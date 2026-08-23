@@ -65,6 +65,10 @@ export const HANDLING_MODES = [
  * …). A preset row claiming one of them is rejected at the trust boundary
  * rather than colliding with the engine's own case table at build time,
  * because the message an operator reads should name the preset field.
+ *
+ * The terminal cases only occupy priorities 2–6, and the fallback is
+ * implicitly 1 — priorities 7–9 are unused. That gap is intentional
+ * headroom for a future codified terminal case, not an oversight.
  */
 export const RESERVED_PRIORITY_CEILING = 9;
 
@@ -390,10 +394,17 @@ export function normaliseProgression(states: readonly string[]): string {
  *
  * Only own, enumerable properties of a **plain object** resolve at each hop
  * — an array is never indexed (numeric segments are out of scope here), and
- * `Object.hasOwn` is checked at every hop so a `__proto__`/inherited property
- * can never resolve, even when the source is hostile JSON. Total: a missing
- * segment, a non-object intermediate value, or an empty path all yield
- * `undefined` rather than throwing.
+ * `Object.hasOwn` is checked at every hop so an *inherited* property can
+ * never resolve, even when the source is hostile JSON. That does **not**
+ * mean a literal `"__proto__"` path segment always misses: `JSON.parse`
+ * turns a `"__proto__"` key in its input into an ordinary **own** data
+ * property — it never touches the real prototype — so `Object.hasOwn`
+ * legitimately sees it and this function reads it like any other field (see
+ * the example below). The guarantee that actually holds, and the one that
+ * matters here, is narrower: no *inherited* value ever resolves, and this
+ * function never writes anything, so no preset field can be used to pollute
+ * `Object.prototype`. Total: a missing segment, a non-object intermediate
+ * value, or an empty path all yield `undefined` rather than throwing.
  *
  * @param source - The value to walk into. Never mutated.
  * @param path - The dot-delimited path, e.g. `"detail.orderId"`.
@@ -405,7 +416,11 @@ export function normaliseProgression(states: readonly string[]): string {
  *
  * readPath({ detail: { orderId: "42" } }, "detail.orderId"); // "42"
  * readPath({ detail: { orderId: "42" } }, "detail.missing"); // undefined
- * readPath(JSON.parse('{"__proto__":{"polluted":true}}'), "__proto__.polluted"); // undefined
+ * // JSON.parse makes "__proto__" an own data property here (never the real
+ * // prototype), so this legitimately resolves — Object.hasOwn(...) is
+ * // `true` — rather than returning `undefined`. No pollution occurs:
+ * // ({}).polluted stays `undefined` after this call.
+ * readPath(JSON.parse('{"__proto__":{"polluted":true}}'), "__proto__.polluted"); // true
  * ```
  */
 export function readPath(source: unknown, path: string): unknown {

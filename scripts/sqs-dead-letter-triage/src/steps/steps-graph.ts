@@ -20,7 +20,12 @@
 import { Core } from "@m3l-automation/m3l-common";
 
 import { normaliseProgression, readPath, SAFE_KEY_VALUE } from "./preset.js";
-import type { TriageArm, TriagePreset, TriageShape } from "./preset.js";
+import type {
+  TriageArm,
+  TriageKeyRule,
+  TriagePreset,
+  TriageShape,
+} from "./preset.js";
 
 /** The error code a step raises when it needs run state no earlier step set. */
 const PROCEDURE_CODE = "ERR_DLQ_TRIAGE_PROCEDURE";
@@ -28,10 +33,14 @@ const PROCEDURE_CODE = "ERR_DLQ_TRIAGE_PROCEDURE";
 /**
  * The fixed, non-empty sentinel `route-event` records as `values.eventType`
  * when the payload's discriminator is absent or not a string. Never a real
- * event-type value a preset author could plausibly declare, and — since
- * every preset-row case's `when` also guards on `values.armLabel`, which is
- * never set on this path — it can never satisfy a preset row's `eventType`
- * predicate.
+ * event-type value a preset author could plausibly declare. On
+ * `route-event`'s **stop** path (no matched arm and no default arm) it can
+ * never satisfy a preset row's `eventType` predicate: `armLabel` is never
+ * set there, and every such row also carries the `armLabel` guard. That
+ * does **not** extend to the continue path — when the discriminator is
+ * absent but a default arm exists, the run continues with the sentinel AND
+ * `armLabel` both set, so a row scoped to that arm could in principle match
+ * it (see the routing step's own note on this).
  */
 const EVENT_TYPE_UNROUTABLE = "(unroutable)";
 
@@ -161,10 +170,14 @@ export function routeEventStep(preset: TriagePreset): Step<"route-event"> {
       // `EVENT_TYPE_UNROUTABLE` sentinel rather than `""` — `exists("")` is
       // `true` (only an absent/`undefined` value is "not present"), so an
       // empty string would already have worked, but the sentinel also makes
-      // the "routing was attempted" intent explicit in a run report. The
-      // sentinel can never satisfy a preset row's `eventType` predicate:
-      // every such row also carries the `armLabel` guard, and `armLabel` is
-      // never set on this stop path.
+      // the "routing was attempted" intent explicit in a run report. On the
+      // STOP path below (no matched arm and no default arm), the sentinel
+      // can never satisfy a preset row's `eventType` predicate, because
+      // `armLabel` is never set there and every such row also carries the
+      // `armLabel` guard. That guarantee does NOT extend to the continue
+      // path a few lines down: when the discriminator is absent but a
+      // default arm exists, the run continues with BOTH the sentinel
+      // `eventType` and `armLabel` set to the default arm's label.
       const eventType = discriminator ?? EVENT_TYPE_UNROUTABLE;
       const matchedArm =
         discriminator === undefined
@@ -180,7 +193,11 @@ export function routeEventStep(preset: TriagePreset): Step<"route-event"> {
           note:
             discriminator === undefined
               ? `stopped: no string discriminator at '${preset.routeOn}'`
-              : `stopped: no arm matches event type '${discriminator}'`,
+              : // Never echo `discriminator` itself: it is read straight out
+                // of the DLQ body, and a step note can end up persisted by
+                // the reporting slice. Name the path instead, as the arm two
+                // lines up already does.
+                `stopped: no arm matches the event type at '${preset.routeOn}'`,
         };
       }
       context.deps.state.selectArm(arm);
@@ -190,6 +207,38 @@ export function routeEventStep(preset: TriagePreset): Step<"route-event"> {
       };
     },
   };
+}
+
+/**
+ * The outcome of applying an arm's key rule's `capture` regex: either the
+ * (possibly captured) key, or a stop note naming why extraction failed. No
+ * `capture` rule at all is the trivial success case.
+ */
+type CaptureOutcome =
+  | { readonly ok: true; readonly key: string }
+  | { readonly ok: false; readonly note: string };
+
+/**
+ * Applies an arm's key rule's `capture` regex to `key`, bounding the subject
+ * length before `exec` — defence in depth, matching how the engine itself
+ * bounds a `matches` subject. The pattern was already proven safe against
+ * the engine's own check at load time (`requireSafeCapturePattern`), but
+ * bounding the subject too means a pathological key can never reach `exec`
+ * regardless.
+ */
+function applyCapture(rule: TriageKeyRule, key: string): CaptureOutcome {
+  if (rule.capture === undefined) return { ok: true, key };
+  if (key.length > Core.M3L_PROCEDURE_MAX_MATCH_INPUT_LENGTH) {
+    return {
+      ok: false,
+      note: `stopped: key exceeds the ${String(Core.M3L_PROCEDURE_MAX_MATCH_INPUT_LENGTH)}-character match-input limit`,
+    };
+  }
+  const captured = new RegExp(rule.capture, "u").exec(key)?.[1];
+  if (captured === undefined || captured.length === 0) {
+    return { ok: false, note: `stopped: no key at '${rule.path}'` };
+  }
+  return { ok: true, key: captured };
 }
 
 /**
@@ -214,13 +263,11 @@ export function extractKeyStep(): Step<"extract-key"> {
       if (rule.stripPrefix !== undefined && key.startsWith(rule.stripPrefix)) {
         key = key.slice(rule.stripPrefix.length);
       }
-      if (rule.capture !== undefined) {
-        const captured = new RegExp(rule.capture, "u").exec(key)?.[1];
-        if (captured === undefined || captured.length === 0) {
-          return { flow: "stop", note: `stopped: no key at '${rule.path}'` };
-        }
-        key = captured;
+      const captured = applyCapture(rule, key);
+      if (!captured.ok) {
+        return { flow: "stop", note: captured.note };
       }
+      key = captured.key;
       if (rule.addSuffix !== undefined) {
         key = `${key}${rule.addSuffix}`;
       }

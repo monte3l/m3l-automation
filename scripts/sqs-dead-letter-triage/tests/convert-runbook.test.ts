@@ -175,6 +175,81 @@ describe("convertMarkdown — case-row derivation never guesses", () => {
   });
 });
 
+describe("convertMarkdown — auto-assigned priorities are disclosed (finding 5)", () => {
+  it("records a todo about the auto-assigned priority for every emitted case row", () => {
+    const markdown = [
+      "| From State | Next State | Verdict |",
+      "| ---------- | ---------- | ------- |",
+      "| a          | b          | remove  |",
+      "| c          | d          | hold    |",
+    ].join("\n");
+    const { preset, todos } = convertMarkdown(markdown, "orders-dlq");
+    const arm = definite(
+      (preset["arms"] as readonly Record<string, unknown>[] | undefined)?.[0],
+      "arms[0]",
+    );
+    const cases = arm["cases"] as readonly Record<string, unknown>[];
+    expect(cases).toHaveLength(2);
+    const priorityTodos = todos.filter((todo) =>
+      todo.toLowerCase().includes("priorit"),
+    );
+    // At least one todo per emitted row, naming the auto-assignment — never
+    // zero, which is what the well-formed round-trip test (above) would have
+    // let slip through before this disclosure existed.
+    expect(priorityTodos.length).toBeGreaterThanOrEqual(cases.length);
+  });
+
+  it("still assigns strictly descending priorities in table order (behaviour unchanged, only the disclosure is added)", () => {
+    // Duplicates the existing assertion above by design: this pins that the
+    // finding-5 fix is additive (a new todo) and does not alter the
+    // priority-assignment behaviour itself.
+    const markdown = [
+      "| From State | Next State | Verdict |",
+      "| ---------- | ---------- | ------- |",
+      "| a          | b          | remove  |",
+      "| c          | d          | hold    |",
+      "| e          | f          | escalate|",
+    ].join("\n");
+    const { preset } = convertMarkdown(markdown, "orders-dlq");
+    const arm = definite(
+      (preset["arms"] as readonly Record<string, unknown>[] | undefined)?.[0],
+      "arms[0]",
+    );
+    const cases = arm["cases"] as readonly Record<string, unknown>[];
+    expect(cases).toHaveLength(3);
+    const priorities = cases.map((row) => row["priority"] as number);
+    let previous: number | undefined;
+    for (const value of priorities) {
+      if (previous !== undefined) expect(value).toBeLessThan(previous);
+      previous = value;
+    }
+  });
+});
+
+describe("convertMarkdown — a synthesised description is disclosed (finding 6)", () => {
+  it("emits the case and records a todo naming the row when no description column is recognised", () => {
+    const markdown = [
+      "| From State | Next State | Verdict |",
+      "| ---------- | ---------- | ------- |",
+      "| created    | paid       | remove  |",
+    ].join("\n");
+    const { preset, todos } = convertMarkdown(markdown, "orders-dlq");
+    const arm = definite(
+      (preset["arms"] as readonly Record<string, unknown>[] | undefined)?.[0],
+      "arms[0]",
+    );
+    const cases = arm["cases"] as readonly Record<string, unknown>[];
+    // The row is still emitted, never dropped for lacking a description.
+    expect(cases).toHaveLength(1);
+    expect(cases[0]?.["description"]).toBeDefined();
+    expect(
+      todos.some(
+        (todo) => todo.includes("cases[0]") && todo.includes("description"),
+      ),
+    ).toBe(true);
+  });
+});
+
 describe("convertMarkdown — non-derivable structural fields", () => {
   it("records a todo naming each of routeOn, escalateTo, arms[0].key, arms[0].lookup and arms[0].state", () => {
     const { todos } = convertMarkdown(WELL_FORMED, "orders-dlq");

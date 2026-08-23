@@ -432,9 +432,13 @@ describe("parseTriagePreset — numbered validations", () => {
         arms: [
           baseArm({
             match: "order.created",
+            label: "Order created arm",
             cases: [baseCase({ id: "case-a", priority: 100 })],
           }),
-          baseArm({ cases: [baseCase({ id: "case-b", priority: 100 })] }),
+          baseArm({
+            label: "Default arm",
+            cases: [baseCase({ id: "case-b", priority: 100 })],
+          }),
         ],
       }),
     );
@@ -449,9 +453,13 @@ describe("parseTriagePreset — numbered validations", () => {
         arms: [
           baseArm({
             match: "order.created",
+            label: "Order created arm",
             cases: [baseCase({ id: "dup-case", priority: 100 })],
           }),
-          baseArm({ cases: [baseCase({ id: "dup-case", priority: 101 })] }),
+          baseArm({
+            label: "Default arm",
+            cases: [baseCase({ id: "dup-case", priority: 101 })],
+          }),
         ],
       }),
     );
@@ -533,8 +541,13 @@ describe("parseTriagePreset — numbered validations", () => {
     // A naive open-paren count would misjudge this pattern: it has one
     // non-capturing group `(?:...)`, one real capturing group `(\w+)`, and
     // two character classes (`[(]`, `[)]`) that each contain a literal
-    // parenthesis but declare no group at all.
-    const capture = "(?:pre-)?id[(](\\w+)[)]";
+    // parenthesis but declare no group at all. No trailing `?` on the
+    // non-capturing group: the engine's own pattern-safety probe
+    // (`requireSafeCapturePattern`) rejects ANY `)` immediately followed by a
+    // quantifier, regardless of whether the group it closes is capturing —
+    // `(?:pre-)?` would trip that same rule this pattern is meant to prove
+    // is NOT tripped by an unrelated shape (a bare character-class paren).
+    const capture = "(?:pre-)id[(](\\w+)[)]";
     const preset = parseTriagePreset(
       reader,
       validPreset({ arms: [baseArm({ key: baseKey({ capture }) })] }),
@@ -552,6 +565,120 @@ describe("parseTriagePreset — numbered validations", () => {
       validPreset({ arms: [baseArm({ cases: [caseRow] })] }),
     );
     expect(message.toLowerCase()).toContain("predicate");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Regression coverage for the 2026-08-23 review findings.
+// ---------------------------------------------------------------------------
+
+describe("parseTriagePreset — arm.label uniqueness (finding 1)", () => {
+  // Every preset-row case is scoped to its declaring arm by `armLabel`
+  // equality (cases.ts's `armGuard`), not by `match` — so two arms sharing a
+  // `label` would let arm A's case rows match messages routed to arm B, even
+  // though their `match` values are entirely distinct. This is the exact
+  // precondition the cross-arm isolation guard depends on never happening.
+  it("rejects two arms with different 'match' values but the same 'label', naming the duplicate label", () => {
+    const message = rejectionOf(
+      validPreset({
+        arms: [
+          baseArm({
+            match: "order.created",
+            label: "orders-arm",
+            cases: [baseCase({ id: "case-first", priority: 100 })],
+          }),
+          baseArm({
+            match: "order.shipped",
+            label: "orders-arm",
+            cases: [baseCase({ id: "case-second", priority: 101 })],
+          }),
+        ],
+      }),
+    );
+    expect(message).toContain("orders-arm");
+    expect(message.toLowerCase()).toContain("label");
+  });
+
+  it("rejects a default arm sharing a label with a matched arm", () => {
+    const message = rejectionOf(
+      validPreset({
+        arms: [
+          baseArm({
+            match: "order.created",
+            label: "orders-arm",
+            cases: [baseCase({ id: "case-first", priority: 100 })],
+          }),
+          baseArm({
+            label: "orders-arm",
+            cases: [baseCase({ id: "case-second", priority: 101 })],
+          }),
+        ],
+      }),
+    );
+    expect(message).toContain("orders-arm");
+    expect(message.toLowerCase()).toContain("label");
+  });
+});
+
+describe("parseTriagePreset — empty-string state predicates are rejected (finding 2)", () => {
+  // An empty-string fromState/nextState/eventType would otherwise collide
+  // with derive-state's/route-event's own "unresolved" sentinels, silently
+  // turning a narrow row into a catch-all whenever the arm's own path is
+  // mistyped. Every other declared string in this schema already rejects
+  // "" via M3LInputFileReader.requiredStringField; these three optional
+  // predicates read through optionalStringField instead, which admits "".
+  test.each(["fromState", "nextState", "eventType"] as const)(
+    "rejects a case row with an empty-string '%s'",
+    (field) => {
+      const message = rejectionOf(
+        validPreset({
+          arms: [baseArm({ cases: [baseCase({ [field]: "" })] })],
+        }),
+      );
+      expect(message).toContain(field);
+      expect(message.toLowerCase()).toContain("empty");
+    },
+  );
+});
+
+describe("parseTriagePreset — key.capture pattern safety (finding 4)", () => {
+  // This pattern already passes the pre-existing checks (it compiles, and
+  // `(x+x+)+` matched against the empty string still reports exactly one
+  // capture group) — only the engine's own ReDoS-shape safety check catches
+  // it, which is why the loader now routes every capture pattern through it.
+  it("rejects a key.capture pattern shaped for catastrophic backtracking, even though it compiles and declares exactly one group", () => {
+    const message = rejectionOf(
+      validPreset({
+        arms: [baseArm({ key: baseKey({ capture: "^(x+x+)+y$" }) })],
+      }),
+    );
+    expect(message).toContain("capture");
+  });
+
+  // A quantified group (`)` immediately followed by a quantifier) is the
+  // other catastrophic-backtracking shape the engine's check rejects,
+  // independent of the "exactly one capture group" count check above — this
+  // one has zero capture groups, so it must be caught by the safety probe
+  // rather than accidentally passing because the group-count check runs
+  // first and never reaches it.
+  it("rejects a key.capture pattern with a quantified group", () => {
+    const message = rejectionOf(
+      validPreset({
+        arms: [baseArm({ key: baseKey({ capture: "(?:a)?b" }) })],
+      }),
+    );
+    expect(message).toContain("capture");
+  });
+
+  it("still accepts a legitimate, non-catastrophic key.capture pattern", () => {
+    const capture = "^order-([0-9]+)$";
+    const preset = parseTriagePreset(
+      reader,
+      validPreset({ arms: [baseArm({ key: baseKey({ capture }) })] }),
+      "example.json",
+    );
+    const arm0 = definite(preset.arms[0], "arms[0]");
+    expect(arm0.key.capture).toBe(capture);
   });
 });
 

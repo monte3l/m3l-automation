@@ -155,59 +155,128 @@ function optional(
   return value === undefined ? {} : { [key]: value };
 }
 
+/** Turns a row's description cell into a description, recording a todo when it must be synthesised from a weaker signal. */
+function resolveDescription(
+  row: Readonly<Record<string, string>>,
+  index: number,
+  fromState: string | undefined,
+  nextState: string | undefined,
+  verdict: string,
+  todos: string[],
+): string {
+  const descriptionCell = cell(row, /description|meaning|detail|cause/u);
+  if (descriptionCell !== undefined) return descriptionCell;
+  const description = fromState ?? nextState ?? verdict;
+  const source =
+    fromState !== undefined
+      ? "fromState"
+      : nextState !== undefined
+        ? "nextState"
+        : "verdict";
+  todos.push(
+    `cases[${String(index)}] ('${description}'): description synthesised from ${source} — review and rewrite`,
+  );
+  return description;
+}
+
+/** Turns a row's prose cell into prose, recording a todo when it must be synthesised from the description. */
+function resolveProse(
+  row: Readonly<Record<string, string>>,
+  index: number,
+  description: string,
+  todos: string[],
+): string {
+  const proseCell = cell(row, /prose|explanation|analysis|note/u);
+  if (proseCell !== undefined) return proseCell;
+  todos.push(
+    `cases[${String(index)}] ('${description}'): prose synthesised from description — review and rewrite`,
+  );
+  return description;
+}
+
 /**
- * Converts the known-cases table into preset case rows, collecting its
- * gaps. Never guesses: a row missing a recognisable state column or an
- * authorable verdict is skipped and named in `todos`, rather than emitted
- * with a guessed value.
+ * Resolves one table row's auto-assigned priority (`BASE_PRIORITY` minus
+ * `index * PRIORITY_STEP`), or `undefined` (with a todo) once the reserved
+ * ceiling is reached.
  */
+function resolvePriority(index: number, todos: string[]): number | undefined {
+  const priority = BASE_PRIORITY - index * PRIORITY_STEP;
+  if (priority > RESERVED_PRIORITY_CEILING) return priority;
+  todos.push(
+    `cases[${String(index)}]: too many rows to auto-assign a priority`,
+  );
+  return undefined;
+}
+
+/**
+ * Builds one preset case row from a table row, or returns `undefined` (with
+ * a todo recording why) when it cannot. Never guesses: a row missing a
+ * recognisable state column or an authorable verdict is skipped rather than
+ * emitted with a guessed value.
+ *
+ * Priority is the one thing still derived implicitly — from table row
+ * position, via {@link resolvePriority} — so table order silently becomes
+ * case precedence. A catch-all listed first for readability would then
+ * outrank a specific row below it with nothing flagging that. Rather than
+ * guess at intent (there is no structural signal here that would let this
+ * function tell "deliberately ordered" from "just how the runbook happened
+ * to list them"), every emitted row pushes a todo naming itself, so
+ * `validate`'s non-empty-`todos` gate forces a human to review precedence
+ * before the preset is trusted.
+ */
+function buildCaseRow(
+  row: Readonly<Record<string, string>>,
+  index: number,
+  todos: string[],
+  taken: Set<string>,
+): Readonly<Record<string, unknown>> | undefined {
+  const fromState = cell(row, /from[\s-]?state|prior[\s-]?state|before/u);
+  const nextState = cell(row, /next[\s-]?state|to[\s-]?state|after/u);
+  if (fromState === undefined && nextState === undefined) {
+    todos.push(`cases[${String(index)}]: no from/next state column found`);
+    return undefined;
+  }
+  const priority = resolvePriority(index, todos);
+  if (priority === undefined) return undefined;
+  const verdict = toVerdict(cell(row, /verdict|outcome|status|action/u));
+  if (verdict === undefined) {
+    todos.push(`cases[${String(index)}]: verdict not recognised; row skipped`);
+    return undefined;
+  }
+  const description = resolveDescription(
+    row,
+    index,
+    fromState,
+    nextState,
+    verdict,
+    todos,
+  );
+  const prose = resolveProse(row, index, description, todos);
+  todos.push(
+    `cases[${String(index)}] ('${description}'): priority ${String(priority)} auto-assigned from table row order — review precedence before use`,
+  );
+  return {
+    id: slugify(description, taken),
+    description,
+    prose,
+    priority,
+    ...optional("fromState", fromState),
+    ...optional("nextState", nextState),
+    verdict,
+    ...optional("ticket", cell(row, /ticket|issue|reference/u)),
+    ...optional("resolution", cell(row, /resolution|action|fix|remediation/u)),
+  };
+}
+
+/** Converts the known-cases table into preset case rows, collecting its gaps — see {@link buildCaseRow}. */
 function toCases(
   rows: readonly Readonly<Record<string, string>>[],
   todos: string[],
 ): readonly Readonly<Record<string, unknown>>[] {
   const taken = new Set<string>();
   return rows.flatMap((row, index) => {
-    const fromState = cell(row, /from[\s-]?state|prior[\s-]?state|before/u);
-    const nextState = cell(row, /next[\s-]?state|to[\s-]?state|after/u);
-    if (fromState === undefined && nextState === undefined) {
-      todos.push(`cases[${String(index)}]: no from/next state column found`);
-      return [];
-    }
-    const priority = BASE_PRIORITY - index * PRIORITY_STEP;
-    if (priority <= RESERVED_PRIORITY_CEILING) {
-      todos.push(
-        `cases[${String(index)}]: too many rows to auto-assign a priority`,
-      );
-      return [];
-    }
-    const verdict = toVerdict(cell(row, /verdict|outcome|status|action/u));
-    if (verdict === undefined) {
-      todos.push(
-        `cases[${String(index)}]: verdict not recognised; row skipped`,
-      );
-      return [];
-    }
-    const description =
-      cell(row, /description|meaning|detail|cause/u) ??
-      fromState ??
-      nextState ??
-      verdict;
-    return [
-      {
-        id: slugify(description, taken),
-        description,
-        prose: cell(row, /prose|explanation|analysis|note/u) ?? description,
-        priority,
-        ...optional("fromState", fromState),
-        ...optional("nextState", nextState),
-        verdict,
-        ...optional("ticket", cell(row, /ticket|issue|reference/u)),
-        ...optional(
-          "resolution",
-          cell(row, /resolution|action|fix|remediation/u),
-        ),
-      },
-    ];
+    const built = buildCaseRow(row, index, todos, taken);
+    return built === undefined ? [] : [built];
   });
 }
 

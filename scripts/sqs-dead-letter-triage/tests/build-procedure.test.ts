@@ -1,6 +1,6 @@
 import { describe, expect, it, test } from "vitest";
 
-import type { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@m3l-automation/m3l-common";
 
 import { buildTriageProcedure } from "../src/steps/build-procedure.js";
 import { createTriageRunState, readPath } from "../src/steps/preset.js";
@@ -904,5 +904,160 @@ describe("describe() and the definition digest", () => {
     const first = buildTriageProcedure(basePreset());
     const second = buildTriageProcedure(basePreset({ queue: "payments-dlq" }));
     expect(first.digest).not.toBe(second.digest);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// J. Regression coverage for the 2026-08-23 review findings.
+// ---------------------------------------------------------------------------
+
+describe("arm.label uniqueness — why the loader's guard matters (finding 1)", () => {
+  // `buildTriageProcedure` compiles an already-validated `TriagePreset`; the
+  // label-uniqueness check itself lives entirely at the load-runbook.ts trust
+  // boundary (see load-runbook.test.ts), which is the ONLY place such a
+  // preset can be rejected — the engine has no independent guard of its own.
+  // This test bypasses the loader (as every fixture in this file does) to
+  // characterise exactly why that boundary check exists: two arms sharing a
+  // label share the SAME armGuard identity in cases.ts, so a message routed
+  // to one arm can still match the other arm's case row.
+  it("[characterizes the pre-loader-guard hazard] lets a non-selected arm's row win when two arms illegally share a label", async () => {
+    const armA = baseArm({
+      match: "order.created",
+      label: "shared-label",
+      state: baseState({ fromState: "status" }),
+      cases: [
+        baseCase({
+          id: "case-a-from-arm-a",
+          priority: 200,
+          fromState: "created",
+          verdict: "escalate",
+        }),
+      ],
+    });
+    const armB = baseArm({
+      match: "order.shipped",
+      label: "shared-label",
+      state: baseState({ fromState: "status" }),
+      cases: [
+        baseCase({
+          id: "case-b-from-arm-b",
+          priority: 100,
+          fromState: "created",
+          verdict: "hold",
+        }),
+      ],
+    });
+    const preset = basePreset({ arms: [armA, armB] });
+
+    // Routed to arm B ("order.shipped"), never to arm A.
+    const outcome = await runTriage(
+      preset,
+      message(standardPayload({ eventType: "order.shipped" })),
+      fakeLookup({ status: "created" }),
+    );
+
+    expect(outcome.status).toBe("matched");
+    if (outcome.status !== "matched") throw new Error("expected a match");
+    // Arm A's higher-priority row wins even though the message was routed to
+    // arm B — the cross-arm leak the label-uniqueness guard exists to
+    // prevent. This is exactly why load-runbook.ts must never let two arms
+    // share a label; it is not a property this engine layer can enforce.
+    expect(outcome.primary.caseId).toBe("case-a-from-arm-a");
+  });
+});
+
+describe("state predicate matching survives a mistyped arm state path (finding 2)", () => {
+  // The motivating scenario for rejecting an empty-string case predicate at
+  // load: derive-state normalises a missing/mistyped fromState path to "".
+  // A row declaring a concrete (non-empty) fromState must never coincide
+  // with that "" sentinel — it must simply fail to match, falling through
+  // to the unrecognised fallback rather than resolving any row's verdict.
+  it("does not let a concrete fromState row match when the arm's own fromState path resolves to nothing, falling through to unrecognised", async () => {
+    const preset = basePreset({
+      arms: [
+        baseArm({
+          // Mistyped/absent path: the entity never has "statusTypo", so
+          // derive-state's fromState always normalises to "".
+          state: baseState({ fromState: "statusTypo" }),
+          cases: [
+            baseCase({
+              id: "only-case",
+              priority: 100,
+              fromState: "shipped",
+              verdict: "hold",
+            }),
+          ],
+        }),
+      ],
+    });
+    const outcome = await runTriage(
+      preset,
+      message(standardPayload()),
+      fakeLookup({ status: "shipped" }),
+    );
+
+    expect(outcome.status).toBe("unrecognized");
+    const conclusion = conclusionOf(outcome);
+    expect(conclusion.verdict).toBe("unrecognised");
+    expect(conclusion.caseId).toBeUndefined();
+  });
+});
+
+describe("no caller data in step notes (finding 3)", () => {
+  it("does not leak the message's discriminator into the 'unrouted' step's note or conclusion", async () => {
+    const sentinel = "SENSITIVE-VALUE-1234";
+    // basePreset()'s single arm has an explicit 'match', so there is no
+    // default arm — the sentinel discriminator matches nothing and routing
+    // stops.
+    const preset = basePreset();
+    const outcome = await runTriage(
+      preset,
+      message(standardPayload({ eventType: sentinel })),
+      fakeLookup(),
+    );
+
+    const conclusion = conclusionOf(outcome);
+    expect(conclusion.verdict).toBe("unrouted");
+
+    // Walk the whole outcome: every step's note, the conclusion, and (were
+    // this run to fail) its error — never just the conclusion alone, since
+    // the leak this finding fixed lived in a step's `note`, not the
+    // conclusion.
+    const notes = outcome.telemetry.steps
+      .map((step) => step.note ?? "")
+      .join(" ");
+    expect(notes).not.toContain(sentinel);
+    expect(JSON.stringify(conclusion)).not.toContain(sentinel);
+    if (outcome.status === "failed" || outcome.status === "aborted") {
+      expect(JSON.stringify(outcome.error)).not.toContain(sentinel);
+    }
+  });
+});
+
+describe("extract-key bounds the key length before running the capture regex (finding 4)", () => {
+  it("stops with a note naming the match-input limit, rather than running the capture regex against an oversized key", async () => {
+    const oversizedKey = "x".repeat(
+      Core.M3L_PROCEDURE_MAX_MATCH_INPUT_LENGTH + 1,
+    );
+    const preset = basePreset({
+      arms: [
+        baseArm({
+          key: baseKey({ path: "orderId", capture: "^(x+)$" }),
+        }),
+      ],
+    });
+    const outcome = await runTriage(
+      preset,
+      message(standardPayload({ orderId: oversizedKey })),
+      fakeLookup(),
+    );
+
+    const conclusion = conclusionOf(outcome);
+    expect(conclusion.verdict).toBe("no-key");
+    const notes = outcome.telemetry.steps
+      .map((step) => step.note ?? "")
+      .join(" ");
+    expect(notes).toContain(String(Core.M3L_PROCEDURE_MAX_MATCH_INPUT_LENGTH));
+    expect(notes).not.toContain(oversizedKey);
   });
 });

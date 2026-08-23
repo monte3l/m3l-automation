@@ -51,6 +51,79 @@ function requiredNumber(
   return value;
 }
 
+/**
+ * The declared shape of a throwaway, single-step, single-case procedure used
+ * only to run one pattern through the procedure engine's own `matches`
+ * condition validation (`internal/procedure/validate/condition-literals.ts`'s
+ * `isPatternSafe`). Never run — `build()` is the whole point, since it is
+ * what performs the safety check.
+ */
+interface PatternProbeShape extends Core.M3LProcedureShape {
+  deps: Record<string, never>;
+  values: Record<string, never>;
+  parameters: Record<string, never>;
+  conclusion: void;
+  stepId: "probe";
+  caseId: "probe";
+}
+
+/**
+ * Rejects a `capture` pattern the procedure engine's own safety check would
+ * reject, by actually running it through that check rather than duplicating
+ * it.
+ *
+ * `isPatternSafe` lives in `packages/m3l-common/src/internal/` and is not
+ * exported — copying or reimplementing it here would drift the moment the
+ * engine's own check changes. A `case.signature` pattern already gets this
+ * check for free: it becomes a `matches` condition compiled into the
+ * procedure's case table, which `build()` validates at `validate`/`explain`
+ * time. A `capture` pattern never enters the condition tree — `extract-key`
+ * runs it directly against the extracted key — so nothing else routes it
+ * through the engine's check. Building a one-step, one-case throwaway
+ * procedure whose sole case matches this pattern against a literal subject
+ * reuses the real check with zero duplication: a `build()` rejection here
+ * means the pattern is unsafe (or otherwise invalid), reported as a preset
+ * problem naming `field` rather than as a hang inside `extract-key`.
+ *
+ * Do not "simplify" this into a local ReDoS heuristic — that is exactly the
+ * duplication this function exists to avoid.
+ */
+function requireSafeCapturePattern(pattern: string, field: string): void {
+  try {
+    Core.createProcedureBuilder<PatternProbeShape>("dlq-triage-pattern-probe")
+      .step({
+        id: "probe",
+        label: "pattern-safety probe",
+        kind: "control",
+        execute: (): Core.M3LProcedureStepResult<PatternProbeShape> => ({
+          flow: "continue",
+        }),
+      })
+      .case({
+        id: "probe",
+        description: "pattern-safety probe",
+        prose: "pattern-safety probe",
+        priority: 1,
+        condition: {
+          kind: "matches",
+          subject: { source: "literal", literal: "" },
+          pattern,
+        },
+        action: (): void => undefined,
+      })
+      .build({
+        description: "pattern-safety probe fallback",
+        prose: "pattern-safety probe fallback",
+        action: (): void => undefined,
+      });
+  } catch (cause) {
+    throw new Core.M3LError(
+      `'${field}' is rejected by the procedure engine's pattern-safety check (unsafe or otherwise invalid regular expression)`,
+      { code: PRESET_CODE, cause },
+    );
+  }
+}
+
 /** Rejects `value` unless it is a compilable, length-bounded regular expression. */
 function requirePattern(value: string, field: string): string {
   if (value.length > MAX_PATTERN_LENGTH) {
@@ -200,6 +273,7 @@ function parseKeyRule(
   );
   if (capture !== undefined) {
     requireSingleCaptureGroup(capture, `${field}.key.capture`);
+    requireSafeCapturePattern(capture, `${field}.key.capture`);
   }
   return {
     path: reader.requiredStringField(record, "path", `${field}.key`),
@@ -262,6 +336,33 @@ function parseStateMap(
 }
 
 /**
+ * Rejects an empty-string predicate value, so it can never collide with the
+ * "unresolved" sentinel `derive-state` normalises a missing/non-string
+ * `fromState`/`nextState` to (`""`), or with the fixed, non-empty
+ * `EVENT_TYPE_UNROUTABLE` sentinel `route-event` uses instead of `""` for
+ * exactly this reason. An empty-string `fromState`, `nextState`, or
+ * `eventType` would otherwise match every entity whose corresponding path
+ * resolves nothing — e.g. a mistyped path — silently turning a narrow row
+ * into a catch-all. Every other declared string in this schema already
+ * rejects `""` via `M3LInputFileReader.requiredStringField`; this restores
+ * that same discipline for the one family of fields (`TriageCase`'s optional
+ * predicates) that reads through `optionalStringField` instead, which admits
+ * `""`.
+ */
+function rejectEmptyPredicate(
+  value: string | undefined,
+  field: string,
+): string | undefined {
+  if (value === "") {
+    throw new Core.M3LError(
+      `'${field}' must not be an empty string — an empty predicate is not permitted; declare a concrete value`,
+      { code: PRESET_CODE },
+    );
+  }
+  return value;
+}
+
+/**
  * Rejects a case row that declares none of its five predicates — such a row
  * would match every message and shadow the arm's fallback.
  */
@@ -282,6 +383,53 @@ function requireAtLeastOnePredicate(
     );
   }
 }
+/** Reads and validates a case row's `priority` field: an integer above the reserved ceiling. */
+function parseCasePriority(
+  reader: Core.M3LInputFileReader,
+  record: Readonly<Record<string, unknown>>,
+  field: string,
+): number {
+  const priority = requiredNumber(reader, record, "priority", field);
+  if (!Number.isInteger(priority) || priority <= RESERVED_PRIORITY_CEILING) {
+    throw new Core.M3LError(
+      `'${field}.priority' must be an integer above ${String(RESERVED_PRIORITY_CEILING)} — priorities 1-${String(RESERVED_PRIORITY_CEILING)} are reserved for the codified terminal cases`,
+      { code: PRESET_CODE },
+    );
+  }
+  return priority;
+}
+
+/** The three optional string predicates a case row may declare directly (as opposed to `signature`/`requiredProgression`). */
+interface CasePredicateFields {
+  readonly fromState: string | undefined;
+  readonly nextState: string | undefined;
+  readonly eventType: string | undefined;
+}
+
+/**
+ * Reads a case row's `fromState`/`nextState`/`eventType` predicates,
+ * rejecting an empty string for each — see {@link rejectEmptyPredicate}.
+ */
+function parseCasePredicateFields(
+  reader: Core.M3LInputFileReader,
+  record: Readonly<Record<string, unknown>>,
+  field: string,
+): CasePredicateFields {
+  return {
+    fromState: rejectEmptyPredicate(
+      reader.optionalStringField(record, "fromState"),
+      `${field}.fromState`,
+    ),
+    nextState: rejectEmptyPredicate(
+      reader.optionalStringField(record, "nextState"),
+      `${field}.nextState`,
+    ),
+    eventType: rejectEmptyPredicate(
+      reader.optionalStringField(record, "eventType"),
+      `${field}.eventType`,
+    ),
+  };
+}
 
 /** Parses one arm's known-case row. */
 function parseCase(
@@ -292,13 +440,8 @@ function parseCase(
 ): TriageCase {
   const field = `${armField}.cases[${String(index)}]`;
   const record = reader.asRecord(value, field);
-  const priority = requiredNumber(reader, record, "priority", field);
-  if (!Number.isInteger(priority) || priority <= RESERVED_PRIORITY_CEILING) {
-    throw new Core.M3LError(
-      `'${field}.priority' must be an integer above ${String(RESERVED_PRIORITY_CEILING)} — priorities 1-${String(RESERVED_PRIORITY_CEILING)} are reserved for the codified terminal cases`,
-      { code: PRESET_CODE },
-    );
-  }
+  const priority = parseCasePriority(reader, record, field);
+  const predicates = parseCasePredicateFields(reader, record, field);
   const requiredProgressionValues = reader.optionalArrayField(
     record,
     "requiredProgression",
@@ -308,9 +451,7 @@ function parseCase(
     description: reader.requiredStringField(record, "description", field),
     prose: reader.requiredStringField(record, "prose", field),
     priority,
-    fromState: reader.optionalStringField(record, "fromState"),
-    nextState: reader.optionalStringField(record, "nextState"),
-    eventType: reader.optionalStringField(record, "eventType"),
+    ...predicates,
     signature: optionalPattern(
       reader,
       record,
@@ -362,8 +503,14 @@ function parseArm(
 }
 
 /**
- * Rejects more than one default arm (a `match === undefined` arm), and any
- * duplicate `match` value across arms.
+ * Rejects more than one default arm (a `match === undefined` arm), any
+ * duplicate `match` value across arms, and any duplicate `label` — including
+ * the default arm's. Every preset-row case's isolation from every other
+ * arm's cases depends on `armLabel` equality (`cases.ts`'s `armGuard`), which
+ * is a plain string comparison — so two arms sharing a `label` (a
+ * copy-paste when adding a second arm) would let one arm's rows match
+ * messages routed to the other, regardless of how distinct their `match`
+ * values are.
  */
 function requireUniqueArms(arms: readonly TriageArm[]): void {
   const defaultArmIndexes = arms
@@ -386,6 +533,17 @@ function requireUniqueArms(arms: readonly TriageArm[]): void {
       );
     }
     seenAt.set(arm.match, index);
+  });
+  const seenLabelAt = new Map<string, number>();
+  arms.forEach((arm, index) => {
+    const firstIndex = seenLabelAt.get(arm.label);
+    if (firstIndex !== undefined) {
+      throw new Core.M3LError(
+        `'arms[${String(index)}].label' ('${arm.label}') duplicates 'arms[${String(firstIndex)}].label' — arm labels must be unique, since case-row isolation between arms depends on it`,
+        { code: PRESET_CODE },
+      );
+    }
+    seenLabelAt.set(arm.label, index);
   });
 }
 

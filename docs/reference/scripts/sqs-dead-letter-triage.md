@@ -133,7 +133,14 @@ optional `ticket`, `resolution`, `escalateTo`, `followUps`.
 ties — so a narrow row beats a broad one regardless of authoring order.
 
 Every regex is compiled and length-bounded at load, so a bad pattern is a
-preset problem rather than a `SyntaxError` from inside a step. The extracted
+preset problem rather than a `SyntaxError` from inside a step. Patterns are
+additionally routed through the procedure engine's own pattern-safety check,
+which rejects any **quantified group** — a `)` immediately followed by `*`,
+`+`, `?` or `{`. That covers catastrophic-backtracking shapes such as
+`^(x+x+)+y$`, and it is deliberately conservative: a harmless `(?:pre-)?` is
+rejected too. The same rule applies to `case.signature` and `key.capture`
+alike, so one constraint holds everywhere. Write `(?:pre-)` rather than
+`(?:pre-)?`, or split the row into two cases. The extracted
 key is allow-listed before use; no value is interpolated into a query string
 anywhere, because the lookup is a typed key.
 

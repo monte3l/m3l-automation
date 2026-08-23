@@ -235,6 +235,11 @@ function unparseableCase(
     description,
     prose,
     priority: PRIORITY_UNPARSEABLE,
+    // The `handling == "runbook"` conjunct is redundant given priority
+    // ordering alone — `notRunbookManagedCase` outranks this one (priority
+    // 6 vs. 5), so a non-"runbook" queue is already claimed before this
+    // condition is even reached. Kept anyway as deliberate belt-and-braces:
+    // do not tidy it away.
     condition: {
       kind: "and",
       operands: [
