@@ -156,6 +156,91 @@ export interface M3LSQSRedriveOptions {
 }
 
 /**
+ * The parsed redrive policy attached to an SQS queue. SQS transmits this as
+ * a JSON string over the wire; {@link M3LSQSOperations.getQueueAttributes}
+ * parses and shape-validates it before returning, so callers never handle raw
+ * JSON or a `SyntaxError`.
+ */
+export interface M3LSQSRedrivePolicy {
+  /** The ARN of the dead-letter queue that receives messages exceeding `maxReceiveCount`. */
+  readonly deadLetterTargetArn: string;
+  /** The number of times a message must be received before it is moved to the dead-letter queue. */
+  readonly maxReceiveCount: number;
+}
+
+/**
+ * The three values SQS accepts for `redrivePermission` in a redrive allow
+ * policy. Tracked as a closed union so adding a member forces a compile error
+ * at the runtime `Record<M3LSQSRedrivePermission, true>` guard.
+ */
+export type M3LSQSRedrivePermission = "allowAll" | "denyAll" | "byQueue";
+
+/**
+ * The parsed redrive allow policy attached to an SQS queue, controlling which
+ * source queues may use this queue as a dead-letter target. SQS transmits this
+ * as a JSON string; {@link M3LSQSOperations.getQueueAttributes} parses and
+ * shape-validates it before returning.
+ */
+export interface M3LSQSRedriveAllowPolicy {
+  /** Controls which source queues may target this queue as their dead-letter queue. */
+  readonly redrivePermission: M3LSQSRedrivePermission;
+  /**
+   * The ARNs of the source queues permitted to use this queue as a
+   * dead-letter target, when `redrivePermission` is `"byQueue"`. Absent
+   * (key omitted) when `redrivePermission` is `"allowAll"` or `"denyAll"`.
+   */
+  readonly sourceQueueArns?: readonly string[];
+}
+
+/**
+ * The resolved queue-level attributes returned by
+ * {@link M3LSQSOperations.getQueueAttributes}. SQS reports every attribute as
+ * a string over the wire; this type is the converted form after parsing and
+ * type-narrowing.
+ */
+export interface M3LSQSQueueAttributes {
+  /**
+   * Approximate number of messages available for retrieval from the queue.
+   * SQS reports this as a numeric string; the wrapper parses it to a finite
+   * `number` and throws {@link M3LSQSOperationError} if it cannot.
+   */
+  readonly approximateNumberOfMessages: number;
+  /**
+   * Approximate number of messages currently in flight — received by a
+   * consumer but not yet deleted or returned to the queue. SQS reports this
+   * as a numeric string; the wrapper parses it to a finite `number` and
+   * throws {@link M3LSQSOperationError} if it cannot.
+   */
+  readonly approximateNumberOfMessagesNotVisible: number;
+  /**
+   * Approximate number of messages waiting to be delivered to consumers due
+   * to a per-message or per-queue delivery delay. SQS reports this as a
+   * numeric string; the wrapper parses it to a finite `number` and throws
+   * {@link M3LSQSOperationError} if it cannot.
+   */
+  readonly approximateNumberOfMessagesDelayed: number;
+  /** The ARN of the queue (e.g. `arn:aws:sqs:<region>:<account>:<name>`). */
+  readonly queueArn: string;
+  /**
+   * Whether the queue is a FIFO queue. SQS omits `FifoQueue` entirely for
+   * standard queues; an absent attribute maps to `false`.
+   */
+  readonly fifoQueue: boolean;
+  /**
+   * The redrive policy configured on this queue, parsed from the wire JSON.
+   * Absent when no redrive policy is set; the key is omitted from the
+   * returned object rather than set to `undefined`.
+   */
+  readonly redrivePolicy?: M3LSQSRedrivePolicy;
+  /**
+   * The redrive allow policy configured on this queue, parsed from the wire
+   * JSON. Absent when no policy is set; the key is omitted from the returned
+   * object rather than set to `undefined`.
+   */
+  readonly redriveAllowPolicy?: M3LSQSRedriveAllowPolicy;
+}
+
+/**
  * The outcome of one {@link M3LSQSOperations.redrive} call. Counters are not
  * guaranteed to be a partition of `received` — see the `redrive` TSDoc for
  * why a send-succeeded-but-delete-failed message counts in neither `moved`

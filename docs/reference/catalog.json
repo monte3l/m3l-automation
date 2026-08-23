@@ -1089,7 +1089,11 @@
       "M3LSQSRedriveProcessor",
       "M3LSQSReceiveDeduplicationMode",
       "M3LSQSRedriveOptions",
-      "M3LSQSRedriveResult"
+      "M3LSQSRedriveResult",
+      "M3LSQSQueueAttributes",
+      "M3LSQSRedrivePolicy",
+      "M3LSQSRedrivePermission",
+      "M3LSQSRedriveAllowPolicy"
     ]
   }
 ]
