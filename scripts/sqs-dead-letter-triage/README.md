@@ -38,21 +38,43 @@ node dist/main.js --operation=explain --queue=orders-dlq
 # derive are recorded as todos, and a non-empty todos list makes validate
 # fail: the skeleton is deliberately not runnable until a human closes them.
 node dist/main.js --operation=convert --source=runbooks/orders-dlq.md
+
+# Mutating (locally only) — drain a dead-letter queue, reach a verdict for
+# every message, and write the report. Reads from AWS and writes two
+# artifacts to M3L_OUTPUT_DIR; it never deletes or re-sends a message, so the
+# queue itself is left exactly as found.
+node dist/main.js --operation=triage \
+  --queue=orders-dlq \
+  --queueUrl=https://sqs.eu-west-1.amazonaws.com/000000000000/orders-dlq \
+  --aws.profile=ops-readonly
+
+# Bounded run — cap how much of a deep queue one pass pulls, and hold the
+# drained batch invisible for longer while the verdicts are reviewed.
+node dist/main.js --operation=triage \
+  --queue=shipments-dlq \
+  --queueUrl=https://sqs.eu-west-1.amazonaws.com/000000000000/shipments-dlq \
+  --maxMessages=50 --visibilityTimeout=900 \
+  --aws.profile=ops-readonly
 ```
 
-> **Not yet available.** The AWS-facing `triage` and `execute` operations —
-> draining a queue, reaching a verdict per message, and applying remediation
-> behind the destructive gate — are not implemented in this slice. Every
-> example above is offline and read-only apart from `convert`, which writes a
-> skeleton to `M3L_OUTPUT_DIR`.
+> **`triage` archives before it does anything else.** The full drained batch —
+> raw bodies included — is written to `M3L_OUTPUT_DIR` before any verdict is
+> reached, and a failed archive write fails the run. That artifact is the
+> evidence a later `execute` is allowed to destroy against.
+>
+> **Not yet available.** The `execute` operation — applying the remediation a
+> verdict implies, behind the graded destructive gate — is not implemented in
+> this slice. Everything above is read-only against AWS: `triage` drains and
+> reports but never deletes or re-sends.
 
 ### Operations at a glance
 
-| Operation  | Demonstrated by |
-| ---------- | --------------- |
-| `validate` | Minimal, Common |
-| `explain`  | Production      |
-| `convert`  | Edge case       |
+| Operation  | Demonstrated by       |
+| ---------- | --------------------- |
+| `validate` | Minimal, Common       |
+| `explain`  | Production            |
+| `convert`  | Edge case             |
+| `triage`   | Mutating, Bounded run |
 
 ### Operational flags
 

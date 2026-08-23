@@ -3,8 +3,35 @@ import type { Core } from "@m3l-automation/m3l-common";
 import { buildTriageProcedure } from "./build-procedure.js";
 import { loadRunbook, PRESET_EXTENSION } from "./load-runbook.js";
 
-/** Resolves a queue name to its preset path inside the runbook directory. */
-function presetPathFor(runbookDir: string, queue: string): string {
+/**
+ * Resolves a queue name to its preset path inside the runbook directory.
+ * Exported so every caller that needs a preset's path — `explainRunbook`
+ * here and `triageQueue` in `triage-queue.ts` — derives it from this one
+ * place rather than re-interpolating `<runbookDir>/<queue>.json` a second
+ * time; `config.ts`'s `queue` traversal guard is written assuming exactly
+ * one such interpolation exists for THIS template. `queue` is also
+ * interpolated separately into an archive filename (`drain-queue.ts`'s
+ * `archiveNameFor`) and a report artifact name (`dispatchTriage`'s own
+ * `${queue}/triage-...` interpolation) — three sites in total, not one. That is not a gap: the guard validates the raw `queue` value
+ * itself before any of the three interpolations run, so all three are
+ * equally protected, and `M3LPaths.resolveOutput` throws
+ * `M3LPathResolutionError` on escape as a second layer regardless of which
+ * call site produced the path. This function is simply the one preset-path
+ * template, not the sole anchor for path safety.
+ *
+ * @param runbookDir - The preset directory, relative to the input directory.
+ * @param queue - The queue name; already guarded against `/`/`..` by
+ *   `config.ts`'s cross-parameter validator before it reaches here.
+ * @returns The preset's path, relative to the input directory.
+ *
+ * @example
+ * ```typescript
+ * import { presetPathFor } from "./explain-runbook.js";
+ *
+ * presetPathFor("runbooks", "orders-dlq"); // "runbooks/orders-dlq.json"
+ * ```
+ */
+export function presetPathFor(runbookDir: string, queue: string): string {
   return `${runbookDir}/${queue}${PRESET_EXTENSION}`;
 }
 

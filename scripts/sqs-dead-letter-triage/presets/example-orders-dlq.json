@@ -1,0 +1,60 @@
+{
+  "queue": "example-orders-dlq",
+  "title": "Example orders dead-letter queue triage",
+  "handling": "runbook",
+  "prohibitions": [],
+  "fifo": false,
+  "envelope": { "bodyIsJson": true },
+  "routeOn": "eventType",
+  "arms": [
+    {
+      "match": "order.created",
+      "label": "order-created",
+      "key": { "path": "orderId" },
+      "lookup": [
+        { "label": "orders-table", "table": "orders", "keyField": "orderId" }
+      ],
+      "onMissing": "escalate",
+      "state": { "fromState": "status", "nextState": "status" },
+      "cases": [
+        {
+          "id": "order-created-already-paid",
+          "description": "the order was already paid before this event was processed",
+          "prose": "The order entity already shows 'paid', so this dead-lettered 'order.created' event is a known-safe duplicate of an event already applied.",
+          "priority": 100,
+          "eventType": "order.created",
+          "fromState": "paid",
+          "verdict": "known-no-action",
+          "resolution": "No action. The order's own state already reflects this event."
+        }
+      ]
+    },
+    {
+      "match": "order.cancelled",
+      "label": "order-cancelled",
+      "key": { "path": "orderId" },
+      "lookup": [
+        { "label": "orders-table", "table": "orders", "keyField": "orderId" }
+      ],
+      "onMissing": "hold",
+      "state": { "fromState": "status", "nextState": "status" },
+      "cases": [
+        {
+          "id": "order-cancelled-safe-to-remove",
+          "description": "the order is already cancelled; the dead-lettered event is redundant",
+          "prose": "The order entity already shows 'cancelled', so this dead-lettered 'order.cancelled' event carries no new information and is safe to drop.",
+          "priority": 110,
+          "eventType": "order.cancelled",
+          "fromState": "cancelled",
+          "verdict": "remove",
+          "resolution": "Remove the message; the order is already in its target state."
+        }
+      ]
+    }
+  ],
+  "escalateTo": "example-orders-team",
+  "followUps": [
+    "Confirm the order still exists in the source system before reinserting any held message."
+  ],
+  "todos": []
+}

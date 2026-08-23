@@ -11,10 +11,21 @@ import { runSqsDeadLetterTriage } from "./steps/run-sqs-dead-letter-triage.js";
 //
 // `runScript`'s main function takes no arguments; reach the library through
 // the script instance (`script.logger`, `await script.getConfiguration()`,
-// `script.paths`, `script.prompt`) and inject what each step needs as
-// parameters. This slice never declares `aws.profile` — every operation runs
-// with no AWS credentials at all, which is what lets `validate` be a CI
-// gate.
+// `script.aws`, `script.paths`, `script.prompt`, `script.signal`) and inject
+// what each step needs as parameters.
+//
+// `aws.profile` is declared here (so `M3LScript.provisionAws` always
+// provisions `script.aws`) but not `required: true`, because
+// `validate`/`explain`/`convert` must stay runnable with no credentials at
+// all. `script.aws` is `undefined` below ONLY if provisioning itself failed
+// (`M3LAWSProvisioningError`) — an absent/empty `aws.profile` is still a
+// valid config that defers to the SDK's default credential chain, not a
+// route to `undefined`. `triage` does not pre-flight credentials; it simply
+// fails at the first AWS call it makes. The `undefined` guard below is
+// defence-in-depth for a genuine provisioning failure, not a documented
+// "no AWS configured" branch.
+// `dispatchTriage` is the one handler that insists on a client, and it
+// fails loud, naming `aws.profile`, when it has none.
 const script = new Core.M3LScript({
   metadata: { name: "sqs-dead-letter-triage", version: "0.0.0" },
   config: { params: configParameters, validate: configValidators },
@@ -30,6 +41,7 @@ await Core.runScript(
   script,
   async () => {
     const config = await script.getConfiguration();
+    const aws = script.aws;
     await runSqsDeadLetterTriage({
       config,
       logger: script.logger,
@@ -39,6 +51,9 @@ await Core.runScript(
         paths: script.paths,
         code: PRESET_CODE,
       }),
+      sqs: aws === undefined ? undefined : aws.services.sqsOperations,
+      dynamo: aws === undefined ? undefined : aws.services.dynamoDBOperations,
+      signal: script.signal,
     });
   },
   { dryRun },

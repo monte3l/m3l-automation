@@ -1,13 +1,19 @@
 import { Core } from "@m3l-automation/m3l-common";
 
 /**
- * The closed set of operations `sqs-dead-letter-triage` dispatches on in
- * this slice. `triage` and `execute` (the AWS-facing operations) are **not**
- * declared here — they land in a later PR (ADR-0072 reviewable-slice
- * discipline). Every operation in this list runs with no AWS credentials at
- * all, which is what lets `validate` run as a CI gate.
+ * The closed set of operations `sqs-dead-letter-triage` dispatches on.
+ * `execute` — applying the remediation a verdict implies, behind the graded
+ * destructive gate — is **not** declared here; it lands in a later PR
+ * (ADR-0072 reviewable-slice discipline). `validate`/`explain`/`convert` run
+ * with no AWS credentials at all, which is what lets `validate` run as a CI
+ * gate; `triage` is the one operation in this list that reaches AWS.
  */
-export const TRIAGE_OPERATIONS = ["validate", "explain", "convert"] as const;
+export const TRIAGE_OPERATIONS = [
+  "validate",
+  "explain",
+  "convert",
+  "triage",
+] as const;
 
 /** One member of {@link TRIAGE_OPERATIONS}. */
 export type TriageOperation = (typeof TRIAGE_OPERATIONS)[number];
@@ -15,19 +21,32 @@ export type TriageOperation = (typeof TRIAGE_OPERATIONS)[number];
 /** The default preset directory, relative to `M3L_INPUT_DIR`. */
 export const RUNBOOK_DIR_DEFAULT = "runbooks";
 
+/** The default total-message cap one `triage` drain pulls across every page. */
+export const MAX_MESSAGES_DEFAULT = 100;
+const MAX_MESSAGES_MIN = 1;
+const MAX_MESSAGES_MAX = 10_000;
+
+/** The default visibility timeout (seconds) applied to a drained batch. */
+export const VISIBILITY_TIMEOUT_DEFAULT = 1800;
+const VISIBILITY_TIMEOUT_MIN = 0;
+const VISIBILITY_TIMEOUT_MAX = 43_200;
+
 /**
  * The declared configuration schema — the script's only input seam. Mirrors
  * `docs/reference/scripts/sqs-dead-letter-triage.md`'s "Configuration
  * schema" table exactly, in table order.
  *
- * Only `operation` and `runbookDir` carry a default; `queue`, `source` and
- * `output` are bare-optional because whether they are required depends on
- * the operation, which {@link configValidators} adjudicates at config-load
- * time.
+ * Only `operation`, `runbookDir`, `maxMessages` and `visibilityTimeout` carry
+ * a default; `queue`, `queueUrl`, `source` and `output` are bare-optional
+ * because whether they are required depends on the operation, which
+ * {@link configValidators} adjudicates at config-load time.
  *
- * `Core.AWS_PROFILE_PARAM_NAME` is deliberately **not** declared: this slice
- * never touches AWS, and declaring it would provision `script.aws` for no
- * reason. `operation` defaults to `"validate"`, not a destructive/AWS path.
+ * `Core.AWS_PROFILE_PARAM_NAME` (`aws.profile`) IS now declared — `triage`
+ * reaches AWS — but deliberately not `required: true`: declaring the
+ * parameter is what makes `M3LScript` provision `script.aws`, and only
+ * `triage` needs it. `validate`, `explain` and `convert` must stay runnable
+ * with no AWS credentials at all, which is what makes `validate` a CI gate.
+ * `operation` still defaults to `"validate"`, not the AWS-facing `"triage"`.
  */
 export const configParameters: readonly Core.M3LConfigParameter[] = [
   new Core.M3LConfigParameter({
@@ -57,6 +76,34 @@ export const configParameters: readonly Core.M3LConfigParameter[] = [
     type: Core.M3LConfigParameterType.STRING,
     validate: Core.M3LConfigValidators.nonEmpty,
   }),
+  new Core.M3LConfigParameter({
+    name: "queueUrl",
+    type: Core.M3LConfigParameterType.STRING,
+    validate: Core.M3LConfigValidators.nonEmpty,
+  }),
+  new Core.M3LConfigParameter({
+    name: "maxMessages",
+    type: Core.M3LConfigParameterType.INT,
+    defaultValue: MAX_MESSAGES_DEFAULT,
+    validate: Core.M3LConfigValidators.range(
+      MAX_MESSAGES_MIN,
+      MAX_MESSAGES_MAX,
+    ),
+  }),
+  new Core.M3LConfigParameter({
+    name: "visibilityTimeout",
+    type: Core.M3LConfigParameterType.INT,
+    defaultValue: VISIBILITY_TIMEOUT_DEFAULT,
+    validate: Core.M3LConfigValidators.range(
+      VISIBILITY_TIMEOUT_MIN,
+      VISIBILITY_TIMEOUT_MAX,
+    ),
+  }),
+  new Core.M3LConfigParameter({
+    name: Core.AWS_PROFILE_PARAM_NAME,
+    type: Core.M3LConfigParameterType.STRING,
+    validate: Core.M3LConfigValidators.nonEmpty,
+  }),
 ];
 
 /**
@@ -69,6 +116,7 @@ const REQUIRED_BY_OPERATION: Record<TriageOperation, readonly string[]> = {
   validate: [],
   explain: ["queue"],
   convert: ["source"],
+  triage: ["queue", "queueUrl"],
 };
 
 /** Reads `operation`, falling back to the declared default. */

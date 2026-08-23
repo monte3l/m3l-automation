@@ -5,8 +5,10 @@ import { Core } from "@m3l-automation/m3l-common";
 import {
   configParameters,
   configValidators,
+  MAX_MESSAGES_DEFAULT,
   RUNBOOK_DIR_DEFAULT,
   TRIAGE_OPERATIONS,
+  VISIBILITY_TIMEOUT_DEFAULT,
 } from "../src/config.js";
 
 // The mandatory config-declaration smoke test (ADR-0022 §8). Importing the
@@ -26,22 +28,42 @@ describe("sqs-dead-letter-triage config declaration", () => {
     }
   });
 
-  it("declares exactly the five parameters named in the contract table", () => {
+  it("declares exactly the nine parameters named in the contract table", () => {
     expect(new Set(configParameters.map((p) => p.getName()))).toEqual(
-      new Set(["operation", "runbookDir", "queue", "source", "output"]),
+      new Set([
+        "operation",
+        "runbookDir",
+        "queue",
+        "source",
+        "output",
+        "queueUrl",
+        "maxMessages",
+        "visibilityTimeout",
+        Core.AWS_PROFILE_PARAM_NAME,
+      ]),
     );
   });
 
-  // This slice is offline-only (validate/explain/convert); declaring the AWS
-  // profile parameter would provision `script.aws` for no reason and defeats
-  // `validate`'s job as a credential-free CI gate.
-  it("never declares Core.AWS_PROFILE_PARAM_NAME — this slice stays credential-free", () => {
-    const names = configParameters.map((parameter) => parameter.getName());
-    expect(names).not.toContain(Core.AWS_PROFILE_PARAM_NAME);
+  // `triage` reaches AWS, so this slice now DOES declare the profile
+  // parameter — declaring it is what makes `M3LScript` provision
+  // `script.aws` at all. It must not be `required: true`, though: `validate`,
+  // `explain` and `convert` must stay runnable with no credentials, which is
+  // what keeps `validate` viable as a CI gate.
+  it("declares Core.AWS_PROFILE_PARAM_NAME but not as required", () => {
+    const awsProfile = configParameters.find(
+      (parameter) => parameter.getName() === Core.AWS_PROFILE_PARAM_NAME,
+    );
+    expect(awsProfile).toBeDefined();
+    expect(awsProfile?.isRequired()).toBe(false);
   });
 
-  it("declares exactly validate, explain and convert as the offline operations", () => {
-    expect([...TRIAGE_OPERATIONS]).toEqual(["validate", "explain", "convert"]);
+  it("declares exactly validate, explain, convert and triage as the operations", () => {
+    expect([...TRIAGE_OPERATIONS]).toEqual([
+      "validate",
+      "explain",
+      "convert",
+      "triage",
+    ]);
   });
 
   it("defaults runbookDir to the declared constant", () => {
@@ -50,6 +72,80 @@ describe("sqs-dead-letter-triage config declaration", () => {
     );
     expect(runbookDir?.getDefaultValue()).toBe(RUNBOOK_DIR_DEFAULT);
   });
+
+  it("defaults maxMessages and visibilityTimeout to the declared constants", () => {
+    const maxMessages = configParameters.find(
+      (parameter) => parameter.getName() === "maxMessages",
+    );
+    const visibilityTimeout = configParameters.find(
+      (parameter) => parameter.getName() === "visibilityTimeout",
+    );
+    expect(maxMessages?.getDefaultValue()).toBe(MAX_MESSAGES_DEFAULT);
+    expect(visibilityTimeout?.getDefaultValue()).toBe(
+      VISIBILITY_TIMEOUT_DEFAULT,
+    );
+  });
+
+  it("declares queueUrl as a bare-optional string, with no default", () => {
+    const queueUrl = configParameters.find(
+      (parameter) => parameter.getName() === "queueUrl",
+    );
+    expect(queueUrl).toBeDefined();
+    expect(queueUrl?.getDefaultValue()).toBeUndefined();
+    expect(queueUrl?.isRequired()).toBe(false);
+  });
+});
+
+describe("maxMessages / visibilityTimeout — declared ranges", () => {
+  /** Resolves a single INT parameter against one raw value, via an in-memory provider. */
+  async function resolveInt(
+    name: string,
+    raw: number,
+  ): Promise<number | undefined> {
+    const parameter = configParameters.find((p) => p.getName() === name);
+    if (parameter === undefined) {
+      throw new Error(`expected '${name}' to be declared`);
+    }
+    const reader = new Core.M3LConfigReader([
+      // Seeded as a string: a real maxMessages/visibilityTimeout value
+      // arrives from CLI or env as a string, and INT coercion (not just
+      // range validation) is exactly what this helper exercises.
+      new Core.M3LInMemoryConfigProvider({ [name]: String(raw) }),
+    ]);
+    return parameter.getValueAsync(reader) as Promise<number | undefined>;
+  }
+
+  test.each([1, 100, 10_000])(
+    "accepts maxMessages=%i, within the declared 1-10,000 range",
+    async (value) => {
+      await expect(resolveInt("maxMessages", value)).resolves.toBe(value);
+    },
+  );
+
+  test.each([0, 10_001])(
+    "rejects maxMessages=%i, outside the declared 1-10,000 range",
+    async (value) => {
+      await expect(resolveInt("maxMessages", value)).rejects.toThrow(
+        Core.M3LConfigValidationError,
+      );
+    },
+  );
+
+  test.each([0, 1800, 43_200])(
+    "accepts visibilityTimeout=%i, within the declared 0-43,200 range",
+    async (value) => {
+      await expect(resolveInt("visibilityTimeout", value)).resolves.toBe(value);
+    },
+  );
+
+  test.each([-1, 43_201])(
+    "rejects visibilityTimeout=%i, outside the declared 0-43,200 range",
+    async (value) => {
+      await expect(resolveInt("visibilityTimeout", value)).rejects.toThrow(
+        Core.M3LConfigValidationError,
+      );
+    },
+  );
 });
 
 describe("operation parameter — default and allowed values", () => {
@@ -72,24 +168,22 @@ describe("operation parameter — default and allowed values", () => {
     expect(operation?.getDefaultValue()).toBe("validate");
   });
 
-  test.each(["validate", "explain", "convert"])(
+  test.each(["validate", "explain", "convert", "triage"])(
     "accepts '%s' as a declared operation",
     async (value) => {
       await expect(resolveOperation(value)).resolves.toBe(value);
     },
   );
 
-  // `triage` and `execute` are the AWS-facing operations deliberately deferred
-  // to a later PR (ADR-0072) — pinning their rejection here stops them being
-  // half-added (declared as accepted here without their handlers existing).
-  test.each(["triage", "execute"])(
-    "rejects '%s' — deliberately not in this slice",
-    async (value) => {
-      await expect(resolveOperation(value)).rejects.toThrow(
-        Core.M3LConfigValidationError,
-      );
-    },
-  );
+  // `execute` — applying the remediation a verdict implies, behind the graded
+  // destructive gate — is deliberately deferred to a later PR (ADR-0072).
+  // Pinning its rejection here stops it being half-added (declared as
+  // accepted here without a handler existing).
+  it("rejects 'execute' — deliberately not in this slice", async () => {
+    await expect(resolveOperation("execute")).rejects.toThrow(
+      Core.M3LConfigValidationError,
+    );
+  });
 
   it("rejects an arbitrary unknown value", async () => {
     await expect(resolveOperation("bogus")).rejects.toThrow(
@@ -147,6 +241,37 @@ describe("configValidators — per-operation requiredness", () => {
 
   it("treats an absent operation as validate, the declared default", () => {
     expect(firstFailure(buildConfig({}))).toBeUndefined();
+  });
+
+  it("requires both queue and queueUrl for triage, naming whichever is missing", () => {
+    const missingBoth = firstFailure(buildConfig({ operation: "triage" }));
+    expect(missingBoth).toContain("queue");
+    expect(missingBoth).toContain("queueUrl");
+
+    const missingQueueUrl = firstFailure(
+      buildConfig({ operation: "triage", queue: "orders-dlq" }),
+    );
+    expect(missingQueueUrl).toContain("queueUrl");
+
+    const missingQueue = firstFailure(
+      buildConfig({
+        operation: "triage",
+        queueUrl: "https://sqs.example/orders-dlq",
+      }),
+    );
+    expect(missingQueue).toContain("queue");
+  });
+
+  it("accepts a triage run with both queue and queueUrl supplied", () => {
+    expect(
+      firstFailure(
+        buildConfig({
+          operation: "triage",
+          queue: "orders-dlq",
+          queueUrl: "https://sqs.example/orders-dlq",
+        }),
+      ),
+    ).toBeUndefined();
   });
 });
 
