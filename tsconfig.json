@@ -17,6 +17,7 @@
     { "path": "./scripts/lambda-ops/tsconfig.build.json" },
     { "path": "./scripts/rds-data-sql/tsconfig.build.json" },
     { "path": "./scripts/s3-objects/tsconfig.build.json" },
+    { "path": "./scripts/sqs-dead-letter-triage/tsconfig.build.json" },
     { "path": "./scripts/sqs-etl/tsconfig.build.json" }
   ]
 }
