@@ -1,10 +1,28 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+import type * as NodeFsPromises from "node:fs/promises";
+import * as path from "node:path";
 
 import { Core } from "@m3l-automation/m3l-common";
 
-import { convertMarkdown } from "../src/steps/convert-runbook.js";
+import {
+  convertMarkdown,
+  convertRunbook,
+} from "../src/steps/convert-runbook.js";
 import { parseTriagePreset } from "../src/steps/load-runbook.js";
 import { RESERVED_PRIORITY_CEILING } from "../src/steps/preset.js";
+
+// Mirrors tests/validate-runbooks.test.ts's node:fs/promises mocking
+// harness (the bot's own hint), rather than inventing a fourth mocking
+// style — only needed by the `convertRunbook` I/O-wrapper suite below;
+// `convertMarkdown`'s existing suite above is pure and untouched.
+vi.mock("node:fs/promises", async () => {
+  const actual =
+    await vi.importActual<typeof NodeFsPromises>("node:fs/promises");
+  return { ...actual };
+});
+
+const fsp = await import("node:fs/promises");
 
 // Mirrors load-runbook.ts's own thrown code (see dlq-ops-spec.md's "Error
 // codes" section, and tests/load-runbook.test.ts's/validate-runbooks.test.ts's
@@ -295,5 +313,233 @@ describe("convertMarkdown — round-trip with the trust boundary", () => {
     expect(() =>
       parseTriagePreset(reader, closed, "converted.json"),
     ).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// convertRunbook — the I/O wrapper (reads via the reader, writes via
+// M3LJSONFileExporter, mkdir's the destination). convertMarkdown itself is
+// already densely covered above; these tests exercise ONLY the wrapping.
+// ---------------------------------------------------------------------------
+
+/** A small recording log handler: captures {@link category}/message pairs. */
+interface RecordedEvent {
+  readonly category: string;
+  readonly message: string;
+}
+function recordingLogger(): {
+  readonly logger: Core.M3LLogger;
+  readonly events: readonly RecordedEvent[];
+} {
+  const events: RecordedEvent[] = [];
+  const handler: Core.M3LLoggerHandler = {
+    handle(event) {
+      events.push({ category: event.category, message: event.message });
+    },
+    reset() {
+      events.length = 0;
+    },
+  };
+  return { logger: new Core.M3LLogger([handler]), events };
+}
+
+/** Stubs the source-file read and no-ops the write side (mkdir + JSON export), returning the export spy. */
+function stubIo(markdown: string) {
+  vi.spyOn(fsp, "readFile").mockResolvedValue(Buffer.from(markdown, "utf8"));
+  vi.spyOn(fsp, "mkdir").mockResolvedValue(undefined);
+  const exportSpy = vi
+    .spyOn(Core.M3LJSONFileExporter.prototype, "export")
+    .mockResolvedValue(undefined);
+  return { exportSpy };
+}
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+describe("convertRunbook — reads via the reader, writes the skeleton, resolves 'output'", () => {
+  it("reads the markdown through the reader, writes the skeleton under the output dir, and returns 'output' defaulted to '<queue>.json'", async () => {
+    const { exportSpy } = stubIo(WELL_FORMED);
+    const { logger } = recordingLogger();
+
+    const result = await convertRunbook({
+      reader,
+      paths,
+      logger,
+      source: "runbooks/orders-dlq.md",
+      queue: undefined,
+      output: undefined,
+    });
+
+    expect(fsp.readFile).toHaveBeenCalledWith(
+      paths.resolveInput("runbooks/orders-dlq.md"),
+    );
+    expect(result.output).toBe("orders-dlq.json");
+    expect(exportSpy).toHaveBeenCalledTimes(1);
+    expect(exportSpy).toHaveBeenCalledWith(result.preset);
+    expect(fsp.mkdir).toHaveBeenCalledWith(
+      path.dirname(paths.resolveOutput("orders-dlq.json")),
+      { recursive: true },
+    );
+  });
+
+  it("derives the queue from the source file's stem when 'queue' is omitted", async () => {
+    stubIo(WELL_FORMED);
+    const { logger } = recordingLogger();
+
+    const result = await convertRunbook({
+      reader,
+      paths,
+      logger,
+      source: "runbooks/payments-dlq.md",
+      queue: undefined,
+      output: undefined,
+    });
+
+    expect(result.output).toBe("payments-dlq.json");
+    expect((result.preset as Record<string, unknown>)["queue"]).toBe(
+      "payments-dlq",
+    );
+  });
+
+  it("honours an explicit 'output' name, overriding the '<queue>.json' default", async () => {
+    stubIo(WELL_FORMED);
+    const { logger } = recordingLogger();
+
+    const result = await convertRunbook({
+      reader,
+      paths,
+      logger,
+      source: "runbooks/orders-dlq.md",
+      queue: undefined,
+      output: "custom-name.json",
+    });
+
+    expect(result.output).toBe("custom-name.json");
+  });
+
+  it("honours an explicit 'queue', overriding the source-file-stem default", async () => {
+    stubIo(WELL_FORMED);
+    const { logger } = recordingLogger();
+
+    const result = await convertRunbook({
+      reader,
+      paths,
+      logger,
+      source: "runbooks/anything.md",
+      queue: "orders-dlq",
+      output: undefined,
+    });
+
+    expect(result.output).toBe("orders-dlq.json");
+    expect((result.preset as Record<string, unknown>)["queue"]).toBe(
+      "orders-dlq",
+    );
+  });
+});
+
+describe("convertRunbook — todo disclosure logging", () => {
+  it("logs every todo through logger.warning, and never logs success, when at least one todo remains", async () => {
+    stubIo(WELL_FORMED);
+    const { logger, events } = recordingLogger();
+
+    const result = await convertRunbook({
+      reader,
+      paths,
+      logger,
+      source: "runbooks/orders-dlq.md",
+      queue: undefined,
+      output: undefined,
+    });
+
+    expect(result.todos.length).toBeGreaterThan(0);
+    const warningEvents = events.filter(
+      (event) => event.category === Core.M3LLogEventCategory.WARNING,
+    );
+    expect(warningEvents).toHaveLength(result.todos.length);
+    for (const todo of result.todos) {
+      expect(warningEvents.some((event) => event.message.includes(todo))).toBe(
+        true,
+      );
+    }
+    expect(
+      events.some(
+        (event) => event.category === Core.M3LLogEventCategory.SUCCESS,
+      ),
+    ).toBe(false);
+  });
+
+  // ADR-0077: routeOn/escalateTo/the default arm's key/lookup/state are not
+  // derivable from prose by design, so convertMarkdown (convert-runbook.ts's
+  // non-derivable-fields block) ALWAYS pushes a todo naming each of them,
+  // regardless of markdown content. A converted skeleton must therefore
+  // never be mistaken for a runnable preset — this is the invariant that
+  // stops it. (Confirmed with the coordinator as by-design, not a defect;
+  // tracked separately as an open follow-up that convertRunbook's own
+  // zero-todo `logger.success` branch is consequently unreachable — that
+  // finding is out of this loop's test-coverage scope.)
+  it("always leaves structural todos on a well-formed conversion, so a converted skeleton is never runnable as-is", async () => {
+    stubIo(WELL_FORMED);
+    const { logger, events } = recordingLogger();
+
+    const result = await convertRunbook({
+      reader,
+      paths,
+      logger,
+      source: "runbooks/orders-dlq.md",
+      queue: undefined,
+      output: undefined,
+    });
+
+    expect(result.todos.length).toBeGreaterThan(0);
+    for (const field of [
+      "routeOn",
+      "escalateTo",
+      "arms[0].key",
+      "arms[0].lookup",
+      "arms[0].state",
+    ]) {
+      expect(
+        result.todos.some((todo) => todo.includes(field)),
+        `expected a todo naming '${field}'`,
+      ).toBe(true);
+    }
+    expect(
+      events.some(
+        (event) => event.category === Core.M3LLogEventCategory.WARNING,
+      ),
+    ).toBe(true);
+    expect(
+      events.some(
+        (event) => event.category === Core.M3LLogEventCategory.SUCCESS,
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("convertRunbook — failure path", () => {
+  it("surfaces an unreadable source file as Core.M3LError under the reader's own code, chaining the raw cause", async () => {
+    const cause = new Error("ENOENT: no such file or directory");
+    vi.spyOn(fsp, "readFile").mockRejectedValue(cause);
+    const { logger } = recordingLogger();
+
+    let thrown: unknown;
+    try {
+      await convertRunbook({
+        reader,
+        paths,
+        logger,
+        source: "runbooks/missing.md",
+        queue: undefined,
+        output: undefined,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(Core.M3LError);
+    const error = thrown as Core.M3LError;
+    expect(error.code).toBe(PRESET_CODE);
+    expect(error.cause).toBe(cause);
   });
 });
