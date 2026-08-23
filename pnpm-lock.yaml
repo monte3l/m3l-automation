@@ -309,6 +309,12 @@ importers:
         specifier: workspace:*
         version: link:../../packages/m3l-common
 
+  scripts/sqs-dead-letter-triage:
+    dependencies:
+      '@m3l-automation/m3l-common':
+        specifier: workspace:*
+        version: link:../../packages/m3l-common
+
   scripts/sqs-etl:
     dependencies:
       '@m3l-automation/m3l-common':
