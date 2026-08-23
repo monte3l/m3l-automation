@@ -216,7 +216,7 @@ function toCases(
         priority,
         pattern,
         verdict: verdict ?? "unrecognised",
-        ...optional("ticket", cell(row, /ticket|issue|jira|reference/u)),
+        ...optional("ticket", cell(row, /ticket|issue|reference/u)),
         ...optional(
           "resolution",
           cell(row, /resolution|action|fix|remediation/u),
