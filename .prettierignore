@@ -10,3 +10,8 @@ pnpm-lock.yaml
 # Local session buffers written by the remember plugin; gitignored and not ours
 # to format, but `prettier --check .` would otherwise fail the pre-push gate.
 .remember/
+
+# Local scratch/working directory (gitignored). Operator source material read
+# while authoring presets; not ours to format, but `prettier --check .` would
+# otherwise fail the pre-push gate.
+tmp/
