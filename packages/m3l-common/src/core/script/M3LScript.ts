@@ -656,12 +656,12 @@ export class M3LScript {
    */
   private buildDefaultLogger(): M3LLogger {
     const resolvedLogLevelFloor = resolveLogLevelFloor();
-    return new M3LLogger(
-      [new M3LConsoleLoggerHandler()],
-      resolvedLogLevelFloor !== undefined
+    return new M3LLogger([new M3LConsoleLoggerHandler()], {
+      ...(resolvedLogLevelFloor !== undefined
         ? { minLevel: resolvedLogLevelFloor }
-        : undefined,
-    );
+        : {}),
+      ...(this.secrets !== undefined ? { secrets: this.secrets } : {}),
+    });
   }
 
   /**

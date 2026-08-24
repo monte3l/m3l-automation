@@ -4343,7 +4343,9 @@ describe("runScript() — composition-root wrapper", () => {
       }),
     ).resolves.toBeUndefined();
 
-    expect(errorFromSpy).toHaveBeenCalledWith(failure);
+    expect(errorFromSpy).toHaveBeenCalledWith(failure, undefined, {
+      secrets: undefined,
+    });
     expect(persistSpy).toHaveBeenCalledTimes(1);
     const [input] = persistSpy.mock.calls[0] as [M3LRunReportInput];
     expect(input.outcome).toBe("failure");

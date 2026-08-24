@@ -60,10 +60,12 @@ export interface M3LFileLoggerHandlerOptions {
  * (a script's own execution log), not a high-volume or long-lived streaming
  * sink — for that, use a streaming exporter instead.
  *
- * **Security note.** Events are persisted **verbatim** (unredacted) to
- * `filePath`. If a message or its `data` may carry secrets, pre-redact with
- * {@link redactSensitiveLogText} / {@link redactSensitiveLogValue} before
- * calling a logger method — this handler performs no redaction itself.
+ * **Security note.** This handler itself performs no redaction — an
+ * {@link M3LLogEvent} handed to it directly (bypassing {@link M3LLogger})
+ * is persisted **verbatim**. A message dispatched through `M3LLogger`'s own
+ * methods is already redacted (heuristic always-on, plus any declared
+ * `secrets`) before this handler ever receives it — see
+ * {@link M3LLoggerOptions.secrets}.
  *
  * @example
  * ```ts

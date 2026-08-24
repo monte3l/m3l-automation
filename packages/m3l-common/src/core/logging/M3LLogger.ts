@@ -16,6 +16,9 @@ import type { M3LLogLevelFloor } from "./M3LLogEventCategory.js";
 import type { M3LLogEvent, M3LLoggerHandler } from "./M3LLogEvent.js";
 import { M3LTableFormatter } from "./M3LTableFormatter.js";
 import type { M3LTableOptions } from "./M3LTableFormatter.js";
+import { redactSensitiveLogText, redactSensitiveLogValue } from "./redact.js";
+import type { M3LSecretNamesPort } from "./redact.js";
+import { isPlainObject } from "../utils/guards.js";
 
 /** Placeholder message used when reading an error's own `.message` throws (a hostile getter). */
 const UNREADABLE_MESSAGE_PLACEHOLDER = "[unreadable error message]";
@@ -35,6 +38,86 @@ function safeGetErrorMessage(error: unknown): string {
     return getErrorMessage(error);
   } catch {
     return UNREADABLE_MESSAGE_PLACEHOLDER;
+  }
+}
+
+/**
+ * Merges two optional {@link M3LSecretNamesPort}s additively: when only one
+ * side is defined, returns it unchanged; when both are defined, returns a
+ * port whose `isSecret` is true if EITHER side's `isSecret` is true (a
+ * union, never a narrowing) — mirroring every other `M3LRedactOptions`
+ * consumer's "additive only" contract.
+ */
+function mergeSecrets(
+  a: M3LSecretNamesPort | undefined,
+  b: M3LSecretNamesPort | undefined,
+): M3LSecretNamesPort | undefined {
+  if (a === undefined) return b;
+  if (b === undefined) return a;
+  return { isSecret: (name: string) => a.isSecret(name) || b.isSecret(name) };
+}
+
+/**
+ * Redacts `data` via {@link redactSensitiveLogValue}, proving (via
+ * {@link isPlainObject}, never asserting) that the result is still a plain
+ * record before returning it — mirroring `core/diagnostics/format-error.ts`'s
+ * `redactContext` "proven, not asserted" pattern. `undefined` in yields
+ * `undefined` out; a redactor that somehow returns a non-record falls back
+ * to `{}` rather than populating the event with an unproven shape.
+ */
+function redactData(
+  data: Record<string, unknown> | undefined,
+  secrets: M3LSecretNamesPort | undefined,
+): Record<string, unknown> | undefined {
+  if (data === undefined) return undefined;
+  const redacted = redactSensitiveLogValue(data, { secrets });
+  return isPlainObject(redacted) ? redacted : {};
+}
+
+/** Fallback message substituted when redaction itself fails (never the original text). */
+const REDACTION_FAILED_PLACEHOLDER = "[m3l-logging: message redaction failed]";
+
+/**
+ * Writes a best-effort stderr diagnostic for a redaction failure — a hostile
+ * `secrets.isSecret` implementation, or a structural failure (circular
+ * reference, excessive depth) in the message/data being redacted — mirroring
+ * `dispatch()`'s own adjacent per-handler-failure diagnostic convention.
+ * Never includes the original message/data in the diagnostic, since either
+ * may carry the very secret redaction was trying to protect.
+ */
+function reportRedactionFailure(
+  category: M3LLogEventCategory,
+  cause: unknown,
+): void {
+  const detail =
+    cause instanceof Error ? (cause.stack ?? cause.message) : String(cause);
+  process.stderr.write(
+    `m3l-logging: redaction failed while emitting a "${category}" event: ${detail}\n`,
+  );
+}
+
+/**
+ * Redacts each of `rows` via {@link redactData}, isolating a redaction
+ * failure into a single placeholder row rather than letting it propagate out
+ * of a table method or crash the caller — mirrors `emit`'s own try/catch
+ * isolation around the identical underlying redaction call. Used both for
+ * `table`/`simpleTable`'s row-shaped input directly, and for
+ * `keyValueTable`'s flat record (passed as the sole element of a one-row
+ * array) so a declared secret is matched against the record's OWN field
+ * name (e.g. `tenantRef`) before it is ever transformed into the
+ * column-shaped `{ key, value }` pairs `M3LTableFormatter` renders — the
+ * transformed shape's literal `"value"` column key would never itself match
+ * a heuristic or declared secret name.
+ */
+function redactRowsSafely(
+  rows: readonly Record<string, unknown>[],
+  secrets: M3LSecretNamesPort | undefined,
+): readonly Record<string, unknown>[] {
+  try {
+    return rows.map((row) => redactData(row, secrets) ?? {});
+  } catch (cause) {
+    reportRedactionFailure(M3LLogEventCategory.TEXT, cause);
+    return [{ error: REDACTION_FAILED_PLACEHOLDER }];
   }
 }
 
@@ -79,6 +162,28 @@ export interface M3LLoggerOptions {
    * handler self-filters independently of the logger's own floor check.
    */
   readonly minLevel?: M3LLogLevelFloor;
+  /**
+   * An optional port additively widening the redactor's built-in key-name
+   * heuristic with caller-declared secret names — e.g.
+   * `deriveSecretsSpecifier` over a script's config schema. This is
+   * consulted alongside the built-in heuristic on every event this logger
+   * emits (`message` and `data` alike, plus rendered table output); it never
+   * narrows what the heuristic alone would already redact. See
+   * {@link M3LErrorFromOptions.secrets} for the additional, per-call
+   * widening `errorFrom`'s third parameter accepts on top of this
+   * constructor-level port.
+   */
+  readonly secrets?: M3LSecretNamesPort | undefined;
+}
+
+/**
+ * Optional options accepted by {@link M3LLogger.errorFrom}'s third
+ * parameter — an additive, per-call widening of this logger's own
+ * constructor-level {@link M3LLoggerOptions.secrets}, merged (union, never
+ * narrowed) for this one call only.
+ */
+export interface M3LErrorFromOptions {
+  readonly secrets?: M3LSecretNamesPort | undefined;
 }
 
 /**
@@ -87,6 +192,14 @@ export interface M3LLoggerOptions {
  * internal handler port. Every message method produces exactly one event
  * carrying the matching {@link M3LLogEventCategory}; table methods render
  * the table up front and emit it as a single `TEXT` event.
+ *
+ * Every event this logger dispatches — including rendered table output — is
+ * redacted before any handler ever sees it: a built-in key-name heuristic
+ * runs unconditionally, and {@link M3LLoggerOptions.secrets} additively
+ * widens it with caller-declared secret names. A redaction failure (a
+ * hostile `secrets.isSecret`, a pathological payload) is itself isolated —
+ * it substitutes a fixed placeholder and reports a best-effort stderr
+ * diagnostic rather than propagating out of a message method.
  *
  * @example
  * ```ts
@@ -107,6 +220,7 @@ export class M3LLogger {
   readonly #formatter = new M3LTableFormatter();
   readonly #correlationId: string | undefined;
   readonly #minLevel: M3LLogEventCategory | undefined;
+  readonly #secrets: M3LSecretNamesPort | undefined;
 
   /**
    * Creates a logger over the given ordered handler array.
@@ -126,6 +240,7 @@ export class M3LLogger {
     this.#handlers = handlers;
     this.#correlationId = options?.correlationId;
     this.#minLevel = options?.minLevel;
+    this.#secrets = options?.secrets;
   }
 
   /** Emits a `TEXT` event. */
@@ -186,15 +301,22 @@ export class M3LLogger {
    * {@link serializeErrorChain}, redacted by default) plus the outermost
    * level's `code`/`context` when present, promoted for easy top-level
    * querying by a downstream log collector. Never throws, even for a
-   * non-`Error` value (a thrown string, `null`) or for an `Error` whose own
-   * `message`/`stack` getter itself throws (a hostile getter) — the event is
-   * still emitted, falling back to a fixed placeholder message when `error`'s
-   * own message cannot be read, mirroring {@link serializeErrorChain}'s own
-   * hostile-getter tolerance for the chain it builds.
+   * non-`Error` value (a thrown string, `null`), for an `Error` whose own
+   * `message`/`stack` getter itself throws (a hostile getter) — mirroring
+   * {@link serializeErrorChain}'s own hostile-getter tolerance for the chain
+   * it builds — or for a hostile `options.secrets.isSecret`/constructor-level
+   * `secrets.isSecret` implementation that itself throws while redacting the
+   * chain: that failure is isolated the same way a redaction failure in any
+   * other message method is (a best-effort stderr diagnostic, never the
+   * original message/data), falling back to an empty `data` rather than
+   * losing the event entirely.
    *
    * @param error - Any caught value.
    * @param message - Optional message override; when omitted, falls back to
    *   `error`'s own message.
+   * @param options - Optional; `options.secrets` additively widens redaction
+   *   for this one call, merged with this logger's own constructor-level
+   *   {@link M3LLoggerOptions.secrets} (union, never narrowed).
    * @example
    * ```ts
    * import { Core } from "@m3l-automation/m3l-common";
@@ -207,16 +329,43 @@ export class M3LLogger {
    * }
    * ```
    */
-  errorFrom(error: unknown, message?: string): void {
-    const chain = serializeErrorChain(error);
-    const first = chain[0];
+  errorFrom(
+    error: unknown,
+    message?: string,
+    options?: M3LErrorFromOptions,
+  ): void {
+    // Captured once, reused for both the chain-building merge below and the
+    // `emit` call at the end — `emit` re-merges with `this.#secrets` itself,
+    // so a single read here keeps the two merges from ever disagreeing were
+    // `options` a non-idempotent getter.
+    const secretsOverride = options?.secrets;
+    const secrets = mergeSecrets(this.#secrets, secretsOverride);
     const resolvedMessage = message ?? safeGetErrorMessage(error);
-    const data: Record<string, unknown> = {
-      chain,
-      ...(first?.code !== undefined ? { code: first.code } : {}),
-      ...(first?.context !== undefined ? { context: first.context } : {}),
-    };
-    this.emit(M3LLogEventCategory.ERROR, resolvedMessage, data);
+    let data: Record<string, unknown>;
+    try {
+      const chain = serializeErrorChain(error, { secrets });
+      const first = chain[0];
+      data = {
+        chain,
+        ...(first?.code !== undefined ? { code: first.code } : {}),
+        ...(first?.context !== undefined ? { context: first.context } : {}),
+      };
+    } catch (cause) {
+      // A hostile `secrets.isSecret` (or an equally hostile `error` shape
+      // `serializeErrorChain`'s own tolerance doesn't already cover) must
+      // never propagate out of `errorFrom` — this is the only call in this
+      // method that can reach a caller-declared `secrets` port before
+      // `emit`'s own isolation gets a chance to run. Falls back to an empty
+      // `data`; the event is still emitted with the resolved message.
+      reportRedactionFailure(M3LLogEventCategory.ERROR, cause);
+      data = {};
+    }
+    this.emit(
+      M3LLogEventCategory.ERROR,
+      resolvedMessage,
+      data,
+      secretsOverride,
+    );
   }
 
   /**
@@ -250,7 +399,9 @@ export class M3LLogger {
 
   /**
    * Renders `rows` as a table (via {@link M3LTableFormatter}) and emits the
-   * result as a single `TEXT` event.
+   * result as a single `TEXT` event. Each row's values are redacted (by the
+   * built-in heuristic, plus this logger's own {@link M3LLoggerOptions.secrets})
+   * BEFORE rendering — table methods have no per-call `secrets` override seam.
    *
    * @param rows - The rows to render.
    * @param options - Table rendering options.
@@ -265,7 +416,7 @@ export class M3LLogger {
   /**
    * Renders `rows` as a minimal (`border-less`) table and emits the result
    * as a single `TEXT` event, unless `options` explicitly overrides the
-   * border style.
+   * border style. Redacted the same way as {@link M3LLogger.table}.
    *
    * @param rows - The rows to render.
    * @param options - Table rendering options; `border` defaults to
@@ -280,7 +431,11 @@ export class M3LLogger {
 
   /**
    * Renders a flat record as a two-column (`key`, `value`) table and emits
-   * the result as a single `TEXT` event.
+   * the result as a single `TEXT` event. `record` is redacted BEFORE the
+   * `{ key, value }` transform below, so a declared secret is matched
+   * against its own original field name (e.g. `tenantRef`) — the transformed
+   * column literally named `"value"` would never itself match a heuristic or
+   * declared secret name.
    *
    * @param record - The key-value pairs to render.
    * @param options - Table rendering options.
@@ -289,42 +444,96 @@ export class M3LLogger {
     record: Record<string, unknown>,
     options?: M3LTableOptions,
   ): void {
-    const rows = Object.entries(record).map(([key, value]) => ({
+    const [redactedRecord] = redactRowsSafely([record], this.#secrets);
+    const rows = Object.entries(redactedRecord ?? {}).map(([key, value]) => ({
       key,
       value,
     }));
     this.emitTable(rows, options);
   }
 
-  /** Builds and dispatches a single event carrying `category`/`message`/`data`. */
+  /**
+   * Builds and dispatches a single event carrying `category`/`message`/`data`,
+   * redacted (via {@link redactSensitiveLogText}/{@link redactSensitiveLogValue})
+   * against this logger's own constructor-level `secrets`
+   * ({@link M3LLoggerOptions.secrets}) merged additively with `secretsOverride`
+   * when a caller (currently only {@link M3LLogger.errorFrom}) supplies one for
+   * this single call. A redaction failure (a hostile `secrets.isSecret`, a
+   * pathological `data` shape) is isolated — mirroring
+   * `M3LBreadcrumbTrail.record()`'s identical "must never propagate"
+   * guarantee over the same underlying redaction call — substituting a fixed
+   * placeholder message and reporting a best-effort stderr diagnostic rather
+   * than throwing out of a message method or crashing the caller.
+   */
   private emit(
     category: M3LLogEventCategory,
     message: string,
     data?: Record<string, unknown>,
+    secretsOverride?: M3LSecretNamesPort,
   ): void {
+    const secrets = mergeSecrets(this.#secrets, secretsOverride);
+    let redactedMessage: string;
+    let redactedData: Record<string, unknown> | undefined;
+    try {
+      redactedMessage = redactSensitiveLogText(message, { secrets });
+      redactedData = redactData(data, secrets);
+    } catch (cause) {
+      reportRedactionFailure(category, cause);
+      redactedMessage = REDACTION_FAILED_PLACEHOLDER;
+      redactedData = undefined;
+    }
     const timestamp = new Date();
     const event: M3LLogEvent =
-      data === undefined
-        ? { category, message, timestamp, ...this.correlationIdField() }
+      redactedData === undefined
+        ? {
+            category,
+            message: redactedMessage,
+            timestamp,
+            ...this.correlationIdField(),
+          }
         : {
             category,
-            message,
-            data,
+            message: redactedMessage,
+            data: redactedData,
             timestamp,
             ...this.correlationIdField(),
           };
     this.dispatch(event);
   }
 
-  /** Renders `rows` to a table string and dispatches it as a `TEXT` event. */
+  /**
+   * Redacts `rows` (via {@link redactRowsSafely}, against this logger's own
+   * constructor-level `secrets` — table methods have no per-call override
+   * seam), renders the redacted rows to a table string, and dispatches it as
+   * a `TEXT` event. `M3LTableFormatter` renders box-drawn/aligned columns
+   * with no `:`/`=` separator between a column name and its value, so
+   * redacting only the RENDERED string (as an earlier version of this method
+   * did) can never match a sensitive value — the row-level redaction here
+   * runs first, against the still-structured data, for that reason. A final
+   * {@link redactSensitiveLogText} pass over the rendered string is kept as
+   * cheap, idempotent defense-in-depth (an already-redacted value never
+   * re-matches). Any failure in either redaction step — a hostile
+   * `secrets.isSecret`, a pathological row shape — is isolated the same way
+   * `emit` isolates its own redaction failure.
+   */
   private emitTable(
     rows: readonly Record<string, unknown>[],
     options?: M3LTableOptions,
   ): void {
-    const rendered = this.#formatter.format(rows, options);
+    const redactedRows = redactRowsSafely(rows, this.#secrets);
+    let redactedMessage: string;
+    try {
+      const rendered = this.#formatter.format(redactedRows, options);
+      redactedMessage = redactSensitiveLogText(rendered, {
+        secrets: this.#secrets,
+      });
+    } catch (cause) {
+      reportRedactionFailure(M3LLogEventCategory.TEXT, cause);
+      redactedMessage = REDACTION_FAILED_PLACEHOLDER;
+    }
     this.dispatch({
       category: M3LLogEventCategory.TEXT,
-      message: rendered,
+      message: redactedMessage,
       timestamp: new Date(),
       ...this.correlationIdField(),
     });
