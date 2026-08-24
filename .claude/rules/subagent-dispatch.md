@@ -49,6 +49,23 @@ occurrences. The checklist:
   instruction — stop once its checklist is answered rather than re-verifying
   indefinitely; a spoke that never converges is indistinguishable from a
   stalled one.
+- **Pre-resolve the facts a writer would otherwise discover, not just its
+  output scope.** Bounding what a writer produces (`≤~40` tests, one file)
+  does not bound what it has to find out before writing a line — and
+  discovery, not writing, is what exhausts `maxTurns: 40`. Four `test-author`
+  spokes on PR #593 truncated at 40–41 tool calls while producing 3–20 tests
+  each, well inside the output budget, and the two that finished their writes
+  still truncated in the closing report — the turns went to deriving facts
+  already knowable at dispatch time: which fixture yields which items, what
+  shape the planner returns, what an empty plan still needs scripted. Resolve
+  those facts yourself before dispatching — the exact fixture contents, a
+  collaborator's return shape, the precise `file:line` anchors to edit — and
+  hand the spoke the answers, so its first tool call is a write, not a
+  search. A later dispatch in the same session, briefed this way, needed only
+  a handful of calls
+  (`docs/plans/2026-08-21-hub-board-restructure.md` §§ "Dispatch note",
+  "Dispatch note (F27 applied)"). This is not license to raise `maxTurns`
+  (`:151`) — it's the same scoping lever above, applied to the input side.
 - **Two independent review lenses landing on the same line is signal, not
   redundancy.** Different-lens convergence has repeatedly marked the real
   defect: error-hierarchy and security reviewers on one unguarded `JSON.parse`
