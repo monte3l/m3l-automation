@@ -11,6 +11,11 @@
           "blob": "70983ac30800646f431b82d6ef7c99b4cf34678a"
         },
         {
+          "file": "packages/m3l-common/src/core/logging/M3LLogger.ts",
+          "symbol": "M3LErrorFromOptions",
+          "blob": "70983ac30800646f431b82d6ef7c99b4cf34678a"
+        },
+        {
           "file": "packages/m3l-common/src/core/logging/M3LLogEvent.ts",
           "symbol": "M3LLogEvent",
           "blob": "230e5a2daad2548c2ca58104d022d438940b8f32"

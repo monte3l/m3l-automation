@@ -1017,6 +1017,11 @@
     "namespace": "core",
     "file": "packages/m3l-common/src/core/logging/M3LLogger.ts"
   },
+  "M3LErrorFromOptions": {
+    "submodule": "logging",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/logging/M3LLogger.ts"
+  },
   "M3LLogEvent": {
     "submodule": "logging",
     "namespace": "core",
