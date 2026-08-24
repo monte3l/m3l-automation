@@ -715,6 +715,24 @@ describe("M3LLogger — a redaction failure never propagates out of a message me
     const event = handler.handle.mock.calls[0]?.[0] as M3LLogEvent;
     expect(event.category).toBe(M3LLogEventCategory.ERROR);
   });
+
+  test("a constructor-level port returning a truthy non-boolean does not defeat a well-formed per-call port's redaction (mergeSecrets normalizes to strict boolean)", () => {
+    const handler = makeFakeHandler();
+    const declaredNames = ["tenantRef"];
+    // Deliberately returns the matched STRING (a common but incorrect idiom),
+    // not a strict boolean — must not poison the per-call port below via ||.
+    const looselyTypedSecrets = {
+      isSecret: (name: string) => declaredNames.find((d) => d === name),
+    } as unknown as M3LSecretNamesPort;
+    const logger = new M3LLogger([handler], { secrets: looselyTypedSecrets });
+
+    logger.errorFrom(new Error("tenantRef=abc123; other=kept"), undefined, {
+      secrets: { isSecret: (name) => name === "tenantRef" },
+    });
+
+    const event = handler.handle.mock.calls[0]?.[0] as M3LLogEvent;
+    expect(event.message).toBe("tenantRef=[REDACTED]; other=kept");
+  });
 });
 
 // ---------------------------------------------------------------------------

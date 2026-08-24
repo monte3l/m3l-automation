@@ -46,7 +46,12 @@ function safeGetErrorMessage(error: unknown): string {
  * side is defined, returns it unchanged; when both are defined, returns a
  * port whose `isSecret` is true if EITHER side's `isSecret` is true (a
  * union, never a narrowing) — mirroring every other `M3LRedactOptions`
- * consumer's "additive only" contract.
+ * consumer's "additive only" contract. Each side is normalized to a strict
+ * `=== true` individually (not just the combined `||` result): `isSecret`'s
+ * `boolean` return type is trusted only as far as its declared type, and a
+ * caller crossing that boundary (an untyped/JS/cast path) with a truthy
+ * non-boolean must not short-circuit `||` and silently poison the other
+ * side's contribution.
  */
 function mergeSecrets(
   a: M3LSecretNamesPort | undefined,
@@ -54,7 +59,10 @@ function mergeSecrets(
 ): M3LSecretNamesPort | undefined {
   if (a === undefined) return b;
   if (b === undefined) return a;
-  return { isSecret: (name: string) => a.isSecret(name) || b.isSecret(name) };
+  return {
+    isSecret: (name: string) =>
+      a.isSecret(name) === true || b.isSecret(name) === true,
+  };
 }
 
 /** Fallback message substituted when redaction itself fails (never the original text). */
@@ -111,7 +119,7 @@ function guardSecrets(
   return {
     isSecret: (name: string): boolean => {
       try {
-        return secrets.isSecret(name);
+        return secrets.isSecret(name) === true;
       } catch (cause) {
         reportRedactionFailure(category, cause);
         return true;
