@@ -211,6 +211,15 @@ catches lessons which only reveal themselves as durable once they recur across
 several logs, so it is fine to leave a borderline "maybe generalizes" lesson
 unpromoted here rather than force it.
 
+**A follow-up that lives only in a work log does not exist.** This holds for
+every follow-up the log surfaces, not just library friction: if it is not a
+tracker row, `sync:hub` cannot project it and nothing will pick it up.
+Re-derive the item at filing time instead of copying the log's framing — gap
+evidence rots like any other authored claim, and a plan asserting something was
+"recorded as a tracked follow-up" has turned out never to have been filed
+(`2026-08-20-a6-pipeline-phase-trace.md`, `2026-07-22-promotion-audit.md`,
+`2026-07-28-w5-config-accessor-fleet-retrofit.md`).
+
 **File library friction into the backlog tracker (distinct from lesson
 promotion).** A lesson changes _how we work_ (→ rules/agents); a **friction
 item** is a concrete _pending library change_ the log surfaced (a missing API, a

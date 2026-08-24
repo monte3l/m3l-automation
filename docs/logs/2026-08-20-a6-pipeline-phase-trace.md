@@ -225,4 +225,4 @@ These four sat in this section alone until #473 was closed out, unreachable by
 an issue automatically. A follow-up that lives only in a work log is a follow-up
 that does not exist. And re-deriving them at filing time changed two of the
 four: one was materially wider than recorded, and one had the wrong fix
-attached.
+attached. _(promoted → .claude/skills/writing-work-logs/SKILL.md)_
