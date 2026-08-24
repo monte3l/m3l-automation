@@ -11,11 +11,13 @@ import type {
   TriageMessage,
   TriagePreset,
   TriageStateMap,
+  TriageVerdict,
 } from "../../src/steps/preset.js";
 import type {
   MessageOutcome,
   TriageQueueResult,
 } from "../../src/steps/triage-queue.js";
+import type { TriageReport } from "../../src/steps/report.js";
 
 /**
  * Shared preset/message/lookup fixture factories for the PR 3a AWS-triage
@@ -105,12 +107,90 @@ export function basePreset(
     fifo: false,
     orderBy: undefined,
     sourceQueue: undefined,
+    // Required when `fifo: true` (a FIFO reinsert needs a message group id
+    // path) and rejected outright when `fifo: false` — see
+    // `load-runbook.ts`'s `requireFifoFieldsMatchFifo`.
+    groupIdPath: undefined,
     envelope: { bodyIsJson: true, payloadPath: undefined },
     routeOn: "eventType",
     arms: [baseArm()],
     escalateTo: "orders-team",
     followUps: [],
     todos: [],
+    ...overrides,
+  };
+}
+
+/**
+ * Every {@link TriageVerdict} member, tracked via the `Record<Union, true>`
+ * idiom (`.claude/rules/library-src.md`) rather than a hand-copied array: a
+ * verdict added to (or removed from) the union without a matching key here
+ * fails typecheck on this file, so `execute-actions.test.ts`'s "all eleven
+ * verdicts" `test.each` can never silently narrow to fewer members as the
+ * vocabulary grows.
+ */
+const ALL_TRIAGE_VERDICTS_MAP: Record<TriageVerdict, true> = {
+  remove: true,
+  reinsert: true,
+  hold: true,
+  escalate: true,
+  "known-no-action": true,
+  "not-runbook-managed": true,
+  unparseable: true,
+  unrouted: true,
+  "no-key": true,
+  "entity-not-found": true,
+  unrecognised: true,
+};
+
+export const ALL_TRIAGE_VERDICTS = Object.keys(
+  ALL_TRIAGE_VERDICTS_MAP,
+) as readonly TriageVerdict[];
+
+/** One row of `TriageReport.rows` — not exported by `report.ts` itself, so derived structurally. */
+export type TriageReportRow = TriageReport["rows"][number];
+
+export function baseReportRow(
+  overrides: Partial<TriageReportRow> & Pick<TriageReportRow, "messageId">,
+): TriageReportRow {
+  return {
+    verdict: "hold",
+    caseId: "case-1",
+    description: "description",
+    ticket: undefined,
+    prohibited: undefined,
+    followUps: [],
+    bodyExcerpt: "{}",
+    bodyLength: 2,
+    status: "matched",
+    failure: undefined,
+    ...overrides,
+  };
+}
+
+/** A zero-count `verdictCounts` record, keyed off every real verdict plus the two non-conclusion statuses. */
+function zeroVerdictCounts(): TriageReport["verdictCounts"] {
+  return Object.fromEntries(
+    [...ALL_TRIAGE_VERDICTS, "failed", "aborted"].map((key) => [key, 0]),
+  ) as TriageReport["verdictCounts"];
+}
+
+/** A fully-populated `TriageReport`, for `execute-actions.test.ts`'s plan-building inputs. */
+export function baseTriageReport(
+  overrides: Partial<TriageReport> = {},
+): TriageReport {
+  return {
+    queue: "orders-dlq",
+    title: "Orders DLQ triage",
+    queueUrl: "https://sqs.example/orders-dlq",
+    generatedAt: "2026-08-23T12:00:00.000Z",
+    depth: 0,
+    drained: 0,
+    archivePath: "orders-dlq/drain-2026-08-23T12-00-00.000Z.json",
+    verdictCounts: zeroVerdictCounts(),
+    rows: [],
+    followUps: [],
+    escalateTo: "orders-team",
     ...overrides,
   };
 }
@@ -247,6 +327,7 @@ export function baseTriageQueueResult(
     messages: [],
     escalateTo: "orders-team",
     followUps: [],
+    preset: basePreset(),
     ...overrides,
   };
 }

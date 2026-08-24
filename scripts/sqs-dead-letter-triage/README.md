@@ -55,26 +55,53 @@ node dist/main.js --operation=triage \
   --queueUrl=https://sqs.eu-west-1.amazonaws.com/000000000000/shipments-dlq \
   --maxMessages=50 --visibilityTimeout=900 \
   --aws.profile=ops-readonly
+
+# Destructive (plan only) — reach a verdict for every message and print the
+# action plan it implies. Prints and stops: execute mutates nothing without
+# --apply, so this is safe to run against production.
+node dist/main.js --operation=execute \
+  --queue=orders-dlq \
+  --queueUrl=https://sqs.eu-west-1.amazonaws.com/000000000000/orders-dlq \
+  --aws.profile=ops-write
+
+# Destructive (applies) — same run, but carries out the plan behind the graded
+# confirmation gate. A sensitive target escalates to typing the queue name;
+# declining aborts with a non-zero exit and mutates nothing. --sourceQueueUrl
+# is required only when the plan actually contains a reinsert.
+node dist/main.js --operation=execute --apply \
+  --queue=orders-dlq \
+  --queueUrl=https://sqs.eu-west-1.amazonaws.com/000000000000/orders-dlq \
+  --sourceQueueUrl=https://sqs.eu-west-1.amazonaws.com/000000000000/orders \
+  --aws.profile=ops-write
 ```
 
-> **`triage` archives before it does anything else.** The full drained batch —
-> raw bodies included — is written to `M3L_OUTPUT_DIR` before any verdict is
-> reached, and a failed archive write fails the run. That artifact is the
-> evidence a later `execute` is allowed to destroy against.
+> **Both AWS operations archive before they do anything else.** The full
+> drained batch — raw bodies included — is written to `M3L_OUTPUT_DIR` before
+> any verdict is reached, and a failed archive write fails the run. That
+> artifact is the evidence `execute` is allowed to destroy against.
 >
-> **Not yet available.** The `execute` operation — applying the remediation a
-> verdict implies, behind the graded destructive gate — is not implemented in
-> this slice. Everything above is read-only against AWS: `triage` drains and
-> reports but never deletes or re-sends.
+> **`execute` mutates nothing without `--apply`.** Without it the plan is
+> printed and the run stops. With it, the graded confirmation gate
+> ([ADR-0048](../../docs/adr/0048-target-graded-destructive-confirmation.md))
+> runs first and always escalates to typing the queue name. A queue's declared
+> prohibitions downgrade an executable verdict to a follow-up and always win.
+>
+> **`--apply` requires an explicit `--aws.profile`.** Without one the library
+> provisions AWS from the default credential chain but resolves no identity to
+> grade against, so the gate would degrade to an ungraded prompt that `--yes`
+> could bypass outright. `execute --apply` therefore refuses to run rather than
+> mutate under an unidentifiable credential. The plan-only path has no such
+> requirement.
 
 ### Operations at a glance
 
-| Operation  | Demonstrated by       |
-| ---------- | --------------------- |
-| `validate` | Minimal, Common       |
-| `explain`  | Production            |
-| `convert`  | Edge case             |
-| `triage`   | Mutating, Bounded run |
+| Operation  | Demonstrated by                                |
+| ---------- | ---------------------------------------------- |
+| `validate` | Minimal, Common                                |
+| `explain`  | Production                                     |
+| `convert`  | Edge case                                      |
+| `triage`   | Mutating, Bounded run                          |
+| `execute`  | Destructive (plan only), Destructive (applies) |
 
 ### Operational flags
 

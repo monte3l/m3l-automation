@@ -9,6 +9,7 @@ import { createTriageRunState } from "./preset.js";
 import type {
   TriageConclusion,
   TriageEntityLookup,
+  TriagePreset,
   TriageShape,
 } from "./preset.js";
 
@@ -74,6 +75,15 @@ export interface TriageQueueResult {
   /** The preset's own `escalateTo`/`followUps` — carried through for the report. */
   readonly escalateTo: string;
   readonly followUps: readonly string[];
+  /**
+   * The preset this pass loaded and ran, carried through (review round 2,
+   * SHOULD-FIX 11) so `execute`'s destructive-apply phase can use the exact
+   * preset the interactive confirmation prompt was shown against, instead of
+   * re-reading the file after the prompt returns — a window during which a
+   * concurrent preset write could otherwise redirect where a confirmed plan
+   * sends.
+   */
+  readonly preset: TriagePreset;
 }
 
 /** Renders a run outcome's failure (an unexpected step throw, or an abort) as one operator-facing line. */
@@ -207,5 +217,6 @@ export async function triageQueue(
     })),
     escalateTo: preset.escalateTo,
     followUps: preset.followUps,
+    preset,
   };
 }

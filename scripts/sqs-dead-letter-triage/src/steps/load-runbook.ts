@@ -3,7 +3,11 @@ import * as path from "node:path";
 
 import { Core } from "@m3l-automation/m3l-common";
 
-import { RESERVED_PRIORITY_CEILING } from "./preset.js";
+import {
+  REINSERT_PROHIBITION_KEYWORDS,
+  REMOVE_PROHIBITION_KEYWORDS,
+  RESERVED_PRIORITY_CEILING,
+} from "./preset.js";
 import type {
   TriageArm,
   TriageCase,
@@ -127,6 +131,103 @@ function parseStateMap(
     ),
     progression: reader.optionalStringField(record, "progression"),
   };
+}
+
+/**
+ * Enforces the two-way rule on `fifo`/`groupIdPath`/`orderBy` (decision 4,
+ * PR 3b; extended in review round 2, MUST-FIX 9, to also cover `orderBy` —
+ * the same class of gap: a FIFO preset with a valid `groupIdPath` but no
+ * `orderBy` previously passed `validate` cleanly and failed deep inside
+ * `applyActions`, after the destructive gate was confirmed and messages
+ * re-received). A FIFO queue cannot be sent to without a message group id
+ * NOR an ordering field, and either one declared on a non-FIFO queue would
+ * silently do nothing — worse than an absent field, since an operator would
+ * reasonably assume it was in effect. Every direction must fail loud
+ * offline, at load time, rather than mid-remediation when a `reinsert`
+ * finally needs to send.
+ */
+function requireFifoFieldsMatchFifo(
+  fifo: boolean,
+  groupIdPath: string | undefined,
+  orderBy: string | undefined,
+  source: string,
+): void {
+  if (fifo && groupIdPath === undefined) {
+    throw new Core.M3LError(
+      `'${source}' declares 'fifo: true' but no 'groupIdPath' — a FIFO queue cannot be sent to without a message group id`,
+      { code: PRESET_CODE },
+    );
+  }
+  if (!fifo && groupIdPath !== undefined) {
+    throw new Core.M3LError(
+      `'${source}' declares 'groupIdPath' but 'fifo: false' — 'groupIdPath' only does anything for a FIFO queue; remove one or the other`,
+      { code: PRESET_CODE },
+    );
+  }
+  if (fifo && orderBy === undefined) {
+    throw new Core.M3LError(
+      `'${source}' declares 'fifo: true' but no 'orderBy' — a FIFO reinsert cannot be ordered without one`,
+      { code: PRESET_CODE },
+    );
+  }
+  if (!fifo && orderBy !== undefined) {
+    throw new Core.M3LError(
+      `'${source}' declares 'orderBy' but 'fifo: false' — 'orderBy' only does anything for a FIFO queue; remove one or the other`,
+      { code: PRESET_CODE },
+    );
+  }
+}
+
+/**
+ * Rejects a prohibition string that matches neither
+ * {@link REMOVE_PROHIBITION_KEYWORDS} nor {@link REINSERT_PROHIBITION_KEYWORDS}
+ * (review round 2, MUST-FIX 8). Prohibitions are free text, and
+ * `cases.ts`'s `downgradeForProhibitions` only ever downgrades a verdict
+ * when one of these keyword sets matches — an inert prohibition (naming
+ * neither) passes `validate` and prints in `explain` while silently
+ * blocking nothing at any downgrade check. Both sets are imported from
+ * `preset.ts`, the single shared source `prohibitionBlocks` itself reads,
+ * so this boundary and that check cannot drift apart. Same principle as
+ * {@link requireFifoFieldsMatchFifo}: it must fail `validate` offline, in
+ * CI, never mid-remediation.
+ */
+function requireEffectiveProhibition(prohibition: string, field: string): void {
+  const lower = prohibition.toLowerCase();
+  const keywords = [
+    ...REMOVE_PROHIBITION_KEYWORDS,
+    ...REINSERT_PROHIBITION_KEYWORDS,
+  ];
+  const effective = keywords.some((keyword) => lower.includes(keyword));
+  if (!effective) {
+    throw new Core.M3LError(
+      `'${field}' does not contain a recognised prohibition keyword (${keywords.join(", ")}) and would be silently ignored — reword it to name what it blocks`,
+      { code: PRESET_CODE },
+    );
+  }
+}
+
+/**
+ * Enforces the offline half of the `reinsert`/`sourceQueue` pair (review
+ * round 2, MUST-FIX 10): a preset authoring any `verdict: "reinsert"` case
+ * row must declare `sourceQueue`, or the reinsert would have nowhere safe to
+ * send. This must fail `validate` offline, never be discovered mid-
+ * remediation inside `run-sqs-dead-letter-triage.ts`'s `resolveSourceQueueUrl`.
+ */
+function requireSourceQueueForReinsert(
+  arms: readonly TriageArm[],
+  sourceQueue: string | undefined,
+  source: string,
+): void {
+  if (sourceQueue !== undefined) return;
+  const declaresReinsert = arms.some((arm) =>
+    arm.cases.some((triageCase) => triageCase.verdict === "reinsert"),
+  );
+  if (declaresReinsert) {
+    throw new Core.M3LError(
+      `'${source}' declares a 'reinsert' verdict case but no 'sourceQueue' — a reinsert has nowhere to send`,
+      { code: PRESET_CODE },
+    );
+  }
 }
 
 /**
@@ -407,6 +508,18 @@ export function parseTriagePreset(
   record: Readonly<Record<string, unknown>>,
   source: string,
 ): TriagePreset {
+  const fifo = reader.optionalBooleanField(record, "fifo") ?? false;
+  const groupIdPath = reader.optionalStringField(record, "groupIdPath");
+  const orderBy = reader.optionalStringField(record, "orderBy");
+  requireFifoFieldsMatchFifo(fifo, groupIdPath, orderBy, source);
+  const prohibitions = optionalStringArray(reader, record, "prohibitions");
+  prohibitions.forEach((prohibition, index) => {
+    requireEffectiveProhibition(
+      prohibition,
+      `${source}.prohibitions[${String(index)}]`,
+    );
+  });
+  const sourceQueue = reader.optionalStringField(record, "sourceQueue");
   const preset: TriagePreset = {
     queue: reader.requiredStringField(record, "queue", source),
     title: reader.requiredStringField(record, "title", source),
@@ -414,10 +527,11 @@ export function parseTriagePreset(
       reader.requiredStringField(record, "handling", source),
       "handling",
     ),
-    prohibitions: optionalStringArray(reader, record, "prohibitions"),
-    fifo: reader.optionalBooleanField(record, "fifo") ?? false,
-    orderBy: reader.optionalStringField(record, "orderBy"),
-    sourceQueue: reader.optionalStringField(record, "sourceQueue"),
+    prohibitions,
+    fifo,
+    orderBy,
+    sourceQueue,
+    groupIdPath,
     envelope: parseEnvelope(reader, record, source),
     routeOn: reader.requiredStringField(record, "routeOn", source),
     arms: reader
@@ -429,6 +543,7 @@ export function parseTriagePreset(
   };
   requireUniqueArms(preset.arms);
   requireUniqueCases(preset.arms);
+  requireSourceQueueForReinsert(preset.arms, preset.sourceQueue, source);
   return preset;
 }
 

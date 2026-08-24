@@ -60,6 +60,26 @@ export const HANDLING_MODES = [
 ] as const satisfies readonly TriageHandling[];
 
 /**
+ * Case-insensitive substring keywords that make a prohibition string
+ * effective against a `"reinsert"` verdict. This is the single shared
+ * source both `cases.ts`'s `prohibitionBlocks` (the downgrade check) and
+ * `load-runbook.ts`'s trust-boundary validation (rejecting a prohibition
+ * that matches neither this set nor {@link REMOVE_PROHIBITION_KEYWORDS})
+ * read — without one shared source, a prohibition string could pass
+ * `validate` and print in `explain` while the two keyword lists silently
+ * drifted apart and it blocked nothing at all.
+ */
+export const REINSERT_PROHIBITION_KEYWORDS = ["redrive", "reinsert"] as const;
+
+/**
+ * Case-insensitive substring keywords that make a prohibition string
+ * effective against a `"remove"` verdict. See
+ * {@link REINSERT_PROHIBITION_KEYWORDS}'s TSDoc for why this lives here
+ * rather than duplicated in every consuming module.
+ */
+export const REMOVE_PROHIBITION_KEYWORDS = ["delete", "remove"] as const;
+
+/**
  * Priorities `1`–`RESERVED_PRIORITY_CEILING` are reserved for the codified
  * terminal cases (`unrouted`, `no-key`, `entity-not-found`, `unrecognised`,
  * …). A preset row claiming one of them is rejected at the trust boundary
@@ -198,6 +218,15 @@ export interface TriagePreset {
   readonly orderBy: string | undefined;
   /** Where a `reinsert` verdict sends. */
   readonly sourceQueue: string | undefined;
+  /**
+   * Dot path to the FIFO message group id inside the resolved payload.
+   * Required when {@link TriagePreset.fifo} is `true` (an un-sendable FIFO
+   * preset must fail `validate` offline, not mid-remediation) and rejected
+   * when `fifo` is `false` — a declared `groupIdPath` on a standard queue
+   * would silently do nothing, which is worse than an absent field. See
+   * `load-runbook.ts`'s two-way validation of this pair.
+   */
+  readonly groupIdPath: string | undefined;
   readonly envelope: TriageEnvelope;
   /** Envelope path holding the event-type discriminator. */
   readonly routeOn: string;

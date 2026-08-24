@@ -693,6 +693,128 @@ describe("parseTriagePreset — todos are not rejected at load", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// PR 3b, STEP 1: the `groupIdPath` two-way rule (decision 4). Both directions
+// must fail loud offline — a `fifo: true` preset that omits `groupIdPath`
+// cannot be sent at execute time, and a `groupIdPath` on a non-FIFO preset
+// silently does nothing, which the spec calls worse than an absent field.
+// ---------------------------------------------------------------------------
+
+describe("parseTriagePreset — groupIdPath two-way rule (PR 3b, decision 4)", () => {
+  it("rejects fifo: true with no groupIdPath, naming the field and the fifo value", () => {
+    const message = rejectionOf(validPreset({ fifo: true }));
+    expect(message).toContain("groupIdPath");
+    expect(message).toContain("fifo");
+    expect(message).toContain("true");
+  });
+
+  it("rejects groupIdPath present with fifo: false, naming the field and the fifo value", () => {
+    const message = rejectionOf(
+      validPreset({ fifo: false, groupIdPath: "detail.shipmentId" }),
+    );
+    expect(message).toContain("groupIdPath");
+    expect(message).toContain("fifo");
+    expect(message).toContain("false");
+  });
+
+  it("rejects groupIdPath present with fifo entirely absent (defaults to false)", () => {
+    // `fifo` defaults to `false` when the preset omits it entirely
+    // (load-runbook.ts: `reader.optionalBooleanField(record, "fifo") ?? false`)
+    // — a declared `groupIdPath` alongside an omitted `fifo` must be rejected
+    // by the same rule as an explicit `fifo: false`, not silently accepted
+    // because the field was never mentioned.
+    const record = validPreset({ groupIdPath: "detail.shipmentId" });
+    delete record["fifo"];
+    const message = rejectionOf(record);
+    expect(message).toContain("groupIdPath");
+    expect(message).toContain("fifo");
+  });
+
+  it("accepts fifo: true with a declared groupIdPath and orderBy", () => {
+    const preset = parseTriagePreset(
+      reader,
+      validPreset({
+        fifo: true,
+        groupIdPath: "detail.shipmentId",
+        orderBy: "detail.seq",
+      }),
+      "example.json",
+    );
+    expect(preset.fifo).toBe(true);
+    expect(preset.groupIdPath).toBe("detail.shipmentId");
+    expect(preset.orderBy).toBe("detail.seq");
+  });
+
+  it("accepts fifo: false (or omitted) with no groupIdPath", () => {
+    const preset = parseTriagePreset(reader, validPreset(), "example.json");
+    expect(preset.fifo).toBe(false);
+    expect(preset.groupIdPath).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PR 3b review round 2: three offline rules that must fail `validate`, never
+// be discovered mid-remediation deep inside `execute-plan.ts`/`execute-actions.ts`.
+// ---------------------------------------------------------------------------
+
+describe("parseTriagePreset — fifo/orderBy two-way rule (review round 2, MUST-FIX 9)", () => {
+  it("rejects fifo: true with no orderBy, naming the field and the fifo value", () => {
+    const message = rejectionOf(
+      validPreset({ fifo: true, groupIdPath: "detail.shipmentId" }),
+    );
+    expect(message).toContain("orderBy");
+    expect(message).toContain("fifo");
+    expect(message).toContain("true");
+  });
+});
+
+describe("parseTriagePreset — an inert prohibition is rejected (review round 2, MUST-FIX 8)", () => {
+  it("rejects a prohibition string matching neither the remove nor reinsert keyword sets", () => {
+    // Contains none of "redrive", "reinsert", "delete", "remove" — it would
+    // pass `validate` and print in `explain` while blocking nothing at any
+    // `downgradeForProhibitions` check.
+    const message = rejectionOf(
+      validPreset({
+        prohibitions: ["always require manager sign-off before any action"],
+      }),
+    );
+    expect(message).toContain("recognised prohibition keyword");
+  });
+
+  it("accepts a prohibition string matching a recognised keyword", () => {
+    const preset = parseTriagePreset(
+      reader,
+      validPreset({ prohibitions: ["do-not-redrive-without-ticket"] }),
+      "example.json",
+    );
+    expect(preset.prohibitions).toEqual(["do-not-redrive-without-ticket"]);
+  });
+});
+
+describe("parseTriagePreset — a 'reinsert' verdict case requires a declared sourceQueue (review round 2, MUST-FIX 10)", () => {
+  it("rejects a preset authoring a 'reinsert' verdict case with no sourceQueue declared", () => {
+    const message = rejectionOf(
+      validPreset({
+        arms: [baseArm({ cases: [baseCase({ verdict: "reinsert" })] })],
+      }),
+    );
+    expect(message).toContain("reinsert");
+    expect(message).toContain("sourceQueue");
+  });
+
+  it("accepts a preset authoring a 'reinsert' verdict case when sourceQueue is declared", () => {
+    const preset = parseTriagePreset(
+      reader,
+      validPreset({
+        sourceQueue: "orders-inbound",
+        arms: [baseArm({ cases: [baseCase({ verdict: "reinsert" })] })],
+      }),
+      "example.json",
+    );
+    expect(preset.sourceQueue).toBe("orders-inbound");
+  });
+});
+
 describe("normaliseProgression", () => {
   it("joins states into a lowercased, comma-delimited form with leading and trailing commas", () => {
     expect(normaliseProgression(["created", "paid", "shipped"])).toBe(

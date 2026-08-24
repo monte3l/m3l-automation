@@ -24,8 +24,14 @@ import { runSqsDeadLetterTriage } from "./steps/run-sqs-dead-letter-triage.js";
 // fails at the first AWS call it makes. The `undefined` guard below is
 // defence-in-depth for a genuine provisioning failure, not a documented
 // "no AWS configured" branch.
-// `dispatchTriage` is the one handler that insists on a client, and it
-// fails loud, naming `aws.profile`, when it has none.
+// `dispatchTriage`/`dispatchExecute` are the handlers that insist on a
+// client, and fail loud, naming `aws.profile`, when they have none.
+// `script.awsTarget` is threaded straight through as-is — it is already
+// `M3LDestructiveTarget | undefined`, resolved from the same identity
+// `script.aws`'s clients were provisioned with; never construct one by hand.
+// `reportRecovery` is bound from `script.reportRecovery` (never the whole
+// `script` object) so a per-message `execute --apply` failure demotes this
+// run's outcome to `"partial"` instead of a silent `"success"`.
 const script = new Core.M3LScript({
   metadata: { name: "sqs-dead-letter-triage", version: "0.0.0" },
   config: { params: configParameters, validate: configValidators },
@@ -53,7 +59,9 @@ await Core.runScript(
       }),
       sqs: aws === undefined ? undefined : aws.services.sqsOperations,
       dynamo: aws === undefined ? undefined : aws.services.dynamoDBOperations,
+      awsTarget: script.awsTarget,
       signal: script.signal,
+      reportRecovery: script.reportRecovery.bind(script),
     });
   },
   { dryRun },
