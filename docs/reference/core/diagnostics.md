@@ -76,8 +76,9 @@ Surfaced through `core` (the `diagnostics` sub-module).
 - `formatErrorChain` — recursive cause-chain formatter (human-readable).
 - `serializeErrorChain` — the same walk as structured JSON, for the run report.
 - `M3LSerializedError` — one level of that walk.
-- `M3LFormatErrorChainOptions` — `{ stacks?, redact? }`, both defaulting to
-  `true`.
+- `M3LFormatErrorChainOptions` — `{ stacks?, redact?, secrets? }`; `stacks`
+  and `redact` both default to `true`, `secrets` has no default and is
+  consulted only when `redact` is `true`.
 
 `M3LSerializedError` carries `name` and `message` always; every other field is
 present only when the level supplies it:
@@ -119,7 +120,9 @@ into its text output. Without it, a truncated chain in `run-report.json` or an
 - `M3LBreadcrumbTrail`, `M3LBreadcrumb` — bounded event-fed context trail.
 - `M3LBreadcrumbScalar` — the value type a breadcrumb payload may hold.
 - `M3LBreadcrumbSource` — the structural `on`/`off` port an emitter satisfies.
-- `M3LBreadcrumbTrailOptions` — `{ limit? }`, default `100`.
+- `M3LBreadcrumbTrailOptions` — `{ limit?, secrets? }`; `limit` defaults to
+  `100`, `secrets` has no default (caller-managed, never set by
+  `runScript()`/`M3LScript`).
 - `M3LBreadcrumbAttachOptions` — `{ source?, events? }`.
 
 ### Diagnostics snapshot
@@ -161,7 +164,9 @@ into its text output. Without it, a truncated chain in `run-report.json` or an
   never inferred by the library.
 - `M3LRunReportInput` — what `build`/`persist` accept.
 - `M3LRunReporter` — builds and persists a run report.
-- `M3LRunReporterOptions` — `{ paths?, fileName? }`.
+- `M3LRunReporterOptions` — `{ paths?, fileName?, secrets? }`; `secrets` has
+  no default and is threaded through every `sanitizeValue`/`sanitizeString`
+  step in `build()` plus `persist()`'s failure diagnostic.
 
 ### The composition-root wrapper
 
@@ -232,6 +237,7 @@ function formatErrorChain(
   options?: {
     readonly stacks?: boolean; // default true
     readonly redact?: boolean; // default true
+    readonly secrets?: M3LSecretNamesPort; // no default; consulted only when redact is true
   },
 ): string;
 ```
@@ -311,7 +317,9 @@ shared artifact.
 
 An unrecognized event, or a payload that is not a plain record, falls back to
 keeping own enumerable scalar properties and relies on `redactSensitiveLogValue`
-alone — which is a **best-effort heuristic**, not a guarantee. That path is
+— widened by the trail's own `secrets` port when one was supplied at
+construction, otherwise heuristic-only — which is still a **best-effort**
+mechanism for any key not declared to that port, not a guarantee. That path is
 reachable only via a custom `options.events` name or a direct `record()` call.
 
 This is how attempt history survives retry exhaustion **without changing the

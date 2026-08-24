@@ -272,8 +272,18 @@ on its own field instead of relying on the embedded-value pass to catch it.
 **Production consumers.** `core/diagnostics`'s `M3LBreadcrumbTrail`,
 `M3LRunReporter`, and `formatErrorChain`/`serializeErrorChain` each accept an
 optional `secrets: M3LSecretNamesPort` constructor/options field that threads
-straight into these two helpers, and `runScript()` wires one in automatically
-from the running script's own config schema. See
+straight into these two helpers. `core/script`'s `runScript()` and
+`M3LScript` each derive one automatically from the running script's own
+config schema and wire it into `M3LRunReporter` plus every best-effort
+diagnostic either of them manages directly (process-fault guards, the
+shutdown-signal handler, lifecycle-hook failures). `M3LBreadcrumbTrail` is
+the one sink `runScript()`/`M3LScript` never construct — it stays
+caller-managed, so a trail only gets widened redaction when its own caller
+passes `secrets` at construction. `M3LLogger` (and its handlers) is **not**
+among the widened sinks: `errorFrom`'s call into `serializeErrorChain` does
+not receive a `secrets` port, so a declared secret in an error logged via
+`M3LLogger` — including the one `runScript()` itself emits on a run's
+failure path — is redacted by the built-in heuristic only. See
 [`diagnostics`](./diagnostics.md#public-api)'s redaction-guarantees note for
 what that widens (and doesn't) at each of those sinks.
 

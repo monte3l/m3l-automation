@@ -8,7 +8,7 @@
         {
           "file": "packages/m3l-common/src/core/script/M3LScript.ts",
           "symbol": "M3LScript",
-          "blob": "6fdbb4a269de6126fdba1b857688b6889e0cde5c"
+          "blob": "77f2939722e8c7dc4b76baf5395aa9b2f55f8670"
         },
         {
           "file": "packages/m3l-common/src/core/script/M3LScriptOptions.ts",
@@ -48,17 +48,17 @@
         {
           "file": "packages/m3l-common/src/core/script/process-guards.ts",
           "symbol": "installProcessGuards",
-          "blob": "ad3fa52a011b632897b5c1687626de5e99d72c21"
+          "blob": "4c5c48e415970a8513d928955b5e93d76e38b2c6"
         },
         {
           "file": "packages/m3l-common/src/core/script/process-guards.ts",
           "symbol": "serializeError",
-          "blob": "ad3fa52a011b632897b5c1687626de5e99d72c21"
+          "blob": "4c5c48e415970a8513d928955b5e93d76e38b2c6"
         },
         {
           "file": "packages/m3l-common/src/core/script/process-guards.ts",
           "symbol": "setProcessGuardRequestId",
-          "blob": "ad3fa52a011b632897b5c1687626de5e99d72c21"
+          "blob": "4c5c48e415970a8513d928955b5e93d76e38b2c6"
         },
         {
           "file": "packages/m3l-common/src/core/script/M3LPresetCycleError.ts",
@@ -78,12 +78,12 @@
         {
           "file": "packages/m3l-common/src/core/script/run-script.ts",
           "symbol": "runScript",
-          "blob": "c401e21b5225678dc1087b071393585dbe9546f3"
+          "blob": "52c59b5f0da8cff69c5b99aca31a7e68f6a4c86c"
         },
         {
           "file": "packages/m3l-common/src/core/script/run-script.ts",
           "symbol": "M3LRunScriptOptions",
-          "blob": "c401e21b5225678dc1087b071393585dbe9546f3"
+          "blob": "52c59b5f0da8cff69c5b99aca31a7e68f6a4c86c"
         },
         {
           "file": "packages/m3l-common/src/core/script/M3LScriptOptions.ts",
@@ -99,7 +99,7 @@
         {
           "file": "packages/m3l-common/src/core/script/M3LScript.ts",
           "symbol": "M3LScript",
-          "blob": "6fdbb4a269de6126fdba1b857688b6889e0cde5c"
+          "blob": "77f2939722e8c7dc4b76baf5395aa9b2f55f8670"
         }
       ],
       "retrieved": "2026-08-24"
@@ -126,12 +126,12 @@
         {
           "file": "packages/m3l-common/src/core/script/run-script.ts",
           "symbol": "runScript",
-          "blob": "c401e21b5225678dc1087b071393585dbe9546f3"
+          "blob": "52c59b5f0da8cff69c5b99aca31a7e68f6a4c86c"
         },
         {
           "file": "packages/m3l-common/src/core/script/run-script.ts",
           "symbol": "M3LRunScriptOptions",
-          "blob": "c401e21b5225678dc1087b071393585dbe9546f3"
+          "blob": "52c59b5f0da8cff69c5b99aca31a7e68f6a4c86c"
         }
       ],
       "retrieved": "2026-08-24"
@@ -147,7 +147,7 @@
         {
           "file": "packages/m3l-common/src/core/script/M3LScript.ts",
           "symbol": "M3LScript",
-          "blob": "6fdbb4a269de6126fdba1b857688b6889e0cde5c"
+          "blob": "77f2939722e8c7dc4b76baf5395aa9b2f55f8670"
         }
       ],
       "retrieved": "2026-08-24"
@@ -158,7 +158,7 @@
         {
           "file": "packages/m3l-common/src/core/script/M3LScript.ts",
           "symbol": "M3LScript",
-          "blob": "6fdbb4a269de6126fdba1b857688b6889e0cde5c"
+          "blob": "77f2939722e8c7dc4b76baf5395aa9b2f55f8670"
         }
       ],
       "retrieved": "2026-08-24"
@@ -169,20 +169,20 @@
         {
           "file": "packages/m3l-common/src/core/script/process-guards.ts",
           "symbol": "installProcessGuards",
-          "blob": "ad3fa52a011b632897b5c1687626de5e99d72c21"
+          "blob": "4c5c48e415970a8513d928955b5e93d76e38b2c6"
         },
         {
           "file": "packages/m3l-common/src/core/script/process-guards.ts",
           "symbol": "serializeError",
-          "blob": "ad3fa52a011b632897b5c1687626de5e99d72c21"
+          "blob": "4c5c48e415970a8513d928955b5e93d76e38b2c6"
         },
         {
           "file": "packages/m3l-common/src/core/script/process-guards.ts",
           "symbol": "setProcessGuardRequestId",
-          "blob": "ad3fa52a011b632897b5c1687626de5e99d72c21"
+          "blob": "4c5c48e415970a8513d928955b5e93d76e38b2c6"
         }
       ],
-      "retrieved": "2026-07-11"
+      "retrieved": "2026-08-24"
     },
     {
       "heading": "Correlation IDs",
@@ -200,7 +200,7 @@
         {
           "file": "packages/m3l-common/src/core/script/M3LScript.ts",
           "symbol": "M3LScript",
-          "blob": "6fdbb4a269de6126fdba1b857688b6889e0cde5c"
+          "blob": "77f2939722e8c7dc4b76baf5395aa9b2f55f8670"
         }
       ],
       "retrieved": "2026-08-24"
@@ -232,7 +232,7 @@
         {
           "file": "packages/m3l-common/src/core/script/M3LScript.ts",
           "symbol": "M3LScript",
-          "blob": "6fdbb4a269de6126fdba1b857688b6889e0cde5c"
+          "blob": "77f2939722e8c7dc4b76baf5395aa9b2f55f8670"
         }
       ],
       "retrieved": "2026-08-24"
@@ -243,7 +243,7 @@
         {
           "file": "packages/m3l-common/src/core/script/M3LScript.ts",
           "symbol": "M3LScript",
-          "blob": "6fdbb4a269de6126fdba1b857688b6889e0cde5c"
+          "blob": "77f2939722e8c7dc4b76baf5395aa9b2f55f8670"
         },
         {
           "file": "packages/m3l-common/src/core/script/M3LScriptPresetLoader.ts",

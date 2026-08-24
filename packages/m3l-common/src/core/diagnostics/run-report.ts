@@ -306,10 +306,12 @@ export interface M3LRunReporterOptions {
    * over a script's config schema). Threaded through every sanitization step
    * in {@link M3LRunReporter.build} — i.e. every field that passes through
    * `sanitizeValue`/`sanitizeString` (`environment`, `timeline`, `archive`,
-   * and failure/recovery detail). `script` and `correlationId` are copied
-   * as-is and never sanitized (a pre-existing, unrelated boundary this
-   * option does not change) — and into the best-effort diagnostic
-   * {@link M3LRunReporter.persist} emits on failure. Omitting this produces
+   * and failure/recovery detail). A small number of caller-supplied scalar
+   * fields are copied as-is and never sanitized — `script`, `correlationId`,
+   * `failure.stage`, and a string-typed `recovery[].recordedAt` (a
+   * pre-existing, unrelated boundary this option does not change) — and into
+   * the best-effort diagnostic {@link M3LRunReporter.persist} emits on
+   * failure. Omitting this produces
    * the same heuristic-only behavior as before this field existed. Only
    * redacts a declared secret carried as a top-level `key=value`/
    * `key: value` pair — a secret value embedded inside another field's free

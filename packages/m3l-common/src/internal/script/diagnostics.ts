@@ -52,20 +52,22 @@ interface SerializedErrorLike {
  * a failure writing the diagnostic itself is silently discarded, since there
  * is nothing further this helper can safely do about it.
  *
- * Of this helper's 10 call sites across `core/script`/`internal/script`, 5
+ * Of this helper's 10 call sites across `core/script`/`internal/script`, 9
  * now pass a derived `secrets` port: `core/diagnostics/run-report.ts`'s
  * `persist()` catch block (it has a script's config schema in scope via
  * `M3LRunReporter`'s constructor options), `M3LScript.ts` (two call sites,
- * deriving from its own `configSchema`), and `run-script.ts`'s
+ * deriving from its own `configSchema`), `run-script.ts`'s
  * `persistBestEffort` (two call sites, threading the `secrets` value already
- * derived in `runScript`). The remaining 5 call sites intentionally omit
- * `options` (equivalent to `undefined`): `process-guards.ts` (three call
- * sites) and `signalHandlers.ts` (one call site) are process-global
- * fault/shutdown guards with no schema or script context available at all,
- * and `collect.ts`'s `collectDiagnostics.config` site (one call site)
- * receives only a narrow `M3LConfigSchemaPort` (just `declaredNames()`), not
- * a full `M3LConfigSchema`, so a `secrets` specifier cannot be derived there
- * either.
+ * derived in `runScript`), `process-guards.ts`'s `unhandledRejection`/
+ * `uncaughtException`/`warning` handlers (three call sites, reading a
+ * process-global `secrets` value that `run-script.ts`'s `runScript()` sets
+ * for the duration of a run via `setProcessGuardSecrets`), and
+ * `signalHandlers.ts`'s `onShutdown`-failure site (one call site, threading
+ * the `secrets` port `registerShutdownSignals` now accepts as an optional
+ * parameter). Only one call site remains intentionally bare: `collect.ts`'s
+ * `collectDiagnostics.config` site, whose `schema` parameter there is a
+ * narrow `M3LConfigSchemaPort` (just `declaredNames()`), not a full
+ * `M3LConfigSchema` a `secrets` specifier could be derived from.
  *
  * @param label - A short label identifying the failure site (e.g.
  *   `"unhandledRejection"`, `"onCleanup"`).

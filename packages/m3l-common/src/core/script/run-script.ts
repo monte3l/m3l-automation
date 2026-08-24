@@ -23,7 +23,11 @@ import { logBestEffortDiagnostic } from "../../internal/script/diagnostics.js";
 import { pushForcedSignalExitCode } from "../../internal/script/signalHandlers.js";
 import { deriveSecretsSpecifier } from "../config/index.js";
 
-import { installProcessGuards, serializeError } from "./process-guards.js";
+import {
+  installProcessGuards,
+  serializeError,
+  setProcessGuardSecrets,
+} from "./process-guards.js";
 import type { M3LScript } from "./M3LScript.js";
 import type { M3LScriptRunOptions } from "./M3LScriptOptions.js";
 
@@ -369,6 +373,11 @@ export async function runScript(
     script.configSchema === undefined
       ? undefined
       : deriveSecretsSpecifier(script.configSchema);
+  // Attach this run's `secrets` to the process-global fault guards
+  // (`unhandledRejection`/`uncaughtException`/`warning`) for the duration of
+  // this call — reset in the `finally` block below so the value never
+  // outlives this run.
+  setProcessGuardSecrets(secrets);
   const reporter = shouldReport
     ? new M3LRunReporter({ paths: script.paths, secrets })
     : undefined;
@@ -417,5 +426,6 @@ export async function runScript(
     );
   } finally {
     releaseForcedSignalExitCode();
+    setProcessGuardSecrets(undefined);
   }
 }

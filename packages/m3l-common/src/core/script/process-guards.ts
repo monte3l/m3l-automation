@@ -7,6 +7,7 @@
 
 import { logBestEffortDiagnostic } from "../../internal/script/diagnostics.js";
 import { M3LError } from "../errors/index.js";
+import type { M3LSecretNamesPort } from "../logging/redact.js";
 import { safeJsonStringify } from "../utils/index.js";
 
 /** Process-global flag guarding {@link installProcessGuards} idempotency. */
@@ -14,6 +15,9 @@ let guardsInstalled = false;
 
 /** The current Lambda request ID, if any, attached to guard diagnostics. */
 let currentRequestId: string | undefined;
+
+/** The current run's `secrets` port, if any, attached to guard diagnostics. */
+let currentSecrets: M3LSecretNamesPort | undefined;
 
 /** A plain, JSON-serializable representation of an arbitrary caught value. */
 interface SerializedError {
@@ -114,13 +118,19 @@ export function installProcessGuards(): void {
   guardsInstalled = true;
 
   process.on("unhandledRejection", (reason: unknown) => {
-    logBestEffortDiagnostic("unhandledRejection", serializeError(reason));
+    logBestEffortDiagnostic("unhandledRejection", serializeError(reason), {
+      secrets: currentSecrets,
+    });
   });
   process.on("uncaughtException", (error: unknown) => {
-    logBestEffortDiagnostic("uncaughtException", serializeError(error));
+    logBestEffortDiagnostic("uncaughtException", serializeError(error), {
+      secrets: currentSecrets,
+    });
   });
   process.on("warning", (warning: unknown) => {
-    logBestEffortDiagnostic("warning", serializeError(warning));
+    logBestEffortDiagnostic("warning", serializeError(warning), {
+      secrets: currentSecrets,
+    });
   });
   process.on("beforeExit", () => {
     // No fault to report — presence confirms the guard layer observes
@@ -147,4 +157,42 @@ export function installProcessGuards(): void {
  */
 export function setProcessGuardRequestId(requestId: string): void {
   currentRequestId = requestId;
+}
+
+/**
+ * Sets the `secrets` port attached to every subsequent guard-caught fault
+ * diagnostic (`unhandledRejection`, `uncaughtException`, `warning`), so a
+ * declared secret cannot print verbatim to stderr if it happens to surface
+ * through one of these process-global fault paths during a run.
+ *
+ * Not re-exported through the `core/script` barrel — consumed only by
+ * `core/script/run-script`'s `runScript()`, which sets it once, at the top
+ * of a run (after deriving its
+ * own `secrets` from the script's config schema), and resets it to
+ * `undefined` in the run's `finally` block, so this process-global value
+ * never outlives the call that set it.
+ *
+ * Because this is process-global rather than per-call state, under deeply
+ * overlapping/nested `runScript` calls with **different** schemas this value
+ * may briefly reflect the wrong call's secrets during the overlap window —
+ * a cosmetic scoping limitation, not a security regression: this redaction
+ * is purely additive/widening, so the worst case during overlap is reverting
+ * to heuristic-only redaction, never less safe than before this option
+ * existed.
+ *
+ * @param secrets - The `secrets` port to attach, or `undefined` to clear it.
+ *
+ * @example
+ * ```ts
+ * import { setProcessGuardSecrets } from "./process-guards.js";
+ *
+ * setProcessGuardSecrets({ isSecret: (name) => name === "tenantRef" });
+ * // ... run ...
+ * setProcessGuardSecrets(undefined);
+ * ```
+ */
+export function setProcessGuardSecrets(
+  secrets: M3LSecretNamesPort | undefined,
+): void {
+  currentSecrets = secrets;
 }

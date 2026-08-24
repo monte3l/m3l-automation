@@ -623,7 +623,7 @@ export class M3LScript {
         // wait while the process is shutting down (ADR-0049).
         this.#controller.abort();
         return this.runCleanup("signal-shutdown");
-      });
+      }, this.secrets);
     }
   }
 
