@@ -392,6 +392,64 @@ describe("runScript() end-to-end — the persisted report's failure context (dif
 });
 
 // =============================================================================
+// F28 (issue #634): handleRunFailure's script.logger.errorFrom call must
+// thread the run's derived `secrets` through so the DEFAULT console logger's
+// stderr output is redacted too, not just the persisted report. `report:
+// false` is passed so `runScript` never constructs an `M3LRunReporter` (no
+// `M3L_OUTPUT_DIR` stub needed, no real fs I/O side effects) — this block
+// asserts console output only.
+// =============================================================================
+describe("core/script/run-script — handleRunFailure's script.logger.errorFrom call (differential)", () => {
+  function makeScript(withSecretSchema: boolean): M3LScript {
+    return new M3LScript({
+      metadata,
+      ...(withSecretSchema ? { config: secretConfig() } : {}),
+    });
+  }
+
+  test("without a declared-secret schema, the console ERROR output leaks the declared value verbatim", async () => {
+    const stderrSpy = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
+    const script = makeScript(false);
+
+    await runScript(
+      script,
+      () => {
+        throw new Error("tenantRef=prod-secret-value; auth failed");
+      },
+      { report: false },
+    );
+
+    const written = stderrSpy.mock.calls
+      .map((call) => String(call[0]))
+      .join("");
+    expect(written).toContain("prod-secret-value");
+  });
+
+  test("with a declared-secret schema, the console ERROR output is redacted", async () => {
+    const stderrSpy = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
+    const script = makeScript(true);
+
+    await runScript(
+      script,
+      () => {
+        throw new Error("tenantRef=prod-secret-value; auth failed");
+      },
+      { report: false },
+    );
+
+    const written = stderrSpy.mock.calls
+      .map((call) => String(call[0]))
+      .join("");
+    expect(written).toContain("tenantRef=[REDACTED]");
+    expect(written).not.toContain("prod-secret-value");
+  });
+});
+
+// =============================================================================
 // 2. internal/script/signalHandlers — the onShutdown-failure diagnostic
 //    carries the caller-supplied secrets port (differential)
 // =============================================================================

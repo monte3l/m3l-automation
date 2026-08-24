@@ -278,7 +278,7 @@ async function handleRunFailure(
   options: M3LRunScriptOptions | undefined,
   secrets: M3LSecretNamesPort | undefined,
 ): Promise<void> {
-  script.logger.errorFrom(error);
+  script.logger.errorFrom(error, undefined, { secrets });
   // Assigned immediately and BEFORE any report construction/persistence —
   // a throw in the reporting path must never cost the exit code.
   //
