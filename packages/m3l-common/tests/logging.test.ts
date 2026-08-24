@@ -579,10 +579,10 @@ describe("M3LLogger — table methods", () => {
     const handler = makeFakeHandler();
     const logger = new M3LLogger([handler]);
 
-    logger.table([{ apiKey: "sk-live-secret123", region: "eu-west-1" }]);
+    logger.table([{ apiKey: "sk-live-SECRETVALUE", region: "eu-west-1" }]);
 
     const event = handler.handle.mock.calls[0]?.[0] as M3LLogEvent;
-    expect(event.message).not.toContain("sk-live-secret123");
+    expect(event.message).not.toContain("sk-live-SECRETVALUE");
     expect(event.message).toContain("[REDACTED]");
     expect(event.message).toContain("region");
     expect(event.message).toContain("eu-west-1");
