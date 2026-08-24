@@ -27,7 +27,17 @@ export const MAX_MESSAGES_DEFAULT = 100;
 const MAX_MESSAGES_MIN = 1;
 const MAX_MESSAGES_MAX = 10_000;
 
-/** The default visibility timeout (seconds) applied to a drained batch. */
+/**
+ * The default visibility timeout (seconds) applied to a drained batch. This
+ * is now also the window an operator has to complete `execute --apply`'s
+ * destructive confirmation: `execute-actions.ts`'s `applyActions` reuses the
+ * exact receipt handles the drain obtained instead of re-receiving, and a
+ * handle expires when this timeout elapses. A value here shorter than a
+ * slow/interactive confirmation takes means an expired handle and a failed
+ * apply — the affected message(s) land in `ApplyResult.failed` (which
+ * demotes the run to `"partial"`) rather than being removed/reinserted, and
+ * stay safely in the dead-letter queue.
+ */
 export const VISIBILITY_TIMEOUT_DEFAULT = 1800;
 const VISIBILITY_TIMEOUT_MIN = 0;
 const VISIBILITY_TIMEOUT_MAX = 43_200;

@@ -32,21 +32,21 @@ operations; neither script absorbs the other.
 Every value is declared through the config seam; the script never reads
 `process.env` directly.
 
-| Parameter           | Type     | Default    | Required for                   | Notes                                                                        |
-| ------------------- | -------- | ---------- | ------------------------------ | ---------------------------------------------------------------------------- |
-| `operation`         | `STRING` | `validate` | —                              | One of `validate`, `explain`, `convert`, `triage`, `execute`.                |
-| `runbookDir`        | `STRING` | `runbooks` | —                              | Preset directory, resolved under `M3L_INPUT_DIR`.                            |
-| `queue`             | `STRING` | —          | `explain`, `triage`, `execute` | The queue a preset is keyed by. Selects `<queue>.json`.                      |
-| `queueUrl`          | `STRING` | —          | `triage`, `execute`            | The dead-letter queue's AWS URL. Deliberately separate from `queue`.         |
-| `sourceQueueUrl`    | `STRING` | —          | see note                       | Where a `reinsert` sends. Guarded at run time, not at config load.           |
-| `source`            | `STRING` | —          | `convert`                      | Markdown runbook to convert, resolved under `M3L_INPUT_DIR`.                 |
-| `output`            | `STRING` | —          | —                              | Artifact name for `convert`; defaults to `<queue>.json`.                     |
-| `maxMessages`       | `INT`    | `100`      | —                              | Total messages one drain pulls across all pages (1–10,000).                  |
-| `visibilityTimeout` | `INT`    | `1800`     | —                              | Seconds the drained batch stays invisible (0–43,200).                        |
-| `apply`             | `BOOL`   | `false`    | —                              | `execute` mutates only when set; otherwise it prints the plan and stops.     |
-| `yes`               | `BOOL`   | `false`    | —                              | Bypasses the plain confirmation. Never bypasses a sensitive target alone.    |
-| `yesSensitive`      | `BOOL`   | `false`    | —                              | With `yes`, also bypasses a sensitive target. Strict `true` only.            |
-| `aws.profile`       | `STRING` | —          | —                              | Declared but **not** `required`; absent is legitimate for the offline three. |
+| Parameter           | Type     | Default    | Required for                   | Notes                                                                                                |
+| ------------------- | -------- | ---------- | ------------------------------ | ---------------------------------------------------------------------------------------------------- |
+| `operation`         | `STRING` | `validate` | —                              | One of `validate`, `explain`, `convert`, `triage`, `execute`.                                        |
+| `runbookDir`        | `STRING` | `runbooks` | —                              | Preset directory, resolved under `M3L_INPUT_DIR`.                                                    |
+| `queue`             | `STRING` | —          | `explain`, `triage`, `execute` | The queue a preset is keyed by. Selects `<queue>.json`.                                              |
+| `queueUrl`          | `STRING` | —          | `triage`, `execute`            | The dead-letter queue's AWS URL. Deliberately separate from `queue`.                                 |
+| `sourceQueueUrl`    | `STRING` | —          | see note                       | Where a `reinsert` sends. Guarded at run time, not at config load.                                   |
+| `source`            | `STRING` | —          | `convert`                      | Markdown runbook to convert, resolved under `M3L_INPUT_DIR`.                                         |
+| `output`            | `STRING` | —          | —                              | Artifact name for `convert`; defaults to `<queue>.json`.                                             |
+| `maxMessages`       | `INT`    | `100`      | —                              | Total messages one drain pulls across all pages (1–10,000).                                          |
+| `visibilityTimeout` | `INT`    | `1800`     | —                              | Seconds the batch stays invisible (0–43,200) — and the operator's confirmation window for `--apply`. |
+| `apply`             | `BOOL`   | `false`    | —                              | `execute` mutates only when set; otherwise it prints the plan and stops.                             |
+| `yes`               | `BOOL`   | `false`    | —                              | Bypasses the plain confirmation. Never bypasses a sensitive target alone.                            |
+| `yesSensitive`      | `BOOL`   | `false`    | —                              | With `yes`, also bypasses a sensitive target. Strict `true` only.                                    |
+| `aws.profile`       | `STRING` | —          | —                              | Declared but **not** `required`; absent is legitimate for the offline three.                         |
 
 `queue` and `queueUrl` are two different things and neither derives from the
 other. `queue` selects the preset file, so it is filename-safe and guarded
@@ -148,10 +148,19 @@ successful send only duplicates it — and only one of those is recoverable.
 FIFO queues send one entry at a time, ordered by the preset's `orderBy` path,
 each carrying a `messageGroupId` read from `groupIdPath`.
 
-`execute` **re-receives** before acting rather than reusing the drain's receipt
-handles: the interactive gate can easily outlast the visibility timeout, and a
-lapsed handle would fail every delete. A planned message that no longer appears
-is reported as skipped, never acted on.
+`execute` **reuses the exact receipt handles the drain already holds** rather
+than re-receiving. A fresh receive cannot work here: the drain took those
+messages with `visibilityTimeout` applied, so it is the drain's own lockout that
+hides them, and the wrapper exposes no `changeMessageVisibility` to lift it. A
+re-receiving `execute` would therefore see an empty queue and act on nothing.
+
+**`visibilityTimeout` is consequently also the window in which the operator must
+complete the confirmation.** A handle expires when that timeout elapses, so a
+value shorter than a slow interactive confirmation means expired handles: the
+affected sends and deletes fail, those messages land in the run's unresolved
+set, and they stay in the dead-letter queue. That is the safe direction — a
+lapsed handle costs a retry, never a lost message — but it is a real constraint
+when raising the default.
 
 `sourceQueueUrl` is cross-checked against the preset's `sourceQueue` **and**
 against the dead-letter queue's own account and region, both parsed out of the
@@ -161,7 +170,10 @@ production, that is the likely paste error rather than an unlikely one.
 
 A per-message send or delete failure does not abort the batch; it is recorded in
 the run's recovery entries, which demote the run to `partial` with a non-zero
-exit code rather than letting an unresolved message pass as success.
+exit code rather than letting an unresolved message pass as success. **Any
+planned action that did not happen demotes the run**, not only the ones that
+failed outright — a confirmed destructive gate followed by nothing happening
+must never report success.
 
 ## Preset schema
 

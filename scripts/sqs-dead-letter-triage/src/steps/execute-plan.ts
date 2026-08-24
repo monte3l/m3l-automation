@@ -89,8 +89,8 @@ const VERDICT_ACTION_KIND: Readonly<
  * documented on {@link buildExecutePlan}. The `entry.body` on a `"move"`
  * action is the report's (possibly truncated) excerpt — good enough for a
  * human reading the printed plan, but never what actually gets sent:
- * {@link applyActions} always re-receives the message and sends its fresh,
- * untruncated body instead.
+ * {@link applyActions} always sends the drain's own full, untruncated body
+ * (held in `deps.messages`), never this excerpt.
  */
 function actionForVerdict(
   messageId: string,

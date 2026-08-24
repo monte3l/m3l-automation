@@ -138,8 +138,8 @@ function parseStateMap(
  * PR 3b; extended in review round 2, MUST-FIX 9, to also cover `orderBy` —
  * the same class of gap: a FIFO preset with a valid `groupIdPath` but no
  * `orderBy` previously passed `validate` cleanly and failed deep inside
- * `applyActions`, after the destructive gate was confirmed and messages
- * re-received). A FIFO queue cannot be sent to without a message group id
+ * `applyActions`, after the destructive gate was confirmed and a send was
+ * attempted). A FIFO queue cannot be sent to without a message group id
  * NOR an ordering field, and either one declared on a non-FIFO queue would
  * silently do nothing — worse than an absent field, since an operator would
  * reasonably assume it was in effect. Every direction must fail loud

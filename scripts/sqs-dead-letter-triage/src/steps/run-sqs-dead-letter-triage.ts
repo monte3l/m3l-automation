@@ -232,7 +232,16 @@ async function runTriagePass(
   settings: RawSettings,
   deps: RunTriageDeps,
   onReport: (report: TriageReport) => void | Promise<void>,
-): Promise<{ readonly report: TriageReport; readonly preset: TriagePreset }> {
+): Promise<{
+  readonly report: TriageReport;
+  readonly preset: TriagePreset;
+  /** The drain's own held messages — see `execute-actions.ts`'s `ApplyActionsDeps.messages`. */
+  readonly messages: readonly {
+    readonly messageId: string;
+    readonly body: string;
+    readonly receiptHandle: string;
+  }[];
+}> {
   const result = await triageQueue({
     sqs,
     lookup: createDynamoDBLookup({ operations: dynamo, signal: deps.signal }),
@@ -268,7 +277,7 @@ async function runTriagePass(
     );
   }
 
-  return { report, preset: result.preset };
+  return { report, preset: result.preset, messages: result.messages };
 }
 
 /**
@@ -333,8 +342,14 @@ async function buildExecuteReportAndPlan(
   readonly report: TriageReport;
   readonly plan: ExecutePlan;
   readonly preset: TriagePreset;
+  /** The drain's own held messages — see `execute-actions.ts`'s `ApplyActionsDeps.messages`. */
+  readonly messages: readonly {
+    readonly messageId: string;
+    readonly body: string;
+    readonly receiptHandle: string;
+  }[];
 }> {
-  const { report, preset } = await runTriagePass(
+  const { report, preset, messages } = await runTriagePass(
     queue,
     queueUrl,
     sqs,
@@ -345,26 +360,53 @@ async function buildExecuteReportAndPlan(
   );
   const plan = buildExecutePlan(report);
   logExecutePlan(deps.logger, plan);
-  return { report, plan, preset };
+  return { report, plan, preset, messages };
 }
 
 /**
  * Records one {@link Core.M3LRunRecoveryEntry} per {@link ApplyResult.failed}
  * element (review round 2, MUST-FIX 2) — otherwise a throttled
- * `deleteBatch`, a stale receipt handle, or a malformed FIFO group id leaves
+ * `deleteBatch`, a lapsed receipt handle, or a malformed FIFO group id leaves
  * messages unresolved (a `drop` that failed to delete stays in the DLQ, a
  * `move` that failed to send never arrives) while the run still resolves
- * `"success"`. `M3LScript.reportRecovery` is what demotes the outcome to
- * `"partial"` (exit code `M3L_EXIT_CODES.PARTIAL`).
+ * `"success"`.
+ *
+ * Also records one entry per {@link ApplyResult.skipped} id (claude-pr-review
+ * Must-fix on PR #629): a `skipped` id is a planned action that was never
+ * acted on at all, which is exactly as unresolved as a `failed` one — routing
+ * only `failed` here let a run where `applyActions` found no matching held
+ * message for any planned id (before handle reuse: every re-receive coming
+ * back empty) still resolve `"success"` with zero sends and zero deletes.
+ * With handle reuse a `skipped` id is now structurally near-impossible
+ * (every planned id comes from the same drain that produced
+ * `deps.messages`), so a non-empty `skipped` here signals an
+ * internal-invariant violation, not routine drift — it still must demote the
+ * run rather than pass silently.
+ *
+ * `M3LScript.reportRecovery` is what demotes the outcome to `"partial"`
+ * (exit code `M3L_EXIT_CODES.PARTIAL`).
  */
-function reportApplyFailures(
+function reportUnresolvedActions(
   reportRecovery: RunTriageDeps["reportRecovery"],
-  failed: ApplyResult["failed"],
+  applyResult: ApplyResult,
 ): void {
-  for (const failure of failed) {
+  for (const failure of applyResult.failed) {
     reportRecovery({
       item: failure.messageId,
       error: [{ name: "Error", message: failure.reason }],
+      recordedAt: new Date().toISOString(),
+    });
+  }
+  for (const messageId of applyResult.skipped) {
+    reportRecovery({
+      item: messageId,
+      error: [
+        {
+          name: "Error",
+          message:
+            "planned action skipped: no held message matched this id (internal invariant violation — see ApplyResult.skipped)",
+        },
+      ],
       recordedAt: new Date().toISOString(),
     });
   }
@@ -385,8 +427,11 @@ function reportApplyFailures(
  * already loaded and ran (review round 2, SHOULD-FIX 11) — never re-read
  * after the interactive confirmation prompt returns, which would otherwise
  * leave a window where a concurrent preset write redirects where a
- * confirmed plan sends. Applying writes `<queue>/execute-<timestamp>.json`
- * and logs the applied counts.
+ * confirmed plan sends. `messages` is that same triage pass's drained
+ * messages (with their receipt handles) — `applyActions` reuses them
+ * directly rather than re-receiving; see its TSDoc for why a fresh receive
+ * here would only see the drain's own lockout. Applying writes
+ * `<queue>/execute-<timestamp>.json` and logs the applied counts.
  *
  * @throws {@link Core.M3LError} coded `ERR_DLQ_TRIAGE_EXECUTE` when the
  *   destructive gate is declined, or {@link resolveSourceQueueUrl} rejects
@@ -399,6 +444,11 @@ async function confirmAndApplyExecutePlan(
   report: TriageReport,
   plan: ExecutePlan,
   preset: TriagePreset,
+  messages: readonly {
+    readonly messageId: string;
+    readonly body: string;
+    readonly receiptHandle: string;
+  }[],
   settings: RawSettings,
   deps: RunTriageDeps,
 ): Promise<ApplyResult> {
@@ -427,9 +477,10 @@ async function confirmAndApplyExecutePlan(
     sourceQueueUrl,
     preset,
     signal: deps.signal,
+    messages,
   });
 
-  reportApplyFailures(deps.reportRecovery, applyResult.failed);
+  reportUnresolvedActions(deps.reportRecovery, applyResult);
 
   deps.logger.step(
     `execute applied for '${queue}': removed=${String(applyResult.removed)} reinserted=${String(applyResult.reinserted)} skipped=${String(applyResult.skipped.length)} failed=${String(applyResult.failed.length)}`,
@@ -488,7 +539,7 @@ async function dispatchExecute(
   const queue = requireDefined(settings.queue, "queue");
   const queueUrl = requireDefined(settings.queueUrl, "queueUrl");
 
-  const { report, plan, preset } = await buildExecuteReportAndPlan(
+  const { report, plan, preset, messages } = await buildExecuteReportAndPlan(
     queue,
     queueUrl,
     deps.sqs,
@@ -508,6 +559,7 @@ async function dispatchExecute(
     report,
     plan,
     preset,
+    messages,
     settings,
     deps,
   );

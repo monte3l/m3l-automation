@@ -21,14 +21,17 @@ import { basePreset } from "./support/preset-fixtures.js";
  * dispatch wiring or the confirm-destructive gate — that lives in
  * `run-sqs-dead-letter-triage.test.ts`.
  *
- * `ApplyActionsDeps`'s shape is only sketched in prose ("sqs, logger,
- * queueUrl, sourceQueueUrl, preset, signal") — this file's `buildDeps` helper
- * fixes a concrete shape for that sketch. Flagged for the hub to confirm or
- * correct at GREEN if `code-implementer` lands a different shape.
+ * `applyActions` never re-receives (`reReceivePlanned` was deleted): it
+ * reuses the exact receipt handles the drain already holds, threaded
+ * through via `ApplyActionsDeps.messages`. `buildDeps` below builds that
+ * field explicitly per test via `heldMessage`, instead of mocking `receive`
+ * — a `receive` mock on this step is dead weight, since `applyActions` no
+ * longer calls it at all (see the "never calls receive" regression test
+ * below, and this module's own `@packageDocumentation`).
  */
 
-/** Builds a re-receivable SQS message matching one `PlannedAction`'s `messageId`. */
-function receivedMessage(
+/** Builds one drained message as `ApplyActionsDeps.messages` carries it — `messageId`, `body`, and `receiptHandle` verbatim from the one drain this run's plan was built from. */
+function heldMessage(
   messageId: string,
   body: unknown,
   receiptHandle = `rh-${messageId}`,
@@ -44,6 +47,7 @@ function buildDeps(overrides: {
   readonly sqs?: ReturnType<typeof createFakeSqsOperations>;
   readonly preset?: Parameters<typeof basePreset>[0];
   readonly sourceQueueUrl?: string;
+  readonly messages?: Parameters<typeof applyActions>[1]["messages"];
 }): Parameters<typeof applyActions>[1] {
   return {
     sqs: overrides.sqs ?? createFakeSqsOperations(),
@@ -52,6 +56,7 @@ function buildDeps(overrides: {
     sourceQueueUrl: overrides.sourceQueueUrl,
     preset: basePreset(overrides.preset),
     signal: undefined,
+    messages: overrides.messages ?? [],
   };
 }
 
@@ -76,12 +81,86 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("applyActions — a planned message absent from the re-receive", () => {
-  test("lands in skipped, and neither sendBatch nor deleteBatch is called for it", async () => {
-    const sqs = createFakeSqsOperations({
-      receive: vi.fn().mockResolvedValue([]), // msg-1 no longer present
+describe("applyActions — never re-receives (handle reuse, not re-acquisition)", () => {
+  test("never calls sqs.receive, even against a fully populated plan", async () => {
+    const sqs = createFakeSqsOperations();
+    const deps = buildDeps({
+      sqs,
+      messages: [heldMessage("msg-1", "body")],
     });
-    const deps = buildDeps({ sqs });
+
+    await applyActions(dropPlan("msg-1"), deps);
+
+    // The direct guard against `reReceivePlanned` (deleted) being
+    // reintroduced: this step must act purely on `deps.messages`.
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- structural fake cast to AWS.M3LSQSOperations; property is a vi.fn(), never called unbound
+    expect(sqs.receive).not.toHaveBeenCalled();
+  });
+
+  test("deleteBatch entries carry exactly deps.messages' own receiptHandle values, never a freshly-minted one", async () => {
+    const plan: ExecutePlan = {
+      actions: [
+        {
+          messageId: "msg-drop",
+          verdict: "remove",
+          action: { action: "drop" },
+          reason: "remove verdict",
+        },
+        {
+          messageId: "msg-move",
+          verdict: "reinsert",
+          action: {
+            action: "move",
+            entry: { id: "msg-move", body: "payload" },
+          },
+          reason: "reinsert verdict",
+        },
+      ],
+      removeCount: 1,
+      reinsertCount: 1,
+      leaveCount: 0,
+      needsSourceQueue: true,
+    };
+    const deleteBatch = vi.fn().mockResolvedValue({
+      successful: [{ id: "msg-drop" }, { id: "msg-move" }],
+      failed: [],
+    });
+    const sqs = createFakeSqsOperations({
+      sendBatch: vi
+        .fn()
+        .mockResolvedValue({ successful: [{ id: "msg-move" }], failed: [] }),
+      deleteBatch,
+    });
+    const deps = buildDeps({
+      sqs,
+      sourceQueueUrl: "https://sqs.example/orders-inbound",
+      messages: [
+        heldMessage("msg-drop", "drop-body", "handle-drop-original"),
+        heldMessage("msg-move", "payload", "handle-move-original"),
+      ],
+    });
+
+    await applyActions(plan, deps);
+
+    expect(deleteBatch).toHaveBeenCalledTimes(1);
+    const entries = deleteBatch.mock.calls[0]?.[1] as readonly {
+      readonly id: string;
+      readonly receiptHandle: string;
+    }[];
+    expect(entries).toHaveLength(2);
+    expect(
+      entries.find((entry) => entry.id === "msg-drop")?.receiptHandle,
+    ).toBe("handle-drop-original");
+    expect(
+      entries.find((entry) => entry.id === "msg-move")?.receiptHandle,
+    ).toBe("handle-move-original");
+  });
+});
+
+describe("applyActions — a planned message absent from deps.messages", () => {
+  test("lands in skipped, and neither sendBatch nor deleteBatch is called for it", async () => {
+    const sqs = createFakeSqsOperations();
+    const deps = buildDeps({ sqs, messages: [] }); // msg-1 not held from the drain
 
     const result = await applyActions(dropPlan("msg-1"), deps);
 
@@ -112,10 +191,6 @@ describe("applyActions — send-then-delete ordering (a failed send must never b
       needsSourceQueue: true,
     };
     const sqs = createFakeSqsOperations({
-      receive: vi
-        .fn()
-        .mockResolvedValueOnce([receivedMessage("msg-1", "the payload")])
-        .mockResolvedValue([]),
       sendBatch: vi.fn().mockResolvedValue({
         successful: [],
         failed: [
@@ -131,6 +206,7 @@ describe("applyActions — send-then-delete ordering (a failed send must never b
     const deps = buildDeps({
       sqs,
       sourceQueueUrl: "https://sqs.example/orders-inbound",
+      messages: [heldMessage("msg-1", "the payload")],
     });
 
     const result = await applyActions(plan, deps);
@@ -153,10 +229,6 @@ describe("applyActions — send-then-delete ordering (a failed send must never b
 describe("applyActions — a batch delete failure lands in failed, never silently dropped", () => {
   test("a failed deleteBatch entry (drop verdict) is reported, not swallowed", async () => {
     const sqs = createFakeSqsOperations({
-      receive: vi
-        .fn()
-        .mockResolvedValueOnce([receivedMessage("msg-1", "body")])
-        .mockResolvedValue([]),
       deleteBatch: vi.fn().mockResolvedValue({
         successful: [],
         failed: [
@@ -169,7 +241,7 @@ describe("applyActions — a batch delete failure lands in failed, never silentl
         ],
       }),
     });
-    const deps = buildDeps({ sqs });
+    const deps = buildDeps({ sqs, messages: [heldMessage("msg-1", "body")] });
 
     const result = await applyActions(dropPlan("msg-1"), deps);
 
@@ -207,16 +279,7 @@ describe("applyActions — FIFO: single-entry, ordered sends carrying messageGro
     const sendBatch = vi
       .fn()
       .mockResolvedValue({ successful: [{ id: "x" }], failed: [] });
-    const sqs = createFakeSqsOperations({
-      receive: vi
-        .fn()
-        .mockResolvedValueOnce([
-          receivedMessage("msg-b", { seq: 2, shipmentId: "grp-b" }),
-          receivedMessage("msg-a", { seq: 1, shipmentId: "grp-a" }),
-        ])
-        .mockResolvedValue([]),
-      sendBatch,
-    });
+    const sqs = createFakeSqsOperations({ sendBatch });
     const deps = buildDeps({
       sqs,
       preset: {
@@ -226,13 +289,17 @@ describe("applyActions — FIFO: single-entry, ordered sends carrying messageGro
         sourceQueue: "orders-inbound",
       },
       sourceQueueUrl: "https://sqs.example/orders-inbound",
+      messages: [
+        heldMessage("msg-b", { seq: 2, shipmentId: "grp-b" }),
+        heldMessage("msg-a", { seq: 1, shipmentId: "grp-a" }),
+      ],
     });
 
     await applyActions(plan, deps);
 
     expect(sendBatch).toHaveBeenCalledTimes(2);
     // orderBy ascending: msg-a (seq 1) before msg-b (seq 2), despite the
-    // plan/receive order listing msg-b first.
+    // plan/held order listing msg-b first.
     const firstCallEntries = sendBatch.mock.calls[0]?.[1] as readonly {
       readonly messageGroupId?: string;
     }[];
@@ -265,9 +332,10 @@ function movePlan(messageIds: readonly string[]): ExecutePlan {
   };
 }
 
-/** The FIFO deps shared by every test below: `preset.fifo: true`, `orderBy: "seq"`, `groupIdPath: "shipmentId"`. */
+/** The FIFO deps shared by every test below: `preset.fifo: true`, `orderBy: "seq"`, `groupIdPath: "shipmentId"`, and the given held messages. */
 function buildFifoDeps(
   sqs: ReturnType<typeof createFakeSqsOperations>,
+  messages: Parameters<typeof applyActions>[1]["messages"],
 ): Parameters<typeof applyActions>[1] {
   return buildDeps({
     sqs,
@@ -278,6 +346,7 @@ function buildFifoDeps(
       sourceQueue: "orders-inbound",
     },
     sourceQueueUrl: "https://sqs.example/orders-inbound",
+    messages,
   });
 }
 
@@ -291,18 +360,12 @@ describe("applyActions — FIFO: mixed orderBy value types across a batch (major
     const sendBatch = vi
       .fn()
       .mockResolvedValue({ successful: [{ id: "x" }], failed: [] });
-    const sqs = createFakeSqsOperations({
-      receive: vi
-        .fn()
-        .mockResolvedValueOnce([
-          receivedMessage("msg-n1", { seq: 1, shipmentId: "g-n1" }),
-          receivedMessage("msg-n2", { seq: 2, shipmentId: "g-n2" }),
-          receivedMessage("msg-s1", { seq: "z", shipmentId: "g-s1" }),
-        ])
-        .mockResolvedValue([]),
-      sendBatch,
-    });
-    const deps = buildFifoDeps(sqs);
+    const sqs = createFakeSqsOperations({ sendBatch });
+    const deps = buildFifoDeps(sqs, [
+      heldMessage("msg-n1", { seq: 1, shipmentId: "g-n1" }),
+      heldMessage("msg-n2", { seq: 2, shipmentId: "g-n2" }),
+      heldMessage("msg-s1", { seq: "z", shipmentId: "g-s1" }),
+    ]);
 
     const result = await applyActions(plan, deps);
 
@@ -326,17 +389,11 @@ describe("applyActions — FIFO: mixed orderBy value types across a batch (major
     const sendBatch = vi
       .fn()
       .mockResolvedValue({ successful: [{ id: "x" }], failed: [] });
-    const sqs = createFakeSqsOperations({
-      receive: vi
-        .fn()
-        .mockResolvedValueOnce([
-          receivedMessage("msg-n", { seq: 5, shipmentId: "g-n" }),
-          receivedMessage("msg-s", { seq: "p", shipmentId: "g-s" }),
-        ])
-        .mockResolvedValue([]),
-      sendBatch,
-    });
-    const deps = buildFifoDeps(sqs);
+    const sqs = createFakeSqsOperations({ sendBatch });
+    const deps = buildFifoDeps(sqs, [
+      heldMessage("msg-n", { seq: 5, shipmentId: "g-n" }),
+      heldMessage("msg-s", { seq: "p", shipmentId: "g-s" }),
+    ]);
 
     const result = await applyActions(plan, deps);
 
@@ -358,17 +415,11 @@ describe("applyActions — FIFO: mixed orderBy value types across a batch (major
     const sendBatch = vi
       .fn()
       .mockResolvedValue({ successful: [{ id: "x" }], failed: [] });
-    const sqs = createFakeSqsOperations({
-      receive: vi
-        .fn()
-        .mockResolvedValueOnce([
-          receivedMessage("msg-ok", { seq: 1, shipmentId: "g-ok" }),
-          receivedMessage("msg-nogroup", { seq: 2 }), // no `shipmentId` at all
-        ])
-        .mockResolvedValue([]),
-      sendBatch,
-    });
-    const deps = buildFifoDeps(sqs);
+    const sqs = createFakeSqsOperations({ sendBatch });
+    const deps = buildFifoDeps(sqs, [
+      heldMessage("msg-ok", { seq: 1, shipmentId: "g-ok" }),
+      heldMessage("msg-nogroup", { seq: 2 }), // no `shipmentId` at all
+    ]);
 
     const result = await applyActions(plan, deps);
 
@@ -386,20 +437,14 @@ describe("applyActions — FIFO: mixed orderBy value types across a batch (major
     const sendBatch = vi
       .fn()
       .mockResolvedValue({ successful: [{ id: "x" }], failed: [] });
-    const sqs = createFakeSqsOperations({
-      receive: vi
-        .fn()
-        .mockResolvedValueOnce([
-          receivedMessage("msg-ok", { seq: 1, shipmentId: "g-ok" }),
-          receivedMessage("msg-badorder", {
-            seq: { nested: true },
-            shipmentId: "g-bad",
-          }),
-        ])
-        .mockResolvedValue([]),
-      sendBatch,
-    });
-    const deps = buildFifoDeps(sqs);
+    const sqs = createFakeSqsOperations({ sendBatch });
+    const deps = buildFifoDeps(sqs, [
+      heldMessage("msg-ok", { seq: 1, shipmentId: "g-ok" }),
+      heldMessage("msg-badorder", {
+        seq: { nested: true },
+        shipmentId: "g-bad",
+      }),
+    ]);
 
     const result = await applyActions(plan, deps);
 

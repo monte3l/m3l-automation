@@ -64,13 +64,18 @@ export interface TriageQueueResult {
   readonly drained: number;
   readonly outcomes: readonly MessageOutcome[];
   /**
-   * The drained messages' ids and raw bodies — carried through so
-   * `report.ts`'s `buildTriageReport` can join each row back to its body
-   * for the excerpt/length fields, without re-reading the archive.
+   * The drained messages' ids, raw bodies, and receipt handles — carried
+   * through so `report.ts`'s `buildTriageReport` can join each row back to
+   * its body for the excerpt/length fields, without re-reading the archive,
+   * AND so `execute-actions.ts`'s `applyActions` can act on the exact same
+   * receipt handles this drain obtained instead of re-receiving (a fresh
+   * `receive` against a queue this same drain just emptied would see
+   * nothing but its own lockout — see `applyActions`'s TSDoc).
    */
   readonly messages: readonly {
     readonly messageId: string;
     readonly body: string;
+    readonly receiptHandle: string;
   }[];
   /** The preset's own `escalateTo`/`followUps` — carried through for the report. */
   readonly escalateTo: string;
@@ -214,6 +219,7 @@ export async function triageQueue(
     messages: drainResult.messages.map((message) => ({
       messageId: message.messageId,
       body: message.body,
+      receiptHandle: message.receiptHandle,
     })),
     escalateTo: preset.escalateTo,
     followUps: preset.followUps,

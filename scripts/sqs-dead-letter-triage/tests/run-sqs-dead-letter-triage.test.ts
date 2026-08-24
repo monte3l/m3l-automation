@@ -1141,6 +1141,79 @@ describe("runSqsDeadLetterTriage — 'execute --apply' reportRecovery (review ro
 
     expect(reportRecovery).not.toHaveBeenCalled();
   });
+
+  test("reports one recovery entry per failed AND per skipped ApplyResult entry in the same run", async () => {
+    // With handle reuse (`ApplyActionsDeps.messages`), a `skipped` entry is
+    // structurally near-impossible in production — every planned messageId
+    // comes from the very drain that produced `messages`. This fixture
+    // still produces one, the same way every other test in this describe
+    // block already decouples the drain's `messages` from the report's
+    // `rows` (two independent mocks, `triageQueueMock` and
+    // `buildTriageReportMock`, never tied together for real): `msg-2` is
+    // planned by the mocked report but absent from the mocked drain's
+    // `messages`, so `applyActions` cannot find a held message for it.
+    const SKIPPED_MESSAGE_ID = "msg-2";
+    triageQueueMock.mockResolvedValue({
+      queue: "orders-dlq",
+      title: "Orders DLQ triage",
+      depth: 1,
+      archivePath: "orders-dlq/drain-2026-08-23T12-00-00.000Z.json",
+      drained: 1,
+      outcomes: [],
+      messages: [{ messageId: FAIL_MESSAGE_ID, body: "body" }],
+      escalateTo: "orders-team",
+      followUps: [],
+      preset: basePreset(),
+    });
+    buildTriageReportMock.mockReturnValue(
+      baseTriageReport({
+        queue: "orders-dlq",
+        rows: [
+          baseReportRow({ messageId: FAIL_MESSAGE_ID, verdict: "remove" }),
+          baseReportRow({ messageId: SKIPPED_MESSAGE_ID, verdict: "remove" }),
+        ],
+      }),
+    );
+    const deleteBatch = vi.fn().mockResolvedValue({
+      successful: [],
+      failed: [
+        {
+          entry: { id: FAIL_MESSAGE_ID, receiptHandle: "rh-1" },
+          code: "ReceiptHandleIsInvalid",
+          senderFault: true,
+          message: "handle expired",
+        },
+      ],
+    });
+    const sqs = createFakeSqsOperations({ deleteBatch });
+    const reportRecovery = vi.fn();
+    const deps = buildDeps(
+      {
+        operation: "execute",
+        queue: "orders-dlq",
+        queueUrl: "https://sqs.example/orders-dlq",
+        apply: true,
+        yes: true,
+        yesSensitive: true,
+      },
+      {
+        sqs,
+        dynamo: createFakeDynamoDBOperations(),
+        awsTarget: { profile: "dev" },
+        reportRecovery,
+      },
+    );
+
+    await runSqsDeadLetterTriage(deps);
+
+    expect(reportRecovery).toHaveBeenCalledTimes(2);
+    expect(reportRecovery).toHaveBeenCalledWith(
+      expect.objectContaining({ item: FAIL_MESSAGE_ID }),
+    );
+    expect(reportRecovery).toHaveBeenCalledWith(
+      expect.objectContaining({ item: SKIPPED_MESSAGE_ID }),
+    );
+  });
 });
 
 describe("type contract", () => {

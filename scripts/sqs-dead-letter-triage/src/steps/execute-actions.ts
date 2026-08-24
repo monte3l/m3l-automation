@@ -1,11 +1,19 @@
 /**
  * `sqs-dead-letter-triage/steps/execute-actions` — DOES what
- * `./execute-plan.js` decided: every SQS call the execute path makes
- * (re-receive, send, delete). Split from `./execute-plan.js` (pure
- * planning) purely to stay under the per-file byte ceiling
- * (`pnpm check:file-budget`); the seam is real, not a size dodge — planning
- * is a pure function of the report while application is entirely I/O, the
- * same shape as `build-procedure.ts` / `steps-graph.ts`.
+ * `./execute-plan.js` decided: every SQS call the execute path makes (send,
+ * delete). Split from `./execute-plan.js` (pure planning) purely to stay
+ * under the per-file byte ceiling (`pnpm check:file-budget`); the seam is
+ * real, not a size dodge — planning is a pure function of the report while
+ * application is entirely I/O, the same shape as `build-procedure.ts` /
+ * `steps-graph.ts`.
+ *
+ * This step never re-receives: it reuses the receipt handles `drainQueue`
+ * already obtained (`deps.messages`, threaded through from `triage-queue.ts`'s
+ * `TriageQueueResult.messages`). A drain's own receive makes every message
+ * invisible for `visibilityTimeout` seconds — re-receiving here would see
+ * nothing but the drain's own lockout and misreport a guaranteed-empty page
+ * as "everything was skipped". See {@link applyActions}'s TSDoc for the full
+ * rationale and what a lapsed handle does instead.
  *
  * @packageDocumentation
  */
@@ -21,26 +29,42 @@ import type { ExecutePlan } from "./execute-plan.js";
 /** The SQS API's own per-call cap on batch entries (`sendBatch`/`deleteBatch`). */
 const MAX_BATCH_SIZE = 10;
 
-/** The SQS API's own per-call cap on `MaxNumberOfMessages` for a re-receive page. */
-const MAX_PAGE_SIZE = 10;
-
 /** What {@link applyActions} needs. */
 export interface ApplyActionsDeps {
   readonly sqs: AWS.M3LSQSOperations;
   readonly logger: Core.M3LLogger;
-  /** The dead-letter queue every `"drop"`/`"move"` re-receives from and deletes from. */
+  /** The dead-letter queue every `"drop"`/`"move"` deletes from. */
   readonly queueUrl: string;
   /** Where a `"move"` sends; required only when the plan actually contains one. */
   readonly sourceQueueUrl: string | undefined;
   readonly preset: TriagePreset;
   readonly signal: AbortSignal | undefined;
+  /**
+   * The same triage pass's drained messages — `TriageQueueResult.messages`,
+   * carrying each message's `receiptHandle` from the one `drainQueue` call
+   * this run ever makes. `applyActions` looks a planned `messageId` up here
+   * instead of re-receiving; see this module's `@packageDocumentation` and
+   * {@link applyActions}'s TSDoc for why re-receiving is unsafe here.
+   */
+  readonly messages: readonly {
+    readonly messageId: string;
+    readonly body: string;
+    readonly receiptHandle: string;
+  }[];
 }
 
 /** What {@link applyActions} resolves with. */
 export interface ApplyResult {
   readonly removed: number;
   readonly reinserted: number;
-  /** Planned `messageId`s no longer present on re-receive — never acted on. */
+  /**
+   * Planned `messageId`s absent from `deps.messages` — never acted on. With
+   * handle reuse this is structurally near-impossible (every planned id
+   * comes from the very drain that produced `deps.messages`), so a non-empty
+   * `skipped` now signals an internal-invariant violation, not routine drift
+   * — the run is demoted the same as a `failed` entry (see
+   * `run-sqs-dead-letter-triage.ts`'s recovery reporting).
+   */
   readonly skipped: readonly string[];
   readonly failed: readonly {
     readonly messageId: string;
@@ -48,16 +72,19 @@ export interface ApplyResult {
   }[];
 }
 
+/** One message held from the drain, keyed by `messageId` for lookup by {@link classifyPlannedActions}. */
+type HeldMessage = ApplyActionsDeps["messages"][number];
+
 /** One failed send/delete entry, joined back to its `messageId` — the shape shared across every batch call this step makes. */
 interface FailureEntry {
   readonly messageId: string;
   readonly reason: string;
 }
 
-/** One `"move"` action whose message was found on re-receive. */
+/** One `"move"` action whose message was found among `deps.messages`. */
 interface MoveCandidate {
   readonly messageId: string;
-  readonly message: AWS.M3LSQSReceivedMessage;
+  readonly message: HeldMessage;
 }
 
 /** What one send pass (FIFO or standard) reports back. */
@@ -67,10 +94,10 @@ interface SendOutcome {
 }
 
 /**
- * Re-checked through a function, never inlined — TypeScript's narrowing of
- * `signal.aborted` to `false` does not survive an `await`, and the value
- * genuinely can change while this function is suspended (mirrors
- * `drain-queue.ts`'s `checkNotAborted`).
+ * Checked once, before this step's first SQS call — never re-checked
+ * mid-loop, since (unlike `drain-queue.ts`'s paging) nothing here awaits
+ * across a boundary that would need TypeScript's `signal.aborted` narrowing
+ * re-defeated.
  */
 function checkNotAborted(signal: AbortSignal | undefined): void {
   if (signal?.aborted === true) {
@@ -95,42 +122,11 @@ function mustGet<V>(map: ReadonlyMap<string, V>, key: string): V {
   const value = map.get(key);
   if (value === undefined) {
     throw new Core.M3LError(
-      `internal invariant violated: expected re-received message '${key}' to be present`,
+      `internal invariant violated: expected drained message '${key}' to be present`,
       { code: EXECUTE_CODE },
     );
   }
   return value;
-}
-
-/**
- * Re-receives from `queueUrl` until every id in `wantedIds` has been found
- * or a page comes back empty, paging and deduplicating exactly like
- * `drain-queue.ts`'s `drainQueue` — this is a fresh read, never the drain's
- * held receipt handles (decision 5: re-receive at execute time).
- */
-async function reReceivePlanned(
-  sqs: AWS.M3LSQSOperations,
-  queueUrl: string,
-  wantedIds: ReadonlySet<string>,
-  signal: AbortSignal | undefined,
-): Promise<Map<string, AWS.M3LSQSReceivedMessage>> {
-  const found = new Map<string, AWS.M3LSQSReceivedMessage>();
-  while (found.size < wantedIds.size) {
-    checkNotAborted(signal);
-    const page = await sqs.receive(queueUrl, { maxMessages: MAX_PAGE_SIZE });
-    if (page.length === 0) break;
-
-    let addedFromPage = 0;
-    for (const message of page) {
-      if (!wantedIds.has(message.messageId) || found.has(message.messageId)) {
-        continue;
-      }
-      found.set(message.messageId, message);
-      addedFromPage += 1;
-    }
-    if (addedFromPage === 0) break;
-  }
-  return found;
 }
 
 /**
@@ -156,7 +152,7 @@ function resolvePayload(preset: TriagePreset, body: string): unknown {
 /** One FIFO `"move"` candidate that has a usable message group id, ready to sort and send. */
 interface FifoCandidate {
   readonly messageId: string;
-  readonly message: AWS.M3LSQSReceivedMessage;
+  readonly message: HeldMessage;
   /**
    * Narrowed to `string | number` before this type is ever constructed — see
    * {@link classifyFifoCandidates} and {@link splitByOrderValueType}. An
@@ -437,29 +433,29 @@ async function deleteConfirmed(
   return { removed, reinserted, failed };
 }
 
-/** What {@link applyActions} does with each re-received planned action, before any SQS call. */
+/** What {@link applyActions} does with each planned action, before any SQS call. */
 interface ClassifiedActions {
-  /** Planned `messageId`s no longer present on re-receive — never acted on. */
+  /** Planned `messageId`s absent from `deps.messages` — never acted on. */
   readonly skipped: readonly string[];
   readonly dropIds: readonly string[];
   readonly moveCandidates: readonly MoveCandidate[];
 }
 
 /**
- * Sorts every planned action into `skipped` (its message was not found on
- * re-receive), `dropIds`, or `moveCandidates` — a `"retry"` action needs no
- * SQS call at all and is simply not carried forward.
+ * Sorts every planned action into `skipped` (its message is not among
+ * `deps.messages`), `dropIds`, or `moveCandidates` — a `"retry"` action needs
+ * no SQS call at all and is simply not carried forward.
  */
 function classifyPlannedActions(
   actions: ExecutePlan["actions"],
-  received: ReadonlyMap<string, AWS.M3LSQSReceivedMessage>,
+  held: ReadonlyMap<string, HeldMessage>,
 ): ClassifiedActions {
   const skipped: string[] = [];
   const dropIds: string[] = [];
   const moveCandidates: MoveCandidate[] = [];
 
   for (const planned of actions) {
-    const message = received.get(planned.messageId);
+    const message = held.get(planned.messageId);
     if (message === undefined) {
       skipped.push(planned.messageId);
       continue;
@@ -517,26 +513,37 @@ async function sendMoves(
 function buildDeleteTargets(
   dropIds: readonly string[],
   sentIds: readonly string[],
-  received: ReadonlyMap<string, AWS.M3LSQSReceivedMessage>,
+  held: ReadonlyMap<string, HeldMessage>,
 ): readonly DeleteTarget[] {
   return [
     ...dropIds.map((id): DeleteTarget => ({
       id,
-      receiptHandle: mustGet(received, id).receiptHandle,
+      receiptHandle: mustGet(held, id).receiptHandle,
       kind: "drop",
     })),
     ...sentIds.map((id): DeleteTarget => ({
       id,
-      receiptHandle: mustGet(received, id).receiptHandle,
+      receiptHandle: mustGet(held, id).receiptHandle,
       kind: "move",
     })),
   ];
 }
 
 /**
- * Applies an {@link ExecutePlan} against real SQS operations: re-receives
- * every planned message, sends every `"move"`, then deletes every `"drop"`
- * and every successfully-sent `"move"`.
+ * Applies an {@link ExecutePlan} against real SQS operations: sends every
+ * `"move"`, then deletes every `"drop"` and every successfully-sent `"move"`.
+ *
+ * Deliberately never re-receives. `drainQueue` already received these exact
+ * messages once, at `visibilityTimeout` (`config.ts`'s `visibilityTimeout`
+ * parameter) — a fresh `receive` here would see nothing but that same
+ * lockout the drain itself created, since a queue's own most recent drain is
+ * always the reason the messages are invisible. A stale re-receive attempt
+ * against a self-inflicted empty page is exactly the guaranteed-no-op MUST-FIX
+ * this function's current shape closes: every planned id would fall through
+ * to `skipped`, `applied`/`reinserted` would stay `0`, and the run would
+ * still resolve successfully. Instead, `deps.messages` carries the receipt
+ * handles `drainQueue` already holds forward from the very same drain this
+ * plan was built from — reused here, never re-acquired.
  *
  * **Order within a message is always send-then-delete, never the
  * reverse.** A delete-then-failed-send would lose the message permanently —
@@ -547,21 +554,25 @@ function buildDeleteTargets(
  * survivable, so this function never deletes a message it has not already
  * confirmed sending for (or that needed no send at all — a `"drop"`).
  *
- * A planned `messageId` absent from the re-receive (its visibility lapsed,
- * or another consumer already took it) lands in `skipped`, never acted on —
- * acting on a stale handle would either fail outright or affect a message
- * this run no longer has authority over.
+ * A planned `messageId` absent from `deps.messages` lands in `skipped`,
+ * never acted on — with handle reuse this is structurally near-impossible
+ * (every planned id comes from the same drain that produced `deps.messages`),
+ * so treat a non-empty `skipped` as the internal-invariant violation it now
+ * is, not routine drift. A handle that HAS lapsed by the time this runs
+ * (the operator's confirmation took longer than `visibilityTimeout`) is a
+ * different case: the send or delete call itself fails against SQS, and that
+ * lands in `failed`, not `skipped` — the message simply stays in the
+ * dead-letter queue, the safe direction.
  *
  * @param plan - The plan to apply.
- * @param deps - The SQS operations wrapper, logger, queue identity, and the
- *   FIFO/routing preset.
+ * @param deps - The SQS operations wrapper, logger, queue identity, the
+ *   FIFO/routing preset, and the drain's own held messages.
  * @returns The applied counts, the skipped ids, and every failed entry.
  * @throws {@link Core.M3LError} coded `ERR_DLQ_TRIAGE_EXECUTE` when the plan
  *   needs `sourceQueueUrl` (at least one `"move"`) but none was supplied, or
  *   when a FIFO preset is missing `orderBy`/`groupIdPath`.
  * @throws {@link Core.M3LOperationAbortedError} when `deps.signal` is
- *   already aborted, checked before the re-receive and again at the top of
- *   every page.
+ *   already aborted, checked before this step's first SQS call.
  *
  * @example
  * ```typescript
@@ -586,27 +597,21 @@ export async function applyActions(
   plan: ExecutePlan,
   deps: ApplyActionsDeps,
 ): Promise<ApplyResult> {
-  const plannedIds = new Set(plan.actions.map((planned) => planned.messageId));
-  const received = await reReceivePlanned(
-    deps.sqs,
-    deps.queueUrl,
-    plannedIds,
-    deps.signal,
+  checkNotAborted(deps.signal);
+
+  const held = new Map(
+    deps.messages.map((message) => [message.messageId, message]),
   );
 
   const { skipped, dropIds, moveCandidates } = classifyPlannedActions(
     plan.actions,
-    received,
+    held,
   );
 
   const sendOutcome = await sendMoves(moveCandidates, deps);
   const failed: FailureEntry[] = [...sendOutcome.failed];
 
-  const deleteTargets = buildDeleteTargets(
-    dropIds,
-    sendOutcome.sentIds,
-    received,
-  );
+  const deleteTargets = buildDeleteTargets(dropIds, sendOutcome.sentIds, held);
 
   let removed = 0;
   let reinserted = 0;

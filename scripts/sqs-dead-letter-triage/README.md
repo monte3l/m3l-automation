@@ -48,8 +48,10 @@ node dist/main.js --operation=triage \
   --queueUrl=https://sqs.eu-west-1.amazonaws.com/000000000000/orders-dlq \
   --aws.profile=ops-readonly
 
-# Bounded run — cap how much of a deep queue one pass pulls, and hold the
-# drained batch invisible for longer while the verdicts are reviewed.
+# Bounded run — cap how much of a deep queue one pass pulls, and set how long
+# the drained batch stays held. For --apply that timeout is also the window to
+# finish the confirmation: let it lapse and the receipt handles expire, the
+# affected sends and deletes fail, and those messages stay in the queue.
 node dist/main.js --operation=triage \
   --queue=shipments-dlq \
   --queueUrl=https://sqs.eu-west-1.amazonaws.com/000000000000/shipments-dlq \
