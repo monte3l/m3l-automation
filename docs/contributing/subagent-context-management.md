@@ -195,6 +195,57 @@ close the remaining gaps:
   digest shape for its Explore fan-out, instead of returning full findings
   inline.
 
+## Prevent: bound input discovery, not just output
+
+Every prevention lever above — decomposing the dispatch, sizing a fix round by
+file, the digest pattern — bounds what a spoke **produces**. None of them
+bound what it has to **find out** before producing anything, and discovery,
+not writing, is what exhausts `maxTurns: 40`.
+
+Four `test-author` spokes dispatched against `docs/plans/2026-08-21-hub-board-restructure.md`'s
+PR #593 truncated at 40–41 tool calls each. The common factor was not output
+volume: the spokes produced 3–20 tests apiece, well inside the existing
+`≤~40`-tests-per-dispatch ceiling, and the two that finished writing their
+tests still truncated in their closing report rather than mid-write. What
+burned the turn budget was **discovery** — a spoke asked to add tests for a
+tracker-drift fixture spends twenty-odd tool calls establishing which fixture
+emits which items, what shape the planner's return value takes, and what a
+truly-empty plan still needs scripted, before it writes a single assertion.
+None of that is undiscoverable in principle; it's just discoverable by the
+hub, at dispatch time, once — instead of separately, by each spoke, inside
+its own budget.
+
+The fix, applied later in the same session (`docs/plans/2026-08-21-hub-board-restructure.md`
+§ "Dispatch note (F27 applied)"): brief the next three test spokes with every
+fact pre-resolved — the exact failing test names, the exact unscripted `gh`
+argv, the rule helper to add, and the precise reason a predicate needed
+widening. Briefed that way, each spoke needed only a handful of calls. One of
+the pre-resolved facts was itself a defect the hub found while doing the
+resolving (`isMutatingIssueCall` couldn't see a `gh api graphql` mutation,
+since it keyed off `-X` rather than the operation keyword) — a second-order
+benefit of doing the discovery once, carefully, up front rather than trusting
+each spoke to rediscover it correctly.
+
+Concretely: before dispatching a writer, resolve the facts it would otherwise
+have to derive — exact fixture contents, a collaborator function's return
+shape, the precise `file:line` anchors to edit, the exact command argv it
+needs to construct — and hand the spoke the answers directly in the prompt.
+The spoke's first tool call should be a write, not a search. This mirrors
+`.claude/rules/subagent-dispatch.md`'s "Bound review-spoke INPUT scope too,
+not just output" bullet, applied to the writer side instead of the review
+side: that bullet already established that output-scoping and input-scoping
+are two independent constraints for review fan-outs; PR #593 is the writer-side
+confirmation that the same is true for `test-author`/`code-implementer`
+dispatches.
+
+This is **additive to decomposition, not a substitute for it** — "Prevent:
+decompose before you dispatch" above still governs how a task is split into
+bounded sub-dispatches in the first place. Pre-resolving facts makes a
+correctly-sized dispatch cheaper to execute; it does not make an oversized
+dispatch safe, and it is not license to raise `maxTurns` as a workaround for
+either problem — "Don't raise `maxTurns` as the fix" in
+`.claude/rules/subagent-dispatch.md` still applies unchanged.
+
 ## Efficacy watch (as of 2026-07-22)
 
 Honest status of the two mitigation layers: **recovery works, prevention is
