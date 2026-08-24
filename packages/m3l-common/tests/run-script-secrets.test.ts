@@ -21,8 +21,14 @@
  * Also covers the two remaining production leak sites closed alongside this
  * one (GitHub issue #517 / tracker row F20): `core/script/process-guards.ts`'s
  * three fault-guard handlers (`unhandledRejection`/`uncaughtException`/
- * `warning`), which now thread a module-global `currentSecrets` (set by
- * `runScript()` via `setProcessGuardSecrets`) into their diagnostics; and
+ * `warning`), which now consult a monotonic, append-only, process-global
+ * secret-name union (`secretNameUnion`, widened only via
+ * `addProcessGuardSecretNames`) — populated by BOTH `runScript()` (once per
+ * run, from its own derived `secrets` specifier) AND `M3LScript`'s
+ * constructor (unconditionally, from its own derived `this.secrets`, right
+ * after it is assigned) — into their diagnostics, so a script driven via
+ * `createLambdaHandler()` or a bare `script.run()` (neither of which ever
+ * calls `runScript()`) still widens the union; and
  * `internal/script/signalHandlers.ts`'s `registerShutdownSignals`, whose
  * `onShutdown`-failure diagnostic now accepts an optional `secrets` second
  * parameter, threaded in by `M3LScript`'s constructor.
@@ -75,6 +81,14 @@ import {
 // `M3LScript`'s public surface (which always swallows its own `onCleanup`
 // errors before they reach `onShutdown`).
 import { registerShutdownSignals } from "../src/internal/script/signalHandlers.js";
+// Namespace import alongside the named one above, used ONLY by the
+// "real constructor wiring" test in section 2 below to `vi.spyOn` the
+// module's own `registerShutdownSignals` export — capturing what
+// `M3LScript.ts`'s constructor actually passes as its second argument at
+// its real call site, rather than proving only that the function's own
+// `secrets` parameter is honoured when called directly (as the rest of
+// this describe block already does).
+import * as signalHandlersModule from "../src/internal/script/signalHandlers.js";
 
 const metadata: M3LScriptMetadata = {
   name: "test-script",
@@ -83,10 +97,23 @@ const metadata: M3LScriptMetadata = {
 
 /** A fresh config declaring a single secret parameter under a heuristic-unmatched name. */
 function secretConfig(): { params: readonly M3LConfigParameter[] } {
+  return secretConfigNamed("tenantRef");
+}
+
+/**
+ * A fresh config declaring a single secret parameter under an
+ * arbitrary, caller-chosen name — used by the process-guards describe
+ * block below, whose tests each need a secret name never declared by any
+ * other test in this file (the process-guards secret-name union is a
+ * monotonic, module-global `Set` with no test-only reset hook).
+ */
+function secretConfigNamed(name: string): {
+  params: readonly M3LConfigParameter[];
+} {
   return {
     params: [
       new M3LConfigParameter({
-        name: "tenantRef",
+        name,
         type: M3LConfigParameterType.STRING,
         secret: true,
       }),
@@ -151,45 +178,144 @@ describe("core/script/process-guards — fault-guard diagnostics honor runScript
     await rm(outDir, { recursive: true, force: true });
   });
 
-  function makeScript(withSecretSchema: boolean): M3LScript {
+  function makeScript(config?: {
+    params: readonly M3LConfigParameter[];
+  }): M3LScript {
     vi.stubEnv("M3L_OUTPUT_DIR", outDir);
     return new M3LScript({
       metadata,
-      ...(withSecretSchema ? { config: secretConfig() } : {}),
+      ...(config === undefined ? {} : { config }),
     });
   }
 
+  /**
+   * Runs `script` via `runScript()`, invokes the captured
+   * `unhandledRejection` handler with an `Error` whose message is
+   * `message`, and returns everything written to stderr across the run.
+   */
   async function triggerUnhandledRejection(
-    withSecretSchema: boolean,
+    script: M3LScript,
+    message: string,
   ): Promise<string> {
     const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
-    const script = makeScript(withSecretSchema);
 
     await runScript(script, () => {
       expect(unhandledRejectionHandler).toBeDefined();
-      // No colon immediately precedes `tenantRef`, per
-      // `redactSensitiveLogText`'s documented bare-key=value pass-1
-      // limitation (a preceding non-sensitive `key:` swallows the rest of
-      // the line) — the same phrasing rule section 3 below follows.
-      unhandledRejectionHandler?.(
-        new Error("floating rejection with tenantRef=guard-secret-value"),
-      );
+      unhandledRejectionHandler?.(new Error(message));
     });
 
     return stderrSpy.mock.calls.map(([chunk]) => String(chunk)).join("\n");
   }
 
   test("without a declared-secret schema, the unhandledRejection diagnostic leaks the embedded value", async () => {
-    const written = await triggerUnhandledRejection(false);
+    // Uses a secret-name literal declared by NO other test anywhere in
+    // this file. The process-guards secret-name union is a monotonic,
+    // module-global `Set` with no test-only reset hook (see this describe
+    // block's own comment above), so reusing a name any other "with
+    // schema" test in this file registers (e.g. `tenantRef`, used
+    // pervasively below) would make this leak assertion pass or fail
+    // depending on whether that other test already ran — not on the
+    // actual behavior under test.
+    const script = makeScript();
+    const written = await triggerUnhandledRejection(
+      script,
+      // No colon immediately precedes the secret name, per
+      // `redactSensitiveLogText`'s documented bare-key=value pass-1
+      // limitation (a preceding non-sensitive `key:` swallows the rest of
+      // the line) — the same phrasing rule section 3 below follows.
+      "floating rejection with process-guards-control-unregistered=guard-secret-value",
+    );
     expect(written).toContain("unhandledRejection");
-    expect(written).toContain("tenantRef=guard-secret-value");
+    expect(written).toContain(
+      "process-guards-control-unregistered=guard-secret-value",
+    );
   });
 
   test("with a declared-secret schema, the unhandledRejection diagnostic redacts the embedded value", async () => {
-    const written = await triggerUnhandledRejection(true);
+    const script = makeScript(secretConfigNamed("tenantRef"));
+    const written = await triggerUnhandledRejection(
+      script,
+      "floating rejection with tenantRef=guard-secret-value",
+    );
     expect(written).toContain("unhandledRejection");
     expect(written).not.toContain("guard-secret-value");
     expect(written).toContain("tenantRef=[REDACTED]");
+  });
+
+  test("a later schema-less run does not evict an earlier run's registered secret from the union (regression)", async () => {
+    // Proves the original leak class stays fixed: a security review found
+    // that both a clear-on-exit AND an unconditional set-on-entry
+    // single-slot design let a later, unrelated `runScript()` call evict
+    // an earlier call's registered secret names. Run 1 registers
+    // "union-persists-secret" via a declared schema; Run 2 is a separate,
+    // LATER, schema-less `runScript()` call, which must contribute
+    // nothing and must NOT evict Run 1's registration.
+    const run1 = makeScript(secretConfigNamed("union-persists-secret"));
+    await runScript(run1, () => {});
+
+    const run2 = makeScript();
+    const written = await triggerUnhandledRejection(
+      run2,
+      "floating rejection with union-persists-secret=some-value",
+    );
+
+    expect(written).toContain("unhandledRejection");
+    expect(written).not.toContain("some-value");
+    expect(written).toContain("union-persists-secret=[REDACTED]");
+  });
+
+  test("a later run with a different schema does not evict an earlier run's registered secret from the union (regression)", async () => {
+    // Run 1 registers "union-a-secret"; Run 2, a separate, later
+    // `runScript()` call, registers a DIFFERENT name ("union-b-secret")
+    // without declaring "union-a-secret" — the union must retain BOTH,
+    // proving Run 2's own registration doesn't evict Run 1's.
+    const run1 = makeScript(secretConfigNamed("union-a-secret"));
+    await runScript(run1, () => {});
+
+    const run2 = makeScript(secretConfigNamed("union-b-secret"));
+    await runScript(run2, () => {});
+
+    const run3 = makeScript();
+    const written = await triggerUnhandledRejection(
+      run3,
+      "floating rejection with union-a-secret=value-a and union-b-secret=value-b",
+    );
+
+    expect(written).toContain("unhandledRejection");
+    expect(written).not.toContain("value-a");
+    expect(written).not.toContain("value-b");
+    expect(written).toContain("union-a-secret=[REDACTED]");
+    expect(written).toContain("union-b-secret=[REDACTED]");
+  });
+
+  test("M3LScript's constructor alone registers its own declared secrets into the union, reachable without ever calling runScript() (real constructor wiring)", () => {
+    // `unhandledRejectionHandler` here is the SAME real handler captured
+    // once, by the very first test in this describe block's own
+    // `runScript()` call — `installProcessGuards()` is a process-global,
+    // idempotent singleton with no per-test reset, so it is already
+    // available to every later test in this block. This test deliberately
+    // never calls `runScript()` for ITS OWN script instance: the point is
+    // proving `M3LScript`'s constructor call to `addProcessGuardSecretNames`
+    // (right after `this.secrets` is assigned) registers the name on its
+    // own, independent of `runScript()` — the exact gap a script driven via
+    // `createLambdaHandler()` or a bare `script.run()` used to fall through.
+    expect(unhandledRejectionHandler).toBeDefined();
+
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    makeScript(secretConfigNamed("m3lscript-ctor-secret"));
+
+    unhandledRejectionHandler?.(
+      new Error(
+        "floating rejection with m3lscript-ctor-secret=ctor-secret-value",
+      ),
+    );
+
+    const written = stderrSpy.mock.calls
+      .map(([chunk]) => String(chunk))
+      .join("\n");
+    expect(written).toContain("unhandledRejection");
+    expect(written).not.toContain("ctor-secret-value");
+    expect(written).toContain("m3lscript-ctor-secret=[REDACTED]");
   });
 });
 
@@ -330,6 +456,34 @@ describe("internal/script/signalHandlers — the onShutdown-failure diagnostic c
     expect(written).toContain("onShutdown");
     expect(written).not.toContain("shutdown-secret-value");
     expect(written).toContain("tenantRef=[REDACTED]");
+  });
+
+  test("M3LScript's constructor passes its own derived `this.secrets` as registerShutdownSignals's real second argument (real constructor wiring)", () => {
+    // The two tests above call `registerShutdownSignals` directly with a
+    // hand-constructed `secrets` port, which only proves the FUNCTION
+    // honours its own parameter — not that `M3LScript.ts`'s constructor
+    // actually passes `this.secrets` at its real call site
+    // (`registerShutdownSignals(() => { ...; return
+    // this.runCleanup("signal-shutdown"); }, this.secrets)`). Spying on the
+    // module's own export (rather than re-deriving the whole signal-fires
+    // -> onShutdown-rejects -> stderr flow already covered above) captures
+    // exactly what the constructor passed, with no other production
+    // behavior mocked away.
+    const registerShutdownSignalsSpy = vi.spyOn(
+      signalHandlersModule,
+      "registerShutdownSignals",
+    );
+
+    new M3LScript({
+      metadata,
+      config: secretConfigNamed("shutdown-ctor-wiring-secret"),
+    });
+
+    expect(registerShutdownSignalsSpy).toHaveBeenCalledTimes(1);
+    const passedSecrets = registerShutdownSignalsSpy.mock.calls[0]?.[1];
+    expect(passedSecrets).toBeDefined();
+    expect(passedSecrets?.isSecret("shutdown-ctor-wiring-secret")).toBe(true);
+    expect(passedSecrets?.isSecret("some-unrelated-name")).toBe(false);
   });
 });
 

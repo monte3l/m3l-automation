@@ -16,8 +16,22 @@ let guardsInstalled = false;
 /** The current Lambda request ID, if any, attached to guard diagnostics. */
 let currentRequestId: string | undefined;
 
-/** The current run's `secrets` port, if any, attached to guard diagnostics. */
-let currentSecrets: M3LSecretNamesPort | undefined;
+/**
+ * Every secret name ever registered via {@link addProcessGuardSecretNames},
+ * across every `runScript()` call in this process — a monotonic union,
+ * never cleared or narrowed. See {@link addProcessGuardSecretNames} for why
+ * this shape (append-only, not a replaceable single slot) is required.
+ */
+const secretNameUnion = new Set<string>();
+
+/**
+ * The `secrets` port consulted by the fault-guard handlers
+ * (`unhandledRejection`, `uncaughtException`, `warning`) — a stable object
+ * backed by {@link secretNameUnion}, constructed once at module load.
+ */
+const currentSecrets: M3LSecretNamesPort = {
+  isSecret: (name) => secretNameUnion.has(name),
+};
 
 /** A plain, JSON-serializable representation of an arbitrary caught value. */
 interface SerializedError {
@@ -160,55 +174,55 @@ export function setProcessGuardRequestId(requestId: string): void {
 }
 
 /**
- * Sets the `secrets` port attached to every subsequent guard-caught fault
- * diagnostic (`unhandledRejection`, `uncaughtException`, `warning`), so a
- * declared secret cannot print verbatim to stderr if it happens to surface
- * through one of these process-global fault paths during a run.
+ * Registers every name in `names` as secret for every subsequent guard-caught
+ * fault diagnostic (`unhandledRejection`, `uncaughtException`, `warning`),
+ * for the remainder of this process — so a declared secret is redacted
+ * wherever it surfaces through one of these process-global fault paths as a
+ * recognizable `key=value`/`key: value` pair, subject to
+ * `redactSensitiveLogText`'s own key-charset limits (`[A-Za-z0-9_-]` — see
+ * that function's docs) and to whatever Node's own default event listeners
+ * print independently of this library (e.g. Node's default `warning` handler
+ * is not suppressed by adding another `process.on("warning")` listener),
+ * even long after (or well before, in an overlapping call) the
+ * `runScript()` invocation that declared it.
  *
- * Not re-exported through the `core/script` barrel — consumed only by
- * `core/script/run-script`'s `runScript()`, which calls it once, at the top
- * of a run, after deriving its own `secrets` from the script's config
- * schema.
+ * Not re-exported through the `core/script` barrel — consumed only from
+ * within `core/script` itself: `run-script.ts`'s `runScript()` calls it once
+ * per run, right after deriving its own `secrets` specifier from the
+ * script's config schema; `M3LScript`'s constructor also calls it
+ * unconditionally, right after deriving `this.secrets`, so a script driven
+ * via `createLambdaHandler()` or a bare `script.run()` (neither of which
+ * goes through `runScript()`) still widens the union with its own
+ * schema-derived names.
  *
- * This is a **latest-write-wins, never-automatically-cleared** process-global
- * value, deliberately mirroring this same file's `currentRequestId` /
- * {@link setProcessGuardRequestId} process-lifetime style: `runScript()` does
- * NOT reset it to `undefined` when a run ends. Because this redaction port
- * only ever *widens* what gets redacted (the built-in heuristic in
- * `redactSensitiveLogText` always still applies underneath, regardless of
- * this value), retaining a stale value from a completed or nested
- * `runScript` call is always the safe direction: at worst, a fault occurring
- * outside any run's "intended" window gets redacted using a specifier that
- * doesn't perfectly match the currently-running code — still strictly more
- * protective than the pre-this-feature heuristic-only baseline. Clearing it
- * automatically was tried and proven actively harmful: a security review
- * found it let a still-in-flight OUTER `runScript()` call, or a background
- * task rejecting after `runScript()` had already returned, leak a declared
- * secret verbatim through these same guards.
+ * **Deliberately append-only — there is no corresponding "unregister" or
+ * "clear" function, and this is not an oversight.** This redaction port only
+ * ever *widens* what gets redacted (the built-in key-name heuristic in
+ * `redactSensitiveLogText`/`redactSensitiveLogValue` always still applies
+ * underneath, regardless of this set's contents), so once a name has been
+ * seen as secret, treating it as secret for the rest of the process is
+ * always the safe direction — there is no scenario where retaining a name
+ * here causes harm, only one where removing it prematurely does. Two
+ * earlier designs both tried a replaceable single-slot value (set on entry,
+ * cleared on exit, or set on entry only) and a security review proved both
+ * leak: a nested or still-in-flight `runScript()` call, or a background task
+ * rejecting after its `runScript()` call already returned, would have its
+ * registered names evicted by an unrelated later or earlier call. A
+ * monotonic union has no eviction path by construction.
  *
- * A caller that genuinely needs the guards to stop attaching secrets (e.g. a
- * long-lived process shutting down a script subsystem) can still call
- * `setProcessGuardSecrets(undefined)` directly — that capability remains
- * exported — but `runScript()` itself never does so automatically.
- *
- * @param secrets - The `secrets` port to attach, or `undefined` to clear it.
+ * @param names - The secret names to register (e.g. an
+ *   `M3LSecretsSpecifier.secretNames` snapshot). Duplicate names across
+ *   calls are harmless (`Set` semantics).
  *
  * @example
  * ```ts
- * import { setProcessGuardSecrets } from "./process-guards.js";
+ * import { addProcessGuardSecretNames } from "./process-guards.js";
  *
- * // Widens the process-global fault guards to redact `tenantRef` for the
- * // remainder of the process — NOT automatically undone when any one run
- * // completes.
- * setProcessGuardSecrets({ isSecret: (name) => name === "tenantRef" });
- *
- * // A caller that explicitly wants to stop attaching secrets can still do
- * // so manually; `runScript()` itself never calls this on a caller's behalf.
- * setProcessGuardSecrets(undefined);
+ * addProcessGuardSecretNames(["tenantRef", "api-key"]);
  * ```
  */
-export function setProcessGuardSecrets(
-  secrets: M3LSecretNamesPort | undefined,
-): void {
-  currentSecrets = secrets;
+export function addProcessGuardSecretNames(names: Iterable<string>): void {
+  for (const name of names) {
+    secretNameUnion.add(name);
+  }
 }

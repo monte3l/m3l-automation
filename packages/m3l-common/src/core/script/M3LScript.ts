@@ -46,7 +46,11 @@ import {
 } from "./aws-param-names.js";
 import { M3LScriptConfigLoader } from "./M3LScriptConfigLoader.js";
 import { M3LScriptPresetLoader } from "./M3LScriptPresetLoader.js";
-import { serializeError, setProcessGuardRequestId } from "./process-guards.js";
+import {
+  addProcessGuardSecretNames,
+  serializeError,
+  setProcessGuardRequestId,
+} from "./process-guards.js";
 import type {
   M3LScriptHookContext,
   M3LScriptLifecycleHooks,
@@ -598,6 +602,21 @@ export class M3LScript {
       this.schema === undefined
         ? undefined
         : deriveSecretsSpecifier(this.schema);
+    // Registers this script's own declared secret names into the
+    // process-global union `addProcessGuardSecretNames` maintains, mirroring
+    // `run-script.ts`'s `runScript()` call site — but here unconditionally at
+    // construction time, not only when a run goes through `runScript()`. A
+    // script driven via `createLambdaHandler()` or a bare `script.run()`
+    // never calls `runScript()`, so without this call its schema-derived
+    // secret names would never reach whatever fault guards the caller has
+    // installed, even though `this.secrets` already has them. This does NOT
+    // install the guards itself — `installProcessGuards()` remains
+    // exclusively `runScript()`'s (or the caller's) responsibility; this only
+    // ensures the names are available once guards ARE installed by whatever
+    // means.
+    if (this.secrets !== undefined) {
+      addProcessGuardSecretNames(this.secrets.secretNames);
+    }
 
     this.configuredCorrelationId = options.correlationId;
     this.preset = options.preset;

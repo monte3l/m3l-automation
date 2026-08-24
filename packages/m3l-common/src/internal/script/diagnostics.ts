@@ -60,8 +60,9 @@ interface SerializedErrorLike {
  * `persistBestEffort` (two call sites, threading the `secrets` value already
  * derived in `runScript`), `process-guards.ts`'s `unhandledRejection`/
  * `uncaughtException`/`warning` handlers (three call sites, reading a
- * process-global `secrets` value that `run-script.ts`'s `runScript()` sets
- * for the duration of a run via `setProcessGuardSecrets`), and
+ * permanent, monotonically-growing union of every secret name
+ * `run-script.ts`'s `runScript()` has ever registered via
+ * `addProcessGuardSecretNames` — never narrowed), and
  * `signalHandlers.ts`'s `onShutdown`-failure site (one call site, threading
  * the `secrets` port `registerShutdownSignals` now accepts as an optional
  * parameter). Only one call site remains intentionally bare: `collect.ts`'s

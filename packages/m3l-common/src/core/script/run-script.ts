@@ -22,11 +22,12 @@ import type { M3LSecretNamesPort } from "../logging/redact.js";
 import { logBestEffortDiagnostic } from "../../internal/script/diagnostics.js";
 import { pushForcedSignalExitCode } from "../../internal/script/signalHandlers.js";
 import { deriveSecretsSpecifier } from "../config/index.js";
+import type { M3LSecretsSpecifier } from "../config/index.js";
 
 import {
+  addProcessGuardSecretNames,
   installProcessGuards,
   serializeError,
-  setProcessGuardSecrets,
 } from "./process-guards.js";
 import type { M3LScript } from "./M3LScript.js";
 import type { M3LScriptRunOptions } from "./M3LScriptOptions.js";
@@ -178,6 +179,19 @@ function environmentEntry(
       config: script.currentConfig,
     }),
   };
+}
+
+/**
+ * Extracts the secret names declared by a run's `secrets` specifier, or an
+ * empty iterable when the run has none — so the call site can register them
+ * with {@link addProcessGuardSecretNames} unconditionally, without an `if`
+ * branch (kept separate from `runScript` to hold that function under its
+ * cyclomatic-complexity budget).
+ */
+function secretNamesOf(
+  secrets: M3LSecretsSpecifier | undefined,
+): ReadonlySet<string> {
+  return secrets === undefined ? new Set() : secrets.secretNames;
 }
 
 /**
@@ -373,15 +387,14 @@ export async function runScript(
     script.configSchema === undefined
       ? undefined
       : deriveSecretsSpecifier(script.configSchema);
-  // Attach this run's `secrets` to the process-global fault guards
-  // (`unhandledRejection`/`uncaughtException`/`warning`). Deliberately never
-  // cleared when this run ends (see `setProcessGuardSecrets`'s own TSDoc): the
-  // port only ever widens redaction, so a stale value left behind by a
-  // completed or nested `runScript` call is always the safe direction — the
-  // alternative (clearing it in `finally`, as an earlier revision did) let a
-  // still-running outer call, or a background task rejecting after this call
-  // already returned, leak a declared secret verbatim.
-  setProcessGuardSecrets(secrets);
+  // Registers this script's declared secret names into the process-global
+  // union `addProcessGuardSecretNames` maintains — see that function's own
+  // TSDoc for why this is append-only and has no corresponding "clear": a
+  // schema-less script, or one whose schema declares no secrets, contributes
+  // nothing here and must NOT be allowed to evict a name a different, still
+  // in-flight or already-finished `runScript()` call registered (two earlier
+  // designs both got this wrong).
+  addProcessGuardSecretNames(secretNamesOf(secrets));
   const reporter = shouldReport
     ? new M3LRunReporter({ paths: script.paths, secrets })
     : undefined;

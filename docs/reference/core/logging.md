@@ -274,20 +274,31 @@ on its own field instead of relying on the embedded-value pass to catch it.
 optional `secrets: M3LSecretNamesPort` constructor/options field that threads
 straight into these two helpers. `core/script`'s `runScript()` and
 `M3LScript` each derive their own copy from the running script's own config
-schema, but wire it into different diagnostics — `runScript()` wires
-`M3LRunReporter` and the process-fault guards (`unhandledRejection`/
-`uncaughtException`/`warning`) it installs; `M3LScript` wires its own
-lifecycle-hook and shutdown-signal diagnostics. Neither wires the other's
-sinks: a script that calls bare `M3LScript.run()` without going through
-`runScript()` gets no process-fault-guard widening at all, even though
-`M3LScript` itself holds a `secrets` copy. `M3LBreadcrumbTrail` is the one
-sink neither ever constructs — it stays caller-managed, so a trail only gets
-widened redaction when its own caller passes `secrets` at construction.
-`M3LLogger` (and its handlers) is **not** among the widened sinks:
-`errorFrom`'s call into `serializeErrorChain` does not receive a `secrets`
-port, so a declared secret in an error logged via `M3LLogger` — including
-the one `runScript()` itself emits on a run's failure path — is redacted by
-the built-in heuristic only. See
+schema; both register their declared secret names into the same
+process-global union the process-fault guards (`unhandledRejection`/
+`uncaughtException`/`warning`) consult, so either composition root — a
+`runScript()`-managed run, a bare `M3LScript.run()`, or a
+`createLambdaHandler()` invocation — widens that shared union regardless of
+which one a caller uses (the union is append-only and never narrowed; see
+`core/script/process-guards`'s `addProcessGuardSecretNames`). `runScript()`
+additionally wires `M3LRunReporter`; `M3LScript` additionally wires its own
+lifecycle-hook and shutdown-signal diagnostics — those two remain
+composition-root-specific. `M3LBreadcrumbTrail` is the one sink neither ever
+constructs — it stays caller-managed, so a trail only gets widened redaction
+when its own caller passes `secrets` at construction.
+`M3LLogger` (and its handlers) applies **no redaction of any kind** to the
+`message` a caller-thrown error's text lands in — this is not merely
+"heuristic-only," it is unredacted, full stop: none of
+`M3LConsoleLoggerHandler`/`M3LFileLoggerHandler`/`M3LJsonLoggerHandler` ever
+calls `redactSensitiveLogText`/`redactSensitiveLogValue`, and `errorFrom`
+builds its event from the error's raw message. A declared secret in an
+error logged via `M3LLogger` — including the one `runScript()` itself emits
+on every failed run's own console output — prints verbatim, even when its
+key name matches the built-in heuristic (e.g. `password=`/`token=`). This
+is a pre-existing gap, not something F20 introduced or fixed; tracked
+separately (`docs/plans/IMPLEMENTATION.md` F28) since closing it means
+adding redaction to the library's general-purpose logging surface, not
+wiring an existing option through an existing call site. See
 [`diagnostics`](./diagnostics.md#public-api)'s redaction-guarantees note for
 what that widens (and doesn't) at each of those sinks.
 

@@ -10,7 +10,7 @@
   "packages/m3l-common/src/core/diagnostics/run-report.ts": 64516,
   "packages/m3l-common/src/core/network/M3LHttpClient.ts": 40251,
   "packages/m3l-common/src/core/pipeline/types.ts": 28210,
-  "packages/m3l-common/src/core/script/M3LScript.ts": 68086,
+  "packages/m3l-common/src/core/script/M3LScript.ts": 69066,
   "packages/m3l-common/tests/checkpoint.test.ts": 153789,
   "packages/m3l-common/tests/codepipeline.test.ts": 71140,
   "packages/m3l-common/tests/config.test.ts": 133256,
