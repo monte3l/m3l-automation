@@ -37,6 +37,14 @@ paths:
   (`2026-08-19-a3-partial-run-outcome.md`). An invariant named over a set has to
   **enumerate** the set — `test.each` over every exit path, not one of them — or
   it silently becomes a test of one member.
+- **Never mock the behavior the test exists to validate.** A stub that hands
+  back the outcome under question asserts the stub, not the code, and still
+  reads as coverage: a retry suite passed 78/78 against a permissive test-only
+  classifier while the real classifier was a complete no-op
+  (`docs/logs/2026-07-13-dynamo-crud.md`). Exercise the real collaborator at
+  least once — and when the subject _is_ a committed artifact, read the real
+  filesystem unmocked, or the test only validates a copy pasted into itself
+  (`docs/logs/2026-08-23-w7-cloudwatch-logs-analysis.md`).
 - **Assert barrel reachability through the package entry point.** Every test
   here imports `src/` paths directly, so none of them can observe a broken
   namespace re-export. A `core/index.ts` missing its
@@ -176,6 +184,16 @@ throw "a string";
   `pnpm test:coverage` text table.** The v8 text reporter omits files that are
   100% on all four metrics, so an "absent" file in the table is not an uncovered
   file — the JSON is the source of truth.
+- **A suite that fails while a spoke fan-out is running may be contention, not
+  a regression — re-run it alone before believing it.** `pnpm test:coverage`
+  exited non-zero once with five review spokes in flight, then passed twice in
+  isolation; three concurrent suites can fan out to ~42 workers on this box
+  (`docs/logs/2026-08-19-a5-no-progress-detection.md`). Don't schedule
+  `test:coverage` against a live fan-out in the first place. Note the converse
+  too: `check:test-counts`'s own flake turned out to be redundant work rather
+  than contention, and it also failed sequentially — so don't stop at
+  "contention" as the diagnosis either
+  (`docs/logs/2026-08-19-check-test-counts-contention.md`).
 - Use `pnpm exec vitest` / `pnpm test:coverage`; bare `npx vitest` fails to
   resolve `@vitest/coverage-v8` under pnpm.
 - **Brace void-union handler bodies.** When a handler type is
