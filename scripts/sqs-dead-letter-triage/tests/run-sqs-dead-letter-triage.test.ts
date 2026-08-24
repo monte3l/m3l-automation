@@ -119,6 +119,7 @@ import { Core } from "@m3l-automation/m3l-common";
 import type { AWS } from "@m3l-automation/m3l-common";
 
 import { runSqsDeadLetterTriage } from "../src/steps/run-sqs-dead-letter-triage.js";
+import type { TriagePreset, TriageVerdict } from "../src/steps/preset.js";
 import {
   createFakeDynamoDBOperations,
   createFakeSqsOperations,
@@ -565,13 +566,26 @@ describe("runSqsDeadLetterTriage — 'execute' dispatch: plan vs. apply, and the
   const EXECUTE_CODE = "ERR_DLQ_TRIAGE_EXECUTE";
 
   /**
-   * A report with exactly one 'remove'-verdict row — a real, un-mocked
-   * `buildExecutePlan` turns this into one 'drop' action, and a real
-   * `applyActions` turns that into one `deleteBatch` call IF (and only if)
-   * the gate actually let execution proceed. This is what makes the
-   * "zero mutations" assertions below meaningful rather than vacuous.
+   * A report with exactly one row, defaulting to a 'remove' verdict — a
+   * real, un-mocked `buildExecutePlan` turns this into one 'drop' action,
+   * and a real `applyActions` turns that into one `deleteBatch` call IF
+   * (and only if) the gate actually let execution proceed. This is what
+   * makes the "zero mutations" assertions below meaningful rather than
+   * vacuous. Parameterised (rather than duplicated) so the same helper can
+   * also drive a 'reinsert'-verdict row end-to-end (claude-pr-review
+   * Must-fix on PR #629): a `remove`-only helper left the entire
+   * send-then-delete accept path for `reinsert` unexercised by any
+   * dispatcher-level test.
    */
-  function setupTriageMocks(): void {
+  function setupTriageMocks(
+    overrides: {
+      readonly verdict?: TriageVerdict;
+      readonly preset?: TriagePreset;
+      readonly receiptHandle?: string;
+    } = {},
+  ): void {
+    const verdict = overrides.verdict ?? "remove";
+    const preset = overrides.preset ?? basePreset();
     triageQueueMock.mockResolvedValue({
       queue: "orders-dlq",
       title: "Orders DLQ triage",
@@ -579,20 +593,24 @@ describe("runSqsDeadLetterTriage — 'execute' dispatch: plan vs. apply, and the
       archivePath: "orders-dlq/drain-2026-08-23T12-00-00.000Z.json",
       drained: 1,
       outcomes: [],
-      messages: [{ messageId: EXECUTE_MESSAGE_ID, body: "body" }],
+      messages: [
+        {
+          messageId: EXECUTE_MESSAGE_ID,
+          body: "body",
+          receiptHandle: overrides.receiptHandle ?? "rh-1",
+        },
+      ],
       escalateTo: "orders-team",
       followUps: [],
-      preset: basePreset(),
+      preset,
     });
     buildTriageReportMock.mockReturnValue(
       baseTriageReport({
         queue: "orders-dlq",
-        rows: [
-          baseReportRow({ messageId: EXECUTE_MESSAGE_ID, verdict: "remove" }),
-        ],
+        rows: [baseReportRow({ messageId: EXECUTE_MESSAGE_ID, verdict })],
       }),
     );
-    loadRunbookMock.mockResolvedValue(basePreset({ fifo: false }));
+    loadRunbookMock.mockResolvedValue(preset);
   }
 
   /** A fake SQS whose `receive` re-serves `EXECUTE_MESSAGE_ID` exactly once, then empties out. */
@@ -764,6 +782,70 @@ describe("runSqsDeadLetterTriage — 'execute' dispatch: plan vs. apply, and the
     expect(confirm).not.toHaveBeenCalled();
     expect(text).not.toHaveBeenCalled();
     expect(deleteBatch).toHaveBeenCalled();
+  });
+
+  // claude-pr-review Must-fix on PR #629: no dispatcher-level test exercised
+  // a 'reinsert' verdict all the way through `applyActions`'
+  // `resolveSourceQueueUrl` guard and into `sendBatch`/`deleteBatch`. This
+  // proves the full accept path, and — critically — the ordering: a real
+  // delete-then-failed-send would lose a message permanently, while a
+  // failed delete after a successful send only duplicates it (recoverable),
+  // so send-before-delete is the property under test, not merely that both
+  // happened.
+  test("'execute --apply' applies a 'reinsert': sendBatch on the source queue happens before deleteBatch on the dead-letter queue", async () => {
+    const REINSERT_DLQ_URL =
+      "https://sqs.us-east-1.amazonaws.com/111111111111/orders-dlq";
+    const REINSERT_SOURCE_URL =
+      "https://sqs.us-east-1.amazonaws.com/111111111111/orders-inbound";
+    setupTriageMocks({
+      verdict: "reinsert",
+      preset: basePreset({ sourceQueue: "orders-inbound" }),
+      receiptHandle: "rh-reinsert-1",
+    });
+    const callOrder: string[] = [];
+    const sendBatch = vi.fn().mockImplementation(() => {
+      callOrder.push("send");
+      return Promise.resolve({
+        successful: [{ id: EXECUTE_MESSAGE_ID }],
+        failed: [],
+      });
+    });
+    const deleteBatch = vi.fn().mockImplementation(() => {
+      callOrder.push("delete");
+      return Promise.resolve({
+        successful: [{ id: EXECUTE_MESSAGE_ID }],
+        failed: [],
+      });
+    });
+    const sqs = createFakeSqsOperations({ sendBatch, deleteBatch });
+    const deps = buildExecuteDeps(
+      {
+        apply: true,
+        yes: true,
+        yesSensitive: true,
+        queueUrl: REINSERT_DLQ_URL,
+        sourceQueueUrl: REINSERT_SOURCE_URL,
+      },
+      { sqs, awsTarget: { profile: "dev" } },
+    );
+
+    await runSqsDeadLetterTriage(deps);
+
+    expect(sendBatch).toHaveBeenCalledWith(REINSERT_SOURCE_URL, [
+      expect.objectContaining({ id: EXECUTE_MESSAGE_ID, body: "body" }),
+    ]);
+    expect(deleteBatch).toHaveBeenCalledWith(REINSERT_DLQ_URL, [
+      expect.objectContaining({
+        id: EXECUTE_MESSAGE_ID,
+        receiptHandle: "rh-reinsert-1",
+      }),
+    ]);
+    expect(callOrder).toEqual(["send", "delete"]);
+    expect(writeJsonArtifactMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.any(String),
+      expect.objectContaining({ reinserted: 1, removed: 0 }),
+    );
   });
 });
 

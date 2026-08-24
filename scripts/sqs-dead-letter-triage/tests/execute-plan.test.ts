@@ -6,13 +6,19 @@ import {
   buildExecutePlan,
   EXECUTE_CODE,
   logExecutePlan,
+  resolveSourceQueueUrl,
 } from "../src/steps/execute-plan.js";
-import type { PlannedAction, TriageAction } from "../src/steps/execute-plan.js";
+import type {
+  ExecutePlan,
+  PlannedAction,
+  TriageAction,
+} from "../src/steps/execute-plan.js";
 import { createRecordingLogger } from "./support/aws-fakes.js";
 import {
   ALL_TRIAGE_VERDICTS,
   baseReportRow,
   baseTriageReport,
+  basePreset,
 } from "./support/preset-fixtures.js";
 
 /**
@@ -207,5 +213,90 @@ describe("logExecutePlan", () => {
     const rendered = events.map((event) => event.message).join("\n");
     expect(rendered).toContain("msg-1");
     expect(rendered).toContain("msg-2");
+  });
+});
+
+/**
+ * `resolveSourceQueueUrl` (claude-pr-review Must-fix on PR #629): before
+ * this describe block, the only reachable case in the whole test tree was
+ * `run-sqs-dead-letter-triage.test.ts`'s `[vacuous]` dispatcher test, whose
+ * plan has no `reinsert` at all and returns at the very first
+ * `needsSourceQueue` check — none of the three checks documented on
+ * `resolveSourceQueueUrl` ever ran, and nothing imported the symbol by
+ * name. This is the direct unit-level happy path plus a deliberate exercise
+ * of the early-exit branch; the four documented failure paths (missing
+ * `sourceQueueUrl`, no declared `preset.sourceQueue`, a mismatched queue
+ * name, a mismatched account/region) are already covered end-to-end via
+ * `run-sqs-dead-letter-triage.test.ts`'s "sourceQueueUrl guard" describe
+ * block.
+ */
+describe("resolveSourceQueueUrl — the sourceQueueUrl guard (review round 2, MUST-FIX 10)", () => {
+  const DLQ_URL = "https://sqs.us-east-1.amazonaws.com/111111111111/orders-dlq";
+  const SOURCE_URL =
+    "https://sqs.us-east-1.amazonaws.com/111111111111/orders-inbound";
+
+  function reinsertPlan(): ExecutePlan {
+    return {
+      actions: [],
+      removeCount: 0,
+      reinsertCount: 1,
+      leaveCount: 0,
+      needsSourceQueue: true,
+    };
+  }
+
+  function noReinsertPlan(): ExecutePlan {
+    return {
+      actions: [],
+      removeCount: 1,
+      reinsertCount: 0,
+      leaveCount: 0,
+      needsSourceQueue: false,
+    };
+  }
+
+  test("returns the supplied sourceQueueUrl unchanged when it names preset.sourceQueue and shares the dead-letter queue's account and region", () => {
+    const preset = basePreset({ sourceQueue: "orders-inbound" });
+
+    const resolved = resolveSourceQueueUrl(
+      reinsertPlan(),
+      preset,
+      SOURCE_URL,
+      DLQ_URL,
+    );
+
+    expect(resolved).toBe(SOURCE_URL);
+  });
+
+  test("a plan with needsSourceQueue: false passes a supplied sourceQueueUrl through unvalidated", () => {
+    // Deliberately a value that would fail every one of the three checks
+    // (no declared sourceQueue on this preset, wrong queue name, wrong
+    // account) — proving this is the untouched early exit, not a
+    // coincidentally-passing validation.
+    const preset = basePreset({ sourceQueue: undefined });
+    const mismatchedUrl =
+      "https://sqs.eu-west-1.amazonaws.com/222222222222/unrelated-queue";
+
+    const resolved = resolveSourceQueueUrl(
+      noReinsertPlan(),
+      preset,
+      mismatchedUrl,
+      DLQ_URL,
+    );
+
+    expect(resolved).toBe(mismatchedUrl);
+  });
+
+  test("a plan with needsSourceQueue: false returns undefined through unchanged when none was supplied", () => {
+    const preset = basePreset({ sourceQueue: undefined });
+
+    const resolved = resolveSourceQueueUrl(
+      noReinsertPlan(),
+      preset,
+      undefined,
+      DLQ_URL,
+    );
+
+    expect(resolved).toBeUndefined();
   });
 });
