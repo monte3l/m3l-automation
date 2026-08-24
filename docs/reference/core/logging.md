@@ -269,6 +269,14 @@ is **not** redacted by the port — only a _top-level_ `tenant-ref=...` pair
 is. Route a value expected to embed a secret through `redactSensitiveLogValue`
 on its own field instead of relying on the embedded-value pass to catch it.
 
+**Production consumers.** `core/diagnostics`'s `M3LBreadcrumbTrail`,
+`M3LRunReporter`, and `formatErrorChain`/`serializeErrorChain` each accept an
+optional `secrets: M3LSecretNamesPort` constructor/options field that threads
+straight into these two helpers, and `runScript()` wires one in automatically
+from the running script's own config schema. See
+[`diagnostics`](./diagnostics.md#public-api)'s redaction-guarantees note for
+what that widens (and doesn't) at each of those sinks.
+
 ## Notes and behavior
 
 - **Ordered handler array.** `M3LLogger` delegates each `M3LLogEvent` to every handler in array order; each handler decides independently how to render the event. When a `minLevel` floor is set, an event below the logger's floor is dropped before any handler sees it, and each handler additionally drops events below its own floor.

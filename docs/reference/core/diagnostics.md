@@ -36,7 +36,16 @@ behavior changes.
 >   `context`, and the `archive` manifest, and a recovery entry's `item` and `error`, are redacted with
 >   `redactSensitiveLogValue` / `redactSensitiveLogText` plus URL scrubbing.
 >   Those are heuristics over unbounded input. They catch the common shapes and
->   are _not_ a guarantee.
+>   are _not_ a guarantee. `M3LBreadcrumbTrail`, `M3LRunReporter`, and
+>   `formatErrorChain`/`serializeErrorChain` each accept an optional
+>   `secrets` port (an `M3LSecretNamesPort` — see
+>   [`logging`](./logging.md#redacting-with-a-declared-secrets-specifier))
+>   that additively widens this heuristic to a caller-declared set of key
+>   names — e.g. a script's own `deriveSecretsSpecifier(configSchema)` — for
+>   a top-level `key`/`key=value` pair. This is not a reclassification: it is
+>   still best effort for any key not declared to that port, and it does not
+>   catch a declared secret embedded inside another field's free text (a URL
+>   query string, say).
 >
 > Consequently **`run-report.json` is a sensitive artifact — treat it as a
 > crash dump**, not as something to attach to a public issue unreviewed. See

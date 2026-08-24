@@ -245,8 +245,12 @@ A consumer such as the m3l CLI's preset layer (ADR-0042 phase 8f) may still
 choose to carry its own serializable secret flag instead of a live
 `M3LSecretsSpecifier` instance when the specifier can't survive a persistence
 boundary (e.g. a JSON-serialized discovery cache) — `deriveSecretsSpecifier`
-is for in-process consumers that hold a live `M3LConfigSchema`, such as a
-script's own logging setup.
+is for in-process consumers that hold a live `M3LConfigSchema`. `runScript()`
+(`core/script`) is exactly such a consumer: it derives a specifier from the
+running script's own `configSchema` and passes it as the `secrets` option to
+`M3LRunReporter` and to every best-effort diagnostic the script's own
+lifecycle hooks can trigger — see
+[`diagnostics`](./diagnostics.md#public-api)'s redaction-guarantees note.
 
 ## Typo suggestions
 

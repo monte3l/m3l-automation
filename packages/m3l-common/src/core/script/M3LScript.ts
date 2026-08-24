@@ -16,7 +16,9 @@ import {
   M3LLambdaEventConfigProvider,
   M3LPresetConfigProvider,
   M3LYAMLConfigProvider,
+  deriveSecretsSpecifier,
   type M3LConfigProvider,
+  type M3LSecretsSpecifier,
 } from "../config/index.js";
 import {
   M3L_RECOVERY_LIMIT,
@@ -270,6 +272,8 @@ function projectReportedRecoveryEntry(
 export class M3LScript {
   private readonly hooks: M3LScriptLifecycleHooks;
   private readonly schema: M3LConfigSchema | undefined;
+  /** Derived once from {@link M3LScript.schema}; widens best-effort diagnostics. */
+  private readonly secrets: M3LSecretsSpecifier | undefined;
   private readonly configLoader = new M3LScriptConfigLoader();
   readonly #paths = new M3LPaths();
   readonly #controller = new AbortController();
@@ -590,6 +594,10 @@ export class M3LScript {
       options.config !== undefined
         ? new M3LConfigSchema(options.config.params, options.config.validate)
         : undefined;
+    this.secrets =
+      this.schema === undefined
+        ? undefined
+        : deriveSecretsSpecifier(this.schema);
 
     this.configuredCorrelationId = options.correlationId;
     this.preset = options.preset;
@@ -1542,6 +1550,7 @@ export class M3LScript {
       logBestEffortDiagnostic(
         "onError hook failure",
         serializeError(onErrorFailure),
+        { secrets: this.secrets },
       );
     }
   }
@@ -1564,6 +1573,7 @@ export class M3LScript {
       logBestEffortDiagnostic(
         `onCleanup failure (${label})`,
         serializeError(cleanupFailure),
+        { secrets: this.secrets },
       );
     }
   }

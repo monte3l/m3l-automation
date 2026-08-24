@@ -9,7 +9,10 @@
  * @packageDocumentation
  */
 
-import { redactSensitiveLogValue } from "../../core/logging/index.js";
+import {
+  redactSensitiveLogValue,
+  type M3LRedactOptions,
+} from "../../core/logging/index.js";
 
 /**
  * The shape {@link logBestEffortDiagnostic} needs from an already-serialized
@@ -49,17 +52,37 @@ interface SerializedErrorLike {
  * a failure writing the diagnostic itself is silently discarded, since there
  * is nothing further this helper can safely do about it.
  *
+ * Of this helper's 10 call sites across `core/script`/`internal/script`, 5
+ * now pass a derived `secrets` port: `core/diagnostics/run-report.ts`'s
+ * `persist()` catch block (it has a script's config schema in scope via
+ * `M3LRunReporter`'s constructor options), `M3LScript.ts` (two call sites,
+ * deriving from its own `configSchema`), and `run-script.ts`'s
+ * `persistBestEffort` (two call sites, threading the `secrets` value already
+ * derived in `runScript`). The remaining 5 call sites intentionally omit
+ * `options` (equivalent to `undefined`): `process-guards.ts` (three call
+ * sites) and `signalHandlers.ts` (one call site) are process-global
+ * fault/shutdown guards with no schema or script context available at all,
+ * and `collect.ts`'s `collectDiagnostics.config` site (one call site)
+ * receives only a narrow `M3LConfigSchemaPort` (just `declaredNames()`), not
+ * a full `M3LConfigSchema`, so a `secrets` specifier cannot be derived there
+ * either.
+ *
  * @param label - A short label identifying the failure site (e.g.
  *   `"unhandledRejection"`, `"onCleanup"`).
  * @param serialized - The already-serialized error (typically the result of
  *   `core/script/process-guards`'s `serializeError`).
+ * @param options - Optional redaction options, additively widening the
+ *   built-in key-name heuristic with a caller-supplied
+ *   {@link M3LRedactOptions.secrets} port. Omitting this produces the same
+ *   heuristic-only behavior as before this parameter existed.
  */
 export function logBestEffortDiagnostic(
   label: string,
   serialized: SerializedErrorLike,
+  options?: M3LRedactOptions,
 ): void {
   try {
-    const redacted = redactSensitiveLogValue(serialized);
+    const redacted = redactSensitiveLogValue(serialized, options);
     process.stderr.write(`m3l-script: ${label}: ${JSON.stringify(redacted)}\n`);
   } catch {
     // Last-resort: if even the diagnostic write fails, there is nothing
