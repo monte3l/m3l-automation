@@ -9,6 +9,10 @@
 
 import { Core } from "@m3l-automation/m3l-common";
 
+import {
+  REINSERT_PROHIBITION_KEYWORDS,
+  REMOVE_PROHIBITION_KEYWORDS,
+} from "./preset.js";
 import type {
   TriageArm,
   TriageCase,
@@ -116,15 +120,22 @@ function rowCondition(row: TriageCase, armLabel: string): Condition {
   return andAll(predicates as [Condition, ...Condition[]]);
 }
 
-/** A prohibition string blocking `verdict` by simple, case-insensitive containment. */
+/**
+ * A prohibition string blocking `verdict` by simple, case-insensitive
+ * containment against the shared keyword sets `preset.ts` declares —
+ * `load-runbook.ts`'s trust boundary rejects any prohibition matching
+ * neither set, so this and that check cannot drift apart.
+ */
 function prohibitionBlocks(
   prohibition: string,
   verdict: "remove" | "reinsert",
 ): boolean {
   const lower = prohibition.toLowerCase();
-  return verdict === "reinsert"
-    ? lower.includes("redrive") || lower.includes("reinsert")
-    : lower.includes("delete") || lower.includes("remove");
+  const keywords =
+    verdict === "reinsert"
+      ? REINSERT_PROHIBITION_KEYWORDS
+      : REMOVE_PROHIBITION_KEYWORDS;
+  return keywords.some((keyword) => lower.includes(keyword));
 }
 
 /**

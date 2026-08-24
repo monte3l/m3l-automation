@@ -9,6 +9,7 @@ import { createTriageRunState } from "./preset.js";
 import type {
   TriageConclusion,
   TriageEntityLookup,
+  TriagePreset,
   TriageShape,
 } from "./preset.js";
 
@@ -63,17 +64,31 @@ export interface TriageQueueResult {
   readonly drained: number;
   readonly outcomes: readonly MessageOutcome[];
   /**
-   * The drained messages' ids and raw bodies — carried through so
-   * `report.ts`'s `buildTriageReport` can join each row back to its body
-   * for the excerpt/length fields, without re-reading the archive.
+   * The drained messages' ids, raw bodies, and receipt handles — carried
+   * through so `report.ts`'s `buildTriageReport` can join each row back to
+   * its body for the excerpt/length fields, without re-reading the archive,
+   * AND so `execute-actions.ts`'s `applyActions` can act on the exact same
+   * receipt handles this drain obtained instead of re-receiving (a fresh
+   * `receive` against a queue this same drain just emptied would see
+   * nothing but its own lockout — see `applyActions`'s TSDoc).
    */
   readonly messages: readonly {
     readonly messageId: string;
     readonly body: string;
+    readonly receiptHandle: string;
   }[];
   /** The preset's own `escalateTo`/`followUps` — carried through for the report. */
   readonly escalateTo: string;
   readonly followUps: readonly string[];
+  /**
+   * The preset this pass loaded and ran, carried through (review round 2,
+   * SHOULD-FIX 11) so `execute`'s destructive-apply phase can use the exact
+   * preset the interactive confirmation prompt was shown against, instead of
+   * re-reading the file after the prompt returns — a window during which a
+   * concurrent preset write could otherwise redirect where a confirmed plan
+   * sends.
+   */
+  readonly preset: TriagePreset;
 }
 
 /** Renders a run outcome's failure (an unexpected step throw, or an abort) as one operator-facing line. */
@@ -204,8 +219,10 @@ export async function triageQueue(
     messages: drainResult.messages.map((message) => ({
       messageId: message.messageId,
       body: message.body,
+      receiptHandle: message.receiptHandle,
     })),
     escalateTo: preset.escalateTo,
     followUps: preset.followUps,
+    preset,
   };
 }
