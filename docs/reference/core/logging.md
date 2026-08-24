@@ -84,11 +84,16 @@ The ranking itself is internal and not exported.
   [diagnostics](./diagnostics.md#formaterrorchain)) — unlike `serializeError`,
   which is single-level and omits `cause`. It takes `unknown` (it is called from
   a `catch`) and never throws, even when the caught value's own `message` or
-  `stack` getter throws, or a caller-supplied `options.secrets.isSecret`
-  itself throws while redacting the chain — it still emits the event rather
-  than losing the failure it exists to report. `options?.secrets`
-  (`M3LErrorFromOptions`) additively widens redaction for this one call,
-  merged with the logger's own constructor-level `M3LLoggerOptions.secrets`.
+  `stack` getter throws, or `options.secrets` is hostile — a throwing
+  _accessor_ on the `secrets` property itself is guarded at the read; a
+  throwing `isSecret` _implementation_ is guarded per name (conservatively
+  redacting that one name and reporting a best-effort stderr diagnostic)
+  before the merged port ever reaches `serializeErrorChain`, whose own body
+  swallows an unguarded throw silently and with no diagnostic — so the real
+  chain is preserved rather than replaced wholesale by a generic
+  placeholder. `options?.secrets` (`M3LErrorFromOptions`) additively widens
+  redaction for this one call, merged with the logger's own constructor-level
+  `M3LLoggerOptions.secrets`.
 - `logger.time(label)` returns a plain callable that, when invoked, logs a
   `DEBUG` event carrying `label` and `durationMs` — the shared replacement for
   the inline `Date.now()` deltas the importer/network/credentials modules
@@ -147,6 +152,7 @@ invocation.
 interface M3LLoggerOptions {
   readonly correlationId?: string;
   readonly minLevel?: M3LLogLevelFloor;
+  readonly secrets?: M3LSecretNamesPort | undefined;
 }
 
 // A logger constructed with a correlationId stamps it onto every event it emits.
@@ -295,28 +301,42 @@ when its own caller passes `secrets` at construction.
 `message`, `data`, and rendered table output alike — before any handler ever
 sees it: the built-in key-name heuristic runs unconditionally, with no
 opt-out, on every one of `M3LLogger`'s message methods (`text`/`step`/`info`/
-`success`/`warning`/`error`/`fatal`/`section`/`header`/`errorFrom`/`table`/
-`simpleTable`/`keyValueTable`). `M3LLoggerOptions.secrets` additively widens
-that heuristic for every event a given logger dispatches, mirroring every
-other sink's `M3LRedactOptions.secrets` contract; `errorFrom`'s own third
-parameter, `M3LErrorFromOptions.secrets`, additively widens redaction for
-that one call only, merged (union, never narrowed) with the logger's own
-constructor-level `secrets`. `run-script.ts`'s `handleRunFailure` — the
-`script.logger.errorFrom(error)` call every failed `runScript()` run makes —
-passes its own derived `secrets` here, and `M3LScript`'s default logger
-(built when the caller omits `options.logger`) is constructed with
+`success`/`warning`/`error`/`fatal`/`section`/`header`/`newline`/`errorFrom`/
+`time`/`table`/`simpleTable`/`keyValueTable`). `M3LLoggerOptions.secrets`
+additively widens that heuristic for every event a given logger dispatches,
+mirroring every other sink's `M3LRedactOptions.secrets` contract; `errorFrom`'s
+own third parameter, `M3LErrorFromOptions.secrets`, additively widens
+redaction for that one call only, merged (union, never narrowed) with the
+logger's own constructor-level `secrets`. `run-script.ts`'s `handleRunFailure`
+— the `script.logger.errorFrom(error)` call every failed `runScript()` run
+makes — passes its own derived `secrets` here, and `M3LScript`'s default
+logger (built when the caller omits `options.logger`) is constructed with
 `secrets: this.secrets` too, so both composition roots' declared secrets now
 reach the console/file/JSON sinks the same way they already reached
-`M3LBreadcrumbTrail`/`M3LRunReporter`/`serializeErrorChain`. Table redaction
-runs on the **structured row data**, before rendering — the rendered table
-string has no `:`/`=` separator for the regex-based redactor to key on, so
-redacting only the rendered string (an earlier draft of this fix) is a
-no-op. A redaction failure itself (a hostile `secrets.isSecret`
-implementation, or a pathological — circular or excessively deep — `data`
-payload) is isolated: it never propagates out of a message method, falling
-back to a fixed placeholder and a best-effort stderr diagnostic instead,
-mirroring `M3LBreadcrumbTrail.record()`'s identical "must never propagate"
-guarantee over the same underlying redaction call. See
+`M3LBreadcrumbTrail`/`M3LRunReporter`/`serializeErrorChain`. **A
+caller-supplied `options.logger` is never touched and does not receive this
+widening automatically** — `M3LLogger` has no post-construction way to widen
+an already-built instance's redaction (`secrets` is set once, at
+construction), so a caller who wants widened redaction on their own logger
+must pass `secrets` at that logger's own construction; this mirrors the
+existing `minLevel`-resolution carve-out for a caller-supplied logger (see
+[Resolving `minLevel` from CLI / environment](#resolving-minlevel-from-cli--environment-m3lscript)
+above) and `M3LBreadcrumbTrail`'s own "caller-managed" limitation (below).
+Table redaction runs on the **structured row data**, before rendering — the
+rendered table string has no `:`/`=` separator for the regex-based redactor
+to key on, so redacting only the rendered string (an earlier draft of this
+fix) is a no-op; a final pass over the fully-rendered string is still run
+afterward as cheap, idempotent defense-in-depth. A throwing
+`secrets.isSecret` implementation is guarded **per name**: the throw is
+caught right at the call site, reported via a best-effort stderr diagnostic,
+and that one name is conservatively treated as secret (redacted) — so the
+rest of the message/data (and, for `errorFrom`, the rest of the error chain)
+is preserved rather than lost wholesale. A genuinely _structural_ redaction
+failure (a circular or excessively deep payload) is caught by an outer,
+last-resort try/catch around the whole redaction step, substituting a fixed
+placeholder message and reporting the same kind of diagnostic — mirroring
+`M3LBreadcrumbTrail.record()`'s identical "must never propagate" guarantee
+over the same underlying redaction call. See
 [`diagnostics`](./diagnostics.md#public-api)'s redaction-guarantees note for
 the other sinks' equivalent contract.
 
@@ -327,9 +347,13 @@ tracked separately as a follow-up:** a declared (non-heuristic) secret's
 preceded — with nothing to stop the value class before it — by an unrelated
 `word:`/`word=` sequence, because pass 1's bare-value class has no
 whitespace/separator boundary short of the next comma, semicolon, or
-whitespace; and a non-plain-object `data` value (`Date`, `Map`, `Set`, a
-class instance) is silently replaced with `{}` rather than redacted, since
-the redactor only recurses into plain objects/arrays. Both are pre-existing
+whitespace; and a value with no own enumerable string-keyed properties
+(`Date`, `Map`, `Set` — their state lives outside what `Object.entries` can
+see) is silently replaced with `{}`. This is **not** because such a value is
+excluded from recursion — an ordinary class instance's own fields _are_
+recursed into and redacted correctly, the same as a plain object's — it is
+because `Object.entries` returns nothing for these particular built-ins, so
+there is nothing for the redactor to walk. Both are pre-existing
 characteristics of the shared redaction engine — already present, unchanged,
 in `M3LBreadcrumbTrail.record()`'s own redaction call — not something this
 logging surface introduces.

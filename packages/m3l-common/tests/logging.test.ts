@@ -637,19 +637,78 @@ describe("M3LLogger — a redaction failure never propagates out of a message me
     expect(handler.handle).toHaveBeenCalledTimes(1);
   });
 
-  test("errorFrom does not throw when options.secrets' isSecret throws, and still dispatches an ERROR event", () => {
+  test("a narrowly-scoped throwing isSecret redacts only the offending key, preserving unrelated data — proving per-key isolation, not whole-event loss", () => {
     const handler = makeFakeHandler();
-    const throwingSecrets: M3LSecretNamesPort = {
-      isSecret: () => {
-        throw new Error("isSecret exploded");
+    const narrowlyThrowingSecrets: M3LSecretNamesPort = {
+      isSecret: (name) => {
+        if (name === "tenantRef")
+          throw new Error("isSecret exploded for tenantRef");
+        return false;
+      },
+    };
+    const logger = new M3LLogger([handler], {
+      secrets: narrowlyThrowingSecrets,
+    });
+
+    logger.info("status update", {
+      tenantRef: "secretvalue",
+      region: "eu-west-1",
+    });
+
+    expect(handler.handle).toHaveBeenCalledTimes(1);
+    const event = handler.handle.mock.calls[0]?.[0] as M3LLogEvent;
+    const data = event.data as Record<string, unknown>;
+    expect(data["tenantRef"]).toBe("[REDACTED]");
+    expect(data["region"]).toBe("eu-west-1");
+    expect(event.message).toBe("status update");
+  });
+
+  test("errorFrom preserves the real error chain when a narrowly-scoped secrets.isSecret throws, reporting a diagnostic instead of losing the chain", () => {
+    const handler = makeFakeHandler();
+    const stderrSpy = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
+    const narrowlyThrowingSecrets: M3LSecretNamesPort = {
+      isSecret: (name) => {
+        if (name === "tenantRef")
+          throw new Error("isSecret exploded for tenantRef");
+        return false;
       },
     };
     const logger = new M3LLogger([handler]);
 
-    expect(() =>
-      logger.errorFrom(new Error("boom"), undefined, {
-        secrets: throwingSecrets,
+    logger.errorFrom(
+      new M3LError("request failed", {
+        code: "ERR_HTTP_REQUEST",
+        context: { tenantRef: "secretvalue", other: "kept" },
       }),
+      undefined,
+      { secrets: narrowlyThrowingSecrets },
+    );
+
+    expect(handler.handle).toHaveBeenCalledTimes(1);
+    const event = handler.handle.mock.calls[0]?.[0] as M3LLogEvent;
+    expect(event.message).toBe("request failed");
+    const data = event.data as Record<string, unknown>;
+    const context = data["context"] as Record<string, unknown>;
+    expect(context["tenantRef"]).toBe("[REDACTED]");
+    expect(context["other"]).toBe("kept");
+    expect(stderrSpy).toHaveBeenCalled();
+  });
+
+  test("errorFrom does not throw when a hostile ACCESSOR getter on options.secrets itself throws (not the isSecret method)", () => {
+    const handler = makeFakeHandler();
+    const logger = new M3LLogger([handler]);
+    const hostileOptions: { secrets?: M3LSecretNamesPort } = {};
+    Object.defineProperty(hostileOptions, "secrets", {
+      get(): M3LSecretNamesPort {
+        throw new Error("secrets getter exploded");
+      },
+      configurable: true,
+    });
+
+    expect(() =>
+      logger.errorFrom(new Error("boom"), undefined, hostileOptions),
     ).not.toThrow();
 
     expect(handler.handle).toHaveBeenCalledTimes(1);

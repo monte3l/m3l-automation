@@ -63,8 +63,11 @@ export interface M3LFileLoggerHandlerOptions {
  * **Security note.** This handler itself performs no redaction — an
  * {@link M3LLogEvent} handed to it directly (bypassing {@link M3LLogger})
  * is persisted **verbatim**. A message dispatched through `M3LLogger`'s own
- * methods is already redacted (heuristic always-on, plus any declared
- * `secrets`) before this handler ever receives it — see
+ * methods has already passed through `M3LLogger`'s best-effort redaction
+ * (heuristic always-on, plus any declared `secrets`) before this handler
+ * ever receives it — see `redactSensitiveLogText`'s own `@remarks` for what
+ * that redaction can and can't catch (e.g. a value with no recognizable
+ * `key=value`/`key: value` shape passes through unredacted); see also
  * {@link M3LLoggerOptions.secrets}.
  *
  * @example
