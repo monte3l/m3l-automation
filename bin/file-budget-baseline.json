@@ -19,7 +19,7 @@
   "packages/m3l-common/tests/eks.test.ts": 68262,
   "packages/m3l-common/tests/exporters.test.ts": 68687,
   "packages/m3l-common/tests/importers.test.ts": 98694,
-  "packages/m3l-common/tests/logging.test.ts": 114282,
+  "packages/m3l-common/tests/logging.test.ts": 114286,
   "packages/m3l-common/tests/network.test.ts": 88712,
   "packages/m3l-common/tests/pipeline.test.ts": 205436,
   "packages/m3l-common/tests/polling.test.ts": 85013,
