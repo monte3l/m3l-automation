@@ -43,6 +43,17 @@ export interface DrainQueueDeps {
   readonly queue: string;
   /** Total cap across every page combined. */
   readonly maxMessages: number;
+  /**
+   * How long (seconds) every drained message stays invisible to other
+   * receivers. Beyond that ordinary meaning, this is now ALSO the window an
+   * operator has to complete `execute --apply`'s destructive confirmation:
+   * `execute-actions.ts`'s `applyActions` reuses these exact receipt
+   * handles instead of re-receiving (a fresh receive against a queue this
+   * same drain just emptied would see nothing but its own lockout), so a
+   * handle that outlives this timeout before the confirmation returns has
+   * lapsed — the subsequent send/delete then fails and that message lands
+   * in `ApplyResult.failed` rather than being applied.
+   */
   readonly visibilityTimeout: number;
   readonly signal: AbortSignal | undefined;
 }
@@ -141,9 +152,14 @@ function accumulatePage(
  * later, in a later slice, acted on) without a durable record of it having
  * existed.
  *
- * This is a plain read: 3b re-receives at execute time rather than holding
- * these receipt handles for a later gate, so a stale handle expiring
- * between triage and execute is never this function's problem.
+ * The receipt handles this drain obtains ARE held for later: `triage-queue.ts`
+ * carries them through unchanged (`TriageQueueResult.messages`), and
+ * `execute-actions.ts`'s `applyActions` reuses them directly rather than
+ * re-receiving — a fresh receive against a queue this same drain just
+ * emptied would see nothing but its own lockout. A handle that lapses
+ * before `applyActions` runs (the operator's confirmation outlived
+ * `visibilityTimeout`) is that function's problem, not this one's: the
+ * subsequent send/delete simply fails against SQS.
  *
  * @param deps - The SQS operations wrapper, `M3LPaths`, logger, queue
  *   identity, and the paging/visibility/cancellation controls.

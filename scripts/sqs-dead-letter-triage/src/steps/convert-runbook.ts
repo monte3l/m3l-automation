@@ -303,11 +303,55 @@ function toCases(
  * console.log(todos.length > 0);
  * ```
  */
+/**
+ * AWS enforces this suffix on every FIFO queue name — it is the only signal
+ * this converter has for whether the target queue is FIFO, since nothing in
+ * a runbook markdown document reliably states it. Detecting FIFO drives one
+ * thing only: recording the `groupIdPath` gap below. The converter never
+ * guesses the path itself — it has no structural signal for it either.
+ */
+function isFifoQueueName(queue: string): boolean {
+  return queue.endsWith(".fifo");
+}
+
+/**
+ * Records every gap `convertMarkdown` can never close from prose alone —
+ * `routeOn`, `escalateTo`, and the default arm's `key`/`lookup`/`state`, plus
+ * (when `fifo`) `groupIdPath`. Split out purely to keep `convertMarkdown`
+ * under the per-function line ceiling; every message here is unconditional
+ * except the FIFO one.
+ */
+function pushStructuralGapTodos(todos: string[], fifo: boolean): void {
+  todos.push(
+    "routeOn: not derivable from prose — set the envelope path holding the event-type discriminator",
+  );
+  todos.push("escalateTo: not derivable from prose — set the owning team");
+  todos.push(
+    "arms[0].key: not derivable from prose — set the payload path used to extract the lookup key",
+  );
+  todos.push(
+    "arms[0].lookup: not derivable from prose — add at least one lookup tier",
+  );
+  todos.push(
+    "arms[0].state: not derivable from prose — set the fromState/nextState payload paths",
+  );
+  if (fifo) {
+    // Never guessed: a FIFO queue cannot be sent to without a real
+    // groupIdPath (decision 4 / PR 3b's two-way rule), and this converter
+    // has no structural signal in the markdown for which payload path holds
+    // the group id, so it leaves the field entirely unset and records why.
+    todos.push(
+      "groupIdPath: not derivable from prose — this is a FIFO queue ('.fifo' suffix); set the payload path to the message group id before this preset can send a 'reinsert'",
+    );
+  }
+}
+
 export function convertMarkdown(
   markdown: string,
   queue: string,
 ): Omit<ConversionResult, "output"> {
   const todos: string[] = [];
+  const fifo = isFifoQueueName(queue);
 
   const title = extractTitle(markdown);
   if (title === undefined) {
@@ -325,26 +369,14 @@ export function convertMarkdown(
   if (table.length === 0) todos.push("arms: no known-cases table found");
   const cases = toCases(table, todos);
 
-  todos.push(
-    "routeOn: not derivable from prose — set the envelope path holding the event-type discriminator",
-  );
-  todos.push("escalateTo: not derivable from prose — set the owning team");
-  todos.push(
-    "arms[0].key: not derivable from prose — set the payload path used to extract the lookup key",
-  );
-  todos.push(
-    "arms[0].lookup: not derivable from prose — add at least one lookup tier",
-  );
-  todos.push(
-    "arms[0].state: not derivable from prose — set the fromState/nextState payload paths",
-  );
+  pushStructuralGapTodos(todos, fifo);
 
   const preset: Record<string, unknown> = {
     queue,
     title: title ?? queue,
     handling: handling ?? "under-analysis",
     prohibitions: [],
-    fifo: false,
+    fifo,
     envelope: { bodyIsJson: false },
     routeOn: "",
     arms: [

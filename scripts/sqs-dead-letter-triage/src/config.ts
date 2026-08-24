@@ -2,17 +2,18 @@ import { Core } from "@m3l-automation/m3l-common";
 
 /**
  * The closed set of operations `sqs-dead-letter-triage` dispatches on.
- * `execute` — applying the remediation a verdict implies, behind the graded
- * destructive gate — is **not** declared here; it lands in a later PR
- * (ADR-0072 reviewable-slice discipline). `validate`/`explain`/`convert` run
- * with no AWS credentials at all, which is what lets `validate` run as a CI
- * gate; `triage` is the one operation in this list that reaches AWS.
+ * `validate`/`explain`/`convert` run with no AWS credentials at all, which
+ * is what lets `validate` run as a CI gate; `triage` and `execute` are the
+ * two operations that reach AWS. `execute` only mutates when the caller also
+ * passes `--apply` — without it, it triages and prints the plan, exactly
+ * like `triage` plus the plan report.
  */
 export const TRIAGE_OPERATIONS = [
   "validate",
   "explain",
   "convert",
   "triage",
+  "execute",
 ] as const;
 
 /** One member of {@link TRIAGE_OPERATIONS}. */
@@ -26,7 +27,17 @@ export const MAX_MESSAGES_DEFAULT = 100;
 const MAX_MESSAGES_MIN = 1;
 const MAX_MESSAGES_MAX = 10_000;
 
-/** The default visibility timeout (seconds) applied to a drained batch. */
+/**
+ * The default visibility timeout (seconds) applied to a drained batch. This
+ * is now also the window an operator has to complete `execute --apply`'s
+ * destructive confirmation: `execute-actions.ts`'s `applyActions` reuses the
+ * exact receipt handles the drain obtained instead of re-receiving, and a
+ * handle expires when this timeout elapses. A value here shorter than a
+ * slow/interactive confirmation takes means an expired handle and a failed
+ * apply — the affected message(s) land in `ApplyResult.failed` (which
+ * demotes the run to `"partial"`) rather than being removed/reinserted, and
+ * stay safely in the dead-letter queue.
+ */
 export const VISIBILITY_TIMEOUT_DEFAULT = 1800;
 const VISIBILITY_TIMEOUT_MIN = 0;
 const VISIBILITY_TIMEOUT_MAX = 43_200;
@@ -36,17 +47,31 @@ const VISIBILITY_TIMEOUT_MAX = 43_200;
  * `docs/reference/scripts/sqs-dead-letter-triage.md`'s "Configuration
  * schema" table exactly, in table order.
  *
- * Only `operation`, `runbookDir`, `maxMessages` and `visibilityTimeout` carry
- * a default; `queue`, `queueUrl`, `source` and `output` are bare-optional
- * because whether they are required depends on the operation, which
- * {@link configValidators} adjudicates at config-load time.
+ * Only `operation`, `runbookDir`, `maxMessages`, `visibilityTimeout`, `apply`,
+ * `yes` and `yesSensitive` carry a default; `queue`, `queueUrl`, `source`,
+ * `output` and `sourceQueueUrl` are bare-optional because whether they are
+ * required depends on the operation (or, for `sourceQueueUrl`, on the plan
+ * `execute` actually builds), which {@link configValidators} and `execute`'s
+ * own run-time guard adjudicate, never here.
  *
  * `Core.AWS_PROFILE_PARAM_NAME` (`aws.profile`) IS now declared — `triage`
- * reaches AWS — but deliberately not `required: true`: declaring the
- * parameter is what makes `M3LScript` provision `script.aws`, and only
- * `triage` needs it. `validate`, `explain` and `convert` must stay runnable
- * with no AWS credentials at all, which is what makes `validate` a CI gate.
- * `operation` still defaults to `"validate"`, not the AWS-facing `"triage"`.
+ * and `execute` reach AWS — but deliberately not `required: true`: declaring
+ * the parameter is what makes `M3LScript` provision `script.aws`, and only
+ * `triage`/`execute` need it. `validate`, `explain` and `convert` must stay
+ * runnable with no AWS credentials at all, which is what makes `validate` a
+ * CI gate. `operation` still defaults to `"validate"`, not an AWS-facing one.
+ *
+ * `sourceQueueUrl` is where a planned `reinsert` sends — required only when
+ * `execute`'s plan actually contains one, guarded at run time in
+ * `run-sqs-dead-letter-triage.ts`, never here (decision 1: an operator
+ * triaging a queue that yields no reinserts must never be forced to supply
+ * it). `apply` gates whether `execute` mutates at all (default `false`:
+ * plan-only). Every `execute --apply` is treated as sensitive (review round
+ * 2, MUST-FIX 7: the library never populates `M3LDestructiveTarget.accountId`,
+ * so an account-keyed allow-list could never work) — `yes`/`yesSensitive` are
+ * the `Core.confirmDestructive` bypass flags, and only `yes && yesSensitive`
+ * (both strictly `true`) bypasses the gate; see that function's TSDoc for the
+ * two flags' deliberately asymmetric polarity.
  */
 export const configParameters: readonly Core.M3LConfigParameter[] = [
   new Core.M3LConfigParameter({
@@ -104,6 +129,26 @@ export const configParameters: readonly Core.M3LConfigParameter[] = [
     type: Core.M3LConfigParameterType.STRING,
     validate: Core.M3LConfigValidators.nonEmpty,
   }),
+  new Core.M3LConfigParameter({
+    name: "sourceQueueUrl",
+    type: Core.M3LConfigParameterType.STRING,
+    validate: Core.M3LConfigValidators.nonEmpty,
+  }),
+  new Core.M3LConfigParameter({
+    name: "apply",
+    type: Core.M3LConfigParameterType.BOOL,
+    defaultValue: false,
+  }),
+  new Core.M3LConfigParameter({
+    name: "yes",
+    type: Core.M3LConfigParameterType.BOOL,
+    defaultValue: false,
+  }),
+  new Core.M3LConfigParameter({
+    name: "yesSensitive",
+    type: Core.M3LConfigParameterType.BOOL,
+    defaultValue: false,
+  }),
 ];
 
 /**
@@ -117,6 +162,7 @@ const REQUIRED_BY_OPERATION: Record<TriageOperation, readonly string[]> = {
   explain: ["queue"],
   convert: ["source"],
   triage: ["queue", "queueUrl"],
+  execute: ["queue", "queueUrl"],
 };
 
 /** Reads `operation`, falling back to the declared default. */
