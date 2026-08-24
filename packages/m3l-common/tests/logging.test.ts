@@ -65,6 +65,7 @@ import {
 import { resolveLogLevelFloor } from "../src/internal/logging/resolveLogLevelFloor.js";
 import type {
   M3LConsoleLoggerHandlerOptions,
+  M3LErrorFromOptions,
   M3LFileLoggerHandlerOptions,
   M3LJsonLoggerHandlerOptions,
   M3LLogEvent,
@@ -252,10 +253,11 @@ describe("M3LLogEvent type", () => {
 // M3LLoggerOptions — construction widening (WS-D correlation IDs)
 // ---------------------------------------------------------------------------
 describe("M3LLoggerOptions — type-level contract", () => {
-  test("M3LLoggerOptions equals { readonly correlationId?: string; readonly minLevel?: M3LLogLevelFloor } (review fix round narrows minLevel to the 6-member floor type)", () => {
+  test("M3LLoggerOptions equals { readonly correlationId?: string; readonly minLevel?: M3LLogLevelFloor; readonly secrets?: M3LSecretNamesPort | undefined } (F28 adds secrets)", () => {
     expectTypeOf<M3LLoggerOptions>().toEqualTypeOf<{
       readonly correlationId?: string;
       readonly minLevel?: M3LLogLevelFloor;
+      readonly secrets?: M3LSecretNamesPort | undefined;
     }>();
   });
 
@@ -571,6 +573,165 @@ describe("M3LLogger — table methods", () => {
     const logger = new M3LLogger([handler]);
 
     expect(() => logger.table(rows, { border: "compact" })).not.toThrow();
+  });
+
+  test("table() redacts a heuristic-matched key's value before rendering, not just the rendered string", () => {
+    const handler = makeFakeHandler();
+    const logger = new M3LLogger([handler]);
+
+    logger.table([{ apiKey: "sk-live-SECRETVALUE", region: "eu-west-1" }]);
+
+    const event = handler.handle.mock.calls[0]?.[0] as M3LLogEvent;
+    expect(event.message).not.toContain("sk-live-SECRETVALUE");
+    expect(event.message).toContain("[REDACTED]");
+    expect(event.message).toContain("region");
+    expect(event.message).toContain("eu-west-1");
+  });
+
+  test("keyValueTable() redacts a declared-secret field's value, matched against the record's own field name before the key/value transform", () => {
+    const handler = makeFakeHandler();
+    const secrets: M3LSecretNamesPort = {
+      isSecret: (name) => name === "tenantRef",
+    };
+    const logger = new M3LLogger([handler], { secrets });
+
+    logger.keyValueTable({ tenantRef: "acme-corp-42", region: "eu-west-1" });
+
+    const event = handler.handle.mock.calls[0]?.[0] as M3LLogEvent;
+    expect(event.message).not.toContain("acme-corp-42");
+    expect(event.message).toContain("[REDACTED]");
+    expect(event.message).toContain("tenantRef");
+    expect(event.message).toContain("region");
+    expect(event.message).toContain("eu-west-1");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// M3LLogger — redaction failure isolation (F28 follow-up round)
+// ---------------------------------------------------------------------------
+describe("M3LLogger — a redaction failure never propagates out of a message method", () => {
+  test("logger.info does not throw when data contains a circular reference, and still dispatches an event", () => {
+    const handler = makeFakeHandler();
+    const logger = new M3LLogger([handler]);
+    const circular: Record<string, unknown> = {};
+    circular["self"] = circular;
+
+    expect(() => logger.info("processing", circular)).not.toThrow();
+
+    expect(handler.handle).toHaveBeenCalledTimes(1);
+  });
+
+  test("logger.info does not throw when the constructor-level secrets port's isSecret throws, and still dispatches an event", () => {
+    const handler = makeFakeHandler();
+    const throwingSecrets: M3LSecretNamesPort = {
+      isSecret: () => {
+        throw new Error("isSecret exploded");
+      },
+    };
+    const logger = new M3LLogger([handler], { secrets: throwingSecrets });
+
+    expect(() =>
+      logger.info("plain message", { region: "eu-west-1" }),
+    ).not.toThrow();
+
+    expect(handler.handle).toHaveBeenCalledTimes(1);
+  });
+
+  test("a narrowly-scoped throwing isSecret redacts only the offending key, preserving unrelated data — proving per-key isolation, not whole-event loss", () => {
+    const handler = makeFakeHandler();
+    const narrowlyThrowingSecrets: M3LSecretNamesPort = {
+      isSecret: (name) => {
+        if (name === "tenantRef")
+          throw new Error("isSecret exploded for tenantRef");
+        return false;
+      },
+    };
+    const logger = new M3LLogger([handler], {
+      secrets: narrowlyThrowingSecrets,
+    });
+
+    logger.info("status update", {
+      tenantRef: "secretvalue",
+      region: "eu-west-1",
+    });
+
+    expect(handler.handle).toHaveBeenCalledTimes(1);
+    const event = handler.handle.mock.calls[0]?.[0] as M3LLogEvent;
+    const data = event.data as Record<string, unknown>;
+    expect(data["tenantRef"]).toBe("[REDACTED]");
+    expect(data["region"]).toBe("eu-west-1");
+    expect(event.message).toBe("status update");
+  });
+
+  test("errorFrom preserves the real error chain when a narrowly-scoped secrets.isSecret throws, reporting a diagnostic instead of losing the chain", () => {
+    const handler = makeFakeHandler();
+    const stderrSpy = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
+    const narrowlyThrowingSecrets: M3LSecretNamesPort = {
+      isSecret: (name) => {
+        if (name === "tenantRef")
+          throw new Error("isSecret exploded for tenantRef");
+        return false;
+      },
+    };
+    const logger = new M3LLogger([handler]);
+
+    logger.errorFrom(
+      new M3LError("request failed", {
+        code: "ERR_HTTP_REQUEST",
+        context: { tenantRef: "secretvalue", other: "kept" },
+      }),
+      undefined,
+      { secrets: narrowlyThrowingSecrets },
+    );
+
+    expect(handler.handle).toHaveBeenCalledTimes(1);
+    const event = handler.handle.mock.calls[0]?.[0] as M3LLogEvent;
+    expect(event.message).toBe("request failed");
+    const data = event.data as Record<string, unknown>;
+    const context = data["context"] as Record<string, unknown>;
+    expect(context["tenantRef"]).toBe("[REDACTED]");
+    expect(context["other"]).toBe("kept");
+    expect(stderrSpy).toHaveBeenCalled();
+  });
+
+  test("errorFrom does not throw when a hostile ACCESSOR getter on options.secrets itself throws (not the isSecret method)", () => {
+    const handler = makeFakeHandler();
+    const logger = new M3LLogger([handler]);
+    const hostileOptions: { secrets?: M3LSecretNamesPort } = {};
+    Object.defineProperty(hostileOptions, "secrets", {
+      get(): M3LSecretNamesPort {
+        throw new Error("secrets getter exploded");
+      },
+      configurable: true,
+    });
+
+    expect(() =>
+      logger.errorFrom(new Error("boom"), undefined, hostileOptions),
+    ).not.toThrow();
+
+    expect(handler.handle).toHaveBeenCalledTimes(1);
+    const event = handler.handle.mock.calls[0]?.[0] as M3LLogEvent;
+    expect(event.category).toBe(M3LLogEventCategory.ERROR);
+  });
+
+  test("a constructor-level port returning a truthy non-boolean does not defeat a well-formed per-call port's redaction (mergeSecrets normalizes to strict boolean)", () => {
+    const handler = makeFakeHandler();
+    const declaredNames = ["tenantRef"];
+    // Deliberately returns the matched STRING (a common but incorrect idiom),
+    // not a strict boolean — must not poison the per-call port below via ||.
+    const looselyTypedSecrets = {
+      isSecret: (name: string) => declaredNames.find((d) => d === name),
+    } as unknown as M3LSecretNamesPort;
+    const logger = new M3LLogger([handler], { secrets: looselyTypedSecrets });
+
+    logger.errorFrom(new Error("tenantRef=abc123; other=kept"), undefined, {
+      secrets: { isSecret: (name) => name === "tenantRef" },
+    });
+
+    const event = handler.handle.mock.calls[0]?.[0] as M3LLogEvent;
+    expect(event.message).toBe("tenantRef=[REDACTED]; other=kept");
   });
 });
 
@@ -2440,6 +2601,83 @@ describe("logger.errorFrom() (ADR-0035 phase 3)", () => {
     const data = event.data as Record<string, unknown>;
     expect(Array.isArray(data["chain"])).toBe(true);
     expect((data["chain"] as unknown[]).length).toBeGreaterThan(0);
+  });
+
+  // ---------------------------------------------------------------------------
+  // F28 (issue #634): unconditional heuristic redaction of the raw message
+  // string, plus additive widening via constructor-level and per-call
+  // `secrets` (M3LErrorFromOptions, net-new third parameter).
+  // ---------------------------------------------------------------------------
+  test("redacts a heuristic-matched key=value pair in the error's own message before it reaches the handler", () => {
+    const handler = makeFakeHandler();
+    const logger = new M3LLogger([handler]);
+
+    logger.errorFrom(new Error("login failed: password=hunter2"));
+
+    const event = handler.handle.mock.calls[0]?.[0] as M3LLogEvent;
+    expect(event.message).toBe("login failed: password=[REDACTED]");
+    expect(event.message).not.toContain("hunter2");
+  });
+
+  test("errorFrom's options.secrets widens redaction to a declared, heuristic-unmatched name in the message", () => {
+    const handler = makeFakeHandler();
+    const logger = new M3LLogger([handler]);
+    const secrets: M3LSecretNamesPort = {
+      isSecret: (name) => name === "tenantRef",
+    };
+    const options: M3LErrorFromOptions = { secrets };
+
+    logger.errorFrom(
+      new Error("tenantRef=acme-corp-42; request failed"),
+      undefined,
+      options,
+    );
+
+    const event = handler.handle.mock.calls[0]?.[0] as M3LLogEvent;
+    expect(event.message).toBe("tenantRef=[REDACTED]; request failed");
+    expect(event.message).not.toContain("acme-corp-42");
+  });
+
+  test("without options.secrets, the same declared name is left verbatim in the message (differential baseline)", () => {
+    const handler = makeFakeHandler();
+    const logger = new M3LLogger([handler]);
+
+    logger.errorFrom(new Error("tenantRef=acme-corp-42; request failed"));
+
+    const event = handler.handle.mock.calls[0]?.[0] as M3LLogEvent;
+    expect(event.message).toBe("tenantRef=acme-corp-42; request failed");
+    expect(event.message).toContain("acme-corp-42");
+  });
+
+  test("a logger constructed with options.secrets redacts a declared name via logger.info (non-error emit path)", () => {
+    const handler = makeFakeHandler();
+    const secrets: M3LSecretNamesPort = {
+      isSecret: (name) => name === "tenantRef",
+    };
+    const logger = new M3LLogger([handler], { secrets });
+
+    logger.info("processing tenantRef=acme-corp-42", {
+      tenantRef: "acme-corp-42",
+    });
+
+    const event = handler.handle.mock.calls[0]?.[0] as M3LLogEvent;
+    expect(event.message).toBe("processing tenantRef=[REDACTED]");
+    const data = event.data as Record<string, unknown>;
+    expect(data["tenantRef"]).toBe("[REDACTED]");
+  });
+
+  test("a message/data with no sensitive pattern reaches the handler byte-identical (additive, not lossy)", () => {
+    const handler = makeFakeHandler();
+    const logger = new M3LLogger([handler]);
+
+    logger.info("processing region=eu-west-1", {
+      region: "eu-west-1",
+      count: 12,
+    });
+
+    const event = handler.handle.mock.calls[0]?.[0] as M3LLogEvent;
+    expect(event.message).toBe("processing region=eu-west-1");
+    expect(event.data).toEqual({ region: "eu-west-1", count: 12 });
   });
 });
 

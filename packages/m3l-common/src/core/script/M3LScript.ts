@@ -650,18 +650,24 @@ export class M3LScript {
    * Builds the default logger used when the caller omits
    * `options.logger` — a single {@link M3LConsoleLoggerHandler} with
    * `minLevel` set to whatever {@link resolveLogLevelFloor} resolves from
-   * the ambient CLI/env chain. Only called from the `??` branch of the
-   * constructor's logger assignment, so a caller-supplied logger never
-   * triggers (or is affected by) this resolution.
+   * the ambient CLI/env chain, and `secrets` set to this script's own
+   * derived {@link M3LScript.secrets}. Only called from the `??` branch of
+   * the constructor's logger assignment, so a caller-supplied logger never
+   * triggers (or is affected by) this resolution — a caller-supplied
+   * `options.logger` is never touched and does not receive this script's
+   * derived `secrets` automatically; `M3LLogger` has no post-construction
+   * way to widen an already-built instance's redaction, so a caller who
+   * wants widened redaction on their own logger must pass `secrets` at
+   * that logger's own construction.
    */
   private buildDefaultLogger(): M3LLogger {
     const resolvedLogLevelFloor = resolveLogLevelFloor();
-    return new M3LLogger(
-      [new M3LConsoleLoggerHandler()],
-      resolvedLogLevelFloor !== undefined
+    return new M3LLogger([new M3LConsoleLoggerHandler()], {
+      ...(resolvedLogLevelFloor !== undefined
         ? { minLevel: resolvedLogLevelFloor }
-        : undefined,
-    );
+        : {}),
+      ...(this.secrets !== undefined ? { secrets: this.secrets } : {}),
+    });
   }
 
   /**

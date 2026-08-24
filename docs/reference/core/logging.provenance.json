@@ -8,7 +8,12 @@
         {
           "file": "packages/m3l-common/src/core/logging/M3LLogger.ts",
           "symbol": "M3LLogger",
-          "blob": "21f2219cabf5a2bfca28c48e2509abc097228fb3"
+          "blob": "607cdadb9f0a107f6a1a6e579b469cd0d415ee66"
+        },
+        {
+          "file": "packages/m3l-common/src/core/logging/M3LLogger.ts",
+          "symbol": "M3LErrorFromOptions",
+          "blob": "607cdadb9f0a107f6a1a6e579b469cd0d415ee66"
         },
         {
           "file": "packages/m3l-common/src/core/logging/M3LLogEvent.ts",
@@ -28,12 +33,12 @@
         {
           "file": "packages/m3l-common/src/core/logging/M3LFileLoggerHandler.ts",
           "symbol": "M3LFileLoggerHandler",
-          "blob": "66a6aeb0b4b3f2a5284eb8e3b09265847078b9f5"
+          "blob": "7eb29005e3ad4f7ee05ee3f19e3ca4bfcd57e208"
         },
         {
           "file": "packages/m3l-common/src/core/logging/M3LFileLoggerHandler.ts",
           "symbol": "M3LFileLoggerHandlerOptions",
-          "blob": "66a6aeb0b4b3f2a5284eb8e3b09265847078b9f5"
+          "blob": "7eb29005e3ad4f7ee05ee3f19e3ca4bfcd57e208"
         },
         {
           "file": "packages/m3l-common/src/core/logging/M3LJsonLoggerHandler.ts",
@@ -68,7 +73,7 @@
         {
           "file": "packages/m3l-common/src/core/logging/M3LLogger.ts",
           "symbol": "M3LLoggerOptions",
-          "blob": "21f2219cabf5a2bfca28c48e2509abc097228fb3"
+          "blob": "607cdadb9f0a107f6a1a6e579b469cd0d415ee66"
         },
         {
           "file": "packages/m3l-common/src/core/logging/M3LLogEventCategory.ts",
@@ -101,7 +106,7 @@
           "blob": "f63b064fa8781afe744fc9c6f0e45c2f4b75088d"
         }
       ],
-      "retrieved": "2026-08-14"
+      "retrieved": "2026-08-24"
     },
     {
       "heading": "`M3LLogger` methods",
@@ -109,10 +114,10 @@
         {
           "file": "packages/m3l-common/src/core/logging/M3LLogger.ts",
           "symbol": "M3LLogger",
-          "blob": "21f2219cabf5a2bfca28c48e2509abc097228fb3"
+          "blob": "607cdadb9f0a107f6a1a6e579b469cd0d415ee66"
         }
       ],
-      "retrieved": "2026-08-10"
+      "retrieved": "2026-08-24"
     },
     {
       "heading": "`M3LLogEventCategory`",
@@ -131,7 +136,7 @@
         {
           "file": "packages/m3l-common/src/core/logging/M3LLogger.ts",
           "symbol": "M3LLogger",
-          "blob": "21f2219cabf5a2bfca28c48e2509abc097228fb3"
+          "blob": "607cdadb9f0a107f6a1a6e579b469cd0d415ee66"
         },
         {
           "file": "packages/m3l-common/src/core/logging/M3LLogEventCategory.ts",
@@ -144,7 +149,7 @@
           "blob": "15d6ccf3b64d17e41790931b1abc1db0b3b99939"
         }
       ],
-      "retrieved": "2026-08-10"
+      "retrieved": "2026-08-24"
     },
     {
       "heading": "Correlation IDs",
@@ -152,7 +157,7 @@
         {
           "file": "packages/m3l-common/src/core/logging/M3LLogger.ts",
           "symbol": "M3LLoggerOptions",
-          "blob": "21f2219cabf5a2bfca28c48e2509abc097228fb3"
+          "blob": "607cdadb9f0a107f6a1a6e579b469cd0d415ee66"
         },
         {
           "file": "packages/m3l-common/src/core/logging/M3LLogEvent.ts",
@@ -165,7 +170,7 @@
           "blob": "d05ccc572611902498e5194c1ff8c7a2b655fee7"
         }
       ],
-      "retrieved": "2026-08-10"
+      "retrieved": "2026-08-24"
     },
     {
       "heading": "Composing handlers",
@@ -173,7 +178,7 @@
         {
           "file": "packages/m3l-common/src/core/logging/M3LLogger.ts",
           "symbol": "M3LLogger",
-          "blob": "21f2219cabf5a2bfca28c48e2509abc097228fb3"
+          "blob": "607cdadb9f0a107f6a1a6e579b469cd0d415ee66"
         },
         {
           "file": "packages/m3l-common/src/core/logging/M3LConsoleLoggerHandler.ts",
@@ -183,7 +188,7 @@
         {
           "file": "packages/m3l-common/src/core/logging/M3LFileLoggerHandler.ts",
           "symbol": "M3LFileLoggerHandler",
-          "blob": "66a6aeb0b4b3f2a5284eb8e3b09265847078b9f5"
+          "blob": "7eb29005e3ad4f7ee05ee3f19e3ca4bfcd57e208"
         },
         {
           "file": "packages/m3l-common/src/core/logging/M3LJsonLoggerHandler.ts",
@@ -191,7 +196,7 @@
           "blob": "d05ccc572611902498e5194c1ff8c7a2b655fee7"
         }
       ],
-      "retrieved": "2026-08-10"
+      "retrieved": "2026-08-24"
     },
     {
       "heading": "Rendering a table",
@@ -246,7 +251,7 @@
         {
           "file": "packages/m3l-common/src/core/logging/M3LLogger.ts",
           "symbol": "M3LLogger",
-          "blob": "21f2219cabf5a2bfca28c48e2509abc097228fb3"
+          "blob": "607cdadb9f0a107f6a1a6e579b469cd0d415ee66"
         },
         {
           "file": "packages/m3l-common/src/core/logging/M3LConsoleLoggerHandler.ts",
@@ -256,7 +261,7 @@
         {
           "file": "packages/m3l-common/src/core/logging/M3LFileLoggerHandler.ts",
           "symbol": "M3LFileLoggerHandler",
-          "blob": "66a6aeb0b4b3f2a5284eb8e3b09265847078b9f5"
+          "blob": "7eb29005e3ad4f7ee05ee3f19e3ca4bfcd57e208"
         },
         {
           "file": "packages/m3l-common/src/core/logging/M3LJsonLoggerHandler.ts",
@@ -269,7 +274,7 @@
           "blob": "36797049c6dff3fe30eea8d24d5071e6b00ceff9"
         }
       ],
-      "retrieved": "2026-08-10"
+      "retrieved": "2026-08-24"
     }
   ]
 }

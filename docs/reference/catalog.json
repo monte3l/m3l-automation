@@ -302,6 +302,7 @@
     "docPath": "docs/reference/core/logging.md",
     "symbols": [
       "M3LLogger",
+      "M3LErrorFromOptions",
       "M3LLogEvent",
       "M3LLogEventCategory",
       "M3LConsoleLoggerHandler",
