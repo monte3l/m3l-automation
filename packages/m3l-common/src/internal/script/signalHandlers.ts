@@ -7,6 +7,7 @@
  * @packageDocumentation
  */
 
+import type { M3LSecretNamesPort } from "../../core/logging/redact.js";
 import { serializeError } from "../../core/script/process-guards.js";
 
 import { logBestEffortDiagnostic } from "./diagnostics.js";
@@ -170,9 +171,13 @@ export function pushForcedSignalExitCode(code: number): () => void {
  * @param onShutdown - Invoked once, on the first signal received. Its
  *   returned promise (if any) is not awaited by this function — shutdown is
  *   best-effort and must not block signal delivery.
+ * @param secrets - Optional `secrets` port, additively widening the
+ *   `onShutdown`-failure diagnostic's redaction beyond the built-in key-name
+ *   heuristic. Omitting it preserves the previous heuristic-only behavior.
  */
 export function registerShutdownSignals(
   onShutdown: () => void | Promise<void>,
+  secrets?: M3LSecretNamesPort,
 ): void {
   let signaled = false;
 
@@ -189,7 +194,9 @@ export function registerShutdownSignals(
       .catch((cause: unknown) => {
         // Best-effort shutdown — a failure here is not actionable from
         // inside a signal handler, but it must not vanish silently either.
-        logBestEffortDiagnostic("onShutdown", serializeError(cause));
+        logBestEffortDiagnostic("onShutdown", serializeError(cause), {
+          secrets,
+        });
       });
   };
 

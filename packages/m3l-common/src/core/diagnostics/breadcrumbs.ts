@@ -14,7 +14,10 @@
  */
 
 import { M3LError } from "../errors/index.js";
-import { redactSensitiveLogValue } from "../logging/redact.js";
+import {
+  redactSensitiveLogValue,
+  type M3LSecretNamesPort,
+} from "../logging/redact.js";
 
 import { scrubUrlsInText } from "./format-error.js";
 
@@ -100,6 +103,19 @@ export interface M3LBreadcrumbSource {
 export interface M3LBreadcrumbTrailOptions {
   /** Maximum number of entries retained; oldest evicted first. Defaults to `100`. */
   readonly limit?: number;
+  /**
+   * An optional port additively widening `redactSensitiveLogValue`'s
+   * built-in key-name heuristic with caller-declared secret names — e.g.
+   * `deriveSecretsSpecifier` over a script's config schema. When supplied, a
+   * *declared* secret key is redacted even under an event's generic
+   * scalar-only fallback; an *undeclared*, arbitrary key remains
+   * heuristic-only either way. See {@link M3LBreadcrumbTrail}'s class doc.
+   * Only redacts a declared secret carried as a top-level `key=value`/
+   * `key: value` pair — a secret value embedded inside another field's free
+   * text (e.g. a URL query string) is not caught this way; see
+   * {@link redactSensitiveLogText}'s `@remarks`.
+   */
+  readonly secrets?: M3LSecretNamesPort | undefined;
 }
 
 /**
@@ -633,10 +649,14 @@ function defaultSourceLabel(source: unknown): string {
  * through that event. For a caller-authored payload instead —
  * `pipeline:phase`/`procedure:step`/`procedure:outcome` (every scalar-valued
  * key survives, by design), or any custom event recorded via {@link
- * M3LBreadcrumbTrail.record} directly — protection is **best effort** only:
- * `redactSensitiveLogValue`'s key-name heuristic does not recognize an
- * arbitrary key name and does not catch a bare, context-free token in free
- * text.
+ * M3LBreadcrumbTrail.record} directly — a *declared* secret key is covered
+ * for a top-level key when the trail is constructed with a {@link
+ * M3LBreadcrumbTrailOptions.secrets} port; a secret value embedded inside
+ * another field's free text is not (see {@link redactSensitiveLogText}).
+ * An *undeclared*, arbitrary key remains heuristic-only either way:
+ * `redactSensitiveLogValue`'s built-in key-name heuristic does not recognize
+ * an arbitrary key name and does not catch a bare, context-free token in
+ * free text.
  *
  * @example
  * ```ts
@@ -651,15 +671,33 @@ function defaultSourceLabel(source: unknown): string {
  * console.log(trail.entries());
  * detach();
  * ```
+ *
+ * Constructing the trail with a `secrets` port derived from a script's own
+ * config schema closes the gap for any declared-secret config value a
+ * caller-authored breadcrumb payload might otherwise carry verbatim:
+ *
+ * ```ts
+ * import { M3LBreadcrumbTrail } from "@m3l-automation/m3l-common/core";
+ * import { deriveSecretsSpecifier } from "@m3l-automation/m3l-common/core";
+ *
+ * declare const script: { configSchema: Parameters<typeof deriveSecretsSpecifier>[0] };
+ *
+ * const trail = new M3LBreadcrumbTrail({
+ *   secrets: deriveSecretsSpecifier(script.configSchema),
+ * });
+ * ```
  */
 export class M3LBreadcrumbTrail {
   readonly #limit: number;
+  readonly #secrets: M3LSecretNamesPort | undefined;
   #entries: M3LBreadcrumb[] = [];
 
   /**
    * Creates a new `M3LBreadcrumbTrail`.
    *
    * @param options - Optional options bag; `limit` defaults to `100`.
+   *   `secrets` is an opt-in, caller-managed port — this class is never
+   *   constructed by `M3LScript`/`runScript`.
    * @throws {@link M3LError} (`ERR_INVALID_ARGUMENT`) When `limit` is not a
    *   positive integer no greater than `Number.MAX_SAFE_INTEGER`.
    */
@@ -667,6 +705,7 @@ export class M3LBreadcrumbTrail {
     const limit = options.limit ?? DEFAULT_LIMIT;
     assertValidLimit(limit);
     this.#limit = limit;
+    this.#secrets = options.secrets;
   }
 
   /**
@@ -679,9 +718,11 @@ export class M3LBreadcrumbTrail {
    * A custom `options.events` name outside the built-in registry (or any
    * event a foreign emitter sends that this trail doesn't recognize) is
    * recorded through the generic fallback: every scalar-valued key is kept
-   * and relies solely on `redactSensitiveLogValue` for protection — a
-   * non-obviously-sensitive key name (e.g. `ssn`) is not recognized as
-   * sensitive and is stored unredacted. See {@link M3LBreadcrumbTrail.record}.
+   * and relies on `redactSensitiveLogValue` (widened by this trail's own
+   * `secrets` port, if one was supplied at construction) for protection — a
+   * non-obviously-sensitive key name not declared to that port (e.g. `ssn`)
+   * is not recognized as sensitive and is stored unredacted. See
+   * {@link M3LBreadcrumbTrail.record}.
    *
    * @param source - Any emitter exposing `on`/`off` — a real
    *   `M3LEventEmitterBase` subclass satisfies this structurally.
@@ -735,11 +776,12 @@ export class M3LBreadcrumbTrail {
    * empty, payload rather than propagating.
    *
    * For an `event` outside the built-in registry, every scalar-valued key is
-   * kept and relies solely on `redactSensitiveLogValue` for protection —
-   * that heuristic only masks keys it recognizes as sensitive by name, so a
-   * non-obviously-sensitive key (e.g. `ssn`) is stored unredacted. This is
-   * opt-in (a custom `options.events` list, or calling `record()` directly)
-   * and intentionally not changed here — only documented.
+   * kept and relies on `redactSensitiveLogValue` (widened by this trail's
+   * own `secrets` port, if one was supplied at construction) for
+   * protection — a *declared* secret key is masked; a key that heuristic
+   * doesn't recognize and that was never declared to `secrets` (e.g. `ssn`)
+   * is stored unredacted. This is opt-in (a custom `options.events` list, or
+   * calling `record()` directly).
    *
    * @param source - The emitter label to record against.
    * @param event - The event name.
@@ -760,7 +802,9 @@ export class M3LBreadcrumbTrail {
     >;
     try {
       const summarized = summarizePayload(event, payload);
-      const redacted = redactSensitiveLogValue(summarized);
+      const redacted = redactSensitiveLogValue(summarized, {
+        secrets: this.#secrets,
+      });
       safePayload = toBreadcrumbPayload(redacted);
     } catch {
       // A hostile getter on the payload (or any other summarize/redact

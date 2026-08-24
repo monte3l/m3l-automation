@@ -15,6 +15,7 @@ import type { M3LErrorOrigin, M3LErrorRetryable } from "../errors/index.js";
 import {
   redactSensitiveLogText,
   redactSensitiveLogValue,
+  type M3LSecretNamesPort,
 } from "../logging/redact.js";
 import { isDangerousKey } from "../security/index.js";
 
@@ -35,7 +36,8 @@ const CAUSED_BY_SEPARATOR = "\n\ncaused by: ";
 
 /**
  * Options controlling {@link formatErrorChain} and {@link serializeErrorChain}
- * rendering. Both fields default to `true`.
+ * rendering. `stacks` and `redact` each default to `true`; `secrets` has no
+ * default and is consulted only when `redact` is `true`.
  *
  * @example
  * ```ts
@@ -49,6 +51,19 @@ export interface M3LFormatErrorChainOptions {
   readonly stacks?: boolean;
   /** Whether to redact sensitive text via `core/logging`'s redactor. Defaults to `true`. */
   readonly redact?: boolean;
+  /**
+   * An optional port additively widening the redactor's built-in key-name
+   * heuristic with caller-declared secret names (e.g. `deriveSecretsSpecifier`
+   * over a script's config schema). Omitting this produces the same
+   * heuristic-only behavior as before this field existed. Has no effect when
+   * `redact` is `false` — redaction (including the declared-secrets
+   * widening) is skipped entirely in that case. Only redacts a declared
+   * secret carried as a top-level `key=value`/`key: value` pair — a secret
+   * value embedded inside another field's free text (e.g. a URL query
+   * string) is not caught this way; see
+   * {@link redactSensitiveLogText}'s `@remarks`.
+   */
+  readonly secrets?: M3LSecretNamesPort | undefined;
 }
 
 /**
@@ -345,16 +360,27 @@ function scrubUrlsInValue(value: unknown): unknown {
  * subsequent URL scrub can only ever trim an already-safe placeholder, never
  * an unredacted secret.
  */
-function maybeRedactText(text: string, redact: boolean): string {
-  return redact ? scrubUrlsInText(redactSensitiveLogText(text)) : text;
+function maybeRedactText(
+  text: string,
+  redact: boolean,
+  secrets: M3LSecretNamesPort | undefined,
+): string {
+  return redact
+    ? scrubUrlsInText(redactSensitiveLogText(text, { secrets }))
+    : text;
 }
 
 /** Renders one level as `"Name: message [CODE]"`, plus stack frames when requested. */
-function renderLevel(level: Error, redact: boolean, stacks: boolean): string {
+function renderLevel(
+  level: Error,
+  redact: boolean,
+  stacks: boolean,
+  secrets: M3LSecretNamesPort | undefined,
+): string {
   const code = level instanceof M3LError ? level.code : undefined;
   const codeSuffix = code === undefined ? "" : ` [${code}]`;
-  const name = maybeRedactText(level.name, redact);
-  const header = `${name}: ${maybeRedactText(level.message, redact)}${codeSuffix}`;
+  const name = maybeRedactText(level.name, redact, secrets);
+  const header = `${name}: ${maybeRedactText(level.message, redact, secrets)}${codeSuffix}`;
 
   if (!stacks) return header;
 
@@ -366,7 +392,7 @@ function renderLevel(level: Error, redact: boolean, stacks: boolean): string {
   const frames = stack.split("\n").slice(1).join("\n");
   if (frames.length === 0) return header;
 
-  return `${header}\n${maybeRedactText(frames, redact)}`;
+  return `${header}\n${maybeRedactText(frames, redact, secrets)}`;
 }
 
 /**
@@ -387,9 +413,10 @@ function renderLevel(level: Error, redact: boolean, stacks: boolean): string {
 function redactContext(
   context: Record<string, unknown>,
   redact: boolean,
+  secrets: M3LSecretNamesPort | undefined,
 ): Record<string, unknown> {
   if (!redact) return context;
-  const redacted = redactSensitiveLogValue(context);
+  const redacted = redactSensitiveLogValue(context, { secrets });
   const scrubbed = scrubUrlsInValue(redacted);
   return isPlainRecord(scrubbed) ? scrubbed : {};
 }
@@ -399,13 +426,16 @@ function serializeLevel(
   level: Error,
   redact: boolean,
   stacks: boolean,
+  secrets: M3LSecretNamesPort | undefined,
 ): M3LSerializedError {
-  const name = maybeRedactText(level.name, redact);
-  const message = maybeRedactText(level.message, redact);
+  const name = maybeRedactText(level.name, redact, secrets);
+  const message = maybeRedactText(level.message, redact, secrets);
   const stack = stacks ? safeReadStack(level) : undefined;
 
   const isM3LError = level instanceof M3LError;
-  const context = isM3LError ? redactContext(level.context, redact) : undefined;
+  const context = isM3LError
+    ? redactContext(level.context, redact, secrets)
+    : undefined;
   const origin = isM3LError ? level.origin : undefined;
   const retryable = isM3LError ? level.retryable : undefined;
 
@@ -413,7 +443,9 @@ function serializeLevel(
     name,
     message,
     ...(isM3LError && { code: level.code }),
-    ...(stack !== undefined && { stack: maybeRedactText(stack, redact) }),
+    ...(stack !== undefined && {
+      stack: maybeRedactText(stack, redact, secrets),
+    }),
     ...(context !== undefined && { context }),
     ...(origin !== undefined && { origin }),
     ...(retryable !== undefined && { retryable }),
@@ -431,7 +463,8 @@ function serializeLevel(
  * renders `[max cause depth reached]`.
  *
  * @param error - Any caught value.
- * @param options - Rendering options; both fields default to `true`.
+ * @param options - Rendering options; `stacks` and `redact` each default to
+ *   `true`, `secrets` has no default (see {@link M3LFormatErrorChainOptions}).
  * @returns A multi-line string describing the full chain.
  *
  * @example
@@ -452,9 +485,12 @@ export function formatErrorChain(
   try {
     const stacks = options.stacks ?? true;
     const redact = options.redact ?? true;
+    const secrets = options.secrets;
     const { levels, circular, maxDepthReached } = walkErrorChain(error);
 
-    const rendered = levels.map((level) => renderLevel(level, redact, stacks));
+    const rendered = levels.map((level) =>
+      renderLevel(level, redact, stacks, secrets),
+    );
     if (circular) {
       rendered.push(CIRCULAR_MARKER);
     } else if (maxDepthReached) {
@@ -477,7 +513,8 @@ export function formatErrorChain(
  * non-`Error` input is normalized to a single synthetic level).
  *
  * @param error - Any caught value.
- * @param options - Rendering options; both fields default to `true`.
+ * @param options - Rendering options; `stacks` and `redact` each default to
+ *   `true`, `secrets` has no default (see {@link M3LFormatErrorChainOptions}).
  * @returns One entry per walked level, root-most last.
  *
  * @example
@@ -498,9 +535,10 @@ export function serializeErrorChain(
   try {
     const stacks = options.stacks ?? true;
     const redact = options.redact ?? true;
+    const secrets = options.secrets;
     const { levels, circular, maxDepthReached } = walkErrorChain(error);
     const serialized = levels.map((level) =>
-      serializeLevel(level, redact, stacks),
+      serializeLevel(level, redact, stacks, secrets),
     );
     if (circular) {
       serialized.push({ name: "Error", message: CIRCULAR_MARKER });

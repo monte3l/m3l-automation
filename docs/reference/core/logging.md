@@ -269,6 +269,39 @@ is **not** redacted by the port — only a _top-level_ `tenant-ref=...` pair
 is. Route a value expected to embed a secret through `redactSensitiveLogValue`
 on its own field instead of relying on the embedded-value pass to catch it.
 
+**Production consumers.** `core/diagnostics`'s `M3LBreadcrumbTrail`,
+`M3LRunReporter`, and `formatErrorChain`/`serializeErrorChain` each accept an
+optional `secrets: M3LSecretNamesPort` constructor/options field that threads
+straight into these two helpers. `core/script`'s `runScript()` and
+`M3LScript` each derive their own copy from the running script's own config
+schema; both register their declared secret names into the same
+process-global union the process-fault guards (`unhandledRejection`/
+`uncaughtException`/`warning`) consult, so either composition root — a
+`runScript()`-managed run, a bare `M3LScript.run()`, or a
+`createLambdaHandler()` invocation — widens that shared union regardless of
+which one a caller uses (the union is append-only and never narrowed; see
+`core/script/process-guards`'s `addProcessGuardSecretNames`). `runScript()`
+additionally wires `M3LRunReporter`; `M3LScript` additionally wires its own
+lifecycle-hook and shutdown-signal diagnostics — those two remain
+composition-root-specific. `M3LBreadcrumbTrail` is the one sink neither ever
+constructs — it stays caller-managed, so a trail only gets widened redaction
+when its own caller passes `secrets` at construction.
+`M3LLogger` (and its handlers) applies **no redaction of any kind** to the
+`message` a caller-thrown error's text lands in — this is not merely
+"heuristic-only," it is unredacted, full stop: none of
+`M3LConsoleLoggerHandler`/`M3LFileLoggerHandler`/`M3LJsonLoggerHandler` ever
+calls `redactSensitiveLogText`/`redactSensitiveLogValue`, and `errorFrom`
+builds its event from the error's raw message. A declared secret in an
+error logged via `M3LLogger` — including the one `runScript()` itself emits
+on every failed run's own console output — prints verbatim, even when its
+key name matches the built-in heuristic (e.g. `password=`/`token=`). This
+is a pre-existing gap, not something F20 introduced or fixed; tracked
+separately (`docs/plans/IMPLEMENTATION.md` F28) since closing it means
+adding redaction to the library's general-purpose logging surface, not
+wiring an existing option through an existing call site. See
+[`diagnostics`](./diagnostics.md#public-api)'s redaction-guarantees note for
+what that widens (and doesn't) at each of those sinks.
+
 ## Notes and behavior
 
 - **Ordered handler array.** `M3LLogger` delegates each `M3LLogEvent` to every handler in array order; each handler decides independently how to render the event. When a `minLevel` floor is set, an event below the logger's floor is dropped before any handler sees it, and each handler additionally drops events below its own floor.
