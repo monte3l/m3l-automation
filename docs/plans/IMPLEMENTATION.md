@@ -422,6 +422,55 @@ procedure-level tests for priority ordering, the ladder looping then giving up,
 the no-correlation short circuit, the depth cap, the fallback carrying
 `investigated`, and preset problems surfacing as validation problems.
 
+### W8 — codified dead-letter-queue triage (P1, done)
+
+`sqs-dead-letter-triage` — the second
+[ADR-0046](../adr/0046-codified-procedure-engine.md) consumer, and the first to
+_act_ on a codified verdict rather than only report one. **Shipped** across a
+**4-PR chain** under [ADR-0072](../adr/0072-reviewable-slice-discipline.md):
+PR #619 (the `aws/sqs` `getQueueAttributes` widening), then #621 (the offline
+spine), #622 (the read-only `triage` path), and #629 (`execute`).
+
+It consumes `aws/sqs` and `aws/dynamodb`, both already wrapped (confirmed
+against the [AWS getter reality table](#aws-getter-reality)), so the only new
+library surface was `getQueueAttributes`. That widening needed its own PR ahead
+of the script per the ADR-0027 wrapper-then-script chain, and `client.ts` was
+already at its `check:file-budget` ceiling, so it also forced a
+behaviour-preserving extraction of the redrive helpers first.
+
+**The code/data split follows [ADR-0076](../adr/0076-codified-runbook-analysis-presets.md)'s
+precedent but diverges on the matcher**, recorded as
+[ADR-0077](../adr/0077-dead-letter-queue-triage-procedure.md). The nine-step
+spine is codified TypeScript so `TriageShape["stepId"]` stays a closed literal
+union; per-queue variation is preset data. Where W7 matches one derived error
+signature, W8 matches a **predicate set over a state-transition pair** — the
+entity's current state against the state the message tried to apply, plus an
+ordered-progression containment check. One preset per queue, with routed
+event-type arms rather than one preset per event type.
+
+**Prohibitions always win.** A queue's declared prohibition downgrades an
+executable verdict to a follow-up regardless of what the case row concluded,
+and `buildExecutePlan` re-asserts the invariant as a last line of defence
+before any mutation. **Archive-before-destroy is codified, not advisory**: the
+drained batch is persisted with full raw bodies before any mutating call, and a
+failed archive write fails the run.
+
+`M3LSQSOperations.redrive()` is **deliberately unused**. Its
+`move | drop | retry` vocabulary was exactly right and is reused as the action
+type, but its control flow receives and acts in a single pass, leaving nowhere
+for the [ADR-0048](../adr/0048-target-graded-destructive-confirmation.md)
+confirmation gate to sit between analysis and action. The script composes
+`receive`/`sendBatch`/`deleteBatch` directly, which also gives the FIFO path
+its required sorted, single-entry sends.
+
+Three defects were found in review rather than in production, all of the
+invisible-failure kind this script can least afford: a cancelled run resolved
+as success (`runScript` classifies `interrupted` only on a rejection), the
+drain could livelock on a page of already-seen ids via the legal
+`visibilityTimeout=0`, and the archive was bounded by message count but not by
+bytes — which only bites because a _correct_ guardrail amplifies it, the drain
+aborting after the batch has already gone invisible so retries never converge.
+
 ## Gated library modules & deferred decisions (Later)
 
 Deliberately unscheduled until the gate opens (ADR-0021 D4/D5 intake). See

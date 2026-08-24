@@ -97,7 +97,7 @@ real, and one Should-fix was worth taking on the spot.
   exactly the drift it exists to catch. `packages/m3l-common/tests/text.test.ts`
   is the precedent (real committed fixture paths, unmocked). `readdirSync` is
   load-bearing, not incidental: it is what makes a fourth preset added later
-  fail this suite rather than ship unvalidated.
+  fail this suite rather than ship unvalidated. _(promoted → .claude/rules/tests.md)_
 - **A Should-fix that was a real injection vector I introduced.** The severity
   rung is substituted into the entry query verbatim, and `severityLadder` is a
   config override validated only as `nonEmpty` — while the correlation key on
@@ -107,7 +107,7 @@ real, and one Should-fix was worth taking on the spot.
   override. **The lesson is the asymmetry, not the vector:** guarding one of
   two paths into the same sink is worse than guarding neither, because the
   guard that exists reads as if the boundary were closed. When you write an
-  allow-list, enumerate every value that reaches the sink.
+  allow-list, enumerate every value that reaches the sink. _(promoted → .claude/agents/code-implementer.md)_
 
 Two Nits were left open (an unterminated final fence in `convert` is dropped
 silently; `vi.restoreAllMocks()` sits in test bodies rather than `afterEach`).

@@ -23,30 +23,30 @@ operator amends after an incident.
 [`sqs-etl`](./sqs-etl.md) keeps the raw dump / send / redrive / delete / purge
 operations; neither script absorbs the other.
 
-> **Landing status.** The offline spine (`validate`, `explain`, `convert`) and
-> the read-only AWS path (`triage`) are implemented. The `execute` operation —
-> applying the remediation a verdict implies, behind the graded destructive
-> gate — is **not yet implemented** and is absent from the configuration schema
-> below; it lands in the following slice (ADR-0072 reviewable-slice
-> discipline). Nothing on this page describes behaviour the script does not
-> currently have.
+> **Landing status.** Complete. All five operations — `validate`, `explain`,
+> `convert`, `triage` and `execute` — are implemented, closing the ADR-0077
+> programme across a four-PR chain.
 
 ## Configuration schema
 
 Every value is declared through the config seam; the script never reads
 `process.env` directly.
 
-| Parameter           | Type     | Default    | Required for        | Notes                                                                        |
-| ------------------- | -------- | ---------- | ------------------- | ---------------------------------------------------------------------------- |
-| `operation`         | `STRING` | `validate` | —                   | One of `validate`, `explain`, `convert`, `triage`.                           |
-| `runbookDir`        | `STRING` | `runbooks` | —                   | Preset directory, resolved under `M3L_INPUT_DIR`.                            |
-| `queue`             | `STRING` | —          | `explain`, `triage` | The queue a preset is keyed by. Selects `<queue>.json`.                      |
-| `queueUrl`          | `STRING` | —          | `triage`            | The dead-letter queue's AWS URL. Deliberately separate from `queue`.         |
-| `source`            | `STRING` | —          | `convert`           | Markdown runbook to convert, resolved under `M3L_INPUT_DIR`.                 |
-| `output`            | `STRING` | —          | —                   | Artifact name for `convert`; defaults to `<queue>.json`.                     |
-| `maxMessages`       | `INT`    | `100`      | —                   | Total messages one `triage` drain pulls across all pages (1–10,000).         |
-| `visibilityTimeout` | `INT`    | `1800`     | —                   | Seconds the drained batch stays invisible (0–43,200).                        |
-| `aws.profile`       | `STRING` | —          | —                   | Declared but **not** `required`; absent is legitimate for the offline three. |
+| Parameter           | Type     | Default    | Required for                   | Notes                                                                                                |
+| ------------------- | -------- | ---------- | ------------------------------ | ---------------------------------------------------------------------------------------------------- |
+| `operation`         | `STRING` | `validate` | —                              | One of `validate`, `explain`, `convert`, `triage`, `execute`.                                        |
+| `runbookDir`        | `STRING` | `runbooks` | —                              | Preset directory, resolved under `M3L_INPUT_DIR`.                                                    |
+| `queue`             | `STRING` | —          | `explain`, `triage`, `execute` | The queue a preset is keyed by. Selects `<queue>.json`.                                              |
+| `queueUrl`          | `STRING` | —          | `triage`, `execute`            | The dead-letter queue's AWS URL. Deliberately separate from `queue`.                                 |
+| `sourceQueueUrl`    | `STRING` | —          | see note                       | Where a `reinsert` sends. Guarded at run time, not at config load.                                   |
+| `source`            | `STRING` | —          | `convert`                      | Markdown runbook to convert, resolved under `M3L_INPUT_DIR`.                                         |
+| `output`            | `STRING` | —          | —                              | Artifact name for `convert`; defaults to `<queue>.json`.                                             |
+| `maxMessages`       | `INT`    | `100`      | —                              | Total messages one drain pulls across all pages (1–10,000).                                          |
+| `visibilityTimeout` | `INT`    | `1800`     | —                              | Seconds the batch stays invisible (0–43,200) — and the operator's confirmation window for `--apply`. |
+| `apply`             | `BOOL`   | `false`    | —                              | `execute` mutates only when set; otherwise it prints the plan and stops.                             |
+| `yes`               | `BOOL`   | `false`    | —                              | Bypasses the plain confirmation. Never bypasses a sensitive target alone.                            |
+| `yesSensitive`      | `BOOL`   | `false`    | —                              | With `yes`, also bypasses a sensitive target. Strict `true` only.                                    |
+| `aws.profile`       | `STRING` | —          | —                              | Declared but **not** `required`; absent is legitimate for the offline three.                         |
 
 `queue` and `queueUrl` are two different things and neither derives from the
 other. `queue` selects the preset file, so it is filename-safe and guarded
@@ -125,6 +125,56 @@ Verdicts map to actions — `remove` → delete, `reinsert` → send to source t
 delete, everything else → leave in place — but **no action is executed by this
 slice**; only `validate`, `explain` and `convert` are implemented.
 
+### Verdict to action
+
+`execute` maps each verdict to exactly one action. The action vocabulary is
+`AWS.M3LSQSRedriveDecision`, reused deliberately — but `drop` means "delete
+from the dead-letter queue" and `retry` means "leave untouched", which read
+backwards in this domain, hence the table.
+
+| Verdict             | Action  | Effect                                     |
+| ------------------- | ------- | ------------------------------------------ |
+| `remove`            | `drop`  | Delete from the dead-letter queue.         |
+| `reinsert`          | `move`  | Send to `sourceQueueUrl`, **then** delete. |
+| every other verdict | `retry` | Leave the message in place.                |
+
+Two guarantees hold regardless of the table. A queue's declared **prohibition
+downgrades** an executable verdict to a follow-up before the plan is built, and
+the planner re-asserts that no action was ever planned for a prohibited
+conclusion. And a `move` **always sends before it deletes**: a delete followed
+by a failed send loses the message permanently, whereas a failed delete after a
+successful send only duplicates it — and only one of those is recoverable.
+
+FIFO queues send one entry at a time, ordered by the preset's `orderBy` path,
+each carrying a `messageGroupId` read from `groupIdPath`.
+
+`execute` **reuses the exact receipt handles the drain already holds** rather
+than re-receiving. A fresh receive cannot work here: the drain took those
+messages with `visibilityTimeout` applied, so it is the drain's own lockout that
+hides them, and the wrapper exposes no `changeMessageVisibility` to lift it. A
+re-receiving `execute` would therefore see an empty queue and act on nothing.
+
+**`visibilityTimeout` is consequently also the window in which the operator must
+complete the confirmation.** A handle expires when that timeout elapses, so a
+value shorter than a slow interactive confirmation means expired handles: the
+affected sends and deletes fail, those messages land in the run's unresolved
+set, and they stay in the dead-letter queue. That is the safe direction — a
+lapsed handle costs a retry, never a lost message — but it is a real constraint
+when raising the default.
+
+`sourceQueueUrl` is cross-checked against the preset's `sourceQueue` **and**
+against the dead-letter queue's own account and region, both parsed out of the
+SQS URLs. A name-only check would pass an identically-named queue in another
+account — and since queue names are routinely identical across dev, staging and
+production, that is the likely paste error rather than an unlikely one.
+
+A per-message send or delete failure does not abort the batch; it is recorded in
+the run's recovery entries, which demote the run to `partial` with a non-zero
+exit code rather than letting an unresolved message pass as success. **Any
+planned action that did not happen demotes the run**, not only the ones that
+failed outright — a confirmed destructive gate followed by nothing happening
+must never report success.
+
 ## Preset schema
 
 One preset per queue, resolved as `<runbookDir>/<queue>.json`.
@@ -136,7 +186,8 @@ One preset per queue, resolved as `<runbookDir>/<queue>.json`.
 | `handling`     | enum       | `runbook` \| `redrive` \| `script` \| `ad-hoc` \| `under-analysis`.     |
 | `prohibitions` | `string[]` | Overrides that downgrade a verdict to a follow-up. Always win.          |
 | `fifo`         | `boolean`  | Whether the queue is FIFO; drives ordered, single-entry sends.          |
-| `orderBy`      | `string?`  | Envelope path the FIFO path sorts on.                                   |
+| `orderBy`      | `string?`  | Envelope path the FIFO path sorts on. Required when `fifo`.             |
+| `groupIdPath`  | `string?`  | Envelope path holding the FIFO `messageGroupId`. Required when `fifo`.  |
 | `sourceQueue`  | `string?`  | Where a `reinsert` verdict sends. Cross-checked against the live queue. |
 | `envelope`     | object     | How to reach the message payload.                                       |
 | `routeOn`      | `string`   | Envelope path holding the event-type discriminator.                     |
@@ -147,6 +198,29 @@ One preset per queue, resolved as `<runbookDir>/<queue>.json`.
 
 Each **arm** carries `match`, `label`, a `key` rule, `lookup` tiers with an
 `onMissing` policy, a `state` field map, and its own `cases[]`.
+
+### Rules the trust boundary enforces offline
+
+Each of these fails `validate` with no AWS credentials, so a preset that cannot
+be executed is rejected in CI rather than partway through a live remediation:
+
+- **`fifo` and its two paths co-occur.** `fifo: true` requires both `orderBy`
+  and `groupIdPath`; declaring either on a standard queue is also rejected,
+  because a field that silently does nothing is worse than an absent one. SQS
+  rejects a FIFO send without a group id, so the alternative is discovering it
+  after the destructive gate was already confirmed.
+- **A `reinsert` needs somewhere to go.** A preset authoring any
+  `verdict: "reinsert"` row must declare `sourceQueue`.
+- **A prohibition must be capable of blocking something.** Prohibitions are
+  prose, matched case-insensitively for `redrive`/`reinsert` (blocking
+  `reinsert`) or `delete`/`remove` (blocking `remove`). A string matching
+  neither is rejected at load, naming the keywords that would make it
+  effective. Without that check a natural paraphrase — "Never replay messages
+  from this queue" — would load, appear in `explain` as a declared prohibition,
+  and then be silently ignored while `execute` deleted or re-sent the messages
+  it was meant to protect.
+- **A non-empty `todos` fails outright.** A partially converted runbook must
+  not produce a confident wrong verdict.
 
 Each **case** carries `id`, `description`, `prose`, a unique `priority` above
 the reserved ceiling, the optional predicates `fromState` / `nextState` /
@@ -170,16 +244,17 @@ anywhere, because the lookup is a typed key.
 
 ## Error codes
 
-| Code                       | Raised when                                                       |
-| -------------------------- | ----------------------------------------------------------------- |
-| `ERR_DLQ_TRIAGE_CONFIG`    | A configuration value is missing or invalid for the operation.    |
-| `ERR_DLQ_TRIAGE_PRESET`    | A preset fails the trust boundary (shape, regex, reserved value). |
-| `ERR_DLQ_TRIAGE_VALIDATE`  | `validate` found problems across one or more presets.             |
-| `ERR_DLQ_TRIAGE_PROCEDURE` | The compiled procedure was asked for a stage the preset omits.    |
-| `ERR_DLQ_TRIAGE_DRAIN`     | The queue could not be drained or its attributes not read.        |
-| `ERR_DLQ_TRIAGE_LOOKUP`    | An entity lookup rejected; the underlying error is the `cause`.   |
-| `ERR_DLQ_TRIAGE_RUN`       | `triage` could not reach a verdict for the queue as a whole.      |
-| `ERR_OPERATION_ABORTED`    | A cancellation signal fired; raised by the library, not remapped. |
+| Code                       | Raised when                                                            |
+| -------------------------- | ---------------------------------------------------------------------- |
+| `ERR_DLQ_TRIAGE_CONFIG`    | A configuration value is missing or invalid for the operation.         |
+| `ERR_DLQ_TRIAGE_PRESET`    | A preset fails the trust boundary (shape, regex, reserved value).      |
+| `ERR_DLQ_TRIAGE_VALIDATE`  | `validate` found problems across one or more presets.                  |
+| `ERR_DLQ_TRIAGE_PROCEDURE` | The compiled procedure was asked for a stage the preset omits.         |
+| `ERR_DLQ_TRIAGE_DRAIN`     | The queue could not be drained or its attributes not read.             |
+| `ERR_DLQ_TRIAGE_LOOKUP`    | An entity lookup rejected; the underlying error is the `cause`.        |
+| `ERR_DLQ_TRIAGE_RUN`       | `triage` could not reach a verdict for the queue as a whole.           |
+| `ERR_DLQ_TRIAGE_EXECUTE`   | An action could not be planned or applied; also the gate's abort code. |
+| `ERR_OPERATION_ABORTED`    | A cancellation signal fired; raised by the library, not remapped.      |
 
 ## Inputs and outputs
 

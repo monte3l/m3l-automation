@@ -163,3 +163,16 @@ status`/`git diff`, re-run `tsc`/`eslint`/`vitest`/coverage) before deciding
   as its own bounded turn, with its own Phase 4 review, landing as its own PR
   before the next slice's dispatch begins — don't let "it's one module" carry
   a many-file, many-concept RED/GREEN pair back into a single dispatch.
+- **Make barrel wiring its own numbered, separately-verified step in any
+  multi-file dispatch.** It is the step most often left for last, so it is the
+  step truncation most often lands on — and a missing
+  `export * from "./<module>/index.js"` line passes the entire suite green while
+  nothing in the module is reachable as `Core.*`/`AWS.*`. Give it its own prompt
+  item with its own verification command, so a truncation mid-verification
+  still leaves the wiring done
+  (`2026-08-11-aws-sqs-redrive-athena-template.md`; the same omission hid behind
+  truncated returns in `2026-07-01-core-json.md`,
+  `2026-07-03-core-exporters.md` and `2026-07-23-core-diagnostics.md`). Budget
+  for it when sizing a slice too: barrel lines, error-catalog entries and
+  ESLint-zone entries are unnamed but required bytes
+  (`2026-08-21-core-procedure.md`).

@@ -28,7 +28,7 @@ describe("sqs-dead-letter-triage config declaration", () => {
     }
   });
 
-  it("declares exactly the nine parameters named in the contract table", () => {
+  it("declares exactly the thirteen parameters named in the contract table (PR 3b adds four — 'nonSensitiveAccounts' was removed: review round 2, MUST-FIX 7, since the library never populates M3LDestructiveTarget.accountId, so an account-keyed allow-list could never fire)", () => {
     expect(new Set(configParameters.map((p) => p.getName()))).toEqual(
       new Set([
         "operation",
@@ -40,6 +40,10 @@ describe("sqs-dead-letter-triage config declaration", () => {
         "maxMessages",
         "visibilityTimeout",
         Core.AWS_PROFILE_PARAM_NAME,
+        "sourceQueueUrl",
+        "apply",
+        "yes",
+        "yesSensitive",
       ]),
     );
   });
@@ -57,12 +61,13 @@ describe("sqs-dead-letter-triage config declaration", () => {
     expect(awsProfile?.isRequired()).toBe(false);
   });
 
-  it("declares exactly validate, explain, convert and triage as the operations", () => {
+  it("declares exactly validate, explain, convert, triage and execute as the operations", () => {
     expect([...TRIAGE_OPERATIONS]).toEqual([
       "validate",
       "explain",
       "convert",
       "triage",
+      "execute",
     ]);
   });
 
@@ -94,6 +99,30 @@ describe("sqs-dead-letter-triage config declaration", () => {
     expect(queueUrl?.getDefaultValue()).toBeUndefined();
     expect(queueUrl?.isRequired()).toBe(false);
   });
+
+  // PR 3b's five new parameters (spec STEP 3). `sourceQueueUrl` is guarded at
+  // run time only when the plan contains a 'reinsert' (decision 1) — never
+  // declared `required: true` here, and never named in
+  // `REQUIRED_BY_OPERATION.execute`.
+  it("declares sourceQueueUrl as a bare-optional, non-empty string, with no default", () => {
+    const sourceQueueUrl = configParameters.find(
+      (parameter) => parameter.getName() === "sourceQueueUrl",
+    );
+    expect(sourceQueueUrl).toBeDefined();
+    expect(sourceQueueUrl?.getDefaultValue()).toBeUndefined();
+    expect(sourceQueueUrl?.isRequired()).toBe(false);
+  });
+
+  test.each(["apply", "yes", "yesSensitive"] as const)(
+    "declares '%s' as a BOOL parameter defaulting to false",
+    (name) => {
+      const parameter = configParameters.find((p) => p.getName() === name);
+      expect(parameter).toBeDefined();
+      expect(parameter?.getType()).toBe(Core.M3LConfigParameterType.BOOL);
+      expect(parameter?.getDefaultValue()).toBe(false);
+      expect(parameter?.isRequired()).toBe(false);
+    },
+  );
 });
 
 describe("maxMessages / visibilityTimeout — declared ranges", () => {
@@ -168,22 +197,14 @@ describe("operation parameter — default and allowed values", () => {
     expect(operation?.getDefaultValue()).toBe("validate");
   });
 
-  test.each(["validate", "explain", "convert", "triage"])(
+  // PR 3b (this slice) lands `execute` — applying the remediation a verdict
+  // implies, behind the graded destructive gate.
+  test.each(["validate", "explain", "convert", "triage", "execute"])(
     "accepts '%s' as a declared operation",
     async (value) => {
       await expect(resolveOperation(value)).resolves.toBe(value);
     },
   );
-
-  // `execute` — applying the remediation a verdict implies, behind the graded
-  // destructive gate — is deliberately deferred to a later PR (ADR-0072).
-  // Pinning its rejection here stops it being half-added (declared as
-  // accepted here without a handler existing).
-  it("rejects 'execute' — deliberately not in this slice", async () => {
-    await expect(resolveOperation("execute")).rejects.toThrow(
-      Core.M3LConfigValidationError,
-    );
-  });
 
   it("rejects an arbitrary unknown value", async () => {
     await expect(resolveOperation("bogus")).rejects.toThrow(
@@ -267,6 +288,26 @@ describe("configValidators — per-operation requiredness", () => {
       firstFailure(
         buildConfig({
           operation: "triage",
+          queue: "orders-dlq",
+          queueUrl: "https://sqs.example/orders-dlq",
+        }),
+      ),
+    ).toBeUndefined();
+  });
+
+  // `execute` needs exactly `queue`/`queueUrl` here (spec decision 1):
+  // `sourceQueueUrl` is guarded at RUN time, only when the built plan
+  // actually contains a 'reinsert' — an operator triaging a queue that
+  // yields no reinserts must never be forced to supply it up front.
+  it("requires both queue and queueUrl for execute, never sourceQueueUrl", () => {
+    const missingBoth = firstFailure(buildConfig({ operation: "execute" }));
+    expect(missingBoth).toContain("queue");
+    expect(missingBoth).toContain("queueUrl");
+
+    expect(
+      firstFailure(
+        buildConfig({
+          operation: "execute",
           queue: "orders-dlq",
           queueUrl: "https://sqs.example/orders-dlq",
         }),

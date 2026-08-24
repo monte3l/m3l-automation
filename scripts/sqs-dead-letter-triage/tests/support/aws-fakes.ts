@@ -17,6 +17,8 @@ import type { AWS } from "@m3l-automation/m3l-common";
 export function createFakeSqsOperations(overrides?: {
   readonly receive?: ReturnType<typeof vi.fn>;
   readonly getQueueAttributes?: ReturnType<typeof vi.fn>;
+  readonly sendBatch?: ReturnType<typeof vi.fn>;
+  readonly deleteBatch?: ReturnType<typeof vi.fn>;
 }): AWS.M3LSQSOperations {
   const fake = {
     receive: overrides?.receive ?? vi.fn().mockResolvedValue([]),
@@ -28,6 +30,15 @@ export function createFakeSqsOperations(overrides?: {
         approximateNumberOfMessagesDelayed: 0,
         queueArn: "arn:aws:sqs:us-east-1:000000000000:fake-queue",
       }),
+    // Used by `execute-actions.ts` (PR 3b): `sendBatch`/`deleteBatch` default
+    // to an all-successful, empty-failure result so a test that does not care
+    // about batch failures does not have to configure one.
+    sendBatch:
+      overrides?.sendBatch ??
+      vi.fn().mockResolvedValue({ successful: [], failed: [] }),
+    deleteBatch:
+      overrides?.deleteBatch ??
+      vi.fn().mockResolvedValue({ successful: [], failed: [] }),
   };
   return fake as unknown as AWS.M3LSQSOperations;
 }

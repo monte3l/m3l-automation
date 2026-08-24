@@ -100,6 +100,10 @@ function basePreset(overrides: Partial<TriagePreset> = {}): TriagePreset {
     fifo: false,
     orderBy: undefined,
     sourceQueue: undefined,
+    // `groupIdPath` is required-but-nullable (same shape as `orderBy` /
+    // `sourceQueue`) — `exactOptionalPropertyTypes` needs it stated
+    // explicitly even when the fixture is non-FIFO.
+    groupIdPath: undefined,
     envelope: { bodyIsJson: true, payloadPath: undefined },
     routeOn: "eventType",
     arms: [baseArm()],

@@ -113,6 +113,20 @@ passes, not when the edit lands.
    makes X needed — it doesn't affect behavior or tests, only correctness of
    the documentation (found on `athena-query`'s `resolve-settings.ts`
    extraction, 2026-07-18).
+6. **A fix to one member of a structurally identical family is not complete
+   until you have grepped the family.** After the repro passes, grep for the
+   siblings sharing the shape you just fixed — the same return type, the same
+   helper, the same path into the same sink — and fix or report every hit. A
+   single passing repro proves the instance, never the class: `core/procedure`
+   fixed one function of several sharing a return shape and left the siblings
+   broken (`docs/logs/2026-08-21-core-procedure.md`), and
+   `cloudwatch-logs-analysis` allow-listed one of two values reaching the same
+   query sink — worse than guarding neither, because the guard that exists
+   reads as if the boundary were closed
+   (`docs/logs/2026-08-23-w7-cloudwatch-logs-analysis.md`). If the siblings sit
+   outside your scoped files (another script, another module), report them to
+   the hub as fleet friction rather than patching one and leaving the rest
+   exposed (`docs/logs/2026-07-27-scripts-cloudformation-stacks.md`).
 
 ## Project invariants (these are how review will judge you)
 
