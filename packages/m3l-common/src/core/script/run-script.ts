@@ -17,11 +17,18 @@ import type {
   M3LConfigSchemaPort,
   M3LRunReportInput,
 } from "../diagnostics/index.js";
+import type { M3LSecretNamesPort } from "../logging/redact.js";
 
 import { logBestEffortDiagnostic } from "../../internal/script/diagnostics.js";
 import { pushForcedSignalExitCode } from "../../internal/script/signalHandlers.js";
+import { deriveSecretsSpecifier } from "../config/index.js";
+import type { M3LSecretsSpecifier } from "../config/index.js";
 
-import { installProcessGuards, serializeError } from "./process-guards.js";
+import {
+  addProcessGuardSecretNames,
+  installProcessGuards,
+  serializeError,
+} from "./process-guards.js";
 import type { M3LScript } from "./M3LScript.js";
 import type { M3LScriptRunOptions } from "./M3LScriptOptions.js";
 
@@ -82,12 +89,15 @@ export interface M3LRunScriptOptions {
 async function persistBestEffort(
   reporter: M3LRunReporter,
   buildInput: () => M3LRunReportInput,
+  secrets: M3LSecretNamesPort | undefined,
 ): Promise<void> {
   let input: M3LRunReportInput;
   try {
     input = buildInput();
   } catch (cause) {
-    logBestEffortDiagnostic("run-report-build-failed", serializeError(cause));
+    logBestEffortDiagnostic("run-report-build-failed", serializeError(cause), {
+      secrets,
+    });
     return;
   }
 
@@ -97,6 +107,7 @@ async function persistBestEffort(
     logBestEffortDiagnostic(
       "run-report-persist-rejected",
       serializeError(cause),
+      { secrets },
     );
   }
 }
@@ -168,6 +179,19 @@ function environmentEntry(
       config: script.currentConfig,
     }),
   };
+}
+
+/**
+ * Extracts the secret names declared by a run's `secrets` specifier, or an
+ * empty iterable when the run has none — so the call site can register them
+ * with {@link addProcessGuardSecretNames} unconditionally, without an `if`
+ * branch (kept separate from `runScript` to hold that function under its
+ * cyclomatic-complexity budget).
+ */
+function secretNamesOf(
+  secrets: M3LSecretsSpecifier | undefined,
+): ReadonlySet<string> {
+  return secrets === undefined ? new Set() : secrets.secretNames;
 }
 
 /**
@@ -252,6 +276,7 @@ async function handleRunFailure(
   startedAt: Date,
   reporter: M3LRunReporter | undefined,
   options: M3LRunScriptOptions | undefined,
+  secrets: M3LSecretNamesPort | undefined,
 ): Promise<void> {
   script.logger.errorFrom(error);
   // Assigned immediately and BEFORE any report construction/persistence —
@@ -273,8 +298,10 @@ async function handleRunFailure(
 
   if (reporter !== undefined) {
     const reportStartedAt = script.runStartedAt ?? startedAt;
-    await persistBestEffort(reporter, () =>
-      buildFailureInput(script, reportStartedAt, options, error),
+    await persistBestEffort(
+      reporter,
+      () => buildFailureInput(script, reportStartedAt, options, error),
+      secrets,
     );
   }
 }
@@ -353,8 +380,23 @@ export async function runScript(
 
   const shouldReport = options?.report !== false;
   const startedAt = new Date();
+  // Mirrors `environmentEntry`'s `if (schema === undefined) return {}`
+  // idiom: a script with no declared config schema has nothing to derive a
+  // secrets port from, so redaction stays purely heuristic for it.
+  const secrets =
+    script.configSchema === undefined
+      ? undefined
+      : deriveSecretsSpecifier(script.configSchema);
+  // Registers this script's declared secret names into the process-global
+  // union `addProcessGuardSecretNames` maintains — see that function's own
+  // TSDoc for why this is append-only and has no corresponding "clear": a
+  // schema-less script, or one whose schema declares no secrets, contributes
+  // nothing here and must NOT be allowed to evict a name a different, still
+  // in-flight or already-finished `runScript()` call registered (two earlier
+  // designs both got this wrong).
+  addProcessGuardSecretNames(secretNamesOf(secrets));
   const reporter = shouldReport
-    ? new M3LRunReporter({ paths: script.paths })
+    ? new M3LRunReporter({ paths: script.paths, secrets })
     : undefined;
 
   // Every field of `M3LScriptRunOptions` is forwarded explicitly via a
@@ -384,12 +426,21 @@ export async function runScript(
       // began) is only a defensive fallback for the fresh-script case where
       // `runPipeline` never got a chance to set it.
       const reportStartedAt = script.runStartedAt ?? startedAt;
-      await persistBestEffort(reporter, () =>
-        buildSuccessInput(script, reportStartedAt, options),
+      await persistBestEffort(
+        reporter,
+        () => buildSuccessInput(script, reportStartedAt, options),
+        secrets,
       );
     }
   } catch (error) {
-    await handleRunFailure(error, script, startedAt, reporter, options);
+    await handleRunFailure(
+      error,
+      script,
+      startedAt,
+      reporter,
+      options,
+      secrets,
+    );
   } finally {
     releaseForcedSignalExitCode();
   }

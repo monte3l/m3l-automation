@@ -20,7 +20,10 @@ import type {
   FileCopySkipReason,
 } from "../../internal/files/types.js";
 import { logBestEffortDiagnostic } from "../../internal/script/diagnostics.js";
-import { redactSensitiveLogValue } from "../logging/redact.js";
+import {
+  redactSensitiveLogValue,
+  type M3LSecretNamesPort,
+} from "../logging/redact.js";
 import { isDangerousKey } from "../security/index.js";
 import { M3LPaths, M3LPathResolutionError } from "../utils/index.js";
 
@@ -297,6 +300,25 @@ export interface M3LRunReporterOptions {
   readonly paths?: Pick<M3LPathsPort, "getOutputDir">;
   /** The report file name within its timestamped directory. Defaults to `"run-report.json"`. */
   readonly fileName?: string;
+  /**
+   * An optional port additively widening the redactor's built-in key-name
+   * heuristic with caller-declared secret names (e.g. `deriveSecretsSpecifier`
+   * over a script's config schema). Threaded through every sanitization step
+   * in {@link M3LRunReporter.build} — i.e. every field that passes through
+   * `sanitizeValue`/`sanitizeString` (`environment`, `timeline`, `archive`,
+   * and failure/recovery detail). A small number of caller-supplied scalar
+   * fields are copied as-is and never sanitized — `script`, `correlationId`,
+   * `failure.stage`, and a string-typed `recovery[].recordedAt` (a
+   * pre-existing, unrelated boundary this option does not change) — and into
+   * the best-effort diagnostic {@link M3LRunReporter.persist} emits on
+   * failure. Omitting this produces
+   * the same heuristic-only behavior as before this field existed. Only
+   * redacts a declared secret carried as a top-level `key=value`/
+   * `key: value` pair — a secret value embedded inside another field's free
+   * text (e.g. a URL query string) is not caught this way; see
+   * {@link redactSensitiveLogText}'s `@remarks`.
+   */
+  readonly secrets?: M3LSecretNamesPort | undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -459,10 +481,14 @@ function safeResolveExitCode(input: M3LRunReportInput): number {
  * to be `"failure"`. With no `error` supplied, the chain is `[]` (not a
  * synthetic single-level chain) — there is genuinely nothing to serialize.
  */
-function buildFailureDetail(input: M3LRunReportInput): M3LRunReportFailure {
+function buildFailureDetail(
+  input: M3LRunReportInput,
+  secrets: M3LSecretNamesPort | undefined,
+): M3LRunReportFailure {
   const stage = input.stage ?? "unknown";
   const error = readInputError(input);
-  const chain = error === undefined ? [] : serializeErrorChain(error);
+  const chain =
+    error === undefined ? [] : serializeErrorChain(error, { secrets });
   return { stage, chain };
 }
 
@@ -779,10 +805,13 @@ function scrubUrlsInSanitizedValue(value: unknown): unknown {
  * Shared by `archive`, `timeline`, and `environment` so none of the three can
  * bypass redaction (or the URL scrub) on its way into the persisted report.
  */
-function sanitizeValue(value: unknown): unknown {
+function sanitizeValue(
+  value: unknown,
+  secrets: M3LSecretNamesPort | undefined,
+): unknown {
   try {
     const acyclic = normalizeForRedaction(value, 0, new WeakSet<object>());
-    const redacted = redactSensitiveLogValue(acyclic);
+    const redacted = redactSensitiveLogValue(acyclic, { secrets });
     return scrubUrlsInSanitizedValue(redacted);
   } catch {
     return UNREDACTABLE_PLACEHOLDER;
@@ -799,8 +828,11 @@ function sanitizeValue(value: unknown): unknown {
  * for an object, which corrupts the field without any signal that the value
  * could not be stringified cleanly.
  */
-function sanitizeString(value: unknown): string {
-  const sanitized = sanitizeValue(value);
+function sanitizeString(
+  value: unknown,
+  secrets: M3LSecretNamesPort | undefined,
+): string {
+  const sanitized = sanitizeValue(value, secrets);
   return typeof sanitized === "string" ? sanitized : UNREDACTABLE_PLACEHOLDER;
 }
 
@@ -1009,11 +1041,12 @@ function projectArchiveReport(
  */
 function buildArchiveEntry(
   archive: unknown,
+  secrets: M3LSecretNamesPort | undefined,
 ): { archive: unknown } | Record<string, never> {
   if (archive === undefined) return {};
   const projected = projectArchiveReport(archive);
   if (projected === undefined) return {};
-  return { archive: sanitizeValue(projected) };
+  return { archive: sanitizeValue(projected, secrets) };
 }
 
 /**
@@ -1058,16 +1091,25 @@ function resolveSerializedErrorContext(
  *
  * Any additional fields a caller attached to the entry are dropped.
  */
-function projectSerializedError(entry: M3LSerializedError): M3LSerializedError {
+function projectSerializedError(
+  entry: M3LSerializedError,
+  secrets: M3LSecretNamesPort | undefined,
+): M3LSerializedError {
   const sanitizedContext =
-    entry.context !== undefined ? sanitizeValue(entry.context) : undefined;
+    entry.context !== undefined
+      ? sanitizeValue(entry.context, secrets)
+      : undefined;
   const context = resolveSerializedErrorContext(sanitizedContext);
 
   return {
-    name: sanitizeString(entry.name),
-    message: sanitizeString(entry.message),
-    ...(entry.code !== undefined && { code: sanitizeString(entry.code) }),
-    ...(entry.stack !== undefined && { stack: sanitizeString(entry.stack) }),
+    name: sanitizeString(entry.name, secrets),
+    message: sanitizeString(entry.message, secrets),
+    ...(entry.code !== undefined && {
+      code: sanitizeString(entry.code, secrets),
+    }),
+    ...(entry.stack !== undefined && {
+      stack: sanitizeString(entry.stack, secrets),
+    }),
     ...(context !== undefined && { context }),
     ...(isM3LErrorOrigin(entry.origin) && { origin: entry.origin }),
     ...(typeof entry.retryable === "boolean" && { retryable: entry.retryable }),
@@ -1106,11 +1148,16 @@ function safeReadEntryField(
  * {@link safeReadEntryField} so {@link M3LRunReporter.build}'s
  * never-throws contract holds even for hostile input.
  */
-function projectRecoveryEntry(entry: M3LRunRecoveryEntry): M3LRunRecoveryEntry {
-  const item = sanitizeString(safeReadEntryField(entry, "item"));
+function projectRecoveryEntry(
+  entry: M3LRunRecoveryEntry,
+  secrets: M3LSecretNamesPort | undefined,
+): M3LRunRecoveryEntry {
+  const item = sanitizeString(safeReadEntryField(entry, "item"), secrets);
   const rawError = safeReadEntryField(entry, "error");
   const error = Array.isArray(rawError)
-    ? (rawError as readonly M3LSerializedError[]).map(projectSerializedError)
+    ? (rawError as readonly M3LSerializedError[]).map((level) =>
+        projectSerializedError(level, secrets),
+      )
     : [];
   const rawRecordedAt = safeReadEntryField(entry, "recordedAt");
   const recordedAt =
@@ -1135,7 +1182,10 @@ function projectRecoveryEntry(entry: M3LRunRecoveryEntry): M3LRunRecoveryEntry {
  * is guarded against throwing getters so `build()`'s never-throws contract
  * holds even for hostile input.
  */
-function buildRecoverySection(input: M3LRunReportInput): {
+function buildRecoverySection(
+  input: M3LRunReportInput,
+  secrets: M3LSecretNamesPort | undefined,
+): {
   readonly recovery: readonly M3LRunRecoveryEntry[];
   readonly recoveryTotal: number;
 } {
@@ -1157,7 +1207,7 @@ function buildRecoverySection(input: M3LRunReportInput): {
   const recovery: M3LRunRecoveryEntry[] = [];
   for (const entry of sliced) {
     try {
-      recovery.push(projectRecoveryEntry(entry));
+      recovery.push(projectRecoveryEntry(entry, secrets));
     } catch {
       // Skip a hostile entry that projectRecoveryEntry could not safely project.
     }
@@ -1234,15 +1284,18 @@ function buildPersistFailureDiagnostic(
 export class M3LRunReporter {
   readonly #paths: Pick<M3LPathsPort, "getOutputDir"> | undefined;
   readonly #fileName: string;
+  readonly #secrets: M3LSecretNamesPort | undefined;
 
   /**
    * Creates a new `M3LRunReporter`.
    *
-   * @param options - Optional injected `paths` port and `fileName` override.
+   * @param options - Optional injected `paths` port, `fileName` override, and
+   *   `secrets` port widening redaction with declared secret names.
    */
   constructor(options: M3LRunReporterOptions = {}) {
     this.#paths = options.paths;
     this.#fileName = options.fileName ?? DEFAULT_FILE_NAME;
+    this.#secrets = options.secrets;
   }
 
   /**
@@ -1352,9 +1405,11 @@ export class M3LRunReporter {
     const exitCode = safeResolveExitCode(input);
     const environment = sanitizeValue(
       input.environment ?? collectDiagnostics(),
+      this.#secrets,
     ) as M3LDiagnosticsSnapshot;
     const timeline = sanitizeValue(
       input.timeline ?? [],
+      this.#secrets,
     ) as readonly M3LBreadcrumb[];
 
     const base = {
@@ -1365,14 +1420,14 @@ export class M3LRunReporter {
       exitCode,
       environment,
       timeline,
-      ...buildArchiveEntry(input.archive),
+      ...buildArchiveEntry(input.archive, this.#secrets),
     };
 
     if (input.outcome === "failure") {
       return {
         ...base,
         outcome: "failure",
-        failure: buildFailureDetail(input),
+        failure: buildFailureDetail(input, this.#secrets),
       };
     }
 
@@ -1391,8 +1446,10 @@ export class M3LRunReporter {
     // outcome — `base.exitCode` was computed for "partial" (exit code 6) and
     // must not bleed into a "success" (exit code 0) fallback report.
     if (input.outcome === "partial") {
-      const { recovery: recoveryRaw, recoveryTotal } =
-        buildRecoverySection(input);
+      const { recovery: recoveryRaw, recoveryTotal } = buildRecoverySection(
+        input,
+        this.#secrets,
+      );
       const [first, ...rest] = recoveryRaw;
       if (first !== undefined) {
         const recovery: readonly [
@@ -1519,6 +1576,7 @@ export class M3LRunReporter {
       logBestEffortDiagnostic(
         "run-report-persist-failed",
         buildPersistFailureDiagnostic(cause),
+        { secrets: this.#secrets },
       );
       return undefined;
     }

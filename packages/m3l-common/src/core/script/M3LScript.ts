@@ -16,7 +16,9 @@ import {
   M3LLambdaEventConfigProvider,
   M3LPresetConfigProvider,
   M3LYAMLConfigProvider,
+  deriveSecretsSpecifier,
   type M3LConfigProvider,
+  type M3LSecretsSpecifier,
 } from "../config/index.js";
 import {
   M3L_RECOVERY_LIMIT,
@@ -44,7 +46,11 @@ import {
 } from "./aws-param-names.js";
 import { M3LScriptConfigLoader } from "./M3LScriptConfigLoader.js";
 import { M3LScriptPresetLoader } from "./M3LScriptPresetLoader.js";
-import { serializeError, setProcessGuardRequestId } from "./process-guards.js";
+import {
+  addProcessGuardSecretNames,
+  serializeError,
+  setProcessGuardRequestId,
+} from "./process-guards.js";
 import type {
   M3LScriptHookContext,
   M3LScriptLifecycleHooks,
@@ -270,6 +276,8 @@ function projectReportedRecoveryEntry(
 export class M3LScript {
   private readonly hooks: M3LScriptLifecycleHooks;
   private readonly schema: M3LConfigSchema | undefined;
+  /** Derived once from {@link M3LScript.schema}; widens best-effort diagnostics. */
+  private readonly secrets: M3LSecretsSpecifier | undefined;
   private readonly configLoader = new M3LScriptConfigLoader();
   readonly #paths = new M3LPaths();
   readonly #controller = new AbortController();
@@ -590,6 +598,25 @@ export class M3LScript {
       options.config !== undefined
         ? new M3LConfigSchema(options.config.params, options.config.validate)
         : undefined;
+    this.secrets =
+      this.schema === undefined
+        ? undefined
+        : deriveSecretsSpecifier(this.schema);
+    // Registers this script's own declared secret names into the
+    // process-global union `addProcessGuardSecretNames` maintains, mirroring
+    // `run-script.ts`'s `runScript()` call site — but here unconditionally at
+    // construction time, not only when a run goes through `runScript()`. A
+    // script driven via `createLambdaHandler()` or a bare `script.run()`
+    // never calls `runScript()`, so without this call its schema-derived
+    // secret names would never reach whatever fault guards the caller has
+    // installed, even though `this.secrets` already has them. This does NOT
+    // install the guards itself — `installProcessGuards()` remains
+    // exclusively `runScript()`'s (or the caller's) responsibility; this only
+    // ensures the names are available once guards ARE installed by whatever
+    // means.
+    if (this.secrets !== undefined) {
+      addProcessGuardSecretNames(this.secrets.secretNames);
+    }
 
     this.configuredCorrelationId = options.correlationId;
     this.preset = options.preset;
@@ -615,7 +642,7 @@ export class M3LScript {
         // wait while the process is shutting down (ADR-0049).
         this.#controller.abort();
         return this.runCleanup("signal-shutdown");
-      });
+      }, this.secrets);
     }
   }
 
@@ -1542,6 +1569,7 @@ export class M3LScript {
       logBestEffortDiagnostic(
         "onError hook failure",
         serializeError(onErrorFailure),
+        { secrets: this.secrets },
       );
     }
   }
@@ -1564,6 +1592,7 @@ export class M3LScript {
       logBestEffortDiagnostic(
         `onCleanup failure (${label})`,
         serializeError(cleanupFailure),
+        { secrets: this.secrets },
       );
     }
   }

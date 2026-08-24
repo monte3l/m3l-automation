@@ -41,6 +41,7 @@ import type {
   M3LSerializedError,
 } from "../src/core/diagnostics/format-error.js";
 import { redactSensitiveLogText } from "../src/core/logging/redact.js";
+import type { M3LSecretNamesPort } from "../src/core/logging/redact.js";
 import { serializeError } from "../src/core/script/process-guards.js";
 import { readPackageVersion } from "../src/internal/diagnostics/packageVersion.js";
 // -----------------------------------------------------------------------
@@ -830,6 +831,7 @@ describe("M3LFormatErrorChainOptions / M3LSerializedError types", () => {
     expectTypeOf<M3LFormatErrorChainOptions>().toEqualTypeOf<{
       readonly stacks?: boolean;
       readonly redact?: boolean;
+      readonly secrets?: M3LSecretNamesPort | undefined;
     }>();
   });
 
