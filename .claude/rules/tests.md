@@ -39,12 +39,15 @@ paths:
   it silently becomes a test of one member.
 - **Never mock the behavior the test exists to validate.** A stub that hands
   back the outcome under question asserts the stub, not the code, and still
-  reads as coverage: a retry suite passed 78/78 against a permissive test-only
-  classifier while the real classifier was a complete no-op
-  (`docs/logs/2026-07-13-dynamo-crud.md`). Exercise the real collaborator at
-  least once — and when the subject _is_ a committed artifact, read the real
-  filesystem unmocked, or the test only validates a copy pasted into itself
-  (`docs/logs/2026-08-23-w7-cloudwatch-logs-analysis.md`).
+  reads as coverage. `sqs-dead-letter-triage`'s apply path had ten tests and
+  could not have caught that the whole path was a guaranteed no-op, because
+  `receive` was mocked to hand the planned messages straight back
+  (`docs/logs/2026-08-24-w8-sqs-dead-letter-triage.md`); a retry suite passed
+  78/78 against a permissive test-only classifier while the real classifier was
+  a complete no-op (`docs/logs/2026-07-13-dynamo-crud.md`). Exercise the real
+  collaborator at least once — and when the subject _is_ a committed artifact,
+  read the real filesystem unmocked, or the test only validates a copy pasted
+  into itself (`docs/logs/2026-08-23-w7-cloudwatch-logs-analysis.md`).
 - **Assert barrel reachability through the package entry point.** Every test
   here imports `src/` paths directly, so none of them can observe a broken
   namespace re-export. A `core/index.ts` missing its

@@ -52,9 +52,14 @@ verifying against repo state instead of trusting the extraction:
 - The "`index.ts` is coverage-invisible" rule was already carried by
   `scaffolding-submodules/SKILL.md` step 2, and its second source log was
   already stamped — the extraction pass had missed the marker. Reverted.
-- A citation to `2026-08-24-w8-sqs-dead-letter-triage.md` was removed: that log
-  exists only on the unmerged `docs/w8-work-log` branch, so the reference would
-  have dangled on `main`. The rule still stands on its two remaining sources.
+- A citation to `2026-08-24-w8-sqs-dead-letter-triage.md` was removed, because
+  that log existed only on the unmerged `docs/w8-work-log` branch and the
+  reference would have dangled on `main`. It was **restored** later the same
+  session: PR #630 landed that log on `main` mid-review, so the citation became
+  valid, the W8 lesson became the never-mock rule's third source, and it got its
+  own stamp. The mechanism is the durable part, not the incident — a citation's
+  validity is a function of the base branch at merge time, not at drafting time,
+  so re-check any cross-branch reference after the pre-PR rebase.
 
 The `check:test-counts` contention bullet was also rewritten after reading the
 cited log properly: that log's own conclusion was that the flake was **redundant

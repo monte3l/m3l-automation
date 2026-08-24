@@ -88,7 +88,7 @@ have caught the no-op, because `receive` was mocked to hand the planned
 messages straight back — the mock asserted the behaviour under question. And
 `resolveSourceQueueUrl` had four failure-path tests that all returned at an
 early exit before any check ran, so its accept path had never executed while
-reading as covered.
+reading as covered. _(promoted → .claude/rules/tests.md)_
 
 **Five stale or false comments**, all the same anatomy: a comment asserting a
 guarantee that lives in another file. One was dictated by my own implementation
