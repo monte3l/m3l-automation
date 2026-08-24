@@ -374,9 +374,13 @@ export async function runScript(
       ? undefined
       : deriveSecretsSpecifier(script.configSchema);
   // Attach this run's `secrets` to the process-global fault guards
-  // (`unhandledRejection`/`uncaughtException`/`warning`) for the duration of
-  // this call — reset in the `finally` block below so the value never
-  // outlives this run.
+  // (`unhandledRejection`/`uncaughtException`/`warning`). Deliberately never
+  // cleared when this run ends (see `setProcessGuardSecrets`'s own TSDoc): the
+  // port only ever widens redaction, so a stale value left behind by a
+  // completed or nested `runScript` call is always the safe direction — the
+  // alternative (clearing it in `finally`, as an earlier revision did) let a
+  // still-running outer call, or a background task rejecting after this call
+  // already returned, leak a declared secret verbatim.
   setProcessGuardSecrets(secrets);
   const reporter = shouldReport
     ? new M3LRunReporter({ paths: script.paths, secrets })
@@ -426,6 +430,5 @@ export async function runScript(
     );
   } finally {
     releaseForcedSignalExitCode();
-    setProcessGuardSecrets(undefined);
   }
 }

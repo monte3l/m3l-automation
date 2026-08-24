@@ -273,17 +273,21 @@ on its own field instead of relying on the embedded-value pass to catch it.
 `M3LRunReporter`, and `formatErrorChain`/`serializeErrorChain` each accept an
 optional `secrets: M3LSecretNamesPort` constructor/options field that threads
 straight into these two helpers. `core/script`'s `runScript()` and
-`M3LScript` each derive one automatically from the running script's own
-config schema and wire it into `M3LRunReporter` plus every best-effort
-diagnostic either of them manages directly (process-fault guards, the
-shutdown-signal handler, lifecycle-hook failures). `M3LBreadcrumbTrail` is
-the one sink `runScript()`/`M3LScript` never construct — it stays
-caller-managed, so a trail only gets widened redaction when its own caller
-passes `secrets` at construction. `M3LLogger` (and its handlers) is **not**
-among the widened sinks: `errorFrom`'s call into `serializeErrorChain` does
-not receive a `secrets` port, so a declared secret in an error logged via
-`M3LLogger` — including the one `runScript()` itself emits on a run's
-failure path — is redacted by the built-in heuristic only. See
+`M3LScript` each derive their own copy from the running script's own config
+schema, but wire it into different diagnostics — `runScript()` wires
+`M3LRunReporter` and the process-fault guards (`unhandledRejection`/
+`uncaughtException`/`warning`) it installs; `M3LScript` wires its own
+lifecycle-hook and shutdown-signal diagnostics. Neither wires the other's
+sinks: a script that calls bare `M3LScript.run()` without going through
+`runScript()` gets no process-fault-guard widening at all, even though
+`M3LScript` itself holds a `secrets` copy. `M3LBreadcrumbTrail` is the one
+sink neither ever constructs — it stays caller-managed, so a trail only gets
+widened redaction when its own caller passes `secrets` at construction.
+`M3LLogger` (and its handlers) is **not** among the widened sinks:
+`errorFrom`'s call into `serializeErrorChain` does not receive a `secrets`
+port, so a declared secret in an error logged via `M3LLogger` — including
+the one `runScript()` itself emits on a run's failure path — is redacted by
+the built-in heuristic only. See
 [`diagnostics`](./diagnostics.md#public-api)'s redaction-guarantees note for
 what that widens (and doesn't) at each of those sinks.
 

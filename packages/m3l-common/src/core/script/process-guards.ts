@@ -166,19 +166,30 @@ export function setProcessGuardRequestId(requestId: string): void {
  * through one of these process-global fault paths during a run.
  *
  * Not re-exported through the `core/script` barrel — consumed only by
- * `core/script/run-script`'s `runScript()`, which sets it once, at the top
- * of a run (after deriving its
- * own `secrets` from the script's config schema), and resets it to
- * `undefined` in the run's `finally` block, so this process-global value
- * never outlives the call that set it.
+ * `core/script/run-script`'s `runScript()`, which calls it once, at the top
+ * of a run, after deriving its own `secrets` from the script's config
+ * schema.
  *
- * Because this is process-global rather than per-call state, under deeply
- * overlapping/nested `runScript` calls with **different** schemas this value
- * may briefly reflect the wrong call's secrets during the overlap window —
- * a cosmetic scoping limitation, not a security regression: this redaction
- * is purely additive/widening, so the worst case during overlap is reverting
- * to heuristic-only redaction, never less safe than before this option
- * existed.
+ * This is a **latest-write-wins, never-automatically-cleared** process-global
+ * value, deliberately mirroring this same file's `currentRequestId` /
+ * {@link setProcessGuardRequestId} process-lifetime style: `runScript()` does
+ * NOT reset it to `undefined` when a run ends. Because this redaction port
+ * only ever *widens* what gets redacted (the built-in heuristic in
+ * `redactSensitiveLogText` always still applies underneath, regardless of
+ * this value), retaining a stale value from a completed or nested
+ * `runScript` call is always the safe direction: at worst, a fault occurring
+ * outside any run's "intended" window gets redacted using a specifier that
+ * doesn't perfectly match the currently-running code — still strictly more
+ * protective than the pre-this-feature heuristic-only baseline. Clearing it
+ * automatically was tried and proven actively harmful: a security review
+ * found it let a still-in-flight OUTER `runScript()` call, or a background
+ * task rejecting after `runScript()` had already returned, leak a declared
+ * secret verbatim through these same guards.
+ *
+ * A caller that genuinely needs the guards to stop attaching secrets (e.g. a
+ * long-lived process shutting down a script subsystem) can still call
+ * `setProcessGuardSecrets(undefined)` directly — that capability remains
+ * exported — but `runScript()` itself never does so automatically.
  *
  * @param secrets - The `secrets` port to attach, or `undefined` to clear it.
  *
@@ -186,8 +197,13 @@ export function setProcessGuardRequestId(requestId: string): void {
  * ```ts
  * import { setProcessGuardSecrets } from "./process-guards.js";
  *
+ * // Widens the process-global fault guards to redact `tenantRef` for the
+ * // remainder of the process — NOT automatically undone when any one run
+ * // completes.
  * setProcessGuardSecrets({ isSecret: (name) => name === "tenantRef" });
- * // ... run ...
+ *
+ * // A caller that explicitly wants to stop attaching secrets can still do
+ * // so manually; `runScript()` itself never calls this on a caller's behalf.
  * setProcessGuardSecrets(undefined);
  * ```
  */
