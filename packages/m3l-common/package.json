@@ -75,7 +75,7 @@
     "@inquirer/prompts": "8.5.2",
     "@smithy/protocol-http": "5.5.9",
     "@smithy/signature-v4": "5.7.3",
-    "better-sqlite3": "12.11.1",
+    "better-sqlite3": "13.0.3",
     "csv-parse": "7.0.2",
     "csv-stringify": "6.8.3",
     "string-width": "8.2.1",
