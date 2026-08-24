@@ -195,4 +195,4 @@ unknown>>` → `Record<string, unknown>` assignability) let every dispatch
   variants, Tier C narrowers, `eventbridge-schedules`'s non-adoption reason)
   convert one session's `check:dup`/grep survey into durable, actionable
   backlog rather than conversation-only context that evaporates at session
-  end.
+  end. _(promoted → .claude/skills/writing-work-logs/SKILL.md)_

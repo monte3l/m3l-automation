@@ -127,7 +127,7 @@ same helper/pattern across other scripts in the fleet. If it's shared, file it
 as library friction (this session added **F9** to
 `docs/plans/IMPLEMENTATION.md`) rather than patching one script and leaving
 the sibling exposed — patching locally would have given a false sense that the
-gap was closed when it demonstrably wasn't.
+gap was closed when it demonstrably wasn't. _(promoted → .claude/agents/code-implementer.md)_
 
 ## Lessons learned
 

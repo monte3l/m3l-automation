@@ -78,7 +78,7 @@ until an independent `git diff` + a throwaway probe script against compiled
 structurally-identical functions (here, three functions all returning
 `M3LProcedureConditionEvaluation`), grep for every sibling with the same
 return shape before declaring the fix complete — a single repro passing does
-not prove the family is closed.
+not prove the family is closed. _(promoted → .claude/agents/code-implementer.md)_
 
 ### 2. Test file split left duplicated, not moved, content
 
@@ -153,7 +153,7 @@ combinator itself has a confirmed-value escape hatch.
   bytes once barrel wiring, error-catalog entries, and the new ESLint zone
   were counted. Future slice estimates should explicitly budget for
   "whatever the new code needs to compile and pass `knip`," not just the
-  files the plan names.
+  files the plan names. _(promoted → .claude/rules/subagent-dispatch.md)_
 
 ## Friction filed
 

@@ -224,7 +224,7 @@ appropriate.
 - **A retry/backoff mechanism's tests must exercise the real production
   classifier at least once**, not only a permissive test-only stand-in —
   otherwise a classifier that never actually recognizes the retry signal can
-  pass 78/78 tests while being a complete no-op in production.
+  pass 78/78 tests while being a complete no-op in production. _(promoted → .claude/rules/tests.md)_
 
 - **A placeholder-sounding phrase in a contract page (`<run-name>`) that
   never became a real declared config parameter is a latent design gap, not

@@ -125,7 +125,7 @@ datapoint for the efficacy watch.
 - **A plan claiming "recorded as a tracked follow-up" must be verified against
   the live tracker in the same review** — the F5 Bash-bypass row and the
   ADR-0032 backlog items were both promised in accepted documents and silently
-  never filed. A claim of tracking is not tracking.
+  never filed. A claim of tracking is not tracking. _(promoted → .claude/skills/writing-work-logs/SKILL.md)_
   _(remediated structurally this change set: both rows restored; the audit
   report itself is the durable record)_
 - **The promotion loop mostly works** — of ~40 distinct recurring lessons

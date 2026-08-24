@@ -213,7 +213,7 @@ then passed twice in isolation, and each config passed individually. That is the
 resource-contention flake `bin/check-test-counts.mjs` documents (F15, issue #489).
 
 **Fix for future:** do not run `test:coverage` concurrently with a spoke fan-out,
-and when a suite fails under load, re-run it alone before believing it.
+and when a suite fails under load, re-run it alone before believing it. _(promoted → .claude/rules/tests.md)_
 
 ## Lessons learned
 
