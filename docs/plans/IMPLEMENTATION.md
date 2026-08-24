@@ -429,7 +429,7 @@ the no-correlation short circuit, the depth cap, the fallback carrying
 _act_ on a codified verdict rather than only report one. **Shipped** across a
 **4-PR chain** under [ADR-0072](../adr/0072-reviewable-slice-discipline.md):
 PR #619 (the `aws/sqs` `getQueueAttributes` widening), then #621 (the offline
-spine), #622 (the read-only `triage` path), and this PR (`execute`).
+spine), #622 (the read-only `triage` path), and #629 (`execute`).
 
 It consumes `aws/sqs` and `aws/dynamodb`, both already wrapped (confirmed
 against the [AWS getter reality table](#aws-getter-reality)), so the only new
