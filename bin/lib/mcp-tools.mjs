@@ -327,7 +327,7 @@ const WORKTREE_SCRIPTS = {
  * script's own `--json` reporter; `setup`/`remove` have no `--json` mode, so
  * their result is exit-code + captured-output based.
  *
- * @param {{ action?: unknown, slug?: unknown, fix?: unknown, dryRun?: unknown }} args
+ * @param {{ action?: unknown, slug?: unknown, fix?: unknown, from?: unknown, dryRun?: unknown }} args
  * @returns {{ content: { type: "text", text: string }[], isError: boolean }}
  * @example
  * ```js
@@ -371,6 +371,28 @@ export function worktreeManage(args) {
       `worktree_manage: 'dryRun' is only valid with action "prune" — omit it for "${action}".`,
     );
   }
+  const from = args?.from;
+  if (from !== undefined && action !== "create") {
+    return errorResult(
+      `worktree_manage: 'from' is only valid with action "create" — omit it for "${action}".`,
+    );
+  }
+  if (
+    from !== undefined &&
+    (typeof from !== "string" || from.length === 0 || from.startsWith("-"))
+  ) {
+    return errorResult(
+      `worktree_manage: 'from' "${String(from)}" is invalid — it must be a ` +
+        'non-empty ref string that doesn\'t start with "-", e.g. ' +
+        '{ action: "create", slug: "audit-x", from: "origin/feat/old-branch" }.',
+    );
+  }
+  if (from !== undefined && args?.fix === true) {
+    return errorResult(
+      `worktree_manage: 'from' and 'fix: true' are mutually exclusive — ` +
+        "`from` checks out an existing ref detached, with no new branch to prefix.",
+    );
+  }
 
   const scriptRelPath = WORKTREE_SCRIPTS[action];
   switch (action) {
@@ -378,6 +400,7 @@ export function worktreeManage(args) {
       const cliArgs = [
         /** @type {string} */ (slug),
         ...(args?.fix === true ? ["--fix"] : []),
+        ...(typeof from === "string" ? ["--from", from] : []),
       ];
       const { exitCode, payload, error } = spawnJson(scriptRelPath, cliArgs);
       if (error !== null) return errorResult(`worktree_manage: ${error}`);
@@ -698,7 +721,11 @@ export const TOOLS = [
         "accepts `dryRun` to just list candidates. `remove` and `prune` (without " +
         "`dryRun`) are DESTRUCTIVE — they delete a worktree directory and " +
         "potentially its branch, so confirm the target before calling. `dryRun` is " +
-        "only meaningful for `prune`; passing it with any other action is rejected.",
+        "only meaningful for `prune`; passing it with any other action is rejected. " +
+        "`from` is only meaningful for `create`: it checks out an existing ref " +
+        "(e.g. a remote branch you want to investigate/audit, not develop on) as a " +
+        "detached-HEAD worktree instead of branching feat/<slug>|fix/<slug> from " +
+        "main, and is mutually exclusive with `fix` since no new branch is created.",
       inputSchema: {
         action: z
           .enum(["create", "setup", "remove", "prune"])
@@ -714,6 +741,14 @@ export const TOOLS = [
           .optional()
           .describe(
             'For action "create" only: branch as fix/<slug> instead of feat/<slug>.',
+          ),
+        from: z
+          .string()
+          .optional()
+          .describe(
+            'For action "create" only: check out an existing ref (e.g. ' +
+              '"origin/feat/old-branch") as a detached-HEAD worktree instead of ' +
+              "branching from main. Mutually exclusive with `fix`.",
           ),
         dryRun: z
           .boolean()

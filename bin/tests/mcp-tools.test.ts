@@ -305,6 +305,64 @@ describe("worktreeManage (mocked execFileSync)", () => {
     expect(args[0]).toContain("worktree-remove.mjs");
     expect(args).toContain("my-feature");
   });
+
+  test("create with 'from' forwards --from <ref> and --json", () => {
+    h.execFileSync.mockReset();
+    h.execFileSync.mockReturnValueOnce(JSON.stringify({ ok: true }));
+    const result = worktreeManage({
+      action: "create",
+      slug: "audit-x",
+      from: "origin/feat/old-branch",
+    });
+    expect(result.isError).toBe(false);
+    const [, args] = h.execFileSync.mock.calls[0] as [string, string[]];
+    expect(args).toContain("audit-x");
+    expect(args).toContain("--from");
+    expect(args).toContain("origin/feat/old-branch");
+    expect(args).toContain("--json");
+  });
+
+  test("create with 'from' and fix:true → isError mutual-exclusivity message, no spawn", () => {
+    h.execFileSync.mockReset();
+    const result = worktreeManage({
+      action: "create",
+      slug: "audit-x",
+      from: "origin/main",
+      fix: true,
+    });
+    expect(result.isError).toBe(true);
+    const message = payloadOf(result)["error"] as string;
+    expect(message).toContain("mutually exclusive");
+    expect(h.execFileSync).not.toHaveBeenCalled();
+  });
+
+  test("create with a flag-like 'from' ('--upload-pack=x') → isError invalid message, no spawn", () => {
+    h.execFileSync.mockReset();
+    const result = worktreeManage({
+      action: "create",
+      slug: "audit-x",
+      from: "--upload-pack=x",
+    });
+    expect(result.isError).toBe(true);
+    const message = payloadOf(result)["error"] as string;
+    expect(message).toContain("--upload-pack=x");
+    expect(message).toContain("invalid");
+    expect(h.execFileSync).not.toHaveBeenCalled();
+  });
+
+  test("'from' with a non-create action (remove) → isError, no spawn", () => {
+    h.execFileSync.mockReset();
+    const result = worktreeManage({
+      action: "remove",
+      slug: "my-feature",
+      from: "origin/main",
+    });
+    expect(result.isError).toBe(true);
+    const message = payloadOf(result)["error"] as string;
+    expect(message).toContain("from");
+    expect(message).toContain("create");
+    expect(h.execFileSync).not.toHaveBeenCalled();
+  });
 });
 
 describe("repoVerify (mocked execFileSync per scope)", () => {
