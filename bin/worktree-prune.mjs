@@ -1,17 +1,29 @@
 #!/usr/bin/env node
 // Cleans up stale git worktrees. A worktree is a removal candidate when its
-// branch is already merged into `main`, or git reports it as `prunable`
-// (its directory is gone). The main checkout and the current worktree are
-// never touched.
+// branch is already merged into `main` (by ancestry, or because its upstream
+// reports `[gone]` after a squash/rebase/merge-commit landing — see
+// bin/lib/worktree-prune.mjs for why ancestry alone misses squash merges), a
+// `--from <ref>` detached worktree whose HEAD is itself merged, or git
+// reports it `prunable` (its directory is gone). The main checkout and the
+// current worktree are never touched.
 //
 // Usage:
-//   node bin/worktree-prune.mjs            # remove safe (clean) candidates
-//   node bin/worktree-prune.mjs --dry-run  # list candidates only
-//   node bin/worktree-prune.mjs --force    # also remove candidates with changes
+//   node bin/worktree-prune.mjs             # remove safe (clean) candidates
+//   node bin/worktree-prune.mjs --dry-run   # list candidates only
+//   node bin/worktree-prune.mjs --force     # also remove candidates with changes
+//   node bin/worktree-prune.mjs --no-fetch  # skip the default `git fetch --prune`
 import process from "node:process";
 import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
 import { parseJsonFlag, createReporter } from "./lib/report.mjs";
+import {
+  parseWorktreeList,
+  mergedBranches,
+  goneUpstreamBranches,
+  isMergedDetached,
+  fetchPrune,
+  classifyWorktrees,
+} from "./lib/worktree-prune.mjs";
 
 const { json, argv } = parseJsonFlag();
 const reporter = createReporter(json);
@@ -19,6 +31,7 @@ const reporter = createReporter(json);
 const args = new Set(argv);
 const dryRun = args.has("--dry-run");
 const force = args.has("--force");
+const noFetch = args.has("--no-fetch");
 
 function git(gitArgs) {
   return execFileSync("git", gitArgs, { encoding: "utf8" }).trim();
@@ -52,60 +65,59 @@ if (!branchExists("main")) {
   process.exit(1);
 }
 
-// Branches merged into main can be cleaned up safely.
-const mergedBranches = new Set(
-  git(["branch", "--merged", "main", "--format=%(refname:short)"])
-    .split("\n")
-    .map((b) => b.trim())
-    .filter(Boolean),
-);
-
-// Parse `git worktree list --porcelain` into records.
-const records = [];
-let current = null;
-for (const line of git(["worktree", "list", "--porcelain"]).split("\n")) {
-  if (line.startsWith("worktree ")) {
-    current = { path: line.slice("worktree ".length), branch: null, flags: [] };
-    records.push(current);
-  } else if (current && line.startsWith("branch ")) {
-    current.branch = line.slice("branch ".length).replace("refs/heads/", "");
-  } else if (current && line.trim() !== "") {
-    current.flags.push(line.trim()); // bare, detached, locked, prunable
+// Refresh remote-tracking refs by default so the `[gone]`-upstream signal
+// reflects reality (it only updates on a pruning fetch). Best-effort: a
+// failed fetch degrades to classifying against whatever is already on disk
+// rather than blocking a local cleanup tool on network access.
+if (!noFetch) {
+  const { ok, error } = fetchPrune(git);
+  if (!ok) {
+    reporter.warn(
+      `worktree:prune: \`git fetch --prune\` failed (${error}). Continuing ` +
+        "with possibly stale remote-tracking refs — some merged-and-deleted " +
+        "branches may not be detected this run. Re-run with `--no-fetch` to " +
+        "silence this if you're intentionally offline.",
+    );
   }
 }
+
+const mergedSet = mergedBranches(git);
+const goneSet = goneUpstreamBranches(git);
+
+const records = parseWorktreeList(git(["worktree", "list", "--porcelain"]));
 
 const here = resolve(process.cwd());
 const mainPath = records.length > 0 ? resolve(records[0].path) : null;
 
-const candidates = records.filter((w) => {
-  const p = resolve(w.path);
-  if (p === mainPath || p === here) return false; // never the main or current tree
-  const prunable = w.flags.includes("prunable");
-  const merged = w.branch !== null && mergedBranches.has(w.branch);
-  return prunable || merged;
+const classified = classifyWorktrees({
+  records: records.map((r) => ({ ...r, path: resolve(r.path) })),
+  mainPath,
+  here,
+  mergedSet,
+  goneSet,
+  isMergedDetachedFn: (sha) => isMergedDetached(sha, git),
 });
 
-if (candidates.length === 0) {
+if (classified.length === 0) {
   reporter.succeed("No stale worktrees to prune.");
   reporter.finish({ pruned: [], dryRun });
   process.exit(0);
 }
 
-reporter.info(`Found ${candidates.length} stale worktree(s):`);
-for (const w of candidates) {
-  const why = [
-    w.flags.includes("prunable") ? "prunable" : null,
-    w.branch && mergedBranches.has(w.branch) ? "merged" : null,
-  ]
-    .filter(Boolean)
-    .join(", ");
-  reporter.info(`  • ${w.path}  [${w.branch ?? "detached"}]  (${why})`);
+reporter.info(`Found ${classified.length} stale worktree(s):`);
+for (const { record: w, reasons } of classified) {
+  reporter.info(
+    `  • ${w.path}  [${w.branch ?? "detached"}]  (${reasons.join(", ")})`,
+  );
 }
 
 if (dryRun) {
   reporter.info("\n(dry run — nothing removed)");
   reporter.finish({
-    pruned: candidates.map((w) => w.path),
+    pruned: classified.map(({ record: w, reasons }) => ({
+      path: w.path,
+      reasons,
+    })),
     dryRun: true,
   });
   process.exit(0);
@@ -114,13 +126,13 @@ if (dryRun) {
 let removed = 0;
 let failed = 0;
 const prunedPaths = [];
-for (const w of candidates) {
+for (const { record: w, reasons } of classified) {
   const removeArgs = ["worktree", "remove", w.path];
   if (force) removeArgs.push("--force");
   try {
     execFileSync("git", removeArgs, { stdio: "pipe" });
     reporter.change("removed", w.path);
-    prunedPaths.push(w.path);
+    prunedPaths.push({ path: w.path, reasons });
     removed++;
   } catch {
     reporter.error(

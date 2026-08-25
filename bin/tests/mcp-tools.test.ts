@@ -250,6 +250,27 @@ describe("worktreeManage (mocked execFileSync)", () => {
     expect(args).not.toContain("--dry-run");
   });
 
+  test("prune with noFetch spawns worktree-prune with --no-fetch", () => {
+    h.execFileSync.mockReset();
+    h.execFileSync.mockReturnValueOnce(JSON.stringify({ ok: true }));
+    const result = worktreeManage({ action: "prune", noFetch: true });
+    expect(result.isError).toBe(false);
+    const [, args] = h.execFileSync.mock.calls[0] as [string, string[]];
+    expect(args).toContain("--no-fetch");
+  });
+
+  test("noFetch with a non-prune action → isError, no spawn attempted", () => {
+    h.execFileSync.mockReset();
+    const result = worktreeManage({
+      action: "create",
+      slug: "my-feature",
+      noFetch: true,
+    });
+    expect(result.isError).toBe(true);
+    expect(payloadOf(result)["error"]).toContain("noFetch");
+    expect(h.execFileSync).not.toHaveBeenCalled();
+  });
+
   test("mocked child failure surfaces the JSON payload's errors", () => {
     h.execFileSync.mockReset();
     const err = Object.assign(new Error("Command failed"), {
