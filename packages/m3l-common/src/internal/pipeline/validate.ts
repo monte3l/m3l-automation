@@ -55,12 +55,8 @@ function checkDuplicateOperations(
   }
 
   const problems: PipelineValidationProblem[] = [];
-  const reported = new Set<string>();
-  for (const operation of operations) {
-    if (reported.has(operation)) continue;
-    const count = counts.get(operation) ?? 0;
+  for (const [operation, count] of counts) {
     if (count <= 1) continue;
-    reported.add(operation);
     problems.push({
       code: "ERR_PIPELINE_DUPLICATE_OPERATION",
       message: `M3LOperationPipeline: 'operations' contains a duplicate entry: '${operation}'`,

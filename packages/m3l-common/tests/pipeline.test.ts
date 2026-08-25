@@ -3386,6 +3386,64 @@ describe("core/pipeline", () => {
       }
     });
 
+    test("TG-10 target configured + isSensitiveTarget omitted + yesSensitive omitted — #buildGateOptions forwards target only", async () => {
+      const { deps, config, confirmMock, inputMock } = makeTargetHarness({});
+      config.set("operation", "write");
+      const confirmDestructiveSpy = vi.spyOn(
+        M3LDestructiveGateModule,
+        "confirmDestructive",
+      );
+
+      const pipeline = new M3LOperationPipeline<
+        TestOp,
+        TestSettings,
+        TestDeps,
+        TestResult,
+        undefined
+      >({
+        operations: TEST_OPS,
+        configCode: "ERR_TEST_CONFIG",
+        resolveSettings: () => ({ yes: true }),
+        requiredFields: { read: [], write: [] },
+        destructive: {
+          operations: new Set(["write"]),
+          describe: () => "destroy",
+          yes: (settings) => settings.yes,
+          abortCode: "ERR_TEST_ABORTED",
+          onDecline: { kind: "throw" },
+          target: () => PROD_TARGET,
+          // isSensitiveTarget and yesSensitive are both deliberately
+          // omitted — TG-10 exercises the final #buildGateOptions return
+          // block's ": {}" arm, which TG-9 does not reach because it
+          // supplies yesSensitive.
+        },
+        handlers: {
+          read: () => Promise.resolve({ processed: 0 }),
+          write: () => Promise.resolve({ processed: 0 }),
+        },
+      });
+
+      try {
+        await expect(pipeline.run(deps)).resolves.toMatchObject({
+          status: "completed",
+        });
+
+        expect(confirmDestructiveSpy).toHaveBeenCalledTimes(1);
+        const optionsArg = confirmDestructiveSpy.mock.calls[0]?.[0];
+        expect(optionsArg).toHaveProperty("target", PROD_TARGET);
+        expect(optionsArg).not.toHaveProperty("yesSensitive");
+        expect(optionsArg).not.toHaveProperty("isSensitiveTarget");
+
+        // With isSensitiveTarget absent, confirmDestructive treats the
+        // target as ungraded (states 1/2) regardless of yesSensitive —
+        // the normal yes-bypass fires, never the escalated echo prompt.
+        expect(confirmMock).not.toHaveBeenCalled();
+        expect(inputMock).not.toHaveBeenCalled();
+      } finally {
+        confirmDestructiveSpy.mockRestore();
+      }
+    });
+
     // -----------------------------------------------------------------------
     // Finding 2 — throwing isSensitiveTarget misclassified as a decline
     //

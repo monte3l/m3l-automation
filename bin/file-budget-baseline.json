@@ -21,7 +21,7 @@
   "packages/m3l-common/tests/importers.test.ts": 98694,
   "packages/m3l-common/tests/logging.test.ts": 114286,
   "packages/m3l-common/tests/network.test.ts": 88712,
-  "packages/m3l-common/tests/pipeline.test.ts": 205436,
+  "packages/m3l-common/tests/pipeline.test.ts": 207674,
   "packages/m3l-common/tests/polling.test.ts": 85013,
   "packages/m3l-common/tests/prompt.test.ts": 76207,
   "packages/m3l-common/tests/script.test.ts": 264191
