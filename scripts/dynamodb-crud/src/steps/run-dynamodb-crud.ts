@@ -49,6 +49,7 @@ export interface RunDynamodbCrudSummary {
 /** The resolved, guard-checked settings a run needs. */
 interface RunSettings {
   readonly operation: DynamoOperation;
+  readonly awsProfile: string;
   readonly tableName: string;
   readonly batchSize: number;
   readonly totalSegments: number;
@@ -168,6 +169,10 @@ function resolveSettings(config: Core.M3LConfig): RunSettings {
     code: "ERR_DYNAMO_CRUD_CONFIG",
   });
   const operation = accessor.oneOf("operation", DYNAMO_OPERATIONS);
+  const awsProfile = accessor.requiredString(
+    Core.AWS_PROFILE_PARAM_NAME,
+    operation,
+  );
   const tableName = accessor.requiredString("tableName", operation);
   const key = parseJSONField(accessor.optionalString("key"), "key");
   const item = parseJSONField(accessor.optionalString("item"), "item");
@@ -178,6 +183,7 @@ function resolveSettings(config: Core.M3LConfig): RunSettings {
 
   return {
     operation,
+    awsProfile,
     tableName,
     batchSize: accessor.requiredNumber("batchSize", operation),
     totalSegments: accessor.requiredNumber("totalSegments", operation),
@@ -413,6 +419,8 @@ async function dispatchScan(
     });
   }
   const outputPath = deps.paths.resolveOutput(settings.output);
+  const mode: "scan" | "query" =
+    settings.operation === "query" ? "query" : "scan";
   const checkpointStore = new Core.M3LCheckpointStore<ScanCheckpoint>({
     paths: deps.paths,
     name: resolveCheckpointName(settings),
@@ -420,9 +428,31 @@ async function dispatchScan(
     missing: settings.resume
       ? { kind: "error" }
       : { kind: "empty", value: { segments: {}, outputBytes: 0 } },
+    // Fingerprints the identity of *what* is being resumed — the derived
+    // mode (not raw `operation`, so `scan` and `export` share a fingerprint
+    // and switching between them never trips a resume mismatch), target
+    // table/index/key-condition/segment shape, the resolved `aws.profile`,
+    // and the `output` file the checkpoint's `outputBytes` is an offset
+    // into — so `--resume` against a checkpoint written under a different
+    // definition fails fast with `ERR_CHECKPOINT_FINGERPRINT_MISMATCH`
+    // instead of silently resuming into the wrong place. `key` is included
+    // only for `query` mode (a `scan`/`export` never reads it, so a `key`
+    // config value happening to be set must not affect its fingerprint).
+    // Deliberately excludes `runName` (already reflected in `name`),
+    // tuning-only knobs (`batchSize`, `checkpointEveryPages`,
+    // `maxPagesPerSecond`, `maxInFlightBatches`, `progressEveryRecords`),
+    // and fields this dispatcher never reads (`input`, `item`, `resume`
+    // itself).
+    definition: {
+      mode,
+      tableName: settings.tableName,
+      totalSegments: settings.totalSegments,
+      indexName: settings.indexName,
+      ...(mode === "query" && { key: settings.key }),
+      output: settings.output,
+      awsProfile: settings.awsProfile,
+    },
   });
-  const mode: "scan" | "query" =
-    settings.operation === "query" ? "query" : "scan";
 
   // Read the checkpoint's `outputBytes` BEFORE constructing the exporter, so
   // a resumed run reopens `output` in append mode at that offset instead of

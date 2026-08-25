@@ -98,6 +98,21 @@ streaming step contract.
   retry is both appended to `failed.jsonl` and reported via
   `M3LScript.reportRecovery()`, so the run resolves with a `"partial"` outcome
   (exit code `6`) rather than an error-classified exit.
+- **Bound to what the segment cursors mean:** the `M3LCheckpointStore` is
+  constructed with a `definition` covering `operation` (as the derived
+  `mode` — `scan` and `export` share one AWS call shape and fingerprint
+  identically), `tableName`, `totalSegments`, `indexName`, `key` (query mode
+  only), `output`, and the resolved `aws.profile` — `tableName`/`indexName`
+  are bare names with no account binding, and `output` isn't part of the
+  checkpoint's identity when `runName` is set, so both are needed alongside
+  `aws.profile` to cover what the stored segment cursors and `outputBytes`
+  offset actually refer to. A `--resume` whose config edited any of these
+  fails loud with `Core.M3LCheckpointError` / `ERR_CHECKPOINT_FINGERPRINT_MISMATCH`
+  instead of silently applying stale cursor state to a different table,
+  index, or account — see [`core/checkpoint`](../core/checkpoint.md).
+  Deliberately excluded: `runName` (already the checkpoint's identity) and
+  tuning-only knobs (`batchSize`, `checkpointEveryPages`, `maxPagesPerSecond`,
+  `maxInFlightBatches`, `progressEveryRecords`).
 
 ## See also
 

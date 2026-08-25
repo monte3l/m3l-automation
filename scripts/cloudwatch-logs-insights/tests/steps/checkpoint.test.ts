@@ -257,3 +257,67 @@ describe("buildCheckpointStore", () => {
     expect(store.path.endsWith("my-run.checkpoint.json")).toBe(true);
   });
 });
+
+/**
+ * Contract: issue #497 (A4b) — `buildCheckpointStore` gains an optional 4th
+ * `definition?: unknown` parameter, forwarded verbatim into
+ * `Core.M3LCheckpointStore`'s constructor options. Rather than mocking `new
+ * Core.M3LCheckpointStore` (which would require rewriting every other test
+ * in this file to keep `instanceof`/`.path` working against a real vs. mocked
+ * class), these tests observe the forwarding through `M3LCheckpointStore`'s
+ * own documented, synchronous construction-time contract: a `definition`
+ * outside its allowlist throws `M3LCheckpointError` coded
+ * `"ERR_CHECKPOINT_DEFINITION"` at construction, before any I/O — a throw
+ * that can only happen if the value actually reached the store's
+ * constructor. This proves the plumbing without depending on file I/O.
+ */
+describe("buildCheckpointStore — definition (issue #497 retrofit)", () => {
+  const paths = new Core.M3LPaths();
+
+  it("forwards an allowlisted definition through to M3LCheckpointStore (constructs without throwing)", () => {
+    const store = buildCheckpointStore(
+      paths,
+      "my-run",
+      { kind: "empty", value: EMPTY_CHECKPOINT },
+      {
+        query: "fields @timestamp",
+        logGroups: ["/aws/lambda/a"],
+        windowMinutes: 60,
+      },
+    );
+
+    expect(store).toBeInstanceOf(Core.M3LCheckpointStore);
+  });
+
+  it("forwards a rejected (non-allowlisted) definition through to M3LCheckpointStore, surfacing ERR_CHECKPOINT_DEFINITION at construction — proves the value reaches the store rather than being swallowed by the factory", () => {
+    let thrown: unknown;
+    try {
+      buildCheckpointStore(
+        paths,
+        "my-run",
+        { kind: "empty", value: EMPTY_CHECKPOINT },
+        // A function value is never on M3LCheckpointStore's definition
+        // allowlist (string | boolean | finite number | null | plain
+        // array/object) — this only throws if the factory actually forwards
+        // it into the constructor.
+        { onFailure: () => undefined },
+      );
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(Core.M3LCheckpointError);
+    expect((thrown as Core.M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_DEFINITION",
+    );
+  });
+
+  it("constructs identically to before when the definition argument is omitted (no fingerprinting opt-in)", () => {
+    const store = buildCheckpointStore(paths, "my-run", {
+      kind: "empty",
+      value: EMPTY_CHECKPOINT,
+    });
+
+    expect(store).toBeInstanceOf(Core.M3LCheckpointStore);
+  });
+});

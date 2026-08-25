@@ -95,6 +95,20 @@ and is unit-testable with plain mocks — no `M3LScript` lifecycle.
   A present-but-corrupt checkpoint throws `ERR_CHECKPOINT_PARSE`; any other
   read/write/delete failure throws `ERR_CHECKPOINT_IO`. A non-resume run
   never reads the checkpoint file at all.
+- **Bound to what the accumulated rows mean:** the `M3LCheckpointStore` is
+  constructed with a `definition` covering `query`, `logGroups`,
+  `startEpochSeconds`, `endEpochSeconds`, `windowMinutes`, `limit`, `format`,
+  and the resolved `aws.profile` — `logGroups` are bare names with no
+  account/region binding of their own, so `aws.profile` closes the one gap
+  the rest of the definition doesn't. A `--resume` whose config edited any of
+  these fails loud with `Core.M3LCheckpointError` /
+  `ERR_CHECKPOINT_FINGERPRINT_MISMATCH` instead of silently continuing to
+  accumulate rows from a different query, window, or account into the same
+  output file — see [`core/checkpoint`](../core/checkpoint.md). Deliberately
+  excluded: `output` (already the checkpoint's identity) and `resume` (a
+  run-mode flag). The delete-only checkpoint store `onAfterRun` constructs
+  (see below) passes no `definition` — it never reads the file, so there is
+  nothing to fingerprint.
 - **Checkpoint shape validation is strict, not just structural:** the `validate`
   predicate (`isLogsInsightsCheckpoint`) requires `completedWindows` to be a
   non-negative integer (rejects negative, non-integer, `NaN`, and `Infinity`

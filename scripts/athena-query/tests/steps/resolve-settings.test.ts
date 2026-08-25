@@ -26,6 +26,7 @@ function buildConfig(values: Record<string, unknown>): Core.M3LConfig {
 }
 
 const VALID_VALUES: Record<string, unknown> = {
+  "aws.profile": "my-profile",
   queryString: "SELECT * FROM orders",
   database: "analytics",
   catalog: "AwsDataCatalog",
@@ -57,6 +58,7 @@ describe("resolveAthenaSettings", () => {
   it("omits unset optional fields from startInput rather than passing undefined", () => {
     const settings = resolveAthenaSettings(
       buildConfig({
+        "aws.profile": "my-profile",
         queryString: "SELECT 1",
         format: "csv",
         output: "out.csv",

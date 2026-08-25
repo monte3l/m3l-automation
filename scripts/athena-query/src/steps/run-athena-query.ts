@@ -59,6 +59,45 @@ export interface AthenaRunSummary {
 }
 
 /**
+ * Projects `startInput` down to the fields that give a checkpointed
+ * `queryExecutionId` its meaning — `queryString`, `database`, `catalog`,
+ * `workGroup`, `executionParameters`, `outputLocation` — plus `awsProfile`,
+ * for `Core.M3LCheckpointStore`'s `definition` option. Mirrors
+ * `buildStartInput`'s (`resolve-settings.js`) omit-rather-than-`undefined`
+ * convention: a field absent from `startInput` stays absent as a key here.
+ * Excludes `output` (already the checkpoint's `name`), `format`, and
+ * `resume` — none of them change what a checkpointed `queryExecutionId`
+ * means. `outputLocation` and `awsProfile` are included: `outputLocation`
+ * becomes `ResultConfiguration.OutputLocation` on `StartQueryExecution`, and
+ * `awsProfile` selects the AWS account/region the execution id was minted
+ * under — a `--resume` after switching profiles must fail loud with
+ * `ERR_CHECKPOINT_FINGERPRINT_MISMATCH` rather than silently reattaching to
+ * an execution id from a different account (issue #497 review round 2).
+ */
+function buildCheckpointDefinition(
+  startInput: AWS.StartAthenaQueryInput,
+  awsProfile: string,
+): unknown {
+  return {
+    queryString: startInput.queryString,
+    ...(startInput.database !== undefined && {
+      database: startInput.database,
+    }),
+    ...(startInput.catalog !== undefined && { catalog: startInput.catalog }),
+    ...(startInput.workGroup !== undefined && {
+      workGroup: startInput.workGroup,
+    }),
+    ...(startInput.executionParameters !== undefined && {
+      executionParameters: startInput.executionParameters,
+    }),
+    ...(startInput.outputLocation !== undefined && {
+      outputLocation: startInput.outputLocation,
+    }),
+    awsProfile,
+  };
+}
+
+/**
  * Runs the `athena-query` orchestration: starts (or reattaches to) the
  * query, checkpointing `queryExecutionId` before the poll, awaits its
  * results, exports the full row set once, then deletes the checkpoint.
@@ -107,11 +146,12 @@ export async function runAthenaQuery(deps: {
   readonly signal?: AbortSignal;
 }): Promise<AthenaRunSummary> {
   const settings = resolveAthenaSettings(deps.config);
-  const { output, format, resume } = settings;
+  const { output, format, resume, startInput, awsProfile } = settings;
 
   const checkpointStore = new Core.M3LCheckpointStore<AthenaCheckpoint>({
     paths: deps.paths,
     name: output,
+    definition: buildCheckpointDefinition(startInput, awsProfile),
     validate: isAthenaCheckpoint,
     // `--resume` with no checkpoint file is a typed config error, not a
     // silent fresh start (docs/reference/core/checkpoint.md's §1.2
