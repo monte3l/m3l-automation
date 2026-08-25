@@ -20,6 +20,7 @@ import type {
   FileCopySkipReason,
 } from "../../internal/files/types.js";
 import { logBestEffortDiagnostic } from "../../internal/script/diagnostics.js";
+import { guardSecrets } from "../../internal/logging/guardSecrets.js";
 import {
   redactSensitiveLogValue,
   type M3LSecretNamesPort,
@@ -316,7 +317,11 @@ export interface M3LRunReporterOptions {
    * redacts a declared secret carried as a top-level `key=value`/
    * `key: value` pair — a secret value embedded inside another field's free
    * text (e.g. a URL query string) is not caught this way; see
-   * {@link redactSensitiveLogText}'s `@remarks`.
+   * {@link redactSensitiveLogText}'s `@remarks`. A throwing `isSecret`
+   * implementation is caught per name (rather than collapsing the failure,
+   * timeline, archive, recovery, or environment section, or the `persist()`
+   * write-failure diagnostic, to nothing), reported to stderr, and the
+   * offending name is conservatively treated as secret.
    */
   readonly secrets?: M3LSecretNamesPort | undefined;
 }
@@ -1290,12 +1295,16 @@ export class M3LRunReporter {
    * Creates a new `M3LRunReporter`.
    *
    * @param options - Optional injected `paths` port, `fileName` override, and
-   *   `secrets` port widening redaction with declared secret names.
+   *   `secrets` port widening redaction with declared secret names. `secrets`
+   *   is wrapped once here (via an internal `guardSecrets` helper) so a
+   *   throwing `isSecret` implementation can never propagate out of any of
+   *   the six read sites this field feeds — it is instead caught per name,
+   *   reported to stderr, and the name is conservatively treated as secret.
    */
   constructor(options: M3LRunReporterOptions = {}) {
     this.#paths = options.paths;
     this.#fileName = options.fileName ?? DEFAULT_FILE_NAME;
-    this.#secrets = options.secrets;
+    this.#secrets = guardSecrets(options.secrets, "M3LRunReporter");
   }
 
   /**

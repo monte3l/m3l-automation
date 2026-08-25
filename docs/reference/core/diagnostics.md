@@ -45,7 +45,12 @@ behavior changes.
 >   a top-level `key`/`key=value` pair. This is not a reclassification: it is
 >   still best effort for any key not declared to that port, and it does not
 >   catch a declared secret embedded inside another field's free text (a URL
->   query string, say).
+>   query string, say). The port itself is guarded: `M3LBreadcrumbTrail` and
+>   `M3LRunReporter` wrap a caller-supplied `secrets` port at construction so
+>   a throwing `isSecret` is caught per key, reported through a best-effort
+>   stderr diagnostic, and the queried key conservatively treated as secret —
+>   a hostile or buggy port degrades to over-redaction, never to the whole
+>   document collapsing to a placeholder.
 >
 > Consequently **`run-report.json` is a sensitive artifact — treat it as a
 > crash dump**, not as something to attach to a public issue unreviewed. See
@@ -122,7 +127,8 @@ into its text output. Without it, a truncated chain in `run-report.json` or an
 - `M3LBreadcrumbSource` — the structural `on`/`off` port an emitter satisfies.
 - `M3LBreadcrumbTrailOptions` — `{ limit?, secrets? }`; `limit` defaults to
   `100`, `secrets` has no default (caller-managed, never set by
-  `runScript()`/`M3LScript`).
+  `runScript()`/`M3LScript`), and is guarded against a throwing `isSecret`
+  at construction time (see [Breadcrumbs](#breadcrumbs) below).
 - `M3LBreadcrumbAttachOptions` — `{ source?, events? }`.
 
 ### Diagnostics snapshot
@@ -166,7 +172,10 @@ into its text output. Without it, a truncated chain in `run-report.json` or an
 - `M3LRunReporter` — builds and persists a run report.
 - `M3LRunReporterOptions` — `{ paths?, fileName?, secrets? }`; `secrets` has
   no default and is threaded through every `sanitizeValue`/`sanitizeString`
-  step in `build()` plus `persist()`'s failure diagnostic.
+  step in `build()` plus `persist()`'s failure diagnostic. Guarded against a
+  throwing `isSecret` at construction time (see
+  [Recovery entries are sanitized, both fields](#recovery-entries-are-sanitized-both-fields)
+  below).
 
 ### The composition-root wrapper
 
@@ -321,6 +330,11 @@ keeping own enumerable scalar properties and relies on `redactSensitiveLogValue`
 construction, otherwise heuristic-only — which is still a **best-effort**
 mechanism for any key not declared to that port, not a guarantee. That path is
 reachable only via a custom `options.events` name or a direct `record()` call.
+A `secrets` port whose `isSecret` throws is caught per key at construction
+time, reported through a best-effort stderr diagnostic, and the queried key
+conservatively treated as secret — `record()` never throws and never
+collapses the whole payload because of it; only a genuinely structural
+failure elsewhere in `record()` (e.g. a hostile payload getter) still does.
 
 This is how attempt history survives retry exhaustion **without changing the
 thrown error's shape**: the last error is still thrown unchanged; the trail
@@ -470,6 +484,12 @@ losing the report entirely rather than the one bad entry.
   best-effort.
 - Success-path reports are written after stage 9, so the archive manifest is
   included when archival ran.
+- A `secrets` port whose `isSecret` throws is caught per key at construction
+  time, reported through a best-effort stderr diagnostic, and the queried
+  key conservatively treated as secret — none of `timeline`, `archive`,
+  `failure`, `recovery`, or `environment` collapses to a generic placeholder
+  because of it, and `persist()`'s own write-failure diagnostic still reaches
+  stderr rather than vanishing silently.
 
 ### `collectDiagnostics`
 
