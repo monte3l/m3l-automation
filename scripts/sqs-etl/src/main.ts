@@ -50,6 +50,10 @@ await Core.runScript(
       correlationId: getCorrelationId(),
       sqsOperations: aws.services.sqsOperations,
       prompt: script.prompt,
+      // Bound from `script.reportRecovery` (never the whole `script` object)
+      // so a per-item send/delete failure absorbed by a step demotes this
+      // run's outcome to `"partial"` instead of a silent `"success"`.
+      reportRecovery: script.reportRecovery.bind(script),
     });
   },
   { dryRun },

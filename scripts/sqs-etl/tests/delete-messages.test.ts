@@ -66,6 +66,7 @@ describe("deleteMessages", () => {
       correlationId: "run-1",
       sqsOperations,
       prompt,
+      reportRecovery: vi.fn(),
     });
 
     // eslint-disable-next-line @typescript-eslint/unbound-method -- structural fake cast to AWS.M3LSQSOperations; property is a vi.fn(), never called unbound
@@ -107,6 +108,7 @@ describe("deleteMessages", () => {
       correlationId: "run-2",
       sqsOperations,
       prompt,
+      reportRecovery: vi.fn(),
     });
 
     const [, entries] = (
@@ -139,6 +141,7 @@ describe("deleteMessages", () => {
       correlationId: "run-3",
       sqsOperations,
       prompt,
+      reportRecovery: vi.fn(),
     });
 
     // eslint-disable-next-line @typescript-eslint/unbound-method -- structural fake cast to AWS.M3LSQSOperations; property is a vi.fn(), never called unbound
@@ -174,6 +177,7 @@ describe("deleteMessages", () => {
         correlationId: "run-4",
         sqsOperations,
         prompt,
+        reportRecovery: vi.fn(),
       });
     } catch (error) {
       thrown = error;
@@ -213,6 +217,7 @@ describe("deleteMessages", () => {
     const paths = new Core.M3LPaths();
     const logger = new Core.M3LLogger([]);
     const prompt = bypassPrompt();
+    const reportRecovery = vi.fn();
 
     await deleteMessages({
       config,
@@ -221,6 +226,7 @@ describe("deleteMessages", () => {
       correlationId: "run-5",
       sqsOperations,
       prompt,
+      reportRecovery,
     });
 
     const failedStream = streams.find((stream) =>
@@ -230,6 +236,15 @@ describe("deleteMessages", () => {
     if (failedStream !== undefined) {
       expect(writtenJsonlRecords(failedStream)).toEqual([failedEntry]);
     }
+
+    // item is the delete-entry's receiptHandle, not the chunk-scoped id.
+    expect(reportRecovery).toHaveBeenCalledWith({
+      item: "rh2",
+      error: [
+        expect.objectContaining({ name: "M3LError", message: "InternalError" }),
+      ],
+      recordedAt: expect.any(String) as string,
+    });
   });
 
   test("a writer.close() failure does not mask the original deleteBatch() rejection", async () => {
@@ -263,6 +278,7 @@ describe("deleteMessages", () => {
         correlationId: "run-close-fail",
         sqsOperations,
         prompt,
+        reportRecovery: vi.fn(),
       });
     } catch (error) {
       thrown = error;
@@ -298,6 +314,7 @@ describe("deleteMessages", () => {
           correlationId: `run-missing-${missing}`,
           sqsOperations,
           prompt,
+          reportRecovery: vi.fn(),
         });
       } catch (error) {
         thrown = error;
@@ -335,6 +352,7 @@ describe("deleteMessages", () => {
         correlationId: "run-batchsize-wrong-type",
         sqsOperations,
         prompt,
+        reportRecovery: vi.fn(),
       }),
     ).rejects.toMatchObject({ code: "ERR_SQS_ETL_CONFIG" });
     expect(confirm).not.toHaveBeenCalled();

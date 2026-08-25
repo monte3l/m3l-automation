@@ -56,6 +56,7 @@ describe("runSqsEtl dispatch", () => {
       const logger = new Core.M3LLogger([]);
       const sqsOperations = createFakeSqsOperations();
       const prompt = new Core.M3LPrompt();
+      const reportRecovery = vi.fn();
 
       await runSqsEtl({
         config,
@@ -64,6 +65,7 @@ describe("runSqsEtl dispatch", () => {
         correlationId: "run-1",
         sqsOperations,
         prompt,
+        reportRecovery,
       });
 
       expect(mock).toHaveBeenCalledTimes(1);
@@ -75,6 +77,7 @@ describe("runSqsEtl dispatch", () => {
           correlationId: "run-1",
           sqsOperations,
           prompt,
+          reportRecovery,
         }),
       );
 
@@ -97,6 +100,7 @@ describe("runSqsEtl dispatch", () => {
     const logger = new Core.M3LLogger([]);
     const sqsOperations = createFakeSqsOperations();
     const prompt = new Core.M3LPrompt();
+    const reportRecovery = vi.fn();
 
     let thrown: unknown;
     try {
@@ -107,6 +111,7 @@ describe("runSqsEtl dispatch", () => {
         correlationId: "run-2",
         sqsOperations,
         prompt,
+        reportRecovery,
       });
     } catch (error) {
       thrown = error;

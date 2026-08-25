@@ -62,6 +62,7 @@ interface RunDynamodbCrudDeps {
   readonly logger: Core.M3LLogger;
   readonly correlationId: string;
   readonly dynamoDBDocument: Parameters<typeof AWS.getItem>[0];
+  readonly reportRecovery: (entry: Core.M3LRunRecoveryEntry) => void;
   readonly signal?: AbortSignal;
 }
 
@@ -483,6 +484,32 @@ async function writeFailedRecords(
 }
 
 /**
+ * Persists items still unprocessed after retry to `failed.jsonl` AND absorbs
+ * each one via `reportRecovery` (demoting the run's outcome rather than
+ * throwing) — the two things `dispatchBatch` must do once `batchWriteTable`
+ * reports a non-empty `failed` list.
+ */
+async function handleFailedRecords(
+  failed: readonly Record<string, unknown>[],
+  deps: RunDynamodbCrudDeps,
+): Promise<void> {
+  await writeFailedRecords(
+    deps.paths.resolveOutput("failed.jsonl"),
+    failed,
+    deps.logger,
+  );
+  for (const record of failed) {
+    deps.reportRecovery({
+      item: JSON.stringify(record),
+      error: [
+        { name: "M3LError", message: "item remained unprocessed after retry" },
+      ],
+      recordedAt: new Date().toISOString(),
+    });
+  }
+}
+
+/**
  * Recognizes `batch-write-table`'s internal "chunk has unprocessed items"
  * sentinel by its `.code` (rather than importing the deliberately
  * unexported sentinel class) and classifies it `"retriable"`; abstains
@@ -571,11 +598,7 @@ async function dispatchBatch(
   });
 
   if (result.failed.length > 0) {
-    await writeFailedRecords(
-      deps.paths.resolveOutput("failed.jsonl"),
-      result.failed,
-      deps.logger,
-    );
+    await handleFailedRecords(result.failed, deps);
   }
 
   return {
@@ -668,17 +691,19 @@ async function dispatch(
  * `false`, surfacing as `ERR_DYNAMO_CRUD_ABORTED`) soft-lands: this function
  * logs a warning and resolves an all-zero summary rather than throwing. Any
  * other gate failure (e.g. `describeTable` rejecting) propagates normally.
+ * A batch operation leaving one or more items unprocessed after retry is
+ * likewise not fatal: each unprocessed item is reported via `reportRecovery`
+ * (demoting the run's outcome rather than throwing), and `summary.failed`
+ * still carries the count for the caller to inspect.
  *
  * @param deps - The resolved config, `M3LPaths`, logger, per-run correlation
- *   id, the provisioned `dynamoDBDocument`/`dynamoDB` clients, and an
- *   injected `Core.M3LPrompt` (mirrors `script.prompt`).
+ *   id, the provisioned `dynamoDBDocument`/`dynamoDB` clients, an injected
+ *   `Core.M3LPrompt` (mirrors `script.prompt`), and `reportRecovery` (mirrors
+ *   `script.reportRecovery`) for absorbing per-item batch failures.
  * @returns The run summary: items read, written, failed (after retry), and
  *   skipped (malformed input records).
  * @throws {@link Core.M3LError} with code `ERR_DYNAMO_CRUD_CONFIG` when a
  *   required parameter is missing/malformed for the requested operation.
- * @throws {@link Core.M3LError} with code `ERR_DYNAMO_CRUD_FAILED_ITEMS` when
- *   the run completes but leaves one or more items failed after retry — a
- *   partial batch failure must never be silent.
  *
  * @example
  * ```typescript
@@ -696,6 +721,7 @@ async function dispatch(
  *   dynamoDBDocument: script.aws.clients.dynamoDBDocument,
  *   dynamoDB: script.aws.clients.dynamoDB,
  *   prompt: script.prompt,
+ *   reportRecovery: script.reportRecovery.bind(script),
  * });
  * console.log(summary.read, summary.written, summary.failed, summary.skipped);
  * ```
@@ -708,6 +734,7 @@ export async function runDynamodbCrud(deps: {
   readonly dynamoDBDocument: Parameters<typeof AWS.getItem>[0];
   readonly dynamoDB: Parameters<typeof AWS.describeTable>[0];
   readonly prompt: Core.M3LPrompt;
+  readonly reportRecovery: (entry: Core.M3LRunRecoveryEntry) => void;
   readonly signal?: AbortSignal;
 }): Promise<RunDynamodbCrudSummary> {
   const settings = resolveSettings(deps.config);
@@ -740,6 +767,7 @@ export async function runDynamodbCrud(deps: {
     logger: deps.logger,
     correlationId: deps.correlationId,
     dynamoDBDocument: deps.dynamoDBDocument,
+    reportRecovery: deps.reportRecovery,
     ...(deps.signal !== undefined && { signal: deps.signal }),
   });
 
@@ -749,17 +777,6 @@ export async function runDynamodbCrud(deps: {
     failed: summary.failed,
     skipped: summary.skipped,
   });
-
-  // A partial batch failure must never be silent: this is the domain
-  // decision that a non-zero `failed` count fails the whole run, so it lives
-  // here (not in `main.ts`, which stays pure composition/propagation per
-  // ADR-0022 — see main.ts's own header comment).
-  if (summary.failed > 0) {
-    throw new Core.M3LError(
-      `dynamodb-crud run ${deps.correlationId} left ${String(summary.failed)} item(s) failed after retry`,
-      { code: "ERR_DYNAMO_CRUD_FAILED_ITEMS", context: { ...summary } },
-    );
-  }
 
   return summary;
 }

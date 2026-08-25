@@ -70,16 +70,16 @@ step (`run-sqs-etl`) as a placeholder; `implementing-scripts` decomposes it
 into the real per-command steps below, dispatched by `run-sqs-etl.ts` on the
 resolved `command`.
 
-| Step                | Responsibility                                                                                                                                                                                                                                |
-| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `dump-queue`        | Long-poll `receive()` loop (10 messages/call, `waitTimeSeconds: 20`) streaming JSONL-appends messages to `output` up to `batchSize`; `deleteAfterDump` additionally `deleteBatch()`s each written page (confirm-gated)                        |
-| `send-batch`        | Streams `input` JSONL, chunks records into <=10-entry `M3LSQSSendEntry` batches, `sendBatch()`s each chunk; per-entry failures append to `failed.jsonl`                                                                                       |
-| `redrive-queue`     | Receives from `dlqUrl` up to `batchSize`, `sendBatch()`s each page to `queueUrl`, then `deleteBatch()`s from `dlqUrl` only the entries that sent successfully; unsent entries stay in the DLQ and are logged to `failed.jsonl`. Confirm-gated |
-| `delete-messages`   | Streams `input` JSONL (`{ receiptHandle }` rows), chunks into <=10-entry `M3LSQSDeleteEntry` batches, `deleteBatch()`s each; per-entry failures append to `failed.jsonl`. Confirm-gated                                                       |
-| `purge-queue`       | Calls `purgeQueue()`; confirm-gated, and surfaces SQS's `PurgeQueueInProgress` 60-second cooldown as a typed error rather than retrying through it                                                                                            |
-| `transform-records` | Streams `input` JSONL, JSON-parses each message body with per-record tolerance (skip-count surfaced, no SQS calls), applies optional `fields` projection / `filters` predicate, streams to `output`                                           |
-| `destructive-gate`  | Shared confirmation step used by `dump-queue` (when `deleteAfterDump`), `redrive-queue`, `delete-messages`, `purge-queue`: prints the target + operation, prompts via `script.prompt.confirm()`, bypassed by `yes` (bypass logged)            |
-| `run-sqs-etl`       | Composition: resolves settings for the selected `command`, dispatches to the matching step above, returns the run summary                                                                                                                     |
+| Step                | Responsibility                                                                                                                                                                                                                                                                                                                                |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `dump-queue`        | Long-poll `receive()` loop (10 messages/call, `waitTimeSeconds: 20`) streaming JSONL-appends messages to `output` up to `batchSize`; `deleteAfterDump` additionally `deleteBatch()`s each written page (confirm-gated)                                                                                                                        |
+| `send-batch`        | Streams `input` JSONL, chunks records into <=10-entry `M3LSQSSendEntry` batches, `sendBatch()`s each chunk; per-entry failures append to `failed.jsonl` and are reported via `M3LScript.reportRecovery()`                                                                                                                                     |
+| `redrive-queue`     | Receives from `dlqUrl` up to `batchSize`, `sendBatch()`s each page to `queueUrl`, then `deleteBatch()`s from `dlqUrl` only the entries that sent successfully; unsent entries stay in the DLQ, are logged to `failed.jsonl`, and are reported via `M3LScript.reportRecovery()` — as are any post-send `deleteBatch()` failures. Confirm-gated |
+| `delete-messages`   | Streams `input` JSONL (`{ receiptHandle }` rows), chunks into <=10-entry `M3LSQSDeleteEntry` batches, `deleteBatch()`s each; per-entry failures append to `failed.jsonl` and are reported via `M3LScript.reportRecovery()`. Confirm-gated                                                                                                     |
+| `purge-queue`       | Calls `purgeQueue()`; confirm-gated, and surfaces SQS's `PurgeQueueInProgress` 60-second cooldown as a typed error rather than retrying through it                                                                                                                                                                                            |
+| `transform-records` | Streams `input` JSONL, JSON-parses each message body with per-record tolerance (skip-count surfaced, no SQS calls), applies optional `fields` projection / `filters` predicate, streams to `output`                                                                                                                                           |
+| `destructive-gate`  | Shared confirmation step used by `dump-queue` (when `deleteAfterDump`), `redrive-queue`, `delete-messages`, `purge-queue`: prints the target + operation, prompts via `script.prompt.confirm()`, bypassed by `yes` (bypass logged)                                                                                                            |
+| `run-sqs-etl`       | Composition: resolves settings for the selected `command`, dispatches to the matching step above, returns the run summary                                                                                                                                                                                                                     |
 
 All SQS access goes through `script.aws.services.sqsOperations`
 (`AWS.M3LSQSOperations`, see [`aws/sqs`](../aws/sqs.md)) — this script never
@@ -93,7 +93,10 @@ writes JSONL to `M3L_OUTPUT_DIR` (`dump`/`transform` result, and the fixed
 failures — each row is the original `M3LSQSSendEntry`/`M3LSQSDeleteEntry`,
 ready to re-drive with no id bookkeeping). Queue identity (`queueUrl`,
 `dlqUrl`) and the `command` selector come from config, never from input-file
-content.
+content. Every absorbed per-entry failure in `send`/`redrive`/`delete` is
+also reported via `M3LScript.reportRecovery()`, so a degraded-but-not-total
+run resolves with a `"partial"` outcome (exit code `6`) rather than
+succeeding silently.
 
 ## Error codes
 

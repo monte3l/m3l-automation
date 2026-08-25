@@ -19,6 +19,13 @@ export interface RunS3ObjectsSummary {
   readonly processed: number;
   /** Always `0` except for `delete-batch`, where it is the per-key failure count. */
   readonly failed: number;
+  /**
+   * The per-key failures `delete-batch` absorbed, when any. Populated only
+   * on the internal handler result the pipeline's `recovery` callback reads
+   * to build {@link Core.M3LRunRecoveryEntry} entries — `runS3Objects` itself
+   * never surfaces this field on the summary it resolves.
+   */
+  readonly errors?: readonly AWS.S3DeleteError[];
 }
 
 /** The resolved, guard-checked settings a run needs. */
@@ -149,6 +156,13 @@ interface Deps extends Core.M3LOperationPipelineBaseDeps {
   readonly paths: Core.M3LPaths;
   readonly correlationId: string;
   readonly s3: Parameters<typeof AWS.listObjects>[0];
+  /**
+   * Reports one absorbed per-key `delete-batch` failure. Called once per
+   * {@link Core.M3LRunRecoveryEntry} produced by the pipeline's `recovery`
+   * callback when a run resolves `"partial"` — never for a fully-succeeded
+   * or fully-declined run.
+   */
+  readonly reportRecovery: (entry: Core.M3LRunRecoveryEntry) => void;
 }
 
 /** The dependencies each per-operation dispatch function needs. */
@@ -265,7 +279,11 @@ async function dispatchDeleteBatch(
     failedOutputPath: deps.paths.resolveOutput("failed.jsonl"),
     logger: deps.logger,
   });
-  return { processed: result.deleted, failed: result.errors.length };
+  return {
+    processed: result.deleted,
+    failed: result.errors.length,
+    errors: result.errors,
+  };
 }
 
 /**
@@ -317,7 +335,12 @@ async function handleDescribeOrGet(
  * mirrors `dynamodb-crud`'s `ERR_DYNAMO_CRUD_ABORTED` handling, not
  * `sqs-etl`'s.
  */
-const pipeline = new Core.M3LOperationPipeline({
+const pipeline = new Core.M3LOperationPipeline<
+  S3ObjectsOperation,
+  RunSettings,
+  Deps,
+  RunS3ObjectsSummary
+>({
   operations: S3_OBJECTS_OPERATIONS,
   configCode: "ERR_S3_OBJECTS_CONFIG",
   resolveSettings,
@@ -348,35 +371,29 @@ const pipeline = new Core.M3LOperationPipeline({
       processed: result.processed,
       failed: result.failed,
     });
-
-    // A partial delete-batch failure must never be silent: this is the
-    // domain decision that a non-zero `failed` count fails the whole run,
-    // so it lives here (not in `main.ts`, which stays pure
-    // composition/propagation per ADR-0022 — see main.ts's own header
-    // comment).
-    if (result.failed > 0) {
-      throw new Core.M3LError(
-        `s3-objects run ${deps.correlationId} left ${String(result.failed)} key(s) failed`,
-        { code: "ERR_S3_OBJECTS_FAILED_KEYS", context: { ...result } },
-      );
-    }
   },
+  recovery: (result) =>
+    (result.errors ?? []).map((error) => ({
+      item: error.key,
+      error: [{ name: "M3LError", message: error.message }],
+      recordedAt: new Date().toISOString(),
+    })),
 });
 
 /**
  * Composes the `s3-objects` pipeline end to end via
  * `Core.M3LOperationPipeline`, preserving the legacy `RunS3ObjectsSummary`
- * return shape regardless of whether the run completed or soft-landed on a
- * declined destructive-operation gate.
+ * return shape regardless of whether the run completed, soft-landed on a
+ * declined destructive-operation gate, or left some `delete-batch` keys
+ * failed. A `delete-batch` run leaving `failed > 0` never throws: each
+ * absorbed per-key failure is reported once via `deps.reportRecovery` (the
+ * pipeline's `"partial"` outcome) and the run still resolves the summary.
  *
  * @param deps - The resolved config, `M3LPaths`, logger, per-run correlation
- *   id, the provisioned `s3` client, and `script.prompt`.
+ *   id, the provisioned `s3` client, `script.prompt`, and `reportRecovery`.
  * @returns The run summary: objects/keys processed and failed.
  * @throws {@link Core.M3LError} coded `ERR_S3_OBJECTS_CONFIG` when a required
  *   parameter is missing/malformed for the requested operation.
- * @throws {@link Core.M3LError} coded `ERR_S3_OBJECTS_FAILED_KEYS` when the
- *   run completes but leaves one or more `delete-batch` keys failed — a
- *   partial batch failure must never be silent.
  *
  * @example
  * ```typescript
@@ -393,10 +410,17 @@ const pipeline = new Core.M3LOperationPipeline({
  *   correlationId: "run-1",
  *   s3: script.aws?.clients.s3,
  *   prompt: script.prompt,
+ *   reportRecovery: (entry) => console.warn(entry.item, entry.error),
  * });
  * console.log(summary.processed, summary.failed);
  * ```
  */
 export async function runS3Objects(deps: Deps): Promise<RunS3ObjectsSummary> {
-  return (await pipeline.run(deps)).result;
+  const outcome = await pipeline.run(deps);
+  if (outcome.status === "partial") {
+    for (const entry of outcome.recovery) {
+      deps.reportRecovery(entry);
+    }
+  }
+  return { processed: outcome.result.processed, failed: outcome.result.failed };
 }

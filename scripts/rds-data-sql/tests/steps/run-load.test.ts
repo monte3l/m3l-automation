@@ -48,8 +48,10 @@ import { runLoad, type RunLoadCheckpoint } from "../../src/steps/run-load.js";
  * ```
  *
  * `runLoad` itself never throws on a partial failure — it returns a summary
- * with a nonzero `failed` count; `run-rds-data-sql` is the layer that maps
- * that into `ERR_RDS_DATA_SQL_PARTIAL_FAILURE` (covered in its own test file).
+ * with a nonzero `failed` count; `run-rds-data-sql` no longer maps a partial
+ * failure to a throw at all (covered in its own test file) — it resolves
+ * normally, since `run-load.ts`'s `reportRecovery` callback (optional on
+ * `RunLoadDeps`) already reports each rejected row.
  *
  * DISCREPANCY NOTE (flagged for the hub / design owner): the task's "exact
  * design" section gives `RunLoadCheckpoint` as exactly `{ chunkIndex?,
@@ -273,6 +275,7 @@ describe("runLoad", () => {
     const withTransaction = passthroughWithTransaction();
     const failedWriter = makeFailedWriter();
     const createFailedWriter = makeFailedWriterFactory(failedWriter);
+    const reportRecovery = vi.fn();
 
     const result = await runLoad({
       rdsData: { batchExecuteStatement, withTransaction },
@@ -284,6 +287,7 @@ describe("runLoad", () => {
       checkpoint: makeCheckpoint(),
       createFailedWriter,
       logger: makeLogger(),
+      reportRecovery,
     });
 
     expect(failedWriter.append).toHaveBeenCalledWith(
@@ -295,6 +299,18 @@ describe("runLoad", () => {
     const input = batchExecuteStatement.mock
       .calls[0]?.[0] as AWS.M3LRDSDataBatchInput;
     expect(input.parameterSets).toHaveLength(1);
+
+    expect(reportRecovery).toHaveBeenCalledTimes(1);
+    expect(reportRecovery).toHaveBeenCalledWith({
+      item: JSON.stringify({ id: 2, extra: "x" }),
+      error: [
+        expect.objectContaining({
+          name: "M3LError",
+          message: "record's keys do not match the resolved column list",
+        }),
+      ],
+      recordedAt: expect.any(String) as string,
+    });
   });
 
   describe("value coercion", () => {
@@ -398,6 +414,7 @@ describe("runLoad", () => {
     });
     const failedWriter = makeFailedWriter();
     const createFailedWriter = makeFailedWriterFactory(failedWriter);
+    const reportRecovery = vi.fn();
 
     const result = await runLoad({
       rdsData: { batchExecuteStatement, withTransaction },
@@ -410,6 +427,7 @@ describe("runLoad", () => {
       checkpoint,
       createFailedWriter,
       logger: makeLogger(),
+      reportRecovery,
     });
 
     expect(createFailedWriter).toHaveBeenCalledTimes(1);
@@ -424,6 +442,27 @@ describe("runLoad", () => {
     // skipped without a duplicate insert.
     expect(withTransaction).toHaveBeenCalledTimes(1);
     expect(batchExecuteStatement).toHaveBeenCalledTimes(1);
+
+    // Resume-safety regression contract: exactly ONE reportRecovery call for
+    // THIS run's newly-rejected record — never for the checkpoint's carried
+    // -over failedCount: 1 from the prior interrupted run. The `message`
+    // field is intentionally loosely asserted (`expect.any(String)`) since
+    // classifyRecord's two rejection paths (key-mismatch vs. value-coercion
+    // failure) share one branch in the current source, and this run's
+    // rejection is a value-coercion failure (an array id), not a key
+    // mismatch — the implementer's exact message text for that path is not
+    // yet fixed by the contract.
+    expect(reportRecovery).toHaveBeenCalledTimes(1);
+    expect(reportRecovery).toHaveBeenCalledWith({
+      item: JSON.stringify(newlyRejectedRecord),
+      error: [
+        expect.objectContaining({
+          name: "M3LError",
+          message: expect.any(String) as string,
+        }),
+      ],
+      recordedAt: expect.any(String) as string,
+    });
 
     // The resolved failed count carries the prior run's failedCount forward
     // plus this run's own newly-rejected record.
@@ -454,6 +493,7 @@ describe("runLoad", () => {
     });
     const failedWriter = makeFailedWriter();
     const createFailedWriter = makeFailedWriterFactory(failedWriter);
+    const reportRecovery = vi.fn();
 
     const result = await runLoad({
       rdsData: { batchExecuteStatement, withTransaction },
@@ -466,12 +506,17 @@ describe("runLoad", () => {
       checkpoint,
       createFailedWriter,
       logger: makeLogger(),
+      reportRecovery,
     });
 
     expect(failedWriter.append).not.toHaveBeenCalled();
     expect(withTransaction).not.toHaveBeenCalled();
     expect(batchExecuteStatement).not.toHaveBeenCalled();
     expect(checkpoint.write).not.toHaveBeenCalled();
+
+    // Zero new recovery entries — nothing is newly classified this run, so
+    // reportRecovery must never fire (mirrors failedWriter.append above).
+    expect(reportRecovery).not.toHaveBeenCalled();
 
     // The resolved failed count carries forward the checkpoint's own count
     // unchanged — there is nothing new to add.
@@ -707,6 +752,7 @@ describe("runLoad", () => {
       );
     const failedWriter = makeFailedWriter();
     const createFailedWriter = makeFailedWriterFactory(failedWriter);
+    const reportRecovery = vi.fn();
 
     const result = await runLoad({
       rdsData: { batchExecuteStatement, withTransaction },
@@ -719,6 +765,7 @@ describe("runLoad", () => {
       checkpoint: makeCheckpoint(),
       createFailedWriter,
       logger: makeLogger(),
+      reportRecovery,
     });
 
     expect(withTransaction).toHaveBeenCalledTimes(3);
@@ -728,5 +775,17 @@ describe("runLoad", () => {
     );
     expect(result.inserted).toBe(2);
     expect(result.failed).toBeGreaterThan(0);
+
+    expect(reportRecovery).toHaveBeenCalledTimes(1);
+    expect(reportRecovery).toHaveBeenCalledWith({
+      item: JSON.stringify({ id: 2 }),
+      error: [
+        expect.objectContaining({
+          name: "M3LError",
+          message: "chunk 2 failed",
+        }),
+      ],
+      recordedAt: expect.any(String) as string,
+    });
   });
 });
