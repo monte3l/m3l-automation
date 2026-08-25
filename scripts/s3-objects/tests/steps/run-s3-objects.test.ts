@@ -76,7 +76,10 @@ function buildConfig(values: Record<string, unknown>): Core.M3LConfig {
 
 function buildDeps(
   configValues: Record<string, unknown>,
-  overrides?: { readonly prompt?: Core.M3LPrompt },
+  overrides?: {
+    readonly prompt?: Core.M3LPrompt;
+    readonly reportRecovery?: (entry: Core.M3LRunRecoveryEntry) => void;
+  },
 ): Parameters<typeof runS3Objects>[0] {
   return {
     config: buildConfig(configValues),
@@ -85,6 +88,7 @@ function buildDeps(
     correlationId: "run-1",
     s3: fakeClient,
     prompt: overrides?.prompt ?? new Core.M3LPrompt(),
+    reportRecovery: overrides?.reportRecovery ?? vi.fn(),
   };
 }
 
@@ -623,8 +627,8 @@ describe("runS3Objects — operation dispatch routing", () => {
   });
 });
 
-describe("runS3Objects — a delete-batch run left with failed keys rejects", () => {
-  test("'delete-batch' leaving failed > 0 throws Core.M3LError coded ERR_S3_OBJECTS_FAILED_KEYS", async () => {
+describe("runS3Objects — a delete-batch run left with failed keys reports recovery", () => {
+  test("'delete-batch' leaving failed > 0 resolves and reports recovery for each failed key, not a throw", async () => {
     stubReadFile(keyRecordsJSONL(2));
     stubOutputStream();
     deleteObjectsMock.mockResolvedValue({
@@ -632,20 +636,47 @@ describe("runS3Objects — a delete-batch run left with failed keys rejects", ()
       errors: [{ key: "k1", message: "AccessDenied" }],
     });
     const prompt = confirmingPrompt(true);
+    const reportRecovery = vi.fn();
     const deps = buildDeps(
       { ...BASE_CONFIG, operation: "delete-batch", input: "keys.jsonl" },
-      { prompt },
+      { prompt, reportRecovery },
     );
 
-    let thrown: unknown;
-    try {
-      await runS3Objects(deps);
-    } catch (error) {
-      thrown = error;
-    }
+    await expect(runS3Objects(deps)).resolves.toEqual({
+      processed: 1,
+      failed: 1,
+    });
 
-    expect(thrown).toBeInstanceOf(Core.M3LError);
-    expect((thrown as Core.M3LError).code).toBe("ERR_S3_OBJECTS_FAILED_KEYS");
+    expect(reportRecovery).toHaveBeenCalledWith(
+      expect.objectContaining({
+        item: "k1",
+        error: [
+          expect.objectContaining({
+            name: "M3LError",
+            message: "AccessDenied",
+          }),
+        ],
+        recordedAt: expect.any(String) as string,
+      }),
+    );
+  });
+
+  test("'delete-batch' with every key succeeding does not report any recovery entry", async () => {
+    stubReadFile(keyRecordsJSONL(3));
+    deleteObjectsMock.mockResolvedValue({ deleted: 3, errors: [] });
+    const prompt = confirmingPrompt(true);
+    const reportRecovery = vi.fn();
+    const deps = buildDeps(
+      { ...BASE_CONFIG, operation: "delete-batch", input: "keys.jsonl" },
+      { prompt, reportRecovery },
+    );
+
+    await expect(runS3Objects(deps)).resolves.toEqual({
+      processed: 3,
+      failed: 0,
+    });
+
+    expect(reportRecovery).not.toHaveBeenCalled();
   });
 });
 
