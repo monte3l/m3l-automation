@@ -140,7 +140,7 @@ per-phase detail in
 | Item    | What                                                         | Status   |
 | ------- | ------------------------------------------------------------ | -------- |
 | **U1**  | Decisions & governance docs — ADR-0053…0057 + trackers       | Done     |
-| **U2**  | `check:cli-scaffold` + `check:cli-docs` gates                | To Do    |
+| **U2**  | `check:cli-scaffold` + `check:cli-docs` gates                | Done     |
 | **U3**  | `core/cli-contract` promotion (Core 23 → 24, additive minor) | Done     |
 | **U4**  | Declarative operations — library half (`core/config`)        | To Do    |
 | **U5**  | Declarative operations — fleet retrofit                      | To Do    |
