@@ -1864,7 +1864,11 @@ export function planParentLinks(items, existingIssues) {
  * closed by this planner.
  *
  * Idempotency law: calling this again over the issue state its own plan
- * produced yields empty `create`/`update`/`close`/`reopen`.
+ * produced yields empty `create`/`update`/`close`/`reopen`. `staleTracker`
+ * is exempt — those entries are never applied (see the runner's `--apply`
+ * loop), so the issue state they were computed from is unchanged, and the
+ * identical entry reproduces on every subsequent run until a human fixes
+ * the tracker row it names.
  *
  * Dirty (triggers `update`) on a title/body change, a managed-label
  * drift (see {@link managedLabelsDiffer}) — the latter so a status-only
@@ -1884,13 +1888,28 @@ export function planParentLinks(items, existingIssues) {
  * `done`/`rejected`, so a closed issue's prior open-state status label
  * would otherwise go stale).
  *
+ * `staleTracker` catches the case where GitHub and the trackers have two
+ * independent writers of issue state: a merged PR's `Closes #N` keyword
+ * closes the issue directly, but nothing in that PR necessarily flipped the
+ * matching tracker row's Status cell. Without this bucket, an item that is
+ * still unresolved on a closed-and-merged-PR issue reads exactly like a
+ * genuine manual close of unfinished work and gets `reopen`ed — silently
+ * re-opening work that already shipped (issue #577 / F24 was reopened this
+ * way after PR #649 merged without updating the tracker). The distinguishing
+ * signal is `issue.mergedClosingPrNumber`: present only when a `gh pr view`
+ * lookup (done by the caller, not here — this function stays pure) confirmed
+ * a referenced closing PR actually merged. A closed issue with no such PR
+ * still reaches `reopen` — a real accidental/manual close of unfinished work
+ * must still reopen, which is the behavior `reopen` exists for.
+ *
  * @param {Item[]} items
- * @param {{ number: number, title: string, body: string, state: "open" | "closed", labels: string[], type: string | null }[]} existingIssues
+ * @param {{ number: number, title: string, body: string, state: "open" | "closed", labels: string[], type: string | null, mergedClosingPrNumber?: number | null }[]} existingIssues
  * @returns {{
  *   create: { key: string, payload: ReturnType<typeof buildIssuePayload> }[],
  *   update: { number: number, key: string, payload: ReturnType<typeof buildIssuePayload> }[],
  *   close: { number: number, key: string, comment: string, reason: "completed" | "not planned", payload?: ReturnType<typeof buildIssuePayload>, labelsStale?: boolean }[],
  *   reopen: { number: number, key: string, payload: ReturnType<typeof buildIssuePayload> }[],
+ *   staleTracker: { number: number, key: string, prNumber: number, sourcePath: string, sourceAnchor: string }[],
  *   untouched: { number: number, reason: string }[],
  * }}
  * @example
@@ -1906,6 +1925,7 @@ export function planIssueSync(items, existingIssues) {
   const update = [];
   const close = [];
   const reopen = [];
+  const staleTracker = [];
   const untouched = [];
 
   const itemByKey = indexItemsByKey(items);
@@ -1962,9 +1982,36 @@ export function planIssueSync(items, existingIssues) {
         } else {
           untouched.push({ number: issue.number, reason: "in sync" });
         }
+      } else if (issue.mergedClosingPrNumber != null) {
+        // Closed by a merged PR's `Closes #N`, but the item is still
+        // unresolved — the tracker row, not GitHub, is out of date. See the
+        // `staleTracker` doc above; #577/F24 is the case that motivated this.
+        staleTracker.push({
+          number: issue.number,
+          key: item.key,
+          prNumber: issue.mergedClosingPrNumber,
+          sourcePath: item.sourcePath,
+          sourceAnchor: item.sourceAnchor,
+        });
       } else {
         reopen.push({ number: issue.number, key: item.key, payload });
       }
+      continue;
+    }
+
+    if (!isResolved(item.status) && issue.mergedClosingPrNumber != null) {
+      // Mirror of the closed-branch case above, for an issue a maintainer
+      // (or a prior stale-tracker-unaware run) already reopened: GitHub
+      // still remembers the merged closing PR even after a reopen, so this
+      // stays caught rather than falling through to `update`/`untouched`
+      // and re-asserting an open, unresolved-looking state forever.
+      staleTracker.push({
+        number: issue.number,
+        key: item.key,
+        prNumber: issue.mergedClosingPrNumber,
+        sourcePath: item.sourcePath,
+        sourceAnchor: item.sourceAnchor,
+      });
       continue;
     }
 
@@ -1997,7 +2044,7 @@ export function planIssueSync(items, existingIssues) {
     });
   }
 
-  return { create, update, close, reopen, untouched };
+  return { create, update, close, reopen, staleTracker, untouched };
 }
 
 // The board's single-select "Status" field carries the tracker's own
