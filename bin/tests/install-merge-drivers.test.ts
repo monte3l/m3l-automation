@@ -49,7 +49,7 @@ describe("installMergeDrivers", () => {
         if (key === undefined || !(key in current)) {
           throw new Error("key not set");
         }
-        return current[key];
+        return current[key] ?? "";
       }
       writeCalls.push(args);
       return "";
@@ -74,7 +74,7 @@ describe("installMergeDrivers", () => {
         if (key === undefined || !(key in current)) {
           throw new Error("key not set");
         }
-        return current[key];
+        return current[key] ?? "";
       }
       writeCalls.push(args);
       return "";

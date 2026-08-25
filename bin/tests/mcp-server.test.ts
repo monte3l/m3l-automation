@@ -15,7 +15,7 @@ import { TOOLS } from "../lib/mcp-tools.mjs";
 
 const h = vi.hoisted(() => {
   const registerTool = vi.fn();
-  const connect = vi.fn(() => Promise.resolve());
+  const connect = vi.fn((_transport: unknown) => Promise.resolve());
   const McpServerCtor = vi.fn(function (
     this: unknown,
     config: Record<string, unknown>,

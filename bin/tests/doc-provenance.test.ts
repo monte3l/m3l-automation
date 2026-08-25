@@ -7,6 +7,20 @@ import {
   applyBlobUpdates,
 } from "../lib/doc-provenance.mjs";
 
+/**
+ * `applyBlobUpdates`'s real `@returns {object | null}` JSDoc is too loose for
+ * the shape the tests below destructure/access — narrow it locally to what
+ * the fixture data (and the function's actual output) shape really is.
+ */
+interface AppliedData {
+  sections: {
+    heading: string;
+    sources: { file: string; symbol: string; blob: string }[];
+    commit?: string;
+    retrieved: string;
+  }[];
+}
+
 describe("parseHeadings", () => {
   test("extracts heading text across levels 1-6", () => {
     const md = [
@@ -249,12 +263,12 @@ describe("applyBlobUpdates", () => {
       data,
       [{ sectionIndex: 0, sourceIndex: 0, blob: "new-a" }],
       "2026-07-11",
-    );
-    expect(next.sections[0].sources[0].blob).toBe("new-a");
-    expect(next.sections[0].retrieved).toBe("2026-07-11");
+    ) as AppliedData;
+    expect(next.sections[0]?.sources[0]?.blob).toBe("new-a");
+    expect(next.sections[0]?.retrieved).toBe("2026-07-11");
     // untouched section is left alone
-    expect(next.sections[1].sources[0].blob).toBe("old-b");
-    expect(next.sections[1].retrieved).toBe("2026-01-01");
+    expect(next.sections[1]?.sources[0]?.blob).toBe("old-b");
+    expect(next.sections[1]?.retrieved).toBe("2026-01-01");
   });
 
   test("strips the legacy commit field from every section on write", () => {
@@ -262,9 +276,9 @@ describe("applyBlobUpdates", () => {
       data,
       [{ sectionIndex: 0, sourceIndex: 0, blob: "new-a" }],
       "2026-07-11",
-    );
-    expect(next.sections[0].commit).toBeUndefined();
-    expect(next.sections[1].commit).toBeUndefined();
+    ) as AppliedData;
+    expect(next.sections[0]?.commit).toBeUndefined();
+    expect(next.sections[1]?.commit).toBeUndefined();
   });
 
   test("does not mutate the input data", () => {

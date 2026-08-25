@@ -267,9 +267,7 @@ describe("findMissingTypes", () => {
   });
 
   test("an item with type: undefined is reported", () => {
-    const findings = findMissingTypes([
-      { key: "roadmap:p0:x", title: "X", type: undefined },
-    ]);
+    const findings = findMissingTypes([{ key: "roadmap:p0:x", title: "X" }]);
     expect(findings).toHaveLength(1);
     expect(findings[0]).toContain("roadmap:p0:x");
     expect(findings[0]).toContain("X");

@@ -885,14 +885,18 @@ function buildDatedSection(files, dirPrefix) {
  *   readmePaths: string[],
  * }} sources
  * @returns {{
- *   adrs: ReturnType<typeof parseAdr>[],
+ *   adrs: (NonNullable<ReturnType<typeof parseAdr>> & { name: string, href: string })[],
  *   logs: ReturnType<typeof parseDatedDoc>[],
  *   archive: ReturnType<typeof parseDatedDoc>[],
  *   plans: ReturnType<typeof parseDatedDoc>[],
  *   contributing: Array<ReturnType<typeof parseDatedDoc> & { name: string, href: string }>,
  *   guides: Array<ReturnType<typeof parseDatedDoc> & { name: string, href: string }>,
  *   research: Array<ReturnType<typeof parseDatedDoc> & { name: string, href: string }>,
- *   reference: { core: unknown[], aws: unknown[], scripts: unknown[] },
+ *   reference: {
+ *     core: { namespace: string, name: string, status: string, docPath: string, symbols: string[], href: string }[],
+ *     aws: { namespace: string, name: string, status: string, docPath: string, symbols: string[], href: string }[],
+ *     scripts: { name: string, docPath: string, href: string }[],
+ *   },
  *   readmes: { path: string, href: string }[],
  * }}
  * @example

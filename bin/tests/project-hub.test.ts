@@ -555,7 +555,7 @@ describe("parseAdr", () => {
   });
 
   test("degrades to Unknown when the Status line is missing, without throwing", () => {
-    let result;
+    let result: ReturnType<typeof parseAdr> | undefined;
     expect(() => {
       result = parseAdr(ADR_MISSING_STATUS_NAME, ADR_MISSING_STATUS_CONTENT);
     }).not.toThrow();
@@ -636,7 +636,7 @@ describe("extractRoadmap", () => {
   });
 
   test("a missing '## Priority 1' section yields a descriptive error, no throw", () => {
-    let result;
+    let result: ReturnType<typeof extractRoadmap> | undefined;
     expect(() => {
       result = extractRoadmap(ROADMAP_MISSING_PRIORITY1_FIXTURE);
     }).not.toThrow();

@@ -411,7 +411,7 @@ describe("TYPE_LABELS", () => {
 
   test("is keyed by the ISSUE_TYPES display name, not the facet name, so TYPE_LABELS[item.type] resolves directly", () => {
     expect(TYPE_LABELS[ISSUE_TYPES.governance]).toBe("type:governance");
-    expect(TYPE_LABELS.governance).toBeUndefined();
+    expect(TYPE_LABELS["governance"]).toBeUndefined();
   });
 });
 
@@ -1659,7 +1659,7 @@ interface TestIssue {
   body: string;
   state: "open" | "closed";
   labels: string[];
-  type?: string | null;
+  type: string | null;
 }
 
 interface IssueSyncResult {
@@ -1875,6 +1875,7 @@ describe("planIssueSync", () => {
       body: "No marker in this body at all.",
       state: "open",
       labels: ["hub-sync"],
+      type: null,
     };
     const result = planIssueSync([], [humanIssue]) as IssueSyncResult;
 
@@ -1931,6 +1932,7 @@ describe("planIssueSync", () => {
       body: "No marker here, just a title collision.",
       state: "open",
       labels: [],
+      type: null,
     };
 
     const result = planIssueSync([item], [lookalikeIssue]) as IssueSyncResult;
@@ -1960,6 +1962,7 @@ describe("planIssueSync", () => {
       body: payload.body,
       state: "open",
       labels: [HUB_LABEL, PRIORITY_LABELS.p0],
+      type: null,
     };
 
     const result = planIssueSync([item], [staleIssue]) as IssueSyncResult;
@@ -2053,6 +2056,7 @@ describe("planIssueSync", () => {
       body: issueBody,
       state: "open",
       labels: [HUB_LABEL, PRIORITY_LABELS.p2],
+      type: null,
     };
     const result = planIssueSync([item], [legacyIssue]) as IssueSyncResult;
 
@@ -2080,6 +2084,7 @@ describe("planIssueSync", () => {
       body: issueBody,
       state: "closed",
       labels: [HUB_LABEL, PRIORITY_LABELS.p2],
+      type: null,
     };
     const result = planIssueSync(
       [item],
@@ -2122,6 +2127,7 @@ describe("planIssueSync", () => {
       body: issueBody,
       state: "open",
       labels: [HUB_LABEL],
+      type: null,
     };
     const result = planIssueSync([], [removedIssue]) as IssueSyncResult;
 
