@@ -54,7 +54,7 @@ await Core.runScript(
     if (awsTarget === undefined) {
       throw new Core.M3LError(
         "rds-data-sql: script.awsTarget was not resolved despite a provisioned script.aws",
-        { code: "ERR_RDS_DATA_SQL_NO_AWS_PROVIDER" },
+        { code: "ERR_RDS_DATA_SQL_NO_TARGET" },
       );
     }
 
