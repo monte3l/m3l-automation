@@ -612,11 +612,12 @@ function normalizePlainObject(
  * *keys*, and a bare array element has none, so a secret riding in a `Set`
  * would reach the persisted report completely unredacted. Emitting the
  * element count keeps the diagnostic signal (how many entries existed)
- * without carrying any of the — possibly sensitive — contents forward. This
- * is no worse than this module's pre-reordering baseline, under which
- * `redactSensitiveLogValue(new Set(...))` returned `{}` (dropping every
- * member outright) — and it is strictly more informative than that baseline
- * while remaining just as leak-free.
+ * without carrying any of the — possibly sensitive — contents forward. Under
+ * an earlier baseline (both before this module's normalize-before-redact
+ * reordering, and before `redactSensitiveLogValue` itself gained `Map`/`Set`
+ * support), `redactSensitiveLogValue(new Set(...))` returned `{}` (dropping
+ * every member outright) — this is no worse than that baseline, and is
+ * strictly more informative than it while remaining just as leak-free.
  *
  * `set.size` is read through an accessor a hostile `Set` subclass (or a
  * `Proxy` wrapping one) can override to return arbitrary content — including
@@ -749,9 +750,14 @@ function normalizeForRedaction(
  * every other type unchanged. Deliberately narrower than
  * `format-error.ts`'s own `scrubUrlsInValue`: by the time {@link sanitizeValue}
  * calls this, `value` has already passed through {@link normalizeForRedaction}
- * and `redactSensitiveLogValue`, both of which only ever produce plain JSON
- * shapes (`string`/`number`/`boolean`/`null`/array/plain record) — there is no
- * `Map`/`Set`/class instance/`toJSON` left to special-case.
+ * and `redactSensitiveLogValue`, both of which, IN THIS PIPELINE'S ORDERING,
+ * only ever hand this function a plain JSON shape
+ * (`string`/`number`/`boolean`/`null`/array/plain record) —
+ * `normalizeForRedaction` already stripped any `Map`/`Set`/class
+ * instance/`toJSON` away before `redactSensitiveLogValue` is reached here;
+ * `redactSensitiveLogValue` called directly elsewhere (outside this
+ * pipeline) does now handle `Map`/`Set` itself, recursively, see
+ * `core/logging/redact.ts`.
  *
  * Exists so `archive`, `timeline`, and `environment` get the exact same URL
  * scrub `redactContext` (`format-error.ts`) already applies to a serialized

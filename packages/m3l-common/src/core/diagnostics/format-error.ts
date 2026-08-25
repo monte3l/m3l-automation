@@ -18,6 +18,7 @@ import {
   type M3LSecretNamesPort,
 } from "../logging/redact.js";
 import { isDangerousKey } from "../security/index.js";
+import { isRedactableRecord } from "../../internal/logging/isRedactableRecord.js";
 
 /**
  * The maximum number of `cause` levels walked before the chain is truncated.
@@ -30,6 +31,20 @@ const CIRCULAR_MARKER = "[circular]";
 
 /** Marker appended when the walk is truncated by {@link MAX_CAUSE_DEPTH}. */
 const MAX_DEPTH_MARKER = "[max cause depth reached]";
+
+/**
+ * Placeholder substituted when a `Map`/`Set`-shaped value throws while
+ * actually being iterated — e.g. `Object.create(Map.prototype)` or a
+ * `Proxy` wrapping one, both of which pass `instanceof Map`/`instanceof Set`
+ * but have no real internal Map/Set state. Degrades this one value rather
+ * than letting the throw propagate and blank out every sibling field this
+ * call was also scrubbing. This module runs on a value already redacted by
+ * `core/logging/redact.ts`, which guards the exact same hazard for the same
+ * reason (and, in turn, mirrors `run-report.ts`'s `invokeToJSONSafely`
+ * guarding a throwing `toJSON`) — this is a second, independent line of
+ * defense over the same already-redacted value, not a first.
+ */
+const UNREDACTABLE_COLLECTION = "[unredactable Map/Set omitted]";
 
 /** Separator joining rendered levels; contains the literal "caused by" text tests assert on. */
 const CAUSED_BY_SEPARATOR = "\n\ncaused by: ";
@@ -138,11 +153,6 @@ function safeReadStack(error: Error): string | undefined {
   } catch {
     return undefined;
   }
-}
-
-/** Narrows `value` to a plain, non-null, non-array object. */
-function isPlainRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /**
@@ -315,6 +325,46 @@ export function scrubUrlsInText(text: string): string {
 }
 
 /**
+ * Scrubs a `Map`'s own entries: a string key is scrubbed the same way an
+ * object property key is, and each value is recursed into via
+ * {@link scrubUrlsInValue}. Extracted from {@link scrubUrlsInValue} to keep
+ * that function's cyclomatic/cognitive complexity within the project's
+ * lint budget.
+ *
+ * An entry whose key is not a `string`, or whose key is a dangerous own-key
+ * name (`__proto__`/`constructor`/`prototype`), is DROPPED entirely — both
+ * the key and its value — rather than carried through unscrubbed. A
+ * non-string key has no representable key name to scrub, and a dangerous
+ * key name offers nothing worth preserving either. This mirrors
+ * `core/logging/redact.ts`'s `redactMapEntries` and
+ * `core/diagnostics/run-report.ts`'s `normalizeMapEntries`.
+ */
+function scrubUrlsInMap(
+  value: ReadonlyMap<unknown, unknown>,
+): Map<unknown, unknown> {
+  const result = new Map<unknown, unknown>();
+  for (const [entryKey, entryValue] of value) {
+    if (typeof entryKey !== "string" || isDangerousKey(entryKey)) continue;
+    result.set(scrubUrlsInText(entryKey), scrubUrlsInValue(entryValue));
+  }
+  return result;
+}
+
+/**
+ * Scrubs a `Set`'s elements, each recursed into via {@link scrubUrlsInValue}
+ * the same way an array's elements are. Extracted from
+ * {@link scrubUrlsInValue} to keep that function's cyclomatic/cognitive
+ * complexity within the project's lint budget.
+ */
+function scrubUrlsInSet(value: ReadonlySet<unknown>): Set<unknown> {
+  const result = new Set<unknown>();
+  for (const entry of value) {
+    result.add(scrubUrlsInValue(entry));
+  }
+  return result;
+}
+
+/**
  * Recursively applies {@link scrubUrlsInText} to every string leaf reachable
  * from `value` — a plain object's/array's nested string values — leaving
  * every other type (`number`, `boolean`, `null`, etc.) unchanged. Used to
@@ -337,7 +387,21 @@ function scrubUrlsInValue(value: unknown): unknown {
   if (typeof value === "string") return scrubUrlsInText(value);
   if (Array.isArray(value))
     return value.map((entry) => scrubUrlsInValue(entry));
-  if (isPlainRecord(value)) {
+  if (value instanceof Map) {
+    try {
+      return scrubUrlsInMap(value);
+    } catch {
+      return UNREDACTABLE_COLLECTION;
+    }
+  }
+  if (value instanceof Set) {
+    try {
+      return scrubUrlsInSet(value);
+    } catch {
+      return UNREDACTABLE_COLLECTION;
+    }
+  }
+  if (isRedactableRecord(value)) {
     const result: Record<string, unknown> = {};
     for (const [key, entry] of Object.entries(value)) {
       if (isDangerousKey(key)) continue;
@@ -397,7 +461,7 @@ function renderLevel(
 
 /**
  * Redacts an `M3LError` level's `context` when `redact` is `true`, guarding
- * against a redactor that returns a non-record (proven via {@link isPlainRecord}
+ * against a redactor that returns a non-record (proven via {@link isRedactableRecord}
  * rather than asserted) so the public {@link M3LSerializedError.context} field
  * is never populated from an unproven value. Runs the name-based
  * `redactSensitiveLogValue` pass FIRST, then {@link scrubUrlsInValue} —
@@ -418,7 +482,7 @@ function redactContext(
   if (!redact) return context;
   const redacted = redactSensitiveLogValue(context, { secrets });
   const scrubbed = scrubUrlsInValue(redacted);
-  return isPlainRecord(scrubbed) ? scrubbed : {};
+  return isRedactableRecord(scrubbed) ? scrubbed : {};
 }
 
 /** Serializes one level to a plain, JSON-serializable {@link M3LSerializedError}. */
