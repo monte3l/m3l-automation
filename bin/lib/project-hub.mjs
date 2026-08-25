@@ -864,10 +864,11 @@ function buildDatedSection(files, dirPrefix) {
 
 /**
  * Assemble every corpus section the hub's "Documentation corpus" tab lists —
- * ADRs, work logs, archived plans, active plans, the Core/AWS/scripts
- * reference catalog, and top-level READMEs — from pre-read file contents and
- * the reference catalog. Every entry carries an `href` built through
- * {@link blobUrl}. ADRs sort number-descending; logs/archive/plans sort
+ * ADRs, work logs, archived plans, active plans, contributing docs, guides,
+ * research docs, the Core/AWS/scripts reference catalog, and top-level
+ * READMEs — from pre-read file contents and the reference catalog. Every
+ * entry carries an `href` built through {@link blobUrl}. ADRs sort
+ * number-descending; logs/archive/plans/contributing/guides/research sort
  * date-descending with undated entries last; reference entries group by
  * `catalog` namespace.
  *
@@ -876,6 +877,9 @@ function buildDatedSection(files, dirPrefix) {
  *   logFiles: { name: string, content: string }[],
  *   archiveFiles: { name: string, content: string }[],
  *   planFiles: { name: string, content: string }[],
+ *   contributingFiles?: { name: string, content: string }[],
+ *   guideFiles?: { name: string, content: string }[],
+ *   researchFiles?: { name: string, content: string }[],
  *   catalog: { namespace: string, name: string, status: string, docPath: string, symbols: string[] }[],
  *   scriptPages: string[],
  *   readmePaths: string[],
@@ -885,6 +889,9 @@ function buildDatedSection(files, dirPrefix) {
  *   logs: ReturnType<typeof parseDatedDoc>[],
  *   archive: ReturnType<typeof parseDatedDoc>[],
  *   plans: ReturnType<typeof parseDatedDoc>[],
+ *   contributing: Array<ReturnType<typeof parseDatedDoc> & { name: string, href: string }>,
+ *   guides: Array<ReturnType<typeof parseDatedDoc> & { name: string, href: string }>,
+ *   research: Array<ReturnType<typeof parseDatedDoc> & { name: string, href: string }>,
  *   reference: { core: unknown[], aws: unknown[], scripts: unknown[] },
  *   readmes: { path: string, href: string }[],
  * }}
@@ -894,6 +901,7 @@ function buildDatedSection(files, dirPrefix) {
  *
  * const corpus = buildCorpusSections({
  *   adrFiles: [], logFiles: [], archiveFiles: [], planFiles: [],
+ *   contributingFiles: [], guideFiles: [], researchFiles: [],
  *   catalog: [], scriptPages: [], readmePaths: ["README.md"],
  * });
  * ```
@@ -903,6 +911,9 @@ export function buildCorpusSections({
   logFiles = [],
   archiveFiles = [],
   planFiles = [],
+  contributingFiles = [],
+  guideFiles = [],
+  researchFiles = [],
   catalog = [],
   scriptPages = [],
   readmePaths = [],
@@ -920,6 +931,12 @@ export function buildCorpusSections({
   const logs = buildDatedSection(logFiles, "docs/logs");
   const archive = buildDatedSection(archiveFiles, "docs/plans/archive");
   const plans = buildDatedSection(planFiles, "docs/plans");
+  const contributing = buildDatedSection(
+    contributingFiles,
+    "docs/contributing",
+  );
+  const guides = buildDatedSection(guideFiles, "docs/guides");
+  const research = buildDatedSection(researchFiles, "docs/research");
 
   const referenceEntries = catalog.map((entry) => ({
     ...entry,
@@ -940,6 +957,9 @@ export function buildCorpusSections({
     logs,
     archive,
     plans,
+    contributing,
+    guides,
+    research,
     reference: { core, aws, scripts },
     readmes,
   };
@@ -1235,7 +1255,7 @@ footer { margin-top: 3rem; color: var(--muted); font-size: 0.85rem; }
  *   roadmap: { priority0: null, priority1: null, priority2: null, governance: null, errors: [] },
  *   backlog: { friction: null, adr0035Rollout: null, capabilityDeepeningWave: null, postComparisonHardeningWave: null, getterReality: null, gated: null, errors: [] },
  *   ledger: { implemented: 30, total: 31, barrels: null, core: null, aws: null, errors: [] },
- *   corpus: { adrs: [], logs: [], archive: [], plans: [], reference: { core: [], aws: [], scripts: [] }, readmes: [] },
+ *   corpus: { adrs: [], logs: [], archive: [], plans: [], contributing: [], guides: [], research: [], reference: { core: [], aws: [], scripts: [] }, readmes: [] },
  * });
  * ```
  */
@@ -1368,6 +1388,15 @@ export function renderHubPage(model) {
     `<h3>Active plans</h3>${renderCorpusList(
       corpus.plans,
       (entry) => `${entry.date ?? "undated"} — ${entry.title}`,
+    )}`,
+    `<h3>Contributing docs</h3>${renderCorpusList(
+      corpus.contributing,
+      (entry) => entry.title,
+    )}`,
+    `<h3>Guides</h3>${renderCorpusList(corpus.guides, (entry) => entry.title)}`,
+    `<h3>Research</h3>${renderCorpusList(
+      corpus.research,
+      (entry) => entry.title,
     )}`,
     `<h3>Core reference</h3>${renderCorpusList(
       corpus.reference.core,
