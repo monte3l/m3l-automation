@@ -157,6 +157,14 @@ export function isLogsInsightsCheckpoint(
  *   stable identity key (`<output-dir>/<output>.checkpoint.json`).
  * @param missing - What `read()` does when no checkpoint file exists; see
  *   `docs/reference/core/checkpoint.md`.
+ * @param definition - Forwarded verbatim to
+ *   `Core.M3LCheckpointStore`'s `definition` option, opting the store into
+ *   fingerprinting. Deliberately left as a parameter rather than centralized,
+ *   same as `missing`: it is inert for the delete-on-success hook's store
+ *   (which only ever calls `.delete()`, never `.read()`/`.write()`, so a
+ *   fingerprint mismatch could never surface there), so that call site omits
+ *   it; only the orchestrator's read/write store has a caller with a
+ *   meaningful definition to project.
  * @returns A configured `Core.M3LCheckpointStore<LogsInsightsCheckpoint>`.
  *
  * @example
@@ -179,11 +187,13 @@ export function buildCheckpointStore(
   paths: Core.M3LPaths,
   output: string,
   missing: Core.M3LCheckpointMissingPolicy<LogsInsightsCheckpoint>,
+  definition?: unknown,
 ): Core.M3LCheckpointStore<LogsInsightsCheckpoint> {
   return new Core.M3LCheckpointStore<LogsInsightsCheckpoint>({
     paths,
     name: output,
     validate: isLogsInsightsCheckpoint,
     missing,
+    definition,
   });
 }

@@ -26,6 +26,13 @@ const ATHENA_OUTPUT_FORMATS = ["json", "csv"] as const;
 export interface AthenaQuerySettings {
   /** The `AWS.M3LAthenaClient.startQuery()` input, ready to pass through. */
   readonly startInput: AWS.StartAthenaQueryInput;
+  /**
+   * The resolved `aws.profile` config value — selects the AWS account/region
+   * `client` runs under, and is folded into the checkpoint's fingerprint
+   * `definition` so a `--resume` after switching profiles fails loud instead
+   * of silently reattaching to an execution id from a different account.
+   */
+  readonly awsProfile: string;
   /** Output format, selecting the exporter. */
   readonly format: "json" | "csv";
   /** Output file name, resolved under `M3L_OUTPUT_DIR`. */
@@ -93,7 +100,11 @@ export function resolveAthenaSettings(
   const output = accessor.requiredString("output", "run");
   const format = accessor.oneOf("format", ATHENA_OUTPUT_FORMATS);
   const resume = accessor.requiredBoolean("resume", "run");
+  const awsProfile = accessor.requiredString(
+    Core.AWS_PROFILE_PARAM_NAME,
+    "run",
+  );
   const startInput = buildStartInput(accessor);
 
-  return { startInput, format, output, resume };
+  return { startInput, awsProfile, format, output, resume };
 }

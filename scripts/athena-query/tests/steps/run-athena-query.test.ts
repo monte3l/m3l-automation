@@ -452,6 +452,187 @@ describe("runAthenaQuery — abort on terminal query failure", () => {
   });
 });
 
+describe("runAthenaQuery — checkpoint definition (issue #497 A4b)", () => {
+  /**
+   * Contract: `Core.M3LCheckpointStore` is constructed with a `definition`
+   * option built as an explicit projection of `settings.startInput` —
+   * `queryString`, `database`, `catalog`, `workGroup`, `executionParameters`,
+   * `outputLocation` — plus `awsProfile` (resolved from the `aws.profile`
+   * config parameter, `Core.AWS_PROFILE_PARAM_NAME`) — excluding `output`
+   * (already the checkpoint's `name`), `format`, and `resume`.
+   *
+   * Both `outputLocation` and `awsProfile` are part of "what a checkpointed
+   * `queryExecutionId` means": `outputLocation` becomes
+   * `ResultConfiguration.OutputLocation` on `StartQueryExecution`, and
+   * `awsProfile` selects the AWS account/region the execution id was minted
+   * under — a `--resume` after switching profiles must fail loud with
+   * `ERR_CHECKPOINT_FINGERPRINT_MISMATCH` rather than silently reattaching
+   * to an execution id from a different account (issue #497 review round 2).
+   */
+  function getCheckpointStoreOptions(
+    callIndex: number,
+  ): Core.M3LCheckpointStoreOptions<AthenaCheckpoint> {
+    const call = vi.mocked(Core.M3LCheckpointStore).mock.calls[callIndex];
+    if (call === undefined) {
+      throw new Error(
+        `Core.M3LCheckpointStore was not called at index ${String(callIndex)}`,
+      );
+    }
+    return call[0];
+  }
+
+  it("passes a definition projected from startInput (queryString, database, catalog, workGroup, executionParameters, outputLocation) plus awsProfile on a fresh run", async () => {
+    const client = buildClient();
+    client.startQuery.mockResolvedValue("query-def-1");
+    client.awaitResults.mockResolvedValue(buildResult("query-def-1", []));
+
+    const config = buildConfig({
+      ...BASE_VALUES,
+      database: "my_db",
+      catalog: "my_catalog",
+      outputLocation: "s3://bucket/",
+      workGroup: "primary",
+      executionParameters: ["param-1"],
+    });
+    const logger = new Core.M3LLogger([]);
+    const paths = buildPaths();
+
+    await runAthenaQuery({ config, logger, client: asClient(client), paths });
+
+    const options = getCheckpointStoreOptions(0);
+    expect(options.definition).toEqual({
+      queryString: "SELECT * FROM my_table",
+      database: "my_db",
+      catalog: "my_catalog",
+      workGroup: "primary",
+      executionParameters: ["param-1"],
+      outputLocation: "s3://bucket/",
+      awsProfile: "my-profile",
+    });
+  });
+
+  it("includes awsProfile in the definition, resolved from the aws.profile config parameter (not hardcoded)", async () => {
+    const client = buildClient();
+    client.startQuery.mockResolvedValue("query-def-profile");
+    client.awaitResults.mockResolvedValue(buildResult("query-def-profile", []));
+
+    const config = buildConfig({
+      ...BASE_VALUES,
+      "aws.profile": "distinct-custom-profile",
+    });
+    const logger = new Core.M3LLogger([]);
+    const paths = buildPaths();
+
+    await runAthenaQuery({ config, logger, client: asClient(client), paths });
+
+    const options = getCheckpointStoreOptions(0);
+    const definitionArg = options.definition as Record<string, unknown>;
+    expect(definitionArg["awsProfile"]).toBe("distinct-custom-profile");
+  });
+
+  it("omits unset optional fields (including outputLocation) from the definition rather than passing them as undefined", async () => {
+    const client = buildClient();
+    client.startQuery.mockResolvedValue("query-def-2");
+    client.awaitResults.mockResolvedValue(buildResult("query-def-2", []));
+
+    const config = buildConfig({ ...BASE_VALUES });
+    const logger = new Core.M3LLogger([]);
+    const paths = buildPaths();
+
+    await runAthenaQuery({ config, logger, client: asClient(client), paths });
+
+    const options = getCheckpointStoreOptions(0);
+    const definitionArg = options.definition as Record<string, unknown>;
+    expect(definitionArg["queryString"]).toBe("SELECT * FROM my_table");
+    // awsProfile is a required config parameter, so it's always present —
+    // unlike the optional startInput fields below, it is never omitted.
+    expect(definitionArg["awsProfile"]).toBe("my-profile");
+    expect(Object.hasOwn(definitionArg, "database")).toBe(false);
+    expect(Object.hasOwn(definitionArg, "catalog")).toBe(false);
+    expect(Object.hasOwn(definitionArg, "workGroup")).toBe(false);
+    expect(Object.hasOwn(definitionArg, "executionParameters")).toBe(false);
+    expect(Object.hasOwn(definitionArg, "outputLocation")).toBe(false);
+  });
+
+  it("includes outputLocation in the definition when startInput.outputLocation is set", async () => {
+    const client = buildClient();
+    client.startQuery.mockResolvedValue("query-def-outloc");
+    client.awaitResults.mockResolvedValue(buildResult("query-def-outloc", []));
+
+    const config = buildConfig({
+      ...BASE_VALUES,
+      outputLocation: "s3://bucket/results/",
+    });
+    const logger = new Core.M3LLogger([]);
+    const paths = buildPaths();
+
+    await runAthenaQuery({ config, logger, client: asClient(client), paths });
+
+    const options = getCheckpointStoreOptions(0);
+    const definitionArg = options.definition as Record<string, unknown>;
+    expect(definitionArg["outputLocation"]).toBe("s3://bucket/results/");
+  });
+
+  it("never includes output, format, or resume in the definition", async () => {
+    const client = buildClient();
+    client.startQuery.mockResolvedValue("query-def-3");
+    client.awaitResults.mockResolvedValue(buildResult("query-def-3", []));
+
+    const config = buildConfig({
+      ...BASE_VALUES,
+      outputLocation: "s3://bucket/",
+    });
+    const logger = new Core.M3LLogger([]);
+    const paths = buildPaths();
+
+    await runAthenaQuery({ config, logger, client: asClient(client), paths });
+
+    const options = getCheckpointStoreOptions(0);
+    const definitionArg = options.definition as Record<string, unknown>;
+    expect(Object.hasOwn(definitionArg, "output")).toBe(false);
+    expect(Object.hasOwn(definitionArg, "format")).toBe(false);
+    expect(Object.hasOwn(definitionArg, "resume")).toBe(false);
+    // outputLocation IS part of what a checkpointed queryExecutionId means
+    // (issue #497 review round 2), so it is expected to be present here.
+    expect(Object.hasOwn(definitionArg, "outputLocation")).toBe(true);
+  });
+
+  it("passes the same definition shape on the --resume path", async () => {
+    const client = buildClient();
+    client.awaitResults.mockResolvedValue(
+      buildResult("query-inflight-def", [{ id: "1", name: "alice" }]),
+    );
+    checkpointMocks.read.mockResolvedValue({
+      queryExecutionId: "query-inflight-def",
+    });
+
+    const config = buildConfig({
+      ...BASE_VALUES,
+      resume: true,
+      database: "my_db",
+      catalog: "my_catalog",
+      outputLocation: "s3://bucket/",
+      workGroup: "primary",
+      executionParameters: ["param-1"],
+    });
+    const logger = new Core.M3LLogger([]);
+    const paths = buildPaths();
+
+    await runAthenaQuery({ config, logger, client: asClient(client), paths });
+
+    const options = getCheckpointStoreOptions(0);
+    expect(options.definition).toEqual({
+      queryString: "SELECT * FROM my_table",
+      database: "my_db",
+      catalog: "my_catalog",
+      workGroup: "primary",
+      executionParameters: ["param-1"],
+      outputLocation: "s3://bucket/",
+      awsProfile: "my-profile",
+    });
+  });
+});
+
 describe("runAthenaQuery — run summary type", () => {
   it("the run summary is a plain object of rowsExported (number) and queryExecutionId (string)", () => {
     expectTypeOf<AthenaRunSummary>().toEqualTypeOf<{

@@ -391,6 +391,30 @@ async function buildQueryDeps(
     name: "query",
     validate: isRunQueryCheckpoint,
     missing: { kind: "empty", value: {} },
+    // Fingerprints the run's shape so a leftover checkpoint from a
+    // differently-configured prior run throws ERR_CHECKPOINT_FINGERPRINT_MISMATCH
+    // on read() instead of silently being reused. `secretArn` (a rotatable
+    // credential locator) is deliberately excluded — the fingerprint is an
+    // unkeyed hash, not a secret store. `sql`/`parameters` are the RESOLVED
+    // values (already read from `sqlFile`/`parametersFile`), not the raw
+    // settings, since a file's on-disk contents can change under a fixed
+    // path. `pageSize` is excluded as non-meaning-bearing on its own — only
+    // its `paged` boolean (whether pagination is active at all) matters.
+    // Unlike the other three consumer scripts' definitions, `aws.profile`
+    // is deliberately not included here: `resourceArn` already embeds the
+    // AWS account id and region, so it strictly dominates the profile as an
+    // account binding — a profile resolving to a different account cannot
+    // silently reach the same cluster ARN.
+    definition: {
+      resourceArn: settings.resourceArn,
+      database: settings.database,
+      ...(settings.schema !== undefined && { schema: settings.schema }),
+      sql,
+      parameters,
+      outputFile: settings.outputFile,
+      outputFormat: settings.outputFormat,
+      paged: settings.pageSize > 0,
+    },
   });
   const outputFormat = settings.outputFormat;
   const outputPath = paths.resolveOutput(settings.outputFile);
@@ -449,6 +473,25 @@ function buildLoadDeps(deps: BuildOperationDepsDeps): RunLoadDeps {
     name: "load",
     validate: isRunLoadCheckpoint,
     missing: { kind: "empty", value: {} },
+    // Fingerprints the run's shape so a leftover checkpoint from a
+    // differently-configured prior run throws ERR_CHECKPOINT_FINGERPRINT_MISMATCH
+    // on read() instead of silently being reused. `secretArn` is
+    // deliberately excluded (see buildQueryDeps's checkpoint above). `table`
+    // is the unqualified settings value (not the already-quoted/qualified
+    // identifier below) — qualification is a rendering detail, not a
+    // meaning-bearing part of the run's shape. `batchSize` IS
+    // meaning-bearing here (unlike query's `pageSize`) — the load
+    // checkpoint's `chunkIndex` counts chunks sized by `batchSize`.
+    definition: {
+      resourceArn: settings.resourceArn,
+      database: settings.database,
+      ...(settings.schema !== undefined && { schema: settings.schema }),
+      table: settings.table,
+      ...(settings.columns !== undefined && { columns: settings.columns }),
+      inputFile: settings.inputFile,
+      inputFormat: settings.inputFormat,
+      batchSize: settings.batchSize,
+    },
   });
   const failedWriterPath = paths.resolveOutput("failed.jsonl");
 

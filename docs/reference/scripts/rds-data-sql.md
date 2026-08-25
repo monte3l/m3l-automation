@@ -158,6 +158,27 @@ logger, paths) as a single options object and is unit-testable without the
   re-appended to the freshly-opened writer before any new work runs. This
   mirrors `cloudwatch-logs-insights`'s established `LogsInsightsCheckpoint.rows`
   pattern. **Known tradeoff, tracked as F11**
+- **Bound to what the offset means — and, unlike the other three scripts
+  fingerprinting a checkpoint, this one has no `resume` config flag to gate
+  it.** `query`/`load` each construct their `M3LCheckpointStore` with a
+  `definition` (`resourceArn`, `database`, `schema`, and — for `query` — the
+  _resolved_ `sql`/`parameters` (not the `sql.file`/`parameters.file`
+  selectors, since a file's on-disk contents can change under a fixed path),
+  `output.file`, `output.format`, and a derived `paged` boolean (`page.size >
+0`; the raw page size itself is excluded — an absolute `OFFSET` resumes
+  correctly under any page size) — or, for `load`, `table`, `columns`,
+  `input.file`, `input.format`, and `batch.size` (meaning-bearing here, since
+  `chunkIndex` counts chunks of that size). `secretArn` is deliberately
+  excluded — a rotatable credential locator, not part of the query's
+  identity (see [`core/checkpoint`](../core/checkpoint.md)'s note that a
+  definition is committed to by its hash and must never carry a credential).
+  Because `query`/`load` read their checkpoint on **every** run (there is no
+  `resume` gate — see the `<output-dir>/<operation>.checkpoint.json` note
+  above), a leftover checkpoint from a differently-configured prior run now
+  fails loud with `Core.M3LCheckpointError` / `ERR_CHECKPOINT_FINGERPRINT_MISMATCH`
+  instead of silently resuming into the wrong query, table, or file. There is
+  no config flag to bypass this — the operator's only escape hatch is
+  deleting the stale `<output-dir>/<operation>.checkpoint.json` by hand.
   (`docs/plans/IMPLEMENTATION.md`): the checkpoint (and an in-memory
   accumulator) holds the full result set for the duration of a run, which
   scales with export size rather than staying bounded — accepted for now,
