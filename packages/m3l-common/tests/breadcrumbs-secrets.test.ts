@@ -14,7 +14,7 @@
  * see `tests/diagnostics-run-report.test.ts` for the rest of the module.
  */
 
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 
 import {
   deriveSecretsSpecifier,
@@ -126,22 +126,35 @@ describe("M3LBreadcrumbTrailOptions.secrets — additive-only guard", () => {
 });
 
 describe("M3LBreadcrumbTrailOptions.secrets — hostile isSecret degrades safely", () => {
-  test("record() still does not throw and still records an entry when secrets.isSecret throws", () => {
+  test("record() redacts the declared key, keeps unrelated fields intact, and reports the failure to stderr instead of collapsing the payload to {}", () => {
     const hostileSecrets = {
-      isSecret: (): boolean => {
-        throw new Error("hostile");
+      isSecret: (name: string): boolean => {
+        if (name === "tenantRef") throw new Error("hostile");
+        return false;
       },
     };
     const trail = new M3LBreadcrumbTrail({ secrets: hostileSecrets });
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
-    expect(() =>
-      trail.record("M3LOperationPipeline", "pipeline:phase", {
-        tenantRef: "secret-value",
-        phase: "settings",
-      }),
-    ).not.toThrow();
+    trail.record("M3LOperationPipeline", "pipeline:phase", {
+      tenantRef: "secret-value",
+      phase: "settings",
+    });
 
     const [entry] = trail.entries();
-    expect(entry?.event).toBe("pipeline:phase");
+    // The declared secret is redacted, not silently dropped by a `{}`
+    // collapse of the whole payload.
+    expect(entry?.payload["tenantRef"]).toBe("[REDACTED]");
+    // An unrelated field in the same payload survives intact.
+    expect(entry?.payload["phase"]).toBe("settings");
+
+    // The redaction failure is surfaced, not silently swallowed.
+    expect(stderrSpy).toHaveBeenCalled();
+    const written = stderrSpy.mock.calls
+      .map(([chunk]) => String(chunk))
+      .join("\n");
+    expect(written).toContain("redaction failed");
+
+    stderrSpy.mockRestore();
   });
 });
