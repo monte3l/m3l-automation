@@ -914,11 +914,11 @@ describe("M3LErrorCode type", () => {
   });
 
   test("does not accept an unrelated typo as a member", () => {
-    expectTypeOf<"ERR_TYPO">().not.toMatchTypeOf<M3LErrorCode>();
+    expectTypeOf<"ERR_TYPO">().not.toExtend<M3LErrorCode>();
   });
 
   test("is a finite union, not the general string type", () => {
-    expectTypeOf<string>().not.toMatchTypeOf<M3LErrorCode>();
+    expectTypeOf<string>().not.toExtend<M3LErrorCode>();
   });
 
   // -------------------------------------------------------------------------
@@ -929,45 +929,29 @@ describe("M3LErrorCode type", () => {
   test("every exported M3LError subclass's code is a member of M3LErrorCode", () => {
     expectTypeOf<
       M3LThresholdRuleValidationError["code"]
-    >().toMatchTypeOf<M3LErrorCode>();
-    expectTypeOf<
-      M3LConfigCoercionError["code"]
-    >().toMatchTypeOf<M3LErrorCode>();
-    expectTypeOf<M3LConfigParseError["code"]>().toMatchTypeOf<M3LErrorCode>();
-    expectTypeOf<
-      M3LUnsafeConfigKeyError["code"]
-    >().toMatchTypeOf<M3LErrorCode>();
+    >().toExtend<M3LErrorCode>();
+    expectTypeOf<M3LConfigCoercionError["code"]>().toExtend<M3LErrorCode>();
+    expectTypeOf<M3LConfigParseError["code"]>().toExtend<M3LErrorCode>();
+    expectTypeOf<M3LUnsafeConfigKeyError["code"]>().toExtend<M3LErrorCode>();
     expectTypeOf<
       M3LEnvironmentDetectionError["code"]
-    >().toMatchTypeOf<M3LErrorCode>();
-    expectTypeOf<M3LFileCopyError["code"]>().toMatchTypeOf<M3LErrorCode>();
+    >().toExtend<M3LErrorCode>();
+    expectTypeOf<M3LFileCopyError["code"]>().toExtend<M3LErrorCode>();
     expectTypeOf<
       M3LJSONFormatDetectionError["code"]
-    >().toMatchTypeOf<M3LErrorCode>();
-    expectTypeOf<M3LHttpClientError["code"]>().toMatchTypeOf<M3LErrorCode>();
-    expectTypeOf<M3LPollExhaustedError["code"]>().toMatchTypeOf<M3LErrorCode>();
-    expectTypeOf<
-      M3LPromptValidationError["code"]
-    >().toMatchTypeOf<M3LErrorCode>();
-    expectTypeOf<
-      M3LPresetUnknownKeysError["code"]
-    >().toMatchTypeOf<M3LErrorCode>();
-    expectTypeOf<
-      M3LAWSProvisioningError["code"]
-    >().toMatchTypeOf<M3LErrorCode>();
-    expectTypeOf<M3LFtsIndexError["code"]>().toMatchTypeOf<M3LErrorCode>();
-    expectTypeOf<
-      M3LTextExtractionError["code"]
-    >().toMatchTypeOf<M3LErrorCode>();
-    expectTypeOf<M3LAWSClientError["code"]>().toMatchTypeOf<M3LErrorCode>();
-    expectTypeOf<
-      M3LAWSCredentialsError["code"]
-    >().toMatchTypeOf<M3LErrorCode>();
-    expectTypeOf<M3LAWSIdentityError["code"]>().toMatchTypeOf<M3LErrorCode>();
-    expectTypeOf<M3LCheckpointError["code"]>().toMatchTypeOf<M3LErrorCode>();
-    expectTypeOf<
-      M3LOperationAbortedError["code"]
-    >().toMatchTypeOf<M3LErrorCode>();
+    >().toExtend<M3LErrorCode>();
+    expectTypeOf<M3LHttpClientError["code"]>().toExtend<M3LErrorCode>();
+    expectTypeOf<M3LPollExhaustedError["code"]>().toExtend<M3LErrorCode>();
+    expectTypeOf<M3LPromptValidationError["code"]>().toExtend<M3LErrorCode>();
+    expectTypeOf<M3LPresetUnknownKeysError["code"]>().toExtend<M3LErrorCode>();
+    expectTypeOf<M3LAWSProvisioningError["code"]>().toExtend<M3LErrorCode>();
+    expectTypeOf<M3LFtsIndexError["code"]>().toExtend<M3LErrorCode>();
+    expectTypeOf<M3LTextExtractionError["code"]>().toExtend<M3LErrorCode>();
+    expectTypeOf<M3LAWSClientError["code"]>().toExtend<M3LErrorCode>();
+    expectTypeOf<M3LAWSCredentialsError["code"]>().toExtend<M3LErrorCode>();
+    expectTypeOf<M3LAWSIdentityError["code"]>().toExtend<M3LErrorCode>();
+    expectTypeOf<M3LCheckpointError["code"]>().toExtend<M3LErrorCode>();
+    expectTypeOf<M3LOperationAbortedError["code"]>().toExtend<M3LErrorCode>();
   });
 
   test("does not narrow M3LError.code itself, which stays string", () => {

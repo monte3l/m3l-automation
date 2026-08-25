@@ -1582,7 +1582,7 @@ describe("M3LScript.createLambdaHandler()", () => {
       const handler = script.createLambdaHandler<MyEvent, MyResult>(
         (): Promise<MyResult> => Promise.resolve({ ok: true }),
       );
-      expectTypeOf(handler).parameter(0).toMatchTypeOf<MyEvent>();
+      expectTypeOf(handler).parameter(0).toExtend<MyEvent>();
     });
   });
 });
@@ -6244,7 +6244,7 @@ describe("M3LScript — absorbed-failure recovery seam (A3)", () => {
   test("type-level: M3LRunOutcome union includes 'partial'", () => {
     // In RED this fails tsc because M3LRunOutcome is "success"|"failure"|"dry-run"|"interrupted"
     // and does not yet include "partial".
-    expectTypeOf<"partial">().toMatchTypeOf<M3LRunOutcome>();
+    expectTypeOf<"partial">().toExtend<M3LRunOutcome>();
   });
 
   test("type-level: M3L_EXIT_CODES has a PARTIAL key with value 6", () => {

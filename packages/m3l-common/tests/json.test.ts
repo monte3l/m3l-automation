@@ -893,7 +893,7 @@ describe("M3LJSONFormatDetector", () => {
     });
 
     test("M3LConfidence is assignable to a plain number", () => {
-      expectTypeOf<M3LConfidence>().toMatchTypeOf<number>();
+      expectTypeOf<M3LConfidence>().toExtend<number>();
     });
 
     test("detect() returns a Promise<M3LJSONDetectionResult>", () => {

@@ -163,7 +163,7 @@ describe("resolveAthenaSettings", () => {
   });
 
   it("returns the AthenaQuerySettings shape (type contract)", () => {
-    expectTypeOf<AthenaQuerySettings>().toMatchTypeOf<{
+    expectTypeOf<AthenaQuerySettings>().toExtend<{
       startInput: { queryString: string };
       format: "json" | "csv";
       output: string;

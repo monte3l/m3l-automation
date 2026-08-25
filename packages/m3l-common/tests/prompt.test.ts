@@ -189,7 +189,7 @@ describe("M3LPromptValidationError", () => {
     });
 
     test("is assignable to M3LError", () => {
-      expectTypeOf<M3LPromptValidationError>().toMatchTypeOf<M3LError>();
+      expectTypeOf<M3LPromptValidationError>().toExtend<M3LError>();
     });
   });
 });
@@ -1463,7 +1463,7 @@ describe("confirmDestructive", () => {
 
   describe("type-level contract", () => {
     test("deps.code accepts an arbitrary string, not a narrowed literal union", () => {
-      expectTypeOf(confirmDestructive).parameter(0).toMatchTypeOf<{
+      expectTypeOf(confirmDestructive).parameter(0).toExtend<{
         readonly prompt: M3LPrompt;
         readonly logger: M3LLogger;
         readonly description: string;
@@ -1546,15 +1546,15 @@ describe("type-level contract", () => {
   });
 
   test("M3LPromptValidationError is assignable to M3LError; code is the literal", () => {
-    expectTypeOf<M3LPromptValidationError>().toMatchTypeOf<M3LError>();
+    expectTypeOf<M3LPromptValidationError>().toExtend<M3LError>();
     expectTypeOf<
       M3LPromptValidationError["code"]
     >().toEqualTypeOf<"ERR_PROMPT_VALIDATION">();
   });
 
   test("M3LChoices<string> accepts both string[] and M3LChoice<string>[]", () => {
-    expectTypeOf<string[]>().toMatchTypeOf<M3LChoices<string>>();
-    expectTypeOf<M3LChoice<string>[]>().toMatchTypeOf<M3LChoices<string>>();
+    expectTypeOf<string[]>().toExtend<M3LChoices<string>>();
+    expectTypeOf<M3LChoice<string>[]>().toExtend<M3LChoices<string>>();
   });
 
   test("M3LPromptOptions shape accepts adapter/spinner/loadingBar", () => {

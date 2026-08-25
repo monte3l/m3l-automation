@@ -336,7 +336,7 @@ describe("M3LRequestSigner", () => {
   });
 
   test("M3LSigningError extends M3LError and pins code to the ERR_SIGNING_FAILURE literal", () => {
-    expectTypeOf<M3LSigningError>().toMatchTypeOf<M3LError>();
+    expectTypeOf<M3LSigningError>().toExtend<M3LError>();
     expectTypeOf<
       M3LSigningError["code"]
     >().toEqualTypeOf<"ERR_SIGNING_FAILURE">();

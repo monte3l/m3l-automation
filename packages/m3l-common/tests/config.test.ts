@@ -207,7 +207,7 @@ describe("M3LCoercedValue<T>", () => {
   });
 
   test("is keyed by the M3LConfigParameterType union, not a wider string", () => {
-    expectTypeOf<M3LCoercedValue<M3LConfigParameterType>>().toMatchTypeOf<
+    expectTypeOf<M3LCoercedValue<M3LConfigParameterType>>().toExtend<
       string | number | boolean | readonly string[] | readonly number[] | Buffer
     >();
   });
@@ -1493,7 +1493,7 @@ describe("M3LConfigParameter.resolveAsync (A6)", () => {
       if (resolved === undefined) {
         throw new Error("expected resolveAsync to resolve a value");
       }
-      expectTypeOf(resolved).toMatchTypeOf<M3LConfigResolution<number>>();
+      expectTypeOf(resolved).toExtend<M3LConfigResolution<number>>();
       expect(resolved.value).toBe(1);
     });
   });
@@ -1981,7 +1981,7 @@ describe("M3LConfigSchemaValidator (F1b)", () => {
     test("a boolean-returning function is NOT assignable (return must be true | string, not boolean)", () => {
       expectTypeOf<
         (config: M3LConfig) => boolean
-      >().not.toMatchTypeOf<M3LConfigSchemaValidator>();
+      >().not.toExtend<M3LConfigSchemaValidator>();
     });
   });
 });
@@ -3664,7 +3664,7 @@ describe("M3LConfigSchemaValidators", () => {
       // A boolean-returning predicate must NOT be assignable.
       expectTypeOf<
         (config: M3LConfig) => boolean
-      >().not.toMatchTypeOf<M3LConfigSchemaValidator>();
+      >().not.toExtend<M3LConfigSchemaValidator>();
       // The canonical return type is exactly true | string
       expectTypeOf<M3LConfigSchemaValidator>().toEqualTypeOf<
         (config: M3LConfig) => true | string

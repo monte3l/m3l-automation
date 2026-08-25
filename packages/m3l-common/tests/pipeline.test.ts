@@ -3985,7 +3985,7 @@ describe("core/pipeline", () => {
           readonly status: "completed";
           readonly recovery: readonly M3LRunRecoveryEntry[];
         };
-        expectTypeOf<CompletedWithRecovery>().not.toMatchTypeOf<
+        expectTypeOf<CompletedWithRecovery>().not.toExtend<
           M3LOperationPipelineOutcome<TestOp, TestResult>
         >();
         // And the non-vacuous control: a completed outcome WITHOUT recovery
@@ -3996,7 +3996,7 @@ describe("core/pipeline", () => {
           readonly result: TestResult;
           readonly status: "completed";
         };
-        expectTypeOf<CompletedNoRecovery>().toMatchTypeOf<
+        expectTypeOf<CompletedNoRecovery>().toExtend<
           M3LOperationPipelineOutcome<TestOp, TestResult>
         >();
       });
@@ -4008,7 +4008,7 @@ describe("core/pipeline", () => {
           readonly status: "declined";
           readonly recovery: readonly M3LRunRecoveryEntry[];
         };
-        expectTypeOf<DeclinedWithRecovery>().not.toMatchTypeOf<
+        expectTypeOf<DeclinedWithRecovery>().not.toExtend<
           M3LOperationPipelineOutcome<TestOp, TestResult>
         >();
         // Non-vacuous control: declined without recovery IS assignable.
@@ -4017,7 +4017,7 @@ describe("core/pipeline", () => {
           readonly result: TestResult;
           readonly status: "declined";
         };
-        expectTypeOf<DeclinedNoRecovery>().toMatchTypeOf<
+        expectTypeOf<DeclinedNoRecovery>().toExtend<
           M3LOperationPipelineOutcome<TestOp, TestResult>
         >();
       });
@@ -4033,7 +4033,7 @@ describe("core/pipeline", () => {
           readonly status: "completed";
           readonly recovery: readonly M3LRunRecoveryEntry[];
         };
-        expectTypeOf<BadOutcome>().not.toMatchTypeOf<
+        expectTypeOf<BadOutcome>().not.toExtend<
           M3LOperationPipelineOutcome<TestOp, TestResult>
         >();
       });
@@ -4093,11 +4093,11 @@ describe("core/pipeline", () => {
           { status: "partial" }
         >;
         // An empty array must NOT satisfy the partial arm's recovery type.
-        expectTypeOf<[]>().not.toMatchTypeOf<PartialArm["recovery"]>();
+        expectTypeOf<[]>().not.toExtend<PartialArm["recovery"]>();
         // Non-vacuous control: a single-entry tuple IS assignable (ensures the
         // assertion above fails only on the empty case, not on some unrelated
         // structural mismatch in PartialArm["recovery"]).
-        expectTypeOf<readonly [M3LRunRecoveryEntry]>().toMatchTypeOf<
+        expectTypeOf<readonly [M3LRunRecoveryEntry]>().toExtend<
           PartialArm["recovery"]
         >();
       });
@@ -5759,7 +5759,7 @@ describe("core/pipeline", () => {
         void full;
       });
 
-      // TR-T3a/b use structural `expectTypeOf(...).not.toMatchTypeOf<...>()`
+      // TR-T3a/b use structural `expectTypeOf(...).not.toExtend<...>()`
       // assertions rather than `@ts-expect-error` on the object literal: the
       // latter is unstable during RED (with `M3LPipelineTraceOptions`
       // unresolved, TS treats the field as `any` and the expected error never
@@ -5776,16 +5776,16 @@ describe("core/pipeline", () => {
 
       test("TR-T3a describe's return type rejects an object-valued member", () => {
         type BadWithObject = { readonly bad: { readonly nested: number } };
-        expectTypeOf<BadWithObject>().not.toMatchTypeOf<DescribeReturn>();
+        expectTypeOf<BadWithObject>().not.toExtend<DescribeReturn>();
         // Non-vacuous control: a scalar-only shape IS assignable.
-        expectTypeOf<{ readonly ok: string }>().toMatchTypeOf<DescribeReturn>();
+        expectTypeOf<{ readonly ok: string }>().toExtend<DescribeReturn>();
       });
 
       test("TR-T3b describe's return type rejects an array-valued member", () => {
         type BadWithArray = { readonly bad: readonly [1, 2, 3] };
-        expectTypeOf<BadWithArray>().not.toMatchTypeOf<DescribeReturn>();
+        expectTypeOf<BadWithArray>().not.toExtend<DescribeReturn>();
         // Non-vacuous control: a scalar-only shape IS assignable.
-        expectTypeOf<{ readonly ok: number }>().toMatchTypeOf<DescribeReturn>();
+        expectTypeOf<{ readonly ok: number }>().toExtend<DescribeReturn>();
       });
 
       test("TR-T3c a describe returning only scalar values compiles (non-vacuous control for TR-T3a/b)", () => {
@@ -5811,16 +5811,16 @@ describe("core/pipeline", () => {
           TestResult,
           undefined
         >;
-        expectTypeOf<undefined>().toMatchTypeOf<Options["trace"]>();
+        expectTypeOf<undefined>().toExtend<Options["trace"]>();
         // Non-vacuous control: the real trace-options shape is ALSO
         // assignable — proves the field's type is
         // `M3LPipelineTraceOptions<...> | undefined`, not that it collapsed
         // to `any`/`unknown`.
         expectTypeOf<
           M3LPipelineTraceOptions<TestOp, TestSettings, undefined>
-        >().toMatchTypeOf<Options["trace"]>();
+        >().toExtend<Options["trace"]>();
         // Non-vacuous negative control: an unrelated shape must NOT match.
-        expectTypeOf<{ readonly nope: true }>().not.toMatchTypeOf<
+        expectTypeOf<{ readonly nope: true }>().not.toExtend<
           Options["trace"]
         >();
       });

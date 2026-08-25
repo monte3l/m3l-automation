@@ -478,7 +478,7 @@ describe("M3LCloudWatchMetricsOperations", () => {
         .toEqualTypeOf<string | undefined>();
       expectTypeOf<M3LGetMetricStatisticsResult>()
         .toHaveProperty("datapoints")
-        .toMatchTypeOf<readonly unknown[]>();
+        .toExtend<readonly unknown[]>();
     });
   });
 });
