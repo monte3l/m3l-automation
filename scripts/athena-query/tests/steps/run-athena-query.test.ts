@@ -255,6 +255,30 @@ describe("runAthenaQuery — happy path (fresh run)", () => {
     });
   });
 
+  it("threads deps.signal through to awaitResults as { signal } when supplied", async () => {
+    const client = buildClient();
+    client.startQuery.mockResolvedValue("query-789");
+    client.awaitResults.mockResolvedValue(buildResult("query-789", []));
+
+    const config = buildConfig({ ...BASE_VALUES });
+    const logger = new Core.M3LLogger([]);
+    const paths = buildPaths();
+    const controller = new AbortController();
+
+    await runAthenaQuery({
+      config,
+      logger,
+      client: asClient(client),
+      paths,
+      signal: controller.signal,
+    });
+
+    expect(client.awaitResults).toHaveBeenCalledTimes(1);
+    expect(client.awaitResults).toHaveBeenCalledWith("query-789", {
+      signal: controller.signal,
+    });
+  });
+
   it("omits unset optional fields from StartAthenaQueryInput rather than passing them as undefined", async () => {
     const client = buildClient();
     client.startQuery.mockResolvedValue("query-456");

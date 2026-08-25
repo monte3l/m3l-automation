@@ -43,6 +43,7 @@ interface Deps extends Core.M3LOperationPipelineBaseDeps {
   readonly paths: Core.M3LPaths;
   readonly correlationId: string;
   readonly operations: AWS.M3LCodePipelineOperations;
+  readonly signal?: AbortSignal;
 }
 
 /**
@@ -420,6 +421,7 @@ async function dispatchWatch(
     executionId,
     waitMaxAttempts: settings.waitMaxAttempts,
     waitIntervalSeconds: settings.waitIntervalSeconds,
+    ...(deps.signal !== undefined && { signal: deps.signal }),
   });
 }
 

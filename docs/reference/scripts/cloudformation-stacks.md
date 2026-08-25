@@ -116,11 +116,11 @@ Every step takes a single `readonly`-field deps object (never raw
 `Core.M3LConfig`) and no step does its own filesystem I/O except
 `run-cloudformation-stacks` itself:
 
-- `runCloudformationStacks(deps: { config: Core.M3LConfig; paths: Core.M3LPaths; logger: Core.M3LLogger; correlationId: string; operations: AWS.M3LCloudFormationOperations; prompt: Core.M3LPrompt }): Promise<void>`
+- `runCloudformationStacks(deps: { config: Core.M3LConfig; paths: Core.M3LPaths; logger: Core.M3LLogger; correlationId: string; operations: AWS.M3LCloudFormationOperations; prompt: Core.M3LPrompt; signal: AbortSignal | undefined }): Promise<void>`
 - `readStacks(deps: { operations: AWS.M3LCloudFormationOperations; operation: "list-stacks" | "describe-stack"; stackName: string | undefined; stackStatusFilter: readonly string[] | undefined; nextToken: string | undefined }): Promise<M3LCloudFormationListStacksResult | M3LCloudFormationStack | undefined>`
 - `readStackEvents(deps: { operations: AWS.M3LCloudFormationOperations; stackName: string; nextToken: string | undefined }): Promise<M3LCloudFormationDescribeStackEventsResult>`
 - `writeStack(deps: { operations: AWS.M3LCloudFormationOperations; reader: Core.M3LInputFileReader; operation: "create-stack" | "update-stack" | "delete-stack"; input: Record<string, unknown> | undefined; templateText: string | undefined; stackName: string | undefined; retainResources: readonly string[] | undefined; roleArn: string | undefined }): Promise<M3LCloudFormationCreateStackResult | M3LCloudFormationUpdateStackResult | void>`
-- `waitStack(deps: { operations: AWS.M3LCloudFormationOperations; operation: "wait-stack-create-complete" | "wait-stack-update-complete" | "wait-stack-delete-complete"; stackName: string; maxWaitTime: number | undefined }): Promise<M3LCloudFormationWaiterResult>`
+- `waitStack(deps: { operations: AWS.M3LCloudFormationOperations; operation: "wait-stack-create-complete" | "wait-stack-update-complete" | "wait-stack-delete-complete"; stackName: string; maxWaitTime: number | undefined; signal: AbortSignal | undefined }): Promise<M3LCloudFormationWaiterResult>`
 
 Script-local error codes are plain `M3LError.code` strings (the field is an
 open `string`, not a closed union — exactly like `ecs-ops`'s `ERR_ECS_OPS_*`),

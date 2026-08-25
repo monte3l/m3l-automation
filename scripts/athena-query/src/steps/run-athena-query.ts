@@ -64,7 +64,8 @@ export interface AthenaRunSummary {
  * results, exports the full row set once, then deletes the checkpoint.
  *
  * @param deps - The resolved `config`, a `logger`, the injected
- *   `AWS.M3LAthenaClient`, and `M3LPaths` for checkpoint/output resolution.
+ *   `AWS.M3LAthenaClient`, `M3LPaths` for checkpoint/output resolution, and
+ *   an optional cooperative-cancellation `signal`.
  * @returns The run summary (rows exported, query execution id).
  * @throws {@link Core.M3LError} coded `"ERR_ATHENA_SETTINGS"` (see
  *   `./resolve-settings.js`) When a declared config value resolves to an
@@ -98,6 +99,12 @@ export async function runAthenaQuery(deps: {
   readonly logger: Core.M3LLogger;
   readonly client: AWS.M3LAthenaClient;
   readonly paths: Core.M3LPaths;
+  /**
+   * Cooperative cancellation signal (ADR-0049), threaded through to
+   * `client.awaitResults` so a shutdown signal aborts the poll rather than
+   * running it to exhaustion.
+   */
+  readonly signal?: AbortSignal;
 }): Promise<AthenaRunSummary> {
   const settings = resolveAthenaSettings(deps.config);
   const { output, format, resume } = settings;
@@ -130,7 +137,12 @@ export async function runAthenaQuery(deps: {
     );
   }
 
-  const result = await deps.client.awaitResults(queryExecutionId);
+  const result =
+    deps.signal === undefined
+      ? await deps.client.awaitResults(queryExecutionId)
+      : await deps.client.awaitResults(queryExecutionId, {
+          signal: deps.signal,
+        });
 
   await exportResults({
     rows: result.rows,

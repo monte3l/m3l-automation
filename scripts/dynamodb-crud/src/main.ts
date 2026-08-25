@@ -55,6 +55,7 @@ await Core.runScript(
       dynamoDBDocument: aws.clients.dynamoDBDocument,
       dynamoDB: aws.clients.dynamoDB,
       prompt: script.prompt,
+      signal: script.signal,
     });
   },
   { dryRun },

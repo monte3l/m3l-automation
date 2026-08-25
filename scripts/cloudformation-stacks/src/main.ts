@@ -55,6 +55,7 @@ await Core.runScript(
         aws.clients.cloudFormation,
       ),
       prompt: script.prompt,
+      signal: script.signal,
     });
   },
   { dryRun },

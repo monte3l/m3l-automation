@@ -95,7 +95,11 @@ paths:
   by typecheck/lint/test/build, so the script must actually exercise the library
   and every export must have a consumer.
 - **Construct `Core.M3LScript` once with `M3LScriptOptions`; never subclass it.**
-  Run with `script.run(async (ctx) => { ... })`.
+  Run with `script.run(async () => { ... })` — `mainFn` takes **zero**
+  parameters, not a `ctx` callback argument. Reach run-scoped context (config
+  via `await script.getConfiguration()`, `script.logger`, `script.signal` for
+  cooperative cancellation, etc.) through the closed-over `script` instance
+  itself, not a callback parameter.
 - **Lifecycle hooks run in fixed order:** `onBeforeInit` → `onAfterInit` →
   `onBeforeConfigLoad` → `onAfterConfigLoad` → `onBeforeRun` → `onAfterRun` →
   `onError` → `onCleanup`.

@@ -277,6 +277,43 @@ describe("watchExecution — rule 5: exhaustion rejects with ERR_POLL_EXHAUSTED"
   });
 });
 
+describe("watchExecution — signal: cooperative cancellation (ADR-0049)", () => {
+  test("rejects with M3LOperationAbortedError when the signal is already aborted before the first attempt", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const getPipelineExecution = vi
+      .fn()
+      .mockResolvedValue(buildExecution("InProgress"));
+    const operations = createFakeCodePipelineOperations({
+      getPipelineExecution,
+    });
+    const logger = new Core.M3LLogger([]);
+
+    let thrown: unknown;
+    try {
+      await settleWithTimers(
+        watchExecution({
+          operations,
+          logger,
+          pipeline: "my-pipeline",
+          executionId: "exec-1",
+          waitMaxAttempts: 5,
+          waitIntervalSeconds: 1,
+          signal: controller.signal,
+        }),
+      );
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(Core.M3LOperationAbortedError);
+    // The poller must check the signal before invoking the check function —
+    // an already-aborted signal rejects without ever calling
+    // getPipelineExecution.
+    expect(getPipelineExecution).not.toHaveBeenCalled();
+  });
+});
+
 describe("type contract", () => {
   test("watchExecution resolves M3LCodePipelineExecution", () => {
     expectTypeOf(

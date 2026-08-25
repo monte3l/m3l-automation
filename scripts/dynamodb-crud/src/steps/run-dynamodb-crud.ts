@@ -62,6 +62,7 @@ interface RunDynamodbCrudDeps {
   readonly logger: Core.M3LLogger;
   readonly correlationId: string;
   readonly dynamoDBDocument: Parameters<typeof AWS.getItem>[0];
+  readonly signal?: AbortSignal;
 }
 
 /**
@@ -556,6 +557,7 @@ async function dispatchBatch(
   const retryRunner = new Core.M3LRetryRunner({
     classifier: batchRetryClassifier,
     unknownDecision: "fatal",
+    ...(deps.signal !== undefined && { signal: deps.signal }),
   });
 
   const result = await batchWriteTable({
@@ -706,6 +708,7 @@ export async function runDynamodbCrud(deps: {
   readonly dynamoDBDocument: Parameters<typeof AWS.getItem>[0];
   readonly dynamoDB: Parameters<typeof AWS.describeTable>[0];
   readonly prompt: Core.M3LPrompt;
+  readonly signal?: AbortSignal;
 }): Promise<RunDynamodbCrudSummary> {
   const settings = resolveSettings(deps.config);
 
@@ -737,6 +740,7 @@ export async function runDynamodbCrud(deps: {
     logger: deps.logger,
     correlationId: deps.correlationId,
     dynamoDBDocument: deps.dynamoDBDocument,
+    ...(deps.signal !== undefined && { signal: deps.signal }),
   });
 
   deps.logger.step(`dynamodb-crud run ${deps.correlationId} complete`, {

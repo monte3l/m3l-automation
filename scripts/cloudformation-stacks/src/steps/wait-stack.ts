@@ -18,6 +18,7 @@ interface WaitStackDeps {
   readonly operation: WaitOperation;
   readonly stackName: string;
   readonly maxWaitTime: number | undefined;
+  readonly signal?: AbortSignal;
 }
 
 /**
@@ -58,6 +59,7 @@ export function waitStack(
 ): Promise<AWS.M3LCloudFormationWaiterResult> {
   const options = {
     ...(deps.maxWaitTime !== undefined && { maxWaitTime: deps.maxWaitTime }),
+    ...(deps.signal !== undefined && { signal: deps.signal }),
   };
 
   switch (deps.operation) {

@@ -52,6 +52,7 @@ await Core.runScript(
       logger: script.logger,
       operations: new AWS.M3LEKSOperations(aws.clients.eks),
       prompt: script.prompt,
+      signal: script.signal,
     });
   },
   { dryRun },

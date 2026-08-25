@@ -45,6 +45,8 @@ interface RawSettings {
 interface Deps extends Core.M3LOperationPipelineBaseDeps {
   readonly paths: Core.M3LPaths;
   readonly operations: AWS.M3LEKSOperations;
+  /** Cooperative-cancellation signal (ADR-0049), forwarded to the wait steps. */
+  readonly signal?: AbortSignal;
 }
 
 /**
@@ -351,6 +353,7 @@ async function dispatchWaitCluster(
     operation,
     cluster,
     maxWaitTime: raw.maxWaitTime,
+    ...(deps.signal !== undefined && { signal: deps.signal }),
   });
 }
 
@@ -429,6 +432,7 @@ async function dispatchWaitNodegroup(
     cluster,
     nodegroup,
     maxWaitTime: raw.maxWaitTime,
+    ...(deps.signal !== undefined && { signal: deps.signal }),
   });
 }
 
