@@ -11,6 +11,7 @@ interface WaitServicesDeps {
   readonly cluster: string;
   readonly services: readonly string[];
   readonly maxWaitTime: number | undefined;
+  readonly signal?: AbortSignal;
 }
 
 /**
@@ -50,5 +51,6 @@ export function waitServices(
 ): Promise<AWS.M3LECSWaiterResult> {
   return deps.operations.waitUntilServicesStable(deps.cluster, deps.services, {
     ...(deps.maxWaitTime !== undefined && { maxWaitTime: deps.maxWaitTime }),
+    ...(deps.signal !== undefined && { signal: deps.signal }),
   });
 }

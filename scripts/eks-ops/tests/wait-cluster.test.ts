@@ -81,6 +81,48 @@ describe("waitCluster — returns every terminal state unchanged, never throwing
   );
 });
 
+describe("waitCluster — signal forwarding", () => {
+  test("forwards deps.signal into the waiter options when supplied", async () => {
+    const result: AWS.M3LEKSWaiterResult = { state: "SUCCESS" };
+    const waitUntilClusterActive = vi.fn().mockResolvedValue(result);
+    const operations = createFakeEKSOperations({ waitUntilClusterActive });
+    const controller = new AbortController();
+
+    await waitCluster({
+      operations,
+      operation: "wait-cluster-active",
+      cluster: "my-cluster",
+      maxWaitTime: 600,
+      signal: controller.signal,
+    });
+
+    expect(waitUntilClusterActive).toHaveBeenCalledWith("my-cluster", {
+      maxWaitTime: 600,
+      signal: controller.signal,
+    });
+  });
+
+  test("omits the signal key from the waiter options when not supplied", async () => {
+    const result: AWS.M3LEKSWaiterResult = { state: "SUCCESS" };
+    const waitUntilClusterActive = vi.fn().mockResolvedValue(result);
+    const operations = createFakeEKSOperations({ waitUntilClusterActive });
+
+    await waitCluster({
+      operations,
+      operation: "wait-cluster-active",
+      cluster: "my-cluster",
+      maxWaitTime: 600,
+    });
+
+    const [, options] = waitUntilClusterActive.mock.calls[0] as [
+      string,
+      Record<string, unknown>,
+    ];
+    expect(options).toEqual({ maxWaitTime: 600 });
+    expect(Object.hasOwn(options, "signal")).toBe(false);
+  });
+});
+
 describe("type contract", () => {
   test("waitCluster resolves M3LEKSWaiterResult", () => {
     expectTypeOf(

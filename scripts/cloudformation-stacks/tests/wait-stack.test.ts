@@ -158,7 +158,7 @@ describe("type contract", () => {
     >().toEqualTypeOf<AWS.M3LCloudFormationWaiterResult>();
   });
 
-  test("waitStack's deps shape is exactly operations/operation/stackName/maxWaitTime", () => {
+  test("waitStack's deps shape is exactly operations/operation/stackName/maxWaitTime/signal", () => {
     expectTypeOf<Parameters<typeof waitStack>[0]>().toEqualTypeOf<{
       readonly operations: AWS.M3LCloudFormationOperations;
       readonly operation:
@@ -167,6 +167,55 @@ describe("type contract", () => {
         | "wait-stack-delete-complete";
       readonly stackName: string;
       readonly maxWaitTime: number | undefined;
+      readonly signal?: AbortSignal;
     }>();
+  });
+});
+
+describe("waitStack — signal forwarding (ADR-0049 cooperative cancellation)", () => {
+  test("forwards deps.signal into the waiter options when supplied", async () => {
+    const controller = new AbortController();
+    const waitUntilStackCreateComplete = vi
+      .fn()
+      .mockResolvedValue({ state: "SUCCESS" });
+    const operations = createFakeCloudFormationOperations({
+      waitUntilStackCreateComplete,
+    });
+
+    await waitStack({
+      operations,
+      operation: "wait-stack-create-complete",
+      stackName: "my-stack",
+      maxWaitTime: undefined,
+      signal: controller.signal,
+    });
+
+    const call = waitUntilStackCreateComplete.mock.calls[0] as [
+      string,
+      Record<string, unknown>,
+    ];
+    expect(call[1]["signal"]).toBe(controller.signal);
+  });
+
+  test("omits the signal key from the options object when deps.signal is not supplied", async () => {
+    const waitUntilStackCreateComplete = vi
+      .fn()
+      .mockResolvedValue({ state: "SUCCESS" });
+    const operations = createFakeCloudFormationOperations({
+      waitUntilStackCreateComplete,
+    });
+
+    await waitStack({
+      operations,
+      operation: "wait-stack-create-complete",
+      stackName: "my-stack",
+      maxWaitTime: undefined,
+    });
+
+    const call = waitUntilStackCreateComplete.mock.calls[0] as [
+      string,
+      Record<string, unknown>,
+    ];
+    expect(call[1]).not.toHaveProperty("signal");
   });
 });

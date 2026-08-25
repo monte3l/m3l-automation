@@ -21,6 +21,8 @@ export interface WaitNodegroupDeps {
   readonly nodegroup: string;
   /** Seconds bounding the wait. */
   readonly maxWaitTime: number;
+  /** Cooperative-cancellation signal (ADR-0049), forwarded to the waiter. */
+  readonly signal?: AbortSignal;
 }
 
 /**
@@ -55,12 +57,18 @@ export function waitNodegroup(
     return deps.operations.waitUntilNodegroupActive(
       deps.cluster,
       deps.nodegroup,
-      { maxWaitTime: deps.maxWaitTime },
+      {
+        maxWaitTime: deps.maxWaitTime,
+        ...(deps.signal !== undefined && { signal: deps.signal }),
+      },
     );
   }
   return deps.operations.waitUntilNodegroupDeleted(
     deps.cluster,
     deps.nodegroup,
-    { maxWaitTime: deps.maxWaitTime },
+    {
+      maxWaitTime: deps.maxWaitTime,
+      ...(deps.signal !== undefined && { signal: deps.signal }),
+    },
   );
 }

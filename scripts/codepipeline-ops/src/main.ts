@@ -53,6 +53,7 @@ await Core.runScript(
       correlationId: getCorrelationId(),
       operations: new AWS.M3LCodePipelineOperations(aws.clients.codePipeline),
       prompt: script.prompt,
+      signal: script.signal,
     });
   },
   { dryRun },
