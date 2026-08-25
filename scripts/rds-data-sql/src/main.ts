@@ -51,6 +51,7 @@ await Core.runScript(
       prompt: script.prompt,
       paths,
       logger: script.logger,
+      reportRecovery: script.reportRecovery.bind(script),
     });
 
     await runRdsDataSql({

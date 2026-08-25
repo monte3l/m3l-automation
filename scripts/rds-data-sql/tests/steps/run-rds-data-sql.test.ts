@@ -21,9 +21,11 @@ import { runRdsDataSql } from "../../src/steps/run-rds-data-sql.js";
  * Contract: docs/reference/scripts/rds-data-sql.md, `run-rds-data-sql` row —
  * "the only module that knows operation dispatch order: preflight →
  * dispatch on `operation` (exhaustive `switch`) → the matching read/write
- * step → emit a run summary"; throws `Core.M3LError` coded
- * `ERR_RDS_DATA_SQL_PARTIAL_FAILURE` when `load` finishes with any row in
- * `failed.jsonl`.
+ * step → emit a run summary"; `load` no longer maps a partial failure to a
+ * throw here — `runRdsDataSql` resolves normally when `load`'s summary has
+ * `failed > 0`, since the per-row failures are reported via `run-load.ts`'s
+ * optional `reportRecovery` callback instead (a separate concern from this
+ * file's own dispatch-routing test scope).
  *
  * `resolve-settings` is assumed to have already run upstream (its own
  * dispatch is a separate test-author pass per the task scope) — this file's
@@ -153,22 +155,14 @@ describe("runRdsDataSql — preflight", () => {
   });
 });
 
-describe("runRdsDataSql — partial-failure mapping", () => {
-  test("throws Core.M3LError coded ERR_RDS_DATA_SQL_PARTIAL_FAILURE when load's summary has failed > 0", async () => {
+describe("runRdsDataSql — load no longer maps a partial failure to a throw", () => {
+  test("resolves without throwing when load's summary has failed > 0 — the partial-failure-to-throw mapping is removed", async () => {
     preflightSecretMock.mockResolvedValue(undefined);
     runLoadMock.mockResolvedValue({ inserted: 3, failed: 2 });
 
-    let thrown: unknown;
-    try {
-      await runRdsDataSql({ ...baseDeps("load"), load: {} });
-    } catch (error) {
-      thrown = error;
-    }
-
-    expect(thrown).toBeInstanceOf(Core.M3LError);
-    expect((thrown as Core.M3LError).code).toBe(
-      "ERR_RDS_DATA_SQL_PARTIAL_FAILURE",
-    );
+    await expect(
+      runRdsDataSql({ ...baseDeps("load"), load: {} }),
+    ).resolves.toBeUndefined();
   });
 
   test("does not throw when load's summary has failed === 0", async () => {

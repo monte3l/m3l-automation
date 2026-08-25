@@ -139,6 +139,14 @@ export interface RunLoadDeps {
   ) => RunLoadFailedWriterPort;
   /** The run's correlated logger. */
   readonly logger: Core.M3LLogger;
+  /**
+   * Reports one absorbed per-row (or per-chunk) rejection to the run's
+   * recovery ledger, when provided — optional because `RunLoadDeps` is
+   * hand-constructed directly by many existing tests that don't exercise
+   * this reporting path. Called once per rejected row (never for a
+   * checkpoint's carried-over `failedCount` from a prior interrupted run).
+   */
+  readonly reportRecovery?: (entry: Core.M3LRunRecoveryEntry) => void;
 }
 
 /** The summary {@link runLoad} resolves with. */
@@ -299,6 +307,11 @@ async function insertChunk(
     try {
       for (const row of chunk) {
         await failedWriter.append(row.record);
+        deps.reportRecovery?.({
+          item: JSON.stringify(row.record),
+          error: [{ name: "M3LError", message: chunkFailureReason }],
+          recordedAt: new Date().toISOString(),
+        });
       }
     } catch (appendCause) {
       // The original transaction-failure `cause` above is only preserved in
@@ -422,12 +435,24 @@ async function classifyRecord(
   record: Record<string, unknown>,
 ): Promise<LoadState> {
   const columns = state.columns ?? resolveColumns(context.deps.columns, record);
-  const parameters = keysMatchColumns(record, columns)
-    ? coerceRecord(record, columns)
-    : undefined;
+  const keysMatch = keysMatchColumns(record, columns);
+  const parameters = keysMatch ? coerceRecord(record, columns) : undefined;
 
   if (parameters === undefined) {
     await context.failedWriter.append(record);
+    // Two distinct failure modes collapse to this one rejection branch: a
+    // key-set mismatch (checked again here, cheaply, since it was already
+    // computed above) versus a value that failed `coerceLoadValue` despite
+    // a matching key set. Each gets its own accurate message rather than one
+    // message that would misdescribe the coercion-failure case.
+    const rejectionReason = keysMatch
+      ? "record's values failed to coerce to the resolved column types"
+      : "record's keys do not match the resolved column list";
+    context.deps.reportRecovery?.({
+      item: JSON.stringify(record),
+      error: [{ name: "M3LError", message: rejectionReason }],
+      recordedAt: new Date().toISOString(),
+    });
     return {
       ...state,
       columns,
