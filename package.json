@@ -18,7 +18,7 @@
   },
   "scripts": {
     "build": "turbo run build",
-    "typecheck": "turbo run typecheck",
+    "typecheck": "turbo run typecheck && tsc -p bin/tsconfig.json",
     "lint": "eslint . --concurrency=2",
     "lint:commit": "node bin/lint-commit.mjs",
     "format": "prettier --write .",

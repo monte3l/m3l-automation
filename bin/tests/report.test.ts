@@ -58,8 +58,8 @@ describe("createReporter — human mode", () => {
 
     expect(errorSpy).toHaveBeenCalledWith("✗  boom");
     const report = reporter.finish();
-    expect(report.ok).toBe(false);
-    expect(report.errors).toEqual(["boom"]);
+    expect(report["ok"]).toBe(false);
+    expect(report["errors"]).toEqual(["boom"]);
   });
 
   test("warn() prints ⚠ via console.error and leaves ok true", () => {
@@ -70,8 +70,8 @@ describe("createReporter — human mode", () => {
 
     expect(errorSpy).toHaveBeenCalledWith("⚠  careful");
     const report = reporter.finish();
-    expect(report.ok).toBe(true);
-    expect(report.warnings).toEqual(["careful"]);
+    expect(report["ok"]).toBe(true);
+    expect(report["warnings"]).toEqual(["careful"]);
   });
 
   test.each([
@@ -120,7 +120,7 @@ describe("createReporter — human mode", () => {
 
     expect(logSpy).toHaveBeenCalledWith("✓  all good");
     const report = reporter.finish();
-    expect(report.summary).toBe("all good");
+    expect(report["summary"]).toBe("all good");
   });
 
   test("finish(extra) returns the base report merged with extra", () => {

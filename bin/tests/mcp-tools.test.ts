@@ -61,9 +61,9 @@ describe("TOOLS registration contract", () => {
 describe("catalogQuery (real docs/reference index, no mocking)", () => {
   test("exact symbol hit returns only the matching entry", () => {
     const result = payloadOf(catalogQuery({ symbol: "M3LError" }));
-    expect(result.module).toBeUndefined();
-    expect(result.query).toBeUndefined();
-    expect(result.symbol).toMatchObject({
+    expect(result["module"]).toBeUndefined();
+    expect(result["query"]).toBeUndefined();
+    expect(result["symbol"]).toMatchObject({
       symbol: "M3LError",
       submodule: "errors",
       namespace: "core",
@@ -72,7 +72,7 @@ describe("catalogQuery (real docs/reference index, no mocking)", () => {
 
   test("module lookup returns that module's catalog entry", () => {
     const result = payloadOf(catalogQuery({ module: "analysis" }));
-    const modules = result.module as { name: string; symbols: string[] }[];
+    const modules = result["module"] as { name: string; symbols: string[] }[];
     expect(modules).toHaveLength(1);
     expect(modules[0]?.name).toBe("analysis");
     expect(modules[0]?.symbols).toContain("M3LThresholdEvaluator");
@@ -80,7 +80,7 @@ describe("catalogQuery (real docs/reference index, no mocking)", () => {
 
   test("query substring search respects the 25-hit cap and note", () => {
     const result = payloadOf(catalogQuery({ query: "m3l" }));
-    const query = result.query as {
+    const query = result["query"] as {
       total: number;
       symbols: unknown[];
       note?: string;
@@ -92,7 +92,7 @@ describe("catalogQuery (real docs/reference index, no mocking)", () => {
 
   test("query substring search with few hits carries no cap note", () => {
     const result = payloadOf(catalogQuery({ query: "M3LThresholdEvaluator" }));
-    const query = result.query as {
+    const query = result["query"] as {
       total: number;
       symbols: unknown[];
       note?: string;
@@ -106,22 +106,22 @@ describe("catalogQuery (real docs/reference index, no mocking)", () => {
     const result = catalogQuery({});
     expect(result.isError).toBe(true);
     const payload = payloadOf(result);
-    expect(payload.error).toContain("requires at least one of");
+    expect(payload["error"]).toContain("requires at least one of");
   });
 
   test("unknown symbol → graceful not-found (null), not an error", () => {
     const result = catalogQuery({ symbol: "M3LDoesNotExist12345" });
     expect(result.isError).toBe(false);
     const payload = payloadOf(result);
-    expect(payload.symbol).toBeNull();
+    expect(payload["symbol"]).toBeNull();
   });
 
   test("a prototype-polluting symbol name (__proto__) resolves to not-found, not a prototype object", () => {
     const result = catalogQuery({ symbol: "__proto__" });
     expect(result.isError).toBe(false);
     const payload = payloadOf(result);
-    expect(payload.symbol).toBeNull();
-    expect(payload.symbol).not.toBe(Object.prototype);
+    expect(payload["symbol"]).toBeNull();
+    expect(payload["symbol"]).not.toBe(Object.prototype);
   });
 });
 
@@ -170,14 +170,14 @@ describe("docsSync (mocked execFileSync)", () => {
     const result = docsSync({});
     expect(result.isError).toBe(true);
     const payload = payloadOf(result);
-    expect(payload.errors).toEqual(["stale doc counts"]);
+    expect(payload["errors"]).toEqual(["stale doc counts"]);
   });
 
   test("a non-string 'affected' → isError usage message, no spawn attempted", () => {
     h.execFileSync.mockReset();
     const result = docsSync({ affected: 123 });
     expect(result.isError).toBe(true);
-    expect(payloadOf(result).error).toContain("string");
+    expect(payloadOf(result)["error"]).toContain("string");
     expect(h.execFileSync).not.toHaveBeenCalled();
   });
 });
@@ -190,23 +190,23 @@ describe("commitLint (direct in-process import, no subprocess)", () => {
     const result = await commitLint({ message });
     expect(result.isError).toBe(false);
     const payload = payloadOf(result);
-    expect(payload.valid).toBe(true);
-    expect(payload.errors).toEqual([]);
+    expect(payload["valid"]).toBe(true);
+    expect(payload["errors"]).toEqual([]);
   });
 
   test("a garbage message → valid:false with non-empty errors, isError stays false", async () => {
     const result = await commitLint({ message: "not a conventional header" });
     expect(result.isError).toBe(false);
     const payload = payloadOf(result);
-    expect(payload.valid).toBe(false);
-    expect((payload.errors as unknown[]).length).toBeGreaterThan(0);
+    expect(payload["valid"]).toBe(false);
+    expect((payload["errors"] as unknown[]).length).toBeGreaterThan(0);
   });
 
   test("empty message → isError with a usage message (input rejected before linting)", async () => {
     const result = await commitLint({ message: "   " });
     expect(result.isError).toBe(true);
     const payload = payloadOf(result);
-    expect(payload.error).toContain("non-empty");
+    expect(payload["error"]).toContain("non-empty");
   });
 });
 
@@ -215,7 +215,7 @@ describe("worktreeManage (mocked execFileSync)", () => {
     h.execFileSync.mockReset();
     const result = worktreeManage({ action: "create" });
     expect(result.isError).toBe(true);
-    expect(payloadOf(result).error).toContain("slug");
+    expect(payloadOf(result)["error"]).toContain("slug");
     expect(h.execFileSync).not.toHaveBeenCalled();
   });
 
@@ -223,7 +223,7 @@ describe("worktreeManage (mocked execFileSync)", () => {
     h.execFileSync.mockReset();
     const result = worktreeManage({ action: "remove" });
     expect(result.isError).toBe(true);
-    expect(payloadOf(result).error).toContain("slug");
+    expect(payloadOf(result)["error"]).toContain("slug");
     expect(h.execFileSync).not.toHaveBeenCalled();
   });
 
@@ -262,7 +262,7 @@ describe("worktreeManage (mocked execFileSync)", () => {
     const result = worktreeManage({ action: "prune" });
     expect(result.isError).toBe(true);
     const payload = payloadOf(result);
-    expect(payload.errors).toEqual(["merge check failed"]);
+    expect(payload["errors"]).toEqual(["merge check failed"]);
   });
 
   test("create with a slug spawns worktree-new with the slug and --json", () => {
@@ -280,7 +280,7 @@ describe("worktreeManage (mocked execFileSync)", () => {
     h.execFileSync.mockReset();
     const result = worktreeManage({ action: "remove", slug: "../evil" });
     expect(result.isError).toBe(true);
-    const message = payloadOf(result).error as string;
+    const message = payloadOf(result)["error"] as string;
     expect(message).toContain("../evil");
     expect(message).toContain("invalid");
     expect(h.execFileSync).not.toHaveBeenCalled();
@@ -290,7 +290,7 @@ describe("worktreeManage (mocked execFileSync)", () => {
     h.execFileSync.mockReset();
     const result = worktreeManage({ action: "create", slug: "--force" });
     expect(result.isError).toBe(true);
-    const message = payloadOf(result).error as string;
+    const message = payloadOf(result)["error"] as string;
     expect(message).toContain("--force");
     expect(message).toContain("invalid");
     expect(h.execFileSync).not.toHaveBeenCalled();
@@ -314,8 +314,8 @@ describe("repoVerify (mocked execFileSync per scope)", () => {
     const result = repoVerify({ scope: "docs" });
     expect(result.isError).toBe(false);
     const payload = payloadOf(result);
-    expect(payload.ok).toBe(true);
-    const checks = payload.checks as { name: string; ok: boolean }[];
+    expect(payload["ok"]).toBe(true);
+    const checks = payload["checks"] as { name: string; ok: boolean }[];
     expect(checks.map((c) => c.name)).toEqual([
       "check-doc-counts",
       "check-impl-counts",
@@ -346,8 +346,8 @@ describe("repoVerify (mocked execFileSync per scope)", () => {
     const result = repoVerify({ scope: "docs" });
     expect(result.isError).toBe(true);
     const payload = payloadOf(result);
-    expect(payload.ok).toBe(false);
-    const checks = payload.checks as {
+    expect(payload["ok"]).toBe(false);
+    const checks = payload["checks"] as {
       name: string;
       ok: boolean;
       errors: string[];
@@ -365,7 +365,7 @@ describe("repoVerify (mocked execFileSync per scope)", () => {
     const result = repoVerify({ scope: "hooks" });
     expect(result.isError).toBe(false);
     const payload = payloadOf(result);
-    const checks = payload.checks as { name: string; ok: boolean }[];
+    const checks = payload["checks"] as { name: string; ok: boolean }[];
     expect(checks).toEqual([{ name: "check-hooks", ok: true, errors: [] }]);
     const [, args] = h.execFileSync.mock.calls[0] as [string, string[]];
     expect(args).not.toContain("--json");
@@ -383,7 +383,7 @@ describe("repoVerify (mocked execFileSync per scope)", () => {
     const result = repoVerify({ scope: "hooks" });
     expect(result.isError).toBe(true);
     const payload = payloadOf(result);
-    const checks = payload.checks as {
+    const checks = payload["checks"] as {
       name: string;
       ok: boolean;
       errors: string[];
@@ -398,7 +398,7 @@ describe("repoVerify (mocked execFileSync per scope)", () => {
     h.execFileSync.mockReset();
     const result = repoVerify({ scope: "bogus" });
     expect(result.isError).toBe(true);
-    expect(payloadOf(result).error).toContain("scope");
+    expect(payloadOf(result)["error"]).toContain("scope");
     expect(h.execFileSync).not.toHaveBeenCalled();
   });
 });
@@ -440,14 +440,14 @@ describe("scaffoldScript (mocked execFileSync)", () => {
     const result = scaffoldScript({ name: "data-sync" });
     expect(result.isError).toBe(true);
     const payload = payloadOf(result);
-    expect(payload.errors).toEqual(["scripts/data-sync already exists"]);
+    expect(payload["errors"]).toEqual(["scripts/data-sync already exists"]);
   });
 
   test("missing name → isError usage message, no spawn attempted", () => {
     h.execFileSync.mockReset();
     const result = scaffoldScript({});
     expect(result.isError).toBe(true);
-    expect(payloadOf(result).error).toContain("name");
+    expect(payloadOf(result)["error"]).toContain("name");
     expect(h.execFileSync).not.toHaveBeenCalled();
   });
 });
@@ -464,7 +464,7 @@ describe("spokeRecover (mocked execFileSync)", () => {
     const result = spokeRecover({ journal: "scratchpad/writer-a.md" });
     expect(result.isError).toBe(false);
     const payload = payloadOf(result);
-    expect(payload.ok).toBe(true);
+    expect(payload["ok"]).toBe(true);
     const [cmd, args] = h.execFileSync.mock.calls[0] as [string, string[]];
     expect(cmd).toBe("node");
     expect(args[0]).toContain("spoke-recovery.mjs");
@@ -489,7 +489,7 @@ describe("spokeRecover (mocked execFileSync)", () => {
     h.execFileSync.mockReset();
     const result = spokeRecover({});
     expect(result.isError).toBe(true);
-    expect(payloadOf(result).error).toContain("journal");
+    expect(payloadOf(result)["error"]).toContain("journal");
     expect(h.execFileSync).not.toHaveBeenCalled();
   });
 
@@ -500,7 +500,7 @@ describe("spokeRecover (mocked execFileSync)", () => {
       expected: "src/a.ts",
     });
     expect(result.isError).toBe(true);
-    expect(payloadOf(result).error).toContain("array of strings");
+    expect(payloadOf(result)["error"]).toContain("array of strings");
     expect(h.execFileSync).not.toHaveBeenCalled();
   });
 
@@ -539,6 +539,6 @@ describe("spokeRecover (mocked execFileSync)", () => {
     });
     const result = spokeRecover({ journal: "scratchpad/writer-a.md" });
     expect(result.isError).toBe(true);
-    expect(payloadOf(result).error).toContain("spoke_recover");
+    expect(payloadOf(result)["error"]).toContain("spoke_recover");
   });
 });

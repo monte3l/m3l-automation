@@ -789,6 +789,8 @@ export function epicPriority(children) {
  *   sourceAnchor: string,
  *   detail: string,
  *   legacyKeys?: string[],
+ *   isEpic?: boolean,
+ *   parentKey?: string,
  * }} Item
  *
  * `type` is derived from {@link ISSUE_TYPES} rather than spelled out as a

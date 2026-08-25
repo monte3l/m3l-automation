@@ -97,7 +97,7 @@ describe("walkMatching", () => {
         return [fakeDirent("f.ts", "file")];
       }
       throw new Error(`unexpected readdirSync call: ${path}`);
-    }) as typeof fs.readdirSync);
+    }) as unknown as typeof fs.readdirSync);
 
     const found = walkMatching(dir, (relPath) => relPath.endsWith(".ts"));
 
@@ -131,7 +131,7 @@ describe("walkMatching", () => {
       throw new Error(
         `unexpected readdirSync call into pruned subtree: ${path}`,
       );
-    }) as typeof fs.readdirSync);
+    }) as unknown as typeof fs.readdirSync);
 
     const found = walkMatching(dir, (relPath) => relPath.endsWith(".ts"));
 
@@ -224,7 +224,7 @@ describe("collectBudgetEntries", () => {
       ) as NodeJS.ErrnoException;
       error.code = "ENOENT";
       throw error;
-    }) as typeof fs.readdirSync);
+    }) as unknown as typeof fs.readdirSync);
 
     vi.spyOn(fs, "readFileSync").mockImplementation(((path: string) => {
       const p = String(path);
