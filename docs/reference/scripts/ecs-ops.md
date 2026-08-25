@@ -101,11 +101,11 @@ Every step takes a single `readonly`-field deps object (never raw
 `Core.M3LConfig`) and no step does its own filesystem I/O except
 `run-ecs-ops` itself:
 
-- `runEcsOps(deps: { config: Core.M3LConfig; paths: Core.M3LPaths; logger: Core.M3LLogger; correlationId: string; operations: AWS.M3LECSOperations; prompt: Core.M3LPrompt }): Promise<void>`
+- `runEcsOps(deps: { config: Core.M3LConfig; paths: Core.M3LPaths; logger: Core.M3LLogger; correlationId: string; operations: AWS.M3LECSOperations; prompt: Core.M3LPrompt; signal: AbortSignal | undefined }): Promise<void>`
 - `destructiveGate(deps: { prompt: Core.M3LPrompt; logger: Core.M3LLogger; description: string; yes: boolean }): Promise<void>`
 - `readServices(deps: { operations: AWS.M3LECSOperations; operation: "list-services" | "describe-service"; cluster: string | undefined; service: string | undefined; nextToken: string | undefined }): Promise<M3LECSListServicesResult | M3LECSServiceDescription>`
 - `writeService(deps: { operations: AWS.M3LECSOperations; reader: Core.M3LInputFileReader; operation: "create-service" | "update-service" | "delete-service"; input: Record<string, unknown> | undefined; cluster: string | undefined; service: string | undefined; force: boolean }): Promise<M3LECSServiceDescription>`
-- `waitServices(deps: { operations: AWS.M3LECSOperations; cluster: string; services: readonly string[]; maxWaitTime: number | undefined }): Promise<M3LECSWaiterResult>`
+- `waitServices(deps: { operations: AWS.M3LECSOperations; cluster: string; services: readonly string[]; maxWaitTime: number | undefined; signal: AbortSignal | undefined }): Promise<M3LECSWaiterResult>`
 - `readClusters(deps: { operations: AWS.M3LECSOperations; operation: "list-clusters" | "describe-cluster"; cluster: string | undefined; nextToken: string | undefined }): Promise<M3LECSListClustersResult | M3LECSClusterSummary>`
 
 Script-local error codes are plain `M3LError.code` strings (the field is an

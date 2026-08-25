@@ -110,13 +110,13 @@ Every step takes a single `readonly`-field deps object (never raw
 `Core.M3LConfig`) and no step does its own filesystem I/O except
 `run-eks-ops` itself:
 
-- `runEksOps(deps: { config: Core.M3LConfig; paths: Core.M3LPaths; logger: Core.M3LLogger; operations: AWS.M3LEKSOperations; prompt: Core.M3LPrompt }): Promise<void>`
+- `runEksOps(deps: { config: Core.M3LConfig; paths: Core.M3LPaths; logger: Core.M3LLogger; operations: AWS.M3LEKSOperations; prompt: Core.M3LPrompt; signal: AbortSignal | undefined }): Promise<void>`
 - `readClusters(deps: { operations: AWS.M3LEKSOperations; operation: "list-clusters" | "describe-cluster"; cluster: string | undefined; nextToken: string | undefined; maxResults: number | undefined; include: readonly string[] | undefined }): Promise<M3LEKSListClustersResult | M3LEKSClusterSummary | undefined>`
 - `writeCluster(deps: { operations: AWS.M3LEKSOperations; operation: "create-cluster" | "update-cluster-config" | "update-cluster-version" | "delete-cluster"; cluster: string; input: Record<string, unknown> | undefined; kubernetesVersion: string | undefined; force: boolean }): Promise<M3LEKSClusterSummary | M3LEKSUpdate>`
-- `waitCluster(deps: { operations: AWS.M3LEKSOperations; operation: "wait-cluster-active" | "wait-cluster-deleted"; cluster: string; maxWaitTime: number }): Promise<M3LEKSWaiterResult>`
+- `waitCluster(deps: { operations: AWS.M3LEKSOperations; operation: "wait-cluster-active" | "wait-cluster-deleted"; cluster: string; maxWaitTime: number; signal: AbortSignal | undefined }): Promise<M3LEKSWaiterResult>`
 - `readNodegroups(deps: { operations: AWS.M3LEKSOperations; operation: "list-nodegroups" | "describe-nodegroup"; cluster: string; nodegroup: string | undefined; nextToken: string | undefined; maxResults: number | undefined }): Promise<M3LEKSListNodegroupsResult | M3LEKSNodegroupSummary | undefined>`
 - `writeNodegroup(deps: { operations: AWS.M3LEKSOperations; operation: "create-nodegroup" | "update-nodegroup-config" | "update-nodegroup-version" | "delete-nodegroup"; cluster: string; nodegroup: string; input: Record<string, unknown> | undefined; kubernetesVersion: string | undefined; releaseVersion: string | undefined; force: boolean }): Promise<M3LEKSNodegroupSummary | M3LEKSUpdate>`
-- `waitNodegroup(deps: { operations: AWS.M3LEKSOperations; operation: "wait-nodegroup-active" | "wait-nodegroup-deleted"; cluster: string; nodegroup: string; maxWaitTime: number }): Promise<M3LEKSWaiterResult>`
+- `waitNodegroup(deps: { operations: AWS.M3LEKSOperations; operation: "wait-nodegroup-active" | "wait-nodegroup-deleted"; cluster: string; nodegroup: string; maxWaitTime: number; signal: AbortSignal | undefined }): Promise<M3LEKSWaiterResult>`
 
 Script-local error codes are plain `M3LError.code` strings (the field is an
 open `string`, not a closed union — exactly like `ecs-ops`'s `ERR_ECS_OPS_*`),

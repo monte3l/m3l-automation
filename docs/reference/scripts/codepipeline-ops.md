@@ -130,14 +130,14 @@ Every step takes a single `readonly`-field deps object (never raw
 `Core.M3LConfig`) and no step does its own filesystem I/O except
 `run-codepipeline-ops` itself:
 
-- `runCodepipelineOps(deps: { config: Core.M3LConfig; paths: Core.M3LPaths; logger: Core.M3LLogger; correlationId: string; operations: AWS.M3LCodePipelineOperations; prompt: Core.M3LPrompt }): Promise<void>`
+- `runCodepipelineOps(deps: { config: Core.M3LConfig; paths: Core.M3LPaths; logger: Core.M3LLogger; correlationId: string; operations: AWS.M3LCodePipelineOperations; prompt: Core.M3LPrompt; signal: AbortSignal | undefined }): Promise<void>`
 - `readPipelines(deps: { operations: AWS.M3LCodePipelineOperations; operation: "list-pipelines" | "describe-pipeline"; pipeline: string | undefined; version: number | undefined; nextToken: string | undefined; maxResults: number | undefined }): Promise<M3LCodePipelineListPipelinesResult | M3LCodePipelineDefinition>`
 - `readState(deps: { operations: AWS.M3LCodePipelineOperations; pipeline: string }): Promise<M3LCodePipelineState>`
 - `readExecutions(deps: { operations: AWS.M3LCodePipelineOperations; operation: "list-executions" | "describe-execution"; pipeline: string; executionId: string | undefined; nextToken: string | undefined; maxResults: number | undefined }): Promise<M3LCodePipelineListExecutionsResult | M3LCodePipelineExecution>`
 - `writePipeline(deps: { operations: AWS.M3LCodePipelineOperations; reader: Core.M3LInputFileReader; operation: "create-pipeline" | "update-pipeline" | "delete-pipeline"; declaration: Record<string, unknown> | undefined; pipeline: string | undefined }): Promise<M3LCodePipelineDeclaration | undefined>`
 - `execute(deps: { operations: AWS.M3LCodePipelineOperations; operation: "start-execution" | "stop-execution"; pipeline: string; executionId: string | undefined; clientRequestToken: string | undefined; abandon: boolean; reason: string | undefined }): Promise<M3LCodePipelineStartExecutionResult | M3LCodePipelineStopExecutionResult>`
 - `transitions(deps: { operations: AWS.M3LCodePipelineOperations; operation: "enable-stage-transition" | "disable-stage-transition"; pipeline: string; stage: string; transitionType: M3LCodePipelineStageTransitionType; reason: string | undefined }): Promise<void>`
-- `watchExecution(deps: { operations: AWS.M3LCodePipelineOperations; logger: Core.M3LLogger; pipeline: string; executionId: string; waitMaxAttempts: number; waitIntervalSeconds: number }): Promise<M3LCodePipelineExecution>`
+- `watchExecution(deps: { operations: AWS.M3LCodePipelineOperations; logger: Core.M3LLogger; pipeline: string; executionId: string; waitMaxAttempts: number; waitIntervalSeconds: number; signal: AbortSignal | undefined }): Promise<M3LCodePipelineExecution>`
 
 Script-local error codes are plain `M3LError.code` strings (the field is an
 open `string`, not a closed union — exactly like `ecs-ops`'s
