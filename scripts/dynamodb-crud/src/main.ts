@@ -43,10 +43,12 @@ await Core.runScript(
       );
     }
 
-    // Any failure (including a partial batch failure left `failed > 0`, which
-    // `runDynamodbCrud` itself turns into an `ERR_DYNAMO_CRUD_FAILED_ITEMS`
-    // throw) propagates out through `Core.runScript` unchanged — that decision
-    // is `runDynamodbCrud`'s to make, not this composition root's.
+    // A partial batch failure (items left `failed > 0` after retry) is no
+    // longer fatal: `runDynamodbCrud` reports each unprocessed item via
+    // `reportRecovery` (bound from `script.reportRecovery`, never the whole
+    // `script` object) so the run's outcome demotes to `"partial"` instead of
+    // throwing. Any other failure still propagates out through
+    // `Core.runScript` unchanged.
     await runDynamodbCrud({
       config,
       paths,
@@ -55,6 +57,7 @@ await Core.runScript(
       dynamoDBDocument: aws.clients.dynamoDBDocument,
       dynamoDB: aws.clients.dynamoDB,
       prompt: script.prompt,
+      reportRecovery: script.reportRecovery.bind(script),
       signal: script.signal,
     });
   },
