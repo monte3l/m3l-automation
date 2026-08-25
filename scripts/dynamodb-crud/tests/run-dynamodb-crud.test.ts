@@ -200,6 +200,15 @@ function readJSONLLines(output: FakeWriteStream): unknown[] {
 }
 
 const BASE_CONFIG: Record<string, unknown> = {
+  // Required (Core.AWS_PROFILE_PARAM_NAME, declared `required: true` in
+  // config.ts) — set here so every test in this file keeps exercising its
+  // OWN intended config-guard scenario once `resolveSettings` starts
+  // requiring `aws.profile` too (issue #497 gap 1); without this, every
+  // test that omits it would start failing on a missing-profile guard
+  // instead of the field each test actually means to cover. Tests that need
+  // a specific/distinct profile value (the checkpoint-definition
+  // `awsProfile` projection tests) override it explicitly.
+  [Core.AWS_PROFILE_PARAM_NAME]: "test-profile",
   tableName: "orders",
   batchSize: 100,
   totalSegments: 1,
@@ -1297,6 +1306,413 @@ describe("runDynamodbCrud — cooperative cancellation via deps.signal (ADR-0049
 
     expect(summary).toEqual({ read: 1, written: 0, failed: 0, skipped: 0 });
     expect(getItemMock).toHaveBeenCalled();
+  });
+});
+
+describe("runDynamodbCrud — scan/query/export checkpoint 'definition' projection (issue #497)", () => {
+  /**
+   * `Core.M3LCheckpointStore` is the REAL, unmocked class in this file — the
+   * top-of-file `vi.mock("@m3l-automation/m3l-common", ...)` factory only
+   * overrides `AWS.*`, never `Core` (confirmed by reading the factory above;
+   * the task brief that prompted this describe block assumed a constructor
+   * spy already existed here, which is not the case). So these tests prove
+   * what `definition` `dispatchScan` supplies to the store the same way any
+   * other caller could observe it: through the store's own documented,
+   * PUBLIC behavior — the `fingerprint` it stamps onto the checkpoint
+   * envelope on `write()`, and the `"ERR_CHECKPOINT_FINGERPRINT_MISMATCH"` it
+   * throws from `read()` when a definition changes between runs — rather
+   * than by reaching into a private field or reassigning a frozen ES module
+   * namespace binding (`Core.M3LCheckpointStore` cannot be `vi.spyOn`-ed
+   * directly; it is non-configurable).
+   *
+   * `write()`'s envelope is persisted via `internal/files/atomicWrite`'s
+   * `fsp.writeFile(tempPath, contents, "utf8")` (see
+   * `packages/m3l-common/src/internal/files/atomicWrite.ts`), so spying on
+   * `fsp.writeFile` and parsing the captured JSON body is how the fingerprint
+   * is observed without ever reading a private field.
+   *
+   * The "key must be gated to query mode" tests below (issue #497 gap 2)
+   * likewise prove the omission through fingerprint divergence rather than a
+   * literal `Object.hasOwn` on the raw definition object: reading
+   * `packages/m3l-common/src/core/checkpoint/M3LCheckpointStore.ts` confirms
+   * the fingerprint is computed inside the constructor from a module-private
+   * `canonicalJsonHash` import (`../json/index.js`), never through the
+   * `Core.canonicalJsonHash` barrel binding this file's `vi.mock(...)`
+   * factory could intercept — so there is no seam to capture the raw
+   * definition object short of wrapping the class itself (an approach the
+   * comment above already rejects as too invasive for this file's shared
+   * mock factory). `M3LCheckpointStore`'s own documented projection
+   * semantics make the hash a faithful proxy for `Object.hasOwn` in exactly
+   * this scenario: an *omitted* key and a key explicitly set to `undefined`
+   * fingerprint identically by design, but `settings.key` in every test below
+   * is real, defined data (never `undefined`) — so a definition that leaks
+   * `key` in produces a different hash than one that correctly omits it.
+   */
+  function stubCheckpointWritesCapturing() {
+    const writeFileSpy = vi
+      .spyOn(fsp, "writeFile")
+      .mockResolvedValue(undefined);
+    vi.spyOn(fsp, "rename").mockResolvedValue(undefined);
+    vi.spyOn(fsp, "unlink").mockResolvedValue(undefined);
+    return writeFileSpy;
+  }
+
+  /** One page, one item, fully drains every segment on the first pass. */
+  function mockOnePageScan(): void {
+    scanSegmentMock.mockImplementation(function fakeScanSegment() {
+      return (async function* page() {
+        await Promise.resolve();
+        yield { items: [{ id: "a" }], lastEvaluatedKey: undefined };
+      })();
+    });
+  }
+
+  /** One page, one item, fully drains every segment on the first pass (query mode). */
+  function mockOnePageQuery(): void {
+    queryItemsMock.mockImplementation(function fakeQueryItems() {
+      return (async function* page() {
+        await Promise.resolve();
+        yield { items: [{ id: "a" }], lastEvaluatedKey: undefined };
+      })();
+    });
+  }
+
+  /** One empty page — fully drains every segment without yielding any item. */
+  function mockOneEmptyPageScan(): void {
+    scanSegmentMock.mockImplementation(function fakeScanSegment() {
+      return (async function* page() {
+        await Promise.resolve();
+        yield { items: [], lastEvaluatedKey: undefined };
+      })();
+    });
+  }
+
+  /** Narrows a JSON-parsed checkpoint envelope body to its `fingerprint` field. */
+  function readEnvelopeFingerprint(body: unknown): string | undefined {
+    if (typeof body !== "string") return undefined;
+    const parsed: unknown = JSON.parse(body);
+    if (typeof parsed !== "object" || parsed === null) return undefined;
+    const fingerprint = (parsed as Record<string, unknown>)["fingerprint"];
+    return typeof fingerprint === "string" ? fingerprint : undefined;
+  }
+
+  /**
+   * Finds the checkpoint envelope among every captured `fsp.writeFile` call
+   * (identified by the `__m3lCheckpointFormat` marker, so an unrelated write
+   * can never be mistaken for it) and returns its `fingerprint` field —
+   * `undefined` when the envelope carries no `fingerprint` at all (the
+   * pre-#497 shape: no `definition` was ever supplied to the constructor, so
+   * `write()` omits the field entirely rather than persisting `undefined`).
+   */
+  function capturedFingerprint(
+    writeFileSpy: ReturnType<typeof stubCheckpointWritesCapturing>,
+  ): string | undefined {
+    for (const call of writeFileSpy.mock.calls) {
+      const body = call[1];
+      if (typeof body === "string" && body.includes("__m3lCheckpointFormat")) {
+        return readEnvelopeFingerprint(body);
+      }
+    }
+    throw new Error("expected a checkpoint envelope to have been written");
+  }
+
+  test("a fresh query's written checkpoint fingerprints mode/tableName/totalSegments/indexName/key/output/awsProfile, excluding runName/batchSize/checkpointEveryPages/item (indexName & key present, mode derived not raw operation)", async () => {
+    mockOnePageQuery();
+    const writeFileSpy = stubCheckpointWritesCapturing();
+    stubOutputStream();
+    const deps = buildDeps({
+      ...BASE_CONFIG,
+      operation: "query",
+      tableName: "widgets",
+      totalSegments: 2,
+      checkpointEveryPages: 1,
+      indexName: "byStatus",
+      key: JSON.stringify({ status: "paid" }),
+      item: JSON.stringify({ status: "shipped" }),
+      runName: "definition-test-run",
+      output: "out.jsonl",
+      [Core.AWS_PROFILE_PARAM_NAME]: "acct-query",
+    });
+
+    await runDynamodbCrud(deps);
+
+    const actualFingerprint = capturedFingerprint(writeFileSpy);
+    const expectedDefinition = {
+      mode: "query",
+      tableName: "widgets",
+      totalSegments: 2,
+      indexName: "byStatus",
+      key: { status: "paid" },
+      output: "out.jsonl",
+      awsProfile: "acct-query",
+    };
+    expect(actualFingerprint).toBe(Core.canonicalJsonHash(expectedDefinition));
+    // Representative excluded fields (runName, batchSize, checkpointEveryPages,
+    // item): each is set to a real, defined value above, so a mistaken
+    // inclusion would change the fingerprint away from the expected value —
+    // the `toBe` assertion above is already the primary proof; these
+    // `not.toBe` checks name the specific mistakes independently for
+    // readability when a failure is triaged.
+    expect(actualFingerprint).not.toBe(
+      Core.canonicalJsonHash({
+        ...expectedDefinition,
+        runName: "definition-test-run",
+      }),
+    );
+    expect(actualFingerprint).not.toBe(
+      Core.canonicalJsonHash({ ...expectedDefinition, batchSize: 100 }),
+    );
+    expect(actualFingerprint).not.toBe(
+      Core.canonicalJsonHash({
+        ...expectedDefinition,
+        checkpointEveryPages: 1,
+      }),
+    );
+    expect(actualFingerprint).not.toBe(
+      Core.canonicalJsonHash({
+        ...expectedDefinition,
+        item: { status: "shipped" },
+      }),
+    );
+    // The pre-#497 raw-operation shape must NOT be what was actually
+    // fingerprinted — pins that "operation" (not "mode") is not silently
+    // still present alongside/instead of the derived value.
+    expect(actualFingerprint).not.toBe(
+      Core.canonicalJsonHash({
+        ...expectedDefinition,
+        mode: undefined,
+        operation: "query",
+      }),
+    );
+  });
+
+  test("a fresh export's written checkpoint fingerprint matches a definition with mode 'scan' (not raw operation 'export') and indexName/key/awsProfile, when indexName/key are unset (indexName & key absent)", async () => {
+    mockOnePageScan();
+    const writeFileSpy = stubCheckpointWritesCapturing();
+    stubOutputStream();
+    const deps = buildDeps({
+      ...BASE_CONFIG,
+      operation: "export",
+      tableName: "widgets",
+      totalSegments: 1,
+      checkpointEveryPages: 1,
+      output: "out.jsonl",
+      [Core.AWS_PROFILE_PARAM_NAME]: "acct-export",
+    });
+
+    await runDynamodbCrud(deps);
+
+    const actualFingerprint = capturedFingerprint(writeFileSpy);
+    const expectedDefinition = {
+      mode: "scan",
+      tableName: "widgets",
+      totalSegments: 1,
+      output: "out.jsonl",
+      awsProfile: "acct-export",
+    };
+    expect(actualFingerprint).toBe(Core.canonicalJsonHash(expectedDefinition));
+  });
+
+  test("issue #497 gap 1: the definition's awsProfile reflects the resolved aws.profile config value, not a hardcoded/omitted one", async () => {
+    mockOnePageScan();
+    const writeFileSpy = stubCheckpointWritesCapturing();
+    stubOutputStream();
+    const deps = buildDeps({
+      ...BASE_CONFIG,
+      operation: "scan",
+      tableName: "widgets",
+      totalSegments: 1,
+      checkpointEveryPages: 1,
+      output: "out.jsonl",
+      [Core.AWS_PROFILE_PARAM_NAME]: "acct-dev",
+    });
+
+    await runDynamodbCrud(deps);
+
+    const actualFingerprint = capturedFingerprint(writeFileSpy);
+    const definitionWithResolvedProfile = {
+      mode: "scan",
+      tableName: "widgets",
+      totalSegments: 1,
+      output: "out.jsonl",
+      awsProfile: "acct-dev",
+    };
+    expect(actualFingerprint).toBe(
+      Core.canonicalJsonHash(definitionWithResolvedProfile),
+    );
+    // Proves awsProfile is genuinely incorporated (not coincidentally
+    // matching): a definition omitting it entirely, and one carrying a
+    // DIFFERENT profile value, must both fingerprint differently from the
+    // actual run's fingerprint.
+    expect(actualFingerprint).not.toBe(
+      Core.canonicalJsonHash({
+        mode: "scan",
+        tableName: "widgets",
+        totalSegments: 1,
+        output: "out.jsonl",
+      }),
+    );
+    expect(actualFingerprint).not.toBe(
+      Core.canonicalJsonHash({
+        ...definitionWithResolvedProfile,
+        awsProfile: "acct-prod",
+      }),
+    );
+  });
+
+  test("issue #497 gap 2: a 'scan' run and an 'export' run under the same settings (same runName, same table) produce a checkpoint with the SAME fingerprint — mode consolidates scan/export so switching between them never trips ERR_CHECKPOINT_FINGERPRINT_MISMATCH on --resume", async () => {
+    const sharedConfig = {
+      ...BASE_CONFIG,
+      tableName: "widgets",
+      totalSegments: 1,
+      checkpointEveryPages: 1,
+      runName: "same-run",
+      output: "out.jsonl",
+      [Core.AWS_PROFILE_PARAM_NAME]: "acct-shared",
+    };
+    mockOnePageScan();
+    const writeFileSpy = stubCheckpointWritesCapturing();
+
+    stubOutputStream();
+    await runDynamodbCrud(buildDeps({ ...sharedConfig, operation: "scan" }));
+    const scanFingerprint = capturedFingerprint(writeFileSpy);
+
+    writeFileSpy.mockClear();
+    stubOutputStream();
+    await runDynamodbCrud(buildDeps({ ...sharedConfig, operation: "export" }));
+    const exportFingerprint = capturedFingerprint(writeFileSpy);
+
+    expect(scanFingerprint).toBe(exportFingerprint);
+    // Pin the actual shared value too, so a future regression that
+    // reintroduces raw `operation` into the definition (which would make the
+    // two diverge, since "scan" !== "export") is caught even if some other
+    // unrelated field change happened to make them coincidentally equal.
+    const expectedSharedDefinition = {
+      mode: "scan",
+      tableName: "widgets",
+      totalSegments: 1,
+      output: "out.jsonl",
+      awsProfile: "acct-shared",
+    };
+    expect(scanFingerprint).toBe(
+      Core.canonicalJsonHash(expectedSharedDefinition),
+    );
+  });
+
+  test("issue #497 gap 2: a 'scan' run's checkpoint fingerprint is unaffected by a 'key' config value happening to be set — key is gated to query mode and never leaks into a scan/export definition", async () => {
+    mockOnePageScan();
+    const writeFileSpy = stubCheckpointWritesCapturing();
+    stubOutputStream();
+    const deps = buildDeps({
+      ...BASE_CONFIG,
+      operation: "scan",
+      tableName: "widgets",
+      totalSegments: 1,
+      checkpointEveryPages: 1,
+      output: "out.jsonl",
+      // Set, but must be ignored for a scan definition — scan-table.ts only
+      // consumes `key` when mode is "query" (guarded there); the config
+      // parameter itself has no operation-scoped restriction.
+      key: JSON.stringify({ status: "paid" }),
+      [Core.AWS_PROFILE_PARAM_NAME]: "acct-shared",
+    });
+
+    await runDynamodbCrud(deps);
+
+    const actualFingerprint = capturedFingerprint(writeFileSpy);
+    const definitionWithoutKey = {
+      mode: "scan",
+      tableName: "widgets",
+      totalSegments: 1,
+      output: "out.jsonl",
+      awsProfile: "acct-shared",
+    };
+    const definitionWithKeyLeaked = {
+      ...definitionWithoutKey,
+      key: { status: "paid" },
+    };
+    expect(actualFingerprint).toBe(
+      Core.canonicalJsonHash(definitionWithoutKey),
+    );
+    expect(actualFingerprint).not.toBe(
+      Core.canonicalJsonHash(definitionWithKeyLeaked),
+    );
+  });
+
+  test("[precedence] --resume rejects ERR_CHECKPOINT_FINGERPRINT_MISMATCH when the on-disk fingerprint disagrees with the current settings' projected definition", async () => {
+    stubOutputStream();
+    mockOneEmptyPageScan();
+    const payload = { segments: {}, outputBytes: 0 };
+    const envelope = {
+      __m3lCheckpointFormat: 1,
+      checksum: Core.canonicalJsonHash(payload),
+      // Deliberately wrong: a well-formed but definitely-incorrect
+      // fingerprint — never the real SHA-256 of the settings-derived
+      // definition below. Pre-#497, this run resolves normally regardless of
+      // this field (no `definition` is ever supplied to the constructor, so
+      // `read()` never checks it) — exactly the difference this test exists
+      // to pin (mirrors the "integrity vs. meaning" precedence shape from
+      // `docs/logs/2026-08-19-a4-checkpoint-fingerprint.md`: both arms —
+      // "fingerprints checked" and "fingerprints mismatch" — must be
+      // reachable, which is why `mockOneEmptyPageScan` lets a pre-#497 run
+      // complete successfully instead of erroring for an unrelated reason).
+      fingerprint: "0".repeat(64),
+      payload,
+    };
+    vi.spyOn(fsp, "readFile").mockResolvedValue(JSON.stringify(envelope));
+    vi.spyOn(fsp, "unlink").mockResolvedValue(undefined);
+    const deps = buildDeps({
+      ...BASE_CONFIG,
+      operation: "scan",
+      tableName: "widgets",
+      totalSegments: 1,
+      resume: true,
+      indexName: "byStatus",
+      key: JSON.stringify({ status: "paid" }),
+      output: "out.jsonl",
+    });
+
+    await expect(runDynamodbCrud(deps)).rejects.toMatchObject({
+      code: "ERR_CHECKPOINT_FINGERPRINT_MISMATCH",
+    });
+  });
+
+  test("--resume succeeds when the on-disk fingerprint matches the current settings' projected definition (fresh and resume construction paths agree on the same definition shape)", async () => {
+    stubOutputStream();
+    mockOneEmptyPageScan();
+    const payload = { segments: {}, outputBytes: 0 };
+    // Post-#497 shape: mode (derived, not raw operation), no `key` (scan
+    // mode gates it out even though settings.key below is set), and the
+    // resolved awsProfile — matching BASE_CONFIG's aws.profile since this
+    // test does not override it.
+    const expectedDefinition = {
+      mode: "scan",
+      tableName: "widgets",
+      totalSegments: 1,
+      indexName: "byStatus",
+      output: "out.jsonl",
+      awsProfile: "test-profile",
+    };
+    const envelope = {
+      __m3lCheckpointFormat: 1,
+      checksum: Core.canonicalJsonHash(payload),
+      fingerprint: Core.canonicalJsonHash(expectedDefinition),
+      payload,
+    };
+    vi.spyOn(fsp, "readFile").mockResolvedValue(JSON.stringify(envelope));
+    vi.spyOn(fsp, "unlink").mockResolvedValue(undefined);
+    const deps = buildDeps({
+      ...BASE_CONFIG,
+      operation: "scan",
+      tableName: "widgets",
+      totalSegments: 1,
+      resume: true,
+      indexName: "byStatus",
+      key: JSON.stringify({ status: "paid" }),
+      output: "out.jsonl",
+    });
+
+    await expect(runDynamodbCrud(deps)).resolves.toMatchObject({ read: 0 });
   });
 });
 

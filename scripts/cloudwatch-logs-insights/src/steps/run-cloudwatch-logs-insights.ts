@@ -522,6 +522,37 @@ async function runWindowsPhase(args: {
 }
 
 /**
+ * Projects `settings` down to `buildCheckpointStore`'s `definition` argument:
+ * everything that determines what the checkpoint's offsets *mean*, so a
+ * resumed run whose query/log-groups/time-range/format/`aws.profile` changed
+ * underneath it is rejected (`ERR_CHECKPOINT_FINGERPRINT_MISMATCH`) rather
+ * than silently resuming against stale offsets. `awsProfile` is included
+ * because the checkpoint's `completedWindows`/`rows`/`outputBytes` are bare
+ * log-group names with no account/region binding of their own — a `--resume`
+ * after switching `aws.profile` (a different AWS account) would otherwise
+ * silently continue accumulating rows from a *different account's* log
+ * groups into the same output file instead of failing loud. `output`
+ * (already the checkpoint's `name`) and `resume` (a run-mode flag, not part
+ * of what the offsets mean) are deliberately excluded. Extracted to keep
+ * `runCloudwatchLogsInsights` within ESLint's `max-lines-per-function`
+ * ceiling.
+ *
+ * @param settings - The resolved run settings.
+ */
+function buildCheckpointDefinition(settings: LogsInsightsRunSettings): unknown {
+  return {
+    query: settings.query,
+    logGroups: settings.logGroups,
+    startEpochSeconds: settings.startEpochSeconds,
+    endEpochSeconds: settings.endEpochSeconds,
+    windowMinutes: settings.windowMinutes,
+    limit: settings.limit,
+    format: settings.format,
+    awsProfile: settings.awsProfile,
+  };
+}
+
+/**
  * Runs the `cloudwatch-logs-insights` orchestration: resolves settings, plans time
  * windows, executes each remaining window's query (checkpointing before and
  * after every poll), and finalizes the output — a streamed JSON writer close
@@ -591,6 +622,7 @@ export async function runCloudwatchLogsInsights(deps: {
     settings.resume
       ? { kind: "error" }
       : { kind: "empty", value: EMPTY_CHECKPOINT },
+    buildCheckpointDefinition(settings),
   );
 
   const initial: LogsInsightsCheckpoint = settings.resume

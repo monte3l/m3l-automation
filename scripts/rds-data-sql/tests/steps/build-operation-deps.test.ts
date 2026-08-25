@@ -110,6 +110,36 @@ async function captureThrown(fn: () => Promise<unknown>): Promise<unknown> {
   }
 }
 
+/**
+ * Spies on `Core.M3LCheckpointStore`'s constructor so a test can inspect the
+ * exact options object (in particular `definition`) passed by
+ * `buildOperationDeps` — while still constructing a REAL store underneath
+ * (`mockImplementation` delegates to the captured original class), so every
+ * other test in this file that relies on the real store's `read()`/`write()`
+ * behavior (parse errors, co-occurrence checks, safe-integer checks) is
+ * unaffected. A plain `function` expression is required for the
+ * implementation (not an arrow) so `new Core.M3LCheckpointStore(...)`'s call
+ * site still works when the mock's implementation itself constructs the real
+ * class and returns it — `new` on a function that returns an object uses
+ * that returned object, mirroring `athena-query`'s
+ * `run-athena-query.test.ts` "mockedStore" pattern but delegating to the real
+ * implementation instead of a stub. Restored by the file's existing
+ * `afterEach(() => vi.restoreAllMocks())`.
+ */
+function spyOnCheckpointStoreCtor(): ReturnType<
+  typeof vi.spyOn<typeof Core, "M3LCheckpointStore">
+> {
+  const OriginalCheckpointStore = Core.M3LCheckpointStore;
+  return vi
+    .spyOn(Core, "M3LCheckpointStore")
+    .mockImplementation(function mockedStore(
+      this: unknown,
+      options: Core.M3LCheckpointStoreOptions<Record<string, unknown>>,
+    ) {
+      return new OriginalCheckpointStore(options);
+    } as unknown as typeof Core.M3LCheckpointStore);
+}
+
 afterEach(() => {
   vi.restoreAllMocks();
   vi.mocked(fsp.readFile).mockReset();
@@ -1219,5 +1249,204 @@ describe("buildOperationDeps: file-read failure propagation", () => {
     const error = thrown as Core.M3LError;
     expect(error.code).toBe(BUILD_DEPS_CODE);
     expect(error.cause).toBe(readFailure);
+  });
+});
+
+/**
+ * Issue #497 (A4b): retrofits `buildQueryDeps`/`buildLoadDeps`'s
+ * `Core.M3LCheckpointStore` construction with a `definition` option, so a
+ * leftover checkpoint from a differently-configured prior run now throws
+ * `ERR_CHECKPOINT_FINGERPRINT_MISMATCH` on `read()` instead of silently
+ * being reused (both stores' `read()` calls are unconditional in
+ * `run-query.ts`/`run-load.ts` — not gated behind `--resume`).
+ *
+ * Per docs/reference/core/checkpoint.md, `secretArn` (a rotatable
+ * credential locator) must never appear in a `definition` — the fingerprint
+ * is an unkeyed hash, so a low-entropy definition is brute-forceable but a
+ * secret trivially isn't meant to be recoverable at all. The same rule
+ * covers a resolved SQL bind `parameter`'s raw `value` (caller-supplied
+ * data, not run shape) — `buildQueryDeps` projects each parameter down to
+ * `name`/`kind`/optional `typeHint` via `projectParameterShape` before it
+ * ever reaches the `definition`.
+ */
+describe("buildOperationDeps: query checkpoint definition (issue #497 A4b)", () => {
+  test("constructs the query checkpoint store with a definition projecting resourceArn/database/schema/resolved-sql/resolved-parameters/outputFile/outputFormat/paged, excluding secretArn/raw pageSize/load-only fields", async () => {
+    stubWriteStream();
+    const ctorSpy = spyOnCheckpointStoreCtor();
+    const parameters: readonly AWS.M3LRDSDataParameter[] = [
+      { name: "id", value: { kind: "long", value: 1 } },
+    ];
+    vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify(parameters));
+
+    await buildOperationDeps(
+      buildDeps(
+        makeSettings({
+          operation: "query",
+          schema: "public",
+          sql: "SELECT 1 FROM t",
+          parametersFile: "params.json",
+          outputFile: "out.json",
+          outputFormat: "csv",
+          pageSize: 50,
+        }),
+      ),
+    );
+
+    expect(ctorSpy).toHaveBeenCalledTimes(1);
+    const [options] = ctorSpy.mock.calls[0] as unknown as [
+      Record<string, unknown>,
+    ];
+    const definition = options["definition"];
+    expect(definition).toBeDefined();
+    const def = definition as Record<string, unknown>;
+
+    expect(def["resourceArn"]).toBe(BASE_SETTINGS.resourceArn);
+    expect(def["database"]).toBe("testdb");
+    expect(def["schema"]).toBe("public");
+    // The RESOLVED sql text (buildQueryDeps's local `sql` variable, already
+    // read from `sql.file` when set) — not `settings.sql`/`settings.sqlFile`,
+    // since a `sqlFile`'s on-disk contents can change under a fixed path.
+    expect(def["sql"]).toBe("SELECT 1 FROM t");
+    // The RESOLVED parameters, PROJECTED to name/kind/typeHint (never the raw
+    // bind value — docs/reference/core/checkpoint.md forbids a secret/credential
+    // in a definition, and a bind value is caller-supplied data, not run shape).
+    expect(def["parameters"]).toEqual([{ name: "id", kind: "long" }]);
+    expect(def["outputFile"]).toBe("out.json");
+    expect(def["outputFormat"]).toBe("csv");
+    expect(def["paged"]).toBe(true);
+
+    expect(Object.hasOwn(def, "secretArn")).toBe(false);
+    expect(Object.hasOwn(def, "pageSize")).toBe(false);
+    expect(Object.hasOwn(def, "batchSize")).toBe(false);
+    expect(Object.hasOwn(def, "table")).toBe(false);
+    expect(Object.hasOwn(def, "columns")).toBe(false);
+    expect(Object.hasOwn(def, "inputFile")).toBe(false);
+    expect(Object.hasOwn(def, "inputFormat")).toBe(false);
+  });
+
+  test("never fingerprints a SQL bind parameter's raw value", async () => {
+    stubWriteStream();
+    const ctorSpy = spyOnCheckpointStoreCtor();
+    // A distinguishing, greppable literal standing in for a real secret bind
+    // value (e.g. a PII column or credential passed as a query parameter) —
+    // if `buildQueryDeps` ever regressed to fingerprinting the raw `value`
+    // instead of the projected name/kind/typeHint shape, this literal would
+    // show up verbatim in the definition passed to `M3LCheckpointStore`.
+    const parameters: readonly AWS.M3LRDSDataParameter[] = [
+      {
+        name: "ssn",
+        value: { kind: "string", value: "planted-secret-bind-value" },
+      },
+      // A `typeHint` is metadata describing HOW the value is sent, not the
+      // value itself — it's expected to survive the projection.
+      {
+        name: "amount",
+        value: { kind: "double", value: 42 },
+        typeHint: "DECIMAL",
+      },
+    ];
+    vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify(parameters));
+
+    await buildOperationDeps(
+      buildDeps(
+        makeSettings({
+          operation: "query",
+          sql: "SELECT 1 FROM t",
+          parametersFile: "params.json",
+          outputFile: "out.json",
+        }),
+      ),
+    );
+
+    expect(ctorSpy).toHaveBeenCalledTimes(1);
+    const [options] = ctorSpy.mock.calls[0] as unknown as [
+      Record<string, unknown>,
+    ];
+    const def = options["definition"] as Record<string, unknown>;
+
+    expect(def["parameters"]).toEqual([
+      { name: "ssn", kind: "string" },
+      { name: "amount", kind: "double", typeHint: "DECIMAL" },
+    ]);
+    // Belt-and-suspenders: the planted literal cannot leak through any other
+    // path in the definition object either.
+    expect(JSON.stringify(def).includes("planted-secret-bind-value")).toBe(
+      false,
+    );
+  });
+
+  test.each([
+    [0, false],
+    [50, true],
+  ])(
+    "derives 'paged' from settings.pageSize > 0 (pageSize=%s -> paged=%s)",
+    async (pageSize, expectedPaged) => {
+      stubWriteStream();
+      const ctorSpy = spyOnCheckpointStoreCtor();
+
+      await buildOperationDeps(
+        buildDeps(
+          makeSettings({
+            operation: "query",
+            sql: "SELECT 1",
+            outputFile: "out.json",
+            pageSize,
+          }),
+        ),
+      );
+
+      expect(ctorSpy).toHaveBeenCalledTimes(1);
+      const [options] = ctorSpy.mock.calls[0] as unknown as [
+        Record<string, unknown>,
+      ];
+      const def = options["definition"] as Record<string, unknown>;
+      expect(def["paged"]).toBe(expectedPaged);
+    },
+  );
+});
+
+describe("buildOperationDeps: load checkpoint definition (issue #497 A4b)", () => {
+  test("constructs the load checkpoint store with a definition projecting resourceArn/database/schema/table/columns/inputFile/inputFormat/batchSize (meaning-bearing here), excluding secretArn/pageSize/outputFile/outputFormat/yes", async () => {
+    stubWriteStream();
+    const ctorSpy = spyOnCheckpointStoreCtor();
+
+    await buildOperationDeps(
+      buildDeps(
+        makeSettings({
+          operation: "load",
+          schema: "public",
+          table: "users",
+          columns: ["id", "name"],
+          inputFile: "users.jsonl",
+          inputFormat: "csv",
+          batchSize: 250,
+        }),
+      ),
+    );
+
+    expect(ctorSpy).toHaveBeenCalledTimes(1);
+    const [options] = ctorSpy.mock.calls[0] as unknown as [
+      Record<string, unknown>,
+    ];
+    const definition = options["definition"];
+    expect(definition).toBeDefined();
+    const def = definition as Record<string, unknown>;
+
+    expect(def["resourceArn"]).toBe(BASE_SETTINGS.resourceArn);
+    expect(def["database"]).toBe("testdb");
+    expect(def["schema"]).toBe("public");
+    expect(def["table"]).toBe("users");
+    expect(def["columns"]).toEqual(["id", "name"]);
+    expect(def["inputFile"]).toBe("users.jsonl");
+    expect(def["inputFormat"]).toBe("csv");
+    // Unlike the query store's page size, batchSize IS meaning-bearing here
+    // — the load checkpoint's chunkIndex counts chunks sized by batchSize.
+    expect(def["batchSize"]).toBe(250);
+
+    expect(Object.hasOwn(def, "secretArn")).toBe(false);
+    expect(Object.hasOwn(def, "pageSize")).toBe(false);
+    expect(Object.hasOwn(def, "outputFile")).toBe(false);
+    expect(Object.hasOwn(def, "outputFormat")).toBe(false);
+    expect(Object.hasOwn(def, "yes")).toBe(false);
   });
 });

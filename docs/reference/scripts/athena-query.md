@@ -86,6 +86,18 @@ and is unit-testable with plain mocks — no `M3LScript` lifecycle.
   A present-but-corrupt checkpoint throws `ERR_CHECKPOINT_PARSE`; any other
   read/write/delete failure throws `ERR_CHECKPOINT_IO`. A non-resume run
   never reads the checkpoint file at all.
+- **Bound to what the execution id means:** the `M3LCheckpointStore` is
+  constructed with a `definition` covering `startInput.queryString`,
+  `database`, `catalog`, `workGroup`, `executionParameters`, `outputLocation`,
+  and the resolved `aws.profile` — everything that changes what the stored
+  `queryExecutionId` refers to (`outputLocation` becomes
+  `ResultConfiguration.OutputLocation` on `StartQueryExecution`; `aws.profile`
+  selects the account/region the execution id was minted under). A `--resume`
+  whose config edited any of these fails loud with `Core.M3LCheckpointError`
+  / `ERR_CHECKPOINT_FINGERPRINT_MISMATCH` instead of silently reattaching to
+  a stale or cross-account execution — see [`core/checkpoint`](../core/checkpoint.md).
+  Deliberately excluded: `output` (already the checkpoint's identity) and
+  `format`/`resume` (run-mode flags, not part of the query's identity).
 - **Abort-and-checkpoint on hard failure:** a terminal
   `AWS.M3LAthenaQueryFailedError` (a genuinely-failed/cancelled query, not
   poll-in-progress) aborts the run — the checkpoint is left intact (still

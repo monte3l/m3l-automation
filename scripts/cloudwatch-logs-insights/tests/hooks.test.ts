@@ -116,3 +116,31 @@ describe("buildHooks — onAfterRun", () => {
     expect(checkpointMocks.delete).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * Contract: issue #497 (A4b). `onAfterRun` only ever calls `.delete()` on its
+ * checkpoint store, and this hook has no resolved `LogsInsightsRunSettings`
+ * in scope (only `ctx.config.get("output")`) to build a `definition`
+ * projection from even if it wanted one — deletion never verifies a
+ * fingerprint, so passing one here would be inert at best. The delete-only
+ * construction site stays as it was: no `definition` reaches
+ * `buildCheckpointStore`.
+ *
+ * This is a regression lock, not a RED-phase proof: `hooks.ts` never passed a
+ * `definition` before this retrofit either, so this test already passes
+ * against the pre-retrofit source — its job is to keep passing once
+ * `buildCheckpointStore` grows the optional 4th parameter, confirming this
+ * call site was deliberately left out of the retrofit rather than missed.
+ */
+describe("buildHooks — onAfterRun (definition, issue #497 retrofit)", () => {
+  it("constructs its checkpoint store with no definition — the delete-only path stays inert", async () => {
+    const paths = new Core.M3LPaths();
+    const hooks = buildHooks(paths);
+
+    await hooks.onAfterRun?.(fakeHookContext({ output: "results.json" }));
+
+    expect(Core.M3LCheckpointStore).toHaveBeenCalledTimes(1);
+    const call = vi.mocked(Core.M3LCheckpointStore).mock.calls[0];
+    expect(call?.[0].definition).toBeUndefined();
+  });
+});

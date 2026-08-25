@@ -1053,3 +1053,110 @@ describe("runCloudwatchLogsInsights — CSV format (unchanged behavior)", () => 
     expect(summary).toEqual({ windowsCompleted: 3, rowsExported: 3 });
   });
 });
+
+/**
+ * Contract: issue #497 (A4b), widened by the #497 follow-up review round.
+ * The orchestrator's `buildCheckpointStore` call gains a 4th `definition`
+ * argument, projected from the resolved `settings` so a resumed run whose
+ * query/log-groups/time-range/format/`aws.profile` changed underneath it is
+ * rejected (`ERR_CHECKPOINT_FINGERPRINT_MISMATCH`) rather than silently
+ * resuming against stale offsets. `output` (already the checkpoint's `name`)
+ * and `resume` (a run-mode flag, not part of what the checkpoint's offsets
+ * mean) are deliberately excluded from the projection.
+ *
+ * `awsProfile` is part of the projection (not just query/log-groups/time-range/
+ * format): the checkpoint's `completedWindows`/`rows`/`outputBytes` are bare
+ * log-group names with no account/region binding of their own, so a
+ * `--resume` after switching `aws.profile` (a different AWS account) would
+ * otherwise silently continue accumulating rows from a *different account's*
+ * log groups into the same output file instead of failing loud.
+ */
+describe("runCloudwatchLogsInsights — checkpoint definition (issue #497 retrofit)", () => {
+  it("passes buildCheckpointStore a 4th-arg definition projected from settings, excluding output and resume", async () => {
+    const client = buildClient();
+    client.startQuery.mockResolvedValue("query-def-1");
+    client.awaitResults.mockResolvedValue({
+      queryId: "query-def-1",
+      status: "Complete",
+      rows: [],
+    });
+
+    const config = buildConfig({
+      ...BASE_VALUES,
+      limit: 500,
+      start: "2026-07-01T00:00:00Z",
+      end: "2026-07-01T01:00:00Z", // 1 window
+      resume: false,
+    });
+    const logger = new Core.M3LLogger([]);
+    const paths = buildPaths();
+
+    await runCloudwatchLogsInsights({
+      config,
+      logger,
+      client: asClient(client),
+      paths,
+    });
+
+    expect(Core.M3LCheckpointStore).toHaveBeenCalledTimes(1);
+    const options = vi.mocked(Core.M3LCheckpointStore).mock.calls[0]?.[0] as
+      Record<string, unknown> | undefined;
+    expect(options).toBeDefined();
+
+    const startEpochSeconds = Math.floor(
+      Date.parse("2026-07-01T00:00:00Z") / 1000,
+    );
+    const endEpochSeconds = Math.floor(
+      Date.parse("2026-07-01T01:00:00Z") / 1000,
+    );
+
+    expect(options?.["definition"]).toEqual({
+      query: "fields @timestamp, @message",
+      logGroups: ["/aws/lambda/a"],
+      startEpochSeconds,
+      endEpochSeconds,
+      windowMinutes: 60,
+      limit: 500,
+      format: "json",
+      awsProfile: "my-profile",
+    });
+
+    const definition = options?.["definition"] as object;
+    expect(Object.hasOwn(definition, "output")).toBe(false);
+    expect(Object.hasOwn(definition, "resume")).toBe(false);
+  });
+
+  it("projects awsProfile from the resolved aws.profile config value, not a hardcoded literal", async () => {
+    const client = buildClient();
+    client.startQuery.mockResolvedValue("query-def-2");
+    client.awaitResults.mockResolvedValue({
+      queryId: "query-def-2",
+      status: "Complete",
+      rows: [],
+    });
+
+    const config = buildConfig({
+      ...BASE_VALUES,
+      [Core.AWS_PROFILE_PARAM_NAME]: "some-other-account-profile",
+      start: "2026-07-01T00:00:00Z",
+      end: "2026-07-01T01:00:00Z", // 1 window
+      resume: false,
+    });
+    const logger = new Core.M3LLogger([]);
+    const paths = buildPaths();
+
+    await runCloudwatchLogsInsights({
+      config,
+      logger,
+      client: asClient(client),
+      paths,
+    });
+
+    const options = vi.mocked(Core.M3LCheckpointStore).mock.calls[0]?.[0] as
+      Record<string, unknown> | undefined;
+    const definition = options?.["definition"] as
+      Record<string, unknown> | undefined;
+
+    expect(definition?.["awsProfile"]).toBe("some-other-account-profile");
+  });
+});

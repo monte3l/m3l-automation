@@ -27,6 +27,14 @@ const LOGS_INSIGHTS_OUTPUT_FORMATS = ["json", "csv"] as const;
  * seconds.
  */
 export interface LogsInsightsRunSettings {
+  /**
+   * The resolved `aws.profile` config value — selects the AWS account/region
+   * `client` runs under, and is folded into the checkpoint's fingerprint
+   * `definition` so a `--resume` after switching profiles fails loud instead
+   * of silently continuing to accumulate rows from a different account's log
+   * groups.
+   */
+  readonly awsProfile: string;
   /** Log group names, forwarded verbatim to every window's `StartQuery`. */
   readonly logGroups: readonly string[];
   /** The Logs Insights query string, applied identically to every window. */
@@ -102,8 +110,13 @@ export function resolveSettings(
   });
   const startEpochSeconds = parseEpochSeconds(accessor, "start");
   const endEpochSeconds = parseEpochSeconds(accessor, "end");
+  const awsProfile = accessor.requiredString(
+    Core.AWS_PROFILE_PARAM_NAME,
+    "run",
+  );
 
   return {
+    awsProfile,
     logGroups: accessor.requiredStringArray("logGroups", "run"),
     query: accessor.requiredString("query", "run"),
     startEpochSeconds,
