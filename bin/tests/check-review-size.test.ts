@@ -1,3 +1,5 @@
+import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
 import {
   SOFT_TARGET_BYTES,
@@ -8,6 +10,17 @@ import {
   splitDiffByFile,
   suggestSplitAxis,
 } from "../../bin/check-review-size.mjs";
+
+const scriptPath = fileURLToPath(
+  new URL("../check-review-size.mjs", import.meta.url),
+);
+
+// A fixed, already-merged commit range (PR #639) that mixes reviewable
+// bin/**/*.mjs|*.ts files with one ignored docs/plans/IMPLEMENTATION.md
+// file — deterministic regardless of when this test runs, unlike the live
+// working tree's diff.
+const FIXED_BASE = "85846a698f29615743832810b4474c2eec6d5c18";
+const FIXED_HEAD = "d82e052026ce8e23962a97a21382f381767217f3";
 
 /** Build a single-file unified diff block's text (no trailing newline). */
 function makeDiffText(path: string, hunkBodyLines: string[]): string {
@@ -135,7 +148,11 @@ describe("filterForReview", () => {
     );
     expect(filteredText).toContain("(diff omitted");
     expect(perFile).toEqual([
-      { path: "docs/notes.md", bytes: Buffer.byteLength(filteredText, "utf8") },
+      {
+        path: "docs/notes.md",
+        bytes: Buffer.byteLength(filteredText, "utf8"),
+        ignored: true,
+      },
     ]);
   });
 
@@ -148,6 +165,7 @@ describe("filterForReview", () => {
     expect(perFile).toHaveLength(1);
     expect(perFile[0]?.path).toBe(path);
     expect(perFile[0]?.bytes).toBeGreaterThan(0);
+    expect(perFile[0]?.ignored).toBe(false);
   });
 
   test("combines ignored and reviewable files, only omitting the ignored one", () => {
@@ -155,9 +173,22 @@ describe("filterForReview", () => {
     const ignoredText = makeDiffText("docs/notes.md", ["+omit me"]);
     const reviewableText = makeDiffText(reviewablePath, ["+keep me"]);
     const blocks = splitDiffByFile([ignoredText, reviewableText].join("\n"));
-    const { filteredText } = filterForReview(blocks);
+    const { filteredText, perFile } = filterForReview(blocks);
     expect(filteredText).not.toContain("omit me");
     expect(filteredText).toContain("keep me");
+    expect(perFile).toHaveLength(2);
+    const ignoredEntry = perFile.find((f) => f.path === "docs/notes.md");
+    const reviewableEntry = perFile.find((f) => f.path === reviewablePath);
+    expect(ignoredEntry).toMatchObject({
+      path: "docs/notes.md",
+      ignored: true,
+    });
+    expect(ignoredEntry?.bytes).toBeGreaterThan(0);
+    expect(reviewableEntry).toMatchObject({
+      path: reviewablePath,
+      ignored: false,
+    });
+    expect(reviewableEntry?.bytes).toBeGreaterThan(0);
   });
 });
 
@@ -248,5 +279,40 @@ describe("oversized-diff detection (the gate's actual purpose)", () => {
     const { filteredText } = filterForReview(blocks);
     const reviewableBytes = Buffer.byteLength(filteredText, "utf8");
     expect(reviewableBytes).toBeLessThan(SOFT_TARGET_BYTES);
+  });
+});
+
+describe("CLI --json perFile breakdown (F24)", () => {
+  test("emits a perFile array of {path, bytes, ignored} for a fixed commit range", () => {
+    const stdout = execFileSync(
+      "node",
+      [scriptPath, "--json", "--base", FIXED_BASE, "--head", FIXED_HEAD],
+      { encoding: "utf8" },
+    );
+    const payload = JSON.parse(stdout) as {
+      perFile: { path: string; bytes: number; ignored: boolean }[];
+    };
+
+    expect(Array.isArray(payload.perFile)).toBe(true);
+    expect(payload.perFile.length).toBeGreaterThan(1);
+    for (const entry of payload.perFile) {
+      expect(typeof entry.path).toBe("string");
+      expect(entry.bytes).toBeGreaterThan(0);
+      expect(typeof entry.ignored).toBe("boolean");
+    }
+
+    const docsEntry = payload.perFile.find(
+      (f) => f.path === "docs/plans/IMPLEMENTATION.md",
+    );
+    expect(docsEntry?.ignored).toBe(true);
+    const reviewableEntry = payload.perFile.find(
+      (f) => f.path === "bin/gen-project-hub.mjs",
+    );
+    expect(reviewableEntry?.ignored).toBe(false);
+
+    // Descending by bytes, matching the human-mode top-5 sort.
+    const bytesInOrder = payload.perFile.map((f) => f.bytes);
+    const sortedDescending = [...bytesInOrder].sort((a, b) => b - a);
+    expect(bytesInOrder).toEqual(sortedDescending);
   });
 });
