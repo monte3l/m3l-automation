@@ -50,6 +50,7 @@
     "check:script-scaffold": "node bin/check-script-scaffold.mjs",
     "check:script-docs": "node bin/check-script-docs.mjs",
     "check:script-deps": "node bin/check-script-deps.mjs",
+    "check:cli-scaffold": "node bin/check-cli-scaffold.mjs",
     "scaffold:script": "node bin/scaffold-script.mjs",
     "check:agents": "node bin/check-agents.mjs",
     "check:hooks": "node bin/check-hooks.mjs",
