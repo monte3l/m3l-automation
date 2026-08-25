@@ -1,6 +1,4 @@
-import { execFileSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import {
   SOFT_TARGET_BYTES,
   filterForReview,
@@ -10,17 +8,7 @@ import {
   splitDiffByFile,
   suggestSplitAxis,
 } from "../../bin/check-review-size.mjs";
-
-const scriptPath = fileURLToPath(
-  new URL("../check-review-size.mjs", import.meta.url),
-);
-
-// A fixed, already-merged commit range (PR #639) that mixes reviewable
-// bin/**/*.mjs|*.ts files with one ignored docs/plans/IMPLEMENTATION.md
-// file — deterministic regardless of when this test runs, unlike the live
-// working tree's diff.
-const FIXED_BASE = "85846a698f29615743832810b4474c2eec6d5c18";
-const FIXED_HEAD = "d82e052026ce8e23962a97a21382f381767217f3";
+import { createReporter } from "../lib/report.mjs";
 
 /** Build a single-file unified diff block's text (no trailing newline). */
 function makeDiffText(path: string, hunkBodyLines: string[]): string {
@@ -283,30 +271,47 @@ describe("oversized-diff detection (the gate's actual purpose)", () => {
 });
 
 describe("CLI --json perFile breakdown (F24)", () => {
-  test("emits a perFile array of {path, bytes, ignored} for a fixed commit range", () => {
-    const stdout = execFileSync(
-      "node",
-      [scriptPath, "--json", "--base", FIXED_BASE, "--head", FIXED_HEAD],
-      { encoding: "utf8" },
+  // Reproduces the CLI body's sort + reporter.finish() wiring
+  // (bin/check-review-size.mjs's top-level `if (process.argv[1] === ...)`
+  // block, which is not exported) purely in-process, from a fixture diff
+  // string — no subprocess, no filesystem, no real git history, so this
+  // stays a true unit test and cannot break on CI's shallow clone.
+  test("perFile flows through reporter.finish() sorted descending by bytes, with ignored flags intact", () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const ignoredText = makeDiffText("docs/notes.md", ["+doc change"]);
+    const reviewableTextSmall = makeDiffText("bin/small.mjs", ["+a"]);
+    const reviewableTextBig = makeDiffText(
+      "bin/big.mjs",
+      Array.from({ length: 20 }, (_, i) => `+line ${i}`),
     );
-    const payload = JSON.parse(stdout) as {
-      perFile: { path: string; bytes: number; ignored: boolean }[];
-    };
+    const blocks = splitDiffByFile(
+      [ignoredText, reviewableTextSmall, reviewableTextBig].join("\n"),
+    );
+    const { filteredText, perFile } = filterForReview(blocks);
+    const reviewableBytes = Buffer.byteLength(filteredText, "utf8");
+    const sortedPerFile = [...perFile].sort((a, b) => b.bytes - a.bytes);
 
-    expect(Array.isArray(payload.perFile)).toBe(true);
-    expect(payload.perFile.length).toBeGreaterThan(1);
+    const reporter = createReporter(true);
+    reporter.succeed("Reviewable diff: fixture run.");
+    const payload = reporter.finish({
+      reviewableBytes,
+      maxReviewableBytes: 300_000,
+      base: "fixture-base",
+      head: "fixture-head",
+      perFile: sortedPerFile,
+    }) as { perFile: { path: string; bytes: number; ignored: boolean }[] };
+
+    expect(payload.perFile).toHaveLength(3);
     for (const entry of payload.perFile) {
       expect(typeof entry.path).toBe("string");
       expect(entry.bytes).toBeGreaterThan(0);
       expect(typeof entry.ignored).toBe("boolean");
     }
 
-    const docsEntry = payload.perFile.find(
-      (f) => f.path === "docs/plans/IMPLEMENTATION.md",
-    );
+    const docsEntry = payload.perFile.find((f) => f.path === "docs/notes.md");
     expect(docsEntry?.ignored).toBe(true);
     const reviewableEntry = payload.perFile.find(
-      (f) => f.path === "bin/gen-project-hub.mjs",
+      (f) => f.path === "bin/small.mjs",
     );
     expect(reviewableEntry?.ignored).toBe(false);
 
@@ -314,5 +319,6 @@ describe("CLI --json perFile breakdown (F24)", () => {
     const bytesInOrder = payload.perFile.map((f) => f.bytes);
     const sortedDescending = [...bytesInOrder].sort((a, b) => b - a);
     expect(bytesInOrder).toEqual(sortedDescending);
+    expect(payload.perFile[0]?.path).toBe("bin/big.mjs");
   });
 });
