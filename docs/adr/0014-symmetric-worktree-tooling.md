@@ -95,6 +95,36 @@ documentation audit:
   uncommitted/untracked changes before removing the worktree, in addition to
   the merged-branch teardown described above.
 
+## Amendment (2026-08-25)
+
+Issue #578 (F25), filed from the F23 field test
+(`docs/logs/2026-08-21-f23-field-test-b2.md`): investigating an
+existing/abandoned branch (`origin/feat/core-procedure-engine`) had no
+supported path through `worktree:new` — it always branches fresh from main
+— and the field test fell back to a raw `git worktree add --detach <path>
+<ref>`. `worktree:new <slug> --from <ref>` makes that workaround a first-class
+command:
+
+- **Detached HEAD, not a new branch.** `--from <ref>` runs
+  `git worktree add --detach <worktreePath> <ref>` instead of branching
+  `feat/<slug>`/`fix/<slug>` from main. The use case is investigation/audit of
+  a branch you don't want to develop on; a detached checkout also sidesteps
+  git's refusal to check out a branch that's already checked out elsewhere.
+  Because no new branch is created, `--from` and `--fix` are mutually
+  exclusive — there's no branch prefix to choose between.
+- **Validated the same way as `<slug>`.** `<ref>` must resolve via
+  `git rev-parse --verify --quiet` before any worktree is created; a missing
+  or unfetched ref errors out with a suggestion to `git fetch` or check the
+  spelling, rather than failing deep inside `git worktree add`.
+- **`worktree:remove` needed no changes.** Its branch-delete step reads the
+  branch from `git worktree list --porcelain` and already skips deletion
+  when none is reported — a detached worktree tears down cleanly with the
+  existing symmetric command.
+- **The MCP wrapper (`worktreeManage` in `bin/lib/mcp-tools.mjs`) grew the
+  matching `from` parameter** on `action: "create"`, since it's the interface
+  AI agents actually use to drive worktree lifecycle, with the same
+  mutual-exclusivity and flag-injection validation as the CLI.
+
 ## Links
 
 - Supersedes / superseded by: none. **Extends ADR-0013** (git worktrees for task
@@ -102,4 +132,5 @@ documentation audit:
   adds the missing teardown half and corrects the prune framing.
 - Related: `docs/logs/2026-07-01-core-json.md` (addendum + correction);
   `bin/worktree-new.mjs`, `bin/worktree-remove.mjs`, `bin/worktree-setup.mjs`,
-  `bin/worktree-prune.mjs`.
+  `bin/worktree-prune.mjs`; `docs/logs/2026-08-21-f23-field-test-b2.md` and
+  issue #578 (the `--from <ref>` amendment above).

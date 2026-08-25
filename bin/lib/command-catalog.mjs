@@ -333,7 +333,7 @@ export const COMMAND_CATALOG = [
   {
     name: "worktree:new",
     description:
-      "Creates and provisions a linked sibling worktree in one step (git worktree add + worktree:setup) — the entry point for concurrent work in an isolated checkout. `-- <slug>` (branch feat/<slug>) or `-- <slug> --fix`.",
+      "Creates and provisions a linked sibling worktree in one step (git worktree add + worktree:setup) — the entry point for concurrent work in an isolated checkout. `-- <slug>` (branch feat/<slug>), `-- <slug> --fix`, or `-- <slug> --from <ref>` (detached HEAD at an existing ref, e.g. to investigate an abandoned branch).",
   },
   {
     name: "worktree:setup",
