@@ -8,7 +8,7 @@
         {
           "file": "packages/m3l-common/src/core/pipeline/M3LOperationPipeline.ts",
           "symbol": "M3LOperationPipeline",
-          "blob": "3403ed0db04657973abdf9258aa888dab6d4f83f"
+          "blob": "66c4316d9bbef65572bef7ae9cf94aaa84d5de94"
         },
         {
           "file": "packages/m3l-common/src/core/pipeline/types.ts",
@@ -71,7 +71,7 @@
           "blob": "c76ea8df69fa6ba2dc2afda728156bc2a0e00c25"
         }
       ],
-      "retrieved": "2026-08-19"
+      "retrieved": "2026-08-25"
     },
     {
       "heading": "The run contract",
@@ -79,10 +79,10 @@
         {
           "file": "packages/m3l-common/src/core/pipeline/M3LOperationPipeline.ts",
           "symbol": "M3LOperationPipeline",
-          "blob": "3403ed0db04657973abdf9258aa888dab6d4f83f"
+          "blob": "66c4316d9bbef65572bef7ae9cf94aaa84d5de94"
         }
       ],
-      "retrieved": "2026-08-19"
+      "retrieved": "2026-08-25"
     },
     {
       "heading": "Types",
@@ -90,7 +90,7 @@
         {
           "file": "packages/m3l-common/src/core/pipeline/M3LOperationPipeline.ts",
           "symbol": "M3LOperationPipeline",
-          "blob": "3403ed0db04657973abdf9258aa888dab6d4f83f"
+          "blob": "66c4316d9bbef65572bef7ae9cf94aaa84d5de94"
         },
         {
           "file": "packages/m3l-common/src/core/pipeline/types.ts",
@@ -148,7 +148,7 @@
           "blob": "c76ea8df69fa6ba2dc2afda728156bc2a0e00c25"
         }
       ],
-      "retrieved": "2026-08-19"
+      "retrieved": "2026-08-25"
     }
   ]
 }

@@ -51,6 +51,17 @@ function isUnknownArray(value: unknown): boolean {
 }
 
 /**
+ * The `context` key of a trace snapshot, present only when `prepare` was
+ * configured and has resolved. Composed once inside
+ * {@link M3LOperationPipeline.#runPrepareGateDispatch} — the one place that
+ * already knows whether `prepare` ran — and carried by value through
+ * {@link PrepareGateDispatchResult} and `run()` into the later phase-group
+ * methods, so none of them has to re-derive the presence rule from
+ * `this.#options`.
+ */
+type ContextTraceFragment<TContext> = { readonly context?: TContext };
+
+/**
  * The result of phases 5-7 (prepare, gate, dispatch), returned by
  * {@link M3LOperationPipeline.#runPrepareGateDispatch} so `run()` can branch
  * on a soft-landed decline without that branch itself counting against
@@ -64,6 +75,7 @@ type PrepareGateDispatchResult<TOp extends string, TResult, TContext> =
   | {
       readonly kind: "dispatched";
       readonly context: TContext;
+      readonly contextTrace: ContextTraceFragment<TContext>;
       readonly result: TResult;
     };
 
@@ -179,124 +191,69 @@ export class M3LOperationPipeline<
       this.#options.trace,
       deps.logger,
     );
-    // Every phase-running helper below receives `snapshot`/`operationForPayload`
-    // (closures over this call's own trace state) plus explicit setters,
-    // rather than reading or writing instance fields — see
-    // `#createTraceState`'s own doc and TR-17's concurrent-run proof.
-    const {
-      snapshot,
-      operationForPayload,
-      setOperation,
-      setSettings,
-      setContext,
-    } = this.#createTraceState();
 
     // Phases 1-4: accessor, operation, settings, guards.
     const { operation, settings } = await this.#runAccessorThroughGuards(
       tracer,
-      snapshot,
-      operationForPayload,
       deps,
-      setOperation,
-      setSettings,
     );
 
     // Phases 5-7: prepare, gate, dispatch.
     const prepared = await this.#runPrepareGateDispatch(
       tracer,
-      snapshot,
-      operationForPayload,
       operation,
       settings,
       deps,
-      setContext,
     );
     if (prepared.kind === "declined") return prepared.outcome;
-    const { result } = prepared;
+    const { contextTrace, result } = prepared;
 
     // Phases 8-9: persist, then finalize.
     await this.#runPersistAndFinalize(
       tracer,
-      snapshot,
-      operationForPayload,
-      result,
-      settings,
-      deps,
       operation,
+      settings,
+      contextTrace,
+      result,
+      deps,
     );
 
     // Phases 10-11: recovery, then outcome.
     return await this.#runRecoveryAndOutcome(
       tracer,
-      snapshot,
-      operationForPayload,
-      result,
-      settings,
-      deps,
       operation,
+      settings,
+      contextTrace,
+      result,
+      deps,
     );
   }
 
   /**
-   * Builds this call's per-run trace state bundle: the mutable
-   * `knownOperation`/`knownSettings`/`knownContext` slots (never written to
-   * `this`), the `snapshot`/`operationForPayload` closures every
-   * phase-running helper reads, and the setters that update them as each
-   * phase resolves a new value. A fresh bundle is returned on every call —
-   * nothing here is shared across `run()` invocations, preserving the
-   * engine's statelessness across runs and safety under concurrent `run()`
-   * calls (TR-17).
-   */
-  #createTraceState(): {
-    readonly snapshot: () => M3LPipelineTraceSnapshot<TOp, TSettings, TContext>;
-    readonly operationForPayload: () => TOp | undefined;
-    readonly setOperation: (operation: TOp) => void;
-    readonly setSettings: (settings: TSettings) => void;
-    readonly setContext: (context: TContext) => void;
-  } {
-    let knownOperation: TOp | undefined;
-    let knownSettings: TSettings | undefined;
-    // Only ever read when `contextKnown` is true — the placeholder cast
-    // mirrors the type-system-guaranteed `undefined as TContext` pattern
-    // used inside `#runPrepareGateDispatch` for the no-`prepare` case.
-    let knownContext: TContext = undefined as TContext;
-    let contextKnown = false;
-
-    return {
-      snapshot: () => ({
-        ...(knownOperation !== undefined ? { operation: knownOperation } : {}),
-        ...(knownSettings !== undefined ? { settings: knownSettings } : {}),
-        ...(contextKnown ? { context: knownContext } : {}),
-      }),
-      operationForPayload: () => knownOperation,
-      setOperation: (operation) => {
-        knownOperation = operation;
-      },
-      setSettings: (settings) => {
-        knownSettings = settings;
-      },
-      setContext: (context) => {
-        knownContext = context;
-        contextKnown = true;
-      },
-    };
-  }
-
-  /**
-   * Phases 1-4: accessor, operation, settings, guards. `setOperation` and
-   * `setSettings` update `run()`'s own per-call-frame trace state as each
-   * value resolves — this method carries no state of its own beyond its
-   * local `accessor`.
+   * Phases 1-4: accessor, operation, settings, guards. Self-contained: builds
+   * its own local `knownOperation`/`knownSettings` trace-state slots and the
+   * `snapshot`/`operationForPayload` closures that read them, rather than
+   * threading a writeback callback in from `run()`. `context` is never known
+   * during these phases, so this method's own snapshot never includes that
+   * key.
    */
   async #runAccessorThroughGuards(
     tracer: M3LPipelinePhaseTracer<TOp, TSettings, TContext>,
-    snapshot: () => M3LPipelineTraceSnapshot<TOp, TSettings, TContext>,
-    operationForPayload: () => TOp | undefined,
     deps: TDeps,
-    setOperation: (operation: TOp) => void,
-    setSettings: (settings: TSettings) => void,
   ): Promise<{ readonly operation: TOp; readonly settings: TSettings }> {
     const options = this.#options;
+
+    let knownOperation: TOp | undefined;
+    let knownSettings: TSettings | undefined;
+    const snapshot = (): M3LPipelineTraceSnapshot<
+      TOp,
+      TSettings,
+      TContext
+    > => ({
+      ...(knownOperation !== undefined ? { operation: knownOperation } : {}),
+      ...(knownSettings !== undefined ? { settings: knownSettings } : {}),
+    });
+    const operationForPayload = (): TOp | undefined => knownOperation;
 
     const accessor = await tracer.run(
       "accessor",
@@ -309,17 +266,17 @@ export class M3LOperationPipeline<
         }),
     );
 
-    // `knownOperation` (via `setOperation`) is set inside the traced body so
-    // this phase's own EXIT payload can carry it, even though it was absent
-    // from this same phase's ENTRY snapshot (docs/reference/core/pipeline.md
-    // § Tracing's asymmetry, TR-5).
+    // `knownOperation` is set inside the traced body so this phase's own EXIT
+    // payload can carry it, even though it was absent from this same phase's
+    // ENTRY snapshot (docs/reference/core/pipeline.md § Tracing's asymmetry,
+    // TR-5).
     const operation = await tracer.run(
       "operation",
       snapshot,
       operationForPayload,
       () => {
         const resolved = accessor.oneOf("operation", options.operations);
-        setOperation(resolved);
+        knownOperation = resolved;
         return resolved;
       },
     );
@@ -330,7 +287,7 @@ export class M3LOperationPipeline<
       operationForPayload,
       async () => {
         const resolved = await options.resolveSettings(accessor, operation);
-        setSettings(resolved);
+        knownSettings = resolved;
         return resolved;
       },
     );
@@ -346,18 +303,25 @@ export class M3LOperationPipeline<
    * Phases 5-7: prepare, gate, dispatch. Returns a `"declined"` result (the
    * gate soft-landed) or a `"dispatched"` result carrying `context` and the
    * handler's `result`, so `run()` can branch without that branch counting
-   * against its own size. `setContext` updates `run()`'s per-call-frame trace
-   * state the same way `#runAccessorThroughGuards`'s setters do.
+   * against its own size. Self-contained: `operation`/`settings` are fixed
+   * parameters (unconditionally present in this method's own snapshot), and
+   * only `context` needs a local mutable trace-state slot, populated inside
+   * the `prepare` branch before that phase's traced body returns.
    */
   async #runPrepareGateDispatch(
     tracer: M3LPipelinePhaseTracer<TOp, TSettings, TContext>,
-    snapshot: () => M3LPipelineTraceSnapshot<TOp, TSettings, TContext>,
-    operationForPayload: () => TOp | undefined,
     operation: TOp,
     settings: TSettings,
     deps: TDeps,
-    setContext: (context: TContext) => void,
   ): Promise<PrepareGateDispatchResult<TOp, TResult, TContext>> {
+    let contextTrace: ContextTraceFragment<TContext> = {};
+    const snapshot = (): M3LPipelineTraceSnapshot<
+      TOp,
+      TSettings,
+      TContext
+    > => ({ operation, settings, ...contextTrace });
+    const operationForPayload = (): TOp | undefined => operation;
+
     // Only when configured; an unconfigured `prepare` contributes no trace
     // entry (TR-3). M3LOperationPipelineOptions makes `prepare` required
     // whenever TContext is not `undefined` (a conditional type keyed on
@@ -368,7 +332,7 @@ export class M3LOperationPipeline<
     const context = prepare
       ? await tracer.run("prepare", snapshot, operationForPayload, async () => {
           const resolved = await prepare(operation, settings, deps);
-          setContext(resolved);
+          contextTrace = { context: resolved };
           return resolved;
         })
       : (undefined as TContext);
@@ -399,7 +363,27 @@ export class M3LOperationPipeline<
       operationForPayload,
       () => this.#dispatch(operation, settings, context, deps),
     );
-    return { kind: "dispatched", context, result };
+    return { kind: "dispatched", context, contextTrace, result };
+  }
+
+  /**
+   * Builds the shared `snapshot`/`operationForPayload` closures for the two
+   * post-dispatch phase groups (persist/finalize and recovery/outcome), both
+   * of which see the same fully-resolved `operation`/`settings`/`contextTrace`
+   * and never mutate them.
+   */
+  #dispatchedSnapshot(
+    operation: TOp,
+    settings: TSettings,
+    contextTrace: ContextTraceFragment<TContext>,
+  ): {
+    readonly snapshot: () => M3LPipelineTraceSnapshot<TOp, TSettings, TContext>;
+    readonly operationForPayload: () => TOp | undefined;
+  } {
+    return {
+      snapshot: () => ({ operation, settings, ...contextTrace }),
+      operationForPayload: () => operation,
+    };
   }
 
   /**
@@ -408,16 +392,25 @@ export class M3LOperationPipeline<
    * result on disk. Each runs (and traces) only when configured; every
    * argument is threaded through explicitly rather than read off `this` or a
    * closure, so no per-run state escapes `run()`'s own call frame.
+   * Self-contained: builds its snapshot/operationForPayload closures via
+   * {@link M3LOperationPipeline.#dispatchedSnapshot} from its fixed
+   * parameters — a declined gate returns early out of `run()` before this
+   * method runs.
    */
   async #runPersistAndFinalize(
     tracer: M3LPipelinePhaseTracer<TOp, TSettings, TContext>,
-    snapshot: () => M3LPipelineTraceSnapshot<TOp, TSettings, TContext>,
-    operationForPayload: () => TOp | undefined,
-    result: TResult,
-    settings: TSettings,
-    deps: TDeps,
     operation: TOp,
+    settings: TSettings,
+    contextTrace: ContextTraceFragment<TContext>,
+    result: TResult,
+    deps: TDeps,
   ): Promise<void> {
+    const { snapshot, operationForPayload } = this.#dispatchedSnapshot(
+      operation,
+      settings,
+      contextTrace,
+    );
+
     const persist = this.#options.persist;
     if (persist) {
       await tracer.run("persist", snapshot, operationForPayload, () =>
@@ -444,16 +437,25 @@ export class M3LOperationPipeline<
    * The `recovery` key is intentionally omitted (not set to undefined) so
    * `Object.hasOwn(outcome, "recovery") === false` on a completed run
    * (`exactOptionalPropertyTypes` requires absence, not explicit undefined).
+   *
+   * Self-contained: builds its snapshot/operationForPayload closures via
+   * {@link M3LOperationPipeline.#dispatchedSnapshot} from its fixed
+   * parameters.
    */
   async #runRecoveryAndOutcome(
     tracer: M3LPipelinePhaseTracer<TOp, TSettings, TContext>,
-    snapshot: () => M3LPipelineTraceSnapshot<TOp, TSettings, TContext>,
-    operationForPayload: () => TOp | undefined,
-    result: TResult,
-    settings: TSettings,
-    deps: TDeps,
     operation: TOp,
+    settings: TSettings,
+    contextTrace: ContextTraceFragment<TContext>,
+    result: TResult,
+    deps: TDeps,
   ): Promise<M3LOperationPipelineOutcome<TOp, TResult>> {
+    const { snapshot, operationForPayload } = this.#dispatchedSnapshot(
+      operation,
+      settings,
+      contextTrace,
+    );
+
     const recovery = this.#options.recovery;
     if (recovery) {
       const recoveryEntries = await tracer.run(
