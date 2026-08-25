@@ -24,6 +24,7 @@ interface Deps extends Core.M3LOperationPipelineBaseDeps {
   readonly paths: Core.M3LPaths;
   readonly correlationId: string;
   readonly operations: AWS.M3LECSOperations;
+  readonly signal?: AbortSignal;
 }
 
 /** The union of result shapes any dispatched operation can resolve. */
@@ -317,6 +318,7 @@ async function dispatchWait(
     cluster,
     services,
     maxWaitTime: raw.maxWaitTime,
+    ...(deps.signal !== undefined && { signal: deps.signal }),
   });
 }
 

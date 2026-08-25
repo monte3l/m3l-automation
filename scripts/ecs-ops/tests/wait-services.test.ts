@@ -102,12 +102,59 @@ describe("type contract", () => {
     ).returns.resolves.toEqualTypeOf<AWS.M3LECSWaiterResult>();
   });
 
-  test("waitServices's deps shape is exactly operations/cluster/services/maxWaitTime", () => {
+  test("waitServices's deps shape is exactly operations/cluster/services/maxWaitTime/signal", () => {
     expectTypeOf<Parameters<typeof waitServices>[0]>().toEqualTypeOf<{
       readonly operations: AWS.M3LECSOperations;
       readonly cluster: string;
       readonly services: readonly string[];
       readonly maxWaitTime: number | undefined;
+      readonly signal?: AbortSignal;
     }>();
+  });
+});
+
+describe("waitServices signal forwarding (ADR-0049 cooperative cancellation)", () => {
+  test("forwards deps.signal into the options object when supplied", async () => {
+    const waitUntilServicesStable = vi
+      .fn()
+      .mockResolvedValue({ state: "SUCCESS" });
+    const operations = createFakeEcsOperations({ waitUntilServicesStable });
+    const controller = new AbortController();
+
+    await waitServices({
+      operations,
+      cluster: "my-cluster",
+      services: ["svc-a"],
+      maxWaitTime: undefined,
+      signal: controller.signal,
+    });
+
+    const call = waitUntilServicesStable.mock.calls[0] as [
+      string,
+      readonly string[],
+      Record<string, unknown>,
+    ];
+    expect(call[2]["signal"]).toBe(controller.signal);
+  });
+
+  test("omits signal from the options object when unset (conditional spread, exactOptionalPropertyTypes-safe)", async () => {
+    const waitUntilServicesStable = vi
+      .fn()
+      .mockResolvedValue({ state: "SUCCESS" });
+    const operations = createFakeEcsOperations({ waitUntilServicesStable });
+
+    await waitServices({
+      operations,
+      cluster: "my-cluster",
+      services: ["svc-a"],
+      maxWaitTime: undefined,
+    });
+
+    const call = waitUntilServicesStable.mock.calls[0] as [
+      string,
+      readonly string[],
+      Record<string, unknown>,
+    ];
+    expect(call[2]).not.toHaveProperty("signal");
   });
 });

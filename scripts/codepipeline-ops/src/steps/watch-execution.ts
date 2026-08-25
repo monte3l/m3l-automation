@@ -47,6 +47,7 @@ interface WatchExecutionDeps {
   readonly executionId: string;
   readonly waitMaxAttempts: number;
   readonly waitIntervalSeconds: number;
+  readonly signal?: AbortSignal;
 }
 
 const MS_PER_SECOND = 1000;
@@ -120,6 +121,7 @@ export async function watchExecution(
   const poller = new Core.M3LPoller({
     backoff: Core.M3LBackoff.constant(deps.waitIntervalSeconds * MS_PER_SECOND),
     maxAttempts: deps.waitMaxAttempts,
+    ...(deps.signal !== undefined && { signal: deps.signal }),
   });
 
   let response;

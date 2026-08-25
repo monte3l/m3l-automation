@@ -55,6 +55,7 @@ await Core.runScript(
       logger: script.logger,
       client,
       paths,
+      signal: script.signal,
     });
   },
   { dryRun },

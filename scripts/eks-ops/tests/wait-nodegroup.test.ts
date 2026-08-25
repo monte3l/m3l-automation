@@ -90,6 +90,52 @@ describe("waitNodegroup — returns every terminal state unchanged, never throwi
   );
 });
 
+describe("waitNodegroup — signal forwarding", () => {
+  test("forwards deps.signal into the waiter options when supplied", async () => {
+    const result: AWS.M3LEKSWaiterResult = { state: "SUCCESS" };
+    const waitUntilNodegroupActive = vi.fn().mockResolvedValue(result);
+    const operations = createFakeEKSOperations({ waitUntilNodegroupActive });
+    const controller = new AbortController();
+
+    await waitNodegroup({
+      operations,
+      operation: "wait-nodegroup-active",
+      cluster: "my-cluster",
+      nodegroup: "my-nodegroup",
+      maxWaitTime: 600,
+      signal: controller.signal,
+    });
+
+    expect(waitUntilNodegroupActive).toHaveBeenCalledWith(
+      "my-cluster",
+      "my-nodegroup",
+      { maxWaitTime: 600, signal: controller.signal },
+    );
+  });
+
+  test("omits the signal key from the waiter options when not supplied", async () => {
+    const result: AWS.M3LEKSWaiterResult = { state: "SUCCESS" };
+    const waitUntilNodegroupActive = vi.fn().mockResolvedValue(result);
+    const operations = createFakeEKSOperations({ waitUntilNodegroupActive });
+
+    await waitNodegroup({
+      operations,
+      operation: "wait-nodegroup-active",
+      cluster: "my-cluster",
+      nodegroup: "my-nodegroup",
+      maxWaitTime: 600,
+    });
+
+    const [, , options] = waitUntilNodegroupActive.mock.calls[0] as [
+      string,
+      string,
+      Record<string, unknown>,
+    ];
+    expect(options).toEqual({ maxWaitTime: 600 });
+    expect(Object.hasOwn(options, "signal")).toBe(false);
+  });
+});
+
 describe("type contract", () => {
   test("waitNodegroup resolves M3LEKSWaiterResult", () => {
     expectTypeOf(

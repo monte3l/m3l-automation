@@ -19,6 +19,8 @@ export interface WaitClusterDeps {
   readonly cluster: string;
   /** Seconds bounding the wait. */
   readonly maxWaitTime: number;
+  /** Cooperative-cancellation signal (ADR-0049), forwarded to the waiter. */
+  readonly signal?: AbortSignal;
 }
 
 /**
@@ -51,9 +53,11 @@ export function waitCluster(
   if (deps.operation === "wait-cluster-active") {
     return deps.operations.waitUntilClusterActive(deps.cluster, {
       maxWaitTime: deps.maxWaitTime,
+      ...(deps.signal !== undefined && { signal: deps.signal }),
     });
   }
   return deps.operations.waitUntilClusterDeleted(deps.cluster, {
     maxWaitTime: deps.maxWaitTime,
+    ...(deps.signal !== undefined && { signal: deps.signal }),
   });
 }

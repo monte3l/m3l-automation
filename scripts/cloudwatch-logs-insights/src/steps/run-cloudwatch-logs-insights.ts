@@ -69,6 +69,15 @@ interface WindowDeps {
    * array and the batch `export-results` step.
    */
   readonly writer?: Core.M3LListExporterStreamWriter<LogsInsightsRow>;
+  /**
+   * Cooperative-cancellation signal (ADR-0049), forwarded to
+   * {@link awaitAndAccumulate}'s `client.awaitResults` call only —
+   * `startOrReattachQuery`'s `startQuery` call is out of scope. `undefined`
+   * when the caller supplied none; `awaitResults` is always called with an
+   * options object, which only carries a `signal` key when one was supplied
+   * (never `signal: undefined`).
+   */
+  readonly signal?: AbortSignal;
 }
 
 /**
@@ -159,7 +168,9 @@ async function awaitAndAccumulate(args: {
 
   let result: AWS.LogsInsightsQueryResult;
   try {
-    result = await deps.client.awaitResults(queryId);
+    result = await deps.client.awaitResults(queryId, {
+      ...(deps.signal !== undefined && { signal: deps.signal }),
+    });
   } catch (cause) {
     deps.logger.error(
       `cloudwatch-logs-insights aborted at window ${String(index)} of ${String(totalWindows)}`,
@@ -234,7 +245,7 @@ interface RemainingWindowsResult {
  * Runs every window from `initial.completedWindows` through the end of
  * `windows`, accumulating rows (CSV) or streaming them (JSON, via
  * `deps.writer`) in place. Extracted from {@link runCloudwatchLogsInsights}
- * to keep that function within the module's line-count budget.
+ * to keep that function within ESLint's `max-lines-per-function` ceiling.
  */
 async function runRemainingWindows(args: {
   readonly deps: WindowDeps;
@@ -421,7 +432,7 @@ async function finalizeExport(args: {
  * close-failure attribution rules. `csv` never opens a writer, so there is
  * nothing to close mid-run; its one batch `export()` call happens later, in
  * `finalizeExport`. Extracted from {@link runCloudwatchLogsInsights} to keep
- * that function within the module's line-count budget.
+ * that function within ESLint's `max-lines-per-function` ceiling.
  */
 async function runWindowsWithWriterCleanup(args: {
   readonly deps: WindowDeps;
@@ -451,14 +462,74 @@ async function runWindowsWithWriterCleanup(args: {
 }
 
 /**
+ * Builds the {@link WindowDeps} bag the window helpers read, narrowing from
+ * `runCloudwatchLogsInsights`'s top-level `deps` plus the two values it
+ * derives (`checkpointStore`, `writer`) before this call.
+ */
+function buildWindowDeps(args: {
+  readonly logger: Core.M3LLogger;
+  readonly client: AWS.M3LLogsInsightsClient;
+  readonly checkpointStore: Core.M3LCheckpointStore<LogsInsightsCheckpoint>;
+  readonly writer:
+    Core.M3LListExporterStreamWriter<LogsInsightsRow> | undefined;
+  readonly signal: AbortSignal | undefined;
+}): WindowDeps {
+  const { logger, client, checkpointStore, writer, signal } = args;
+  return {
+    logger,
+    client,
+    checkpointStore,
+    ...(writer !== undefined && { writer }),
+    ...(signal !== undefined && { signal }),
+  };
+}
+
+/**
+ * Builds the window-phase deps (via {@link buildWindowDeps}) and runs every
+ * remaining window (via {@link runWindowsWithWriterCleanup}). Extracted to
+ * keep `runCloudwatchLogsInsights` within ESLint's `max-lines-per-function`
+ * ceiling.
+ */
+async function runWindowsPhase(args: {
+  readonly logger: Core.M3LLogger;
+  readonly client: AWS.M3LLogsInsightsClient;
+  readonly signal: AbortSignal | undefined;
+  readonly checkpointStore: Core.M3LCheckpointStore<LogsInsightsCheckpoint>;
+  readonly writer:
+    Core.M3LListExporterStreamWriter<LogsInsightsRow> | undefined;
+  readonly settings: LogsInsightsRunSettings;
+  readonly windows: readonly LogsInsightsTimeWindow[];
+  readonly initial: LogsInsightsCheckpoint;
+}): Promise<RemainingWindowsResult> {
+  const {
+    logger,
+    client,
+    signal,
+    checkpointStore,
+    writer,
+    settings,
+    windows,
+    initial,
+  } = args;
+  return runWindowsWithWriterCleanup({
+    deps: buildWindowDeps({ logger, client, checkpointStore, writer, signal }),
+    settings,
+    windows,
+    initial,
+    writer,
+    logger,
+  });
+}
+
+/**
  * Runs the `cloudwatch-logs-insights` orchestration: resolves settings, plans time
  * windows, executes each remaining window's query (checkpointing before and
  * after every poll), and finalizes the output — a streamed JSON writer close
  * or a batch CSV export, see this module's doc comment.
  *
  * @param deps - The resolved `config`, a `logger`, the injected
- *   `AWS.M3LLogsInsightsClient`, and `M3LPaths` for checkpoint/output
- *   resolution.
+ *   `AWS.M3LLogsInsightsClient`, `M3LPaths` for checkpoint/output resolution,
+ *   and an optional cooperative-cancellation `signal`.
  * @returns The run summary (windows completed, rows exported).
  * @throws {@link Core.M3LError} (via {@link resolveSettings}) when `start`/
  *   `end` fail to parse (the `start < end` ordering constraint is enforced
@@ -495,6 +566,11 @@ export async function runCloudwatchLogsInsights(deps: {
   readonly logger: Core.M3LLogger;
   readonly client: AWS.M3LLogsInsightsClient;
   readonly paths: Core.M3LPaths;
+  /**
+   * Cooperative-cancellation signal (ADR-0049), forwarded internally to the
+   * window-processing helpers' `awaitResults` call.
+   */
+  readonly signal?: AbortSignal;
 }): Promise<LogsInsightsRunSummary> {
   const settings = resolveSettings(deps.config);
   const windows = planTimeWindows(
@@ -531,19 +607,15 @@ export async function runCloudwatchLogsInsights(deps: {
     initial,
   });
 
-  const windowDeps: WindowDeps = {
+  const result = await runWindowsPhase({
     logger: deps.logger,
     client: deps.client,
+    signal: deps.signal,
     checkpointStore,
-    ...(writer !== undefined && { writer }),
-  };
-  const result = await runWindowsWithWriterCleanup({
-    deps: windowDeps,
+    writer,
     settings,
     windows,
     initial,
-    writer,
-    logger: deps.logger,
   });
 
   const rowsExported = await finalizeExport({

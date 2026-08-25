@@ -1215,6 +1215,76 @@ describe("runDynamodbCrud — the production retry-classifier composition actual
   });
 });
 
+describe("runDynamodbCrud — cooperative cancellation via deps.signal (ADR-0049)", () => {
+  /**
+   * `Core.M3LRetryRunner` checks `signal.aborted` before its first attempt
+   * AND as the first action inside `catch` — before the classifier runs —
+   * so an already-aborted signal always wins over "is this retriable" (see
+   * `packages/m3l-common/src/core/polling/M3LRetryRunner.ts`). `dispatchBatch`
+   * is expected to forward `deps.signal` into the `Core.M3LRetryRunner`
+   * constructor it builds for `batch-write-table`; until it does, this
+   * signal is silently ignored and the real (unmocked) retry runner runs the
+   * batch to a normal success, so this proves the wiring rather than
+   * `M3LRetryRunner`'s own abort behavior (already covered in
+   * `packages/m3l-common/tests/polling.test.ts`).
+   */
+  test("'batch-write' rejects with M3LOperationAbortedError, never calling AWS.batchWriteItems, when the signal is already aborted", async () => {
+    stubInputFile(['{"id":"1"}', '{"id":"2"}'].join("\n"));
+    batchWriteItemsMock.mockImplementation((_client, _table, items) =>
+      Promise.resolve({ written: items.length, unprocessed: [] }),
+    );
+    const controller = new AbortController();
+    controller.abort();
+    const deps = {
+      ...buildDeps({
+        ...BASE_CONFIG,
+        operation: "batch-write",
+        input: "in.jsonl",
+      }),
+      signal: controller.signal,
+    };
+
+    let thrown: unknown;
+    try {
+      await runDynamodbCrud(deps);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(Core.M3LOperationAbortedError);
+    expect(batchWriteItemsMock).not.toHaveBeenCalled();
+  });
+
+  /**
+   * `dispatchSingleItem`/`dispatchScan` never construct an
+   * `M3LRetryRunner` themselves and are out of scope for #481's
+   * `dynamodb-crud` retrofit — only `dispatchBatch` forwards `signal`. A
+   * `get` on an already-aborted signal must therefore still resolve
+   * normally: this pins that the cancellation seam is scoped to the batch
+   * family and does not accidentally leak into the single-item path.
+   */
+  test("'get' ignores an already-aborted signal and still resolves normally (out of scope for #481's batch-only retrofit)", async () => {
+    stubWriteFile();
+    getItemMock.mockResolvedValue({ id: "42" });
+    const controller = new AbortController();
+    controller.abort();
+    const deps = {
+      ...buildDeps({
+        ...BASE_CONFIG,
+        operation: "get",
+        key: JSON.stringify({ id: "42" }),
+        output: "out.jsonl",
+      }),
+      signal: controller.signal,
+    };
+
+    const summary = await runDynamodbCrud(deps);
+
+    expect(summary).toEqual({ read: 1, written: 0, failed: 0, skipped: 0 });
+    expect(getItemMock).toHaveBeenCalled();
+  });
+});
+
 describe("type contract", () => {
   test("RunDynamodbCrudSummary's four fields are numbers and runDynamodbCrud resolves it", () => {
     expectTypeOf<RunDynamodbCrudSummary["read"]>().toBeNumber();

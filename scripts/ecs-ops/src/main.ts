@@ -53,6 +53,7 @@ await Core.runScript(
       correlationId: getCorrelationId(),
       operations: new AWS.M3LECSOperations(aws.clients.ecs),
       prompt: script.prompt,
+      signal: script.signal,
     });
   },
   { dryRun },

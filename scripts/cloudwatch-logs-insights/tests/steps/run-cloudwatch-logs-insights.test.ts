@@ -282,6 +282,58 @@ describe("runCloudwatchLogsInsights — happy path", () => {
     expect(exportResultsMock).not.toHaveBeenCalled();
 
     expect(summary).toEqual({ windowsCompleted: 2, rowsExported: 2 });
+
+    // No signal was supplied to runCloudwatchLogsInsights, so the options
+    // object passed to awaitResults contains no `signal` key — it is empty.
+    expect(client.awaitResults).toHaveBeenNthCalledWith(1, "query-0", {});
+    expect(client.awaitResults).toHaveBeenNthCalledWith(2, "query-1", {});
+  });
+});
+
+/**
+ * Contract: ADR-0049's cooperative-cancellation seam. When the caller
+ * supplies `deps.signal`, it must reach `client.awaitResults` as
+ * `{ signal }` (a 2nd argument) so an in-flight poll can be aborted via
+ * Ctrl-C/SIGTERM. The implementation always passes an options object to
+ * `awaitResults`, built via the same conditional-spread idiom used at every
+ * other signal-forwarding site in this retrofit — the object contains the
+ * `signal` key only when `deps.signal` was supplied, and is otherwise empty
+ * (`{}`, see the "no signal" assertion above). `startOrReattachQuery`'s
+ * separate `startQuery` call is explicitly out of scope for this change and
+ * is not asserted here.
+ */
+describe("runCloudwatchLogsInsights — cooperative cancellation (signal)", () => {
+  it("threads deps.signal through to awaitResults as { signal } when supplied", async () => {
+    const client = buildClient();
+    client.startQuery.mockResolvedValue("query-signal-1");
+    client.awaitResults.mockResolvedValue({
+      queryId: "query-signal-1",
+      status: "Complete",
+      rows: [],
+    });
+
+    const config = buildConfig({
+      ...BASE_VALUES,
+      start: "2026-07-01T00:00:00Z",
+      end: "2026-07-01T01:00:00Z", // 1 window
+      resume: false,
+    });
+    const logger = new Core.M3LLogger([]);
+    const paths = buildPaths();
+    const controller = new AbortController();
+
+    await runCloudwatchLogsInsights({
+      config,
+      logger,
+      client: asClient(client),
+      paths,
+      signal: controller.signal,
+    });
+
+    expect(client.awaitResults).toHaveBeenCalledTimes(1);
+    expect(client.awaitResults).toHaveBeenCalledWith("query-signal-1", {
+      signal: controller.signal,
+    });
   });
 });
 
