@@ -125,6 +125,52 @@ command:
   AI agents actually use to drive worktree lifecycle, with the same
   mutual-exclusivity and flag-injection validation as the CLI.
 
+## Amendment (2026-08-25) — squash-merge-aware staleness
+
+`pnpm worktree:prune` was reporting "No stale worktrees to prune." for
+worktrees whose branch had already landed and whose `git worktree list` entry
+was still present. Root cause: the original prune predicate above (`branch
+--merged main` or `prunable`) is an **ancestry** test, and this repo lands
+PRs by squash merge — verified against PRs #650/#649/#647, whose head commits
+are not ancestors of `main` after merge (`main` carries only the squashed
+replacement commit). `git branch --merged main` therefore never contains a
+squash- or rebase-merged branch's tip, so `merged` was permanently `false`
+for the common case and `prunable` only fires once the directory is already
+gone by hand. The prune script was doing exactly what this ADR originally
+specified; the specification itself was blind to the repo's actual merge
+style.
+
+The staleness predicate (`bin/lib/worktree-prune.mjs`, consumed by
+`bin/worktree-prune.mjs`) now checks four signals, any one of which makes a
+worktree a candidate:
+
+- **`merged`** — unchanged: `git branch --merged main` (still catches a true
+  merge-commit or fast-forward landing).
+- **`upstream gone`** — the branch's upstream tracking ref reports `[gone]`,
+  the marker GitHub's `deleteBranchOnMerge` leaves behind after **any** merge
+  style once the local remote-tracking refs are current. A branch that was
+  never pushed has no upstream and can never report `[gone]`, so this cannot
+  misfire on in-progress work.
+- **`detached at merged commit`** — a `--from <ref>` detached worktree (see
+  the `--from` amendment above) whose HEAD is itself an ancestor of `main`.
+  The original predicate could never match a detached worktree at all
+  (`branch` is `null` for one), so this closes that gap too.
+- **`prunable`** — unchanged: git's own directory-gone signal.
+
+Because `[gone]` only updates on a pruning fetch, `worktree:prune` now runs
+`git fetch --prune` **by default** (both for a real run and `--dry-run`, so
+the preview matches reality) before classifying. `--no-fetch` skips it for
+offline use; a failed fetch is a warning, not a hard failure — classification
+continues against whatever remote-tracking state is already on disk rather
+than blocking a local cleanup tool on network access. Removal behavior is
+unchanged: `git worktree remove` (without `--force`) still refuses a dirty
+tree, and prune never deletes branches — an `upstream gone` false positive
+costs a directory, not commits.
+
+`worktreeManage` (`bin/lib/mcp-tools.mjs`) gained the matching `noFetch`
+boolean on `action: "prune"`, validated the same way `dryRun` is (rejected
+for any other action).
+
 ## Links
 
 - Supersedes / superseded by: none. **Extends ADR-0013** (git worktrees for task
@@ -132,5 +178,6 @@ command:
   adds the missing teardown half and corrects the prune framing.
 - Related: `docs/logs/2026-07-01-core-json.md` (addendum + correction);
   `bin/worktree-new.mjs`, `bin/worktree-remove.mjs`, `bin/worktree-setup.mjs`,
-  `bin/worktree-prune.mjs`; `docs/logs/2026-08-21-f23-field-test-b2.md` and
-  issue #578 (the `--from <ref>` amendment above).
+  `bin/worktree-prune.mjs`, `bin/lib/worktree-prune.mjs`;
+  `docs/logs/2026-08-21-f23-field-test-b2.md` and issue #578 (the `--from
+<ref>` amendment above).

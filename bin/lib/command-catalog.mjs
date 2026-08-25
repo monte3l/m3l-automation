@@ -348,7 +348,7 @@ export const COMMAND_CATALOG = [
   {
     name: "worktree:prune",
     description:
-      "Cleans up every worktree whose branch is already merged into main or that git reports prunable. `-- --dry-run` to preview, `-- --force` to also remove ones with uncommitted changes.",
+      "Cleans up every worktree whose branch is merged into main by ancestry, whose upstream reports [gone] (the marker left after a squash/rebase/merge-commit PR lands and the remote branch auto-deletes), a detached (--from) worktree whose HEAD is itself merged, or that git reports prunable. Refreshes remote-tracking refs first (git fetch --prune) unless `-- --no-fetch` is passed. `-- --dry-run` to preview, `-- --force` to also remove ones with uncommitted changes.",
   },
   {
     name: "spoke:recover",
