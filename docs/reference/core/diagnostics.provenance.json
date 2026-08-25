@@ -39,31 +39,31 @@
           "file": "packages/m3l-common/src/core/diagnostics/format-error.ts",
           "symbol": "M3LFormatErrorChainOptions",
           "lines": "46-62",
-          "blob": "66fa862280a781d82596bc254dc86e9d99070e1d"
+          "blob": "3803a4dc64ea2e3d38a67913731136e1247a118f"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/format-error.ts",
           "symbol": "M3LSerializedError",
           "lines": "63-267",
-          "blob": "66fa862280a781d82596bc254dc86e9d99070e1d"
+          "blob": "3803a4dc64ea2e3d38a67913731136e1247a118f"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/format-error.ts",
           "symbol": "scrubUrlsInText",
           "lines": "268-429",
-          "blob": "66fa862280a781d82596bc254dc86e9d99070e1d"
+          "blob": "3803a4dc64ea2e3d38a67913731136e1247a118f"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/format-error.ts",
           "symbol": "formatErrorChain",
           "lines": "430-475",
-          "blob": "66fa862280a781d82596bc254dc86e9d99070e1d"
+          "blob": "3803a4dc64ea2e3d38a67913731136e1247a118f"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/format-error.ts",
           "symbol": "serializeErrorChain",
           "lines": "476-489",
-          "blob": "66fa862280a781d82596bc254dc86e9d99070e1d"
+          "blob": "3803a4dc64ea2e3d38a67913731136e1247a118f"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/breadcrumbs.ts",

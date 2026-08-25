@@ -359,20 +359,28 @@ see [`diagnostics`](./diagnostics.md#public-api)):
   value legitimately contains its own `:`/`=`), and only for a non-sensitive
   outer key with a whitespace-separated pair does it additionally look for a
   swallowed, glued `innerKey=value`/`innerKey:value` pair whose own key is
-  sensitive/declared. Two narrower shapes remain deliberate, documented
-  residual limitations: a declared secret embedded in a fully **glued** value
-  chain (`url=https://x/?tenant-ref=abc`) still stays swallowed, and an inner
-  key separated from **its own** operator by whitespace too
-  (`failed: tenantRef : secret`) is not rescued — see
-  `redactSensitiveLogText`'s `@remarks` for why both are structurally
-  impossible to close further without reopening the same regression this fix
-  closed.
+  sensitive/declared. Three narrower shapes remain deliberate, documented
+  residual limitations, specifically for a _declared_ (non-heuristic) secret
+  — the built-in heuristic's own word list is additionally rescued in all
+  three by the third, embedded-word pass, which the declared-secrets port is
+  never consulted on (see `redactSensitiveLogText`'s `@remarks`): a declared
+  secret embedded in a fully **glued** value chain
+  (`url=https://x/?tenant-ref=abc`) still stays swallowed; an inner key
+  separated from **its own** operator by whitespace too
+  (`failed: tenantRef : secret`) is not rescued; and an inner pair carrying a
+  recognized auth-scheme prefix (`failed: Bearer tenantRef=secret`) is not
+  rescued either — the rescue's key class is `^`-anchored against the start
+  of the swallowed value and cannot span the space after `Bearer`/`Basic`/
+  `Digest`/`Token`. All three are structurally impossible to close further
+  without reopening the same regression this fix closed.
 - **`Date`/`Map`/`Set` data loss (fixed).** These three built-ins no longer
   collapse to `{}`. `Date` is shallow-cloned. `Map`/`Set` are now
   **recursively redacted**: a `Map`'s string-keyed entries are checked for
-  sensitivity the same way a plain object's properties are (values recursed
-  either way), and a `Set`'s elements are each recursed the same way an
-  array's elements are. An entry whose `Map` key is not a `string`, or is a
+  sensitivity the same way a plain object's properties are — a sensitive
+  entry's value is replaced wholesale, exactly as a plain object's would be,
+  never itself recursed into — and a non-sensitive entry's value is recursed
+  the same way a plain object's non-sensitive property value is. A `Set`'s
+  elements are each recursed the same way an array's elements are. An entry whose `Map` key is not a `string`, or is a
   dangerous key name (`__proto__`/`constructor`/`prototype`), is dropped
   entirely — both key and value — since a non-string key has no
   representable name to check for sensitivity and passing its value through
