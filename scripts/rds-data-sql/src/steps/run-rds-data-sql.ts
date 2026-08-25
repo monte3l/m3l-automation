@@ -1,13 +1,15 @@
 /**
  * `steps/run-rds-data-sql` — composes the pipeline: preflight the secret,
- * then dispatch on `operation` to the matching read/write step, then map
- * `load`'s partial failure onto a thrown error.
+ * then dispatch on `operation` to the matching read/write step.
  *
  * The only module that knows operation dispatch order. Business logic lives
  * here — never in `main.ts`. Per-operation dependency bags are built
  * upstream by `build-operation-deps.ts`; this module only routes to the
  * matching `run*` step and reacts to its result — see
  * `docs/reference/scripts/rds-data-sql.md`'s `run-rds-data-sql` row.
+ * `load`'s per-row failures are absorbed rather than mapped onto a thrown
+ * error here — see `run-load.ts`'s `reportRecovery` seam, which is what now
+ * surfaces them, via the run's recovery ledger.
  */
 
 import { Core, type AWS } from "@m3l-automation/m3l-common";
@@ -17,9 +19,6 @@ import { runExecute, type RunExecuteDeps } from "./run-execute.js";
 import { runLoad, type RunLoadDeps } from "./run-load.js";
 import { runMigrate, type RunMigrateDeps } from "./run-migrate.js";
 import { runQuery, type RunQueryDeps } from "./run-query.js";
-
-/** The `Core.M3LError` code {@link runRdsDataSql} throws with when `load` finishes with any row rejected to `failed.jsonl`. */
-const PARTIAL_FAILURE_CODE = "ERR_RDS_DATA_SQL_PARTIAL_FAILURE";
 
 /** The `Core.M3LError` code {@link runRdsDataSql} throws with when `deps.operation`'s matching deps bag was not supplied — a composition bug, never a user-facing config error. */
 const MISSING_OPERATION_DEPS_CODE = "ERR_RDS_DATA_SQL_MISSING_OPERATION_DEPS";
@@ -84,13 +83,11 @@ function requireDeps<T>(
 }
 
 /**
- * Dispatches to the matching `run*` step for `deps.operation`, logs a run
- * summary, and maps `load`'s partial failure onto a thrown error — split out
- * of {@link runRdsDataSql} to keep its own complexity low.
+ * Dispatches to the matching `run*` step for `deps.operation` and logs a run
+ * summary — split out of {@link runRdsDataSql} to keep its own complexity
+ * low.
  *
- * @throws {@link Core.M3LError} coded `"ERR_RDS_DATA_SQL_PARTIAL_FAILURE"`
- *   when `operation` is `"load"` and its resolved summary has `failed > 0`.
- * @throws Whatever the dispatched step throws, unchanged, for every other
+ * @throws Whatever the dispatched step throws, unchanged, for every
  *   operation.
  */
 async function dispatchOperation(deps: RunRdsDataSqlDeps): Promise<void> {
@@ -109,12 +106,6 @@ async function dispatchOperation(deps: RunRdsDataSqlDeps): Promise<void> {
       deps.logger.step(
         `rds-data-sql load complete: inserted=${String(result.inserted)}, failed=${String(result.failed)}`,
       );
-      if (result.failed > 0) {
-        throw new Core.M3LError(
-          `load finished with ${String(result.failed)} row(s) rejected to failed.jsonl`,
-          { code: PARTIAL_FAILURE_CODE },
-        );
-      }
       return;
     }
     case "execute": {
@@ -146,15 +137,12 @@ async function dispatchOperation(deps: RunRdsDataSqlDeps): Promise<void> {
 
 /**
  * Runs `rds-data-sql`'s pipeline: preflight-validates `deps.secretArn`, then
- * dispatches on `deps.operation` to the matching step, then maps `load`'s
- * partial failure onto a thrown error.
+ * dispatches on `deps.operation` to the matching step.
  *
  * @param deps - See {@link RunRdsDataSqlDeps}.
  * @throws Whatever `preflightSecret` throws, unchanged — no operation step
  *   runs when preflight fails.
- * @throws {@link Core.M3LError} coded `"ERR_RDS_DATA_SQL_PARTIAL_FAILURE"`
- *   when `operation` is `"load"` and its resolved summary has `failed > 0`.
- * @throws Whatever the dispatched step throws, unchanged, for every other
+ * @throws Whatever the dispatched step throws, unchanged, for every
  *   operation.
  *
  * @example

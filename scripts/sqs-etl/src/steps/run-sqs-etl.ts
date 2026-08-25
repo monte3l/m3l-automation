@@ -16,6 +16,7 @@ interface RunSqsEtlDeps {
   readonly correlationId: string;
   readonly sqsOperations: AWS.M3LSQSOperations;
   readonly prompt: Core.M3LPrompt;
+  readonly reportRecovery: (entry: Core.M3LRunRecoveryEntry) => void;
 }
 
 /**
@@ -23,8 +24,9 @@ interface RunSqsEtlDeps {
  * `command`.
  *
  * @param deps - The resolved config, `M3LPaths`, logger, correlation id, the
- *   injected `AWS.M3LSQSOperations`, and the interactive-prompt facade —
- *   forwarded unchanged to whichever step is selected.
+ *   injected `AWS.M3LSQSOperations`, the interactive-prompt facade, and the
+ *   `reportRecovery` callback for absorbed per-item failures — forwarded
+ *   unchanged to whichever step is selected.
  * @returns The dispatched step's own return value (`void` for every command
  *   except `transform`, which returns its read/written/skipped summary).
  * @throws {@link Core.M3LError} coded `"ERR_SQS_ETL_CONFIG"` when `command`
@@ -38,16 +40,18 @@ interface RunSqsEtlDeps {
  *
  * declare const sqsOperations: import("@m3l-automation/m3l-common/aws").M3LSQSOperations;
  *
+ * const script = new Core.M3LScript({
+ *   metadata: { name: "sqs-etl", version: "0.0.0" },
+ *   config: { params: [] },
+ * });
  * await runSqsEtl({
- *   config: await new Core.M3LScript({
- *     metadata: { name: "sqs-etl", version: "0.0.0" },
- *     config: { params: [] },
- *   }).getConfiguration(),
- *   paths: new Core.M3LPaths(),
- *   logger: new Core.M3LLogger([]),
+ *   config: await script.getConfiguration(),
+ *   paths: script.paths,
+ *   logger: script.logger,
  *   correlationId: "run-1",
  *   sqsOperations,
- *   prompt: new Core.M3LPrompt(),
+ *   prompt: script.prompt,
+ *   reportRecovery: script.reportRecovery.bind(script),
  * });
  * ```
  */

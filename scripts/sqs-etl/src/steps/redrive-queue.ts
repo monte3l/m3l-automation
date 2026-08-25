@@ -85,20 +85,39 @@ function toDeleteEntries(
 }
 
 /**
+ * Builds the `M3LRunRecoveryEntry` for one absorbed batch-entry failure,
+ * keyed by the caller-supplied `item` identity (a chunk-scoped send id or a
+ * delete entry's `receiptHandle`, depending on the call site).
+ */
+function toRecoveryEntry(
+  item: string,
+  failure: { readonly code: string; readonly message?: string },
+): Core.M3LRunRecoveryEntry {
+  return {
+    item,
+    error: [{ name: "M3LError", message: failure.message ?? failure.code }],
+    recordedAt: new Date().toISOString(),
+  };
+}
+
+/**
  * Logs each `deleteBatch()` failure via `logger.warning`, surfacing it
  * instead of silently discarding it (the entry itself is not written to
  * `failed.jsonl` — that file's meaning is reserved for unsent `sendBatch`
- * entries).
+ * entries), and reports it to `reportRecovery` keyed by the delete entry's
+ * `receiptHandle` — the same identity the warning log already uses.
  */
 function logDeleteFailures(
   logger: Core.M3LLogger,
   failures: readonly AWS.M3LSQSBatchFailure<AWS.M3LSQSDeleteEntry>[],
+  reportRecovery: (entry: Core.M3LRunRecoveryEntry) => void,
 ): void {
   for (const failure of failures) {
     logger.warning(
       `deleteBatch failed for receipt handle ${failure.entry.receiptHandle}`,
       { failure },
     );
+    reportRecovery(toRecoveryEntry(failure.entry.receiptHandle, failure));
   }
 }
 
@@ -151,6 +170,7 @@ async function runRedrivePages(
     readonly logger: Core.M3LLogger;
     readonly sqsOperations: AWS.M3LSQSOperations;
     readonly prompt: Core.M3LPrompt;
+    readonly reportRecovery: (entry: Core.M3LRunRecoveryEntry) => void;
   },
   settings: RedriveSettings,
   failedWriter: Core.M3LListExporterStreamWriter<AWS.M3LSQSSendEntry>,
@@ -175,6 +195,7 @@ async function runRedrivePages(
 
     for (const failure of sendResult.failed) {
       await failedWriter.append(failure.entry);
+      deps.reportRecovery(toRecoveryEntry(failure.entry.id, failure));
     }
 
     if (sendResult.successful.length > 0) {
@@ -191,7 +212,7 @@ async function runRedrivePages(
         settings.dlqUrl,
         toDeleteEntries(messages, successfulIds),
       );
-      logDeleteFailures(deps.logger, deleteResult.failed);
+      logDeleteFailures(deps.logger, deleteResult.failed, deps.reportRecovery);
     }
 
     total += messages.length;
@@ -205,7 +226,8 @@ async function runRedrivePages(
  * `queueUrl`.
  *
  * @param deps - The resolved config, `M3LPaths`, logger, correlation id, the
- *   injected `AWS.M3LSQSOperations`, and the interactive-prompt facade.
+ *   injected `AWS.M3LSQSOperations`, the interactive-prompt facade, and the
+ *   `reportRecovery` callback for absorbed per-entry send/delete failures.
  * @returns A promise that resolves once the run completes.
  * @throws {@link Core.M3LError} coded `"ERR_SQS_ETL_CONFIG"` when `queueUrl`/
  *   `dlqUrl` is missing, or `"ERR_SQS_ETL_ABORTED"` when the
@@ -229,6 +251,7 @@ async function runRedrivePages(
  *   correlationId: "run-1",
  *   sqsOperations,
  *   prompt: new Core.M3LPrompt(),
+ *   reportRecovery: () => {},
  * });
  * ```
  */
@@ -239,6 +262,7 @@ export async function redriveQueue(deps: {
   readonly correlationId: string;
   readonly sqsOperations: AWS.M3LSQSOperations;
   readonly prompt: Core.M3LPrompt;
+  readonly reportRecovery: (entry: Core.M3LRunRecoveryEntry) => void;
 }): Promise<void> {
   const settings = resolveSettings(deps.config);
   const failedPath = deps.paths.resolveOutput("failed.jsonl");

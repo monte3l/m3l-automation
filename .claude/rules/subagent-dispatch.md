@@ -103,6 +103,16 @@ occurrences. The checklist:
   benign quirk — verify on-disk state yourself (the spoke's journal, `git
 status`/`git diff`, re-run `tsc`/`eslint`/`vitest`/coverage) before deciding
   what's actually done.
+- **A spoke's scratchpad journal doesn't survive a session-level restart,
+  but its git-worktree edits do.** A `stopped`/"no completion record"
+  notification after an interruption broader than one spoke's own turn limit
+  (a harness/process restart mid-fan-out, not a single `maxTurns` truncation)
+  can leave `bin/spoke-recovery.mjs` with no journal path to read at all — the
+  ephemeral scratchpad directory is gone, even though the spoke's actual file
+  edits, written straight into the git worktree, persisted the whole time.
+  Check `git status`/`git diff` in the worktree first; if the edits are
+  already there and match the dispatch's spec, there is nothing to recover or
+  redispatch (`docs/logs/2026-08-25-a3b-recovery-fleet-retrofit.md`).
 - **A coherent-looking report can still be wrong — this is a separate failure
   mode from truncation.** A fix-round `code-implementer` once returned a
   clean, complete-sounding summary claiming all 4 requested items were done

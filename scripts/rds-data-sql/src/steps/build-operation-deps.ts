@@ -56,6 +56,12 @@ export interface BuildOperationDepsDeps {
   readonly paths: Core.M3LPaths;
   /** The run's correlated logger. */
   readonly logger: Core.M3LLogger;
+  /**
+   * Forwarded into `load`'s deps bag only — `load` is the one operation that
+   * absorbs per-row failures rather than throwing, so it's the only one that
+   * needs to report them to the run's recovery ledger.
+   */
+  readonly reportRecovery?: (entry: Core.M3LRunRecoveryEntry) => void;
 }
 
 /**
@@ -463,6 +469,9 @@ function buildLoadDeps(deps: BuildOperationDepsDeps): RunLoadDeps {
         resumeFromByte,
       }).exportStream(),
     logger,
+    ...(deps.reportRecovery !== undefined && {
+      reportRecovery: deps.reportRecovery,
+    }),
   };
 }
 

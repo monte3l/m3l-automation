@@ -13,7 +13,10 @@ import { runS3Objects } from "./steps/run-s3-objects.js";
 // `script.aws`, `script.paths`, `script.prompt`) and inject what each step
 // needs as parameters. The per-run correlation id is captured by
 // `hooks.onBeforeRun` (mainFn itself receives no `ctx`) and read back via
-// `getCorrelationId()`.
+// `getCorrelationId()`. `reportRecovery` is bound from `script.reportRecovery`
+// (never the whole `script` object) so a `delete-batch` run leaving keys
+// failed demotes this run's outcome to `"partial"` instead of a silent
+// `"success"` — mirrors sqs-dead-letter-triage/src/main.ts.
 const script = new Core.M3LScript({
   metadata: { name: "s3-objects", version: "0.0.0" },
   config: { params: configParameters },
@@ -50,6 +53,7 @@ await Core.runScript(
       correlationId: getCorrelationId(),
       s3: aws.clients.s3,
       prompt: script.prompt,
+      reportRecovery: script.reportRecovery.bind(script),
     });
   },
   { dryRun },

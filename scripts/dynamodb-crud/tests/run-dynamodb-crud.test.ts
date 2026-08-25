@@ -241,7 +241,10 @@ function buildPrompt(outcome = true): {
 
 function buildDeps(
   configValues: Record<string, unknown>,
-  overrides?: { readonly prompt?: Core.M3LPrompt },
+  overrides?: {
+    readonly prompt?: Core.M3LPrompt;
+    readonly reportRecovery?: (entry: Core.M3LRunRecoveryEntry) => void;
+  },
 ): Parameters<typeof runDynamodbCrud>[0] {
   return {
     config: buildConfig(configValues),
@@ -251,6 +254,7 @@ function buildDeps(
     dynamoDBDocument: fakeDynamoDBDocument,
     dynamoDB: fakeDynamoDB,
     prompt: overrides?.prompt ?? buildPrompt(true).prompt,
+    reportRecovery: overrides?.reportRecovery ?? vi.fn(),
   };
 }
 
@@ -1138,8 +1142,8 @@ describe("runDynamodbCrud — resumed scan opens output for r+ append, never tru
   });
 });
 
-describe("runDynamodbCrud — a batch run left with failed items rejects (fix #2)", () => {
-  test("'batch-write' leaving items permanently unprocessed after retry rejects with ERR_DYNAMO_CRUD_FAILED_ITEMS", async () => {
+describe("runDynamodbCrud — a batch run left with failed items reports recovery (fix #2)", () => {
+  test("'batch-write' leaving items permanently unprocessed after retry resolves and reports recovery, not a throw", async () => {
     stubInputFile(['{"id":"1"}', '{"id":"2"}', '{"id":"3"}'].join("\n"));
     stubOutputStream();
     // Every attempt leaves one item unprocessed, so the runner's own attempt
@@ -1150,25 +1154,36 @@ describe("runDynamodbCrud — a batch run left with failed items rejects (fix #2
         unprocessed: [{ id: "3" }],
       }),
     );
-    const deps = buildDeps({
-      ...BASE_CONFIG,
-      operation: "batch-write",
-      input: "in.jsonl",
-    });
+    const reportRecovery = vi.fn();
+    const deps = buildDeps(
+      {
+        ...BASE_CONFIG,
+        operation: "batch-write",
+        input: "in.jsonl",
+      },
+      { reportRecovery },
+    );
 
     vi.useFakeTimers();
-    let thrown: unknown;
     try {
-      await settleWithTimers(runDynamodbCrud(deps));
-    } catch (error) {
-      thrown = error;
+      const summary = await settleWithTimers(runDynamodbCrud(deps));
+
+      expect(summary).toEqual({ read: 3, written: 2, failed: 1, skipped: 0 });
+      expect(batchWriteItemsMock.mock.calls.length).toBeGreaterThan(1);
+      expect(reportRecovery).toHaveBeenCalledTimes(1);
+      expect(reportRecovery).toHaveBeenCalledWith({
+        item: JSON.stringify({ id: "3" }),
+        error: [
+          expect.objectContaining({
+            name: "M3LError",
+            message: "item remained unprocessed after retry",
+          }),
+        ],
+        recordedAt: expect.any(String) as string,
+      });
     } finally {
       vi.useRealTimers();
     }
-
-    expect(thrown).toBeInstanceOf(Core.M3LError);
-    expect((thrown as Core.M3LError).code).toBe("ERR_DYNAMO_CRUD_FAILED_ITEMS");
-    expect(batchWriteItemsMock.mock.calls.length).toBeGreaterThan(1);
   });
 });
 

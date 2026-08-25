@@ -126,12 +126,11 @@ logger) as a single options object and is unit-testable without the
 The script's own `M3LError`s (never `aws/s3`'s `M3LS3OperationError`, which
 propagates unmodified) use this code family:
 
-| Code                         | Meaning                                                                                                      |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `ERR_S3_OBJECTS_CONFIG`      | Missing or malformed cross-parameter requirement (e.g. `key` absent for `describe`)                          |
-| `ERR_S3_OBJECTS_ABORTED`     | Destructive-gate confirmation declined by the operator                                                       |
-| `ERR_S3_OBJECTS_OUTPUT`      | Local read/write failure (e.g. writing `output` or `failed.jsonl`); chains the original I/O error as `cause` |
-| `ERR_S3_OBJECTS_FAILED_KEYS` | Thrown at the end of a `delete-batch` run when `failed > 0` — a partial batch failure must never be silent   |
+| Code                     | Meaning                                                                                                      |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| `ERR_S3_OBJECTS_CONFIG`  | Missing or malformed cross-parameter requirement (e.g. `key` absent for `describe`)                          |
+| `ERR_S3_OBJECTS_ABORTED` | Destructive-gate confirmation declined by the operator                                                       |
+| `ERR_S3_OBJECTS_OUTPUT`  | Local read/write failure (e.g. writing `output` or `failed.jsonl`); chains the original I/O error as `cause` |
 
 ## Inputs and outputs
 
@@ -145,9 +144,11 @@ propagates unmodified) use this code family:
   collecting every chunk's per-key failures (no in-script retry — retry
   policy stays the operator's concern, consistent with `aws/s3`'s own
   no-internal-retry design).
-- **Reports:** a run summary — `{ processed, failed }` (see Error codes) —
-  so a partial `delete-batch` failure is never silent; the run exits non-zero
-  (`ERR_S3_OBJECTS_FAILED_KEYS`) when `failed > 0`.
+- **Reports:** a run summary — `{ processed, failed }` — so a partial
+  `delete-batch` failure is never silent: each failed key is reported via
+  `M3LScript.reportRecovery()` (through the pipeline's `recovery` callback),
+  so the run resolves with a `"partial"` outcome (exit code `6`) rather than
+  an error-classified exit.
 
 ## See also
 

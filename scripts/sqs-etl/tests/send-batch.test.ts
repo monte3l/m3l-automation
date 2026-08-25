@@ -53,6 +53,7 @@ describe("sendBatch", () => {
       logger,
       correlationId: "run-1",
       sqsOperations,
+      reportRecovery: vi.fn(),
     });
 
     // eslint-disable-next-line @typescript-eslint/unbound-method -- structural fake cast to AWS.M3LSQSOperations; property is a vi.fn(), never called unbound
@@ -84,6 +85,7 @@ describe("sendBatch", () => {
       logger,
       correlationId: "run-2",
       sqsOperations,
+      reportRecovery: vi.fn(),
     });
 
     const [, entries] = (
@@ -115,6 +117,7 @@ describe("sendBatch", () => {
       logger,
       correlationId: "run-3",
       sqsOperations,
+      reportRecovery: vi.fn(),
     });
 
     const [, entries] = (
@@ -147,6 +150,7 @@ describe("sendBatch", () => {
       logger,
       correlationId: "run-4",
       sqsOperations,
+      reportRecovery: vi.fn(),
     });
 
     const [, entries] = (
@@ -178,6 +182,7 @@ describe("sendBatch", () => {
       logger,
       correlationId: "run-5",
       sqsOperations,
+      reportRecovery: vi.fn(),
     });
 
     // eslint-disable-next-line @typescript-eslint/unbound-method -- structural fake cast to AWS.M3LSQSOperations; property is a vi.fn(), never called unbound
@@ -229,6 +234,7 @@ describe("sendBatch", () => {
       logger,
       correlationId: "run-6",
       sqsOperations,
+      reportRecovery: vi.fn(),
     });
 
     const calls = (
@@ -258,6 +264,7 @@ describe("sendBatch", () => {
       logger,
       correlationId: "run-7",
       sqsOperations,
+      reportRecovery: vi.fn(),
     });
 
     const [, entries] = (
@@ -284,6 +291,7 @@ describe("sendBatch", () => {
     });
     const paths = new Core.M3LPaths();
     const logger = new Core.M3LLogger([]);
+    const reportRecovery = vi.fn();
 
     await sendBatch({
       config,
@@ -291,6 +299,7 @@ describe("sendBatch", () => {
       logger,
       correlationId: "run-8",
       sqsOperations,
+      reportRecovery,
     });
 
     // Search on the failed entry's own top-level 'id' field, not the nested
@@ -304,6 +313,16 @@ describe("sendBatch", () => {
     if (failedStream !== undefined) {
       expect(writtenJsonlRecords(failedStream)).toEqual([failedEntry]);
     }
+
+    // Design: `error: [{ name: "M3LError", message: failure.message ?? failure.code }]`.
+    // This failure has no `message`, so the fallback resolves to `failure.code`.
+    expect(reportRecovery).toHaveBeenCalledWith({
+      item: failedEntry.id,
+      error: [
+        expect.objectContaining({ name: "M3LError", message: "InternalError" }),
+      ],
+      recordedAt: expect.any(String) as string,
+    });
   });
 
   test("a writer.close() failure does not mask the original sendBatch() rejection", async () => {
@@ -334,6 +353,7 @@ describe("sendBatch", () => {
         logger,
         correlationId: "run-close-fail",
         sqsOperations,
+        reportRecovery: vi.fn(),
       });
     } catch (error) {
       thrown = error;
@@ -365,6 +385,7 @@ describe("sendBatch", () => {
           logger,
           correlationId: `run-missing-${missing}`,
           sqsOperations,
+          reportRecovery: vi.fn(),
         });
       } catch (error) {
         thrown = error;
@@ -397,6 +418,7 @@ describe("sendBatch", () => {
         logger,
         correlationId: "run-batchsize-wrong-type",
         sqsOperations,
+        reportRecovery: vi.fn(),
       }),
     ).rejects.toMatchObject({ code: "ERR_SQS_ETL_CONFIG" });
     // eslint-disable-next-line @typescript-eslint/unbound-method -- structural fake cast to AWS.M3LSQSOperations; property is a vi.fn(), never called unbound
