@@ -1307,8 +1307,8 @@ describe("M3LSQSOperations", () => {
       const sync: M3LSQSRedriveProcessor = () => ({ action: "retry" });
       const asynchronous: M3LSQSRedriveProcessor = async () =>
         Promise.resolve({ action: "retry" } as const);
-      expectTypeOf(sync).toMatchTypeOf<M3LSQSRedriveProcessor>();
-      expectTypeOf(asynchronous).toMatchTypeOf<M3LSQSRedriveProcessor>();
+      expectTypeOf(sync).toExtend<M3LSQSRedriveProcessor>();
+      expectTypeOf(asynchronous).toExtend<M3LSQSRedriveProcessor>();
     });
 
     test("M3LSQSRedriveOptions and M3LSQSRedriveResult fields are all readonly", () => {
@@ -1350,7 +1350,7 @@ describe("M3LSQSOperations", () => {
       readonly messageAttributeNames?: readonly string[];
       readonly systemAttributeNames?: readonly string[];
     }>();
-    expectTypeOf<M3LSQSReceivedMessage>().toMatchTypeOf<{
+    expectTypeOf<M3LSQSReceivedMessage>().toExtend<{
       readonly messageId: string;
       readonly receiptHandle: string;
       readonly body: string;

@@ -802,7 +802,7 @@ describe("M3LSecretsManagerOperations", () => {
   // ===========================================================================
   describe("type-level contracts", () => {
     test("M3LSecretsManagerOperationError extends M3LError", () => {
-      expectTypeOf<M3LSecretsManagerOperationError>().toMatchTypeOf<M3LError>();
+      expectTypeOf<M3LSecretsManagerOperationError>().toExtend<M3LError>();
     });
 
     test("M3LSecretsManagerOperationError.code narrows to the literal 'ERR_SECRETS_MANAGER_OPERATION'", () => {

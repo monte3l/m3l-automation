@@ -1041,7 +1041,7 @@ describe("M3LThresholdEvaluator", () => {
     });
 
     test("M3LThresholdRuleResult has the name/breached/severity/actual shape", () => {
-      expectTypeOf<M3LThresholdRuleResult>().toMatchTypeOf<{
+      expectTypeOf<M3LThresholdRuleResult>().toExtend<{
         name: string;
         breached: boolean;
         actual: number | null;
@@ -1049,7 +1049,7 @@ describe("M3LThresholdEvaluator", () => {
     });
 
     test("M3LThresholdRule requires name/operator/value/aggregation/severity and an optional field", () => {
-      expectTypeOf<M3LThresholdRule>().toMatchTypeOf<{
+      expectTypeOf<M3LThresholdRule>().toExtend<{
         name: string;
         field?: string;
         value: string | number;
@@ -1064,7 +1064,7 @@ describe("M3LThresholdEvaluator", () => {
     });
 
     test("M3LThresholdRuleValidationError is an M3LError subclass", () => {
-      expectTypeOf<M3LThresholdRuleValidationError>().toMatchTypeOf<M3LError>();
+      expectTypeOf<M3LThresholdRuleValidationError>().toExtend<M3LError>();
     });
 
     test('M3LThresholdVerdict is exactly the "breached" | "clear" | "no-rules" union', () => {
@@ -1087,7 +1087,7 @@ describe("M3LThresholdEvaluator", () => {
         readonly breached: true;
         readonly summary: string;
         readonly results: readonly M3LThresholdRuleResult[];
-      }>().not.toMatchTypeOf<M3LThresholdEvaluation>();
+      }>().not.toExtend<M3LThresholdEvaluation>();
     });
 
     test("illegal state: { verdict: 'no-rules', breached: true } is not assignable to M3LThresholdEvaluation", () => {
@@ -1096,7 +1096,7 @@ describe("M3LThresholdEvaluator", () => {
         readonly breached: true;
         readonly summary: string;
         readonly results: readonly M3LThresholdRuleResult[];
-      }>().not.toMatchTypeOf<M3LThresholdEvaluation>();
+      }>().not.toExtend<M3LThresholdEvaluation>();
     });
 
     test("illegal state: { verdict: 'breached', breached: false } is not assignable to M3LThresholdEvaluation", () => {
@@ -1105,7 +1105,7 @@ describe("M3LThresholdEvaluator", () => {
         readonly breached: false;
         readonly summary: string;
         readonly results: readonly M3LThresholdRuleResult[];
-      }>().not.toMatchTypeOf<M3LThresholdEvaluation>();
+      }>().not.toExtend<M3LThresholdEvaluation>();
     });
 
     // -------------------------------------------------------------------------
@@ -1120,7 +1120,7 @@ describe("M3LThresholdEvaluator", () => {
         readonly breached: true;
         readonly summary: string;
         readonly results: readonly M3LThresholdRuleResult[];
-      }>().toMatchTypeOf<M3LThresholdEvaluation>();
+      }>().toExtend<M3LThresholdEvaluation>();
     });
 
     test("legal state: { verdict: 'clear', breached: false } is assignable to M3LThresholdEvaluation", () => {
@@ -1129,7 +1129,7 @@ describe("M3LThresholdEvaluator", () => {
         readonly breached: false;
         readonly summary: string;
         readonly results: readonly M3LThresholdRuleResult[];
-      }>().toMatchTypeOf<M3LThresholdEvaluation>();
+      }>().toExtend<M3LThresholdEvaluation>();
     });
 
     test("legal state: { verdict: 'no-rules', breached: false } is assignable to M3LThresholdEvaluation", () => {
@@ -1138,7 +1138,7 @@ describe("M3LThresholdEvaluator", () => {
         readonly breached: false;
         readonly summary: string;
         readonly results: readonly M3LThresholdRuleResult[];
-      }>().toMatchTypeOf<M3LThresholdEvaluation>();
+      }>().toExtend<M3LThresholdEvaluation>();
     });
 
     // -------------------------------------------------------------------------

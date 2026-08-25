@@ -1170,14 +1170,14 @@ describe("M3LRDSDataOperations", () => {
   // ===========================================================================
   describe("type-level contracts", () => {
     test("M3LRDSDataOperationError extends M3LError; code narrows to the literal", () => {
-      expectTypeOf<M3LRDSDataOperationError>().toMatchTypeOf<M3LError>();
+      expectTypeOf<M3LRDSDataOperationError>().toExtend<M3LError>();
       expectTypeOf<
         M3LRDSDataOperationError["code"]
       >().toEqualTypeOf<"ERR_RDS_DATA_OPERATION">();
     });
 
     test("M3LRDSDataResultTooLargeError extends M3LError; code narrows to the literal", () => {
-      expectTypeOf<M3LRDSDataResultTooLargeError>().toMatchTypeOf<M3LError>();
+      expectTypeOf<M3LRDSDataResultTooLargeError>().toExtend<M3LError>();
       expectTypeOf<
         M3LRDSDataResultTooLargeError["code"]
       >().toEqualTypeOf<"ERR_RDS_DATA_RESULT_TOO_LARGE">();

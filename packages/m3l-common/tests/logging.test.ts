@@ -205,7 +205,7 @@ describe("M3LLogEventCategory", () => {
 // ---------------------------------------------------------------------------
 describe("M3LLogEvent type", () => {
   test("has the documented readonly fields", () => {
-    expectTypeOf<M3LLogEvent>().toMatchTypeOf<{
+    expectTypeOf<M3LLogEvent>().toExtend<{
       readonly category: M3LLogEventCategory;
       readonly message: string;
       readonly data?: Record<string, unknown>;
@@ -270,12 +270,12 @@ describe("M3LLoggerOptions — type-level contract", () => {
     // shape is exercised by the FakeHandler-based fan-out tests elsewhere in
     // this file. The parameter is OPTIONAL (see the one-arg-still-constructs
     // runtime test below), so `M3LLoggerOptions` must be a valid value for
-    // it — asserted via `toMatchTypeOf` rather than `toEqualTypeOf` against a
+    // it — asserted via `toExtend` rather than `toEqualTypeOf` against a
     // `| undefined` union, which is redundant while the not-yet-implemented
     // `M3LLoggerOptions` is an error/`any` type in RED.
     expectTypeOf(M3LLogger).constructorParameters.toHaveProperty("1");
     const options: M3LLoggerOptions = { correlationId: "x" };
-    expectTypeOf(options).toMatchTypeOf<
+    expectTypeOf(options).toExtend<
       ConstructorParameters<typeof M3LLogger>[1]
     >();
   });

@@ -232,7 +232,7 @@ describe("M3LAWSIdentityError", () => {
       expectTypeOf<
         M3LAWSIdentityError["code"]
       >().toEqualTypeOf<M3LAWSIdentityErrorCode>();
-      expectTypeOf<string>().not.toMatchTypeOf<M3LAWSIdentityErrorCode>();
+      expectTypeOf<string>().not.toExtend<M3LAWSIdentityErrorCode>();
     });
   });
 });
@@ -249,24 +249,24 @@ describe("M3LAWSRegion / M3LAWSProfile — type-level contract", () => {
   });
 
   test("M3LAWSRegion is NOT assignable from a bare string", () => {
-    expectTypeOf<string>().not.toMatchTypeOf<M3LAWSRegion>();
+    expectTypeOf<string>().not.toExtend<M3LAWSRegion>();
   });
 
   test("M3LAWSProfile is NOT assignable from a bare string", () => {
-    expectTypeOf<string>().not.toMatchTypeOf<M3LAWSProfile>();
+    expectTypeOf<string>().not.toExtend<M3LAWSProfile>();
   });
 
   test("M3LAWSRegion is NOT assignable to M3LAWSProfile", () => {
-    expectTypeOf<M3LAWSRegion>().not.toMatchTypeOf<M3LAWSProfile>();
+    expectTypeOf<M3LAWSRegion>().not.toExtend<M3LAWSProfile>();
   });
 
   test("M3LAWSProfile is NOT assignable to M3LAWSRegion", () => {
-    expectTypeOf<M3LAWSProfile>().not.toMatchTypeOf<M3LAWSRegion>();
+    expectTypeOf<M3LAWSProfile>().not.toExtend<M3LAWSRegion>();
   });
 
   test("both brands ARE assignable to string", () => {
-    expectTypeOf<M3LAWSRegion>().toMatchTypeOf<string>();
-    expectTypeOf<M3LAWSProfile>().toMatchTypeOf<string>();
+    expectTypeOf<M3LAWSRegion>().toExtend<string>();
+    expectTypeOf<M3LAWSProfile>().toExtend<string>();
   });
 
   test("isAWSRegion narrows a string parameter to M3LAWSRegion", () => {
@@ -330,11 +330,11 @@ describe("M3LAWSCredentialsErrorType", () => {
     });
 
     test("rejects an out-of-set string literal", () => {
-      expectTypeOf<"NOT_A_REAL_MEMBER">().not.toMatchTypeOf<M3LAWSCredentialsErrorType>();
+      expectTypeOf<"NOT_A_REAL_MEMBER">().not.toExtend<M3LAWSCredentialsErrorType>();
     });
 
     test("is not the general `string` type (a plain string is rejected)", () => {
-      expectTypeOf<string>().not.toMatchTypeOf<M3LAWSCredentialsErrorType>();
+      expectTypeOf<string>().not.toExtend<M3LAWSCredentialsErrorType>();
     });
   });
 });
@@ -399,14 +399,14 @@ describe("M3LAWSCredentialsErrorAnalysis", () => {
       expectTypeOf<{
         readonly recoverable: true;
         readonly type: "SSO_SESSION_EXPIRED";
-      }>().toMatchTypeOf<M3LAWSCredentialsErrorAnalysis>();
+      }>().toExtend<M3LAWSCredentialsErrorAnalysis>();
     });
 
     test("a recoverable=false arm with an unrecoverable category is assignable", () => {
       expectTypeOf<{
         readonly recoverable: false;
         readonly type: "PROFILE_NOT_FOUND";
-      }>().toMatchTypeOf<M3LAWSCredentialsErrorAnalysis>();
+      }>().toExtend<M3LAWSCredentialsErrorAnalysis>();
     });
 
     test("rejects recoverable=true paired with an unrecoverable-only category", () => {
@@ -431,31 +431,31 @@ describe("M3LAWSCredentialsErrorAnalysis", () => {
       expectTypeOf<{
         readonly recoverable: true;
         readonly type: "totally-made-up";
-      }>().not.toMatchTypeOf<M3LAWSCredentialsErrorAnalysis>();
+      }>().not.toExtend<M3LAWSCredentialsErrorAnalysis>();
       expectTypeOf<{
         readonly recoverable: false;
         readonly type: "totally-made-up";
-      }>().not.toMatchTypeOf<M3LAWSCredentialsErrorAnalysis>();
+      }>().not.toExtend<M3LAWSCredentialsErrorAnalysis>();
     });
 
     test("cause is optional unknown in both arms — omitting it still satisfies the union", () => {
       expectTypeOf<{
         readonly recoverable: true;
         readonly type: "SSO_SESSION_EXPIRED";
-      }>().toMatchTypeOf<M3LAWSCredentialsErrorAnalysis>();
+      }>().toExtend<M3LAWSCredentialsErrorAnalysis>();
       expectTypeOf<{
         readonly recoverable: false;
         readonly type: "UNKNOWN";
-      }>().toMatchTypeOf<M3LAWSCredentialsErrorAnalysis>();
+      }>().toExtend<M3LAWSCredentialsErrorAnalysis>();
     });
 
     test("recoverable and type are both required — omitting either is rejected", () => {
       expectTypeOf<{
         readonly recoverable: true;
-      }>().not.toMatchTypeOf<M3LAWSCredentialsErrorAnalysis>();
+      }>().not.toExtend<M3LAWSCredentialsErrorAnalysis>();
       expectTypeOf<{
         readonly type: "SSO_SESSION_EXPIRED";
-      }>().not.toMatchTypeOf<M3LAWSCredentialsErrorAnalysis>();
+      }>().not.toExtend<M3LAWSCredentialsErrorAnalysis>();
     });
   });
 });
@@ -499,15 +499,15 @@ describe("M3LAWSRetryContext", () => {
       expectTypeOf<{
         maxAttempts: number;
         analysis: M3LAWSCredentialsErrorAnalysis;
-      }>().not.toMatchTypeOf<M3LAWSRetryContext>();
+      }>().not.toExtend<M3LAWSRetryContext>();
       expectTypeOf<{
         attempt: number;
         analysis: M3LAWSCredentialsErrorAnalysis;
-      }>().not.toMatchTypeOf<M3LAWSRetryContext>();
+      }>().not.toExtend<M3LAWSRetryContext>();
       expectTypeOf<{
         attempt: number;
         maxAttempts: number;
-      }>().not.toMatchTypeOf<M3LAWSRetryContext>();
+      }>().not.toExtend<M3LAWSRetryContext>();
     });
   });
 });
@@ -604,22 +604,22 @@ describe("M3LAWSLoginResult", () => {
         readonly exitCode: 0;
         readonly profile: string;
         readonly durationMs: number;
-      }>().not.toMatchTypeOf<M3LAWSLoginResult>();
+      }>().not.toExtend<M3LAWSLoginResult>();
       expectTypeOf<{
         readonly outcome: "success";
         readonly profile: string;
         readonly durationMs: number;
-      }>().not.toMatchTypeOf<M3LAWSLoginResult>();
+      }>().not.toExtend<M3LAWSLoginResult>();
       expectTypeOf<{
         readonly outcome: "success";
         readonly exitCode: 0;
         readonly durationMs: number;
-      }>().not.toMatchTypeOf<M3LAWSLoginResult>();
+      }>().not.toExtend<M3LAWSLoginResult>();
       expectTypeOf<{
         readonly outcome: "success";
         readonly exitCode: 0;
         readonly profile: string;
-      }>().not.toMatchTypeOf<M3LAWSLoginResult>();
+      }>().not.toExtend<M3LAWSLoginResult>();
     });
 
     test("rejects outcome:'success' paired with a non-zero exitCode", () => {
@@ -673,7 +673,7 @@ describe("M3LAWSLoginResult", () => {
         readonly durationMs: number;
         readonly exitCode: number | null;
         readonly timedOut: boolean;
-      }>().not.toMatchTypeOf<M3LAWSLoginResult>();
+      }>().not.toExtend<M3LAWSLoginResult>();
     });
 
     test("rejects an out-of-union `outcome` string literal", () => {
@@ -682,7 +682,7 @@ describe("M3LAWSLoginResult", () => {
         readonly exitCode: 0;
         readonly profile: string;
         readonly durationMs: number;
-      }>().not.toMatchTypeOf<M3LAWSLoginResult>();
+      }>().not.toExtend<M3LAWSLoginResult>();
     });
   });
 });
@@ -720,7 +720,7 @@ describe("M3LAWSCredentialsManagerOptions", () => {
     test("`{}` is assignable — all three fields are optional, not required", () => {
       expectTypeOf<
         Record<string, never>
-      >().toMatchTypeOf<M3LAWSCredentialsManagerOptions>();
+      >().toExtend<M3LAWSCredentialsManagerOptions>();
     });
 
     test("profile is optional M3LAWSProfile, loginTimeoutMs is optional number, interactive is optional boolean", () => {
@@ -745,7 +745,7 @@ describe("M3LAWSCredentialsManagerOptions", () => {
         profile?: M3LAWSProfile;
         loginTimeoutMs?: number;
         interactive?: boolean;
-      }>().toMatchTypeOf<M3LAWSCredentialsManagerOptions>();
+      }>().toExtend<M3LAWSCredentialsManagerOptions>();
     });
 
     test("maxRetries is optional number", () => {

@@ -194,7 +194,7 @@ function makeJsonResponse(status: number, body: unknown): UndiciResponse {
 // =============================================================================
 describe("M3LBreadcrumb / M3LBreadcrumbTrailOptions / M3LBreadcrumbAttachOptions — type contracts", () => {
   test("M3LBreadcrumb has the documented readonly shape", () => {
-    expectTypeOf<M3LBreadcrumb>().toMatchTypeOf<{
+    expectTypeOf<M3LBreadcrumb>().toExtend<{
       readonly timestamp: string;
       readonly source: string;
       readonly event: string;
@@ -1180,7 +1180,7 @@ describe("collectDiagnostics — config fingerprint (names + sources only, never
   });
 
   test("type-level: a real M3LConfig satisfies M3LConfigSourcePort structurally", () => {
-    expectTypeOf<M3LConfig>().toMatchTypeOf<M3LConfigSourcePort>();
+    expectTypeOf<M3LConfig>().toExtend<M3LConfigSourcePort>();
   });
 });
 
@@ -1390,14 +1390,14 @@ describe("M3LDiagnosticsEnvironment / M3LDiagnosticsSnapshot — type contracts"
   test("the discriminated union narrows monorepoRoot by deploymentMode", () => {
     expectTypeOf<
       Extract<M3LDiagnosticsEnvironment, { deploymentMode: "MONOREPO" }>
-    >().toMatchTypeOf<{ readonly monorepoRoot: string }>();
+    >().toExtend<{ readonly monorepoRoot: string }>();
     expectTypeOf<
       Extract<M3LDiagnosticsEnvironment, { deploymentMode: "STANDALONE" }>
-    >().toMatchTypeOf<{ readonly monorepoRoot: undefined }>();
+    >().toExtend<{ readonly monorepoRoot: undefined }>();
   });
 
   test("M3LDiagnosticsSnapshot carries the documented optional sections", () => {
-    expectTypeOf<M3LDiagnosticsSnapshot>().toMatchTypeOf<{
+    expectTypeOf<M3LDiagnosticsSnapshot>().toExtend<{
       readonly capturedAt: string;
       readonly packageVersion: string;
       readonly nodeVersion: string;
@@ -2810,7 +2810,7 @@ describe("M3LRunOutcome — type contract", () => {
 // =============================================================================
 describe("M3LRunReport — type contract", () => {
   test("carries the documented base fields shared by every outcome, including archive and environment", () => {
-    expectTypeOf<M3LRunReport>().toMatchTypeOf<{
+    expectTypeOf<M3LRunReport>().toExtend<{
       readonly script: { readonly name: string; readonly version: string };
       readonly correlationId: string;
       readonly startedAt: string;
@@ -2823,9 +2823,7 @@ describe("M3LRunReport — type contract", () => {
   });
 
   test("the 'failure' branch requires a fully-shaped M3LRunReportFailure", () => {
-    expectTypeOf<
-      Extract<M3LRunReport, { outcome: "failure" }>
-    >().toMatchTypeOf<{
+    expectTypeOf<Extract<M3LRunReport, { outcome: "failure" }>>().toExtend<{
       readonly outcome: "failure";
       readonly failure: M3LRunReportFailure;
     }>();
@@ -2836,9 +2834,7 @@ describe("M3LRunReport — type contract", () => {
     // itself a 3-member union (`Exclude<M3LRunOutcome, "failure">`), so
     // `Extract<M3LRunReport, { outcome: "success" }>` would fail to match
     // either top-level constituent and silently collapse to `never`.
-    expectTypeOf<
-      Exclude<M3LRunReport, { outcome: "failure" }>
-    >().toMatchTypeOf<{
+    expectTypeOf<Exclude<M3LRunReport, { outcome: "failure" }>>().toExtend<{
       readonly outcome: Exclude<M3LRunOutcome, "failure">;
       readonly failure?: undefined;
     }>();
@@ -2895,7 +2891,7 @@ describe("M3LRunReport — type contract", () => {
 // =============================================================================
 describe("M3LRunRecoveryEntry — type contract", () => {
   test("has the three required readonly fields", () => {
-    expectTypeOf<M3LRunRecoveryEntry>().toMatchTypeOf<{
+    expectTypeOf<M3LRunRecoveryEntry>().toExtend<{
       readonly item: string;
       readonly error: readonly M3LSerializedError[];
       readonly recordedAt: string;
@@ -2922,9 +2918,7 @@ describe("M3LRunRecoveryEntry — type contract", () => {
 // =============================================================================
 describe("M3LRunReport — partial arm type contract", () => {
   test("the 'partial' branch requires a readonly recovery array and recoveryTotal", () => {
-    expectTypeOf<
-      Extract<M3LRunReport, { outcome: "partial" }>
-    >().toMatchTypeOf<{
+    expectTypeOf<Extract<M3LRunReport, { outcome: "partial" }>>().toExtend<{
       readonly outcome: "partial";
       readonly recovery: readonly M3LRunRecoveryEntry[];
       readonly recoveryTotal: number;
@@ -2947,36 +2941,32 @@ describe("M3LRunReport — partial arm type contract", () => {
   });
 
   test("the 'partial' branch has failure?: undefined (coexistence is impossible)", () => {
-    expectTypeOf<
-      Extract<M3LRunReport, { outcome: "partial" }>
-    >().toMatchTypeOf<{
+    expectTypeOf<Extract<M3LRunReport, { outcome: "partial" }>>().toExtend<{
       readonly failure?: undefined;
     }>();
   });
 
   test("recoveryTotal is required on the partial arm and absent from every other arm", () => {
     // partial arm must have recoveryTotal
-    expectTypeOf<
-      Extract<M3LRunReport, { outcome: "partial" }>
-    >().toMatchTypeOf<{ readonly recoveryTotal: number }>();
+    expectTypeOf<Extract<M3LRunReport, { outcome: "partial" }>>().toExtend<{
+      readonly recoveryTotal: number;
+    }>();
     // non-partial arms must NOT have recoveryTotal
-    expectTypeOf<
-      Extract<M3LRunReport, { outcome: "failure" }>
-    >().not.toMatchTypeOf<{ readonly recoveryTotal: number }>();
-    expectTypeOf<
-      Extract<M3LRunReport, { outcome: "success" }>
-    >().not.toMatchTypeOf<{ readonly recoveryTotal: number }>();
+    expectTypeOf<Extract<M3LRunReport, { outcome: "failure" }>>().not.toExtend<{
+      readonly recoveryTotal: number;
+    }>();
+    expectTypeOf<Extract<M3LRunReport, { outcome: "success" }>>().not.toExtend<{
+      readonly recoveryTotal: number;
+    }>();
   });
 
   test("illegal state unrepresentable: outcome 'partial' cannot carry a failure detail (structural check)", () => {
     // Cannot use @ts-expect-error here — in RED the "partial" literal is not
     // yet in M3LRunOutcome so the error lands on the interior `outcome` line,
     // not the const declaration, leaving the directive unused. Use structural
-    // toMatchTypeOf instead: the partial arm must extend { failure?: undefined }
+    // toExtend instead: the partial arm must extend { failure?: undefined }
     // (already asserted above) and must NOT extend { failure: M3LRunReportFailure }.
-    expectTypeOf<
-      Extract<M3LRunReport, { outcome: "partial" }>
-    >().not.toMatchTypeOf<{
+    expectTypeOf<Extract<M3LRunReport, { outcome: "partial" }>>().not.toExtend<{
       readonly failure: M3LRunReportFailure;
     }>();
   });
@@ -2985,9 +2975,7 @@ describe("M3LRunReport — partial arm type contract", () => {
     // The failure arm of M3LRunReport has no `recovery` field — it must never
     // extend a type that requires one. In RED this also holds: the failure arm
     // already exists and has no recovery.
-    expectTypeOf<
-      Extract<M3LRunReport, { outcome: "failure" }>
-    >().not.toMatchTypeOf<{
+    expectTypeOf<Extract<M3LRunReport, { outcome: "failure" }>>().not.toExtend<{
       readonly recovery: readonly unknown[];
     }>();
   });
@@ -4536,10 +4524,10 @@ describe("T1 — non-partial arms of M3LRunReport close recovery and recoveryTot
       timeline: [] as const,
     };
     // Control: the clean shape IS a valid report
-    expectTypeOf(clean).toMatchTypeOf<M3LRunReport>();
+    expectTypeOf(clean).toExtend<M3LRunReport>();
     // Subject: adding a required recovery field makes it NOT a valid report
     const withRecovery = { ...clean, recovery: [] as readonly unknown[] };
-    expectTypeOf(withRecovery).not.toMatchTypeOf<M3LRunReport>();
+    expectTypeOf(withRecovery).not.toExtend<M3LRunReport>();
   });
 
   test("the non-failure non-partial arm closes recoveryTotal — a success-shaped report with recoveryTotal is not assignable to M3LRunReport", () => {
@@ -4554,10 +4542,10 @@ describe("T1 — non-partial arms of M3LRunReport close recovery and recoveryTot
       timeline: [] as const,
     };
     // Control
-    expectTypeOf(clean).toMatchTypeOf<M3LRunReport>();
+    expectTypeOf(clean).toExtend<M3LRunReport>();
     // Subject
     const withTotal = { ...clean, recoveryTotal: 5 };
-    expectTypeOf(withTotal).not.toMatchTypeOf<M3LRunReport>();
+    expectTypeOf(withTotal).not.toExtend<M3LRunReport>();
   });
 });
 
@@ -4575,11 +4563,11 @@ describe("T2 — partial arm recovery is non-empty (type regression)", () => {
     // If recovery were readonly M3LRunRecoveryEntry[], the empty tuple [] would
     // be assignable. The fix narrows to a non-empty tuple so [] is rejected.
     // Control: a one-element tuple IS assignable (it satisfies non-empty)
-    expectTypeOf<readonly [M3LRunRecoveryEntry]>().toMatchTypeOf<
+    expectTypeOf<readonly [M3LRunRecoveryEntry]>().toExtend<
       Extract<M3LRunReport, { outcome: "partial" }>["recovery"]
     >();
     // Subject: the empty tuple must NOT be assignable — fails at tsc before fix
-    expectTypeOf<readonly []>().not.toMatchTypeOf<
+    expectTypeOf<readonly []>().not.toExtend<
       Extract<M3LRunReport, { outcome: "partial" }>["recovery"]
     >();
   });
@@ -4590,11 +4578,9 @@ describe("T2 — partial arm recovery is non-empty (type regression)", () => {
     // Control: a non-empty tuple satisfies the type
     expectTypeOf<
       readonly [M3LRunRecoveryEntry, ...M3LRunRecoveryEntry[]]
-    >().toMatchTypeOf<
-      Extract<M3LRunReport, { outcome: "partial" }>["recovery"]
-    >();
+    >().toExtend<Extract<M3LRunReport, { outcome: "partial" }>["recovery"]>();
     // Subject: a generic array (length unknown) must not satisfy it — fails at tsc before fix
-    expectTypeOf<readonly M3LRunRecoveryEntry[]>().not.toMatchTypeOf<
+    expectTypeOf<readonly M3LRunRecoveryEntry[]>().not.toExtend<
       Extract<M3LRunReport, { outcome: "partial" }>["recovery"]
     >();
   });

@@ -397,7 +397,7 @@ describe("M3LCliDiscoveryCache contract", () => {
   });
 
   test("M3LCliDiscoveryCacheEntry declares the documented readonly shape", () => {
-    expectTypeOf<M3LCliDiscoveryCacheEntry>().toMatchTypeOf<{
+    expectTypeOf<M3LCliDiscoveryCacheEntry>().toExtend<{
       readonly srcMtimeMs: number | null;
       readonly distMtimeMs: number | null;
     }>();

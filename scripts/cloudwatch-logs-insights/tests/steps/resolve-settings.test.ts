@@ -111,7 +111,7 @@ describe("resolveSettings", () => {
   });
 
   it("returns the LogsInsightsRunSettings shape (type contract)", () => {
-    expectTypeOf<LogsInsightsRunSettings>().toMatchTypeOf<{
+    expectTypeOf<LogsInsightsRunSettings>().toExtend<{
       logGroups: readonly string[];
       query: string;
       startEpochSeconds: number;

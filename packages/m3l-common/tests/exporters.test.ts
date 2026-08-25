@@ -227,14 +227,14 @@ afterEach(() => {
 
 describe("type contracts", () => {
   test("M3LListExporterStreamWriter<TItem> shape", () => {
-    expectTypeOf<M3LListExporterStreamWriter<{ id: string }>>().toMatchTypeOf<{
+    expectTypeOf<M3LListExporterStreamWriter<{ id: string }>>().toExtend<{
       append: (item: { id: string }) => Promise<void>;
       close: () => Promise<void>;
     }>();
   });
 
   test("M3LListExporterStreamWriter<TItem> gains a readonly bytesWritten: number (resume seam)", () => {
-    expectTypeOf<M3LListExporterStreamWriter<{ id: string }>>().toMatchTypeOf<{
+    expectTypeOf<M3LListExporterStreamWriter<{ id: string }>>().toExtend<{
       append: (item: { id: string }) => Promise<void>;
       close: () => Promise<void>;
       bytesWritten: number;
@@ -284,37 +284,37 @@ describe("type contracts", () => {
   });
 
   test("M3LCSVListExporter is assignable to M3LListExporter<TItem>", () => {
-    expectTypeOf<M3LCSVListExporter<{ id: string }>>().toMatchTypeOf<
+    expectTypeOf<M3LCSVListExporter<{ id: string }>>().toExtend<
       M3LListExporter<{ id: string }>
     >();
   });
 
   test("M3LJSONListExporter is assignable to M3LListExporter<TItem>", () => {
-    expectTypeOf<M3LJSONListExporter<{ id: string }>>().toMatchTypeOf<
+    expectTypeOf<M3LJSONListExporter<{ id: string }>>().toExtend<
       M3LListExporter<{ id: string }>
     >();
   });
 
   test("M3LHTMLListExporter is assignable to M3LListExporter<TItem>", () => {
-    expectTypeOf<M3LHTMLListExporter<{ id: string }>>().toMatchTypeOf<
+    expectTypeOf<M3LHTMLListExporter<{ id: string }>>().toExtend<
       M3LListExporter<{ id: string }>
     >();
   });
 
   test("M3LCSVListExporter extends M3LEventEmitterBase", () => {
-    expectTypeOf<M3LCSVListExporter<{ id: string }>>().toMatchTypeOf<
+    expectTypeOf<M3LCSVListExporter<{ id: string }>>().toExtend<
       M3LEventEmitterBase<M3LListExporterEvents>
     >();
   });
 
   test("M3LJSONListExporter extends M3LEventEmitterBase", () => {
-    expectTypeOf<M3LJSONListExporter<{ id: string }>>().toMatchTypeOf<
+    expectTypeOf<M3LJSONListExporter<{ id: string }>>().toExtend<
       M3LEventEmitterBase<M3LListExporterEvents>
     >();
   });
 
   test("M3LHTMLListExporter extends M3LEventEmitterBase", () => {
-    expectTypeOf<M3LHTMLListExporter<{ id: string }>>().toMatchTypeOf<
+    expectTypeOf<M3LHTMLListExporter<{ id: string }>>().toExtend<
       M3LEventEmitterBase<M3LListExporterEvents>
     >();
   });
@@ -323,7 +323,7 @@ describe("type contracts", () => {
     // Positive: an object literal and a named interface both compile.
     const csvWithObjectLiteral: M3LCSVListExporter<{ id: string }> =
       new M3LCSVListExporter<{ id: string }>({ filePath: "x.csv" });
-    expectTypeOf(csvWithObjectLiteral).toMatchTypeOf<
+    expectTypeOf(csvWithObjectLiteral).toExtend<
       M3LCSVListExporter<{ id: string }>
     >();
 
@@ -332,7 +332,7 @@ describe("type contracts", () => {
     }
     const csvWithInterface: M3LCSVListExporter<Row> =
       new M3LCSVListExporter<Row>({ filePath: "x.csv" });
-    expectTypeOf(csvWithInterface).toMatchTypeOf<M3LCSVListExporter<Row>>();
+    expectTypeOf(csvWithInterface).toExtend<M3LCSVListExporter<Row>>();
 
     // Negative: a primitive TItem must be rejected at the type level.
     // @ts-expect-error — CSV items must be objects, not a primitive `number`
@@ -343,7 +343,7 @@ describe("type contracts", () => {
     // Positive: an object literal and a named interface both compile.
     const htmlWithObjectLiteral: M3LHTMLListExporter<{ id: string }> =
       new M3LHTMLListExporter<{ id: string }>({ filePath: "x.html" });
-    expectTypeOf(htmlWithObjectLiteral).toMatchTypeOf<
+    expectTypeOf(htmlWithObjectLiteral).toExtend<
       M3LHTMLListExporter<{ id: string }>
     >();
 
@@ -352,7 +352,7 @@ describe("type contracts", () => {
     }
     const htmlWithInterface: M3LHTMLListExporter<Row> =
       new M3LHTMLListExporter<Row>({ filePath: "x.html" });
-    expectTypeOf(htmlWithInterface).toMatchTypeOf<M3LHTMLListExporter<Row>>();
+    expectTypeOf(htmlWithInterface).toExtend<M3LHTMLListExporter<Row>>();
 
     // Negative: a primitive TItem must be rejected at the type level.
     // @ts-expect-error — HTML items must be objects, not a primitive `string`
@@ -363,7 +363,7 @@ describe("type contracts", () => {
     // Positive: an object literal and a named interface both compile.
     const jsonWithObjectLiteral: M3LJSONListExporter<{ id: string }> =
       new M3LJSONListExporter<{ id: string }>({ filePath: "x.json" });
-    expectTypeOf(jsonWithObjectLiteral).toMatchTypeOf<
+    expectTypeOf(jsonWithObjectLiteral).toExtend<
       M3LJSONListExporter<{ id: string }>
     >();
 
@@ -372,7 +372,7 @@ describe("type contracts", () => {
     }
     const jsonWithInterface: M3LJSONListExporter<Row> =
       new M3LJSONListExporter<Row>({ filePath: "x.json" });
-    expectTypeOf(jsonWithInterface).toMatchTypeOf<M3LJSONListExporter<Row>>();
+    expectTypeOf(jsonWithInterface).toExtend<M3LJSONListExporter<Row>>();
 
     // Negative: a primitive TItem must be rejected at the type level.
     // @ts-expect-error - M3LJSONListExporter requires TItem extends object, not a primitive `number`
@@ -383,7 +383,7 @@ describe("type contracts", () => {
     // Positive: an object literal and a named interface both compile.
     const fileListWithObjectLiteral: M3LFileListExporter<{ id: string }> =
       new M3LFileListExporter<{ id: string }>({ filePath: "x.json" });
-    expectTypeOf(fileListWithObjectLiteral).toMatchTypeOf<
+    expectTypeOf(fileListWithObjectLiteral).toExtend<
       M3LFileListExporter<{ id: string }>
     >();
 
@@ -392,16 +392,14 @@ describe("type contracts", () => {
     }
     const fileListWithInterface: M3LFileListExporter<Row> =
       new M3LFileListExporter<Row>({ filePath: "x.json" });
-    expectTypeOf(fileListWithInterface).toMatchTypeOf<
-      M3LFileListExporter<Row>
-    >();
+    expectTypeOf(fileListWithInterface).toExtend<M3LFileListExporter<Row>>();
   });
 
   test("M3LListExporter<TItem extends object> rejects a primitive type argument and accepts an object/interface type argument", () => {
     // Positive: an object literal type and a named interface both instantiate cleanly.
     type _OkObjectLiteral = M3LListExporter<{ id: number }>;
     const okObjectLiteral: _OkObjectLiteral | undefined = undefined;
-    expectTypeOf(okObjectLiteral).toMatchTypeOf<
+    expectTypeOf(okObjectLiteral).toExtend<
       M3LListExporter<{ id: number }> | undefined
     >();
 
@@ -410,7 +408,7 @@ describe("type contracts", () => {
     }
     type _OkInterface = M3LListExporter<Row>;
     const okInterface: _OkInterface | undefined = undefined;
-    expectTypeOf(okInterface).toMatchTypeOf<M3LListExporter<Row> | undefined>();
+    expectTypeOf(okInterface).toExtend<M3LListExporter<Row> | undefined>();
 
     // Negative: a primitive TItem must be rejected at the type level.
     // @ts-expect-error - M3LListExporter requires TItem extends object, not a primitive `number`
@@ -422,7 +420,7 @@ describe("type contracts", () => {
     // Positive: an object literal type and a named interface both instantiate cleanly.
     type _OkObjectLiteral = M3LListExporterStreamWriter<{ id: number }>;
     const okObjectLiteral: _OkObjectLiteral | undefined = undefined;
-    expectTypeOf(okObjectLiteral).toMatchTypeOf<
+    expectTypeOf(okObjectLiteral).toExtend<
       M3LListExporterStreamWriter<{ id: number }> | undefined
     >();
 
@@ -431,7 +429,7 @@ describe("type contracts", () => {
     }
     type _OkInterface = M3LListExporterStreamWriter<Row>;
     const okInterface: _OkInterface | undefined = undefined;
-    expectTypeOf(okInterface).toMatchTypeOf<
+    expectTypeOf(okInterface).toExtend<
       M3LListExporterStreamWriter<Row> | undefined
     >();
 

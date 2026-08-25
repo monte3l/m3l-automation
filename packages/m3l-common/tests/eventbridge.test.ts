@@ -1112,7 +1112,7 @@ describe("M3LEventBridgeOperations", () => {
     });
 
     test("M3LEventBridgeRuleDetail extends M3LEventBridgeRule with an optional createdBy", () => {
-      expectTypeOf<M3LEventBridgeRuleDetail>().toMatchTypeOf<M3LEventBridgeRule>();
+      expectTypeOf<M3LEventBridgeRuleDetail>().toExtend<M3LEventBridgeRule>();
       expectTypeOf<M3LEventBridgeRuleDetail>()
         .toHaveProperty("createdBy")
         .toEqualTypeOf<string | undefined>();

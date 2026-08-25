@@ -1743,7 +1743,7 @@ describe("M3LEKSOperations", () => {
 
   describe("type contract", () => {
     test("M3LEKSClusterSummary has the documented required/optional field shape", () => {
-      expectTypeOf<M3LEKSClusterSummary>().toMatchTypeOf<{
+      expectTypeOf<M3LEKSClusterSummary>().toExtend<{
         readonly name: string;
         readonly arn: string;
         readonly status: string;
@@ -1758,7 +1758,7 @@ describe("M3LEKSOperations", () => {
     });
 
     test("M3LEKSNodegroupSummary has the documented required/optional field shape", () => {
-      expectTypeOf<M3LEKSNodegroupSummary>().toMatchTypeOf<{
+      expectTypeOf<M3LEKSNodegroupSummary>().toExtend<{
         readonly nodegroupName: string;
         readonly nodegroupArn: string;
         readonly status: string;
@@ -1769,7 +1769,7 @@ describe("M3LEKSOperations", () => {
     });
 
     test("M3LEKSVpcConfig.subnetIds is a required readonly string[], unlike the SDK's optional VpcConfigResponse.subnetIds", () => {
-      expectTypeOf<M3LEKSVpcConfig>().toMatchTypeOf<{
+      expectTypeOf<M3LEKSVpcConfig>().toExtend<{
         readonly subnetIds: readonly string[];
       }>();
     });

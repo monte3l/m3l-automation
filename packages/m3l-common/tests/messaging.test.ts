@@ -519,11 +519,11 @@ describe("M3LMessenger — type-level contract", () => {
   });
 
   test("M3LMessageTarget requires only a readonly string id", () => {
-    expectTypeOf<M3LMessageTarget>().toMatchTypeOf<{ readonly id: string }>();
+    expectTypeOf<M3LMessageTarget>().toExtend<{ readonly id: string }>();
   });
 
   test("M3LReceivedMessage carries an author of type M3LMessageAuthor", () => {
-    expectTypeOf<M3LReceivedMessage>().toMatchTypeOf<{
+    expectTypeOf<M3LReceivedMessage>().toExtend<{
       author: M3LMessageAuthor;
     }>();
   });
