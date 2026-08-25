@@ -216,6 +216,20 @@ falling back to the local `main` if `origin/main` is absent, and validates
 the symmetric way with `pnpm worktree:remove <slug>` (add `--force` to discard
 uncommitted/untracked changes first).
 
+To investigate or audit an existing branch — an abandoned or in-review branch
+you don't intend to develop on — without a raw manual `git worktree add
+--detach`, use `--from <ref>` instead of branching from main:
+
+```bash
+pnpm worktree:new <slug> --from origin/feat/some-existing-branch
+```
+
+This checks out `<ref>` as a detached-HEAD worktree at
+`../m3l-automation-<slug>` and provisions it the same way. `--from` is
+mutually exclusive with `--fix` (there's no new branch to prefix). Tear down
+the same way, with `pnpm worktree:remove <slug>` — it already handles a
+detached worktree correctly (there's no branch to delete).
+
 A fresh worktree is a clean checkout: it has no `node_modules` and none of your
 gitignored local files, which is why `pnpm worktree:setup` exists. The `.git`
 directory (and therefore the lefthook hooks) is shared, so hooks work without a
