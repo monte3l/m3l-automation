@@ -63,12 +63,12 @@
         {
           "file": "packages/m3l-common/src/core/logging/redact.ts",
           "symbol": "redactSensitiveLogText",
-          "blob": "f63b064fa8781afe744fc9c6f0e45c2f4b75088d"
+          "blob": "8715a829a731e9b3db18a5cc6e00f70cc406ed07"
         },
         {
           "file": "packages/m3l-common/src/core/logging/redact.ts",
           "symbol": "redactSensitiveLogValue",
-          "blob": "f63b064fa8781afe744fc9c6f0e45c2f4b75088d"
+          "blob": "8715a829a731e9b3db18a5cc6e00f70cc406ed07"
         },
         {
           "file": "packages/m3l-common/src/core/logging/M3LLogger.ts",
@@ -98,12 +98,12 @@
         {
           "file": "packages/m3l-common/src/core/logging/redact.ts",
           "symbol": "M3LSecretNamesPort",
-          "blob": "f63b064fa8781afe744fc9c6f0e45c2f4b75088d"
+          "blob": "8715a829a731e9b3db18a5cc6e00f70cc406ed07"
         },
         {
           "file": "packages/m3l-common/src/core/logging/redact.ts",
           "symbol": "M3LRedactOptions",
-          "blob": "f63b064fa8781afe744fc9c6f0e45c2f4b75088d"
+          "blob": "8715a829a731e9b3db18a5cc6e00f70cc406ed07"
         }
       ],
       "retrieved": "2026-08-25"
@@ -225,25 +225,25 @@
         {
           "file": "packages/m3l-common/src/core/logging/redact.ts",
           "symbol": "redactSensitiveLogText",
-          "blob": "f63b064fa8781afe744fc9c6f0e45c2f4b75088d"
+          "blob": "8715a829a731e9b3db18a5cc6e00f70cc406ed07"
         },
         {
           "file": "packages/m3l-common/src/core/logging/redact.ts",
           "symbol": "redactSensitiveLogValue",
-          "blob": "f63b064fa8781afe744fc9c6f0e45c2f4b75088d"
+          "blob": "8715a829a731e9b3db18a5cc6e00f70cc406ed07"
         },
         {
           "file": "packages/m3l-common/src/core/logging/redact.ts",
           "symbol": "M3LSecretNamesPort",
-          "blob": "f63b064fa8781afe744fc9c6f0e45c2f4b75088d"
+          "blob": "8715a829a731e9b3db18a5cc6e00f70cc406ed07"
         },
         {
           "file": "packages/m3l-common/src/core/logging/redact.ts",
           "symbol": "M3LRedactOptions",
-          "blob": "f63b064fa8781afe744fc9c6f0e45c2f4b75088d"
+          "blob": "8715a829a731e9b3db18a5cc6e00f70cc406ed07"
         }
       ],
-      "retrieved": "2026-08-14"
+      "retrieved": "2026-08-25"
     },
     {
       "heading": "Notes and behavior",

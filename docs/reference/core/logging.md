@@ -343,23 +343,56 @@ over the same underlying redaction call. See
 [`diagnostics`](./diagnostics.md#public-api)'s redaction-guarantees note for
 the other sinks' equivalent contract.
 
-**Known limitation, shared with every other `redactSensitiveLogValue`/
-`redactSensitiveLogText` consumer (not introduced or worsened by F28) —
-tracked separately as a follow-up:** a declared (non-heuristic) secret's
-`key=value` pair can be swallowed, unredacted, when it is immediately
-preceded — with nothing to stop the value class before it — by an unrelated
-`word:`/`word=` sequence, because pass 1's bare-value class has no
-whitespace/separator boundary short of the next comma, semicolon, or
-whitespace; and a value with no own enumerable string-keyed properties
-(`Date`, `Map`, `Set` — their state lives outside what `Object.entries` can
-see) is silently replaced with `{}`. This is **not** because such a value is
-excluded from recursion — an ordinary class instance's own fields _are_
-recursed into and redacted correctly, the same as a plain object's — it is
-because `Object.entries` returns nothing for these particular built-ins, so
-there is nothing for the redactor to walk. Both are pre-existing
-characteristics of the shared redaction engine — already present, unchanged,
-in `M3LBreadcrumbTrail.record()`'s own redaction call — not something this
-logging surface introduces.
+**F29 (issue #637) fixed two bugs previously documented here as known
+limitations of the shared redaction engine.** Both are now corrected in
+`redactSensitiveLogText`/`redactSensitiveLogValue` (and, for the second one,
+in `core/diagnostics/format-error.ts`'s independent copy of the same check —
+see [`diagnostics`](./diagnostics.md#public-api)):
+
+- **Swallow bug (fixed).** A declared (non-heuristic) secret's `key=value`
+  pair directly following an unrelated, non-sensitive `word:`/`word=`
+  sequence with nothing of its own attached (e.g. `"failed: tenantRef=secret"`)
+  is now independently redacted rather than swallowed whole as the unrelated
+  key's own value. The fix lives in `redactBareMatch`, not the regex itself —
+  it checks the outer key's sensitivity first (unconditionally redacting a
+  sensitive/declared key's whole value, exactly as before, even when that
+  value legitimately contains its own `:`/`=`), and only for a non-sensitive
+  outer key with a whitespace-separated pair does it additionally look for a
+  swallowed, glued `innerKey=value`/`innerKey:value` pair whose own key is
+  sensitive/declared. Three narrower shapes remain deliberate, documented
+  residual limitations, specifically for a _declared_ (non-heuristic) secret
+  — the built-in heuristic's own word list is additionally rescued in all
+  three by the third, embedded-word pass, which the declared-secrets port is
+  never consulted on (see `redactSensitiveLogText`'s `@remarks`): a declared
+  secret embedded in a fully **glued** value chain
+  (`url=https://x/?tenant-ref=abc`) still stays swallowed; an inner key
+  separated from **its own** operator by whitespace too
+  (`failed: tenantRef : secret`) is not rescued; and an inner pair carrying a
+  recognized auth-scheme prefix (`failed: Bearer tenantRef=secret`) is not
+  rescued either — the rescue's key class is `^`-anchored against the start
+  of the swallowed value and cannot span the space after `Bearer`/`Basic`/
+  `Digest`/`Token`. All three are structurally impossible to close further
+  without reopening the same regression this fix closed.
+- **`Date`/`Map`/`Set` data loss (fixed).** These three built-ins no longer
+  collapse to `{}`. `Date` is shallow-cloned. `Map`/`Set` are now
+  **recursively redacted**: a `Map`'s string-keyed entries are checked for
+  sensitivity the same way a plain object's properties are — a sensitive
+  entry's value is replaced wholesale, exactly as a plain object's would be,
+  never itself recursed into — and a non-sensitive entry's value is recursed
+  the same way a plain object's non-sensitive property value is. A `Set`'s
+  elements are each recursed the same way an array's elements are. An entry whose `Map` key is not a `string`, or is a
+  dangerous key name (`__proto__`/`constructor`/`prototype`), is dropped
+  entirely — both key and value — since a non-string key has no
+  representable name to check for sensitivity and passing its value through
+  unchecked would risk an unattributable leak. A `Map`/`Set`-shaped value
+  that throws while actually being iterated (e.g. a prototype-spoofed object
+  with no real internal state) degrades to a fixed placeholder string rather
+  than propagating. **Remaining scope boundary:** only a `Map`'s own
+  entries and a `Set`'s own elements are redacted — an object riding as a
+  `Map` **key** is dropped rather than recursed into (see above), and
+  neither this redactor nor `run-report.ts`'s own separate normalize-before-
+  redact pipeline guards against a self-referential (cyclic) `Map`/`Set`
+  structure any more than they do for a cyclic plain object today.
 
 ## Notes and behavior
 

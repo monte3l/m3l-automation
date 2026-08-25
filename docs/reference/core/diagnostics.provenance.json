@@ -39,31 +39,31 @@
           "file": "packages/m3l-common/src/core/diagnostics/format-error.ts",
           "symbol": "M3LFormatErrorChainOptions",
           "lines": "46-62",
-          "blob": "51f6f83fffd0d9e08812ba262f527a5e2c808dac"
+          "blob": "3803a4dc64ea2e3d38a67913731136e1247a118f"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/format-error.ts",
           "symbol": "M3LSerializedError",
           "lines": "63-267",
-          "blob": "51f6f83fffd0d9e08812ba262f527a5e2c808dac"
+          "blob": "3803a4dc64ea2e3d38a67913731136e1247a118f"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/format-error.ts",
           "symbol": "scrubUrlsInText",
           "lines": "268-429",
-          "blob": "51f6f83fffd0d9e08812ba262f527a5e2c808dac"
+          "blob": "3803a4dc64ea2e3d38a67913731136e1247a118f"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/format-error.ts",
           "symbol": "formatErrorChain",
           "lines": "430-475",
-          "blob": "51f6f83fffd0d9e08812ba262f527a5e2c808dac"
+          "blob": "3803a4dc64ea2e3d38a67913731136e1247a118f"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/format-error.ts",
           "symbol": "serializeErrorChain",
           "lines": "476-489",
-          "blob": "51f6f83fffd0d9e08812ba262f527a5e2c808dac"
+          "blob": "3803a4dc64ea2e3d38a67913731136e1247a118f"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/breadcrumbs.ts",
@@ -159,53 +159,53 @@
           "file": "packages/m3l-common/src/core/diagnostics/run-report.ts",
           "symbol": "M3LRunOutcome",
           "lines": "52-64",
-          "blob": "b839574c5f42023c0973e04871f780442a8e4460"
+          "blob": "c5b4b078e010d24681ed3ca92063cbb40d7555f6"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/run-report.ts",
           "symbol": "M3LRunReportFailure",
           "lines": "65-87",
-          "blob": "b839574c5f42023c0973e04871f780442a8e4460"
+          "blob": "c5b4b078e010d24681ed3ca92063cbb40d7555f6"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/run-report.ts",
           "symbol": "M3LRunReportInput",
           "lines": "88-115",
-          "blob": "b839574c5f42023c0973e04871f780442a8e4460"
+          "blob": "c5b4b078e010d24681ed3ca92063cbb40d7555f6"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/run-report.ts",
           "symbol": "M3LRunReportBase",
           "lines": "116-150",
-          "blob": "b839574c5f42023c0973e04871f780442a8e4460"
+          "blob": "c5b4b078e010d24681ed3ca92063cbb40d7555f6"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/run-report.ts",
           "symbol": "M3LRunReport",
           "lines": "151-176",
-          "blob": "b839574c5f42023c0973e04871f780442a8e4460"
+          "blob": "c5b4b078e010d24681ed3ca92063cbb40d7555f6"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/run-report.ts",
           "symbol": "M3LRunReporterOptions",
           "lines": "177-946",
-          "blob": "b839574c5f42023c0973e04871f780442a8e4460"
+          "blob": "c5b4b078e010d24681ed3ca92063cbb40d7555f6"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/run-report.ts",
           "symbol": "M3LRunReporter",
           "lines": "947-1189",
-          "blob": "b839574c5f42023c0973e04871f780442a8e4460"
+          "blob": "c5b4b078e010d24681ed3ca92063cbb40d7555f6"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/run-report.ts",
           "symbol": "M3LRunRecoveryEntry",
-          "blob": "b839574c5f42023c0973e04871f780442a8e4460"
+          "blob": "c5b4b078e010d24681ed3ca92063cbb40d7555f6"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/run-report.ts",
           "symbol": "M3L_RECOVERY_LIMIT",
-          "blob": "b839574c5f42023c0973e04871f780442a8e4460"
+          "blob": "c5b4b078e010d24681ed3ca92063cbb40d7555f6"
         }
       ],
       "retrieved": "2026-08-25"
