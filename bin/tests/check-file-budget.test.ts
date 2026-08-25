@@ -4,7 +4,8 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import * as fs from "node:fs";
 
 // ---------------------------------------------------------------------------
-// Mock setup for walkMatching / collectBudgetEntries (node:fs)
+// Mock setup for walkMatching / collectBudgetEntries (node:fs) and
+// collectBudgetEntriesAtRef / readBaselineAtRef (node:child_process)
 // ---------------------------------------------------------------------------
 //
 // Spread the actual fs so vi.spyOn can intercept individual methods (ESM
@@ -16,13 +17,27 @@ vi.mock("node:fs", async () => {
   return { ...actual };
 });
 
+// Same vi.hoisted + vi.mock pattern bin/tests/check-test-counts.test.ts uses
+// for spawnSync — execFileSync here.
+const h = vi.hoisted(() => ({
+  execFileSync: vi.fn(),
+}));
+
+vi.mock("node:child_process", () => ({
+  execFileSync: h.execFileSync,
+}));
+
 import {
   SRC_CEILING_BYTES,
   TEST_CEILING_BYTES,
   walkMatching,
   isCoverageEligibleSrcFile,
   isTestFile,
+  classifyRefPath,
   collectBudgetEntries,
+  collectBudgetEntriesAtRef,
+  readBaselineAtRef,
+  parseRefArg,
   checkBudget,
   buildBaseline,
 } from "../check-file-budget.mjs";
@@ -163,6 +178,19 @@ describe("isTestFile", () => {
     ["tests/index.test.ts", true],
   ])("isTestFile(%s) -> %s", (relPath, expected) => {
     expect(isTestFile(relPath)).toBe(expected);
+  });
+});
+
+describe("classifyRefPath", () => {
+  test.each([
+    ["packages/m3l-common/src/core/foo/M3LFoo.ts", "src"],
+    ["packages/m3l-common/tests/core/foo/M3LFoo.test.ts", "test"],
+    ["packages/m3l-common/src/core/foo/index.ts", null],
+    ["packages/m3l-common/src/core/foo/M3LFoo.d.ts", null],
+    ["packages/m3l-common/tests/core/foo/helper.ts", null],
+    ["bin/check-file-budget.mjs", null],
+  ])("classifyRefPath(%s) -> %s", (relPath, expected) => {
+    expect(classifyRefPath(relPath)).toBe(expected);
   });
 });
 
@@ -443,5 +471,101 @@ describe("buildBaseline", () => {
       "packages/m3l-common/src/m.ts",
       "packages/m3l-common/src/z.ts",
     ]);
+  });
+});
+
+describe("collectBudgetEntriesAtRef", () => {
+  afterEach(() => {
+    h.execFileSync.mockReset();
+  });
+
+  test("filters a git ls-tree listing through classifyRefPath and shapes/sorts the survivors", () => {
+    const listing = [
+      "packages/m3l-common/src/core/foo/M3LFoo.ts",
+      "packages/m3l-common/src/core/foo/index.ts",
+      "packages/m3l-common/tests/core/foo/M3LFoo.test.ts",
+      "packages/m3l-common/tests/core/foo/helper.ts",
+      "bin/check-file-budget.mjs",
+      "",
+    ].join("\n");
+    const sizeByPath: Record<string, string> = {
+      "packages/m3l-common/src/core/foo/M3LFoo.ts": "1234",
+      "packages/m3l-common/tests/core/foo/M3LFoo.test.ts": "5678",
+    };
+
+    h.execFileSync.mockImplementation((_cmd: string, args: string[]) => {
+      if (args[0] === "ls-tree") return listing;
+      if (args[0] === "cat-file" && args[1] === "-s") {
+        const target = String(args[2]);
+        const path = target.slice(target.indexOf(":") + 1);
+        return sizeByPath[path] ?? "0";
+      }
+      throw new Error(`unexpected execFileSync call: ${JSON.stringify(args)}`);
+    });
+
+    expect(collectBudgetEntriesAtRef("main")).toEqual([
+      {
+        path: "packages/m3l-common/src/core/foo/M3LFoo.ts",
+        bytes: 1234,
+        category: "src",
+      },
+      {
+        path: "packages/m3l-common/tests/core/foo/M3LFoo.test.ts",
+        bytes: 5678,
+        category: "test",
+      },
+    ]);
+  });
+});
+
+describe("readBaselineAtRef", () => {
+  afterEach(() => {
+    h.execFileSync.mockReset();
+  });
+
+  test("returns the parsed baseline when present at ref", () => {
+    h.execFileSync.mockImplementation((_cmd: string, args: string[]) => {
+      if (args[0] === "cat-file" && args[1] === "-e") return "";
+      if (args[0] === "show")
+        return '{"packages/m3l-common/src/big.ts": 30000}\n';
+      throw new Error(`unexpected execFileSync call: ${JSON.stringify(args)}`);
+    });
+
+    expect(readBaselineAtRef("main")).toEqual({
+      "packages/m3l-common/src/big.ts": 30000,
+    });
+  });
+
+  test("returns {} when the baseline is missing at ref", () => {
+    h.execFileSync.mockImplementation((_cmd: string, args: string[]) => {
+      if (args[0] === "cat-file" && args[1] === "-e") {
+        throw new Error(
+          "fatal: Not a valid object name main:bin/file-budget-baseline.json",
+        );
+      }
+      throw new Error(`unexpected execFileSync call: ${JSON.stringify(args)}`);
+    });
+
+    expect(readBaselineAtRef("main")).toEqual({});
+  });
+
+  test("propagates a JSON.parse failure on an invalid baseline rather than swallowing it", () => {
+    h.execFileSync.mockImplementation((_cmd: string, args: string[]) => {
+      if (args[0] === "cat-file" && args[1] === "-e") return "";
+      if (args[0] === "show") return "{not valid json";
+      throw new Error(`unexpected execFileSync call: ${JSON.stringify(args)}`);
+    });
+
+    expect(() => readBaselineAtRef("main")).toThrow();
+  });
+});
+
+describe("parseRefArg", () => {
+  test("returns the value following --ref", () => {
+    expect(parseRefArg(["--ref", "main"])).toBe("main");
+  });
+
+  test("returns undefined when --ref is absent", () => {
+    expect(parseRefArg(["--update"])).toBeUndefined();
   });
 });

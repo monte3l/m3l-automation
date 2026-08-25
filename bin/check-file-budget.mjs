@@ -32,9 +32,11 @@
  * Usage:
  *   node bin/check-file-budget.mjs            # verify (fails on growth/new-over-ceiling)
  *   node bin/check-file-budget.mjs --update    # rewrite the baseline from current sizes
+ *   node bin/check-file-budget.mjs --ref <ref>    # verify a committed ref instead of the working tree (no checkout/worktree required); incompatible with --update
  */
 import process from "node:process";
 import { readFileSync, writeFileSync, readdirSync, existsSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseJsonFlag, createReporter, repoRoot } from "./lib/report.mjs";
@@ -114,6 +116,28 @@ export function isTestFile(relPath) {
   return relPath.endsWith(".test.ts");
 }
 
+const SRC_SUBTREE_RE = /^packages\/[^/]+\/src\//;
+const TEST_SUBTREE_RE = /^packages\/[^/]+\/tests\//;
+
+/**
+ * Classify a `git ls-tree`-reported path the same way
+ * {@link collectBudgetEntries}'s per-package walk classifies a filesystem
+ * path — but from a bare repo-relative string, since `--ref` mode has no
+ * directory to walk per package. `isCoverageEligibleSrcFile`/`isTestFile`
+ * already operate on the full repo-relative path, so this only adds the
+ * `packages/<pkg>/{src,tests}/` subtree gate that the filesystem walk gets
+ * for free from starting inside each package's own `src`/`tests` directory.
+ *
+ * @param {string} relPath repo-relative path
+ * @returns {"src" | "test" | null}
+ */
+export function classifyRefPath(relPath) {
+  if (SRC_SUBTREE_RE.test(relPath) && isCoverageEligibleSrcFile(relPath))
+    return "src";
+  if (TEST_SUBTREE_RE.test(relPath) && isTestFile(relPath)) return "test";
+  return null;
+}
+
 /**
  * @typedef {Object} BudgetEntry
  * @property {string} path repo-relative
@@ -169,6 +193,79 @@ export function collectBudgetEntries() {
     }
   }
   return entries.sort((a, b) => a.path.localeCompare(b.path));
+}
+
+/**
+ * {@link collectBudgetEntries}'s equivalent for a committed ref, read via
+ * `git` plumbing instead of `node:fs` — no checkout or worktree required.
+ * `git ls-tree` lists every path in `<ref>`'s `packages/` subtree in one
+ * call; `git cat-file -s` reports a blob's byte size directly, so there is
+ * no need to materialize file content the way the filesystem path's
+ * `readFileSync` does.
+ *
+ * @param {string} ref a ref resolvable by `git` (branch, tag, SHA, `origin/*`)
+ * @returns {BudgetEntry[]}
+ * @throws {Error} if `ref` cannot be resolved, or `git` fails for any reason
+ */
+export function collectBudgetEntriesAtRef(ref) {
+  const listing = execFileSync(
+    "git",
+    ["ls-tree", "-r", "--name-only", ref, "--", "packages/"],
+    { cwd: root, encoding: "utf8" },
+  );
+
+  /** @type {BudgetEntry[]} */
+  const entries = [];
+  for (const relPath of listing.split("\n")) {
+    if (relPath === "") continue;
+    const category = classifyRefPath(relPath);
+    if (category === null) continue;
+    const size = execFileSync("git", ["cat-file", "-s", `${ref}:${relPath}`], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    entries.push({ path: relPath, bytes: Number(size.trim()), category });
+  }
+  return entries.sort((a, b) => a.path.localeCompare(b.path));
+}
+
+/**
+ * {@link readFileSync}/`JSON.parse` of `bin/file-budget-baseline.json`, but
+ * against a committed ref instead of the working tree. Mirrors the
+ * filesystem path's contract exactly: a baseline absent at `ref` yields `{}`
+ * (the `existsSync` gate's ref-mode equivalent), while a present-but-invalid
+ * baseline's `JSON.parse` failure propagates uncaught — the caller's job to
+ * report fatally, same as the filesystem path.
+ *
+ * @param {string} ref a ref resolvable by `git`
+ * @returns {Record<string, number>}
+ */
+export function readBaselineAtRef(ref) {
+  try {
+    execFileSync("git", ["cat-file", "-e", `${ref}:${baselineRel}`], {
+      cwd: root,
+      encoding: "utf8",
+    });
+  } catch {
+    return {};
+  }
+  const text = execFileSync("git", ["show", `${ref}:${baselineRel}`], {
+    cwd: root,
+    encoding: "utf8",
+  });
+  return JSON.parse(text);
+}
+
+/**
+ * Read `--ref <value>` out of an argv array, mirroring
+ * `check-review-size.mjs`'s `parseArgs`.
+ *
+ * @param {string[]} argv
+ * @returns {string | undefined}
+ */
+export function parseRefArg(argv) {
+  const i = argv.indexOf("--ref");
+  return i >= 0 ? argv[i + 1] : undefined;
 }
 
 /**
@@ -229,14 +326,27 @@ export function buildBaseline(entries) {
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const { json, argv } = parseJsonFlag();
   const reporter = createReporter(json);
+  const ref = parseRefArg(argv);
+
+  if (ref !== undefined && argv.includes("--update")) {
+    reporter.error(
+      "--update cannot be combined with --ref — there is no committed " +
+        "blob to write a regenerated baseline into. Run --update on a " +
+        "checked-out working tree instead.",
+    );
+    reporter.finish();
+    process.exit(1);
+  }
 
   let entries;
   try {
-    entries = collectBudgetEntries();
+    entries = ref ? collectBudgetEntriesAtRef(ref) : collectBudgetEntries();
   } catch (cause) {
+    const message = cause instanceof Error ? cause.message : String(cause);
     reporter.error(
-      `Could not scan ${relative(root, packagesDir)}: ` +
-        `${cause instanceof Error ? cause.message : String(cause)}`,
+      ref
+        ? `Could not scan packages/ at ${ref}: ${message}`
+        : `Could not scan ${relative(root, packagesDir)}: ${message}`,
     );
     reporter.finish();
     process.exit(1);
@@ -257,7 +367,17 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
 
   /** @type {Record<string, number>} */
   let baseline = {};
-  if (existsSync(baselinePath)) {
+  if (ref !== undefined) {
+    try {
+      baseline = readBaselineAtRef(ref);
+    } catch (cause) {
+      reporter.error(
+        `Could not parse ${baselineRel} at ${ref}: ${cause instanceof Error ? cause.message : String(cause)}`,
+      );
+      reporter.finish();
+      process.exit(1);
+    }
+  } else if (existsSync(baselinePath)) {
     try {
       baseline = JSON.parse(readFileSync(baselinePath, "utf8"));
     } catch (cause) {

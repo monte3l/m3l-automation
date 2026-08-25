@@ -238,16 +238,49 @@ not merely a missing message.
 - **Semver impact:** none. Tooling and process only; no `packages/m3l-common`
   public surface changes.
 
+## Amendment (2026-08-25)
+
+Issue #579 (F26), filed from the F23 field test
+(`docs/logs/2026-08-21-f23-field-test-b2.md`): `pnpm check:file-budget` only
+scanned the working tree via `node:fs` — auditing a branch's file sizes
+without checking it out required falling back to a raw
+`git worktree add --detach`, the same class of friction F25 (`worktree:new
+--from <ref>`, this ADR's sibling amendment on ADR-0014) already closed for
+worktree creation. The issue was filed as an open design question rather
+than a bug — `check:file-budget` is an absolute per-file ratchet against a
+committed baseline, not a diff range, so it wasn't obvious a `--base`/`--head`
+pair (`check:review-size`'s shape) was even the right fix. The maintainer's
+call: add `--ref <ref>` instead — there is no "base" here, only "which tree
+state to read."
+
+- **`--ref <ref>` reads via `git` plumbing, not `node:fs`.** `git ls-tree -r
+--name-only <ref> -- packages/` lists every path in the ref's `packages/`
+  subtree in one call; `git cat-file -s <ref>:<path>` reports a blob's byte
+  size directly, with no need to materialize file content. The baseline read
+  follows the same substitution: `git cat-file -e <ref>:bin/file-budget-baseline.json`
+  stands in for the working-tree path's `existsSync` gate, and `git show
+<ref>:bin/file-budget-baseline.json` stands in for `readFileSync` — no
+  checkout or worktree required.
+- **Mutually exclusive with `--update`.** There is no committed blob to write
+  a regenerated baseline into at an arbitrary ref, so `--ref` combined with
+  `--update` fails fast with a clear error rather than doing partial work.
+- **No new gate wiring.** Like `check:review-size`'s `--base`/`--head`, `--ref`
+  is invoked manually (ad hoc auditing), not from `package.json` or
+  `lefthook.yml` — `pnpm check:cadence`/`pnpm verify` are unaffected.
+
 ## Links
 
 - Supersedes / superseded by: none.
 - Related: [ADR-0016 (signed-commit enforcement and the pre-work decision
   gate)](./0016-signed-commits-and-decision-gate.md),
-  [ADR-0046 (the codified-procedure engine this post-mortem is about)](./0046-codified-procedure-engine.md).
+  [ADR-0046 (the codified-procedure engine this post-mortem is about)](./0046-codified-procedure-engine.md),
+  [ADR-0014 (symmetric worktree tooling, whose 2026-08-25 amendment closed the
+  sibling F25 friction item)](./0014-symmetric-worktree-tooling.md).
 - Evidence: `docs/research/pr-review-action-tuning.md` §§ Addendum
   (2026-08-20), (2026-08-20b), Outcome (2026-08-20c);
   `docs/plans/archive/2026-08-20-pr-review-turn-budget.md`;
-  `docs/plans/IMPLEMENTATION.md` F23 row.
-- Gate: `.github/workflows/claude-pr-review.yml` (`MAX_REVIEWABLE_BYTES`).
-- Issues: closes #571 (F23); #474 (B2, `core/procedure`) remains open and is
-  the first intended consumer of this discipline.
+  `docs/plans/IMPLEMENTATION.md` F23 row; `docs/logs/2026-08-21-f23-field-test-b2.md`.
+- Gate: `.github/workflows/claude-pr-review.yml` (`MAX_REVIEWABLE_BYTES`);
+  `bin/check-file-budget.mjs`.
+- Issues: closes #571 (F23) and #579 (F26); #474 (B2, `core/procedure`)
+  remains open and is the first intended consumer of this discipline.
