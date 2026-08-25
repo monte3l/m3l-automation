@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // Renders the ADR-0032 visibility-hub dashboard to dist/index.html: the
 // current Roadmap/Implementation-backlog/Implementation-status trackers plus
-// an index over the ADR/work-log/plan-archive/reference-doc corpus, all in
-// one self-contained, styled HTML page. Run by .github/workflows/pages.yml on
+// an index over the ADR/work-log/plan-archive/contributing/guides/research/reference-doc
+// corpus, all in one self-contained, styled HTML page. Run by .github/workflows/pages.yml on
 // every push to `main` (published to GitHub Pages alongside
 // dist/commit-stats/, see gen-commit-stats-endpoint.mjs); also runnable
 // locally via `pnpm gen:project-hub`.
@@ -154,6 +154,18 @@ function runGenerator(reporter) {
     listMarkdownFiles("docs/plans/archive"),
   );
   const planFiles = readFileSet("docs/plans", listMarkdownFiles("docs/plans"));
+  const contributingFiles = readFileSet(
+    "docs/contributing",
+    listMarkdownFiles("docs/contributing"),
+  );
+  const guideFiles = readFileSet(
+    "docs/guides",
+    listMarkdownFiles("docs/guides"),
+  );
+  const researchFiles = readFileSet(
+    "docs/research",
+    listMarkdownFiles("docs/research", ["README.md"]),
+  );
 
   const catalog = JSON.parse(readDoc("docs/reference/catalog.json"));
   const scriptPages = listMarkdownFiles(SCRIPT_DOCS_DIR, ["README.md"]).map(
@@ -163,6 +175,8 @@ function runGenerator(reporter) {
     "README.md",
     "packages/m3l-common/README.md",
     "docs/README.md",
+    "docs/getting-started.md",
+    "docs/m3l-common-architecture.md",
     ...scriptReadmePaths(),
   ];
 
@@ -171,6 +185,9 @@ function runGenerator(reporter) {
     logFiles,
     archiveFiles,
     planFiles,
+    contributingFiles,
+    guideFiles,
+    researchFiles,
     catalog,
     scriptPages,
     readmePaths,
