@@ -281,8 +281,11 @@ on its own field instead of relying on the embedded-value pass to catch it.
 
 **Production consumers.** `core/diagnostics`'s `M3LBreadcrumbTrail`,
 `M3LRunReporter`, and `formatErrorChain`/`serializeErrorChain` each accept an
-optional `secrets: M3LSecretNamesPort` constructor/options field that threads
-straight into these two helpers. `core/script`'s `runScript()` and
+optional `secrets: M3LSecretNamesPort` constructor/options field that reaches
+these two helpers. `M3LBreadcrumbTrail` and `M3LRunReporter` wrap it once, at
+construction, in the same per-name throw guard described below; a direct
+`formatErrorChain`/`serializeErrorChain` call still receives the caller's port
+unguarded. `core/script`'s `runScript()` and
 `M3LScript` each derive their own copy from the running script's own config
 schema; both register their declared secret names into the same
 process-global union the process-fault guards (`unhandledRejection`/

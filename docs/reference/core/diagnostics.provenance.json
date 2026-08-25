@@ -159,53 +159,53 @@
           "file": "packages/m3l-common/src/core/diagnostics/run-report.ts",
           "symbol": "M3LRunOutcome",
           "lines": "52-64",
-          "blob": "6f2ea550bea1af4fd4af118775d19f76db863c60"
+          "blob": "b839574c5f42023c0973e04871f780442a8e4460"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/run-report.ts",
           "symbol": "M3LRunReportFailure",
           "lines": "65-87",
-          "blob": "6f2ea550bea1af4fd4af118775d19f76db863c60"
+          "blob": "b839574c5f42023c0973e04871f780442a8e4460"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/run-report.ts",
           "symbol": "M3LRunReportInput",
           "lines": "88-115",
-          "blob": "6f2ea550bea1af4fd4af118775d19f76db863c60"
+          "blob": "b839574c5f42023c0973e04871f780442a8e4460"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/run-report.ts",
           "symbol": "M3LRunReportBase",
           "lines": "116-150",
-          "blob": "6f2ea550bea1af4fd4af118775d19f76db863c60"
+          "blob": "b839574c5f42023c0973e04871f780442a8e4460"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/run-report.ts",
           "symbol": "M3LRunReport",
           "lines": "151-176",
-          "blob": "6f2ea550bea1af4fd4af118775d19f76db863c60"
+          "blob": "b839574c5f42023c0973e04871f780442a8e4460"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/run-report.ts",
           "symbol": "M3LRunReporterOptions",
           "lines": "177-946",
-          "blob": "6f2ea550bea1af4fd4af118775d19f76db863c60"
+          "blob": "b839574c5f42023c0973e04871f780442a8e4460"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/run-report.ts",
           "symbol": "M3LRunReporter",
           "lines": "947-1189",
-          "blob": "6f2ea550bea1af4fd4af118775d19f76db863c60"
+          "blob": "b839574c5f42023c0973e04871f780442a8e4460"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/run-report.ts",
           "symbol": "M3LRunRecoveryEntry",
-          "blob": "6f2ea550bea1af4fd4af118775d19f76db863c60"
+          "blob": "b839574c5f42023c0973e04871f780442a8e4460"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/run-report.ts",
           "symbol": "M3L_RECOVERY_LIMIT",
-          "blob": "6f2ea550bea1af4fd4af118775d19f76db863c60"
+          "blob": "b839574c5f42023c0973e04871f780442a8e4460"
         }
       ],
       "retrieved": "2026-08-25"

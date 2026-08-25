@@ -319,7 +319,7 @@ export interface M3LRunReporterOptions {
    * text (e.g. a URL query string) is not caught this way; see
    * {@link redactSensitiveLogText}'s `@remarks`. A throwing `isSecret`
    * implementation is caught per name (rather than collapsing the failure,
-   * timeline, archive, or environment section, or the `persist()`
+   * timeline, archive, recovery, or environment section, or the `persist()`
    * write-failure diagnostic, to nothing), reported to stderr, and the
    * offending name is conservatively treated as secret.
    */
