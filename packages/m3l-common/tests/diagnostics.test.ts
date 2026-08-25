@@ -805,6 +805,49 @@ describe("serializeErrorChain()", () => {
 
     expect(context?.creds.get("apiKey")).toBe("[REDACTED]");
   });
+
+  // (issue #637 / hub-sync F29, silent-failure-hunter follow-up) —
+  // format-error.ts's own Map/Set guard (in `scrubUrlsInValue`, mirroring
+  // `core/logging/redact.ts`'s guard) had ZERO test coverage through the
+  // public `serializeErrorChain` surface before this test. A Map/Set-shaped
+  // context value with no real internal state (`Object.create(Map.prototype)`)
+  // must degrade to a safe placeholder rather than throw or silently blank
+  // out — and a sibling field in the same context must survive intact.
+  test("a fake Map (no real internal Map state) in context degrades to a placeholder through serializeErrorChain; a sibling context field survives", () => {
+    const fakeMap: unknown = Object.create(Map.prototype);
+    const error = new M3LError("bad config", {
+      code: "ERR_CONFIG_MISSING",
+      context: { m: fakeMap, tail: "TAIL_OK" },
+    });
+
+    expect(() => serializeErrorChain(error)).not.toThrow();
+
+    const levels = serializeErrorChain(error);
+    const context = levels[0]?.context as
+      { m: unknown; tail: unknown } | undefined;
+
+    expect(context?.m).not.toBeInstanceOf(Map);
+    expect(typeof context?.m).toBe("string");
+    expect(context?.tail).toBe("TAIL_OK");
+  });
+
+  test("a fake Set (no real internal Set state) in context degrades to a placeholder through serializeErrorChain; a sibling context field survives", () => {
+    const fakeSet: unknown = Object.create(Set.prototype);
+    const error = new M3LError("bad config", {
+      code: "ERR_CONFIG_MISSING",
+      context: { s: fakeSet, tail: "TAIL_OK" },
+    });
+
+    expect(() => serializeErrorChain(error)).not.toThrow();
+
+    const levels = serializeErrorChain(error);
+    const context = levels[0]?.context as
+      { s: unknown; tail: unknown } | undefined;
+
+    expect(context?.s).not.toBeInstanceOf(Set);
+    expect(typeof context?.s).toBe("string");
+    expect(context?.tail).toBe("TAIL_OK");
+  });
 });
 
 // =============================================================================

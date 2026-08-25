@@ -46,6 +46,34 @@ const MAX_DEPTH_MARKER = "[max cause depth reached]";
  */
 const UNREDACTABLE_COLLECTION = "[unredactable Map/Set omitted]";
 
+/**
+ * Writes a best-effort stderr diagnostic when a `Map`/`Set`-shaped value's
+ * own iteration throws (see {@link UNREDACTABLE_COLLECTION}) — mirroring
+ * `core/logging/redact.ts`'s own `reportUnredactableCollection` for the
+ * same class of structural redaction failure, but self-contained here
+ * rather than imported: this module already explains (see
+ * {@link UNREDACTABLE_COLLECTION}'s own doc) why it keeps its own
+ * independent copy of the guard rather than depending on that module's
+ * internals. Wrapped in its own try/catch: a hostile `cause` (a throwing
+ * `.stack`/`.message` getter) must not defeat the diagnostic itself.
+ */
+function reportUnredactableCollection(
+  kind: "Map" | "Set",
+  cause: unknown,
+): void {
+  try {
+    const detail =
+      cause instanceof Error ? (cause.stack ?? cause.message) : String(cause);
+    process.stderr.write(
+      `m3l-diagnostics: URL scrub failed while iterating a ${kind}-shaped value: ${detail}\n`,
+    );
+  } catch {
+    process.stderr.write(
+      `m3l-diagnostics: URL scrub failed while iterating a ${kind}-shaped value (unreadable failure detail)\n`,
+    );
+  }
+}
+
 /** Separator joining rendered levels; contains the literal "caused by" text tests assert on. */
 const CAUSED_BY_SEPARATOR = "\n\ncaused by: ";
 
@@ -325,11 +353,15 @@ export function scrubUrlsInText(text: string): string {
 }
 
 /**
- * Scrubs a `Map`'s own entries: a string key is scrubbed the same way an
- * object property key is, and each value is recursed into via
- * {@link scrubUrlsInValue}. Extracted from {@link scrubUrlsInValue} to keep
- * that function's cyclomatic/cognitive complexity within the project's
- * lint budget.
+ * Scrubs an already-collected list of `Map` entries: a string key is
+ * scrubbed the same way an object property key is, and each value is
+ * recursed into via {@link scrubUrlsInValue}. Extracted from
+ * {@link scrubUrlsInMapSafely} to keep that function's cyclomatic/cognitive
+ * complexity within the project's lint budget, and so the recursive scrub
+ * below runs OUTSIDE {@link scrubUrlsInMapSafely}'s try/catch — an unrelated
+ * exception thrown deep inside a nested value must propagate normally, not
+ * be caught by the same handler that guards the raw iteration step and
+ * mislabeled as an unredactable collection.
  *
  * An entry whose key is not a `string`, or whose key is a dangerous own-key
  * name (`__proto__`/`constructor`/`prototype`), is DROPPED entirely — both
@@ -339,11 +371,11 @@ export function scrubUrlsInText(text: string): string {
  * `core/logging/redact.ts`'s `redactMapEntries` and
  * `core/diagnostics/run-report.ts`'s `normalizeMapEntries`.
  */
-function scrubUrlsInMap(
-  value: ReadonlyMap<unknown, unknown>,
+function scrubUrlsInMapEntries(
+  entries: readonly (readonly [unknown, unknown])[],
 ): Map<unknown, unknown> {
   const result = new Map<unknown, unknown>();
-  for (const [entryKey, entryValue] of value) {
+  for (const [entryKey, entryValue] of entries) {
     if (typeof entryKey !== "string" || isDangerousKey(entryKey)) continue;
     result.set(scrubUrlsInText(entryKey), scrubUrlsInValue(entryValue));
   }
@@ -351,17 +383,56 @@ function scrubUrlsInMap(
 }
 
 /**
- * Scrubs a `Set`'s elements, each recursed into via {@link scrubUrlsInValue}
- * the same way an array's elements are. Extracted from
- * {@link scrubUrlsInValue} to keep that function's cyclomatic/cognitive
- * complexity within the project's lint budget.
+ * Scrubs an already-collected list of `Set` elements, each recursed into
+ * via {@link scrubUrlsInValue} the same way an array's elements are.
+ * Extracted from {@link scrubUrlsInSetSafely} for the same reason
+ * {@link scrubUrlsInMapEntries} is extracted from
+ * {@link scrubUrlsInMapSafely}: the recursive scrub must run OUTSIDE the
+ * raw-iteration try/catch.
  */
-function scrubUrlsInSet(value: ReadonlySet<unknown>): Set<unknown> {
+function scrubUrlsInSetEntries(entries: readonly unknown[]): Set<unknown> {
   const result = new Set<unknown>();
-  for (const entry of value) {
+  for (const entry of entries) {
     result.add(scrubUrlsInValue(entry));
   }
   return result;
+}
+
+/**
+ * Scrubs a `Map`, guarding against a `Map`-shaped value that throws while
+ * actually being iterated — see {@link UNREDACTABLE_COLLECTION}'s own doc
+ * for the guard's rationale. The try/catch below wraps ONLY the raw
+ * iteration step (spreading `value` into a plain array) — never the
+ * subsequent recursive {@link scrubUrlsInValue} calls performed by
+ * {@link scrubUrlsInMapEntries}. An unrelated exception thrown deep inside a
+ * nested value must propagate normally rather than being caught here and
+ * mislabeled as an unredactable Map.
+ */
+function scrubUrlsInMapSafely(value: ReadonlyMap<unknown, unknown>): unknown {
+  let entries: (readonly [unknown, unknown])[];
+  try {
+    entries = [...value];
+  } catch (cause) {
+    reportUnredactableCollection("Map", cause);
+    return UNREDACTABLE_COLLECTION;
+  }
+  return scrubUrlsInMapEntries(entries);
+}
+
+/**
+ * Scrubs a `Set`, guarding against a `Set`-shaped value that throws while
+ * actually being iterated, mirroring {@link scrubUrlsInMapSafely}. The
+ * try/catch below wraps ONLY the raw iteration step, for the same reason.
+ */
+function scrubUrlsInSetSafely(value: ReadonlySet<unknown>): unknown {
+  let entries: unknown[];
+  try {
+    entries = [...value];
+  } catch (cause) {
+    reportUnredactableCollection("Set", cause);
+    return UNREDACTABLE_COLLECTION;
+  }
+  return scrubUrlsInSetEntries(entries);
 }
 
 /**
@@ -387,20 +458,8 @@ function scrubUrlsInValue(value: unknown): unknown {
   if (typeof value === "string") return scrubUrlsInText(value);
   if (Array.isArray(value))
     return value.map((entry) => scrubUrlsInValue(entry));
-  if (value instanceof Map) {
-    try {
-      return scrubUrlsInMap(value);
-    } catch {
-      return UNREDACTABLE_COLLECTION;
-    }
-  }
-  if (value instanceof Set) {
-    try {
-      return scrubUrlsInSet(value);
-    } catch {
-      return UNREDACTABLE_COLLECTION;
-    }
-  }
+  if (value instanceof Map) return scrubUrlsInMapSafely(value);
+  if (value instanceof Set) return scrubUrlsInSetSafely(value);
   if (isRedactableRecord(value)) {
     const result: Record<string, unknown> = {};
     for (const [key, entry] of Object.entries(value)) {

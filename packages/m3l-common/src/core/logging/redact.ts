@@ -32,6 +32,34 @@ const REDACTED = "[REDACTED]";
  */
 const UNREDACTABLE_COLLECTION = "[unredactable Map/Set omitted]";
 
+/**
+ * Writes a best-effort stderr diagnostic when a `Map`/`Set`-shaped value's
+ * own iteration throws (see {@link UNREDACTABLE_COLLECTION}) — mirroring
+ * `internal/logging/guardSecrets.ts`'s `reportRedactionFailure` convention
+ * for the same class of structural redaction failure, but self-contained
+ * here rather than imported: `guardSecrets.ts` already depends on this
+ * file's own `M3LSecretNamesPort` type, and importing its value back in
+ * would invert that layering. Wrapped in its own try/catch: a hostile
+ * `cause` (a throwing `.stack`/`.message` getter) must not defeat the
+ * diagnostic itself.
+ */
+function reportUnredactableCollection(
+  kind: "Map" | "Set",
+  cause: unknown,
+): void {
+  try {
+    const detail =
+      cause instanceof Error ? (cause.stack ?? cause.message) : String(cause);
+    process.stderr.write(
+      `m3l-logging: redaction failed while iterating a ${kind}-shaped value: ${detail}\n`,
+    );
+  } catch {
+    process.stderr.write(
+      `m3l-logging: redaction failed while iterating a ${kind}-shaped value (unreadable failure detail)\n`,
+    );
+  }
+}
+
 /** The raw sensitive key names, each also stored as its `splitWords()` word list. */
 const SENSITIVE_KEY_NAMES = [
   "token",
@@ -433,11 +461,16 @@ export function redactSensitiveLogText(
 }
 
 /**
- * Redacts a `Map`'s own entries: a string key is checked for sensitivity the
- * same way a plain object's property key is, and each value is recursed
- * into via {@link redactSensitiveLogValue}. Extracted from
- * {@link redactSensitiveLogValue} to keep that function's cyclomatic/
- * cognitive complexity within the project's lint budget.
+ * Redacts an already-collected list of `Map` entries: a string key is
+ * checked for sensitivity the same way a plain object's property key is,
+ * and each value is recursed into via {@link redactSensitiveLogValue}.
+ * Extracted from {@link redactMapSafely} to keep that function's
+ * cyclomatic/cognitive complexity within the project's lint budget, and so
+ * the recursive redaction below runs OUTSIDE {@link redactMapSafely}'s
+ * try/catch — an unrelated exception thrown deep inside a nested value
+ * (e.g. a hostile property getter) must propagate normally, not be caught
+ * by the same handler that guards the raw iteration step and mislabeled as
+ * an unredactable collection.
  *
  * An entry whose key is not a `string`, or whose key is a dangerous own-key
  * name (`__proto__`/`constructor`/`prototype`), is DROPPED entirely — both
@@ -449,11 +482,11 @@ export function redactSensitiveLogText(
  * precedent in `core/diagnostics/run-report.ts`'s `normalizeMapEntries`.
  */
 function redactMapEntries(
-  value: ReadonlyMap<unknown, unknown>,
+  entries: readonly (readonly [unknown, unknown])[],
   options: M3LRedactOptions | undefined,
 ): Map<unknown, unknown> {
   const result = new Map<unknown, unknown>();
-  for (const [entryKey, entryValue] of value) {
+  for (const [entryKey, entryValue] of entries) {
     if (typeof entryKey !== "string" || isDangerousKey(entryKey)) continue;
     result.set(
       entryKey,
@@ -466,17 +499,18 @@ function redactMapEntries(
 }
 
 /**
- * Redacts a `Set`'s elements, each recursed into via
- * {@link redactSensitiveLogValue} the same way an array's elements are.
- * Extracted from {@link redactSensitiveLogValue} to keep that function's
- * cyclomatic/cognitive complexity within the project's lint budget.
+ * Redacts an already-collected list of `Set` elements, each recursed into
+ * via {@link redactSensitiveLogValue} the same way an array's elements are.
+ * Extracted from {@link redactSetSafely} for the same reason
+ * {@link redactMapEntries} is extracted from {@link redactMapSafely}: the
+ * recursive redaction must run OUTSIDE the raw-iteration try/catch.
  */
 function redactSetEntries(
-  value: ReadonlySet<unknown>,
+  entries: readonly unknown[],
   options: M3LRedactOptions | undefined,
 ): Set<unknown> {
   const result = new Set<unknown>();
-  for (const entry of value) {
+  for (const entry of entries) {
     result.add(redactSensitiveLogValue(entry, options));
   }
   return result;
@@ -490,16 +524,26 @@ function redactSetEntries(
  * that function's cyclomatic/cognitive complexity within the project's lint
  * budget; see {@link UNREDACTABLE_COLLECTION}'s own doc for the guard's
  * rationale.
+ *
+ * The try/catch below wraps ONLY the raw iteration step (spreading `value`
+ * into a plain array) — never the subsequent recursive
+ * {@link redactSensitiveLogValue} calls performed by {@link redactMapEntries}.
+ * An unrelated exception thrown deep inside a nested value must propagate
+ * normally rather than being caught here and mislabeled as an unredactable
+ * Map.
  */
 function redactMapSafely(
   value: ReadonlyMap<unknown, unknown>,
   options: M3LRedactOptions | undefined,
 ): unknown {
+  let entries: (readonly [unknown, unknown])[];
   try {
-    return redactMapEntries(value, options);
-  } catch {
+    entries = [...value];
+  } catch (cause) {
+    reportUnredactableCollection("Map", cause);
     return UNREDACTABLE_COLLECTION;
   }
+  return redactMapEntries(entries, options);
 }
 
 /**
@@ -507,16 +551,22 @@ function redactMapSafely(
  * actually being iterated, mirroring {@link redactMapSafely}. Extracted from
  * {@link redactSensitiveLogValue} to keep that function's cyclomatic/
  * cognitive complexity within the project's lint budget.
+ *
+ * The try/catch below wraps ONLY the raw iteration step, mirroring
+ * {@link redactMapSafely}'s own narrowed scope for the same reason.
  */
 function redactSetSafely(
   value: ReadonlySet<unknown>,
   options: M3LRedactOptions | undefined,
 ): unknown {
+  let entries: unknown[];
   try {
-    return redactSetEntries(value, options);
-  } catch {
+    entries = [...value];
+  } catch (cause) {
+    reportUnredactableCollection("Set", cause);
     return UNREDACTABLE_COLLECTION;
   }
+  return redactSetEntries(entries, options);
 }
 
 /**
@@ -569,9 +619,11 @@ export function redactSensitiveLogValue(
   // same as an object property key would be, and each value is recursed
   // into. A `Set`'s elements are each recursively redacted the same way an
   // array's elements are. `Map#set`/`Set#add` never touch the prototype
-  // chain, so the `isDangerousKey` prototype-pollution guard applied to
-  // plain-object keys below does not apply here — there is nothing to
-  // guard against for a Map/Set.
+  // chain the way a plain-object bracket assignment (`result[key] = …`)
+  // would, so a dangerous Map/Set key poses no prototype-pollution hazard
+  // here — but `redactMapEntries` still drops a dangerous-named Map key for
+  // a DIFFERENT reason: it has no representable name worth trusting, not
+  // because keeping it would mutate anything.
   if (value instanceof Date) return new Date(value.getTime());
   if (value instanceof Map) return redactMapSafely(value, options);
   if (value instanceof Set) return redactSetSafely(value, options);

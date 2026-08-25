@@ -2376,6 +2376,100 @@ describe("redactSensitiveLogValue", () => {
     expect(result.apiKey).toBe("[REDACTED]");
     expect(result.s).not.toBeInstanceOf(Set);
   });
+
+  // (issue #637 / hub-sync F29, silent-failure-hunter follow-up finding 1) —
+  // the Map/Set guard's try/catch currently wraps BOTH the raw iteration
+  // step AND the recursive per-entry redaction call. An unrelated exception
+  // thrown deep inside a NESTED value (a hostile property getter on a plain
+  // object that happens to be a Map's value/Set's element) is caught by the
+  // SAME handler and mislabeled as "[unredactable Map/Set omitted]" — hiding
+  // the real bug behind a message that names the wrong culprit. The fix
+  // narrows the try/catch to the raw iteration only, so a nested-value
+  // failure propagates normally. `Object.entries` on a plain object already
+  // propagates a hostile-getter throw uncaught when NOT nested inside a
+  // Map/Set (see `redactSensitiveLogValue`'s object branch, which has no
+  // wrapping try/catch of its own) — these tests prove the SAME propagation
+  // also holds once that hostile object is nested inside a Map's value / a
+  // Set's element, which today it does not: today the throw is caught by
+  // the Map/Set guard and swallowed into the placeholder string instead.
+  test("an unrelated exception thrown deep inside a Map's nested value propagates normally, not mislabeled as an unredactable collection", () => {
+    const hostileNested: Record<string, unknown> = {};
+    Object.defineProperty(hostileNested, "boom", {
+      enumerable: true,
+      get(): never {
+        throw new Error("nested getter exploded");
+      },
+    });
+    const input = new Map([["key", hostileNested]]);
+
+    expect(() => redactSensitiveLogValue(input)).toThrow(
+      "nested getter exploded",
+    );
+  });
+
+  test("an unrelated exception thrown deep inside a Set's nested element propagates normally, not mislabeled as an unredactable collection", () => {
+    const hostileNested: Record<string, unknown> = {};
+    Object.defineProperty(hostileNested, "boom", {
+      enumerable: true,
+      get(): never {
+        throw new Error("nested getter exploded");
+      },
+    });
+    const input = new Set([hostileNested]);
+
+    expect(() => redactSensitiveLogValue(input)).toThrow(
+      "nested getter exploded",
+    );
+  });
+
+  // (issue #637 / hub-sync F29, silent-failure-hunter follow-up finding 2) —
+  // today the Map/Set-shaped-but-empty-internal-state degradation (see the
+  // "Must-fix (#637 round 2)" tests above) happens with NO stderr signal at
+  // all, unlike this codebase's established `reportRedactionFailure` pattern
+  // (`internal/logging/guardSecrets.ts`) used elsewhere for the same class
+  // of "structural redaction failure". The fix adds a best-effort stderr
+  // diagnostic write when the Map/Set-shaped value's iteration itself
+  // throws. The exact wording is an implementation detail — only that
+  // *some* diagnostic naming the failure is written is asserted here.
+  test("a Map-shaped value with no real internal Map state writes a best-effort stderr diagnostic while still degrading gracefully", () => {
+    const stderrSpy = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
+    const fakeMap: unknown = Object.create(Map.prototype);
+
+    const result = redactSensitiveLogValue({
+      apiKey: "secret",
+      m: fakeMap,
+    }) as { apiKey: string; m: unknown };
+
+    expect(result.apiKey).toBe("[REDACTED]");
+    expect(result.m).not.toBeInstanceOf(Map);
+    expect(stderrSpy).toHaveBeenCalled();
+    const written = stderrSpy.mock.calls
+      .map((call) => String(call[0]))
+      .join("\n");
+    expect(written.toLowerCase()).toMatch(/redact|map/);
+  });
+
+  test("a Set-shaped value with no real internal Set state writes a best-effort stderr diagnostic while still degrading gracefully", () => {
+    const stderrSpy = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
+    const fakeSet: unknown = Object.create(Set.prototype);
+
+    const result = redactSensitiveLogValue({
+      apiKey: "secret",
+      s: fakeSet,
+    }) as { apiKey: string; s: unknown };
+
+    expect(result.apiKey).toBe("[REDACTED]");
+    expect(result.s).not.toBeInstanceOf(Set);
+    expect(stderrSpy).toHaveBeenCalled();
+    const written = stderrSpy.mock.calls
+      .map((call) => String(call[0]))
+      .join("\n");
+    expect(written.toLowerCase()).toMatch(/redact|set/);
+  });
 });
 
 // =============================================================================
