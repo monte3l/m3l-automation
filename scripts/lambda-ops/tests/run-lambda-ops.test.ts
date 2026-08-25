@@ -70,11 +70,22 @@ function stubReadFileByPath(entries: Record<string, string | Buffer>): void {
   }) as typeof fsp.readFile);
 }
 
+/**
+ * Non-sensitive by the retrofit's `profile.toLowerCase().includes("prod")`
+ * predicate (issue #483 / ADR-0048) — the default `awsTarget` for every
+ * pre-existing test in this file, so none of them exercise the escalated
+ * typed-echo path unless they opt in via `overrides.awsTarget`.
+ */
+const NON_SENSITIVE_TARGET: Core.M3LDestructiveTarget = {
+  profile: "dev-sandbox",
+};
+
 function buildDeps(
   configValues: Record<string, unknown>,
   overrides?: {
     readonly operations?: ReturnType<typeof createFakeLambdaOperations>;
     readonly prompt?: Core.M3LPrompt;
+    readonly awsTarget?: Core.M3LDestructiveTarget;
   },
 ): Parameters<typeof runLambdaOps>[0] {
   return {
@@ -84,20 +95,32 @@ function buildDeps(
     correlationId: "run-1",
     operations: overrides?.operations ?? createFakeLambdaOperations(),
     prompt: overrides?.prompt ?? new Core.M3LPrompt(),
+    // Not yet declared on `Deps` (issue #483 RED phase) — the destructive
+    // block wires `deps.awsTarget` through to `confirmDestructive`'s `target`
+    // once `src/steps/run-lambda-ops.ts` lands the field.
+    awsTarget: overrides?.awsTarget ?? NON_SENSITIVE_TARGET,
   };
 }
 
 /**
  * Builds a `Core.M3LPrompt` whose `confirm` method is stubbed to resolve
- * `confirmed`, alongside the spy itself. `Core.confirmDestructive` (invoked
- * internally by `run-lambda-ops`) always calls `deps.prompt.confirm` directly
- * on the decline/confirm path — this is the seam every gate test in this file
- * observes instead of a `Core`-barrel override.
+ * `confirmed` and whose `text` method (the escalated typed-echo path added by
+ * issue #483 / ADR-0048) is stubbed to resolve `textResponse`, alongside both
+ * spies. `Core.confirmDestructive` (invoked internally by `run-lambda-ops`)
+ * always calls `deps.prompt.confirm`/`deps.prompt.text` directly — this is the
+ * seam every gate test in this file observes instead of a `Core`-barrel
+ * override.
  */
-function confirmingPrompt(confirmed: boolean) {
+function confirmingPrompt(
+  confirmed: boolean,
+  options?: { readonly textResponse?: string },
+) {
   const prompt = new Core.M3LPrompt();
   const confirm = vi.spyOn(prompt, "confirm").mockResolvedValue(confirmed);
-  return { prompt, confirm };
+  const text = vi
+    .spyOn(prompt, "text")
+    .mockResolvedValue(options?.textResponse ?? "");
+  return { prompt, confirm, text };
 }
 
 afterEach(() => {
@@ -290,6 +313,113 @@ describe("runLambdaOps — destructive-gate dispatch", () => {
       code: "ERR_LAMBDA_OPS_ABORTED",
     });
     expect(writeFunctionMock).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Issue #483 (A2b) / ADR-0048 fleet retrofit: `lambda-ops` wires
+ * `deps.awsTarget` and a per-script inline sensitivity predicate
+ * (`target.profile.toLowerCase().includes("prod")`) into the pipeline's
+ * `destructive.target`/`isSensitiveTarget`/`yesSensitive` fields — none of
+ * which are declared on `Deps`/the `destructive` block yet, so every test
+ * below is expected to fail RED until `src/steps/run-lambda-ops.ts` lands the
+ * wiring. `delete` is used throughout as the clearest always-destructive
+ * operation. `Core.confirmDestructive` runs for real (see the file header);
+ * these tests observe the same `prompt.confirm`/`prompt.text` seam, never a
+ * `Core`-barrel override.
+ */
+describe("runLambdaOps — target-graded destructive confirmation (issue #483)", () => {
+  test("escalates to the typed-echo prompt when the target's profile contains 'prod'", async () => {
+    writeFunctionMock.mockResolvedValue(undefined);
+    const { prompt, confirm, text } = confirmingPrompt(true, {
+      textResponse: "prod",
+    });
+    const deps = buildDeps(
+      { operation: "delete", functionName: "my-function" },
+      { prompt, awsTarget: { profile: "prod" } },
+    );
+
+    await runLambdaOps(deps);
+
+    expect(text).toHaveBeenCalledTimes(1);
+    expect(confirm).not.toHaveBeenCalled();
+    expect(writeFunctionMock).toHaveBeenCalled();
+  });
+
+  test("throws ERR_LAMBDA_OPS_ABORTED when the typed-echo input doesn't match the profile", async () => {
+    const { prompt } = confirmingPrompt(true, { textResponse: "not-prod" });
+    const deps = buildDeps(
+      { operation: "delete", functionName: "my-function" },
+      { prompt, awsTarget: { profile: "prod" } },
+    );
+
+    await expect(runLambdaOps(deps)).rejects.toMatchObject({
+      code: "ERR_LAMBDA_OPS_ABORTED",
+    });
+    expect(writeFunctionMock).not.toHaveBeenCalled();
+  });
+
+  test("bypasses confirmation with a warning when yes and yesSensitive are both true for a sensitive target", async () => {
+    writeFunctionMock.mockResolvedValue(undefined);
+    const { prompt, confirm, text } = confirmingPrompt(true);
+    const deps = buildDeps(
+      {
+        operation: "delete",
+        functionName: "my-function",
+        yes: true,
+        yesSensitive: true,
+      },
+      { prompt, awsTarget: { profile: "prod" } },
+    );
+    const warningSpy = vi.spyOn(deps.logger, "warning");
+
+    await runLambdaOps(deps);
+
+    expect(confirm).not.toHaveBeenCalled();
+    expect(text).not.toHaveBeenCalled();
+    expect(warningSpy).toHaveBeenCalledTimes(1);
+    expect(warningSpy).toHaveBeenCalledWith(expect.stringContaining("prod"));
+    expect(writeFunctionMock).toHaveBeenCalled();
+  });
+
+  test.each([
+    ["absent", {}],
+    ["false", { yesSensitive: false }],
+  ] as const)(
+    "still escalates when yes:true but yesSensitive is %s, for a sensitive target",
+    async (_label, extra) => {
+      writeFunctionMock.mockResolvedValue(undefined);
+      const { prompt, text } = confirmingPrompt(true, {
+        textResponse: "prod",
+      });
+      const deps = buildDeps(
+        {
+          operation: "delete",
+          functionName: "my-function",
+          yes: true,
+          ...extra,
+        },
+        { prompt, awsTarget: { profile: "prod" } },
+      );
+
+      await runLambdaOps(deps);
+
+      expect(text).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  test("uses the plain confirm (not escalated) when the target is not sensitive", async () => {
+    writeFunctionMock.mockResolvedValue(undefined);
+    const { prompt, confirm, text } = confirmingPrompt(true);
+    const deps = buildDeps(
+      { operation: "delete", functionName: "my-function" },
+      { prompt, awsTarget: { profile: "dev" } },
+    );
+
+    await runLambdaOps(deps);
+
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(text).not.toHaveBeenCalled();
   });
 });
 

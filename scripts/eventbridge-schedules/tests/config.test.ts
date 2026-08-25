@@ -2,16 +2,21 @@ import { describe, expect, it } from "vitest";
 
 import { Core } from "@m3l-automation/m3l-common";
 
-import { configParameters } from "../src/config.js";
+import { configParameters, configValidators } from "../src/config.js";
 
 /**
  * Contract: spec-conformance-reviewer's `scripts/eventbridge-schedules`
- * contract §1. 14 declared parameters, in order: aws.profile, operation,
- * ruleName, namePrefix, eventBusName, eventPattern, scheduleExpression,
- * state, description, roleArn, targets, force, output, yes. This file
- * asserts the DECLARED shape only — names, uniqueness, instance types, and
- * each parameter's own validator/default — never the library's own
- * provider-resolution order.
+ * contract §1, widened by ADR-0048 (Issue #483, A2b). 15 declared
+ * parameters, in order: aws.profile, operation, ruleName, namePrefix,
+ * eventBusName, eventPattern, scheduleExpression, state, description,
+ * roleArn, targets, force, output, yes, yesSensitive. `yesSensitive` is the
+ * target-graded destructive-confirmation bypass companion to `yes` (see
+ * `Core.confirmDestructive`'s TSDoc for the deliberately asymmetric polarity
+ * between the two flags) — its own cross-parameter constraint (`yesSensitive`
+ * requires `yes`) is asserted in the `configValidators` describe block below,
+ * not here. This file asserts the DECLARED shape only — names, uniqueness,
+ * instance types, and each parameter's own validator/default — never the
+ * library's own provider-resolution order.
  */
 
 const EXPECTED_NAMES = [
@@ -29,6 +34,7 @@ const EXPECTED_NAMES = [
   "force",
   "output",
   "yes",
+  "yesSensitive",
 ] as const;
 
 const OPERATIONS = [
@@ -91,7 +97,7 @@ describe("eventbridge-schedules config declaration", () => {
     }
   });
 
-  it("declares exactly the 14 documented parameters, in order", () => {
+  it("declares exactly the 15 documented parameters, in order", () => {
     const names = configParameters.map((parameter) => parameter.getName());
     expect(names).toEqual(EXPECTED_NAMES);
   });
@@ -221,7 +227,7 @@ describe("eventbridge-schedules config declaration", () => {
     });
   });
 
-  describe.each(["force", "yes"] as const)(
+  describe.each(["force", "yes", "yesSensitive"] as const)(
     "'%s' — BOOL, default false",
     (name) => {
       it("defaults to false", async () => {
@@ -233,4 +239,63 @@ describe("eventbridge-schedules config declaration", () => {
       });
     },
   );
+});
+
+/**
+ * ADR-0048 (Issue #483, A2b): `yesSensitive`'s cross-parameter constraint —
+ * `yesSensitive` requires `yes` to also be set — is declared as a brand-new
+ * `configValidators` export (this script had none before this retrofit),
+ * containing exactly `Core.M3LConfigSchemaValidators.requires("yesSensitive",
+ * "yes")`. Mirrors `eks-ops/tests/config.test.ts`'s equivalent describe block.
+ */
+describe("configValidators — yesSensitive requires yes", () => {
+  /** Builds a raw `M3LConfig` store directly, one `.set(name, value)` per key. */
+  function buildConfig(values: Record<string, unknown>): Core.M3LConfig {
+    const config = new Core.M3LConfig();
+    for (const [key, value] of Object.entries(values)) {
+      config.set(key, value);
+    }
+    return config;
+  }
+
+  /**
+   * Runs every declared `configValidators` entry against `config`, in
+   * declaration order, mirroring `Core.M3LConfigSchema.validate`'s fail-fast
+   * iteration: returns the first non-`true` result, or `undefined` when every
+   * validator passes.
+   */
+  function firstFailure(config: Core.M3LConfig): string | undefined {
+    for (const validator of configValidators) {
+      const result = validator(config);
+      if (result !== true) return result;
+    }
+    return undefined;
+  }
+
+  it("returns \"'yesSensitive' requires 'yes' to be set\" when 'yesSensitive' is true and 'yes' is unset", () => {
+    const config = buildConfig({
+      operation: "list",
+      yesSensitive: true,
+    });
+
+    expect(firstFailure(config)).toBe(
+      "'yesSensitive' requires 'yes' to be set",
+    );
+  });
+
+  it("passes every validator when both 'yesSensitive' and 'yes' are set", () => {
+    const config = buildConfig({
+      operation: "list",
+      yesSensitive: true,
+      yes: true,
+    });
+
+    expect(firstFailure(config)).toBeUndefined();
+  });
+
+  it("passes every validator when 'yesSensitive' is unset, regardless of 'yes'", () => {
+    const config = buildConfig({ operation: "list" });
+
+    expect(firstFailure(config)).toBeUndefined();
+  });
 });

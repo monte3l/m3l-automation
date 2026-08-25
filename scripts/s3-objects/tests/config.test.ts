@@ -2,18 +2,21 @@ import { describe, expect, it } from "vitest";
 
 import { Core } from "@m3l-automation/m3l-common";
 
-import { configParameters } from "../src/config.js";
+import { configParameters, configValidators } from "../src/config.js";
 
 /**
  * Contract: docs/reference/scripts/s3-objects.md "Configuration schema"
- * table + `src/config.ts`. 12 declared parameters: aws.profile, operation,
+ * table + `src/config.ts`. 13 declared parameters: aws.profile, operation,
  * bucket, key, prefix, pageSize, sourceBucket, sourceKey, contentType,
- * input, output, yes. This file asserts the DECLARED shape only — names,
- * uniqueness, instance types, and each parameter's own validator/default —
- * never the library's own provider-resolution order. The per-operation
- * cross-parameter requirements (e.g. `key` required for `describe`) are NOT
- * expressible by a single parameter's validator and are guard-checked at run
- * start instead (see `tests/steps/run-s3-objects.test.ts`).
+ * input, output, yes, yesSensitive (ADR-0048 fleet retrofit — F2b, issue
+ * #483). This file asserts the DECLARED shape only — names, uniqueness,
+ * instance types, and each parameter's own validator/default — never the
+ * library's own provider-resolution order. The per-operation cross-parameter
+ * requirements (e.g. `key` required for `describe`) are NOT expressible by a
+ * single parameter's validator and are guard-checked at run start instead
+ * (see `tests/steps/run-s3-objects.test.ts`). The `yesSensitive` -> `yes`
+ * cross-parameter constraint IS expressible at the schema level and is
+ * covered by the `configValidators` describe block below.
  */
 
 const EXPECTED_NAMES = [
@@ -29,6 +32,7 @@ const EXPECTED_NAMES = [
   "input",
   "output",
   "yes",
+  "yesSensitive",
 ] as const;
 
 const S3_OBJECTS_OPERATIONS = [
@@ -85,7 +89,7 @@ describe("s3-objects config declaration", () => {
     }
   });
 
-  it("declares exactly the 12 documented parameters, in order", () => {
+  it("declares exactly the 13 documented parameters, in order", () => {
     const names = configParameters.map((parameter) => parameter.getName());
     expect(names).toEqual(EXPECTED_NAMES);
   });
@@ -214,5 +218,106 @@ describe("s3-objects config declaration", () => {
     it("accepts an explicit true", async () => {
       await expect(resolveWith(paramNamed("yes"), "true")).resolves.toBe(true);
     });
+  });
+
+  describe("'yesSensitive' — BOOL, default false (ADR-0048)", () => {
+    it("defaults to false", async () => {
+      await expect(resolveDefault(paramNamed("yesSensitive"))).resolves.toBe(
+        false,
+      );
+    });
+
+    it("accepts an explicit true", async () => {
+      await expect(
+        resolveWith(paramNamed("yesSensitive"), "true"),
+      ).resolves.toBe(true);
+    });
+  });
+});
+
+/** Builds a raw `M3LConfig` store directly, one `.set(name, value)` per key. */
+function buildConfig(values: Record<string, unknown>): Core.M3LConfig {
+  const config = new Core.M3LConfig();
+  for (const [key, value] of Object.entries(values)) {
+    config.set(key, value);
+  }
+  return config;
+}
+
+/**
+ * Runs every declared `configValidators` entry against `config`, in
+ * declaration order, mirroring `Core.M3LConfigSchema.validate`'s fail-fast
+ * iteration: returns the first non-`true` result, or `undefined` when every
+ * validator passes.
+ */
+function firstFailure(config: Core.M3LConfig): string | undefined {
+  for (const validator of configValidators) {
+    const result = validator(config);
+    if (result !== true) return result;
+  }
+  return undefined;
+}
+
+/**
+ * F2b (ADR-0048 fleet retrofit, issue #483) — `yesSensitive` is only a
+ * meaningful bypass companion to `yes` (see `Core.confirmDestructive`'s
+ * state 3: both must be `true` together to bypass a sensitive target's
+ * escalated confirmation). A `yesSensitive: true` without `yes` resolving to
+ * `true` is pointless-to-dangerous config drift the schema should reject
+ * outright rather than silently falling through to the still-escalated
+ * state 4.
+ *
+ * `configValidators` enforces this with a value-based inline predicate
+ * (`scripts/s3-objects/src/config.ts`), not
+ * `Core.M3LConfigSchemaValidators.requires`: both `yes` and `yesSensitive`
+ * carry declared defaults, so `config.get()` never returns `undefined` for
+ * either and a presence-based `requires` check would never fire. The
+ * predicate instead compares resolved values — `yesSensitive: true` requires
+ * `yes` to actually resolve to `true`, not merely be set to some value.
+ */
+describe("configValidators — yesSensitive requires yes (ADR-0048)", () => {
+  it("fails with the documented reason when 'yesSensitive' is true and 'yes' is unset", () => {
+    const config = buildConfig({
+      [Core.AWS_PROFILE_PARAM_NAME]: "default",
+      operation: "delete",
+      yesSensitive: true,
+    });
+
+    expect(firstFailure(config)).toBe(
+      "'yesSensitive' requires 'yes' to be set",
+    );
+  });
+
+  it("passes when 'yesSensitive' is true and 'yes' is explicitly true", () => {
+    const config = buildConfig({
+      [Core.AWS_PROFILE_PARAM_NAME]: "default",
+      operation: "delete",
+      yesSensitive: true,
+      yes: true,
+    });
+
+    expect(firstFailure(config)).toBeUndefined();
+  });
+
+  it("fails when 'yesSensitive' is true and 'yes' is explicitly false", () => {
+    const config = buildConfig({
+      [Core.AWS_PROFILE_PARAM_NAME]: "default",
+      operation: "delete",
+      yesSensitive: true,
+      yes: false,
+    });
+
+    expect(firstFailure(config)).toBe(
+      "'yesSensitive' requires 'yes' to be set",
+    );
+  });
+
+  it("passes when 'yesSensitive' is unset regardless of 'yes'", () => {
+    const config = buildConfig({
+      [Core.AWS_PROFILE_PARAM_NAME]: "default",
+      operation: "delete",
+    });
+
+    expect(firstFailure(config)).toBeUndefined();
   });
 });

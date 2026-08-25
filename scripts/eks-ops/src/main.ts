@@ -46,6 +46,20 @@ await Core.runScript(
       );
     }
 
+    // `script.awsTarget` is already `M3LDestructiveTarget | undefined`,
+    // resolved from the same identity `script.aws`'s clients were
+    // provisioned with — never construct one by hand. It is `undefined`
+    // below ONLY if a provisioned `script.aws` somehow lacks a resolved
+    // target, which does not happen for this script's declared config; fail
+    // loud with a typed error rather than a non-null assertion.
+    const awsTarget = script.awsTarget;
+    if (awsTarget === undefined) {
+      throw new Core.M3LError(
+        "eks-ops: script.awsTarget was not resolved despite a provisioned script.aws",
+        { code: "ERR_EKS_OPS_CONFIG" },
+      );
+    }
+
     await runEksOps({
       config,
       paths: script.paths,
@@ -53,6 +67,7 @@ await Core.runScript(
       operations: new AWS.M3LEKSOperations(aws.clients.eks),
       prompt: script.prompt,
       signal: script.signal,
+      awsTarget,
     });
   },
   { dryRun },

@@ -11,11 +11,12 @@ import {
 
 /**
  * Contract: docs/reference/scripts/cloudformation-stacks.md "Configuration
- * schema" table + `src/config.ts`. 12 declared parameters: aws.profile,
+ * schema" table + `src/config.ts`. 13 declared parameters: aws.profile,
  * operation, stackName, input, template, stackStatusFilter, retainResources,
- * roleArn, nextToken, maxWaitTime, output, yes. This file asserts the
- * DECLARED shape only — names, uniqueness, instance types, and each
- * parameter's own validator/default — never the per-operation
+ * roleArn, nextToken, maxWaitTime, output, yes, yesSensitive (the ADR-0048
+ * fleet retrofit's sensitive-target bypass flag — issue #483 / A2b). This
+ * file asserts the DECLARED shape only — names, uniqueness, instance types,
+ * and each parameter's own validator/default — never the per-operation
  * cross-parameter requirements (guard-checked at run start instead — see
  * `tests/run-cloudformation-stacks.test.ts`).
  *
@@ -38,6 +39,7 @@ const EXPECTED_NAMES = [
   "maxWaitTime",
   "output",
   "yes",
+  "yesSensitive",
 ] as const;
 
 const EXPECTED_OPERATIONS = [
@@ -108,7 +110,7 @@ describe("cloudformation-stacks config declaration", () => {
     }
   });
 
-  it("declares exactly the 12 documented parameters, in order", () => {
+  it("declares exactly the 13 documented parameters, in order", () => {
     const names = configParameters.map((parameter) => parameter.getName());
     expect(names).toEqual(EXPECTED_NAMES);
   });
@@ -225,6 +227,20 @@ describe("cloudformation-stacks config declaration", () => {
 
     it("accepts an explicit true", async () => {
       await expect(resolveWith(paramNamed("yes"), "true")).resolves.toBe(true);
+    });
+  });
+
+  describe("'yesSensitive' — BOOL, default false (ADR-0048 fleet retrofit)", () => {
+    it("defaults to false", async () => {
+      await expect(resolveDefault(paramNamed("yesSensitive"))).resolves.toBe(
+        false,
+      );
+    });
+
+    it("accepts an explicit true", async () => {
+      await expect(
+        resolveWith(paramNamed("yesSensitive"), "true"),
+      ).resolves.toBe(true);
     });
   });
 });
@@ -370,6 +386,51 @@ describe("configValidators (F1b — cross-parameter validation)", () => {
       const config = buildConfig({
         [Core.AWS_PROFILE_PARAM_NAME]: "default",
         operation: "list-stacks",
+      });
+
+      expect(firstFailure(config)).toBeUndefined();
+    });
+  });
+
+  /**
+   * ADR-0048 fleet retrofit (issue #483 / A2b): `yesSensitive` is the
+   * sensitive-target bypass flag threaded into the pipeline's `destructive`
+   * gate options. `Core.M3LConfigSchemaValidators.requires("yesSensitive",
+   * "yes")` enforces that it can never be set without the plain `yes` bypass
+   * also being set — mirroring `M3LConfigSchemaValidator`'s documented
+   * `requires()` factory example.
+   */
+  describe("'yesSensitive' requires 'yes' to be set", () => {
+    it("returns the documented failure reason when 'yesSensitive' is set but 'yes' is unset", () => {
+      const config = buildConfig({
+        [Core.AWS_PROFILE_PARAM_NAME]: "default",
+        operation: "delete-stack",
+        stackName: "my-stack",
+        yesSensitive: true,
+      });
+
+      expect(firstFailure(config)).toBe(
+        "'yesSensitive' requires 'yes' to be set",
+      );
+    });
+
+    it("passes when both 'yesSensitive' and 'yes' are set", () => {
+      const config = buildConfig({
+        [Core.AWS_PROFILE_PARAM_NAME]: "default",
+        operation: "delete-stack",
+        stackName: "my-stack",
+        yes: true,
+        yesSensitive: true,
+      });
+
+      expect(firstFailure(config)).toBeUndefined();
+    });
+
+    it("passes when 'yesSensitive' is unset regardless of 'yes'", () => {
+      const config = buildConfig({
+        [Core.AWS_PROFILE_PARAM_NAME]: "default",
+        operation: "delete-stack",
+        stackName: "my-stack",
       });
 
       expect(firstFailure(config)).toBeUndefined();

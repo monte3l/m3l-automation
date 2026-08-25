@@ -117,6 +117,11 @@ export const configParameters: readonly Core.M3LConfigParameter[] = [
     type: Core.M3LConfigParameterType.BOOL,
     defaultValue: false,
   }),
+  new Core.M3LConfigParameter({
+    name: "yesSensitive",
+    type: Core.M3LConfigParameterType.BOOL,
+    defaultValue: false,
+  }),
 ];
 
 /**
@@ -173,4 +178,10 @@ export const configValidators: readonly Core.M3LConfigSchemaValidator[] = [
   requiredWhenEquals("input", "command", "batch"),
   requiredWhenEquals("apiKey", "auth", "api-key"),
   requiredWhenEquals(Core.AWS_PROFILE_PARAM_NAME, "auth", "iam"),
+  // requires() would be a no-op here since both yesSensitive and yes carry
+  // declared defaults — compare resolved values instead.
+  (config: Core.M3LConfig): true | string =>
+    config.get("yesSensitive") !== true || config.get("yes") === true
+      ? true
+      : "'yesSensitive' requires 'yes' to be set",
 ];

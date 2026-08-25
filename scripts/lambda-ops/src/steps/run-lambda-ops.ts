@@ -3,7 +3,11 @@ import * as fsp from "node:fs/promises";
 import { Core } from "@m3l-automation/m3l-common";
 import type { AWS } from "@m3l-automation/m3l-common";
 
-import { LAMBDA_OPERATIONS, YES_DEFAULT } from "../config.js";
+import {
+  LAMBDA_OPERATIONS,
+  YES_DEFAULT,
+  YES_SENSITIVE_DEFAULT,
+} from "../config.js";
 
 /** The closed union of `lambda-ops`'s declared `operation` values. */
 type LambdaOperation = (typeof LAMBDA_OPERATIONS)[number];
@@ -15,6 +19,7 @@ interface RawSettings {
   readonly zipFilePath: string | undefined;
   readonly input: string | undefined;
   readonly yes: boolean;
+  readonly yesSensitive: boolean;
   readonly output: string | undefined;
 }
 
@@ -23,6 +28,7 @@ interface Deps extends Core.M3LOperationPipelineBaseDeps {
   readonly paths: Core.M3LPaths;
   readonly correlationId: string;
   readonly operations: AWS.M3LLambdaOperations;
+  readonly awsTarget: Core.M3LDestructiveTarget;
 }
 
 /** The union of result shapes any dispatched operation can resolve. */
@@ -105,6 +111,10 @@ function resolveSettings(accessor: Core.M3LConfigAccessor): RawSettings {
     zipFilePath: accessor.optionalString("zipFilePath"),
     input: accessor.optionalString("input"),
     yes: accessor.booleanWithDefault("yes", YES_DEFAULT),
+    yesSensitive: accessor.booleanWithDefault(
+      "yesSensitive",
+      YES_SENSITIVE_DEFAULT,
+    ),
     output: accessor.optionalString("output"),
   };
 }
@@ -265,6 +275,10 @@ const pipeline = new Core.M3LOperationPipeline<
     yes: (settings) => settings.yes,
     abortCode: "ERR_LAMBDA_OPS_ABORTED",
     onDecline: { kind: "throw" },
+    target: (_operation, _settings, _context, deps) => deps.awsTarget,
+    isSensitiveTarget: (target) =>
+      target.profile.toLowerCase().includes("prod"),
+    yesSensitive: (settings) => settings.yesSensitive,
   },
   handlers: {
     list: dispatchList,
@@ -305,7 +319,8 @@ const pipeline = new Core.M3LOperationPipeline<
  * once a populated `functionError` has had a chance to be persisted first.
  *
  * @param deps - The resolved config, `M3LPaths`, logger, correlation id, the
- *   injected `AWS.M3LLambdaOperations`, and the interactive-prompt facade.
+ *   injected `AWS.M3LLambdaOperations`, the interactive-prompt facade, and the
+ *   resolved `awsTarget` the destructive gate classifies for sensitivity.
  * @returns A promise that resolves once the run completes successfully.
  * @throws {@link Core.M3LError} coded `"ERR_LAMBDA_OPS_CONFIG"` when a
  *   guard-checked per-operation requirement is unmet, or `operation` is
@@ -335,6 +350,7 @@ const pipeline = new Core.M3LOperationPipeline<
  *   correlationId: "run-1",
  *   operations,
  *   prompt: new Core.M3LPrompt(),
+ *   awsTarget: { profile: "dev-sandbox" },
  * });
  * ```
  */

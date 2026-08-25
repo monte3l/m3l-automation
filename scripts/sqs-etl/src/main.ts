@@ -43,6 +43,14 @@ await Core.runScript(
       );
     }
 
+    const awsTarget = script.awsTarget;
+    if (awsTarget === undefined) {
+      throw new Core.M3LError(
+        "sqs-etl: script.awsTarget was not resolved despite a provisioned script.aws",
+        { code: "ERR_SQS_ETL_CONFIG" },
+      );
+    }
+
     await runSqsEtl({
       config,
       paths: script.paths,
@@ -54,6 +62,7 @@ await Core.runScript(
       // so a per-item send/delete failure absorbed by a step demotes this
       // run's outcome to `"partial"` instead of a silent `"success"`.
       reportRecovery: script.reportRecovery.bind(script),
+      awsTarget,
     });
   },
   { dryRun },

@@ -36,6 +36,15 @@ export const MAX_WAIT_TIME_DEFAULT = 1200;
 /** The `yes` parameter's declared default — bypasses the destructive-operation confirmation prompt when `true`. */
 export const YES_DEFAULT = false;
 
+/**
+ * The `yesSensitive` parameter's declared default — the sensitive-target
+ * bypass companion to {@link YES_DEFAULT} (ADR-0048). Only consulted when the
+ * resolved `Core.M3LDestructiveTarget` is classified as sensitive; `yes`
+ * alone is insufficient to bypass the escalated typed-echo confirmation for
+ * a sensitive target.
+ */
+export const YES_SENSITIVE_DEFAULT = false;
+
 const MAX_RESULTS_MIN = 1;
 const MAX_RESULTS_MAX = 100;
 const MAX_WAIT_TIME_MIN = 1;
@@ -130,6 +139,11 @@ export const configParameters: readonly Core.M3LConfigParameter[] = [
     name: "yes",
     type: Core.M3LConfigParameterType.BOOL,
     defaultValue: YES_DEFAULT,
+  }),
+  new Core.M3LConfigParameter({
+    name: "yesSensitive",
+    type: Core.M3LConfigParameterType.BOOL,
+    defaultValue: YES_SENSITIVE_DEFAULT,
   }),
 ];
 
@@ -233,4 +247,10 @@ export const configValidators: readonly Core.M3LConfigSchemaValidator[] = [
     "kubernetesVersion",
     KUBERNETES_VERSION_REQUIRING_OPERATIONS,
   ),
+  // requires() would be a no-op here since both yesSensitive and yes carry
+  // declared defaults — compare resolved values instead.
+  (config: Core.M3LConfig): true | string =>
+    config.get("yesSensitive") !== true || config.get("yes") === true
+      ? true
+      : "'yesSensitive' requires 'yes' to be set",
 ];

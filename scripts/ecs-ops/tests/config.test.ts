@@ -10,13 +10,17 @@ import {
 
 /**
  * Contract: docs/reference/scripts/ecs-ops.md "Configuration schema" table +
- * `src/config.ts`. 11 declared parameters: aws.profile, operation, cluster,
- * service, services, input, nextToken, force, maxWaitTime, output, yes. This
- * file asserts the DECLARED shape only — names, uniqueness, instance types,
- * and each parameter's own validator/default — never the library's own
- * provider-resolution order or the per-operation cross-parameter
- * requirements (guard-checked at run start instead — see
- * `tests/run-ecs-ops.test.ts`).
+ * `src/config.ts`. 12 declared parameters: aws.profile, operation, cluster,
+ * service, services, input, nextToken, force, maxWaitTime, output, yes,
+ * yesSensitive (ADR-0048's target-graded destructive-confirmation retrofit,
+ * Issue #483 / A2b — `yesSensitive` is the per-script config surface for
+ * `M3LPipelineDestructiveOptions.yesSensitive`, guarded by the
+ * `M3LConfigSchemaValidators.requires("yesSensitive", "yes")`
+ * cross-parameter validator below). This file asserts the DECLARED shape
+ * only — names, uniqueness, instance types, and each parameter's own
+ * validator/default — never the library's own provider-resolution order or
+ * the per-operation cross-parameter requirements (guard-checked at run start
+ * instead — see `tests/run-ecs-ops.test.ts`).
  *
  * `ECS_OPERATIONS` is declared as a bare `as const` array (the same
  * "bare `as const` + derived union" idiom `LAMBDA_OPERATIONS`/
@@ -36,6 +40,7 @@ const EXPECTED_NAMES = [
   "maxWaitTime",
   "output",
   "yes",
+  "yesSensitive",
 ] as const;
 
 const EXPECTED_OPERATIONS = [
@@ -99,7 +104,7 @@ describe("ecs-ops config declaration", () => {
     }
   });
 
-  it("declares exactly the 11 documented parameters, in order", () => {
+  it("declares exactly the 12 documented parameters, in order", () => {
     const names = configParameters.map((parameter) => parameter.getName());
     expect(names).toEqual(EXPECTED_NAMES);
   });
@@ -220,6 +225,20 @@ describe("ecs-ops config declaration", () => {
 
     it("accepts an explicit true", async () => {
       await expect(resolveWith(paramNamed("yes"), "true")).resolves.toBe(true);
+    });
+  });
+
+  describe("'yesSensitive' — BOOL, default false", () => {
+    it("defaults to false", async () => {
+      await expect(resolveDefault(paramNamed("yesSensitive"))).resolves.toBe(
+        false,
+      );
+    });
+
+    it("accepts an explicit true", async () => {
+      await expect(
+        resolveWith(paramNamed("yesSensitive"), "true"),
+      ).resolves.toBe(true);
     });
   });
 });
@@ -419,6 +438,43 @@ describe("configValidators (F1b — cross-parameter validation)", () => {
         operation: "describe-cluster",
         cluster: "my-cluster",
       });
+
+      expect(firstFailure(config)).toBeUndefined();
+    });
+  });
+
+  /**
+   * ADR-0048 (Issue #483 / A2b): `yesSensitive` is the per-script config
+   * surface feeding `M3LPipelineDestructiveOptions.yesSensitive`, guarded by
+   * `Core.M3LConfigSchemaValidators.requires("yesSensitive", "yes")` — a
+   * routine `yesSensitive: true` must not silently carry authority over a
+   * sensitive target without the caller also opting into the plain `yes`
+   * bypass.
+   */
+  describe("'yesSensitive' requires 'yes' to be set", () => {
+    it("returns a failure reason naming both parameters when 'yesSensitive' is true and 'yes' is unset", () => {
+      const config = buildConfig({
+        operation: "list-services",
+        yesSensitive: true,
+      });
+
+      expect(firstFailure(config)).toBe(
+        "'yesSensitive' requires 'yes' to be set",
+      );
+    });
+
+    it("passes every validator when both 'yesSensitive' and 'yes' are true", () => {
+      const config = buildConfig({
+        operation: "list-services",
+        yes: true,
+        yesSensitive: true,
+      });
+
+      expect(firstFailure(config)).toBeUndefined();
+    });
+
+    it("passes every validator when 'yesSensitive' is unset regardless of 'yes'", () => {
+      const config = buildConfig({ operation: "list-services", yes: true });
 
       expect(firstFailure(config)).toBeUndefined();
     });

@@ -93,12 +93,18 @@ function stubReadFileByPath(entries: Record<string, string | Buffer>): void {
   }) as typeof fsp.readFile);
 }
 
+/** The default `awsTarget` a test gets when it doesn't care about target grading — deliberately non-sensitive. */
+const NON_SENSITIVE_TARGET: Core.M3LDestructiveTarget = {
+  profile: "dev-sandbox",
+};
+
 function buildDeps(
   configValues: Record<string, unknown>,
   overrides?: {
     readonly operations?: ReturnType<typeof createFakeEKSOperations>;
     readonly prompt?: Core.M3LPrompt;
     readonly logger?: Core.M3LLogger;
+    readonly awsTarget?: Core.M3LDestructiveTarget;
   },
 ): Parameters<typeof runEksOps>[0] {
   return {
@@ -107,6 +113,7 @@ function buildDeps(
     logger: overrides?.logger ?? new Core.M3LLogger([]),
     operations: overrides?.operations ?? createFakeEKSOperations(),
     prompt: overrides?.prompt ?? new Core.M3LPrompt(),
+    awsTarget: overrides?.awsTarget ?? NON_SENSITIVE_TARGET,
   };
 }
 
@@ -120,6 +127,28 @@ function confirmingPrompt(confirmed: boolean) {
   const prompt = new Core.M3LPrompt();
   const confirm = vi.spyOn(prompt, "confirm").mockResolvedValue(confirmed);
   return { prompt, confirm };
+}
+
+/**
+ * Builds a `Core.M3LPrompt` with BOTH `confirm` and `text` spied — the seam
+ * for target-graded confirmation: the plain (ungraded/non-sensitive) path
+ * calls `confirm`, the escalated typed-echo path (sensitive target, not
+ * bypassed) calls `text` instead. `confirmed` defaults to `true` and
+ * `textResponse` defaults to `""` (never matches a non-blank profile,
+ * exercising the decline path unless a matching response is supplied).
+ */
+function gradedPrompt(options?: {
+  readonly confirmed?: boolean;
+  readonly textResponse?: string;
+}) {
+  const prompt = new Core.M3LPrompt();
+  const confirm = vi
+    .spyOn(prompt, "confirm")
+    .mockResolvedValue(options?.confirmed ?? true);
+  const text = vi
+    .spyOn(prompt, "text")
+    .mockResolvedValue(options?.textResponse ?? "");
+  return { prompt, confirm, text };
 }
 
 afterEach(() => {
@@ -594,6 +623,114 @@ describe("runEksOps — destructive-gate dispatch (mutating operations only)", (
       expect(confirm).toHaveBeenCalledTimes(1);
     },
   );
+});
+
+describe("runEksOps — target-graded destructive confirmation (ADR-0048)", () => {
+  // Sensitivity predicate for this retrofit (per docs/reference/scripts/eks-ops.md
+  // and the src-side inline one-liner): a target is sensitive when its
+  // `profile` (case-insensitively) contains "prod". `{ profile: "prod" }` is
+  // sensitive; the `NON_SENSITIVE_TARGET` default (`"dev-sandbox"`) is not.
+  test("escalates to the typed-echo prompt when the target's profile contains 'prod'", async () => {
+    writeClusterMock.mockResolvedValue({
+      name: "my-cluster",
+      arn: "arn",
+      status: "DELETING",
+    });
+    const { prompt, confirm, text } = gradedPrompt({ textResponse: "prod" });
+    const deps = buildDeps(
+      { operation: "delete-cluster", cluster: "my-cluster" },
+      { prompt, awsTarget: { profile: "prod" } },
+    );
+
+    await expect(runEksOps(deps)).resolves.toBeUndefined();
+
+    expect(text).toHaveBeenCalledTimes(1);
+    expect(confirm).not.toHaveBeenCalled();
+    expect(writeClusterMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("throws ERR_EKS_OPS_ABORTED when the typed-echo input doesn't match the profile", async () => {
+    const { prompt, text } = gradedPrompt({ textResponse: "not-prod" });
+    const deps = buildDeps(
+      { operation: "delete-cluster", cluster: "my-cluster" },
+      { prompt, awsTarget: { profile: "prod" } },
+    );
+
+    await expect(runEksOps(deps)).rejects.toMatchObject({
+      code: "ERR_EKS_OPS_ABORTED",
+    });
+    expect(text).toHaveBeenCalledTimes(1);
+    expect(writeClusterMock).not.toHaveBeenCalled();
+  });
+
+  test("bypasses confirmation with a warning when yes and yesSensitive are both true for a sensitive target", async () => {
+    writeClusterMock.mockResolvedValue({
+      name: "my-cluster",
+      arn: "arn",
+      status: "DELETING",
+    });
+    const { prompt, confirm, text } = gradedPrompt();
+    const logger = new Core.M3LLogger([]);
+    const warningSpy = vi.spyOn(logger, "warning");
+    const deps = buildDeps(
+      {
+        operation: "delete-cluster",
+        cluster: "my-cluster",
+        yes: true,
+        yesSensitive: true,
+      },
+      { prompt, logger, awsTarget: { profile: "prod" } },
+    );
+
+    await expect(runEksOps(deps)).resolves.toBeUndefined();
+
+    expect(confirm).not.toHaveBeenCalled();
+    expect(text).not.toHaveBeenCalled();
+    expect(warningSpy).toHaveBeenCalledTimes(1);
+    expect(warningSpy).toHaveBeenCalledWith(expect.stringContaining("prod"));
+    expect(writeClusterMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("still escalates when yes:true but yesSensitive is false/absent, for a sensitive target", async () => {
+    writeClusterMock.mockResolvedValue({
+      name: "my-cluster",
+      arn: "arn",
+      status: "DELETING",
+    });
+    const { prompt, confirm, text } = gradedPrompt({ textResponse: "prod" });
+    const deps = buildDeps(
+      {
+        operation: "delete-cluster",
+        cluster: "my-cluster",
+        yes: true,
+        // yesSensitive intentionally absent (defaults false)
+      },
+      { prompt, awsTarget: { profile: "prod" } },
+    );
+
+    await expect(runEksOps(deps)).resolves.toBeUndefined();
+
+    expect(text).toHaveBeenCalledTimes(1);
+    expect(confirm).not.toHaveBeenCalled();
+  });
+
+  test("uses the plain confirm (not escalated) when the target is not sensitive", async () => {
+    writeClusterMock.mockResolvedValue({
+      name: "my-cluster",
+      arn: "arn",
+      status: "DELETING",
+    });
+    const { prompt, confirm, text } = gradedPrompt({ confirmed: true });
+    const deps = buildDeps(
+      { operation: "delete-cluster", cluster: "my-cluster" },
+      { prompt, awsTarget: { profile: "dev" } },
+    );
+
+    await expect(runEksOps(deps)).resolves.toBeUndefined();
+
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(text).not.toHaveBeenCalled();
+  });
 });
 
 describe("runEksOps — ERR_EKS_OPS_NOT_FOUND (fires before any persist attempt)", () => {

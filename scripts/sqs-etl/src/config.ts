@@ -41,6 +41,7 @@ export const configParameters: readonly Core.M3LConfigParameter[] = [
     name: Core.AWS_PROFILE_PARAM_NAME,
     type: Core.M3LConfigParameterType.STRING,
     required: true,
+    validate: Core.M3LConfigValidators.nonEmpty,
   }),
   new Core.M3LConfigParameter({
     name: "command",
@@ -89,6 +90,11 @@ export const configParameters: readonly Core.M3LConfigParameter[] = [
   }),
   new Core.M3LConfigParameter({
     name: "yes",
+    type: Core.M3LConfigParameterType.BOOL,
+    defaultValue: false,
+  }),
+  new Core.M3LConfigParameter({
+    name: "yesSensitive",
     type: Core.M3LConfigParameterType.BOOL,
     defaultValue: false,
   }),
@@ -190,4 +196,10 @@ export const configValidators: readonly Core.M3LConfigSchemaValidator[] = [
   requiredForCommands("dlqUrl", DLQ_URL_REQUIRING_COMMANDS),
   requiredForCommands("input", INPUT_REQUIRING_COMMANDS),
   requiredForCommands("output", OUTPUT_REQUIRING_COMMANDS),
+  // requires() would be a no-op here since both yesSensitive and yes carry
+  // declared defaults — compare resolved values instead.
+  (config: Core.M3LConfig): true | string =>
+    config.get("yesSensitive") !== true || config.get("yes") === true
+      ? true
+      : "'yesSensitive' requires 'yes' to be set",
 ];

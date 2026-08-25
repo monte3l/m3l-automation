@@ -37,7 +37,7 @@ describe("lambda-ops config declaration", () => {
     }
   });
 
-  it("declares exactly the eight parameters named in the contract table", () => {
+  it("declares exactly the eight parameters named in the contract table, plus 'yesSensitive' (issue #483 fleet retrofit — docs/reference/scripts/lambda-ops.md pending update)", () => {
     const names = new Set(
       configParameters.map((parameter) => parameter.getName()),
     );
@@ -51,6 +51,7 @@ describe("lambda-ops config declaration", () => {
         "input",
         "output",
         "yes",
+        "yesSensitive",
       ]),
     );
   });
@@ -272,6 +273,44 @@ describe("configValidators (F1b — cross-parameter validation)", () => {
         operation: "invoke",
         functionName: "my-function",
       });
+
+      expect(firstFailure(config)).toBeUndefined();
+    });
+  });
+
+  /**
+   * Issue #483 (A2b) / ADR-0048 fleet retrofit: `yesSensitive` is a
+   * sensitive-target bypass co-flag, only meaningful alongside `yes` (see
+   * `Core.confirmDestructive`'s state 3). `config.ts` is expected to add a
+   * `Core.M3LConfigSchemaValidators.requires("yesSensitive", "yes")` entry to
+   * `configValidators` — that library helper already exists and is exercised
+   * directly in `packages/m3l-common/tests/config.test.ts`; only its wiring
+   * into this script's schema is new here.
+   */
+  describe("'yesSensitive' requires 'yes' to be set", () => {
+    it("returns a failure reason when 'yesSensitive' is true and 'yes' is unset", () => {
+      const config = buildConfig({
+        operation: "list",
+        yesSensitive: true,
+      });
+
+      expect(firstFailure(config)).toBe(
+        "'yesSensitive' requires 'yes' to be set",
+      );
+    });
+
+    it("passes every validator when both 'yesSensitive' and 'yes' are set", () => {
+      const config = buildConfig({
+        operation: "list",
+        yes: true,
+        yesSensitive: true,
+      });
+
+      expect(firstFailure(config)).toBeUndefined();
+    });
+
+    it("passes every validator when 'yesSensitive' is unset regardless of 'yes'", () => {
+      const config = buildConfig({ operation: "list" });
 
       expect(firstFailure(config)).toBeUndefined();
     });

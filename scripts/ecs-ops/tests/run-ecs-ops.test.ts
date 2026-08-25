@@ -88,11 +88,23 @@ function stubReadFileByPath(entries: Record<string, string | Buffer>): void {
   }) as typeof fsp.readFile);
 }
 
+/**
+ * The default `awsTarget` fixture used by every test that does not care
+ * about target-graded escalation: a profile whose lowercased form does not
+ * contain "prod", so it is never classified sensitive by the per-script
+ * `(target) => target.profile.toLowerCase().includes("prod")` predicate
+ * `run-ecs-ops.ts` wires into the pipeline's `destructive.isSensitiveTarget`.
+ */
+const NON_SENSITIVE_TARGET: Core.M3LDestructiveTarget = {
+  profile: "dev-sandbox",
+};
+
 function buildDeps(
   configValues: Record<string, unknown>,
   overrides?: {
     readonly operations?: ReturnType<typeof createFakeEcsOperations>;
     readonly prompt?: Core.M3LPrompt;
+    readonly awsTarget?: Core.M3LDestructiveTarget;
   },
 ): Parameters<typeof runEcsOps>[0] {
   return {
@@ -102,7 +114,29 @@ function buildDeps(
     correlationId: "run-1",
     operations: overrides?.operations ?? createFakeEcsOperations(),
     prompt: overrides?.prompt ?? new Core.M3LPrompt(),
+    awsTarget: overrides?.awsTarget ?? NON_SENSITIVE_TARGET,
   };
+}
+
+/**
+ * Builds a `Core.M3LPrompt` with both `confirm` and `text` spied — the two
+ * seams `Core.confirmDestructive` calls through for the ungraded and the
+ * escalated typed-echo paths respectively. Every target-graded-escalation
+ * test below observes the gate at this boundary, exactly as
+ * {@link confirmingPrompt} does for the ungraded gate.
+ */
+function targetGatePrompt(overrides?: {
+  readonly confirmed?: boolean;
+  readonly textResponse?: string;
+}) {
+  const prompt = new Core.M3LPrompt();
+  const confirm = vi
+    .spyOn(prompt, "confirm")
+    .mockResolvedValue(overrides?.confirmed ?? true);
+  const text = vi
+    .spyOn(prompt, "text")
+    .mockResolvedValue(overrides?.textResponse ?? "");
+  return { prompt, confirm, text };
 }
 
 /**
@@ -390,6 +424,120 @@ describe("runEcsOps — destructive-gate dispatch (create/update/delete-service 
 
     expect(confirm).toHaveBeenCalledWith(expect.stringContaining("my-cluster"));
     expect(confirm).toHaveBeenCalledWith(expect.stringContaining("my-svc"));
+  });
+});
+
+/**
+ * Contract: ADR-0048's target-graded destructive-confirmation gate (Issue
+ * #483, A2b), wired into `ecs-ops`'s existing `delete-service` gate via a
+ * per-script `awsTarget: Core.M3LDestructiveTarget` dep and an inline
+ * `isSensitiveTarget` predicate,
+ * `(target) => target.profile.toLowerCase().includes("prod")`. Only
+ * `delete-service` is exercised here — `create-service`/`update-service`
+ * share the same `destructive` block and are not re-tested per state.
+ */
+describe("runEcsOps — destructive-gate target-graded escalation (delete-service)", () => {
+  test("escalates to the typed-echo prompt when the target's profile contains 'prod'", async () => {
+    writeServiceMock.mockResolvedValue(SERVICE_DESCRIPTION);
+    const { prompt, confirm, text } = targetGatePrompt({
+      textResponse: "prod",
+    });
+    const deps = buildDeps(
+      { operation: "delete-service", cluster: "my-cluster", service: "my-svc" },
+      { prompt, awsTarget: { profile: "prod" } },
+    );
+
+    await runEcsOps(deps);
+
+    expect(text).toHaveBeenCalledTimes(1);
+    expect(confirm).not.toHaveBeenCalled();
+    expect(writeServiceMock).toHaveBeenCalled();
+  });
+
+  test("throws ERR_ECS_OPS_ABORTED when the typed-echo input doesn't match the profile", async () => {
+    const { prompt } = targetGatePrompt({ textResponse: "not-prod" });
+    const deps = buildDeps(
+      { operation: "delete-service", cluster: "my-cluster", service: "my-svc" },
+      { prompt, awsTarget: { profile: "prod" } },
+    );
+
+    await expect(runEcsOps(deps)).rejects.toMatchObject({
+      code: "ERR_ECS_OPS_ABORTED",
+    });
+    expect(writeServiceMock).not.toHaveBeenCalled();
+  });
+
+  test("bypasses confirmation with a warning when yes and yesSensitive are both true for a sensitive target", async () => {
+    writeServiceMock.mockResolvedValue(SERVICE_DESCRIPTION);
+    const { prompt, confirm, text } = targetGatePrompt({
+      textResponse: "prod",
+    });
+    const deps = buildDeps(
+      {
+        operation: "delete-service",
+        cluster: "my-cluster",
+        service: "my-svc",
+        yes: true,
+        yesSensitive: true,
+      },
+      { prompt, awsTarget: { profile: "prod" } },
+    );
+    const warningSpy = vi.spyOn(deps.logger, "warning");
+
+    await runEcsOps(deps);
+
+    expect(confirm).not.toHaveBeenCalled();
+    expect(text).not.toHaveBeenCalled();
+    expect(warningSpy).toHaveBeenCalledTimes(1);
+    expect(warningSpy).toHaveBeenCalledWith(expect.stringContaining("prod"));
+    expect(writeServiceMock).toHaveBeenCalled();
+  });
+
+  test.each([
+    ["absent", undefined],
+    ["false", false],
+  ])(
+    "still escalates when yes:true but yesSensitive is %s, for a sensitive target",
+    async (_label, yesSensitiveValue) => {
+      writeServiceMock.mockResolvedValue(SERVICE_DESCRIPTION);
+      const { prompt, confirm, text } = targetGatePrompt({
+        textResponse: "prod",
+      });
+      const configValues: Record<string, unknown> = {
+        operation: "delete-service",
+        cluster: "my-cluster",
+        service: "my-svc",
+        yes: true,
+      };
+      if (yesSensitiveValue !== undefined) {
+        configValues["yesSensitive"] = yesSensitiveValue;
+      }
+      const deps = buildDeps(configValues, {
+        prompt,
+        awsTarget: { profile: "prod" },
+      });
+
+      await runEcsOps(deps);
+
+      expect(text).toHaveBeenCalledTimes(1);
+      expect(confirm).not.toHaveBeenCalled();
+      expect(writeServiceMock).toHaveBeenCalled();
+    },
+  );
+
+  test("uses the plain confirm (not escalated) when the target is not sensitive", async () => {
+    writeServiceMock.mockResolvedValue(SERVICE_DESCRIPTION);
+    const { prompt, confirm, text } = targetGatePrompt({ confirmed: true });
+    const deps = buildDeps(
+      { operation: "delete-service", cluster: "my-cluster", service: "my-svc" },
+      { prompt, awsTarget: { profile: "dev-sandbox" } },
+    );
+
+    await runEcsOps(deps);
+
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(text).not.toHaveBeenCalled();
+    expect(writeServiceMock).toHaveBeenCalled();
   });
 });
 

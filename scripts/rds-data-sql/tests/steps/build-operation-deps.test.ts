@@ -50,7 +50,11 @@ const BASE_SETTINGS: RdsDataSqlSettings = {
   outputFormat: "json",
   migrationsTable: "schema_migrations",
   yes: false,
+  yesSensitive: false,
 };
+
+/** The resolved AWS identity forwarded through every `buildDeps()` bag. */
+const AWS_TARGET: Core.M3LDestructiveTarget = { profile: "dev-sandbox" };
 
 function makeSettings(
   overrides: Partial<RdsDataSqlSettings>,
@@ -92,6 +96,7 @@ function buildDeps(settings: RdsDataSqlSettings) {
     prompt: new Core.M3LPrompt(),
     paths: new Core.M3LPaths(),
     logger: makeLogger(),
+    awsTarget: AWS_TARGET,
   };
 }
 
@@ -1043,6 +1048,22 @@ describe("buildOperationDeps: execute", () => {
     expect(error.message).not.toContain(rawContent);
     expect(error.message).not.toContain("secret-bind-value");
     expect(error.cause).toBeUndefined();
+  });
+
+  test("forwards 'awsTarget' and 'settings.yesSensitive' into RunExecuteDeps", async () => {
+    const result = await buildOperationDeps(
+      buildDeps(
+        makeSettings({
+          operation: "execute",
+          sql: "DELETE FROM t",
+          yes: true,
+          yesSensitive: true,
+        }),
+      ),
+    );
+
+    expect(result.execute?.awsTarget).toEqual(AWS_TARGET);
+    expect(result.execute?.yesSensitive).toBe(true);
   });
 });
 

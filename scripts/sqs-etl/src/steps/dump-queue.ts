@@ -22,6 +22,7 @@ interface DumpSettings {
   readonly visibilityTimeoutSeconds: number | undefined;
   readonly deleteAfterDump: boolean;
   readonly yes: boolean;
+  readonly yesSensitive: boolean;
 }
 
 /** Resolves and guard-checks every declared parameter `dumpQueue` needs. */
@@ -39,6 +40,7 @@ function resolveSettings(config: Core.M3LConfig): DumpSettings {
     ),
     deleteAfterDump: accessor.booleanWithDefault("deleteAfterDump", false),
     yes: accessor.booleanWithDefault("yes", false),
+    yesSensitive: accessor.booleanWithDefault("yesSensitive", false),
   };
 }
 
@@ -98,9 +100,14 @@ function logDeleteFailures(
  */
 async function confirmDeleteOnce(
   confirmed: boolean,
-  deps: { readonly prompt: Core.M3LPrompt; readonly logger: Core.M3LLogger },
+  deps: {
+    readonly prompt: Core.M3LPrompt;
+    readonly logger: Core.M3LLogger;
+    readonly awsTarget: Core.M3LDestructiveTarget;
+  },
   description: string,
   yes: boolean,
+  yesSensitive: boolean,
 ): Promise<boolean> {
   if (confirmed) return true;
   await Core.confirmDestructive({
@@ -108,9 +115,80 @@ async function confirmDeleteOnce(
     logger: deps.logger,
     description,
     yes,
+    yesSensitive,
     code: "ERR_SQS_ETL_ABORTED",
+    target: deps.awsTarget,
+    isSensitiveTarget: (target) =>
+      target.profile.toLowerCase().includes("prod"),
   });
   return true;
+}
+
+/** Best-effort closes `writer`, swallowing any close failure — used when a primary error already occurred and must not be masked by a subsequent close failure. */
+async function closeWriterBestEffort(
+  writer: Core.M3LListExporterStreamWriter<AWS.M3LSQSReceivedMessage>,
+): Promise<void> {
+  try {
+    await writer.close();
+  } catch {
+    // best-effort: a close failure must not mask the original error
+  }
+}
+
+/**
+ * Runs the receive/write/delete loop until `settings.batchSize` is reached or
+ * `receive()` returns an empty page: long-polls `queueUrl`, streams each
+ * received message to `writer`, and (when `deleteAfterDump`, once confirmed)
+ * `deleteBatch()`s the written page.
+ *
+ * @returns The total count of messages received across every page.
+ */
+async function runDumpPages(
+  deps: {
+    readonly logger: Core.M3LLogger;
+    readonly sqsOperations: AWS.M3LSQSOperations;
+    readonly prompt: Core.M3LPrompt;
+    readonly awsTarget: Core.M3LDestructiveTarget;
+  },
+  settings: DumpSettings,
+  writer: Core.M3LListExporterStreamWriter<AWS.M3LSQSReceivedMessage>,
+): Promise<{ total: number }> {
+  let confirmed = false;
+  let total = 0;
+  for (;;) {
+    const receiveOptions = buildReceiveOptions(
+      settings,
+      settings.batchSize - total,
+    );
+    const messages = await deps.sqsOperations.receive(
+      settings.queueUrl,
+      receiveOptions,
+    );
+    if (messages.length === 0) break;
+
+    for (const message of messages) {
+      await writer.append(message);
+    }
+
+    if (settings.deleteAfterDump) {
+      confirmed = await confirmDeleteOnce(
+        confirmed,
+        deps,
+        `delete drained messages from queue ${settings.queueUrl}`,
+        settings.yes,
+        settings.yesSensitive,
+      );
+      const deleteResult = await deps.sqsOperations.deleteBatch(
+        settings.queueUrl,
+        toDeleteEntries(messages),
+      );
+      logDeleteFailures(deps.logger, deleteResult.failed);
+    }
+
+    total += messages.length;
+    if (total >= settings.batchSize) break;
+  }
+  return { total };
 }
 
 /**
@@ -143,6 +221,7 @@ async function confirmDeleteOnce(
  *   correlationId: "run-1",
  *   sqsOperations,
  *   prompt: new Core.M3LPrompt(),
+ *   awsTarget: { profile: "dev" },
  * });
  * ```
  */
@@ -153,6 +232,7 @@ export async function dumpQueue(deps: {
   readonly correlationId: string;
   readonly sqsOperations: AWS.M3LSQSOperations;
   readonly prompt: Core.M3LPrompt;
+  readonly awsTarget: Core.M3LDestructiveTarget;
 }): Promise<void> {
   const settings = resolveSettings(deps.config);
   const outputPath = deps.paths.resolveOutput(settings.output);
@@ -163,52 +243,16 @@ export async function dumpQueue(deps: {
   });
   const writer = exporter.exportStream();
 
-  let confirmed = false;
-  let total = 0;
+  let result: { total: number };
   try {
-    for (;;) {
-      const receiveOptions = buildReceiveOptions(
-        settings,
-        settings.batchSize - total,
-      );
-      const messages = await deps.sqsOperations.receive(
-        settings.queueUrl,
-        receiveOptions,
-      );
-      if (messages.length === 0) break;
-
-      for (const message of messages) {
-        await writer.append(message);
-      }
-
-      if (settings.deleteAfterDump) {
-        confirmed = await confirmDeleteOnce(
-          confirmed,
-          deps,
-          `delete drained messages from queue ${settings.queueUrl}`,
-          settings.yes,
-        );
-        const deleteResult = await deps.sqsOperations.deleteBatch(
-          settings.queueUrl,
-          toDeleteEntries(messages),
-        );
-        logDeleteFailures(deps.logger, deleteResult.failed);
-      }
-
-      total += messages.length;
-      if (total >= settings.batchSize) break;
-    }
+    result = await runDumpPages(deps, settings, writer);
   } catch (cause) {
-    try {
-      await writer.close();
-    } catch {
-      // best-effort: a close failure must not mask the original error
-    }
+    await closeWriterBestEffort(writer);
     throw cause;
   }
   await writer.close();
 
   deps.logger.step(`sqs-etl dump run ${deps.correlationId} complete`, {
-    total,
+    total: result.total,
   });
 }

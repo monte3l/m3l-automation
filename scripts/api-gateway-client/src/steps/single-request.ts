@@ -104,6 +104,7 @@ export async function singleRequest(deps: {
   readonly httpClient: Core.M3LHttpClient;
   readonly signer: AWS.M3LRequestSigner | undefined;
   readonly prompt: Core.M3LPrompt;
+  readonly awsTarget: Core.M3LDestructiveTarget | undefined;
 }): Promise<void> {
   const accessor = new Core.M3LConfigAccessor({
     config: deps.config,
@@ -117,6 +118,7 @@ export async function singleRequest(deps: {
   const body = accessor.optionalNonEmptyString("body");
   const baseUrl = accessor.optionalNonEmptyString("baseUrl");
   const yes = deps.config.get("yes") === true;
+  const yesSensitive = deps.config.get("yesSensitive") === true;
 
   const url = buildRequestUrl(path, baseUrl);
 
@@ -126,7 +128,11 @@ export async function singleRequest(deps: {
       logger: deps.logger,
       description: `${method} ${url}`,
       yes,
+      yesSensitive,
       code: "ERR_API_GATEWAY_CLIENT_ABORTED",
+      ...(deps.awsTarget !== undefined && { target: deps.awsTarget }),
+      isSensitiveTarget: (target) =>
+        target.profile.toLowerCase().includes("prod"),
     });
   }
 

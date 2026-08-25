@@ -24,6 +24,7 @@ interface BatchRequestDeps {
   readonly httpClient: Core.M3LHttpClient;
   readonly signer: AWS.M3LRequestSigner | undefined;
   readonly prompt: Core.M3LPrompt;
+  readonly awsTarget: Core.M3LDestructiveTarget | undefined;
 }
 
 /** HTTP verbs `Core.confirmDestructive` confirms before dispatch; GET/HEAD are never gated. */
@@ -47,6 +48,7 @@ interface BatchSettings {
   readonly method: Core.M3LHttpMethod;
   readonly input: string;
   readonly yes: boolean;
+  readonly yesSensitive: boolean;
   readonly baseUrl: string | undefined;
   /** `baseUrl`'s origin, precomputed once so every record's resolved URL can be origin-checked against it (see {@link isOffOrigin}). */
   readonly baseOrigin: string | undefined;
@@ -65,6 +67,7 @@ function resolveBatchSettings(config: Core.M3LConfig): BatchSettings {
     method: accessor.requiredString("method", "batch") as Core.M3LHttpMethod,
     input: accessor.requiredString("input", "batch"),
     yes: config.get("yes") === true,
+    yesSensitive: config.get("yesSensitive") === true,
     baseUrl,
     baseOrigin: baseUrl === undefined ? undefined : new URL(baseUrl).origin,
     outputName: accessor.optionalNonEmptyString("output"),
@@ -421,7 +424,11 @@ export async function batchRequest(deps: BatchRequestDeps): Promise<void> {
       logger: deps.logger,
       description: `${settings.method} batch requests from '${settings.input}'`,
       yes: settings.yes,
+      yesSensitive: settings.yesSensitive,
       code: "ERR_API_GATEWAY_CLIENT_ABORTED",
+      ...(deps.awsTarget !== undefined && { target: deps.awsTarget }),
+      isSensitiveTarget: (target) =>
+        target.profile.toLowerCase().includes("prod"),
     });
   }
 

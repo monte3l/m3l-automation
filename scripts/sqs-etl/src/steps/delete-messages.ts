@@ -20,6 +20,7 @@ interface DeleteSettings {
   readonly input: string;
   readonly batchSize: number;
   readonly yes: boolean;
+  readonly yesSensitive: boolean;
 }
 
 /** Resolves and guard-checks every declared parameter `deleteMessages` needs. */
@@ -33,6 +34,7 @@ function resolveSettings(config: Core.M3LConfig): DeleteSettings {
     input: accessor.requiredString("input", "delete"),
     batchSize: accessor.numberWithDefault("batchSize", DEFAULT_BATCH_SIZE),
     yes: accessor.booleanWithDefault("yes", false),
+    yesSensitive: accessor.booleanWithDefault("yesSensitive", false),
   };
 }
 
@@ -196,6 +198,7 @@ async function runDeleteBatches(
  *   sqsOperations,
  *   prompt: new Core.M3LPrompt(),
  *   reportRecovery: () => {},
+ *   awsTarget: { profile: "dev" },
  * });
  * ```
  */
@@ -207,6 +210,7 @@ export async function deleteMessages(deps: {
   readonly sqsOperations: AWS.M3LSQSOperations;
   readonly prompt: Core.M3LPrompt;
   readonly reportRecovery: (entry: Core.M3LRunRecoveryEntry) => void;
+  readonly awsTarget: Core.M3LDestructiveTarget;
 }): Promise<void> {
   const settings = resolveSettings(deps.config);
   const inputPath = deps.paths.resolveInput(settings.input);
@@ -217,7 +221,11 @@ export async function deleteMessages(deps: {
     logger: deps.logger,
     description: `delete messages from queue ${settings.queueUrl}`,
     yes: settings.yes,
+    yesSensitive: settings.yesSensitive,
     code: "ERR_SQS_ETL_ABORTED",
+    target: deps.awsTarget,
+    isSensitiveTarget: (target) =>
+      target.profile.toLowerCase().includes("prod"),
   });
 
   const failedExporter = new Core.M3LJSONListExporter<AWS.M3LSQSDeleteEntry>({

@@ -66,6 +66,7 @@ describe("runSqsEtl dispatch", () => {
         sqsOperations,
         prompt,
         reportRecovery,
+        awsTarget: { profile: "dev-sandbox" },
       });
 
       expect(mock).toHaveBeenCalledTimes(1);
@@ -112,6 +113,7 @@ describe("runSqsEtl dispatch", () => {
         sqsOperations,
         prompt,
         reportRecovery,
+        awsTarget: { profile: "dev-sandbox" },
       });
     } catch (error) {
       thrown = error;

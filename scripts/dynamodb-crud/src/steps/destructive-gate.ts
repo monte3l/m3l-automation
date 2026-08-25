@@ -10,9 +10,12 @@ import { AWS, Core } from "@m3l-automation/m3l-common";
  * real-time guarantee of emptiness.
  *
  * @param deps - The provisioned base `dynamoDB` client, the target table and
- *   operation name (named in the confirmation description), a logger, and
- *   an injected `Core.M3LPrompt` (mirrors `script.prompt`, so this step is
- *   unit-testable without the `M3LScript` lifecycle).
+ *   operation name (named in the confirmation description), a logger, an
+ *   injected `Core.M3LPrompt` (mirrors `script.prompt`, so this step is
+ *   unit-testable without the `M3LScript` lifecycle), and the resolved
+ *   `awsTarget` (mirrors `script.awsTarget`) used for target-graded
+ *   confirmation — a target whose `profile` contains `"prod"` escalates to
+ *   the typed-echo confirmation instead of the plain yes/no prompt.
  * @returns A promise that resolves once the operator has confirmed.
  * @throws {@link Core.M3LError} with code `ERR_DYNAMO_CRUD_ABORTED` —
  *   raised by `Core.confirmDestructive` (message
@@ -33,6 +36,7 @@ import { AWS, Core } from "@m3l-automation/m3l-common";
  *   operation: "delete",
  *   logger: new Core.M3LLogger([]),
  *   prompt: script.prompt,
+ *   awsTarget: { profile: "prod" },
  * });
  * ```
  */
@@ -42,6 +46,7 @@ export async function runDestructiveGate(deps: {
   readonly operation: string;
   readonly logger: Core.M3LLogger;
   readonly prompt: Core.M3LPrompt;
+  readonly awsTarget: Core.M3LDestructiveTarget;
 }): Promise<void> {
   const { itemCount } = await AWS.describeTable(deps.dynamoDB, deps.tableName);
 
@@ -51,5 +56,8 @@ export async function runDestructiveGate(deps: {
     description: `run '${deps.operation}' on table '${deps.tableName}' (~${String(itemCount)} item(s))`,
     yes: false,
     code: "ERR_DYNAMO_CRUD_ABORTED",
+    target: deps.awsTarget,
+    isSensitiveTarget: (target) =>
+      target.profile.toLowerCase().includes("prod"),
   });
 }

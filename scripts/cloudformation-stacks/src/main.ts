@@ -46,6 +46,18 @@ await Core.runScript(
       );
     }
 
+    // `script.awsTarget` is resolved alongside `script.aws` from the same
+    // identity; a provisioned `script.aws` with an `undefined` `awsTarget`
+    // is a wiring bug, not a runtime condition — fail loud rather than
+    // threading an optional target through the destructive gate.
+    const awsTarget = script.awsTarget;
+    if (awsTarget === undefined) {
+      throw new Core.M3LError(
+        "cloudformation-stacks: script.awsTarget was not resolved despite a provisioned script.aws",
+        { code: "ERR_CLOUDFORMATION_STACKS_CONFIG" },
+      );
+    }
+
     await runCloudformationStacks({
       config,
       paths: script.paths,
@@ -56,6 +68,7 @@ await Core.runScript(
       ),
       prompt: script.prompt,
       signal: script.signal,
+      awsTarget,
     });
   },
   { dryRun },
