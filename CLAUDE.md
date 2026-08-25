@@ -95,11 +95,11 @@ every `check:*`, `knip`, `lint:md`, `gitleaks`, `audit` — see
 `docs/contributing/ci-cd.md`. `pre-push` takes minutes — background it rather
 than `--no-verify`, since CI re-runs everything anyway.
 
-| Stage                   | Checks                                                                                                                                                                                                                           | Scope  |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| `pre-commit` (lefthook) | `eslint`, `prettier`                                                                                                                                                                                                             | staged |
-| `commit-msg` (lefthook) | `lint-commit`                                                                                                                                                                                                                    | commit |
-| `pre-push` (lefthook)   | `format:check`, `lint`, `typecheck`, `test:coverage`, `build`, `check:exports`, `verify-signed-range`, `check:control-chars`, `check:file-budget`, `check:agents`, `check:test-counts`, `check:script-docs`, `check:review-size` | repo   |
+| Stage                   | Checks                                                                                                                                                                                                                                             | Scope  |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| `pre-commit` (lefthook) | `eslint`, `prettier`                                                                                                                                                                                                                               | staged |
+| `commit-msg` (lefthook) | `lint-commit`                                                                                                                                                                                                                                      | commit |
+| `pre-push` (lefthook)   | `format:check`, `lint`, `typecheck`, `test:coverage`, `build`, `check:exports`, `verify-signed-range`, `check:control-chars`, `check:file-budget`, `check:agents`, `check:test-counts`, `check:script-docs`, `check:cli-docs`, `check:review-size` | repo   |
 
 `pnpm verify` reproduces every CI check locally; `pnpm check:verify-parity`
 keeps its step list in sync with `ci.yml`.

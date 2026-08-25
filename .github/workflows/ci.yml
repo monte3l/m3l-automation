@@ -424,6 +424,13 @@ jobs:
       - name: Check CLI scaffold conformance
         run: pnpm check:cli-scaffold
 
+      # docs/reference/cli.md must follow the canonical structure spec
+      # (docs/contributing/cli-structure.md): required sections in canonical
+      # order and an `## Exit codes` table — plus a docs<->code cross-check
+      # that every command main.ts dispatches is documented. ADR-0053.
+      - name: Check CLI doc structure
+        run: pnpm check:cli-docs
+
       # Subagent config: skill/CLAUDE.md references resolve to real agents or
       # built-ins, and no spoke is granted the Agent tool (no-nesting invariant).
       - name: Check subagent configuration (agents)
