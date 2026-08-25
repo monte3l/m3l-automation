@@ -516,6 +516,19 @@ describe("collectBudgetEntriesAtRef", () => {
       },
     ]);
   });
+
+  test("propagates a git ls-tree failure rather than swallowing it into an empty array", () => {
+    h.execFileSync.mockImplementation((_cmd: string, args: string[]) => {
+      if (args[0] === "ls-tree") {
+        throw new Error("fatal: not a valid object name does-not-exist-ref");
+      }
+      throw new Error(`unexpected execFileSync call: ${JSON.stringify(args)}`);
+    });
+
+    expect(() => collectBudgetEntriesAtRef("does-not-exist-ref")).toThrow(
+      "fatal: not a valid object name does-not-exist-ref",
+    );
+  });
 });
 
 describe("readBaselineAtRef", () => {
