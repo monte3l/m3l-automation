@@ -327,7 +327,7 @@ const WORKTREE_SCRIPTS = {
  * script's own `--json` reporter; `setup`/`remove` have no `--json` mode, so
  * their result is exit-code + captured-output based.
  *
- * @param {{ action?: unknown, slug?: unknown, fix?: unknown, from?: unknown, dryRun?: unknown }} args
+ * @param {{ action?: unknown, slug?: unknown, fix?: unknown, from?: unknown, dryRun?: unknown, noFetch?: unknown }} args
  * @returns {{ content: { type: "text", text: string }[], isError: boolean }}
  * @example
  * ```js
@@ -371,6 +371,12 @@ export function worktreeManage(args) {
       `worktree_manage: 'dryRun' is only valid with action "prune" — omit it for "${action}".`,
     );
   }
+  const noFetch = args?.noFetch;
+  if (noFetch !== undefined && action !== "prune") {
+    return errorResult(
+      `worktree_manage: 'noFetch' is only valid with action "prune" — omit it for "${action}".`,
+    );
+  }
   const from = args?.from;
   if (from !== undefined && action !== "create") {
     return errorResult(
@@ -410,7 +416,10 @@ export function worktreeManage(args) {
       );
     }
     case "prune": {
-      const cliArgs = dryRun === true ? ["--dry-run"] : [];
+      const cliArgs = [
+        ...(dryRun === true ? ["--dry-run"] : []),
+        ...(noFetch === true ? ["--no-fetch"] : []),
+      ];
       const { exitCode, payload, error } = spawnJson(scriptRelPath, cliArgs);
       if (error !== null) return errorResult(`worktree_manage: ${error}`);
       return toolResult(
@@ -717,15 +726,21 @@ export const TOOLS = [
         "bin/worktree-{new,setup,remove,prune}.mjs. `create` and `remove` REQUIRE " +
         "`slug`; `setup` provisions the worktree rooted at the current working " +
         "directory (run it from inside the new worktree, not the main checkout); " +
-        "`prune` removes worktrees whose branch is already merged into main and " +
-        "accepts `dryRun` to just list candidates. `remove` and `prune` (without " +
-        "`dryRun`) are DESTRUCTIVE — they delete a worktree directory and " +
-        "potentially its branch, so confirm the target before calling. `dryRun` is " +
-        "only meaningful for `prune`; passing it with any other action is rejected. " +
-        "`from` is only meaningful for `create`: it checks out an existing ref " +
-        "(e.g. a remote branch you want to investigate/audit, not develop on) as a " +
-        "detached-HEAD worktree instead of branching feat/<slug>|fix/<slug> from " +
-        "main, and is mutually exclusive with `fix` since no new branch is created.",
+        "`prune` removes worktrees whose branch is merged into main by ancestry, " +
+        "whose upstream reports `[gone]` (the marker left after a squash/rebase/" +
+        "merge-commit PR gets merged and its remote branch auto-deleted — the " +
+        "common case here, since ancestry alone misses squash merges), a detached " +
+        "(`--from`) worktree whose HEAD is itself merged, or that git reports " +
+        "`prunable`; it accepts `dryRun` to just list candidates and refreshes " +
+        "remote-tracking refs first unless `noFetch` is set. `remove` and `prune` " +
+        "(without `dryRun`) are DESTRUCTIVE — they delete a worktree directory and " +
+        "potentially its branch, so confirm the target before calling. `dryRun` " +
+        "and `noFetch` are only meaningful for `prune`; passing either with any " +
+        "other action is rejected. `from` is only meaningful for `create`: it " +
+        "checks out an existing ref (e.g. a remote branch you want to " +
+        "investigate/audit, not develop on) as a detached-HEAD worktree instead " +
+        "of branching feat/<slug>|fix/<slug> from main, and is mutually exclusive " +
+        "with `fix` since no new branch is created.",
       inputSchema: {
         action: z
           .enum(["create", "setup", "remove", "prune"])
@@ -755,6 +770,14 @@ export const TOOLS = [
           .optional()
           .describe(
             'For action "prune" only: list stale-worktree candidates without removing them.',
+          ),
+        noFetch: z
+          .boolean()
+          .optional()
+          .describe(
+            'For action "prune" only: skip the default `git fetch --prune` ' +
+              "refresh of remote-tracking refs (offline use; may miss branches " +
+              "merged-and-deleted since the last fetch).",
           ),
       },
       annotations: { destructiveHint: true },

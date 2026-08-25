@@ -242,6 +242,17 @@ pnpm worktree:prune --dry-run   # preview
 pnpm worktree:prune             # remove
 ```
 
+A worktree is a removal candidate when its branch is merged into `main` by
+ancestry, its upstream reports `[gone]` (the marker left after a PR is
+squash-, rebase-, or merge-commit merged and GitHub auto-deletes the remote
+branch — the common case here, since ancestry alone misses squash and rebase
+merges), a `--from <ref>` detached worktree whose HEAD is itself merged, or
+git reports it `prunable` (its directory is gone). Each candidate's listing
+names which of these matched. `worktree:prune` refreshes remote-tracking refs
+first (`git fetch --prune`) so the `[gone]` signal is current; pass
+`--no-fetch` to skip that for offline use (a failed fetch degrades to a
+warning, not a hard failure). See ADR-0014's 2026-08-25 amendment.
+
 Do not run repo-wide commands (`pnpm format`, `pnpm lint`, `pnpm test`) against a
 worktree nested under `.claude/worktrees/`; those paths are deliberately excluded
 from the tooling so a main-tree command can never rewrite another branch's files.
