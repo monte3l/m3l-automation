@@ -1660,6 +1660,9 @@ interface TestIssue {
   state: "open" | "closed";
   labels: string[];
   type: string | null;
+  // Present (a number) only when the caller confirmed a candidate closing PR
+  // actually merged — see planIssueSync's staleTracker doc.
+  mergedClosingPrNumber?: number | null;
 }
 
 interface IssueSyncResult {
@@ -1679,6 +1682,13 @@ interface IssueSyncResult {
     labelsStale?: boolean;
   }[];
   reopen: { number: number; key: string; payload: unknown }[];
+  staleTracker: {
+    number: number;
+    key: string;
+    prNumber: number;
+    sourcePath: string;
+    sourceAnchor: string;
+  }[];
   untouched: { number: number; reason: string }[];
 }
 
@@ -2138,6 +2148,135 @@ describe("planIssueSync", () => {
     expect(result.close[0]?.comment).toMatch(/remov/i);
     expect(result.update).toEqual([]);
     expect(result.create).toEqual([]);
+  });
+
+  test("a closed issue with a confirmed merged closing PR and an unresolved item lands in staleTracker, not reopen", () => {
+    const item = makeItem({ key: "roadmap:p0:f", status: "todo" });
+    const closedIssue: TestIssue = {
+      ...issueFromPayload(60, item, "closed"),
+      mergedClosingPrNumber: 649,
+    };
+    const result = planIssueSync([item], [closedIssue]) as IssueSyncResult;
+
+    expect(result.staleTracker).toEqual([
+      {
+        number: 60,
+        key: "roadmap:p0:f",
+        prNumber: 649,
+        sourcePath: item.sourcePath,
+        sourceAnchor: item.sourceAnchor,
+      },
+    ]);
+    expect(result.reopen).toEqual([]);
+    expect(result.close).toEqual([]);
+    expect(result.update).toEqual([]);
+  });
+
+  test("a closed issue whose marker is a LEGACY key, with an unresolved item and a confirmed merged closing PR, lands in staleTracker (not update) — reported with the item's CURRENT key, not the stale legacy marker", () => {
+    // Combines two branches: a legacy-marker issue normally triggers a
+    // marker-migration update (see the legacy-marker cases above), but an
+    // unresolved item with a confirmed merged closing PR must still be
+    // caught by the stale-tracker guard first. staleTracker entries are
+    // never applied at all, so the legacy marker is deliberately left
+    // as-is until a human resolves the tracker row — unlike the
+    // closed+resolved+legacy-marker case, which does rewrite it via update.
+    const item = makeItem({
+      key: "impl:friction:f7",
+      status: "todo",
+      legacyKeys: ["impl:F7"],
+    });
+    const issueBody = `${hubMarker("impl:F7")}\nsome body\n`;
+    const legacyClosedIssue: TestIssue = {
+      number: 64,
+      title: "old title",
+      body: issueBody,
+      state: "closed",
+      labels: [HUB_LABEL, PRIORITY_LABELS.p2],
+      type: null,
+      mergedClosingPrNumber: 652,
+    };
+    const result = planIssueSync(
+      [item],
+      [legacyClosedIssue],
+    ) as IssueSyncResult;
+
+    expect(result.staleTracker).toEqual([
+      {
+        number: 64,
+        key: "impl:friction:f7",
+        prNumber: 652,
+        sourcePath: item.sourcePath,
+        sourceAnchor: item.sourceAnchor,
+      },
+    ]);
+    expect(result.update).toEqual([]);
+    expect(result.close).toEqual([]);
+    expect(result.reopen).toEqual([]);
+  });
+
+  test("an OPEN issue with a confirmed merged closing PR and an unresolved item lands in staleTracker, not update/untouched", () => {
+    // Mirrors the closed-branch case: an issue reopened by a maintainer (or a
+    // prior stale-tracker-unaware run) still carries the merged closing PR,
+    // so it must stay caught rather than falling through to update/untouched.
+    const item = makeItem({ key: "roadmap:p0:g", status: "todo" });
+    const openIssue: TestIssue = {
+      ...issueFromPayload(61, item, "open"),
+      mergedClosingPrNumber: 650,
+    };
+    const result = planIssueSync([item], [openIssue]) as IssueSyncResult;
+
+    expect(result.staleTracker).toEqual([
+      {
+        number: 61,
+        key: "roadmap:p0:g",
+        prNumber: 650,
+        sourcePath: item.sourcePath,
+        sourceAnchor: item.sourceAnchor,
+      },
+    ]);
+    expect(result.update.some((entry) => entry.number === 61)).toBe(false);
+    expect(result.untouched.some((entry) => entry.number === 61)).toBe(false);
+  });
+
+  test.each([
+    ["absent", undefined],
+    ["null", null],
+  ])(
+    "a closed issue with an unresolved item and %s mergedClosingPrNumber still reopens (regression guard: a genuine manual close of unfinished work must still reopen)",
+    (_label, mergedClosingPrNumber) => {
+      const item = makeItem({ key: "roadmap:p0:h", status: "todo" });
+      const closedIssue: TestIssue = {
+        ...issueFromPayload(62, item, "closed"),
+        ...(mergedClosingPrNumber !== undefined && { mergedClosingPrNumber }),
+      };
+      const result = planIssueSync([item], [closedIssue]) as IssueSyncResult;
+
+      expect(result.reopen).toHaveLength(1);
+      expect(result.reopen[0]?.number).toBe(62);
+      expect(result.reopen[0]?.key).toBe("roadmap:p0:h");
+      expect(result.staleTracker).toEqual([]);
+    },
+  );
+
+  test("a closed issue whose item is resolved (done) stays untouched even with a confirmed merged closing PR — the resolved branch is untouched by this change entirely", () => {
+    const item = makeItem({ key: "roadmap:p0:i", status: "done" });
+    const closedIssue: TestIssue = {
+      ...issueFromPayload(63, item, "closed"),
+      mergedClosingPrNumber: 651,
+    };
+    const result = planIssueSync([item], [closedIssue]) as IssueSyncResult;
+
+    expect(result.untouched).toEqual([{ number: 63, reason: "in sync" }]);
+    expect(result.staleTracker).toEqual([]);
+    expect(result.close).toEqual([]);
+    expect(result.reopen).toEqual([]);
+    expect(result.update).toEqual([]);
+  });
+
+  test("returns a staleTracker key (empty array), not undefined, even when there are no items or issues at all", () => {
+    const result = planIssueSync([], []) as IssueSyncResult;
+
+    expect(result.staleTracker).toEqual([]);
   });
 });
 

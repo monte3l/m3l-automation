@@ -481,12 +481,17 @@ function milestoneDef(key: string): (typeof MILESTONE_DEFS)[number] {
   );
 }
 
+// Field list now also carries `closedByPullRequestsReferences` (the
+// stale-tracker guard's merged-closing-PR candidate read) — the same list
+// is shared by the hub-sync-labeled read and the unfiltered backfill read.
 function issueListSyncRule(issues: unknown[]): GhRule {
   return {
     match: (a) =>
       a[0] === "issue" &&
       a[1] === "list" &&
-      a.includes("number,title,body,state,labels,issueType,parent"),
+      a.includes(
+        "number,title,body,state,labels,issueType,parent,closedByPullRequestsReferences",
+      ),
     respond: () => JSON.stringify(issues),
   };
 }
@@ -517,7 +522,9 @@ function issueListAllRule(issues: unknown[]): GhRule {
     match: (a) =>
       a[0] === "issue" &&
       a[1] === "list" &&
-      a.includes("number,title,body,state,labels,issueType,parent") &&
+      a.includes(
+        "number,title,body,state,labels,issueType,parent,closedByPullRequestsReferences",
+      ) &&
       !a.includes("--label"),
     respond: () => JSON.stringify(issues),
   };
@@ -531,7 +538,9 @@ function issueListLabeledRule(issues: unknown[]): GhRule {
     match: (a) =>
       a[0] === "issue" &&
       a[1] === "list" &&
-      a.includes("number,title,body,state,labels,issueType,parent") &&
+      a.includes(
+        "number,title,body,state,labels,issueType,parent,closedByPullRequestsReferences",
+      ) &&
       a.includes("--label"),
     respond: () => JSON.stringify(issues),
   };
@@ -555,6 +564,22 @@ function issueReopenRule(): GhRule {
   return {
     match: (a) => a[0] === "issue" && a[1] === "reopen",
     respond: () => "",
+  };
+}
+
+// The stale-tracker guard's `resolveMergedClosingPr` read (`gh pr view <n>
+// --json state`) — one entry per PR number a test cares about. A PR number
+// not present in `statesByNumber` defaults to "OPEN" (i.e. not merged), the
+// safe default for a test that doesn't care about that particular number.
+function prViewStateRule(
+  statesByNumber: Record<number, "OPEN" | "CLOSED" | "MERGED">,
+): GhRule {
+  return {
+    match: (a) => a[0] === "pr" && a[1] === "view",
+    respond: (a) =>
+      JSON.stringify({
+        state: statesByNumber[Number(a[2])] ?? "OPEN",
+      }),
   };
 }
 
@@ -2136,6 +2161,357 @@ describe("runIssueSync", () => {
     // The whole point: no partial batch. Not one mutating call (label
     // bootstrap, milestone create, issue create) ever reaches `gh`.
     expect(calls.every((args) => !isMutatingIssueCall(args))).toBe(true);
+  });
+
+  // ---------------------------------------------------------------------------
+  // staleTracker — a closed issue whose closing PR is confirmed merged, but
+  // the matching tracker row is still unresolved (issue #577 / F24: a merged
+  // PR's `Closes #N` keyword closes the issue directly, but nothing flips
+  // the tracker row's Status cell). Never auto-fixed: runIssueSync must
+  // never reopen or edit that specific issue, on either --check or --apply.
+  // ---------------------------------------------------------------------------
+
+  describe("staleTracker", () => {
+    // The default fixtures' real P0A/W1 items — computed via the same
+    // extraction pipeline the runner uses (see computeItems' own comment).
+    const items = computeItems(ROADMAP_FIXTURE, IMPLEMENTATION_FIXTURE);
+    const p0aItem = required(
+      items.find((item) => item.key === "roadmap:p0:p0a"),
+      "P0A item in the default fixtures",
+    );
+    const p0aPayload = buildIssuePayload(p0aItem);
+
+    test("check: true with a closed, marker-matched issue whose closing PR is confirmed merged reports the stale-tracker-specific message (not just the generic drift one) and returns { ok: false }, without mutating anything", () => {
+      const staleIssue = {
+        number: 601,
+        title: p0aPayload.title,
+        body: p0aPayload.body,
+        state: "CLOSED",
+        labels: p0aPayload.labels.map((name) => ({ name })),
+        issueType: { name: p0aPayload.type },
+        closedByPullRequestsReferences: [{ number: 649 }],
+      };
+      const { runGh, calls } = scriptedGh([
+        authOkRule(),
+        milestonesGetRule([]),
+        issueListSyncRule([staleIssue]),
+        prViewStateRule({ 649: "MERGED" }),
+      ]);
+      const reporter = createFakeReporter();
+
+      const outcome = runIssueSync({
+        runGh,
+        reporter,
+        apply: false,
+        check: true,
+        readDoc: makeReadDoc(),
+      });
+
+      expect(outcome.ok).toBe(false);
+      // Distinct from the generic "Tracker/GitHub drift detected" message:
+      // names the issue number and points at the tracker row's source.
+      expect(
+        reporter.errors.some(
+          (message) =>
+            message.includes("closed by a merged PR") &&
+            message.includes("#601") &&
+            message.includes(p0aItem.sourcePath) &&
+            message.includes("(closed by PR #649)"),
+        ),
+      ).toBe(true);
+      // No mutating call for #601 (or any issue) — --check never mutates.
+      expect(calls.every((args) => !isMutatingIssueCall(args))).toBe(true);
+    });
+
+    test("--apply with the same closed+merged-PR issue: makes no reopen/edit call for it, reports the stale-tracker message, and still returns { ok: true } since every applicable mutation succeeded — while an unrelated dirty issue in the same batch still gets its edit applied", () => {
+      const w1Item = required(
+        items.find((item) => item.key === "roadmap:W1:svc"),
+        "W1 item in the default fixtures",
+      );
+      const w1Payload = buildIssuePayload(w1Item);
+      const staleIssue = {
+        number: 601,
+        title: p0aPayload.title,
+        body: p0aPayload.body,
+        state: "CLOSED",
+        labels: p0aPayload.labels.map((name) => ({ name })),
+        issueType: { name: p0aPayload.type },
+        closedByPullRequestsReferences: [{ number: 649 }],
+      };
+      // Unrelated: a different key/number, no closing-PR reference at all,
+      // just a stale title — a legitimate update, unblocked by #601's
+      // stale-tracker entry.
+      const dirtyIssue = {
+        number: 602,
+        title: "Stale W1 title",
+        body: w1Payload.body,
+        state: "OPEN",
+        labels: w1Payload.labels.map((name) => ({ name })),
+        issueType: { name: w1Payload.type },
+      };
+      const { runGh, calls } = scriptedGh([
+        authOkRule(),
+        orgIssueTypesGraphqlRule(),
+        milestonesGetRule([]),
+        issueListSyncRule([staleIssue, dirtyIssue]),
+        prViewStateRule({ 649: "MERGED" }),
+        labelCreateRule(),
+        milestoneCreateRule(),
+        issueCreateRule(),
+        issueEditRule(),
+      ]);
+      const reporter = createFakeReporter();
+
+      const outcome = runIssueSync({
+        runGh,
+        reporter,
+        apply: true,
+        readDoc: makeReadDoc(),
+      });
+
+      // Every planned mutation this run still succeeded — only #601's
+      // stale-tracker row was left for a human, which is reported via
+      // reporter.error() below but must not flip the run's own exit code,
+      // or `bin/sync-hub.mjs`'s runPhases() would skip the projects-board
+      // phase entirely on every run with a lingering stale-tracker entry.
+      expect(outcome.ok).toBe(true);
+      expect(
+        reporter.errors.some(
+          (message) =>
+            message.includes("#601") &&
+            message.includes("closed by merged PR #649") &&
+            message.includes("--apply will not do this for you"),
+        ),
+      ).toBe(true);
+
+      const callsForStaleIssue = calls.filter(
+        (args) =>
+          args[0] === "issue" &&
+          (args[1] === "reopen" || args[1] === "edit") &&
+          args[2] === "601",
+      );
+      expect(callsForStaleIssue).toEqual([]);
+
+      // W1's item also gains a parentKey once its section's derived epic is
+      // created this run, so a second (parent-link-only) edit call for #602
+      // is expected alongside the title/body update — filter for the one
+      // that actually carries --title to prove the *update* itself ran.
+      const editCallsForDirtyIssue = calls.filter(
+        (args) =>
+          args[0] === "issue" && args[1] === "edit" && args[2] === "602",
+      );
+      expect(editCallsForDirtyIssue.length).toBeGreaterThanOrEqual(1);
+      expect(
+        editCallsForDirtyIssue.some(
+          (args) => argAfter(args, "--title") !== undefined,
+        ),
+      ).toBe(true);
+    });
+
+    test("an issue closed by a PR that merely references it but never merged still reopens on --apply — an unmerged PR must not trip the stale-tracker guard", () => {
+      const staleIssue = {
+        number: 603,
+        title: p0aPayload.title,
+        body: p0aPayload.body,
+        state: "CLOSED",
+        labels: p0aPayload.labels.map((name) => ({ name })),
+        issueType: { name: p0aPayload.type },
+        closedByPullRequestsReferences: [{ number: 650 }],
+      };
+      const { runGh, calls } = scriptedGh([
+        authOkRule(),
+        orgIssueTypesGraphqlRule(),
+        milestonesGetRule([]),
+        issueListSyncRule([staleIssue]),
+        prViewStateRule({ 650: "OPEN" }),
+        labelCreateRule(),
+        milestoneCreateRule(),
+        issueCreateRule(),
+        issueEditRule(),
+        issueReopenRule(),
+      ]);
+      const reporter = createFakeReporter();
+
+      const outcome = runIssueSync({
+        runGh,
+        reporter,
+        apply: true,
+        readDoc: makeReadDoc(),
+      });
+
+      expect(outcome.ok).toBe(true);
+      const reopenCallsForIssue = calls.filter(
+        (args) =>
+          args[0] === "issue" && args[1] === "reopen" && args[2] === "603",
+      );
+      expect(reopenCallsForIssue).toHaveLength(1);
+      expect(
+        reporter.errors.some((message) =>
+          message.includes("closed by merged PR"),
+        ),
+      ).toBe(false);
+    });
+
+    test("a bare dry run (no --check) with a stale-tracker-eligible issue still reports { ok: true } and prints the stale-tracker section — informational only, never a failure", () => {
+      const staleIssue = {
+        number: 604,
+        title: p0aPayload.title,
+        body: p0aPayload.body,
+        state: "CLOSED",
+        labels: p0aPayload.labels.map((name) => ({ name })),
+        issueType: { name: p0aPayload.type },
+        closedByPullRequestsReferences: [{ number: 649 }],
+      };
+      const { runGh } = scriptedGh([
+        authOkRule(),
+        milestonesGetRule([]),
+        issueListSyncRule([staleIssue]),
+        prViewStateRule({ 649: "MERGED" }),
+      ]);
+      const reporter = createFakeReporter();
+
+      const outcome = runIssueSync({
+        runGh,
+        reporter,
+        apply: false,
+        readDoc: makeReadDoc(),
+      });
+
+      expect(outcome.ok).toBe(true);
+      expect(
+        reporter.infos.some((message) =>
+          message.includes("Issues with a stale tracker row (1)"),
+        ),
+      ).toBe(true);
+      expect(reporter.finishedWith).toMatchObject({
+        issues: { staleTracker: 1 },
+      });
+    });
+
+    test("resolveMergedClosingPr's cache is shared across issues within one run: two issues naming the same candidate PR trigger exactly one gh pr view call, and an issue with no candidates triggers none", () => {
+      // A local roadmap fixture (rather than the shared ROADMAP_FIXTURE) so
+      // this test can add a Done item alongside the two To Do ones without
+      // perturbing every other test's item/key expectations.
+      const roadmapWithThree = `# Roadmap — m3l-automation
+
+## Priority 0
+
+| Item    | What      | Status | Why now / Notes |
+| ------- | ---------- | ------ | ------------------ |
+| **P0A** | thing one  | To Do  | notes               |
+| **UD**  | already-synced done thing | Done | notes |
+
+## Priority 1
+
+| Wave   | Scripts | Status | Depends on |
+| ------ | ------- | ------ | ---------- |
+| **W1** | \`svc\`   | To Do  | W0         |
+
+## Priority 2
+
+| Item                | Status   | Unblock condition |
+| --------------------- | -------- | -------------------- |
+| **D1** gated thing    | Deferred | condition             |
+
+## Governance follow-ups
+
+| Item   | What              | Status | Notes   |
+| ------ | ------------------ | ------ | ------- |
+| **T1** | governance thing    | To Do  | pending owner |
+`;
+      const threeItems = computeItems(roadmapWithThree, IMPLEMENTATION_FIXTURE);
+      const cachedP0aItem = required(
+        threeItems.find((item) => item.key === "roadmap:p0:p0a"),
+        "P0A item in the local fixture",
+      );
+      const cachedW1Item = required(
+        threeItems.find((item) => item.key === "roadmap:W1:svc"),
+        "W1 item in the local fixture",
+      );
+      const udItem = required(
+        threeItems.find((item) => item.key === "roadmap:p0:ud"),
+        "UD (Done) item in the local fixture",
+      );
+      const cachedP0aPayload = buildIssuePayload(cachedP0aItem);
+      const cachedW1Payload = buildIssuePayload(cachedW1Item);
+      const udPayload = buildIssuePayload(udItem);
+
+      // Two different tracker items, both closed, both naming the SAME
+      // candidate PR (#649) as their closing PR.
+      const staleIssueA = {
+        number: 701,
+        title: cachedP0aPayload.title,
+        body: cachedP0aPayload.body,
+        state: "CLOSED",
+        labels: cachedP0aPayload.labels.map((name) => ({ name })),
+        issueType: { name: cachedP0aPayload.type },
+        closedByPullRequestsReferences: [{ number: 649 }],
+      };
+      const staleIssueB = {
+        number: 702,
+        title: cachedW1Payload.title,
+        body: cachedW1Payload.body,
+        state: "CLOSED",
+        labels: cachedW1Payload.labels.map((name) => ({ name })),
+        issueType: { name: cachedW1Payload.type },
+        closedByPullRequestsReferences: [{ number: 649 }],
+      };
+      // A third, unrelated, already-resolved-and-closed issue with no
+      // closing-PR reference at all — must trigger zero gh pr view calls of
+      // its own.
+      const resolvedIssue = {
+        number: 703,
+        title: udPayload.title,
+        body: udPayload.body,
+        state: "CLOSED",
+        labels: udPayload.labels.map((name) => ({ name })),
+        issueType: { name: udPayload.type },
+        closedByPullRequestsReferences: [],
+      };
+      const { runGh, calls } = scriptedGh([
+        authOkRule(),
+        milestonesGetRule([]),
+        issueListSyncRule([staleIssueA, staleIssueB, resolvedIssue]),
+        prViewStateRule({ 649: "MERGED" }),
+      ]);
+      const reporter = createFakeReporter();
+
+      const outcome = runIssueSync({
+        runGh,
+        reporter,
+        apply: false,
+        check: true,
+        readDoc: makeReadDoc(roadmapWithThree, IMPLEMENTATION_FIXTURE),
+      });
+
+      expect(outcome.ok).toBe(false);
+      // The point of this test: one shared cache across the whole run means
+      // exactly one `gh pr view 649` call total, not one per issue that
+      // names it, and the resolved issue (no candidates) adds none.
+      const prViewCalls = calls.filter(
+        (args) => args[0] === "pr" && args[1] === "view",
+      );
+      expect(prViewCalls).toHaveLength(1);
+      expect(prViewCalls[0]?.[2]).toBe("649");
+
+      expect(
+        reporter.errors.some(
+          (message) =>
+            message.includes("#701") &&
+            message.includes("closed by a merged PR"),
+        ),
+      ).toBe(true);
+      expect(
+        reporter.errors.some(
+          (message) =>
+            message.includes("#702") &&
+            message.includes("closed by a merged PR"),
+        ),
+      ).toBe(true);
+      expect(reporter.finishedWith).toMatchObject({
+        issues: { staleTracker: 2 },
+      });
+    });
   });
 });
 
