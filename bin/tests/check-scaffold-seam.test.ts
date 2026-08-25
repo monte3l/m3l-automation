@@ -49,7 +49,7 @@ describe("implementedModules", () => {
     vi.spyOn(fs, "readdirSync").mockReturnValue([
       { name: "polling", isDirectory: () => true },
       { name: "retry", isDirectory: () => true },
-    ] as unknown as fs.Dirent[]);
+    ] as unknown as ReturnType<typeof fs.readdirSync>);
     vi.spyOn(fs, "existsSync").mockImplementation((p) =>
       String(p).endsWith("polling/index.ts"),
     );
@@ -61,7 +61,7 @@ describe("implementedModules", () => {
     vi.spyOn(fs, "readdirSync").mockReturnValue([
       { name: "polling", isDirectory: () => true },
       { name: "README.md", isDirectory: () => false },
-    ] as unknown as fs.Dirent[]);
+    ] as unknown as ReturnType<typeof fs.readdirSync>);
     vi.spyOn(fs, "existsSync").mockReturnValue(true);
 
     expect(implementedModules("/fake/src/core")).toEqual(["polling"]);
@@ -71,7 +71,7 @@ describe("implementedModules", () => {
     vi.spyOn(fs, "readdirSync").mockReturnValue([
       { name: "polling", isDirectory: () => true },
       { name: "scaffolded-only", isDirectory: () => true },
-    ] as unknown as fs.Dirent[]);
+    ] as unknown as ReturnType<typeof fs.readdirSync>);
     vi.spyOn(fs, "existsSync").mockImplementation((p) =>
       String(p).endsWith("polling/index.ts"),
     );
@@ -90,7 +90,7 @@ describe("implementedModules", () => {
   test("returns an empty array when no directory contains an index.ts", () => {
     vi.spyOn(fs, "readdirSync").mockReturnValue([
       { name: "empty-dir", isDirectory: () => true },
-    ] as unknown as fs.Dirent[]);
+    ] as unknown as ReturnType<typeof fs.readdirSync>);
     vi.spyOn(fs, "existsSync").mockReturnValue(false);
 
     expect(implementedModules("/fake/src/core")).toEqual([]);
@@ -100,7 +100,7 @@ describe("implementedModules", () => {
     vi.spyOn(fs, "readdirSync").mockReturnValue([
       { name: "zeta", isDirectory: () => true },
       { name: "alpha", isDirectory: () => true },
-    ] as unknown as fs.Dirent[]);
+    ] as unknown as ReturnType<typeof fs.readdirSync>);
     vi.spyOn(fs, "existsSync").mockReturnValue(true);
 
     expect(implementedModules("/fake/src/core")).toEqual(["zeta", "alpha"]);
@@ -131,7 +131,7 @@ describe("hasSeamTestFile", () => {
     vi.spyOn(fs, "existsSync").mockReturnValue(false);
     vi.spyOn(fs, "readdirSync").mockReturnValue([
       "procedure-conditions.test.ts",
-    ]);
+    ] as unknown as ReturnType<typeof fs.readdirSync>);
 
     expect(hasSeamTestFile("/fake/tests", "procedure")).toBe(true);
   });
@@ -141,7 +141,7 @@ describe("hasSeamTestFile", () => {
     vi.spyOn(fs, "readdirSync").mockReturnValue([
       "procedure-conditions.test.ts",
       "procedure-transitions.test.ts",
-    ]);
+    ] as unknown as ReturnType<typeof fs.readdirSync>);
 
     expect(hasSeamTestFile("/fake/tests", "procedure")).toBe(true);
   });
@@ -151,7 +151,7 @@ describe("hasSeamTestFile", () => {
     vi.spyOn(fs, "readdirSync").mockReturnValue([
       "polling.test.ts",
       "retry.test.ts",
-    ]);
+    ] as unknown as ReturnType<typeof fs.readdirSync>);
 
     expect(hasSeamTestFile("/fake/tests", "procedure")).toBe(false);
   });
@@ -167,21 +167,27 @@ describe("hasSeamTestFile", () => {
 
   test("does not match a sibling-shaped filename missing the hyphen boundary (s3extra.test.ts)", () => {
     vi.spyOn(fs, "existsSync").mockReturnValue(false);
-    vi.spyOn(fs, "readdirSync").mockReturnValue(["s3extra.test.ts"]);
+    vi.spyOn(fs, "readdirSync").mockReturnValue([
+      "s3extra.test.ts",
+    ] as unknown as ReturnType<typeof fs.readdirSync>);
 
     expect(hasSeamTestFile("/fake/tests", "s3")).toBe(false);
   });
 
   test("does not match a filename where the module name is not anchored at the start (xs3-thing.test.ts)", () => {
     vi.spyOn(fs, "existsSync").mockReturnValue(false);
-    vi.spyOn(fs, "readdirSync").mockReturnValue(["xs3-thing.test.ts"]);
+    vi.spyOn(fs, "readdirSync").mockReturnValue([
+      "xs3-thing.test.ts",
+    ] as unknown as ReturnType<typeof fs.readdirSync>);
 
     expect(hasSeamTestFile("/fake/tests", "s3")).toBe(false);
   });
 
   test("matches a genuine hyphenated sibling sharing the module's prefix (s3-objects.test.ts)", () => {
     vi.spyOn(fs, "existsSync").mockReturnValue(false);
-    vi.spyOn(fs, "readdirSync").mockReturnValue(["s3-objects.test.ts"]);
+    vi.spyOn(fs, "readdirSync").mockReturnValue([
+      "s3-objects.test.ts",
+    ] as unknown as ReturnType<typeof fs.readdirSync>);
 
     expect(hasSeamTestFile("/fake/tests", "s3")).toBe(true);
   });

@@ -20,6 +20,7 @@ describe("extractHookScriptName", () => {
 
   test("returns null for an empty or missing command", () => {
     expect(extractHookScriptName("")).toBeNull();
+    // @ts-expect-error exercising the runtime guard
     expect(extractHookScriptName(undefined)).toBeNull();
   });
 });

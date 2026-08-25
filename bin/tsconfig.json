@@ -7,7 +7,11 @@
     "sourceMap": false,
     "noEmit": true,
     "allowJs": true,
+    // checkJs stays false: only parse bin/**/*.mjs for its declared types
+    // (JSDoc typedefs consumed by tests), don't type-check the untyped
+    // internals of every script — that would surface ~130 unrelated
+    // config-artifact errors.
     "checkJs": false
   },
-  "include": ["tests/**/*.ts"]
+  "include": ["tests/**/*.ts", "**/*.mjs"]
 }

@@ -140,6 +140,7 @@ describe("deriveFeatureIssues", () => {
 
   test("flags a non-array topics value", () => {
     const repo = { ...COMPLIANT_REPO, topics: undefined };
+    // @ts-expect-error exercising the runtime guard
     const result = deriveFeatureIssues(repo, COMPLIANT_TEMPLATE_CONFIG);
     expect(result.metadataGaps).toEqual([
       "Repository has no topics set — add at least one (ADR-0050 §Insights).",

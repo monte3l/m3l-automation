@@ -164,8 +164,8 @@ describe("MAJOR_HOLDS", () => {
   test("typescript is deferred at major 7 with a documented reason", () => {
     // This deferral exists because typescript-eslint has no TS 7 support yet.
     // When that changes and TS 7 is adopted, remove the hold AND this test.
-    expect(MAJOR_HOLDS.typescript?.major).toBe(7);
-    expect(MAJOR_HOLDS.typescript?.reason).toMatch(/typescript-eslint/);
+    expect(MAJOR_HOLDS["typescript"]?.major).toBe(7);
+    expect(MAJOR_HOLDS["typescript"]?.reason).toMatch(/typescript-eslint/);
   });
 });
 
