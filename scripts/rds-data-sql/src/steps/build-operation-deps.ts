@@ -373,6 +373,28 @@ function toOutputRecord(
   return record;
 }
 
+/**
+ * Projects a resolved parameter set down to its name/kind/typeHint shape for
+ * the checkpoint `definition` — never the bind `value` itself.
+ * `docs/reference/core/checkpoint.md` requires a `definition` be free of
+ * secrets/credentials because the fingerprint is an unkeyed hash (a
+ * low-entropy value is brute-forceable); a bind value is caller-supplied
+ * data, not run shape, so it belongs in that same excluded category. The
+ * name/kind/typeHint triple still fingerprints a parameter-set shape change
+ * (added/removed/retyped parameter) without embedding what was bound.
+ */
+function projectParameterShape(
+  parameters: readonly AWS.M3LRDSDataParameter[],
+): readonly Record<string, unknown>[] {
+  return parameters.map((parameter) => ({
+    name: parameter.name,
+    kind: parameter.value.kind,
+    ...(parameter.typeHint !== undefined && {
+      typeHint: parameter.typeHint,
+    }),
+  }));
+}
+
 /** Builds `query`'s deps bag — split out of {@link buildOperationDeps} to keep its complexity low. */
 async function buildQueryDeps(
   deps: BuildOperationDepsDeps,
@@ -398,7 +420,11 @@ async function buildQueryDeps(
     // unkeyed hash, not a secret store. `sql`/`parameters` are the RESOLVED
     // values (already read from `sqlFile`/`parametersFile`), not the raw
     // settings, since a file's on-disk contents can change under a fixed
-    // path. `pageSize` is excluded as non-meaning-bearing on its own — only
+    // path. `parameters` is further projected to name/kind/typeHint via
+    // `projectParameterShape` — the raw bind values are caller-supplied
+    // data, not run shape, and would put a low-entropy secret into an
+    // unkeyed hash (`docs/reference/core/checkpoint.md`'s definition rule).
+    // `pageSize` is excluded as non-meaning-bearing on its own — only
     // its `paged` boolean (whether pagination is active at all) matters.
     // Unlike the other three consumer scripts' definitions, `aws.profile`
     // is deliberately not included here: `resourceArn` already embeds the
@@ -410,7 +436,7 @@ async function buildQueryDeps(
       database: settings.database,
       ...(settings.schema !== undefined && { schema: settings.schema }),
       sql,
-      parameters,
+      parameters: projectParameterShape(parameters),
       outputFile: settings.outputFile,
       outputFormat: settings.outputFormat,
       paged: settings.pageSize > 0,

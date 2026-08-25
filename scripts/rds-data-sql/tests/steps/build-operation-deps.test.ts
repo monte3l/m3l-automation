@@ -1263,11 +1263,11 @@ describe("buildOperationDeps: file-read failure propagation", () => {
  * Per docs/reference/core/checkpoint.md, `secretArn` (a rotatable
  * credential locator) must never appear in a `definition` — the fingerprint
  * is an unkeyed hash, so a low-entropy definition is brute-forceable but a
- * secret trivially isn't meant to be recoverable at all.
- *
- * These tests are RED against the current implementation: neither
- * construction site passes a `definition` yet, so `options["definition"]`
- * is `undefined` and every inclusion assertion below fails.
+ * secret trivially isn't meant to be recoverable at all. The same rule
+ * covers a resolved SQL bind `parameter`'s raw `value` (caller-supplied
+ * data, not run shape) — `buildQueryDeps` projects each parameter down to
+ * `name`/`kind`/optional `typeHint` via `projectParameterShape` before it
+ * ever reaches the `definition`.
  */
 describe("buildOperationDeps: query checkpoint definition (issue #497 A4b)", () => {
   test("constructs the query checkpoint store with a definition projecting resourceArn/database/schema/resolved-sql/resolved-parameters/outputFile/outputFormat/paged, excluding secretArn/raw pageSize/load-only fields", async () => {
@@ -1307,10 +1307,10 @@ describe("buildOperationDeps: query checkpoint definition (issue #497 A4b)", () 
     // read from `sql.file` when set) — not `settings.sql`/`settings.sqlFile`,
     // since a `sqlFile`'s on-disk contents can change under a fixed path.
     expect(def["sql"]).toBe("SELECT 1 FROM t");
-    // The RESOLVED parameters (buildQueryDeps's local `parameters` variable,
-    // already read+parsed from `parametersFile`) — RdsDataSqlSettings has no
-    // `parameters` field at all, only `parametersFile`.
-    expect(def["parameters"]).toEqual(parameters);
+    // The RESOLVED parameters, PROJECTED to name/kind/typeHint (never the raw
+    // bind value — docs/reference/core/checkpoint.md forbids a secret/credential
+    // in a definition, and a bind value is caller-supplied data, not run shape).
+    expect(def["parameters"]).toEqual([{ name: "id", kind: "long" }]);
     expect(def["outputFile"]).toBe("out.json");
     expect(def["outputFormat"]).toBe("csv");
     expect(def["paged"]).toBe(true);
@@ -1322,6 +1322,57 @@ describe("buildOperationDeps: query checkpoint definition (issue #497 A4b)", () 
     expect(Object.hasOwn(def, "columns")).toBe(false);
     expect(Object.hasOwn(def, "inputFile")).toBe(false);
     expect(Object.hasOwn(def, "inputFormat")).toBe(false);
+  });
+
+  test("never fingerprints a SQL bind parameter's raw value", async () => {
+    stubWriteStream();
+    const ctorSpy = spyOnCheckpointStoreCtor();
+    // A distinguishing, greppable literal standing in for a real secret bind
+    // value (e.g. a PII column or credential passed as a query parameter) —
+    // if `buildQueryDeps` ever regressed to fingerprinting the raw `value`
+    // instead of the projected name/kind/typeHint shape, this literal would
+    // show up verbatim in the definition passed to `M3LCheckpointStore`.
+    const parameters: readonly AWS.M3LRDSDataParameter[] = [
+      {
+        name: "ssn",
+        value: { kind: "string", value: "planted-secret-bind-value" },
+      },
+      // A `typeHint` is metadata describing HOW the value is sent, not the
+      // value itself — it's expected to survive the projection.
+      {
+        name: "amount",
+        value: { kind: "double", value: 42 },
+        typeHint: "DECIMAL",
+      },
+    ];
+    vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify(parameters));
+
+    await buildOperationDeps(
+      buildDeps(
+        makeSettings({
+          operation: "query",
+          sql: "SELECT 1 FROM t",
+          parametersFile: "params.json",
+          outputFile: "out.json",
+        }),
+      ),
+    );
+
+    expect(ctorSpy).toHaveBeenCalledTimes(1);
+    const [options] = ctorSpy.mock.calls[0] as unknown as [
+      Record<string, unknown>,
+    ];
+    const def = options["definition"] as Record<string, unknown>;
+
+    expect(def["parameters"]).toEqual([
+      { name: "ssn", kind: "string" },
+      { name: "amount", kind: "double", typeHint: "DECIMAL" },
+    ]);
+    // Belt-and-suspenders: the planted literal cannot leak through any other
+    // path in the definition object either.
+    expect(JSON.stringify(def).includes("planted-secret-bind-value")).toBe(
+      false,
+    );
   });
 
   test.each([
