@@ -140,13 +140,25 @@ function toSendEntryFields(
   return { body: JSON.stringify(record) };
 }
 
+/** Builds the `M3LRunRecoveryEntry` for one absorbed `sendBatch()` failure. */
+function toSendRecoveryEntry(
+  failure: AWS.M3LSQSBatchFailure<AWS.M3LSQSSendEntry>,
+): Core.M3LRunRecoveryEntry {
+  return {
+    item: failure.entry.id,
+    error: [{ name: "M3LError", message: failure.message ?? failure.code }],
+    recordedAt: new Date().toISOString(),
+  };
+}
+
 /**
  * Runs the `send` command: streams `input`, chunks records into at most 10-entry
  * batches, and `sendBatch()`s each chunk to `queueUrl`. Per-entry failures
  * are appended to `failed.jsonl`, ready to re-drive with no id bookkeeping.
  *
- * @param deps - The resolved config, `M3LPaths`, logger, correlation id, and
- *   the injected `AWS.M3LSQSOperations`.
+ * @param deps - The resolved config, `M3LPaths`, logger, correlation id, the
+ *   injected `AWS.M3LSQSOperations`, and the `reportRecovery` callback for
+ *   absorbed per-entry send failures.
  * @returns A promise that resolves once every chunk has been sent.
  * @throws {@link Core.M3LError} coded `"ERR_SQS_ETL_CONFIG"` when `queueUrl`/
  *   `input` is missing.
@@ -167,6 +179,7 @@ function toSendEntryFields(
  *   logger: new Core.M3LLogger([]),
  *   correlationId: "run-1",
  *   sqsOperations,
+ *   reportRecovery: () => {},
  * });
  * ```
  */
@@ -176,6 +189,7 @@ export async function sendBatch(deps: {
   readonly logger: Core.M3LLogger;
   readonly correlationId: string;
   readonly sqsOperations: AWS.M3LSQSOperations;
+  readonly reportRecovery: (entry: Core.M3LRunRecoveryEntry) => void;
 }): Promise<void> {
   const settings = resolveSettings(deps.config);
   const inputPath = deps.paths.resolveInput(settings.input);
@@ -212,6 +226,7 @@ export async function sendBatch(deps: {
       );
       for (const failure of result.failed) {
         await failedWriter.append(failure.entry);
+        deps.reportRecovery(toSendRecoveryEntry(failure));
       }
       sent += result.successful.length;
       failed += result.failed.length;

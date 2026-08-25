@@ -108,6 +108,17 @@ async function closeWriterBestEffort(
   }
 }
 
+/** Builds the `M3LRunRecoveryEntry` for one absorbed `deleteBatch()` failure. */
+function toDeleteRecoveryEntry(
+  failure: AWS.M3LSQSBatchFailure<AWS.M3LSQSDeleteEntry>,
+): Core.M3LRunRecoveryEntry {
+  return {
+    item: failure.entry.receiptHandle,
+    error: [{ name: "M3LError", message: failure.message ?? failure.code }],
+    recordedAt: new Date().toISOString(),
+  };
+}
+
 /**
  * Streams `inputPath`, chunks receipt handles into at most 10-entry batches,
  * `deleteBatch()`s each from `settings.queueUrl`, and appends every per-entry
@@ -119,6 +130,7 @@ async function runDeleteBatches(
   deps: {
     readonly logger: Core.M3LLogger;
     readonly sqsOperations: AWS.M3LSQSOperations;
+    readonly reportRecovery: (entry: Core.M3LRunRecoveryEntry) => void;
   },
   settings: DeleteSettings,
   inputPath: string,
@@ -146,6 +158,7 @@ async function runDeleteBatches(
     );
     for (const failure of result.failed) {
       await failedWriter.append(failure.entry);
+      deps.reportRecovery(toDeleteRecoveryEntry(failure));
     }
     deleted += result.successful.length;
     failed += result.failed.length;
@@ -158,7 +171,8 @@ async function runDeleteBatches(
  * at most 10-entry batches, and `deleteBatch()`s each from `queueUrl`.
  *
  * @param deps - The resolved config, `M3LPaths`, logger, correlation id, the
- *   injected `AWS.M3LSQSOperations`, and the interactive-prompt facade.
+ *   injected `AWS.M3LSQSOperations`, the interactive-prompt facade, and the
+ *   `reportRecovery` callback for absorbed per-entry delete failures.
  * @returns A promise that resolves once every batch has been deleted.
  * @throws {@link Core.M3LError} coded `"ERR_SQS_ETL_CONFIG"` when `queueUrl`/
  *   `input` is missing, or `"ERR_SQS_ETL_ABORTED"` when the
@@ -181,6 +195,7 @@ async function runDeleteBatches(
  *   correlationId: "run-1",
  *   sqsOperations,
  *   prompt: new Core.M3LPrompt(),
+ *   reportRecovery: () => {},
  * });
  * ```
  */
@@ -191,6 +206,7 @@ export async function deleteMessages(deps: {
   readonly correlationId: string;
   readonly sqsOperations: AWS.M3LSQSOperations;
   readonly prompt: Core.M3LPrompt;
+  readonly reportRecovery: (entry: Core.M3LRunRecoveryEntry) => void;
 }): Promise<void> {
   const settings = resolveSettings(deps.config);
   const inputPath = deps.paths.resolveInput(settings.input);

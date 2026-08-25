@@ -76,6 +76,7 @@ describe("redriveQueue", () => {
       correlationId: "run-1",
       sqsOperations,
       prompt,
+      reportRecovery: vi.fn(),
     });
 
     const [sendQueueUrl, sendEntries] = sendBatchMock.mock.calls[0] as [
@@ -129,6 +130,7 @@ describe("redriveQueue", () => {
       correlationId: "run-2",
       sqsOperations,
       prompt,
+      reportRecovery: vi.fn(),
     });
 
     expect(deleteBatchMock).toHaveBeenCalledTimes(1);
@@ -172,6 +174,7 @@ describe("redriveQueue", () => {
     const paths = new Core.M3LPaths();
     const logger = new Core.M3LLogger([]);
     const prompt = bypassPrompt();
+    const reportRecovery = vi.fn();
 
     await redriveQueue({
       config,
@@ -180,9 +183,17 @@ describe("redriveQueue", () => {
       correlationId: "run-3",
       sqsOperations,
       prompt,
+      reportRecovery,
     });
 
     expect(deleteBatchMock).not.toHaveBeenCalled();
+    expect(reportRecovery).toHaveBeenCalledWith({
+      item: failedSendEntry.id,
+      error: [
+        expect.objectContaining({ name: "M3LError", message: "InternalError" }),
+      ],
+      recordedAt: expect.any(String) as string,
+    });
     // Search on the failed entry's own top-level 'id' field, not the nested
     // 'body' string's content — body is itself JSON-stringified inside the
     // outer JSON.stringify, so its raw text is backslash-escaped in the
@@ -234,6 +245,7 @@ describe("redriveQueue", () => {
       correlationId: "run-4",
       sqsOperations,
       prompt,
+      reportRecovery: vi.fn(),
     });
 
     expect(confirm).toHaveBeenCalledTimes(1);
@@ -277,6 +289,7 @@ describe("redriveQueue", () => {
         correlationId: "run-5",
         sqsOperations,
         prompt,
+        reportRecovery: vi.fn(),
       });
     } catch (error) {
       thrown = error;
@@ -321,6 +334,7 @@ describe("redriveQueue", () => {
       correlationId: "run-batch-cap",
       sqsOperations,
       prompt,
+      reportRecovery: vi.fn(),
     });
 
     expect(receive).toHaveBeenNthCalledWith(1, "https://sqs.example/dlq", {
@@ -370,6 +384,7 @@ describe("redriveQueue", () => {
     const logger = new Core.M3LLogger([]);
     const warning = vi.spyOn(logger, "warning");
     const prompt = bypassPrompt();
+    const reportRecovery = vi.fn();
 
     await redriveQueue({
       config,
@@ -378,6 +393,7 @@ describe("redriveQueue", () => {
       correlationId: "run-delete-failure",
       sqsOperations,
       prompt,
+      reportRecovery,
     });
 
     const calls = warning.mock.calls as unknown[][];
@@ -385,6 +401,15 @@ describe("redriveQueue", () => {
       call.some((arg) => JSON.stringify(arg).includes("rh-2")),
     );
     expect(mentionsFailure).toBe(true);
+    // item is the delete-entry's receiptHandle, matching what
+    // logDeleteFailures already logs by — not the chunk-scoped id.
+    expect(reportRecovery).toHaveBeenCalledWith({
+      item: "rh-2",
+      error: [
+        expect.objectContaining({ name: "M3LError", message: "InternalError" }),
+      ],
+      recordedAt: expect.any(String) as string,
+    });
   });
 
   test("a writer.close() failure does not mask the original declined-confirmation error", async () => {
@@ -425,6 +450,7 @@ describe("redriveQueue", () => {
         correlationId: "run-close-fail",
         sqsOperations,
         prompt,
+        reportRecovery: vi.fn(),
       });
     } catch (error) {
       thrown = error;
@@ -460,6 +486,7 @@ describe("redriveQueue", () => {
           correlationId: `run-missing-${missing}`,
           sqsOperations,
           prompt,
+          reportRecovery: vi.fn(),
         });
       } catch (error) {
         thrown = error;
@@ -493,6 +520,7 @@ describe("redriveQueue", () => {
         correlationId: "run-batchsize-wrong-type",
         sqsOperations,
         prompt,
+        reportRecovery: vi.fn(),
       }),
     ).rejects.toMatchObject({ code: "ERR_SQS_ETL_CONFIG" });
     expect(receive).not.toHaveBeenCalled();
