@@ -721,6 +721,133 @@ describe("serializeErrorChain()", () => {
     const verbatimLevels = serializeErrorChain(error, { redact: false });
     expect(JSON.stringify(verbatimLevels[0]?.context)).toContain("abc123");
   });
+
+  // (issue #637 / hub-sync F29, bug 2's adjacent copy) — format-error.ts's
+  // own `isPlainRecord` (used by `scrubUrlsInValue`, which runs after
+  // `redactSensitiveLogValue` inside `redactContext`) had the same loose
+  // non-null/non-array check as core/logging/redact.ts's copy. Even once
+  // redact.ts's copy was fixed, a Date survived redaction (it has no
+  // sensitive key to trip) only to be collapsed to `{}` one stage later by
+  // this second, separate copy in the scrubUrlsInValue pass. Now fixed: both
+  // stages clone/recurse through Date/Map/Set instead of collapsing them.
+  test("regression (fixed in #637): a Date in an M3LError's context survives serialization intact, not collapsed to {}", () => {
+    const when = new Date("2026-01-01T00:00:00Z");
+    const error = new M3LError("bad config", {
+      code: "ERR_CONFIG_MISSING",
+      context: { when },
+    });
+
+    const levels = serializeErrorChain(error);
+    const context = levels[0]?.context as { when: Date } | undefined;
+
+    expect(context?.when).toBeInstanceOf(Date);
+    expect(context?.when.getTime()).toBe(when.getTime());
+  });
+
+  // Proves the recursive Map redaction fix reaches all the way through the
+  // public serializeErrorChain surface (redactSensitiveLogValue AND the
+  // separate scrubUrlsInValue pass in format-error.ts), not just
+  // redactSensitiveLogValue in isolation (covered separately in
+  // logging.test.ts).
+  test("regression (fixed in #637): a Map in an M3LError's context has its sensitive entries redacted through serializeErrorChain", () => {
+    const error = new M3LError("bad config", {
+      code: "ERR_CONFIG_MISSING",
+      context: { creds: new Map([["apiKey", "SECRET_VALUE"]]) },
+    });
+
+    const levels = serializeErrorChain(error);
+    const context = levels[0]?.context as
+      { creds: Map<string, unknown> } | undefined;
+
+    expect(context?.creds).toBeInstanceOf(Map);
+    expect(context?.creds.get("apiKey")).toBe("[REDACTED]");
+  });
+
+  // (issue #637 / hub-sync F29, security-review round 2 Must-fix) — proves
+  // the non-string-Map-key drop fix reaches all the way through the public
+  // serializeErrorChain surface, not just redactSensitiveLogValue in
+  // isolation (covered separately in logging.test.ts). The object riding as
+  // the Map KEY carries a literal secret string that must not survive
+  // "redaction" if the key is merely passed through untouched; the sibling
+  // recognized string key ("apiKey") entry must remain present but redacted.
+  //
+  // NOTE on the assertion shape: the task brief for this test asked for a
+  // bare `JSON.stringify(levels)` containment check. Verified against
+  // `JSON.stringify(new Map([["a", 1]]))` -> `"{}"` — a `Map` has no own
+  // enumerable properties, so `JSON.stringify` on the serialized levels array
+  // can *never* surface a Map's own entries (leaked or not) regardless of
+  // whether the fix lands; that shape would pass unconditionally and prove
+  // nothing. Instead this stringifies `context.creds`'s own entries directly
+  // (`[...context.creds.entries()]`), which is the same discrimination fix
+  // the brief's own test 1 (logging.test.ts) already calls for on the
+  // identical false-negative risk.
+  test("Must-fix (#637 round 2): a Map entry keyed by a non-string object is dropped entirely through serializeErrorChain, not leaked", () => {
+    const error = new M3LError("bad config", {
+      code: "ERR_CONFIG_MISSING",
+      context: {
+        creds: new Map<unknown, unknown>([
+          [{ apiKey: "SECRET_NONSTR" }, "v"],
+          ["apiKey", "ALSO_SECRET"],
+        ]),
+      },
+    });
+
+    const levels = serializeErrorChain(error);
+    const context = levels[0]?.context as
+      { creds: Map<unknown, unknown> } | undefined;
+    expect(context?.creds).toBeInstanceOf(Map);
+
+    const serializedEntries = JSON.stringify([
+      ...(context?.creds.entries() ?? []),
+    ]);
+    expect(serializedEntries).not.toContain("SECRET_NONSTR");
+    expect(serializedEntries).not.toContain("ALSO_SECRET");
+
+    expect(context?.creds.get("apiKey")).toBe("[REDACTED]");
+  });
+
+  // (issue #637 / hub-sync F29, silent-failure-hunter follow-up) —
+  // format-error.ts's own Map/Set guard (in `scrubUrlsInValue`, mirroring
+  // `core/logging/redact.ts`'s guard) had ZERO test coverage through the
+  // public `serializeErrorChain` surface before this test. A Map/Set-shaped
+  // context value with no real internal state (`Object.create(Map.prototype)`)
+  // must degrade to a safe placeholder rather than throw or silently blank
+  // out — and a sibling field in the same context must survive intact.
+  test("a fake Map (no real internal Map state) in context degrades to a placeholder through serializeErrorChain; a sibling context field survives", () => {
+    const fakeMap: unknown = Object.create(Map.prototype);
+    const error = new M3LError("bad config", {
+      code: "ERR_CONFIG_MISSING",
+      context: { m: fakeMap, tail: "TAIL_OK" },
+    });
+
+    expect(() => serializeErrorChain(error)).not.toThrow();
+
+    const levels = serializeErrorChain(error);
+    const context = levels[0]?.context as
+      { m: unknown; tail: unknown } | undefined;
+
+    expect(context?.m).not.toBeInstanceOf(Map);
+    expect(typeof context?.m).toBe("string");
+    expect(context?.tail).toBe("TAIL_OK");
+  });
+
+  test("a fake Set (no real internal Set state) in context degrades to a placeholder through serializeErrorChain; a sibling context field survives", () => {
+    const fakeSet: unknown = Object.create(Set.prototype);
+    const error = new M3LError("bad config", {
+      code: "ERR_CONFIG_MISSING",
+      context: { s: fakeSet, tail: "TAIL_OK" },
+    });
+
+    expect(() => serializeErrorChain(error)).not.toThrow();
+
+    const levels = serializeErrorChain(error);
+    const context = levels[0]?.context as
+      { s: unknown; tail: unknown } | undefined;
+
+    expect(context?.s).not.toBeInstanceOf(Set);
+    expect(typeof context?.s).toBe("string");
+    expect(context?.tail).toBe("TAIL_OK");
+  });
 });
 
 // =============================================================================

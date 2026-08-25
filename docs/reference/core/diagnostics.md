@@ -117,6 +117,20 @@ including its two truncation cases: a `cause` cycle or a chain past the
 into its text output. Without it, a truncated chain in `run-report.json` or an
 `errorFrom` log line would be indistinguishable from a complete one.
 
+**F29 (issue #637):** `redactContext`'s internal `scrubUrlsInValue` helper —
+which post-processes every serialized level's `context` after
+`redactSensitiveLogValue` runs — carried its own separate, drifted copy of
+the same loose `isPlainRecord` check that redaction's core engine had (see
+[`logging`](./logging.md#public-api)'s "Known limitation" section). A `Date`
+in `context` no longer collapses to `{}`; `Map`/`Set` are recursively
+scrubbed (URLs inside their entries/elements are rewritten the same way a
+plain object's/array's are) rather than collapsed. A live `Map`/`Set`/`Date`
+instance can therefore now appear in `M3LSerializedError.context` — `context`
+is still typed `Record<string, unknown>`, and `JSON.stringify` on the
+persisted `run-report.json` still collapses any of the three to `{}` exactly
+as before (the fix is a purely in-memory improvement for a consumer that
+inspects `context` directly, not a change to what reaches disk).
+
 - `scrubUrlsInText` — rewrites `http(s)` URLs in free text to
   `origin + pathname`, dropping userinfo, query, and fragment.
 

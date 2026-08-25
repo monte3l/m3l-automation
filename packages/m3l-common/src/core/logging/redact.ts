@@ -15,9 +15,50 @@
  */
 
 import { isDangerousKey } from "../security/index.js";
+import { isRedactableRecord } from "../../internal/logging/isRedactableRecord.js";
 
 /** Replacement literal written in place of a redacted value. */
 const REDACTED = "[REDACTED]";
+
+/**
+ * Placeholder substituted when a `Map`/`Set`-shaped value throws while
+ * actually being iterated — e.g. `Object.create(Map.prototype)` or a
+ * `Proxy` wrapping one, both of which pass `instanceof Map` but have no
+ * real internal Map state. Degrades this one value rather than letting the
+ * throw propagate and blank out every sibling field this call was also
+ * redacting — the same "guard a hostile call, degrade to a safe placeholder
+ * rather than propagate" pattern `run-report.ts`'s `invokeToJSONSafely`
+ * already applies to a throwing `toJSON`.
+ */
+const UNREDACTABLE_COLLECTION = "[unredactable Map/Set omitted]";
+
+/**
+ * Writes a best-effort stderr diagnostic when a `Map`/`Set`-shaped value's
+ * own iteration throws (see {@link UNREDACTABLE_COLLECTION}) — mirroring
+ * `internal/logging/guardSecrets.ts`'s `reportRedactionFailure` convention
+ * for the same class of structural redaction failure, but self-contained
+ * here rather than imported: `guardSecrets.ts` already depends on this
+ * file's own `M3LSecretNamesPort` type, and importing its value back in
+ * would invert that layering. Wrapped in its own try/catch: a hostile
+ * `cause` (a throwing `.stack`/`.message` getter) must not defeat the
+ * diagnostic itself.
+ */
+function reportUnredactableCollection(
+  kind: "Map" | "Set",
+  cause: unknown,
+): void {
+  try {
+    const detail =
+      cause instanceof Error ? (cause.stack ?? cause.message) : String(cause);
+    process.stderr.write(
+      `m3l-logging: redaction failed while iterating a ${kind}-shaped value: ${detail}\n`,
+    );
+  } catch {
+    process.stderr.write(
+      `m3l-logging: redaction failed while iterating a ${kind}-shaped value (unreadable failure detail)\n`,
+    );
+  }
+}
 
 /** The raw sensitive key names, each also stored as its `splitWords()` word list. */
 const SENSITIVE_KEY_NAMES = [
@@ -258,7 +299,15 @@ function isSensitiveOrDeclaredKey(
   return isSensitiveKey(key) || options?.secrets?.isSecret(key) === true;
 }
 
-/** Redacts one matched bare key/separator/value triple, preserving quoting. */
+/**
+ * Redacts one matched bare key/separator/value triple, preserving quoting.
+ *
+ * When `key` itself is not sensitive, the value is still checked for an
+ * embedded, glued `innerKey=value`/`innerKey:value` pair the greedy value
+ * class may have swallowed whole — see the inline comment below for the
+ * exact shape recovered and the two shapes deliberately left as residual,
+ * documented limitations.
+ */
 function redactBareMatch(
   match: string,
   key: string,
@@ -266,11 +315,43 @@ function redactBareMatch(
   value: string,
   options: M3LRedactOptions | undefined,
 ): string {
-  if (!isSensitiveOrDeclaredKey(key, options)) return match;
+  if (isSensitiveOrDeclaredKey(key, options)) {
+    const isQuoted = value.startsWith('"') && value.endsWith('"');
+    const replacement = isQuoted ? `"${REDACTED}"` : REDACTED;
+    return `${key}${separator}${replacement}`;
+  }
 
-  const isQuoted = value.startsWith('"') && value.endsWith('"');
-  const replacement = isQuoted ? `"${REDACTED}"` : REDACTED;
-  return `${key}${separator}${replacement}`;
+  // `key` itself isn't sensitive, but the greedy value class has no
+  // internal `:`/`=` boundary, so it may have swallowed a directly
+  // following, GLUED (no internal whitespace) `innerKey=value` or
+  // `innerKey:value` pair whole — e.g. "failed: tenantRef=secret" swallows
+  // "tenantRef=secret" as `failed`'s own value. Only checked when the
+  // OUTER separator itself consumed whitespace (the "key: value" shape);
+  // the glued shape ("url=https://x/?tenant-ref=abc") is a deliberate,
+  // documented limitation left untouched (see `redactSensitiveLogText`'s
+  // `@remarks`). A further shape — an inner key separated from ITS OWN
+  // operator by a space too ("failed: tenantRef : secret") — is a second,
+  // deliberate, documented residual limitation: rescuing it would require
+  // the same regex-level lookahead approach that caused the sensitive-key
+  // regression above, since by the time this callback runs, the outer
+  // match has already consumed only "tenantRef" as `key`'s bare value,
+  // stranding the inner separator and its value outside this match
+  // entirely with no key characters left for them to attach to.
+  if (/\s/.test(separator)) {
+    const embedded = /^([A-Za-z0-9_-]+)(\s*[:=]\s*)(.+)$/.exec(value);
+    if (embedded) {
+      const [, embeddedKey, embeddedSeparator] = embedded;
+      if (
+        embeddedKey !== undefined &&
+        embeddedSeparator !== undefined &&
+        isSensitiveOrDeclaredKey(embeddedKey, options)
+      ) {
+        return `${key}${separator}${embeddedKey}${embeddedSeparator}${REDACTED}`;
+      }
+    }
+  }
+
+  return match;
 }
 
 /**
@@ -300,6 +381,10 @@ function redactBareMatch(
  * - A value wrapped in single quotes or backticks is not recognized as
  *   quoted (only double quotes are) — `password='p@ss word'` leaks
  *   everything after the first whitespace inside the quotes.
+ * - A directly-following unrelated key's value is rescued from swallowing a
+ *   glued `innerKey=value`/`innerKey:value` pair, but not one where the
+ *   inner key is itself separated from its own operator by whitespace —
+ *   `failed: tenantRef : secret` still leaks `tenantRef`'s pairing.
  *
  * For reliable redaction of structured data, prefer
  * {@link redactSensitiveLogValue} over interpolating values into free-form
@@ -376,6 +461,115 @@ export function redactSensitiveLogText(
 }
 
 /**
+ * Redacts an already-collected list of `Map` entries: a string key is
+ * checked for sensitivity the same way a plain object's property key is,
+ * and each value is recursed into via {@link redactSensitiveLogValue}.
+ * Extracted from {@link redactMapSafely} to keep that function's
+ * cyclomatic/cognitive complexity within the project's lint budget, and so
+ * the recursive redaction below runs OUTSIDE {@link redactMapSafely}'s
+ * try/catch — an unrelated exception thrown deep inside a nested value
+ * (e.g. a hostile property getter) must propagate normally, not be caught
+ * by the same handler that guards the raw iteration step and mislabeled as
+ * an unredactable collection.
+ *
+ * An entry whose key is not a `string`, or whose key is a dangerous own-key
+ * name (`__proto__`/`constructor`/`prototype`), is DROPPED entirely — both
+ * the key and its value — rather than carried through unredacted. A
+ * non-string key has no representable key name to check for sensitivity, so
+ * passing its value through unchecked would risk leaking a secret that
+ * happens to be keyed by e.g. an object or symbol; a dangerous key name
+ * offers nothing worth preserving either. This mirrors the existing
+ * precedent in `core/diagnostics/run-report.ts`'s `normalizeMapEntries`.
+ */
+function redactMapEntries(
+  entries: readonly (readonly [unknown, unknown])[],
+  options: M3LRedactOptions | undefined,
+): Map<unknown, unknown> {
+  const result = new Map<unknown, unknown>();
+  for (const [entryKey, entryValue] of entries) {
+    if (typeof entryKey !== "string" || isDangerousKey(entryKey)) continue;
+    result.set(
+      entryKey,
+      isSensitiveOrDeclaredKey(entryKey, options)
+        ? REDACTED
+        : redactSensitiveLogValue(entryValue, options),
+    );
+  }
+  return result;
+}
+
+/**
+ * Redacts an already-collected list of `Set` elements, each recursed into
+ * via {@link redactSensitiveLogValue} the same way an array's elements are.
+ * Extracted from {@link redactSetSafely} for the same reason
+ * {@link redactMapEntries} is extracted from {@link redactMapSafely}: the
+ * recursive redaction must run OUTSIDE the raw-iteration try/catch.
+ */
+function redactSetEntries(
+  entries: readonly unknown[],
+  options: M3LRedactOptions | undefined,
+): Set<unknown> {
+  const result = new Set<unknown>();
+  for (const entry of entries) {
+    result.add(redactSensitiveLogValue(entry, options));
+  }
+  return result;
+}
+
+/**
+ * Redacts a `Map`, guarding against a `Map`-shaped value that throws while
+ * actually being iterated — e.g. `Object.create(Map.prototype)` or a
+ * `Proxy` wrapping one, both of which pass `instanceof Map` but have no real
+ * internal Map state. Extracted from {@link redactSensitiveLogValue} to keep
+ * that function's cyclomatic/cognitive complexity within the project's lint
+ * budget; see {@link UNREDACTABLE_COLLECTION}'s own doc for the guard's
+ * rationale.
+ *
+ * The try/catch below wraps ONLY the raw iteration step (spreading `value`
+ * into a plain array) — never the subsequent recursive
+ * {@link redactSensitiveLogValue} calls performed by {@link redactMapEntries}.
+ * An unrelated exception thrown deep inside a nested value must propagate
+ * normally rather than being caught here and mislabeled as an unredactable
+ * Map.
+ */
+function redactMapSafely(
+  value: ReadonlyMap<unknown, unknown>,
+  options: M3LRedactOptions | undefined,
+): unknown {
+  let entries: (readonly [unknown, unknown])[];
+  try {
+    entries = [...value];
+  } catch (cause) {
+    reportUnredactableCollection("Map", cause);
+    return UNREDACTABLE_COLLECTION;
+  }
+  return redactMapEntries(entries, options);
+}
+
+/**
+ * Redacts a `Set`, guarding against a `Set`-shaped value that throws while
+ * actually being iterated, mirroring {@link redactMapSafely}. Extracted from
+ * {@link redactSensitiveLogValue} to keep that function's cyclomatic/
+ * cognitive complexity within the project's lint budget.
+ *
+ * The try/catch below wraps ONLY the raw iteration step, mirroring
+ * {@link redactMapSafely}'s own narrowed scope for the same reason.
+ */
+function redactSetSafely(
+  value: ReadonlySet<unknown>,
+  options: M3LRedactOptions | undefined,
+): unknown {
+  let entries: unknown[];
+  try {
+    entries = [...value];
+  } catch (cause) {
+    reportUnredactableCollection("Set", cause);
+    return UNREDACTABLE_COLLECTION;
+  }
+  return redactSetEntries(entries, options);
+}
+
+/**
  * Recursively redacts sensitive keys' values in a plain object/array
  * structure. Returns a new, deep-cloned structure — the input is never
  * mutated. Object and array values are recursed into at any depth; string
@@ -415,7 +609,26 @@ export function redactSensitiveLogValue(
     return value.map((item) => redactSensitiveLogValue(item, options));
   }
 
-  if (isPlainRecord(value)) {
+  // Date/Map/Set carry their real state in internal slots invisible to
+  // `Object.entries` — recursing into them as if they were plain records
+  // would silently collapse each to `{}` (data loss, not redaction). This
+  // function's own "never mutates input, always returns a new structure"
+  // contract still applies to them, so each is cloned here. A `Map`'s own
+  // state (its entries) IS recursively redacted the same way a plain
+  // object's properties are: a string key is checked for sensitivity the
+  // same as an object property key would be, and each value is recursed
+  // into. A `Set`'s elements are each recursively redacted the same way an
+  // array's elements are. `Map#set`/`Set#add` never touch the prototype
+  // chain the way a plain-object bracket assignment (`result[key] = …`)
+  // would, so a dangerous Map/Set key poses no prototype-pollution hazard
+  // here — but `redactMapEntries` still drops a dangerous-named Map key for
+  // a DIFFERENT reason: it has no representable name worth trusting, not
+  // because keeping it would mutate anything.
+  if (value instanceof Date) return new Date(value.getTime());
+  if (value instanceof Map) return redactMapSafely(value, options);
+  if (value instanceof Set) return redactSetSafely(value, options);
+
+  if (isRedactableRecord(value)) {
     const result: Record<string, unknown> = {};
     for (const [key, entry] of Object.entries(value)) {
       // Skip prototype-pollution vectors outright: a `__proto__`/
@@ -431,9 +644,4 @@ export function redactSensitiveLogValue(
   }
 
   return value;
-}
-
-/** Narrows `value` to a plain, non-null, non-array object. */
-function isPlainRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

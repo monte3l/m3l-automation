@@ -1872,6 +1872,89 @@ describe("redactSensitiveLogText", () => {
     // literals every other test in this block uses.
     expectTypeOf<M3LSecretsSpecifier>().toExtend<M3LSecretNamesPort>();
   });
+
+  // (issue #637 / hub-sync F29, bug 1) — BARE_KEY_VALUE_PATTERN's
+  // unquoted-value character class (`[^\s,;]+`) has no internal `:`/`=`
+  // boundary, so a preceding, non-sensitive bare key's own value previously
+  // greedily swallowed a directly-following DECLARED secret's `key=value`
+  // pair whole, before that pair ever got its own match attempt. In
+  // "failed: tenantRef=secret", the `failed:` match consumed
+  // "tenantRef=secret" entirely as `failed`'s value; since `failed` is not
+  // sensitive, the whole match — including the embedded secret — passed
+  // through unredacted. The additive embedded-value pass did not rescue this
+  // either: it is keyed on the fixed built-in SENSITIVE_KEY_NAMES list only,
+  // and "tenantRef" is a caller-declared secret, not a built-in name. Now
+  // fixed by `redactBareMatch` itself recognizing a glued (no internal
+  // whitespace) embedded `key[:=]value` pair inside a swallowed value when
+  // the outer separator consumed whitespace, without reintroducing a
+  // regex-level lookahead (which is what caused the sensitive-key regression
+  // covered below).
+  test("regression (fixed in #637): a declared secret's key=value pair directly following an unrelated bare key's value is not swallowed whole", () => {
+    const secrets: M3LSecretNamesPort = {
+      isSecret: (name: string) => name === "tenantRef",
+    };
+
+    const result = redactSensitiveLogText("failed: tenantRef=secret", {
+      secrets,
+    });
+
+    expect(result).toContain("[REDACTED]");
+    expect(result).not.toMatch(/tenantRef[:=]\s*secret\b/);
+  });
+
+  // Security-review Must-fix: the regex-lookahead swallow "fix" that shipped
+  // in the flawed first draft made BARE_KEY_VALUE_PATTERN's value class
+  // refuse to match at all whenever a SENSITIVE key's own value legitimately
+  // contains an internal `:` or `=` (a base64-padded token, a `host:port`
+  // pair, a query-string-shaped value) — the match failed outright and the
+  // value leaked completely unredacted. The corrected design reverts the
+  // pattern and moves the swallow fix into `redactBareMatch`, so these must
+  // once again be fully redacted, not partially or not at all.
+  test("regression guard: a sensitive key's own value containing an internal ':' is still fully redacted, not left unredacted", () => {
+    // "x-amz-security-token" is recognized by the built-in heuristic via its
+    // "token" word (see the hyphenated-header-name tests above/below using
+    // "x-api-key"); no declared secrets port is needed.
+    const result = redactSensitiveLogText(
+      "x-amz-security-token: FwoGZXIvYXdzEBQaDLKj9Xn2Qm4pZ0aBcDEfGhIjKlMnOpQrStUvWxYz=",
+    );
+
+    expect(result).toBe("x-amz-security-token: [REDACTED]");
+  });
+
+  test("regression guard: a declared secret's own value containing an internal ':' is still fully redacted, not left unredacted", () => {
+    const result = redactSensitiveLogText("tenantRef: host:port", {
+      secrets: { isSecret: (name: string) => name === "tenantRef" },
+    });
+
+    expect(result).toBe("tenantRef: [REDACTED]");
+  });
+
+  test("regression guard: a sensitive key's own value containing an internal '=' is still fully redacted, not left unredacted", () => {
+    const result = redactSensitiveLogText("apiKey: a=b?c");
+
+    expect(result).toBe("apiKey: [REDACTED]");
+  });
+
+  // Documented, deliberate residual limitation (same status as the
+  // glued-URL limitation above): the swallow fix only recognizes a GLUED
+  // (no internal whitespace) embedded `key[:=]value` pair — "tenantRef=secret"
+  // directly after the outer separator's whitespace. A space BEFORE the
+  // inner separator too ("tenantRef : secret") is intentionally left
+  // unrecovered: rescuing that shape would require the outer regex itself to
+  // look ahead past a space for a still-unknown-at-compile-time sensitive
+  // key, which is exactly the mechanism that caused the sensitive-key
+  // regression covered above. This test locks in the current, documented
+  // behavior — it must not start (or stop) passing silently.
+  test("deliberate limitation: an inner key/value pair separated by its own leading space is not rescued from the swallow", () => {
+    const result = redactSensitiveLogText("failed: tenantRef : secret", {
+      secrets: { isSecret: (name: string) => name === "tenantRef" },
+    });
+
+    // Whole string stays byte-for-byte unchanged: `failed` isn't
+    // built-in-sensitive or declared secret, and this exact shape isn't
+    // rescued by the swallow fix (see the block comment above).
+    expect(result).toBe("failed: tenantRef : secret");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -2130,6 +2213,262 @@ describe("redactSensitiveLogValue", () => {
       { tenantRef: "abc123" },
       { secrets: { isSecret: (name: string) => name === "tenantRef" } },
     );
+  });
+
+  // (issue #637 / hub-sync F29, bug 2) — `isPlainRecord` treats any
+  // non-null, non-array object as a plain record to recurse into via
+  // `Object.entries`. A `Date`/`Map`/`Set`'s real state lives in internal
+  // slots invisible to `Object.entries`, so each previously collapsed to
+  // `{}` — a full data-loss bug, not a redaction. Each case below also
+  // carries a sibling sensitive key to prove the sensitive-key path still
+  // fires alongside the non-record value. Now fixed: Date is cloned intact;
+  // Map/Set are now fully, recursively redacted rather than merely
+  // shallow-cloned (per the corrected design), so the cases below also cover
+  // that recursive-redaction behavior directly.
+  test("regression (fixed in #637): a sibling Date value is preserved intact, not collapsed to {}", () => {
+    const when = new Date("2026-01-01T00:00:00Z");
+    const input = { apiKey: "secret", when };
+
+    const result = redactSensitiveLogValue(input) as {
+      apiKey: string;
+      when: Date;
+    };
+
+    expect(result.apiKey).toBe("[REDACTED]");
+    expect(result.when).toBeInstanceOf(Date);
+    expect(result.when.getTime()).toBe(when.getTime());
+    expect(result.when).not.toBe(when);
+  });
+
+  test("regression (fixed in #637): a sibling Map value is preserved intact, not collapsed to {}, and its own entries are recursively redacted", () => {
+    const m = new Map<string, unknown>([
+      ["a", 1],
+      ["apiKey", "secret-in-map"],
+      ["plain", "value"],
+    ]);
+    const input = { apiKey: "secret", m };
+
+    const result = redactSensitiveLogValue(input) as {
+      apiKey: string;
+      m: Map<string, unknown>;
+    };
+
+    expect(result.apiKey).toBe("[REDACTED]");
+    expect(result.m).toBeInstanceOf(Map);
+    expect(result.m).not.toBe(m);
+    // Non-sensitive entries survive intact.
+    expect(result.m.get("a")).toBe(1);
+    expect(result.m.get("plain")).toBe("value");
+    // A sensitive Map key gets its own value redacted, same as an object
+    // property value would.
+    expect(result.m.get("apiKey")).toBe("[REDACTED]");
+  });
+
+  test("regression (fixed in #637): a sibling Set value is preserved intact, not collapsed to {}, and its own elements are recursively redacted", () => {
+    const s = new Set([1, 2, 3, "token=abc123"]);
+    const input = { apiKey: "secret", s };
+
+    const result = redactSensitiveLogValue(input) as {
+      apiKey: string;
+      s: Set<unknown>;
+    };
+
+    expect(result.apiKey).toBe("[REDACTED]");
+    expect(result.s).toBeInstanceOf(Set);
+    expect(result.s).not.toBe(s);
+    expect(result.s.has(1)).toBe(true);
+    expect(result.s.has(2)).toBe(true);
+    expect(result.s.has(3)).toBe(true);
+    // Each Set element is redacted via the same string-redaction pass as any
+    // other value — the raw original string must not survive.
+    expect(result.s.has("token=abc123")).toBe(false);
+    expect(result.s.has("token=[REDACTED]")).toBe(true);
+  });
+
+  test("regression (fixed in #637): a Map nested inside an array inside an object is recursively redacted, not just top-level Map/Set values", () => {
+    const input = {
+      items: [new Map<string, unknown>([["secret", "x"]])],
+    };
+
+    const result = redactSensitiveLogValue(input, {
+      secrets: { isSecret: (name: string) => name === "secret" },
+    }) as { items: Map<string, unknown>[] };
+
+    const nestedMap = result.items[0];
+    expect(nestedMap).toBeInstanceOf(Map);
+    expect(nestedMap?.get("secret")).toBe("[REDACTED]");
+  });
+
+  // (issue #637 / hub-sync F29, security-review round 2 Must-fix) —
+  // `redactMapEntries` only checks/transforms a Map entry's key when
+  // `typeof entryKey === "string"`; a non-string key (e.g. an object) rides
+  // through completely untouched, unredacted. The fix drops the whole entry
+  // (key AND value) when the key is not a string, or is a dangerous string
+  // key — mirroring `run-report.ts`'s `normalizeMapEntries` precedent
+  // (`if (typeof key !== "string" || isDangerousKey(key)) continue;`).
+  test("Must-fix (#637 round 2): a Map entry keyed by a non-string object is dropped entirely, not passed through unredacted", () => {
+    const input = new Map<unknown, unknown>([
+      [{ apiKey: "SECRET_NONSTR" }, "v"],
+      ["safe", "keep"],
+    ]);
+
+    const result = redactSensitiveLogValue(input) as Map<unknown, unknown>;
+
+    // Check the Map's own entries directly, not a shallow `.get()` that
+    // would trivially miss an object-shaped key never sent as an argument.
+    const serializedEntries = JSON.stringify([...result.entries()]);
+    expect(serializedEntries).not.toContain("SECRET_NONSTR");
+    expect(result.size).toBe(1);
+    expect(result.get("safe")).toBe("keep");
+  });
+
+  test("Must-fix (#637 round 2): a Map entry keyed by a dangerous string ('__proto__') is dropped entirely", () => {
+    const input = new Map<string, unknown>([
+      ["__proto__", "x"],
+      ["safe", "keep"],
+    ]);
+
+    const result = redactSensitiveLogValue(input) as Map<string, unknown>;
+
+    expect(result.has("__proto__")).toBe(false);
+    expect(result.get("safe")).toBe("keep");
+  });
+
+  // (issue #637 / hub-sync F29, security-review round 2 should-fix) — the
+  // Map/Set branches are wrapped in a try/catch that degrades to a safe
+  // placeholder instead of throwing when the value is Map/Set-shaped
+  // (`instanceof Map`/`Set` is `true`) but has no real internal state, so
+  // iterating it throws a TypeError. Only the throw-surface properties are
+  // locked in here — never throws, sibling fields still redact, and the
+  // hostile field itself is not a broken/empty Map/Set masquerading as a
+  // successful clone — since the exact placeholder text is an
+  // implementation detail (TBD by the implementer).
+  test("Must-fix (#637 round 2): a Map-shaped object with no real internal Map state degrades to a safe placeholder instead of throwing", () => {
+    const fakeMap: unknown = Object.create(Map.prototype); // instanceof Map === true, but no real [[MapData]]
+
+    expect(() =>
+      redactSensitiveLogValue({ apiKey: "secret", m: fakeMap }),
+    ).not.toThrow();
+
+    const result = redactSensitiveLogValue({
+      apiKey: "secret",
+      m: fakeMap,
+    }) as { apiKey: string; m: unknown };
+
+    expect(result.apiKey).toBe("[REDACTED]");
+    // Degraded to a placeholder, not a broken Map clone masquerading as a
+    // successful one.
+    expect(result.m).not.toBeInstanceOf(Map);
+  });
+
+  test("Must-fix (#637 round 2): a Set-shaped object with no real internal Set state degrades to a safe placeholder instead of throwing", () => {
+    const fakeSet: unknown = Object.create(Set.prototype); // instanceof Set === true, but no real [[SetData]]
+
+    expect(() =>
+      redactSensitiveLogValue({ apiKey: "secret", s: fakeSet }),
+    ).not.toThrow();
+
+    const result = redactSensitiveLogValue({
+      apiKey: "secret",
+      s: fakeSet,
+    }) as { apiKey: string; s: unknown };
+
+    expect(result.apiKey).toBe("[REDACTED]");
+    expect(result.s).not.toBeInstanceOf(Set);
+  });
+
+  // (issue #637 / hub-sync F29, silent-failure-hunter follow-up finding 1) —
+  // the Map/Set guard's try/catch currently wraps BOTH the raw iteration
+  // step AND the recursive per-entry redaction call. An unrelated exception
+  // thrown deep inside a NESTED value (a hostile property getter on a plain
+  // object that happens to be a Map's value/Set's element) is caught by the
+  // SAME handler and mislabeled as "[unredactable Map/Set omitted]" — hiding
+  // the real bug behind a message that names the wrong culprit. The fix
+  // narrows the try/catch to the raw iteration only, so a nested-value
+  // failure propagates normally. `Object.entries` on a plain object already
+  // propagates a hostile-getter throw uncaught when NOT nested inside a
+  // Map/Set (see `redactSensitiveLogValue`'s object branch, which has no
+  // wrapping try/catch of its own) — these tests prove the SAME propagation
+  // also holds once that hostile object is nested inside a Map's value / a
+  // Set's element, which today it does not: today the throw is caught by
+  // the Map/Set guard and swallowed into the placeholder string instead.
+  test("an unrelated exception thrown deep inside a Map's nested value propagates normally, not mislabeled as an unredactable collection", () => {
+    const hostileNested: Record<string, unknown> = {};
+    Object.defineProperty(hostileNested, "boom", {
+      enumerable: true,
+      get(): never {
+        throw new Error("nested getter exploded");
+      },
+    });
+    const input = new Map([["key", hostileNested]]);
+
+    expect(() => redactSensitiveLogValue(input)).toThrow(
+      "nested getter exploded",
+    );
+  });
+
+  test("an unrelated exception thrown deep inside a Set's nested element propagates normally, not mislabeled as an unredactable collection", () => {
+    const hostileNested: Record<string, unknown> = {};
+    Object.defineProperty(hostileNested, "boom", {
+      enumerable: true,
+      get(): never {
+        throw new Error("nested getter exploded");
+      },
+    });
+    const input = new Set([hostileNested]);
+
+    expect(() => redactSensitiveLogValue(input)).toThrow(
+      "nested getter exploded",
+    );
+  });
+
+  // (issue #637 / hub-sync F29, silent-failure-hunter follow-up finding 2) —
+  // today the Map/Set-shaped-but-empty-internal-state degradation (see the
+  // "Must-fix (#637 round 2)" tests above) happens with NO stderr signal at
+  // all, unlike this codebase's established `reportRedactionFailure` pattern
+  // (`internal/logging/guardSecrets.ts`) used elsewhere for the same class
+  // of "structural redaction failure". The fix adds a best-effort stderr
+  // diagnostic write when the Map/Set-shaped value's iteration itself
+  // throws. The exact wording is an implementation detail — only that
+  // *some* diagnostic naming the failure is written is asserted here.
+  test("a Map-shaped value with no real internal Map state writes a best-effort stderr diagnostic while still degrading gracefully", () => {
+    const stderrSpy = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
+    const fakeMap: unknown = Object.create(Map.prototype);
+
+    const result = redactSensitiveLogValue({
+      apiKey: "secret",
+      m: fakeMap,
+    }) as { apiKey: string; m: unknown };
+
+    expect(result.apiKey).toBe("[REDACTED]");
+    expect(result.m).not.toBeInstanceOf(Map);
+    expect(stderrSpy).toHaveBeenCalled();
+    const written = stderrSpy.mock.calls
+      .map((call) => String(call[0]))
+      .join("\n");
+    expect(written.toLowerCase()).toMatch(/redact|map/);
+  });
+
+  test("a Set-shaped value with no real internal Set state writes a best-effort stderr diagnostic while still degrading gracefully", () => {
+    const stderrSpy = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
+    const fakeSet: unknown = Object.create(Set.prototype);
+
+    const result = redactSensitiveLogValue({
+      apiKey: "secret",
+      s: fakeSet,
+    }) as { apiKey: string; s: unknown };
+
+    expect(result.apiKey).toBe("[REDACTED]");
+    expect(result.s).not.toBeInstanceOf(Set);
+    expect(stderrSpy).toHaveBeenCalled();
+    const written = stderrSpy.mock.calls
+      .map((call) => String(call[0]))
+      .join("\n");
+    expect(written.toLowerCase()).toMatch(/redact|set/);
   });
 });
 
