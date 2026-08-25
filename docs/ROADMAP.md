@@ -133,7 +133,7 @@ flow), `m3l new`, shell completion, retry/resume surfacing, CLI gates, and
 phased distribution to a private GitHub Packages registry (single-file
 binary recorded but gated). Coarse summary only — the item source for sync
 is the U-series in
-[`IMPLEMENTATION.md`](./plans/IMPLEMENTATION.md#m3l-cli-build-out--adr-0042-activation-issue-333);
+[`IMPLEMENTATION.md`](./plans/IMPLEMENTATION.md#cli-evolution-wave-u-series);
 per-phase detail in
 [`2026-08-20-cli-evolution.md`](./plans/2026-08-20-cli-evolution.md).
 
@@ -165,7 +165,7 @@ control ADR-0048 disclaims, an append-only decision log, and
 runtime MCP surface (`packages/m3l-mcp`), then headless/scheduled operation.
 Secrets delivery and remote MCP stay gated behind future ADRs. Coarse
 summary only — the item source for sync is the V-series in
-[`IMPLEMENTATION.md`](./plans/IMPLEMENTATION.md#m3l-cli-build-out--adr-0042-activation-issue-333);
+[`IMPLEMENTATION.md`](./plans/IMPLEMENTATION.md#cli-evolution-wave-u-series);
 per-phase detail in
 [`2026-08-20-agent-operator.md`](./plans/2026-08-20-agent-operator.md).
 
@@ -198,7 +198,7 @@ display-vs-persist exposure rule, and local-first two-container compose
 deployment. Remote/multi-user, the microservice split, and Aurora
 migration stay gated. Coarse summary only — the item source for sync is
 the X-series in
-[`IMPLEMENTATION.md`](./plans/IMPLEMENTATION.md#m3l-cli-build-out--adr-0042-activation-issue-333);
+[`IMPLEMENTATION.md`](./plans/IMPLEMENTATION.md#cli-evolution-wave-u-series);
 per-phase detail in
 [`2026-08-20-m3l-console.md`](./plans/2026-08-20-m3l-console.md).
 
