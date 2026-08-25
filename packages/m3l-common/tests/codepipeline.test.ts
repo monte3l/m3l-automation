@@ -1223,7 +1223,7 @@ describe("M3LCodePipelineOperations", () => {
     });
 
     test("M3LCodePipelineState shape matches the documented contract", () => {
-      expectTypeOf<M3LCodePipelineState>().toMatchTypeOf<{
+      expectTypeOf<M3LCodePipelineState>().toExtend<{
         readonly pipelineName: string;
         readonly stageStates: readonly M3LCodePipelineStageState[];
         readonly pipelineVersion?: number;
@@ -1231,14 +1231,14 @@ describe("M3LCodePipelineOperations", () => {
     });
 
     test("M3LCodePipelineStageState shape matches the documented contract", () => {
-      expectTypeOf<M3LCodePipelineStageState>().toMatchTypeOf<{
+      expectTypeOf<M3LCodePipelineStageState>().toExtend<{
         readonly stageName: string;
         readonly actionStates: readonly M3LCodePipelineActionState[];
       }>();
     });
 
     test("M3LCodePipelineActionState shape matches the documented contract", () => {
-      expectTypeOf<M3LCodePipelineActionState>().toMatchTypeOf<{
+      expectTypeOf<M3LCodePipelineActionState>().toExtend<{
         readonly actionName: string;
         readonly latestExecution?: M3LCodePipelineActionExecution;
       }>();
@@ -1268,14 +1268,14 @@ describe("M3LCodePipelineOperations", () => {
     test("listPipelineExecutions resolves executionSummaries always as an array", () => {
       expectTypeOf<
         Awaited<ReturnType<M3LCodePipelineOperations["listPipelineExecutions"]>>
-      >().toMatchTypeOf<{
+      >().toExtend<{
         readonly executionSummaries: readonly M3LCodePipelineExecutionSummary[];
         readonly nextToken?: string;
       }>();
     });
 
     test("M3LCodePipelineExecutionSummary shape matches the documented contract", () => {
-      expectTypeOf<M3LCodePipelineExecutionSummary>().toMatchTypeOf<{
+      expectTypeOf<M3LCodePipelineExecutionSummary>().toExtend<{
         readonly pipelineExecutionId: string;
         readonly status: string;
         readonly stopTriggerReason?: string;
@@ -1289,7 +1289,7 @@ describe("M3LCodePipelineOperations", () => {
     });
 
     test("M3LCodePipelineExecution shape matches the documented contract and never surfaces variables/artifactRevisions", () => {
-      expectTypeOf<M3LCodePipelineExecution>().toMatchTypeOf<{
+      expectTypeOf<M3LCodePipelineExecution>().toExtend<{
         readonly pipelineExecutionId: string;
         readonly pipelineName: string;
         readonly status: string;

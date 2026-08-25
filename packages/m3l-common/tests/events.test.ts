@@ -377,7 +377,7 @@ describe("M3LEventEmitter — concrete emitter with public emit", () => {
 // ---------------------------------------------------------------------------
 describe("M3LEventEmitter type-level", () => {
   test("M3LEventEmitter is assignable to M3LEventEmitterBase (extends it)", () => {
-    expectTypeOf<M3LEventEmitter<{ x: number }>>().toMatchTypeOf<
+    expectTypeOf<M3LEventEmitter<{ x: number }>>().toExtend<
       M3LEventEmitterBase<{ x: number }>
     >();
   });

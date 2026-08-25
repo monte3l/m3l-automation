@@ -1698,7 +1698,7 @@ describe("core/polling", () => {
     //
     // M3LPollerOptions and M3LRetryRunnerOptions are not re-exported from the
     // barrel (intentionally opaque); import them from their source files to assert
-    // the signal field. toMatchTypeOf is used (not toEqualTypeOf) because the
+    // the signal field. toExtend is used (not toEqualTypeOf) because the
     // interfaces carry other required/optional fields; we only assert the signal
     // field shape here.
     // ---------------------------------------------------------------------------

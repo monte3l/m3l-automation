@@ -263,7 +263,7 @@ describe("M3LCliOutput contract", () => {
   });
 
   test("M3LCliOutputOptions requires stdout/stderr and makes env optional", () => {
-    expectTypeOf<M3LCliOutputOptions>().toMatchTypeOf<{
+    expectTypeOf<M3LCliOutputOptions>().toExtend<{
       stdout: M3LCliOutputStream;
       stderr: M3LCliOutputStream;
     }>();

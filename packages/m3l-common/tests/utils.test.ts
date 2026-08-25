@@ -92,7 +92,7 @@ describe("isNullish()", () => {
   test("narrows to null | undefined", () => {
     const v: unknown = null;
     if (isNullish(v)) {
-      expectTypeOf(v).toMatchTypeOf<null | undefined>();
+      expectTypeOf(v).toExtend<null | undefined>();
     }
   });
 });
@@ -125,7 +125,7 @@ describe("isPrimitive()", () => {
   test("narrows the type to a primitive union", () => {
     const v: unknown = "hello";
     if (isPrimitive(v)) {
-      expectTypeOf(v).toMatchTypeOf<
+      expectTypeOf(v).toExtend<
         string | number | boolean | bigint | symbol | null | undefined
       >();
     }
@@ -159,7 +159,7 @@ describe("isError()", () => {
   test("narrows to Error", () => {
     const v: unknown = new Error("x");
     if (isError(v)) {
-      expectTypeOf(v).toMatchTypeOf<Error>();
+      expectTypeOf(v).toExtend<Error>();
     }
   });
 });
@@ -188,7 +188,7 @@ describe("isNodeError()", () => {
   test("narrows to NodeJS.ErrnoException", () => {
     const err = Object.assign(new Error("x"), { code: "EIO" });
     if (isNodeError(err)) {
-      expectTypeOf(err).toMatchTypeOf<NodeJS.ErrnoException>();
+      expectTypeOf(err).toExtend<NodeJS.ErrnoException>();
     }
   });
 });
@@ -264,7 +264,7 @@ describe("isPlainObject()", () => {
   test("narrows to object", () => {
     const v: unknown = { x: 1 };
     if (isPlainObject(v)) {
-      expectTypeOf(v).toMatchTypeOf<object>();
+      expectTypeOf(v).toExtend<object>();
     }
   });
 });
@@ -302,7 +302,7 @@ describe("isObject()", () => {
   test("narrows to object", () => {
     const v: unknown = {};
     if (isObject(v)) {
-      expectTypeOf(v).toMatchTypeOf<object>();
+      expectTypeOf(v).toExtend<object>();
     }
   });
 });
@@ -330,7 +330,7 @@ describe("isArray()", () => {
   test("narrows to unknown[]", () => {
     const v: unknown = [1, 2];
     if (isArray(v)) {
-      expectTypeOf(v).toMatchTypeOf<unknown[]>();
+      expectTypeOf(v).toExtend<unknown[]>();
     }
   });
 });
@@ -490,7 +490,7 @@ describe("isDate()", () => {
   test("narrows to Date", () => {
     const v: unknown = new Date();
     if (isDate(v)) {
-      expectTypeOf(v).toMatchTypeOf<Date>();
+      expectTypeOf(v).toExtend<Date>();
     }
   });
 });
@@ -518,7 +518,7 @@ describe("isValidDate()", () => {
   test("narrows to Date inside the truthy branch", () => {
     const v: unknown = new Date();
     if (isValidDate(v)) {
-      expectTypeOf(v).toMatchTypeOf<Date>();
+      expectTypeOf(v).toExtend<Date>();
     }
   });
 });
@@ -550,7 +550,7 @@ describe("isBuffer()", () => {
   test("narrows to Buffer", () => {
     const v: unknown = Buffer.from("x");
     if (isBuffer(v)) {
-      expectTypeOf(v).toMatchTypeOf<Buffer>();
+      expectTypeOf(v).toExtend<Buffer>();
     }
   });
 });
@@ -578,7 +578,7 @@ describe("isMap()", () => {
   test("narrows to Map<unknown, unknown>", () => {
     const v: unknown = new Map();
     if (isMap(v)) {
-      expectTypeOf(v).toMatchTypeOf<Map<unknown, unknown>>();
+      expectTypeOf(v).toExtend<Map<unknown, unknown>>();
     }
   });
 });
@@ -606,7 +606,7 @@ describe("isSet()", () => {
   test("narrows to Set<unknown>", () => {
     const v: unknown = new Set();
     if (isSet(v)) {
-      expectTypeOf(v).toMatchTypeOf<Set<unknown>>();
+      expectTypeOf(v).toExtend<Set<unknown>>();
     }
   });
 });
@@ -634,7 +634,7 @@ describe("isRegExp()", () => {
   test("narrows to RegExp", () => {
     const v: unknown = /x/;
     if (isRegExp(v)) {
-      expectTypeOf(v).toMatchTypeOf<RegExp>();
+      expectTypeOf(v).toExtend<RegExp>();
     }
   });
 });
@@ -726,7 +726,7 @@ describe("isPromise()", () => {
   test("narrows to a Promise-like type", () => {
     const v: unknown = Promise.resolve(1);
     if (isPromise(v)) {
-      expectTypeOf(v).toMatchTypeOf<Promise<unknown>>();
+      expectTypeOf(v).toExtend<Promise<unknown>>();
     }
   });
 });
@@ -790,7 +790,7 @@ describe("isNonEmptyArray()", () => {
   test("narrows to unknown[]", () => {
     const v: unknown = [1, 2];
     if (isNonEmptyArray(v)) {
-      expectTypeOf(v).toMatchTypeOf<unknown[]>();
+      expectTypeOf(v).toExtend<unknown[]>();
     }
   });
 });
@@ -827,7 +827,7 @@ describe("hasProperty()", () => {
   test("narrows to object & Record<K, unknown> inside the truthy branch", () => {
     const v: unknown = { message: "oops" };
     if (hasProperty(v, "message")) {
-      expectTypeOf(v).toMatchTypeOf<object & Record<"message", unknown>>();
+      expectTypeOf(v).toExtend<object & Record<"message", unknown>>();
     }
   });
 
@@ -835,7 +835,7 @@ describe("hasProperty()", () => {
     const v: unknown = { customKey: 42 };
     const key = "customKey" as const;
     if (hasProperty(v, key)) {
-      expectTypeOf(v).toMatchTypeOf<object & Record<typeof key, unknown>>();
+      expectTypeOf(v).toExtend<object & Record<typeof key, unknown>>();
     }
   });
 });
@@ -867,7 +867,7 @@ describe("hasMessage()", () => {
   test("narrows to { message: unknown }", () => {
     const v: unknown = { message: "hello" };
     if (hasMessage(v)) {
-      expectTypeOf(v).toMatchTypeOf<{ message: unknown }>();
+      expectTypeOf(v).toExtend<{ message: unknown }>();
     }
   });
 });

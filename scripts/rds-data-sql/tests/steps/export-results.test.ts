@@ -77,7 +77,7 @@ describe("coerceRdsDataValueForOutput", () => {
   it("has the documented (value, format) -> unknown signature (type contract)", () => {
     expectTypeOf(coerceRdsDataValueForOutput)
       .parameter(0)
-      .toMatchTypeOf<AWS.M3LRDSDataValue>();
+      .toExtend<AWS.M3LRDSDataValue>();
     expectTypeOf(coerceRdsDataValueForOutput)
       .parameter(1)
       .toEqualTypeOf<"json" | "jsonl" | "csv">();

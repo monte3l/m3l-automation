@@ -811,7 +811,7 @@ describe("type-level contract", () => {
       description: string;
       yes: boolean;
       code: string;
-    }>().toMatchTypeOf<M3LConfirmDestructiveOptions>();
+    }>().toExtend<M3LConfirmDestructiveOptions>();
   });
 
   test("M3LDestructiveTargetPredicate is (target: M3LDestructiveTarget) => boolean", () => {
@@ -829,7 +829,7 @@ describe("type-level contract", () => {
   test("sensitiveTargets accepts an M3LSensitiveTargetSpec argument", () => {
     expectTypeOf(sensitiveTargets)
       .parameter(0)
-      .toMatchTypeOf<M3LSensitiveTargetSpec>();
+      .toExtend<M3LSensitiveTargetSpec>();
   });
 
   test("M3LDestructiveTarget requires profile as a string field (region and accountId are optional)", () => {
@@ -841,7 +841,7 @@ describe("type-level contract", () => {
     // the type resolves to `any`, making every assignment succeed and the
     // directive "unused" → TS2578. The positive check below is self-consistent
     // in both RED and GREEN and correctly specifies the contract.)
-    expectTypeOf<M3LDestructiveTarget>().toMatchTypeOf<{
+    expectTypeOf<M3LDestructiveTarget>().toExtend<{
       readonly profile: string;
     }>();
   });
@@ -850,7 +850,7 @@ describe("type-level contract", () => {
     expectTypeOf({
       profile: "prod",
       region: "us-east-1",
-    }).toMatchTypeOf<M3LDestructiveTarget>();
+    }).toExtend<M3LDestructiveTarget>();
   });
 
   test("confirmDestructive still returns Promise<void> with target-graded options", () => {
@@ -1026,7 +1026,7 @@ describe("Decision 1 — region becomes optional on M3LDestructiveTarget", () =>
       // In RED: typecheck fails — M3LDestructiveTarget.region is still required,
       // so { profile: string } is not assignable to M3LDestructiveTarget (TS2344).
       // In GREEN: region is optional → passes.
-      expectTypeOf<{ profile: string }>().toMatchTypeOf<M3LDestructiveTarget>();
+      expectTypeOf<{ profile: string }>().toExtend<M3LDestructiveTarget>();
     });
 
     test("object without profile does not satisfy M3LDestructiveTarget — profile stays required in both contracts", () => {

@@ -785,6 +785,6 @@ describe("runWizard — type contract", () => {
   });
 
   test("the real Core.M3LPrompt structurally satisfies M3LCliWizardPrompt", () => {
-    expectTypeOf<Core.M3LPrompt>().toMatchTypeOf<M3LCliWizardPrompt>();
+    expectTypeOf<Core.M3LPrompt>().toExtend<M3LCliWizardPrompt>();
   });
 });

@@ -166,7 +166,7 @@ describe("resolveRdsDataSqlSettings", () => {
   });
 
   it("has the documented RdsDataSqlSettings shape (type contract)", () => {
-    expectTypeOf<RdsDataSqlSettings>().toMatchTypeOf<{
+    expectTypeOf<RdsDataSqlSettings>().toExtend<{
       operation: "query" | "load" | "execute" | "migrate";
       resourceArn: string;
       secretArn: string;

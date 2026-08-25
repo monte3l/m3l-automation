@@ -1052,7 +1052,7 @@ describe("core/procedure — tracing", () => {
     });
 
     test("M3LProcedureRunOptions gains optional trace and logger fields", () => {
-      expectTypeOf<M3LProcedureRunOptions<TS>>().toMatchTypeOf<{
+      expectTypeOf<M3LProcedureRunOptions<TS>>().toExtend<{
         readonly trace?: M3LProcedureTraceOptions;
         readonly logger?: M3LLogger;
       }>();

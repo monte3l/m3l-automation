@@ -839,7 +839,7 @@ describe("M3LCSVListImporter", () => {
 
   describe("M3LCSVListImporter type-level contract", () => {
     test("implements M3LListImporter<TItem>", () => {
-      expectTypeOf<Core.M3LCSVListImporter<UserRow>>().toMatchTypeOf<
+      expectTypeOf<Core.M3LCSVListImporter<UserRow>>().toExtend<
         M3LListImporter<UserRow>
       >();
     });
@@ -1668,7 +1668,7 @@ describe("M3LJSONListImporter", () => {
 
   describe("M3LJSONListImporter type-level contract", () => {
     test("implements M3LListImporter<TItem>", () => {
-      expectTypeOf<Core.M3LJSONListImporter<{ id: number }>>().toMatchTypeOf<
+      expectTypeOf<Core.M3LJSONListImporter<{ id: number }>>().toExtend<
         M3LListImporter<{ id: number }>
       >();
     });
@@ -2537,16 +2537,16 @@ describe("M3LListImporterEvents<TItem> type-level contract", () => {
   test("import:item payload carries TItem", () => {
     expectTypeOf<
       M3LListImporterEvents<{ id: number }>["import:item"]
-    >().toMatchTypeOf<{ item: { id: number }; index: number }>();
+    >().toExtend<{ item: { id: number }; index: number }>();
   });
 
   test("import:progress and import:completed payloads carry a numeric processed count", () => {
     expectTypeOf<
       M3LListImporterEvents<{ id: number }>["import:progress"]
-    >().toMatchTypeOf<{ processed: number }>();
+    >().toExtend<{ processed: number }>();
     expectTypeOf<
       M3LListImporterEvents<{ id: number }>["import:completed"]
-    >().toMatchTypeOf<{ processed: number }>();
+    >().toExtend<{ processed: number }>();
   });
 });
 
