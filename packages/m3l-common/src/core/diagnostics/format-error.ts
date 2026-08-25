@@ -32,48 +32,6 @@ const CIRCULAR_MARKER = "[circular]";
 /** Marker appended when the walk is truncated by {@link MAX_CAUSE_DEPTH}. */
 const MAX_DEPTH_MARKER = "[max cause depth reached]";
 
-/**
- * Placeholder substituted when a `Map`/`Set`-shaped value throws while
- * actually being iterated — e.g. `Object.create(Map.prototype)` or a
- * `Proxy` wrapping one, both of which pass `instanceof Map`/`instanceof Set`
- * but have no real internal Map/Set state. Degrades this one value rather
- * than letting the throw propagate and blank out every sibling field this
- * call was also scrubbing. This module runs on a value already redacted by
- * `core/logging/redact.ts`, which guards the exact same hazard for the same
- * reason (and, in turn, mirrors `run-report.ts`'s `invokeToJSONSafely`
- * guarding a throwing `toJSON`) — this is a second, independent line of
- * defense over the same already-redacted value, not a first.
- */
-const UNREDACTABLE_COLLECTION = "[unredactable Map/Set omitted]";
-
-/**
- * Writes a best-effort stderr diagnostic when a `Map`/`Set`-shaped value's
- * own iteration throws (see {@link UNREDACTABLE_COLLECTION}) — mirroring
- * `core/logging/redact.ts`'s own `reportUnredactableCollection` for the
- * same class of structural redaction failure, but self-contained here
- * rather than imported: this module already explains (see
- * {@link UNREDACTABLE_COLLECTION}'s own doc) why it keeps its own
- * independent copy of the guard rather than depending on that module's
- * internals. Wrapped in its own try/catch: a hostile `cause` (a throwing
- * `.stack`/`.message` getter) must not defeat the diagnostic itself.
- */
-function reportUnredactableCollection(
-  kind: "Map" | "Set",
-  cause: unknown,
-): void {
-  try {
-    const detail =
-      cause instanceof Error ? (cause.stack ?? cause.message) : String(cause);
-    process.stderr.write(
-      `m3l-diagnostics: URL scrub failed while iterating a ${kind}-shaped value: ${detail}\n`,
-    );
-  } catch {
-    process.stderr.write(
-      `m3l-diagnostics: URL scrub failed while iterating a ${kind}-shaped value (unreadable failure detail)\n`,
-    );
-  }
-}
-
 /** Separator joining rendered levels; contains the literal "caused by" text tests assert on. */
 const CAUSED_BY_SEPARATOR = "\n\ncaused by: ";
 
@@ -353,15 +311,24 @@ export function scrubUrlsInText(text: string): string {
 }
 
 /**
- * Scrubs an already-collected list of `Map` entries: a string key is
- * scrubbed the same way an object property key is, and each value is
- * recursed into via {@link scrubUrlsInValue}. Extracted from
- * {@link scrubUrlsInMapSafely} to keep that function's cyclomatic/cognitive
- * complexity within the project's lint budget, and so the recursive scrub
- * below runs OUTSIDE {@link scrubUrlsInMapSafely}'s try/catch — an unrelated
- * exception thrown deep inside a nested value must propagate normally, not
- * be caught by the same handler that guards the raw iteration step and
- * mislabeled as an unredactable collection.
+ * Scrubs a `Map`'s entries: a string key is scrubbed the same way an object
+ * property key is, and each value is recursed into via
+ * {@link scrubUrlsInValue}.
+ *
+ * No hostile-iteration guard here, unlike `core/logging/redact.ts`'s
+ * `redactMapSafely` (which DOES need one). This function has exactly one
+ * caller — {@link scrubUrlsInValue}, itself reachable only through
+ * {@link redactContext} — and `redactContext` always runs
+ * `redactSensitiveLogValue` (that module's guarded pass) over `context`
+ * FIRST, before this scrub ever sees it. By the time a `Map` reaches here it
+ * is one of exactly two shapes: the original was hostile (throws on
+ * iteration) and `redactMapSafely` already replaced it with the
+ * `"[unredactable Map/Set omitted]"` placeholder *string* — so this function
+ * never runs at all for that value — or the original was a real, working
+ * `Map`, and `redactMapSafely`/`redactMapEntries` built a brand-new `Map`
+ * from scratch (`new Map(); .set(...)`) and returned that clone, whose
+ * iteration cannot throw. A guard here would be dead code by construction,
+ * not defense-in-depth.
  *
  * An entry whose key is not a `string`, or whose key is a dangerous own-key
  * name (`__proto__`/`constructor`/`prototype`), is DROPPED entirely — both
@@ -371,11 +338,11 @@ export function scrubUrlsInText(text: string): string {
  * `core/logging/redact.ts`'s `redactMapEntries` and
  * `core/diagnostics/run-report.ts`'s `normalizeMapEntries`.
  */
-function scrubUrlsInMapEntries(
-  entries: readonly (readonly [unknown, unknown])[],
+function scrubUrlsInMap(
+  value: ReadonlyMap<unknown, unknown>,
 ): Map<unknown, unknown> {
   const result = new Map<unknown, unknown>();
-  for (const [entryKey, entryValue] of entries) {
+  for (const [entryKey, entryValue] of value) {
     if (typeof entryKey !== "string" || isDangerousKey(entryKey)) continue;
     result.set(scrubUrlsInText(entryKey), scrubUrlsInValue(entryValue));
   }
@@ -383,56 +350,23 @@ function scrubUrlsInMapEntries(
 }
 
 /**
- * Scrubs an already-collected list of `Set` elements, each recursed into
- * via {@link scrubUrlsInValue} the same way an array's elements are.
- * Extracted from {@link scrubUrlsInSetSafely} for the same reason
- * {@link scrubUrlsInMapEntries} is extracted from
- * {@link scrubUrlsInMapSafely}: the recursive scrub must run OUTSIDE the
- * raw-iteration try/catch.
+ * Scrubs a `Set`'s elements, each recursed into via {@link scrubUrlsInValue}
+ * the same way an array's elements are.
+ *
+ * No hostile-iteration guard here, for the same reason {@link scrubUrlsInMap}
+ * has none: this function is reachable only through {@link scrubUrlsInValue}
+ * by way of {@link redactContext}, which always runs the guarded
+ * `redactSensitiveLogValue` pass first — so any `Set` seen here is either
+ * already reduced to a placeholder string upstream (the hostile case) or a
+ * freshly-built, guaranteed-iterable clone (the safe case), never the
+ * original, possibly-hostile value.
  */
-function scrubUrlsInSetEntries(entries: readonly unknown[]): Set<unknown> {
+function scrubUrlsInSet(value: ReadonlySet<unknown>): Set<unknown> {
   const result = new Set<unknown>();
-  for (const entry of entries) {
+  for (const entry of value) {
     result.add(scrubUrlsInValue(entry));
   }
   return result;
-}
-
-/**
- * Scrubs a `Map`, guarding against a `Map`-shaped value that throws while
- * actually being iterated — see {@link UNREDACTABLE_COLLECTION}'s own doc
- * for the guard's rationale. The try/catch below wraps ONLY the raw
- * iteration step (spreading `value` into a plain array) — never the
- * subsequent recursive {@link scrubUrlsInValue} calls performed by
- * {@link scrubUrlsInMapEntries}. An unrelated exception thrown deep inside a
- * nested value must propagate normally rather than being caught here and
- * mislabeled as an unredactable Map.
- */
-function scrubUrlsInMapSafely(value: ReadonlyMap<unknown, unknown>): unknown {
-  let entries: (readonly [unknown, unknown])[];
-  try {
-    entries = [...value];
-  } catch (cause) {
-    reportUnredactableCollection("Map", cause);
-    return UNREDACTABLE_COLLECTION;
-  }
-  return scrubUrlsInMapEntries(entries);
-}
-
-/**
- * Scrubs a `Set`, guarding against a `Set`-shaped value that throws while
- * actually being iterated, mirroring {@link scrubUrlsInMapSafely}. The
- * try/catch below wraps ONLY the raw iteration step, for the same reason.
- */
-function scrubUrlsInSetSafely(value: ReadonlySet<unknown>): unknown {
-  let entries: unknown[];
-  try {
-    entries = [...value];
-  } catch (cause) {
-    reportUnredactableCollection("Set", cause);
-    return UNREDACTABLE_COLLECTION;
-  }
-  return scrubUrlsInSetEntries(entries);
 }
 
 /**
@@ -458,8 +392,8 @@ function scrubUrlsInValue(value: unknown): unknown {
   if (typeof value === "string") return scrubUrlsInText(value);
   if (Array.isArray(value))
     return value.map((entry) => scrubUrlsInValue(entry));
-  if (value instanceof Map) return scrubUrlsInMapSafely(value);
-  if (value instanceof Set) return scrubUrlsInSetSafely(value);
+  if (value instanceof Map) return scrubUrlsInMap(value);
+  if (value instanceof Set) return scrubUrlsInSet(value);
   if (isRedactableRecord(value)) {
     const result: Record<string, unknown> = {};
     for (const [key, entry] of Object.entries(value)) {
