@@ -23,6 +23,7 @@ interface RedriveSettings {
   readonly batchSize: number;
   readonly visibilityTimeoutSeconds: number | undefined;
   readonly yes: boolean;
+  readonly yesSensitive: boolean;
 }
 
 /** Resolves and guard-checks every declared parameter `redriveQueue` needs. */
@@ -39,6 +40,7 @@ function resolveSettings(config: Core.M3LConfig): RedriveSettings {
       "visibilityTimeoutSeconds",
     ),
     yes: accessor.booleanWithDefault("yes", false),
+    yesSensitive: accessor.booleanWithDefault("yesSensitive", false),
   };
 }
 
@@ -130,9 +132,14 @@ function logDeleteFailures(
  */
 async function confirmDeleteOnce(
   confirmed: boolean,
-  deps: { readonly prompt: Core.M3LPrompt; readonly logger: Core.M3LLogger },
+  deps: {
+    readonly prompt: Core.M3LPrompt;
+    readonly logger: Core.M3LLogger;
+    readonly awsTarget: Core.M3LDestructiveTarget;
+  },
   description: string,
   yes: boolean,
+  yesSensitive: boolean,
 ): Promise<boolean> {
   if (confirmed) return true;
   await Core.confirmDestructive({
@@ -140,7 +147,11 @@ async function confirmDeleteOnce(
     logger: deps.logger,
     description,
     yes,
+    yesSensitive,
     code: "ERR_SQS_ETL_ABORTED",
+    target: deps.awsTarget,
+    isSensitiveTarget: (target) =>
+      target.profile.toLowerCase().includes("prod"),
   });
   return true;
 }
@@ -171,6 +182,7 @@ async function runRedrivePages(
     readonly sqsOperations: AWS.M3LSQSOperations;
     readonly prompt: Core.M3LPrompt;
     readonly reportRecovery: (entry: Core.M3LRunRecoveryEntry) => void;
+    readonly awsTarget: Core.M3LDestructiveTarget;
   },
   settings: RedriveSettings,
   failedWriter: Core.M3LListExporterStreamWriter<AWS.M3LSQSSendEntry>,
@@ -204,6 +216,7 @@ async function runRedrivePages(
         deps,
         `delete redriven messages from queue ${settings.dlqUrl}`,
         settings.yes,
+        settings.yesSensitive,
       );
       const successfulIds = new Set(
         sendResult.successful.map((entry) => entry.id),
@@ -252,6 +265,7 @@ async function runRedrivePages(
  *   sqsOperations,
  *   prompt: new Core.M3LPrompt(),
  *   reportRecovery: () => {},
+ *   awsTarget: { profile: "dev" },
  * });
  * ```
  */
@@ -263,6 +277,7 @@ export async function redriveQueue(deps: {
   readonly sqsOperations: AWS.M3LSQSOperations;
   readonly prompt: Core.M3LPrompt;
   readonly reportRecovery: (entry: Core.M3LRunRecoveryEntry) => void;
+  readonly awsTarget: Core.M3LDestructiveTarget;
 }): Promise<void> {
   const settings = resolveSettings(deps.config);
   const failedPath = deps.paths.resolveOutput("failed.jsonl");

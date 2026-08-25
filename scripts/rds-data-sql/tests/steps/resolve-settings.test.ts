@@ -165,6 +165,25 @@ describe("resolveRdsDataSqlSettings", () => {
     });
   });
 
+  describe("'yesSensitive'", () => {
+    it("defaults to false when unset", () => {
+      const settings = resolveRdsDataSqlSettings(
+        buildConfig(VALID_QUERY_VALUES),
+      );
+
+      expect(settings.yesSensitive).toBe(false);
+    });
+
+    it("resolves true when set, the same way 'yes' does", () => {
+      const settings = resolveRdsDataSqlSettings(
+        buildConfig({ ...VALID_QUERY_VALUES, yes: true, yesSensitive: true }),
+      );
+
+      expect(settings.yesSensitive).toBe(true);
+      expect(settings.yes).toBe(true);
+    });
+  });
+
   it("has the documented RdsDataSqlSettings shape (type contract)", () => {
     expectTypeOf<RdsDataSqlSettings>().toExtend<{
       operation: "query" | "load" | "execute" | "migrate";

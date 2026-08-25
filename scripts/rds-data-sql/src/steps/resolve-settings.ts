@@ -84,6 +84,8 @@ export interface RdsDataSqlSettings {
   readonly migrationsTable: string;
   /** Bypasses the interactive destructive-op confirmation for `execute`. */
   readonly yes: boolean;
+  /** Bypasses the escalated typed-echo confirmation for a sensitive target (requires `yes`). */
+  readonly yesSensitive: boolean;
 }
 
 /**
@@ -151,6 +153,49 @@ function resolveIdentifierFields(accessor: Core.M3LConfigAccessor): {
 }
 
 /**
+ * Resolves the per-operation, non-identifier-bound fields (`sql`/`sql.file`/
+ * `parameters.file`/`input.file`/`input.format`/`batch.size`/`page.size`/
+ * `output.file`/`output.format`/`migrations.dir`) — split out of
+ * {@link resolveRdsDataSqlSettings} to keep its cyclomatic/line complexity
+ * low.
+ */
+function resolveOperationFields(accessor: Core.M3LConfigAccessor): {
+  readonly sql: string | undefined;
+  readonly sqlFile: string | undefined;
+  readonly parametersFile: string | undefined;
+  readonly inputFile: string | undefined;
+  readonly inputFormat: (typeof INPUT_FORMATS)[number];
+  readonly batchSize: number;
+  readonly pageSize: number;
+  readonly outputFile: string | undefined;
+  readonly outputFormat: (typeof OUTPUT_FORMATS)[number];
+  readonly migrationsDir: string | undefined;
+} {
+  return {
+    sql: accessor.optionalString("sql"),
+    sqlFile: accessor.optionalString("sql.file"),
+    parametersFile: accessor.optionalString("parameters.file"),
+    inputFile: accessor.optionalString("input.file"),
+    inputFormat: oneOfWithDefault(
+      accessor,
+      "input.format",
+      INPUT_FORMATS,
+      "jsonl",
+    ),
+    batchSize: accessor.numberWithDefault("batch.size", BATCH_SIZE_DEFAULT),
+    pageSize: accessor.numberWithDefault("page.size", PAGE_SIZE_DEFAULT),
+    outputFile: accessor.optionalString("output.file"),
+    outputFormat: oneOfWithDefault(
+      accessor,
+      "output.format",
+      OUTPUT_FORMATS,
+      "json",
+    ),
+    migrationsDir: accessor.optionalString("migrations.dir"),
+  };
+}
+
+/**
  * Narrows the resolved `rds-data-sql` config into a typed
  * {@link RdsDataSqlSettings}, re-validating every field's type and the
  * identifier-pattern-bound fields' shape.
@@ -189,30 +234,20 @@ export function resolveRdsDataSqlSettings(
   const database = accessor.requiredString("database", "run");
   const { schema, table, columns, migrationsTable } =
     resolveIdentifierFields(accessor);
-  const sql = accessor.optionalString("sql");
-  const sqlFile = accessor.optionalString("sql.file");
-  const parametersFile = accessor.optionalString("parameters.file");
-  const inputFile = accessor.optionalString("input.file");
-  const inputFormat = oneOfWithDefault(
-    accessor,
-    "input.format",
-    INPUT_FORMATS,
-    "jsonl",
-  );
-  const batchSize = accessor.numberWithDefault(
-    "batch.size",
-    BATCH_SIZE_DEFAULT,
-  );
-  const pageSize = accessor.numberWithDefault("page.size", PAGE_SIZE_DEFAULT);
-  const outputFile = accessor.optionalString("output.file");
-  const outputFormat = oneOfWithDefault(
-    accessor,
-    "output.format",
-    OUTPUT_FORMATS,
-    "json",
-  );
-  const migrationsDir = accessor.optionalString("migrations.dir");
+  const {
+    sql,
+    sqlFile,
+    parametersFile,
+    inputFile,
+    inputFormat,
+    batchSize,
+    pageSize,
+    outputFile,
+    outputFormat,
+    migrationsDir,
+  } = resolveOperationFields(accessor);
   const yes = accessor.booleanWithDefault("yes", false);
+  const yesSensitive = accessor.booleanWithDefault("yesSensitive", false);
 
   return {
     operation,
@@ -234,5 +269,6 @@ export function resolveRdsDataSqlSettings(
     ...(migrationsDir !== undefined && { migrationsDir }),
     migrationsTable,
     yes,
+    yesSensitive,
   };
 }

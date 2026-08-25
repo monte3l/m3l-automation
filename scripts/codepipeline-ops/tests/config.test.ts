@@ -15,10 +15,11 @@ import {
 
 /**
  * Contract: docs/reference/scripts/codepipeline-ops.md "Configuration
- * schema" table + `src/config.ts`. 16 declared parameters: aws.profile,
+ * schema" table + `src/config.ts`. 17 declared parameters: aws.profile,
  * operation, pipeline, executionId, stage, transitionType, reason, input,
  * output, version, maxResults, clientRequestToken, abandon, yes,
- * waitMaxAttempts, waitIntervalSeconds. This file asserts the DECLARED shape
+ * yesSensitive, waitMaxAttempts, waitIntervalSeconds. This file asserts the
+ * DECLARED shape
  * only — names, uniqueness, instance types, and each parameter's own
  * validator/default — never the library's own provider-resolution order or
  * the per-operation cross-parameter requirements (guard-checked at run start
@@ -45,6 +46,7 @@ const EXPECTED_NAMES = [
   "clientRequestToken",
   "abandon",
   "yes",
+  "yesSensitive",
   "waitMaxAttempts",
   "waitIntervalSeconds",
 ] as const;
@@ -121,7 +123,7 @@ describe("codepipeline-ops config declaration", () => {
     }
   });
 
-  it("declares exactly the 16 documented parameters, in order", () => {
+  it("declares exactly the 17 documented parameters, in order", () => {
     const names = configParameters.map((parameter) => parameter.getName());
     expect(names).toEqual(EXPECTED_NAMES);
   });
@@ -629,6 +631,43 @@ describe("configValidators (F1b — cross-parameter validation)", () => {
     });
 
     it("passes when 'input' is unset but the operation is 'delete-pipeline' (does not require it)", () => {
+      const config = buildConfig({
+        [Core.AWS_PROFILE_PARAM_NAME]: "default",
+        operation: "delete-pipeline",
+        pipeline: "my-pipeline",
+      });
+
+      expect(firstFailure(config)).toBeUndefined();
+    });
+  });
+
+  describe("'yesSensitive' — requires 'yes' to also be set (Core.M3LConfigSchemaValidators.requires)", () => {
+    it("returns the documented failure reason when 'yesSensitive' is set but 'yes' is unset", () => {
+      const config = buildConfig({
+        [Core.AWS_PROFILE_PARAM_NAME]: "default",
+        operation: "delete-pipeline",
+        pipeline: "my-pipeline",
+        yesSensitive: true,
+      });
+
+      expect(firstFailure(config)).toBe(
+        "'yesSensitive' requires 'yes' to be set",
+      );
+    });
+
+    it("passes when both 'yesSensitive' and 'yes' are set", () => {
+      const config = buildConfig({
+        [Core.AWS_PROFILE_PARAM_NAME]: "default",
+        operation: "delete-pipeline",
+        pipeline: "my-pipeline",
+        yes: true,
+        yesSensitive: true,
+      });
+
+      expect(firstFailure(config)).toBeUndefined();
+    });
+
+    it("passes when 'yesSensitive' is unset entirely, regardless of 'yes'", () => {
       const config = buildConfig({
         [Core.AWS_PROFILE_PARAM_NAME]: "default",
         operation: "delete-pipeline",

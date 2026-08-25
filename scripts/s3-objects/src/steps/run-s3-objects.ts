@@ -41,6 +41,7 @@ interface RunSettings {
   readonly input: string | undefined;
   readonly output: string | undefined;
   readonly yes: boolean;
+  readonly yesSensitive: boolean;
 }
 
 /** The five cross-parameter fields an operation's requirements are drawn from. */
@@ -89,6 +90,7 @@ function resolveSettings(
   const input = accessor.optionalString("input");
   const output = accessor.optionalString("output");
   const yes = accessor.requiredBoolean("yes", operation);
+  const yesSensitive = accessor.booleanWithDefault("yesSensitive", false);
 
   return {
     operation,
@@ -102,6 +104,7 @@ function resolveSettings(
     input,
     output,
     yes,
+    yesSensitive,
   };
 }
 
@@ -163,6 +166,7 @@ interface Deps extends Core.M3LOperationPipelineBaseDeps {
    * or fully-declined run.
    */
   readonly reportRecovery: (entry: Core.M3LRunRecoveryEntry) => void;
+  readonly awsTarget: Core.M3LDestructiveTarget;
 }
 
 /** The dependencies each per-operation dispatch function needs. */
@@ -349,6 +353,10 @@ const pipeline = new Core.M3LOperationPipeline<
     operations: new Set(["put", "copy", "delete", "delete-batch"] as const),
     describe: (_operation, settings) => describeDestructiveOp(settings),
     yes: (settings) => settings.yes,
+    target: (_operation, _settings, _context, deps) => deps.awsTarget,
+    isSensitiveTarget: (target) =>
+      target.profile.toLowerCase().includes("prod"),
+    yesSensitive: (settings) => settings.yesSensitive,
     abortCode: "ERR_S3_OBJECTS_ABORTED",
     onDecline: {
       kind: "soft-land",
@@ -390,7 +398,9 @@ const pipeline = new Core.M3LOperationPipeline<
  * pipeline's `"partial"` outcome) and the run still resolves the summary.
  *
  * @param deps - The resolved config, `M3LPaths`, logger, per-run correlation
- *   id, the provisioned `s3` client, `script.prompt`, and `reportRecovery`.
+ *   id, the provisioned `s3` client, `script.prompt`, `reportRecovery`, and
+ *   the resolved `script.awsTarget` (ADR-0048's target-graded destructive
+ *   gate).
  * @returns The run summary: objects/keys processed and failed.
  * @throws {@link Core.M3LError} coded `ERR_S3_OBJECTS_CONFIG` when a required
  *   parameter is missing/malformed for the requested operation.
@@ -411,6 +421,7 @@ const pipeline = new Core.M3LOperationPipeline<
  *   s3: script.aws?.clients.s3,
  *   prompt: script.prompt,
  *   reportRecovery: (entry) => console.warn(entry.item, entry.error),
+ *   awsTarget: script.awsTarget,
  * });
  * console.log(summary.processed, summary.failed);
  * ```

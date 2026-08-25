@@ -38,6 +38,37 @@ function bypassPrompt(): Core.M3LPrompt {
   return prompt;
 }
 
+/**
+ * A non-sensitive default `awsTarget` fixture — the per-script
+ * `(target) => target.profile.toLowerCase().includes("prod")` predicate
+ * `redriveQueue` wires into `Core.confirmDestructive` (via the shared
+ * `confirmDeleteOnce` helper) never classifies this profile as sensitive, so
+ * every pre-existing (ungraded) test above keeps its current plain yes/no
+ * `confirm` behavior once the src change lands.
+ */
+const nonSensitiveTarget: Core.M3LDestructiveTarget = {
+  profile: "dev-sandbox",
+};
+
+/**
+ * Builds a `Core.M3LPrompt` with both `confirm` and `text` spied — the two
+ * seams `Core.confirmDestructive` calls through for the ungraded and the
+ * escalated typed-echo paths respectively.
+ */
+function targetGatePrompt(overrides?: {
+  readonly confirmed?: boolean;
+  readonly textResponse?: string;
+}) {
+  const prompt = new Core.M3LPrompt();
+  const confirm = vi
+    .spyOn(prompt, "confirm")
+    .mockResolvedValue(overrides?.confirmed ?? true);
+  const text = vi
+    .spyOn(prompt, "text")
+    .mockResolvedValue(overrides?.textResponse ?? "");
+  return { prompt, confirm, text };
+}
+
 afterEach(() => {
   vi.restoreAllMocks();
 });
@@ -77,6 +108,7 @@ describe("redriveQueue", () => {
       sqsOperations,
       prompt,
       reportRecovery: vi.fn(),
+      awsTarget: nonSensitiveTarget,
     });
 
     const [sendQueueUrl, sendEntries] = sendBatchMock.mock.calls[0] as [
@@ -131,6 +163,7 @@ describe("redriveQueue", () => {
       sqsOperations,
       prompt,
       reportRecovery: vi.fn(),
+      awsTarget: nonSensitiveTarget,
     });
 
     expect(deleteBatchMock).toHaveBeenCalledTimes(1);
@@ -184,6 +217,7 @@ describe("redriveQueue", () => {
       sqsOperations,
       prompt,
       reportRecovery,
+      awsTarget: nonSensitiveTarget,
     });
 
     expect(deleteBatchMock).not.toHaveBeenCalled();
@@ -246,6 +280,7 @@ describe("redriveQueue", () => {
       sqsOperations,
       prompt,
       reportRecovery: vi.fn(),
+      awsTarget: nonSensitiveTarget,
     });
 
     expect(confirm).toHaveBeenCalledTimes(1);
@@ -290,6 +325,7 @@ describe("redriveQueue", () => {
         sqsOperations,
         prompt,
         reportRecovery: vi.fn(),
+        awsTarget: nonSensitiveTarget,
       });
     } catch (error) {
       thrown = error;
@@ -335,6 +371,7 @@ describe("redriveQueue", () => {
       sqsOperations,
       prompt,
       reportRecovery: vi.fn(),
+      awsTarget: nonSensitiveTarget,
     });
 
     expect(receive).toHaveBeenNthCalledWith(1, "https://sqs.example/dlq", {
@@ -394,6 +431,7 @@ describe("redriveQueue", () => {
       sqsOperations,
       prompt,
       reportRecovery,
+      awsTarget: nonSensitiveTarget,
     });
 
     const calls = warning.mock.calls as unknown[][];
@@ -451,6 +489,7 @@ describe("redriveQueue", () => {
         sqsOperations,
         prompt,
         reportRecovery: vi.fn(),
+        awsTarget: nonSensitiveTarget,
       });
     } catch (error) {
       thrown = error;
@@ -487,6 +526,7 @@ describe("redriveQueue", () => {
           sqsOperations,
           prompt,
           reportRecovery: vi.fn(),
+          awsTarget: nonSensitiveTarget,
         });
       } catch (error) {
         thrown = error;
@@ -521,8 +561,258 @@ describe("redriveQueue", () => {
         sqsOperations,
         prompt,
         reportRecovery: vi.fn(),
+        awsTarget: nonSensitiveTarget,
       }),
     ).rejects.toMatchObject({ code: "ERR_SQS_ETL_CONFIG" });
     expect(receive).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Contract: ADR-0048's target-graded destructive-confirmation gate (Issue
+   * #483, A2b), wired into `redriveQueue`'s existing `Core.confirmDestructive`
+   * call (inside `confirmDeleteOnce`) via a per-script
+   * `awsTarget: Core.M3LDestructiveTarget` dep and an inline
+   * `isSensitiveTarget` predicate,
+   * `(target) => target.profile.toLowerCase().includes("prod")`.
+   */
+  describe("target-graded escalation", () => {
+    test("escalates to the typed-echo prompt when the target's profile contains 'prod'", async () => {
+      stubOutputStreams();
+      const receive = vi
+        .fn()
+        .mockResolvedValueOnce([dlqMessage(1)])
+        .mockResolvedValueOnce([]);
+      const sendBatchMock = vi.fn().mockResolvedValue({
+        successful: [{ id: "0", body: dlqMessage(1).body }],
+        failed: [],
+      });
+      const deleteBatchMock = vi
+        .fn()
+        .mockResolvedValue({ successful: [], failed: [] });
+      const sqsOperations = createFakeSqsOperations({
+        receive,
+        sendBatch: sendBatchMock,
+        deleteBatch: deleteBatchMock,
+      });
+      const config = buildConfig({
+        queueUrl: "https://sqs.example/q",
+        dlqUrl: "https://sqs.example/dlq",
+        yes: false,
+      });
+      const paths = new Core.M3LPaths();
+      const logger = new Core.M3LLogger([]);
+      const { prompt, confirm, text } = targetGatePrompt({
+        textResponse: "prod",
+      });
+
+      await redriveQueue({
+        config,
+        paths,
+        logger,
+        correlationId: "run-escalate",
+        sqsOperations,
+        prompt,
+        reportRecovery: vi.fn(),
+        awsTarget: { profile: "prod" },
+      });
+
+      expect(text).toHaveBeenCalledTimes(1);
+      expect(confirm).not.toHaveBeenCalled();
+      expect(deleteBatchMock).toHaveBeenCalledTimes(1);
+    });
+
+    test("throws ERR_SQS_ETL_ABORTED when the typed-echo input doesn't match the profile", async () => {
+      stubOutputStreams();
+      const receive = vi
+        .fn()
+        .mockResolvedValueOnce([dlqMessage(1)])
+        .mockResolvedValueOnce([]);
+      const sendBatchMock = vi.fn().mockResolvedValue({
+        successful: [{ id: "0", body: dlqMessage(1).body }],
+        failed: [],
+      });
+      const deleteBatchMock = vi
+        .fn()
+        .mockResolvedValue({ successful: [], failed: [] });
+      const sqsOperations = createFakeSqsOperations({
+        receive,
+        sendBatch: sendBatchMock,
+        deleteBatch: deleteBatchMock,
+      });
+      const config = buildConfig({
+        queueUrl: "https://sqs.example/q",
+        dlqUrl: "https://sqs.example/dlq",
+        yes: false,
+      });
+      const paths = new Core.M3LPaths();
+      const logger = new Core.M3LLogger([]);
+      const { prompt } = targetGatePrompt({ textResponse: "not-prod" });
+
+      let thrown: unknown;
+      try {
+        await redriveQueue({
+          config,
+          paths,
+          logger,
+          correlationId: "run-escalate-mismatch",
+          sqsOperations,
+          prompt,
+          reportRecovery: vi.fn(),
+          awsTarget: { profile: "prod" },
+        });
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toBeInstanceOf(Core.M3LError);
+      expect((thrown as Core.M3LError).code).toBe("ERR_SQS_ETL_ABORTED");
+      expect(deleteBatchMock).not.toHaveBeenCalled();
+    });
+
+    test("bypasses confirmation with a warning when yes and yesSensitive are both true for a sensitive target", async () => {
+      stubOutputStreams();
+      const receive = vi
+        .fn()
+        .mockResolvedValueOnce([dlqMessage(1)])
+        .mockResolvedValueOnce([]);
+      const sendBatchMock = vi.fn().mockResolvedValue({
+        successful: [{ id: "0", body: dlqMessage(1).body }],
+        failed: [],
+      });
+      const deleteBatchMock = vi
+        .fn()
+        .mockResolvedValue({ successful: [], failed: [] });
+      const sqsOperations = createFakeSqsOperations({
+        receive,
+        sendBatch: sendBatchMock,
+        deleteBatch: deleteBatchMock,
+      });
+      const config = buildConfig({
+        queueUrl: "https://sqs.example/q",
+        dlqUrl: "https://sqs.example/dlq",
+        yes: true,
+        yesSensitive: true,
+      });
+      const paths = new Core.M3LPaths();
+      const logger = new Core.M3LLogger([]);
+      const warningSpy = vi.spyOn(logger, "warning");
+      const { prompt, confirm, text } = targetGatePrompt({
+        textResponse: "prod",
+      });
+
+      await redriveQueue({
+        config,
+        paths,
+        logger,
+        correlationId: "run-bypass-sensitive",
+        sqsOperations,
+        prompt,
+        reportRecovery: vi.fn(),
+        awsTarget: { profile: "prod" },
+      });
+
+      expect(confirm).not.toHaveBeenCalled();
+      expect(text).not.toHaveBeenCalled();
+      expect(warningSpy).toHaveBeenCalledWith(expect.stringContaining("prod"));
+      expect(deleteBatchMock).toHaveBeenCalledTimes(1);
+    });
+
+    test.each([
+      ["absent", undefined],
+      ["false", false],
+    ])(
+      "still escalates when yes:true but yesSensitive is %s, for a sensitive target",
+      async (_label, yesSensitiveValue) => {
+        stubOutputStreams();
+        const receive = vi
+          .fn()
+          .mockResolvedValueOnce([dlqMessage(1)])
+          .mockResolvedValueOnce([]);
+        const sendBatchMock = vi.fn().mockResolvedValue({
+          successful: [{ id: "0", body: dlqMessage(1).body }],
+          failed: [],
+        });
+        const deleteBatchMock = vi
+          .fn()
+          .mockResolvedValue({ successful: [], failed: [] });
+        const sqsOperations = createFakeSqsOperations({
+          receive,
+          sendBatch: sendBatchMock,
+          deleteBatch: deleteBatchMock,
+        });
+        const configValues: Record<string, unknown> = {
+          queueUrl: "https://sqs.example/q",
+          dlqUrl: "https://sqs.example/dlq",
+          yes: true,
+        };
+        if (yesSensitiveValue !== undefined) {
+          configValues["yesSensitive"] = yesSensitiveValue;
+        }
+        const config = buildConfig(configValues);
+        const paths = new Core.M3LPaths();
+        const logger = new Core.M3LLogger([]);
+        const { prompt, confirm, text } = targetGatePrompt({
+          textResponse: "prod",
+        });
+
+        await redriveQueue({
+          config,
+          paths,
+          logger,
+          correlationId: "run-still-escalates",
+          sqsOperations,
+          prompt,
+          reportRecovery: vi.fn(),
+          awsTarget: { profile: "prod" },
+        });
+
+        expect(text).toHaveBeenCalledTimes(1);
+        expect(confirm).not.toHaveBeenCalled();
+        expect(deleteBatchMock).toHaveBeenCalledTimes(1);
+      },
+    );
+
+    test("uses the plain confirm (not escalated) when the target is not sensitive", async () => {
+      stubOutputStreams();
+      const receive = vi
+        .fn()
+        .mockResolvedValueOnce([dlqMessage(1)])
+        .mockResolvedValueOnce([]);
+      const sendBatchMock = vi.fn().mockResolvedValue({
+        successful: [{ id: "0", body: dlqMessage(1).body }],
+        failed: [],
+      });
+      const deleteBatchMock = vi
+        .fn()
+        .mockResolvedValue({ successful: [], failed: [] });
+      const sqsOperations = createFakeSqsOperations({
+        receive,
+        sendBatch: sendBatchMock,
+        deleteBatch: deleteBatchMock,
+      });
+      const config = buildConfig({
+        queueUrl: "https://sqs.example/q",
+        dlqUrl: "https://sqs.example/dlq",
+        yes: false,
+      });
+      const paths = new Core.M3LPaths();
+      const logger = new Core.M3LLogger([]);
+      const { prompt, confirm, text } = targetGatePrompt({ confirmed: true });
+
+      await redriveQueue({
+        config,
+        paths,
+        logger,
+        correlationId: "run-not-sensitive",
+        sqsOperations,
+        prompt,
+        reportRecovery: vi.fn(),
+        awsTarget: { profile: "dev-sandbox" },
+      });
+
+      expect(confirm).toHaveBeenCalledTimes(1);
+      expect(text).not.toHaveBeenCalled();
+      expect(deleteBatchMock).toHaveBeenCalledTimes(1);
+    });
   });
 });

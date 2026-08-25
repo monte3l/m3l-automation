@@ -23,6 +23,9 @@ export const CLOUDFORMATION_STACKS_OPERATIONS = [
 /** The `yes` parameter's declared default — the single source of truth `steps/run-cloudformation-stacks.ts` reads at the config-read site too. */
 export const YES_DEFAULT = false;
 
+/** The `yesSensitive` parameter's declared default — the single source of truth `steps/run-cloudformation-stacks.ts` reads at the config-read site too. */
+export const YES_SENSITIVE_DEFAULT = false;
+
 /** The `maxWaitTime` parameter's declared `range()` bounds, in seconds. */
 const MAX_WAIT_TIME_MIN_SECONDS = 1;
 const MAX_WAIT_TIME_MAX_SECONDS = 3600;
@@ -112,6 +115,11 @@ export const configParameters: readonly Core.M3LConfigParameter[] = [
     name: "yes",
     type: Core.M3LConfigParameterType.BOOL,
     defaultValue: YES_DEFAULT,
+  }),
+  new Core.M3LConfigParameter({
+    name: "yesSensitive",
+    type: Core.M3LConfigParameterType.BOOL,
+    defaultValue: YES_SENSITIVE_DEFAULT,
   }),
 ];
 
@@ -212,4 +220,10 @@ export const configValidators: readonly Core.M3LConfigSchemaValidator[] = [
     "except",
   ),
   requiredWhenOperation("input", INPUT_REQUIRED_OPERATIONS),
+  // requires() would be a no-op here since both yesSensitive and yes carry
+  // declared defaults — compare resolved values instead.
+  (config: Core.M3LConfig): true | string =>
+    config.get("yesSensitive") !== true || config.get("yes") === true
+      ? true
+      : "'yesSensitive' requires 'yes' to be set",
 ];

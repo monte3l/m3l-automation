@@ -17,6 +17,7 @@ interface RunSqsEtlDeps {
   readonly sqsOperations: AWS.M3LSQSOperations;
   readonly prompt: Core.M3LPrompt;
   readonly reportRecovery: (entry: Core.M3LRunRecoveryEntry) => void;
+  readonly awsTarget: Core.M3LDestructiveTarget;
 }
 
 /**
@@ -24,9 +25,10 @@ interface RunSqsEtlDeps {
  * `command`.
  *
  * @param deps - The resolved config, `M3LPaths`, logger, correlation id, the
- *   injected `AWS.M3LSQSOperations`, the interactive-prompt facade, and the
- *   `reportRecovery` callback for absorbed per-item failures — forwarded
- *   unchanged to whichever step is selected.
+ *   injected `AWS.M3LSQSOperations`, the interactive-prompt facade, the
+ *   `reportRecovery` callback for absorbed per-item failures, and the
+ *   resolved `awsTarget` used for target-graded destructive confirmation —
+ *   both forwarded unchanged to whichever step is selected.
  * @returns The dispatched step's own return value (`void` for every command
  *   except `transform`, which returns its read/written/skipped summary).
  * @throws {@link Core.M3LError} coded `"ERR_SQS_ETL_CONFIG"` when `command`
@@ -52,6 +54,7 @@ interface RunSqsEtlDeps {
  *   sqsOperations,
  *   prompt: script.prompt,
  *   reportRecovery: script.reportRecovery.bind(script),
+ *   awsTarget: { profile: "dev" },
  * });
  * ```
  */

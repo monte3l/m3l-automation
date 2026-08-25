@@ -1,6 +1,6 @@
 import { Core } from "@m3l-automation/m3l-common";
 
-import { configParameters } from "./config.js";
+import { configParameters, configValidators } from "./config.js";
 import { getCorrelationId, hooks } from "./hooks.js";
 import { runEventbridgeSchedules } from "./steps/run-eventbridge-schedules.js";
 
@@ -16,7 +16,7 @@ import { runEventbridgeSchedules } from "./steps/run-eventbridge-schedules.js";
 // `getCorrelationId()`.
 const script = new Core.M3LScript({
   metadata: { name: "eventbridge-schedules", version: "0.0.0" },
-  config: { params: configParameters },
+  config: { params: configParameters, validate: configValidators },
   hooks,
 });
 
@@ -42,6 +42,17 @@ await Core.runScript(
       );
     }
 
+    // `script.awsTarget` mirrors `script.aws`'s provisioning: a still-
+    // `undefined` value here is a wiring bug, not a runtime condition, since
+    // this script always declares `aws.profile` above.
+    const awsTarget = script.awsTarget;
+    if (awsTarget === undefined) {
+      throw new Core.M3LError(
+        "eventbridge-schedules: script.awsTarget was not resolved despite a provisioned script.aws",
+        { code: "ERR_EVENTBRIDGE_SCHEDULES_CONFIG" },
+      );
+    }
+
     await runEventbridgeSchedules({
       config,
       paths: script.paths,
@@ -49,6 +60,7 @@ await Core.runScript(
       correlationId: getCorrelationId(),
       eventBridgeOperations: aws.services.eventBridgeOperations,
       prompt: script.prompt,
+      awsTarget,
     });
   },
   { dryRun },

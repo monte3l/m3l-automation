@@ -42,6 +42,14 @@ await Core.runScript(
       );
     }
 
+    const awsTarget = script.awsTarget;
+    if (awsTarget === undefined) {
+      throw new Core.M3LError(
+        "lambda-ops: script.awsTarget was not resolved despite a provisioned script.aws",
+        { code: "ERR_LAMBDA_OPS_CONFIG" },
+      );
+    }
+
     await runLambdaOps({
       config,
       paths: script.paths,
@@ -49,6 +57,7 @@ await Core.runScript(
       correlationId: getCorrelationId(),
       operations: new AWS.M3LLambdaOperations(aws.clients.lambda),
       prompt: script.prompt,
+      awsTarget,
     });
   },
   { dryRun },

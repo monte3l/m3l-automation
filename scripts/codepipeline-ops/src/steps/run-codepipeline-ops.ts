@@ -8,6 +8,7 @@ import {
   WAIT_INTERVAL_SECONDS_DEFAULT,
   WAIT_MAX_ATTEMPTS_DEFAULT,
   YES_DEFAULT,
+  YES_SENSITIVE_DEFAULT,
 } from "../config.js";
 import { FAILED_STATUSES } from "./watch-execution.js";
 
@@ -33,6 +34,7 @@ interface RunSettings {
   readonly clientRequestToken: string | undefined;
   readonly abandon: boolean;
   readonly yes: boolean;
+  readonly yesSensitive: boolean;
   readonly output: string | undefined;
   readonly waitMaxAttempts: number;
   readonly waitIntervalSeconds: number;
@@ -44,6 +46,7 @@ interface Deps extends Core.M3LOperationPipelineBaseDeps {
   readonly correlationId: string;
   readonly operations: AWS.M3LCodePipelineOperations;
   readonly signal?: AbortSignal;
+  readonly awsTarget: Core.M3LDestructiveTarget;
 }
 
 /**
@@ -216,6 +219,10 @@ function resolveSettings(
     clientRequestToken: accessor.optionalString("clientRequestToken"),
     abandon: accessor.booleanWithDefault("abandon", ABANDON_DEFAULT),
     yes: accessor.booleanWithDefault("yes", YES_DEFAULT),
+    yesSensitive: accessor.booleanWithDefault(
+      "yesSensitive",
+      YES_SENSITIVE_DEFAULT,
+    ),
     output: accessor.optionalString("output"),
     waitMaxAttempts: accessor.numberWithDefault(
       "waitMaxAttempts",
@@ -494,7 +501,11 @@ const pipeline = new Core.M3LOperationPipeline<
     ] as const),
     describe: (operation, _settings, context, _deps) =>
       requireWritePlan(context, operation).description,
+    target: (_operation, _settings, _context, deps) => deps.awsTarget,
+    isSensitiveTarget: (target) =>
+      target.profile.toLowerCase().includes("prod"),
     yes: (settings) => settings.yes,
+    yesSensitive: (settings) => settings.yesSensitive,
     abortCode: "ERR_CODEPIPELINE_OPS_ABORTED",
     onDecline: { kind: "throw" },
   },

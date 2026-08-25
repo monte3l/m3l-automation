@@ -1,7 +1,12 @@
 import { Core } from "@m3l-automation/m3l-common";
 import type { AWS } from "@m3l-automation/m3l-common";
 
-import { ECS_OPERATIONS, FORCE_DEFAULT, YES_DEFAULT } from "../config.js";
+import {
+  ECS_OPERATIONS,
+  FORCE_DEFAULT,
+  YES_DEFAULT,
+  YES_SENSITIVE_DEFAULT,
+} from "../config.js";
 
 /** The closed union of `ecs-ops`'s declared `operation` values. */
 type EcsOperation = (typeof ECS_OPERATIONS)[number];
@@ -16,6 +21,7 @@ interface RawSettings {
   readonly force: boolean;
   readonly maxWaitTime: number | undefined;
   readonly yes: boolean;
+  readonly yesSensitive: boolean;
   readonly output: string | undefined;
 }
 
@@ -25,6 +31,7 @@ interface Deps extends Core.M3LOperationPipelineBaseDeps {
   readonly correlationId: string;
   readonly operations: AWS.M3LECSOperations;
   readonly signal?: AbortSignal;
+  readonly awsTarget: Core.M3LDestructiveTarget;
 }
 
 /** The union of result shapes any dispatched operation can resolve. */
@@ -152,6 +159,10 @@ function resolveSettings(accessor: Core.M3LConfigAccessor): RawSettings {
     force: accessor.booleanWithDefault("force", FORCE_DEFAULT),
     maxWaitTime: accessor.optionalNumber("maxWaitTime"),
     yes: accessor.booleanWithDefault("yes", YES_DEFAULT),
+    yesSensitive: accessor.booleanWithDefault(
+      "yesSensitive",
+      YES_SENSITIVE_DEFAULT,
+    ),
     output: accessor.optionalString("output"),
   };
 }
@@ -377,6 +388,10 @@ const pipeline = new Core.M3LOperationPipeline<
     describe: (operation, _settings, context) =>
       requireWritePlan(context, requireWriteOperation(operation)).description,
     yes: (settings) => settings.yes,
+    target: (_operation, _settings, _context, deps) => deps.awsTarget,
+    isSensitiveTarget: (target) =>
+      target.profile.toLowerCase().includes("prod"),
+    yesSensitive: (settings) => settings.yesSensitive,
     abortCode: "ERR_ECS_OPS_ABORTED",
     onDecline: { kind: "throw" },
   },

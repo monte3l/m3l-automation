@@ -74,11 +74,18 @@ function buildConfig(values: Record<string, unknown>): Core.M3LConfig {
   return config;
 }
 
+// The default target for every test that doesn't care about target grading:
+// deliberately non-sensitive under the script's `profile.toLowerCase().includes("prod")`
+// predicate, so pre-existing (non-target-focused) tests keep exercising the
+// plain confirm path unchanged.
+const DEFAULT_TARGET: Core.M3LDestructiveTarget = { profile: "dev-sandbox" };
+
 function buildDeps(
   configValues: Record<string, unknown>,
   overrides?: {
     readonly prompt?: Core.M3LPrompt;
     readonly reportRecovery?: (entry: Core.M3LRunRecoveryEntry) => void;
+    readonly awsTarget?: Core.M3LDestructiveTarget;
   },
 ): Parameters<typeof runS3Objects>[0] {
   return {
@@ -89,6 +96,7 @@ function buildDeps(
     s3: fakeClient,
     prompt: overrides?.prompt ?? new Core.M3LPrompt(),
     reportRecovery: overrides?.reportRecovery ?? vi.fn(),
+    awsTarget: overrides?.awsTarget ?? DEFAULT_TARGET,
   };
 }
 
@@ -146,6 +154,25 @@ function confirmingPrompt(confirmed: boolean): Core.M3LPrompt {
   const prompt = new Core.M3LPrompt();
   vi.spyOn(prompt, "confirm").mockResolvedValue(confirmed);
   return prompt;
+}
+
+/**
+ * Spies on BOTH `prompt.confirm` and `prompt.text` on the same instance, so
+ * a target-graded-gate test can assert the ungated method was never called
+ * regardless of which path (plain confirm vs. escalated typed-echo) fires.
+ * `confirmed` defaults to `true` and `typed` defaults to `""` — a test only
+ * cares about the arm it's exercising.
+ */
+function gatePrompt(options: {
+  readonly confirmed?: boolean;
+  readonly typed?: string;
+}) {
+  const prompt = new Core.M3LPrompt();
+  const confirm = vi
+    .spyOn(prompt, "confirm")
+    .mockResolvedValue(options.confirmed ?? true);
+  const text = vi.spyOn(prompt, "text").mockResolvedValue(options.typed ?? "");
+  return { prompt, confirm, text };
 }
 
 const BASE_CONFIG: Record<string, unknown> = {
@@ -422,6 +449,110 @@ describe("runS3Objects — destructive-gate routing", () => {
       expect(confirm).not.toHaveBeenCalled();
     },
   );
+});
+
+/**
+ * Contract: ADR-0048 + `Core.confirmDestructive` / `Core.M3LOperationPipeline`'s
+ * `M3LPipelineDestructiveOptions.target`/`isSensitiveTarget`/`yesSensitive`
+ * (`packages/m3l-common/src/core/prompt/M3LDestructiveGate.ts`,
+ * `packages/m3l-common/src/core/pipeline/types.ts`). `s3-objects`'s own
+ * sensitivity predicate (to be wired in `steps/run-s3-objects.ts`) is
+ * `(target) => target.profile.toLowerCase().includes("prod")`.
+ *
+ * `s3-objects`'s decline policy is `soft-land` (see the "gate-decline
+ * soft-lands" describe block above) — a mismatched typed-echo therefore
+ * soft-lands to an all-zero summary with a warning, exactly like a declined
+ * plain confirm, rather than throwing `ERR_S3_OBJECTS_ABORTED` to the caller.
+ */
+describe("runS3Objects — target-graded destructive gate (ADR-0048)", () => {
+  const SENSITIVE_TARGET: Core.M3LDestructiveTarget = { profile: "prod" };
+  const DELETE_CONFIG = {
+    operation: "delete",
+    key: "2026/07/summary.json",
+  } as const;
+
+  test("escalates to the typed-echo prompt when the target's profile contains 'prod'", async () => {
+    deleteObjectMock.mockResolvedValue(undefined);
+    const { prompt, confirm, text } = gatePrompt({ typed: "prod" });
+    const deps = buildDeps(
+      { ...BASE_CONFIG, ...DELETE_CONFIG },
+      { prompt, awsTarget: SENSITIVE_TARGET },
+    );
+
+    const summary = await runS3Objects(deps);
+
+    expect(summary).toEqual({ processed: 1, failed: 0 });
+    expect(text).toHaveBeenCalledTimes(1);
+    const [message] = text.mock.calls[0] ?? [];
+    expect(message).toEqual(expect.stringContaining("prod"));
+    expect(confirm).not.toHaveBeenCalled();
+    expect(deleteObjectMock).toHaveBeenCalled();
+  });
+
+  test("soft-lands (does not throw) when the typed-echo input doesn't match the profile", async () => {
+    const { prompt, text } = gatePrompt({ typed: "not-the-right-profile" });
+    const deps = buildDeps(
+      { ...BASE_CONFIG, ...DELETE_CONFIG },
+      { prompt, awsTarget: SENSITIVE_TARGET },
+    );
+    const warningSpy = vi.spyOn(deps.logger, "warning");
+
+    const summary = await runS3Objects(deps);
+
+    expect(summary).toEqual({ processed: 0, failed: 0 });
+    expect(deleteObjectMock).not.toHaveBeenCalled();
+    expect(warningSpy).toHaveBeenCalled();
+    expect(text).toHaveBeenCalledTimes(1);
+  });
+
+  test("bypasses confirmation with a warning when yes and yesSensitive are both true for a sensitive target", async () => {
+    deleteObjectMock.mockResolvedValue(undefined);
+    const { prompt, confirm, text } = gatePrompt({});
+    const deps = buildDeps(
+      { ...BASE_CONFIG, ...DELETE_CONFIG, yes: true, yesSensitive: true },
+      { prompt, awsTarget: SENSITIVE_TARGET },
+    );
+    const warningSpy = vi.spyOn(deps.logger, "warning");
+
+    const summary = await runS3Objects(deps);
+
+    expect(summary).toEqual({ processed: 1, failed: 0 });
+    expect(confirm).not.toHaveBeenCalled();
+    expect(text).not.toHaveBeenCalled();
+    expect(warningSpy).toHaveBeenCalledTimes(1);
+    const [message] = warningSpy.mock.calls[0] ?? [];
+    expect(message).toEqual(expect.stringContaining("prod"));
+  });
+
+  test("still escalates when yes:true but yesSensitive is false/absent, for a sensitive target", async () => {
+    deleteObjectMock.mockResolvedValue(undefined);
+    const { prompt, confirm, text } = gatePrompt({ typed: "prod" });
+    const deps = buildDeps(
+      { ...BASE_CONFIG, ...DELETE_CONFIG, yes: true },
+      { prompt, awsTarget: SENSITIVE_TARGET },
+    );
+
+    const summary = await runS3Objects(deps);
+
+    expect(summary).toEqual({ processed: 1, failed: 0 });
+    expect(text).toHaveBeenCalledTimes(1);
+    expect(confirm).not.toHaveBeenCalled();
+  });
+
+  test("uses the plain confirm (not escalated) when the target is not sensitive", async () => {
+    deleteObjectMock.mockResolvedValue(undefined);
+    const { prompt, confirm, text } = gatePrompt({ confirmed: true });
+    const deps = buildDeps(
+      { ...BASE_CONFIG, ...DELETE_CONFIG },
+      { prompt, awsTarget: DEFAULT_TARGET },
+    );
+
+    const summary = await runS3Objects(deps);
+
+    expect(summary).toEqual({ processed: 1, failed: 0 });
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(text).not.toHaveBeenCalled();
+  });
 });
 
 describe("runS3Objects — gate-decline soft-lands", () => {

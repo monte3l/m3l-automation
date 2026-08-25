@@ -38,6 +38,7 @@ import type { AWS } from "@m3l-automation/m3l-common";
  *   correlationId: "run-1",
  *   sqsOperations,
  *   prompt: new Core.M3LPrompt(),
+ *   awsTarget: { profile: "dev" },
  * });
  * ```
  */
@@ -47,6 +48,7 @@ export async function purgeQueue(deps: {
   readonly correlationId: string;
   readonly sqsOperations: AWS.M3LSQSOperations;
   readonly prompt: Core.M3LPrompt;
+  readonly awsTarget: Core.M3LDestructiveTarget;
 }): Promise<void> {
   const accessor = new Core.M3LConfigAccessor({
     config: deps.config,
@@ -54,13 +56,18 @@ export async function purgeQueue(deps: {
   });
   const queueUrl = accessor.requiredString("queueUrl", "purge");
   const yes = accessor.booleanWithDefault("yes", false);
+  const yesSensitive = accessor.booleanWithDefault("yesSensitive", false);
 
   await Core.confirmDestructive({
     prompt: deps.prompt,
     logger: deps.logger,
     description: `purge queue ${queueUrl}`,
     yes,
+    yesSensitive,
     code: "ERR_SQS_ETL_ABORTED",
+    target: deps.awsTarget,
+    isSensitiveTarget: (target) =>
+      target.profile.toLowerCase().includes("prod"),
   });
 
   await deps.sqsOperations.purgeQueue(queueUrl);

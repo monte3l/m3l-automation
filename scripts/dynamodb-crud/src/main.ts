@@ -43,6 +43,18 @@ await Core.runScript(
       );
     }
 
+    // A provisioned script.aws always resolves script.awsTarget alongside it
+    // (M3LScript derives one from the other); a still-`undefined` value here
+    // is a wiring bug, not a runtime condition — fail loud rather than a
+    // non-null assertion.
+    const awsTarget = script.awsTarget;
+    if (awsTarget === undefined) {
+      throw new Core.M3LError(
+        "dynamodb-crud: script.awsTarget was not resolved despite a provisioned script.aws",
+        { code: "ERR_DYNAMO_CRUD_CONFIG" },
+      );
+    }
+
     // A partial batch failure (items left `failed > 0` after retry) is no
     // longer fatal: `runDynamodbCrud` reports each unprocessed item via
     // `reportRecovery` (bound from `script.reportRecovery`, never the whole
@@ -59,6 +71,7 @@ await Core.runScript(
       prompt: script.prompt,
       reportRecovery: script.reportRecovery.bind(script),
       signal: script.signal,
+      awsTarget,
     });
   },
   { dryRun },

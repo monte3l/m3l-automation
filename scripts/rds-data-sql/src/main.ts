@@ -1,6 +1,6 @@
 import { Core } from "@m3l-automation/m3l-common";
 
-import { configParameters } from "./config.js";
+import { configParameters, configValidators } from "./config.js";
 import { hooks } from "./hooks.js";
 import { buildOperationDeps } from "./steps/build-operation-deps.js";
 import { resolveRdsDataSqlSettings } from "./steps/resolve-settings.js";
@@ -19,7 +19,7 @@ const paths = new Core.M3LPaths();
 
 const script = new Core.M3LScript({
   metadata: { name: "rds-data-sql", version: "0.0.0" },
-  config: { params: configParameters },
+  config: { params: configParameters, validate: configValidators },
   hooks,
 });
 
@@ -45,6 +45,19 @@ await Core.runScript(
       );
     }
 
+    // `script.awsTarget` is `M3LDestructiveTarget | undefined` at the type
+    // level, but `aws.profile` is declared `required: true` + `nonEmpty`
+    // above, so it is always resolved whenever `script.aws` is provisioned —
+    // the guard is required since the type doesn't guarantee it, never a `!`
+    // assertion.
+    const awsTarget = script.awsTarget;
+    if (awsTarget === undefined) {
+      throw new Core.M3LError(
+        "rds-data-sql: script.awsTarget was not resolved despite a provisioned script.aws",
+        { code: "ERR_RDS_DATA_SQL_NO_AWS_PROVIDER" },
+      );
+    }
+
     const operationDeps = await buildOperationDeps({
       settings,
       rdsData: script.aws.services.rdsDataOperations,
@@ -52,6 +65,7 @@ await Core.runScript(
       paths,
       logger: script.logger,
       reportRecovery: script.reportRecovery.bind(script),
+      awsTarget,
     });
 
     await runRdsDataSql({

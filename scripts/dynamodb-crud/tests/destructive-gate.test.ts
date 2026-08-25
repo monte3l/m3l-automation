@@ -42,6 +42,13 @@ function makeMockAdapter() {
   };
 }
 
+// A non-sensitive default `awsTarget` — `isSensitiveTarget` will not match
+// this, so every existing (pre-escalation) test keeps its current plain
+// yes/no `confirm` behavior once the src change lands.
+const nonSensitiveTarget: Core.M3LDestructiveTarget = {
+  profile: "dev-sandbox",
+};
+
 const describeTableMock = vi.mocked(AWS.describeTable);
 
 // Only the mocked `AWS.describeTable` is invoked in these tests; the client
@@ -71,6 +78,7 @@ describe("runDestructiveGate", () => {
         operation: "delete",
         logger,
         prompt,
+        awsTarget: nonSensitiveTarget,
       }),
     ).resolves.toBeUndefined();
 
@@ -99,6 +107,7 @@ describe("runDestructiveGate", () => {
       operation: "delete",
       logger,
       prompt,
+      awsTarget: nonSensitiveTarget,
     });
 
     // Core.confirmDestructive only warns on the yes=true bypass channel;
@@ -126,6 +135,7 @@ describe("runDestructiveGate", () => {
         operation: "batch-delete",
         logger,
         prompt,
+        awsTarget: nonSensitiveTarget,
       });
     } catch (error) {
       thrown = error;
@@ -152,6 +162,7 @@ describe("runDestructiveGate", () => {
       operation: "import",
       logger,
       prompt,
+      awsTarget: nonSensitiveTarget,
     });
 
     expect(adapter.confirm).toHaveBeenCalledTimes(1);
@@ -176,6 +187,7 @@ describe("runDestructiveGate", () => {
         operation: "update",
         logger,
         prompt,
+        awsTarget: nonSensitiveTarget,
       });
     } catch (error) {
       thrown = error;
@@ -201,9 +213,94 @@ describe("runDestructiveGate", () => {
       operation: "update",
       logger,
       prompt,
+      awsTarget: nonSensitiveTarget,
     });
 
     expect(describeTableMock).toHaveBeenCalledWith(fakeClient, "widgets");
+  });
+
+  test("uses the plain confirm (not escalated) when the target is not sensitive", async () => {
+    describeTableMock.mockResolvedValue({
+      itemCount: 7,
+      tableStatus: "ACTIVE",
+    });
+    const logger = new Core.M3LLogger([]);
+    const adapter = makeMockAdapter();
+    adapter.confirm.mockResolvedValue(true);
+    const prompt = new Core.M3LPrompt({ adapter });
+
+    await runDestructiveGate({
+      dynamoDB: fakeClient,
+      tableName: "orders",
+      operation: "delete",
+      logger,
+      prompt,
+      awsTarget: { profile: "dev-sandbox" },
+    });
+
+    expect(adapter.confirm).toHaveBeenCalledTimes(1);
+    expect(adapter.input).not.toHaveBeenCalled();
+  });
+
+  test("escalates to the typed-echo prompt when the target's profile contains 'prod'", async () => {
+    describeTableMock.mockResolvedValue({
+      itemCount: 7,
+      tableStatus: "ACTIVE",
+    });
+    const logger = new Core.M3LLogger([]);
+    const adapter = makeMockAdapter();
+    // The escalated typed-echo path is `Core.M3LPrompt.text()`, which
+    // delegates to the adapter's `input()` method (there is no separate
+    // `text()` adapter method) — see
+    // packages/m3l-common/src/core/prompt/M3LPrompt.ts.
+    adapter.input.mockResolvedValue("prod");
+    const prompt = new Core.M3LPrompt({ adapter });
+
+    await expect(
+      runDestructiveGate({
+        dynamoDB: fakeClient,
+        tableName: "orders",
+        operation: "delete",
+        logger,
+        prompt,
+        awsTarget: { profile: "prod" },
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(adapter.input).toHaveBeenCalledTimes(1);
+    const [config] = adapter.input.mock.calls[0] as [{ message: string }];
+    expect(config.message).toEqual(expect.stringContaining("orders"));
+    expect(config.message).toEqual(expect.stringContaining("prod"));
+    expect(adapter.confirm).not.toHaveBeenCalled();
+  });
+
+  test("throws ERR_DYNAMO_CRUD_ABORTED when the typed-echo input doesn't match the profile", async () => {
+    describeTableMock.mockResolvedValue({
+      itemCount: 7,
+      tableStatus: "ACTIVE",
+    });
+    const logger = new Core.M3LLogger([]);
+    const adapter = makeMockAdapter();
+    adapter.input.mockResolvedValue("nope");
+    const prompt = new Core.M3LPrompt({ adapter });
+
+    let thrown: unknown;
+    try {
+      await runDestructiveGate({
+        dynamoDB: fakeClient,
+        tableName: "orders",
+        operation: "delete",
+        logger,
+        prompt,
+        awsTarget: { profile: "prod" },
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(Core.M3LError);
+    expect((thrown as Core.M3LError).code).toBe("ERR_DYNAMO_CRUD_ABORTED");
+    expect(adapter.confirm).not.toHaveBeenCalled();
   });
 
   test("type contract: runDestructiveGate resolves void and takes a Core.M3LPrompt, not a bare confirm callback", () => {
@@ -214,5 +311,8 @@ describe("runDestructiveGate", () => {
     expectTypeOf<
       Parameters<typeof runDestructiveGate>[0]["dynamoDB"]
     >().toEqualTypeOf<Parameters<typeof AWS.describeTable>[0]>();
+    expectTypeOf<
+      Parameters<typeof runDestructiveGate>[0]["awsTarget"]
+    >().toEqualTypeOf<Core.M3LDestructiveTarget>();
   });
 });

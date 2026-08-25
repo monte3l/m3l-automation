@@ -46,6 +46,7 @@ await Core.runScript(
       httpClient,
       signer: script.aws?.services.requestSigner,
       prompt: script.prompt,
+      awsTarget: script.awsTarget,
     });
   },
   { dryRun },

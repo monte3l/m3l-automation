@@ -3,7 +3,11 @@ import * as fsp from "node:fs/promises";
 import { Core } from "@m3l-automation/m3l-common";
 import type { AWS } from "@m3l-automation/m3l-common";
 
-import { CLOUDFORMATION_STACKS_OPERATIONS, YES_DEFAULT } from "../config.js";
+import {
+  CLOUDFORMATION_STACKS_OPERATIONS,
+  YES_DEFAULT,
+  YES_SENSITIVE_DEFAULT,
+} from "../config.js";
 
 /** The closed union of `cloudformation-stacks`'s declared `operation` values. */
 type Operation = (typeof CLOUDFORMATION_STACKS_OPERATIONS)[number];
@@ -19,6 +23,7 @@ interface RawSettings {
   readonly nextToken: string | undefined;
   readonly maxWaitTime: number | undefined;
   readonly yes: boolean;
+  readonly yesSensitive: boolean;
   readonly output: string | undefined;
 }
 
@@ -28,6 +33,7 @@ interface Deps extends Core.M3LOperationPipelineBaseDeps {
   readonly correlationId: string;
   readonly operations: AWS.M3LCloudFormationOperations;
   readonly signal?: AbortSignal;
+  readonly awsTarget: Core.M3LDestructiveTarget;
 }
 
 /** The union of result shapes any dispatched operation can resolve. */
@@ -353,6 +359,10 @@ function resolveSettings(accessor: Core.M3LConfigAccessor): RawSettings {
     nextToken: accessor.optionalString("nextToken"),
     maxWaitTime: accessor.optionalNumber("maxWaitTime"),
     yes: accessor.booleanWithDefault("yes", YES_DEFAULT),
+    yesSensitive: accessor.booleanWithDefault(
+      "yesSensitive",
+      YES_SENSITIVE_DEFAULT,
+    ),
     output: accessor.optionalString("output"),
   };
 }
@@ -483,6 +493,10 @@ const pipeline = new Core.M3LOperationPipeline<
     yes: (settings) => settings.yes,
     abortCode: "ERR_CLOUDFORMATION_STACKS_ABORTED",
     onDecline: { kind: "throw" },
+    target: (_operation, _settings, _context, deps) => deps.awsTarget,
+    isSensitiveTarget: (target) =>
+      target.profile.toLowerCase().includes("prod"),
+    yesSensitive: (settings) => settings.yesSensitive,
   },
   handlers: {
     "list-stacks": dispatchReadStacks,

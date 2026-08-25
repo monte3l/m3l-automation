@@ -13,10 +13,15 @@ import {
 
 /**
  * Contract: docs/reference/scripts/eks-ops.md "Configuration schema" table +
- * `src/config.ts`. 14 declared parameters: aws.profile, operation, cluster,
+ * `src/config.ts`. 15 declared parameters: aws.profile, operation, cluster,
  * nodegroup, input, output, kubernetesVersion, releaseVersion, force,
- * maxResults, nextToken, include, maxWaitTime, yes — spanning the 16
- * documented `EKS_OPS_OPERATIONS` values. This file asserts the DECLARED
+ * maxResults, nextToken, include, maxWaitTime, yes, yesSensitive — spanning
+ * the 16 documented `EKS_OPS_OPERATIONS` values. `yesSensitive` is the
+ * ADR-0048 target-graded destructive-confirmation bypass companion to `yes`
+ * (see `Core.confirmDestructive`'s TSDoc for the deliberately asymmetric
+ * polarity between the two flags) — its own cross-parameter constraint
+ * (`yesSensitive` requires `yes`) is asserted in the `configValidators`
+ * describe block below, not here. This file asserts the DECLARED
  * shape only — names, uniqueness, instance types, and each parameter's own
  * validator/default — never the per-operation cross-parameter requirements
  * (guard-checked at run start instead — see `tests/run-eks-ops.test.ts`).
@@ -42,6 +47,7 @@ const EXPECTED_NAMES = [
   "include",
   "maxWaitTime",
   "yes",
+  "yesSensitive",
 ] as const;
 
 const EXPECTED_OPERATIONS = [
@@ -113,7 +119,7 @@ describe("eks-ops config declaration", () => {
     }
   });
 
-  it("declares exactly the 14 documented parameters, in order", () => {
+  it("declares exactly the 15 documented parameters, in order", () => {
     const names = configParameters.map((parameter) => parameter.getName());
     expect(names).toEqual(EXPECTED_NAMES);
   });
@@ -233,6 +239,20 @@ describe("eks-ops config declaration", () => {
 
     it("accepts an explicit true", async () => {
       await expect(resolveWith(paramNamed("yes"), "true")).resolves.toBe(true);
+    });
+  });
+
+  describe("'yesSensitive' — BOOL, default false (ADR-0048 sensitive-target bypass companion to 'yes')", () => {
+    it("defaults to false", async () => {
+      await expect(resolveDefault(paramNamed("yesSensitive"))).resolves.toBe(
+        false,
+      );
+    });
+
+    it("accepts an explicit true", async () => {
+      await expect(
+        resolveWith(paramNamed("yesSensitive"), "true"),
+      ).resolves.toBe(true);
     });
   });
 
@@ -505,6 +525,35 @@ describe("configValidators (F1b — cross-parameter validation)", () => {
         cluster: "my-cluster",
         nodegroup: "my-nodegroup",
       });
+
+      expect(firstFailure(config)).toBeUndefined();
+    });
+  });
+
+  describe("'yesSensitive' — requires 'yes' to also be set (Core.M3LConfigSchemaValidators.requires)", () => {
+    it("returns \"'yesSensitive' requires 'yes' to be set\" when 'yesSensitive' is true and 'yes' is unset", () => {
+      const config = buildConfig({
+        operation: "list-clusters",
+        yesSensitive: true,
+      });
+
+      expect(firstFailure(config)).toBe(
+        "'yesSensitive' requires 'yes' to be set",
+      );
+    });
+
+    it("passes every validator when both 'yesSensitive' and 'yes' are set", () => {
+      const config = buildConfig({
+        operation: "list-clusters",
+        yesSensitive: true,
+        yes: true,
+      });
+
+      expect(firstFailure(config)).toBeUndefined();
+    });
+
+    it("passes every validator when 'yesSensitive' is unset, regardless of 'yes'", () => {
+      const config = buildConfig({ operation: "list-clusters" });
 
       expect(firstFailure(config)).toBeUndefined();
     });

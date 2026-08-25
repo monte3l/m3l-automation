@@ -17,6 +17,7 @@ interface RunApiGatewayClientDeps {
   readonly httpClient: Core.M3LHttpClient;
   readonly signer: AWS.M3LRequestSigner | undefined;
   readonly prompt: Core.M3LPrompt;
+  readonly awsTarget: Core.M3LDestructiveTarget | undefined;
 }
 
 /**
@@ -26,8 +27,9 @@ interface RunApiGatewayClientDeps {
  * @param deps - The resolved config, `M3LPaths`, logger, correlation id, the
  *   script-constructed `Core.M3LHttpClient`, the optional
  *   `AWS.M3LRequestSigner` (present only when `auth: iam` provisioned
- *   `script.aws`), and the interactive-prompt facade — forwarded unchanged
- *   to whichever step is selected.
+ *   `script.aws`), the interactive-prompt facade, and the resolved
+ *   `awsTarget` used for target-graded destructive confirmation — forwarded
+ *   unchanged to whichever step is selected.
  * @returns A promise that resolves once the dispatched step completes.
  * @throws {@link Core.M3LError} coded `"ERR_API_GATEWAY_CLIENT_CONFIG"` when
  *   `command` is not one of the two declared modes — unreachable through the
@@ -49,6 +51,7 @@ interface RunApiGatewayClientDeps {
  *   httpClient: new Core.M3LHttpClient({ baseUrl: "https://api.example.com" }),
  *   signer: undefined,
  *   prompt: new Core.M3LPrompt(),
+ *   awsTarget: { profile: "dev" },
  * });
  * ```
  */

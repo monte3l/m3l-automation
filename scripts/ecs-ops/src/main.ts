@@ -46,6 +46,18 @@ await Core.runScript(
       );
     }
 
+    // `script.awsTarget` mirrors `script.aws`'s identity — resolved from the
+    // same provisioning pass — so it is guaranteed defined whenever `aws` is,
+    // but not narrowed together by the compiler; guard it independently
+    // rather than reach for a non-null assertion.
+    const awsTarget = script.awsTarget;
+    if (awsTarget === undefined) {
+      throw new Core.M3LError(
+        "ecs-ops: script.awsTarget was not resolved despite a provisioned script.aws",
+        { code: "ERR_ECS_OPS_CONFIG" },
+      );
+    }
+
     await runEcsOps({
       config,
       paths: script.paths,
@@ -54,6 +66,7 @@ await Core.runScript(
       operations: new AWS.M3LECSOperations(aws.clients.ecs),
       prompt: script.prompt,
       signal: script.signal,
+      awsTarget,
     });
   },
   { dryRun },

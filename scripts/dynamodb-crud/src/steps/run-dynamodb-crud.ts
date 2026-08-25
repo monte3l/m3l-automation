@@ -25,6 +25,15 @@ const DESTRUCTIVE_OPERATIONS: ReadonlySet<DynamoOperation> = new Set([
   "import",
 ]);
 
+/**
+ * The fallback `Core.M3LDestructiveTarget` used when a caller omits
+ * `deps.awsTarget` (e.g. a unit test constructing `Core.M3LConfig` directly
+ * rather than going through `M3LScript`). `"unresolved"` never contains
+ * `"prod"`, so it never trips the escalated typed-echo confirmation path —
+ * the safe default for an identity that genuinely could not be resolved.
+ */
+const UNRESOLVED_TARGET: Core.M3LDestructiveTarget = { profile: "unresolved" };
+
 /** The run summary `run-dynamodb-crud` reports: items read/written/failed/skipped. */
 export interface RunDynamodbCrudSummary {
   /** Items read (fetched, streamed, or successfully parsed from input). */
@@ -698,8 +707,10 @@ async function dispatch(
  *
  * @param deps - The resolved config, `M3LPaths`, logger, per-run correlation
  *   id, the provisioned `dynamoDBDocument`/`dynamoDB` clients, an injected
- *   `Core.M3LPrompt` (mirrors `script.prompt`), and `reportRecovery` (mirrors
- *   `script.reportRecovery`) for absorbing per-item batch failures.
+ *   `Core.M3LPrompt` (mirrors `script.prompt`), `reportRecovery` (mirrors
+ *   `script.reportRecovery`) for absorbing per-item batch failures, and the
+ *   resolved `awsTarget` (mirrors `script.awsTarget`) forwarded to
+ *   {@link runDestructiveGate}.
  * @returns The run summary: items read, written, failed (after retry), and
  *   skipped (malformed input records).
  * @throws {@link Core.M3LError} with code `ERR_DYNAMO_CRUD_CONFIG` when a
@@ -722,6 +733,7 @@ async function dispatch(
  *   dynamoDB: script.aws.clients.dynamoDB,
  *   prompt: script.prompt,
  *   reportRecovery: script.reportRecovery.bind(script),
+ *   awsTarget: { profile: "prod" },
  * });
  * console.log(summary.read, summary.written, summary.failed, summary.skipped);
  * ```
@@ -736,6 +748,16 @@ export async function runDynamodbCrud(deps: {
   readonly prompt: Core.M3LPrompt;
   readonly reportRecovery: (entry: Core.M3LRunRecoveryEntry) => void;
   readonly signal?: AbortSignal;
+  /**
+   * The resolved AWS identity this run is pointed at (mirrors
+   * `script.awsTarget`), forwarded to {@link runDestructiveGate} for
+   * target-graded confirmation. Optional so callers that construct
+   * `Core.M3LConfig` directly (bypassing the `M3LScript` lifecycle, e.g.
+   * this module's own unit tests) are not forced to fabricate one; when
+   * omitted, {@link UNRESOLVED_TARGET} is used, which never matches the
+   * `"prod"` escalation predicate.
+   */
+  readonly awsTarget?: Core.M3LDestructiveTarget;
 }): Promise<RunDynamodbCrudSummary> {
   const settings = resolveSettings(deps.config);
 
@@ -747,6 +769,7 @@ export async function runDynamodbCrud(deps: {
         operation: settings.operation,
         logger: deps.logger,
         prompt: deps.prompt,
+        awsTarget: deps.awsTarget ?? UNRESOLVED_TARGET,
       });
     } catch (cause) {
       if (

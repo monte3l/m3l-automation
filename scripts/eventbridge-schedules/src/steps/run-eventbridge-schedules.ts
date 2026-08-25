@@ -19,6 +19,7 @@ interface RunEventbridgeSchedulesDeps {
   readonly correlationId: string;
   readonly eventBridgeOperations: AWS.M3LEventBridgeOperations;
   readonly prompt: Core.M3LPrompt;
+  readonly awsTarget: Core.M3LDestructiveTarget;
 }
 
 /** The five operations that mutate state and therefore require confirmation. */
@@ -54,8 +55,9 @@ function readRuleNameForDisplay(config: Core.M3LConfig): string {
  * `operation`.
  *
  * @param deps - The resolved config, `M3LPaths`, logger, correlation id, the
- *   provisioned `eventBridgeOperations` wrapper, and the interactive-prompt
- *   facade — forwarded unchanged to whichever step is selected.
+ *   provisioned `eventBridgeOperations` wrapper, the interactive-prompt
+ *   facade, and the resolved `awsTarget` used for target-graded destructive
+ *   confirmation — forwarded unchanged to whichever step is selected.
  * @returns A promise that resolves once the dispatched step completes.
  * @throws {@link Core.M3LError} coded `"ERR_EVENTBRIDGE_SCHEDULES_ABORTED"`
  *   when the user declines the `Core.confirmDestructive` confirmation.
@@ -81,6 +83,7 @@ function readRuleNameForDisplay(config: Core.M3LConfig): string {
  *   correlationId: "run-1",
  *   eventBridgeOperations,
  *   prompt: new Core.M3LPrompt(),
+ *   awsTarget: { profile: "dev-sandbox" },
  * });
  * ```
  */
@@ -109,7 +112,11 @@ export async function runEventbridgeSchedules(
       logger: deps.logger,
       description: `${operation} rule '${readRuleNameForDisplay(deps.config)}'`,
       yes: accessor.booleanWithDefault("yes", false),
+      yesSensitive: accessor.booleanWithDefault("yesSensitive", false),
       code: "ERR_EVENTBRIDGE_SCHEDULES_ABORTED",
+      target: deps.awsTarget,
+      isSensitiveTarget: (target) =>
+        target.profile.toLowerCase().includes("prod"),
     });
   }
 

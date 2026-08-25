@@ -25,6 +25,9 @@ export const FORCE_DEFAULT = false;
 /** The `yes` parameter's declared default — the single source of truth `steps/run-ecs-ops.ts` reads at the config-read site too. */
 export const YES_DEFAULT = false;
 
+/** The `yesSensitive` parameter's declared default — the single source of truth `steps/run-ecs-ops.ts` reads at the config-read site too. */
+export const YES_SENSITIVE_DEFAULT = false;
+
 /** The `maxWaitTime` parameter's declared `range()` bounds, in seconds. */
 const MAX_WAIT_TIME_MIN_SECONDS = 1;
 const MAX_WAIT_TIME_MAX_SECONDS = 3600;
@@ -102,6 +105,11 @@ export const configParameters: readonly Core.M3LConfigParameter[] = [
     name: "yes",
     type: Core.M3LConfigParameterType.BOOL,
     defaultValue: YES_DEFAULT,
+  }),
+  new Core.M3LConfigParameter({
+    name: "yesSensitive",
+    type: Core.M3LConfigParameterType.BOOL,
+    defaultValue: YES_SENSITIVE_DEFAULT,
   }),
 ];
 
@@ -192,4 +200,10 @@ export const configValidators: readonly Core.M3LConfigSchemaValidator[] = [
   requiredForOperations("service", SERVICE_REQUIRING_OPERATIONS),
   requiredForOperations("services", SERVICES_REQUIRING_OPERATIONS),
   requiredForOperations("input", INPUT_REQUIRING_OPERATIONS),
+  // requires() would be a no-op here since both yesSensitive and yes carry
+  // declared defaults — compare resolved values instead.
+  (config: Core.M3LConfig): true | string =>
+    config.get("yesSensitive") !== true || config.get("yes") === true
+      ? true
+      : "'yesSensitive' requires 'yes' to be set",
 ];

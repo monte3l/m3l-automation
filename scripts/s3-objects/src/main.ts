@@ -1,6 +1,6 @@
 import { Core } from "@m3l-automation/m3l-common";
 
-import { configParameters } from "./config.js";
+import { configParameters, configValidators } from "./config.js";
 import { getCorrelationId, hooks } from "./hooks.js";
 import { runS3Objects } from "./steps/run-s3-objects.js";
 
@@ -19,7 +19,7 @@ import { runS3Objects } from "./steps/run-s3-objects.js";
 // `"success"` — mirrors sqs-dead-letter-triage/src/main.ts.
 const script = new Core.M3LScript({
   metadata: { name: "s3-objects", version: "0.0.0" },
-  config: { params: configParameters },
+  config: { params: configParameters, validate: configValidators },
   hooks,
 });
 
@@ -46,6 +46,14 @@ await Core.runScript(
       );
     }
 
+    const awsTarget = script.awsTarget;
+    if (awsTarget === undefined) {
+      throw new Core.M3LError(
+        "s3-objects: script.awsTarget was not resolved despite a provisioned script.aws",
+        { code: "ERR_S3_OBJECTS_CONFIG" },
+      );
+    }
+
     await runS3Objects({
       config,
       paths: script.paths,
@@ -54,6 +62,7 @@ await Core.runScript(
       s3: aws.clients.s3,
       prompt: script.prompt,
       reportRecovery: script.reportRecovery.bind(script),
+      awsTarget,
     });
   },
   { dryRun },

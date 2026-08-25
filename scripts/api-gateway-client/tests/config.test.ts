@@ -6,11 +6,11 @@ import { configParameters, configValidators } from "../src/config.js";
 
 /**
  * Contract: docs/reference/scripts/api-gateway-client.md "Configuration
- * schema" table + `src/config.ts`. 12 declared parameters: aws.profile,
+ * schema" table + `src/config.ts`. 13 declared parameters: aws.profile,
  * command, auth, baseUrl, method, path, body, input, output, maxInFlight,
- * apiKey, yes. This file asserts the DECLARED shape only — names,
- * uniqueness, instance types, and each parameter's own validator/default —
- * never the library's own provider-resolution order.
+ * apiKey, yes, yesSensitive. This file asserts the DECLARED shape only —
+ * names, uniqueness, instance types, and each parameter's own
+ * validator/default — never the library's own provider-resolution order.
  */
 
 const EXPECTED_NAMES = [
@@ -26,6 +26,7 @@ const EXPECTED_NAMES = [
   "maxInFlight",
   "apiKey",
   "yes",
+  "yesSensitive",
 ] as const;
 
 const COMMANDS = ["request", "batch"] as const;
@@ -88,7 +89,7 @@ describe("api-gateway-client config declaration", () => {
     }
   });
 
-  it("declares exactly the 12 documented parameters, in order", () => {
+  it("declares exactly the 13 documented parameters, in order", () => {
     const names = configParameters.map((parameter) => parameter.getName());
     expect(names).toEqual(EXPECTED_NAMES);
   });
@@ -278,6 +279,20 @@ describe("api-gateway-client config declaration", () => {
 
     it("accepts an explicit true", async () => {
       await expect(resolveWith(paramNamed("yes"), "true")).resolves.toBe(true);
+    });
+  });
+
+  describe("'yesSensitive' — BOOL, default false", () => {
+    it("defaults to false", async () => {
+      await expect(resolveDefault(paramNamed("yesSensitive"))).resolves.toBe(
+        false,
+      );
+    });
+
+    it("accepts an explicit true", async () => {
+      await expect(
+        resolveWith(paramNamed("yesSensitive"), "true"),
+      ).resolves.toBe(true);
     });
   });
 
@@ -531,6 +546,50 @@ describe("configValidators (F1b — cross-parameter validation)", () => {
         baseUrl: "https://api.example.test",
         method: "GET",
         path: "/health",
+      });
+
+      expect(firstFailure(config)).toBeUndefined();
+    });
+  });
+
+  describe("'yesSensitive' — requires 'yes' to be set", () => {
+    it("returns the documented failure reason when 'yesSensitive' is set but 'yes' is unset", () => {
+      const config = buildConfig({
+        command: "request",
+        auth: "none",
+        baseUrl: "https://api.example.test",
+        method: "GET",
+        path: "/health",
+        yesSensitive: true,
+      });
+
+      expect(firstFailure(config)).toBe(
+        "'yesSensitive' requires 'yes' to be set",
+      );
+    });
+
+    it("passes when both 'yesSensitive' and 'yes' are set", () => {
+      const config = buildConfig({
+        command: "request",
+        auth: "none",
+        baseUrl: "https://api.example.test",
+        method: "GET",
+        path: "/health",
+        yes: true,
+        yesSensitive: true,
+      });
+
+      expect(firstFailure(config)).toBeUndefined();
+    });
+
+    it("passes when 'yesSensitive' is unset regardless of 'yes'", () => {
+      const config = buildConfig({
+        command: "request",
+        auth: "none",
+        baseUrl: "https://api.example.test",
+        method: "GET",
+        path: "/health",
+        yes: false,
       });
 
       expect(firstFailure(config)).toBeUndefined();

@@ -137,6 +137,12 @@ describe("rds-data-sql config declaration", () => {
     it("'yes' defaults to false", async () => {
       await expect(resolveDefault(paramNamed("yes"))).resolves.toBe(false);
     });
+
+    it("'yesSensitive' defaults to false", async () => {
+      await expect(resolveDefault(paramNamed("yesSensitive"))).resolves.toBe(
+        false,
+      );
+    });
   });
 });
 
@@ -257,6 +263,34 @@ describe("configValidators (cross-parameter validation, fail-fast, in order)", (
         operation: "migrate",
         "migrations.dir": "migrations/",
       });
+      expect(firstFailure(config)).toBeUndefined();
+    });
+  });
+
+  describe("4. 'yesSensitive' requires 'yes'", () => {
+    it("fails when 'yesSensitive' is true and 'yes' is unset", () => {
+      const config = buildConfig({
+        operation: "query",
+        sql: "SELECT 1",
+        yesSensitive: true,
+      });
+      expect(firstFailure(config)).toBe(
+        "'yesSensitive' requires 'yes' to be set",
+      );
+    });
+
+    it("passes when both 'yesSensitive' and 'yes' are set", () => {
+      const config = buildConfig({
+        operation: "query",
+        sql: "SELECT 1",
+        yes: true,
+        yesSensitive: true,
+      });
+      expect(firstFailure(config)).toBeUndefined();
+    });
+
+    it("passes when 'yesSensitive' is unset regardless of 'yes'", () => {
+      const config = buildConfig({ operation: "query", sql: "SELECT 1" });
       expect(firstFailure(config)).toBeUndefined();
     });
   });

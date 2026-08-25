@@ -6,6 +6,7 @@ import {
   FORCE_DEFAULT,
   MAX_WAIT_TIME_DEFAULT,
   YES_DEFAULT,
+  YES_SENSITIVE_DEFAULT,
 } from "../config.js";
 
 /**
@@ -38,6 +39,7 @@ interface RawSettings {
   readonly include: readonly string[] | undefined;
   readonly maxWaitTime: number;
   readonly yes: boolean;
+  readonly yesSensitive: boolean;
   readonly operation: EksOperation;
 }
 
@@ -47,6 +49,7 @@ interface Deps extends Core.M3LOperationPipelineBaseDeps {
   readonly operations: AWS.M3LEKSOperations;
   /** Cooperative-cancellation signal (ADR-0049), forwarded to the wait steps. */
   readonly signal?: AbortSignal;
+  readonly awsTarget: Core.M3LDestructiveTarget;
 }
 
 /**
@@ -205,6 +208,10 @@ function resolveSettings(accessor: Core.M3LConfigAccessor): RawSettings {
       MAX_WAIT_TIME_DEFAULT,
     ),
     yes: accessor.booleanWithDefault("yes", YES_DEFAULT),
+    yesSensitive: accessor.booleanWithDefault(
+      "yesSensitive",
+      YES_SENSITIVE_DEFAULT,
+    ),
     operation: accessor.requiredString("operation", "eks-ops") as EksOperation,
   };
 }
@@ -531,6 +538,10 @@ const pipeline = new Core.M3LOperationPipeline<
     yes: (settings) => settings.yes,
     abortCode: "ERR_EKS_OPS_ABORTED",
     onDecline: { kind: "throw" },
+    target: (_operation, _settings, _context, deps) => deps.awsTarget,
+    isSensitiveTarget: (target) =>
+      target.profile.toLowerCase().includes("prod"),
+    yesSensitive: (settings) => settings.yesSensitive,
   },
   handlers: {
     "list-clusters": dispatchReadClusters,
