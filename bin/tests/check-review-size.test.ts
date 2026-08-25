@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import {
   SOFT_TARGET_BYTES,
   filterForReview,
@@ -8,6 +8,7 @@ import {
   splitDiffByFile,
   suggestSplitAxis,
 } from "../../bin/check-review-size.mjs";
+import { createReporter } from "../lib/report.mjs";
 
 /** Build a single-file unified diff block's text (no trailing newline). */
 function makeDiffText(path: string, hunkBodyLines: string[]): string {
@@ -135,7 +136,11 @@ describe("filterForReview", () => {
     );
     expect(filteredText).toContain("(diff omitted");
     expect(perFile).toEqual([
-      { path: "docs/notes.md", bytes: Buffer.byteLength(filteredText, "utf8") },
+      {
+        path: "docs/notes.md",
+        bytes: Buffer.byteLength(filteredText, "utf8"),
+        ignored: true,
+      },
     ]);
   });
 
@@ -148,6 +153,7 @@ describe("filterForReview", () => {
     expect(perFile).toHaveLength(1);
     expect(perFile[0]?.path).toBe(path);
     expect(perFile[0]?.bytes).toBeGreaterThan(0);
+    expect(perFile[0]?.ignored).toBe(false);
   });
 
   test("combines ignored and reviewable files, only omitting the ignored one", () => {
@@ -155,9 +161,22 @@ describe("filterForReview", () => {
     const ignoredText = makeDiffText("docs/notes.md", ["+omit me"]);
     const reviewableText = makeDiffText(reviewablePath, ["+keep me"]);
     const blocks = splitDiffByFile([ignoredText, reviewableText].join("\n"));
-    const { filteredText } = filterForReview(blocks);
+    const { filteredText, perFile } = filterForReview(blocks);
     expect(filteredText).not.toContain("omit me");
     expect(filteredText).toContain("keep me");
+    expect(perFile).toHaveLength(2);
+    const ignoredEntry = perFile.find((f) => f.path === "docs/notes.md");
+    const reviewableEntry = perFile.find((f) => f.path === reviewablePath);
+    expect(ignoredEntry).toMatchObject({
+      path: "docs/notes.md",
+      ignored: true,
+    });
+    expect(ignoredEntry?.bytes).toBeGreaterThan(0);
+    expect(reviewableEntry).toMatchObject({
+      path: reviewablePath,
+      ignored: false,
+    });
+    expect(reviewableEntry?.bytes).toBeGreaterThan(0);
   });
 });
 
@@ -248,5 +267,58 @@ describe("oversized-diff detection (the gate's actual purpose)", () => {
     const { filteredText } = filterForReview(blocks);
     const reviewableBytes = Buffer.byteLength(filteredText, "utf8");
     expect(reviewableBytes).toBeLessThan(SOFT_TARGET_BYTES);
+  });
+});
+
+describe("CLI --json perFile breakdown (F24)", () => {
+  // Reproduces the CLI body's sort + reporter.finish() wiring
+  // (bin/check-review-size.mjs's top-level `if (process.argv[1] === ...)`
+  // block, which is not exported) purely in-process, from a fixture diff
+  // string — no subprocess, no filesystem, no real git history, so this
+  // stays a true unit test and cannot break on CI's shallow clone.
+  test("perFile flows through reporter.finish() sorted descending by bytes, with ignored flags intact", () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const ignoredText = makeDiffText("docs/notes.md", ["+doc change"]);
+    const reviewableTextSmall = makeDiffText("bin/small.mjs", ["+a"]);
+    const reviewableTextBig = makeDiffText(
+      "bin/big.mjs",
+      Array.from({ length: 20 }, (_, i) => `+line ${i}`),
+    );
+    const blocks = splitDiffByFile(
+      [ignoredText, reviewableTextSmall, reviewableTextBig].join("\n"),
+    );
+    const { filteredText, perFile } = filterForReview(blocks);
+    const reviewableBytes = Buffer.byteLength(filteredText, "utf8");
+    const sortedPerFile = [...perFile].sort((a, b) => b.bytes - a.bytes);
+
+    const reporter = createReporter(true);
+    reporter.succeed("Reviewable diff: fixture run.");
+    const payload = reporter.finish({
+      reviewableBytes,
+      maxReviewableBytes: 300_000,
+      base: "fixture-base",
+      head: "fixture-head",
+      perFile: sortedPerFile,
+    }) as { perFile: { path: string; bytes: number; ignored: boolean }[] };
+
+    expect(payload.perFile).toHaveLength(3);
+    for (const entry of payload.perFile) {
+      expect(typeof entry.path).toBe("string");
+      expect(entry.bytes).toBeGreaterThan(0);
+      expect(typeof entry.ignored).toBe("boolean");
+    }
+
+    const docsEntry = payload.perFile.find((f) => f.path === "docs/notes.md");
+    expect(docsEntry?.ignored).toBe(true);
+    const reviewableEntry = payload.perFile.find(
+      (f) => f.path === "bin/small.mjs",
+    );
+    expect(reviewableEntry?.ignored).toBe(false);
+
+    // Descending by bytes, matching the human-mode top-5 sort.
+    const bytesInOrder = payload.perFile.map((f) => f.bytes);
+    const sortedDescending = [...bytesInOrder].sort((a, b) => b - a);
+    expect(bytesInOrder).toEqual(sortedDescending);
+    expect(payload.perFile[0]?.path).toBe("bin/big.mjs");
   });
 });

@@ -135,11 +135,12 @@ export function splitDiffByFile(diffText) {
  * Reconstruct the filtered patch the workflow would measure: an ignored
  * file keeps only its `diff --git` header plus a short omission marker
  * (never its hunks); a reviewable file keeps its block unchanged. Returns
- * the filtered text plus each file's post-filter byte size, for the
- * top-contributor ranking.
+ * the filtered text plus each file's post-filter byte size and its
+ * `ignored` flag, for the top-contributor ranking and the `--json`
+ * per-file breakdown.
  *
  * @param {DiffFileBlock[]} blocks
- * @returns {{ filteredText: string, perFile: { path: string, bytes: number }[] }}
+ * @returns {{ filteredText: string, perFile: { path: string, bytes: number, ignored: boolean }[] }}
  */
 export function filterForReview(blocks) {
   const perFile = [];
@@ -150,7 +151,11 @@ export function filterForReview(blocks) {
       ? `${headerLine}\n(diff omitted — not reviewable by this gate)\n`
       : `${block.text}\n`;
     parts.push(text);
-    perFile.push({ path: block.path, bytes: Buffer.byteLength(text, "utf8") });
+    perFile.push({
+      path: block.path,
+      bytes: Buffer.byteLength(text, "utf8"),
+      ignored: block.ignored,
+    });
   }
   return { filteredText: parts.join(""), perFile };
 }
@@ -265,8 +270,8 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const { filteredText, perFile } = filterForReview(blocks);
   const reviewableBytes = Buffer.byteLength(filteredText, "utf8");
 
-  const top = [...perFile]
-    .sort((a, b) => b.bytes - a.bytes)
+  const sortedPerFile = [...perFile].sort((a, b) => b.bytes - a.bytes);
+  const top = sortedPerFile
     .slice(0, 5)
     .map((f) => `- \`${f.path}\` — ${f.bytes} chars`)
     .join("\n");
@@ -277,7 +282,13 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
         `MAX_REVIEWABLE_BYTES ceiling. CI will reject this PR outright with no review ` +
         `attempted. Split it — ${suggestSplitAxis(blocks)}.\n\nLargest contributors:\n${top}`,
     );
-    reporter.finish({ reviewableBytes, maxReviewableBytes, base, head });
+    reporter.finish({
+      reviewableBytes,
+      maxReviewableBytes,
+      base,
+      head,
+      perFile: sortedPerFile,
+    });
     process.exit(1);
   }
 
@@ -293,6 +304,12 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   reporter.succeed(
     `Reviewable diff: ${reviewableBytes} chars (soft target ${SOFT_TARGET_BYTES}, ceiling ${maxReviewableBytes}).`,
   );
-  reporter.finish({ reviewableBytes, maxReviewableBytes, base, head });
+  reporter.finish({
+    reviewableBytes,
+    maxReviewableBytes,
+    base,
+    head,
+    perFile: sortedPerFile,
+  });
   process.exit(0);
 }
