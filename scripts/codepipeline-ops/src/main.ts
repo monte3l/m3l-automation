@@ -46,6 +46,14 @@ await Core.runScript(
       );
     }
 
+    const awsTarget = script.awsTarget;
+    if (awsTarget === undefined) {
+      throw new Core.M3LError(
+        "codepipeline-ops: script.awsTarget was not resolved despite a provisioned script.aws",
+        { code: "ERR_CODEPIPELINE_OPS_CONFIG" },
+      );
+    }
+
     await runCodepipelineOps({
       config,
       paths: script.paths,
@@ -54,6 +62,7 @@ await Core.runScript(
       operations: new AWS.M3LCodePipelineOperations(aws.clients.codePipeline),
       prompt: script.prompt,
       signal: script.signal,
+      awsTarget,
     });
   },
   { dryRun },

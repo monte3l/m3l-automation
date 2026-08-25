@@ -32,6 +32,16 @@ import type * as WatchExecutionModule from "../src/steps/watch-execution.js";
  * destructive gate). This is architecture-agnostic: it observes the gate at
  * the prompt boundary `confirmDestructive` has always called through,
  * regardless of how the pipeline that invokes it is wired.
+ *
+ * Target-graded escalation (ADR-0048/A2b): the pipeline's `destructive` gate
+ * option wires `target: (_operation, _settings, _context, deps) =>
+ * deps.awsTarget` and `isSensitiveTarget: (target) =>
+ * target.profile.toLowerCase().includes("prod")`. `buildDeps`'s `awsTarget`
+ * override defaults to a non-sensitive profile (`"dev-sandbox"`) so every
+ * pre-existing test in this file is unaffected; tests that need the sensitive
+ * path override it explicitly (e.g. `{ profile: "prod" }`). The escalated
+ * path is observed at `prompt.text` — the same directly-injected-`M3LPrompt`
+ * seam `confirmingPrompt` already uses for `prompt.confirm`.
  */
 
 vi.mock("node:fs/promises", async () => {
@@ -118,11 +128,15 @@ function stubReadFileByPath(entries: Record<string, string | Buffer>): void {
   }) as typeof fsp.readFile);
 }
 
+/** A non-sensitive default target — `awsTarget`'s profile never matches "prod". */
+const DEFAULT_TARGET: Core.M3LDestructiveTarget = { profile: "dev-sandbox" };
+
 function buildDeps(
   configValues: Record<string, unknown>,
   overrides?: {
     readonly operations?: ReturnType<typeof createFakeCodePipelineOperations>;
     readonly prompt?: Core.M3LPrompt;
+    readonly awsTarget?: Core.M3LDestructiveTarget;
   },
 ): Parameters<typeof runCodepipelineOps>[0] {
   return {
@@ -132,6 +146,7 @@ function buildDeps(
     correlationId: "run-1",
     operations: overrides?.operations ?? createFakeCodePipelineOperations(),
     prompt: overrides?.prompt ?? new Core.M3LPrompt(),
+    awsTarget: overrides?.awsTarget ?? DEFAULT_TARGET,
   };
 }
 
@@ -146,6 +161,21 @@ function confirmingPrompt(confirmed: boolean) {
   const prompt = new Core.M3LPrompt();
   const confirm = vi.spyOn(prompt, "confirm").mockResolvedValue(confirmed);
   return { prompt, confirm };
+}
+
+/**
+ * Builds a `Core.M3LPrompt` whose `text` method is stubbed to resolve
+ * `response` — the seam the escalated typed-echo path (`confirmDestructive`'s
+ * states 4/5, for a sensitive target) calls through instead of `confirm`.
+ * `confirm` is also spied (defaulted to resolve `true` so an unexpected call
+ * doesn't hang the test on real stdin) so every test using this helper can
+ * assert it was never called.
+ */
+function textRespondingPrompt(response: string) {
+  const prompt = new Core.M3LPrompt();
+  const confirm = vi.spyOn(prompt, "confirm").mockResolvedValue(true);
+  const text = vi.spyOn(prompt, "text").mockResolvedValue(response);
+  return { prompt, confirm, text };
 }
 
 afterEach(() => {
@@ -390,6 +420,89 @@ describe("runCodepipelineOps — destructive-gate dispatch (create/update/delete
     await runCodepipelineOps(deps);
 
     expect(confirm).toHaveBeenCalledTimes(1);
+  });
+
+  test("uses the plain confirm (not escalated) when the target is not sensitive", async () => {
+    writePipelineMock.mockResolvedValue(undefined);
+    const { prompt, confirm } = confirmingPrompt(true);
+    const text = vi.spyOn(prompt, "text");
+    const deps = buildDeps(
+      { operation: "delete-pipeline", pipeline: "my-pipeline" },
+      { prompt, awsTarget: { profile: "dev-sandbox" } },
+    );
+
+    await runCodepipelineOps(deps);
+
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(text).not.toHaveBeenCalled();
+  });
+
+  test("escalates to the typed-echo prompt when the target's profile contains 'prod'", async () => {
+    writePipelineMock.mockResolvedValue(undefined);
+    const { prompt, confirm, text } = textRespondingPrompt("prod");
+    const deps = buildDeps(
+      { operation: "delete-pipeline", pipeline: "my-pipeline" },
+      { prompt, awsTarget: { profile: "prod" } },
+    );
+
+    await runCodepipelineOps(deps);
+
+    expect(text).toHaveBeenCalledTimes(1);
+    expect(confirm).not.toHaveBeenCalled();
+    expect(writePipelineMock).toHaveBeenCalled();
+  });
+
+  test("throws ERR_CODEPIPELINE_OPS_ABORTED when the typed-echo input doesn't match the profile", async () => {
+    const { prompt, text } = textRespondingPrompt("not-the-profile");
+    const deps = buildDeps(
+      { operation: "delete-pipeline", pipeline: "my-pipeline" },
+      { prompt, awsTarget: { profile: "prod" } },
+    );
+
+    await expect(runCodepipelineOps(deps)).rejects.toMatchObject({
+      code: "ERR_CODEPIPELINE_OPS_ABORTED",
+    });
+    expect(text).toHaveBeenCalledTimes(1);
+    expect(writePipelineMock).not.toHaveBeenCalled();
+  });
+
+  test("bypasses confirmation with a warning when yes and yesSensitive are both true for a sensitive target", async () => {
+    writePipelineMock.mockResolvedValue(undefined);
+    const warningSpy = vi.spyOn(Core.M3LLogger.prototype, "warning");
+    const { prompt, confirm } = confirmingPrompt(true);
+    const promptTextSpy = vi.spyOn(prompt, "text");
+    const deps = buildDeps(
+      {
+        operation: "delete-pipeline",
+        pipeline: "my-pipeline",
+        yes: true,
+        yesSensitive: true,
+      },
+      { prompt, awsTarget: { profile: "prod" } },
+    );
+
+    await runCodepipelineOps(deps);
+
+    expect(confirm).not.toHaveBeenCalled();
+    expect(promptTextSpy).not.toHaveBeenCalled();
+    expect(warningSpy).toHaveBeenCalledTimes(1);
+    expect(warningSpy).toHaveBeenCalledWith(expect.stringContaining("prod"));
+    expect(writePipelineMock).toHaveBeenCalled();
+  });
+
+  test("still escalates when yes:true but yesSensitive is false/absent, for a sensitive target", async () => {
+    writePipelineMock.mockResolvedValue(undefined);
+    const { prompt, confirm, text } = textRespondingPrompt("prod");
+    const deps = buildDeps(
+      { operation: "delete-pipeline", pipeline: "my-pipeline", yes: true },
+      { prompt, awsTarget: { profile: "prod" } },
+    );
+
+    await runCodepipelineOps(deps);
+
+    expect(text).toHaveBeenCalledTimes(1);
+    expect(confirm).not.toHaveBeenCalled();
+    expect(writePipelineMock).toHaveBeenCalled();
   });
 });
 

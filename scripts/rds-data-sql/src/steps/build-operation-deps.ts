@@ -62,6 +62,11 @@ export interface BuildOperationDepsDeps {
    * needs to report them to the run's recovery ledger.
    */
   readonly reportRecovery?: (entry: Core.M3LRunRecoveryEntry) => void;
+  /**
+   * This run's resolved AWS identity, forwarded to `execute`'s
+   * `Core.confirmDestructive` gate as `target` (ADR-0048).
+   */
+  readonly awsTarget: Core.M3LDestructiveTarget;
 }
 
 /**
@@ -479,7 +484,7 @@ function buildLoadDeps(deps: BuildOperationDepsDeps): RunLoadDeps {
 async function buildExecuteDeps(
   deps: BuildOperationDepsDeps,
 ): Promise<RunExecuteDeps> {
-  const { settings, rdsData, prompt, paths, logger } = deps;
+  const { settings, rdsData, prompt, paths, logger, awsTarget } = deps;
   const sql = await resolveSql(paths, settings);
   const parameters = await resolveParameters(paths, settings.parametersFile);
 
@@ -494,6 +499,8 @@ async function buildExecuteDeps(
     yes: settings.yes,
     prompt,
     logger,
+    awsTarget,
+    yesSensitive: settings.yesSensitive,
   };
 }
 
@@ -582,6 +589,7 @@ async function buildMigrateDeps(
  *   rdsData: AWS.M3LRDSDataOperations,
  *   prompt: Core.M3LPrompt,
  *   logger: Core.M3LLogger,
+ *   awsTarget: Core.M3LDestructiveTarget,
  * ): Promise<void> {
  *   const settings = resolveRdsDataSqlSettings(config);
  *   const paths = new Core.M3LPaths();
@@ -591,6 +599,7 @@ async function buildMigrateDeps(
  *     prompt,
  *     paths,
  *     logger,
+ *     awsTarget,
  *   });
  *   console.log(Object.keys(operationDeps));
  * }

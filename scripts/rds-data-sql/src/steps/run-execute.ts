@@ -50,6 +50,15 @@ export interface RunExecuteDeps {
   readonly prompt: Core.M3LPrompt;
   /** The logger used by {@link Core.confirmDestructive} to record a bypass warning. */
   readonly logger: Core.M3LLogger;
+  /**
+   * This run's resolved AWS identity (`aws.profile`/`aws.region`), forwarded
+   * to {@link Core.confirmDestructive} as `target` for ADR-0048's
+   * target-graded confirmation. Always defined in the normal script
+   * lifecycle: `aws.profile` is declared `required: true` + `nonEmpty`.
+   */
+  readonly awsTarget: Core.M3LDestructiveTarget;
+  /** Bypasses the escalated typed-echo confirmation for a sensitive target when `true` (still requires `yes`). */
+  readonly yesSensitive: boolean;
 }
 
 /** The outcome of {@link runExecute}. */
@@ -133,6 +142,7 @@ function isPlainSelect(sql: string): boolean {
  *   rdsData: Pick<AWS.M3LRDSDataOperations, "executeStatement">,
  *   prompt: Core.M3LPrompt,
  *   logger: Core.M3LLogger,
+ *   awsTarget: Core.M3LDestructiveTarget,
  * ): Promise<void> {
  *   const { rowsAffected } = await runExecute({
  *     rdsData,
@@ -145,6 +155,8 @@ function isPlainSelect(sql: string): boolean {
  *     yes: false,
  *     prompt,
  *     logger,
+ *     awsTarget,
+ *     yesSensitive: false,
  *   });
  *   logger.step(`rows affected: ${String(rowsAffected)}`);
  * }
@@ -164,7 +176,11 @@ export async function runExecute(
       // `Core.runScript` can persist into an on-disk run report.
       description: `run ${firstKeyword(deps.sql)} statement (${String(deps.sql.length)} chars)`,
       yes: deps.yes,
+      yesSensitive: deps.yesSensitive,
       code: ABORTED_CODE,
+      target: deps.awsTarget,
+      isSensitiveTarget: (target) =>
+        target.profile.toLowerCase().includes("prod"),
     });
   }
 

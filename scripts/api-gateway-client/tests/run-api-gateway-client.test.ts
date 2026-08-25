@@ -42,6 +42,7 @@ describe("runApiGatewayClient dispatch", () => {
       const logger = new Core.M3LLogger([]);
       const httpClient = createFakeHttpClient();
       const prompt = new Core.M3LPrompt();
+      const awsTarget = { profile: "dev-sandbox" };
 
       await runApiGatewayClient({
         config,
@@ -50,6 +51,7 @@ describe("runApiGatewayClient dispatch", () => {
         correlationId: "run-1",
         httpClient,
         signer: undefined,
+        awsTarget,
         prompt,
       });
 
@@ -62,6 +64,7 @@ describe("runApiGatewayClient dispatch", () => {
           correlationId: "run-1",
           httpClient,
           signer: undefined,
+          awsTarget,
           prompt,
         }),
       );
@@ -88,6 +91,7 @@ describe("runApiGatewayClient dispatch", () => {
         correlationId: "run-2",
         httpClient,
         signer: undefined,
+        awsTarget: undefined,
         prompt,
       });
     } catch (error) {

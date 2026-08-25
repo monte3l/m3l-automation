@@ -36,6 +36,36 @@ function bypassPrompt(): Core.M3LPrompt {
   return prompt;
 }
 
+/**
+ * A non-sensitive default `awsTarget` fixture — the per-script
+ * `(target) => target.profile.toLowerCase().includes("prod")` predicate
+ * `deleteMessages` wires into `Core.confirmDestructive` never classifies this
+ * profile as sensitive, so every pre-existing (ungraded) test above keeps its
+ * current plain yes/no `confirm` behavior once the src change lands.
+ */
+const nonSensitiveTarget: Core.M3LDestructiveTarget = {
+  profile: "dev-sandbox",
+};
+
+/**
+ * Builds a `Core.M3LPrompt` with both `confirm` and `text` spied — the two
+ * seams `Core.confirmDestructive` calls through for the ungraded and the
+ * escalated typed-echo paths respectively.
+ */
+function targetGatePrompt(overrides?: {
+  readonly confirmed?: boolean;
+  readonly textResponse?: string;
+}) {
+  const prompt = new Core.M3LPrompt();
+  const confirm = vi
+    .spyOn(prompt, "confirm")
+    .mockResolvedValue(overrides?.confirmed ?? true);
+  const text = vi
+    .spyOn(prompt, "text")
+    .mockResolvedValue(overrides?.textResponse ?? "");
+  return { prompt, confirm, text };
+}
+
 afterEach(() => {
   vi.restoreAllMocks();
 });
@@ -67,6 +97,7 @@ describe("deleteMessages", () => {
       sqsOperations,
       prompt,
       reportRecovery: vi.fn(),
+      awsTarget: nonSensitiveTarget,
     });
 
     // eslint-disable-next-line @typescript-eslint/unbound-method -- structural fake cast to AWS.M3LSQSOperations; property is a vi.fn(), never called unbound
@@ -109,6 +140,7 @@ describe("deleteMessages", () => {
       sqsOperations,
       prompt,
       reportRecovery: vi.fn(),
+      awsTarget: nonSensitiveTarget,
     });
 
     const [, entries] = (
@@ -142,6 +174,7 @@ describe("deleteMessages", () => {
       sqsOperations,
       prompt,
       reportRecovery: vi.fn(),
+      awsTarget: nonSensitiveTarget,
     });
 
     // eslint-disable-next-line @typescript-eslint/unbound-method -- structural fake cast to AWS.M3LSQSOperations; property is a vi.fn(), never called unbound
@@ -178,6 +211,7 @@ describe("deleteMessages", () => {
         sqsOperations,
         prompt,
         reportRecovery: vi.fn(),
+        awsTarget: nonSensitiveTarget,
       });
     } catch (error) {
       thrown = error;
@@ -227,6 +261,7 @@ describe("deleteMessages", () => {
       sqsOperations,
       prompt,
       reportRecovery,
+      awsTarget: nonSensitiveTarget,
     });
 
     const failedStream = streams.find((stream) =>
@@ -279,6 +314,7 @@ describe("deleteMessages", () => {
         sqsOperations,
         prompt,
         reportRecovery: vi.fn(),
+        awsTarget: nonSensitiveTarget,
       });
     } catch (error) {
       thrown = error;
@@ -315,6 +351,7 @@ describe("deleteMessages", () => {
           sqsOperations,
           prompt,
           reportRecovery: vi.fn(),
+          awsTarget: nonSensitiveTarget,
         });
       } catch (error) {
         thrown = error;
@@ -353,10 +390,195 @@ describe("deleteMessages", () => {
         sqsOperations,
         prompt,
         reportRecovery: vi.fn(),
+        awsTarget: nonSensitiveTarget,
       }),
     ).rejects.toMatchObject({ code: "ERR_SQS_ETL_CONFIG" });
     expect(confirm).not.toHaveBeenCalled();
     // eslint-disable-next-line @typescript-eslint/unbound-method -- structural fake cast to AWS.M3LSQSOperations; property is a vi.fn(), never called unbound
     expect(sqsOperations.deleteBatch).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Contract: ADR-0048's target-graded destructive-confirmation gate (Issue
+   * #483, A2b), wired into `deleteMessages`'s existing `Core.confirmDestructive`
+   * call via a per-script `awsTarget: Core.M3LDestructiveTarget` dep and an
+   * inline `isSensitiveTarget` predicate,
+   * `(target) => target.profile.toLowerCase().includes("prod")`.
+   */
+  describe("target-graded escalation", () => {
+    test("escalates to the typed-echo prompt when the target's profile contains 'prod'", async () => {
+      stubInput(JSON.stringify({ receiptHandle: "rh1" }));
+      stubOutputStreams();
+      const sqsOperations = createFakeSqsOperations();
+      const config = buildConfig({
+        queueUrl: "https://sqs.example/q",
+        input: "in.jsonl",
+        yes: false,
+      });
+      const paths = new Core.M3LPaths();
+      const logger = new Core.M3LLogger([]);
+      const { prompt, confirm, text } = targetGatePrompt({
+        textResponse: "prod",
+      });
+
+      await deleteMessages({
+        config,
+        paths,
+        logger,
+        correlationId: "run-escalate",
+        sqsOperations,
+        prompt,
+        reportRecovery: vi.fn(),
+        awsTarget: { profile: "prod" },
+      });
+
+      expect(text).toHaveBeenCalledTimes(1);
+      expect(confirm).not.toHaveBeenCalled();
+      // eslint-disable-next-line @typescript-eslint/unbound-method -- structural fake cast to AWS.M3LSQSOperations; property is a vi.fn(), never called unbound
+      expect(sqsOperations.deleteBatch).toHaveBeenCalledTimes(1);
+    });
+
+    test("throws ERR_SQS_ETL_ABORTED when the typed-echo input doesn't match the profile", async () => {
+      stubInput(JSON.stringify({ receiptHandle: "rh1" }));
+      stubOutputStreams();
+      const sqsOperations = createFakeSqsOperations();
+      const config = buildConfig({
+        queueUrl: "https://sqs.example/q",
+        input: "in.jsonl",
+        yes: false,
+      });
+      const paths = new Core.M3LPaths();
+      const logger = new Core.M3LLogger([]);
+      const { prompt } = targetGatePrompt({ textResponse: "not-prod" });
+
+      let thrown: unknown;
+      try {
+        await deleteMessages({
+          config,
+          paths,
+          logger,
+          correlationId: "run-escalate-mismatch",
+          sqsOperations,
+          prompt,
+          reportRecovery: vi.fn(),
+          awsTarget: { profile: "prod" },
+        });
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toBeInstanceOf(Core.M3LError);
+      expect((thrown as Core.M3LError).code).toBe("ERR_SQS_ETL_ABORTED");
+      // eslint-disable-next-line @typescript-eslint/unbound-method -- structural fake cast to AWS.M3LSQSOperations; property is a vi.fn(), never called unbound
+      expect(sqsOperations.deleteBatch).not.toHaveBeenCalled();
+    });
+
+    test("bypasses confirmation with a warning when yes and yesSensitive are both true for a sensitive target", async () => {
+      stubInput(JSON.stringify({ receiptHandle: "rh1" }));
+      stubOutputStreams();
+      const sqsOperations = createFakeSqsOperations();
+      const config = buildConfig({
+        queueUrl: "https://sqs.example/q",
+        input: "in.jsonl",
+        yes: true,
+        yesSensitive: true,
+      });
+      const paths = new Core.M3LPaths();
+      const logger = new Core.M3LLogger([]);
+      const warningSpy = vi.spyOn(logger, "warning");
+      const { prompt, confirm, text } = targetGatePrompt({
+        textResponse: "prod",
+      });
+
+      await deleteMessages({
+        config,
+        paths,
+        logger,
+        correlationId: "run-bypass-sensitive",
+        sqsOperations,
+        prompt,
+        reportRecovery: vi.fn(),
+        awsTarget: { profile: "prod" },
+      });
+
+      expect(confirm).not.toHaveBeenCalled();
+      expect(text).not.toHaveBeenCalled();
+      expect(warningSpy).toHaveBeenCalledTimes(1);
+      expect(warningSpy).toHaveBeenCalledWith(expect.stringContaining("prod"));
+      // eslint-disable-next-line @typescript-eslint/unbound-method -- structural fake cast to AWS.M3LSQSOperations; property is a vi.fn(), never called unbound
+      expect(sqsOperations.deleteBatch).toHaveBeenCalledTimes(1);
+    });
+
+    test.each([
+      ["absent", undefined],
+      ["false", false],
+    ])(
+      "still escalates when yes:true but yesSensitive is %s, for a sensitive target",
+      async (_label, yesSensitiveValue) => {
+        stubInput(JSON.stringify({ receiptHandle: "rh1" }));
+        stubOutputStreams();
+        const sqsOperations = createFakeSqsOperations();
+        const configValues: Record<string, unknown> = {
+          queueUrl: "https://sqs.example/q",
+          input: "in.jsonl",
+          yes: true,
+        };
+        if (yesSensitiveValue !== undefined) {
+          configValues["yesSensitive"] = yesSensitiveValue;
+        }
+        const config = buildConfig(configValues);
+        const paths = new Core.M3LPaths();
+        const logger = new Core.M3LLogger([]);
+        const { prompt, confirm, text } = targetGatePrompt({
+          textResponse: "prod",
+        });
+
+        await deleteMessages({
+          config,
+          paths,
+          logger,
+          correlationId: "run-still-escalates",
+          sqsOperations,
+          prompt,
+          reportRecovery: vi.fn(),
+          awsTarget: { profile: "prod" },
+        });
+
+        expect(text).toHaveBeenCalledTimes(1);
+        expect(confirm).not.toHaveBeenCalled();
+        // eslint-disable-next-line @typescript-eslint/unbound-method -- structural fake cast to AWS.M3LSQSOperations; property is a vi.fn(), never called unbound
+        expect(sqsOperations.deleteBatch).toHaveBeenCalledTimes(1);
+      },
+    );
+
+    test("uses the plain confirm (not escalated) when the target is not sensitive", async () => {
+      stubInput(JSON.stringify({ receiptHandle: "rh1" }));
+      stubOutputStreams();
+      const sqsOperations = createFakeSqsOperations();
+      const config = buildConfig({
+        queueUrl: "https://sqs.example/q",
+        input: "in.jsonl",
+        yes: false,
+      });
+      const paths = new Core.M3LPaths();
+      const logger = new Core.M3LLogger([]);
+      const { prompt, confirm, text } = targetGatePrompt({ confirmed: true });
+
+      await deleteMessages({
+        config,
+        paths,
+        logger,
+        correlationId: "run-not-sensitive",
+        sqsOperations,
+        prompt,
+        reportRecovery: vi.fn(),
+        awsTarget: { profile: "dev-sandbox" },
+      });
+
+      expect(confirm).toHaveBeenCalledTimes(1);
+      expect(text).not.toHaveBeenCalled();
+      // eslint-disable-next-line @typescript-eslint/unbound-method -- structural fake cast to AWS.M3LSQSOperations; property is a vi.fn(), never called unbound
+      expect(sqsOperations.deleteBatch).toHaveBeenCalledTimes(1);
+    });
   });
 });

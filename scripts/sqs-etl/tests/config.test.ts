@@ -10,11 +10,12 @@ import {
 
 /**
  * Contract: docs/reference/scripts/sqs-etl.md "Configuration schema" table +
- * `src/config.ts`. 12 declared parameters: aws.profile, command, queueUrl,
+ * `src/config.ts`. 13 declared parameters: aws.profile, command, queueUrl,
  * dlqUrl, input, output, batchSize, visibilityTimeoutSeconds,
- * deleteAfterDump, yes, fields, filters. This file asserts the DECLARED
- * shape only — names, uniqueness, instance types, and each parameter's own
- * validator/default — never the library's own provider-resolution order.
+ * deleteAfterDump, yes, yesSensitive, fields, filters. This file asserts the
+ * DECLARED shape only — names, uniqueness, instance types, and each
+ * parameter's own validator/default — never the library's own
+ * provider-resolution order.
  */
 
 const EXPECTED_NAMES = [
@@ -28,6 +29,7 @@ const EXPECTED_NAMES = [
   "visibilityTimeoutSeconds",
   "deleteAfterDump",
   "yes",
+  "yesSensitive",
   "fields",
   "filters",
 ] as const;
@@ -76,7 +78,7 @@ describe("sqs-etl config declaration", () => {
     }
   });
 
-  it("declares exactly the 12 documented parameters, in order", () => {
+  it("declares exactly the 13 documented parameters, in order", () => {
     const names = configParameters.map((parameter) => parameter.getName());
     expect(names).toEqual(EXPECTED_NAMES);
   });
@@ -221,7 +223,7 @@ describe("sqs-etl config declaration", () => {
     });
   });
 
-  describe(`'${Core.AWS_PROFILE_PARAM_NAME}' — required`, () => {
+  describe(`'${Core.AWS_PROFILE_PARAM_NAME}' — required, nonEmpty`, () => {
     it("rejects a MISSING value with M3LConfigMissingError", async () => {
       let thrown: unknown;
       try {
@@ -232,10 +234,12 @@ describe("sqs-etl config declaration", () => {
       expect(thrown).toBeInstanceOf(Core.M3LConfigMissingError);
     });
 
-    it("accepts a non-empty profile name", async () => {
-      await expect(
-        resolveWith(paramNamed(Core.AWS_PROFILE_PARAM_NAME), "default"),
-      ).resolves.toBe("default");
+    it("rejects an empty string and accepts a non-empty one", async () => {
+      const parameter = paramNamed(Core.AWS_PROFILE_PARAM_NAME);
+      await expect(resolveWith(parameter, "")).rejects.toBeInstanceOf(
+        Core.M3LConfigValidationError,
+      );
+      await expect(resolveWith(parameter, "default")).resolves.toBe("default");
     });
   });
 });
@@ -452,6 +456,29 @@ describe("configValidators (F1b — cross-parameter validation)", () => {
         queueUrl: "https://sqs.example/queue",
         input: "records.jsonl",
       });
+
+      expect(firstFailure(config)).toBeUndefined();
+    });
+  });
+
+  describe("'yesSensitive' — requires 'yes' to be set", () => {
+    it("returns a failure reason describing 'yesSensitive' requires 'yes' when 'yesSensitive' is set without 'yes'", () => {
+      const config = buildConfig({ yesSensitive: true });
+
+      const result = firstFailure(config);
+      expect(typeof result).toBe("string");
+      expect(result).toContain("'yesSensitive'");
+      expect(result).toContain("'yes'");
+    });
+
+    it("passes every validator when both 'yes' and 'yesSensitive' are set", () => {
+      const config = buildConfig({ yes: true, yesSensitive: true });
+
+      expect(firstFailure(config)).toBeUndefined();
+    });
+
+    it("passes every validator when 'yesSensitive' is unset regardless of 'yes'", () => {
+      const config = buildConfig({ yes: true });
 
       expect(firstFailure(config)).toBeUndefined();
     });

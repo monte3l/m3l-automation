@@ -74,6 +74,7 @@ describe("batchRequest", () => {
       correlationId: "run-1",
       httpClient,
       signer: undefined,
+      awsTarget: undefined,
       prompt,
     });
 
@@ -103,10 +104,242 @@ describe("batchRequest", () => {
       correlationId: "run-2",
       httpClient,
       signer: undefined,
+      awsTarget: undefined,
       prompt,
     });
 
     expect(confirm).not.toHaveBeenCalled();
+  });
+
+  describe("target-graded destructive confirmation", () => {
+    /**
+     * Sensitivity predicate under test, mirroring the exact inline one-liner
+     * `batch-request.ts` is expected to add:
+     * `(target) => target.profile.toLowerCase().includes("prod")`.
+     * These tests drive that predicate indirectly through `awsTarget`'s
+     * `profile` value plus `Core.confirmDestructive`'s real semantics —
+     * never through a mocked `Core.confirmDestructive`.
+     */
+
+    test("escalates to the typed-echo prompt when the target's profile contains 'prod'", async () => {
+      stubInput(JSON.stringify({ path: "/items/1" }));
+      stubOutputStreams();
+      const request = vi.fn().mockResolvedValue({ ok: true });
+      const httpClient = createFakeHttpClient({ request });
+      const config = buildConfig({
+        method: "POST",
+        auth: "iam",
+        baseUrl: "https://api.example.test",
+        input: "in.jsonl",
+        yes: false,
+      });
+      const paths = new Core.M3LPaths();
+      const logger = new Core.M3LLogger([]);
+      const prompt = new Core.M3LPrompt();
+      const confirm = vi.spyOn(prompt, "confirm");
+      const text = vi.spyOn(prompt, "text").mockResolvedValue("prod");
+      const signer = createFakeRequestSigner();
+
+      await batchRequest({
+        config,
+        paths,
+        logger,
+        correlationId: "run-target-1",
+        httpClient,
+        signer,
+        awsTarget: { profile: "prod" },
+        prompt,
+      });
+
+      expect(text).toHaveBeenCalledTimes(1);
+      expect(confirm).not.toHaveBeenCalled();
+      expect(request).toHaveBeenCalledTimes(1);
+    });
+
+    test("throws ERR_API_GATEWAY_CLIENT_ABORTED when the typed-echo input doesn't match the profile", async () => {
+      stubInput(JSON.stringify({ path: "/items/1" }));
+      stubOutputStreams();
+      const httpClient = createFakeHttpClient();
+      const config = buildConfig({
+        method: "POST",
+        auth: "iam",
+        baseUrl: "https://api.example.test",
+        input: "in.jsonl",
+        yes: false,
+      });
+      const paths = new Core.M3LPaths();
+      const logger = new Core.M3LLogger([]);
+      const prompt = new Core.M3LPrompt();
+      vi.spyOn(prompt, "text").mockResolvedValue("not-the-profile");
+      const signer = createFakeRequestSigner();
+
+      let thrown: unknown;
+      try {
+        await batchRequest({
+          config,
+          paths,
+          logger,
+          correlationId: "run-target-2",
+          httpClient,
+          signer,
+          awsTarget: { profile: "prod" },
+          prompt,
+        });
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toBeInstanceOf(Core.M3LError);
+      expect((thrown as Core.M3LError).code).toBe(
+        "ERR_API_GATEWAY_CLIENT_ABORTED",
+      );
+      // eslint-disable-next-line @typescript-eslint/unbound-method -- structural fake cast to Core.M3LHttpClient; property is a vi.fn(), never called unbound
+      expect(httpClient.request).not.toHaveBeenCalled();
+    });
+
+    test("bypasses with a warning when yes and yesSensitive are both true for a sensitive target", async () => {
+      stubInput(JSON.stringify({ path: "/items/1" }));
+      stubOutputStreams();
+      const request = vi.fn().mockResolvedValue({ ok: true });
+      const httpClient = createFakeHttpClient({ request });
+      const config = buildConfig({
+        method: "POST",
+        auth: "iam",
+        baseUrl: "https://api.example.test",
+        input: "in.jsonl",
+        yes: true,
+        yesSensitive: true,
+      });
+      const paths = new Core.M3LPaths();
+      const logger = new Core.M3LLogger([]);
+      const prompt = new Core.M3LPrompt();
+      const confirm = vi.spyOn(prompt, "confirm");
+      const text = vi.spyOn(prompt, "text");
+      const warning = vi.spyOn(logger, "warning");
+      const signer = createFakeRequestSigner();
+
+      await batchRequest({
+        config,
+        paths,
+        logger,
+        correlationId: "run-target-3",
+        httpClient,
+        signer,
+        awsTarget: { profile: "prod" },
+        prompt,
+      });
+
+      expect(confirm).not.toHaveBeenCalled();
+      expect(text).not.toHaveBeenCalled();
+      expect(warning).toHaveBeenCalledTimes(1);
+      const [message] = warning.mock.calls[0] ?? [];
+      expect(typeof message === "string" && message.includes("prod")).toBe(
+        true,
+      );
+      expect(request).toHaveBeenCalledTimes(1);
+    });
+
+    test("still escalates when yes:true but yesSensitive is false/absent, for a sensitive target", async () => {
+      stubInput(JSON.stringify({ path: "/items/1" }));
+      stubOutputStreams();
+      const request = vi.fn().mockResolvedValue({ ok: true });
+      const httpClient = createFakeHttpClient({ request });
+      const config = buildConfig({
+        method: "POST",
+        auth: "iam",
+        baseUrl: "https://api.example.test",
+        input: "in.jsonl",
+        yes: true,
+      });
+      const paths = new Core.M3LPaths();
+      const logger = new Core.M3LLogger([]);
+      const prompt = new Core.M3LPrompt();
+      const text = vi.spyOn(prompt, "text").mockResolvedValue("prod");
+      const signer = createFakeRequestSigner();
+
+      await batchRequest({
+        config,
+        paths,
+        logger,
+        correlationId: "run-target-4",
+        httpClient,
+        signer,
+        awsTarget: { profile: "prod" },
+        prompt,
+      });
+
+      expect(text).toHaveBeenCalledTimes(1);
+      expect(request).toHaveBeenCalledTimes(1);
+    });
+
+    test("uses the plain confirm (not escalated) when the target is not sensitive", async () => {
+      stubInput(JSON.stringify({ path: "/items/1" }));
+      stubOutputStreams();
+      const request = vi.fn().mockResolvedValue({ ok: true });
+      const httpClient = createFakeHttpClient({ request });
+      const config = buildConfig({
+        method: "POST",
+        auth: "iam",
+        baseUrl: "https://api.example.test",
+        input: "in.jsonl",
+        yes: false,
+      });
+      const paths = new Core.M3LPaths();
+      const logger = new Core.M3LLogger([]);
+      const prompt = new Core.M3LPrompt();
+      const confirm = vi.spyOn(prompt, "confirm").mockResolvedValue(true);
+      const text = vi.spyOn(prompt, "text");
+      const signer = createFakeRequestSigner();
+
+      await batchRequest({
+        config,
+        paths,
+        logger,
+        correlationId: "run-target-5",
+        httpClient,
+        signer,
+        awsTarget: { profile: "dev-sandbox" },
+        prompt,
+      });
+
+      expect(confirm).toHaveBeenCalledTimes(1);
+      expect(text).not.toHaveBeenCalled();
+      expect(request).toHaveBeenCalledTimes(1);
+    });
+
+    test("does not pass a target at all when awsTarget is undefined (auth: none/api-key)", async () => {
+      stubInput(JSON.stringify({ path: "/items/1" }));
+      stubOutputStreams();
+      const request = vi.fn().mockResolvedValue({ ok: true });
+      const httpClient = createFakeHttpClient({ request });
+      const config = buildConfig({
+        method: "POST",
+        auth: "none",
+        baseUrl: "https://api.example.test",
+        input: "in.jsonl",
+        yes: false,
+      });
+      const paths = new Core.M3LPaths();
+      const logger = new Core.M3LLogger([]);
+      const prompt = new Core.M3LPrompt();
+      const confirm = vi.spyOn(prompt, "confirm").mockResolvedValue(true);
+      const text = vi.spyOn(prompt, "text");
+
+      await batchRequest({
+        config,
+        paths,
+        logger,
+        correlationId: "run-target-6",
+        httpClient,
+        signer: undefined,
+        awsTarget: undefined,
+        prompt,
+      });
+
+      expect(confirm).toHaveBeenCalledTimes(1);
+      expect(text).not.toHaveBeenCalled();
+      expect(request).toHaveBeenCalledTimes(1);
+    });
   });
 
   test("throws ERR_API_GATEWAY_CLIENT_CONFIG when 'input' is missing, never gating or calling httpClient.request", async () => {
@@ -132,6 +365,7 @@ describe("batchRequest", () => {
         correlationId: "run-3",
         httpClient,
         signer: undefined,
+        awsTarget: undefined,
         prompt,
       });
     } catch (error) {
@@ -169,6 +403,7 @@ describe("batchRequest", () => {
         correlationId: "run-4",
         httpClient,
         signer: undefined,
+        awsTarget: undefined,
         prompt,
       }),
     ).rejects.toMatchObject({ code: "ERR_API_GATEWAY_CLIENT_CONFIG" });
@@ -205,6 +440,7 @@ describe("batchRequest", () => {
       correlationId: "run-4",
       httpClient,
       signer: undefined,
+      awsTarget: undefined,
       prompt,
     });
 
@@ -236,6 +472,7 @@ describe("batchRequest", () => {
         correlationId: "run-5",
         httpClient,
         signer: undefined,
+        awsTarget: undefined,
         prompt,
       });
     } catch (error) {
@@ -278,6 +515,7 @@ describe("batchRequest", () => {
       correlationId: "run-6",
       httpClient,
       signer: undefined,
+      awsTarget: undefined,
       prompt,
     });
 
@@ -325,6 +563,7 @@ describe("batchRequest", () => {
       correlationId: "run-7",
       httpClient,
       signer: undefined,
+      awsTarget: undefined,
       prompt,
     });
 
@@ -369,6 +608,7 @@ describe("batchRequest", () => {
         correlationId: "run-8",
         httpClient,
         signer: undefined,
+        awsTarget: undefined,
         prompt,
       });
       // Arm every writer opened so far to fail on close — regardless of
@@ -424,6 +664,7 @@ describe("batchRequest", () => {
         correlationId: "run-9",
         httpClient,
         signer: undefined,
+        awsTarget: undefined,
         prompt,
       });
 
@@ -478,6 +719,7 @@ describe("batchRequest", () => {
       correlationId: "run-10",
       httpClient,
       signer: undefined,
+      awsTarget: undefined,
       prompt,
     });
 
@@ -551,6 +793,7 @@ describe("batchRequest", () => {
       correlationId: "run-11",
       httpClient,
       signer: undefined,
+      awsTarget: undefined,
       prompt,
     });
 
@@ -603,6 +846,7 @@ describe("batchRequest", () => {
       correlationId: "run-12",
       httpClient,
       signer: undefined,
+      awsTarget: undefined,
       prompt,
     });
 
@@ -654,6 +898,7 @@ describe("batchRequest", () => {
       correlationId: "run-13",
       httpClient,
       signer,
+      awsTarget: undefined,
       prompt,
     });
 
@@ -702,6 +947,7 @@ describe("batchRequest", () => {
       correlationId: "run-14",
       httpClient,
       signer: undefined,
+      awsTarget: undefined,
       prompt,
     });
 
@@ -733,6 +979,7 @@ describe("batchRequest", () => {
       correlationId: "run-15",
       httpClient,
       signer: undefined,
+      awsTarget: undefined,
       prompt,
     });
 

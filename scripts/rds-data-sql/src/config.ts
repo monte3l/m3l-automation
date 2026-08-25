@@ -22,7 +22,7 @@ const PAGE_SIZE_MAX = 10_000;
  * coercion, validation, and redaction all flow through the library.
  *
  * Mirrors `docs/reference/scripts/rds-data-sql.md`'s "Configuration schema"
- * table exactly (21 parameters, in table order). `aws.profile`, `operation`,
+ * table exactly (22 parameters, in table order). `aws.profile`, `operation`,
  * `cluster.arn`, `secret.arn`, and `database` are `required: true`, so
  * presence is enforced by the library at config-load time. Declaring
  * `Core.AWS_PROFILE_PARAM_NAME` (`aws.profile`) is the sole trigger for
@@ -155,6 +155,11 @@ export const configParameters: readonly Core.M3LConfigParameter[] = [
     type: Core.M3LConfigParameterType.BOOL,
     defaultValue: false,
   }),
+  new Core.M3LConfigParameter({
+    name: "yesSensitive",
+    type: Core.M3LConfigParameterType.BOOL,
+    defaultValue: false,
+  }),
 ];
 
 /**
@@ -173,6 +178,7 @@ export const configParameters: readonly Core.M3LConfigParameter[] = [
  *    ignored, not an error.
  * 2. `'load'` requires `table` and `input.file` to both be set.
  * 3. `'migrate'` requires `migrations.dir` to be set.
+ * 4. `'yesSensitive'` requires `yes` to also be set.
  *
  * @example
  * ```typescript
@@ -206,4 +212,10 @@ export const configValidators: readonly Core.M3LConfigSchemaValidator[] = [
       ? true
       : "'migrate' requires 'migrations.dir' to be set";
   },
+  // requires() would be a no-op here since both yesSensitive and yes carry
+  // declared defaults — compare resolved values instead.
+  (config: Core.M3LConfig): true | string =>
+    config.get("yesSensitive") !== true || config.get("yes") === true
+      ? true
+      : "'yesSensitive' requires 'yes' to be set",
 ];

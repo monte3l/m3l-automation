@@ -30,6 +30,9 @@ export const STAGE_TRANSITION_TYPES = ["Inbound", "Outbound"] as const;
 /** The `yes` parameter's declared default — the single source of truth `steps/run-codepipeline-ops.ts` reads at the config-read site too. */
 export const YES_DEFAULT = false;
 
+/** The `yesSensitive` parameter's declared default — the single source of truth `steps/run-codepipeline-ops.ts` reads at the config-read site too. */
+export const YES_SENSITIVE_DEFAULT = false;
+
 /** The `abandon` parameter's declared default (`stop-execution` only). */
 export const ABANDON_DEFAULT = false;
 
@@ -134,6 +137,11 @@ export const configParameters: readonly Core.M3LConfigParameter[] = [
     name: "yes",
     type: Core.M3LConfigParameterType.BOOL,
     defaultValue: YES_DEFAULT,
+  }),
+  new Core.M3LConfigParameter({
+    name: "yesSensitive",
+    type: Core.M3LConfigParameterType.BOOL,
+    defaultValue: YES_SENSITIVE_DEFAULT,
   }),
   new Core.M3LConfigParameter({
     name: "waitMaxAttempts",
@@ -268,4 +276,10 @@ export const configValidators: readonly Core.M3LConfigSchemaValidator[] = [
   requiredWhenOperation("transitionType", STAGE_TRANSITION_REQUIRED_OPERATIONS),
   requiredWhenOperation("reason", REASON_REQUIRED_OPERATIONS),
   requiredWhenOperation("input", INPUT_REQUIRED_OPERATIONS),
+  // requires() would be a no-op here since both yesSensitive and yes carry
+  // declared defaults — compare resolved values instead.
+  (config: Core.M3LConfig): true | string =>
+    config.get("yesSensitive") !== true || config.get("yes") === true
+      ? true
+      : "'yesSensitive' requires 'yes' to be set",
 ];

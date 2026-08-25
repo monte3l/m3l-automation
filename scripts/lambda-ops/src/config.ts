@@ -21,6 +21,9 @@ export const LAMBDA_OPERATIONS = [
 /** The `yes` parameter's declared default — the single source of truth `steps/run-lambda-ops.ts` reads at the config-read site too. */
 export const YES_DEFAULT = false;
 
+/** The `yesSensitive` parameter's declared default — the single source of truth `steps/run-lambda-ops.ts` reads at the config-read site too. */
+export const YES_SENSITIVE_DEFAULT = false;
+
 /**
  * The declared configuration schema for `lambda-ops` — the script's only
  * input seam. Never read `process.env` directly (the scripts ESLint zone bans
@@ -76,6 +79,11 @@ export const configParameters: readonly Core.M3LConfigParameter[] = [
     name: "yes",
     type: Core.M3LConfigParameterType.BOOL,
     defaultValue: YES_DEFAULT,
+  }),
+  new Core.M3LConfigParameter({
+    name: "yesSensitive",
+    type: Core.M3LConfigParameterType.BOOL,
+    defaultValue: YES_SENSITIVE_DEFAULT,
   }),
 ];
 
@@ -156,4 +164,10 @@ export const configValidators: readonly Core.M3LConfigSchemaValidator[] = [
   requiredForOperations("functionName", FUNCTION_NAME_REQUIRING_OPERATIONS),
   requiredForOperations("zipFilePath", ZIP_FILE_PATH_REQUIRING_OPERATIONS),
   requiredForOperations("input", INPUT_REQUIRING_OPERATIONS),
+  // requires() would be a no-op here since both yesSensitive and yes carry
+  // declared defaults — compare resolved values instead.
+  (config: Core.M3LConfig): true | string =>
+    config.get("yesSensitive") !== true || config.get("yes") === true
+      ? true
+      : "'yesSensitive' requires 'yes' to be set",
 ];

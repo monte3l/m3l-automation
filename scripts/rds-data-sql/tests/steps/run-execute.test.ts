@@ -42,12 +42,26 @@ import { runExecute } from "../../src/steps/run-execute.js";
 
 const confirmDestructiveMock = vi.mocked(Core.confirmDestructive);
 
+/** A target whose profile does NOT contain "prod" — never escalated. */
+const NON_SENSITIVE_TARGET: Core.M3LDestructiveTarget = {
+  profile: "dev-sandbox",
+};
+
+/** A target whose profile DOES contain "prod" — always escalated. */
+const SENSITIVE_TARGET: Core.M3LDestructiveTarget = { profile: "prod" };
+
 function makeLogger(): Core.M3LLogger {
   return new Core.M3LLogger([]);
 }
 
-function makePrompt(): Core.M3LPrompt {
-  const adapter = {
+/**
+ * A fresh, individually-mockable adapter. `M3LPrompt.confirm`/`.text` map
+ * directly onto `adapter.confirm`/`adapter.input` (there is no separate
+ * `adapter.text` method) — callers that need to assert on the escalated
+ * typed-echo prompt spy on `adapter.input`.
+ */
+function makeAdapter() {
+  return {
     input: vi.fn(),
     password: vi.fn(),
     number: vi.fn(),
@@ -56,7 +70,30 @@ function makePrompt(): Core.M3LPrompt {
     checkbox: vi.fn(),
     search: vi.fn(),
   };
+}
+
+type PromptAdapter = ReturnType<typeof makeAdapter>;
+
+function makePrompt(adapter: PromptAdapter = makeAdapter()): Core.M3LPrompt {
   return new Core.M3LPrompt({ adapter });
+}
+
+/**
+ * Resolves the REAL (un-mocked) `Core.confirmDestructive` implementation,
+ * bypassing this file's module-level `vi.mock`. The escalation-behavior
+ * tests below install this as `confirmDestructiveMock`'s implementation so
+ * they exercise the actual target-grading logic (states 3-5 of
+ * `M3LDestructiveGate`'s contract) rather than asserting on call args alone
+ * — `afterEach`'s `confirmDestructiveMock.mockReset()` clears the
+ * implementation back to a bare stub before the next test.
+ */
+async function getActualConfirmDestructive(): Promise<
+  typeof Core.confirmDestructive
+> {
+  const actual = await vi.importActual<typeof M3LCommon>(
+    "@m3l-automation/m3l-common",
+  );
+  return actual.Core.confirmDestructive;
 }
 
 function statementResult(
@@ -83,6 +120,8 @@ describe("runExecute", () => {
       yes: false,
       prompt: makePrompt(),
       logger: makeLogger(),
+      awsTarget: NON_SENSITIVE_TARGET,
+      yesSensitive: false,
     });
 
     expect(confirmDestructiveMock).not.toHaveBeenCalled();
@@ -103,6 +142,8 @@ describe("runExecute", () => {
       yes: false,
       prompt: makePrompt(),
       logger: makeLogger(),
+      awsTarget: NON_SENSITIVE_TARGET,
+      yesSensitive: false,
     });
 
     expect(confirmDestructiveMock).toHaveBeenCalledTimes(1);
@@ -128,6 +169,8 @@ describe("runExecute", () => {
       yes: true,
       prompt: makePrompt(),
       logger: makeLogger(),
+      awsTarget: NON_SENSITIVE_TARGET,
+      yesSensitive: false,
     });
 
     const [options] = confirmDestructiveMock.mock.calls[0] as [
@@ -155,6 +198,8 @@ describe("runExecute", () => {
         yes: false,
         prompt: makePrompt(),
         logger: makeLogger(),
+        awsTarget: NON_SENSITIVE_TARGET,
+        yesSensitive: false,
       });
     } catch (error) {
       thrown = error;
@@ -177,6 +222,8 @@ describe("runExecute", () => {
       yes: false,
       prompt: makePrompt(),
       logger: makeLogger(),
+      awsTarget: NON_SENSITIVE_TARGET,
+      yesSensitive: false,
     });
 
     expect(confirmDestructiveMock).not.toHaveBeenCalled();
@@ -197,6 +244,8 @@ describe("runExecute", () => {
       yes: false,
       prompt: makePrompt(),
       logger: makeLogger(),
+      awsTarget: NON_SENSITIVE_TARGET,
+      yesSensitive: false,
     });
 
     expect(confirmDestructiveMock).toHaveBeenCalledTimes(1);
@@ -222,9 +271,168 @@ describe("runExecute", () => {
       yes: false,
       prompt: makePrompt(),
       logger: makeLogger(),
+      awsTarget: NON_SENSITIVE_TARGET,
+      yesSensitive: false,
     });
 
     expect(confirmDestructiveMock).toHaveBeenCalledTimes(1);
+    expect(executeStatement).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * Contract: ADR-0048's target-graded destructive confirmation, retrofitted
+ * onto `run-execute.ts`'s single `Core.confirmDestructive` call site.
+ * `deps.awsTarget` (this script's resolved `aws.profile` identity — always
+ * defined, since `aws.profile` is declared `required: true` + `nonEmpty`)
+ * and `deps.yesSensitive` are forwarded as `target`/`yesSensitive`, alongside
+ * an `isSensitiveTarget` predicate matching this retrofit's documented
+ * classification: `target.profile.toLowerCase().includes("prod")`.
+ *
+ * Unlike the `describe("runExecute", ...)` block above, these tests install
+ * the REAL `Core.confirmDestructive` implementation (via
+ * `getActualConfirmDestructive`) so the escalation/bypass/plain-confirm
+ * branching is exercised end-to-end against a controllable prompt adapter,
+ * rather than merely asserting on the options object handed to a stub.
+ */
+describe("runExecute: target-graded destructive confirmation (ADR-0048)", () => {
+  test("escalates to the typed-echo prompt when the target's profile contains 'prod'", async () => {
+    confirmDestructiveMock.mockImplementation(
+      await getActualConfirmDestructive(),
+    );
+    const executeStatement = vi.fn().mockResolvedValue(statementResult(1));
+    const adapter = makeAdapter();
+    adapter.input.mockResolvedValue("prod");
+
+    const result = await runExecute({
+      rdsData: { executeStatement },
+      resourceArn: "arn:aws:rds:cluster",
+      secretArn: "arn:aws:secretsmanager:secret",
+      sql: "DELETE FROM t",
+      parameters: [],
+      yes: false,
+      prompt: makePrompt(adapter),
+      logger: makeLogger(),
+      awsTarget: SENSITIVE_TARGET,
+      yesSensitive: false,
+    });
+
+    expect(adapter.input).toHaveBeenCalledTimes(1);
+    expect(adapter.confirm).not.toHaveBeenCalled();
+    expect(executeStatement).toHaveBeenCalledTimes(1);
+    expect(result.rowsAffected).toBe(1);
+  });
+
+  test("throws ERR_RDS_DATA_SQL_ABORTED when the typed-echo input doesn't match the profile", async () => {
+    confirmDestructiveMock.mockImplementation(
+      await getActualConfirmDestructive(),
+    );
+    const executeStatement = vi.fn();
+    const adapter = makeAdapter();
+    adapter.input.mockResolvedValue("not-the-profile");
+
+    let thrown: unknown;
+    try {
+      await runExecute({
+        rdsData: { executeStatement },
+        resourceArn: "arn:aws:rds:cluster",
+        secretArn: "arn:aws:secretsmanager:secret",
+        sql: "DELETE FROM t",
+        parameters: [],
+        yes: false,
+        prompt: makePrompt(adapter),
+        logger: makeLogger(),
+        awsTarget: SENSITIVE_TARGET,
+        yesSensitive: false,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(Core.M3LError);
+    expect((thrown as Core.M3LError).code).toBe("ERR_RDS_DATA_SQL_ABORTED");
+    expect(executeStatement).not.toHaveBeenCalled();
+  });
+
+  test("bypasses with a warning when yes and yesSensitive are both true for a sensitive target", async () => {
+    confirmDestructiveMock.mockImplementation(
+      await getActualConfirmDestructive(),
+    );
+    const executeStatement = vi.fn().mockResolvedValue(statementResult(2));
+    const adapter = makeAdapter();
+    const logger = makeLogger();
+    const warningSpy = vi.spyOn(logger, "warning");
+
+    const result = await runExecute({
+      rdsData: { executeStatement },
+      resourceArn: "arn:aws:rds:cluster",
+      secretArn: "arn:aws:secretsmanager:secret",
+      sql: "DELETE FROM t",
+      parameters: [],
+      yes: true,
+      prompt: makePrompt(adapter),
+      logger,
+      awsTarget: SENSITIVE_TARGET,
+      yesSensitive: true,
+    });
+
+    expect(adapter.input).not.toHaveBeenCalled();
+    expect(adapter.confirm).not.toHaveBeenCalled();
+    expect(warningSpy).toHaveBeenCalledTimes(1);
+    expect(warningSpy.mock.calls[0]?.[0]).toContain("prod");
+    expect(executeStatement).toHaveBeenCalledTimes(1);
+    expect(result.rowsAffected).toBe(2);
+  });
+
+  test("still escalates when yes:true but yesSensitive is false, for a sensitive target", async () => {
+    confirmDestructiveMock.mockImplementation(
+      await getActualConfirmDestructive(),
+    );
+    const executeStatement = vi.fn().mockResolvedValue(statementResult(1));
+    const adapter = makeAdapter();
+    adapter.input.mockResolvedValue("prod");
+
+    await runExecute({
+      rdsData: { executeStatement },
+      resourceArn: "arn:aws:rds:cluster",
+      secretArn: "arn:aws:secretsmanager:secret",
+      sql: "DELETE FROM t",
+      parameters: [],
+      yes: true,
+      prompt: makePrompt(adapter),
+      logger: makeLogger(),
+      awsTarget: SENSITIVE_TARGET,
+      yesSensitive: false,
+    });
+
+    expect(adapter.input).toHaveBeenCalledTimes(1);
+    expect(adapter.confirm).not.toHaveBeenCalled();
+    expect(executeStatement).toHaveBeenCalledTimes(1);
+  });
+
+  test("uses the plain confirm (not escalated) when the target is not sensitive", async () => {
+    confirmDestructiveMock.mockImplementation(
+      await getActualConfirmDestructive(),
+    );
+    const executeStatement = vi.fn().mockResolvedValue(statementResult(1));
+    const adapter = makeAdapter();
+    adapter.confirm.mockResolvedValue(true);
+
+    await runExecute({
+      rdsData: { executeStatement },
+      resourceArn: "arn:aws:rds:cluster",
+      secretArn: "arn:aws:secretsmanager:secret",
+      sql: "DELETE FROM t",
+      parameters: [],
+      yes: false,
+      prompt: makePrompt(adapter),
+      logger: makeLogger(),
+      awsTarget: NON_SENSITIVE_TARGET,
+      yesSensitive: false,
+    });
+
+    expect(adapter.confirm).toHaveBeenCalledTimes(1);
+    expect(adapter.input).not.toHaveBeenCalled();
     expect(executeStatement).toHaveBeenCalledTimes(1);
   });
 });

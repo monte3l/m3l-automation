@@ -113,6 +113,27 @@ paths:
   with one sensible fallback (all confirm-gate `yes`/`force` flags);
   bare-optional = operation-specific, validated via cross-parameter
   `configValidators` or a run-start guard — state which in the contract page.
+- **`Core.M3LConfigSchemaValidators.requires(dependent, required)` is a silent
+  no-op when both parameters carry a declared `defaultValue`.** It treats a
+  parameter as "unset" only via `config.get(name) === undefined`, but
+  `M3LScript`'s config loader resolves every declared default into the store
+  before any validator runs — so a defaulted `dependent`/`required` pair (e.g.
+  two confirm-gate `BOOL` flags both defaulting `false`) never actually
+  reaches `undefined`, and the validator always passes. Use a value-based
+  inline predicate instead (`config.get(dependent) !== true ||
+config.get(required) === true ? true : "reason"`) whenever both operands
+  have defaults. Found during the A2b fleet retrofit
+  (`docs/logs/2026-08-25-a2b-fleet-destructive-confirmation-retrofit.md`),
+  where this shipped as a no-op across 10 scripts before a silent-failure-hunter
+  pass reproduced it against the real `M3LScript` pipeline.
+- **A `configValidators` array being exported proves nothing about whether
+  it's enforced.** `main.ts` must explicitly pass `validate: configValidators`
+  to `M3LScript`'s constructor — a script that declares the array but never
+  wires it (as `rds-data-sql` did until the same A2b pass above) has every
+  validator silently dead, and the normal test suite (which typically
+  constructs an `M3LConfigSchema` directly, bypassing `M3LScript`) won't catch
+  it. When reviewing or adding a `configValidators` entry, grep the script's
+  `main.ts` for `validate:` to confirm the wiring, not just the array.
 - **When promoting a script's local config-read helper onto
   `Core.M3LConfigAccessor`, grep the whole file for `config.get(` afterward —
   not just for callers of the helper being deleted.** A boolean/string field

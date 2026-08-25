@@ -2,6 +2,7 @@ import { Core } from "@m3l-automation/m3l-common";
 
 const FORCE_DEFAULT = false;
 const YES_DEFAULT = false;
+const YES_SENSITIVE_DEFAULT = false;
 
 /** The seven operations `eventbridge-schedules` supports. */
 const EVENTBRIDGE_SCHEDULES_OPERATIONS = [
@@ -114,4 +115,26 @@ export const configParameters: readonly Core.M3LConfigParameter[] = [
     type: Core.M3LConfigParameterType.BOOL,
     defaultValue: YES_DEFAULT,
   }),
+  new Core.M3LConfigParameter({
+    name: "yesSensitive",
+    type: Core.M3LConfigParameterType.BOOL,
+    defaultValue: YES_SENSITIVE_DEFAULT,
+  }),
+];
+
+/**
+ * Cross-parameter constraints that a single {@link Core.M3LConfigParameter}'s
+ * own `validate` cannot express (ADR-0048, Issue #483, A2b): `yesSensitive`
+ * only means anything alongside `yes` (see
+ * `steps/run-eventbridge-schedules.ts`'s `Core.confirmDestructive` call), so
+ * setting it without `yes` is rejected at config-load time rather than
+ * silently ignored at run time.
+ */
+export const configValidators: readonly Core.M3LConfigSchemaValidator[] = [
+  // requires() would be a no-op here since both yesSensitive and yes carry
+  // declared defaults — compare resolved values instead.
+  (config: Core.M3LConfig): true | string =>
+    config.get("yesSensitive") !== true || config.get("yes") === true
+      ? true
+      : "'yesSensitive' requires 'yes' to be set",
 ];

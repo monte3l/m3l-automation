@@ -79,11 +79,23 @@ function stubReadFileByPath(entries: Record<string, string | Buffer>): void {
   }) as typeof fsp.readFile);
 }
 
+/**
+ * A non-sensitive default target — every existing (pre-ADR-0048) test relies
+ * on the plain confirm path, so `buildDeps` always supplies a default
+ * `awsTarget` whose profile does not contain "prod" unless a test overrides
+ * it. The per-script sensitivity predicate under retrofit is the inline
+ * one-liner `(target) => target.profile.toLowerCase().includes("prod")`.
+ */
+const DEFAULT_AWS_TARGET: Core.M3LDestructiveTarget = {
+  profile: "dev-sandbox",
+};
+
 function buildDeps(
   configValues: Record<string, unknown>,
   overrides?: {
     readonly operations?: ReturnType<typeof createFakeCloudFormationOperations>;
     readonly prompt?: Core.M3LPrompt;
+    readonly awsTarget?: Core.M3LDestructiveTarget;
   },
 ): Parameters<typeof runCloudformationStacks>[0] {
   return {
@@ -93,14 +105,24 @@ function buildDeps(
     correlationId: "run-1",
     operations: overrides?.operations ?? createFakeCloudFormationOperations(),
     prompt: overrides?.prompt ?? new Core.M3LPrompt(),
+    awsTarget: overrides?.awsTarget ?? DEFAULT_AWS_TARGET,
   };
 }
 
-/** Returns a prompt spy that resolves the gate to `confirmed` and the spy for assertions. */
+/** Returns confirm/text spies resolving the gate to `confirmed`/`""`, for assertions. */
 function confirmingPrompt(confirmed: boolean) {
   const prompt = new Core.M3LPrompt();
   const confirm = vi.spyOn(prompt, "confirm").mockResolvedValue(confirmed);
-  return { prompt, confirm };
+  const text = vi.spyOn(prompt, "text").mockResolvedValue("");
+  return { prompt, confirm, text };
+}
+
+/** Returns confirm/text spies for the escalated typed-echo path: `prompt.text` resolves `textResponse`. */
+function escalatingPrompt(textResponse: string) {
+  const prompt = new Core.M3LPrompt();
+  const confirm = vi.spyOn(prompt, "confirm").mockResolvedValue(true);
+  const text = vi.spyOn(prompt, "text").mockResolvedValue(textResponse);
+  return { prompt, confirm, text };
 }
 
 afterEach(() => {
@@ -402,6 +424,110 @@ describe("runCloudformationStacks — destructive-gate dispatch (create/update/d
     await runCloudformationStacks(deps);
 
     expect(confirm).toHaveBeenCalledWith(expect.stringContaining("my-stack"));
+  });
+});
+
+/**
+ * ADR-0048 fleet retrofit (issue #483 / A2b): `deps.awsTarget` plus a
+ * per-script sensitivity predicate
+ * `(target) => target.profile.toLowerCase().includes("prod")` are wired into
+ * the pipeline's `destructive` gate options (`target`/`isSensitiveTarget`/
+ * `yesSensitive`). These tests exercise `Core.confirmDestructive`'s five
+ * states end to end through the orchestrator for `delete-stack`; the plain
+ * (non-target) path is already covered above.
+ */
+describe("runCloudformationStacks — target-graded destructive confirmation (ADR-0048 retrofit)", () => {
+  const SENSITIVE_TARGET: Core.M3LDestructiveTarget = { profile: "prod" };
+  const NON_SENSITIVE_TARGET: Core.M3LDestructiveTarget = { profile: "dev" };
+
+  test("escalates to the typed-echo prompt when the target's profile contains 'prod'", async () => {
+    writeStackMock.mockResolvedValue(undefined);
+    const { prompt, confirm, text } = escalatingPrompt("prod");
+    const deps = buildDeps(
+      { operation: "delete-stack", stackName: "my-stack" },
+      { prompt, awsTarget: SENSITIVE_TARGET },
+    );
+
+    await runCloudformationStacks(deps);
+
+    expect(text).toHaveBeenCalledTimes(1);
+    expect(confirm).not.toHaveBeenCalled();
+  });
+
+  test("throws ERR_CLOUDFORMATION_STACKS_ABORTED when the typed-echo input doesn't match the profile", async () => {
+    const { prompt } = escalatingPrompt("not-prod");
+    const deps = buildDeps(
+      { operation: "delete-stack", stackName: "my-stack" },
+      { prompt, awsTarget: SENSITIVE_TARGET },
+    );
+
+    await expect(runCloudformationStacks(deps)).rejects.toMatchObject({
+      code: "ERR_CLOUDFORMATION_STACKS_ABORTED",
+    });
+    expect(writeStackMock).not.toHaveBeenCalled();
+  });
+
+  test("bypasses confirmation with a warning when yes and yesSensitive are both true for a sensitive target", async () => {
+    writeStackMock.mockResolvedValue(undefined);
+    const warningSpy = vi
+      .spyOn(Core.M3LLogger.prototype, "warning")
+      .mockImplementation(() => {
+        /* no-op: assert on call args only */
+      });
+    const { prompt, confirm, text } = confirmingPrompt(true);
+    const deps = buildDeps(
+      {
+        operation: "delete-stack",
+        stackName: "my-stack",
+        yes: true,
+        yesSensitive: true,
+      },
+      { prompt, awsTarget: SENSITIVE_TARGET },
+    );
+
+    await runCloudformationStacks(deps);
+
+    expect(confirm).not.toHaveBeenCalled();
+    expect(text).not.toHaveBeenCalled();
+    expect(warningSpy).toHaveBeenCalledTimes(1);
+    expect(warningSpy).toHaveBeenCalledWith(expect.stringContaining("prod"));
+  });
+
+  test.each([
+    ["absent", {}],
+    ["false", { yesSensitive: false }],
+  ])(
+    "still escalates when yes:true but yesSensitive is %s, for a sensitive target",
+    async (_label, extraConfig) => {
+      const { prompt, text } = escalatingPrompt("prod");
+      const deps = buildDeps(
+        {
+          operation: "delete-stack",
+          stackName: "my-stack",
+          yes: true,
+          ...extraConfig,
+        },
+        { prompt, awsTarget: SENSITIVE_TARGET },
+      );
+
+      await runCloudformationStacks(deps);
+
+      expect(text).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  test("uses the plain confirm (not escalated) when the target is not sensitive", async () => {
+    writeStackMock.mockResolvedValue(undefined);
+    const { prompt, confirm, text } = confirmingPrompt(true);
+    const deps = buildDeps(
+      { operation: "delete-stack", stackName: "my-stack" },
+      { prompt, awsTarget: NON_SENSITIVE_TARGET },
+    );
+
+    await runCloudformationStacks(deps);
+
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(text).not.toHaveBeenCalled();
   });
 });
 
