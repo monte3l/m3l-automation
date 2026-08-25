@@ -1684,6 +1684,9 @@ describe("renderHubPage", () => {
       logs: [],
       archive: [],
       plans: [],
+      contributing: [],
+      guides: [],
+      research: [],
       reference: { core: [], aws: [], scripts: [] },
       readmes: [],
     },
@@ -1719,6 +1722,35 @@ describe("renderHubPage", () => {
     const first = renderHubPage(model);
     const second = renderHubPage(model);
     expect(first).toBe(second);
+  });
+
+  test("renders the Contributing docs / Guides / Research headings", () => {
+    const html = renderHubPage(model);
+    expect(html).toContain("<h3>Contributing docs</h3>");
+    expect(html).toContain("<h3>Guides</h3>");
+    expect(html).toContain("<h3>Research</h3>");
+  });
+
+  test("renders a populated corpus.guides entry as a link to its href", () => {
+    const modelWithGuide = {
+      ...model,
+      corpus: {
+        ...model.corpus,
+        guides: [
+          {
+            date: undefined,
+            slug: "some-guide",
+            title: "Some Guide",
+            name: "some-guide.md",
+            href: "https://example.com/docs/guides/some-guide.md",
+          },
+        ],
+      },
+    };
+    const html = renderHubPage(modelWithGuide);
+    expect(html).toContain(
+      '<a href="https://example.com/docs/guides/some-guide.md">Some Guide</a>',
+    );
   });
 });
 
@@ -1758,6 +1790,17 @@ describe("buildCorpusSections", () => {
 
   const planFiles = [
     { name: "IMPLEMENTATION.md", content: "# Implementation backlog\n" },
+  ];
+
+  const contributingFiles = [
+    { name: "style-guide.md", content: "# Style guide\n" },
+    { name: "contributing.md", content: "# Contributing\n" },
+  ];
+
+  const guideFiles = [{ name: "worktrees.md", content: "# Worktrees guide\n" }];
+
+  const researchFiles = [
+    { name: "bedrock-tool-use.md", content: "# Bedrock tool use research\n" },
   ];
 
   const catalog = [
@@ -1839,12 +1882,60 @@ describe("buildCorpusSections", () => {
     expect(aws.map((entry) => entry.name)).toEqual(["s3"]);
   });
 
-  test("every ADR/reference/readme entry carries an href built via blobUrl", () => {
+  test("builds contributing/guides/research sections with title, href, and undated stable order", () => {
+    const result = buildCorpusSections({
+      adrFiles: [],
+      logFiles: [],
+      archiveFiles: [],
+      planFiles: [],
+      contributingFiles,
+      guideFiles,
+      researchFiles,
+      catalog: [],
+      scriptPages: [],
+      readmePaths: [],
+    });
+
+    expect(result.contributing.map((entry) => entry.title)).toEqual([
+      "Style guide",
+      "Contributing",
+    ]);
+    expect(result.contributing.every((entry) => entry.date === undefined)).toBe(
+      true,
+    );
+    expect(
+      result.contributing.every((entry) =>
+        entry.href.startsWith(REPO_BLOB_BASE),
+      ),
+    ).toBe(true);
+    expect(result.contributing[0]?.href).toBe(
+      blobUrl("docs/contributing/style-guide.md"),
+    );
+
+    expect(result.guides.map((entry) => entry.title)).toEqual([
+      "Worktrees guide",
+    ]);
+    expect(result.guides[0]?.date).toBeUndefined();
+    expect(result.guides[0]?.href).toBe(blobUrl("docs/guides/worktrees.md"));
+
+    expect(result.research.map((entry) => entry.title)).toEqual([
+      "Bedrock tool use research",
+    ]);
+    expect(result.research[0]?.date).toBeUndefined();
+    expect(result.research[0]?.href).toBe(
+      blobUrl("docs/research/bedrock-tool-use.md"),
+    );
+  });
+
+  test("every ADR/reference/readme/contributing/guides/research entry carries an href built via blobUrl", () => {
     const result = buildCorpusSections({
       adrFiles,
       logFiles,
       archiveFiles,
       planFiles,
+      contributingFiles,
+      guideFiles,
+      researchFiles,
       catalog,
       scriptPages,
       readmePaths,
