@@ -199,6 +199,116 @@ describe("M3LRunReporterOptions.secrets — build() via partial recovery.item (d
   });
 });
 
+describe("M3LRunReporterOptions.secrets — hostile isSecret in build()'s failure chain", () => {
+  const hostileSecrets = {
+    isSecret: (name: string): boolean => {
+      if (name === "tenantRef") throw new Error("hostile");
+      return false;
+    },
+  };
+
+  function hostileFailureInput(): M3LRunReportInput {
+    return {
+      ...baseInput,
+      outcome: "failure",
+      error: new M3LError("boom", {
+        code: "ERR_CONFIG_MISSING",
+        context: { tenantRef: "secret-value", otherField: "keep-me" },
+      }),
+    };
+  }
+
+  test("the chain is a real serialized error, not the generic collapsed placeholder", () => {
+    const reporter = new M3LRunReporter({ secrets: hostileSecrets });
+    const report = reporter.build(hostileFailureInput());
+
+    // A hostile isSecret must not make serializeErrorChain's own catch-all
+    // collapse the whole chain to [{ name: "Error", message:
+    // "[unrepresentable error chain]" }] — assert the real M3LError identity
+    // survived.
+    expect(report.failure?.chain[0]?.name).toBe("M3LError");
+    expect(report.failure?.chain[0]?.message).toBe("boom");
+  });
+
+  test("the offending context field is redacted rather than leaked or dropped by a collapse", () => {
+    const reporter = new M3LRunReporter({ secrets: hostileSecrets });
+    const report = reporter.build(hostileFailureInput());
+
+    expect(report.failure?.chain[0]?.context?.["tenantRef"]).toBe("[REDACTED]");
+  });
+
+  test("an unrelated context field on the same error survives intact", () => {
+    const reporter = new M3LRunReporter({ secrets: hostileSecrets });
+    const report = reporter.build(hostileFailureInput());
+
+    expect(report.failure?.chain[0]?.context?.["otherField"]).toBe("keep-me");
+  });
+
+  test("a redaction-failure diagnostic reaches stderr", () => {
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    const reporter = new M3LRunReporter({ secrets: hostileSecrets });
+
+    reporter.build(hostileFailureInput());
+
+    expect(stderrSpy).toHaveBeenCalled();
+    const written = stderrSpy.mock.calls
+      .map(([chunk]) => String(chunk))
+      .join("\n");
+    expect(written).toContain("redaction failed");
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+});
+
+describe("M3LRunReporterOptions.secrets — hostile isSecret in persist()'s write-failure diagnostic", () => {
+  let outDir: string;
+  const hostileSecrets = {
+    isSecret: (name: string): boolean => {
+      if (name === "tenantRef") throw new Error("hostile");
+      return false;
+    },
+  };
+
+  beforeEach(async () => {
+    outDir = await mkdtemp(join(tmpdir(), "m3l-run-report-secrets-hostile-"));
+  });
+
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    await rm(outDir, { recursive: true, force: true });
+  });
+
+  function baseReportInput(): M3LRunReportInput {
+    return {
+      ...baseInput,
+      outcome: "success",
+    };
+  }
+
+  test("the run-report-persist-failed diagnostic still reaches stderr instead of vanishing silently", async () => {
+    vi.spyOn(nodeFsPromises, "writeFile").mockRejectedValue(
+      new Error("disk full"),
+    );
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    const reporter = new M3LRunReporter({
+      paths: { getOutputDir: () => outDir },
+      secrets: hostileSecrets,
+    });
+
+    await reporter.persist(baseReportInput());
+
+    // The diagnostic must not vanish silently — it must actually reach
+    // stderr, identifying the persist failure.
+    expect(stderrSpy).toHaveBeenCalled();
+    const written = stderrSpy.mock.calls
+      .map(([chunk]) => String(chunk))
+      .join("\n");
+    expect(written).toContain("run-report-persist-failed");
+  });
+});
+
 describe("M3LRunReporterOptions.secrets — additive-only guard", () => {
   test("a heuristic-matched key (apiKey) redacts identically whether or not secrets is supplied", () => {
     const breadcrumb: M3LBreadcrumb = {

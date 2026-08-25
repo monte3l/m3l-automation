@@ -14,6 +14,7 @@
  */
 
 import { M3LError } from "../errors/index.js";
+import { guardSecrets } from "../../internal/logging/guardSecrets.js";
 import {
   redactSensitiveLogValue,
   type M3LSecretNamesPort,
@@ -113,7 +114,10 @@ export interface M3LBreadcrumbTrailOptions {
    * Only redacts a declared secret carried as a top-level `key=value`/
    * `key: value` pair — a secret value embedded inside another field's free
    * text (e.g. a URL query string) is not caught this way; see
-   * {@link redactSensitiveLogText}'s `@remarks`.
+   * {@link redactSensitiveLogText}'s `@remarks`. A throwing `isSecret`
+   * implementation is caught per name (rather than collapsing the whole
+   * recorded payload to `{}`), reported to stderr, and the offending name is
+   * conservatively treated as secret.
    */
   readonly secrets?: M3LSecretNamesPort | undefined;
 }
@@ -697,7 +701,11 @@ export class M3LBreadcrumbTrail {
    *
    * @param options - Optional options bag; `limit` defaults to `100`.
    *   `secrets` is an opt-in, caller-managed port — this class is never
-   *   constructed by `M3LScript`/`runScript`.
+   *   constructed by `M3LScript`/`runScript`. It is wrapped once here (via an
+   *   internal `guardSecrets` helper) so a throwing `isSecret` implementation
+   *   can never propagate out of {@link M3LBreadcrumbTrail.record} — it is
+   *   instead caught per name, reported to stderr, and the name is
+   *   conservatively treated as secret.
    * @throws {@link M3LError} (`ERR_INVALID_ARGUMENT`) When `limit` is not a
    *   positive integer no greater than `Number.MAX_SAFE_INTEGER`.
    */
@@ -705,7 +713,7 @@ export class M3LBreadcrumbTrail {
     const limit = options.limit ?? DEFAULT_LIMIT;
     assertValidLimit(limit);
     this.#limit = limit;
-    this.#secrets = options.secrets;
+    this.#secrets = guardSecrets(options.secrets, "M3LBreadcrumbTrail");
   }
 
   /**
@@ -773,7 +781,13 @@ export class M3LBreadcrumbTrail {
    *
    * Never throws: a hostile payload (e.g. a throwing getter), a non-record
    * payload, or an unrecognized event name all degrade to a safe, possibly
-   * empty, payload rather than propagating.
+   * empty, payload rather than propagating. A throwing `secrets.isSecret` is
+   * guarded per-key at construction (via an internal `guardSecrets`
+   * wrapper), so it no longer reaches the try/catch below at all — that
+   * try/catch remains only as a last-resort net for a genuinely STRUCTURAL
+   * failure (e.g. a hostile payload getter during `summarizePayload`), which
+   * still collapses the whole recorded payload to `{}` since there is no
+   * per-field boundary to fall back to for a failure that broad.
    *
    * For an `event` outside the built-in registry, every scalar-valued key is
    * kept and relies on `redactSensitiveLogValue` (widened by this trail's

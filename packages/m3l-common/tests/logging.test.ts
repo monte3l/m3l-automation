@@ -716,6 +716,69 @@ describe("M3LLogger — a redaction failure never propagates out of a message me
     expect(event.category).toBe(M3LLogEventCategory.ERROR);
   });
 
+  test("logger.info's underlying guardSecrets/reportRedactionFailure covers every isSecret-cause shape: a non-Error cause, an Error with a falsy (but non-throwing) stack, and a hostile stack/message getter", () => {
+    const handler = makeFakeHandler();
+    const stderrSpy = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
+
+    // An Error whose `.stack` reads back as falsy (not thrown, just absent) —
+    // exercises reportRedactionFailure's `cause.stack ?? cause.message`
+    // fallback to `.message`, distinct from the hostile-getter case below.
+    const errorWithoutStack = new Error("no-stack");
+    Object.defineProperty(errorWithoutStack, "stack", {
+      get(): string | undefined {
+        return undefined;
+      },
+      configurable: true,
+    });
+
+    // An Error whose `.stack`/`.message` getters themselves throw — a
+    // second-order failure that must fall back to the detail-free line
+    // rather than propagating out of reportRedactionFailure's own catch.
+    const hostileCause = new Error("outer");
+    Object.defineProperty(hostileCause, "stack", {
+      get(): string {
+        throw new Error("stack getter exploded");
+      },
+      configurable: true,
+    });
+    Object.defineProperty(hostileCause, "message", {
+      get(): string {
+        throw new Error("message getter exploded");
+      },
+      configurable: true,
+    });
+
+    const secrets: M3LSecretNamesPort = {
+      isSecret: (name) => {
+        if (name === "nonErrorCause") {
+          // eslint-disable-next-line @typescript-eslint/only-throw-error -- intentional non-Error cause to exercise reportRedactionFailure's `cause instanceof Error` false branch
+          throw "a bare string cause";
+        }
+        if (name === "errorWithoutStack") throw errorWithoutStack;
+        throw hostileCause;
+      },
+    };
+    const logger = new M3LLogger([handler], { secrets });
+
+    expect(() =>
+      logger.info("status", {
+        nonErrorCause: "a",
+        errorWithoutStack: "b",
+        hostileCause: "c",
+      }),
+    ).not.toThrow();
+
+    expect(handler.handle).toHaveBeenCalledTimes(1);
+    const written = stderrSpy.mock.calls
+      .map(([chunk]) => String(chunk))
+      .join("\n");
+    expect(written).toContain("a bare string cause");
+    expect(written).toContain("no-stack");
+    expect(written).toContain("unreadable failure detail");
+  });
+
   test("a constructor-level port returning a truthy non-boolean does not defeat a well-formed per-call port's redaction (mergeSecrets normalizes to strict boolean)", () => {
     const handler = makeFakeHandler();
     const declaredNames = ["tenantRef"];
