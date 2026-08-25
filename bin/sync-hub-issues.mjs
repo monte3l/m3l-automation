@@ -163,7 +163,7 @@ function listIssues(runGhFn, reporter, labelArgs) {
     "--state",
     "all",
     "--json",
-    "number,title,body,state,labels,issueType,parent",
+    "number,title,body,state,labels,issueType,parent,closedByPullRequestsReferences",
     "--limit",
     String(LIST_LIMIT),
   ]);
@@ -187,7 +187,58 @@ function listIssues(runGhFn, reporter, labelArgs) {
     // planner, so fixing one link must not trigger a full title/body/label
     // rewrite of the issue.
     parentNumber: issue.parent?.number ?? null,
+    // PR numbers this issue's body/comments name with a closing keyword
+    // (`Closes #N`) — GitHub's connection includes a PR that merely
+    // references the issue this way, whether or not it has merged yet, so
+    // this is only a list of *candidates*. `resolveMergedClosingPr` below
+    // confirms which (if any) actually merged before the planner trusts it.
+    closingPrCandidates: (issue.closedByPullRequestsReferences ?? []).map(
+      (ref) => ref.number,
+    ),
   }));
+}
+
+// gh's `pr view --json state` cache, keyed by PR number — a run's
+// candidate set is small (an unresolved item with a linked PR is rare) and
+// overlaps across issues (e.g. one PR closing several tracker rows), so a
+// cache avoids repeat `gh` calls for the same PR within one invocation.
+function resolveMergedClosingPr(runGhFn, prNumbers, cache) {
+  for (const number of prNumbers) {
+    if (!cache.has(number)) {
+      const raw = runGhFn([
+        "pr",
+        "view",
+        String(number),
+        "-R",
+        REPO,
+        "--json",
+        "state",
+      ]);
+      const { state } = JSON.parse(raw);
+      cache.set(number, state === "MERGED");
+    }
+    if (cache.get(number) === true) return number;
+  }
+  return null;
+}
+
+// Attach `mergedClosingPrNumber` to every issue that has at least one
+// closing-keyword PR candidate — planIssueSync stays pure and never shells
+// out itself, so merge-state resolution (an I/O concern) happens here, in
+// the runner, before the issues are handed to the planner.
+function withMergedClosingPr(runGhFn, issues) {
+  const cache = new Map();
+  return issues.map((issue) => {
+    if (issue.closingPrCandidates.length === 0) return issue;
+    return {
+      ...issue,
+      mergedClosingPrNumber: resolveMergedClosingPr(
+        runGhFn,
+        issue.closingPrCandidates,
+        cache,
+      ),
+    };
+  });
 }
 
 function loadExistingIssues(runGhFn, reporter) {
@@ -500,6 +551,25 @@ function printPlan(reporter, milestonePlan, issuePlan, parentPlan) {
   reporter.info(`Issues to reopen (${issuePlan.reopen.length}):`);
   for (const { number, key } of issuePlan.reopen) {
     reporter.info(`  ^ #${number} [${key}]`);
+  }
+
+  // Never auto-fixed by --apply — only a human editing the tracker cell can
+  // resolve this, so it is reported as an error site, not a plannable action.
+  reporter.info(
+    `Issues with a stale tracker row (${issuePlan.staleTracker.length}):`,
+  );
+  for (const {
+    number,
+    key,
+    prNumber,
+    sourcePath,
+    sourceAnchor,
+  } of issuePlan.staleTracker) {
+    reporter.info(
+      `  ! #${number} [${key}] closed by merged PR #${prNumber}, but ` +
+        `${sourcePath}${sourceAnchor} still lists it as unresolved — flip ` +
+        `the Status cell to Done (or Rejected).`,
+    );
   }
 
   reporter.info(`Untouched: ${issuePlan.untouched.length}`);
@@ -907,11 +977,12 @@ export function runIssueSync({
     for (const message of warnings) reporter.warn(message);
 
     const existingMilestones = loadExistingMilestones(runGhFn);
-    const existingIssues = loadExistingIssues(runGhFn, reporter);
-    if (existingIssues === null) {
+    const existingIssuesRaw = loadExistingIssues(runGhFn, reporter);
+    if (existingIssuesRaw === null) {
       reporter.finish();
       return { ok: false };
     }
+    const existingIssues = withMergedClosingPr(runGhFn, existingIssuesRaw);
     const existingIssuesByNumber = new Map(
       existingIssues.map((issue) => [issue.number, issue]),
     );
@@ -938,7 +1009,12 @@ export function runIssueSync({
     printBackfillPlan(reporter, backfillPlan);
 
     if (!apply) {
-      const planIsEmpty =
+      const staleTrackerIsEmpty = issuePlan.staleTracker.length === 0;
+      // Kept separate from staleTrackerIsEmpty so --check can tell "GitHub
+      // drifted from the trackers" (fixable by --apply) apart from "the
+      // trackers drifted from GitHub" (fixable only by hand) and emit the
+      // right remedy for each.
+      const otherDriftIsEmpty =
         milestonePlan.create.length === 0 &&
         milestonePlan.rename.length === 0 &&
         milestonePlan.describe.length === 0 &&
@@ -948,6 +1024,7 @@ export function runIssueSync({
         issuePlan.reopen.length === 0 &&
         parentPlan.set.length === 0 &&
         parentPlan.clear.length === 0;
+      const planIsEmpty = otherDriftIsEmpty && staleTrackerIsEmpty;
       const summary = {
         applied: false,
         milestones: {
@@ -961,6 +1038,7 @@ export function runIssueSync({
           update: issuePlan.update.length,
           close: issuePlan.close.length,
           reopen: issuePlan.reopen.length,
+          staleTracker: issuePlan.staleTracker.length,
           untouched: issuePlan.untouched.length,
         },
         parents: {
@@ -977,12 +1055,27 @@ export function runIssueSync({
       };
 
       if (check && !planIsEmpty) {
-        reporter.error(
-          "Tracker/GitHub drift detected — the docs/ROADMAP.md and " +
-            "docs/plans/IMPLEMENTATION.md trackers no longer match GitHub " +
-            "Issues/Milestones. Run `pnpm sync:hub -- --apply` (maintainer-local, " +
-            "needs your own `gh` auth) to reconcile.",
-        );
+        if (!staleTrackerIsEmpty) {
+          reporter.error(
+            `${issuePlan.staleTracker.length} issue(s) closed by a merged PR ` +
+              "still list an unresolved tracker row. This is not GitHub/tracker " +
+              "drift — `--apply` cannot fix it. Edit the Status cell(s) by hand:\n" +
+              issuePlan.staleTracker
+                .map(
+                  ({ number, key, prNumber, sourcePath, sourceAnchor }) =>
+                    `  #${number} [${key}]: ${sourcePath}${sourceAnchor} (closed by PR #${prNumber})`,
+                )
+                .join("\n"),
+          );
+        }
+        if (!otherDriftIsEmpty) {
+          reporter.error(
+            "Tracker/GitHub drift detected — the docs/ROADMAP.md and " +
+              "docs/plans/IMPLEMENTATION.md trackers no longer match GitHub " +
+              "Issues/Milestones. Run `pnpm sync:hub -- --apply` (maintainer-local, " +
+              "needs your own `gh` auth) to reconcile.",
+          );
+        }
         reporter.finish(summary);
         return { ok: false };
       }
@@ -998,6 +1091,7 @@ export function runIssueSync({
             `${milestonePlan.rename.length} and describe ${milestonePlan.describe.length} milestone(s); ` +
             `${issuePlan.create.length} issue(s) to create, ${issuePlan.update.length} to update, ` +
             `${issuePlan.close.length} to close, ${issuePlan.reopen.length} to reopen, ` +
+            `${issuePlan.staleTracker.length} with a stale tracker row, ` +
             `${issuePlan.untouched.length} untouched.`) + backfillSummary,
       );
       reporter.finish(summary);
@@ -1116,6 +1210,25 @@ export function runIssueSync({
       reporter.change("updated", `issue #${number} [${key}] reopened`);
     }
 
+    // Never mutated by --apply — see the `staleTracker` doc on
+    // planIssueSync. Reported as errors so the run's exit code reflects
+    // that human action is still required, but every other planned mutation
+    // above still applies; a stale tracker row on one item must not block
+    // the rest of the sync.
+    for (const {
+      number,
+      key,
+      prNumber,
+      sourcePath,
+      sourceAnchor,
+    } of issuePlan.staleTracker) {
+      reporter.error(
+        `issue #${number} [${key}] closed by merged PR #${prNumber}, but ` +
+          `${sourcePath}${sourceAnchor} still lists it as unresolved — flip ` +
+          `the Status cell to Done (or Rejected); --apply will not do this for you.`,
+      );
+    }
+
     // Parent links last: every issue this run creates or reopens already
     // exists by now, so `numberByKey` can resolve an epic filed moments ago
     // and the run converges without needing a second --apply.
@@ -1179,11 +1292,17 @@ export function runIssueSync({
       ? ` Backfill: ${backfillPlan.create.length} created+closed, ` +
         `${backfillPlan.needsReview.length} skipped for manual review.`
       : "";
+    const staleTrackerAppliedSummary =
+      issuePlan.staleTracker.length > 0
+        ? ` ${issuePlan.staleTracker.length} issue(s) need a tracker Status ` +
+          `cell fixed by hand — see the errors above.`
+        : "";
     reporter.succeed(
       `Applied: ${milestonePlan.create.length} milestone(s) created, ${milestonePlan.rename.length} renamed, ` +
         `${milestonePlan.describe.length} described; ${issuePlan.create.length} issue(s) created, ` +
         `${issuePlan.update.length} updated, ${issuePlan.close.length} closed, ${issuePlan.reopen.length} reopened.` +
-        backfillAppliedSummary,
+        backfillAppliedSummary +
+        staleTrackerAppliedSummary,
     );
     reporter.finish({
       applied: true,
@@ -1198,6 +1317,7 @@ export function runIssueSync({
         update: issuePlan.update.length,
         close: issuePlan.close.length,
         reopen: issuePlan.reopen.length,
+        staleTracker: issuePlan.staleTracker.length,
         untouched: issuePlan.untouched.length,
       },
       parents: {
@@ -1212,6 +1332,17 @@ export function runIssueSync({
         },
       }),
     });
+    // Deliberately `ok: true` even with staleTracker entries present: this
+    // function's return code is what bin/sync-hub.mjs's runPhases() treats
+    // as fatal, stopping before the projects-board phase ever runs. A
+    // staleTracker row is a "human needs to fix a tracker cell" signal, not
+    // a failed sync — every planned mutation above still applied — so it
+    // must not block the rest of `pnpm sync:hub --apply`'s pipeline. It is
+    // still loud: each entry got its own reporter.error() above, which
+    // flips the --json payload's `ok` to false and prints a ✗ line in human
+    // mode. `pnpm check:hub-drift` (this file's --check path, called
+    // directly, never through sync-hub.mjs/runPhases) is the actual
+    // CI-facing gate for this condition and is unaffected by this choice.
     return { ok: true };
   } catch (cause) {
     reporter.error(
