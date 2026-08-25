@@ -363,12 +363,20 @@ describe("formatMismatch", () => {
 // formatCollectFailure
 // ---------------------------------------------------------------------------
 
+// spawnSync's ENOBUFS error is a NodeJS.ErrnoException — an Error with a `code`.
+function makeEnobufsError() {
+  return Object.assign(new Error("spawnSync node ENOBUFS"), {
+    code: "ENOBUFS",
+  });
+}
+
 describe("formatCollectFailure", () => {
   test("never contains the old 'fix failing tests' misattribution text", () => {
     const scenarios = [
       { status: 1, signal: null },
       { status: null, signal: "SIGKILL" },
       { status: 1, error: new Error("spawn fail") },
+      { status: null, signal: "SIGTERM", error: makeEnobufsError() },
     ];
     for (const res of scenarios) {
       expect(formatCollectFailure(res)).not.toContain("fix failing tests");
@@ -378,6 +386,30 @@ describe("formatCollectFailure", () => {
   test("names the signal and clarifies it is NOT a test or count failure", () => {
     const msg = formatCollectFailure({ status: null, signal: "SIGKILL" });
     expect(msg).toContain("SIGKILL");
+    expect(msg.toLowerCase()).toMatch(/not a test/);
+  });
+
+  // Regression guard for the ENOBUFS branch reordering: a plain SIGKILL with no
+  // error attached (a real OOM kill) must still route through the memory message.
+  test("a plain SIGKILL with no error attached still reports memory exhaustion", () => {
+    const msg = formatCollectFailure({ status: null, signal: "SIGKILL" });
+    expect(msg).toContain("usually memory");
+    expect(msg).not.toContain("ENOBUFS");
+  });
+
+  // Task F16 — spawnSync sets BOTH signal and error.code === "ENOBUFS" when the
+  // child's output exceeds the buffer ceiling. The ENOBUFS branch must win over
+  // the generic signal branch, or a buffer limit gets reported as memory
+  // exhaustion (the exact misattribution class F15 was filed to remove).
+  test("an ENOBUFS-shaped kill (signal + error.code) reports a buffer ceiling, not memory exhaustion", () => {
+    const msg = formatCollectFailure({
+      status: null,
+      signal: "SIGTERM",
+      error: makeEnobufsError(),
+    });
+    expect(msg.toUpperCase()).toContain("ENOBUFS");
+    expect(msg.toLowerCase()).toContain("buffer");
+    expect(msg).not.toContain("usually memory");
     expect(msg.toLowerCase()).toMatch(/not a test/);
   });
 

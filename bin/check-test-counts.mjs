@@ -209,8 +209,15 @@ export function formatMismatch({ submodule, recorded, actual }) {
  * kernel killed the process (SIGKILL under memory pressure), which is a machine
  * problem, not a repository one.
  *
- * @param {{ status?: number | null, signal?: string | null, error?: Error,
- *           stdout?: string, stderr?: string }} res
+ * `res.error?.code === "ENOBUFS"` is checked before the plain `signal` branch:
+ * when `spawnSync` kills a child for exceeding its output buffer ceiling, it sets
+ * both `signal` (typically `SIGTERM`) and `error.code === "ENOBUFS"` on the same
+ * result. That's a `spawnSync` option limit, not a kernel OOM kill, so the more
+ * specific cause has to win or a buffer ceiling gets misreported as memory
+ * exhaustion.
+ *
+ * @param {{ status?: number | null, signal?: string | null,
+ *           error?: NodeJS.ErrnoException, stdout?: string, stderr?: string }} res
  * @param {number} [tailLines] how many trailing lines of each stream to include
  * @returns {string}
  */
@@ -219,7 +226,12 @@ export function formatCollectFailure(res, tailLines = 20) {
     (stream ?? "").trim().split("\n").slice(-tailLines).join("\n").trim();
 
   const parts = [];
-  if (res.signal) {
+  if (res.error?.code === "ENOBUFS") {
+    parts.push(
+      `vitest list's output exceeded spawnSync's buffer ceiling (ENOBUFS) — a` +
+        ` buffer limit, not memory exhaustion; this is not a test or count failure.`,
+    );
+  } else if (res.signal) {
     parts.push(
       `vitest list was killed by ${res.signal} — the machine ran out of a` +
         ` resource (usually memory); this is not a test or count failure.`,
