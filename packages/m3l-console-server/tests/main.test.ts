@@ -10,6 +10,7 @@ import { Core } from "@m3l-automation/m3l-common";
 
 import { createConsoleRuntime } from "../src/main.js";
 import { M3LConsoleError } from "../src/errors/console-error.js";
+import type { M3LRoute } from "../src/http/router.js";
 
 /** A minimal valid env: only the required operator name set. */
 function buildEnv(
@@ -197,5 +198,86 @@ describe("createConsoleRuntime — config failure propagates", () => {
 
     expect(runtime).not.toHaveProperty("server");
     expect(runtime).not.toHaveProperty("close");
+  });
+
+  test("registers no process signal handler — process.listenerCount for SIGTERM/SIGINT is unchanged across the call", () => {
+    const handler = new RecordingHandler();
+    const sigtermBefore = process.listenerCount("SIGTERM");
+    const sigintBefore = process.listenerCount("SIGINT");
+
+    createConsoleRuntime({ env: buildEnv(), handlers: [handler] });
+
+    expect(process.listenerCount("SIGTERM")).toBe(sigtermBefore);
+    expect(process.listenerCount("SIGINT")).toBe(sigintBefore);
+  });
+});
+
+describe("createConsoleRuntime — operator composition", () => {
+  test("builds the operator from the resolved config's operatorName/operatorEmail", () => {
+    const handler = new RecordingHandler();
+
+    const runtime = createConsoleRuntime({
+      env: buildEnv({
+        M3L_CONSOLE_OPERATOR_NAME: "grace",
+        M3L_CONSOLE_OPERATOR_EMAIL: "grace@example.com",
+      }),
+      handlers: [handler],
+    });
+
+    expect(runtime.operator).toEqual({
+      name: "grace",
+      email: "grace@example.com",
+    });
+    expect(runtime.operator.name).toBe(runtime.config.operatorName);
+    expect(runtime.operator.email).toBe(runtime.config.operatorEmail);
+  });
+
+  test("operatorProvider is the single-operator provider, and resolve() returns the same operator profile", () => {
+    const handler = new RecordingHandler();
+
+    const runtime = createConsoleRuntime({
+      env: buildEnv({ M3L_CONSOLE_OPERATOR_NAME: "ada" }),
+      handlers: [handler],
+    });
+
+    expect(runtime.operatorProvider.kind).toBe("single-operator");
+    expect(runtime.operatorProvider.resolve({})).toEqual(runtime.operator);
+  });
+});
+
+describe("createConsoleRuntime — routes option reaches the router", () => {
+  test("a routes array passed through options is reachable via runtime.router", () => {
+    const handler = new RecordingHandler();
+    const route: M3LRoute = {
+      method: "GET",
+      path: "/api/v1/health",
+      auth: "exempt",
+      handler: () => ({ status: 200, headers: {}, body: "ok" }),
+    };
+
+    const runtime = createConsoleRuntime({
+      env: buildEnv(),
+      handlers: [handler],
+      routes: [route],
+    });
+
+    expect(runtime.router.routes).toEqual([route]);
+    expect(runtime.router.lookup("GET", "/api/v1/health")).toMatchObject({
+      outcome: "matched",
+    });
+  });
+});
+
+describe("createConsoleRuntime — drain signal", () => {
+  test("runtime.signal is an unaborted AbortSignal at construction", () => {
+    const handler = new RecordingHandler();
+
+    const runtime = createConsoleRuntime({
+      env: buildEnv(),
+      handlers: [handler],
+    });
+
+    expect(runtime.signal).toBeInstanceOf(AbortSignal);
+    expect(runtime.signal.aborted).toBe(false);
   });
 });

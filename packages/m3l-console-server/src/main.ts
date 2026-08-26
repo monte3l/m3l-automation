@@ -14,6 +14,15 @@ import { Core } from "@m3l-automation/m3l-common";
 
 import type { M3LConsoleConfig } from "./config/env.js";
 import { loadConsoleConfig } from "./config/env.js";
+import { createSingleOperatorProvider } from "./auth/identity.js";
+import type {
+  M3LOperatorProfile,
+  M3LOperatorProvider,
+} from "./auth/identity.js";
+import { createConsoleRequestListener } from "./http/handler.js";
+import type { M3LConsoleRequestListener } from "./http/handler.js";
+import { createRouter } from "./http/router.js";
+import type { M3LRoute, M3LRouter } from "./http/router.js";
 
 /**
  * Constructor options for {@link createConsoleRuntime}.
@@ -33,6 +42,12 @@ export interface M3LConsoleRuntimeOptions {
    * so JSON lines rather than the pretty console handler.
    */
   readonly handlers?: readonly Core.M3LLoggerHandler[];
+  /**
+   * The route table the runtime's router is built over; defaults to an
+   * empty table (routes land in a later slice). Exposed so tests can drive
+   * the request listener without a live server.
+   */
+  readonly routes?: readonly M3LRoute[];
 }
 
 /**
@@ -51,6 +66,21 @@ export interface M3LConsoleRuntime {
   readonly config: M3LConsoleConfig;
   /** The logger the rest of the server writes through. */
   readonly logger: Core.M3LLogger;
+  /** The single operator profile resolved from configuration at boot. */
+  readonly operator: M3LOperatorProfile;
+  /** The ADR-0071 auth seam, resolved to {@link operator} for every request. */
+  readonly operatorProvider: M3LOperatorProvider;
+  /** The compiled router; empty at this slice — routes land in a later one. */
+  readonly router: M3LRouter;
+  /** The `node:http` request listener built over {@link router}. */
+  readonly requestListener: M3LConsoleRequestListener;
+  /**
+   * The drain signal threaded into every in-flight request context
+   * (ADR-0049). Backed by a bare `AbortController` at this slice; a later
+   * slice replaces the owner with `M3LDrainController` without changing
+   * this field's shape.
+   */
+  readonly signal: AbortSignal;
 }
 
 /**
@@ -128,5 +158,27 @@ export function createConsoleRuntime(
 
   logPosture(logger, config);
 
-  return { config, logger };
+  const operator: M3LOperatorProfile = {
+    name: config.operatorName,
+    email: config.operatorEmail,
+  };
+  const operatorProvider = createSingleOperatorProvider(operator);
+  const router = createRouter(options.routes ?? []);
+  const drainController = new AbortController();
+  const requestListener = createConsoleRequestListener({
+    router,
+    middlewares: [],
+    logger,
+    signal: drainController.signal,
+  });
+
+  return {
+    config,
+    logger,
+    operator,
+    operatorProvider,
+    router,
+    requestListener,
+    signal: drainController.signal,
+  };
 }
