@@ -8,82 +8,82 @@
         {
           "file": "packages/m3l-common/src/aws/s3/operations.ts",
           "symbol": "listObjects",
-          "blob": "872930b267559a4825be524a591e707313a84372"
+          "blob": "a775f4d8c53299a684cab326a09a86bfeba01b7a"
         },
         {
           "file": "packages/m3l-common/src/aws/s3/operations.ts",
           "symbol": "headObject",
-          "blob": "872930b267559a4825be524a591e707313a84372"
+          "blob": "a775f4d8c53299a684cab326a09a86bfeba01b7a"
         },
         {
           "file": "packages/m3l-common/src/aws/s3/operations.ts",
           "symbol": "getObject",
-          "blob": "872930b267559a4825be524a591e707313a84372"
+          "blob": "a775f4d8c53299a684cab326a09a86bfeba01b7a"
         },
         {
           "file": "packages/m3l-common/src/aws/s3/operations.ts",
           "symbol": "putObject",
-          "blob": "872930b267559a4825be524a591e707313a84372"
+          "blob": "a775f4d8c53299a684cab326a09a86bfeba01b7a"
         },
         {
           "file": "packages/m3l-common/src/aws/s3/operations.ts",
           "symbol": "copyObject",
-          "blob": "872930b267559a4825be524a591e707313a84372"
+          "blob": "a775f4d8c53299a684cab326a09a86bfeba01b7a"
         },
         {
           "file": "packages/m3l-common/src/aws/s3/operations.ts",
           "symbol": "deleteObject",
-          "blob": "872930b267559a4825be524a591e707313a84372"
+          "blob": "a775f4d8c53299a684cab326a09a86bfeba01b7a"
         },
         {
           "file": "packages/m3l-common/src/aws/s3/operations.ts",
           "symbol": "deleteObjects",
-          "blob": "872930b267559a4825be524a591e707313a84372"
+          "blob": "a775f4d8c53299a684cab326a09a86bfeba01b7a"
         },
         {
           "file": "packages/m3l-common/src/aws/s3/operations.ts",
           "symbol": "S3ObjectSummary",
-          "blob": "872930b267559a4825be524a591e707313a84372"
+          "blob": "a775f4d8c53299a684cab326a09a86bfeba01b7a"
         },
         {
           "file": "packages/m3l-common/src/aws/s3/operations.ts",
           "symbol": "ListObjectsOptions",
-          "blob": "872930b267559a4825be524a591e707313a84372"
+          "blob": "a775f4d8c53299a684cab326a09a86bfeba01b7a"
         },
         {
           "file": "packages/m3l-common/src/aws/s3/operations.ts",
           "symbol": "S3Page",
-          "blob": "872930b267559a4825be524a591e707313a84372"
+          "blob": "a775f4d8c53299a684cab326a09a86bfeba01b7a"
         },
         {
           "file": "packages/m3l-common/src/aws/s3/operations.ts",
           "symbol": "S3ObjectMetadata",
-          "blob": "872930b267559a4825be524a591e707313a84372"
+          "blob": "a775f4d8c53299a684cab326a09a86bfeba01b7a"
         },
         {
           "file": "packages/m3l-common/src/aws/s3/operations.ts",
           "symbol": "GetObjectResult",
-          "blob": "872930b267559a4825be524a591e707313a84372"
+          "blob": "a775f4d8c53299a684cab326a09a86bfeba01b7a"
         },
         {
           "file": "packages/m3l-common/src/aws/s3/operations.ts",
           "symbol": "PutObjectOptions",
-          "blob": "872930b267559a4825be524a591e707313a84372"
+          "blob": "a775f4d8c53299a684cab326a09a86bfeba01b7a"
         },
         {
           "file": "packages/m3l-common/src/aws/s3/operations.ts",
           "symbol": "CopyObjectSource",
-          "blob": "872930b267559a4825be524a591e707313a84372"
+          "blob": "a775f4d8c53299a684cab326a09a86bfeba01b7a"
         },
         {
           "file": "packages/m3l-common/src/aws/s3/operations.ts",
           "symbol": "S3DeleteError",
-          "blob": "872930b267559a4825be524a591e707313a84372"
+          "blob": "a775f4d8c53299a684cab326a09a86bfeba01b7a"
         },
         {
           "file": "packages/m3l-common/src/aws/s3/operations.ts",
           "symbol": "DeleteObjectsResult",
-          "blob": "872930b267559a4825be524a591e707313a84372"
+          "blob": "a775f4d8c53299a684cab326a09a86bfeba01b7a"
         },
         {
           "file": "packages/m3l-common/src/aws/s3/error.ts",
@@ -111,7 +111,7 @@
           "blob": "412ded1fe19ab31522fe3fc3957a78e0740773e8"
         }
       ],
-      "retrieved": "2026-08-11"
+      "retrieved": "2026-08-26"
     },
     {
       "heading": "Design choices",
@@ -119,25 +119,25 @@
         {
           "file": "packages/m3l-common/src/aws/s3/operations.ts",
           "symbol": "listObjects",
-          "blob": "872930b267559a4825be524a591e707313a84372"
+          "blob": "a775f4d8c53299a684cab326a09a86bfeba01b7a"
         },
         {
           "file": "packages/m3l-common/src/aws/s3/operations.ts",
           "symbol": "deleteObjects",
-          "blob": "872930b267559a4825be524a591e707313a84372"
+          "blob": "a775f4d8c53299a684cab326a09a86bfeba01b7a"
         },
         {
           "file": "packages/m3l-common/src/aws/s3/operations.ts",
           "symbol": "copyObject",
-          "blob": "872930b267559a4825be524a591e707313a84372"
+          "blob": "a775f4d8c53299a684cab326a09a86bfeba01b7a"
         },
         {
           "file": "packages/m3l-common/src/aws/s3/operations.ts",
           "symbol": "headObject",
-          "blob": "872930b267559a4825be524a591e707313a84372"
+          "blob": "a775f4d8c53299a684cab326a09a86bfeba01b7a"
         }
       ],
-      "retrieved": "2026-07-18"
+      "retrieved": "2026-08-26"
     },
     {
       "heading": "`M3LS3OperationError`",
@@ -167,7 +167,7 @@
       "retrieved": "2026-08-11"
     },
     {
-      "heading": "`M3LS3Operations` \u2014 the `.services.s3Operations` wrapper class",
+      "heading": "`M3LS3Operations` — the `.services.s3Operations` wrapper class",
       "sources": [
         {
           "file": "packages/m3l-common/src/aws/s3/client.ts",

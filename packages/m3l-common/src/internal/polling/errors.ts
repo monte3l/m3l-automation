@@ -67,11 +67,23 @@ export class M3LPollingInvalidOptionError extends M3LError {
 }
 
 /**
- * Thrown when a {@link M3LPoller}/{@link M3LRetryRunner} progress witness
- * stays unchanged (per `Object.is`) for `maxStalledAttempts` consecutive
- * attempts. Carries the stable code `ERR_NO_PROGRESS`; `context.attempts`
- * records the 1-based attempt that tripped the guard and
- * `context.stalledAttempts` the configured threshold that was reached.
+ * Thrown when a "no progress" observation repeats. Two independent families
+ * of caller trip this class, each with its own comparison mechanism:
+ * {@link M3LPoller}/{@link M3LRetryRunner} throw it when their caller-supplied
+ * `progress` witness returns a value unchanged (per `Object.is`) for
+ * `maxStalledAttempts` consecutive attempts; `internal/aws/pagination`'s page
+ * cursor guards (used by `aws/dynamodb`'s `queryItems`/`scanSegment` and
+ * `aws/s3`'s `listObjects`) throw it when a paginated operation's own page
+ * cursor — there is no separate witness function, the cursor itself is
+ * compared — normalizes to the same serialized string on two consecutive
+ * pages. Carries the stable code `ERR_NO_PROGRESS`; `context.attempts`
+ * records the 1-based count of relevant observations up to and including the
+ * one that tripped the guard, and `context.stalledAttempts` records how many
+ * consecutive unchanged observations triggered the rejection — for
+ * `M3LPoller`/`M3LRetryRunner` this equals the caller's configured
+ * `maxStalledAttempts`, while for the pagination guards it is always the
+ * fixed value `1`, since pagination has no configurable threshold and trips
+ * on the first repeat.
  */
 export class M3LNoProgressError extends M3LError {
   /** Narrows the inherited `code` to the literal `"ERR_NO_PROGRESS"`. */
@@ -80,7 +92,9 @@ export class M3LNoProgressError extends M3LError {
   /**
    * @param message - Human-readable description of the failure.
    * @param context - `attempts` (1-based, the attempt that tripped the
-   *   guard) and `stalledAttempts` (the configured threshold reached).
+   *   guard) and `stalledAttempts` (how many consecutive unchanged
+   *   observations triggered the rejection — see the class doc for how this
+   *   differs between the polling and pagination throwers).
    * @param options - Optional `cause`. `M3LRetryRunner` threads the
    *   operation's in-flight error through as `cause` so a no-progress
    *   rejection still carries what the operation was actually failing with;

@@ -9,6 +9,7 @@ import {
   DeleteObjectsCommand,
 } from "@aws-sdk/client-s3";
 import { M3LS3OperationError } from "./error.js";
+import { createPageCursorGuard } from "../../internal/aws/pagination.js";
 
 /**
  * `aws/s3/operations` — high-level S3 object operations over the `s3` client
@@ -92,6 +93,7 @@ function mapS3ObjectSummaries(
  * @param options - Listing parameters.
  * @param continuationToken - Resume cursor from a prior page (`--resume`).
  * @throws {@link M3LS3OperationError} when the underlying `ListObjectsV2Command` rejects.
+ * @throws A plain `M3LError` with `code === "ERR_NO_PROGRESS"` when the underlying page cursor (`NextContinuationToken`) is identical between two consecutive pages, since a repeating cursor cannot make progress.
  * @example
  * ```ts
  * import { listObjects } from "@m3l-automation/m3l-common/aws";
@@ -110,6 +112,7 @@ export async function* listObjects(
   const prefix = options?.prefix;
   const pageSize = options?.pageSize;
   let token = continuationToken;
+  const cursorGuard = createPageCursorGuard();
   do {
     try {
       const response = await client.send(
@@ -127,6 +130,10 @@ export async function* listObjects(
         context: { bucket, prefix, continuationToken: token },
       });
     }
+    // Outside the try/catch above so a tripped guard's M3LNoProgressError
+    // propagates unwrapped — the catch block only exists to re-wrap SDK
+    // failures from client.send, not this call-site plumbing.
+    cursorGuard.check(token);
   } while (token !== undefined);
 }
 
