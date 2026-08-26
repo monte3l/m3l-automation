@@ -5,6 +5,7 @@ import { Core } from "@m3l-automation/m3l-common";
 import {
   configParameters,
   configValidators,
+  ECS_OPERATION_DECLARATIONS,
   ECS_OPERATIONS,
 } from "../src/config.js";
 
@@ -88,6 +89,77 @@ function paramNamed(name: string): Core.M3LConfigParameter {
 describe("ecs-ops ECS_OPERATIONS", () => {
   it("declares exactly the 8 documented operation strings, in order", () => {
     expect(ECS_OPERATIONS).toEqual(EXPECTED_OPERATIONS);
+  });
+});
+
+/**
+ * The per-operation `requiredParameters` table from
+ * `docs/reference/scripts/ecs-ops.md` § Configuration schema, re-derived
+ * independently of `ECS_OPERATION_DECLARATIONS` so a typo'd
+ * `requiredParameters` entry in `src/config.ts` is caught rather than
+ * silently agreeing with itself.
+ */
+const EXPECTED_REQUIRED_PARAMETERS: Record<
+  (typeof EXPECTED_OPERATIONS)[number],
+  readonly string[]
+> = {
+  "list-services": [],
+  "describe-service": ["cluster", "service"],
+  "create-service": ["input"],
+  "update-service": ["input"],
+  "delete-service": ["cluster", "service"],
+  "wait-services-stable": ["cluster", "services"],
+  "list-clusters": [],
+  "describe-cluster": ["cluster"],
+};
+
+describe("ecs-ops 'operation' parameter — getOperations() round-trip (ADR-0055)", () => {
+  it("is declared on the 'operation' parameter (not undefined)", () => {
+    expect(paramNamed("operation").getOperations()).not.toBeUndefined();
+  });
+
+  it("equals ECS_OPERATION_DECLARATIONS by content — a fresh projection, not the same array (toEqual, not toBe)", () => {
+    const operations = paramNamed("operation").getOperations();
+    expect(operations).toEqual(ECS_OPERATION_DECLARATIONS);
+    expect(operations).not.toBe(ECS_OPERATION_DECLARATIONS);
+  });
+
+  it("projects the 8 declared operations, in order, by name", () => {
+    const operations = paramNamed("operation").getOperations() ?? [];
+    expect(operations.map((operation) => operation.name)).toEqual(
+      EXPECTED_OPERATIONS,
+    );
+  });
+
+  it("gives every operation a non-blank description", () => {
+    const operations = paramNamed("operation").getOperations() ?? [];
+    for (const operation of operations) {
+      expect(operation.description.trim().length).toBeGreaterThan(0);
+    }
+  });
+
+  it.each(EXPECTED_OPERATIONS)(
+    "'%s' projects the documented requiredParameters",
+    (operationName) => {
+      const operations = paramNamed("operation").getOperations() ?? [];
+      const operation = operations.find((op) => op.name === operationName);
+      expect(operation?.requiredParameters).toEqual(
+        EXPECTED_REQUIRED_PARAMETERS[operationName],
+      );
+    },
+  );
+
+  it("names only declared configParameters in every operation's requiredParameters (catches a typo'd parameter name)", () => {
+    const operations = paramNamed("operation").getOperations() ?? [];
+    const declaredNames = new Set(
+      configParameters.map((parameter) => parameter.getName()),
+    );
+    const requiredNames = new Set(
+      operations.flatMap((operation) => operation.requiredParameters ?? []),
+    );
+    for (const name of requiredNames) {
+      expect(declaredNames.has(name)).toBe(true);
+    }
   });
 });
 
