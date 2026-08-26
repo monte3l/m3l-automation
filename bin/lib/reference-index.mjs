@@ -62,16 +62,25 @@ export function fileExports(absTsPath, visited) {
     return new Set();
   }
 
+  // Strip comments before matching so an `export` declaration written inside
+  // a TSDoc `@example` fence (or any other comment) isn't mistaken for a
+  // real one. The line-comment strip only fires when `//` starts the line
+  // (allowing leading whitespace) so a real code line containing `//`
+  // mid-line (e.g. a URL string literal) isn't truncated.
+  const scannable = src
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*\/\/.*$/gm, "");
+
   const names = new Set();
 
   // 1. Direct declarations: export (class|function|const|type|interface|enum) X
   const declRe =
     /\bexport\s+(?:declare\s+)?(?:abstract\s+)?(?:async\s+)?(?:class|function|const|let|var|type|interface|enum)\s+([A-Za-z_$][\w$]*)/g;
-  for (const m of src.matchAll(declRe)) names.add(m[1]);
+  for (const m of scannable.matchAll(declRe)) names.add(m[1]);
 
   // 2. Named export lists: export { A, B as C, type D } [from "..."]
   const listRe = /\bexport\s+(?:type\s+)?\{([^}]*)\}/g;
-  for (const m of src.matchAll(listRe)) {
+  for (const m of scannable.matchAll(listRe)) {
     for (const rawItem of m[1].split(",")) {
       const item = rawItem.trim().replace(/^type\s+/, "");
       if (!item || item === "default") continue;
@@ -83,11 +92,11 @@ export function fileExports(absTsPath, visited) {
 
   // 3. export * as ns from "..."
   const starAsRe = /\bexport\s+\*\s+as\s+([A-Za-z_$][\w$]*)\s+from/g;
-  for (const m of src.matchAll(starAsRe)) names.add(m[1]);
+  for (const m of scannable.matchAll(starAsRe)) names.add(m[1]);
 
   // 4. export * from "./sibling.js" — resolve and recurse.
   const starRe = /\bexport\s+\*\s+from\s+["']([^"']+)["']/g;
-  for (const m of src.matchAll(starRe)) {
+  for (const m of scannable.matchAll(starRe)) {
     const spec = m[1];
     if (!spec.startsWith(".")) continue; // never follow package specifiers
     const resolved = join(dirname(absTsPath), spec.replace(/\.js$/, ".ts"));
