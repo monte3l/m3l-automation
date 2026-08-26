@@ -206,6 +206,11 @@ export const COMMAND_CATALOG = [
       "The script-facing m3l CLI (packages/m3l-cli, ADR-0042): `pnpm m3l list` enumerates the scripts/* packages, `pnpm m3l inspect <script>` shows a script's declared configParameters. Contract: docs/reference/cli.md.",
   },
   {
+    name: "console:server",
+    description:
+      "Runs the m3l operations-console backend (packages/m3l-console-server, ADR-0064/0065) in the foreground: binds a loopback-only listener, serves /health and /ready, and drains gracefully on SIGINT/SIGTERM. Requires M3L_CONSOLE_OPERATOR_NAME (ADR-0071). Settings: the package README's Configuration table.",
+  },
+  {
     name: "check:agents",
     description:
       "Verifies every skill/CLAUDE.md agent reference resolves to a real subagent or built-in, and that no spoke is granted the Agent tool (the no-nesting invariant). Run after editing .claude/agents/** or a skill's dispatch prompt.",

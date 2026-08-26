@@ -281,12 +281,19 @@ if (!hasConsoleServerImportBoundary) {
 // EXACT `except` set for the same reason the aws island is: a subset check
 // would keep passing after someone widened `except` to let http/ reach
 // config/, which is precisely the edge the layering forbids.
+//
+// `net` is the second leaf: loopback classification is needed by config/ (to
+// validate the requested bind host), lifecycle/ (to re-assert it against the
+// address actually bound) and http/ (the Host/Origin rebinding guard). Its
+// row asserts an except set of exactly ["net"] so it can never quietly grow
+// an inbound edge and stop being a leaf.
 const CONSOLE_SERVER_LAYERS = [
+  ["net", ["net"]],
   ["errors", ["errors"]],
-  ["config", ["config", "errors"]],
+  ["config", ["config", "errors", "net"]],
   ["auth", ["auth", "errors"]],
-  ["lifecycle", ["lifecycle", "errors"]],
-  ["http", ["http", "errors", "auth", "lifecycle"]],
+  ["lifecycle", ["lifecycle", "errors", "net"]],
+  ["http", ["http", "errors", "auth", "lifecycle", "net"]],
 ];
 
 for (const [layer, allowed] of CONSOLE_SERVER_LAYERS) {
