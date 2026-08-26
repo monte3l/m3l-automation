@@ -143,7 +143,7 @@ per-phase detail in
 | **U2**  | `check:cli-scaffold` + `check:cli-docs` gates                | Done     |
 | **U3**  | `core/cli-contract` promotion (Core 23 → 24, additive minor) | Done     |
 | **U4**  | Declarative operations — library half (`core/config`)        | Done     |
-| **U5**  | Declarative operations — fleet retrofit                      | To Do    |
+| **U5**  | Declarative operations — fleet retrofit                      | Done     |
 | **U6**  | `commandModule` adoption — template + pilot scripts          | To Do    |
 | **U7**  | Hybrid execution in the CLI; discovery over dependencies     | To Do    |
 | **U8**  | Operation introspection in `inspect`/`--help`/wizard         | To Do    |

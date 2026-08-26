@@ -4,15 +4,73 @@ const FORCE_DEFAULT = false;
 const YES_DEFAULT = false;
 const YES_SENSITIVE_DEFAULT = false;
 
-/** The seven operations `eventbridge-schedules` supports. */
-const EVENTBRIDGE_SCHEDULES_OPERATIONS = [
-  "list",
-  "describe",
-  "create",
-  "update",
-  "delete",
-  "enable",
-  "disable",
+/**
+ * The `operation` parameter's declared operation set (ADR-0055) — the seven
+ * verbs `eventbridge-schedules` dispatches over `AWS.M3LEventBridgeOperations`.
+ * Feeds {@link configParameters}' `operation` declaration, which
+ * auto-composes the membership validator, replacing the prior hand-written
+ * `oneOf`.
+ *
+ * `requiredParameters` here is **declarative metadata only** — CLI
+ * introspection surfaces it (ADR-0055), but it is deliberately **not**
+ * enforced at config-load time: `Core.deriveOperationValidators` is NOT
+ * spread into {@link configValidators}, so presence enforcement stays
+ * exactly where it already was — the run-start guard in
+ * `steps/run-eventbridge-schedules.ts`. Wiring `deriveOperationValidators`
+ * in here would move that failure earlier (to config-load time) and is out
+ * of scope for this change — do not add it without deliberately deciding to
+ * change failure timing.
+ *
+ * `create`/`update` additionally require exactly one of
+ * `eventPattern`/`scheduleExpression` — an exclusive-or `requiredParameters`
+ * cannot express, so it is deliberately omitted here and stays enforced in
+ * `steps/put-rule.ts`'s `readRuleDiscriminant`.
+ *
+ * Deliberately declared with a bare `as const` — NOT
+ * `as const satisfies Core.M3LOperationDeclarationList` — because a
+ * `satisfies` clause on this literal fails `tsc --isolatedDeclarations`
+ * (the mode each script's `tsconfig.build.json` builds under). The shape is
+ * still fully compile-time-checked at its use site without it: passing this
+ * value to `operations:` in `configParameters` checks it against
+ * `Core.M3LOperationDeclarationList` — do not re-add `satisfies` here.
+ */
+const EVENTBRIDGE_SCHEDULES_OPERATION_DECLARATIONS = [
+  {
+    name: "list",
+    description:
+      "List EventBridge rules, optionally filtered by name prefix or event bus.",
+    requiredParameters: [],
+  },
+  {
+    name: "describe",
+    description: "Describe one EventBridge rule by name.",
+    requiredParameters: ["ruleName"],
+  },
+  {
+    name: "create",
+    description: "Create an EventBridge rule, optionally attaching targets.",
+    requiredParameters: ["ruleName"],
+  },
+  {
+    name: "update",
+    description: "Update an EventBridge rule, optionally attaching targets.",
+    requiredParameters: ["ruleName"],
+  },
+  {
+    name: "delete",
+    description: "Delete an EventBridge rule by name.",
+    requiredParameters: ["ruleName"],
+  },
+  {
+    name: "enable",
+    description: "Enable an EventBridge rule by name.",
+    requiredParameters: ["ruleName"],
+  },
+  {
+    name: "disable",
+    description: "Disable an EventBridge rule by name.",
+    requiredParameters: ["ruleName"],
+  },
 ] as const;
 
 /** The three EventBridge rule states. */
@@ -35,9 +93,13 @@ const EVENTBRIDGE_SCHEDULES_STATES = [
  * `aws.profile` and `operation` are `required: true`: presence is enforced at
  * config-load time by the library. The remaining per-operation requirements
  * (e.g. `ruleName` for `describe`/`delete`, `scheduleExpression` for
- * `create`) are cross-parameter constraints a single parameter's validator
- * cannot express, so they are guard-checked at run start instead (see
- * `steps/run-eventbridge-schedules.ts`).
+ * `create`) are declared as data on
+ * {@link EVENTBRIDGE_SCHEDULES_OPERATION_DECLARATIONS}' `requiredParameters`
+ * for CLI introspection (ADR-0055), but are cross-parameter constraints a
+ * single parameter's validator cannot express and are deliberately left
+ * enforced at run start only (see `steps/run-eventbridge-schedules.ts`) —
+ * see that constant's TSDoc for why `Core.deriveOperationValidators` is not
+ * wired into {@link configValidators} here.
  */
 export const configParameters: readonly Core.M3LConfigParameter[] = [
   new Core.M3LConfigParameter({
@@ -50,9 +112,7 @@ export const configParameters: readonly Core.M3LConfigParameter[] = [
     name: "operation",
     type: Core.M3LConfigParameterType.STRING,
     required: true,
-    validate: Core.M3LConfigValidators.oneOf<string>(
-      EVENTBRIDGE_SCHEDULES_OPERATIONS,
-    ),
+    operations: EVENTBRIDGE_SCHEDULES_OPERATION_DECLARATIONS,
   }),
   new Core.M3LConfigParameter({
     name: "ruleName",

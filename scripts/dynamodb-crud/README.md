@@ -54,12 +54,23 @@ node dist/main.js --operation export --tableName orders \
 
 ### Operations at a glance
 
-| Operation                                                                 | Demonstrated by                                                          |
-| ------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| `get`                                                                     | Minimal                                                                  |
-| `update`                                                                  | Common                                                                   |
-| `export`                                                                  | Production, Edge case                                                    |
-| `put`, `delete`, `query`, `scan`, `batch-write`, `batch-delete`, `import` | — see the [contract page](../../docs/reference/scripts/dynamodb-crud.md) |
+| Operation      | Description                                                                                   | Demonstrated by       |
+| -------------- | --------------------------------------------------------------------------------------------- | --------------------- |
+| `get`          | Get a single item by key.                                                                     | Minimal               |
+| `put`          | Put a full item.                                                                              | —                     |
+| `update`       | Update an item via a merge patch, routed through the destructive-operation gate.              | Common                |
+| `delete`       | Delete an item by key, routed through the destructive-operation gate.                         | —                     |
+| `query`        | Query items across parallel segmented workers, with an optional equality key condition.       | —                     |
+| `scan`         | Scan a table across parallel segmented workers, streaming records as JSONL.                   | —                     |
+| `batch-write`  | Batch-write records read from the input file, retrying unprocessed items.                     | —                     |
+| `batch-delete` | Batch-delete records read from the input file, routed through the destructive-operation gate. | —                     |
+| `export`       | Export a full table scan to JSONL across parallel segmented workers.                          | Production, Edge case |
+| `import`       | Import records from the input file, routed through the destructive-operation gate.            | —                     |
+
+A `—` in **Demonstrated by** means the operation has no worked example in
+§ Examples above — see the [contract page](../../docs/reference/scripts/dynamodb-crud.md) for its full
+contract. Descriptions are the same strings the script declares in
+`src/config.ts` and exposes via `getOperations()` (ADR-0055).
 
 ### Operational flags
 
