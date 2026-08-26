@@ -18,11 +18,19 @@ import type { M3LCliCommandContext } from "./context.js";
 import { discoverScripts } from "../discovery/discover.js";
 import type { M3LCliScriptCandidate } from "../discovery/discover.js";
 import { loadParametersCached } from "../discovery/cached-load.js";
-import type { M3LCliParameterDescriptor } from "../discovery/load-config.js";
+import type {
+  M3LCliOperationDescriptor,
+  M3LCliParameterDescriptor,
+} from "../discovery/load-config.js";
 import { spawnScript } from "../run/spawn.js";
 import { recordHistoryEntry } from "../history/store.js";
 import { writePreset } from "../presets/store.js";
 import { translateArgv } from "./dynamic.js";
+import {
+  collectScopedParameterNames,
+  isRequiredForOperation,
+  shouldPromptParameter,
+} from "./wizard-operations.js";
 
 /**
  * `M3LCliCommandContext` plus the run-history file's absolute path (8f) —
@@ -72,6 +80,12 @@ export interface M3LCliWizardPrompt {
   ): Promise<number>;
   /** Prompts for a yes/no confirmation. */
   confirm(message: string, options?: { default?: boolean }): Promise<boolean>;
+  /** Prompts for a single choice from a fixed list (U8 — operation selection). */
+  select(
+    message: string,
+    choices: Core.M3LChoices<string>,
+    options?: { default?: string },
+  ): Promise<string>;
 }
 
 /** The set of value shapes a collected/translated parameter value can take. */
@@ -123,17 +137,64 @@ async function resolveSelectedScript(
   return candidate;
 }
 
-/** Prompts for every declared parameter, in declaration order, collecting the non-skipped values. */
+/**
+ * Prompts for every declared parameter, in declaration order, collecting the
+ * non-skipped values.
+ *
+ * Once a value has been collected for a descriptor declaring a non-empty
+ * `operations` array (ADR-0055, U8), every subsequent descriptor is scoped
+ * against the chosen operation: {@link shouldPromptParameter} decides whether
+ * it is prompted at all (a parameter scoped to a *different* operation is
+ * skipped entirely — no prompt call, no entry in the returned values), and
+ * {@link isRequiredForOperation} widens the empty-answer re-ask policy to
+ * cover a parameter the chosen operation requires even when its own
+ * `required` flag is `false`.
+ */
 async function collectAllParameterValues(
   prompt: M3LCliWizardPrompt,
   descriptors: readonly M3LCliParameterDescriptor[],
   output: M3LCliOutput,
 ): Promise<M3LCliWizardValues> {
   const values: M3LCliWizardValues = {};
+  let chosenOperation: M3LCliOperationDescriptor | undefined;
+  let scoped: ReadonlySet<string> = new Set();
+
   for (const descriptor of descriptors) {
-    const collected = await collectParameterValue(prompt, descriptor, output);
+    if (
+      !shouldPromptParameter(descriptor, chosenOperation, scoped, descriptors)
+    ) {
+      continue;
+    }
+
+    const required =
+      descriptor.required ||
+      isRequiredForOperation(descriptor, chosenOperation, descriptors);
+    const collected = await collectParameterValue(
+      prompt,
+      descriptor,
+      output,
+      required,
+    );
     if (collected !== undefined) {
       values[descriptor.name] = finalizeValue(descriptor, collected.value);
+    }
+
+    if (
+      chosenOperation === undefined &&
+      collected !== undefined &&
+      descriptor.operations !== undefined &&
+      descriptor.operations.length > 0
+    ) {
+      const selected = descriptor.operations.find(
+        (operation) => operation.name === collected.value,
+      );
+      if (selected !== undefined) {
+        chosenOperation = selected;
+        scoped = collectScopedParameterNames(
+          descriptor.operations,
+          descriptors,
+        );
+      }
     }
   }
   return values;
@@ -168,15 +229,38 @@ interface M3LCliWizardRawAnswer {
 }
 
 /**
- * Prompts once for `descriptor`'s value, dispatching by secret flag then
- * declared type: `secret` always uses `password` (regardless of the declared
- * type); `BOOL` uses `confirm` (default `false` unless `defaultValue` is the
- * literal string `"true"`); `INT`/`DOUBLE` use `number` (forwarding a
- * parseable declared default); everything else (including `STRING_ARRAY`)
- * uses `text` (a non-array type forwards its declared default as the
- * prefill, sanitized via {@link sanitizeTerminalText} — `M3LPrompt` escapes
- * only the prompt `message`, not the `default` prefill, and a declared
- * default is attacker-influencable script config).
+ * Builds the `select` choices for a descriptor's declared operations,
+ * rendered as `"name — description"` (ADR-0055, U8) — both interpolated
+ * fields are sanitized via {@link sanitizeTerminalText} before rendering,
+ * since an operation's `name` and `description` both come from a script's
+ * `getOperations()` export, the same attacker-influencable script config
+ * already sanitized elsewhere in this file and in `inspect.ts`'s operations
+ * table. `value` stays the raw, unsanitized operation name — sanitization is
+ * a display-only concern, and `value` is what `select` resolves the answer
+ * to, matched back against `descriptor.operations` by exact name in
+ * {@link collectAllParameterValues}.
+ */
+function buildOperationChoices(
+  operations: readonly M3LCliOperationDescriptor[],
+): Core.M3LChoices<string> {
+  return operations.map((operation) => ({
+    value: operation.name,
+    name: `${sanitizeTerminalText(operation.name)} — ${sanitizeTerminalText(operation.description)}`,
+  }));
+}
+
+/**
+ * Prompts once for `descriptor`'s value, dispatching by secret flag, then a
+ * non-empty declared `operations` list (ADR-0055, U8 — prompted via
+ * `select`, choices rendered as `"name — description"`), then declared type:
+ * `secret` always uses `password` (regardless of the declared type); `BOOL`
+ * uses `confirm` (default `false` unless `defaultValue` is the literal
+ * string `"true"`); `INT`/`DOUBLE` use `number` (forwarding a parseable
+ * declared default); everything else (including `STRING_ARRAY`) uses `text`
+ * (a non-array type forwards its declared default as the prefill, sanitized
+ * via {@link sanitizeTerminalText} — `M3LPrompt` escapes only the prompt
+ * `message`, not the `default` prefill, and a declared default is
+ * attacker-influencable script config).
  */
 async function promptOnce(
   prompt: M3LCliWizardPrompt,
@@ -186,6 +270,14 @@ async function promptOnce(
 
   if (descriptor.secret === true) {
     const value = await prompt.password(message);
+    return { raw: value, value };
+  }
+
+  if (descriptor.operations !== undefined && descriptor.operations.length > 0) {
+    const value = await prompt.select(
+      message,
+      buildOperationChoices(descriptor.operations),
+    );
     return { raw: value, value };
   }
 
@@ -228,10 +320,12 @@ function isEmptyAnswer(answer: M3LCliWizardRawAnswer): boolean {
 
 /**
  * Prompts for one declared parameter's value, applying the empty-answer
- * policy: an empty answer on an optional parameter is skipped silently; an
- * empty answer on a required parameter is re-prompted once, then skipped
- * with a rendered warning naming it (the script's own required-validation is
- * the authority and will fail loud at run).
+ * policy: an empty answer is skipped silently unless `required` is `true` —
+ * `required` is the caller-resolved union of `descriptor.required` and
+ * {@link isRequiredForOperation} against the chosen operation (U8), not just
+ * the descriptor's own flag. A required empty answer is re-prompted once,
+ * then skipped with a rendered warning naming it (the script's own
+ * required-validation is the authority and will fail loud at run).
  *
  * @returns The collected raw value, or `undefined` when the parameter was
  *   skipped.
@@ -240,10 +334,11 @@ async function collectParameterValue(
   prompt: M3LCliWizardPrompt,
   descriptor: M3LCliParameterDescriptor,
   output: M3LCliOutput,
+  required: boolean,
 ): Promise<{ readonly value: string | boolean | number } | undefined> {
   let answer = await promptOnce(prompt, descriptor);
   if (isEmptyAnswer(answer)) {
-    if (!descriptor.required) {
+    if (!required) {
       return undefined;
     }
     answer = await promptOnce(prompt, descriptor);
