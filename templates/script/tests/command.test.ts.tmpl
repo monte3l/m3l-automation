@@ -120,8 +120,13 @@ const manifest: PackageManifest = JSON.parse(
 describe("__SCRIPT_NAME__ command module descriptor", () => {
   it("names itself with the script's own kebab-case name", () => {
     // The name is the CLI's dispatch key (ADR-0042 `m3l <script>`), so it must
-    // match the package directory exactly.
-    expect(commandModule.name).toBe("__SCRIPT_NAME__");
+    // match the package directory exactly. Derived from package.json's scoped
+    // name rather than a hardcoded literal: a long script name substituted
+    // directly here would push the assertion past prettier's line width,
+    // which `check-template-format.mjs` cannot reformat away (ADR-0053 U9).
+    expect(commandModule.name).toBe(
+      manifest.name.replace("@m3l-automation/", ""),
+    );
   });
 
   // Asserted against package.json rather than a bare "0.0.0" literal, so the
@@ -133,10 +138,12 @@ describe("__SCRIPT_NAME__ command module descriptor", () => {
     expect(commandModule.version).toBe(manifest.version);
   });
 
-  // Drift guard, not a tautology: a host renders `description` in help output,
-  // and package.json's is what every other surface (the reference index, the
-  // command catalog) already shows. Two hand-written copies of the same
-  // sentence is exactly the kind of thing that silently diverges.
+  // A wiring check, not a drift guard between two hand-written copies:
+  // `scriptDescription()` (command.ts) reads `description` from this same
+  // package.json at runtime, so both sides of this assertion ultimately come
+  // from the one field a host renders in help output. What this proves is
+  // that the read-and-wire-through actually works, not that two independent
+  // authors' copies stay in sync.
   it("carries the same one-line description as package.json", () => {
     expect(commandModule.description).toBe(manifest.description);
   });
@@ -333,9 +340,7 @@ describe("__SCRIPT_NAME__ fallback command output port", () => {
       "an info line\n",
       "A heading\n",
     ]);
-    expect(err.mock.calls.map(([chunk]) => chunk)).toEqual([
-      "an error line\n",
-    ]);
+    expect(err.mock.calls.map(([chunk]) => chunk)).toEqual(["an error line\n"]);
   });
 });
 
@@ -361,10 +366,7 @@ describe("__SCRIPT_NAME__ execute wiring", () => {
     const { hooks } = runMocks.scriptOptions[0] as {
       readonly hooks: Core.M3LScriptLifecycleHooks;
     };
-    await hooks.onError?.(
-      {} as unknown as Core.M3LScriptHookContext,
-      error,
-    );
+    await hooks.onError?.({} as unknown as Core.M3LScriptHookContext, error);
   }
 
   afterEach(() => {

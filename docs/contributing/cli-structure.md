@@ -46,7 +46,7 @@ whatever shipped last.
 Every directory directly under `src/` must be one of:
 
 ```text
-cli  commands  discovery  history  presets  run
+cli  commands  discovery  history  presets  run  scaffold
 ```
 
 `main.ts` is the only file allowed to sit directly under `src/`. A new
@@ -59,7 +59,12 @@ Of those layers, `src/cli`, `src/commands`, `src/discovery` and `src/run` must
 each hold at least one `.ts`, and `tests/` at least one `.test.ts`.
 `src/history` and `src/presets` are allowed but **not required**: they are 8f
 feature stores that ADR-0054/U7 may relocate, and requiring them would make
-this gate fight a refactor it has no opinion on.
+this gate fight a refactor it has no opinion on. `src/scaffold` (U9, ADR-0053)
+holds the `scripts/<name>/` generation manifest and emitter that
+`commands/new.ts` calls — the single source of truth `bin/lib/script-scaffold.mjs`
+re-exports from the built CLI, so the generator and `bin/check-script-scaffold.mjs`'s
+checker cannot drift apart. Allowed but not required, for the same reason as
+`history`/`presets`: it exists once `new` ships, not before.
 
 `packages/m3l-cli/bin/` must hold **exactly** `m3l.mjs` — the machine-checked
 form of the contract page's "the only process entry is the `bin/m3l.mjs`

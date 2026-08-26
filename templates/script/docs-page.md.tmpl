@@ -3,7 +3,7 @@
 __PURPOSE__
 
 > **This page is the script's contract** — configuration schema, steps, and
-> inputs/outputs. How to *run* it lives in the colocated
+> inputs/outputs. How to _run_ it lives in the colocated
 > [`scripts/__SCRIPT_NAME__/README.md`](../../../scripts/__SCRIPT_NAME__/README.md).
 
 ## Purpose and scope
@@ -17,18 +17,17 @@ __PURPOSE__
 Declared in `src/config.ts` (`configParameters`); config is the script's only
 input seam.
 
-| Parameter   | Type  | Default | Validation         | Required for | Description                  |
-| ----------- | ----- | ------- | ------------------ | ------------ | ---------------------------- |
-| `batchSize` | `INT` | `100`   | `range(1, 10_000)` | all          | Items processed per batch    |
+| Parameter   | Type  | Default | Validation         | Required for | Description               |
+| ----------- | ----- | ------- | ------------------ | ------------ | ------------------------- |
+| `batchSize` | `INT` | `100`   | `range(1, 10_000)` | all          | Items processed per batch |
 
 ## Steps
 
-One row per `src/steps/` module; each step takes injected dependencies and is
-unit-testable without the lifecycle.
+One entry per `src/steps/` module; each step takes injected dependencies and
+is unit-testable without the lifecycle. (A list, not a table — the module
+name embeds the script name, so its width isn't known ahead of scaffolding.)
 
-| Step                  | Responsibility |
-| --------------------- | -------------- |
-| `run-__SCRIPT_NAME__` | <!-- what it does --> |
+- `run-__SCRIPT_NAME__` — <!-- what it does -->
 
 ## Error codes
 
@@ -37,8 +36,8 @@ unit-testable without the lifecycle.
      ERR_CHECKPOINT_* or ERR_IMPORT_*) — in that case replace this section with a
      prose note: "This script defines no script-local error codes; see core/errors." -->
 
-| Code | Meaning |
-| ---- | ------- |
+| Code      | Meaning              |
+| --------- | -------------------- |
 | `ERR_...` | <!-- description --> |
 
 ## Inputs and outputs

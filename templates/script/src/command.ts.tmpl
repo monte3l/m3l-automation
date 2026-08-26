@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
 import { Core } from "@m3l-automation/m3l-common";
 
 import { configParameters } from "./config.js";
@@ -18,6 +21,28 @@ import { run__SCRIPT_NAME_PASCAL__ } from "./steps/run-__SCRIPT_NAME__.js";
 // stop being redacted). U7 unifies the two composition sites behind the
 // library seam it has to add anyway; until then the per-script
 // `tests/command.test.ts` is the anti-drift guard.
+
+/**
+ * Reads this package's own `description` from `package.json` at runtime
+ * rather than embedding `__PURPOSE__` as a TS string literal directly:
+ * `--purpose` is free-form prose up to 200 characters, and prettier breaks a
+ * long string-valued object property onto its own line (unlike a JSON string,
+ * which it never reflows regardless of length) — so a literal embedding here
+ * would make `command.ts` fail `pnpm format:check` for any purpose long
+ * enough to push the line past 80 columns, which `packages/m3l-cli/src/scaffold/generate.ts`
+ * has no `prettier` dependency to fix at scaffold time (ADR-0053 U9).
+ * `package.json`'s own `"description": "__PURPOSE__"` is already proven
+ * stable for every length, so this reads the same value from there instead.
+ */
+function scriptDescription(): string {
+  const packageJsonPath = fileURLToPath(
+    new URL("../package.json", import.meta.url),
+  );
+  const manifest = JSON.parse(readFileSync(packageJsonPath, "utf8")) as {
+    readonly description: string;
+  };
+  return manifest.description;
+}
 
 /**
  * The fallback operator-facing writer for a caller that has no host of its
@@ -107,7 +132,10 @@ async function runMain(script: Core.M3LScript): Promise<void> {
   // `process.env` or a global. Add `script.aws` / `M3LPaths` dirs here too
   // when the step needs them.
   const config = await script.getConfiguration();
-  await run__SCRIPT_NAME_PASCAL__({ logger: script.logger, config });
+  await run__SCRIPT_NAME_PASCAL__({
+    logger: script.logger,
+    config,
+  });
 }
 
 /**
@@ -177,7 +205,7 @@ export function toOutcome(
 export const commandModule: Core.M3LCommandModule = {
   name: "__SCRIPT_NAME__",
   version: "0.0.0",
-  description: "__PURPOSE__",
+  description: scriptDescription(),
   configParameters,
   async execute(_parameters, context): Promise<Core.M3LCommandOutcome> {
     const capture = captureFailures();

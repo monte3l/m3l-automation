@@ -168,7 +168,7 @@ describe("substituteTokens", () => {
     expect(() => {
       substituteTokens("Hello __UNKNOWN__", { __NAME__: "World" });
     }).toThrow(
-      'substituteTokens: unreplaced token "__UNKNOWN__" survived substitution — add it to scriptTokens() in bin/lib/script-scaffold.mjs.',
+      'substituteTokens: unreplaced token "__UNKNOWN__" survived substitution — add it to scriptTokens() in packages/m3l-cli/src/scaffold/manifest.ts.',
     );
   });
 

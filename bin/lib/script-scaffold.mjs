@@ -1,258 +1,80 @@
 // The single source of truth for the consumer-script scaffold shape
-// (ADR-0022 fleet conventions). Both the generator (bin/scaffold-script.mjs)
-// and the conformance checker (bin/check-script-scaffold.mjs) consume this
-// manifest, so the two cannot drift apart: a file added here is emitted by
-// the generator AND required by the checker in the same change.
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+// (ADR-0022 fleet conventions), split across two owners since ADR-0053 U9:
+//
+//   - Generation-relevant identifiers (name/purpose validation, token
+//     substitution, the template manifest, doc-page/tsconfig-ref helpers)
+//     are now OWNED by packages/m3l-cli/src/scaffold/manifest.ts — the CLI's
+//     `m3l new` command consumes them directly. This file RE-EXPORTS them
+//     from the built CLI (`packages/m3l-cli/dist/scaffold/manifest.js`) so
+//     `bin/scaffold-script.mjs` (the thin delegate) and
+//     `bin/check-script-scaffold.mjs` (the checker) keep consuming ONE
+//     source — generator and checker still cannot drift apart, they just
+//     both drift-guard against the CLI's copy instead of a local one.
+//   - Checker-only identifiers (`packageManifestErrors`, `tsconfigShapeErrors`,
+//     `readmeExamplesErrors`, `scriptPackageDirs`, `commandModuleErrors` and
+//     their private helpers) stay LOCAL: they're never used by generation,
+//     only by `bin/check-script-scaffold.mjs`'s structural validation of
+//     already-scaffolded output, so there's exactly one consumer and no
+//     drift risk to guard against by relocating them.
+//
+// Requires `packages/m3l-cli` to be built (`pnpm build`) before this module
+// is imported — the re-export throws a clear message otherwise rather than
+// Node's raw ERR_MODULE_NOT_FOUND.
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { root } from "./reference-index.mjs";
 
-/** Kebab-case script names only: `data-sync`, `report-builder`, `probe`. */
-export const SCRIPT_NAME_RE = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/;
-
-/**
- * ADR-0028: known-bad abbreviated AWS service tokens. A name whose FIRST
- * hyphen-segment is one of these keys is rejected. This is a denylist, not a
- * service-name allowlist — no canonical vocabulary of "every valid AWS
- * service name" exists yet, nor any structural signal marking a script
- * "AWS-scoped" versus not (see ADR-0028's scope-definition note), so an
- * allowlist can't be built without inventing both. A denylist sidesteps that:
- * it applies uniformly to every name, so a non-AWS name (`json-etl`) is
- * simply never on the list.
- */
-export const BANNED_LEADING_SEGMENTS = new Map([
-  ["dynamo", "dynamodb"],
-  ["cfn", "cloudformation"],
-  ["apigw", "api-gateway"],
-]);
-
-/**
- * ADR-0028: bare AWS capability names that omit their owning service.
- * Checked as an exact whole-name match (the missing piece is a leading
- * prefix, not a segment substitution, so a leading-segment check can't
- * catch it).
- */
-export const BANNED_EXACT_NAMES = new Map([
-  ["logs-insights", "cloudwatch-logs-insights"],
-]);
-
-/**
- * ADR-0042: static command names of the m3l CLI. A script whose name equals
- * one of these would shadow the CLI's own subcommand routing (`m3l <script>`
- * dynamic dispatch, ADR-0042 phase 8d), so scaffold and checker both reject
- * them. `run <script>` stays the always-unambiguous canonical form either
- * way; this list just keeps the short form collision-free.
- */
-const RESERVED_CLI_NAMES = new Set([
-  "list",
-  "inspect",
-  "run",
-  "doctor",
-  "presets",
-  "history",
-  "wizard",
-  "new",
-  "help",
-]);
-
-/**
- * Validate a script name against the ADR-0028 full-service-name convention
- * and the ADR-0042 reserved-CLI-name list.
- * Returns human-readable problem strings (empty array = compliant).
- */
-export function serviceNameErrors(name) {
-  const problems = [];
-  const leadingSegment = name.split("-")[0];
-  const abbrevTarget = BANNED_LEADING_SEGMENTS.get(leadingSegment);
-  if (abbrevTarget) {
-    problems.push(
-      `"${name}" abbreviates the AWS service name (uses "${leadingSegment}") — ADR-0028 requires the full official service name ("${abbrevTarget}") as the leading segment.`,
-    );
-  }
-  const exactTarget = BANNED_EXACT_NAMES.get(name);
-  if (exactTarget) {
-    problems.push(
-      `"${name}" names an AWS capability without its owning service — ADR-0028 requires "${exactTarget}".`,
-    );
-  }
-  if (RESERVED_CLI_NAMES.has(name)) {
-    problems.push(
-      `"${name}" is a reserved m3l CLI command name (${[...RESERVED_CLI_NAMES].join(", ")}) — ADR-0042 forbids script names that shadow a static CLI command.`,
-    );
-  }
-  return problems;
+let cliScaffoldModule;
+try {
+  cliScaffoldModule =
+    await import("../../packages/m3l-cli/dist/scaffold/manifest.js");
+} catch (cause) {
+  throw new Error(
+    "bin/lib/script-scaffold.mjs: packages/m3l-cli is not built — run `pnpm build` first " +
+      "(the scaffold manifest moved into the CLI, ADR-0053 U9).",
+    { cause },
+  );
 }
 
-/** Longest purpose accepted — one terse sentence, not a paragraph. */
-export const PURPOSE_MAX_LENGTH = 200;
-
-/**
- * Validate a --purpose value before substitution. The purpose is injected
- * verbatim into a JSON string (package.json "description"), TS doc comments,
- * and markdown — so characters that terminate or escape those contexts are
- * rejected up front rather than escaped per-context: a double quote or
- * backslash breaks the JSON string, and star/slash can form the two-char
- * comment terminator, which would end the doc comment early and let a
- * "purpose" inject live code into the emitted module (this very comment
- * cannot spell the sequence out — that is the bug).
- * Returns human-readable problem strings (empty array = valid).
- */
-export function purposeErrors(purpose) {
-  const problems = [];
-  if (typeof purpose !== "string" || purpose.trim() === "") {
-    return ["purpose must be a non-empty string"];
-  }
-  if (purpose.length > PURPOSE_MAX_LENGTH) {
-    problems.push(
-      `purpose must be at most ${PURPOSE_MAX_LENGTH} characters (got ${purpose.length})`,
-    );
-  }
-  // eslint-disable-next-line no-control-regex -- rejecting control chars is the point
-  if (/[\u0000-\u001f\u007f]/u.test(purpose)) {
-    problems.push("purpose must not contain newlines or control characters");
-  }
-  for (const [char, why] of [
-    ['"', "it terminates the package.json description string"],
-    ["\\", "it escapes inside the package.json description string"],
-    ["*", "it can terminate the doc comment the purpose is emitted into"],
-    ["/", "it can terminate the doc comment the purpose is emitted into"],
-  ]) {
-    if (purpose.includes(char)) {
-      problems.push(
-        `purpose must not contain ${JSON.stringify(char)} — ${why}`,
-      );
-    }
-  }
-  return problems;
-}
-
-/** Directory (repo-relative) holding the *.tmpl sources. */
-export const TEMPLATE_DIR = "templates/script";
-
-/** Directory (repo-relative) holding one contract page per script. */
-export const SCRIPT_DOCS_DIR = "docs/reference/scripts";
-
-/** `data-sync` → `DataSync` (for generated identifiers like `runDataSync`). */
-export function pascalCase(name) {
-  return name
-    .split("-")
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join("");
-}
-
-/**
- * The substitution map applied to template content AND target paths.
- * Every `__TOKEN__` used by any file under templates/script/ must be here.
- */
-export function scriptTokens(name, purpose) {
-  return {
-    __SCRIPT_NAME__: name,
-    __SCRIPT_NAME_PASCAL__: pascalCase(name),
-    __PURPOSE__: purpose,
-  };
-}
-
-/**
- * A `__TOKEN__`-shaped span: two leading underscores, one or more
- * uppercase/digit/underscore characters, two trailing underscores.
- */
-const UNREPLACED_TOKEN_RE = /__[A-Z][A-Z0-9_]*__/;
-
-/**
- * Replace every known token in `text`, then assert none survive. A
- * surviving `__TOKEN__`-shaped span after every known substitution means a
- * template uses a token this manifest's map doesn't know about — a typo, or
- * `scriptTokens()` wasn't updated for a new template. Throwing here (rather
- * than letting it ship into generated source silently) is what makes the
- * scaffolder's atomic rollback (bin/scaffold-script.mjs's try/catch) useful
- * for this failure mode: the half-written package gets removed instead of
- * shipping a literal `__TOKEN__` string a user only discovers later as a
- * `tsc` error in a file they never wrote.
- */
-export function substituteTokens(text, tokens) {
-  let result = text;
-  for (const [token, value] of Object.entries(tokens)) {
-    result = result.replaceAll(token, value);
-  }
-  const leftover = UNREPLACED_TOKEN_RE.exec(result);
-  if (leftover) {
-    throw new Error(
-      `substituteTokens: unreplaced token "${leftover[0]}" survived substitution — add it to scriptTokens() in bin/lib/script-scaffold.mjs.`,
-    );
-  }
-  return result;
-}
-
-/**
- * Template → target pairs emitted inside `scripts/<name>/`. Targets may carry
- * tokens (resolved with the same map as the content).
- */
-export const PACKAGE_TEMPLATE_FILES = [
-  { template: "package.json.tmpl", target: "package.json" },
-  { template: "tsconfig.json.tmpl", target: "tsconfig.json" },
-  { template: "tsconfig.build.json.tmpl", target: "tsconfig.build.json" },
-  { template: "src/main.ts.tmpl", target: "src/main.ts" },
-  { template: "src/config.ts.tmpl", target: "src/config.ts" },
-  { template: "src/hooks.ts.tmpl", target: "src/hooks.ts" },
-  { template: "src/command.ts.tmpl", target: "src/command.ts" },
-  {
-    template: "src/steps/run-__SCRIPT_NAME__.ts.tmpl",
-    target: "src/steps/run-__SCRIPT_NAME__.ts",
-  },
-  { template: "tests/config.test.ts.tmpl", target: "tests/config.test.ts" },
-  { template: "tests/command.test.ts.tmpl", target: "tests/command.test.ts" },
-  { template: "README.md.tmpl", target: "README.md" },
-];
-
-/** The contract page emitted outside the package dir. */
-export const DOC_PAGE_TEMPLATE = "docs-page.md.tmpl";
-
-/** Repo-relative path of a script's contract page. */
-export function docPagePath(name) {
-  return `${SCRIPT_DOCS_DIR}/${name}.md`;
-}
-
-/**
- * Files the checker requires by exact path inside `scripts/<name>/`.
- * (The starter step and smoke test are required via REQUIRED_GLOBS instead,
- * so a script may rename/extend them without a false positive.)
- */
-export const REQUIRED_EXACT_FILES = [
-  "package.json",
-  "tsconfig.json",
-  "tsconfig.build.json",
-  "src/main.ts",
-  "src/config.ts",
-  "src/hooks.ts",
-  "README.md",
-];
-
-/**
- * Directory/suffix pairs of which at least one match must exist:
- * business logic lives in steps modules, and ADR-0022 §8 mandates at least a
- * config-declaration smoke test.
- *
- * The scan is deliberately SHALLOW (one level): flat `src/steps/` and
- * `tests/` directories are part of the ratified fleet shape — the ESLint
- * design rules already cap module size, so growth means more flat step
- * modules, not nesting. A conformant file one level deeper does not count;
- * to allow nesting, change this manifest (and the ADR) — not the checker.
- */
-export const REQUIRED_GLOBS = [
-  { dir: "src/steps", suffix: ".ts", what: "a steps/ module" },
-  { dir: "tests", suffix: ".test.ts", what: "the config smoke test" },
-];
+// Only the names an actual bin/*.mjs script or bin/tests/*.test.ts file
+// consumes are re-exported here — `RESERVED_CLI_NAMES` and
+// `packageTemplateFiles` exist in the CLI's manifest for the CLI's own
+// internal use (the `new` command, the doctor.test.ts drift guard reading
+// the CLI source directly) but have no bin/-side consumer, so `pnpm knip`
+// correctly flags them as unused if re-exported here too.
+export const {
+  SCRIPT_NAME_RE,
+  BANNED_LEADING_SEGMENTS,
+  BANNED_EXACT_NAMES,
+  serviceNameErrors,
+  PURPOSE_MAX_LENGTH,
+  purposeErrors,
+  TEMPLATE_DIR,
+  SCRIPT_DOCS_DIR,
+  pascalCase,
+  scriptTokens,
+  substituteTokens,
+  PACKAGE_TEMPLATE_FILES,
+  DOC_PAGE_TEMPLATE,
+  docPagePath,
+  REQUIRED_EXACT_FILES,
+  REQUIRED_GLOBS,
+  rootTsconfigRef,
+} = cliScaffoldModule;
 
 /**
  * Files the checker treats as **optional but verified**: absent is
  * conformant, present must be correctly shaped.
  *
- * `src/command.ts` is the ADR-0054 command-module seam (U6). The generator
- * always emits it, so every NEW script carries it — but the 13 pre-U6 fleet
- * scripts have not adopted it yet, and the gate must not fail them. This is
- * deliberately a SEPARATE tier from {@link REQUIRED_EXACT_FILES}: promoting
- * `src/command.ts` into that list is the fleet-catch-up event, and it is a
- * one-line move once every script has adopted.
+ * `src/command.ts` is the ADR-0054 command-module seam (U6), emitted for the
+ * `cli` scaffold variant only — a Lambda-variant script (ADR-0053 U9) has no
+ * `dist/main.js` CLI process for an in-process host to be an alternative to,
+ * so `packageTemplateFiles("lambda")` omits it. The generator emits it for
+ * every NEW `cli`-variant script, but the pre-U6 fleet scripts have not
+ * adopted it yet, and the gate must not fail them. This is deliberately a
+ * SEPARATE tier from {@link REQUIRED_EXACT_FILES}: promoting `src/command.ts`
+ * into that list is the fleet-catch-up event, and it is a one-line move once
+ * every `cli`-variant script has adopted.
  *
  * Each entry pairs the path with its own validator rather than being a bare
  * path list, so the checker cannot apply the wrong one when a second optional
@@ -417,13 +239,10 @@ export function commandModuleErrors(commandSrc) {
   return problems;
 }
 
-/** The root tsconfig `references` entry a script package must have. */
-export function rootTsconfigRef(name) {
-  return `./scripts/${name}/tsconfig.build.json`;
-}
-
 /**
  * Validate a script's package.json against the ADR-0022 package contract.
+ * Checker-only — never consumed by generation, so it stays local rather than
+ * moving into the CLI.
  * Returns human-readable problem strings (empty array = conformant).
  */
 export function packageManifestErrors(pkg, name) {
@@ -470,10 +289,10 @@ export function packageManifestErrors(pkg, name) {
  * hand-duplicated as string literals. Its `scripts` values carry no
  * `__TOKEN__`s (unlike `name`/`description`), so its committed text IS every
  * script's expected value verbatim; this is the same shared-manifest
- * discipline the rest of this module already follows (one source, generator
- * and checker both read it), applied to a field this manifest previously
- * only checked for presence. Reads lazily (per call, not at module load) so
- * this module carries no import-time fs side effect.
+ * discipline this module already follows (one source, generator and checker
+ * both read it), applied to a field this manifest previously only checked
+ * for presence. Reads lazily (per call, not at module load) so this module
+ * carries no import-time fs side effect.
  *
  * @returns {Record<string, string>}
  */
@@ -505,9 +324,7 @@ function expectedTsconfigShape(templateName) {
  * Validate a scaffolded script's tsconfig.json or tsconfig.build.json against
  * the invariants the matching template encodes: `extends` the base config,
  * and a project `references` entry back to m3l-common (so `tsc -b` and
- * editor tooling resolve `@m3l-automation/m3l-common`'s types). Previously
- * only file EXISTENCE was checked (`REQUIRED_EXACT_FILES`), so a script whose
- * tsconfig lost `extends` or its m3l-common reference passed silently.
+ * editor tooling resolve `@m3l-automation/m3l-common`'s types). Checker-only.
  * Returns human-readable problem strings (empty array = conformant).
  *
  * @param {{ extends?: unknown, references?: { path?: unknown }[] }} tsconfig parsed tsconfig.json or tsconfig.build.json
@@ -548,12 +365,7 @@ const RUNNABLE_EXAMPLE_RE = /```bash\n[^`]*node dist\/main\.js[^`]*```/;
  * Validate a script README's Examples section against the fleet convention
  * (`templates/script/README.md.tmpl`): a populated `### Examples` heading, no
  * leftover scaffold placeholder, and at least one runnable
- * `node dist/main.js` invocation somewhere after that heading. "Somewhere
- * after" (not "immediately inside") is deliberate: the fleet shape puts the
- * fence directly under the heading, but `json-etl`'s teaching-oriented layout
- * puts its worked examples under numbered sibling headings instead — both
- * satisfy this check without an allowlist. Content only, not example count or
- * the Minimal/Common/Production/Edge-case labels — those stay reviewer-judged.
+ * `node dist/main.js` invocation somewhere after that heading. Checker-only.
  * Returns human-readable problem strings (empty array = conformant).
  */
 export function readmeExamplesErrors(readmeText) {
@@ -584,7 +396,7 @@ export function readmeExamplesErrors(readmeText) {
 /**
  * Directory names under `scripts/` that contain a package.json — the set of
  * script packages the checker validates. Artifact-only ghosts (a leftover
- * dist/ with no manifest) are ignored.
+ * dist/ with no manifest) are ignored. Checker-only.
  */
 export function scriptPackageDirs(repoRoot) {
   const scriptsDir = join(repoRoot, "scripts");
