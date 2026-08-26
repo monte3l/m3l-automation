@@ -5,6 +5,7 @@ import { Core } from "@m3l-automation/m3l-common";
 import {
   configParameters,
   configValidators,
+  LAMBDA_OPERATION_DECLARATIONS,
   LAMBDA_OPERATIONS,
 } from "../src/config.js";
 
@@ -24,6 +25,40 @@ import {
  * config resolution — the repo's "bare `as const` + derived union" idiom for
  * a closed set of string literals.
  */
+
+const EXPECTED_OPERATIONS = [
+  "list",
+  "describe",
+  "invoke",
+  "create",
+  "update-code",
+  "update-configuration",
+  "delete",
+] as const;
+
+/** Resolves `parameter` against a single in-memory raw value, nothing else. */
+async function resolveWith(
+  parameter: Core.M3LConfigParameter,
+  raw: unknown,
+): Promise<unknown> {
+  const reader = new Core.M3LConfigReader([
+    new Core.M3LInMemoryConfigProvider({ [parameter.getName()]: raw }),
+  ]);
+  return parameter.getValueAsync(reader);
+}
+
+function paramNamed(name: string): Core.M3LConfigParameter {
+  const found = configParameters.find(
+    (parameter) => parameter.getName() === name,
+  );
+  if (found === undefined) {
+    throw new Error(
+      `test fixture error: no declared parameter named '${name}'`,
+    );
+  }
+  return found;
+}
+
 describe("lambda-ops config declaration", () => {
   it("declares at least one parameter", () => {
     expect(configParameters.length).toBeGreaterThan(0);
@@ -91,6 +126,82 @@ describe("LAMBDA_OPERATIONS — the operation parameter's oneOf set", () => {
       | "update-configuration"
       | "delete"
     >();
+  });
+
+  it("rejects a value outside the declared set with M3LConfigValidationError (membership is derived from the declaration, not a hand-written oneOf)", async () => {
+    await expect(
+      resolveWith(paramNamed("operation"), "frobnicate"),
+    ).rejects.toBeInstanceOf(Core.M3LConfigValidationError);
+  });
+});
+
+/**
+ * The per-operation `requiredParameters` table from
+ * `docs/reference/scripts/lambda-ops.md` § Configuration schema, re-derived
+ * independently of `LAMBDA_OPERATION_DECLARATIONS` so a typo'd
+ * `requiredParameters` entry in `src/config.ts` is caught rather than
+ * silently agreeing with itself.
+ */
+const EXPECTED_REQUIRED_PARAMETERS: Record<
+  (typeof EXPECTED_OPERATIONS)[number],
+  readonly string[]
+> = {
+  list: [],
+  describe: ["functionName"],
+  invoke: ["functionName"],
+  create: ["functionName", "zipFilePath", "input"],
+  "update-code": ["functionName", "zipFilePath"],
+  "update-configuration": ["functionName", "input"],
+  delete: ["functionName"],
+};
+
+describe("lambda-ops 'operation' parameter — getOperations() round-trip (ADR-0055)", () => {
+  it("is declared on the 'operation' parameter (not undefined)", () => {
+    expect(paramNamed("operation").getOperations()).not.toBeUndefined();
+  });
+
+  it("equals LAMBDA_OPERATION_DECLARATIONS by content — a fresh projection, not the same array (toEqual, not toBe)", () => {
+    const operations = paramNamed("operation").getOperations();
+    expect(operations).toEqual(LAMBDA_OPERATION_DECLARATIONS);
+    expect(operations).not.toBe(LAMBDA_OPERATION_DECLARATIONS);
+  });
+
+  it("projects the 7 declared operations, in order, by name", () => {
+    const operations = paramNamed("operation").getOperations() ?? [];
+    expect(operations.map((operation) => operation.name)).toEqual(
+      EXPECTED_OPERATIONS,
+    );
+  });
+
+  it("gives every operation a non-blank description", () => {
+    const operations = paramNamed("operation").getOperations() ?? [];
+    for (const operation of operations) {
+      expect(operation.description.trim().length).toBeGreaterThan(0);
+    }
+  });
+
+  it.each(EXPECTED_OPERATIONS)(
+    "'%s' projects the documented requiredParameters",
+    (operationName) => {
+      const operations = paramNamed("operation").getOperations() ?? [];
+      const operation = operations.find((op) => op.name === operationName);
+      expect(operation?.requiredParameters).toEqual(
+        EXPECTED_REQUIRED_PARAMETERS[operationName],
+      );
+    },
+  );
+
+  it("names only declared configParameters in every operation's requiredParameters (catches a typo'd parameter name)", () => {
+    const operations = paramNamed("operation").getOperations() ?? [];
+    const declaredNames = new Set(
+      configParameters.map((parameter) => parameter.getName()),
+    );
+    const requiredNames = new Set(
+      operations.flatMap((operation) => operation.requiredParameters ?? []),
+    );
+    for (const name of requiredNames) {
+      expect(declaredNames.has(name)).toBe(true);
+    }
   });
 });
 

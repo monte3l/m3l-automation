@@ -49,14 +49,29 @@ comes from `cluster`/`nodegroup`. `update-nodegroup-version` above needs no
 
 ### Operations at a glance
 
-| Operation                                                                                                                                                                                                                                            | Demonstrated by                                                    |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| `list-clusters`                                                                                                                                                                                                                                      | Minimal                                                            |
-| `describe-nodegroup`                                                                                                                                                                                                                                 | Common                                                             |
-| `update-nodegroup-version`                                                                                                                                                                                                                           | Production                                                         |
-| `wait-nodegroup-active`                                                                                                                                                                                                                              | Production                                                         |
-| `delete-nodegroup`                                                                                                                                                                                                                                   | Edge case                                                          |
-| `describe-cluster`, `create-cluster`, `update-cluster-config`, `update-cluster-version`, `delete-cluster`, `wait-cluster-active`, `wait-cluster-deleted`, `list-nodegroups`, `create-nodegroup`, `update-nodegroup-config`, `wait-nodegroup-deleted` | — see the [contract page](../../docs/reference/scripts/eks-ops.md) |
+| Operation                  | Description                                                     | Demonstrated by |
+| -------------------------- | --------------------------------------------------------------- | --------------- |
+| `list-clusters`            | List the EKS clusters in the account, one page per call.        | Minimal         |
+| `describe-cluster`         | Describe one cluster.                                           | —               |
+| `create-cluster`           | Create a cluster from a JSON input document.                    | —               |
+| `update-cluster-config`    | Update a cluster's configuration from a JSON input document.    | —               |
+| `update-cluster-version`   | Upgrade a cluster to a target Kubernetes version.               | —               |
+| `delete-cluster`           | Delete a cluster.                                               | —               |
+| `wait-cluster-active`      | Wait until a cluster becomes ACTIVE.                            | —               |
+| `wait-cluster-deleted`     | Wait until a cluster is fully deleted.                          | —               |
+| `list-nodegroups`          | List a cluster's managed node groups, one page per call.        | —               |
+| `describe-nodegroup`       | Describe one managed node group.                                | Common          |
+| `create-nodegroup`         | Create a managed node group from a JSON input document.         | —               |
+| `update-nodegroup-config`  | Update a node group's configuration from a JSON input document. | —               |
+| `update-nodegroup-version` | Upgrade a node group's Kubernetes or AMI release version.       | Production      |
+| `delete-nodegroup`         | Delete a managed node group.                                    | Edge case       |
+| `wait-nodegroup-active`    | Wait until a node group becomes ACTIVE.                         | Production      |
+| `wait-nodegroup-deleted`   | Wait until a node group is fully deleted.                       | —               |
+
+A `—` in **Demonstrated by** means the operation has no worked example in
+§ Examples above — see the [contract page](../../docs/reference/scripts/eks-ops.md) for its full
+contract. Descriptions are the same strings the script declares in
+`src/config.ts` and renders under `--help` (ADR-0055).
 
 ### Operational flags
 
