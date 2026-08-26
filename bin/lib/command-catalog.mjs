@@ -181,6 +181,16 @@ export const COMMAND_CATALOG = [
       "Verifies every scripts/*/package.json declares exactly the ADR-0029 dependency boundary (@m3l-automation/m3l-common via workspace:*, no devDependencies). Run after editing a consumer script's package.json.",
   },
   {
+    name: "check:cli-scaffold",
+    description:
+      "Verifies packages/m3l-cli matches the CLI package shape (docs/contributing/cli-structure.md): required files, the src/ layer allowlist, the single bin/ process entry, the bin-first manifest contract (one bin entry, no scripts.start, no exports map, no third-party dependency), and both tsconfig shapes. Run after editing the CLI package's structure or manifest.",
+  },
+  {
+    name: "check:cli-docs",
+    description:
+      "Verifies docs/reference/cli.md follows the canonical structure spec (docs/contributing/cli-structure.md): title and preamble, required sections in canonical order, conditional sections validated when present, an `## Exit codes` table, and a `## Commands` cross-check against main.ts's STATIC_COMMAND_NAMES. Run after editing the CLI contract page or adding a CLI command.",
+  },
+  {
     name: "scaffold:script",
     description:
       "Deterministic generator for a brand-new scripts/<name>/ consumer-script package from templates/script/ (ADR-0022). The greenfield entry point when scripts/<name>/ doesn't exist yet.",

@@ -39,8 +39,10 @@ This page is the CLI's contract. It grows one section per shipped phase
   defeat the CLI's injectable-`cwd` testability.)
 - **Named errors, mapped exits.** Failures surface as `M3LCliError`
   (extending `Core.M3LError`, always cause-chained) — never a raw stack — and
-  exit codes follow the ADR-0035 registry conventions: `0` success, `1`
-  operational failure, `2` usage error (unknown command/script, bad flags).
+  each one maps to a process exit code through a `Record` keyed by the full
+  `M3LCliErrorCode` union, so a new error code cannot be added without an
+  explicit exit-code decision for it. The mapping is
+  [§Exit codes](#exit-codes).
 - **Import-inert modules.** No `src` module executes anything at import time;
   the only process entry is the `bin/m3l.mjs` wrapper, which calls
   `runCli(argv)` and assigns its resolved number to `process.exitCode`.
@@ -90,12 +92,11 @@ child. Everything after the **first bare `--`** passes through verbatim
 (never parsed by the CLI's own flag handling). No config load and no cache
 involvement — `run` only needs discovery.
 
-Exit: the **child's exit code verbatim** (preserving the ADR-0035 registry
-end-to-end); a signal-terminated child yields `128 + <signal number>` (e.g.
-SIGTERM → 143). CLI-side failures: `2` unknown script (with suggestions) or
-missing `<script>` positional; `1` script not built (`ERR_CLI_SCRIPT_NOT_BUILT`,
-message names `pnpm build`) or spawn failure (`ERR_CLI_SPAWN_FAILED`,
-cause-chained).
+Exit: the **child's exit code verbatim**, signals included — see
+[§Exit codes](#exit-codes). CLI-side failures: `2` unknown script (with
+suggestions) or missing `<script>` positional; `1` script not built
+(`ERR_CLI_SCRIPT_NOT_BUILT`, message names `pnpm build`) or spawn failure
+(`ERR_CLI_SPAWN_FAILED`, cause-chained).
 
 ### Phase 8d — per-script dynamic subcommands
 
@@ -210,3 +211,20 @@ rendering), constructed lazily behind an injectable port.
 
 `wizard` completes the reserved command-name set:
 `list, inspect, run, doctor, presets, history, new, help, wizard`.
+
+## Exit codes
+
+The CLI's own exit codes are `M3LCliExitCode` — exactly `0 | 1 | 2`, the
+coarse ADR-0035 subset (`SUCCESS` / `UNCLASSIFIED` / `CONFIG_USAGE`). It never
+mints `3`–`6` itself; a finer-grained registry code reaches the caller only by
+passthrough from a spawned script. The `M3LCliErrorCode` → exit-code mapping
+lives in `src/cli/errors.ts` as a `Record` keyed by the full union, so adding
+an error code is a compile error until its exit code is chosen.
+
+| Code    | Meaning             | Raised by                                                                                                                                                                                                              |
+| ------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `0`     | Success             | every happy path — including `list` with some configs unloadable, `doctor` with no `fail` row (a `warn` never affects the code), `wizard` declining "run now?", and an empty `presets` listing                         |
+| `1`     | Operational failure | `ERR_CLI_CONFIG_IMPORT`, `ERR_CLI_WORKSPACE_NOT_FOUND`, `ERR_CLI_SCRIPT_NOT_BUILT`, `ERR_CLI_SPAWN_FAILED`, `ERR_CLI_DOCTOR_FAILED`, `ERR_CLI_PRESET_INVALID` — and any non-`M3LCliError` value reaching the top level |
+| `2`     | Usage error         | `ERR_CLI_UNKNOWN_COMMAND`, `ERR_CLI_UNKNOWN_SCRIPT`, `ERR_CLI_UNKNOWN_PARAMETER`, `ERR_CLI_INVALID_PARAMETER_VALUE`; a missing required positional; `wizard` on a non-interactive stdin                                |
+| child's | Passthrough         | `run <script>` and dynamic per-script dispatch return the child's code **verbatim**, preserving the ADR-0035 registry end-to-end                                                                                       |
+| `128+N` | Signal-terminated   | a signal-killed child, e.g. SIGTERM → `143`                                                                                                                                                                            |

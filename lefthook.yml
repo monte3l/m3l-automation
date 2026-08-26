@@ -77,6 +77,13 @@ pre-push:
     # docs/contributing/script-docs-structure.md.
     check-script-docs:
       run: pnpm check:script-docs
+    # Same rationale one surface over: the CLI contract page's structure gate
+    # is cheap (~0.05s) and is the one a contributor trips by adding a command
+    # to main.ts without documenting it. See docs/contributing/cli-structure.md.
+    # Its sibling check:cli-scaffold stays CI-only, mirroring the
+    # check:script-docs / check:script-scaffold split.
+    check-cli-docs:
+      run: pnpm check:cli-docs
     # Reproduces claude-pr-review.yml's own reviewable-size gate locally
     # (ADR-0072), before the CI review job ever spends a turn on an
     # oversized PR. Resolves origin/main...HEAD itself when run bare; skips
