@@ -494,6 +494,92 @@ describe("aws/dynamodb", () => {
       expect(thrown).toBeInstanceOf(M3LDynamoDBOperationError);
       expect(send).not.toHaveBeenCalled();
     });
+
+    // A5b (issue #506): queryItems' `do … while (startKey !== undefined)`
+    // loop must not spin forever when the SDK hands back a repeated
+    // LastEvaluatedKey (an SDK bug or a misbehaving mock/local endpoint).
+    // Iteration is bounded by THIS TEST (a fixed number of `.next()` calls),
+    // not solely by the per-test timeout below: a resolved-promise tight
+    // loop can starve Node's timer phase with a perpetually-refilled
+    // microtask queue, so an unguarded generator was observed to OOM the
+    // worker instead of cleanly timing out. The explicit timeout stays as a
+    // secondary backstop.
+    test("rejects with ERR_NO_PROGRESS within a few pages instead of looping forever when LastEvaluatedKey never changes", async () => {
+      const send = vi.fn().mockResolvedValue({
+        Items: [{ userId: "42" }],
+        LastEvaluatedKey: { userId: "42", seq: 1 },
+      });
+      const client = { send } as unknown as DynamoDBDocumentClient;
+
+      const generator = queryItems(client, {
+        tableName: "orders",
+        keyCondition: { userId: "42" },
+      });
+
+      let thrown: unknown;
+      try {
+        for (let attempt = 0; attempt < 5; attempt += 1) {
+          await generator.next();
+        }
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toMatchObject({ code: "ERR_NO_PROGRESS" });
+    }, 2000);
+
+    test("still yields every page when LastEvaluatedKey genuinely advances across pages", async () => {
+      const send = vi
+        .fn()
+        .mockResolvedValueOnce({
+          Items: [{ userId: "42", seq: 1 }],
+          LastEvaluatedKey: { id: "1" },
+        })
+        .mockResolvedValueOnce({
+          Items: [{ userId: "42", seq: 2 }],
+          LastEvaluatedKey: { id: "2" },
+        })
+        .mockResolvedValueOnce({
+          Items: [{ userId: "42", seq: 3 }],
+          LastEvaluatedKey: undefined,
+        });
+      const client = { send } as unknown as DynamoDBDocumentClient;
+
+      const pages: DynamoDBPage[] = [];
+      for await (const page of queryItems(client, {
+        tableName: "orders",
+        keyCondition: { userId: "42" },
+      })) {
+        pages.push(page);
+      }
+
+      expect(pages).toHaveLength(3);
+      expect(pages.map((page) => page.items)).toEqual([
+        [{ userId: "42", seq: 1 }],
+        [{ userId: "42", seq: 2 }],
+        [{ userId: "42", seq: 3 }],
+      ]);
+      expect(send).toHaveBeenCalledTimes(3);
+    });
+
+    test("a single-page listing (no LastEvaluatedKey on the first response) is unaffected by the guard", async () => {
+      const send = vi.fn().mockResolvedValue({
+        Items: [{ userId: "42" }],
+        LastEvaluatedKey: undefined,
+      });
+      const client = { send } as unknown as DynamoDBDocumentClient;
+
+      const pages: DynamoDBPage[] = [];
+      for await (const page of queryItems(client, {
+        tableName: "orders",
+        keyCondition: { userId: "42" },
+      })) {
+        pages.push(page);
+      }
+
+      expect(pages).toHaveLength(1);
+      expect(send).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe("scanSegment", () => {
@@ -601,6 +687,78 @@ describe("aws/dynamodb", () => {
       }
 
       expect(pages).toEqual([{ items: [], lastEvaluatedKey: undefined }]);
+    });
+
+    // A5b (issue #506): same unbounded-loop hazard as queryItems above,
+    // for scanSegment's identical `do … while (startKey !== undefined)`
+    // shape. Bounded by a fixed number of `.next()` calls, not solely by
+    // the timeout — see the queryItems test above for why.
+    test("rejects with ERR_NO_PROGRESS within a few pages instead of looping forever when LastEvaluatedKey never changes", async () => {
+      const send = vi.fn().mockResolvedValue({
+        Items: [{ id: "1" }],
+        LastEvaluatedKey: { id: "1" },
+      });
+      const client = { send } as unknown as DynamoDBDocumentClient;
+
+      const generator = scanSegment(client, { tableName: "orders" });
+
+      let thrown: unknown;
+      try {
+        for (let attempt = 0; attempt < 5; attempt += 1) {
+          await generator.next();
+        }
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toMatchObject({ code: "ERR_NO_PROGRESS" });
+    }, 2000);
+
+    test("still yields every page when LastEvaluatedKey genuinely advances across pages", async () => {
+      const send = vi
+        .fn()
+        .mockResolvedValueOnce({
+          Items: [{ id: "1" }],
+          LastEvaluatedKey: { id: "1" },
+        })
+        .mockResolvedValueOnce({
+          Items: [{ id: "2" }],
+          LastEvaluatedKey: { id: "2" },
+        })
+        .mockResolvedValueOnce({
+          Items: [{ id: "3" }],
+          LastEvaluatedKey: undefined,
+        });
+      const client = { send } as unknown as DynamoDBDocumentClient;
+
+      const pages: DynamoDBPage[] = [];
+      for await (const page of scanSegment(client, { tableName: "orders" })) {
+        pages.push(page);
+      }
+
+      expect(pages).toHaveLength(3);
+      expect(pages.map((page) => page.items)).toEqual([
+        [{ id: "1" }],
+        [{ id: "2" }],
+        [{ id: "3" }],
+      ]);
+      expect(send).toHaveBeenCalledTimes(3);
+    });
+
+    test("a single-page listing (no LastEvaluatedKey on the first response) is unaffected by the guard", async () => {
+      const send = vi.fn().mockResolvedValue({
+        Items: [{ id: "1" }],
+        LastEvaluatedKey: undefined,
+      });
+      const client = { send } as unknown as DynamoDBDocumentClient;
+
+      const pages: DynamoDBPage[] = [];
+      for await (const page of scanSegment(client, { tableName: "orders" })) {
+        pages.push(page);
+      }
+
+      expect(pages).toHaveLength(1);
+      expect(send).toHaveBeenCalledTimes(1);
     });
   });
 

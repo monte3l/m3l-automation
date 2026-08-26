@@ -14,6 +14,7 @@ import {
 import type { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DescribeTableCommand } from "@aws-sdk/client-dynamodb";
 import { M3LDynamoDBOperationError } from "./error.js";
+import { createPageCursorGuard } from "../../internal/aws/pagination.js";
 
 /**
  * DynamoDB's own `BatchWriteItem` cap — the maximum number of items or keys
@@ -227,6 +228,7 @@ export interface DynamoDBPage {
  * @param options - Query parameters.
  * @param exclusiveStartKey - Resume cursor from a prior page (`--resume`).
  * @throws {@link M3LDynamoDBOperationError} when the underlying `QueryCommand` rejects.
+ * @throws A plain `M3LError` with `code === "ERR_NO_PROGRESS"` when the underlying page cursor (`LastEvaluatedKey`) is identical between two consecutive pages, since a repeating cursor cannot make progress.
  * @example
  * ```ts
  * import { queryItems } from "@m3l-automation/m3l-common/aws";
@@ -261,6 +263,7 @@ export async function* queryItems(
   });
 
   let startKey = exclusiveStartKey;
+  const cursorGuard = createPageCursorGuard();
   do {
     try {
       const response = await client.send(
@@ -290,6 +293,10 @@ export async function* queryItems(
         context: { tableName: options.tableName, exclusiveStartKey: startKey },
       });
     }
+    // Outside the try/catch above so a tripped guard's M3LNoProgressError
+    // propagates unwrapped — the catch block only exists to re-wrap SDK
+    // failures from client.send, not this call-site plumbing.
+    cursorGuard.check(startKey);
   } while (startKey !== undefined);
 }
 
@@ -322,6 +329,7 @@ export interface ScanSegmentOptions {
  * @param options - Scan parameters.
  * @param exclusiveStartKey - Resume cursor from a prior page (`--resume`).
  * @throws {@link M3LDynamoDBOperationError} when the underlying `ScanCommand` rejects.
+ * @throws A plain `M3LError` with `code === "ERR_NO_PROGRESS"` when the underlying page cursor (`LastEvaluatedKey`) is identical between two consecutive pages, since a repeating cursor cannot make progress.
  * @example
  * ```ts
  * import { scanSegment } from "@m3l-automation/m3l-common/aws";
@@ -337,6 +345,7 @@ export async function* scanSegment(
   exclusiveStartKey?: DynamoDBKey,
 ): AsyncGenerator<DynamoDBPage> {
   let startKey = exclusiveStartKey;
+  const cursorGuard = createPageCursorGuard();
   do {
     try {
       const response = await client.send(
@@ -364,6 +373,10 @@ export async function* scanSegment(
         context: { tableName: options.tableName, exclusiveStartKey: startKey },
       });
     }
+    // Outside the try/catch above so a tripped guard's M3LNoProgressError
+    // propagates unwrapped — the catch block only exists to re-wrap SDK
+    // failures from client.send, not this call-site plumbing.
+    cursorGuard.check(startKey);
   } while (startKey !== undefined);
 }
 

@@ -69,12 +69,32 @@ namespace):
   larger record set into 25-item batches is the caller's job (mirrors DynamoDB's
   own `BatchWriteItem` limit); passing more than 25 throws
   `M3LDynamoDBOperationError`.
+- **`queryItems`/`scanSegment` reject a repeated `LastEvaluatedKey`.** Each page
+  loop is guarded against a `LastEvaluatedKey` identical to the immediately
+  preceding one — the second such observation rejects with a plain `M3LError`
+  (`code === "ERR_NO_PROGRESS"`, see [`core/errors`](../core/errors.md)) instead
+  of looping forever, since a repeating cursor can never make progress. This
+  catches exactly a same-cursor-twice-in-a-row repeat, not a longer cycle
+  (`a → b → a → …`) or a merely-unhelpful-but-changing cursor; it costs one
+  extra page request beyond the repeat before it trips, and it does not seed
+  its baseline from a caller-supplied resume key, so a resume that immediately
+  re-stalls also costs one extra request. `scanSegment`'s parallel segments
+  each track independently. Composite keys are compared by a key-order-
+  normalized serialization (so two `LastEvaluatedKey`s with the same
+  attributes in different insertion order still count as unchanged) and never
+  appear in the thrown error's message or context — this is a distinct,
+  non-configurable mechanism from `core/polling`'s opt-in `progress` witness
+  (see [`core/polling`](../core/polling.md#no-progress-detection)), not that
+  option applied internally.
 
 ### `M3LDynamoDBOperationError`
 
 Thrown by every function above when the underlying AWS SDK command rejects
 (chained via `cause`), or when a function-level precondition is violated (e.g.
 the 25-item batch cap). Callers narrow via `code === "ERR_DYNAMODB_OPERATION"`.
+The one exception is `queryItems`/`scanSegment`'s repeated-cursor guard above,
+which rejects with `code === "ERR_NO_PROGRESS"` instead — a caller narrowing
+only on `ERR_DYNAMODB_OPERATION` will not catch it.
 
 ### `M3LDynamoDBOperations` — the `.services.dynamoDBOperations` wrapper class
 

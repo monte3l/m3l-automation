@@ -236,6 +236,18 @@ loudly rather than silently:
 construction, so mutating the options object after the constructor returns
 cannot change how a later `poll()` / `run()` behaves.
 
+**Not the same mechanism as pagination's own repeated-cursor guard.**
+`aws/dynamodb`'s `queryItems`/`scanSegment` and `aws/s3`'s `listObjects`
+also throw `ERR_NO_PROGRESS` when a page cursor repeats (see
+[`aws/dynamodb`](../aws/dynamodb.md)/[`aws/s3`](../aws/s3.md)), but through a
+separate, non-configurable internal guard — not this `progress` option applied
+internally. It has no caller-supplied witness (the page cursor itself is
+compared), no `maxStalledAttempts` (it trips on the first repeat), and its
+`context.attempts` counts pages fetched, not poll/retry attempts. Absent a
+`progress` option, `M3LPoller`/`M3LRetryRunner` behaviour is unchanged by
+either mechanism — this note only prevents reading the two as one shared
+implementation.
+
 ## Events
 
 `M3LPoller` and `M3LRetryRunner` both extend `M3LEventEmitterBase`, so a consumer
