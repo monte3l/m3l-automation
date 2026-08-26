@@ -13,7 +13,6 @@
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { docPagePath } from "./lib/script-scaffold.mjs";
 import { parseJsonFlag, createReporter } from "./lib/report.mjs";
 
 const { json, argv } = parseJsonFlag();
@@ -51,12 +50,16 @@ if (!name || name.startsWith("--")) {
 }
 
 // --- Delegate to the CLI-owned generator --------------------------------------
-// A dynamic import (not a static one) so a missing build fails with THIS
-// script's own clear message rather than Node's raw ERR_MODULE_NOT_FOUND.
-let generateScript;
+// Both imports are dynamic (not static) so a missing build fails with THIS
+// script's own clear message rather than Node's raw ERR_MODULE_NOT_FOUND — a
+// static `import { docPagePath } from "./lib/script-scaffold.mjs"` would
+// trigger that module's OWN top-level-await dist import first, throwing
+// before this try/catch ever ran.
+let generateScript, docPagePath;
 try {
   ({ generateScript } =
     await import("../packages/m3l-cli/dist/scaffold/generate.js"));
+  ({ docPagePath } = await import("./lib/script-scaffold.mjs"));
 } catch (cause) {
   fail(
     `packages/m3l-cli is not built — run \`pnpm build\` first (scaffolding now lives in the CLI, ADR-0053 U9): ${cause}`,

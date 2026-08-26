@@ -99,6 +99,11 @@ export const VERIFY_STEPS = [
     conditional: true,
   },
   {
+    ciStepName: "Build CLI (scaffold checkers read packages/m3l-cli/dist)",
+    id: "build-cli-for-gates",
+    cmd: () => "pnpm turbo run build --filter=@m3l-automation/m3l-cli",
+  },
+  {
     ciStepName: "Check verify parity",
     id: "check-verify-parity",
     cmd: () => "pnpm check:verify-parity",

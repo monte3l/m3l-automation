@@ -23,18 +23,6 @@ import { run__SCRIPT_NAME_PASCAL__ } from "./steps/run-__SCRIPT_NAME__.js";
 // `tests/command.test.ts` is the anti-drift guard.
 
 /**
- * The fallback operator-facing writer for a caller that has no host of its
- * own — `tests/command.test.ts` today, and any local invocation before U7's
- * in-process host ships its real renderer.
- *
- * `colorEnabled: false` is the truthful answer rather than a placeholder:
- * this writer never styles anything, and a script cannot resolve colour
- * anyway (per-stream TTY detection plus `NO_COLOR`/`FORCE_COLOR` needs
- * `process.env`, which the scripts ESLint zone bans). Writes go straight to
- * the process streams — `M3LCommandOutput` is a rendering port, and ADR-0054
- * keeps the real rendering half private to `packages/m3l-cli`.
- */
-/**
  * Reads this package's own `description` from `package.json` at runtime
  * rather than embedding `__PURPOSE__` as a TS string literal directly:
  * `--purpose` is free-form prose up to 200 characters, and prettier breaks a
@@ -56,6 +44,18 @@ function scriptDescription(): string {
   return manifest.description;
 }
 
+/**
+ * The fallback operator-facing writer for a caller that has no host of its
+ * own — `tests/command.test.ts` today, and any local invocation before U7's
+ * in-process host ships its real renderer.
+ *
+ * `colorEnabled: false` is the truthful answer rather than a placeholder:
+ * this writer never styles anything, and a script cannot resolve colour
+ * anyway (per-stream TTY detection plus `NO_COLOR`/`FORCE_COLOR` needs
+ * `process.env`, which the scripts ESLint zone bans). Writes go straight to
+ * the process streams — `M3LCommandOutput` is a rendering port, and ADR-0054
+ * keeps the real rendering half private to `packages/m3l-cli`.
+ */
 export const consoleOutput: Core.M3LCommandOutput = {
   colorEnabled: false,
   info(text: string): void {

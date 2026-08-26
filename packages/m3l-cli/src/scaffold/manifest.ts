@@ -8,6 +8,8 @@
  * @packageDocumentation
  */
 
+import { M3LCliError } from "../cli/errors.js";
+
 /**
  * The two shapes `m3l new` can scaffold: a plain CLI-invoked script, or one
  * whose `src/main.ts` is a Lambda handler.
@@ -260,7 +262,8 @@ const UNREPLACED_TOKEN_RE = /__[A-Z][A-Z0-9_]*__/;
  *   caller across the `bin/` boundary) without widening
  *   {@link ScaffoldTokens} itself into carrying an index signature.
  * @returns `text` with every token replaced.
- * @throws `Error` when a `__TOKEN__`-shaped span survives substitution.
+ * @throws {@link M3LCliError} with code `ERR_CLI_SCAFFOLD_FAILED` when a
+ *   `__TOKEN__`-shaped span survives substitution.
  *
  * @example
  * ```ts
@@ -279,8 +282,9 @@ export function substituteTokens(
   }
   const leftover = UNREPLACED_TOKEN_RE.exec(result);
   if (leftover) {
-    throw new Error(
-      `substituteTokens: unreplaced token "${leftover[0]}" survived substitution — add it to scriptTokens() in bin/lib/script-scaffold.mjs.`,
+    throw new M3LCliError(
+      "ERR_CLI_SCAFFOLD_FAILED",
+      `substituteTokens: unreplaced token "${leftover[0]}" survived substitution — add it to scriptTokens() in packages/m3l-cli/src/scaffold/manifest.ts.`,
     );
   }
   return result;
