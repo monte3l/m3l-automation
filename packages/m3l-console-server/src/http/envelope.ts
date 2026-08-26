@@ -28,24 +28,100 @@ const STATUS_NOT_FOUND = 404;
 const STATUS_METHOD_NOT_ALLOWED = 405;
 const STATUS_INTERNAL = 500;
 
+/** The status/origin/retryable decision for one {@link M3LConsoleErrorCode}. */
+interface ErrorClassification {
+  /** The HTTP status this code maps to. */
+  readonly status: number;
+  /** Whether the failure originates from the caller or this library. */
+  readonly origin: Core.M3LErrorOrigin;
+  /** Whether retrying the same request could plausibly succeed. */
+  readonly retryable: Core.M3LErrorRetryable;
+}
+
 /**
- * Per-code classification: the HTTP status every {@link M3LConsoleErrorCode}
- * maps to. A `Record` keyed by the full code union — rather than a lookup
- * with a default — forces a compile error the moment a new
- * `M3LConsoleErrorCode` is added without an explicit status decision for it
- * (the same exhaustiveness trick as `packages/m3l-cli/src/cli/errors.ts`).
+ * Per-code classification: the HTTP status, origin, and retryability every
+ * {@link M3LConsoleErrorCode} maps to. A `Record` keyed by the full code
+ * union — rather than a lookup with a default — forces a compile error the
+ * moment a new `M3LConsoleErrorCode` is added without an explicit decision
+ * for it (the same exhaustiveness trick as `packages/m3l-cli/src/cli/errors.ts`).
+ *
+ * `ERR_CONSOLE_*` is deliberately absent from `Core`'s own classification
+ * catalog (see `errors/console-error.ts`), so `Core.classifyErrorCode` can
+ * never supply these decisions — this table is the only source of truth for
+ * an `M3LConsoleError`'s `origin`/`retryable`.
  */
-const STATUS_BY_CODE: Record<M3LConsoleErrorCode, number> = {
-  ERR_CONSOLE_BAD_REQUEST: STATUS_BAD_REQUEST,
-  ERR_CONSOLE_UNAUTHENTICATED: STATUS_UNAUTHENTICATED,
-  ERR_CONSOLE_NOT_FOUND: STATUS_NOT_FOUND,
-  ERR_CONSOLE_METHOD_NOT_ALLOWED: STATUS_METHOD_NOT_ALLOWED,
-  ERR_CONSOLE_CONFIG_INVALID: STATUS_INTERNAL,
-  ERR_CONSOLE_INTERNAL: STATUS_INTERNAL,
-  ERR_CONSOLE_ROUTE_CONFLICT: STATUS_INTERNAL,
-  ERR_CONSOLE_DRAIN_FAILED: STATUS_INTERNAL,
-  ERR_CONSOLE_LISTEN_FAILED: STATUS_INTERNAL,
+const CLASSIFICATION_BY_CODE: Record<M3LConsoleErrorCode, ErrorClassification> =
+  {
+    ERR_CONSOLE_BAD_REQUEST: {
+      status: STATUS_BAD_REQUEST,
+      origin: "caller",
+      retryable: false,
+    },
+    ERR_CONSOLE_UNAUTHENTICATED: {
+      status: STATUS_UNAUTHENTICATED,
+      origin: "caller",
+      retryable: false,
+    },
+    ERR_CONSOLE_NOT_FOUND: {
+      status: STATUS_NOT_FOUND,
+      origin: "caller",
+      retryable: false,
+    },
+    ERR_CONSOLE_METHOD_NOT_ALLOWED: {
+      status: STATUS_METHOD_NOT_ALLOWED,
+      origin: "caller",
+      retryable: false,
+    },
+    ERR_CONSOLE_CONFIG_INVALID: {
+      status: STATUS_INTERNAL,
+      origin: "library",
+      retryable: false,
+    },
+    ERR_CONSOLE_INTERNAL: {
+      status: STATUS_INTERNAL,
+      origin: "library",
+      retryable: false,
+    },
+    ERR_CONSOLE_ROUTE_CONFLICT: {
+      status: STATUS_INTERNAL,
+      origin: "library",
+      retryable: false,
+    },
+    ERR_CONSOLE_DRAIN_FAILED: {
+      status: STATUS_INTERNAL,
+      origin: "library",
+      retryable: false,
+    },
+    ERR_CONSOLE_LISTEN_FAILED: {
+      status: STATUS_INTERNAL,
+      origin: "library",
+      retryable: false,
+    },
+  };
+
+/**
+ * The classification used when a caught {@link M3LConsoleError}'s `code`
+ * falls outside {@link M3LConsoleErrorCode} at runtime (a value that defeats
+ * the type system — e.g. a boundary that decoded an external value into this
+ * class without validating it against the union first). Not a licence to
+ * skip a table entry for a real code: {@link CLASSIFICATION_BY_CODE}'s
+ * `Record` type still forces a compile error for that.
+ */
+const FALLBACK_CLASSIFICATION: ErrorClassification = {
+  status: STATUS_INTERNAL,
+  origin: "library",
+  retryable: false,
 };
+
+/**
+ * Resolves the {@link ErrorClassification} for `code`, falling back to
+ * {@link FALLBACK_CLASSIFICATION} when `code` is not a key of
+ * {@link CLASSIFICATION_BY_CODE} — which can only happen at runtime, for a
+ * value that defeats the compile-time exhaustiveness check.
+ */
+function classificationForCode(code: M3LConsoleErrorCode): ErrorClassification {
+  return CLASSIFICATION_BY_CODE[code] ?? FALLBACK_CLASSIFICATION;
+}
 
 /**
  * The REST error envelope body (ADR-0066). Never carries a stack trace or a
@@ -94,28 +170,30 @@ export interface M3LConsoleErrorEnvelope {
  * ```
  */
 export function httpStatusForCode(code: M3LConsoleErrorCode): number {
-  return STATUS_BY_CODE[code];
+  return classificationForCode(code).status;
 }
 
 /**
  * Builds the envelope's `error` field for an {@link M3LConsoleError}: its
- * own code and message, the mapped status, and the table's `origin`/
- * `retryable`, conditionally spread so an undefined field is never keyed at
- * all (`exactOptionalPropertyTypes`).
+ * own code and message, and {@link CLASSIFICATION_BY_CODE}'s status/origin/
+ * retryable for that code — never the instance's own `origin`/`retryable`
+ * fields, which are always `undefined` (`ERR_CONSOLE_*` is absent from
+ * `Core`'s classification catalog, and this package's error options accept
+ * no override).
  */
 function envelopeForConsoleError(
   error: M3LConsoleError,
   correlationId: string,
 ): M3LConsoleErrorEnvelope {
-  const status = httpStatusForCode(error.code);
+  const classification = classificationForCode(error.code);
   return {
     error: {
       code: error.code,
       message: error.message,
-      status,
+      status: classification.status,
       correlationId,
-      ...(error.origin !== undefined && { origin: error.origin }),
-      ...(error.retryable !== undefined && { retryable: error.retryable }),
+      origin: classification.origin,
+      retryable: classification.retryable,
     },
   };
 }

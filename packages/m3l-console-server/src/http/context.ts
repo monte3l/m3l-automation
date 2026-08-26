@@ -65,9 +65,12 @@ function parseRequestUrl(rawUrl: string): URL {
   try {
     return new URL(rawUrl, URL_PARSE_BASE);
   } catch (cause) {
+    // Deliberately does not echo `rawUrl`: this message reaches the response
+    // body via the error envelope, and the raw request target is untrusted
+    // input on a surface a browser frontend shares an origin with.
     throw new M3LConsoleError(
       "ERR_CONSOLE_BAD_REQUEST",
-      `malformed request url '${rawUrl}'`,
+      "malformed request url",
       { cause },
     );
   }

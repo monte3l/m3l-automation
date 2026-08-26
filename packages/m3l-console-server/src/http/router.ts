@@ -139,14 +139,28 @@ function assertNoDuplicateParamNames(
 }
 
 /**
+ * Whether same-length pattern segment lists `a` and `b` could both match some
+ * concrete request path: at every position, either segment is a `:param`
+ * (which matches anything) or the two literal segments are identical.
+ */
+function segmentsOverlap(a: readonly string[], b: readonly string[]): boolean {
+  const [aHead, ...aRest] = a;
+  const [bHead, ...bRest] = b;
+  if (aHead === undefined || bHead === undefined) return true;
+  const positionCompatible =
+    aHead.startsWith(":") || bHead.startsWith(":") || aHead === bHead;
+  return positionCompatible && segmentsOverlap(aRest, bRest);
+}
+
+/**
  * Throws `ERR_CONSOLE_ROUTE_CONFLICT` when two routes in `compiled` share a
  * method and a normalized pattern signature (every `:param` collapsed to a
- * single placeholder).
+ * single placeholder) — a literal duplicate registration regardless of
+ * `auth`.
  */
-function detectConflicts(compiled: readonly CompiledRoute[]): void {
+function detectDuplicateSignatures(compiled: readonly CompiledRoute[]): void {
   const seenSignatures = new Map<string, string>();
   for (const { route, segments } of compiled) {
-    assertNoDuplicateParamNames(route, segments);
     const signature = `${route.method} ${toPatternSignature(segments)}`;
     const existingPath = seenSignatures.get(signature);
     if (existingPath !== undefined) {
@@ -159,15 +173,70 @@ function detectConflicts(compiled: readonly CompiledRoute[]): void {
   }
 }
 
+/**
+ * Whether compiled routes `a` and `b` share a method and segment count,
+ * could both match some concrete request path (see {@link segmentsOverlap}),
+ * and declare different {@link M3LRouteAuth} modes.
+ */
+function overlapsWithDifferentAuth(
+  a: CompiledRoute,
+  b: CompiledRoute,
+): boolean {
+  if (a.route.method !== b.route.method) return false;
+  if (a.route.auth === b.route.auth) return false;
+  if (a.segments.length !== b.segments.length) return false;
+  return segmentsOverlap(a.segments, b.segments);
+}
+
+/**
+ * Throws `ERR_CONSOLE_ROUTE_CONFLICT` for the first pair in `compiled`
+ * flagged by {@link overlapsWithDifferentAuth}. Left unresolved, a
+ * per-position specificity tie-break would still pick a winner
+ * deterministically, but which route's `auth` a given request ends up under
+ * would depend on the two patterns' shapes rather than on any declared
+ * intent — so this ambiguity class is rejected at construction time instead.
+ */
+function detectCrossAuthOverlaps(compiled: readonly CompiledRoute[]): void {
+  for (let i = 0; i < compiled.length; i += 1) {
+    const a = compiled[i];
+    if (a === undefined) continue;
+    for (let j = i + 1; j < compiled.length; j += 1) {
+      const b = compiled[j];
+      if (b === undefined || !overlapsWithDifferentAuth(a, b)) continue;
+      throw new M3LConsoleError(
+        "ERR_CONSOLE_ROUTE_CONFLICT",
+        `route '${a.route.path}' and route '${b.route.path}' both match some request path for method ${a.route.method} but declare different auth modes`,
+      );
+    }
+  }
+}
+
+/**
+ * Throws `ERR_CONSOLE_ROUTE_CONFLICT` for a literal duplicate pattern, a
+ * duplicated `:param` name within one pattern, or an overlap between two
+ * differently-`auth`ed routes.
+ */
+function detectConflicts(compiled: readonly CompiledRoute[]): void {
+  for (const { route, segments } of compiled) {
+    assertNoDuplicateParamNames(route, segments);
+  }
+  detectDuplicateSignatures(compiled);
+  detectCrossAuthOverlaps(compiled);
+}
+
 /** Decodes every segment, surfacing a malformed percent-escape as a typed error. */
 function decodeSegments(segments: readonly string[]): readonly string[] {
   return segments.map((segment) => {
     try {
       return decodeURIComponent(segment);
     } catch (cause) {
+      // Deliberately does not echo `segment`: this message reaches the
+      // response body via the error envelope, and the offending path
+      // segment is untrusted input on a surface a browser frontend shares
+      // an origin with.
       throw new M3LConsoleError(
         "ERR_CONSOLE_BAD_REQUEST",
-        `malformed percent-escape in path segment '${segment}'`,
+        "malformed percent-escape in request path",
         { cause },
       );
     }
@@ -192,31 +261,74 @@ function matchesStructure(
   );
 }
 
-/** Counts the `:param` segments in `segments` — fewer wins a match (static beats param). */
-function paramCount(segments: readonly string[]): number {
-  return segments.filter((segment) => segment.startsWith(":")).length;
+/**
+ * Compares two same-length segment lists position by position: negative when
+ * `a` is more specific than `b` (a static segment beats a `:param` segment
+ * at the first position where they differ), positive when `b` is more
+ * specific, zero when every position ties.
+ */
+function compareSpecificity(
+  a: readonly string[],
+  b: readonly string[],
+): number {
+  const [aHead, ...aRest] = a;
+  const [bHead, ...bRest] = b;
+  if (aHead === undefined || bHead === undefined) return 0;
+  const aIsParam = aHead.startsWith(":");
+  const bIsParam = bHead.startsWith(":");
+  if (aIsParam !== bIsParam) return aIsParam ? 1 : -1;
+  return compareSpecificity(aRest, bRest);
 }
 
-/** Picks the most specific (fewest params) candidate among structural matches. */
+/**
+ * Picks the most specific candidate among structural matches: static beats
+ * param at the first differing position (see {@link compareSpecificity}),
+ * not by total param count — two patterns with a static segment at
+ * different positions (`/a/:x/c` vs `/a/b/:y`) are resolved deterministically
+ * rather than falling back to registration order.
+ */
 function pickBestMatch(candidates: readonly CompiledRoute[]): CompiledRoute {
   return candidates.reduce((best, candidate) =>
-    paramCount(candidate.segments) < paramCount(best.segments)
+    compareSpecificity(candidate.segments, best.segments) < 0
       ? candidate
       : best,
   );
 }
 
-/** Extracts captured `:param` values, decoded, keyed by param name. */
+/** Collects `[name, value]` pairs for every `:param` segment in `patternSegments`, positionally decoded from `requestSegments`. */
+function collectParamEntries(
+  patternSegments: readonly string[],
+  requestSegments: readonly string[],
+): readonly (readonly [string, string])[] {
+  const [patternHead, ...patternRest] = patternSegments;
+  const [requestHead, ...requestRest] = requestSegments;
+  if (patternHead === undefined || requestHead === undefined) return [];
+  const rest = collectParamEntries(patternRest, requestRest);
+  if (!patternHead.startsWith(":")) return rest;
+  return [[patternHead.slice(1), requestHead], ...rest];
+}
+
+/**
+ * Extracts captured `:param` values, decoded, keyed by param name, into a
+ * frozen, `null`-prototype object — so a handler indexing `params` by a
+ * request-derived key (e.g. `params[untrustedKey]`) can never read an
+ * inherited `Object.prototype` property.
+ */
 function extractParams(
   patternSegments: readonly string[],
   requestSegments: readonly string[],
 ): Readonly<Record<string, string>> {
-  const [patternHead, ...patternRest] = patternSegments;
-  const [requestHead, ...requestRest] = requestSegments;
-  if (patternHead === undefined || requestHead === undefined) return {};
-  const rest = extractParams(patternRest, requestRest);
-  if (!patternHead.startsWith(":")) return rest;
-  return { ...rest, [patternHead.slice(1)]: requestHead };
+  const params: Record<string, string> = Object.create(null) as Record<
+    string,
+    string
+  >;
+  for (const [name, value] of collectParamEntries(
+    patternSegments,
+    requestSegments,
+  )) {
+    params[name] = value;
+  }
+  return Object.freeze(params);
 }
 
 /**

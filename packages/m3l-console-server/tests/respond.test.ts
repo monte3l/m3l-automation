@@ -127,7 +127,34 @@ describe("writeResponse — happy path over a real loopback server", () => {
           "application/json; charset=utf-8",
         );
         expect(response.headers[CORRELATION_ID_HEADER]).toBe("corr-abc");
+        expect(response.headers["x-content-type-options"]).toBe("nosniff");
+        expect(response.headers["cache-control"]).toBe("no-store");
         expect(JSON.parse(response.body)).toEqual({ ok: true });
+      },
+    );
+  });
+});
+
+describe("writeResponse — nosniff and no-store are unconditional", () => {
+  test("sets x-content-type-options: nosniff and cache-control: no-store even when caller-supplied headers try to override them", async () => {
+    const response = jsonResponse(
+      200,
+      { ok: true },
+      {
+        "cache-control": "max-age=3600",
+        "x-content-type-options": "sniff-anyway",
+      },
+    );
+
+    await withServer(
+      (_req, res) => {
+        writeResponse(res, response, "corr-headers");
+      },
+      async (baseUrl) => {
+        const captured = await requestOnce(baseUrl);
+
+        expect(captured.headers["x-content-type-options"]).toBe("nosniff");
+        expect(captured.headers["cache-control"]).toBe("no-store");
       },
     );
   });

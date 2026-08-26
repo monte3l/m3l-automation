@@ -39,6 +39,30 @@ const STATUS_TABLE: readonly (readonly [M3LConsoleErrorCode, number])[] = [
   ["ERR_CONSOLE_LISTEN_FAILED", INTERNAL_STATUS],
 ];
 
+/**
+ * The documented code -> classified origin table (X2b): every code a
+ * caller-triggered failure (4xx) classifies as `"caller"`; every
+ * library-side failure (the remaining 500s) classifies as `"library"`.
+ * `retryable` is `false` for every current code — there is no retryable
+ * `M3LConsoleErrorCode` yet, but the table still asserts it explicitly
+ * rather than merely "defined", since `CLASSIFICATION_BY_CODE` now supplies
+ * a real value (never `undefined`) for every code.
+ */
+const ORIGIN_TABLE: readonly (readonly [
+  M3LConsoleErrorCode,
+  Core.M3LErrorOrigin,
+])[] = [
+  ["ERR_CONSOLE_BAD_REQUEST", "caller"],
+  ["ERR_CONSOLE_UNAUTHENTICATED", "caller"],
+  ["ERR_CONSOLE_NOT_FOUND", "caller"],
+  ["ERR_CONSOLE_METHOD_NOT_ALLOWED", "caller"],
+  ["ERR_CONSOLE_CONFIG_INVALID", "library"],
+  ["ERR_CONSOLE_INTERNAL", "library"],
+  ["ERR_CONSOLE_ROUTE_CONFLICT", "library"],
+  ["ERR_CONSOLE_DRAIN_FAILED", "library"],
+  ["ERR_CONSOLE_LISTEN_FAILED", "library"],
+];
+
 /** Recursively asserts no object in `value`'s graph carries a `stack` key. */
 function assertNoStackKey(value: unknown): void {
   if (Array.isArray(value)) {
@@ -74,28 +98,48 @@ describe("errorEnvelope — M3LConsoleError", () => {
     },
   );
 
-  test.each(STATUS_TABLE.map(([code]) => code))(
-    "never keys origin/retryable with an explicit undefined value for %s (conditional spread)",
-    (code) => {
-      const error = new M3LConsoleError(code, "message");
-
-      const envelope = errorEnvelope(error, "corr-2");
-
-      if (envelope.error.origin === undefined) {
-        expect(Object.hasOwn(envelope.error, "origin")).toBe(false);
-      }
-      if (envelope.error.retryable === undefined) {
-        expect(Object.hasOwn(envelope.error, "retryable")).toBe(false);
-      }
-    },
-  );
-
   test("never includes a stack key in the serialized envelope", () => {
     const error = new M3LConsoleError("ERR_CONSOLE_INTERNAL", "boom");
 
     const envelope = errorEnvelope(error, "corr-3");
 
     assertNoStackKey(envelope);
+  });
+});
+
+describe("errorEnvelope — classified origin/retryable per code (always defined via CLASSIFICATION_BY_CODE)", () => {
+  test.each(ORIGIN_TABLE)(
+    "classifies %s as origin=%s, retryable=false, with both keys present",
+    (code, origin) => {
+      const error = new M3LConsoleError(code, "message");
+
+      const envelope = errorEnvelope(error, "corr-classification");
+
+      expect(envelope.error.origin).toBe(origin);
+      expect(envelope.error.retryable).toBe(false);
+      expect(Object.hasOwn(envelope.error, "origin")).toBe(true);
+      expect(Object.hasOwn(envelope.error, "retryable")).toBe(true);
+    },
+  );
+});
+
+describe("classificationForCode — fallback for a code outside the union", () => {
+  test("falls back to the internal/library/non-retryable classification when code defeats the compile-time exhaustiveness check", () => {
+    // A cast is required to construct this: no real M3LConsoleErrorCode
+    // reaches this path at compile time. This models a boundary that
+    // decoded an external value into M3LConsoleError without validating it
+    // against the union first — the runtime guard against `writeHead(undefined)`.
+    const offUnionCode =
+      "ERR_CONSOLE_NOT_A_REAL_CODE" as unknown as M3LConsoleErrorCode;
+    const error = new M3LConsoleError(offUnionCode, "boom");
+
+    expect(httpStatusForCode(offUnionCode)).toBe(INTERNAL_STATUS);
+
+    const envelope = errorEnvelope(error, "corr-fallback");
+
+    expect(envelope.error.status).toBe(INTERNAL_STATUS);
+    expect(envelope.error.origin).toBe("library");
+    expect(envelope.error.retryable).toBe(false);
   });
 });
 

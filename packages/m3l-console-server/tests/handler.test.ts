@@ -67,6 +67,41 @@ function requestOnce(
 }
 
 /**
+ * Issues a single GET against `baseUrl` using a raw request-target that
+ * bypasses `node:http`'s own client-side URL validation (via the `path`
+ * option instead of a `url` argument) — needed to reproduce a request target
+ * that `req.url` on the server side will carry verbatim even though it
+ * fails to parse with `new URL` (see the S1 regression test below).
+ */
+function requestRawTarget(
+  baseUrl: string,
+  rawTarget: string,
+): Promise<CapturedResponse> {
+  return new Promise((resolve, reject) => {
+    const { hostname, port } = new URL(baseUrl);
+    const req = httpRequest(
+      { hostname, port: Number(port), path: rawTarget, method: "GET" },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on("data", (chunk: Buffer) => {
+          chunks.push(chunk);
+        });
+        res.on("end", () => {
+          resolve({
+            status: res.statusCode ?? 0,
+            headers: res.headers,
+            body: Buffer.concat(chunks).toString("utf8"),
+          });
+        });
+        res.on("error", reject);
+      },
+    );
+    req.on("error", reject);
+    req.end();
+  });
+}
+
+/**
  * Starts an ephemeral loopback server running `handler`, awaits `run` with
  * its base URL, then always tears the server down — no leaked listeners
  * between tests.
@@ -176,6 +211,52 @@ function createFakeServerResponse(
     ...overrides,
   });
   return res;
+}
+
+/** A mutable `ServerResponse` double that can flip its own state mid-call. */
+type RaceyServerResponse = ServerResponse & {
+  headersSent: boolean;
+  writableEnded: boolean;
+};
+
+/** The observable call counts against a {@link RaceyServerResponse}. */
+interface FallbackResponseCallLog {
+  writeHeadCalls: number;
+  endCalls: number;
+}
+
+/**
+ * Builds a `ServerResponse` double plus a mutable call log, for exercising
+ * `writeFallbackResponse`'s guard branches. `writeHeadBehavior`/`endBehavior`
+ * receive the double itself (already constructed) so they can flip
+ * `headersSent`/`writableEnded` as a side effect — modelling a real
+ * `node:http` race (e.g. headers flushed just before the call that reports
+ * the failure) rather than a static fixture.
+ */
+function createRaceyServerResponse(options: {
+  readonly writeHeadBehavior: (res: RaceyServerResponse, call: number) => void;
+  readonly endBehavior?: (res: RaceyServerResponse, call: number) => void;
+}): {
+  readonly res: RaceyServerResponse;
+  readonly log: FallbackResponseCallLog;
+} {
+  const log: FallbackResponseCallLog = { writeHeadCalls: 0, endCalls: 0 };
+  const res = new EventEmitter() as unknown as RaceyServerResponse;
+  Object.assign(res, {
+    writableEnded: false,
+    headersSent: false,
+    writeHead: () => {
+      log.writeHeadCalls += 1;
+      options.writeHeadBehavior(res, log.writeHeadCalls);
+      return res;
+    },
+    end: () => {
+      log.endCalls += 1;
+      options.endBehavior?.(res, log.endCalls);
+      return res;
+    },
+  });
+  return { res, log };
 }
 
 /** Builds a minimal `M3LRoute`, defaulting `auth` and `handler`. */
@@ -612,8 +693,14 @@ describe("createConsoleRequestListener — the abort seam is live", () => {
   });
 });
 
-describe("createConsoleRequestListener — the outer safety net", () => {
-  test("logs and swallows a failure outside runRequest's own try/catch instead of letting it become an unhandled rejection", async () => {
+describe("createConsoleRequestListener — a writeResponse failure can never leave the socket open with no log line", () => {
+  // Pins the FIXED behaviour (X2b, S3): a throw from `writeResponse` (e.g.
+  // `res.writeHead` rejecting an out-of-range status) used to escape to the
+  // outer `.catch`, which only logged and never touched the socket —
+  // attacker-controlled FD exhaustion. `writeResponse` is now guarded
+  // inside `runRequest` itself, so every request either writes a real
+  // response or a fallback 500, and always logs exactly one line.
+  test("falls back to a bare 500 and still ends the response and logs exactly one line", async () => {
     const { logger, events, logged } = createResolvingLogger();
     const req = createFakeIncomingMessage();
     const res = createFakeServerResponse({
@@ -634,10 +721,228 @@ describe("createConsoleRequestListener — the outer safety net", () => {
     listener(req, res);
     await logged;
 
+    // The socket was ended (via the default fake `end`, which does not
+    // throw) rather than left open, and exactly one outcome line was
+    // logged — never the outer-`.catch` "unhandled" message, since this
+    // failure was fully handled inside `runRequest`.
+    expect(events).toHaveLength(1);
+    expect(events[0]?.message).not.toContain(
+      "unhandled console request listener failure",
+    );
+  });
+});
+
+describe("createConsoleRequestListener — the outer safety net still guards runRequest's own boundary", () => {
+  // `runRequest`'s internal try/catch now covers context creation, dispatch,
+  // AND writing the response — but a failure BEFORE that guarded region
+  // (e.g. the injected clock itself throwing) can still escape `runRequest`
+  // entirely. This is the one remaining case the outer `.catch` guards.
+  test("logs and swallows a failure that occurs before runRequest's own try/catch begins", async () => {
+    const { logger, events, logged } = createResolvingLogger();
+    const req = createFakeIncomingMessage();
+    const res = createFakeServerResponse();
+    const router = createRouter([
+      route({ method: "GET", path: "/api/v1/runs" }),
+    ]);
+    const listener = createConsoleRequestListener({
+      router,
+      middlewares: [],
+      logger,
+      signal: new AbortController().signal,
+      now: () => {
+        throw new Error("clock exploded");
+      },
+    });
+
+    listener(req, res);
+    await logged;
+
     expect(events).toHaveLength(1);
     expect(events[0]?.category).toBe(Core.M3LLogEventCategory.ERROR);
     expect(events[0]?.message).toContain(
       "unhandled console request listener failure",
     );
   });
+});
+
+describe("createConsoleRequestListener — writeFallbackResponse's own guards", () => {
+  test("attempts the fallback writeHead(500), swallows a further throw from it, and still ends the response", async () => {
+    const { logger, events, logged } = createResolvingLogger();
+    const req = createFakeIncomingMessage();
+    const { res, log } = createRaceyServerResponse({
+      // Every writeHead call throws (both the primary attempt inside
+      // writeResponse and the fallback's own writeHead(500)); state is never
+      // flipped, so both guards ahead of writeHead(500) stay true.
+      writeHeadBehavior: () => {
+        throw new Error("writeHead exploded");
+      },
+    });
+    const router = createRouter([
+      route({
+        method: "GET",
+        path: "/api/v1/runs",
+        handler: () => ({ status: 201, headers: {}, body: "created" }),
+      }),
+    ]);
+    const listener = createConsoleRequestListener({
+      router,
+      middlewares: [],
+      logger,
+      signal: new AbortController().signal,
+    });
+
+    listener(req, res);
+    await logged;
+
+    // Two writeHead attempts: the primary (throws) and the fallback's own
+    // writeHead(500) (also throws, caught, falls through to end()).
+    expect(log.writeHeadCalls).toBe(2);
+    expect(log.endCalls).toBe(1);
+    expect(events).toHaveLength(1);
+    // The logged status is the REAL computed status from the route handler
+    // (201) — never overwritten to the fallback's hard-coded 500, since
+    // `response.status` is read from the already-computed response value.
+    expect(events[0]?.data).toMatchObject({ status: 201 });
+  });
+
+  test("skips the fallback writeHead(500) once headers were already sent, but still retries end()", async () => {
+    const { logger, events, logged } = createResolvingLogger();
+    const req = createFakeIncomingMessage();
+    // Models the real writeResponse call sequence: writeHead succeeds
+    // (flipping headersSent, as node:http itself would), but the
+    // subsequent res.end(body) call throws. The fallback must then see
+    // headersSent === true and skip re-sending a status line, retrying
+    // only end().
+    const { res, log } = createRaceyServerResponse({
+      writeHeadBehavior: (raceyRes) => {
+        raceyRes.headersSent = true;
+      },
+      endBehavior: (_raceyRes, call) => {
+        if (call === 1) throw new Error("first end() exploded");
+      },
+    });
+    const router = createRouter([
+      route({
+        method: "GET",
+        path: "/api/v1/runs",
+        handler: () => ({ status: 204, headers: {}, body: "" }),
+      }),
+    ]);
+    const listener = createConsoleRequestListener({
+      router,
+      middlewares: [],
+      logger,
+      signal: new AbortController().signal,
+    });
+
+    listener(req, res);
+    await logged;
+
+    // writeHead was only ever called once (the primary attempt) — the
+    // fallback's own writeHead(500) was skipped because headersSent was
+    // already true.
+    expect(log.writeHeadCalls).toBe(1);
+    expect(log.endCalls).toBe(2);
+    expect(events).toHaveLength(1);
+    expect(events[0]?.data).toMatchObject({ status: 204 });
+  });
+
+  test("skips the fallback end() once the response was already reported as ended", async () => {
+    const { logger, events, logged } = createResolvingLogger();
+    const req = createFakeIncomingMessage();
+    // Models a concurrent close: the primary writeHead throws AND, as a
+    // side effect of that same race, writableEnded flips to true — the
+    // fallback must then skip both writeHead(500) (writableEnded guard) and
+    // end() (writableEnded guard), never touching an already-finished
+    // response.
+    const { res, log } = createRaceyServerResponse({
+      writeHeadBehavior: (raceyRes) => {
+        raceyRes.writableEnded = true;
+        throw new Error("writeHead exploded as the socket was closing");
+      },
+    });
+    const router = createRouter([
+      route({ method: "GET", path: "/api/v1/runs" }),
+    ]);
+    const listener = createConsoleRequestListener({
+      router,
+      middlewares: [],
+      logger,
+      signal: new AbortController().signal,
+    });
+
+    listener(req, res);
+    await logged;
+
+    expect(log.writeHeadCalls).toBe(1);
+    expect(log.endCalls).toBe(0);
+    expect(events).toHaveLength(1);
+  });
+
+  test("swallows a throw from the fallback's own end() call", async () => {
+    const { logger, events, logged } = createResolvingLogger();
+    const req = createFakeIncomingMessage();
+    const { res, log } = createRaceyServerResponse({
+      writeHeadBehavior: () => {
+        throw new Error("writeHead exploded");
+      },
+      endBehavior: () => {
+        throw new Error("end() exploded too");
+      },
+    });
+    const router = createRouter([
+      route({ method: "GET", path: "/api/v1/runs" }),
+    ]);
+    const listener = createConsoleRequestListener({
+      router,
+      middlewares: [],
+      logger,
+      signal: new AbortController().signal,
+    });
+
+    listener(req, res);
+    await logged;
+
+    // Neither writeHead nor end() ever succeeded, yet nothing escaped
+    // runRequest: exactly one (non-"unhandled") log line was still written.
+    expect(log.writeHeadCalls).toBe(2);
+    expect(log.endCalls).toBe(1);
+    expect(events).toHaveLength(1);
+    expect(events[0]?.message).not.toContain(
+      "unhandled console request listener failure",
+    );
+  });
+});
+
+describe("createConsoleRequestListener — a request whose target fails to parse never logs the raw target (S1)", () => {
+  test.each<string>(["http://[", "http://%zz/", "//"])(
+    "logs the fixed placeholder path, never the raw target or its query string, for %s",
+    async (rawTarget) => {
+      const { logger, events } = createCapturingLogger();
+      const listener = createConsoleRequestListener({
+        router: createRouter([]),
+        middlewares: [],
+        logger,
+        signal: new AbortController().signal,
+      });
+      const canaryTarget = `${rawTarget}${rawTarget.includes("?") ? "&" : "?"}token=CANARY123`;
+
+      await withServer(listener, async (baseUrl) => {
+        const response = await requestRawTarget(baseUrl, canaryTarget);
+        expect(response.status).toBe(400);
+      });
+
+      expect(events).toHaveLength(1);
+      const serialized = JSON.stringify(events[0]);
+      // The canary — and the raw target it was embedded in — must never
+      // appear anywhere in the logged event: this is the exact regression
+      // a raw-`req.url` seed would reintroduce.
+      expect(serialized).not.toContain("CANARY123");
+      expect(serialized).not.toContain(canaryTarget);
+      // The `path` field is logged as the fixed placeholder, never the raw,
+      // unparsed target — this literal mirrors handler.ts's own
+      // PATH_PLACEHOLDER_UNPARSED constant, which is not exported.
+      expect(events[0]?.data).toMatchObject({ path: "(unparsed)" });
+    },
+  );
 });

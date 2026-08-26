@@ -15,6 +15,10 @@ import { Core } from "@m3l-automation/m3l-common";
 
 /** The `content-type` header value every {@link jsonResponse} sets. */
 const JSON_CONTENT_TYPE = "application/json; charset=utf-8";
+/** Blocks MIME-sniffing on every response — cheap hardening on a surface a browser frontend will share an origin with. */
+const NO_SNIFF_HEADER_VALUE = "nosniff";
+/** Every response is dynamic and operator-specific; never cache it. */
+const NO_STORE_HEADER_VALUE = "no-store";
 
 /**
  * A framework-agnostic HTTP response value. Handlers and middleware build
@@ -72,8 +76,9 @@ export function jsonResponse(
  * Writes `response` onto `res`: sets its status and headers, adds
  * `content-length` (the UTF-8 byte length of the body, not its string
  * length — a multi-byte body would otherwise get a wrong, too-small
- * `content-length`), and echoes `correlationId` under
- * `x-correlation-id`. A no-op when `res.writableEnded` or `res.headersSent`
+ * `content-length`), echoes `correlationId` under `x-correlation-id`, and
+ * unconditionally sets `x-content-type-options: nosniff` and
+ * `cache-control: no-store`. A no-op when `res.writableEnded` or `res.headersSent`
  * is already `true` — a drained or aborted connection must not throw
  * `ERR_HTTP_HEADERS_SENT` out of the request listener.
  *
@@ -100,6 +105,8 @@ export function writeResponse(
   res.writeHead(response.status, {
     ...response.headers,
     "x-correlation-id": correlationId,
+    "x-content-type-options": NO_SNIFF_HEADER_VALUE,
+    "cache-control": NO_STORE_HEADER_VALUE,
     "content-length": String(Buffer.byteLength(response.body, "utf8")),
   });
   res.end(response.body);

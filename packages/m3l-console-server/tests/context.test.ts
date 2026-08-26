@@ -15,6 +15,7 @@ import {
   withParams,
 } from "../src/http/context.js";
 import type { CreateRequestContextInput } from "../src/http/context.js";
+import { errorResponse } from "../src/http/envelope.js";
 import { M3LConsoleError } from "../src/errors/console-error.js";
 import type { M3LOperatorProfile } from "../src/auth/identity.js";
 
@@ -143,6 +144,39 @@ describe("createRequestContext — method, path, query", () => {
 
     expect(thrown).toBeInstanceOf(M3LConsoleError);
     expect((thrown as M3LConsoleError).code).toBe("ERR_CONSOLE_BAD_REQUEST");
+  });
+
+  test("the ERR_CONSOLE_BAD_REQUEST message never embeds the raw url (S2 — reflected-input hardening)", () => {
+    const rawUrl = "http://[invalid?token=CANARY-SECRET-42";
+
+    let thrown: unknown;
+    try {
+      createRequestContext(buildInput({ url: rawUrl }));
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).message).not.toContain(rawUrl);
+    expect((thrown as M3LConsoleError).message).not.toContain(
+      "CANARY-SECRET-42",
+    );
+  });
+
+  test("the raw url never reaches the response body via the error envelope (S2)", () => {
+    const rawUrl = "http://[invalid?token=CANARY-SECRET-42";
+
+    let thrown: unknown;
+    try {
+      createRequestContext(buildInput({ url: rawUrl }));
+    } catch (error) {
+      thrown = error;
+    }
+
+    const response = errorResponse(thrown, "corr-envelope-leak");
+
+    expect(response.body).not.toContain(rawUrl);
+    expect(response.body).not.toContain("CANARY-SECRET-42");
   });
 });
 

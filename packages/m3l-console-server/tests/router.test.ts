@@ -208,6 +208,203 @@ describe("createRouter — malformed percent-escape", () => {
   });
 });
 
+describe("createRouter — per-position specificity, not total param count", () => {
+  // The motivating case (X2b, S5): both patterns have exactly one `:param`,
+  // so the OLD total-param-count comparison tied and fell back to whichever
+  // was registered first — silently deciding `auth` by array order. A
+  // differing-`auth` version of this exact pair is now rejected outright at
+  // construction time (see "construction-time cross-auth overlap
+  // detection" below), so both routes here share `auth` to isolate the
+  // pure specificity decision: static beats param at the first DIFFERING
+  // position (position 1: "b" vs ":x"), regardless of registration order.
+  test("prefers the pattern with an earlier static segment, registered first", () => {
+    const earlyParam = route({
+      method: "GET",
+      path: "/a/:x/c",
+      auth: "required",
+    });
+    const earlyStatic = route({
+      method: "GET",
+      path: "/a/b/:y",
+      auth: "required",
+    });
+
+    const router = createRouter([earlyParam, earlyStatic]);
+    const result = router.lookup("GET", "/a/b/c");
+
+    expect(result.outcome).toBe("matched");
+    if (result.outcome !== "matched") throw new Error("expected a match");
+    expect(result.route.path).toBe("/a/b/:y");
+  });
+
+  test("resolves the identical pair to the same winner when registered in the opposite order", () => {
+    const earlyParam = route({
+      method: "GET",
+      path: "/a/:x/c",
+      auth: "required",
+    });
+    const earlyStatic = route({
+      method: "GET",
+      path: "/a/b/:y",
+      auth: "required",
+    });
+
+    const router = createRouter([earlyStatic, earlyParam]);
+    const result = router.lookup("GET", "/a/b/c");
+
+    expect(result.outcome).toBe("matched");
+    if (result.outcome !== "matched") throw new Error("expected a match");
+    expect(result.route.path).toBe("/a/b/:y");
+  });
+});
+
+describe("createRouter — construction-time cross-auth overlap detection", () => {
+  test("throws ERR_CONSOLE_ROUTE_CONFLICT for a static-vs-param overlap declaring different auth modes", () => {
+    // Same shape as the specificity test above, but with DIFFERENT auth:
+    // every position is pairwise compatible (":x" is a param at position 1,
+    // literal "c"/":y" is compatible at position 2), so this pair would
+    // resolve deterministically by specificity — but which route's `auth`
+    // a request lands under would still depend on the two patterns' shapes
+    // rather than any declared intent. Rejected at construction instead.
+    let thrown: unknown;
+    try {
+      createRouter([
+        route({ method: "GET", path: "/a/:x/c", auth: "required" }),
+        route({ method: "GET", path: "/a/b/:y", auth: "exempt" }),
+      ]);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(isConsoleError(thrown)).toBe(true);
+    expect((thrown as M3LConsoleError).code).toBe("ERR_CONSOLE_ROUTE_CONFLICT");
+    expect((thrown as M3LConsoleError).message).toContain("/a/:x/c");
+    expect((thrown as M3LConsoleError).message).toContain("/a/b/:y");
+  });
+
+  test("throws when the SECOND route is the param side (b-is-param arm) rather than the first", () => {
+    let thrown: unknown;
+    try {
+      createRouter([
+        route({
+          method: "GET",
+          path: "/api/v1/runs/summary",
+          auth: "required",
+        }),
+        route({ method: "GET", path: "/api/v1/runs/:id", auth: "exempt" }),
+      ]);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(isConsoleError(thrown)).toBe(true);
+    expect((thrown as M3LConsoleError).code).toBe("ERR_CONSOLE_ROUTE_CONFLICT");
+  });
+
+  test("does not throw when overlapping routes share the same auth mode", () => {
+    expect(() =>
+      createRouter([
+        route({
+          method: "GET",
+          path: "/api/v1/runs/summary",
+          auth: "required",
+        }),
+        route({ method: "GET", path: "/api/v1/runs/:id", auth: "required" }),
+      ]),
+    ).not.toThrow();
+  });
+
+  test("does not throw when auth differs but the two patterns are literally incompatible at some position", () => {
+    expect(() =>
+      createRouter([
+        route({ method: "GET", path: "/api/v1/runs", auth: "required" }),
+        route({ method: "GET", path: "/api/v1/steps", auth: "exempt" }),
+      ]),
+    ).not.toThrow();
+  });
+
+  test("does not flag a cross-auth overlap when only the method differs", () => {
+    expect(() =>
+      createRouter([
+        route({
+          method: "GET",
+          path: "/api/v1/runs/:id",
+          auth: "required",
+        }),
+        route({
+          method: "POST",
+          path: "/api/v1/runs/:id",
+          auth: "exempt",
+        }),
+      ]),
+    ).not.toThrow();
+  });
+
+  test("does not flag a cross-auth overlap when the segment counts differ", () => {
+    expect(() =>
+      createRouter([
+        route({ method: "GET", path: "/api/v1/runs/:id", auth: "required" }),
+        route({
+          method: "GET",
+          path: "/api/v1/runs/:id/steps",
+          auth: "exempt",
+        }),
+      ]),
+    ).not.toThrow();
+  });
+
+  test("finds a conflicting pair beyond the first candidate checked", () => {
+    // (0,1): same auth -> no conflict. (0,2): different auth, and ":name"
+    // (a param) is compatible with the literal "healthz" -> conflict. The
+    // detector must not stop after the first (non-conflicting) pair it
+    // examines for route 0.
+    let thrown: unknown;
+    try {
+      createRouter([
+        route({ method: "GET", path: "/healthz", auth: "exempt" }),
+        route({ method: "GET", path: "/readyz", auth: "exempt" }),
+        route({ method: "GET", path: "/:name", auth: "required" }),
+      ]);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(isConsoleError(thrown)).toBe(true);
+    expect((thrown as M3LConsoleError).code).toBe("ERR_CONSOLE_ROUTE_CONFLICT");
+    expect((thrown as M3LConsoleError).message).toContain("/healthz");
+    expect((thrown as M3LConsoleError).message).toContain("/:name");
+  });
+});
+
+describe("createRouter — captured params are a frozen, null-prototype record", () => {
+  test("params has no inherited prototype and is frozen", () => {
+    const router = createRouter([
+      route({ method: "GET", path: "/api/v1/runs/:id" }),
+    ]);
+
+    const result = router.lookup("GET", "/api/v1/runs/42");
+
+    expect(result.outcome).toBe("matched");
+    if (result.outcome !== "matched") throw new Error("expected a match");
+    expect(Object.getPrototypeOf(result.params)).toBeNull();
+    expect(Object.isFrozen(result.params)).toBe(true);
+  });
+
+  test("an unmatched :param-free route still yields a frozen, null-prototype empty params object", () => {
+    const router = createRouter([
+      route({ method: "GET", path: "/api/v1/runs" }),
+    ]);
+
+    const result = router.lookup("GET", "/api/v1/runs");
+
+    expect(result.outcome).toBe("matched");
+    if (result.outcome !== "matched") throw new Error("expected a match");
+    expect(result.params).toEqual({});
+    expect(Object.getPrototypeOf(result.params)).toBeNull();
+    expect(Object.isFrozen(result.params)).toBe(true);
+  });
+});
+
 describe("createRouter — routes property", () => {
   test("exposes the registered routes verbatim", () => {
     const registered = [

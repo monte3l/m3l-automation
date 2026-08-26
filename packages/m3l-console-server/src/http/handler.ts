@@ -26,6 +26,8 @@ import type { M3LRouteAuth, M3LRouteLookup, M3LRouter } from "./router.js";
 const STATUS_CLIENT_ERROR_THRESHOLD = 400;
 /** The status at and above which a response is logged at `error`. */
 const STATUS_SERVER_ERROR_THRESHOLD = 500;
+/** Logged in place of a request's path when it failed to parse — never the raw, unparsed target. */
+const PATH_PLACEHOLDER_UNPARSED = "(unparsed)";
 
 /**
  * Constructor options for {@link createConsoleRequestListener}.
@@ -152,6 +154,31 @@ function responseForUnmatchedLookup(
   };
 }
 
+/**
+ * Last-resort recovery when {@link writeResponse} itself throws (e.g. an
+ * out-of-range status or a header value `res.writeHead` rejects): writes a
+ * bare 500 and ends the socket so a request can never finish with an open
+ * connection and no log line. Every step is individually best-effort —
+ * `res` may already be in a state where even this fails — since the
+ * overriding goal is for {@link runRequest} to reach its `logOutcome` call,
+ * not for this recovery path itself to succeed.
+ */
+function writeFallbackResponse(res: ServerResponse): void {
+  try {
+    if (!res.headersSent && !res.writableEnded) {
+      res.writeHead(STATUS_SERVER_ERROR_THRESHOLD);
+    }
+  } catch {
+    // best-effort: nothing more can be done if even the fallback header
+    // write fails; still attempt to end the response below.
+  }
+  try {
+    if (!res.writableEnded) res.end();
+  } catch {
+    // best-effort: the socket may already be closed.
+  }
+}
+
 /** The result of dispatching a request: the response, and the auth mode of any matched route. */
 interface DispatchResult {
   readonly response: M3LConsoleResponse;
@@ -207,7 +234,9 @@ async function runRequest(
   const signal = AbortSignal.any([options.signal, connectionController.signal]);
 
   let method = req.method ?? "";
-  let path = req.url ?? "/";
+  // Never seeded from the raw `req.url`: a request whose target fails to
+  // parse must not log its (possibly query-string-bearing) raw target.
+  let path = PATH_PLACEHOLDER_UNPARSED;
   let correlationId = fallbackCorrelationId;
   let accessMode: M3LRouteAuth | undefined;
   let response: M3LConsoleResponse;
@@ -215,7 +244,7 @@ async function runRequest(
   try {
     const ctx = createRequestContext({
       method,
-      url: path,
+      url: req.url ?? "/",
       headers: toHeaderMap(req.headers),
       signal,
       now,
@@ -234,7 +263,16 @@ async function runRequest(
     req.removeListener("close", onClose);
   }
 
-  writeResponse(res, response, correlationId);
+  // Guarded: a throw from `writeResponse` (e.g. an out-of-range status
+  // reaching `res.writeHead`) must never leave the socket open with no log
+  // line — fall back to a bare 500 rather than letting the throw escape to
+  // the outer `.catch`, which only logs and never touches the socket.
+  try {
+    writeResponse(res, response, correlationId);
+  } catch {
+    writeFallbackResponse(res);
+  }
+
   logOutcome(options.logger, {
     method,
     path,
