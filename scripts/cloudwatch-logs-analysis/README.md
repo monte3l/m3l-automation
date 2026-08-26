@@ -62,15 +62,17 @@ node dist/main.js --operation convert --source runbooks/queue-backlog.md
 
 ### Operations at a glance
 
-| Operation  | Demonstrated by      |
-| ---------- | -------------------- |
-| `analyze`  | Minimal / Production |
-| `validate` | Common               |
-| `explain`  | Common               |
-| `convert`  | Edge case            |
+| Operation  | Description                                                                                 | Demonstrated by      |
+| ---------- | ------------------------------------------------------------------------------------------- | -------------------- |
+| `analyze`  | Load a preset, compile it, run it against CloudWatch Logs Insights, and persist the report. | Minimal / Production |
+| `validate` | Build every preset in the runbook directory offline and report every problem at once.       | Common               |
+| `explain`  | Print one preset's compiled step graph, cases and digest.                                   | Common               |
+| `convert`  | Turn one runbook markdown file into a preset skeleton.                                      | Edge case            |
 
-Only `analyze` reaches AWS. `validate`, `explain` and `convert` run entirely
-offline and need no credentials at all.
+A `—` in **Demonstrated by** means the operation has no worked example in
+§ Examples above — see the [contract page](../../docs/reference/scripts/cloudwatch-logs-analysis.md) for its full
+contract. Descriptions are the same strings the script declares in
+`src/config.ts` and exposes via `getOperations()` (ADR-0055).
 
 ### Trying it against the shipped examples
 

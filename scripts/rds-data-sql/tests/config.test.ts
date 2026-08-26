@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import { Core } from "@m3l-automation/m3l-common";
 
-import { configParameters, configValidators } from "../src/config.js";
+import {
+  configParameters,
+  configValidators,
+  RDS_DATA_SQL_OPERATIONS,
+} from "../src/config.js";
 
 /**
  * Contract: docs/reference/scripts/rds-data-sql.md "Configuration schema"
@@ -215,28 +219,28 @@ describe("configValidators (cross-parameter validation, fail-fast, in order)", (
     });
   });
 
-  describe("2. 'load' requires 'table' and 'input.file'", () => {
+  describe("2. 'load' requires 'table' and 'input.file' (derived — ADR-0055, two independent validators)", () => {
     it("fails when operation is 'load' and 'table' is unset", () => {
       const config = buildConfig({
         operation: "load",
         "input.file": "in.jsonl",
       });
       expect(firstFailure(config)).toBe(
-        "'load' requires 'table' and 'input.file' to be set",
+        "'table' is required for operation(s): load",
       );
     });
 
     it("fails when operation is 'load' and 'input.file' is unset", () => {
       const config = buildConfig({ operation: "load", table: "widgets" });
       expect(firstFailure(config)).toBe(
-        "'load' requires 'table' and 'input.file' to be set",
+        "'input.file' is required for operation(s): load",
       );
     });
 
-    it("fails when operation is 'load' and both are unset", () => {
+    it("fails when operation is 'load' and both are unset, fail-fast reporting 'table' first (it is derived first)", () => {
       const config = buildConfig({ operation: "load" });
       expect(firstFailure(config)).toBe(
-        "'load' requires 'table' and 'input.file' to be set",
+        "'table' is required for operation(s): load",
       );
     });
 
@@ -250,11 +254,11 @@ describe("configValidators (cross-parameter validation, fail-fast, in order)", (
     });
   });
 
-  describe("3. 'migrate' requires 'migrations.dir'", () => {
+  describe("3. 'migrate' requires 'migrations.dir' (derived — ADR-0055)", () => {
     it("fails when operation is 'migrate' and 'migrations.dir' is unset", () => {
       const config = buildConfig({ operation: "migrate" });
       expect(firstFailure(config)).toBe(
-        "'migrate' requires 'migrations.dir' to be set",
+        "'migrations.dir' is required for operation(s): migrate",
       );
     });
 
@@ -293,5 +297,75 @@ describe("configValidators (cross-parameter validation, fail-fast, in order)", (
       const config = buildConfig({ operation: "query", sql: "SELECT 1" });
       expect(firstFailure(config)).toBeUndefined();
     });
+  });
+
+  it("passes every validator for 'query' with only 'sql' set (vacuous pass on the derived validators; XOR still applies)", () => {
+    const config = buildConfig({ operation: "query", sql: "SELECT 1" });
+    expect(firstFailure(config)).toBeUndefined();
+  });
+});
+
+describe("RDS_DATA_SQL_OPERATIONS", () => {
+  it("is exported and equals ['query', 'load', 'execute', 'migrate'] in order — the single source of truth steps/resolve-settings.ts imports instead of a duplicate copy", () => {
+    expect(RDS_DATA_SQL_OPERATIONS).toEqual([
+      "query",
+      "load",
+      "execute",
+      "migrate",
+    ]);
+  });
+});
+
+/**
+ * Hand-authored (not re-derived from `src/config.ts`) so a src typo in
+ * `requiredParameters` is actually caught rather than trivially agreeing
+ * with itself. `query`/`execute` are deliberately `[]` — their real
+ * constraint is the `sql` XOR `sql.file` rule, which `requiredParameters`
+ * cannot express and which stays a hand-written validator (see
+ * `configValidators` above).
+ */
+const REQUIRED_PARAMETERS_BY_OPERATION: Readonly<
+  Record<string, readonly string[]>
+> = {
+  query: [],
+  load: ["table", "input.file"],
+  execute: [],
+  migrate: ["migrations.dir"],
+};
+
+describe("'operation' parameter's declared operations (ADR-0055 introspection)", () => {
+  it("getOperations() round-trips names, in order, non-blank descriptions, and requiredParameters", () => {
+    const operations = paramNamed("operation").getOperations();
+
+    expect(operations).toBeDefined();
+    const names = (operations ?? []).map((operation) => operation.name);
+    expect(names).toEqual(RDS_DATA_SQL_OPERATIONS);
+
+    for (const operation of operations ?? []) {
+      expect(operation.description.trim().length).toBeGreaterThan(0);
+      expect(operation.requiredParameters ?? []).toEqual(
+        REQUIRED_PARAMETERS_BY_OPERATION[operation.name],
+      );
+    }
+  });
+
+  it("returns a frozen projection — never the same reference twice, but always structurally equal", () => {
+    const first = paramNamed("operation").getOperations();
+    const second = paramNamed("operation").getOperations();
+
+    expect(first).toEqual(second);
+  });
+
+  it("every requiredParameters entry names a declared configParameters entry (subset check)", () => {
+    const declaredNames = new Set(
+      configParameters.map((parameter) => parameter.getName()),
+    );
+    const operations = paramNamed("operation").getOperations() ?? [];
+
+    for (const operation of operations) {
+      for (const entry of operation.requiredParameters ?? []) {
+        expect(declaredNames.has(entry)).toBe(true);
+      }
+    }
   });
 });

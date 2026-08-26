@@ -56,12 +56,17 @@ behavior.
 
 ### Operations at a glance
 
-| Operation | What it does                                                 | Demonstrated by |
-| --------- | ------------------------------------------------------------ | --------------- |
-| `query`   | Paginated SELECT — streams rows to a JSON output file        | Minimal         |
-| `load`    | Bulk INSERT from a JSONL file into a table                   | Common          |
-| `migrate` | Apply ordered SQL migration files, one transaction each      | Production      |
-| `execute` | Run any SQL statement (DML/DDL); destructive — confirm-gated | Edge case       |
+| Operation | Description                                                                       | Demonstrated by                                              |
+| --------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| `query`   | Run a SQL statement, optionally paginated, streaming rows to output.file.         | Paginated SELECT — streams rows to a JSON output file        |
+| `load`    | Import rows from input.file into table via batchExecuteStatement.                 | Bulk INSERT from a JSONL file into a table                   |
+| `execute` | Run a single SQL statement once, gated behind confirmation unless it is a SELECT. | Run any SQL statement (DML/DDL); destructive — confirm-gated |
+| `migrate` | Apply pending .sql files from migrations.dir inside one transaction.              | Apply ordered SQL migration files, one transaction each      |
+
+A `—` in **Demonstrated by** means the operation has no worked example in
+§ Examples above — see the [contract page](../../docs/reference/scripts/rds-data-sql.md) for its full
+contract. Descriptions are the same strings the script declares in
+`src/config.ts` and exposes via `getOperations()` (ADR-0055).
 
 ### Operational flags
 

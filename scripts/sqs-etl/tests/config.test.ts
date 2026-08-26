@@ -94,6 +94,74 @@ describe("sqs-etl config declaration", () => {
     ]);
   });
 
+  describe("'command' — declared ADR-0055 operations", () => {
+    /**
+     * Hand-authored — deliberately NOT re-derived from
+     * `SQS_ETL_COMMAND_DECLARATIONS` (the src export under test), so a typo
+     * in that export's `requiredParameters` is caught rather than compared
+     * against itself.
+     */
+    const EXPECTED_REQUIRED_PARAMETERS: ReadonlyArray<
+      readonly [string, readonly string[]]
+    > = [
+      ["dump", ["queueUrl", "output"]],
+      ["send", ["queueUrl", "input"]],
+      ["redrive", ["queueUrl", "dlqUrl"]],
+      ["delete", ["queueUrl", "input"]],
+      ["purge", ["queueUrl"]],
+      ["transform", ["input", "output"]],
+    ];
+
+    function expectedRequiredParametersFor(name: string): readonly string[] {
+      const found = EXPECTED_REQUIRED_PARAMETERS.find(
+        ([opName]) => opName === name,
+      );
+      if (found === undefined) {
+        throw new Error(
+          `test fixture error: no hand-authored requirement table entry for '${name}'`,
+        );
+      }
+      return found[1];
+    }
+
+    it("round-trips getOperations() against the hand-authored requirement table", () => {
+      const operations = paramNamed("command").getOperations();
+      expect(operations).toBeDefined();
+      if (operations === undefined) return;
+
+      expect(operations.map((operation) => operation.name)).toEqual([
+        ...SQS_ETL_COMMANDS,
+      ]);
+
+      for (const operation of operations) {
+        expect(operation.description.trim().length).toBeGreaterThan(0);
+        expect(operation.requiredParameters ?? []).toEqual(
+          expectedRequiredParametersFor(operation.name),
+        );
+      }
+    });
+
+    it("names only declared parameters in every command's requiredParameters", () => {
+      const operations = paramNamed("command").getOperations();
+      expect(operations).toBeDefined();
+      if (operations === undefined) return;
+
+      const declaredNames = new Set(
+        configParameters.map((parameter) => parameter.getName()),
+      );
+      for (const operation of operations) {
+        for (const required of operation.requiredParameters ?? []) {
+          expect(declaredNames.has(required)).toBe(true);
+        }
+      }
+    });
+
+    // Every SQS_ETL_COMMANDS entry declares at least one requiredParameter
+    // (see the table above) — there is no zero-requirement command here to
+    // exercise a "vacuous pass" case, unlike cloudwatch-logs-analysis'
+    // 'validate' or sqs-dead-letter-triage's 'validate'.
+  });
+
   describe("'command' — required, oneOf(SQS_ETL_COMMANDS)", () => {
     it("rejects a MISSING value with M3LConfigMissingError", async () => {
       let thrown: unknown;

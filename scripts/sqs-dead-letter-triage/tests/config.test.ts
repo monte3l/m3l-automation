@@ -211,6 +211,71 @@ describe("operation parameter — default and allowed values", () => {
       Core.M3LConfigValidationError,
     );
   });
+
+  /**
+   * Hand-authored — deliberately NOT re-derived from
+   * `TRIAGE_OPERATION_DECLARATIONS` (the src export under test), so a typo
+   * in that export's `requiredParameters` is caught rather than compared
+   * against itself.
+   */
+  const EXPECTED_REQUIRED_PARAMETERS: ReadonlyArray<
+    readonly [string, readonly string[]]
+  > = [
+    ["validate", []],
+    ["explain", ["queue"]],
+    ["convert", ["source"]],
+    ["triage", ["queue", "queueUrl"]],
+    ["execute", ["queue", "queueUrl"]],
+  ];
+
+  function expectedRequiredParametersFor(name: string): readonly string[] {
+    const found = EXPECTED_REQUIRED_PARAMETERS.find(
+      ([opName]) => opName === name,
+    );
+    if (found === undefined) {
+      throw new Error(
+        `test fixture error: no hand-authored requirement table entry for '${name}'`,
+      );
+    }
+    return found[1];
+  }
+
+  it("round-trips getOperations() against the hand-authored requirement table", () => {
+    expect(operation).toBeDefined();
+    const operations = operation?.getOperations();
+    expect(operations).toBeDefined();
+    if (operations === undefined) return;
+
+    expect(operations.map((op) => op.name)).toEqual([...TRIAGE_OPERATIONS]);
+
+    for (const op of operations) {
+      expect(op.description.trim().length).toBeGreaterThan(0);
+      expect(op.requiredParameters ?? []).toEqual(
+        expectedRequiredParametersFor(op.name),
+      );
+    }
+  });
+
+  it("names only declared parameters in every operation's requiredParameters", () => {
+    const operations = operation?.getOperations();
+    expect(operations).toBeDefined();
+    if (operations === undefined) return;
+
+    const declaredNames = new Set(
+      configParameters.map((parameter) => parameter.getName()),
+    );
+    for (const op of operations) {
+      for (const required of op.requiredParameters ?? []) {
+        expect(declaredNames.has(required)).toBe(true);
+      }
+    }
+  });
+
+  it("'validate' declares no required parameters, so it passes every validator (vacuous pass)", () => {
+    const operations = operation?.getOperations();
+    const validate = operations?.find((op) => op.name === "validate");
+    expect(validate?.requiredParameters ?? []).toEqual([]);
+  });
 });
 
 describe("configValidators — per-operation requiredness", () => {
@@ -264,15 +329,23 @@ describe("configValidators — per-operation requiredness", () => {
     expect(firstFailure(buildConfig({}))).toBeUndefined();
   });
 
-  it("requires both queue and queueUrl for triage, naming whichever is missing", () => {
+  // Each derived validator guards exactly one canonical parameter and the
+  // schema runs them fail-fast (first non-true result wins) — unlike the
+  // prior hand-written check, which reported every missing "Required for"
+  // parameter in one combined message. 'queue' is derived ahead of
+  // 'queueUrl' (first-encountered via 'explain', which precedes 'triage' in
+  // TRIAGE_OPERATION_DECLARATIONS), so with both missing only the 'queue'
+  // message surfaces; 'queueUrl' only appears once 'queue' is supplied.
+  it("requires 'queue' first (fail-fast) for triage; 'queueUrl' surfaces once 'queue' is supplied, and 'sourceQueueUrl' is never mentioned", () => {
     const missingBoth = firstFailure(buildConfig({ operation: "triage" }));
-    expect(missingBoth).toContain("queue");
-    expect(missingBoth).toContain("queueUrl");
+    expect(missingBoth).toContain("'queue'");
+    expect(missingBoth).not.toContain("sourceQueueUrl");
 
     const missingQueueUrl = firstFailure(
       buildConfig({ operation: "triage", queue: "orders-dlq" }),
     );
-    expect(missingQueueUrl).toContain("queueUrl");
+    expect(missingQueueUrl).toContain("'queueUrl'");
+    expect(missingQueueUrl).not.toContain("sourceQueueUrl");
 
     const missingQueue = firstFailure(
       buildConfig({
@@ -280,7 +353,8 @@ describe("configValidators — per-operation requiredness", () => {
         queueUrl: "https://sqs.example/orders-dlq",
       }),
     );
-    expect(missingQueue).toContain("queue");
+    expect(missingQueue).toContain("'queue'");
+    expect(missingQueue).not.toContain("sourceQueueUrl");
   });
 
   it("accepts a triage run with both queue and queueUrl supplied", () => {
@@ -299,10 +373,16 @@ describe("configValidators — per-operation requiredness", () => {
   // `sourceQueueUrl` is guarded at RUN time, only when the built plan
   // actually contains a 'reinsert' — an operator triaging a queue that
   // yields no reinserts must never be forced to supply it up front.
-  it("requires both queue and queueUrl for execute, never sourceQueueUrl", () => {
+  it("requires 'queue' first (fail-fast) for execute; 'queueUrl' surfaces once 'queue' is supplied, and 'sourceQueueUrl' is never mentioned", () => {
     const missingBoth = firstFailure(buildConfig({ operation: "execute" }));
-    expect(missingBoth).toContain("queue");
-    expect(missingBoth).toContain("queueUrl");
+    expect(missingBoth).toContain("'queue'");
+    expect(missingBoth).not.toContain("sourceQueueUrl");
+
+    const missingQueueUrl = firstFailure(
+      buildConfig({ operation: "execute", queue: "orders-dlq" }),
+    );
+    expect(missingQueueUrl).toContain("'queueUrl'");
+    expect(missingQueueUrl).not.toContain("sourceQueueUrl");
 
     expect(
       firstFailure(

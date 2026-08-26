@@ -2,23 +2,85 @@ import { Core } from "@m3l-automation/m3l-common";
 
 /**
  * The nine operations `cloudformation-stacks` dispatches over
- * `AWS.M3LCloudFormationOperations`. Declared as a bare `as const` array
- * (rather than inline in the `M3LConfigParameter`'s `oneOf` call) so the
- * closed set is independently assertable in tests without exercising config
- * resolution — the same "bare `as const` + derived union" idiom
- * `ECS_OPERATIONS`/`LAMBDA_OPERATIONS`/`DYNAMO_OPERATIONS` use.
+ * `AWS.M3LCloudFormationOperations`, declared as data (ADR-0055). Feeds
+ * {@link configParameters}' `operation` declaration (which auto-composes the
+ * membership validator) and {@link Core.deriveOperationValidators}'s
+ * per-operation `requiredParameters` derivation below.
+ *
+ * Deliberately declared with a bare `as const` — NOT
+ * `as const satisfies Core.M3LOperationDeclarationList` — because a
+ * `satisfies` clause on this literal fails `tsc --isolatedDeclarations`
+ * (the mode each script's `tsconfig.build.json` builds under). The shape is
+ * still fully compile-time-checked at both use sites without it: passing
+ * this value to `Core.deriveOperationNames` below and to `operations:` in
+ * `configParameters` each independently check it against
+ * `Core.M3LOperationDeclarationList` — do not re-add `satisfies` here.
  */
-export const CLOUDFORMATION_STACKS_OPERATIONS = [
-  "list-stacks",
-  "describe-stack",
-  "describe-stack-events",
-  "create-stack",
-  "update-stack",
-  "delete-stack",
-  "wait-stack-create-complete",
-  "wait-stack-update-complete",
-  "wait-stack-delete-complete",
+export const CLOUDFORMATION_STACKS_OPERATION_DECLARATIONS = [
+  {
+    name: "list-stacks",
+    description: "List stacks in the account, one page per call.",
+    requiredParameters: [],
+  },
+  {
+    name: "describe-stack",
+    description: "Describe one stack by name or ID.",
+    requiredParameters: ["stackName"],
+  },
+  {
+    name: "describe-stack-events",
+    description: "List a stack's events, one page per call.",
+    requiredParameters: ["stackName"],
+  },
+  {
+    name: "create-stack",
+    description: "Create a stack from a JSON input document.",
+    requiredParameters: ["input"],
+  },
+  {
+    name: "update-stack",
+    description: "Update an existing stack from a JSON input document.",
+    requiredParameters: ["input"],
+  },
+  {
+    name: "delete-stack",
+    description: "Delete a stack, optionally retaining named resources.",
+    requiredParameters: ["stackName"],
+  },
+  {
+    name: "wait-stack-create-complete",
+    description: "Wait until a stack finishes creating.",
+    requiredParameters: ["stackName"],
+  },
+  {
+    name: "wait-stack-update-complete",
+    description: "Wait until a stack finishes updating.",
+    requiredParameters: ["stackName"],
+  },
+  {
+    name: "wait-stack-delete-complete",
+    description: "Wait until a stack finishes deleting.",
+    requiredParameters: ["stackName"],
+  },
 ] as const;
+
+/**
+ * The literal union of
+ * {@link CLOUDFORMATION_STACKS_OPERATION_DECLARATIONS}' operation names.
+ */
+type CloudformationStacksOperationName =
+  (typeof CLOUDFORMATION_STACKS_OPERATION_DECLARATIONS)[number]["name"];
+
+/**
+ * Name-only projection of
+ * {@link CLOUDFORMATION_STACKS_OPERATION_DECLARATIONS} — keeps the closed
+ * set independently assertable in tests without exercising config
+ * resolution.
+ */
+export const CLOUDFORMATION_STACKS_OPERATIONS: readonly [
+  CloudformationStacksOperationName,
+  ...(readonly CloudformationStacksOperationName[]),
+] = Core.deriveOperationNames(CLOUDFORMATION_STACKS_OPERATION_DECLARATIONS);
 
 /** The `yes` parameter's declared default — the single source of truth `steps/run-cloudformation-stacks.ts` reads at the config-read site too. */
 export const YES_DEFAULT = false;
@@ -38,10 +100,11 @@ const MAX_WAIT_TIME_MAX_SECONDS = 3600;
  *
  * Only `aws.profile` and `operation` are `required: true`: per-operation
  * presence requirements (e.g. `stackName` for `describe-stack`, `input` for
- * `create-stack`/`update-stack`) are not expressible by a single parameter's
- * `validate:` callback — see `configValidators` below, which enforces these
- * presence checks at config-load time. The separate `template`-vs-`input`-
- * record `templateBody`/`templateUrl` conflict check
+ * `create-stack`/`update-stack`) are declared on
+ * {@link CLOUDFORMATION_STACKS_OPERATION_DECLARATIONS} rather than expressed
+ * by a single parameter's `validate:` callback — see {@link configValidators}
+ * below, which derives and enforces them at config-load time. The separate
+ * `template`-vs-`input`-record `templateBody`/`templateUrl` conflict check
  * (`steps/run-cloudformation-stacks.ts`'s `resolveTemplateText`) is a
  * different class of guard — it compares a config parameter against a
  * *parsed input file's contents*, not another config parameter, so
@@ -59,9 +122,7 @@ export const configParameters: readonly Core.M3LConfigParameter[] = [
     name: "operation",
     type: Core.M3LConfigParameterType.STRING,
     required: true,
-    validate: Core.M3LConfigValidators.oneOf<string>(
-      CLOUDFORMATION_STACKS_OPERATIONS,
-    ),
+    operations: CLOUDFORMATION_STACKS_OPERATION_DECLARATIONS,
   }),
   new Core.M3LConfigParameter({
     name: "stackName",
@@ -123,66 +184,6 @@ export const configParameters: readonly Core.M3LConfigParameter[] = [
   }),
 ];
 
-/** `stackName` is required for every operation except these three. */
-const STACK_NAME_NOT_REQUIRED_OPERATIONS = [
-  "list-stacks",
-  "create-stack",
-  "update-stack",
-] as const;
-
-/** `input` is required for both mutating-declaration operations. */
-const INPUT_REQUIRED_OPERATIONS = ["create-stack", "update-stack"] as const;
-
-const OXFORD_COMMA_MIN_LENGTH = 3;
-
-/**
- * Joins `operations` into a human-readable, individually-quoted,
- * Oxford-comma list: `'a'`, `'a' and 'b'`, or `'a', 'b', and 'c'`. Used only
- * to describe the fixed, closed set of operations a constraint applies to —
- * never a caller-supplied value.
- */
-function quotedList(operations: readonly string[]): string {
-  const quoted = operations.map((operation) => `'${operation}'`);
-  return quoted.reduce((joined, item, index) => {
-    if (index === 0) return item;
-    if (index === quoted.length - 1) {
-      return quoted.length >= OXFORD_COMMA_MIN_LENGTH
-        ? `${joined}, and ${item}`
-        : `${joined} and ${item}`;
-    }
-    return `${joined}, ${item}`;
-  }, "");
-}
-
-/**
- * Builds an F1b cross-parameter validator enforcing that `paramName` is set
- * whenever `operation` resolves to a member of `operations` — or, when
- * `mode` is `"except"`, whenever it resolves to anything OUTSIDE
- * `operations` (used for `stackName`, whose exclusion set is smaller than
- * its requirement set). Skips (returns `true`) when `operation` itself has
- * not resolved to a string — the `operation` parameter's own `required` +
- * `oneOf` validation already guards that shape before schema-level
- * validators ever run, so this is defensive, not load-bearing.
- */
-function requiredWhenOperation(
-  paramName: string,
-  operations: readonly string[],
-  mode: "for" | "except" = "for",
-): Core.M3LConfigSchemaValidator {
-  return (config: Core.M3LConfig): true | string => {
-    const operation = config.get("operation");
-    if (typeof operation !== "string") return true;
-
-    const listed = operations.includes(operation);
-    const applies = mode === "for" ? listed : !listed;
-    if (!applies || config.get(paramName) !== undefined) return true;
-
-    return mode === "for"
-      ? `'${paramName}' is required for ${quotedList(operations)}`
-      : `'${paramName}' is required for every operation except ${quotedList(operations)}`;
-  };
-}
-
 /**
  * The `cloudformation-stacks` schema-level cross-parameter validators
  * (F1b) — the declared config schema's second validation layer, run once by
@@ -193,6 +194,14 @@ function requiredWhenOperation(
  * parameter(s) it conditionally requires, which no single
  * `M3LConfigParameter` can express on its own — the "Required for" column of
  * `docs/reference/scripts/cloudformation-stacks.md`'s configuration table.
+ *
+ * The per-operation requiredness validators are DERIVED from
+ * {@link CLOUDFORMATION_STACKS_OPERATION_DECLARATIONS} by
+ * {@link Core.deriveOperationValidators} (ADR-0055):
+ *
+ * - `stackName` is required for `describe-stack`, `describe-stack-events`,
+ *   `delete-stack`, and the three `wait-stack-*-complete` operations.
+ * - `input` is required for `create-stack`, `update-stack`.
  *
  * This SUPPLEMENTS, rather than replaces, the existing run-start
  * `accessor.requiredFor(...)` guards in `steps/run-cloudformation-stacks.ts`:
@@ -214,12 +223,7 @@ function requiredWhenOperation(
  * ```
  */
 export const configValidators: readonly Core.M3LConfigSchemaValidator[] = [
-  requiredWhenOperation(
-    "stackName",
-    STACK_NAME_NOT_REQUIRED_OPERATIONS,
-    "except",
-  ),
-  requiredWhenOperation("input", INPUT_REQUIRED_OPERATIONS),
+  ...Core.deriveOperationValidators(configParameters),
   // requires() would be a no-op here since both yesSensitive and yes carry
   // declared defaults — compare resolved values instead.
   (config: Core.M3LConfig): true | string =>

@@ -97,13 +97,18 @@ node dist/main.js --operation=execute --apply \
 
 ### Operations at a glance
 
-| Operation  | Demonstrated by                                |
-| ---------- | ---------------------------------------------- |
-| `validate` | Minimal, Common                                |
-| `explain`  | Production                                     |
-| `convert`  | Edge case                                      |
-| `triage`   | Mutating, Bounded run                          |
-| `execute`  | Destructive (plan only), Destructive (applies) |
+| Operation  | Description                                                                           | Demonstrated by                                |
+| ---------- | ------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| `validate` | Build every preset offline and fail on any problem.                                   | Minimal, Common                                |
+| `explain`  | Print one preset's compiled step graph, cases and digest.                             | Production                                     |
+| `convert`  | Turn one runbook markdown file into a preset skeleton.                                | Edge case                                      |
+| `triage`   | Drain the queue, run the compiled preset per message, and write the triage report.    | Mutating, Bounded run                          |
+| `execute`  | Re-run the triage pass, build the remediation plan, and apply it when 'apply' is set. | Destructive (plan only), Destructive (applies) |
+
+A `—` in **Demonstrated by** means the operation has no worked example in
+§ Examples above — see the [contract page](../../docs/reference/scripts/sqs-dead-letter-triage.md) for its full
+contract. Descriptions are the same strings the script declares in
+`src/config.ts` and exposes via `getOperations()` (ADR-0055).
 
 ### Operational flags
 

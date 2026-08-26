@@ -111,6 +111,96 @@ describe("cloudwatch-logs-analysis config declaration", () => {
   });
 });
 
+describe("'operation' — declared ADR-0055 operations", () => {
+  const operation = configParameters.find(
+    (parameter) => parameter.getName() === "operation",
+  );
+
+  /** Resolves `operation` against a single raw value, via an in-memory provider. */
+  async function resolveOperation(raw: string): Promise<unknown> {
+    if (operation === undefined) {
+      throw new Error("expected the 'operation' parameter to be declared");
+    }
+    const reader = new Core.M3LConfigReader([
+      new Core.M3LInMemoryConfigProvider({ operation: raw }),
+    ]);
+    return operation.getValueAsync(reader);
+  }
+
+  it("rejects a value outside the declared operation set", async () => {
+    await expect(resolveOperation("frobnicate")).rejects.toBeInstanceOf(
+      Core.M3LConfigValidationError,
+    );
+  });
+
+  /**
+   * Hand-authored — deliberately NOT re-derived from
+   * `ANALYSIS_OPERATION_DECLARATIONS` (the src export under test), so a typo
+   * in that export's `requiredParameters` is caught rather than compared
+   * against itself.
+   */
+  const EXPECTED_REQUIRED_PARAMETERS: ReadonlyArray<
+    readonly [string, readonly string[]]
+  > = [
+    ["analyze", [Core.AWS_PROFILE_PARAM_NAME, "alarm", "triggeredAt"]],
+    ["validate", []],
+    ["explain", ["alarm"]],
+    ["convert", ["source"]],
+  ];
+
+  function expectedRequiredParametersFor(name: string): readonly string[] {
+    const found = EXPECTED_REQUIRED_PARAMETERS.find(
+      ([opName]) => opName === name,
+    );
+    if (found === undefined) {
+      throw new Error(
+        `test fixture error: no hand-authored requirement table entry for '${name}'`,
+      );
+    }
+    return found[1];
+  }
+
+  it("round-trips getOperations() against the hand-authored requirement table", () => {
+    expect(operation).toBeDefined();
+    const operations = operation?.getOperations();
+    expect(operations).toBeDefined();
+    if (operations === undefined) return;
+
+    expect(operations.map((op) => op.name)).toEqual([...ANALYSIS_OPERATIONS]);
+
+    for (const op of operations) {
+      expect(op.description.trim().length).toBeGreaterThan(0);
+      expect(op.requiredParameters ?? []).toEqual(
+        expectedRequiredParametersFor(op.name),
+      );
+    }
+  });
+
+  it("names only declared parameters in every operation's requiredParameters", () => {
+    const operations = operation?.getOperations();
+    expect(operations).toBeDefined();
+    if (operations === undefined) return;
+
+    const declaredNames = new Set(
+      configParameters.map((parameter) => parameter.getName()),
+    );
+    for (const op of operations) {
+      for (const required of op.requiredParameters ?? []) {
+        expect(declaredNames.has(required)).toBe(true);
+      }
+    }
+  });
+
+  it("'validate' declares no required parameters, so it passes every validator (vacuous pass)", () => {
+    const operations = operation?.getOperations();
+    const validate = operations?.find((op) => op.name === "validate");
+    expect(validate?.requiredParameters ?? []).toEqual([]);
+    expect(
+      firstFailure(buildConfig({ operation: "validate" })),
+    ).toBeUndefined();
+  });
+});
+
 describe("configValidators (cross-parameter requiredness)", () => {
   it("accepts a fully specified analyze run", () => {
     expect(
@@ -163,8 +253,25 @@ describe("configValidators (cross-parameter requiredness)", () => {
     ).toBeUndefined();
   });
 
-  it("treats an absent operation as analyze, the declared default", () => {
-    expect(firstFailure(buildConfig({}))).toContain("analyze");
+  it("enforces analyze's requirements when operation is explicitly 'analyze'", () => {
+    expect(firstFailure(buildConfig({ operation: "analyze" }))).toContain(
+      "analyze",
+    );
+  });
+
+  // deriveOperationValidators' per-parameter check vacuously passes
+  // (`typeof current !== "string" → return true`) whenever the selector
+  // value itself is absent from the store — it carries no fallback of its
+  // own. Real behaviour is unchanged, because `operation` is declared with
+  // `defaultValue: "analyze"` and M3LScript's config loader resolves every
+  // declared default into the store BEFORE any validator runs — running the
+  // built script with no `--operation` yields
+  // `'aws.profile' is required for operation(s): analyze`. This test builds
+  // a raw M3LConfig store directly, bypassing that default resolution, so it
+  // observes the validator's own (correct) vacuous-pass behavior rather than
+  // the pipeline's end-to-end one.
+  it("vacuously passes at the raw-store level when operation is absent — the declared defaultValue, not this validator, supplies 'analyze' in the real M3LScript pipeline", () => {
+    expect(firstFailure(buildConfig({}))).toBeUndefined();
   });
 
   it("rejects a triggeredAt that is not an ISO-8601 timestamp", () => {
