@@ -301,6 +301,12 @@ const COMMAND_MODULE_CONFIG_IMPORT_RE =
  * both layers. Left open deliberately: this is a guardrail against the
  * accident (a copied `process.exit(1)`), not a sandbox against a determined
  * author, and closing it would need a parser rather than a regex.
+ *
+ * Conversely, {@link stripComments} preserves string CONTENT — it has to,
+ * since {@link COMMAND_MODULE_CONFIG_IMPORT_RE} matches a string literal — so
+ * the text `process.exit(` inside a string is flagged even though it is data.
+ * An accepted false positive: a `command.ts` carrying that text as data is
+ * vanishingly unlikely, and the failure direction is safe.
  */
 const COMMAND_MODULE_PROCESS_EXIT_RE = /process\s*\.\s*exit\s*\(/;
 
@@ -329,10 +335,14 @@ const COMMAND_MODULE_PROCESS_EXIT_RE = /process\s*\.\s*exit\s*\(/;
  *
  * Deliberately a small scanner, not a parser: it tracks quote state and
  * backslash escapes, which is all TypeScript source needs for this decision.
- * A regex literal containing an unbalanced quote (`/'/`) is the known blind
- * spot; it opens quote state until the end of the line, at worst failing to
- * strip a trailing comment there — the pre-existing behaviour, never a false
- * pass.
+ * A regex literal containing an unbalanced quote is the known blind spot, and
+ * carrying state across lines widened it: an unbalanced `'` or `"` (`/'/`)
+ * still closes at the newline, but an unbalanced BACKTICK (`` /`/ ``) opens
+ * template state for the rest of the FILE, suppressing comment stripping from
+ * that point on. Both directions stay fail-safe — a comment left unstripped
+ * can only produce a false failure, never a false pass — so the gate never
+ * lets a bad `command.ts` through; it would just complain about a good one.
+ * Closing it properly needs a tokenizer, which this gate does not justify.
  *
  * @param source - Raw TypeScript source.
  * @returns The source with comments removed.
