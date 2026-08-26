@@ -159,6 +159,37 @@ export interface M3LConsoleErrorEnvelope {
 }
 
 /**
+ * Returns `true` when `error` is an {@link M3LConsoleError} whose code
+ * classifies as caller-origin (`ERR_CONSOLE_BAD_REQUEST`,
+ * `_UNAUTHENTICATED`, `_NOT_FOUND`, `_METHOD_NOT_ALLOWED`) — a routine,
+ * expected outcome rather than a fault. Every other value (a library-origin
+ * `M3LConsoleError`, a foreign `Core.M3LError`, a plain `Error`, or a thrown
+ * non-`Error` value) returns `false`.
+ *
+ * `http/handler` uses this to gate its diagnostic {@link Core.M3LLogger.errorFrom}
+ * line (ADR-0070's display-vs-persist split): a caller-origin error already
+ * reads clearly from the outcome line's status alone, so logging it again as
+ * a diagnostic would be noise and would let a caller remotely steer log
+ * severity by choosing which routine error to trigger.
+ *
+ * @param error - Any value caught while handling a request.
+ * @returns `true` when `error` is a caller-origin {@link M3LConsoleError}.
+ * @example
+ * ```ts
+ * isCallerOriginError(
+ *   new M3LConsoleError("ERR_CONSOLE_NOT_FOUND", "route not found"),
+ * ); // true
+ * isCallerOriginError(new Error("boom")); // false
+ * ```
+ */
+export function isCallerOriginError(error: unknown): boolean {
+  return (
+    error instanceof M3LConsoleError &&
+    classificationForCode(error.code).origin === "caller"
+  );
+}
+
+/**
  * Returns the HTTP status {@link M3LConsoleErrorCode} `code` maps to.
  *
  * @param code - The console error code.

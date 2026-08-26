@@ -16,6 +16,7 @@ import {
   errorEnvelope,
   errorResponse,
   httpStatusForCode,
+  isCallerOriginError,
 } from "../src/http/envelope.js";
 import type { M3LConsoleErrorEnvelope } from "../src/http/envelope.js";
 import { M3LConsoleError } from "../src/errors/console-error.js";
@@ -254,6 +255,48 @@ describe("errorResponse", () => {
     expect(response.body).not.toContain(
       "plain failure with a real stack trace",
     );
+  });
+});
+
+describe("isCallerOriginError", () => {
+  test.each<M3LConsoleErrorCode>([
+    "ERR_CONSOLE_BAD_REQUEST",
+    "ERR_CONSOLE_UNAUTHENTICATED",
+    "ERR_CONSOLE_NOT_FOUND",
+    "ERR_CONSOLE_METHOD_NOT_ALLOWED",
+  ])("returns true for the caller-origin code %s", (code) => {
+    expect(isCallerOriginError(new M3LConsoleError(code, "message"))).toBe(
+      true,
+    );
+  });
+
+  test.each<M3LConsoleErrorCode>([
+    "ERR_CONSOLE_CONFIG_INVALID",
+    "ERR_CONSOLE_INTERNAL",
+    "ERR_CONSOLE_ROUTE_CONFLICT",
+    "ERR_CONSOLE_DRAIN_FAILED",
+    "ERR_CONSOLE_LISTEN_FAILED",
+  ])("returns false for the library-origin code %s", (code) => {
+    expect(isCallerOriginError(new M3LConsoleError(code, "message"))).toBe(
+      false,
+    );
+  });
+
+  test("returns false for a foreign Core.M3LError", () => {
+    const foreign = new Core.M3LError("boom", { code: "ERR_CONFIG_MISSING" });
+    expect(isCallerOriginError(foreign)).toBe(false);
+  });
+
+  test("returns false for a plain Error", () => {
+    expect(isCallerOriginError(new Error("boom"))).toBe(false);
+  });
+
+  test("returns false for a string", () => {
+    expect(isCallerOriginError("boom")).toBe(false);
+  });
+
+  test("returns false for null", () => {
+    expect(isCallerOriginError(null)).toBe(false);
   });
 });
 

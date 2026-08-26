@@ -373,8 +373,32 @@ describe("createConsoleRequestListener — 404 and 405 envelopes", () => {
   });
 });
 
+/**
+ * Finds the diagnostic event emitted by `logDiagnosticIfFault`/
+ * `writeResponseGuarded` — the message they build always contains this
+ * substring — distinct from the per-request outcome line `logOutcome` always
+ * emits (`<method> <path> -> <status>`).
+ */
+function findDiagnosticEvent(
+  events: readonly Core.M3LLogEvent[],
+): Core.M3LLogEvent | undefined {
+  return events.find(
+    (event) =>
+      event.message.includes("unhandled failure handling") ||
+      event.message.includes("failed writing response for"),
+  );
+}
+
+/** Finds the per-request outcome line: `<method> <path> -> <status>`. */
+function findOutcomeEvent(
+  events: readonly Core.M3LLogEvent[],
+  status: number,
+): Core.M3LLogEvent | undefined {
+  return events.find((event) => event.message.includes(`-> ${String(status)}`));
+}
+
 describe("createConsoleRequestListener — a handler that throws", () => {
-  test("still yields a well-formed envelope and exactly one log line", async () => {
+  test("yields a well-formed envelope, logs the outcome line, and logs a diagnostic line carrying the real cause", async () => {
     const { logger, events } = createCapturingLogger();
     const router = createRouter([
       route({
@@ -407,7 +431,26 @@ describe("createConsoleRequestListener — a handler that throws", () => {
       expect(JSON.stringify(parsed)).not.toContain("kaboom");
     });
 
-    expect(events).toHaveLength(1);
+    // Two events, not one: the outcome line and a separate diagnostic line
+    // (ADR-0070's display-vs-persist split) — this is the whole point of the
+    // fix, and would fail if the diagnostic call were ever removed.
+    expect(events).toHaveLength(2);
+
+    const outcome = findOutcomeEvent(events, 500);
+    expect(outcome?.category).toBe(Core.M3LLogEventCategory.ERROR);
+    expect(outcome?.message).toContain("GET");
+    expect(outcome?.message).toContain("/boom");
+
+    const diagnostic = findDiagnosticEvent(events);
+    expect(diagnostic?.category).toBe(Core.M3LLogEventCategory.ERROR);
+    expect(diagnostic?.message).toContain("unhandled failure handling");
+    expect(diagnostic?.message).toContain("GET");
+    expect(diagnostic?.message).toContain("/boom");
+    // The real cause reaches the diagnostic line even though the response
+    // body only ever shows the fixed generic message.
+    expect(JSON.stringify(diagnostic)).toContain(
+      "kaboom, and this text must never reach the caller",
+    );
   });
 
   test("a rejected handler promise is caught the same way as a synchronous throw", async () => {
@@ -431,7 +474,9 @@ describe("createConsoleRequestListener — a handler that throws", () => {
       expect(response.status).toBe(500);
     });
 
-    expect(events).toHaveLength(1);
+    expect(events).toHaveLength(2);
+    expect(findDiagnosticEvent(events)).toBeDefined();
+    expect(findOutcomeEvent(events, 500)).toBeDefined();
   });
 
   test("a middleware that throws is also caught and yields a well-formed envelope", async () => {
@@ -454,7 +499,44 @@ describe("createConsoleRequestListener — a handler that throws", () => {
       expect(response.status).toBe(500);
     });
 
-    expect(events).toHaveLength(1);
+    expect(events).toHaveLength(2);
+    expect(findDiagnosticEvent(events)).toBeDefined();
+    expect(findOutcomeEvent(events, 500)).toBeDefined();
+  });
+
+  test("a rejected handler promise wrapping a cause: the underlying cause survives into the diagnostic event", async () => {
+    const { logger, events } = createCapturingLogger();
+    const underlyingCause = new Error(
+      "distinctive underlying cause: connection refused",
+    );
+    const router = createRouter([
+      route({
+        method: "GET",
+        path: "/wrapped-boom",
+        handler: () =>
+          Promise.reject(
+            new Error("wrapping failure", { cause: underlyingCause }),
+          ),
+      }),
+    ]);
+    const listener = createConsoleRequestListener({
+      router,
+      middlewares: [],
+      logger,
+      signal: new AbortController().signal,
+    });
+
+    await withServer(listener, async (baseUrl) => {
+      const response = await requestOnce(`${baseUrl}/wrapped-boom`);
+      expect(response.status).toBe(500);
+    });
+
+    const diagnostic = findDiagnosticEvent(events);
+    // `errorFrom` walks the full `cause` chain via `serializeErrorChain` — a
+    // flattened top-level message alone would not carry this.
+    expect(JSON.stringify(diagnostic)).toContain(
+      "distinctive underlying cause: connection refused",
+    );
   });
 });
 
@@ -481,11 +563,15 @@ describe("createConsoleRequestListener — log level by status class", () => {
       await requestOnce(`${baseUrl}/boom`);
     });
 
-    expect(events).toHaveLength(1);
-    expect(events[0]?.category).toBe(Core.M3LLogEventCategory.ERROR);
+    // A genuine (library-origin) fault logs both the outcome line AND the
+    // gated diagnostic line, both at error level.
+    expect(events).toHaveLength(2);
+    for (const event of events) {
+      expect(event.category).toBe(Core.M3LLogEventCategory.ERROR);
+    }
   });
 
-  test("logs a 4xx (not-found) at warning level", async () => {
+  test("logs a 4xx (not-found) at warning level, as a single outcome line", async () => {
     const { logger, events } = createCapturingLogger();
     const listener = createConsoleRequestListener({
       router: createRouter([]),
@@ -498,8 +584,15 @@ describe("createConsoleRequestListener — log level by status class", () => {
       await requestOnce(`${baseUrl}/nope`);
     });
 
+    // An unmatched route resolves through `dispatch()`'s "not-found" branch
+    // without ever throwing, so `logDiagnosticIfFault` (and its
+    // caller-origin gate) is never reached on this path at all — this only
+    // pins the not-found outcome's own status/level/single-line shape. The
+    // origin gate itself is pinned by the S1 malformed-target tests below,
+    // which throw a genuine caller-origin error and so actually exercise it.
     expect(events).toHaveLength(1);
     expect(events[0]?.category).toBe(Core.M3LLogEventCategory.WARNING);
+    expect(findDiagnosticEvent(events)).toBeUndefined();
   });
 
   test("logs a successful 2xx at info level", async () => {
@@ -542,11 +635,52 @@ describe("createConsoleRequestListener — log line never leaks sensitive reques
       });
     });
 
+    // A successful 2xx dispatch stays at exactly one event (no diagnostic
+    // line is gated for a fault that never occurred) — asserted over every
+    // captured event, not `events[0]` alone, so this still holds if that
+    // count is ever wrong.
     expect(events).toHaveLength(1);
-    const serialized = JSON.stringify(events[0]);
-    expect(serialized).not.toContain("super-secret-value");
-    expect(serialized).not.toContain("should-not-be-logged");
-    expect(serialized).not.toContain("apiKey");
+    for (const event of events) {
+      const serialized = JSON.stringify(event);
+      expect(serialized).not.toContain("super-secret-value");
+      expect(serialized).not.toContain("should-not-be-logged");
+      expect(serialized).not.toContain("apiKey");
+    }
+  });
+
+  test("a genuine fault's diagnostic line is held to the same redaction rule as the outcome line", async () => {
+    const { logger, events } = createCapturingLogger();
+    const router = createRouter([
+      route({
+        method: "GET",
+        path: "/api/v1/runs",
+        handler: () => {
+          throw new Error("boom while handling the request");
+        },
+      }),
+    ]);
+    const listener = createConsoleRequestListener({
+      router,
+      middlewares: [],
+      logger,
+      signal: new AbortController().signal,
+    });
+
+    await withServer(listener, async (baseUrl) => {
+      await requestOnce(`${baseUrl}/api/v1/runs?apiKey=super-secret-value`, {
+        headers: { "x-secret-header": "should-not-be-logged" },
+      });
+    });
+
+    // The new diagnostic line is a new sink for request data — no captured
+    // event (outcome OR diagnostic) may carry the query string or headers.
+    expect(events.length).toBeGreaterThan(0);
+    for (const event of events) {
+      const serialized = JSON.stringify(event);
+      expect(serialized).not.toContain("super-secret-value");
+      expect(serialized).not.toContain("should-not-be-logged");
+      expect(serialized).not.toContain("apiKey");
+    }
   });
 
   test.each<M3LRouteAuth>(["required", "exempt"])(
@@ -568,7 +702,9 @@ describe("createConsoleRequestListener — log line never leaks sensitive reques
       });
 
       expect(events).toHaveLength(1);
-      expect(JSON.stringify(events[0])).toContain(auth);
+      for (const event of events) {
+        expect(JSON.stringify(event)).toContain(auth);
+      }
     },
   );
 });
@@ -699,8 +835,11 @@ describe("createConsoleRequestListener — a writeResponse failure can never lea
   // outer `.catch`, which only logged and never touched the socket —
   // attacker-controlled FD exhaustion. `writeResponse` is now guarded
   // inside `runRequest` itself, so every request either writes a real
-  // response or a fallback 500, and always logs exactly one line.
-  test("falls back to a bare 500 and still ends the response and logs exactly one line", async () => {
+  // response or a fallback 500, and always logs the outcome line. A failed
+  // write is always a genuine fault (never a routine caller-origin outcome),
+  // so `writeResponseGuarded` also logs an UNCONDITIONAL diagnostic line via
+  // `errorFrom` — two events total, not one.
+  test("falls back to a bare 500, still ends the response, and logs both the outcome line and an unconditional write-failure diagnostic", async () => {
     const { logger, events, logged } = createResolvingLogger();
     const req = createFakeIncomingMessage();
     const res = createFakeServerResponse({
@@ -722,13 +861,19 @@ describe("createConsoleRequestListener — a writeResponse failure can never lea
     await logged;
 
     // The socket was ended (via the default fake `end`, which does not
-    // throw) rather than left open, and exactly one outcome line was
-    // logged — never the outer-`.catch` "unhandled" message, since this
-    // failure was fully handled inside `runRequest`.
-    expect(events).toHaveLength(1);
-    expect(events[0]?.message).not.toContain(
-      "unhandled console request listener failure",
-    );
+    // throw) rather than left open, and exactly two log lines were written —
+    // never the outer-`.catch` "unhandled" message, since this failure was
+    // fully handled inside `runRequest`.
+    expect(events).toHaveLength(2);
+    for (const event of events) {
+      expect(event.message).not.toContain(
+        "unhandled console request listener failure",
+      );
+    }
+
+    const diagnostic = findDiagnosticEvent(events);
+    expect(diagnostic?.message).toContain("failed writing response for");
+    expect(JSON.stringify(diagnostic)).toContain("writeHead exploded");
   });
 });
 
@@ -795,14 +940,19 @@ describe("createConsoleRequestListener — writeFallbackResponse's own guards", 
     await logged;
 
     // Two writeHead attempts: the primary (throws) and the fallback's own
-    // writeHead(500) (also throws, caught, falls through to end()).
+    // writeHead(500) (also throws, caught, falls through to end()). A failed
+    // write is always a genuine fault, so `writeResponseGuarded` logs an
+    // unconditional diagnostic line in addition to the outcome line.
     expect(log.writeHeadCalls).toBe(2);
     expect(log.endCalls).toBe(1);
-    expect(events).toHaveLength(1);
+    expect(events).toHaveLength(2);
+    const outcome = events.find((event) => event.data?.["status"] === 201);
     // The logged status is the REAL computed status from the route handler
     // (201) — never overwritten to the fallback's hard-coded 500, since
     // `response.status` is read from the already-computed response value.
-    expect(events[0]?.data).toMatchObject({ status: 201 });
+    expect(outcome).toBeDefined();
+    const diagnostic = findDiagnosticEvent(events);
+    expect(diagnostic?.message).toContain("failed writing response for");
   });
 
   test("skips the fallback writeHead(500) once headers were already sent, but still retries end()", async () => {
@@ -840,11 +990,16 @@ describe("createConsoleRequestListener — writeFallbackResponse's own guards", 
 
     // writeHead was only ever called once (the primary attempt) — the
     // fallback's own writeHead(500) was skipped because headersSent was
-    // already true.
+    // already true. The failed `end()` is still a genuine fault, so an
+    // unconditional diagnostic line accompanies the outcome line.
     expect(log.writeHeadCalls).toBe(1);
     expect(log.endCalls).toBe(2);
-    expect(events).toHaveLength(1);
-    expect(events[0]?.data).toMatchObject({ status: 204 });
+    expect(events).toHaveLength(2);
+    const outcome = events.find((event) => event.data?.["status"] === 204);
+    expect(outcome).toBeDefined();
+    expect(findDiagnosticEvent(events)?.message).toContain(
+      "failed writing response for",
+    );
   });
 
   test("skips the fallback end() once the response was already reported as ended", async () => {
@@ -876,7 +1031,12 @@ describe("createConsoleRequestListener — writeFallbackResponse's own guards", 
 
     expect(log.writeHeadCalls).toBe(1);
     expect(log.endCalls).toBe(0);
-    expect(events).toHaveLength(1);
+    // The failed primary write is still a genuine fault: the outcome line
+    // plus an unconditional write-failure diagnostic.
+    expect(events).toHaveLength(2);
+    expect(JSON.stringify(findDiagnosticEvent(events))).toContain(
+      "writeHead exploded as the socket was closing",
+    );
   });
 
   test("swallows a throw from the fallback's own end() call", async () => {
@@ -904,19 +1064,25 @@ describe("createConsoleRequestListener — writeFallbackResponse's own guards", 
     await logged;
 
     // Neither writeHead nor end() ever succeeded, yet nothing escaped
-    // runRequest: exactly one (non-"unhandled") log line was still written.
+    // runRequest: the outcome line plus one write-failure diagnostic line
+    // were still written — never the outer-`.catch` "unhandled" message.
     expect(log.writeHeadCalls).toBe(2);
     expect(log.endCalls).toBe(1);
-    expect(events).toHaveLength(1);
-    expect(events[0]?.message).not.toContain(
-      "unhandled console request listener failure",
+    expect(events).toHaveLength(2);
+    for (const event of events) {
+      expect(event.message).not.toContain(
+        "unhandled console request listener failure",
+      );
+    }
+    expect(findDiagnosticEvent(events)?.message).toContain(
+      "failed writing response for",
     );
   });
 });
 
 describe("createConsoleRequestListener — a request whose target fails to parse never logs the raw target (S1)", () => {
   test.each<string>(["http://[", "http://%zz/", "//"])(
-    "logs the fixed placeholder path, never the raw target or its query string, for %s",
+    "logs the fixed placeholder path, never the raw target or its query string, and pins the caller-origin diagnostic gate, for %s",
     async (rawTarget) => {
       const { logger, events } = createCapturingLogger();
       const listener = createConsoleRequestListener({
@@ -943,6 +1109,13 @@ describe("createConsoleRequestListener — a request whose target fails to parse
       // unparsed target — this literal mirrors handler.ts's own
       // PATH_PLACEHOLDER_UNPARSED constant, which is not exported.
       expect(events[0]?.data).toMatchObject({ path: "(unparsed)" });
+      // Unlike the not-found path, a malformed target genuinely throws
+      // (`createRequestContext` raises `ERR_CONSOLE_BAD_REQUEST`) and is
+      // caught in `runRequest`'s `catch`, which calls
+      // `logDiagnosticIfFault` for real. That error is caller-origin, so
+      // this is what actually pins `isCallerOriginError`'s gate: removing
+      // the gate would emit a second diagnostic event here.
+      expect(findDiagnosticEvent(events)).toBeUndefined();
     },
   );
 });

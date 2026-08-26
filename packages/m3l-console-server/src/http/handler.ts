@@ -14,7 +14,7 @@ import { Core } from "@m3l-automation/m3l-common";
 
 import { createRequestContext, withParams } from "./context.js";
 import type { M3LRequestContext } from "./context.js";
-import { errorResponse } from "./envelope.js";
+import { errorResponse, isCallerOriginError } from "./envelope.js";
 import { M3LConsoleError } from "../errors/console-error.js";
 import { composeMiddleware } from "./middleware.js";
 import type { M3LConsoleMiddleware } from "./middleware.js";
@@ -126,6 +126,37 @@ function logOutcome(logger: Core.M3LLogger, outcome: RequestOutcome): void {
   }
 }
 
+/** Context for {@link logDiagnosticIfFault} — never the query string, headers, or body. */
+interface RequestFaultContext {
+  readonly method: string;
+  readonly path: string;
+  readonly correlationId: string;
+}
+
+/**
+ * Emits a diagnostic `ERROR` line via {@link Core.M3LLogger.errorFrom} for a
+ * genuine fault — but never for a routine caller-origin outcome (a bad
+ * request, or an unauthenticated/not-found/method-not-allowed lookup) — so
+ * the real cause behind a handler/middleware throw is recorded somewhere,
+ * even though only the fixed generic envelope message ever reaches the
+ * caller (ADR-0070's display-vs-persist split; see
+ * {@link isCallerOriginError}). Gating on origin also keeps a caller from
+ * remotely steering log severity by choosing which routine error to trigger.
+ * The message carries only the correlation id, method, and normalized path —
+ * never the query string, headers, or body.
+ */
+function logDiagnosticIfFault(
+  logger: Core.M3LLogger,
+  error: unknown,
+  context: RequestFaultContext,
+): void {
+  if (isCallerOriginError(error)) return;
+  logger.errorFrom(
+    error,
+    `unhandled failure handling ${context.method} ${context.path} (correlationId=${context.correlationId})`,
+  );
+}
+
 /** Builds the response for a router lookup that did not reach a route handler. */
 function responseForUnmatchedLookup(
   outcome: "not-found" | "method-not-allowed",
@@ -179,6 +210,33 @@ function writeFallbackResponse(res: ServerResponse): void {
   }
 }
 
+/**
+ * Writes `response` to `res`, guarded: a throw from {@link writeResponse}
+ * (e.g. an out-of-range status or a header value `res.writeHead` rejects)
+ * must never leave the socket open with no log line, so this falls back to
+ * a bare 500 rather than letting the throw escape to the outer `.catch`,
+ * which only logs and never touches the socket. A failed write is always a
+ * genuine fault — never a routine caller-origin outcome — so its
+ * {@link Core.M3LLogger.errorFrom} diagnostic line is unconditional, unlike
+ * {@link logDiagnosticIfFault}.
+ */
+function writeResponseGuarded(
+  res: ServerResponse,
+  response: M3LConsoleResponse,
+  context: RequestFaultContext,
+  logger: Core.M3LLogger,
+): void {
+  try {
+    writeResponse(res, response, context.correlationId);
+  } catch (writeError) {
+    logger.errorFrom(
+      writeError,
+      `failed writing response for ${context.method} ${context.path} (correlationId=${context.correlationId})`,
+    );
+    writeFallbackResponse(res);
+  }
+}
+
 /** The result of dispatching a request: the response, and the auth mode of any matched route. */
 interface DispatchResult {
   readonly response: M3LConsoleResponse;
@@ -216,7 +274,12 @@ async function dispatch(
   return { response, accessMode: lookup.route.auth };
 }
 
-/** Runs one request end-to-end: context, dispatch, response, and its single log line. */
+/**
+ * Runs one request end-to-end: context, dispatch, response, and its logging.
+ * Exactly one outcome line is logged per request; a failure additionally
+ * emits one diagnostic line (see {@link logDiagnosticIfFault}), gated so a
+ * routine caller-origin outcome (4xx) never doubles up.
+ */
 async function runRequest(
   req: IncomingMessage,
   res: ServerResponse,
@@ -259,19 +322,21 @@ async function runRequest(
     accessMode = result.accessMode;
   } catch (error) {
     response = errorResponse(error, correlationId);
+    logDiagnosticIfFault(options.logger, error, {
+      method,
+      path,
+      correlationId,
+    });
   } finally {
     req.removeListener("close", onClose);
   }
 
-  // Guarded: a throw from `writeResponse` (e.g. an out-of-range status
-  // reaching `res.writeHead`) must never leave the socket open with no log
-  // line — fall back to a bare 500 rather than letting the throw escape to
-  // the outer `.catch`, which only logs and never touches the socket.
-  try {
-    writeResponse(res, response, correlationId);
-  } catch {
-    writeFallbackResponse(res);
-  }
+  writeResponseGuarded(
+    res,
+    response,
+    { method, path, correlationId },
+    options.logger,
+  );
 
   logOutcome(options.logger, {
     method,
@@ -286,8 +351,13 @@ async function runRequest(
 /**
  * Builds the `node:http` request listener for the console server: resolves
  * a request context, dispatches it through the router and middleware
- * chain, writes the response, and logs exactly one outcome line — never a
- * query string, headers, a body, or the operator's email.
+ * chain, writes the response, and logs exactly one *outcome* line — never a
+ * query string, headers, a body, or the operator's email. A failure
+ * additionally emits one diagnostic line via
+ * {@link Core.M3LLogger.errorFrom} (gated so a routine caller-origin 4xx
+ * never doubles up — see {@link isCallerOriginError}), so the real cause of
+ * a genuine fault is never lost to the fixed generic envelope message alone
+ * (ADR-0070's display-vs-persist split).
  *
  * The listener returns `void` and never lets a rejection escape: every
  * failure — a bad request, an unmatched route, or a handler/middleware
