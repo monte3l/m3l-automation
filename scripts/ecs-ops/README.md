@@ -46,14 +46,21 @@ already-registered task definition — this script does not register one).
 
 ### Operations at a glance
 
-| Operation                                             | Demonstrated by                                                    |
-| ----------------------------------------------------- | ------------------------------------------------------------------ |
-| `list-services`                                       | Minimal                                                            |
-| `describe-service`                                    | Common                                                             |
-| `update-service`                                      | Production                                                         |
-| `wait-services-stable`                                | Production                                                         |
-| `delete-service`                                      | Edge case                                                          |
-| `create-service`, `list-clusters`, `describe-cluster` | — see the [contract page](../../docs/reference/scripts/ecs-ops.md) |
+| Operation              | Description                                                                  | Demonstrated by |
+| ---------------------- | ---------------------------------------------------------------------------- | --------------- |
+| `list-services`        | List a cluster's services, one page per call.                                | Minimal         |
+| `describe-service`     | Describe one service in a cluster.                                           | Common          |
+| `create-service`       | Create a service from a JSON input document.                                 | —               |
+| `update-service`       | Update an existing service from a JSON input document.                       | Production      |
+| `delete-service`       | Delete a service, optionally forcing deletion without scaling to zero first. | Edge case       |
+| `wait-services-stable` | Wait until the named services reach a stable state.                          | Production      |
+| `list-clusters`        | List the account's ECS clusters, one page per call.                          | —               |
+| `describe-cluster`     | Describe one cluster.                                                        | —               |
+
+A `—` in **Demonstrated by** means the operation has no worked example in
+§ Examples above — see the [contract page](../../docs/reference/scripts/ecs-ops.md) for its full
+contract. Descriptions are the same strings the script declares in
+`src/config.ts` and renders under `--help` (ADR-0055).
 
 ### Operational flags
 

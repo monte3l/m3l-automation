@@ -1,31 +1,119 @@
 import { Core } from "@m3l-automation/m3l-common";
 
 /**
- * The sixteen operations `eks-ops` dispatches over `AWS.M3LEKSOperations`.
- * Declared as a bare `as const` array (rather than inline in the
- * `M3LConfigParameter`'s `oneOf` call) so the closed set is independently
- * assertable in tests without exercising config resolution — the same "bare
- * `as const` + derived union" idiom `CODEPIPELINE_OPS_OPERATIONS`/
- * `ECS_OPERATIONS` use.
+ * The `operation` parameter's declared operation set (ADR-0055) — the
+ * sixteen operations `eks-ops` dispatches over `AWS.M3LEKSOperations`. Feeds
+ * {@link configParameters}' `operation` declaration (which auto-composes the
+ * membership validator) and {@link Core.deriveOperationValidators}'s
+ * per-operation `requiredParameters` derivation below.
+ *
+ * Deliberately declared with a bare `as const` — NOT
+ * `as const satisfies Core.M3LOperationDeclarationList` — because a
+ * `satisfies` clause on this literal fails `tsc --isolatedDeclarations`
+ * (the mode each script's `tsconfig.build.json` builds under). The shape is
+ * still fully compile-time-checked at both use sites without it: passing
+ * this value to `Core.deriveOperationNames` below and to `operations:` in
+ * `configParameters` each independently check it against
+ * `Core.M3LOperationDeclarationList` — do not re-add `satisfies` here.
  */
-export const EKS_OPS_OPERATIONS = [
-  "list-clusters",
-  "describe-cluster",
-  "create-cluster",
-  "update-cluster-config",
-  "update-cluster-version",
-  "delete-cluster",
-  "wait-cluster-active",
-  "wait-cluster-deleted",
-  "list-nodegroups",
-  "describe-nodegroup",
-  "create-nodegroup",
-  "update-nodegroup-config",
-  "update-nodegroup-version",
-  "delete-nodegroup",
-  "wait-nodegroup-active",
-  "wait-nodegroup-deleted",
+export const EKS_OPS_OPERATION_DECLARATIONS = [
+  {
+    name: "list-clusters",
+    description: "List the EKS clusters in the account, one page per call.",
+    requiredParameters: [],
+  },
+  {
+    name: "describe-cluster",
+    description: "Describe one cluster.",
+    requiredParameters: ["cluster"],
+  },
+  {
+    name: "create-cluster",
+    description: "Create a cluster from a JSON input document.",
+    requiredParameters: ["cluster", "input"],
+  },
+  {
+    name: "update-cluster-config",
+    description: "Update a cluster's configuration from a JSON input document.",
+    requiredParameters: ["cluster", "input"],
+  },
+  {
+    name: "update-cluster-version",
+    description: "Upgrade a cluster to a target Kubernetes version.",
+    requiredParameters: ["cluster", "kubernetesVersion"],
+  },
+  {
+    name: "delete-cluster",
+    description: "Delete a cluster.",
+    requiredParameters: ["cluster"],
+  },
+  {
+    name: "wait-cluster-active",
+    description: "Wait until a cluster becomes ACTIVE.",
+    requiredParameters: ["cluster"],
+  },
+  {
+    name: "wait-cluster-deleted",
+    description: "Wait until a cluster is fully deleted.",
+    requiredParameters: ["cluster"],
+  },
+  {
+    name: "list-nodegroups",
+    description: "List a cluster's managed node groups, one page per call.",
+    requiredParameters: ["cluster"],
+  },
+  {
+    name: "describe-nodegroup",
+    description: "Describe one managed node group.",
+    requiredParameters: ["cluster", "nodegroup"],
+  },
+  {
+    name: "create-nodegroup",
+    description: "Create a managed node group from a JSON input document.",
+    requiredParameters: ["cluster", "nodegroup", "input"],
+  },
+  {
+    name: "update-nodegroup-config",
+    description:
+      "Update a node group's configuration from a JSON input document.",
+    requiredParameters: ["cluster", "nodegroup", "input"],
+  },
+  {
+    name: "update-nodegroup-version",
+    description: "Upgrade a node group's Kubernetes or AMI release version.",
+    requiredParameters: ["cluster", "nodegroup"],
+  },
+  {
+    name: "delete-nodegroup",
+    description: "Delete a managed node group.",
+    requiredParameters: ["cluster", "nodegroup"],
+  },
+  {
+    name: "wait-nodegroup-active",
+    description: "Wait until a node group becomes ACTIVE.",
+    requiredParameters: ["cluster", "nodegroup"],
+  },
+  {
+    name: "wait-nodegroup-deleted",
+    description: "Wait until a node group is fully deleted.",
+    requiredParameters: ["cluster", "nodegroup"],
+  },
 ] as const;
+
+/** The literal union of {@link EKS_OPS_OPERATION_DECLARATIONS}' operation names. */
+type EksOpsOperationName =
+  (typeof EKS_OPS_OPERATION_DECLARATIONS)[number]["name"];
+
+/**
+ * Name-only projection of {@link EKS_OPS_OPERATION_DECLARATIONS} — keeps the
+ * closed set independently assertable in tests without exercising config
+ * resolution, and preserves the literal union that `steps/run-eks-ops.ts`'s
+ * exhaustive dispatch table depends on.
+ */
+export const EKS_OPS_OPERATIONS: readonly [
+  EksOpsOperationName,
+  ...(readonly EksOpsOperationName[]),
+] = Core.deriveOperationNames(EKS_OPS_OPERATION_DECLARATIONS);
 
 /** The `force` parameter's declared default — passed to `update-cluster-version`/`update-nodegroup-version`. */
 export const FORCE_DEFAULT = false;
@@ -59,9 +147,10 @@ const MAX_WAIT_TIME_MAX = 3600;
  * Only `aws.profile` and `operation` are `required: true`: per-operation
  * presence requirements (e.g. `cluster` for every operation but
  * `list-clusters`, `input` for the four create/update-config operations) are
- * not expressible by a single parameter's `validate:` callback — see
- * {@link configValidators} below, which enforces them at config-load time
- * via F1b's `Core.M3LConfigSchema` cross-parameter validation seam.
+ * declared on {@link EKS_OPS_OPERATION_DECLARATIONS} rather than expressed by
+ * a single parameter's `validate:` callback — see {@link configValidators}
+ * below, which derives and enforces them at config-load time via F1b's
+ * `Core.M3LConfigSchema` cross-parameter validation seam.
  */
 export const configParameters: readonly Core.M3LConfigParameter[] = [
   new Core.M3LConfigParameter({
@@ -74,7 +163,7 @@ export const configParameters: readonly Core.M3LConfigParameter[] = [
     name: "operation",
     type: Core.M3LConfigParameterType.STRING,
     required: true,
-    validate: Core.M3LConfigValidators.oneOf<string>(EKS_OPS_OPERATIONS),
+    operations: EKS_OPS_OPERATION_DECLARATIONS,
   }),
   new Core.M3LConfigParameter({
     name: "cluster",
@@ -147,60 +236,6 @@ export const configParameters: readonly Core.M3LConfigParameter[] = [
   }),
 ];
 
-/** Every operation except `list-clusters` — the operations for which `cluster` is required. */
-const CLUSTER_REQUIRING_OPERATIONS = EKS_OPS_OPERATIONS.filter(
-  (operation) => operation !== "list-clusters",
-);
-
-/** The seven nodegroup-scoped operations for which `nodegroup` is required. */
-const NODEGROUP_REQUIRING_OPERATIONS = [
-  "describe-nodegroup",
-  "create-nodegroup",
-  "update-nodegroup-config",
-  "update-nodegroup-version",
-  "delete-nodegroup",
-  "wait-nodegroup-active",
-  "wait-nodegroup-deleted",
-] as const;
-
-/** The operations for which `input` is required. */
-const INPUT_REQUIRING_OPERATIONS = [
-  "create-cluster",
-  "update-cluster-config",
-  "create-nodegroup",
-  "update-nodegroup-config",
-] as const;
-
-/** The single operation for which `kubernetesVersion` is required. */
-const KUBERNETES_VERSION_REQUIRING_OPERATIONS = [
-  "update-cluster-version",
-] as const;
-
-/** True when `value` is a string present in `operations` — narrows `unknown` without an `as` assertion. */
-function isOneOf(value: unknown, operations: readonly string[]): boolean {
-  return typeof value === "string" && operations.includes(value);
-}
-
-/**
- * Builds a schema-level validator asserting `paramName` is set whenever
- * `config`'s `operation` is one of `requiringOperations`. The failure reason
- * names only the fixed operation list (a constraint description), never the
- * received `operation`/`paramName` value.
- */
-function requiredForOperations(
-  paramName: string,
-  requiringOperations: readonly string[],
-): Core.M3LConfigSchemaValidator {
-  return (config: Core.M3LConfig): true | string => {
-    const requires =
-      isOneOf(config.get("operation"), requiringOperations) &&
-      config.get(paramName) === undefined;
-    return requires
-      ? `'${paramName}' is required for operation(s): ${requiringOperations.join(", ")}`
-      : true;
-  };
-}
-
 /**
  * The `eks-ops` schema-level cross-parameter validators (F1b) — the declared
  * config schema's second validation layer, run once by
@@ -209,7 +244,13 @@ function requiredForOperations(
  * `configParameters` above) already guard each value in isolation; what
  * these validators guard is the relationship BETWEEN `operation` and the
  * per-operation "Required for" parameters, which no single
- * `M3LConfigParameter` can express on its own:
+ * `M3LConfigParameter` can express on its own.
+ *
+ * The per-operation requiredness validators are DERIVED from
+ * {@link EKS_OPS_OPERATION_DECLARATIONS} by
+ * {@link Core.deriveOperationValidators} (ADR-0055) rather than hand-written
+ * — the derived reason strings are unchanged from the prior hand-written
+ * form:
  *
  * - `cluster` is required for every operation EXCEPT `list-clusters`.
  * - `nodegroup` is required for `describe-nodegroup`, `create-nodegroup`,
@@ -231,6 +272,10 @@ function requiredForOperations(
  * "Cross-parameter validation" section for the `M3LConfigSchemaValidator`
  * contract these functions satisfy.
  *
+ * The `yesSensitive`⇒`yes` validator stays hand-written: it is not
+ * per-operation requiredness, but a genuinely cross-parameter constraint
+ * between two independently-defaulted BOOL parameters (ADR-0048).
+ *
  * @example
  * ```typescript
  * import { Core } from "@m3l-automation/m3l-common";
@@ -240,13 +285,7 @@ function requiredForOperations(
  * ```
  */
 export const configValidators: readonly Core.M3LConfigSchemaValidator[] = [
-  requiredForOperations("cluster", CLUSTER_REQUIRING_OPERATIONS),
-  requiredForOperations("nodegroup", NODEGROUP_REQUIRING_OPERATIONS),
-  requiredForOperations("input", INPUT_REQUIRING_OPERATIONS),
-  requiredForOperations(
-    "kubernetesVersion",
-    KUBERNETES_VERSION_REQUIRING_OPERATIONS,
-  ),
+  ...Core.deriveOperationValidators(configParameters),
   // requires() would be a no-op here since both yesSensitive and yes carry
   // declared defaults — compare resolved values instead.
   (config: Core.M3LConfig): true | string =>
