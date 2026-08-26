@@ -20,6 +20,10 @@ import { Core } from "@m3l-automation/m3l-common";
  * every consumer package. A consequence: {@link Core.classifyErrorCode}
  * returns `undefined` for every one of these codes.
  *
+ * `ERR_CONSOLE_UNAVAILABLE` is raised when the server refuses a request
+ * because it is draining (ADR-0049): a routine, expected outcome rather than
+ * a fault, distinct from every other code here.
+ *
  * @example
  * ```ts
  * function isConfigError(code: M3LConsoleErrorCode): boolean {
@@ -36,7 +40,8 @@ export type M3LConsoleErrorCode =
   | "ERR_CONSOLE_ROUTE_CONFLICT"
   | "ERR_CONSOLE_INTERNAL"
   | "ERR_CONSOLE_DRAIN_FAILED"
-  | "ERR_CONSOLE_LISTEN_FAILED";
+  | "ERR_CONSOLE_LISTEN_FAILED"
+  | "ERR_CONSOLE_UNAVAILABLE";
 
 /**
  * Constructor options for {@link M3LConsoleError}.

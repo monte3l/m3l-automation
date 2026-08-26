@@ -16,7 +16,7 @@ import {
   errorEnvelope,
   errorResponse,
   httpStatusForCode,
-  isCallerOriginError,
+  isFaultError,
 } from "../src/http/envelope.js";
 import type { M3LConsoleErrorEnvelope } from "../src/http/envelope.js";
 import { M3LConsoleError } from "../src/errors/console-error.js";
@@ -27,7 +27,7 @@ const GENERIC_MESSAGE = "An unexpected error occurred.";
 /** The status every non-M3LConsoleError value maps to. */
 const INTERNAL_STATUS = 500;
 
-/** The documented code -> HTTP status table from the X2b contract. */
+/** The documented code -> HTTP status table from the X2b/X2c contract. */
 const STATUS_TABLE: readonly (readonly [M3LConsoleErrorCode, number])[] = [
   ["ERR_CONSOLE_BAD_REQUEST", 400],
   ["ERR_CONSOLE_UNAUTHENTICATED", 401],
@@ -38,30 +38,33 @@ const STATUS_TABLE: readonly (readonly [M3LConsoleErrorCode, number])[] = [
   ["ERR_CONSOLE_ROUTE_CONFLICT", INTERNAL_STATUS],
   ["ERR_CONSOLE_DRAIN_FAILED", INTERNAL_STATUS],
   ["ERR_CONSOLE_LISTEN_FAILED", INTERNAL_STATUS],
+  ["ERR_CONSOLE_UNAVAILABLE", 503],
 ];
 
 /**
- * The documented code -> classified origin table (X2b): every code a
- * caller-triggered failure (4xx) classifies as `"caller"`; every
+ * The documented code -> classified origin/retryable table (X2b/X2c): every
+ * code a caller-triggered failure (4xx) classifies as `"caller"`; every
  * library-side failure (the remaining 500s) classifies as `"library"`.
- * `retryable` is `false` for every current code — there is no retryable
- * `M3LConsoleErrorCode` yet, but the table still asserts it explicitly
- * rather than merely "defined", since `CLASSIFICATION_BY_CODE` now supplies
- * a real value (never `undefined`) for every code.
+ * `ERR_CONSOLE_UNAVAILABLE` is the first row whose `retryable` is not
+ * `false` — it is `origin: "library"` (the caller did nothing wrong) but
+ * `retryable: true` (a drained server can succeed on a later attempt).
+ * Every other code is `retryable: false`.
  */
 const ORIGIN_TABLE: readonly (readonly [
   M3LConsoleErrorCode,
   Core.M3LErrorOrigin,
+  Core.M3LErrorRetryable,
 ])[] = [
-  ["ERR_CONSOLE_BAD_REQUEST", "caller"],
-  ["ERR_CONSOLE_UNAUTHENTICATED", "caller"],
-  ["ERR_CONSOLE_NOT_FOUND", "caller"],
-  ["ERR_CONSOLE_METHOD_NOT_ALLOWED", "caller"],
-  ["ERR_CONSOLE_CONFIG_INVALID", "library"],
-  ["ERR_CONSOLE_INTERNAL", "library"],
-  ["ERR_CONSOLE_ROUTE_CONFLICT", "library"],
-  ["ERR_CONSOLE_DRAIN_FAILED", "library"],
-  ["ERR_CONSOLE_LISTEN_FAILED", "library"],
+  ["ERR_CONSOLE_BAD_REQUEST", "caller", false],
+  ["ERR_CONSOLE_UNAUTHENTICATED", "caller", false],
+  ["ERR_CONSOLE_NOT_FOUND", "caller", false],
+  ["ERR_CONSOLE_METHOD_NOT_ALLOWED", "caller", false],
+  ["ERR_CONSOLE_CONFIG_INVALID", "library", false],
+  ["ERR_CONSOLE_INTERNAL", "library", false],
+  ["ERR_CONSOLE_ROUTE_CONFLICT", "library", false],
+  ["ERR_CONSOLE_DRAIN_FAILED", "library", false],
+  ["ERR_CONSOLE_LISTEN_FAILED", "library", false],
+  ["ERR_CONSOLE_UNAVAILABLE", "library", true],
 ];
 
 /** Recursively asserts no object in `value`'s graph carries a `stack` key. */
@@ -110,14 +113,14 @@ describe("errorEnvelope — M3LConsoleError", () => {
 
 describe("errorEnvelope — classified origin/retryable per code (always defined via CLASSIFICATION_BY_CODE)", () => {
   test.each(ORIGIN_TABLE)(
-    "classifies %s as origin=%s, retryable=false, with both keys present",
-    (code, origin) => {
+    "classifies %s as origin=%s, retryable=%s, with both keys present",
+    (code, origin, retryable) => {
       const error = new M3LConsoleError(code, "message");
 
       const envelope = errorEnvelope(error, "corr-classification");
 
       expect(envelope.error.origin).toBe(origin);
-      expect(envelope.error.retryable).toBe(false);
+      expect(envelope.error.retryable).toBe(retryable);
       expect(Object.hasOwn(envelope.error, "origin")).toBe(true);
       expect(Object.hasOwn(envelope.error, "retryable")).toBe(true);
     },
@@ -167,7 +170,7 @@ describe("classificationForCode — a code naming an inherited Object.prototype 
       const error = new M3LConsoleError(offUnionCode, "boom");
 
       expect(httpStatusForCode(offUnionCode)).toBe(INTERNAL_STATUS);
-      expect(isCallerOriginError(error)).toBe(false);
+      expect(isFaultError(error)).toBe(true);
 
       const envelope = errorEnvelope(error, "corr-proto");
       expect(envelope.error.status).toBe(INTERNAL_STATUS);
@@ -180,7 +183,7 @@ describe("classificationForCode — a code naming an inherited Object.prototype 
     const error = new M3LConsoleError("ERR_CONSOLE_NOT_FOUND", "not found");
 
     expect(httpStatusForCode("ERR_CONSOLE_NOT_FOUND")).toBe(404);
-    expect(isCallerOriginError(error)).toBe(true);
+    expect(isFaultError(error)).toBe(false);
 
     const envelope = errorEnvelope(error, "corr-real");
     expect(envelope.error.status).toBe(404);
@@ -300,18 +303,43 @@ describe("errorResponse", () => {
       "plain failure with a real stack trace",
     );
   });
+
+  test("ERR_CONSOLE_UNAVAILABLE builds a 503 response whose envelope is origin=library, retryable=true", () => {
+    const error = new M3LConsoleError(
+      "ERR_CONSOLE_UNAVAILABLE",
+      "the server is draining",
+    );
+
+    const response = errorResponse(error, "corr-12");
+    const parsed: unknown = JSON.parse(response.body);
+
+    expect(response.status).toBe(503);
+    expect(parsed).toMatchObject({
+      error: {
+        code: "ERR_CONSOLE_UNAVAILABLE",
+        status: 503,
+        origin: "library",
+        retryable: true,
+      },
+    });
+  });
 });
 
-describe("isCallerOriginError", () => {
+describe("isFaultError", () => {
+  // isFaultError replaces isCallerOriginError with the inverted sense, gated
+  // on ErrorClassification's new `fault` field rather than on `origin`.
+  // Every caller-origin row is `fault: false`, and so is
+  // ERR_CONSOLE_UNAVAILABLE (library-origin but not a fault — see the
+  // dedicated divergence test below); every other row, plus a non-console
+  // value, is a fault.
   test.each<M3LConsoleErrorCode>([
     "ERR_CONSOLE_BAD_REQUEST",
     "ERR_CONSOLE_UNAUTHENTICATED",
     "ERR_CONSOLE_NOT_FOUND",
     "ERR_CONSOLE_METHOD_NOT_ALLOWED",
-  ])("returns true for the caller-origin code %s", (code) => {
-    expect(isCallerOriginError(new M3LConsoleError(code, "message"))).toBe(
-      true,
-    );
+    "ERR_CONSOLE_UNAVAILABLE",
+  ])("returns false for the non-fault code %s", (code) => {
+    expect(isFaultError(new M3LConsoleError(code, "message"))).toBe(false);
   });
 
   test.each<M3LConsoleErrorCode>([
@@ -320,27 +348,47 @@ describe("isCallerOriginError", () => {
     "ERR_CONSOLE_ROUTE_CONFLICT",
     "ERR_CONSOLE_DRAIN_FAILED",
     "ERR_CONSOLE_LISTEN_FAILED",
-  ])("returns false for the library-origin code %s", (code) => {
-    expect(isCallerOriginError(new M3LConsoleError(code, "message"))).toBe(
-      false,
-    );
+  ])("returns true for the fault code %s", (code) => {
+    expect(isFaultError(new M3LConsoleError(code, "message"))).toBe(true);
   });
 
-  test("returns false for a foreign Core.M3LError", () => {
+  test("returns true for a foreign Core.M3LError", () => {
     const foreign = new Core.M3LError("boom", { code: "ERR_CONFIG_MISSING" });
-    expect(isCallerOriginError(foreign)).toBe(false);
+    expect(isFaultError(foreign)).toBe(true);
   });
 
-  test("returns false for a plain Error", () => {
-    expect(isCallerOriginError(new Error("boom"))).toBe(false);
+  test("returns true for a plain Error", () => {
+    expect(isFaultError(new Error("boom"))).toBe(true);
   });
 
-  test("returns false for a string", () => {
-    expect(isCallerOriginError("boom")).toBe(false);
+  test("returns true for a thrown string", () => {
+    expect(isFaultError("boom")).toBe(true);
   });
 
-  test("returns false for null", () => {
-    expect(isCallerOriginError(null)).toBe(false);
+  test("returns true for null", () => {
+    expect(isFaultError(null)).toBe(true);
+  });
+
+  test("returns true for undefined", () => {
+    expect(isFaultError(undefined)).toBe(true);
+  });
+
+  // THE KEY REGRESSION TEST: origin and fault genuinely disagree for
+  // ERR_CONSOLE_UNAVAILABLE. Fails if `fault` is ever folded back into
+  // `origin` (i.e. if isFaultError is reimplemented as `origin !== "library"`
+  // or similar) — that reimplementation would report `true` here, emitting
+  // an error-level diagnostic line for every request refused during an
+  // ordinary drain-triggered shutdown.
+  test("[origin vs fault divergence] ERR_CONSOLE_UNAVAILABLE is origin=library yet not a fault", () => {
+    const error = new M3LConsoleError(
+      "ERR_CONSOLE_UNAVAILABLE",
+      "the server is draining",
+    );
+
+    const envelope = errorEnvelope(error, "corr-unavailable");
+
+    expect(envelope.error.origin).toBe("library");
+    expect(isFaultError(error)).toBe(false);
   });
 });
 

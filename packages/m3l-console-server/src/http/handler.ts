@@ -14,7 +14,7 @@ import { Core } from "@m3l-automation/m3l-common";
 
 import { createRequestContext, withParams } from "./context.js";
 import type { M3LRequestContext } from "./context.js";
-import { errorResponse, isCallerOriginError } from "./envelope.js";
+import { errorResponse, isFaultError } from "./envelope.js";
 import { M3LConsoleError } from "../errors/console-error.js";
 import { composeMiddleware } from "./middleware.js";
 import type { M3LConsoleMiddleware } from "./middleware.js";
@@ -135,22 +135,26 @@ interface RequestFaultContext {
 
 /**
  * Emits a diagnostic `ERROR` line via {@link Core.M3LLogger.errorFrom} for a
- * genuine fault — but never for a routine caller-origin outcome (a bad
- * request, or an unauthenticated/not-found/method-not-allowed lookup) — so
- * the real cause behind a handler/middleware throw is recorded somewhere,
- * even though only the fixed generic envelope message ever reaches the
- * caller (ADR-0070's display-vs-persist split; see
- * {@link isCallerOriginError}). Gating on origin also keeps a caller from
- * remotely steering log severity by choosing which routine error to trigger.
- * The message carries only the correlation id, method, and normalized path —
- * never the query string, headers, or body.
+ * genuine fault — but never for a routine non-fault outcome (a bad request,
+ * an unauthenticated/not-found/method-not-allowed lookup, or a drain
+ * refusal) — so the real cause behind a handler/middleware throw is
+ * recorded somewhere, even though only the fixed generic envelope message
+ * ever reaches the caller (ADR-0070's display-vs-persist split; see
+ * {@link isFaultError}). The gate is "is this a fault", not "is this
+ * caller-origin": a drain refusal (`ERR_CONSOLE_UNAVAILABLE`) is
+ * `origin: "library"` yet not a fault, so gating on origin alone would emit
+ * a spurious error-level line for every request refused during an ordinary
+ * shutdown. Gating on fault also keeps a caller from remotely steering log
+ * severity by choosing which routine error to trigger. The message carries
+ * only the correlation id, method, and normalized path — never the query
+ * string, headers, or body.
  */
 function logDiagnosticIfFault(
   logger: Core.M3LLogger,
   error: unknown,
   context: RequestFaultContext,
 ): void {
-  if (isCallerOriginError(error)) return;
+  if (!isFaultError(error)) return;
   logger.errorFrom(
     error,
     `unhandled failure handling ${context.method} ${context.path} (correlationId=${context.correlationId})`,
@@ -354,8 +358,8 @@ async function runRequest(
  * chain, writes the response, and logs exactly one *outcome* line — never a
  * query string, headers, a body, or the operator's email. A failure
  * additionally emits one diagnostic line via
- * {@link Core.M3LLogger.errorFrom} (gated so a routine caller-origin 4xx
- * never doubles up — see {@link isCallerOriginError}), so the real cause of
+ * {@link Core.M3LLogger.errorFrom} (gated so a routine non-fault outcome
+ * never doubles up — see {@link isFaultError}), so the real cause of
  * a genuine fault is never lost to the fixed generic envelope message alone
  * (ADR-0070's display-vs-persist split).
  *
