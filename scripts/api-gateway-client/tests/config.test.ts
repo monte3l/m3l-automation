@@ -337,13 +337,17 @@ function firstFailure(config: Core.M3LConfig): string | undefined {
 /**
  * F1b — cross-parameter validation, per
  * docs/reference/scripts/api-gateway-client.md's "Configuration schema"
- * section: per-mode/per-auth requiredness is guard-checked at run start
- * today pending this script's fleet retrofit onto `configValidators`. Each
- * rule below is verified against both the doc table and the guard code:
+ * section. Each rule below is verified against both the doc table and the
+ * guard code:
  *
- * - `path` — required when `command` is `request` (verified:
- *   `single-request.ts`'s `accessor.requiredString("path", "request")`).
- * - `input` — required when `command` is `batch` (verified:
+ * - `path` — required when `command` is `request`, DERIVED from
+ *   `API_GATEWAY_CLIENT_COMMAND_DECLARATIONS` via
+ *   `Core.deriveOperationValidators` (ADR-0055) — the failure reason reads
+ *   `'path' is required for operation(s): request`, not the pre-retrofit
+ *   hand-written `'path' is required when 'command' is 'request'` (verified:
+ *   `single-request.ts`'s `accessor.requiredString("path", "request")` still
+ *   backstops presence at run start).
+ * - `input` — required when `command` is `batch`, likewise DERIVED (verified:
  *   `batch-request.ts`'s `resolveBatchSettings`'s
  *   `accessor.requiredString("input", "batch")`).
  * - `apiKey` — required when `auth` is `api-key` (verified:
@@ -361,8 +365,8 @@ function firstFailure(config: Core.M3LConfig): string | undefined {
  * "Cross-parameter validation" section.
  */
 describe("configValidators (F1b — cross-parameter validation)", () => {
-  describe("'path' — required when 'command' is 'request'", () => {
-    it("returns the documented failure reason when 'path' is missing for 'command: request'", () => {
+  describe("'path' — required when 'command' is 'request' (derived, ADR-0055)", () => {
+    it("returns the derived failure reason when 'path' is missing for 'command: request'", () => {
       const config = buildConfig({
         command: "request",
         auth: "none",
@@ -371,7 +375,7 @@ describe("configValidators (F1b — cross-parameter validation)", () => {
       });
 
       expect(firstFailure(config)).toBe(
-        "'path' is required when 'command' is 'request'",
+        "'path' is required for operation(s): request",
       );
     });
 
@@ -413,8 +417,8 @@ describe("configValidators (F1b — cross-parameter validation)", () => {
     });
   });
 
-  describe("'input' — required when 'command' is 'batch'", () => {
-    it("returns the documented failure reason when 'input' is missing for 'command: batch'", () => {
+  describe("'input' — required when 'command' is 'batch' (derived, ADR-0055)", () => {
+    it("returns the derived failure reason when 'input' is missing for 'command: batch'", () => {
       const config = buildConfig({
         command: "batch",
         auth: "none",
@@ -423,7 +427,7 @@ describe("configValidators (F1b — cross-parameter validation)", () => {
       });
 
       expect(firstFailure(config)).toBe(
-        "'input' is required when 'command' is 'batch'",
+        "'input' is required for operation(s): batch",
       );
     });
 
@@ -594,5 +598,60 @@ describe("configValidators (F1b — cross-parameter validation)", () => {
 
       expect(firstFailure(config)).toBeUndefined();
     });
+  });
+});
+
+/**
+ * Hand-authored per the task spec, NOT re-derived from
+ * `API_GATEWAY_CLIENT_COMMAND_DECLARATIONS` — the point of this table is to
+ * catch a `src/config.ts` typo, not to restate whatever `src` currently
+ * says.
+ */
+const API_GATEWAY_CLIENT_COMMAND_REQUIRED_PARAMETERS: Readonly<
+  Record<(typeof COMMANDS)[number], readonly string[]>
+> = {
+  request: ["path"],
+  batch: ["input"],
+};
+
+describe("'command' declared operations (getOperations() round-trip, ADR-0055)", () => {
+  it("declares an operations list on the 'command' parameter", () => {
+    const operations = paramNamed("command").getOperations();
+    expect(operations).toBeDefined();
+  });
+
+  it("declares operation names, in order, matching COMMANDS", () => {
+    const operations = paramNamed("command").getOperations() ?? [];
+    expect(operations.map((operation) => operation.name)).toEqual(COMMANDS);
+  });
+
+  it("gives every operation a non-blank description", () => {
+    const operations = paramNamed("command").getOperations() ?? [];
+    for (const operation of operations) {
+      expect(operation.description.trim().length).toBeGreaterThan(0);
+    }
+  });
+
+  it("declares the documented requiredParameters for every operation (frozen projection — toEqual, not toBe)", () => {
+    const operations = paramNamed("command").getOperations() ?? [];
+    for (const operation of operations) {
+      expect(operation.requiredParameters).toEqual(
+        API_GATEWAY_CLIENT_COMMAND_REQUIRED_PARAMETERS[
+          operation.name as (typeof COMMANDS)[number]
+        ],
+      );
+    }
+  });
+
+  it("names only declared config parameters in every operation's requiredParameters (subset check)", () => {
+    const declaredNames = new Set(
+      configParameters.map((parameter) => parameter.getName()),
+    );
+    const operations = paramNamed("command").getOperations() ?? [];
+    for (const operation of operations) {
+      for (const requiredName of operation.requiredParameters ?? []) {
+        expect(declaredNames.has(requiredName)).toBe(true);
+      }
+    }
   });
 });
