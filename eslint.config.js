@@ -557,9 +557,17 @@ export default tseslint.config(
       //   errors                                (m3l-common + node: only)
       //   config    -> errors
       //   auth      -> errors
-      //   lifecycle -> errors
-      //   http      -> errors, auth, lifecycle  (transport only; NOT config)
-      //   main.ts   -> everything               (composition root)
+      //   lifecycle -> errors, net
+      //   http      -> errors, auth, lifecycle, net  (transport; NOT config)
+      //   main.ts   -> everything                    (composition root)
+      //
+      // `net` is the second pure leaf alongside `errors`: loopback address
+      // classification is needed by `config` (to validate the requested bind
+      // host), by `lifecycle` (to re-assert it against the address actually
+      // bound) and by `http` (the Host/Origin rebinding guard). Keeping the
+      // predicate in `config` would have forced a `lifecycle -> config` and
+      // an `http -> config` edge — the exact edges this table exists to
+      // forbid — so it lives in a leaf all three may reach instead.
       //
       // `http` may not import `config` on purpose: transport receives already
       // resolved values from the composition root, so a request handler can
@@ -571,6 +579,13 @@ export default tseslint.config(
         {
           zones: [
             {
+              target: "./packages/m3l-console-server/src/net",
+              from: "./packages/m3l-console-server/src",
+              except: ["net"],
+              message:
+                "console-server: net/ is a layering leaf — it may import @m3l-automation/m3l-common and node: builtins only, never another console-server module (ADR-0065). It holds pure network-address predicates that config/, lifecycle/ and http/ all need.",
+            },
+            {
               target: "./packages/m3l-console-server/src/errors",
               from: "./packages/m3l-console-server/src",
               except: ["errors"],
@@ -580,9 +595,9 @@ export default tseslint.config(
             {
               target: "./packages/m3l-console-server/src/config",
               from: "./packages/m3l-console-server/src",
-              except: ["config", "errors"],
+              except: ["config", "errors", "net"],
               message:
-                "console-server: config/ may import only errors/ — it stays a leaf so it can be loaded before anything else exists (ADR-0065).",
+                "console-server: config/ may import only errors/ and net/ — it stays a leaf so it can be loaded before anything else exists (ADR-0065).",
             },
             {
               target: "./packages/m3l-console-server/src/auth",
@@ -594,16 +609,16 @@ export default tseslint.config(
             {
               target: "./packages/m3l-console-server/src/lifecycle",
               from: "./packages/m3l-console-server/src",
-              except: ["lifecycle", "errors"],
+              except: ["lifecycle", "errors", "net"],
               message:
-                "console-server: lifecycle/ may import only errors/ (ADR-0065). Drain timeouts and bind addresses arrive as arguments from main.ts.",
+                "console-server: lifecycle/ may import only errors/ and net/ (ADR-0065). Drain timeouts and bind addresses arrive as arguments from main.ts; net/ is what lets the listener re-assert loopback against the address it actually bound.",
             },
             {
               target: "./packages/m3l-console-server/src/http",
               from: "./packages/m3l-console-server/src",
-              except: ["http", "errors", "auth", "lifecycle"],
+              except: ["http", "errors", "auth", "lifecycle", "net"],
               message:
-                "console-server: http/ is transport — it may import errors/, auth/ and lifecycle/, but NOT config/ (ADR-0065). Resolved configuration is passed in from main.ts; a handler must never re-read the environment.",
+                "console-server: http/ is transport — it may import errors/, auth/, lifecycle/ and net/, but NOT config/ (ADR-0065). Resolved configuration is passed in from main.ts; a handler must never re-read the environment.",
             },
             {
               target: "./packages/m3l-console-server/src",

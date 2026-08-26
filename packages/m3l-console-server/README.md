@@ -62,10 +62,18 @@ required operator profile). The REST/SSE contract ships as a
   mechanism:
 
   ```text
-  errors                                (m3l-common + node: only)
-  config    -> errors
+  net                                        (m3l-common + node: only)
+  errors                                     (m3l-common + node: only)
+  config    -> errors, net
   auth      -> errors
-  lifecycle -> errors
-  http      -> errors, auth, lifecycle  (transport only; may NOT import config)
-  main.ts   -> everything               (composition root; nothing imports it)
+  lifecycle -> errors, net
+  http      -> errors, auth, lifecycle, net  (transport; may NOT import config)
+  main.ts   -> everything                    (composition root; nothing imports it)
   ```
+
+  `net/` holds the pure loopback-address predicates. They live in a leaf
+  rather than in `config/` because all three of `config/` (validating the
+  requested bind host), `lifecycle/` (re-asserting loopback against the
+  address actually bound) and `http/` (the `Host`/`Origin` rebinding guard)
+  need them — putting them in `config/` would have forced exactly the
+  `http -> config` edge this table exists to forbid.

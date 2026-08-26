@@ -1,14 +1,17 @@
 /**
- * Tests for src/config/env.ts — `loadConsoleConfig` and `isLoopbackHost`
- * (m3l-console-server X2a contract). Every case injects `env` explicitly;
- * `process.env` is never mutated.
+ * Tests for src/config/env.ts — `loadConsoleConfig` (m3l-console-server X2a
+ * contract). Every case injects `env` explicitly; `process.env` is never
+ * mutated. Direct `isLoopbackHost`/`unwrapBracketedHost` predicate tests live
+ * in `tests/loopback.test.ts` (src/net/loopback.ts); the loopback host
+ * cases below stay here because they exercise `loadConsoleConfig`'s
+ * validation of `M3L_CONSOLE_HOST`, not the predicate directly.
  */
 import { afterEach, describe, expect, expectTypeOf, test, vi } from "vitest";
 
 import { Core } from "@m3l-automation/m3l-common";
 
 import { M3LConsoleError } from "../src/errors/console-error.js";
-import { isLoopbackHost, loadConsoleConfig } from "../src/config/env.js";
+import { loadConsoleConfig } from "../src/config/env.js";
 import type { M3LConsoleConfig } from "../src/config/env.js";
 
 /** Dotted config key the port setting is stored under (mirrors `src/config/env.ts`). */
@@ -349,26 +352,5 @@ describe("loadConsoleConfig — wrapConfigRead rethrows a non-M3LError untouched
     }
     expect(thrown).toBeInstanceOf(RangeError);
     expect(thrown).not.toBeInstanceOf(M3LConsoleError);
-  });
-});
-
-describe("isLoopbackHost", () => {
-  test.each<[string, boolean]>([
-    ["localhost", true],
-    ["LOCALHOST", true],
-    ["127.0.0.1", true],
-    ["127.1.2.3", true],
-    ["127.255.255.255", true],
-    ["::1", true],
-    ["[::1]", true],
-    ["0:0:0:0:0:0:0:1", true],
-    ["0.0.0.0", false],
-    ["::", false],
-    ["127.0.0.1.evil.com", false],
-    ["192.168.1.1", false],
-    ["", false],
-    ["127.0.0.256", false],
-  ])("returns %2$s for %1$s", (host, expected) => {
-    expect(isLoopbackHost(host)).toBe(expected);
   });
 });
