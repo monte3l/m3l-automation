@@ -16,7 +16,10 @@ import { run__SCRIPT_NAME_PASCAL__ } from "./steps/run-__SCRIPT_NAME__.js";
 // run report; passing `{ dryRun }` runs validation stages 1-5 (env/config/AWS)
 // without executing the main function.
 const script = new Core.M3LScript({
-  metadata: { name: "__SCRIPT_NAME__", version: "0.0.0" },
+  metadata: {
+    name: "__SCRIPT_NAME__",
+    version: "0.0.0",
+  },
   config: { params: configParameters },
   hooks,
 });
@@ -34,7 +37,10 @@ await Core.runScript(
     // `process.env` or a global. Add `script.aws` / `M3LPaths` dirs here too
     // when the step needs them.
     const config = await script.getConfiguration();
-    await run__SCRIPT_NAME_PASCAL__({ logger: script.logger, config });
+    await run__SCRIPT_NAME_PASCAL__({
+      logger: script.logger,
+      config,
+    });
   },
   { dryRun },
 );

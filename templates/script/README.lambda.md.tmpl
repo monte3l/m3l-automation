@@ -1,0 +1,76 @@
+# __SCRIPT_NAME__
+
+__PURPOSE__
+
+> **This README covers how to deploy and invoke the Lambda handler.** The
+> contract — configuration schema, steps, inputs/outputs — lives in the
+> reference page:
+> [`docs/reference/scripts/__SCRIPT_NAME__.md`](../../docs/reference/scripts/__SCRIPT_NAME__.md).
+> Keep the two disjoint: deploy/invoke instructions here, contract there.
+
+## Deploy
+
+`src/main.ts` exports `handler` (built to `dist/main.js`). Packaging and
+deployment (SAM, CDK, Terraform, the AWS console, ...) are **not** part of
+this fleet's tooling — wire `dist/main.js`'s `handler` export into whichever
+Lambda function definition your infrastructure declares. Set the function's
+runtime to Node.js 24.x and its handler to `main.handler`.
+
+```bash
+pnpm build                                        # library first (turbo orders it)
+pnpm --filter @m3l-automation/__SCRIPT_NAME__ build
+```
+
+### Examples
+
+<!-- Add examples here — at least 3, labelled in-fence, spanning read-only →
+     mutating → destructive/interactive. Scale the count to the script's
+     operation count and complexity. See docs/contributing/script-docs-structure.md. -->
+
+```bash
+# Minimal — invoke the built handler locally with a synthetic event, without deploying
+node --input-type=module -e "
+  import('./dist/main.js').then(({ handler }) =>
+    handler({}, { awsRequestId: 'local-test' }),
+  ).then(console.log);
+"
+
+# Common — <describe the most frequently reached case, e.g. a real event-source payload>
+
+# Production — <describe the deployed trigger: event-source mapping, EventBridge rule, schedule>
+
+# Edge case — <describe a rare or destructive path and any caveats>
+```
+
+## Configuration
+
+Every invocation resolves configuration from, in precedence order: an
+explicit `--param` override (never present at runtime — CLI-only), the
+Lambda **event payload** (a top-level key matching a declared parameter's
+name/alias overrides that parameter for this invocation), environment
+variables, then declared defaults
+([`docs/reference/core/script.md`](../../docs/reference/core/script.md)
+"Configuration from the Lambda event"). Set environment variables on the
+function itself (console, IaC); there is no `.env` file at runtime.
+
+## Local development (`.env`)
+
+For local testing only (the "Minimal" example above, or a unit test), a
+`scripts/__SCRIPT_NAME__/.env` file works the same way it would for a CLI
+script — gitignored, listed in `.worktreeinclude` so worktrees inherit it.
+Secrets go **only** here or in config `secretNames` — never in source or
+fixtures. Per-script data isolation (ADR-0022):
+
+```dotenv
+M3L_CONFIG_DIR=<absolute-repo-path>/data/__SCRIPT_NAME__/config
+M3L_INPUT_DIR=<absolute-repo-path>/data/__SCRIPT_NAME__/input
+M3L_OUTPUT_DIR=<absolute-repo-path>/data/__SCRIPT_NAME__/output
+```
+
+## Data directories
+
+| Directory | Purpose                                          |
+| --------- | ------------------------------------------------ |
+| `config/` | Presets / config files used during local testing |
+| `input/`  | Files the script consumes during local testing   |
+| `output/` | Run results during local testing                 |

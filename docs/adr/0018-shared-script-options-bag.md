@@ -90,8 +90,36 @@ end-to-end outside its own tests. Anything that presupposes unattended dispatch
 (deadline budgeting, execution fencing, pinning a definition digest into a
 dispatched command) is gated behind this same trigger.
 
+## Update (2026-08-26) — a scaffolding template does not flip C2's dormant status
+
+U9 (`m3l new` + Lambda scaffold variant, ADR-0053, issue #533) added a Lambda
+composition-root template to `templates/script/` — `m3l new --variant lambda`
+now generates a script whose `src/main.ts` exports a
+`M3LScript.createLambdaHandler()`-wired handler, closing the audit finding
+that no such template existed. The U9 plan
+([`2026-08-20-cli-evolution.md`](../plans/2026-08-20-cli-evolution.md#u9-m3l-new--lambda-scaffold-variant))
+deferred deciding whether this flips C2's dormant status to this ADR's Update.
+
+**It does not.** The 2026-08-18 Update's recorded activation trigger is "a
+consumer script that must run from an event source or on a schedule" — a real
+deployment, packaged and triggered. A scaffolding template is generation-time
+infrastructure: nothing under `scripts/*/src/` consumes
+`createLambdaHandler()`/`M3LLambdaEventConfigProvider` as a result of U9, no
+script is packaged or deployed by it, and no event-source or scheduled trigger
+exists. Making the seam easier to _reach for_ is not the same as it being
+_reached_ — the seam remains exercised only by its own tests, same as before.
+
+**Recorded as deliberate, not as a gap.** A future audit should not re-derive
+"the Lambda template exists but nothing deploys it" as a new finding — it is
+the same dormancy the 2026-08-18 Update named, now with a scaffolding path
+available in addition to a hand-written one. C2 flips to active the moment a
+real consumer script ships with a real trigger, template-scaffolded or not.
+
 ## Links
 
 - Related: `docs/plans/archive/2026-07-05-pre-1.0.0-release-audit.md` (SF-10),
   `packages/m3l-common/src/core/script/M3LScriptOptions.ts`,
   `docs/reference/core/script.md`, rule `03-design-principles-and-patterns.md`.
+- U9: [ADR-0053](./0053-cli-first-evolution-programme.md),
+  [`2026-08-20-cli-evolution.md`](../plans/2026-08-20-cli-evolution.md#u9-m3l-new--lambda-scaffold-variant),
+  issue #533.

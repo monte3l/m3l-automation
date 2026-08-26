@@ -103,6 +103,7 @@ export const CLI_SRC_LAYERS = Object.freeze([
   "history",
   "presets",
   "run",
+  "scaffold",
 ]);
 
 /** The only file allowed to sit directly under `src/` — one composition root. */

@@ -44,10 +44,8 @@ const USAGE_EXIT_CODE: M3LCliExitCode = 2;
  * A deliberately narrower subset of the full ADR-0042 reserved-name list
  * (`doctor.ts`'s `RESERVED_COMMAND_NAMES`, `commands/dynamic.ts`'s
  * `STATIC_COMMAND_NAMES`, and `bin/lib/script-scaffold.mjs`'s
- * `RESERVED_CLI_NAMES`): it omits `"new"`, which is reserved against script
- * names but has no dispatched command here, so it correctly falls through to
- * dynamic dispatch's unknown-script handling rather than
- * {@link dispatchStaticCommandByName}'s unreachable default.
+ * `RESERVED_CLI_NAMES`). `"new"` is dispatched statically here like every
+ * other reserved name (U9, issue #533).
  */
 const STATIC_COMMAND_NAMES: readonly string[] = [
   "list",
@@ -56,6 +54,7 @@ const STATIC_COMMAND_NAMES: readonly string[] = [
   "doctor",
   "presets",
   "history",
+  "new",
   "wizard",
   "help",
 ];
@@ -100,6 +99,9 @@ function printUsage(output: M3LCliOutput): void {
     "  presets <script>           List a script's declared preset files",
   );
   output.info("  history                    Show the recorded run history");
+  output.info(
+    "  new <name> [options]       Scaffold a new scripts/<name>/ package",
+  );
   output.info(
     "  wizard                     Interactively build and run a script",
   );
@@ -237,6 +239,25 @@ async function runInspectCommand(
     buildCommandContext(cwd, output, jsonOutput, env),
     scriptName,
   );
+}
+
+/**
+ * Lazily loads and runs `new`, parsing its own flag surface from the raw
+ * post-command argument slice (bypassing `parseStaticCommandArgs`'s
+ * json/help-only parser, which would misparse `new`'s own `--purpose`/
+ * `--variant` value flags as bare booleans and split their values into
+ * `positionals` — the same reason {@link runDynamicCommand} bypasses it
+ * for scripts).
+ */
+async function runNewCommand(
+  output: M3LCliOutput,
+  cwd: string,
+  rawArgs: readonly string[],
+  jsonOutput: boolean,
+  env: Readonly<Record<string, string | undefined>>,
+): Promise<M3LCliExitCode> {
+  const { runNew } = await import("./commands/new.js");
+  return runNew(buildCommandContext(cwd, output, jsonOutput, env), rawArgs);
 }
 
 /**
@@ -381,59 +402,96 @@ function parseStaticCommandArgs(beforeArgs: readonly string[]): {
   };
 }
 
+/** The shared inputs every {@link StaticCommandHandler} may draw from. */
+interface StaticCommandHandlerArgs {
+  readonly positionals: readonly string[];
+  readonly beforeArgs: readonly string[];
+  readonly passthroughArgs: readonly string[];
+  readonly output: M3LCliOutput;
+  readonly cwd: string;
+  readonly jsonOutput: boolean;
+  readonly env: Readonly<Record<string, string | undefined>>;
+}
+
+/** One entry of {@link STATIC_COMMAND_HANDLERS}. */
+type StaticCommandHandler = (args: StaticCommandHandlerArgs) => Promise<number>;
+
 /**
- * Dispatches by the already-confirmed static command name — split out of
- * {@link dispatchStaticCommand} purely to keep that function's cyclomatic
- * complexity under the ESLint `complexity` ceiling as the static command
- * table grows (8f adds `presets`/`history`); no behavioral difference from
- * inlining the switch would make.
- *
- * `command` can only be
- * `"list"`/`"inspect"`/`"run"`/`"doctor"`/`"presets"`/`"history"`/`"wizard"` at runtime
- * (see {@link dispatchStaticCommand}'s doc) — anything else is a caller
- * contract violation, not a normal path, and `command`'s static type is the
- * general `string | undefined` (not a literal union `parseArgs`'s
- * `positionals` can't express), so this can't be a compile-checked `never`
- * exhaustiveness assertion.
+ * Maps each {@link STATIC_COMMAND_NAMES} entry (other than `help`, handled
+ * earlier in {@link dispatch}) to its dispatcher — a lookup table rather than
+ * a `switch` so {@link dispatchStaticCommandByName} stays a single indexed
+ * lookup, keeping its cyclomatic complexity under the ESLint `complexity`
+ * ceiling as the static command table grows (8f added `presets`/`history`;
+ * U9 added `new`); no behavioral difference from a `switch` would make.
  */
-async function dispatchStaticCommandByName(
-  command: string | undefined,
-  positionals: readonly string[],
-  passthroughArgs: readonly string[],
-  output: M3LCliOutput,
-  cwd: string,
-  jsonOutput: boolean,
-  env: Readonly<Record<string, string | undefined>>,
-): Promise<number> {
-  switch (command) {
-    case "inspect":
-      return runInspectCommand(output, cwd, positionals[1], jsonOutput, env);
-    case "run":
-      return runRunCommand(
+const STATIC_COMMAND_HANDLERS: Readonly<Record<string, StaticCommandHandler>> =
+  {
+    inspect: ({ positionals, output, cwd, jsonOutput, env }) =>
+      runInspectCommand(output, cwd, positionals[1], jsonOutput, env),
+    run: ({ positionals, passthroughArgs, output, cwd, jsonOutput, env }) =>
+      runRunCommand(
         output,
         cwd,
         positionals[1],
         passthroughArgs,
         jsonOutput,
         env,
-      );
-    case "list":
-      return runListCommand(output, cwd, jsonOutput, env);
-    case "doctor":
-      return runDoctorCommand(output, cwd, jsonOutput, env);
-    case "presets":
-      return runPresetsCommand(output, cwd, positionals[1], jsonOutput, env);
-    case "history":
-      return runHistoryCommand(output, cwd, jsonOutput, env);
-    case "wizard":
-      return runWizardCommand(output, cwd, jsonOutput, env);
-    case undefined:
-    default:
-      throw new M3LCliError(
-        "ERR_CLI_UNKNOWN_COMMAND",
-        `unreachable dispatchStaticCommand command '${command ?? ""}'`,
-      );
+      ),
+    list: ({ output, cwd, jsonOutput, env }) =>
+      runListCommand(output, cwd, jsonOutput, env),
+    doctor: ({ output, cwd, jsonOutput, env }) =>
+      runDoctorCommand(output, cwd, jsonOutput, env),
+    presets: ({ positionals, output, cwd, jsonOutput, env }) =>
+      runPresetsCommand(output, cwd, positionals[1], jsonOutput, env),
+    history: ({ output, cwd, jsonOutput, env }) =>
+      runHistoryCommand(output, cwd, jsonOutput, env),
+    new: ({ beforeArgs, output, cwd, jsonOutput, env }) =>
+      runNewCommand(output, cwd, beforeArgs.slice(1), jsonOutput, env),
+    wizard: ({ output, cwd, jsonOutput, env }) =>
+      runWizardCommand(output, cwd, jsonOutput, env),
+  };
+
+/**
+ * Dispatches by the already-confirmed static command name via
+ * {@link STATIC_COMMAND_HANDLERS} — split out of {@link dispatchStaticCommand}
+ * purely to keep that caller's own complexity down; no behavioral difference
+ * from inlining the lookup would make.
+ *
+ * `command` can only be
+ * `"list"`/`"inspect"`/`"run"`/`"doctor"`/`"presets"`/`"history"`/`"new"`/`"wizard"`
+ * at runtime (see {@link dispatchStaticCommand}'s doc) — anything else is a
+ * caller contract violation, not a normal path, and `command`'s static type
+ * is the general `string | undefined` (not a literal union `parseArgs`'s
+ * `positionals` can't express), so this can't be a compile-checked `never`
+ * exhaustiveness assertion.
+ */
+async function dispatchStaticCommandByName(
+  command: string | undefined,
+  positionals: readonly string[],
+  beforeArgs: readonly string[],
+  passthroughArgs: readonly string[],
+  output: M3LCliOutput,
+  cwd: string,
+  jsonOutput: boolean,
+  env: Readonly<Record<string, string | undefined>>,
+): Promise<number> {
+  const handler =
+    command === undefined ? undefined : STATIC_COMMAND_HANDLERS[command];
+  if (handler === undefined) {
+    throw new M3LCliError(
+      "ERR_CLI_UNKNOWN_COMMAND",
+      `unreachable dispatchStaticCommand command '${command ?? ""}'`,
+    );
   }
+  return handler({
+    positionals,
+    beforeArgs,
+    passthroughArgs,
+    output,
+    cwd,
+    jsonOutput,
+    env,
+  });
 }
 
 /**
@@ -474,6 +532,7 @@ async function dispatchStaticCommand(
   return dispatchStaticCommandByName(
     positionals[0],
     positionals,
+    beforeArgs,
     passthroughArgs,
     output,
     cwd,

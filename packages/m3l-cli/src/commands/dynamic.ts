@@ -38,12 +38,10 @@ interface M3LCliDynamicCommandContext extends M3LCliCommandContext {
  * independent reasons: `doctor.ts`'s own `RESERVED_COMMAND_NAMES` is pinned
  * by a `doctor.test.ts` drift guard that regex-extracts the literal array
  * straight out of `doctor.ts`'s source text, so that declaration can't move;
- * and `main.ts`'s own `STATIC_COMMAND_NAMES` is a narrower, intentionally
- * different list (it excludes `"new"`, which has no dispatched command and
- * would hit `dispatchStaticCommandByName`'s unreachable default), plus
- * `main.ts` lazy-imports every command module to keep `help`/`--version`
- * free of discovery — a static import of `doctor.ts` purely for this
- * constant would defeat that. This literal must stay set-equal to
+ * and `main.ts` lazy-imports every command module (including `new.ts`, which
+ * it now also dispatches statically) to keep `help`/`--version` free of
+ * discovery — a static import of `doctor.ts` purely for this constant would
+ * defeat that. This literal must stay set-equal to
  * `doctor.ts`'s `RESERVED_COMMAND_NAMES` and `bin/lib/script-scaffold.mjs`'s
  * `RESERVED_CLI_NAMES` (the ADR-0042 source of truth) whenever any of the
  * three changes.

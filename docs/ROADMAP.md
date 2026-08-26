@@ -147,7 +147,7 @@ per-phase detail in
 | **U6**  | `commandModule` adoption — template + pilot scripts          | Done     |
 | **U7**  | Hybrid execution in the CLI; discovery over dependencies     | To Do    |
 | **U8**  | Operation introspection in `inspect`/`--help`/wizard         | To Do    |
-| **U9**  | `m3l new` + Lambda scaffold variant                          | To Do    |
+| **U9**  | `m3l new` + Lambda scaffold variant                          | Done     |
 | **U10** | `m3l flow` — orchestration engine + the named flow           | To Do    |
 | **U11** | Retry/resume/cancellation surfacing at the CLI layer         | To Do    |
 | **U12** | `m3l completion` (bash/zsh/fish)                             | To Do    |

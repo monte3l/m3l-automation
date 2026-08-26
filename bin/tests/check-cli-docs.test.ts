@@ -383,7 +383,7 @@ Usage text.
 });
 
 describe("shippedCommandNames", () => {
-  test("extracts all eight commands from the real main.ts", () => {
+  test("extracts all nine commands from the real main.ts", () => {
     const names = shippedCommandNames(
       readFileSync(join(repoRoot, CLI_MAIN_PATH), "utf8"),
     );
@@ -394,6 +394,7 @@ describe("shippedCommandNames", () => {
       "doctor",
       "presets",
       "history",
+      "new",
       "wizard",
       "help",
     ]);
