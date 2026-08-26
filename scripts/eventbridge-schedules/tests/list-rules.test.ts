@@ -259,4 +259,107 @@ describe("listRules", () => {
       }),
     ).rejects.toBe(sentinelError);
   });
+
+  // A5b PR2 (issue #506): `drainRules`' hand-rolled
+  // `do { … } while (nextToken !== undefined)` loop has no ceiling — if the
+  // SDK/mock ever repeats the same `nextToken`, it spins forever. This
+  // mirrors the bound already shipped for the library's own pagination
+  // generators (packages/m3l-common/tests/dynamodb.test.ts's
+  // "rejects with ERR_NO_PROGRESS ... instead of looping forever" tests).
+  //
+  // Unlike that generator case, `drainRules` cannot be stepped from the
+  // outside (it returns one Promise wrapping the whole loop, not a
+  // steppable async generator), so the safety bound here is placed INSIDE
+  // the mock itself: the mock throws once it has been called more times
+  // than any reasonable guard should ever allow, deterministically ending
+  // the promise chain whether or not the real no-progress guard exists yet.
+  // This avoids relying solely on the per-test timeout to interrupt an
+  // unbounded synchronous-microtask loop (which starves Node's timer phase
+  // rather than raising a clean timeout error, per the dynamodb.test.ts
+  // precedent comment).
+  test("rejects with ERR_NO_PROGRESS instead of looping forever when nextToken never changes across pages", async () => {
+    let calls = 0;
+    const listRulesMock = vi.fn().mockImplementation(() => {
+      calls += 1;
+      if (calls > 5) {
+        throw new Error(
+          "test bound exceeded: drainRules did not stop looping on a repeated nextToken",
+        );
+      }
+      return Promise.resolve({
+        rules: [ruleA],
+        nextToken: "stuck-token",
+      });
+    });
+    const eventBridgeOperations = createFakeEventBridgeOperations({
+      listRules: listRulesMock,
+    });
+    const config = buildConfig({});
+    const paths = new Core.M3LPaths();
+    const logger = new Core.M3LLogger([]);
+
+    await expect(
+      listRules({
+        config,
+        paths,
+        logger,
+        correlationId: "run-6",
+        eventBridgeOperations,
+      }),
+    ).rejects.toMatchObject({ code: "ERR_NO_PROGRESS" });
+  }, 2000);
+
+  test("drains a genuinely advancing nextToken across 3 pages, accumulating rules from all of them", async () => {
+    const { streams } = stubWriteStream();
+    const ruleC: AWS.M3LEventBridgeRule = {
+      name: "rule-c",
+      arn: "arn:aws:events:eu-south-1:123456789012:rule/rule-c",
+    };
+    const listRulesMock = vi
+      .fn()
+      .mockResolvedValueOnce({ rules: [ruleA], nextToken: "page2" })
+      .mockResolvedValueOnce({ rules: [ruleB], nextToken: "page3" })
+      .mockResolvedValueOnce({ rules: [ruleC] });
+    const eventBridgeOperations = createFakeEventBridgeOperations({
+      listRules: listRulesMock,
+    });
+    const config = buildConfig({ output: "rules.json" });
+    const paths = new Core.M3LPaths();
+    const logger = new Core.M3LLogger([]);
+
+    await listRules({
+      config,
+      paths,
+      logger,
+      correlationId: "run-7",
+      eventBridgeOperations,
+    });
+
+    expect(listRulesMock).toHaveBeenCalledTimes(3);
+    const written = streams[0];
+    expect(written).toBeDefined();
+    if (written === undefined) throw new Error("unreachable");
+    expect(JSON.parse(written.content())).toEqual([ruleA, ruleB, ruleC]);
+  });
+
+  test("completes after a single page with no nextToken, without ever suspecting a repeated token", async () => {
+    stubWriteStream();
+    const listRulesMock = vi.fn().mockResolvedValue({ rules: [ruleA] });
+    const eventBridgeOperations = createFakeEventBridgeOperations({
+      listRules: listRulesMock,
+    });
+    const config = buildConfig({});
+    const paths = new Core.M3LPaths();
+    const logger = new Core.M3LLogger([]);
+
+    await listRules({
+      config,
+      paths,
+      logger,
+      correlationId: "run-8",
+      eventBridgeOperations,
+    });
+
+    expect(listRulesMock).toHaveBeenCalledTimes(1);
+  });
 });
