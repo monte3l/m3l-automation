@@ -6,6 +6,8 @@
  * @packageDocumentation
  */
 
+import { M3LConfigValidationError } from "./M3LConfigValidationError.js";
+
 /**
  * One operation a script can perform, declared as data rather than a
  * closure — a fleet-facing discovery cache (ADR-0042) can read this shape
@@ -88,6 +90,12 @@ export type M3LOperationDeclarationList<TName extends string = string> =
  * @param operations - The declaration list to project.
  * @returns A non-empty, ordered, non-deduplicated tuple of every declared
  *   operation's `name`.
+ * @throws {@link M3LConfigValidationError} When `operations` is empty — the
+ *   non-empty-tuple type forbids this at compile time, but a plain
+ *   JavaScript caller (or a cast, e.g.
+ *   `[] as unknown as M3LOperationDeclarationList`) has no `tsc` enforcing
+ *   it, so the runtime guard is the only thing standing between this and a
+ *   bare `TypeError` destructuring `first` off an empty array.
  *
  * @example
  * ```ts
@@ -104,5 +112,11 @@ export function deriveOperationNames<const TName extends string>(
   operations: M3LOperationDeclarationList<TName>,
 ): readonly [TName, ...(readonly TName[])] {
   const [first, ...rest] = operations;
+  if (first === undefined) {
+    throw new M3LConfigValidationError(
+      "deriveOperationNames received an empty operation list",
+      { context: { reason: "empty operation list" } },
+    );
+  }
   return [first.name, ...rest.map((operation) => operation.name)];
 }

@@ -69,7 +69,11 @@ describe("M3LOperationDeclaration — type-level contract", () => {
       type: M3LConfigParameterType.STRING,
       operations,
     });
-    expect(parameter.getOperations()).toBe(operations);
+    // `getOperations()` returns a fresh, normalised projection, not the
+    // caller's array by reference — see the dedicated projection-semantics
+    // tests below for why. This test's job is the type-check above; content
+    // equality is enough to confirm it type-checked and constructed.
+    expect(parameter.getOperations()).toEqual(operations);
   });
 
   test("operations type-checks on a STRING parameter inside a readonly M3LConfigParameter[] annotation (the fleet shape)", () => {
@@ -128,7 +132,9 @@ describe("M3LOperationDeclaration — type-level contract", () => {
       operations,
       validate,
     });
-    expect(parameter.getOperations()).toBe(operations);
+    // See the projection-semantics tests below: getOperations() no longer
+    // returns the caller's array by reference.
+    expect(parameter.getOperations()).toEqual(operations);
   });
 
   test("deriveOperationNames preserves the literal name union", () => {
@@ -159,6 +165,34 @@ describe("deriveOperationNames — runtime contract", () => {
       { name: "put", description: "Write one item." },
     ];
     expect(deriveOperationNames(operations)).toEqual(["get", "get", "put"]);
+  });
+
+  test("an empty operation list throws M3LConfigValidationError, not a bare TypeError", () => {
+    // `M3LOperationDeclarationList` is a non-empty tuple, so `[]` is a
+    // compile error (see the type-level test above) — this cast models a
+    // plain JavaScript caller bypassing that compile-time guard, the same
+    // way the `M3LConfigParameter` malformed-shape tests do elsewhere in
+    // this file.
+    const empty = [] as unknown as M3LOperationDeclarationList;
+
+    expect(() => deriveOperationNames(empty)).toThrow(M3LConfigValidationError);
+
+    let thrown: unknown;
+    try {
+      deriveOperationNames(empty);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(M3LConfigValidationError);
+    // The regression being locked down: this must never again surface as
+    // a bare `TypeError` from destructuring `first` off an empty array.
+    expect(thrown).not.toBeInstanceOf(TypeError);
+    expect((thrown as M3LConfigValidationError).code).toBe(
+      "ERR_CONFIG_VALIDATION",
+    );
+    expect((thrown as Error).message).toBe(
+      "deriveOperationNames received an empty operation list",
+    );
   });
 });
 
@@ -194,7 +228,7 @@ describe("operations declaration serialisability (ADR-0042)", () => {
 // =============================================================================
 
 describe("M3LConfigParameter.getOperations()", () => {
-  test("returns the declared operations list verbatim", () => {
+  test("returns a projection equal in content to the declared operations, but never the caller's array by reference", () => {
     const operations: M3LOperationDeclarationList = [
       { name: "get", description: "Fetch one item by key." },
     ];
@@ -203,7 +237,14 @@ describe("M3LConfigParameter.getOperations()", () => {
       type: M3LConfigParameterType.STRING,
       operations,
     });
-    expect(parameter.getOperations()).toBe(operations);
+
+    // The declared content is still the contract.
+    expect(parameter.getOperations()).toEqual(operations);
+    // The new contract: this is a fresh, normalised projection, never the
+    // caller's own array — see `validateOperationDeclarations`'s TSDoc for
+    // why (an accessor property could otherwise pass validation and then
+    // hand back something else to a later re-read).
+    expect(parameter.getOperations()).not.toBe(operations);
   });
 
   test("returns undefined when no operations were declared", () => {
@@ -212,6 +253,106 @@ describe("M3LConfigParameter.getOperations()", () => {
       type: M3LConfigParameterType.STRING,
     });
     expect(parameter.getOperations()).toBeUndefined();
+  });
+
+  test("the accessor-property escape is closed: a name re-observed after validation cannot disagree with what was validated", () => {
+    // Models a declaration whose `name` is a getter that returns a valid
+    // string for validation's read(s) (at most 2, to tolerate either the
+    // current or a prior read-count inside `validateOperationEntryShape`),
+    // then `undefined` on every subsequent read. Against the old
+    // reference-returning `validateOperationDeclarations` (which stored and
+    // returned the caller's own entry objects verbatim), `getOperations()`
+    // hands back the SAME live-getter object, so `M3LConfigHelpFormatter`'s
+    // `operations.map((op) => op.name.length)` re-triggers the getter a
+    // third time, observes `undefined`, and throws a bare `TypeError`
+    // reading `.length` off it — asserted below via `format(schema)`, which
+    // must run first so that TypeError (not a later assertion mismatch) is
+    // what fails this test against the old code. The fixed implementation
+    // reads `name` at most twice, at validation time, and projects the
+    // already-read value into a fresh plain object — so nothing downstream
+    // ever re-triggers the getter.
+    let reads = 0;
+    const entry: unknown = {
+      get name(): unknown {
+        reads += 1;
+        return reads <= 2 ? "get" : undefined;
+      },
+      description: "Fetch one item by key.",
+    };
+    // Cast models a plain JavaScript caller bypassing the compile-time
+    // M3LOperationDeclarationList shape, per this file's established
+    // pattern for malformed/adversarial `operations` fixtures.
+    const operations = [entry] as unknown as M3LOperationDeclarationList;
+
+    const parameter = new M3LConfigParameter({
+      name: "operation",
+      type: M3LConfigParameterType.STRING,
+      operations,
+    });
+
+    const schema = new M3LConfigSchema([parameter]);
+    const formatter = new M3LConfigHelpFormatter();
+    let formatted = "";
+    expect(() => {
+      formatted = formatter.format(schema);
+    }).not.toThrow();
+    expect(formatted).toContain("get");
+
+    expect(parameter.getOperations()?.[0].name).toBe("get");
+  });
+
+  test("mutating the caller's array after construction does not affect the parameter", async () => {
+    const operations: M3LOperationDeclarationList = [
+      { name: "get", description: "Fetch one item by key." },
+    ];
+    const parameter = new M3LConfigParameter({
+      name: "operation",
+      type: M3LConfigParameterType.STRING,
+      operations,
+    });
+
+    // Cast past the readonly tuple type — the same JavaScript-caller-bypass
+    // pattern used elsewhere in this file — to mutate the original array
+    // after construction.
+    (operations as unknown as M3LOperationDeclaration[]).push({
+      name: "put",
+      description: "Write one item.",
+    });
+
+    expect(parameter.getOperations()).toEqual([
+      { name: "get", description: "Fetch one item by key." },
+    ]);
+
+    const reader = new M3LConfigReader([
+      new M3LInMemoryConfigProvider({ operation: "put" }),
+    ]);
+    await expect(parameter.getValueAsync(reader)).rejects.toBeInstanceOf(
+      M3LConfigValidationError,
+    );
+  });
+
+  test("the returned projection is deep-frozen: the array, each entry, and a present requiredParameters copy", () => {
+    const operations: M3LOperationDeclarationList = [
+      {
+        name: "get",
+        description: "Fetch one item by key.",
+        requiredParameters: ["key"],
+      },
+    ];
+    const parameter = new M3LConfigParameter({
+      name: "operation",
+      type: M3LConfigParameterType.STRING,
+      operations,
+    });
+
+    const projected = parameter.getOperations();
+    expect(projected).toBeDefined();
+    expect(Object.isFrozen(projected)).toBe(true);
+
+    const entry = projected?.[0];
+    expect(entry).toBeDefined();
+    expect(Object.isFrozen(entry)).toBe(true);
+    expect(Object.isFrozen(entry?.requiredParameters)).toBe(true);
   });
 
   test("all six existing getters plus isSecret() are unchanged on a declaring parameter", () => {

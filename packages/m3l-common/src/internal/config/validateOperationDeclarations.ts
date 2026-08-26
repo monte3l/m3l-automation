@@ -19,9 +19,24 @@ import type {
 } from "../../core/config/M3LOperationDeclaration.js";
 
 /**
- * Validates a declared `operations` option and returns it unchanged — the
- * exact array reference, never a copy (`M3LConfigParameter.getOperations`
- * returns it verbatim) — or `undefined` when none was declared.
+ * Validates a declared `operations` option and returns a **fresh, deep-
+ * frozen projection** of it — never the caller's original array or its
+ * original entry objects (`M3LConfigParameter.getOperations` returns this
+ * projection, not the constructor argument) — or `undefined` when none was
+ * declared.
+ *
+ * Returning the projection rather than the original array/entries matters
+ * beyond immutability: an entry can carry an accessor property (e.g. a
+ * `get name()` getter) that returns a different value on each read. Reading
+ * `name`/`description` exactly once per entry, in
+ * {@link validateOperationEntryShape}, and building this function's return
+ * value from those already-read locals — never by re-reading the caller's
+ * object — is what keeps every downstream consumer
+ * ({@link deriveOperationValidators}, `M3LConfigHelpFormatter`,
+ * `M3LConfigParameter`'s derived membership validator) looking at the exact
+ * values that were validated, instead of independently re-observing a
+ * mutable object and risking disagreement with the validation that already
+ * ran.
  *
  * Runtime guard for {@link M3LOperationDeclarationList}'s compile-time
  * constraints (non-empty, `STRING`-only, well-shaped entries): a plain
@@ -33,8 +48,9 @@ import type {
  *   messages/context.
  * @param type - The declaring parameter's declared coercion target type.
  * @param operations - The constructor option to validate.
- * @returns `operations`, narrowed to {@link M3LOperationDeclarationList}, or
- *   `undefined` when `operations` is `undefined`.
+ * @returns A fresh, deep-frozen {@link M3LOperationDeclarationList}
+ *   projecting every validated entry, or `undefined` when `operations` is
+ *   `undefined`.
  * @throws {@link M3LConfigValidationError} When `operations` is declared on
  *   a non-`STRING` parameter, is not an array, is empty, or contains a
  *   malformed entry — see {@link validateOperationEntry}.
@@ -83,12 +99,14 @@ export function validateOperationDeclarations(
   }
 
   const seenNames = new Set<string>();
+  const validated: M3LOperationDeclaration[] = [];
   for (const entry of candidate) {
     const operation = validateOperationEntry(parameterName, entry, seenNames);
     seenNames.add(operation.name);
+    validated.push(operation);
   }
 
-  return candidate as unknown as M3LOperationDeclarationList;
+  return Object.freeze(validated) as unknown as M3LOperationDeclarationList;
 }
 
 /**
@@ -105,7 +123,9 @@ export function validateOperationDeclarations(
  *   messages/context.
  * @param entry - The raw operation entry to validate.
  * @param seenNames - Names already validated earlier in the same list.
- * @returns `entry`, narrowed to {@link M3LOperationDeclaration}.
+ * @returns A fresh, frozen {@link M3LOperationDeclaration} built from the
+ *   values read off `entry` — never `entry` itself, and never a second read
+ *   of any of its properties.
  * @throws {@link M3LConfigValidationError} When `entry` is not a non-null
  *   object; `name` or `description` is not a string, is blank, or
  *   duplicates an earlier entry's `name`; or `requiredParameters` is present
@@ -122,11 +142,16 @@ function validateOperationEntry(
   );
   validateOperationEntryContent(parameterName, name, description, seenNames);
 
-  return {
+  // `exactOptionalPropertyTypes` is on: `requiredParameters` must be
+  // omitted entirely when absent, never assigned an explicit `undefined`
+  // (that would fail the JSON round-trip contract too — JSON.stringify
+  // drops an `undefined` value, but a caller inspecting the in-memory
+  // object before serialising it should not see the key at all).
+  return Object.freeze({
     name,
     description,
     ...(requiredParameters !== undefined && { requiredParameters }),
-  };
+  });
 }
 
 /**
@@ -168,7 +193,14 @@ function validateOperationEntryShape(
 
   const candidate = entry as Record<string, unknown>;
 
-  if (typeof candidate["name"] !== "string") {
+  // Each property is read into a local exactly once, before its `typeof`
+  // check, and that same local is what gets returned — never a second
+  // bracket access off `candidate`. `candidate["name"]`/`["description"]`
+  // can be accessor properties (a `get name()` that computes a different
+  // value on each read); reading twice would let a value that passed the
+  // guard differ from the value this function hands back.
+  const rawName: unknown = candidate["name"];
+  if (typeof rawName !== "string") {
     throw new M3LConfigValidationError(
       `configuration parameter '${parameterName}' declares an operation with a non-string name`,
       {
@@ -179,9 +211,10 @@ function validateOperationEntryShape(
       },
     );
   }
-  const operationName = candidate["name"];
+  const operationName = rawName;
 
-  if (typeof candidate["description"] !== "string") {
+  const rawDescription: unknown = candidate["description"];
+  if (typeof rawDescription !== "string") {
     throw new M3LConfigValidationError(
       `configuration parameter '${parameterName}' declares an operation with a non-string description: '${operationName}'`,
       {
@@ -192,7 +225,7 @@ function validateOperationEntryShape(
       },
     );
   }
-  const description = candidate["description"];
+  const description = rawDescription;
 
   const requiredParameters = validateRequiredParametersShape(
     parameterName,
@@ -271,7 +304,8 @@ function validateOperationEntryContent(
  * @param requiredParameters - The raw field value to validate.
  * @param operationName - The already-validated operation name, used only in
  *   the thrown message/context.
- * @returns `requiredParameters` narrowed to `readonly string[]`, or
+ * @returns A fresh, frozen copy of `requiredParameters` narrowed to
+ *   `readonly string[]` — never the caller's original array — or
  *   `undefined` when absent.
  * @throws {@link M3LConfigValidationError} When `requiredParameters` is
  *   present and is not an array of strings.
@@ -311,5 +345,5 @@ function validateRequiredParametersShape(
     validated.push(item);
   }
 
-  return validated;
+  return Object.freeze(validated);
 }

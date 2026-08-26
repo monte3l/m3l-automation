@@ -278,6 +278,14 @@ export class M3LConfigParameter<
    * The parameter's declared operations list (ADR-0055), or `undefined`
    * when none was declared. Only ever non-`undefined` on a `STRING`
    * parameter — see {@link M3LConfigParameterOptions.operations}.
+   *
+   * Returns the validated **projection** {@link validateOperationDeclarations}
+   * built at construction time — a fresh, deep-frozen structure, never the
+   * `options.operations` array/entries the caller passed in. Every
+   * downstream consumer ({@link deriveOperationValidators}, this class's own
+   * derived membership validator, `M3LConfigHelpFormatter`) reads this
+   * projection, so none of them can observe a value that disagrees with what
+   * the constructor already validated.
    */
   getOperations(): M3LOperationDeclarationList | undefined {
     return this.operations;
