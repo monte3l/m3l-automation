@@ -292,10 +292,76 @@ const COMMAND_MODULE_CONFIG_IMPORT_RE =
  * `no-restricted-properties` ban over every script source file is the primary
  * guard; this is its manifest-level backstop, so a script that somehow
  * suppressed the lint rule still fails the scaffold gate. Matched against
- * comment-stripped source, so a comment that documents the ban is not itself
- * a violation.
+ * {@link stripComments}-processed source, so a comment that documents the ban
+ * — whether on its own line or trailing real code — is not itself a
+ * violation.
  */
 const COMMAND_MODULE_PROCESS_EXIT_RE = /process\s*\.\s*exit\s*\(/;
+
+/**
+ * Remove comments from TypeScript source so the command-module checks below
+ * match code only.
+ *
+ * It matters in BOTH directions: a `process.exit(1)` written inside a comment
+ * that DOCUMENTS the ban must not fail the gate, and an
+ * `export const commandModule: ...` inside a TSDoc `@example` fence must not
+ * satisfy it.
+ *
+ * `fileExports()` in bin/lib/reference-index.mjs strips line comments with
+ * `/^\s*\/\/.*$/gm` — anchored to the line start, so a `//` inside a string
+ * literal (a URL) can't truncate a real declaration. That anchor also means a
+ * TRAILING comment survives, which for this gate is a false positive:
+ * `await flush(); // never call process.exit(1)` is conformant code. So this
+ * scans each line for the first `//` that is not inside a string or template
+ * literal and cuts there — handling both cases the anchored regex cannot.
+ *
+ * Deliberately a small scanner, not a parser: it tracks quote state and
+ * backslash escapes, which is all TypeScript source needs for this decision.
+ * A regex literal containing an unbalanced quote (`/'/`) is the known blind
+ * spot; it would leave quote state open for the rest of the line, at worst
+ * failing to strip a trailing comment on that one line — the pre-existing
+ * behaviour, never a false pass.
+ *
+ * @param source - Raw TypeScript source.
+ * @returns The source with comments blanked out.
+ */
+function stripComments(source) {
+  // Block comments first: they can span lines, so the per-line scan below
+  // would otherwise see their fragments as code.
+  const withoutBlocks = source.replace(/\/\*[\s\S]*?\*\//g, "");
+  return withoutBlocks
+    .split("\n")
+    .map((line) => line.slice(0, codeLengthOf(line)))
+    .join("\n");
+}
+
+/**
+ * The length of `line` up to the first `//` that starts a real comment — i.e.
+ * one not inside a single-quoted, double-quoted, or template string.
+ * Returns `line.length` when the line carries no comment.
+ *
+ * @param line - One line of TypeScript source, block comments already removed.
+ * @returns The index at which to truncate the line.
+ */
+function codeLengthOf(line) {
+  let quote = "";
+  for (let i = 0; i < line.length; i += 1) {
+    const char = line[i];
+    if (quote !== "") {
+      // Skip the character after a backslash so an escaped quote does not
+      // close the string.
+      if (char === "\\") i += 1;
+      else if (char === quote) quote = "";
+      continue;
+    }
+    if (char === '"' || char === "'" || char === "`") {
+      quote = char;
+      continue;
+    }
+    if (char === "/" && line[i + 1] === "/") return i;
+  }
+  return line.length;
+}
 
 /**
  * Validate an adopted command module. Only called when
@@ -307,16 +373,7 @@ const COMMAND_MODULE_PROCESS_EXIT_RE = /process\s*\.\s*exit\s*\(/;
  */
 export function commandModuleErrors(commandSrc) {
   const problems = [];
-  // Strip comments before matching, the same way `fileExports()` in
-  // bin/lib/reference-index.mjs does. It matters in BOTH directions here: a
-  // `process.exit(1)` written inside a comment that DOCUMENTS the ban would
-  // otherwise fail the gate, and an `export const commandModule: ...` inside a
-  // TSDoc `@example` fence would otherwise satisfy it. The line-comment strip
-  // is anchored to the line start (allowing leading whitespace) so a real code
-  // line containing `//` mid-line is never truncated.
-  const scannable = commandSrc
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/^\s*\/\/.*$/gm, "");
+  const scannable = stripComments(commandSrc);
   if (!COMMAND_MODULE_EXPORT_RE.test(scannable)) {
     problems.push(
       "must declare `export const commandModule: Core.M3LCommandModule` — the ADR-0054 descriptor a host discovers. The explicit annotation (not `satisfies`) is required by `isolatedDeclarations`.",

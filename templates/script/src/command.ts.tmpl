@@ -181,12 +181,19 @@ export const commandModule: Core.M3LCommandModule = {
   configParameters,
   async execute(_parameters, context): Promise<Core.M3LCommandOutcome> {
     const capture = captureFailures();
-    // `metadata: commandModule` — an `M3LCommandModule` IS structurally an
-    // `M3LScriptMetadata`, so the descriptor is its own single source of
-    // truth for this script's name and version (no adapter, no second
-    // literal). Passing a variable also sidesteps excess-property checking.
+    // The descriptor stays the single source of truth for this script's name
+    // and version — but only those two fields are handed over. Passing
+    // `commandModule` itself typechecks (an `M3LCommandModule` IS structurally
+    // an `M3LScriptMetadata`) and is WRONG: `M3LRunReporter` passes
+    // `input.script` through verbatim, and it is the one report field NOT run
+    // through `sanitizeValue`. The whole descriptor would therefore serialize
+    // into `run-report.json` — `description` plus every `M3LConfigParameter`'s
+    // name, type, aliases and `defaultValue` — where the spawn path writes
+    // only `{ name, version }`. That breaks parity in the very artifact
+    // ADR-0054's parity clause is about, and writes a secret parameter's
+    // default into an unredacted field.
     const script = new Core.M3LScript({
-      metadata: commandModule,
+      metadata: { name: commandModule.name, version: commandModule.version },
       config: { params: configParameters },
       hooks: capture.hooks,
     });

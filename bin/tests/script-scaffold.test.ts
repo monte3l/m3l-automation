@@ -412,12 +412,53 @@ describe("commandModuleErrors", () => {
     ]);
   });
 
-  // The line-comment strip is anchored to the line start, so a real code line
-  // carrying `//` mid-line (a URL literal, a regex) is never truncated.
-  test("keeps matching a real declaration on a line containing // mid-line", () => {
+  // A `//` inside a string literal is not a comment, so the scan must not
+  // truncate the line there and lose the declaration that follows.
+  test("keeps matching a real declaration on a line containing // in a string", () => {
     const src = conformant.replace(
       "  configParameters,",
       '  docs: "https://example.invalid/docs",\n  configParameters,',
+    );
+    expect(commandModuleErrors(src)).toEqual([]);
+  });
+
+  // The regression the anchored `/^\s*\/\/.*$/gm` strip could not handle: a
+  // TRAILING comment documenting the ban is conformant code, not a violation.
+  test("does not flag a process.exit inside a trailing comment", () => {
+    const src = conformant.replace(
+      "  },\n};",
+      "    await flush(); // never call process.exit(1) here\n  },\n};",
+    );
+    expect(commandModuleErrors(src)).toEqual([]);
+  });
+
+  // ...but a trailing comment must not become a way to HIDE real code either:
+  // the cut happens at the comment, so code before it is still scanned.
+  test("still flags a real process.exit that precedes a trailing comment", () => {
+    const src = conformant.replace(
+      "  },\n};",
+      "    process.exit(1); // bail out\n  },\n};",
+    );
+    expect(commandModuleErrors(src)).toEqual([
+      expect.stringContaining("process.exit"),
+    ]);
+  });
+
+  // An escaped quote must not close the string and re-open comment scanning
+  // partway through the line.
+  test("handles an escaped quote inside a string before a trailing comment", () => {
+    const src = conformant.replace(
+      "  configParameters,",
+      '  label: "a \\" quote", // process.exit(1)\n  configParameters,',
+    );
+    expect(commandModuleErrors(src)).toEqual([]);
+  });
+
+  // A template literal is a string too — `//` inside one is not a comment.
+  test("treats // inside a template literal as string content", () => {
+    const src = conformant.replace(
+      "  configParameters,",
+      "  url: `https://example.invalid`,\n  configParameters,",
     );
     expect(commandModuleErrors(src)).toEqual([]);
   });

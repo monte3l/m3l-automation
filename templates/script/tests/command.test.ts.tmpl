@@ -14,10 +14,15 @@ import { configParameters } from "../src/config.js";
  * from this file's own URL, so it does not depend on the runner's working
  * directory.
  */
-const manifest: { readonly name: string; readonly description: string } =
-  JSON.parse(
-    readFileSync(new URL("../package.json", import.meta.url), "utf8"),
-  ) as { readonly name: string; readonly description: string };
+interface PackageManifest {
+  readonly name: string;
+  readonly version: string;
+  readonly description: string;
+}
+
+const manifest: PackageManifest = JSON.parse(
+  readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+) as PackageManifest;
 
 /**
  * Contract: `docs/reference/core/cli-contract.md` (ADR-0054) plus
@@ -44,8 +49,13 @@ describe("__SCRIPT_NAME__ command module descriptor", () => {
     expect(commandModule.name).toBe("__SCRIPT_NAME__");
   });
 
-  it("carries the same version main.ts passes as M3LScript metadata", () => {
-    expect(commandModule.version).toBe("0.0.0");
+  // Asserted against package.json rather than a bare "0.0.0" literal, so the
+  // manifest is the single source of truth and a bumped package version that
+  // never reached the descriptor is caught. `main.ts` holds a third copy that
+  // no test can reach without parsing it — a residual drift the CLI's
+  // in-process host retires when it unifies the two composition roots.
+  it("carries the same version as package.json", () => {
+    expect(commandModule.version).toBe(manifest.version);
   });
 
   // Drift guard, not a tautology: a host renders `description` in help output,
