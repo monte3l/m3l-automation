@@ -74,6 +74,7 @@ import { Core } from "@m3l-automation/m3l-common";
 
 import { commandModule, consoleOutput, toOutcome } from "../src/command.js";
 import { configParameters } from "../src/config.js";
+import { hooks } from "../src/hooks.js";
 
 /**
  * This package's own manifest, read at runtime rather than imported: the
@@ -336,19 +337,19 @@ describe("dynamodb-crud fallback command output port", () => {
   });
 });
 
-describe("dynamodb-crud execute wiring", () => {
-  /** A host port bag with the fallback writer and no cancellation. */
-  function contextFor(dryRun: boolean): Core.M3LCommandContext {
-    return {
-      output: consoleOutput,
-      // No handlers: `execute` deliberately does not forward this port into
-      // `M3LScript` at all, so a sink-less logger is the honest stand-in.
-      logger: new Core.M3LLogger([]),
-      signal: undefined,
-      dryRun,
-    };
-  }
+/** A host port bag with the fallback writer and no cancellation. */
+function contextFor(dryRun: boolean): Core.M3LCommandContext {
+  return {
+    output: consoleOutput,
+    // No handlers: `execute` deliberately does not forward this port into
+    // `M3LScript` at all, so a sink-less logger is the honest stand-in.
+    logger: new Core.M3LLogger([]),
+    signal: undefined,
+    dryRun,
+  };
+}
 
+describe("dynamodb-crud execute wiring", () => {
   /**
    * Invokes the `onError` hook `execute` composed onto this script's own
    * hooks — the seam that lets `execute` observe a failure at all, since
@@ -368,10 +369,9 @@ describe("dynamodb-crud execute wiring", () => {
     vi.clearAllMocks();
   });
 
-  it("hands runScript a callable main function", () => {
-    return commandModule.execute({}, contextFor(true)).then(() => {
-      expect(typeof runMocks.runScriptCalls[0]?.mainFn).toBe("function");
-    });
+  it("hands runScript a callable main function", async () => {
+    await commandModule.execute({}, contextFor(true));
+    expect(typeof runMocks.runScriptCalls[0]?.mainFn).toBe("function");
   });
 
   // The regression guard for a defect a previous revision shipped: passing
@@ -398,6 +398,27 @@ describe("dynamodb-crud execute wiring", () => {
       readonly config: { readonly params: unknown };
     };
     expect(options.config.params).toBe(configParameters);
+  });
+
+  // `hooks: capture.hooks` must SPREAD this script's declared hooks, not
+  // replace them: `captureFailures` adds an `onError` for the outcome, and a
+  // composition that dropped the spread would silently stop running
+  // `onBeforeRun` — which is what captures the correlation id — on the
+  // in-process path only. Asserted by key set plus a same-reference check on
+  // every hook the script actually declares.
+  it("composes onError onto the script's own declared hooks", async () => {
+    await commandModule.execute({}, contextFor(true));
+
+    const options = runMocks.scriptOptions[0] as {
+      readonly hooks: Record<string, unknown>;
+    };
+    for (const [name, declared] of Object.entries(
+      hooks as Record<string, unknown>,
+    )) {
+      if (name === "onError") continue;
+      expect(options.hooks[name]).toBe(declared);
+    }
+    expect(typeof options.hooks["onError"]).toBe("function");
   });
 
   // `context.dryRun` is the one port U6 forwards; the others are accepted and
@@ -455,6 +476,30 @@ describe("dynamodb-crud execute wiring", () => {
 
     await expect(commandModule.execute({}, contextFor(false))).resolves.toEqual(
       { status: "interrupted" },
+    );
+  });
+});
+
+describe("dynamodb-crud cross-parameter validator parity", () => {
+  afterEach(() => {
+    runMocks.scriptOptions.length = 0;
+    runMocks.runScriptCalls.length = 0;
+    vi.clearAllMocks();
+  });
+
+  // dynamodb-crud declares no `configValidators` today, and `command.ts` says so
+  // explicitly. Pinned rather than left implicit: the moment one is added it
+  // must be wired into BOTH composition sites, and this failing is the
+  // reminder. `main.ts` passes no `validate` either, so the two agree.
+  it("passes no validate, matching config.ts declaring none", async () => {
+    await commandModule.execute({}, contextFor(true));
+
+    const options = runMocks.scriptOptions[0] as {
+      readonly config: Record<string, unknown>;
+    };
+    expect(options.config).not.toHaveProperty("validate");
+    expect(await import("../src/config.js")).not.toHaveProperty(
+      "configValidators",
     );
   });
 });

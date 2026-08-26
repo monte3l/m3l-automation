@@ -73,7 +73,8 @@ vi.mock("@m3l-automation/m3l-common", async (importOriginal) => {
 import { Core } from "@m3l-automation/m3l-common";
 
 import { commandModule, consoleOutput, toOutcome } from "../src/command.js";
-import { configParameters } from "../src/config.js";
+import { configParameters, configValidators } from "../src/config.js";
+import { hooks } from "../src/hooks.js";
 
 /**
  * This package's own manifest, read at runtime rather than imported: the
@@ -336,19 +337,19 @@ describe("sqs-etl fallback command output port", () => {
   });
 });
 
-describe("sqs-etl execute wiring", () => {
-  /** A host port bag with the fallback writer and no cancellation. */
-  function contextFor(dryRun: boolean): Core.M3LCommandContext {
-    return {
-      output: consoleOutput,
-      // No handlers: `execute` deliberately does not forward this port into
-      // `M3LScript` at all, so a sink-less logger is the honest stand-in.
-      logger: new Core.M3LLogger([]),
-      signal: undefined,
-      dryRun,
-    };
-  }
+/** A host port bag with the fallback writer and no cancellation. */
+function contextFor(dryRun: boolean): Core.M3LCommandContext {
+  return {
+    output: consoleOutput,
+    // No handlers: `execute` deliberately does not forward this port into
+    // `M3LScript` at all, so a sink-less logger is the honest stand-in.
+    logger: new Core.M3LLogger([]),
+    signal: undefined,
+    dryRun,
+  };
+}
 
+describe("sqs-etl execute wiring", () => {
   /**
    * Invokes the `onError` hook `execute` composed onto this script's own
    * hooks — the seam that lets `execute` observe a failure at all, since
@@ -368,10 +369,9 @@ describe("sqs-etl execute wiring", () => {
     vi.clearAllMocks();
   });
 
-  it("hands runScript a callable main function", () => {
-    return commandModule.execute({}, contextFor(true)).then(() => {
-      expect(typeof runMocks.runScriptCalls[0]?.mainFn).toBe("function");
-    });
+  it("hands runScript a callable main function", async () => {
+    await commandModule.execute({}, contextFor(true));
+    expect(typeof runMocks.runScriptCalls[0]?.mainFn).toBe("function");
   });
 
   // The regression guard for a defect a previous revision shipped: passing
@@ -398,6 +398,27 @@ describe("sqs-etl execute wiring", () => {
       readonly config: { readonly params: unknown };
     };
     expect(options.config.params).toBe(configParameters);
+  });
+
+  // `hooks: capture.hooks` must SPREAD this script's declared hooks, not
+  // replace them: `captureFailures` adds an `onError` for the outcome, and a
+  // composition that dropped the spread would silently stop running
+  // `onBeforeRun` — which is what captures the correlation id — on the
+  // in-process path only. Asserted by key set plus a same-reference check on
+  // every hook the script actually declares.
+  it("composes onError onto the script's own declared hooks", async () => {
+    await commandModule.execute({}, contextFor(true));
+
+    const options = runMocks.scriptOptions[0] as {
+      readonly hooks: Record<string, unknown>;
+    };
+    for (const [name, declared] of Object.entries(
+      hooks as Record<string, unknown>,
+    )) {
+      if (name === "onError") continue;
+      expect(options.hooks[name]).toBe(declared);
+    }
+    expect(typeof options.hooks["onError"]).toBe("function");
   });
 
   // `context.dryRun` is the one port U6 forwards; the others are accepted and
@@ -456,5 +477,34 @@ describe("sqs-etl execute wiring", () => {
     await expect(commandModule.execute({}, contextFor(false))).resolves.toEqual(
       { status: "interrupted" },
     );
+  });
+});
+
+describe("sqs-etl cross-parameter validator parity", () => {
+  afterEach(() => {
+    runMocks.scriptOptions.length = 0;
+    runMocks.runScriptCalls.length = 0;
+    vi.clearAllMocks();
+  });
+
+  // The gap this closes: `command.ts` and `main.ts` are two independent
+  // composition sites, and `command.ts`'s own comment says a validator wired in
+  // one is not wired in the other. Nothing asserted it — dropping
+  // `validate: configValidators` from `execute` left every other test green,
+  // and the normal suite constructs `M3LConfigSchema` directly (bypassing
+  // `M3LScript`) so it would not notice either. This is the `rds-data-sql` A2b
+  // bug: an exported validator array proves nothing about enforcement.
+  it("wires config.ts's validators into the in-process composition", async () => {
+    await commandModule.execute({}, contextFor(true));
+
+    const options = runMocks.scriptOptions[0] as {
+      readonly config: { readonly validate?: unknown };
+    };
+    expect(options.config.validate).toBe(configValidators);
+  });
+
+  it("declares at least one validator to wire", () => {
+    // Guards the assertion above from passing vacuously if the array empties.
+    expect(configValidators.length).toBeGreaterThan(0);
   });
 });
