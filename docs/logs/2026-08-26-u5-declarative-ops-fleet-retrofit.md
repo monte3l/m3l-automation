@@ -4,7 +4,7 @@ This log covers **U5** (issue #529), the fleet half of ADR-0055: retrofitting al
 13 selector-bearing consumer scripts from an opaque `oneOf` closure onto the
 declarative operation model that landed in `core/config` at U4 (#666). It ran
 through the hub-and-spoke model across three PRs by script cluster, and records
-what shipped, what matched the plan, the eleven divergences worth remembering,
+what shipped, what matched the plan, the twelve divergences worth remembering,
 and the durable lessons — three of which were promoted into rules/agents in the
 same change set.
 
@@ -274,8 +274,40 @@ reviewer, and tell the reviewer to diff against the **merge base**
 (`git diff $(git merge-base HEAD origin/main)`) so branch staleness cannot
 masquerade as a change.
 
+### 12. `pnpm knip` failed CI on both open PRs — a test-brief instruction stranded six exports
+
+After PR1 merged, #675 and #676 both failed CI's Governance-gates lane on
+`pnpm knip`: six unused exports in #675 (every PR2 declaration list) and one
+in #676 (`S3_OBJECTS_OPERATION_DECLARATIONS`). The declarations are exported from
+`src/config.ts` but had no consumer, so knip's static-reachability check flagged
+them. Fixed by importing each declaration in its test and asserting projection
+identity — the shape merged PR1 already uses — keeping the hand-authored tables
+untouched.
+
+**Why it happened:** my PR2/PR3 test briefs said to assert `requiredParameters`
+against a table "hand-authored… **NOT** re-derived from the src export". That is
+the right instruction on its own terms — it makes the test catch a `src` typo
+rather than echo it — but the test file was the export's _only_ consumer, so the
+instruction silently orphaned it. PR1's brief said the opposite ("`toEqual`
+against the file's `*_OPERATION_DECLARATIONS` export"), which is exactly why PR1
+passed and the other two didn't. `knip` is CI-only, absent from `pre-push`, so
+all 12 local gates were green on both PRs. `.claude/rules/scripts.md` already
+carries the rule ("knip fails … a consumer-less export — re-run `pnpm knip`");
+I read it this session and still didn't run it.
+
+**Fix for future:** keep both assertions — import the declaration for projection
+identity _and_ hand-author the table for content. And treat `pnpm knip` as a
+manual gate after any change that adds, removes, or orphans an export, because
+no local hook runs it.
+
 ## Lessons learned
 
+- **A test-authoring instruction can break a gate two lanes away.** Telling a
+  test author not to import from `src` (so the test catches a typo instead of
+  echoing it) orphaned six exports and failed `pnpm knip` on two PRs. Keep both
+  assertions: import the export for projection identity, hand-author the table
+  for content. And run `pnpm knip` manually — it is CI-only, so `pre-push` green
+  means nothing for it. _(promoted → .claude/rules/tests.md)_
 - **A rule in a path-scoped file only fires on that path.** The
   `build`-vs-`typecheck` / `as const satisfies` trap was already documented in
   `.claude/rules/tests.md` with a prior log cited — and recurred anyway, because
