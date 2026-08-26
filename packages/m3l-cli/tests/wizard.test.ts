@@ -145,6 +145,7 @@ interface ScriptedPrompt {
   readonly password: ReturnType<typeof vi.fn>;
   readonly number: ReturnType<typeof vi.fn>;
   readonly confirm: ReturnType<typeof vi.fn>;
+  readonly select: ReturnType<typeof vi.fn>;
 }
 
 /** Builds a hand-scripted fake prompt port — never `vi.mock`, per the tests convention. */
@@ -155,6 +156,7 @@ function createScriptedPrompt(): ScriptedPrompt {
     password: vi.fn(),
     number: vi.fn(),
     confirm: vi.fn(),
+    select: vi.fn(),
   };
 }
 
@@ -782,9 +784,214 @@ describe("runWizard — type contract", () => {
     expectTypeOf<M3LCliWizardPrompt["number"]>().returns.toEqualTypeOf<
       Promise<number>
     >();
+    expectTypeOf<M3LCliWizardPrompt["select"]>().returns.toEqualTypeOf<
+      Promise<string>
+    >();
   });
 
-  test("the real Core.M3LPrompt structurally satisfies M3LCliWizardPrompt", () => {
+  test("the real Core.M3LPrompt structurally satisfies the widened M3LCliWizardPrompt (U8 — gains select)", () => {
     expectTypeOf<Core.M3LPrompt>().toExtend<M3LCliWizardPrompt>();
+  });
+});
+
+describe("runWizard — operation scoping (U8)", () => {
+  const operationDescriptor = makeDescriptor({
+    name: "operation",
+    type: "STRING",
+    operations: [
+      {
+        name: "get",
+        description: "Fetch an item",
+        requiredParameters: ["key"],
+      },
+      {
+        name: "put",
+        description: "Store an item",
+        requiredParameters: ["bucket"],
+      },
+    ],
+  });
+  const keyDescriptor = makeDescriptor({
+    name: "key",
+    type: "STRING",
+    required: false,
+  });
+  const bucketDescriptor = makeDescriptor({
+    name: "bucket",
+    type: "STRING",
+    required: false,
+  });
+  const regionDescriptor = makeDescriptor({ name: "region", type: "STRING" });
+
+  test("a descriptor declaring operations is prompted via select, with choices rendered as 'name — description' and value = operation.name", async () => {
+    discoverScriptsMock.mockReturnValue([jsonEtlCandidate]);
+    loadParametersCachedMock.mockResolvedValue([
+      operationDescriptor,
+      keyDescriptor,
+    ]);
+    const prompt = createScriptedPrompt();
+    prompt.autocomplete.mockResolvedValue("json-etl");
+    prompt.select.mockResolvedValue("get");
+    prompt.text.mockResolvedValue("abc123");
+    prompt.confirm.mockResolvedValueOnce(false).mockResolvedValueOnce(false);
+    translateArgvMock.mockReturnValue([]);
+
+    await runWizard(buildContext(), { prompt, isTTY: true });
+
+    expect(prompt.select).toHaveBeenCalledTimes(1);
+    expect(prompt.text).not.toHaveBeenCalledWith(
+      expect.stringContaining("operation") as unknown,
+      expect.anything() as unknown,
+    );
+    const [message, choices] = prompt.select.mock.calls[0] as [
+      string,
+      readonly { readonly value: string; readonly name?: string }[],
+    ];
+    expect(message).toContain("operation");
+    expect(choices).toEqual([
+      { value: "get", name: "get — Fetch an item" },
+      { value: "put", name: "put — Store an item" },
+    ]);
+
+    const [, values] = translateArgvMock.mock.calls[0] as [
+      readonly M3LCliParameterDescriptor[],
+      Record<string, unknown>,
+    ];
+    expect(values["operation"]).toBe("get");
+  });
+
+  test("a scoped parameter required by a DIFFERENT operation than the one chosen is never prompted, and is absent from values, summary, and argv", async () => {
+    discoverScriptsMock.mockReturnValue([jsonEtlCandidate]);
+    loadParametersCachedMock.mockResolvedValue([
+      operationDescriptor,
+      keyDescriptor,
+      bucketDescriptor,
+    ]);
+    const { output, stdoutLines } = buildOutputCollector();
+    const prompt = createScriptedPrompt();
+    prompt.autocomplete.mockResolvedValue("json-etl");
+    prompt.select.mockResolvedValue("get");
+    prompt.text.mockResolvedValue("abc123");
+    prompt.confirm.mockResolvedValueOnce(false).mockResolvedValueOnce(false);
+    translateArgvMock.mockReturnValue([]);
+
+    await runWizard(buildContext({ output }), { prompt, isTTY: true });
+
+    expect(prompt.text).toHaveBeenCalledTimes(1); // only 'key', never 'bucket'
+    expect(prompt.text).not.toHaveBeenCalledWith(
+      expect.stringContaining("bucket") as unknown,
+      expect.anything() as unknown,
+    );
+    const [, values] = translateArgvMock.mock.calls[0] as [
+      readonly M3LCliParameterDescriptor[],
+      Record<string, unknown>,
+    ];
+    expect(Object.hasOwn(values, "bucket")).toBe(false);
+    expect(stdoutLines.join("\n")).not.toContain("bucket");
+  });
+
+  test("a parameter required by the CHOSEN operation, left blank twice, gets the same re-ask-once-then-warn-and-skip treatment as a required: true parameter — even though its own required field is false", async () => {
+    discoverScriptsMock.mockReturnValue([jsonEtlCandidate]);
+    loadParametersCachedMock.mockResolvedValue([
+      operationDescriptor,
+      keyDescriptor,
+    ]);
+    const { output, stdoutLines, stderrLines } = buildOutputCollector();
+    const prompt = createScriptedPrompt();
+    prompt.autocomplete.mockResolvedValue("json-etl");
+    prompt.select.mockResolvedValue("get");
+    prompt.text.mockResolvedValueOnce("").mockResolvedValueOnce("");
+    prompt.confirm.mockResolvedValueOnce(false).mockResolvedValueOnce(false);
+    translateArgvMock.mockReturnValue([]);
+
+    await runWizard(buildContext({ output }), { prompt, isTTY: true });
+
+    expect(prompt.text).toHaveBeenCalledTimes(2);
+    const rendered = [...stdoutLines, ...stderrLines].join("\n");
+    expect(rendered).toMatch(/key/i);
+    expect(rendered.toLowerCase()).toContain("skip");
+    const [, values] = translateArgvMock.mock.calls[0] as [
+      readonly M3LCliParameterDescriptor[],
+      Record<string, unknown>,
+    ];
+    expect(Object.hasOwn(values, "key")).toBe(false);
+  });
+
+  test("a parameter with no declared operations and not scoped by any operation is prompted exactly as before", async () => {
+    discoverScriptsMock.mockReturnValue([jsonEtlCandidate]);
+    loadParametersCachedMock.mockResolvedValue([
+      operationDescriptor,
+      keyDescriptor,
+      regionDescriptor,
+    ]);
+    const prompt = createScriptedPrompt();
+    prompt.autocomplete.mockResolvedValue("json-etl");
+    prompt.select.mockResolvedValue("get");
+    prompt.text
+      .mockResolvedValueOnce("abc123")
+      .mockResolvedValueOnce("us-east-1");
+    prompt.confirm.mockResolvedValueOnce(false).mockResolvedValueOnce(false);
+    translateArgvMock.mockReturnValue([]);
+
+    await runWizard(buildContext(), { prompt, isTTY: true });
+
+    expect(prompt.text).toHaveBeenCalledTimes(2);
+    const [, values] = translateArgvMock.mock.calls[0] as [
+      readonly M3LCliParameterDescriptor[],
+      Record<string, unknown>,
+    ];
+    expect(values["region"]).toBe("us-east-1");
+  });
+
+  test("a parameter that WOULD be scoped once an operation is chosen is still always prompted when it is declared BEFORE the operation-selector descriptor, regardless of which operation gets chosen", async () => {
+    // `bucket` is required by the "put" operation (part of the union
+    // `collectAllParameterValues` scopes against), but it is declared
+    // BEFORE `operation` in the descriptors array — per this file's own
+    // `collectAllParameterValues` TSDoc, `chosenOperation` only updates
+    // AFTER the selector descriptor's own turn completes, so at the point
+    // `bucket` is reached during iteration no operation has been chosen
+    // yet and it must always be prompted, even though the operation chosen
+    // below ("get") does not itself require `bucket`.
+    const earlyBucketDescriptor = makeDescriptor({
+      name: "bucket",
+      type: "STRING",
+      required: false,
+    });
+    const lateOperationDescriptor = makeDescriptor({
+      name: "operation",
+      type: "STRING",
+      operations: [
+        {
+          name: "get",
+          description: "Fetch an item",
+          requiredParameters: ["key"],
+        },
+        {
+          name: "put",
+          description: "Store an item",
+          requiredParameters: ["bucket"],
+        },
+      ],
+    });
+    discoverScriptsMock.mockReturnValue([jsonEtlCandidate]);
+    loadParametersCachedMock.mockResolvedValue([
+      earlyBucketDescriptor,
+      lateOperationDescriptor,
+    ]);
+    const prompt = createScriptedPrompt();
+    prompt.autocomplete.mockResolvedValue("json-etl");
+    prompt.text.mockResolvedValue("my-bucket");
+    prompt.select.mockResolvedValue("get");
+    prompt.confirm.mockResolvedValueOnce(false).mockResolvedValueOnce(false);
+    translateArgvMock.mockReturnValue([]);
+
+    await runWizard(buildContext(), { prompt, isTTY: true });
+
+    expect(prompt.text).toHaveBeenCalledTimes(1);
+    const [, values] = translateArgvMock.mock.calls[0] as [
+      readonly M3LCliParameterDescriptor[],
+      Record<string, unknown>,
+    ];
+    expect(values["bucket"]).toBe("my-bucket");
   });
 });
