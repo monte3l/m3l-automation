@@ -1,8 +1,8 @@
 # Plan: A5b — bound the unbounded pagination loops
 
-**Status: shipped** — landed as PR #664 (library) and PR #665 (fleet +
-tracker close-out) on `fix/a5b-bound-pagination-loops` and
-`fix/a5b-fleet-close-out`, closing issue #506. Work log:
+**Status: shipped** — the library half landed as PR #664 on
+`fix/a5b-bound-pagination-loops`; the fleet fix + this tracker close-out
+landed on `fix/a5b-fleet-close-out`, closing issue #506 on merge. Work log:
 [`docs/logs/2026-08-26-a5b-bound-pagination-loops.md`](../../logs/2026-08-26-a5b-bound-pagination-loops.md).
 
 ## Context
@@ -75,12 +75,12 @@ signal).
   covering both throwers) and one should-fix deferred (narrowing the cursor
   value type would require widening the public `DynamoDBKey` type — out of
   scope for a patch fix). Squash-merged as `b373cb4`.
-- PR #665: 3 new tests on `scripts/eventbridge-schedules`'s `list-rules`
-  step; 2-spoke review, clean. Tracker rows flipped —
+- The fleet fix: 3 new tests on `scripts/eventbridge-schedules`'s
+  `list-rules` step; 2-spoke review, clean. Tracker rows flipped —
   `docs/plans/IMPLEMENTATION.md`'s **A5b** `To Do → Done`,
   `docs/ROADMAP.md`'s **A5** `To Do → Done` (closing pre-existing drift from
   A5's own PR #501 landing without a ROADMAP flip).
-- `pnpm sync:hub` re-applied after merge to archive issue #506.
+- `pnpm sync:hub` re-applied after this PR merges, to archive issue #506.
 
 Full narrative, spoke incidents, and durable lessons:
 [`docs/logs/2026-08-26-a5b-bound-pagination-loops.md`](../../logs/2026-08-26-a5b-bound-pagination-loops.md).

@@ -10,7 +10,7 @@ hub-and-spoke TDD pipeline twice (once per PR): `test-author` RED,
 `code-implementer` GREEN, a multi-spoke review round, a fix round, a second
 pre-push review pass, then merge.
 
-Plan of record: [`docs/plans/2026-08-26-a5b-bound-pagination-loops.md`](../plans/archive/2026-08-26-a5b-bound-pagination-loops.md)
+Plan of record: [`docs/plans/archive/2026-08-26-a5b-bound-pagination-loops.md`](../plans/archive/2026-08-26-a5b-bound-pagination-loops.md)
 
 ## Summary
 
