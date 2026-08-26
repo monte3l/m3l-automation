@@ -33,12 +33,14 @@ import {
   BANNED_EXACT_NAMES,
   BANNED_LEADING_SEGMENTS,
   DOC_PAGE_TEMPLATE,
+  OPTIONAL_EXACT_FILES,
   PACKAGE_TEMPLATE_FILES,
   PURPOSE_MAX_LENGTH,
   REQUIRED_EXACT_FILES,
   REQUIRED_GLOBS,
   SCRIPT_NAME_RE,
   TEMPLATE_DIR,
+  commandModuleErrors,
   docPagePath,
   packageManifestErrors,
   pascalCase,
@@ -247,6 +249,16 @@ describe("PACKAGE_TEMPLATE_FILES", () => {
     expect(stepsEntry?.target).toBe("src/steps/run-__SCRIPT_NAME__.ts");
   });
 
+  // The generator emits the ADR-0054 command-module seam for every NEW script
+  // even though the checker only requires it optionally — that asymmetry is
+  // what lets the fleet catch up without a flag day.
+  test("emits the command-module seam for every newly scaffolded script", () => {
+    expect(PACKAGE_TEMPLATE_FILES).toContainEqual({
+      template: "src/command.ts.tmpl",
+      target: "src/command.ts",
+    });
+  });
+
   test("substituting tokens into every target resolves the __SCRIPT_NAME__ placeholder", () => {
     const tokens = scriptTokens("data-sync", "purpose");
     const resolvedTargets: string[] = PACKAGE_TEMPLATE_FILES.map(
@@ -280,6 +292,85 @@ describe("REQUIRED_GLOBS", () => {
       { dir: "src/steps", suffix: ".ts", what: "a steps/ module" },
       { dir: "tests", suffix: ".test.ts", what: "the config smoke test" },
     ]);
+  });
+});
+
+describe("OPTIONAL_EXACT_FILES", () => {
+  test("pairs src/command.ts with its own validator", () => {
+    expect(OPTIONAL_EXACT_FILES).toEqual([
+      { file: "src/command.ts", validate: commandModuleErrors },
+    ]);
+  });
+
+  // The negative IS the contract: a pre-U6 script with no src/command.ts must
+  // keep passing check:script-scaffold. Promoting the path into
+  // REQUIRED_EXACT_FILES is the deliberate fleet-catch-up event.
+  test("keeps src/command.ts out of the required tier", () => {
+    expect(REQUIRED_EXACT_FILES).not.toContain("src/command.ts");
+  });
+});
+
+describe("commandModuleErrors", () => {
+  /** A minimal command.ts satisfying every assertion the checker makes. */
+  const conformant = [
+    'import { Core } from "@m3l-automation/m3l-common";',
+    'import { configParameters } from "./config.js";',
+    "export const commandModule: Core.M3LCommandModule = {",
+    "  configParameters,",
+    "  async execute(_parameters, context) {",
+    "    await Core.runScript(script, () => runMain(script), {",
+    "      dryRun: context.dryRun,",
+    "    });",
+    "  },",
+    "};",
+  ].join("\n");
+
+  test("returns no errors for a conformant command module", () => {
+    expect(commandModuleErrors(conformant)).toEqual([]);
+  });
+
+  test("flags a missing annotated commandModule export", () => {
+    const src = conformant.replace(
+      "export const commandModule: Core.M3LCommandModule = {",
+      "export const commandModule = {",
+    );
+    expect(commandModuleErrors(src)).toEqual([
+      expect.stringContaining("export const commandModule"),
+    ]);
+  });
+
+  test("flags a command module that does not compose Core.runScript", () => {
+    const src = conformant.replace(
+      "    await Core.runScript(script, () => runMain(script), {",
+      "    await script.run(() => runMain(script), {",
+    );
+    expect(commandModuleErrors(src)).toEqual([
+      expect.stringContaining("Core.runScript"),
+    ]);
+  });
+
+  test("flags a second declared schema instead of config.ts's", () => {
+    const src = conformant.replace(
+      'import { configParameters } from "./config.js";',
+      "const configParameters: Core.M3LConfigParameter[] = [];",
+    );
+    expect(commandModuleErrors(src)).toEqual([
+      expect.stringContaining("./config.js"),
+    ]);
+  });
+
+  test("flags a process.exit call", () => {
+    const src = conformant.replace(
+      "  },\n};",
+      "    process.exit(1);\n  },\n};",
+    );
+    expect(commandModuleErrors(src)).toEqual([
+      expect.stringContaining("process.exit"),
+    ]);
+  });
+
+  test("reports every problem at once rather than stopping at the first", () => {
+    expect(commandModuleErrors("export const nothing = 1;\n")).toHaveLength(3);
   });
 });
 

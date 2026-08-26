@@ -5,7 +5,8 @@ description: >-
   @m3l-automation/m3l-common via workspace:* — the greenfield entry point for a consumer
   script that has no directory yet. Runs the deterministic generator (pnpm scaffold:script),
   which emits the ratified modular skeleton (thin main.ts composition root + config.ts +
-  hooks.ts + starter steps/ module + config smoke test + README + contract page) from
+  hooks.ts + command.ts (the ADR-0054 command-module seam) + starter steps/ module +
+  config smoke test + README + contract page) from
   templates/script/ and wires the root tsconfig reference; then installs, builds, smoke-runs,
   and hands off to implementing-scripts for the real logic. Use this whenever the user asks
   to add, create, or scaffold a new automation/consumer script, job, or CLI under scripts/ —
