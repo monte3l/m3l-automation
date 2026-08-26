@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { Core } from "@m3l-automation/m3l-common";
 
@@ -13,6 +13,12 @@ import { configParameters } from "../src/config.js";
  * one assertion would widen the compiler surface for every script. Resolved
  * from this file's own URL, so it does not depend on the runner's working
  * directory.
+ *
+ * Read for real rather than mocked, deliberately: this file IS the artifact
+ * under comparison. Mocking it would assert a fixture the test itself wrote
+ * against the descriptor, which detects no drift at all — the opposite of the
+ * point. The read is of a committed file inside this package, so it is neither
+ * a network nor a mutating dependency.
  */
 interface PackageManifest {
   readonly name: string;
@@ -221,6 +227,10 @@ describe("json-etl outcome-to-exit-code parity", () => {
 });
 
 describe("json-etl fallback command output port", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   // The port exists so a caller with no host (this test today, a local
   // invocation before the CLI's in-process renderer ships) can build an
   // `M3LCommandContext`. `colorEnabled` is false by construction, not by
@@ -232,5 +242,28 @@ describe("json-etl fallback command output port", () => {
     expect(typeof output.info).toBe("function");
     expect(typeof output.error).toBe("function");
     expect(typeof output.heading).toBe("function");
+  });
+
+  // Which STREAM each writer targets is the part a host relies on: `error`
+  // must not land on stdout, or a caller piping stdout would swallow the
+  // diagnostics. Asserted by spying on the streams rather than by reading the
+  // source.
+  it("writes info and heading to stdout, error to stderr", () => {
+    const out = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    const err = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
+
+    consoleOutput.info("an info line");
+    consoleOutput.heading("A heading");
+    consoleOutput.error("an error line");
+
+    expect(out.mock.calls.map(([chunk]) => chunk)).toEqual([
+      "an info line\n",
+      "A heading\n",
+    ]);
+    expect(err.mock.calls.map(([chunk]) => chunk)).toEqual(["an error line\n"]);
   });
 });
