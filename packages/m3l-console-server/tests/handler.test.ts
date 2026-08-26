@@ -24,6 +24,7 @@ import { createRouter } from "../src/http/router.js";
 import type { M3LRoute, M3LRouteAuth } from "../src/http/router.js";
 import { createConsoleRequestListener } from "../src/http/handler.js";
 import type { M3LConsoleMiddleware } from "../src/http/middleware.js";
+import { M3LConsoleError } from "../src/errors/console-error.js";
 
 /** A capturing `M3LLoggerHandler`: records every event it is handed. */
 function createCapturingLogger(): {
@@ -490,6 +491,80 @@ describe("createConsoleRequestListener — a handler that throws", () => {
     expect(JSON.stringify(diagnostic)).toContain(
       "distinctive underlying cause: connection refused",
     );
+  });
+
+  test("a handler that throws ERR_CONSOLE_UNAVAILABLE yields 503 and emits NO diagnostic line — exactly one outcome line total", async () => {
+    const { logger, events, logged } = createResolvingLogger();
+    const router = createRouter([
+      route({
+        method: "GET",
+        path: "/draining",
+        handler: () => {
+          throw new M3LConsoleError(
+            "ERR_CONSOLE_UNAVAILABLE",
+            "the server is draining and refuses new requests",
+          );
+        },
+      }),
+    ]);
+    const listener = createConsoleRequestListener({
+      router,
+      middlewares: [],
+      logger,
+      signal: new AbortController().signal,
+    });
+    const req = createFakeIncomingMessage({ url: "/draining" });
+    const { res, written } = createRecordingServerResponse();
+
+    listener(req, res);
+    await logged;
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(written.status).toBe(503);
+
+    // This is the whole point of the `fault` field: an origin-only gate
+    // (the old isCallerOriginError) would treat this library-origin code as
+    // a fault and log a diagnostic line for it too, producing 2 events.
+    expect(events).toHaveLength(1);
+    expect(findDiagnosticEvent(events)).toBeUndefined();
+    expect(findOutcomeEvent(events, 503)).toBeDefined();
+  });
+
+  test("a handler that throws ERR_CONSOLE_INTERNAL still emits its diagnostic line (the gate is not disabled wholesale)", async () => {
+    const { logger, events, logged } = createResolvingLogger();
+    const router = createRouter([
+      route({
+        method: "GET",
+        path: "/internal-boom",
+        handler: () => {
+          throw new M3LConsoleError(
+            "ERR_CONSOLE_INTERNAL",
+            "genuine internal failure, distinct from the generic envelope text",
+          );
+        },
+      }),
+    ]);
+    const listener = createConsoleRequestListener({
+      router,
+      middlewares: [],
+      logger,
+      signal: new AbortController().signal,
+    });
+    const req = createFakeIncomingMessage({ url: "/internal-boom" });
+    const { res, written } = createRecordingServerResponse();
+
+    listener(req, res);
+    await logged;
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(written.status).toBe(500);
+    expect(events).toHaveLength(2);
+    const diagnostic = findDiagnosticEvent(events);
+    expect(diagnostic).toBeDefined();
+    expect(JSON.stringify(diagnostic)).toContain(
+      "genuine internal failure, distinct from the generic envelope text",
+    );
+    expect(findOutcomeEvent(events, 500)).toBeDefined();
   });
 });
 

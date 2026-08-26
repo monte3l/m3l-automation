@@ -13,7 +13,7 @@ import {
 import type { M3LConsoleErrorCode } from "../src/errors/console-error.js";
 
 describe("M3LConsoleErrorCode", () => {
-  test("is the exact nine-member union the contract declares", () => {
+  test("is the exact ten-member union the contract declares", () => {
     expectTypeOf<M3LConsoleErrorCode>().toEqualTypeOf<
       | "ERR_CONSOLE_CONFIG_INVALID"
       | "ERR_CONSOLE_BAD_REQUEST"
@@ -24,6 +24,7 @@ describe("M3LConsoleErrorCode", () => {
       | "ERR_CONSOLE_INTERNAL"
       | "ERR_CONSOLE_DRAIN_FAILED"
       | "ERR_CONSOLE_LISTEN_FAILED"
+      | "ERR_CONSOLE_UNAVAILABLE"
     >();
   });
 
@@ -104,6 +105,17 @@ describe("M3LConsoleError", () => {
     );
 
     expect(Core.classifyErrorCode(error.code)).toBeUndefined();
+  });
+
+  test("carries ERR_CONSOLE_UNAVAILABLE and is caught by isConsoleError and instanceof Core.M3LError", () => {
+    const error = new M3LConsoleError(
+      "ERR_CONSOLE_UNAVAILABLE",
+      "the server is draining and refuses new requests",
+    );
+
+    expect(error.code).toBe("ERR_CONSOLE_UNAVAILABLE");
+    expect(isConsoleError(error)).toBe(true);
+    expect(error).toBeInstanceOf(Core.M3LError);
   });
 });
 
