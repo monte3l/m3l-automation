@@ -37,6 +37,21 @@
   },
   {
     "namespace": "core",
+    "name": "cli-contract",
+    "importPath": "@m3l-automation/m3l-common/core",
+    "status": "✅",
+    "wired": true,
+    "docPath": "docs/reference/core/cli-contract.md",
+    "symbols": [
+      "M3LCommandModule",
+      "M3LCommandContext",
+      "M3LCommandOutcome",
+      "mapCommandOutcomeToExitCode",
+      "M3LCommandOutput"
+    ]
+  },
+  {
+    "namespace": "core",
     "name": "config",
     "importPath": "@m3l-automation/m3l-common/core",
     "status": "✅",
