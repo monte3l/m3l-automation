@@ -93,8 +93,9 @@ paths:
   `commandModule: Core.M3LCommandModule` so a host (the `m3l` CLI today, an
   agent runtime later) can invoke the script **in-process** instead of spawning
   `dist/main.js` and reading an integer off a dead child. `pnpm scaffold:script`
-  emits it for every new script; the 13 pre-U6 fleet scripts have not adopted it
-  and are not required to. Enforcement: `check:script-scaffold`'s
+  emits it — together with `tests/command.test.ts`, which covers the
+  parity-critical outcome mapping — for every new script; the 13 pre-U6 fleet
+  scripts have not adopted it and are not required to. Enforcement: `check:script-scaffold`'s
   optional-but-verified tier (`OPTIONAL_EXACT_FILES` in
   `bin/lib/script-scaffold.mjs`) — absent passes; present must export the
   annotated descriptor, compose `Core.runScript` itself, import
@@ -122,6 +123,12 @@ paths:
 abortError }` maps to 1-4 while the spawn path exits 5. Detect by CODE, not
   class (ADR-0049): `error instanceof Error && Core.hasProperty(error, "code")
 && error.code === "ERR_OPERATION_ABORTED"`.
+- **Export the outcome mapper.** `toOutcome` takes only the
+  `Pick<Core.M3LScript, "recovery" | "recoveryTotal">` slice it reads, so
+  `tests/command.test.ts` can drive every arm — including the truncated-ring
+  and thrown-`undefined` cases — without constructing a script or reaching AWS.
+  It is the parity-critical function in the file; leaving it private leaves it
+  untested. (`command.ts` is a knip entry, so its extra export is not flagged.)
 - **Report `script.recoveryTotal`, not `script.recovery.length`, as
   `partial.recovered`** — `recovery` is a ring buffer truncated at
   `M3L_RECOVERY_LIMIT`, so `.length` under-reports. Keep the _predicate_ as

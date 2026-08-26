@@ -200,6 +200,7 @@ export const PACKAGE_TEMPLATE_FILES = [
     target: "src/steps/run-__SCRIPT_NAME__.ts",
   },
   { template: "tests/config.test.ts.tmpl", target: "tests/config.test.ts" },
+  { template: "tests/command.test.ts.tmpl", target: "tests/command.test.ts" },
   { template: "README.md.tmpl", target: "README.md" },
 ];
 
@@ -290,7 +291,9 @@ const COMMAND_MODULE_CONFIG_IMPORT_RE =
  * `process.exit` — in-process that takes the host down with it. The ESLint
  * `no-restricted-properties` ban over every script source file is the primary
  * guard; this is its manifest-level backstop, so a script that somehow
- * suppressed the lint rule still fails the scaffold gate.
+ * suppressed the lint rule still fails the scaffold gate. Matched against
+ * comment-stripped source, so a comment that documents the ban is not itself
+ * a violation.
  */
 const COMMAND_MODULE_PROCESS_EXIT_RE = /process\s*\.\s*exit\s*\(/;
 
@@ -304,22 +307,32 @@ const COMMAND_MODULE_PROCESS_EXIT_RE = /process\s*\.\s*exit\s*\(/;
  */
 export function commandModuleErrors(commandSrc) {
   const problems = [];
-  if (!COMMAND_MODULE_EXPORT_RE.test(commandSrc)) {
+  // Strip comments before matching, the same way `fileExports()` in
+  // bin/lib/reference-index.mjs does. It matters in BOTH directions here: a
+  // `process.exit(1)` written inside a comment that DOCUMENTS the ban would
+  // otherwise fail the gate, and an `export const commandModule: ...` inside a
+  // TSDoc `@example` fence would otherwise satisfy it. The line-comment strip
+  // is anchored to the line start (allowing leading whitespace) so a real code
+  // line containing `//` mid-line is never truncated.
+  const scannable = commandSrc
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*\/\/.*$/gm, "");
+  if (!COMMAND_MODULE_EXPORT_RE.test(scannable)) {
     problems.push(
       "must declare `export const commandModule: Core.M3LCommandModule` — the ADR-0054 descriptor a host discovers. The explicit annotation (not `satisfies`) is required by `isolatedDeclarations`.",
     );
   }
-  if (!COMMAND_MODULE_COMPOSES_RE.test(commandSrc)) {
+  if (!COMMAND_MODULE_COMPOSES_RE.test(scannable)) {
     problems.push(
       "must compose the script itself via `Core.runScript(...)` — ADR-0054's parity guarantee is that the in-process path runs the same composition root the spawned child would, not a bypass of it.",
     );
   }
-  if (!COMMAND_MODULE_CONFIG_IMPORT_RE.test(commandSrc)) {
+  if (!COMMAND_MODULE_CONFIG_IMPORT_RE.test(scannable)) {
     problems.push(
       'must import `configParameters` from "./config.js" — one declared schema per script, or the spawn and in-process paths drift apart silently.',
     );
   }
-  if (COMMAND_MODULE_PROCESS_EXIT_RE.test(commandSrc)) {
+  if (COMMAND_MODULE_PROCESS_EXIT_RE.test(scannable)) {
     problems.push(
       "must never call `process.exit` — a hosted command resolves an M3LCommandOutcome; exiting takes the in-process host down with it (ADR-0054).",
     );

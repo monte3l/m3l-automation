@@ -259,6 +259,17 @@ describe("PACKAGE_TEMPLATE_FILES", () => {
     });
   });
 
+  // The seam ships with its own test, not just its own source: `execute`'s
+  // outcome mapping is the parity-critical half of ADR-0054, and
+  // REQUIRED_GLOBS is satisfied by the config smoke test alone, so a
+  // command.ts emitted without a command.test.ts would ship untested.
+  test("emits a command-module test alongside the seam", () => {
+    expect(PACKAGE_TEMPLATE_FILES).toContainEqual({
+      template: "tests/command.test.ts.tmpl",
+      target: "tests/command.test.ts",
+    });
+  });
+
   test("substituting tokens into every target resolves the __SCRIPT_NAME__ placeholder", () => {
     const tokens = scriptTokens("data-sync", "purpose");
     const resolvedTargets: string[] = PACKAGE_TEMPLATE_FILES.map(
@@ -371,6 +382,44 @@ describe("commandModuleErrors", () => {
 
   test("reports every problem at once rather than stopping at the first", () => {
     expect(commandModuleErrors("export const nothing = 1;\n")).toHaveLength(3);
+  });
+
+  // Comments are stripped before matching, in both directions.
+  test("does not flag a process.exit written inside a comment", () => {
+    const src = `${conformant}\n// Never write process.exit(1) here.\n`;
+    expect(commandModuleErrors(src)).toEqual([]);
+  });
+
+  test("does not flag a process.exit written inside a block comment", () => {
+    const src = `${conformant}\n/* do not call process.exit(1) */\n`;
+    expect(commandModuleErrors(src)).toEqual([]);
+  });
+
+  test("is not satisfied by a commandModule export inside a TSDoc example", () => {
+    const src = [
+      "/**",
+      " * @example",
+      " * ```ts",
+      " * export const commandModule: Core.M3LCommandModule = {};",
+      " * ```",
+      " */",
+      "export const notTheDescriptor = 1;",
+    ].join("\n");
+    expect(commandModuleErrors(src)).toEqual([
+      expect.stringContaining("export const commandModule"),
+      expect.stringContaining("Core.runScript"),
+      expect.stringContaining("./config.js"),
+    ]);
+  });
+
+  // The line-comment strip is anchored to the line start, so a real code line
+  // carrying `//` mid-line (a URL literal, a regex) is never truncated.
+  test("keeps matching a real declaration on a line containing // mid-line", () => {
+    const src = conformant.replace(
+      "  configParameters,",
+      '  docs: "https://example.invalid/docs",\n  configParameters,',
+    );
+    expect(commandModuleErrors(src)).toEqual([]);
   });
 });
 
