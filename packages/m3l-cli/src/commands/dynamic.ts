@@ -10,6 +10,7 @@
 import { parseArgs } from "node:util";
 
 import { M3LCliError } from "../cli/errors.js";
+import { partitionJsonFlag } from "../cli/flags.js";
 import { suggestNames } from "../cli/suggest.js";
 import type { M3LCliCommandContext } from "./context.js";
 import { discoverScripts } from "../discovery/discover.js";
@@ -313,6 +314,13 @@ function recordDynamicHistory(
  * against the script's declared parameters and spawns it, forwarding
  * `passthroughArgs` verbatim after the translated flags.
  *
+ * Before any of that, the CLI-reserved `--json` flag (V2 slice 1, #539 /
+ * ADR-0063) is stripped out of `args` via {@link partitionJsonFlag} — the
+ * same treatment `--help`/`-h` already gets — so it never reaches the
+ * script's own strict `parseArgs` (which would otherwise reject it as an
+ * unknown parameter) and never leaks into the translated child argv, even
+ * when the script happens to declare its own same-named `json` parameter.
+ *
  * Once the spawn resolves, best-effort records a run-history entry (8f)
  * naming the parsed canonical parameter names (unlike `run`, which never
  * parses and always records `[]`) — never recorded for the `--help`/`-h`
@@ -367,7 +375,12 @@ export async function runDynamic(
     );
   }
 
-  if (args.includes("--help") || args.includes("-h")) {
+  const { rest: argsWithoutJsonFlag } = partitionJsonFlag(args);
+
+  if (
+    argsWithoutJsonFlag.includes("--help") ||
+    argsWithoutJsonFlag.includes("-h")
+  ) {
     return runInspect(context, scriptName);
   }
 
@@ -381,7 +394,7 @@ export async function runDynamic(
   let values: M3LCliParsedValues;
   try {
     const parsed = parseArgs({
-      args: [...args],
+      args: [...argsWithoutJsonFlag],
       options,
       strict: true,
       allowPositionals: false,
