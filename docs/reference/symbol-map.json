@@ -269,6 +269,26 @@
     "namespace": "core",
     "file": "packages/m3l-common/src/core/config/M3LConfigSchemaValidator.ts"
   },
+  "M3LOperationDeclaration": {
+    "submodule": "config",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/config/M3LOperationDeclaration.ts"
+  },
+  "M3LOperationDeclarationList": {
+    "submodule": "config",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/config/M3LOperationDeclaration.ts"
+  },
+  "deriveOperationNames": {
+    "submodule": "config",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/config/M3LOperationDeclaration.ts"
+  },
+  "deriveOperationValidators": {
+    "submodule": "config",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/config/deriveOperationValidators.ts"
+  },
   "M3LConfigAccessorOptions": {
     "submodule": "config",
     "namespace": "core",

@@ -10,6 +10,7 @@
  */
 
 export * from "./coerceConfigValue.js";
+export * from "./deriveOperationValidators.js";
 export * from "./deriveSecretsSpecifier.js";
 export * from "./M3LCommandLineConfigProvider.js";
 export * from "./M3LConfig.js";
@@ -30,6 +31,7 @@ export * from "./M3LEnvironmentConfigProvider.js";
 export * from "./M3LInMemoryConfigProvider.js";
 export * from "./M3LJSONConfigProvider.js";
 export * from "./M3LLambdaEventConfigProvider.js";
+export * from "./M3LOperationDeclaration.js";
 export * from "./M3LPresetConfigProvider.js";
 export * from "./M3LSecretsSpecifier.js";
 export * from "./M3LUnknownParameterDetector.js";
