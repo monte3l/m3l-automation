@@ -203,6 +203,20 @@ config.get(required) === true ? true : "reason"`) whenever both operands
 - **Scripts are exempt from the per-file coverage gate** (coverage is scoped to
   `packages/*/src`), but each ships **at least a config-declaration smoke test**;
   unit-test `steps/` modules with plain mocks where it earns its keep.
+- **`pnpm build` is a distinct gate from `pnpm typecheck` for `scripts/**` too
+  — never call a `config.ts` change green without it.** Each
+  `scripts/*/tsconfig.build.json` sets `isolatedDeclarations` (deliberately kept
+  out of `tsconfig.base.json`), so `pnpm typecheck` can be fully green while
+  `pnpm build` fails `TS9010`. Two forms trip it:
+  `] as const satisfies SomeType;` (use plain `] as const;` — passing the array
+  to the consuming API still type-checks every entry) and any `export const`
+  initialised from a **function call**, which needs an explicit type annotation.
+  Annotate with the literal union, never `string`, or exhaustive
+  `Record<Op, …>` dispatch tables in `steps/` silently stop catching unhandled
+  cases. This rule is also in `.claude/rules/tests.md`, but that file is scoped
+  to `**/tests/**` and so does **not** load while you are editing
+  `scripts/*/src/**` — which is exactly how it recurred in the U5 retrofit after
+  first biting in `2026-08-19-a3-partial-run-outcome.md`.
 - **ESM `.js` extensions, named exports, no `any`** apply here too — see
   [`docs/contributing/style-guide.md`](../../docs/contributing/style-guide.md) for
   the full code, test, and refactoring rules that also govern `scripts/`.
