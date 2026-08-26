@@ -178,6 +178,82 @@ describe("aws/s3", () => {
       expect(thrown).toBe(inner);
       expect((thrown as M3LS3OperationError).message).toBe("inner");
     });
+
+    // A5b (issue #506): listObjects' `do … while (token !== undefined)`
+    // loop must not spin forever when the SDK hands back a repeated
+    // NextContinuationToken (an SDK bug or a misbehaving mock/local
+    // endpoint). Iteration is bounded by THIS TEST (a fixed number of
+    // `.next()` calls), not solely by the per-test timeout below: a
+    // resolved-promise tight loop can starve Node's timer phase with a
+    // perpetually-refilled microtask queue, so relying on the timeout alone
+    // was observed to OOM the worker rather than cleanly time out (see
+    // `tests/dynamodb.test.ts`'s equivalent queryItems test). The explicit
+    // timeout stays as a secondary backstop.
+    test("rejects with ERR_NO_PROGRESS within a few pages instead of looping forever when NextContinuationToken never changes", async () => {
+      const send = vi.fn().mockResolvedValue({
+        Contents: [{ Key: "a", Size: 1 }],
+        NextContinuationToken: "stuck-token",
+      });
+      const client = { send } as unknown as S3Client;
+
+      const generator = listObjects(client, "reports");
+
+      let thrown: unknown;
+      try {
+        for (let attempt = 0; attempt < 5; attempt += 1) {
+          await generator.next();
+        }
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toMatchObject({ code: "ERR_NO_PROGRESS" });
+    }, 2000);
+
+    test("still yields every page when NextContinuationToken genuinely advances across pages", async () => {
+      const send = vi
+        .fn()
+        .mockResolvedValueOnce({
+          Contents: [{ Key: "a", Size: 1 }],
+          NextContinuationToken: "token-1",
+        })
+        .mockResolvedValueOnce({
+          Contents: [{ Key: "b", Size: 2 }],
+          NextContinuationToken: "token-2",
+        })
+        .mockResolvedValueOnce({
+          Contents: [{ Key: "c", Size: 3 }],
+          NextContinuationToken: undefined,
+        });
+      const client = { send } as unknown as S3Client;
+
+      const pages: S3Page[] = [];
+      for await (const page of listObjects(client, "reports")) {
+        pages.push(page);
+      }
+
+      expect(pages).toHaveLength(3);
+      expect(
+        pages.map((page) => page.objects.map((object) => object.key)),
+      ).toEqual([["a"], ["b"], ["c"]]);
+      expect(send).toHaveBeenCalledTimes(3);
+    });
+
+    test("a single-page listing (no NextContinuationToken on the first response) is unaffected by the guard", async () => {
+      const send = vi.fn().mockResolvedValue({
+        Contents: [{ Key: "a", Size: 1 }],
+        NextContinuationToken: undefined,
+      });
+      const client = { send } as unknown as S3Client;
+
+      const pages: S3Page[] = [];
+      for await (const page of listObjects(client, "reports")) {
+        pages.push(page);
+      }
+
+      expect(pages).toHaveLength(1);
+      expect(send).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe("headObject", () => {

@@ -8,87 +8,87 @@
         {
           "file": "packages/m3l-common/src/aws/dynamodb/operations.ts",
           "symbol": "getItem",
-          "blob": "b924d79ff6edc85de4b088a6a751e3c3ef767516"
+          "blob": "f345b26ca95bd90b2ecc66fbd101ee6349f8b1fd"
         },
         {
           "file": "packages/m3l-common/src/aws/dynamodb/operations.ts",
           "symbol": "putItem",
-          "blob": "b924d79ff6edc85de4b088a6a751e3c3ef767516"
+          "blob": "f345b26ca95bd90b2ecc66fbd101ee6349f8b1fd"
         },
         {
           "file": "packages/m3l-common/src/aws/dynamodb/operations.ts",
           "symbol": "updateItem",
-          "blob": "b924d79ff6edc85de4b088a6a751e3c3ef767516"
+          "blob": "f345b26ca95bd90b2ecc66fbd101ee6349f8b1fd"
         },
         {
           "file": "packages/m3l-common/src/aws/dynamodb/operations.ts",
           "symbol": "deleteItem",
-          "blob": "b924d79ff6edc85de4b088a6a751e3c3ef767516"
+          "blob": "f345b26ca95bd90b2ecc66fbd101ee6349f8b1fd"
         },
         {
           "file": "packages/m3l-common/src/aws/dynamodb/operations.ts",
           "symbol": "queryItems",
-          "blob": "b924d79ff6edc85de4b088a6a751e3c3ef767516"
+          "blob": "f345b26ca95bd90b2ecc66fbd101ee6349f8b1fd"
         },
         {
           "file": "packages/m3l-common/src/aws/dynamodb/operations.ts",
           "symbol": "scanSegment",
-          "blob": "b924d79ff6edc85de4b088a6a751e3c3ef767516"
+          "blob": "f345b26ca95bd90b2ecc66fbd101ee6349f8b1fd"
         },
         {
           "file": "packages/m3l-common/src/aws/dynamodb/operations.ts",
           "symbol": "batchWriteItems",
-          "blob": "b924d79ff6edc85de4b088a6a751e3c3ef767516"
+          "blob": "f345b26ca95bd90b2ecc66fbd101ee6349f8b1fd"
         },
         {
           "file": "packages/m3l-common/src/aws/dynamodb/operations.ts",
           "symbol": "batchDeleteItems",
-          "blob": "b924d79ff6edc85de4b088a6a751e3c3ef767516"
+          "blob": "f345b26ca95bd90b2ecc66fbd101ee6349f8b1fd"
         },
         {
           "file": "packages/m3l-common/src/aws/dynamodb/operations.ts",
           "symbol": "describeTable",
-          "blob": "b924d79ff6edc85de4b088a6a751e3c3ef767516"
+          "blob": "f345b26ca95bd90b2ecc66fbd101ee6349f8b1fd"
         },
         {
           "file": "packages/m3l-common/src/aws/dynamodb/operations.ts",
           "symbol": "DynamoDBKey",
-          "blob": "b924d79ff6edc85de4b088a6a751e3c3ef767516"
+          "blob": "f345b26ca95bd90b2ecc66fbd101ee6349f8b1fd"
         },
         {
           "file": "packages/m3l-common/src/aws/dynamodb/operations.ts",
           "symbol": "DynamoDBItem",
-          "blob": "b924d79ff6edc85de4b088a6a751e3c3ef767516"
+          "blob": "f345b26ca95bd90b2ecc66fbd101ee6349f8b1fd"
         },
         {
           "file": "packages/m3l-common/src/aws/dynamodb/operations.ts",
           "symbol": "DynamoDBPage",
-          "blob": "b924d79ff6edc85de4b088a6a751e3c3ef767516"
+          "blob": "f345b26ca95bd90b2ecc66fbd101ee6349f8b1fd"
         },
         {
           "file": "packages/m3l-common/src/aws/dynamodb/operations.ts",
           "symbol": "QueryItemsOptions",
-          "blob": "b924d79ff6edc85de4b088a6a751e3c3ef767516"
+          "blob": "f345b26ca95bd90b2ecc66fbd101ee6349f8b1fd"
         },
         {
           "file": "packages/m3l-common/src/aws/dynamodb/operations.ts",
           "symbol": "ScanSegmentOptions",
-          "blob": "b924d79ff6edc85de4b088a6a751e3c3ef767516"
+          "blob": "f345b26ca95bd90b2ecc66fbd101ee6349f8b1fd"
         },
         {
           "file": "packages/m3l-common/src/aws/dynamodb/operations.ts",
           "symbol": "BatchWriteResult",
-          "blob": "b924d79ff6edc85de4b088a6a751e3c3ef767516"
+          "blob": "f345b26ca95bd90b2ecc66fbd101ee6349f8b1fd"
         },
         {
           "file": "packages/m3l-common/src/aws/dynamodb/operations.ts",
           "symbol": "BatchDeleteResult",
-          "blob": "b924d79ff6edc85de4b088a6a751e3c3ef767516"
+          "blob": "f345b26ca95bd90b2ecc66fbd101ee6349f8b1fd"
         },
         {
           "file": "packages/m3l-common/src/aws/dynamodb/operations.ts",
           "symbol": "TableDescription",
-          "blob": "b924d79ff6edc85de4b088a6a751e3c3ef767516"
+          "blob": "f345b26ca95bd90b2ecc66fbd101ee6349f8b1fd"
         },
         {
           "file": "packages/m3l-common/src/aws/dynamodb/error.ts",
@@ -101,7 +101,7 @@
           "blob": "4844032e55d2f57d5749d12a277eebda10d6f82f"
         }
       ],
-      "retrieved": "2026-07-12"
+      "retrieved": "2026-08-26"
     },
     {
       "heading": "Design choices",
@@ -109,35 +109,35 @@
         {
           "file": "packages/m3l-common/src/aws/dynamodb/operations.ts",
           "symbol": "queryItems",
-          "blob": "b924d79ff6edc85de4b088a6a751e3c3ef767516"
+          "blob": "f345b26ca95bd90b2ecc66fbd101ee6349f8b1fd"
         },
         {
           "file": "packages/m3l-common/src/aws/dynamodb/operations.ts",
           "symbol": "scanSegment",
-          "blob": "b924d79ff6edc85de4b088a6a751e3c3ef767516"
+          "blob": "f345b26ca95bd90b2ecc66fbd101ee6349f8b1fd"
         },
         {
           "file": "packages/m3l-common/src/aws/dynamodb/operations.ts",
           "symbol": "batchWriteItems",
-          "blob": "b924d79ff6edc85de4b088a6a751e3c3ef767516"
+          "blob": "f345b26ca95bd90b2ecc66fbd101ee6349f8b1fd"
         },
         {
           "file": "packages/m3l-common/src/aws/dynamodb/operations.ts",
           "symbol": "batchDeleteItems",
-          "blob": "b924d79ff6edc85de4b088a6a751e3c3ef767516"
+          "blob": "f345b26ca95bd90b2ecc66fbd101ee6349f8b1fd"
         },
         {
           "file": "packages/m3l-common/src/aws/dynamodb/operations.ts",
           "symbol": "updateItem",
-          "blob": "b924d79ff6edc85de4b088a6a751e3c3ef767516"
+          "blob": "f345b26ca95bd90b2ecc66fbd101ee6349f8b1fd"
         },
         {
           "file": "packages/m3l-common/src/aws/dynamodb/operations.ts",
           "symbol": "describeTable",
-          "blob": "b924d79ff6edc85de4b088a6a751e3c3ef767516"
+          "blob": "f345b26ca95bd90b2ecc66fbd101ee6349f8b1fd"
         }
       ],
-      "retrieved": "2026-07-12"
+      "retrieved": "2026-08-26"
     },
     {
       "heading": "`M3LDynamoDBOperationError`",
@@ -151,7 +151,7 @@
       "retrieved": "2026-07-12"
     },
     {
-      "heading": "`M3LDynamoDBOperations` \u2014 the `.services.dynamoDBOperations` wrapper class",
+      "heading": "`M3LDynamoDBOperations` — the `.services.dynamoDBOperations` wrapper class",
       "sources": [
         {
           "file": "packages/m3l-common/src/aws/dynamodb/client.ts",
