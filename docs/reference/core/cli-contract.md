@@ -284,6 +284,59 @@ convention, enforced by `templates/script/`'s shape at U6, by
 is exactly what `M3LScriptOptions.logger` accepts) even though nothing can
 prove the _composition_ happened.
 
+### What U6 shipped, and what it deliberately did not
+
+U6 landed the adopting-script half. A script that has adopted the seam carries
+an **additive second entry point**, `src/command.ts`, exporting
+`commandModule: Core.M3LCommandModule` whose `execute` constructs `M3LScript`
+and calls `Core.runScript` itself. `src/main.ts` is left exactly as it was, so
+the spawn path has zero behaviour change. `check:script-scaffold` verifies an
+adopted `src/command.ts` optionally-but-strictly (absent passes; present must
+export the annotated descriptor, compose `Core.runScript`, source its schema
+from `config.ts`, and never call `process.exit`); the manifest tier is
+`OPTIONAL_EXACT_FILES` in `bin/lib/script-scaffold.mjs`.
+
+Three consequences are deliberate at U6 and are U7's inheritance. They are
+recorded here rather than in ADR-0054, which is `Accepted` and therefore
+immutable:
+
+1. **`main.ts` does not delegate to `execute`, so two composition sites exist.**
+   Delegating would force `main.ts` to build an `M3LCommandContext`, and
+   `execute` to forward `context.logger` into `M3LScriptOptions.logger`. That
+   option documents a caller-supplied logger as skipping
+   `resolveLogLevelFloor()` — which lives in `internal/logging/` and is not
+   exported, so a script cannot replicate it, and `--log-level` /
+   `M3L_LOG_LEVEL` would silently stop working — and as never receiving the
+   script's derived `secrets`, so declared secret parameters would stop being
+   redacted. That is a behavioural **and** security regression on the spawn
+   path, which is why the two sites stand until U7 unifies them behind a
+   library seam. The per-script `tests/command.test.ts` is the anti-drift
+   guard in the meantime.
+2. **`context.output`, `context.logger` and `context.signal` are accepted and
+   not forwarded.** `execute` consumes only `context.dryRun`. A U7 host must
+   build its logger with the script's derived `secrets` and the resolved
+   log-level floor, and must expect that aborting its own signal has no effect
+   on a U6-era command (a script that threads cancellation does so from its own
+   `script.signal`).
+3. **`TParameters` stays the default `Record<string, never>`.**
+   `M3LScriptOptions` has no seam to inject host-bound values — precedence
+   level 1 is built from `process.argv` inside the loader, and only
+   `preset`/`configFiles`/Lambda-event providers are injectable — so
+   configuration still resolves ambiently through the library's own precedence
+   chain on both paths. Real parameter binding needs an additive `m3l-common`
+   minor.
+
+One further clause of ADR-0054 is worth stating plainly, because U6 is where
+its ESLint ban lands: `process.exit` is forbidden in the command-module path,
+and the ban (`no-restricted-properties` over every `scripts/*/src/**/*.ts`,
+plus a companion `no-restricted-imports` entry for
+`import { exit } from "node:process"`) covers **script** code only. It does not
+reach `runScript`'s own transitive behaviour: `installProcessGuards` +
+`pushForcedSignalExitCode` install a signal handler that calls `process.exit`
+on a second SIGINT/SIGTERM (`internal/script/signalHandlers.ts`). A hosted
+command therefore still terminates its host on a double signal. Closing that is
+a U7 host obligation, not something a script can do.
+
 ## Example
 
 ```typescript

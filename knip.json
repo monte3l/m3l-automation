@@ -29,7 +29,7 @@
       "project": "src/**/*.ts"
     },
     "scripts/*": {
-      "entry": "src/main.ts",
+      "entry": "src/{main,command}.ts",
       "project": "src/**/*.ts"
     }
   }

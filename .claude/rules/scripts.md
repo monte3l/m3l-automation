@@ -41,7 +41,8 @@ paths:
   module, and reviewers reject logic in `main.ts`.
 - **Logic lives in named-export modules** that take their dependencies (config
   values, logger, paths, aws provider) as parameters: `config.ts` (the declared
-  `M3LConfigParameter` set), `hooks.ts` (lifecycle hooks — always present), and
+  `M3LConfigParameter` set), `hooks.ts` (lifecycle hooks — always present),
+  `command.ts` (the optional ADR-0054 command-module seam — see below), and
   `steps/<step>.ts` (one module per concern, flat — no nesting). Injected deps
   keep each step unit-testable without running the lifecycle. Enforcement is
   split: `pnpm check:script-scaffold` machine-verifies the **layout** (required
@@ -85,6 +86,65 @@ paths:
   `readmeExamplesErrors`) still verifies the heading exists and has at least one
   invocation as a backstop. The full README and reference-page structure spec is
   [`docs/contributing/script-docs-structure.md`](../../docs/contributing/script-docs-structure.md).
+
+## The command-module seam (`command.ts`, ADR-0054)
+
+- **`src/command.ts` is optional and additive.** It exports
+  `commandModule: Core.M3LCommandModule` so a host (the `m3l` CLI today, an
+  agent runtime later) can invoke the script **in-process** instead of spawning
+  `dist/main.js` and reading an integer off a dead child. `pnpm scaffold:script`
+  emits it — together with `tests/command.test.ts`, which covers the
+  parity-critical outcome mapping — for every new script; the 13 pre-U6 fleet
+  scripts have not adopted it and are not required to. Enforcement: `check:script-scaffold`'s
+  optional-but-verified tier (`OPTIONAL_EXACT_FILES` in
+  `bin/lib/script-scaffold.mjs`) — absent passes; present must export the
+  annotated descriptor, compose `Core.runScript` itself, import
+  `configParameters` from `./config.js`, and never call `process.exit`.
+- **`main.ts` is NOT rewritten to delegate to `execute`.** Both files compose
+  `M3LScript`/`runScript` independently. This is deliberate: delegating would
+  force `execute` to forward a caller-supplied `context.logger` into
+  `M3LScriptOptions.logger`, which skips the unexported
+  `resolveLogLevelFloor()` (so `--log-level`/`M3L_LOG_LEVEL` silently stops
+  working) and never receives the script's derived `secrets` (so declared secret
+  parameters stop being redacted). Two composition sites is the lesser evil
+  until U7 adds the library seam; `tests/command.test.ts` is the anti-drift
+  guard. Full record: `docs/reference/core/cli-contract.md` § What U6 shipped.
+- **Capture failures through `onError`, never a `try`/`catch` around the
+  `mainFn` body.** `mainFn` is stage 7 of nine; stages 1-6, 8 and 9 throw
+  outside it — `config-load` (a missing or invalid parameter, the most common
+  real failure) most of all. A `try` in `mainFn` would let those escape,
+  `execute` would answer `{ status: "success" }`, and
+  `mapCommandOutcomeToExitCode` would then overwrite the non-zero
+  `process.exitCode` `runScript` had already set. `M3LScript` invokes `onError`
+  for every stage's error and isolates it best-effort, so composing a capture
+  into `hooks` sees exactly what `runScript` classifies.
+- **Classify an abort as `interrupted`, not `failure`.** `mapErrorToExitCode`
+  is typed never to return `INTERRUPTED` (5), so `{ status: "failure", error:
+abortError }` maps to 1-4 while the spawn path exits 5. Detect by CODE, not
+  class (ADR-0049): `error instanceof Error && Core.hasProperty(error, "code")
+&& error.code === "ERR_OPERATION_ABORTED"`.
+- **Export the outcome mapper.** `toOutcome` takes only the
+  `Pick<Core.M3LScript, "recovery" | "recoveryTotal">` slice it reads, so
+  `tests/command.test.ts` can drive every arm — including the truncated-ring
+  and thrown-`undefined` cases — without constructing a script or reaching AWS.
+  It is the parity-critical function in the file; leaving it private leaves it
+  untested. (`command.ts` is a knip entry, so its extra export is not flagged.)
+- **Report `script.recoveryTotal`, not `script.recovery.length`, as
+  `partial.recovered`** — `recovery` is a ring buffer truncated at
+  `M3L_RECOVERY_LIMIT`, so `.length` under-reports. Keep the _predicate_ as
+  `recovery.length > 0` to mirror `run-script.ts` literally.
+- **Never call `process.exit` anywhere under `scripts/*/src/**`.** In-process it
+  takes the host down with it, along with its other in-flight commands and its
+  run-report persistence. Resolve an `M3LCommandOutcome` and let
+  `Core.runScript` / `mapCommandOutcomeToExitCode` drive `process.exitCode`
+  (assignment, not a call — that stays legal). Enforcement: ESLint
+  `no-restricted-properties` over every script source file, plus a companion
+  `no-restricted-imports` entry banning
+  `import { exit } from "node:process"`. The ban is fleet-wide rather than
+  `command.ts`-only because steps are reachable from both execution paths.
+- **Annotate, never `satisfies`.** `export const commandModule:
+Core.M3LCommandModule = { … }` — `tsconfig.build.json` sets
+  `isolatedDeclarations`, which rejects an exported `satisfies` expression.
 
 ## Library usage
 
@@ -133,7 +193,10 @@ config.get(required) === true ? true : "reason"`) whenever both operands
   validator silently dead, and the normal test suite (which typically
   constructs an `M3LConfigSchema` directly, bypassing `M3LScript`) won't catch
   it. When reviewing or adding a `configValidators` entry, grep the script's
-  `main.ts` for `validate:` to confirm the wiring, not just the array.
+  `main.ts` for `validate:` to confirm the wiring, not just the array — and if
+  the script has adopted `src/command.ts` (below), grep **both** files: they
+  are two independent composition sites until U7, and a validator wired in one
+  is not wired in the other.
 - **When promoting a script's local config-read helper onto
   `Core.M3LConfigAccessor`, grep the whole file for `config.get(` afterward —
   not just for callers of the helper being deleted.** A boolean/string field

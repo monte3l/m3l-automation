@@ -194,11 +194,13 @@ export const PACKAGE_TEMPLATE_FILES = [
   { template: "src/main.ts.tmpl", target: "src/main.ts" },
   { template: "src/config.ts.tmpl", target: "src/config.ts" },
   { template: "src/hooks.ts.tmpl", target: "src/hooks.ts" },
+  { template: "src/command.ts.tmpl", target: "src/command.ts" },
   {
     template: "src/steps/run-__SCRIPT_NAME__.ts.tmpl",
     target: "src/steps/run-__SCRIPT_NAME__.ts",
   },
   { template: "tests/config.test.ts.tmpl", target: "tests/config.test.ts" },
+  { template: "tests/command.test.ts.tmpl", target: "tests/command.test.ts" },
   { template: "README.md.tmpl", target: "README.md" },
 ];
 
@@ -240,6 +242,160 @@ export const REQUIRED_GLOBS = [
   { dir: "src/steps", suffix: ".ts", what: "a steps/ module" },
   { dir: "tests", suffix: ".test.ts", what: "the config smoke test" },
 ];
+
+/**
+ * Files the checker treats as **optional but verified**: absent is
+ * conformant, present must be correctly shaped.
+ *
+ * `src/command.ts` is the ADR-0054 command-module seam (U6). The generator
+ * always emits it, so every NEW script carries it — but the 13 pre-U6 fleet
+ * scripts have not adopted it yet, and the gate must not fail them. This is
+ * deliberately a SEPARATE tier from {@link REQUIRED_EXACT_FILES}: promoting
+ * `src/command.ts` into that list is the fleet-catch-up event, and it is a
+ * one-line move once every script has adopted.
+ *
+ * Each entry pairs the path with its own validator rather than being a bare
+ * path list, so the checker cannot apply the wrong one when a second optional
+ * file joins the tier — "optional" here means optional-AND-verified, and the
+ * verification is per-file by definition.
+ */
+export const OPTIONAL_EXACT_FILES = [
+  { file: "src/command.ts", validate: commandModuleErrors },
+];
+
+/** `export const commandModule` carrying the `M3LCommandModule` annotation. */
+const COMMAND_MODULE_EXPORT_RE =
+  /export\s+const\s+commandModule\s*:\s*Core\.M3LCommandModule\b/;
+
+/**
+ * `command.ts` must compose the script itself. ADR-0054's parity guarantee is
+ * that the in-process path runs the same composition root the spawned child
+ * would — config resolution, lifecycle hooks, AWS provisioning and
+ * `run-report.json` all still happen "because the entry composes
+ * `M3LScript`/`runScript`, not a bypass of them". Nothing in the *types* can
+ * prove that (an ADR-0009 layering zone forbids `core/cli-contract` from even
+ * naming `core/script`), so it is asserted here instead.
+ */
+const COMMAND_MODULE_COMPOSES_RE = /Core\.runScript\s*\(/;
+
+/**
+ * `command.ts` must source its schema from `config.ts` rather than declaring
+ * a second parameter set — one declared schema per script, or the two
+ * execution paths can drift apart silently.
+ */
+const COMMAND_MODULE_CONFIG_IMPORT_RE =
+  /import\s*\{[^}]*\bconfigParameters\b[^}]*\}\s*from\s*"\.\/config\.js"/;
+
+/**
+ * `commandModule.execute` resolves an outcome and must never call
+ * `process.exit` — in-process that takes the host down with it. The ESLint
+ * `no-restricted-properties` ban over every script source file is the primary
+ * guard; this is its manifest-level backstop, so a script that somehow
+ * suppressed the lint rule still fails the scaffold gate. Matched against
+ * {@link stripComments}-processed source, so a comment that documents the ban
+ * — whether on its own line or trailing real code — is not itself a
+ * violation.
+ */
+const COMMAND_MODULE_PROCESS_EXIT_RE = /process\s*\.\s*exit\s*\(/;
+
+/**
+ * Remove comments from TypeScript source so the command-module checks below
+ * match code only.
+ *
+ * It matters in BOTH directions: a `process.exit(1)` written inside a comment
+ * that DOCUMENTS the ban must not fail the gate, and an
+ * `export const commandModule: ...` inside a TSDoc `@example` fence must not
+ * satisfy it.
+ *
+ * `fileExports()` in bin/lib/reference-index.mjs strips line comments with
+ * `/^\s*\/\/.*$/gm` — anchored to the line start, so a `//` inside a string
+ * literal (a URL) can't truncate a real declaration. That anchor also means a
+ * TRAILING comment survives, which for this gate is a false positive:
+ * `await flush(); // never call process.exit(1)` is conformant code. So this
+ * scans each line for the first `//` that is not inside a string or template
+ * literal and cuts there — handling both cases the anchored regex cannot.
+ *
+ * Deliberately a small scanner, not a parser: it tracks quote state and
+ * backslash escapes, which is all TypeScript source needs for this decision.
+ * A regex literal containing an unbalanced quote (`/'/`) is the known blind
+ * spot; it would leave quote state open for the rest of the line, at worst
+ * failing to strip a trailing comment on that one line — the pre-existing
+ * behaviour, never a false pass.
+ *
+ * @param source - Raw TypeScript source.
+ * @returns The source with comments blanked out.
+ */
+function stripComments(source) {
+  // Block comments first: they can span lines, so the per-line scan below
+  // would otherwise see their fragments as code.
+  const withoutBlocks = source.replace(/\/\*[\s\S]*?\*\//g, "");
+  return withoutBlocks
+    .split("\n")
+    .map((line) => line.slice(0, codeLengthOf(line)))
+    .join("\n");
+}
+
+/**
+ * The length of `line` up to the first `//` that starts a real comment — i.e.
+ * one not inside a single-quoted, double-quoted, or template string.
+ * Returns `line.length` when the line carries no comment.
+ *
+ * @param line - One line of TypeScript source, block comments already removed.
+ * @returns The index at which to truncate the line.
+ */
+function codeLengthOf(line) {
+  let quote = "";
+  for (let i = 0; i < line.length; i += 1) {
+    const char = line[i];
+    if (quote !== "") {
+      // Skip the character after a backslash so an escaped quote does not
+      // close the string.
+      if (char === "\\") i += 1;
+      else if (char === quote) quote = "";
+      continue;
+    }
+    if (char === '"' || char === "'" || char === "`") {
+      quote = char;
+      continue;
+    }
+    if (char === "/" && line[i + 1] === "/") return i;
+  }
+  return line.length;
+}
+
+/**
+ * Validate an adopted command module. Only called when
+ * `src/command.ts` exists — a script without it passes vacuously.
+ * Returns human-readable problem strings (empty array = conformant).
+ *
+ * @param {string} commandSrc - contents of `src/command.ts`
+ * @returns {string[]}
+ */
+export function commandModuleErrors(commandSrc) {
+  const problems = [];
+  const scannable = stripComments(commandSrc);
+  if (!COMMAND_MODULE_EXPORT_RE.test(scannable)) {
+    problems.push(
+      "must declare `export const commandModule: Core.M3LCommandModule` — the ADR-0054 descriptor a host discovers. The explicit annotation (not `satisfies`) is required by `isolatedDeclarations`.",
+    );
+  }
+  if (!COMMAND_MODULE_COMPOSES_RE.test(scannable)) {
+    problems.push(
+      "must compose the script itself via `Core.runScript(...)` — ADR-0054's parity guarantee is that the in-process path runs the same composition root the spawned child would, not a bypass of it.",
+    );
+  }
+  if (!COMMAND_MODULE_CONFIG_IMPORT_RE.test(scannable)) {
+    problems.push(
+      'must import `configParameters` from "./config.js" — one declared schema per script, or the spawn and in-process paths drift apart silently.',
+    );
+  }
+  if (COMMAND_MODULE_PROCESS_EXIT_RE.test(scannable)) {
+    problems.push(
+      "must never call `process.exit` — a hosted command resolves an M3LCommandOutcome; exiting takes the in-process host down with it (ADR-0054).",
+    );
+  }
+  return problems;
+}
 
 /** The root tsconfig `references` entry a script package must have. */
 export function rootTsconfigRef(name) {

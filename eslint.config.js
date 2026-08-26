@@ -250,6 +250,42 @@ export default tseslint.config(
     },
   },
   {
+    // ADR-0054: a script may be run IN-PROCESS by a host (the m3l CLI today,
+    // an agent runtime later) rather than spawned as `dist/main.js`. A
+    // `process.exit` on that path does not end "the script" — it kills the
+    // host, taking its other in-flight commands, its run-report persistence,
+    // and its own exit code with it. The command-module contract therefore
+    // resolves an `M3LCommandOutcome` and lets `Core.runScript` /
+    // `mapCommandOutcomeToExitCode` drive `process.exitCode` instead.
+    //
+    // Scoped to EVERY script source file, not just `command.ts`: steps are
+    // reachable from both execution paths, so a `command.ts`-only ban would
+    // miss the real hazard (a step killing the CLI host).
+    //
+    // Deliberately `no-restricted-properties`, NOT `no-restricted-syntax`:
+    // flat config REPLACES a rule's value for whichever matching block comes
+    // last and never merges, and three blocks already set
+    // `no-restricted-syntax` for scripts (general / main.ts / config.ts) —
+    // see the comment on the first of them. `no-restricted-properties` is set
+    // nowhere else in this file, so one block covering every script source
+    // carries no overlap risk, exactly as the `no-restricted-imports` block
+    // below documents for itself. It also targets `process.exit` without
+    // touching the legitimate `process.exitCode = ...` writes the contract
+    // depends on (a different property, and an assignment rather than a call).
+    files: ["scripts/*/src/**/*.ts"],
+    rules: {
+      "no-restricted-properties": [
+        "error",
+        {
+          object: "process",
+          property: "exit",
+          message:
+            "Scripts must never call process.exit — in-process (ADR-0054) it takes the host down with it. Resolve an M3LCommandOutcome and let Core.runScript / mapCommandOutcomeToExitCode drive process.exitCode.",
+        },
+      ],
+    },
+  },
+  {
     // Scripts must never import the AWS SDK directly — all AWS SDK usage is
     // mediated through @m3l-automation/m3l-common/aws (ADR-0027).
     // packages/m3l-common/src/** is intentionally NOT covered by this block:
@@ -262,6 +298,20 @@ export default tseslint.config(
       "@typescript-eslint/no-restricted-imports": [
         "error",
         {
+          // The `process.exit` ban above is a property-access rule, so it
+          // cannot see `import { exit } from "node:process"; exit(1)` — and
+          // `node:` builtins are explicitly allowed by the pattern list
+          // below. Ban that named import specifically; a default
+          // `import process from "node:process"` stays legal and is covered
+          // by the property rule.
+          paths: [
+            {
+              name: "node:process",
+              importNames: ["exit"],
+              message:
+                "Scripts must never call process.exit — in-process (ADR-0054) it takes the host down with it. Resolve an M3LCommandOutcome and let Core.runScript / mapCommandOutcomeToExitCode drive process.exitCode.",
+            },
+          ],
           patterns: [
             {
               group: ["@aws-sdk", "@aws-sdk/*", "@aws-sdk/**"],
