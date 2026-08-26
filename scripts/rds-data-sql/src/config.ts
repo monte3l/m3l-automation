@@ -16,6 +16,70 @@ const PAGE_SIZE_MIN = 0;
 const PAGE_SIZE_MAX = 10_000;
 
 /**
+ * The four operations `rds-data-sql` dispatches, declared as data
+ * (ADR-0055). Feeds {@link configParameters}' `operation` declaration (which
+ * auto-composes the membership validator) and
+ * {@link Core.deriveOperationValidators}'s per-operation `requiredParameters`
+ * derivation below.
+ *
+ * `query`/`execute` declare an EMPTY `requiredParameters`: their real
+ * constraint is "exactly one of `sql` or `sql.file`" — an XOR, which
+ * `requiredParameters` (a plain presence list) cannot express. That
+ * constraint stays a hand-written validator in {@link configValidators}.
+ *
+ * Deliberately declared with a bare `as const` — NOT
+ * `as const satisfies Core.M3LOperationDeclarationList` — because a
+ * `satisfies` clause on this literal fails `tsc --isolatedDeclarations`
+ * (the mode each script's `tsconfig.build.json` builds under). The shape is
+ * still fully compile-time-checked at both use sites without it: passing
+ * this value to `Core.deriveOperationNames` below and to `operations:` in
+ * `configParameters` each independently check it against
+ * `Core.M3LOperationDeclarationList` — do not re-add `satisfies` here.
+ */
+export const RDS_DATA_SQL_OPERATION_DECLARATIONS = [
+  {
+    name: "query",
+    description:
+      "Run a SQL statement, optionally paginated, streaming rows to output.file.",
+    requiredParameters: [],
+  },
+  {
+    name: "load",
+    description:
+      "Import rows from input.file into table via batchExecuteStatement.",
+    requiredParameters: ["table", "input.file"],
+  },
+  {
+    name: "execute",
+    description:
+      "Run a single SQL statement once, gated behind confirmation unless it is a SELECT.",
+    requiredParameters: [],
+  },
+  {
+    name: "migrate",
+    description:
+      "Apply pending .sql files from migrations.dir inside one transaction.",
+    requiredParameters: ["migrations.dir"],
+  },
+] as const;
+
+/** The literal union of {@link RDS_DATA_SQL_OPERATION_DECLARATIONS}' operation names. */
+type RdsDataSqlOperationName =
+  (typeof RDS_DATA_SQL_OPERATION_DECLARATIONS)[number]["name"];
+
+/**
+ * Name-only projection of {@link RDS_DATA_SQL_OPERATION_DECLARATIONS} —
+ * keeps the closed set independently assertable in tests without exercising
+ * config resolution, and is the single source `steps/resolve-settings.ts`
+ * imports for its `Core.M3LConfigAccessor.oneOf` call rather than
+ * redeclaring the same four literals.
+ */
+export const RDS_DATA_SQL_OPERATIONS: readonly [
+  RdsDataSqlOperationName,
+  ...(readonly RdsDataSqlOperationName[]),
+] = Core.deriveOperationNames(RDS_DATA_SQL_OPERATION_DECLARATIONS);
+
+/**
  * The declared configuration schema for `rds-data-sql` — the script's only
  * input seam. Never read `process.env` directly (the scripts ESLint zone bans
  * it); every input the pipeline needs is declared here so resolution,
@@ -31,9 +95,13 @@ const PAGE_SIZE_MAX = 10_000;
  * to `main.ts`.
  *
  * The remaining per-operation requirements are cross-parameter constraints a
- * single parameter's `validate:` callback cannot express, so — following the
- * `json-etl` precedent, not `dynamodb-crud`'s run-start guards — they are
- * declared as the ordered, fail-fast {@link configValidators} list below.
+ * single parameter's `validate:` callback cannot express. `load`'s
+ * `table`/`input.file` and `migrate`'s `migrations.dir` are declared on
+ * {@link RDS_DATA_SQL_OPERATION_DECLARATIONS} and derived by
+ * {@link Core.deriveOperationValidators} (ADR-0055); `query`/`execute`'s
+ * "exactly one of `sql`/`sql.file`" XOR cannot be expressed that way (it is
+ * not a presence list) and stays hand-written — see
+ * {@link configValidators} below.
  */
 export const configParameters: readonly Core.M3LConfigParameter[] = [
   new Core.M3LConfigParameter({
@@ -51,12 +119,7 @@ export const configParameters: readonly Core.M3LConfigParameter[] = [
     name: "operation",
     type: Core.M3LConfigParameterType.STRING,
     required: true,
-    validate: Core.M3LConfigValidators.oneOf([
-      "query",
-      "load",
-      "execute",
-      "migrate",
-    ]),
+    operations: RDS_DATA_SQL_OPERATION_DECLARATIONS,
   }),
   new Core.M3LConfigParameter({
     name: "cluster.arn",
@@ -175,10 +238,22 @@ export const configParameters: readonly Core.M3LConfigParameter[] = [
  *
  * 1. `'query'`/`'execute'` require exactly one of `sql`/`sql.file` — a
  *    `sql`/`sql.file` value supplied for `load`/`migrate` is silently
- *    ignored, not an error.
- * 2. `'load'` requires `table` and `input.file` to both be set.
- * 3. `'migrate'` requires `migrations.dir` to be set.
- * 4. `'yesSensitive'` requires `yes` to also be set.
+ *    ignored, not an error. Hand-written: this is an XOR, not a presence
+ *    list, so {@link Core.deriveOperationValidators} cannot express it.
+ * 2. `'table'`/`'input.file'` are each required for `load` — DERIVED from
+ *    {@link RDS_DATA_SQL_OPERATION_DECLARATIONS} by
+ *    {@link Core.deriveOperationValidators}, emitted as two independent
+ *    validators (one per required parameter) rather than the prior single
+ *    combined check.
+ * 3. `'migrations.dir'` is required for `migrate` — likewise DERIVED.
+ * 4. `'yesSensitive'` requires `yes` to also be set — hand-written (a
+ *    genuinely cross-parameter constraint between two independently
+ *    defaulted `BOOL` parameters, not per-operation requiredness).
+ *
+ * The derived and hand-written validators never both apply to the same
+ * operation (`query`/`execute` carry no `requiredParameters`; `load`/
+ * `migrate` never reach the XOR check), so relative order between them is
+ * not observable.
  *
  * @example
  * ```typescript
@@ -189,6 +264,7 @@ export const configParameters: readonly Core.M3LConfigParameter[] = [
  * ```
  */
 export const configValidators: readonly Core.M3LConfigSchemaValidator[] = [
+  ...Core.deriveOperationValidators(configParameters),
   (config: Core.M3LConfig): true | string => {
     const operation = config.get("operation");
     if (operation !== "query" && operation !== "execute") return true;
@@ -197,20 +273,6 @@ export const configValidators: readonly Core.M3LConfigSchemaValidator[] = [
     return sqlSet !== sqlFileSet
       ? true
       : "'query'/'execute' require exactly one of 'sql' or 'sql.file' to be set";
-  },
-  (config: Core.M3LConfig): true | string => {
-    if (config.get("operation") !== "load") return true;
-    const tableSet = config.get("table") !== undefined;
-    const inputFileSet = config.get("input.file") !== undefined;
-    return tableSet && inputFileSet
-      ? true
-      : "'load' requires 'table' and 'input.file' to be set";
-  },
-  (config: Core.M3LConfig): true | string => {
-    if (config.get("operation") !== "migrate") return true;
-    return config.get("migrations.dir") !== undefined
-      ? true
-      : "'migrate' requires 'migrations.dir' to be set";
   },
   // requires() would be a no-op here since both yesSensitive and yes carry
   // declared defaults — compare resolved values instead.

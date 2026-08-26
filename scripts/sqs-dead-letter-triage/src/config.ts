@@ -1,6 +1,61 @@
 import { Core } from "@m3l-automation/m3l-common";
 
 /**
+ * The `operation` parameter's declared operation set (ADR-0055) — the five
+ * verbs `sqs-dead-letter-triage` dispatches over. `validate`/`explain`/
+ * `convert` run with no AWS credentials at all, which is what lets
+ * `validate` run as a CI gate; `triage` and `execute` are the two
+ * operations that reach AWS. `execute` only mutates when the caller also
+ * passes `--apply` — without it, it triages and prints the plan, exactly
+ * like `triage` plus the plan report. Feeds {@link configParameters}'
+ * `operation` declaration (which auto-composes the membership validator)
+ * and {@link Core.deriveOperationValidators}'s per-operation
+ * `requiredParameters` derivation below.
+ *
+ * Deliberately declared with a bare `as const` — NOT
+ * `as const satisfies Core.M3LOperationDeclarationList` — because a
+ * `satisfies` clause on this literal fails `tsc --isolatedDeclarations`
+ * (the mode each script's `tsconfig.build.json` builds under). The shape is
+ * still fully compile-time-checked at both use sites without it: passing
+ * this value to `Core.deriveOperationNames` below and to `operations:` in
+ * `configParameters` each independently check it against
+ * `Core.M3LOperationDeclarationList` — do not re-add `satisfies` here.
+ */
+export const TRIAGE_OPERATION_DECLARATIONS = [
+  {
+    name: "validate",
+    description: "Build every preset offline and fail on any problem.",
+    requiredParameters: [],
+  },
+  {
+    name: "explain",
+    description: "Print one preset's compiled step graph, cases and digest.",
+    requiredParameters: ["queue"],
+  },
+  {
+    name: "convert",
+    description: "Turn one runbook markdown file into a preset skeleton.",
+    requiredParameters: ["source"],
+  },
+  {
+    name: "triage",
+    description:
+      "Drain the queue, run the compiled preset per message, and write the triage report.",
+    requiredParameters: ["queue", "queueUrl"],
+  },
+  {
+    name: "execute",
+    description:
+      "Re-run the triage pass, build the remediation plan, and apply it when 'apply' is set.",
+    requiredParameters: ["queue", "queueUrl"],
+  },
+] as const;
+
+/** The literal union of {@link TRIAGE_OPERATION_DECLARATIONS}' operation names. */
+type TriageOperationName =
+  (typeof TRIAGE_OPERATION_DECLARATIONS)[number]["name"];
+
+/**
  * The closed set of operations `sqs-dead-letter-triage` dispatches on.
  * `validate`/`explain`/`convert` run with no AWS credentials at all, which
  * is what lets `validate` run as a CI gate; `triage` and `execute` are the
@@ -8,13 +63,10 @@ import { Core } from "@m3l-automation/m3l-common";
  * passes `--apply` — without it, it triages and prints the plan, exactly
  * like `triage` plus the plan report.
  */
-export const TRIAGE_OPERATIONS = [
-  "validate",
-  "explain",
-  "convert",
-  "triage",
-  "execute",
-] as const;
+export const TRIAGE_OPERATIONS: readonly [
+  TriageOperationName,
+  ...(readonly TriageOperationName[]),
+] = Core.deriveOperationNames(TRIAGE_OPERATION_DECLARATIONS);
 
 /** One member of {@link TRIAGE_OPERATIONS}. */
 export type TriageOperation = (typeof TRIAGE_OPERATIONS)[number];
@@ -50,9 +102,10 @@ const VISIBILITY_TIMEOUT_MAX = 43_200;
  * Only `operation`, `runbookDir`, `maxMessages`, `visibilityTimeout`, `apply`,
  * `yes` and `yesSensitive` carry a default; `queue`, `queueUrl`, `source`,
  * `output` and `sourceQueueUrl` are bare-optional because whether they are
- * required depends on the operation (or, for `sourceQueueUrl`, on the plan
- * `execute` actually builds), which {@link configValidators} and `execute`'s
- * own run-time guard adjudicate, never here.
+ * required depends on the operation — declared on
+ * {@link TRIAGE_OPERATION_DECLARATIONS} — or, for `sourceQueueUrl`, on the
+ * plan `execute` actually builds, which only {@link configValidators} and
+ * `execute`'s own run-time guard adjudicate, never here.
  *
  * `Core.AWS_PROFILE_PARAM_NAME` (`aws.profile`) IS now declared — `triage`
  * and `execute` reach AWS — but deliberately not `required: true`: declaring
@@ -78,7 +131,7 @@ export const configParameters: readonly Core.M3LConfigParameter[] = [
     name: "operation",
     type: Core.M3LConfigParameterType.STRING,
     defaultValue: "validate",
-    validate: Core.M3LConfigValidators.oneOf<string>(TRIAGE_OPERATIONS),
+    operations: TRIAGE_OPERATION_DECLARATIONS,
   }),
   new Core.M3LConfigParameter({
     name: "runbookDir",
@@ -152,48 +205,29 @@ export const configParameters: readonly Core.M3LConfigParameter[] = [
 ];
 
 /**
- * Which bare-optional parameters each operation cannot run without. Keyed as
- * a `Record<TriageOperation, ...>` so adding an operation to
- * {@link TRIAGE_OPERATIONS} without deciding its requirements is a compile
- * error, not a run-time gap.
- */
-const REQUIRED_BY_OPERATION: Record<TriageOperation, readonly string[]> = {
-  validate: [],
-  explain: ["queue"],
-  convert: ["source"],
-  triage: ["queue", "queueUrl"],
-  execute: ["queue", "queueUrl"],
-};
-
-/** Reads `operation`, falling back to the declared default. */
-function readOperation(config: Core.M3LConfig): TriageOperation {
-  const raw = config.get("operation");
-  const match = TRIAGE_OPERATIONS.find((candidate) => candidate === raw);
-  return match ?? "validate";
-}
-
-/**
  * The schema-level (cross-parameter) validators, wired into `main.ts` as
  * `config.validate`.
  *
- * Two constraints live here because no per-parameter validator can express
- * them: per-operation requiredness (a validator never sees a second
- * parameter's value), and a `queue` traversal guard — `queue` is
- * interpolated into a preset filename (`<runbookDir>/<queue>.json`), so a
- * value carrying a path separator or `..` must fail loud here rather than
- * resolving a file outside the runbook directory.
+ * The per-operation requiredness validator is DERIVED from
+ * {@link TRIAGE_OPERATION_DECLARATIONS} by
+ * {@link Core.deriveOperationValidators} (ADR-0055) — `queue` for
+ * `explain`; `source` for `convert`; `queue` and `queueUrl` for `triage` and
+ * `execute`; `validate` requires nothing extra. Unlike the prior
+ * hand-written check, each derived validator reports one missing parameter
+ * at a time (fail-fast) and never names the resolved `operation` value,
+ * matching the library's secret-safety discipline — see
+ * `docs/reference/scripts/sqs-dead-letter-triage.md` for the exact wording
+ * change this produces.
+ *
+ * The `queue` path-traversal guard stays hand-written: it is not
+ * per-operation requiredness, but a genuinely independent format constraint
+ * — `queue` is interpolated into a preset filename
+ * (`<runbookDir>/<queue>.json`), so a value carrying a path separator or
+ * `..` must fail loud here rather than resolving a file outside the
+ * runbook directory.
  */
 export const configValidators: readonly Core.M3LConfigSchemaValidator[] = [
-  (config: Core.M3LConfig): true | string => {
-    const operation = readOperation(config);
-    const missing = REQUIRED_BY_OPERATION[operation].filter((name) => {
-      const value = config.get(name);
-      return typeof value !== "string" || value.length === 0;
-    });
-    return missing.length === 0
-      ? true
-      : `operation '${operation}' requires: ${missing.join(", ")}`;
-  },
+  ...Core.deriveOperationValidators(configParameters),
   (config: Core.M3LConfig): true | string => {
     const queue = config.get("queue");
     if (typeof queue !== "string" || queue.length === 0) return true;

@@ -57,15 +57,26 @@ for why a partial declaration silently deletes fields from the live pipeline.
 
 ### Operations at a glance
 
-| Operation                                                                                                                                              | Demonstrated by                                                             |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------- |
-| `list-pipelines`                                                                                                                                       | Minimal                                                                     |
-| `describe-pipeline`                                                                                                                                    | Common                                                                      |
-| `get-pipeline-state`                                                                                                                                   | Common                                                                      |
-| `start-execution`                                                                                                                                      | Production                                                                  |
-| `watch-execution`                                                                                                                                      | Production                                                                  |
-| `update-pipeline`                                                                                                                                      | Edge case                                                                   |
-| `list-executions`, `describe-execution`, `create-pipeline`, `delete-pipeline`, `stop-execution`, `enable-stage-transition`, `disable-stage-transition` | — see the [contract page](../../docs/reference/scripts/codepipeline-ops.md) |
+| Operation                  | Description                                                            | Demonstrated by |
+| -------------------------- | ---------------------------------------------------------------------- | --------------- |
+| `list-pipelines`           | List pipelines in the account, one page per call.                      | Minimal         |
+| `describe-pipeline`        | Describe one pipeline's declaration, optionally at a specific version. | Common          |
+| `get-pipeline-state`       | Get a pipeline's current stage states.                                 | Common          |
+| `list-executions`          | List a pipeline's executions, one page per call.                       | —               |
+| `describe-execution`       | Describe one pipeline execution.                                       | —               |
+| `create-pipeline`          | Create a pipeline from a JSON declaration document.                    | —               |
+| `update-pipeline`          | Update an existing pipeline from a JSON declaration document.          | Edge case       |
+| `delete-pipeline`          | Delete a pipeline.                                                     | —               |
+| `start-execution`          | Start a new execution of a pipeline.                                   | Production      |
+| `stop-execution`           | Stop an in-progress pipeline execution.                                | —               |
+| `enable-stage-transition`  | Enable a stage's inbound or outbound transition.                       | —               |
+| `disable-stage-transition` | Disable a stage's inbound or outbound transition, recording a reason.  | —               |
+| `watch-execution`          | Poll an execution until it reaches a terminal status.                  | Production      |
+
+A `—` in **Demonstrated by** means the operation has no worked example in
+§ Examples above — see the [contract page](../../docs/reference/scripts/codepipeline-ops.md) for its full
+contract. Descriptions are the same strings the script declares in
+`src/config.ts` and exposes via `getOperations()` (ADR-0055).
 
 ### Operational flags
 

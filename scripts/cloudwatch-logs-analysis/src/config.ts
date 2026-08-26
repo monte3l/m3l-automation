@@ -1,16 +1,61 @@
 import { Core } from "@m3l-automation/m3l-common";
 
 /**
+ * The `operation` parameter's declared operation set (ADR-0055) — the four
+ * verbs `cloudwatch-logs-analysis` dispatches over. `analyze` is the
+ * incident-time path; the other three are offline authoring/CI aids that
+ * never reach AWS (ADR-0076). Feeds {@link configParameters}' `operation`
+ * declaration (which auto-composes the membership validator) and
+ * {@link Core.deriveOperationValidators}'s per-operation `requiredParameters`
+ * derivation below.
+ *
+ * Deliberately declared with a bare `as const` — NOT
+ * `as const satisfies Core.M3LOperationDeclarationList` — because a
+ * `satisfies` clause on this literal fails `tsc --isolatedDeclarations`
+ * (the mode each script's `tsconfig.build.json` builds under). The shape is
+ * still fully compile-time-checked at both use sites without it: passing
+ * this value to `Core.deriveOperationNames` below and to `operations:` in
+ * `configParameters` each independently check it against
+ * `Core.M3LOperationDeclarationList` — do not re-add `satisfies` here.
+ */
+export const ANALYSIS_OPERATION_DECLARATIONS = [
+  {
+    name: "analyze",
+    description:
+      "Load a preset, compile it, run it against CloudWatch Logs Insights, and persist the report.",
+    requiredParameters: [Core.AWS_PROFILE_PARAM_NAME, "alarm", "triggeredAt"],
+  },
+  {
+    name: "validate",
+    description:
+      "Build every preset in the runbook directory offline and report every problem at once.",
+    requiredParameters: [],
+  },
+  {
+    name: "explain",
+    description: "Print one preset's compiled step graph, cases and digest.",
+    requiredParameters: ["alarm"],
+  },
+  {
+    name: "convert",
+    description: "Turn one runbook markdown file into a preset skeleton.",
+    requiredParameters: ["source"],
+  },
+] as const;
+
+/** The literal union of {@link ANALYSIS_OPERATION_DECLARATIONS}' operation names. */
+type AnalysisOperationName =
+  (typeof ANALYSIS_OPERATION_DECLARATIONS)[number]["name"];
+
+/**
  * The closed set of operations `cloudwatch-logs-analysis` dispatches on.
  * `analyze` is the incident-time path; the other three are offline
  * authoring/CI aids that never reach AWS (ADR-0076).
  */
-export const ANALYSIS_OPERATIONS = [
-  "analyze",
-  "validate",
-  "explain",
-  "convert",
-] as const;
+export const ANALYSIS_OPERATIONS: readonly [
+  AnalysisOperationName,
+  ...(readonly AnalysisOperationName[]),
+] = Core.deriveOperationNames(ANALYSIS_OPERATION_DECLARATIONS);
 
 /** One member of {@link ANALYSIS_OPERATIONS}. */
 export type AnalysisOperation = (typeof ANALYSIS_OPERATIONS)[number];
@@ -31,9 +76,10 @@ const MINUTES_MAX = 1440;
  *
  * Only `operation`, `runbookDir`, `maxDepth`, `interactive` and `format`
  * carry a default. Everything else is **bare-optional**: whether it is
- * required depends on the operation, which no per-parameter validator can
- * see — {@link configValidators} adjudicates that at config-load time,
- * before any step runs.
+ * required depends on the operation, which is declared on
+ * {@link ANALYSIS_OPERATION_DECLARATIONS} rather than expressed by a single
+ * parameter's `validate:` callback — {@link configValidators} derives and
+ * enforces those requirements at config-load time, before any step runs.
  *
  * `Core.AWS_PROFILE_PARAM_NAME` (`aws.profile`) is declared but not
  * `required: true` on purpose: declaring the parameter is what triggers
@@ -50,7 +96,7 @@ export const configParameters: readonly Core.M3LConfigParameter[] = [
     name: "operation",
     type: Core.M3LConfigParameterType.STRING,
     defaultValue: "analyze",
-    validate: Core.M3LConfigValidators.oneOf<string>(ANALYSIS_OPERATIONS),
+    operations: ANALYSIS_OPERATION_DECLARATIONS,
   }),
   new Core.M3LConfigParameter({
     name: Core.AWS_PROFILE_PARAM_NAME,
@@ -118,46 +164,27 @@ export const configParameters: readonly Core.M3LConfigParameter[] = [
 ];
 
 /**
- * Which bare-optional parameters each operation cannot run without. Keyed as
- * a `Record<AnalysisOperation, ...>` so adding an operation to
- * {@link ANALYSIS_OPERATIONS} without deciding its requirements is a compile
- * error, not a run-time gap.
- */
-const REQUIRED_BY_OPERATION: Record<AnalysisOperation, readonly string[]> = {
-  analyze: [Core.AWS_PROFILE_PARAM_NAME, "alarm", "triggeredAt"],
-  validate: [],
-  explain: ["alarm"],
-  convert: ["source"],
-};
-
-/** Reads `operation`, falling back to the declared default. */
-function readOperation(config: Core.M3LConfig): AnalysisOperation {
-  const raw = config.get("operation");
-  const match = ANALYSIS_OPERATIONS.find((candidate) => candidate === raw);
-  return match ?? "analyze";
-}
-
-/**
  * The schema-level (cross-parameter) validators, wired into `main.ts` as
  * `config.validate`.
  *
- * Two constraints live here because no per-parameter validator can express
- * them: per-operation requiredness (a validator never sees a second
- * parameter's value), and `triggeredAt`'s ISO-8601 parseability, which is
- * checked here so a typo'd timestamp fails at config load rather than
- * halfway through the first Logs Insights query.
+ * The per-operation requiredness validator is DERIVED from
+ * {@link ANALYSIS_OPERATION_DECLARATIONS} by
+ * {@link Core.deriveOperationValidators} (ADR-0055) — `aws.profile`,
+ * `alarm` and `triggeredAt` are required for `analyze`; `alarm` for
+ * `explain`; `source` for `convert`; `validate` requires nothing extra.
+ * Unlike the prior hand-written check, each derived validator reports one
+ * missing parameter at a time (fail-fast) and never names the resolved
+ * `operation` value, matching the library's secret-safety discipline — see
+ * `docs/reference/scripts/cloudwatch-logs-analysis.md` for the exact wording
+ * change this produces.
+ *
+ * `triggeredAt`'s ISO-8601 parseability stays hand-written: it is not
+ * per-operation requiredness, but a genuinely cross-parameter-independent
+ * format constraint, checked here so a typo'd timestamp fails at config
+ * load rather than halfway through the first Logs Insights query.
  */
 export const configValidators: readonly Core.M3LConfigSchemaValidator[] = [
-  (config: Core.M3LConfig): true | string => {
-    const operation = readOperation(config);
-    const missing = REQUIRED_BY_OPERATION[operation].filter((name) => {
-      const value = config.get(name);
-      return typeof value !== "string" || value.length === 0;
-    });
-    return missing.length === 0
-      ? true
-      : `operation '${operation}' requires: ${missing.join(", ")}`;
-  },
+  ...Core.deriveOperationValidators(configParameters),
   (config: Core.M3LConfig): true | string => {
     const triggeredAt = config.get("triggeredAt");
     if (typeof triggeredAt !== "string" || triggeredAt.length === 0)

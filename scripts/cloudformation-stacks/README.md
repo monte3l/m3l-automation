@@ -46,14 +46,22 @@ instead. `--template` is optional: when set and the input file sets neither
 
 ### Operations at a glance
 
-| Operation                                                                                           | Demonstrated by                                                                  |
-| --------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| `list-stacks`                                                                                       | Minimal                                                                          |
-| `describe-stack`                                                                                    | Common                                                                           |
-| `create-stack`                                                                                      | Production                                                                       |
-| `wait-stack-create-complete`                                                                        | Production                                                                       |
-| `delete-stack`                                                                                      | Edge case                                                                        |
-| `describe-stack-events`, `update-stack`, `wait-stack-update-complete`, `wait-stack-delete-complete` | — see the [contract page](../../docs/reference/scripts/cloudformation-stacks.md) |
+| Operation                    | Description                                           | Demonstrated by |
+| ---------------------------- | ----------------------------------------------------- | --------------- |
+| `list-stacks`                | List stacks in the account, one page per call.        | Minimal         |
+| `describe-stack`             | Describe one stack by name or ID.                     | Common          |
+| `describe-stack-events`      | List a stack's events, one page per call.             | —               |
+| `create-stack`               | Create a stack from a JSON input document.            | Production      |
+| `update-stack`               | Update an existing stack from a JSON input document.  | —               |
+| `delete-stack`               | Delete a stack, optionally retaining named resources. | Edge case       |
+| `wait-stack-create-complete` | Wait until a stack finishes creating.                 | Production      |
+| `wait-stack-update-complete` | Wait until a stack finishes updating.                 | —               |
+| `wait-stack-delete-complete` | Wait until a stack finishes deleting.                 | —               |
+
+A `—` in **Demonstrated by** means the operation has no worked example in
+§ Examples above — see the [contract page](../../docs/reference/scripts/cloudformation-stacks.md) for its full
+contract. Descriptions are the same strings the script declares in
+`src/config.ts` and exposes via `getOperations()` (ADR-0055).
 
 ### Operational flags
 

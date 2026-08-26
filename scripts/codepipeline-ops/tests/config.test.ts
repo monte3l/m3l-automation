@@ -4,6 +4,7 @@ import { Core } from "@m3l-automation/m3l-common";
 
 import {
   ABANDON_DEFAULT,
+  CODEPIPELINE_OPS_OPERATION_DECLARATIONS,
   CODEPIPELINE_OPS_OPERATIONS,
   configParameters,
   configValidators,
@@ -373,37 +374,46 @@ function firstFailure(config: Core.M3LConfig): string | undefined {
 /**
  * F1b — cross-parameter validation, per docs/reference/scripts/codepipeline-ops.md's
  * "Configuration schema" section: per-operation requiredness (the "Required
- * for" column) is guard-checked at run start today (`run-codepipeline-ops.ts`'s
- * `accessor.requiredFor(...)` calls) pending this script's fleet retrofit
- * onto `configValidators`. Each block below verifies the exact per-parameter
- * rule against the doc table AND the guard code before asserting it as a
- * config-load-time constraint:
+ * for" column) is DERIVED (ADR-0055, U5) from
+ * `CODEPIPELINE_OPS_OPERATION_DECLARATIONS`' `requiredParameters` by
+ * `Core.deriveOperationValidators`, run once by
+ * `Core.M3LConfigSchema.validate` after every declared parameter has
+ * resolved. This SUPPLEMENTS, rather than replaces, the existing run-start
+ * `accessor.requiredFor(...)` guards in `steps/run-codepipeline-ops.ts`,
+ * which also narrow `string | undefined` into `string` for typed downstream
+ * use.
  *
- * - `pipeline` — required for every operation except `list-pipelines`,
- *   `create-pipeline`, `update-pipeline` (verified: every `dispatch*`
- *   function but `dispatchReadPipelines`'s `list-pipelines` branch and
- *   `dispatchWritePipeline`'s create/update branch calls
- *   `accessor.requiredFor(raw.pipeline, "pipeline", operation)`).
+ * - `pipeline` — required for every operation but `list-pipelines`,
+ *   `create-pipeline`, `update-pipeline`.
  * - `executionId` — required for `describe-execution`, `stop-execution`,
- *   `watch-execution` (verified: `dispatchReadExecutions`,
- *   `dispatchExecute`, `dispatchWatch`).
+ *   `watch-execution`.
  * - `stage`/`transitionType` — required for `enable-stage-transition` and
- *   `disable-stage-transition` (verified: `dispatchTransitions`).
- * - `reason` — required ONLY for `disable-stage-transition` (verified:
- *   `dispatchTransitions`'s `if (operation === "disable-stage-transition")`
- *   guard); `stop-execution` forwards `reason` but never guard-checks it
- *   (`dispatchExecute` never calls `requiredFor` on `raw.reason`), matching
- *   the doc table's "optional" annotation for that operation.
- * - `input` — required for `create-pipeline`/`update-pipeline` (verified:
- *   `planWriteDispatch`'s non-`delete-pipeline` branch).
+ *   `disable-stage-transition`.
+ * - `reason` — required ONLY for `disable-stage-transition`; `stop-execution`
+ *   forwards `reason` but never requires it, matching the doc table's
+ *   "optional" annotation for that operation.
+ * - `input` — required for `create-pipeline`/`update-pipeline`.
  *
- * Each validator's failure reason names the fixed, closed set of
- * operations the constraint applies to (from `CODEPIPELINE_OPS_OPERATIONS`)
- * — never a caller-supplied value — matching the contract in
- * `docs/reference/core/config.md`'s "Cross-parameter validation" section.
+ * Each derived validator's failure reason names the fixed, closed set of
+ * operations the constraint applies to — never a caller-supplied value —
+ * matching the contract in `docs/reference/core/config.md`'s
+ * "Cross-parameter validation" section.
  */
 describe("configValidators (F1b — cross-parameter validation)", () => {
-  describe("'pipeline' — required for every operation except list-pipelines/create-pipeline/update-pipeline", () => {
+  describe("'pipeline' — required for every operation but list-pipelines/create-pipeline/update-pipeline", () => {
+    const pipelineRequiredOperations = [
+      "describe-pipeline",
+      "get-pipeline-state",
+      "list-executions",
+      "describe-execution",
+      "delete-pipeline",
+      "start-execution",
+      "stop-execution",
+      "enable-stage-transition",
+      "disable-stage-transition",
+      "watch-execution",
+    ] as const;
+
     it("returns the documented failure reason when 'pipeline' is missing for an operation that requires it", () => {
       const config = buildConfig({
         [Core.AWS_PROFILE_PARAM_NAME]: "default",
@@ -411,7 +421,7 @@ describe("configValidators (F1b — cross-parameter validation)", () => {
       });
 
       expect(firstFailure(config)).toBe(
-        "'pipeline' is required for every operation except 'list-pipelines', 'create-pipeline', and 'update-pipeline'",
+        `'pipeline' is required for operation(s): ${pipelineRequiredOperations.join(", ")}`,
       );
     });
 
@@ -434,15 +444,31 @@ describe("configValidators (F1b — cross-parameter validation)", () => {
       expect(firstFailure(config)).toBeUndefined();
     });
 
-    it("does not embed a received/rejected value in the failure reason", () => {
-      const config = buildConfig({
+    /**
+     * Re-expresses the pre-retrofit "does not embed a received/rejected
+     * value" intent: the derived message is now a FIXED constraint
+     * description that necessarily names every requiring operation
+     * (including whichever one triggered the failure), so
+     * `.not.toContain(operation)` is no longer meaningful — see the hub's
+     * brief. What the message still never does is interpolate the config's
+     * actual *received* value: running the identical validator against two
+     * different triggering operations produces a byte-identical string.
+     */
+    it("produces a byte-identical failure reason regardless of which requiring operation triggers it", () => {
+      const deletePipelineConfig = buildConfig({
         [Core.AWS_PROFILE_PARAM_NAME]: "default",
         operation: "delete-pipeline",
       });
+      const startExecutionConfig = buildConfig({
+        [Core.AWS_PROFILE_PARAM_NAME]: "default",
+        operation: "start-execution",
+      });
 
-      const result = firstFailure(config);
-      expect(result).toMatch(/'pipeline'/);
-      expect(result).not.toContain("delete-pipeline");
+      const deletePipelineResult = firstFailure(deletePipelineConfig);
+      const startExecutionResult = firstFailure(startExecutionConfig);
+
+      expect(deletePipelineResult).toMatch(/'pipeline'/);
+      expect(deletePipelineResult).toBe(startExecutionResult);
     });
   });
 
@@ -455,7 +481,7 @@ describe("configValidators (F1b — cross-parameter validation)", () => {
       });
 
       expect(firstFailure(config)).toBe(
-        "'executionId' is required for 'describe-execution', 'stop-execution', and 'watch-execution'",
+        "'executionId' is required for operation(s): describe-execution, stop-execution, watch-execution",
       );
     });
 
@@ -491,7 +517,7 @@ describe("configValidators (F1b — cross-parameter validation)", () => {
       });
 
       expect(firstFailure(config)).toBe(
-        "'stage' is required for 'enable-stage-transition' and 'disable-stage-transition'",
+        "'stage' is required for operation(s): enable-stage-transition, disable-stage-transition",
       );
     });
 
@@ -528,7 +554,7 @@ describe("configValidators (F1b — cross-parameter validation)", () => {
       });
 
       expect(firstFailure(config)).toBe(
-        "'transitionType' is required for 'enable-stage-transition' and 'disable-stage-transition'",
+        "'transitionType' is required for operation(s): enable-stage-transition, disable-stage-transition",
       );
     });
 
@@ -567,7 +593,7 @@ describe("configValidators (F1b — cross-parameter validation)", () => {
       });
 
       expect(firstFailure(config)).toBe(
-        "'reason' is required for 'disable-stage-transition'",
+        "'reason' is required for operation(s): disable-stage-transition",
       );
     });
 
@@ -616,7 +642,7 @@ describe("configValidators (F1b — cross-parameter validation)", () => {
       });
 
       expect(firstFailure(config)).toBe(
-        "'input' is required for 'create-pipeline' and 'update-pipeline'",
+        "'input' is required for operation(s): create-pipeline, update-pipeline",
       );
     });
 
@@ -676,5 +702,80 @@ describe("configValidators (F1b — cross-parameter validation)", () => {
 
       expect(firstFailure(config)).toBeUndefined();
     });
+  });
+
+  it("passes every validator for 'list-pipelines' with nothing else set (vacuous pass)", () => {
+    const config = buildConfig({
+      [Core.AWS_PROFILE_PARAM_NAME]: "default",
+      operation: "list-pipelines",
+    });
+
+    expect(firstFailure(config)).toBeUndefined();
+  });
+});
+
+/**
+ * Hand-authored (not re-derived from `src/config.ts`) so a src typo in
+ * `requiredParameters` is actually caught rather than trivially agreeing
+ * with itself. Mirrors the hub brief's table verbatim.
+ */
+const REQUIRED_PARAMETERS_BY_OPERATION: Readonly<
+  Record<string, readonly string[]>
+> = {
+  "list-pipelines": [],
+  "describe-pipeline": ["pipeline"],
+  "get-pipeline-state": ["pipeline"],
+  "list-executions": ["pipeline"],
+  "describe-execution": ["pipeline", "executionId"],
+  "create-pipeline": ["input"],
+  "update-pipeline": ["input"],
+  "delete-pipeline": ["pipeline"],
+  "start-execution": ["pipeline"],
+  "stop-execution": ["pipeline", "executionId"],
+  "enable-stage-transition": ["pipeline", "stage", "transitionType"],
+  "disable-stage-transition": ["pipeline", "stage", "transitionType", "reason"],
+  "watch-execution": ["pipeline", "executionId"],
+};
+
+describe("'operation' parameter's declared operations (ADR-0055 introspection)", () => {
+  it("getOperations() round-trips names, in order, non-blank descriptions, and requiredParameters", () => {
+    const operations = paramNamed("operation").getOperations();
+
+    expect(operations).toBeDefined();
+    const names = (operations ?? []).map((operation) => operation.name);
+    expect(names).toEqual(EXPECTED_OPERATIONS);
+
+    for (const operation of operations ?? []) {
+      expect(operation.description.trim().length).toBeGreaterThan(0);
+      expect(operation.requiredParameters ?? []).toEqual(
+        REQUIRED_PARAMETERS_BY_OPERATION[operation.name],
+      );
+    }
+  });
+
+  it("returns a frozen projection — never the same reference twice, but always structurally equal", () => {
+    const first = paramNamed("operation").getOperations();
+    const second = paramNamed("operation").getOperations();
+
+    expect(first).toEqual(second);
+  });
+
+  it("equals CODEPIPELINE_OPS_OPERATION_DECLARATIONS by content — a fresh projection, not the same array (toEqual, not toBe)", () => {
+    const operations = paramNamed("operation").getOperations();
+    expect(operations).toEqual(CODEPIPELINE_OPS_OPERATION_DECLARATIONS);
+    expect(operations).not.toBe(CODEPIPELINE_OPS_OPERATION_DECLARATIONS);
+  });
+
+  it("every requiredParameters entry names a declared configParameters entry (subset check)", () => {
+    const declaredNames = new Set(
+      configParameters.map((parameter) => parameter.getName()),
+    );
+    const operations = paramNamed("operation").getOperations() ?? [];
+
+    for (const operation of operations) {
+      for (const entry of operation.requiredParameters ?? []) {
+        expect(declaredNames.has(entry)).toBe(true);
+      }
+    }
   });
 });

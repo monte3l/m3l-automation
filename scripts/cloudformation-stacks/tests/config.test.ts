@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { Core } from "@m3l-automation/m3l-common";
 
 import {
+  CLOUDFORMATION_STACKS_OPERATION_DECLARATIONS,
   CLOUDFORMATION_STACKS_OPERATIONS,
   configParameters,
   configValidators,
@@ -272,21 +273,18 @@ function firstFailure(config: Core.M3LConfig): string | undefined {
  * F1b — cross-parameter validation, per
  * docs/reference/scripts/cloudformation-stacks.md's "Configuration schema"
  * section: per-operation requiredness (the "Required for" column) is
- * guard-checked at run start today (`run-cloudformation-stacks.ts`'s
- * `accessor.requiredFor(...)` calls) pending this script's fleet retrofit
- * onto `configValidators`. Each rule below is verified against both the doc
- * table and the guard code:
+ * DERIVED (ADR-0055, U5) from
+ * `CLOUDFORMATION_STACKS_OPERATION_DECLARATIONS`' `requiredParameters` by
+ * `Core.deriveOperationValidators`, run once by
+ * `Core.M3LConfigSchema.validate` after every declared parameter has
+ * resolved. This SUPPLEMENTS, rather than replaces, the existing run-start
+ * `accessor.requiredFor(...)` guards in `steps/run-cloudformation-stacks.ts`,
+ * which also narrow `string | undefined` into `string` for typed downstream
+ * use.
  *
- * - `stackName` — required for `describe-stack`, `delete-stack`,
- *   `describe-stack-events`, and the three `wait-stack-*-complete`
- *   operations — i.e. every operation except `list-stacks`, `create-stack`,
- *   `update-stack` (verified: `dispatchReadStacks`'s `describe-stack`
- *   branch, `planWriteDispatch`'s `delete-stack` branch,
- *   `dispatchReadStackEvents`, `dispatchWait`, each calling
- *   `accessor.requiredFor(raw.stackName, "stackName", operation)`).
- * - `input` — required for `create-stack`/`update-stack` (verified:
- *   `planCreateOrUpdate`'s `accessor.requiredFor(raw.input, "input",
- *   operation)`).
+ * - `stackName` — required for `describe-stack`, `describe-stack-events`,
+ *   `delete-stack`, and the three `wait-stack-*-complete` operations.
+ * - `input` — required for `create-stack`/`update-stack`.
  *
  * The `template`-vs-`templateBody`/`templateUrl` conflict check
  * (`resolveTemplateText`) is deliberately **not** retrofitted here — it
@@ -296,17 +294,17 @@ function firstFailure(config: Core.M3LConfig): string | undefined {
  * guard per the doc's "Configuration schema" section and
  * `docs/plans/IMPLEMENTATION.md`'s F1b row.
  *
- * Each validator's failure reason names the fixed set of operations the
- * constraint applies to — never a caller-supplied value — matching the
+ * Each derived validator's failure reason names the fixed set of operations
+ * the constraint applies to — never a caller-supplied value — matching the
  * contract in `docs/reference/core/config.md`'s "Cross-parameter
  * validation" section.
  */
 describe("configValidators (F1b — cross-parameter validation)", () => {
-  describe("'stackName' — required for every operation except list-stacks/create-stack/update-stack", () => {
+  describe("'stackName' — required for describe-stack/describe-stack-events/delete-stack/wait-stack-*-complete", () => {
     const stackNameRequiredOperations = [
       "describe-stack",
-      "delete-stack",
       "describe-stack-events",
+      "delete-stack",
       "wait-stack-create-complete",
       "wait-stack-update-complete",
       "wait-stack-delete-complete",
@@ -321,7 +319,7 @@ describe("configValidators (F1b — cross-parameter validation)", () => {
         });
 
         expect(firstFailure(config)).toBe(
-          "'stackName' is required for every operation except 'list-stacks', 'create-stack', and 'update-stack'",
+          "'stackName' is required for operation(s): describe-stack, describe-stack-events, delete-stack, wait-stack-create-complete, wait-stack-update-complete, wait-stack-delete-complete",
         );
       },
     );
@@ -348,15 +346,33 @@ describe("configValidators (F1b — cross-parameter validation)", () => {
       expect(firstFailure(config)).toBeUndefined();
     });
 
-    it("does not embed a received/rejected value in the failure reason", () => {
-      const config = buildConfig({
+    /**
+     * Re-expresses the pre-retrofit "does not embed a received/rejected
+     * value" intent: the derived message is now a FIXED constraint
+     * description that necessarily names every requiring operation
+     * (including whichever one triggered the failure), so
+     * `.not.toContain(operation)` is no longer a meaningful assertion — see
+     * the hub's brief. What the message still never does is interpolate the
+     * config's actual *received* value: running the identical validator
+     * against two different triggering operations produces a byte-identical
+     * string, proving nothing operation-specific beyond the fixed set was
+     * substituted in.
+     */
+    it("produces a byte-identical failure reason regardless of which requiring operation triggers it", () => {
+      const deleteStackConfig = buildConfig({
         [Core.AWS_PROFILE_PARAM_NAME]: "default",
         operation: "delete-stack",
       });
+      const waitDeleteConfig = buildConfig({
+        [Core.AWS_PROFILE_PARAM_NAME]: "default",
+        operation: "wait-stack-delete-complete",
+      });
 
-      const result = firstFailure(config);
-      expect(result).toMatch(/'stackName'/);
-      expect(result).not.toContain("delete-stack");
+      const deleteStackResult = firstFailure(deleteStackConfig);
+      const waitDeleteResult = firstFailure(waitDeleteConfig);
+
+      expect(deleteStackResult).toMatch(/'stackName'/);
+      expect(deleteStackResult).toBe(waitDeleteResult);
     });
   });
 
@@ -368,7 +384,7 @@ describe("configValidators (F1b — cross-parameter validation)", () => {
       });
 
       expect(firstFailure(config)).toBe(
-        "'input' is required for 'create-stack' and 'update-stack'",
+        "'input' is required for operation(s): create-stack, update-stack",
       );
     });
 
@@ -435,5 +451,76 @@ describe("configValidators (F1b — cross-parameter validation)", () => {
 
       expect(firstFailure(config)).toBeUndefined();
     });
+  });
+
+  it("passes every validator for 'list-stacks' with nothing else set (vacuous pass)", () => {
+    const config = buildConfig({
+      [Core.AWS_PROFILE_PARAM_NAME]: "default",
+      operation: "list-stacks",
+    });
+
+    expect(firstFailure(config)).toBeUndefined();
+  });
+});
+
+/**
+ * Hand-authored (not re-derived from `src/config.ts`) so a src typo in
+ * `requiredParameters` is actually caught rather than trivially agreeing
+ * with itself. Mirrors the hub brief's table verbatim.
+ */
+const REQUIRED_PARAMETERS_BY_OPERATION: Readonly<
+  Record<string, readonly string[]>
+> = {
+  "list-stacks": [],
+  "describe-stack": ["stackName"],
+  "describe-stack-events": ["stackName"],
+  "create-stack": ["input"],
+  "update-stack": ["input"],
+  "delete-stack": ["stackName"],
+  "wait-stack-create-complete": ["stackName"],
+  "wait-stack-update-complete": ["stackName"],
+  "wait-stack-delete-complete": ["stackName"],
+};
+
+describe("'operation' parameter's declared operations (ADR-0055 introspection)", () => {
+  it("getOperations() round-trips names, in order, non-blank descriptions, and requiredParameters", () => {
+    const operations = paramNamed("operation").getOperations();
+
+    expect(operations).toBeDefined();
+    const names = (operations ?? []).map((operation) => operation.name);
+    expect(names).toEqual(EXPECTED_OPERATIONS);
+
+    for (const operation of operations ?? []) {
+      expect(operation.description.trim().length).toBeGreaterThan(0);
+      expect(operation.requiredParameters ?? []).toEqual(
+        REQUIRED_PARAMETERS_BY_OPERATION[operation.name],
+      );
+    }
+  });
+
+  it("returns a frozen projection — never the same reference twice, but always structurally equal", () => {
+    const first = paramNamed("operation").getOperations();
+    const second = paramNamed("operation").getOperations();
+
+    expect(first).toEqual(second);
+  });
+
+  it("equals CLOUDFORMATION_STACKS_OPERATION_DECLARATIONS by content — a fresh projection, not the same array (toEqual, not toBe)", () => {
+    const operations = paramNamed("operation").getOperations();
+    expect(operations).toEqual(CLOUDFORMATION_STACKS_OPERATION_DECLARATIONS);
+    expect(operations).not.toBe(CLOUDFORMATION_STACKS_OPERATION_DECLARATIONS);
+  });
+
+  it("every requiredParameters entry names a declared configParameters entry (subset check)", () => {
+    const declaredNames = new Set(
+      configParameters.map((parameter) => parameter.getName()),
+    );
+    const operations = paramNamed("operation").getOperations() ?? [];
+
+    for (const operation of operations) {
+      for (const entry of operation.requiredParameters ?? []) {
+        expect(declaredNames.has(entry)).toBe(true);
+      }
+    }
   });
 });
