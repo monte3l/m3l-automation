@@ -6,7 +6,10 @@ import type { M3LCliCommandContext } from "../src/commands/context.js";
 import { discoverScripts } from "../src/discovery/discover.js";
 import type { M3LCliScriptCandidate } from "../src/discovery/discover.js";
 import { loadParametersCached } from "../src/discovery/cached-load.js";
-import type { M3LCliParameterDescriptor } from "../src/discovery/load-config.js";
+import type {
+  M3LCliOperationDescriptor,
+  M3LCliParameterDescriptor,
+} from "../src/discovery/load-config.js";
 
 /**
  * Contract: `src/commands/inspect.ts` — `runInspect` resolves the script name
@@ -112,6 +115,32 @@ const exporterParameters: readonly M3LCliParameterDescriptor[] = [
   },
 ];
 
+const commandOperations: readonly M3LCliOperationDescriptor[] = [
+  { name: "get", description: "Fetch one item.", requiredParameters: ["key"] },
+  { name: "put", description: "Write one item.", requiredParameters: [] },
+];
+
+const parametersWithOperations: readonly M3LCliParameterDescriptor[] = [
+  {
+    name: "command",
+    aliases: [],
+    type: "STRING",
+    required: true,
+    defaultValue: undefined,
+    description: "Operation to perform",
+    operations: commandOperations,
+  },
+  {
+    name: "region",
+    aliases: [],
+    type: "STRING",
+    required: false,
+    defaultValue: undefined,
+    description: "AWS region",
+    operations: [],
+  },
+];
+
 describe("runInspect — known script", () => {
   test("loads parameters through loadParametersCached and renders the JSON descriptor array", async () => {
     discoverScriptsMock.mockReturnValue(knownCandidates);
@@ -210,8 +239,127 @@ describe("runInspect — config load failure", () => {
   });
 });
 
+describe("runInspect — operations rendering (U8)", () => {
+  test("renders an 'Operations (--<parameterName>)' table after the Parameters table for each operation-declaring parameter", async () => {
+    discoverScriptsMock.mockReturnValue(knownCandidates);
+    loadParametersCachedMock.mockResolvedValue(parametersWithOperations);
+
+    const { context, infoLines, headingLines } = buildContext({
+      jsonOutput: false,
+    });
+    const code = await runInspect(context, "exporter");
+
+    expect(code).toBe(0);
+    expect(headingLines).toEqual(["Parameters", "Operations (--command)"]);
+    // Parameters table: header + 2 rows = 3 lines; Operations table for
+    // 'command' (the only parameter with a non-empty operations list):
+    // header + 2 rows = 3 lines.
+    expect(infoLines).toHaveLength(6);
+    const operationsLines = infoLines.slice(3);
+    const [opHeader, getRow, putRow] = operationsLines;
+    expect(opHeader).toContain("OPERATION");
+    expect(opHeader).toContain("DESCRIPTION");
+    expect(opHeader).toContain("REQUIRES");
+    expect(getRow).toContain("get");
+    expect(getRow).toContain("Fetch one item.");
+    expect(getRow).toContain("key");
+    expect(putRow).toContain("put");
+    expect(putRow).toContain("Write one item.");
+  });
+
+  test("names the Operations heading after the declaring parameter's own canonical name, not a hardcoded 'operation'", async () => {
+    discoverScriptsMock.mockReturnValue(knownCandidates);
+    const commandNamedDescriptors: readonly M3LCliParameterDescriptor[] = [
+      {
+        name: "command",
+        aliases: [],
+        type: "STRING",
+        required: true,
+        defaultValue: undefined,
+        description: "The action to run",
+        operations: [
+          { name: "sync", description: "Synchronize.", requiredParameters: [] },
+        ],
+      },
+    ];
+    loadParametersCachedMock.mockResolvedValue(commandNamedDescriptors);
+
+    const { context, headingLines } = buildContext({ jsonOutput: false });
+    await runInspect(context, "exporter");
+
+    expect(headingLines).toContain("Operations (--command)");
+    expect(headingLines).not.toContain("Operations (--operation)");
+  });
+
+  test("renders no additional Operations heading/table when every parameter's operations is [] or absent, matching today's baseline exactly", async () => {
+    discoverScriptsMock.mockReturnValue(knownCandidates);
+    loadParametersCachedMock.mockResolvedValue(exporterParameters);
+
+    const { context, infoLines, headingLines } = buildContext({
+      jsonOutput: false,
+    });
+    const code = await runInspect(context, "exporter");
+
+    expect(code).toBe(0);
+    expect(headingLines).toEqual(["Parameters"]);
+    expect(infoLines).toHaveLength(1 + exporterParameters.length);
+  });
+
+  test("round-trips each parameter's operations field in --json output, including the always-present [] for a non-declaring parameter", async () => {
+    discoverScriptsMock.mockReturnValue(knownCandidates);
+    loadParametersCachedMock.mockResolvedValue(parametersWithOperations);
+
+    const { context, infoLines } = buildContext({ jsonOutput: true });
+    const code = await runInspect(context, "exporter");
+
+    expect(code).toBe(0);
+    const parsed = JSON.parse(
+      infoLines[0] ?? "null",
+    ) as readonly M3LCliParameterDescriptor[];
+    expect(parsed[0]?.operations).toEqual(commandOperations);
+    expect(parsed[1]?.operations).toEqual([]);
+  });
+
+  test("sanitizes a raw control character in an operation's name/description before it reaches a rendered info() line", async () => {
+    discoverScriptsMock.mockReturnValue(knownCandidates);
+    const maliciousOperations: readonly M3LCliOperationDescriptor[] = [
+      {
+        name: "get\x1b[31m",
+        description: "Fetch\x00 one item.",
+        requiredParameters: [],
+      },
+    ];
+    const maliciousParameters: readonly M3LCliParameterDescriptor[] = [
+      {
+        name: "command",
+        aliases: [],
+        type: "STRING",
+        required: true,
+        defaultValue: undefined,
+        description: "Operation to perform",
+        operations: maliciousOperations,
+      },
+    ];
+    loadParametersCachedMock.mockResolvedValue(maliciousParameters);
+
+    const { context, infoLines, headingLines } = buildContext({
+      jsonOutput: false,
+    });
+    await runInspect(context, "exporter");
+
+    // Confirms the Operations table actually rendered (so the assertions
+    // below exercise real sanitization of operation content, not a
+    // vacuously-true check against a table that never rendered).
+    expect(headingLines).toContain("Operations (--command)");
+    for (const line of infoLines) {
+      expect(line).not.toContain("\x1b");
+      expect(line).not.toContain("\x00");
+    }
+  });
+});
+
 describe("runInspect — type contract", () => {
-  test("M3LCliParameterDescriptor is a readonly descriptor of name/aliases/type/required/defaultValue/description/secret", () => {
+  test("M3LCliParameterDescriptor is a readonly descriptor of name/aliases/type/required/defaultValue/description/secret/operations", () => {
     expectTypeOf<M3LCliParameterDescriptor>().toEqualTypeOf<{
       readonly name: string;
       readonly aliases: readonly string[];
@@ -220,6 +368,7 @@ describe("runInspect — type contract", () => {
       readonly defaultValue: string | undefined;
       readonly description: string;
       readonly secret?: boolean;
+      readonly operations?: readonly M3LCliOperationDescriptor[];
     }>();
   });
 });

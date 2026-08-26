@@ -51,6 +51,18 @@ const wellFormedParameter = {
   defaultValue: "us-east-1",
   description: "AWS region",
   secret: false,
+  operations: [],
+};
+
+/**
+ * A well-formed operation-descriptor fixture (U8 contract): every
+ * `M3LCliParameterDescriptor.operations` element must carry name/description
+ * strings and a `requiredParameters` string array (never optional/omitted).
+ */
+const wellFormedOperation = {
+  name: "get",
+  description: "Fetch one item.",
+  requiredParameters: ["key"],
 };
 
 function errnoError(code: string): NodeJS.ErrnoException {
@@ -170,6 +182,154 @@ describe("readDiscoveryCache", () => {
       expect(readDiscoveryCache("/cache/discovery.json")).toEqual({});
     },
   );
+
+  test("keeps an entry whose parameters element has a well-formed, populated operations array (U8)", () => {
+    const parameterWithOperations = {
+      ...wellFormedParameter,
+      operations: [wellFormedOperation],
+    };
+    const payload = {
+      exporter: {
+        srcMtimeMs: 1,
+        distMtimeMs: 2,
+        parameters: [parameterWithOperations],
+      },
+    };
+    vi.spyOn(fs, "readFileSync").mockReturnValue(JSON.stringify(payload));
+
+    expect(readDiscoveryCache("/cache/discovery.json")).toEqual(payload);
+  });
+
+  test("drops an entry whose parameters element has no 'operations' key at all — today's real pre-U8 on-disk shape, invalidating the cache exactly once on upgrade (U8)", () => {
+    const { operations: _drop, ...preU8Parameter } = wellFormedParameter;
+    const payload = {
+      exporter: {
+        srcMtimeMs: 1,
+        distMtimeMs: 2,
+        parameters: [preU8Parameter],
+      },
+    };
+    vi.spyOn(fs, "readFileSync").mockReturnValue(JSON.stringify(payload));
+
+    expect(readDiscoveryCache("/cache/discovery.json")).toEqual({});
+  });
+
+  test("drops an entry whose operation is missing requiredParameters entirely — it is not optional on the descriptor (U8)", () => {
+    const payload = {
+      exporter: {
+        srcMtimeMs: 1,
+        distMtimeMs: 2,
+        parameters: [
+          {
+            ...wellFormedParameter,
+            operations: [{ name: "get", description: "Fetch one item." }],
+          },
+        ],
+      },
+    };
+    vi.spyOn(fs, "readFileSync").mockReturnValue(JSON.stringify(payload));
+
+    expect(readDiscoveryCache("/cache/discovery.json")).toEqual({});
+  });
+
+  test.each([
+    ["operations is not an array", { operations: "nope" }],
+    ["operations is undefined", { operations: undefined }],
+    [
+      "operations array element has a non-array requiredParameters",
+      { operations: [{ ...wellFormedOperation, requiredParameters: "key" }] },
+    ],
+    [
+      "operations array element has a non-string name",
+      { operations: [{ ...wellFormedOperation, name: 1 }] },
+    ],
+    [
+      "operations array element has a non-string description",
+      { operations: [{ ...wellFormedOperation, description: 1 }] },
+    ],
+    [
+      "operations array element's requiredParameters contains a non-string element",
+      {
+        operations: [
+          { ...wellFormedOperation, requiredParameters: ["key", 1] },
+        ],
+      },
+    ],
+  ])(
+    "drops an entry whose parameters element has a malformed operations field: %s (U8)",
+    (_label, override) => {
+      const payload = {
+        exporter: {
+          srcMtimeMs: 1,
+          distMtimeMs: 2,
+          parameters: [{ ...wellFormedParameter, ...override }],
+        },
+      };
+      vi.spyOn(fs, "readFileSync").mockReturnValue(JSON.stringify(payload));
+
+      expect(readDiscoveryCache("/cache/discovery.json")).toEqual({});
+    },
+  );
+
+  test("drops an extra unknown field inside a kept entry's operation object, projecting to exactly the declared operation shape (U8)", () => {
+    const payload = {
+      exporter: {
+        srcMtimeMs: 1,
+        distMtimeMs: 2,
+        parameters: [
+          {
+            ...wellFormedParameter,
+            operations: [
+              {
+                ...wellFormedOperation,
+                extraOperationField: "should-not-survive",
+              },
+            ],
+          },
+        ],
+      },
+    };
+    vi.spyOn(fs, "readFileSync").mockReturnValue(JSON.stringify(payload));
+
+    const result = readDiscoveryCache("/cache/discovery.json");
+
+    expect(result["exporter"]?.parameters[0]?.operations).toEqual([
+      wellFormedOperation,
+    ]);
+    expect(
+      result["exporter"]?.parameters[0]?.operations?.[0],
+    ).not.toHaveProperty("extraOperationField");
+  });
+
+  test("projects operations into a fresh array (and fresh requiredParameters array), so mutating the parsed cache object after the read leaves the returned descriptor unaffected (U8)", () => {
+    const requiredParameters = ["key"];
+    const parsedPayload = {
+      exporter: {
+        srcMtimeMs: 1,
+        distMtimeMs: 2,
+        parameters: [
+          {
+            ...wellFormedParameter,
+            operations: [{ ...wellFormedOperation, requiredParameters }],
+          },
+        ],
+      },
+    };
+    vi.spyOn(fs, "readFileSync").mockReturnValue(
+      "ignored-since-JSON.parse-is-mocked",
+    );
+    vi.spyOn(JSON, "parse").mockReturnValue(parsedPayload);
+
+    const result = readDiscoveryCache("/cache/discovery.json");
+    // Mutate the very array `JSON.parse` handed back internally to
+    // readDiscoveryCache — if projectCachedParameter/projectCacheEntry
+    // aliased it instead of copying, this mutation would leak into `result`.
+    requiredParameters.push("mutated-after-read");
+
+    expect(
+      result["exporter"]?.parameters[0]?.operations?.[0]?.requiredParameters,
+    ).toEqual(["key"]);
+  });
 
   test("drops only the entry with a malformed parameters element, keeping a well-formed sibling entry (8f)", () => {
     const { secret: _drop, ...preSecretParameter } = wellFormedParameter;
