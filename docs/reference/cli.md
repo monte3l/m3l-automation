@@ -70,7 +70,24 @@ getters: name, aliases, type, required, default, description. An unknown
 `<script>` exits `2` with Damerau–Levenshtein suggestions (via
 `Core.M3LUnknownParameterDetector`) over the known script names.
 
-Flags: `--json` (machine-readable descriptor on stdout).
+For every parameter that declares an operation set (ADR-0055's
+`Core.M3LOperationDeclaration`, U4), an additional `Operations
+(--<parameterName>)` table follows the parameter table — columns
+`OPERATION` / `DESCRIPTION` / `REQUIRES` (a comma-joined list of any
+other parameter names the operation needs), one row per declared
+operation, in declaration order. The heading names the selector
+parameter itself, since it is not always called `operation` (`sqs-etl`
+and `api-gateway-client` call theirs `command`). No table renders for a
+parameter that declares no operations. A declared `Core.M3LConfigParameter`
+rejects a malformed operation set at construction (the config module
+fails to import, surfacing as `inspect`'s existing `1` config-load-failure
+exit); only a duck-typed or stale config export whose `getOperations()`
+is absent, non-callable, throws, or returns a malformed shape degrades
+tolerantly to no table for that parameter.
+
+Flags: `--json` (machine-readable descriptor on stdout; every parameter
+carries an `operations` array — `[]` when none is declared, otherwise
+one `{ name, description, requiredParameters }` object per operation).
 
 Exit: `0` success; `2` unknown script; `1` config load failure (the named
 `M3LCliError` reason is printed, e.g. an unbuilt script whose `src/config.ts`
@@ -115,7 +132,8 @@ the first bare `--` appended verbatim.
   future scripts from shadowing them); `run <script>` remains the canonical
   unambiguous form.
 - `m3l <script> --help` renders the same parameter table as
-  `inspect <script>` — no spawn.
+  `inspect <script>` — no spawn — including its per-parameter
+  `Operations (--<parameterName>)` table (U8) when the script declares any.
 - An unrecognized flag exits `2` with `ERR_CLI_UNKNOWN_PARAMETER` and
   Damerau–Levenshtein suggestions over the script's declared parameter
   names; a BOOL flag given a value (`--verbose=true`) exits `2` with

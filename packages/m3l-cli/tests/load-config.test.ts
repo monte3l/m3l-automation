@@ -23,7 +23,10 @@ import {
   loadScriptParameters,
   resolveConfigModulePath,
 } from "../src/discovery/load-config.js";
-import type { M3LCliParameterDescriptor } from "../src/discovery/load-config.js";
+import type {
+  M3LCliOperationDescriptor,
+  M3LCliParameterDescriptor,
+} from "../src/discovery/load-config.js";
 import { M3LCliError } from "../src/cli/errors.js";
 
 afterEach(() => {
@@ -74,6 +77,7 @@ describe("describeParameters", () => {
         defaultValue: "3000",
         description: "the listen port",
         secret: false,
+        operations: [],
       },
     ]);
   });
@@ -172,6 +176,233 @@ describe("describeParameters", () => {
     const [descriptor] = describeParameters([staleParameterLike]);
 
     expect(descriptor?.secret).toBe(false);
+  });
+});
+
+describe("describeParameters — operations (U8)", () => {
+  test("normalizes a real Core.M3LConfigParameter's single declared operation onto descriptor.operations", () => {
+    const parameter = new Core.M3LConfigParameter({
+      name: "command",
+      type: Core.M3LConfigParameterType.STRING,
+      operations: [
+        {
+          name: "get",
+          description: "Fetch one item.",
+          requiredParameters: ["key"],
+        },
+      ],
+    });
+
+    const [descriptor] = describeParameters([parameter]);
+
+    expect(descriptor?.operations).toEqual([
+      {
+        name: "get",
+        description: "Fetch one item.",
+        requiredParameters: ["key"],
+      },
+    ]);
+  });
+
+  test("preserves declaration order across multiple declared operations", () => {
+    const parameter = new Core.M3LConfigParameter({
+      name: "command",
+      type: Core.M3LConfigParameterType.STRING,
+      operations: [
+        { name: "get", description: "Fetch one item." },
+        { name: "put", description: "Write one item." },
+        { name: "delete", description: "Remove one item." },
+      ],
+    });
+
+    const [descriptor] = describeParameters([parameter]);
+
+    expect(descriptor?.operations?.map((operation) => operation.name)).toEqual([
+      "get",
+      "put",
+      "delete",
+    ]);
+  });
+
+  test("normalizes an operation with no declared requiredParameters to an empty array, not undefined", () => {
+    const parameter = new Core.M3LConfigParameter({
+      name: "command",
+      type: Core.M3LConfigParameterType.STRING,
+      operations: [{ name: "get", description: "Fetch one item." }],
+    });
+
+    const [descriptor] = describeParameters([parameter]);
+
+    expect(descriptor?.operations?.[0]?.requiredParameters).toEqual([]);
+  });
+
+  test("normalizes an operation's declared requiredParameters through unchanged", () => {
+    const parameter = new Core.M3LConfigParameter({
+      name: "command",
+      type: Core.M3LConfigParameterType.STRING,
+      operations: [
+        {
+          name: "put",
+          description: "Write one item.",
+          requiredParameters: ["key", "value"],
+        },
+      ],
+    });
+
+    const [descriptor] = describeParameters([parameter]);
+
+    expect(descriptor?.operations?.[0]?.requiredParameters).toEqual([
+      "key",
+      "value",
+    ]);
+  });
+
+  test("assigns an empty operations array to a real parameter that declares no operations", () => {
+    const parameter = new Core.M3LConfigParameter({
+      name: "PORT",
+      type: Core.M3LConfigParameterType.INT,
+    });
+
+    const [descriptor] = describeParameters([parameter]);
+
+    expect(descriptor?.operations).toEqual([]);
+  });
+
+  test("assigns an empty operations array, never throwing, for a duck-typed element with no getOperations() method", () => {
+    const staleParameterLike = {
+      getName: () => "LEGACY",
+      getAliases: () => [],
+      getType: () => "STRING",
+      isRequired: () => false,
+      getDefaultValue: () => undefined,
+      getDescription: () => undefined,
+      // no getOperations() — simulates a config module compiled against a
+      // dist predating the U8 operation-threading addition.
+    };
+
+    const [descriptor] = describeParameters([staleParameterLike]);
+
+    expect(descriptor?.operations).toEqual([]);
+  });
+
+  test.each<[string, unknown]>([
+    ["undefined", undefined],
+    ["null", null],
+    ["a non-array string", "get"],
+    ["a non-array plain object", { name: "get" }],
+    ["an array containing a non-object element", ["get"]],
+    ["an array containing an object missing name and description", [{}]],
+    [
+      "an array containing an object with non-string name and description",
+      [{ name: 1, description: 2 }],
+    ],
+    [
+      "an array containing an object with a non-array requiredParameters",
+      [{ name: "get", description: "d", requiredParameters: "key" }],
+    ],
+    [
+      "an array containing an object whose requiredParameters array contains a non-string element",
+      [{ name: "get", description: "d", requiredParameters: [1] }],
+    ],
+    ["an empty array", []],
+  ])(
+    "falls back to an empty operations array, never throwing, when getOperations() returns %s",
+    (_label, malformedReturn) => {
+      const duckTypedElement = {
+        getName: () => "command",
+        getAliases: () => [],
+        getType: () => "STRING",
+        isRequired: () => false,
+        getDefaultValue: () => undefined,
+        getDescription: () => undefined,
+        getOperations: () => malformedReturn,
+      };
+
+      expect(() => describeParameters([duckTypedElement])).not.toThrow();
+      const [descriptor] = describeParameters([duckTypedElement]);
+      expect(descriptor?.operations).toEqual([]);
+    },
+  );
+
+  test("reads a duck-typed element's getOperations() exactly once, reflecting only its first return value", () => {
+    const getOperations = vi
+      .fn()
+      .mockReturnValueOnce([
+        {
+          name: "get",
+          description: "Fetch one item.",
+          requiredParameters: ["key"],
+        },
+      ])
+      .mockReturnValueOnce([{ name: "put", description: "Write one item." }]);
+    const duckTypedElement = {
+      getName: () => "command",
+      getAliases: () => [],
+      getType: () => "STRING",
+      isRequired: () => false,
+      getDefaultValue: () => undefined,
+      getDescription: () => undefined,
+      getOperations,
+    };
+
+    const [descriptor] = describeParameters([duckTypedElement]);
+
+    expect(getOperations).toHaveBeenCalledTimes(1);
+    expect(descriptor?.operations).toEqual([
+      {
+        name: "get",
+        description: "Fetch one item.",
+        requiredParameters: ["key"],
+      },
+    ]);
+  });
+
+  test("assigns an empty operations array, never throwing, when getOperations is a non-function property", () => {
+    // Cast bypasses the getOperations type: this simulates a config module
+    // exporting a plain property in place of the documented method, a shape
+    // TypeScript itself would reject but a dynamically-imported, untrusted
+    // script module can still produce at runtime.
+    const duckTypedElement = {
+      getName: () => "command",
+      getAliases: () => [],
+      getType: () => "STRING",
+      isRequired: () => false,
+      getDefaultValue: () => undefined,
+      getDescription: () => "A malformed export.",
+      getOperations: "not-a-function",
+    } as unknown as Parameters<typeof describeParameters>[0][number];
+
+    expect(() => describeParameters([duckTypedElement])).not.toThrow();
+    const [descriptor] = describeParameters([duckTypedElement]);
+
+    expect(descriptor?.operations).toEqual([]);
+    expect(descriptor?.name).toBe("command");
+    expect(descriptor?.type).toBe("STRING");
+    expect(descriptor?.required).toBe(false);
+    expect(descriptor?.description).toBe("A malformed export.");
+  });
+
+  test("assigns an empty operations array, never throwing, when getOperations() throws", () => {
+    const duckTypedElement = {
+      getName: () => "command",
+      getAliases: () => [],
+      getType: () => "STRING",
+      isRequired: () => false,
+      getDefaultValue: () => undefined,
+      getDescription: () => "A thrown getter.",
+      getOperations: () => {
+        throw new Error("boom");
+      },
+    };
+
+    expect(() => describeParameters([duckTypedElement])).not.toThrow();
+    const [descriptor] = describeParameters([duckTypedElement]);
+
+    expect(descriptor?.operations).toEqual([]);
+    expect(descriptor?.name).toBe("command");
+    expect(descriptor?.type).toBe("STRING");
+    expect(descriptor?.required).toBe(false);
+    expect(descriptor?.description).toBe("A thrown getter.");
   });
 });
 
@@ -290,6 +521,7 @@ describe("loadScriptParameters", () => {
         defaultValue: undefined,
         description: "",
         secret: false,
+        operations: [],
       },
     ]);
   });
@@ -359,7 +591,7 @@ describe("loadScriptParameters", () => {
 });
 
 describe("M3LCliParameterDescriptor contract", () => {
-  test("declares the documented readonly shape, including 8f's secret flag", () => {
+  test("declares the documented readonly shape, including 8f's secret flag and U8's operations list", () => {
     expectTypeOf<M3LCliParameterDescriptor>().toEqualTypeOf<{
       readonly name: string;
       readonly aliases: readonly string[];
@@ -368,6 +600,17 @@ describe("M3LCliParameterDescriptor contract", () => {
       readonly defaultValue: string | undefined;
       readonly description: string;
       readonly secret?: boolean;
+      readonly operations?: readonly M3LCliOperationDescriptor[];
+    }>();
+  });
+});
+
+describe("M3LCliOperationDescriptor contract (U8)", () => {
+  test("declares the documented readonly shape: name, description, and an always-array requiredParameters", () => {
+    expectTypeOf<M3LCliOperationDescriptor>().toEqualTypeOf<{
+      readonly name: string;
+      readonly description: string;
+      readonly requiredParameters: readonly string[];
     }>();
   });
 });
