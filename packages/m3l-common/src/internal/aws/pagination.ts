@@ -6,9 +6,13 @@
  * SDK response hands back (`LastEvaluatedKey`/`NextContinuationToken`). A
  * misbehaving SDK, mock, or local endpoint that returns the same defined
  * cursor forever turns that loop into an unbounded spin — this guard bounds
- * it by treating the cursor value itself as the progress witness (unlike
- * `internal/polling/progress.ts`'s {@link ProgressTracker}, there is no
- * caller-supplied witness function to sample; the cursor IS the witness).
+ * *that* case by treating the cursor value itself as the progress witness
+ * (unlike `internal/polling/progress.ts`'s {@link ProgressTracker}, there is
+ * no caller-supplied witness function to sample; the cursor IS the witness).
+ * Scope is deliberately narrow: only two consecutive identical observations
+ * trip it — a longer alternating cycle (`a → b → a → …`) is not detected,
+ * since a repeated cursor is the only shape that's unconditionally
+ * pathological (a cycle could coincidentally be legitimate paging state).
  *
  * Private to `internal/`; never re-exported through a public barrel.
  */
