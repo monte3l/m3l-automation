@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import { Core } from "@m3l-automation/m3l-common";
 
-import { configParameters, configValidators } from "../src/config.js";
+import {
+  configParameters,
+  configValidators,
+  S3_OBJECTS_OPERATION_DECLARATIONS,
+} from "../src/config.js";
 
 /**
  * Contract: docs/reference/scripts/s3-objects.md "Configuration schema"
@@ -316,6 +320,105 @@ describe("configValidators — yesSensitive requires yes (ADR-0048)", () => {
     const config = buildConfig({
       [Core.AWS_PROFILE_PARAM_NAME]: "default",
       operation: "delete",
+    });
+
+    expect(firstFailure(config)).toBeUndefined();
+  });
+});
+
+/**
+ * Hand-authored per the task spec, NOT re-derived from
+ * `S3_OBJECTS_OPERATION_DECLARATIONS` — the point of this table is to catch
+ * a `src/config.ts` typo, not to restate whatever `src` currently says.
+ */
+const S3_OBJECTS_OPERATION_REQUIRED_PARAMETERS: Readonly<
+  Record<(typeof S3_OBJECTS_OPERATIONS)[number], readonly string[]>
+> = {
+  list: ["output"],
+  describe: ["key", "output"],
+  get: ["key", "output"],
+  put: ["key", "input"],
+  copy: ["key", "sourceBucket", "sourceKey"],
+  delete: ["key"],
+  "delete-batch": ["input"],
+};
+
+describe("'operation' declared operations (getOperations() round-trip, ADR-0055)", () => {
+  it("declares an operations list on the 'operation' parameter", () => {
+    const operations = paramNamed("operation").getOperations();
+    expect(operations).toBeDefined();
+  });
+
+  it("declares operation names, in order, matching S3_OBJECTS_OPERATIONS", () => {
+    const operations = paramNamed("operation").getOperations() ?? [];
+    expect(operations.map((operation) => operation.name)).toEqual(
+      S3_OBJECTS_OPERATIONS,
+    );
+  });
+
+  it("gives every operation a non-blank description", () => {
+    const operations = paramNamed("operation").getOperations() ?? [];
+    for (const operation of operations) {
+      expect(operation.description.trim().length).toBeGreaterThan(0);
+    }
+  });
+
+  it("equals S3_OBJECTS_OPERATION_DECLARATIONS by content — a fresh projection, not the same array (toEqual, not toBe)", () => {
+    const operations = paramNamed("operation").getOperations();
+    expect(operations).toEqual(S3_OBJECTS_OPERATION_DECLARATIONS);
+    expect(operations).not.toBe(S3_OBJECTS_OPERATION_DECLARATIONS);
+  });
+
+  it("declares the documented requiredParameters for every operation (frozen projection — toEqual, not toBe)", () => {
+    const operations = paramNamed("operation").getOperations() ?? [];
+    for (const operation of operations) {
+      expect(operation.requiredParameters).toEqual(
+        S3_OBJECTS_OPERATION_REQUIRED_PARAMETERS[
+          operation.name as (typeof S3_OBJECTS_OPERATIONS)[number]
+        ],
+      );
+    }
+  });
+
+  it("names only declared config parameters in every operation's requiredParameters (subset check)", () => {
+    const declaredNames = new Set(
+      configParameters.map((parameter) => parameter.getName()),
+    );
+    const operations = paramNamed("operation").getOperations() ?? [];
+    for (const operation of operations) {
+      for (const requiredName of operation.requiredParameters ?? []) {
+        expect(declaredNames.has(requiredName)).toBe(true);
+      }
+    }
+  });
+});
+
+/**
+ * ADR-0055's opt-in clause: declaring `requiredParameters` on an operation
+ * is metadata for CLI introspection ONLY — it does not, by itself, derive
+ * any enforcement. `s3-objects` never opted in (`configValidators` contains
+ * only the `yesSensitive` ⇒ `yes` guard above; `Core.deriveOperationValidators`
+ * is not spread into it), so presence enforcement for e.g.
+ * `key`/`sourceBucket`/`sourceKey` on `copy` stays exactly where it was
+ * before this retrofit: the run-start guard in `steps/run-s3-objects.ts`
+ * (`Core.M3LOperationPipeline`'s `requiredFields` option). This test pins
+ * that intent — it is not documenting an oversight, and should keep passing
+ * unchanged even as `S3_OBJECTS_OPERATION_DECLARATIONS` grows new
+ * operations/fields.
+ */
+describe("ADR-0055 opt-in clause — requiredParameters is declarative metadata only", () => {
+  it("declares exactly one configValidators entry (the yesSensitive => yes guard)", () => {
+    expect(configValidators.length).toBe(1);
+  });
+
+  it("does not enforce a declared operation's requiredParameters at config-load time ('copy' requires key/sourceBucket/sourceKey, all left unset)", () => {
+    const config = buildConfig({
+      [Core.AWS_PROFILE_PARAM_NAME]: "default",
+      operation: "copy",
+      bucket: "reports",
+      // Deliberately omit key/sourceBucket/sourceKey — 'copy's declared
+      // requiredParameters — to prove config-load validation does not
+      // enforce them; enforcement lives in the run-start guard instead.
     });
 
     expect(firstFailure(config)).toBeUndefined();

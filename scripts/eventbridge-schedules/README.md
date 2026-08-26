@@ -49,13 +49,20 @@ dispatch — add `--yes` for unattended runs (the bypass is logged). `list`/
 
 ### Operations at a glance
 
-| Operation                     | Demonstrated by                                                                  |
-| ----------------------------- | -------------------------------------------------------------------------------- |
-| `list`                        | Minimal                                                                          |
-| `describe`                    | Common                                                                           |
-| `create`                      | Production                                                                       |
-| `delete`                      | Edge case                                                                        |
-| `update`, `enable`, `disable` | — see the [contract page](../../docs/reference/scripts/eventbridge-schedules.md) |
+| Operation  | Description                                                              | Demonstrated by |
+| ---------- | ------------------------------------------------------------------------ | --------------- |
+| `list`     | List EventBridge rules, optionally filtered by name prefix or event bus. | Minimal         |
+| `describe` | Describe one EventBridge rule by name.                                   | Common          |
+| `create`   | Create an EventBridge rule, optionally attaching targets.                | Production      |
+| `update`   | Update an EventBridge rule, optionally attaching targets.                | —               |
+| `delete`   | Delete an EventBridge rule by name.                                      | Edge case       |
+| `enable`   | Enable an EventBridge rule by name.                                      | —               |
+| `disable`  | Disable an EventBridge rule by name.                                     | —               |
+
+A `—` in **Demonstrated by** means the operation has no worked example in
+§ Examples above — see the [contract page](../../docs/reference/scripts/eventbridge-schedules.md) for its full
+contract. Descriptions are the same strings the script declares in
+`src/config.ts` and exposes via `getOperations()` (ADR-0055).
 
 ### Operational flags
 

@@ -25,19 +25,109 @@ const PROGRESS_EVERY_RECORDS_DEFAULT = 10_000;
 
 const RESUME_DEFAULT = false;
 
-/** The ten operations `dynamodb-crud` supports. */
-export const DYNAMO_OPERATIONS = [
-  "get",
-  "put",
-  "update",
-  "delete",
-  "query",
-  "scan",
-  "batch-write",
-  "batch-delete",
-  "export",
-  "import",
+/**
+ * The `operation` parameter's declared operation set (ADR-0055) — the ten
+ * verbs `dynamodb-crud` dispatches over `aws/dynamodb`. Feeds
+ * {@link configParameters}' `operation` declaration (which auto-composes the
+ * membership validator, replacing the prior hand-written `oneOf`) and
+ * {@link DYNAMO_OPERATIONS}' name projection below.
+ *
+ * `requiredParameters` here is **declarative metadata only** — CLI
+ * introspection surfaces it (ADR-0055), but it is deliberately **not**
+ * enforced at config-load time: `Core.deriveOperationValidators` is NOT
+ * spread into {@link configValidators} (dynamodb-crud has none), so presence
+ * enforcement stays exactly where it already was — the run-start guard in
+ * `steps/run-dynamodb-crud.ts` (`applyOperationGuards`/`REQUIRED_FIELDS`).
+ * Wiring `deriveOperationValidators` in here would move that failure earlier
+ * (to config-load time) and is out of scope for this change — do not add it
+ * without deliberately deciding to change failure timing.
+ *
+ * Deliberately declared with a bare `as const` — NOT
+ * `as const satisfies Core.M3LOperationDeclarationList` — because a
+ * `satisfies` clause on this literal fails `tsc --isolatedDeclarations`
+ * (the mode each script's `tsconfig.build.json` builds under). The shape is
+ * still fully compile-time-checked at both use sites without it: passing
+ * this value to `Core.deriveOperationNames` below and to `operations:` in
+ * `configParameters` each independently check it against
+ * `Core.M3LOperationDeclarationList` — do not re-add `satisfies` here.
+ */
+export const DYNAMO_OPERATION_DECLARATIONS = [
+  {
+    name: "get",
+    description: "Get a single item by key.",
+    requiredParameters: ["key", "output"],
+  },
+  {
+    name: "put",
+    description: "Put a full item.",
+    requiredParameters: ["item"],
+  },
+  {
+    name: "update",
+    description:
+      "Update an item via a merge patch, routed through the destructive-operation gate.",
+    requiredParameters: ["key", "item"],
+  },
+  {
+    name: "delete",
+    description:
+      "Delete an item by key, routed through the destructive-operation gate.",
+    requiredParameters: ["key"],
+  },
+  {
+    name: "query",
+    description:
+      "Query items across parallel segmented workers, with an optional equality key condition.",
+    requiredParameters: ["key", "output"],
+  },
+  {
+    name: "scan",
+    description:
+      "Scan a table across parallel segmented workers, streaming records as JSONL.",
+    requiredParameters: ["output"],
+  },
+  {
+    name: "batch-write",
+    description:
+      "Batch-write records read from the input file, retrying unprocessed items.",
+    requiredParameters: ["input"],
+  },
+  {
+    name: "batch-delete",
+    description:
+      "Batch-delete records read from the input file, routed through the destructive-operation gate.",
+    requiredParameters: ["input"],
+  },
+  {
+    name: "export",
+    description:
+      "Export a full table scan to JSONL across parallel segmented workers.",
+    requiredParameters: ["output"],
+  },
+  {
+    name: "import",
+    description:
+      "Import records from the input file, routed through the destructive-operation gate.",
+    requiredParameters: ["input"],
+  },
 ] as const;
+
+/** The literal union of {@link DYNAMO_OPERATION_DECLARATIONS}' operation names. */
+type DynamoOperationName =
+  (typeof DYNAMO_OPERATION_DECLARATIONS)[number]["name"];
+
+/**
+ * Name-only projection of {@link DYNAMO_OPERATION_DECLARATIONS} — the ten
+ * operations `dynamodb-crud` supports. Kept under its original name and
+ * element order: `steps/run-dynamodb-crud.ts` derives its `DynamoOperation`
+ * type alias from this constant, keys two exhaustive
+ * `Record<DynamoOperation, …>` dispatch tables off it, and calls
+ * `accessor.oneOf("operation", DYNAMO_OPERATIONS)` with it.
+ */
+export const DYNAMO_OPERATIONS: readonly [
+  DynamoOperationName,
+  ...(readonly DynamoOperationName[]),
+] = Core.deriveOperationNames(DYNAMO_OPERATION_DECLARATIONS);
 
 /**
  * The declared configuration schema for `dynamodb-crud` — the script's only
@@ -52,9 +142,12 @@ export const DYNAMO_OPERATIONS = [
  * `operation`, `tableName`, and `aws.profile` are `required: true`: presence
  * is enforced at config-load time by the library. The remaining
  * per-operation requirements (e.g. `key` for `get`, `input` for
- * `batch-write`) are cross-parameter constraints a single parameter's
- * validator cannot express, so they are guard-checked at run start instead
- * (see `steps/run-dynamodb-crud.ts`).
+ * `batch-write`) are declared as data on
+ * {@link DYNAMO_OPERATION_DECLARATIONS}' `requiredParameters` for CLI
+ * introspection, but are cross-parameter constraints a single parameter's
+ * validator cannot express and are deliberately left enforced at run start
+ * only (see `steps/run-dynamodb-crud.ts`) — see that constant's TSDoc for
+ * why `Core.deriveOperationValidators` is not wired in here.
  */
 export const configParameters: readonly Core.M3LConfigParameter[] = [
   new Core.M3LConfigParameter({
@@ -67,7 +160,7 @@ export const configParameters: readonly Core.M3LConfigParameter[] = [
     name: "operation",
     type: Core.M3LConfigParameterType.STRING,
     required: true,
-    validate: Core.M3LConfigValidators.oneOf<string>(DYNAMO_OPERATIONS),
+    operations: DYNAMO_OPERATION_DECLARATIONS,
   }),
   new Core.M3LConfigParameter({
     name: "tableName",

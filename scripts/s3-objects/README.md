@@ -48,13 +48,20 @@ node dist/main.js --operation put --bucket reports \
 
 ### Operations at a glance
 
-| Operation                    | Demonstrated by                                                       |
-| ---------------------------- | --------------------------------------------------------------------- |
-| `list`                       | Minimal                                                               |
-| `get`                        | Common                                                                |
-| `delete-batch`               | Production                                                            |
-| `put`                        | Edge case                                                             |
-| `describe`, `copy`, `delete` | — see the [contract page](../../docs/reference/scripts/s3-objects.md) |
+| Operation      | Description                                                                        | Demonstrated by |
+| -------------- | ---------------------------------------------------------------------------------- | --------------- |
+| `list`         | List objects in a bucket, optionally under a prefix, streaming summaries as JSONL. | Minimal         |
+| `describe`     | Describe one object's metadata.                                                    | —               |
+| `get`          | Get one object's body.                                                             | Common          |
+| `put`          | Write one object's body.                                                           | Edge case       |
+| `copy`         | Copy one object between buckets/keys.                                              | —               |
+| `delete`       | Delete one object by key.                                                          | —               |
+| `delete-batch` | Delete many objects listed in the input file, chunked into 1000-key groups.        | Production      |
+
+A `—` in **Demonstrated by** means the operation has no worked example in
+§ Examples above — see the [contract page](../../docs/reference/scripts/s3-objects.md) for its full
+contract. Descriptions are the same strings the script declares in
+`src/config.ts` and exposes via `getOperations()` (ADR-0055).
 
 ### Operational flags
 

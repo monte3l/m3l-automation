@@ -6,16 +6,89 @@ const PAGE_SIZE_MAX = 1_000;
 const YES_DEFAULT = false;
 const YES_SENSITIVE_DEFAULT = false;
 
-/** The seven operations `s3-objects` supports. */
-export const S3_OBJECTS_OPERATIONS = [
-  "list",
-  "describe",
-  "get",
-  "put",
-  "copy",
-  "delete",
-  "delete-batch",
+/**
+ * The `operation` parameter's declared operation set (ADR-0055) — the seven
+ * verbs `s3-objects` dispatches over `aws/s3`. Feeds {@link configParameters}'
+ * `operation` declaration (which auto-composes the membership validator,
+ * replacing the prior hand-written `oneOf`) and
+ * {@link S3_OBJECTS_OPERATIONS}' name projection below.
+ *
+ * `requiredParameters` here is **declarative metadata only** — CLI
+ * introspection surfaces it (ADR-0055), but it is deliberately **not**
+ * enforced at config-load time: `Core.deriveOperationValidators` is NOT
+ * spread into {@link configValidators}, so presence enforcement stays
+ * exactly where it already was — the run-start guard `steps/run-s3-objects.ts`
+ * applies via `Core.M3LOperationPipeline`'s `requiredFields` option
+ * (`REQUIRED_FIELDS`). Wiring `deriveOperationValidators` in here would move
+ * that failure earlier (to config-load time) and is out of scope for this
+ * change — do not add it without deliberately deciding to change failure
+ * timing.
+ *
+ * Deliberately declared with a bare `as const` — NOT
+ * `as const satisfies Core.M3LOperationDeclarationList` — because a
+ * `satisfies` clause on this literal fails `tsc --isolatedDeclarations`
+ * (the mode each script's `tsconfig.build.json` builds under). The shape is
+ * still fully compile-time-checked at both use sites without it: passing
+ * this value to `Core.deriveOperationNames` below and to `operations:` in
+ * `configParameters` each independently check it against
+ * `Core.M3LOperationDeclarationList` — do not re-add `satisfies` here.
+ */
+export const S3_OBJECTS_OPERATION_DECLARATIONS = [
+  {
+    name: "list",
+    description:
+      "List objects in a bucket, optionally under a prefix, streaming summaries as JSONL.",
+    requiredParameters: ["output"],
+  },
+  {
+    name: "describe",
+    description: "Describe one object's metadata.",
+    requiredParameters: ["key", "output"],
+  },
+  {
+    name: "get",
+    description: "Get one object's body.",
+    requiredParameters: ["key", "output"],
+  },
+  {
+    name: "put",
+    description: "Write one object's body.",
+    requiredParameters: ["key", "input"],
+  },
+  {
+    name: "copy",
+    description: "Copy one object between buckets/keys.",
+    requiredParameters: ["key", "sourceBucket", "sourceKey"],
+  },
+  {
+    name: "delete",
+    description: "Delete one object by key.",
+    requiredParameters: ["key"],
+  },
+  {
+    name: "delete-batch",
+    description:
+      "Delete many objects listed in the input file, chunked into 1000-key groups.",
+    requiredParameters: ["input"],
+  },
 ] as const;
+
+/** The literal union of {@link S3_OBJECTS_OPERATION_DECLARATIONS}' operation names. */
+type S3ObjectsOperationName =
+  (typeof S3_OBJECTS_OPERATION_DECLARATIONS)[number]["name"];
+
+/**
+ * Name-only projection of {@link S3_OBJECTS_OPERATION_DECLARATIONS} — the
+ * seven operations `s3-objects` supports. Kept under its original name and
+ * element order: passed to `Core.M3LOperationPipeline`'s `operations` option
+ * in `steps/run-s3-objects.ts`, whose constructor requires a
+ * `readonly [TOp, ...(readonly TOp[])]`, and read elsewhere as the closed
+ * `S3ObjectsOperation` literal union.
+ */
+export const S3_OBJECTS_OPERATIONS: readonly [
+  S3ObjectsOperationName,
+  ...(readonly S3ObjectsOperationName[]),
+] = Core.deriveOperationNames(S3_OBJECTS_OPERATION_DECLARATIONS);
 
 /**
  * The declared configuration schema for `s3-objects` — the script's only
@@ -29,10 +102,12 @@ export const S3_OBJECTS_OPERATIONS = [
  *
  * `operation`, `bucket`, and `aws.profile` are `required: true`: presence is
  * enforced at config-load time by the library. The remaining per-operation
- * requirements (e.g. `key` for `describe`, `input` for `put`) are
- * cross-parameter constraints a single parameter's validator cannot express,
- * so they are guard-checked at run start instead (see
- * `steps/run-s3-objects.ts`).
+ * requirements (e.g. `key` for `describe`, `input` for `put`) are declared as
+ * data on {@link S3_OBJECTS_OPERATION_DECLARATIONS}' `requiredParameters` for
+ * CLI introspection, but are cross-parameter constraints a single
+ * parameter's validator cannot express and are deliberately left enforced at
+ * run start only (see `steps/run-s3-objects.ts`) — see that constant's
+ * TSDoc for why `Core.deriveOperationValidators` is not wired in here.
  */
 export const configParameters: readonly Core.M3LConfigParameter[] = [
   new Core.M3LConfigParameter({
@@ -45,7 +120,7 @@ export const configParameters: readonly Core.M3LConfigParameter[] = [
     name: "operation",
     type: Core.M3LConfigParameterType.STRING,
     required: true,
-    validate: Core.M3LConfigValidators.oneOf<string>(S3_OBJECTS_OPERATIONS),
+    operations: S3_OBJECTS_OPERATION_DECLARATIONS,
   }),
   new Core.M3LConfigParameter({
     name: "bucket",
