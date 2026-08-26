@@ -245,6 +245,57 @@ rendering), constructed lazily behind an injectable port.
 `wizard` completes the reserved command-name set:
 `list, inspect, run, doctor, presets, history, new, help, wizard`.
 
+### U9 — script scaffolding
+
+#### `m3l new <name> [options]`
+
+Activates the long-reserved `new` command (ADR-0053 U9, issue #533):
+generates a new `scripts/<name>/` package (ADR-0022 fleet conventions) plus
+its `docs/reference/scripts/<name>.md` contract page, and wires the root
+`tsconfig.json` project reference — the same shape `bin/scaffold-script.mjs`
+used to generate directly; that script is now a thin delegate onto this
+command for one release (ADR-0053), and `pnpm scaffold:script` keeps working
+unchanged. Emits every file from the committed `templates/script/*.tmpl`
+sources via plain token substitution, with **no reformatting pass** — the
+templates are authored (and machine-verified, `check:template-format`) to
+already be prettier-conformant after substitution, since `packages/m3l-cli`
+carries a zero-third-party-runtime-dependency contract
+([§Design invariants](#design-invariants)) that forbids importing `prettier`.
+
+Options:
+
+- `--purpose "<one-line purpose>"` — injected into the package description,
+  README, and contract page (defaults to a `TODO` placeholder).
+- `--variant <cli|lambda>` — which composition-root/README pair to emit
+  (default `cli`): `cli` wires `Core.runScript` for a terminal invocation;
+  `lambda` wires `M3LScript.createLambdaHandler()` instead, with a matching
+  README. Every other emitted file (config, hooks, the starter step, the
+  config smoke test, the contract page) is identical between variants —
+  output filenames never differ by variant, so `check:script-scaffold`'s
+  shape validation needs no variant awareness. Choosing `lambda` scaffolds
+  the shape only; it does not itself activate ADR-0018's event-source seam
+  (see that ADR's 2026-08-26 Update) — that trigger is a real deployed
+  consumer, not a template.
+- `--dry-run` — renders every file and reports what would be written, writing
+  nothing.
+- `--force` — overwrite a pre-existing `scripts/<name>/` or contract page;
+  anything else already there is left untouched, and a failure mid-run under
+  `--force` is **not** rolled back (only the default, nothing-pre-existing
+  path rolls back atomically on failure).
+
+Flags: `--json` (machine-readable `{ scriptName, variant, dryRun, changes }`
+on stdout, where `changes` is one `{ action: "created" | "updated", path }`
+entry per emitted/updated file).
+
+A name that fails ADR-0028's full-service-name convention, collides with a
+reserved CLI command name (ADR-0042), or is not kebab-case exits `2`
+(`ERR_CLI_SCAFFOLD_INVALID`), as does an invalid `--purpose` (a control
+character, or a character that would break out of the JSON/doc-comment
+context it's substituted into) or an unrecognized `--variant`. A pre-existing
+target without `--force` exits `2` (`ERR_CLI_SCAFFOLD_EXISTS`). A write
+failure exits `1` (`ERR_CLI_SCAFFOLD_FAILED`, cause-chained; the run is rolled
+back first unless the target pre-existed under `--force`).
+
 ## Exit codes
 
 The CLI's own exit codes are `M3LCliExitCode` — exactly `0 | 1 | 2`, the
@@ -254,10 +305,10 @@ passthrough from a spawned script. The `M3LCliErrorCode` → exit-code mapping
 lives in `src/cli/errors.ts` as a `Record` keyed by the full union, so adding
 an error code is a compile error until its exit code is chosen.
 
-| Code    | Meaning             | Raised by                                                                                                                                                                                                              |
-| ------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `0`     | Success             | every happy path — including `list` with some configs unloadable, `doctor` with no `fail` row (a `warn` never affects the code), `wizard` declining "run now?", and an empty `presets` listing                         |
-| `1`     | Operational failure | `ERR_CLI_CONFIG_IMPORT`, `ERR_CLI_WORKSPACE_NOT_FOUND`, `ERR_CLI_SCRIPT_NOT_BUILT`, `ERR_CLI_SPAWN_FAILED`, `ERR_CLI_DOCTOR_FAILED`, `ERR_CLI_PRESET_INVALID` — and any non-`M3LCliError` value reaching the top level |
-| `2`     | Usage error         | `ERR_CLI_UNKNOWN_COMMAND`, `ERR_CLI_UNKNOWN_SCRIPT`, `ERR_CLI_UNKNOWN_PARAMETER`, `ERR_CLI_INVALID_PARAMETER_VALUE`; a missing required positional; `wizard` on a non-interactive stdin                                |
-| child's | Passthrough         | `run <script>` and dynamic per-script dispatch return the child's code **verbatim**, preserving the ADR-0035 registry end-to-end                                                                                       |
-| `128+N` | Signal-terminated   | a signal-killed child, e.g. SIGTERM → `143`                                                                                                                                                                            |
+| Code    | Meaning             | Raised by                                                                                                                                                                                                                                         |
+| ------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `0`     | Success             | every happy path — including `list` with some configs unloadable, `doctor` with no `fail` row (a `warn` never affects the code), `wizard` declining "run now?", and an empty `presets` listing                                                    |
+| `1`     | Operational failure | `ERR_CLI_CONFIG_IMPORT`, `ERR_CLI_WORKSPACE_NOT_FOUND`, `ERR_CLI_SCRIPT_NOT_BUILT`, `ERR_CLI_SPAWN_FAILED`, `ERR_CLI_DOCTOR_FAILED`, `ERR_CLI_PRESET_INVALID`, `ERR_CLI_SCAFFOLD_FAILED` — and any non-`M3LCliError` value reaching the top level |
+| `2`     | Usage error         | `ERR_CLI_UNKNOWN_COMMAND`, `ERR_CLI_UNKNOWN_SCRIPT`, `ERR_CLI_UNKNOWN_PARAMETER`, `ERR_CLI_INVALID_PARAMETER_VALUE`, `ERR_CLI_SCAFFOLD_INVALID`, `ERR_CLI_SCAFFOLD_EXISTS`; a missing required positional; `wizard` on a non-interactive stdin    |
+| child's | Passthrough         | `run <script>` and dynamic per-script dispatch return the child's code **verbatim**, preserving the ADR-0035 registry end-to-end                                                                                                                  |
+| `128+N` | Signal-terminated   | a signal-killed child, e.g. SIGTERM → `143`                                                                                                                                                                                                       |

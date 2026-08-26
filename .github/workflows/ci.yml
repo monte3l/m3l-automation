@@ -431,6 +431,15 @@ jobs:
       - name: Check CLI doc structure
         run: pnpm check:cli-docs
 
+      # templates/script/*.tmpl must stay prettier-conformant after plain
+      # __TOKEN__ substitution, across several token sets — the invariant
+      # packages/m3l-cli/src/scaffold/generate.ts depends on, since it emits
+      # scaffolded files with no reformatting pass (the CLI's zero-third-
+      # party-runtime-dependency contract forbids importing prettier).
+      # ADR-0053 U9.
+      - name: Check scaffold template format
+        run: pnpm check:template-format
+
       # Subagent config: skill/CLAUDE.md references resolve to real agents or
       # built-ins, and no spoke is granted the Agent tool (no-nesting invariant).
       - name: Check subagent configuration (agents)

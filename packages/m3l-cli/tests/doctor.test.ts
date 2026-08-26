@@ -660,9 +660,11 @@ describe("runDoctor — unexpected check-executor failure", () => {
 /**
  * Extracts the double-quoted string members of a `[...]` / `new Set([...])`
  * array literal captured by `pattern`'s first capture group. Used only by the
- * drift-guard test below, which reads both source files as plain text since
- * `bin/lib/script-scaffold.mjs`'s `RESERVED_CLI_NAMES` is unexported and
- * `bin/` sits outside this package's module graph.
+ * drift-guard test below, which reads both source files as plain text for
+ * symmetry with `doctor.ts`'s own regex-extraction, and because a plain-text
+ * diff between the two sources is the actual thing being guarded against.
+ * The manifest source is `packages/m3l-cli/src/scaffold/manifest.ts` (inside
+ * this package, ADR-0053 U9).
  */
 function extractSetLiteral(source: string, pattern: RegExp): Set<string> {
   const match = pattern.exec(source);
@@ -675,15 +677,15 @@ function extractSetLiteral(source: string, pattern: RegExp): Set<string> {
   return new Set(members);
 }
 
-describe("runDoctor — reserved-names drift guard vs bin/lib/script-scaffold.mjs", () => {
-  test("RESERVED_COMMAND_NAMES stays set-equal to script-scaffold.mjs's RESERVED_CLI_NAMES", () => {
+describe("runDoctor — reserved-names drift guard vs packages/m3l-cli/src/scaffold/manifest.ts", () => {
+  test("RESERVED_COMMAND_NAMES stays set-equal to scaffold/manifest.ts's RESERVED_CLI_NAMES", () => {
     const repoRoot = fileURLToPath(new URL("../../../", import.meta.url));
     const doctorSource = fs.readFileSync(
       join(repoRoot, "packages/m3l-cli/src/commands/doctor.ts"),
       "utf8",
     );
     const scaffoldSource = fs.readFileSync(
-      join(repoRoot, "bin/lib/script-scaffold.mjs"),
+      join(repoRoot, "packages/m3l-cli/src/scaffold/manifest.ts"),
       "utf8",
     );
 
@@ -693,7 +695,7 @@ describe("runDoctor — reserved-names drift guard vs bin/lib/script-scaffold.mj
     );
     const scaffoldNames = extractSetLiteral(
       scaffoldSource,
-      /RESERVED_CLI_NAMES\s*=\s*new Set\(\[([\s\S]*?)\]\)/,
+      /RESERVED_CLI_NAMES[^=]*=\s*new Set\(\[([\s\S]*?)\]\)/,
     );
 
     // Both extractions must have found something real, or an equal-but-empty
@@ -711,11 +713,11 @@ describe("runDoctor — reserved-names drift guard vs bin/lib/script-scaffold.mj
 
     expect(
       missingFromDoctor,
-      `doctor.ts's RESERVED_COMMAND_NAMES is missing name(s) present in script-scaffold.mjs's RESERVED_CLI_NAMES: ${missingFromDoctor.join(", ")}`,
+      `doctor.ts's RESERVED_COMMAND_NAMES is missing name(s) present in scaffold/manifest.ts's RESERVED_CLI_NAMES: ${missingFromDoctor.join(", ")}`,
     ).toEqual([]);
     expect(
       extraInDoctor,
-      `doctor.ts's RESERVED_COMMAND_NAMES has name(s) not present in script-scaffold.mjs's RESERVED_CLI_NAMES: ${extraInDoctor.join(", ")}`,
+      `doctor.ts's RESERVED_COMMAND_NAMES has name(s) not present in scaffold/manifest.ts's RESERVED_CLI_NAMES: ${extraInDoctor.join(", ")}`,
     ).toEqual([]);
   });
 });

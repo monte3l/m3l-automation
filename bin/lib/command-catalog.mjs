@@ -191,6 +191,11 @@ export const COMMAND_CATALOG = [
       "Verifies docs/reference/cli.md follows the canonical structure spec (docs/contributing/cli-structure.md): title and preamble, required sections in canonical order, conditional sections validated when present, an `## Exit codes` table, and a `## Commands` cross-check against main.ts's STATIC_COMMAND_NAMES. Run after editing the CLI contract page or adding a CLI command.",
   },
   {
+    name: "check:template-format",
+    description:
+      "Verifies every templates/script/*.tmpl file stays prettier-conformant after plain __TOKEN__ substitution, across several token sets (short/typical/edge-case names and purposes) — the invariant packages/m3l-cli/src/scaffold/generate.ts depends on, since it emits scaffolded files with no reformatting pass (the CLI carries a zero-third-party-runtime-dependency contract that forbids importing prettier). Run after editing any templates/script/*.tmpl file.",
+  },
+  {
     name: "scaffold:script",
     description:
       "Deterministic generator for a brand-new scripts/<name>/ consumer-script package from templates/script/ (ADR-0022). The greenfield entry point when scripts/<name>/ doesn't exist yet.",

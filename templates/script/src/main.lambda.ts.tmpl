@@ -1,0 +1,72 @@
+import { Core } from "@m3l-automation/m3l-common";
+
+import { configParameters } from "./config.js";
+import { hooks } from "./hooks.js";
+import { run__SCRIPT_NAME_PASCAL__ } from "./steps/run-__SCRIPT_NAME__.js";
+
+// Composition root ONLY (ADR-0022): construct the script and export the
+// Lambda handler. Any conditional, loop, or I/O beyond wiring belongs in a
+// steps/ module — reviewers reject business logic here.
+//
+// `createLambdaHandler()` wraps the same initialization pipeline `run()`
+// uses for a CLI script: per invocation it resets `initialized`/
+// `configLoaded` and clears the config store, while SDK clients stay warm
+// across invocations. The received event is wired automatically into stage 3
+// of config resolution (docs/reference/core/script.md "Configuration from
+// the Lambda event") — a top-level event key matching a declared parameter's
+// name/alias overrides that parameter for this invocation, with no change to
+// how the parameter is declared below.
+const script = new Core.M3LScript({
+  metadata: {
+    name: "__SCRIPT_NAME__",
+    version: "0.0.0",
+  },
+  config: { params: configParameters },
+  hooks,
+});
+
+/**
+ * Declare the event payload shape your trigger delivers (event-source
+ * mapping, EventBridge rule, API Gateway proxy integration, a scheduled
+ * rule's fixed shape, ...). Any top-level key here can also flow through as
+ * configuration — see the comment above. Named generically (not after the
+ * script) since it's local to this one file.
+ */
+interface LambdaEvent {
+  readonly [key: string]: unknown;
+}
+
+/** The Lambda's return value — shape it to whatever your invoker expects. */
+interface LambdaResult {
+  readonly ok: boolean;
+}
+
+/**
+ * The subset of the Lambda `Context` this handler actually reads — declared
+ * locally rather than pulling in a `@types/aws-lambda` dependency the
+ * scripts fleet does not otherwise need (ADR-0029).
+ */
+interface LambdaContext {
+  readonly awsRequestId: string;
+}
+
+export const handler = script.createLambdaHandler<
+  LambdaEvent,
+  LambdaResult,
+  LambdaContext
+>(async (_event, context) => {
+  // Attributes any process-guard-caught error to this invocation; harmless
+  // if you never call `Core.installProcessGuards()` at module scope.
+  Core.setProcessGuardRequestId(context.awsRequestId);
+
+  // Resolve the declared config (event payload + env + defaults for this
+  // invocation) and inject what the step needs as a single options object —
+  // never reach for `process.env` or a global. Add `script.aws` / `M3LPaths`
+  // dirs here too when the step needs them.
+  const config = await script.getConfiguration();
+  await run__SCRIPT_NAME_PASCAL__({
+    logger: script.logger,
+    config,
+  });
+  return { ok: true };
+});

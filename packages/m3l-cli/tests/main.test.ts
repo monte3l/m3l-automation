@@ -13,6 +13,7 @@ import { runDoctor } from "../src/commands/doctor.js";
 import { runPresets } from "../src/commands/presets.js";
 import { runHistory } from "../src/commands/history.js";
 import { runWizard } from "../src/commands/wizard.js";
+import { runNew } from "../src/commands/new.js";
 import { resolveWorkspaceRoot } from "../src/discovery/discover.js";
 import type { M3LCliCommandContext } from "../src/commands/context.js";
 
@@ -47,6 +48,7 @@ vi.mock("../src/commands/doctor.js", () => ({ runDoctor: vi.fn() }));
 vi.mock("../src/commands/presets.js", () => ({ runPresets: vi.fn() }));
 vi.mock("../src/commands/history.js", () => ({ runHistory: vi.fn() }));
 vi.mock("../src/commands/wizard.js", () => ({ runWizard: vi.fn() }));
+vi.mock("../src/commands/new.js", () => ({ runNew: vi.fn() }));
 vi.mock("../src/discovery/discover.js", () => ({
   resolveWorkspaceRoot: vi.fn(),
 }));
@@ -59,6 +61,7 @@ const runDoctorMock = vi.mocked(runDoctor);
 const runPresetsMock = vi.mocked(runPresets);
 const runHistoryMock = vi.mocked(runHistory);
 const runWizardMock = vi.mocked(runWizard);
+const runNewMock = vi.mocked(runNew);
 const resolveWorkspaceRootMock = vi.mocked(resolveWorkspaceRoot);
 
 afterEach(() => {
@@ -70,6 +73,7 @@ afterEach(() => {
   runPresetsMock.mockReset();
   runHistoryMock.mockReset();
   runWizardMock.mockReset();
+  runNewMock.mockReset();
   resolveWorkspaceRootMock.mockReset();
 });
 
@@ -622,12 +626,14 @@ describe("runCli — dynamic dispatch (8d)", () => {
     ["the run command", ["run", "json-etl", "--"]],
     ["the doctor command", ["doctor"]],
     ["the wizard command", ["wizard"]],
+    ["the new command", ["new", "data-sync"]],
   ])("dynamic.js is never touched by %s", async (_label, argv) => {
     resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
     runInspectMock.mockResolvedValue(0);
     runRunMock.mockResolvedValue(0);
     runDoctorMock.mockResolvedValue(0);
     runWizardMock.mockResolvedValue(0);
+    runNewMock.mockResolvedValue(0);
     const { options } = buildOptions();
 
     await runCli(argv, options);
@@ -865,6 +871,102 @@ describe("runCli — wizard dispatch (8g)", () => {
 
     expect(code).toBe(1);
     expect(stderrLines.join("\n")).toContain("no workspace found");
+  });
+});
+
+/**
+ * m3l-cli U9 addendum (issue #533) — `new <name>` joins the static command
+ * table, always winning over dynamic per-script dispatch. Unlike every other
+ * static command handled so far, `new`'s own value-flags (`--purpose`,
+ * `--variant`) must survive unparsed by `parseStaticCommandArgs`'s shared
+ * `--json`/`--help`-only parser (which would otherwise misparse them, the
+ * same reason `runDynamicCommand` already bypasses that parser for script
+ * args) — so `new` is dispatched the RAW pre-parse `beforeArgs` slice (minus
+ * the leading `"new"` token) rather than `positionals`.
+ */
+describe("runCli — new dispatch (U9, issue #533)", () => {
+  test("dispatches to runNew with the raw args after 'new' (excluding the 'new' token itself), preserving --purpose's value unparsed", async () => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    runNewMock.mockResolvedValue(0);
+    const { options } = buildOptions();
+
+    const code = await runCli(
+      ["new", "data-sync", "--purpose", "Sync it"],
+      options,
+    );
+
+    expect(code).toBe(0);
+    expect(runNewMock).toHaveBeenCalledTimes(1);
+    const [context, rawArgs] = runNewMock.mock.calls[0] as [
+      M3LCliCommandContext,
+      readonly string[],
+    ];
+    expect(context.workspaceRoot).toBe("/workspace-root");
+    expect(rawArgs).toEqual(["data-sync", "--purpose", "Sync it"]);
+  });
+
+  test("preserves raw arg order and every token when flags precede the <name> positional", async () => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    runNewMock.mockResolvedValue(0);
+    const { options } = buildOptions();
+
+    await runCli(["new", "--purpose", "Sync it", "data-sync"], options);
+
+    const [, rawArgs] = runNewMock.mock.calls[0] as [
+      M3LCliCommandContext,
+      readonly string[],
+    ];
+    expect(rawArgs).toEqual(["--purpose", "Sync it", "data-sync"]);
+  });
+
+  test.each<[0 | 1 | 2]>([[2], [0]])(
+    "propagates runNew's resolved exit code (%i) verbatim",
+    async (exitCode) => {
+      resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+      runNewMock.mockResolvedValue(exitCode);
+      const { options } = buildOptions();
+
+      const code = await runCli(["new"], options);
+
+      expect(code).toBe(exitCode);
+    },
+  );
+
+  test("the static 'new' command wins over dynamic dispatch and never calls runDynamic", async () => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    runNewMock.mockResolvedValue(0);
+    const { options } = buildOptions();
+
+    const code = await runCli(["new", "data-sync"], options);
+
+    expect(code).toBe(0);
+    expect(runNewMock).toHaveBeenCalledTimes(1);
+    expect(runDynamicMock).not.toHaveBeenCalled();
+  });
+
+  test("new.js is loaded lazily and never touched by unrelated dispatch paths", async () => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    runListMock.mockResolvedValue(0);
+    const { options } = buildOptions();
+
+    await runCli(["list"], options);
+
+    expect(runNewMock).not.toHaveBeenCalled();
+  });
+
+  test("sets context.jsonOutput true for --json while --json also survives verbatim in rawArgs (new's own parser tolerates unrecognized flags under strict:false)", async () => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    runNewMock.mockResolvedValue(0);
+    const { options } = buildOptions();
+
+    await runCli(["new", "data-sync", "--json"], options);
+
+    const [context, rawArgs] = runNewMock.mock.calls[0] as [
+      M3LCliCommandContext,
+      readonly string[],
+    ];
+    expect(context.jsonOutput).toBe(true);
+    expect(rawArgs).toContain("--json");
   });
 });
 

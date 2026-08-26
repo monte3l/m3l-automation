@@ -269,6 +269,11 @@ export const VERIFY_STEPS = [
     cmd: () => "pnpm check:cli-docs",
   },
   {
+    ciStepName: "Check scaffold template format",
+    id: "check-template-format",
+    cmd: () => "pnpm check:template-format",
+  },
+  {
     ciStepName: "Check barrel vs docs exports",
     id: "check-doc-exports",
     cmd: () => "pnpm check:doc-exports",
