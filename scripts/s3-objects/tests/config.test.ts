@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import { Core } from "@m3l-automation/m3l-common";
 
-import { configParameters, configValidators } from "../src/config.js";
+import {
+  configParameters,
+  configValidators,
+  S3_OBJECTS_OPERATION_DECLARATIONS,
+} from "../src/config.js";
 
 /**
  * Contract: docs/reference/scripts/s3-objects.md "Configuration schema"
@@ -357,6 +361,12 @@ describe("'operation' declared operations (getOperations() round-trip, ADR-0055)
     for (const operation of operations) {
       expect(operation.description.trim().length).toBeGreaterThan(0);
     }
+  });
+
+  it("equals S3_OBJECTS_OPERATION_DECLARATIONS by content — a fresh projection, not the same array (toEqual, not toBe)", () => {
+    const operations = paramNamed("operation").getOperations();
+    expect(operations).toEqual(S3_OBJECTS_OPERATION_DECLARATIONS);
+    expect(operations).not.toBe(S3_OBJECTS_OPERATION_DECLARATIONS);
   });
 
   it("declares the documented requiredParameters for every operation (frozen projection — toEqual, not toBe)", () => {
