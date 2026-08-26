@@ -229,6 +229,64 @@ describe("runDynamic — --help/-h delegation", () => {
     expect(runInspectMock).not.toHaveBeenCalled();
     expect(spawnScriptMock).toHaveBeenCalledTimes(1);
   });
+
+  /**
+   * U8 addendum — `--help` delegates to the REAL `runInspect` (not the
+   * module-level `runInspectMock`) here, via `vi.importActual`, so this test
+   * proves the delegation actually surfaces `runInspect`'s operation-table
+   * rendering, not just that `runInspect` was called. `discoverScripts` and
+   * `loadParametersCached` stay mocked at the module level, which the real
+   * `runInspect` reads through unchanged since mocks apply per-module.
+   */
+  test("delegates to the real runInspect for --help, which renders the Operations table when a descriptor declares operations (U8)", async () => {
+    discoverScriptsMock.mockReturnValue(knownCandidates);
+    const descriptorsWithOperations: readonly M3LCliParameterDescriptor[] = [
+      {
+        name: "command",
+        aliases: [],
+        type: "STRING",
+        required: true,
+        defaultValue: undefined,
+        description: "Operation to perform",
+        operations: [
+          {
+            name: "get",
+            description: "Fetch one item.",
+            requiredParameters: ["key"],
+          },
+        ],
+      },
+    ];
+    loadParametersCachedMock.mockResolvedValue(descriptorsWithOperations);
+    const actualInspect = await vi.importActual<{
+      runInspect: typeof runInspect;
+    }>("../src/commands/inspect.js");
+    runInspectMock.mockImplementation(actualInspect.runInspect);
+
+    const infoLines: string[] = [];
+    const headingLines: string[] = [];
+    const context = buildContext({
+      output: {
+        colorEnabled: false,
+        info: (text: string) => {
+          infoLines.push(text);
+        },
+        error: () => {
+          /* unused */
+        },
+        heading: (text: string) => {
+          headingLines.push(text);
+        },
+      },
+    });
+
+    const code = await runDynamic(context, "json-etl", ["--help"], []);
+
+    expect(code).toBe(0);
+    expect(spawnScriptMock).not.toHaveBeenCalled();
+    expect(headingLines).toContain("Operations (--command)");
+    expect(infoLines.some((line) => line.includes("get"))).toBe(true);
+  });
 });
 
 describe("runDynamic — parseArgs config building + argv translation", () => {

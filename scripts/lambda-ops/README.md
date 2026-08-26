@@ -42,13 +42,20 @@ node dist/main.js --operation delete --functionName decommissioned-worker
 
 ### Operations at a glance
 
-| Operation                                         | Demonstrated by                                                       |
-| ------------------------------------------------- | --------------------------------------------------------------------- |
-| `list`                                            | Minimal                                                               |
-| `invoke`                                          | Common                                                                |
-| `create`                                          | Production                                                            |
-| `delete`                                          | Edge case                                                             |
-| `describe`, `update-code`, `update-configuration` | — see the [contract page](../../docs/reference/scripts/lambda-ops.md) |
+| Operation              | Description                                                              | Demonstrated by |
+| ---------------------- | ------------------------------------------------------------------------ | --------------- |
+| `list`                 | List the account's Lambda functions, one page per call.                  | Minimal         |
+| `describe`             | Describe one function's configuration.                                   | —               |
+| `invoke`               | Invoke a function, with an optional JSON payload.                        | Common          |
+| `create`               | Create a function from a zip artifact and a JSON configuration document. | Production      |
+| `update-code`          | Replace a function's code with a zip artifact.                           | —               |
+| `update-configuration` | Update a function's configuration from a JSON input document.            | —               |
+| `delete`               | Delete a function.                                                       | Edge case       |
+
+A `—` in **Demonstrated by** means the operation has no worked example in
+§ Examples above — see the [contract page](../../docs/reference/scripts/lambda-ops.md) for its full
+contract. Descriptions are the same strings the script declares in
+`src/config.ts` and renders under `--help` (ADR-0055).
 
 ### Operational flags
 
