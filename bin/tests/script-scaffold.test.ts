@@ -33,12 +33,14 @@ import {
   BANNED_EXACT_NAMES,
   BANNED_LEADING_SEGMENTS,
   DOC_PAGE_TEMPLATE,
+  OPTIONAL_EXACT_FILES,
   PACKAGE_TEMPLATE_FILES,
   PURPOSE_MAX_LENGTH,
   REQUIRED_EXACT_FILES,
   REQUIRED_GLOBS,
   SCRIPT_NAME_RE,
   TEMPLATE_DIR,
+  commandModuleErrors,
   docPagePath,
   packageManifestErrors,
   pascalCase,
@@ -247,6 +249,27 @@ describe("PACKAGE_TEMPLATE_FILES", () => {
     expect(stepsEntry?.target).toBe("src/steps/run-__SCRIPT_NAME__.ts");
   });
 
+  // The generator emits the ADR-0054 command-module seam for every NEW script
+  // even though the checker only requires it optionally — that asymmetry is
+  // what lets the fleet catch up without a flag day.
+  test("emits the command-module seam for every newly scaffolded script", () => {
+    expect(PACKAGE_TEMPLATE_FILES).toContainEqual({
+      template: "src/command.ts.tmpl",
+      target: "src/command.ts",
+    });
+  });
+
+  // The seam ships with its own test, not just its own source: `execute`'s
+  // outcome mapping is the parity-critical half of ADR-0054, and
+  // REQUIRED_GLOBS is satisfied by the config smoke test alone, so a
+  // command.ts emitted without a command.test.ts would ship untested.
+  test("emits a command-module test alongside the seam", () => {
+    expect(PACKAGE_TEMPLATE_FILES).toContainEqual({
+      template: "tests/command.test.ts.tmpl",
+      target: "tests/command.test.ts",
+    });
+  });
+
   test("substituting tokens into every target resolves the __SCRIPT_NAME__ placeholder", () => {
     const tokens = scriptTokens("data-sync", "purpose");
     const resolvedTargets: string[] = PACKAGE_TEMPLATE_FILES.map(
@@ -280,6 +303,164 @@ describe("REQUIRED_GLOBS", () => {
       { dir: "src/steps", suffix: ".ts", what: "a steps/ module" },
       { dir: "tests", suffix: ".test.ts", what: "the config smoke test" },
     ]);
+  });
+});
+
+describe("OPTIONAL_EXACT_FILES", () => {
+  test("pairs src/command.ts with its own validator", () => {
+    expect(OPTIONAL_EXACT_FILES).toEqual([
+      { file: "src/command.ts", validate: commandModuleErrors },
+    ]);
+  });
+
+  // The negative IS the contract: a pre-U6 script with no src/command.ts must
+  // keep passing check:script-scaffold. Promoting the path into
+  // REQUIRED_EXACT_FILES is the deliberate fleet-catch-up event.
+  test("keeps src/command.ts out of the required tier", () => {
+    expect(REQUIRED_EXACT_FILES).not.toContain("src/command.ts");
+  });
+});
+
+describe("commandModuleErrors", () => {
+  /** A minimal command.ts satisfying every assertion the checker makes. */
+  const conformant = [
+    'import { Core } from "@m3l-automation/m3l-common";',
+    'import { configParameters } from "./config.js";',
+    "export const commandModule: Core.M3LCommandModule = {",
+    "  configParameters,",
+    "  async execute(_parameters, context) {",
+    "    await Core.runScript(script, () => runMain(script), {",
+    "      dryRun: context.dryRun,",
+    "    });",
+    "  },",
+    "};",
+  ].join("\n");
+
+  test("returns no errors for a conformant command module", () => {
+    expect(commandModuleErrors(conformant)).toEqual([]);
+  });
+
+  test("flags a missing annotated commandModule export", () => {
+    const src = conformant.replace(
+      "export const commandModule: Core.M3LCommandModule = {",
+      "export const commandModule = {",
+    );
+    expect(commandModuleErrors(src)).toEqual([
+      expect.stringContaining("export const commandModule"),
+    ]);
+  });
+
+  test("flags a command module that does not compose Core.runScript", () => {
+    const src = conformant.replace(
+      "    await Core.runScript(script, () => runMain(script), {",
+      "    await script.run(() => runMain(script), {",
+    );
+    expect(commandModuleErrors(src)).toEqual([
+      expect.stringContaining("Core.runScript"),
+    ]);
+  });
+
+  test("flags a second declared schema instead of config.ts's", () => {
+    const src = conformant.replace(
+      'import { configParameters } from "./config.js";',
+      "const configParameters: Core.M3LConfigParameter[] = [];",
+    );
+    expect(commandModuleErrors(src)).toEqual([
+      expect.stringContaining("./config.js"),
+    ]);
+  });
+
+  test("flags a process.exit call", () => {
+    const src = conformant.replace(
+      "  },\n};",
+      "    process.exit(1);\n  },\n};",
+    );
+    expect(commandModuleErrors(src)).toEqual([
+      expect.stringContaining("process.exit"),
+    ]);
+  });
+
+  test("reports every problem at once rather than stopping at the first", () => {
+    expect(commandModuleErrors("export const nothing = 1;\n")).toHaveLength(3);
+  });
+
+  // Comments are stripped before matching, in both directions.
+  test("does not flag a process.exit written inside a comment", () => {
+    const src = `${conformant}\n// Never write process.exit(1) here.\n`;
+    expect(commandModuleErrors(src)).toEqual([]);
+  });
+
+  test("does not flag a process.exit written inside a block comment", () => {
+    const src = `${conformant}\n/* do not call process.exit(1) */\n`;
+    expect(commandModuleErrors(src)).toEqual([]);
+  });
+
+  test("is not satisfied by a commandModule export inside a TSDoc example", () => {
+    const src = [
+      "/**",
+      " * @example",
+      " * ```ts",
+      " * export const commandModule: Core.M3LCommandModule = {};",
+      " * ```",
+      " */",
+      "export const notTheDescriptor = 1;",
+    ].join("\n");
+    expect(commandModuleErrors(src)).toEqual([
+      expect.stringContaining("export const commandModule"),
+      expect.stringContaining("Core.runScript"),
+      expect.stringContaining("./config.js"),
+    ]);
+  });
+
+  // A `//` inside a string literal is not a comment, so the scan must not
+  // truncate the line there and lose the declaration that follows.
+  test("keeps matching a real declaration on a line containing // in a string", () => {
+    const src = conformant.replace(
+      "  configParameters,",
+      '  docs: "https://example.invalid/docs",\n  configParameters,',
+    );
+    expect(commandModuleErrors(src)).toEqual([]);
+  });
+
+  // The regression the anchored `/^\s*\/\/.*$/gm` strip could not handle: a
+  // TRAILING comment documenting the ban is conformant code, not a violation.
+  test("does not flag a process.exit inside a trailing comment", () => {
+    const src = conformant.replace(
+      "  },\n};",
+      "    await flush(); // never call process.exit(1) here\n  },\n};",
+    );
+    expect(commandModuleErrors(src)).toEqual([]);
+  });
+
+  // ...but a trailing comment must not become a way to HIDE real code either:
+  // the cut happens at the comment, so code before it is still scanned.
+  test("still flags a real process.exit that precedes a trailing comment", () => {
+    const src = conformant.replace(
+      "  },\n};",
+      "    process.exit(1); // bail out\n  },\n};",
+    );
+    expect(commandModuleErrors(src)).toEqual([
+      expect.stringContaining("process.exit"),
+    ]);
+  });
+
+  // An escaped quote must not close the string and re-open comment scanning
+  // partway through the line.
+  test("handles an escaped quote inside a string before a trailing comment", () => {
+    const src = conformant.replace(
+      "  configParameters,",
+      '  label: "a \\" quote", // process.exit(1)\n  configParameters,',
+    );
+    expect(commandModuleErrors(src)).toEqual([]);
+  });
+
+  // A template literal is a string too — `//` inside one is not a comment.
+  test("treats // inside a template literal as string content", () => {
+    const src = conformant.replace(
+      "  configParameters,",
+      "  url: `https://example.invalid`,\n  configParameters,",
+    );
+    expect(commandModuleErrors(src)).toEqual([]);
   });
 });
 

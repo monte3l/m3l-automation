@@ -143,8 +143,13 @@ it as a reference lookup, not a narrative to read top-to-bottom.
    referencing `core/errors` is sufficient.
 8. **`## Inputs and outputs`** — what the script reads from `M3L_INPUT_DIR` /
    config, and what it writes to `M3L_OUTPUT_DIR`.
-9. **`## See also`** — cross-links; the `core/script` and ADR-0022 links must
-   appear last.
+9. **`## Command module`** — present **only** for a script that has adopted the
+   optional `src/command.ts` seam (ADR-0054): the `command.ts` / `main.ts`
+   split, which `context` ports are accepted but not forwarded, and the
+   outcome-to-exit-code mapping. Omitted entirely for a script that has not
+   adopted it.
+10. **`## See also`** — cross-links; the `core/script` and ADR-0022 links must
+    appear last.
 
 ### Configuration schema table
 

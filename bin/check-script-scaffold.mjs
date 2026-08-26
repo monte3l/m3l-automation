@@ -10,6 +10,12 @@
 // artifact-only ghosts are ignored):
 //   - every required file exists (main.ts/config.ts/hooks.ts, tsconfigs,
 //     README) plus at least one steps/ module and at least one test file
+//   - src/command.ts (the ADR-0054 command-module seam, U6) is OPTIONAL but
+//     verified: absent passes, present must export
+//     `commandModule: Core.M3LCommandModule`, compose Core.runScript itself,
+//     source its schema from config.ts, and never call process.exit. It is a
+//     separate manifest tier from REQUIRED_EXACT_FILES because the pre-U6
+//     fleet scripts have not adopted it yet.
 //   - README.md's "### Examples" section is populated: no leftover scaffold
 //     placeholder, at least one runnable `node dist/main.js` invocation
 //   - package.json satisfies the fleet package contract (including the
@@ -31,6 +37,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { basename, dirname, join } from "node:path";
 import {
+  OPTIONAL_EXACT_FILES,
   REQUIRED_EXACT_FILES,
   REQUIRED_GLOBS,
   SCRIPT_DOCS_DIR,
@@ -103,6 +110,17 @@ for (const name of scriptNames) {
         `scripts/${name}/${dir}/ has no ${suffix} file — ${what} is required (ADR-0022 §8).`,
         `${packageDirRel}/${dir}`,
       );
+    }
+  }
+
+  // Optional-but-verified tier (OPTIONAL_EXACT_FILES): a script that has not
+  // adopted the command-module seam passes vacuously; one that has must have
+  // it correctly shaped.
+  for (const { file, validate } of OPTIONAL_EXACT_FILES) {
+    const optionalPath = join(packageDir, file);
+    if (!existsSync(optionalPath)) continue;
+    for (const problem of validate(readFileSync(optionalPath, "utf8"))) {
+      report(`scripts/${name}/${file}: ${problem}`, `${packageDirRel}/${file}`);
     }
   }
 
