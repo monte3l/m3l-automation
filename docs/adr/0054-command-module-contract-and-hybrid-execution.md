@@ -130,6 +130,60 @@ permit (they constrain scripts only).
   `check:api` unaffected — barrel-surfaced symbols only, no new `exports`
   subpath).
 
+## Update (2026-08-26) — the contract as implemented
+
+U3 shipped the contract as `core/cli-contract` (PR for issue #527). Four points
+where the implementation refines what this ADR recorded:
+
+**The submodule name is `core/cli-contract`.** This ADR left it open; the
+tracker's working name was kept, so no doc churn was needed.
+
+**The count is Core 23 → 24, not 22 → 23.** The "22 → 23" in Consequences above
+(and in the U3 tracker rows) was authored on 2026-08-20. `core/procedure`
+landed on 2026-08-21 and consumed 22 → 23, making this ADR's figure stale
+before U3 began. The fleet total is 42 → 43. `gen:counts` derives every count
+site from the filesystem, so only the hand-written prose was wrong; the tracker
+rows are corrected in the U3 PR.
+
+**ADR-0055's operations field is deliberately absent.** The serialisable
+operation declaration lands in `core/config` at U4; the descriptor is widened
+then, as a second additive minor. No placeholder type was shipped, so U4 is a
+clean addition rather than a replacement.
+
+**The `M3LScript`/`runScript` composition could not live in the contract — an
+ADR-0009 constraint this ADR did not anticipate.** The "guarantee parity" clause
+of § The contract assumes the descriptor's `execute` composes
+`M3LScript`/`runScript`. It cannot: `eslint.config.js` defines a layering zone
+forbidding any `core/**` module from importing `core/script` (the composition
+root), asserted by `bin/check-eslint-zones.mjs`. The rule is
+`import-x/no-restricted-paths`, which is not type-aware, so even `import type`
+is blocked.
+
+`core/cli-contract` therefore defines its types structurally and imports nothing
+from `core/script`. The composition moves to the adopting script's entry file
+(U6) and the CLI's in-process host (U7) — both outside the zone. **No zone
+widening was performed and no new ADR was raised**: ADR-0040 and ADR-0041 are
+the widening precedent and each cost its own ADR, which is disproportionate for
+one tracker item whose requirement is satisfied without it.
+
+The consequence worth stating plainly: the parity guarantee is a **convention**,
+not a type-level guarantee. Nothing in `core/cli-contract` proves a given
+`execute` composed `M3LScript`. It is enforced by `templates/script/`'s shape at
+U6, by `check:script-scaffold`, and by structural type tests that prove the
+seams line up (`M3LCommandModule` satisfies `M3LScriptMetadata`;
+`M3LCommandContext["logger"]` is exactly what `M3LScriptOptions.logger` accepts)
+— never that the composition happened.
+
+A related mechanical finding: the exit-code surface could not be a bare
+re-export of `mapErrorToExitCode`. The Core barrel is
+`export * from "./<mod>/index.js"` per submodule, so the same name arriving from
+both `core/diagnostics` and `core/cli-contract` is TS2308 at compile time and a
+silently dropped export under ES module semantics. It shipped instead as a
+distinct symbol built on the same registry — `mapCommandOutcomeToExitCode`,
+an outcome→code mapper — which is what this ADR's "so the CLI maps an
+in-process outcome to the same code the child process would have exited with"
+actually asks for. It mints no new codes.
+
 ## Links
 
 - Programme: [ADR-0053](./0053-cli-first-evolution-programme.md). Operations

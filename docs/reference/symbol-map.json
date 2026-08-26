@@ -79,6 +79,31 @@
     "namespace": "core",
     "file": "packages/m3l-common/src/internal/files/atomicWrite.ts"
   },
+  "M3LCommandModule": {
+    "submodule": "cli-contract",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/cli-contract/types.ts"
+  },
+  "M3LCommandContext": {
+    "submodule": "cli-contract",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/cli-contract/types.ts"
+  },
+  "M3LCommandOutcome": {
+    "submodule": "cli-contract",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/cli-contract/types.ts"
+  },
+  "mapCommandOutcomeToExitCode": {
+    "submodule": "cli-contract",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/cli-contract/exit-codes.ts"
+  },
+  "M3LCommandOutput": {
+    "submodule": "cli-contract",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/cli-contract/output.ts"
+  },
   "M3LConfig": {
     "submodule": "config",
     "namespace": "core",

@@ -1,0 +1,92 @@
+{
+  "$schema": "../provenance.schema.json",
+  "doc": "core/cli-contract.md",
+  "sections": [
+    {
+      "heading": "Public API",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/cli-contract/types.ts",
+          "symbol": "M3LCommandModule",
+          "blob": "d0091bc69cfaa8e9ca11ec8b7a312ca421474cf5"
+        },
+        {
+          "file": "packages/m3l-common/src/core/cli-contract/types.ts",
+          "symbol": "M3LCommandContext",
+          "blob": "d0091bc69cfaa8e9ca11ec8b7a312ca421474cf5"
+        },
+        {
+          "file": "packages/m3l-common/src/core/cli-contract/types.ts",
+          "symbol": "M3LCommandOutcome",
+          "blob": "d0091bc69cfaa8e9ca11ec8b7a312ca421474cf5"
+        },
+        {
+          "file": "packages/m3l-common/src/core/cli-contract/exit-codes.ts",
+          "symbol": "mapCommandOutcomeToExitCode",
+          "blob": "ef3ea2713f0ae5ad6dcbdcfce24e052d4546e118"
+        },
+        {
+          "file": "packages/m3l-common/src/core/cli-contract/output.ts",
+          "symbol": "M3LCommandOutput",
+          "blob": "38f50751db89719ce23e66095b02a4f141b0f201"
+        }
+      ],
+      "retrieved": "2026-08-26"
+    },
+    {
+      "heading": "The command-module descriptor",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/cli-contract/types.ts",
+          "symbol": "M3LCommandModule",
+          "blob": "d0091bc69cfaa8e9ca11ec8b7a312ca421474cf5"
+        }
+      ],
+      "retrieved": "2026-08-26"
+    },
+    {
+      "heading": "The execution context",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/cli-contract/types.ts",
+          "symbol": "M3LCommandContext",
+          "blob": "d0091bc69cfaa8e9ca11ec8b7a312ca421474cf5"
+        }
+      ],
+      "retrieved": "2026-08-26"
+    },
+    {
+      "heading": "Outcomes",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/cli-contract/types.ts",
+          "symbol": "M3LCommandOutcome",
+          "blob": "d0091bc69cfaa8e9ca11ec8b7a312ca421474cf5"
+        }
+      ],
+      "retrieved": "2026-08-26"
+    },
+    {
+      "heading": "Exit-code mapping",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/cli-contract/exit-codes.ts",
+          "symbol": "mapCommandOutcomeToExitCode",
+          "blob": "ef3ea2713f0ae5ad6dcbdcfce24e052d4546e118"
+        }
+      ],
+      "retrieved": "2026-08-26"
+    },
+    {
+      "heading": "The output port",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/cli-contract/output.ts",
+          "symbol": "M3LCommandOutput",
+          "blob": "38f50751db89719ce23e66095b02a4f141b0f201"
+        }
+      ],
+      "retrieved": "2026-08-26"
+    }
+  ]
+}

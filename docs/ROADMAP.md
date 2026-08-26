@@ -4,7 +4,7 @@ The **living, prioritized view of pending program work**. It is the coarse
 companion to two other trackers:
 
 - [`docs/implementation-status.md`](./implementation-status.md) — the _done_
-  library ledger (42/42 submodules, count-enforced).
+  library ledger (43/43 submodules, count-enforced).
 - [`docs/plans/IMPLEMENTATION.md`](./plans/IMPLEMENTATION.md) — the _detailed_
   per-item backlog this file summarizes.
 
@@ -17,7 +17,7 @@ _Maintenance_ at the bottom. Completed dated plans live under
 
 Per-item status lives in the tables below (Priority 0/1/2) and in
 [`docs/implementation-status.md`](./implementation-status.md) — the
-count-enforced library ledger (42/42 submodules, shipped at v1.1.0 + the
+count-enforced library ledger (43/43 submodules, shipped at v1.1.0 + the
 ad-hoc `aws/dynamodb`, `aws/sqs`, and `aws/cloudwatch-logs-insights` additions,
 ADR-0026/ADR-0027).
 
@@ -141,7 +141,7 @@ per-phase detail in
 | ------- | ------------------------------------------------------------ | -------- |
 | **U1**  | Decisions & governance docs — ADR-0053…0057 + trackers       | Done     |
 | **U2**  | `check:cli-scaffold` + `check:cli-docs` gates                | To Do    |
-| **U3**  | `core/cli-contract` promotion (Core 22 → 23, additive minor) | To Do    |
+| **U3**  | `core/cli-contract` promotion (Core 23 → 24, additive minor) | Done     |
 | **U4**  | Declarative operations — library half (`core/config`)        | To Do    |
 | **U5**  | Declarative operations — fleet retrofit                      | To Do    |
 | **U6**  | `commandModule` adoption — template + pilot scripts          | To Do    |
