@@ -3513,13 +3513,7 @@ describe("M3LRunReporter — round-4 (describeSetCardinality hostile size, lock-
 
   beforeEach(async () => {
     outDir = await mkdtemp(join(tmpdir(), "m3l-run-report-round4-setsize-"));
-    // Freeze time: `persist()`'s real `finishedAt` and `collectDiagnostics()`'s
-    // real `environment.capturedAt` timestamps are uncontrolled `new Date()`
-    // calls embedded verbatim in the persisted JSON. Without a frozen clock,
-    // the wall-clock ISO string can coincidentally contain one of this
-    // block's forbidden fragments (e.g. `...T18:52:51.774Z` contains `1.7`),
-    // spuriously failing the `not.toContain` assertion on the test's own
-    // timestamp rather than the hostile Set value under test (issue #655).
+    // Freeze time: an unfrozen timestamp could coincidentally match a forbidden fragment (e.g. "1.7"), issue #655.
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
   });
