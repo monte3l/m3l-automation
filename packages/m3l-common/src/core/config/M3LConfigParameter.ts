@@ -6,8 +6,8 @@
  */
 
 import { coerceConfigValue } from "./coerceConfigValue.js";
+import { validateOperationDeclarations } from "../../internal/config/validateOperationDeclarations.js";
 import { M3LConfigMissingError } from "./M3LConfigMissingError.js";
-import { M3LConfigValidationError } from "./M3LConfigValidationError.js";
 import type {
   M3LCoercedValue,
   M3LConfigParameterType,
@@ -16,7 +16,10 @@ import type {
   M3LConfigReader,
   M3LConfigResolution,
 } from "./M3LConfigReader.js";
+import { M3LConfigValidationError } from "./M3LConfigValidationError.js";
+import { M3LConfigValidators } from "./M3LConfigValidator.js";
 import type { M3LConfigValidator } from "./M3LConfigValidator.js";
+import type { M3LOperationDeclarationList } from "./M3LOperationDeclaration.js";
 
 /**
  * Constructor options for {@link M3LConfigParameter}.
@@ -72,6 +75,24 @@ interface M3LConfigParameterOptions<TType extends M3LConfigParameterType> {
    * env-sourced rather than a source literal. Defaults to `false`.
    */
   readonly secret?: boolean;
+  /**
+   * Declares the finite set of operations a `STRING` parameter selects
+   * between (ADR-0055) — e.g. an `operation`/`action` flag. Declaring this
+   * derives a membership validator (composed with any explicit `validate`,
+   * which can then only narrow, never widen) and feeds
+   * {@link M3LConfigHelpFormatter}'s operations block.
+   *
+   * Restricted to `STRING` at the type level via a non-distributive
+   * conditional (`[TType] extends ["STRING"] ? M3LOperationDeclarationList : never`) —
+   * a naked, un-tupled `TType extends "STRING" ? … : never` is DISTRIBUTIVE
+   * and would let `operations` silently type-check on a widened
+   * `M3LConfigParameterType`; wrapping both sides in a one-tuple prevents
+   * that. The constructor also enforces this at runtime, for a caller that
+   * bypasses the type system (plain JavaScript, or a cast).
+   */
+  readonly operations?: [TType] extends ["STRING"]
+    ? M3LOperationDeclarationList
+    : never;
 }
 
 /**
@@ -125,14 +146,19 @@ export class M3LConfigParameter<
   private readonly required: boolean;
   private readonly description: string | undefined;
   private readonly secret: boolean;
+  private readonly operations: M3LOperationDeclarationList | undefined;
 
   /**
    * Creates a new `M3LConfigParameter`.
    *
    * @param options - The parameter declaration.
-   * @throws {@link M3LConfigValidationError} When `options.validate` is
-   *   declared and `options.defaultValue` is present but fails it — a bad
-   *   static default is a programming error and fails fast at declaration.
+   * @throws {@link M3LConfigValidationError} When `options.operations` is
+   *   declared and is structurally invalid — see
+   *   {@link validateOperationDeclarations} — since this constructor is the
+   *   only guard a plain JavaScript caller has against a bare `TypeError`.
+   *   Also thrown when `options.validate` (composed with the derived
+   *   membership check, if `operations` is declared) is present and
+   *   `options.defaultValue` fails it.
    */
   constructor(options: M3LConfigParameterOptions<TType>) {
     this.name = options.name;
@@ -140,14 +166,54 @@ export class M3LConfigParameter<
     this.aliases = options.aliases ?? [];
     this.defaultValue = options.defaultValue;
     this.asyncFallback = options.asyncFallback;
-    this.validate = options.validate;
     this.required = options.required ?? false;
     this.description = options.description;
     this.secret = options.secret ?? false;
 
+    this.operations = validateOperationDeclarations(
+      this.name,
+      this.type,
+      options.operations,
+    );
+    this.validate =
+      this.operations !== undefined
+        ? this.composeOperationValidator(this.operations, options.validate)
+        : options.validate;
+
     if (this.defaultValue !== undefined) {
       this.runValidation(this.defaultValue);
     }
+  }
+
+  /**
+   * Composes a derived operations membership validator with an optional
+   * explicit `validate`: membership runs first (built on
+   * {@link M3LConfigValidators.oneOf} so the failure text has exactly one
+   * source), and the explicit validator — if any — only runs, and can only
+   * narrow the result, when membership already passed.
+   *
+   * @param operations - The validated, declared operations list.
+   * @param explicit - The caller's own `validate`, if declared.
+   * @returns A validator that fails closed: a stale explicit `oneOf` naming
+   *   a value beyond the declared set still rejects it, with the membership
+   *   failure reason.
+   */
+  private composeOperationValidator(
+    operations: M3LOperationDeclarationList,
+    explicit: M3LConfigValidator<M3LCoercedValue<TType>> | undefined,
+  ): M3LConfigValidator<M3LCoercedValue<TType>> {
+    const membership = M3LConfigValidators.oneOf<string>(
+      operations.map((operation) => operation.name),
+    );
+    return (value) => {
+      const result =
+        typeof value === "string" ? membership(value) : "must be a string";
+      return result !== true
+        ? result
+        : explicit === undefined
+          ? true
+          : explicit(value);
+    };
   }
 
   /**
@@ -206,6 +272,15 @@ export class M3LConfigParameter<
    */
   isSecret(): boolean {
     return this.secret;
+  }
+
+  /**
+   * The parameter's declared operations list (ADR-0055), or `undefined`
+   * when none was declared. Only ever non-`undefined` on a `STRING`
+   * parameter — see {@link M3LConfigParameterOptions.operations}.
+   */
+  getOperations(): M3LOperationDeclarationList | undefined {
+    return this.operations;
   }
 
   /** The parameter's declared default value, or `undefined` when none was declared. */

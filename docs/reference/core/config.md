@@ -23,6 +23,10 @@ Exported from `@m3l-automation/m3l-common/core` (the `config` sub-module):
 - `coerceConfigValue` (the value parser: coerces a raw provider value to its declared `M3LConfigParameterType`, throwing on a type mismatch; generic over the target type so its return is `M3LCoercedValue<T>`, not `unknown`)
 - `M3LSecretsSpecifier`
 - `deriveSecretsSpecifier`, `M3LDeriveSecretsSpecifierOptions` (derives an `M3LSecretsSpecifier` from a schema's declared `secret` parameters — see [Secret parameters](#secret-parameters))
+- `M3LOperationDeclaration` (one operation a script can perform — its `name`, its `description`, and optionally the `requiredParameters` it needs — declared as plain data rather than a closure)
+- `M3LOperationDeclarationList` (type: a non-empty tuple of `M3LOperationDeclaration`, generic over the operation-name literal union)
+- `deriveOperationNames` (projects a declaration list to its literal-union name tuple — the bridge to `M3LConfigValidators.oneOf` and `M3LOperationPipelineOptions.operations`)
+- `deriveOperationValidators` (derives the per-operation required-parameter `M3LConfigSchemaValidator`s from a parameter list's declared operations — see [Declarative operations](#declarative-operations))
 - `M3LUnknownParameterDetector`
 - `M3LUnknownParameterSuggestion`, `M3LUnknownParameterSuggestOptions` (the typed result/options pair for `M3LUnknownParameterDetector.detectWithSuggestions`)
 - `M3LConfigValidator` (type: a `(value) => true | string` schema-time validator)
@@ -151,6 +155,26 @@ comma-joined (`default: a, b, c`); every other declared type renders via
 `String(value)`. `format()` never throws and never resolves a value; an empty
 schema renders `""`.
 
+When a parameter declares `operations` (see
+[Declarative operations](#declarative-operations)), an operations block follows
+the `default:` line — the declared name and description of every operation, in
+declaration order, plus a `requires:` column for the operations that name
+`requiredParameters`:
+
+```text
+--operation <STRING> (required)
+    Which operation this run performs.
+    operations:
+      get   Fetch one item by key.  requires: key
+      put   Write one item.         requires: item
+      scan  Scan the whole table.
+```
+
+The `requires:` half is omitted for an operation that declares no
+`requiredParameters`, and the whole block is omitted for a parameter that
+declares no operations — a non-declaring parameter renders exactly as it did
+before.
+
 ## Secret parameters
 
 A parameter may declare itself secret:
@@ -252,6 +276,179 @@ derives one from the running script's own `configSchema` and passes it to
 manages; `M3LScript` itself derives a separate copy once at construction and
 threads it into its own lifecycle-hook and shutdown-signal diagnostics — see
 [`diagnostics`](./diagnostics.md#public-api)'s redaction-guarantees note.
+
+## Declarative operations
+
+A multi-operation script used to encode its real capabilities as a plain
+`STRING` parameter validated by a `oneOf` closure. A closure is not readable
+data, so nothing downstream could **enumerate** what the script can actually
+do — the same knowledge ended up copied into the value list, a per-operation
+required-parameter table in the step module, and prose in the script's
+reference page, with no gate keeping the three in step. ADR-0055 replaces the
+closure with a declaration: a parameter declares its operations as data, and
+the validation is derived from it.
+
+### Declaring an operation set
+
+```typescript
+const OPERATIONS = [
+  {
+    name: "get",
+    description: "Fetch one item by key.",
+    requiredParameters: ["key"],
+  },
+  { name: "put", description: "Write one item.", requiredParameters: ["item"] },
+  { name: "scan", description: "Scan the whole table." },
+] as const satisfies Core.M3LOperationDeclarationList;
+
+const operation = new Core.M3LConfigParameter({
+  name: "operation",
+  type: Core.M3LConfigParameterType.STRING,
+  required: true,
+  description: "Which operation this run performs.",
+  operations: OPERATIONS,
+});
+```
+
+The declaration is a plain JSON shape — `string`, `string`, optional
+`string[]` — deliberately: no class instance and no closure, so it survives a
+persistence boundary such as the m3l CLI's JSON discovery cache verbatim. This
+is the same constraint that (per ADR-0042) rules out threading a live
+`M3LSecretsSpecifier` instance through that cache.
+
+The declaration is read back through `getOperations()`, which sits beside
+`isSecret()` in the same purely-declarative getter family and returns
+`undefined` when no operations were declared.
+
+Four rules are enforced at construction, all throwing `M3LConfigValidationError`
+(`code: "ERR_CONFIG_VALIDATION"` — no new error code):
+
+| Rule                                                            | Enforced by                                                                                                                                      |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| The parameter's `type` must be `STRING`                         | The option's type resolves to `never` on any other declared type; the constructor also throws at run time                                        |
+| The list must be non-empty                                      | `M3LOperationDeclarationList` is a non-empty tuple, so `operations: []` is a compile error; the constructor also throws, for a JavaScript caller |
+| Every `name` and `description` must be non-blank after trimming | The constructor                                                                                                                                  |
+| Two operations may not share a `name`                           | The constructor                                                                                                                                  |
+
+`description` is **required**, not optional: a declaration that cannot describe
+itself gives the CLI surfaces nothing to render, which is the gap this feature
+exists to close.
+
+### Derived membership validation
+
+Declaring `operations` implicitly validates the parameter against the declared
+names — there is no need to also hand-write a `oneOf`. The derived check is
+built **on** `M3LConfigValidators.oneOf`, so the failure reason
+(`must be one of: get, put, scan`) has exactly one source and reads identically
+whether it was declared or derived.
+
+An explicitly declared `validate` still runs, but **after** the membership
+check and only when it passes. An explicit validator can therefore only
+**narrow** the accepted set, never widen it: a stale hand-written
+`oneOf(["get", "legacy"])` sitting beside `operations: [get, put]` still
+rejects `"legacy"`, with the membership reason. The composition fails closed.
+
+Because the derived validator is installed before the constructor's existing
+eager `defaultValue` check, a `defaultValue` naming an undeclared operation
+throws at **declaration** rather than at the first resolution.
+
+### Per-operation required parameters
+
+`requiredParameters` names the parameters an operation needs. It **declares**
+the relationship; on its own it enforces nothing. This is deliberate: making
+`M3LConfigSchema.validate` enforce it automatically would not be additive in
+effect — a script that added `operations` purely to gain a description would
+silently change _when_ and _with what code_ it fails, from its own run-start
+error to `ERR_CONFIG_VALIDATION` at config load. ADR-0055 requires the model to
+serve both the declaration and the existing run semantics rather than force a
+migration of one, so enforcement is opt-in, one function call away.
+
+### `deriveOperationValidators`
+
+```typescript
+export function deriveOperationValidators(
+  parameters: readonly M3LConfigParameter[],
+): readonly M3LConfigSchemaValidator[];
+```
+
+Turns every declared `requiredParameters` entry into the cross-parameter
+validators that enforce it, mirroring the free-function convention
+`deriveSecretsSpecifier` already establishes. It takes a **parameter list, not
+a schema**, because a script authors its `configValidators` in `src/config.ts`
+beside `configParameters`, before any `M3LConfigSchema` exists; pass
+`schema.parameters` when a schema is already in hand.
+
+```typescript
+export const configValidators: readonly Core.M3LConfigSchemaValidator[] = [
+  ...Core.deriveOperationValidators(configParameters),
+  // hand-written cross-parameter validators continue here
+];
+```
+
+It emits **one validator per required-parameter name**, not one per operation:
+the operations requiring the same parameter are grouped, and the reason names
+every one of them, in declaration order. Grouping is per declaring parameter,
+so in the rare case of two selector parameters requiring the same canonical
+name, each contributes its own validator.
+
+```text
+'cluster' is required for operation(s): describe-service, delete-service, wait-services-stable, describe-cluster
+```
+
+Each emitted validator passes vacuously when the selector parameter is unset,
+when it resolves to a value outside the declared set (the per-parameter
+membership check already owns that failure, and runs earlier), or when it
+resolves to a non-string. Reason strings name parameters and the fixed
+operation list only — never a resolved value, matching the
+`M3LConfigSchemaValidators` secret-safety discipline described below.
+
+A `requiredParameters` entry may name a declared **alias**; it is resolved to
+the owning parameter's canonical name. This is load-bearing rather than a
+convenience: `M3LScriptConfigLoader` stores every resolved value under
+`parameter.getName()` only, so a validator that looked up an alias would find
+`undefined` forever and be a permanent silent no-op.
+
+An entry matching neither a declared parameter's canonical name nor one of its
+aliases throws `M3LConfigValidationError` at derive time — a typo would
+otherwise produce an unenforceable guard that passes vacuously in every run.
+
+The function returns `[]` when no parameter declares operations, so the spread
+above is always safe, and a fresh array on every call.
+
+### `deriveOperationNames`
+
+```typescript
+export function deriveOperationNames<const TName extends string>(
+  operations: M3LOperationDeclarationList<TName>,
+): readonly [TName, ...(readonly TName[])];
+```
+
+A pure projection from a declaration list to its name tuple — the bridge to
+anything that wants the names alone, such as `M3LConfigValidators.oneOf` or
+`M3LOperationPipelineOptions.operations`. The `const` type parameter preserves
+the literal union, so an exhaustive `Record<Operation, …>` dispatch table built
+from it keeps failing to compile when an operation is added to the
+declaration.
+
+### Relationship to `M3LOperationPipelineOptions.requiredFields`
+
+`M3LOperationPipelineOptions` ([`pipeline`](./pipeline.md)) has its own
+`requiredFields`, and it is **not** derived from `requiredParameters` — by
+design, not by omission. Two independent reasons:
+
+- The two describe different things at different layers, and the types do not
+  lift. `requiredFields` is mapped over the **operation-name union**, and each
+  entry is a list of keys of that operation's **settings struct** — narrowed
+  further to the keys whose type admits `undefined`. A runtime
+  `readonly string[]` of _config parameter_ names carries neither the settings
+  struct nor that narrowing, so there is nothing to lift it from.
+- A derivation would have to live in `core/config` and import
+  `core/pipeline`'s types to produce that shape — inverting the existing
+  `core/pipeline` → `core/config` dependency direction. (The reverse framing
+  does not rescue it: a helper placed in `core/pipeline` respects the
+  direction but still hits the type gap above.)
+
+Declaring both is correct, and neither should be "fixed" to feed the other.
 
 ## Typo suggestions
 
@@ -388,6 +585,12 @@ Each stock validator's failure reason describes the **constraint**, never the
 received value — so a stock validator applied to a secret parameter cannot leak
 the value through the reason.
 
+A `STRING` parameter that declares `operations` gets an `oneOf` check over the
+declared names implicitly, built on this same factory — so a hand-written
+`oneOf` alongside it is redundant, and where the two disagree the hand-written
+one can only narrow the accepted set, never widen it (see
+[Declarative operations](#declarative-operations)).
+
 > **Secret values.** A validator receives the real coerced value (it must, to
 > validate it). The library itself never places that value into `context` —
 > but a **custom** validator's returned reason string is author-controlled and
@@ -447,6 +650,11 @@ usefully through `M3LConfigAccessor` for typed reads. **A validator must not
 call `M3LConfig.set()`** — it is handed the live store for reading, not for
 mutation; this is a documented contract, not a type-enforced one.
 
+A parameter that declares `operations` can have this whole layer derived rather
+than hand-written: `deriveOperationValidators` returns exactly these validators
+from the declared `requiredParameters`, to be spread into the same list (see
+[`deriveOperationValidators`](#deriveoperationvalidators)).
+
 `M3LConfigSchema`'s constructor takes the validator list as an optional second
 positional parameter:
 
@@ -503,6 +711,11 @@ resolved by `M3LScriptConfigLoader.load()` — so any per-parameter `required` o
 `validate` failure always surfaces first, before a cross-parameter constraint
 is ever evaluated. Validators run in declaration order; the first one to return
 a string reason throws immediately (fail-fast), and no later validator runs.
+
+Validators derived by `deriveOperationValidators` are ordinary members of this
+list: they enter through the same seam, run at the same point in declaration
+order, and throw with the same `{ validatorIndex, reason }` context shape as a
+hand-written one.
 
 A script declares its schema-level validators alongside its parameters:
 
@@ -720,5 +933,7 @@ The example is illustrative of the documented resolution behavior; exact constru
 - [security](./security.md)
 - [files](./files.md) — `M3LInputFileReader` pairs with `M3LConfigAccessor` for
   input-file `name` parameters resolved through config
+- [ADR-0055](../../adr/0055-declarative-operation-introspection.md) —
+  declarative, enumerable operations in script config
 - [Guide: Configuration](../../guides/configuration.md)
 - [Architecture overview](../../m3l-common-architecture.md)

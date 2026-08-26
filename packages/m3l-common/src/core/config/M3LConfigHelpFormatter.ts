@@ -7,6 +7,10 @@
 
 import type { M3LConfigParameter } from "./M3LConfigParameter.js";
 import type { M3LConfigSchema } from "./M3LConfigSchema.js";
+import type {
+  M3LOperationDeclaration,
+  M3LOperationDeclarationList,
+} from "./M3LOperationDeclaration.js";
 
 /** Indentation applied to a description/default line beneath its header. */
 const LINE_INDENT = "    ";
@@ -35,8 +39,62 @@ function formatDefaultValue(value: unknown): string {
 }
 
 /**
+ * Renders one operation line: the name column, the (possibly padded)
+ * description column, and an optional `requires:` cell.
+ *
+ * `descriptionCell` is only padded when `requiresCell` is non-empty (so the
+ * `requires:` column aligns); otherwise the description is rendered plain,
+ * which is what keeps a `requires:`-less operation's line from ending in
+ * trailing whitespace.
+ */
+function formatOperationLine(
+  operation: M3LOperationDeclaration,
+  nameWidth: number,
+  descWidth: number,
+): string {
+  const requiresCell =
+    operation.requiredParameters !== undefined &&
+    operation.requiredParameters.length > 0
+      ? `  requires: ${operation.requiredParameters.join(", ")}`
+      : "";
+  const descriptionCell =
+    requiresCell === ""
+      ? operation.description
+      : operation.description.padEnd(descWidth);
+
+  return `${LINE_INDENT}  ${operation.name.padEnd(nameWidth)}  ${descriptionCell}${requiresCell}`;
+}
+
+/**
+ * Renders the `operations:` block for a parameter that declares
+ * {@link M3LConfigParameter.getOperations}: a header line followed by one
+ * line per operation, in declaration order, name- and description-aligned
+ * across the whole list.
+ *
+ * Typed `M3LOperationDeclarationList` rather than a plain
+ * `readonly M3LOperationDeclaration[]`, so the non-empty guarantee its
+ * only caller ({@link formatParameter}, gated on
+ * `getOperations() !== undefined`) already has stays visible here — the
+ * `Math.max` spread below would silently return `-Infinity` on an empty
+ * array.
+ */
+function formatOperationsBlock(
+  operations: M3LOperationDeclarationList,
+): string {
+  const nameWidth = Math.max(...operations.map((op) => op.name.length));
+  const descWidth = Math.max(...operations.map((op) => op.description.length));
+
+  const lines = [`${LINE_INDENT}operations:`];
+  for (const operation of operations) {
+    lines.push(formatOperationLine(operation, nameWidth, descWidth));
+  }
+  return lines.join("\n");
+}
+
+/**
  * Renders the full block for a single `parameter`: its header line, an
- * optional description line, and an optional default-value line.
+ * optional description line, an optional default-value line, and — when
+ * declared — its operations block.
  */
 function formatParameter(parameter: M3LConfigParameter): string {
   const lines = [formatHeader(parameter)];
@@ -52,6 +110,11 @@ function formatParameter(parameter: M3LConfigParameter): string {
       ? SECRET_MASK
       : formatDefaultValue(defaultValue);
     lines.push(`${LINE_INDENT}default: ${rendered}`);
+  }
+
+  const operations = parameter.getOperations();
+  if (operations !== undefined) {
+    lines.push(formatOperationsBlock(operations));
   }
 
   return lines.join("\n");
