@@ -463,6 +463,47 @@ describe("runWizard — terminal-text sanitization (8g addendum)", () => {
     expect(options?.default).not.toContain("‮");
     expect(options?.default).not.toContain("⁦");
   });
+
+  test("an operation's ESC/bidi-laden name/description reach prompt.select's choices sanitized, with value left raw (U8)", async () => {
+    const rawName = "get\x1b";
+    const rawDescription = "Fetch‮-item⁦";
+    discoverScriptsMock.mockReturnValue([jsonEtlCandidate]);
+    loadParametersCachedMock.mockResolvedValue([
+      makeDescriptor({
+        name: "operation",
+        type: "STRING",
+        operations: [
+          {
+            name: rawName,
+            description: rawDescription,
+            requiredParameters: [],
+          },
+        ],
+      }),
+    ]);
+    const prompt = createScriptedPrompt();
+    prompt.autocomplete.mockResolvedValue("json-etl");
+    prompt.select.mockResolvedValue(rawName);
+    prompt.confirm.mockResolvedValueOnce(false).mockResolvedValueOnce(false);
+    translateArgvMock.mockReturnValue([]);
+
+    await runWizard(buildContext(), { prompt, isTTY: true });
+
+    const [, choices] = prompt.select.mock.calls[0] as [
+      string,
+      readonly { readonly value: string; readonly name?: string }[],
+    ];
+    expect(choices).toEqual([
+      {
+        value: rawName,
+        name: `${sanitizeTerminalText(rawName)} — ${sanitizeTerminalText(rawDescription)}`,
+      },
+    ]);
+    expect(choices[0]?.name).not.toContain("\x1b");
+    expect(choices[0]?.name).not.toContain("‮");
+    expect(choices[0]?.name).not.toContain("⁦");
+    expect(choices[0]?.value).toBe(rawName);
+  });
 });
 
 describe("runWizard — renderSummary sanitizes rendered cells (8g addendum)", () => {

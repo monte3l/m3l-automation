@@ -228,13 +228,24 @@ interface M3LCliWizardRawAnswer {
   readonly value: string | boolean | number;
 }
 
-/** Builds the `select` choices for a descriptor's declared operations, rendered as `"name — description"` (ADR-0055, U8). */
+/**
+ * Builds the `select` choices for a descriptor's declared operations,
+ * rendered as `"name — description"` (ADR-0055, U8) — both interpolated
+ * fields are sanitized via {@link sanitizeTerminalText} before rendering,
+ * since an operation's `name` and `description` both come from a script's
+ * `getOperations()` export, the same attacker-influencable script config
+ * already sanitized elsewhere in this file and in `inspect.ts`'s operations
+ * table. `value` stays the raw, unsanitized operation name — sanitization is
+ * a display-only concern, and `value` is what `select` resolves the answer
+ * to, matched back against `descriptor.operations` by exact name in
+ * {@link collectAllParameterValues}.
+ */
 function buildOperationChoices(
   operations: readonly M3LCliOperationDescriptor[],
 ): Core.M3LChoices<string> {
   return operations.map((operation) => ({
     value: operation.name,
-    name: `${operation.name} — ${operation.description}`,
+    name: `${sanitizeTerminalText(operation.name)} — ${sanitizeTerminalText(operation.description)}`,
   }));
 }
 
