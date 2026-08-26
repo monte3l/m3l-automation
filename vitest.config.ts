@@ -11,11 +11,16 @@ export default defineConfig({
     // configs back to back) executed all of bin/tests/** twice per run with
     // no coverage benefit (the two configs' coverage `include` scopes were
     // always disjoint; only the test *execution* overlapped).
+    // `**/tests/integration/**` is vitest.integration.config.ts's domain:
+    // those tests bind a real loopback socket, so they are not unit tests and
+    // must not run in this project (a unit test must not make network calls —
+    // the same rule `eslint.config.js`'s bare-`fetch()` ban enforces).
     exclude: [
       "**/dist/**",
       "**/node_modules/**",
       "**/.claude/worktrees/**",
       "bin/tests/**",
+      "**/tests/integration/**",
     ],
     coverage: {
       provider: "v8",
