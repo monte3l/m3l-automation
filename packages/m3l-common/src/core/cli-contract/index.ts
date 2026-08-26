@@ -19,3 +19,6 @@
 export * from "./types.js";
 export * from "./output.js";
 export * from "./exit-codes.js";
+export * from "./guards.js";
+export * from "./logger.js";
+export * from "./outcome.js";

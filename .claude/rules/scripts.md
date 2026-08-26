@@ -100,15 +100,22 @@ paths:
   `bin/lib/script-scaffold.mjs`) — absent passes; present must export the
   annotated descriptor, compose `Core.runScript` itself, import
   `configParameters` from `./config.js`, and never call `process.exit`.
-- **`main.ts` is NOT rewritten to delegate to `execute`.** Both files compose
-  `M3LScript`/`runScript` independently. This is deliberate: delegating would
-  force `execute` to forward a caller-supplied `context.logger` into
-  `M3LScriptOptions.logger`, which skips the unexported
-  `resolveLogLevelFloor()` (so `--log-level`/`M3L_LOG_LEVEL` silently stops
-  working) and never receives the script's derived `secrets` (so declared secret
-  parameters stop being redacted). Two composition sites is the lesser evil
-  until U7 adds the library seam; `tests/command.test.ts` is the anti-drift
-  guard. Full record: `docs/reference/core/cli-contract.md` § What U6 shipped.
+- **An adopted `main.ts` delegates to `execute`, once U7's library seam is
+  in place.** The three pilots (`json-etl`, `sqs-etl`, `dynamodb-crud`) and
+  the scaffold template do this: `main.ts` builds an `M3LCommandContext` via
+  `Core.createCommandOutput()`/`Core.createCommandLogger()` and calls
+  `await commandModule.execute({}, context)`, retiring the second composition
+  site U6 originally left standing. This was blocked at U6 because forwarding
+  a caller-supplied `context.logger` into `M3LScriptOptions.logger` used to
+  skip the unexported `resolveLogLevelFloor()` (so `--log-level`/`M3L_LOG_LEVEL`
+  silently stopped working) and never received the script's derived `secrets`
+  (so declared secret parameters stopped being redacted).
+  `Core.createCommandLogger` closes both gaps, so passing
+  `logger: context.logger` into `M3LScriptOptions.logger` is now safe.
+  `tests/command.test.ts` remains the anti-drift guard. The thirteen
+  pre-U6 fleet scripts have no `command.ts` yet, so this bullet does not
+  apply to them until they adopt the seam. Full record:
+  `docs/reference/core/cli-contract.md` § What U7 shipped.
 - **Capture failures through `onError`, never a `try`/`catch` around the
   `mainFn` body.** `mainFn` is stage 7 of nine; stages 1-6, 8 and 9 throw
   outside it — `config-load` (a missing or invalid parameter, the most common

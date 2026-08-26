@@ -184,6 +184,86 @@ an outcome→code mapper — which is what this ADR's "so the CLI maps an
 in-process outcome to the same code the child process would have exited with"
 actually asks for. It mints no new codes.
 
+## Update (2026-08-26) — U7a: the host seams, as implemented
+
+U6 left three consequences standing (recorded in this ADR's first Update
+above): two composition sites in an adopting script, `execute` accepting but
+not forwarding `context.output`/`logger`/`signal`, and `TParameters` stuck at
+`Record<string, never>` because `M3LScriptOptions` had no seam to inject
+host-bound values. U7's first slice (U7a, PR for issue #531) closes the
+library-side half of all three, before the CLI itself calls any of it.
+
+**The `M3LScriptOptions.loggerHandler` idea from this ADR's own "output/logger
+port" phrasing does not work, and the reason is worth recording.** The
+descriptor's `execute` receives `M3LCommandContext.logger`, a **built**
+`M3LLogger` — not a handler list — so there is nothing on the context for a
+script to inject a handler into. The seam that actually closes the gap is a
+factory, not an injection point: `core/cli-contract/logger.ts`'s
+`createCommandLogger(options)` takes a host's raw `M3LLoggerHandler[]` plus
+the command's `configParameters`, and internally applies the exact policy
+`M3LScript`'s own default-logger construction already applies —
+`resolveLogLevelFloor()` plus `deriveSecretsSpecifier()` — over the host's
+handlers instead of a hardcoded console one. This is legal because
+`core/cli-contract` may import `core/logging`/`core/config`/`internal/**`
+freely; the ADR-0009 zone (below) bans only `core/**` → `core/script`. A
+script's `execute` can then safely do `logger: context.logger` — the seam this
+ADR wanted, delivered by a different shape than first assumed.
+
+**Parameter binding replaces, not layers over, precedence level 1 — a
+correction to how far this ADR's language went.** `M3LScriptOptions.host`
+(module-private `M3LScriptHostOptions`, following this file's existing
+unexported-inline-options precedent) supplies `parameterValues` bound in
+place of the command-line provider, never above it: layering would leave the
+_host's own_ `process.argv` live at level 1, so a flag on the host's
+invocation (`m3l --json --in-process s3-objects`) could leak into a script
+declaring an unrelated `json` parameter — a contamination class the spawn
+path cannot have. A bound value reports `config.sourceOf() === "cli"` (a new
+optional `sourceLabel` constructor argument on `M3LInMemoryConfigProvider`,
+additive), so a hosted run's `run-report.json` cannot be told apart from a
+spawned one's by provenance alone — the parity property this ADR names.
+
+**Cancellation forwarding required suppressing this library's own shutdown
+handlers, not merely adding a new one.** `M3LScriptOptions.host` present (even
+`{}`) skips `registerShutdownSignals`'s `SIGTERM`/`SIGINT`/`SIGQUIT`
+registration entirely — a hosted script installing its own would tear down
+the host's _other_ work on the first Ctrl-C — and bridges `host.signal`
+instead, aborting `script.signal` before running cleanup, the same ordering
+the non-hosted path already used. This closes the "hosted command still
+terminates its host on a double signal" gap the previous Update recorded:
+`runScript`'s own `installProcessGuards`/`pushForcedSignalExitCode` needed no
+change, because they only ever affected the handlers `host` now suppresses.
+
+**The four duplicated pilot helpers (this ADR's original "check:dup headroom"
+gate on fleet adoption) are promoted, split across two submodules by the same
+ADR-0009 zone.** `consoleOutput` → `createCommandOutput` and the abort
+predicate + outcome derivation → `deriveCommandOutcome` land in
+`core/cli-contract` (both name only symbols that module may already reach).
+The fourth, `captureFailures` → `captureRunFailures`, could **not** land
+there: it returns `M3LScriptLifecycleHooks`, and the zone forbids
+`core/cli-contract` from naming anything in `core/script` even structurally
+without re-declaring the whole hook contract as a second source of truth. It
+lands in `core/script` instead, next to `runScript`, its only real neighbor.
+The three U6 pilots and `templates/script/src/command.ts.tmpl` were rewritten
+in the same PR to consume all four promotions, which is what actually clears
+the `check:dup` headroom this ADR's fleet-adoption gate depends on.
+
+**Two new runtime guards close a hostile-boundary gap this ADR did not
+originally name.** `isM3LCommandModule`/`isM3LCommandOutcome`
+(`core/cli-contract/guards.ts`) are the type guards a host needs before it can
+trust a foreign `dist/`'s export or whatever a foreign `execute` resolved to
+— reachable only once the CLI's in-process host (U7's next slice) actually
+`import()`s untrusted code, but shipped now so that host is written against
+them rather than the guards being extracted from it afterwards. Both carry the
+same never-throws, read-each-property-once discipline
+`mapCommandOutcomeToExitCode` already established, deliberately: a `Proxy`, a
+throwing getter, or a revoked handle are all reachable at this boundary, and a
+guard that threw would cost the caller the one answer it asked for.
+
+None of this required a zone widening or a new ADR — every seam above
+composes with the existing ADR-0009 boundary rather than crossing it, and the
+whole slice remains an additive `m3l-common` minor (Core stays 24; no new
+`exports`-map subpath; `check:api` unaffected).
+
 ## Links
 
 - Programme: [ADR-0053](./0053-cli-first-evolution-programme.md). Operations

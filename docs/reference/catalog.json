@@ -47,7 +47,16 @@
       "M3LCommandContext",
       "M3LCommandOutcome",
       "mapCommandOutcomeToExitCode",
-      "M3LCommandOutput"
+      "M3LCommandOutput",
+      "M3LCommandOutputStream",
+      "M3LCommandOutputOptions",
+      "createCommandOutput",
+      "M3LCommandLoggerOptions",
+      "createCommandLogger",
+      "isM3LCommandModule",
+      "isM3LCommandOutcome",
+      "M3LCommandRunState",
+      "deriveCommandOutcome"
     ]
   },
   {
@@ -554,7 +563,9 @@
       "AWS_REGION_PARAM_NAME",
       "runScript",
       "M3LRunScriptOptions",
-      "M3LScriptRunOptions"
+      "M3LScriptRunOptions",
+      "captureRunFailures",
+      "M3LCapturedRunFailures"
     ]
   },
   {

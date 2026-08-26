@@ -30,6 +30,8 @@ Exported from `@m3l-automation/m3l-common/core` (the `script` sub-module):
 - `serializeError`
 - `setProcessGuardRequestId`
 - `AWS_PROFILE_PARAM_NAME` / `AWS_REGION_PARAM_NAME` — the canonical config parameter names (`"aws.profile"` / `"aws.region"`) the AWS-provisioning seam looks up
+- `captureRunFailures` — composes a failure-recording `onError` onto a script's hooks (see [Hosted runs (`options.host`)](#hosted-runs-optionshost)).
+- `M3LCapturedRunFailures` — its return shape (`{ hooks, failures }`).
 
 `M3LScript` additionally exposes seven read accessors the wrapper uses to build
 a run report (the five below plus `recovery`/`recoveryTotal`, covered under
@@ -265,6 +267,87 @@ in Lambda the accessor still exists and simply never aborts — callers need no
 environment-specific branch. The signal is observed at operation and step
 boundaries; it does not interrupt CPU-bound synchronous code
 ([ADR-0049](../../adr/0049-cooperative-cancellation-contract.md)).
+
+## Hosted runs (`options.host`)
+
+A program that runs a script **in-process** — rather than spawning
+`dist/main.js` as its own child process — supplies `options.host` (ADR-0054,
+U7). See `docs/reference/core/cli-contract.md`'s `M3LCommandContext` for the
+host-side half of this seam; this section covers what a `host` value changes
+on `M3LScript` itself.
+
+```typescript
+readonly host?: {
+  readonly parameterValues?: Readonly<Record<string, unknown>>;
+  readonly signal?: AbortSignal;
+};
+```
+
+Supplying `host` at all — **even `{}`** — changes two behaviours
+simultaneously, not just parameter binding:
+
+1. **No signal handlers of its own.** The [signal-handling](#signal-handling)
+   registration above is skipped entirely: a hosted script installing its own
+   `SIGTERM`/`SIGINT`/`SIGQUIT` listeners would tear down the host's _other_
+   work on the first Ctrl-C. When `host.signal` is supplied, `M3LScript`
+   bridges it instead — an abort on `host.signal` aborts `script.signal`
+   (abort before cleanup, the same ordering [described
+   above](#cooperative-cancellation-scriptsignal)) and runs
+   `runCleanup("signal-shutdown")`, exactly as the non-hosted path does on its
+   own first signal. An already-aborted `host.signal` at construction time
+   aborts synchronously, before any stage begins.
+2. **Parameter binding**, when `host.parameterValues` is present: bound at
+   precedence level 1 in [`loadConfig`](#execution-flow), **replacing** the
+   command-line provider rather than layering above it — the host's own
+   `process.argv` must not leak into a hosted run's configuration. A parameter
+   `parameterValues` does not bind still falls through to level 2 and below
+   (config files, environment, defaults), never back to `process.argv`. A
+   bound value reports `config.sourceOf(name) === "cli"` — the same label the
+   command-line provider itself reports — so a persisted `run-report.json`
+   cannot distinguish a hosted run's config from a spawned one by provenance
+   alone. `parameterValues` passes through the same prototype-pollution
+   screening every config source does: a `__proto__`/`constructor`/`prototype`
+   key throws `M3LUnsafeConfigKeyError` (`ERR_CONFIG_UNSAFE_KEY`).
+
+`runScript`'s own `installProcessGuards`/`pushForcedSignalExitCode` (below)
+are unaffected by `host` and stay inert for a hosted script — they only
+governed the shutdown handlers `host` already suppresses.
+
+### Composing hooks without wrapping the run body — `captureRunFailures`
+
+```typescript
+function captureRunFailures(
+  hooks?: M3LScriptLifecycleHooks,
+): M3LCapturedRunFailures;
+
+interface M3LCapturedRunFailures {
+  readonly hooks: M3LScriptLifecycleHooks;
+  readonly failures: readonly unknown[];
+}
+```
+
+A caller driving a hosted run needs to observe what it threw, but a
+`try`/`catch` around `mainFn` misses six of the pipeline's nine stages —
+`config-load` (a missing or invalid parameter) most of all. `captureRunFailures`
+composes an `onError` onto the caller's own `hooks` that records every
+pipeline failure into `failures` — the **live** array, not a snapshot, so a
+caller takes the reference before the run starts and reads it after the run
+finishes. Composition, never replacement: the caller's own `onError` (if any)
+is still invoked with the same `(ctx, error)` arguments, after the capture, so
+an async error handler is still awaited by the pipeline.
+
+```typescript
+import {
+  M3LScript,
+  captureRunFailures,
+  runScript,
+} from "@m3l-automation/m3l-common/core";
+
+const capture = captureRunFailures(hooks);
+const script = new M3LScript({ metadata, hooks: capture.hooks });
+await runScript(script, () => runMain(script));
+// capture.failures now holds every error the pipeline raised.
+```
 
 ## Absorbed failures (`script.reportRecovery`)
 

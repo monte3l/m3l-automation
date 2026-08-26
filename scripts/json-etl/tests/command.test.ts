@@ -13,7 +13,7 @@ import type * as M3LCommon from "@m3l-automation/m3l-common";
  * would write a run report into the data tree.
  *
  * What that buys is coverage of the one path a composition regression would
- * land on — `captureFailures` -> `Core.runScript` -> `toOutcome` — including
+ * land on — Core.captureRunFailures -> Core.runScript -> Core.deriveCommandOutcome — including
  * the metadata narrowing, which a previous revision got wrong.
  */
 const runMocks = vi.hoisted(() => ({
@@ -72,7 +72,7 @@ vi.mock("@m3l-automation/m3l-common", async (importOriginal) => {
 
 import { Core } from "@m3l-automation/m3l-common";
 
-import { commandModule, consoleOutput, toOutcome } from "../src/command.js";
+import { commandModule } from "../src/command.js";
 import { configParameters, configValidators } from "../src/config.js";
 import { hooks } from "../src/hooks.js";
 
@@ -172,85 +172,9 @@ describe("json-etl command module descriptor", () => {
   });
 });
 
-describe("json-etl outcome derivation", () => {
-  /** A run that absorbed nothing. */
-  const clean = { recovery: [], recoveryTotal: 0 };
-
-  /** One absorbed per-item failure — the minimum that makes a run `partial`. */
-  const absorbed = {
-    recovery: [
-      { item: "record-1", error: [], recordedAt: "2026-01-01T00:00:00.000Z" },
-    ],
-    recoveryTotal: 1,
-  };
-
-  it("reports a clean run as success", () => {
-    expect(toOutcome(clean, [], false)).toEqual({ status: "success" });
-  });
-
-  it("reports a clean dry run as dry-run", () => {
-    expect(toOutcome(clean, [], true)).toEqual({ status: "dry-run" });
-  });
-
-  it("reports an absorbed per-item failure as partial", () => {
-    expect(toOutcome(absorbed, [], false)).toEqual({
-      status: "partial",
-      recovered: 1,
-    });
-  });
-
-  // `recoveryTotal`, not `recovery.length`: the buffer is a ring truncated at
-  // `M3L_RECOVERY_LIMIT`, so `.length` under-reports a large batch. This
-  // simulates the truncated state directly.
-  it("reports the honest recovered count when the ring buffer truncated", () => {
-    expect(toOutcome({ ...absorbed, recoveryTotal: 4096 }, [], false)).toEqual({
-      status: "partial",
-      recovered: 4096,
-    });
-  });
-
-  it("reports a thrown error as failure, carrying the error", () => {
-    const error = new Core.M3LError("boom", { code: "ERR_CONFIG_MISSING" });
-    expect(toOutcome(clean, [error], false)).toEqual({
-      status: "failure",
-      error,
-    });
-  });
-
-  // Classified by CODE, never by class (ADR-0049) — and it must NOT come out
-  // as `failure`, because `mapErrorToExitCode` is typed never to return
-  // INTERRUPTED (see the parity block below).
-  it("reports a cooperative abort as interrupted, not failure", () => {
-    const abort = new Core.M3LOperationAbortedError("cancelled");
-    expect(toOutcome(clean, [abort], false)).toEqual({
-      status: "interrupted",
-    });
-  });
-
-  it("lets a failure win over both absorbed recovery and dry-run", () => {
-    const error = new Core.M3LError("boom", { code: "ERR_CONFIG_MISSING" });
-    // Mirrors runScript: its `catch` skips the PARTIAL assignment entirely,
-    // and a dry run that threw is still a failure.
-    expect(toOutcome(absorbed, [error], true)).toEqual({
-      status: "failure",
-      error,
-    });
-  });
-
-  // A thrown `undefined` is representable, which is exactly why the capture is
-  // an array rather than a `let captured: unknown` — the two would otherwise
-  // be indistinguishable from "nothing was captured".
-  it("treats a thrown undefined as a failure, not as no failure", () => {
-    expect(toOutcome(clean, [undefined], false)).toEqual({
-      status: "failure",
-      error: undefined,
-    });
-  });
-});
-
 describe("json-etl outcome-to-exit-code parity", () => {
   /**
-   * The parity property: for every outcome `toOutcome` can produce, the mapped
+   * The parity property: for every outcome Core.deriveCommandOutcome can produce, the mapped
    * exit code equals the one `Core.runScript` already assigned to
    * `process.exitCode` on the spawn path. A disagreement means a scheduler
    * sees two different results for the same run depending on how it was
@@ -295,56 +219,26 @@ describe("json-etl outcome-to-exit-code parity", () => {
   });
 });
 
-describe("json-etl fallback command output port", () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  // The port exists so a caller with no host (this test today, a local
-  // invocation before the CLI's in-process renderer ships) can build an
-  // `M3LCommandContext`. `colorEnabled` is false by construction, not by
-  // configuration: a script cannot resolve colour, because per-stream TTY
-  // detection needs `process.env`, which the scripts ESLint zone bans.
-  it("satisfies M3LCommandOutput and never claims colour support", () => {
-    const output: Core.M3LCommandOutput = consoleOutput;
-    expect(output.colorEnabled).toBe(false);
-    expect(typeof output.info).toBe("function");
-    expect(typeof output.error).toBe("function");
-    expect(typeof output.heading).toBe("function");
-  });
-
-  // Which STREAM each writer targets is the part a host relies on: `error`
-  // must not land on stdout, or a caller piping stdout would swallow the
-  // diagnostics. Asserted by spying on the streams rather than by reading the
-  // source.
-  it("writes info and heading to stdout, error to stderr", () => {
-    const out = vi
-      .spyOn(process.stdout, "write")
-      .mockImplementation(() => true);
-    const err = vi
-      .spyOn(process.stderr, "write")
-      .mockImplementation(() => true);
-
-    consoleOutput.info("an info line");
-    consoleOutput.heading("A heading");
-    consoleOutput.error("an error line");
-
-    expect(out.mock.calls.map(([chunk]) => chunk)).toEqual([
-      "an info line\n",
-      "A heading\n",
-    ]);
-    expect(err.mock.calls.map(([chunk]) => chunk)).toEqual(["an error line\n"]);
-  });
-});
-
-/** A host port bag with the fallback writer and no cancellation. */
-function contextFor(dryRun: boolean): Core.M3LCommandContext {
+/**
+ * A host port bag with the fallback writer; `signal` defaults to none.
+ *
+ * Coverage for `Core.createCommandOutput` and `Core.deriveCommandOutcome`
+ * themselves lives in the library's own `cli-contract-output.test.ts` and
+ * `cli-contract-outcome.test.ts` — this helper exists only to build a
+ * plausible `M3LCommandContext` for driving `execute`.
+ */
+function contextFor(
+  dryRun: boolean,
+  signal?: AbortSignal,
+): Core.M3LCommandContext {
   return {
-    output: consoleOutput,
-    // No handlers: `execute` deliberately does not forward this port into
-    // `M3LScript` at all, so a sink-less logger is the honest stand-in.
+    output: Core.createCommandOutput(),
+    // A sink-less logger: nothing under test here asserts on emitted log
+    // content, so a silent logger keeps the test output clean. `execute` now
+    // forwards this straight into `M3LScript` — see the "forwards
+    // context.logger" test below for that assertion.
     logger: new Core.M3LLogger([]),
-    signal: undefined,
+    signal,
     dryRun,
   };
 }
@@ -391,6 +285,51 @@ describe("json-etl execute wiring", () => {
     });
   });
 
+  // `execute` now forwards `context.logger` straight into `M3LScriptOptions`
+  // (U7, ADR-0054): the port is built by `Core.createCommandLogger`, which
+  // already resolves the log-level floor and derives secrets, so there is no
+  // longer a reason for `execute` to build its own default logger instead.
+  it("forwards context.logger to M3LScript", async () => {
+    const logger = new Core.M3LLogger([]);
+    await commandModule.execute(
+      {},
+      {
+        output: Core.createCommandOutput(),
+        logger,
+        signal: undefined,
+        dryRun: true,
+      },
+    );
+
+    const options = runMocks.scriptOptions[0] as { readonly logger: unknown };
+    expect(options.logger).toBe(logger);
+  });
+
+  // The conditional spread must omit the `host` KEY entirely when no signal
+  // was supplied, not merely leave it `undefined` — matching this repo's
+  // `exactOptionalPropertyTypes` conventions for forwarding an optional value
+  // into a strict target.
+  it("omits host entirely when context.signal is undefined", async () => {
+    await commandModule.execute({}, contextFor(true));
+
+    const options = runMocks.scriptOptions[0] as Record<string, unknown>;
+    expect(Object.hasOwn(options, "host")).toBe(false);
+  });
+
+  // The bridge that lets a host's cooperative-cancellation signal (ADR-0049)
+  // reach the script: `context.signal`, when present, must land on
+  // `M3LScriptOptions.host.signal` by identity.
+  it("bridges context.signal into host.signal when present", async () => {
+    const controller = new AbortController();
+    await commandModule.execute({}, contextFor(true, controller.signal));
+
+    const options = runMocks.scriptOptions[0] as {
+      readonly host: { readonly signal: AbortSignal };
+    };
+    expect(options.host).toEqual({ signal: controller.signal });
+    expect(options.host.signal).toBe(controller.signal);
+  });
+
   it("declares the same schema config.ts exports", async () => {
     await commandModule.execute({}, contextFor(true));
 
@@ -401,7 +340,7 @@ describe("json-etl execute wiring", () => {
   });
 
   // `hooks: capture.hooks` must SPREAD this script's declared hooks, not
-  // replace them: `captureFailures` adds an `onError` for the outcome, and a
+  // replace them: `Core.captureRunFailures` adds an `onError` for the outcome, and a
   // composition that dropped the spread would silently stop running
   // `onBeforeRun` — which is what captures the correlation id — on the
   // in-process path only. Asserted by key set plus a same-reference check on

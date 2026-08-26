@@ -204,3 +204,122 @@ export function registerShutdownSignals(
     process.on(signal, handleSignal);
   }
 }
+
+/**
+ * Bridges a host's cancellation signal into a hosted script's own controller
+ * and cleanup — the in-process counterpart to
+ * {@link registerShutdownSignals}, which a hosted script never calls because
+ * the host owns process signals.
+ *
+ * `controller.abort()` runs BEFORE `onCleanup`, so a cleanup hook reading
+ * `signal.aborted` already sees `true` and does not start a fresh
+ * long-running wait while the run is shutting down (ADR-0049). The abort is
+ * deliberately **reason-less** — no `abort(reason)` — so a script's own
+ * `catch { if (signal.aborted) ... }` classification behaves exactly as it
+ * does on the spawn path, and `AbortSignal.reason` does not silently become a
+ * new observable.
+ *
+ * An **already-aborted** signal aborts the controller synchronously, before
+ * this function returns: a script whose own signal stayed live for even one
+ * tick could start work it will never be told to stop. Cleanup is dispatched
+ * fire-and-forget on a microtask either way, mirroring
+ * {@link registerShutdownSignals}' own dispatch — it must not run inside the
+ * host's `abort()` call frame, where a slow or throwing hook would surface as
+ * the host's own failure. `{ once: true }` mirrors that function's "first
+ * signal asks nicely" flag.
+ *
+ * @param host - The script's `options.host` bag, or `undefined` on the spawn
+ *   path. Taking the whole bag (rather than `host?.signal`) keeps the optional
+ *   chain out of `M3LScript`'s already-at-budget constructor complexity, and a
+ *   host with no signal is as much a no-op as no host at all. Typed
+ *   structurally rather than as `M3LScriptHostOptions`, which is
+ *   module-private to `core/script/M3LScriptOptions.ts`.
+ * @param controller - The hosted script's own controller, aborted on bridge.
+ * @param onCleanup - The script's cleanup, dispatched after the abort. Its
+ *   returned promise is not awaited, and it is expected to absorb its own
+ *   failures, as `M3LScript.runCleanup` does. Should it reject anyway, the
+ *   rejection is reported through the same best-effort diagnostic
+ *   {@link registerShutdownSignals} uses rather than becoming an unhandled
+ *   rejection — the two dispatches must not differ in whether a failure is
+ *   observable.
+ * @param secrets - Optional `secrets` port, additively widening the
+ *   cleanup-failure diagnostic's redaction beyond the built-in key-name
+ *   heuristic — same parameter, same purpose, as
+ *   {@link registerShutdownSignals}'.
+ *
+ * @example
+ * ```ts
+ * import { bridgeHostSignal } from "../internal/script/signalHandlers.js";
+ *
+ * bridgeHostSignal(
+ *   options.host,
+ *   controller,
+ *   () => runCleanup("signal-shutdown"),
+ *   secrets,
+ * );
+ * ```
+ */
+export function bridgeHostSignal(
+  host: { readonly signal?: AbortSignal } | undefined,
+  controller: AbortController,
+  onCleanup: () => Promise<void>,
+  secrets?: M3LSecretNamesPort,
+): void {
+  const signal = host?.signal;
+  if (signal === undefined) return;
+  const bridge = (): void => {
+    controller.abort();
+    void Promise.resolve()
+      .then(onCleanup)
+      .catch((cause: unknown) => {
+        // Best-effort cleanup — a failure here is not actionable from inside
+        // the host's abort dispatch, but it must not vanish silently either.
+        logBestEffortDiagnostic("onShutdown", serializeError(cause), {
+          secrets,
+        });
+      });
+  };
+  if (signal.aborted) {
+    bridge();
+    return;
+  }
+  signal.addEventListener("abort", bridge, { once: true });
+}
+
+/**
+ * Whether a script owns the process's shutdown signals — i.e. whether its
+ * constructor should call {@link registerShutdownSignals}.
+ *
+ * Two independent reasons say no, and folding both into one named predicate
+ * keeps `M3LScript`'s constructor at its existing complexity budget while
+ * making the rule readable in one place:
+ *
+ *  - **Hosted** (`host` present, even as `{}`): the host owns
+ *    `SIGINT`/`SIGTERM`/`SIGQUIT`, and a hosted script registering its own
+ *    would tear down the host's other work on the first Ctrl-C. It bridges
+ *    `host.signal` instead — see {@link bridgeHostSignal}.
+ *  - **AWS-managed**: the platform owns the lifecycle and delivers no signal a
+ *    handler could usefully answer.
+ *
+ * @param host - The script's `options.host` bag, or `undefined` when spawned.
+ *   Typed structurally rather than as `M3LScriptHostOptions`, which is
+ *   module-private to `core/script/M3LScriptOptions.ts`.
+ * @param isAWSManaged - The environment verdict from
+ *   `M3LExecutionEnvironment.detect()`.
+ * @returns Whether to register this script's own shutdown handlers.
+ *
+ * @example
+ * ```ts
+ * import { ownsProcessSignals } from "../internal/script/signalHandlers.js";
+ *
+ * if (ownsProcessSignals(options.host, env.isAWSManaged)) {
+ *   registerShutdownSignals(onShutdown, secrets);
+ * }
+ * ```
+ */
+export function ownsProcessSignals(
+  host: object | undefined,
+  isAWSManaged: boolean,
+): boolean {
+  return host === undefined && !isAWSManaged;
+}

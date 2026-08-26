@@ -104,6 +104,51 @@
     "namespace": "core",
     "file": "packages/m3l-common/src/core/cli-contract/output.ts"
   },
+  "M3LCommandOutputStream": {
+    "submodule": "cli-contract",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/cli-contract/output.ts"
+  },
+  "M3LCommandOutputOptions": {
+    "submodule": "cli-contract",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/cli-contract/output.ts"
+  },
+  "createCommandOutput": {
+    "submodule": "cli-contract",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/cli-contract/output.ts"
+  },
+  "M3LCommandLoggerOptions": {
+    "submodule": "cli-contract",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/cli-contract/logger.ts"
+  },
+  "createCommandLogger": {
+    "submodule": "cli-contract",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/cli-contract/logger.ts"
+  },
+  "isM3LCommandModule": {
+    "submodule": "cli-contract",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/cli-contract/guards.ts"
+  },
+  "isM3LCommandOutcome": {
+    "submodule": "cli-contract",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/cli-contract/guards.ts"
+  },
+  "M3LCommandRunState": {
+    "submodule": "cli-contract",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/cli-contract/outcome.ts"
+  },
+  "deriveCommandOutcome": {
+    "submodule": "cli-contract",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/cli-contract/outcome.ts"
+  },
   "M3LConfig": {
     "submodule": "config",
     "namespace": "core",
@@ -1881,6 +1926,16 @@
     "submodule": "script",
     "namespace": "core",
     "file": "packages/m3l-common/src/core/script/M3LScriptOptions.ts"
+  },
+  "captureRunFailures": {
+    "submodule": "script",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/script/capture-run-failures.ts"
+  },
+  "M3LCapturedRunFailures": {
+    "submodule": "script",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/script/capture-run-failures.ts"
   },
   "isDangerousKey": {
     "submodule": "security",
