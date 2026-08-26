@@ -201,7 +201,18 @@ export default tseslint.config(
     // would bypass that seam (and any redaction it applies) entirely. Scoped
     // to the library only: scripts are CLI entrypoints and legitimately print
     // (progress, prompts, `--dry-run` summaries).
-    files: ["packages/m3l-common/src/**/*.ts"],
+    //
+    // The console server is held to the library's standard rather than the
+    // scripts': it is a long-running daemon whose only sanctioned output
+    // channel is `M3LLogger` (ADR-0070's display-vs-persist rule). A stray
+    // `console.*` in `src/` would emit an unstructured, unredacted line
+    // outside that seam. `bin/m3l-console-server.mjs` is the process entry
+    // and is deliberately not covered — it prints boot/drain failures before
+    // and after a logger exists.
+    files: [
+      "packages/m3l-common/src/**/*.ts",
+      "packages/m3l-console-server/src/**/*.ts",
+    ],
     rules: {
       "no-console": "error",
     },
@@ -519,6 +530,93 @@ export default tseslint.config(
     },
   },
   {
+    // The console server carries the same source-level dependency boundary as
+    // the m3l CLI: @m3l-automation/m3l-common (or a subpath) and node:
+    // builtins, nothing else. ADR-0065 chose a hand-rolled node:http router
+    // over a routing framework precisely to keep this budget minimal, and
+    // recorded adopting one as an explicit fallback rather than a free
+    // choice — so the ban names the widening path in its own message.
+    files: ["packages/m3l-console-server/src/**/*.ts"],
+    rules: {
+      "@typescript-eslint/no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              regex: "^(?!\\.)(?!node:)(?!@m3l-automation/m3l-common($|/)).+$",
+              allowTypeImports: false,
+              message:
+                "The console server may only import @m3l-automation/m3l-common (or a subpath) and node: builtins — ADR-0065 keeps its dependency budget minimal. Adopting the recorded routing-framework fallback requires widening this zone in the same PR as a dated ADR-0065 Update.",
+            },
+          ],
+        },
+      ],
+      // ADR-0065's modular monolith, mechanized the ADR-0009 way. Layering,
+      // leaf to root:
+      //
+      //   errors                                (m3l-common + node: only)
+      //   config    -> errors
+      //   auth      -> errors
+      //   lifecycle -> errors
+      //   http      -> errors, auth, lifecycle  (transport only; NOT config)
+      //   main.ts   -> everything               (composition root)
+      //
+      // `http` may not import `config` on purpose: transport receives already
+      // resolved values from the composition root, so a request handler can
+      // never re-read the environment mid-flight. `main.ts` is in no zone's
+      // `target`, so it may import anything; it is in no zone's `except`, so
+      // nothing may import IT — the composition root stays a sink.
+      "import-x/no-restricted-paths": [
+        "error",
+        {
+          zones: [
+            {
+              target: "./packages/m3l-console-server/src/errors",
+              from: "./packages/m3l-console-server/src",
+              except: ["errors"],
+              message:
+                "console-server: errors/ is the layering leaf — it may import @m3l-automation/m3l-common and node: builtins only, never another console-server module (ADR-0065).",
+            },
+            {
+              target: "./packages/m3l-console-server/src/config",
+              from: "./packages/m3l-console-server/src",
+              except: ["config", "errors"],
+              message:
+                "console-server: config/ may import only errors/ — it stays a leaf so it can be loaded before anything else exists (ADR-0065).",
+            },
+            {
+              target: "./packages/m3l-console-server/src/auth",
+              from: "./packages/m3l-console-server/src",
+              except: ["auth", "errors"],
+              message:
+                "console-server: auth/ may import only errors/ (ADR-0065). It receives the resolved operator profile from main.ts rather than reading config itself.",
+            },
+            {
+              target: "./packages/m3l-console-server/src/lifecycle",
+              from: "./packages/m3l-console-server/src",
+              except: ["lifecycle", "errors"],
+              message:
+                "console-server: lifecycle/ may import only errors/ (ADR-0065). Drain timeouts and bind addresses arrive as arguments from main.ts.",
+            },
+            {
+              target: "./packages/m3l-console-server/src/http",
+              from: "./packages/m3l-console-server/src",
+              except: ["http", "errors", "auth", "lifecycle"],
+              message:
+                "console-server: http/ is transport — it may import errors/, auth/ and lifecycle/, but NOT config/ (ADR-0065). Resolved configuration is passed in from main.ts; a handler must never re-read the environment.",
+            },
+            {
+              target: "./packages/m3l-console-server/src",
+              from: "./packages/m3l-console-server/tests",
+              message:
+                "Production source must not import from tests/ — move shared fixtures/helpers into src/ if they're needed at runtime.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     // `internal/` is private and MUST NOT be re-exported through a public
     // barrel (rules 04 / ADR 0004 — the exports map stays at three entries).
     // Forbid the public entry points from importing it at all.
@@ -752,6 +850,7 @@ export default tseslint.config(
       "packages/m3l-common/src/**/*.ts",
       "scripts/*/src/**/*.ts",
       "packages/m3l-cli/src/**/*.ts",
+      "packages/m3l-console-server/src/**/*.ts",
     ],
     rules: {
       "import-x/no-cycle": ["error", { maxDepth: Infinity }],
@@ -766,6 +865,7 @@ export default tseslint.config(
       "bin/**/*.mjs",
       ".claude/hooks/**/*.mjs",
       "packages/m3l-cli/bin/**/*.mjs",
+      "packages/m3l-console-server/bin/**/*.mjs",
     ],
     extends: [tseslint.configs.disableTypeChecked],
     languageOptions: {

@@ -1,0 +1,132 @@
+/**
+ * `main` — the console server's composition root.
+ *
+ * Resolves boot-time configuration and builds the logger the rest of the
+ * server writes through. At this slice ({@link createConsoleRuntime}, v1)
+ * nothing here binds a socket, listens, or registers a process signal
+ * handler — that lands with the HTTP/lifecycle wiring in a later slice.
+ * Nothing else in this package imports this module.
+ *
+ * @packageDocumentation
+ */
+
+import { Core } from "@m3l-automation/m3l-common";
+
+import type { M3LConsoleConfig } from "./config/env.js";
+import { loadConsoleConfig } from "./config/env.js";
+
+/**
+ * Constructor options for {@link createConsoleRuntime}.
+ *
+ * @example
+ * ```ts
+ * const options: M3LConsoleRuntimeOptions = { env: process.env };
+ * ```
+ */
+export interface M3LConsoleRuntimeOptions {
+  /** The environment variable map to resolve configuration from; defaults to `process.env`. */
+  readonly env?: NodeJS.ProcessEnv;
+  /**
+   * Log sinks the runtime's logger fans events out to; defaults to a single
+   * {@link Core.M3LJsonLoggerHandler} floored at the resolved
+   * {@link M3LConsoleConfig.logLevel} — a daemon's output is machine-read,
+   * so JSON lines rather than the pretty console handler.
+   */
+  readonly handlers?: readonly Core.M3LLoggerHandler[];
+}
+
+/**
+ * The console server's resolved runtime: its boot-time configuration and the
+ * logger every other layer writes through.
+ *
+ * @example
+ * ```ts
+ * function describe(runtime: M3LConsoleRuntime): string {
+ *   return `operator: ${runtime.config.operatorName}`;
+ * }
+ * ```
+ */
+export interface M3LConsoleRuntime {
+  /** The resolved boot-time configuration. */
+  readonly config: M3LConsoleConfig;
+  /** The logger the rest of the server writes through. */
+  readonly logger: Core.M3LLogger;
+}
+
+/**
+ * Builds this runtime's default log sinks: a single JSON-lines handler
+ * floored at `logLevel`.
+ */
+function buildDefaultHandlers(
+  logLevel: Core.M3LLogLevelFloor,
+): readonly Core.M3LLoggerHandler[] {
+  return [new Core.M3LJsonLoggerHandler({ minLevel: logLevel })];
+}
+
+/**
+ * Names the config fields this runtime's logger treats as secret, on top of
+ * `M3LLogger`'s built-in key-name heuristic. `operatorEmail`/`email` is NOT
+ * in the library's built-in `SENSITIVE_KEY_NAMES` set (`core/logging/redact.ts`),
+ * so without this port, a later layer doing something as ordinary as
+ * `logger.info(msg, { ...runtime.config })` would print the operator's email
+ * verbatim — {@link M3LConsoleConfig.operatorEmail}'s "Never logged" TSDoc
+ * would then be convention, not a control. Wiring this once here, at the
+ * logger's construction, makes the guarantee structural for every later
+ * slice that writes through this logger, not just the boot-line log call in
+ * {@link logPosture}.
+ */
+const runtimeSecrets: Core.M3LSecretNamesPort = {
+  isSecret: (name) => name === "operatorEmail" || name === "email",
+};
+
+/**
+ * Emits the one posture line every boot logs: the resolved host, port,
+ * operator name, drain timeout, and log level. The operator email is
+ * deliberately never included — it is caller PII, and the library does not
+ * log caller data by default.
+ */
+function logPosture(logger: Core.M3LLogger, config: M3LConsoleConfig): void {
+  logger.info("console server configuration resolved", {
+    host: config.host,
+    port: config.port,
+    operatorName: config.operatorName,
+    drainTimeoutMs: config.drainTimeoutMs,
+    logLevel: config.logLevel,
+  });
+}
+
+/**
+ * Resolves the console server's configuration and builds its logger. Does
+ * not bind a socket, start listening, or register any process signal
+ * handler — this is a pure composition step, side-effect-free at import
+ * time.
+ *
+ * @param options - See {@link M3LConsoleRuntimeOptions}.
+ * @returns The resolved {@link M3LConsoleRuntime}.
+ * @throws {@link M3LConsoleError} When configuration resolution fails (see
+ *   {@link loadConsoleConfig}) — propagated, never swallowed.
+ *
+ * @example
+ * ```ts
+ * import { createConsoleRuntime } from "./main.js";
+ *
+ * const runtime = createConsoleRuntime();
+ * runtime.logger.info("ready");
+ * ```
+ */
+export function createConsoleRuntime(
+  options: M3LConsoleRuntimeOptions = {},
+): M3LConsoleRuntime {
+  const config = loadConsoleConfig(
+    options.env !== undefined ? { env: options.env } : {},
+  );
+  const handlers = options.handlers ?? buildDefaultHandlers(config.logLevel);
+  const logger = new Core.M3LLogger(handlers, {
+    minLevel: config.logLevel,
+    secrets: runtimeSecrets,
+  });
+
+  logPosture(logger, config);
+
+  return { config, logger };
+}
