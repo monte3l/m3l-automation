@@ -3513,9 +3513,13 @@ describe("M3LRunReporter — round-4 (describeSetCardinality hostile size, lock-
 
   beforeEach(async () => {
     outDir = await mkdtemp(join(tmpdir(), "m3l-run-report-round4-setsize-"));
+    // Freeze time: an unfrozen timestamp could coincidentally match a forbidden fragment (e.g. "1.7"), issue #655.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
   });
 
   afterEach(async () => {
+    vi.useRealTimers();
     await rm(outDir, { recursive: true, force: true });
   });
 
