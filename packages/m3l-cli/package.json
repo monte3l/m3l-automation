@@ -1,6 +1,6 @@
 {
   "name": "@m3l-automation/m3l-cli",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "Script-facing CLI: discovery, introspection, and guided execution over the scripts/* configParameters seam (ADR-0042)",

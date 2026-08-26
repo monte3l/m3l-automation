@@ -205,11 +205,26 @@ The guided composition flow (explicitly invoked — bare `m3l` still prints
 help; a non-interactive stdin exits `2`): fuzzy `autocomplete` script
 selection ("name — description"), then one typed prompt per declared
 parameter in declaration order — `password` (masked input) for
-secret-flagged parameters, `confirm` for BOOL, `number` for INT/DOUBLE,
+secret-flagged parameters, `select` for a parameter declaring an operation
+set (ADR-0055, U8 — choices rendered "name — description", value the
+chosen operation's name), `confirm` for BOOL, `number` for INT/DOUBLE,
 comma-split `text` for STRING_ARRAY, `text` with the default prefilled
 otherwise. An empty answer skips an optional parameter; a required one is
 re-asked once, then skipped with a warning (the script's own validation
 stays the authority at run time).
+
+Once an operation is chosen, every subsequent declared parameter whose own
+`required` is `false` is scoped against it (U8): named by an operation of
+that _same selector_ but not the chosen one, it is skipped entirely —
+never prompted, absent from the summary, the preset, and the spawned argv
+— while one the chosen operation requires is always prompted, re-asked on
+an empty answer the same way a `required: true` parameter is. A parameter
+declared `required: true` is always prompted regardless of scoping; so is
+one no operation of that selector names, or one declared before the
+selector in the script's own parameter order. A script declaring more than
+one operation-selector parameter is scoped only against the first whose
+answer resolves to one of its own declared operations — a later selector's
+operations never contribute to scoping.
 
 The confirmation summary masks secret values (`********`) and routes every
 value through `redactSensitiveLogValue` — a wizard-entered secret reaches
