@@ -91,6 +91,10 @@
       "deriveSecretsSpecifier",
       "M3LDeriveSecretsSpecifierOptions",
       "M3LConfigSchemaValidators",
+      "M3LOperationDeclaration",
+      "M3LOperationDeclarationList",
+      "deriveOperationNames",
+      "deriveOperationValidators",
       "M3LConfigAccessorOptions"
     ]
   },

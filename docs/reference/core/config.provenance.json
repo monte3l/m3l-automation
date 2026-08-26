@@ -28,7 +28,7 @@
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigParameter.ts",
           "symbol": "M3LConfigParameter",
-          "blob": "2ae74ff94daeb63e6732e35c5481ec0792f85f23"
+          "blob": "509918de2da71918d5eb46cd12cf35ab39298618"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigParameterType.ts",
@@ -38,7 +38,7 @@
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigHelpFormatter.ts",
           "symbol": "M3LConfigHelpFormatter",
-          "blob": "a74f891b6406c14760848564c577e70d88855e10"
+          "blob": "8a6345fdaa74e6ce0f78b354dfcb08b4bea0a50f"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigParameterType.ts",
@@ -169,9 +169,29 @@
           "file": "packages/m3l-common/src/core/config/M3LConfigSchemaValidator.ts",
           "symbol": "M3LConfigSchemaValidators",
           "blob": "59bdba62320799392ab10640c9e6e56a8258522b"
+        },
+        {
+          "file": "packages/m3l-common/src/core/config/M3LOperationDeclaration.ts",
+          "symbol": "M3LOperationDeclaration",
+          "blob": "b9f214fe092d318f15365b19cb1ad73c7d301679"
+        },
+        {
+          "file": "packages/m3l-common/src/core/config/M3LOperationDeclaration.ts",
+          "symbol": "M3LOperationDeclarationList",
+          "blob": "b9f214fe092d318f15365b19cb1ad73c7d301679"
+        },
+        {
+          "file": "packages/m3l-common/src/core/config/M3LOperationDeclaration.ts",
+          "symbol": "deriveOperationNames",
+          "blob": "b9f214fe092d318f15365b19cb1ad73c7d301679"
+        },
+        {
+          "file": "packages/m3l-common/src/core/config/deriveOperationValidators.ts",
+          "symbol": "deriveOperationValidators",
+          "blob": "e8f7d200eda60dddeddbee9ee093bf3fc2f6d361"
         }
       ],
-      "retrieved": "2026-08-18"
+      "retrieved": "2026-08-26"
     },
     {
       "heading": "Defensive typed reads (`M3LConfigAccessor`)",
@@ -210,7 +230,7 @@
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigParameter.ts",
           "symbol": "M3LConfigParameter",
-          "blob": "2ae74ff94daeb63e6732e35c5481ec0792f85f23"
+          "blob": "509918de2da71918d5eb46cd12cf35ab39298618"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigMissingError.ts",
@@ -233,7 +253,7 @@
           "blob": "59bdba62320799392ab10640c9e6e56a8258522b"
         }
       ],
-      "retrieved": "2026-08-18"
+      "retrieved": "2026-08-26"
     },
     {
       "heading": "Descriptions and `--help` rendering",
@@ -241,15 +261,51 @@
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigParameter.ts",
           "symbol": "M3LConfigParameter",
-          "blob": "2ae74ff94daeb63e6732e35c5481ec0792f85f23"
+          "blob": "509918de2da71918d5eb46cd12cf35ab39298618"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigHelpFormatter.ts",
           "symbol": "M3LConfigHelpFormatter",
-          "blob": "a74f891b6406c14760848564c577e70d88855e10"
+          "blob": "8a6345fdaa74e6ce0f78b354dfcb08b4bea0a50f"
         }
       ],
-      "retrieved": "2026-08-14"
+      "retrieved": "2026-08-26"
+    },
+    {
+      "heading": "Declarative operations",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/config/M3LOperationDeclaration.ts",
+          "symbol": "M3LOperationDeclaration",
+          "blob": "b9f214fe092d318f15365b19cb1ad73c7d301679"
+        },
+        {
+          "file": "packages/m3l-common/src/core/config/M3LOperationDeclaration.ts",
+          "symbol": "M3LOperationDeclarationList",
+          "blob": "b9f214fe092d318f15365b19cb1ad73c7d301679"
+        },
+        {
+          "file": "packages/m3l-common/src/core/config/M3LOperationDeclaration.ts",
+          "symbol": "deriveOperationNames",
+          "blob": "b9f214fe092d318f15365b19cb1ad73c7d301679"
+        },
+        {
+          "file": "packages/m3l-common/src/core/config/deriveOperationValidators.ts",
+          "symbol": "deriveOperationValidators",
+          "blob": "e8f7d200eda60dddeddbee9ee093bf3fc2f6d361"
+        },
+        {
+          "file": "packages/m3l-common/src/core/config/M3LConfigParameter.ts",
+          "symbol": "M3LConfigParameter",
+          "blob": "509918de2da71918d5eb46cd12cf35ab39298618"
+        },
+        {
+          "file": "packages/m3l-common/src/core/config/M3LConfigHelpFormatter.ts",
+          "symbol": "M3LConfigHelpFormatter",
+          "blob": "8a6345fdaa74e6ce0f78b354dfcb08b4bea0a50f"
+        }
+      ],
+      "retrieved": "2026-08-26"
     },
     {
       "heading": "Typo suggestions",
@@ -299,10 +355,10 @@
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigHelpFormatter.ts",
           "symbol": "M3LConfigHelpFormatter",
-          "blob": "a74f891b6406c14760848564c577e70d88855e10"
+          "blob": "8a6345fdaa74e6ce0f78b354dfcb08b4bea0a50f"
         }
       ],
-      "retrieved": "2026-08-14"
+      "retrieved": "2026-08-26"
     }
   ]
 }
