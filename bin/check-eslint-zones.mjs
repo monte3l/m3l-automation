@@ -35,6 +35,12 @@
 //   8. m3l-cli boundary    — packages/m3l-cli/src may import only
 //                            @m3l-automation/m3l-common and node: builtins,
 //                            and is covered by the no-cycle rule (ADR-0042).
+//   9. console-server      — the same library+node: import boundary (ADR-0065),
+//                            the ADR-0065 modular-monolith layering (one zone
+//                            per module: errors is a leaf; config/auth/lifecycle
+//                            may reach only errors; http may reach errors, auth
+//                            and lifecycle but NOT config), its prod-not-to-test
+//                            zone, and no-cycle coverage.
 //
 // Usage:
 //   node bin/check-eslint-zones.mjs   # exits 0 on success, 1 on any violation
@@ -144,17 +150,25 @@ const hasNoCycleGuard = config.some((block) => {
   const coversCli = files.some((f) =>
     norm(f).endsWith("packages/m3l-cli/src/**/*.ts"),
   );
+  const coversConsoleServer = files.some((f) =>
+    norm(f).endsWith("packages/m3l-console-server/src/**/*.ts"),
+  );
   const rule = block?.rules?.["import-x/no-cycle"];
   const [severity, options] = Array.isArray(rule) ? rule : [rule];
   const isError = severity === "error" || severity === 2;
   const isInfiniteDepth = options?.maxDepth === Infinity;
   return (
-    coversLibrary && coversScripts && coversCli && isError && isInfiniteDepth
+    coversLibrary &&
+    coversScripts &&
+    coversCli &&
+    coversConsoleServer &&
+    isError &&
+    isInfiniteDepth
   );
 });
 if (!hasNoCycleGuard) {
   reporter.error(
-    "missing or malformed ADR-0035 guard: import-x/no-cycle over packages/m3l-common/src/**/*.ts, scripts/*/src/**/*.ts, and packages/m3l-cli/src/**/*.ts (maxDepth: Infinity)",
+    "missing or malformed ADR-0035 guard: import-x/no-cycle over packages/m3l-common/src/**/*.ts, scripts/*/src/**/*.ts, packages/m3l-cli/src/**/*.ts, and packages/m3l-console-server/src/**/*.ts (maxDepth: Infinity)",
     { file: "eslint.config.js" },
   );
   errors++;
@@ -225,6 +239,74 @@ if (!hasCliImportBoundary) {
   );
   errors++;
 }
+
+// ADR-0065: the console server's dependency budget — its source may import
+// only the library (or a subpath) and node: builtins. Adopting the recorded
+// routing-framework fallback has to widen this zone deliberately, in the same
+// PR as a dated ADR-0065 Update, rather than drifting in silently.
+const hasConsoleServerImportBoundary = config.some((block) => {
+  const files = Array.isArray(block?.files) ? block.files : [];
+  if (
+    !files.some((f) =>
+      norm(f).endsWith("packages/m3l-console-server/src/**/*.ts"),
+    )
+  ) {
+    return false;
+  }
+  const rule = block?.rules?.["@typescript-eslint/no-restricted-imports"];
+  if (!Array.isArray(rule)) return false;
+  const [severity, options] = rule;
+  const isError = severity === "error" || severity === 2;
+  const patterns = Array.isArray(options?.patterns) ? options.patterns : [];
+  return (
+    isError &&
+    patterns.some(
+      (pattern) =>
+        typeof pattern?.regex === "string" &&
+        pattern.regex.includes("@m3l-automation/m3l-common") &&
+        pattern.regex.includes("node:") &&
+        pattern.allowTypeImports === false,
+    )
+  );
+});
+if (!hasConsoleServerImportBoundary) {
+  reporter.error(
+    "missing or malformed ADR-0065 guard: @typescript-eslint/no-restricted-imports boundary over packages/m3l-console-server/src/**/*.ts (library + node: builtins only)",
+    { file: "eslint.config.js" },
+  );
+  errors++;
+}
+
+// ADR-0065 modular-monolith layering. One zone per module, asserted with an
+// EXACT `except` set for the same reason the aws island is: a subset check
+// would keep passing after someone widened `except` to let http/ reach
+// config/, which is precisely the edge the layering forbids.
+const CONSOLE_SERVER_LAYERS = [
+  ["errors", ["errors"]],
+  ["config", ["config", "errors"]],
+  ["auth", ["auth", "errors"]],
+  ["lifecycle", ["lifecycle", "errors"]],
+  ["http", ["http", "errors", "auth", "lifecycle"]],
+];
+
+for (const [layer, allowed] of CONSOLE_SERVER_LAYERS) {
+  requireZone(
+    `console-server layering for src/${layer} (may import only ${allowed.join(", ")})`,
+    (zone) =>
+      norm(zone.target).endsWith(`packages/m3l-console-server/src/${layer}`) &&
+      norm(zone.from).endsWith("packages/m3l-console-server/src") &&
+      Array.isArray(zone.except) &&
+      zone.except.length === allowed.length &&
+      allowed.every((name) => zone.except.includes(name)),
+  );
+}
+
+requireZone(
+  "prod-not-to-test guard for packages/m3l-console-server/src (must not import packages/m3l-console-server/tests)",
+  (zone) =>
+    norm(zone.target).endsWith("packages/m3l-console-server/src") &&
+    norm(zone.from).endsWith("packages/m3l-console-server/tests"),
+);
 
 // Toolchain-hardening follow-up: one `no-restricted-paths` zone per
 // scripts/ directory entry, forbidding a script from importing any sibling

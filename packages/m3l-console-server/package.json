@@ -1,0 +1,17 @@
+{
+  "name": "@m3l-automation/m3l-console-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Operations-console backend: a loopback-bound modular monolith over node:http, the repo's first long-running process (ADR-0064, ADR-0065, ADR-0071)",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "tsc -b tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@m3l-automation/m3l-common": "workspace:*"
+  }
+}
