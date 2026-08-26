@@ -3,6 +3,7 @@
   "references": [
     { "path": "./packages/m3l-cli/tsconfig.build.json" },
     { "path": "./packages/m3l-common/tsconfig.build.json" },
+    { "path": "./packages/m3l-console-server/tsconfig.build.json" },
     { "path": "./scripts/api-gateway-client/tsconfig.build.json" },
     { "path": "./scripts/athena-query/tsconfig.build.json" },
     { "path": "./scripts/cloudformation-stacks/tsconfig.build.json" },

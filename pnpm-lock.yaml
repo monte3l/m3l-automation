@@ -225,6 +225,12 @@ importers:
         specifier: ^1.6.2
         version: 1.6.2
 
+  packages/m3l-console-server:
+    dependencies:
+      '@m3l-automation/m3l-common':
+        specifier: workspace:*
+        version: link:../m3l-common
+
   scripts/api-gateway-client:
     dependencies:
       '@m3l-automation/m3l-common':
