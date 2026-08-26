@@ -74,6 +74,67 @@ interface M3LScriptConfigDeclaration {
 type M3LReadonlyConfig = Pick<M3LConfig, "get" | "has" | "sourceOf">;
 
 /**
+ * The seam a program that runs this script **in-process** — rather than
+ * spawning `dist/main.js` as its own child — supplies through
+ * {@link M3LScriptOptions.host}.
+ *
+ * Not exported from the `script` barrel, following the same precedent as this
+ * file's `M3LScriptConfigDeclaration`/`M3LReadonlyConfig`: it is only ever
+ * supplied inline, and stays reachable as `M3LScriptOptions["host"]`.
+ *
+ * Supplying `host` at all — **even as `{}`** — changes two behaviours
+ * simultaneously, not just parameter binding:
+ *
+ * 1. **Signal ownership.** The script installs no `SIGTERM`/`SIGINT`/
+ *    `SIGQUIT` listeners of its own, because the host owns process signals; a
+ *    hosted script that installed its own would tear down the host's *other*
+ *    work on the first Ctrl-C.
+ * 2. **Parameter binding**, when `parameterValues` is present — see that
+ *    member.
+ *
+ * See `docs/reference/core/cli-contract.md`'s `M3LCommandContext` for the
+ * host-side half of this seam.
+ */
+interface M3LScriptHostOptions {
+  /**
+   * Parameter values the host already resolved, bound at precedence level 1
+   * **in place of** the command-line provider — replaced, never layered above.
+   * The host's own `process.argv` must not leak into a hosted run's
+   * configuration, so a parameter this record does not bind falls through to
+   * level 2 and below (config files, environment, defaults), never back to
+   * argv.
+   *
+   * The substitute provider reports the source label `"cli"`, not
+   * `"in-memory"`, so a hosted run's `run-report.json` is indistinguishable
+   * from a spawned one's (ADR-0054's parity clause).
+   *
+   * Keys are validated like any other externally supplied config key: a
+   * prototype-pollution key (`__proto__`, `constructor`, `prototype`) makes
+   * config loading reject with `M3LUnsafeConfigKeyError`
+   * (`"ERR_CONFIG_UNSAFE_KEY"`) rather than being silently dropped, so a host
+   * forwarding unsanitised operator input learns about it.
+   *
+   * Omit the member entirely to keep the real command-line provider; an empty
+   * record binds nothing but still replaces level 1.
+   */
+  readonly parameterValues?: Readonly<Record<string, unknown>>;
+  /**
+   * The host's own cancellation signal, bridged into this script's
+   * {@link M3LScript.signal} instead of this script installing signal
+   * handlers of its own.
+   *
+   * The bridge preserves ADR-0049's abort-before-cleanup ordering, and aborts
+   * *reason-lessly*: a script's own classification code reads `.aborted`,
+   * never a reason, so bridging must not start attaching one.
+   *
+   * Under `exactOptionalPropertyTypes` a caller forwarding a possibly-absent
+   * `context.signal` must spread it conditionally — `signal: undefined` does
+   * not compile.
+   */
+  readonly signal?: AbortSignal;
+}
+
+/**
  * The context object passed to every {@link M3LScriptLifecycleHooks} hook.
  *
  * Carries a read-only view over the live {@link M3LConfig} store so a hook
@@ -282,6 +343,20 @@ export interface M3LScriptOptions {
    * change for scripts that do not opt in.
    */
   readonly configFiles?: readonly string[];
+  /**
+   * The in-process host seam — see {@link M3LScriptHostOptions}.
+   *
+   * Supplying it (even as `{}`) declares that some other program owns this
+   * process, and changes TWO behaviours at once: this script installs no
+   * `SIGTERM`/`SIGINT`/`SIGQUIT` handlers of its own, and — when
+   * `host.parameterValues` is present — precedence level 1 stops reading
+   * `process.argv` and binds the host's already-resolved values instead.
+   *
+   * Omitted, nothing changes: the script registers its own shutdown handlers
+   * and the command-line provider reads the real `process.argv`, exactly as
+   * on the spawn path.
+   */
+  readonly host?: M3LScriptHostOptions;
 }
 
 /**

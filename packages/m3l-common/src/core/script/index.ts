@@ -4,7 +4,7 @@
  * scripts and Lambda handlers; `runScript` is the composition-root wrapper
  * around it (ADR-0035 phase 4a).
  *
- * Re-exports exactly the seventeen public symbols documented in
+ * Re-exports exactly the nineteen public symbols documented in
  * `docs/reference/core/script.md`. No logic lives here; this file is a
  * barrel only.
  *
@@ -15,6 +15,8 @@ export {
   AWS_PROFILE_PARAM_NAME,
   AWS_REGION_PARAM_NAME,
 } from "./aws-param-names.js";
+export { captureRunFailures } from "./capture-run-failures.js";
+export type { M3LCapturedRunFailures } from "./capture-run-failures.js";
 export { M3LScript } from "./M3LScript.js";
 export type {
   M3LScriptHookContext,

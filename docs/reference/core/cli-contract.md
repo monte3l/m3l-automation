@@ -32,11 +32,12 @@ present and the _shape_ a host must supply — nothing that renders anything.
 
 ## Landing plan
 
-ADR-0072 slice record. One slice; no further slicing was needed.
+ADR-0072 slice record.
 
-| Slice             | Scope                                                                               | Status |
-| ----------------- | ----------------------------------------------------------------------------------- | ------ |
-| U3 — the contract | The descriptor types, the outcome→exit-code mapper, and the output port. 5 exports. | Landed |
+| Slice                          | Scope                                                                                                                                    | Status |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| U3 — the contract              | The descriptor types, the outcome→exit-code mapper, and the output port. 5 exports.                                                      | Landed |
+| U7a — the host seams (library) | The logger factory, the output-stream shape + default factory, the two descriptor/outcome guards, and `deriveCommandOutcome`. See below. | Landed |
 
 Deliberately **not** in this slice, and why:
 
@@ -47,7 +48,10 @@ Deliberately **not** in this slice, and why:
   [Compatibility with `core/script`](#compatibility-with-corescript) — an
   ADR-0009 layering zone puts it out of reach, so it lands in the adopting
   script (U6) and the CLI's in-process host (U7).
-- **Fleet adoption** (U6) and **the CLI's in-process execution path** (U7).
+- **The CLI's own in-process execution path.** U7a lands the library seams a
+  host needs; `packages/m3l-cli`'s consumption of them — locating and
+  dynamically importing a script's `dist/command.js`, building the context,
+  wiring `--in-process` — is U7's second slice and is not in this diff.
 
 This slice takes Core from 23 to 24 submodules (fleet total 42 → 43). ADR-0054,
 `docs/ROADMAP.md`, and `docs/plans/IMPLEMENTATION.md` all originally recorded
@@ -61,13 +65,29 @@ import { Core } from "@m3l-automation/m3l-common";
 // or: import { ... } from "@m3l-automation/m3l-common/core";
 ```
 
-Exported symbols — five, grouped by ADR-0054's three bullets:
+Exported symbols — fourteen. The original five from U3, grouped by ADR-0054's
+three bullets, plus nine U7a additions (the host seams a program running a
+script in-process needs — see their own sections below):
 
 - `M3LCommandModule<TParameters>` — the descriptor a script exports.
 - `M3LCommandContext` — the port bag a host supplies to `execute`.
 - `M3LCommandOutcome` — the discriminated result `execute` resolves to.
 - `mapCommandOutcomeToExitCode` — outcome → process exit code.
 - `M3LCommandOutput` — the operator-facing writer port.
+- `M3LCommandOutputStream` / `M3LCommandOutputOptions` / `createCommandOutput`
+  — the writable-stream shape a default output port writes through, and the
+  factory that builds one (§ [The output port](#the-output-port)).
+- `M3LCommandLoggerOptions` / `createCommandLogger` — builds the logger a host
+  hands a hosted command, carrying the resolved log-level floor and the
+  command's own derived secrets (§ [Building the host's
+  logger](#building-the-hosts-logger)).
+- `isM3LCommandModule` / `isM3LCommandOutcome` — runtime guards over the two
+  values that cross a genuinely hostile boundary: a foreign `dist/`'s export,
+  and whatever its `execute` resolved to (§ [Validating a foreign
+  descriptor](#validating-a-foreign-descriptor)).
+- `M3LCommandRunState` / `deriveCommandOutcome` — derives the outcome a hosted
+  command reports from a finished run's observable end state (§ [Deriving an
+  outcome](#deriving-an-outcome)).
 
 **Reused, not re-exported.** `M3LExitCode`, `M3L_EXIT_CODES`, and
 `mapErrorToExitCode` stay singly owned by `core/diagnostics`;
@@ -223,6 +243,44 @@ Adding a sixth outcome arm without mapping it is a compile error, via the
 `const _exhaustive: never` idiom this module shares with
 `core/diagnostics/run-report.ts`.
 
+## Deriving an outcome
+
+```typescript
+interface M3LCommandRunState {
+  readonly recovery: readonly M3LRunRecoveryEntry[];
+  readonly recoveryTotal: number;
+}
+
+function deriveCommandOutcome(
+  run: M3LCommandRunState,
+  failures: readonly unknown[],
+  dryRun: boolean,
+): M3LCommandOutcome;
+```
+
+Promoted out of three byte-identical private `toOutcome` functions the U6
+pilot scripts each carried. `M3LCommandRunState` is the two-property slice of
+a finished run this function reads — structural, never `Pick<M3LScript, ...>`,
+because the ADR-0009 layering zone forbids this module from naming
+`core/script` at all. A real `M3LScript` satisfies the shape through its
+existing `recovery`/`recoveryTotal` getters.
+
+The precedence — a captured failure first, then partial recovery, then
+dry-run, then success — mirrors `core/script/run-script.ts` literally rather
+than being re-derived, because the property that matters is **parity**: for
+every state a finished run can be in,
+`mapCommandOutcomeToExitCode(deriveCommandOutcome(...))` must equal the exit
+code the spawn path already assigned to `process.exitCode`. Only the first
+captured failure is reported (the run's proximate cause); `recovered` reports
+the honest `recoveryTotal`, not `recovery.length`, since the recovery buffer
+is a truncated ring.
+
+**Never throws**, matching every sibling in this module. `failures` holds
+arbitrary caller-thrown values, so the cooperative-cancellation classification
+(by `code`, per ADR-0049) reads the one caller-controlled property once inside
+a `try` and falls back to `{ status: "failure" }` on a throwing read — a
+hostile value costs the caller a classification, never the outcome itself.
+
 ## The output port
 
 ```typescript
@@ -241,20 +299,120 @@ stdout is a TTY and stderr is not will style `info`/`heading` while leaving
 the error channel would get the stdout answer. Per-channel resolution is not
 exposed, deliberately — a command should not be branching on it.
 
-`M3LCommandOutput` is the promoted shape of the CLI's own `M3LCliOutput`: a
-hosted command renders operator-facing text through it, so output routes via
-the host's TTY / `NO_COLOR` / redaction handling rather than raw
-`process.stdout`.
-
-The two shapes agree today by construction, but nothing yet _enforces_ that
-they stay in agreement — `m3l-cli` keeps its own private copy. At U7 the CLI
-should alias this type rather than keep a second declaration; if U7 slips, the
-drift lock belongs in `packages/m3l-cli/tests` (the CLI may import
-`m3l-common`, and the reverse would invert ADR-0029).
+`M3LCommandOutput` is the promoted shape of the CLI's own `M3LCliOutput`. At
+U7's second slice (`packages/m3l-cli`'s in-process host) the CLI aliases its
+`M3LCliOutput`/`M3LCliOutputStream` to these types rather than keeping a
+second declaration, closing the drift risk this page used to flag.
 
 **What stays CLI-private.** The rendering half — `createOutput`,
 `resolveColorEnabled`, `sanitizeTerminalText`, and the options bag — remains in
 `packages/m3l-cli`, per ADR-0054's "output rendering stays CLI-private".
+
+### A default output port — `M3LCommandOutputStream` / `createCommandOutput`
+
+```typescript
+interface M3LCommandOutputStream {
+  write(text: string): unknown;
+  readonly isTTY?: boolean | undefined;
+}
+
+interface M3LCommandOutputOptions {
+  readonly stdout?: M3LCommandOutputStream;
+  readonly stderr?: M3LCommandOutputStream;
+  readonly colorEnabled?: boolean;
+}
+
+function createCommandOutput(
+  options?: M3LCommandOutputOptions,
+): M3LCommandOutput;
+```
+
+A command needs _some_ writer when nothing hosted it — a direct
+`node dist/command.js` invocation, or a test — and this replaces the
+byte-identical private `consoleOutput` const the three U6 pilot scripts each
+carried. `createCommandOutput()` with no argument writes to
+`process.stdout`/`process.stderr`; `M3LCommandOutputStream` is a deliberately
+minimal two-member structural port (not `NodeJS.WriteStream`) so a host can
+bind an in-memory collector or a socket just as readily as a process stream.
+It renders nothing — no styling, no terminal-escape sanitisation — same rule
+as `M3LCommandOutput` itself; `error` always lands on the stderr sink
+regardless of `colorEnabled`.
+
+This ships one slice ahead of its second intended consumer:
+`packages/m3l-cli`'s in-process host (U7's next slice) is written _against_
+this shape rather than the shape being extracted from it afterwards — not yet
+a satisfied two-consumer bar, a deliberate ordering risk stated plainly rather
+than glossed over.
+
+## Building the host's logger
+
+```typescript
+interface M3LCommandLoggerOptions {
+  readonly handlers: readonly M3LLoggerHandler[];
+  readonly configParameters: readonly M3LConfigParameter[];
+  readonly correlationId?: string;
+}
+
+function createCommandLogger(options: M3LCommandLoggerOptions): M3LLogger;
+```
+
+This closes the gap U6 left open (see [What U6 shipped, and what it
+deliberately did not](#what-u6-shipped-and-what-it-deliberately-did-not)): a
+host cannot correctly build `M3LCommandContext.logger` by hand.
+`new M3LLogger([handler])` carries neither the resolved
+`--log-level`/`M3L_LOG_LEVEL` floor (`resolveLogLevelFloor` is `internal/` and
+unreachable from outside the library) nor the command's own schema-derived
+secrets — so a declared secret parameter's value would stop being redacted
+the moment a run went hosted rather than spawned. `createCommandLogger`
+applies the exact policy `M3LScript`'s own default logger applies, over
+caller-supplied handlers instead of a hardcoded console handler.
+
+`handlers` and `configParameters` are both **required**: a host that forgot
+`configParameters` would silently build a logger with no derived secrets,
+which is the exact regression this factory exists to prevent. Each declared
+parameter is duck-type-checked (callable `getName`/`getAliases`/`isSecret`)
+before it reaches `M3LConfigSchema`, so a malformed element from a foreign
+`dist/` build throws a named `M3LError` (`ERR_INVALID_ARGUMENT`, naming the
+offending index) rather than a raw `TypeError` three frames down —
+`isM3LCommandModule` deliberately does not validate `configParameters`
+elements (see below), so this factory is the first place they are used.
+
+The layering is legal in both directions: `core/cli-contract` may import
+`core/logging`, `core/config`, and `internal/**` freely — the ADR-0009 zone
+bans only `core/**` → `core/script`.
+
+## Validating a foreign descriptor
+
+```typescript
+function isM3LCommandModule(value: unknown): value is M3LCommandModule<object>;
+function isM3LCommandOutcome(value: unknown): value is M3LCommandOutcome;
+```
+
+A host reads two values it did not compile: the export a foreign
+`dist/command.js` resolves to, and whatever that descriptor's `execute`
+resolves to. Both sit on a genuinely hostile boundary — a `Proxy`, a throwing
+getter, a revoked handle, or a plain `undefined` from a missing `await` are
+all reachable — so **neither guard ever throws**, and each reads every
+caller-controlled property **at most once**, mirroring the fix
+`mapCommandOutcomeToExitCode` already carries.
+
+`isM3LCommandModule` is structural, never nominal: a descriptor loaded from a
+foreign `dist/` build carries `M3LConfigParameter` instances constructed by a
+_different copy_ of this library, so an `instanceof` element check would
+reject exactly the case the guard exists for — `configParameters` is checked
+with `Array.isArray` only, its elements not inspected (see
+`createCommandLogger` above for where that trust boundary is actually
+enforced). It narrows to `M3LCommandModule<object>`, never the bare
+`M3LCommandModule` (which defaults `TParameters` to `Record<string, never>`
+and cannot serve as the "any module" type — TS2375).
+
+`isM3LCommandOutcome` accepts **what the type accepts**, not a stricter
+runtime rule the type disclaims: since `M3LCommandOutcome`'s own
+documentation already declines to make an odd `recovered` value
+unrepresentable, the guard only requires `typeof recovered === "number"` —
+`NaN` and `Infinity` included. On the `"failure"` arm only the _presence_ of
+`error` is checked (`Object.hasOwn`), never its value, so a hostile `error`
+getter is never invoked by a guard that never needed the answer.
 
 ## Compatibility with `core/script`
 
@@ -296,64 +454,108 @@ export the annotated descriptor, compose `Core.runScript`, source its schema
 from `config.ts`, and never call `process.exit`); the manifest tier is
 `OPTIONAL_EXACT_FILES` in `bin/lib/script-scaffold.mjs`.
 
-Three consequences are deliberate at U6 and are U7's inheritance. They are
-recorded here rather than in ADR-0054, which is `Accepted` and therefore
-immutable:
+Three consequences were deliberate at U6. **U7a (this slice) closes two of
+them** at the library level; the third — the CLI actually calling any of it —
+is U7's next slice:
 
-1. **`main.ts` does not delegate to `execute`, so two composition sites exist.**
-   Delegating would force `main.ts` to build an `M3LCommandContext`, and
-   `execute` to forward `context.logger` into `M3LScriptOptions.logger`. That
-   option documents a caller-supplied logger as skipping
-   `resolveLogLevelFloor()` — which lives in `internal/logging/` and is not
-   exported, so a script cannot replicate it, and `--log-level` /
-   `M3L_LOG_LEVEL` would silently stop working — and as never receiving the
-   script's derived `secrets`, so declared secret parameters would stop being
-   redacted. That is a behavioural **and** security regression on the spawn
-   path, which is why the two sites stand until U7 unifies them behind a
-   library seam. The per-script `tests/command.test.ts` is the anti-drift
-   guard in the meantime.
-2. **`context.output`, `context.logger` and `context.signal` are accepted and
-   not forwarded.** `execute` consumes only `context.dryRun`. A U7 host must
-   build its logger with the script's derived `secrets` and the resolved
-   log-level floor, and must expect that aborting its own signal has no effect
-   on a U6-era command (a script that threads cancellation does so from its own
-   `script.signal`).
-3. **`TParameters` stays the default `Record<string, never>`.**
-   `M3LScriptOptions` has no seam to inject host-bound values — precedence
-   level 1 is built from `process.argv` inside the loader, and only
-   `preset`/`configFiles`/Lambda-event providers are injectable — so
-   configuration still resolves ambiently through the library's own precedence
-   chain on both paths. Real parameter binding needs an additive `m3l-common`
-   minor.
+1. **`main.ts` does not delegate to `execute`, so two composition sites still
+   exist.** Delegating would force `main.ts` to build an `M3LCommandContext`
+   itself, which is out of scope for U7a (`main.ts` is untouched — the spawn
+   path has zero behaviour change). What U7a _does_ close is the reason a
+   pilot's `execute` couldn't safely forward `context.logger`: `createCommandLogger`
+   (below) is now the library-supplied way to build a logger carrying both the
+   resolved log-level floor and the script's own derived secrets, so `execute`
+   passing `logger: context.logger` into `M3LScriptOptions.logger` is safe —
+   the three pilots do exactly this now. The per-script `tests/command.test.ts`
+   remains the anti-drift guard.
+2. **`context.output`, `context.logger` and `context.signal` are now
+   forwarded** by all three pilots, closing this consequence: `execute` passes
+   `context.logger` straight into `M3LScript`'s `logger` option, and
+   `context.signal` into the new `M3LScriptOptions.host.signal` seam (below) —
+   conditionally, since a U6-era command with no host still has no signal to
+   forward.
+3. **`TParameters` stays the default `Record<string, never>` in the _type_,
+   but real parameter binding now has a seam.** `M3LScriptOptions.host.parameterValues`
+   (below) lets a caller bind already-resolved values at precedence level 1,
+   replacing rather than layering over the ambient `process.argv` read. The
+   three pilots pass their bound `parameters` through this seam. Widening the
+   pilots' own `M3LCommandModule<TParameters>` generic beyond
+   `Record<string, never>` is separate from this seam existing — each pilot
+   does so individually as it adopts real per-command parameter types.
 
-### A prerequisite for fleet-wide adoption
+### The host seam — `M3LScriptOptions.host`
 
-The three pilots each carry their own copy of the same four helpers —
-`consoleOutput`, the abort predicate, the `onError` capture, and the
-outcome mapper — because a `scripts/*` package may not import from a sibling
-script (an ESLint path zone forbids it) and the library exports none of them.
-Measured cost: `check:dup` moved from **2.80%** to **3.23%** duplicated
-TypeScript lines against a **4%** threshold, so three pilots consumed roughly
-a third of the headroom. Thirteen more scripts adopting the same shape would
-exceed the threshold.
+Not part of `core/cli-contract` (an ADR-0009 zone forbids this module from
+naming anything in `core/script`) — it lives on `M3LScriptOptions` itself,
+documented here because it is the other half of what a hosted `execute` wires
+up:
 
-So the remaining fleet retrofit is **gated on promoting those helpers into
-`core/cli-contract`** (an additive minor: an outcome-deriving seam plus a
-default `M3LCommandOutput`), not merely on repeating the pilots' diff. This
-is the same reasoning `.claude/rules/scripts.md` applies to any capability the
-library lacks — it becomes a typed library wrapper first (the ADR-0027
-pattern), never sixteen hand-rolled copies.
+```typescript
+interface M3LScriptOptions {
+  // ...
+  readonly host?: {
+    readonly parameterValues?: Readonly<Record<string, unknown>>;
+    readonly signal?: AbortSignal;
+  };
+}
+```
 
-One further clause of ADR-0054 is worth stating plainly, because U6 is where
-its ESLint ban lands: `process.exit` is forbidden in the command-module path,
-and the ban (`no-restricted-properties` over every `scripts/*/src/**/*.ts`,
-plus a companion `no-restricted-imports` entry for
-`import { exit } from "node:process"`) covers **script** code only. It does not
-reach `runScript`'s own transitive behaviour: `installProcessGuards` +
-`pushForcedSignalExitCode` install a signal handler that calls `process.exit`
-on a second SIGINT/SIGTERM (`internal/script/signalHandlers.ts`). A hosted
-command therefore still terminates its host on a double signal. Closing that is
-a U7 host obligation, not something a script can do.
+(The inner shape, `M3LScriptHostOptions`, is module-private — supplied inline,
+like this file's existing `M3LScriptConfigDeclaration`.)
+
+Supplying `host` at all — **even `{}`** — changes two behaviours
+simultaneously:
+
+1. **Signal ownership.** The script installs no `SIGTERM`/`SIGINT`/`SIGQUIT`
+   listeners of its own; a hosted script that installed its own would tear
+   down the host's _other_ work on the first Ctrl-C. When `host.signal` is
+   supplied, an abort on it aborts the script's own `signal` (abort before
+   cleanup, same order as the non-hosted shutdown path) instead.
+2. **Parameter binding**, when `parameterValues` is present: bound at
+   precedence level 1, _replacing_ the command-line provider rather than
+   layering above it — the host's own `process.argv` must not leak into a
+   hosted run's configuration. A value that came through this seam reports
+   `config.sourceOf(name) === "cli"`, the same label the spawn path's
+   command-line provider reports, so `run-report.json` cannot tell the two
+   paths apart from provenance alone. `parameterValues` still passes through
+   the same prototype-pollution screening every other config source does
+   (`M3LUnsafeConfigKeyError` on a `__proto__`/`constructor`/`prototype` key).
+
+`runScript`'s own `installProcessGuards`/`pushForcedSignalExitCode`
+(`core/script/run-script.ts`) are untouched by `host` and stay inert for a
+hosted script — they only affect the shutdown handlers `host` already
+suppresses.
+
+### A prerequisite for fleet-wide adoption — discharged
+
+The three pilots used to each carry their own copy of the same four helpers —
+`consoleOutput`, the abort predicate, the `onError` capture, and the outcome
+mapper — because a `scripts/*` package may not import from a sibling script
+(an ESLint path zone forbids it) and the library exported none of them.
+Measured cost before this slice: `check:dup` at **3.23%** duplicated
+TypeScript lines against a **4%** threshold, with thirteen more scripts
+adopting the same shape projected to exceed it.
+
+**U7a promotes all four** — `createCommandOutput` (output above),
+`deriveCommandOutcome` (above; the abort predicate stays private, folded in),
+and `captureRunFailures` (in `core/script`, documented on that page, since it
+names `M3LScriptLifecycleHooks`, which this module cannot). The three pilots
+and `templates/script/src/command.ts.tmpl` now consume the library versions
+instead of their own copies, in the same PR. This unblocks — but does not
+itself perform — the remaining thirteen-script fleet retrofit, which is its
+own tracker item.
+
+One further clause of ADR-0054 is worth stating plainly: `process.exit` is
+forbidden in the command-module path, and the ban (`no-restricted-properties`
+over every `scripts/*/src/**/*.ts`, plus a companion `no-restricted-imports`
+entry for `import { exit } from "node:process"`) covers **script** code only.
+It does not reach `runScript`'s own transitive behaviour:
+`installProcessGuards` + `pushForcedSignalExitCode` install a signal handler
+that calls `process.exit` on a second SIGINT/SIGTERM
+(`internal/script/signalHandlers.ts`) — but only when the script is
+**not** hosted (`M3LScriptOptions.host` is absent). A hosted command supplying
+`host` therefore no longer installs that handler at all; the host owns what
+happens on a second signal.
 
 ## Example
 
@@ -402,21 +604,20 @@ process.exitCode = Core.mapCommandOutcomeToExitCode(outcome);
 
 - **The operation declaration (ADR-0055).** Lands in `core/config` at U4; the
   descriptor is widened then.
-- **Re-narrowing the awaited outcome.** A host that dynamically imports a
-  foreign `dist/` cannot trust that `execute` resolved to a real
-  `M3LCommandOutcome` — no structural check over a returned promise can prove
-  it. The host must narrow at the call site (a U7 obligation); if it does not,
-  the failure mode is a bare `TypeError` crossing the public boundary.
-- **The output stream shape.** No `M3LCommandOutputStream` ships here. Its only
-  consumer is U7's stream binder, and one speculative consumer is the same
-  argument that defers the descriptor guard below. It lands with that binder,
-  as a second additive minor.
-- **Descriptor validation.** No `isM3LCommandModule` guard ships here. U7's
-  loader is its first real consumer, and it lands then rather than being
-  promoted speculatively.
 - **Name validation.** `name` is a bare `string`; reserved-name and slug rules
   live in `packages/m3l-cli` and importing them would invert ADR-0029.
-- **Fleet adoption** (U6) and **the in-process execution path** (U7).
+- **The CLI actually calling any of this.** U7a (this slice) ships the guards,
+  the logger and output factories, `deriveCommandOutcome`, and the
+  `M3LScriptOptions.host` seam — `isM3LCommandModule`/`isM3LCommandOutcome`
+  now exist for a host to re-narrow a foreign `execute`'s resolved value with,
+  closing what used to be listed here as "re-narrowing the awaited outcome".
+  `packages/m3l-cli` importing and calling any of it — locating a script's
+  `dist/command.js`, dynamically importing it, building the context, wiring
+  a `--in-process` flag — is U7's next slice and is not in this diff.
+- **The remaining thirteen-script fleet retrofit.** Unblocked by this slice's
+  `check:dup` reduction (see [A prerequisite for fleet-wide
+  adoption](#a-prerequisite-for-fleet-wide-adoption--discharged)), but not
+  performed here — it is its own tracker item.
 
 ## See also
 

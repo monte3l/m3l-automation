@@ -8,32 +8,32 @@
         {
           "file": "packages/m3l-common/src/core/script/M3LScript.ts",
           "symbol": "M3LScript",
-          "blob": "df5cbbce621bcd8d52a8e8a1ee3c70dce31a19d6"
+          "blob": "1ce84fdf14a1e6b9109e8540e7152ce45dc85224"
         },
         {
           "file": "packages/m3l-common/src/core/script/M3LScriptOptions.ts",
           "symbol": "M3LScriptOptions",
-          "blob": "3f5f5224701d99220e7c9b8896c66bf10bcbf724"
+          "blob": "9a90303e73390ba7cf5734ab8e8e2c6f34c9121d"
         },
         {
           "file": "packages/m3l-common/src/core/script/M3LScriptOptions.ts",
           "symbol": "M3LScriptMetadata",
-          "blob": "3f5f5224701d99220e7c9b8896c66bf10bcbf724"
+          "blob": "9a90303e73390ba7cf5734ab8e8e2c6f34c9121d"
         },
         {
           "file": "packages/m3l-common/src/core/script/M3LScriptOptions.ts",
           "symbol": "M3LScriptLifecycleHooks",
-          "blob": "3f5f5224701d99220e7c9b8896c66bf10bcbf724"
+          "blob": "9a90303e73390ba7cf5734ab8e8e2c6f34c9121d"
         },
         {
           "file": "packages/m3l-common/src/core/script/M3LScriptOptions.ts",
           "symbol": "M3LScriptHookContext",
-          "blob": "3f5f5224701d99220e7c9b8896c66bf10bcbf724"
+          "blob": "9a90303e73390ba7cf5734ab8e8e2c6f34c9121d"
         },
         {
           "file": "packages/m3l-common/src/core/script/M3LScriptConfigLoader.ts",
           "symbol": "M3LScriptConfigLoader",
-          "blob": "5eed51915c48333794331ea07cd3e579219170c0"
+          "blob": "09d50fa4f7bf311885528491005f36e073c2b84e"
         },
         {
           "file": "packages/m3l-common/src/core/script/M3LScriptPresetLoader.ts",
@@ -88,10 +88,20 @@
         {
           "file": "packages/m3l-common/src/core/script/M3LScriptOptions.ts",
           "symbol": "M3LScriptRunOptions",
-          "blob": "3f5f5224701d99220e7c9b8896c66bf10bcbf724"
+          "blob": "9a90303e73390ba7cf5734ab8e8e2c6f34c9121d"
+        },
+        {
+          "file": "packages/m3l-common/src/core/script/capture-run-failures.ts",
+          "symbol": "captureRunFailures",
+          "blob": "5c5befef0040a1ea1ae71d8b193e6042f42e0dda"
+        },
+        {
+          "file": "packages/m3l-common/src/core/script/capture-run-failures.ts",
+          "symbol": "M3LCapturedRunFailures",
+          "blob": "5c5befef0040a1ea1ae71d8b193e6042f42e0dda"
         }
       ],
-      "retrieved": "2026-08-24"
+      "retrieved": "2026-08-26"
     },
     {
       "heading": "Execution flow",
@@ -99,10 +109,10 @@
         {
           "file": "packages/m3l-common/src/core/script/M3LScript.ts",
           "symbol": "M3LScript",
-          "blob": "df5cbbce621bcd8d52a8e8a1ee3c70dce31a19d6"
+          "blob": "1ce84fdf14a1e6b9109e8540e7152ce45dc85224"
         }
       ],
-      "retrieved": "2026-08-24"
+      "retrieved": "2026-08-26"
     },
     {
       "heading": "Lifecycle hooks",
@@ -110,15 +120,15 @@
         {
           "file": "packages/m3l-common/src/core/script/M3LScriptOptions.ts",
           "symbol": "M3LScriptLifecycleHooks",
-          "blob": "3f5f5224701d99220e7c9b8896c66bf10bcbf724"
+          "blob": "9a90303e73390ba7cf5734ab8e8e2c6f34c9121d"
         },
         {
           "file": "packages/m3l-common/src/core/script/M3LScriptOptions.ts",
           "symbol": "M3LScriptHookContext",
-          "blob": "3f5f5224701d99220e7c9b8896c66bf10bcbf724"
+          "blob": "9a90303e73390ba7cf5734ab8e8e2c6f34c9121d"
         }
       ],
-      "retrieved": "2026-08-13"
+      "retrieved": "2026-08-26"
     },
     {
       "heading": "`runScript()`",
@@ -142,15 +152,15 @@
         {
           "file": "packages/m3l-common/src/core/script/M3LScriptOptions.ts",
           "symbol": "M3LScriptRunOptions",
-          "blob": "3f5f5224701d99220e7c9b8896c66bf10bcbf724"
+          "blob": "9a90303e73390ba7cf5734ab8e8e2c6f34c9121d"
         },
         {
           "file": "packages/m3l-common/src/core/script/M3LScript.ts",
           "symbol": "M3LScript",
-          "blob": "df5cbbce621bcd8d52a8e8a1ee3c70dce31a19d6"
+          "blob": "1ce84fdf14a1e6b9109e8540e7152ce45dc85224"
         }
       ],
-      "retrieved": "2026-08-24"
+      "retrieved": "2026-08-26"
     },
     {
       "heading": "Signal handling",
@@ -158,10 +168,36 @@
         {
           "file": "packages/m3l-common/src/core/script/M3LScript.ts",
           "symbol": "M3LScript",
-          "blob": "df5cbbce621bcd8d52a8e8a1ee3c70dce31a19d6"
+          "blob": "1ce84fdf14a1e6b9109e8540e7152ce45dc85224"
         }
       ],
-      "retrieved": "2026-08-24"
+      "retrieved": "2026-08-26"
+    },
+    {
+      "heading": "Hosted runs (`options.host`)",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/script/M3LScriptOptions.ts",
+          "symbol": "M3LScriptOptions",
+          "blob": "9a90303e73390ba7cf5734ab8e8e2c6f34c9121d"
+        },
+        {
+          "file": "packages/m3l-common/src/core/script/M3LScript.ts",
+          "symbol": "M3LScript",
+          "blob": "1ce84fdf14a1e6b9109e8540e7152ce45dc85224"
+        },
+        {
+          "file": "packages/m3l-common/src/core/script/capture-run-failures.ts",
+          "symbol": "captureRunFailures",
+          "blob": "5c5befef0040a1ea1ae71d8b193e6042f42e0dda"
+        },
+        {
+          "file": "packages/m3l-common/src/core/script/capture-run-failures.ts",
+          "symbol": "M3LCapturedRunFailures",
+          "blob": "5c5befef0040a1ea1ae71d8b193e6042f42e0dda"
+        }
+      ],
+      "retrieved": "2026-08-26"
     },
     {
       "heading": "Process guards",
@@ -190,20 +226,20 @@
         {
           "file": "packages/m3l-common/src/core/script/M3LScriptOptions.ts",
           "symbol": "M3LScriptOptions",
-          "blob": "3f5f5224701d99220e7c9b8896c66bf10bcbf724"
+          "blob": "9a90303e73390ba7cf5734ab8e8e2c6f34c9121d"
         },
         {
           "file": "packages/m3l-common/src/core/script/M3LScriptOptions.ts",
           "symbol": "M3LScriptHookContext",
-          "blob": "3f5f5224701d99220e7c9b8896c66bf10bcbf724"
+          "blob": "9a90303e73390ba7cf5734ab8e8e2c6f34c9121d"
         },
         {
           "file": "packages/m3l-common/src/core/script/M3LScript.ts",
           "symbol": "M3LScript",
-          "blob": "df5cbbce621bcd8d52a8e8a1ee3c70dce31a19d6"
+          "blob": "1ce84fdf14a1e6b9109e8540e7152ce45dc85224"
         }
       ],
-      "retrieved": "2026-08-24"
+      "retrieved": "2026-08-26"
     },
     {
       "heading": "Preset loader",
@@ -232,10 +268,10 @@
         {
           "file": "packages/m3l-common/src/core/script/M3LScript.ts",
           "symbol": "M3LScript",
-          "blob": "df5cbbce621bcd8d52a8e8a1ee3c70dce31a19d6"
+          "blob": "1ce84fdf14a1e6b9109e8540e7152ce45dc85224"
         }
       ],
-      "retrieved": "2026-08-24"
+      "retrieved": "2026-08-26"
     },
     {
       "heading": "Notes and behavior",
@@ -243,7 +279,7 @@
         {
           "file": "packages/m3l-common/src/core/script/M3LScript.ts",
           "symbol": "M3LScript",
-          "blob": "df5cbbce621bcd8d52a8e8a1ee3c70dce31a19d6"
+          "blob": "1ce84fdf14a1e6b9109e8540e7152ce45dc85224"
         },
         {
           "file": "packages/m3l-common/src/core/script/M3LScriptPresetLoader.ts",
@@ -251,7 +287,7 @@
           "blob": "639558f4f6d96b0b509fdd97a2cf32714143b813"
         }
       ],
-      "retrieved": "2026-08-24"
+      "retrieved": "2026-08-26"
     }
   ]
 }

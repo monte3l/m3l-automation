@@ -53,7 +53,7 @@ type — decides which of a JSON or YAML entry outranks the other.
 
 When no provider supplies a value, resolution continues to the static default, then the async fallback (see below).
 
-Every provider declares its label via `getSourceLabel()`, an overridable method on the `M3LConfigProvider` base class (default `"other"`). `M3LConfigReader.resolveForKeys(keys)` returns the winning provider's value paired with that label as an `M3LConfigResolution`; `getRawValueForKeys(keys)` delegates to it and returns just the value, unchanged from before. `M3LInMemoryConfigProvider` reports `"in-memory"`.
+Every provider declares its label via `getSourceLabel()`, an overridable method on the `M3LConfigProvider` base class (default `"other"`). `M3LConfigReader.resolveForKeys(keys)` returns the winning provider's value paired with that label as an `M3LConfigResolution`; `getRawValueForKeys(keys)` delegates to it and returns just the value, unchanged from before. `M3LInMemoryConfigProvider` reports `"in-memory"` by default, or an explicit `sourceLabel` passed as its optional second constructor argument (`new M3LInMemoryConfigProvider(values, { sourceLabel })`) — added so `core/script`'s hosted-run seam (ADR-0054, U7) can report `"cli"` for a value a host bound in place of the command-line provider, keeping a hosted run's `run-report.json` provenance indistinguishable from a spawned one's. See `docs/reference/core/script.md`'s "Hosted runs" section.
 
 ## Alias resolution
 
