@@ -2,17 +2,17 @@
  * Tests for src/http/respond.ts — `jsonResponse` and `writeResponse`
  * (m3l-console-server X2b contract, wave 1).
  *
- * `writeResponse` is exercised against a real ephemeral loopback
- * `node:http` server rather than a hand-built `ServerResponse` double — the
- * contract's own File 7 (`handler.ts`) test guidance sanctions this pattern
- * for this package ("use node:http against an ephemeral loopback server"),
- * and it avoids pinning the test to whichever internal call shape
- * (`writeHead` vs `setHeader`+`end`) the implementer picks. The client side
- * uses `node:http`'s own `request`, never the banned bare `fetch()`
- * (`no-restricted-syntax` in `eslint.config.js`).
+ * `writeResponse` is exercised against a recording `ServerResponse` double
+ * rather than a real loopback `node:http` server — a double is sufficient
+ * to prove which arguments `writeResponse` passes to `writeHead`/`end` and
+ * to drive its no-op guard branches deterministically. The one guarantee
+ * that genuinely needs a real socket — that the `content-length` header is
+ * byte-accurate once actually written to the wire, for a multi-byte body —
+ * lives in `tests/integration/respond.integration.test.ts` instead (see
+ * `vitest.integration.config.ts`).
  */
-import { createServer, request as httpRequest } from "node:http";
-import type { IncomingMessage, ServerResponse } from "node:http";
+import { EventEmitter } from "node:events";
+import type { ServerResponse } from "node:http";
 
 import { describe, expect, test } from "vitest";
 
@@ -23,62 +23,50 @@ import { jsonResponse, writeResponse } from "../src/http/respond.js";
 /** The header `writeResponse` echoes the correlation id under. */
 const CORRELATION_ID_HEADER = "x-correlation-id";
 
-/** A captured client-side view of an HTTP response. */
-interface CapturedResponse {
-  readonly status: number;
-  readonly headers: Readonly<NodeJS.Dict<string | string[]>>;
-  readonly body: string;
-}
-
-/** Issues a single GET against `baseUrl` using node:http's own client. */
-function requestOnce(baseUrl: string): Promise<CapturedResponse> {
-  return new Promise((resolve, reject) => {
-    const req = httpRequest(baseUrl, (res) => {
-      const chunks: Buffer[] = [];
-      res.on("data", (chunk: Buffer) => {
-        chunks.push(chunk);
-      });
-      res.on("end", () => {
-        resolve({
-          status: res.statusCode ?? 0,
-          headers: res.headers,
-          body: Buffer.concat(chunks).toString("utf8"),
-        });
-      });
-      res.on("error", reject);
-    });
-    req.on("error", reject);
-    req.end();
-  });
+/** What `writeResponse` actually wrote onto a {@link createRecordingServerResponse} double. */
+interface RecordedWrite {
+  status?: number;
+  headers?: Readonly<Record<string, string>> | undefined;
+  body?: string | undefined;
 }
 
 /**
- * Starts an ephemeral loopback server running `handler`, awaits `run` with
- * its base URL, then always tears the server down — no leaked listeners
- * between tests.
+ * Builds a `ServerResponse` double that records the arguments its
+ * `writeHead`/`end` calls receive, and flips `headersSent`/`writableEnded`
+ * the way a real `node:http` response would — so `writeResponse`'s no-op
+ * guards behave identically to the real thing.
  */
-async function withServer(
-  handler: (req: IncomingMessage, res: ServerResponse) => void,
-  run: (baseUrl: string) => Promise<void>,
-): Promise<void> {
-  const server = createServer(handler);
-  await new Promise<void>((resolve) => {
-    server.listen(0, "127.0.0.1", resolve);
+function createRecordingServerResponse(
+  overrides: Partial<{
+    readonly writableEnded: boolean;
+    readonly headersSent: boolean;
+  }> = {},
+): {
+  readonly res: ServerResponse;
+  readonly written: RecordedWrite;
+} {
+  const written: RecordedWrite = {};
+  const res = new EventEmitter() as unknown as ServerResponse & {
+    headersSent: boolean;
+    writableEnded: boolean;
+  };
+  Object.assign(res, {
+    writableEnded: false,
+    headersSent: false,
+    ...overrides,
+    writeHead: (status: number, headers?: Readonly<Record<string, string>>) => {
+      written.status = status;
+      written.headers = headers;
+      res.headersSent = true;
+      return res;
+    },
+    end: (body?: string) => {
+      written.body = body;
+      res.writableEnded = true;
+      return res;
+    },
   });
-  const address = server.address();
-  if (typeof address !== "object" || address === null) {
-    throw new Error("expected a TCP AddressInfo from an ephemeral listener");
-  }
-  const baseUrl = `http://127.0.0.1:${String(address.port)}`;
-  try {
-    await run(baseUrl);
-  } finally {
-    await new Promise<void>((resolve) => {
-      server.close(() => {
-        resolve();
-      });
-    });
-  }
+  return { res, written };
 }
 
 describe("jsonResponse", () => {
@@ -113,30 +101,37 @@ describe("jsonResponse", () => {
   });
 });
 
-describe("writeResponse — happy path over a real loopback server", () => {
-  test("writes status, headers, and the JSON body", async () => {
-    await withServer(
-      (_req, res) => {
-        writeResponse(res, jsonResponse(201, { ok: true }), "corr-abc");
-      },
-      async (baseUrl) => {
-        const response = await requestOnce(baseUrl);
+describe("writeResponse — happy path", () => {
+  test("writes status, headers, and the JSON body", () => {
+    const { res, written } = createRecordingServerResponse();
 
-        expect(response.status).toBe(201);
-        expect(response.headers["content-type"]).toBe(
-          "application/json; charset=utf-8",
-        );
-        expect(response.headers[CORRELATION_ID_HEADER]).toBe("corr-abc");
-        expect(response.headers["x-content-type-options"]).toBe("nosniff");
-        expect(response.headers["cache-control"]).toBe("no-store");
-        expect(JSON.parse(response.body)).toEqual({ ok: true });
-      },
+    writeResponse(res, jsonResponse(201, { ok: true }), "corr-abc");
+
+    expect(written.status).toBe(201);
+    expect(written.headers?.["content-type"]).toBe(
+      "application/json; charset=utf-8",
+    );
+    expect(written.headers?.[CORRELATION_ID_HEADER]).toBe("corr-abc");
+    expect(written.headers?.["x-content-type-options"]).toBe("nosniff");
+    expect(written.headers?.["cache-control"]).toBe("no-store");
+    expect(JSON.parse(written.body ?? "")).toEqual({ ok: true });
+  });
+
+  test("sets content-length to the computed UTF-8 byte length of the body", () => {
+    const payload = { message: "hello" };
+    const { res, written } = createRecordingServerResponse();
+
+    const response = jsonResponse(200, payload);
+    writeResponse(res, response, "corr-len");
+
+    expect(written.headers?.["content-length"]).toBe(
+      String(Buffer.byteLength(response.body, "utf8")),
     );
   });
 });
 
 describe("writeResponse — nosniff and no-store are unconditional", () => {
-  test("sets x-content-type-options: nosniff and cache-control: no-store even when caller-supplied headers try to override them", async () => {
+  test("sets x-content-type-options: nosniff and cache-control: no-store even when caller-supplied headers try to override them", () => {
     const response = jsonResponse(
       200,
       { ok: true },
@@ -145,76 +140,37 @@ describe("writeResponse — nosniff and no-store are unconditional", () => {
         "x-content-type-options": "sniff-anyway",
       },
     );
+    const { res, written } = createRecordingServerResponse();
 
-    await withServer(
-      (_req, res) => {
-        writeResponse(res, response, "corr-headers");
-      },
-      async (baseUrl) => {
-        const captured = await requestOnce(baseUrl);
+    writeResponse(res, response, "corr-headers");
 
-        expect(captured.headers["x-content-type-options"]).toBe("nosniff");
-        expect(captured.headers["cache-control"]).toBe("no-store");
-      },
-    );
-  });
-});
-
-describe("writeResponse — content-length is a byte length", () => {
-  test("sets content-length to the UTF-8 byte length, not the string length, for a multi-byte body", async () => {
-    const payload = { message: "café 🎉" };
-
-    await withServer(
-      (_req, res) => {
-        writeResponse(res, jsonResponse(200, payload), "corr-multi");
-      },
-      async (baseUrl) => {
-        const response = await requestOnce(baseUrl);
-        const expectedByteLength = Buffer.byteLength(response.body, "utf8");
-
-        // Proves this fixture is genuinely multi-byte — a naive
-        // `body.length` (UTF-16 code units) would NOT equal the byte
-        // length here, so the assertion below actually discriminates.
-        expect(response.body.length).not.toBe(expectedByteLength);
-
-        expect(response.headers["content-length"]).toBe(
-          String(expectedByteLength),
-        );
-      },
-    );
+    expect(written.headers?.["x-content-type-options"]).toBe("nosniff");
+    expect(written.headers?.["cache-control"]).toBe("no-store");
   });
 });
 
 describe("writeResponse — no-op on an already-finished response", () => {
-  test("does not throw and does not clobber a response that has already ended", async () => {
-    await withServer(
-      (_req, res) => {
-        res.end("already-done");
-        expect(() =>
-          writeResponse(res, jsonResponse(200, { ignored: true }), "corr-x"),
-        ).not.toThrow();
-      },
-      async (baseUrl) => {
-        const response = await requestOnce(baseUrl);
-        expect(response.body).toBe("already-done");
-      },
-    );
+  test("does not throw and does not write when the response has already ended", () => {
+    const { res, written } = createRecordingServerResponse({
+      writableEnded: true,
+    });
+
+    expect(() =>
+      writeResponse(res, jsonResponse(200, { ignored: true }), "corr-x"),
+    ).not.toThrow();
+    expect(written.status).toBeUndefined();
+    expect(written.body).toBeUndefined();
   });
 
-  test("does not throw and does not write when headers were already sent but the response has not ended", async () => {
-    await withServer(
-      (_req, res) => {
-        res.writeHead(200, { "content-type": "text/plain" });
-        expect(() =>
-          writeResponse(res, jsonResponse(200, { ignored: true }), "corr-y"),
-        ).not.toThrow();
-        res.end("manual-end");
-      },
-      async (baseUrl) => {
-        const response = await requestOnce(baseUrl);
-        expect(response.headers["content-type"]).toBe("text/plain");
-        expect(response.body).toBe("manual-end");
-      },
-    );
+  test("does not throw and does not write when headers were already sent but the response has not ended", () => {
+    const { res, written } = createRecordingServerResponse({
+      headersSent: true,
+    });
+
+    expect(() =>
+      writeResponse(res, jsonResponse(200, { ignored: true }), "corr-y"),
+    ).not.toThrow();
+    expect(written.status).toBeUndefined();
+    expect(written.body).toBeUndefined();
   });
 });

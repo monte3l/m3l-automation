@@ -40,7 +40,14 @@ export type M3LRouteAuth = "required" | "exempt";
  * ```
  */
 export interface M3LRoute {
-  /** The HTTP method this route matches, upper-case. */
+  /**
+   * The HTTP method this route matches. Must be upper-case (`"GET"`, not
+   * `"get"`) — {@link createRouter} rejects a lower/mixed-case method at
+   * construction time with `ERR_CONSOLE_CONFIG_INVALID` rather than
+   * normalizing it, since {@link M3LRouter.lookup} compares case-sensitively
+   * and a silently-normalized method would let a typo'd registration match
+   * requests its author never intended.
+   */
   readonly method: string;
   /** The path pattern, e.g. `"/api/v1/runs/:id"`. */
   readonly path: string;
@@ -114,6 +121,20 @@ function toPatternSignature(segments: readonly string[]): string {
   return segments
     .map((segment) => (segment.startsWith(":") ? PARAM_PLACEHOLDER : segment))
     .join("/");
+}
+
+/**
+ * Throws `ERR_CONSOLE_CONFIG_INVALID` when `route.method` is not already
+ * upper-case. {@link M3LRouter.lookup} compares methods case-sensitively, so
+ * a lower/mixed-case registration would otherwise silently never match any
+ * request and report 405 for every attempt (see {@link M3LRoute.method}).
+ */
+function assertUpperCaseMethod(route: M3LRoute): void {
+  if (route.method === route.method.toUpperCase()) return;
+  throw new M3LConsoleError(
+    "ERR_CONSOLE_CONFIG_INVALID",
+    `route '${route.path}' declares method '${route.method}', which is not upper-case`,
+  );
 }
 
 /**
@@ -218,6 +239,7 @@ function detectCrossAuthOverlaps(compiled: readonly CompiledRoute[]): void {
  */
 function detectConflicts(compiled: readonly CompiledRoute[]): void {
   for (const { route, segments } of compiled) {
+    assertUpperCaseMethod(route);
     assertNoDuplicateParamNames(route, segments);
   }
   detectDuplicateSignatures(compiled);
@@ -337,9 +359,11 @@ function extractParams(
  *
  * @param routes - The routes to register.
  * @returns The compiled router.
- * @throws {@link M3LConsoleError} with code `"ERR_CONSOLE_ROUTE_CONFLICT"`
- *   when two routes with the same method normalize to the same pattern, or
- *   a single route declares the same `:param` name more than once.
+ * @throws {@link M3LConsoleError} with code `"ERR_CONSOLE_CONFIG_INVALID"`
+ *   when a route's `method` is not upper-case, or with code
+ *   `"ERR_CONSOLE_ROUTE_CONFLICT"` when two routes with the same method
+ *   normalize to the same pattern, or a single route declares the same
+ *   `:param` name more than once.
  *
  * @example
  * ```ts

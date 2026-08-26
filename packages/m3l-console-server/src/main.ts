@@ -23,6 +23,7 @@ import { createConsoleRequestListener } from "./http/handler.js";
 import type { M3LConsoleRequestListener } from "./http/handler.js";
 import { createRouter } from "./http/router.js";
 import type { M3LRoute, M3LRouter } from "./http/router.js";
+import { M3LConsoleError } from "./errors/console-error.js";
 
 /**
  * Constructor options for {@link createConsoleRuntime}.
@@ -46,6 +47,15 @@ export interface M3LConsoleRuntimeOptions {
    * The route table the runtime's router is built over; defaults to an
    * empty table (routes land in a later slice). Exposed so tests can drive
    * the request listener without a live server.
+   *
+   * No route may declare `auth: "required"` yet: {@link createConsoleRuntime}
+   * builds the request listener with an empty middleware chain, so nothing
+   * currently consumes {@link M3LConsoleRuntime.operatorProvider} — an
+   * `auth: "required"` route would otherwise be served with no
+   * authentication step at all. {@link createConsoleRuntime} rejects such a
+   * route with `ERR_CONSOLE_CONFIG_INVALID` at composition time. This
+   * restriction lifts once the auth middleware lands and is wired into
+   * {@link createConsoleRequestListener}'s `middlewares`.
    */
   readonly routes?: readonly M3LRoute[];
 }
@@ -94,6 +104,24 @@ function buildDefaultHandlers(
 }
 
 /**
+ * Throws `ERR_CONSOLE_CONFIG_INVALID` when `routes` declares an
+ * `auth: "required"` entry. Until the auth middleware lands and is wired
+ * into {@link createConsoleRequestListener}'s `middlewares`, nothing
+ * consumes {@link M3LOperatorProvider} — registering such a route today
+ * would silently serve it with no authentication step at all, which is a
+ * composition-time misconfiguration rather than a request-time failure.
+ */
+function assertNoRequiredAuthRoutes(routes: readonly M3LRoute[]): void {
+  const unauthenticated = routes.find((route) => route.auth === "required");
+  if (unauthenticated === undefined) return;
+  throw new M3LConsoleError(
+    "ERR_CONSOLE_CONFIG_INVALID",
+    `route '${unauthenticated.method} ${unauthenticated.path}' declares ` +
+      `auth: "required", but no auth middleware is wired in yet`,
+  );
+}
+
+/**
  * Names the config fields this runtime's logger treats as secret, on top of
  * `M3LLogger`'s built-in key-name heuristic. `operatorEmail`/`email` is NOT
  * in the library's built-in `SENSITIVE_KEY_NAMES` set (`core/logging/redact.ts`),
@@ -134,7 +162,9 @@ function logPosture(logger: Core.M3LLogger, config: M3LConsoleConfig): void {
  * @param options - See {@link M3LConsoleRuntimeOptions}.
  * @returns The resolved {@link M3LConsoleRuntime}.
  * @throws {@link M3LConsoleError} When configuration resolution fails (see
- *   {@link loadConsoleConfig}) — propagated, never swallowed.
+ *   {@link loadConsoleConfig}) — propagated, never swallowed — or when
+ *   `options.routes` declares an `auth: "required"` route (see
+ *   {@link M3LConsoleRuntimeOptions.routes}).
  *
  * @example
  * ```ts
@@ -163,7 +193,9 @@ export function createConsoleRuntime(
     email: config.operatorEmail,
   };
   const operatorProvider = createSingleOperatorProvider(operator);
-  const router = createRouter(options.routes ?? []);
+  const routes = options.routes ?? [];
+  assertNoRequiredAuthRoutes(routes);
+  const router = createRouter(routes);
   const drainController = new AbortController();
   const requestListener = createConsoleRequestListener({
     router,

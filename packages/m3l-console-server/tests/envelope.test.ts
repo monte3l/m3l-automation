@@ -144,6 +144,50 @@ describe("classificationForCode — fallback for a code outside the union", () =
   });
 });
 
+describe("classificationForCode — a code naming an inherited Object.prototype member", () => {
+  // Before the `Object.hasOwn` fix, a `code` that happens to name an
+  // inherited `Object.prototype` member (e.g. `"toString"`) resolved via
+  // plain bracket access to that prototype FUNCTION rather than `undefined`
+  // — and a function is never `null`/`undefined`, so a `??` lookup would
+  // never fall back to `FALLBACK_CLASSIFICATION`. The result was a
+  // classification with an `undefined` `status`, which reaches
+  // `res.writeHead(undefined)` and hangs the socket — exactly the failure
+  // `FALLBACK_CLASSIFICATION` exists to prevent. `Object.hasOwn` closes this:
+  // every one of these off-union codes now falls back cleanly.
+  test.each<string>([
+    "constructor",
+    "toString",
+    "valueOf",
+    "__proto__",
+    "hasOwnProperty",
+  ])(
+    "falls back to the internal/library classification for the prototype-key code %s",
+    (prototypeKeyCode) => {
+      const offUnionCode = prototypeKeyCode as unknown as M3LConsoleErrorCode;
+      const error = new M3LConsoleError(offUnionCode, "boom");
+
+      expect(httpStatusForCode(offUnionCode)).toBe(INTERNAL_STATUS);
+      expect(isCallerOriginError(error)).toBe(false);
+
+      const envelope = errorEnvelope(error, "corr-proto");
+      expect(envelope.error.status).toBe(INTERNAL_STATUS);
+      expect(envelope.error.origin).toBe("library");
+      expect(envelope.error.retryable).toBe(false);
+    },
+  );
+
+  test("a real code is unaffected: ERR_CONSOLE_NOT_FOUND still classifies as 404/caller", () => {
+    const error = new M3LConsoleError("ERR_CONSOLE_NOT_FOUND", "not found");
+
+    expect(httpStatusForCode("ERR_CONSOLE_NOT_FOUND")).toBe(404);
+    expect(isCallerOriginError(error)).toBe(true);
+
+    const envelope = errorEnvelope(error, "corr-real");
+    expect(envelope.error.status).toBe(404);
+    expect(envelope.error.origin).toBe("caller");
+  });
+});
+
 describe("errorEnvelope — any other value collapses to the fixed generic message", () => {
   test("a foreign Core.M3LError never leaks its own message, but may still carry a classified origin/retryable", () => {
     const foreign = new Core.M3LError(

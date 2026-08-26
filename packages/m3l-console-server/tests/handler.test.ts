@@ -1,16 +1,17 @@
 /**
  * Tests for src/http/handler.ts — `createConsoleRequestListener`'s per-
  * request pipeline (m3l-console-server X2b contract, wave 2).
- * `src/http/handler.ts` does not exist yet; this suite is RED until wave-2
- * implementation lands.
  *
- * Drives an ephemeral loopback `node:http` server, exactly like
- * `respond.test.ts` — bare `fetch()` is banned in tests
- * (`no-restricted-syntax`, eslint.config.js), so the client side uses
- * `node:http`'s own `request`.
+ * Every case here drives `createConsoleRequestListener`'s returned listener
+ * directly against `IncomingMessage`/`ServerResponse` doubles — never a real
+ * loopback `node:http` server. None of this module's own branches (context
+ * creation, dispatch, logging, the write-failure fallback) depend on an
+ * actual socket; the two guarantees that genuinely need one (byte-accurate
+ * `content-length` over the wire, and a failed write really ending the
+ * socket) live in `tests/integration/` instead (see
+ * `vitest.integration.config.ts`).
  */
 import { EventEmitter } from "node:events";
-import { createServer, request as httpRequest } from "node:http";
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 import { describe, expect, test } from "vitest";
@@ -23,112 +24,6 @@ import { createRouter } from "../src/http/router.js";
 import type { M3LRoute, M3LRouteAuth } from "../src/http/router.js";
 import { createConsoleRequestListener } from "../src/http/handler.js";
 import type { M3LConsoleMiddleware } from "../src/http/middleware.js";
-
-/** A captured client-side view of an HTTP response. */
-interface CapturedResponse {
-  readonly status: number;
-  readonly headers: Readonly<NodeJS.Dict<string | string[]>>;
-  readonly body: string;
-}
-
-/** Request options for {@link requestOnce}; defaults to a GET with no extra headers. */
-interface RequestOnceOptions {
-  readonly method?: string;
-  readonly headers?: Readonly<Record<string, string>>;
-}
-
-/** Issues a single request against `url` using node:http's own client. */
-function requestOnce(
-  url: string,
-  options: RequestOnceOptions = {},
-): Promise<CapturedResponse> {
-  return new Promise((resolve, reject) => {
-    const requestOptions = {
-      method: options.method ?? "GET",
-      headers: options.headers ?? {},
-    };
-    const req = httpRequest(url, requestOptions, (res) => {
-      const chunks: Buffer[] = [];
-      res.on("data", (chunk: Buffer) => {
-        chunks.push(chunk);
-      });
-      res.on("end", () => {
-        resolve({
-          status: res.statusCode ?? 0,
-          headers: res.headers,
-          body: Buffer.concat(chunks).toString("utf8"),
-        });
-      });
-      res.on("error", reject);
-    });
-    req.on("error", reject);
-    req.end();
-  });
-}
-
-/**
- * Issues a single GET against `baseUrl` using a raw request-target that
- * bypasses `node:http`'s own client-side URL validation (via the `path`
- * option instead of a `url` argument) — needed to reproduce a request target
- * that `req.url` on the server side will carry verbatim even though it
- * fails to parse with `new URL` (see the S1 regression test below).
- */
-function requestRawTarget(
-  baseUrl: string,
-  rawTarget: string,
-): Promise<CapturedResponse> {
-  return new Promise((resolve, reject) => {
-    const { hostname, port } = new URL(baseUrl);
-    const req = httpRequest(
-      { hostname, port: Number(port), path: rawTarget, method: "GET" },
-      (res) => {
-        const chunks: Buffer[] = [];
-        res.on("data", (chunk: Buffer) => {
-          chunks.push(chunk);
-        });
-        res.on("end", () => {
-          resolve({
-            status: res.statusCode ?? 0,
-            headers: res.headers,
-            body: Buffer.concat(chunks).toString("utf8"),
-          });
-        });
-        res.on("error", reject);
-      },
-    );
-    req.on("error", reject);
-    req.end();
-  });
-}
-
-/**
- * Starts an ephemeral loopback server running `handler`, awaits `run` with
- * its base URL, then always tears the server down — no leaked listeners
- * between tests.
- */
-async function withServer(
-  handler: (req: IncomingMessage, res: ServerResponse) => void,
-  run: (baseUrl: string) => Promise<void>,
-): Promise<void> {
-  const server = createServer(handler);
-  await new Promise<void>((resolve) => {
-    server.listen(0, "127.0.0.1", resolve);
-  });
-  const address = server.address();
-  if (typeof address !== "object" || address === null) {
-    throw new Error("expected a TCP AddressInfo from an ephemeral listener");
-  }
-  const baseUrl = `http://127.0.0.1:${String(address.port)}`;
-  try {
-    await run(baseUrl);
-  } finally {
-    await new Promise<void>((resolve) => {
-      server.close(() => {
-        resolve();
-      });
-    });
-  }
-}
 
 /** A capturing `M3LLoggerHandler`: records every event it is handed. */
 function createCapturingLogger(): {
@@ -213,6 +108,48 @@ function createFakeServerResponse(
   return res;
 }
 
+/** What `writeResponse` actually wrote onto a {@link createRecordingServerResponse} double. */
+interface RecordedWrite {
+  status?: number;
+  headers?: Readonly<Record<string, string>> | undefined;
+  body?: string | undefined;
+}
+
+/**
+ * Builds a `ServerResponse` double that records the arguments its
+ * `writeHead`/`end` calls receive — the doubles-based replacement for
+ * driving a real request through a real socket and inspecting the response
+ * client-side. Also flips `headersSent`/`writableEnded` the way a real
+ * `node:http` response would, so the no-op guards in `writeResponse` behave
+ * identically.
+ */
+function createRecordingServerResponse(): {
+  readonly res: ServerResponse;
+  readonly written: RecordedWrite;
+} {
+  const written: RecordedWrite = {};
+  const res = new EventEmitter() as unknown as ServerResponse & {
+    headersSent: boolean;
+    writableEnded: boolean;
+  };
+  Object.assign(res, {
+    writableEnded: false,
+    headersSent: false,
+    writeHead: (status: number, headers?: Readonly<Record<string, string>>) => {
+      written.status = status;
+      written.headers = headers;
+      res.headersSent = true;
+      return res;
+    },
+    end: (body?: string) => {
+      written.body = body;
+      res.writableEnded = true;
+      return res;
+    },
+  });
+  return { res, written };
+}
+
 /** A mutable `ServerResponse` double that can flip its own state mid-call. */
 type RaceyServerResponse = ServerResponse & {
   headersSent: boolean;
@@ -273,7 +210,7 @@ function route(
 
 describe("createConsoleRequestListener — happy path", () => {
   test("dispatches to the matched route's handler and writes its response", async () => {
-    const { logger } = createCapturingLogger();
+    const { logger, logged } = createResolvingLogger();
     const router = createRouter([
       route({
         method: "GET",
@@ -287,18 +224,22 @@ describe("createConsoleRequestListener — happy path", () => {
       logger,
       signal: new AbortController().signal,
     });
-
-    await withServer(listener, async (baseUrl) => {
-      const response = await requestOnce(`${baseUrl}/api/v1/runs`);
-
-      expect(response.status).toBe(200);
-      const parsed: unknown = JSON.parse(response.body);
-      expect(parsed).toEqual({ ok: true });
+    const req = createFakeIncomingMessage({
+      method: "GET",
+      url: "/api/v1/runs",
     });
+    const { res, written } = createRecordingServerResponse();
+
+    listener(req, res);
+    await logged;
+
+    expect(written.status).toBe(200);
+    const parsed: unknown = JSON.parse(written.body ?? "");
+    expect(parsed).toEqual({ ok: true });
   });
 
   test("attaches matched route params via withParams before running the middleware chain", async () => {
-    const { logger } = createCapturingLogger();
+    const { logger, logged } = createResolvingLogger();
     let paramsSeenByMiddleware: Readonly<Record<string, string>> | undefined;
     const middleware: M3LConsoleMiddleware = (ctx, next) => {
       paramsSeenByMiddleware = ctx.params;
@@ -317,38 +258,43 @@ describe("createConsoleRequestListener — happy path", () => {
       logger,
       signal: new AbortController().signal,
     });
-
-    await withServer(listener, async (baseUrl) => {
-      const response = await requestOnce(`${baseUrl}/api/v1/runs/42`);
-      const parsed: unknown = JSON.parse(response.body);
-      expect(parsed).toEqual({ params: { id: "42" } });
+    const req = createFakeIncomingMessage({
+      method: "GET",
+      url: "/api/v1/runs/42",
     });
+    const { res, written } = createRecordingServerResponse();
 
+    listener(req, res);
+    await logged;
+
+    const parsed: unknown = JSON.parse(written.body ?? "");
+    expect(parsed).toEqual({ params: { id: "42" } });
     expect(paramsSeenByMiddleware).toEqual({ id: "42" });
   });
 });
 
 describe("createConsoleRequestListener — 404 and 405 envelopes", () => {
   test("returns a well-formed 404 envelope for an unmatched path", async () => {
-    const { logger } = createCapturingLogger();
+    const { logger, logged } = createResolvingLogger();
     const listener = createConsoleRequestListener({
       router: createRouter([]),
       middlewares: [],
       logger,
       signal: new AbortController().signal,
     });
+    const req = createFakeIncomingMessage({ url: "/nope" });
+    const { res, written } = createRecordingServerResponse();
 
-    await withServer(listener, async (baseUrl) => {
-      const response = await requestOnce(`${baseUrl}/nope`);
+    listener(req, res);
+    await logged;
 
-      expect(response.status).toBe(404);
-      const parsed: unknown = JSON.parse(response.body);
-      expect(parsed).toMatchObject({ error: { status: 404 } });
-    });
+    expect(written.status).toBe(404);
+    const parsed: unknown = JSON.parse(written.body ?? "");
+    expect(parsed).toMatchObject({ error: { status: 404 } });
   });
 
   test("returns a well-formed 405 envelope for a matched path with the wrong method", async () => {
-    const { logger } = createCapturingLogger();
+    const { logger, logged } = createResolvingLogger();
     const router = createRouter([
       route({ method: "GET", path: "/api/v1/runs" }),
     ]);
@@ -358,17 +304,19 @@ describe("createConsoleRequestListener — 404 and 405 envelopes", () => {
       logger,
       signal: new AbortController().signal,
     });
+    const req = createFakeIncomingMessage({
+      method: "DELETE",
+      url: "/api/v1/runs",
+    });
+    const { res, written } = createRecordingServerResponse();
 
-    await withServer(listener, async (baseUrl) => {
-      const response = await requestOnce(`${baseUrl}/api/v1/runs`, {
-        method: "DELETE",
-      });
+    listener(req, res);
+    await logged;
 
-      expect(response.status).toBe(405);
-      const parsed: unknown = JSON.parse(response.body);
-      expect(parsed).toMatchObject({
-        error: { status: 405, code: "ERR_CONSOLE_METHOD_NOT_ALLOWED" },
-      });
+    expect(written.status).toBe(405);
+    const parsed: unknown = JSON.parse(written.body ?? "");
+    expect(parsed).toMatchObject({
+      error: { status: 405, code: "ERR_CONSOLE_METHOD_NOT_ALLOWED" },
     });
   });
 });
@@ -399,7 +347,7 @@ function findOutcomeEvent(
 
 describe("createConsoleRequestListener — a handler that throws", () => {
   test("yields a well-formed envelope, logs the outcome line, and logs a diagnostic line carrying the real cause", async () => {
-    const { logger, events } = createCapturingLogger();
+    const { logger, events, logged } = createResolvingLogger();
     const router = createRouter([
       route({
         method: "GET",
@@ -415,21 +363,23 @@ describe("createConsoleRequestListener — a handler that throws", () => {
       logger,
       signal: new AbortController().signal,
     });
+    const req = createFakeIncomingMessage({ url: "/boom" });
+    const { res, written } = createRecordingServerResponse();
 
-    await withServer(listener, async (baseUrl) => {
-      const response = await requestOnce(`${baseUrl}/boom`);
+    listener(req, res);
+    await logged;
+    await new Promise((resolve) => setImmediate(resolve));
 
-      expect(response.status).toBe(500);
-      const parsed: unknown = JSON.parse(response.body);
-      expect(parsed).toMatchObject({
-        error: {
-          code: "ERR_CONSOLE_INTERNAL",
-          message: "An unexpected error occurred.",
-          status: 500,
-        },
-      });
-      expect(JSON.stringify(parsed)).not.toContain("kaboom");
+    expect(written.status).toBe(500);
+    const parsed: unknown = JSON.parse(written.body ?? "");
+    expect(parsed).toMatchObject({
+      error: {
+        code: "ERR_CONSOLE_INTERNAL",
+        message: "An unexpected error occurred.",
+        status: 500,
+      },
     });
+    expect(JSON.stringify(parsed)).not.toContain("kaboom");
 
     // Two events, not one: the outcome line and a separate diagnostic line
     // (ADR-0070's display-vs-persist split) — this is the whole point of the
@@ -454,7 +404,7 @@ describe("createConsoleRequestListener — a handler that throws", () => {
   });
 
   test("a rejected handler promise is caught the same way as a synchronous throw", async () => {
-    const { logger, events } = createCapturingLogger();
+    const { logger, events, logged } = createResolvingLogger();
     const router = createRouter([
       route({
         method: "GET",
@@ -468,19 +418,20 @@ describe("createConsoleRequestListener — a handler that throws", () => {
       logger,
       signal: new AbortController().signal,
     });
+    const req = createFakeIncomingMessage({ url: "/async-boom" });
+    const { res, written } = createRecordingServerResponse();
 
-    await withServer(listener, async (baseUrl) => {
-      const response = await requestOnce(`${baseUrl}/async-boom`);
-      expect(response.status).toBe(500);
-    });
+    listener(req, res);
+    await logged;
 
+    expect(written.status).toBe(500);
     expect(events).toHaveLength(2);
     expect(findDiagnosticEvent(events)).toBeDefined();
     expect(findOutcomeEvent(events, 500)).toBeDefined();
   });
 
   test("a middleware that throws is also caught and yields a well-formed envelope", async () => {
-    const { logger, events } = createCapturingLogger();
+    const { logger, events, logged } = createResolvingLogger();
     const throwingMiddleware: M3LConsoleMiddleware = () => {
       throw new Error("middleware kaboom");
     };
@@ -493,19 +444,20 @@ describe("createConsoleRequestListener — a handler that throws", () => {
       logger,
       signal: new AbortController().signal,
     });
+    const req = createFakeIncomingMessage({ url: "/api/v1/runs" });
+    const { res, written } = createRecordingServerResponse();
 
-    await withServer(listener, async (baseUrl) => {
-      const response = await requestOnce(`${baseUrl}/api/v1/runs`);
-      expect(response.status).toBe(500);
-    });
+    listener(req, res);
+    await logged;
 
+    expect(written.status).toBe(500);
     expect(events).toHaveLength(2);
     expect(findDiagnosticEvent(events)).toBeDefined();
     expect(findOutcomeEvent(events, 500)).toBeDefined();
   });
 
   test("a rejected handler promise wrapping a cause: the underlying cause survives into the diagnostic event", async () => {
-    const { logger, events } = createCapturingLogger();
+    const { logger, events, logged } = createResolvingLogger();
     const underlyingCause = new Error(
       "distinctive underlying cause: connection refused",
     );
@@ -525,12 +477,13 @@ describe("createConsoleRequestListener — a handler that throws", () => {
       logger,
       signal: new AbortController().signal,
     });
+    const req = createFakeIncomingMessage({ url: "/wrapped-boom" });
+    const { res, written } = createRecordingServerResponse();
 
-    await withServer(listener, async (baseUrl) => {
-      const response = await requestOnce(`${baseUrl}/wrapped-boom`);
-      expect(response.status).toBe(500);
-    });
+    listener(req, res);
+    await logged;
 
+    expect(written.status).toBe(500);
     const diagnostic = findDiagnosticEvent(events);
     // `errorFrom` walks the full `cause` chain via `serializeErrorChain` — a
     // flattened top-level message alone would not carry this.
@@ -542,7 +495,7 @@ describe("createConsoleRequestListener — a handler that throws", () => {
 
 describe("createConsoleRequestListener — log level by status class", () => {
   test("logs a 5xx at error level", async () => {
-    const { logger, events } = createCapturingLogger();
+    const { logger, events, logged } = createResolvingLogger();
     const router = createRouter([
       route({
         method: "GET",
@@ -558,10 +511,12 @@ describe("createConsoleRequestListener — log level by status class", () => {
       logger,
       signal: new AbortController().signal,
     });
+    const req = createFakeIncomingMessage({ url: "/boom" });
+    const { res } = createRecordingServerResponse();
 
-    await withServer(listener, async (baseUrl) => {
-      await requestOnce(`${baseUrl}/boom`);
-    });
+    listener(req, res);
+    await logged;
+    await new Promise((resolve) => setImmediate(resolve));
 
     // A genuine (library-origin) fault logs both the outcome line AND the
     // gated diagnostic line, both at error level.
@@ -572,17 +527,18 @@ describe("createConsoleRequestListener — log level by status class", () => {
   });
 
   test("logs a 4xx (not-found) at warning level, as a single outcome line", async () => {
-    const { logger, events } = createCapturingLogger();
+    const { logger, events, logged } = createResolvingLogger();
     const listener = createConsoleRequestListener({
       router: createRouter([]),
       middlewares: [],
       logger,
       signal: new AbortController().signal,
     });
+    const req = createFakeIncomingMessage({ url: "/nope" });
+    const { res } = createRecordingServerResponse();
 
-    await withServer(listener, async (baseUrl) => {
-      await requestOnce(`${baseUrl}/nope`);
-    });
+    listener(req, res);
+    await logged;
 
     // An unmatched route resolves through `dispatch()`'s "not-found" branch
     // without ever throwing, so `logDiagnosticIfFault` (and its
@@ -596,7 +552,7 @@ describe("createConsoleRequestListener — log level by status class", () => {
   });
 
   test("logs a successful 2xx at info level", async () => {
-    const { logger, events } = createCapturingLogger();
+    const { logger, events, logged } = createResolvingLogger();
     const router = createRouter([
       route({ method: "GET", path: "/api/v1/runs" }),
     ]);
@@ -606,10 +562,11 @@ describe("createConsoleRequestListener — log level by status class", () => {
       logger,
       signal: new AbortController().signal,
     });
+    const req = createFakeIncomingMessage({ url: "/api/v1/runs" });
+    const { res } = createRecordingServerResponse();
 
-    await withServer(listener, async (baseUrl) => {
-      await requestOnce(`${baseUrl}/api/v1/runs`);
-    });
+    listener(req, res);
+    await logged;
 
     expect(events).toHaveLength(1);
     expect(events[0]?.category).toBe(Core.M3LLogEventCategory.INFO);
@@ -618,7 +575,7 @@ describe("createConsoleRequestListener — log level by status class", () => {
 
 describe("createConsoleRequestListener — log line never leaks sensitive request data", () => {
   test("never logs the query string, request headers, or an unrelated body value", async () => {
-    const { logger, events } = createCapturingLogger();
+    const { logger, events, logged } = createResolvingLogger();
     const router = createRouter([
       route({ method: "GET", path: "/api/v1/runs" }),
     ]);
@@ -628,12 +585,14 @@ describe("createConsoleRequestListener — log line never leaks sensitive reques
       logger,
       signal: new AbortController().signal,
     });
-
-    await withServer(listener, async (baseUrl) => {
-      await requestOnce(`${baseUrl}/api/v1/runs?apiKey=super-secret-value`, {
-        headers: { "x-secret-header": "should-not-be-logged" },
-      });
+    const req = createFakeIncomingMessage({
+      url: "/api/v1/runs?apiKey=super-secret-value",
+      headers: { "x-secret-header": "should-not-be-logged" },
     });
+    const { res } = createRecordingServerResponse();
+
+    listener(req, res);
+    await logged;
 
     // A successful 2xx dispatch stays at exactly one event (no diagnostic
     // line is gated for a fault that never occurred) — asserted over every
@@ -649,7 +608,7 @@ describe("createConsoleRequestListener — log line never leaks sensitive reques
   });
 
   test("a genuine fault's diagnostic line is held to the same redaction rule as the outcome line", async () => {
-    const { logger, events } = createCapturingLogger();
+    const { logger, events, logged } = createResolvingLogger();
     const router = createRouter([
       route({
         method: "GET",
@@ -665,12 +624,15 @@ describe("createConsoleRequestListener — log line never leaks sensitive reques
       logger,
       signal: new AbortController().signal,
     });
-
-    await withServer(listener, async (baseUrl) => {
-      await requestOnce(`${baseUrl}/api/v1/runs?apiKey=super-secret-value`, {
-        headers: { "x-secret-header": "should-not-be-logged" },
-      });
+    const req = createFakeIncomingMessage({
+      url: "/api/v1/runs?apiKey=super-secret-value",
+      headers: { "x-secret-header": "should-not-be-logged" },
     });
+    const { res } = createRecordingServerResponse();
+
+    listener(req, res);
+    await logged;
+    await new Promise((resolve) => setImmediate(resolve));
 
     // The new diagnostic line is a new sink for request data — no captured
     // event (outcome OR diagnostic) may carry the query string or headers.
@@ -686,7 +648,7 @@ describe("createConsoleRequestListener — log line never leaks sensitive reques
   test.each<M3LRouteAuth>(["required", "exempt"])(
     "logs the matched route's auth mode (%s)",
     async (auth) => {
-      const { logger, events } = createCapturingLogger();
+      const { logger, events, logged } = createResolvingLogger();
       const router = createRouter([
         route({ method: "GET", path: "/api/v1/runs", auth }),
       ]);
@@ -696,10 +658,11 @@ describe("createConsoleRequestListener — log line never leaks sensitive reques
         logger,
         signal: new AbortController().signal,
       });
+      const req = createFakeIncomingMessage({ url: "/api/v1/runs" });
+      const { res } = createRecordingServerResponse();
 
-      await withServer(listener, async (baseUrl) => {
-        await requestOnce(`${baseUrl}/api/v1/runs`);
-      });
+      listener(req, res);
+      await logged;
 
       expect(events).toHaveLength(1);
       for (const event of events) {
@@ -711,7 +674,7 @@ describe("createConsoleRequestListener — log line never leaks sensitive reques
 
 describe("createConsoleRequestListener — the abort seam is live", () => {
   test("aborting the drain signal aborts the in-flight request's ctx.signal", async () => {
-    const { logger } = createCapturingLogger();
+    const { logger, logged } = createResolvingLogger();
     const drainController = new AbortController();
     let observedAborted: boolean | undefined;
     let resolveReceived: () => void = () => undefined;
@@ -739,13 +702,13 @@ describe("createConsoleRequestListener — the abort seam is live", () => {
       logger,
       signal: drainController.signal,
     });
+    const req = createFakeIncomingMessage({ url: "/slow" });
+    const { res } = createRecordingServerResponse();
 
-    await withServer(listener, async (baseUrl) => {
-      const responsePromise = requestOnce(`${baseUrl}/slow`);
-      await received;
-      drainController.abort();
-      await responsePromise;
-    });
+    listener(req, res);
+    await received;
+    drainController.abort();
+    await logged;
 
     expect(observedAborted).toBe(true);
   });
@@ -838,7 +801,9 @@ describe("createConsoleRequestListener — a writeResponse failure can never lea
   // response or a fallback 500, and always logs the outcome line. A failed
   // write is always a genuine fault (never a routine caller-origin outcome),
   // so `writeResponseGuarded` also logs an UNCONDITIONAL diagnostic line via
-  // `errorFrom` — two events total, not one.
+  // `errorFrom` — two events total, not one. (The real-socket proof that
+  // this fallback genuinely closes the connection lives in
+  // `tests/integration/handler.integration.test.ts`.)
   test("falls back to a bare 500, still ends the response, and logs both the outcome line and an unconditional write-failure diagnostic", async () => {
     const { logger, events, logged } = createResolvingLogger();
     const req = createFakeIncomingMessage();
@@ -1081,10 +1046,16 @@ describe("createConsoleRequestListener — writeFallbackResponse's own guards", 
 });
 
 describe("createConsoleRequestListener — a request whose target fails to parse never logs the raw target (S1)", () => {
+  // `parseRequestUrl` (context.ts) runs `new URL(rawUrl, "http://localhost")`
+  // directly against `req.url` — a plain string per Node's `http` contract —
+  // so a malformed target is reproduced by setting the fake
+  // `IncomingMessage.url` directly, with no real socket/client involved at
+  // all (verified against the source: this is a more direct reproduction
+  // than routing a malformed request-line through an actual TCP connection).
   test.each<string>(["http://[", "http://%zz/", "//"])(
     "logs the fixed placeholder path, never the raw target or its query string, and pins the caller-origin diagnostic gate, for %s",
     async (rawTarget) => {
-      const { logger, events } = createCapturingLogger();
+      const { logger, events, logged } = createResolvingLogger();
       const listener = createConsoleRequestListener({
         router: createRouter([]),
         middlewares: [],
@@ -1092,12 +1063,13 @@ describe("createConsoleRequestListener — a request whose target fails to parse
         signal: new AbortController().signal,
       });
       const canaryTarget = `${rawTarget}${rawTarget.includes("?") ? "&" : "?"}token=CANARY123`;
+      const req = createFakeIncomingMessage({ url: canaryTarget });
+      const { res, written } = createRecordingServerResponse();
 
-      await withServer(listener, async (baseUrl) => {
-        const response = await requestRawTarget(baseUrl, canaryTarget);
-        expect(response.status).toBe(400);
-      });
+      listener(req, res);
+      await logged;
 
+      expect(written.status).toBe(400);
       expect(events).toHaveLength(1);
       const serialized = JSON.stringify(events[0]);
       // The canary — and the raw target it was embedded in — must never

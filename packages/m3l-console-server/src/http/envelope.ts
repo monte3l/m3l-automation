@@ -115,12 +115,22 @@ const FALLBACK_CLASSIFICATION: ErrorClassification = {
 
 /**
  * Resolves the {@link ErrorClassification} for `code`, falling back to
- * {@link FALLBACK_CLASSIFICATION} when `code` is not a key of
+ * {@link FALLBACK_CLASSIFICATION} when `code` is not an own key of
  * {@link CLASSIFICATION_BY_CODE} — which can only happen at runtime, for a
  * value that defeats the compile-time exhaustiveness check.
+ *
+ * Checks {@link Object.hasOwn} rather than `??`-ing the lookup: a `code` that
+ * happens to name an inherited `Object.prototype` member (`"constructor"`,
+ * `"toString"`, `"valueOf"`, `"__proto__"`) resolves to that prototype
+ * function via plain bracket access, and a function is never `null`/
+ * `undefined` — so `??` would never fire and this would return a
+ * classification with an `undefined` `status`, which is exactly the
+ * socket-hang {@link FALLBACK_CLASSIFICATION} exists to prevent.
  */
 function classificationForCode(code: M3LConsoleErrorCode): ErrorClassification {
-  return CLASSIFICATION_BY_CODE[code] ?? FALLBACK_CLASSIFICATION;
+  return Object.hasOwn(CLASSIFICATION_BY_CODE, code)
+    ? CLASSIFICATION_BY_CODE[code]
+    : FALLBACK_CLASSIFICATION;
 }
 
 /**

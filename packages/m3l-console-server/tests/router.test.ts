@@ -137,6 +137,35 @@ describe("createRouter — method-not-allowed", () => {
   });
 });
 
+describe("createRouter — rejects a non-upper-case method at construction time", () => {
+  // Before this guard, `lookup` compares methods case-sensitively, so a
+  // `"get"` registration would silently never match any request and report
+  // 405 for every attempt instead of surfacing the typo at construction time.
+  test("throws ERR_CONSOLE_CONFIG_INVALID for a lower-case method", () => {
+    let thrown: unknown;
+    try {
+      createRouter([route({ method: "get", path: "/api/v1/runs" })]);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(isConsoleError(thrown)).toBe(true);
+    expect((thrown as M3LConsoleError).code).toBe("ERR_CONSOLE_CONFIG_INVALID");
+    expect((thrown as M3LConsoleError).message).toContain("/api/v1/runs");
+    expect((thrown as M3LConsoleError).message).toContain("get");
+  });
+
+  test("does not throw, and matches requests, for an upper-case method", () => {
+    const router = createRouter([
+      route({ method: "GET", path: "/api/v1/runs" }),
+    ]);
+
+    expect(router.lookup("GET", "/api/v1/runs")).toMatchObject({
+      outcome: "matched",
+    });
+  });
+});
+
 describe("createRouter — construction-time conflict detection", () => {
   test("throws ERR_CONSOLE_ROUTE_CONFLICT for two equivalent patterns with the same method", () => {
     const routes = [

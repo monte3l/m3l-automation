@@ -268,6 +268,40 @@ describe("createConsoleRuntime — routes option reaches the router", () => {
   });
 });
 
+describe("createConsoleRuntime — rejects an auth: 'required' route (no auth middleware wired in yet)", () => {
+  test("throws ERR_CONSOLE_CONFIG_INVALID when a route declares auth: 'required'", () => {
+    const handler = new RecordingHandler();
+    const route: M3LRoute = {
+      method: "GET",
+      path: "/api/v1/runs",
+      auth: "required",
+      handler: () => ({ status: 200, headers: {}, body: "ok" }),
+    };
+
+    expect(() =>
+      createConsoleRuntime({
+        env: buildEnv(),
+        handlers: [handler],
+        routes: [route],
+      }),
+    ).toThrow(M3LConsoleError);
+
+    let thrown: unknown;
+    try {
+      createConsoleRuntime({
+        env: buildEnv(),
+        handlers: [handler],
+        routes: [route],
+      });
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).code).toBe("ERR_CONSOLE_CONFIG_INVALID");
+    expect((thrown as M3LConsoleError).message).toContain("GET /api/v1/runs");
+  });
+});
+
 describe("createConsoleRuntime — drain signal", () => {
   test("runtime.signal is an unaborted AbortSignal at construction", () => {
     const handler = new RecordingHandler();
