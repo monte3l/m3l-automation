@@ -298,8 +298,17 @@ export interface ScaffoldTemplateFile {
  * The template → target pairs emitted inside `scripts/<name>/` for a given
  * variant. Targets may carry tokens (resolved with the same map as content).
  *
+ * ADR-0054's in-process command-module seam (U6, `src/command.ts` +
+ * `tests/command.test.ts`) is emitted for the `"cli"` variant only. It is an
+ * alternative host for invoking a script's declared operations in-process
+ * against the CLI's own `dist/main.js` process — a Lambda-variant script (U9)
+ * has no such CLI process at all, so there is nothing for the seam to be an
+ * alternative to. This is a deliberate scoping, not an oversight: don't "fix"
+ * it by making the two variants symmetric.
+ *
  * @param variant - Which entry-point/README pair to emit.
- * @returns The 9-entry manifest for `variant`.
+ * @returns The 11-entry manifest for `"cli"`, or the 9-entry manifest for
+ *   `"lambda"`.
  *
  * @example
  * ```ts
@@ -321,11 +330,22 @@ export function packageTemplateFiles(
     },
     { template: "src/config.ts.tmpl", target: "src/config.ts" },
     { template: "src/hooks.ts.tmpl", target: "src/hooks.ts" },
+    ...(variant === "cli"
+      ? [{ template: "src/command.ts.tmpl", target: "src/command.ts" }]
+      : []),
     {
       template: "src/steps/run-__SCRIPT_NAME__.ts.tmpl",
       target: "src/steps/run-__SCRIPT_NAME__.ts",
     },
     { template: "tests/config.test.ts.tmpl", target: "tests/config.test.ts" },
+    ...(variant === "cli"
+      ? [
+          {
+            template: "tests/command.test.ts.tmpl",
+            target: "tests/command.test.ts",
+          },
+        ]
+      : []),
     {
       template:
         variant === "lambda" ? "README.lambda.md.tmpl" : "README.md.tmpl",

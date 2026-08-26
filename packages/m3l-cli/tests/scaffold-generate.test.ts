@@ -44,6 +44,9 @@ const docPageAbs = join(
 );
 const rootTsconfigAbs = join(WORKSPACE_ROOT, "tsconfig.json");
 
+// The cli variant carries two entries the lambda variant entirely lacks
+// (ADR-0054's commandModule seam is CLI-only — a Lambda-variant script has no
+// dist/main.js CLI process for an in-process host to be an alternative to).
 const CLI_TEMPLATE_NAMES = [
   "package.json.tmpl",
   "tsconfig.json.tmpl",
@@ -51,18 +54,24 @@ const CLI_TEMPLATE_NAMES = [
   "src/main.ts.tmpl",
   "src/config.ts.tmpl",
   "src/hooks.ts.tmpl",
+  "src/command.ts.tmpl",
   "src/steps/run-__SCRIPT_NAME__.ts.tmpl",
   "tests/config.test.ts.tmpl",
+  "tests/command.test.ts.tmpl",
   "README.md.tmpl",
 ];
 
-const LAMBDA_TEMPLATE_NAMES = CLI_TEMPLATE_NAMES.map((name) =>
-  name === "src/main.ts.tmpl"
-    ? "src/main.lambda.ts.tmpl"
-    : name === "README.md.tmpl"
-      ? "README.lambda.md.tmpl"
-      : name,
-);
+const LAMBDA_TEMPLATE_NAMES = [
+  "package.json.tmpl",
+  "tsconfig.json.tmpl",
+  "tsconfig.build.json.tmpl",
+  "src/main.lambda.ts.tmpl",
+  "src/config.ts.tmpl",
+  "src/hooks.ts.tmpl",
+  "src/steps/run-__SCRIPT_NAME__.ts.tmpl",
+  "tests/config.test.ts.tmpl",
+  "README.lambda.md.tmpl",
+];
 
 const EXPECTED_CREATED_PATHS = [
   join("scripts", NAME, "package.json"),
@@ -71,8 +80,10 @@ const EXPECTED_CREATED_PATHS = [
   join("scripts", NAME, "src", "main.ts"),
   join("scripts", NAME, "src", "config.ts"),
   join("scripts", NAME, "src", "hooks.ts"),
+  join("scripts", NAME, "src", "command.ts"),
   join("scripts", NAME, "src", "steps", `run-${NAME}.ts`),
   join("scripts", NAME, "tests", "config.test.ts"),
+  join("scripts", NAME, "tests", "command.test.ts"),
   join("scripts", NAME, "README.md"),
   join("docs", "reference", "scripts", `${NAME}.md`),
 ];
@@ -205,8 +216,8 @@ describe("generateScript — happy path (variant: cli, dryRun: false)", () => {
     expect(result.variant).toBe("cli");
     expect(result.dryRun).toBe(false);
 
-    // 9 package files + 1 doc page + 1 tsconfig.json rewrite.
-    expect(writeSpy).toHaveBeenCalledTimes(11);
+    // 11 package files + 1 doc page + 1 tsconfig.json rewrite.
+    expect(writeSpy).toHaveBeenCalledTimes(13);
 
     const createdPaths = result.changes
       .filter((change: GenerateScriptChange) => change.action === "created")
@@ -217,7 +228,7 @@ describe("generateScript — happy path (variant: cli, dryRun: false)", () => {
       action: "updated",
       path: "tsconfig.json",
     });
-    expect(result.changes).toHaveLength(11);
+    expect(result.changes).toHaveLength(13);
   });
 
   test("reads every template through TEMPLATE_DIR, including the doc page template and the root tsconfig", () => {
@@ -266,7 +277,7 @@ describe("generateScript — dryRun: true", () => {
       action: "updated",
       path: "tsconfig.json",
     });
-    expect(result.changes).toHaveLength(11);
+    expect(result.changes).toHaveLength(13);
   });
 });
 
@@ -302,6 +313,28 @@ describe("generateScript — variant: lambda", () => {
       ),
     ).toBe(true);
   });
+
+  // ADR-0054's commandModule seam (U6) is CLI-only: a Lambda-variant script
+  // has no dist/main.js CLI process for an in-process host to be an
+  // alternative to, so command.ts/command.test.ts must never even be READ
+  // for a lambda-variant run — not merely absent from the written output.
+  test("never reads the command.ts or command.test.ts templates", () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(false);
+    const readSpy = vi.spyOn(fs, "readFileSync");
+    mockTemplateReads("lambda", JSON.stringify({ references: [] }));
+    vi.spyOn(fs, "mkdirSync").mockReturnValue(undefined);
+    vi.spyOn(fs, "writeFileSync").mockReturnValue(undefined);
+
+    generateScript(baseOptions({ variant: "lambda" }));
+
+    const readPaths = readSpy.mock.calls.map((call) => String(call[0]));
+    expect(readPaths.some((path) => path.includes("command.ts.tmpl"))).toBe(
+      false,
+    );
+    expect(
+      readPaths.some((path) => path.includes("command.test.ts.tmpl")),
+    ).toBe(false);
+  });
 });
 
 describe("generateScript — root tsconfig reference already present", () => {
@@ -327,7 +360,7 @@ describe("generateScript — root tsconfig reference already present", () => {
         (change: GenerateScriptChange) => change.action === "updated",
       ),
     ).toBe(false);
-    expect(result.changes).toHaveLength(10);
+    expect(result.changes).toHaveLength(12);
   });
 });
 

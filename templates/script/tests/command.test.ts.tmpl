@@ -120,8 +120,13 @@ const manifest: PackageManifest = JSON.parse(
 describe("__SCRIPT_NAME__ command module descriptor", () => {
   it("names itself with the script's own kebab-case name", () => {
     // The name is the CLI's dispatch key (ADR-0042 `m3l <script>`), so it must
-    // match the package directory exactly.
-    expect(commandModule.name).toBe("__SCRIPT_NAME__");
+    // match the package directory exactly. Derived from package.json's scoped
+    // name rather than a hardcoded literal: a long script name substituted
+    // directly here would push the assertion past prettier's line width,
+    // which `check-template-format.mjs` cannot reformat away (ADR-0053 U9).
+    expect(commandModule.name).toBe(
+      manifest.name.replace("@m3l-automation/", ""),
+    );
   });
 
   // Asserted against package.json rather than a bare "0.0.0" literal, so the
@@ -333,9 +338,7 @@ describe("__SCRIPT_NAME__ fallback command output port", () => {
       "an info line\n",
       "A heading\n",
     ]);
-    expect(err.mock.calls.map(([chunk]) => chunk)).toEqual([
-      "an error line\n",
-    ]);
+    expect(err.mock.calls.map(([chunk]) => chunk)).toEqual(["an error line\n"]);
   });
 });
 
@@ -361,10 +364,7 @@ describe("__SCRIPT_NAME__ execute wiring", () => {
     const { hooks } = runMocks.scriptOptions[0] as {
       readonly hooks: Core.M3LScriptLifecycleHooks;
     };
-    await hooks.onError?.(
-      {} as unknown as Core.M3LScriptHookContext,
-      error,
-    );
+    await hooks.onError?.({} as unknown as Core.M3LScriptHookContext, error);
   }
 
   afterEach(() => {

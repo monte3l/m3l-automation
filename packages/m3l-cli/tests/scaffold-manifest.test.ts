@@ -272,6 +272,12 @@ describe("substituteTokens", () => {
 });
 
 describe("packageTemplateFiles", () => {
+  // ADR-0054's commandModule seam (U6) is CLI-only: a Lambda-variant script
+  // has no dist/main.js CLI process for an in-process host to be an
+  // alternative to, so src/command.ts / tests/command.test.ts are emitted
+  // for variant "cli" only, inserted after hooks.ts and after
+  // config.test.ts respectively (matching the pre-U9 ordering on
+  // origin/main's bin/lib/script-scaffold.mjs).
   const CLI_EXPECTED: readonly ScaffoldTemplateFile[] = [
     { template: "package.json.tmpl", target: "package.json" },
     { template: "tsconfig.json.tmpl", target: "tsconfig.json" },
@@ -279,42 +285,106 @@ describe("packageTemplateFiles", () => {
     { template: "src/main.ts.tmpl", target: "src/main.ts" },
     { template: "src/config.ts.tmpl", target: "src/config.ts" },
     { template: "src/hooks.ts.tmpl", target: "src/hooks.ts" },
+    { template: "src/command.ts.tmpl", target: "src/command.ts" },
     {
       template: "src/steps/run-__SCRIPT_NAME__.ts.tmpl",
       target: "src/steps/run-__SCRIPT_NAME__.ts",
     },
     { template: "tests/config.test.ts.tmpl", target: "tests/config.test.ts" },
+    {
+      template: "tests/command.test.ts.tmpl",
+      target: "tests/command.test.ts",
+    },
     { template: "README.md.tmpl", target: "README.md" },
   ];
 
-  test("cli variant returns the exact 9-entry manifest", () => {
+  const LAMBDA_EXPECTED: readonly ScaffoldTemplateFile[] = [
+    { template: "package.json.tmpl", target: "package.json" },
+    { template: "tsconfig.json.tmpl", target: "tsconfig.json" },
+    { template: "tsconfig.build.json.tmpl", target: "tsconfig.build.json" },
+    { template: "src/main.lambda.ts.tmpl", target: "src/main.ts" },
+    { template: "src/config.ts.tmpl", target: "src/config.ts" },
+    { template: "src/hooks.ts.tmpl", target: "src/hooks.ts" },
+    {
+      template: "src/steps/run-__SCRIPT_NAME__.ts.tmpl",
+      target: "src/steps/run-__SCRIPT_NAME__.ts",
+    },
+    { template: "tests/config.test.ts.tmpl", target: "tests/config.test.ts" },
+    { template: "README.lambda.md.tmpl", target: "README.md" },
+  ];
+
+  test("cli variant returns the exact 11-entry manifest", () => {
     expect(packageTemplateFiles("cli")).toEqual(CLI_EXPECTED);
   });
 
-  test("lambda variant differs from cli only in the main-entry and README template names", () => {
+  test("lambda variant returns the exact 9-entry manifest (unchanged; no command.ts/command.test.ts)", () => {
+    expect(packageTemplateFiles("lambda")).toEqual(LAMBDA_EXPECTED);
+  });
+
+  test("lambda variant is cli's manifest with command.ts/command.test.ts removed and the main-entry/README templates swapped", () => {
     const cli = packageTemplateFiles("cli");
     const lambda = packageTemplateFiles("lambda");
 
-    expect(lambda).toHaveLength(cli.length);
+    // Isolate the entries every variant shares (i.e. drop the two entries
+    // ONLY the cli variant carries) so the remaining, shared-length arrays
+    // can be compared position-by-position — this is what makes both arms
+    // of the "swap" (main.ts, README.md) AND the "removed" (command.ts,
+    // command.test.ts) claims reachable in one test.
+    const cliShared = cli.filter(
+      (entry) =>
+        entry.target !== "src/command.ts" &&
+        entry.target !== "tests/command.test.ts",
+    );
+    expect(cliShared).toHaveLength(lambda.length);
 
-    for (const [index, cliEntry] of cli.entries()) {
+    for (const [index, cliEntry] of cliShared.entries()) {
       const lambdaEntry = lambda[index];
       if (lambdaEntry === undefined) {
         throw new Error(`expected lambda manifest entry at index ${index}`);
       }
 
-      if (index === 3) {
+      if (cliEntry.target === "src/main.ts") {
         expect(lambdaEntry.template).toBe("src/main.lambda.ts.tmpl");
-        expect(lambdaEntry.target).toBe(cliEntry.target);
         expect(lambdaEntry.target).toBe("src/main.ts");
-      } else if (index === 8) {
+      } else if (cliEntry.target === "README.md") {
         expect(lambdaEntry.template).toBe("README.lambda.md.tmpl");
-        expect(lambdaEntry.target).toBe(cliEntry.target);
         expect(lambdaEntry.target).toBe("README.md");
       } else {
         expect(lambdaEntry).toEqual(cliEntry);
       }
     }
+  });
+
+  test("cli has exactly two entries lambda entirely lacks: src/command.ts and tests/command.test.ts", () => {
+    const cli = packageTemplateFiles("cli");
+    const lambda = packageTemplateFiles("lambda");
+
+    expect(cli.length - lambda.length).toBe(2);
+
+    const lambdaTargets = new Set(lambda.map((entry) => entry.target));
+    const cliOnlyEntries = cli.filter(
+      (entry) => !lambdaTargets.has(entry.target),
+    );
+
+    expect(cliOnlyEntries).toEqual([
+      { template: "src/command.ts.tmpl", target: "src/command.ts" },
+      {
+        template: "tests/command.test.ts.tmpl",
+        target: "tests/command.test.ts",
+      },
+    ]);
+  });
+
+  test("cli variant includes src/command.ts and tests/command.test.ts; lambda variant does not", () => {
+    const cliTargets = packageTemplateFiles("cli").map((entry) => entry.target);
+    const lambdaTargets = packageTemplateFiles("lambda").map(
+      (entry) => entry.target,
+    );
+
+    expect(cliTargets).toContain("src/command.ts");
+    expect(cliTargets).toContain("tests/command.test.ts");
+    expect(lambdaTargets).not.toContain("src/command.ts");
+    expect(lambdaTargets).not.toContain("tests/command.test.ts");
   });
 });
 

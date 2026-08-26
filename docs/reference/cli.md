@@ -270,12 +270,15 @@ Options:
   (default `cli`): `cli` wires `Core.runScript` for a terminal invocation;
   `lambda` wires `M3LScript.createLambdaHandler()` instead, with a matching
   README. Every other emitted file (config, hooks, the starter step, the
-  config smoke test, the contract page) is identical between variants —
-  output filenames never differ by variant, so `check:script-scaffold`'s
-  shape validation needs no variant awareness. Choosing `lambda` scaffolds
-  the shape only; it does not itself activate ADR-0018's event-source seam
-  (see that ADR's 2026-08-26 Update) — that trigger is a real deployed
-  consumer, not a template.
+  config smoke test, the contract page) is identical between variants and
+  never differs in target filename, so `check:script-scaffold`'s shape
+  validation needs no variant awareness for them. The one exception is the
+  ADR-0054 `src/command.ts` in-process command-module seam (U6): `cli` emits
+  it (plus `tests/command.test.ts`); `lambda` does not, since a Lambda-variant
+  script has no `dist/main.js` CLI process for an in-process host to be an
+  alternative to. Choosing `lambda` scaffolds the shape only; it does not
+  itself activate ADR-0018's event-source seam (see that ADR's 2026-08-26
+  Update) — that trigger is a real deployed consumer, not a template.
 - `--dry-run` — renders every file and reports what would be written, writing
   nothing.
 - `--force` — overwrite a pre-existing `scripts/<name>/` or contract page;

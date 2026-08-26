@@ -26,9 +26,8 @@ import { root } from "./reference-index.mjs";
 
 let cliScaffoldModule;
 try {
-  cliScaffoldModule = await import(
-    "../../packages/m3l-cli/dist/scaffold/manifest.js"
-  );
+  cliScaffoldModule =
+    await import("../../packages/m3l-cli/dist/scaffold/manifest.js");
 } catch (cause) {
   throw new Error(
     "bin/lib/script-scaffold.mjs: packages/m3l-cli is not built — run `pnpm build` first " +
