@@ -5,6 +5,7 @@ import { Core } from "@m3l-automation/m3l-common";
 import {
   configParameters,
   configValidators,
+  RDS_DATA_SQL_OPERATION_DECLARATIONS,
   RDS_DATA_SQL_OPERATIONS,
 } from "../src/config.js";
 
@@ -354,6 +355,12 @@ describe("'operation' parameter's declared operations (ADR-0055 introspection)",
     const second = paramNamed("operation").getOperations();
 
     expect(first).toEqual(second);
+  });
+
+  it("equals RDS_DATA_SQL_OPERATION_DECLARATIONS by content — a fresh projection, not the same array (toEqual, not toBe)", () => {
+    const operations = paramNamed("operation").getOperations();
+    expect(operations).toEqual(RDS_DATA_SQL_OPERATION_DECLARATIONS);
+    expect(operations).not.toBe(RDS_DATA_SQL_OPERATION_DECLARATIONS);
   });
 
   it("every requiredParameters entry names a declared configParameters entry (subset check)", () => {

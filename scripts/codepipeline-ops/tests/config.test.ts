@@ -4,6 +4,7 @@ import { Core } from "@m3l-automation/m3l-common";
 
 import {
   ABANDON_DEFAULT,
+  CODEPIPELINE_OPS_OPERATION_DECLARATIONS,
   CODEPIPELINE_OPS_OPERATIONS,
   configParameters,
   configValidators,
@@ -757,6 +758,12 @@ describe("'operation' parameter's declared operations (ADR-0055 introspection)",
     const second = paramNamed("operation").getOperations();
 
     expect(first).toEqual(second);
+  });
+
+  it("equals CODEPIPELINE_OPS_OPERATION_DECLARATIONS by content — a fresh projection, not the same array (toEqual, not toBe)", () => {
+    const operations = paramNamed("operation").getOperations();
+    expect(operations).toEqual(CODEPIPELINE_OPS_OPERATION_DECLARATIONS);
+    expect(operations).not.toBe(CODEPIPELINE_OPS_OPERATION_DECLARATIONS);
   });
 
   it("every requiredParameters entry names a declared configParameters entry (subset check)", () => {

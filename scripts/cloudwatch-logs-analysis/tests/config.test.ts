@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { Core } from "@m3l-automation/m3l-common";
 
 import {
+  ANALYSIS_OPERATION_DECLARATIONS,
   ANALYSIS_OPERATIONS,
   configParameters,
   configValidators,
@@ -159,6 +160,12 @@ describe("'operation' — declared ADR-0055 operations", () => {
     }
     return found[1];
   }
+
+  it("equals ANALYSIS_OPERATION_DECLARATIONS by content — a fresh projection, not the same array (toEqual, not toBe)", () => {
+    const operations = operation?.getOperations();
+    expect(operations).toEqual(ANALYSIS_OPERATION_DECLARATIONS);
+    expect(operations).not.toBe(ANALYSIS_OPERATION_DECLARATIONS);
+  });
 
   it("round-trips getOperations() against the hand-authored requirement table", () => {
     expect(operation).toBeDefined();

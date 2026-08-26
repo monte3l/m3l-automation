@@ -5,6 +5,7 @@ import { Core } from "@m3l-automation/m3l-common";
 import {
   configParameters,
   configValidators,
+  SQS_ETL_COMMAND_DECLARATIONS,
   SQS_ETL_COMMANDS,
 } from "../src/config.js";
 
@@ -123,6 +124,12 @@ describe("sqs-etl config declaration", () => {
       }
       return found[1];
     }
+
+    it("equals SQS_ETL_COMMAND_DECLARATIONS by content — a fresh projection, not the same array (toEqual, not toBe)", () => {
+      const operations = paramNamed("command").getOperations();
+      expect(operations).toEqual(SQS_ETL_COMMAND_DECLARATIONS);
+      expect(operations).not.toBe(SQS_ETL_COMMAND_DECLARATIONS);
+    });
 
     it("round-trips getOperations() against the hand-authored requirement table", () => {
       const operations = paramNamed("command").getOperations();

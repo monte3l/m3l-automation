@@ -7,6 +7,7 @@ import {
   configValidators,
   MAX_MESSAGES_DEFAULT,
   RUNBOOK_DIR_DEFAULT,
+  TRIAGE_OPERATION_DECLARATIONS,
   TRIAGE_OPERATIONS,
   VISIBILITY_TIMEOUT_DEFAULT,
 } from "../src/config.js";
@@ -239,6 +240,12 @@ describe("operation parameter — default and allowed values", () => {
     }
     return found[1];
   }
+
+  it("equals TRIAGE_OPERATION_DECLARATIONS by content — a fresh projection, not the same array (toEqual, not toBe)", () => {
+    const operations = operation?.getOperations();
+    expect(operations).toEqual(TRIAGE_OPERATION_DECLARATIONS);
+    expect(operations).not.toBe(TRIAGE_OPERATION_DECLARATIONS);
+  });
 
   it("round-trips getOperations() against the hand-authored requirement table", () => {
     expect(operation).toBeDefined();
