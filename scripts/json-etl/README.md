@@ -64,6 +64,17 @@ node dist/main.js --preset ../../data/config/presets/report-active.yaml
 `--preset` takes an explicit path — there is no name-to-path resolution or
 library search root (see [Data directories](#data-directories)).
 
+### Command module
+
+This script also exports an ADR-0054 **command module** (`src/command.ts`), so
+a host — the `m3l` CLI, later an agent runtime — can run it **in-process**
+instead of spawning `dist/main.js`. Nothing above changes: `node dist/main.js`
+remains the supported entry point, its behaviour and its exit codes are exactly
+what they were, and the in-process path produces the same `run-report.json`
+because `execute` composes the same `M3LScript`/`runScript` root. The contract —
+which context ports are honoured today and which are not — is on the
+[contract page](../../docs/reference/scripts/json-etl.md#command-module).
+
 ### Examples
 
 Unlike the other scripts in this repo, these examples show real input data
