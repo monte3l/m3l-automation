@@ -180,6 +180,17 @@ throw "a string";
   additive `as const satisfies` formulation passed `typecheck` and failed `build`
   with TS9010 (`2026-08-19-a3-partial-run-outcome.md`). Any change touching an
   **exported type** needs both before you call it green.
+- **A test that deliberately avoids importing from `src` can strand an export and
+  fail `pnpm knip`.** Asserting against a hand-authored table (rather than the
+  `src` export) is the right call — it catches a `src` typo instead of echoing it
+  back — but if that test file was the export's only consumer, knip's
+  static-reachability check now reports an unused export and fails CI's
+  governance lane. Keep **both**: import the export and assert projection
+  identity (`toEqual` it, `not.toBe` it), _and_ keep the hand-authored table for
+  content. `knip` is **not** in `pre-push`, so all local gates go green — run
+  `pnpm knip` yourself after adding, removing, or orphaning any export under
+  `scripts/**` or `packages/**`. Cost two PRs a red CI lane in the U5 retrofit
+  after six test files were briefed to hand-author their tables.
 - **eslint runs in-loop** (`post-edit-verify`: prettier → eslint → typecheck →
   vitest). Resolve eslint findings as you write — don't defer them to a later
   `pnpm lint` pass; that defeats the in-loop signal.

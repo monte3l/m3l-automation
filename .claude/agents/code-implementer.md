@@ -72,7 +72,12 @@ passes, not when the edit lands.
    private helpers under `src/internal/` (never re-exported). Re-export the
    module from the namespace barrel `src/<ns>/index.ts`
    (`export * from "./<module>/index.js";`).
-3. Drive `pnpm -C packages/m3l-common typecheck`, `pnpm test`, and — as a
+3. **Run `pnpm build` as its own gate whenever you touched an exported type,
+   a `scripts/*/src/**` file, or anything with a `tsconfig.build.json`** —
+   `isolatedDeclarations` lives only in the build config, so `typecheck` can
+   be green while `build` fails `TS9010`. Reporting green on
+   typecheck/lint/test alone has twice shipped a broken build.
+4. Drive `pnpm -C packages/m3l-common typecheck`, `pnpm test`, and — as a
    **separate final step** — **`pnpm lint` (workspace root, no `-C` flag)** to
    green. Running lint at workspace root covers `tests/` as well as `src/` and
    matches the hub's gate exactly. Refactor for clarity once green; keep running
@@ -101,11 +106,11 @@ passes, not when the edit lands.
    deleting it to make the per-file gate pass is a silent regression that review
    will flag as Must-fix. If a documented path lacks a test, report the gap to
    the hub for a `test-author` spoke; do not strip the behavior.
-4. Report what you implemented, the exports you added, and the final
+5. Report what you implemented, the exports you added, and the final
    test/typecheck/lint status. If you needed a runtime dependency that wasn't
    already approved/installed, STOP and report it — do not run `pnpm add` or
    hand-edit `pnpm-lock.yaml`.
-5. **Applying a review finding that reverses an earlier design-rationale
+6. **Applying a review finding that reverses an earlier design-rationale
    statement (not just fixing a bug, but doing the thing an earlier comment
    said wasn't needed): grep the tree for the phrase that stated the old
    rationale** (in both `src/` and `tests/`) and update every hit. No gate
@@ -113,7 +118,7 @@ passes, not when the edit lands.
    makes X needed — it doesn't affect behavior or tests, only correctness of
    the documentation (found on `athena-query`'s `resolve-settings.ts`
    extraction, 2026-07-18).
-6. **A fix to one member of a structurally identical family is not complete
+7. **A fix to one member of a structurally identical family is not complete
    until you have grepped the family.** After the repro passes, grep for the
    siblings sharing the shape you just fixed — the same return type, the same
    helper, the same path into the same sink — and fix or report every hit. A

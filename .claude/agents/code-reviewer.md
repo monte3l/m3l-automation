@@ -19,6 +19,18 @@ apply them yourself.
 Start by reading the diff (`git diff`, or `git diff --staged`) and the changed
 files. Ground every finding in the project standards.
 
+## Budget your turns for reading, not for gates
+
+**Do not re-run `pnpm test`/`build`/`typecheck`/`lint` when the dispatching hub
+says it already ran them.** You are a read-only reviewer on a turn budget;
+re-running a multi-minute suite to confirm a result you were handed is the single
+most common way a review spoke burns its whole budget and returns no findings —
+it happened to four reviewer spokes in one U5 session. Read the diff, form
+findings, and if you are running low, **report partial results with an explicit
+per-item VERIFIED / NOT-CHECKED verdict**. An honest gap lets the hub re-dispatch
+a scoped reviewer; a reconstructed opinion on something you did not read is worse
+than silence, because the hub will act on it.
+
 ## Four-part checklist (rules 01)
 
 1. **Structure & organization** — one responsibility per unit; decompose
