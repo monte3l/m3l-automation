@@ -6,15 +6,65 @@ const BATCH_SIZE_DEFAULT = 100;
 const VISIBILITY_TIMEOUT_MIN = 0;
 const VISIBILITY_TIMEOUT_MAX = 43_200;
 
-/** The `command` config parameter's finite set of operation modes. */
-export const SQS_ETL_COMMANDS = [
-  "dump",
-  "send",
-  "redrive",
-  "delete",
-  "purge",
-  "transform",
+/**
+ * The `command` parameter's declared operation set (ADR-0055) — the six
+ * verbs `sqs-etl` dispatches over. Feeds {@link configParameters}'
+ * `command` declaration (which auto-composes the membership validator) and
+ * {@link Core.deriveOperationValidators}'s per-command `requiredParameters`
+ * derivation below.
+ *
+ * Deliberately declared with a bare `as const` — NOT
+ * `as const satisfies Core.M3LOperationDeclarationList` — because a
+ * `satisfies` clause on this literal fails `tsc --isolatedDeclarations`
+ * (the mode each script's `tsconfig.build.json` builds under). The shape is
+ * still fully compile-time-checked at both use sites without it: passing
+ * this value to `Core.deriveOperationNames` below and to `operations:` in
+ * `configParameters` each independently check it against
+ * `Core.M3LOperationDeclarationList` — do not re-add `satisfies` here.
+ */
+export const SQS_ETL_COMMAND_DECLARATIONS = [
+  {
+    name: "dump",
+    description: "Drain the queue to a streamed JSONL file.",
+    requiredParameters: ["queueUrl", "output"],
+  },
+  {
+    name: "send",
+    description: "Batch-publish JSONL records from a file to the queue.",
+    requiredParameters: ["queueUrl", "input"],
+  },
+  {
+    name: "redrive",
+    description:
+      "Move messages from a dead-letter queue back to its source queue.",
+    requiredParameters: ["queueUrl", "dlqUrl"],
+  },
+  {
+    name: "delete",
+    description: "Remove specific messages from the queue by receipt handle.",
+    requiredParameters: ["queueUrl", "input"],
+  },
+  {
+    name: "purge",
+    description: "Clear a queue of all messages.",
+    requiredParameters: ["queueUrl"],
+  },
+  {
+    name: "transform",
+    description:
+      "Map/filter records between two JSONL files without touching AWS.",
+    requiredParameters: ["input", "output"],
+  },
 ] as const;
+
+/** The literal union of {@link SQS_ETL_COMMAND_DECLARATIONS}' command names. */
+type SqsEtlCommandName = (typeof SQS_ETL_COMMAND_DECLARATIONS)[number]["name"];
+
+/** The `command` config parameter's finite set of operation modes. */
+export const SQS_ETL_COMMANDS: readonly [
+  SqsEtlCommandName,
+  ...(readonly SqsEtlCommandName[]),
+] = Core.deriveOperationNames(SQS_ETL_COMMAND_DECLARATIONS);
 
 /**
  * The declared configuration schema for `sqs-etl` — the script's only
@@ -22,15 +72,15 @@ export const SQS_ETL_COMMANDS = [
  * it); declare a parameter here instead so resolution, coercion, validation,
  * and redaction all flow through the library.
  *
- * Per-command requiredness (e.g. `queueUrl` for `dump` but not `transform`)
- * is not expressed here as a declarative `M3LConfigParameter({ required: true })`
- * — a single parameter's `validate:` callback cannot express a
- * cross-parameter constraint; every parameter besides `command` and
- * `aws.profile` remains declared optional. See {@link configValidators}
- * below, which enforces the per-command requirement at config-load time via
- * F1b's `Core.M3LConfigSchema` cross-parameter validation seam. See
- * `docs/reference/scripts/sqs-etl.md` for the full per-command requirement
- * table.
+ * Only `aws.profile` and `command` are `required: true`: per-command
+ * presence requirements (e.g. `queueUrl` for `dump`/`send`/`redrive`/
+ * `delete`/`purge`, `input` for `send`/`delete`/`transform`, `output` for
+ * `dump`/`transform`) are declared on {@link SQS_ETL_COMMAND_DECLARATIONS}
+ * rather than expressed by a single parameter's `validate:` callback — see
+ * {@link configValidators} below, which derives and enforces them at
+ * config-load time via F1b's `Core.M3LConfigSchema` cross-parameter
+ * validation seam. See `docs/reference/scripts/sqs-etl.md` for the full
+ * per-command requirement table.
  *
  * Declare an AWS profile parameter with `Core.AWS_PROFILE_PARAM_NAME` when the
  * script touches AWS — that name is what enables the `script.aws`
@@ -47,7 +97,7 @@ export const configParameters: readonly Core.M3LConfigParameter[] = [
     name: "command",
     type: Core.M3LConfigParameterType.STRING,
     required: true,
-    validate: Core.M3LConfigValidators.oneOf<string>(SQS_ETL_COMMANDS),
+    operations: SQS_ETL_COMMAND_DECLARATIONS,
   }),
   new Core.M3LConfigParameter({
     name: "queueUrl",
@@ -110,49 +160,6 @@ export const configParameters: readonly Core.M3LConfigParameter[] = [
   }),
 ];
 
-/** The commands for which `queueUrl` is required — every command except `transform`, which never touches SQS. */
-const QUEUE_URL_REQUIRING_COMMANDS = [
-  "dump",
-  "send",
-  "redrive",
-  "delete",
-  "purge",
-] as const;
-
-/** The commands for which `dlqUrl` is required. */
-const DLQ_URL_REQUIRING_COMMANDS = ["redrive"] as const;
-
-/** The commands for which `input` is required. */
-const INPUT_REQUIRING_COMMANDS = ["send", "delete", "transform"] as const;
-
-/** The commands for which `output` is required. */
-const OUTPUT_REQUIRING_COMMANDS = ["dump", "transform"] as const;
-
-/** True when `value` is a string present in `commands` — narrows `unknown` without an `as` assertion. */
-function isOneOf(value: unknown, commands: readonly string[]): boolean {
-  return typeof value === "string" && commands.includes(value);
-}
-
-/**
- * Builds a schema-level validator asserting `paramName` is set whenever
- * `config`'s `command` is one of `requiringCommands`. The failure reason
- * names only the fixed command list (a constraint description), never the
- * received `command`/`paramName` value.
- */
-function requiredForCommands(
-  paramName: string,
-  requiringCommands: readonly string[],
-): Core.M3LConfigSchemaValidator {
-  return (config: Core.M3LConfig): true | string => {
-    const requires =
-      isOneOf(config.get("command"), requiringCommands) &&
-      config.get(paramName) === undefined;
-    return requires
-      ? `'${paramName}' is required for command(s): ${requiringCommands.join(", ")}`
-      : true;
-  };
-}
-
 /**
  * The `sqs-etl` schema-level cross-parameter validators (F1b) — the declared
  * config schema's second validation layer, run once by
@@ -161,13 +168,23 @@ function requiredForCommands(
  * `configParameters` above) already guard each value in isolation; what
  * these validators guard is the relationship BETWEEN `command` and the
  * per-command "Required for" parameters, which no single
- * `M3LConfigParameter` can express on its own:
+ * `M3LConfigParameter` can express on its own.
+ *
+ * The per-command requiredness validators are DERIVED from
+ * {@link SQS_ETL_COMMAND_DECLARATIONS} by
+ * {@link Core.deriveOperationValidators} (ADR-0055) rather than
+ * hand-written:
  *
  * - `queueUrl` is required for `dump`, `send`, `redrive`, `delete`, `purge`
  *   (NOT `transform`, which never touches SQS).
  * - `dlqUrl` is required for `redrive` only.
  * - `input` is required for `send`, `delete`, `transform`.
  * - `output` is required for `dump`, `transform`.
+ *
+ * The derived reason strings say "operation(s)" where the prior hand-written
+ * validators said "command(s)" — the library's wording is fixed, and this is
+ * the one unavoidable string change; everything else about the messages is
+ * identical.
  *
  * Unlike `ecs-ops`/`eks-ops`/`lambda-ops`, `sqs-etl` has no central
  * dispatcher — each command's guard previously lived inside its own step
@@ -183,6 +200,10 @@ function requiredForCommands(
  * `docs/reference/core/config.md`'s "Cross-parameter validation" section for
  * the `M3LConfigSchemaValidator` contract these functions satisfy.
  *
+ * The `yesSensitive`⇒`yes` validator stays hand-written: it is not
+ * per-command requiredness, but a genuinely cross-parameter constraint
+ * between two independently-defaulted BOOL parameters (ADR-0048).
+ *
  * @example
  * ```typescript
  * import { Core } from "@m3l-automation/m3l-common";
@@ -192,10 +213,7 @@ function requiredForCommands(
  * ```
  */
 export const configValidators: readonly Core.M3LConfigSchemaValidator[] = [
-  requiredForCommands("queueUrl", QUEUE_URL_REQUIRING_COMMANDS),
-  requiredForCommands("dlqUrl", DLQ_URL_REQUIRING_COMMANDS),
-  requiredForCommands("input", INPUT_REQUIRING_COMMANDS),
-  requiredForCommands("output", OUTPUT_REQUIRING_COMMANDS),
+  ...Core.deriveOperationValidators(configParameters),
   // requires() would be a no-op here since both yesSensitive and yes carry
   // declared defaults — compare resolved values instead.
   (config: Core.M3LConfig): true | string =>

@@ -18,6 +18,7 @@
 
 import { Core } from "@m3l-automation/m3l-common";
 
+import { RDS_DATA_SQL_OPERATIONS } from "../config.js";
 import {
   BATCH_SIZE_DEFAULT,
   MIGRATIONS_TABLE_DEFAULT,
@@ -27,9 +28,6 @@ import { validateIdentifier } from "../lib/identifiers.js";
 
 /** The `Core.M3LError` code every `resolveRdsDataSqlSettings` guard throws with. */
 const SETTINGS_CODE = "ERR_RDS_DATA_SQL_SETTINGS";
-
-/** The declared literal set backing `operation`, for `Core.M3LConfigAccessor.oneOf`. */
-const OPERATIONS = ["query", "load", "execute", "migrate"] as const;
 
 /** The declared literal set backing `input.format`. */
 const INPUT_FORMATS = ["jsonl", "csv"] as const;
@@ -47,7 +45,7 @@ const OUTPUT_FORMATS = ["json", "jsonl", "csv"] as const;
  */
 export interface RdsDataSqlSettings {
   /** Which of the four operations this run performs. */
-  readonly operation: (typeof OPERATIONS)[number];
+  readonly operation: (typeof RDS_DATA_SQL_OPERATIONS)[number];
   /** The Aurora cluster/instance ARN, passed as `resourceArn` to every `aws/rds-data` call. */
   readonly resourceArn: string;
   /** The Secrets Manager ARN holding the database credentials, passed as `secretArn`. */
@@ -228,7 +226,7 @@ export function resolveRdsDataSqlSettings(
     code: SETTINGS_CODE,
   });
 
-  const operation = accessor.oneOf("operation", OPERATIONS);
+  const operation = accessor.oneOf("operation", RDS_DATA_SQL_OPERATIONS);
   const resourceArn = accessor.requiredString("cluster.arn", "run");
   const secretArn = accessor.requiredString("secret.arn", "run");
   const database = accessor.requiredString("database", "run");

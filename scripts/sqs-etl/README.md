@@ -48,13 +48,19 @@ iteration" note.
 
 ### Operations at a glance
 
-| Operation             | Demonstrated by                                                    |
-| --------------------- | ------------------------------------------------------------------ |
-| `dump`                | Minimal                                                            |
-| `send`                | Common                                                             |
-| `redrive`             | Production                                                         |
-| `purge`               | Edge case                                                          |
-| `delete`, `transform` | — see the [contract page](../../docs/reference/scripts/sqs-etl.md) |
+| Operation   | Description                                                      | Demonstrated by |
+| ----------- | ---------------------------------------------------------------- | --------------- |
+| `dump`      | Drain the queue to a streamed JSONL file.                        | Minimal         |
+| `send`      | Batch-publish JSONL records from a file to the queue.            | Common          |
+| `redrive`   | Move messages from a dead-letter queue back to its source queue. | Production      |
+| `delete`    | Remove specific messages from the queue by receipt handle.       | —               |
+| `purge`     | Clear a queue of all messages.                                   | Edge case       |
+| `transform` | Map/filter records between two JSONL files without touching AWS. | —               |
+
+A `—` in **Demonstrated by** means the operation has no worked example in
+§ Examples above — see the [contract page](../../docs/reference/scripts/sqs-etl.md) for its full
+contract. Descriptions are the same strings the script declares in
+`src/config.ts` and exposes via `getOperations()` (ADR-0055).
 
 ### Operational flags
 

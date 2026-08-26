@@ -2,27 +2,107 @@ import { Core } from "@m3l-automation/m3l-common";
 
 /**
  * The thirteen operations `codepipeline-ops` dispatches over
- * `AWS.M3LCodePipelineOperations`. Declared as a bare `as const` array
- * (rather than inline in the `M3LConfigParameter`'s `oneOf` call) so the
- * closed set is independently assertable in tests without exercising config
- * resolution — the same "bare `as const` + derived union" idiom
- * `ECS_OPERATIONS`/`CLOUDFORMATION_STACKS_OPERATIONS` use.
+ * `AWS.M3LCodePipelineOperations`, declared as data (ADR-0055). Feeds
+ * {@link configParameters}' `operation` declaration (which auto-composes the
+ * membership validator) and {@link Core.deriveOperationValidators}'s
+ * per-operation `requiredParameters` derivation below.
+ *
+ * Deliberately declared with a bare `as const` — NOT
+ * `as const satisfies Core.M3LOperationDeclarationList` — because a
+ * `satisfies` clause on this literal fails `tsc --isolatedDeclarations`
+ * (the mode each script's `tsconfig.build.json` builds under). The shape is
+ * still fully compile-time-checked at both use sites without it: passing
+ * this value to `Core.deriveOperationNames` below and to `operations:` in
+ * `configParameters` each independently check it against
+ * `Core.M3LOperationDeclarationList` — do not re-add `satisfies` here.
  */
-export const CODEPIPELINE_OPS_OPERATIONS = [
-  "list-pipelines",
-  "describe-pipeline",
-  "get-pipeline-state",
-  "list-executions",
-  "describe-execution",
-  "create-pipeline",
-  "update-pipeline",
-  "delete-pipeline",
-  "start-execution",
-  "stop-execution",
-  "enable-stage-transition",
-  "disable-stage-transition",
-  "watch-execution",
+export const CODEPIPELINE_OPS_OPERATION_DECLARATIONS = [
+  {
+    name: "list-pipelines",
+    description: "List pipelines in the account, one page per call.",
+    requiredParameters: [],
+  },
+  {
+    name: "describe-pipeline",
+    description:
+      "Describe one pipeline's declaration, optionally at a specific version.",
+    requiredParameters: ["pipeline"],
+  },
+  {
+    name: "get-pipeline-state",
+    description: "Get a pipeline's current stage states.",
+    requiredParameters: ["pipeline"],
+  },
+  {
+    name: "list-executions",
+    description: "List a pipeline's executions, one page per call.",
+    requiredParameters: ["pipeline"],
+  },
+  {
+    name: "describe-execution",
+    description: "Describe one pipeline execution.",
+    requiredParameters: ["pipeline", "executionId"],
+  },
+  {
+    name: "create-pipeline",
+    description: "Create a pipeline from a JSON declaration document.",
+    requiredParameters: ["input"],
+  },
+  {
+    name: "update-pipeline",
+    description:
+      "Update an existing pipeline from a JSON declaration document.",
+    requiredParameters: ["input"],
+  },
+  {
+    name: "delete-pipeline",
+    description: "Delete a pipeline.",
+    requiredParameters: ["pipeline"],
+  },
+  {
+    name: "start-execution",
+    description: "Start a new execution of a pipeline.",
+    requiredParameters: ["pipeline"],
+  },
+  {
+    name: "stop-execution",
+    description: "Stop an in-progress pipeline execution.",
+    requiredParameters: ["pipeline", "executionId"],
+  },
+  {
+    name: "enable-stage-transition",
+    description: "Enable a stage's inbound or outbound transition.",
+    requiredParameters: ["pipeline", "stage", "transitionType"],
+  },
+  {
+    name: "disable-stage-transition",
+    description:
+      "Disable a stage's inbound or outbound transition, recording a reason.",
+    requiredParameters: ["pipeline", "stage", "transitionType", "reason"],
+  },
+  {
+    name: "watch-execution",
+    description: "Poll an execution until it reaches a terminal status.",
+    requiredParameters: ["pipeline", "executionId"],
+  },
 ] as const;
+
+/**
+ * The literal union of {@link CODEPIPELINE_OPS_OPERATION_DECLARATIONS}'
+ * operation names.
+ */
+type CodepipelineOpsOperationName =
+  (typeof CODEPIPELINE_OPS_OPERATION_DECLARATIONS)[number]["name"];
+
+/**
+ * Name-only projection of {@link CODEPIPELINE_OPS_OPERATION_DECLARATIONS} —
+ * keeps the closed set independently assertable in tests without exercising
+ * config resolution.
+ */
+export const CODEPIPELINE_OPS_OPERATIONS: readonly [
+  CodepipelineOpsOperationName,
+  ...(readonly CodepipelineOpsOperationName[]),
+] = Core.deriveOperationNames(CODEPIPELINE_OPS_OPERATION_DECLARATIONS);
 
 /** The two values `M3LCodePipelineStageTransitionType` accepts — the wrapper's closed write-only union. */
 export const STAGE_TRANSITION_TYPES = ["Inbound", "Outbound"] as const;
@@ -59,9 +139,11 @@ const MAX_RESULTS_MAX = 1000;
  *
  * Only `aws.profile` and `operation` are `required: true`: per-operation
  * presence requirements (e.g. `pipeline` for every operation but
- * `list-pipelines`, `input` for `create-pipeline`/`update-pipeline`) are not
- * expressible by a single parameter's `validate:` callback — see
- * `configValidators` below, which enforces them at config-load time.
+ * `list-pipelines`/`create-pipeline`/`update-pipeline`, `input` for
+ * `create-pipeline`/`update-pipeline`) are declared on
+ * {@link CODEPIPELINE_OPS_OPERATION_DECLARATIONS} rather than expressed by a
+ * single parameter's `validate:` callback — see {@link configValidators}
+ * below, which derives and enforces them at config-load time.
  */
 export const configParameters: readonly Core.M3LConfigParameter[] = [
   new Core.M3LConfigParameter({
@@ -74,9 +156,7 @@ export const configParameters: readonly Core.M3LConfigParameter[] = [
     name: "operation",
     type: Core.M3LConfigParameterType.STRING,
     required: true,
-    validate: Core.M3LConfigValidators.oneOf<string>(
-      CODEPIPELINE_OPS_OPERATIONS,
-    ),
+    operations: CODEPIPELINE_OPS_OPERATION_DECLARATIONS,
   }),
   new Core.M3LConfigParameter({
     name: "pipeline",
@@ -163,85 +243,6 @@ export const configParameters: readonly Core.M3LConfigParameter[] = [
   }),
 ];
 
-/** `pipeline` is required for every operation except these three. */
-const PIPELINE_NOT_REQUIRED_OPERATIONS = [
-  "list-pipelines",
-  "create-pipeline",
-  "update-pipeline",
-] as const;
-
-/** `executionId` is required for these three operations. */
-const EXECUTION_ID_REQUIRED_OPERATIONS = [
-  "describe-execution",
-  "stop-execution",
-  "watch-execution",
-] as const;
-
-/** `stage`/`transitionType` are required for both stage-transition operations. */
-const STAGE_TRANSITION_REQUIRED_OPERATIONS = [
-  "enable-stage-transition",
-  "disable-stage-transition",
-] as const;
-
-/** `reason` is required ONLY for `disable-stage-transition` — `stop-execution` forwards it but never requires it. */
-const REASON_REQUIRED_OPERATIONS = ["disable-stage-transition"] as const;
-
-/** `input` is required for both mutating-declaration operations. */
-const INPUT_REQUIRED_OPERATIONS = [
-  "create-pipeline",
-  "update-pipeline",
-] as const;
-
-/**
- * Joins `operations` into a human-readable, individually-quoted,
- * Oxford-comma list: `'a'`, `'a' and 'b'`, or `'a', 'b', and 'c'`. Used only
- * to describe the fixed, closed set of operations a constraint applies to —
- * never a caller-supplied value.
- */
-const OXFORD_COMMA_MIN_LENGTH = 3;
-
-function quotedList(operations: readonly string[]): string {
-  const quoted = operations.map((operation) => `'${operation}'`);
-  return quoted.reduce((joined, item, index) => {
-    if (index === 0) return item;
-    if (index === quoted.length - 1) {
-      return quoted.length >= OXFORD_COMMA_MIN_LENGTH
-        ? `${joined}, and ${item}`
-        : `${joined} and ${item}`;
-    }
-    return `${joined}, ${item}`;
-  }, "");
-}
-
-/**
- * Builds an F1b cross-parameter validator enforcing that `paramName` is set
- * whenever `operation` resolves to a member of `operations` — or, when
- * `mode` is `"except"`, whenever it resolves to anything OUTSIDE
- * `operations` (used for `pipeline`, whose exclusion set is smaller than its
- * requirement set). Skips (returns `true`) when `operation` itself has not
- * resolved to a string — the `operation` parameter's own `required` +
- * `oneOf` validation already guards that shape before schema-level
- * validators ever run, so this is defensive, not load-bearing.
- */
-function requiredWhenOperation(
-  paramName: string,
-  operations: readonly string[],
-  mode: "for" | "except" = "for",
-): Core.M3LConfigSchemaValidator {
-  return (config: Core.M3LConfig): true | string => {
-    const operation = config.get("operation");
-    if (typeof operation !== "string") return true;
-
-    const listed = operations.includes(operation);
-    const applies = mode === "for" ? listed : !listed;
-    if (!applies || config.get(paramName) !== undefined) return true;
-
-    return mode === "for"
-      ? `'${paramName}' is required for ${quotedList(operations)}`
-      : `'${paramName}' is required for every operation except ${quotedList(operations)}`;
-  };
-}
-
 /**
  * The `codepipeline-ops` schema-level cross-parameter validators (F1b) — the
  * declared config schema's second validation layer, run once by
@@ -252,6 +253,24 @@ function requiredWhenOperation(
  * parameter(s) it conditionally requires, which no single
  * `M3LConfigParameter` can express on its own — the "Required for" column of
  * `docs/reference/scripts/codepipeline-ops.md`'s configuration table.
+ *
+ * The per-operation requiredness validators are DERIVED from
+ * {@link CODEPIPELINE_OPS_OPERATION_DECLARATIONS} by
+ * {@link Core.deriveOperationValidators} (ADR-0055):
+ *
+ * - `pipeline` is required for every operation but `list-pipelines`,
+ *   `create-pipeline`, `update-pipeline`.
+ * - `executionId` is required for `describe-execution`, `stop-execution`,
+ *   `watch-execution`.
+ * - `stage`/`transitionType` are required for `enable-stage-transition`,
+ *   `disable-stage-transition`.
+ * - `reason` is required ONLY for `disable-stage-transition` —
+ *   `stop-execution` forwards it but never requires it.
+ * - `input` is required for `create-pipeline`, `update-pipeline`.
+ *
+ * `transitionType`'s own `oneOf(Inbound, Outbound)` membership check (see
+ * `configParameters` above) is a plain enum validator, not an operation
+ * selector — it is unaffected by this derivation.
  *
  * This SUPPLEMENTS, rather than replaces, the existing run-start
  * `accessor.requiredFor(...)` guards in `steps/run-codepipeline-ops.ts`:
@@ -270,12 +289,7 @@ function requiredWhenOperation(
  * ```
  */
 export const configValidators: readonly Core.M3LConfigSchemaValidator[] = [
-  requiredWhenOperation("pipeline", PIPELINE_NOT_REQUIRED_OPERATIONS, "except"),
-  requiredWhenOperation("executionId", EXECUTION_ID_REQUIRED_OPERATIONS),
-  requiredWhenOperation("stage", STAGE_TRANSITION_REQUIRED_OPERATIONS),
-  requiredWhenOperation("transitionType", STAGE_TRANSITION_REQUIRED_OPERATIONS),
-  requiredWhenOperation("reason", REASON_REQUIRED_OPERATIONS),
-  requiredWhenOperation("input", INPUT_REQUIRED_OPERATIONS),
+  ...Core.deriveOperationValidators(configParameters),
   // requires() would be a no-op here since both yesSensitive and yes carry
   // declared defaults — compare resolved values instead.
   (config: Core.M3LConfig): true | string =>
