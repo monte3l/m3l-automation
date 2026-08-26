@@ -1,69 +1,31 @@
 import { Core } from "@m3l-automation/m3l-common";
 
-import { configParameters, configValidators } from "./config.js";
-import { getCorrelationId, hooks } from "./hooks.js";
-import { runSqsEtl } from "./steps/run-sqs-etl.js";
+import { commandModule } from "./command.js";
+import { configParameters } from "./config.js";
 
-// Composition root ONLY (ADR-0022): construct the script, wire config/hooks,
-// and run the step. Any conditional, loop, or I/O beyond wiring belongs in a
-// steps/ module — reviewers reject business logic here.
-//
-// `run`'s main function takes no arguments; reach the library through the
-// script instance (`script.logger`, `await script.getConfiguration()`,
-// `script.aws`, `script.paths`, `script.prompt`) and inject what each step
-// needs as parameters. The per-run correlation id is captured by
-// `hooks.onBeforeRun` (mainFn itself receives no `ctx`) and read back via
-// `getCorrelationId()`.
-const script = new Core.M3LScript({
-  metadata: { name: "sqs-etl", version: "0.0.0" },
-  config: { params: configParameters, validate: configValidators },
-  hooks,
+// Composition root ONLY (ADR-0022): delegate to the ADR-0054 command-module
+// descriptor rather than composing a second, independent M3LScript. U7
+// (docs/reference/core/cli-contract.md § "What U7 shipped") retired the
+// prior two-composition-site shape once the library gained a seam for a
+// host-supplied logger (`Core.createCommandLogger`) that still carries the
+// resolved `--log-level`/`M3L_LOG_LEVEL` floor and this script's own derived
+// secrets — the thing a raw `M3LScriptOptions.logger` would have skipped.
+const output = Core.createCommandOutput();
+const logger = Core.createCommandLogger({
+  handlers: [new Core.M3LConsoleLoggerHandler()],
+  configParameters,
 });
 
 // A --dry-run switch validates environment, configuration, and AWS
 // credentials (pipeline stages 1-5) without executing the run — the one
-// argv read the composition root is permitted.
+// argv read this composition root is permitted.
 const dryRun = process.argv.includes("--dry-run");
 
-await Core.runScript(
-  script,
-  async () => {
-    const config = await script.getConfiguration();
-
-    // Declaring `aws.profile` (Core.AWS_PROFILE_PARAM_NAME) in config.ts
-    // triggers M3LScript's AWS-provisioning stage before mainFn runs, so
-    // `script.aws` is defined here — the undefined branch only guards against
-    // a future wiring regression (e.g. the parameter being dropped from
-    // config.ts), never an expected runtime path.
-    const aws = script.aws;
-    if (aws === undefined) {
-      throw new Core.M3LError(
-        "AWS was not provisioned — declare 'aws.profile' in config.ts to enable script.aws",
-        { code: "ERR_SQS_ETL_CONFIG" },
-      );
-    }
-
-    const awsTarget = script.awsTarget;
-    if (awsTarget === undefined) {
-      throw new Core.M3LError(
-        "sqs-etl: script.awsTarget was not resolved despite a provisioned script.aws",
-        { code: "ERR_SQS_ETL_CONFIG" },
-      );
-    }
-
-    await runSqsEtl({
-      config,
-      paths: script.paths,
-      logger: script.logger,
-      correlationId: getCorrelationId(),
-      sqsOperations: aws.services.sqsOperations,
-      prompt: script.prompt,
-      // Bound from `script.reportRecovery` (never the whole `script` object)
-      // so a per-item send/delete failure absorbed by a step demotes this
-      // run's outcome to `"partial"` instead of a silent `"success"`.
-      reportRecovery: script.reportRecovery.bind(script),
-      awsTarget,
-    });
-  },
-  { dryRun },
+const outcome = await commandModule.execute(
+  {},
+  { output, logger, signal: undefined, dryRun },
 );
+// `Core.runScript` inside `execute` already assigned `process.exitCode`;
+// this makes the mapping explicit rather than relying on that side effect —
+// the same mapping a future in-process CLI host applies to the same outcome.
+process.exitCode = Core.mapCommandOutcomeToExitCode(outcome);

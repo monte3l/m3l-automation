@@ -356,9 +356,9 @@ interface M3LCommandLoggerOptions {
 function createCommandLogger(options: M3LCommandLoggerOptions): M3LLogger;
 ```
 
-This closes the gap U6 left open (see [What U6 shipped, and what it
-deliberately did not](#what-u6-shipped-and-what-it-deliberately-did-not)): a
-host cannot correctly build `M3LCommandContext.logger` by hand.
+This closes the gap U6 left open (see [What U7
+shipped](#what-u7-shipped)): a host cannot correctly build
+`M3LCommandContext.logger` by hand.
 `new M3LLogger([handler])` carries neither the resolved
 `--log-level`/`M3L_LOG_LEVEL` floor (`resolveLogLevelFloor` is `internal/` and
 unreachable from outside the library) nor the command's own schema-derived
@@ -442,46 +442,59 @@ convention, enforced by `templates/script/`'s shape at U6, by
 is exactly what `M3LScriptOptions.logger` accepts) even though nothing can
 prove the _composition_ happened.
 
-### What U6 shipped, and what it deliberately did not
+### What U7 shipped
 
 U6 landed the adopting-script half. A script that has adopted the seam carries
 an **additive second entry point**, `src/command.ts`, exporting
 `commandModule: Core.M3LCommandModule` whose `execute` constructs `M3LScript`
-and calls `Core.runScript` itself. `src/main.ts` is left exactly as it was, so
-the spawn path has zero behaviour change. `check:script-scaffold` verifies an
+and calls `Core.runScript` itself. `check:script-scaffold` verifies an
 adopted `src/command.ts` optionally-but-strictly (absent passes; present must
 export the annotated descriptor, compose `Core.runScript`, source its schema
 from `config.ts`, and never call `process.exit`); the manifest tier is
 `OPTIONAL_EXACT_FILES` in `bin/lib/script-scaffold.mjs`.
 
-Three consequences were deliberate at U6. **U7a (this slice) closes two of
-them** at the library level; the third — the CLI actually calling any of it —
-is U7's next slice:
+Three consequences were deliberate at U6. U7 closes all three for the three
+adopted pilots (`json-etl`, `sqs-etl`, `dynamodb-crud`) and the scaffold
+template; the remaining thirteen-script fleet retrofit is a separate,
+not-yet-started tracker item that inherits the same shape:
 
-1. **`main.ts` does not delegate to `execute`, so two composition sites still
-   exist.** Delegating would force `main.ts` to build an `M3LCommandContext`
-   itself, which is out of scope for U7a (`main.ts` is untouched — the spawn
-   path has zero behaviour change). What U7a _does_ close is the reason a
-   pilot's `execute` couldn't safely forward `context.logger`: `createCommandLogger`
-   (below) is now the library-supplied way to build a logger carrying both the
-   resolved log-level floor and the script's own derived secrets, so `execute`
-   passing `logger: context.logger` into `M3LScriptOptions.logger` is safe —
-   the three pilots do exactly this now. The per-script `tests/command.test.ts`
-   remains the anti-drift guard.
-2. **`context.output`, `context.logger` and `context.signal` are now
-   forwarded** by all three pilots, closing this consequence: `execute` passes
-   `context.logger` straight into `M3LScript`'s `logger` option, and
-   `context.signal` into the new `M3LScriptOptions.host.signal` seam (below) —
-   conditionally, since a U6-era command with no host still has no signal to
-   forward.
-3. **`TParameters` stays the default `Record<string, never>` in the _type_,
-   but real parameter binding now has a seam.** `M3LScriptOptions.host.parameterValues`
-   (below) lets a caller bind already-resolved values at precedence level 1,
-   replacing rather than layering over the ambient `process.argv` read. The
-   three pilots pass their bound `parameters` through this seam. Widening the
-   pilots' own `M3LCommandModule<TParameters>` generic beyond
-   `Record<string, never>` is separate from this seam existing — each pilot
-   does so individually as it adopts real per-command parameter types.
+1. **`main.ts` now delegates to `execute`, retiring the second composition
+   site.** Each pilot's `main.ts` builds an `M3LCommandContext` (via
+   `createCommandOutput()` and `createCommandLogger` — both below) and calls
+   `await commandModule.execute({}, context)`, then assigns
+   `process.exitCode` from `mapCommandOutcomeToExitCode(outcome)` — a mapping
+   that is redundant with, and confirms, the assignment `Core.runScript`
+   already made inside `execute`. This was blocked at U6 because a
+   caller-supplied logger forwarded into `M3LScriptOptions.logger` skipped
+   `resolveLogLevelFloor()` (internal, unexported) and the script's own
+   derived `secrets`; `createCommandLogger` (below) closes that gap by
+   applying the same policy over host-supplied handlers, so `execute` passing
+   `logger: context.logger` into `M3LScriptOptions.logger` is now safe. The
+   per-script `tests/command.test.ts` remains the anti-drift guard.
+2. **`context.logger` and `context.signal` are now forwarded** by all three
+   pilots: `execute` passes `context.logger` straight into `M3LScript`'s
+   `logger` option, and `context.signal` into the new
+   `M3LScriptOptions.host.signal` seam (below) — conditionally, via
+   `...(context.signal !== undefined ? { host: { signal: context.signal } } : {})`,
+   so a caller with no signal to offer (every pilot's own `main.ts`, which
+   has no in-process host yet) leaves `host` unset entirely rather than
+   suppressing the script's own shutdown handlers for nothing.
+   `context.output` is accepted by every pilot's `execute` but not forwarded
+   anywhere — there is no `M3LScriptOptions.output` seam, and none of the
+   three pilots render anything through `context.output` in their own run
+   body. A future command that wants to report progress through the host's
+   writer would call `context.output.info(...)` etc. directly; nothing here
+   wires it into `M3LScript`.
+3. **`TParameters` stays the default `Record<string, never>`, and no pilot
+   binds parameters through the new seam yet.** `M3LScriptOptions.host.parameterValues`
+   (below) exists and lets a caller bind already-resolved values at
+   precedence level 1, replacing rather than layering over the ambient
+   `process.argv` read — but the three pilots' `execute` still ignores its
+   `_parameters` argument and lets configuration resolve ambiently, exactly
+   as the spawn path does. Direct parameter binding is the CLI's in-process
+   host's job (U7's next slice, not yet built) — once it exists, an adopting
+   pilot widens its own `M3LCommandModule<TParameters>` generic and threads
+   `parameters` into `host.parameterValues` individually.
 
 ### The host seam — `M3LScriptOptions.host`
 

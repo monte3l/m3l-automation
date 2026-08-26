@@ -127,28 +127,29 @@ rather than spawning `dist/main.js` and reading an integer off a dead child.
   what makes ADR-0054's parity guarantee true rather than aspirational:
   configuration resolution, lifecycle hooks, AWS provisioning, and
   `run-report.json` all still happen.
-- **`src/main.ts` is unchanged and does not delegate to `execute`.** The two
-  are independent composition sites until U7. Delegating would force `execute`
-  to forward a caller-supplied `context.logger` into `M3LScriptOptions.logger`,
-  which skips the unexported `resolveLogLevelFloor()` (so `--log-level` /
-  `M3L_LOG_LEVEL` would silently stop working) and never receives the script's
-  derived `secrets` (so declared secret parameters would stop being redacted).
-  `tests/command.test.ts` is the anti-drift guard.
+- **`src/main.ts` now delegates to `execute`** (U7): it builds `output` via
+  `Core.createCommandOutput()`, `logger` via `Core.createCommandLogger()` — the
+  library seam that resolves the log-level floor and this script's derived
+  `secrets`, closing the gap that used to keep the two composition sites
+  independent — and calls `commandModule.execute({}, { output, logger, signal:
+undefined, dryRun })`. `tests/command.test.ts` is the anti-drift guard.
 
 ### Context ports honoured today
 
-| Port             | U6 status                                                                                                                                                            |
-| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `context.dryRun` | **Honoured** — forwarded as `Core.runScript`'s `dryRun`, so stages 1-5 run and the main function does not.                                                           |
-| `context.output` | Accepted, not used. `src/command.ts` exports a `consoleOutput` fallback for a caller with no host; the real renderer stays private to `packages/m3l-cli` (ADR-0054). |
-| `context.logger` | Accepted, **not forwarded** — see above. A U7 host must build its logger with this script's derived `secrets` and the resolved log-level floor.                      |
-| `context.signal` | Accepted, **not forwarded**. This script threads no cancellation signal today, so a host that aborts its signal sees no effect.                                      |
+| Port             | U7 status                                                                                                  |
+| ---------------- | ---------------------------------------------------------------------------------------------------------- |
+| `context.dryRun` | **Honoured** — forwarded as `Core.runScript`'s `dryRun`, so stages 1-5 run and the main function does not. |
+| `context.output` | Accepted, not used by `execute` itself; `main.ts` builds it via `Core.createCommandOutput()`.              |
+| `context.logger` | **Honoured** — forwarded straight into `M3LScriptOptions.logger`.                                          |
+| `context.signal` | **Honoured** — bridged into `M3LScriptOptions.host.signal` when present.                                   |
 
-`TParameters` stays the default `Record<string, never>`: `M3LScriptOptions` has
-no seam to inject host-bound values (precedence level 1 is built from
-`process.argv` inside the loader), so configuration still resolves ambiently
-through the library's 8-level precedence chain on both paths. Direct parameter
-binding is U7.
+`TParameters` stays the default `Record<string, never>`, and `execute` still
+ignores its `_parameters` argument: `M3LScriptOptions.host.parameterValues`
+exists as a seam (bound at precedence level 1, replacing rather than
+layering over `process.argv`), but nothing here binds through it yet, so
+configuration still resolves ambiently through the library's 8-level
+precedence chain on both paths. Direct parameter binding is the CLI's
+in-process host's job, not yet built.
 
 ### Outcome to exit code
 
