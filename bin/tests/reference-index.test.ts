@@ -187,6 +187,58 @@ describe("fileExports", () => {
     const visited = new Set([aPath]);
     expect(fileExports(aPath, visited)).toEqual(new Set());
   });
+
+  test("does not surface an export declaration written inside a TSDoc @example block comment (#667)", () => {
+    mockSources({
+      "/repo/a.ts": [
+        "/**",
+        " * Registers a command module.",
+        " *",
+        " * @example",
+        " * ```ts",
+        " * export const commandModule: M3LCommandModule<ExportParameters> = {",
+        ' *   name: "export",',
+        " *   run: async () => {},",
+        " * };",
+        " * ```",
+        " */",
+        "export const M3LReal = 1;",
+      ].join("\n"),
+    });
+    expect(fileExports("/repo/a.ts", new Set())).toEqual(new Set(["M3LReal"]));
+  });
+
+  test("does not surface an export declaration written inside a standalone `//` line comment", () => {
+    mockSources({
+      "/repo/a.ts": [
+        "// export const M3LCommented = 1;",
+        "export const M3LReal = 1;",
+      ].join("\n"),
+    });
+    expect(fileExports("/repo/a.ts", new Set())).toEqual(new Set(["M3LReal"]));
+  });
+
+  test("does not truncate a real declaration whose line contains a `//` mid-line (e.g. a URL)", () => {
+    mockSources({
+      "/repo/a.ts": 'export const M3L_URL = "https://example.com/x";',
+    });
+    expect(fileExports("/repo/a.ts", new Set())).toEqual(new Set(["M3L_URL"]));
+  });
+
+  test("does not follow a commented-out `export * from` re-export", () => {
+    const indexPath = join("/repo", "src", "core", "foo", "index.ts");
+    const siblingPath = join("/repo", "src", "core", "foo", "impl.ts");
+    mockSources({
+      [indexPath]: [
+        "/*",
+        ' * export * from "./impl.js";',
+        " */",
+        "export const M3LDirect = 1;",
+      ].join("\n"),
+      [siblingPath]: "export const M3LFoo = 1;",
+    });
+    expect(fileExports(indexPath, new Set())).toEqual(new Set(["M3LDirect"]));
+  });
 });
 
 describe("parseImplementationStatus", () => {
