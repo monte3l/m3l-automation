@@ -15,6 +15,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { M3LCliError, exitCodeForError } from "./cli/errors.js";
+import { partitionJsonFlag } from "./cli/flags.js";
 import type { M3LCliExitCode } from "./cli/errors.js";
 import type { M3LCliOutput, M3LCliOutputStream } from "./cli/output.js";
 import { createOutput } from "./cli/output.js";
@@ -364,8 +365,9 @@ async function runDynamicCommand(
   env: Readonly<Record<string, string | undefined>>,
 ): Promise<number> {
   const { runDynamic } = await import("./commands/dynamic.js");
+  const { jsonOutput } = partitionJsonFlag(args);
   return runDynamic(
-    buildCommandContext(cwd, output, false, env),
+    buildCommandContext(cwd, output, jsonOutput, env),
     scriptName,
     args,
     passthroughArgs,
@@ -508,6 +510,13 @@ async function dispatchStaticCommandByName(
  * This is confined to the static-command path: a dynamic script invocation
  * never reaches this function, so a script's own `--version` parameter is
  * never intercepted.
+ *
+ * V2 slice 1 (#539 / ADR-0063): `run <script> --help` redirects to
+ * `inspect <script>` instead of the generic usage text — the same
+ * `--help`/`-h` symmetry `commands/dynamic.ts` already has for dynamic
+ * dispatch. Only `run` with a `<script>` positional present redirects; every
+ * other static command's `--help` (including bare `run --help`) still prints
+ * generic usage.
  */
 async function dispatchStaticCommand(
   beforeArgs: readonly string[],
@@ -520,6 +529,9 @@ async function dispatchStaticCommand(
     parseStaticCommandArgs(beforeArgs);
 
   if (helpRequested) {
+    if (positionals[0] === "run" && positionals[1] !== undefined) {
+      return runInspectCommand(output, cwd, positionals[1], jsonOutput, env);
+    }
     printUsage(output);
     return 0;
   }
