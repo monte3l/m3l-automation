@@ -107,20 +107,27 @@ Spawns the named script's built entry (`scripts/<name>/dist/main.js`) via
 script's directory, and `stdio: "inherit"` — the terminal belongs to the
 child. Everything after the **first bare `--`** passes through verbatim
 (never parsed by the CLI's own flag handling). No config load and no cache
-involvement — `run` only needs discovery.
+involvement on the spawn path — `run` only needs discovery to resolve the
+script directory. (`run <script> --help`/`-h` is the one exception — see
+below.)
 
 Exit: the **child's exit code verbatim**, signals included — see
-[§Exit codes](#exit-codes). CLI-side failures: `2` unknown script (with
-suggestions) or missing `<script>` positional; `1` script not built
-(`ERR_CLI_SCRIPT_NOT_BUILT`, message names `pnpm build`) or spawn failure
-(`ERR_CLI_SPAWN_FAILED`, cause-chained).
+[§Exit codes](#exit-codes). CLI-side failures on the spawn path: `2` unknown
+script (with suggestions) or missing `<script>` positional; `1` script not
+built (`ERR_CLI_SCRIPT_NOT_BUILT`, message names `pnpm build`) or spawn
+failure (`ERR_CLI_SPAWN_FAILED`, cause-chained).
 
-`run <script> --help` renders the same per-script parameter table as
+`run <script> --help`/`-h` renders the same per-script parameter table as
 `inspect <script>` — the dynamic form's own `--help`/`-h` redirect (below),
 extended to the canonical `run` form so the two invocations no longer
-diverge (V2, ADR-0063). `run --help` with no `<script>` positional still
-prints the generic usage block; `run <script> -- --help` still passes
-`--help` through to the child verbatim, unaffected.
+diverge (V2, ADR-0063). This redirect delegates to `inspect`, so it **does**
+load config and read the discovery cache — the "no config load, no cache"
+statement above covers only the spawn path. Its CLI-side failures follow
+`inspect`'s, not the spawn path's (e.g. an unbuilt or malformed script fails
+`ERR_CLI_CONFIG_IMPORT`, exit `1` — never `ERR_CLI_SCRIPT_NOT_BUILT`, which is
+spawn-path only). `run --help` with no `<script>` positional still prints the
+generic usage block; `run <script> -- --help` still passes `--help` through
+to the child verbatim, unaffected.
 
 ### Phase 8d — per-script dynamic subcommands
 
@@ -141,12 +148,24 @@ the first bare `--` appended verbatim.
 - `m3l <script> --help` renders the same parameter table as
   `inspect <script>` — no spawn — including its per-parameter
   `Operations (--<parameterName>)` table (U8) when the script declares any.
-- `--json` is CLI-reserved: it is stripped before the script's own strict
-  `parseArgs` ever sees it, so it never fails as an unknown parameter and is
-  never forwarded to the spawned child. This shadows a script's own
-  declared `json` parameter, if any — the same treatment `--help`/`-h`
-  already get. A script that genuinely needs to receive `--json` gets it via
-  `-- --json` (V2, ADR-0063).
+- `--json` is CLI-reserved: the **exact `--json` token** (not `--json=value`)
+  is stripped before the script's own strict `parseArgs` ever sees it, and is
+  never forwarded to the spawned child. For a script that declares no `json`
+  parameter, or declares it as BOOL, this is transparent shadowing — the
+  same treatment `--help`/`-h` already get. `--json=value` is **not**
+  recognized by this stripping and reaches `parseArgs` like any other
+  undeclared flag — it still fails `ERR_CLI_UNKNOWN_PARAMETER` (or
+  `ERR_CLI_INVALID_PARAMETER_VALUE` for a declared BOOL). A script that
+  declares `json` as a value-taking parameter (STRING/INT/STRING_ARRAY) is
+  **not** safely shadowed: a bare `--json` still strips, but the value that
+  would have followed it is left as an unexpected bare positional and fails
+  (an empty-named `ERR_CLI_UNKNOWN_PARAMETER`). A script that genuinely needs
+  to receive the literal `--json` token gets it via `-- --json` (V2,
+  ADR-0063). Today `--json` only changes behavior through the `--help`/`-h`
+  redirect above and below (`m3l <script> --json --help` renders `inspect`'s
+  machine-readable descriptor instead of the human table); on the spawn path
+  it has no observable effect yet — the allowlisted-scalar run-result
+  envelope is a separate, later V2 slice.
 - An unrecognized flag exits `2` with `ERR_CLI_UNKNOWN_PARAMETER` and
   Damerau–Levenshtein suggestions over the script's declared parameter
   names; a BOOL flag given a value (`--verbose=true`) exits `2` with
