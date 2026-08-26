@@ -1,46 +1,31 @@
 import { Core } from "@m3l-automation/m3l-common";
 
+import { commandModule } from "./command.js";
 import { configParameters } from "./config.js";
-import { hooks } from "./hooks.js";
-import { run__SCRIPT_NAME_PASCAL__ } from "./steps/run-__SCRIPT_NAME__.js";
 
-// Composition root ONLY (ADR-0022): construct the script, wire config/hooks,
-// and run the step. Any conditional, loop, or I/O beyond wiring belongs in a
-// steps/ module — reviewers reject business logic here.
-//
-// `runScript`'s main function takes no arguments; reach the library through
-// the script instance (`script.logger`, `await script.getConfiguration()`,
-// `script.aws`) and inject what each step needs as parameters. Wrapping with
-// `Core.runScript` (rather than bare `script.run`) adds process guards, a
-// top-level catch with origin-specific `process.exitCode`, and a persisted
-// run report; passing `{ dryRun }` runs validation stages 1-5 (env/config/AWS)
-// without executing the main function.
-const script = new Core.M3LScript({
-  metadata: {
-    name: "__SCRIPT_NAME__",
-    version: "0.0.0",
-  },
-  config: { params: configParameters },
-  hooks,
+// Composition root ONLY (ADR-0022): delegate to the ADR-0054 command-module
+// descriptor rather than composing a second, independent M3LScript. U7
+// (docs/reference/core/cli-contract.md § "What U7 shipped") retired the
+// prior two-composition-site shape once the library gained a seam for a
+// host-supplied logger (`Core.createCommandLogger`) that still carries the
+// resolved `--log-level`/`M3L_LOG_LEVEL` floor and this script's own derived
+// secrets — the thing a raw `M3LScriptOptions.logger` would have skipped.
+const output = Core.createCommandOutput();
+const logger = Core.createCommandLogger({
+  handlers: [new Core.M3LConsoleLoggerHandler()],
+  configParameters,
 });
 
 // A --dry-run switch validates environment, configuration, and AWS
 // credentials (pipeline stages 1-5) without executing the run — the one
-// argv read the composition root is permitted.
+// argv read this composition root is permitted.
 const dryRun = process.argv.includes("--dry-run");
 
-await Core.runScript(
-  script,
-  async () => {
-    // Resolve the declared config (CLI + preset + env + defaults) and inject
-    // what the step needs as a single options object — never reach for
-    // `process.env` or a global. Add `script.aws` / `M3LPaths` dirs here too
-    // when the step needs them.
-    const config = await script.getConfiguration();
-    await run__SCRIPT_NAME_PASCAL__({
-      logger: script.logger,
-      config,
-    });
-  },
-  { dryRun },
+const outcome = await commandModule.execute(
+  {},
+  { output, logger, signal: undefined, dryRun },
 );
+// `Core.runScript` inside `execute` already assigned `process.exitCode`;
+// this makes the mapping explicit rather than relying on that side effect —
+// the same mapping a future in-process CLI host applies to the same outcome.
+process.exitCode = Core.mapCommandOutcomeToExitCode(outcome);

@@ -12,6 +12,7 @@ import { extname, join } from "node:path";
 import {
   M3LConfig,
   M3LConfigSchema,
+  M3LInMemoryConfigProvider,
   M3LJSONConfigProvider,
   M3LLambdaEventConfigProvider,
   M3LPresetConfigProvider,
@@ -29,16 +30,21 @@ import { M3LError } from "../errors/index.js";
 import { M3LExecutionEnvironment } from "../environment/index.js";
 import type { M3LFileCopyReport } from "../files/index.js";
 import { M3LFileCopier, getDefaultSubdirForPathType } from "../files/index.js";
-import { M3LConsoleLoggerHandler, M3LLogger } from "../logging/index.js";
+import type { M3LLogger } from "../logging/index.js";
 import { M3LPrompt } from "../prompt/index.js";
 import type { M3LDestructiveTarget } from "../prompt/index.js";
 import { M3LPaths, isEnoentError } from "../utils/index.js";
 
+import { CLI_CONFIG_SOURCE_LABEL } from "../../internal/config/sourceLabels.js";
 import { runDirectoryName } from "../../internal/diagnostics/runDirectoryName.js";
-import { resolveLogLevelFloor } from "../../internal/logging/resolveLogLevelFloor.js";
+import { buildScriptLogger } from "../../internal/logging/buildScriptLogger.js";
 import { M3LAWSProvisioningError } from "../../internal/script/M3LAWSProvisioningError.js";
 import { logBestEffortDiagnostic } from "../../internal/script/diagnostics.js";
-import { registerShutdownSignals } from "../../internal/script/signalHandlers.js";
+import {
+  bridgeHostSignal,
+  ownsProcessSignals,
+  registerShutdownSignals,
+} from "../../internal/script/signalHandlers.js";
 
 import {
   AWS_PROFILE_PARAM_NAME,
@@ -398,6 +404,9 @@ export class M3LScript {
    */
   private readonly configFiles: readonly string[] | undefined;
 
+  /** `options.host`; present (even `{}`) means a host owns this process. */
+  private readonly host: M3LScriptOptions["host"];
+
   /**
    * Ring buffer of absorbed per-item failures recorded via
    * {@link M3LScript.reportRecovery}. Bounded at {@link M3L_RECOVERY_LIMIT}:
@@ -583,9 +592,9 @@ export class M3LScript {
    * @throws {@link M3LError} with code `ERR_INVALID_ARGUMENT` when
    *   `options.logger` is omitted and the ambient CLI/env log-level chain
    *   (`--log-level`/`M3L_LOG_LEVEL`) carries an out-of-vocabulary value, or
-   *   `--log-level` is present with no value — see
-   *   {@link resolveLogLevelFloor}. Never thrown when `options.logger` is
-   *   supplied: a caller-supplied logger opts out of that resolution entirely.
+   *   `--log-level` is present with no value — see `buildScriptLogger`. Never
+   *   thrown when `options.logger` is supplied: a caller-supplied logger opts
+   *   out of that resolution entirely.
    * @throws {@link M3LError} with code `ERR_INVALID_ARGUMENT` when any entry
    *   of `options.configFiles` has an unrecognized file extension (anything
    *   other than `.json`, `.yaml`, or `.yml`, case-insensitive, including an
@@ -626,11 +635,12 @@ export class M3LScript {
         validateConfigFileExtension(configFilePath);
       }
     }
-    this.logger = options.logger ?? this.buildDefaultLogger();
+    this.logger = options.logger ?? buildScriptLogger(this.secrets);
     this.prompt = options.prompt ?? new M3LPrompt();
+    this.host = options.host;
 
     const env = M3LExecutionEnvironment.detect();
-    if (!env.isAWSManaged) {
+    if (ownsProcessSignals(this.host, env.isAWSManaged)) {
       // One instance per process is the supported usage pattern:
       // `registerShutdownSignals` installs a fresh, independent set of
       // `SIGTERM`/`SIGINT`/`SIGQUIT` listeners on every call, so constructing
@@ -644,30 +654,14 @@ export class M3LScript {
         return this.runCleanup("signal-shutdown");
       }, this.secrets);
     }
-  }
-
-  /**
-   * Builds the default logger used when the caller omits
-   * `options.logger` — a single {@link M3LConsoleLoggerHandler} with
-   * `minLevel` set to whatever {@link resolveLogLevelFloor} resolves from
-   * the ambient CLI/env chain, and `secrets` set to this script's own
-   * derived {@link M3LScript.secrets}. Only called from the `??` branch of
-   * the constructor's logger assignment, so a caller-supplied logger never
-   * triggers (or is affected by) this resolution — a caller-supplied
-   * `options.logger` is never touched and does not receive this script's
-   * derived `secrets` automatically; `M3LLogger` has no post-construction
-   * way to widen an already-built instance's redaction, so a caller who
-   * wants widened redaction on their own logger must pass `secrets` at
-   * that logger's own construction.
-   */
-  private buildDefaultLogger(): M3LLogger {
-    const resolvedLogLevelFloor = resolveLogLevelFloor();
-    return new M3LLogger([new M3LConsoleLoggerHandler()], {
-      ...(resolvedLogLevelFloor !== undefined
-        ? { minLevel: resolvedLogLevelFloor }
-        : {}),
-      ...(this.secrets !== undefined ? { secrets: this.secrets } : {}),
-    });
+    // A hosted script takes its stop request from here instead: same two
+    // steps, same order, same label, same redacted failure diagnostic.
+    bridgeHostSignal(
+      this.host,
+      this.#controller,
+      () => this.runCleanup("signal-shutdown"),
+      this.secrets,
+    );
   }
 
   /**
@@ -1302,9 +1296,20 @@ export class M3LScript {
     const presetProviders = this.buildPresetProviders();
     const configFileProviders = this.buildConfigFileProviders();
     const eventProviders = this.buildEventProviders();
+    // Host-bound values REPLACE level 1: the host's own `process.argv` must
+    // not leak in. The label is shared with `M3LCommandLineConfigProvider`,
+    // never re-typed, so report sources match a spawned run's.
+    const hostValues = this.host?.parameterValues;
+    const commandLineProvider =
+      hostValues === undefined
+        ? undefined
+        : new M3LInMemoryConfigProvider(hostValues, {
+            sourceLabel: CLI_CONFIG_SOURCE_LABEL,
+          });
 
     this.config = await this.configLoader.load({
       params: this.schema?.parameters ?? [],
+      ...(commandLineProvider !== undefined ? { commandLineProvider } : {}),
       ...(configFileProviders !== undefined ? { configFileProviders } : {}),
       ...(eventProviders !== undefined
         ? { extraProviders: eventProviders }

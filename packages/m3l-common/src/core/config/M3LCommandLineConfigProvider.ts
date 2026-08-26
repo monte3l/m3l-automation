@@ -6,6 +6,7 @@
  */
 
 import { parseArgv } from "../../internal/config/parseArgv.js";
+import { CLI_CONFIG_SOURCE_LABEL } from "../../internal/config/sourceLabels.js";
 import { M3LConfigProvider } from "./M3LConfigProvider.js";
 
 /** Number of leading argv entries (`node`, script path) skipped by default. */
@@ -45,6 +46,6 @@ export class M3LCommandLineConfigProvider extends M3LConfigProvider {
 
   /** {@inheritDoc M3LConfigProvider.getSourceLabel} */
   override getSourceLabel(): string {
-    return "cli";
+    return CLI_CONFIG_SOURCE_LABEL;
   }
 }

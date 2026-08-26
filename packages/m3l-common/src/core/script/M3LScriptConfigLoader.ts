@@ -39,14 +39,25 @@ interface M3LScriptConfigLoadOptions {
    * environment providers), ordered highest priority first.
    */
   readonly configFileProviders?: readonly M3LConfigProvider[];
+  /**
+   * A replacement for the level-1 command-line provider, supplied by a program
+   * hosting the script in-process and carrying the parameter values it already
+   * resolved.
+   *
+   * It **replaces** the command-line provider rather than layering above it: a
+   * hosted run must not additionally read the host's own `process.argv`.
+   * Omitted, a real {@link M3LCommandLineConfigProvider} is constructed as
+   * before.
+   */
+  readonly commandLineProvider?: M3LConfigProvider;
 }
 
 /**
  * Resolves a script's declared {@link M3LConfigParameter} list against the
- * standard provider chain (command-line arguments, then config-file
- * providers, then environment variables, then extra providers, then preset
- * providers, in priority order), producing a populated {@link M3LConfig}
- * store.
+ * standard provider chain (the command-line provider — or a host-supplied
+ * replacement at the same precedence level — then config-file providers, then
+ * environment variables, then extra providers, then preset providers, in
+ * priority order), producing a populated {@link M3LConfig} store.
  *
  * Each parameter's `asyncFallback` (if any) is honored via
  * {@link M3LConfigParameter.getValueAsync}, so `load` is asynchronous.
@@ -72,7 +83,7 @@ export class M3LScriptConfigLoader {
    */
   async load(options: M3LScriptConfigLoadOptions): Promise<M3LConfig> {
     const providers: M3LConfigProvider[] = [
-      new M3LCommandLineConfigProvider(),
+      options.commandLineProvider ?? new M3LCommandLineConfigProvider(),
       ...(options.configFileProviders ?? []),
       new M3LEnvironmentConfigProvider(),
       ...(options.extraProviders ?? []),
