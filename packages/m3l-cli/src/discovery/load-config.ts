@@ -49,6 +49,32 @@ export interface M3LCliParameterDescriptor {
    * never leaves it `undefined`.
    */
   readonly secret?: boolean;
+  /**
+   * The parameter's declared operations (ADR-0055), normalized from
+   * `Core.M3LConfigParameter.getOperations`. Declared optional so a
+   * hand-built fixture literal predating the U8 operation-threading
+   * addition remains a valid `M3LCliParameterDescriptor`;
+   * {@link describeParameters} itself always assigns an array (never leaves
+   * it `undefined`), falling back to `[]` when the parameter declares no
+   * operations or its `getOperations()` returns a malformed shape.
+   */
+  readonly operations?: readonly M3LCliOperationDescriptor[];
+}
+
+/**
+ * A CLI-facing rendering of one declared operation (ADR-0055) — the same
+ * name/description/requiredParameters shape as
+ * `Core.M3LOperationDeclaration`, but with `requiredParameters` always an
+ * array (never optional) so every consumer of
+ * {@link M3LCliParameterDescriptor.operations} can read it unconditionally.
+ */
+export interface M3LCliOperationDescriptor {
+  /** The operation's canonical name. */
+  readonly name: string;
+  /** A human-readable description. */
+  readonly description: string;
+  /** Names of other declared parameters this operation requires to be set. */
+  readonly requiredParameters: readonly string[];
 }
 
 /**
@@ -82,6 +108,15 @@ interface M3LCliParameterLike {
    * non-secret rather than rejecting the whole element.
    */
   isSecret?(): boolean;
+  /**
+   * Optional — NOT part of the six-getter parameter-like gate
+   * ({@link PARAMETER_LIKE_GETTER_NAMES}). A duck-typed export compiled
+   * against a dist predating the U8 operation-threading addition simply
+   * won't have this method; {@link describeParameters} treats its absence
+   * (or a malformed return value) as declaring no operations, falling back
+   * to `[]`, rather than rejecting the whole element.
+   */
+  getOperations?(): unknown;
 }
 
 /**
@@ -105,6 +140,108 @@ function renderDefaultValue(
     return undefined;
   }
   return secret ? SECRET_MASK : String(value);
+}
+
+/**
+ * Validates and projects a single candidate operation element (one entry of
+ * a `getOperations()` return value) onto {@link M3LCliOperationDescriptor}.
+ * Every field is read into a local variable at validation time via
+ * `Object.hasOwn` + direct property access, and the returned descriptor is
+ * built from those same locals — the candidate object is never re-read
+ * after being validated, so a mutable/accessor property on it cannot
+ * disagree with what was checked.
+ *
+ * @param candidate - One element of a `getOperations()` return value.
+ * @returns The normalized descriptor, or `undefined` when `candidate` is
+ *   not a well-formed operation.
+ */
+function normalizeOperationCandidate(
+  candidate: unknown,
+): M3LCliOperationDescriptor | undefined {
+  if (typeof candidate !== "object" || candidate === null) {
+    return undefined;
+  }
+  if (
+    !Object.hasOwn(candidate, "name") ||
+    !Object.hasOwn(candidate, "description")
+  ) {
+    return undefined;
+  }
+
+  const name: unknown = (candidate as Record<string, unknown>)["name"];
+  const description: unknown = (candidate as Record<string, unknown>)[
+    "description"
+  ];
+  if (typeof name !== "string" || typeof description !== "string") {
+    return undefined;
+  }
+
+  if (!Object.hasOwn(candidate, "requiredParameters")) {
+    return { name, description, requiredParameters: [] };
+  }
+  const requiredParameters: unknown = (candidate as Record<string, unknown>)[
+    "requiredParameters"
+  ];
+  if (
+    !Array.isArray(requiredParameters) ||
+    !requiredParameters.every((item) => typeof item === "string")
+  ) {
+    return undefined;
+  }
+  return { name, description, requiredParameters };
+}
+
+/**
+ * Normalizes a `getOperations()` return value onto
+ * {@link M3LCliOperationDescriptor} array, never throwing: any malformed
+ * shape (not an array, or containing even one malformed element — see
+ * {@link normalizeOperationCandidate}) falls back to `[]` for the whole
+ * list, rather than silently dropping just the bad element, since a
+ * partially-normalized operations list could hide a config-authoring
+ * mistake behind an apparently-valid `--<parameter>` help table.
+ *
+ * @param value - The raw `getOperations()` return value (or `undefined`
+ *   when the duck-typed element has no such method).
+ * @returns The normalized operations list, or `[]` on any malformed shape.
+ */
+function describeOperations(
+  value: unknown,
+): readonly M3LCliOperationDescriptor[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const normalized: M3LCliOperationDescriptor[] = [];
+  for (const candidate of value) {
+    const operation = normalizeOperationCandidate(candidate);
+    if (operation === undefined) {
+      return [];
+    }
+    normalized.push(operation);
+  }
+  return normalized;
+}
+
+/**
+ * Safely invokes a duck-typed `getOperations()`. Extends the tolerance
+ * `isSecret` already gets for a non-function property, and additionally
+ * survives a throw from the call itself: a non-function `getOperations` or
+ * one that throws when called degrades to `undefined` (normalized to
+ * `operations: []` by {@link describeOperations}) rather than escaping as a
+ * raw `TypeError` and failing the whole script's config load.
+ *
+ * @param parameter - The duck-typed parameter-like element to inspect.
+ * @returns The raw `getOperations()` return value, or `undefined` when the
+ *   method is absent, not a function, or throws when invoked.
+ */
+function safeGetOperations(parameter: M3LCliParameterLike): unknown {
+  if (typeof parameter.getOperations !== "function") {
+    return undefined;
+  }
+  try {
+    return parameter.getOperations();
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -134,6 +271,7 @@ export function describeParameters(
     const defaultValue = parameter.getDefaultValue();
     const secret =
       typeof parameter.isSecret === "function" ? parameter.isSecret() : false;
+    const operations = describeOperations(safeGetOperations(parameter));
     return {
       name: parameter.getName(),
       aliases: parameter.getAliases(),
@@ -142,6 +280,7 @@ export function describeParameters(
       defaultValue: renderDefaultValue(defaultValue, secret),
       description: parameter.getDescription() ?? "",
       secret,
+      operations,
     };
   });
 }

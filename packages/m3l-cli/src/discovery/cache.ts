@@ -11,7 +11,10 @@ import { dirname, join } from "node:path";
 
 import { Core } from "@m3l-automation/m3l-common";
 
-import type { M3LCliParameterDescriptor } from "./load-config.js";
+import type {
+  M3LCliOperationDescriptor,
+  M3LCliParameterDescriptor,
+} from "./load-config.js";
 
 /** Indentation width for the pretty-printed cache file. */
 const CACHE_JSON_INDENT = 2;
@@ -52,23 +55,44 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * Checks whether `value` is a well-formed cached {@link M3LCliParameterDescriptor}
- * element — every field present with its documented primitive shape,
- * including the 8f-added `secret` boolean. Validated element-wise (rather
- * than trusting the array's shape alone) so a single malformed or stale
- * (pre-8f, missing `secret`) parameter entry drops the whole cache entry it
- * belongs to — this is also how a pre-8f cache gets invalidated exactly once
- * on upgrade, since every entry it wrote lacked `secret`.
+ * Checks whether `value` is a well-formed cached {@link M3LCliOperationDescriptor}
+ * element — `name`/`description` strings and a `requiredParameters` array of
+ * strings, all present (not optional on the cached shape, unlike the
+ * in-memory descriptor {@link M3LCliParameterDescriptor.operations} produces
+ * via `describeParameters`, which always assigns a real array too — the
+ * cache simply mirrors that always-array guarantee strictly).
  *
- * @param value - The candidate `parameters` array element to check.
- * @returns Whether `value` is a well-formed cached parameter descriptor.
+ * @param value - The candidate `operations` array element to check.
+ * @returns Whether `value` is a well-formed cached operation descriptor.
  */
-function isValidCachedParameter(
+function isValidCachedOperation(
   value: unknown,
-): value is M3LCliParameterDescriptor {
+): value is M3LCliOperationDescriptor {
   if (!isPlainObject(value)) {
     return false;
   }
+  const { name, description, requiredParameters } = value;
+  return (
+    typeof name === "string" &&
+    typeof description === "string" &&
+    Array.isArray(requiredParameters) &&
+    requiredParameters.every((item) => typeof item === "string")
+  );
+}
+
+/**
+ * Checks whether a plain object's fields match {@link M3LCliParameterDescriptor}'s
+ * documented primitive shape (name/aliases/type/required/defaultValue/
+ * description/secret) — every field except the U8-added `operations`, which
+ * {@link isValidCachedParameter} checks separately to stay under the
+ * per-function complexity ceiling.
+ *
+ * @param value - The candidate `parameters` array element's fields.
+ * @returns Whether every non-`operations` field is well-formed.
+ */
+function hasValidCachedParameterScalars(
+  value: Record<string, unknown>,
+): boolean {
   const { name, aliases, type, required, defaultValue, description, secret } =
     value;
   return (
@@ -80,6 +104,35 @@ function isValidCachedParameter(
     (defaultValue === undefined || typeof defaultValue === "string") &&
     typeof description === "string" &&
     typeof secret === "boolean"
+  );
+}
+
+/**
+ * Checks whether `value` is a well-formed cached {@link M3LCliParameterDescriptor}
+ * element — every field present with its documented primitive shape (see
+ * {@link hasValidCachedParameterScalars}), including the 8f-added `secret`
+ * boolean and the U8-added `operations` array (every element validated via
+ * {@link isValidCachedOperation}). Validated element-wise (rather than
+ * trusting the array's shape alone) so a single malformed or stale (pre-8f,
+ * missing `secret`; pre-U8, missing `operations`) parameter entry drops the
+ * whole cache entry it belongs to — this is also how a pre-8f/pre-U8 cache
+ * gets invalidated exactly once on upgrade, since every entry it wrote
+ * lacked the newly-required field.
+ *
+ * @param value - The candidate `parameters` array element to check.
+ * @returns Whether `value` is a well-formed cached parameter descriptor.
+ */
+function isValidCachedParameter(
+  value: unknown,
+): value is M3LCliParameterDescriptor {
+  if (!isPlainObject(value)) {
+    return false;
+  }
+  const { operations } = value;
+  return (
+    hasValidCachedParameterScalars(value) &&
+    Array.isArray(operations) &&
+    operations.every(isValidCachedOperation)
   );
 }
 
@@ -109,6 +162,25 @@ function isValidCacheEntry(value: unknown): value is M3LCliDiscoveryCacheEntry {
 }
 
 /**
+ * Projects a validated {@link M3LCliOperationDescriptor} down to exactly its
+ * declared fields, building a fresh object (and a fresh `requiredParameters`
+ * array) so neither aliases the parsed cache payload.
+ *
+ * @param operation - An element already confirmed well-formed by
+ *   {@link isValidCachedOperation}.
+ * @returns A new object carrying only the declared fields.
+ */
+function projectCachedOperation(
+  operation: M3LCliOperationDescriptor,
+): M3LCliOperationDescriptor {
+  return {
+    name: operation.name,
+    description: operation.description,
+    requiredParameters: [...operation.requiredParameters],
+  };
+}
+
+/**
  * Projects a validated {@link M3LCliParameterDescriptor} down to exactly its
  * declared fields, so a hand-added extra field on a parsed cache element
  * cannot pass through into a `list`/`inspect --json` output.
@@ -132,6 +204,11 @@ function projectCachedParameter(
     // only satisfies the public descriptor type's optional `secret?:
     // boolean`, it never actually observes the fallback at runtime.
     secret: parameter.secret ?? false,
+    // Same reasoning as `secret` above: `isValidCachedParameter` already
+    // proved `operations` is a real array on every element reaching this
+    // function; the `?? []` only satisfies the public descriptor type's
+    // optional `operations?`, it never actually observes the fallback.
+    operations: (parameter.operations ?? []).map(projectCachedOperation),
   };
 }
 

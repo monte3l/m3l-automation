@@ -10,12 +10,16 @@
 
 import { M3LCliError } from "../cli/errors.js";
 import type { M3LCliExitCode } from "../cli/errors.js";
+import { sanitizeTerminalText } from "../cli/output.js";
 import { suggestNames } from "../cli/suggest.js";
 import { formatAlignedTable } from "../cli/table.js";
 import type { M3LCliCommandContext } from "./context.js";
 import { discoverScripts } from "../discovery/discover.js";
 import { loadParametersCached } from "../discovery/cached-load.js";
-import type { M3LCliParameterDescriptor } from "../discovery/load-config.js";
+import type {
+  M3LCliOperationDescriptor,
+  M3LCliParameterDescriptor,
+} from "../discovery/load-config.js";
 
 /** The human-readable rendering's column headers. */
 const HEADER = [
@@ -27,6 +31,9 @@ const HEADER = [
   "DESCRIPTION",
 ] as const;
 
+/** The operations table's column headers (U8). */
+const OPERATIONS_HEADER = ["OPERATION", "DESCRIPTION", "REQUIRES"] as const;
+
 /** Renders a single parameter's cells for {@link formatAlignedTable}. */
 function toTableRow(parameter: M3LCliParameterDescriptor): readonly string[] {
   return [
@@ -37,6 +44,53 @@ function toTableRow(parameter: M3LCliParameterDescriptor): readonly string[] {
     parameter.defaultValue ?? "",
     parameter.description,
   ];
+}
+
+/**
+ * Renders a single declared operation's cells for {@link formatAlignedTable},
+ * sanitizing every cell via {@link sanitizeTerminalText} — an operation's
+ * name/description originates from the script's own config module, not a
+ * trusted source, so it must never carry a raw control character or bidi
+ * override into a rendered terminal line.
+ */
+function toOperationTableRow(
+  operation: M3LCliOperationDescriptor,
+): readonly string[] {
+  return [
+    sanitizeTerminalText(operation.name),
+    sanitizeTerminalText(operation.description),
+    sanitizeTerminalText(operation.requiredParameters.join(", ")),
+  ];
+}
+
+/**
+ * Renders one `Operations (--<parameterName>)` table per parameter that
+ * declares a non-empty `operations` list (U8), after the main `Parameters`
+ * table — a no-op for a script whose parameters declare no operations, so
+ * today's baseline rendering is unchanged.
+ *
+ * @param context - The command context to render through.
+ * @param parameters - The resolved parameters to scan for declared operations.
+ */
+function renderOperationsTables(
+  context: M3LCliCommandContext,
+  parameters: readonly M3LCliParameterDescriptor[],
+): void {
+  for (const parameter of parameters) {
+    const operations = parameter.operations ?? [];
+    if (operations.length === 0) {
+      continue;
+    }
+    context.output.heading(
+      `Operations (--${sanitizeTerminalText(parameter.name)})`,
+    );
+    for (const line of formatAlignedTable(
+      OPERATIONS_HEADER,
+      operations.map(toOperationTableRow),
+    )) {
+      context.output.info(line);
+    }
+  }
 }
 
 /** Renders the resolved parameters through `context.output`, JSON or human-readable. */
@@ -53,6 +107,7 @@ function renderParameters(
   for (const line of formatAlignedTable(HEADER, parameters.map(toTableRow))) {
     context.output.info(line);
   }
+  renderOperationsTables(context, parameters);
 }
 
 /**
