@@ -3558,6 +3558,11 @@ describe("M3LRunReporter — round-4 (describeSetCardinality hostile size, lock-
       });
       const environment = {
         ...collectDiagnostics(),
+        // Pin the two fields collectDiagnostics() cannot take as options: an
+        // unpinned process.version/package version could coincidentally
+        // contain a forbidden fragment on a future release (issue #671).
+        nodeVersion: "stub-node-version",
+        packageVersion: "stub-package-version",
         s: hostileSet,
       };
       const writtenPath = await reporter.persist(
