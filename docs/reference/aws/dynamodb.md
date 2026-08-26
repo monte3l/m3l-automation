@@ -75,11 +75,12 @@ namespace):
   (`code === "ERR_NO_PROGRESS"`, see [`core/errors`](../core/errors.md)) instead
   of looping forever, since a repeating cursor can never make progress. This
   catches exactly a same-cursor-twice-in-a-row repeat, not a longer cycle
-  (`a → b → a → …`) or a merely-unhelpful-but-changing cursor; it costs one
-  extra page request beyond the repeat before it trips, and it does not seed
-  its baseline from a caller-supplied resume key, so a resume that immediately
-  re-stalls also costs one extra request. `scanSegment`'s parallel segments
-  each track independently. Composite keys are compared by a key-order-
+  (`a → b → a → …`) or a merely-unhelpful-but-changing cursor; the duplicate
+  page is still yielded to the caller, and the rejection surfaces on the
+  following page fetch. It does not seed its baseline from a caller-supplied
+  resume key, so a resume needs the same two page fetches a fresh call would
+  to detect a stall — no extra cost either way. `scanSegment`'s parallel
+  segments each track independently. Composite keys are compared by a key-order-
   normalized serialization (so two `LastEvaluatedKey`s with the same
   attributes in different insertion order still count as unchanged) and never
   appear in the thrown error's message or context — this is a distinct,
