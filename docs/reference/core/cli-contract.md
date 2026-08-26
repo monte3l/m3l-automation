@@ -326,6 +326,24 @@ immutable:
    chain on both paths. Real parameter binding needs an additive `m3l-common`
    minor.
 
+### A prerequisite for fleet-wide adoption
+
+The three pilots each carry their own copy of the same four helpers —
+`consoleOutput`, the abort predicate, the `onError` capture, and the
+outcome mapper — because a `scripts/*` package may not import from a sibling
+script (an ESLint path zone forbids it) and the library exports none of them.
+Measured cost: `check:dup` moved from **2.80%** to **3.23%** duplicated
+TypeScript lines against a **4%** threshold, so three pilots consumed roughly
+a third of the headroom. Thirteen more scripts adopting the same shape would
+exceed the threshold.
+
+So the remaining fleet retrofit is **gated on promoting those helpers into
+`core/cli-contract`** (an additive minor: an outcome-deriving seam plus a
+default `M3LCommandOutput`), not merely on repeating the pilots' diff. This
+is the same reasoning `.claude/rules/scripts.md` applies to any capability the
+library lacks — it becomes a typed library wrapper first (the ADR-0027
+pattern), never sixteen hand-rolled copies.
+
 One further clause of ADR-0054 is worth stating plainly, because U6 is where
 its ESLint ban lands: `process.exit` is forbidden in the command-module path,
 and the ban (`no-restricted-properties` over every `scripts/*/src/**/*.ts`,

@@ -32,7 +32,7 @@ const manifest: PackageManifest = JSON.parse(
 
 /**
  * Contract: `docs/reference/core/cli-contract.md` (ADR-0054) plus
- * `docs/reference/scripts/__SCRIPT_NAME__.md`.
+ * `docs/reference/scripts/json-etl.md`.
  *
  * This file is the anti-drift guard for the command-module seam: `command.ts`
  * and `main.ts` are two independent composition sites until the CLI's
@@ -48,11 +48,11 @@ const manifest: PackageManifest = JSON.parse(
  * `src/command.ts` to compose `Core.runScript` and to source its schema from
  * `./config.js`.
  */
-describe("__SCRIPT_NAME__ command module descriptor", () => {
+describe("json-etl command module descriptor", () => {
   it("names itself with the script's own kebab-case name", () => {
     // The name is the CLI's dispatch key (ADR-0042 `m3l <script>`), so it must
     // match the package directory exactly.
-    expect(commandModule.name).toBe("__SCRIPT_NAME__");
+    expect(commandModule.name).toBe("json-etl");
   });
 
   // Asserted against package.json rather than a bare "0.0.0" literal, so the
@@ -103,7 +103,7 @@ describe("__SCRIPT_NAME__ command module descriptor", () => {
   });
 });
 
-describe("__SCRIPT_NAME__ outcome derivation", () => {
+describe("json-etl outcome derivation", () => {
   /** A run that absorbed nothing. */
   const clean = { recovery: [], recoveryTotal: 0 };
 
@@ -179,7 +179,7 @@ describe("__SCRIPT_NAME__ outcome derivation", () => {
   });
 });
 
-describe("__SCRIPT_NAME__ outcome-to-exit-code parity", () => {
+describe("json-etl outcome-to-exit-code parity", () => {
   /**
    * The parity property: for every outcome `toOutcome` can produce, the mapped
    * exit code equals the one `Core.runScript` already assigned to
@@ -226,7 +226,7 @@ describe("__SCRIPT_NAME__ outcome-to-exit-code parity", () => {
   });
 });
 
-describe("__SCRIPT_NAME__ fallback command output port", () => {
+describe("json-etl fallback command output port", () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
@@ -264,8 +264,6 @@ describe("__SCRIPT_NAME__ fallback command output port", () => {
       "an info line\n",
       "A heading\n",
     ]);
-    expect(err.mock.calls.map(([chunk]) => chunk)).toEqual([
-      "an error line\n",
-    ]);
+    expect(err.mock.calls.map(([chunk]) => chunk)).toEqual(["an error line\n"]);
   });
 });
