@@ -497,12 +497,44 @@ describe("commandModuleErrors", () => {
     expect(commandModuleErrors(src)).toEqual([]);
   });
 
-  // ...but a single-quoted string cannot legally span lines, so a newline must
-  // close it. Otherwise one stray apostrophe in a comment would open quote
-  // state and suppress every later check in the file.
-  test("closes a single-quoted string at the newline", () => {
-    const src = `const stray = "it's fine";\n${conformant}`;
+  // ...but a single- or double-quoted string cannot legally span lines, so a
+  // newline must close it. Otherwise one UNTERMINATED quote would leave quote
+  // state open and stop stripping comments for the rest of the file.
+  //
+  // Building a fixture that actually reaches this branch takes care, and two
+  // earlier attempts did not. The scanner only REMOVES comments — string
+  // content is preserved verbatim — so an unterminated quote is invisible
+  // unless a COMMENT follows that the gate would otherwise have stripped.
+  // Each fixture below therefore pairs an unterminated quote with a trailing
+  // comment mentioning `process.exit(1)`: with the newline-close branch the
+  // comment is stripped and the file is conformant; without it the comment
+  // survives and the ban fires. Both were verified by deleting the branch and
+  // watching these fail.
+  test("closes an unterminated double-quoted string at the newline", () => {
+    const src = `${conformant}\nconst stray = "unterminated;\n// never call process.exit(1)\n`;
     expect(commandModuleErrors(src)).toEqual([]);
+  });
+
+  test("closes an unterminated single-quoted string at the newline", () => {
+    const src = `${conformant}\nconst stray = 'unterminated;\n// never call process.exit(1)\n`;
+    expect(commandModuleErrors(src)).toEqual([]);
+  });
+
+  // Documents a known, accepted false positive rather than asserting a fix.
+  // `stripComments` removes comments but PRESERVES string content, and it has
+  // to: COMMAND_MODULE_CONFIG_IMPORT_RE matches `from "./config.js"`, which is
+  // itself a string. So the literal text `process.exit(` inside any string —
+  // here a multi-line template — is flagged. Accepted because a `command.ts`
+  // carrying that text as data is vanishingly unlikely, and the failure
+  // direction is safe: it complains about a good file, never passes a bad one.
+  test("flags process.exit text inside a string — a known false positive", () => {
+    const src = conformant.replace(
+      "  configParameters,",
+      "  banner: `line one\nprocess.exit(1)\nline three`,\n  configParameters,",
+    );
+    expect(commandModuleErrors(src)).toEqual([
+      expect.stringContaining("process.exit"),
+    ]);
   });
 });
 

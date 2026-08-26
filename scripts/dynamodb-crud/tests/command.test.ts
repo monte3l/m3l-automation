@@ -2,6 +2,74 @@ import { readFileSync } from "node:fs";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type * as M3LCommon from "@m3l-automation/m3l-common";
+
+/**
+ * `Core.runScript` and `Core.M3LScript` are mocked at the package level (the
+ * fleet's established `vi.mock("@m3l-automation/m3l-common", ...)` factory
+ * pattern) so `execute`'s WIRING can be asserted without running the
+ * nine-stage pipeline: a real run resolves configuration and provisions AWS
+ * even under `--dry-run`, so it would need real inputs and credentials and
+ * would write a run report into the data tree.
+ *
+ * What that buys is coverage of the one path a composition regression would
+ * land on — `captureFailures` -> `Core.runScript` -> `toOutcome` — including
+ * the metadata narrowing, which a previous revision got wrong.
+ */
+const runMocks = vi.hoisted(() => ({
+  /** Captures the `M3LScriptOptions` bag `execute` builds. */
+  scriptOptions: [] as unknown[],
+  /** Captures `Core.runScript`'s `mainFn` and options per call. */
+  runScriptCalls: [] as { mainFn: unknown; options: unknown }[],
+  /** Set by a test to make the mocked run report absorbed recoveries. */
+  recoveryTotal: 0,
+}));
+
+vi.mock("@m3l-automation/m3l-common", async (importOriginal) => {
+  const actual = await importOriginal<typeof M3LCommon>();
+  return {
+    ...actual,
+    Core: {
+      ...actual.Core,
+      // `new Core.M3LScript(...)` — must be an ordinary function expression,
+      // since an arrow cannot be invoked with `new`.
+      M3LScript: vi.fn().mockImplementation(function mockedScript(options) {
+        runMocks.scriptOptions.push(options);
+        return {
+          get recovery() {
+            return Array.from({ length: runMocks.recoveryTotal }, () => ({
+              item: "x",
+              error: [],
+              recordedAt: "2026-01-01T00:00:00.000Z",
+            }));
+          },
+          get recoveryTotal() {
+            return runMocks.recoveryTotal;
+          },
+        };
+      }),
+      // Records its arguments and never throws (matching `runScript`'s
+      // documented contract), but deliberately does NOT invoke `mainFn`.
+      //
+      // Scope choice, not an oversight: `mainFn` reaches into the real
+      // `M3LScript` instance (`getConfiguration`, `logger`, and per-script
+      // extras like `aws`/`prompt`/`reportRecovery`), so invoking it would
+      // force this template to stub a different surface for every script in
+      // the fleet. What is under test here is `execute`'s COMPOSITION — the
+      // options it builds, the dryRun it forwards, the outcome it derives —
+      // while `runMain`'s body is covered by each script's own `steps/` tests.
+      // The tests below assert that a callable was handed over, and drive the
+      // failure paths through the composed `onError` directly.
+      runScript: vi
+        .fn()
+        .mockImplementation((_script, mainFn: unknown, options: unknown) => {
+          runMocks.runScriptCalls.push({ mainFn, options });
+          return Promise.resolve();
+        }),
+    },
+  };
+});
+
 import { Core } from "@m3l-automation/m3l-common";
 
 import { commandModule, consoleOutput, toOutcome } from "../src/command.js";
@@ -265,5 +333,128 @@ describe("dynamodb-crud fallback command output port", () => {
       "A heading\n",
     ]);
     expect(err.mock.calls.map(([chunk]) => chunk)).toEqual(["an error line\n"]);
+  });
+});
+
+describe("dynamodb-crud execute wiring", () => {
+  /** A host port bag with the fallback writer and no cancellation. */
+  function contextFor(dryRun: boolean): Core.M3LCommandContext {
+    return {
+      output: consoleOutput,
+      // No handlers: `execute` deliberately does not forward this port into
+      // `M3LScript` at all, so a sink-less logger is the honest stand-in.
+      logger: new Core.M3LLogger([]),
+      signal: undefined,
+      dryRun,
+    };
+  }
+
+  /**
+   * Invokes the `onError` hook `execute` composed onto this script's own
+   * hooks — the seam that lets `execute` observe a failure at all, since
+   * `runScript` absorbs the error instead of re-throwing.
+   */
+  async function invokeCapturedOnError(error: unknown): Promise<void> {
+    const { hooks } = runMocks.scriptOptions[0] as {
+      readonly hooks: Core.M3LScriptLifecycleHooks;
+    };
+    await hooks.onError?.({} as unknown as Core.M3LScriptHookContext, error);
+  }
+
+  afterEach(() => {
+    runMocks.scriptOptions.length = 0;
+    runMocks.runScriptCalls.length = 0;
+    runMocks.recoveryTotal = 0;
+    vi.clearAllMocks();
+  });
+
+  it("hands runScript a callable main function", () => {
+    return commandModule.execute({}, contextFor(true)).then(() => {
+      expect(typeof runMocks.runScriptCalls[0]?.mainFn).toBe("function");
+    });
+  });
+
+  // The regression guard for a defect a previous revision shipped: passing
+  // `commandModule` itself as `metadata` typechecks, but `M3LRunReporter`
+  // writes `input.script` into `run-report.json` verbatim and does NOT redact
+  // it — so the whole descriptor, including every parameter's `defaultValue`,
+  // would land in the report where the spawn path writes two fields.
+  it("hands M3LScript only the descriptor's name and version", async () => {
+    await commandModule.execute({}, contextFor(true));
+
+    const options = runMocks.scriptOptions[0] as {
+      readonly metadata: Record<string, unknown>;
+    };
+    expect(options.metadata).toEqual({
+      name: commandModule.name,
+      version: commandModule.version,
+    });
+  });
+
+  it("declares the same schema config.ts exports", async () => {
+    await commandModule.execute({}, contextFor(true));
+
+    const options = runMocks.scriptOptions[0] as {
+      readonly config: { readonly params: unknown };
+    };
+    expect(options.config.params).toBe(configParameters);
+  });
+
+  // `context.dryRun` is the one port U6 forwards; the others are accepted and
+  // deliberately unused. If this stops reaching `runScript`, `--dry-run` would
+  // silently perform real work on the in-process path.
+  it("forwards context.dryRun to runScript", async () => {
+    await commandModule.execute({}, contextFor(true));
+    expect(runMocks.runScriptCalls[0]?.options).toEqual({ dryRun: true });
+
+    runMocks.runScriptCalls.length = 0;
+    runMocks.scriptOptions.length = 0;
+    await commandModule.execute({}, contextFor(false));
+    expect(runMocks.runScriptCalls[0]?.options).toEqual({ dryRun: false });
+  });
+
+  it("resolves dry-run when the run absorbed nothing", async () => {
+    await expect(commandModule.execute({}, contextFor(true))).resolves.toEqual({
+      status: "dry-run",
+    });
+  });
+
+  it("resolves partial from the script's own recovery count", async () => {
+    runMocks.recoveryTotal = 7;
+    await expect(commandModule.execute({}, contextFor(false))).resolves.toEqual(
+      { status: "partial", recovered: 7 },
+    );
+  });
+
+  // The composed `onError` is what lets `execute` see a failure at all:
+  // `runScript` absorbs the error rather than re-throwing, and `mainFn` is
+  // only stage 7 of nine, so a try/catch around it would miss a `config-load`
+  // failure entirely and answer `success`.
+  it("resolves failure from an error the composed onError captured", async () => {
+    const boom = new Core.M3LError("boom", { code: "ERR_CONFIG_MISSING" });
+    vi.mocked(Core.runScript).mockImplementationOnce(
+      async (_script, mainFn, options) => {
+        runMocks.runScriptCalls.push({ mainFn, options });
+        await invokeCapturedOnError(boom);
+      },
+    );
+
+    await expect(commandModule.execute({}, contextFor(false))).resolves.toEqual(
+      { status: "failure", error: boom },
+    );
+  });
+
+  it("resolves interrupted when the captured error is a cooperative abort", async () => {
+    const abort = new Core.M3LOperationAbortedError("cancelled");
+    vi.mocked(Core.runScript).mockImplementationOnce(
+      async (_script, mainFn, options) => {
+        runMocks.runScriptCalls.push({ mainFn, options });
+        await invokeCapturedOnError(abort);
+      },
+    );
+
+    await expect(commandModule.execute({}, contextFor(false))).resolves.toEqual(
+      { status: "interrupted" },
+    );
   });
 });
