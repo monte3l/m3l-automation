@@ -116,8 +116,64 @@ Script-local error codes are plain `M3LError.code` strings, all prefixed
   value; it now throws.
 - `ERR_SQS_ETL_ABORTED` — the destructive-gate confirmation was declined.
 
+## Command module
+
+This script has adopted the optional ADR-0054 command-module seam, so a host
+(the `m3l` CLI today, an agent runtime later) can invoke it **in-process**
+rather than spawning `dist/main.js` and reading an integer off a dead child.
+
+- **`src/command.ts`** exports `commandModule: Core.M3LCommandModule`. Its
+  `execute` constructs `M3LScript` and calls `Core.runScript` itself, which is
+  what makes ADR-0054's parity guarantee true rather than aspirational:
+  configuration resolution, lifecycle hooks, AWS provisioning, and
+  `run-report.json` all still happen.
+- **`src/main.ts` is unchanged and does not delegate to `execute`.** The two
+  are independent composition sites until U7. Delegating would force `execute`
+  to forward a caller-supplied `context.logger` into `M3LScriptOptions.logger`,
+  which skips the unexported `resolveLogLevelFloor()` (so `--log-level` /
+  `M3L_LOG_LEVEL` would silently stop working) and never receives the script's
+  derived `secrets` (so declared secret parameters would stop being redacted).
+  `tests/command.test.ts` is the anti-drift guard.
+
+### Context ports honoured today
+
+| Port             | U6 status                                                                                                                                                            |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `context.dryRun` | **Honoured** — forwarded as `Core.runScript`'s `dryRun`, so stages 1-5 run and the main function does not.                                                           |
+| `context.output` | Accepted, not used. `src/command.ts` exports a `consoleOutput` fallback for a caller with no host; the real renderer stays private to `packages/m3l-cli` (ADR-0054). |
+| `context.logger` | Accepted, **not forwarded** — see above. A U7 host must build its logger with this script's derived `secrets` and the resolved log-level floor.                      |
+| `context.signal` | Accepted, **not forwarded**. This script threads no cancellation signal today, so a host that aborts its signal sees no effect.                                      |
+
+`TParameters` stays the default `Record<string, never>`: `M3LScriptOptions` has
+no seam to inject host-bound values (precedence level 1 is built from
+`process.argv` inside the loader), so configuration still resolves ambiently
+through the library's 8-level precedence chain on both paths. Direct parameter
+binding is U7.
+
+### Outcome to exit code
+
+`execute` resolves an `M3LCommandOutcome` whose
+`Core.mapCommandOutcomeToExitCode(...)` equals the code `Core.runScript`
+already assigned to `process.exitCode` — a scheduler cannot tell the two
+invocation paths apart.
+
+| Observed end state                                                                     | Outcome       | Exit code                              |
+| -------------------------------------------------------------------------------------- | ------------- | -------------------------------------- |
+| Any pipeline stage threw a cooperative abort (`ERR_OPERATION_ABORTED`)                 | `interrupted` | `5`                                    |
+| Any pipeline stage threw anything else                                                 | `failure`     | `Core.mapErrorToExitCode(error)` (1-4) |
+| No throw, one or more per-item send/delete failures were absorbed via `reportRecovery` | `partial`     | `6`                                    |
+| No throw, `--dry-run`                                                                  | `dry-run`     | `0`                                    |
+| No throw, clean run                                                                    | `success`     | `0`                                    |
+
+Failures are captured through a composed `onError` hook rather than a
+`try`/`catch` around the run body: the main function is stage 7 of nine, and
+stages 1-6, 8 and 9 — `config-load` above all — throw outside it. `partial`
+reports `script.recoveryTotal`, not `recovery.length`, because the recovery
+buffer is a ring truncated at `M3L_RECOVERY_LIMIT`.
+
 ## See also
 
+- [`core/cli-contract`](../core/cli-contract.md) — the `M3LCommandModule` seam this script adopts.
 - [`core/script`](../core/script.md) — the `M3LScript` lifecycle the script runs on
 - [`aws/sqs`](../aws/sqs.md) — `M3LSQSOperations`, the only SQS access seam this script uses
 - [ADR-0022](../../adr/0022-reintroduce-scripts-workspace.md) — fleet conventions

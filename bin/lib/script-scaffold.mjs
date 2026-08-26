@@ -295,6 +295,12 @@ const COMMAND_MODULE_CONFIG_IMPORT_RE =
  * {@link stripComments}-processed source, so a comment that documents the ban
  * — whether on its own line or trailing real code — is not itself a
  * violation.
+ *
+ * Property-access shaped, like the ESLint rule it backs up, so
+ * `process["exit"]()` and `const { exit } = process; exit(1)` both slip past
+ * both layers. Left open deliberately: this is a guardrail against the
+ * accident (a copied `process.exit(1)`), not a sandbox against a determined
+ * author, and closing it would need a parser rather than a regex.
  */
 const COMMAND_MODULE_PROCESS_EXIT_RE = /process\s*\.\s*exit\s*\(/;
 
@@ -309,58 +315,62 @@ const COMMAND_MODULE_PROCESS_EXIT_RE = /process\s*\.\s*exit\s*\(/;
  *
  * `fileExports()` in bin/lib/reference-index.mjs strips line comments with
  * `/^\s*\/\/.*$/gm` — anchored to the line start, so a `//` inside a string
- * literal (a URL) can't truncate a real declaration. That anchor also means a
+ * literal (a URL) cannot truncate a real declaration. That anchor also means a
  * TRAILING comment survives, which for this gate is a false positive:
  * `await flush(); // never call process.exit(1)` is conformant code. So this
- * scans each line for the first `//` that is not inside a string or template
- * literal and cuts there — handling both cases the anchored regex cannot.
+ * scans the source for each `//` that is not inside a string and drops to the
+ * end of that line — handling both cases the anchored regex cannot.
+ *
+ * Quote state is carried ACROSS lines, so a multi-line template literal whose
+ * continuation line contains `//` (a URL, a path) is treated as string content
+ * rather than truncated there. A newline still closes a single- or
+ * double-quoted string, since those cannot legally span lines — that way one
+ * stray apostrophe cannot swallow the rest of the file.
  *
  * Deliberately a small scanner, not a parser: it tracks quote state and
  * backslash escapes, which is all TypeScript source needs for this decision.
  * A regex literal containing an unbalanced quote (`/'/`) is the known blind
- * spot; it would leave quote state open for the rest of the line, at worst
- * failing to strip a trailing comment on that one line — the pre-existing
- * behaviour, never a false pass.
+ * spot; it opens quote state until the end of the line, at worst failing to
+ * strip a trailing comment there — the pre-existing behaviour, never a false
+ * pass.
  *
  * @param source - Raw TypeScript source.
- * @returns The source with comments blanked out.
+ * @returns The source with comments removed.
  */
 function stripComments(source) {
-  // Block comments first: they can span lines, so the per-line scan below
-  // would otherwise see their fragments as code.
-  const withoutBlocks = source.replace(/\/\*[\s\S]*?\*\//g, "");
-  return withoutBlocks
-    .split("\n")
-    .map((line) => line.slice(0, codeLengthOf(line)))
-    .join("\n");
-}
-
-/**
- * The length of `line` up to the first `//` that starts a real comment — i.e.
- * one not inside a single-quoted, double-quoted, or template string.
- * Returns `line.length` when the line carries no comment.
- *
- * @param line - One line of TypeScript source, block comments already removed.
- * @returns The index at which to truncate the line.
- */
-function codeLengthOf(line) {
+  // Block comments first: they can span lines and can contain quote
+  // characters, which would otherwise open quote state in the scan below.
+  const src = source.replace(/\/\*[\s\S]*?\*\//g, "");
+  let out = "";
   let quote = "";
-  for (let i = 0; i < line.length; i += 1) {
-    const char = line[i];
+  for (let i = 0; i < src.length; i += 1) {
+    const char = src[i];
     if (quote !== "") {
-      // Skip the character after a backslash so an escaped quote does not
-      // close the string.
-      if (char === "\\") i += 1;
-      else if (char === quote) quote = "";
+      if (char === "\\") {
+        // Consume the escaped character so an escaped quote cannot close the
+        // string.
+        out += char + (src[i + 1] ?? "");
+        i += 1;
+        continue;
+      }
+      if (char === quote) quote = "";
+      else if (char === "\n" && quote !== "`") quote = "";
+      out += char;
       continue;
     }
     if (char === '"' || char === "'" || char === "`") {
       quote = char;
+      out += char;
       continue;
     }
-    if (char === "/" && line[i + 1] === "/") return i;
+    if (char === "/" && src[i + 1] === "/") {
+      while (i < src.length && src[i] !== "\n") i += 1;
+      out += "\n";
+      continue;
+    }
+    out += char;
   }
-  return line.length;
+  return out;
 }
 
 /**

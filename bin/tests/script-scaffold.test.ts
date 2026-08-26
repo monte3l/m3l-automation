@@ -412,6 +412,25 @@ describe("commandModuleErrors", () => {
     ]);
   });
 
+  // The drift guard that matters most: the artifact the generator actually
+  // emits must pass the gate that checks it. Without this, a rename or a
+  // reformat could break COMMAND_MODULE_CONFIG_IMPORT_RE and ship a scaffold
+  // that fails `check:script-scaffold` on its very first run — the hand-written
+  // `conformant` fixture above would keep passing regardless. Same
+  // template-backed discipline the substituteTokens block already uses.
+  test("the emitted command.ts template passes its own gate", () => {
+    const rendered = String(
+      substituteTokens(
+        fs.readFileSync(
+          join(repoRootDir, TEMPLATE_DIR, "src/command.ts.tmpl"),
+          "utf8",
+        ),
+        scriptTokens("data-sync", "A purpose."),
+      ),
+    );
+    expect(commandModuleErrors(rendered)).toEqual([]);
+  });
+
   // A `//` inside a string literal is not a comment, so the scan must not
   // truncate the line there and lose the declaration that follows.
   test("keeps matching a real declaration on a line containing // in a string", () => {
@@ -460,6 +479,29 @@ describe("commandModuleErrors", () => {
       "  configParameters,",
       "  url: `https://example.invalid`,\n  configParameters,",
     );
+    expect(commandModuleErrors(src)).toEqual([]);
+  });
+
+  // Quote state carries across lines, so a MULTI-LINE template literal whose
+  // continuation contains `//` is string content, not a comment. A per-line
+  // scanner would truncate there and drop the real declarations that follow —
+  // a false failure, the one direction that loses code.
+  test("carries template-literal state across lines", () => {
+    const src = conformant.replace(
+      "  configParameters,",
+      "  banner: `line one\n" +
+        "https://example.invalid/docs\n" +
+        "line three`,\n" +
+        "  configParameters,",
+    );
+    expect(commandModuleErrors(src)).toEqual([]);
+  });
+
+  // ...but a single-quoted string cannot legally span lines, so a newline must
+  // close it. Otherwise one stray apostrophe in a comment would open quote
+  // state and suppress every later check in the file.
+  test("closes a single-quoted string at the newline", () => {
+    const src = `const stray = "it's fine";\n${conformant}`;
     expect(commandModuleErrors(src)).toEqual([]);
   });
 });
