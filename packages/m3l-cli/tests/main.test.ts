@@ -483,6 +483,62 @@ describe("runCli — run dispatch", () => {
   });
 });
 
+/**
+ * V2 slice 1 (#539 / ADR-0063) — `run <script> --help` (before the bare
+ * `--`) redirects to `inspect <script>` instead of the generic usage text,
+ * closing the symmetry gap against dynamic dispatch's own `--help`
+ * delegation (`commands/dynamic.ts`). `--help` after the bare `--`, or with
+ * no `<script>` positional at all, must NOT trigger the redirect.
+ */
+describe("runCli — run <script> --help redirects to inspect (V2 slice 1)", () => {
+  test("'run <script> --help' calls runInspect with the script name and never calls runRun", async () => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    runInspectMock.mockResolvedValue(0);
+    const { options } = buildOptions();
+
+    const code = await runCli(["run", "json-etl", "--help"], options);
+
+    expect(code).toBe(0);
+    expect(runInspectMock).toHaveBeenCalledTimes(1);
+    const [context, scriptName] = runInspectMock.mock.calls[0] as [
+      M3LCliCommandContext,
+      string,
+    ];
+    expect(scriptName).toBe("json-etl");
+    expect(context.workspaceRoot).toBe("/workspace-root");
+    expect(runRunMock).not.toHaveBeenCalled();
+  });
+
+  test("'run --help' with no <script> positional still prints generic usage, calling neither runInspect nor runRun (regression guard)", async () => {
+    const { options, stdoutLines } = buildOptions();
+
+    const code = await runCli(["run", "--help"], options);
+
+    expect(code).toBe(0);
+    expect(runInspectMock).not.toHaveBeenCalled();
+    expect(runRunMock).not.toHaveBeenCalled();
+    expect(stdoutLines.join("\n")).toContain("Usage: m3l");
+  });
+
+  test("'run <script> -- --help' passes --help through as passthroughArgs, never redirecting to inspect (regression guard)", async () => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    runRunMock.mockResolvedValue(0);
+    const { options } = buildOptions();
+
+    const code = await runCli(["run", "json-etl", "--", "--help"], options);
+
+    expect(code).toBe(0);
+    expect(runInspectMock).not.toHaveBeenCalled();
+    expect(runRunMock).toHaveBeenCalledTimes(1);
+    const [, , passthroughArgs] = runRunMock.mock.calls[0] as [
+      M3LCliCommandContext,
+      string,
+      readonly string[],
+    ];
+    expect(passthroughArgs).toContain("--help");
+  });
+});
+
 describe("runCli — run with a missing script positional", () => {
   test("returns 2 as a usage error without invoking runRun", async () => {
     const { options, stderrLines } = buildOptions();
@@ -639,6 +695,62 @@ describe("runCli — dynamic dispatch (8d)", () => {
     await runCli(argv, options);
 
     expect(runDynamicMock).not.toHaveBeenCalled();
+  });
+
+  /**
+   * V2 slice 1 (#539 / ADR-0063) — dynamic dispatch gains the same
+   * `--json` context recognition the static commands already have
+   * (`context.jsonOutput`), closing the symmetry gap against `list`/
+   * `doctor`/etc.
+   */
+  test("'<script> --json ...' sets jsonOutput true in runDynamic's context", async () => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    runDynamicMock.mockResolvedValue(0);
+    const { options } = buildOptions();
+
+    await runCli(["json-etl", "--json", "--region", "us-east-1"], options);
+
+    const [context] = runDynamicMock.mock.calls[0] as [
+      M3LCliCommandContext,
+      string,
+      readonly string[],
+      readonly string[],
+    ];
+    expect(context.jsonOutput).toBe(true);
+  });
+
+  test("'<script>' with no --json leaves jsonOutput false in runDynamic's context (regression guard)", async () => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    runDynamicMock.mockResolvedValue(0);
+    const { options } = buildOptions();
+
+    await runCli(["json-etl", "--region", "us-east-1"], options);
+
+    const [context] = runDynamicMock.mock.calls[0] as [
+      M3LCliCommandContext,
+      string,
+      readonly string[],
+      readonly string[],
+    ];
+    expect(context.jsonOutput).toBe(false);
+  });
+});
+
+/**
+ * V2 slice 1 (#539 / ADR-0063) regression guards — `list --help` is already
+ * covered above; `inspect <script> --help` is added here since it wasn't
+ * previously exercised. Neither should change behavior as part of this
+ * slice (only `run <script> --help` gains the new inspect redirect).
+ */
+describe("runCli — --help on other static commands is unchanged (regression guard)", () => {
+  test("'inspect <script> --help' still prints generic usage without calling runInspect", async () => {
+    const { options, stdoutLines } = buildOptions();
+
+    const code = await runCli(["inspect", "exporter", "--help"], options);
+
+    expect(code).toBe(0);
+    expect(runInspectMock).not.toHaveBeenCalled();
+    expect(stdoutLines.join("\n")).toContain("Usage: m3l");
   });
 });
 

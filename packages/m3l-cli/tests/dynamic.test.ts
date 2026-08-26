@@ -551,3 +551,104 @@ describe("runDynamic — best-effort history recording (8f)", () => {
     expect(code).toBe(0);
   });
 });
+
+/**
+ * V2 slice 1 (#539 / ADR-0063) — the CLI-reserved `--json` flag is
+ * recognized ahead of any script's own declared parameters (mirroring the
+ * existing `--help`/`-h` precedent a few lines up in `runDynamic`), so it
+ * never reaches `parseArgs`'s strict unknown-option check and never leaks
+ * into the translated argv the spawned child receives — even when the
+ * script itself happens to declare a same-named `json` parameter, in which
+ * case the reserved flag shadows the declared one entirely.
+ */
+describe("runDynamic — reserved --json flag shadowing (V2 slice 1)", () => {
+  test("'--json' for a script that does NOT declare a json parameter does not throw and is stripped from the translated argv", async () => {
+    discoverScriptsMock.mockReturnValue(knownCandidates);
+    loadParametersCachedMock.mockResolvedValue(descriptors);
+    spawnScriptMock.mockResolvedValue(0);
+
+    const context = buildContext();
+
+    let thrown: unknown;
+    let code: number | undefined;
+    try {
+      code = await runDynamic(context, "json-etl", ["--json"], []);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeUndefined();
+    expect(code).toBe(0);
+    expect(spawnScriptMock).toHaveBeenCalledTimes(1);
+    const [, translatedArgs] = spawnScriptMock.mock.calls[0] as [
+      string,
+      readonly string[],
+    ];
+    expect(translatedArgs).not.toContain("--json");
+  });
+
+  test("'--json' for a script that DOES declare a json parameter shadows the declared parameter — no error, and the declared parameter is not toggled via the reserved flag", async () => {
+    discoverScriptsMock.mockReturnValue(knownCandidates);
+    const descriptorsWithJsonParameter: readonly M3LCliParameterDescriptor[] = [
+      {
+        name: "json",
+        aliases: [],
+        type: "BOOL",
+        required: false,
+        defaultValue: undefined,
+        description: "Emit JSON output",
+      },
+    ];
+    loadParametersCachedMock.mockResolvedValue(descriptorsWithJsonParameter);
+    spawnScriptMock.mockResolvedValue(0);
+
+    const context = buildContext();
+
+    let thrown: unknown;
+    let code: number | undefined;
+    try {
+      code = await runDynamic(context, "json-etl", ["--json"], []);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeUndefined();
+    expect(code).toBe(0);
+    expect(spawnScriptMock).toHaveBeenCalledTimes(1);
+    const [, translatedArgs] = spawnScriptMock.mock.calls[0] as [
+      string,
+      readonly string[],
+    ];
+    expect(translatedArgs).not.toContain("--json");
+  });
+
+  test("'--json --help' still redirects to runInspect — the reserved --json does not interfere with the pre-existing --help redirect", async () => {
+    discoverScriptsMock.mockReturnValue(knownCandidates);
+    runInspectMock.mockResolvedValue(0);
+
+    const context = buildContext();
+    const code = await runDynamic(
+      context,
+      "json-etl",
+      ["--json", "--help"],
+      [],
+    );
+
+    expect(code).toBe(0);
+    expect(runInspectMock).toHaveBeenCalledWith(context, "json-etl");
+    expect(spawnScriptMock).not.toHaveBeenCalled();
+  });
+
+  test("'--json' appearing only in passthroughArgs (after the bare '--') is unaffected by flag-stripping (regression guard)", async () => {
+    discoverScriptsMock.mockReturnValue(knownCandidates);
+    loadParametersCachedMock.mockResolvedValue(descriptors);
+    spawnScriptMock.mockResolvedValue(0);
+
+    const context = buildContext();
+    await runDynamic(context, "json-etl", [], ["--json"]);
+
+    expect(spawnScriptMock).toHaveBeenCalledWith(jsonEtlCandidate.directory, [
+      "--json",
+    ]);
+  });
+});

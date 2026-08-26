@@ -115,6 +115,13 @@ suggestions) or missing `<script>` positional; `1` script not built
 (`ERR_CLI_SCRIPT_NOT_BUILT`, message names `pnpm build`) or spawn failure
 (`ERR_CLI_SPAWN_FAILED`, cause-chained).
 
+`run <script> --help` renders the same per-script parameter table as
+`inspect <script>` — the dynamic form's own `--help`/`-h` redirect (below),
+extended to the canonical `run` form so the two invocations no longer
+diverge (V2, ADR-0063). `run --help` with no `<script>` positional still
+prints the generic usage block; `run <script> -- --help` still passes
+`--help` through to the child verbatim, unaffected.
+
 ### Phase 8d — per-script dynamic subcommands
 
 #### `m3l <script> [--param value ...] [-- args...]`
@@ -134,6 +141,12 @@ the first bare `--` appended verbatim.
 - `m3l <script> --help` renders the same parameter table as
   `inspect <script>` — no spawn — including its per-parameter
   `Operations (--<parameterName>)` table (U8) when the script declares any.
+- `--json` is CLI-reserved: it is stripped before the script's own strict
+  `parseArgs` ever sees it, so it never fails as an unknown parameter and is
+  never forwarded to the spawned child. This shadows a script's own
+  declared `json` parameter, if any — the same treatment `--help`/`-h`
+  already get. A script that genuinely needs to receive `--json` gets it via
+  `-- --json` (V2, ADR-0063).
 - An unrecognized flag exits `2` with `ERR_CLI_UNKNOWN_PARAMETER` and
   Damerau–Levenshtein suggestions over the script's declared parameter
   names; a BOOL flag given a value (`--verbose=true`) exits `2` with
