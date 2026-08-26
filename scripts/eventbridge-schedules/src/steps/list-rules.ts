@@ -6,7 +6,8 @@ import { CONFIG_ERROR_CODE } from "./config-helpers.js";
 /**
  * Drains every `listRules()` page starting from `namePrefix`/`eventBusName`,
  * looping while a page's `nextToken` is present and threading it back as the
- * next call's `nextToken`.
+ * next call's `nextToken`; a `nextToken` repeated across two consecutive
+ * pages throws `ERR_NO_PROGRESS` instead of looping forever.
  */
 async function drainRules(
   eventBridgeOperations: AWS.M3LEventBridgeOperations,
@@ -15,14 +16,27 @@ async function drainRules(
 ): Promise<readonly AWS.M3LEventBridgeRule[]> {
   const rules: AWS.M3LEventBridgeRule[] = [];
   let nextToken: string | undefined;
+  let pagesFetched = 0;
   do {
     const result = await eventBridgeOperations.listRules({
       ...(namePrefix !== undefined && { namePrefix }),
       ...(eventBusName !== undefined && { eventBusName }),
       ...(nextToken !== undefined && { nextToken }),
     });
+    pagesFetched += 1;
     rules.push(...result.rules);
+    const previousToken = nextToken;
     nextToken = result.nextToken;
+    if (
+      nextToken !== undefined &&
+      previousToken !== undefined &&
+      nextToken === previousToken
+    ) {
+      throw new Core.M3LError(
+        "eventbridge-schedules listRules pagination did not advance: nextToken repeated across pages",
+        { code: "ERR_NO_PROGRESS", context: { nextToken, pagesFetched } },
+      );
+    }
   } while (nextToken !== undefined);
   return rules;
 }
