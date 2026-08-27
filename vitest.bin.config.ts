@@ -29,6 +29,11 @@ import { defineConfig } from "vitest/config";
 // bin/lib/licenses.mjs's tests measurably drops the combined percentage).
 export default defineConfig({
   test: {
+    pool: "forks",
+    // ADR-0080: cap the pool at half of this host's cores — see
+    // vitest.config.ts for the full rationale (this run is one of several
+    // heavy processes lefthook's `pre-push` runs concurrently).
+    maxWorkers: "50%",
     include: ["bin/tests/**/*.test.ts"],
     coverage: {
       provider: "v8",

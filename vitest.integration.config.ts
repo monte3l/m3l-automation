@@ -30,6 +30,10 @@ import { defineConfig } from "vitest/config";
 // earn their place as a correctness gate, not as a way to reach a threshold.
 export default defineConfig({
   test: {
+    pool: "forks",
+    // ADR-0080: cap the pool at half of this host's cores — see
+    // vitest.config.ts for the full rationale.
+    maxWorkers: "50%",
     include: ["**/tests/integration/**/*.test.ts"],
     exclude: ["**/dist/**", "**/node_modules/**", "**/.claude/worktrees/**"],
     coverage: {
