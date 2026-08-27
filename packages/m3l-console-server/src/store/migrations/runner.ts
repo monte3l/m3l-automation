@@ -195,19 +195,19 @@ function assertNoHistoryDrift(
 
 /**
  * Applies one migration inside its own `BEGIN IMMEDIATE` transaction:
- * `BEGIN IMMEDIATE` -> each of `migration.statements` in order -> a history
- * row into `console_schema_migrations` -> `PRAGMA user_version =
- * <migration.version>` -> `COMMIT`. Any failure rolls back the whole
- * transaction and re-throws, wrapped with `{ version, name }` context -
- * never the failing SQL text or bound values.
+ * `BEGIN IMMEDIATE` -\> each of `migration.statements` in order -\> a
+ * history row into `console_schema_migrations` -\> the
+ * `PRAGMA user_version = <migration.version>` statement -\> `COMMIT`. Any
+ * failure rolls back the whole transaction and re-throws, wrapped with
+ * `{ version, name }` context - never the failing SQL text or bound values.
  *
  * `BEGIN IMMEDIATE`, not `BEGIN`, is deliberate: it acquires the write lock
  * up front, so a competing writer fails immediately at `BEGIN` rather than
  * deadlocking partway through this migration's DDL.
  *
- * `migration.version` is interpolated directly into the `PRAGMA
- * user_version` statement - `PRAGMA user_version = ?` is a measured syntax
- * error, so it cannot be bound. This is safe only because
+ * `migration.version` is interpolated directly into the
+ * `PRAGMA user_version` statement - `PRAGMA user_version = ?` is a
+ * measured syntax error, so it cannot be bound. This is safe only because
  * {@link validateRegistry} already ran, unconditionally, before
  * {@link applyMigrations} ever reaches this function - see that function's
  * own TSDoc.

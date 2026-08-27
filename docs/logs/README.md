@@ -65,6 +65,15 @@ deliberately do not.
 > W1 `json-etl`'s 8 library-friction items (F1–F8) are tracked in
 > [`../plans/IMPLEMENTATION.md`](../plans/IMPLEMENTATION.md#library-friction-f-series).
 
+## m3l console wave (X-series)
+
+| Date       | Change                                                        | Log                                                              |
+| ---------- | ------------------------------------------------------------- | ---------------------------------------------------------------- |
+| 2026-08-27 | X3 — console persistence foundation (`node:sqlite`, ADR-0069) | [x3-console-persistence](./2026-08-27-x3-console-persistence.md) |
+
+> X1 (governance docs) and X2 (`m3l-console-server` skeleton) shipped without
+> logs; X3 is the first entry in this wave.
+
 ## Workflow / infra
 
 | Date       | Change                                              | Log                                                                                |
