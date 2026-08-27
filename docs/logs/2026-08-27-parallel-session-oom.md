@@ -10,8 +10,9 @@ and per-tooling-invocation memory footprint, confirmed the mechanism is
 memory-pressure livelock (not a real kernel panic — `vm.panic_on_oom=0`), and
 produced a 5-PR fix plan recorded as [ADR-0080](../adr/0080-host-resource-budgeting.md).
 
-This session lands **PR 1 of 5**: the host guardrail and official env caps —
-the slice that stops the crash on its own, independent of the other four.
+This session lands all 5 PRs of the ADR-0080 rollout — PR 1 (this PR, #712):
+the host guardrail and official env caps, the slice that stops the crash on
+its own, independent of the other four.
 
 - **Measured (audit box: 4 cores, 24 GB, Ubuntu, kernel 6.17, `claude` 2.1.247):**
   idle `claude` client 776 MB RSS; stdio MCP server 86 MB; `statusLine`
@@ -29,10 +30,18 @@ the slice that stops the crash on its own, independent of the other four.
   (SessionStart advisory), `.claude/settings.json` `env.CLAUDE_CODE_NO_FLICKER`,
   `docs/contributing/host-resources.md` (operator runbook), and
   `docs/adr/0080-host-resource-budgeting.md`.
-- **Planned, not yet landed (PRs 2–4):** `turbo.json`/`vitest` concurrency
-  caps; `lefthook.yml` lane regrouping (cheap gates chained, heavy lanes
-  adaptive-serial) + fixing the statusLine respawn; `if:` conditions on the
-  14 `Write|Edit` hooks.
+- **Also shipped, as three follow-on PRs from this same session:**
+  PR 2 (#713) — `turbo.json`/`vitest` concurrency caps (`concurrency: "50%"`,
+  `maxWorkers: "50%"`; caught and fixed a deprecated `poolOptions.forks.maxForks`
+  shape from Vitest 4's migration mid-authoring). PR 3 (#714) — `lefthook.yml`'s
+  eight sub-second `check:*` gates chained into one lane (13 pre-push lanes
+  down to 6, zero `CLAUDE.md` change needed), an adaptive `lefthook-local.yml`
+  serial fallback under 20 GiB RAM (`bin/setup-host-resources.mjs` step 7),
+  and the statusLine `npx -y ccstatusline@latest` respawn fixed via a pinned
+  `npm install -g`. PR 4 (#715) — `if:` conditions scoping 9 of the 14
+  `Write|Edit` hooks to their own internal path logic, with 3 safety-critical
+  guards (`guard-branch-isolation`, `guard-hub-src-writes`, `guard-secret-writes`)
+  deliberately left unscoped (no stated backstop, or inherently unscopeable).
 - **Skills used:** `auditing` (3-facet fan-out: tooling memory profile,
   per-session process footprint, documented parallelism stance),
   `researching-anthropic-guidance` (3-facet fan-out: memory/system
@@ -88,6 +97,44 @@ in the gitignored `settings.local.json` (host-derived) — is recorded in
 ADR-0080's Decision section and both docstrings, so a future contributor
 extending this script has the rule stated, not just implied by the code.
 
+### 2. `poolOptions.forks.maxForks` is a deprecated Vitest shape under this repo's Vitest 4
+
+The first draft of PR 2's vitest config changes used
+`test.poolOptions.forks.maxForks`. It worked but printed
+`DEPRECATED 'test.poolOptions' was removed in Vitest 4. All previous
+'poolOptions' are now top-level options.` on every run.
+
+**Why it happened:** the config option's shape changed between Vitest major
+versions and the older shape still silently functions (with a warning)
+rather than erroring, so it wasn't caught by a type error.
+
+**Fix for future:** re-ran `pnpm test:coverage` after every vitest.config.ts
+edit and grepped its own output for `DEPRECATED` before treating the change
+as done — caught here before commit. Corrected to the top-level
+`maxWorkers: "50%"` (a percentage string, same convention as `turbo.json`'s
+`concurrency`).
+
+### 3. Two "killed" background `git push` attempts for PR 4, resolved by running in the foreground
+
+PR 4's push was attempted twice via a backgrounded `Bash` call and both were
+reported `status: killed` with no error text, after roughly 5-minute
+`ScheduleWakeup` waits. Re-running the identical `git push` in the
+foreground with an explicit 300s timeout succeeded on the first attempt, full
+`pre-push` verify green.
+
+**Why it happened:** unclear from available evidence — no error surfaced on
+either killed attempt, and the identical command succeeded immediately after
+in the foreground. Possibly an environment-level constraint on how long a
+backgrounded task may run before the next `ScheduleWakeup` cycle reaps it,
+rather than anything about the push itself.
+
+**Fix for future:** when a backgrounded long-running command (`pre-push`
+takes minutes) is reported `killed` with no error rather than a real
+failure, retry it in the foreground with an explicit generous timeout before
+assuming a real problem — don't keep re-backgrounding the same command
+indefinitely, and tell the user what's happening rather than silently
+retrying more than once.
+
 ## Lessons learned
 
 - **A "kernel panic" symptom deserves a kernel-config check before being
@@ -116,6 +163,24 @@ extending this script has the rule stated, not just implied by the code.
   input rather than a literal — the same repo runs on the 24 GB audit box and
   the 16 GB machines the bug reports came from, and a single hardcoded number
   would have been wrong for one of them by construction.
+- **Verify an undocumented-in-practice glob/config semantic empirically before
+  writing 30+ real config entries against it.** Before scoping any of PR 4's
+  hooks, a throwaway canary hook + scratch file (removed before commit)
+  confirmed live in this session: `if` has no `&&`/`||`/brace/`@()`-extglob
+  syntax (each fails silently — no error, the handler just never fires), a
+  bare extension glob like `*.ts` matches at any depth for both tools, and an
+  exact relative path with no wildcard matches literally. Getting any of
+  these wrong would have silently disabled a guard with no error signal —
+  cheaper to spend a few minutes proving the mechanism than to ship a
+  plausible-looking config that quietly does nothing.
+- **A regex-based (non-YAML) config parser breaks on any multi-line scalar.**
+  `bin/check-cadence-doc.mjs` only reads text on the same physical line as
+  `run:` — it does not parse YAML block (`|`) or folded (`>`) scalars at all.
+  Discovered by writing `lefthook.yml`'s merged `checks` lane as a `run: |`
+  block with inline comments, which `check:cadence` immediately flagged as
+  8 missing checks. Before extending or duplicating logic in a script like
+  this, check whether it does real parsing or line-based pattern matching —
+  the two have very different multi-line-input failure modes.
 
 ## Links
 
@@ -125,3 +190,5 @@ extending this script has the rule stated, not just implied by the code.
 - [docs/logs/2026-08-19-check-test-counts-contention.md](./2026-08-19-check-test-counts-contention.md) —
   the earlier, unresolved memory-exhaustion hypothesis this investigation
   confirms
+- PRs: #712 (host guardrail), #713 (turbo/vitest caps), #714 (lefthook regroup
+  - statusLine), #715 (hook `if:` narrowing)
