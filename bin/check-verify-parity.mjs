@@ -20,6 +20,7 @@ import { join } from "node:path";
 import {
   parseCiVerifyStepNames,
   diffVerifySteps,
+  findHermeticityViolations,
 } from "./lib/verify-steps.mjs";
 import { parseJsonFlag, createReporter, repoRoot } from "./lib/report.mjs";
 
@@ -60,6 +61,40 @@ if (missingFromList.length > 0 || staleInList.length > 0) {
     reporter.error(
       `VERIFY_STEPS lists "${name}" but no ci.yml lane job runs it anymore.`,
       { file: verifyStepsRel },
+    );
+  }
+  reporter.finish();
+  process.exit(1);
+}
+
+// ADR-0079: a `needsLiveState: true` step (compares committed state against
+// mutable remote GitHub state) must never be wired into a job that feeds
+// the required `verify` aggregate — that is exactly how check:hub-drift
+// caused 23 of 24 CI failures on main. Makes the ADR-0079 fix permanent
+// rather than a one-time correction.
+let hermeticityViolations;
+try {
+  hermeticityViolations = findHermeticityViolations(
+    readFileSync(join(root, ciYamlRel), "utf8"),
+  );
+} catch (error) {
+  reporter.error(error instanceof Error ? error.message : String(error), {
+    file: ciYamlRel,
+  });
+  reporter.finish();
+  process.exit(1);
+}
+
+if (hermeticityViolations.length > 0) {
+  if (!json) {
+    console.error(
+      "✗  A needsLiveState step is wired into a job that feeds the required `verify` aggregate:",
+    );
+  }
+  for (const violation of hermeticityViolations) {
+    reporter.error(
+      `"${violation.ciStepName}" carries needsLiveState: true (bin/lib/verify-steps.mjs) but lives in job "${violation.job}", which is in verify's needs: list — move it to a non-blocking job (ADR-0079).`,
+      { file: ciYamlRel },
     );
   }
   reporter.finish();
