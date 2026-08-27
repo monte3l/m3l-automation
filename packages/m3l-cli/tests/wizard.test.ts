@@ -28,7 +28,7 @@ import { writePreset } from "../src/presets/store.js";
  * hard-masked `********`), offers an optional save-as-preset step (a write
  * failure renders an error but still falls through to the run decision), and
  * a final "run now?" confirm — declining resolves `0` without spawning;
- * accepting translates answers through `commands/dynamic.js`'s shared
+ * accepting translates answers through `commands/dynamic-argv.js`'s shared
  * `translateArgv` helper (pinned below via a hoisted mock, since that helper
  * is not exported from `dynamic.ts` until the 8g refactor lands), spawns, and
  * best-effort records history. See the pinned 8g addendum in the m3l-cli-8b
@@ -53,18 +53,19 @@ vi.mock("../src/presets/store.js", () => ({
 
 /**
  * Hoisted rather than a plain top-level `const` — `wizard.ts` is expected to
- * gain a *static* import of `translateArgv` from `commands/dynamic.js` (per
- * the 8g refactor, sharing the helper rather than duplicating it), so this
- * factory must reference an already-initialized binding at hoist time (see
- * the tests-rules "step module reached only via dynamic import" gotcha,
- * which applies here in reverse: `dynamic.js` becomes a static dependency of
- * `wizard.js`, not a dynamic one). Referencing `translateArgv` as a *value*
- * import here would additionally fail typecheck until `dynamic.ts` exports
- * it — the hoisted-mock form pins the export's *name* (the vi.mock factory
- * key) without depending on that export existing yet.
+ * gain a *static* import of `translateArgv` from `commands/dynamic-argv.js`
+ * (per the 8g refactor, sharing the helper rather than duplicating it), so
+ * this factory must reference an already-initialized binding at hoist time
+ * (see the tests-rules "step module reached only via dynamic import" gotcha,
+ * which applies here in reverse: `dynamic-argv.js` becomes a static
+ * dependency of `wizard.js`, not a dynamic one). Referencing `translateArgv`
+ * as a *value* import here would additionally fail typecheck until
+ * `dynamic-argv.ts` exports it — the hoisted-mock form pins the export's
+ * *name* (the vi.mock factory key) without depending on that export existing
+ * yet.
  */
 const translateArgvMock = vi.hoisted(() => vi.fn());
-vi.mock("../src/commands/dynamic.js", () => ({
+vi.mock("../src/commands/dynamic-argv.js", () => ({
   translateArgv: translateArgvMock,
 }));
 

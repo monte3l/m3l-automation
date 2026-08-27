@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { runDynamic } from "../src/commands/dynamic.js";
+import { toParameterError } from "../src/commands/dynamic-argv.js";
 import { M3LCliError } from "../src/cli/errors.js";
 import type { M3LCliCommandContext } from "../src/commands/context.js";
 import { discoverScripts } from "../src/discovery/discover.js";
@@ -8,6 +9,7 @@ import type { M3LCliScriptCandidate } from "../src/discovery/discover.js";
 import { loadParametersCached } from "../src/discovery/cached-load.js";
 import type { M3LCliParameterDescriptor } from "../src/discovery/load-config.js";
 import { executeScript } from "../src/run/execute.js";
+import { runInProcess } from "../src/run/in-process.js";
 import { runInspect } from "../src/commands/inspect.js";
 import { recordHistoryEntry } from "../src/history/store.js";
 
@@ -38,6 +40,9 @@ vi.mock("../src/discovery/cached-load.js", () => ({
 vi.mock("../src/run/execute.js", () => ({
   executeScript: vi.fn(),
 }));
+vi.mock("../src/run/in-process.js", () => ({
+  runInProcess: vi.fn(),
+}));
 vi.mock("../src/commands/inspect.js", () => ({
   runInspect: vi.fn(),
 }));
@@ -48,6 +53,7 @@ vi.mock("../src/history/store.js", () => ({
 const discoverScriptsMock = vi.mocked(discoverScripts);
 const loadParametersCachedMock = vi.mocked(loadParametersCached);
 const executeScriptMock = vi.mocked(executeScript);
+const runInProcessMock = vi.mocked(runInProcess);
 const runInspectMock = vi.mocked(runInspect);
 const recordHistoryEntryMock = vi.mocked(recordHistoryEntry);
 
@@ -55,6 +61,7 @@ afterEach(() => {
   discoverScriptsMock.mockReset();
   loadParametersCachedMock.mockReset();
   executeScriptMock.mockReset();
+  runInProcessMock.mockReset();
   runInspectMock.mockReset();
   recordHistoryEntryMock.mockReset();
 });
@@ -703,5 +710,537 @@ describe("runDynamic — never renders output directly (V2 slice 2)", () => {
     await runDynamic(context, "json-etl", ["--r", "us-east-1"], []);
 
     expect(infoSpy).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * U7 (ADR-0054 in-process host) — the CLI-reserved `--in-process` flag is
+ * stripped from `args` the same way `--json` already is (see the block
+ * above), but when present it diverts execution entirely: `runDynamic` calls
+ * `runInProcess` with the script's directory, a `parameterValues` bag built
+ * from the already-parsed `values` (an array-valued STRING_ARRAY parameter
+ * comma-joined into one string; everything else passed through unchanged),
+ * and a `dryRun` flag derived from whether `passthroughArgs` contains the
+ * literal `--dry-run` token — never `executeScript`/`translateArgv`. Absent,
+ * behavior is byte-identical to the pre-U7 spawn path (regression guard).
+ */
+describe("runDynamic — in-process execution (U7)", () => {
+  test("'--in-process' is stripped before the script's own parseArgs runs, even when the script declares its own same-named parameter (shadowing, mirrors --json)", async () => {
+    discoverScriptsMock.mockReturnValue(knownCandidates);
+    const descriptorsWithReservedName: readonly M3LCliParameterDescriptor[] = [
+      {
+        name: "in-process",
+        aliases: [],
+        type: "BOOL",
+        required: false,
+        defaultValue: undefined,
+        description: "Conflicting name",
+      },
+    ];
+    loadParametersCachedMock.mockResolvedValue(descriptorsWithReservedName);
+    runInProcessMock.mockResolvedValue(0);
+
+    const context = buildContext();
+
+    let thrown: unknown;
+    let code: number | undefined;
+    try {
+      code = await runDynamic(context, "json-etl", ["--in-process"], []);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeUndefined();
+    expect(code).toBe(0);
+    expect(runInProcessMock).toHaveBeenCalledTimes(1);
+    // The declared "in-process" parameter never received a value: the
+    // reserved flag was consumed before parseArgs ever saw it.
+    const [, options] = runInProcessMock.mock.calls[0] ?? [
+      "",
+      { output: undefined, parameterValues: {}, dryRun: false },
+    ];
+    expect(options.parameterValues).toEqual({});
+    expect(executeScriptMock).not.toHaveBeenCalled();
+  });
+
+  test("calls runInProcess with the script directory, the built parameterValues (STRING_ARRAY comma-joined), and dryRun computed from passthroughArgs; never calls executeScript", async () => {
+    discoverScriptsMock.mockReturnValue(knownCandidates);
+    loadParametersCachedMock.mockResolvedValue(descriptors);
+    runInProcessMock.mockResolvedValue(0);
+
+    const context = buildContext();
+    const code = await runDynamic(
+      context,
+      "json-etl",
+      ["--r", "us-east-1", "--v", "--tags", "a", "--tags", "b", "--in-process"],
+      ["--dry-run"],
+    );
+
+    expect(code).toBe(0);
+    expect(runInProcessMock).toHaveBeenCalledTimes(1);
+    const [scriptDirectory, options] = runInProcessMock.mock.calls[0] ?? [
+      "",
+      { output: undefined, parameterValues: {}, dryRun: false },
+    ];
+    expect(scriptDirectory).toBe(jsonEtlCandidate.directory);
+    expect(options.parameterValues).toEqual({
+      region: "us-east-1",
+      verbose: true,
+      tags: "a,b",
+    });
+    expect(options.dryRun).toBe(true);
+    expect(options.output).toBe(context.output);
+    expect(executeScriptMock).not.toHaveBeenCalled();
+  });
+
+  test("dryRun is false when passthroughArgs does not contain '--dry-run'", async () => {
+    discoverScriptsMock.mockReturnValue(knownCandidates);
+    loadParametersCachedMock.mockResolvedValue(descriptors);
+    runInProcessMock.mockResolvedValue(0);
+
+    const context = buildContext();
+    // passthroughArgs must stay empty here: any token other than the literal
+    // "--dry-run" is rejected on the in-process path (see the
+    // ERR_CLI_IN_PROCESS_UNSUPPORTED tests below) — this test only isolates
+    // the "no --dry-run token present" half of that computation.
+    await runDynamic(context, "json-etl", ["--in-process"], []);
+
+    const [, options] = runInProcessMock.mock.calls[0] ?? [
+      "",
+      { output: undefined, parameterValues: {}, dryRun: true },
+    ];
+    expect(options.dryRun).toBe(false);
+  });
+
+  test("'--in-process' ABSENT: executeScript is called exactly as before and runInProcess is never called (regression guard)", async () => {
+    discoverScriptsMock.mockReturnValue(knownCandidates);
+    loadParametersCachedMock.mockResolvedValue(descriptors);
+    executeScriptMock.mockResolvedValue(0);
+
+    const context = buildContext();
+    const code = await runDynamic(
+      context,
+      "json-etl",
+      ["--r", "us-east-1"],
+      [],
+    );
+
+    expect(code).toBe(0);
+    expect(executeScriptMock).toHaveBeenCalledTimes(1);
+    expect(executeScriptMock).toHaveBeenCalledWith(
+      context,
+      "json-etl",
+      jsonEtlCandidate.directory,
+      ["--region=us-east-1"],
+    );
+    expect(runInProcessMock).not.toHaveBeenCalled();
+  });
+
+  test("an error thrown by runInProcess propagates out of runDynamic unchanged", async () => {
+    discoverScriptsMock.mockReturnValue(knownCandidates);
+    loadParametersCachedMock.mockResolvedValue(descriptors);
+    const inProcessError = new M3LCliError(
+      "ERR_CLI_COMMAND_MODULE_INVALID",
+      "no adopted command module",
+    );
+    runInProcessMock.mockRejectedValue(inProcessError);
+
+    const context = buildContext();
+
+    let thrown: unknown;
+    try {
+      await runDynamic(context, "json-etl", ["--in-process"], []);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBe(inProcessError);
+  });
+
+  test("records a history entry with the in-process exit code and the same parameterNames computation as the spawn path", async () => {
+    discoverScriptsMock.mockReturnValue(knownCandidates);
+    loadParametersCachedMock.mockResolvedValue(descriptors);
+    runInProcessMock.mockResolvedValue(6);
+    recordHistoryEntryMock.mockReturnValue(true);
+
+    const context = buildContext();
+    const code = await runDynamic(
+      context,
+      "json-etl",
+      ["--r", "us-east-1", "--v", "--in-process"],
+      [],
+    );
+
+    expect(code).toBe(6);
+    expect(recordHistoryEntryMock).toHaveBeenCalledTimes(1);
+    const [historyFilePath, entry] = recordHistoryEntryMock.mock.calls[0] ?? [
+      "",
+      undefined,
+    ];
+    expect(historyFilePath).toBe(context.historyFilePath);
+    expect(entry).toMatchObject({
+      script: "json-etl",
+      parameterNames: expect.arrayContaining(["region", "verbose"]) as unknown,
+      exitCode: 6,
+    });
+  });
+
+  test("'--in-process --help' still redirects to runInspect before either execution path — no spawn and no in-process call", async () => {
+    discoverScriptsMock.mockReturnValue(knownCandidates);
+    runInspectMock.mockResolvedValue(0);
+
+    const context = buildContext();
+    const code = await runDynamic(
+      context,
+      "json-etl",
+      ["--in-process", "--help"],
+      [],
+    );
+
+    expect(code).toBe(0);
+    expect(runInspectMock).toHaveBeenCalledWith(context, "json-etl");
+    expect(executeScriptMock).not.toHaveBeenCalled();
+    expect(runInProcessMock).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Security fix (nit): `M3LConfigParameter` accepts a parameter literally
+   * named `__proto__` as a valid declared name, and
+   * `M3LInMemoryConfigProvider`'s own `M3LUnsafeConfigKeyError` guard is the
+   * documented place that rejects it. `buildParameterValues`'s plain
+   * `{}`-literal result object defeats that guarantee before the value even
+   * reaches the library: `result["__proto__"] = value` sets the object's
+   * *prototype* via the inherited setter instead of creating an own key, so
+   * `Object.keys(result)`/`Object.hasOwn(result, "__proto__")` never sees it
+   * and the value silently vanishes. This test only proves the CLI's own
+   * object construction doesn't defeat the guarantee before it gets that
+   * far — the downstream `M3LUnsafeConfigKeyError` throw itself is already
+   * covered in `packages/m3l-common`.
+   */
+  test("a parameter literally named '__proto__' becomes a genuine own key in the parameterValues bag passed to runInProcess, not silently absorbed into the object's prototype", async () => {
+    discoverScriptsMock.mockReturnValue(knownCandidates);
+    const descriptorsWithProtoName: readonly M3LCliParameterDescriptor[] = [
+      {
+        name: "__proto__",
+        aliases: [],
+        type: "STRING",
+        required: false,
+        defaultValue: undefined,
+        description: "Prototype-pollution-shaped parameter name",
+      },
+    ];
+    loadParametersCachedMock.mockResolvedValue(descriptorsWithProtoName);
+    runInProcessMock.mockResolvedValue(0);
+
+    const context = buildContext();
+
+    let thrown: unknown;
+    try {
+      await runDynamic(
+        context,
+        "json-etl",
+        ["--__proto__", "danger", "--in-process"],
+        [],
+      );
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeUndefined();
+    expect(runInProcessMock).toHaveBeenCalledTimes(1);
+    const [, options] = runInProcessMock.mock.calls[0] ?? [
+      "",
+      { output: undefined, parameterValues: {}, dryRun: false },
+    ];
+    expect(Object.hasOwn(options.parameterValues, "__proto__")).toBe(true);
+    expect(
+      (options.parameterValues as Record<string, unknown>)["__proto__"],
+    ).toBe("danger");
+  });
+
+  /**
+   * `restoreDroppedOptionTokens` checks `Object.hasOwn(values, token.name)`
+   * against the pristine input, not the fold's own running accumulator
+   * state — so a repeated `STRING_ARRAY` parameter literally named
+   * `__proto__` keeps every occurrence (comma-joined, mirroring
+   * `buildParameterValues`'s established convention), not just the first.
+   * Regression guard for a bug that existed briefly during this feature's
+   * development and was fixed before merge.
+   */
+  test("a STRING_ARRAY parameter literally named '__proto__' passed multiple times keeps every value, not just the first", async () => {
+    discoverScriptsMock.mockReturnValue(knownCandidates);
+    const descriptorsWithProtoArrayName: readonly M3LCliParameterDescriptor[] =
+      [
+        {
+          name: "__proto__",
+          aliases: [],
+          type: "STRING_ARRAY",
+          required: false,
+          defaultValue: undefined,
+          description: "Prototype-pollution-shaped STRING_ARRAY parameter name",
+        },
+      ];
+    loadParametersCachedMock.mockResolvedValue(descriptorsWithProtoArrayName);
+    runInProcessMock.mockResolvedValue(0);
+
+    const context = buildContext();
+
+    let thrown: unknown;
+    try {
+      await runDynamic(
+        context,
+        "json-etl",
+        [
+          "--__proto__",
+          "a",
+          "--__proto__",
+          "b",
+          "--__proto__",
+          "c",
+          "--in-process",
+        ],
+        [],
+      );
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeUndefined();
+    expect(runInProcessMock).toHaveBeenCalledTimes(1);
+    const [, options] = runInProcessMock.mock.calls[0] ?? [
+      "",
+      { output: undefined, parameterValues: {}, dryRun: false },
+    ];
+    expect(Object.hasOwn(options.parameterValues, "__proto__")).toBe(true);
+    expect(
+      (options.parameterValues as Record<string, unknown>)["__proto__"],
+    ).toBe("a,b,c");
+  });
+
+  /**
+   * The spawn path forwards `passthroughArgs` verbatim to the child process,
+   * but the in-process path has no child argv for arbitrary tokens to reach
+   * — today only the literal "--dry-run" token is consulted and every other
+   * token is silently discarded. `dispatchDynamicRun` must instead reject
+   * loudly (`ERR_CLI_IN_PROCESS_UNSUPPORTED`, exit code 2) the moment
+   * `passthroughArgs` carries anything else, rather than running with those
+   * tokens silently dropped.
+   */
+  test("'--in-process' combined with passthrough args other than '--dry-run' throws ERR_CLI_IN_PROCESS_UNSUPPORTED", async () => {
+    discoverScriptsMock.mockReturnValue(knownCandidates);
+    loadParametersCachedMock.mockResolvedValue(descriptors);
+    runInProcessMock.mockResolvedValue(0);
+
+    const context = buildContext();
+
+    let thrown: unknown;
+    try {
+      await runDynamic(
+        context,
+        "json-etl",
+        ["--r", "us-east-1", "--in-process"],
+        ["--limit", "5"],
+      );
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCliError);
+    expect((thrown as M3LCliError).code).toBe("ERR_CLI_IN_PROCESS_UNSUPPORTED");
+    expect(runInProcessMock).not.toHaveBeenCalled();
+  });
+
+  test("'--in-process' combined with '--dry-run' alone in passthroughArgs still runs normally (regression guard)", async () => {
+    discoverScriptsMock.mockReturnValue(knownCandidates);
+    loadParametersCachedMock.mockResolvedValue(descriptors);
+    runInProcessMock.mockResolvedValue(0);
+
+    const context = buildContext();
+
+    let thrown: unknown;
+    try {
+      await runDynamic(
+        context,
+        "json-etl",
+        ["--r", "us-east-1", "--in-process"],
+        ["--dry-run"],
+      );
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeUndefined();
+    expect(runInProcessMock).toHaveBeenCalledTimes(1);
+    const [, options] = runInProcessMock.mock.calls[0] ?? [
+      "",
+      { output: undefined, parameterValues: {}, dryRun: false },
+    ];
+    expect(options.dryRun).toBe(true);
+  });
+
+  /**
+   * `--json` is `executeScript`'s job (the `--json` envelope); the
+   * in-process branch never calls `executeScript`, so combining the two
+   * flags today is a silent no-op — `--in-process` wins and `--json` is
+   * simply never honored. `dispatchDynamicRun` must instead reject loudly
+   * rather than silently ignore the request for a JSON envelope.
+   */
+  test("'--in-process' combined with '--json' (context.jsonOutput true) throws ERR_CLI_IN_PROCESS_UNSUPPORTED", async () => {
+    discoverScriptsMock.mockReturnValue(knownCandidates);
+    loadParametersCachedMock.mockResolvedValue(descriptors);
+    runInProcessMock.mockResolvedValue(0);
+
+    const context = buildContext({ jsonOutput: true });
+
+    let thrown: unknown;
+    try {
+      await runDynamic(
+        context,
+        "json-etl",
+        ["--r", "us-east-1", "--in-process"],
+        [],
+      );
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCliError);
+    expect((thrown as M3LCliError).code).toBe("ERR_CLI_IN_PROCESS_UNSUPPORTED");
+    expect(runInProcessMock).not.toHaveBeenCalled();
+  });
+
+  test("'--in-process' WITHOUT '--json' (context.jsonOutput false) is unaffected (regression guard)", async () => {
+    discoverScriptsMock.mockReturnValue(knownCandidates);
+    loadParametersCachedMock.mockResolvedValue(descriptors);
+    runInProcessMock.mockResolvedValue(0);
+
+    const context = buildContext({ jsonOutput: false });
+
+    let thrown: unknown;
+    try {
+      await runDynamic(
+        context,
+        "json-etl",
+        ["--r", "us-east-1", "--in-process"],
+        [],
+      );
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeUndefined();
+    expect(runInProcessMock).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * `translatedTokenValue`'s `config.type === "boolean"` branch — reachable
+   * only through `restoreDroppedOptionTokens`'s dropped-token backfill. A
+   * BOOL parameter literally named `__proto__`, passed as a bare flag,
+   * exercises the same "parseArgs silently drops __proto__" mechanism as the
+   * STRING/STRING_ARRAY `__proto__` regression guards above, but for the
+   * boolean per-type translation specifically: the backfilled value must be
+   * the real boolean `true` (mirroring what parseArgs itself would have
+   * produced for any other BOOL flag), not a string or array.
+   */
+  test("a BOOL parameter literally named '__proto__' passed as a bare flag is restored as boolean true, not a string", async () => {
+    discoverScriptsMock.mockReturnValue(knownCandidates);
+    const descriptorsWithProtoBoolName: readonly M3LCliParameterDescriptor[] = [
+      {
+        name: "__proto__",
+        aliases: [],
+        type: "BOOL",
+        required: false,
+        defaultValue: undefined,
+        description: "Prototype-pollution-shaped BOOL parameter name",
+      },
+    ];
+    loadParametersCachedMock.mockResolvedValue(descriptorsWithProtoBoolName);
+    runInProcessMock.mockResolvedValue(0);
+
+    const context = buildContext();
+
+    let thrown: unknown;
+    try {
+      await runDynamic(
+        context,
+        "json-etl",
+        ["--__proto__", "--in-process"],
+        [],
+      );
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeUndefined();
+    expect(runInProcessMock).toHaveBeenCalledTimes(1);
+    const [, options] = runInProcessMock.mock.calls[0] ?? [
+      "",
+      { output: undefined, parameterValues: {}, dryRun: false },
+    ];
+    expect(Object.hasOwn(options.parameterValues, "__proto__")).toBe(true);
+    expect(
+      (options.parameterValues as Record<string, unknown>)["__proto__"],
+    ).toBe(true);
+  });
+});
+
+/**
+ * `restoreDroppedOptionTokens`'s
+ * `if (token.kind !== "option" || token.name === undefined) { return accumulated; }`
+ * guard — every other test's parsed token stream apparently only ever
+ * contains `"option"`-kind tokens. Node's real `parseArgs({ tokens: true })`
+ * also yields an `"option-terminator"`-kind token (no `name` field) for a
+ * bare `--` in `args` that isn't followed by anything else — verified
+ * empirically: with `allowPositionals: false` and `strict: true`, a
+ * *trailing* bare `--` does not throw (only a positional token *after* it
+ * would), so `restoreDroppedOptionTokens` genuinely receives this shaped
+ * token through `runDynamic`'s own real `parseArgs` call and must skip it
+ * without disrupting the rest of the fold.
+ */
+describe("runDynamic — restoreDroppedOptionTokens skips a non-option/nameless token", () => {
+  test("a trailing bare '--' in args (an option-terminator token, no name) does not disrupt normal parsing or execution", async () => {
+    discoverScriptsMock.mockReturnValue(knownCandidates);
+    loadParametersCachedMock.mockResolvedValue(descriptors);
+    executeScriptMock.mockResolvedValue(0);
+
+    const context = buildContext();
+    const code = await runDynamic(
+      context,
+      "json-etl",
+      ["--r", "us-east-1", "--"],
+      [],
+    );
+
+    expect(code).toBe(0);
+    expect(executeScriptMock).toHaveBeenCalledWith(
+      context,
+      "json-etl",
+      jsonEtlCandidate.directory,
+      ["--region=us-east-1"],
+    );
+  });
+});
+
+/**
+ * `extractOptionName`'s `if (!(error instanceof Error)) { return undefined; }`
+ * branch — `toParameterError` is exported from `dynamic-argv.ts` (unlike the
+ * module-private `translatedTokenValue`/`extractOptionName`), so it is
+ * tested directly here rather than indirectly through `runDynamic`: Node's
+ * real `parseArgs` never throws a non-`Error` value, so this branch cannot
+ * be reached through `runDynamic`'s own catch block — the only way to
+ * exercise it is to hand `toParameterError` a non-`Error` `error` directly,
+ * proving the function degrades to the generic "unknown parameter" shape
+ * (an empty parameter name) rather than throwing on the malformed input
+ * itself.
+ */
+describe("toParameterError — a non-Error thrown value", () => {
+  test("falls back to ERR_CLI_UNKNOWN_PARAMETER with an empty parameter name when the input is not an Error instance", () => {
+    const nonError: unknown = "boom";
+
+    const error = toParameterError(nonError, "json-etl", descriptors);
+
+    expect(error).toBeInstanceOf(M3LCliError);
+    expect(error.code).toBe("ERR_CLI_UNKNOWN_PARAMETER");
+    expect(error.message).toBe("unknown parameter '' for script 'json-etl'");
   });
 });
