@@ -145,7 +145,7 @@ function resolveLoopbackAddress(
  * previous implementation dropped `close()`'s own callback `error` argument
  * entirely and always resolved, so a real close failure (e.g. Node's own
  * `ERR_SERVER_NOT_RUNNING`) was reported to the caller as a clean success,
- * and `main.ts`'s `runShutdownSequence` would report a graceful shutdown
+ * and `lifecycle/shutdown.ts`'s `runShutdownSequence` would report a graceful shutdown
  * that never actually happened. `ERR_CONSOLE_DRAIN_FAILED` is the code that
  * fits: this failure is only ever reachable while shutting the listener
  * down (the ADR-0049 drain sequence closes the listener right after
