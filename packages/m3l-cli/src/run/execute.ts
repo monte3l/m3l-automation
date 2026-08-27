@@ -81,7 +81,9 @@ export interface M3LCliExecuteOptions {
  * Envelope emission is best-effort: a failure locating or rendering the
  * report (including `context.output.info` itself throwing) never changes
  * the resolved exit code — only {@link spawnScript}'s own rejection
- * propagates.
+ * propagates. Such a failure is not silently discarded: it is surfaced via
+ * `context.output.error` (itself best-effort, so a throwing implementation
+ * still cannot alter the resolved exit code).
  *
  * @param context - The writer facade, `--json` flag, and output directory to
  *   scan.
@@ -145,8 +147,14 @@ export async function executeScript(
       lookup,
     });
     context.output.info(formatRunEnvelope(envelope));
-  } catch {
-    /* best-effort: envelope emission must never alter the resolved exit code */
+  } catch (cause) {
+    try {
+      context.output.error(
+        `failed to emit the --json run-result envelope${cause instanceof Error ? `: ${cause.message}` : ""}`,
+      );
+    } catch {
+      /* the diagnostic write itself is best-effort too — it must never alter the resolved exit code */
+    }
   }
 
   return exitCode;
