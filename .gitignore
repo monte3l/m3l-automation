@@ -29,8 +29,10 @@ data/output/*
 .claude/worktrees/
 
 # Local scratch/working directory: untracked operator source material read
-# while authoring presets. Never committed, never formatted, never linted —
-# mirrored in .prettierignore and the `lint:md` exclude list.
+# while authoring presets, plus hook-written ephemeral state (e.g.
+# write-compact-handoff.mjs's tmp/compact-handoff.json, ADR-0078). Never
+# committed, never formatted, never linted — mirrored in .prettierignore
+# and the `lint:md` exclude list.
 tmp/
 
 # Logs and OS cruft
