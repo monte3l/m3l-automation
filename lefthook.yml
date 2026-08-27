@@ -90,6 +90,13 @@ pre-push:
     # gracefully (never blocks) when that range can't be resolved.
     check-review-size:
       run: pnpm check:review-size
+    # ADR-0078: guards CLAUDE.md's resolved always-loaded budget (CLAUDE.md +
+    # any @-import, measured as Claude Code actually injects them — separate
+    # blocks, not spliced inline) and ratchets .claude/rules/*.md conditional-
+    # load weight. Was CI-only before this PR (a 2.9x-over-budget @-import
+    # regression was only ever caught after a push); catch it locally too.
+    check-context-budget:
+      run: pnpm check:context-budget
 
 # Fire after `git rebase` completes (including a no-op rebase with nothing to
 # replay) and after `git merge` completes. Regenerates the derived files the
