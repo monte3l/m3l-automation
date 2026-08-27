@@ -244,8 +244,8 @@ type CandidateReportOutcome =
 /**
  * Reads `reportPath`, tolerating a missing file.
  *
- * @returns The file's raw text, `{ kind: "enoent" }` when it doesn't exist,
- *   or `{ kind: "stop", reason: "report-unreadable" }` for any other read
+ * @returns The file's raw text on success, `{ kind: "enoent" }` when it
+ *   doesn't exist, or `{ kind: "stop-unreadable" }` for any other read
  *   failure.
  */
 function readReportFile(
@@ -289,10 +289,11 @@ function parseReportObject(
  *
  * @returns `{ kind: "enoent" }` when the file doesn't exist (caller should
  *   continue to the next candidate); `{ kind: "stop", reason }` for any other
- *   read failure or a malformed report (caller must stop the whole scan);
- *   `{ kind: "mismatch" }` when the report parses fine but belongs to a
- *   different script (caller should continue to the next candidate);
- *   `{ kind: "found", summary }` on a match.
+ *   read failure or a malformed report (the caller remembers this as a
+ *   fallback reason and continues scanning older candidates — it wins only
+ *   if the scan never finds a match); `{ kind: "mismatch" }` when the report
+ *   parses fine but belongs to a different script (caller should continue to
+ *   the next candidate); `{ kind: "found", summary }` on a match.
  */
 function readCandidateReport(
   reportPath: string,
