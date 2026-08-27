@@ -149,12 +149,22 @@ function assertNotAheadOfRegistry(
 }
 
 /**
- * Detects an edited-in-place migration: for every migration already applied
- * (`migration.version <= currentVersion`), its recorded
- * `console_schema_migrations` row must still agree on `name` and
- * `sql_digest`. A disagreement means the migration's declared SQL (or name)
- * changed after it already ran in production - the one case this runner's
- * persisted history table exists to catch.
+ * Detects an edited-in-place migration, or a deleted history row for an
+ * already-applied migration: for every migration already applied
+ * (`migration.version <= currentVersion`), a recorded
+ * `console_schema_migrations` row must exist AND still agree on `name` and
+ * `sql_digest`. A missing row means the audit trail itself was tampered
+ * with (deleted or never written for a version the database reports as
+ * applied); a disagreement means the migration's declared SQL (or name)
+ * changed after it already ran in production. Both are exactly what this
+ * runner's persisted history table exists to catch.
+ *
+ * All database access here - the `prepare` and every `statement.get` - is
+ * wrapped in the same classification pattern as {@link readCurrentSchemaVersion},
+ * so a missing/unreadable `console_schema_migrations` table (e.g. a
+ * `user_version` past 0 on a database that never actually ran migration 1)
+ * surfaces as a classified `M3LConsoleError` rather than a raw `node:sqlite`
+ * error escaping {@link applyMigrations}.
  */
 function assertNoHistoryDrift(
   database: M3LSqliteDatabaseHandle,
@@ -169,27 +179,43 @@ function assertNoHistoryDrift(
   // touching the database on a fresh open.
   if (currentVersion === 0) return;
 
-  const statement = database.prepare(
-    "SELECT name, sql_digest FROM console_schema_migrations WHERE version = ?",
-  );
+  try {
+    const statement = database.prepare(
+      "SELECT name, sql_digest FROM console_schema_migrations WHERE version = ?",
+    );
 
-  for (const migration of migrations) {
-    if (migration.version > currentVersion) continue;
+    for (const migration of migrations) {
+      if (migration.version > currentVersion) continue;
 
-    const recorded = statement.get(migration.version);
-    if (recorded === undefined) continue;
+      const recorded = statement.get(migration.version);
+      if (recorded === undefined) {
+        throw new M3LConsoleError(
+          "ERR_CONSOLE_STORE_SCHEMA_DRIFT",
+          `console store migration ${String(migration.version)} has no recorded history row even though the database reports it as already applied - the audit trail appears to have been tampered with`,
+          { context: { version: migration.version, name: migration.name } },
+        );
+      }
 
-    const digest = computeStatementsDigest(migration.statements);
-    if (
-      recorded["name"] !== migration.name ||
-      recorded["sql_digest"] !== digest
-    ) {
-      throw new M3LConsoleError(
-        "ERR_CONSOLE_STORE_SCHEMA_DRIFT",
-        `console store migration ${String(migration.version)} no longer matches its recorded history - it appears to have been edited after it was applied`,
-        { context: { version: migration.version, name: migration.name } },
-      );
+      const digest = computeStatementsDigest(migration.statements);
+      if (
+        recorded["name"] !== migration.name ||
+        recorded["sql_digest"] !== digest
+      ) {
+        throw new M3LConsoleError(
+          "ERR_CONSOLE_STORE_SCHEMA_DRIFT",
+          `console store migration ${String(migration.version)} no longer matches its recorded history - it appears to have been edited after it was applied`,
+          { context: { version: migration.version, name: migration.name } },
+        );
+      }
     }
+  } catch (cause) {
+    if (cause instanceof M3LConsoleError) throw cause;
+    throw storeError(
+      classifyStoreFailure(cause),
+      "migrate",
+      "failed to verify the console store's migration history",
+      cause,
+    );
   }
 }
 
@@ -275,7 +301,8 @@ function applyOneMigration(
  * 2. Read `PRAGMA user_version` (the authoritative current schema version).
  * 3. Refuse a database strictly ahead of the registry's highest version
  *    ({@link assertNotAheadOfRegistry}) - equal is fine, nothing pending.
- * 4. Detect an edited-in-place migration against the recorded history
+ * 4. Detect an edited-in-place migration, or a deleted history row for an
+ *    already-applied migration, against the recorded history
  *    ({@link assertNoHistoryDrift}).
  * 5. Apply every migration whose version is greater than the current
  *    version, in order, each in its own transaction
@@ -287,9 +314,11 @@ function applyOneMigration(
  * @returns The number of migrations actually applied (`0` when the database
  * is already fully up to date).
  * @throws {@link M3LConsoleError} - `ERR_CONSOLE_STORE_MIGRATION_FAILED` for
- * an invalid registry or a failed migration, `ERR_CONSOLE_STORE_SCHEMA_DRIFT`
- * for a database ahead of the registry or an edited-in-place migration, or
- * `ERR_CONSOLE_STORE_BUSY` for a `SQLITE_BUSY` encountered while migrating.
+ * an invalid registry, a failed migration, or an unreadable migration
+ * history table; `ERR_CONSOLE_STORE_SCHEMA_DRIFT` for a database ahead of
+ * the registry, an edited-in-place migration, or a deleted history row for
+ * an already-applied migration; or `ERR_CONSOLE_STORE_BUSY` for a
+ * `SQLITE_BUSY` encountered while migrating.
  *
  * @example
  * ```ts

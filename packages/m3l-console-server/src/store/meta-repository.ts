@@ -165,10 +165,33 @@ function readMetaValue(
  * value it tried (and failed) to write, rather than the one a competing
  * caller actually persisted. Reading back after the (possibly no-op) insert
  * is the only form that is correct under a concurrent second minter.
+ *
+ * Before minting, checks for an already-partial mint: `store.id` and
+ * `store.created.at.ms` are written as two separate statements (never one
+ * transaction), so a crash or `SQLITE_BUSY` between them can persist one
+ * without the other. If exactly one of the two is present, that partial
+ * state is the exact "minted once and reused forever" invariant documented
+ * on {@link M3LConsoleStoreIdentity.id} breaking — silently minting the
+ * missing half from a fresh `Date.now()` would report a creation time that
+ * is not when the identity was actually minted, so this throws instead of
+ * fabricating one, matching this function's own "impossible" guard below.
  */
 function describeStore(
   executor: M3LStoreQueryExecutor,
 ): M3LConsoleStoreIdentity {
+  const existingId = readMetaValue(executor, KEY_STORE_ID);
+  const existingCreatedAtText = readMetaValue(
+    executor,
+    KEY_STORE_CREATED_AT_MS,
+  );
+
+  if ((existingId === undefined) !== (existingCreatedAtText === undefined)) {
+    throw new M3LConsoleError(
+      "ERR_CONSOLE_STORE_QUERY_FAILED",
+      "console store identity is only partially persisted in console_meta - store.id and store.created.at.ms must be minted together",
+    );
+  }
+
   insertIfAbsent(executor, KEY_STORE_ID, randomUUID());
   insertIfAbsent(executor, KEY_STORE_CREATED_AT_MS, String(Date.now()));
 
@@ -186,7 +209,15 @@ function describeStore(
     );
   }
 
-  return { id, createdAtMs: Number(createdAtMsText) };
+  const createdAtMs = Number(createdAtMsText);
+  if (!Number.isSafeInteger(createdAtMs)) {
+    throw new M3LConsoleError(
+      "ERR_CONSOLE_STORE_QUERY_FAILED",
+      "console store identity's store.created.at.ms is not a safe-integer epoch-millisecond value",
+    );
+  }
+
+  return { id, createdAtMs };
 }
 
 /** Projects one raw `console_schema_migrations` row into a {@link M3LMigrationHistoryEntry}. */

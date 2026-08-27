@@ -12,14 +12,15 @@
  * `store/types.ts`/`errors/console-error.ts` for types — never to a
  * sibling slice).
  *
- * `store/migrations/runner.ts` (the migration runner) is owned by a
- * concurrent slice and does not exist yet, so this file cannot apply
- * migrations through it. Instead it runs `CONSOLE_MIGRATIONS`' own DDL
- * `statements` directly against a real database (exactly what the runner
- * will do at open time) and hand-inserts the `console_schema_migrations`
- * audit rows the runner would otherwise write — a faithful, real-database
- * fixture for exactly the one collaborator (the not-yet-built runner) this
- * file cannot reach.
+ * `store/migrations/runner.ts` (the migration runner) now exists, landed by
+ * a concurrent slice in this same PR — but this file still does not import
+ * it: doing so would re-bind this file's `perFile` v8 coverage across the
+ * `store/` slice split (see this header's own coverage note above). It runs
+ * `CONSOLE_MIGRATIONS`' own DDL `statements` directly against a real
+ * database (exactly what the runner does at open time) and hand-inserts the
+ * `console_schema_migrations` audit rows the runner would otherwise write —
+ * a faithful, real-database fixture that stays within this file's own
+ * slice rather than reaching into the runner's.
  *
  * One exception to the "no sibling-slice import" rule: the
  * "runMetaOperation — an already-classified failure" `describe` block below
@@ -147,7 +148,7 @@ function createRawExecutor(database: DatabaseSync): M3LStoreQueryExecutor {
   };
 }
 
-/** Applies every `CONSOLE_MIGRATIONS` DDL statement to a fresh `:memory:` database — the real registry, run directly (the runner does not exist yet). */
+/** Applies every `CONSOLE_MIGRATIONS` DDL statement to a fresh `:memory:` database — the real registry, run directly rather than through `store/migrations/runner.ts` (which now exists), to keep this file's coverage bound to its own slice. */
 function createMigratedDatabase(): DatabaseSync {
   const database = new DatabaseSync(":memory:");
   for (const migration of CONSOLE_MIGRATIONS) {
@@ -158,7 +159,7 @@ function createMigratedDatabase(): DatabaseSync {
   return database;
 }
 
-/** Hand-inserts one `console_schema_migrations` audit row — what `store/migrations/runner.ts` will write at open time, once it exists. */
+/** Hand-inserts one `console_schema_migrations` audit row — what `store/migrations/runner.ts` writes at open time. */
 function insertHistoryRow(
   database: DatabaseSync,
   migration: M3LMigration,
@@ -204,6 +205,16 @@ function seedHistoryReversed(database: DatabaseSync): void {
 
 function createRepository(database: DatabaseSync): M3LConsoleMetaRepository {
   return createConsoleMetaRepository(createRawExecutor(database));
+}
+
+/** Runs `run`, capturing whatever it throws synchronously as a single `unknown` value. */
+function captureFailure(run: () => unknown): unknown {
+  try {
+    run();
+    return undefined;
+  } catch (error) {
+    return error;
+  }
 }
 
 function readMetaValue(database: DatabaseSync, key: string): unknown {
@@ -304,6 +315,73 @@ describe("createConsoleMetaRepository — describe()", () => {
     const identityB = createRepository(databaseB).describe();
 
     expect(identityA.id).not.toBe(identityB.id);
+  });
+});
+
+describe("createConsoleMetaRepository — describe() after an interrupted mint", () => {
+  // `meta-repository.ts:172-173` issues `insertIfAbsent(store.id, ...)` then
+  // `insertIfAbsent(store.created.at.ms, ...)` as two separate, un-transacted
+  // statements. A crash (or SQLITE_BUSY) between them persists an id with no
+  // creation timestamp; the next boot's `describeStore` then mints
+  // `store.created.at.ms` from a fresh `Date.now()`, permanently reporting a
+  // creation time that is NOT when `store.id` was actually minted — breaking
+  // the "minted once and reused forever" property documented at
+  // `meta-repository.ts:52`.
+  //
+  // This test pins "detect and surface" as the required fix, not "invent a
+  // plausible-looking timestamp": once `store.created.at.ms` is genuinely
+  // lost, no value this repository could compute is the real mint time, so
+  // manufacturing one is worse than a loud failure — the same philosophy
+  // `store.ts`'s `readSchemaVersion` already applies (refusing to collapse
+  // an unreadable value to a falsely-safe `0`) and this repository's own
+  // `describeStore` already applies to its own "impossible" branch just
+  // below (throwing rather than fabricating an identity). An "atomic write"
+  // fix (wrapping both inserts in one statement/transaction) is also a
+  // legitimate way to prevent the partial state from ever being observed,
+  // but it does not by itself say what `describe()` should do if it EVER
+  // encounters this partial state (e.g. from data migrated in some other
+  // way) — so this test's expectation is the one the implementer should
+  // match: surface a loud failure here.
+  test("throws rather than inventing a later store.created.at.ms when only store.id was ever persisted", () => {
+    const database = createMigratedDatabase();
+    seedHistoryReversed(database);
+    const repository = createRepository(database);
+
+    // Simulate the interrupted mint directly: only `store.id` was ever
+    // written, `store.created.at.ms` is entirely absent.
+    prepareRaw(
+      database,
+      "INSERT INTO console_meta (key, value) VALUES (?, ?)",
+    ).run("store.id", "pre-existing-id");
+
+    const thrown = captureFailure(() => repository.describe());
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+  });
+});
+
+describe("createConsoleMetaRepository — a non-numeric store.created.at.ms", () => {
+  // `meta-repository.ts:189`'s `Number(createdAtMsText)` is unvalidated, so
+  // a non-numeric `console_meta` value silently produces `createdAtMs: NaN`
+  // — unlike the adjacent missing-row guard a few lines above, which throws
+  // rather than returning a fabricated identity.
+  test("describe() throws rather than returning createdAtMs: NaN", () => {
+    const database = createMigratedDatabase();
+    seedHistoryReversed(database);
+    const repository = createRepository(database);
+
+    prepareRaw(
+      database,
+      "INSERT INTO console_meta (key, value) VALUES (?, ?)",
+    ).run("store.id", "pre-existing-id");
+    prepareRaw(
+      database,
+      "INSERT INTO console_meta (key, value) VALUES (?, ?)",
+    ).run("store.created.at.ms", "not-a-number");
+
+    const thrown = captureFailure(() => repository.describe());
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
   });
 });
 

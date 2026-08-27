@@ -471,6 +471,62 @@ describe("schema drift — an edited-in-place migration (changed SQL, same versi
   });
 });
 
+describe("schema drift — a deleted history row for an already-applied version", () => {
+  // The deleted-row arm of the same tampering check `runner.ts` performs for
+  // a name/digest mismatch (see the "edited-in-place" test above): a history
+  // row missing for a version <= currentVersion is exactly the tampering
+  // signal `console_schema_migrations` exists to catch. `runner.ts:180`'s
+  // `if (recorded === undefined) continue;` silently skips it instead of
+  // throwing `ERR_CONSOLE_STORE_SCHEMA_DRIFT`.
+  test("re-applying after a history row was deleted fails as ERR_CONSOLE_STORE_SCHEMA_DRIFT", () => {
+    const database = new DatabaseSync(":memory:");
+    const migrations = [
+      historyTableMigration(),
+      tableMigration(2, "creates_t2", "t2"),
+      tableMigration(3, "creates_t3", "t3"),
+    ];
+    applyMigrations(database, migrations);
+
+    database.exec("DELETE FROM console_schema_migrations WHERE version = 2");
+
+    const thrown = captureFailure(() => applyMigrations(database, migrations));
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).code).toBe(
+      "ERR_CONSOLE_STORE_SCHEMA_DRIFT",
+    );
+  });
+});
+
+describe("assertNoHistoryDrift — a missing console_schema_migrations table escapes classification", () => {
+  // `runner.ts:172` (`database.prepare(...)`) and its `statement.get(...)`
+  // are the only DB access in this module NOT wrapped by a classification
+  // helper (contrast `readCurrentSchemaVersion`'s explicit try/catch just
+  // above it). A `user_version` ahead of 0 but a missing/unreadable
+  // `console_schema_migrations` table lets the raw `node:sqlite` error
+  // escape `applyMigrations` unclassified, contradicting its documented
+  // `@throws` contract.
+  test("a user_version past 0 with no console_schema_migrations table throws a classified M3LConsoleError, not a raw error", () => {
+    const database = new DatabaseSync(":memory:");
+    // user_version = 1 with NO console_schema_migrations table: the
+    // "already applied" bookkeeping is present, but the audit trail table
+    // itself is missing or unreadable.
+    database.exec("PRAGMA user_version = 1");
+
+    const migrations = [
+      historyTableMigration(),
+      tableMigration(2, "creates_t2", "t2"),
+    ];
+
+    const thrown = captureFailure(() => applyMigrations(database, migrations));
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).code).toBe(
+      "ERR_CONSOLE_STORE_MIGRATION_FAILED",
+    );
+  });
+});
+
 describe("registry validation — malformed registries fail BEFORE the database is touched", () => {
   const MALFORMED_REGISTRIES: readonly [string, M3LMigration[]][] = [
     ["a duplicate version", [noopMigration(1, "a"), noopMigration(1, "b")]],
