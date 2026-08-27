@@ -1,6 +1,14 @@
 {
   "$schema": "https://turborepo.dev/schema.json",
   "globalDependencies": ["tsconfig.base.json", "pnpm-lock.yaml"],
+  // ADR-0080: absent, this defaulted to 10 concurrent tasks — oversubscribing
+  // a 4-core host by 2.5x when `build`/`typecheck` fan out across all 19
+  // workspace packages, and doing so WHILE lefthook's `pre-push` runs the
+  // vitest lane concurrently (`parallel: true`). A percentage scales with
+  // whatever host actually runs it rather than baking in one machine's core
+  // count; 50% leaves the other half for vitest's own capped fork pool (see
+  // vitest.config.ts) and the lighter check:* lanes running at the same time.
+  "concurrency": "50%",
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
