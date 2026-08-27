@@ -288,12 +288,19 @@ export interface M3LRunningConsole {
   /** The verified, actually-listening server (see `lifecycle/http-server.ts`). */
   readonly server: M3LListeningServer;
   /**
-   * Resolves once a shutdown has been triggered AND completed — by a call to
+   * Settles once a shutdown has been triggered AND completed — by a call to
    * {@link shutdown} or by a trapped signal, whichever happens first. Never
-   * resolves merely because the process is idle: nothing about awaiting
-   * this promise itself starts a drain. The process entry point should
-   * `await` this, not {@link shutdown} — see {@link shutdown}'s TSDoc for
-   * why those are not interchangeable.
+   * settles merely because the process is idle: nothing about awaiting this
+   * promise itself starts a drain. The process entry point should `await`
+   * this, not {@link shutdown} — see {@link shutdown}'s TSDoc for why those
+   * are not interchangeable.
+   *
+   * REJECTS, rather than staying pending forever, if the underlying shutdown
+   * sequence (drain + listener close) itself fails — carrying the original
+   * cause unchanged. A caller that only ever expects the happy path should
+   * still attach a rejection handler (or await inside a `try`/`catch`); an
+   * unobserved rejection here is an unhandled-rejection warning like any
+   * other promise.
    */
   readonly closed: Promise<M3LDrainOutcome>;
   /**
@@ -336,20 +343,36 @@ async function runShutdownSequence(
   return outcome;
 }
 
-/** Builds the idempotent {@link M3LRunningConsole.shutdown}, memoizing its outcome promise. */
+/**
+ * Builds the idempotent {@link M3LRunningConsole.shutdown}, memoizing its
+ * outcome promise. `onSettled`/`onFailed` fan the sequence's single outcome
+ * out to `closed`'s resolver/rejecter (see {@link startConsole}) while
+ * `shutdown()`'s own returned promise keeps propagating a rejection
+ * unchanged — `onFailed`'s handler re-throws `cause` rather than swallowing
+ * it, so both channels observe the same failure (a rejecting
+ * `runShutdownSequence` must never leave `closed` pending forever, but must
+ * also never make `shutdown()` itself resolve).
+ */
 function createShutdown(
   runtime: M3LConsoleRuntime,
   server: M3LListeningServer,
   onSettled: (outcome: M3LDrainOutcome) => void,
+  onFailed: (cause: unknown) => void,
 ): () => Promise<M3LDrainOutcome> {
   let shutdownPromise: Promise<M3LDrainOutcome> | undefined;
 
   return function shutdown(): Promise<M3LDrainOutcome> {
     if (shutdownPromise !== undefined) return shutdownPromise;
-    shutdownPromise = runShutdownSequence(runtime, server).then((outcome) => {
-      onSettled(outcome);
-      return outcome;
-    });
+    shutdownPromise = runShutdownSequence(runtime, server).then(
+      (outcome) => {
+        onSettled(outcome);
+        return outcome;
+      },
+      (cause: unknown) => {
+        onFailed(cause);
+        throw cause;
+      },
+    );
     return shutdownPromise;
   };
 }
@@ -398,13 +421,24 @@ function registerConsoleShutdownSignals(
     process.on(signal, handleSignal);
   }
 
-  // Removed only once `closed` settles, regardless of whether it was a
-  // trapped signal or an explicit `shutdown()` call that triggered it.
-  void closed.finally(() => {
-    for (const signal of signals) {
-      process.removeListener(signal, handleSignal);
-    }
-  });
+  // Removed once `closed` settles — on EITHER the resolve or the reject
+  // path, regardless of whether it was a trapped signal or an explicit
+  // `shutdown()` call that triggered it. `.finally()`'s own returned promise
+  // re-rejects with `closed`'s cause when `closed` rejects (it never
+  // swallows), so the trailing `.catch()` is required here: this listener
+  // cleanup is the only consumer of this particular chain, and the
+  // rejection itself is already observable through `closed`/`shutdown()`
+  // directly — an unhandled one here would just be a duplicate warning, not
+  // a lost failure.
+  void closed
+    .finally(() => {
+      for (const signal of signals) {
+        process.removeListener(signal, handleSignal);
+      }
+    })
+    .catch(() => {
+      // Deliberately swallowed — see comment above.
+    });
 }
 
 /** Logs the one line every boot emits once the listener is verified. Never the operator email. */
@@ -466,14 +500,26 @@ export async function startConsole(
   logListening(runtime.logger, server);
 
   let resolveClosed!: (outcome: M3LDrainOutcome) => void;
-  const closed = new Promise<M3LDrainOutcome>((resolve) => {
+  let rejectClosed!: (cause: unknown) => void;
+  const closed = new Promise<M3LDrainOutcome>((resolve, reject) => {
     resolveClosed = resolve;
+    rejectClosed = reject;
   });
-  void closed.then((outcome) => {
-    logDrainCompletion(runtime.logger, outcome);
-  });
+  // Only the fulfillment branch logs — a rejected shutdown sequence never
+  // "completed", so there is no drain outcome to report; the failure itself
+  // is surfaced through `closed`/`shutdown()` rejecting, not this log line.
+  // The rejection handler here exists solely to keep this internal chain
+  // from becoming an unhandled rejection of its own.
+  void closed.then(
+    (outcome) => {
+      logDrainCompletion(runtime.logger, outcome);
+    },
+    () => {
+      // Deliberately swallowed — see comment above.
+    },
+  );
 
-  const shutdown = createShutdown(runtime, server, resolveClosed);
+  const shutdown = createShutdown(runtime, server, resolveClosed, rejectClosed);
   const signals = options.signals ?? DEFAULT_SIGNALS;
   registerConsoleShutdownSignals(signals, shutdown, closed, runtime.logger);
 

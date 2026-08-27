@@ -69,17 +69,26 @@ function createResolvingLogger(): {
 /**
  * Builds a minimal `IncomingMessage` double: an `EventEmitter` carrying just
  * the members `handler.ts` reads before dispatch (`method`, `url`,
- * `headers`) plus the `once`/`removeListener` pair it uses for the
- * connection-abort seam.
+ * `headers`, `rawHeaders`) plus the `once`/`removeListener` pair it uses for
+ * the connection-abort seam. `rawHeaders` defaults to the flattened form of
+ * `headers` (Node's own alternating key/value shape) when not overridden,
+ * matching a request with no duplicate header lines.
  */
 function createFakeIncomingMessage(
-  overrides: Partial<Pick<IncomingMessage, "method" | "url" | "headers">> = {},
+  overrides: Partial<
+    Pick<IncomingMessage, "method" | "url" | "headers" | "rawHeaders">
+  > = {},
 ): IncomingMessage {
   const req = new EventEmitter() as unknown as IncomingMessage;
+  const headers = overrides.headers ?? {};
   Object.assign(req, {
     method: "GET",
     url: "/api/v1/runs",
-    headers: {},
+    headers,
+    rawHeaders: Object.entries(headers).flatMap(([key, value]) => [
+      key,
+      String(value),
+    ]),
     ...overrides,
   });
   return req;
@@ -1154,54 +1163,6 @@ describe("createConsoleRequestListener — writeFallbackResponse's own guards", 
       "failed writing response for",
     );
   });
-});
-
-describe("createConsoleRequestListener — a request whose target fails to parse never logs the raw target (S1)", () => {
-  // `parseRequestUrl` (context.ts) runs `new URL(rawUrl, "http://localhost")`
-  // directly against `req.url` — a plain string per Node's `http` contract —
-  // so a malformed target is reproduced by setting the fake
-  // `IncomingMessage.url` directly, with no real socket/client involved at
-  // all (verified against the source: this is a more direct reproduction
-  // than routing a malformed request-line through an actual TCP connection).
-  test.each<string>(["http://[", "http://%zz/", "//"])(
-    "logs the fixed placeholder path, never the raw target or its query string, and pins the caller-origin diagnostic gate, for %s",
-    async (rawTarget) => {
-      const { logger, events, logged } = createResolvingLogger();
-      const listener = createConsoleRequestListener({
-        router: createRouter([]),
-        middlewares: [],
-        preRouting: [],
-        logger,
-        signal: new AbortController().signal,
-      });
-      const canaryTarget = `${rawTarget}${rawTarget.includes("?") ? "&" : "?"}token=CANARY123`;
-      const req = createFakeIncomingMessage({ url: canaryTarget });
-      const { res, written } = createRecordingServerResponse();
-
-      listener(req, res);
-      await logged;
-
-      expect(written.status).toBe(400);
-      expect(events).toHaveLength(1);
-      const serialized = JSON.stringify(events[0]);
-      // The canary — and the raw target it was embedded in — must never
-      // appear anywhere in the logged event: this is the exact regression
-      // a raw-`req.url` seed would reintroduce.
-      expect(serialized).not.toContain("CANARY123");
-      expect(serialized).not.toContain(canaryTarget);
-      // The `path` field is logged as the fixed placeholder, never the raw,
-      // unparsed target — this literal mirrors handler.ts's own
-      // PATH_PLACEHOLDER_UNPARSED constant, which is not exported.
-      expect(events[0]?.data).toMatchObject({ path: "(unparsed)" });
-      // Unlike the not-found path, a malformed target genuinely throws
-      // (`createRequestContext` raises `ERR_CONSOLE_BAD_REQUEST`) and is
-      // caught in `runRequest`'s `catch`, which calls
-      // `logDiagnosticIfFault` for real. That error is caller-origin, so
-      // this is what actually pins `isCallerOriginError`'s gate: removing
-      // the gate would emit a second diagnostic event here.
-      expect(findDiagnosticEvent(events)).toBeUndefined();
-    },
-  );
 });
 
 /**

@@ -48,6 +48,7 @@ describe("createOriginGuard — Host header, loopback accepted", () => {
     ["localhost"],
     ["localhost:9000"],
     ["[::1]:8787"],
+    ["[::1]"],
     ["127.0.0.2"],
   ])(
     "accepts Host: %s, calling next exactly once and returning its response unchanged",
@@ -76,6 +77,45 @@ describe("createOriginGuard — Host header, non-loopback rejected", () => {
     ["0.0.0.0"],
   ])(
     "rejects Host: %s with ERR_CONSOLE_BAD_REQUEST and never calls next",
+    async (hostValue) => {
+      const guard = createOriginGuard();
+      let called = false;
+      const next: M3LConsoleHandler = () => {
+        called = true;
+        return okResponse();
+      };
+
+      let thrown: unknown;
+      try {
+        await guard(buildContext({ host: hostValue }), next);
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(isConsoleError(thrown)).toBe(true);
+      expect((thrown as M3LConsoleError).code).toBe("ERR_CONSOLE_BAD_REQUEST");
+      expect(called).toBe(false);
+    },
+  );
+});
+
+describe("createOriginGuard — Host header, malformed port suffix rejected (security audit finding)", () => {
+  // MEASURED on a real (unmocked) `node:http` server on Node v26.7.0: both
+  // `127.0.0.1:8787.evil.example` and `localhost:80.evil.example` reached the
+  // handler with a 200. `extractHostname` split at the LAST colon
+  // unconditionally and treated whatever preceded it as the hostname — so
+  // `127.0.0.1:8787.evil.example` split into hostname `127.0.0.1` (the
+  // `8787.evil.example` port suffix was silently discarded), passing the
+  // loopback check even though the authority as a whole names an attacker
+  // domain. A port is digits; anything else means the authority is malformed
+  // and must fail closed rather than have its bogus "port" silently dropped.
+  test.each<[string]>([
+    ["127.0.0.1:8787.evil.example"],
+    ["localhost:80.evil.example"],
+    ["127.0.0.1:80x"],
+    ["127.0.0.1:"],
+  ])(
+    "rejects Host: %s with ERR_CONSOLE_BAD_REQUEST rather than treating the malformed suffix as a droppable port",
     async (hostValue) => {
       const guard = createOriginGuard();
       let called = false;

@@ -21,24 +21,58 @@ import type { M3LConsoleResponse } from "./respond.js";
 const NULL_ORIGIN = "null";
 
 /**
+ * Returns `true` when `value` is one or more ASCII digits — the only shape a
+ * real port number can take. An empty string is rejected:
+ * `Host: 127.0.0.1:` names no port at all, not a droppable one.
+ */
+function isDigitsOnly(value: string): boolean {
+  return value.length > 0 && /^[0-9]+$/.test(value);
+}
+
+/**
  * Strips an optional trailing `:port` from `authority`, returning the bare
  * hostname. Bracket-aware: an IPv6 literal such as `[::1]:8787` carries its
- * own colons, so the port is only ever the segment after the *last* `:`
- * outside the brackets — {@link unwrapBracketedHost} handles the bracketed
- * form once the port (if any) has been split off.
+ * own colons, so the port is only ever the segment after the closing `]` —
+ * {@link unwrapBracketedHost} handles the bracketed form once the port (if
+ * any) has been split off.
  *
- * The port is deliberately discarded rather than validated: see
+ * The port's *value* is deliberately discarded rather than compared: see
  * {@link createOriginGuard}'s module-level rationale for why this guard
- * never compares it.
+ * never compares it. Its *shape* is still validated — a security audit
+ * measured `Host: 127.0.0.1:8787.evil.example` and
+ * `Host: localhost:80.evil.example` being served 200: naively splitting at
+ * the last colon silently drops a bogus, non-numeric "port" and lets the
+ * attacker hostname pass the loopback check underneath it. When the suffix
+ * after the colon (or after a bracketed IPv6 literal) is not entirely
+ * digits, the authority is malformed and this throws
+ * `ERR_CONSOLE_BAD_REQUEST` rather than falling back to treating the whole
+ * string as a hostname.
  */
 function extractHostname(authority: string): string {
   if (authority.startsWith("[")) {
     const closeBracket = authority.indexOf("]");
     if (closeBracket === -1) return unwrapBracketedHost(authority);
+    const suffix = authority.slice(closeBracket + 1);
+    const hasValidPort =
+      suffix === "" ||
+      (suffix.startsWith(":") && isDigitsOnly(suffix.slice(1)));
+    if (!hasValidPort) {
+      throw new M3LConsoleError(
+        "ERR_CONSOLE_BAD_REQUEST",
+        "request Host header has a malformed port suffix",
+      );
+    }
     return unwrapBracketedHost(authority.slice(0, closeBracket + 1));
   }
   const lastColon = authority.lastIndexOf(":");
-  return lastColon === -1 ? authority : authority.slice(0, lastColon);
+  if (lastColon === -1) return authority;
+  if (!isDigitsOnly(authority.slice(lastColon + 1))) {
+    throw new M3LConsoleError(
+      "ERR_CONSOLE_BAD_REQUEST",
+      "request Host header has a malformed port suffix",
+    );
+  }
+  return authority.slice(0, lastColon);
 }
 
 /**

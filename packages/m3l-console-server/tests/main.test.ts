@@ -562,6 +562,50 @@ describe("createConsoleRuntime — routes option reaches the router", () => {
   });
 });
 
+// This divergence is INTENTIONAL and load-bearing (a code-review finding
+// confirmed against the source, not a bug): `runtime.router` reflects
+// `options.routes` VERBATIM, for a caller's own introspection, while
+// `requestListener` actually dispatches through a SEPARATE router built by
+// `buildDispatchRouter`, which merges the built-in health routes ahead of
+// `options.routes` so a caller can never accidentally shadow `/health` or
+// `/ready`. Nothing previously pinned this, so a future "fix" that made
+// `runtime.router` the same object `requestListener` dispatches through
+// would silently change this guarantee. See `buildDispatchRouter`'s own
+// TSDoc in `src/main.ts` for the rationale.
+describe("createConsoleRuntime — runtime.router and the live dispatch router are deliberately different objects", () => {
+  test("runtime.router.lookup('GET', '/health') is not-found, even though the live requestListener answers 200 for GET /health", async () => {
+    const handler = new RecordingHandler();
+    const runtime = createConsoleRuntime({
+      env: buildEnv(),
+      handlers: [handler],
+    });
+
+    // `runtime.router` only ever knows about `options.routes` (empty here)
+    // — it never sees the built-in health routes at all.
+    expect(runtime.router.lookup("GET", "/health")).toMatchObject({
+      outcome: "not-found",
+    });
+
+    // Yet the SAME runtime's live `requestListener` — which dispatches
+    // through `buildDispatchRouter`'s merged router, not `runtime.router`
+    // — answers the same path with a real 200.
+    const req = createFakeIncomingMessage({
+      method: "GET",
+      url: "/health",
+      headers: { host: "127.0.0.1" },
+    });
+    const { res, written, finished } = createRecordingServerResponse();
+
+    runtime.requestListener(req, res);
+    await withTimeout(
+      finished,
+      "requestListener never called res.end() for GET /health",
+    );
+
+    expect(written.status).toBe(200);
+  });
+});
+
 // `assertNoRequiredAuthRoutes` is gone: now that the auth middleware exists
 // and is wired into `createConsoleRuntime`'s own `requestListener`, an
 // `auth: "required"` route is no longer a composition-time misconfiguration
@@ -910,5 +954,187 @@ describe("startConsole — composed chains are wired into runtime.requestListene
     const shutdownPromise = running.shutdown();
     fake.resolveClose();
     await shutdownPromise;
+  });
+});
+
+// =============================================================================
+// startConsole — 'closed' must settle on a REJECTING shutdown sequence too
+// (error-handling audit regression: `resolveClosed` is only ever invoked on
+// `runShutdownSequence`'s success branch, so a rejecting shutdown leaves
+// `closed` pending forever — a silent hang, not a surfaced failure).
+// =============================================================================
+
+/**
+ * Builds a fake server whose close() THROWS SYNCHRONOUSLY. `createCloseOnce`
+ * (`lifecycle/http-server.ts`) calls `server.close(cb)` inside a `Promise`
+ * executor with no `try`/`catch` of its own, so a synchronous throw there
+ * makes the executor itself throw, which the `Promise` constructor turns
+ * into a rejection — in turn rejecting `runShutdownSequence`'s
+ * `Promise.all`. This is the seam the audit named to drive the "closed
+ * never settles on a rejecting shutdown" defect deterministically, with no
+ * real socket involved.
+ */
+function createServerWithThrowingClose(closeError: Error): FakeServer {
+  const fake = createFakeServer(tcpAddress());
+  Object.assign(fake.instance, {
+    close: (): Server => {
+      throw closeError;
+    },
+  });
+  return fake;
+}
+
+/** The signal set `startConsole` traps by default (mirrors `DEFAULT_SIGNALS` in `src/main.ts`). */
+const TRAPPED_SIGNALS: readonly NodeJS.Signals[] = [
+  "SIGTERM",
+  "SIGINT",
+  "SIGQUIT",
+];
+
+/** A `process.on(signal, ...)` listener's shape, narrower than `EventEmitter.listeners()`'s own `Function[]` return type. */
+type SignalListenerFn = (...args: unknown[]) => void;
+
+/**
+ * Snapshots the exact listener functions currently registered for
+ * `TRAPPED_SIGNALS`, so a later call to {@link stripLeakedSignalListeners}
+ * can remove precisely what a test added — not just restore a count. Every
+ * test below drives `startConsole` against a REAL (unspied) `process.on`,
+ * so on the defect's RED path (`closed` never settling) the registered
+ * `handleSignal` listener is never cleaned up by the implementation itself;
+ * without this, that leaked listener would corrupt every later test file's
+ * own `process.listenerCount` baseline for the rest of the worker process.
+ */
+function snapshotSignalListeners(): ReadonlyMap<
+  NodeJS.Signals,
+  SignalListenerFn[]
+> {
+  return new Map(
+    TRAPPED_SIGNALS.map((signal) => [
+      signal,
+      process.listeners(signal) as SignalListenerFn[],
+    ]),
+  );
+}
+
+/** Removes any listener present now but absent from `before` — this test's own leak, regardless of pass/fail. */
+function stripLeakedSignalListeners(
+  before: ReadonlyMap<NodeJS.Signals, SignalListenerFn[]>,
+): void {
+  for (const signal of TRAPPED_SIGNALS) {
+    const untouched = before.get(signal) ?? [];
+    for (const listener of process.listeners(signal) as SignalListenerFn[]) {
+      if (!untouched.includes(listener)) {
+        process.removeListener(signal, listener);
+      }
+    }
+  }
+}
+
+describe("startConsole — 'closed' rejects (rather than hanging) when the shutdown sequence fails", () => {
+  test("'closed' rejects and carries the original cause, instead of staying pending forever", async () => {
+    const before = snapshotSignalListeners();
+    const closeError = new Error("close-boom-1");
+    const fake = createServerWithThrowingClose(closeError);
+
+    try {
+      const promise = startConsole({
+        env: buildEnv(),
+        createServer: () => fake.instance,
+      });
+      fake.emitListening();
+      const running = await promise;
+
+      void running.shutdown().catch(() => {});
+
+      // Never await this directly without a timeout guard: today `closed`
+      // never settles on this path, so a bare `await running.closed` would
+      // hang until vitest's global test timeout — slow and illegible.
+      // Attach a no-op catch immediately too, so a fix landing mid-run
+      // never produces an unhandled-rejection warning from this unawaited
+      // handle.
+      running.closed.catch(() => {});
+
+      const settled = await withTimeout(
+        running.closed.then(
+          (outcome) => ({ kind: "resolved" as const, outcome }),
+          (cause: unknown) => ({ kind: "rejected" as const, cause }),
+        ),
+        "closed never settled",
+        500,
+      );
+
+      expect(settled.kind).toBe("rejected");
+      if (settled.kind === "rejected") {
+        // Identity, not just a message match: a swallowed/re-wrapped cause
+        // would still be "an error", but this is half the defect too.
+        expect(settled.cause).toBe(closeError);
+      }
+    } finally {
+      stripLeakedSignalListeners(before);
+    }
+  });
+
+  test("shutdown() also rejects on that same failing path, so a caller awaiting it directly observes the failure too", async () => {
+    const before = snapshotSignalListeners();
+    const closeError = new Error("close-boom-2");
+    const fake = createServerWithThrowingClose(closeError);
+
+    try {
+      const promise = startConsole({
+        env: buildEnv(),
+        createServer: () => fake.instance,
+      });
+      fake.emitListening();
+      const running = await promise;
+      running.closed.catch(() => {});
+
+      let thrown: unknown;
+      try {
+        await running.shutdown();
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toBe(closeError);
+    } finally {
+      stripLeakedSignalListeners(before);
+    }
+  });
+
+  test("signal listeners are still removed even when the shutdown sequence fails — cleanup must not be a happy-path-only side effect", async () => {
+    const before = snapshotSignalListeners();
+    const baselineCounts = new Map<NodeJS.Signals, number>(
+      TRAPPED_SIGNALS.map((signal) => [signal, process.listenerCount(signal)]),
+    );
+
+    const closeError = new Error("close-boom-3");
+    const fake = createServerWithThrowingClose(closeError);
+
+    try {
+      const promise = startConsole({
+        env: buildEnv(),
+        createServer: () => fake.instance,
+      });
+      fake.emitListening();
+      const running = await promise;
+      running.closed.catch(() => {});
+
+      await running.shutdown().catch(() => {});
+      // The cleanup this test pins is wired off `closed.finally(...)`, not
+      // off `shutdown()`'s own settling — give any such chain a few
+      // microtask turns to run before asserting, mirroring this file's
+      // established `flushMicrotasks` pattern for fire-and-forget chains.
+      await flushMicrotasks(8);
+
+      for (const signal of TRAPPED_SIGNALS) {
+        expect(process.listenerCount(signal)).toBe(baselineCounts.get(signal));
+      }
+    } finally {
+      // Regardless of outcome, remove any listener this test's failing
+      // shutdown leaked, so it never pollutes a later test's own baseline
+      // count — this cleanup exists precisely BECAUSE the defect under
+      // test is a listener leak.
+      stripLeakedSignalListeners(before);
+    }
   });
 });
