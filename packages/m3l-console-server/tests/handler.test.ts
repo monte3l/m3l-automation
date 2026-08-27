@@ -24,6 +24,7 @@ import { createRouter } from "../src/http/router.js";
 import type { M3LRoute, M3LRouteAuth } from "../src/http/router.js";
 import { createConsoleRequestListener } from "../src/http/handler.js";
 import type { M3LConsoleMiddleware } from "../src/http/middleware.js";
+import { M3LConsoleError } from "../src/errors/console-error.js";
 
 /** A capturing `M3LLoggerHandler`: records every event it is handed. */
 function createCapturingLogger(): {
@@ -68,17 +69,26 @@ function createResolvingLogger(): {
 /**
  * Builds a minimal `IncomingMessage` double: an `EventEmitter` carrying just
  * the members `handler.ts` reads before dispatch (`method`, `url`,
- * `headers`) plus the `once`/`removeListener` pair it uses for the
- * connection-abort seam.
+ * `headers`, `rawHeaders`) plus the `once`/`removeListener` pair it uses for
+ * the connection-abort seam. `rawHeaders` defaults to the flattened form of
+ * `headers` (Node's own alternating key/value shape) when not overridden,
+ * matching a request with no duplicate header lines.
  */
 function createFakeIncomingMessage(
-  overrides: Partial<Pick<IncomingMessage, "method" | "url" | "headers">> = {},
+  overrides: Partial<
+    Pick<IncomingMessage, "method" | "url" | "headers" | "rawHeaders">
+  > = {},
 ): IncomingMessage {
   const req = new EventEmitter() as unknown as IncomingMessage;
+  const headers = overrides.headers ?? {};
   Object.assign(req, {
     method: "GET",
     url: "/api/v1/runs",
-    headers: {},
+    headers,
+    rawHeaders: Object.entries(headers).flatMap(([key, value]) => [
+      key,
+      String(value),
+    ]),
     ...overrides,
   });
   return req;
@@ -221,6 +231,7 @@ describe("createConsoleRequestListener — happy path", () => {
     const listener = createConsoleRequestListener({
       router,
       middlewares: [],
+      preRouting: [],
       logger,
       signal: new AbortController().signal,
     });
@@ -255,6 +266,7 @@ describe("createConsoleRequestListener — happy path", () => {
     const listener = createConsoleRequestListener({
       router,
       middlewares: [middleware],
+      preRouting: [],
       logger,
       signal: new AbortController().signal,
     });
@@ -279,6 +291,7 @@ describe("createConsoleRequestListener — 404 and 405 envelopes", () => {
     const listener = createConsoleRequestListener({
       router: createRouter([]),
       middlewares: [],
+      preRouting: [],
       logger,
       signal: new AbortController().signal,
     });
@@ -301,6 +314,7 @@ describe("createConsoleRequestListener — 404 and 405 envelopes", () => {
     const listener = createConsoleRequestListener({
       router,
       middlewares: [],
+      preRouting: [],
       logger,
       signal: new AbortController().signal,
     });
@@ -360,6 +374,7 @@ describe("createConsoleRequestListener — a handler that throws", () => {
     const listener = createConsoleRequestListener({
       router,
       middlewares: [],
+      preRouting: [],
       logger,
       signal: new AbortController().signal,
     });
@@ -415,6 +430,7 @@ describe("createConsoleRequestListener — a handler that throws", () => {
     const listener = createConsoleRequestListener({
       router,
       middlewares: [],
+      preRouting: [],
       logger,
       signal: new AbortController().signal,
     });
@@ -441,6 +457,7 @@ describe("createConsoleRequestListener — a handler that throws", () => {
     const listener = createConsoleRequestListener({
       router,
       middlewares: [throwingMiddleware],
+      preRouting: [],
       logger,
       signal: new AbortController().signal,
     });
@@ -474,6 +491,7 @@ describe("createConsoleRequestListener — a handler that throws", () => {
     const listener = createConsoleRequestListener({
       router,
       middlewares: [],
+      preRouting: [],
       logger,
       signal: new AbortController().signal,
     });
@@ -490,6 +508,82 @@ describe("createConsoleRequestListener — a handler that throws", () => {
     expect(JSON.stringify(diagnostic)).toContain(
       "distinctive underlying cause: connection refused",
     );
+  });
+
+  test("a handler that throws ERR_CONSOLE_UNAVAILABLE yields 503 and emits NO diagnostic line — exactly one outcome line total", async () => {
+    const { logger, events, logged } = createResolvingLogger();
+    const router = createRouter([
+      route({
+        method: "GET",
+        path: "/draining",
+        handler: () => {
+          throw new M3LConsoleError(
+            "ERR_CONSOLE_UNAVAILABLE",
+            "the server is draining and refuses new requests",
+          );
+        },
+      }),
+    ]);
+    const listener = createConsoleRequestListener({
+      router,
+      middlewares: [],
+      preRouting: [],
+      logger,
+      signal: new AbortController().signal,
+    });
+    const req = createFakeIncomingMessage({ url: "/draining" });
+    const { res, written } = createRecordingServerResponse();
+
+    listener(req, res);
+    await logged;
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(written.status).toBe(503);
+
+    // This is the whole point of the `fault` field: an origin-only gate
+    // (the old isCallerOriginError) would treat this library-origin code as
+    // a fault and log a diagnostic line for it too, producing 2 events.
+    expect(events).toHaveLength(1);
+    expect(findDiagnosticEvent(events)).toBeUndefined();
+    expect(findOutcomeEvent(events, 503)).toBeDefined();
+  });
+
+  test("a handler that throws ERR_CONSOLE_INTERNAL still emits its diagnostic line (the gate is not disabled wholesale)", async () => {
+    const { logger, events, logged } = createResolvingLogger();
+    const router = createRouter([
+      route({
+        method: "GET",
+        path: "/internal-boom",
+        handler: () => {
+          throw new M3LConsoleError(
+            "ERR_CONSOLE_INTERNAL",
+            "genuine internal failure, distinct from the generic envelope text",
+          );
+        },
+      }),
+    ]);
+    const listener = createConsoleRequestListener({
+      router,
+      middlewares: [],
+      preRouting: [],
+      logger,
+      signal: new AbortController().signal,
+    });
+    const req = createFakeIncomingMessage({ url: "/internal-boom" });
+    const { res, written } = createRecordingServerResponse();
+
+    listener(req, res);
+    await logged;
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(written.status).toBe(500);
+    expect(events).toHaveLength(2);
+    const diagnostic = findDiagnosticEvent(events);
+    expect(diagnostic).toBeDefined();
+    expect(JSON.stringify(diagnostic)).toContain(
+      "genuine internal failure, distinct from the generic envelope text",
+    );
+    expect(findOutcomeEvent(events, 500)).toBeDefined();
   });
 });
 
@@ -508,6 +602,7 @@ describe("createConsoleRequestListener — log level by status class", () => {
     const listener = createConsoleRequestListener({
       router,
       middlewares: [],
+      preRouting: [],
       logger,
       signal: new AbortController().signal,
     });
@@ -531,6 +626,7 @@ describe("createConsoleRequestListener — log level by status class", () => {
     const listener = createConsoleRequestListener({
       router: createRouter([]),
       middlewares: [],
+      preRouting: [],
       logger,
       signal: new AbortController().signal,
     });
@@ -559,6 +655,7 @@ describe("createConsoleRequestListener — log level by status class", () => {
     const listener = createConsoleRequestListener({
       router,
       middlewares: [],
+      preRouting: [],
       logger,
       signal: new AbortController().signal,
     });
@@ -582,6 +679,7 @@ describe("createConsoleRequestListener — log line never leaks sensitive reques
     const listener = createConsoleRequestListener({
       router,
       middlewares: [],
+      preRouting: [],
       logger,
       signal: new AbortController().signal,
     });
@@ -621,6 +719,7 @@ describe("createConsoleRequestListener — log line never leaks sensitive reques
     const listener = createConsoleRequestListener({
       router,
       middlewares: [],
+      preRouting: [],
       logger,
       signal: new AbortController().signal,
     });
@@ -655,6 +754,7 @@ describe("createConsoleRequestListener — log line never leaks sensitive reques
       const listener = createConsoleRequestListener({
         router,
         middlewares: [],
+        preRouting: [],
         logger,
         signal: new AbortController().signal,
       });
@@ -699,6 +799,7 @@ describe("createConsoleRequestListener — the abort seam is live", () => {
     const listener = createConsoleRequestListener({
       router,
       middlewares: [],
+      preRouting: [],
       logger,
       signal: drainController.signal,
     });
@@ -738,6 +839,7 @@ describe("createConsoleRequestListener — the abort seam is live", () => {
       const listener = createConsoleRequestListener({
         router,
         middlewares: [],
+        preRouting: [],
         logger,
         signal: new AbortController().signal,
       });
@@ -752,7 +854,7 @@ describe("createConsoleRequestListener — the abort seam is live", () => {
     expect(observedAborted).toBe(true);
   });
 
-  test("the connection-abort listener no-ops once the response has already finished", async () => {
+  test("a late close does not abort mid-request, but the signal is released once the response is written", async () => {
     const { logger } = createCapturingLogger();
     const req = createFakeIncomingMessage();
     const res = createFakeServerResponse({ writableEnded: true });
@@ -777,6 +879,7 @@ describe("createConsoleRequestListener — the abort seam is live", () => {
       const listener = createConsoleRequestListener({
         router,
         middlewares: [],
+        preRouting: [],
         logger,
         signal: new AbortController().signal,
       });
@@ -785,10 +888,21 @@ describe("createConsoleRequestListener — the abort seam is live", () => {
 
     await dispatchStarted;
     req.emit("close");
+
+    // The LISTENER no-ops: a late close must not report "cancelled" for a
+    // request that has already succeeded.
+    expect(observedAborted).toBeUndefined();
+
     resolveDispatch({ status: 200, headers: {}, body: "done" });
     await new Promise((resolve) => setImmediate(resolve));
 
-    expect(observedAborted).toBeUndefined();
+    // ...but the composite pin IS released once the response has been
+    // written, even though `res` was already ended: without this, an
+    // `AbortSignal.any([drainSignal, perRequest])` that ever gets an abort
+    // listener attached (exactly what `ctx.signal` is for) stays pinned by
+    // the still-open, server-lifetime drain signal for the rest of the
+    // process — a measured leak.
+    expect(observedAborted).toBe(true);
   });
 });
 
@@ -818,6 +932,7 @@ describe("createConsoleRequestListener — a writeResponse failure can never lea
     const listener = createConsoleRequestListener({
       router,
       middlewares: [],
+      preRouting: [],
       logger,
       signal: new AbortController().signal,
     });
@@ -857,6 +972,7 @@ describe("createConsoleRequestListener — the outer safety net still guards run
     const listener = createConsoleRequestListener({
       router,
       middlewares: [],
+      preRouting: [],
       logger,
       signal: new AbortController().signal,
       now: () => {
@@ -897,6 +1013,7 @@ describe("createConsoleRequestListener — writeFallbackResponse's own guards", 
     const listener = createConsoleRequestListener({
       router,
       middlewares: [],
+      preRouting: [],
       logger,
       signal: new AbortController().signal,
     });
@@ -946,6 +1063,7 @@ describe("createConsoleRequestListener — writeFallbackResponse's own guards", 
     const listener = createConsoleRequestListener({
       router,
       middlewares: [],
+      preRouting: [],
       logger,
       signal: new AbortController().signal,
     });
@@ -987,6 +1105,7 @@ describe("createConsoleRequestListener — writeFallbackResponse's own guards", 
     const listener = createConsoleRequestListener({
       router,
       middlewares: [],
+      preRouting: [],
       logger,
       signal: new AbortController().signal,
     });
@@ -1021,6 +1140,7 @@ describe("createConsoleRequestListener — writeFallbackResponse's own guards", 
     const listener = createConsoleRequestListener({
       router,
       middlewares: [],
+      preRouting: [],
       logger,
       signal: new AbortController().signal,
     });
@@ -1045,49 +1165,463 @@ describe("createConsoleRequestListener — writeFallbackResponse's own guards", 
   });
 });
 
-describe("createConsoleRequestListener — a request whose target fails to parse never logs the raw target (S1)", () => {
-  // `parseRequestUrl` (context.ts) runs `new URL(rawUrl, "http://localhost")`
-  // directly against `req.url` — a plain string per Node's `http` contract —
-  // so a malformed target is reproduced by setting the fake
-  // `IncomingMessage.url` directly, with no real socket/client involved at
-  // all (verified against the source: this is a more direct reproduction
-  // than routing a malformed request-line through an actual TCP connection).
-  test.each<string>(["http://[", "http://%zz/", "//"])(
-    "logs the fixed placeholder path, never the raw target or its query string, and pins the caller-origin diagnostic gate, for %s",
-    async (rawTarget) => {
-      const { logger, events, logged } = createResolvingLogger();
+/**
+ * Tests for `CreateConsoleRequestListenerOptions.preRouting` (X2b, wave 3):
+ * a second middleware chain that runs around the WHOLE of `dispatch`, unlike
+ * `middlewares`, which only wraps a matched route's handler and therefore
+ * never sees an unmatched request. WHY this matters: a DNS-rebinding probe
+ * to an unknown path would bypass an origin guard placed in `middlewares`
+ * entirely, getting a clean 404 that still confirms an m3l console is
+ * listening. A `preRouting` guard sees the probe regardless of outcome.
+ */
+describe("createConsoleRequestListener — the preRouting chain wraps the whole of dispatch", () => {
+  test("a preRouting middleware runs for a request that 404s", async () => {
+    const { logger, logged } = createResolvingLogger();
+    let ran = false;
+    const preRoutingMw: M3LConsoleMiddleware = (ctx, next) => {
+      ran = true;
+      return next(ctx);
+    };
+    const listener = createConsoleRequestListener({
+      router: createRouter([]),
+      middlewares: [],
+      preRouting: [preRoutingMw],
+      logger,
+      signal: new AbortController().signal,
+    });
+    const req = createFakeIncomingMessage({ url: "/nope" });
+    const { res, written } = createRecordingServerResponse();
+
+    listener(req, res);
+    await logged;
+
+    expect(ran).toBe(true);
+    expect(written.status).toBe(404);
+  });
+
+  test("a preRouting middleware runs for a request that 405s", async () => {
+    const { logger, logged } = createResolvingLogger();
+    let ran = false;
+    const preRoutingMw: M3LConsoleMiddleware = (ctx, next) => {
+      ran = true;
+      return next(ctx);
+    };
+    const router = createRouter([
+      route({ method: "GET", path: "/api/v1/runs" }),
+    ]);
+    const listener = createConsoleRequestListener({
+      router,
+      middlewares: [],
+      preRouting: [preRoutingMw],
+      logger,
+      signal: new AbortController().signal,
+    });
+    const req = createFakeIncomingMessage({
+      method: "DELETE",
+      url: "/api/v1/runs",
+    });
+    const { res, written } = createRecordingServerResponse();
+
+    listener(req, res);
+    await logged;
+
+    expect(ran).toBe(true);
+    expect(written.status).toBe(405);
+  });
+
+  test("a preRouting middleware runs for a request that matches a route", async () => {
+    const { logger, logged } = createResolvingLogger();
+    let ran = false;
+    const preRoutingMw: M3LConsoleMiddleware = (ctx, next) => {
+      ran = true;
+      return next(ctx);
+    };
+    const router = createRouter([
+      route({ method: "GET", path: "/api/v1/runs" }),
+    ]);
+    const listener = createConsoleRequestListener({
+      router,
+      middlewares: [],
+      preRouting: [preRoutingMw],
+      logger,
+      signal: new AbortController().signal,
+    });
+    const req = createFakeIncomingMessage({ url: "/api/v1/runs" });
+    const { res, written } = createRecordingServerResponse();
+
+    listener(req, res);
+    await logged;
+
+    expect(ran).toBe(true);
+    expect(written.status).toBe(200);
+  });
+
+  test("a middlewares member does NOT run for a 404 — the existing behaviour, now made explicit", async () => {
+    const { logger, logged } = createResolvingLogger();
+    let ran = false;
+    const middleware: M3LConsoleMiddleware = (ctx, next) => {
+      ran = true;
+      return next(ctx);
+    };
+    const listener = createConsoleRequestListener({
+      router: createRouter([]),
+      middlewares: [middleware],
+      preRouting: [],
+      logger,
+      signal: new AbortController().signal,
+    });
+    const req = createFakeIncomingMessage({ url: "/nope" });
+    const { res, written } = createRecordingServerResponse();
+
+    listener(req, res);
+    await logged;
+
+    expect(written.status).toBe(404);
+    expect(ran).toBe(false);
+  });
+
+  test("a preRouting middleware that short-circuits prevents routing entirely: the route handler never runs and the response is the middleware's own", async () => {
+    const { logger, logged } = createResolvingLogger();
+    let handlerRan = false;
+    const shortCircuitResponse: M3LConsoleResponse = {
+      status: 418,
+      headers: {},
+      body: "short-circuited",
+    };
+    const preRoutingMw: M3LConsoleMiddleware = () => shortCircuitResponse;
+    const router = createRouter([
+      route({
+        method: "GET",
+        path: "/api/v1/runs",
+        handler: () => {
+          handlerRan = true;
+          return { status: 200, headers: {}, body: "ok" };
+        },
+      }),
+    ]);
+    const listener = createConsoleRequestListener({
+      router,
+      middlewares: [],
+      preRouting: [preRoutingMw],
+      logger,
+      signal: new AbortController().signal,
+    });
+    const req = createFakeIncomingMessage({ url: "/api/v1/runs" });
+    const { res, written } = createRecordingServerResponse();
+
+    listener(req, res);
+    await logged;
+
+    expect(handlerRan).toBe(false);
+    expect(written.status).toBe(418);
+    expect(written.body).toBe("short-circuited");
+  });
+
+  test("preRouting members run outermost-first, before any middlewares member", async () => {
+    const { logger, logged } = createResolvingLogger();
+    const order: string[] = [];
+    const preRoutingMw: M3LConsoleMiddleware = async (ctx, next) => {
+      order.push("preRouting-in");
+      const response = await next(ctx);
+      order.push("preRouting-out");
+      return response;
+    };
+    const middleware: M3LConsoleMiddleware = async (ctx, next) => {
+      order.push("middlewares-in");
+      const response = await next(ctx);
+      order.push("middlewares-out");
+      return response;
+    };
+    const router = createRouter([
+      route({
+        method: "GET",
+        path: "/api/v1/runs",
+        handler: () => {
+          order.push("handler");
+          return { status: 200, headers: {}, body: "ok" };
+        },
+      }),
+    ]);
+    const listener = createConsoleRequestListener({
+      router,
+      middlewares: [middleware],
+      preRouting: [preRoutingMw],
+      logger,
+      signal: new AbortController().signal,
+    });
+    const req = createFakeIncomingMessage({ url: "/api/v1/runs" });
+    const { res } = createRecordingServerResponse();
+
+    listener(req, res);
+    await logged;
+
+    expect(order).toEqual([
+      "preRouting-in",
+      "middlewares-in",
+      "handler",
+      "middlewares-out",
+      "preRouting-out",
+    ]);
+  });
+
+  test("when a preRouting middleware short-circuits, the outcome log's accessMode is undefined — routing never happened, so there is no route to report", async () => {
+    const { logger, events, logged } = createResolvingLogger();
+    const preRoutingMw: M3LConsoleMiddleware = () => ({
+      status: 418,
+      headers: {},
+      body: "short",
+    });
+    const router = createRouter([
+      route({ method: "GET", path: "/api/v1/runs", auth: "required" }),
+    ]);
+    const listener = createConsoleRequestListener({
+      router,
+      middlewares: [],
+      preRouting: [preRoutingMw],
+      logger,
+      signal: new AbortController().signal,
+    });
+    const req = createFakeIncomingMessage({ url: "/api/v1/runs" });
+    const { res } = createRecordingServerResponse();
+
+    listener(req, res);
+    await logged;
+
+    expect(events).toHaveLength(1);
+    // `logOutcome` only spreads `accessMode` onto the logged data when it is
+    // defined — an undefined accessMode is therefore an absent key, not a
+    // present key with value `undefined`.
+    expect(events[0]?.data).not.toHaveProperty("accessMode");
+  });
+
+  test.each<M3LRouteAuth>(["required", "exempt"])(
+    "ctx.accessMode inside a middlewares member equals the matched route's auth (%s)",
+    async (auth) => {
+      const { logger, logged } = createResolvingLogger();
+      let observedAccessMode: M3LRouteAuth | undefined;
+      const middleware: M3LConsoleMiddleware = (ctx, next) => {
+        observedAccessMode = ctx.accessMode;
+        return next(ctx);
+      };
+      const router = createRouter([
+        route({ method: "GET", path: "/api/v1/runs", auth }),
+      ]);
       const listener = createConsoleRequestListener({
-        router: createRouter([]),
-        middlewares: [],
+        router,
+        middlewares: [middleware],
+        preRouting: [],
         logger,
         signal: new AbortController().signal,
       });
-      const canaryTarget = `${rawTarget}${rawTarget.includes("?") ? "&" : "?"}token=CANARY123`;
-      const req = createFakeIncomingMessage({ url: canaryTarget });
-      const { res, written } = createRecordingServerResponse();
+      const req = createFakeIncomingMessage({ url: "/api/v1/runs" });
+      const { res } = createRecordingServerResponse();
 
       listener(req, res);
       await logged;
 
-      expect(written.status).toBe(400);
-      expect(events).toHaveLength(1);
-      const serialized = JSON.stringify(events[0]);
-      // The canary — and the raw target it was embedded in — must never
-      // appear anywhere in the logged event: this is the exact regression
-      // a raw-`req.url` seed would reintroduce.
-      expect(serialized).not.toContain("CANARY123");
-      expect(serialized).not.toContain(canaryTarget);
-      // The `path` field is logged as the fixed placeholder, never the raw,
-      // unparsed target — this literal mirrors handler.ts's own
-      // PATH_PLACEHOLDER_UNPARSED constant, which is not exported.
-      expect(events[0]?.data).toMatchObject({ path: "(unparsed)" });
-      // Unlike the not-found path, a malformed target genuinely throws
-      // (`createRequestContext` raises `ERR_CONSOLE_BAD_REQUEST`) and is
-      // caught in `runRequest`'s `catch`, which calls
-      // `logDiagnosticIfFault` for real. That error is caller-origin, so
-      // this is what actually pins `isCallerOriginError`'s gate: removing
-      // the gate would emit a second diagnostic event here.
-      expect(findDiagnosticEvent(events)).toBeUndefined();
+      expect(observedAccessMode).toBe(auth);
     },
   );
+});
+
+/**
+ * Tests for the abort-signal release fixed in `runRequest` (X2b, wave 3).
+ * This is a MEASURED leak, not a hypothetical: on Node v26.7.0,
+ * `AbortSignal.any([longLived, perRequest])` produces a composite that is
+ * normally collectable, but once anything attaches a listener to that
+ * composite and never removes it, the long-lived source (`options.signal`,
+ * the drain signal, which lives as long as the server) pins the composite
+ * for the life of the process. `runRequest` builds exactly this shape, and
+ * `ctx.signal` exists precisely to be listened on by pollers and X4's run
+ * orchestration — so every request must leave its `ctx.signal` aborted once
+ * it completes, releasing the composite, regardless of which path the
+ * request took.
+ *
+ * A `preRouting` middleware is used to capture `ctx.signal` uniformly across
+ * all four paths below, since it is the only seam that runs on every one of
+ * them (unlike a route handler, which never runs for a 404 or a
+ * preRouting-level short-circuit).
+ */
+describe("createConsoleRequestListener — runRequest releases its composite abort signal after completion", () => {
+  test("a normal 2xx response ends with ctx.signal aborted", async () => {
+    const { logger, logged } = createResolvingLogger();
+    let capturedSignal: AbortSignal | undefined;
+    const captureSignal: M3LConsoleMiddleware = (ctx, next) => {
+      capturedSignal = ctx.signal;
+      return next(ctx);
+    };
+    const router = createRouter([
+      route({ method: "GET", path: "/api/v1/runs" }),
+    ]);
+    const listener = createConsoleRequestListener({
+      router,
+      middlewares: [],
+      preRouting: [captureSignal],
+      logger,
+      signal: new AbortController().signal,
+    });
+    const req = createFakeIncomingMessage({ url: "/api/v1/runs" });
+    const { res, written } = createRecordingServerResponse();
+
+    listener(req, res);
+    await logged;
+
+    expect(written.status).toBe(200);
+    expect(capturedSignal?.aborted).toBe(true);
+  });
+
+  test("a handler that throws (5xx) still ends with ctx.signal aborted", async () => {
+    const { logger, logged } = createResolvingLogger();
+    let capturedSignal: AbortSignal | undefined;
+    const captureSignal: M3LConsoleMiddleware = (ctx, next) => {
+      capturedSignal = ctx.signal;
+      return next(ctx);
+    };
+    const router = createRouter([
+      route({
+        method: "GET",
+        path: "/boom",
+        handler: () => {
+          throw new Error("kaboom");
+        },
+      }),
+    ]);
+    const listener = createConsoleRequestListener({
+      router,
+      middlewares: [],
+      preRouting: [captureSignal],
+      logger,
+      signal: new AbortController().signal,
+    });
+    const req = createFakeIncomingMessage({ url: "/boom" });
+    const { res, written } = createRecordingServerResponse();
+
+    listener(req, res);
+    await logged;
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(written.status).toBe(500);
+    expect(capturedSignal?.aborted).toBe(true);
+  });
+
+  test("an unmatched 404 still ends with ctx.signal aborted", async () => {
+    const { logger, logged } = createResolvingLogger();
+    let capturedSignal: AbortSignal | undefined;
+    const captureSignal: M3LConsoleMiddleware = (ctx, next) => {
+      capturedSignal = ctx.signal;
+      return next(ctx);
+    };
+    const listener = createConsoleRequestListener({
+      router: createRouter([]),
+      middlewares: [],
+      preRouting: [captureSignal],
+      logger,
+      signal: new AbortController().signal,
+    });
+    const req = createFakeIncomingMessage({ url: "/nope" });
+    const { res, written } = createRecordingServerResponse();
+
+    listener(req, res);
+    await logged;
+
+    expect(written.status).toBe(404);
+    expect(capturedSignal?.aborted).toBe(true);
+  });
+
+  test("a preRouting short-circuit still ends with ctx.signal aborted", async () => {
+    const { logger, logged } = createResolvingLogger();
+    let capturedSignal: AbortSignal | undefined;
+    const shortCircuitMw: M3LConsoleMiddleware = (ctx) => {
+      capturedSignal = ctx.signal;
+      return { status: 418, headers: {}, body: "short" };
+    };
+    const router = createRouter([
+      route({ method: "GET", path: "/api/v1/runs" }),
+    ]);
+    const listener = createConsoleRequestListener({
+      router,
+      middlewares: [],
+      preRouting: [shortCircuitMw],
+      logger,
+      signal: new AbortController().signal,
+    });
+    const req = createFakeIncomingMessage({ url: "/api/v1/runs" });
+    const { res, written } = createRecordingServerResponse();
+
+    listener(req, res);
+    await logged;
+
+    expect(written.status).toBe(418);
+    expect(capturedSignal?.aborted).toBe(true);
+  });
+
+  // NOTE TO FUTURE MAINTAINERS: this ordering is load-bearing, not
+  // incidental. Do NOT "tidy away" the abort-after-write sequencing as
+  // redundant with the abort-happens-eventually tests above — aborting the
+  // composite signal BEFORE the response is written would cancel the very
+  // write it is meant to follow (a poller or X4 run orchestration listening
+  // on `ctx.signal` could tear down mid-write). This test fails if the abort
+  // is ever moved ahead of `writeResponseGuarded`.
+  test("ordering: runRequest aborts ctx.signal ONLY AFTER the response is fully written, never before", async () => {
+    const { logger, logged } = createResolvingLogger();
+    let capturedSignal: AbortSignal | undefined;
+    let abortedAtWriteHeadTime: boolean | undefined;
+    let abortedAtEndTime: boolean | undefined;
+    let writtenStatus: number | undefined;
+    let writtenBody: string | undefined;
+    const captureSignal: M3LConsoleMiddleware = (ctx, next) => {
+      capturedSignal = ctx.signal;
+      return next(ctx);
+    };
+    const router = createRouter([
+      route({
+        method: "GET",
+        path: "/api/v1/runs",
+        handler: () => ({ status: 200, headers: {}, body: "ok-body" }),
+      }),
+    ]);
+    const res = new EventEmitter() as unknown as ServerResponse & {
+      writableEnded: boolean;
+      headersSent: boolean;
+    };
+    Object.assign(res, {
+      writableEnded: false,
+      headersSent: false,
+      writeHead: (status: number) => {
+        writtenStatus = status;
+        // The response write must observe the signal as NOT YET aborted.
+        abortedAtWriteHeadTime = capturedSignal?.aborted;
+        res.headersSent = true;
+        return res;
+      },
+      end: (body?: string) => {
+        writtenBody = body;
+        // Same guarantee at the final `end()` call — still not aborted.
+        abortedAtEndTime = capturedSignal?.aborted;
+        res.writableEnded = true;
+        return res;
+      },
+    });
+    const listener = createConsoleRequestListener({
+      router,
+      middlewares: [],
+      preRouting: [captureSignal],
+      logger,
+      signal: new AbortController().signal,
+    });
+    const req = createFakeIncomingMessage({ url: "/api/v1/runs" });
+
+    listener(req, res);
+    await logged;
+
+    // The response was intact and fully written...
+    expect(writtenStatus).toBe(200);
+    expect(writtenBody).toBe("ok-body");
+    // ...and at the moment of each write call, the signal had not yet been
+    // aborted...
+    expect(abortedAtWriteHeadTime).toBe(false);
+    expect(abortedAtEndTime).toBe(false);
+    // ...only AFTER the write completed does the signal end up aborted.
+    expect(capturedSignal?.aborted).toBe(true);
+  });
 });

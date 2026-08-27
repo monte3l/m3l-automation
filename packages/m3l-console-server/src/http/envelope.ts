@@ -27,8 +27,9 @@ const STATUS_UNAUTHENTICATED = 401;
 const STATUS_NOT_FOUND = 404;
 const STATUS_METHOD_NOT_ALLOWED = 405;
 const STATUS_INTERNAL = 500;
+const STATUS_UNAVAILABLE = 503;
 
-/** The status/origin/retryable decision for one {@link M3LConsoleErrorCode}. */
+/** The status/origin/retryable/fault decision for one {@link M3LConsoleErrorCode}. */
 interface ErrorClassification {
   /** The HTTP status this code maps to. */
   readonly status: number;
@@ -36,6 +37,15 @@ interface ErrorClassification {
   readonly origin: Core.M3LErrorOrigin;
   /** Whether retrying the same request could plausibly succeed. */
   readonly retryable: Core.M3LErrorRetryable;
+  /**
+   * Whether this outcome is a genuine server fault worth an error-level
+   * diagnostic line. Deliberately distinct from `origin`: a drain refusal is
+   * `origin: "library"` (the caller did nothing wrong) yet is not a fault
+   * (the server is shutting down as instructed), so gating the diagnostic
+   * log on `origin` alone would emit an error-level line for every request
+   * refused during an ordinary shutdown.
+   */
+  readonly fault: boolean;
 }
 
 /**
@@ -56,46 +66,61 @@ const CLASSIFICATION_BY_CODE: Record<M3LConsoleErrorCode, ErrorClassification> =
       status: STATUS_BAD_REQUEST,
       origin: "caller",
       retryable: false,
+      fault: false,
     },
     ERR_CONSOLE_UNAUTHENTICATED: {
       status: STATUS_UNAUTHENTICATED,
       origin: "caller",
       retryable: false,
+      fault: false,
     },
     ERR_CONSOLE_NOT_FOUND: {
       status: STATUS_NOT_FOUND,
       origin: "caller",
       retryable: false,
+      fault: false,
     },
     ERR_CONSOLE_METHOD_NOT_ALLOWED: {
       status: STATUS_METHOD_NOT_ALLOWED,
       origin: "caller",
       retryable: false,
+      fault: false,
     },
     ERR_CONSOLE_CONFIG_INVALID: {
       status: STATUS_INTERNAL,
       origin: "library",
       retryable: false,
+      fault: true,
     },
     ERR_CONSOLE_INTERNAL: {
       status: STATUS_INTERNAL,
       origin: "library",
       retryable: false,
+      fault: true,
     },
     ERR_CONSOLE_ROUTE_CONFLICT: {
       status: STATUS_INTERNAL,
       origin: "library",
       retryable: false,
+      fault: true,
     },
     ERR_CONSOLE_DRAIN_FAILED: {
       status: STATUS_INTERNAL,
       origin: "library",
       retryable: false,
+      fault: true,
     },
     ERR_CONSOLE_LISTEN_FAILED: {
       status: STATUS_INTERNAL,
       origin: "library",
       retryable: false,
+      fault: true,
+    },
+    ERR_CONSOLE_UNAVAILABLE: {
+      status: STATUS_UNAVAILABLE,
+      origin: "library",
+      retryable: true,
+      fault: false,
     },
   };
 
@@ -111,6 +136,7 @@ const FALLBACK_CLASSIFICATION: ErrorClassification = {
   status: STATUS_INTERNAL,
   origin: "library",
   retryable: false,
+  fault: true,
 };
 
 /**
@@ -169,34 +195,41 @@ export interface M3LConsoleErrorEnvelope {
 }
 
 /**
- * Returns `true` when `error` is an {@link M3LConsoleError} whose code
- * classifies as caller-origin (`ERR_CONSOLE_BAD_REQUEST`,
- * `_UNAUTHENTICATED`, `_NOT_FOUND`, `_METHOD_NOT_ALLOWED`) — a routine,
- * expected outcome rather than a fault. Every other value (a library-origin
- * `M3LConsoleError`, a foreign `Core.M3LError`, a plain `Error`, or a thrown
- * non-`Error` value) returns `false`.
+ * Returns `true` when `error` represents a genuine server fault worth an
+ * error-level diagnostic line — i.e. when it is *not* an
+ * {@link M3LConsoleError} whose {@link ErrorClassification.fault} is
+ * `false`. Every other value (a foreign `Core.M3LError`, a plain `Error`, a
+ * thrown non-`Error` value, `null`, or `undefined`) returns `true`.
  *
- * `http/handler` uses this to gate its diagnostic {@link Core.M3LLogger.errorFrom}
- * line (ADR-0070's display-vs-persist split): a caller-origin error already
- * reads clearly from the outcome line's status alone, so logging it again as
- * a diagnostic would be noise and would let a caller remotely steer log
- * severity by choosing which routine error to trigger.
+ * `fault` is deliberately a separate field from `origin`, not a synonym for
+ * `origin !== "caller"`: `ERR_CONSOLE_UNAVAILABLE` is `origin: "library"`
+ * (the caller did nothing wrong) yet `fault: false` (the server is
+ * shutting down as instructed, not malfunctioning). Reimplementing this as
+ * an `origin`-only check (comparing `origin` against `"library"` instead of
+ * reading `fault`) would silently re-break the drain case: every request a
+ * draining server refuses would once again log a spurious error-level
+ * diagnostic line.
+ *
+ * `http/handler` uses this to gate its diagnostic
+ * {@link Core.M3LLogger.errorFrom} line (ADR-0070's display-vs-persist
+ * split): a non-fault error already reads clearly from the outcome line's
+ * status alone, so logging it again as a diagnostic would be noise and
+ * would let a caller remotely steer log severity by choosing which routine
+ * error to trigger.
  *
  * @param error - Any value caught while handling a request.
- * @returns `true` when `error` is a caller-origin {@link M3LConsoleError}.
+ * @returns `true` when `error` is a genuine fault.
  * @example
  * ```ts
- * isCallerOriginError(
+ * isFaultError(
  *   new M3LConsoleError("ERR_CONSOLE_NOT_FOUND", "route not found"),
- * ); // true
- * isCallerOriginError(new Error("boom")); // false
+ * ); // false
+ * isFaultError(new Error("boom")); // true
  * ```
  */
-export function isCallerOriginError(error: unknown): boolean {
-  return (
-    error instanceof M3LConsoleError &&
-    classificationForCode(error.code).origin === "caller"
-  );
+export function isFaultError(error: unknown): boolean {
+  if (!(error instanceof M3LConsoleError)) return true;
+  return classificationForCode(error.code).fault;
 }
 
 /**
