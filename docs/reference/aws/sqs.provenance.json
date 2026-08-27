@@ -8,7 +8,7 @@
         {
           "file": "packages/m3l-common/src/aws/sqs/client.ts",
           "symbol": "M3LSQSOperations",
-          "blob": "cce858e5ba701e2afdec32431c4d66d8e088f401"
+          "blob": "2e3a657ec5f84b0b5b4486b2d4f0ee177d13d1b9"
         },
         {
           "file": "packages/m3l-common/src/aws/sqs/error.ts",
@@ -18,60 +18,70 @@
         {
           "file": "packages/m3l-common/src/aws/sqs/types.ts",
           "symbol": "M3LSQSReceivedMessage",
-          "blob": "088aff8cc8e6fda843b2ca98c4503ab88bba51d2"
+          "blob": "9e5382c477836a333df9425f58274fc486bad275"
         },
         {
           "file": "packages/m3l-common/src/aws/sqs/types.ts",
           "symbol": "M3LSQSSendEntry",
-          "blob": "088aff8cc8e6fda843b2ca98c4503ab88bba51d2"
+          "blob": "9e5382c477836a333df9425f58274fc486bad275"
         },
         {
           "file": "packages/m3l-common/src/aws/sqs/types.ts",
           "symbol": "M3LSQSDeleteEntry",
-          "blob": "088aff8cc8e6fda843b2ca98c4503ab88bba51d2"
+          "blob": "9e5382c477836a333df9425f58274fc486bad275"
         },
         {
           "file": "packages/m3l-common/src/aws/sqs/types.ts",
           "symbol": "M3LSQSBatchFailure",
-          "blob": "088aff8cc8e6fda843b2ca98c4503ab88bba51d2"
+          "blob": "9e5382c477836a333df9425f58274fc486bad275"
         },
         {
           "file": "packages/m3l-common/src/aws/sqs/types.ts",
           "symbol": "M3LSQSBatchResult",
-          "blob": "088aff8cc8e6fda843b2ca98c4503ab88bba51d2"
+          "blob": "9e5382c477836a333df9425f58274fc486bad275"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/sqs/types.ts",
+          "symbol": "M3LSQSListQueuesOptions",
+          "blob": "9e5382c477836a333df9425f58274fc486bad275"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/sqs/types.ts",
+          "symbol": "M3LSQSListQueuesResult",
+          "blob": "9e5382c477836a333df9425f58274fc486bad275"
         },
         {
           "file": "packages/m3l-common/src/aws/sqs/types.ts",
           "symbol": "M3LSQSReceiveOptions",
-          "blob": "088aff8cc8e6fda843b2ca98c4503ab88bba51d2"
+          "blob": "9e5382c477836a333df9425f58274fc486bad275"
         },
         {
           "file": "packages/m3l-common/src/aws/sqs/types.ts",
           "symbol": "M3LSQSRedriveDecision",
-          "blob": "088aff8cc8e6fda843b2ca98c4503ab88bba51d2"
+          "blob": "9e5382c477836a333df9425f58274fc486bad275"
         },
         {
           "file": "packages/m3l-common/src/aws/sqs/types.ts",
           "symbol": "M3LSQSRedriveProcessor",
-          "blob": "088aff8cc8e6fda843b2ca98c4503ab88bba51d2"
+          "blob": "9e5382c477836a333df9425f58274fc486bad275"
         },
         {
           "file": "packages/m3l-common/src/aws/sqs/types.ts",
           "symbol": "M3LSQSReceiveDeduplicationMode",
-          "blob": "088aff8cc8e6fda843b2ca98c4503ab88bba51d2"
+          "blob": "9e5382c477836a333df9425f58274fc486bad275"
         },
         {
           "file": "packages/m3l-common/src/aws/sqs/types.ts",
           "symbol": "M3LSQSRedriveOptions",
-          "blob": "088aff8cc8e6fda843b2ca98c4503ab88bba51d2"
+          "blob": "9e5382c477836a333df9425f58274fc486bad275"
         },
         {
           "file": "packages/m3l-common/src/aws/sqs/types.ts",
           "symbol": "M3LSQSRedriveResult",
-          "blob": "088aff8cc8e6fda843b2ca98c4503ab88bba51d2"
+          "blob": "9e5382c477836a333df9425f58274fc486bad275"
         }
       ],
-      "retrieved": "2026-08-23"
+      "retrieved": "2026-08-27"
     },
     {
       "heading": "`M3LSQSOperations`",
@@ -79,10 +89,10 @@
         {
           "file": "packages/m3l-common/src/aws/sqs/client.ts",
           "symbol": "M3LSQSOperations",
-          "blob": "cce858e5ba701e2afdec32431c4d66d8e088f401"
+          "blob": "2e3a657ec5f84b0b5b4486b2d4f0ee177d13d1b9"
         }
       ],
-      "retrieved": "2026-08-23"
+      "retrieved": "2026-08-27"
     },
     {
       "heading": "`redrive` — the receive→process→move flow",
@@ -90,10 +100,10 @@
         {
           "file": "packages/m3l-common/src/aws/sqs/client.ts",
           "symbol": "M3LSQSOperations",
-          "blob": "cce858e5ba701e2afdec32431c4d66d8e088f401"
+          "blob": "2e3a657ec5f84b0b5b4486b2d4f0ee177d13d1b9"
         }
       ],
-      "retrieved": "2026-08-23"
+      "retrieved": "2026-08-27"
     },
     {
       "heading": "`M3LSQSOperationError`",
@@ -112,80 +122,90 @@
         {
           "file": "packages/m3l-common/src/aws/sqs/types.ts",
           "symbol": "M3LSQSReceivedMessage",
-          "blob": "088aff8cc8e6fda843b2ca98c4503ab88bba51d2"
+          "blob": "9e5382c477836a333df9425f58274fc486bad275"
         },
         {
           "file": "packages/m3l-common/src/aws/sqs/types.ts",
           "symbol": "M3LSQSSendEntry",
-          "blob": "088aff8cc8e6fda843b2ca98c4503ab88bba51d2"
+          "blob": "9e5382c477836a333df9425f58274fc486bad275"
         },
         {
           "file": "packages/m3l-common/src/aws/sqs/types.ts",
           "symbol": "M3LSQSDeleteEntry",
-          "blob": "088aff8cc8e6fda843b2ca98c4503ab88bba51d2"
+          "blob": "9e5382c477836a333df9425f58274fc486bad275"
         },
         {
           "file": "packages/m3l-common/src/aws/sqs/types.ts",
           "symbol": "M3LSQSBatchFailure",
-          "blob": "088aff8cc8e6fda843b2ca98c4503ab88bba51d2"
+          "blob": "9e5382c477836a333df9425f58274fc486bad275"
         },
         {
           "file": "packages/m3l-common/src/aws/sqs/types.ts",
           "symbol": "M3LSQSBatchResult",
-          "blob": "088aff8cc8e6fda843b2ca98c4503ab88bba51d2"
+          "blob": "9e5382c477836a333df9425f58274fc486bad275"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/sqs/types.ts",
+          "symbol": "M3LSQSListQueuesOptions",
+          "blob": "9e5382c477836a333df9425f58274fc486bad275"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/sqs/types.ts",
+          "symbol": "M3LSQSListQueuesResult",
+          "blob": "9e5382c477836a333df9425f58274fc486bad275"
         },
         {
           "file": "packages/m3l-common/src/aws/sqs/types.ts",
           "symbol": "M3LSQSReceiveOptions",
-          "blob": "088aff8cc8e6fda843b2ca98c4503ab88bba51d2"
+          "blob": "9e5382c477836a333df9425f58274fc486bad275"
         },
         {
           "file": "packages/m3l-common/src/aws/sqs/types.ts",
           "symbol": "M3LSQSRedriveDecision",
-          "blob": "088aff8cc8e6fda843b2ca98c4503ab88bba51d2"
+          "blob": "9e5382c477836a333df9425f58274fc486bad275"
         },
         {
           "file": "packages/m3l-common/src/aws/sqs/types.ts",
           "symbol": "M3LSQSRedriveProcessor",
-          "blob": "088aff8cc8e6fda843b2ca98c4503ab88bba51d2"
+          "blob": "9e5382c477836a333df9425f58274fc486bad275"
         },
         {
           "file": "packages/m3l-common/src/aws/sqs/types.ts",
           "symbol": "M3LSQSReceiveDeduplicationMode",
-          "blob": "088aff8cc8e6fda843b2ca98c4503ab88bba51d2"
+          "blob": "9e5382c477836a333df9425f58274fc486bad275"
         },
         {
           "file": "packages/m3l-common/src/aws/sqs/types.ts",
           "symbol": "M3LSQSRedriveOptions",
-          "blob": "088aff8cc8e6fda843b2ca98c4503ab88bba51d2"
+          "blob": "9e5382c477836a333df9425f58274fc486bad275"
         },
         {
           "file": "packages/m3l-common/src/aws/sqs/types.ts",
           "symbol": "M3LSQSRedriveResult",
-          "blob": "088aff8cc8e6fda843b2ca98c4503ab88bba51d2"
+          "blob": "9e5382c477836a333df9425f58274fc486bad275"
         },
         {
           "file": "packages/m3l-common/src/aws/sqs/types.ts",
           "symbol": "M3LSQSQueueAttributes",
-          "blob": "088aff8cc8e6fda843b2ca98c4503ab88bba51d2"
+          "blob": "9e5382c477836a333df9425f58274fc486bad275"
         },
         {
           "file": "packages/m3l-common/src/aws/sqs/types.ts",
           "symbol": "M3LSQSRedrivePolicy",
-          "blob": "088aff8cc8e6fda843b2ca98c4503ab88bba51d2"
+          "blob": "9e5382c477836a333df9425f58274fc486bad275"
         },
         {
           "file": "packages/m3l-common/src/aws/sqs/types.ts",
           "symbol": "M3LSQSRedrivePermission",
-          "blob": "088aff8cc8e6fda843b2ca98c4503ab88bba51d2"
+          "blob": "9e5382c477836a333df9425f58274fc486bad275"
         },
         {
           "file": "packages/m3l-common/src/aws/sqs/types.ts",
           "symbol": "M3LSQSRedriveAllowPolicy",
-          "blob": "088aff8cc8e6fda843b2ca98c4503ab88bba51d2"
+          "blob": "9e5382c477836a333df9425f58274fc486bad275"
         }
       ],
-      "retrieved": "2026-08-23"
+      "retrieved": "2026-08-27"
     },
     {
       "heading": "Field-mapping details (`receive`)",
@@ -193,10 +213,10 @@
         {
           "file": "packages/m3l-common/src/aws/sqs/client.ts",
           "symbol": "M3LSQSOperations",
-          "blob": "cce858e5ba701e2afdec32431c4d66d8e088f401"
+          "blob": "2e3a657ec5f84b0b5b4486b2d4f0ee177d13d1b9"
         }
       ],
-      "retrieved": "2026-08-23"
+      "retrieved": "2026-08-27"
     },
     {
       "heading": "Notes and behavior",
@@ -204,10 +224,10 @@
         {
           "file": "packages/m3l-common/src/aws/sqs/client.ts",
           "symbol": "M3LSQSOperations",
-          "blob": "cce858e5ba701e2afdec32431c4d66d8e088f401"
+          "blob": "2e3a657ec5f84b0b5b4486b2d4f0ee177d13d1b9"
         }
       ],
-      "retrieved": "2026-08-23"
+      "retrieved": "2026-08-27"
     }
   ]
 }
