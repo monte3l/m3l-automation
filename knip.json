@@ -30,7 +30,7 @@
     },
     "packages/m3l-console-server": {
       "entry": ["src/main.ts"],
-      "project": ["src/**/*.ts", "bin/**/*.mjs"]
+      "project": ["src/**/*.ts"]
     },
     "scripts/*": {
       "entry": "src/{main,command}.ts",

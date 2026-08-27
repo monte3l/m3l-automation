@@ -32,7 +32,6 @@
     "check:verify-parity": "node bin/check-verify-parity.mjs",
     "commands": "node bin/list-commands.mjs",
     "m3l": "node packages/m3l-cli/bin/m3l.mjs",
-    "console:server": "node packages/m3l-console-server/bin/m3l-console-server.mjs",
     "check:command-catalog": "node bin/check-command-catalog.mjs",
     "check:api": "node bin/check-exports-snapshot.mjs",
     "check:provenance": "node bin/check-doc-provenance.mjs",

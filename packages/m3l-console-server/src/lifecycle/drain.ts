@@ -29,7 +29,7 @@ const MAX_TIMEOUT_MS = 2_147_483_647;
  * }
  * ```
  */
-export type M3LDrainState = "serving" | "draining" | "drained";
+type M3LDrainState = "serving" | "draining" | "drained";
 
 /**
  * The result of a completed {@link M3LDrainController.drain} call.

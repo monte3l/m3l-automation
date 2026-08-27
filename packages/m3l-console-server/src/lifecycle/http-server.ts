@@ -5,13 +5,14 @@
  *
  * `listen()` alone does not guarantee a loopback bind: the host string
  * `main.ts` passes in is a *request*, and Node resolves it independently
- * (`localhost` does not even resolve to the address you might expect — see
- * the table below). This module never trusts the request; it re-derives the
- * bound host from `server.address()` after `listening` fires and rejects
- * anything that is not a verified loopback `AddressInfo`, closing the
- * socket first so a rejected start never leaves a live listener behind.
+ * (which loopback address `localhost` resolves to is host-dependent, not
+ * a Node fact — see the table below). This module never trusts the
+ * request; it re-derives the bound host from `server.address()` after
+ * `listening` fires and rejects anything that is not a verified loopback
+ * `AddressInfo`, closing the socket first so a rejected start never
+ * leaves a live listener behind.
  *
- * Measured on Node v26.7.0, against a real listener:
+ * Observed on Node v26.7.0, on one machine, against a real listener:
  *
  * | `listen` host      | `address().address` | verdict |
  * | ------------------- | -------------------- | ------- |
@@ -22,12 +23,22 @@
  * | `::`                 | `::`                  | REJECT  |
  * | *(host omitted)*     | `::`                  | REJECT  |
  *
- * Two consequences worth stating explicitly: `localhost` binds to the IPv6
- * loopback address `::1`, **not** `127.0.0.1` — rejecting the IPv6 loopback
- * form here would break the single most natural config value an operator
- * would type. And omitting the host binds `::` (every interface on the
- * host), which is the likeliest way to accidentally expose the console to
- * the network — exactly the failure mode this module exists to catch.
+ * The `localhost` row reflects that one machine, not a universal Node
+ * fact: which loopback address `localhost` resolves to is decided by the
+ * host's `/etc/hosts` and `getaddrinfo` ordering, so a CI runner, a
+ * container, or an IPv6-disabled host can resolve it to `127.0.0.1`
+ * instead of `::1`. The `0.0.0.0`, `::`, and *(host omitted)* rows are
+ * genuine Node behaviours that hold on every host: omitting the host
+ * binds `::` (every interface on the host), which is the likeliest way
+ * to accidentally expose the console to the network — the failure mode
+ * this assertion exists to catch.
+ *
+ * The invariant this module actually enforces is unconditional, unlike
+ * the `localhost` row above: it accepts any loopback form — `127.0.0.1`
+ * or `::1` — and rejects everything else, so it behaves correctly
+ * whichever address a given host resolves `localhost` to. Rejecting the
+ * IPv6 loopback form would break hosts that resolve `localhost` to
+ * `::1`, which is why both forms are accepted here.
  *
  * @packageDocumentation
  */
