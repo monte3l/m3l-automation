@@ -12,6 +12,27 @@ CLAUDE.md is advisory only (Claude reads it as context); everything in this
 table is deterministic enforcement that runs whether or not Claude "remembers"
 the rule.
 
+**`if:` scoping (ADR-0080).** Nine of the guards below whose own internal logic
+is scoped to specific paths/extensions — `guard-protected-paths`,
+`guard-eslint-disable-red`, `post-edit-md-verify`, `guard-exports-semver`,
+`post-edit-verify`, `guard-doc-counts`, `guard-provenance-staleness`,
+`guard-index-staleness`, `guard-red-phase-comments` — carry a per-handler `if`
+condition (Claude Code's [documented permission-rule filter](https://code.claude.com/docs/en/hooks#the-if-field))
+so the process only spawns for a matching edit, instead of spawning on every
+`Write`/`Edit` and exiting immediately for a non-matching path. `if` supports
+exactly one rule with no `&&`/`||`/list syntax, so a guard needing both tools
+and/or several path patterns gets one entry per (tool, pattern) combination —
+this is why `.claude/settings.json`'s `PreToolUse`/`PostToolUse` arrays list
+more entries than there are distinct guard scripts. The three guards with no
+stated backstop elsewhere (`guard-branch-isolation`, `guard-hub-src-writes`)
+or with an inherently unscopeable concern (`guard-secret-writes`, which must
+inspect any file) are **deliberately left unscoped** — narrowing them risks a
+silent gap with no fallback if the `if` glob ever drifts from the guard's own
+logic. `guard-js-extension`/`guard-no-commonjs` are also left unscoped: both
+match the majority of real edits in a TypeScript codebase already (little
+marginal spawn-reduction) and both have a CI/build backstop (see "Known gap"
+below), unlike the three above.
+
 | Event            | Matcher       | Hook                                | Purpose                                                                                                                                                                                                         | Mode     |
 | ---------------- | ------------- | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
 | SessionStart     | —             | `guard-worktree-ready.mjs`          | Reminds to run `pnpm worktree:setup` inside an unprovisioned linked worktree (missing `node_modules` / `.worktreeinclude` files).                                                                               | advisory |
