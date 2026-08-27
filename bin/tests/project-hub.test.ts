@@ -22,6 +22,7 @@ import {
   parseMarkdownTable,
   renderCellMarkdown,
   renderHubPage,
+  renderOverviewSection,
   renderStatusBadge,
   renderTrackerTable,
 } from "../lib/project-hub.mjs";
@@ -1631,6 +1632,11 @@ describe("renderHubPage", () => {
     generatedAt: "2026-07-22T00:00:00.000Z",
     commitSha: "abc1234",
     summary: { implemented: 30, total: 31 },
+    packages: [
+      { name: "@m3l-automation/m3l-common", description: "The library." },
+      { name: "@m3l-automation/m3l-cli", description: "The CLI." },
+    ],
+    scriptCount: 16,
     roadmap: {
       priority0: {
         header: ["Item", "What", "Status"],
@@ -1750,6 +1756,107 @@ describe("renderHubPage", () => {
     const html = renderHubPage(modelWithGuide);
     expect(html).toContain(
       '<a href="https://example.com/docs/guides/some-guide.md">Some Guide</a>',
+    );
+  });
+
+  test("renders an overview section before the roadmap section", () => {
+    const html = renderHubPage(model);
+    expect(html).toContain('id="overview"');
+    expect(html.indexOf('id="overview"')).toBeLessThan(
+      html.indexOf('id="roadmap"'),
+    );
+  });
+
+  test("includes the script fleet count from model.scriptCount in the overview prose", () => {
+    const html = renderHubPage(model);
+    expect(html).toContain("16-script");
+  });
+
+  test("renders an overview-packages table with each package name and description", () => {
+    const html = renderHubPage(model);
+    expect(html).toContain('<table id="overview-packages">');
+    expect(html).toContain("<code>@m3l-automation/m3l-common</code>");
+    expect(html).toContain("<code>@m3l-automation/m3l-cli</code>");
+    expect(html).toContain("The library.");
+    expect(html).toContain("The CLI.");
+  });
+
+  test("links all three programme ADRs (0053, 0058, 0064) from the overview", () => {
+    const html = renderHubPage(model);
+    expect(html).toContain(
+      `<a href="${blobUrl("docs/adr/0053-cli-first-evolution-programme.md")}">ADR-0053</a>`,
+    );
+    expect(html).toContain(
+      `<a href="${blobUrl("docs/adr/0058-agent-operator-programme.md")}">ADR-0058</a>`,
+    );
+    expect(html).toContain(
+      `<a href="${blobUrl("docs/adr/0064-m3l-console-programme.md")}">ADR-0064</a>`,
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// renderOverviewSection
+// ---------------------------------------------------------------------------
+
+describe("renderOverviewSection", () => {
+  const packages = [
+    { name: "@m3l-automation/m3l-common", description: "The library." },
+    { name: "@m3l-automation/m3l-cli", description: "The CLI." },
+  ];
+
+  test("renders an overview-packages table with one row per package", () => {
+    const html = renderOverviewSection({ packages, scriptCount: 9 });
+    expect(html).toContain('<table id="overview-packages">');
+    expect(html).toContain("<code>@m3l-automation/m3l-common</code>");
+    expect(html).toContain("<code>@m3l-automation/m3l-cli</code>");
+    expect(html).toContain("The library.");
+    expect(html).toContain("The CLI.");
+  });
+
+  test("renders the scriptCount value inside the prose", () => {
+    const html = renderOverviewSection({ packages, scriptCount: 9 });
+    expect(html).toContain("9-script");
+  });
+
+  test("links exactly three programme mentions (U, V, X) to their respective ADRs", () => {
+    const html = renderOverviewSection({ packages, scriptCount: 9 });
+    expect(html).toContain(
+      `<a href="${blobUrl("docs/adr/0053-cli-first-evolution-programme.md")}">ADR-0053</a>`,
+    );
+    expect(html).toContain(
+      `<a href="${blobUrl("docs/adr/0058-agent-operator-programme.md")}">ADR-0058</a>`,
+    );
+    expect(html).toContain(
+      `<a href="${blobUrl("docs/adr/0064-m3l-console-programme.md")}">ADR-0064</a>`,
+    );
+    expect(html).toContain("<strong>U</strong>");
+    expect(html).toContain("<strong>V</strong>");
+    expect(html).toContain("<strong>X</strong>");
+  });
+
+  test("handles an empty packages array without throwing", () => {
+    expect(() =>
+      renderOverviewSection({ packages: [], scriptCount: 0 }),
+    ).not.toThrow();
+    const html = renderOverviewSection({ packages: [], scriptCount: 0 });
+    expect(html).toContain('<table id="overview-packages">');
+    expect(html).toContain("<tbody></tbody>");
+  });
+
+  test("escapes HTML-significant characters in a package description", () => {
+    const html = renderOverviewSection({
+      packages: [
+        {
+          name: "@m3l-automation/m3l-common",
+          description: "<script>alert(1)</script> & friends",
+        },
+      ],
+      scriptCount: 1,
+    });
+    expect(html).not.toContain("<script>alert(1)</script>");
+    expect(html).toContain(
+      "&lt;script&gt;alert(1)&lt;/script&gt; &amp; friends",
     );
   });
 });

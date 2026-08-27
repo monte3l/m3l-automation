@@ -78,6 +78,22 @@ function scriptReadmePaths() {
     .filter((relativePath) => existsSync(join(root, relativePath)));
 }
 
+/**
+ * Every `packages/<name>/package.json`'s `name`/`description`, for the hub's
+ * overview section — read fresh each run so a new workspace package appears
+ * with no generator change.
+ */
+function readWorkspacePackages() {
+  const dirs = readdirSync(join(root, "packages"), { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort();
+  return dirs.map((dir) => {
+    const pkg = JSON.parse(readDoc(`packages/${dir}/package.json`));
+    return { name: pkg.name, description: pkg.description ?? "" };
+  });
+}
+
 /** Short commit SHA for the header; "unknown" (with a warning) if git fails. */
 function resolveCommitSha(reporter) {
   try {
@@ -197,6 +213,8 @@ function runGenerator(reporter) {
     generatedAt: new Date().toISOString(),
     commitSha: resolveCommitSha(reporter),
     summary: { implemented: ledger.implemented, total: ledger.total },
+    packages: readWorkspacePackages(),
+    scriptCount: scriptPackageDirs(root).length,
     roadmap,
     backlog,
     ledger,
