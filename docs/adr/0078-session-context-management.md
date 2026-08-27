@@ -157,6 +157,35 @@ Recording this here so it is not re-proposed by a future audit.
 - **Semver impact:** none. Tooling, hooks, and documentation only; no
   `packages/m3l-common` public surface changes.
 
+## Update (2026-08-27) — Part D dropped; PR 5 folded into this note
+
+Part D's config-knob pins (`autoCompactWindow`, `skillListingBudgetFraction`/
+`skillListingMaxDescChars`, `MAX_MCP_OUTPUT_TOKENS`,
+`promptCacheTtl`/`subagentPromptCacheTtl`) were never landed. Presented with
+the specific values before implementation, the maintainer's call was to skip
+all of them rather than guess:
+
+- **`autoCompactWindow`**: left at the platform default. The research
+  snapshot's own Contradictions section already flagged that Anthropic's
+  docs don't fully specify precedence for the on/off toggle (only the window
+  value); pinning a number couples the repo to partially-understood platform
+  behavior for a benefit that was never concretely demonstrated.
+- **`MAX_MCP_OUTPUT_TOKENS` and the prompt-cache TTL overrides**: skipped.
+  No hook in this repo caps tool output at all today, so this would have
+  been the first such cap with no way to verify the right threshold ahead of
+  time — a wrong guess risks truncating a legitimate large MCP response.
+  Cache TTL defaults were judged to already fit this repo's usage tier;
+  the worktree-per-PR cache-miss cost this ADR's Part D cited (ADR-0013/0014)
+  is left as a future observation, not a blind guess now.
+
+This ADR's Decision section (Part D) is left as-is per the "ADRs are
+immutable once Accepted" convention — this Update records the reversal
+rather than rewriting the original text. PRs 1-4 (Parts A-C) landed as
+described; PR 5 (Part D) is dropped; PR 6 (`bin/check-agents.mjs`
+enforcement, four correctness fixes surfaced by the original audit, and the
+`subagent-dispatch.md` bounded-output-instruction gap in three skills) closes
+out the sequence.
+
 ## Links
 
 - Supersedes / superseded by: none.

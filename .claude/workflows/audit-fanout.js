@@ -228,7 +228,11 @@ const findings = digests.flatMap((digest) =>
 
 let toVerify = findings.slice(0, VERIFY_MAX);
 const unverified = findings.slice(VERIFY_MAX);
-if (budget.total && budget.remaining() < 50_000) {
+// budget.remaining() is Infinity when no target is set, so this naturally
+// never fires without a target — no need to gate on budget.total separately
+// (that gate was previously present but redundant with a hardcoded 50_000
+// that had drifted from the MIN_VERIFY_TOKEN_BUDGET constant above it).
+if (budget.remaining() < MIN_VERIFY_TOKEN_BUDGET) {
   unverified.push(...toVerify);
   toVerify = [];
   log("audit-fanout: token budget low — deferring all refutations to the hub");

@@ -39,7 +39,12 @@ import {
   isValidEffort,
   isValidWorkflowModel,
 } from "./lib/claude-models.mjs";
-import { WRITER_SPOKES, frontmatter, walk } from "./lib/agent-roster.mjs";
+import {
+  MAX_TURNS_CEILING,
+  WRITER_SPOKES,
+  frontmatter,
+  walk,
+} from "./lib/agent-roster.mjs";
 import { parseJsonFlag, createReporter } from "./lib/report.mjs";
 
 const { json } = parseJsonFlag();
@@ -81,6 +86,7 @@ for (const file of walk(agentsDir, (n) => n.endsWith(".md"))) {
     model: fm.model,
     effort: fm.effort,
     description: fm.description,
+    maxTurns: fm.maxTurns,
     file,
   });
 }
@@ -215,6 +221,74 @@ for (const [name, { description, file }] of defined) {
       `${file.slice(root.length + 1)} (${name}) omits "description:" ` +
         `frontmatter, or it is empty — every spoke needs one so callers know ` +
         `when to dispatch it.`,
+    );
+    errors++;
+  }
+}
+
+// --- 4d. maxTurns: presence + ceiling ---------------------------------------
+// Every spoke's turn budget is currently 40 by convention only — nothing
+// enforced it, so it could silently drift or be raised as a workaround for
+// truncation (`.claude/rules/subagent-dispatch.md`'s "Don't raise maxTurns
+// as the fix" rule exists precisely because that doesn't solve the
+// underlying problem). MAX_TURNS_CEILING lives in lib/agent-roster.mjs (not
+// here) so the two hooks that reference it in their own rationale comments
+// (detect-spoke-truncation.mjs, guard-writer-dispatch-journal.mjs) share the
+// same source of truth this check enforces against, rather than each
+// hardcoding the number independently.
+for (const [name, { maxTurns, file }] of defined) {
+  const relFile = file.slice(root.length + 1);
+  if (maxTurns === undefined) {
+    reporter.error(
+      `${relFile} (${name}) omits "maxTurns:" frontmatter — every spoke ` +
+        `must pin an explicit turn budget.`,
+    );
+    errors++;
+    continue;
+  }
+  const parsed = Number(maxTurns);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    reporter.error(
+      `${relFile} (${name}) declares "maxTurns: ${maxTurns}", which is not ` +
+        `a positive integer.`,
+    );
+    errors++;
+  } else if (parsed > MAX_TURNS_CEILING) {
+    reporter.error(
+      `${relFile} (${name}) declares "maxTurns: ${maxTurns}", above the ` +
+        `${MAX_TURNS_CEILING}-turn ceiling. Raising maxTurns is not the fix ` +
+        `for truncation (.claude/rules/subagent-dispatch.md) — decompose the ` +
+        `dispatch instead.`,
+    );
+    errors++;
+  }
+}
+
+// --- 4e. Bounded-output / journal section presence --------------------------
+// The digest and journal patterns (docs/contributing/subagent-context-
+// management.md) are this repo's most load-bearing prompt contracts against
+// truncation, but until now they were prose-only — a spoke definition could
+// lose its "Bounded output" or "Journal as you go" section with CI still
+// green. Read-only spokes (review/research, including Explore) need the
+// former; the two writer spokes need the latter.
+for (const [name, { file }] of defined) {
+  const relFile = file.slice(root.length + 1);
+  const body = readFileSync(file, "utf8");
+  if (WRITER_SPOKES.has(name)) {
+    if (!/journal as you go/i.test(body)) {
+      reporter.error(
+        `${relFile} (${name}) is a writer spoke but its prompt has no ` +
+          `"Journal as you go" section — this is the pattern that recovers ` +
+          `a truncated writer dispatch losslessly; it must not be silently ` +
+          `removed.`,
+      );
+      errors++;
+    }
+  } else if (!/bounded output/i.test(body)) {
+    reporter.error(
+      `${relFile} (${name}) has no "Bounded output" section — every read-` +
+        `only spoke needs this so a long findings report can't itself run ` +
+        `it out of turn budget mid-report.`,
     );
     errors++;
   }

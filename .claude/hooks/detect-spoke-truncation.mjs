@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 /**
  * SubagentStop advisory: inspects a finished spoke's final message for the
- * signature of a mid-turn truncation (a `maxTurns: 40` or output-token cap
- * hit mid-thought) and, on a hit, reminds the hub to verify on-disk state
- * before trusting the summary — instead of leaving that detection entirely
- * to the hub noticing on its own.
+ * signature of a mid-turn truncation (a spoke hitting its `maxTurns`
+ * ceiling — `MAX_TURNS_CEILING` in bin/lib/agent-roster.mjs, enforced
+ * against every spoke's frontmatter by bin/check-agents.mjs — or an
+ * output-token cap hit mid-thought) and, on a hit, reminds the hub to
+ * verify on-disk state before trusting the summary — instead of leaving
+ * that detection entirely to the hub noticing on its own.
  *
  * Why: subagent mid-turn truncation is this repo's most-recurring build
  * divergence (see `docs/contributing/subagent-context-management.md`), and
