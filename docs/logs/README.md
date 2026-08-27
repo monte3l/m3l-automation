@@ -76,12 +76,13 @@ deliberately do not.
 
 ## Workflow / infra
 
-| Date       | Change                                              | Log                                                                                |
-| ---------- | --------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| 2026-07-11 | Parallelize the pre-push verify (fix push timeouts) | [prepush-parallelization](./2026-07-11-prepush-parallelization.md)                 |
-| 2026-07-16 | `audit-fanout` dynamic workflow (ADR-0025 pilot)    | [audit-fanout-workflow](./2026-07-16-audit-fanout-workflow.md)                     |
-| 2026-07-17 | ADR-0030 workflow tooling + MCP program (6 phases)  | [adr-0030-workflow-tooling-mcp](./2026-07-17-adr-0030-workflow-tooling-mcp.md)     |
-| 2026-07-19 | Subagent stall/truncation guidance integration      | [subagent-stall-integration](./2026-07-19-subagent-stall-integration.md)           |
-| 2026-07-22 | Promotion audit — unpromoted/unlearned lesson sweep | [promotion-audit](./2026-07-22-promotion-audit.md)                                 |
-| 2026-08-20 | ADR-0072 reviewable-slice discipline (F23)          | [f23-reviewable-slice-discipline](./2026-08-20-f23-reviewable-slice-discipline.md) |
-| 2026-08-21 | F23 field test against PR #523 / issue #474         | [f23-field-test-b2](./2026-08-21-f23-field-test-b2.md)                             |
+| Date       | Change                                               | Log                                                                                |
+| ---------- | ---------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| 2026-07-11 | Parallelize the pre-push verify (fix push timeouts)  | [prepush-parallelization](./2026-07-11-prepush-parallelization.md)                 |
+| 2026-07-16 | `audit-fanout` dynamic workflow (ADR-0025 pilot)     | [audit-fanout-workflow](./2026-07-16-audit-fanout-workflow.md)                     |
+| 2026-07-17 | ADR-0030 workflow tooling + MCP program (6 phases)   | [adr-0030-workflow-tooling-mcp](./2026-07-17-adr-0030-workflow-tooling-mcp.md)     |
+| 2026-07-19 | Subagent stall/truncation guidance integration       | [subagent-stall-integration](./2026-07-19-subagent-stall-integration.md)           |
+| 2026-07-22 | Promotion audit — unpromoted/unlearned lesson sweep  | [promotion-audit](./2026-07-22-promotion-audit.md)                                 |
+| 2026-08-20 | ADR-0072 reviewable-slice discipline (F23)           | [f23-reviewable-slice-discipline](./2026-08-20-f23-reviewable-slice-discipline.md) |
+| 2026-08-21 | F23 field test against PR #523 / issue #474          | [f23-field-test-b2](./2026-08-21-f23-field-test-b2.md)                             |
+| 2026-08-27 | Parallel-session OOM/livelock audit + fix (ADR-0080) | [parallel-session-oom](./2026-08-27-parallel-session-oom.md)                       |
