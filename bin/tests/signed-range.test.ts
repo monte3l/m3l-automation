@@ -58,12 +58,13 @@ describe("parseGitPush", () => {
 });
 
 describe("outgoingCommits", () => {
-  test("excludes the union of every resolvable base", () => {
+  test("excludes only the two remote refs when both resolve, never probing local main", () => {
     const calls: string[][] = [];
     const runGit = (args: string[]) => {
       calls.push(args);
       if (args[0] === "rev-parse" && args[1] === "--verify") {
-        // all three candidate refs resolve
+        // Both remote refs resolve; `main` would also resolve here if it
+        // were ever probed, so a false pass on "not called" is ruled out.
         return "deadbeef\n";
       }
       if (args[0] === "rev-list") return "sha1\nsha2\n";
@@ -72,11 +73,15 @@ describe("outgoingCommits", () => {
 
     expect(outgoingCommits(runGit)).toEqual(["sha1", "sha2"]);
 
-    // This is the regression this fix targets: excluding only the FIRST
-    // resolvable base (the old behavior) would still coincidentally return
-    // ["sha1", "sha2"] under this mock, since only one rev-list call is
-    // stubbed — so the union guarantee must be checked on the call args
-    // themselves, not just the final return value.
+    // `main` must never be probed once a remote ref already resolved — the
+    // old (buggy) behavior unioned it in regardless, which is the exact
+    // regression this fix targets.
+    const mainProbe = calls.find(
+      (args) =>
+        args[0] === "rev-parse" && args[1] === "--verify" && args[3] === "main",
+    );
+    expect(mainProbe).toBeUndefined();
+
     const revListCall = calls.find((args) => args[0] === "rev-list");
     expect(revListCall).toBeDefined();
     const notIndex = revListCall?.indexOf("--not") ?? -1;
@@ -84,8 +89,54 @@ describe("outgoingCommits", () => {
     expect(revListCall?.slice(notIndex + 1)).toEqual([
       "@{upstream}",
       "origin/main",
-      "main",
     ]);
+  });
+
+  test("does not exclude local main when a remote ref already resolves, even if main equals HEAD", () => {
+    // Regression: on branch `main` with unpushed local commits, `@{upstream}`
+    // and `origin/main` both resolve to the same old published tip, while
+    // local `main` IS `HEAD`. If `main` were unioned into the exclude set
+    // regardless, `--not main` would erase every outgoing commit and the
+    // signature guard would silently vet nothing.
+    const calls: string[][] = [];
+    const runGit = (args: string[]) => {
+      calls.push(args);
+      if (args[0] === "rev-parse" && args[1] === "--verify") {
+        if (args[3] === "@{upstream}" || args[3] === "origin/main") {
+          return "oldtip\n";
+        }
+        throw new Error("unexpected probe");
+      }
+      if (args[0] === "rev-list") return "sha1\nsha2\n";
+      throw new Error(`unexpected call: ${args.join(" ")}`);
+    };
+
+    expect(outgoingCommits(runGit)).toEqual(["sha1", "sha2"]);
+
+    const revListCall = calls.find((args) => args[0] === "rev-list");
+    expect(revListCall).toBeDefined();
+    expect(revListCall).not.toContain("main");
+  });
+
+  test("falls back to local main as a last resort when neither remote ref resolves", () => {
+    const calls: string[][] = [];
+    const runGit = (args: string[]) => {
+      calls.push(args);
+      if (args[0] === "rev-parse" && args[1] === "--verify") {
+        if (args[3] === "main") return "localtip\n";
+        throw new Error("no remote ref");
+      }
+      if (args[0] === "rev-list") return "sha4\n";
+      throw new Error(`unexpected call: ${args.join(" ")}`);
+    };
+
+    expect(outgoingCommits(runGit)).toEqual(["sha4"]);
+
+    const revListCall = calls.find((args) => args[0] === "rev-list");
+    expect(revListCall).toBeDefined();
+    const notIndex = revListCall?.indexOf("--not") ?? -1;
+    expect(notIndex).toBeGreaterThan(-1);
+    expect(revListCall?.slice(notIndex + 1)).toEqual(["main"]);
   });
 
   test("excludes only the bases that actually resolve", () => {
@@ -105,8 +156,15 @@ describe("outgoingCommits", () => {
     const revListCall = calls.find((args) => args[0] === "rev-list");
     expect(revListCall).toBeDefined();
     const notIndex = revListCall?.indexOf("--not") ?? -1;
-    expect(revListCall?.slice(notIndex + 1)).toEqual(["origin/main", "main"]);
+    expect(revListCall?.slice(notIndex + 1)).toEqual(["origin/main"]);
     expect(revListCall).not.toContain("@{upstream}");
+
+    // `origin/main` already resolved, so `main` must not be probed at all.
+    const mainProbe = calls.find(
+      (args) =>
+        args[0] === "rev-parse" && args[1] === "--verify" && args[3] === "main",
+    );
+    expect(mainProbe).toBeUndefined();
   });
 
   test("falls back to HEAD when no base resolves", () => {

@@ -86,30 +86,45 @@ export function parseGitPush(command) {
 
 /**
  * The commits that a push would send: everything reachable from `HEAD` but not
- * from the branch's upstream, `origin/main`, or `main` — every one of those that
- * resolves is excluded, not just the first. A single-base fallback chain (try
- * `@{upstream}`, else `origin/main`, else `main`) is wrong after a rebase onto a
- * moved `main` that hasn't been pushed yet: the branch's own remote-tracking ref
- * (`@{upstream}`) is still the pre-rebase tip, so it resolves first and "wins",
- * and commits merged into `origin/main` since the branch's original base (now
- * ancestors of `HEAD` via the rebase, but not of the stale `@{upstream}`) get
- * misreported as new/outgoing even though they're already published. Falls back
- * to just `HEAD` when none of the three resolve (a brand-new repo/branch).
- * Already-pushed history is intentionally excluded — we only vet what's new.
+ * from the branch's upstream or `origin/main` — both that resolve are excluded
+ * together, not just the first. A single-base fallback chain (try `@{upstream}`,
+ * else `origin/main`) is wrong after a rebase onto a moved `main` that hasn't
+ * been pushed yet: the branch's own remote-tracking ref (`@{upstream}`) is
+ * still the pre-rebase tip, so it resolves first and "wins", and commits
+ * merged into `origin/main` since the branch's original base (now ancestors
+ * of `HEAD` via the rebase, but not of the stale `@{upstream}`) get
+ * misreported as new/outgoing even though they're already published.
+ *
+ * Local `main` is used only as a LAST RESORT, when neither remote ref
+ * resolves (e.g. a fresh local-only repo with no `origin`) — never unioned
+ * in alongside them. Unlike `@{upstream}`/`origin/main`, which always name a
+ * remote's last-known-published state, local `main` can be `HEAD` itself
+ * (pushing unpushed commits directly from `main`); excluding it
+ * unconditionally would make `--not` erase the very commits being pushed,
+ * so the guard would silently vet nothing.
+ *
+ * Falls back to just `HEAD` when nothing resolves at all (a brand-new
+ * repo/branch). Already-pushed history is intentionally excluded — we only
+ * vet what's new.
  *
  * @param {(args: string[]) => string} [runGit]
  * @returns {string[]} commit SHAs (newest first), possibly empty
  */
 export function outgoingCommits(runGit = defaultRunGit) {
-  const excludeRefs = [];
-  for (const ref of ["@{upstream}", "origin/main", "main"]) {
+  const resolves = (ref) => {
     try {
       runGit(["rev-parse", "--verify", "--quiet", ref]);
-      excludeRefs.push(ref);
+      return true;
     } catch {
-      // ref doesn't resolve (no upstream, no origin/main, ...); skip it.
+      return false; // ref doesn't resolve; treat as absent.
     }
+  };
+
+  const excludeRefs = ["@{upstream}", "origin/main"].filter(resolves);
+  if (excludeRefs.length === 0 && resolves("main")) {
+    excludeRefs.push("main");
   }
+
   if (excludeRefs.length === 0) {
     try {
       return [runGit(["rev-parse", "HEAD"]).trim()].filter(Boolean);
