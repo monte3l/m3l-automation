@@ -10,13 +10,15 @@
 import { parseArgs } from "node:util";
 
 import { M3LCliError } from "../cli/errors.js";
-import { partitionJsonFlag } from "../cli/flags.js";
+import { partitionInProcessFlag, partitionJsonFlag } from "../cli/flags.js";
 import { suggestNames } from "../cli/suggest.js";
 import type { M3LCliCommandContext } from "./context.js";
 import { discoverScripts } from "../discovery/discover.js";
+import type { M3LCliScriptCandidate } from "../discovery/discover.js";
 import { loadParametersCached } from "../discovery/cached-load.js";
 import type { M3LCliParameterDescriptor } from "../discovery/load-config.js";
 import { executeScript } from "../run/execute.js";
+import { runInProcess } from "../run/in-process.js";
 import { runInspect } from "./inspect.js";
 import { recordHistoryEntry } from "../history/store.js";
 
@@ -91,7 +93,15 @@ type M3LCliParsedValues = Record<
 function buildParseArgsOptions(
   descriptors: readonly M3LCliParameterDescriptor[],
 ): Record<string, M3LCliParseArgsOptionConfig> {
-  const options: Record<string, M3LCliParseArgsOptionConfig> = {};
+  // Object.create(null) rather than a `{}` literal: a declared parameter or
+  // alias literally named "__proto__" must become a genuine own key here —
+  // a plain-literal object would route `options["__proto__"] = config`
+  // through the inherited setter instead, silently dropping the key and
+  // making parseArgs reject `--__proto__` as unknown before it ever reaches
+  // buildParameterValues's own same-shaped fix.
+  const options: Record<string, M3LCliParseArgsOptionConfig> = Object.create(
+    null,
+  ) as Record<string, M3LCliParseArgsOptionConfig>;
   const ownerNameByKey = new Map<string, string>();
 
   for (const descriptor of descriptors) {
@@ -119,6 +129,83 @@ function buildParseArgsOptions(
   }
 
   return options;
+}
+
+/** The subset of a `node:util` `parseArgs` token this module reads back to reconstruct a dropped entry. */
+interface M3LParseArgsTokenLike {
+  readonly kind: string;
+  readonly name?: string;
+  readonly value?: string | undefined;
+}
+
+/**
+ * Computes the value {@link restoreDroppedOptionTokens} backfills for one
+ * dropped option token, mirroring `parseArgs`'s own per-type translation:
+ * a bare boolean flag, a single string, or an accumulating array for a
+ * `multiple` option.
+ */
+function translatedTokenValue(
+  existing: M3LCliParsedValues[string],
+  token: M3LParseArgsTokenLike,
+  config: M3LCliParseArgsOptionConfig,
+): string | boolean | Array<string | boolean> {
+  if (config.type === "boolean") {
+    return true;
+  }
+  if (config.multiple === true) {
+    return [...(Array.isArray(existing) ? existing : []), token.value ?? ""];
+  }
+  return token.value ?? "";
+}
+
+/**
+ * Backfills any "option" token `node:util`'s `parseArgs` silently declined to
+ * record on its own returned `values` — specifically an option literally
+ * named `__proto__`, which `parseArgs`'s implementation unconditionally
+ * refuses to set on `values` regardless of how `options`/`values` are
+ * constructed (verified empirically: even an `Object.create(null)`-backed
+ * pair still drops it). Reads every "option" token back and, for any `name`
+ * not already an own property of the ORIGINAL, pristine `values` parseArgs
+ * returned, sets it via {@link translatedTokenValue} — so this module's own
+ * `Object.create(null)` fix in {@link buildParseArgsOptions} /
+ * {@link buildParameterValues} isn't quietly defeated one layer further down
+ * the stack. The own-key guard is deliberately checked against `values`
+ * rather than the fold's own mutating `accumulated` state: checking
+ * `accumulated` would make the reducer's first write for a repeated name
+ * (e.g. a `STRING_ARRAY` parameter passed `--name` three times) look like it
+ * was "already recorded" by the second and third occurrences, silently
+ * truncating a multi-valued option to its first value. Returns a new object
+ * (via a computed-key object literal, never bracket-assignment on an
+ * existing object) rather than mutating `values` in place, since a
+ * `__proto__`-named backfill must go through `[[DefineOwnProperty]]`
+ * (an object literal's computed key), not `[[Set]]` (bracket assignment),
+ * to land as a genuine own key regardless of the target object's prototype.
+ */
+function restoreDroppedOptionTokens(
+  values: M3LCliParsedValues,
+  tokens: readonly M3LParseArgsTokenLike[],
+  options: Record<string, M3LCliParseArgsOptionConfig>,
+): M3LCliParsedValues {
+  return tokens.reduce<M3LCliParsedValues>((accumulated, token) => {
+    if (token.kind !== "option" || token.name === undefined) {
+      return accumulated;
+    }
+    if (Object.hasOwn(values, token.name)) {
+      return accumulated;
+    }
+    const config = options[token.name];
+    if (config === undefined) {
+      return accumulated;
+    }
+    return {
+      ...accumulated,
+      [token.name]: translatedTokenValue(
+        accumulated[token.name],
+        token,
+        config,
+      ),
+    };
+  }, values);
 }
 
 /** Matches `node:util` `parseArgs`'s unknown-option error message, e.g. `Unknown option '--regoin'`. */
@@ -266,6 +353,112 @@ export function translateArgv(
 }
 
 /**
+ * Builds the typed `parameterValues` bag {@link runInProcess} passes straight
+ * into a hosted command's `execute` as its first argument — the in-process
+ * counterpart to {@link translateArgv}'s argv-string translation, keyed by
+ * canonical `descriptor.name` rather than child-process argv tokens.
+ *
+ * Mirrors {@link translateArgv}'s own present-key lookup over `descriptors`
+ * exactly (an alias hit still resolves to its canonical name), but only a
+ * `STRING_ARRAY` parameter's value needs translating: `parseArgs` already
+ * yields a real JS array for it, which is comma-joined into one string per
+ * `Core.coerceConfigValue`'s documented `STRING_ARRAY` contract (the same
+ * contract `translateArgv` honours by emitting one repeated `--name=value`
+ * per item). Every other declared type's raw `parseArgs` value — a real
+ * `boolean` for `BOOL`, a raw `string` for everything else — already matches
+ * what `coerceConfigValue` expects and passes through unchanged.
+ *
+ * @param descriptors - The script's declared parameters, in declaration order.
+ * @param values - The parsed/collected values, keyed by canonical name or alias.
+ * @returns One entry per parameter present in `values`, keyed by canonical name.
+ */
+function buildParameterValues(
+  descriptors: readonly M3LCliParameterDescriptor[],
+  values: M3LCliParsedValues,
+): Record<string, unknown> {
+  // Object.create(null) rather than a `{}` literal: a declared parameter
+  // literally named "__proto__" must become a genuine own key here — a
+  // plain-literal object would route `result["__proto__"] = value` through
+  // the inherited setter instead, silently dropping the value before it
+  // ever reaches M3LInMemoryConfigProvider's own M3LUnsafeConfigKeyError
+  // guard downstream (see buildParseArgsOptions's matching fix above).
+  const result: Record<string, unknown> = Object.create(null) as Record<
+    string,
+    unknown
+  >;
+  for (const descriptor of descriptors) {
+    const names = [descriptor.name, ...descriptor.aliases];
+    const presentKey = names.find((name) => Object.hasOwn(values, name));
+    if (presentKey === undefined) {
+      continue;
+    }
+    const value = values[presentKey];
+    result[descriptor.name] = Array.isArray(value)
+      ? value.map(String).join(",")
+      : value;
+  }
+  return result;
+}
+
+/**
+ * Dispatches a resolved, parsed dynamic run to its execution path: in-process
+ * via {@link runInProcess} when `inProcess` is `true` (no envelope emission —
+ * that integration is a deliberate follow-up, not part of this dispatch),
+ * otherwise the spawn path via {@link translateArgv} + {@link executeScript}
+ * (which also emits the `--json` envelope when `context.jsonOutput` is
+ * `true`). Extracted so {@link runDynamic} itself stays under the
+ * per-function line budget.
+ */
+async function dispatchDynamicRun(
+  context: M3LCliCommandContext,
+  scriptName: string,
+  scriptDirectory: string,
+  descriptors: readonly M3LCliParameterDescriptor[],
+  values: M3LCliParsedValues,
+  passthroughArgs: readonly string[],
+  inProcess: boolean,
+): Promise<number> {
+  if (inProcess) {
+    return runInProcess(scriptDirectory, {
+      output: context.output,
+      parameterValues: buildParameterValues(descriptors, values),
+      dryRun: passthroughArgs.includes("--dry-run"),
+    });
+  }
+  return executeScript(context, scriptName, scriptDirectory, [
+    ...translateArgv(descriptors, values),
+    ...passthroughArgs,
+  ]);
+}
+
+/**
+ * Resolves `scriptName` against `discoverScripts`' candidates, or throws
+ * `ERR_CLI_UNKNOWN_SCRIPT` with suggestions spanning the static command names
+ * and the discovered script names. Extracted so {@link runDynamic} itself
+ * stays under the per-function line budget.
+ */
+function resolveDynamicCandidate(
+  workspaceRoot: string,
+  scriptName: string,
+): M3LCliScriptCandidate {
+  const candidates = discoverScripts(workspaceRoot);
+  const candidate = candidates.find((entry) => entry.name === scriptName);
+  if (candidate === undefined) {
+    throw new M3LCliError(
+      "ERR_CLI_UNKNOWN_SCRIPT",
+      `unknown script '${scriptName}'`,
+      {
+        suggestions: suggestNames(scriptName, [
+          ...STATIC_COMMAND_NAMES,
+          ...candidates.map((entry) => entry.name),
+        ]),
+      },
+    );
+  }
+  return candidate;
+}
+
+/**
  * Names every declared parameter whose canonical name or an alias is present
  * in the already-parsed `values` — the run-history entry's `parameterNames`
  * (8f), mapped to each descriptor's canonical `name` (never the alias key
@@ -315,17 +508,28 @@ function recordDynamicHistory(
  * `passthroughArgs` verbatim after the translated flags.
  *
  * Before any of that, the CLI-reserved `--json` flag (V2 slice 1, #539 /
- * ADR-0063) is stripped out of `args` via {@link partitionJsonFlag} — the
- * same treatment `--help`/`-h` already gets — so it never reaches the
- * script's own strict `parseArgs` (which would otherwise reject it as an
- * unknown parameter) and never leaks into the translated child argv, even
- * when the script happens to declare its own same-named `json` parameter.
+ * ADR-0063) and the CLI-reserved `--in-process` flag (U7, ADR-0054) are
+ * stripped out of `args` via {@link partitionJsonFlag} then
+ * {@link partitionInProcessFlag} on its `rest` — the same treatment
+ * `--help`/`-h` already gets — so neither ever reaches the script's own
+ * strict `parseArgs` (which would otherwise reject it as an unknown
+ * parameter) or leaks into the translated child argv, even when the script
+ * happens to declare its own same-named `json`/`in-process` parameter.
  *
- * Once the spawn resolves, best-effort records a run-history entry (8f)
- * naming the parsed canonical parameter names (unlike `run`, which never
- * parses and always records `[]`) — never recorded for the `--help`/`-h`
- * delegation (no spawn) or when an unknown script/parameter throws before
- * spawning.
+ * When `--in-process` was present, execution diverts entirely: instead of
+ * {@link translateArgv} + {@link executeScript}, `runDynamic` builds a typed
+ * `parameterValues` bag via {@link buildParameterValues} and calls
+ * {@link runInProcess} with the script's directory, `context.output`, and a
+ * `dryRun` flag derived from whether `passthroughArgs` contains the literal
+ * `--dry-run` token (the same convention a spawned script's own `main.ts`
+ * reads off its own argv). Absent, behavior is unchanged from the pre-U7
+ * spawn path.
+ *
+ * Once the spawn/in-process run resolves, best-effort records a run-history
+ * entry (8f) naming the parsed canonical parameter names (unlike `run`,
+ * which never parses and always records `[]`) — never recorded for the
+ * `--help`/`-h` delegation (no spawn) or when an unknown script/parameter
+ * throws before spawning.
  *
  * @param context - The command context to run against; must carry
  *   `historyFilePath`.
@@ -359,27 +563,15 @@ export async function runDynamic(
   args: readonly string[],
   passthroughArgs: readonly string[],
 ): Promise<number> {
-  const candidates = discoverScripts(context.workspaceRoot);
-  const candidate = candidates.find((entry) => entry.name === scriptName);
-
-  if (candidate === undefined) {
-    throw new M3LCliError(
-      "ERR_CLI_UNKNOWN_SCRIPT",
-      `unknown script '${scriptName}'`,
-      {
-        suggestions: suggestNames(scriptName, [
-          ...STATIC_COMMAND_NAMES,
-          ...candidates.map((entry) => entry.name),
-        ]),
-      },
-    );
-  }
+  const candidate = resolveDynamicCandidate(context.workspaceRoot, scriptName);
 
   const { rest: argsWithoutJsonFlag } = partitionJsonFlag(args);
+  const { inProcess, rest: argsWithoutReservedFlags } =
+    partitionInProcessFlag(argsWithoutJsonFlag);
 
   if (
-    argsWithoutJsonFlag.includes("--help") ||
-    argsWithoutJsonFlag.includes("-h")
+    argsWithoutReservedFlags.includes("--help") ||
+    argsWithoutReservedFlags.includes("-h")
   ) {
     return runInspect(context, scriptName);
   }
@@ -394,10 +586,11 @@ export async function runDynamic(
   let values: M3LCliParsedValues;
   try {
     const parsed = parseArgs({
-      args: [...argsWithoutJsonFlag],
+      args: [...argsWithoutReservedFlags],
       options,
       strict: true,
       allowPositionals: false,
+      tokens: true,
     });
     // `options` is built dynamically (not a literal), so Node's own
     // `parseArgs` typings widen `parsed.values` to this generic
@@ -405,16 +598,27 @@ export async function runDynamic(
     // shape — `M3LCliParsedValues` mirrors that fallback declaration
     // exactly, so no cast is needed to assign it.
     values = parsed.values;
+    // Node's own parseArgs implementation unconditionally refuses to record
+    // an option literally named `__proto__` on its returned `values` — even
+    // when both `options` and `values` are null-prototype objects, verified
+    // empirically. `restoreDroppedOptionTokens` reconstructs any such
+    // silently-dropped entry from the raw `tokens` Node still hands back, so
+    // this CLI's own security fix (Object.create(null) in
+    // buildParseArgsOptions/buildParameterValues) isn't quietly defeated one
+    // layer further down the stack.
+    values = restoreDroppedOptionTokens(values, parsed.tokens ?? [], options);
   } catch (error) {
     throw toParameterError(error, scriptName, descriptors);
   }
 
-  const translatedArgs = translateArgv(descriptors, values);
-  const exitCode = await executeScript(
+  const exitCode = await dispatchDynamicRun(
     context,
     scriptName,
     candidate.directory,
-    [...translatedArgs, ...passthroughArgs],
+    descriptors,
+    values,
+    passthroughArgs,
+    inProcess,
   );
   recordDynamicHistory(
     context.historyFilePath,

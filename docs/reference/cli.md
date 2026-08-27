@@ -53,6 +53,12 @@ This page is the CLI's contract. It grows one section per shipped phase
   allowlist, never re-emitted. Emission is read-tolerant — an absent or
   unreadable report yields a named `reportUnavailable` reason, never a crash
   and never a fabricated outcome ([§V2 — structured run results](#v2--structured-run-results)).
+- **Spawn stays default; in-process is opt-in (ADR-0054, U7).** The dynamic
+  per-script dispatch (`m3l <script> --in-process ...`) can run a script that
+  exports `commandModule` (`dist/command.js`) directly inside the CLI's own
+  process instead of spawning `dist/main.js` as a child — see
+  [§Phase 8d](#phase-8d--per-script-dynamic-subcommands). `run <script>` and
+  `wizard` do not offer this opt-in; they always spawn.
 
 ## Commands
 
@@ -180,6 +186,34 @@ the first bare `--` appended verbatim.
   positional exits `2` with suggestions spanning static commands and script
   names; colliding declared names/aliases fail loud with
   `ERR_CLI_CONFIG_IMPORT`.
+- **`--in-process` opts into running the script in the CLI's own process
+  instead of spawning (ADR-0054, U7).** Reserved exactly like `--json` — the
+  exact `--in-process` token is stripped before the script's own strict
+  `parseArgs` ever sees it, so a script that happens to declare its own
+  same-named parameter is shadowed the same way. When present, the CLI
+  resolves `<script>/dist/command.js`, validates its `commandModule` export,
+  and calls its `execute` directly with the parsed parameter values bound
+  (typed, not re-serialized to argv — a `STRING_ARRAY` parameter's repeated
+  values are joined into one comma-separated string, matching what the
+  library's own config coercion expects) rather than spawning
+  `dist/main.js`. `--dry-run` is not a declared parameter on either
+  execution path; on `--in-process` it is detected from the tokens after the
+  first bare `--` (the same place a spawn-path caller already puts it,
+  `m3l <script> [params] -- --dry-run`), since there is no child process argv
+  for the script to read on its own. Cancellation forwarding
+  (`context.signal`) is wired as a port only — it is always `undefined` in
+  this slice, since no in-process host yet owns process signals; real
+  Ctrl-C → `AbortSignal` wiring is issue tracker item U11's job, which
+  depends on this seam existing first. A script that has not adopted the
+  ADR-0054 seam (no `dist/command.js`, or an invalid export) exits `1`
+  (`ERR_CLI_COMMAND_MODULE_INVALID`); a script whose `dist/command.js` exists
+  but fails to import exits `1` (`ERR_CLI_COMMAND_MODULE_IMPORT_FAILED`,
+  cause-chained); `execute` itself throwing or resolving a malformed outcome
+  exits `1` (`ERR_CLI_IN_PROCESS_FAILED`, cause-chained where applicable).
+  `m3l doctor` reports each discovered script's command-module availability
+  as its own `command-module:<name>` row (`ok`/`warn` only, never `fail` —
+  absence is expected for a script that has not adopted the optional seam;
+  see [§Phase 8e](#phase-8e--diagnostics)).
 
 ### Phase 8e — diagnostics
 
@@ -190,8 +224,14 @@ Renders one aligned row per check (`CHECK` / `STATUS` / `DETAIL`, statuses
 Node floor (≥ 24), workspace root, one `script:<name>` row per discovered
 script (dir shape → fail when neither config exists; dist freshness → warn
 naming `pnpm build`; importability through the real loader → fail with the
-load-error message; all-green renders the parameter count), reserved-name
-collision audit, and cache health (parent-dir writability, cache-file
+load-error message; all-green renders the parameter count) immediately
+followed by that script's own `command-module:<name>` row (ADR-0054, U7 —
+whether `dist/command.js` exports a usable in-process `commandModule`; `ok`
+when valid, `warn` when absent or malformed, **never** `fail` — the seam is
+optional, and most fleet scripts have not adopted it; a malformed export's
+underlying error is never rendered into `detail`, only a fixed, safe
+message, since `dist/command.js` may be script-controlled content), reserved-
+name collision audit, and cache health (parent-dir writability, cache-file
 integrity — an invalid file warns "will be rebuilt", an absent one is ok).
 
 Exit: `1` iff any check is `fail` (`warn` never affects the code); `0`
@@ -413,13 +453,13 @@ passthrough from a spawned script. The `M3LCliErrorCode` → exit-code mapping
 lives in `src/cli/errors.ts` as a `Record` keyed by the full union, so adding
 an error code is a compile error until its exit code is chosen.
 
-| Code    | Meaning             | Raised by                                                                                                                                                                                                                                         |
-| ------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `0`     | Success             | every happy path — including `list` with some configs unloadable, `doctor` with no `fail` row (a `warn` never affects the code), `wizard` declining "run now?", and an empty `presets` listing                                                    |
-| `1`     | Operational failure | `ERR_CLI_CONFIG_IMPORT`, `ERR_CLI_WORKSPACE_NOT_FOUND`, `ERR_CLI_SCRIPT_NOT_BUILT`, `ERR_CLI_SPAWN_FAILED`, `ERR_CLI_DOCTOR_FAILED`, `ERR_CLI_PRESET_INVALID`, `ERR_CLI_SCAFFOLD_FAILED` — and any non-`M3LCliError` value reaching the top level |
-| `2`     | Usage error         | `ERR_CLI_UNKNOWN_COMMAND`, `ERR_CLI_UNKNOWN_SCRIPT`, `ERR_CLI_UNKNOWN_PARAMETER`, `ERR_CLI_INVALID_PARAMETER_VALUE`, `ERR_CLI_SCAFFOLD_INVALID`, `ERR_CLI_SCAFFOLD_EXISTS`; a missing required positional; `wizard` on a non-interactive stdin    |
-| child's | Passthrough         | `run <script>` and dynamic per-script dispatch return the child's code **verbatim**, preserving the ADR-0035 registry end-to-end                                                                                                                  |
-| `128+N` | Signal-terminated   | a signal-killed child, e.g. SIGTERM → `143`                                                                                                                                                                                                       |
+| Code    | Meaning             | Raised by                                                                                                                                                                                                                                                                                                                                                |
+| ------- | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `0`     | Success             | every happy path — including `list` with some configs unloadable, `doctor` with no `fail` row (a `warn` never affects the code), `wizard` declining "run now?", and an empty `presets` listing                                                                                                                                                           |
+| `1`     | Operational failure | `ERR_CLI_CONFIG_IMPORT`, `ERR_CLI_WORKSPACE_NOT_FOUND`, `ERR_CLI_SCRIPT_NOT_BUILT`, `ERR_CLI_SPAWN_FAILED`, `ERR_CLI_DOCTOR_FAILED`, `ERR_CLI_PRESET_INVALID`, `ERR_CLI_SCAFFOLD_FAILED`, `ERR_CLI_COMMAND_MODULE_INVALID`, `ERR_CLI_COMMAND_MODULE_IMPORT_FAILED`, `ERR_CLI_IN_PROCESS_FAILED` — and any non-`M3LCliError` value reaching the top level |
+| `2`     | Usage error         | `ERR_CLI_UNKNOWN_COMMAND`, `ERR_CLI_UNKNOWN_SCRIPT`, `ERR_CLI_UNKNOWN_PARAMETER`, `ERR_CLI_INVALID_PARAMETER_VALUE`, `ERR_CLI_SCAFFOLD_INVALID`, `ERR_CLI_SCAFFOLD_EXISTS`; a missing required positional; `wizard` on a non-interactive stdin                                                                                                           |
+| child's | Passthrough         | `run <script>` and dynamic per-script dispatch return the child's code **verbatim**, preserving the ADR-0035 registry end-to-end                                                                                                                                                                                                                         |
+| `128+N` | Signal-terminated   | a signal-killed child, e.g. SIGTERM → `143`                                                                                                                                                                                                                                                                                                              |
 
 Under `--json`, the envelope's `exitCodeName` carries the ADR-0035 registry
 name for `exitCode` when it falls in `0`–`6`, and `null` for anything else
