@@ -514,10 +514,15 @@ function checkHistory(historyFilePath: string): M3LCliDoctorCheck {
  * `runDoctor` suite before {@link checkDependencyGraph} ever gets a chance to
  * report the same problem as its own isolated `"warn"` row.
  *
- * The retry forces `resolveScriptManifest` to report every declared
- * dependency as unresolved without performing any real resolution, so it can
- * never throw again — the result degrades to filesystem-only candidates
- * (`discoverScriptsFromFilesystem`'s results only).
+ * The retry overrides both `readOwnManifest` and `resolveScriptManifest`
+ * with non-throwing stubs that report zero declared dependencies and every
+ * dependency unresolved, respectively, without performing any real manifest
+ * read or resolution — so the retry can never throw for either of those two
+ * causes, and degrades to filesystem-only candidates
+ * (`discoverScriptsFromFilesystem`'s results only). It does *not* cover a
+ * failure inside `discoverScriptsFromFilesystem`'s own unguarded filesystem
+ * calls — that's a separate, pre-existing gap and a failure there still
+ * propagates.
  */
 function discoverScriptCandidates(
   workspaceRoot: string,
@@ -526,6 +531,7 @@ function discoverScriptCandidates(
     return discoverScripts(workspaceRoot);
   } catch {
     return discoverScripts(workspaceRoot, {
+      readOwnManifest: () => ({ dependencies: {} }),
       resolveScriptManifest: () => undefined,
     });
   }
