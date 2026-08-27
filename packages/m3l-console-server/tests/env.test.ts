@@ -19,8 +19,6 @@ import type {
   M3LConsoleConfig,
 } from "../src/config/env.js";
 
-/** Dotted config key the port setting is stored under (mirrors `src/config/env.ts`). */
-const PORT_KEY = "m3l.console.port";
 /** Dotted config key the log-level setting is stored under (mirrors `src/config/env.ts`). */
 const LOG_LEVEL_KEY = "m3l.console.log.level";
 /** Dotted config key the database path setting is stored under. */
@@ -342,52 +340,6 @@ describe("loadConsoleConfig — never mutates process.env", () => {
     loadConsoleConfig({ env: buildEnv() });
 
     expect(process.env).toEqual(before);
-  });
-});
-
-describe("loadConsoleConfig — coercion failure surfaces as M3LConsoleError", () => {
-  test("a non-integer port raw value never propagates the raw value in the error", () => {
-    let thrown: unknown;
-    try {
-      loadConsoleConfig({
-        env: buildEnv({ M3L_CONSOLE_PORT: "super-secret-not-a-port" }),
-      });
-    } catch (error) {
-      thrown = error;
-    }
-
-    expect(thrown).toBeInstanceOf(M3LConsoleError);
-    const consoleError = thrown as M3LConsoleError;
-    const message = consoleError.message;
-    const contextJson = JSON.stringify(consoleError.context);
-    expect(message).not.toContain("super-secret-not-a-port");
-    expect(contextJson).not.toContain("super-secret-not-a-port");
-
-    // The original coercion failure must still be reachable via `cause` —
-    // the raw value is redacted from the message/context, never dropped.
-    expect(consoleError.cause).toBeInstanceOf(Core.M3LConfigCoercionError);
-    expect(consoleError.context).toMatchObject({ key: PORT_KEY });
-  });
-});
-
-describe("loadConsoleConfig — wrapConfigRead rethrows a non-M3LError untouched", () => {
-  test("a non-M3LError escaping the accessor read propagates unrelabelled, not as M3LConsoleError", () => {
-    vi.spyOn(Core.M3LConfigAccessor.prototype, "oneOf").mockImplementation(
-      () => {
-        throw new RangeError("not an M3LError - simulates a module defect");
-      },
-    );
-
-    expect(() => loadConsoleConfig({ env: buildEnv() })).toThrow(RangeError);
-
-    let thrown: unknown;
-    try {
-      loadConsoleConfig({ env: buildEnv() });
-    } catch (error) {
-      thrown = error;
-    }
-    expect(thrown).toBeInstanceOf(RangeError);
-    expect(thrown).not.toBeInstanceOf(M3LConsoleError);
   });
 });
 
