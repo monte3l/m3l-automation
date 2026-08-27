@@ -1231,6 +1231,50 @@ footer { margin-top: 3rem; color: var(--muted); font-size: 0.85rem; }
 `;
 
 /**
+ * Render the project-overview section: what m3l-automation *is*, above the
+ * trackers below it. A visitor landing on the Pages URL previously saw
+ * trackers with no orientation. `packages` and `scriptCount` are pre-resolved
+ * by the caller (`bin/gen-project-hub.mjs`) so this function stays pure — no
+ * filesystem access here. The three programme names (U/V/X) are stable
+ * identifiers already load-bearing across README.md and ROADMAP.md, so they
+ * are static prose rather than derived from the model.
+ *
+ * @param {{ packages: { name: string, description: string }[], scriptCount: number }} params
+ * @returns {string}
+ * @example
+ * ```js
+ * import { renderOverviewSection } from "@m3l-automation/workspace/bin/lib/project-hub.mjs";
+ *
+ * renderOverviewSection({
+ *   packages: [{ name: "@m3l-automation/m3l-common", description: "The library." }],
+ *   scriptCount: 16,
+ * });
+ * ```
+ */
+export function renderOverviewSection({ packages, scriptCount }) {
+  const packagesTable = renderTrackerTable({
+    id: "overview-packages",
+    caption: "Packages",
+    header: ["Package", "What it is"],
+    rows: packages.map((pkg) => [`\`${pkg.name}\``, pkg.description]),
+    sourceDir: "docs",
+  });
+
+  return `<p>m3l-automation is an AWS automation platform: a shared TypeScript
+library, the <code>m3l</code> CLI, a ${scriptCount}-script AWS operations
+fleet, and an emerging operations console — developed under an explicit AI
+agent-operating model.</p>
+${packagesTable}
+<p>Programmes: <strong>U</strong> — CLI-first evolution
+(<a href="${blobUrl("docs/adr/0053-cli-first-evolution-programme.md")}">ADR-0053</a>)
+· <strong>V</strong> — agent-operator
+(<a href="${blobUrl("docs/adr/0058-agent-operator-programme.md")}">ADR-0058</a>)
+· <strong>X</strong> — m3l console
+(<a href="${blobUrl("docs/adr/0064-m3l-console-programme.md")}">ADR-0064</a>).
+See <a href="${blobUrl("docs/ROADMAP.md")}">ROADMAP.md</a> for current status.</p>`;
+}
+
+/**
  * Render the complete, self-contained hub HTML document from a fully-built
  * model (roadmap/backlog/ledger/corpus, each already extracted via this
  * module's other exports). Deterministic: the same `model` always produces
@@ -1242,6 +1286,8 @@ footer { margin-top: 3rem; color: var(--muted); font-size: 0.85rem; }
  *   generatedAt: string,
  *   commitSha: string,
  *   summary: { implemented: number, total: number },
+ *   packages: { name: string, description: string }[],
+ *   scriptCount: number,
  *   roadmap: { priority0: unknown, priority1: unknown, priority2: unknown, governance: unknown, errors: string[] },
  *   backlog: { friction: unknown, adr0035Rollout: unknown, capabilityDeepeningWave: unknown, postComparisonHardeningWave: unknown, getterReality: unknown, gated: unknown, errors: string[] },
  *   ledger: { implemented: number, total: number, barrels: unknown, core: unknown, aws: unknown, errors: string[] },
@@ -1256,6 +1302,8 @@ footer { margin-top: 3rem; color: var(--muted); font-size: 0.85rem; }
  *   generatedAt: new Date().toISOString(),
  *   commitSha: "abc1234",
  *   summary: { implemented: 30, total: 31 },
+ *   packages: [{ name: "@m3l-automation/m3l-common", description: "The library." }],
+ *   scriptCount: 16,
  *   roadmap: { priority0: null, priority1: null, priority2: null, governance: null, errors: [] },
  *   backlog: { friction: null, adr0035Rollout: null, capabilityDeepeningWave: null, postComparisonHardeningWave: null, getterReality: null, gated: null, errors: [] },
  *   ledger: { implemented: 30, total: 31, barrels: null, core: null, aws: null, errors: [] },
@@ -1264,8 +1312,17 @@ footer { margin-top: 3rem; color: var(--muted); font-size: 0.85rem; }
  * ```
  */
 export function renderHubPage(model) {
-  const { generatedAt, commitSha, summary, roadmap, backlog, ledger, corpus } =
-    model;
+  const {
+    generatedAt,
+    commitSha,
+    summary,
+    packages,
+    scriptCount,
+    roadmap,
+    backlog,
+    ledger,
+    corpus,
+  } = model;
 
   const roadmapSection = [
     renderOptionalTable(
@@ -1441,6 +1498,10 @@ export function renderHubPage(model) {
 ${errorsHtml}
 </header>
 <main>
+<section id="overview">
+<h2>Overview</h2>
+${renderOverviewSection({ packages, scriptCount })}
+</section>
 <section id="roadmap">
 <h2>Roadmap</h2>
 ${roadmapSection}
