@@ -237,6 +237,78 @@ describe("buildRunEnvelope — lookup.status === 'found'", () => {
       buildRunEnvelope(baseInput({ lookup: hostileFoundLookup })),
     ).not.toThrow();
   });
+
+  test("does not throw when a 'found' lookup's summary property is a throwing getter — every summary-derived field degrades to null", () => {
+    const hostileLookup: Record<string, unknown> = {
+      status: "found",
+      reportPath: "/some/path",
+    };
+    Object.defineProperty(hostileLookup, "summary", {
+      get() {
+        throw new Error("hostile getter");
+      },
+      enumerable: true,
+    });
+
+    const envelope = buildRunEnvelope(
+      baseInput({ lookup: hostileLookup as unknown as M3LCliRunReportLookup }),
+    );
+
+    expect(envelope.outcome).toBeNull();
+    expect(envelope.timelineCount).toBeNull();
+    expect(envelope.timelineSourceCount).toBeNull();
+    expect(envelope.recoveryTotal).toBeNull();
+  });
+
+  test("does not throw when summary.outcome is a throwing getter — the guard is per-field, sibling scalars still come through", () => {
+    const hostileSummary: Record<string, unknown> = {
+      timelineCount: 5,
+      timelineSourceCount: 2,
+      recoveryTotal: null,
+    };
+    Object.defineProperty(hostileSummary, "outcome", {
+      get() {
+        throw new Error("hostile getter");
+      },
+      enumerable: true,
+    });
+    const lookup = {
+      status: "found",
+      reportPath: "/x/run-report.json",
+      summary: hostileSummary,
+    } as unknown as M3LCliRunReportLookup;
+
+    const envelope = buildRunEnvelope(baseInput({ lookup }));
+
+    expect(envelope.outcome).toBeNull();
+    expect(envelope.timelineCount).toBe(5);
+    expect(envelope.timelineSourceCount).toBe(2);
+  });
+
+  test("does not throw when summary.timelineCount is a throwing getter — that field alone degrades to null", () => {
+    const hostileSummary: Record<string, unknown> = {
+      outcome: "success",
+      timelineSourceCount: 3,
+      recoveryTotal: null,
+    };
+    Object.defineProperty(hostileSummary, "timelineCount", {
+      get() {
+        throw new Error("hostile getter");
+      },
+      enumerable: true,
+    });
+    const lookup = {
+      status: "found",
+      reportPath: "/x/run-report.json",
+      summary: hostileSummary,
+    } as unknown as M3LCliRunReportLookup;
+
+    const envelope = buildRunEnvelope(baseInput({ lookup }));
+
+    expect(envelope.timelineCount).toBeNull();
+    expect(envelope.outcome).toBe("success");
+    expect(envelope.timelineSourceCount).toBe(3);
+  });
 });
 
 describe("buildRunEnvelope — lookup.status === 'unavailable'", () => {
@@ -289,6 +361,26 @@ describe("buildRunEnvelope — lookup.status === 'unavailable'", () => {
     expect(() =>
       buildRunEnvelope(baseInput({ lookup: hostileUnavailableLookup })),
     ).not.toThrow();
+  });
+
+  test("does not throw for an unavailable lookup whose reason is a throwing getter — reportUnavailable degrades to null", () => {
+    const hostileUnavailableLookup: Record<string, unknown> = {
+      status: "unavailable",
+    };
+    Object.defineProperty(hostileUnavailableLookup, "reason", {
+      get() {
+        throw new Error("hostile getter");
+      },
+      enumerable: true,
+    });
+
+    const envelope = buildRunEnvelope(
+      baseInput({
+        lookup: hostileUnavailableLookup as unknown as M3LCliRunReportLookup,
+      }),
+    );
+
+    expect(envelope.reportUnavailable).toBeNull();
   });
 });
 

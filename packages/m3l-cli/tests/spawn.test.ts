@@ -8,10 +8,25 @@
  */
 import { EventEmitter } from "node:events";
 import * as fs from "node:fs";
+// Bare identifier imports (not `fsPromises.<method>` member calls) for the
+// real-filesystem setup/teardown of the "real spawnImpl" describe block below
+// — the repo's `no-restricted-syntax` guard bans mutating `fs`/`fsPromises`
+// *member-expression* calls in tests, but a bare identifier call is exempt,
+// matching packages/m3l-common/tests/checkpoint.test.ts's precedent.
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import * as os from "node:os";
 import { join } from "node:path";
 
-import { afterEach, describe, expect, expectTypeOf, test, vi } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  expectTypeOf,
+  test,
+  vi,
+} from "vitest";
 
 // Make 'node:fs' configurable so vi.spyOn can intercept individual functions
 // (ESM namespace objects are non-writable) — mirrors packages/m3l-common's
@@ -477,4 +492,56 @@ describe("spawnScript — redirectStdoutToStderr (stdout redirected to the paren
 
     await expect(resultPromise).resolves.toBe(5);
   });
+});
+
+describe("spawnScript — resolveExitCode fallback (code and signal both null)", () => {
+  test("resolves the fallback exit code 1 when close fires with code=null and signal=null (neither a normal exit nor a recognized signal death)", async () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(true);
+    const fakeChild = createFakeChild();
+    const spawnImpl = vi.fn(() => fakeChild);
+
+    const resultPromise = spawnScript(scriptDirectory, [], { spawnImpl });
+    fakeChild.emit("close", null, null);
+
+    await expect(resultPromise).resolves.toBe(1);
+  });
+});
+
+describe("spawnScript — real defaultSpawnImpl (no injected spawnImpl override)", () => {
+  // No `spawnImpl` is supplied in this block, so `spawnScript` falls through
+  // to the module-scope `defaultSpawnImpl`, which genuinely calls
+  // `node:child_process`'s real `spawn` — exercising both arms of its
+  // `stdio: spawnOptions.stdio === "inherit" ? "inherit" : [...spawnOptions.stdio]`
+  // ternary, which no fake-spawnImpl test elsewhere in this file can reach.
+  let scriptDirectoryReal: string;
+
+  beforeAll(async () => {
+    scriptDirectoryReal = await mkdtemp(
+      join(os.tmpdir(), "m3l-cli-spawn-real-"),
+    );
+    await mkdir(join(scriptDirectoryReal, "dist"), { recursive: true });
+    // A trivial CJS script (no package.json in this scratch directory, so
+    // Node's default module type applies): exits with a known code so the
+    // test can assert on it without any process output to synchronize on.
+    await writeFile(
+      join(scriptDirectoryReal, "dist", "main.js"),
+      "process.exit(0);\n",
+    );
+  });
+
+  afterAll(async () => {
+    await rm(scriptDirectoryReal, { recursive: true, force: true });
+  });
+
+  test("spawns the real child process with no options and resolves with its exit code (covers the stdio === 'inherit' ternary arm)", async () => {
+    await expect(spawnScript(scriptDirectoryReal, [])).resolves.toBe(0);
+  }, 15000);
+
+  test("spawns the real child process with redirectStdoutToStderr and resolves with its exit code (covers the tuple-stdio ternary arm)", async () => {
+    await expect(
+      spawnScript(scriptDirectoryReal, [], {
+        redirectStdoutToStderr: true,
+      }),
+    ).resolves.toBe(0);
+  }, 15000);
 });
