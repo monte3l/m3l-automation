@@ -91,6 +91,57 @@ We chose **option 4**.
 - **Semver impact:** none from this ADR (docs only). X12 produces infra
   artifacts (Dockerfiles, compose), not package API changes.
 
+## Update (2026-08-27) — the posture as implemented
+
+X2c (issue #550) shipped the loopback binding and the required operator
+profile as enforced code rather than convention. Four points where the
+implementation refines or corrects what this ADR recorded.
+
+**"No listener binds beyond loopback" is now asserted after the bind, not
+before it.** `listen()`'s host argument is a _request_; Node resolves it
+independently, and the resolution is not what you would guess. Measured
+against a real listener on Node v26.7.0: `localhost` binds to `::1`, **not**
+`127.0.0.1`; omitting the host binds `::` — every interface. So
+`lifecycle/http-server.ts` re-derives the bound address from
+`server.address()` once `listening` fires and rejects any non-loopback
+`AddressInfo`, a `null` address, or a UNIX socket path, closing the socket
+before it throws. This holds for a programmatic caller who never went
+through `loadConsoleConfig`, which a config-time check alone would not
+cover.
+
+**Loopback binding is not by itself a defence against a browser, so a
+Host/Origin guard was added.** This ADR's threat model says single-operator
+localhost, and treats binding as the boundary. It is not: any web page can
+issue requests to `127.0.0.1`, and — measured — Node serves a request
+bearing `Host: evil.example` with a 200. `http/origin-guard.ts` is
+therefore the only control refusing a DNS-rebinding request. It compares the
+`Host` hostname and deliberately **not** the port: under rebinding the
+browser sends the attacker's hostname, so the hostname is the entire
+defence, while comparing the port would reject every legitimate request
+behind a compose published-port remap (`9000:8787`) — a deployment this ADR
+explicitly ships. `Origin: null`, the sandboxed/`file://` origin, is
+rejected explicitly; it arrives as a literal string, not a nullish value.
+
+**The identity seam is wired, with one shipped provider, as recorded.**
+`createSingleOperatorProvider` resolves every request to the profile
+declared at boot; `http/auth-middleware.ts` enforces it per route and fails
+closed when a route's auth mode is unknown. Health and readiness are
+`auth: "exempt"` — a liveness probe must work before a session exists.
+Multi-user (OIDC) remains a provider swap behind the X14 gate.
+
+**A readiness grace period is deferred to X12.** `/ready` answers 503 once
+draining, but with the shipped shutdown ordering — `drain()` then
+`server.close()`, back to back — a client normally observes a connection
+error instead, because `close()` destroys idle sockets at call time.
+An orchestrator reads that as not-ready too, so the operational outcome is
+unchanged; making the 503 itself observable needs a grace period between
+drain-start and listener-close, which belongs with this ADR's compose health
+wiring at X12.
+
+Unchanged by this Update: the two-image packaging, the volume-passed
+credential path, the non-root lifecycle, the ADR-0034/0015 stance
+reconciliation, and the X14 remote/multi-user gate.
+
 ## Links
 
 - Programme: [ADR-0064](./0064-m3l-console-programme.md). Server

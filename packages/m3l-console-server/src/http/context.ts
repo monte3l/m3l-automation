@@ -13,6 +13,7 @@ import { randomUUID } from "node:crypto";
 
 import type { M3LOperatorProfile } from "../auth/identity.js";
 import { M3LConsoleError } from "../errors/console-error.js";
+import type { M3LRouteAuth } from "./router.js";
 
 /** The request header a caller may supply a correlation id under. */
 export const CORRELATION_ID_HEADER: string = "x-correlation-id";
@@ -110,10 +111,31 @@ export interface M3LRequestContext {
   readonly params: Readonly<Record<string, string>>;
   /** The resolved operator, when one has been attached via {@link withOperator}. */
   readonly operator: M3LOperatorProfile | undefined;
+  /**
+   * The matched route's auth requirement, once routing has run —
+   * `undefined` until then. Routing happens after a request is dispatched
+   * (see `http/handler`'s `dispatch`), so a `preRouting` middleware always
+   * observes `undefined` here: that is the honest value for "not routed
+   * yet", not a placeholder for "unknown" or "public". Set via
+   * {@link withAccessMode}.
+   */
+  readonly accessMode: M3LRouteAuth | undefined;
   /** The cooperative-cancellation signal for this request (ADR-0049). */
   readonly signal: AbortSignal;
   /** The timestamp (`Date.now()`-shaped) this request was received at. */
   readonly receivedAt: number;
+  /**
+   * The inbound request headers, as a frozen copy — never a live alias onto
+   * the caller's map, so mutating that map after construction cannot change
+   * what a downstream layer observes. Carried on the context for three
+   * reasons: the `Host`/`Origin` rebinding guard (`http/origin-guard.ts`)
+   * needs them to classify a request before it reaches any route; the
+   * ADR-0071 auth seam, {@link M3LOperatorProvider.resolve}, was designed
+   * taking a headers map as its sole input; and ADR-0066's `Last-Event-ID`
+   * SSE resume will need to read an inbound resume header the same way.
+   * Defaults to `{}`, never `undefined`.
+   */
+  readonly headers: Readonly<Record<string, string | undefined>>;
 }
 
 /**
@@ -179,8 +201,10 @@ export function createRequestContext(
     query: parsed.searchParams,
     params: {},
     operator: undefined,
+    accessMode: undefined,
     signal: input.signal,
     receivedAt: now(),
+    headers: Object.freeze({ ...input.headers }),
   });
 }
 
@@ -222,4 +246,27 @@ export function withParams(
   params: Readonly<Record<string, string>>,
 ): M3LRequestContext {
   return Object.freeze({ ...ctx, params });
+}
+
+/**
+ * Returns a new frozen {@link M3LRequestContext} identical to `ctx` except
+ * for `accessMode`. Does not mutate `ctx`. Applied by `http/handler`'s
+ * `dispatch` once a route has matched, alongside {@link withParams} — a
+ * `preRouting` middleware runs before this, so it always observes
+ * `ctx.accessMode === undefined`.
+ *
+ * @param ctx - The context to derive from.
+ * @param mode - The matched route's auth requirement.
+ * @returns The new context.
+ *
+ * @example
+ * ```ts
+ * const routed = withAccessMode(ctx, "required");
+ * ```
+ */
+export function withAccessMode(
+  ctx: M3LRequestContext,
+  mode: M3LRouteAuth,
+): M3LRequestContext {
+  return Object.freeze({ ...ctx, accessMode: mode });
 }
