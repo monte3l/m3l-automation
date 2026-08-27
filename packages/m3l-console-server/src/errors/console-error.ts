@@ -24,13 +24,19 @@ import { Core } from "@m3l-automation/m3l-common";
  * because it is draining (ADR-0049): a routine, expected outcome rather than
  * a fault, distinct from every other code here.
  *
- * The five `ERR_CONSOLE_STORE_*` codes are the ADR-0069 embedded-persistence
+ * The seven `ERR_CONSOLE_STORE_*` codes are the ADR-0069 embedded-persistence
  * failures, raised by the store driver port and its callers. Of these,
  * `ERR_CONSOLE_STORE_UNSUPPORTED` is distinguished as ADR-0069's **stability
  * checkpoint's** failure: it is raised at boot when the `node:sqlite` builtin
  * no longer exposes the members the driver port consumes — the recorded
  * trigger condition for adopting one of that ADR's fallback persistence
- * strategies.
+ * strategies. `ERR_CONSOLE_STORE_MIGRATION_FAILED` and
+ * `ERR_CONSOLE_STORE_SCHEMA_DRIFT` are raised by the migration runner
+ * (`store/migrations/runner.ts`): the former for an invalid registry or a
+ * failed migration, the latter when the database's schema disagrees with
+ * what the registry expects — either strictly ahead of every known
+ * migration, or an already-applied migration whose recorded history no
+ * longer matches its declared SQL.
  *
  * @example
  * ```ts
@@ -54,7 +60,9 @@ export type M3LConsoleErrorCode =
   | "ERR_CONSOLE_STORE_OPEN_FAILED"
   | "ERR_CONSOLE_STORE_BUSY"
   | "ERR_CONSOLE_STORE_CLOSED"
-  | "ERR_CONSOLE_STORE_QUERY_FAILED";
+  | "ERR_CONSOLE_STORE_QUERY_FAILED"
+  | "ERR_CONSOLE_STORE_MIGRATION_FAILED"
+  | "ERR_CONSOLE_STORE_SCHEMA_DRIFT";
 
 /**
  * Constructor options for {@link M3LConsoleError}.

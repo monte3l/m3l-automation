@@ -1,12 +1,18 @@
 /**
  * `store/store` — `openConsoleStore`, the ADR-0069 embedded-persistence
  * lifecycle: resolving the parent directory, opening the `node:sqlite`
- * handle, re-verifying it via `assertSqliteSupport`, and applying the
- * pragma sequence every console-store consumer depends on.
+ * handle, re-verifying it via `assertSqliteSupport`, applying the pragma
+ * sequence every console-store consumer depends on, and applying every
+ * pending schema migration via `store/migrations/runner.ts`'s
+ * `applyMigrations`.
  *
- * In this PR (A4) the opened store exposes the query executor directly
- * plus open/close lifecycle; the migration runner and the first typed
- * repository land in PR B.
+ * The opened store exposes the raw query executor directly (open/close
+ * lifecycle plus `all`/`get`/`run`/`script`) AND the typed
+ * {@link M3LConsoleStore} surface (`meta`, `transaction()`) built on top of
+ * it — {@link M3LConsoleStoreUnit} is what grows one field per later
+ * repository (X4's `runs`, X6's `sessions`, X7's `audit`), without
+ * `store/migrations/runner.ts`, `store/executor.ts`, `store/sqlite-driver.ts`,
+ * or `main.ts` ever needing to change.
  *
  * Measured facts this module's shape rests on (see
  * `store/sqlite-driver.ts`'s headline TSDoc for the full table, re-asserted
@@ -27,6 +33,8 @@ import { dirname } from "node:path";
 import { M3LConsoleError } from "../errors/console-error.js";
 
 import { classifyStoreFailure, storeError } from "./failures.js";
+import { applyMigrations } from "./migrations/runner.js";
+import { CONSOLE_MIGRATIONS } from "./migrations/registry.js";
 import type {
   M3LSqliteDatabaseFactory,
   M3LSqliteDatabaseHandle,
@@ -36,7 +44,9 @@ import {
   openSqliteDatabase,
   readUserVersion,
 } from "./sqlite-driver.js";
-import { createStoreExecutor } from "./executor.js";
+import { createStoreExecutor, withTransaction } from "./executor.js";
+import { createConsoleMetaRepository } from "./meta-repository.js";
+import type { M3LConsoleMetaRepository } from "./meta-repository.js";
 import type { M3LStoreQueryExecutor } from "./types.js";
 
 /** The permission mode applied to the console store's parent directory. */
@@ -97,9 +107,10 @@ export interface M3LConsoleStoreLifecycle {
   /** The `location` this store was opened with. */
   readonly location: string;
   /**
-   * The schema version read once from `PRAGMA user_version` at open time,
-   * never re-read per access — this PR (A4/A5) has no migrations, so it is
-   * always `0`; the migration PR changes the value, not this field's shape.
+   * The schema version read from `PRAGMA user_version` at open time, after
+   * every pending migration has been applied — never re-read per access.
+   * Reflects the post-migration value, so it equals the registry's highest
+   * known version on a fully up-to-date database.
    */
   readonly schemaVersion: number;
   /** Closes the underlying database handle. Idempotent — a second call is a no-op. */
@@ -123,6 +134,72 @@ export interface M3LConsoleStoreLifecycle {
  */
 export interface M3LConsoleStoreHandle
   extends M3LStoreQueryExecutor, M3LConsoleStoreLifecycle {}
+
+/**
+ * The repositories bound to one unit of work: either the top-level store
+ * (queries run outside any explicit transaction) or one call to
+ * {@link M3LConsoleStore.transaction}. Grows one field per later repository
+ * — X4 adds `runs`, X6 adds `sessions`, X7 adds `audit` — each wired the same
+ * way {@link meta} is here, with `store/migrations/runner.ts`,
+ * `store/executor.ts`, `store/sqlite-driver.ts`, and `main.ts` untouched.
+ *
+ * Deliberately NOT exported today: a caller writing
+ * `store.transaction((unit) => ...)` gets `unit`'s shape inferred from
+ * {@link M3LConsoleStore.transaction}'s own signature, so nothing outside
+ * this file needs this name while `meta` is the only field. Re-export it the
+ * moment a second repository (X4's `runs`) gives an outside consumer a
+ * reason to name this type directly — knip flags an exported type nothing
+ * in `src` consumes, and `tests/**` is not part of its `project` glob, so a
+ * test-only import would not count as usage anyway.
+ *
+ * @example
+ * ```ts
+ * function describeUnit(unit: M3LConsoleStoreUnit): string {
+ *   return unit.meta.describe().id;
+ * }
+ * ```
+ */
+interface M3LConsoleStoreUnit {
+  /** The console store's metadata repository (identity, migration history). */
+  readonly meta: M3LConsoleMetaRepository;
+  // X4: readonly runs; X6: readonly sessions; X7: readonly audit
+}
+
+/**
+ * What `main.ts` holds: the typed repository surface plus lifecycle.
+ * Exposes NO SQL — this is X16's eventual replacement for
+ * {@link M3LConsoleStoreHandle}'s raw query executor, once every consumer of
+ * this store has a typed repository to reach for instead.
+ *
+ * @example
+ * ```ts
+ * function withMeta<T>(store: M3LConsoleStore, work: (id: string) => T): T {
+ *   return store.transaction((unit) => work(unit.meta.describe().id));
+ * }
+ * ```
+ */
+export interface M3LConsoleStore
+  extends M3LConsoleStoreUnit, M3LConsoleStoreLifecycle {
+  /**
+   * Runs `work` inside one `BEGIN IMMEDIATE` transaction (see
+   * `store/executor.ts`'s `withTransaction`), handing it an
+   * {@link M3LConsoleStoreUnit} built fresh over the TRANSACTION's own
+   * executor — never the top-level store's. This is the entire reason
+   * {@link M3LConsoleStoreUnit} exists as a type distinct from
+   * {@link M3LConsoleStore}: a repository is a function closed over
+   * whichever executor it is handed, so a repository reached through
+   * `unit.meta` inside `work` writes through the SAME transaction `work`
+   * runs in, rather than around it against the top-level connection.
+   */
+  transaction<T>(work: (unit: M3LConsoleStoreUnit) => T): T;
+}
+
+/** Builds a {@link M3LConsoleStoreUnit} bound to `executor` — the top-level store's own, or a transaction's. */
+function buildConsoleStoreUnit(
+  executor: M3LStoreQueryExecutor,
+): M3LConsoleStoreUnit {
+  return { meta: createConsoleMetaRepository(executor) };
+}
 
 /**
  * Runs `step`, closing `database` before re-throwing on any failure — a
@@ -158,20 +235,24 @@ function prepareOrCloseAndThrow<T>(
 /**
  * Opens the ADR-0069 console store: ensures the parent directory exists
  * (skipped for `":memory:"`), opens the database, re-verifies it via
- * {@link assertSqliteSupport}, and applies the pragma sequence
+ * {@link assertSqliteSupport}, applies the pragma sequence
  * (`journal_mode = WAL`, then `synchronous = NORMAL`, then
- * `foreign_keys = ON`, strictly in that order).
+ * `foreign_keys = ON`, strictly in that order), then applies every pending
+ * migration from `store/migrations/registry.ts`'s `CONSOLE_MIGRATIONS` via
+ * {@link applyMigrations}.
  *
  * A blank `location` is rejected before the factory is ever called. Any
- * failure once the database is open results in `close()` being called
- * before the error is re-thrown, so a failed boot never leaks a handle.
+ * failure once the database is open — including a migration failure —
+ * results in `close()` being called before the error is re-thrown, so a
+ * failed boot never leaks a handle.
  *
  * @param options - See {@link OpenConsoleStoreOptions}.
  * @returns The opened {@link M3LConsoleStoreHandle}.
  * @throws {@link M3LConsoleError} — `ERR_CONSOLE_STORE_OPEN_FAILED` for a
  * blank location or an unclassified open failure, `ERR_CONSOLE_STORE_BUSY`
- * for a factory `SQLITE_BUSY`, or `ERR_CONSOLE_STORE_UNSUPPORTED` from
- * {@link assertSqliteSupport}.
+ * for a factory `SQLITE_BUSY`, `ERR_CONSOLE_STORE_UNSUPPORTED` from
+ * {@link assertSqliteSupport}, or `ERR_CONSOLE_STORE_MIGRATION_FAILED` /
+ * `ERR_CONSOLE_STORE_SCHEMA_DRIFT` from {@link applyMigrations}.
  *
  * @example
  * ```ts
@@ -273,9 +354,9 @@ function openDatabaseHandle(
 }
 
 /**
- * Reads `PRAGMA user_version` once, at open — never re-read per access, so
- * the handle's `schemaVersion` stays stable for its whole lifetime (see
- * {@link M3LConsoleStoreHandle.schemaVersion}'s TSDoc).
+ * Reads `PRAGMA user_version`, after migrations have been applied — never
+ * re-read per access, so the handle's `schemaVersion` stays stable for its
+ * whole lifetime (see {@link M3LConsoleStoreHandle.schemaVersion}'s TSDoc).
  *
  * Delegates to `sqlite-driver.ts`'s {@link readUserVersion} rather than
  * duplicating its strictness: an unreadable pragma throws instead of
@@ -289,19 +370,22 @@ function readSchemaVersion(database: M3LSqliteDatabaseHandle): number {
 }
 
 /**
- * Builds the {@link M3LConsoleStoreHandle} returned to callers, wiring its
- * `isOpen`/`close()` lifecycle to `database` on top of the executor.
+ * Builds the returned store: {@link M3LConsoleStoreHandle}'s raw query
+ * surface AND {@link M3LConsoleStore}'s typed `meta`/`transaction()`, both
+ * over the same underlying `database` and its shared top-level executor —
+ * wiring its `isOpen`/`close()` lifecycle to `database`.
  */
 function buildConsoleStoreHandle(
   database: M3LSqliteDatabaseHandle,
   location: string,
   schemaVersion: number,
-): M3LConsoleStoreHandle {
+): M3LConsoleStoreHandle & M3LConsoleStore {
   const executor = createStoreExecutor(database);
   let closed = false;
 
   return {
     ...executor,
+    ...buildConsoleStoreUnit(executor),
     get isOpen(): boolean {
       return !closed && database.isOpen;
     },
@@ -317,12 +401,15 @@ function buildConsoleStoreHandle(
       database.close();
       closed = true;
     },
+    transaction<T>(work: (unit: M3LConsoleStoreUnit) => T): T {
+      return withTransaction(database, (tx) => work(buildConsoleStoreUnit(tx)));
+    },
   };
 }
 
 export function openConsoleStore(
   options: OpenConsoleStoreOptions,
-): M3LConsoleStoreHandle {
+): M3LConsoleStoreHandle & M3LConsoleStore {
   assertValidLocation(options.location);
   ensureParentDirectory(options.location);
 
@@ -347,6 +434,7 @@ export function openConsoleStore(
       database.exec("PRAGMA journal_mode = WAL");
       database.exec("PRAGMA synchronous = NORMAL");
       database.exec("PRAGMA foreign_keys = ON");
+      applyMigrations(database, CONSOLE_MIGRATIONS);
       return readSchemaVersion(database);
     },
   );
