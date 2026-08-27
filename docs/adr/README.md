@@ -124,3 +124,4 @@ surface).
 | 0077 | [Codified dead-letter-queue triage: one preset per queue, predicates as the matcher](./0077-dead-letter-queue-triage-procedure.md)                        | Accepted                                              |
 | 0078 | [Hub session context management: honest budgets and durable-artifact compaction](./0078-session-context-management.md)                                    | Accepted                                              |
 | 0079 | [Demote the live-GitHub-state drift gates to a non-blocking alarm](./0079-hub-drift-non-blocking-alarm.md)                                                | Accepted                                              |
+| 0080 | [Host resource budgeting for concurrent Claude Code sessions](./0080-host-resource-budgeting.md)                                                          | Accepted; amends ADR-0013                             |

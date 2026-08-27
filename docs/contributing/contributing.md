@@ -19,6 +19,17 @@ pnpm build          # tsc -> dist/ (ESM .js + .d.ts)
 pnpm test           # run the suite once
 ```
 
+**Hardware:** 16 GB RAM is the recommended floor for one Claude Code session
+doing normal TDD work in this repo — `git push` alone fans `lefthook`'s
+`pre-push` out to 13 parallel lanes (`test:coverage`, a 19-package `turbo
+run typecheck`/`build`, and 8 further `check:*` gates), plausibly 30+ Node
+processes at once with no default heap cap. Running 2+ concurrent sessions
+needs the mitigations in `docs/contributing/host-resources.md`
+(ADR-0080) in place first — without them, a memory-constrained host can
+livelock rather than fail cleanly. Run `pnpm check:host-resources` to see
+what's missing on your machine; this is repo-measured guidance, not an
+Anthropic-documented requirement (the only official floor is "4 GB+ RAM").
+
 A pure library needs no services to run locally. In CI, install with a
 frozen lockfile so the build fails if `pnpm-lock.yaml` is out of sync:
 

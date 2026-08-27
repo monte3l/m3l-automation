@@ -58,6 +58,8 @@
     "scaffold:script": "node bin/scaffold-script.mjs",
     "check:agents": "node bin/check-agents.mjs",
     "check:hooks": "node bin/check-hooks.mjs",
+    "check:host-resources": "node bin/check-host-resources.mjs",
+    "setup:host-resources": "node bin/setup-host-resources.mjs",
     "check:integration-stance": "node bin/check-integration-stance.mjs",
     "check:github-features": "node bin/check-github-features.mjs",
     "check:label-drift": "node bin/check-label-drift.mjs",
