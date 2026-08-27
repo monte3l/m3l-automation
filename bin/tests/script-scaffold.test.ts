@@ -38,6 +38,7 @@ import {
   PURPOSE_MAX_LENGTH,
   REQUIRED_EXACT_FILES,
   REQUIRED_GLOBS,
+  SCRIPT_DOCS_DIR,
   SCRIPT_NAME_RE,
   TEMPLATE_DIR,
   commandModuleErrors,
@@ -225,6 +226,34 @@ describe("docPagePath", () => {
     expect(docPagePath("data-sync")).toBe(
       "docs/reference/scripts/data-sync.md",
     );
+  });
+});
+
+// bin/lib/script-doc-paths.mjs deliberately duplicates SCRIPT_DOCS_DIR and
+// docPagePath from packages/m3l-cli/src/scaffold/manifest.ts instead of
+// importing them, so bin/ scripts that only need directory/path bookkeeping
+// (e.g. .github/workflows/pages.yml's dashboard generator) can run without
+// `pnpm build` first — see bin/lib/script-doc-paths.mjs's own header comment
+// for the full rationale. This test is the drift guard for that duplicate:
+// it fails the moment the two copies diverge.
+// Routed through a `const` variable (widened to `string`, not the literal
+// type) rather than passed inline: a literal specifier in `import(...)`
+// makes tsc statically resolve the module to type the expression, which
+// fails with TS2307 in CI's build job — `pnpm typecheck` runs before
+// `pnpm build`, so packages/m3l-cli/dist/ genuinely doesn't exist yet at
+// that point. The import only needs to succeed at Vitest runtime, after the
+// CLI has been built elsewhere in the pipeline.
+const cliManifestPath = "../../packages/m3l-cli/dist/scaffold/manifest.js";
+
+describe("SCRIPT_DOCS_DIR / docPagePath — bin/lib duplicate matches the CLI's canonical copy", () => {
+  test("SCRIPT_DOCS_DIR matches the CLI's canonical manifest value", async () => {
+    const cliManifest = await import(cliManifestPath);
+    expect(SCRIPT_DOCS_DIR).toBe(cliManifest.SCRIPT_DOCS_DIR);
+  });
+
+  test("docPagePath produces the same output as the CLI's canonical implementation", async () => {
+    const cliManifest = await import(cliManifestPath);
+    expect(docPagePath("data-sync")).toBe(cliManifest.docPagePath("data-sync"));
   });
 });
 

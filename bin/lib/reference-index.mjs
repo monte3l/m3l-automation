@@ -9,7 +9,7 @@ import {
   SCRIPT_DOCS_DIR,
   docPagePath,
   scriptPackageDirs,
-} from "./script-scaffold.mjs";
+} from "./script-doc-paths.mjs";
 
 export const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
 

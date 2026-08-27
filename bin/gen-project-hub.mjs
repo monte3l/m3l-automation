@@ -31,7 +31,7 @@ import {
   extractRoadmap,
   renderHubPage,
 } from "./lib/project-hub.mjs";
-import { SCRIPT_DOCS_DIR, scriptPackageDirs } from "./lib/script-scaffold.mjs";
+import { SCRIPT_DOCS_DIR, scriptPackageDirs } from "./lib/script-doc-paths.mjs";
 import { createReporter, parseJsonFlag } from "./lib/report.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");

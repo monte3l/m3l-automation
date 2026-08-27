@@ -11,18 +11,30 @@
 //     source — generator and checker still cannot drift apart, they just
 //     both drift-guard against the CLI's copy instead of a local one.
 //   - Checker-only identifiers (`packageManifestErrors`, `tsconfigShapeErrors`,
-//     `readmeExamplesErrors`, `scriptPackageDirs`, `commandModuleErrors` and
-//     their private helpers) stay LOCAL: they're never used by generation,
-//     only by `bin/check-script-scaffold.mjs`'s structural validation of
+//     `readmeExamplesErrors`, `commandModuleErrors` and their private
+//     helpers) stay LOCAL: they're never used by generation, only by
+//     `bin/check-script-scaffold.mjs`'s structural validation of
 //     already-scaffolded output, so there's exactly one consumer and no
 //     drift risk to guard against by relocating them.
+//   - `SCRIPT_DOCS_DIR`, `docPagePath` and `scriptPackageDirs` live in
+//     ./script-doc-paths.mjs instead, a build-independent sibling module —
+//     see that file's header. They're re-exported below unchanged so every
+//     existing consumer of this module keeps working; a new bin/*.mjs script
+//     that needs only these three should import script-doc-paths.mjs
+//     directly rather than pulling in this module's CLI-build requirement.
 //
 // Requires `packages/m3l-cli` to be built (`pnpm build`) before this module
 // is imported — the re-export throws a clear message otherwise rather than
 // Node's raw ERR_MODULE_NOT_FOUND.
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { root } from "./reference-index.mjs";
+
+export {
+  SCRIPT_DOCS_DIR,
+  docPagePath,
+  scriptPackageDirs,
+} from "./script-doc-paths.mjs";
 
 let cliScaffoldModule;
 try {
@@ -50,13 +62,11 @@ export const {
   PURPOSE_MAX_LENGTH,
   purposeErrors,
   TEMPLATE_DIR,
-  SCRIPT_DOCS_DIR,
   pascalCase,
   scriptTokens,
   substituteTokens,
   PACKAGE_TEMPLATE_FILES,
   DOC_PAGE_TEMPLATE,
-  docPagePath,
   REQUIRED_EXACT_FILES,
   REQUIRED_GLOBS,
   rootTsconfigRef,
@@ -391,20 +401,4 @@ export function readmeExamplesErrors(readmeText) {
     );
   }
   return problems;
-}
-
-/**
- * Directory names under `scripts/` that contain a package.json — the set of
- * script packages the checker validates. Artifact-only ghosts (a leftover
- * dist/ with no manifest) are ignored. Checker-only.
- */
-export function scriptPackageDirs(repoRoot) {
-  const scriptsDir = join(repoRoot, "scripts");
-  if (!existsSync(scriptsDir)) {
-    return [];
-  }
-  return readdirSync(scriptsDir, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => entry.name)
-    .filter((name) => existsSync(join(scriptsDir, name, "package.json")));
 }
