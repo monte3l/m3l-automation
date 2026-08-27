@@ -123,10 +123,12 @@ describe("exitCodeForError", () => {
     // the code it's split from — a genuine import failure is still a
     // general failure, not a usage error.
     ["ERR_CLI_COMMAND_MODULE_IMPORT_FAILED", 1],
-    // U7 follow-up: the target script's execute genuinely doesn't support
-    // in-process execution (no adopted commandModule) — a usage-shaped
-    // mismatch between what was asked and what the script supports, so it
-    // maps to the usage exit-code class (2), not the general class (1).
+    // U7 follow-up: an unsupported flag combination was requested alongside
+    // --in-process (non-dry-run passthrough args, or --json combined with
+    // --in-process) — raised by dispatchDynamicRun's assertInProcessSupported,
+    // before any command module is ever loaded. A usage-shaped mismatch
+    // between what was asked and what --in-process supports, so it maps to
+    // the usage exit-code class (2), not the general class (1).
     ["ERR_CLI_IN_PROCESS_UNSUPPORTED", 2],
   ];
 

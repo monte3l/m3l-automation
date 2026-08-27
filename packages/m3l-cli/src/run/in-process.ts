@@ -79,6 +79,30 @@ function freezeConfigParametersSnapshot(candidate: unknown): boolean {
 }
 
 /**
+ * The default {@link M3LCliInProcessImportOptions.importModule} implementation
+ * — a plain dynamic `import()`. Extracted as its own named function (rather
+ * than an inline arrow inside {@link loadCommandModule}) so it can be unit
+ * tested directly against a `data:` URL (a real dynamic import with zero
+ * filesystem access — `import("data:text/javascript,...")` is a standard,
+ * stable ESM feature, not an experimental one, on this repo's Node 24 floor)
+ * instead of only being exercised indirectly through a fabricated,
+ * nonexistent file path.
+ *
+ * @param url - The module specifier to import — a `file://` URL in
+ *   production use (via {@link loadCommandModule}), any valid ESM specifier
+ *   in tests.
+ * @returns The imported module's namespace object.
+ *
+ * @example
+ * ```ts
+ * const mod = await defaultImportModule("data:text/javascript,export const x = 1;");
+ * ```
+ */
+export function defaultImportModule(url: string): Promise<unknown> {
+  return import(url);
+}
+
+/**
  * Resolves `<scriptDirectory>/dist/command.js` and returns its exported
  * `commandModule`, or `undefined` when the script has not adopted the
  * ADR-0054 in-process seam.
@@ -111,8 +135,7 @@ export async function loadCommandModule(
     return undefined;
   }
 
-  const importModule =
-    options.importModule ?? ((url: string) => import(url) as Promise<unknown>);
+  const importModule = options.importModule ?? defaultImportModule;
   const imported = await importModule(pathToFileURL(entryPoint).href);
   const candidate = (imported as Record<string, unknown>)["commandModule"];
   if (!freezeConfigParametersSnapshot(candidate)) {
