@@ -13,6 +13,14 @@
  * and flips to a 503 `{ status: "draining" }` once `drain.state` leaves
  * `"serving"`.
  *
+ * The "stays 200 while draining" guarantee holds through the FULL composed
+ * request listener, not merely at this module's own handler: `main.ts`
+ * places `createDrainMiddleware` in its `middlewares` chain (which skips an
+ * `auth: "exempt"` route) rather than `preRouting` (which runs before
+ * routing and cannot tell an exempt route from any other), specifically so
+ * a drain refusal can never intercept this route ahead of its handler. See
+ * `http/drain-middleware.ts`'s TSDoc for the full rationale.
+ *
  * With today's shutdown ordering — `drain()` then `server.close()`, run
  * back to back in `main.ts`'s `runShutdownSequence` — a client normally
  * does not see that 503 body. `close()` sweeps idle connections at the

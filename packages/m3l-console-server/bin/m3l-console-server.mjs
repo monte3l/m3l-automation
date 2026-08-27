@@ -23,12 +23,25 @@ try {
 }
 
 if (console_ !== undefined) {
-  // `closed`, never `shutdown()` — the latter TRIGGERS the drain, so awaiting
-  // it here would tear the server down the instant it finished booting. This
-  // resolves only once a trapped SIGINT/SIGTERM has driven the drain through.
-  const outcome = await console_.closed;
-  // A drain that abandoned in-flight work is not a clean exit: report it in
-  // the exit code so a supervisor (compose, systemd) can tell the difference
-  // between "shut down as asked" and "gave up on N requests".
-  process.exitCode = outcome.graceful ? 0 : 1;
+  try {
+    // `closed`, never `shutdown()` — the latter TRIGGERS the drain, so
+    // awaiting it here would tear the server down the instant it finished
+    // booting. This resolves only once a trapped signal has driven the drain
+    // through.
+    const outcome = await console_.closed;
+    // A drain that abandoned in-flight work is not a clean exit: report it in
+    // the exit code so a supervisor (compose, systemd) can tell the difference
+    // between "shut down as asked" and "gave up on N requests".
+    process.exitCode = outcome.graceful ? 0 : 1;
+  } catch (error) {
+    // `closed` rejects when the shutdown sequence itself fails. Without this
+    // catch that is an uncaught rejection at top level: the process dies with
+    // a raw stack trace, losing both the stderr line and the exit code this
+    // wrapper exists to produce — and a supervisor sees an abnormal
+    // termination rather than a reported failure.
+    process.stderr.write(
+      `m3l-console-server: shutdown failed: ${error instanceof Error ? error.message : String(error)}\n`,
+    );
+    process.exitCode = 1;
+  }
 }

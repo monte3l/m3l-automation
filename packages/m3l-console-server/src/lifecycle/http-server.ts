@@ -140,6 +140,27 @@ function resolveLoopbackAddress(
 }
 
 /**
+ * Builds the `M3LConsoleError` a failed `server.close()` rejects with,
+ * chaining the original Node error as `cause` — PR review finding: the
+ * previous implementation dropped `close()`'s own callback `error` argument
+ * entirely and always resolved, so a real close failure (e.g. Node's own
+ * `ERR_SERVER_NOT_RUNNING`) was reported to the caller as a clean success,
+ * and `main.ts`'s `runShutdownSequence` would report a graceful shutdown
+ * that never actually happened. `ERR_CONSOLE_DRAIN_FAILED` is the code that
+ * fits: this failure is only ever reachable while shutting the listener
+ * down (the ADR-0049 drain sequence closes the listener right after
+ * draining), never during the initial bind (`ERR_CONSOLE_LISTEN_FAILED`
+ * covers that path instead, in {@link startConsoleServer}).
+ */
+function buildCloseFailure(cause: Error): M3LConsoleError {
+  return new M3LConsoleError(
+    "ERR_CONSOLE_DRAIN_FAILED",
+    "console server failed to close its listener",
+    { cause },
+  );
+}
+
+/**
  * Builds the idempotent `close()` for a {@link M3LListeningServer}.
  *
  * `server.close()` only sweeps connections that are ALREADY idle at the
@@ -153,6 +174,18 @@ function resolveLoopbackAddress(
  * request with `ECONNRESET`, so it may only fire once `closeTimeoutMs` has
  * elapsed — calling it eagerly would turn a graceful drain into a kill for
  * every request still being written.
+ *
+ * A close failure REJECTS the returned promise (see {@link buildCloseFailure})
+ * rather than resolving it. That rejection is memoized exactly like the
+ * success path — a second `close()` call re-returns the very same (still
+ * rejected) promise rather than retrying or resolving — because `closePromise`
+ * is only ever assigned once, on the first call. An internal no-op `.catch`
+ * is attached to that same promise the instant it is created, purely so a
+ * caller who invokes `close()` a second time without ever awaiting (or
+ * attaching a handler to) the memoized promise cannot turn this into an
+ * unhandled-rejection warning; a real caller (e.g. `runShutdownSequence`)
+ * still observes the rejection through the identical promise reference
+ * returned below, since a promise supports more than one handler.
  */
 function createCloseOnce(
   server: Server,
@@ -163,17 +196,24 @@ function createCloseOnce(
   return function close(): Promise<void> {
     if (closePromise !== undefined) return closePromise;
 
-    closePromise = new Promise<void>((resolve) => {
+    closePromise = new Promise<void>((resolve, reject) => {
       const forceCloseTimer = setTimeout(() => {
         server.closeAllConnections();
       }, closeTimeoutMs);
 
-      server.close(() => {
+      server.close((error?: Error) => {
         clearTimeout(forceCloseTimer);
+        if (error !== undefined) {
+          reject(buildCloseFailure(error));
+          return;
+        }
         resolve();
       });
       server.closeIdleConnections();
     });
+    // See this function's TSDoc: prevents an unhandled-rejection warning
+    // when a later `close()` caller never observes the memoized promise.
+    void closePromise.catch(() => undefined);
 
     return closePromise;
   };

@@ -222,10 +222,20 @@ export function createConsoleRuntime(
   const drain = createDrainController({ timeoutMs: config.drainTimeoutMs });
   const routes = options.routes ?? [];
   const router = createRouter(routes);
+  // Drain refusal is per-route policy, like auth, so it belongs in
+  // `middlewares` (which only wraps a matched route's handler, once
+  // `ctx.accessMode` is populated) — never `preRouting` (which runs before
+  // routing has resolved, so it would refuse `auth: "exempt"` health routes
+  // right alongside real work; see `createDrainMiddleware`'s TSDoc for the
+  // full rationale). It runs ahead of auth so a drain refusal never pays the
+  // cost of resolving an operator first.
   const requestListener = createConsoleRequestListener({
     router: buildDispatchRouter(drain, routes),
-    middlewares: [createAuthMiddleware(operatorProvider)],
-    preRouting: [createOriginGuard(), createDrainMiddleware(drain)],
+    middlewares: [
+      createDrainMiddleware(drain),
+      createAuthMiddleware(operatorProvider),
+    ],
+    preRouting: [createOriginGuard()],
     logger,
     signal: drain.signal,
   });

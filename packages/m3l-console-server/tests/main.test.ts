@@ -668,6 +668,125 @@ describe("createConsoleRuntime — drain signal", () => {
 });
 
 // =============================================================================
+// PR review MUST-FIX: health routes must survive a drain through the COMPOSED
+// listener. `main.ts` registers `createDrainMiddleware(drain)` in
+// `preRouting`, which runs before routing for EVERY request — including the
+// `auth: "exempt"` health routes — and `createDrainMiddleware` calls
+// `controller.track()` unconditionally, which throws `ERR_CONSOLE_UNAVAILABLE`
+// the instant the controller leaves "serving". So today, once a drain starts,
+// `GET /health` returns a 503 error envelope instead of health.ts's
+// documented 200 `{ status: "ok", uptimeMs }`, and `GET /ready` returns that
+// same error envelope instead of its own plain `{ status: "draining" }` body
+// — that branch of `buildReadyHandler` is unreachable through the composed
+// listener. These tests deliberately drive `runtime.requestListener` (never
+// the route handlers directly, which the pre-existing health suite already
+// does and is why this defect shipped unnoticed) and start the drain via
+// `runtime.drain` directly — `createConsoleRuntime` exposes it for exactly
+// this kind of test, per its own TSDoc.
+// =============================================================================
+describe("createConsoleRuntime — health routes survive a drain (composition defect regression)", () => {
+  /** A non-exempt route this suite uses to prove the drain refusal still applies to real work. */
+  const requiredRoute: M3LRoute = {
+    method: "GET",
+    path: "/api/v1/secure-during-drain",
+    auth: "required",
+    handler: () => jsonResponse(200, { ok: true }),
+  };
+
+  function buildDrainableRuntime(): ReturnType<typeof createConsoleRuntime> {
+    const handler = new RecordingHandler();
+    return createConsoleRuntime({
+      env: buildEnv(),
+      handlers: [handler],
+      routes: [requiredRoute],
+    });
+  }
+
+  /** Drives one GET request through `runtime.requestListener` end to end, parsing the JSON body once `res.end()` is observed. */
+  async function dispatch(
+    runtime: ReturnType<typeof createConsoleRuntime>,
+    path: string,
+  ): Promise<{ status: number | undefined; body: unknown }> {
+    const req = createFakeIncomingMessage({
+      method: "GET",
+      url: path,
+      headers: { host: "127.0.0.1" },
+    });
+    const { res, written, finished } = createRecordingServerResponse();
+
+    runtime.requestListener(req, res);
+    await withTimeout(
+      finished,
+      `requestListener never called res.end() for GET ${path}`,
+    );
+
+    return {
+      status: written.status,
+      body:
+        written.body !== undefined
+          ? (JSON.parse(written.body) as unknown)
+          : undefined,
+    };
+  }
+
+  // Baseline: this is expected to pass both before and after the fix — it
+  // only pins that nothing is broken absent a drain.
+  test("before any drain: health is 200 ok, ready is 200 ready, and the required route serves normally", async () => {
+    const runtime = buildDrainableRuntime();
+
+    const health = await dispatch(runtime, "/health");
+    expect(health.status).toBe(200);
+    expect(health.body).toMatchObject({ status: "ok" });
+
+    const ready = await dispatch(runtime, "/ready");
+    expect(ready.status).toBe(200);
+    expect(ready.body).toMatchObject({ status: "ready" });
+
+    const required = await dispatch(runtime, "/api/v1/secure-during-drain");
+    expect(required.status).toBe(200);
+  });
+
+  test("GET /health returns 200 { status: 'ok', uptimeMs } during a drain — NOT an error envelope", async () => {
+    const runtime = buildDrainableRuntime();
+    void runtime.drain.drain();
+    expect(runtime.drain.state).toBe("draining");
+
+    const health = await dispatch(runtime, "/health");
+
+    expect(health.status).toBe(200);
+    expect(health.body).toMatchObject({ status: "ok" });
+    expect(health.body).not.toHaveProperty("error");
+  });
+
+  test("GET /ready returns a plain 503 { status: 'draining' } body during a drain — NOT an ERR_CONSOLE_UNAVAILABLE envelope", async () => {
+    const runtime = buildDrainableRuntime();
+    void runtime.drain.drain();
+    expect(runtime.drain.state).toBe("draining");
+
+    const ready = await dispatch(runtime, "/ready");
+
+    expect(ready.status).toBe(503);
+    expect(ready.body).toEqual({ status: "draining" });
+    expect(ready.body).not.toHaveProperty("error");
+    expect(ready.body).not.toHaveProperty("code");
+  });
+
+  // The over-correction guard: expected to pass both before and after the
+  // fix — a "fix" that disabled the drain middleware entirely to make the
+  // two tests above pass would show up here as a regression.
+  test("a non-exempt (auth: 'required') route is STILL refused with ERR_CONSOLE_UNAVAILABLE during a drain", async () => {
+    const runtime = buildDrainableRuntime();
+    void runtime.drain.drain();
+
+    const required = await dispatch(runtime, "/api/v1/secure-during-drain");
+
+    expect(required.status).toBe(503);
+    const body = required.body as { error?: { code?: string } };
+    expect(body.error?.code).toBe("ERR_CONSOLE_UNAVAILABLE");
+  });
+});
+
+// =============================================================================
 // startConsole — lifecycle entry point
 // =============================================================================
 

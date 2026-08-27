@@ -346,6 +346,36 @@ describe("startConsoleServer — close()", () => {
     expectConsoleErrorCode(thrown, "ERR_CONSOLE_LISTEN_FAILED");
   });
 
+  // PR review finding: `createCloseOnce`'s `server.close(callback)` drops the
+  // callback's own `error` argument — it only ever calls `resolve()`,
+  // regardless of what `close()` passed back. So a real close failure (e.g.
+  // Node's own `ERR_SERVER_NOT_RUNNING`) is reported to the caller as a clean
+  // success, and `main.ts`'s `runShutdownSequence` would report a graceful
+  // shutdown that never actually happened.
+  test("rejects with an M3LConsoleError, chaining the original error as cause, when the close callback receives an error", async () => {
+    const fake = createFakeServer(tcpAddress("127.0.0.1"));
+    const listeningServer = await startResolved(fake);
+    const closeError = new Error("ERR_SERVER_NOT_RUNNING");
+
+    const closePromise = listeningServer.close();
+    fake.resolveClose(closeError);
+
+    const thrown = await captureRejection(closePromise);
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).cause).toBe(closeError);
+  });
+
+  test("still resolves cleanly when the close callback is invoked with no error (undefined)", async () => {
+    const fake = createFakeServer(tcpAddress("127.0.0.1"));
+    const listeningServer = await startResolved(fake);
+
+    const closePromise = listeningServer.close();
+    fake.resolveClose(undefined);
+
+    await expect(closePromise).resolves.toBeUndefined();
+  });
+
   test("closeIdleConnections() runs after close() is initiated; closeAllConnections() only fires at the closeTimeoutMs deadline", async () => {
     vi.useFakeTimers();
     const closeTimeoutMs = 5_000;
