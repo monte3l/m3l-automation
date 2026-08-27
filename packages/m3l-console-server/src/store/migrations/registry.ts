@@ -103,15 +103,29 @@ const CREATE_META_TABLE = `
  * later edit does not reintroduce either hole:
  *
  * **(a) The `ended_at_ms >= started_at_ms` and `started_at_ms IS NOT NULL`
- * checks are load-bearing only as a PAIR.** SQLite treats a `CHECK` that
- * evaluates to SQL `NULL` as *satisfied*, not violated — so
+ * checks are load-bearing as a PAIR for every status except one deliberate
+ * exemption.** SQLite treats a `CHECK` that evaluates to SQL `NULL` as
+ * *satisfied*, not violated — so
  * `CHECK (ended_at_ms IS NULL OR ended_at_ms >= started_at_ms)` does **not**
  * fire when `started_at_ms` is `NULL` and `ended_at_ms` is not: the
- * comparison itself evaluates to `NULL`. That state (`ended_at_ms` set,
- * `started_at_ms` `NULL`) is rejected only because the sibling
- * `CHECK (ended_at_ms IS NULL OR started_at_ms IS NOT NULL)` independently
- * forbids it. Removing either constraint in isolation silently reopens this
- * hole — they must be edited, or removed, together.
+ * comparison itself evaluates to `NULL`. For every status other than
+ * `'interrupted'`, that state (`ended_at_ms` set, `started_at_ms` `NULL`) is
+ * rejected only because the sibling
+ * `CHECK (ended_at_ms IS NULL OR started_at_ms IS NOT NULL OR status = 'interrupted')`
+ * independently forbids it — so for those statuses the pair must still be
+ * edited, or removed, together, or this hole silently reopens.
+ *
+ * For `status = 'interrupted'`, the NULL-satisfaction is **deliberate, not a
+ * hole**: a run can end without ever having started — a `SIGKILL` while it
+ * sat `queued` produces exactly this — and boot reconciliation
+ * (`reconcileOrphaned`, `store/runs-repository.ts`) must be able to record
+ * that outcome without fabricating a `started_at_ms`. Fabricating one would
+ * destroy an operationally decisive distinction (`started_at_ms IS NULL`
+ * means "never executed, safe to re-launch"; `IS NOT NULL` means "killed
+ * mid-execution, may have left side effects") and would make any
+ * `ended - started` duration silently include the queue wait. Only
+ * `'interrupted'` is exempted — no other terminal status may legitimately
+ * end without starting, so the pairing still holds everywhere else.
  *
  * **(b) The status/ended_at_ms pairing check is NOT vulnerable to that
  * trap**, and it is worth saying why: `status` is `NOT NULL`, so
@@ -121,6 +135,14 @@ const CREATE_META_TABLE = `
  * `CHECK ((status IN ('queued','running')) = (ended_at_ms IS NULL))` can
  * never be satisfied-by-`NULL`; it genuinely means "pending iff not yet
  * ended, terminal iff ended" with no gap.
+ *
+ * **This constant was edited in place, not additively migrated, and that is
+ * only safe right now.** `store/migrations/runner.ts` digests each
+ * migration's `statements` to detect an already-applied migration being
+ * edited underneath a deployment. v3 has never shipped — X4 is unmerged — so
+ * no deployment can observe this edit as drift. This window closes at merge:
+ * once v3 has been applied anywhere, correcting it further would need a new,
+ * additive v4 migration instead.
  */
 const CREATE_CONSOLE_RUNS_TABLE = `
   CREATE TABLE console_runs (
@@ -139,7 +161,11 @@ const CREATE_CONSOLE_RUNS_TABLE = `
     exit_code INTEGER,
     failure_message TEXT,
     CHECK (started_at_ms IS NULL OR started_at_ms >= queued_at_ms),
-    CHECK (ended_at_ms IS NULL OR started_at_ms IS NOT NULL),
+    CHECK (
+      ended_at_ms IS NULL
+      OR started_at_ms IS NOT NULL
+      OR status = 'interrupted'
+    ),
     CHECK (ended_at_ms IS NULL OR ended_at_ms >= started_at_ms),
     CHECK ((status IN ('queued','running')) = (ended_at_ms IS NULL)),
     CHECK ((outcome IS NULL) = (ended_at_ms IS NULL))

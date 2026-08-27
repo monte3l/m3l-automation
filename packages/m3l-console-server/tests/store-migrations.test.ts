@@ -795,7 +795,11 @@ describe("CONSOLE_MIGRATIONS — the real registry (v3: console_runs)", () => {
       },
     ],
     [
-      "ended_at_ms set while started_at_ms is NULL",
+      // Uses validTerminalRow's default status ("success") deliberately —
+      // this is the non-interrupted terminal-status case the pairing check
+      // still forbids. The 'interrupted' exemption is asserted separately,
+      // as an ACCEPTED case, below.
+      "ended_at_ms set while started_at_ms is NULL, for a non-interrupted terminal status",
       {
         ...validTerminalRow("v-ended-no-started"),
         started_at_ms: null,
@@ -849,6 +853,24 @@ describe("CONSOLE_MIGRATIONS — the real registry (v3: console_runs)", () => {
     const database = createRealMigratedDatabase();
 
     expect(() => insertRun(database, row)).toThrow();
+  });
+
+  test("accepts an interrupted row with ended_at_ms set and started_at_ms NULL — a run that ended without ever starting (e.g. SIGKILL while queued)", () => {
+    const database = createRealMigratedDatabase();
+    const row: RunRowFixture = {
+      ...validQueuedRow("v-interrupted-never-started"),
+      status: "interrupted",
+      ended_at_ms: 9000,
+      outcome: "interrupted",
+    };
+
+    expect(() => insertRun(database, row)).not.toThrow();
+
+    const stored = database
+      .prepare("SELECT status, started_at_ms FROM console_runs WHERE id = ?")
+      .get("v-interrupted-never-started");
+    expect(stored?.["status"]).toBe("interrupted");
+    expect(stored?.["started_at_ms"]).toBeNull();
   });
 
   test("STRICT is honest about what it does not enforce: an integer bound to script (TEXT) is silently accepted", () => {
