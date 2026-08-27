@@ -37,8 +37,7 @@ export type M3LStoreFailureKind =
 
 /**
  * The phase of the store lifecycle a failure occurred in. `"migrate"` is
- * reserved for PR B (the migration runner); it is not yet produced by
- * anything in PR A.
+ * produced by `store/migrations/runner.ts`'s `applyMigrations`.
  *
  * @example
  * ```ts
@@ -211,14 +210,11 @@ function buildSafeContext(
  * a new `M3LStorePhase` member becomes a compile error here instead of a
  * silent fall-through. The same `"unopenable"` kind is `_OPEN_FAILED` at
  * boot and `_QUERY_FAILED` mid-request — the phase is what disambiguates.
- * `phase: "migrate"` is not reachable in PR A (there is no migration runner
- * yet); it maps to `_OPEN_FAILED` for now — next PR: give it its own
- * `ERR_CONSOLE_STORE_MIGRATION_FAILED` code.
  */
 const CODE_BY_PHASE: Record<M3LStorePhase, M3LConsoleErrorCode> = {
   open: "ERR_CONSOLE_STORE_OPEN_FAILED",
   query: "ERR_CONSOLE_STORE_QUERY_FAILED",
-  migrate: "ERR_CONSOLE_STORE_OPEN_FAILED", // next PR: _MIGRATION_FAILED
+  migrate: "ERR_CONSOLE_STORE_MIGRATION_FAILED",
 };
 
 function mapToErrorCode(

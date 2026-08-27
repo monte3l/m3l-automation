@@ -162,6 +162,18 @@ const CLASSIFICATION_BY_CODE: Record<M3LConsoleErrorCode, ErrorClassification> =
       retryable: false,
       fault: true,
     },
+    ERR_CONSOLE_STORE_MIGRATION_FAILED: {
+      status: STATUS_INTERNAL,
+      origin: "library",
+      retryable: false,
+      fault: true,
+    },
+    ERR_CONSOLE_STORE_SCHEMA_DRIFT: {
+      status: STATUS_INTERNAL,
+      origin: "library",
+      retryable: false,
+      fault: true,
+    },
   };
 
 /**
