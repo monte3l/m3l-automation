@@ -35,3 +35,11 @@ command (fail-fast by default); `pnpm check:verify-parity` keeps its step list
 (`bin/lib/verify-steps.mjs`) from drifting out of sync with `ci.yml`'s lane
 jobs. `ci.yml`'s own `verify` job is the required-status-check aggregator
 (`needs:` on all seven lanes) — it carries no project checks itself.
+
+The `secrets` lane (`gitleaks/gitleaks-action`, config at `.gitleaks.toml`)
+has no local `pnpm` equivalent — `verify` skips it — and this repo carries no
+`.gitleaksignore`: a fingerprint there is `<commit>:<file>:<rule>:<line>`, and
+squash-merge rewrites the commit SHA a branch-authored fingerprint would key
+on, so every entry ever added went dead the moment its PR landed. A test that
+deliberately plants a secret-shaped literal must assemble it at runtime
+instead (`.claude/rules/tests.md`), which needs no ignore entry at all.

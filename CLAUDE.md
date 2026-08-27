@@ -91,9 +91,10 @@ locally. Full setup detail: `docs/contributing/contributing.md`
 Run any task with `pnpm <script>` (`pnpm commands` lists every one with its
 scope). The table is the pre-push cadence, machine-verified against
 `lefthook.yml` by `pnpm check:cadence`; CI runs every pre-push check plus
-every `check:*`, `knip`, `lint:md`, `gitleaks`, `audit` — see
-`docs/contributing/ci-cd.md`. `pre-push` takes minutes — background it rather
-than `--no-verify`, since CI re-runs everything anyway.
+every `check:*`, `knip`, `lint:md`, `audit`, and gitleaks secret scanning
+(no local `pnpm` equivalent) — see `docs/contributing/ci-cd.md`. `pre-push`
+takes minutes — background it rather than `--no-verify`, since CI re-runs
+everything anyway.
 
 | Stage                   | Checks                                                                                                                                                                                                                                             | Scope  |
 | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |

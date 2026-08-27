@@ -511,7 +511,10 @@ describe("locateRunReport — per-candidate report read", () => {
 
   test("a malformed-JSON syntax error never leaks the file's content into the returned result", () => {
     const dirName = dirNameFor(STARTED_AT);
-    const plantedSecret = "sk-PLANTED-1234";
+    // gitleaks scans source literals, not runtime values — assembling this
+    // planted marker at runtime avoids shipping a literal that reads as a
+    // real credential (same technique as diagnostics-run-report.test.ts:144-148).
+    const plantedSecret = "sk" + "-PLANTED-1234";
 
     mockReaddirSync([fakeDirent(dirName)]);
     mockReadFileSync(
