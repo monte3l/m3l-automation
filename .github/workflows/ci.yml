@@ -259,13 +259,6 @@ jobs:
     needs: changes
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # Widens the workflow-level `contents: read` default with `issues: read`
-    # — needed only by the push-only "Check hub drift" step at the end of
-    # this job (reads Issues/Milestones; never writes). See that step's
-    # comment and ADR-0032's 2026-08-13 Update.
-    permissions:
-      contents: read
-      issues: read
     steps:
       # fetch-depth 0: "Validate commit messages" below needs the PR
       # base..head commit range. Not job-gated (unlike deps/lint/build/test):
@@ -501,15 +494,51 @@ jobs:
       - name: Unused files / exports / dependencies (knip)
         run: pnpm knip
 
+      # A literal control byte makes a source file binary to git, so it has no
+      # diff and cannot be reviewed — while prettier, eslint and gitleaks all
+      # stay green (four NUL bytes survived three pushes that way, PR #599).
+      # Needs no network or auth, so unlike the hub-alarm job's live-state
+      # checks this runs on pull_request too, which is where it has to fire
+      # to be useful.
+      - name: Check for literal control characters
+        run: pnpm check:control-chars
+
+  # Live-GitHub-state drift ALARMS, not merge-blocking gates — deliberately a
+  # SEPARATE job from `gates`, not a `needs:` of `verify` (ADR-0079). Each
+  # compares a commit against MUTABLE remote state (Issues/Milestones/labels/
+  # repo metadata/Projects board) that a merge or a maintainer action can
+  # change with no repo commit — `check:hub-drift` specifically races the
+  # PR-merge auto-close of its linked issue against the commit that would
+  # flip the tracker row, so `main` can go red on ANY push regardless of what
+  # that push touched, and no push can ever fix it (the write-back stays
+  # maintainer-local: `pnpm sync:hub -- --apply`, since GITHUB_TOKEN cannot
+  # write GitHub Projects v2). `continue-on-error` at the job level keeps the
+  # signal loud (still visible as a warned job, still failing the CI
+  # summary's non-required rollup) without it ever reading as the reason a
+  # merge is blocked. Push-only (not on PRs): the PR that introduces drift
+  # cannot detect it against a state the merge itself hasn't happened yet —
+  # this is a `main`-only alarm by construction, same as ADR-0032 already
+  # accepts for the underlying reconcile.
+  hub-alarm:
+    name: Hub drift alarm (informational, non-blocking)
+    needs: changes
+    if: github.event_name == 'push'
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: ./.github/actions/setup
+
       # ADR-0032's visibility hub: docs/ROADMAP.md + IMPLEMENTATION.md must
-      # still match GitHub Issues/Milestones. Push-only (not on PRs) — this
-      # is a drift ALARM for main, not a merge-blocking gate for unrelated
-      # work; the underlying sync itself stays maintainer-local (`pnpm
-      # sync:hub -- --apply`), since GITHUB_TOKEN cannot write GitHub
-      # Projects v2 (see the ADR). Not path-gated — a drift alarm for GitHub
-      # state, unrelated to what files this push happened to touch.
+      # still match GitHub Issues/Milestones. Not path-gated — a drift alarm
+      # for GitHub state, unrelated to what files this push happened to
+      # touch.
       - name: Check hub drift (push-only)
-        if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: pnpm check:hub-drift
@@ -518,16 +547,11 @@ jobs:
       # wiki/discussions/issues/projects flags and description/homepage/
       # topics metadata must still match the ADR, and the issue-template
       # config must still link to the Discussions Ideas/Q&A categories.
-      # Push-only, same rationale as "Check hub drift" above — a drift
-      # ALARM for main, unrelated to what files this push happened to
-      # touch. Reads only `GET /repos/{owner}/{repo}` (repo metadata),
-      # which every GITHUB_TOKEN can read by default — no extra
-      # `permissions:` entry needed, unlike the hub-drift step's
-      # `issues: read`. Deliberately does NOT cover the Projects board's
-      # link/visibility/views — those need the `project` OAuth scope
-      # GITHUB_TOKEN never carries (see the script's own header).
+      # Reads only `GET /repos/{owner}/{repo}` (repo metadata), which every
+      # GITHUB_TOKEN can read by default. Deliberately does NOT cover the
+      # Projects board's link/visibility/views — those need the `project`
+      # OAuth scope GITHUB_TOKEN never carries (see the script's own header).
       - name: Check GitHub platform-feature stance (push-only)
-        if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: pnpm check:github-features
@@ -537,18 +561,8 @@ jobs:
       # name/description/color bin/sync-hub-issues.mjs would bootstrap.
       # check:hub-drift only ever inspects an issue's OWN labels against its
       # tracker row, never the label objects themselves — a hand-renamed or
-      # hand-deleted managed label went undetected without this. Push-only,
-      # same rationale as the two steps above.
-      # A literal control byte makes a source file binary to git, so it has no
-      # diff and cannot be reviewed — while prettier, eslint and gitleaks all
-      # stay green (four NUL bytes survived three pushes that way, PR #599).
-      # Needs no network or auth, so unlike the drift gates above this runs on
-      # pull_request too, which is where it has to fire to be useful.
-      - name: Check for literal control characters
-        run: pnpm check:control-chars
-
+      # hand-deleted managed label went undetected without this.
       - name: Check label drift (push-only)
-        if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: pnpm check:label-drift
@@ -556,19 +570,16 @@ jobs:
       # ADR-0073's board surface: the view set, each view's layout/filter/
       # ordered columns/sort, the built-in Issue Type field, and the
       # Status/Priority option sets, all against bin/lib/hub-views.mjs.
-      # Push-only, same rationale as the two steps above.
       #
       # GITHUB_TOKEN cannot read Projects v2 at ALL, so in CI this step is
       # expected to take its loud graceful-skip path: it prints each facet it
       # could not verify and exits 0. That is deliberate — a missing
-      # capability is not drift, and a gate that fails for a reason no
-      # contributor can fix trains people to ignore it. The real enforcement
-      # is a maintainer running `pnpm check:hub-views` locally with the
-      # `project` scope. The step is wired here anyway so the command stays on
-      # the verify/CI inventory (check:verify-parity) and starts failing for
-      # real the day a token can read the board.
+      # capability is not drift. The real enforcement is a maintainer running
+      # `pnpm check:hub-views` locally with the `project` scope. The step is
+      # wired here anyway so the command stays on the verify/CI inventory
+      # (check:verify-parity) and starts failing for real the day a token
+      # can read the board.
       - name: Check hub board views (push-only)
-        if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: pnpm check:hub-views
