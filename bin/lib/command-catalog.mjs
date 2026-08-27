@@ -326,6 +326,16 @@ export const COMMAND_CATALOG = [
       ".worktreeinclude hygiene gate: every literal entry is gitignored and every path resolves, so `pnpm worktree:setup` provisions a fresh worktree correctly. Run after editing .worktreeinclude.",
   },
   {
+    name: "check:host-resources",
+    description:
+      "Warn-only preflight (ADR-0080) reporting missing OOM-livelock mitigations on this host — earlyoom/systemd-oomd inactive, no zram swap, no user-.slice MemoryMax, CLAUDE_CODE_TOOL_MEMORY_LIMIT unset, another claude process already running. Never exits non-zero; runs automatically once per session via a SessionStart hook. Run setup:host-resources to apply the fixes it reports.",
+  },
+  {
+    name: "setup:host-resources",
+    description:
+      "Idempotent host-level applier (ADR-0080) for the mitigations check:host-resources reports — earlyoom, zram, vm.swappiness, user-.slice MemoryMax, claude-rc.service ceiling, CLAUDE_CODE_TOOL_MEMORY_LIMIT. Dry-run by default; pass --apply to mutate the host (uses sudo). Never weakens an existing stricter setting it finds.",
+  },
+  {
     name: "check:signed-range",
     description:
       "Refuses an unsigned/unverified outgoing commit range (@{upstream}..HEAD, falling back to origin/main) — the same check the pre-push hook runs. Run locally to preflight a push before it's rejected.",

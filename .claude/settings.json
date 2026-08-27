@@ -44,6 +44,9 @@
     ]
   },
   "availableModels": ["fable", "opus", "sonnet", "haiku"],
+  "env": {
+    "CLAUDE_CODE_NO_FLICKER": "1"
+  },
   "hooks": {
     "SessionStart": [
       {
@@ -51,6 +54,11 @@
           {
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-worktree-ready.mjs\"",
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/warn-host-resources.mjs\"",
             "timeout": 30
           }
         ]
