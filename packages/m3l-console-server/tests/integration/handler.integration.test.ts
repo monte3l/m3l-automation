@@ -124,6 +124,7 @@ describe("createConsoleRequestListener — a real writeHead failure genuinely en
     ]);
     const listener = createConsoleRequestListener({
       router,
+      preRouting: [],
       middlewares: [],
       logger: createSilentLogger(),
       signal: new AbortController().signal,

@@ -200,6 +200,7 @@ export function createConsoleRuntime(
   const requestListener = createConsoleRequestListener({
     router,
     middlewares: [],
+    preRouting: [],
     logger,
     signal: drainController.signal,
   });

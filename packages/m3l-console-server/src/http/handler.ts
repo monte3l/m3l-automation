@@ -12,12 +12,12 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 
 import { Core } from "@m3l-automation/m3l-common";
 
-import { createRequestContext, withParams } from "./context.js";
+import { createRequestContext, withAccessMode, withParams } from "./context.js";
 import type { M3LRequestContext } from "./context.js";
 import { errorResponse, isFaultError } from "./envelope.js";
 import { M3LConsoleError } from "../errors/console-error.js";
 import { composeMiddleware } from "./middleware.js";
-import type { M3LConsoleMiddleware } from "./middleware.js";
+import type { M3LConsoleHandler, M3LConsoleMiddleware } from "./middleware.js";
 import { writeResponse } from "./respond.js";
 import type { M3LConsoleResponse } from "./respond.js";
 import type { M3LRouteAuth, M3LRouteLookup, M3LRouter } from "./router.js";
@@ -37,6 +37,7 @@ const PATH_PLACEHOLDER_UNPARSED = "(unparsed)";
  * const options: CreateConsoleRequestListenerOptions = {
  *   router: createRouter([]),
  *   middlewares: [],
+ *   preRouting: [],
  *   logger,
  *   signal: new AbortController().signal,
  * };
@@ -45,8 +46,26 @@ const PATH_PLACEHOLDER_UNPARSED = "(unparsed)";
 export interface CreateConsoleRequestListenerOptions {
   /** The compiled router dispatching each request. */
   readonly router: M3LRouter;
-  /** The middleware chain wrapping every matched route's handler. */
+  /**
+   * The middleware chain wrapping every matched route's handler. Runs only
+   * once a route has matched, so `ctx.accessMode` is populated (the matched
+   * route's {@link M3LRouteAuth}) and `ctx.params` are available. This is
+   * where per-route policy belongs (e.g. auth) — it never sees an unmatched
+   * request (a 404 or 405 never reaches it). See {@link preRouting} for the
+   * chain that does.
+   */
   readonly middlewares: readonly M3LConsoleMiddleware[];
+  /**
+   * A second middleware chain that runs around the WHOLE of dispatch,
+   * before routing has resolved — including a request that ends up 404 or
+   * 405. This is where a control that must not be bypassable by requesting
+   * an unknown path belongs (e.g. an origin guard): a `middlewares` member
+   * would never see that request at all. Its members always observe
+   * `ctx.accessMode === undefined`, since routing has not run yet. Runs
+   * outermost relative to {@link middlewares} — see
+   * {@link createConsoleRequestListener}.
+   */
+  readonly preRouting: readonly M3LConsoleMiddleware[];
   /** The logger every request's single outcome line is written through. */
   readonly logger: Core.M3LLogger;
   /** The drain signal — aborts every in-flight request context (ADR-0049). */
@@ -272,10 +291,124 @@ async function dispatch(
     };
   }
 
-  const matchedCtx = withParams(ctx, lookup.params);
+  const matchedCtx = withAccessMode(
+    withParams(ctx, lookup.params),
+    lookup.route.auth,
+  );
   const dispatched = composeMiddleware(middlewares)(lookup.route.handler);
   const response = await dispatched(matchedCtx);
   return { response, accessMode: lookup.route.auth };
+}
+
+/**
+ * Wraps {@link dispatch} in the `preRouting` middleware chain, so it runs
+ * around the whole of dispatch — an unmatched lookup (404/405) included —
+ * unlike `middlewares`, which only wraps a matched route's handler.
+ *
+ * `composeMiddleware` yields an {@link M3LConsoleHandler} returning a plain
+ * {@link M3LConsoleResponse}, with no room to carry {@link DispatchResult}'s
+ * `accessMode` back out without widening every middleware layer to carry
+ * routing detail — a leak of routing internals into a seam that should stay
+ * response-shaped. So the terminal handler passed to the `preRouting` chain
+ * reports `accessMode` to `onDispatched` as a side effect instead;
+ * `onDispatched` is only invoked once {@link dispatch} actually runs, never
+ * when a `preRouting` member short-circuits before reaching it.
+ */
+function dispatchThroughPreRouting(
+  ctx: M3LRequestContext,
+  router: M3LRouter,
+  middlewares: readonly M3LConsoleMiddleware[],
+  preRouting: readonly M3LConsoleMiddleware[],
+  onDispatched: (accessMode: M3LRouteAuth | undefined) => void,
+): Promise<M3LConsoleResponse> {
+  const terminal: M3LConsoleHandler = async (routedCtx) => {
+    const result = await dispatch(routedCtx, router, middlewares);
+    onDispatched(result.accessMode);
+    return result.response;
+  };
+  return Promise.resolve(composeMiddleware(preRouting)(terminal)(ctx));
+}
+
+/** The per-request bookkeeping {@link beginRequest} hands to {@link runRequest}. */
+interface BeginRequestResult {
+  readonly startedAt: number;
+  readonly fallbackCorrelationId: string;
+  readonly connectionController: AbortController;
+  readonly onClose: () => void;
+  readonly signal: AbortSignal;
+}
+
+/**
+ * Sets up the bookkeeping {@link runRequest} needs before it can build a
+ * request context: the start timestamp, a fallback correlation id, the
+ * connection-abort controller, and the composite signal it feeds.
+ *
+ * The returned `onClose` is registered via `req.once("close", onClose)`
+ * BEFORE the composite signal is built, and MUST be removed by the caller
+ * (via `req.removeListener("close", onClose)`, in `runRequest`'s `finally`)
+ * once the request is done with it. The composite is
+ * `AbortSignal.any([options.signal, connectionController.signal])`, in that
+ * order — see {@link finishRequest}'s TSDoc for why both the controller and
+ * this order matter.
+ */
+function beginRequest(
+  req: IncomingMessage,
+  res: ServerResponse,
+  options: CreateConsoleRequestListenerOptions,
+  newCorrelationId: () => string,
+  now: () => number,
+): BeginRequestResult {
+  const startedAt = now();
+  const fallbackCorrelationId = newCorrelationId();
+  const connectionController = new AbortController();
+  const onClose = (): void => {
+    if (!res.writableEnded) connectionController.abort();
+  };
+  req.once("close", onClose);
+  const signal = AbortSignal.any([options.signal, connectionController.signal]);
+
+  return {
+    startedAt,
+    fallbackCorrelationId,
+    connectionController,
+    onClose,
+    signal,
+  };
+}
+
+/** Builds the request context, reusing the already-generated fallback correlation id rather than minting a fresh one. */
+function buildRequestContext(
+  req: IncomingMessage,
+  method: string,
+  signal: AbortSignal,
+  now: () => number,
+  fallbackCorrelationId: string,
+): M3LRequestContext {
+  return createRequestContext({
+    method,
+    url: req.url ?? "/",
+    headers: toHeaderMap(req.headers),
+    signal,
+    now,
+    newCorrelationId: () => fallbackCorrelationId,
+  });
+}
+
+/**
+ * Turns a thrown value caught by {@link runRequest} into its response,
+ * emitting the diagnostic line for a genuine fault along the way (see
+ * {@link logDiagnosticIfFault} for the fault-vs-routine gate). `context`
+ * carries the CURRENT correlation id, method, and path as they stand at the
+ * moment of the throw — never the raw, unparsed `req.url`.
+ */
+function responseForThrownError(
+  error: unknown,
+  logger: Core.M3LLogger,
+  context: RequestFaultContext,
+): M3LConsoleResponse {
+  const response = errorResponse(error, context.correlationId);
+  logDiagnosticIfFault(logger, error, context);
+  return response;
 }
 
 /**
@@ -291,64 +424,113 @@ async function runRequest(
   newCorrelationId: () => string,
   now: () => number,
 ): Promise<void> {
-  const startedAt = now();
-  const fallbackCorrelationId = newCorrelationId();
-  const connectionController = new AbortController();
-  const onClose = (): void => {
-    if (!res.writableEnded) connectionController.abort();
-  };
-  req.once("close", onClose);
-  const signal = AbortSignal.any([options.signal, connectionController.signal]);
+  const began = beginRequest(req, res, options, newCorrelationId, now);
 
   let method = req.method ?? "";
   // Never seeded from the raw `req.url`: a request whose target fails to
   // parse must not log its (possibly query-string-bearing) raw target.
   let path = PATH_PLACEHOLDER_UNPARSED;
-  let correlationId = fallbackCorrelationId;
+  let correlationId = began.fallbackCorrelationId;
   let accessMode: M3LRouteAuth | undefined;
   let response: M3LConsoleResponse;
 
   try {
-    const ctx = createRequestContext({
+    const ctx = buildRequestContext(
+      req,
       method,
-      url: req.url ?? "/",
-      headers: toHeaderMap(req.headers),
-      signal,
+      began.signal,
       now,
-      newCorrelationId: () => fallbackCorrelationId,
-    });
+      began.fallbackCorrelationId,
+    );
     correlationId = ctx.correlationId;
     method = ctx.method;
     path = ctx.path;
 
-    const result = await dispatch(ctx, options.router, options.middlewares);
-    response = result.response;
-    accessMode = result.accessMode;
+    response = await dispatchThroughPreRouting(
+      ctx,
+      options.router,
+      options.middlewares,
+      options.preRouting,
+      (mode) => {
+        accessMode = mode;
+      },
+    );
   } catch (error) {
-    response = errorResponse(error, correlationId);
-    logDiagnosticIfFault(options.logger, error, {
+    response = responseForThrownError(error, options.logger, {
       method,
       path,
       correlationId,
     });
   } finally {
-    req.removeListener("close", onClose);
+    req.removeListener("close", began.onClose);
   }
 
-  writeResponseGuarded(
+  finishRequest({
     res,
     response,
-    { method, path, correlationId },
-    options.logger,
+    context: { method, path, correlationId },
+    connectionController: began.connectionController,
+    startedAt: began.startedAt,
+    now,
+    accessMode,
+    logger: options.logger,
+  });
+}
+
+/** Inputs for {@link finishRequest}. */
+interface FinishRequestInputs {
+  readonly res: ServerResponse;
+  readonly response: M3LConsoleResponse;
+  readonly context: RequestFaultContext;
+  readonly connectionController: AbortController;
+  readonly startedAt: number;
+  readonly now: () => number;
+  readonly accessMode: M3LRouteAuth | undefined;
+  readonly logger: Core.M3LLogger;
+}
+
+/**
+ * Writes `response`, releases the composite abort signal, and logs the
+ * request's outcome line — the tail shared by every completion path through
+ * {@link runRequest}.
+ *
+ * Releasing the composite `signal` — built as
+ * `AbortSignal.any([options.signal, connectionController.signal])` and
+ * threaded through as `ctx.signal` — is a fix for a MEASURED leak (Node
+ * v26.7.0): a composite whose sources are both
+ * still open is normally collectable, but the moment anything attaches an
+ * `abort` listener to it and never removes it — exactly what `ctx.signal`
+ * exists for (pollers, X4's run orchestration) — the still-open long-lived
+ * `options.signal` (the drain signal, which lives as long as the server)
+ * pins the composite for the rest of the process. Aborting
+ * `connectionController` here releases that pin on every completion path
+ * (2xx, a thrown/rejected handler, an unmatched 404/405, or a `preRouting`
+ * short-circuit).
+ *
+ * ORDER IS LOAD-BEARING: the abort MUST run after {@link writeResponseGuarded},
+ * never before — aborting first would cancel the very write it is meant to
+ * follow (a listener on `ctx.signal` could tear down mid-write). This is
+ * NOT redundant with the `onClose` listener in {@link runRequest}: that only
+ * fires on an early client disconnect, not on ordinary completion, so most
+ * requests would otherwise never release the pin.
+ */
+function finishRequest(inputs: FinishRequestInputs): void {
+  writeResponseGuarded(
+    inputs.res,
+    inputs.response,
+    inputs.context,
+    inputs.logger,
   );
 
-  logOutcome(options.logger, {
-    method,
-    path,
-    status: response.status,
-    durationMs: now() - startedAt,
-    correlationId,
-    accessMode,
+  inputs.connectionController.abort();
+
+  logOutcome(inputs.logger, {
+    method: inputs.context.method,
+    path: inputs.context.path,
+    status: inputs.response.status,
+    durationMs: inputs.now() - inputs.startedAt,
+    correlationId: inputs.context.correlationId,
+    accessMode: inputs.accessMode,
   });
 }
 
@@ -378,6 +560,7 @@ async function runRequest(
  * const listener = createConsoleRequestListener({
  *   router: createRouter([]),
  *   middlewares: [],
+ *   preRouting: [],
  *   logger,
  *   signal: new AbortController().signal,
  * });

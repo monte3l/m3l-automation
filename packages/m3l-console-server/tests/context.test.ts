@@ -11,6 +11,7 @@ import { describe, expect, test } from "vitest";
 import {
   CORRELATION_ID_HEADER,
   createRequestContext,
+  withAccessMode,
   withOperator,
   withParams,
 } from "../src/http/context.js";
@@ -18,6 +19,7 @@ import type { CreateRequestContextInput } from "../src/http/context.js";
 import { errorResponse } from "../src/http/envelope.js";
 import { M3LConsoleError } from "../src/errors/console-error.js";
 import type { M3LOperatorProfile } from "../src/auth/identity.js";
+import type { M3LRouteAuth } from "../src/http/router.js";
 
 /** Builds a minimal valid input, then applies `overrides` on top. */
 function buildInput(
@@ -193,6 +195,12 @@ describe("createRequestContext — defaults", () => {
     expect(ctx.operator).toBeUndefined();
   });
 
+  test("defaults accessMode to undefined — a fresh context has not been routed yet", () => {
+    const ctx = createRequestContext(buildInput());
+
+    expect(ctx.accessMode).toBeUndefined();
+  });
+
   test("carries through the supplied AbortSignal unchanged", () => {
     const controller = new AbortController();
 
@@ -268,5 +276,50 @@ describe("withParams", () => {
 
     expect(withBoth.operator).toEqual(operator);
     expect(withBoth.params).toEqual({ id: "1" });
+  });
+});
+
+describe("withAccessMode", () => {
+  test.each<M3LRouteAuth>(["required", "exempt"])(
+    "returns a new frozen context carrying the access mode (%s), without mutating the original",
+    (mode) => {
+      const ctx = createRequestContext(buildInput());
+
+      const next = withAccessMode(ctx, mode);
+
+      expect(next).not.toBe(ctx);
+      expect(next.accessMode).toBe(mode);
+      expect(ctx.accessMode).toBeUndefined();
+      expect(Object.isFrozen(next)).toBe(true);
+    },
+  );
+
+  test("preserves every other field from the original context", () => {
+    const ctx = createRequestContext(
+      buildInput({ url: "/api/v1/runs?x=1", now: () => 999 }),
+    );
+
+    const next = withAccessMode(ctx, "required");
+
+    expect(next.method).toBe(ctx.method);
+    expect(next.path).toBe(ctx.path);
+    expect(next.correlationId).toBe(ctx.correlationId);
+    expect(next.receivedAt).toBe(999);
+    expect(next.params).toEqual(ctx.params);
+    expect(next.operator).toBe(ctx.operator);
+    expect(next.signal).toBe(ctx.signal);
+  });
+
+  test("preserves params and operator already attached by prior withParams/withOperator calls", () => {
+    const ctx = createRequestContext(buildInput());
+    const operator: M3LOperatorProfile = { name: "ada", email: undefined };
+
+    const withOp = withOperator(ctx, operator);
+    const withBoth = withParams(withOp, { id: "1" });
+    const withAll = withAccessMode(withBoth, "exempt");
+
+    expect(withAll.operator).toEqual(operator);
+    expect(withAll.params).toEqual({ id: "1" });
+    expect(withAll.accessMode).toBe("exempt");
   });
 });
