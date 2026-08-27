@@ -1,4 +1,4 @@
-# Subagent context management: preventing and recovering from mid-turn truncation
+# Context management: the hub session and its subagents
 
 Why a dedicated doc: an audit of `docs/logs/*.md` (2026-07-13) found subagent
 mid-turn truncation is **the single most-recurring divergence** in this repo's
@@ -6,12 +6,93 @@ build history — a spoke hits its `maxTurns: 40` budget or an output-token limi
 **mid-thought**, returning a fragment (`"Now the config module —"`) instead of a
 completion report, in **20+ logged occurrences** across 16+ work logs, one
 session recurring **5+ times**
-(`docs/logs/2026-07-13-dynamo-crud.md`). This doc is the canonical playbook:
-what causes it, how to prevent it, and how to recover — grounded in this
-project's own incident history plus official Anthropic guidance. The
-`.claude/rules/subagent-dispatch.md` extract is the terse version consulted
-mid-task; this doc is the reference when you need the full reasoning or the
-citations.
+(`docs/logs/2026-07-13-dynamo-crud.md`). Part 2 of this doc is the canonical
+playbook for that failure: what causes it, how to prevent it, and how to
+recover — grounded in this project's own incident history plus official
+Anthropic guidance. The `.claude/rules/subagent-dispatch.md` extract is the
+terse version consulted mid-task; this doc is the reference when you need the
+full reasoning or the citations.
+
+A 2026-08-27 audit (`/auditing`) found the hub **session itself** — as opposed
+to the spokes it dispatches — had none of this doctrine: no compaction
+strategy, no durable-artifact handoff, and an always-loaded-budget gate that
+measured only 37% of what it governed (see ADR-0078). Part 1 below closes that
+gap. The filename stays as-is even though it now covers both halves — see
+ADR-0078's Considered Options for why a rename was rejected (31 referencing
+files, 20 of them immutable historical records).
+
+## Part 1 — The hub session
+
+### What survives compaction
+
+Per `code.claude.com/docs/en/context-window` and
+`code.claude.com/docs/en/how-claude-code-works`: Claude Code clears older tool
+outputs first, then summarizes the conversation if that alone doesn't free
+enough space. On the automatic pass, the project-root `CLAUDE.md`, unscoped
+`.claude/rules/*.md`, auto memory (`MEMORY.md`), and the plan-mode plan are
+re-injected from disk; up to five most-recently-modified read/edited files are
+re-read (over 5,000 tokens, a file returns as a path reference only); invoked
+skill _bodies_ re-inject capped at 5,000 tokens/skill and 25,000 total, oldest
+dropped first; the skill _listing_ is not re-injected; `paths:`-scoped rules
+and nested `CLAUDE.md` reload only when a matching file is next read; and
+`SessionStart` hooks matching source `compact` re-run. Early, conversation-only
+instructions that never made it into `CLAUDE.md` can be lost — promote a rule
+you need to survive compaction into `CLAUDE.md`, not just the conversation.
+
+### `/clear` vs. `/compact` vs. `/rewind`
+
+| Situation                                                    | Action                                            |
+| ------------------------------------------------------------ | ------------------------------------------------- |
+| Same task, context still coherent                            | Keep going                                        |
+| Debugging went down a wrong path                             | `/rewind` (Esc×2), then redirect                  |
+| Bloated with stale debugging detail but the task continues   | `/compact <focus>`                                |
+| Genuinely new, unrelated task                                | `/clear`                                          |
+| Known-verbose upcoming work (large file reads, broad search) | Delegate to a subagent instead of doing it inline |
+
+`/compact` re-reads the whole conversation to summarize it — expensive for a
+large context. `/clear` costs nothing. A bad auto-compact typically happens
+when the model can't predict where the work is going (compacting mid-debug,
+then pivoting to something the summary dropped) — when in doubt on a genuine
+pivot, `/clear` rather than trusting compaction to carry the right context
+forward.
+
+### Durable-artifact compaction (ADR-0078)
+
+Anthropic's harness-design guidance argues structured artifact handoffs
+outperform in-place summarization for long-running work — "git commits
+eliminated the need for an agent to have to guess at what had happened"
+(`anthropic.com/engineering/effective-harnesses-for-long-running-agents`).
+This repo's own incident history validated the same pattern one layer down:
+every one of the 20+ logged subagent truncations recovered losslessly via its
+journal, none via a narrated summary. ADR-0078 extends that pattern to the hub
+session itself: `.claude/hooks/write-compact-handoff.mjs` (`PreCompact`) writes
+branch, worktree, PR number, open spoke journal paths, pending gates, and the
+last verified commit's signature status to the session scratchpad;
+`.claude/hooks/reinject-compact-handoff.mjs` (`SessionStart`, matcher
+`compact`) reads it back as `additionalContext` — so post-compaction state
+reconstruction doesn't depend on the summary having retained it.
+
+### The always-loaded budget, measured honestly
+
+`bin/check-context-budget.mjs` (ADR-0078; formerly `check-claude-md-budget.mjs`)
+resolves `CLAUDE.md`'s `@`-imports before measuring — `@path` imports "help
+organization but don't reduce context" (`code.claude.com/docs/en/memory`); an
+import is not a scoping mechanism, it's a paste. It also reports the
+conditional load each `.claude/rules/*.md` adds by its `paths:` glob, and sums
+skill-listing description weight. Keep `CLAUDE.md` itself under ~200 lines —
+"bloated CLAUDE.md files cause Claude to ignore your actual instructions"
+(`code.claude.com/docs/en/best-practices`) — and prefer moving procedural
+detail into a skill over growing `CLAUDE.md` or a broadly-scoped rule.
+
+**Context rot**: more context is not automatically better. Anthropic: "as
+token count grows, accuracy and recall degrade, a phenomenon known as context
+rot" — curate the smallest high-signal set rather than defaulting to a larger
+window as the fix for pressure.
+
+Full research synthesis, contradictions between Anthropic sources, and
+coverage gaps: `docs/research/context-window-and-compaction.md`.
+
+## Part 2 — Subagents: preventing and recovering from mid-turn truncation
 
 ## The failure pattern
 
@@ -299,7 +380,7 @@ token count grows, accuracy and recall degrade, a phenomenon known as context
 rot" — curate the smallest high-signal set rather than defaulting to a larger
 window as the fix for truncation.
 
-## Sources
+## Sources (Part 2 — subagents)
 
 - Anthropic, ["How we built our multi-agent research
   system"](https://www.anthropic.com/engineering/multi-agent-research-system)
@@ -313,3 +394,7 @@ window as the fix for truncation.
   windows"](https://platform.claude.com/docs/en/build-with-claude/context-windows)
 - Claude Agent SDK, ["How the agent loop
   works"](https://code.claude.com/docs/en/agent-sdk/agent-loop#handle-the-result)
+
+**Part 1 — hub session** sources (43 total, including contradictions and
+coverage gaps): `docs/research/context-window-and-compaction.md`. The
+governing decision record for Part 1: [ADR-0078](../adr/0078-session-context-management.md).
