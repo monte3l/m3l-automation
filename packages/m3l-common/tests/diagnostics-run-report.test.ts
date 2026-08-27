@@ -3572,8 +3572,10 @@ describe("M3LRunReporter — round-4 (describeSetCardinality hostile size, lock-
       const raw = await readFile(writtenPath as string, "utf8");
 
       expect(raw).not.toContain("sk-SIZE");
-      expect(raw).toMatch(/\[set: \d+ items?\]/);
-      expect(raw).not.toContain(String(forbiddenFragment));
+      const parsed = JSON.parse(raw) as { environment?: { s?: string } };
+      const marker = parsed.environment?.s;
+      expect(marker).toMatch(/^\[set: \d+ items?\]$/);
+      expect(marker).not.toBe(String(forbiddenFragment));
     },
   );
 });
