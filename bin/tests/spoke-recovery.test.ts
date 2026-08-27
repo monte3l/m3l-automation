@@ -10,7 +10,14 @@ import {
   outstandingPending,
   parseJournalEntries,
   recommend,
+  summarizeDiffStatTotalLines,
 } from "../spoke-recovery.mjs";
+
+// bin/spoke-recovery.mjs's HOLLOW_WORK_LINE_THRESHOLD constant is not
+// exported (module-private), so this mirrors its current value (3) for the
+// recommend() hollowWorkCaveat tests below — keep in sync with the module if
+// that constant ever changes.
+const HOLLOW_WORK_LINE_THRESHOLD = 3;
 
 type Entry = ReturnType<typeof parseJournalEntries>[number];
 
@@ -225,6 +232,56 @@ describe("outstandingPending", () => {
         marker: "bullet",
       },
     ]);
+  });
+});
+
+describe("summarizeDiffStatTotalLines", () => {
+  test("a realistic multi-file summary line sums insertions and deletions", () => {
+    expect(
+      summarizeDiffStatTotalLines(
+        "5 files changed, 12 insertions(+), 3 deletions(-)",
+      ),
+    ).toBe(15);
+  });
+
+  test("insertions only, no deletions clause", () => {
+    expect(summarizeDiffStatTotalLines("1 file changed, 2 insertions(+)")).toBe(
+      2,
+    );
+  });
+
+  test("deletions only, no insertions clause", () => {
+    expect(summarizeDiffStatTotalLines("1 file changed, 1 deletion(-)")).toBe(
+      1,
+    );
+  });
+
+  test("singular grammar ('1 insertion(+), 1 deletion(-)') is matched the same as the plural forms", () => {
+    expect(
+      summarizeDiffStatTotalLines(
+        "1 file changed, 1 insertion(+), 1 deletion(-)",
+      ),
+    ).toBe(2);
+  });
+
+  test("only the LAST (summary) line is parsed, not per-file stat lines above it", () => {
+    const raw = [
+      " a.ts | 3 +--",
+      " b.ts | 1 +",
+      " 2 files changed, 3 insertions(+), 1 deletion(-)",
+    ].join("\n");
+    expect(summarizeDiffStatTotalLines(raw)).toBe(4);
+  });
+
+  test("empty string input returns null", () => {
+    expect(summarizeDiffStatTotalLines("")).toBeNull();
+  });
+
+  test("a string with no recognizable summary line returns null", () => {
+    expect(summarizeDiffStatTotalLines("   \n  ")).toBeNull();
+    expect(
+      summarizeDiffStatTotalLines("fatal: not a git repository"),
+    ).toBeNull();
   });
 });
 
@@ -479,6 +536,99 @@ describe("recommend", () => {
       "Not yet touched on disk: packages/m3l-common/src/core/bar/index.ts",
     ]);
     expect(result.rationale).toContain("resume the SAME spoke");
+  });
+
+  test("resume + diffStatTotalLines at the hollow-work threshold → rationale carries the caveat", () => {
+    const result = recommend(
+      {
+        entries: [
+          entry("read contract", "done"),
+          entry("write failure path test", "pending"),
+        ],
+      },
+      {
+        modified: ["packages/m3l-common/tests/foo.test.ts"],
+        untouchedExpected: [],
+        expectedGiven: false,
+        expectedTotal: 0,
+        verified: true,
+        error: null,
+        diffStatTotalLines: HOLLOW_WORK_LINE_THRESHOLD,
+      },
+      null,
+    );
+    expect(result.action).toBe("resume");
+    expect(result.rationale).toContain("Caveat");
+    expect(result.rationale).toContain("hollow-work");
+  });
+
+  test("resume + diffStatTotalLines comfortably above the threshold → no caveat in the rationale", () => {
+    const result = recommend(
+      {
+        entries: [
+          entry("read contract", "done"),
+          entry("write failure path test", "pending"),
+        ],
+      },
+      {
+        modified: ["packages/m3l-common/tests/foo.test.ts"],
+        untouchedExpected: [],
+        expectedGiven: false,
+        expectedTotal: 0,
+        verified: true,
+        error: null,
+        diffStatTotalLines: HOLLOW_WORK_LINE_THRESHOLD + 100,
+      },
+      null,
+    );
+    expect(result.action).toBe("resume");
+    expect(result.rationale).not.toContain("Caveat");
+    expect(result.rationale).not.toContain("hollow-work");
+  });
+
+  test("resume + diffStatTotalLines omitted (undefined) → no caveat, matching every pre-existing fixture's shape", () => {
+    const result = recommend(
+      {
+        entries: [
+          entry("read contract", "done"),
+          entry("write failure path test", "pending"),
+        ],
+      },
+      {
+        modified: ["packages/m3l-common/tests/foo.test.ts"],
+        untouchedExpected: [],
+        expectedGiven: false,
+        expectedTotal: 0,
+        verified: true,
+        error: null,
+        // diffStatTotalLines deliberately omitted — proves the new optional
+        // field is backward-compatible with every existing disk fixture in
+        // this file that never sets it.
+      },
+      null,
+    );
+    expect(result.action).toBe("resume");
+    expect(result.rationale).not.toContain("Caveat");
+    expect(result.rationale).not.toContain("hollow-work");
+  });
+
+  test("action 'none' + diffStatTotalLines at the hollow-work threshold → rationale still carries the caveat", () => {
+    const result = recommend(
+      { entries: [entry("everything shipped", "done")] },
+      {
+        modified: ["packages/m3l-common/tests/foo.test.ts"],
+        untouchedExpected: [],
+        expectedGiven: false,
+        expectedTotal: 0,
+        verified: true,
+        error: null,
+        diffStatTotalLines: HOLLOW_WORK_LINE_THRESHOLD,
+      },
+      null,
+    );
+    expect(result.action).toBe("none");
+    expect(result.rationale).toContain("Caveat");
+    expect(result.rationale).toContain("hollow-work");
   });
 });
 

@@ -156,6 +156,13 @@ commit`. Don't fight this: either scaffold a throwing placeholder per
    try/catch, async fan-out, or retry/poll logic. Route Must-fix findings back
    to `code-implementer` and re-run until clean.
 
+   **Hand each reviewer an explicit scratchpad path** (e.g.
+   `<scratchpad>/<agent-name>-<script>.md`) alongside its file list — every
+   review spoke's bounded-output contract only spills full findings and
+   returns a capped digest when it has a path to write to; leaving it to each
+   spoke's own fallback default makes the digest pattern accidental rather
+   than deliberate.
+
    **Re-review every substantive fix round with a bounded confirmation pass.**
    A fix round is new writer code with no reviewer between it and the commit —
    post-review fix batches introduced fresh Must-fix defects in at least four

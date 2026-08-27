@@ -4,9 +4,11 @@
  * spoke (`test-author` / `code-implementer`) without handing it an explicit
  * journal path in the prompt.
  *
- * Why: subagent mid-turn truncation (a spoke hitting `maxTurns: 40` or an
- * output-token cap mid-thought) is this repo's most-recurring build
- * divergence — see `docs/contributing/subagent-context-management.md`. Both
+ * Why: subagent mid-turn truncation (a spoke hitting its `maxTurns` ceiling
+ * — `MAX_TURNS_CEILING` in bin/lib/agent-roster.mjs, enforced against every
+ * spoke's frontmatter by bin/check-agents.mjs — or an output-token cap
+ * mid-thought) is this repo's most-recurring build divergence — see
+ * `docs/contributing/subagent-context-management.md`. Both
  * writer spokes already carry a "Journal as you go" fallback that derives a
  * scratchpad path on its own (`<scratchpad>/<agent-name>-<module>.md`) when
  * the hub doesn't name one, so this is a belt-and-suspenders check, not the

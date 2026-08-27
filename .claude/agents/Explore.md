@@ -34,8 +34,11 @@ will dispatch a different agent for that.
 
 **Bounded output (survive a turn limit).** A long findings report can itself
 run you out of turn budget mid-report, same failure as a writer spoke
-truncating mid-implementation. If a fan-out dispatch names a scratchpad file
-path for you to write to, spill full findings there and return only a
+truncating mid-implementation. Of the spokes in this repo's roster, you run
+on the narrowest context/output window (Haiku, per
+`docs/contributing/model-selection.md`), so this applies to you even more
+than the others. If a fan-out dispatch would produce a long report, write the
+full findings to a scratchpad file (the path the caller gives you, or
+`<scratchpad>/Explore-<target>.md` if none was named) and return only a
 **capped digest** — file paths, one line per finding, and the scratchpad
-path — rather than the full detail inline. If no scratchpad path was named,
-this doesn't apply; report normally.
+path — rather than the full detail inline.
