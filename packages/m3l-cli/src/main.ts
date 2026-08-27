@@ -15,7 +15,11 @@ import { fileURLToPath } from "node:url";
 
 import { M3LCliError, exitCodeForError } from "./cli/errors.js";
 import { partitionJsonFlag } from "./cli/flags.js";
-import { resolveCacheFilePath, resolveHistoryFilePath } from "./cli/paths.js";
+import {
+  resolveCacheFilePath,
+  resolveHistoryFilePath,
+  resolveOutputDirPath,
+} from "./cli/paths.js";
 import type { M3LCliExitCode } from "./cli/errors.js";
 import type { M3LCliOutput, M3LCliOutputStream } from "./cli/output.js";
 import { createOutput } from "./cli/output.js";
@@ -155,6 +159,7 @@ function buildCommandContext(
     jsonOutput,
     cacheFilePath: resolveCacheFilePath(workspaceRoot, env),
     historyFilePath: resolveHistoryFilePath(workspaceRoot, env),
+    outputDirPath: resolveOutputDirPath(workspaceRoot, env),
   };
 }
 

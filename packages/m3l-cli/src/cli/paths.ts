@@ -60,3 +60,40 @@ export function resolveHistoryFilePath(
 ): string {
   return join(resolveCacheDir(workspaceRoot, env), "m3l-cli", "history.json");
 }
+
+/**
+ * The environment variable overriding the managed output directory (V2
+ * slice 2, #539 / ADR-0063) — distinct from {@link CACHE_DIR_ENV_VAR} and
+ * from `@m3l-automation/m3l-common`'s own `M3L_DATA_DIR`: this module never
+ * consults either when resolving the output directory.
+ *
+ * Deliberately the SAME variable name `M3LPathEnvironmentVariables.OUTPUT_DIR`
+ * (`core/utils/M3LPaths.ts`) already honors, so a caller setting
+ * `M3L_OUTPUT_DIR` redirects both this scan target and every spawned script's
+ * own `M3LPaths.outputDir` in agreement — do not rename this without
+ * preserving that identity.
+ */
+const OUTPUT_DIR_ENV_VAR = "M3L_OUTPUT_DIR";
+
+/**
+ * Resolves the managed output directory's absolute path: the
+ * {@link OUTPUT_DIR_ENV_VAR} override when set and non-empty in `env`,
+ * otherwise `<workspaceRoot>/data/output` — a distinct default from
+ * {@link resolveCacheDir}'s `data/cache` (deliberately not shared, per this
+ * module's own doc: the cache and output directories are unrelated).
+ *
+ * This is the same env var name `M3LPathEnvironmentVariables.OUTPUT_DIR`
+ * (`core/utils/M3LPaths.ts`) already honors — intentionally, so that setting
+ * `M3L_OUTPUT_DIR` redirects both the CLI's own report scan (this module) and
+ * every spawned script's own `M3LPaths.outputDir`, keeping parent and child
+ * pointed at the same directory.
+ */
+export function resolveOutputDirPath(
+  workspaceRoot: string,
+  env: Readonly<Record<string, string | undefined>>,
+): string {
+  const outputDirOverride = env[OUTPUT_DIR_ENV_VAR];
+  return outputDirOverride !== undefined && outputDirOverride !== ""
+    ? outputDirOverride
+    : join(workspaceRoot, "data", "output");
+}

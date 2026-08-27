@@ -33,7 +33,33 @@ interface M3LCliSpawnedProcess {
     listener: (code: number | null, signal: string | null) => void,
   ): unknown;
   off(event: "error", listener: (error: Error) => void): unknown;
+  /**
+   * The child's stdout stream, present only when `stdio`'s second element is
+   * `"pipe"` — `null` for a real `ChildProcess` spawned with inherited stdio,
+   * and possibly absent entirely from a minimal test double.
+   */
+  readonly stdout?: {
+    pipe(destination: { write(chunk: unknown): unknown }): unknown;
+  } | null;
 }
+
+/**
+ * The `stdio` shape `spawnScript` ever passes to `spawnImpl`: either fully
+ * inherited (the default), or the three-element form that pipes only the
+ * child's stdout (fd 1) back to the parent while leaving stdin/stderr
+ * inherited — used when {@link M3LCliSpawnOptions.redirectStdoutToStderr} is
+ * set, so a script's own stdout never contends with a `--json` envelope
+ * written to the parent's stdout.
+ *
+ * @example
+ * ```ts
+ * import type { M3LCliSpawnStdio } from "@m3l-automation/m3l-cli/run/spawn";
+ *
+ * const stdio: M3LCliSpawnStdio = ["inherit", "pipe", "inherit"];
+ * ```
+ */
+export type M3LCliSpawnStdio =
+  "inherit" | readonly ["inherit", "pipe", "inherit"];
 
 /** Injectable overrides `spawnScript` accepts in place of the real process globals. */
 export interface M3LCliSpawnOptions {
@@ -46,16 +72,40 @@ export interface M3LCliSpawnOptions {
   readonly spawnImpl?: (
     command: string,
     args: readonly string[],
-    options: { readonly cwd: string; readonly stdio: "inherit" },
+    options: { readonly cwd: string; readonly stdio: M3LCliSpawnStdio },
   ) => M3LCliSpawnedProcess;
+  /**
+   * When `true`, spawns with `stdio: ["inherit", "pipe", "inherit"]` and
+   * pipes the child's stdout into {@link stderrStream} (or `process.stderr`)
+   * instead of letting it inherit the parent's stdout — so a `--json`
+   * caller's own envelope line is never interleaved with the script's own
+   * stdout output. Defaults to `false` (fully inherited stdio).
+   */
+  readonly redirectStdoutToStderr?: boolean;
+  /**
+   * The stream the child's stdout is piped into when
+   * {@link redirectStdoutToStderr} is `true`; defaults to `process.stderr`.
+   * Ignored when `redirectStdoutToStderr` is not `true`.
+   */
+  readonly stderrStream?: { write(chunk: unknown): unknown };
 }
 
-/** Adapts `node:child_process`'s real `spawn` to {@link M3LCliSpawnOptions}'s narrower shape. */
+/**
+ * Adapts `node:child_process`'s real `spawn` to {@link M3LCliSpawnOptions}'s
+ * narrower shape. `stdio`'s three-element form is copied into a fresh
+ * mutable array — `node:child_process`'s own `SpawnOptions.stdio` accepts a
+ * mutable array, never the `readonly` tuple {@link M3LCliSpawnStdio} declares.
+ */
 const defaultSpawnImpl: NonNullable<M3LCliSpawnOptions["spawnImpl"]> = (
   command,
   args,
   spawnOptions,
-) => nodeSpawn(command, args, spawnOptions);
+) =>
+  nodeSpawn(command, args, {
+    cwd: spawnOptions.cwd,
+    stdio:
+      spawnOptions.stdio === "inherit" ? "inherit" : [...spawnOptions.stdio],
+  });
 
 /** Exit-code offset applied to a signal's numeric value (POSIX shell convention). */
 const SIGNAL_EXIT_CODE_OFFSET = 128;
@@ -119,6 +169,10 @@ export async function spawnScript(
   }
 
   const spawnImpl = options.spawnImpl ?? defaultSpawnImpl;
+  const stdio: M3LCliSpawnStdio =
+    options.redirectStdoutToStderr === true
+      ? ["inherit", "pipe", "inherit"]
+      : "inherit";
 
   return new Promise<number>((resolve, reject) => {
     let child: M3LCliSpawnedProcess;
@@ -126,7 +180,7 @@ export async function spawnScript(
       child = spawnImpl(
         process.execPath,
         ["--env-file-if-exists=.env", "dist/main.js", ...passthroughArgs],
-        { cwd: scriptDirectory, stdio: "inherit" },
+        { cwd: scriptDirectory, stdio },
       );
     } catch (cause) {
       reject(
@@ -138,6 +192,12 @@ export async function spawnScript(
       );
       return;
     }
+
+    // Piping is a no-op unless `stdio`'s second element is `"pipe"` (real
+    // child) or the double happens to expose a `stdout.pipe` spy (test
+    // double) — `?.` guards a real child whose `stdout` is `null` (inherited
+    // stdio) and a double that omits `stdout` entirely.
+    child.stdout?.pipe(options.stderrStream ?? process.stderr);
 
     // Settle-once guard: whichever of close/error fires first `.off()`s the
     // sibling listener before settling, so a spawn implementation that (in

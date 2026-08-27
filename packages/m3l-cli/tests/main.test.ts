@@ -29,6 +29,17 @@ interface M3LCliCommandContextWithHistory extends M3LCliCommandContext {
 }
 
 /**
+ * `M3LCliCommandContext` gains `outputDirPath` (V2 slice 2, #539 /
+ * ADR-0063) — not yet present on the type until `commands/context.ts` is
+ * extended. A local extension (rather than an `as` cast) keeps assertions
+ * type-checked against a real declared shape in RED, and becomes an
+ * identical (harmless) extension of the real field once GREEN lands.
+ */
+interface M3LCliCommandContextWithOutputDir extends M3LCliCommandContext {
+  readonly outputDirPath: string;
+}
+
+/**
  * Contract: `src/main.ts` — `runCli` parses `argv` with `node:util`
  * `parseArgs`-style dispatch (help/--version are static, never touch
  * discovery; `list`/`inspect <script>` lazily import their command modules,
@@ -1095,6 +1106,98 @@ describe("runCli — context.historyFilePath (8f)", () => {
     ];
     const normalized = context.historyFilePath.split(path.sep).join("/");
     expect(normalized.endsWith("m3l-cli/history.json")).toBe(true);
+  });
+});
+
+/**
+ * V2 slice 2 (#539 / ADR-0063) — `M3LCliCommandContext` gains
+ * `outputDirPath`, populated by `main.ts`'s `buildCommandContext` for EVERY
+ * command context (mirroring how `historyFilePath` is already populated
+ * unconditionally): `env["M3L_OUTPUT_DIR"]` when set and non-empty,
+ * otherwise `<workspaceRoot>/data/output` — independent of `M3L_CACHE_DIR`
+ * and `M3L_DATA_DIR`.
+ */
+describe("runCli — outputDirPath in the command context (V2)", () => {
+  test("defaults to <workspaceRoot>/data/output when M3L_OUTPUT_DIR is unset", async () => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    runListMock.mockResolvedValue(0);
+    const { options } = buildOptions();
+
+    await runCli(["list"], options);
+
+    const [context] = runListMock.mock.calls[0] as [
+      M3LCliCommandContextWithOutputDir,
+    ];
+    expect(context.outputDirPath).toBe(
+      path.join("/workspace-root", "data", "output"),
+    );
+  });
+
+  test("uses M3L_OUTPUT_DIR verbatim as an absolute-path override", async () => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    runListMock.mockResolvedValue(0);
+    const { options } = buildOptions();
+
+    await runCli(["list"], {
+      ...options,
+      env: { M3L_OUTPUT_DIR: "/custom/output" },
+    });
+
+    const [context] = runListMock.mock.calls[0] as [
+      M3LCliCommandContextWithOutputDir,
+    ];
+    expect(context.outputDirPath).toBe("/custom/output");
+  });
+
+  test("falls back to the default when M3L_OUTPUT_DIR is set to an empty string", async () => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    runListMock.mockResolvedValue(0);
+    const { options } = buildOptions();
+
+    await runCli(["list"], {
+      ...options,
+      env: { M3L_OUTPUT_DIR: "" },
+    });
+
+    const [context] = runListMock.mock.calls[0] as [
+      M3LCliCommandContextWithOutputDir,
+    ];
+    expect(context.outputDirPath).toBe(
+      path.join("/workspace-root", "data", "output"),
+    );
+  });
+
+  test("is present on a non-run command's context too (doctor), populated unconditionally", async () => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    runDoctorMock.mockResolvedValue(0);
+    const { options } = buildOptions();
+
+    await runCli(["doctor"], options);
+
+    const [context] = runDoctorMock.mock.calls[0] as [
+      M3LCliCommandContextWithOutputDir,
+    ];
+    expect(context.outputDirPath).toBe(
+      path.join("/workspace-root", "data", "output"),
+    );
+  });
+
+  test("M3L_DATA_DIR does not affect outputDirPath (independent of M3LPaths' own override)", async () => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    runListMock.mockResolvedValue(0);
+    const { options } = buildOptions();
+
+    await runCli(["list"], {
+      ...options,
+      env: { M3L_DATA_DIR: "/some/other/data/dir" },
+    });
+
+    const [context] = runListMock.mock.calls[0] as [
+      M3LCliCommandContextWithOutputDir,
+    ];
+    expect(context.outputDirPath).toBe(
+      path.join("/workspace-root", "data", "output"),
+    );
   });
 });
 

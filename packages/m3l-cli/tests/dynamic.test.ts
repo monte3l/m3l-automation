@@ -7,7 +7,7 @@ import { discoverScripts } from "../src/discovery/discover.js";
 import type { M3LCliScriptCandidate } from "../src/discovery/discover.js";
 import { loadParametersCached } from "../src/discovery/cached-load.js";
 import type { M3LCliParameterDescriptor } from "../src/discovery/load-config.js";
-import { spawnScript } from "../src/run/spawn.js";
+import { executeScript } from "../src/run/execute.js";
 import { runInspect } from "../src/commands/inspect.js";
 import { recordHistoryEntry } from "../src/history/store.js";
 
@@ -21,10 +21,12 @@ import { recordHistoryEntry } from "../src/history/store.js";
  * STRING_ARRAY -> multiple string, everything else -> string), translates
  * the parsed values back to canonical `--name[=value]` argv in descriptor
  * declaration order with `passthroughArgs` appended verbatim, and delegates
- * to `spawnScript`, propagating its resolved exit code. An unknown parseArgs
- * option throws `ERR_CLI_UNKNOWN_PARAMETER` with suggestions over the
- * script's declared parameter names. See the 8d addendum at the pinned
- * contract `docs/reference/cli.md`.
+ * to `executeScript` (V2 slice 2, #539 / ADR-0063 — replaces the direct
+ * `spawnScript` call, passing the whole context through), propagating its
+ * resolved exit code. An unknown parseArgs option throws
+ * `ERR_CLI_UNKNOWN_PARAMETER` with suggestions over the script's declared
+ * parameter names. See the 8d addendum at the pinned contract
+ * `docs/reference/cli.md`.
  */
 
 vi.mock("../src/discovery/discover.js", () => ({
@@ -33,8 +35,8 @@ vi.mock("../src/discovery/discover.js", () => ({
 vi.mock("../src/discovery/cached-load.js", () => ({
   loadParametersCached: vi.fn(),
 }));
-vi.mock("../src/run/spawn.js", () => ({
-  spawnScript: vi.fn(),
+vi.mock("../src/run/execute.js", () => ({
+  executeScript: vi.fn(),
 }));
 vi.mock("../src/commands/inspect.js", () => ({
   runInspect: vi.fn(),
@@ -45,14 +47,14 @@ vi.mock("../src/history/store.js", () => ({
 
 const discoverScriptsMock = vi.mocked(discoverScripts);
 const loadParametersCachedMock = vi.mocked(loadParametersCached);
-const spawnScriptMock = vi.mocked(spawnScript);
+const executeScriptMock = vi.mocked(executeScript);
 const runInspectMock = vi.mocked(runInspect);
 const recordHistoryEntryMock = vi.mocked(recordHistoryEntry);
 
 afterEach(() => {
   discoverScriptsMock.mockReset();
   loadParametersCachedMock.mockReset();
-  spawnScriptMock.mockReset();
+  executeScriptMock.mockReset();
   runInspectMock.mockReset();
   recordHistoryEntryMock.mockReset();
 });
@@ -97,6 +99,7 @@ function buildContext(
     jsonOutput: false,
     cacheFilePath: "/workspace/data/cache/m3l-cli/discovery.json",
     historyFilePath: "/workspace/data/cache/m3l-cli/history.json",
+    outputDirPath: "/workspace/data/output",
     ...overrides,
   };
 }
@@ -161,7 +164,7 @@ describe("runDynamic — unknown script", () => {
       suggestions: expect.arrayContaining(["exporter"]) as unknown,
     });
     expect(loadParametersCachedMock).not.toHaveBeenCalled();
-    expect(spawnScriptMock).not.toHaveBeenCalled();
+    expect(executeScriptMock).not.toHaveBeenCalled();
   });
 
   test("throws ERR_CLI_UNKNOWN_SCRIPT with a suggestion over a near-miss static command name", async () => {
@@ -188,7 +191,7 @@ describe("runDynamic — unknown script", () => {
 });
 
 describe("runDynamic — --help/-h delegation", () => {
-  test("delegates to runInspect and never loads parameters or spawns, for --help", async () => {
+  test("delegates to runInspect and never loads parameters or executes, for --help", async () => {
     discoverScriptsMock.mockReturnValue(knownCandidates);
     runInspectMock.mockResolvedValue(0);
 
@@ -198,7 +201,7 @@ describe("runDynamic — --help/-h delegation", () => {
     expect(code).toBe(0);
     expect(runInspectMock).toHaveBeenCalledWith(context, "json-etl");
     expect(loadParametersCachedMock).not.toHaveBeenCalled();
-    expect(spawnScriptMock).not.toHaveBeenCalled();
+    expect(executeScriptMock).not.toHaveBeenCalled();
   });
 
   test("delegates to runInspect for a bare -h mixed in with other args, propagating its return code", async () => {
@@ -215,19 +218,19 @@ describe("runDynamic — --help/-h delegation", () => {
 
     expect(code).toBe(2);
     expect(runInspectMock).toHaveBeenCalledWith(context, "json-etl");
-    expect(spawnScriptMock).not.toHaveBeenCalled();
+    expect(executeScriptMock).not.toHaveBeenCalled();
   });
 
   test("does not delegate when --help only appears in passthroughArgs, not args", async () => {
     discoverScriptsMock.mockReturnValue(knownCandidates);
     loadParametersCachedMock.mockResolvedValue([]);
-    spawnScriptMock.mockResolvedValue(0);
+    executeScriptMock.mockResolvedValue(0);
 
     const context = buildContext();
     await runDynamic(context, "json-etl", [], ["--help"]);
 
     expect(runInspectMock).not.toHaveBeenCalled();
-    expect(spawnScriptMock).toHaveBeenCalledTimes(1);
+    expect(executeScriptMock).toHaveBeenCalledTimes(1);
   });
 
   /**
@@ -283,7 +286,7 @@ describe("runDynamic — --help/-h delegation", () => {
     const code = await runDynamic(context, "json-etl", ["--help"], []);
 
     expect(code).toBe(0);
-    expect(spawnScriptMock).not.toHaveBeenCalled();
+    expect(executeScriptMock).not.toHaveBeenCalled();
     expect(headingLines).toContain("Operations (--command)");
     expect(infoLines.some((line) => line.includes("get"))).toBe(true);
   });
@@ -293,7 +296,7 @@ describe("runDynamic — parseArgs config building + argv translation", () => {
   test("builds string/boolean/multiple options per declared type, maps aliases to canonical names, and orders translated argv by descriptor declaration order with passthrough appended", async () => {
     discoverScriptsMock.mockReturnValue(knownCandidates);
     loadParametersCachedMock.mockResolvedValue(descriptors);
-    spawnScriptMock.mockResolvedValue(0);
+    executeScriptMock.mockResolvedValue(0);
 
     const context = buildContext();
     const code = await runDynamic(
@@ -319,38 +322,48 @@ describe("runDynamic — parseArgs config building + argv translation", () => {
       jsonEtlCandidate.directory,
       context.cacheFilePath,
     );
-    expect(spawnScriptMock).toHaveBeenCalledWith(jsonEtlCandidate.directory, [
-      "--region=us-east-1",
-      "--verbose",
-      "--tags=a",
-      "--tags=b",
-      "--batchSize=10",
-      "--extra-passthrough",
-    ]);
+    expect(executeScriptMock).toHaveBeenCalledWith(
+      context,
+      "json-etl",
+      jsonEtlCandidate.directory,
+      [
+        "--region=us-east-1",
+        "--verbose",
+        "--tags=a",
+        "--tags=b",
+        "--batchSize=10",
+        "--extra-passthrough",
+      ],
+    );
   });
 
   test("resolves a second alias for the same canonical name", async () => {
     discoverScriptsMock.mockReturnValue(knownCandidates);
     loadParametersCachedMock.mockResolvedValue(descriptors);
-    spawnScriptMock.mockResolvedValue(0);
+    executeScriptMock.mockResolvedValue(0);
 
     const context = buildContext();
     await runDynamic(context, "json-etl", ["--aws-region", "eu-west-1"], []);
 
-    expect(spawnScriptMock).toHaveBeenCalledWith(jsonEtlCandidate.directory, [
-      "--region=eu-west-1",
-    ]);
+    expect(executeScriptMock).toHaveBeenCalledWith(
+      context,
+      "json-etl",
+      jsonEtlCandidate.directory,
+      ["--region=eu-west-1"],
+    );
   });
 
   test("omits a boolean parameter from translated argv when it was not supplied", async () => {
     discoverScriptsMock.mockReturnValue(knownCandidates);
     loadParametersCachedMock.mockResolvedValue(descriptors);
-    spawnScriptMock.mockResolvedValue(0);
+    executeScriptMock.mockResolvedValue(0);
 
     const context = buildContext();
     await runDynamic(context, "json-etl", ["--r", "us-east-1"], []);
 
-    const [, translatedArgs] = spawnScriptMock.mock.calls[0] as [
+    const [, , , translatedArgs] = executeScriptMock.mock.calls[0] as [
+      M3LCliCommandContext,
+      string,
       string,
       readonly string[],
     ];
@@ -361,15 +374,17 @@ describe("runDynamic — parseArgs config building + argv translation", () => {
   test("appends passthroughArgs verbatim after every translated flag when no flags are supplied", async () => {
     discoverScriptsMock.mockReturnValue(knownCandidates);
     loadParametersCachedMock.mockResolvedValue(descriptors);
-    spawnScriptMock.mockResolvedValue(0);
+    executeScriptMock.mockResolvedValue(0);
 
     const context = buildContext();
     await runDynamic(context, "json-etl", [], ["--limit", "5"]);
 
-    expect(spawnScriptMock).toHaveBeenCalledWith(jsonEtlCandidate.directory, [
-      "--limit",
-      "5",
-    ]);
+    expect(executeScriptMock).toHaveBeenCalledWith(
+      context,
+      "json-etl",
+      jsonEtlCandidate.directory,
+      ["--limit", "5"],
+    );
   });
 });
 
@@ -392,7 +407,7 @@ describe("runDynamic — invalid parameter value", () => {
       "ERR_CLI_INVALID_PARAMETER_VALUE",
     );
     expect((thrown as M3LCliError).message).toContain("verbose");
-    expect(spawnScriptMock).not.toHaveBeenCalled();
+    expect(executeScriptMock).not.toHaveBeenCalled();
   });
 });
 
@@ -432,7 +447,7 @@ describe("runDynamic — config collision", () => {
     expect((thrown as M3LCliError).code).toBe("ERR_CLI_CONFIG_IMPORT");
     expect((thrown as M3LCliError).message).toContain("foo");
     expect((thrown as M3LCliError).message).toContain("bar");
-    expect(spawnScriptMock).not.toHaveBeenCalled();
+    expect(executeScriptMock).not.toHaveBeenCalled();
   });
 });
 
@@ -455,15 +470,15 @@ describe("runDynamic — unknown parameter", () => {
     expect((thrown as M3LCliError).suggestions).toEqual(
       expect.arrayContaining(["region"]) as unknown,
     );
-    expect(spawnScriptMock).not.toHaveBeenCalled();
+    expect(executeScriptMock).not.toHaveBeenCalled();
   });
 });
 
 describe("runDynamic — spawn code propagation", () => {
-  test("resolves to spawnScript's returned exit code verbatim", async () => {
+  test("resolves to executeScript's returned exit code verbatim", async () => {
     discoverScriptsMock.mockReturnValue(knownCandidates);
     loadParametersCachedMock.mockResolvedValue(descriptors);
-    spawnScriptMock.mockResolvedValue(7);
+    executeScriptMock.mockResolvedValue(7);
 
     const context = buildContext();
     const code = await runDynamic(context, "json-etl", [], []);
@@ -473,7 +488,7 @@ describe("runDynamic — spawn code propagation", () => {
 });
 
 /**
- * m3l-cli 8f addendum — after `spawnScript` resolves, `runDynamic`
+ * m3l-cli 8f addendum — after `executeScript` resolves, `runDynamic`
  * best-effort records a history entry naming the parsed canonical parameter
  * names (unlike `runRun`, which never parses and always records `[]`); a
  * recording failure never surfaces and never changes the resolved exit code.
@@ -482,7 +497,7 @@ describe("runDynamic — best-effort history recording (8f)", () => {
   test("records a history entry naming the parsed canonical parameter names and the spawned exit code", async () => {
     discoverScriptsMock.mockReturnValue(knownCandidates);
     loadParametersCachedMock.mockResolvedValue(descriptors);
-    spawnScriptMock.mockResolvedValue(4);
+    executeScriptMock.mockResolvedValue(4);
     recordHistoryEntryMock.mockReturnValue(true);
 
     const context = buildContext();
@@ -541,7 +556,7 @@ describe("runDynamic — best-effort history recording (8f)", () => {
   test("a history-recording failure never affects the resolved exit code", async () => {
     discoverScriptsMock.mockReturnValue(knownCandidates);
     loadParametersCachedMock.mockResolvedValue(descriptors);
-    spawnScriptMock.mockResolvedValue(0);
+    executeScriptMock.mockResolvedValue(0);
     recordHistoryEntryMock.mockImplementation(() => {
       throw new Error("disk full");
     });
@@ -565,7 +580,7 @@ describe("runDynamic — reserved --json flag shadowing (V2 slice 1)", () => {
   test("'--json' for a script that does NOT declare a json parameter does not throw and is stripped from the translated argv", async () => {
     discoverScriptsMock.mockReturnValue(knownCandidates);
     loadParametersCachedMock.mockResolvedValue(descriptors);
-    spawnScriptMock.mockResolvedValue(0);
+    executeScriptMock.mockResolvedValue(0);
 
     const context = buildContext();
 
@@ -579,8 +594,10 @@ describe("runDynamic — reserved --json flag shadowing (V2 slice 1)", () => {
 
     expect(thrown).toBeUndefined();
     expect(code).toBe(0);
-    expect(spawnScriptMock).toHaveBeenCalledTimes(1);
-    const [, translatedArgs] = spawnScriptMock.mock.calls[0] as [
+    expect(executeScriptMock).toHaveBeenCalledTimes(1);
+    const [, , , translatedArgs] = executeScriptMock.mock.calls[0] as [
+      M3LCliCommandContext,
+      string,
       string,
       readonly string[],
     ];
@@ -600,7 +617,7 @@ describe("runDynamic — reserved --json flag shadowing (V2 slice 1)", () => {
       },
     ];
     loadParametersCachedMock.mockResolvedValue(descriptorsWithJsonParameter);
-    spawnScriptMock.mockResolvedValue(0);
+    executeScriptMock.mockResolvedValue(0);
 
     const context = buildContext();
 
@@ -614,8 +631,10 @@ describe("runDynamic — reserved --json flag shadowing (V2 slice 1)", () => {
 
     expect(thrown).toBeUndefined();
     expect(code).toBe(0);
-    expect(spawnScriptMock).toHaveBeenCalledTimes(1);
-    const [, translatedArgs] = spawnScriptMock.mock.calls[0] as [
+    expect(executeScriptMock).toHaveBeenCalledTimes(1);
+    const [, , , translatedArgs] = executeScriptMock.mock.calls[0] as [
+      M3LCliCommandContext,
+      string,
       string,
       readonly string[],
     ];
@@ -636,19 +655,53 @@ describe("runDynamic — reserved --json flag shadowing (V2 slice 1)", () => {
 
     expect(code).toBe(0);
     expect(runInspectMock).toHaveBeenCalledWith(context, "json-etl");
-    expect(spawnScriptMock).not.toHaveBeenCalled();
+    expect(executeScriptMock).not.toHaveBeenCalled();
   });
 
   test("'--json' appearing only in passthroughArgs (after the bare '--') is unaffected by flag-stripping (regression guard)", async () => {
     discoverScriptsMock.mockReturnValue(knownCandidates);
     loadParametersCachedMock.mockResolvedValue(descriptors);
-    spawnScriptMock.mockResolvedValue(0);
+    executeScriptMock.mockResolvedValue(0);
 
     const context = buildContext();
     await runDynamic(context, "json-etl", [], ["--json"]);
 
-    expect(spawnScriptMock).toHaveBeenCalledWith(jsonEtlCandidate.directory, [
-      "--json",
-    ]);
+    expect(executeScriptMock).toHaveBeenCalledWith(
+      context,
+      "json-etl",
+      jsonEtlCandidate.directory,
+      ["--json"],
+    );
+  });
+});
+
+/**
+ * V2 slice 2 (#539 / ADR-0063) — `runDynamic` is a thin pass-through to
+ * `executeScript`: any JSON-envelope/report-derived rendering belongs
+ * entirely inside `executeScript` (mocked here), never duplicated by
+ * `runDynamic` itself.
+ */
+describe("runDynamic — never renders output directly (V2 slice 2)", () => {
+  test("never calls context.output.info itself; envelope emission belongs to executeScript", async () => {
+    discoverScriptsMock.mockReturnValue(knownCandidates);
+    loadParametersCachedMock.mockResolvedValue(descriptors);
+    executeScriptMock.mockResolvedValue(0);
+    const infoSpy = vi.fn();
+    const context = buildContext({
+      output: {
+        colorEnabled: false,
+        info: infoSpy,
+        error: () => {
+          /* unused */
+        },
+        heading: () => {
+          /* unused */
+        },
+      },
+    });
+
+    await runDynamic(context, "json-etl", ["--r", "us-east-1"], []);
+
+    expect(infoSpy).not.toHaveBeenCalled();
   });
 });

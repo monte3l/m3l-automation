@@ -11,7 +11,7 @@ import { M3LCliError } from "../cli/errors.js";
 import { suggestNames } from "../cli/suggest.js";
 import type { M3LCliCommandContext } from "./context.js";
 import { discoverScripts } from "../discovery/discover.js";
-import { spawnScript } from "../run/spawn.js";
+import { executeScript } from "../run/execute.js";
 import { recordHistoryEntry } from "../history/store.js";
 
 /**
@@ -65,7 +65,7 @@ function recordRunHistory(
  *   Damerau-Levenshtein `suggestions` over the known script names — when
  *   `scriptName` does not match a discovered script.
  * @throws {@link M3LCliError} coded `ERR_CLI_SCRIPT_NOT_BUILT` or
- *   `ERR_CLI_SPAWN_FAILED` — propagated unchanged from {@link spawnScript}.
+ *   `ERR_CLI_SPAWN_FAILED` — propagated unchanged from {@link executeScript}.
  *
  * @example
  * ```ts
@@ -93,7 +93,12 @@ export async function runRun(
     );
   }
 
-  const exitCode = await spawnScript(candidate.directory, passthroughArgs);
+  const exitCode = await executeScript(
+    context,
+    scriptName,
+    candidate.directory,
+    passthroughArgs,
+  );
   recordRunHistory(context.historyFilePath, scriptName, exitCode);
   return exitCode;
 }

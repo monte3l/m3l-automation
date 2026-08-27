@@ -128,6 +128,7 @@ function buildContext(
     jsonOutput: false,
     cacheFilePath: "/workspace/data/cache/m3l-cli/discovery.json",
     historyFilePath: "/workspace/data/cache/m3l-cli/history.json",
+    outputDirPath: "/workspace/data/output",
     ...overrides,
   };
 }

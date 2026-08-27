@@ -11,7 +11,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import { join } from "node:path";
 
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, expectTypeOf, test, vi } from "vitest";
 
 // Make 'node:fs' configurable so vi.spyOn can intercept individual functions
 // (ESM namespace objects are non-writable) — mirrors packages/m3l-common's
@@ -23,7 +23,7 @@ vi.mock("node:fs", async () => {
 });
 
 import { spawnScript } from "../src/run/spawn.js";
-import type { M3LCliSpawnOptions } from "../src/run/spawn.js";
+import type { M3LCliSpawnOptions, M3LCliSpawnStdio } from "../src/run/spawn.js";
 import { M3LCliError } from "../src/cli/errors.js";
 
 afterEach(() => {
@@ -33,6 +33,33 @@ afterEach(() => {
 /** A minimal fake `ChildProcess`: an EventEmitter emitting `close`/`error`. */
 function createFakeChild(): EventEmitter {
   return new EventEmitter();
+}
+
+/**
+ * A fake child whose `stdout` exposes a spy `pipe` — used to assert
+ * `spawnScript` pipes the child's stdout into the caller's redirect target
+ * when `redirectStdoutToStderr` is set.
+ */
+function createFakeChildWithStdoutPipe(): EventEmitter & {
+  stdout: {
+    pipe: ReturnType<
+      typeof vi.fn<(destination: { write(chunk: unknown): unknown }) => unknown>
+    >;
+  };
+} {
+  const child = createFakeChild() as EventEmitter & {
+    stdout: {
+      pipe: ReturnType<
+        typeof vi.fn<
+          (destination: { write(chunk: unknown): unknown }) => unknown
+        >
+      >;
+    };
+  };
+  child.stdout = {
+    pipe: vi.fn<(destination: { write(chunk: unknown): unknown }) => unknown>(),
+  };
+  return child;
 }
 
 const scriptDirectory = join("/workspace", "scripts", "foo");
@@ -283,5 +310,171 @@ describe("M3LCliSpawnOptions contract", () => {
     const options: M3LCliSpawnOptions = { spawnImpl };
 
     expect(options.spawnImpl).toBe(spawnImpl);
+  });
+});
+
+describe("M3LCliSpawnOptions contract — redirectStdoutToStderr / stderrStream (RED: fields do not exist yet)", () => {
+  test("redirectStdoutToStderr is optional — an options object with only spawnImpl still satisfies the type", () => {
+    // Compiles only once `redirectStdoutToStderr` is declared optional on
+    // M3LCliSpawnOptions; until then this is a plain, already-valid object.
+    const spawnImpl = vi.fn(() => createFakeChild());
+    const options: M3LCliSpawnOptions = { spawnImpl };
+
+    expect(options.redirectStdoutToStderr).toBeUndefined();
+  });
+
+  test("redirectStdoutToStderr alone satisfies the type — proving it did not become required alongside spawnImpl", () => {
+    // RED: `redirectStdoutToStderr` is not yet declared on
+    // M3LCliSpawnOptions, so this object literal fails typecheck (excess
+    // property) until the field is added — the sanctioned RED-phase type
+    // error for a not-yet-existing member.
+    const options: M3LCliSpawnOptions = { redirectStdoutToStderr: true };
+
+    expect(options.redirectStdoutToStderr).toBe(true);
+  });
+
+  test("stderrStream alone satisfies the type", () => {
+    // RED: same as above, for the `stderrStream` field.
+    const stderrStream = { write: vi.fn() };
+    const options: M3LCliSpawnOptions = { stderrStream };
+
+    expect(options.stderrStream).toBe(stderrStream);
+  });
+});
+
+describe("M3LCliSpawnStdio type contract (RED: type does not exist yet)", () => {
+  test("accepts the literal 'inherit' string", () => {
+    expectTypeOf<"inherit">().toMatchTypeOf<M3LCliSpawnStdio>();
+  });
+
+  test("accepts the three-element ['inherit', 'pipe', 'inherit'] tuple", () => {
+    expectTypeOf<
+      readonly ["inherit", "pipe", "inherit"]
+    >().toMatchTypeOf<M3LCliSpawnStdio>();
+  });
+});
+
+describe("spawnScript — redirectStdoutToStderr (stdout redirected to the parent's stderr)", () => {
+  test('regression guard: redirectStdoutToStderr omitted still calls spawnImpl with stdio: "inherit"', async () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(true);
+    const fakeChild = createFakeChild();
+    const spawnImpl = vi.fn(() => fakeChild);
+
+    const resultPromise = spawnScript(scriptDirectory, [], { spawnImpl });
+    fakeChild.emit("close", 0, null);
+    await resultPromise;
+
+    expect(spawnImpl).toHaveBeenCalledWith(
+      process.execPath,
+      ["--env-file-if-exists=.env", "dist/main.js"],
+      { cwd: scriptDirectory, stdio: "inherit" },
+    );
+  });
+
+  test('regression guard: redirectStdoutToStderr explicitly false still calls spawnImpl with stdio: "inherit"', async () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(true);
+    const fakeChild = createFakeChild();
+    const spawnImpl = vi.fn(() => fakeChild);
+    const options: M3LCliSpawnOptions = {
+      spawnImpl,
+      redirectStdoutToStderr: false,
+    };
+
+    const resultPromise = spawnScript(scriptDirectory, [], options);
+    fakeChild.emit("close", 0, null);
+    await resultPromise;
+
+    expect(spawnImpl).toHaveBeenCalledWith(
+      process.execPath,
+      ["--env-file-if-exists=.env", "dist/main.js"],
+      { cwd: scriptDirectory, stdio: "inherit" },
+    );
+  });
+
+  test('redirectStdoutToStderr: true calls spawnImpl with stdio ["inherit", "pipe", "inherit"]', async () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(true);
+    const fakeChild = createFakeChildWithStdoutPipe();
+    const spawnImpl = vi.fn(() => fakeChild);
+    const options: M3LCliSpawnOptions = {
+      spawnImpl,
+      redirectStdoutToStderr: true,
+    };
+
+    const resultPromise = spawnScript(scriptDirectory, [], options);
+    fakeChild.emit("close", 0, null);
+    await resultPromise;
+
+    expect(spawnImpl).toHaveBeenCalledWith(
+      process.execPath,
+      ["--env-file-if-exists=.env", "dist/main.js"],
+      { cwd: scriptDirectory, stdio: ["inherit", "pipe", "inherit"] },
+    );
+  });
+
+  test("redirectStdoutToStderr: true pipes the child's stdout into the caller-supplied stderrStream exactly once", async () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(true);
+    const fakeChild = createFakeChildWithStdoutPipe();
+    const spawnImpl = vi.fn(() => fakeChild);
+    const stderrStream = { write: vi.fn() };
+    const options: M3LCliSpawnOptions = {
+      spawnImpl,
+      redirectStdoutToStderr: true,
+      stderrStream,
+    };
+
+    const resultPromise = spawnScript(scriptDirectory, [], options);
+    fakeChild.emit("close", 0, null);
+    await resultPromise;
+
+    expect(fakeChild.stdout.pipe).toHaveBeenCalledTimes(1);
+    expect(fakeChild.stdout.pipe).toHaveBeenCalledWith(stderrStream);
+  });
+
+  test("redirectStdoutToStderr: true with stderrStream omitted pipes the child's stdout into process.stderr", async () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(true);
+    const fakeChild = createFakeChildWithStdoutPipe();
+    const spawnImpl = vi.fn(() => fakeChild);
+    const options: M3LCliSpawnOptions = {
+      spawnImpl,
+      redirectStdoutToStderr: true,
+    };
+
+    const resultPromise = spawnScript(scriptDirectory, [], options);
+    fakeChild.emit("close", 0, null);
+    await resultPromise;
+
+    expect(fakeChild.stdout.pipe).toHaveBeenCalledTimes(1);
+    expect(fakeChild.stdout.pipe).toHaveBeenCalledWith(process.stderr);
+  });
+
+  test("redirectStdoutToStderr: true with the fake child's stdout as null does not throw, and still resolves with the exit code", async () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(true);
+    const fakeChild = createFakeChild() as EventEmitter & { stdout: null };
+    fakeChild.stdout = null;
+    const spawnImpl = vi.fn(() => fakeChild);
+    const options: M3LCliSpawnOptions = {
+      spawnImpl,
+      redirectStdoutToStderr: true,
+    };
+
+    const resultPromise = spawnScript(scriptDirectory, [], options);
+    fakeChild.emit("close", 5, null);
+
+    await expect(resultPromise).resolves.toBe(5);
+  });
+
+  test("redirectStdoutToStderr: true with the fake child's stdout field omitted entirely does not throw, and still resolves with the exit code", async () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(true);
+    const fakeChild = createFakeChild();
+    const spawnImpl = vi.fn(() => fakeChild);
+    const options: M3LCliSpawnOptions = {
+      spawnImpl,
+      redirectStdoutToStderr: true,
+    };
+
+    const resultPromise = spawnScript(scriptDirectory, [], options);
+    fakeChild.emit("close", 5, null);
+
+    await expect(resultPromise).resolves.toBe(5);
   });
 });
