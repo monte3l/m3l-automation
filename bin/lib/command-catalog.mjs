@@ -98,7 +98,12 @@ export const COMMAND_CATALOG = [
   {
     name: "check:verify-parity",
     description:
-      "Verifies bin/lib/verify-steps.mjs (the `pnpm verify` aggregate gate's step list) matches the union of project-check steps across every lane job in .github/workflows/ci.yml exactly, in both directions. Run after adding/removing/renaming a step in any ci.yml lane job.",
+      "Verifies bin/lib/verify-steps.mjs (the `pnpm verify` aggregate gate's step list) matches the union of project-check steps across every lane job in .github/workflows/ci.yml exactly, in both directions, and that no `needsLiveState: true` step is wired into a job feeding the required `verify` aggregate (ADR-0079). Run after adding/removing/renaming a step in any ci.yml lane job.",
+  },
+  {
+    name: "check:workflow-build-order",
+    description:
+      "Derives which bin/**/*.mjs scripts transitively require packages/m3l-cli/dist to be built, then verifies every GitHub Actions workflow step invoking one is preceded, in the same job, by a step that builds @m3l-automation/m3l-cli. Run after adding a bin/ script that imports from packages/m3l-cli or wiring a new workflow step.",
   },
   {
     name: "check:api",

@@ -62,6 +62,12 @@
  *   absent for steps with no local equivalent (see `skipReason`)
  * @property {boolean} [prOnly]   - only meaningful against a PR diff range
  * @property {string} [skipReason] - why `pnpm verify` does not run this by default
+ * @property {boolean} [needsLiveState] - true when this step compares committed
+ *   state against MUTABLE remote state (GitHub Issues/Milestones/labels/repo
+ *   metadata/the Projects board) that can change with no corresponding code
+ *   change — {@link findHermeticityViolations} fails if such a step is wired
+ *   into a job that feeds the required `verify` aggregate's `needs:` list
+ *   (ADR-0079: check:hub-drift and three siblings were exactly this).
  * @property {boolean} [conditional] - true when this step is path-gated in CI
  *   (skipped when its category's inputs didn't change — see the file header).
  *   `pnpm verify` still runs it unconditionally either way.
@@ -102,6 +108,11 @@ export const VERIFY_STEPS = [
     ciStepName: "Build CLI (scaffold checkers read packages/m3l-cli/dist)",
     id: "build-cli-for-gates",
     cmd: () => "pnpm turbo run build --filter=@m3l-automation/m3l-cli",
+  },
+  {
+    ciStepName: "Check workflow build order",
+    id: "check-workflow-build-order",
+    cmd: () => "pnpm check:workflow-build-order",
   },
   {
     ciStepName: "Check verify parity",
@@ -334,6 +345,7 @@ export const VERIFY_STEPS = [
     cmd: () => "pnpm check:hub-drift",
     skipReason:
       "needs a `gh`-authenticated session and live GitHub state; ci.yml also runs it push-only, not on PRs",
+    needsLiveState: true,
   },
   {
     ciStepName: "Check GitHub platform-feature stance (push-only)",
@@ -341,6 +353,7 @@ export const VERIFY_STEPS = [
     cmd: () => "pnpm check:github-features",
     skipReason:
       "needs a `gh`-authenticated session and live GitHub state; ci.yml also runs it push-only, not on PRs",
+    needsLiveState: true,
   },
   {
     ciStepName: "Check label drift (push-only)",
@@ -348,6 +361,7 @@ export const VERIFY_STEPS = [
     cmd: () => "pnpm check:label-drift",
     skipReason:
       "needs a `gh`-authenticated session and live GitHub state; ci.yml also runs it push-only, not on PRs",
+    needsLiveState: true,
   },
   {
     ciStepName: "Check for literal control characters",
@@ -360,6 +374,7 @@ export const VERIFY_STEPS = [
     cmd: () => "pnpm check:hub-views",
     skipReason:
       "needs a `gh` session with the `project` OAuth scope, which GITHUB_TOKEN never carries; ci.yml also runs it push-only, not on PRs",
+    needsLiveState: true,
   },
 ];
 
@@ -383,31 +398,45 @@ export const VERIFY_STEPS = [
  * @returns {string[]}
  */
 export function parseCiVerifyStepNames(ciYamlText) {
+  const names = new Set();
+  for (const { jobName, body } of parseCiJobBoundaries(ciYamlText)) {
+    if (jobName === "verify") continue;
+    for (const m of body.matchAll(/^ {6}- name:\s*(.+?)\s*$/gm)) {
+      names.add(m[1]);
+    }
+  }
+  return [...names];
+}
+
+/**
+ * Split ci.yml's `jobs:` section into per-job bodies — the shared boundary
+ * walk {@link parseCiVerifyStepNames}, {@link parseCiJobStepNames}, and
+ * {@link parseVerifyNeeds} all build on, so the job-boundary regex is
+ * defined exactly once. Job boundaries are 2-space-indented `key:` lines
+ * directly under `jobs:` — every job's own body content (`runs-on:`,
+ * `steps:`, and everything nested under them) sits at 4-space indent or
+ * deeper, so this cannot false-positive on job-body content.
+ *
+ * @param {string} ciYamlText
+ * @returns {{ jobName: string, body: string }[]}
+ */
+function parseCiJobBoundaries(ciYamlText) {
   const jobsMatch = /\njobs:\n([\s\S]*)$/.exec(`\n${ciYamlText}`);
   if (!jobsMatch) {
     throw new Error("could not locate a `jobs:` section in ci.yml");
   }
   const jobsSection = jobsMatch[1];
 
-  const jobBoundaries = [...jobsSection.matchAll(/^ {2}([\w-]+):\n/gm)];
-  if (jobBoundaries.length === 0) {
+  const boundaries = [...jobsSection.matchAll(/^ {2}([\w-]+):\n/gm)];
+  if (boundaries.length === 0) {
     throw new Error("could not locate any job definitions in ci.yml");
   }
 
-  const names = new Set();
-  for (const [index, boundary] of jobBoundaries.entries()) {
-    const jobName = boundary[1];
-    if (jobName === "verify") continue;
-
+  return boundaries.map((boundary, index) => {
     const start = boundary.index + boundary[0].length;
-    const end = jobBoundaries[index + 1]?.index ?? jobsSection.length;
-    const jobBody = jobsSection.slice(start, end);
-
-    for (const m of jobBody.matchAll(/^ {6}- name:\s*(.+?)\s*$/gm)) {
-      names.add(m[1]);
-    }
-  }
-  return [...names];
+    const end = boundaries[index + 1]?.index ?? jobsSection.length;
+    return { jobName: boundary[1], body: jobsSection.slice(start, end) };
+  });
 }
 
 /**
@@ -431,4 +460,87 @@ export function diffVerifySteps(ciStepNames, steps = VERIFY_STEPS) {
     .sort();
 
   return { missingFromList, staleInList };
+}
+
+/**
+ * Parse each job's own ordered `name:` step values in ci.yml, keyed by job
+ * id — the same per-job walk {@link parseCiVerifyStepNames} does, but
+ * keeping the job boundary instead of flattening into one set. Used by
+ * {@link findHermeticityViolations} to check which JOB a live-state step
+ * lives in, not just whether the step exists somewhere in ci.yml.
+ *
+ * @param {string} ciYamlText
+ * @returns {Map<string, string[]>} job id -> ordered step names (verify excluded)
+ */
+export function parseCiJobStepNames(ciYamlText) {
+  const jobSteps = new Map();
+  for (const { jobName, body } of parseCiJobBoundaries(ciYamlText)) {
+    if (jobName === "verify") continue;
+    const names = [...body.matchAll(/^ {6}- name:\s*(.+?)\s*$/gm)].map(
+      (m) => m[1],
+    );
+    jobSteps.set(jobName, names);
+  }
+  return jobSteps;
+}
+
+/**
+ * Parse the required `verify` job's own `needs:` array from ci.yml — the
+ * set of lane jobs whose failure fails the required status check.
+ *
+ * @param {string} ciYamlText
+ * @returns {string[]}
+ */
+export function parseVerifyNeeds(ciYamlText) {
+  const verifyJob = parseCiJobBoundaries(ciYamlText).find(
+    (job) => job.jobName === "verify",
+  );
+  if (!verifyJob) {
+    throw new Error("could not locate the `verify` job in ci.yml");
+  }
+
+  const needsMatch = /^ {4}needs:\s*\[([^\]]*)\]/m.exec(verifyJob.body);
+  if (!needsMatch) {
+    throw new Error("could not locate `verify`'s `needs:` array in ci.yml");
+  }
+  return needsMatch[1]
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+/**
+ * @typedef {Object} HermeticityViolation
+ * @property {string} ciStepName
+ * @property {string} job
+ */
+
+/**
+ * A `needsLiveState: true` step wired into a job that feeds the required
+ * `verify` aggregate is a hermeticity violation: `verify` would gate `main`
+ * on a step that can fail or pass based on mutable remote state alone, with
+ * no corresponding code change — exactly the defect ADR-0079 fixed for
+ * `check:hub-drift` and its three siblings. This makes that fix permanent
+ * rather than a one-time correction: a future live-state check wired the
+ * same wrong way fails this gate instead of silently repeating the failure
+ * mode.
+ *
+ * @param {string} ciYamlText
+ * @param {VerifyStep[]} [steps] defaults to {@link VERIFY_STEPS}
+ * @returns {HermeticityViolation[]}
+ */
+export function findHermeticityViolations(ciYamlText, steps = VERIFY_STEPS) {
+  const jobSteps = parseCiJobStepNames(ciYamlText);
+  const verifyNeeds = new Set(parseVerifyNeeds(ciYamlText));
+
+  const violations = [];
+  for (const step of steps) {
+    if (!step.needsLiveState) continue;
+    for (const [jobName, stepNames] of jobSteps) {
+      if (stepNames.includes(step.ciStepName) && verifyNeeds.has(jobName)) {
+        violations.push({ ciStepName: step.ciStepName, job: jobName });
+      }
+    }
+  }
+  return violations;
 }
