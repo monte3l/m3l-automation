@@ -1,8 +1,10 @@
 /**
  * Tests for src/commands/run.ts — `runRun` resolves a script name via
  * `discoverScripts`, throwing `ERR_CLI_UNKNOWN_SCRIPT` (with suggestions) for
- * an unknown name, otherwise spawning it via `spawnScript` and propagating
- * its resolved exit code verbatim. `runRun` never loads config or touches
+ * an unknown name, otherwise delegating to `executeScript` (V2 slice 2, #539
+ * / ADR-0063 — replaces the direct `spawnScript` call so the whole context
+ * threads through for envelope/report handling) and propagating its
+ * resolved exit code verbatim. `runRun` never loads config or touches
  * the discovery cache (m3l-cli 8c addendum).
  */
 import { afterEach, describe, expect, test, vi } from "vitest";
@@ -12,7 +14,7 @@ import { M3LCliError } from "../src/cli/errors.js";
 import type { M3LCliCommandContext } from "../src/commands/context.js";
 import { discoverScripts } from "../src/discovery/discover.js";
 import type { M3LCliScriptCandidate } from "../src/discovery/discover.js";
-import { spawnScript } from "../src/run/spawn.js";
+import { executeScript } from "../src/run/execute.js";
 import { loadScriptParameters } from "../src/discovery/load-config.js";
 import {
   configMtimes,
@@ -25,7 +27,7 @@ import { recordHistoryEntry } from "../src/history/store.js";
 vi.mock("../src/discovery/discover.js", () => ({
   discoverScripts: vi.fn(),
 }));
-vi.mock("../src/run/spawn.js", () => ({ spawnScript: vi.fn() }));
+vi.mock("../src/run/execute.js", () => ({ executeScript: vi.fn() }));
 // runRun must never touch config-load or the discovery cache — these mocks
 // throw the moment they're invoked, so any accidental call surfaces loudly
 // as a failing assertion rather than silently passing.
@@ -55,7 +57,7 @@ vi.mock("../src/history/store.js", () => ({
 }));
 
 const discoverScriptsMock = vi.mocked(discoverScripts);
-const spawnScriptMock = vi.mocked(spawnScript);
+const executeScriptMock = vi.mocked(executeScript);
 const loadScriptParametersMock = vi.mocked(loadScriptParameters);
 const readDiscoveryCacheMock = vi.mocked(readDiscoveryCache);
 const writeDiscoveryCacheMock = vi.mocked(writeDiscoveryCache);
@@ -65,7 +67,7 @@ const recordHistoryEntryMock = vi.mocked(recordHistoryEntry);
 
 afterEach(() => {
   discoverScriptsMock.mockReset();
-  spawnScriptMock.mockReset();
+  executeScriptMock.mockReset();
   loadScriptParametersMock.mockReset();
   readDiscoveryCacheMock.mockReset();
   writeDiscoveryCacheMock.mockReset();
@@ -109,6 +111,7 @@ function buildContext(
     jsonOutput: false,
     cacheFilePath: "/workspace/data/cache/m3l-cli/discovery.json",
     historyFilePath: "/workspace/data/cache/m3l-cli/history.json",
+    outputDirPath: "/workspace/data/output",
     ...overrides,
   };
 }
@@ -128,17 +131,20 @@ const importerCandidate: M3LCliScriptCandidate = {
 const knownCandidates = [exporterCandidate, importerCandidate];
 
 describe("runRun — known script", () => {
-  test("spawns via spawnScript with the candidate's directory and passthrough args, propagating its exit code", async () => {
+  test("delegates to executeScript with the context, script name, candidate directory, and passthrough args, propagating its exit code", async () => {
     discoverScriptsMock.mockReturnValue(knownCandidates);
-    spawnScriptMock.mockResolvedValue(7);
+    executeScriptMock.mockResolvedValue(7);
 
-    const code = await runRun(buildContext(), "exporter", ["--limit", "5"]);
+    const context = buildContext();
+    const code = await runRun(context, "exporter", ["--limit", "5"]);
 
     expect(code).toBe(7);
-    expect(spawnScriptMock).toHaveBeenCalledWith(exporterCandidate.directory, [
-      "--limit",
-      "5",
-    ]);
+    expect(executeScriptMock).toHaveBeenCalledWith(
+      context,
+      "exporter",
+      exporterCandidate.directory,
+      ["--limit", "5"],
+    );
     expect(loadScriptParametersMock).not.toHaveBeenCalled();
     expect(readDiscoveryCacheMock).not.toHaveBeenCalled();
     expect(writeDiscoveryCacheMock).not.toHaveBeenCalled();
@@ -146,26 +152,29 @@ describe("runRun — known script", () => {
     expect(isCacheEntryFreshMock).not.toHaveBeenCalled();
   });
 
-  test("propagates spawnScript's resolved exit code of 0 unchanged", async () => {
+  test("propagates executeScript's resolved exit code of 0 unchanged", async () => {
     discoverScriptsMock.mockReturnValue(knownCandidates);
-    spawnScriptMock.mockResolvedValue(0);
+    executeScriptMock.mockResolvedValue(0);
 
-    const code = await runRun(buildContext(), "importer", []);
+    const context = buildContext();
+    const code = await runRun(context, "importer", []);
 
     expect(code).toBe(0);
-    expect(spawnScriptMock).toHaveBeenCalledWith(
+    expect(executeScriptMock).toHaveBeenCalledWith(
+      context,
+      "importer",
       importerCandidate.directory,
       [],
     );
   });
 
-  test("propagates a spawnScript rejection (e.g. ERR_CLI_SCRIPT_NOT_BUILT) unchanged", async () => {
+  test("propagates an executeScript rejection (e.g. ERR_CLI_SCRIPT_NOT_BUILT) unchanged", async () => {
     discoverScriptsMock.mockReturnValue(knownCandidates);
-    const spawnError = new Error("not built");
-    spawnScriptMock.mockRejectedValue(spawnError);
+    const executeError = new Error("not built");
+    executeScriptMock.mockRejectedValue(executeError);
 
     await expect(runRun(buildContext(), "exporter", [])).rejects.toBe(
-      spawnError,
+      executeError,
     );
   });
 });
@@ -186,7 +195,7 @@ describe("runRun — unknown script", () => {
     expect((thrown as M3LCliError).suggestions).toEqual(
       expect.arrayContaining(["exporter"]),
     );
-    expect(spawnScriptMock).not.toHaveBeenCalled();
+    expect(executeScriptMock).not.toHaveBeenCalled();
   });
 
   test("throws ERR_CLI_UNKNOWN_SCRIPT with an empty suggestions array when nothing is close", async () => {
@@ -198,20 +207,20 @@ describe("runRun — unknown script", () => {
       code: "ERR_CLI_UNKNOWN_SCRIPT",
       suggestions: [],
     });
-    expect(spawnScriptMock).not.toHaveBeenCalled();
+    expect(executeScriptMock).not.toHaveBeenCalled();
   });
 });
 
 /**
- * m3l-cli 8f addendum — after `spawnScript` resolves, `runRun` best-effort
+ * m3l-cli 8f addendum — after `executeScript` resolves, `runRun` best-effort
  * records a history entry with an empty `parameterNames` (it never parses
  * flags); a recording failure never surfaces and never changes the resolved
  * exit code.
  */
 describe("runRun — best-effort history recording (8f)", () => {
-  test("records a history entry with empty parameterNames and the spawned exit code after a successful spawn", async () => {
+  test("records a history entry with empty parameterNames and the spawned exit code after a successful run", async () => {
     discoverScriptsMock.mockReturnValue(knownCandidates);
-    spawnScriptMock.mockResolvedValue(3);
+    executeScriptMock.mockResolvedValue(3);
     recordHistoryEntryMock.mockReturnValue(true);
 
     const context = buildContext();
@@ -234,9 +243,9 @@ describe("runRun — best-effort history recording (8f)", () => {
     ).toBe("string");
   });
 
-  test("does not record history when spawnScript rejects", async () => {
+  test("does not record history when executeScript rejects", async () => {
     discoverScriptsMock.mockReturnValue(knownCandidates);
-    spawnScriptMock.mockRejectedValue(new Error("not built"));
+    executeScriptMock.mockRejectedValue(new Error("not built"));
 
     await expect(runRun(buildContext(), "exporter", [])).rejects.toThrow();
     expect(recordHistoryEntryMock).not.toHaveBeenCalled();
@@ -244,7 +253,7 @@ describe("runRun — best-effort history recording (8f)", () => {
 
   test("a history-recording failure never affects the resolved exit code", async () => {
     discoverScriptsMock.mockReturnValue(knownCandidates);
-    spawnScriptMock.mockResolvedValue(0);
+    executeScriptMock.mockResolvedValue(0);
     recordHistoryEntryMock.mockImplementation(() => {
       throw new Error("disk full");
     });
@@ -256,11 +265,41 @@ describe("runRun — best-effort history recording (8f)", () => {
 
   test("a history-recording that returns false never affects the resolved exit code", async () => {
     discoverScriptsMock.mockReturnValue(knownCandidates);
-    spawnScriptMock.mockResolvedValue(5);
+    executeScriptMock.mockResolvedValue(5);
     recordHistoryEntryMock.mockReturnValue(false);
 
     const code = await runRun(buildContext(), "exporter", []);
 
     expect(code).toBe(5);
+  });
+});
+
+/**
+ * V2 slice 2 (#539 / ADR-0063) — `runRun` is a thin pass-through to
+ * `executeScript`: any JSON-envelope/report-derived rendering belongs
+ * entirely inside `executeScript` (mocked here), never duplicated by
+ * `runRun` itself.
+ */
+describe("runRun — never renders output directly (V2 slice 2)", () => {
+  test("never calls context.output.info itself; envelope emission belongs to executeScript", async () => {
+    discoverScriptsMock.mockReturnValue(knownCandidates);
+    executeScriptMock.mockResolvedValue(0);
+    const infoSpy = vi.fn();
+    const context = buildContext({
+      output: {
+        colorEnabled: false,
+        info: infoSpy,
+        error: () => {
+          /* unused */
+        },
+        heading: () => {
+          /* unused */
+        },
+      },
+    });
+
+    await runRun(context, "exporter", ["--limit", "5"]);
+
+    expect(infoSpy).not.toHaveBeenCalled();
   });
 });

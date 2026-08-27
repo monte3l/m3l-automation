@@ -25,6 +25,7 @@ import type { M3LCliOutput } from "../cli/output.js";
  *   jsonOutput: false,
  *   cacheFilePath: "/repo/data/cache/m3l-cli/discovery.json",
  *   historyFilePath: "/repo/data/cache/m3l-cli/history.json",
+ *   outputDirPath: "/repo/data/output",
  * };
  * ```
  */
@@ -43,4 +44,11 @@ export interface M3LCliCommandContext {
    * ones (`list`/`inspect`/`presets`) that don't read it.
    */
   readonly historyFilePath: string;
+  /**
+   * The absolute path to the managed output directory (V2 slice 2, #539 /
+   * ADR-0063) — `main.ts`'s `buildCommandContext` populates this
+   * unconditionally for every command context, mirroring `historyFilePath`,
+   * even for commands (`list`/`inspect`/`presets`) that don't read it.
+   */
+  readonly outputDirPath: string;
 }

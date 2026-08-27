@@ -16,7 +16,7 @@ import type { M3LCliCommandContext } from "./context.js";
 import { discoverScripts } from "../discovery/discover.js";
 import { loadParametersCached } from "../discovery/cached-load.js";
 import type { M3LCliParameterDescriptor } from "../discovery/load-config.js";
-import { spawnScript } from "../run/spawn.js";
+import { executeScript } from "../run/execute.js";
 import { runInspect } from "./inspect.js";
 import { recordHistoryEntry } from "../history/store.js";
 
@@ -335,7 +335,7 @@ function recordDynamicHistory(
  * @param passthroughArgs - Everything after the first bare `--`, forwarded
  *   verbatim to the spawned script.
  * @returns `runInspect`'s resolved code for `--help`/`-h`; otherwise
- *   {@link spawnScript}'s resolved exit code, propagated verbatim.
+ *   {@link executeScript}'s resolved exit code, propagated verbatim.
  * @throws {@link M3LCliError} coded `ERR_CLI_UNKNOWN_SCRIPT` — with
  *   suggestions spanning the static command names and the discovered script
  *   names — when `scriptName` matches neither.
@@ -410,10 +410,12 @@ export async function runDynamic(
   }
 
   const translatedArgs = translateArgv(descriptors, values);
-  const exitCode = await spawnScript(candidate.directory, [
-    ...translatedArgs,
-    ...passthroughArgs,
-  ]);
+  const exitCode = await executeScript(
+    context,
+    scriptName,
+    candidate.directory,
+    [...translatedArgs, ...passthroughArgs],
+  );
   recordDynamicHistory(
     context.historyFilePath,
     scriptName,
