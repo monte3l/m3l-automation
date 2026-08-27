@@ -32,6 +32,9 @@ const h = vi.hoisted(() => {
   class PurgeQueueCommand {
     constructor(readonly input: unknown) {}
   }
+  class ListQueuesCommand {
+    constructor(readonly input: unknown) {}
+  }
   class SQSClient {
     readonly config: unknown;
     send = send;
@@ -49,6 +52,7 @@ const h = vi.hoisted(() => {
     SendMessageBatchCommand,
     DeleteMessageBatchCommand,
     PurgeQueueCommand,
+    ListQueuesCommand,
   };
 });
 
@@ -58,12 +62,14 @@ vi.mock("@aws-sdk/client-sqs", () => ({
   SendMessageBatchCommand: h.SendMessageBatchCommand,
   DeleteMessageBatchCommand: h.DeleteMessageBatchCommand,
   PurgeQueueCommand: h.PurgeQueueCommand,
+  ListQueuesCommand: h.ListQueuesCommand,
 }));
 
 import type {
   M3LSQSBatchFailure,
   M3LSQSBatchResult,
   M3LSQSDeleteEntry,
+  M3LSQSListQueuesResult,
   M3LSQSReceiveOptions,
   M3LSQSReceivedMessage,
   M3LSQSRedriveDecision,
@@ -296,6 +302,103 @@ describe("M3LSQSOperations", () => {
     ];
     expect(command.input).toEqual({ QueueUrl: QUEUE_URL });
     expect(h.send).toHaveBeenCalledTimes(1);
+  });
+
+  describe("listQueues()", () => {
+    test("resolves { queueUrls } with no nextToken key present when the response omits NextToken", async () => {
+      h.send.mockResolvedValueOnce({ QueueUrls: ["url1", "url2"] });
+
+      const operations = new M3LSQSOperations(fakeClient());
+      const result = await operations.listQueues();
+
+      expect(result).toEqual({ queueUrls: ["url1", "url2"] });
+      expect(Object.hasOwn(result, "nextToken")).toBe(false);
+    });
+
+    test("resolves { queueUrls: [] } when QueueUrls is absent from the response entirely", async () => {
+      h.send.mockResolvedValueOnce({});
+
+      const operations = new M3LSQSOperations(fakeClient());
+
+      await expect(operations.listQueues()).resolves.toEqual({
+        queueUrls: [],
+      });
+    });
+
+    test("round-trips a response NextToken into result.nextToken", async () => {
+      h.send.mockResolvedValueOnce({
+        QueueUrls: ["url1"],
+        NextToken: "next-page-token",
+      });
+
+      const operations = new M3LSQSOperations(fakeClient());
+      const result = await operations.listQueues();
+
+      expect(result).toEqual({
+        queueUrls: ["url1"],
+        nextToken: "next-page-token",
+      });
+    });
+
+    test("maps queueNamePrefix/nextToken/maxResults onto QueueNamePrefix/NextToken/MaxResults on the sent command", async () => {
+      h.send.mockResolvedValueOnce({ QueueUrls: [] });
+
+      const operations = new M3LSQSOperations(fakeClient());
+      await operations.listQueues({
+        queueNamePrefix: "dlq-",
+        nextToken: "tok123",
+        maxResults: 5,
+      });
+
+      const [command] = h.send.mock.calls[0] as [
+        { input: Record<string, unknown> },
+      ];
+      expect(command.input).toEqual({
+        QueueNamePrefix: "dlq-",
+        NextToken: "tok123",
+        MaxResults: 5,
+      });
+    });
+
+    test("omits QueueNamePrefix/NextToken/MaxResults entirely (not undefined-valued) when called with no options", async () => {
+      h.send.mockResolvedValueOnce({ QueueUrls: [] });
+
+      const operations = new M3LSQSOperations(fakeClient());
+      await operations.listQueues();
+
+      const [command] = h.send.mock.calls[0] as [
+        { input: Record<string, unknown> },
+      ];
+      expect(command.input).toEqual({});
+      expect(Object.hasOwn(command.input, "QueueNamePrefix")).toBe(false);
+      expect(Object.hasOwn(command.input, "NextToken")).toBe(false);
+      expect(Object.hasOwn(command.input, "MaxResults")).toBe(false);
+    });
+
+    test("rejects M3LSQSOperationError with cause chained, and is not retried (send called exactly once), when ListQueues rejects", async () => {
+      const sdkError = new Error("network blip");
+      h.send.mockRejectedValueOnce(sdkError);
+
+      const operations = new M3LSQSOperations(fakeClient());
+
+      let thrown: unknown;
+      try {
+        await operations.listQueues();
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toBeInstanceOf(M3LSQSOperationError);
+      expect((thrown as M3LSQSOperationError).cause).toBe(sdkError);
+      expect(h.send).toHaveBeenCalledTimes(1);
+    });
+
+    test("M3LSQSListQueuesResult shape: queueUrls required, nextToken optional, both readonly", () => {
+      expectTypeOf<M3LSQSListQueuesResult>().toEqualTypeOf<{
+        readonly queueUrls: readonly string[];
+        readonly nextToken?: string;
+      }>();
+    });
   });
 
   describe("sendBatch()", () => {

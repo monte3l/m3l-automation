@@ -15,6 +15,7 @@ import type {
 import {
   DeleteMessageBatchCommand,
   GetQueueAttributesCommand,
+  ListQueuesCommand,
   PurgeQueueCommand,
   ReceiveMessageCommand,
   SendMessageBatchCommand,
@@ -47,6 +48,8 @@ import type {
   M3LSQSBatchFailure,
   M3LSQSBatchResult,
   M3LSQSDeleteEntry,
+  M3LSQSListQueuesOptions,
+  M3LSQSListQueuesResult,
   M3LSQSQueueAttributes,
   M3LSQSReceiveOptions,
   M3LSQSReceivedMessage,
@@ -62,12 +65,13 @@ import {
 
 /**
  * Typed operations over a raw SQS `SQSClient`: receive, batch-send,
- * batch-delete, purge, and queue-attribute retrieval — translating SDK
- * request/response shapes into the plain types in `aws/sqs/types`.
- * `sendBatch`, `deleteBatch`, and `getQueueAttributes` retry throttling/network
- * failures internally (see {@link M3LSQSOperationError} for how a
- * request-level failure is surfaced); `receive` and `purgeQueue` are not
- * retried (ADR-0026).
+ * batch-delete, purge, queue listing, and queue-attribute retrieval —
+ * translating SDK request/response shapes into the plain types in
+ * `aws/sqs/types`. `sendBatch`, `deleteBatch`, and `getQueueAttributes`
+ * retry throttling/network failures internally (see
+ * {@link M3LSQSOperationError} for how a request-level failure is
+ * surfaced); `receive`, `purgeQueue`, and `listQueues` are not retried —
+ * see each method's own TSDoc for why.
  *
  * @example
  * ```ts
@@ -233,6 +237,53 @@ export class M3LSQSOperations {
         { cause },
       );
     }
+  }
+
+  /**
+   * Lists queue URLs, one page at a time, via a single `ListQueues` call.
+   * Not retried: a single idempotent page fetch the caller already drives
+   * via a `nextToken` loop, so a throttled call is naturally retried by the
+   * caller's own next iteration rather than inside the wrapper.
+   *
+   * `maxResults`, `queueNamePrefix`, and `nextToken` are forwarded to the SDK
+   * without a pre-flight validity check; an invalid value (e.g. `maxResults`
+   * outside SQS's accepted range) surfaces as an SDK-rejected
+   * {@link M3LSQSOperationError} after the round trip, not a pre-flight throw.
+   *
+   * @param options - `queueNamePrefix` filters by name prefix; `nextToken`
+   *   continues a previous page; `maxResults` caps the page size.
+   * @throws {@link M3LSQSOperationError} if the underlying `ListQueues` call fails.
+   */
+  async listQueues(
+    options?: M3LSQSListQueuesOptions,
+  ): Promise<M3LSQSListQueuesResult> {
+    let response;
+    try {
+      response = await this.client.send(
+        new ListQueuesCommand({
+          ...(options?.queueNamePrefix !== undefined && {
+            QueueNamePrefix: options.queueNamePrefix,
+          }),
+          ...(options?.nextToken !== undefined && {
+            NextToken: options.nextToken,
+          }),
+          ...(options?.maxResults !== undefined && {
+            MaxResults: options.maxResults,
+          }),
+        }),
+      );
+    } catch (cause) {
+      throw new M3LSQSOperationError("listQueues: ListQueues failed", {
+        cause,
+      });
+    }
+
+    return {
+      queueUrls: response.QueueUrls ?? [],
+      ...(response.NextToken !== undefined && {
+        nextToken: response.NextToken,
+      }),
+    };
   }
 
   /**

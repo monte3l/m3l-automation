@@ -92,6 +92,24 @@ export interface M3LSQSBatchResult<T extends { readonly id: string }> {
   readonly failed: readonly M3LSQSBatchFailure<T>[];
 }
 
+/** The result of {@link M3LSQSOperations.listQueues}: one page of queue URLs. */
+export interface M3LSQSListQueuesResult {
+  /** Queue URLs on this page. */
+  readonly queueUrls: readonly string[];
+  /** Present when another page is available; pass back as `nextToken` to continue. */
+  readonly nextToken?: string;
+}
+
+/** Options for {@link M3LSQSOperations.listQueues}. */
+export interface M3LSQSListQueuesOptions {
+  /** Filters returned queue URLs to those whose name starts with this prefix. */
+  readonly queueNamePrefix?: string;
+  /** Continues a previous page; pass back the `nextToken` from a prior result. */
+  readonly nextToken?: string;
+  /** Caps the number of queue URLs returned on this page. */
+  readonly maxResults?: number;
+}
+
 /** Options for {@link M3LSQSOperations.receive}. */
 export interface M3LSQSReceiveOptions {
   /** Maximum messages to return in one call (1-10 per the SQS API cap). Default 10. */

@@ -17,7 +17,8 @@ library-owned types so a caller never touches an `@aws-sdk/client-sqs` type.
 - `M3LSQSOperationError` — thrown on a request-level SQS failure.
 - Plain types: `M3LSQSReceivedMessage`, `M3LSQSSendEntry`,
   `M3LSQSDeleteEntry`, `M3LSQSBatchFailure<T>`, `M3LSQSBatchResult<T>`,
-  `M3LSQSReceiveOptions`, `M3LSQSRedriveDecision`, `M3LSQSRedriveProcessor`,
+  `M3LSQSListQueuesOptions`, `M3LSQSListQueuesResult`, `M3LSQSReceiveOptions`,
+  `M3LSQSRedriveDecision`, `M3LSQSRedriveProcessor`,
   `M3LSQSReceiveDeduplicationMode`, `M3LSQSRedriveOptions`,
   `M3LSQSRedriveResult`, `M3LSQSQueueAttributes`, `M3LSQSRedrivePolicy`,
   `M3LSQSRedrivePermission`, `M3LSQSRedriveAllowPolicy`.
@@ -37,6 +38,7 @@ for you, sharing the underlying `sqs` client's lifecycle).
 | `sendBatch(queueUrl, entries)`                                           | Yes       | `Promise<M3LSQSBatchResult<M3LSQSSendEntry>>`   | `M3LSQSOperationError` |
 | `deleteBatch(queueUrl, entries)`                                         | Yes       | `Promise<M3LSQSBatchResult<M3LSQSDeleteEntry>>` | `M3LSQSOperationError` |
 | `purgeQueue(queueUrl)`                                                   | No        | `Promise<void>`                                 | `M3LSQSOperationError` |
+| `listQueues(options?)`                                                   | No        | `Promise<M3LSQSListQueuesResult>`               | `M3LSQSOperationError` |
 | `getQueueAttributes(queueUrl)`                                           | Yes       | `Promise<M3LSQSQueueAttributes>`                | `M3LSQSOperationError` |
 | `redrive(sourceQueueUrl, destinationQueueUrl, processMessage, options?)` | Composed¹ | `Promise<M3LSQSRedriveResult>`                  | `M3LSQSOperationError` |
 
@@ -49,10 +51,18 @@ for you, sharing the underlying `sqs` client's lifecycle).
 (throttling/network classifiers, exponential backoff 100ms→3s). A per-entry
 failure inside a _successful_ response (SQS's `Failed[]`) is never retried —
 it is returned via `M3LSQSBatchResult.failed`, joined back to the caller's
-original input entry. `receive`/`purgeQueue` are not retried: a long-poll
-receive absorbs transient emptiness on its own, and SQS's `PurgeQueue`
-60-second cooldown (`PurgeQueueInProgress`) is a business condition, not a
-transient fault.
+original input entry. `receive`/`purgeQueue`/`listQueues` are not retried. A
+long-poll `receive` absorbs transient emptiness on its own; SQS's
+`PurgeQueue` 60-second cooldown (`PurgeQueueInProgress`) is a business
+condition, not a transient fault; and `listQueues` is a single idempotent
+page fetch the caller already drives in a `nextToken` loop, so a throttled
+page is re-attempted by the caller's own next iteration rather than inside
+the wrapper. `listQueues`' `queueNamePrefix`/`nextToken`/`maxResults`
+options are forwarded to the SDK without a pre-flight validity check —
+unlike `sendBatch`/`deleteBatch`'s batch-size guard or `redrive`'s
+`messageLimit` guard below, an invalid value (e.g. `maxResults` outside
+SQS's accepted range) surfaces as an SDK-rejected `M3LSQSOperationError`
+after the round trip, not a pre-flight throw.
 
 **Batch limits:** `sendBatch`/`deleteBatch` accept at most 10 entries per
 call (the SQS API cap) with unique `id`s; a violation throws
@@ -148,10 +158,10 @@ SDK call of its own.
 
 Subclass of `M3LError` with `code: "ERR_SQS_OPERATION"`. Thrown when a
 request-level SQS operation fails: a whole batch request rejects after
-retries, `receive`/`purgeQueue` rejects, or a pre-flight guard (batch size,
-duplicate ids) fails before any AWS call. The originating SDK error is
-chained via `cause`. Per-entry batch failures are **not** represented by this
-error — see `M3LSQSBatchResult.failed`.
+retries, `receive`/`purgeQueue`/`listQueues` rejects, or a pre-flight guard
+(batch size, duplicate ids) fails before any AWS call. The originating SDK
+error is chained via `cause`. Per-entry batch failures are **not**
+represented by this error — see `M3LSQSBatchResult.failed`.
 
 ### Plain types
 
@@ -168,6 +178,16 @@ messageDeduplicationId?, messageAttributes? }`. `id` must be unique within
 - **`M3LSQSBatchResult<T>`** — `{ successful: readonly T[], failed:
 readonly M3LSQSBatchFailure<T>[] }`. Every input entry lands in exactly one
   of the two.
+- **`M3LSQSListQueuesOptions`** — `{ queueNamePrefix?, nextToken?,
+maxResults? }`, `listQueues`' input. `queueNamePrefix` filters by name
+  prefix, `nextToken` continues a previous page, `maxResults` caps the page
+  size — each forwarded to the SDK only when supplied.
+- **`M3LSQSListQueuesResult`** — `{ queueUrls: readonly string[], nextToken? }`,
+  one page of queue URLs from `listQueues`. `queueUrls` is `[]` when the
+  response carried no `QueueUrls` field at all — an empty page is success, not
+  an error. `nextToken` is **omitted**, not set to `undefined`, when SQS
+  returned no continuation token; pass it back as the next call's
+  `nextToken` to continue paging.
 - **`M3LSQSReceiveOptions`** — `{ maxMessages?, waitTimeSeconds?,
 visibilityTimeout?, messageAttributeNames?, systemAttributeNames? }`.
   `maxMessages` defaults to `10`, `waitTimeSeconds` defaults to `20`
@@ -256,6 +276,15 @@ const result = await sqsOperations.sendBatch(queueUrl, [
 ]);
 // result.failed[].entry is the original M3LSQSSendEntry, ready to write
 // straight to a failed.jsonl file with no extra bookkeeping.
+
+// List every queue URL, one page at a time.
+let nextToken;
+const queueUrls = [];
+do {
+  const page = await sqsOperations.listQueues({ nextToken });
+  queueUrls.push(...page.queueUrls);
+  nextToken = page.nextToken;
+} while (nextToken !== undefined);
 
 // Redrive every message from a DLQ back to its source queue.
 const redriveResult = await sqsOperations.redrive(
