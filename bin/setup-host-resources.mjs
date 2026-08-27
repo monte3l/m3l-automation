@@ -23,8 +23,11 @@
  *      sshd/systemd/tmux/sudo and prefer killing node/claude/vitest/tsc.
  *   2. zram swap — install zram-tools, ~50% of RAM, zstd.
  *   3. vm.swappiness — lower via /etc/sysctl.d/ drop-in (never raises it).
- *   4. user@.slice MemoryMax — system-wide drop-in bounding every login
- *      session's cgroup, derived from total host memory.
+ *   4. user-.slice MemoryMax — system-wide drop-in bounding the TOTAL memory
+ *      available to all of this user's login sessions combined (one shared
+ *      cgroup per UID, not one per session), derived from total host memory
+ *      with a fixed OS reserve. Deliberately independent of --sessions: the
+ *      per-session split is CLAUDE_CODE_TOOL_MEMORY_LIMIT's job (step 6).
  *   5. claude-rc.service — MemoryMax + OOMPolicy=kill drop-in, if the unit
  *      exists (~/.config/systemd/user/claude-rc.service per this host's
  *      remote-control wrapper; a no-op elsewhere).
@@ -78,22 +81,25 @@ export function buildEarlyoomOverride() {
 }
 
 /**
- * Build the `/etc/systemd/system/user-.slice.d/` drop-in that bounds every
- * login user slice's cgroup, sized off total host memory so it is never
- * hardcoded per machine.
+ * Build the `/etc/systemd/system/user-.slice.d/` drop-in that bounds the
+ * TOTAL memory available to every one of this user's login sessions
+ * combined — `user-.slice` is one shared cgroup per UID, not one per
+ * session, so this must NOT be divided by the session count (a divided
+ * value would make the ceiling for the whole user tree shrink as more
+ * concurrent sessions are budgeted for, inverting `--sessions`'s intent
+ * and colliding with the per-session `CLAUDE_CODE_TOOL_MEMORY_LIMIT`
+ * step 6 derives from the same host). Reserves the same OS_RESERVE_GIB as
+ * {@link recommendToolMemoryLimitGiB} so the two ceilings stay consistent.
  *
  * @param {number} totalMemGiB
- * @param {number} maxConcurrentSessions
  * @returns {string}
  */
-export function buildUserSliceOverride(totalMemGiB, maxConcurrentSessions) {
-  const perSessionGiB = Math.max(
-    4,
-    Math.floor((totalMemGiB * 0.85) / Math.max(1, maxConcurrentSessions)),
-  );
-  return `[Slice]\nMemoryMax=${perSessionGiB}G\nMemoryHigh=${Math.max(
+export function buildUserSliceOverride(totalMemGiB) {
+  const OS_RESERVE_GIB = 2;
+  const totalBudgetGiB = Math.max(4, Math.floor(totalMemGiB - OS_RESERVE_GIB));
+  return `[Slice]\nMemoryMax=${totalBudgetGiB}G\nMemoryHigh=${Math.max(
     2,
-    perSessionGiB - 1,
+    totalBudgetGiB - 1,
   )}G\n`;
 }
 
@@ -205,7 +211,7 @@ function run(opts, reporter) {
   }
 
   // 4. user@.slice MemoryMax
-  const sliceOverride = buildUserSliceOverride(totalMemGiB, opts.sessions);
+  const sliceOverride = buildUserSliceOverride(totalMemGiB);
   const sliceOverridePath = "/etc/systemd/system/user-.slice.d/override.conf";
   const existingSlice = existsSync(sliceOverridePath)
     ? readFileSync(sliceOverridePath, "utf8")

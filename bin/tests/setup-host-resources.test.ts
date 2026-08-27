@@ -43,17 +43,24 @@ describe("buildEarlyoomOverride", () => {
 });
 
 describe("buildUserSliceOverride", () => {
-  test("computes MemoryMax/MemoryHigh for a normal-sized host", () => {
-    expect(buildUserSliceOverride(16, 2)).toBe(
-      "[Slice]\nMemoryMax=6G\nMemoryHigh=5G\n",
+  test("reserves a fixed 2 GiB for the OS and gives the rest to the user-slice ceiling", () => {
+    // totalBudgetGiB = max(4, floor(16 - 2)) = 14; MemoryHigh = max(2, 13) = 13.
+    expect(buildUserSliceOverride(16)).toBe(
+      "[Slice]\nMemoryMax=14G\nMemoryHigh=13G\n",
     );
   });
 
-  test("floors MemoryMax to the minimum of 4 on a small, heavily-shared host", () => {
-    expect(buildUserSliceOverride(4, 4)).toBe(
+  test("floors MemoryMax to the minimum of 4 on a small host where the OS reserve would leave less", () => {
+    // totalBudgetGiB = max(4, floor(4 - 2)) = max(4, 2) = 4; MemoryHigh = max(2, 3) = 3.
+    expect(buildUserSliceOverride(4)).toBe(
       "[Slice]\nMemoryMax=4G\nMemoryHigh=3G\n",
     );
   });
+
+  // No case exercises the Math.max(2, totalBudgetGiB - 1) floor on MemoryHigh:
+  // totalBudgetGiB is already floored at 4 by the check above, so
+  // totalBudgetGiB - 1 >= 3 always holds and the MemoryHigh floor of 2 is
+  // unreachable given the MemoryMax floor's own minimum.
 });
 
 describe("buildClaudeRcOverride", () => {
