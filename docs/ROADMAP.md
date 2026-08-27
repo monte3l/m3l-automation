@@ -205,7 +205,7 @@ per-phase detail in
 | Item    | What                                                             | Status   |
 | ------- | ---------------------------------------------------------------- | -------- |
 | **X1**  | Decisions & governance docs — ADR-0064…0071 + trackers           | Done     |
-| **X2**  | `m3l-console-server` skeleton (HTTP, health, auth seam, drain)   | To Do    |
+| **X2**  | `m3l-console-server` skeleton (HTTP, health, auth seam, drain)   | Done     |
 | **X3**  | Persistence foundation (`node:sqlite` + repository seam)         | To Do    |
 | **X4**  | Run orchestration (registry, concurrency, SSE streams)           | To Do    |
 | **X5**  | `sqs-etl` list-queues operation (fleet PR)                       | To Do    |
