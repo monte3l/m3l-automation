@@ -107,7 +107,7 @@ keeps its step list in sync with `ci.yml`.
 
 ## CI/CD
 
-Seven GitHub Actions workflows in `.github/workflows/` (plus Dependabot).
+Eight GitHub Actions workflows in `.github/workflows/` (plus Dependabot).
 Full table — triggers, purpose, required status checks:
 `docs/contributing/ci-cd.md`.
 
