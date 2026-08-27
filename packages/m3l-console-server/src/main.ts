@@ -18,6 +18,7 @@ import { Core } from "@m3l-automation/m3l-common";
 
 import type { M3LConsoleConfig } from "./config/env.js";
 import { loadConsoleConfig } from "./config/env.js";
+import { chainSecondaryFailure } from "./errors/chain-secondary-failure.js";
 import { createSingleOperatorProvider } from "./auth/identity.js";
 import type {
   M3LOperatorProfile,
@@ -35,6 +36,16 @@ import { createDrainController } from "./lifecycle/drain.js";
 import type { M3LDrainController, M3LDrainOutcome } from "./lifecycle/drain.js";
 import { startConsoleServer } from "./lifecycle/http-server.js";
 import type { M3LListeningServer } from "./lifecycle/http-server.js";
+import {
+  createShutdown,
+  registerConsoleShutdownSignals,
+} from "./lifecycle/shutdown.js";
+import { openConsoleStore } from "./store/store.js";
+import type {
+  M3LConsoleStoreHandle,
+  M3LConsoleStoreLifecycle,
+  OpenConsoleStoreOptions,
+} from "./store/store.js";
 
 /**
  * Constructor options for {@link createConsoleRuntime}.
@@ -60,6 +71,10 @@ export interface M3LConsoleRuntimeOptions {
    * tests can drive the request listener without a live server.
    */
   readonly routes?: readonly M3LRoute[];
+  /** Pre-resolved config; when supplied, `loadConsoleConfig` is skipped (see {@link startConsole}). */
+  readonly config?: M3LConsoleConfig;
+  /** The opened console store (ADR-0069), when the caller already has one. */
+  readonly store?: M3LConsoleStoreHandle;
 }
 
 /**
@@ -103,6 +118,14 @@ export interface M3LConsoleRuntime {
    * (ADR-0049). Equivalent to `drain.signal`.
    */
   readonly signal: AbortSignal;
+  /**
+   * The opened console store (ADR-0069), when `options.store` supplied one
+   * — narrowed to its {@link M3LConsoleStoreLifecycle} view: this composition
+   * root has no business issuing queries itself, so the full
+   * {@link M3LConsoleStoreHandle} (which carries the SQL query surface) never
+   * republishes past this field.
+   */
+  readonly store?: M3LConsoleStoreLifecycle;
 }
 
 /**
@@ -138,13 +161,37 @@ function buildDefaultHandlers(
  * by some future call site. The library's key-name heuristic cannot know a
  * consumer's vocabulary — which is exactly what `M3LSecretNamesPort` exists
  * for.
+ *
+ * `sql`/`parameters`/`bindings`/`expandedSQL` are the same structural fix
+ * for the ADR-0069 store: a repository logging a failed query's context as
+ * ordinary as `logger.error(msg, { sql, parameters })` must never print the
+ * raw SQL, its bound parameters/bindings, or its interpolated `expandedSQL`
+ * form — the sqlite driver's own TSDoc documents `expandedSQL` as
+ * interpolating bound values, so it is never loggable. `query`/`statement`
+ * (near-synonyms for `sql`) and `params`/`values`/`args` (near-synonyms for
+ * `parameters`/`bindings`) round out the same store vocabulary: a security
+ * probe measured all five leaking verbatim through the real logger, and
+ * `params` in particular is an entirely ordinary shorthand at a real call
+ * site, not an exotic one this port can afford to skip.
  */
+const RUNTIME_SECRET_NAMES: ReadonlySet<string> = new Set([
+  "operatorEmail",
+  "email",
+  "headers",
+  "cookie",
+  "sql",
+  "parameters",
+  "bindings",
+  "expandedSQL",
+  "query",
+  "statement",
+  "params",
+  "values",
+  "args",
+]);
+
 const runtimeSecrets: Core.M3LSecretNamesPort = {
-  isSecret: (name) =>
-    name === "operatorEmail" ||
-    name === "email" ||
-    name === "headers" ||
-    name === "cookie",
+  isSecret: (name) => RUNTIME_SECRET_NAMES.has(name),
 };
 
 /**
@@ -171,12 +218,26 @@ function logPosture(logger: Core.M3LLogger, config: M3LConsoleConfig): void {
  * {@link M3LConsoleRuntime.router} — that field reflects `options.routes`
  * verbatim, so a caller introspecting it sees exactly what it registered,
  * not an implementation detail of how liveness/readiness are served.
+ *
+ * `store` is threaded through to {@link createHealthRoutes} so `/ready`
+ * actually reflects the real store's health in every deployment — this call
+ * site is also the compiler-checked proof that
+ * {@link M3LConsoleStoreLifecycle} (and the full {@link M3LConsoleStoreHandle}
+ * that satisfies it) structurally conforms to `health.ts`'s
+ * `M3LReadinessProbe`, without creating an `http -> store` ESLint zone edge
+ * (that module deliberately declares its own narrower shape rather than
+ * importing this one).
  */
 function buildDispatchRouter(
   drain: M3LDrainController,
   routes: readonly M3LRoute[],
+  store: M3LConsoleStoreLifecycle | undefined,
 ): M3LRouter {
-  const healthRoutes = createHealthRoutes({ drain, startedAt: Date.now() });
+  const healthRoutes = createHealthRoutes({
+    drain,
+    startedAt: Date.now(),
+    ...(store !== undefined && { store }),
+  });
   return createRouter([...healthRoutes, ...routes]);
 }
 
@@ -200,12 +261,18 @@ function buildDispatchRouter(
  * runtime.logger.info("ready");
  * ```
  */
+/** Resolves the boot config: `options.config` verbatim if supplied, else `loadConsoleConfig`. */
+function resolveConfig(options: M3LConsoleRuntimeOptions): M3LConsoleConfig {
+  return (
+    options.config ??
+    loadConsoleConfig(options.env !== undefined ? { env: options.env } : {})
+  );
+}
+
 export function createConsoleRuntime(
   options: M3LConsoleRuntimeOptions = {},
 ): M3LConsoleRuntime {
-  const config = loadConsoleConfig(
-    options.env !== undefined ? { env: options.env } : {},
-  );
+  const config = resolveConfig(options);
   const handlers = options.handlers ?? buildDefaultHandlers(config.logLevel);
   const logger = new Core.M3LLogger(handlers, {
     minLevel: config.logLevel,
@@ -230,7 +297,7 @@ export function createConsoleRuntime(
   // full rationale). It runs ahead of auth so a drain refusal never pays the
   // cost of resolving an operator first.
   const requestListener = createConsoleRequestListener({
-    router: buildDispatchRouter(drain, routes),
+    router: buildDispatchRouter(drain, routes, options.store),
     middlewares: [
       createDrainMiddleware(drain),
       createAuthMiddleware(operatorProvider),
@@ -249,6 +316,7 @@ export function createConsoleRuntime(
     requestListener,
     drain,
     signal: drain.signal,
+    ...(options.store !== undefined && { store: options.store }),
   };
 }
 
@@ -263,9 +331,6 @@ const DEFAULT_SIGNALS: readonly NodeJS.Signals[] = [
   "SIGQUIT",
 ];
 
-/** The exit code forced on a second shutdown signal. */
-const FORCED_SECOND_SIGNAL_EXIT_CODE = 1;
-
 /**
  * Constructor options for {@link startConsole}.
  *
@@ -279,6 +344,10 @@ export interface StartConsoleOptions extends M3LConsoleRuntimeOptions {
   readonly signals?: readonly NodeJS.Signals[];
   /** Test seam: builds the underlying `Server` instead of `node:http`'s `createServer`. */
   readonly createServer?: () => Server;
+  /** Test seam: opens the console store instead of the real `openConsoleStore`. */
+  readonly openStore?: (
+    options: OpenConsoleStoreOptions,
+  ) => M3LConsoleStoreHandle;
 }
 
 /**
@@ -297,6 +366,13 @@ export interface M3LRunningConsole {
   readonly runtime: M3LConsoleRuntime;
   /** The verified, actually-listening server (see `lifecycle/http-server.ts`). */
   readonly server: M3LListeningServer;
+  /**
+   * The console store (ADR-0069) opened before the listener bound; closed
+   * after the drain settles. Narrowed to {@link M3LConsoleStoreLifecycle} —
+   * see {@link M3LConsoleRuntimeOptions.store}'s TSDoc for why this
+   * composition root never republishes the full query surface.
+   */
+  readonly store: M3LConsoleStoreLifecycle;
   /**
    * Settles once a shutdown has been triggered AND completed — by a call to
    * {@link shutdown} or by a trapped signal, whichever happens first. Never
@@ -326,131 +402,6 @@ export interface M3LRunningConsole {
   shutdown(): Promise<M3LDrainOutcome>;
 }
 
-/**
- * Runs the shutdown sequence: starts the drain BEFORE closing the listener.
- *
- * `M3LDrainController.drain()` aborts its signal SYNCHRONOUSLY before
- * returning, so calling it first (and only then calling `server.close()`)
- * guarantees `runtime.signal` is already aborted by the instant the
- * listener stops accepting connections — measured on Node v26.7.0,
- * `close()` refuses new connections with `ECONNREFUSED` the instant it is
- * *called*, not once its callback settles, so closing first would leave a
- * window where the server is unreachable yet nothing (a readiness probe,
- * `runtime.signal`) has observed a drain in progress. Both layers still
- * stop accepting new work before any in-flight work is awaited: the drain
- * controller refuses new `track()`s and flips `/ready` to 503 at the
- * application layer, with the socket layer following immediately after.
- * `server.close()` already runs its own idle-connection sweep internally
- * (`lifecycle/http-server.ts`'s `createCloseOnce`) — not duplicated here.
- */
-async function runShutdownSequence(
-  runtime: M3LConsoleRuntime,
-  server: M3LListeningServer,
-): Promise<M3LDrainOutcome> {
-  const drainPromise = runtime.drain.drain();
-  const closePromise = server.close();
-  const [outcome] = await Promise.all([drainPromise, closePromise]);
-  return outcome;
-}
-
-/**
- * Builds the idempotent {@link M3LRunningConsole.shutdown}, memoizing its
- * outcome promise. `onSettled`/`onFailed` fan the sequence's single outcome
- * out to `closed`'s resolver/rejecter (see {@link startConsole}) while
- * `shutdown()`'s own returned promise keeps propagating a rejection
- * unchanged — `onFailed`'s handler re-throws `cause` rather than swallowing
- * it, so both channels observe the same failure (a rejecting
- * `runShutdownSequence` must never leave `closed` pending forever, but must
- * also never make `shutdown()` itself resolve).
- */
-function createShutdown(
-  runtime: M3LConsoleRuntime,
-  server: M3LListeningServer,
-  onSettled: (outcome: M3LDrainOutcome) => void,
-  onFailed: (cause: unknown) => void,
-): () => Promise<M3LDrainOutcome> {
-  let shutdownPromise: Promise<M3LDrainOutcome> | undefined;
-
-  return function shutdown(): Promise<M3LDrainOutcome> {
-    if (shutdownPromise !== undefined) return shutdownPromise;
-    shutdownPromise = runShutdownSequence(runtime, server).then(
-      (outcome) => {
-        onSettled(outcome);
-        return outcome;
-      },
-      (cause: unknown) => {
-        onFailed(cause);
-        throw cause;
-      },
-    );
-    return shutdownPromise;
-  };
-}
-
-/**
- * Registers `signals` to trigger `shutdown` on first receipt and force
- * `process.exit` on a second — mirroring
- * `internal/script/signalHandlers.ts`'s `registerShutdownSignals`, with one
- * deliberate difference: handlers here are removed once `closed` settles
- * (`internal/script/signalHandlers.ts` never removes its own — a bare
- * script process exits shortly after anyway, but a long-lived console
- * server calling this more than once per process lifetime would otherwise
- * leak three listeners per call and eventually trip
- * `MaxListenersExceededWarning`).
- *
- * Uses a persistent listener with a `signaled` flag rather than
- * `{ once: true }`: `once` would hand a second signal to Node's default
- * disposition (an uncontrolled exit) instead of the deliberate forced exit
- * this function performs.
- */
-function registerConsoleShutdownSignals(
-  signals: readonly NodeJS.Signals[],
-  shutdown: () => Promise<M3LDrainOutcome>,
-  closed: Promise<M3LDrainOutcome>,
-  logger: Core.M3LLogger,
-): void {
-  let signaled = false;
-
-  const handleSignal = (): void => {
-    if (signaled) {
-      process.exit(FORCED_SECOND_SIGNAL_EXIT_CODE);
-    }
-    signaled = true;
-    // Fire-and-forget: a hanging shutdown must not block signal delivery,
-    // and a rejecting one must not surface as an unhandled rejection.
-    void Promise.resolve()
-      .then(() => shutdown())
-      .catch((cause: unknown) => {
-        logger.error("console server shutdown failed", {
-          cause: Core.getErrorMessage(cause),
-        });
-      });
-  };
-
-  for (const signal of signals) {
-    process.on(signal, handleSignal);
-  }
-
-  // Removed once `closed` settles — on EITHER the resolve or the reject
-  // path, regardless of whether it was a trapped signal or an explicit
-  // `shutdown()` call that triggered it. `.finally()`'s own returned promise
-  // re-rejects with `closed`'s cause when `closed` rejects (it never
-  // swallows), so the trailing `.catch()` is required here: this listener
-  // cleanup is the only consumer of this particular chain, and the
-  // rejection itself is already observable through `closed`/`shutdown()`
-  // directly — an unhandled one here would just be a duplicate warning, not
-  // a lost failure.
-  void closed
-    .finally(() => {
-      for (const signal of signals) {
-        process.removeListener(signal, handleSignal);
-      }
-    })
-    .catch(() => {
-      // Deliberately swallowed — see comment above.
-    });
-}
-
 /** Logs the one line every boot emits once the listener is verified. Never the operator email. */
 function logListening(
   logger: Core.M3LLogger,
@@ -472,6 +423,77 @@ function logDrainCompletion(
     abandoned: outcome.abandoned,
     durationMs: outcome.durationMs,
   });
+}
+
+/** Logs the one line every boot emits once the console store is confirmed open. */
+function logStoreReady(
+  logger: Core.M3LLogger,
+  store: M3LConsoleStoreHandle,
+): void {
+  logger.info("console store ready", {
+    location: store.location,
+    schemaVersion: store.schemaVersion,
+  });
+}
+
+/**
+ * Builds the {@link M3LConsoleRuntime} and binds its listener (ADR-0071,
+ * `lifecycle/http-server.ts`), closing `store` if EITHER step fails. A
+ * runtime-construction failure (e.g. `createRouter` raising
+ * `ERR_CONSOLE_ROUTE_CONFLICT` on a duplicate route) is exactly the same
+ * handle/WAL-sidecar leak class a bind failure is, so both are guarded by
+ * this one region rather than only the bind.
+ *
+ * The failure that triggered the close always propagates UNCHANGED — a
+ * failing `store.close()` here is best-effort and must never shadow it: it
+ * is logged through the runtime's own logger when one exists (construction
+ * succeeded, only the bind failed), or else chained onto the triggering
+ * failure's own cause chain, since `createConsoleRuntime` is what threw and
+ * so there is no logger yet to report it through.
+ */
+async function buildRuntimeAndBindListener(
+  options: StartConsoleOptions,
+  config: M3LConsoleConfig,
+  store: M3LConsoleStoreHandle,
+): Promise<{
+  readonly runtime: M3LConsoleRuntime;
+  readonly server: M3LListeningServer;
+}> {
+  let runtime: M3LConsoleRuntime | undefined;
+  try {
+    runtime = createConsoleRuntime({ ...options, config, store });
+    const server = await startConsoleServer({
+      host: runtime.config.host,
+      port: runtime.config.port,
+      listener: runtime.requestListener,
+      closeTimeoutMs: runtime.config.drainTimeoutMs,
+      ...(options.createServer !== undefined && {
+        createServer: options.createServer,
+      }),
+    });
+    return { runtime, server };
+  } catch (cause) {
+    // Best-effort: the construction/bind failure below is what the caller
+    // needs to see, and a failing close() here must never shadow it.
+    try {
+      store.close();
+    } catch (closeCause) {
+      if (runtime === undefined) {
+        // createConsoleRuntime is what threw — there is no runtime, and so
+        // no logger, for the close failure to be reported through. It has
+        // nowhere left to go but cause's own cause chain.
+        chainSecondaryFailure(cause, closeCause);
+      } else {
+        // Logged, like the structurally identical close-failure path in
+        // `lifecycle/shutdown.ts`, but the ORIGINAL bind failure is still
+        // what gets re-thrown below.
+        runtime.logger.error("console store close failed", {
+          cause: Core.getErrorMessage(closeCause),
+        });
+      }
+    }
+    throw cause;
+  }
 }
 
 /**
@@ -496,18 +518,21 @@ function logDrainCompletion(
 export async function startConsole(
   options: StartConsoleOptions = {},
 ): Promise<M3LRunningConsole> {
-  const runtime = createConsoleRuntime(options);
-  const server = await startConsoleServer({
-    host: runtime.config.host,
-    port: runtime.config.port,
-    listener: runtime.requestListener,
-    closeTimeoutMs: runtime.config.drainTimeoutMs,
-    ...(options.createServer !== undefined && {
-      createServer: options.createServer,
-    }),
+  const config = resolveConfig(options);
+  const openStore = options.openStore ?? openConsoleStore;
+  const store = openStore({
+    location: config.databasePath,
+    busyTimeoutMs: config.databaseBusyTimeoutMs,
   });
 
+  const { runtime, server } = await buildRuntimeAndBindListener(
+    options,
+    config,
+    store,
+  );
+
   logListening(runtime.logger, server);
+  logStoreReady(runtime.logger, store);
 
   let resolveClosed!: (outcome: M3LDrainOutcome) => void;
   let rejectClosed!: (cause: unknown) => void;
@@ -529,9 +554,15 @@ export async function startConsole(
     },
   );
 
-  const shutdown = createShutdown(runtime, server, resolveClosed, rejectClosed);
+  const shutdown = createShutdown(
+    runtime,
+    server,
+    store,
+    resolveClosed,
+    rejectClosed,
+  );
   const signals = options.signals ?? DEFAULT_SIGNALS;
   registerConsoleShutdownSignals(signals, shutdown, closed, runtime.logger);
 
-  return { runtime, server, closed, shutdown };
+  return { runtime, server, store, closed, shutdown };
 }

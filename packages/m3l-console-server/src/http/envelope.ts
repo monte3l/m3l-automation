@@ -44,6 +44,16 @@ interface ErrorClassification {
    * (the server is shutting down as instructed), so gating the diagnostic
    * log on `origin` alone would emit an error-level line for every request
    * refused during an ordinary shutdown.
+   *
+   * `retryable` and `fault` diverge for two codes, in opposite directions.
+   * `ERR_CONSOLE_UNAVAILABLE` is `retryable: true, fault: false` (a drain
+   * refusal — expected shutdown, not a fault). `ERR_CONSOLE_STORE_BUSY` is
+   * the second divergence, and it diverges the OTHER way: both `retryable`
+   * and `fault` are `true`, because a `SQLITE_BUSY` that survived the
+   * `node:sqlite` builtin's own busy handler means ADR-0069's single-writer
+   * invariant is actually broken — genuinely retryable (a later attempt may
+   * find the writer free again), and genuinely worth an error-level
+   * diagnostic line, unlike an ordinary drain.
    */
   readonly fault: boolean;
 }
@@ -121,6 +131,36 @@ const CLASSIFICATION_BY_CODE: Record<M3LConsoleErrorCode, ErrorClassification> =
       origin: "library",
       retryable: true,
       fault: false,
+    },
+    ERR_CONSOLE_STORE_UNSUPPORTED: {
+      status: STATUS_INTERNAL,
+      origin: "library",
+      retryable: false,
+      fault: true,
+    },
+    ERR_CONSOLE_STORE_OPEN_FAILED: {
+      status: STATUS_INTERNAL,
+      origin: "library",
+      retryable: false,
+      fault: true,
+    },
+    ERR_CONSOLE_STORE_QUERY_FAILED: {
+      status: STATUS_INTERNAL,
+      origin: "library",
+      retryable: false,
+      fault: true,
+    },
+    ERR_CONSOLE_STORE_BUSY: {
+      status: STATUS_UNAVAILABLE,
+      origin: "library",
+      retryable: true,
+      fault: true,
+    },
+    ERR_CONSOLE_STORE_CLOSED: {
+      status: STATUS_UNAVAILABLE,
+      origin: "library",
+      retryable: false,
+      fault: true,
     },
   };
 
@@ -209,6 +249,14 @@ export interface M3LConsoleErrorEnvelope {
  * reading `fault`) would silently re-break the drain case: every request a
  * draining server refuses would once again log a spurious error-level
  * diagnostic line.
+ *
+ * `ERR_CONSOLE_STORE_BUSY` is the second code where `retryable` and `fault`
+ * diverge, and it diverges the OTHER way from `ERR_CONSOLE_UNAVAILABLE`: a
+ * drain refusal is `retryable: true, fault: false` (the server is shutting
+ * down as instructed), whereas a `SQLITE_BUSY` that survived the `node:sqlite`
+ * builtin's own busy handler means ADR-0069's single-writer invariant is
+ * actually broken — genuinely retryable, and genuinely worth an error-level
+ * diagnostic line, so it is `retryable: true, fault: true`.
  *
  * `http/handler` uses this to gate its diagnostic
  * {@link Core.M3LLogger.errorFrom} line (ADR-0070's display-vs-persist

@@ -69,6 +69,18 @@ Every setting is one dotted `m3l.console.<area>.<name>` name, read through
 | `m3l.console.drain.timeout.ms` | `M3L_CONSOLE_DRAIN_TIMEOUT_MS` | `15000`     |
 | `m3l.console.log.level`        | `M3L_CONSOLE_LOG_LEVEL`        | `info`      |
 
+| Setting                          | Env var                          | Default                            |
+| -------------------------------- | -------------------------------- | ---------------------------------- |
+| `m3l.console.db.path`            | `M3L_CONSOLE_DB_PATH`            | `<dataDir>/console/console.sqlite` |
+| `m3l.console.db.busy.timeout.ms` | `M3L_CONSOLE_DB_BUSY_TIMEOUT_MS` | `5000`                             |
+
+`m3l.console.db.path` is anchored to the workspace `data/` tree resolved by
+`Core.M3LPaths().getDataDir()` — the same anchor every other data artifact in
+the repo uses, honouring `M3L_DATA_DIR`. A relative value resolves against
+that directory; an absolute one passes through. `:memory:` is **rejected**
+here: in-memory is available only programmatically, which keeps an
+operator's deployment and a test's fixture cleanly separated.
+
 `m3l.console.operator.name` is **required at boot**, not per request: absent
 it, `loadConsoleConfig` throws and the process never binds a socket. That is
 ADR-0071's "a declared operator profile is required to use the console",
@@ -106,6 +118,7 @@ required operator profile). The REST/SSE contract ships as a
   config    -> errors, net
   auth      -> errors
   lifecycle -> errors, net
+  store     -> errors                        (persistence; ADR-0069)
   http      -> errors, auth, lifecycle, net  (transport; may NOT import config)
   main.ts   -> everything                    (composition root; nothing imports it)
   ```
@@ -116,3 +129,54 @@ required operator profile). The REST/SSE contract ships as a
   address actually bound) and `http/` (the `Host`/`Origin` rebinding guard)
   need them — putting them in `config/` would have forced exactly the
   `http -> config` edge this table exists to forbid.
+
+  `store/` is absent from every other row's allowance, so nothing outside it
+  can reach a SQL seam. In particular `http -> store` is deliberately **not**
+  granted: `http` may already import `lifecycle`, so admitting `store` there
+  would hand every request handler a database handle — the inverse of
+  ADR-0065's "modules speak only to typed repositories". `/ready` reports
+  store health through a structural probe declared inside `http/routes/`,
+  which needs no import and therefore no edge.
+
+## Persistence
+
+The console keeps an embedded SQLite database (ADR-0069) opened through
+`node:sqlite`, the Node 24 builtin. `store/sqlite-driver.ts` is the only
+module in the package that imports it, and its ports are structural
+interfaces naming just the members this package consumes — never a direct
+`= DatabaseSync` alias, which is what makes a seam unreplaceable.
+
+What ADR-0069's recorded fallbacks would actually cost, stated honestly
+rather than optimistically: a **packaged sqlite dependency** replaces
+`store/sqlite-driver.ts`, `store/failures.ts`, and a factory injection —
+the classifier is included because it branches on `node:sqlite`'s own error
+vocabulary (`ERR_SQLITE_ERROR`/`ERR_INVALID_STATE`/`ERR_OUT_OF_RANGE` and a
+numeric `errcode`), whereas `better-sqlite3` throws a string `.code` like
+`SQLITE_BUSY` with no `errcode`. A **degraded JSONL-only mode**
+additionally replaces `store/executor.ts`, which cannot sit on a
+`prepare(sql)`-free backend and in any case encodes SQLite mechanics (the
+per-statement bigint flag, the SQL-text statement cache, null-prototype row
+normalization).
+
+That is still a contained blast radius — three files, none of them visible
+to a repository or to `main.ts` — which is the property the seam exists to
+provide. It is simply not the one file an earlier draft of this README
+claimed.
+
+The database directory is created `0700` and the database file `chmod`ed to
+`0600` before WAL is enabled, so the `-wal`/`-shm` sidecars inherit those
+modes at creation. Without that, a default `umask 022` leaves operator
+audit data (ADR-0070) world-readable, with recently written rows sitting in
+cleartext in the `-wal`.
+
+SQLite is an _index_ over authoritative JSONL, not the source of truth, so
+migrations are forward-only with no `down`: recovery is "delete the file and
+re-index", which is strictly safer than a reverse migration that has to be
+correct under partial data. The schema version lives in `PRAGMA
+user_version` (transactional, and readable on a schema-less database, so
+there is no chicken-and-egg version table); `console_schema_migrations` is an
+audit trail, not control flow.
+
+The database file and its WAL sidecars are git-ignored at directory level
+(`data/console/`) — a committed `-wal` would be replayed against a database
+it does not belong to.

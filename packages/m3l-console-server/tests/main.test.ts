@@ -12,6 +12,7 @@
 import { EventEmitter } from "node:events";
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
+import * as path from "node:path";
 
 import { afterEach, describe, expect, test, vi } from "vitest";
 
@@ -22,6 +23,7 @@ import type { M3LRunningConsole, StartConsoleOptions } from "../src/main.js";
 import { M3LConsoleError } from "../src/errors/console-error.js";
 import { jsonResponse } from "../src/http/respond.js";
 import type { M3LRoute } from "../src/http/router.js";
+import * as envModule from "../src/config/env.js";
 
 /** A minimal valid env: only the required operator name set. */
 function buildEnv(
@@ -266,14 +268,27 @@ describe("createConsoleRuntime — resolved config", () => {
       handlers: [handler],
     });
 
-    expect(runtime.config).toEqual({
+    // `databasePath` is machine-dependent (it bottoms out in
+    // `Core.M3LPaths().getDataDir()`) — `createConsoleRuntime` does not
+    // thread a `resolveDataDir` seam through to `loadConsoleConfig`, so this
+    // asserts every other field exactly and checks `databasePath`'s
+    // shape/suffix separately rather than pinning an absolute,
+    // environment-dependent value that would break in CI.
+    expect(runtime.config).toMatchObject({
       host: "127.0.0.1",
       port: 9090,
       operatorName: "ada",
       operatorEmail: undefined,
       drainTimeoutMs: 15000,
       logLevel: "info",
+      databaseBusyTimeoutMs: 5000,
     });
+    expect(path.isAbsolute(runtime.config.databasePath)).toBe(true);
+    expect(
+      runtime.config.databasePath.endsWith(
+        `${path.sep}console${path.sep}console.sqlite`,
+      ),
+    ).toBe(true);
   });
 
   test("returns a Core.M3LLogger instance", () => {
@@ -1256,4 +1271,112 @@ describe("startConsole — 'closed' rejects (rather than hanging) when the shutd
       stripLeakedSignalListeners(before);
     }
   });
+});
+
+// =============================================================================
+// X3 console-persistence (issue #551, ADR-0069). The store-lifecycle wiring
+// tests (open-before-bind, close-on-bind-failure, close-after-drain, the
+// boot line, and `options.config` short-circuiting `loadConsoleConfig`) live
+// in `tests/main-store.test.ts` (ADR-0072 — split out to keep this file
+// under the file-budget ceiling). The `loadConsoleConfig` call-count
+// baseline below and the logger-secrets coverage for store query fields stay
+// here since they are about the config/logger, not the store lifecycle.
+// =============================================================================
+
+describe("createConsoleRuntime — loadConsoleConfig call count", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  test("loadConsoleConfig is called exactly once when options.config is omitted", () => {
+    const spy = vi.spyOn(envModule, "loadConsoleConfig");
+
+    createConsoleRuntime({
+      env: buildEnv(),
+      handlers: [new RecordingHandler()],
+    });
+
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("createConsoleRuntime — logger secrets port covers store query fields", () => {
+  // Same class of leak as the operator-email/headers regressions above: a
+  // future repository layer logging a failed query's context as ordinary as
+  // `logger.error(msg, { sql, parameters })` must never print the raw SQL,
+  // its bound parameters/bindings, or its expanded form verbatim.
+  test.each([
+    ["sql", "SELECT * FROM secrets WHERE token = 'CANARY-SQL-VALUE'"],
+    ["parameters", { token: "CANARY-PARAMETERS-VALUE" }],
+    ["bindings", { token: "CANARY-BINDINGS-VALUE" }],
+    [
+      "expandedSQL",
+      "SELECT * FROM secrets WHERE token = 'CANARY-EXPANDEDSQL-VALUE'",
+    ],
+  ])("isSecret treats a top-level '%s' field as secret", (field, value) => {
+    const handler = new RecordingHandler();
+    const runtime = createConsoleRuntime({
+      env: buildEnv(),
+      handlers: [handler],
+    });
+    handler.reset();
+
+    runtime.logger.info("caller-triggered field", { [field]: value });
+
+    const rendered = JSON.stringify(handler.events);
+    expect(rendered).not.toContain("CANARY");
+  });
+});
+
+/**
+ * Builds a secret-shaped canary value at runtime by concatenating two
+ * substrings — never as a single source literal. gitleaks scans source
+ * text, not runtime values, and this repo has no `.gitleaksignore` (see
+ * `.claude/rules/tests.md`).
+ */
+function buildNearSynonymCanary(tag: string): string {
+  const prefix = "CANARY-NEAR-SYNONYM";
+  return `${prefix}-${tag}`;
+}
+
+describe("createConsoleRuntime — logger secrets port covers near-synonym query fields (security probe regression)", () => {
+  // A security probe measured these FIVE field names leaking the raw
+  // SQL text / bound-parameter shape verbatim through the real logger:
+  // `query`/`statement` (near-synonyms for `sql`) and `params`/`values`/
+  // `args` (near-synonyms for `parameters`/`bindings`). `runtimeSecrets`
+  // (main.ts) does not yet name any of them — `params` in particular is an
+  // entirely ordinary shorthand at a real call site, not an exotic one.
+  // This port exists to make redaction structural rather than conventional,
+  // so a near-synonym must be covered just as directly as the canonical
+  // name it stands in for.
+  // Deliberately plain STRING values (not `{ token: ... }` like the
+  // canonical `parameters`/`bindings` fields above) — an inner `token` key
+  // is already redacted by the library's built-in key-name heuristic
+  // regardless of whether `params`/`values`/`args` themselves are named
+  // secret, which would let this test pass for the wrong reason (a proxy
+  // for the built-in heuristic, not for `runtimeSecrets` naming the
+  // near-synonym itself).
+  test.each([
+    ["query", buildNearSynonymCanary("QUERY")],
+    ["statement", buildNearSynonymCanary("STATEMENT")],
+    ["params", buildNearSynonymCanary("PARAMS")],
+    ["values", buildNearSynonymCanary("VALUES")],
+    ["args", buildNearSynonymCanary("ARGS")],
+  ])(
+    "[wiring defect] isSecret treats a top-level '%s' field as secret, rendering [REDACTED]",
+    (field, value) => {
+      const handler = new RecordingHandler();
+      const runtime = createConsoleRuntime({
+        env: buildEnv(),
+        handlers: [handler],
+      });
+      handler.reset();
+
+      runtime.logger.info("caller-triggered field", { [field]: value });
+
+      const rendered = JSON.stringify(handler.events);
+      expect(rendered).toContain("[REDACTED]");
+      expect(rendered).not.toContain("CANARY-NEAR-SYNONYM");
+    },
+  );
 });

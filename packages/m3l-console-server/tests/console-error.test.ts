@@ -13,7 +13,7 @@ import {
 import type { M3LConsoleErrorCode } from "../src/errors/console-error.js";
 
 describe("M3LConsoleErrorCode", () => {
-  test("is the exact ten-member union the contract declares", () => {
+  test("is the exact fifteen-member union the contract declares (X2/X3-A1)", () => {
     expectTypeOf<M3LConsoleErrorCode>().toEqualTypeOf<
       | "ERR_CONSOLE_CONFIG_INVALID"
       | "ERR_CONSOLE_BAD_REQUEST"
@@ -25,6 +25,11 @@ describe("M3LConsoleErrorCode", () => {
       | "ERR_CONSOLE_DRAIN_FAILED"
       | "ERR_CONSOLE_LISTEN_FAILED"
       | "ERR_CONSOLE_UNAVAILABLE"
+      | "ERR_CONSOLE_STORE_UNSUPPORTED"
+      | "ERR_CONSOLE_STORE_OPEN_FAILED"
+      | "ERR_CONSOLE_STORE_BUSY"
+      | "ERR_CONSOLE_STORE_CLOSED"
+      | "ERR_CONSOLE_STORE_QUERY_FAILED"
     >();
   });
 
@@ -117,6 +122,39 @@ describe("M3LConsoleError", () => {
     expect(isConsoleError(error)).toBe(true);
     expect(error).toBeInstanceOf(Core.M3LError);
   });
+
+  test.each<[M3LConsoleErrorCode, string]>([
+    [
+      "ERR_CONSOLE_STORE_UNSUPPORTED",
+      "the configured store backend is not supported on this platform",
+    ],
+    [
+      "ERR_CONSOLE_STORE_OPEN_FAILED",
+      "failed to open the console persistence store",
+    ],
+    ["ERR_CONSOLE_STORE_BUSY", "SQLITE_BUSY persisted past the busy handler"],
+    ["ERR_CONSOLE_STORE_CLOSED", "the store is closed and refuses new work"],
+    [
+      "ERR_CONSOLE_STORE_QUERY_FAILED",
+      "the query against the console store failed",
+    ],
+  ])(
+    "constructs %s and is caught by isConsoleError and instanceof Core.M3LError (X3-A1)",
+    (code, message) => {
+      const error = new M3LConsoleError(code, message);
+
+      expect(error.code).toBe(code);
+      expect(error.message).toBe(message);
+      expect(isConsoleError(error)).toBe(true);
+      expect(error).toBeInstanceOf(Core.M3LError);
+      expect(error).toBeInstanceOf(Error);
+      // ERR_CONSOLE_* is deliberately absent from Core's own classification
+      // catalog (see the module doc comment) — every one of these five new
+      // codes stays unclassified by Core.classifyErrorCode, same as every
+      // existing ERR_CONSOLE_* code.
+      expect(Core.classifyErrorCode(error.code)).toBeUndefined();
+    },
+  );
 });
 
 describe("isConsoleError", () => {
