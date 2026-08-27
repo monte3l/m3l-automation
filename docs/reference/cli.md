@@ -46,6 +46,13 @@ This page is the CLI's contract. It grows one section per shipped phase
 - **Import-inert modules.** No `src` module executes anything at import time;
   the only process entry is the `bin/m3l.mjs` wrapper, which calls
   `runCli(argv)` and assigns its resolved number to `process.exitCode`.
+- **Allowlisted machine surface.** `run <script> --json` emits exactly one
+  result envelope on stdout carrying allowlisted scalars only — never the
+  run report's own content. ADR-0035 classifies that report as a sensitive,
+  crash-dump-class artifact: it is referenced by path and summarized by
+  allowlist, never re-emitted. Emission is read-tolerant — an absent or
+  unreadable report yields a named `reportUnavailable` reason, never a crash
+  and never a fabricated outcome ([§V2 — structured run results](#v2--structured-run-results)).
 
 ## Commands
 
@@ -331,6 +338,72 @@ target without `--force` exits `2` (`ERR_CLI_SCAFFOLD_EXISTS`). A write
 failure exits `1` (`ERR_CLI_SCAFFOLD_FAILED`, cause-chained; the run is rolled
 back first unless the target pre-existed under `--force`).
 
+### V2 — structured run results
+
+#### The `--json` run-result envelope
+
+`m3l run <script> --json` and the dynamic `m3l <script> --json` form both
+route through one shared execution tail (`run/execute.ts`), so they behave
+identically. After the child exits, exactly one line of JSON — the
+"envelope" — is written to stdout. Under `--json` the child's own stdout is
+redirected to the parent's **stderr** instead of being inherited, so the
+envelope is the only thing on stdout; nothing the script itself writes is
+lost, it simply moves streams.
+
+ADR-0035 classifies the run report (`run-report.json`, produced by
+`M3LRunReporter`) as a sensitive, crash-dump-class artifact. The envelope
+**never re-emits report content** — it carries only allowlisted scalars,
+plus the report's own path:
+
+| Field                 | Type               | Notes                                                                                           |
+| --------------------- | ------------------ | ----------------------------------------------------------------------------------------------- |
+| `kind`                | `"m3l.run.result"` | Schema discriminant.                                                                            |
+| `schemaVersion`       | `1`                | Bumped only on a breaking field change.                                                         |
+| `script`              | `string`           | The resolved script name — never read from the report.                                          |
+| `startedAt`           | ISO-8601 `string`  | Parent-observed, immediately before spawn.                                                      |
+| `finishedAt`          | ISO-8601 `string`  | Parent-observed, immediately after the child's `close` event.                                   |
+| `durationMs`          | `number`           | `finishedAt − startedAt`, not clamped.                                                          |
+| `exitCode`            | `number`           | The child's exit code, verbatim (`128+N` for a signal-killed child).                            |
+| `exitCodeName`        | `string \| null`   | The ADR-0035 registry name for `exitCode`; `null` outside `0`–`6`.                              |
+| `outcome`             | `string \| null`   | The report's outcome (one of the 5 registered literals); `null` if unavailable or unrecognized. |
+| `reportPath`          | `string \| null`   | Absolute path to the matched `run-report.json`; `null` if unavailable.                          |
+| `reportUnavailable`   | `string \| null`   | A reason below when no report was matched; `null` when one was.                                 |
+| `timelineCount`       | `number \| null`   | Breadcrumb count — never the breadcrumbs themselves.                                            |
+| `timelineSourceCount` | `number \| null`   | Count of distinct breadcrumb `source` labels.                                                   |
+| `recoveryTotal`       | `number \| null`   | Absorbed-failure count, only when `outcome` is `"partial"`.                                     |
+
+Emission is **read-tolerant**: an absent, unreadable, or malformed report
+never crashes the CLI and never fabricates an outcome — `reportUnavailable`
+names one of:
+
+| Reason                        | Meaning                                                                   |
+| ----------------------------- | ------------------------------------------------------------------------- |
+| `output-directory-missing`    | The managed output directory does not exist.                              |
+| `output-directory-unreadable` | It exists but couldn't be listed (e.g. a permission fault).               |
+| `no-matching-report`          | The directory was scanned but no report matched this script's run window. |
+| `report-unreadable`           | A matching candidate's report file couldn't be read.                      |
+| `report-malformed`            | A matching candidate's report file didn't parse as valid JSON.            |
+
+The parent cannot learn the report's path directly (it's named after the
+_child's_ own start time), so it scans the managed output directory
+(`M3L_OUTPUT_DIR`, defaulting to `<workspaceRoot>/data/output` — the exact
+same variable name and default `@m3l-automation/m3l-common`'s own `M3LPaths`
+already uses, so setting it redirects both this scan and every spawned
+script's own output directory in agreement) for the newest directory, within
+the observed run window, whose report's `script.name` matches. Two known
+limitations: a script-local `.env` setting `M3L_OUTPUT_DIR` is visible to the
+**child only** (the parent still scans its own resolved directory, so the
+lookup reports `output-directory-missing` or misses the report); and two
+truly concurrent invocations of the **same** script can, rarely, have the
+younger run's scan match the older run's sibling report — this is accepted,
+not solved, per ADR-0063.
+
+A CLI-side failure **before** the spawn (unknown script, not built, spawn
+failed) emits **no** envelope at all — only stderr and the corresponding exit
+code (see [§Exit codes](#exit-codes)). An agent consuming `--json` output
+must treat "empty stdout, non-zero exit" as a CLI-side failure distinct from
+"one envelope, exit code inside it".
+
 ## Exit codes
 
 The CLI's own exit codes are `M3LCliExitCode` — exactly `0 | 1 | 2`, the
@@ -347,3 +420,8 @@ an error code is a compile error until its exit code is chosen.
 | `2`     | Usage error         | `ERR_CLI_UNKNOWN_COMMAND`, `ERR_CLI_UNKNOWN_SCRIPT`, `ERR_CLI_UNKNOWN_PARAMETER`, `ERR_CLI_INVALID_PARAMETER_VALUE`, `ERR_CLI_SCAFFOLD_INVALID`, `ERR_CLI_SCAFFOLD_EXISTS`; a missing required positional; `wizard` on a non-interactive stdin    |
 | child's | Passthrough         | `run <script>` and dynamic per-script dispatch return the child's code **verbatim**, preserving the ADR-0035 registry end-to-end                                                                                                                  |
 | `128+N` | Signal-terminated   | a signal-killed child, e.g. SIGTERM → `143`                                                                                                                                                                                                       |
+
+Under `--json`, the envelope's `exitCodeName` carries the ADR-0035 registry
+name for `exitCode` when it falls in `0`–`6`, and `null` for anything else
+(including a passthrough child code or `128+N`) — see
+[§V2 — structured run results](#v2--structured-run-results).
