@@ -58,24 +58,64 @@ describe("parseGitPush", () => {
 });
 
 describe("outgoingCommits", () => {
-  test("uses the first base that resolves", () => {
+  test("excludes the union of every resolvable base", () => {
     const calls: string[][] = [];
     const runGit = (args: string[]) => {
       calls.push(args);
-      if (args[1] === "@{upstream}..HEAD") throw new Error("no upstream");
-      if (args[1] === "origin/main..HEAD") return "sha1\nsha2\n";
-      throw new Error("unexpected");
+      if (args[0] === "rev-parse" && args[1] === "--verify") {
+        // all three candidate refs resolve
+        return "deadbeef\n";
+      }
+      if (args[0] === "rev-list") return "sha1\nsha2\n";
+      throw new Error(`unexpected call: ${args.join(" ")}`);
     };
+
     expect(outgoingCommits(runGit)).toEqual(["sha1", "sha2"]);
-    // it tried upstream first, then fell back to origin/main
-    expect(calls[0]?.[1]).toBe("@{upstream}..HEAD");
-    expect(calls[1]?.[1]).toBe("origin/main..HEAD");
+
+    // This is the regression this fix targets: excluding only the FIRST
+    // resolvable base (the old behavior) would still coincidentally return
+    // ["sha1", "sha2"] under this mock, since only one rev-list call is
+    // stubbed — so the union guarantee must be checked on the call args
+    // themselves, not just the final return value.
+    const revListCall = calls.find((args) => args[0] === "rev-list");
+    expect(revListCall).toBeDefined();
+    const notIndex = revListCall?.indexOf("--not") ?? -1;
+    expect(notIndex).toBeGreaterThan(-1);
+    expect(revListCall?.slice(notIndex + 1)).toEqual([
+      "@{upstream}",
+      "origin/main",
+      "main",
+    ]);
+  });
+
+  test("excludes only the bases that actually resolve", () => {
+    const calls: string[][] = [];
+    const runGit = (args: string[]) => {
+      calls.push(args);
+      if (args[0] === "rev-parse" && args[1] === "--verify") {
+        if (args[3] === "@{upstream}") throw new Error("no upstream");
+        return "deadbeef\n";
+      }
+      if (args[0] === "rev-list") return "sha3\n";
+      throw new Error(`unexpected call: ${args.join(" ")}`);
+    };
+
+    expect(outgoingCommits(runGit)).toEqual(["sha3"]);
+
+    const revListCall = calls.find((args) => args[0] === "rev-list");
+    expect(revListCall).toBeDefined();
+    const notIndex = revListCall?.indexOf("--not") ?? -1;
+    expect(revListCall?.slice(notIndex + 1)).toEqual(["origin/main", "main"]);
+    expect(revListCall).not.toContain("@{upstream}");
   });
 
   test("falls back to HEAD when no base resolves", () => {
     const runGit = (args: string[]) => {
+      if (args[0] === "rev-parse" && args[1] === "--verify") {
+        throw new Error("no base");
+      }
       if (args[0] === "rev-parse") return "headsha\n";
-      throw new Error("no base");
+      throw new Error(`unexpected call: ${args.join(" ")}`);
     };
     expect(outgoingCommits(runGit)).toEqual(["headsha"]);
   });

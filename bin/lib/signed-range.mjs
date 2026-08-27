@@ -86,27 +86,43 @@ export function parseGitPush(command) {
 
 /**
  * The commits that a push would send: everything reachable from `HEAD` but not
- * from the branch's upstream. Falls back to `origin/main`, then `main`, and
- * finally to just `HEAD` when no base resolves (a brand-new repo/branch).
+ * from the branch's upstream, `origin/main`, or `main` — every one of those that
+ * resolves is excluded, not just the first. A single-base fallback chain (try
+ * `@{upstream}`, else `origin/main`, else `main`) is wrong after a rebase onto a
+ * moved `main` that hasn't been pushed yet: the branch's own remote-tracking ref
+ * (`@{upstream}`) is still the pre-rebase tip, so it resolves first and "wins",
+ * and commits merged into `origin/main` since the branch's original base (now
+ * ancestors of `HEAD` via the rebase, but not of the stale `@{upstream}`) get
+ * misreported as new/outgoing even though they're already published. Falls back
+ * to just `HEAD` when none of the three resolve (a brand-new repo/branch).
  * Already-pushed history is intentionally excluded — we only vet what's new.
  *
  * @param {(args: string[]) => string} [runGit]
  * @returns {string[]} commit SHAs (newest first), possibly empty
  */
 export function outgoingCommits(runGit = defaultRunGit) {
-  for (const base of ["@{upstream}", "origin/main", "main"]) {
+  const excludeRefs = [];
+  for (const ref of ["@{upstream}", "origin/main", "main"]) {
     try {
-      const out = runGit(["rev-list", `${base}..HEAD`]);
-      return out
-        .split("\n")
-        .map((s) => s.trim())
-        .filter(Boolean);
+      runGit(["rev-parse", "--verify", "--quiet", ref]);
+      excludeRefs.push(ref);
     } catch {
-      // base doesn't resolve (no upstream, no origin/main); try the next one.
+      // ref doesn't resolve (no upstream, no origin/main, ...); skip it.
+    }
+  }
+  if (excludeRefs.length === 0) {
+    try {
+      return [runGit(["rev-parse", "HEAD"]).trim()].filter(Boolean);
+    } catch {
+      return [];
     }
   }
   try {
-    return [runGit(["rev-parse", "HEAD"]).trim()].filter(Boolean);
+    const out = runGit(["rev-list", "HEAD", "--not", ...excludeRefs]);
+    return out
+      .split("\n")
+      .map((s) => s.trim())
+      .filter(Boolean);
   } catch {
     return [];
   }
