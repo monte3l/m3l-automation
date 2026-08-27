@@ -11,12 +11,15 @@ import {
 
 /**
  * Contract: docs/reference/scripts/sqs-etl.md "Configuration schema" table +
- * `src/config.ts`. 13 declared parameters: aws.profile, command, queueUrl,
- * dlqUrl, input, output, batchSize, visibilityTimeoutSeconds,
- * deleteAfterDump, yes, yesSensitive, fields, filters. This file asserts the
- * DECLARED shape only — names, uniqueness, instance types, and each
- * parameter's own validator/default — never the library's own
- * provider-resolution order.
+ * `src/config.ts`. 15 declared parameters: aws.profile, command, queueUrl,
+ * dlqUrl, input, output, queueNamePrefix, nextToken, batchSize,
+ * visibilityTimeoutSeconds, deleteAfterDump, yes, yesSensitive, fields,
+ * filters. `queueNamePrefix`/`nextToken` are bare-optional STRING
+ * parameters added for `list-queues` (issue #553, X5, PR 2) — clustered
+ * right after `output` alongside the script's other queue-scoped optional
+ * string parameters. This file asserts the DECLARED shape only — names,
+ * uniqueness, instance types, and each parameter's own validator/default —
+ * never the library's own provider-resolution order.
  */
 
 const EXPECTED_NAMES = [
@@ -26,6 +29,8 @@ const EXPECTED_NAMES = [
   "dlqUrl",
   "input",
   "output",
+  "queueNamePrefix",
+  "nextToken",
   "batchSize",
   "visibilityTimeoutSeconds",
   "deleteAfterDump",
@@ -79,12 +84,12 @@ describe("sqs-etl config declaration", () => {
     }
   });
 
-  it("declares exactly the 13 documented parameters, in order", () => {
+  it("declares exactly the 15 documented parameters, in order", () => {
     const names = configParameters.map((parameter) => parameter.getName());
     expect(names).toEqual(EXPECTED_NAMES);
   });
 
-  it("exports SQS_ETL_COMMANDS with the 6 documented command modes", () => {
+  it("exports SQS_ETL_COMMANDS with the 7 documented command modes", () => {
     expect(SQS_ETL_COMMANDS).toEqual([
       "dump",
       "send",
@@ -92,6 +97,7 @@ describe("sqs-etl config declaration", () => {
       "delete",
       "purge",
       "transform",
+      "list-queues",
     ]);
   });
 
@@ -111,6 +117,7 @@ describe("sqs-etl config declaration", () => {
       ["delete", ["queueUrl", "input"]],
       ["purge", ["queueUrl"]],
       ["transform", ["input", "output"]],
+      ["list-queues", []],
     ];
 
     function expectedRequiredParametersFor(name: string): readonly string[] {
@@ -163,10 +170,10 @@ describe("sqs-etl config declaration", () => {
       }
     });
 
-    // Every SQS_ETL_COMMANDS entry declares at least one requiredParameter
-    // (see the table above) — there is no zero-requirement command here to
-    // exercise a "vacuous pass" case, unlike cloudwatch-logs-analysis'
-    // 'validate' or sqs-dead-letter-triage's 'validate'.
+    // 'list-queues' declares no requiredParameters (empty array), exercising
+    // the "vacuous pass" case the other six commands (each with at least one
+    // requiredParameter) do not — mirrors cloudwatch-logs-analysis' 'validate'
+    // and sqs-dead-letter-triage's 'validate'.
   });
 
   describe("'command' — required, oneOf(SQS_ETL_COMMANDS)", () => {
@@ -202,6 +209,26 @@ describe("sqs-etl config declaration", () => {
     );
 
     it.each(["queueUrl", "dlqUrl", "input", "output"] as const)(
+      "'%s' rejects an empty string and accepts a non-empty one",
+      async (name) => {
+        const parameter = paramNamed(name);
+        await expect(resolveWith(parameter, "")).rejects.toBeInstanceOf(
+          Core.M3LConfigValidationError,
+        );
+        await expect(resolveWith(parameter, "value")).resolves.toBe("value");
+      },
+    );
+  });
+
+  describe("'queueNamePrefix'/'nextToken' — optional, nonEmpty when set (list-queues)", () => {
+    it.each(["queueNamePrefix", "nextToken"] as const)(
+      "'%s' has no default (unset)",
+      async (name) => {
+        await expect(resolveDefault(paramNamed(name))).resolves.toBeUndefined();
+      },
+    );
+
+    it.each(["queueNamePrefix", "nextToken"] as const)(
       "'%s' rejects an empty string and accepts a non-empty one",
       async (name) => {
         const parameter = paramNamed(name);

@@ -1,6 +1,6 @@
 # sqs-etl
 
-SQS message ETL: dump, send, redrive, delete, purge, and transform
+SQS message ETL: dump, send, redrive, delete, purge, transform, and list queues
 
 > **This README covers how to run the script.** The contract — configuration
 > schema, steps, inputs/outputs — lives in the reference page:
@@ -47,6 +47,9 @@ node dist/main.js --command redrive --queueUrl "$QUEUE_URL" \
 # Edge case — purge a queue entirely; SQS enforces a 60s cooldown between
 # purges on the same queue, so a rapid retry fails with PurgeQueueInProgress
 node dist/main.js --command purge --queueUrl "$QUEUE_URL"
+
+# List queues — read-only, no queueUrl needed; the drill-down's first step
+node dist/main.js --command list-queues --output queues.json
 ```
 
 `delete` (by receipt handle) shares `redrive`'s destructive-gate shape;
@@ -59,14 +62,15 @@ iteration" note.
 
 ### Operations at a glance
 
-| Operation   | Description                                                      | Demonstrated by |
-| ----------- | ---------------------------------------------------------------- | --------------- |
-| `dump`      | Drain the queue to a streamed JSONL file.                        | Minimal         |
-| `send`      | Batch-publish JSONL records from a file to the queue.            | Common          |
-| `redrive`   | Move messages from a dead-letter queue back to its source queue. | Production      |
-| `delete`    | Remove specific messages from the queue by receipt handle.       | —               |
-| `purge`     | Clear a queue of all messages.                                   | Edge case       |
-| `transform` | Map/filter records between two JSONL files without touching AWS. | —               |
+| Operation     | Description                                                      | Demonstrated by |
+| ------------- | ---------------------------------------------------------------- | --------------- |
+| `dump`        | Drain the queue to a streamed JSONL file.                        | Minimal         |
+| `send`        | Batch-publish JSONL records from a file to the queue.            | Common          |
+| `redrive`     | Move messages from a dead-letter queue back to its source queue. | Production      |
+| `delete`      | Remove specific messages from the queue by receipt handle.       | —               |
+| `purge`       | Clear a queue of all messages.                                   | Edge case       |
+| `transform`   | Map/filter records between two JSONL files without touching AWS. | —               |
+| `list-queues` | List the account's SQS queue URLs, one page per call.            | List queues     |
 
 A `—` in **Demonstrated by** means the operation has no worked example in
 § Examples above — see the [contract page](../../docs/reference/scripts/sqs-etl.md) for its full
