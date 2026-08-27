@@ -174,15 +174,26 @@ const ALLOWED_CONTEXT_KEYS = [
 ] as const;
 
 /**
+ * The `context` shape {@link storeError} accepts — a `Partial<Record<...>>`
+ * over {@link ALLOWED_CONTEXT_KEYS} rather than a bare
+ * `Record<string, unknown>`, so passing an out-of-allow-list key (e.g. `sql`)
+ * fails excess-property checking at the call site, instead of being silently
+ * dropped at runtime by {@link buildSafeContext}.
+ */
+type M3LStoreErrorContext = Partial<
+  Record<(typeof ALLOWED_CONTEXT_KEYS)[number], unknown>
+>;
+
+/**
  * Builds the safe, allow-listed context object `storeError` attaches to the
  * `M3LConsoleError` it returns, dropping every key not in
- * {@link ALLOWED_CONTEXT_KEYS}. This is what makes leak discipline
- * unconditional: a caller cannot accidentally widen the leaked surface by
- * passing a context bag built from a failing statement's diagnostic
- * surface (`sql`, bound parameters, `expandedSQL`, `errstr`, a row).
+ * {@link ALLOWED_CONTEXT_KEYS}. `M3LStoreErrorContext` already makes an
+ * out-of-allow-list key a compile-time error at the call site; this function
+ * remains as the guard for the non-fresh-object case (e.g. a context value
+ * built with `Object.create(null)` or otherwise not a plain object literal).
  */
 function buildSafeContext(
-  context: Record<string, unknown> | undefined,
+  context: M3LStoreErrorContext | undefined,
 ): Record<string, unknown> {
   const safeContext: Record<string, unknown> = {};
   if (context === undefined) return safeContext;
@@ -195,22 +206,28 @@ function buildSafeContext(
 }
 
 /**
- * Maps `(kind, phase)` to the `M3LConsoleErrorCode` that names it. The same
- * `"unopenable"` kind is `_OPEN_FAILED` at boot and `_QUERY_FAILED`
- * mid-request — the phase is what disambiguates. `phase: "migrate"` is not
- * reachable in PR A (there is no migration runner yet), so it is not
- * handled here; it is added alongside `ERR_CONSOLE_STORE_MIGRATION_FAILED`
- * in PR B.
+ * Maps `(kind, phase)` to the `M3LConsoleErrorCode` that names it, via an
+ * exhaustive `Record<M3LStorePhase, ...>` rather than an `if`-chain — adding
+ * a new `M3LStorePhase` member becomes a compile error here instead of a
+ * silent fall-through. The same `"unopenable"` kind is `_OPEN_FAILED` at
+ * boot and `_QUERY_FAILED` mid-request — the phase is what disambiguates.
+ * `phase: "migrate"` is not reachable in PR A (there is no migration runner
+ * yet); it maps to `_OPEN_FAILED` for now — next PR: give it its own
+ * `ERR_CONSOLE_STORE_MIGRATION_FAILED` code.
  */
+const CODE_BY_PHASE: Record<M3LStorePhase, M3LConsoleErrorCode> = {
+  open: "ERR_CONSOLE_STORE_OPEN_FAILED",
+  query: "ERR_CONSOLE_STORE_QUERY_FAILED",
+  migrate: "ERR_CONSOLE_STORE_OPEN_FAILED", // next PR: _MIGRATION_FAILED
+};
+
 function mapToErrorCode(
   kind: M3LStoreFailureKind,
   phase: M3LStorePhase,
 ): M3LConsoleErrorCode {
   if (kind === "busy") return "ERR_CONSOLE_STORE_BUSY";
   if (kind === "closed") return "ERR_CONSOLE_STORE_CLOSED";
-  return phase === "query"
-    ? "ERR_CONSOLE_STORE_QUERY_FAILED"
-    : "ERR_CONSOLE_STORE_OPEN_FAILED";
+  return CODE_BY_PHASE[phase];
 }
 
 /**
@@ -246,7 +263,7 @@ export function storeError(
   phase: M3LStorePhase,
   message: string,
   cause: unknown,
-  context?: Record<string, unknown>,
+  context?: M3LStoreErrorContext,
 ): M3LConsoleError {
   return new M3LConsoleError(mapToErrorCode(kind, phase), message, {
     cause,

@@ -88,6 +88,132 @@ function createRecordingDatabase(options?: {
   };
 }
 
+/**
+ * Wraps a real `:memory:` database whose `close()` throws on the FIRST
+ * call and succeeds on every subsequent call — proves whether a second
+ * `close()` after a failed first one still attempts the underlying close,
+ * or silently no-ops on an unreleased handle.
+ */
+function createDatabaseThrowingOnFirstClose(): {
+  handle: DatabaseSync;
+  getCloseCallCount: () => number;
+} {
+  const real = new DatabaseSync(":memory:");
+  let closeCallCount = 0;
+
+  const handle = {
+    get isOpen() {
+      return real.isOpen;
+    },
+    get isTransaction() {
+      return real.isTransaction;
+    },
+    exec(sql: string) {
+      real.exec(sql);
+    },
+    prepare(sql: string) {
+      return real.prepare(sql);
+    },
+    close() {
+      closeCallCount += 1;
+      if (closeCallCount === 1) {
+        throw new Error("synthetic first-close failure");
+      }
+      real.close();
+    },
+  };
+
+  return {
+    handle: handle as unknown as DatabaseSync,
+    getCloseCallCount: () => closeCallCount,
+  };
+}
+
+/**
+ * Wraps a real `:memory:` database whose `isOpen` is STICKY `true` — it
+ * never flips to `false`, even after `close()` runs — so a store handle
+ * that merely forwards `database.isOpen` (rather than tracking its own
+ * `closed` flag) cannot ever report `isOpen: false`.
+ */
+function createDatabaseWithStickyIsOpen(): { handle: DatabaseSync } {
+  const real = new DatabaseSync(":memory:");
+
+  const handle = {
+    isOpen: true,
+    get isTransaction() {
+      return real.isTransaction;
+    },
+    exec(sql: string) {
+      real.exec(sql);
+    },
+    prepare(sql: string) {
+      return real.prepare(sql);
+    },
+    close() {
+      real.close();
+    },
+  };
+
+  return { handle: handle as unknown as DatabaseSync };
+}
+
+/**
+ * Wraps a real `:memory:` database whose `PRAGMA user_version` reads
+ * behave normally for `assertSqliteSupport`'s own round-trip probe (which
+ * reads it three times: before/during/after a `BEGIN IMMEDIATE` — see
+ * `sqlite-driver.ts`'s `assertUserVersionRoundTrip`), but returns a
+ * non-number shape on every read AFTER that — i.e. exactly the read
+ * `store.ts`'s own `readSchemaVersion` performs once the pragma sequence
+ * has run. This isolates the defect under test (`readSchemaVersion`
+ * collapsing an unreadable value to `0`) from `assertSqliteSupport`'s own,
+ * already-correct throw-on-corruption behavior.
+ */
+function createDatabaseWithCorruptedFinalUserVersionRead(): {
+  handle: DatabaseSync;
+} {
+  const real = new DatabaseSync(":memory:");
+  /** The number of `PRAGMA user_version` reads `assertUserVersionRoundTrip` performs before `readSchemaVersion` ever runs. */
+  const ROUND_TRIP_PROBE_READS = 3;
+  let userVersionReadCount = 0;
+
+  const handle = {
+    get isOpen() {
+      return real.isOpen;
+    },
+    get isTransaction() {
+      return real.isTransaction;
+    },
+    exec(sql: string) {
+      real.exec(sql);
+    },
+    prepare(sql: string) {
+      if (sql === "PRAGMA user_version") {
+        userVersionReadCount += 1;
+        if (userVersionReadCount > ROUND_TRIP_PROBE_READS) {
+          return {
+            run: (): never => {
+              throw new Error("unexpected run() on the corrupted statement");
+            },
+            get: () => ({ user_version: "not-a-number" }),
+            all: (): never => {
+              throw new Error("unexpected all() on the corrupted statement");
+            },
+            setReadBigInts: () => {
+              /* no-op */
+            },
+          };
+        }
+      }
+      return real.prepare(sql);
+    },
+    close() {
+      real.close();
+    },
+  };
+
+  return { handle: handle as unknown as DatabaseSync };
+}
+
 describe("openConsoleStore — :memory: happy path", () => {
   test("opens, reports isOpen true, and exposes its location", () => {
     const store = openConsoleStore({ location: ":memory:" });
@@ -180,6 +306,64 @@ describe("openConsoleStore — close()", () => {
 
     expect(firstCloseFailure).toBeUndefined();
     expect(secondCloseFailure).toBeUndefined();
+  });
+
+  // `store.ts`'s `close()` sets the local `closed` flag to `true` BEFORE
+  // calling `database.close()` — so when the underlying close throws, the
+  // handle was never actually released, but the flag already reads
+  // "closed". A subsequent call (which the documented contract says must
+  // be a safe no-op RETRY) instead short-circuits on `if (closed) return;`
+  // and never attempts the underlying close again.
+  test("[wiring defect] a second call still attempts the underlying close() after the first one throws", () => {
+    const { handle, getCloseCallCount } = createDatabaseThrowingOnFirstClose();
+    const store = openConsoleStore({
+      location: ":memory:",
+      createDatabase: () => handle,
+    });
+
+    expect(() => store.close()).toThrow("synthetic first-close failure");
+    expect(getCloseCallCount()).toBe(1);
+
+    // The retry: a failed close() left the handle unreleased, so this must
+    // reach `database.close()` again, not silently no-op.
+    store.close();
+    expect(getCloseCallCount()).toBe(2);
+  });
+});
+
+describe("openConsoleStore — isOpen after close() (wiring defect regression)", () => {
+  // `isOpen` forwards `database.isOpen` directly, ignoring the store
+  // handle's own `closed` flag — so the two can disagree permanently if the
+  // underlying database ever reports `isOpen` unreliably after `close()`.
+  test("[wiring defect] reports isOpen: false once close() has been called, even when database.isOpen never flips", () => {
+    const { handle } = createDatabaseWithStickyIsOpen();
+    const store = openConsoleStore({
+      location: ":memory:",
+      createDatabase: () => handle,
+    });
+
+    store.close();
+
+    expect(store.isOpen).toBe(false);
+  });
+});
+
+describe("openConsoleStore — an unreadable PRAGMA user_version (wiring defect regression)", () => {
+  // `readSchemaVersion` collapses ANY non-number `PRAGMA user_version`
+  // shape to `0` — the "unmigrated, run every migration from scratch"
+  // value, which against a POPULATED database is the dangerous direction.
+  // It must fail loudly instead.
+  test("[wiring defect] opening fails with M3LConsoleError rather than silently reporting schemaVersion: 0", () => {
+    const { handle } = createDatabaseWithCorruptedFinalUserVersionRead();
+
+    const thrown = captureFailure(() =>
+      openConsoleStore({
+        location: ":memory:",
+        createDatabase: () => handle,
+      }),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
   });
 });
 

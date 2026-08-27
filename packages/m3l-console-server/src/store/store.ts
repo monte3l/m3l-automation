@@ -21,7 +21,7 @@
  *
  * @packageDocumentation
  */
-import { mkdirSync } from "node:fs";
+import { chmodSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 
 import { M3LConsoleError } from "../errors/console-error.js";
@@ -31,9 +31,18 @@ import type {
   M3LSqliteDatabaseFactory,
   M3LSqliteDatabaseHandle,
 } from "./sqlite-driver.js";
-import { assertSqliteSupport, openSqliteDatabase } from "./sqlite-driver.js";
+import {
+  assertSqliteSupport,
+  openSqliteDatabase,
+  readUserVersion,
+} from "./sqlite-driver.js";
 import { createStoreExecutor } from "./executor.js";
 import type { M3LStoreQueryExecutor } from "./types.js";
+
+/** The permission mode applied to the console store's parent directory. */
+const CONSOLE_STORE_DIRECTORY_MODE = 0o700;
+/** The permission mode applied to the console store's `.sqlite` file. */
+const CONSOLE_STORE_FILE_MODE = 0o600;
 
 /**
  * Options accepted by {@link openConsoleStore}.
@@ -69,20 +78,20 @@ export interface OpenConsoleStoreOptions {
 }
 
 /**
- * An opened console store: the query executor, plus open/close lifecycle.
- * Deliberately not named `M3LConsoleStore` — that name (alongside
- * `M3LConsoleStoreUnit`) is reserved for PR B, once a repository sits
- * alongside the executor.
+ * The SQL-free view of an opened console store: open/close lifecycle only,
+ * no query surface. Deliberately not named `M3LConsoleStore` — that name
+ * (alongside `M3LConsoleStoreUnit`) is reserved for PR B, once a repository
+ * sits alongside the executor. A composition root (`main.ts`) narrows to
+ * this view when it has no business issuing queries itself.
  *
  * @example
  * ```ts
- * function countWidgets(store: M3LConsoleStoreHandle): number {
- *   const row = store.get("SELECT COUNT(*) AS count FROM widgets");
- *   return typeof row?.["count"] === "number" ? row["count"] : 0;
+ * function isStoreOpen(store: M3LConsoleStoreLifecycle): boolean {
+ *   return store.isOpen;
  * }
  * ```
  */
-export interface M3LConsoleStoreHandle extends M3LStoreQueryExecutor {
+export interface M3LConsoleStoreLifecycle {
   /** `true` until `close()` has been called. */
   readonly isOpen: boolean;
   /** The `location` this store was opened with. */
@@ -96,6 +105,24 @@ export interface M3LConsoleStoreHandle extends M3LStoreQueryExecutor {
   /** Closes the underlying database handle. Idempotent — a second call is a no-op. */
   close(): void;
 }
+
+/**
+ * An opened console store: the query executor, plus its
+ * {@link M3LConsoleStoreLifecycle}. The full handle a fresh
+ * {@link openConsoleStore} call returns; a composition root that needs no
+ * query surface can instead hold the narrower
+ * {@link M3LConsoleStoreLifecycle}.
+ *
+ * @example
+ * ```ts
+ * function countWidgets(store: M3LConsoleStoreHandle): number {
+ *   const row = store.get("SELECT COUNT(*) AS count FROM widgets");
+ *   return typeof row?.["count"] === "number" ? row["count"] : 0;
+ * }
+ * ```
+ */
+export interface M3LConsoleStoreHandle
+  extends M3LStoreQueryExecutor, M3LConsoleStoreLifecycle {}
 
 /**
  * Runs `step`, closing `database` before re-throwing on any failure — a
@@ -172,17 +199,47 @@ function assertValidLocation(location: string): void {
 /**
  * Ensures `location`'s parent directory exists, skipped entirely for
  * `":memory:"` — `node:sqlite` measurably does not create a missing parent
- * directory itself (errcode 14, `CANTOPEN`).
+ * directory itself (errcode 14, `CANTOPEN`). Created `0700`: this directory
+ * holds operator audit data (ADR-0069/0070), and a default umask would
+ * otherwise leave it world-readable.
  */
 function ensureParentDirectory(location: string): void {
   if (location === ":memory:") return;
   try {
-    mkdirSync(dirname(location), { recursive: true });
+    mkdirSync(dirname(location), {
+      recursive: true,
+      mode: CONSOLE_STORE_DIRECTORY_MODE,
+    });
   } catch (cause) {
     throw storeError(
       classifyStoreFailure(cause),
       "open",
       "failed to ensure the console store's parent directory exists",
+      cause,
+      { location },
+    );
+  }
+}
+
+/**
+ * Restricts `location` to `0600`, skipped for `":memory:"` and on a
+ * non-POSIX platform (`process.platform === "win32"`, where a POSIX mode is
+ * not meaningful). Must run **before** `PRAGMA journal_mode = WAL` — SQLite
+ * derives its `-wal`/`-shm` sidecar files' modes from the main file's mode
+ * at the time those sidecars are first created, so chmod-ing after WAL is
+ * enabled would leave the sidecars world-readable even though the main file
+ * is locked down.
+ */
+function restrictFilePermissions(location: string): void {
+  if (location === ":memory:") return;
+  if (process.platform === "win32") return;
+  try {
+    chmodSync(location, CONSOLE_STORE_FILE_MODE);
+  } catch (cause) {
+    throw storeError(
+      classifyStoreFailure(cause),
+      "open",
+      "failed to restrict the console store file's permissions",
       cause,
       { location },
     );
@@ -219,11 +276,16 @@ function openDatabaseHandle(
  * Reads `PRAGMA user_version` once, at open — never re-read per access, so
  * the handle's `schemaVersion` stays stable for its whole lifetime (see
  * {@link M3LConsoleStoreHandle.schemaVersion}'s TSDoc).
+ *
+ * Delegates to `sqlite-driver.ts`'s {@link readUserVersion} rather than
+ * duplicating its strictness: an unreadable pragma throws instead of
+ * silently collapsing to `0` — against a populated database, `0` means
+ * "unmigrated, run every migration from scratch", the dangerous direction.
+ * The thrown `Error` is classified into an `M3LConsoleError` by
+ * {@link prepareOrCloseAndThrow}, the caller of this function.
  */
 function readSchemaVersion(database: M3LSqliteDatabaseHandle): number {
-  const row = database.prepare("PRAGMA user_version").get();
-  const value = (row as Record<string, unknown> | undefined)?.["user_version"];
-  return typeof value === "number" ? value : 0;
+  return readUserVersion(database);
 }
 
 /**
@@ -241,14 +303,19 @@ function buildConsoleStoreHandle(
   return {
     ...executor,
     get isOpen(): boolean {
-      return database.isOpen;
+      return !closed && database.isOpen;
     },
     location,
     schemaVersion,
     close(): void {
       if (closed) return;
-      closed = true;
+      // Set AFTER database.close() returns, not before: if the underlying
+      // close() throws, the handle was never actually released, and a
+      // subsequent call (the documented contract's safe no-op retry) must
+      // still attempt the real close again rather than silently succeeding
+      // against a leaked handle.
       database.close();
+      closed = true;
     },
   };
 }
@@ -270,6 +337,12 @@ export function openConsoleStore(
     database,
     options.location,
     () => {
+      // Before anything else touches the file: SQLite derives the -wal/-shm
+      // sidecar files' modes from the main file's mode at the moment those
+      // sidecars are first created, so this must run before
+      // assertSqliteSupport's own round-trip probe (which opens a
+      // transaction) and before journal_mode = WAL, not merely before WAL.
+      restrictFilePermissions(options.location);
       assertSqliteSupport(database);
       database.exec("PRAGMA journal_mode = WAL");
       database.exec("PRAGMA synchronous = NORMAL");

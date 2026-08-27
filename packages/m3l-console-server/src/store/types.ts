@@ -48,6 +48,14 @@ export type M3LStoreParameters =
  * One result row, normalized to an ordinary object — never the
  * null-prototype object `node:sqlite` itself yields.
  *
+ * The spread normalization (`store/executor.ts`'s `normalizeRow`) is safe
+ * against prototype pollution: a plain object spread performs
+ * `CreateDataProperty`, never a prototype-chain write. A column literally
+ * named `__proto__`, however, still becomes an **own** key of the normalized
+ * row (not the prototype) — a future reader iterating this type with
+ * `target[k] = row[k]` over `Object.keys(row)` must still treat `__proto__`
+ * as a dangerous key to guard against, even though the spread itself is fine.
+ *
  * @example
  * ```ts
  * function readId(row: M3LStoreRow): M3LStoreRow["id"] {
@@ -101,10 +109,15 @@ export interface M3LStoreWriteResult {
  * Streaming reads arrive with the row that needs one, behind a repository
  * method that owns the cursor's lifetime for its own duration.
  *
+ * SQLite cannot bind a table/column identifier as a parameter (only values
+ * bind) — so any identifier that must vary in a query can never come from a
+ * caller-supplied value; it must be validated against a code-side allowlist
+ * before it is interpolated.
+ *
  * @example
  * ```ts
- * function countRows(executor: M3LStoreQueryExecutor, table: string): number {
- *   const row = executor.get(`SELECT COUNT(*) AS count FROM ${table}`);
+ * function countWidgets(executor: M3LStoreQueryExecutor): number {
+ *   const row = executor.get("SELECT COUNT(*) AS count FROM widgets");
  *   return typeof row?.["count"] === "number" ? row["count"] : 0;
  * }
  * ```

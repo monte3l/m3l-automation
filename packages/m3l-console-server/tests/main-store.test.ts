@@ -21,7 +21,7 @@
  * `tests/main.test.ts`) stands in for both.
  */
 import { EventEmitter } from "node:events";
-import type { Server } from "node:http";
+import type { IncomingMessage, Server, ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 
 import { afterEach, describe, expect, test, vi } from "vitest";
@@ -29,7 +29,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { Core } from "@m3l-automation/m3l-common";
 
 import { createConsoleRuntime, startConsole } from "../src/main.js";
-import type { StartConsoleOptions } from "../src/main.js";
+import type { M3LConsoleRuntime, StartConsoleOptions } from "../src/main.js";
 import { M3LConsoleError } from "../src/errors/console-error.js";
 import * as envModule from "../src/config/env.js";
 
@@ -204,6 +204,144 @@ function createFakeStore(
   return { store, closeCallCount: () => closeCalls };
 }
 
+/**
+ * Builds a {@link FakeConsoleStoreHandle} that is already closed
+ * (`isOpen: false`) — the shape `/ready`'s `M3LReadinessProbe` reads
+ * structurally. Only `isOpen` is exercised by the test below; the
+ * query-executor methods are stubbed to fail loudly if hit by surprise.
+ */
+function createClosedFakeStore(): FakeConsoleStoreHandle {
+  const unexpectedCall = (): never => {
+    throw new Error("unexpected query-executor call on the fake store");
+  };
+  return {
+    isOpen: false,
+    location: ":memory:",
+    schemaVersion: 0,
+    close(): void {
+      /* already closed */
+    },
+    all: unexpectedCall,
+    get: unexpectedCall,
+    run: unexpectedCall,
+    script: unexpectedCall,
+  };
+}
+
+/**
+ * Builds a minimal `IncomingMessage` double — an `EventEmitter` carrying
+ * just the members the request listener reads (`method`, `url`, `headers`).
+ * Duplicated from `tests/main.test.ts` rather than imported — see this
+ * file's header comment.
+ */
+function createFakeIncomingMessage(
+  overrides: Partial<Pick<IncomingMessage, "method" | "url" | "headers">> = {},
+): IncomingMessage {
+  const req = new EventEmitter() as unknown as IncomingMessage;
+  Object.assign(req, {
+    method: "GET",
+    url: "/",
+    headers: {},
+    ...overrides,
+  });
+  return req;
+}
+
+/** What a {@link createRecordingServerResponse} double actually had written to it. */
+interface RecordedWrite {
+  status?: number;
+  headers?: Readonly<Record<string, string>> | undefined;
+  body?: string | undefined;
+}
+
+/**
+ * Builds a `ServerResponse` double that records `writeHead`/`end` calls.
+ * Duplicated from `tests/main.test.ts` — see this file's header comment.
+ */
+function createRecordingServerResponse(): {
+  readonly res: ServerResponse;
+  readonly written: RecordedWrite;
+  readonly finished: Promise<void>;
+} {
+  const written: RecordedWrite = {};
+  const res = new EventEmitter() as unknown as ServerResponse & {
+    headersSent: boolean;
+    writableEnded: boolean;
+  };
+  let resolveFinished: () => void;
+  const finished = new Promise<void>((resolve) => {
+    resolveFinished = resolve;
+  });
+  Object.assign(res, {
+    writableEnded: false,
+    headersSent: false,
+    writeHead: (
+      status: number,
+      headers?: Readonly<Record<string, string>>,
+    ): ServerResponse => {
+      written.status = status;
+      written.headers = headers;
+      res.headersSent = true;
+      return res;
+    },
+    end: (body?: string): ServerResponse => {
+      written.body = body;
+      res.writableEnded = true;
+      resolveFinished();
+      return res;
+    },
+  });
+  return { res, written, finished };
+}
+
+/** Rejects if `promise` has not settled within `ms`, so a wedged listener fails fast instead of hanging the suite. */
+async function withTimeout<T>(
+  promise: Promise<T>,
+  message: string,
+  ms = 1000,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      reject(new Error(message));
+    }, ms);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timer !== undefined) {
+      clearTimeout(timer);
+    }
+  }
+}
+
+/** Drives one GET request through `runtime.requestListener` end to end, parsing the JSON body once `res.end()` is observed. */
+async function dispatch(
+  runtime: M3LConsoleRuntime,
+  path: string,
+): Promise<{ status: number | undefined; body: unknown }> {
+  const req = createFakeIncomingMessage({
+    method: "GET",
+    url: path,
+    headers: { host: "127.0.0.1" },
+  });
+  const { res, written, finished } = createRecordingServerResponse();
+
+  runtime.requestListener(req, res);
+  await withTimeout(
+    finished,
+    `requestListener never called res.end() for GET ${path}`,
+  );
+
+  return {
+    status: written.status,
+    body:
+      written.body !== undefined
+        ? (JSON.parse(written.body) as unknown)
+        : undefined,
+  };
+}
+
 describe("createConsoleRuntime — options.config short-circuits the resolve", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -367,6 +505,37 @@ describe("startConsole — the boot line names the store's location and schemaVe
       "/tmp/x3-console-store-boot-line/console.sqlite",
     );
     expect(rendered).toContain("schemaVersion");
+
+    const shutdownPromise = running.shutdown();
+    fake.resolveClose();
+    await shutdownPromise;
+  });
+});
+
+describe("startConsole — /ready reflects the store's health through the composed listener (wiring defect regression)", () => {
+  // `main.ts`'s `buildDispatchRouter` calls `createHealthRoutes({ drain,
+  // startedAt })` and never forwards `options.store`, even though
+  // `createConsoleRuntime` has it in scope by the time the dispatch router
+  // is built. `createHealthRoutes` itself is fully correct — proven in
+  // isolation by `tests/health.test.ts` — which is exactly why this shipped
+  // unnoticed: no existing test drives `/ready` through the REAL composed
+  // `startConsole` -> `createConsoleRuntime` -> `requestListener` path with a
+  // closed store. This test is the conformance proof for the structural
+  // `M3LReadinessProbe` type: it must observe `/ready` degrade with the real
+  // store wired through `startConsole`, not merely call
+  // `createHealthRoutes` directly.
+  test("GET /ready is 503 { status: 'unavailable' } when the opened store reports isOpen: false, while GET /health stays 200", async () => {
+    const store = createClosedFakeStore();
+    const openStore = vi.fn(() => store);
+    const { promise, fake } = startWithFakeServer({ openStore });
+    const running = await promise;
+
+    const ready = await dispatch(running.runtime, "/ready");
+    expect(ready.status).toBe(503);
+    expect(ready.body).toEqual({ status: "unavailable" });
+
+    const health = await dispatch(running.runtime, "/health");
+    expect(health.status).toBe(200);
 
     const shutdownPromise = running.shutdown();
     fake.resolveClose();

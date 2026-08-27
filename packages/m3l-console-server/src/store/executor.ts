@@ -38,10 +38,13 @@ import type {
  * Converts a raw, possibly null-prototype row from the driver into an
  * ordinary object — `node:sqlite` measurably returns
  * `[Object: null prototype]` rows, which fails `toStrictEqual` and any
- * `instanceof Object` check a caller might reasonably make.
+ * `instanceof Object` check a caller might reasonably make. No cast is
+ * needed: {@link M3LSqliteStatementHandle}'s `get`/`all` are already typed to
+ * {@link M3LStoreRow}, so the spread alone both strips the null prototype and
+ * satisfies the return type.
  */
-function normalizeRow(row: unknown): M3LStoreRow {
-  return { ...(row as Record<string, unknown>) } as M3LStoreRow;
+function normalizeRow(row: M3LStoreRow): M3LStoreRow {
+  return { ...row };
 }
 
 /**

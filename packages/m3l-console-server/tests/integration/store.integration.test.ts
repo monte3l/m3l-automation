@@ -104,6 +104,54 @@ describe("openConsoleStore — a real file-backed database", () => {
   });
 });
 
+describe("openConsoleStore — file permissions (wiring defect regression)", () => {
+  // `store.ts` calls `mkdirSync(dirname(location), { recursive: true })`
+  // with no `mode`, and `node:sqlite` creates the database file itself with
+  // no mode either — so under a default `umask 022` the directory, the
+  // `.sqlite` file, and its `-wal`/`-shm` sidecars all end up
+  // world-readable. ADR-0069/0070 put operator audit data in this store, so
+  // that permissiveness is a real leak, not a cosmetic nit. This machine's
+  // ambient `umask` may happen to mask the defect (that is environment
+  // luck, not a control) — `process.umask` is set explicitly for the
+  // duration of this test so the assertion does not depend on the runner's
+  // ambient umask.
+  const originalUmask = process.umask();
+
+  afterEach(() => {
+    process.umask(originalUmask);
+  });
+
+  test.skipIf(process.platform === "win32")(
+    "[wiring defect] the console directory is 0700 and the .sqlite/-wal/-shm files are each 0600 under umask 022",
+    async () => {
+      process.umask(0o022);
+
+      const location = join(dir, "perm-check", "console.sqlite");
+      const store = openConsoleStore({ location });
+      try {
+        // Write a row while the store is open — the sidecars only exist
+        // while WAL is checkpointed-but-not-yet-closed (mirrors the
+        // existing "a write leaves -wal and -shm sidecars" test above).
+        store.script("CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT)");
+        store.run("INSERT INTO t (v) VALUES ($v)", { v: "hello" });
+
+        const directoryMode =
+          (await stat(join(dir, "perm-check"))).mode & 0o777;
+        const databaseMode = (await stat(location)).mode & 0o777;
+        const walMode = (await stat(`${location}-wal`)).mode & 0o777;
+        const shmMode = (await stat(`${location}-shm`)).mode & 0o777;
+
+        expect(directoryMode).toBe(0o700);
+        expect(databaseMode).toBe(0o600);
+        expect(walMode).toBe(0o600);
+        expect(shmMode).toBe(0o600);
+      } finally {
+        store.close();
+      }
+    },
+  );
+});
+
 describe("openConsoleStore — a non-SQLite file", () => {
   test("[non-SQLite file] surfaces as ERR_CONSOLE_STORE_UNSUPPORTED", async () => {
     // Empirically verified against the real, already-shipped

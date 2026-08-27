@@ -194,3 +194,91 @@ describe("storeError — leak discipline", () => {
     }
   });
 });
+
+describe("storeError — message is never augmented with cause detail", () => {
+  // The leak test above plants a secret as a *bound parameter* and asserts
+  // the secret is absent from `message` — but SQLite's own diagnostic text
+  // names the offending *identifier* (a table/column name), never the bound
+  // value, so that assertion holds even if `storeError` were to interpolate
+  // `cause.message` straight into the mapped message. That leaves a real gap:
+  // `errstr` is forbidden alongside `sql`/bound parameters/`expandedSQL`
+  // regardless of whether it happens to carry a secret in a given call. This
+  // test drives a genuine `node:sqlite` failure (not a hand-built fixture) so
+  // `cause.message` is real SQLite `errstr` text, and asserts `message` is
+  // *exactly* the safe string passed in — never that string plus any
+  // fragment of `cause`'s message. Do not delete this as redundant with the
+  // leak test: it is the only test that would catch the identifier-leaking
+  // shape of the mutation described above.
+
+  test("a constraint-violation cause's identifier-bearing message never reaches the mapped message", () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      database.exec(
+        "CREATE TABLE secrets (id INTEGER PRIMARY KEY, label TEXT NOT NULL UNIQUE)",
+      );
+      database.prepare("INSERT INTO secrets (id, label) VALUES (?, ?)").run(
+        1,
+        // Assembled at runtime from two substrings, never a single source
+        // literal (see the leak test above and `.claude/rules/tests.md`).
+        "sk" + "_live_placeholder",
+      );
+
+      let nativeCause: unknown;
+      try {
+        database.prepare("INSERT INTO secrets (id, label) VALUES (?, ?)").run(
+          2,
+          // Assembled at runtime, same rationale as above.
+          "sk" + "_live_placeholder",
+        );
+      } catch (error) {
+        nativeCause = error;
+      }
+      expect(nativeCause).toBeInstanceOf(Error);
+      const causeMessage = (nativeCause as Error).message;
+      // Sanity-check the fixture: the real SQLite errstr must actually name
+      // the column, or this test would pass for the wrong reason (an empty
+      // cause message).
+      expect(causeMessage).toContain("secrets.label");
+
+      const safeMessage = "a safe, non-interpolated message";
+      const consoleError = storeError(
+        "constraint",
+        "query",
+        safeMessage,
+        nativeCause,
+      );
+
+      expect(consoleError.message).toBe(safeMessage);
+      expect(consoleError.message).not.toContain("secrets.label");
+      expect(consoleError.cause).toBe(nativeCause);
+    } finally {
+      database.close();
+    }
+  });
+
+  test("a syntax-error cause's statement-echoing message never reaches the mapped message", () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      let nativeCause: unknown;
+      try {
+        database.exec("SELCT * FROM nowhere");
+      } catch (error) {
+        nativeCause = error;
+      }
+      expect(nativeCause).toBeInstanceOf(Error);
+      const causeMessage = (nativeCause as Error).message;
+      // Sanity-check the fixture: SQLite's syntax-error errstr echoes a
+      // fragment of the offending statement.
+      expect(causeMessage).toContain("SELCT");
+
+      const safeMessage = "a safe, non-interpolated message";
+      const consoleError = storeError("sql", "query", safeMessage, nativeCause);
+
+      expect(consoleError.message).toBe(safeMessage);
+      expect(consoleError.message).not.toContain("SELCT");
+      expect(consoleError.cause).toBe(nativeCause);
+    } finally {
+      database.close();
+    }
+  });
+});

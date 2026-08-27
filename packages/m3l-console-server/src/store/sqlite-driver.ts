@@ -8,11 +8,30 @@
  * classes directly — `export type X = DatabaseSync` is exactly what makes a
  * seam unreplaceable, so only the members this package actually consumes are
  * named here. That discipline is what makes ADR-0069's recorded fallbacks
- * (a packaged `sqlite` dependency, or a degraded JSONL-only mode) cheap to
- * adopt later: swapping either in replaces **this file plus a factory
- * injection** (`OpenConsoleStoreOptions.createDatabase` in `store/store.ts`)
- * **and nothing else** — every repository, the executor, and the failure
- * classifier are all written against the port, not the builtin.
+ * (a packaged `sqlite` dependency, or a degraded JSONL-only mode) cheaper to
+ * adopt later, but not free, and not uniform across both fallbacks:
+ *
+ * - Swapping in another **SQL** backend (e.g. a packaged `sqlite` /
+ *   `better-sqlite3`) replaces **this file, plus `store/failures.ts`'s
+ *   classifier, plus a factory injection**
+ *   (`OpenConsoleStoreOptions.createDatabase` in `store/store.ts`) — not
+ *   "and nothing else". `failures.ts` classifies on `node:sqlite`'s own
+ *   vocabulary (`ERR_SQLITE_ERROR` / `ERR_INVALID_STATE` /
+ *   `ERR_OUT_OF_RANGE`, and numeric `errcode & 0xff`); a packaged
+ *   `better-sqlite3` throws `SqliteError` with a **string** `.code`
+ *   (`"SQLITE_BUSY"`) and no numeric `errcode`, so the classifier would need
+ *   rewriting too, not just this file.
+ * - A **non-SQL** fallback (the degraded JSONL-only mode) additionally
+ *   replaces `store/executor.ts`: a JSONL store cannot implement
+ *   `prepare(sql)` at all, and `executor.ts` encodes `node:sqlite`-specific
+ *   mechanics (the per-statement bigint flag, the SQL-text statement cache,
+ *   null-prototype row normalization) that have no JSONL analogue.
+ *
+ * This is a deliberate deferral, not a gap to close now: the point is that
+ * every repository is still written against the port
+ * ({@link M3LSqliteDatabaseHandle} / {@link M3LSqliteStatementHandle}), never
+ * the builtin directly, which is what keeps the replaceable unit bounded at
+ * all.
  *
  * `assertSqliteSupport` is the ADR-0069 **stability checkpoint**, run once
  * at every store open: it re-verifies the specific shape and behaviour this
@@ -57,10 +76,21 @@ import { DatabaseSync } from "node:sqlite";
 
 import { M3LConsoleError } from "../errors/console-error.js";
 
+import type { M3LStoreRow } from "./types.js";
+
 /**
  * The structural port over a prepared statement. Named for only the four
  * members this package consumes — `node:sqlite`'s own `StatementSync` has
  * many more, deliberately not named here.
+ *
+ * `get`/`all` are typed straight to {@link M3LStoreRow}: `@types/node`
+ * already declares `StatementSync.get` and `.all` as returning a row (or
+ * array of rows) shaped `Record<string, SQLOutputValue>`, and `SQLOutputValue`
+ * is assignable to `M3LStoreRow`'s value type — so `openSqliteDatabase`'s
+ * `M3LSqliteDatabaseFactory` annotation is itself the compile-time proof
+ * this holds, with no cast needed anywhere downstream. Rows still arrive
+ * null-prototype at runtime; `store/executor.ts` normalizes them to an
+ * ordinary object via a plain spread.
  *
  * @example
  * ```ts
@@ -74,8 +104,8 @@ export interface M3LSqliteStatementHandle {
     changes: number | bigint;
     lastInsertRowid: number | bigint;
   };
-  get(...parameters: readonly unknown[]): unknown;
-  all(...parameters: readonly unknown[]): readonly unknown[];
+  get(...parameters: readonly unknown[]): M3LStoreRow | undefined;
+  all(...parameters: readonly unknown[]): readonly M3LStoreRow[];
   /**
    * Reads INTEGER columns as `bigint` for subsequent calls on this
    * statement. Must be set **per call** by the executor when
@@ -189,10 +219,26 @@ function versionAtLeast(
   return true;
 }
 
-/** Reads `PRAGMA user_version` as an integer, throwing if the shape is not what `node:sqlite` is known to return. */
-function readUserVersion(database: M3LSqliteDatabaseHandle): number {
+/**
+ * Reads `PRAGMA user_version` as an integer, throwing if the shape is not
+ * what `node:sqlite` is known to return. Exported so `store/store.ts`'s
+ * `readSchemaVersion` reuses this same strictness instead of duplicating a
+ * looser, silently-collapsing read — an unreadable `user_version` must fail
+ * loudly, never collapse to `0` (which against a populated database means
+ * "unmigrated, run every migration from scratch").
+ *
+ * @param database - The handle to read from.
+ * @returns The current `user_version` integer.
+ * @throws `Error` if the pragma does not read back as a `number`.
+ *
+ * @example
+ * ```ts
+ * const version = readUserVersion(database);
+ * ```
+ */
+export function readUserVersion(database: M3LSqliteDatabaseHandle): number {
   const row = database.prepare("PRAGMA user_version").get();
-  const value = (row as Record<string, unknown> | undefined)?.["user_version"];
+  const value = row?.["user_version"];
   if (typeof value !== "number") {
     throw new Error("PRAGMA user_version did not return a number");
   }
@@ -239,6 +285,18 @@ function assertUserVersionRoundTrip(database: M3LSqliteDatabaseHandle): void {
   const before = readUserVersion(database);
   const probe = before + 1;
 
+  // `PRAGMA user_version = ?` is a syntax error (node:sqlite does not permit
+  // binding a pragma value), so `probe` is interpolated directly. No
+  // injection is constructible here — `probe` comes from SQLite's own int32
+  // header via `readUserVersion`, and `String(number)` cannot emit SQL — but
+  // guarding the value is an integer before it ever reaches template
+  // interpolation is the check a security reviewer expects to see on sight,
+  // and it is the same guard the migration runner (PR B) needs for its own
+  // real `user_version` write.
+  if (!Number.isSafeInteger(probe)) {
+    throw new Error("PRAGMA user_version probe value is not a safe integer");
+  }
+
   database.exec("BEGIN IMMEDIATE");
   database.exec(`PRAGMA user_version = ${String(probe)}`);
   const during = readUserVersion(database);
@@ -263,7 +321,7 @@ function assertSqliteVersionAtLeast337(
   database: M3LSqliteDatabaseHandle,
 ): void {
   const row = database.prepare("SELECT sqlite_version() AS version").get();
-  const version = (row as Record<string, unknown> | undefined)?.["version"];
+  const version = row?.["version"];
   if (
     typeof version !== "string" ||
     !versionAtLeast(

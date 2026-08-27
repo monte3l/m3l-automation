@@ -1327,3 +1327,56 @@ describe("createConsoleRuntime — logger secrets port covers store query fields
     expect(rendered).not.toContain("CANARY");
   });
 });
+
+/**
+ * Builds a secret-shaped canary value at runtime by concatenating two
+ * substrings — never as a single source literal. gitleaks scans source
+ * text, not runtime values, and this repo has no `.gitleaksignore` (see
+ * `.claude/rules/tests.md`).
+ */
+function buildNearSynonymCanary(tag: string): string {
+  const prefix = "CANARY-NEAR-SYNONYM";
+  return `${prefix}-${tag}`;
+}
+
+describe("createConsoleRuntime — logger secrets port covers near-synonym query fields (security probe regression)", () => {
+  // A security probe measured these FIVE field names leaking the raw
+  // SQL text / bound-parameter shape verbatim through the real logger:
+  // `query`/`statement` (near-synonyms for `sql`) and `params`/`values`/
+  // `args` (near-synonyms for `parameters`/`bindings`). `runtimeSecrets`
+  // (main.ts) does not yet name any of them — `params` in particular is an
+  // entirely ordinary shorthand at a real call site, not an exotic one.
+  // This port exists to make redaction structural rather than conventional,
+  // so a near-synonym must be covered just as directly as the canonical
+  // name it stands in for.
+  // Deliberately plain STRING values (not `{ token: ... }` like the
+  // canonical `parameters`/`bindings` fields above) — an inner `token` key
+  // is already redacted by the library's built-in key-name heuristic
+  // regardless of whether `params`/`values`/`args` themselves are named
+  // secret, which would let this test pass for the wrong reason (a proxy
+  // for the built-in heuristic, not for `runtimeSecrets` naming the
+  // near-synonym itself).
+  test.each([
+    ["query", buildNearSynonymCanary("QUERY")],
+    ["statement", buildNearSynonymCanary("STATEMENT")],
+    ["params", buildNearSynonymCanary("PARAMS")],
+    ["values", buildNearSynonymCanary("VALUES")],
+    ["args", buildNearSynonymCanary("ARGS")],
+  ])(
+    "[wiring defect] isSecret treats a top-level '%s' field as secret, rendering [REDACTED]",
+    (field, value) => {
+      const handler = new RecordingHandler();
+      const runtime = createConsoleRuntime({
+        env: buildEnv(),
+        handlers: [handler],
+      });
+      handler.reset();
+
+      runtime.logger.info("caller-triggered field", { [field]: value });
+
+      const rendered = JSON.stringify(handler.events);
+      expect(rendered).toContain("[REDACTED]");
+      expect(rendered).not.toContain("CANARY-NEAR-SYNONYM");
+    },
+  );
+});

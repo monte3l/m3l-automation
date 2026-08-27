@@ -42,6 +42,7 @@ import {
 import { openConsoleStore } from "./store/store.js";
 import type {
   M3LConsoleStoreHandle,
+  M3LConsoleStoreLifecycle,
   OpenConsoleStoreOptions,
 } from "./store/store.js";
 
@@ -116,8 +117,14 @@ export interface M3LConsoleRuntime {
    * (ADR-0049). Equivalent to `drain.signal`.
    */
   readonly signal: AbortSignal;
-  /** The opened console store (ADR-0069), when `options.store` supplied one. */
-  readonly store?: M3LConsoleStoreHandle;
+  /**
+   * The opened console store (ADR-0069), when `options.store` supplied one
+   * — narrowed to its {@link M3LConsoleStoreLifecycle} view: this composition
+   * root has no business issuing queries itself, so the full
+   * {@link M3LConsoleStoreHandle} (which carries the SQL query surface) never
+   * republishes past this field.
+   */
+  readonly store?: M3LConsoleStoreLifecycle;
 }
 
 /**
@@ -159,18 +166,31 @@ function buildDefaultHandlers(
  * ordinary as `logger.error(msg, { sql, parameters })` must never print the
  * raw SQL, its bound parameters/bindings, or its interpolated `expandedSQL`
  * form — the sqlite driver's own TSDoc documents `expandedSQL` as
- * interpolating bound values, so it is never loggable.
+ * interpolating bound values, so it is never loggable. `query`/`statement`
+ * (near-synonyms for `sql`) and `params`/`values`/`args` (near-synonyms for
+ * `parameters`/`bindings`) round out the same store vocabulary: a security
+ * probe measured all five leaking verbatim through the real logger, and
+ * `params` in particular is an entirely ordinary shorthand at a real call
+ * site, not an exotic one this port can afford to skip.
  */
+const RUNTIME_SECRET_NAMES: ReadonlySet<string> = new Set([
+  "operatorEmail",
+  "email",
+  "headers",
+  "cookie",
+  "sql",
+  "parameters",
+  "bindings",
+  "expandedSQL",
+  "query",
+  "statement",
+  "params",
+  "values",
+  "args",
+]);
+
 const runtimeSecrets: Core.M3LSecretNamesPort = {
-  isSecret: (name) =>
-    name === "operatorEmail" ||
-    name === "email" ||
-    name === "headers" ||
-    name === "cookie" ||
-    name === "sql" ||
-    name === "parameters" ||
-    name === "bindings" ||
-    name === "expandedSQL",
+  isSecret: (name) => RUNTIME_SECRET_NAMES.has(name),
 };
 
 /**
@@ -197,12 +217,26 @@ function logPosture(logger: Core.M3LLogger, config: M3LConsoleConfig): void {
  * {@link M3LConsoleRuntime.router} — that field reflects `options.routes`
  * verbatim, so a caller introspecting it sees exactly what it registered,
  * not an implementation detail of how liveness/readiness are served.
+ *
+ * `store` is threaded through to {@link createHealthRoutes} so `/ready`
+ * actually reflects the real store's health in every deployment — this call
+ * site is also the compiler-checked proof that
+ * {@link M3LConsoleStoreLifecycle} (and the full {@link M3LConsoleStoreHandle}
+ * that satisfies it) structurally conforms to `health.ts`'s
+ * `M3LReadinessProbe`, without creating an `http -> store` ESLint zone edge
+ * (that module deliberately declares its own narrower shape rather than
+ * importing this one).
  */
 function buildDispatchRouter(
   drain: M3LDrainController,
   routes: readonly M3LRoute[],
+  store: M3LConsoleStoreLifecycle | undefined,
 ): M3LRouter {
-  const healthRoutes = createHealthRoutes({ drain, startedAt: Date.now() });
+  const healthRoutes = createHealthRoutes({
+    drain,
+    startedAt: Date.now(),
+    ...(store !== undefined && { store }),
+  });
   return createRouter([...healthRoutes, ...routes]);
 }
 
@@ -262,7 +296,7 @@ export function createConsoleRuntime(
   // full rationale). It runs ahead of auth so a drain refusal never pays the
   // cost of resolving an operator first.
   const requestListener = createConsoleRequestListener({
-    router: buildDispatchRouter(drain, routes),
+    router: buildDispatchRouter(drain, routes, options.store),
     middlewares: [
       createDrainMiddleware(drain),
       createAuthMiddleware(operatorProvider),
@@ -331,8 +365,13 @@ export interface M3LRunningConsole {
   readonly runtime: M3LConsoleRuntime;
   /** The verified, actually-listening server (see `lifecycle/http-server.ts`). */
   readonly server: M3LListeningServer;
-  /** The console store (ADR-0069) opened before the listener bound; closed after the drain settles. */
-  readonly store: M3LConsoleStoreHandle;
+  /**
+   * The console store (ADR-0069) opened before the listener bound; closed
+   * after the drain settles. Narrowed to {@link M3LConsoleStoreLifecycle} —
+   * see {@link M3LConsoleRuntimeOptions.store}'s TSDoc for why this
+   * composition root never republishes the full query surface.
+   */
+  readonly store: M3LConsoleStoreLifecycle;
   /**
    * Settles once a shutdown has been triggered AND completed — by a call to
    * {@link shutdown} or by a trapped signal, whichever happens first. Never
@@ -440,11 +479,15 @@ export async function startConsole(
     });
   } catch (cause) {
     // Best-effort: the bind failure below is what the caller needs to see,
-    // and a failing close() here must never shadow it.
+    // and a failing close() here must never shadow it — logged, like the
+    // structurally identical close-failure path in `lifecycle/shutdown.ts`,
+    // but the ORIGINAL bind failure is still what gets re-thrown.
     try {
       store.close();
-    } catch {
-      /* best-effort */
+    } catch (closeCause) {
+      runtime.logger.error("console store close failed", {
+        cause: Core.getErrorMessage(closeCause),
+      });
     }
     throw cause;
   }

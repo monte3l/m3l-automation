@@ -165,3 +165,48 @@ describe("resolveStoreDatabasePath — never reads process.env", () => {
     expect(result).toBe(path.join("/data", "console", "console.sqlite"));
   });
 });
+
+describe("resolveStoreDatabasePath — path traversal / absolute paths (accepted-behavior regression lock)", () => {
+  // Escaping the data directory is accepted, not overlooked.
+  // `M3L_CONSOLE_DB_PATH` is set by the operator, for a loopback-only
+  // process that runs as them and can already write anywhere their umask
+  // allows; containment would break the legitimate "put the database on a
+  // separate volume" case while preventing nothing they could not do more
+  // directly. Revisit if this path ever becomes settable through the HTTP
+  // surface — at that point the actor is no longer necessarily the
+  // operator, and containment becomes worth its cost.
+  //
+  // This test PASSES today — it pins the current, deliberate behavior as a
+  // regression lock, not a RED test proving a fix.
+  test("a relative configuredPath containing ../ traversal resolves outside the injected data dir", () => {
+    const dataDir = path.join(path.sep, "data", "dir");
+
+    const result = resolveStoreDatabasePath({
+      configuredPath: path.join("..", "..", "elsewhere", "db.sqlite"),
+      resolveDataDir: () => dataDir,
+    });
+
+    expect(result).toBe(
+      path.resolve(dataDir, "..", "..", "elsewhere", "db.sqlite"),
+    );
+    // The discriminating assertion: the resolved path is NOT contained
+    // within `dataDir` — proving traversal actually escapes, not merely
+    // that some path was returned.
+    const relative = path.relative(dataDir, result);
+    expect(relative.startsWith("..")).toBe(true);
+  });
+
+  test("an absolute configuredPath passes through unchanged, regardless of the injected data dir", () => {
+    const dataDir = path.join(path.sep, "data", "dir");
+    const absolute = path.resolve(path.sep, "somewhere", "else", "db.sqlite");
+
+    const result = resolveStoreDatabasePath({
+      configuredPath: absolute,
+      resolveDataDir: () => dataDir,
+    });
+
+    expect(result).toBe(absolute);
+    const relative = path.relative(dataDir, result);
+    expect(relative.startsWith("..")).toBe(true);
+  });
+});

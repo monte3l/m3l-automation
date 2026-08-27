@@ -142,9 +142,32 @@ required operator profile). The REST/SSE contract ships as a
 
 The console keeps an embedded SQLite database (ADR-0069) opened through
 `node:sqlite`, the Node 24 builtin. `store/sqlite-driver.ts` is the only
-module in the package that imports it — that single file plus a factory
-injection is what ADR-0069's recorded fallbacks (a packaged sqlite
-dependency, or a degraded JSONL-only mode) would replace.
+module in the package that imports it, and its ports are structural
+interfaces naming just the members this package consumes — never a direct
+`= DatabaseSync` alias, which is what makes a seam unreplaceable.
+
+What ADR-0069's recorded fallbacks would actually cost, stated honestly
+rather than optimistically: a **packaged sqlite dependency** replaces
+`store/sqlite-driver.ts`, `store/failures.ts`, and a factory injection —
+the classifier is included because it branches on `node:sqlite`'s own error
+vocabulary (`ERR_SQLITE_ERROR`/`ERR_INVALID_STATE`/`ERR_OUT_OF_RANGE` and a
+numeric `errcode`), whereas `better-sqlite3` throws a string `.code` like
+`SQLITE_BUSY` with no `errcode`. A **degraded JSONL-only mode**
+additionally replaces `store/executor.ts`, which cannot sit on a
+`prepare(sql)`-free backend and in any case encodes SQLite mechanics (the
+per-statement bigint flag, the SQL-text statement cache, null-prototype row
+normalization).
+
+That is still a contained blast radius — three files, none of them visible
+to a repository or to `main.ts` — which is the property the seam exists to
+provide. It is simply not the one file an earlier draft of this README
+claimed.
+
+The database directory is created `0700` and the database file `chmod`ed to
+`0600` before WAL is enabled, so the `-wal`/`-shm` sidecars inherit those
+modes at creation. Without that, a default `umask 022` leaves operator
+audit data (ADR-0070) world-readable, with recently written rows sitting in
+cleartext in the `-wal`.
 
 SQLite is an _index_ over authoritative JSONL, not the source of truth, so
 migrations are forward-only with no `down`: recovery is "delete the file and
