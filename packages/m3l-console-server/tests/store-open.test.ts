@@ -408,6 +408,61 @@ describe("openConsoleStore — an invalid location", () => {
   });
 });
 
+describe("openConsoleStore — transaction()", () => {
+  // `store.ts:194`'s whole documented reason for `M3LConsoleStoreUnit` to
+  // exist as a type distinct from `M3LConsoleStore`: a repository reached
+  // through `unit.meta` inside `work` must write through the TRANSACTION's
+  // own executor, never around it against the top-level connection. Until
+  // this block landed, nothing called `transaction()` at all (verified by
+  // grep) — its central documented claim was entirely unverified.
+  test("commits: a unit.meta write inside work is visible after transaction() returns, which returns work's own value", () => {
+    const store = openConsoleStore({ location: ":memory:" });
+
+    const mintedId = store.transaction((unit) => {
+      // describe() mints on first call — the natural vehicle for a write
+      // through unit.meta, since a fresh :memory: store's console_meta
+      // starts empty.
+      return unit.meta.describe().id;
+    });
+
+    expect(typeof mintedId).toBe("string");
+    expect(mintedId.length).toBeGreaterThan(0);
+
+    // describe() reuses a persisted identity forever — a second call
+    // through the TOP-LEVEL store.meta (never through transaction()) must
+    // see the SAME id the transaction minted, proving the write committed.
+    const afterCommit = store.meta.describe();
+    expect(afterCommit.id).toBe(mintedId);
+  });
+
+  test("a throwing callback rolls back a unit.meta write and re-throws the original error with its identity intact", () => {
+    const store = openConsoleStore({ location: ":memory:" });
+    const originalError = new Error("synthetic work failure");
+
+    let thrown: unknown;
+    try {
+      store.transaction((unit) => {
+        // Mints store.id + store.created.at.ms through the TRANSACTION's
+        // executor — if unit.meta were bound to the top-level executor
+        // instead (the bug this test exists to catch), this insert would
+        // commit directly and survive the rollback below.
+        unit.meta.describe();
+        throw originalError;
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBe(originalError);
+
+    // The load-bearing assertion: console_meta must be empty afterward. A
+    // transaction-bound unit.meta rolls this insert back; a top-level-bound
+    // one would leave two persisted rows here regardless of the throw.
+    const row = store.get("SELECT COUNT(*) AS count FROM console_meta");
+    expect(row?.["count"]).toBe(0);
+  });
+});
+
 describe("openConsoleStore — busyTimeoutMs", () => {
   test("reaches the database factory as `timeout`", () => {
     let receivedOptions: unknown;

@@ -13,7 +13,7 @@ import {
 import type { M3LConsoleErrorCode } from "../src/errors/console-error.js";
 
 describe("M3LConsoleErrorCode", () => {
-  test("is the exact fifteen-member union the contract declares (X2/X3-A1)", () => {
+  test("is the exact seventeen-member union the contract declares (X2/X3-A1)", () => {
     expectTypeOf<M3LConsoleErrorCode>().toEqualTypeOf<
       | "ERR_CONSOLE_CONFIG_INVALID"
       | "ERR_CONSOLE_BAD_REQUEST"
@@ -30,6 +30,8 @@ describe("M3LConsoleErrorCode", () => {
       | "ERR_CONSOLE_STORE_BUSY"
       | "ERR_CONSOLE_STORE_CLOSED"
       | "ERR_CONSOLE_STORE_QUERY_FAILED"
+      | "ERR_CONSOLE_STORE_MIGRATION_FAILED"
+      | "ERR_CONSOLE_STORE_SCHEMA_DRIFT"
     >();
   });
 
@@ -138,6 +140,14 @@ describe("M3LConsoleError", () => {
       "ERR_CONSOLE_STORE_QUERY_FAILED",
       "the query against the console store failed",
     ],
+    [
+      "ERR_CONSOLE_STORE_MIGRATION_FAILED",
+      "a pending schema migration failed to apply",
+    ],
+    [
+      "ERR_CONSOLE_STORE_SCHEMA_DRIFT",
+      "the on-disk schema does not match the expected version",
+    ],
   ])(
     "constructs %s and is caught by isConsoleError and instanceof Core.M3LError (X3-A1)",
     (code, message) => {
@@ -149,7 +159,7 @@ describe("M3LConsoleError", () => {
       expect(error).toBeInstanceOf(Core.M3LError);
       expect(error).toBeInstanceOf(Error);
       // ERR_CONSOLE_* is deliberately absent from Core's own classification
-      // catalog (see the module doc comment) — every one of these five new
+      // catalog (see the module doc comment) — every one of these seven new
       // codes stays unclassified by Core.classifyErrorCode, same as every
       // existing ERR_CONSOLE_* code.
       expect(Core.classifyErrorCode(error.code)).toBeUndefined();

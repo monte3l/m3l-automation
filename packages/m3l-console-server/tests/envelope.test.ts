@@ -146,6 +146,18 @@ const CLASSIFICATION_TABLE: Record<
     retryable: false,
     fault: true,
   },
+  ERR_CONSOLE_STORE_MIGRATION_FAILED: {
+    status: INTERNAL_STATUS,
+    origin: "library",
+    retryable: false,
+    fault: true,
+  },
+  ERR_CONSOLE_STORE_SCHEMA_DRIFT: {
+    status: INTERNAL_STATUS,
+    origin: "library",
+    retryable: false,
+    fault: true,
+  },
 };
 
 // `Object.entries` widens the key to `string`; `CLASSIFICATION_TABLE`'s
