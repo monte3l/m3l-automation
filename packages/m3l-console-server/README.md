@@ -5,15 +5,54 @@ Backend for the m3l operations console (ADR-0064): a modular monolith over
 drain. It is the repo's first long-running process (ADR-0065) — everything
 else here is batch-shaped.
 
-## Status
+## Usage
 
-This package is being built in slices. **It is not runnable yet** — there is no
-process entry and nothing binds a socket. What ships today is the boot-time
-configuration loader, the error vocabulary, and the composition root
-(`createConsoleRuntime`). The `bin/m3l-console-server.mjs` entry, the
-`pnpm console:server` script, and the HTTP listener land with the lifecycle
-slice; that is deliberate, so no unauthenticated listener ever exists, even
-transiently (ADR-0071).
+```bash
+M3L_CONSOLE_OPERATOR_NAME="your name" pnpm console:server
+```
+
+The operator name is required (ADR-0071) — without it `loadConsoleConfig`
+throws and the process never binds a socket. The server listens on
+`127.0.0.1:8787` by default, serves `/health` and `/ready`, and drains
+gracefully on `SIGTERM`/`SIGINT`/`SIGQUIT`. A second signal force-exits.
+
+```bash
+curl -s localhost:8787/health   # {"status":"ok","uptimeMs":42}
+curl -s localhost:8787/ready    # {"status":"ready","uptimeMs":57}
+```
+
+Beyond those two probes there is nothing to call yet: the run-orchestration,
+session, and audit routes arrive with X4 onward. What exists today is the
+transport tier, the lifecycle, and the security posture the rest will be
+built on.
+
+## Posture
+
+Three controls are load-bearing rather than decorative, and each is
+enforced in code rather than by convention:
+
+- **The listener cannot bind beyond loopback.** `startConsoleServer` reads
+  `server.address()` after `listening` fires and rejects anything that is
+  not a verified loopback address, closing the socket before it throws. This
+  holds even for a programmatic caller that never went through
+  `loadConsoleConfig`. It matters because `listen()`'s host argument is a
+  _request_: omitting it binds `::` — every interface — and `localhost`
+  resolves to `::1`, not `127.0.0.1`.
+- **A cross-origin request is refused.** Loopback binding does not stop a
+  browser: a page on any site can issue requests to `127.0.0.1`, and Node
+  serves a request bearing `Host: evil.example` with a 200 quite happily.
+  `createOriginGuard` is the only thing that refuses it. It compares the
+  `Host` hostname, and deliberately not the port — under rebinding the
+  browser sends the attacker's hostname, so the hostname is the whole
+  defence, while comparing the port would break a compose port remap
+  (`9000:8787`). `Origin: null` — the sandboxed/`file://` origin — is
+  rejected explicitly.
+- **Secrets never reach the log.** The operator email, request headers, and
+  cookies are named in an `M3LSecretNamesPort` at the logger's construction,
+  so redaction is structural for every layer written later rather than a
+  rule each one must remember. The library's own heuristic redacts a nested
+  `authorization` header but not a `cookie`, which is exactly the gap this
+  closes.
 
 ## Configuration
 
