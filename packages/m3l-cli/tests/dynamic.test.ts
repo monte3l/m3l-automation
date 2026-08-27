@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { runDynamic } from "../src/commands/dynamic.js";
+import { toParameterError } from "../src/commands/dynamic-argv.js";
 import { M3LCliError } from "../src/cli/errors.js";
 import type { M3LCliCommandContext } from "../src/commands/context.js";
 import { discoverScripts } from "../src/discovery/discover.js";
@@ -1129,5 +1130,117 @@ describe("runDynamic — in-process execution (U7)", () => {
 
     expect(thrown).toBeUndefined();
     expect(runInProcessMock).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * `translatedTokenValue`'s `config.type === "boolean"` branch — reachable
+   * only through `restoreDroppedOptionTokens`'s dropped-token backfill. A
+   * BOOL parameter literally named `__proto__`, passed as a bare flag,
+   * exercises the same "parseArgs silently drops __proto__" mechanism as the
+   * STRING/STRING_ARRAY `__proto__` regression guards above, but for the
+   * boolean per-type translation specifically: the backfilled value must be
+   * the real boolean `true` (mirroring what parseArgs itself would have
+   * produced for any other BOOL flag), not a string or array.
+   */
+  test("a BOOL parameter literally named '__proto__' passed as a bare flag is restored as boolean true, not a string", async () => {
+    discoverScriptsMock.mockReturnValue(knownCandidates);
+    const descriptorsWithProtoBoolName: readonly M3LCliParameterDescriptor[] = [
+      {
+        name: "__proto__",
+        aliases: [],
+        type: "BOOL",
+        required: false,
+        defaultValue: undefined,
+        description: "Prototype-pollution-shaped BOOL parameter name",
+      },
+    ];
+    loadParametersCachedMock.mockResolvedValue(descriptorsWithProtoBoolName);
+    runInProcessMock.mockResolvedValue(0);
+
+    const context = buildContext();
+
+    let thrown: unknown;
+    try {
+      await runDynamic(
+        context,
+        "json-etl",
+        ["--__proto__", "--in-process"],
+        [],
+      );
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeUndefined();
+    expect(runInProcessMock).toHaveBeenCalledTimes(1);
+    const [, options] = runInProcessMock.mock.calls[0] ?? [
+      "",
+      { output: undefined, parameterValues: {}, dryRun: false },
+    ];
+    expect(Object.hasOwn(options.parameterValues, "__proto__")).toBe(true);
+    expect(
+      (options.parameterValues as Record<string, unknown>)["__proto__"],
+    ).toBe(true);
+  });
+});
+
+/**
+ * `restoreDroppedOptionTokens`'s
+ * `if (token.kind !== "option" || token.name === undefined) { return accumulated; }`
+ * guard — every other test's parsed token stream apparently only ever
+ * contains `"option"`-kind tokens. Node's real `parseArgs({ tokens: true })`
+ * also yields an `"option-terminator"`-kind token (no `name` field) for a
+ * bare `--` in `args` that isn't followed by anything else — verified
+ * empirically: with `allowPositionals: false` and `strict: true`, a
+ * *trailing* bare `--` does not throw (only a positional token *after* it
+ * would), so `restoreDroppedOptionTokens` genuinely receives this shaped
+ * token through `runDynamic`'s own real `parseArgs` call and must skip it
+ * without disrupting the rest of the fold.
+ */
+describe("runDynamic — restoreDroppedOptionTokens skips a non-option/nameless token", () => {
+  test("a trailing bare '--' in args (an option-terminator token, no name) does not disrupt normal parsing or execution", async () => {
+    discoverScriptsMock.mockReturnValue(knownCandidates);
+    loadParametersCachedMock.mockResolvedValue(descriptors);
+    executeScriptMock.mockResolvedValue(0);
+
+    const context = buildContext();
+    const code = await runDynamic(
+      context,
+      "json-etl",
+      ["--r", "us-east-1", "--"],
+      [],
+    );
+
+    expect(code).toBe(0);
+    expect(executeScriptMock).toHaveBeenCalledWith(
+      context,
+      "json-etl",
+      jsonEtlCandidate.directory,
+      ["--region=us-east-1"],
+    );
+  });
+});
+
+/**
+ * `extractOptionName`'s `if (!(error instanceof Error)) { return undefined; }`
+ * branch — `toParameterError` is exported from `dynamic-argv.ts` (unlike the
+ * module-private `translatedTokenValue`/`extractOptionName`), so it is
+ * tested directly here rather than indirectly through `runDynamic`: Node's
+ * real `parseArgs` never throws a non-`Error` value, so this branch cannot
+ * be reached through `runDynamic`'s own catch block — the only way to
+ * exercise it is to hand `toParameterError` a non-`Error` `error` directly,
+ * proving the function degrades to the generic "unknown parameter" shape
+ * (an empty parameter name) rather than throwing on the malformed input
+ * itself.
+ */
+describe("toParameterError — a non-Error thrown value", () => {
+  test("falls back to ERR_CLI_UNKNOWN_PARAMETER with an empty parameter name when the input is not an Error instance", () => {
+    const nonError: unknown = "boom";
+
+    const error = toParameterError(nonError, "json-etl", descriptors);
+
+    expect(error).toBeInstanceOf(M3LCliError);
+    expect(error.code).toBe("ERR_CLI_UNKNOWN_PARAMETER");
+    expect(error.message).toBe("unknown parameter '' for script 'json-etl'");
   });
 });
