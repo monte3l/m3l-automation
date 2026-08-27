@@ -14,6 +14,18 @@ import { join } from "node:path";
 export const WRITER_SPOKES = new Set(["code-implementer", "test-author"]);
 
 /**
+ * The turn-budget ceiling every spoke's `maxTurns:` frontmatter is checked
+ * against (`bin/check-agents.mjs`). Raising a spoke's `maxTurns` is not the
+ * fix for truncation (`.claude/rules/subagent-dispatch.md`'s "Don't raise
+ * maxTurns as the fix" rule) — decompose the dispatch instead. Referenced by
+ * name (not the literal number) in `.claude/hooks/detect-spoke-
+ * truncation.mjs` and `.claude/hooks/guard-writer-dispatch-journal.mjs`'s
+ * rationale comments, so neither can silently drift from this value the way
+ * two independent hardcoded "40"s could.
+ */
+export const MAX_TURNS_CEILING = 40;
+
+/**
  * Extract the YAML frontmatter block (between the first two `---` lines).
  *
  * @param {string} filePath

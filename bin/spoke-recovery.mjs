@@ -14,6 +14,7 @@
 //   node bin/spoke-recovery.mjs --journal <path>
 //   node bin/spoke-recovery.mjs --journal <path> --expected "src/a.ts,src/b/**"
 //   node bin/spoke-recovery.mjs --journal <path> --test "core/retry" --json
+//   node bin/spoke-recovery.mjs --journal <path> --cwd ../m3l-automation-foo
 //
 // Flags:
 //   --journal <path>   Path to the spoke's scratchpad journal (required). A
@@ -29,6 +30,13 @@
 //                       since it can take minutes; the MCP tool wrapping this
 //                       script deliberately never sets it (see
 //                       bin/lib/mcp-tools.mjs's spoke_recover for why).
+//   --cwd <path>        Directory to run `git status`/`git diff`/the targeted
+//                       test in — defaults to this repo's own root. Pass the
+//                       linked worktree's path when recovering a spoke that
+//                       ran inside a `pnpm worktree:new` sibling checkout
+//                       (.claude/rules/subagent-dispatch.md directs the hub
+//                       to check the worktree, not this repo's root, in that
+//                       case).
 //   --json             Machine-readable single-line JSON payload on stdout
 //                       instead of the human summary block.
 //
@@ -60,6 +68,18 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 // recent progress without dumping an entire multi-hour journal into the
 // recommendation payload.
 const JOURNAL_TAIL_ENTRIES = 20;
+
+// Below this many total changed lines (git diff --stat's insertions +
+// deletions across modified files), a "resume" recommendation gets an
+// explicit hollow-work caveat — the incident this guards against
+// (docs/contributing/subagent-context-management.md's cooperative-
+// cancellation-seam case) had a spoke touch 5 files while changing
+// essentially nothing functional. Deliberately informational, not a hard
+// override: `git diff --stat` never reflects untracked/new files, so a
+// legitimate new-module dispatch can have a near-zero total here too — the
+// hub still makes the call, this just surfaces the signal it was silently
+// discarding.
+const HOLLOW_WORK_LINE_THRESHOLD = 3;
 
 // Generous — a targeted vitest run can still take a while under coverage or
 // on a cold cache; this is a deliberate CLI-only affordance (never wired
@@ -200,6 +220,30 @@ function gitDiffStat(cwd) {
     return { raw: "", error: message };
   }
   return { raw: res.stdout.trim(), error: null };
+}
+
+/**
+ * Parse `git diff --stat`'s trailing summary line (e.g. "5 files changed, 12
+ * insertions(+), 3 deletions(-)") into a total changed-line count. Only the
+ * summary line's insertions/deletions counts, not the per-file breakdown
+ * above it, matter here.
+ *
+ * @param {string} raw output of {@link gitDiffStat}
+ * @returns {number | null} total insertions + deletions, or null when `raw`
+ *   is empty or doesn't end in a recognizable summary line (e.g. a git
+ *   failure already reported via {@link gitDiffStat}'s `error`)
+ */
+export function summarizeDiffStatTotalLines(raw) {
+  const lines = raw.split("\n").filter((line) => line.trim().length > 0);
+  const summary = lines.at(-1);
+  if (summary === undefined) return null;
+  const insertions = summary.match(/(\d+) insertions?\(\+\)/);
+  const deletions = summary.match(/(\d+) deletions?\(-\)/);
+  if (insertions === null && deletions === null) return null;
+  return (
+    (insertions ? Number(insertions[1]) : 0) +
+    (deletions ? Number(deletions[1]) : 0)
+  );
 }
 
 /**
@@ -366,11 +410,24 @@ export function outstandingPending(entries) {
  * both green needs no recovery at all.
  *
  * @param {{ entries: ReturnType<typeof parseJournalEntries> }} journal
- * @param {{ modified: string[], untouchedExpected: string[], expectedGiven: boolean, expectedTotal: number, verified: boolean, error: string | null }} disk
+ * @param {{ modified: string[], untouchedExpected: string[], expectedGiven: boolean, expectedTotal: number, verified: boolean, error: string | null, diffStatTotalLines?: number | null }} disk
  * @param {ReturnType<typeof runTargetedTests> | null} tests
  * @returns {{ action: "resume" | "redispatch" | "none" | "unverifiable", punchList: string[], rationale: string }}
  */
 export function recommend(journal, disk, tests) {
+  // Below HOLLOW_WORK_LINE_THRESHOLD total changed lines, append a caveat
+  // rather than change the action — git diff --stat never reflects
+  // untracked/new files, so this is a signal for the hub to weigh, not a
+  // verdict this function can make on its own.
+  const hollowWorkCaveat =
+    typeof disk.diffStatTotalLines === "number" &&
+    disk.diffStatTotalLines <= HOLLOW_WORK_LINE_THRESHOLD
+      ? ` Caveat: git diff --stat shows only ${disk.diffStatTotalLines} ` +
+        "changed line(s) total across modified files (this excludes " +
+        "untracked/new files) — verify this isn't the hollow-work pattern " +
+        "(files touched, little or no functional change) before trusting " +
+        "the journal's progress claim."
+      : "";
   if (journal.entries.length === 0) {
     return {
       action: "redispatch",
@@ -440,7 +497,8 @@ export function recommend(journal, disk, tests) {
       rationale:
         "Work exists on disk and the journal shows progress, but the " +
         "targeted test run failed — resume the SAME spoke (not a fresh " +
-        "dispatch) with a punch-list scoped to what's still failing.",
+        "dispatch) with a punch-list scoped to what's still failing." +
+        hollowWorkCaveat,
     };
   }
 
@@ -452,7 +510,8 @@ export function recommend(journal, disk, tests) {
         "Journal shows verified partial progress and on-disk state " +
         "corroborates it (modified files present). Resume the SAME spoke " +
         "via SendMessage with the outstanding punch-list below — never a " +
-        "fresh dispatch, which would restart the turn budget from zero.",
+        "fresh dispatch, which would restart the turn budget from zero." +
+        hollowWorkCaveat,
     };
   }
 
@@ -465,7 +524,8 @@ export function recommend(journal, disk, tests) {
       rationale:
         "Journal shows no explicit outstanding items, but some --expected " +
         "paths are still untouched on disk — resume the SAME spoke to " +
-        "close that gap rather than assuming completion.",
+        "close that gap rather than assuming completion." +
+        hollowWorkCaveat,
     };
   }
 
@@ -475,7 +535,8 @@ export function recommend(journal, disk, tests) {
     rationale:
       "Journal shows no outstanding items, on-disk state corroborates it" +
       (tests !== null ? ", and the targeted test run passed" : "") +
-      " — no recovery action needed.",
+      " — no recovery action needed." +
+      hollowWorkCaveat,
   };
 }
 
@@ -486,6 +547,12 @@ async function main() {
   const journalPath = flagValue(argv, "--journal");
   const expectedRaw = flagValue(argv, "--expected");
   const testPattern = flagValue(argv, "--test");
+  // `.claude/rules/subagent-dispatch.md` directs the hub to check the
+  // WORKTREE a spoke ran in, not this repo's own root — a spoke dispatched
+  // inside a `pnpm worktree:new` sibling checkout has its on-disk state
+  // there, not here. Defaults to this repo's root (this script's own
+  // location) for the common single-checkout case.
+  const cwd = flagValue(argv, "--cwd") ?? root;
   const expected =
     expectedRaw !== undefined
       ? expectedRaw
@@ -552,14 +619,16 @@ async function main() {
   const tailEntries = entries.slice(-JOURNAL_TAIL_ENTRIES);
   const lastEntry = entries.at(-1) ?? null;
 
-  const { modified, error: statusError } = gitStatusPorcelain(root);
+  const { modified, error: statusError } = gitStatusPorcelain(cwd);
   if (statusError !== null) {
     reporter.warn(`git status --porcelain failed: ${statusError}`);
   }
-  const { raw: diffStat, error: diffError } = gitDiffStat(root);
+  const { raw: diffStat, error: diffError } = gitDiffStat(cwd);
   if (diffError !== null) {
     reporter.warn(`git diff --stat failed: ${diffError}`);
   }
+  const diffStatTotalLines =
+    diffError === null ? summarizeDiffStatTotalLines(diffStat) : null;
 
   const untouchedExpected = expected.filter(
     (pattern) => !modified.some((m) => matchesExpected(m, pattern)),
@@ -568,7 +637,7 @@ async function main() {
   let tests = null;
   if (testPattern !== undefined) {
     reporter.info(`Running targeted tests: pnpm vitest run ${testPattern} ...`);
-    tests = runTargetedTests(testPattern, root);
+    tests = runTargetedTests(testPattern, cwd);
   }
 
   const recommendation = recommend(
@@ -578,6 +647,7 @@ async function main() {
       untouchedExpected,
       expectedGiven: expected.length > 0,
       expectedTotal: expected.length,
+      diffStatTotalLines,
       verified: statusError === null,
       error: statusError,
     },
@@ -620,6 +690,7 @@ async function main() {
       modified,
       untouchedExpected,
       diffStat,
+      diffStatTotalLines,
       verified: statusError === null,
       error: statusError,
     },

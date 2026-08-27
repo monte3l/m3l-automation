@@ -201,6 +201,13 @@ two pipelines stay consistent:
 - **If `aws/`, secrets, credentials, or logging paths changed:** also
   `security-reviewer`
 
+Hand each dispatched reviewer an explicit scratchpad path (e.g.
+`<scratchpad>/<agent-name>-<target>.md`) alongside its file list — every
+review spoke's bounded-output contract only spills full findings and returns
+a capped digest when it has a path to write to; leaving it to each spoke's
+own fallback default makes the digest pattern accidental rather than
+deliberate.
+
 If the diff contains **only docs/automation changes** (no `src/**` files),
 dispatch `docs-consistency-reviewer` instead.
 

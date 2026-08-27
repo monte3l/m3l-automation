@@ -263,6 +263,13 @@ ADR-0013 (its durable home), not a per-plan caveat.
    **Must-fix** items back to `code-implementer`, and re-run tests/review
    until clean.
 
+   **Hand each reviewer an explicit scratchpad path** (e.g.
+   `<scratchpad>/<agent-name>-<module>.md`) alongside its file list — every
+   review spoke's bounded-output contract only spills full findings and
+   returns a capped digest when it has a path to write to; leaving it to each
+   spoke's own fallback default makes the digest pattern accidental rather
+   than deliberate.
+
    **Re-review every substantive fix round with a bounded confirmation pass.**
    A fix round is new writer code with no reviewer between it and the commit —
    post-review fix batches introduced fresh Must-fix defects in at least four
