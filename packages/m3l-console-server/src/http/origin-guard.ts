@@ -15,7 +15,7 @@ import { M3LConsoleError } from "../errors/console-error.js";
 import { isLoopbackHost, unwrapBracketedHost } from "../net/loopback.js";
 import type { M3LConsoleHandler, M3LConsoleMiddleware } from "./middleware.js";
 import type { M3LRequestContext } from "./context.js";
-import type { M3LConsoleResponse } from "./respond.js";
+import type { M3LConsoleResult } from "./stream-response.js";
 
 /** The literal string a sandboxed/`file://` origin sends — not a nullish value. */
 const NULL_ORIGIN = "null";
@@ -172,7 +172,7 @@ export function createOriginGuard(): M3LConsoleMiddleware {
   return (
     ctx: M3LRequestContext,
     next: M3LConsoleHandler,
-  ): Promise<M3LConsoleResponse> | M3LConsoleResponse => {
+  ): Promise<M3LConsoleResult> | M3LConsoleResult => {
     assertLoopbackHost(ctx.headers);
     assertLoopbackOriginIfPresent(ctx.headers);
     return next(ctx);

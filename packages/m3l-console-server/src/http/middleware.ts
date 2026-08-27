@@ -8,11 +8,14 @@
 
 import type { M3LRequestContext } from "./context.js";
 import { M3LConsoleError } from "../errors/console-error.js";
-import type { M3LConsoleResponse } from "./respond.js";
+import type { M3LConsoleResult } from "./stream-response.js";
 
 /**
- * A route's terminal request handler: builds the {@link M3LConsoleResponse}
- * for a request context. May be synchronous or asynchronous.
+ * A route's terminal request handler: builds the {@link M3LConsoleResult}
+ * (a buffered response or a stream, X4 ADR-0066) for a request context. May
+ * be synchronous or asynchronous. Every existing handler already returns a
+ * plain buffered response, which is assignable to `M3LConsoleResult`
+ * unchanged.
  *
  * @example
  * ```ts
@@ -25,27 +28,27 @@ import type { M3LConsoleResponse } from "./respond.js";
  */
 export type M3LConsoleHandler = (
   ctx: M3LRequestContext,
-) => Promise<M3LConsoleResponse> | M3LConsoleResponse;
+) => Promise<M3LConsoleResult> | M3LConsoleResult;
 
 /**
  * One layer of the request pipeline's onion: receives the context and the
  * next handler in the chain (either the next middleware or, at the
  * innermost layer, the matched route's own handler), and either calls
  * `next` to continue the chain or short-circuits by returning its own
- * response.
+ * result.
  *
  * @example
  * ```ts
  * const logging: M3LConsoleMiddleware = async (ctx, next) => {
- *   const response = await next(ctx);
- *   return response;
+ *   const result = await next(ctx);
+ *   return result;
  * };
  * ```
  */
 export type M3LConsoleMiddleware = (
   ctx: M3LRequestContext,
   next: M3LConsoleHandler,
-) => Promise<M3LConsoleResponse> | M3LConsoleResponse;
+) => Promise<M3LConsoleResult> | M3LConsoleResult;
 
 /**
  * Wraps `handler` in a single middleware layer, guarding against `next`
