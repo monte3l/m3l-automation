@@ -153,6 +153,94 @@ describe("createHealthRoutes — GET /ready (readiness)", () => {
   });
 });
 
+// =============================================================================
+// X3 console-persistence (issue #551, ADR-0069) — readiness reports store
+// health via a structural probe declared inside `http/routes/health.ts`
+// (`M3LReadinessProbe`, `{ readonly isOpen: boolean }`), never through an
+// import of `M3LConsoleStoreHandle` — an `http -> store` ESLint zone edge
+// must never exist. `HealthRouteOptions` does not yet accept a `store` field,
+// so every case below is RED until it does.
+// =============================================================================
+
+describe("createHealthRoutes — GET /ready reports store health via a structural probe", () => {
+  test("returns 503 { status: 'unavailable' } when the store probe reports isOpen: false — not 'degraded', and discloses no schemaVersion", async () => {
+    const drain = createDrainController({ timeoutMs: 1_000 });
+    const routes = createHealthRoutes({
+      drain,
+      startedAt: 0,
+      store: { isOpen: false },
+    });
+
+    const response = await runRoute(
+      findRoute(routes, "GET", "/ready"),
+      "/ready",
+    );
+
+    expect(response.status).toBe(503);
+    const body = parseBody(response);
+    expect(body["status"]).toBe("unavailable");
+    expect(body).not.toHaveProperty("schemaVersion");
+  });
+
+  test("still returns 200 'ready' when the store probe reports isOpen: true and the drain is serving", async () => {
+    const drain = createDrainController({ timeoutMs: 1_000 });
+    const routes = createHealthRoutes({
+      drain,
+      startedAt: 0,
+      store: { isOpen: true },
+    });
+
+    const response = await runRoute(
+      findRoute(routes, "GET", "/ready"),
+      "/ready",
+    );
+
+    expect(response.status).toBe(200);
+    expect(parseBody(response)["status"]).toBe("ready");
+  });
+});
+
+describe("createHealthRoutes — GET /health stays 200 unconditionally, even with a closed store", () => {
+  test("returns 200 'ok' when the store probe reports isOpen: false — an orchestrator that sees liveness fail kills the process mid-drain", async () => {
+    const drain = createDrainController({ timeoutMs: 1_000 });
+    const routes = createHealthRoutes({
+      drain,
+      startedAt: 0,
+      store: { isOpen: false },
+    });
+
+    const response = await runRoute(
+      findRoute(routes, "GET", "/health"),
+      "/health",
+    );
+
+    expect(response.status).toBe(200);
+    expect(parseBody(response)["status"]).toBe("ok");
+  });
+});
+
+describe("createHealthRoutes — existing draining behaviour is unchanged by the store probe", () => {
+  test("GET /ready still returns 503 'draining' while draining, even when the store probe reports isOpen: true", async () => {
+    const drain = createDrainController({ timeoutMs: 1_000 });
+    const routes = createHealthRoutes({
+      drain,
+      startedAt: 0,
+      store: { isOpen: true },
+    });
+
+    void drain.drain();
+    expect(drain.state).toBe("draining");
+
+    const response = await runRoute(
+      findRoute(routes, "GET", "/ready"),
+      "/ready",
+    );
+
+    expect(response.status).toBe(503);
+    expect(parseBody(response)["status"]).toBe("draining");
+  });
+});
+
 describe("createHealthRoutes — no posture disclosure on a pre-auth surface", () => {
   test("neither /health's nor /ready's serialized body carries the operator name, email, host, port, or a version string", async () => {
     const drain = createDrainController({ timeoutMs: 1_000 });

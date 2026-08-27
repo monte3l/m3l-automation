@@ -1,6 +1,6 @@
 /**
  * Tests for src/http/envelope.ts — `httpStatusForCode`, `errorEnvelope`, and
- * `errorResponse` (m3l-console-server X2b contract, wave 1).
+ * `errorResponse` (m3l-console-server X2b/X2c/X3-A1 contract).
  *
  * Security-critical: only an `M3LConsoleError`'s own message ever reaches
  * the envelope. Every other value — a foreign `Core.M3LError`, a plain
@@ -27,45 +27,143 @@ const GENERIC_MESSAGE = "An unexpected error occurred.";
 /** The status every non-M3LConsoleError value maps to. */
 const INTERNAL_STATUS = 500;
 
-/** The documented code -> HTTP status table from the X2b/X2c contract. */
-const STATUS_TABLE: readonly (readonly [M3LConsoleErrorCode, number])[] = [
-  ["ERR_CONSOLE_BAD_REQUEST", 400],
-  ["ERR_CONSOLE_UNAUTHENTICATED", 401],
-  ["ERR_CONSOLE_NOT_FOUND", 404],
-  ["ERR_CONSOLE_METHOD_NOT_ALLOWED", 405],
-  ["ERR_CONSOLE_CONFIG_INVALID", INTERNAL_STATUS],
-  ["ERR_CONSOLE_INTERNAL", INTERNAL_STATUS],
-  ["ERR_CONSOLE_ROUTE_CONFLICT", INTERNAL_STATUS],
-  ["ERR_CONSOLE_DRAIN_FAILED", INTERNAL_STATUS],
-  ["ERR_CONSOLE_LISTEN_FAILED", INTERNAL_STATUS],
-  ["ERR_CONSOLE_UNAVAILABLE", 503],
-];
+/** One code's expected classification, mirroring `ErrorClassification`. */
+interface ExpectedClassification {
+  readonly status: number;
+  readonly origin: Core.M3LErrorOrigin;
+  readonly retryable: Core.M3LErrorRetryable;
+  readonly fault: boolean;
+}
 
 /**
- * The documented code -> classified origin/retryable table (X2b/X2c): every
- * code a caller-triggered failure (4xx) classifies as `"caller"`; every
- * library-side failure (the remaining 500s) classifies as `"library"`.
- * `ERR_CONSOLE_UNAVAILABLE` is the first row whose `retryable` is not
- * `false` — it is `origin: "library"` (the caller did nothing wrong) but
- * `retryable: true` (a drained server can succeed on a later attempt).
- * Every other code is `retryable: false`.
+ * The documented code -> classification table (X2b/X2c/X3-A1), typed as a
+ * `Record` keyed by the full `M3LConsoleErrorCode` union so a missing row is
+ * a compile error here too — the same exhaustiveness discipline
+ * `CLASSIFICATION_BY_CODE` itself uses. Every `test.each` block below is
+ * derived from this single table via `CLASSIFICATION_ENTRIES`, so the next
+ * code addition fails to compile in this file instead of silently going
+ * unexercised.
+ *
+ * Two divergences between `retryable` and `fault` exist, in opposite
+ * directions: `ERR_CONSOLE_UNAVAILABLE` is `retryable: true, fault: false` (a
+ * drain refusal — expected shutdown, not a fault); `ERR_CONSOLE_STORE_BUSY`
+ * is `retryable: true, fault: true` (a `SQLITE_BUSY` that survived the busy
+ * handler means ADR-0069's single-writer invariant broke — genuinely
+ * retryable, and genuinely worth an error-level line). See the dedicated
+ * divergence tests below for both.
  */
-const ORIGIN_TABLE: readonly (readonly [
+const CLASSIFICATION_TABLE: Record<
   M3LConsoleErrorCode,
-  Core.M3LErrorOrigin,
-  Core.M3LErrorRetryable,
-])[] = [
-  ["ERR_CONSOLE_BAD_REQUEST", "caller", false],
-  ["ERR_CONSOLE_UNAUTHENTICATED", "caller", false],
-  ["ERR_CONSOLE_NOT_FOUND", "caller", false],
-  ["ERR_CONSOLE_METHOD_NOT_ALLOWED", "caller", false],
-  ["ERR_CONSOLE_CONFIG_INVALID", "library", false],
-  ["ERR_CONSOLE_INTERNAL", "library", false],
-  ["ERR_CONSOLE_ROUTE_CONFLICT", "library", false],
-  ["ERR_CONSOLE_DRAIN_FAILED", "library", false],
-  ["ERR_CONSOLE_LISTEN_FAILED", "library", false],
-  ["ERR_CONSOLE_UNAVAILABLE", "library", true],
-];
+  ExpectedClassification
+> = {
+  ERR_CONSOLE_BAD_REQUEST: {
+    status: 400,
+    origin: "caller",
+    retryable: false,
+    fault: false,
+  },
+  ERR_CONSOLE_UNAUTHENTICATED: {
+    status: 401,
+    origin: "caller",
+    retryable: false,
+    fault: false,
+  },
+  ERR_CONSOLE_NOT_FOUND: {
+    status: 404,
+    origin: "caller",
+    retryable: false,
+    fault: false,
+  },
+  ERR_CONSOLE_METHOD_NOT_ALLOWED: {
+    status: 405,
+    origin: "caller",
+    retryable: false,
+    fault: false,
+  },
+  ERR_CONSOLE_CONFIG_INVALID: {
+    status: INTERNAL_STATUS,
+    origin: "library",
+    retryable: false,
+    fault: true,
+  },
+  ERR_CONSOLE_INTERNAL: {
+    status: INTERNAL_STATUS,
+    origin: "library",
+    retryable: false,
+    fault: true,
+  },
+  ERR_CONSOLE_ROUTE_CONFLICT: {
+    status: INTERNAL_STATUS,
+    origin: "library",
+    retryable: false,
+    fault: true,
+  },
+  ERR_CONSOLE_DRAIN_FAILED: {
+    status: INTERNAL_STATUS,
+    origin: "library",
+    retryable: false,
+    fault: true,
+  },
+  ERR_CONSOLE_LISTEN_FAILED: {
+    status: INTERNAL_STATUS,
+    origin: "library",
+    retryable: false,
+    fault: true,
+  },
+  ERR_CONSOLE_UNAVAILABLE: {
+    status: 503,
+    origin: "library",
+    retryable: true,
+    fault: false,
+  },
+  ERR_CONSOLE_STORE_UNSUPPORTED: {
+    status: INTERNAL_STATUS,
+    origin: "library",
+    retryable: false,
+    fault: true,
+  },
+  ERR_CONSOLE_STORE_OPEN_FAILED: {
+    status: INTERNAL_STATUS,
+    origin: "library",
+    retryable: false,
+    fault: true,
+  },
+  ERR_CONSOLE_STORE_QUERY_FAILED: {
+    status: INTERNAL_STATUS,
+    origin: "library",
+    retryable: false,
+    fault: true,
+  },
+  ERR_CONSOLE_STORE_BUSY: {
+    status: 503,
+    origin: "library",
+    retryable: true,
+    fault: true,
+  },
+  ERR_CONSOLE_STORE_CLOSED: {
+    status: 503,
+    origin: "library",
+    retryable: false,
+    fault: true,
+  },
+};
+
+// `Object.entries` widens the key to `string`; `CLASSIFICATION_TABLE`'s
+// `Record` type already guarantees its keys are exhaustively
+// `M3LConsoleErrorCode` (a missing/extra key is a compile error at the
+// declaration above), so this cast only restores that narrowing — it does
+// not weaken any check the `Record` type performs.
+const CLASSIFICATION_ENTRIES = Object.entries(CLASSIFICATION_TABLE) as [
+  M3LConsoleErrorCode,
+  ExpectedClassification,
+][];
+
+const NON_FAULT_CODES = CLASSIFICATION_ENTRIES.filter(
+  ([, expected]) => !expected.fault,
+).map(([code]) => code);
+const FAULT_CODES = CLASSIFICATION_ENTRIES.filter(
+  ([, expected]) => expected.fault,
+).map(([code]) => code);
 
 /** Recursively asserts no object in `value`'s graph carries a `stack` key. */
 function assertNoStackKey(value: unknown): void {
@@ -82,22 +180,25 @@ function assertNoStackKey(value: unknown): void {
 }
 
 describe("httpStatusForCode", () => {
-  test.each(STATUS_TABLE)("maps %s to status %i", (code, status) => {
-    expect(httpStatusForCode(code)).toBe(status);
-  });
+  test.each(CLASSIFICATION_ENTRIES)(
+    "maps %s to status %i",
+    (code, expected) => {
+      expect(httpStatusForCode(code)).toBe(expected.status);
+    },
+  );
 });
 
 describe("errorEnvelope — M3LConsoleError", () => {
-  test.each(STATUS_TABLE)(
+  test.each(CLASSIFICATION_ENTRIES)(
     "uses the mapped status, the error's own code, and the error's own message for %s",
-    (code, status) => {
+    (code, expected) => {
       const error = new M3LConsoleError(code, `failure detail for ${code}`);
 
       const envelope = errorEnvelope(error, "corr-1");
 
       expect(envelope.error.code).toBe(code);
       expect(envelope.error.message).toBe(`failure detail for ${code}`);
-      expect(envelope.error.status).toBe(status);
+      expect(envelope.error.status).toBe(expected.status);
       expect(envelope.error.correlationId).toBe("corr-1");
     },
   );
@@ -112,19 +213,42 @@ describe("errorEnvelope — M3LConsoleError", () => {
 });
 
 describe("errorEnvelope — classified origin/retryable per code (always defined via CLASSIFICATION_BY_CODE)", () => {
-  test.each(ORIGIN_TABLE)(
-    "classifies %s as origin=%s, retryable=%s, with both keys present",
-    (code, origin, retryable) => {
+  test.each(CLASSIFICATION_ENTRIES)(
+    "classifies %s with the mapped origin/retryable, both keys present",
+    (code, expected) => {
       const error = new M3LConsoleError(code, "message");
 
       const envelope = errorEnvelope(error, "corr-classification");
 
-      expect(envelope.error.origin).toBe(origin);
-      expect(envelope.error.retryable).toBe(retryable);
+      expect(envelope.error.origin).toBe(expected.origin);
+      expect(envelope.error.retryable).toBe(expected.retryable);
       expect(Object.hasOwn(envelope.error, "origin")).toBe(true);
       expect(Object.hasOwn(envelope.error, "retryable")).toBe(true);
     },
   );
+});
+
+describe("errorEnvelope — ERR_CONSOLE_STORE_BUSY diverges from ERR_CONSOLE_UNAVAILABLE", () => {
+  // ERR_CONSOLE_UNAVAILABLE is retryable:true, fault:false (a drain refusal —
+  // expected shutdown, the caller did nothing wrong and the server isn't
+  // malfunctioning). ERR_CONSOLE_STORE_BUSY diverges the OTHER way: a
+  // SQLITE_BUSY that survived the busy handler means ADR-0069's
+  // single-writer invariant is broken — genuinely retryable (a later attempt
+  // may find the writer free again) AND genuinely a fault worth an
+  // error-level diagnostic line, unlike an ordinary drain.
+  test("[origin/retryable/fault divergence] is retryable=true AND fault=true, unlike ERR_CONSOLE_UNAVAILABLE's fault=false", () => {
+    const error = new M3LConsoleError(
+      "ERR_CONSOLE_STORE_BUSY",
+      "SQLITE_BUSY persisted past the busy handler timeout",
+    );
+
+    const envelope = errorEnvelope(error, "corr-store-busy");
+
+    expect(envelope.error.status).toBe(503);
+    expect(envelope.error.origin).toBe("library");
+    expect(envelope.error.retryable).toBe(true);
+    expect(isFaultError(error)).toBe(true);
+  });
 });
 
 describe("classificationForCode — fallback for a code outside the union", () => {
@@ -328,27 +452,20 @@ describe("errorResponse", () => {
 describe("isFaultError", () => {
   // isFaultError replaces isCallerOriginError with the inverted sense, gated
   // on ErrorClassification's new `fault` field rather than on `origin`.
-  // Every caller-origin row is `fault: false`, and so is
-  // ERR_CONSOLE_UNAVAILABLE (library-origin but not a fault — see the
-  // dedicated divergence test below); every other row, plus a non-console
-  // value, is a fault.
-  test.each<M3LConsoleErrorCode>([
-    "ERR_CONSOLE_BAD_REQUEST",
-    "ERR_CONSOLE_UNAUTHENTICATED",
-    "ERR_CONSOLE_NOT_FOUND",
-    "ERR_CONSOLE_METHOD_NOT_ALLOWED",
-    "ERR_CONSOLE_UNAVAILABLE",
-  ])("returns false for the non-fault code %s", (code) => {
-    expect(isFaultError(new M3LConsoleError(code, "message"))).toBe(false);
-  });
+  // Derived from CLASSIFICATION_TABLE via NON_FAULT_CODES/FAULT_CODES, so a
+  // new code's fault decision is exercised here automatically. Every
+  // caller-origin row is `fault: false`, and so is ERR_CONSOLE_UNAVAILABLE
+  // (library-origin but not a fault); every other row, plus a non-console
+  // value, is a fault — including ERR_CONSOLE_STORE_BUSY, whose divergence
+  // from ERR_CONSOLE_UNAVAILABLE is covered by a dedicated test above.
+  test.each(NON_FAULT_CODES)(
+    "returns false for the non-fault code %s",
+    (code) => {
+      expect(isFaultError(new M3LConsoleError(code, "message"))).toBe(false);
+    },
+  );
 
-  test.each<M3LConsoleErrorCode>([
-    "ERR_CONSOLE_CONFIG_INVALID",
-    "ERR_CONSOLE_INTERNAL",
-    "ERR_CONSOLE_ROUTE_CONFLICT",
-    "ERR_CONSOLE_DRAIN_FAILED",
-    "ERR_CONSOLE_LISTEN_FAILED",
-  ])("returns true for the fault code %s", (code) => {
+  test.each(FAULT_CODES)("returns true for the fault code %s", (code) => {
     expect(isFaultError(new M3LConsoleError(code, "message"))).toBe(true);
   });
 

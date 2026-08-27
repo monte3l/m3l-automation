@@ -287,12 +287,21 @@ if (!hasConsoleServerImportBoundary) {
 // address actually bound) and http/ (the Host/Origin rebinding guard). Its
 // row asserts an except set of exactly ["net"] so it can never quietly grow
 // an inbound edge and stop being a leaf.
+//
+// `store` (ADR-0069) is asserted at exactly ["store", "errors"] for the same
+// reason, in both directions: `store` is absent from every other row's except
+// set, so nothing outside store/ can reach it today. The exact-length check is
+// what makes widening either side a deliberate act — adding `config` to
+// store/'s except (letting persistence re-read the environment), or adding
+// `store` to http/'s (handing every request handler a direct SQL seam), each
+// fails here until this table is edited in the same PR that argues for it.
 const CONSOLE_SERVER_LAYERS = [
   ["net", ["net"]],
   ["errors", ["errors"]],
   ["config", ["config", "errors", "net"]],
   ["auth", ["auth", "errors"]],
   ["lifecycle", ["lifecycle", "errors", "net"]],
+  ["store", ["store", "errors"]],
   ["http", ["http", "errors", "auth", "lifecycle", "net"]],
 ];
 

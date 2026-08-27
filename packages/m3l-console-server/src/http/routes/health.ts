@@ -22,7 +22,7 @@
  * `http/drain-middleware.ts`'s TSDoc for the full rationale.
  *
  * With today's shutdown ordering — `drain()` then `server.close()`, run
- * back to back in `main.ts`'s `runShutdownSequence` — a client normally
+ * back to back in `lifecycle/shutdown.ts`'s `runShutdownSequence` — a client normally
  * does not see that 503 body. `close()` sweeps idle connections at the
  * moment it is called, so a request racing the drain gets a connection
  * error instead of a response: measured on Node v26.7.0, both a brand-new
@@ -53,6 +53,21 @@ const STATUS_SERVICE_UNAVAILABLE = 503;
 const STATUS_OK = 200;
 
 /**
+ * The structural shape `/ready` needs from a console store: nothing more
+ * than `isOpen`. Declared here, rather than imported from `store/store.ts`,
+ * so wiring store health into readiness never creates an `http -> store`
+ * ESLint zone edge — `M3LConsoleStoreHandle` satisfies this structurally.
+ *
+ * @example
+ * ```ts
+ * const probe: M3LReadinessProbe = { isOpen: true };
+ * ```
+ */
+interface M3LReadinessProbe {
+  readonly isOpen: boolean;
+}
+
+/**
  * Constructor options for {@link createHealthRoutes}.
  *
  * @example
@@ -70,6 +85,16 @@ export interface HealthRouteOptions {
   readonly startedAt: number;
   /** Injectable clock; defaults to `Date.now`. */
   readonly now?: () => number;
+  /**
+   * Optional store-health probe. When supplied and `isOpen` is `false`,
+   * `/ready` reports 503 `{ status: "unavailable" }` — never `"degraded"`,
+   * and never carrying `schemaVersion`, since `/ready` is a pre-auth,
+   * unauthenticated surface (see this module's headline TSDoc on posture
+   * disclosure). `/health` never reads this — liveness must stay 200
+   * regardless of store state, or an orchestrator kills the process
+   * mid-drain.
+   */
+  readonly store?: M3LReadinessProbe;
 }
 
 /**
@@ -98,13 +123,18 @@ function buildHealthHandler(options: HealthRouteOptions): M3LConsoleHandler {
 function buildReadyHandler(options: HealthRouteOptions): M3LConsoleHandler {
   const now = options.now ?? Date.now;
   return () => {
-    if (options.drain.state === "serving") {
-      return jsonResponse(STATUS_OK, {
-        status: "ready",
-        uptimeMs: now() - options.startedAt,
+    if (options.drain.state !== "serving") {
+      return jsonResponse(STATUS_SERVICE_UNAVAILABLE, { status: "draining" });
+    }
+    if (options.store?.isOpen === false) {
+      return jsonResponse(STATUS_SERVICE_UNAVAILABLE, {
+        status: "unavailable",
       });
     }
-    return jsonResponse(STATUS_SERVICE_UNAVAILABLE, { status: "draining" });
+    return jsonResponse(STATUS_OK, {
+      status: "ready",
+      uptimeMs: now() - options.startedAt,
+    });
   };
 }
 
@@ -116,7 +146,9 @@ function buildReadyHandler(options: HealthRouteOptions): M3LConsoleHandler {
  * bind host or port, or a version string — a pre-auth endpoint reachable by
  * anything that can open a TCP connection is not a posture-disclosure
  * surface, and every field beyond a bare status/uptime would leak
- * information to an unauthenticated caller for no operational benefit.
+ * information to an unauthenticated caller for no operational benefit. The
+ * same rule covers store health: a closed store reports the bare
+ * `{ status: "unavailable" }`, never the store's `schemaVersion`.
  *
  * @param options - See {@link HealthRouteOptions}.
  * @returns The two-route table, ready to register ahead of every other

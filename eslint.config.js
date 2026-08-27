@@ -558,6 +558,7 @@ export default tseslint.config(
       //   config    -> errors
       //   auth      -> errors
       //   lifecycle -> errors, net
+      //   store     -> errors                        (persistence; ADR-0069)
       //   http      -> errors, auth, lifecycle, net  (transport; NOT config)
       //   main.ts   -> everything                    (composition root)
       //
@@ -574,6 +575,16 @@ export default tseslint.config(
       // never re-read the environment mid-flight. `main.ts` is in no zone's
       // `target`, so it may import anything; it is in no zone's `except`, so
       // nothing may import IT — the composition root stays a sink.
+      //
+      // `store` (ADR-0069) is deliberately NOT in `http`'s `except`: `http`
+      // may import `lifecycle`, so putting persistence there would hand every
+      // request handler a direct SQL seam — the exact inverse of ADR-0065's
+      // "modules speak only to typed repositories". `/ready` reports store
+      // health through a structural probe declared inside `http/routes/`
+      // instead, which needs no import and no edge. A later row that genuinely
+      // serves store-backed data widens this with its own justification.
+      // `store` appears in no other zone's `except` either, so `config`,
+      // `auth`, `lifecycle` and `http` all already cannot reach it.
       "import-x/no-restricted-paths": [
         "error",
         {
@@ -612,6 +623,13 @@ export default tseslint.config(
               except: ["lifecycle", "errors", "net"],
               message:
                 "console-server: lifecycle/ may import only errors/ and net/ (ADR-0065). Drain timeouts and bind addresses arrive as arguments from main.ts; net/ is what lets the listener re-assert loopback against the address it actually bound.",
+            },
+            {
+              target: "./packages/m3l-console-server/src/store",
+              from: "./packages/m3l-console-server/src",
+              except: ["store", "errors"],
+              message:
+                "console-server: store/ may import only errors/ (ADR-0065, ADR-0069). It receives its resolved database path and busy timeout from main.ts rather than reading config itself, and `store/sqlite-driver.ts` is the single module allowed to import node:sqlite — the seam ADR-0069's recorded fallbacks (a packaged sqlite dependency, or a degraded JSONL-only mode) replace.",
             },
             {
               target: "./packages/m3l-console-server/src/http",

@@ -22,6 +22,12 @@ coverage/
 data/output/*
 !data/output/.gitkeep
 
+# Console server's embedded SQLite store (ADR-0069). Ignored at DIRECTORY
+# level rather than as `*.sqlite`: WAL mode creates `-wal`/`-shm` sidecars
+# alongside the main file, and a committed `-wal` is a corrupt-restore hazard
+# — it would be replayed against a database it does not belong to.
+data/console/
+
 # Skill eval workspaces (generated artefacts from skill-creator runs)
 .claude/skills/*/**-workspace/
 
