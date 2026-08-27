@@ -351,6 +351,11 @@ export const COMMAND_CATALOG = [
       "Renders the ADR-0032 visibility-hub dashboard (dist/index.html) from docs/ROADMAP.md, docs/plans/IMPLEMENTATION.md, and docs/implementation-status.md. Run to preview the hub locally after editing a tracker table.",
   },
   {
+    name: "notify:main-health",
+    description:
+      'Opens, updates, or closes the single "main is red" tracking issue from a workflow_run event on CI or Pages. Invoked by .github/workflows/main-health.yml only — needs WORKFLOW_NAME/RUN_URL/HEAD_SHA/CONCLUSION env vars from a real workflow_run payload, so not meaningfully runnable by hand.',
+  },
+  {
     name: "check:index",
     description:
       "Verifies docs/reference/catalog.json, symbol-map.json, and the README catalog block are current against docs/reference/ + the provenance sidecars. Run after gen:index.",

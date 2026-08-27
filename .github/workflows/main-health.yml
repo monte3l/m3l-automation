@@ -1,0 +1,72 @@
+# Opens, updates, or closes a single tracking issue when CI or Pages fails
+# (or recovers) on `main`. Neither watched workflow can alert on itself going
+# red — this closes the gap seven consecutive red pushes over 2.5 hours went
+# unremarked by any automation before this (2026-08-26). `hub-alarm`
+# (ci.yml, ADR-0079) deliberately does NOT trigger this: it carries
+# `continue-on-error: true`, so a workflow_run event for the parent `CI` run
+# still reports `success` even when hub-alarm itself failed — that is by
+# design (a non-blocking alarm, not a required check), not a gap this
+# workflow needs to separately cover.
+#
+# No pnpm install: bin/notify-main-health.mjs and bin/lib/main-health.mjs use
+# only node builtins plus each other and bin/lib/report.mjs (also
+# dependency-free), and shell out to `gh`.
+name: Main health
+
+on:
+  workflow_run:
+    workflows: [CI, Pages]
+    types: [completed]
+
+permissions:
+  contents: read
+  issues: write
+
+# CI and Pages both run on every push to main — if both fail on one push,
+# two workflow_run completed events fire two notify jobs. Without this, both
+# could concurrently see "no existing tracking issue" and both create one,
+# leaving a permanent duplicate that findTrackingIssue's single-match lookup
+# can never fully reconcile. Queuing (not cancelling) the second run means
+# it re-reads live issue state AFTER the first run's write lands, so it
+# correctly finds the issue the first run just created instead of racing it.
+concurrency:
+  group: main-health
+  cancel-in-progress: false
+
+jobs:
+  notify:
+    # head_branch alone is NOT a trust boundary: it is only a branch-name
+    # string scoped to head_repository, which can be a fork — an ordinary
+    # PR from a fork whose own default branch is literally `main` (the
+    # git/GitHub default since ~2020, no malicious intent required)
+    # produces a workflow_run completed event with head_branch == 'main'
+    # even though the run was against the fork, not this repo's real
+    # `main`. Given this job's `issues: write` permission, that PR run's
+    # conclusion could otherwise spuriously open/comment on — or, worse,
+    # silently close — the real tracking issue. Both conditions below are
+    # required: `event == 'push'` rules out every pull_request-triggered
+    # run of CI/Pages (a fork PR run always reports `event ==
+    # 'pull_request'`), and the repository-identity check rules out a push
+    # to a fork's own `main`, which `event == 'push'` alone would not.
+    if: |
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+
+      - name: Notify main health
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          WORKFLOW_NAME: ${{ github.event.workflow_run.name }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          RUN_UPDATED_AT: ${{ github.event.workflow_run.updated_at }}
+        run: node bin/notify-main-health.mjs

@@ -128,7 +128,7 @@ reads, passing test output) over any of the above.
 
 ## CI/CD
 
-Seven GitHub Actions workflows in `.github/workflows/` (plus Dependabot).
+Eight GitHub Actions workflows in `.github/workflows/` (plus Dependabot).
 Full table — triggers, purpose, required status checks:
 `docs/contributing/ci-cd.md`.
 
