@@ -39,6 +39,7 @@ the transcript.
 | `claude-rc.service` `MemoryMax`+`OOMPolicy=kill`                | Bounds this host's remote-control unit specifically, if present                                                                                                                                                                                                    | `claude-rc-run` restarts in an infinite loop with no memory ceiling of its own today — a runaway session there currently takes the whole box down instead of just that unit. No-op on a host without this unit.                                                                                                                                                                                |
 | `CLAUDE_CODE_TOOL_MEMORY_LIMIT` (`.claude/settings.local.json`) | Anthropic's own memory cgroup over a session's Bash-tool subprocesses                                                                                                                                                                                              | The purpose-built official fix (v2.1.233+, Linux/WSL only) — "so one runaway build can't take the memory the rest of the session needs." Written to `settings.local.json` (gitignored), never the repo-tracked `settings.json`, because the recommended value is derived from _this host's_ RAM and would be wrong for every other contributor's machine.                                      |
 | `CLAUDE_CODE_NO_FLICKER=1` (`.claude/settings.json`)            | Keeps the client's render tree — and memory — flat over a long session                                                                                                                                                                                             | Safe for every host (no per-machine tradeoff), so it's set once in the shared, repo-tracked settings.                                                                                                                                                                                                                                                                                          |
+| `lefthook-local.yml` `pre-push: parallel: false`                | Forces the entire `pre-push` run serial when total RAM is under 20 GiB                                                                                                                                                                                             | `test`/`typecheck`/`build-exports` each cap their own internal fan-out (turbo/vitest, both 50%, see below), but three already-capped heavy processes can still stack on a small box. Lefthook's own documented [local-override mechanism](https://lefthook.dev/examples/lefthook-local) — gitignored, never edits the shared `lefthook.yml`.                                                   |
 
 ## Known caveat: silent kills
 
@@ -59,6 +60,31 @@ the OS and each session's own ~1 GiB non-tool overhead (client + stdio MCP
 server + hook/statusLine burst). Nothing here is a single hardcoded number for
 all machines — re-run the script (dry-run first) after a RAM upgrade or a
 change in how many sessions you actually run at once.
+
+## Repo-side mitigations (no setup script needed — already in the tracked config)
+
+These land as part of the checked-in repo, not the per-host setup script:
+
+- **`turbo.json`'s `concurrency: "50%"`** — `build`/`typecheck` defaulted to 10
+  concurrent tasks across 19 workspace packages with no `concurrency` key set,
+  2.5x oversubscribing a 4-core host. A percentage scales with whatever host
+  runs it.
+- **`vitest.config.ts` / `vitest.bin.config.ts` / `vitest.integration.config.ts`'s
+  `maxWorkers: "50%"`** — each config previously relied on Vitest's own default
+  (`availableParallelism() - 1`, i.e. nearly every core).
+- **`lefthook.yml`'s merged `checks` lane** — the eight sub-second `check:*`
+  gates (`verify-signed-range`, `check:control-chars`, `check:file-budget`,
+  `check:agents`, `check:script-docs`, `check:cli-docs`, `check:review-size`,
+  `check:context-budget`) run as one chained lane instead of eight separate
+  concurrent lefthook processes — 13 pre-push lanes down to 6, at no wall-clock
+  cost (none of the eight was ever on the critical path).
+- **Pinned `statusLine`** — `npx -y ccstatusline@latest` (user-level
+  `~/.claude/settings.json`, not repo-tracked) re-resolves the npm registry and
+  spawns a fresh `npm exec` supervisor on every render; pin it to a real
+  install instead: `npm install -g ccstatusline@<version>` then
+  `"command": "$(which ccstatusline)"` (or the resolved absolute path) in
+  `statusLine`. This is a per-operator fix, not something `setup-host-resources.mjs`
+  can apply — it lives outside the repo entirely.
 
 ## Recommended hardware floor
 

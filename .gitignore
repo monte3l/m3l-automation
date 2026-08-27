@@ -41,6 +41,11 @@ data/console/
 # and the `lint:md` exclude list.
 tmp/
 
+# Lefthook's own local-override mechanism (ADR-0080's
+# bin/setup-host-resources.mjs writes one on a memory-constrained host to
+# force pre-push serial): https://lefthook.dev/examples/lefthook-local
+lefthook-local.yml
+
 # Logs and OS cruft
 *.log
 .DS_Store
