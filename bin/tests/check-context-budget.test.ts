@@ -396,6 +396,54 @@ describe("resolveImportedFiles", () => {
     expect(result).toEqual([{ path: "b.md", content: "@c.md" }]);
     expect(result.some((r) => r.path === "c.md")).toBe(false);
   });
+
+  // -------------------------------------------------------------------------
+  // [REGRESSION] path-traversal containment — a "@a/../../.." token must be
+  // rejected because its resolved absolute path falls outside fromRoot, even
+  // when that resolved path exists on disk. statSync always succeeds here so
+  // the test proves the containment check runs BEFORE any filesystem access,
+  // not that the filesystem check happens to fail for an unrelated reason.
+  // -------------------------------------------------------------------------
+
+  test("[REGRESSION] a token resolving outside fromRoot via ../ traversal is excluded, and statSync is never called for it", () => {
+    const fromRoot = "/repo/root";
+    const statSyncSpy = vi
+      .spyOn(fs, "statSync")
+      .mockReturnValue({ isFile: () => true } as unknown as fs.Stats);
+    vi.spyOn(fs, "readFileSync").mockImplementation(() => {
+      throw new Error("readFileSync must not be called for a traversal token");
+    });
+
+    const result = resolveImportedFiles(
+      "@a/../../../../etc/passwd is a token",
+      fromRoot,
+    );
+
+    expect(result).toEqual([]);
+    expect(statSyncSpy).not.toHaveBeenCalledWith(
+      expect.stringContaining("passwd"),
+    );
+  });
+
+  test("a normal in-root relative token still resolves through the same containment check (the fix does not reject legitimate imports)", () => {
+    const fromRoot = "/repo/root";
+    vi.spyOn(fs, "statSync").mockImplementation(((p: string) => {
+      if (String(p) === join(fromRoot, "sub/dir/file.md")) {
+        return { isFile: () => true } as unknown as fs.Stats;
+      }
+      throw new Error(`unexpected statSync call: ${String(p)}`);
+    }) as typeof fs.statSync);
+    vi.spyOn(fs, "readFileSync").mockImplementation(((p: string) => {
+      if (String(p) === join(fromRoot, "sub/dir/file.md")) return "SUB CONTENT";
+      throw new Error(`unexpected readFileSync call: ${String(p)}`);
+    }) as typeof fs.readFileSync);
+
+    const result = resolveImportedFiles("@sub/dir/file.md is fine", fromRoot);
+
+    expect(result).toEqual([
+      { path: "sub/dir/file.md", content: "SUB CONTENT" },
+    ]);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -522,6 +570,45 @@ describe("globToRegExp", () => {
   test('".claude/skills/**" matches a nested skill file', () => {
     const re = globToRegExp(".claude/skills/**");
     expect(re.test(".claude/skills/auditing/SKILL.md")).toBe(true);
+  });
+
+  // -------------------------------------------------------------------------
+  // [REGRESSION] zero-segment "**" matching — the OLD implementation joined a
+  // "**" segment via a plain ".*" between fixed neighbors, which required at
+  // least one intervening path segment to exist. A mid-path "**" (used by
+  // .claude/rules/domain-knowledge.md's "packages/**/*.ts") therefore failed
+  // to match a file directly inside the prefix directory, and a leading "**"
+  // failed to match a bare top-level file with no leading "/" at all.
+  // -------------------------------------------------------------------------
+
+  test('[REGRESSION] "packages/**/*.ts" (used by .claude/rules/domain-knowledge.md) matches with zero intermediate directories', () => {
+    const re = globToRegExp("packages/**/*.ts");
+    expect(re.test("packages/foo.ts")).toBe(true);
+  });
+
+  test('[REGRESSION] "packages/**/*.ts" also still matches multiple intermediate directories', () => {
+    const re = globToRegExp("packages/**/*.ts");
+    expect(re.test("packages/a/b/foo.ts")).toBe(true);
+  });
+
+  test('[REGRESSION] "**/*.test.ts" matches a bare top-level file with no leading directory at all', () => {
+    const re = globToRegExp("**/*.test.ts");
+    expect(re.test("foo.test.ts")).toBe(true);
+  });
+
+  test('a trailing "**" ("packages/m3l-common/src/**") still matches a multi-directory-deep path (confirms the rewrite did not regress the working trailing case)', () => {
+    const re = globToRegExp("packages/m3l-common/src/**");
+    expect(re.test("packages/m3l-common/src/deep/nested/file.ts")).toBe(true);
+  });
+
+  test('[REGRESSION] "packages/**/*.ts" does NOT match a wrong top-level prefix', () => {
+    const re = globToRegExp("packages/**/*.ts");
+    expect(re.test("scripts/foo.ts")).toBe(false);
+  });
+
+  test('[REGRESSION] "packages/**/*.ts" does NOT match a file with the wrong extension', () => {
+    const re = globToRegExp("packages/**/*.ts");
+    expect(re.test("packages/foo.md")).toBe(false);
   });
 });
 

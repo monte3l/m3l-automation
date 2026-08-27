@@ -50,7 +50,7 @@ import {
   statSync,
 } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { join, relative } from "node:path";
+import { join, relative, resolve, sep } from "node:path";
 import { parseJsonFlag, createReporter, repoRoot } from "./lib/report.mjs";
 
 const root = repoRoot(import.meta.url);
@@ -203,7 +203,12 @@ export function resolveImportedFiles(rootText, fromRoot, maxHops = 4) {
     for (const relPath of frontier) {
       if (seen.has(relPath)) continue;
       seen.add(relPath);
-      const abs = join(fromRoot, relPath);
+      const abs = resolve(fromRoot, relPath);
+      // Defense in depth: a token containing "../" segments (e.g. a
+      // hypothetical "@a/../../../../etc/passwd") must never resolve
+      // outside fromRoot, even though CLAUDE.md is a trusted, repo-controlled
+      // file today.
+      if (abs !== fromRoot && !abs.startsWith(fromRoot + sep)) continue;
       let stats;
       try {
         stats = statSync(abs);
@@ -288,15 +293,42 @@ export function extractFrontmatterField(fmBody, key) {
  * rule files use) to a RegExp. `**` matches zero or more path segments
  * (including their separating slashes); `*` matches within one segment.
  *
+ * A "zero" match must not leave a stray separator behind: `"a/**\/b"` has to
+ * match `"a/b"` (no segments in between) as well as `"a/x/y/b"`, and
+ * `"**\/*.ts"` has to match a top-level `"foo.ts"` with no leading `"/"` at
+ * all. Each `**` segment therefore swallows its own adjoining slash into an
+ * optional group, rather than being joined via a plain `.*` between fixed
+ * neighbors (which requires at least one intervening segment to exist).
+ *
  * @param {string} glob
  * @returns {RegExp}
  */
 export function globToRegExp(glob) {
   const escapeLiteral = (s) => s.replace(/[.+^${}()|[\]\\]/g, "\\$&");
-  const pattern = glob
-    .split("**")
-    .map((part) => part.split("*").map(escapeLiteral).join("[^/]*"))
-    .join(".*");
+  const segments = glob.split("/");
+  /** @type {Array<string | null>} */
+  const parts = segments.map((seg) =>
+    seg === "**" ? null : seg.split("*").map(escapeLiteral).join("[^/]*"),
+  );
+
+  let pattern = "";
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i];
+    if (part === null) {
+      if (parts.length === 1) {
+        pattern += ".*"; // the entire glob is just "**"
+      } else if (i === 0) {
+        pattern += "(?:.*\\/)?"; // "**/rest" -> optional "anything/" prefix
+      } else if (i === parts.length - 1) {
+        pattern += "(?:\\/.*)?"; // "prefix/**" -> optional "/anything" suffix
+      } else {
+        pattern += "(?:.*\\/)?"; // "a/**/b" -> optional "anything/" between
+      }
+      continue;
+    }
+    if (i > 0 && parts[i - 1] !== null) pattern += "\\/";
+    pattern += part;
+  }
   return new RegExp(`^${pattern}$`);
 }
 
