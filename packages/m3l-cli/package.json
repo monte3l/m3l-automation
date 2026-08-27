@@ -15,6 +15,22 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@m3l-automation/m3l-common": "workspace:*"
+    "@m3l-automation/m3l-common": "workspace:*",
+    "@m3l-automation/api-gateway-client": "workspace:*",
+    "@m3l-automation/athena-query": "workspace:*",
+    "@m3l-automation/cloudformation-stacks": "workspace:*",
+    "@m3l-automation/cloudwatch-logs-analysis": "workspace:*",
+    "@m3l-automation/cloudwatch-logs-insights": "workspace:*",
+    "@m3l-automation/codepipeline-ops": "workspace:*",
+    "@m3l-automation/dynamodb-crud": "workspace:*",
+    "@m3l-automation/ecs-ops": "workspace:*",
+    "@m3l-automation/eks-ops": "workspace:*",
+    "@m3l-automation/eventbridge-schedules": "workspace:*",
+    "@m3l-automation/json-etl": "workspace:*",
+    "@m3l-automation/lambda-ops": "workspace:*",
+    "@m3l-automation/rds-data-sql": "workspace:*",
+    "@m3l-automation/s3-objects": "workspace:*",
+    "@m3l-automation/sqs-dead-letter-triage": "workspace:*",
+    "@m3l-automation/sqs-etl": "workspace:*"
   }
 }

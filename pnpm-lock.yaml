@@ -103,9 +103,57 @@ importers:
 
   packages/m3l-cli:
     dependencies:
+      '@m3l-automation/api-gateway-client':
+        specifier: workspace:*
+        version: link:../../scripts/api-gateway-client
+      '@m3l-automation/athena-query':
+        specifier: workspace:*
+        version: link:../../scripts/athena-query
+      '@m3l-automation/cloudformation-stacks':
+        specifier: workspace:*
+        version: link:../../scripts/cloudformation-stacks
+      '@m3l-automation/cloudwatch-logs-analysis':
+        specifier: workspace:*
+        version: link:../../scripts/cloudwatch-logs-analysis
+      '@m3l-automation/cloudwatch-logs-insights':
+        specifier: workspace:*
+        version: link:../../scripts/cloudwatch-logs-insights
+      '@m3l-automation/codepipeline-ops':
+        specifier: workspace:*
+        version: link:../../scripts/codepipeline-ops
+      '@m3l-automation/dynamodb-crud':
+        specifier: workspace:*
+        version: link:../../scripts/dynamodb-crud
+      '@m3l-automation/ecs-ops':
+        specifier: workspace:*
+        version: link:../../scripts/ecs-ops
+      '@m3l-automation/eks-ops':
+        specifier: workspace:*
+        version: link:../../scripts/eks-ops
+      '@m3l-automation/eventbridge-schedules':
+        specifier: workspace:*
+        version: link:../../scripts/eventbridge-schedules
+      '@m3l-automation/json-etl':
+        specifier: workspace:*
+        version: link:../../scripts/json-etl
+      '@m3l-automation/lambda-ops':
+        specifier: workspace:*
+        version: link:../../scripts/lambda-ops
       '@m3l-automation/m3l-common':
         specifier: workspace:*
         version: link:../m3l-common
+      '@m3l-automation/rds-data-sql':
+        specifier: workspace:*
+        version: link:../../scripts/rds-data-sql
+      '@m3l-automation/s3-objects':
+        specifier: workspace:*
+        version: link:../../scripts/s3-objects
+      '@m3l-automation/sqs-dead-letter-triage':
+        specifier: workspace:*
+        version: link:../../scripts/sqs-dead-letter-triage
+      '@m3l-automation/sqs-etl':
+        specifier: workspace:*
+        version: link:../../scripts/sqs-etl
 
   packages/m3l-common:
     dependencies:

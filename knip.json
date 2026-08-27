@@ -22,7 +22,25 @@
     },
     "packages/m3l-cli": {
       "entry": ["src/main.ts"],
-      "project": ["src/**/*.ts", "bin/**/*.mjs"]
+      "project": ["src/**/*.ts", "bin/**/*.mjs"],
+      "ignoreDependencies": [
+        "@m3l-automation/api-gateway-client",
+        "@m3l-automation/athena-query",
+        "@m3l-automation/cloudformation-stacks",
+        "@m3l-automation/cloudwatch-logs-analysis",
+        "@m3l-automation/cloudwatch-logs-insights",
+        "@m3l-automation/codepipeline-ops",
+        "@m3l-automation/dynamodb-crud",
+        "@m3l-automation/ecs-ops",
+        "@m3l-automation/eks-ops",
+        "@m3l-automation/eventbridge-schedules",
+        "@m3l-automation/json-etl",
+        "@m3l-automation/lambda-ops",
+        "@m3l-automation/rds-data-sql",
+        "@m3l-automation/s3-objects",
+        "@m3l-automation/sqs-dead-letter-triage",
+        "@m3l-automation/sqs-etl"
+      ]
     },
     "packages/m3l-common": {
       "entry": "src/index.ts",
