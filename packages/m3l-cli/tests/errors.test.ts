@@ -10,7 +10,7 @@ import { exitCodeForError, M3LCliError } from "../src/cli/errors.js";
 import type { M3LCliErrorCode } from "../src/cli/errors.js";
 
 describe("M3LCliErrorCode", () => {
-  test("is the exact sixteen-member union the contract declares (U7 adds ERR_CLI_COMMAND_MODULE_INVALID/ERR_CLI_IN_PROCESS_FAILED; a U7 follow-up splits off ERR_CLI_COMMAND_MODULE_IMPORT_FAILED for a genuine import failure, distinct from ERR_CLI_COMMAND_MODULE_INVALID's 'no adopted seam' case)", () => {
+  test("is the exact seventeen-member union the contract declares (U7 adds ERR_CLI_COMMAND_MODULE_INVALID/ERR_CLI_IN_PROCESS_FAILED; a U7 follow-up splits off ERR_CLI_COMMAND_MODULE_IMPORT_FAILED for a genuine import failure, distinct from ERR_CLI_COMMAND_MODULE_INVALID's 'no adopted seam' case; a further U7 follow-up adds ERR_CLI_IN_PROCESS_UNSUPPORTED)", () => {
     expectTypeOf<M3LCliErrorCode>().toEqualTypeOf<
       | "ERR_CLI_UNKNOWN_COMMAND"
       | "ERR_CLI_UNKNOWN_SCRIPT"
@@ -28,6 +28,7 @@ describe("M3LCliErrorCode", () => {
       | "ERR_CLI_COMMAND_MODULE_INVALID"
       | "ERR_CLI_IN_PROCESS_FAILED"
       | "ERR_CLI_COMMAND_MODULE_IMPORT_FAILED"
+      | "ERR_CLI_IN_PROCESS_UNSUPPORTED"
     >();
   });
 });
@@ -122,6 +123,11 @@ describe("exitCodeForError", () => {
     // the code it's split from — a genuine import failure is still a
     // general failure, not a usage error.
     ["ERR_CLI_COMMAND_MODULE_IMPORT_FAILED", 1],
+    // U7 follow-up: the target script's execute genuinely doesn't support
+    // in-process execution (no adopted commandModule) — a usage-shaped
+    // mismatch between what was asked and what the script supports, so it
+    // maps to the usage exit-code class (2), not the general class (1).
+    ["ERR_CLI_IN_PROCESS_UNSUPPORTED", 2],
   ];
 
   test.each(codeExitCases)(

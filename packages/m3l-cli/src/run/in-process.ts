@@ -151,8 +151,11 @@ export interface M3LCliInProcessOptions {
  * @returns The exit code {@link Core.mapCommandOutcomeToExitCode} resolves
  *   for the outcome `execute` produced.
  * @throws {@link M3LCliError} coded `ERR_CLI_COMMAND_MODULE_INVALID` when the
- *   script has no adopted command module, or when importing it fails (the
- *   underlying failure chained as `cause`).
+ *   script has no adopted command module (no `cause` chained — there was
+ *   nothing to import in the first place).
+ * @throws {@link M3LCliError} coded `ERR_CLI_COMMAND_MODULE_IMPORT_FAILED`
+ *   when importing the script's command module fails (the underlying
+ *   failure chained as `cause`).
  * @throws {@link M3LCliError} coded `ERR_CLI_IN_PROCESS_FAILED` when
  *   `execute` itself throws (the thrown value chained as `cause`), or
  *   resolves a value that fails {@link Core.isM3LCommandOutcome}.

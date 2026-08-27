@@ -401,13 +401,53 @@ function buildParameterValues(
 }
 
 /**
+ * Rejects an in-process dispatch the moment it's asked for something that
+ * path cannot honor: a `passthroughArgs` token other than the literal
+ * `--dry-run` (there is no child process argv for it to reach — the spawn
+ * path forwards `passthroughArgs` verbatim, but {@link runInProcess} only
+ * ever consults the `--dry-run` token), or `context.jsonOutput` (only
+ * {@link executeScript}'s spawn path emits the `--json` result envelope).
+ * Either condition previously produced a silent no-op — the extra tokens
+ * dropped, or `--json` simply never honored — rather than a loud failure.
+ *
+ * @throws {@link M3LCliError} coded `ERR_CLI_IN_PROCESS_UNSUPPORTED` when
+ *   either unsupported combination is present.
+ */
+function assertInProcessSupported(
+  passthroughArgs: readonly string[],
+  jsonOutput: boolean,
+): void {
+  const unsupportedPassthrough = passthroughArgs.filter(
+    (token) => token !== "--dry-run",
+  );
+  if (unsupportedPassthrough.length > 0) {
+    throw new M3LCliError(
+      "ERR_CLI_IN_PROCESS_UNSUPPORTED",
+      "--in-process does not support passthrough arguments other than --dry-run — there is no child process argv for them to reach; drop --in-process to spawn instead",
+    );
+  }
+  if (jsonOutput) {
+    throw new M3LCliError(
+      "ERR_CLI_IN_PROCESS_UNSUPPORTED",
+      "--in-process does not yet support --json (no result envelope is emitted on this path) — drop one flag or the other",
+    );
+  }
+}
+
+/**
  * Dispatches a resolved, parsed dynamic run to its execution path: in-process
  * via {@link runInProcess} when `inProcess` is `true` (no envelope emission —
- * that integration is a deliberate follow-up, not part of this dispatch),
- * otherwise the spawn path via {@link translateArgv} + {@link executeScript}
- * (which also emits the `--json` envelope when `context.jsonOutput` is
- * `true`). Extracted so {@link runDynamic} itself stays under the
- * per-function line budget.
+ * that integration is a deliberate follow-up, not part of this dispatch —
+ * and rejected loudly via {@link assertInProcessSupported} rather than
+ * silently dropping unsupported input), otherwise the spawn path via
+ * {@link translateArgv} + {@link executeScript} (which also emits the
+ * `--json` envelope when `context.jsonOutput` is `true`). Extracted so
+ * {@link runDynamic} itself stays under the per-function line budget.
+ *
+ * @throws {@link M3LCliError} coded `ERR_CLI_IN_PROCESS_UNSUPPORTED` — see
+ *   {@link assertInProcessSupported} — when `inProcess` is `true` and either
+ *   `passthroughArgs` carries a token other than `--dry-run`, or
+ *   `context.jsonOutput` is `true`.
  */
 async function dispatchDynamicRun(
   context: M3LCliCommandContext,
@@ -419,6 +459,7 @@ async function dispatchDynamicRun(
   inProcess: boolean,
 ): Promise<number> {
   if (inProcess) {
+    assertInProcessSupported(passthroughArgs, context.jsonOutput);
     return runInProcess(scriptDirectory, {
       output: context.output,
       parameterValues: buildParameterValues(descriptors, values),
@@ -524,6 +565,13 @@ function recordDynamicHistory(
  * `--dry-run` token (the same convention a spawned script's own `main.ts`
  * reads off its own argv). Absent, behavior is unchanged from the pre-U7
  * spawn path.
+ *
+ * The in-process path rejects loudly, rather than silently dropping the
+ * request, when it's asked for something it cannot honor: a
+ * `passthroughArgs` token other than the literal `--dry-run` (there is no
+ * child process argv for it to reach), or `context.jsonOutput` (only the
+ * spawn path's `executeScript` emits the `--json` result envelope) — see
+ * `dispatchDynamicRun`'s `assertInProcessSupported` helper.
  *
  * Once the spawn/in-process run resolves, best-effort records a run-history
  * entry (8f) naming the parsed canonical parameter names (unlike `run`,

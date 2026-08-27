@@ -9,9 +9,10 @@
  * straight through, logger via `Core.createCommandLogger`, `signal:
  * undefined`, `dryRun` forwarded), calls `execute`, and maps the resolved
  * outcome to an exit code via `Core.mapCommandOutcomeToExitCode` — raising
- * `M3LCliError` coded `ERR_CLI_COMMAND_MODULE_INVALID` (no adopted seam, or a
- * propagated import failure) or `ERR_CLI_IN_PROCESS_FAILED` (execute itself
- * throws, or resolves a malformed outcome).
+ * `M3LCliError` coded `ERR_CLI_COMMAND_MODULE_INVALID` (no adopted seam, no
+ * `cause`), `ERR_CLI_COMMAND_MODULE_IMPORT_FAILED` (a propagated import
+ * failure, chained as `cause`), or `ERR_CLI_IN_PROCESS_FAILED` (execute
+ * itself throws, or resolves a malformed outcome).
  */
 import { afterEach, describe, expect, test, vi } from "vitest";
 import * as fs from "node:fs";
