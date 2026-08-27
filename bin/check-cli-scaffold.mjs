@@ -40,7 +40,7 @@ import process from "node:process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
-import { scriptPackageDirs } from "./lib/script-scaffold.mjs";
+import { scriptPackageDirs } from "./lib/script-doc-paths.mjs";
 import { parseJsonFlag, createReporter, repoRoot } from "./lib/report.mjs";
 
 /** Repo-relative path of the CLI package this gate governs. */

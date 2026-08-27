@@ -38,6 +38,7 @@ import {
   PURPOSE_MAX_LENGTH,
   REQUIRED_EXACT_FILES,
   REQUIRED_GLOBS,
+  SCRIPT_DOCS_DIR,
   SCRIPT_NAME_RE,
   TEMPLATE_DIR,
   commandModuleErrors,
@@ -225,6 +226,27 @@ describe("docPagePath", () => {
     expect(docPagePath("data-sync")).toBe(
       "docs/reference/scripts/data-sync.md",
     );
+  });
+});
+
+// bin/lib/script-doc-paths.mjs deliberately duplicates SCRIPT_DOCS_DIR and
+// docPagePath from packages/m3l-cli/src/scaffold/manifest.ts instead of
+// importing them, so bin/ scripts that only need directory/path bookkeeping
+// (e.g. .github/workflows/pages.yml's dashboard generator) can run without
+// `pnpm build` first — see bin/lib/script-doc-paths.mjs's own header comment
+// for the full rationale. This test is the drift guard for that duplicate:
+// it fails the moment the two copies diverge.
+describe("SCRIPT_DOCS_DIR / docPagePath — bin/lib duplicate matches the CLI's canonical copy", () => {
+  test("SCRIPT_DOCS_DIR matches the CLI's canonical manifest value", async () => {
+    const cliManifest =
+      await import("../../packages/m3l-cli/dist/scaffold/manifest.js");
+    expect(SCRIPT_DOCS_DIR).toBe(cliManifest.SCRIPT_DOCS_DIR);
+  });
+
+  test("docPagePath produces the same output as the CLI's canonical implementation", async () => {
+    const cliManifest =
+      await import("../../packages/m3l-cli/dist/scaffold/manifest.js");
+    expect(docPagePath("data-sync")).toBe(cliManifest.docPagePath("data-sync"));
   });
 });
 

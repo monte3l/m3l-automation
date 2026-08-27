@@ -34,12 +34,20 @@ jobs:
           # trailers across all of git log and totals via rev-list --count.
           fetch-depth: 0
 
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 24
+      - uses: ./.github/actions/setup
 
-      # No pnpm install: both generators use only node builtins plus
-      # dependency-free repo .mjs modules, and shell out to git.
+      # bin/gen-project-hub.mjs only reads bin/lib/script-doc-paths.mjs (build-
+      # independent — see that file's header), so nothing here strictly needs
+      # packages/m3l-cli/dist today. Building it anyway is a deliberate
+      # defense-in-depth: this workflow has no build-order gate the way
+      # ci.yml's `gates` lane does (bin/check-verify-parity.mjs only models
+      # ci.yml), so a future generator change that reaches for a genuinely
+      # CLI-owned symbol (as bin/gen-project-hub.mjs briefly did, breaking
+      # every push from 2026-08-26 to 2026-08-27) fails loudly in CI instead
+      # of here.
+      - name: Build CLI (defense-in-depth for bin/gen-project-hub.mjs)
+        run: pnpm turbo run build --filter=@m3l-automation/m3l-cli
+
       - name: Generate commit-stats endpoint badge JSON
         run: node bin/gen-commit-stats-endpoint.mjs
 
