@@ -26,6 +26,7 @@ import type {
   M3LSqliteDatabaseHandle,
   M3LSqliteStatementHandle,
 } from "../src/store/sqlite-driver.js";
+import type { M3LStoreRow } from "../src/store/types.js";
 
 /** Reads a scalar column off a port-level row without assuming a prototype. */
 function readColumn(row: unknown, column: string): unknown {
@@ -348,5 +349,225 @@ describe("assertSqliteSupport", () => {
     expect((thrown as M3LConsoleError).code).toBe(
       "ERR_CONSOLE_STORE_UNSUPPORTED",
     );
+  });
+});
+
+/**
+ * A stubbed statement whose only real behaviour is `get()` returning a
+ * fixed row — `run`/`all`/`setReadBigInts` are unused by every path these
+ * tripwires exercise, but are still real no-op functions so the fake
+ * remains structurally assignable to {@link M3LSqliteStatementHandle}
+ * without a cast.
+ */
+function stubStatement(row: M3LStoreRow): M3LSqliteStatementHandle {
+  return {
+    run: () => ({ changes: 0, lastInsertRowid: 0 }),
+    get: () => row,
+    all: () => [],
+    setReadBigInts: () => undefined,
+  };
+}
+
+describe("assertSqliteSupport — checkpoint tripwires unreachable with a real handle", () => {
+  // A genuine node:sqlite handle can never take any of these branches today:
+  // isOpen/isTransaction are always booleans, PRAGMA user_version always
+  // round-trips transactionally, and sqlite_version() always reports a real
+  // semver string above the floor. Each case below crafts a narrow fake —
+  // mostly a real :memory: handle with one call intercepted — to prove the
+  // branch exists and reports ERR_CONSOLE_STORE_UNSUPPORTED, for a FUTURE
+  // node:sqlite that changes one of those behaviours. Do not delete these as
+  // dead code: they are the ADR-0069 checkpoint's tripwires, not redundant
+  // coverage of the happy path.
+
+  test("rejects a handle whose isOpen is not a boolean", () => {
+    const fakeStatement = stubStatement({ one: 1 });
+    const fakeDatabase = {
+      isOpen: undefined,
+      isTransaction: false,
+      exec: () => undefined,
+      prepare: () => fakeStatement,
+      close: () => undefined,
+    } as unknown as M3LSqliteDatabaseHandle;
+
+    let thrown: unknown;
+    try {
+      assertSqliteSupport(fakeDatabase);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).code).toBe(
+      "ERR_CONSOLE_STORE_UNSUPPORTED",
+    );
+  });
+
+  test("rejects a handle whose isTransaction is not a boolean", () => {
+    const fakeStatement = stubStatement({ one: 1 });
+    const fakeDatabase = {
+      isOpen: true,
+      isTransaction: "no",
+      exec: () => undefined,
+      prepare: () => fakeStatement,
+      close: () => undefined,
+    } as unknown as M3LSqliteDatabaseHandle;
+
+    let thrown: unknown;
+    try {
+      assertSqliteSupport(fakeDatabase);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).code).toBe(
+      "ERR_CONSOLE_STORE_UNSUPPORTED",
+    );
+  });
+
+  test("rejects a handle whose user_version probe would overflow Number.isSafeInteger", () => {
+    const real = openSqliteDatabase(":memory:");
+    try {
+      const fakeDatabase: M3LSqliteDatabaseHandle = {
+        get isOpen() {
+          return real.isOpen;
+        },
+        get isTransaction() {
+          return real.isTransaction;
+        },
+        exec: (sql) => {
+          real.exec(sql);
+        },
+        prepare: (sql) =>
+          sql === "PRAGMA user_version"
+            ? stubStatement({ user_version: Number.MAX_SAFE_INTEGER })
+            : real.prepare(sql),
+        close: () => {
+          real.close();
+        },
+      };
+
+      let thrown: unknown;
+      try {
+        assertSqliteSupport(fakeDatabase);
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toBeInstanceOf(M3LConsoleError);
+      expect((thrown as M3LConsoleError).code).toBe(
+        "ERR_CONSOLE_STORE_UNSUPPORTED",
+      );
+    } finally {
+      if (real.isOpen) real.close();
+    }
+  });
+
+  test("rejects a handle whose user_version read-back does not match what was written", () => {
+    const real = openSqliteDatabase(":memory:");
+    try {
+      const fakeDatabase: M3LSqliteDatabaseHandle = {
+        get isOpen() {
+          return real.isOpen;
+        },
+        get isTransaction() {
+          return real.isTransaction;
+        },
+        exec: (sql) => {
+          real.exec(sql);
+        },
+        prepare: (sql) =>
+          sql === "PRAGMA user_version"
+            ? // Always reports the same value regardless of the write the
+              // caller just issued — this is what a broken round-trip looks
+              // like from the caller's side.
+              stubStatement({ user_version: 5 })
+            : real.prepare(sql),
+        close: () => {
+          real.close();
+        },
+      };
+
+      let thrown: unknown;
+      try {
+        assertSqliteSupport(fakeDatabase);
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toBeInstanceOf(M3LConsoleError);
+      expect((thrown as M3LConsoleError).code).toBe(
+        "ERR_CONSOLE_STORE_UNSUPPORTED",
+      );
+    } finally {
+      if (real.isOpen) real.close();
+    }
+  });
+
+  test("rejects a handle reporting sqlite_version() below the 3.37 floor", () => {
+    const real = openSqliteDatabase(":memory:");
+    try {
+      const fakeDatabase: M3LSqliteDatabaseHandle = {
+        get isOpen() {
+          return real.isOpen;
+        },
+        get isTransaction() {
+          return real.isTransaction;
+        },
+        exec: (sql) => {
+          real.exec(sql);
+        },
+        prepare: (sql) =>
+          sql === "SELECT sqlite_version() AS version"
+            ? stubStatement({ version: "3.36.0" })
+            : real.prepare(sql),
+        close: () => {
+          real.close();
+        },
+      };
+
+      let thrown: unknown;
+      try {
+        assertSqliteSupport(fakeDatabase);
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toBeInstanceOf(M3LConsoleError);
+      expect((thrown as M3LConsoleError).code).toBe(
+        "ERR_CONSOLE_STORE_UNSUPPORTED",
+      );
+    } finally {
+      if (real.isOpen) real.close();
+    }
+  });
+
+  test("accepts sqlite_version() equal to the floor at every compared part (versionAtLeast's fall-through arm)", () => {
+    // [3, 37, 0] vs the floor [3, 37]: both compared parts are equal, so
+    // versionAtLeast's loop never takes its `>` or `<` return and instead
+    // falls through to `return true` after the loop — the arm a version
+    // strictly above the floor (the real handle's own version) never hits.
+    const real = openSqliteDatabase(":memory:");
+    try {
+      const fakeDatabase: M3LSqliteDatabaseHandle = {
+        get isOpen() {
+          return real.isOpen;
+        },
+        get isTransaction() {
+          return real.isTransaction;
+        },
+        exec: (sql) => {
+          real.exec(sql);
+        },
+        prepare: (sql) =>
+          sql === "SELECT sqlite_version() AS version"
+            ? stubStatement({ version: "3.37.0" })
+            : real.prepare(sql),
+        close: () => {
+          real.close();
+        },
+      };
+
+      expect(() => {
+        assertSqliteSupport(fakeDatabase);
+      }).not.toThrow();
+    } finally {
+      if (real.isOpen) real.close();
+    }
   });
 });
