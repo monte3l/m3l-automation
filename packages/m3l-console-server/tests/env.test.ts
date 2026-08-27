@@ -6,18 +6,33 @@
  * cases below stay here because they exercise `loadConsoleConfig`'s
  * validation of `M3L_CONSOLE_HOST`, not the predicate directly.
  */
+import * as path from "node:path";
+
 import { afterEach, describe, expect, expectTypeOf, test, vi } from "vitest";
 
 import { Core } from "@m3l-automation/m3l-common";
 
 import { M3LConsoleError } from "../src/errors/console-error.js";
 import { loadConsoleConfig } from "../src/config/env.js";
-import type { M3LConsoleConfig } from "../src/config/env.js";
+import type {
+  LoadConsoleConfigOptions,
+  M3LConsoleConfig,
+} from "../src/config/env.js";
 
 /** Dotted config key the port setting is stored under (mirrors `src/config/env.ts`). */
 const PORT_KEY = "m3l.console.port";
 /** Dotted config key the log-level setting is stored under (mirrors `src/config/env.ts`). */
 const LOG_LEVEL_KEY = "m3l.console.log.level";
+/** Dotted config key the database path setting is stored under. */
+const DB_PATH_KEY = "m3l.console.db.path";
+/** Dotted config key the database busy-timeout setting is stored under. */
+const DB_BUSY_TIMEOUT_KEY = "m3l.console.db.busy.timeout.ms";
+
+/** Hermetic data dir injected via `LoadConsoleConfigOptions.resolveDataDir`. */
+const TEST_DATA_DIR = "/test-data";
+
+/** The documented default database path, under the hermetic data dir above. */
+const DEFAULT_DB_PATH = path.join(TEST_DATA_DIR, "console", "console.sqlite");
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -58,13 +73,27 @@ describe("M3LConsoleConfig", () => {
       readonly operatorEmail: string | undefined;
       readonly drainTimeoutMs: number;
       readonly logLevel: Core.M3LLogLevelFloor;
+      readonly databasePath: string;
+      readonly databaseBusyTimeoutMs: number;
+    }>();
+  });
+});
+
+describe("LoadConsoleConfigOptions", () => {
+  test("gains an optional resolveDataDir seam", () => {
+    expectTypeOf<LoadConsoleConfigOptions>().toEqualTypeOf<{
+      readonly env?: NodeJS.ProcessEnv;
+      readonly resolveDataDir?: () => string;
     }>();
   });
 });
 
 describe("loadConsoleConfig — defaults", () => {
   test("resolves every default when only the operator name is set", () => {
-    const config = loadConsoleConfig({ env: buildEnv() });
+    const config = loadConsoleConfig({
+      env: buildEnv(),
+      resolveDataDir: () => TEST_DATA_DIR,
+    });
 
     expect(config).toEqual({
       host: "127.0.0.1",
@@ -73,6 +102,8 @@ describe("loadConsoleConfig — defaults", () => {
       operatorEmail: undefined,
       drainTimeoutMs: 15000,
       logLevel: "info",
+      databasePath: DEFAULT_DB_PATH,
+      databaseBusyTimeoutMs: 5000,
     });
   });
 });
@@ -87,7 +118,10 @@ describe("loadConsoleConfig — every setting overridden", () => {
         M3L_CONSOLE_OPERATOR_EMAIL: "grace@example.com",
         M3L_CONSOLE_DRAIN_TIMEOUT_MS: "5000",
         M3L_CONSOLE_LOG_LEVEL: "debug",
+        M3L_CONSOLE_DB_PATH: "custom/console.sqlite",
+        M3L_CONSOLE_DB_BUSY_TIMEOUT_MS: "1234",
       }),
+      resolveDataDir: () => TEST_DATA_DIR,
     });
 
     expect(config).toEqual({
@@ -97,6 +131,8 @@ describe("loadConsoleConfig — every setting overridden", () => {
       operatorEmail: "grace@example.com",
       drainTimeoutMs: 5000,
       logLevel: "debug",
+      databasePath: path.resolve(TEST_DATA_DIR, "custom/console.sqlite"),
+      databaseBusyTimeoutMs: 1234,
     });
   });
 });
@@ -353,4 +389,103 @@ describe("loadConsoleConfig — wrapConfigRead rethrows a non-M3LError untouched
     expect(thrown).toBeInstanceOf(RangeError);
     expect(thrown).not.toBeInstanceOf(M3LConsoleError);
   });
+});
+
+describe("loadConsoleConfig — database path validation", () => {
+  test("resolves the default database path under the injected data dir when unset", () => {
+    const config = loadConsoleConfig({
+      env: buildEnv(),
+      resolveDataDir: () => TEST_DATA_DIR,
+    });
+
+    expect(config.databasePath).toBe(DEFAULT_DB_PATH);
+  });
+
+  test("resolves M3L_CONSOLE_DB_PATH relative to the injected data dir", () => {
+    const config = loadConsoleConfig({
+      env: buildEnv({ M3L_CONSOLE_DB_PATH: "nested/store.sqlite" }),
+      resolveDataDir: () => TEST_DATA_DIR,
+    });
+
+    expect(config.databasePath).toBe(
+      path.resolve(TEST_DATA_DIR, "nested/store.sqlite"),
+    );
+  });
+
+  // resolveStoreDatabasePath (src/config/paths.ts) already raises
+  // ERR_CONSOLE_CONFIG_INVALID for a rejected path — this asserts the
+  // rejection propagates through loadConsoleConfig unchanged, naming the
+  // same key, rather than being swallowed or relabelled.
+  test("propagates a rejected M3L_CONSOLE_DB_PATH as ERR_CONSOLE_CONFIG_INVALID naming the db path key", () => {
+    let thrown: unknown;
+    try {
+      loadConsoleConfig({
+        env: buildEnv({ M3L_CONSOLE_DB_PATH: ":memory:" }),
+        resolveDataDir: () => TEST_DATA_DIR,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    const error = thrown as M3LConsoleError;
+    expect(error.code).toBe("ERR_CONSOLE_CONFIG_INVALID");
+    expect(error.message).toContain(DB_PATH_KEY);
+  });
+});
+
+describe("loadConsoleConfig — database busy-timeout validation", () => {
+  test("resolves the documented default of 5000ms when unset", () => {
+    const config = loadConsoleConfig({
+      env: buildEnv(),
+      resolveDataDir: () => TEST_DATA_DIR,
+    });
+
+    expect(config.databaseBusyTimeoutMs).toBe(5000);
+  });
+
+  test("resolves M3L_CONSOLE_DB_BUSY_TIMEOUT_MS when set", () => {
+    const config = loadConsoleConfig({
+      env: buildEnv({ M3L_CONSOLE_DB_BUSY_TIMEOUT_MS: "9000" }),
+      resolveDataDir: () => TEST_DATA_DIR,
+    });
+
+    expect(config.databaseBusyTimeoutMs).toBe(9000);
+  });
+
+  test("accepts the boundary busy timeout 2147483647", () => {
+    const config = loadConsoleConfig({
+      env: buildEnv({ M3L_CONSOLE_DB_BUSY_TIMEOUT_MS: "2147483647" }),
+      resolveDataDir: () => TEST_DATA_DIR,
+    });
+
+    expect(config.databaseBusyTimeoutMs).toBe(2147483647);
+  });
+
+  // Every invalid value below must throw ERR_CONSOLE_CONFIG_INVALID naming
+  // the busy-timeout key without ever echoing the raw value — the same
+  // never-echo guarantee the drain-timeout/port validators already carry.
+  // A non-integer string ("5.5") fails at the earlier INT-coercion step
+  // rather than the bounds check below; both sites must still satisfy the
+  // same naming/never-echo contract.
+  test.each<[string]>([["0"], ["-5"], ["5.5"], ["2147483648"]])(
+    "throws ERR_CONSOLE_CONFIG_INVALID naming the key, never the value, for the invalid busy timeout %s",
+    (rawValue) => {
+      let thrown: unknown;
+      try {
+        loadConsoleConfig({
+          env: buildEnv({ M3L_CONSOLE_DB_BUSY_TIMEOUT_MS: rawValue }),
+          resolveDataDir: () => TEST_DATA_DIR,
+        });
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toBeInstanceOf(M3LConsoleError);
+      const error = thrown as M3LConsoleError;
+      expect(error.code).toBe("ERR_CONSOLE_CONFIG_INVALID");
+      expect(error.message).toContain(DB_BUSY_TIMEOUT_KEY);
+      expect(error.message).not.toContain(rawValue);
+    },
+  );
 });

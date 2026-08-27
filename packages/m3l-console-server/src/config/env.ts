@@ -10,6 +10,7 @@ import { Core } from "@m3l-automation/m3l-common";
 
 import { M3LConsoleError } from "../errors/console-error.js";
 import { isLoopbackHost, unwrapBracketedHost } from "../net/loopback.js";
+import { resolveStoreDatabasePath } from "./paths.js";
 
 /** The single error code every configuration failure in this module raises. */
 const CODE = "ERR_CONSOLE_CONFIG_INVALID";
@@ -32,6 +33,10 @@ const OPERATOR_EMAIL_KEY = "m3l.console.operator.email";
 const DRAIN_TIMEOUT_KEY = "m3l.console.drain.timeout.ms";
 /** Dotted config key for the logger's severity floor. */
 const LOG_LEVEL_KEY = "m3l.console.log.level";
+/** Dotted config key for the embedded store's database path. */
+const DB_PATH_KEY = "m3l.console.db.path";
+/** Dotted config key for the embedded store's SQLite busy-timeout. */
+const DB_BUSY_TIMEOUT_KEY = "m3l.console.db.busy.timeout.ms";
 
 /** Default bind host: loopback-only per ADR-0071. */
 const DEFAULT_HOST = "127.0.0.1";
@@ -41,6 +46,8 @@ const DEFAULT_PORT = 8787;
 const DEFAULT_DRAIN_TIMEOUT_MS = 15000;
 /** Default logger severity floor. */
 const DEFAULT_LOG_LEVEL: Core.M3LLogLevelFloor = "info";
+/** Default SQLite busy-timeout, in milliseconds. */
+const DEFAULT_DB_BUSY_TIMEOUT_MS = 5000;
 
 /** The lowest valid TCP port. */
 const MIN_PORT = 1;
@@ -152,53 +159,78 @@ function wrapConfigRead<T>(key: string, read: () => T): T {
   }
 }
 
+/** One row of the {@link SETTINGS} table driving {@link populateConfigFromEnv}. */
+interface SettingDescriptor {
+  readonly key: string;
+  readonly type:
+    | typeof Core.M3LConfigParameterType.STRING
+    | typeof Core.M3LConfigParameterType.INT;
+  readonly defaultValue: string | number | undefined;
+}
+
+/**
+ * Every documented setting this module resolves, in the shape
+ * {@link storeFromEnv} consumes. A setting with `defaultValue: undefined` is
+ * required-with-no-default (left unset for a later accessor read to reject),
+ * exactly like the operator name.
+ */
+const SETTINGS: readonly SettingDescriptor[] = [
+  {
+    key: HOST_KEY,
+    type: Core.M3LConfigParameterType.STRING,
+    defaultValue: DEFAULT_HOST,
+  },
+  {
+    key: PORT_KEY,
+    type: Core.M3LConfigParameterType.INT,
+    defaultValue: DEFAULT_PORT,
+  },
+  {
+    key: OPERATOR_NAME_KEY,
+    type: Core.M3LConfigParameterType.STRING,
+    defaultValue: undefined,
+  },
+  {
+    key: OPERATOR_EMAIL_KEY,
+    type: Core.M3LConfigParameterType.STRING,
+    defaultValue: undefined,
+  },
+  {
+    key: DRAIN_TIMEOUT_KEY,
+    type: Core.M3LConfigParameterType.INT,
+    defaultValue: DEFAULT_DRAIN_TIMEOUT_MS,
+  },
+  {
+    key: LOG_LEVEL_KEY,
+    type: Core.M3LConfigParameterType.STRING,
+    defaultValue: DEFAULT_LOG_LEVEL,
+  },
+  {
+    key: DB_PATH_KEY,
+    type: Core.M3LConfigParameterType.STRING,
+    defaultValue: undefined,
+  },
+  {
+    key: DB_BUSY_TIMEOUT_KEY,
+    type: Core.M3LConfigParameterType.INT,
+    defaultValue: DEFAULT_DB_BUSY_TIMEOUT_MS,
+  },
+];
+
 /** Stores every documented setting's raw-or-default value into `config`. */
 function populateConfigFromEnv(
   reader: Core.M3LConfigReader,
   config: Core.M3LConfig,
 ): void {
-  storeFromEnv(
-    reader,
-    config,
-    HOST_KEY,
-    Core.M3LConfigParameterType.STRING,
-    DEFAULT_HOST,
-  );
-  storeFromEnv(
-    reader,
-    config,
-    PORT_KEY,
-    Core.M3LConfigParameterType.INT,
-    DEFAULT_PORT,
-  );
-  storeFromEnv(
-    reader,
-    config,
-    OPERATOR_NAME_KEY,
-    Core.M3LConfigParameterType.STRING,
-    undefined,
-  );
-  storeFromEnv(
-    reader,
-    config,
-    OPERATOR_EMAIL_KEY,
-    Core.M3LConfigParameterType.STRING,
-    undefined,
-  );
-  storeFromEnv(
-    reader,
-    config,
-    DRAIN_TIMEOUT_KEY,
-    Core.M3LConfigParameterType.INT,
-    DEFAULT_DRAIN_TIMEOUT_MS,
-  );
-  storeFromEnv(
-    reader,
-    config,
-    LOG_LEVEL_KEY,
-    Core.M3LConfigParameterType.STRING,
-    DEFAULT_LOG_LEVEL,
-  );
+  for (const setting of SETTINGS) {
+    storeFromEnv(
+      reader,
+      config,
+      setting.key,
+      setting.type,
+      setting.defaultValue,
+    );
+  }
 }
 
 /**
@@ -289,6 +321,33 @@ function resolveDrainTimeoutMs(accessor: Core.M3LConfigAccessor): number {
 }
 
 /**
+ * Reads the resolved database busy-timeout and rejects a non-positive value
+ * or one above {@link MAX_DRAIN_TIMEOUT_MS} — reused here rather than
+ * redeclared, since it is the same Node 32-bit signed timer bound the drain
+ * timeout is capped at, and this value ultimately arms a `busy_timeout`
+ * pragma of the same kind.
+ */
+function resolveDatabaseBusyTimeoutMs(
+  accessor: Core.M3LConfigAccessor,
+): number {
+  const busyTimeoutMs = wrapConfigRead(DB_BUSY_TIMEOUT_KEY, () =>
+    accessor.numberWithDefault(DB_BUSY_TIMEOUT_KEY, DEFAULT_DB_BUSY_TIMEOUT_MS),
+  );
+  if (
+    !Number.isInteger(busyTimeoutMs) ||
+    busyTimeoutMs <= 0 ||
+    busyTimeoutMs > MAX_DRAIN_TIMEOUT_MS
+  ) {
+    throw new M3LConsoleError(
+      CODE,
+      `configuration key '${DB_BUSY_TIMEOUT_KEY}' must be a positive integer number of milliseconds, at most ${String(MAX_DRAIN_TIMEOUT_MS)}`,
+      { context: { key: DB_BUSY_TIMEOUT_KEY } },
+    );
+  }
+  return busyTimeoutMs;
+}
+
+/**
  * The console server's resolved boot-time configuration.
  *
  * @example
@@ -311,6 +370,10 @@ export interface M3LConsoleConfig {
   readonly drainTimeoutMs: number;
   /** The logger's minimum severity floor. */
   readonly logLevel: Core.M3LLogLevelFloor;
+  /** The resolved, absolute path to the embedded store's SQLite database file (ADR-0069). */
+  readonly databasePath: string;
+  /** The embedded store's SQLite `busy_timeout`, in milliseconds. */
+  readonly databaseBusyTimeoutMs: number;
 }
 
 /**
@@ -324,6 +387,14 @@ export interface M3LConsoleConfig {
 export interface LoadConsoleConfigOptions {
   /** The environment variable map to resolve settings from; defaults to `process.env`. */
   readonly env?: NodeJS.ProcessEnv;
+  /**
+   * Resolves the base data directory used to compute the default/relative
+   * database path; threaded through to {@link resolveStoreDatabasePath}.
+   * `Core.M3LPaths` (the default resolver) reads `process.env` directly
+   * rather than `options.env`, so this seam is what lets a caller resolve
+   * the database path hermetically.
+   */
+  readonly resolveDataDir?: () => string;
 }
 
 /**
@@ -338,7 +409,12 @@ export interface LoadConsoleConfigOptions {
  * `1..65535`; `M3L_CONSOLE_DRAIN_TIMEOUT_MS` must be a positive integer no
  * greater than {@link MAX_DRAIN_TIMEOUT_MS};
  * `M3L_CONSOLE_LOG_LEVEL` must be one of the six documented
- * {@link Core.M3LLogLevelFloor} spellings. Every failure surfaces as an
+ * {@link Core.M3LLogLevelFloor} spellings. `M3L_CONSOLE_DB_PATH` is resolved
+ * via {@link resolveStoreDatabasePath} (rejecting a blank value, the literal
+ * `":memory:"`, a `file:`-prefixed value, or one ending in a path separator)
+ * and defaults to `<dataDir>/console/console.sqlite`.
+ * `M3L_CONSOLE_DB_BUSY_TIMEOUT_MS` must be a positive integer no greater than
+ * {@link MAX_DRAIN_TIMEOUT_MS}, defaulting to `5000`. Every failure surfaces as an
  * {@link M3LConsoleError} with code `"ERR_CONSOLE_CONFIG_INVALID"`, naming
  * the offending key and never echoing the raw value (which may be a secret)
  * — with one deliberate, reasoned exception: a rejected `M3L_CONSOLE_HOST`
@@ -382,6 +458,25 @@ export function loadConsoleConfig(
   const logLevel = wrapConfigRead(LOG_LEVEL_KEY, () =>
     accessor.oneOf(LOG_LEVEL_KEY, LOG_LEVELS),
   );
+  const configuredDbPath = wrapConfigRead(DB_PATH_KEY, () =>
+    accessor.optionalString(DB_PATH_KEY),
+  );
+  const databasePath = resolveStoreDatabasePath({
+    configuredPath: configuredDbPath,
+    ...(options.resolveDataDir !== undefined && {
+      resolveDataDir: options.resolveDataDir,
+    }),
+  });
+  const databaseBusyTimeoutMs = resolveDatabaseBusyTimeoutMs(accessor);
 
-  return { host, port, operatorName, operatorEmail, drainTimeoutMs, logLevel };
+  return {
+    host,
+    port,
+    operatorName,
+    operatorEmail,
+    drainTimeoutMs,
+    logLevel,
+    databasePath,
+    databaseBusyTimeoutMs,
+  };
 }
