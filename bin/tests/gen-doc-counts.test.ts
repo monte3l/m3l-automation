@@ -78,11 +78,11 @@ const TOTAL_STALE_BY_LABEL: Record<string, string> = {
     "implemented (0 of 0)",
   "total submodule count (root README.md badge URL)": "modules-99%2F0-red",
   "total submodule count (root README.md prose)":
-    "0 of 0 submodules are implemented",
+    "0 of 0 library submodules are implemented",
   "total submodule count (npm-facing README.md badge URL)":
     "modules-99%2F0-red",
   "total submodule count (npm-facing README.md prose)":
-    "0 of 0 submodules are implemented",
+    "0 of 0 library submodules are implemented",
   "total submodule count (implementation-status.md intro prose)":
     "(0 of 0 submodules)",
   "Core submodule count (implementation-status.md barrels table)":
@@ -93,16 +93,18 @@ const TOTAL_STALE_BY_LABEL: Record<string, string> = {
     "library ledger (0/0 submodules, count-enforced)",
   "total submodule count (agent-operating-model.md live-status bullet)":
     "count-enforced 0/0 ledger",
-  "total submodule count (root README.md badge alt text)": 'alt="modules: 0/0"',
+  "total submodule count (root README.md badge alt text)":
+    'alt="library modules: 0/0"',
   "total submodule count (npm-facing README.md badge alt text)":
-    'alt="modules: 0/0"',
+    'alt="library modules: 0/0"',
 };
 
 const IMPLEMENTED_STALE_BY_LABEL: Record<string, string> = {
   "root README.md badge URL": "modules-0%2F99-red",
-  "root README.md prose callout": "0 of 99 submodules are implemented",
+  "root README.md prose callout": "0 of 99 library submodules are implemented",
   "npm-facing README.md badge URL": "modules-0%2F99-red",
-  "npm-facing README.md prose callout": "0 of 99 submodules are implemented",
+  "npm-facing README.md prose callout":
+    "0 of 99 library submodules are implemented",
   "docs/README.md development-status callout": "implemented (0 of 99)",
   "implementation-status.md intro prose": "(0 of 99 submodules)",
   "ROADMAP.md intro pointer":
@@ -112,8 +114,8 @@ const IMPLEMENTED_STALE_BY_LABEL: Record<string, string> = {
   "docs/plans/README.md living-trackers pointer":
     "library ledger (0/99 submodules, count-enforced)",
   "agent-operating-model.md live-status bullet": "count-enforced 0/99 ledger",
-  "root README.md badge alt text": 'alt="modules: 0/99"',
-  "npm-facing README.md badge alt text": 'alt="modules: 0/99"',
+  "root README.md badge alt text": 'alt="library modules: 0/99"',
+  "npm-facing README.md badge alt text": 'alt="library modules: 0/99"',
 };
 
 // `TOTAL_COUNT_SITES.find`/`IMPLEMENTED_COUNT_SITES.find` narrowed the same

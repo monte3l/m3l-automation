@@ -23,14 +23,23 @@ ready to build something real, continue with the
 
 ## 2. Installation
 
-`@m3l-automation/m3l-common` is a published npm package. Add it with `pnpm`:
+`@m3l-automation/m3l-common` is not published to npm. Consumers live inside
+this monorepo and depend on it via `workspace:*`
+([ADR-0029](adr/0029-script-dependency-boundary.md)):
 
-```bash
-pnpm add @m3l-automation/m3l-common
+```jsonc
+{
+  "dependencies": {
+    "@m3l-automation/m3l-common": "workspace:*",
+  },
+}
 ```
 
-That single dependency brings in the whole framework. There is nothing else to
-configure to start — no scaffolding step and no generated files.
+External installation from a private GitHub Packages registry is planned
+([ADR-0057](adr/0057-private-registry-distribution.md), roadmap U13) but not
+yet available. That single dependency brings in the whole framework — there is
+nothing else to configure to start, no scaffolding step and no generated
+files.
 
 ## 3. The two namespaces
 

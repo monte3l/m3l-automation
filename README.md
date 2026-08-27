@@ -12,7 +12,7 @@
 <a href="https://nodejs.org/api/esm.html"><img src="https://img.shields.io/badge/esm-only-66D9EF?style=flat-square&labelColor=272822" alt="ESM only"></a>
 <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-strict-66D9EF?style=flat-square&labelColor=272822" alt="TypeScript strict"></a>
 <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-A6E22E?style=flat-square&labelColor=272822" alt="Apache-2.0"></a>
-<a href="docs/implementation-status.md"><img src="https://img.shields.io/badge/modules-43%2F43-A6E22E?style=flat-square&labelColor=272822" alt="modules: 43/43"></a>
+<a href="docs/implementation-status.md"><img src="https://img.shields.io/badge/library%20modules-43%2F43-A6E22E?style=flat-square&labelColor=272822" alt="library modules: 43/43"></a>
 </p>
 
 <p align="center">
@@ -26,24 +26,43 @@
 <a href="#co-developed-with-claude"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fmonte3l.github.io%2Fm3l-automation%2Fcommit-stats%2Fclaude-opus-4-8.json" alt="Claude Opus 4.8 commits"></a>
 <a href="#co-developed-with-claude"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fmonte3l.github.io%2Fm3l-automation%2Fcommit-stats%2Fclaude-sonnet-5.json" alt="Claude Sonnet 5 commits"></a>
 <a href="#co-developed-with-claude"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fmonte3l.github.io%2Fm3l-automation%2Fcommit-stats%2Fclaude-sonnet-4-6.json" alt="Claude Sonnet 4.6 commits"></a>
+<a href="#co-developed-with-claude"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fmonte3l.github.io%2Fm3l-automation%2Fcommit-stats%2Fclaude-haiku-4-5.json" alt="Claude Haiku 4.5 commits"></a>
 </p>
 
-> **All 43 of 43 submodules are implemented and reviewed.** The package is
-> internal and not published to npm; `version` in `package.json` is hand-managed.
-> Implemented submodules:
-> <!-- BEGIN GENERATED SUBMODULE-LIST -->
->
-> `errors`, `events`, `security`, `environment`, `utils`, `json`, `analysis`, `messaging`, `config`, `logging`, `files`, `network`, `polling`, `prompt`, `importers`, `exporters`, `storage`, `text`, `script`, `diagnostics`, `checkpoint`, `pipeline`, `procedure`, `cli-contract`, `aws/models`, `aws/credentials`, `aws/clients`, `aws/dynamodb`, `aws/cloudwatch-logs-insights`, `aws/sqs`, `aws/signing`, `aws/s3`, `aws/athena`, `aws/eventbridge`, `aws/lambda`, `aws/ecs`, `aws/codepipeline`, `aws/cloudformation`, `aws/eks`, `aws/cloudwatch-alarms`, `aws/cloudwatch-metrics`, `aws/secrets-manager`, `aws/rds-data`.
-> <!-- END GENERATED SUBMODULE-LIST -->
->
-> See [Implementation status](docs/implementation-status.md) for the per-module breakdown.
+**m3l-automation is an AWS automation platform**, built around a shared
+TypeScript library, a script-facing CLI, and a fleet of consumer scripts that
+run real AWS operations — developed under an explicit AI agent-operating
+model in which a human maintainer reviews and signs off on every change.
 
-A shared infrastructure library for automation scripts and AWS Lambda handlers. It provides
-enterprise-grade building blocks — application scaffolding, configuration, logging, error
-handling, file import/export, polling/retry resilience, and AWS credential and client management
-— so consumer scripts stay free of boilerplate.
+## What's here
 
-## Features
+| Path                                                         | What it is                                                                                                                                                                                                               |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [`packages/m3l-common`](packages/m3l-common)                 | The substrate library — 43 Core/AWS submodules covering configuration, logging, resilience, data I/O, and AWS SDK client/operations wrappers.                                                                            |
+| [`packages/m3l-cli`](packages/m3l-cli)                       | `m3l` — the CLI product. Discovers, inspects, runs, and scaffolds every script in `scripts/*` over a typed command-module seam ([ADR-0053](docs/adr/0053-cli-first-evolution-programme.md)).                             |
+| [`packages/m3l-console-server`](packages/m3l-console-server) | The operations-console backend — a loopback-bound HTTP server, the repo's first long-running process ([ADR-0064](docs/adr/0064-m3l-console-programme.md)). Early stage.                                                  |
+| [`scripts/*`](scripts)                                       | 16 consumer automations against real AWS services — S3, SQS, DynamoDB, Athena, CloudFormation, ECS, EKS, Lambda, EventBridge, CodePipeline, RDS Data API, and CloudWatch — each built on `m3l-common` via `workspace:*`. |
+
+## The `m3l` CLI
+
+`m3l` discovers every script under `scripts/*`, introspects its declared
+configuration, and runs it with guided prompts, presets, or full non-interactive
+automation:
+
+```bash
+m3l list                    # every script in the fleet
+m3l inspect <script>        # its configuration surface
+m3l wizard                  # guided, interactive run
+m3l run <script> -- [args]  # non-interactive run
+m3l new <name>               # scaffold a new script
+m3l doctor                   # environment/config diagnostics
+```
+
+`m3l run --json` and the dynamic `m3l <script> --json` form emit a structured,
+allowlisted result envelope for machine consumers. Full command reference:
+[`docs/reference/cli.md`](docs/reference/cli.md).
+
+## The library
 
 Per-module detail and coverage are tracked in
 [docs/implementation-status.md](docs/implementation-status.md).
@@ -54,7 +73,29 @@ Per-module detail and coverage are tracked in
 - **Interactive UI** — spinners, progress bars, and prompts that degrade gracefully to plain text in non-interactive environments.
 - **Data I/O** — streaming CSV/JSON/text importers and CSV/JSON/HTML exporters, multi-format text extraction (PDF, DOCX, XLSX, email, ZIP), and SQLite FTS5 full-text search.
 - **Resilience** — `Core.M3LPoller`, `Core.M3LRetryRunner`, backoff strategies, and composable retry classifiers; plus `M3LError` and `M3LResult<T, E>` for explicit error handling.
-- **AWS integration** — `AWS.M3LAWSCredentialsManager` manages SSO credentials (validating via STS `GetCallerIdentity`), and client providers lazily create and cache AWS SDK v3 clients per profile.
+- **Codified procedures** — `Core.procedure` runs declarative analysis/decision spines (condition evaluation, threshold analysis, pipeline steps, checkpointed resume) so operational runbooks live as reviewed code, not tribal knowledge.
+- **Command-module contract** — `Core.cli-contract` is the typed seam every script exposes so `m3l` can discover, introspect, and dispatch it without bespoke wiring per script.
+- **AWS integration** — `AWS.M3LAWSCredentialsManager` manages SSO credentials (validating via STS `GetCallerIdentity`), lazily-cached SDK v3 client providers, and typed operation wrappers for S3, SQS, DynamoDB, Athena, EventBridge, Lambda, ECS, EKS, CodePipeline, CloudFormation, CloudWatch (alarms, metrics, Logs Insights), Secrets Manager, and the RDS Data API.
+
+## The fleet
+
+16 consumer scripts under [`scripts/`](scripts), each with a contract page under
+[`docs/reference/scripts/`](docs/reference/scripts):
+
+`api-gateway-client`, `athena-query`, `cloudformation-stacks`,
+`cloudwatch-logs-analysis`, `cloudwatch-logs-insights`, `codepipeline-ops`,
+`dynamodb-crud`, `ecs-ops`, `eks-ops`, `eventbridge-schedules`, `json-etl`,
+`lambda-ops`, `rds-data-sql`, `s3-objects`, `sqs-dead-letter-triage`,
+`sqs-etl`.
+
+## Where it's going
+
+Three named programmes carry the roadmap forward — see
+[docs/ROADMAP.md](docs/ROADMAP.md) for current status:
+
+- **U — CLI-first evolution** ([ADR-0053](docs/adr/0053-cli-first-evolution-programme.md)): `m3l` grows from launcher to product — cross-script orchestration (`m3l flow`), private-registry distribution, hybrid in-process execution.
+- **V — Agent-operator programme** ([ADR-0058](docs/adr/0058-agent-operator-programme.md)): staged AI-agent operation of the fleet under a graded autonomy policy layer and an append-only decision log.
+- **X — m3l console** ([ADR-0064](docs/adr/0064-m3l-console-programme.md)): a full-stack operations console — server, web UI, and workbench sessions — over the same command-module seam the CLI uses.
 
 ## Requirements
 
@@ -63,9 +104,20 @@ Per-module detail and coverage are tracked in
 
 ## Installation
 
-```bash
-pnpm add @m3l-automation/m3l-common
+Consumers live in this monorepo and depend on the library via `workspace:*`
+([ADR-0029](docs/adr/0029-script-dependency-boundary.md)):
+
+```jsonc
+{
+  "dependencies": {
+    "@m3l-automation/m3l-common": "workspace:*",
+  },
+}
 ```
+
+External installation from a private GitHub Packages registry is planned
+([ADR-0057](docs/adr/0057-private-registry-distribution.md), roadmap U13) but
+not yet available.
 
 ## Quick start
 
@@ -98,11 +150,22 @@ import { Core, AWS } from "@m3l-automation/m3l-common";
 - **`Core`** — application scaffolding, configuration, logging, prompts, I/O, data utilities, and resilience primitives.
 - **`AWS`** — AWS credential management and SDK client providers.
 
+> **All 43 of 43 library submodules are implemented and reviewed.** Implemented
+> submodules:
+> <!-- BEGIN GENERATED SUBMODULE-LIST -->
+>
+> `errors`, `events`, `security`, `environment`, `utils`, `json`, `analysis`, `messaging`, `config`, `logging`, `files`, `network`, `polling`, `prompt`, `importers`, `exporters`, `storage`, `text`, `script`, `diagnostics`, `checkpoint`, `pipeline`, `procedure`, `cli-contract`, `aws/models`, `aws/credentials`, `aws/clients`, `aws/dynamodb`, `aws/cloudwatch-logs-insights`, `aws/sqs`, `aws/signing`, `aws/s3`, `aws/athena`, `aws/eventbridge`, `aws/lambda`, `aws/ecs`, `aws/codepipeline`, `aws/cloudformation`, `aws/eks`, `aws/cloudwatch-alarms`, `aws/cloudwatch-metrics`, `aws/secrets-manager`, `aws/rds-data`.
+> <!-- END GENERATED SUBMODULE-LIST -->
+>
+> See [Implementation status](docs/implementation-status.md) for the per-module breakdown.
+
 ## Documentation
 
 - [Documentation index](docs/README.md)
 - [Getting started](docs/getting-started.md)
+- [CLI reference](docs/reference/cli.md)
 - [Implementation status](docs/implementation-status.md) — per-module progress tracker
+- [Roadmap](docs/ROADMAP.md) — the U/V/X programmes and current status
 - [Architecture overview](docs/m3l-common-architecture.md)
 - [Contributing](.github/CONTRIBUTING.md)
 
