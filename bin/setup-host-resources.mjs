@@ -112,6 +112,33 @@ export function buildClaudeRcOverride() {
   return "[Service]\nMemoryMax=6G\nOOMPolicy=kill\n";
 }
 
+/**
+ * Extract the integer GiB value from a `MemoryMax=<N>G` line in systemd
+ * drop-in content. Returns null when the line is absent or not a plain
+ * `<N>G` value (e.g. `infinity`) — treated as "unknown", never as 0, so a
+ * caller comparing against it doesn't mistake unparseable for unbounded.
+ *
+ * @param {string} overrideText
+ * @returns {number | null}
+ */
+export function extractMemoryMaxGiB(overrideText) {
+  const match = /MemoryMax=(\d+)G/.exec(overrideText);
+  return match ? Number(match[1]) : null;
+}
+
+/**
+ * Extract the integer GiB value from a `<N>G` string, the format
+ * `CLAUDE_CODE_TOOL_MEMORY_LIMIT` is written in. Returns null when the
+ * value isn't that exact shape.
+ *
+ * @param {string} value
+ * @returns {number | null}
+ */
+export function extractGiBSuffix(value) {
+  const match = /^(\d+)G$/.exec(value);
+  return match ? Number(match[1]) : null;
+}
+
 function sh(cmd, args, opts = {}) {
   return execFileSync(cmd, args, { encoding: "utf8", ...opts }).trim();
 }
@@ -216,9 +243,13 @@ function run(opts, reporter) {
   const existingSlice = existsSync(sliceOverridePath)
     ? readFileSync(sliceOverridePath, "utf8")
     : null;
-  if (existingSlice === sliceOverride) {
+  const existingSliceGiB =
+    existingSlice !== null ? extractMemoryMaxGiB(existingSlice) : null;
+  const targetSliceGiB = extractMemoryMaxGiB(sliceOverride);
+  if (existingSliceGiB !== null && existingSliceGiB <= targetSliceGiB) {
     reporter.info(
-      "[4/6] user-.slice MemoryMax: already at target — leaving as-is.",
+      `[4/6] user-.slice MemoryMax: existing ${existingSliceGiB}G is already ` +
+        `at or stricter than the derived ${targetSliceGiB}G — leaving as-is.`,
     );
   } else {
     reporter.info(
@@ -280,9 +311,12 @@ function run(opts, reporter) {
     ? JSON.parse(readFileSync(localSettingsPath, "utf8"))
     : {};
   const currentLimit = localSettings.env?.CLAUDE_CODE_TOOL_MEMORY_LIMIT;
-  if (currentLimit === `${recommendedGiB}G`) {
+  const currentLimitGiB =
+    typeof currentLimit === "string" ? extractGiBSuffix(currentLimit) : null;
+  if (currentLimitGiB !== null && currentLimitGiB <= recommendedGiB) {
     reporter.info(
-      `[6/6] CLAUDE_CODE_TOOL_MEMORY_LIMIT: already ${currentLimit} in settings.local.json — leaving as-is.`,
+      `[6/6] CLAUDE_CODE_TOOL_MEMORY_LIMIT: existing ${currentLimit} is ` +
+        `already at or stricter than the derived ${recommendedGiB}G — leaving as-is.`,
     );
   } else {
     reporter.info(

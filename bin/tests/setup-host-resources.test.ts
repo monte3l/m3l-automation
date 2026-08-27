@@ -4,6 +4,8 @@ import {
   buildEarlyoomOverride,
   buildUserSliceOverride,
   buildClaudeRcOverride,
+  extractMemoryMaxGiB,
+  extractGiBSuffix,
 } from "../../bin/setup-host-resources.mjs";
 
 describe("parseSessionsFlag", () => {
@@ -68,5 +70,33 @@ describe("buildClaudeRcOverride", () => {
     expect(buildClaudeRcOverride()).toBe(
       "[Service]\nMemoryMax=6G\nOOMPolicy=kill\n",
     );
+  });
+});
+
+describe("extractMemoryMaxGiB", () => {
+  test("extracts the integer GiB value from a MemoryMax=<N>G line", () => {
+    expect(
+      extractMemoryMaxGiB("[Slice]\nMemoryMax=14G\nMemoryHigh=13G\n"),
+    ).toBe(14);
+  });
+
+  test("returns null when no MemoryMax line is present", () => {
+    expect(extractMemoryMaxGiB("[Slice]\nMemoryHigh=13G\n")).toBeNull();
+  });
+
+  test("returns null (not 0) for an unparseable MemoryMax value like infinity", () => {
+    expect(extractMemoryMaxGiB("[Slice]\nMemoryMax=infinity\n")).toBeNull();
+  });
+});
+
+describe("extractGiBSuffix", () => {
+  test("extracts the integer GiB value from a plain <N>G string", () => {
+    expect(extractGiBSuffix("6G")).toBe(6);
+  });
+
+  test("returns null for a value that isn't the exact <N>G shape", () => {
+    expect(extractGiBSuffix("infinity")).toBeNull();
+    expect(extractGiBSuffix("6")).toBeNull();
+    expect(extractGiBSuffix("6GB")).toBeNull();
   });
 });
