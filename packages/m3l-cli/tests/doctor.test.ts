@@ -24,7 +24,10 @@ import type {
   M3LCliDoctorStatus,
 } from "../src/commands/doctor.js";
 import type { M3LCliCommandContext } from "../src/commands/context.js";
-import { discoverScripts } from "../src/discovery/discover.js";
+import {
+  diagnoseDependencyGraph,
+  discoverScripts,
+} from "../src/discovery/discover.js";
 import type { M3LCliScriptCandidate } from "../src/discovery/discover.js";
 import { loadScriptParameters } from "../src/discovery/load-config.js";
 import type { M3LCliParameterDescriptor } from "../src/discovery/load-config.js";
@@ -47,6 +50,7 @@ import { M3LCliError } from "../src/cli/errors.js";
 
 vi.mock("../src/discovery/discover.js", () => ({
   discoverScripts: vi.fn(),
+  diagnoseDependencyGraph: vi.fn(),
 }));
 vi.mock("../src/discovery/load-config.js", () => ({
   loadScriptParameters: vi.fn(),
@@ -63,6 +67,7 @@ vi.mock("../src/run/in-process.js", () => ({
 }));
 
 const discoverScriptsMock = vi.mocked(discoverScripts);
+const diagnoseDependencyGraphMock = vi.mocked(diagnoseDependencyGraph);
 const loadScriptParametersMock = vi.mocked(loadScriptParameters);
 const configMtimesMock = vi.mocked(configMtimes);
 const readDiscoveryCacheMock = vi.mocked(readDiscoveryCache);
@@ -81,6 +86,7 @@ function setNodeVersion(version: string): void {
 beforeEach(() => {
   setNodeVersion("v24.0.0");
   discoverScriptsMock.mockReturnValue([]);
+  diagnoseDependencyGraphMock.mockReturnValue({ resolved: [], unresolved: [] });
   configMtimesMock.mockReturnValue({ srcMtimeMs: 100, distMtimeMs: 200 });
   loadScriptParametersMock.mockResolvedValue([]);
   readDiscoveryCacheMock.mockReturnValue({});
@@ -95,6 +101,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.restoreAllMocks();
   discoverScriptsMock.mockReset();
+  diagnoseDependencyGraphMock.mockReset();
   loadScriptParametersMock.mockReset();
   configMtimesMock.mockReset();
   readDiscoveryCacheMock.mockReset();
@@ -708,6 +715,148 @@ describe("runDoctor — command-module check (U7)", () => {
     expect(findCheck(checks, "command-module:exporter")).toBeDefined();
     expect(findCheck(checks, "script:importer")).toBeDefined();
     expect(findCheck(checks, "command-module:importer")).toBeDefined();
+  });
+});
+
+/**
+ * U7 (ADR-0054, "discovery starts resolving over the dependency graph") —
+ * a new `dependency-graph` row, built from `diagnoseDependencyGraph`
+ * (imported from `../discovery/discover.js`, alongside `discoverScripts`).
+ * Reports how many declared `@m3l-automation/*` script dependencies resolved
+ * successfully vs. how many are declared-but-unresolvable. This check can
+ * NEVER resolve `"fail"`: a script package failing to resolve is recoverable
+ * via `pnpm install`, not a hard failure.
+ */
+describe("runDoctor — dependency-graph check (U7)", () => {
+  test("resolves 'ok' when every declared dependency resolved", async () => {
+    diagnoseDependencyGraphMock.mockReturnValue({
+      resolved: ["json-etl", "s3-objects"],
+      unresolved: [],
+    });
+
+    const { context, infoLines } = buildContext();
+    const code = await runDoctor(context);
+
+    const row = findCheck(parseChecks(infoLines), "dependency-graph");
+    expect(row?.status).toBe("ok");
+    expect(code).toBe(0);
+  });
+
+  test("resolves 'ok' when zero dependencies are declared (a legitimate near-term state before the manifest change lands)", async () => {
+    diagnoseDependencyGraphMock.mockReturnValue({
+      resolved: [],
+      unresolved: [],
+    });
+
+    const { context, infoLines } = buildContext();
+    const code = await runDoctor(context);
+
+    const row = findCheck(parseChecks(infoLines), "dependency-graph");
+    expect(row?.status).toBe("ok");
+    expect(code).toBe(0);
+  });
+
+  test("resolves 'warn' (never 'fail'), naming the unresolvable dependency in detail, when at least one declared dependency fails to resolve", async () => {
+    diagnoseDependencyGraphMock.mockReturnValue({
+      resolved: ["json-etl"],
+      unresolved: ["stale-symlink"],
+    });
+
+    const { context, infoLines } = buildContext();
+    const code = await runDoctor(context);
+
+    const row = findCheck(parseChecks(infoLines), "dependency-graph");
+    expect(row?.status).toBe("warn");
+    expect(row?.detail).toContain("stale-symlink");
+    expect(code).toBe(0);
+  });
+
+  test("names every unresolvable dependency in detail when more than one fails to resolve", async () => {
+    diagnoseDependencyGraphMock.mockReturnValue({
+      resolved: [],
+      unresolved: ["stale-symlink-one", "stale-symlink-two"],
+    });
+
+    const { context, infoLines } = buildContext();
+    const code = await runDoctor(context);
+
+    const row = findCheck(parseChecks(infoLines), "dependency-graph");
+    expect(row?.status).toBe("warn");
+    expect(row?.detail).toContain("stale-symlink-one");
+    expect(row?.detail).toContain("stale-symlink-two");
+    expect(code).toBe(0);
+  });
+
+  test("a dependency-graph row alone (warn) never flips runDoctor's overall exit code to 1, even though every other check is ok", async () => {
+    diagnoseDependencyGraphMock.mockReturnValue({
+      resolved: [],
+      unresolved: ["stale-symlink"],
+    });
+
+    const { context, infoLines } = buildContext();
+    const code = await runDoctor(context);
+
+    const checks = parseChecks(infoLines);
+    const nonDependencyGraphChecks = checks.filter(
+      (check) => check.name !== "dependency-graph",
+    );
+    expect(
+      nonDependencyGraphChecks.every((check) => check.status === "ok"),
+    ).toBe(true);
+    const dependencyGraphRow = findCheck(checks, "dependency-graph");
+    expect(dependencyGraphRow?.status).toBe("warn");
+    expect(code).toBe(0);
+  });
+});
+
+/**
+ * Should-fix (silent-failure-hunter review of #531): unlike its sibling
+ * `checkCommandModule` (which wraps `loadCommandModule` in its own
+ * try/catch so a broken script's command module only degrades ITS OWN row),
+ * `checkDependencyGraph` currently calls `diagnoseDependencyGraph()` with no
+ * try/catch of its own — an unexpected throw propagates all the way out of
+ * `runDoctor`'s per-check loop, aborting EVERY other check, not just this
+ * one row. The fix wraps `diagnoseDependencyGraph()` the same way, returning
+ * a "warn" row (never "fail") on catch.
+ */
+describe("runDoctor — dependency-graph check isolation from diagnoseDependencyGraph failing (Should-fix)", () => {
+  test("an unexpected diagnoseDependencyGraph failure degrades only the dependency-graph row to warn and does not abort the rest of the run — mirrors checkCommandModule's isolation pattern", async () => {
+    discoverScriptsMock.mockReturnValue([exporterCandidate]);
+    configMtimesMock.mockReturnValue({ srcMtimeMs: 100, distMtimeMs: 200 });
+    loadScriptParametersMock.mockResolvedValue(sampleParameters);
+    loadCommandModuleMock.mockResolvedValue({
+      name: "exporter",
+      version: "1.0.0",
+      configParameters: [],
+      execute: () => Promise.resolve({ status: "success" }),
+    });
+    diagnoseDependencyGraphMock.mockImplementation(() => {
+      throw new Error("unexpected dependency-graph blowup");
+    });
+
+    const { context, infoLines } = buildContext();
+    const code = await runDoctor(context);
+
+    const checks = parseChecks(infoLines);
+    const dependencyGraphRow = findCheck(checks, "dependency-graph");
+    expect(dependencyGraphRow?.status).toBe("warn");
+    expect(dependencyGraphRow?.status).not.toBe("fail");
+
+    // Isolation: every OTHER check still ran and shows up in the results —
+    // the failure did not abort the whole run.
+    expect(findCheck(checks, "node-version")).toBeDefined();
+    expect(findCheck(checks, "workspace-root")).toBeDefined();
+    expect(findCheck(checks, "script:exporter")).toBeDefined();
+    expect(findCheck(checks, "command-module:exporter")).toBeDefined();
+    expect(findCheck(checks, "reserved-names")).toBeDefined();
+    expect(findCheck(checks, "cache")).toBeDefined();
+    expect(findCheck(checks, "history")).toBeDefined();
+    const otherChecks = checks.filter(
+      (check) => check.name !== "dependency-graph",
+    );
+    expect(otherChecks.every((check) => check.status === "ok")).toBe(true);
+
+    expect(code).toBe(0);
   });
 });
 

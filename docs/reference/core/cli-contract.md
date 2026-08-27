@@ -619,18 +619,16 @@ process.exitCode = Core.mapCommandOutcomeToExitCode(outcome);
   descriptor is widened then.
 - **Name validation.** `name` is a bare `string`; reserved-name and slug rules
   live in `packages/m3l-cli` and importing them would invert ADR-0029.
-- **The CLI actually calling any of this.** U7a (this slice) ships the guards,
-  the logger and output factories, `deriveCommandOutcome`, and the
-  `M3LScriptOptions.host` seam — `isM3LCommandModule`/`isM3LCommandOutcome`
-  now exist for a host to re-narrow a foreign `execute`'s resolved value with,
-  closing what used to be listed here as "re-narrowing the awaited outcome".
-  `packages/m3l-cli` importing and calling any of it — locating a script's
-  `dist/command.js`, dynamically importing it, building the context, wiring
-  a `--in-process` flag — is U7's next slice and is not in this diff.
 - **The remaining thirteen-script fleet retrofit.** Unblocked by this slice's
   `check:dup` reduction (see [A prerequisite for fleet-wide
   adoption](#a-prerequisite-for-fleet-wide-adoption--discharged)), but not
   performed here — it is its own tracker item.
+
+`packages/m3l-cli` now does call all of this: locating a script's
+`dist/command.js`, dynamically importing it, building the context, and
+wiring a `--in-process` flag are shipped — see `docs/reference/cli.md`
+§ Design invariants ("Dependency-graph discovery, filesystem fallback") and
+`#### m3l <script> --in-process`.
 
 ## See also
 

@@ -18,7 +18,10 @@ import { Core } from "@m3l-automation/m3l-common";
 import { formatAlignedTable } from "../cli/table.js";
 import { M3LCliError } from "../cli/errors.js";
 import type { M3LCliCommandContext } from "./context.js";
-import { discoverScripts } from "../discovery/discover.js";
+import {
+  diagnoseDependencyGraph,
+  discoverScripts,
+} from "../discovery/discover.js";
 import type { M3LCliScriptCandidate } from "../discovery/discover.js";
 import { loadScriptParameters } from "../discovery/load-config.js";
 import { configMtimes, readDiscoveryCache } from "../discovery/cache.js";
@@ -249,6 +252,48 @@ async function checkCommandModule(
         name: `command-module:${candidate.name}`,
         status: "ok",
         detail: "in-process command module available",
+      };
+}
+
+/**
+ * Builds the `dependency-graph` row (U7, ADR-0054) from
+ * {@link diagnoseDependencyGraph}, reporting how many declared
+ * `@m3l-automation/*` script dependencies resolved successfully vs. how many
+ * are declared-but-unresolvable. This check can **never** resolve `"fail"`:
+ * an unresolvable dependency is recoverable via `pnpm install`, not a hard
+ * failure. An unexpected `diagnoseDependencyGraph` failure (e.g. a
+ * non-`MODULE_NOT_FOUND` resolution error) is isolated to this one row too —
+ * mirrors {@link checkCommandModule}'s isolation pattern exactly — and never
+ * aborts the rest of the `runDoctor` suite.
+ */
+function checkDependencyGraph(): M3LCliDoctorCheck {
+  let status;
+  try {
+    status = diagnoseDependencyGraph();
+  } catch {
+    // Deliberately fixed and content-free: diagnoseDependencyGraph propagates
+    // a genuine resolution failure unwrapped, so the caught error's own
+    // message could carry arbitrary content (e.g. a malformed package
+    // export's path) — never interpolate it into this rendered detail
+    // (plain-text table AND --json), mirrors checkCommandModule's own
+    // catch-block detail-message safety posture exactly.
+    return {
+      name: "dependency-graph",
+      status: "warn",
+      detail:
+        "dependency-graph diagnosis failed unexpectedly — run 'pnpm install' or inspect the workspace manifest directly",
+    };
+  }
+  return status.unresolved.length === 0
+    ? {
+        name: "dependency-graph",
+        status: "ok",
+        detail: `${String(status.resolved.length)} script(s) resolved via the declared dependency graph`,
+      }
+    : {
+        name: "dependency-graph",
+        status: "warn",
+        detail: `unresolved: ${status.unresolved.join(", ")} — run 'pnpm install'`,
       };
 }
 
@@ -519,7 +564,11 @@ export async function runDoctor(
   try {
     const candidates = discoverScripts(context.workspaceRoot);
 
-    checks = [checkNodeVersion(), checkWorkspaceRoot(context)];
+    checks = [
+      checkNodeVersion(),
+      checkWorkspaceRoot(context),
+      checkDependencyGraph(),
+    ];
     for (const candidate of candidates) {
       checks.push(await buildScriptCheck(candidate));
       checks.push(await checkCommandModule(candidate));
