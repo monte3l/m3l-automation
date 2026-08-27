@@ -286,6 +286,11 @@ export const COMMAND_CATALOG = [
       "Verifies CLAUDE.md's runtime content (HTML comments stripped) stays under its line/token budget, and warns on Prettier-padded table rows. Run after editing CLAUDE.md.",
   },
   {
+    name: "check:context-budget",
+    description:
+      "ADR-0078's successor to check:claude-md-budget — resolves CLAUDE.md's @-imports before measuring the always-loaded budget, ratchets .claude/rules/*.md conditional-load weight against a committed baseline, and reports .claude/skills/*/SKILL.md description weight. Not yet wired into CI/pre-push (lands in a follow-up PR once CLAUDE.md's always-loaded surface fits); run manually, or with --update to refresh the rules baseline.",
+  },
+  {
     name: "check:tracker-coverage",
     description:
       "Verifies every status-bearing table in ROADMAP.md/IMPLEMENTATION.md is registered with the sync:hub extractor (bin/lib/project-hub.mjs), so a newly added tracker table can't silently go unsynced. Run after adding a new '## ' section with a Status column to either tracker.",
