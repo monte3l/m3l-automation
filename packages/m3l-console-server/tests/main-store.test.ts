@@ -32,6 +32,8 @@ import { createConsoleRuntime, startConsole } from "../src/main.js";
 import type { M3LConsoleRuntime, StartConsoleOptions } from "../src/main.js";
 import { M3LConsoleError } from "../src/errors/console-error.js";
 import * as envModule from "../src/config/env.js";
+import * as routerModule from "../src/http/router.js";
+import type { M3LRoute } from "../src/http/router.js";
 
 /** A minimal valid env: only the required operator name set. */
 function buildEnv(
@@ -342,6 +344,27 @@ async function dispatch(
   };
 }
 
+/**
+ * Walks a caught value's native `cause` chain, collecting every link so a
+ * test can assert a value is reachable at ANY depth rather than assuming a
+ * fixed number of hops.
+ */
+function causeChain(error: unknown): unknown[] {
+  const chain: unknown[] = [];
+  let current: unknown = error;
+  while (
+    current !== null &&
+    typeof current === "object" &&
+    "cause" in current
+  ) {
+    const cause = (current as { cause?: unknown }).cause;
+    if (cause === undefined) break;
+    chain.push(cause);
+    current = cause;
+  }
+  return chain;
+}
+
 describe("createConsoleRuntime — options.config short-circuits the resolve", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -432,6 +455,176 @@ describe("startConsole — a bind failure closes the store", () => {
 
     await expect(promise).rejects.toThrow(M3LConsoleError);
     expect(closeCallCount()).toBe(1);
+  });
+});
+
+describe("startConsole — a runtime-construction failure closes the store [SHOULD-FIX, PR #706 finding 4]", () => {
+  // `openStore()`/`createConsoleRuntime()` run BEFORE the `try` that guards
+  // the bind path (`src/main.ts` ~462-470). A duplicate route makes
+  // `createConsoleRuntime` throw ERR_CONSOLE_ROUTE_CONFLICT (`http/router.ts`)
+  // synchronously, before that `try` is ever entered — the same handle/WAL
+  // leak class the bind-failure path exists to prevent.
+  test("createConsoleRuntime throwing on a duplicate route still closes the already-opened store, and the original error propagates unchanged", async () => {
+    const { store, closeCallCount } = createFakeStore();
+    const openStore = vi.fn(() => store);
+    const duplicateRoute: M3LRoute = {
+      method: "GET",
+      path: "/api/v1/duplicate",
+      auth: "required",
+      handler: () => ({ status: 200, headers: {}, body: "" }),
+    };
+
+    let thrown: unknown;
+    try {
+      await startConsole({
+        env: buildEnv(),
+        openStore,
+        routes: [duplicateRoute, duplicateRoute],
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).code).toBe("ERR_CONSOLE_ROUTE_CONFLICT");
+    expect(closeCallCount()).toBe(1);
+  });
+});
+
+// -----------------------------------------------------------------------------
+// Double-fault paths: a store `close()` that ITSELF fails while `main.ts` is
+// already handling a construction/bind failure. These are deliberately
+// distinct from the single-failure tests directly above (which use a store
+// whose `close()` succeeds) — they exercise `chainSecondaryFailure` and the
+// `runtime === undefined` branch that selects between chaining the close
+// failure onto `cause`'s own cause chain (no runtime, so no logger yet) and
+// logging it through `runtime.logger` (a runtime exists; only the bind
+// failed). Neither of these second failures is reachable from a
+// single-failure fixture, which is why they shipped uncovered.
+// -----------------------------------------------------------------------------
+
+describe("startConsole — a runtime-construction failure AND a store close failure (double fault)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  test("createConsoleRuntime throwing on a duplicate route, with no pre-existing cause, chains the close failure onto the original error's own cause — the original error still propagates unchanged", async () => {
+    const closeError = new Error("close-boom-no-runtime");
+    const { store, closeCallCount } = createFakeStore({
+      closeShouldThrow: closeError,
+    });
+    const openStore = vi.fn(() => store);
+    const duplicateRoute: M3LRoute = {
+      method: "GET",
+      path: "/api/v1/duplicate-double-fault",
+      auth: "required",
+      handler: () => ({ status: 200, headers: {}, body: "" }),
+    };
+
+    let thrown: unknown;
+    try {
+      await startConsole({
+        env: buildEnv(),
+        openStore,
+        routes: [duplicateRoute, duplicateRoute],
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    // The original construction failure propagates unchanged — identity on
+    // both the instance's code and its class, not merely "something threw".
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).code).toBe("ERR_CONSOLE_ROUTE_CONFLICT");
+    expect(closeCallCount()).toBe(1);
+
+    // There is no `runtime.logger` for this close failure to be reported
+    // through (createConsoleRuntime is what threw), so it has nowhere left
+    // to go but the original error's own cause chain — walk it rather than
+    // assuming a fixed depth.
+    expect(causeChain(thrown)).toContain(closeError);
+  });
+
+  // `createRouter` (`http/router.ts`) is spied out rather than relying on a
+  // duplicate-route conflict, because none of that module's
+  // `ERR_CONSOLE_ROUTE_CONFLICT` errors carry a `cause` — there is no
+  // deterministic, undocumented-internals-free way to make
+  // `createConsoleRuntime` throw an error that already has one otherwise.
+  // Spying the named export mirrors this file's existing
+  // `envModule.loadConsoleConfig` spy technique above.
+  test("a pre-existing cause on the construction error is preserved, and the close failure is still reachable further down the chain — chainSecondaryFailure never overwrites an existing cause but never drops the secondary failure either", async () => {
+    const preExistingCause = new Error("pre-existing-cause");
+    const constructionError = new Error("construction-boom-with-cause", {
+      cause: preExistingCause,
+    });
+    vi.spyOn(routerModule, "createRouter").mockImplementation(() => {
+      throw constructionError;
+    });
+
+    const closeError = new Error("close-boom-pre-existing-cause");
+    const { store, closeCallCount } = createFakeStore({
+      closeShouldThrow: closeError,
+    });
+    const openStore = vi.fn(() => store);
+
+    let thrown: unknown;
+    try {
+      await startConsole({ env: buildEnv(), openStore });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBe(constructionError);
+    expect(closeCallCount()).toBe(1);
+
+    // `failure.cause === undefined` is FALSE here (it is already
+    // `preExistingCause`), so `chainSecondaryFailure` must leave it exactly
+    // as it was — never replacing it with the close failure. But the close
+    // failure must not simply vanish either: `chainSecondaryFailure` walks
+    // past the already-set `cause` to the first free slot further down the
+    // chain and attaches it there, so it is appended beyond the existing
+    // cause rather than discarded.
+    expect((thrown as Error).cause).toBe(preExistingCause);
+    expect(causeChain(thrown)).toEqual([preExistingCause, closeError]);
+    expect(preExistingCause.cause).toBe(closeError);
+  });
+});
+
+describe("startConsole — a bind failure AND a store close failure (double fault)", () => {
+  test("the close failure is logged through runtime.logger — a runtime exists, only the bind failed — while the original bind failure still propagates unchanged", async () => {
+    const closeError = new Error("close-boom-bind-double-fault");
+    const { store, closeCallCount } = createFakeStore({
+      closeShouldThrow: closeError,
+    });
+    const openStore = vi.fn(() => store);
+    const bindError = new Error("bind-boom-double-fault");
+    const fake = createFakeServer(tcpAddress());
+    const handler = new RecordingHandler();
+
+    const promise = startConsole({
+      env: buildEnv(),
+      createServer: () => fake.instance,
+      openStore,
+      handlers: [handler],
+    });
+    fake.instance.emit("error", bindError);
+
+    let thrown: unknown;
+    try {
+      await promise;
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).code).toBe("ERR_CONSOLE_LISTEN_FAILED");
+    expect(closeCallCount()).toBe(1);
+
+    const errorEvents = handler.events.filter(
+      (event) => event.category === Core.M3LLogEventCategory.ERROR,
+    );
+    expect(errorEvents.length).toBeGreaterThanOrEqual(1);
+    expect(JSON.stringify(errorEvents)).toContain("console store close failed");
   });
 });
 

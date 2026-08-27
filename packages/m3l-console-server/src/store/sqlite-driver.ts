@@ -229,7 +229,10 @@ function versionAtLeast(
  *
  * @param database - The handle to read from.
  * @returns The current `user_version` integer.
- * @throws `Error` if the pragma does not read back as a `number`.
+ * @throws {@link M3LConsoleError} with code `ERR_CONSOLE_STORE_UNSUPPORTED`
+ * if the pragma does not read back as a `number` — this driver's own code
+ * for "the builtin is not behaving as this package requires", the same code
+ * {@link assertSqliteSupport}'s tripwires raise.
  *
  * @example
  * ```ts
@@ -240,7 +243,10 @@ export function readUserVersion(database: M3LSqliteDatabaseHandle): number {
   const row = database.prepare("PRAGMA user_version").get();
   const value = row?.["user_version"];
   if (typeof value !== "number") {
-    throw new Error("PRAGMA user_version did not return a number");
+    throw new M3LConsoleError(
+      "ERR_CONSOLE_STORE_UNSUPPORTED",
+      "PRAGMA user_version did not return a number — see ADR-0069's recorded fallback strategies",
+    );
   }
   return value;
 }
@@ -363,6 +369,10 @@ export function assertSqliteSupport(database: M3LSqliteDatabaseHandle): void {
     assertUserVersionRoundTrip(database);
     assertSqliteVersionAtLeast337(database);
   } catch (cause) {
+    // assertUserVersionRoundTrip delegates its reads to readUserVersion,
+    // which now throws an already-typed M3LConsoleError directly — re-throw
+    // it unchanged rather than wrapping a fresh one around it.
+    if (cause instanceof M3LConsoleError) throw cause;
     throw new M3LConsoleError(
       "ERR_CONSOLE_STORE_UNSUPPORTED",
       "the node:sqlite builtin no longer provides the shape or behaviour the console store driver depends on — see ADR-0069's recorded fallback strategies",

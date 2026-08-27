@@ -398,6 +398,198 @@ describe("withTransaction — a failing ROLLBACK", () => {
   });
 });
 
+/**
+ * Wraps a real `:memory:` database (with the `widgets` schema already
+ * applied), throwing `error` for any `exec()` call where `shouldThrow(sql)`
+ * is `true`; every other `exec`/`prepare`/`close` call delegates to the real
+ * backing database. Unlike `createRecordingDatabase`, this lets a test
+ * supply an arbitrary error shape (e.g. a specific `errcode`) rather than a
+ * generic synthetic failure.
+ */
+function createDatabaseWithExecFailure(
+  shouldThrow: (sql: string) => boolean,
+  error: unknown,
+): DatabaseSync {
+  const real = freshDatabase();
+  const handle = {
+    get isOpen() {
+      return real.isOpen;
+    },
+    get isTransaction() {
+      return real.isTransaction;
+    },
+    exec(sql: string) {
+      if (shouldThrow(sql)) throw error;
+      real.exec(sql);
+    },
+    prepare(sql: string) {
+      return real.prepare(sql);
+    },
+    close() {
+      real.close();
+    },
+  };
+  return handle as unknown as DatabaseSync;
+}
+
+/**
+ * Builds an `ERR_SQLITE_ERROR`-shaped error with `errcode: 5` (SQLITE_BUSY,
+ * per `store/sqlite-driver.ts`'s measured table) — mimics a real
+ * `node:sqlite` "competing writer" failure at `BEGIN IMMEDIATE` without a
+ * real second writer/process.
+ */
+function buildBusyError(): NodeJS.ErrnoException {
+  const error = new Error("database is locked") as NodeJS.ErrnoException & {
+    errcode?: number;
+  };
+  error.code = "ERR_SQLITE_ERROR";
+  error.errcode = 5;
+  return error;
+}
+
+describe("withTransaction — its own BEGIN IMMEDIATE/COMMIT calls escape classification [MUST-FIX, PR #706 finding 1]", () => {
+  // withTransaction's own TSDoc advertises BEGIN IMMEDIATE failing fast under
+  // a competing writer as the BUSY design's entire premise — this is the
+  // headline case: that exact failure must surface as
+  // ERR_CONSOLE_STORE_BUSY, not the raw node:sqlite error.
+  test("a BEGIN IMMEDIATE failure with errcode 5 surfaces as ERR_CONSOLE_STORE_BUSY, not a raw node:sqlite error", () => {
+    const busyError = buildBusyError();
+    const faulty = createDatabaseWithExecFailure(
+      (sql) => sql === "BEGIN IMMEDIATE",
+      busyError,
+    );
+
+    let thrown: unknown;
+    try {
+      withTransaction(faulty, () => undefined);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).code).toBe("ERR_CONSOLE_STORE_BUSY");
+  });
+
+  test("a COMMIT failure surfaces as an M3LConsoleError classified for phase 'query', not a raw error", () => {
+    const commitFailure = new Error("commit boom");
+    const faulty = createDatabaseWithExecFailure(
+      (sql) => sql === "COMMIT",
+      commitFailure,
+    );
+
+    let thrown: unknown;
+    try {
+      withTransaction(faulty, (tx: TestTransaction) => {
+        tx.run("INSERT INTO widgets (name) VALUES (?)", ["x"]);
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).code).toBe(
+      "ERR_CONSOLE_STORE_QUERY_FAILED",
+    );
+  });
+
+  test("a SAVEPOINT failure inside nested() surfaces as an M3LConsoleError, not a raw error", () => {
+    const savepointFailure = new Error("savepoint boom");
+    const faulty = createDatabaseWithExecFailure(
+      (sql) => sql.startsWith("SAVEPOINT "),
+      savepointFailure,
+    );
+
+    let thrown: unknown;
+    try {
+      withTransaction(faulty, (tx: TestTransaction) => {
+        tx.nested(() => undefined);
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+  });
+});
+
+/**
+ * Walks `start`'s `cause` chain (including `start` itself), returning `true`
+ * the first time `predicate` matches a node. Guards against a cyclical chain
+ * with a `seen` set.
+ */
+function causeChainIncludes(
+  start: unknown,
+  predicate: (value: unknown) => boolean,
+): boolean {
+  const seen = new Set<unknown>();
+  let current = start;
+  while (
+    current !== null &&
+    typeof current === "object" &&
+    !seen.has(current)
+  ) {
+    if (predicate(current)) return true;
+    seen.add(current);
+    current = (current as { cause?: unknown }).cause;
+  }
+  return false;
+}
+
+describe("withTransaction — a failing ROLLBACK after a classified work failure [SHOULD-FIX, PR #706 finding 3]", () => {
+  // The existing "a failing ROLLBACK" test above throws a plain Error with
+  // no prior `cause`, so it passes identically whether or not the original
+  // cause is preserved — that is why this double-fault case survived: it
+  // needs `work` to fail through `executeOrThrow` FIRST (so the thrown
+  // M3LConsoleError already carries a real cause), and THEN have the
+  // ROLLBACK also fail.
+  test("does not overwrite the original error's cause — it stays reachable by walking the chain", () => {
+    const rollbackFailure = new Error("rollback failed");
+    const faulty = createDatabaseWithExecFailure(
+      (sql) => sql.trim().toUpperCase().startsWith("ROLLBACK"),
+      rollbackFailure,
+    );
+
+    let thrown: unknown;
+    try {
+      withTransaction(faulty, (tx: TestTransaction) => {
+        // A genuinely invalid statement: forces executeOrThrow to classify
+        // the raw node:sqlite failure into a real M3LConsoleError whose
+        // `cause` is that raw failure — the "already carries a cause" case.
+        tx.run("INSERT INTO nonexistent_table (name) VALUES (?)", ["x"]);
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    const workFailure = thrown as M3LConsoleError;
+
+    // Regression lock for a bug that used to overwrite `.cause`
+    // unconditionally, discarding the original node:sqlite failure that made
+    // `work` throw in the first place. `chainSecondaryFailure` walks to the
+    // first free `cause` slot instead of replacing it, so the rollback
+    // failure is chained in without replacing the original.
+    expect(workFailure.cause).toBeDefined();
+    expect(workFailure.cause).not.toBe(rollbackFailure);
+
+    // The rollback failure must be chained on somewhere...
+    expect(
+      causeChainIncludes(workFailure, (value) => value === rollbackFailure),
+    ).toBe(true);
+    // ...WITHOUT replacing the original node:sqlite failure that caused
+    // `work` to fail in the first place.
+    expect(
+      causeChainIncludes(
+        workFailure,
+        (value) =>
+          typeof value === "object" &&
+          value !== null &&
+          (value as { code?: unknown }).code === "ERR_SQLITE_ERROR",
+      ),
+    ).toBe(true);
+  });
+});
+
 describe("createStoreExecutor — query failure classification (phase: query)", () => {
   test("a syntax error is raised as ERR_CONSOLE_STORE_QUERY_FAILED", () => {
     const database = freshDatabase();

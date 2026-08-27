@@ -18,6 +18,7 @@ import { Core } from "@m3l-automation/m3l-common";
 
 import type { M3LConsoleConfig } from "./config/env.js";
 import { loadConsoleConfig } from "./config/env.js";
+import { chainSecondaryFailure } from "./errors/chain-secondary-failure.js";
 import { createSingleOperatorProvider } from "./auth/identity.js";
 import type {
   M3LOperatorProfile,
@@ -436,6 +437,66 @@ function logStoreReady(
 }
 
 /**
+ * Builds the {@link M3LConsoleRuntime} and binds its listener (ADR-0071,
+ * `lifecycle/http-server.ts`), closing `store` if EITHER step fails. A
+ * runtime-construction failure (e.g. `createRouter` raising
+ * `ERR_CONSOLE_ROUTE_CONFLICT` on a duplicate route) is exactly the same
+ * handle/WAL-sidecar leak class a bind failure is, so both are guarded by
+ * this one region rather than only the bind.
+ *
+ * The failure that triggered the close always propagates UNCHANGED — a
+ * failing `store.close()` here is best-effort and must never shadow it: it
+ * is logged through the runtime's own logger when one exists (construction
+ * succeeded, only the bind failed), or else chained onto the triggering
+ * failure's own cause chain, since `createConsoleRuntime` is what threw and
+ * so there is no logger yet to report it through.
+ */
+async function buildRuntimeAndBindListener(
+  options: StartConsoleOptions,
+  config: M3LConsoleConfig,
+  store: M3LConsoleStoreHandle,
+): Promise<{
+  readonly runtime: M3LConsoleRuntime;
+  readonly server: M3LListeningServer;
+}> {
+  let runtime: M3LConsoleRuntime | undefined;
+  try {
+    runtime = createConsoleRuntime({ ...options, config, store });
+    const server = await startConsoleServer({
+      host: runtime.config.host,
+      port: runtime.config.port,
+      listener: runtime.requestListener,
+      closeTimeoutMs: runtime.config.drainTimeoutMs,
+      ...(options.createServer !== undefined && {
+        createServer: options.createServer,
+      }),
+    });
+    return { runtime, server };
+  } catch (cause) {
+    // Best-effort: the construction/bind failure below is what the caller
+    // needs to see, and a failing close() here must never shadow it.
+    try {
+      store.close();
+    } catch (closeCause) {
+      if (runtime === undefined) {
+        // createConsoleRuntime is what threw — there is no runtime, and so
+        // no logger, for the close failure to be reported through. It has
+        // nowhere left to go but cause's own cause chain.
+        chainSecondaryFailure(cause, closeCause);
+      } else {
+        // Logged, like the structurally identical close-failure path in
+        // `lifecycle/shutdown.ts`, but the ORIGINAL bind failure is still
+        // what gets re-thrown below.
+        runtime.logger.error("console store close failed", {
+          cause: Core.getErrorMessage(closeCause),
+        });
+      }
+    }
+    throw cause;
+  }
+}
+
+/**
  * Starts the console server: builds the {@link M3LConsoleRuntime}, binds and
  * verifies its listener (ADR-0071, `lifecycle/http-server.ts`), and
  * registers shutdown signal handlers.
@@ -464,33 +525,11 @@ export async function startConsole(
     busyTimeoutMs: config.databaseBusyTimeoutMs,
   });
 
-  const runtime = createConsoleRuntime({ ...options, config, store });
-
-  let server: M3LListeningServer;
-  try {
-    server = await startConsoleServer({
-      host: runtime.config.host,
-      port: runtime.config.port,
-      listener: runtime.requestListener,
-      closeTimeoutMs: runtime.config.drainTimeoutMs,
-      ...(options.createServer !== undefined && {
-        createServer: options.createServer,
-      }),
-    });
-  } catch (cause) {
-    // Best-effort: the bind failure below is what the caller needs to see,
-    // and a failing close() here must never shadow it — logged, like the
-    // structurally identical close-failure path in `lifecycle/shutdown.ts`,
-    // but the ORIGINAL bind failure is still what gets re-thrown.
-    try {
-      store.close();
-    } catch (closeCause) {
-      runtime.logger.error("console store close failed", {
-        cause: Core.getErrorMessage(closeCause),
-      });
-    }
-    throw cause;
-  }
+  const { runtime, server } = await buildRuntimeAndBindListener(
+    options,
+    config,
+    store,
+  );
 
   logListening(runtime.logger, server);
   logStoreReady(runtime.logger, store);

@@ -18,6 +18,7 @@
  *
  * @packageDocumentation
  */
+import { chainSecondaryFailure } from "../errors/chain-secondary-failure.js";
 import { M3LConsoleError } from "../errors/console-error.js";
 
 import { classifyStoreFailure, storeError } from "./failures.js";
@@ -150,30 +151,17 @@ function createQueryExecutor(
   };
 }
 
-/**
- * Mutates `target.cause` to `rollbackCause`, when `target` is an object —
- * used to chain a failing `ROLLBACK`/`ROLLBACK TO` onto the original error
- * without shadowing it. A hostile or frozen thrown value is tolerated: this
- * runs on the failure path, where the original error is what the caller
- * needs above all else.
- */
-function chainRollbackFailure(target: unknown, rollbackCause: unknown): void {
-  if (target === null || typeof target !== "object") return;
-  const failure = target as { cause?: unknown };
-  try {
-    failure.cause = rollbackCause;
-  } catch {
-    /* best-effort — losing the chained cause must not mask the original error */
-  }
-}
-
 /** A monotonically increasing counter used to name nested `SAVEPOINT`s uniquely. */
 let savepointSequence = 0;
 
 /**
  * Runs `work` inside a `SAVEPOINT`, releasing it on success or rolling back
  * to it (and re-throwing the original error, chaining any rollback failure
- * as `cause`) on failure.
+ * onto its cause chain via {@link chainSecondaryFailure}) on failure. The
+ * `SAVEPOINT`/`RELEASE` statements this issues on the success path are
+ * classified through {@link executeOrThrow}, like `withTransaction`'s own
+ * `BEGIN IMMEDIATE`/`COMMIT`; the `ROLLBACK TO`/`RELEASE` pair issued on
+ * failure is not (see `withTransaction`'s TSDoc for why).
  */
 function runNested<T>(
   database: M3LSqliteDatabaseHandle,
@@ -182,17 +170,21 @@ function runNested<T>(
 ): T {
   savepointSequence += 1;
   const savepoint = `m3l_console_store_savepoint_${String(savepointSequence)}`;
-  database.exec(`SAVEPOINT ${savepoint}`);
+  executeOrThrow(() => {
+    database.exec(`SAVEPOINT ${savepoint}`);
+  });
   try {
     const result = work(createTransactionExecutor(database, cache));
-    database.exec(`RELEASE ${savepoint}`);
+    executeOrThrow(() => {
+      database.exec(`RELEASE ${savepoint}`);
+    });
     return result;
   } catch (cause) {
     try {
       database.exec(`ROLLBACK TO ${savepoint}`);
       database.exec(`RELEASE ${savepoint}`);
     } catch (rollbackCause) {
-      chainRollbackFailure(cause, rollbackCause);
+      chainSecondaryFailure(cause, rollbackCause);
     }
     throw cause;
   }
@@ -245,12 +237,20 @@ export function createStoreExecutor(
  *
  * `BEGIN IMMEDIATE`, not `BEGIN`, is used deliberately — it acquires the
  * write lock up front, so a competing writer fails immediately at `BEGIN`
- * rather than deadlocking partway through `work`.
+ * rather than deadlocking partway through `work`. That failure (and every
+ * other transaction-control statement this function issues directly —
+ * `BEGIN IMMEDIATE` and `COMMIT` here, `SAVEPOINT`/`RELEASE` in `nested()`)
+ * is routed through the same {@link executeOrThrow} classification the query
+ * methods use, with `phase: "query"` — so a competing writer's own
+ * `BEGIN IMMEDIATE` failure surfaces as `ERR_CONSOLE_STORE_BUSY`, never a
+ * raw `node:sqlite` error. The `ROLLBACK` issued on failure is deliberately
+ * NOT routed through it (see the `catch` block below).
  *
  * A throwing `work` is rolled back and the **original error is re-thrown
  * with its identity intact** (never wrapped). If the `ROLLBACK` itself
- * fails, that failure is chained onto the original error's `cause` rather
- * than replacing it — the original failure is what the caller needs to see.
+ * fails, that failure is chained onto the original error's cause chain
+ * (see {@link chainSecondaryFailure}) rather than replacing its `cause` —
+ * the original failure is what the caller needs to see, all the way down.
  *
  * @param database - An already-open {@link M3LSqliteDatabaseHandle}.
  * @param work - Runs with a {@link M3LStoreTransaction} scoped to this
@@ -273,16 +273,23 @@ export function withTransaction<T>(
   work: (transaction: M3LStoreTransaction) => T,
 ): T {
   const cache = new Map<string, M3LSqliteStatementHandle>();
-  database.exec("BEGIN IMMEDIATE");
+  // Deliberately OUTSIDE the try below: a `BEGIN IMMEDIATE` failure (e.g. a
+  // competing writer, ERR_CONSOLE_STORE_BUSY) means no transaction was ever
+  // opened, so there is nothing for the catch's `ROLLBACK` to undo.
+  executeOrThrow(() => {
+    database.exec("BEGIN IMMEDIATE");
+  });
   try {
     const result = work(createTransactionExecutor(database, cache));
-    database.exec("COMMIT");
+    executeOrThrow(() => {
+      database.exec("COMMIT");
+    });
     return result;
   } catch (cause) {
     try {
       database.exec("ROLLBACK");
     } catch (rollbackCause) {
-      chainRollbackFailure(cause, rollbackCause);
+      chainSecondaryFailure(cause, rollbackCause);
     }
     throw cause;
   }

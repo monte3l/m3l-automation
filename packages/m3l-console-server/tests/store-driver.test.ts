@@ -21,6 +21,7 @@ import { M3LConsoleError } from "../src/errors/console-error.js";
 import {
   assertSqliteSupport,
   openSqliteDatabase,
+  readUserVersion,
 } from "../src/store/sqlite-driver.js";
 import type {
   M3LSqliteDatabaseHandle,
@@ -341,6 +342,42 @@ describe("assertSqliteSupport", () => {
     let thrown: unknown;
     try {
       assertSqliteSupport(fakeDatabase);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).code).toBe(
+      "ERR_CONSOLE_STORE_UNSUPPORTED",
+    );
+  });
+});
+
+describe("readUserVersion — exported directly [MUST-FIX, PR #706 finding 2]", () => {
+  // `readUserVersion` is exported and documented `@throws Error` — any
+  // caller other than `store/store.ts` (which happens to wrap it) gets a
+  // bare, non-M3LError value with no code and no cause chain. This is the
+  // driver's own established code for "the builtin is not behaving as this
+  // package requires" (the same code `assertSqliteSupport`'s tripwires
+  // below assert) — it must be raised here directly, not only by the
+  // wrapper.
+  test("throws ERR_CONSOLE_STORE_UNSUPPORTED, not a bare Error, when PRAGMA user_version does not read back as a number", () => {
+    const fakeDatabase = {
+      isOpen: true,
+      isTransaction: false,
+      exec: () => undefined,
+      prepare: () => ({
+        run: () => ({ changes: 0, lastInsertRowid: 0 }),
+        get: () => ({ user_version: "not-a-number" }),
+        all: () => [],
+        setReadBigInts: () => undefined,
+      }),
+      close: () => undefined,
+    } as unknown as M3LSqliteDatabaseHandle;
+
+    let thrown: unknown;
+    try {
+      readUserVersion(fakeDatabase);
     } catch (error) {
       thrown = error;
     }
