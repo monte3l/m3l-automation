@@ -10,7 +10,7 @@ import { exitCodeForError, M3LCliError } from "../src/cli/errors.js";
 import type { M3LCliErrorCode } from "../src/cli/errors.js";
 
 describe("M3LCliErrorCode", () => {
-  test("is the exact thirteen-member union the contract declares (U9 adds the three ERR_CLI_SCAFFOLD_* codes)", () => {
+  test("is the exact seventeen-member union the contract declares (U7 adds ERR_CLI_COMMAND_MODULE_INVALID/ERR_CLI_IN_PROCESS_FAILED; a U7 follow-up splits off ERR_CLI_COMMAND_MODULE_IMPORT_FAILED for a genuine import failure, distinct from ERR_CLI_COMMAND_MODULE_INVALID's 'no adopted seam' case; a further U7 follow-up adds ERR_CLI_IN_PROCESS_UNSUPPORTED)", () => {
     expectTypeOf<M3LCliErrorCode>().toEqualTypeOf<
       | "ERR_CLI_UNKNOWN_COMMAND"
       | "ERR_CLI_UNKNOWN_SCRIPT"
@@ -25,6 +25,10 @@ describe("M3LCliErrorCode", () => {
       | "ERR_CLI_SCAFFOLD_INVALID"
       | "ERR_CLI_SCAFFOLD_EXISTS"
       | "ERR_CLI_SCAFFOLD_FAILED"
+      | "ERR_CLI_COMMAND_MODULE_INVALID"
+      | "ERR_CLI_IN_PROCESS_FAILED"
+      | "ERR_CLI_COMMAND_MODULE_IMPORT_FAILED"
+      | "ERR_CLI_IN_PROCESS_UNSUPPORTED"
     >();
   });
 });
@@ -105,6 +109,27 @@ describe("exitCodeForError", () => {
     ["ERR_CLI_SCAFFOLD_INVALID", 2],
     ["ERR_CLI_SCAFFOLD_EXISTS", 2],
     ["ERR_CLI_SCAFFOLD_FAILED", 1],
+    // U7 (ADR-0054 in-process host): both codes map to the general exit-code
+    // class (1), not usage (2) — the caller's flags/args were syntactically
+    // fine, the target script just doesn't support what was asked (no
+    // adopted commandModule, or its execute genuinely failed) — the same
+    // class as their spawn-path analogues ERR_CLI_SCRIPT_NOT_BUILT /
+    // ERR_CLI_SPAWN_FAILED above.
+    ["ERR_CLI_COMMAND_MODULE_INVALID", 1],
+    ["ERR_CLI_IN_PROCESS_FAILED", 1],
+    // U7 follow-up: splits the collapsed "import itself threw" case out of
+    // ERR_CLI_COMMAND_MODULE_INVALID (which is now reserved for the
+    // benign/expected "no adopted seam" case). Same exit-code class (1) as
+    // the code it's split from — a genuine import failure is still a
+    // general failure, not a usage error.
+    ["ERR_CLI_COMMAND_MODULE_IMPORT_FAILED", 1],
+    // U7 follow-up: an unsupported flag combination was requested alongside
+    // --in-process (non-dry-run passthrough args, or --json combined with
+    // --in-process) — raised by dispatchDynamicRun's assertInProcessSupported,
+    // before any command module is ever loaded. A usage-shaped mismatch
+    // between what was asked and what --in-process supports, so it maps to
+    // the usage exit-code class (2), not the general class (1).
+    ["ERR_CLI_IN_PROCESS_UNSUPPORTED", 2],
   ];
 
   test.each(codeExitCases)(

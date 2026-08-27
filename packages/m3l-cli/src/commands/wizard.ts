@@ -25,7 +25,7 @@ import type {
 import { spawnScript } from "../run/spawn.js";
 import { recordHistoryEntry } from "../history/store.js";
 import { writePreset } from "../presets/store.js";
-import { translateArgv } from "./dynamic.js";
+import { translateArgv } from "./dynamic-argv.js";
 import {
   collectScopedParameterNames,
   isRequiredForOperation,
@@ -510,7 +510,7 @@ function recordWizardHistory(
  * 5. Offers an optional save-as-preset step.
  * 6. Asks a final "run now?" confirm — declining resolves `0` without
  *    spawning; accepting translates the collected answers to child argv
- *    (via `commands/dynamic.js`'s shared `translateArgv`), spawns the
+ *    (via `commands/dynamic-argv.js`'s shared `translateArgv`), spawns the
  *    script, and best-effort records history.
  *
  * @param context - The command context to run against; must carry

@@ -31,6 +31,7 @@ import type { M3LCliParameterDescriptor } from "../src/discovery/load-config.js"
 import { configMtimes, readDiscoveryCache } from "../src/discovery/cache.js";
 import type { M3LCliConfigMtimes } from "../src/discovery/cache.js";
 import { readHistory } from "../src/history/store.js";
+import { loadCommandModule } from "../src/run/in-process.js";
 import { M3LCliError } from "../src/cli/errors.js";
 
 /**
@@ -57,12 +58,16 @@ vi.mock("../src/discovery/cache.js", () => ({
 vi.mock("../src/history/store.js", () => ({
   readHistory: vi.fn(),
 }));
+vi.mock("../src/run/in-process.js", () => ({
+  loadCommandModule: vi.fn(),
+}));
 
 const discoverScriptsMock = vi.mocked(discoverScripts);
 const loadScriptParametersMock = vi.mocked(loadScriptParameters);
 const configMtimesMock = vi.mocked(configMtimes);
 const readDiscoveryCacheMock = vi.mocked(readDiscoveryCache);
 const readHistoryMock = vi.mocked(readHistory);
+const loadCommandModuleMock = vi.mocked(loadCommandModule);
 
 const ORIGINAL_NODE_VERSION = process.version;
 
@@ -80,6 +85,9 @@ beforeEach(() => {
   loadScriptParametersMock.mockResolvedValue([]);
   readDiscoveryCacheMock.mockReturnValue({});
   readHistoryMock.mockReturnValue([]);
+  // Default: no adopted command module — the common case for a discovered
+  // candidate (13 of 16 fleet scripts have not adopted the ADR-0054 seam).
+  loadCommandModuleMock.mockResolvedValue(undefined);
   vi.spyOn(fs, "existsSync").mockReturnValue(false);
   vi.spyOn(fs, "accessSync").mockImplementation(() => undefined);
 });
@@ -91,6 +99,7 @@ afterEach(() => {
   configMtimesMock.mockReset();
   readDiscoveryCacheMock.mockReset();
   readHistoryMock.mockReset();
+  loadCommandModuleMock.mockReset();
   Object.defineProperty(process, "version", {
     value: ORIGINAL_NODE_VERSION,
     configurable: true,
@@ -590,6 +599,115 @@ describe("runDoctor — exit code semantics", () => {
     const code = await runDoctor(context);
 
     expect(code).toBe(0);
+  });
+});
+
+/**
+ * U7 (ADR-0054 in-process host) — each discovered candidate also gets a
+ * `command-module:<name>` row, built from `loadCommandModule` (imported
+ * from `../run/in-process.js`). This check can NEVER resolve `"fail"`:
+ * absence of an adopted command module is the expected/optional state for
+ * every fleet script that hasn't opted in yet.
+ */
+describe("runDoctor — command-module check (U7)", () => {
+  test("resolves 'ok' when the candidate has a valid command module", async () => {
+    discoverScriptsMock.mockReturnValue([exporterCandidate]);
+    configMtimesMock.mockReturnValue({ srcMtimeMs: 100, distMtimeMs: 200 });
+    loadScriptParametersMock.mockResolvedValue(sampleParameters);
+    loadCommandModuleMock.mockResolvedValue({
+      name: "exporter",
+      version: "1.0.0",
+      configParameters: [],
+      execute: () => Promise.resolve({ status: "success" }),
+    });
+
+    const { context, infoLines } = buildContext();
+    const code = await runDoctor(context);
+
+    const row = findCheck(parseChecks(infoLines), "command-module:exporter");
+    expect(row?.status).toBe("ok");
+    expect(code).toBe(0);
+  });
+
+  test("resolves 'warn' (never 'fail') when the candidate has no dist/command.js (loadCommandModule resolves undefined)", async () => {
+    discoverScriptsMock.mockReturnValue([exporterCandidate]);
+    configMtimesMock.mockReturnValue({ srcMtimeMs: 100, distMtimeMs: 200 });
+    loadScriptParametersMock.mockResolvedValue(sampleParameters);
+    loadCommandModuleMock.mockResolvedValue(undefined);
+
+    const { context, infoLines } = buildContext();
+    const code = await runDoctor(context);
+
+    const row = findCheck(parseChecks(infoLines), "command-module:exporter");
+    expect(row?.status).toBe("warn");
+    expect(code).toBe(0);
+  });
+
+  test("resolves 'warn' (never 'fail') with a fixed safe detail message when dist/command.js exists but fails to import — the underlying import error's own message/content must never leak into the rendered detail", async () => {
+    discoverScriptsMock.mockReturnValue([exporterCandidate]);
+    configMtimesMock.mockReturnValue({ srcMtimeMs: 100, distMtimeMs: 200 });
+    loadScriptParametersMock.mockResolvedValue(sampleParameters);
+    // A deliberately distinctive, secret-shaped planted string: this test
+    // fails if a regression reintroduces raw error.message interpolation
+    // (security-reviewer finding — checkCommandModule's underlying loader,
+    // loadCommandModule, deliberately propagates import failures UNWRAPPED,
+    // so whatever the script's own dist/command.js threw at import time
+    // would otherwise render verbatim in `m3l doctor`'s plain-text table AND
+    // its --json output).
+    loadCommandModuleMock.mockRejectedValue(
+      new Error("boom: AWS_SECRET_ACCESS_KEY=fake-leaked-value-xyz"),
+    );
+
+    const { context, infoLines } = buildContext();
+    const code = await runDoctor(context);
+
+    const row = findCheck(parseChecks(infoLines), "command-module:exporter");
+    expect(row?.status).toBe("warn");
+    expect(row?.detail).not.toContain("fake-leaked-value-xyz");
+    expect(row?.detail).not.toContain("AWS_SECRET_ACCESS_KEY");
+    expect(row?.detail).toContain("dist/command.js failed to import");
+    expect(code).toBe(0);
+  });
+
+  test("a command-module row alone (warn) never flips runDoctor's overall exit code to 1, even though every other check is ok", async () => {
+    discoverScriptsMock.mockReturnValue([exporterCandidate]);
+    configMtimesMock.mockReturnValue({ srcMtimeMs: 100, distMtimeMs: 200 });
+    loadScriptParametersMock.mockResolvedValue(sampleParameters);
+    loadCommandModuleMock.mockResolvedValue(undefined);
+
+    const { context, infoLines } = buildContext();
+    const code = await runDoctor(context);
+
+    const checks = parseChecks(infoLines);
+    // End-to-end confirmation: every OTHER check is ok/passing, and the
+    // command-module row is the only warn present — the overall exit code
+    // must still be 0, proving this check category cannot by itself flip
+    // runDoctor's exit code (it structurally never emits "fail").
+    const nonCommandModuleChecks = checks.filter(
+      (check) => !check.name.startsWith("command-module:"),
+    );
+    expect(nonCommandModuleChecks.every((check) => check.status === "ok")).toBe(
+      true,
+    );
+    const commandModuleRow = findCheck(checks, "command-module:exporter");
+    expect(commandModuleRow?.status).toBe("warn");
+    expect(code).toBe(0);
+  });
+
+  test("renders one command-module:<name> row per discovered candidate, alongside its script:<name> row", async () => {
+    discoverScriptsMock.mockReturnValue([exporterCandidate, importerCandidate]);
+    configMtimesMock.mockReturnValue({ srcMtimeMs: 100, distMtimeMs: 200 });
+    loadScriptParametersMock.mockResolvedValue(sampleParameters);
+    loadCommandModuleMock.mockResolvedValue(undefined);
+
+    const { context, infoLines } = buildContext();
+    await runDoctor(context);
+
+    const checks = parseChecks(infoLines);
+    expect(findCheck(checks, "script:exporter")).toBeDefined();
+    expect(findCheck(checks, "command-module:exporter")).toBeDefined();
+    expect(findCheck(checks, "script:importer")).toBeDefined();
+    expect(findCheck(checks, "command-module:importer")).toBeDefined();
   });
 });
 

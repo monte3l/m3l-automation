@@ -1,9 +1,11 @@
 /**
  * `commands/doctor` — runs an ordered health-check suite over the resolved
  * workspace (Node version, workspace root, one row per discovered
- * `scripts/*` candidate, a reserved-names audit, and the discovery cache's
- * writability/integrity) and renders it via `context.output`, JSON or an
- * aligned CHECK/STATUS/DETAIL table.
+ * `scripts/*` candidate immediately followed by its `command-module:<name>`
+ * row (U7, ADR-0054 — never `"fail"`, only `"ok"`/`"warn"`), a reserved-names
+ * audit, and the discovery cache's/run-history file's writability/integrity)
+ * and renders it via `context.output`, JSON or an aligned CHECK/STATUS/DETAIL
+ * table.
  *
  * @packageDocumentation
  */
@@ -22,6 +24,7 @@ import { loadScriptParameters } from "../discovery/load-config.js";
 import { configMtimes, readDiscoveryCache } from "../discovery/cache.js";
 import type { M3LCliConfigMtimes } from "../discovery/cache.js";
 import { readHistory } from "../history/store.js";
+import { loadCommandModule } from "../run/in-process.js";
 
 /**
  * A single check's outcome: `"ok"` (healthy), `"warn"` (diagnosable but not
@@ -208,6 +211,45 @@ async function buildScriptCheck(
     freshness,
   ]);
   return { name: `script:${candidate.name}`, status, detail };
+}
+
+/**
+ * Builds a `command-module:<name>` row from {@link loadCommandModule} (U7,
+ * ADR-0054). This check can **never** resolve `"fail"`: absence of an
+ * adopted in-process command module is the expected, optional state for
+ * every fleet script that hasn't opted in yet — only `"ok"` (a valid module
+ * was found) or `"warn"` (no module, or it failed to import) are possible.
+ */
+async function checkCommandModule(
+  candidate: M3LCliScriptCandidate,
+): Promise<M3LCliDoctorCheck> {
+  let commandModule;
+  try {
+    commandModule = await loadCommandModule(candidate.directory);
+  } catch {
+    // Deliberately fixed and content-free: loadCommandModule propagates a
+    // genuine import failure unwrapped, so the caught error's own message
+    // could carry arbitrary content from the script's own dist/command.js —
+    // never interpolate it into this rendered detail (plain-text table AND
+    // --json), or that content leaks straight to the operator's terminal.
+    return {
+      name: `command-module:${candidate.name}`,
+      status: "warn",
+      detail:
+        "dist/command.js failed to import — run 'pnpm build' or inspect the script directly",
+    };
+  }
+  return commandModule === undefined
+    ? {
+        name: `command-module:${candidate.name}`,
+        status: "warn",
+        detail: "no in-process command module (optional, ADR-0054)",
+      }
+    : {
+        name: `command-module:${candidate.name}`,
+        status: "ok",
+        detail: "in-process command module available",
+      };
 }
 
 /** Fails when a discovered script's name collides with a {@link RESERVED_COMMAND_NAMES} entry. */
@@ -440,18 +482,22 @@ function renderChecks(
 /**
  * Runs the m3l CLI's health-check suite and renders it via `context.output`.
  *
- * Checks, in order: `node-version`, `workspace-root`, one `script:<name>`
- * row per discovered candidate (dir shape, dist freshness, config
+ * Checks, in order: `node-version`, `workspace-root`, per discovered
+ * candidate a `script:<name>` row (dir shape, dist freshness, config
  * importability through the real {@link loadScriptParameters} loader — never
- * the discovery cache), `reserved-names`, `cache`, and `history` (8f — mirrors
- * `cache`'s absent/valid/invalid arms over `context.historyFilePath`). Never
- * throws for an unhealthy check — an unhealthy-but-diagnosable workspace is a
- * normal result, rendered as a `"warn"`/`"fail"` row, not an exception. An
- * unexpected failure in a check's own collaborator (e.g. `discoverScripts`
- * itself throwing) propagates as an {@link M3LCliError} with code
- * `"ERR_CLI_DOCTOR_FAILED"` rather than being swallowed into a `"fail"` row —
- * an already-typed `M3LCliError` (e.g. from {@link checkCache}'s or
- * {@link checkHistory}'s writability probe) passes through unwrapped.
+ * the discovery cache) immediately followed by its `command-module:<name>`
+ * row (U7, ADR-0054 — built from {@link checkCommandModule}, which can never
+ * resolve `"fail"`: no adopted in-process command module is an optional,
+ * expected state), then `reserved-names`, `cache`, and `history` (8f —
+ * mirrors `cache`'s absent/valid/invalid arms over
+ * `context.historyFilePath`). Never throws for an unhealthy check — an
+ * unhealthy-but-diagnosable workspace is a normal result, rendered as a
+ * `"warn"`/`"fail"` row, not an exception. An unexpected failure in a check's
+ * own collaborator (e.g. `discoverScripts` itself throwing) propagates as an
+ * {@link M3LCliError} with code `"ERR_CLI_DOCTOR_FAILED"` rather than being
+ * swallowed into a `"fail"` row — an already-typed `M3LCliError` (e.g. from
+ * {@link checkCache}'s or {@link checkHistory}'s writability probe) passes
+ * through unwrapped.
  *
  * @param context - The command context to run against; must carry
  *   `historyFilePath`.
@@ -476,6 +522,7 @@ export async function runDoctor(
     checks = [checkNodeVersion(), checkWorkspaceRoot(context)];
     for (const candidate of candidates) {
       checks.push(await buildScriptCheck(candidate));
+      checks.push(await checkCommandModule(candidate));
     }
     checks.push(checkReservedNames(candidates));
     checks.push(checkCache(context.cacheFilePath));
