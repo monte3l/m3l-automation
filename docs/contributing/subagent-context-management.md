@@ -23,13 +23,13 @@ files, 20 of them immutable historical records).
 
 ## Part 1 — The hub session
 
-**Rollout note:** ADR-0078 is implemented across a six-PR sequence. This PR
-(1 of 6) is docs-only, recording the policy. `bin/check-context-budget.mjs`,
-`.claude/hooks/write-compact-handoff.mjs`, and
-`.claude/hooks/reinject-compact-handoff.mjs` — referenced below — land in PRs
-2 and 4; until then, `bin/check-claude-md-budget.mjs` (unrenamed) is still the
-live gate and no compaction hooks exist yet. The subsections below describe
-the target state the sequence is building toward.
+**Rollout note:** ADR-0078 is implemented across a six-PR sequence. PRs 1-3
+have landed: the policy is recorded, `bin/check-context-budget.mjs` replaced
+`bin/check-claude-md-budget.mjs` as the live gate (CI + pre-push), and
+`CLAUDE.md`'s always-loaded surface fits under budget with zero `@`-imports.
+`.claude/hooks/write-compact-handoff.mjs` and
+`.claude/hooks/reinject-compact-handoff.mjs` — referenced below — land in PR
+4; until then, no compaction hooks exist yet.
 
 ### What survives compaction
 
@@ -83,13 +83,15 @@ reconstruction won't depend on the summary having retained it.
 
 ### The always-loaded budget, measured honestly
 
-`bin/check-context-budget.mjs` (ADR-0078 PR 2; will replace
-`bin/check-claude-md-budget.mjs`, the current live gate) will resolve
-`CLAUDE.md`'s `@`-imports before measuring — `@path` imports "help
-organization but don't reduce context" (`code.claude.com/docs/en/memory`); an
-import is not a scoping mechanism, it's a paste. It will also report the
-conditional load each `.claude/rules/*.md` adds by its `paths:` glob, and sum
-skill-listing description weight. Keep `CLAUDE.md` itself under ~200 lines —
+`bin/check-context-budget.mjs` (ADR-0078) resolves `CLAUDE.md`'s `@`-imports
+before measuring — `@path` imports "help organization but don't reduce
+context" (`code.claude.com/docs/en/memory`); an import is not a scoping
+mechanism, it's a paste. It also reports the conditional load each
+`.claude/rules/*.md` adds by its `paths:` glob (a ratchet against a committed
+baseline, mirroring `bin/check-file-budget.mjs`), and sums skill-listing
+description weight. `CLAUDE.md` itself carries no `@`-imports any more — the
+gate would otherwise be measuring 37% of what it governs, the defect that
+motivated this ADR. Keep `CLAUDE.md` itself under ~200 lines —
 "bloated CLAUDE.md files cause Claude to ignore your actual instructions"
 (`code.claude.com/docs/en/best-practices`) — and prefer moving procedural
 detail into a skill over growing `CLAUDE.md` or a broadly-scoped rule.

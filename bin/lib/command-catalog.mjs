@@ -281,14 +281,9 @@ export const COMMAND_CATALOG = [
       "Verifies CLAUDE.md's Commands cadence table matches lefthook.yml's pre-commit/commit-msg/pre-push stages exactly. Run after editing lefthook.yml.",
   },
   {
-    name: "check:claude-md-budget",
-    description:
-      "Verifies CLAUDE.md's runtime content (HTML comments stripped) stays under its line/token budget, and warns on Prettier-padded table rows. Run after editing CLAUDE.md.",
-  },
-  {
     name: "check:context-budget",
     description:
-      "ADR-0078's successor to check:claude-md-budget — resolves CLAUDE.md's @-imports before measuring the always-loaded budget, ratchets .claude/rules/*.md conditional-load weight against a committed baseline, and reports .claude/skills/*/SKILL.md description weight. Not yet wired into CI/pre-push (lands in a follow-up PR once CLAUDE.md's always-loaded surface fits); run manually, or with --update to refresh the rules baseline.",
+      "ADR-0078: resolves CLAUDE.md's @-imports before measuring the always-loaded budget (CLAUDE.md is injected in full into every session and every custom subagent launch), ratchets .claude/rules/*.md conditional-load weight against a committed baseline, and reports .claude/skills/*/SKILL.md description weight. Run after editing CLAUDE.md, a rule file, or a skill's frontmatter description; --update refreshes the rules baseline.",
   },
   {
     name: "check:tracker-coverage",

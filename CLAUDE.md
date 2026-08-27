@@ -11,9 +11,13 @@
  instructions," docs.claude.com/en/best-practices). Every custom subagent
  in this repo's spoke roster reloads this file at launch (only the built-in
  Explore/Plan agents skip it), so its size is paid per-dispatch, not once
- per session. `pnpm check:claude-md-budget` enforces the line/token budget
- in CI; it also warns when a table row's Prettier alignment padding exceeds
- 200 chars — the recurring cause of this file's largest blocks historically.
+ per session. `pnpm check:context-budget` (ADR-0078) enforces the
+ line/token budget in CI, resolving any `@path` import before measuring —
+ an import "expands in full at launch" (docs.claude.com/en/memory) and is
+ injected as its OWN block, not spliced inline, so it must be measured, not
+ assumed away. It also warns when a table row's Prettier alignment padding
+ exceeds 200 chars — the recurring cause of this file's largest blocks
+ historically.
 
  EVICTION RULES: a multi-step procedure -> a skill (.claude/skills/); a
  constraint scoped to one path -> a rule with `paths:` frontmatter
@@ -21,14 +25,17 @@
  .claude/settings.json hook, not prose (CLAUDE.md is advisory context, never
  enforced config). Keep here only facts every session needs. `@path`
  imports do NOT save context — they expand in full at launch; prefer a
- pointer sentence over an import when the target is large.
+ pointer sentence over an import when the target is large (this file no
+ longer imports anything for exactly that reason — ADR-0078).
 
  WARNING — three scripts parse this file's exact prose; do not restructure
  the sections below without updating them:
    bin/check-cadence-doc.mjs     reads "## Commands" here — the stage cell
                                   + backticked check tokens per lefthook
-                                  stage (the `ci.yml` row is skipped).
-   bin/check-claude-md-budget.mjs reads this whole file (comments stripped).
+                                  stage (the `ci.yml` row is skipped); a
+                                  stage MAY span several rows, unioned.
+   bin/check-context-budget.mjs  reads this whole file (comments stripped)
+                                  plus any resolved `@path` import.
    bin/lib/count-sites.mjs       reads the literal "Core namespace barrel
                                   (N documented submodules)" / "AWS
                                   namespace barrel (N documented submodules)"
@@ -55,8 +62,8 @@ A utilities library designed to support automation scripts with enterprise-grade
 - Versioning is manual (`version` hand-managed; internal, unpublished
   package, ADR-0020)
 
-See @package.json for the full dependency set, scripts, and the
-`exports` map.
+Run `pnpm commands` for the full script list; `package.json` has the
+dependency set and the `exports` map.
 
 ## Repository Layout
 
@@ -96,14 +103,28 @@ every `check:*`, `knip`, `lint:md`, `audit`, and gitleaks secret scanning
 takes minutes — background it rather than `--no-verify`, since CI re-runs
 everything anyway.
 
-| Stage                   | Checks                                                                                                                                                                                                                                             | Scope  |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| `pre-commit` (lefthook) | `eslint`, `prettier`                                                                                                                                                                                                                               | staged |
-| `commit-msg` (lefthook) | `lint-commit`                                                                                                                                                                                                                                      | commit |
-| `pre-push` (lefthook)   | `format:check`, `lint`, `typecheck`, `test:coverage`, `build`, `check:exports`, `verify-signed-range`, `check:control-chars`, `check:file-budget`, `check:agents`, `check:test-counts`, `check:script-docs`, `check:cli-docs`, `check:review-size` | repo   |
+| Stage                   | Checks                                                                        | Scope  |
+| ----------------------- | ----------------------------------------------------------------------------- | ------ |
+| `pre-commit` (lefthook) | `eslint`, `prettier`                                                          | staged |
+| `commit-msg` (lefthook) | `lint-commit`                                                                 | commit |
+| `pre-push` (lefthook)   | `format:check`, `lint`, `typecheck`, `test:coverage`                          | repo   |
+| `pre-push` (lefthook)   | `build`, `check:exports`, `verify-signed-range`, `check:control-chars`        | repo   |
+| `pre-push` (lefthook)   | `check:file-budget`, `check:agents`, `check:test-counts`, `check:script-docs` | repo   |
+| `pre-push` (lefthook)   | `check:cli-docs`, `check:review-size`, `check:context-budget`                 | repo   |
 
 `pnpm verify` reproduces every CI check locally; `pnpm check:verify-parity`
-keeps its step list in sync with `ci.yml`.
+keeps its step list in sync with `ci.yml`. `pre-push` splits across several
+rows above to stay under the table-width warning (`check:context-budget`);
+`check:cadence` unions them back into one set per stage before comparing
+against `lefthook.yml`.
+
+## Compact Instructions
+
+When this session compacts, preserve: the current branch/worktree and any
+open PR number; a failing `pnpm` gate and its exact error text; the ADR or
+plan being implemented and which step is in progress; any `AskUserQuestion`
+answer not yet acted on. Prefer dropping exploratory tool-call detail (file
+reads, passing test output) over any of the above.
 
 ## CI/CD
 
@@ -140,8 +161,7 @@ Canonical **Style Guide**: `docs/contributing/style-guide.md` (`[enforced]` vs `
 
 The `exports` map is the public contract (semver-gated); `internal/` is private and may change freely. Full rationale: `docs/contributing/contributing.md` § The `exports` Map / § `internal/` Is Private.
 
-Decisions live in `docs/adr/`.
-See @docs/adr/README.md
+Decisions live in `docs/adr/`; start at `docs/adr/README.md` for the index.
 
 ## Security
 
