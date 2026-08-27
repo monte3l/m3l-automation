@@ -27,7 +27,16 @@ commit-msg:
 # test run, and vitest+eslint+tsc now run at once (more CPU/RAM). Worth it — the
 # all-pass push is the case that timed out. Every command's token set must stay
 # mirrored in the CLAUDE.md cadence table's `pre-push` row — `check:cadence` diffs
-# the two both ways.
+# the two both ways (it compares the token SET per stage, not lane names or
+# groupings, so chaining several checks into one lane below changes nothing there).
+#
+# ADR-0080: on a memory-constrained host, `parallel: true` here plus turbo's own
+# fan-out (capped 50%, turbo.json) and vitest's own fan-out (capped 50%,
+# vitest.config.ts) can still stack three heavy lanes (test/typecheck/build-exports)
+# concurrently. `bin/setup-host-resources.mjs` writes a gitignored
+# `lefthook-local.yml` forcing `pre-push: parallel: false` when the host has under
+# ~20 GiB RAM — lefthook's own documented local-override mechanism
+# (https://lefthook.dev/examples/lefthook-local), not a change to this shared file.
 pre-push:
   parallel: true
   commands:
@@ -42,8 +51,7 @@ pre-push:
     # test:coverage's two full suite runs, contending for the same machine until
     # it intermittently exited non-zero and blamed the tests (F15, issue #489).
     # Chaining costs no wall-clock — the collection pass is ~5s against lint's
-    # ~26s, so this lane stays well off the critical path. `check:cadence`
-    # compares the token SET per stage, so both tokens still count as pre-push.
+    # ~26s, so this lane stays well off the critical path.
     test:
       run: pnpm test:coverage && pnpm check:test-counts
     # build + check:exports catch a broken compile or exports map (publint / attw)
@@ -52,51 +60,22 @@ pre-push:
     # per-command DAG). build is turbo-cached, so its marginal cost is small.
     build-exports:
       run: pnpm build && pnpm check:exports
-    # Refuse to push unsigned/unverified commits (skipped in CI so release
-    # automation isn't wedged). Bypassable with --no-verify; the unbypassable
-    # layer is branch-protection "Require signed commits" (ADR-0016).
-    verify-signatures:
-      run: node bin/verify-signed-range.mjs
-    # A literal control byte makes a file binary to git, so it cannot be
-    # reviewed at all — this is the one gate whose whole value is firing BEFORE
-    # the file reaches a reviewer, and it costs ~0.2s.
-    check-control-chars:
-      run: pnpm check:control-chars
-    # ADR-0072's per-file size ratchet. Was CI-only, which meant a 6-byte
-    # overrun was discovered only after a push with all eleven other pre-push
-    # gates green (#604). Costs ~0.05s.
-    check-file-budget:
-      run: pnpm check:file-budget
-    # Catch agent/model-matrix drift locally instead of first in CI (was
-    # CI-only; see docs/contributing/model-selection.md "Enforcement").
-    check-agents:
-      run: pnpm check:agents
-    # Catch script README / reference-page structure drift locally instead of
-    # first in CI (section presence, contract blockquote, example count,
-    # Operation column header, Validation column header). See
-    # docs/contributing/script-docs-structure.md.
-    check-script-docs:
-      run: pnpm check:script-docs
-    # Same rationale one surface over: the CLI contract page's structure gate
-    # is cheap (~0.05s) and is the one a contributor trips by adding a command
-    # to main.ts without documenting it. See docs/contributing/cli-structure.md.
-    # Its sibling check:cli-scaffold stays CI-only, mirroring the
-    # check:script-docs / check:script-scaffold split.
-    check-cli-docs:
-      run: pnpm check:cli-docs
-    # Reproduces claude-pr-review.yml's own reviewable-size gate locally
-    # (ADR-0072), before the CI review job ever spends a turn on an
-    # oversized PR. Resolves origin/main...HEAD itself when run bare; skips
-    # gracefully (never blocks) when that range can't be resolved.
-    check-review-size:
-      run: pnpm check:review-size
-    # ADR-0078: guards CLAUDE.md's resolved always-loaded budget (CLAUDE.md +
-    # any @-import, measured as Claude Code actually injects them — separate
-    # blocks, not spliced inline) and ratchets .claude/rules/*.md conditional-
-    # load weight. Was CI-only before this PR (a 2.9x-over-budget @-import
-    # regression was only ever caught after a push); catch it locally too.
-    check-context-budget:
-      run: pnpm check:context-budget
+    # ADR-0080: the eight gates below were each their own top-level lane (13
+    # total pre-push lanes with format/lint/typecheck/test/build-exports above),
+    # every one of them sub-second and none ever on the critical path (the
+    # slowest of the eight, check:agents, runs in ~7s against lint's ~4 minutes).
+    # Chaining them into one lane cuts pre-push from 13 concurrent lefthook-spawned
+    # processes to 6 with no wall-clock cost — the same "chain a cheap check,
+    # costs nothing" reasoning as the `test` lane's check:test-counts above.
+    # Each check's own rationale for existing lives in its bin/check-*.mjs
+    # header comment (not duplicated here); this lane's `run:` must stay a
+    # single PHYSICAL line — check-cadence-doc.mjs's line-based parser only
+    # captures text on the same line as `run:` (no real YAML parsing), so ANY
+    # multi-line scalar here (block `|`, folded `>`, or a folded `>-` that
+    # still wraps across lines) silently drops every chained check from the
+    # cadence-doc comparison. Verified: `pnpm check:cadence` after this change.
+    checks:
+      run: node bin/verify-signed-range.mjs && pnpm check:control-chars && pnpm check:file-budget && pnpm check:agents && pnpm check:script-docs && pnpm check:cli-docs && pnpm check:review-size && pnpm check:context-budget
 
 # Fire after `git rebase` completes (including a no-op rebase with nothing to
 # replay) and after `git merge` completes. Regenerates the derived files the
