@@ -3,8 +3,11 @@
 The script-facing CLI activated by ADR-0042 (issue #333): discovery,
 introspection, and guided execution over the `configParameters` seam every
 `scripts/*` package declares in `src/config.ts`. Private, unpublished, and
-zero-runtime-dependency — its only dependency is `@m3l-automation/m3l-common`
-via `workspace:*`; everything else is `node:` builtins.
+zero-_third-party_-dependency — every declared `dependencies` entry is a
+`@m3l-automation/*` workspace package pinned to `workspace:*` (the library,
+`@m3l-automation/m3l-common`, plus one entry per `scripts/*` package since
+ADR-0054/U7 — see "Dependency-graph discovery" below); everything else is
+`node:` builtins.
 
 Invocation: `pnpm m3l <command>` from the workspace root (a root
 `package.json` script wrapping `packages/m3l-cli/bin/m3l.mjs` — the package
@@ -16,7 +19,7 @@ This page is the CLI's contract. It grows one section per shipped phase
 
 ## Design invariants
 
-- **Zero runtime dependencies.** Arg parsing is `node:util` `parseArgs`
+- **Zero third-party runtime dependencies.** Arg parsing is `node:util` `parseArgs`
   (per-command dispatch off the first positional — parseArgs has no native
   subcommand support); colors are `util.styleText` behind a TTY/`NO_COLOR`/
   `FORCE_COLOR`-aware output layer; interactive UI (later phases) is
@@ -29,6 +32,22 @@ This page is the CLI's contract. It grows one section per shipped phase
   bans `enum`/runtime `namespace`/decorators/parameter properties in every
   `scripts/*/src/config.ts` (see the ADR-0042 update for the `json-etl`
   counter-example that forced dist-first).
+- **Dependency-graph discovery, filesystem fallback (ADR-0054, U7).**
+  `packages/m3l-cli/package.json` declares every `scripts/*` package as a
+  real `dependencies` entry (alongside `@m3l-automation/m3l-common`, the
+  library — excluded from discovery, since it is not a script); script
+  discovery resolves each declared script package via Node's own module
+  resolution over that declared graph
+  (`createRequire(...).resolve("@m3l-automation/<name>/package.json")`)
+  rather than scanning `<workspaceRoot>/scripts/*` on disk — the property
+  that makes publishing the CLI and fleet independently of a shared
+  `scripts/` directory possible (ADR-0057). The filesystem scan still runs
+  and fills in anything the graph didn't resolve (a script not yet declared
+  as a CLI dependency), with the graph's answer winning on a name collision.
+  A declared dependency that fails to resolve (`pnpm install` not yet run)
+  is tolerated — `discoverScripts` falls through to the filesystem scan for
+  it, and `m3l doctor`'s `dependency-graph` row names it (`warn`, never
+  `fail`).
 - **Lazy, cached discovery.** Static commands (`help`, `--version`) never pay
   the discovery cost. Discovery results are cached under the directory named
   by the `M3L_CACHE_DIR` environment variable (the same override `M3LPaths`
@@ -221,7 +240,13 @@ the first bare `--` appended verbatim.
 
 Renders one aligned row per check (`CHECK` / `STATUS` / `DETAIL`, statuses
 `ok` / `warn` / `fail`; `--json` for the machine-readable array):
-Node floor (≥ 24), workspace root, one `script:<name>` row per discovered
+Node floor (≥ 24), workspace root, a `dependency-graph` row (ADR-0054, U7 —
+how many of the CLI's declared `@m3l-automation/*` script dependencies
+resolved via `createRequire`; `ok` when all resolve, `warn` — never `fail` —
+naming any that don't, e.g. after adding a script dependency without running
+`pnpm install`; a collaborator failure inside this check itself also
+degrades to `warn` rather than aborting the rest of the run), one
+`script:<name>` row per discovered
 script (dir shape → fail when neither config exists; dist freshness → warn
 naming `pnpm build`; importability through the real loader → fail with the
 load-error message; all-green renders the parameter count) immediately

@@ -18,7 +18,10 @@ import { Core } from "@m3l-automation/m3l-common";
 import { formatAlignedTable } from "../cli/table.js";
 import { M3LCliError } from "../cli/errors.js";
 import type { M3LCliCommandContext } from "./context.js";
-import { discoverScripts } from "../discovery/discover.js";
+import {
+  diagnoseDependencyGraph,
+  discoverScripts,
+} from "../discovery/discover.js";
 import type { M3LCliScriptCandidate } from "../discovery/discover.js";
 import { loadScriptParameters } from "../discovery/load-config.js";
 import { configMtimes, readDiscoveryCache } from "../discovery/cache.js";
@@ -252,6 +255,47 @@ async function checkCommandModule(
       };
 }
 
+/**
+ * Builds the `dependency-graph` row (U7, ADR-0054) from
+ * {@link diagnoseDependencyGraph}, reporting how many declared
+ * `@m3l-automation/*` script dependencies resolved successfully vs. how many
+ * are declared-but-unresolvable. This check can **never** resolve `"fail"`:
+ * an unresolvable dependency is recoverable via `pnpm install`, not a hard
+ * failure. An unexpected `diagnoseDependencyGraph` failure (e.g. a
+ * non-`MODULE_NOT_FOUND` resolution error) is isolated to this one row too —
+ * mirrors {@link checkCommandModule}'s isolation pattern exactly — and never
+ * aborts the rest of the `runDoctor` suite.
+ */
+function checkDependencyGraph(): M3LCliDoctorCheck {
+  let status;
+  try {
+    status = diagnoseDependencyGraph();
+  } catch (cause) {
+    // Deliberately message-free: diagnoseDependencyGraph propagates a genuine
+    // resolution failure unwrapped, so the caught error's own message could
+    // carry arbitrary content (e.g. a malformed package export's path) —
+    // never interpolate the message into this rendered detail (plain-text
+    // table AND --json), mirrors checkCommandModule's own catch-block detail
+    // safety posture exactly. The error's *type* is safe to surface.
+    return {
+      name: "dependency-graph",
+      status: "warn",
+      detail: `dependency-graph diagnosis failed unexpectedly (${cause instanceof Error ? cause.name : typeof cause}) — run 'pnpm install' or inspect the workspace manifest directly`,
+    };
+  }
+  return status.unresolved.length === 0
+    ? {
+        name: "dependency-graph",
+        status: "ok",
+        detail: `${String(status.resolved.length)} script(s) resolved via the declared dependency graph`,
+      }
+    : {
+        name: "dependency-graph",
+        status: "warn",
+        detail: `unresolved: ${status.unresolved.join(", ")} — run 'pnpm install'`,
+      };
+}
+
 /** Fails when a discovered script's name collides with a {@link RESERVED_COMMAND_NAMES} entry. */
 function checkReservedNames(
   candidates: readonly M3LCliScriptCandidate[],
@@ -459,6 +503,40 @@ function checkHistory(historyFilePath: string): M3LCliDoctorCheck {
   };
 }
 
+/**
+ * Discovers `scripts/*` candidates, tolerating an unexpected dependency-graph
+ * resolution failure (e.g. `EACCES`, `ERR_PACKAGE_PATH_NOT_EXPORTED`) from
+ * {@link discoverScripts}'s own unguarded first attempt. `discoverScripts`
+ * shares its resolver with {@link diagnoseDependencyGraph} (both wrap
+ * `discover.ts`'s module-private `resolveScriptManifestDefault`, which
+ * deliberately propagates any non-`MODULE_NOT_FOUND` resolution error), so
+ * without this retry a resolver blowup here would abort the whole
+ * `runDoctor` suite before {@link checkDependencyGraph} ever gets a chance to
+ * report the same problem as its own isolated `"warn"` row.
+ *
+ * The retry overrides both `readOwnManifest` and `resolveScriptManifest`
+ * with non-throwing stubs that report zero declared dependencies and every
+ * dependency unresolved, respectively, without performing any real manifest
+ * read or resolution — so the retry can never throw for either of those two
+ * causes, and degrades to filesystem-only candidates
+ * (`discoverScriptsFromFilesystem`'s results only). It does *not* cover a
+ * failure inside `discoverScriptsFromFilesystem`'s own unguarded filesystem
+ * calls — that's a separate, pre-existing gap and a failure there still
+ * propagates.
+ */
+function discoverScriptCandidates(
+  workspaceRoot: string,
+): readonly M3LCliScriptCandidate[] {
+  try {
+    return discoverScripts(workspaceRoot);
+  } catch {
+    return discoverScripts(workspaceRoot, {
+      readOwnManifest: () => ({ dependencies: {} }),
+      resolveScriptManifest: () => undefined,
+    });
+  }
+}
+
 /** The human-readable rendering's column headers. */
 const HEADER = ["CHECK", "STATUS", "DETAIL"] as const;
 
@@ -497,7 +575,14 @@ function renderChecks(
  * {@link M3LCliError} with code `"ERR_CLI_DOCTOR_FAILED"` rather than being
  * swallowed into a `"fail"` row — an already-typed `M3LCliError` (e.g. from
  * {@link checkCache}'s or {@link checkHistory}'s writability probe) passes
- * through unwrapped.
+ * through unwrapped. `discoverScripts` shares its dependency-graph resolver
+ * with {@link checkDependencyGraph}'s own isolated call, so an unexpected
+ * resolution failure (e.g. `EACCES`) there is tolerated the same way: the
+ * candidate discovery is retried with `resolveScriptManifest` forced to
+ * report every declared dependency as unresolved, degrading to
+ * filesystem-only candidates rather than aborting the whole run —
+ * `checkDependencyGraph` still reports the same underlying problem as its
+ * own `"warn"` row.
  *
  * @param context - The command context to run against; must carry
  *   `historyFilePath`.
@@ -517,9 +602,13 @@ export async function runDoctor(
 ): Promise<number> {
   let checks: M3LCliDoctorCheck[];
   try {
-    const candidates = discoverScripts(context.workspaceRoot);
+    const candidates = discoverScriptCandidates(context.workspaceRoot);
 
-    checks = [checkNodeVersion(), checkWorkspaceRoot(context)];
+    checks = [
+      checkNodeVersion(),
+      checkWorkspaceRoot(context),
+      checkDependencyGraph(),
+    ];
     for (const candidate of candidates) {
       checks.push(await buildScriptCheck(candidate));
       checks.push(await checkCommandModule(candidate));

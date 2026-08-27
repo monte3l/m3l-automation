@@ -8,6 +8,7 @@ import {
   vi,
 } from "vitest";
 import * as fs from "node:fs";
+import * as nodeModule from "node:module";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -18,13 +19,26 @@ vi.mock("node:fs", async () => {
   return { ...actual };
 });
 
+// Same non-writable-ESM-namespace reason, so vi.spyOn can override
+// createRequire's return value — used only by the "share one resolver"
+// describe block below, to drive the REAL resolveScriptManifestDefault's
+// non-MODULE_NOT_FOUND propagation path (mirrors discover.test.ts's own
+// resolveScriptManifestDefault error-narrowing tests).
+vi.mock("node:module", async () => {
+  const actual = await vi.importActual<typeof nodeModule>("node:module");
+  return { ...actual };
+});
+
 import { runDoctor } from "../src/commands/doctor.js";
 import type {
   M3LCliDoctorCheck,
   M3LCliDoctorStatus,
 } from "../src/commands/doctor.js";
 import type { M3LCliCommandContext } from "../src/commands/context.js";
-import { discoverScripts } from "../src/discovery/discover.js";
+import {
+  diagnoseDependencyGraph,
+  discoverScripts,
+} from "../src/discovery/discover.js";
 import type { M3LCliScriptCandidate } from "../src/discovery/discover.js";
 import { loadScriptParameters } from "../src/discovery/load-config.js";
 import type { M3LCliParameterDescriptor } from "../src/discovery/load-config.js";
@@ -47,6 +61,7 @@ import { M3LCliError } from "../src/cli/errors.js";
 
 vi.mock("../src/discovery/discover.js", () => ({
   discoverScripts: vi.fn(),
+  diagnoseDependencyGraph: vi.fn(),
 }));
 vi.mock("../src/discovery/load-config.js", () => ({
   loadScriptParameters: vi.fn(),
@@ -63,6 +78,7 @@ vi.mock("../src/run/in-process.js", () => ({
 }));
 
 const discoverScriptsMock = vi.mocked(discoverScripts);
+const diagnoseDependencyGraphMock = vi.mocked(diagnoseDependencyGraph);
 const loadScriptParametersMock = vi.mocked(loadScriptParameters);
 const configMtimesMock = vi.mocked(configMtimes);
 const readDiscoveryCacheMock = vi.mocked(readDiscoveryCache);
@@ -81,6 +97,7 @@ function setNodeVersion(version: string): void {
 beforeEach(() => {
   setNodeVersion("v24.0.0");
   discoverScriptsMock.mockReturnValue([]);
+  diagnoseDependencyGraphMock.mockReturnValue({ resolved: [], unresolved: [] });
   configMtimesMock.mockReturnValue({ srcMtimeMs: 100, distMtimeMs: 200 });
   loadScriptParametersMock.mockResolvedValue([]);
   readDiscoveryCacheMock.mockReturnValue({});
@@ -95,6 +112,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.restoreAllMocks();
   discoverScriptsMock.mockReset();
+  diagnoseDependencyGraphMock.mockReset();
   loadScriptParametersMock.mockReset();
   configMtimesMock.mockReset();
   readDiscoveryCacheMock.mockReset();
@@ -708,6 +726,295 @@ describe("runDoctor — command-module check (U7)", () => {
     expect(findCheck(checks, "command-module:exporter")).toBeDefined();
     expect(findCheck(checks, "script:importer")).toBeDefined();
     expect(findCheck(checks, "command-module:importer")).toBeDefined();
+  });
+});
+
+/**
+ * U7 (ADR-0054, "discovery starts resolving over the dependency graph") —
+ * a new `dependency-graph` row, built from `diagnoseDependencyGraph`
+ * (imported from `../discovery/discover.js`, alongside `discoverScripts`).
+ * Reports how many declared `@m3l-automation/*` script dependencies resolved
+ * successfully vs. how many are declared-but-unresolvable. This check can
+ * NEVER resolve `"fail"`: a script package failing to resolve is recoverable
+ * via `pnpm install`, not a hard failure.
+ */
+describe("runDoctor — dependency-graph check (U7)", () => {
+  test("resolves 'ok' when every declared dependency resolved", async () => {
+    diagnoseDependencyGraphMock.mockReturnValue({
+      resolved: ["json-etl", "s3-objects"],
+      unresolved: [],
+    });
+
+    const { context, infoLines } = buildContext();
+    const code = await runDoctor(context);
+
+    const row = findCheck(parseChecks(infoLines), "dependency-graph");
+    expect(row?.status).toBe("ok");
+    expect(code).toBe(0);
+  });
+
+  test("resolves 'ok' when zero dependencies are declared (a legitimate near-term state before the manifest change lands)", async () => {
+    diagnoseDependencyGraphMock.mockReturnValue({
+      resolved: [],
+      unresolved: [],
+    });
+
+    const { context, infoLines } = buildContext();
+    const code = await runDoctor(context);
+
+    const row = findCheck(parseChecks(infoLines), "dependency-graph");
+    expect(row?.status).toBe("ok");
+    expect(code).toBe(0);
+  });
+
+  test("resolves 'warn' (never 'fail'), naming the unresolvable dependency in detail, when at least one declared dependency fails to resolve", async () => {
+    diagnoseDependencyGraphMock.mockReturnValue({
+      resolved: ["json-etl"],
+      unresolved: ["stale-symlink"],
+    });
+
+    const { context, infoLines } = buildContext();
+    const code = await runDoctor(context);
+
+    const row = findCheck(parseChecks(infoLines), "dependency-graph");
+    expect(row?.status).toBe("warn");
+    expect(row?.detail).toContain("stale-symlink");
+    expect(code).toBe(0);
+  });
+
+  test("names every unresolvable dependency in detail when more than one fails to resolve", async () => {
+    diagnoseDependencyGraphMock.mockReturnValue({
+      resolved: [],
+      unresolved: ["stale-symlink-one", "stale-symlink-two"],
+    });
+
+    const { context, infoLines } = buildContext();
+    const code = await runDoctor(context);
+
+    const row = findCheck(parseChecks(infoLines), "dependency-graph");
+    expect(row?.status).toBe("warn");
+    expect(row?.detail).toContain("stale-symlink-one");
+    expect(row?.detail).toContain("stale-symlink-two");
+    expect(code).toBe(0);
+  });
+
+  test("a dependency-graph row alone (warn) never flips runDoctor's overall exit code to 1, even though every other check is ok", async () => {
+    diagnoseDependencyGraphMock.mockReturnValue({
+      resolved: [],
+      unresolved: ["stale-symlink"],
+    });
+
+    const { context, infoLines } = buildContext();
+    const code = await runDoctor(context);
+
+    const checks = parseChecks(infoLines);
+    const nonDependencyGraphChecks = checks.filter(
+      (check) => check.name !== "dependency-graph",
+    );
+    expect(
+      nonDependencyGraphChecks.every((check) => check.status === "ok"),
+    ).toBe(true);
+    const dependencyGraphRow = findCheck(checks, "dependency-graph");
+    expect(dependencyGraphRow?.status).toBe("warn");
+    expect(code).toBe(0);
+  });
+});
+
+/**
+ * Should-fix (silent-failure-hunter review of #531): unlike its sibling
+ * `checkCommandModule` (which wraps `loadCommandModule` in its own
+ * try/catch so a broken script's command module only degrades ITS OWN row),
+ * `checkDependencyGraph` currently calls `diagnoseDependencyGraph()` with no
+ * try/catch of its own — an unexpected throw propagates all the way out of
+ * `runDoctor`'s per-check loop, aborting EVERY other check, not just this
+ * one row. The fix wraps `diagnoseDependencyGraph()` the same way, returning
+ * a "warn" row (never "fail") on catch.
+ *
+ * NOTE — this test mocks `discoverScripts` and `diagnoseDependencyGraph` as
+ * two INDEPENDENT `vi.fn()`s (leaving `discoverScriptsMock` succeeding while
+ * only `diagnoseDependencyGraphMock` throws), so it does NOT cover the
+ * separate doctor.ts-level call-order bug where `runDoctor`'s own unguarded
+ * `discoverScripts(context.workspaceRoot)` call (line ~565, BEFORE
+ * `checkDependencyGraph()` even runs) shares the exact same underlying
+ * `resolveScriptManifestDefault` resolver with `diagnoseDependencyGraph` in
+ * production. See the "share one resolver" describe block below for that.
+ */
+describe("runDoctor — dependency-graph check isolation from diagnoseDependencyGraph failing (Should-fix)", () => {
+  test("an unexpected diagnoseDependencyGraph failure degrades only the dependency-graph row to warn and does not abort the rest of the run — mirrors checkCommandModule's isolation pattern", async () => {
+    discoverScriptsMock.mockReturnValue([exporterCandidate]);
+    configMtimesMock.mockReturnValue({ srcMtimeMs: 100, distMtimeMs: 200 });
+    loadScriptParametersMock.mockResolvedValue(sampleParameters);
+    loadCommandModuleMock.mockResolvedValue({
+      name: "exporter",
+      version: "1.0.0",
+      configParameters: [],
+      execute: () => Promise.resolve({ status: "success" }),
+    });
+    diagnoseDependencyGraphMock.mockImplementation(() => {
+      throw new Error("unexpected dependency-graph blowup");
+    });
+
+    const { context, infoLines } = buildContext();
+    const code = await runDoctor(context);
+
+    const checks = parseChecks(infoLines);
+    const dependencyGraphRow = findCheck(checks, "dependency-graph");
+    expect(dependencyGraphRow?.status).toBe("warn");
+    expect(dependencyGraphRow?.status).not.toBe("fail");
+
+    // Isolation: every OTHER check still ran and shows up in the results —
+    // the failure did not abort the whole run.
+    expect(findCheck(checks, "node-version")).toBeDefined();
+    expect(findCheck(checks, "workspace-root")).toBeDefined();
+    expect(findCheck(checks, "script:exporter")).toBeDefined();
+    expect(findCheck(checks, "command-module:exporter")).toBeDefined();
+    expect(findCheck(checks, "reserved-names")).toBeDefined();
+    expect(findCheck(checks, "cache")).toBeDefined();
+    expect(findCheck(checks, "history")).toBeDefined();
+    const otherChecks = checks.filter(
+      (check) => check.name !== "dependency-graph",
+    );
+    expect(otherChecks.every((check) => check.status === "ok")).toBe(true);
+
+    expect(code).toBe(0);
+  });
+});
+
+/**
+ * [KNOWN BUG] eed7dfb, three independent review passes — `runDoctor`'s OWN
+ * unguarded call, `discoverScripts(context.workspaceRoot)` (doctor.ts around
+ * line 565, BEFORE `checkDependencyGraph()` even runs), and
+ * `checkDependencyGraph`'s guarded call to `diagnoseDependencyGraph()` share
+ * the exact same underlying, module-private `resolveScriptManifestDefault`
+ * resolver (discover.ts) — deliberately designed to swallow only
+ * `MODULE_NOT_FOUND` and re-throw anything else (see discover.test.ts's own
+ * "resolveScriptManifestDefault's error narrowing" tests). The isolation
+ * test above cannot see this because it mocks `discoverScripts` and
+ * `diagnoseDependencyGraph` as two INDEPENDENT `vi.fn()`s. These tests route
+ * BOTH mocked seams through to the REAL discover.ts implementation (via
+ * `vi.importActual`), so a non-MODULE_NOT_FOUND resolution error's actual,
+ * shared propagation path is exercised: today it throws out of
+ * `discoverScripts` before `checkDependencyGraph` ever runs, `runDoctor`'s
+ * outer catch wraps it as `M3LCliError("ERR_CLI_DOCTOR_FAILED", ...)`, and
+ * the ENTIRE run aborts with no rows rendered at all. The planned fix
+ * retries `discoverScripts(context.workspaceRoot, { resolveScriptManifest:
+ * () => undefined })` when the first, unguarded call throws — an override
+ * that can never throw again, so the retry safely degrades to
+ * filesystem-only candidates while `checkDependencyGraph`'s own
+ * `dependency-graph` row still independently reports "warn" for the same
+ * underlying problem.
+ */
+describe("runDoctor — discoverScripts and checkDependencyGraph share one resolver; a resolution blowup must not abort the whole run", () => {
+  const OWN_MANIFEST_HREF = new URL("../package.json", import.meta.url).href;
+  const SCRIPTS_DIR = join("/workspace-root", "scripts");
+  const FS_ONLY_SCRIPT_DIR = join(SCRIPTS_DIR, "fs-only-script");
+  const FS_ONLY_SCRIPT_MANIFEST = join(FS_ONLY_SCRIPT_DIR, "package.json");
+
+  let actualDiscoverScripts: typeof discoverScripts;
+  let actualDiagnoseDependencyGraph: typeof diagnoseDependencyGraph;
+
+  beforeEach(async () => {
+    const actual = await vi.importActual<{
+      discoverScripts: typeof discoverScripts;
+      diagnoseDependencyGraph: typeof diagnoseDependencyGraph;
+    }>("../src/discovery/discover.js");
+    actualDiscoverScripts = actual.discoverScripts;
+    actualDiagnoseDependencyGraph = actual.diagnoseDependencyGraph;
+
+    // Both mocked seams delegate to the REAL implementation — proving the
+    // shared collaborator's actual behavior, not a hand-authored stand-in.
+    discoverScriptsMock.mockImplementation((workspaceRoot, graphOptions) =>
+      actualDiscoverScripts(workspaceRoot, graphOptions),
+    );
+    diagnoseDependencyGraphMock.mockImplementation((graphOptions) =>
+      actualDiagnoseDependencyGraph(graphOptions),
+    );
+
+    // A non-MODULE_NOT_FOUND resolution failure from the real, shared
+    // resolveScriptManifestDefault — e.g. a malformed subpath export or a
+    // permissions fault, never the tolerated "not installed yet" case.
+    vi.spyOn(nodeModule, "createRequire").mockReturnValue({
+      resolve: () => {
+        throw Object.assign(new Error("permission denied"), {
+          code: "EACCES",
+        });
+      },
+    } as unknown as ReturnType<typeof nodeModule.createRequire>);
+
+    vi.spyOn(fs, "existsSync").mockImplementation((path) => {
+      const value = String(path);
+      return (
+        value === OWN_MANIFEST_HREF ||
+        value === SCRIPTS_DIR ||
+        value === FS_ONLY_SCRIPT_MANIFEST
+      );
+    });
+    vi.spyOn(fs, "readdirSync").mockImplementation(((path: unknown) =>
+      String(path) === SCRIPTS_DIR
+        ? [{ name: "fs-only-script", isDirectory: () => true }]
+        : []) as unknown as typeof fs.readdirSync);
+    vi.spyOn(fs, "readFileSync").mockImplementation((path) => {
+      const value = String(path);
+      if (value === OWN_MANIFEST_HREF) {
+        return JSON.stringify({
+          dependencies: {
+            "@m3l-automation/graph-dep-that-blows-up": "workspace:*",
+            "@m3l-automation/m3l-common": "workspace:*",
+          },
+        });
+      }
+      if (value === FS_ONLY_SCRIPT_MANIFEST) {
+        return JSON.stringify({ description: "found via filesystem scan" });
+      }
+      return JSON.stringify({});
+    });
+  });
+
+  test("runDoctor does not throw/reject and still renders a full row set (including dependency-graph, node-version, workspace-root) when the shared resolver blows up on discoverScripts's own unguarded call", async () => {
+    const { context, infoLines } = buildContext();
+
+    const exitCode = await runDoctor(context);
+
+    const checks = parseChecks(infoLines);
+    expect(findCheck(checks, "node-version")).toBeDefined();
+    expect(findCheck(checks, "workspace-root")).toBeDefined();
+    expect(findCheck(checks, "reserved-names")).toBeDefined();
+    expect(findCheck(checks, "cache")).toBeDefined();
+    expect(findCheck(checks, "history")).toBeDefined();
+    const dependencyGraphRow = findCheck(checks, "dependency-graph");
+    expect(dependencyGraphRow?.status).toBe("warn");
+
+    // The shared resolver's blowup must never resolve "fail" anywhere.
+    expect(checks.every((check) => check.status !== "fail")).toBe(true);
+    expect(exitCode).toBe(0);
+  });
+
+  test("falls back to filesystem-only discovery: the script rows equal exactly what pure filesystem discovery alone would produce — the graph-resolved candidate is absent, not silently duplicated or partially included", async () => {
+    const { context, infoLines } = buildContext();
+
+    const exitCode = await runDoctor(context);
+
+    const checks = parseChecks(infoLines);
+    const scriptRowNames = checks
+      .filter((check) => check.name.startsWith("script:"))
+      .map((check) => check.name)
+      .toSorted();
+
+    // What pure filesystem-only discovery alone produces: the same real
+    // discoverScripts, with zero declared graph dependencies, so this
+    // expectation can never accidentally include a graph candidate itself.
+    const filesystemOnlyCandidates = actualDiscoverScripts("/workspace-root", {
+      readOwnManifest: () => ({ dependencies: {} }),
+    });
+
+    expect(scriptRowNames).toEqual(
+      filesystemOnlyCandidates
+        .map((candidate) => `script:${candidate.name}`)
+        .toSorted(),
+    );
+    expect(scriptRowNames).not.toContain("script:graph-dep-that-blows-up");
+    expect(scriptRowNames).toContain("script:fs-only-script");
+    expect(exitCode).toBe(0);
   });
 });
 
