@@ -130,12 +130,26 @@
           {
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-protected-paths.mjs\"",
-            "timeout": 30
+            "timeout": 30,
+            "if": "Write(**/dist/**)"
+          },
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-protected-paths.mjs\"",
+            "timeout": 30,
+            "if": "Edit(**/dist/**)"
           },
           {
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-eslint-disable-red.mjs\"",
-            "timeout": 30
+            "timeout": 30,
+            "if": "Write(packages/m3l-common/tests/**)"
+          },
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-eslint-disable-red.mjs\"",
+            "timeout": 30,
+            "if": "Edit(packages/m3l-common/tests/**)"
           },
           {
             "type": "command",
@@ -184,37 +198,158 @@
           {
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/post-edit-md-verify.mjs\"",
-            "timeout": 120
+            "timeout": 120,
+            "if": "Write(*.md)"
+          },
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/post-edit-md-verify.mjs\"",
+            "timeout": 120,
+            "if": "Edit(*.md)"
           },
           {
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-exports-semver.mjs\"",
-            "timeout": 120
+            "timeout": 120,
+            "if": "Write(packages/m3l-common/package.json)"
+          },
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-exports-semver.mjs\"",
+            "timeout": 120,
+            "if": "Edit(packages/m3l-common/package.json)"
           },
           {
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/post-edit-verify.mjs\"",
-            "timeout": 180
+            "timeout": 180,
+            "if": "Write(*.ts)"
+          },
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/post-edit-verify.mjs\"",
+            "timeout": 180,
+            "if": "Edit(*.ts)"
+          },
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/post-edit-verify.mjs\"",
+            "timeout": 180,
+            "if": "Write(*.mts)"
+          },
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/post-edit-verify.mjs\"",
+            "timeout": 180,
+            "if": "Edit(*.mts)"
+          },
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/post-edit-verify.mjs\"",
+            "timeout": 180,
+            "if": "Write(*.cts)"
+          },
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/post-edit-verify.mjs\"",
+            "timeout": 180,
+            "if": "Edit(*.cts)"
           },
           {
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-doc-counts.mjs\"",
-            "timeout": 120
+            "timeout": 120,
+            "if": "Write(docs/reference/**/*.md)"
+          },
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-doc-counts.mjs\"",
+            "timeout": 120,
+            "if": "Edit(docs/reference/**/*.md)"
+          },
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-doc-counts.mjs\"",
+            "timeout": 120,
+            "if": "Write(README.md)"
+          },
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-doc-counts.mjs\"",
+            "timeout": 120,
+            "if": "Edit(README.md)"
           },
           {
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-provenance-staleness.mjs\"",
-            "timeout": 120
+            "timeout": 120,
+            "if": "Write(packages/m3l-common/src/**)"
+          },
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-provenance-staleness.mjs\"",
+            "timeout": 120,
+            "if": "Edit(packages/m3l-common/src/**)"
           },
           {
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-index-staleness.mjs\"",
-            "timeout": 120
+            "timeout": 120,
+            "if": "Write(docs/reference/**/*.provenance.json)"
+          },
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-index-staleness.mjs\"",
+            "timeout": 120,
+            "if": "Edit(docs/reference/**/*.provenance.json)"
+          },
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-index-staleness.mjs\"",
+            "timeout": 120,
+            "if": "Write(packages/m3l-common/src/**/index.ts)"
+          },
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-index-staleness.mjs\"",
+            "timeout": 120,
+            "if": "Edit(packages/m3l-common/src/**/index.ts)"
+          },
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-index-staleness.mjs\"",
+            "timeout": 120,
+            "if": "Write(docs/implementation-status.md)"
+          },
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-index-staleness.mjs\"",
+            "timeout": 120,
+            "if": "Edit(docs/implementation-status.md)"
+          },
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-index-staleness.mjs\"",
+            "timeout": 120,
+            "if": "Write(docs/reference/**/*.md)"
+          },
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-index-staleness.mjs\"",
+            "timeout": 120,
+            "if": "Edit(docs/reference/**/*.md)"
           },
           {
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-red-phase-comments.mjs\"",
-            "timeout": 30
+            "timeout": 30,
+            "if": "Write(packages/m3l-common/src/**)"
+          },
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-red-phase-comments.mjs\"",
+            "timeout": 30,
+            "if": "Edit(packages/m3l-common/src/**)"
           }
         ]
       }
