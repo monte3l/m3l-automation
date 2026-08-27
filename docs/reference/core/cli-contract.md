@@ -628,7 +628,7 @@ process.exitCode = Core.mapCommandOutcomeToExitCode(outcome);
 `dist/command.js`, dynamically importing it, building the context, and
 wiring a `--in-process` flag are shipped — see `docs/reference/cli.md`
 § Design invariants ("Dependency-graph discovery, filesystem fallback") and
-`#### m3l <script> --in-process`.
+`#### m3l <script> [--param value ...] [-- args...]`.
 
 ## See also
 

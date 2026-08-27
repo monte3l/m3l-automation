@@ -19,7 +19,7 @@ This page is the CLI's contract. It grows one section per shipped phase
 
 ## Design invariants
 
-- **Zero runtime dependencies.** Arg parsing is `node:util` `parseArgs`
+- **Zero third-party runtime dependencies.** Arg parsing is `node:util` `parseArgs`
   (per-command dispatch off the first positional — parseArgs has no native
   subcommand support); colors are `util.styleText` behind a TTY/`NO_COLOR`/
   `FORCE_COLOR`-aware output layer; interactive UI (later phases) is
@@ -34,8 +34,10 @@ This page is the CLI's contract. It grows one section per shipped phase
   counter-example that forced dist-first).
 - **Dependency-graph discovery, filesystem fallback (ADR-0054, U7).**
   `packages/m3l-cli/package.json` declares every `scripts/*` package as a
-  real `dependencies` entry; script discovery resolves each one via Node's
-  own module resolution over that declared graph
+  real `dependencies` entry (alongside `@m3l-automation/m3l-common`, the
+  library — excluded from discovery, since it is not a script); script
+  discovery resolves each declared script package via Node's own module
+  resolution over that declared graph
   (`createRequire(...).resolve("@m3l-automation/<name>/package.json")`)
   rather than scanning `<workspaceRoot>/scripts/*` on disk — the property
   that makes publishing the CLI and fleet independently of a shared

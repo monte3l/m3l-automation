@@ -270,18 +270,17 @@ function checkDependencyGraph(): M3LCliDoctorCheck {
   let status;
   try {
     status = diagnoseDependencyGraph();
-  } catch {
-    // Deliberately fixed and content-free: diagnoseDependencyGraph propagates
-    // a genuine resolution failure unwrapped, so the caught error's own
-    // message could carry arbitrary content (e.g. a malformed package
-    // export's path) — never interpolate it into this rendered detail
-    // (plain-text table AND --json), mirrors checkCommandModule's own
-    // catch-block detail-message safety posture exactly.
+  } catch (cause) {
+    // Deliberately message-free: diagnoseDependencyGraph propagates a genuine
+    // resolution failure unwrapped, so the caught error's own message could
+    // carry arbitrary content (e.g. a malformed package export's path) —
+    // never interpolate the message into this rendered detail (plain-text
+    // table AND --json), mirrors checkCommandModule's own catch-block detail
+    // safety posture exactly. The error's *type* is safe to surface.
     return {
       name: "dependency-graph",
       status: "warn",
-      detail:
-        "dependency-graph diagnosis failed unexpectedly — run 'pnpm install' or inspect the workspace manifest directly",
+      detail: `dependency-graph diagnosis failed unexpectedly (${cause instanceof Error ? cause.name : typeof cause}) — run 'pnpm install' or inspect the workspace manifest directly`,
     };
   }
   return status.unresolved.length === 0
@@ -504,6 +503,34 @@ function checkHistory(historyFilePath: string): M3LCliDoctorCheck {
   };
 }
 
+/**
+ * Discovers `scripts/*` candidates, tolerating an unexpected dependency-graph
+ * resolution failure (e.g. `EACCES`, `ERR_PACKAGE_PATH_NOT_EXPORTED`) from
+ * {@link discoverScripts}'s own unguarded first attempt. `discoverScripts`
+ * shares its resolver with {@link diagnoseDependencyGraph} (both wrap
+ * `discover.ts`'s module-private `resolveScriptManifestDefault`, which
+ * deliberately propagates any non-`MODULE_NOT_FOUND` resolution error), so
+ * without this retry a resolver blowup here would abort the whole
+ * `runDoctor` suite before {@link checkDependencyGraph} ever gets a chance to
+ * report the same problem as its own isolated `"warn"` row.
+ *
+ * The retry forces `resolveScriptManifest` to report every declared
+ * dependency as unresolved without performing any real resolution, so it can
+ * never throw again — the result degrades to filesystem-only candidates
+ * (`discoverScriptsFromFilesystem`'s results only).
+ */
+function discoverScriptCandidates(
+  workspaceRoot: string,
+): readonly M3LCliScriptCandidate[] {
+  try {
+    return discoverScripts(workspaceRoot);
+  } catch {
+    return discoverScripts(workspaceRoot, {
+      resolveScriptManifest: () => undefined,
+    });
+  }
+}
+
 /** The human-readable rendering's column headers. */
 const HEADER = ["CHECK", "STATUS", "DETAIL"] as const;
 
@@ -542,7 +569,14 @@ function renderChecks(
  * {@link M3LCliError} with code `"ERR_CLI_DOCTOR_FAILED"` rather than being
  * swallowed into a `"fail"` row — an already-typed `M3LCliError` (e.g. from
  * {@link checkCache}'s or {@link checkHistory}'s writability probe) passes
- * through unwrapped.
+ * through unwrapped. `discoverScripts` shares its dependency-graph resolver
+ * with {@link checkDependencyGraph}'s own isolated call, so an unexpected
+ * resolution failure (e.g. `EACCES`) there is tolerated the same way: the
+ * candidate discovery is retried with `resolveScriptManifest` forced to
+ * report every declared dependency as unresolved, degrading to
+ * filesystem-only candidates rather than aborting the whole run —
+ * `checkDependencyGraph` still reports the same underlying problem as its
+ * own `"warn"` row.
  *
  * @param context - The command context to run against; must carry
  *   `historyFilePath`.
@@ -562,7 +596,7 @@ export async function runDoctor(
 ): Promise<number> {
   let checks: M3LCliDoctorCheck[];
   try {
-    const candidates = discoverScripts(context.workspaceRoot);
+    const candidates = discoverScriptCandidates(context.workspaceRoot);
 
     checks = [
       checkNodeVersion(),
