@@ -30,10 +30,11 @@ interface RunSqsEtlDeps {
  *   resolved `awsTarget` used for target-graded destructive confirmation —
  *   both forwarded unchanged to whichever step is selected.
  * @returns The dispatched step's own return value (`void` for every command
- *   except `transform`, which returns its read/written/skipped summary).
+ *   except `transform`, which returns its read/written/skipped summary, and
+ *   `list-queues`, which returns the raw listed-queues page).
  * @throws {@link Core.M3LError} coded `"ERR_SQS_ETL_CONFIG"` when `command`
- *   is not one of the six declared modes — unreachable through the declared
- *   config schema's `oneOf` validator, guarded here defensively.
+ *   is not one of the seven declared modes — unreachable through the
+ *   declared config schema's `oneOf` validator, guarded here defensively.
  *
  * @example
  * ```typescript
@@ -60,7 +61,11 @@ interface RunSqsEtlDeps {
  */
 export async function runSqsEtl(
   deps: RunSqsEtlDeps,
-): Promise<{ read: number; written: number; skipped: number } | void> {
+): Promise<
+  | { read: number; written: number; skipped: number }
+  | AWS.M3LSQSListQueuesResult
+  | void
+> {
   const command = deps.config.get("command");
 
   // Each step module is imported dynamically, at dispatch time rather than
@@ -94,6 +99,10 @@ export async function runSqsEtl(
     case "transform": {
       const { transformRecords } = await import("./transform-records.js");
       return transformRecords(deps);
+    }
+    case "list-queues": {
+      const { listQueues } = await import("./list-queues.js");
+      return listQueues(deps);
     }
     default:
       throw new Core.M3LError(

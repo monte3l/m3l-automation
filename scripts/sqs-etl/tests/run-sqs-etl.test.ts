@@ -15,6 +15,7 @@ const redriveQueueMock = vi.fn();
 const deleteMessagesMock = vi.fn();
 const purgeQueueMock = vi.fn();
 const transformRecordsMock = vi.fn();
+const listQueuesMock = vi.fn();
 
 vi.mock("../src/steps/dump-queue.js", () => ({ dumpQueue: dumpQueueMock }));
 vi.mock("../src/steps/send-batch.js", () => ({ sendBatch: sendBatchMock }));
@@ -29,6 +30,9 @@ vi.mock("../src/steps/purge-queue.js", () => ({
 }));
 vi.mock("../src/steps/transform-records.js", () => ({
   transformRecords: transformRecordsMock,
+}));
+vi.mock("../src/steps/list-queues.js", () => ({
+  listQueues: listQueuesMock,
 }));
 
 import { Core } from "@m3l-automation/m3l-common";
@@ -48,6 +52,7 @@ describe("runSqsEtl dispatch", () => {
     ["delete", deleteMessagesMock],
     ["purge", purgeQueueMock],
     ["transform", transformRecordsMock],
+    ["list-queues", listQueuesMock],
   ] as const)(
     "dispatches command '%s' to its matching step, passing deps through unchanged",
     async (command, mock) => {
@@ -89,6 +94,7 @@ describe("runSqsEtl dispatch", () => {
         deleteMessagesMock,
         purgeQueueMock,
         transformRecordsMock,
+        listQueuesMock,
       ]) {
         if (other !== mock) expect(other).not.toHaveBeenCalled();
       }

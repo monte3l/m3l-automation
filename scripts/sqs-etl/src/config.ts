@@ -7,7 +7,7 @@ const VISIBILITY_TIMEOUT_MIN = 0;
 const VISIBILITY_TIMEOUT_MAX = 43_200;
 
 /**
- * The `command` parameter's declared operation set (ADR-0055) — the six
+ * The `command` parameter's declared operation set (ADR-0055) — the seven
  * verbs `sqs-etl` dispatches over. Feeds {@link configParameters}'
  * `command` declaration (which auto-composes the membership validator) and
  * {@link Core.deriveOperationValidators}'s per-command `requiredParameters`
@@ -55,6 +55,11 @@ export const SQS_ETL_COMMAND_DECLARATIONS = [
       "Map/filter records between two JSONL files without touching AWS.",
     requiredParameters: ["input", "output"],
   },
+  {
+    name: "list-queues",
+    description: "List the account's SQS queue URLs, one page per call.",
+    requiredParameters: [],
+  },
 ] as const;
 
 /** The literal union of {@link SQS_ETL_COMMAND_DECLARATIONS}' command names. */
@@ -75,7 +80,8 @@ export const SQS_ETL_COMMANDS: readonly [
  * Only `aws.profile` and `command` are `required: true`: per-command
  * presence requirements (e.g. `queueUrl` for `dump`/`send`/`redrive`/
  * `delete`/`purge`, `input` for `send`/`delete`/`transform`, `output` for
- * `dump`/`transform`) are declared on {@link SQS_ETL_COMMAND_DECLARATIONS}
+ * `dump`/`transform`; `list-queues` requires none) are declared on
+ * {@link SQS_ETL_COMMAND_DECLARATIONS}
  * rather than expressed by a single parameter's `validate:` callback — see
  * {@link configValidators} below, which derives and enforces them at
  * config-load time via F1b's `Core.M3LConfigSchema` cross-parameter
@@ -116,6 +122,16 @@ export const configParameters: readonly Core.M3LConfigParameter[] = [
   }),
   new Core.M3LConfigParameter({
     name: "output",
+    type: Core.M3LConfigParameterType.STRING,
+    validate: Core.M3LConfigValidators.nonEmpty,
+  }),
+  new Core.M3LConfigParameter({
+    name: "queueNamePrefix",
+    type: Core.M3LConfigParameterType.STRING,
+    validate: Core.M3LConfigValidators.nonEmpty,
+  }),
+  new Core.M3LConfigParameter({
+    name: "nextToken",
     type: Core.M3LConfigParameterType.STRING,
     validate: Core.M3LConfigValidators.nonEmpty,
   }),

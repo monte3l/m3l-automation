@@ -4,8 +4,8 @@ import { Core } from "@m3l-automation/m3l-common";
 import type { AWS } from "@m3l-automation/m3l-common";
 
 /**
- * Builds a plain-object fake of `AWS.M3LSQSOperations`'s 4-method public
- * interface (`receive`/`sendBatch`/`deleteBatch`/`purgeQueue`), each a
+ * Builds a plain-object fake of `AWS.M3LSQSOperations`'s 5-method public
+ * interface (`receive`/`sendBatch`/`deleteBatch`/`purgeQueue`/`listQueues`), each a
  * `vi.fn()` the caller can configure per test. `M3LSQSOperations` is a
  * concrete class with a private field, so a structural object literal is
  * cast through `unknown` — the same pattern this suite already uses for
@@ -20,6 +20,7 @@ export function createFakeSqsOperations(overrides?: {
   readonly sendBatch?: ReturnType<typeof vi.fn>;
   readonly deleteBatch?: ReturnType<typeof vi.fn>;
   readonly purgeQueue?: ReturnType<typeof vi.fn>;
+  readonly listQueues?: ReturnType<typeof vi.fn>;
 }): AWS.M3LSQSOperations {
   const fake = {
     receive: overrides?.receive ?? vi.fn().mockResolvedValue([]),
@@ -30,6 +31,8 @@ export function createFakeSqsOperations(overrides?: {
       overrides?.deleteBatch ??
       vi.fn().mockResolvedValue({ successful: [], failed: [] }),
     purgeQueue: overrides?.purgeQueue ?? vi.fn().mockResolvedValue(undefined),
+    listQueues:
+      overrides?.listQueues ?? vi.fn().mockResolvedValue({ queueUrls: [] }),
   };
   return fake as unknown as AWS.M3LSQSOperations;
 }
