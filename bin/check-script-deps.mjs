@@ -16,7 +16,7 @@ import process from "node:process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
-import { scriptPackageDirs } from "./lib/script-scaffold.mjs";
+import { scriptPackageDirs } from "./lib/script-doc-paths.mjs";
 import { parseJsonFlag, createReporter, repoRoot } from "./lib/report.mjs";
 
 const root = repoRoot(import.meta.url);
