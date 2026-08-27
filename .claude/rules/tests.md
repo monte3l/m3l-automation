@@ -166,6 +166,18 @@ paths:
 throw "a string";
 ```
 
+- **Assemble a deliberately planted secret-shaped fixture at runtime, never as
+  a single source literal — even in a comment or example.** gitleaks scans
+  source text, not runtime values, and this repo has no `.gitleaksignore` (a
+  fingerprint there is `<commit>:<file>:<rule>:<line>`, which squash-merge
+  rewrites on every PR — every entry ever added went dead the moment its PR
+  landed). Split the literal so the string is built by concatenating two
+  substrings at runtime — the fixture and every assertion against it stay
+  byte-identical, only how the string is constructed changes. Apply this
+  whenever a test plants a credential-shaped value on purpose (to prove a
+  redactor strips it, a checker rejects it, or similar) — see
+  `diagnostics-run-report.test.ts:144-148` for the established pattern.
+
 ### Test-tooling gotchas
 
 - **Runtime-green ≠ typecheck-green.** Vitest transforms without type-checking;
