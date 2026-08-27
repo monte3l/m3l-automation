@@ -23,13 +23,12 @@ files, 20 of them immutable historical records).
 
 ## Part 1 — The hub session
 
-**Rollout note:** ADR-0078 is implemented across a six-PR sequence. PRs 1-3
+**Rollout note:** ADR-0078 is implemented across a six-PR sequence. PRs 1-4
 have landed: the policy is recorded, `bin/check-context-budget.mjs` replaced
-`bin/check-claude-md-budget.mjs` as the live gate (CI + pre-push), and
-`CLAUDE.md`'s always-loaded surface fits under budget with zero `@`-imports.
-`.claude/hooks/write-compact-handoff.mjs` and
-`.claude/hooks/reinject-compact-handoff.mjs` — referenced below — land in PR
-4; until then, no compaction hooks exist yet.
+`bin/check-claude-md-budget.mjs` as the live gate (CI + pre-push),
+`CLAUDE.md`'s always-loaded surface fits under budget with zero `@`-imports,
+and the `PreCompact`/`SessionStart(compact)` handoff hooks described below
+are live.
 
 ### What survives compaction
 
@@ -73,13 +72,19 @@ eliminated the need for an agent to have to guess at what had happened"
 This repo's own incident history validated the same pattern one layer down:
 every one of the 20+ logged subagent truncations recovered losslessly via its
 journal, none via a narrated summary. ADR-0078 extends that pattern to the hub
-session itself (PR 4 of the ADR-0078 sequence — see the rollout note above):
-`.claude/hooks/write-compact-handoff.mjs` (`PreCompact`) will write branch,
-worktree, PR number, open spoke journal paths, pending gates, and the last
-verified commit's signature status to the session scratchpad;
+session itself: `.claude/hooks/write-compact-handoff.mjs` (`PreCompact`)
+writes branch, worktree, the last commit's SHA and signature status, and
+`git status --porcelain`'s uncommitted-file list to `tmp/compact-handoff.json`
+(this repo's gitignored scratch directory — not the ephemeral OS-level
+session scratchpad, which a hook has no documented way to address);
 `.claude/hooks/reinject-compact-handoff.mjs` (`SessionStart`, matcher
-`compact`) will read it back as `additionalContext` — so post-compaction state
-reconstruction won't depend on the summary having retained it.
+`compact`) reads it back as `additionalContext` and deletes it (one-shot) —
+so post-compaction state reconstruction doesn't depend on the summary having
+retained it. Deliberately excludes a live PR-number lookup (`gh` is a network
+call; every other hook in this repo stays fast and dependency-free) and a
+genuine "open spoke journal" list (no reliable way to discover it from a
+hook) — the artifact lists only journal-shaped files under `tmp/` itself, an
+honest, best-effort proxy rather than a fabricated claim.
 
 ### The always-loaded budget, measured honestly
 
