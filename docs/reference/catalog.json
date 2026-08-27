@@ -1115,6 +1115,8 @@
       "M3LSQSDeleteEntry",
       "M3LSQSBatchFailure",
       "M3LSQSBatchResult",
+      "M3LSQSListQueuesOptions",
+      "M3LSQSListQueuesResult",
       "M3LSQSReceiveOptions",
       "M3LSQSRedriveDecision",
       "M3LSQSRedriveProcessor",

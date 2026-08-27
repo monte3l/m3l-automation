@@ -12,6 +12,8 @@ export type {
   M3LSQSBatchFailure,
   M3LSQSBatchResult,
   M3LSQSDeleteEntry,
+  M3LSQSListQueuesOptions,
+  M3LSQSListQueuesResult,
   M3LSQSQueueAttributes,
   M3LSQSReceiveDeduplicationMode,
   M3LSQSReceiveOptions,

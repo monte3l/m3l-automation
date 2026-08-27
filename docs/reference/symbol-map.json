@@ -3606,6 +3606,16 @@
     "namespace": "aws",
     "file": "packages/m3l-common/src/aws/sqs/types.ts"
   },
+  "M3LSQSListQueuesOptions": {
+    "submodule": "sqs",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/sqs/types.ts"
+  },
+  "M3LSQSListQueuesResult": {
+    "submodule": "sqs",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/sqs/types.ts"
+  },
   "M3LSQSReceiveOptions": {
     "submodule": "sqs",
     "namespace": "aws",
