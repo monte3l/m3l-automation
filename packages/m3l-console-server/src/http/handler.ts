@@ -12,9 +12,11 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 
 import { Core } from "@m3l-automation/m3l-common";
 
+import { logDiagnosticIfFault, logOutcome } from "./access-log.js";
+import type { RequestFaultContext } from "./access-log.js";
 import { createRequestContext, withAccessMode, withParams } from "./context.js";
 import type { M3LRequestContext } from "./context.js";
-import { errorResponse, isFaultError } from "./envelope.js";
+import { errorResponse } from "./envelope.js";
 import { M3LConsoleError } from "../errors/console-error.js";
 import { composeMiddleware } from "./middleware.js";
 import type { M3LConsoleHandler, M3LConsoleMiddleware } from "./middleware.js";
@@ -22,12 +24,10 @@ import { writeResponse } from "./respond.js";
 import type { M3LConsoleResponse } from "./respond.js";
 import type { M3LRouteAuth, M3LRouteLookup, M3LRouter } from "./router.js";
 
-/** The status below which a response is logged at `info`. */
-const STATUS_CLIENT_ERROR_THRESHOLD = 400;
-/** The status at and above which a response is logged at `error`. */
-const STATUS_SERVER_ERROR_THRESHOLD = 500;
 /** Logged in place of a request's path when it failed to parse — never the raw, unparsed target. */
 const PATH_PLACEHOLDER_UNPARSED = "(unparsed)";
+/** The status the last-resort fallback response writes when {@link writeResponse} itself throws. */
+const STATUS_INTERNAL_SERVER_ERROR = 500;
 
 /**
  * Constructor options for {@link createConsoleRequestListener}.
@@ -158,80 +158,6 @@ function toHeaderMap(
   return headers as unknown as Readonly<Record<string, string | undefined>>;
 }
 
-/** The three log levels a request outcome is ever recorded at. */
-function logLevelForStatus(status: number): "error" | "warning" | "info" {
-  if (status >= STATUS_SERVER_ERROR_THRESHOLD) return "error";
-  if (status >= STATUS_CLIENT_ERROR_THRESHOLD) return "warning";
-  return "info";
-}
-
-/** Fields logged for exactly one line per request — never headers, query, or body. */
-interface RequestOutcome {
-  readonly method: string;
-  readonly path: string;
-  readonly status: number;
-  readonly durationMs: number;
-  readonly correlationId: string;
-  readonly accessMode: M3LRouteAuth | undefined;
-}
-
-/** Logs the single outcome line for a request, at the level its status implies. */
-function logOutcome(logger: Core.M3LLogger, outcome: RequestOutcome): void {
-  const message = `${outcome.method} ${outcome.path} -> ${String(outcome.status)}`;
-  const data = {
-    method: outcome.method,
-    path: outcome.path,
-    status: outcome.status,
-    durationMs: outcome.durationMs,
-    correlationId: outcome.correlationId,
-    ...(outcome.accessMode !== undefined && { accessMode: outcome.accessMode }),
-  };
-
-  const level = logLevelForStatus(outcome.status);
-  if (level === "error") {
-    logger.error(message, data);
-  } else if (level === "warning") {
-    logger.warning(message, data);
-  } else {
-    logger.info(message, data);
-  }
-}
-
-/** Context for {@link logDiagnosticIfFault} — never the query string, headers, or body. */
-interface RequestFaultContext {
-  readonly method: string;
-  readonly path: string;
-  readonly correlationId: string;
-}
-
-/**
- * Emits a diagnostic `ERROR` line via {@link Core.M3LLogger.errorFrom} for a
- * genuine fault — but never for a routine non-fault outcome (a bad request,
- * an unauthenticated/not-found/method-not-allowed lookup, or a drain
- * refusal) — so the real cause behind a handler/middleware throw is
- * recorded somewhere, even though only the fixed generic envelope message
- * ever reaches the caller (ADR-0070's display-vs-persist split; see
- * {@link isFaultError}). The gate is "is this a fault", not "is this
- * caller-origin": a drain refusal (`ERR_CONSOLE_UNAVAILABLE`) is
- * `origin: "library"` yet not a fault, so gating on origin alone would emit
- * a spurious error-level line for every request refused during an ordinary
- * shutdown. Gating on fault also keeps a caller from remotely steering log
- * severity by choosing which routine error to trigger. The message carries
- * only the correlation id, method, and normalized path — never the query
- * string, headers, or body.
- */
-function logDiagnosticIfFault(
-  logger: Core.M3LLogger,
-  error: unknown,
-  context: RequestFaultContext,
-): void {
-  if (!isFaultError(error)) return;
-  logger.errorFrom(
-    error,
-    `unhandled failure handling ${context.method} ${context.path} (correlationId=${context.correlationId})`,
-  );
-}
-
 /** Builds the response for a router lookup that did not reach a route handler. */
 function responseForUnmatchedLookup(
   outcome: "not-found" | "method-not-allowed",
@@ -272,7 +198,7 @@ function responseForUnmatchedLookup(
 function writeFallbackResponse(res: ServerResponse): void {
   try {
     if (!res.headersSent && !res.writableEnded) {
-      res.writeHead(STATUS_SERVER_ERROR_THRESHOLD);
+      res.writeHead(STATUS_INTERNAL_SERVER_ERROR);
     }
   } catch {
     // best-effort: nothing more can be done if even the fallback header
@@ -592,8 +518,8 @@ function finishRequest(inputs: FinishRequestInputs): void {
  * chain, writes the response, and logs exactly one *outcome* line — never a
  * query string, headers, a body, or the operator's email. A failure
  * additionally emits one diagnostic line via
- * {@link Core.M3LLogger.errorFrom} (gated so a routine non-fault outcome
- * never doubles up — see {@link isFaultError}), so the real cause of
+ * {@link Core.M3LLogger.errorFrom} (gated by {@link logDiagnosticIfFault} so
+ * a routine non-fault outcome never doubles up), so the real cause of
  * a genuine fault is never lost to the fixed generic envelope message alone
  * (ADR-0070's display-vs-persist split).
  *
