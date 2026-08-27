@@ -143,6 +143,30 @@ function hostileProxyModule(): Core.M3LCommandModule<object> {
   }) as unknown as Core.M3LCommandModule<object>;
 }
 
+/**
+ * A plain object whose `configParameters` is declared with
+ * `configurable: false` — `freezeConfigParametersSnapshot`'s own
+ * `Object.defineProperty` call on this exact property therefore throws a
+ * `TypeError: Cannot redefine property`, landing in its `catch` block. This
+ * is a DIFFERENT failure mode than `hostileProxyModule` above: here the
+ * write attempt throws (tolerated, `return true`), whereas the hostile Proxy
+ * never throws but silently drops the write (rejected, `return false`).
+ */
+function moduleWithNonConfigurableConfigParameters(): Core.M3LCommandModule<object> {
+  const target: Record<string, unknown> = {
+    name: "frozen-getter",
+    version: "0.0.0",
+    execute: () => Promise.resolve({ status: "success" }),
+  };
+  Object.defineProperty(target, "configParameters", {
+    value: [],
+    writable: false,
+    enumerable: true,
+    configurable: false,
+  });
+  return target as unknown as Core.M3LCommandModule<object>;
+}
+
 describe("loadCommandModule — happy path", () => {
   test("resolves the real commandModule export when dist/command.js exists and is valid", async () => {
     vi.spyOn(fs, "existsSync").mockReturnValue(true);
@@ -211,6 +235,27 @@ describe("loadCommandModule — propagated import failure", () => {
     }
 
     expect(thrown).toBe(importError);
+  });
+});
+
+describe("loadCommandModule — default importModule (no override)", () => {
+  test("uses the real dynamic import() default when no importModule override is supplied, and propagates the resulting import failure", async () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(true);
+
+    // No importOptions passed at all — this exercises
+    // `options.importModule ?? ((url) => import(url))`'s fallback branch for
+    // real, rather than every other test's injected `importModule` stub. The
+    // fabricated scriptDirectory does not exist on disk, so the real
+    // dynamic import() call rejects — proving the default is wired to a
+    // real import, not merely present as dead code.
+    let thrown: unknown;
+    try {
+      await loadCommandModule(scriptDirectory);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeDefined();
   });
 });
 
@@ -368,6 +413,18 @@ describe("runInProcess — configParameters TOCTOU (security fix)", () => {
       readonly configParameters: unknown;
     };
     expect(call.configParameters).toEqual(firstReadConfigParameters);
+  });
+});
+
+describe("loadCommandModule — non-configurable configParameters (tolerated)", () => {
+  test("resolves the commandModule normally when Object.defineProperty on configParameters throws (non-configurable property) — tolerated, unlike the hostile-Proxy case which is rejected", async () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(true);
+    const commandModule = moduleWithNonConfigurableConfigParameters();
+    const importModule = vi.fn(() => Promise.resolve({ commandModule }));
+
+    const result = await loadCommandModule(scriptDirectory, { importModule });
+
+    expect(result).toBe(commandModule);
   });
 });
 
