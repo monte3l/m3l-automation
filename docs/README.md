@@ -46,7 +46,17 @@ import { Core, AWS } from "@m3l-automation/m3l-common";
 ### Architecture
 
 - [Architecture overview](m3l-common-architecture.md) — package shape, namespaces, and module map
-- [Implementation plan](plans/archive/m3l-common-implementation.md) — _historical_: the 2026-06-28 build strategy, whose 22-submodule scope shipped in full by 2026-07-05; the library has since grown to 39 (see [Implementation status](implementation-status.md))
+- [Roadmap](ROADMAP.md) — the U/V/X programmes (CLI-first, agent-operator, console) and current status
+- [Architecture Decision Records](adr/README.md) — the indexed log of accepted decisions
+- [Implementation plan](plans/archive/m3l-common-implementation.md) — _historical_: the 2026-06-28 build strategy, whose 22-submodule scope shipped in full by 2026-07-05; the library has since grown to 43 (see [Implementation status](implementation-status.md))
+
+### CLI reference
+
+- [`m3l` CLI](reference/cli.md) — commands, `--json` result envelope, exit codes
+
+### Script contracts
+
+- [Consumer scripts](reference/scripts/) — one contract page per `scripts/*` automation (16 total)
 
 ### API Reference — Core
 
@@ -80,6 +90,12 @@ Resilience
 - [`diagnostics`](reference/core/diagnostics.md) — run reports, exit codes, cause-chain formatting
 - [`checkpoint`](reference/core/checkpoint.md) — `M3LCheckpointStore`: atomic JSON checkpoint/resume for long-running scripts
 
+Codified procedures
+
+- [`pipeline`](reference/core/pipeline.md) — declarative multi-operation dispatcher skeleton for `steps/run-*.ts` modules
+- [`procedure`](reference/core/procedure.md) — codified-procedure engine: control flow and conclusions as data, not hand-written branching
+- [`cli-contract`](reference/core/cli-contract.md) — typed command-module seam a script exports for `m3l` (and future agent runtimes) to invoke in-process
+
 Utilities
 
 - [`utils`](reference/core/utils.md) — `M3LPaths`, concurrency pool, type guards, string utils
@@ -103,6 +119,10 @@ Utilities
 - [`codepipeline`](reference/aws/codepipeline.md) — `M3LCodePipelineOperations`
 - [`cloudformation`](reference/aws/cloudformation.md) — `M3LCloudFormationOperations`
 - [`eks`](reference/aws/eks.md) — `M3LEKSOperations`
+- [`cloudwatch-alarms`](reference/aws/cloudwatch-alarms.md) — `M3LCloudWatchAlarmsOperations`
+- [`cloudwatch-metrics`](reference/aws/cloudwatch-metrics.md) — `M3LCloudWatchMetricsOperations`
+- [`secrets-manager`](reference/aws/secrets-manager.md) — `M3LSecretsManagerOperations`
+- [`rds-data`](reference/aws/rds-data.md) — `M3LRDSDataOperations`
 
 ### Contributing
 
