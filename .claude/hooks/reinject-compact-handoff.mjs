@@ -39,10 +39,15 @@ export function formatHandoff(handoff) {
     }\``,
   ];
 
-  if (handoff.lastCommit) {
+  const lastCommit = handoff.lastCommit;
+  if (
+    lastCommit &&
+    typeof lastCommit === "object" &&
+    typeof lastCommit.sha === "string"
+  ) {
     lines.push(
-      `  • Last commit: \`${handoff.lastCommit.sha.slice(0, 12)}\` ` +
-        `(signature: \`${handoff.lastCommit.signature}\`)`,
+      `  • Last commit: \`${lastCommit.sha.slice(0, 12)}\` ` +
+        `(signature: \`${lastCommit.signature ?? "?"}\`)`,
     );
   }
 
@@ -99,8 +104,10 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   // Belt-and-suspenders alongside the settings.json `matcher: "compact"`
   // registration — if the harness ever routes an unmatched SessionStart
   // here, stay silent rather than injecting a compaction handoff into a
-  // fresh, non-compacted session.
-  if (input.source !== "compact") process.exit(0);
+  // fresh, non-compacted session. `input` can itself be `null` (valid JSON,
+  // e.g. a bare `null` payload) — read defensively rather than assume it's
+  // an object.
+  if (input?.source !== "compact") process.exit(0);
 
   const handoffPath = join(root, HANDOFF_REL_PATH);
   const handoff = readHandoff(handoffPath);

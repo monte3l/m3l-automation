@@ -83,6 +83,36 @@ describe("formatHandoff", () => {
     expect(result).not.toContain("undefined");
   });
 
+  test("falls back to a '?' signature when signature is legitimately absent from an otherwise-valid lastCommit", () => {
+    const result = formatHandoff({
+      branch: "feat/x",
+      worktree: "/repo",
+      lastCommit: { sha: "abc123" },
+    });
+
+    expect(result).toContain("Last commit");
+    expect(result).toContain("abc123");
+    expect(result).toContain("signature: `?`");
+    expect(result).not.toContain("undefined");
+  });
+
+  test.each([
+    ["sha is a number, not a string", { sha: 42 }],
+    ["lastCommit is not an object at all", true],
+    ["lastCommit is an object missing sha entirely", {}],
+  ])(
+    "does not throw and omits the last-commit line when lastCommit is malformed: %s",
+    (_description, lastCommit) => {
+      const handoff = { branch: "feat/x", worktree: "/repo", lastCommit };
+
+      expect(() => formatHandoff(handoff)).not.toThrow();
+
+      const result = formatHandoff(handoff);
+      expect(result).not.toContain("Last commit");
+      expect(result).not.toContain("undefined");
+    },
+  );
+
   test("lists up to the first 10 uncommitted entries plus a '(+N more)' suffix", () => {
     const uncommittedFiles = Array.from(
       { length: 12 },
