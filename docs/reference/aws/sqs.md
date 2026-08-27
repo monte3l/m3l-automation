@@ -54,10 +54,11 @@ it is returned via `M3LSQSBatchResult.failed`, joined back to the caller's
 original input entry. `receive`/`purgeQueue`/`listQueues` are not retried. A
 long-poll `receive` absorbs transient emptiness on its own; SQS's
 `PurgeQueue` 60-second cooldown (`PurgeQueueInProgress`) is a business
-condition, not a transient fault; and `listQueues` is a single idempotent
-page fetch the caller already drives in a `nextToken` loop, so a throttled
-page is re-attempted by the caller's own next iteration rather than inside
-the wrapper. `listQueues`' `queueNamePrefix`/`nextToken`/`maxResults`
+condition, not a transient fault; and `listQueues` is a single-page read
+with no `M3LRetryRunner` of its own — a throttled call throws immediately
+rather than retrying internally, so a caller that wants retry-on-throttle
+around its `nextToken` loop wraps that loop itself. `listQueues`'
+`queueNamePrefix`/`nextToken`/`maxResults`
 options are forwarded to the SDK without a pre-flight validity check —
 unlike `sendBatch`/`deleteBatch`'s batch-size guard or `redrive`'s
 `messageLimit` guard below, an invalid value (e.g. `maxResults` outside
@@ -281,7 +282,11 @@ const result = await sqsOperations.sendBatch(queueUrl, [
 let nextToken;
 const queueUrls = [];
 do {
-  const page = await sqsOperations.listQueues({ nextToken });
+  // exactOptionalPropertyTypes rejects `{ nextToken: undefined }` — omit the
+  // key on the first call instead of passing it through unconditionally.
+  const page = await sqsOperations.listQueues(
+    nextToken === undefined ? {} : { nextToken },
+  );
   queueUrls.push(...page.queueUrls);
   nextToken = page.nextToken;
 } while (nextToken !== undefined);

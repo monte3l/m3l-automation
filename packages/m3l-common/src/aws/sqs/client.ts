@@ -241,9 +241,10 @@ export class M3LSQSOperations {
 
   /**
    * Lists queue URLs, one page at a time, via a single `ListQueues` call.
-   * Not retried: a single idempotent page fetch the caller already drives
-   * via a `nextToken` loop, so a throttled call is naturally retried by the
-   * caller's own next iteration rather than inside the wrapper.
+   * Not retried: a single-page read, left to the caller to wrap in their own
+   * retry logic if desired — unlike `getQueueAttributes`, this method has no
+   * `M3LRetryRunner`, so a throttled call throws immediately rather than
+   * retrying internally.
    *
    * `maxResults`, `queueNamePrefix`, and `nextToken` are forwarded to the SDK
    * without a pre-flight validity check; an invalid value (e.g. `maxResults`
