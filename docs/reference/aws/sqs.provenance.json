@@ -42,6 +42,16 @@
         },
         {
           "file": "packages/m3l-common/src/aws/sqs/types.ts",
+          "symbol": "M3LSQSListQueuesOptions",
+          "blob": "9e5382c477836a333df9425f58274fc486bad275"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/sqs/types.ts",
+          "symbol": "M3LSQSListQueuesResult",
+          "blob": "9e5382c477836a333df9425f58274fc486bad275"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/sqs/types.ts",
           "symbol": "M3LSQSReceiveOptions",
           "blob": "9e5382c477836a333df9425f58274fc486bad275"
         },
@@ -85,7 +95,7 @@
       "retrieved": "2026-08-27"
     },
     {
-      "heading": "`redrive` — the receive→process→move flow",
+      "heading": "`redrive` \u2014 the receive\u2192process\u2192move flow",
       "sources": [
         {
           "file": "packages/m3l-common/src/aws/sqs/client.ts",
@@ -132,6 +142,16 @@
         {
           "file": "packages/m3l-common/src/aws/sqs/types.ts",
           "symbol": "M3LSQSBatchResult",
+          "blob": "9e5382c477836a333df9425f58274fc486bad275"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/sqs/types.ts",
+          "symbol": "M3LSQSListQueuesOptions",
+          "blob": "9e5382c477836a333df9425f58274fc486bad275"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/sqs/types.ts",
+          "symbol": "M3LSQSListQueuesResult",
           "blob": "9e5382c477836a333df9425f58274fc486bad275"
         },
         {
