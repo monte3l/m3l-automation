@@ -126,6 +126,45 @@ describe("parseCadenceTable", () => {
       /## Commands/,
     );
   });
+
+  test("unions check tokens across multiple rows for the same stage", () => {
+    // CLAUDE.md's real "## Commands" table splits `pre-push` across several
+    // rows to stay under a table-width warning. Under the pre-fix overwrite
+    // behavior (`stages.set(stage, tokens)` with a fresh Set per line), only
+    // the last row's tokens would survive; this fixture would then fail
+    // because the returned Set would contain only `test:coverage` and
+    // `build`, not the checks from the earlier two rows.
+    const multiRowClaudeMd = [
+      "## Commands",
+      "",
+      "| Stage | Checks run | Scope |",
+      "| ----- | ---------- | ----- |",
+      "| `pre-commit` (lefthook) | `eslint --fix`, `prettier --write` | staged |",
+      "| `pre-push` (lefthook) | `format:check`, `lint` | repo |",
+      "| `pre-push` (lefthook) | `typecheck` | repo |",
+      "| `pre-push` (lefthook) | `test:coverage`, `build` | repo |",
+      "| CI `verify` job (`ci.yml`) | every `check:*`, `pnpm build` | repo |",
+      "",
+      "## CI/CD",
+      "",
+    ].join("\n");
+
+    const stages = parseCadenceTable(multiRowClaudeMd);
+
+    const prePush = stages.get("pre-push");
+    expect(prePush).toEqual(
+      new Set(["format:check", "lint", "typecheck", "test:coverage", "build"]),
+    );
+    expect(prePush?.has("format:check")).toBe(true);
+    expect(prePush?.has("lint")).toBe(true);
+    expect(prePush?.has("typecheck")).toBe(true);
+    expect(prePush?.has("test:coverage")).toBe(true);
+    expect(prePush?.has("build")).toBe(true);
+
+    // The accumulation must be scoped per-stage: pre-commit's single row is
+    // unaffected by pre-push's multi-row union.
+    expect(stages.get("pre-commit")).toEqual(new Set(["eslint", "prettier"]));
+  });
 });
 
 describe("diffCadence", () => {

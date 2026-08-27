@@ -110,6 +110,11 @@ export function parseLefthookStages(yamlText) {
  * of check tokens documented for it. Only rows whose first cell names a tracked
  * stage and contains `(lefthook)` are read; the CI row is skipped.
  *
+ * A stage MAY be documented across several rows (e.g. `pre-push`'s long check
+ * list split into shorter rows to stay under the Prettier-padded table-width
+ * budget `check-context-budget.mjs` warns on) — every matching row's tokens are
+ * UNIONED into that stage's set, not overwritten by the last row seen.
+ *
  * @param {string} claudeMd
  * @returns {Map<string, Set<string>>}
  */
@@ -130,7 +135,7 @@ export function parseCadenceTable(claudeMd) {
       new RegExp(`\`${s}\``).test(stageCell),
     );
     if (!stage) continue;
-    const tokens = new Set();
+    const tokens = stages.get(stage) ?? new Set();
     for (const m of checksCell.matchAll(/`([^`]+)`/g)) {
       tokens.add(normalizeToken(m[1]));
     }

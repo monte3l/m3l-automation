@@ -72,7 +72,7 @@
     "check:workflows": "node bin/check-workflows.mjs",
     "check:workflows-doc": "node bin/check-workflows-doc.mjs",
     "check:cadence": "node bin/check-cadence-doc.mjs",
-    "check:claude-md-budget": "node bin/check-claude-md-budget.mjs",
+    "check:context-budget": "node bin/check-context-budget.mjs",
     "check:tracker-coverage": "node bin/check-tracker-coverage.mjs",
     "check:tracker-status": "node bin/check-tracker-status.mjs",
     "check:hub-keys": "node bin/check-hub-keys.mjs",

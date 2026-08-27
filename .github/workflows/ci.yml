@@ -341,12 +341,13 @@ jobs:
         run: pnpm check:cadence
 
       # CLAUDE.md is injected in full into every session and every custom
-      # subagent launch — guards its always-loaded runtime content against
-      # silent regrowth past the line/token budget (docs/contributing/model-
-      # selection.md's spoke roster is why this repo pays that cost per spoke,
-      # not once per session).
-      - name: Check CLAUDE.md budget
-        run: pnpm check:claude-md-budget
+      # subagent launch — guards its always-loaded runtime content (resolving
+      # any @-import before measuring, ADR-0078) against silent regrowth past
+      # the line/token budget (docs/contributing/model-selection.md's spoke
+      # roster is why this repo pays that cost per spoke, not once per
+      # session), and ratchets .claude/rules/*.md conditional-load weight.
+      - name: Check context budget
+        run: pnpm check:context-budget
 
       # Every status-bearing ("## ", has a Status column) table in ROADMAP.md
       # and IMPLEMENTATION.md must be registered with the sync:hub extractor —
