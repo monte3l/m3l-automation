@@ -141,6 +141,78 @@ describe("createConsoleRuntime — logger secrets port (operator email leak regr
   });
 });
 
+describe("createConsoleRuntime — logger secrets port covers headers/cookie", () => {
+  // `M3LRequestContext` now carries `headers` (see tests/context.test.ts).
+  // Pinning `isSecret("cookie")`/`isSecret("headers")` indirectly through
+  // observable logger output, since `runtimeSecrets` is a module-private
+  // const in main.ts, not an exported symbol.
+  test("isSecret treats a top-level 'cookie' field as secret, independent of any headers wrapping", () => {
+    const handler = new RecordingHandler();
+    const runtime = createConsoleRuntime({
+      env: buildEnv(),
+      handlers: [handler],
+    });
+    handler.reset();
+
+    runtime.logger.info("caller-triggered field", {
+      cookie: "TOPLEVEL-COOKIE-CANARY",
+    });
+
+    const rendered = JSON.stringify(handler.events);
+    expect(rendered).not.toContain("TOPLEVEL-COOKIE-CANARY");
+  });
+
+  test("isSecret treats a top-level 'headers' field as secret, even when its nested keys are otherwise unremarkable", () => {
+    const handler = new RecordingHandler();
+    const runtime = createConsoleRuntime({
+      env: buildEnv(),
+      handlers: [handler],
+    });
+    handler.reset();
+
+    runtime.logger.info("caller-triggered field", {
+      headers: { pragma: "NO-CACHE-CANARY" },
+    });
+
+    const rendered = JSON.stringify(handler.events);
+    expect(rendered).not.toContain("NO-CACHE-CANARY");
+  });
+});
+
+describe("createConsoleRuntime — logger secrets port (request-headers leak regression)", () => {
+  // MEASURED against a real M3LLogger: redaction recurses and DOES redact a
+  // nested `authorization` header (it's in the library's built-in
+  // `SENSITIVE_KEY_NAMES`), but `cookie` is NOT in that set and leaked
+  // verbatim. Adding `headers` to `M3LRequestContext` therefore makes an
+  // ordinary `logger.info(msg, { ...ctx })` print a session cookie in full —
+  // the same class of defect as the operator-email leak above, fixed the
+  // same structural way: widen `runtimeSecrets` rather than rely on every
+  // future call site remembering not to spread `ctx.headers` into a log
+  // call. Reproduces the exact call shape through the runtime's own logger,
+  // not a fresh one, so it fails if the `secrets` port is ever narrowed.
+  test("redacts a nested cookie AND a nested authorization header, while a non-secret sibling field still appears", () => {
+    const handler = new RecordingHandler();
+    const runtime = createConsoleRuntime({
+      env: buildEnv(),
+      handlers: [handler],
+    });
+    handler.reset();
+
+    const cookieValue = "sid=CANARY-SESSION-COOKIE-1";
+    const authValue = "Bearer CANARY-AUTH-TOKEN-2";
+
+    runtime.logger.info("caller-triggered spread of a request context", {
+      method: "GET",
+      headers: { cookie: cookieValue, authorization: authValue },
+    });
+
+    const rendered = JSON.stringify(handler.events);
+    expect(rendered).not.toContain(cookieValue);
+    expect(rendered).not.toContain(authValue);
+    expect(rendered).toContain("GET");
+  });
+});
+
 describe("createConsoleRuntime — default handler path", () => {
   afterEach(() => {
     vi.restoreAllMocks();

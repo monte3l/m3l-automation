@@ -226,6 +226,44 @@ describe("createRequestContext — defaults", () => {
   });
 });
 
+describe("createRequestContext — headers", () => {
+  // Headers were previously discarded after deriving the correlation id.
+  // They are now carried on the context so a `preRouting` middleware (e.g.
+  // an origin guard reading `Host`/`Origin`) has something to inspect.
+  test("exposes the headers it was given", () => {
+    const ctx = createRequestContext(
+      buildInput({ headers: { host: "127.0.0.1", origin: "http://x" } }),
+    );
+
+    expect(ctx.headers).toEqual({ host: "127.0.0.1", origin: "http://x" });
+  });
+
+  test("the headers object is frozen", () => {
+    const ctx = createRequestContext(
+      buildInput({ headers: { host: "127.0.0.1" } }),
+    );
+
+    expect(Object.isFrozen(ctx.headers)).toBe(true);
+  });
+
+  test("is a copy, not a live alias — mutating the input map afterwards does not change the context's view", () => {
+    const input: Record<string, string | undefined> = { host: "127.0.0.1" };
+
+    const ctx = createRequestContext(buildInput({ headers: input }));
+    input["host"] = "evil.example";
+    input["injected"] = "new-header";
+
+    expect(ctx.headers).toEqual({ host: "127.0.0.1" });
+  });
+
+  test("defaults to an empty object rather than undefined when no headers are given", () => {
+    const ctx = createRequestContext(buildInput({ headers: {} }));
+
+    expect(ctx.headers).toEqual({});
+    expect(ctx.headers).not.toBeUndefined();
+  });
+});
+
 describe("withOperator", () => {
   test("returns a new frozen context carrying the operator, without mutating the original", () => {
     const ctx = createRequestContext(buildInput());

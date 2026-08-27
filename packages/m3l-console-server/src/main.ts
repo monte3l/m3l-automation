@@ -122,19 +122,35 @@ function assertNoRequiredAuthRoutes(routes: readonly M3LRoute[]): void {
 }
 
 /**
- * Names the config fields this runtime's logger treats as secret, on top of
- * `M3LLogger`'s built-in key-name heuristic. `operatorEmail`/`email` is NOT
- * in the library's built-in `SENSITIVE_KEY_NAMES` set (`core/logging/redact.ts`),
- * so without this port, a later layer doing something as ordinary as
- * `logger.info(msg, { ...runtime.config })` would print the operator's email
- * verbatim — {@link M3LConsoleConfig.operatorEmail}'s "Never logged" TSDoc
- * would then be convention, not a control. Wiring this once here, at the
- * logger's construction, makes the guarantee structural for every later
- * slice that writes through this logger, not just the boot-line log call in
- * {@link logPosture}.
+ * Names the config/context fields this runtime's logger treats as secret, on
+ * top of `M3LLogger`'s built-in key-name heuristic. `operatorEmail`/`email`
+ * is NOT in the library's built-in `SENSITIVE_KEY_NAMES` set
+ * (`core/logging/redact.ts`), so without this port, a later layer doing
+ * something as ordinary as `logger.info(msg, { ...runtime.config })` would
+ * print the operator's email verbatim — {@link M3LConsoleConfig.operatorEmail}'s
+ * "Never logged" TSDoc would then be convention, not a control. Wiring this
+ * once here, at the logger's construction, makes the guarantee structural
+ * for every later slice that writes through this logger, not just the
+ * boot-line log call in {@link logPosture}.
+ *
+ * `headers`/`cookie` are the same structural fix applied to a second leak:
+ * `M3LRequestContext` (`http/context.ts`) now carries the inbound request
+ * headers, and MEASURED behavior of `M3LLogger`'s redaction is that it
+ * recurses and DOES redact a nested `authorization` header (it is in the
+ * library's `SENSITIVE_KEY_NAMES`), but `cookie` is NOT in that set and
+ * would leak an operator's session cookie verbatim. Naming `"headers"`
+ * redacts the whole object regardless of which keys it happens to contain;
+ * naming `"cookie"` also catches a cookie value hoisted to a top-level field
+ * by some future call site. The library's key-name heuristic cannot know a
+ * consumer's vocabulary — which is exactly what `M3LSecretNamesPort` exists
+ * for.
  */
 const runtimeSecrets: Core.M3LSecretNamesPort = {
-  isSecret: (name) => name === "operatorEmail" || name === "email",
+  isSecret: (name) =>
+    name === "operatorEmail" ||
+    name === "email" ||
+    name === "headers" ||
+    name === "cookie",
 };
 
 /**

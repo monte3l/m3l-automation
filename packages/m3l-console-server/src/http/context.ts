@@ -124,6 +124,18 @@ export interface M3LRequestContext {
   readonly signal: AbortSignal;
   /** The timestamp (`Date.now()`-shaped) this request was received at. */
   readonly receivedAt: number;
+  /**
+   * The inbound request headers, as a frozen copy — never a live alias onto
+   * the caller's map, so mutating that map after construction cannot change
+   * what a downstream layer observes. Carried on the context for three
+   * reasons: the `Host`/`Origin` rebinding guard (`http/origin-guard.ts`)
+   * needs them to classify a request before it reaches any route; the
+   * ADR-0071 auth seam, {@link M3LOperatorProvider.resolve}, was designed
+   * taking a headers map as its sole input; and ADR-0066's `Last-Event-ID`
+   * SSE resume will need to read an inbound resume header the same way.
+   * Defaults to `{}`, never `undefined`.
+   */
+  readonly headers: Readonly<Record<string, string | undefined>>;
 }
 
 /**
@@ -192,6 +204,7 @@ export function createRequestContext(
     accessMode: undefined,
     signal: input.signal,
     receivedAt: now(),
+    headers: Object.freeze({ ...input.headers }),
   });
 }
 
