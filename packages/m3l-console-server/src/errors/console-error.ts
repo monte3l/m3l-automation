@@ -38,6 +38,15 @@ import { Core } from "@m3l-automation/m3l-common";
  * migration, or an already-applied migration whose recorded history no
  * longer matches its declared SQL.
  *
+ * The two `ERR_CONSOLE_RUN_*` codes are the X4 run-registry's own failure
+ * modes, layered on top of `console_runs` (`store/migrations/registry.ts`'s
+ * v3). `ERR_CONSOLE_RUN_NOT_FOUND` is raised when a lookup by run id matches
+ * no row — a routine, caller-facing "not found", not a fault.
+ * `ERR_CONSOLE_RUN_TRANSITION_INVALID` is raised when a guarded status
+ * transition's `UPDATE ... WHERE status = <expected>` matches zero rows: the
+ * run exists, but its current status was not the one the caller's transition
+ * expected, so the write that would have advanced its FSM never applied.
+ *
  * @example
  * ```ts
  * function isConfigError(code: M3LConsoleErrorCode): boolean {
@@ -62,7 +71,9 @@ export type M3LConsoleErrorCode =
   | "ERR_CONSOLE_STORE_CLOSED"
   | "ERR_CONSOLE_STORE_QUERY_FAILED"
   | "ERR_CONSOLE_STORE_MIGRATION_FAILED"
-  | "ERR_CONSOLE_STORE_SCHEMA_DRIFT";
+  | "ERR_CONSOLE_STORE_SCHEMA_DRIFT"
+  | "ERR_CONSOLE_RUN_NOT_FOUND"
+  | "ERR_CONSOLE_RUN_TRANSITION_INVALID";
 
 /**
  * Constructor options for {@link M3LConsoleError}.

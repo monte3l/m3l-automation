@@ -13,7 +13,7 @@ import {
 import type { M3LConsoleErrorCode } from "../src/errors/console-error.js";
 
 describe("M3LConsoleErrorCode", () => {
-  test("is the exact seventeen-member union the contract declares (X2/X3-A1)", () => {
+  test("is the exact nineteen-member union the contract declares (X2/X3-A1/X4)", () => {
     expectTypeOf<M3LConsoleErrorCode>().toEqualTypeOf<
       | "ERR_CONSOLE_CONFIG_INVALID"
       | "ERR_CONSOLE_BAD_REQUEST"
@@ -32,6 +32,8 @@ describe("M3LConsoleErrorCode", () => {
       | "ERR_CONSOLE_STORE_QUERY_FAILED"
       | "ERR_CONSOLE_STORE_MIGRATION_FAILED"
       | "ERR_CONSOLE_STORE_SCHEMA_DRIFT"
+      | "ERR_CONSOLE_RUN_NOT_FOUND"
+      | "ERR_CONSOLE_RUN_TRANSITION_INVALID"
     >();
   });
 
@@ -161,6 +163,30 @@ describe("M3LConsoleError", () => {
       // ERR_CONSOLE_* is deliberately absent from Core's own classification
       // catalog (see the module doc comment) — every one of these seven new
       // codes stays unclassified by Core.classifyErrorCode, same as every
+      // existing ERR_CONSOLE_* code.
+      expect(Core.classifyErrorCode(error.code)).toBeUndefined();
+    },
+  );
+
+  test.each<[M3LConsoleErrorCode, string]>([
+    ["ERR_CONSOLE_RUN_NOT_FOUND", "no run exists with the given id"],
+    [
+      "ERR_CONSOLE_RUN_TRANSITION_INVALID",
+      "the guarded status transition matched zero rows",
+    ],
+  ])(
+    "constructs %s and is caught by isConsoleError and instanceof Core.M3LError (X4)",
+    (code, message) => {
+      const error = new M3LConsoleError(code, message);
+
+      expect(error.code).toBe(code);
+      expect(error.message).toBe(message);
+      expect(isConsoleError(error)).toBe(true);
+      expect(error).toBeInstanceOf(Core.M3LError);
+      expect(error).toBeInstanceOf(Error);
+      // ERR_CONSOLE_* is deliberately absent from Core's own classification
+      // catalog (see the module doc comment) — these two new run-registry
+      // codes stay unclassified by Core.classifyErrorCode, same as every
       // existing ERR_CONSOLE_* code.
       expect(Core.classifyErrorCode(error.code)).toBeUndefined();
     },

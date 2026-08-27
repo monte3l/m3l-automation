@@ -37,12 +37,22 @@
  * never `store/sqlite-driver.ts`'s `openSqliteDatabase` wrapper) or a thin
  * recording/fault-injecting fake that wraps one, mirroring the established
  * pattern in `tests/store-open.test.ts` and `tests/store-executor.test.ts`.
+ *
+ * One exception to the "build your own small registry" rule above: the
+ * `CONSOLE_MIGRATIONS — the real registry (v3: console_runs)` block near the
+ * end of this file imports the real `CONSOLE_MIGRATIONS` (X4 run-registry,
+ * slice 3) as a value, to prove the registry's actual v3 entry — not a
+ * stand-in — creates a schema whose `CHECK` constraints hold. This does not
+ * re-bind `perFile` coverage across the `store/` slice split: `registry.ts`
+ * and `runner.ts` are both already this file's own slice (the former is
+ * already imported for its `M3LMigration` type above).
  */
 import { DatabaseSync } from "node:sqlite";
 
 import { describe, expect, test } from "vitest";
 
 import { M3LConsoleError } from "../src/errors/console-error.js";
+import { CONSOLE_MIGRATIONS } from "../src/store/migrations/registry.js";
 import { applyMigrations } from "../src/store/migrations/runner.js";
 import type { M3LMigration } from "../src/store/migrations/registry.js";
 
@@ -597,5 +607,278 @@ describe("interpolation safety — a version crafted as SQL", () => {
 
     const row = database.prepare("SELECT COUNT(*) AS count FROM keepme").get();
     expect(row?.["count"]).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// CONSOLE_MIGRATIONS — the real registry (v3: console_runs)
+//
+// Everything below this line exercises the ACTUAL `CONSOLE_MIGRATIONS`
+// registry (see the file header's documented exception), not a stand-in
+// fixture — because the thing under test here is the real v3 migration's
+// `CHECK` constraints, which only exist on the real `console_runs` table.
+// ---------------------------------------------------------------------------
+
+/** `true` when an index named `indexName` exists in `database`. */
+function indexExists(database: DatabaseSync, indexName: string): boolean {
+  const row = database
+    .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name = ?")
+    .get(indexName);
+  return row !== undefined;
+}
+
+/** Applies the real `CONSOLE_MIGRATIONS` registry to a fresh `:memory:` database. */
+function createRealMigratedDatabase(): DatabaseSync {
+  const database = new DatabaseSync(":memory:");
+  applyMigrations(database, CONSOLE_MIGRATIONS);
+  return database;
+}
+
+/** One `console_runs` row, in the column order `insertRun` binds positionally. */
+interface RunRowFixture {
+  readonly id: string;
+  readonly script: string;
+  readonly status: string;
+  readonly dry_run: number;
+  readonly execution_mode: string;
+  readonly parameters_json: string;
+  readonly operator: string;
+  readonly correlation_id: string;
+  readonly queued_at_ms: number;
+  readonly started_at_ms: number | null;
+  readonly ended_at_ms: number | null;
+  readonly outcome: string | null;
+  readonly exit_code: number | null;
+  readonly failure_message: string | null;
+}
+
+/** A fully valid, still-pending `console_runs` row — the "queued" positive control. */
+function validQueuedRow(id: string): RunRowFixture {
+  return {
+    id,
+    script: "scripts/example",
+    status: "queued",
+    dry_run: 0,
+    execution_mode: "spawn",
+    parameters_json: "{}",
+    operator: "alice",
+    correlation_id: `corr-${id}`,
+    queued_at_ms: 1000,
+    started_at_ms: null,
+    ended_at_ms: null,
+    outcome: null,
+    exit_code: null,
+    failure_message: null,
+  };
+}
+
+/** A fully valid, terminal `console_runs` row — the "success" positive control. */
+function validTerminalRow(id: string): RunRowFixture {
+  return {
+    id,
+    script: "scripts/example",
+    status: "success",
+    dry_run: 0,
+    execution_mode: "in-process",
+    parameters_json: "{}",
+    operator: "alice",
+    correlation_id: `corr-${id}`,
+    queued_at_ms: 1000,
+    started_at_ms: 1500,
+    ended_at_ms: 2000,
+    outcome: "success",
+    exit_code: 0,
+    failure_message: null,
+  };
+}
+
+/** Inserts one `console_runs` row, positionally bound in `RunRowFixture`'s declared order. */
+function insertRun(database: DatabaseSync, row: RunRowFixture): void {
+  database
+    .prepare(
+      `INSERT INTO console_runs (
+        id, script, status, dry_run, execution_mode, parameters_json,
+        operator, correlation_id, queued_at_ms, started_at_ms, ended_at_ms,
+        outcome, exit_code, failure_message
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      row.id,
+      row.script,
+      row.status,
+      row.dry_run,
+      row.execution_mode,
+      row.parameters_json,
+      row.operator,
+      row.correlation_id,
+      row.queued_at_ms,
+      row.started_at_ms,
+      row.ended_at_ms,
+      row.outcome,
+      row.exit_code,
+      row.failure_message,
+    );
+}
+
+describe("CONSOLE_MIGRATIONS — the real registry (v3: console_runs)", () => {
+  test("has exactly three migrations, versions strictly increasing and gap-free (1, 2, 3)", () => {
+    expect(CONSOLE_MIGRATIONS.map((migration) => migration.version)).toEqual([
+      1, 2, 3,
+    ]);
+  });
+
+  test("v3 has a stable, non-empty name distinct from v1's and v2's", () => {
+    const names = CONSOLE_MIGRATIONS.map((migration) => migration.name);
+
+    expect(new Set(names).size).toBe(names.length);
+    const v3 = CONSOLE_MIGRATIONS.find((migration) => migration.version === 3);
+    expect(v3).toBeDefined();
+    expect(v3?.name.length).toBeGreaterThan(0);
+  });
+
+  test("applying every migration succeeds and creates console_runs with both its indexes", () => {
+    const database = createRealMigratedDatabase();
+
+    expect(tableExists(database, "console_runs")).toBe(true);
+    expect(indexExists(database, "console_runs_status_queued_at")).toBe(true);
+    expect(indexExists(database, "console_runs_script_status")).toBe(true);
+  });
+
+  test("a valid queued row inserts successfully", () => {
+    const database = createRealMigratedDatabase();
+
+    expect(() =>
+      insertRun(database, validQueuedRow("run-queued")),
+    ).not.toThrow();
+
+    const row = database
+      .prepare("SELECT status FROM console_runs WHERE id = ?")
+      .get("run-queued");
+    expect(row?.["status"]).toBe("queued");
+  });
+
+  test("a valid terminal row inserts successfully", () => {
+    const database = createRealMigratedDatabase();
+
+    expect(() =>
+      insertRun(database, validTerminalRow("run-terminal")),
+    ).not.toThrow();
+
+    const row = database
+      .prepare("SELECT status FROM console_runs WHERE id = ?")
+      .get("run-terminal");
+    expect(row?.["status"]).toBe("success");
+  });
+
+  // Every case below is a single-field departure from an otherwise fully
+  // valid row, chosen so that exactly ONE documented CHECK constraint is
+  // violated — never merely a proxy like "the row count did not change",
+  // which would also hold if the insert had silently no-op'd instead of
+  // throwing.
+  const CHECK_VIOLATIONS: readonly [string, RunRowFixture][] = [
+    [
+      "an unknown status value",
+      { ...validQueuedRow("v-status"), status: "bogus" },
+    ],
+    ["a dry_run value of 2", { ...validQueuedRow("v-dryrun"), dry_run: 2 }],
+    [
+      "an unknown execution_mode value",
+      { ...validQueuedRow("v-mode"), execution_mode: "invalid-mode" },
+    ],
+    [
+      "started_at_ms before queued_at_ms",
+      {
+        ...validQueuedRow("v-started-before-queued"),
+        status: "running",
+        queued_at_ms: 1000,
+        started_at_ms: 500,
+      },
+    ],
+    [
+      "ended_at_ms set while started_at_ms is NULL",
+      {
+        ...validTerminalRow("v-ended-no-started"),
+        started_at_ms: null,
+      },
+    ],
+    [
+      "ended_at_ms before started_at_ms",
+      {
+        ...validTerminalRow("v-ended-before-started"),
+        started_at_ms: 2000,
+        ended_at_ms: 1000,
+      },
+    ],
+    [
+      "a terminal status with ended_at_ms NULL",
+      {
+        ...validTerminalRow("v-terminal-no-ended"),
+        ended_at_ms: null,
+        outcome: null,
+        exit_code: null,
+      },
+    ],
+    [
+      "a pending status with ended_at_ms set",
+      {
+        ...validQueuedRow("v-pending-ended-set"),
+        started_at_ms: 1500,
+        ended_at_ms: 2000,
+        outcome: "success",
+        exit_code: 0,
+      },
+    ],
+    [
+      "outcome NULL while ended_at_ms is set",
+      {
+        ...validTerminalRow("v-outcome-null-ended-set"),
+        outcome: null,
+        exit_code: null,
+      },
+    ],
+    [
+      "outcome set while ended_at_ms is NULL",
+      {
+        ...validQueuedRow("v-outcome-set-ended-null"),
+        outcome: "success",
+      },
+    ],
+  ];
+
+  test.each(CHECK_VIOLATIONS)("rejects a row with %s", (_label, row) => {
+    const database = createRealMigratedDatabase();
+
+    expect(() => insertRun(database, row)).toThrow();
+  });
+
+  test("STRICT is honest about what it does not enforce: an integer bound to script (TEXT) is silently accepted", () => {
+    // MEASURED, same finding `registry.ts`'s own TSDoc records for v1/v2:
+    // `STRICT` checks storage-class compatibility, not column-level types —
+    // an INTEGER is a convertible storage class for a TEXT column, so
+    // `STRICT` alone does not reject it. This table's actual invariants
+    // (status vocabulary, dry_run boolean-ness, the FSM pairing between
+    // status/ended_at_ms/outcome) are enforced entirely by the `CHECK`
+    // constraints exercised above, not by `STRICT`.
+    const database = createRealMigratedDatabase();
+    const row = validQueuedRow("v-strict-int-script");
+
+    expect(() =>
+      insertRun(database, {
+        ...row,
+        script: 12_345 as unknown as string,
+      }),
+    ).not.toThrow();
+
+    const stored = database
+      .prepare("SELECT script FROM console_runs WHERE id = ?")
+      .get("v-strict-int-script");
+    // node:sqlite binds a plain JS number as SQLITE_FLOAT, so the value
+    // STRICT's storage-class coercion casts into the TEXT column is
+    // "12345.0" — not "12345" — but it IS a stored string, not a rejection.
+    // That coercion detail is exactly why STRICT is not column-level type
+    // enforcement: the point this test proves is that the row was accepted
+    // and stored as text at all, whatever its exact textual form.
+    expect(typeof stored?.["script"]).toBe("string");
+    expect(stored?.["script"]).toBe("12345.0");
   });
 });

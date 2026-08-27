@@ -174,6 +174,18 @@ const CLASSIFICATION_BY_CODE: Record<M3LConsoleErrorCode, ErrorClassification> =
       retryable: false,
       fault: true,
     },
+    ERR_CONSOLE_RUN_NOT_FOUND: {
+      status: STATUS_NOT_FOUND,
+      origin: "caller",
+      retryable: false,
+      fault: false,
+    },
+    ERR_CONSOLE_RUN_TRANSITION_INVALID: {
+      status: STATUS_INTERNAL,
+      origin: "library",
+      retryable: false,
+      fault: true,
+    },
   };
 
 /**
