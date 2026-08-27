@@ -244,7 +244,7 @@ export const TOTAL_COUNT_SITES = [
   },
   {
     file: "README.md",
-    pattern: /\d+ of (\d+) submodules are/,
+    pattern: /\d+ of (\d+) library submodules are/,
     label: "total submodule count (root README.md prose)",
     expected: (counts) => counts.total,
   },
@@ -256,7 +256,7 @@ export const TOTAL_COUNT_SITES = [
   },
   {
     file: "packages/m3l-common/README.md",
-    pattern: /\d+ of (\d+) submodules are/,
+    pattern: /\d+ of (\d+) library submodules are/,
     label: "total submodule count (npm-facing README.md prose)",
     expected: (counts) => counts.total,
   },
@@ -294,13 +294,13 @@ export const TOTAL_COUNT_SITES = [
   },
   {
     file: "README.md",
-    pattern: /alt="modules: \d+\/(\d+)"/,
+    pattern: /alt="library modules: \d+\/(\d+)"/,
     label: "total submodule count (root README.md badge alt text)",
     expected: (counts) => counts.total,
   },
   {
     file: "packages/m3l-common/README.md",
-    pattern: /alt="modules: \d+\/(\d+)"/,
+    pattern: /alt="library modules: \d+\/(\d+)"/,
     label: "total submodule count (npm-facing README.md badge alt text)",
     expected: (counts) => counts.total,
   },
@@ -319,7 +319,7 @@ export const IMPLEMENTED_COUNT_SITES = [
   },
   {
     file: "README.md",
-    pattern: /(\d+) of \d+ submodules are/,
+    pattern: /(\d+) of \d+ library submodules are/,
     label: "root README.md prose callout",
     expected: (counts) => counts.implemented,
   },
@@ -331,7 +331,7 @@ export const IMPLEMENTED_COUNT_SITES = [
   },
   {
     file: "packages/m3l-common/README.md",
-    pattern: /(\d+) of \d+ submodules are/,
+    pattern: /(\d+) of \d+ library submodules are/,
     label: "npm-facing README.md prose callout",
     expected: (counts) => counts.implemented,
   },
@@ -374,13 +374,13 @@ export const IMPLEMENTED_COUNT_SITES = [
   },
   {
     file: "README.md",
-    pattern: /alt="modules: (\d+)\/\d+"/,
+    pattern: /alt="library modules: (\d+)\/\d+"/,
     label: "root README.md badge alt text",
     expected: (counts) => counts.implemented,
   },
   {
     file: "packages/m3l-common/README.md",
-    pattern: /alt="modules: (\d+)\/\d+"/,
+    pattern: /alt="library modules: (\d+)\/\d+"/,
     label: "npm-facing README.md badge alt text",
     expected: (counts) => counts.implemented,
   },

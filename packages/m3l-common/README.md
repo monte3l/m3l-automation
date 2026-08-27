@@ -12,10 +12,10 @@
 <a href="https://nodejs.org/api/esm.html"><img src="https://img.shields.io/badge/esm-only-66D9EF?style=flat-square&labelColor=272822" alt="ESM only"></a>
 <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-strict-66D9EF?style=flat-square&labelColor=272822" alt="TypeScript strict"></a>
 <a href="https://github.com/monte3l/m3l-automation/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-A6E22E?style=flat-square&labelColor=272822" alt="Apache-2.0"></a>
-<a href="https://github.com/monte3l/m3l-automation/blob/main/docs/implementation-status.md"><img src="https://img.shields.io/badge/modules-43%2F43-A6E22E?style=flat-square&labelColor=272822" alt="modules: 43/43"></a>
+<a href="https://github.com/monte3l/m3l-automation/blob/main/docs/implementation-status.md"><img src="https://img.shields.io/badge/library%20modules-43%2F43-A6E22E?style=flat-square&labelColor=272822" alt="library modules: 43/43"></a>
 </p>
 
-> **All 43 of 43 submodules are implemented and reviewed.** The package is
+> **All 43 of 43 library submodules are implemented and reviewed.** The package is
 > internal and not published to npm; `version` in `package.json` is hand-managed.
 > Implemented submodules:
 > <!-- BEGIN GENERATED SUBMODULE-LIST -->
@@ -28,6 +28,11 @@ enterprise-grade building blocks — application scaffolding, configuration, log
 handling, file import/export, polling/retry resilience, and AWS credential and client management
 — so consumer scripts stay free of boilerplate.
 
+It is the substrate of the wider
+[m3l-automation](https://github.com/monte3l/m3l-automation) monorepo, which also
+ships the `m3l` CLI, a fleet of AWS consumer scripts, and an operations
+console built on top of it.
+
 See the
 [implementation status](https://github.com/monte3l/m3l-automation/blob/main/docs/implementation-status.md)
 for the per-module breakdown.
@@ -39,9 +44,21 @@ for the per-module breakdown.
 
 ## Installation
 
-```bash
-pnpm add @m3l-automation/m3l-common
+This package is not published to npm. Inside the monorepo, consumers depend on
+it via `workspace:*`
+([ADR-0029](https://github.com/monte3l/m3l-automation/blob/main/docs/adr/0029-script-dependency-boundary.md)):
+
+```jsonc
+{
+  "dependencies": {
+    "@m3l-automation/m3l-common": "workspace:*",
+  },
+}
 ```
+
+External installation from a private GitHub Packages registry is planned
+([ADR-0057](https://github.com/monte3l/m3l-automation/blob/main/docs/adr/0057-private-registry-distribution.md),
+roadmap U13) but not yet available.
 
 ## Quick start
 
