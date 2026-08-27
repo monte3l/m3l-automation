@@ -43,8 +43,8 @@ The five phases mandated by
 because the gap they close is fleet-wide: an unattended cron/CI run that fails
 today leaves **no artifact at all** — stage-9 archival runs on the success path
 only, `M3LScript.run()` never logs the failing error, and every failure exits `1`
-regardless of cause. That compounds across all nine consumer scripts exactly as the
-F-series friction did. Per-phase detail:
+regardless of cause. That compounds across every consumer script in the fleet
+exactly as the F-series friction did. Per-phase detail:
 [`IMPLEMENTATION.md`](./plans/IMPLEMENTATION.md#adr-0035-rollout--failure-reporting--diagnostics).
 
 | Item    | What                                                                                               | Status | Why now / Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
@@ -145,8 +145,8 @@ per-phase detail in
 | **U4**  | Declarative operations — library half (`core/config`)        | Done     |
 | **U5**  | Declarative operations — fleet retrofit                      | Done     |
 | **U6**  | `commandModule` adoption — template + pilot scripts          | Done     |
-| **U7**  | Hybrid execution in the CLI; discovery over dependencies     | To Do    |
-| **U8**  | Operation introspection in `inspect`/`--help`/wizard         | To Do    |
+| **U7**  | Hybrid execution in the CLI; discovery over dependencies     | Done     |
+| **U8**  | Operation introspection in `inspect`/`--help`/wizard         | Done     |
 | **U9**  | `m3l new` + Lambda scaffold variant                          | Done     |
 | **U10** | `m3l flow` — orchestration engine + the named flow           | To Do    |
 | **U11** | Retry/resume/cancellation surfacing at the CLI layer         | To Do    |
