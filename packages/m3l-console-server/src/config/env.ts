@@ -11,15 +11,13 @@ import { Core } from "@m3l-automation/m3l-common";
 import { M3LConsoleError } from "../errors/console-error.js";
 import { isLoopbackHost, unwrapBracketedHost } from "../net/loopback.js";
 import { resolveStoreDatabasePath } from "./paths.js";
-
-/** The single error code every configuration failure in this module raises. */
-const CODE = "ERR_CONSOLE_CONFIG_INVALID";
-
-/** Source label recorded for a value read from `env`. */
-const ENVIRONMENT_SOURCE_LABEL = "environment-variable";
-
-/** Source label recorded for a value that fell back to its documented default. */
-const DEFAULT_SOURCE_LABEL = "default";
+import {
+  CONFIG_INVALID_CODE,
+  MAX_TIMER_DELAY_MS,
+  populateConfig,
+  type SettingDescriptor,
+  wrapConfigRead,
+} from "./settings.js";
 
 /** Dotted config key for the bind host. */
 const HOST_KEY = "m3l.console.host";
@@ -55,18 +53,6 @@ const MIN_PORT = 1;
 const MAX_PORT = 65535;
 
 /**
- * The highest drain timeout this module accepts, in milliseconds — Node's
- * maximum representable 32-bit signed timer delay (`setTimeout`/`setInterval`
- * store the delay in an `int32`). A value above this is silently coerced to
- * `1`ms with a `TimeoutOverflowWarning`, so an operator asking the server to
- * "drain for a long time" would instead get an immediate kill that drops
- * in-flight work — the exact inverse of the intent. Rejecting it here, before
- * X2c ever arms a timer with it, turns that silent inversion into a loud
- * boot-time configuration error.
- */
-const MAX_DRAIN_TIMEOUT_MS = 2_147_483_647;
-
-/**
  * The longest prefix of a rejected `M3L_CONSOLE_HOST` value echoed back in
  * the failure message (see {@link resolveHost}). Host is the sole
  * deliberate exception to this module's "never echo the raw value" rule —
@@ -98,81 +84,11 @@ const LOG_LEVELS: readonly Core.M3LLogLevelFloor[] = [
 ];
 
 /**
- * Reads `key` from `reader` and stores its coerced value into `config`. When
- * `key` is unset in every provider, stores `defaultValue` when one is
- * supplied (labelled `"default"`), or leaves `key` unset in `config`
- * otherwise — the latter is how a required-with-no-default setting (the
- * operator name) is left for the later accessor read to reject.
- *
- * A coercion failure is wrapped as an {@link M3LConsoleError} naming the
- * offending key — never the raw value, which may be a secret — chaining the
- * original {@link Core.M3LConfigCoercionError} as `cause`.
- */
-function storeFromEnv(
-  reader: Core.M3LConfigReader,
-  config: Core.M3LConfig,
-  key: string,
-  type:
-    | typeof Core.M3LConfigParameterType.STRING
-    | typeof Core.M3LConfigParameterType.INT,
-  defaultValue: string | number | undefined,
-): void {
-  const raw = reader.getRawValue(key);
-  if (raw === undefined) {
-    if (defaultValue !== undefined) {
-      config.set(key, defaultValue, DEFAULT_SOURCE_LABEL);
-    }
-    return;
-  }
-  let value: string | number;
-  try {
-    value = Core.coerceConfigValue(raw, type);
-  } catch (cause) {
-    throw new M3LConsoleError(
-      CODE,
-      `failed to read configuration key '${key}'`,
-      { cause, context: { key } },
-    );
-  }
-  config.set(key, value, ENVIRONMENT_SOURCE_LABEL);
-}
-
-/**
- * Runs `read`, wrapping any thrown value as an {@link M3LConsoleError}
- * naming `key` — covers a bare `Core.M3LError` thrown by
- * {@link Core.M3LConfigAccessor}'s typed readers, which otherwise would not
- * be an `M3LConsoleError` instance.
- */
-function wrapConfigRead<T>(key: string, read: () => T): T {
-  try {
-    return read();
-  } catch (cause) {
-    // A non-`M3LError` escaping `read` is a bug in this module, not invalid
-    // operator configuration — relabelling it as a config error would send
-    // the operator to fix their environment for a defect in our code.
-    if (!(cause instanceof Core.M3LError)) throw cause;
-    throw new M3LConsoleError(
-      CODE,
-      `invalid value for configuration key '${key}'`,
-      { cause, context: { key } },
-    );
-  }
-}
-
-/** One row of the {@link SETTINGS} table driving {@link populateConfigFromEnv}. */
-interface SettingDescriptor {
-  readonly key: string;
-  readonly type:
-    | typeof Core.M3LConfigParameterType.STRING
-    | typeof Core.M3LConfigParameterType.INT;
-  readonly defaultValue: string | number | undefined;
-}
-
-/**
- * Every documented setting this module resolves, in the shape
- * {@link storeFromEnv} consumes. A setting with `defaultValue: undefined` is
- * required-with-no-default (left unset for a later accessor read to reject),
- * exactly like the operator name.
+ * Every documented setting this module resolves, as a
+ * {@link SettingDescriptor} table passed to {@link populateConfig}. A
+ * setting with `defaultValue: undefined` is required-with-no-default (left
+ * unset for a later accessor read to reject), exactly like the operator
+ * name.
  */
 const SETTINGS: readonly SettingDescriptor[] = [
   {
@@ -217,22 +133,6 @@ const SETTINGS: readonly SettingDescriptor[] = [
   },
 ];
 
-/** Stores every documented setting's raw-or-default value into `config`. */
-function populateConfigFromEnv(
-  reader: Core.M3LConfigReader,
-  config: Core.M3LConfig,
-): void {
-  for (const setting of SETTINGS) {
-    storeFromEnv(
-      reader,
-      config,
-      setting.key,
-      setting.type,
-      setting.defaultValue,
-    );
-  }
-}
-
 /**
  * Reads the required operator name and rejects a missing, empty, or
  * whitespace-only value — ADR-0071 requires a declared operator profile
@@ -245,7 +145,7 @@ function resolveOperatorName(accessor: Core.M3LConfigAccessor): string {
   );
   if (operatorName.trim().length === 0) {
     throw new M3LConsoleError(
-      CODE,
+      CONFIG_INVALID_CODE,
       "the console server requires a declared operator profile (ADR-0071); M3L_CONSOLE_OPERATOR_NAME must not be blank",
       { context: { key: OPERATOR_NAME_KEY } },
     );
@@ -273,7 +173,7 @@ function resolveHost(accessor: Core.M3LConfigAccessor): string {
     DEFAULT_HOST;
   if (!isLoopbackHost(host)) {
     throw new M3LConsoleError(
-      CODE,
+      CONFIG_INVALID_CODE,
       `host '${truncateHostForEcho(host)}' is not a loopback address; ADR-0071 requires the console server to bind loopback-only`,
       { context: { key: HOST_KEY } },
     );
@@ -288,7 +188,7 @@ function resolvePort(accessor: Core.M3LConfigAccessor): number {
   );
   if (!Number.isInteger(port) || port < MIN_PORT || port > MAX_PORT) {
     throw new M3LConsoleError(
-      CODE,
+      CONFIG_INVALID_CODE,
       `port must be an integer between ${String(MIN_PORT)} and ${String(MAX_PORT)}`,
       { context: { key: PORT_KEY } },
     );
@@ -298,7 +198,7 @@ function resolvePort(accessor: Core.M3LConfigAccessor): number {
 
 /**
  * Reads the resolved drain timeout and rejects a non-positive value or one
- * above {@link MAX_DRAIN_TIMEOUT_MS} — see that constant's TSDoc for why an
+ * above {@link MAX_TIMER_DELAY_MS} — see that constant's TSDoc for why an
  * unbounded value is a silent, inverted footgun rather than a merely large
  * one.
  */
@@ -309,11 +209,11 @@ function resolveDrainTimeoutMs(accessor: Core.M3LConfigAccessor): number {
   if (
     !Number.isInteger(drainTimeoutMs) ||
     drainTimeoutMs <= 0 ||
-    drainTimeoutMs > MAX_DRAIN_TIMEOUT_MS
+    drainTimeoutMs > MAX_TIMER_DELAY_MS
   ) {
     throw new M3LConsoleError(
-      CODE,
-      `drain timeout must be a positive integer number of milliseconds, at most ${String(MAX_DRAIN_TIMEOUT_MS)} (Node's maximum 32-bit signed timer delay — above it, the timer silently coerces to 1ms)`,
+      CONFIG_INVALID_CODE,
+      `drain timeout must be a positive integer number of milliseconds, at most ${String(MAX_TIMER_DELAY_MS)} (Node's maximum 32-bit signed timer delay — above it, the timer silently coerces to 1ms)`,
       { context: { key: DRAIN_TIMEOUT_KEY } },
     );
   }
@@ -322,7 +222,7 @@ function resolveDrainTimeoutMs(accessor: Core.M3LConfigAccessor): number {
 
 /**
  * Reads the resolved database busy-timeout and rejects a non-positive value
- * or one above {@link MAX_DRAIN_TIMEOUT_MS} — reused here rather than
+ * or one above {@link MAX_TIMER_DELAY_MS} — reused here rather than
  * redeclared, since it is the same Node 32-bit signed timer bound the drain
  * timeout is capped at, and this value ultimately arms a `busy_timeout`
  * pragma of the same kind.
@@ -336,11 +236,11 @@ function resolveDatabaseBusyTimeoutMs(
   if (
     !Number.isInteger(busyTimeoutMs) ||
     busyTimeoutMs <= 0 ||
-    busyTimeoutMs > MAX_DRAIN_TIMEOUT_MS
+    busyTimeoutMs > MAX_TIMER_DELAY_MS
   ) {
     throw new M3LConsoleError(
-      CODE,
-      `configuration key '${DB_BUSY_TIMEOUT_KEY}' must be a positive integer number of milliseconds, at most ${String(MAX_DRAIN_TIMEOUT_MS)}`,
+      CONFIG_INVALID_CODE,
+      `configuration key '${DB_BUSY_TIMEOUT_KEY}' must be a positive integer number of milliseconds, at most ${String(MAX_TIMER_DELAY_MS)}`,
       { context: { key: DB_BUSY_TIMEOUT_KEY } },
     );
   }
@@ -407,14 +307,14 @@ export interface LoadConsoleConfigOptions {
  * binds a socket. `M3L_CONSOLE_HOST` must resolve to a loopback address (see
  * {@link isLoopbackHost}); `M3L_CONSOLE_PORT` must be an integer in
  * `1..65535`; `M3L_CONSOLE_DRAIN_TIMEOUT_MS` must be a positive integer no
- * greater than {@link MAX_DRAIN_TIMEOUT_MS};
+ * greater than {@link MAX_TIMER_DELAY_MS};
  * `M3L_CONSOLE_LOG_LEVEL` must be one of the six documented
  * {@link Core.M3LLogLevelFloor} spellings. `M3L_CONSOLE_DB_PATH` is resolved
  * via {@link resolveStoreDatabasePath} (rejecting a blank value, the literal
  * `":memory:"`, a `file:`-prefixed value, or one ending in a path separator)
  * and defaults to `<dataDir>/console/console.sqlite`.
  * `M3L_CONSOLE_DB_BUSY_TIMEOUT_MS` must be a positive integer no greater than
- * {@link MAX_DRAIN_TIMEOUT_MS}, defaulting to `5000`. Every failure surfaces as an
+ * {@link MAX_TIMER_DELAY_MS}, defaulting to `5000`. Every failure surfaces as an
  * {@link M3LConsoleError} with code `"ERR_CONSOLE_CONFIG_INVALID"`, naming
  * the offending key and never echoing the raw value (which may be a secret)
  * — with one deliberate, reasoned exception: a rejected `M3L_CONSOLE_HOST`
@@ -444,9 +344,12 @@ export function loadConsoleConfig(
     new Core.M3LEnvironmentConfigProvider({ env }),
   ]);
   const config = new Core.M3LConfig();
-  populateConfigFromEnv(reader, config);
+  populateConfig(reader, config, SETTINGS);
 
-  const accessor = new Core.M3LConfigAccessor({ config, code: CODE });
+  const accessor = new Core.M3LConfigAccessor({
+    config,
+    code: CONFIG_INVALID_CODE,
+  });
 
   const operatorName = resolveOperatorName(accessor);
   const operatorEmail = wrapConfigRead(OPERATOR_EMAIL_KEY, () =>
