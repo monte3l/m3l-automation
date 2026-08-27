@@ -70,6 +70,7 @@ function buildContext(overrides: Partial<M3LCliCommandContext> = {}): {
     jsonOutput: false,
     cacheFilePath: "/workspace/data/cache/m3l-cli/discovery.json",
     historyFilePath: "/workspace/data/cache/m3l-cli/history.json",
+    outputDirPath: "/workspace/data/output",
     ...overrides,
   };
   return { context, infoLines, headingLines };
@@ -245,7 +246,7 @@ describe("runList — type contract", () => {
     >();
   });
 
-  test("M3LCliCommandContext is a readonly record of workspaceRoot/output/jsonOutput/cacheFilePath/historyFilePath", () => {
+  test("M3LCliCommandContext is a readonly record of workspaceRoot/output/jsonOutput/cacheFilePath/historyFilePath/outputDirPath", () => {
     expectTypeOf<M3LCliCommandContext>().toEqualTypeOf<{
       readonly workspaceRoot: string;
       readonly output: {
@@ -257,6 +258,7 @@ describe("runList — type contract", () => {
       readonly jsonOutput: boolean;
       readonly cacheFilePath: string;
       readonly historyFilePath: string;
+      readonly outputDirPath: string;
     }>();
   });
 });

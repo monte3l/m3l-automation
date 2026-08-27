@@ -148,6 +148,7 @@ function buildContext(
     jsonOutput: true,
     cacheFilePath: "/workspace-root/data/cache/m3l-cli/discovery.json",
     historyFilePath: "/workspace-root/data/cache/m3l-cli/history.json",
+    outputDirPath: "/workspace-root/data/output",
     ...overrides,
   };
   return { context, infoLines, headingLines };

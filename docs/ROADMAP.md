@@ -172,7 +172,7 @@ per-phase detail in
 | Item    | What                                                            | Status   |
 | ------- | --------------------------------------------------------------- | -------- |
 | **V1**  | Decisions & governance docs — ADR-0058…0063 + trackers          | Done     |
-| **V2**  | CLI machine-surface hardening (`run --json` envelope, `--help`) | To Do    |
+| **V2**  | CLI machine-surface hardening (`run --json` envelope, `--help`) | Done     |
 | **V3**  | Secrets-delivery hardening (gated on a future ADR)              | To Do    |
 | **V4**  | `aws/bedrock-runtime` wrapper (AWS 19 → 20, additive minor)     | To Do    |
 | **V5**  | Tool-use loop primitives                                        | To Do    |

@@ -11,11 +11,15 @@
 
 import { readFileSync } from "node:fs";
 import { parseArgs } from "node:util";
-import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { M3LCliError, exitCodeForError } from "./cli/errors.js";
 import { partitionJsonFlag } from "./cli/flags.js";
+import {
+  resolveCacheFilePath,
+  resolveHistoryFilePath,
+  resolveOutputDirPath,
+} from "./cli/paths.js";
 import type { M3LCliExitCode } from "./cli/errors.js";
 import type { M3LCliOutput, M3LCliOutputStream } from "./cli/output.js";
 import { createOutput } from "./cli/output.js";
@@ -141,58 +145,6 @@ function splitAtFirstDoubleDash(argv: readonly string[]): {
   };
 }
 
-/**
- * The environment variable `@m3l-automation/m3l-common`'s `M3LPaths`
- * honors to redirect its cache directory (see
- * `M3LPathEnvironmentVariables.CACHE_DIR` in `core/utils/M3LPaths.ts`).
- * Consulted directly here — rather
- * than by constructing an `M3LPaths` instance — because `M3LPaths` detects
- * its base via the `M3LExecutionEnvironment` process-global singleton, which
- * would ignore the `cwd` this module already threads through for
- * testability.
- */
-const CACHE_DIR_ENV_VAR = "M3L_CACHE_DIR";
-
-/**
- * Resolves the directory the {@link CACHE_DIR_ENV_VAR} override (or the
- * `<workspaceRoot>/data/cache` default) names — shared by
- * {@link resolveCacheFilePath} and {@link resolveHistoryFilePath} so both
- * files sit under the same root.
- */
-function resolveCacheDir(
-  workspaceRoot: string,
-  env: Readonly<Record<string, string | undefined>>,
-): string {
-  const cacheDirOverride = env[CACHE_DIR_ENV_VAR];
-  return cacheDirOverride !== undefined && cacheDirOverride !== ""
-    ? cacheDirOverride
-    : join(workspaceRoot, "data", "cache");
-}
-
-/**
- * Resolves the discovery cache file's absolute path: under the
- * {@link CACHE_DIR_ENV_VAR} override when set in `env`, otherwise under
- * `<workspaceRoot>/data/cache`.
- */
-function resolveCacheFilePath(
-  workspaceRoot: string,
-  env: Readonly<Record<string, string | undefined>>,
-): string {
-  return join(resolveCacheDir(workspaceRoot, env), "m3l-cli", "discovery.json");
-}
-
-/**
- * Resolves the run-history file's absolute path, mirroring
- * {@link resolveCacheFilePath}'s `M3L_CACHE_DIR`/workspace-root resolution
- * (8f) — the two files sit side by side under the same cache directory.
- */
-function resolveHistoryFilePath(
-  workspaceRoot: string,
-  env: Readonly<Record<string, string | undefined>>,
-): string {
-  return join(resolveCacheDir(workspaceRoot, env), "m3l-cli", "history.json");
-}
-
 /** Builds the shared per-command context, resolving the workspace root. */
 function buildCommandContext(
   cwd: string,
@@ -207,6 +159,7 @@ function buildCommandContext(
     jsonOutput,
     cacheFilePath: resolveCacheFilePath(workspaceRoot, env),
     historyFilePath: resolveHistoryFilePath(workspaceRoot, env),
+    outputDirPath: resolveOutputDirPath(workspaceRoot, env),
   };
 }
 

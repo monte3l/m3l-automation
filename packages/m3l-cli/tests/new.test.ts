@@ -73,6 +73,7 @@ function buildContext(overrides: Partial<M3LCliCommandContext> = {}): {
     jsonOutput: false,
     cacheFilePath: "/workspace/data/cache/m3l-cli/discovery.json",
     historyFilePath: "/workspace/data/cache/m3l-cli/history.json",
+    outputDirPath: "/workspace/data/output",
     ...overrides,
   };
   return { context, infoLines, headingLines, errorLines };
