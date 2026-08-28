@@ -11,7 +11,7 @@ import { Core } from "@m3l-automation/m3l-common";
 import { M3LConsoleError } from "../errors/console-error.js";
 
 /** The pattern a valid `scriptName` must match: kebab-case, lowercase-leading. */
-const SCRIPT_NAME_PATTERN = /^[a-z][a-z0-9-]*$/;
+export const SCRIPT_NAME_PATTERN: RegExp = /^[a-z][a-z0-9-]*$/;
 
 /**
  * A validated run request: the script to run, whether the caller confirmed

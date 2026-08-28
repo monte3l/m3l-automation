@@ -11,8 +11,7 @@ import * as path from "node:path";
 
 import { M3LConsoleError } from "../errors/console-error.js";
 
-/** The pattern a valid script name must match: kebab-case, lowercase-leading. */
-const SCRIPT_NAME_PATTERN = /^[a-z][a-z0-9-]*$/;
+import { SCRIPT_NAME_PATTERN } from "./parameters.js";
 
 /**
  * A script resolved against the run governor's scripts root.
@@ -34,7 +33,7 @@ export interface M3LResolvedScript {
   readonly scriptsRoot: string;
   /** The script's resolved directory, `path.join(scriptsRoot, name)`. */
   readonly scriptDir: string;
-  /** Whether `<scriptDir>/src/command.ts` exists (ADR-0022's script entry point). */
+  /** Whether `<scriptDir>/dist/command.js` exists (ADR-0022's script entry point). */
   readonly hasCommandModule: boolean;
 }
 
@@ -84,7 +83,7 @@ export function resolveScript(
   }
 
   const hasCommandModule = fs.existsSync(
-    path.join(scriptDir, "src", "command.ts"),
+    path.join(scriptDir, "dist", "command.js"),
   );
 
   return {

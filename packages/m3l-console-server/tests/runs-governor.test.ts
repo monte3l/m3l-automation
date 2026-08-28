@@ -106,6 +106,16 @@ describe("createRunGovernor — enqueue/dequeue", () => {
   });
 });
 
+describe("createRunGovernor — dequeue floor", () => {
+  test("dequeue() does not drive queuedCount below zero on an unmatched call", () => {
+    const governor = buildGovernor();
+
+    governor.dequeue(); // unmatched — no prior enqueue()
+
+    expect(governor.queuedCount).toBe(0);
+  });
+});
+
 describe("createRunGovernor — activeCount tracks only accepted runs", () => {
   test("enqueue does not affect activeCount", () => {
     const governor = buildGovernor({ maxConcurrency: 1 });
