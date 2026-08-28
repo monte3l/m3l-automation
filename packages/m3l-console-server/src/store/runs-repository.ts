@@ -37,11 +37,10 @@
  *
  * @packageDocumentation
  */
-import { Core } from "@m3l-automation/m3l-common";
-
 import { M3LConsoleError } from "../errors/console-error.js";
 
 import { classifyStoreFailure, storeError } from "./failures.js";
+import { toParametersJson } from "./parameters-json.js";
 import { isRunStatus, isTerminalRunStatus } from "./run-status.js";
 import type { M3LRunStatus, M3LRunTerminalStatus } from "./run-status.js";
 import type { M3LStoreQueryExecutor, M3LStoreRow } from "./types.js";
@@ -132,7 +131,15 @@ export interface M3LRunInsert {
   readonly dryRun: boolean;
   /** Whether this run executes as a spawned subprocess or in-process. */
   readonly executionMode: RunExecutionMode;
-  /** The run's parameters; round-tripped through JSON, so must be JSON-serializable. */
+  /**
+   * The run's parameters; round-tripped through JSON, so must be
+   * JSON-serializable — arbitrarily deep plain data is fine (`JSON.stringify`
+   * has no depth limit), but a cycle, a `BigInt`, or a function/symbol/
+   * `undefined` value is rejected. See `store/parameters-json.ts`'s own
+   * `@packageDocumentation` for why a diagnostic serializer
+   * (`Core.safeJsonStringify`) must never be swapped back in here — it
+   * silently mangles exactly these cases instead of rejecting them.
+   */
   readonly parameters: unknown;
   /** The operator queuing this run. */
   readonly operator: string;
@@ -163,7 +170,10 @@ export interface M3LRunFinish {
 
 /**
  * Filters and a limit for `list`. `limit` is required — there is no
- * unbounded default, so a caller always makes an explicit choice.
+ * unbounded default, so a caller always makes an explicit choice. `limit`
+ * must be a non-negative integer: SQLite treats a negative `LIMIT` as
+ * unbounded, which would silently defeat that guarantee, so `list` validates
+ * it at the boundary rather than binding it straight into SQL.
  *
  * @example
  * ```ts
@@ -175,7 +185,7 @@ export interface M3LRunListQuery {
   readonly status?: M3LRunStatus;
   /** Restricts results to this script, when given. */
   readonly script?: string;
-  /** The maximum number of rows to return. */
+  /** The maximum number of rows to return. Must be a non-negative integer. */
   readonly limit: number;
 }
 
@@ -191,7 +201,13 @@ export interface M3LRunListQuery {
  * ```
  */
 export interface M3LConsoleRunsRepository {
-  /** Inserts a new `'queued'` run. */
+  /**
+   * Inserts a new `'queued'` run.
+   *
+   * @throws {@link M3LConsoleError} with code `"ERR_CONSOLE_BAD_REQUEST"`
+   *   when `input.parameters` is not JSON-serializable (a cycle, a
+   *   `BigInt`, or a function/symbol/`undefined` value).
+   */
   insertQueued(input: M3LRunInsert): void;
   /**
    * Guarded `queued` to `running` transition.
@@ -211,7 +227,12 @@ export interface M3LConsoleRunsRepository {
   finish(id: string, result: M3LRunFinish): boolean;
   /** Reads one run by id, or `undefined` when no such row exists. */
   get(id: string): M3LRunRecord | undefined;
-  /** Lists runs matching `query`, oldest-queued-first, up to `query.limit`. */
+  /**
+   * Lists runs matching `query`, oldest-queued-first, up to `query.limit`.
+   *
+   * @throws {@link M3LConsoleError} with code `"ERR_CONSOLE_BAD_REQUEST"`
+   *   when `query.limit` is not a non-negative integer.
+   */
   list(query: M3LRunListQuery): readonly M3LRunRecord[];
   /** Counts rows currently in `status`. */
   countByStatus(status: M3LRunStatus): number;
@@ -345,7 +366,7 @@ function insertQueuedRow(
       input.script,
       input.dryRun ? 1 : 0,
       input.executionMode,
-      Core.safeJsonStringify(input.parameters),
+      toParametersJson(input.parameters),
       input.operator,
       input.correlationId,
       input.queuedAtMs,
@@ -397,6 +418,25 @@ function getRow(
   return row === undefined ? undefined : toRunRecord(row);
 }
 
+/**
+ * Throws `ERR_CONSOLE_BAD_REQUEST` unless `limit` is a non-negative
+ * integer. SQLite treats a negative `LIMIT` as unbounded, so binding an
+ * unvalidated `limit` straight into `LIMIT ?` would silently contradict
+ * `M3LRunListQuery.limit`'s own "no unbounded default" guarantee; a
+ * non-integer (e.g. `1.5`) is rejected the same way, as a caller error
+ * rather than the generic store fault `classifyStoreFailure` would
+ * otherwise produce once it reached `node:sqlite`.
+ */
+function requireValidLimit(limit: number): number {
+  if (!Number.isInteger(limit) || limit < 0) {
+    throw new M3LConsoleError(
+      "ERR_CONSOLE_BAD_REQUEST",
+      "list query limit must be a non-negative integer",
+    );
+  }
+  return limit;
+}
+
 /** The `WHERE` clause + bound parameters `listRows` adds for `query`'s optional filters. */
 function buildListFilter(query: M3LRunListQuery): {
   readonly clause: string;
@@ -424,7 +464,7 @@ function listRows(
   const { clause, parameters } = buildListFilter(query);
   const rows = executor.all(
     `SELECT * FROM console_runs${clause} ORDER BY queued_at_ms ASC LIMIT ?`,
-    [...parameters, query.limit],
+    [...parameters, requireValidLimit(query.limit)],
   );
   return rows.map((row) => toRunRecord(row));
 }

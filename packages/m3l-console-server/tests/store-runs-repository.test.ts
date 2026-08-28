@@ -279,6 +279,167 @@ describe("createConsoleRunsRepository — insertQueued + get round trip", () => 
 });
 
 // ---------------------------------------------------------------------------
+// insertQueued — parameters must fail loudly when not JSON-serializable
+// (regression: PR #719 defect 1 — `insertQueuedRow` persisted `parameters`
+// with `Core.safeJsonStringify`, a never-throwing *diagnostic* serializer
+// that silently mangles depth-exceeding, cyclic, and function-bearing input
+// instead of rejecting it at the write boundary).
+// ---------------------------------------------------------------------------
+
+describe("createConsoleRunsRepository — insertQueued() parameters validation", () => {
+  /** Builds an object nested `depth` levels deep — deeper than the 10-level default `safeJsonStringify` tolerates. */
+  function buildDeeplyNested(depth: number): Record<string, unknown> {
+    let value: Record<string, unknown> = { leaf: true };
+    for (let level = 0; level < depth; level += 1) {
+      value = { child: value };
+    }
+    return value;
+  }
+
+  // A 12-level-deep plain object IS JSON-serializable — `JSON.stringify` has
+  // no depth limit at all. The 10-level "[Max Depth]" truncation is purely an
+  // artifact of `Core.safeJsonStringify` being a *diagnostic* serializer, not
+  // a property of JSON itself, so this is legitimate input per the
+  // `runs-repository.ts:135` "must be JSON-serializable" contract — rejecting
+  // it would be a capability regression, not a fix.
+  test("parameters nested deeper than 10 levels round-trip faithfully, with no '[Max Depth]' truncation", () => {
+    const database = createMigratedDatabase();
+    const repository = createRepository(database);
+    const parameters = buildDeeplyNested(12);
+
+    repository.insertQueued(
+      insertInput({ id: "run-params-too-deep", parameters }),
+    );
+
+    expect(repository.get("run-params-too-deep")?.parameters).toEqual(
+      parameters,
+    );
+  });
+
+  test("parameters containing a cycle throws ERR_CONSOLE_BAD_REQUEST rather than persisting a '[Circular]' placeholder", () => {
+    const database = createMigratedDatabase();
+    const repository = createRepository(database);
+    const parameters: Record<string, unknown> = { mode: "batch" };
+    parameters["self"] = parameters;
+
+    const thrown = captureFailure(() =>
+      repository.insertQueued(
+        insertInput({ id: "run-params-cyclic", parameters }),
+      ),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).code).toBe("ERR_CONSOLE_BAD_REQUEST");
+    expect(readRawRun(database, "run-params-cyclic")).toBeUndefined();
+  });
+
+  // Enumerates all three shapes `JSON.stringify` silently drops instead of
+  // throwing on (per parameters-json.ts's own TSDoc) — a test that only ever
+  // exercised `function` would leave `symbol` and `undefined` unproven even
+  // though the module claims to detect all three.
+  const unserializableTopLevelKinds: readonly (readonly [string, unknown])[] = [
+    ["function", () => "unused"],
+    ["symbol", Symbol("callback")],
+    ["undefined", undefined],
+  ];
+
+  test.each(unserializableTopLevelKinds)(
+    "parameters containing a %s value throws ERR_CONSOLE_BAD_REQUEST rather than persisting a lossy placeholder",
+    (kind, value) => {
+      const database = createMigratedDatabase();
+      const repository = createRepository(database);
+      const parameters = { mode: "batch", callback: value };
+      const id = `run-params-${kind}`;
+
+      const thrown = captureFailure(() =>
+        repository.insertQueued(insertInput({ id, parameters })),
+      );
+
+      expect(thrown).toBeInstanceOf(M3LConsoleError);
+      expect((thrown as M3LConsoleError).code).toBe("ERR_CONSOLE_BAD_REQUEST");
+      expect(readRawRun(database, id)).toBeUndefined();
+    },
+  );
+
+  // `<root>` is reachable only when `parameters` is ITSELF one of the three
+  // unserializable shapes — not merely containing one as a property — so
+  // this exercises that arm explicitly, over the same enumerated set as the
+  // property-valued cases above.
+  const unserializableRootValues: readonly (readonly [string, unknown])[] = [
+    ["function", () => "unused"],
+    ["symbol", Symbol("root")],
+    ["undefined", undefined],
+  ];
+
+  test.each(unserializableRootValues)(
+    "parameters that is itself a bare %s value throws ERR_CONSOLE_BAD_REQUEST naming the <root> path",
+    (kind, value) => {
+      const database = createMigratedDatabase();
+      const repository = createRepository(database);
+      const id = `run-params-root-${kind}`;
+
+      const thrown = captureFailure(() =>
+        repository.insertQueued(insertInput({ id, parameters: value })),
+      );
+
+      expect(thrown).toBeInstanceOf(M3LConsoleError);
+      expect((thrown as M3LConsoleError).code).toBe("ERR_CONSOLE_BAD_REQUEST");
+      // Asserts the KIND and PATH only — never the offending VALUE.
+      expect((thrown as M3LConsoleError).message).toContain(kind);
+      expect((thrown as M3LConsoleError).message).toContain("<root>");
+      expect(readRawRun(database, id)).toBeUndefined();
+    },
+  );
+
+  // The error message's whole operational value is the property PATH, not
+  // the kind — an operator needs to know *where* in a possibly large
+  // `parameters` object the offending value lives. A top-level fixture can't
+  // prove the path-tracking `WeakMap` in `computePath` actually walks
+  // nested holders rather than just echoing the leaf key, so this plants the
+  // offending value two levels deep and asserts the dotted path by name.
+  test("a nested function value's error message names the dotted path to it, not just the leaf key", () => {
+    const database = createMigratedDatabase();
+    const repository = createRepository(database);
+    const parameters = { outer: { callback: () => "unused" } };
+
+    const thrown = captureFailure(() =>
+      repository.insertQueued(
+        insertInput({ id: "run-params-nested-function", parameters }),
+      ),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).code).toBe("ERR_CONSOLE_BAD_REQUEST");
+    // Asserts the KIND and PATH only — never the offending VALUE, which is
+    // caller data this project deliberately never echoes back.
+    expect((thrown as M3LConsoleError).message).toContain("function");
+    expect((thrown as M3LConsoleError).message).toContain("outer.callback");
+    expect(readRawRun(database, "run-params-nested-function")).toBeUndefined();
+  });
+
+  // Guards against a fix over-tightening into rejecting legitimate input: an
+  // ordinary, JSON-serializable nested object — well within the depth limit,
+  // no cycles, no functions — must still round-trip byte-identically.
+  test("an ordinary nested-but-valid parameters object still round-trips through insertQueued then get() byte-identically", () => {
+    const database = createMigratedDatabase();
+    const repository = createRepository(database);
+    const parameters = {
+      mode: "batch",
+      count: 3,
+      nested: { a: 1, b: [1, 2, { c: "deep-but-valid" }], d: null },
+    };
+
+    repository.insertQueued(
+      insertInput({ id: "run-params-valid-nested", parameters }),
+    );
+
+    expect(repository.get("run-params-valid-nested")?.parameters).toEqual(
+      parameters,
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
 // claimForStart — the guarded queued -> running transition
 // ---------------------------------------------------------------------------
 
@@ -577,6 +738,71 @@ describe("createConsoleRunsRepository — list()", () => {
     const results = repository.list({ limit: 10 });
 
     expect(results).toHaveLength(3);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// list — limit validation (regression: PR #719 defect 2 — `listRows` bound
+// `query.limit` straight into `LIMIT ?` with no validation; SQLite treats a
+// negative `LIMIT` as unbounded, so `list({ limit: -1 })` silently returned
+// every matching row instead of the documented "no unbounded default, a
+// caller always makes an explicit choice" guarantee at `runs-repository.ts:178-179`).
+// ---------------------------------------------------------------------------
+
+describe("createConsoleRunsRepository — list() limit validation", () => {
+  /** Seeds more queued rows than any plausible limit, so "returned everything" is unmistakable if a negative-limit fix regresses. */
+  function seedManyQueuedRows(repository: M3LConsoleRunsRepository): void {
+    for (let index = 0; index < 6; index += 1) {
+      repository.insertQueued(
+        insertInput({
+          id: `run-limit-guard-${String(index)}`,
+          queuedAtMs: 1_000 + index,
+        }),
+      );
+    }
+  }
+
+  test("limit: -1 throws ERR_CONSOLE_BAD_REQUEST rather than returning every matching row unbounded", () => {
+    const database = createMigratedDatabase();
+    const repository = createRepository(database);
+    seedManyQueuedRows(repository);
+
+    const thrown = captureFailure(() =>
+      repository.list({ status: "queued", limit: -1 }),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).code).toBe("ERR_CONSOLE_BAD_REQUEST");
+  });
+
+  test("a non-integer limit (1.5) throws ERR_CONSOLE_BAD_REQUEST", () => {
+    const database = createMigratedDatabase();
+    const repository = createRepository(database);
+    seedManyQueuedRows(repository);
+
+    const thrown = captureFailure(() =>
+      repository.list({ status: "queued", limit: 1.5 }),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).code).toBe("ERR_CONSOLE_BAD_REQUEST");
+  });
+
+  // Guards against a fix over-tightening: the existing documented behaviour
+  // for a valid limit must not change.
+  test("limit: 0 still returns an empty list and a positive limit still truncates correctly, unchanged by the negative/non-integer guard", () => {
+    const database = createMigratedDatabase();
+    const repository = createRepository(database);
+    seedManyQueuedRows(repository);
+
+    expect(repository.list({ status: "queued", limit: 0 })).toEqual([]);
+
+    const truncated = repository.list({ status: "queued", limit: 2 });
+    expect(truncated).toHaveLength(2);
+    expect(truncated.map((record: M3LRunRecord) => record.id)).toEqual([
+      "run-limit-guard-0",
+      "run-limit-guard-1",
+    ]);
   });
 });
 
