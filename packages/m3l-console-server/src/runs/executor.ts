@@ -26,10 +26,16 @@ export type M3LLineSink = (line: string) => void;
 /**
  * The options {@link M3LRunExecutor.execute} accepts for one run.
  *
+ * Deliberately NOT exported today: knip flags an exported type that nothing
+ * under `src/**` consumes, and `tests/**` is outside its `project` glob so a
+ * test-only import would not count as usage anyway. A caller building one of
+ * these at the call site does not need to name this type — `execute`'s own
+ * signature infers the argument shape directly. Re-export it the moment X4
+ * slice 6's run orchestrator builds one to call {@link M3LRunExecutor.execute},
+ * giving `src/**` a consumer that satisfies the knip gate.
+ *
  * @example
  * ```ts
- * import type { M3LRunExecutorOptions } from "@m3l-automation/m3l-console-server/runs/executor.js";
- *
  * const options: M3LRunExecutorOptions = {
  *   scriptDir: "/scripts/example",
  *   parameters: { region: "us-east-1" },
@@ -41,7 +47,7 @@ export type M3LLineSink = (line: string) => void;
  * };
  * ```
  */
-export interface M3LRunExecutorOptions {
+interface M3LRunExecutorOptions {
   /** The absolute path to the script's build directory. */
   readonly scriptDir: string;
   /** The run's caller-supplied parameters. */
