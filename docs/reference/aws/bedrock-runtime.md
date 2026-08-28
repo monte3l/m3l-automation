@@ -3,7 +3,7 @@
 `M3LBedrockRuntimeOperations` is a typed wrapper over a raw
 `BedrockRuntimeClient`'s Converse API, so callers never import
 `@aws-sdk/client-bedrock-runtime` command classes or touch its `Converse*`
-types directly. See [ADR-0059](../adr/0059-bedrock-runtime-wrapper-and-loop-primitives.md)
+types directly. See [ADR-0059](../../adr/0059-bedrock-runtime-wrapper-and-loop-primitives.md)
 for why this module exists and its scope boundary against V5 (tool-use loop
 primitives, a separate future change).
 
@@ -46,24 +46,43 @@ existing shape.
 ### `M3LBedrockRuntimeOperations`
 
 **Constructor** — `new M3LBedrockRuntimeOperations(client, options)`, where
-`client` is a raw `BedrockRuntimeClient` (e.g.
-`script.aws.clients.bedrockRuntime`, or the cached
-`script.aws.services.bedrockRuntimeOperations` getter which constructs one for
-you, sharing the underlying `bedrockRuntime` client's lifecycle) and `options`
+`client` is a raw `BedrockRuntimeClient` (e.g. `script.aws.clients.bedrockRuntime`
+— the only Bedrock provider getter this slice adds; unlike every other
+`AWSServiceProvider.*Operations` wrapper, there is **no** cached
+`bedrockRuntimeOperations` convenience getter, since the model fallback list
+is inherently caller-specific configuration with no library-owned sane
+default — a caller constructs `M3LBedrockRuntimeOperations` itself, once,
+with its own `models` list) and `options`
 is `M3LBedrockRuntimeOptions` — `{ models: readonly string[] }`, an ordered,
 non-empty fallback list (`models[0]` is the primary model id; later entries
 are tried only on a model-availability fault). Throws
 `M3LBedrockRuntimeNoModelError` at construction if `models` is empty — this is
 a caller/config error, not deferred to the first `invoke` call.
 
-| Method                            | Retried? | Returns                                 | Throws                                                                                                                                      |
-| --------------------------------- | -------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `invoke(request, options?)`       | Yes¹     | `Promise<M3LBedrockInvocationResult>`   | `M3LBedrockRuntimeOperationError`, `M3LBedrockRuntimeModelError`, `M3LBedrockRuntimeNoModelError`                                           |
-| `invokeStream(request, options?)` | Yes¹     | `AsyncGenerator<M3LBedrockStreamEvent>` | same three, from the generator's `next()` (Landing plan slice 2 — not yet implemented; throws `M3LBedrockRuntimeOperationError` in slice 1) |
+| Method                      | Retried? | Returns                               | Throws                                                                                                                        |
+| --------------------------- | -------- | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `invoke(request, options?)` | Yes¹     | `Promise<M3LBedrockInvocationResult>` | `M3LBedrockRuntimeOperationError`, `M3LBedrockRuntimeModelError`, `M3LBedrockRuntimeNoModelError`, `M3LOperationAbortedError` |
 
 ¹ `ThrottlingException`/`InternalServerException` retry on the **same** model
-via `M3LRetryRunner` (`M3LPollingPolicies.awsThrottling()`) before any
-fallback is attempted; see "Fault handling and model fallback" below.
+via `M3LRetryRunner` before any fallback is attempted; see "Fault handling and
+model fallback" below for the retry classifier's exact scope.
+
+**`invokeStream` does not exist on the class in slice 1.** It is added whole
+in slice 2, once `M3LBedrockStreamEvent` and the streaming contract are
+settled — a class gaining a method later is additive, not breaking, so
+nothing here needs a stub. Do not declare, export, or test `invokeStream` (or
+`M3LBedrockStreamEvent`) as part of this slice.
+
+**`AbortSignal` cancellation.** `options?.signal` is checked against a
+module-private `isAborted(signal)` helper (the ADR-0049 named-function
+convention — see `aws/athena/client.ts`; a bare `signal?.aborted` re-check
+after an `await` produces a TS2367 false alarm) **before** any exception
+classification, at every point an abort could have occurred: before the
+initial `send()`, after each retry-runner exhaustion, and before advancing
+fallback to the next model. An abort mid-fallback stops the walk entirely —
+it never advances to the next model — and throws `M3LOperationAbortedError`
+(`ERR_OPERATION_ABORTED`, `origin: caller`, `retryable: false`) unchanged,
+never wrapped as one of this module's own error classes.
 
 ### `M3LBedrockInvokeRequest`
 
@@ -158,11 +177,13 @@ the same vocabulary AWS's own docs use.
 
 ### `M3LBedrockRuntimeOperationError`
 
-Thrown for a transport/API-call failure that is not one of the model-specific
-faults below: `ValidationException`, `AccessDeniedException`,
-`ResourceNotFoundException`, `ServiceQuotaExceededException`, an exhausted
-`InternalServerException`/`ThrottlingException` retry, or any other
-non-classified `client.send()` rejection.
+Thrown immediately, with no fallback advance, for: `ValidationException`,
+`AccessDeniedException`, `ResourceNotFoundException`,
+`ServiceQuotaExceededException`, or any other non-classified `client.send()`
+rejection. **Not** thrown for an exhausted `InternalServerException`/
+`ThrottlingException` retry — exhaustion always advances fallback instead
+(see "Fault handling and model fallback" below), so the terminal error on
+full exhaustion is always `M3LBedrockRuntimeNoModelError`, never this class.
 
 ```ts
 class M3LBedrockRuntimeOperationError extends M3LError {
@@ -191,10 +212,15 @@ class M3LBedrockRuntimeModelError extends M3LError {
 }
 ```
 
+`modelId` is both an own field (`error.modelId`) and mirrored into
+`context.modelId` — `context` is what `toJSON()` serializes and what ADR-0035
+diagnostics tooling reads; an own field alone would be invisible to both.
+
 ### `M3LBedrockRuntimeNoModelError`
 
-Thrown when `models` is empty at construction, or when every model in the
-fallback order has been exhausted by availability faults (see below).
+Thrown when `models` is empty at construction (`attemptedModels: []`), or
+when every model in the fallback order has been exhausted by availability
+faults (see below; `attemptedModels` lists every model id tried, in order).
 `origin: caller`, `retryable: false` — the caller's model list is the fault,
 not AWS.
 
@@ -205,6 +231,10 @@ class M3LBedrockRuntimeNoModelError extends M3LError {
 }
 ```
 
+`attemptedModels` is both an own field and mirrored into
+`context.attemptedModels`, for the same `toJSON()`/diagnostics reason as
+`M3LBedrockRuntimeModelError.modelId` above.
+
 ## Fault handling and model fallback
 
 Every SDK-thrown or in-band exception is classified into exactly one of three
@@ -212,11 +242,28 @@ handling tiers before the wrapper's own error is raised:
 
 | SDK exception                                                                                                | Delivered as¹               | Tier                                                                                                                 |
 | ------------------------------------------------------------------------------------------------------------ | --------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `ThrottlingException`, `InternalServerException`                                                             | thrown / in-band            | **Retry same model** via `M3LRetryRunner(M3LPollingPolicies.awsThrottling())`; exhausted → advance fallback          |
+| `ThrottlingException`, `InternalServerException`                                                             | thrown / in-band            | **Retry same model** (see classifier note below); exhausted → advance fallback                                       |
 | `ModelNotReadyException`, `ModelTimeoutException`, `ServiceUnavailableException`                             | thrown / in-band            | **Advance fallback** immediately, no same-model retry                                                                |
 | `ModelErrorException` / `ModelStreamErrorException`                                                          | thrown / in-band            | **Immediate throw**, `M3LBedrockRuntimeModelError` — no retry, no fallback                                           |
 | `ValidationException`, `AccessDeniedException`, `ResourceNotFoundException`, `ServiceQuotaExceededException` | thrown only (never in-band) | **Immediate throw**, `M3LBedrockRuntimeOperationError` with `caller`/`false` origin override — no retry, no fallback |
 | any other rejection                                                                                          | thrown                      | **Immediate throw**, `M3LBedrockRuntimeOperationError`, default `external`/`true`                                    |
+
+**Retry classifier note (row 1 only).** The exception is classified by SDK
+error **`name`** _before_ any retry runner is invoked — never by
+`$metadata.httpStatusCode`. This matters because `M3LPollingPolicies.
+awsThrottling()`'s generic classifier retries any transient 5xx status,
+including 503, and `ServiceUnavailableException` is a 503 — reusing that
+policy unmodified would retry `ServiceUnavailableException` on the same
+model, contradicting row 2 ("advance fallback immediately, no same-model
+retry"). `invoke` therefore classifies by exception `name` first: only
+`"ThrottlingException"` and `"InternalServerException"` enter a
+`M3LRetryRunner` (constructed fresh per call so `signal` can be threaded,
+matching `aws/athena/client.ts`'s per-call runner pattern), configured with
+the same backoff as `M3LPollingPolicies.awsThrottling()`
+(`exponentialJittered(200ms, 5000ms)`) but a **name-scoped** classifier
+(retryable exactly on those two names; anything else is `unknownDecision:
+"fatal"`, rethrown unchanged) rather than that policy's broader status-code
+classifier. Every other exception in the table skips the runner entirely.
 
 ¹ Verified against installed `@aws-sdk/client-bedrock-runtime@3.1115.0`
 `dist-types` (2026-08-28). For `ConverseCommand` (single-shot), every
@@ -239,7 +286,11 @@ practice.
 
 "Advance fallback" means: try the next `models[]` entry with a fresh
 `ConverseCommand`; if no entry remains, throw `M3LBedrockRuntimeNoModelError`
-naming every attempted model id in `attemptedModels`.
+naming every attempted model id in `attemptedModels`. This is the **only**
+way `M3LBedrockRuntimeNoModelError` is thrown from `invoke` (besides the
+empty-`models` constructor guard) — every fallback-exhaustion path,
+including an exhausted same-model retry, ends here, never as
+`M3LBedrockRuntimeOperationError`.
 
 ## Usage
 
@@ -247,9 +298,15 @@ naming every attempted model id in `attemptedModels`.
 
 ```ts
 import type { M3LScript } from "@m3l-automation/m3l-common/core";
+import { M3LBedrockRuntimeOperations } from "@m3l-automation/m3l-common/aws";
 
 export async function run(script: M3LScript): Promise<void> {
-  const ops = script.aws.services.bedrockRuntimeOperations;
+  const ops = new M3LBedrockRuntimeOperations(
+    script.aws.clients.bedrockRuntime,
+    {
+      models: ["anthropic.claude-opus-5", "anthropic.claude-sonnet-5"],
+    },
+  );
   const result = await ops.invoke({
     messages: [
       {
@@ -289,6 +346,28 @@ const ops = new M3LBedrockRuntimeOperations(client, {
   primitives will).
 - `M3LRetryRunner` wraps only the `client.send()` call, never response
   mapping — see `library-src.md`'s narrow-`try` rule.
+- **Malformed-but-successful response.** `ConverseCommandOutput.output`,
+  `.stopReason`, and `.usage` are each `T | undefined` in the SDK, and
+  `output`'s `ConverseOutput` union has an `$UnknownMember` arm, but
+  `M3LBedrockInvocationResult` declares every field required. A response
+  missing any of `output.message`, `stopReason`, or `usage` — or an
+  `output` matching `$UnknownMember` rather than the expected message
+  member — throws `M3LBedrockRuntimeOperationError` (default
+  `external`/`true`; this is a genuinely unexpected AWS response shape, not
+  a caller mistake), same as table row 5 above. This is checked **after**
+  the retry runner resolves successfully — it is a response-shape fault,
+  not a transport fault, so it is never retried or fallen back from.
+- **Non-text content blocks in a reply.** V4's `M3LBedrockContentBlock` is
+  text-only, but the SDK's `ContentBlock` union on the reply side can in
+  principle carry non-text members. Per the style guide's caller-vs-external
+  distinction, the model's reply is _external_ data, not a caller mistake,
+  so `invoke` tolerates rather than rejects it: any non-`text` content block
+  in `output.message.content` is dropped when building the result's
+  `message.content` array. In practice this is unreachable in V4 — the
+  request never sends `toolConfig`, so the model has no tool to invoke — but
+  the tolerance is documented so a future response shape doesn't throw an
+  unexplained "malformed response" error for a legitimately-absent library
+  feature.
 
 ## Landing plan
 
@@ -296,10 +375,10 @@ Two independently-landable PRs (ADR-0072):
 
 1. **Slice 1 — core wrapper.** `invoke()` single-shot Converse call, the model
    registry/fallback state machine, token usage capture, the three error
-   classes, `AWSClientProvider.bedrockRuntime` getter,
-   `AWSServiceProvider.bedrockRuntimeOperations` getter. Tests:
-   `packages/m3l-common/tests/bedrock-runtime.test.ts`, importing only this
-   slice's symbols.
+   classes, and the `AWSClientProvider.bedrockRuntime` getter (no
+   `AWSServiceProvider` convenience getter — see the constructor note above).
+   Tests: `packages/m3l-common/tests/bedrock-runtime.test.ts`, importing only
+   this slice's symbols.
 2. **Slice 2 — streaming.** `invokeStream()` over `ConverseStreamCommand`, the
    `M3LBedrockStreamEvent` tagged union, in-band exception discrimination.
    Tests: `packages/m3l-common/tests/bedrock-runtime-streaming.test.ts`,
@@ -309,10 +388,10 @@ Two independently-landable PRs (ADR-0072):
 ## See also
 
 - [AWS Clients](./clients.md) — `AWSClientProvider` / `AWSServiceProvider`.
-- [ADR-0059](../adr/0059-bedrock-runtime-wrapper-and-loop-primitives.md) —
+- [ADR-0059](../../adr/0059-bedrock-runtime-wrapper-and-loop-primitives.md) —
   the governing decision, including its 2026-08-28 Update correcting the
   "first `AsyncIterable` contract" premise.
-- [ADR-0049](../adr/0049-cooperative-cancellation-contract.md) — the
+- [ADR-0049](../../adr/0049-cooperative-cancellation-contract.md) — the
   `AbortSignal` convention `invoke`/`invokeStream` follow.
-- [ADR-0035](../adr/0035-failure-reporting-and-diagnostics.md) — the
+- [ADR-0035](../../adr/0035-failure-reporting-and-diagnostics.md) — the
   fault-origin classification `M3LBedrockRuntime*Error` codes register into.

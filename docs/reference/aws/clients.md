@@ -67,6 +67,7 @@ second, independently-supplied copy.
 | `sqs`              | `SQSClient`              | `@aws-sdk/client-sqs`             |
 | `secretsManager`   | `SecretsManagerClient`   | `@aws-sdk/client-secrets-manager` |
 | `rdsData`          | `RDSDataClient`          | `@aws-sdk/client-rds-data`        |
+| `bedrockRuntime`   | `BedrockRuntimeClient`   | `@aws-sdk/client-bedrock-runtime` |
 
 Most getters construct a fresh SDK client from the resolved region and
 credentials. Two behave specially:
