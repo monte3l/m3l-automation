@@ -53,4 +53,57 @@ describe("fetchHealth", () => {
 
     await expect(fetchHealth()).resolves.toEqual(errorResult);
   });
+
+  // [KNOWN BUG] fetchHealth() is currently a thin passthrough over
+  // fetchConsoleJson, which decodes the body with a bare `as T` cast and
+  // therefore cannot validate the shape at runtime. A syntactically valid
+  // but wrong-shaped /health body should be downgraded to a
+  // "malformed-body" error instead of sailing through as ok: true.
+  test("downgrades an empty ok body to a malformed-body error", async () => {
+    mockedFetchConsoleJson.mockResolvedValue({
+      ok: true,
+      data: {},
+    });
+
+    await expect(fetchHealth()).resolves.toMatchObject({
+      ok: false,
+      error: { kind: "malformed-body", message: expect.any(String) as string },
+    });
+  });
+
+  test("downgrades an ok body missing uptimeMs to a malformed-body error", async () => {
+    mockedFetchConsoleJson.mockResolvedValue({
+      ok: true,
+      data: { status: "ok" },
+    });
+
+    await expect(fetchHealth()).resolves.toMatchObject({
+      ok: false,
+      error: { kind: "malformed-body", message: expect.any(String) as string },
+    });
+  });
+
+  test("downgrades an ok body with a non-numeric uptimeMs to a malformed-body error", async () => {
+    mockedFetchConsoleJson.mockResolvedValue({
+      ok: true,
+      data: { status: "ok", uptimeMs: "42" },
+    });
+
+    await expect(fetchHealth()).resolves.toMatchObject({
+      ok: false,
+      error: { kind: "malformed-body", message: expect.any(String) as string },
+    });
+  });
+
+  test("downgrades a non-object ok body to a malformed-body error", async () => {
+    mockedFetchConsoleJson.mockResolvedValue({
+      ok: true,
+      data: null,
+    });
+
+    await expect(fetchHealth()).resolves.toMatchObject({
+      ok: false,
+      error: { kind: "malformed-body", message: expect.any(String) as string },
+    });
+  });
 });

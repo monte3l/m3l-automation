@@ -15,6 +15,10 @@ type HealthState =
   | { readonly kind: "ok"; readonly uptimeMs: number }
   | { readonly kind: "unreachable"; readonly message: string };
 
+function deriveErrorMessage(caught: unknown): string {
+  return caught instanceof Error ? caught.message : String(caught);
+}
+
 /**
  * Fetches the console server's health once on mount and reports the
  * result: checking, reachable (with uptime), or unreachable (with the
@@ -34,16 +38,23 @@ export function HealthBanner(props: HealthBannerProps): ReactElement {
   useEffect(() => {
     let cancelled = false;
 
-    void load().then((result) => {
-      if (cancelled) {
-        return;
-      }
-      setState(
-        result.ok
-          ? { kind: "ok", uptimeMs: result.data.uptimeMs }
-          : { kind: "unreachable", message: result.error.message },
-      );
-    });
+    void load()
+      .then((result) => {
+        if (cancelled) {
+          return;
+        }
+        setState(
+          result.ok
+            ? { kind: "ok", uptimeMs: result.data.uptimeMs }
+            : { kind: "unreachable", message: result.error.message },
+        );
+      })
+      .catch((caught: unknown) => {
+        if (cancelled) {
+          return;
+        }
+        setState({ kind: "unreachable", message: deriveErrorMessage(caught) });
+      });
 
     return () => {
       cancelled = true;

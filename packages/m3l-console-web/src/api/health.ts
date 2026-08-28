@@ -7,6 +7,16 @@ export interface M3LHealthPayload {
   readonly uptimeMs: number;
 }
 
+function isM3LHealthPayload(data: unknown): data is M3LHealthPayload {
+  if (typeof data !== "object" || data === null) {
+    return false;
+  }
+  const candidate = data as Record<string, unknown>;
+  return (
+    candidate["status"] === "ok" && typeof candidate["uptimeMs"] === "number"
+  );
+}
+
 /**
  * Fetches the console-server's health status.
  *
@@ -23,5 +33,15 @@ export interface M3LHealthPayload {
 export async function fetchHealth(): Promise<
   M3LConsoleFetchResult<M3LHealthPayload>
 > {
-  return fetchConsoleJson<M3LHealthPayload>("/health");
+  const result = await fetchConsoleJson<M3LHealthPayload>("/health");
+  if (result.ok && !isM3LHealthPayload(result.data)) {
+    return {
+      ok: false,
+      error: {
+        kind: "malformed-body",
+        message: "unexpected /health response shape",
+      },
+    };
+  }
+  return result;
 }
