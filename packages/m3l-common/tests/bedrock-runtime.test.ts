@@ -812,15 +812,49 @@ describe("M3LBedrockRuntimeOperations.invoke() — cancellation", () => {
 
   // Targets #invokeOnModel's own catch-time `isAborted` re-check — distinct
   // from the pre-send() abort check (first test above) and from the
-  // loop-level fallback-gap check (previous test). A plain unclassified
-  // rejection (not M3LOperationAbortedError, not retriable) reaches the
-  // catch block; the signal happens to already be aborted by the time that
-  // check runs, so abort still wins per the doc's unconditional-check design.
-  test("a non-aborted rejection surfaces as M3LOperationAbortedError when the signal is already aborted by catch time", async () => {
+  // loop-level fallback-gap check (previous test). The reactive check is
+  // stricter than the two proactive `isAborted`-only checks: it promotes a
+  // caught rejection to M3LOperationAbortedError only when the rejection
+  // itself is ALSO abort-shaped (`isAbortError`). A plain unclassified
+  // `Error("boom")` — not `M3LOperationAbortedError`, not retriable, and not
+  // named `"AbortError"` — reaches the catch block while the signal happens
+  // to already be aborted for an unrelated reason; it must NOT be silently
+  // reclassified as an abort. It falls through classifySendFailure's every
+  // named-exception check to the "any other rejection" tier and surfaces as
+  // its real type, M3LBedrockRuntimeOperationError with the default
+  // external/true classification.
+  test("a non-abort-shaped rejection is NOT reclassified as aborted, even when the signal is already aborted by catch time", async () => {
     const controller = new AbortController();
     h.send.mockImplementationOnce(() => {
       scheduleAbortAfterTicks(controller, 2);
       return Promise.reject(new Error("boom"));
+    });
+    const ops = new M3LBedrockRuntimeOperations(
+      fakeClient(),
+      buildOptions([MODEL_A]),
+    );
+
+    const thrown = await settleWithTimers(
+      ops
+        .invoke(BASE_REQUEST, { signal: controller.signal })
+        .catch((error: unknown) => error),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LBedrockRuntimeOperationError);
+    expect((thrown as M3LBedrockRuntimeOperationError).origin).toBe("external");
+    expect((thrown as M3LBedrockRuntimeOperationError).retryable).toBe(true);
+    expect(h.send).toHaveBeenCalledTimes(1);
+  });
+
+  // Targets the reactive check's OTHER branch: a rejection that genuinely IS
+  // abort-shaped (`isAbortError` true) racing an already-aborted signal is
+  // the case the reactive check exists to catch — it IS reclassified as
+  // M3LOperationAbortedError, unlike the non-abort-shaped rejection above.
+  test("an AbortError-shaped rejection racing an already-aborted signal is reclassified as M3LOperationAbortedError", async () => {
+    const controller = new AbortController();
+    h.send.mockImplementationOnce(() => {
+      scheduleAbortAfterTicks(controller, 2);
+      return Promise.reject(sdkError("AbortError", "aborted"));
     });
     const ops = new M3LBedrockRuntimeOperations(
       fakeClient(),

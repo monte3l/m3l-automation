@@ -102,6 +102,14 @@ function isAborted(signal: AbortSignal | undefined): boolean {
   return signal !== undefined && signal.aborted;
 }
 
+/**
+ * Returns `true` when `err` is an `AbortError` thrown by the AWS SDK when
+ * an `abortSignal` fires during an in-flight `send()`.
+ */
+function isAbortError(err: unknown): boolean {
+  return err instanceof Error && err.name === "AbortError";
+}
+
 /** Reads `err.name` when `err` is an `Error`-shaped value, `undefined` otherwise. */
 function readErrorName(err: unknown): string | undefined {
   return err instanceof Error ? err.name : undefined;
@@ -245,11 +253,16 @@ function mapConverseResponse(
     usage === undefined ||
     usage.inputTokens === undefined ||
     usage.outputTokens === undefined ||
-    usage.totalTokens === undefined ||
-    !STOP_REASON_LOOKUP.has(stopReason)
+    usage.totalTokens === undefined
   ) {
     throw new M3LBedrockRuntimeOperationError(
       `Converse response for model ${modelId} was missing output/stopReason/usage`,
+    );
+  }
+
+  if (!STOP_REASON_LOOKUP.has(stopReason)) {
+    throw new M3LBedrockRuntimeOperationError(
+      `Converse response for model ${modelId} had an unrecognized stopReason`,
     );
   }
 
@@ -468,7 +481,7 @@ export class M3LBedrockRuntimeOperations {
       );
     } catch (error) {
       if (error instanceof M3LOperationAbortedError) throw error;
-      if (isAborted(signal)) {
+      if (isAborted(signal) && isAbortError(error)) {
         throw new M3LOperationAbortedError();
       }
       const cause = classifySendFailure(error, modelId);
