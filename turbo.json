@@ -12,7 +12,18 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "inputs": ["src/**", "tsconfig*.json", "package.json"],
+      // index.html/vite.config.ts/public/** only exist under
+      // packages/m3l-console-web (ADR-0067's Vite build) — harmless
+      // no-op globs for every tsc-only package, but needed so a change to
+      // any of them invalidates that package's turbo cache.
+      "inputs": [
+        "src/**",
+        "tsconfig*.json",
+        "package.json",
+        "index.html",
+        "vite.config.ts",
+        "public/**"
+      ],
       "outputs": ["dist/**", "dist/.tsbuildinfo"]
     },
     "typecheck": {

@@ -50,6 +50,9 @@
       "entry": ["src/main.ts"],
       "project": ["src/**/*.ts", "bin/**/*.mjs"]
     },
+    "packages/m3l-console-web": {
+      "project": ["src/**/*.ts", "src/**/*.tsx"]
+    },
     "scripts/*": {
       "entry": "src/{main,command}.ts",
       "project": "src/**/*.ts"
