@@ -2456,6 +2456,31 @@
     "namespace": "aws",
     "file": "packages/m3l-common/src/aws/bedrock-runtime/types.ts"
   },
+  "M3LBedrockStreamEvent": {
+    "submodule": "bedrock-runtime",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/bedrock-runtime/types.ts"
+  },
+  "M3LBedrockStreamStartEvent": {
+    "submodule": "bedrock-runtime",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/bedrock-runtime/types.ts"
+  },
+  "M3LBedrockStreamTextDeltaEvent": {
+    "submodule": "bedrock-runtime",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/bedrock-runtime/types.ts"
+  },
+  "M3LBedrockStreamStopEvent": {
+    "submodule": "bedrock-runtime",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/bedrock-runtime/types.ts"
+  },
+  "M3LBedrockRuntimeStreamError": {
+    "submodule": "bedrock-runtime",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/bedrock-runtime/error.ts"
+  },
   "AWSClientProvider": {
     "submodule": "clients",
     "namespace": "aws",

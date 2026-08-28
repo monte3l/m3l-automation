@@ -219,3 +219,108 @@ export class M3LBedrockRuntimeNoModelError extends M3LError {
     this.attemptedModels = options.attemptedModels;
   }
 }
+
+/**
+ * Constructor options for {@link M3LBedrockRuntimeStreamError}.
+ *
+ * Not exported — callers _catch_ this error, they don't construct it.
+ */
+interface M3LBedrockRuntimeStreamErrorOptions {
+  /** The model that was streaming when the fault occurred. */
+  readonly modelId: string;
+  /** How many {@link M3LBedrockStreamEvent}s the caller already consumed before the fault. */
+  readonly eventsEmitted: number;
+  /**
+   * Whether a caller can safely re-invoke `invokeStream` without risking
+   * duplicated output. `true` only for the zero-event clean-drain case
+   * (`eventsEmitted === 0` — nothing reached the caller); `false` for every
+   * mid-stream fault (`eventsEmitted >= 1` there, by construction).
+   */
+  readonly retrySafe: boolean;
+  /** The underlying cause of the lifecycle fault, when available. */
+  readonly cause?: unknown;
+}
+
+/**
+ * Thrown by {@link M3LBedrockRuntimeOperations.invokeStream} for a
+ * streaming-lifecycle fault that occurs **after** `invokeStream` has already
+ * yielded at least one `M3LBedrockStreamEvent` to the caller — at that
+ * point retry and fallback are both unsafe (falling back would re-run the
+ * prompt and silently append a second, unrelated continuation to a
+ * partially-delivered reply), so this class exists specifically to make
+ * "some output was already delivered, a naive retry would produce a second,
+ * unrelated continuation" a type-visible, programmatically-checkable
+ * distinction from every other error this module throws. Also thrown for a
+ * stream that drains cleanly without ever delivering both a `messageStop`
+ * and a `metadata` event — a truncated stream is a lifecycle fault, the
+ * same tier as any other post-first-byte failure.
+ *
+ * `modelId`, `eventsEmitted`, and `retrySafe` are all own fields and
+ * mirrored into `context`, for the same `toJSON()`/ADR-0035-diagnostics
+ * reason as {@link M3LBedrockRuntimeModelError.modelId}. `retrySafe` is the
+ * type-visible, programmatically-checkable answer to "did the caller
+ * already receive output that a retry would duplicate?" — `true` only for
+ * the zero-event clean-drain case, `false` for every mid-stream fault; a
+ * caller should branch on `retrySafe` rather than compare `eventsEmitted`
+ * itself, since the field exists precisely so that comparison never has to
+ * be written at every call site. `origin: external`,
+ * `retryable: "situational"` — situational for the same reason `retrySafe`
+ * exists: a blanket "retry"/"don't retry" classification would be wrong for
+ * one of the two cases this class covers. `cause` is the standard `M3LError`
+ * chain (`unknown`, never an own field) — absent for the zero-event
+ * clean-drain case, present for every mid-stream fault case.
+ *
+ * @example
+ * ```ts
+ * import { M3LBedrockRuntimeStreamError } from "@m3l-automation/m3l-common/aws";
+ *
+ * try {
+ *   for await (const event of ops.invokeStream(request)) {
+ *     // consume event
+ *   }
+ * } catch (error) {
+ *   if (error instanceof M3LBedrockRuntimeStreamError) {
+ *     console.error(error.modelId, error.eventsEmitted, error.retrySafe);
+ *   }
+ * }
+ * ```
+ */
+export class M3LBedrockRuntimeStreamError extends M3LError {
+  /** Narrows the inherited `code` property to the literal `"ERR_BEDROCK_RUNTIME_STREAM"`. */
+  override readonly code = "ERR_BEDROCK_RUNTIME_STREAM" as const;
+
+  /** The model that was streaming when the fault occurred. */
+  readonly modelId: string;
+
+  /** How many {@link M3LBedrockStreamEvent}s the caller already consumed before the fault. */
+  readonly eventsEmitted: number;
+
+  /**
+   * Whether a caller can safely re-invoke `invokeStream` without risking
+   * duplicated output — `true` only for the zero-event clean-drain case.
+   */
+  readonly retrySafe: boolean;
+
+  /**
+   * Creates a new `M3LBedrockRuntimeStreamError`.
+   *
+   * @param message - Human-readable description of the failure.
+   * @param options - `modelId`, `eventsEmitted`, and `retrySafe` (all
+   *   carried in `context` and exposed directly as typed instance
+   *   properties), and an optional `cause` chaining the underlying fault.
+   */
+  constructor(message: string, options: M3LBedrockRuntimeStreamErrorOptions) {
+    super(message, {
+      code: "ERR_BEDROCK_RUNTIME_STREAM",
+      context: {
+        modelId: options.modelId,
+        eventsEmitted: options.eventsEmitted,
+        retrySafe: options.retrySafe,
+      },
+      ...(options.cause !== undefined && { cause: options.cause }),
+    });
+    this.modelId = options.modelId;
+    this.eventsEmitted = options.eventsEmitted;
+    this.retrySafe = options.retrySafe;
+  }
+}
