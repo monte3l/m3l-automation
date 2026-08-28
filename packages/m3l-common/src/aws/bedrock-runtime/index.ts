@@ -4,9 +4,10 @@
  * `@aws-sdk/client-bedrock-runtime` command classes or touch its `Converse*`
  * types directly. See ADR-0059.
  *
- * Slice 1 (this submodule): `invoke()` single-shot Converse call, the model
- * fallback registry, token usage capture, and the three error classes.
- * `invokeStream`/`M3LBedrockStreamEvent` are added whole in slice 2.
+ * Slice 1: `invoke()` single-shot Converse call, the model fallback
+ * registry, token usage capture, and the three error classes. Slice 2 (this
+ * update): `invokeStream()` over `ConverseStream`, `M3LBedrockStreamEvent`
+ * and its three members, and `M3LBedrockRuntimeStreamError`.
  *
  * @packageDocumentation
  */
@@ -16,6 +17,7 @@ export {
   M3LBedrockRuntimeModelError,
   M3LBedrockRuntimeNoModelError,
   M3LBedrockRuntimeOperationError,
+  M3LBedrockRuntimeStreamError,
 } from "./error.js";
 export type {
   M3LBedrockContentBlock,
@@ -27,6 +29,10 @@ export type {
   M3LBedrockRuntimeOptions,
   M3LBedrockRuntimeRole,
   M3LBedrockStopReason,
+  M3LBedrockStreamEvent,
+  M3LBedrockStreamStartEvent,
+  M3LBedrockStreamStopEvent,
+  M3LBedrockStreamTextDeltaEvent,
   M3LBedrockTextBlock,
   M3LBedrockTokenUsage,
 } from "./types.js";

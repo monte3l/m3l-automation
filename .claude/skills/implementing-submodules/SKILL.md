@@ -265,6 +265,18 @@ ADR-0013 (its durable home), not a per-plan caveat.
    untracked `scratch*` / stray `*.test.ts` debug files before the review
    fan-out. (The `Stop` hook also flags these, but sweep proactively here.)
 
+   **Include `pnpm check:file-budget` in the GREEN dispatch's own gate list,
+   not just `test`/`typecheck`.** A GREEN pass that only runs
+   `test`/`typecheck`/`lint` can declare success on a single `client.ts` that
+   already exceeds ADR-0072's 25,000-byte ceiling — the gate only fires later,
+   during a full `pnpm verify` pass, forcing a whole extra split-and-re-verify
+   round after review has already signed off (`aws/bedrock-runtime` slice 2,
+   2026-08-28, `docs/logs/2026-08-28-aws-bedrock-runtime-streaming.md`). If the
+   contract or an earlier plan already scoped a multi-file layout (e.g. a
+   separate `stream.ts` for a large method), say so explicitly in the GREEN
+   dispatch and have the implementer honor it from the start rather than
+   discovering the ceiling after the fact.
+
 8. **Phase 4 — Review (fan out in parallel).** In one message, dispatch
    `code-reviewer` and `spec-conformance-reviewer` (now in _conformance mode_),
    plus `security-reviewer` if the surface is security-sensitive (anything under

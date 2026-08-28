@@ -125,3 +125,67 @@ export interface M3LBedrockRuntimeOptions {
    */
   readonly models: readonly [string, ...(readonly string[])];
 }
+
+/**
+ * One event yielded by {@link M3LBedrockRuntimeOperations.invokeStream}.
+ * `type` is a library-owned kebab-case discriminant, not the SDK's own
+ * camelCase event names — deliberate, since `"message-stop"` fuses two
+ * distinct SDK events (`messageStop` for `stopReason`, `metadata` for
+ * `usage`) and borrowing either name alone would mislead.
+ *
+ * There is no error-shaped member: every streaming fault is a rejection of
+ * `.next()`, never a yielded value — see
+ * {@link M3LBedrockRuntimeStreamError}.
+ */
+export type M3LBedrockStreamEvent =
+  | M3LBedrockStreamStartEvent
+  | M3LBedrockStreamTextDeltaEvent
+  | M3LBedrockStreamStopEvent;
+
+/**
+ * Emitted exactly once, from the SDK's `messageStart` event, before any
+ * text.
+ */
+export interface M3LBedrockStreamStartEvent {
+  /** Discriminant tag for {@link M3LBedrockStreamEvent}. */
+  readonly type: "message-start";
+  /** Who authored the message being streamed — always `"assistant"` in practice. */
+  readonly role: M3LBedrockRuntimeRole;
+  /** The model that actually served the request — `models[0]` unless fallback advanced past it. */
+  readonly modelId: string;
+}
+
+/**
+ * Emitted for every `contentBlockDelta` event carrying a text delta.
+ * Concatenating every `text-delta.text` in yield order reconstructs the full
+ * reply text.
+ */
+export interface M3LBedrockStreamTextDeltaEvent {
+  /** Discriminant tag for {@link M3LBedrockStreamEvent}. */
+  readonly type: "text-delta";
+  /** This delta's text fragment. */
+  readonly text: string;
+  /** From the SDK's `contentBlockIndex`; defaults to `0` when the SDK omits it. */
+  readonly contentBlockIndex: number;
+}
+
+/**
+ * Emitted exactly once, last, fusing the SDK's `messageStop` (`stopReason`)
+ * and `metadata` (`usage`) events — buffered independently and fused as
+ * soon as both have arrived, regardless of which the SDK sends first.
+ */
+export interface M3LBedrockStreamStopEvent {
+  /** Discriminant tag for {@link M3LBedrockStreamEvent}. */
+  readonly type: "message-stop";
+  /** Why the model stopped generating output. */
+  readonly stopReason: M3LBedrockStopReason;
+  /**
+   * Cumulative token usage for the whole stream, read directly from the
+   * SDK's single terminal `metadata` event — there is no per-delta usage
+   * field anywhere in the union, so no client-side accumulation is
+   * performed.
+   */
+  readonly usage: M3LBedrockTokenUsage;
+  /** The model that actually served the request — `models[0]` unless fallback advanced past it. */
+  readonly modelId: string;
+}

@@ -717,7 +717,12 @@
       "M3LBedrockInvokeRequest",
       "M3LBedrockInvokeOptions",
       "M3LBedrockInvocationResult",
-      "M3LBedrockRuntimeOptions"
+      "M3LBedrockRuntimeOptions",
+      "M3LBedrockStreamEvent",
+      "M3LBedrockStreamStartEvent",
+      "M3LBedrockStreamTextDeltaEvent",
+      "M3LBedrockStreamStopEvent",
+      "M3LBedrockRuntimeStreamError"
     ]
   },
   {
