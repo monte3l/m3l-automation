@@ -81,13 +81,25 @@ nothing here needs a stub. Do not declare, export, or test `invokeStream` (or
 **`AbortSignal` cancellation.** `options?.signal` is checked against a
 module-private `isAborted(signal)` helper (the ADR-0049 named-function
 convention — see `aws/athena/client.ts`; a bare `signal?.aborted` re-check
-after an `await` produces a TS2367 false alarm) **before** any exception
-classification, at every point an abort could have occurred: before the
-initial `send()`, after each retry-runner exhaustion, and before advancing
-fallback to the next model. An abort mid-fallback stops the walk entirely —
-it never advances to the next model — and throws `M3LOperationAbortedError`
-(`ERR_OPERATION_ABORTED`, `origin: caller`, `retryable: false`) unchanged,
-never wrapped as one of this module's own error classes.
+after an `await` produces a TS2367 false alarm) at every point an abort
+could have occurred: before the initial `send()`, before advancing fallback
+to the next model, and inside the retry/fallback catch block. The two
+proactive checks (before `send()`, before advancing fallback) act on
+`isAborted(signal)` alone — there is no caught error to correlate against
+yet — and immediately throw `M3LOperationAbortedError`. The **reactive**
+check inside the catch block is stricter, matching `aws/athena/client.ts`'s
+precedent exactly: it promotes a caught rejection to
+`M3LOperationAbortedError` only when **both** `isAborted(signal)` **and**
+`isAbortError(error)` hold (`error instanceof Error && error.name ===
+"AbortError"` — the shape the AWS SDK actually throws when its own
+`abortSignal` fires mid-`send()`). A signal that happens to be aborted for
+an unrelated reason at the same moment a genuine `ValidationException` or
+other classifiable fault arrives does **not** get silently reclassified as
+an abort — the real cause is preserved and classified normally. Abort
+mid-fallback (the proactive checks) stops the walk entirely — it never
+advances to the next model — and `M3LOperationAbortedError`
+(`ERR_OPERATION_ABORTED`, `origin: caller`, `retryable: false`) is always
+thrown unchanged, never wrapped as one of this module's own error classes.
 
 ### `M3LBedrockInvokeRequest`
 
