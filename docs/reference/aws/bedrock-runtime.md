@@ -53,11 +53,16 @@ existing shape.
 is inherently caller-specific configuration with no library-owned sane
 default — a caller constructs `M3LBedrockRuntimeOperations` itself, once,
 with its own `models` list) and `options`
-is `M3LBedrockRuntimeOptions` — `{ models: readonly string[] }`, an ordered,
-non-empty fallback list (`models[0]` is the primary model id; later entries
-are tried only on a model-availability fault). Throws
-`M3LBedrockRuntimeNoModelError` at construction if `models` is empty — this is
-a caller/config error, not deferred to the first `invoke` call.
+is `M3LBedrockRuntimeOptions` — `{ models: readonly [string, ...(readonly string[])] }`,
+an ordered, **type-level non-empty** fallback list (`models[0]` is the
+primary model id; later entries are tried only on a model-availability
+fault). The non-empty-tuple type makes an empty array a compile error for a
+caller passing a literal, rather than an invariant enforced only at runtime
+— but a config- or JSON-sourced `string[]` can still arrive empty after
+being downcast to satisfy the type, so the constructor **also** throws
+`M3LBedrockRuntimeNoModelError` at construction if `models` is empty — this
+is a caller/config error, not deferred to the first `invoke` call, and stays
+as defense-in-depth for exactly that downcast case.
 
 | Method                      | Retried? | Returns                               | Throws                                                                                                                        |
 | --------------------------- | -------- | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
@@ -166,7 +171,7 @@ interface M3LBedrockInferenceConfig {
 }
 
 interface M3LBedrockRuntimeOptions {
-  readonly models: readonly string[]; // non-empty; models[0] is primary
+  readonly models: readonly [string, ...(readonly string[])]; // models[0] is primary
 }
 ```
 
@@ -218,11 +223,13 @@ diagnostics tooling reads; an own field alone would be invisible to both.
 
 ### `M3LBedrockRuntimeNoModelError`
 
-Thrown when `models` is empty at construction (`attemptedModels: []`), or
-when every model in the fallback order has been exhausted by availability
-faults (see below; `attemptedModels` lists every model id tried, in order).
-`origin: caller`, `retryable: false` — the caller's model list is the fault,
-not AWS.
+Thrown when `models` is empty at construction (`attemptedModels: []`, no
+`cause`), or when every model in the fallback order has been exhausted by
+availability faults (see below; `attemptedModels` lists every model id
+tried, in order, and `cause` chains the **last** attempt's fault — the most
+recent evidence of why the fallback list as a whole failed, not a synthetic
+message). `origin: caller`, `retryable: false` — the caller's model list is
+the fault, not AWS.
 
 ```ts
 class M3LBedrockRuntimeNoModelError extends M3LError {
@@ -233,7 +240,11 @@ class M3LBedrockRuntimeNoModelError extends M3LError {
 
 `attemptedModels` is both an own field and mirrored into
 `context.attemptedModels`, for the same `toJSON()`/diagnostics reason as
-`M3LBedrockRuntimeModelError.modelId` above.
+`M3LBedrockRuntimeModelError.modelId` above. `cause` is the standard
+`M3LError` chain (not an own field) — without it, a caller whose every model
+failed for a genuine, diagnosable AWS-side reason (a throttling storm, a
+region misconfiguration surfacing as `ModelNotReadyException` everywhere)
+would see only a bare `attemptedModels` list with no evidence of _why_.
 
 ## Fault handling and model fallback
 
@@ -340,6 +351,19 @@ const ops = new M3LBedrockRuntimeOperations(client, {
 - The wrapper never leaks an `@aws-sdk/client-bedrock-runtime` type through
   its public boundary — every request/response field is translated to a
   plain, library-owned type.
+- **A caller's prompt content can round-trip out through a chained SDK
+  exception's `.message`.** `ValidationException` and similar faults from
+  the Bedrock service can quote the offending request content in the SDK
+  exception's own message; this wrapper chains that exception unchanged via
+  `cause` (the standing library-wide `M3LError` contract — this module
+  introduces no new leak), and any log sink that renders a `cause` chain's
+  `message` (e.g. `Core.format-error`'s default renderer) will surface it
+  verbatim. Redaction in this library is key-name-scoped over structured
+  `context`/`data`, not free text, so it does not catch this. Unlike most
+  AWS wrappers, this submodule's request payload is routinely the
+  highest-sensitivity data in a run — a caller logging a caught
+  `M3LBedrockRuntimeOperationError`'s full chain should be aware the
+  `cause.message` may echo back what was sent.
 - Model-generated text is untrusted input: any future consumer parsing
   `message.content` text follows the style guide's ReDoS-conscious parsing
   rules — this submodule itself does not parse model output (V5's loop
@@ -357,6 +381,16 @@ const ops = new M3LBedrockRuntimeOperations(client, {
   a caller mistake), same as table row 5 above. This is checked **after**
   the retry runner resolves successfully — it is a response-shape fault,
   not a transport fault, so it is never retried or fallen back from.
+- **`stopReason` is validated against the closed `M3LBedrockStopReason`
+  membership**, the same `ReadonlySet` membership-check idiom used to
+  classify SDK exception names — not just checked for presence. AWS's
+  Smithy enums are open at the wire level (a future SDK/service value is not
+  a client-side type error), so a `stopReason` outside the 9 documented
+  members throws `M3LBedrockRuntimeOperationError` (malformed-response path
+  above) rather than silently admitting an unrecognized string into a type
+  callers switch on exhaustively — `content_filtered`/`guardrail_intervened`
+  are exactly the values a caller checks for a blocked generation, so a
+  silently-wrong value here is a correctness risk, not just a type nicety.
 - **Non-text content blocks in a reply.** V4's `M3LBedrockContentBlock` is
   text-only, but the SDK's `ContentBlock` union on the reply side can in
   principle carry non-text members. Per the style guide's caller-vs-external
