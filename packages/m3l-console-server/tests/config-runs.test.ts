@@ -10,7 +10,7 @@ import * as path from "node:path";
 import { describe, expect, expectTypeOf, test } from "vitest";
 
 import { M3LConsoleError } from "../src/errors/console-error.js";
-import { loadRunsConfig } from "../src/config/runs.js";
+import { loadRunsConfig, tryLoadRunsConfig } from "../src/config/runs.js";
 import type {
   LoadRunsConfigOptions,
   M3LConsoleRunsConfig,
@@ -299,5 +299,56 @@ describe("loadRunsConfig — never mutates process.env", () => {
     loadRunsConfig({ env: buildEnv() });
 
     expect(process.env).toEqual(before);
+  });
+});
+
+describe("tryLoadRunsConfig — configured", () => {
+  test("delegates to loadRunsConfig when scriptsDir alone is set", () => {
+    const env: NodeJS.ProcessEnv = { M3L_CONSOLE_RUNS_SCRIPTS_DIR: "/scripts" };
+
+    expect(tryLoadRunsConfig(env)).toEqual(loadRunsConfig({ env }));
+  });
+
+  test("delegates every overridden setting, not just scriptsDir", () => {
+    const env = buildEnv({
+      M3L_CONSOLE_RUNS_MAX_PER_SCRIPT: "2",
+      M3L_CONSOLE_RUNS_QUEUE_CAPACITY: "32",
+      M3L_CONSOLE_RUNS_STREAM_RETENTION: "512",
+      M3L_CONSOLE_RUNS_KILL_TIMEOUT_MS: "9000",
+      M3L_CONSOLE_RUNS_MAX_CONCURRENCY: "8",
+      M3L_CONSOLE_RUNS_QUEUE_TIMEOUT_MS: "60000",
+    });
+
+    expect(tryLoadRunsConfig(env)).toEqual(loadRunsConfig({ env }));
+  });
+});
+
+describe("tryLoadRunsConfig — not configured", () => {
+  test.each<[string, NodeJS.ProcessEnv]>([
+    ["the key is absent entirely", {}],
+    ["the key is an empty string", { M3L_CONSOLE_RUNS_SCRIPTS_DIR: "" }],
+    ["the key is space-only", { M3L_CONSOLE_RUNS_SCRIPTS_DIR: "   " }],
+    ["the key is tab-only", { M3L_CONSOLE_RUNS_SCRIPTS_DIR: "\t" }],
+  ])("returns undefined when %s", (_label, env) => {
+    expect(tryLoadRunsConfig(env)).toBeUndefined();
+  });
+});
+
+describe("tryLoadRunsConfig — still validates once configured", () => {
+  test("throws ERR_CONSOLE_CONFIG_INVALID when scriptsDir is set but another setting is malformed", () => {
+    const env = buildEnv({ M3L_CONSOLE_RUNS_MAX_CONCURRENCY: "not-an-int" });
+
+    expectRunsConfigError(() => tryLoadRunsConfig(env));
+  });
+});
+
+describe("tryLoadRunsConfig — never mutates the passed env", () => {
+  test("does not mutate the env object it is handed", () => {
+    const env = buildEnv({ M3L_CONSOLE_RUNS_MAX_CONCURRENCY: "8" });
+    const before = { ...env };
+
+    tryLoadRunsConfig(env);
+
+    expect(env).toEqual(before);
   });
 });

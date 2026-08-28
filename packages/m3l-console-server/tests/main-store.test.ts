@@ -34,6 +34,9 @@ import { M3LConsoleError } from "../src/errors/console-error.js";
 import * as envModule from "../src/config/env.js";
 import * as routerModule from "../src/http/router.js";
 import type { M3LRoute } from "../src/http/router.js";
+import type { M3LConsoleMetaRepository } from "../src/store/meta-repository.js";
+import type { M3LConsoleRunsRepository } from "../src/store/runs-repository.js";
+import type { M3LConsoleStoreUnit } from "../src/store/store.js";
 
 /** A minimal valid env: only the required operator name set. */
 function buildEnv(
@@ -156,8 +159,17 @@ function startWithFakeServer(overrides: Partial<StartConsoleOptions> = {}): {
  * give the fakes below an explicit local shape in RED (the real type is a
  * strict superset once it lands, and stays structurally assignable). Only
  * `isOpen`/`location`/`schemaVersion`/`close()` are ever exercised by these
- * tests — the query-executor methods are stubbed to fail loudly if a test
- * hits them by surprise.
+ * tests — the query-executor methods, `meta`, `runs`, and `transaction` are
+ * stubbed to fail loudly if a test hits them by surprise; none of the tests
+ * in this file touch `store.runs` (that seam is exercised through
+ * `tests/main-runs.test.ts`'s own fake instead), so a loud-throwing stub is
+ * correct here too, per `.claude/rules/tests.md`'s "real enough behaviour
+ * for whatever the tests touch" guidance.
+ *
+ * `meta`/`runs`/`transaction` were added once `StartConsoleOptions.openStore`
+ * widened from `M3LConsoleStoreHandle` to `M3LConsoleStoreHandle &
+ * M3LConsoleStore` (X4 slice 6 round 3b) — every `openStore` fake in this
+ * file must now satisfy the wider intersection type.
  */
 interface FakeConsoleStoreHandle {
   readonly isOpen: boolean;
@@ -168,7 +180,44 @@ interface FakeConsoleStoreHandle {
   get(): never;
   run(): never;
   script(): never;
+  readonly meta: M3LConsoleMetaRepository;
+  readonly runs: M3LConsoleRunsRepository;
+  transaction<T>(work: (unit: M3LConsoleStoreUnit) => T): T;
 }
+
+/** Throws when a `meta`-repository method is called unexpectedly on a fake store. */
+const unexpectedMetaCall = (): never => {
+  throw new Error("unexpected meta-repository call on the fake store");
+};
+
+/** Throws when a `runs`-repository method is called unexpectedly on a fake store. */
+const unexpectedRunsCall = (): never => {
+  throw new Error("unexpected runs-repository call on the fake store");
+};
+
+/** Throws when `transaction()` is called unexpectedly on a fake store. */
+function unexpectedTransactionCall<T>(): T {
+  throw new Error("unexpected transaction() call on the fake store");
+}
+
+/** A loud-throwing `meta` stub, shared by every fake store in this file. */
+const stubMetaRepository: M3LConsoleMetaRepository = {
+  describe: unexpectedMetaCall,
+  history: unexpectedMetaCall,
+};
+
+/** A loud-throwing `runs` stub, shared by every fake store in this file. */
+const stubRunsRepository: M3LConsoleRunsRepository = {
+  insertQueued: unexpectedRunsCall,
+  claimForStart: unexpectedRunsCall,
+  finish: unexpectedRunsCall,
+  get: unexpectedRunsCall,
+  list: unexpectedRunsCall,
+  countByStatus: unexpectedRunsCall,
+  countRunningForScript: unexpectedRunsCall,
+  reconcileOrphaned: unexpectedRunsCall,
+  abandonQueued: unexpectedRunsCall,
+};
 
 /**
  * Builds a recording {@link FakeConsoleStoreHandle}: `close()` records every
@@ -202,6 +251,9 @@ function createFakeStore(
     get: unexpectedCall,
     run: unexpectedCall,
     script: unexpectedCall,
+    meta: stubMetaRepository,
+    runs: stubRunsRepository,
+    transaction: unexpectedTransactionCall,
   };
   return { store, closeCallCount: () => closeCalls };
 }
@@ -210,7 +262,8 @@ function createFakeStore(
  * Builds a {@link FakeConsoleStoreHandle} that is already closed
  * (`isOpen: false`) — the shape `/ready`'s `M3LReadinessProbe` reads
  * structurally. Only `isOpen` is exercised by the test below; the
- * query-executor methods are stubbed to fail loudly if hit by surprise.
+ * query-executor/`meta`/`runs`/`transaction` members are stubbed to fail
+ * loudly if hit by surprise.
  */
 function createClosedFakeStore(): FakeConsoleStoreHandle {
   const unexpectedCall = (): never => {
@@ -227,6 +280,9 @@ function createClosedFakeStore(): FakeConsoleStoreHandle {
     get: unexpectedCall,
     run: unexpectedCall,
     script: unexpectedCall,
+    meta: stubMetaRepository,
+    runs: stubRunsRepository,
+    transaction: unexpectedTransactionCall,
   };
 }
 

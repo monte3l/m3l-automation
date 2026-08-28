@@ -954,6 +954,80 @@ describe("createConsoleRunsRepository — reconcileOrphaned()", () => {
 });
 
 // ---------------------------------------------------------------------------
+// abandonQueued — the guarded queued -> interrupted transition for a run
+// that timed out while still queued (never claimed)
+// ---------------------------------------------------------------------------
+
+describe("createConsoleRunsRepository — abandonQueued()", () => {
+  test("on a queued run: returns true, transitions to interrupted with outcome interrupted and the given endedAtMs, and leaves startedAtMs undefined", () => {
+    const database = createMigratedDatabase();
+    const repository = createRepository(database);
+    repository.insertQueued(
+      insertInput({ id: "run-abandon-queued", queuedAtMs: 1_000 }),
+    );
+
+    const abandoned = repository.abandonQueued("run-abandon-queued", 9_000);
+
+    expect(abandoned).toBe(true);
+    const record = repository.get("run-abandon-queued");
+    expect(record?.status).toBe("interrupted");
+    expect(record?.outcome).toBe("interrupted");
+    expect(record?.endedAtMs).toBe(9_000);
+    // The whole point of this method: a run that timed out while still
+    // queued never executed, so its started_at_ms must stay undefined
+    // rather than being fabricated by a claimForStart-then-finish
+    // workaround.
+    expect(record?.startedAtMs).toBeUndefined();
+  });
+
+  test("the written interrupted-with-no-started_at_ms row satisfies the real STRICT table's CHECK constraints — the write does not throw", () => {
+    const database = createMigratedDatabase();
+    const repository = createRepository(database);
+    repository.insertQueued(
+      insertInput({ id: "run-abandon-checks", queuedAtMs: 1_000 }),
+    );
+
+    const thrown = captureFailure(() =>
+      repository.abandonQueued("run-abandon-checks", 9_000),
+    );
+
+    expect(thrown).toBeUndefined();
+    expect(repository.get("run-abandon-checks")?.status).toBe("interrupted");
+  });
+
+  test("on a run already running: returns false and leaves the row byte-for-byte unchanged", () => {
+    const database = createMigratedDatabase();
+    const repository = createRepository(database);
+    const { id } = insertAndClaim(repository, { id: "run-abandon-running" });
+    const before = readRawRun(database, id);
+
+    const abandoned = repository.abandonQueued(id, 9_999);
+
+    expect(abandoned).toBe(false);
+    expect(readRawRun(database, id)).toEqual(before);
+  });
+
+  test("on an already-terminal run: returns false and leaves the row byte-for-byte unchanged", () => {
+    const database = createMigratedDatabase();
+    const repository = createRepository(database);
+    const id = insertAndFinish(repository, { id: "run-abandon-terminal" });
+    const before = readRawRun(database, id);
+
+    const abandoned = repository.abandonQueued(id, 9_999);
+
+    expect(abandoned).toBe(false);
+    expect(readRawRun(database, id)).toEqual(before);
+  });
+
+  test("on an unknown id: returns false", () => {
+    const database = createMigratedDatabase();
+    const repository = createRepository(database);
+
+    expect(repository.abandonQueued("does-not-exist", 1_000)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Failure mapping — a closed database
 // ---------------------------------------------------------------------------
 
@@ -1039,6 +1113,7 @@ describe("createConsoleRunsRepository — type contract", () => {
     expectTypeOf<M3LConsoleRunsRepository>().toHaveProperty(
       "reconcileOrphaned",
     );
+    expectTypeOf<M3LConsoleRunsRepository>().toHaveProperty("abandonQueued");
   });
 
   test("M3LRunListQuery requires limit but status/script are optional", () => {

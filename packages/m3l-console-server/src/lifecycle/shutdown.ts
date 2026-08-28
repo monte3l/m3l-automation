@@ -21,8 +21,9 @@ import type { M3LListeningServer } from "./http-server.js";
 
 /**
  * The pieces {@link runShutdownSequence} needs from the composed runtime:
- * the drain controller and the logger a failing disposable close is
- * reported through.
+ * the drain controller, the logger a failing disposable close is reported
+ * through, and (X4 slice 6) the optional run subsystem drained alongside the
+ * HTTP drain.
  *
  * @example
  * ```ts
@@ -32,6 +33,12 @@ import type { M3LListeningServer } from "./http-server.js";
 export interface M3LShutdownRuntime {
   readonly drain: M3LDrainController;
   readonly logger: Core.M3LLogger;
+  /**
+   * The X4 run subsystem's drain seam, when one is wired (see `main.ts`'s
+   * `M3LConsoleRuntime.runs`). Absent when run orchestration is disabled —
+   * {@link runShutdownSequence} treats that as an already-settled drain.
+   */
+  readonly runs?: M3LShutdownDrainable;
 }
 
 /**
@@ -46,6 +53,23 @@ export interface M3LShutdownRuntime {
  */
 export interface M3LShutdownDisposable {
   close(): void;
+}
+
+/**
+ * A structural seam over an abortable, awaitable run subsystem — e.g. the
+ * X4 `runs/composition.ts` `M3LRunSubsystem`. Declared here (not imported),
+ * the same trick {@link M3LShutdownDisposable} already uses: `lifecycle/`
+ * may import only `lifecycle`, `errors`, `net` (ADR-0065), never `runs/`, so
+ * this port lets `M3LRunSubsystem` satisfy it structurally without either
+ * module ever importing the other.
+ *
+ * @example
+ * ```ts
+ * const drainable: M3LShutdownDrainable = { drain: () => Promise.resolve() };
+ * ```
+ */
+export interface M3LShutdownDrainable {
+  drain(): Promise<void>;
 }
 
 /** The exit code forced on a second shutdown signal. */
@@ -64,12 +88,19 @@ const FORCED_SECOND_SIGNAL_EXIT_CODE = 1;
  * `server.close()` already runs its own idle-connection sweep internally
  * (`lifecycle/http-server.ts`'s `createCloseOnce`) — not duplicated here.
  *
- * `disposable` closes only after both settle — an in-flight response may
- * still be reading it. A failing `close()` is logged at error level but
- * never rejects this sequence: the process is about to exit anyway, which
- * releases the handle regardless, and turning a graceful drain into a
- * rejected shutdown for a cosmetic close failure would cost the operator the
- * drain outcome they actually need.
+ * `disposable` closes only after ALL THREE — the HTTP drain, the listener
+ * close, and (X4 slice 6) `runtime.runs`'s drain, when one is wired — settle.
+ * An in-flight response may still be reading it, and (now) an in-flight run
+ * may still be writing to it. `runtime.runs?.drain()` is started ALONGSIDE
+ * the HTTP drain, not sequenced after it settles: a run outliving the HTTP
+ * drain window is exactly the `ECONNRESET`-for-watchers failure this design
+ * exists to prevent — a run's SSE/log watcher would otherwise be torn down
+ * by the listener closing while the run it is watching is still in flight.
+ * A failing `close()` is logged at error level but never rejects this
+ * sequence: the process is about to exit anyway, which releases the handle
+ * regardless, and turning a graceful drain into a rejected shutdown for a
+ * cosmetic close failure would cost the operator the drain outcome they
+ * actually need.
  *
  * @example
  * ```ts
@@ -81,9 +112,14 @@ async function runShutdownSequence(
   server: M3LListeningServer,
   disposable: M3LShutdownDisposable,
 ): Promise<M3LDrainOutcome> {
+  const runsPromise = runtime.runs?.drain() ?? Promise.resolve();
   const drainPromise = runtime.drain.drain();
   const closePromise = server.close();
-  const [outcome] = await Promise.all([drainPromise, closePromise]);
+  const [outcome] = await Promise.all([
+    drainPromise,
+    closePromise,
+    runsPromise,
+  ]);
   try {
     disposable.close();
   } catch (cause) {
