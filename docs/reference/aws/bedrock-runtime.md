@@ -370,12 +370,17 @@ const ops = new M3LBedrockRuntimeOperations(client, {
   `cause` (the standing library-wide `M3LError` contract — this module
   introduces no new leak), and any log sink that renders a `cause` chain's
   `message` (e.g. `Core.format-error`'s default renderer) will surface it
-  verbatim. Redaction in this library is key-name-scoped over structured
-  `context`/`data`, not free text, so it does not catch this. Unlike most
-  AWS wrappers, this submodule's request payload is routinely the
-  highest-sensitivity data in a run — a caller logging a caught
-  `M3LBedrockRuntimeOperationError`'s full chain should be aware the
-  `cause.message` may echo back what was sent.
+  verbatim. `toJSON()` is unaffected — it serializes only `cause.name`, never
+  `cause.message`, so structured/JSON log sinks do not leak this; the
+  exposure is specific to a renderer that walks the `cause` chain's
+  `.message` text. Redaction in this library is key-name-scoped (`key=value`
+  / `"key": "value"` patterns), so unkeyed prompt prose in a message string
+  is not caught by it. Unlike most AWS wrappers, this submodule's request
+  payload is routinely the highest-sensitivity data in a run — a caller
+  logging a caught `M3LBedrockRuntimeOperationError`'s **or
+  `M3LBedrockRuntimeNoModelError`'s** full chain should be aware
+  `cause.message` may echo back what was sent (the latter chains the last
+  fallback attempt's fault the same way, once every model is exhausted).
 - Model-generated text is untrusted input: any future consumer parsing
   `message.content` text follows the style guide's ReDoS-conscious parsing
   rules — this submodule itself does not parse model output (V5's loop
