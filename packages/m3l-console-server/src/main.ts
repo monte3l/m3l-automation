@@ -30,7 +30,7 @@ import { createConsoleRequestListener } from "./http/handler.js";
 import type { M3LConsoleRequestListener } from "./http/handler.js";
 import { createRouter } from "./http/router.js";
 import type { M3LRoute, M3LRouter } from "./http/router.js";
-import { createHealthRoutes } from "./http/routes/health.js";
+import { createBuiltInRoutes } from "./http/routes/built-in.js";
 import { createOriginGuard } from "./http/origin-guard.js";
 import { createDrainMiddleware } from "./http/drain-middleware.js";
 import { createAuthMiddleware } from "./http/auth-middleware.js";
@@ -229,33 +229,31 @@ function logPosture(logger: Core.M3LLogger, config: M3LConsoleConfig): void {
 
 /**
  * Builds the router the request listener actually dispatches through: the
- * built-in health routes (see {@link createHealthRoutes}) ahead of
- * `routes`, so a caller can never accidentally shadow `/health`/`/ready`.
- * Deliberately a SEPARATE router instance from the one exposed as
+ * built-in routes (see {@link createBuiltInRoutes}) ahead of `routes`, so a
+ * caller can never accidentally shadow `/health`/`/ready`. Deliberately a
+ * SEPARATE router instance from the one exposed as
  * {@link M3LConsoleRuntime.router} — that field reflects `options.routes`
- * verbatim, so a caller introspecting it sees exactly what it registered,
- * not an implementation detail of how liveness/readiness are served.
+ * verbatim, not an implementation detail of how liveness/readiness are
+ * served.
  *
- * `store` is threaded through to {@link createHealthRoutes} so `/ready`
- * actually reflects the real store's health in every deployment — this call
- * site is also the compiler-checked proof that
+ * This call site is also the compiler-checked proof that
  * {@link M3LConsoleStoreLifecycle} (and the full {@link M3LConsoleStoreHandle}
- * that satisfies it) structurally conforms to `health.ts`'s
- * `M3LReadinessProbe`, without creating an `http -> store` ESLint zone edge
- * (that module deliberately declares its own narrower shape rather than
- * importing this one).
+ * that satisfies it) structurally conforms to {@link createBuiltInRoutes}'s
+ * store-probe shape, without creating an `http -> store` ESLint zone edge.
  */
 function buildDispatchRouter(
   drain: M3LDrainController,
   routes: readonly M3LRoute[],
   store: M3LConsoleStoreLifecycle | undefined,
 ): M3LRouter {
-  const healthRoutes = createHealthRoutes({
-    drain,
-    startedAt: Date.now(),
-    ...(store !== undefined && { store }),
-  });
-  return createRouter([...healthRoutes, ...routes]);
+  return createRouter(
+    createBuiltInRoutes({
+      drain,
+      startedAt: Date.now(),
+      ...(store !== undefined && { store }),
+      routes,
+    }),
+  );
 }
 
 /**
