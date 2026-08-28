@@ -35,6 +35,8 @@ const LOG_LEVEL_KEY = "m3l.console.log.level";
 const DB_PATH_KEY = "m3l.console.db.path";
 /** Dotted config key for the embedded store's SQLite busy-timeout. */
 const DB_BUSY_TIMEOUT_KEY = "m3l.console.db.busy.timeout.ms";
+/** Dotted config key for the request-body byte cap (X4 slice 7-pre). */
+const MAX_BODY_BYTES_KEY = "m3l.console.max.body.bytes";
 
 /** Default bind host: loopback-only per ADR-0071. */
 const DEFAULT_HOST = "127.0.0.1";
@@ -46,6 +48,8 @@ const DEFAULT_DRAIN_TIMEOUT_MS = 15000;
 const DEFAULT_LOG_LEVEL: Core.M3LLogLevelFloor = "info";
 /** Default SQLite busy-timeout, in milliseconds. */
 const DEFAULT_DB_BUSY_TIMEOUT_MS = 5000;
+/** Default request-body byte cap: 64 KiB (X4 slice 7-pre). */
+const DEFAULT_MAX_BODY_BYTES = 65536;
 
 /** The lowest valid TCP port. */
 const MIN_PORT = 1;
@@ -130,6 +134,11 @@ const SETTINGS: readonly SettingDescriptor[] = [
     key: DB_BUSY_TIMEOUT_KEY,
     type: Core.M3LConfigParameterType.INT,
     defaultValue: DEFAULT_DB_BUSY_TIMEOUT_MS,
+  },
+  {
+    key: MAX_BODY_BYTES_KEY,
+    type: Core.M3LConfigParameterType.INT,
+    defaultValue: DEFAULT_MAX_BODY_BYTES,
   },
 ];
 
@@ -248,6 +257,26 @@ function resolveDatabaseBusyTimeoutMs(
 }
 
 /**
+ * Reads the resolved request-body byte cap and rejects a non-positive
+ * value. Unlike {@link resolveDrainTimeoutMs}/{@link resolveDatabaseBusyTimeoutMs},
+ * this is a byte count, not a timer delay, so {@link MAX_TIMER_DELAY_MS}
+ * does not apply.
+ */
+function resolveMaxBodyBytes(accessor: Core.M3LConfigAccessor): number {
+  const maxBodyBytes = wrapConfigRead(MAX_BODY_BYTES_KEY, () =>
+    accessor.numberWithDefault(MAX_BODY_BYTES_KEY, DEFAULT_MAX_BODY_BYTES),
+  );
+  if (!Number.isInteger(maxBodyBytes) || maxBodyBytes <= 0) {
+    throw new M3LConsoleError(
+      CONFIG_INVALID_CODE,
+      `configuration key '${MAX_BODY_BYTES_KEY}' must be a positive integer number of bytes`,
+      { context: { key: MAX_BODY_BYTES_KEY } },
+    );
+  }
+  return maxBodyBytes;
+}
+
+/**
  * The console server's resolved boot-time configuration.
  *
  * @example
@@ -274,6 +303,12 @@ export interface M3LConsoleConfig {
   readonly databasePath: string;
   /** The embedded store's SQLite `busy_timeout`, in milliseconds. */
   readonly databaseBusyTimeoutMs: number;
+  /**
+   * The request-body byte cap `http/handler.ts` threads into
+   * `http/body.ts`'s `readJsonBody` (X4 slice 7-pre). Defaults to `65536`
+   * (64 KiB).
+   */
+  readonly maxBodyBytes: number;
 }
 
 /**
@@ -314,7 +349,9 @@ export interface LoadConsoleConfigOptions {
  * `":memory:"`, a `file:`-prefixed value, or one ending in a path separator)
  * and defaults to `<dataDir>/console/console.sqlite`.
  * `M3L_CONSOLE_DB_BUSY_TIMEOUT_MS` must be a positive integer no greater than
- * {@link MAX_TIMER_DELAY_MS}, defaulting to `5000`. Every failure surfaces as an
+ * {@link MAX_TIMER_DELAY_MS}, defaulting to `5000`.
+ * `M3L_CONSOLE_MAX_BODY_BYTES` must be a positive integer, defaulting to
+ * `65536` (64 KiB). Every failure surfaces as an
  * {@link M3LConsoleError} with code `"ERR_CONSOLE_CONFIG_INVALID"`, naming
  * the offending key and never echoing the raw value (which may be a secret)
  * — with one deliberate, reasoned exception: a rejected `M3L_CONSOLE_HOST`
@@ -371,6 +408,7 @@ export function loadConsoleConfig(
     }),
   });
   const databaseBusyTimeoutMs = resolveDatabaseBusyTimeoutMs(accessor);
+  const maxBodyBytes = resolveMaxBodyBytes(accessor);
 
   return {
     host,
@@ -381,5 +419,6 @@ export function loadConsoleConfig(
     logLevel,
     databasePath,
     databaseBusyTimeoutMs,
+    maxBodyBytes,
   };
 }

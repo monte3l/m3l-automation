@@ -200,6 +200,18 @@ const CLASSIFICATION_TABLE: Record<
     retryable: true,
     fault: false,
   },
+  ERR_CONSOLE_BODY_TOO_LARGE: {
+    status: 413,
+    origin: "caller",
+    retryable: false,
+    fault: false,
+  },
+  ERR_CONSOLE_UNSUPPORTED_MEDIA_TYPE: {
+    status: 415,
+    origin: "caller",
+    retryable: false,
+    fault: false,
+  },
 };
 
 // `Object.entries` widens the key to `string`; `CLASSIFICATION_TABLE`'s
@@ -530,6 +542,17 @@ describe("isFaultError", () => {
 
   test("returns true for a plain Error", () => {
     expect(isFaultError(new Error("boom"))).toBe(true);
+  });
+
+  // THE NARROWNESS PIN: the abort exemption is a targeted `instanceof`
+  // check on `Core.M3LOperationAbortedError`, not a blanket "any
+  // non-M3LConsoleError value is fine". The immediately-preceding plain
+  // `Error` test proves that a foreign value is still a fault by default;
+  // this test proves the one, specific carve-out `readJsonBody`'s abort
+  // path needs, so a mid-body client disconnect or drain-triggered abort
+  // never logs a spurious "unhandled failure" diagnostic.
+  test("returns false for Core.M3LOperationAbortedError (routine abort — client disconnect or drain, not a fault)", () => {
+    expect(isFaultError(new Core.M3LOperationAbortedError())).toBe(false);
   });
 
   test("returns true for a thrown string", () => {

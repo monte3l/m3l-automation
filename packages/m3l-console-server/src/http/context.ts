@@ -136,6 +136,17 @@ export interface M3LRequestContext {
    * Defaults to `{}`, never `undefined`.
    */
   readonly headers: Readonly<Record<string, string | undefined>>;
+  /**
+   * The request's parsed JSON body, when one was read. `http/handler.ts`'s
+   * `runRequest` reads and parses it (via `http/body.ts`'s `readJsonBody`)
+   * before dispatching to the matched route's own handler, for a method
+   * that may carry one (`POST`/`PUT`/`PATCH`) — attached via
+   * {@link withBody}. `undefined` for every other method, for a body-less
+   * request, and for a `preRouting`/auth middleware observing `ctx` before
+   * that read has run (see `withBody`'s placement in `http/handler.ts`'s
+   * `dispatch`, which runs the read only once auth has already passed).
+   */
+  readonly body?: unknown;
 }
 
 /**
@@ -269,4 +280,27 @@ export function withAccessMode(
   mode: M3LRouteAuth,
 ): M3LRequestContext {
   return Object.freeze({ ...ctx, accessMode: mode });
+}
+
+/**
+ * Returns a new frozen {@link M3LRequestContext} identical to `ctx` except
+ * for `body`. Does not mutate `ctx`. Applied by `http/handler.ts`'s
+ * `dispatch`, strictly after both the `preRouting` chain (the origin guard)
+ * and the matched route's own `middlewares` chain (auth) have already run —
+ * see {@link M3LRequestContext.body}'s TSDoc for why that ordering matters.
+ *
+ * @param ctx - The context to derive from.
+ * @param body - The parsed JSON body, or `undefined` for a body-less request.
+ * @returns The new context.
+ *
+ * @example
+ * ```ts
+ * const withParsedBody = withBody(ctx, { scriptName: "hello-world" });
+ * ```
+ */
+export function withBody(
+  ctx: M3LRequestContext,
+  body: unknown,
+): M3LRequestContext {
+  return Object.freeze({ ...ctx, body });
 }

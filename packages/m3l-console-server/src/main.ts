@@ -352,6 +352,7 @@ export function createConsoleRuntime(
     preRouting: [createOriginGuard()],
     logger,
     signal: drain.signal,
+    maxBodyBytes: config.maxBodyBytes,
   });
 
   return {
