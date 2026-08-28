@@ -23,4 +23,13 @@ describe("App", () => {
     expect(screen.getByText(/m3l console/i)).toBeInTheDocument();
     expect(screen.getByTestId("health-banner")).toBeInTheDocument();
   });
+
+  test("propagates a failed health check through to the banner's unreachable state", async () => {
+    render(<App />);
+
+    const banner = await screen.findByText(/unreachable/i);
+
+    expect(banner.textContent).toContain("unreachable");
+    expect(banner.textContent).toContain("Service Unavailable");
+  });
 });
