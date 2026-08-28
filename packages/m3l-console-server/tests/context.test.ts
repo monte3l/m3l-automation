@@ -12,6 +12,7 @@ import {
   CORRELATION_ID_HEADER,
   createRequestContext,
   withAccessMode,
+  withBody,
   withOperator,
   withParams,
 } from "../src/http/context.js";
@@ -359,5 +360,61 @@ describe("withAccessMode", () => {
     expect(withAll.operator).toEqual(operator);
     expect(withAll.params).toEqual({ id: "1" });
     expect(withAll.accessMode).toBe("exempt");
+  });
+});
+
+describe("withBody", () => {
+  test("returns a new frozen context carrying the parsed body, without mutating the original", () => {
+    const ctx = createRequestContext(buildInput());
+    const body = { scriptName: "hello-world" };
+
+    const next = withBody(ctx, body);
+
+    expect(next).not.toBe(ctx);
+    expect(next.body).toEqual(body);
+    expect(ctx.body).toBeUndefined();
+    expect(Object.isFrozen(next)).toBe(true);
+  });
+
+  test("accepts undefined for a body-less request", () => {
+    const ctx = createRequestContext(buildInput());
+
+    const next = withBody(ctx, undefined);
+
+    expect(next).not.toBe(ctx);
+    expect(next.body).toBeUndefined();
+    expect(Object.isFrozen(next)).toBe(true);
+  });
+
+  test("preserves every other field from the original context", () => {
+    const ctx = createRequestContext(
+      buildInput({ url: "/api/v1/runs?x=1", now: () => 999 }),
+    );
+
+    const next = withBody(ctx, { scriptName: "hello-world" });
+
+    expect(next.method).toBe(ctx.method);
+    expect(next.path).toBe(ctx.path);
+    expect(next.correlationId).toBe(ctx.correlationId);
+    expect(next.receivedAt).toBe(999);
+    expect(next.params).toEqual(ctx.params);
+    expect(next.operator).toBe(ctx.operator);
+    expect(next.accessMode).toBe(ctx.accessMode);
+    expect(next.signal).toBe(ctx.signal);
+  });
+
+  test("preserves params, operator, and accessMode already attached by prior derivers", () => {
+    const ctx = createRequestContext(buildInput());
+    const operator: M3LOperatorProfile = { name: "ada", email: undefined };
+
+    const withOp = withOperator(ctx, operator);
+    const withBoth = withParams(withOp, { id: "1" });
+    const withMode = withAccessMode(withBoth, "required");
+    const withAll = withBody(withMode, { scriptName: "hello-world" });
+
+    expect(withAll.operator).toEqual(operator);
+    expect(withAll.params).toEqual({ id: "1" });
+    expect(withAll.accessMode).toBe("required");
+    expect(withAll.body).toEqual({ scriptName: "hello-world" });
   });
 });

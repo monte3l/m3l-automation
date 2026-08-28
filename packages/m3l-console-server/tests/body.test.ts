@@ -317,6 +317,20 @@ describe("readJsonBody — size cap", () => {
         "content-type": "application/json",
       });
 
+      // Counts `data` events actually delivered to a listener — attached
+      // before the read starts, so it sees exactly what `readJsonBody`'s
+      // own listener sees. This (not `chunksServed`, which counts `_read()`
+      // pushes) is the safe discriminator once the cap response is
+      // `pause()` rather than `destroy()`: pausing a Node `Readable` stops
+      // it emitting further `data` events, but its internal read-ahead
+      // keeps pulling already-available bytes into its buffer regardless,
+      // so `chunksServed` reaches `chunks.length` even under a correctly
+      // streaming implementation for a body this small.
+      let dataEventsSeen = 0;
+      req.on("data", () => {
+        dataEventsSeen += 1;
+      });
+
       let thrown: unknown;
       try {
         await readJsonBody(asIncomingMessage(req), {
@@ -337,12 +351,15 @@ describe("readJsonBody — size cap", () => {
       // every chunk through to the stream's natural `end` (there is no
       // content-length to consult instead) — so it would necessarily drain
       // all 5 chunks and observe `end`. A genuinely streaming implementation
-      // stops accumulating and destroys the request the moment the running
-      // total crosses `maxBytes` (after chunk 3: 60 > 50), so `end` never
-      // fires and at least one chunk is left unconsumed.
+      // stops consuming the moment the running total crosses `maxBytes`
+      // (after chunk 3: 60 > 50): it removes its own `data`/`end` listeners
+      // and pauses the request right there — rather than destroying it,
+      // which would tear down the connection before the 413 response could
+      // reach a client still mid-upload — so `end` never fires and
+      // `dataEventsSeen` never reaches all 5 chunks.
       expect(req.endEmitted).toBe(false);
-      expect(req.chunksServed).toBeLessThan(chunks.length);
-      expect(req.destroyed).toBe(true);
+      expect(dataEventsSeen).toBeLessThan(chunks.length);
+      expect(req.isPaused()).toBe(true);
     },
   );
 
@@ -353,6 +370,15 @@ describe("readJsonBody — size cap", () => {
       "content-type": "application/json",
       // Lies: claims 10 bytes (under the cap) while 100 will actually arrive.
       "content-length": "10",
+    });
+
+    // Same discriminator as the streaming-cap test above: counts `data`
+    // events actually delivered, which stays capped under a `pause()`-based
+    // implementation even though `chunksServed` (a push-into-buffer count)
+    // does not — see the comment there for why.
+    let dataEventsSeen = 0;
+    req.on("data", () => {
+      dataEventsSeen += 1;
     });
 
     let thrown: unknown;
@@ -369,10 +395,11 @@ describe("readJsonBody — size cap", () => {
     expect((thrown as M3LConsoleError).code).toBe("ERR_CONSOLE_BODY_TOO_LARGE");
     // A lying content-length must not let the fast path wave this through:
     // the streaming path must actually have run (readCalls > 0), and — same
-    // discriminator as above — must not have drained the whole body.
+    // discriminator as above — must not have delivered the whole body as
+    // `data` events before stopping.
     expect(req.readCalls).toBeGreaterThan(0);
     expect(req.endEmitted).toBe(false);
-    expect(req.chunksServed).toBeLessThan(chunks.length);
+    expect(dataEventsSeen).toBeLessThan(chunks.length);
   });
 });
 

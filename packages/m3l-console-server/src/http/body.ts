@@ -76,15 +76,6 @@ function unsupportedMediaTypeError(): M3LConsoleError {
 }
 
 /**
- * Streams `req`'s body, capping it at `options.maxBytes` while chunks
- * arrive — destroying `req` and rejecting the instant the running total
- * crosses the cap, never after draining to `'end'` first — and parses the
- * accumulated bytes as JSON once the stream ends within the cap. Resolves
- * `undefined` when the stream ends having delivered zero bytes (a body-less
- * request that could not be identified as such from `content-length` alone,
- * e.g. chunked transfer-encoding with no data).
- */
-/**
  * Resolves/rejects the promise once the stream has ended within cap:
  * `undefined` for zero bytes, an unsupported-media-type rejection for a
  * non-empty body whose `contentType` is not JSON, or the parsed JSON value
@@ -118,6 +109,28 @@ function settleCollectedBody(
   }
 }
 
+/**
+ * Streams `req`'s body, capping it at `options.maxBytes` while chunks
+ * arrive — rejecting the instant the running total crosses the cap, never
+ * after draining to `'end'` first — and parses the accumulated bytes as JSON
+ * once the stream ends within the cap. Resolves `undefined` when the stream
+ * ends having delivered zero bytes (a body-less request that could not be
+ * identified as such from `content-length` alone, e.g. chunked
+ * transfer-encoding with no data).
+ *
+ * Crossing the cap does NOT destroy `req`. A chunked (no `content-length`)
+ * upload is still actively arriving at that point — destroying the socket
+ * tears down the TCP connection while the client is still writing to it, so
+ * the 413 this rejection leads to would never reach the client (it observes
+ * `ECONNRESET` instead of the documented status). Instead, this removes its
+ * own listeners (so no further chunk is ever pushed), drops the
+ * already-accumulated `chunks`, and pauses `req` — memory stays bounded at
+ * roughly `maxBytes` regardless of how much more the client goes on sending,
+ * and the socket itself is left alone for the caller's response write to
+ * reach the client normally. That reasoning does not apply to
+ * {@link readJsonBody}'s `content-length` fast path, which never reads a
+ * byte — see its TSDoc.
+ */
 function streamAndParseBody(
   req: IncomingMessage,
   contentType: string | undefined,
@@ -149,7 +162,14 @@ function streamAndParseBody(
       total += chunk.length;
       if (total > options.maxBytes) {
         finish(() => {
-          req.destroy();
+          // Stop retaining bytes without tearing down the socket: `finish`
+          // has already removed this listener, so no further chunk is ever
+          // pushed; dropping what is already collected and pausing `req`
+          // keeps memory bounded at roughly `maxBytes` without discarding
+          // the 413 response this rejection leads to (see this function's
+          // TSDoc for why destroying here would do exactly that).
+          chunks.length = 0;
+          req.pause();
           reject(bodyTooLargeError(options.maxBytes));
         });
         return;
@@ -196,6 +216,18 @@ function streamAndParseBody(
  * size), the cap is enforced WHILE streaming instead — see
  * {@link streamAndParseBody} — so neither a missing nor an understated
  * `content-length` can bypass the limit.
+ *
+ * The two `content-length` fast-path rejections deliberately do **not**
+ * call `req.destroy()`: nothing has been read into memory yet (unread
+ * bytes stay in the kernel's socket buffer under TCP flow control, not in
+ * this process), so there is no leak to close against, and destroying the
+ * socket before the caller writes the 413/415 response discards the
+ * response itself — the client would see a connection reset instead of the
+ * documented status code. The streaming path in {@link streamAndParseBody}
+ * reaches the same conclusion by a different route: it also never destroys
+ * `req` on a cap breach, precisely so the 413 it rejects with actually
+ * reaches a client still mid-upload — see that function's TSDoc for how it
+ * keeps memory bounded without the socket teardown.
  *
  * @param req - The inbound request.
  * @param options - See {@link M3LReadJsonBodyOptions}.
