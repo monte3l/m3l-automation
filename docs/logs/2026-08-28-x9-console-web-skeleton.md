@@ -28,8 +28,8 @@ push); the `claude-pr-review` bot's second pass then blocked on
 a local error class, a filed follow-up (issue #724), and an explicit override
 of the `review` required check with documented reasoning (see divergence #3).
 Final state: 6 `src/` files (all but `main.tsx` individually ≥90/83/80/89%
-coverage), 24 tests, `pnpm verify` 48/48 local steps passed (6 push-only
-skipped).
+coverage), 24 tests, `pnpm verify` 48 passed / 6 skipped (gitleaks, `Cache
+turbo`, 4 push-only hub-alarm checks).
 
 **PR 2 — `feat/console-web-playwright` (X9b, staged, not yet pushed).** Adds
 `playwright.config.ts` (Chromium only, `webServer` builds + `vite preview`s
@@ -45,8 +45,8 @@ Chromium install, and a dated ADR-0067 Update recording the CI-cost decision
 and the two alternatives rejected. Tracker rows flip to Done in this PR
 (`IMPLEMENTATION.md`, `ROADMAP.md`), plus a one-token stale-anchor fix
 (`ROADMAP.md` pointed the X-series at `#cli-evolution-wave-u-series`).
-`pnpm verify`: 48 passed, 9 skipped (6 push-only + gitleaks + the 3 new
-`skipReason` e2e entries).
+`pnpm verify`: 48 passed, 9 skipped (gitleaks, `Cache turbo`, 4 push-only
+hub-alarm checks, plus the 3 new e2e `skipReason` entries).
 
 Skills used: starting-work, creating-prs (×2), syncing-docs (×2),
 resolving-pr-comments, writing-work-logs.
