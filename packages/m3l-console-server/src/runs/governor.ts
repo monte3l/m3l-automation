@@ -167,7 +167,7 @@ export function createRunGovernor(
       queuedCount += 1;
     },
     dequeue(): void {
-      queuedCount -= 1;
+      if (queuedCount > 0) queuedCount -= 1;
     },
     get activeCount(): number {
       return activeCount;

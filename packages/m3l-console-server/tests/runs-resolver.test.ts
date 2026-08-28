@@ -50,15 +50,15 @@ describe("resolveScript — happy path", () => {
     );
     expect(existsSyncSpy).toHaveBeenNthCalledWith(
       2,
-      path.join(SCRIPTS_ROOT, "sqs-etl", "src", "command.ts"),
+      path.join(SCRIPTS_ROOT, "sqs-etl", "dist", "command.js"),
     );
   });
 });
 
 describe("resolveScript — script without a command module", () => {
-  test("hasCommandModule is false when src/command.ts is absent", () => {
+  test("hasCommandModule is false when dist/command.js is absent", () => {
     vi.spyOn(fs, "existsSync").mockImplementation(
-      (target: fs.PathLike) => !String(target).endsWith("command.ts"),
+      (target: fs.PathLike) => !String(target).endsWith("command.js"),
     );
 
     const resolved = resolveScript("json-etl", SCRIPTS_ROOT);

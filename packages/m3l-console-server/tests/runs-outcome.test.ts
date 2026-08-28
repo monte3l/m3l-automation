@@ -45,3 +45,61 @@ describe("mapSpawnOutcome — return type", () => {
     expectTypeOf(outcome).toEqualTypeOf<Core.M3LRunOutcome>();
   });
 });
+
+// Regression coverage for PR #721's review finding: `mapCommandOutcome`
+// (src/runs/executor.ts) can only express a hosted command's own
+// "interrupted"/"partial" self-report through exitCode/killRequested, and
+// `mapSpawnOutcome`'s exit-code-only fallback then degrades a self-reported
+// "interrupted" or "partial" (with killRequested: false) to "failure". The
+// fix under test: `M3LSpawnExitInfo` gains an optional `outcome` field that
+// `mapSpawnOutcome` prefers over its exit-code/killRequested derivation.
+describe("mapSpawnOutcome — explicit outcome field takes priority", () => {
+  // Each row's `exit` fields are deliberately chosen so the exit-code/
+  // killRequested fallback would derive a DIFFERENT outcome than the
+  // explicit `outcome` field states — proving the explicit value wins
+  // rather than merely coinciding with what the fallback would have said.
+  test.each<[Core.M3LRunOutcome, M3LSpawnExitInfo]>([
+    [
+      "success",
+      { exitCode: 1, killRequested: true, dryRun: true, outcome: "success" },
+    ],
+    [
+      "failure",
+      { exitCode: 0, killRequested: false, dryRun: false, outcome: "failure" },
+    ],
+    [
+      "dry-run",
+      { exitCode: 0, killRequested: false, dryRun: false, outcome: "dry-run" },
+    ],
+    [
+      "interrupted",
+      {
+        exitCode: 130,
+        killRequested: false,
+        dryRun: false,
+        outcome: "interrupted",
+      },
+    ],
+    [
+      "partial",
+      { exitCode: 2, killRequested: false, dryRun: false, outcome: "partial" },
+    ],
+  ])(
+    "explicit outcome %s wins even though exitCode/killRequested/dryRun would derive something else",
+    (expected, exit) => {
+      expect(mapSpawnOutcome(exit)).toBe(expected);
+    },
+  );
+});
+
+describe("M3LSpawnExitInfo — outcome is optional", () => {
+  test("an exit info omitting outcome still satisfies M3LSpawnExitInfo", () => {
+    const exit: M3LSpawnExitInfo = {
+      exitCode: 0,
+      killRequested: false,
+      dryRun: false,
+    };
+    expectTypeOf(exit).toExtend<M3LSpawnExitInfo>();
+    expect(mapSpawnOutcome(exit)).toBe("success");
+  });
+});
