@@ -7,7 +7,7 @@ import {
 } from "../lib/changed-paths.mjs";
 
 describe("CHANGE_CATEGORIES", () => {
-  test("names exactly the 7 documented categories", () => {
+  test("names exactly the 8 documented categories", () => {
     expect(CHANGE_CATEGORIES).toEqual([
       "ts",
       "deps",
@@ -16,6 +16,7 @@ describe("CHANGE_CATEGORIES", () => {
       "workflows",
       "docs",
       "md",
+      "console",
     ]);
   });
 });
@@ -24,6 +25,32 @@ describe("classifyChangedPaths", () => {
   test("sets ts true for a source TypeScript file", () => {
     const flags = classifyChangedPaths([
       "packages/m3l-common/src/core/errors/index.ts",
+    ]);
+    expect(flags.ts).toBe(true);
+  });
+
+  test("sets console true for a path under packages/m3l-console-web/", () => {
+    const flags = classifyChangedPaths([
+      "packages/m3l-console-web/src/App.tsx",
+    ]);
+    expect(flags.console).toBe(true);
+  });
+
+  test("sets console true for a path under packages/m3l-console-server/", () => {
+    const flags = classifyChangedPaths([
+      "packages/m3l-console-server/src/main.ts",
+    ]);
+    expect(flags.console).toBe(true);
+  });
+
+  test("sets console false for a path under an unrelated package", () => {
+    const flags = classifyChangedPaths(["packages/m3l-common/src/index.ts"]);
+    expect(flags.console).toBe(false);
+  });
+
+  test("sets ts true for a .tsx file", () => {
+    const flags = classifyChangedPaths([
+      "packages/m3l-console-web/src/App.tsx",
     ]);
     expect(flags.ts).toBe(true);
   });
@@ -83,10 +110,11 @@ describe("classifyChangedPaths", () => {
   });
 
   test("a path matching no predicate forces every category true (fail-open)", () => {
-    // .gitignore matches none of the 7 predicates individually (not .ts,
+    // .gitignore matches none of the 8 predicates individually (not .ts,
     // not scripts/, not .claude/, not a listed workflows exact match, not
-    // docs/, not .md) — so if this comes back all-true, it can only be the
-    // unclassified-path safety net firing, not any predicate.
+    // docs/, not .md, not packages/m3l-console-web//console-server/) — so
+    // if this comes back all-true, it can only be the unclassified-path
+    // safety net firing, not any predicate.
     const flags = classifyChangedPaths([".gitignore"]);
     for (const category of CHANGE_CATEGORIES) {
       expect(flags[category]).toBe(true);
@@ -103,6 +131,7 @@ describe("classifyChangedPaths", () => {
       workflows: false,
       docs: false,
       md: false,
+      console: false,
     });
   });
 
@@ -129,10 +158,11 @@ describe("classifyChangedPaths", () => {
   });
 
   test("any bin/ change forces every category true, even for a path matching no predicate on its own", () => {
-    // bin/lib/report.mjs matches none of the 7 predicates individually
+    // bin/lib/report.mjs matches none of the 8 predicates individually
     // (not .ts, not scripts/, not .claude/, not a listed workflows exact
-    // match, not docs/, not .md) — so if this comes back all-true, it can
-    // only be the bin/ safety net firing, not any predicate.
+    // match, not docs/, not .md, not packages/m3l-console-web//console-server/)
+    // — so if this comes back all-true, it can only be the bin/ safety net
+    // firing, not any predicate.
     const soloFlags = classifyChangedPaths(["bin/lib/report.mjs"]);
     for (const category of CHANGE_CATEGORIES) {
       expect(soloFlags[category]).toBe(true);
@@ -147,11 +177,12 @@ describe("classifyChangedPaths", () => {
   });
 
   test("an unclassified path forces every category true even alongside a path that would otherwise classify narrowly", () => {
-    // templates/script/foo.tmpl matches none of the 7 predicates individually
+    // templates/script/foo.tmpl matches none of the 8 predicates individually
     // (not .ts, not scripts/, not .claude/, not a listed workflows exact
-    // match, not docs/, not .md), while the .ts path alone would only ever
-    // set `ts` true — so if this comes back all-true, it can only be the
-    // unclassified-path safety net firing, not any predicate combination.
+    // match, not docs/, not .md, not packages/m3l-console-web//console-server/),
+    // while the .ts path alone would only ever set `ts` true — so if this
+    // comes back all-true, it can only be the unclassified-path safety net
+    // firing, not any predicate combination.
     const flags = classifyChangedPaths([
       "templates/script/foo.tmpl",
       "packages/m3l-common/src/core/errors/index.ts",

@@ -76,6 +76,11 @@ export const COMMAND_CATALOG = [
       "Runs Vitest in watch mode for interactive TDD (RED → GREEN → refactor) against the files you're actively editing.",
   },
   {
+    name: "test:e2e",
+    description:
+      "Runs the m3l-console-web Playwright suite (packages/m3l-console-web/tests/e2e, ADR-0067): builds the production bundle, serves it via `vite preview`, and drives it with Chromium. CI runs this job only when packages/m3l-console-web{,-server}/** changed, on a PR carrying the `e2e` label, or on push to main — not on every PR by default.",
+  },
+  {
     name: "knip",
     description:
       "Detects unused files, exports, and dependencies across the workspace. CI-only dead-code gate; run locally after removing a symbol or dependency.",
