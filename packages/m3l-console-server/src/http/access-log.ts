@@ -12,6 +12,7 @@ import type { Core } from "@m3l-automation/m3l-common";
 
 import { isFaultError } from "./envelope.js";
 import type { M3LRouteAuth } from "./router.js";
+import type { M3LStreamWriteOutcome } from "./stream-writer.js";
 
 /** The status below which a response is logged at `info`. */
 const STATUS_CLIENT_ERROR_THRESHOLD = 400;
@@ -33,6 +34,14 @@ export interface RequestOutcome {
   readonly durationMs: number;
   readonly correlationId: string;
   readonly accessMode: M3LRouteAuth | undefined;
+  /**
+   * The stream's frame/drop counts and stop reason (X4, ADR-0066) — present
+   * only when the request was a streaming response, never for a buffered
+   * one. Omitted rather than `undefined` (see the `data` spread below) so a
+   * buffered request's outcome line stays byte-identical to before streaming
+   * existed.
+   */
+  readonly streamOutcome?: M3LStreamWriteOutcome;
 }
 
 /** Logs the single outcome line for a request, at the level its status implies. */
@@ -48,6 +57,9 @@ export function logOutcome(
     durationMs: outcome.durationMs,
     correlationId: outcome.correlationId,
     ...(outcome.accessMode !== undefined && { accessMode: outcome.accessMode }),
+    ...(outcome.streamOutcome !== undefined && {
+      streamOutcome: outcome.streamOutcome,
+    }),
   };
 
   const level = logLevelForStatus(outcome.status);

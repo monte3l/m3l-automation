@@ -574,7 +574,7 @@ export default tseslint.config(
       //   lifecycle -> errors, net
       //   store     -> errors                        (persistence; ADR-0069)
       //   stream    -> errors                        (live event fan-out; X4)
-      //   http      -> errors, auth, lifecycle, net  (transport; NOT config)
+      //   http      -> errors, auth, lifecycle, net, stream   (transport; NOT config)
       //   main.ts   -> everything                    (composition root)
       //
       // `net` is the second pure leaf alongside `errors`: loopback address
@@ -610,8 +610,12 @@ export default tseslint.config(
       // `http -> runs` edge: transport reaching into orchestration, the exact
       // class of edge this table exists to forbid. Keeping it a leaf both
       // modules may reach costs one zone and buys that edge's absence.
-      // `http`'s `except` gains `stream` only when a route actually subscribes
-      // (X4 slice 2), not here — nothing in `http` imports it yet.
+      // `http` -> `stream` is the edge that makes SSE serveable (X4 slice 2):
+      // `http/stream-writer.ts` subscribes to a stream by id and encodes each
+      // payload as an SSE frame. Note the direction — `http` reaches INTO the
+      // leaf, and `stream` still reaches nothing but `errors`, so this widening
+      // cannot become a back channel from orchestration into transport.
+      // `http` still may not import `runs` or `store`.
       "import-x/no-restricted-paths": [
         "error",
         {
@@ -668,9 +672,9 @@ export default tseslint.config(
             {
               target: "./packages/m3l-console-server/src/http",
               from: "./packages/m3l-console-server/src",
-              except: ["http", "errors", "auth", "lifecycle", "net"],
+              except: ["http", "errors", "auth", "lifecycle", "net", "stream"],
               message:
-                "console-server: http/ is transport — it may import errors/, auth/, lifecycle/ and net/, but NOT config/ (ADR-0065). Resolved configuration is passed in from main.ts; a handler must never re-read the environment.",
+                "console-server: http/ is transport — it may import errors/, auth/, lifecycle/, net/ and stream/, but NOT config/, store/ or runs/ (ADR-0065). Resolved configuration is passed in from main.ts; a handler must never re-read the environment. stream/ is reachable so an SSE route can subscribe to a live event stream by id (ADR-0066) without transport ever importing orchestration.",
             },
             {
               target: "./packages/m3l-console-server/src",
