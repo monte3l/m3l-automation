@@ -177,10 +177,43 @@ function pipeLines(
 }
 
 /**
+ * Builds the terminal {@link M3LSpawnExitInfo} for a spawned child's
+ * `"close"` event.
+ *
+ * Node's `killSignal` is `non-null` whenever the child died from a signal —
+ * whether this executor requested it (via `abort()`) or not (kernel OOM
+ * `SIGKILL`, an operator `kill`, a supervisor's own `SIGTERM`). Either way the
+ * run did not complete normally, so `outcome` is set to `"interrupted"`
+ * explicitly rather than left for `mapSpawnOutcome` to derive
+ * `"success"`/`"failure"` from an exit code a signal death can leave
+ * meaningless (`null`, collapsed to `0` here). This is deliberately
+ * independent of `killRequested`: an externally-initiated signal must NOT
+ * flip that flag — only an `abort()` this executor issued may do that — so an
+ * unrequested signal death still reports `killRequested: false` alongside
+ * `outcome: "interrupted"`.
+ */
+function buildCloseExitInfo(
+  exitCode: number | null,
+  killSignal: string | null,
+  killRequested: boolean,
+  dryRun: boolean,
+): M3LSpawnExitInfo {
+  return {
+    exitCode: exitCode ?? 0,
+    killRequested,
+    dryRun,
+    ...(killSignal !== null && { outcome: "interrupted" as const }),
+  };
+}
+
+/**
  * Awaits a spawned {@link M3LSpawnedProcess} to a terminal
  * {@link M3LSpawnExitInfo}, wiring up abort-driven `SIGTERM`/`SIGKILL`
  * escalation and settle-once resolve/reject guards. Extracted out of
  * {@link createSpawnExecutor} to keep that factory function short.
+ *
+ * See {@link buildCloseExitInfo} for how the `"close"` event's `code`/`signal`
+ * pair maps onto the resolved {@link M3LSpawnExitInfo}.
  */
 function awaitSpawnedChild(
   child: M3LSpawnedProcess,
@@ -237,8 +270,10 @@ function awaitSpawnedChild(
       { once: true },
     );
 
-    child.once("close", (code): void => {
-      settleResolve({ exitCode: code ?? 0, killRequested, dryRun });
+    child.once("close", (code, killSignal): void => {
+      settleResolve(
+        buildCloseExitInfo(code, killSignal, killRequested, dryRun),
+      );
     });
     child.once("error", (error): void => {
       settleReject(error);

@@ -579,6 +579,123 @@ describe("createSpawnExecutor — does not set outcome (regression guard)", () =
     expect(info.outcome).toBeUndefined();
     expect(mapSpawnOutcome(info)).toBe("success");
   });
+
+  // Extends the guard above rather than replacing it: a clean, unsignaled
+  // exit (signal === null on the "close" event) must leave `outcome` absent
+  // regardless of the exit code, so mapSpawnOutcome's own exit-code
+  // derivation rules (not the signal-driven branch under test elsewhere in
+  // this file) are what decide "success" vs "failure".
+  test.each<[number, Core.M3LRunOutcome]>([
+    [0, "success"],
+    [1, "failure"],
+  ])(
+    "a clean exit(%i, null) with no signal leaves outcome undefined and maps to %s",
+    async (exitCode, expectedOutcome) => {
+      const fakeChild = createFakeChild();
+      const spawnImpl = vi.fn(() => fakeChild);
+      const executor = createSpawnExecutor(
+        { killTimeoutMs: 5000 },
+        { spawnImpl },
+      );
+
+      const resultPromise = executor.execute(baseExecuteOptions());
+      fakeChild.emit("close", exitCode, null);
+      const info = await resultPromise;
+
+      expect(info.outcome).toBeUndefined();
+      expect(mapSpawnOutcome(info)).toBe(expectedOutcome);
+    },
+  );
+});
+
+describe("createSpawnExecutor — externally-initiated signal kill (PR #721 regression)", () => {
+  // PR #721 re-review defect: `awaitSpawnedChild`'s "close" listener declared
+  // the Node child-process signature `(code: number | null, signal: string |
+  // null)` but only bound `code`, discarding `signal` entirely and collapsing
+  // a null exit code to 0. Node emits close(null, "SIGKILL") when a child
+  // dies from an externally-initiated signal (kernel OOM, operator `kill`, a
+  // supervisor's own SIGTERM) that this executor never requested — before
+  // the fix, that case resolved as {exitCode: 0, killRequested: false},
+  // which `mapSpawnOutcome` maps to "success": a killed run recorded as
+  // successful. The fix must report `outcome: "interrupted"` whenever a
+  // signal is present, and must NOT flip `killRequested` to true merely
+  // because a signal arrived — only an actual abort() from this executor's
+  // own signal may set that flag honestly.
+  //
+  // NOTE: the existing fake child already supports emitting a second "close"
+  // argument (see the abort describe block above, e.g.
+  // `fakeChild.emit("close", null, "SIGTERM")` for a self-requested kill) —
+  // so no fake changes were needed to reproduce this. What was missing is
+  // that no existing test asserted anything about `outcome` for a
+  // signal-closed child with NO abort requested; every existing signal-close
+  // assertion pairs the signal with `killRequested: true` because the test
+  // itself called `controller.abort()` first.
+  test.each(["SIGKILL", "SIGTERM", "SIGABRT"])(
+    "a child closed by an unrequested %s reports outcome: 'interrupted', and mapSpawnOutcome agrees",
+    async (signal) => {
+      const fakeChild = createFakeChild();
+      const spawnImpl = vi.fn(() => fakeChild);
+      const executor = createSpawnExecutor(
+        { killTimeoutMs: 5000 },
+        { spawnImpl },
+      );
+
+      // No controller.abort() anywhere in this test: the executor never
+      // asked for this kill.
+      const resultPromise = executor.execute(baseExecuteOptions());
+      fakeChild.emit("close", null, signal);
+      const info = await resultPromise;
+
+      expect(info.outcome).toBe("interrupted");
+      expect(mapSpawnOutcome(info)).toBe("interrupted");
+    },
+  );
+
+  test.each(["SIGKILL", "SIGTERM", "SIGABRT"])(
+    "a child closed by an unrequested %s does NOT set killRequested: true",
+    async (signal) => {
+      const fakeChild = createFakeChild();
+      const spawnImpl = vi.fn(() => fakeChild);
+      const executor = createSpawnExecutor(
+        { killTimeoutMs: 5000 },
+        { spawnImpl },
+      );
+
+      const resultPromise = executor.execute(baseExecuteOptions());
+      fakeChild.emit("close", null, signal);
+      const info = await resultPromise;
+
+      // Guards against "fixing" the defect by lying on this field: no abort
+      // was requested by this executor, so killRequested must stay false
+      // even though the process did, in fact, die from a signal.
+      expect(info.killRequested).toBe(false);
+    },
+  );
+
+  test("when this executor DID request the kill, a signal-closed child still reports killRequested: true and outcome: 'interrupted'", async () => {
+    const fakeChild = createFakeChild();
+    const spawnImpl = vi.fn(() => fakeChild);
+    const executor = createSpawnExecutor(
+      { killTimeoutMs: 5000 },
+      { spawnImpl },
+    );
+    const controller = new AbortController();
+
+    const resultPromise = executor.execute(
+      baseExecuteOptions({ signal: controller.signal }),
+    );
+
+    controller.abort();
+    await flush();
+    expect(fakeChild.kill).toHaveBeenCalledWith("SIGTERM");
+
+    fakeChild.emit("close", null, "SIGTERM");
+    const info = await resultPromise;
+
+    expect(info.killRequested).toBe(true);
+    expect(info.outcome).toBe("interrupted");
+    expect(mapSpawnOutcome(info)).toBe("interrupted");
+  });
 });
 
 describe("createInProcessExecutor — output routing", () => {
