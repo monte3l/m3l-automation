@@ -13,7 +13,7 @@ import {
 import type { M3LConsoleErrorCode } from "../src/errors/console-error.js";
 
 describe("M3LConsoleErrorCode", () => {
-  test("is the exact seventeen-member union the contract declares (X2/X3-A1)", () => {
+  test("is the exact nineteen-member union the contract declares (X2/X3-A1/X4)", () => {
     expectTypeOf<M3LConsoleErrorCode>().toEqualTypeOf<
       | "ERR_CONSOLE_CONFIG_INVALID"
       | "ERR_CONSOLE_BAD_REQUEST"
@@ -32,6 +32,8 @@ describe("M3LConsoleErrorCode", () => {
       | "ERR_CONSOLE_STORE_QUERY_FAILED"
       | "ERR_CONSOLE_STORE_MIGRATION_FAILED"
       | "ERR_CONSOLE_STORE_SCHEMA_DRIFT"
+      | "ERR_CONSOLE_STREAM_CLOSED"
+      | "ERR_CONSOLE_STREAM_DUPLICATE"
     >();
   });
 
