@@ -1,22 +1,36 @@
 /**
  * `runs/composition` — `createRunSubsystem`, the X4 run-governor's one-call
  * factory: builds every Round 1 collaborator a real deployment needs (the
- * governor, the confirmation policy, both logger-backed sinks, both
- * executors) from `config` and `registry` alone, and wires them into a real
- * {@link M3LRunOrchestrator}.
+ * governor, the confirmation policy, an audit sink, the run-event stream hub
+ * and its composite logger+stream sink, both executors) from `config` and
+ * `registry` alone, and wires them into a real {@link M3LRunOrchestrator}.
  *
  * This exists so `main.ts` grows by one line of wiring
  * (`createRunSubsystem({ config, logger, registry })`) instead of eight
  * separate factory calls — `main.ts` sits at 21,990 of its 25,000-char
  * budget, and inlining this slice's wiring there would have pushed it over.
  *
+ * Slice 7a also makes this factory the run-event stream hub's owner, for the
+ * same budget reason plus a better one: `main.ts` has essentially no
+ * headroom left, but more importantly the hub's lifecycle (open at boot,
+ * `endAll("draining")` at shutdown) genuinely belongs beside the orchestrator
+ * that publishes into it, not in the composition root. `main.ts` reaches it
+ * at `subsystem.eventHub` to wire the HTTP stream route.
+ *
  * @packageDocumentation
  */
 
 import type { Core } from "@m3l-automation/m3l-common";
 
+import { createEventStreamHub } from "../stream/event-stream.js";
+import type { M3LEventStreamHub } from "../stream/event-stream.js";
+
 import { createLoggerAuditSink } from "./audit.js";
-import { createLoggerRunEventSink } from "./events.js";
+import {
+  createCompositeRunEventSink,
+  createLoggerRunEventSink,
+} from "./events.js";
+import type { M3LRunEvent } from "./events.js";
 import { createInProcessExecutor, createSpawnExecutor } from "./executor.js";
 import { createRunGovernor } from "./governor.js";
 import { createRunOrchestrator } from "./orchestrator.js";
@@ -26,6 +40,7 @@ import type {
 } from "./orchestrator.js";
 import { createConfirmationPolicy } from "./policy.js";
 import type { M3LRunRegistry } from "./registry.js";
+import { createStreamRunEventSink } from "./stream-events.js";
 
 /**
  * Constructor options for {@link createRunSubsystem}.
@@ -91,11 +106,21 @@ export interface M3LRunSubsystemOptions {
  *
  * declare const subsystem: M3LRunSubsystem;
  * subsystem.orchestrator.activeCount; // 0
+ * subsystem.eventHub.openCount; // 0
  * ```
  */
 export interface M3LRunSubsystem {
   /** The wired run orchestrator. */
   readonly orchestrator: M3LRunOrchestrator;
+  /**
+   * The run-event stream hub this subsystem owns: created with
+   * `bufferSize: config.streamRetention` and wired as one member of the
+   * orchestrator's composite event sink (see {@link createRunSubsystem}'s
+   * own TSDoc for why ownership sits here rather than in `main.ts`). The HTTP
+   * layer subscribes to it to serve `GET /api/v1/runs/:id/stream`, but never
+   * creates or closes it itself.
+   */
+  readonly eventHub: M3LEventStreamHub<M3LRunEvent>;
   /**
    * Aborts every in-flight run and resolves once they have all settled.
    * Delegates to {@link M3LRunOrchestrator.drain} — see this interface's own
@@ -108,10 +133,17 @@ export interface M3LRunSubsystem {
 /**
  * Builds a working {@link M3LRunSubsystem} from `options.config` and
  * `options.registry` alone: a governor sized from `config`'s concurrency and
- * queue knobs, the confirmation policy, a logger-backed audit sink and a
- * logger-backed event sink (both over `options.logger`), a spawn executor
- * sized from `config.killTimeoutMs`, and an in-process executor — then wires
- * every one of them into a real {@link createRunOrchestrator}.
+ * queue knobs, the confirmation policy, a logger-backed audit sink, a
+ * run-event stream hub sized by `config.streamRetention` plus the composite
+ * event sink that fans out to both a logger-backed sink and a
+ * stream-backed sink (both over `options.logger` / the new hub), a spawn
+ * executor sized from `config.killTimeoutMs`, and an in-process executor —
+ * then wires every one of them into a real {@link createRunOrchestrator}.
+ *
+ * The fan-out is deliberate, not redundant: the logger sink keeps recording
+ * lifecycle events so a console with no stream watcher still logs run
+ * activity, while the stream sink receives everything — including
+ * `run.line`, which the logger sink drops (see `events.ts`'s own TSDoc).
  *
  * @param options - See {@link M3LRunSubsystemOptions}.
  * @returns The wired {@link M3LRunSubsystem}.
@@ -152,7 +184,13 @@ export function createRunSubsystem(
   });
   const policy = createConfirmationPolicy();
   const audit = createLoggerAuditSink(logger);
-  const events = createLoggerRunEventSink(logger);
+  const eventHub = createEventStreamHub<M3LRunEvent>({
+    bufferSize: config.streamRetention,
+  });
+  const events = createCompositeRunEventSink(
+    [createLoggerRunEventSink(logger), createStreamRunEventSink(eventHub)],
+    logger,
+  );
   const spawnExecutor = createSpawnExecutor({
     killTimeoutMs: config.killTimeoutMs,
   });
@@ -172,6 +210,7 @@ export function createRunSubsystem(
 
   return {
     orchestrator,
+    eventHub,
     drain(): Promise<void> {
       return orchestrator.drain();
     },
