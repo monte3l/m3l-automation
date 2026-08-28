@@ -27,17 +27,28 @@ export default defineConfig({
     // those tests bind a real loopback socket, so they are not unit tests and
     // must not run in this project (a unit test must not make network calls —
     // the same rule `eslint.config.js`'s bare-`fetch()` ban enforces).
+    // `packages/m3l-console-web/**` is vitest.web.config.ts's domain (ADR-0067):
+    // its component tests need a jsdom environment this Node-environment
+    // project does not provide, and a plain-`.ts` test under its `src/`
+    // (e.g. a fetch-wrapper test with no JSX) would otherwise still match
+    // this project's `**/*.test.ts` include and run twice with no benefit —
+    // the same reasoning `bin/tests/**` is excluded above.
     exclude: [
       "**/dist/**",
       "**/node_modules/**",
       "**/.claude/worktrees/**",
       "bin/tests/**",
       "**/tests/integration/**",
+      "packages/m3l-console-web/**",
     ],
     coverage: {
       provider: "v8",
       include: ["packages/*/src/**/*.ts"],
-      exclude: ["**/index.ts", "**/*.d.ts"],
+      // packages/m3l-console-web/** is vitest.web.config.ts's coverage domain
+      // (see the test.exclude comment above) — its `.tsx` files already miss
+      // this `.ts`-only include glob, but a plain-`.ts` module under its
+      // src/ (e.g. api/client.ts) would not, so it is excluded explicitly.
+      exclude: ["**/index.ts", "**/*.d.ts", "packages/m3l-console-web/**"],
       // `json` emits coverage-final.json: the v8 text table hides files that
       // are 100% on every metric, so the JSON is the authoritative per-file
       // record when investigating a suspected gap.

@@ -153,6 +153,16 @@ const hasNoCycleGuard = config.some((block) => {
   const coversConsoleServer = files.some((f) =>
     norm(f).endsWith("packages/m3l-console-server/src/**/*.ts"),
   );
+  // console-web (ADR-0067) ships both .ts (e.g. api/client.ts) and .tsx
+  // (components) under src/ — the guard requires both globs so neither
+  // extension can silently lose cycle protection.
+  const coversConsoleWeb =
+    files.some((f) =>
+      norm(f).endsWith("packages/m3l-console-web/src/**/*.ts"),
+    ) &&
+    files.some((f) =>
+      norm(f).endsWith("packages/m3l-console-web/src/**/*.tsx"),
+    );
   const rule = block?.rules?.["import-x/no-cycle"];
   const [severity, options] = Array.isArray(rule) ? rule : [rule];
   const isError = severity === "error" || severity === 2;
@@ -162,13 +172,14 @@ const hasNoCycleGuard = config.some((block) => {
     coversScripts &&
     coversCli &&
     coversConsoleServer &&
+    coversConsoleWeb &&
     isError &&
     isInfiniteDepth
   );
 });
 if (!hasNoCycleGuard) {
   reporter.error(
-    "missing or malformed ADR-0035 guard: import-x/no-cycle over packages/m3l-common/src/**/*.ts, scripts/*/src/**/*.ts, packages/m3l-cli/src/**/*.ts, and packages/m3l-console-server/src/**/*.ts (maxDepth: Infinity)",
+    "missing or malformed ADR-0035 guard: import-x/no-cycle over packages/m3l-common/src/**/*.ts, scripts/*/src/**/*.ts, packages/m3l-cli/src/**/*.ts, packages/m3l-console-server/src/**/*.ts, and packages/m3l-console-web/src/**/*.{ts,tsx} (maxDepth: Infinity)",
     { file: "eslint.config.js" },
   );
   errors++;
