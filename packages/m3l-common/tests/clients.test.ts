@@ -62,6 +62,7 @@ const h = vi.hoisted(() => {
     athenaCtor: vi.fn(),
     secretsManagerCtor: vi.fn(),
     rdsDataCtor: vi.fn(),
+    bedrockRuntimeCtor: vi.fn(),
     docFrom: vi.fn(),
     docDestroy: vi.fn(),
     makeClientClass,
@@ -141,6 +142,9 @@ vi.mock("@aws-sdk/client-secrets-manager", () => ({
 vi.mock("@aws-sdk/client-rds-data", () => ({
   RDSDataClient: h.makeClientClass(h.rdsDataCtor),
 }));
+vi.mock("@aws-sdk/client-bedrock-runtime", () => ({
+  BedrockRuntimeClient: h.makeClientClass(h.bedrockRuntimeCtor),
+}));
 vi.mock("@aws-sdk/lib-dynamodb", () => ({
   // DynamoDBDocumentClient.from(rawClient) returns a wrapper with its OWN
   // destroy spy, so a test can assert the wrapper is NOT destroyed by close().
@@ -183,6 +187,7 @@ import type { CloudWatchLogsClient } from "@aws-sdk/client-cloudwatch-logs";
 import type { AthenaClient } from "@aws-sdk/client-athena";
 import type { SecretsManagerClient } from "@aws-sdk/client-secrets-manager";
 import type { RDSDataClient } from "@aws-sdk/client-rds-data";
+import type { BedrockRuntimeClient } from "@aws-sdk/client-bedrock-runtime";
 import type { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 
 // ---------------------------------------------------------------------------
@@ -216,6 +221,7 @@ const GETTER_MATRIX = [
   ["athena", h.athenaCtor] as const,
   ["secretsManager", h.secretsManagerCtor] as const,
   ["rdsData", h.rdsDataCtor] as const,
+  ["bedrockRuntime", h.bedrockRuntimeCtor] as const,
 ] satisfies readonly (readonly [
   keyof AWSClientProvider,
   ReturnType<typeof vi.fn>,
@@ -1401,6 +1407,12 @@ describe("type-level contracts", () => {
 
   test("provider.rdsData is typed RDSDataClient", () => {
     expectTypeOf<AWSClientProvider["rdsData"]>().toEqualTypeOf<RDSDataClient>();
+  });
+
+  test("provider.bedrockRuntime is typed BedrockRuntimeClient", () => {
+    expectTypeOf<
+      AWSClientProvider["bedrockRuntime"]
+    >().toEqualTypeOf<BedrockRuntimeClient>();
   });
 
   test("provider.dynamoDBDocument is typed DynamoDBDocumentClient", () => {
