@@ -573,6 +573,7 @@ export default tseslint.config(
       //   auth      -> errors
       //   lifecycle -> errors, net
       //   store     -> errors                        (persistence; ADR-0069)
+      //   stream    -> errors                        (live event fan-out; X4)
       //   http      -> errors, auth, lifecycle, net  (transport; NOT config)
       //   main.ts   -> everything                    (composition root)
       //
@@ -599,6 +600,18 @@ export default tseslint.config(
       // serves store-backed data widens this with its own justification.
       // `store` appears in no other zone's `except` either, so `config`,
       // `auth`, `lifecycle` and `http` all already cannot reach it.
+      //
+      // `stream` (X4) is the third pure leaf, and its position is the whole
+      // reason it is a separate module rather than part of `runs`. It holds
+      // the generic `M3LEventStreamHub<TPayload>` — a ring buffer plus
+      // subscriber fan-out, with no `node:http` import and no run-specific
+      // type. `runs` PUBLISHES into it and `http` SERVES it, so if the buffer
+      // lived in `runs`, serving an SSE stream would require an
+      // `http -> runs` edge: transport reaching into orchestration, the exact
+      // class of edge this table exists to forbid. Keeping it a leaf both
+      // modules may reach costs one zone and buys that edge's absence.
+      // `http`'s `except` gains `stream` only when a route actually subscribes
+      // (X4 slice 2), not here — nothing in `http` imports it yet.
       "import-x/no-restricted-paths": [
         "error",
         {
@@ -644,6 +657,13 @@ export default tseslint.config(
               except: ["store", "errors"],
               message:
                 "console-server: store/ may import only errors/ (ADR-0065, ADR-0069). It receives its resolved database path and busy timeout from main.ts rather than reading config itself, and `store/sqlite-driver.ts` is the single module allowed to import node:sqlite — the seam ADR-0069's recorded fallbacks (a packaged sqlite dependency, or a degraded JSONL-only mode) replace.",
+            },
+            {
+              target: "./packages/m3l-console-server/src/stream",
+              from: "./packages/m3l-console-server/src",
+              except: ["stream", "errors"],
+              message:
+                "console-server: stream/ is a layering leaf — it may import @m3l-automation/m3l-common, node: builtins and errors/ only (ADR-0065, ADR-0066). It is generic over its payload type and must never import node:http, store/ or runs/: runs/ publishes into it and http/ serves it, so any edge out of stream/ would drag transport and orchestration into each other.",
             },
             {
               target: "./packages/m3l-console-server/src/http",

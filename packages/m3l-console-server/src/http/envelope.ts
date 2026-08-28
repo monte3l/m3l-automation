@@ -174,6 +174,25 @@ const CLASSIFICATION_BY_CODE: Record<M3LConsoleErrorCode, ErrorClassification> =
       retryable: false,
       fault: true,
     },
+    // Neither stream code is reachable from an HTTP request: the SSE route
+    // only ever *subscribes* to an already-open stream, while
+    // `open`/`publish` are called by `runs/`. A caller can never trigger
+    // either, so both are genuine internal defects — `origin: "library"`,
+    // `retryable: false`, `fault: true` — with none of the
+    // caller-steerable-log-severity concern that makes `ERR_CONSOLE_UNAVAILABLE`
+    // `fault: false`.
+    ERR_CONSOLE_STREAM_CLOSED: {
+      status: STATUS_INTERNAL,
+      origin: "library",
+      retryable: false,
+      fault: true,
+    },
+    ERR_CONSOLE_STREAM_DUPLICATE: {
+      status: STATUS_INTERNAL,
+      origin: "library",
+      retryable: false,
+      fault: true,
+    },
   };
 
 /**

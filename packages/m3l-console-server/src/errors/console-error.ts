@@ -38,6 +38,13 @@ import { Core } from "@m3l-automation/m3l-common";
  * migration, or an already-applied migration whose recorded history no
  * longer matches its declared SQL.
  *
+ * `ERR_CONSOLE_STREAM_CLOSED` and `ERR_CONSOLE_STREAM_DUPLICATE` are raised
+ * by `stream/event-stream.ts` (X4, ADR-0065, ADR-0066). Neither is
+ * reachable from an HTTP request: the SSE route only ever *subscribes* to
+ * an already-open stream, while `publish`/`end`/`open` are called by
+ * `runs/` — so a caller can never trigger either code, and both are genuine
+ * internal defects rather than a routine, expected outcome.
+ *
  * @example
  * ```ts
  * function isConfigError(code: M3LConsoleErrorCode): boolean {
@@ -62,7 +69,9 @@ export type M3LConsoleErrorCode =
   | "ERR_CONSOLE_STORE_CLOSED"
   | "ERR_CONSOLE_STORE_QUERY_FAILED"
   | "ERR_CONSOLE_STORE_MIGRATION_FAILED"
-  | "ERR_CONSOLE_STORE_SCHEMA_DRIFT";
+  | "ERR_CONSOLE_STORE_SCHEMA_DRIFT"
+  | "ERR_CONSOLE_STREAM_CLOSED"
+  | "ERR_CONSOLE_STREAM_DUPLICATE";
 
 /**
  * Constructor options for {@link M3LConsoleError}.
