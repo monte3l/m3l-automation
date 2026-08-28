@@ -18,6 +18,8 @@ import { Core } from "@m3l-automation/m3l-common";
 
 import type { M3LConsoleConfig } from "./config/env.js";
 import { loadConsoleConfig } from "./config/env.js";
+import type { M3LConsoleRunsConfig } from "./config/runs.js";
+import { tryLoadRunsConfig } from "./config/runs.js";
 import { chainSecondaryFailure } from "./errors/chain-secondary-failure.js";
 import { createSingleOperatorProvider } from "./auth/identity.js";
 import type {
@@ -40,8 +42,12 @@ import {
   createShutdown,
   registerConsoleShutdownSignals,
 } from "./lifecycle/shutdown.js";
+import { createRunSubsystem } from "./runs/composition.js";
+import type { M3LRunSubsystem } from "./runs/composition.js";
+import type { M3LRunRegistry } from "./runs/registry.js";
 import { openConsoleStore } from "./store/store.js";
 import type {
+  M3LConsoleStore,
   M3LConsoleStoreHandle,
   M3LConsoleStoreLifecycle,
   OpenConsoleStoreOptions,
@@ -75,6 +81,10 @@ export interface M3LConsoleRuntimeOptions {
   readonly config?: M3LConsoleConfig;
   /** The opened console store (ADR-0069), when the caller already has one. */
   readonly store?: M3LConsoleStoreHandle;
+  /** Pre-resolved X4 run-governor config; skips `loadRunsConfig` (mirrors {@link config}). */
+  readonly runsConfig?: M3LConsoleRunsConfig;
+  /** The run-persistence port the X4 run subsystem builds from; see {@link createConsoleRuntime}. */
+  readonly runs?: M3LRunRegistry;
 }
 
 /**
@@ -126,6 +136,13 @@ export interface M3LConsoleRuntime {
    * republishes past this field.
    */
   readonly store?: M3LConsoleStoreLifecycle;
+  /**
+   * The wired X4 run subsystem, present only when a runs config resolved AND
+   * {@link M3LConsoleRuntimeOptions.runs} was supplied. Satisfies
+   * `lifecycle/shutdown.ts`'s `M3LShutdownDrainable` structurally, so its
+   * `drain()` runs alongside the HTTP drain with no `runs/` import there.
+   */
+  readonly runs?: M3LRunSubsystem;
 }
 
 /**
@@ -269,6 +286,35 @@ function resolveConfig(options: M3LConsoleRuntimeOptions): M3LConsoleConfig {
   );
 }
 
+/** The env var naming the X4 scripts directory, named in the disabled-orchestration posture line. */
+const RUNS_SCRIPTS_DIR_ENV = "M3L_CONSOLE_RUNS_SCRIPTS_DIR";
+
+/**
+ * Builds the X4 run subsystem when `options.runs` was supplied AND a runs
+ * config resolved (`options.runsConfig` verbatim, else
+ * `tryLoadRunsConfig`); else `undefined`, logging one `warning` posture
+ * line. Checks `options.runs` FIRST — nothing to wire a resolved config to
+ * without a registry, and skipping config resolution (and the warning)
+ * entirely when no registry was ever supplied is what keeps every existing
+ * caller that never mentions `runs` silent; the warning only fires once a
+ * caller has actually opted in by supplying one.
+ */
+function buildRunSubsystem(
+  options: M3LConsoleRuntimeOptions,
+  logger: Core.M3LLogger,
+): M3LRunSubsystem | undefined {
+  if (options.runs === undefined) return undefined;
+  const config: M3LConsoleRunsConfig | undefined =
+    options.runsConfig ?? tryLoadRunsConfig(options.env ?? process.env);
+  if (config === undefined) {
+    logger.warning("run orchestration disabled: scripts directory unset", {
+      variable: RUNS_SCRIPTS_DIR_ENV,
+    });
+    return undefined;
+  }
+  return createRunSubsystem({ config, logger, registry: options.runs });
+}
+
 export function createConsoleRuntime(
   options: M3LConsoleRuntimeOptions = {},
 ): M3LConsoleRuntime {
@@ -280,6 +326,7 @@ export function createConsoleRuntime(
   });
 
   logPosture(logger, config);
+  const runs = buildRunSubsystem(options, logger);
 
   const operator: M3LOperatorProfile = {
     name: config.operatorName,
@@ -317,6 +364,7 @@ export function createConsoleRuntime(
     drain,
     signal: drain.signal,
     ...(options.store !== undefined && { store: options.store }),
+    ...(runs !== undefined && { runs }),
   };
 }
 
@@ -344,10 +392,13 @@ export interface StartConsoleOptions extends M3LConsoleRuntimeOptions {
   readonly signals?: readonly NodeJS.Signals[];
   /** Test seam: builds the underlying `Server` instead of `node:http`'s `createServer`. */
   readonly createServer?: () => Server;
-  /** Test seam: opens the console store instead of the real `openConsoleStore`. */
+  /**
+   * Test seam: opens the console store instead of `openConsoleStore`.
+   * Widened to `& M3LConsoleStore` so `startConsole` can reach `store.runs`.
+   */
   readonly openStore?: (
     options: OpenConsoleStoreOptions,
-  ) => M3LConsoleStoreHandle;
+  ) => M3LConsoleStoreHandle & M3LConsoleStore;
 }
 
 /**
@@ -454,14 +505,23 @@ function logStoreReady(
 async function buildRuntimeAndBindListener(
   options: StartConsoleOptions,
   config: M3LConsoleConfig,
-  store: M3LConsoleStoreHandle,
+  store: M3LConsoleStoreHandle & M3LConsoleStore,
 ): Promise<{
   readonly runtime: M3LConsoleRuntime;
   readonly server: M3LListeningServer;
 }> {
   let runtime: M3LConsoleRuntime | undefined;
   try {
-    runtime = createConsoleRuntime({ ...options, config, store });
+    runtime = createConsoleRuntime({
+      ...options,
+      config,
+      store,
+      runs: store.runs,
+    });
+    // A database write (reconciling SIGKILL-orphaned rows), so it belongs
+    // here — not in createConsoleRuntime, a pure composition step — and
+    // strictly before the bind below.
+    runtime.runs?.orchestrator.reconcileOnBoot();
     const server = await startConsoleServer({
       host: runtime.config.host,
       port: runtime.config.port,

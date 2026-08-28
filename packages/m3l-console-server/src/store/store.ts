@@ -47,6 +47,8 @@ import {
 import { createStoreExecutor, withTransaction } from "./executor.js";
 import { createConsoleMetaRepository } from "./meta-repository.js";
 import type { M3LConsoleMetaRepository } from "./meta-repository.js";
+import { createConsoleRunsRepository } from "./runs-repository.js";
+import type { M3LConsoleRunsRepository } from "./runs-repository.js";
 import type { M3LStoreQueryExecutor } from "./types.js";
 
 /** The permission mode applied to the console store's parent directory. */
@@ -90,9 +92,10 @@ export interface OpenConsoleStoreOptions {
 /**
  * The SQL-free view of an opened console store: open/close lifecycle only,
  * no query surface. Deliberately not named `M3LConsoleStore` — that name
- * (alongside `M3LConsoleStoreUnit`) is reserved for PR B, once a repository
- * sits alongside the executor. A composition root (`main.ts`) narrows to
- * this view when it has no business issuing queries itself.
+ * (alongside `M3LConsoleStoreUnit`) is for the repository-bearing surface,
+ * once a repository sits alongside the executor (shipped in slice 3). A
+ * composition root (`main.ts`) narrows to this view when it has no business
+ * issuing queries itself.
  *
  * @example
  * ```ts
@@ -143,14 +146,14 @@ export interface M3LConsoleStoreHandle
  * way {@link meta} is here, with `store/migrations/runner.ts`,
  * `store/executor.ts`, `store/sqlite-driver.ts`, and `main.ts` untouched.
  *
- * Deliberately NOT exported today: a caller writing
- * `store.transaction((unit) => ...)` gets `unit`'s shape inferred from
- * {@link M3LConsoleStore.transaction}'s own signature, so nothing outside
- * this file needs this name while `meta` is the only field. Re-export it the
- * moment a second repository (X4's `runs`) gives an outside consumer a
- * reason to name this type directly — knip flags an exported type nothing
- * in `src` consumes, and `tests/**` is not part of its `project` glob, so a
- * test-only import would not count as usage anyway.
+ * Exported as of X4 slice 6: a caller writing `store.transaction()` could
+ * always get `unit`'s shape inferred from
+ * {@link M3LConsoleStore.transaction}'s own signature, but `runs/registry.ts`
+ * now declares `M3LRunRegistry`, a narrow port `M3LConsoleRunsRepository`
+ * (reached through `unit.runs`) structurally satisfies — the outside
+ * consumer this type's TSDoc long promised would eventually name it
+ * directly. The store's own tests also name it, to assert both `meta` and
+ * `runs` are carried.
  *
  * @example
  * ```ts
@@ -159,10 +162,12 @@ export interface M3LConsoleStoreHandle
  * }
  * ```
  */
-interface M3LConsoleStoreUnit {
+export interface M3LConsoleStoreUnit {
   /** The console store's metadata repository (identity, migration history). */
   readonly meta: M3LConsoleMetaRepository;
-  // X4: readonly runs; X6: readonly sessions; X7: readonly audit
+  /** The console store's run-persistence repository (X4's run governor). */
+  readonly runs: M3LConsoleRunsRepository;
+  // X6: readonly sessions; X7: readonly audit
 }
 
 /**
@@ -198,7 +203,10 @@ export interface M3LConsoleStore
 function buildConsoleStoreUnit(
   executor: M3LStoreQueryExecutor,
 ): M3LConsoleStoreUnit {
-  return { meta: createConsoleMetaRepository(executor) };
+  return {
+    meta: createConsoleMetaRepository(executor),
+    runs: createConsoleRunsRepository(executor),
+  };
 }
 
 /**
