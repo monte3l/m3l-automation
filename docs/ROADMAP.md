@@ -198,7 +198,7 @@ display-vs-persist exposure rule, and local-first two-container compose
 deployment. Remote/multi-user, the microservice split, and Aurora
 migration stay gated. Coarse summary only — the item source for sync is
 the X-series in
-[`IMPLEMENTATION.md`](./plans/IMPLEMENTATION.md#cli-evolution-wave-u-series);
+[`IMPLEMENTATION.md`](./plans/IMPLEMENTATION.md#m3l-console-wave-x-series);
 per-phase detail in
 [`2026-08-20-m3l-console.md`](./plans/2026-08-20-m3l-console.md).
 
@@ -212,7 +212,7 @@ per-phase detail in
 | **X6**  | Workbench sessions (addressable results, bindings; U10 consumes) | To Do    |
 | **X7**  | Human-action audit + correlation threading                       | To Do    |
 | **X8**  | Self-telemetry + retention tooling                               | To Do    |
-| **X9**  | `m3l-console-web` skeleton (Vite/React/Playwright, zones)        | To Do    |
+| **X9**  | `m3l-console-web` skeleton (Vite/React/Playwright, zones)        | Done     |
 | **X10** | Run-launcher UI MVP (button-press launch + live tail)            | To Do    |
 | **X11** | Drill-down UI — SQS scenario e2e acceptance                      | To Do    |
 | **X12** | Containerization + compose (fires the ADR-0015 update)           | To Do    |

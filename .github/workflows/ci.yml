@@ -39,6 +39,7 @@ jobs:
       workflows: ${{ steps.classify.outputs.workflows }}
       docs: ${{ steps.classify.outputs.docs }}
       md: ${{ steps.classify.outputs.md }}
+      console: ${{ steps.classify.outputs.console }}
     steps:
       # Full history: bin/ci-changed-paths.mjs diffs against an arbitrary
       # base sha (the PR base, or the pre-push sha on a push) that needs to
@@ -253,6 +254,43 @@ jobs:
       # `vitest run` alone never evaluates them.
       - name: Test (with coverage gate)
         run: pnpm test:coverage
+
+  # ADR-0067's X9 row named this decision to make and record: Playwright's
+  # CI cost (a full Chromium install + browser runtime) is real enough that
+  # every-PR-by-default was rejected. Path-scoped + label-gated instead — a
+  # console change always runs it (nothing under packages/m3l-console-{web,
+  # server}/** ships unverified), any PR can opt in with the `e2e` label,
+  # and every push to main runs it regardless of what that push touched (the
+  # same "can't detect drift against a state that hasn't landed yet" reasoning
+  # `hub-alarm` already documents for its own push-only trigger).
+  e2e:
+    name: End-to-end (Playwright)
+    needs: changes
+    if: needs.changes.outputs.console == 'true' || contains(github.event.pull_request.labels.*.name, 'e2e') || github.event_name == 'push'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+
+      - uses: ./.github/actions/setup
+
+      # Keyed on the lockfile the same way the turbo cache is — a Playwright
+      # version bump changes the lockfile hash and correctly invalidates the
+      # installed browser build alongside it.
+      - name: Cache Playwright browsers
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Install Playwright browsers
+        working-directory: packages/m3l-console-web
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run e2e suite
+        run: pnpm test:e2e
 
   gates:
     name: Governance gates
@@ -604,7 +642,7 @@ jobs:
   # deliberately skipped by path-scoping.
   verify:
     name: verify
-    needs: [changes, secrets, deps, lint, format, build, test, gates]
+    needs: [changes, secrets, deps, lint, format, build, test, gates, e2e]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5

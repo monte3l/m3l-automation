@@ -1,0 +1,12 @@
+{
+  "//": "Playwright config and e2e specs run under Node, not the browser -- unlike the rest of this package, they need process.env and Node module resolution, not DOM types or bundler resolution. Kept as a separate tooling project (not folded into tsconfig.json) rather than widening that project's types to include \"node\" alongside \"vite/client\", which would let a stray `process.env` reference type-check inside browser src/ code that can never actually see it at runtime.",
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "noEmit": true
+  },
+  "include": ["playwright.config.ts", "tests/e2e/**/*.ts"],
+  "exclude": ["dist", "node_modules"]
+}
