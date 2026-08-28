@@ -2381,6 +2381,81 @@
     "namespace": "aws",
     "file": "packages/m3l-common/src/aws/athena/errors.ts"
   },
+  "M3LBedrockRuntimeOperations": {
+    "submodule": "bedrock-runtime",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/bedrock-runtime/client.ts"
+  },
+  "M3LBedrockRuntimeOperationError": {
+    "submodule": "bedrock-runtime",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/bedrock-runtime/error.ts"
+  },
+  "M3LBedrockRuntimeModelError": {
+    "submodule": "bedrock-runtime",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/bedrock-runtime/error.ts"
+  },
+  "M3LBedrockRuntimeNoModelError": {
+    "submodule": "bedrock-runtime",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/bedrock-runtime/error.ts"
+  },
+  "M3LBedrockMessage": {
+    "submodule": "bedrock-runtime",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/bedrock-runtime/types.ts"
+  },
+  "M3LBedrockTextBlock": {
+    "submodule": "bedrock-runtime",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/bedrock-runtime/types.ts"
+  },
+  "M3LBedrockContentBlock": {
+    "submodule": "bedrock-runtime",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/bedrock-runtime/types.ts"
+  },
+  "M3LBedrockRuntimeRole": {
+    "submodule": "bedrock-runtime",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/bedrock-runtime/types.ts"
+  },
+  "M3LBedrockStopReason": {
+    "submodule": "bedrock-runtime",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/bedrock-runtime/types.ts"
+  },
+  "M3LBedrockTokenUsage": {
+    "submodule": "bedrock-runtime",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/bedrock-runtime/types.ts"
+  },
+  "M3LBedrockInferenceConfig": {
+    "submodule": "bedrock-runtime",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/bedrock-runtime/types.ts"
+  },
+  "M3LBedrockInvokeRequest": {
+    "submodule": "bedrock-runtime",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/bedrock-runtime/types.ts"
+  },
+  "M3LBedrockInvokeOptions": {
+    "submodule": "bedrock-runtime",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/bedrock-runtime/types.ts"
+  },
+  "M3LBedrockInvocationResult": {
+    "submodule": "bedrock-runtime",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/bedrock-runtime/types.ts"
+  },
+  "M3LBedrockRuntimeOptions": {
+    "submodule": "bedrock-runtime",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/bedrock-runtime/types.ts"
+  },
   "AWSClientProvider": {
     "submodule": "clients",
     "namespace": "aws",

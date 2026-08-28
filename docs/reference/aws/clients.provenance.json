@@ -8,7 +8,7 @@
         {
           "file": "packages/m3l-common/src/aws/clients/provider.ts",
           "symbol": "AWSClientProvider",
-          "blob": "a4bfd7e0ccea1fdeef856d0ed83acab59d165345"
+          "blob": "8de88ccbba9e75d387c88342faec1e394c3a057b"
         },
         {
           "file": "packages/m3l-common/src/aws/clients/multi-provider.ts",
@@ -36,7 +36,7 @@
           "blob": "525749955c204dae2c1d0a1cd4f363afff408894"
         }
       ],
-      "retrieved": "2026-08-14"
+      "retrieved": "2026-08-28"
     },
     {
       "heading": "`AWSClientProvider`",
@@ -44,10 +44,10 @@
         {
           "file": "packages/m3l-common/src/aws/clients/provider.ts",
           "symbol": "AWSClientProvider",
-          "blob": "a4bfd7e0ccea1fdeef856d0ed83acab59d165345"
+          "blob": "8de88ccbba9e75d387c88342faec1e394c3a057b"
         }
       ],
-      "retrieved": "2026-08-14"
+      "retrieved": "2026-08-28"
     },
     {
       "heading": "`AWSMultiClientProvider`",
@@ -99,10 +99,10 @@
         {
           "file": "packages/m3l-common/src/aws/clients/provider.ts",
           "symbol": "AWSClientProvider",
-          "blob": "a4bfd7e0ccea1fdeef856d0ed83acab59d165345"
+          "blob": "8de88ccbba9e75d387c88342faec1e394c3a057b"
         }
       ],
-      "retrieved": "2026-08-14"
+      "retrieved": "2026-08-28"
     }
   ]
 }
