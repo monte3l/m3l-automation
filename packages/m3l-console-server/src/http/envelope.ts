@@ -26,6 +26,8 @@ const STATUS_BAD_REQUEST = 400;
 const STATUS_UNAUTHENTICATED = 401;
 const STATUS_NOT_FOUND = 404;
 const STATUS_METHOD_NOT_ALLOWED = 405;
+const STATUS_CONFLICT = 409;
+const STATUS_TOO_MANY_REQUESTS = 429;
 const STATUS_INTERNAL = 500;
 const STATUS_UNAVAILABLE = 503;
 
@@ -204,6 +206,24 @@ const CLASSIFICATION_BY_CODE: Record<M3LConsoleErrorCode, ErrorClassification> =
       origin: "library",
       retryable: false,
       fault: true,
+    },
+    ERR_CONSOLE_RUN_SCRIPT_NOT_FOUND: {
+      status: STATUS_NOT_FOUND,
+      origin: "caller",
+      retryable: false,
+      fault: false,
+    },
+    ERR_CONSOLE_RUN_CONFIRMATION_REQUIRED: {
+      status: STATUS_CONFLICT,
+      origin: "caller",
+      retryable: false,
+      fault: false,
+    },
+    ERR_CONSOLE_RUN_CAPACITY_EXCEEDED: {
+      status: STATUS_TOO_MANY_REQUESTS,
+      origin: "caller",
+      retryable: true,
+      fault: false,
     },
   };
 
