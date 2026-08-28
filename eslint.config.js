@@ -670,6 +670,13 @@ export default tseslint.config(
                 "console-server: stream/ is a layering leaf — it may import @m3l-automation/m3l-common, node: builtins and errors/ only (ADR-0065, ADR-0066). It is generic over its payload type and must never import node:http, store/ or runs/: runs/ publishes into it and http/ serves it, so any edge out of stream/ would drag transport and orchestration into each other.",
             },
             {
+              target: "./packages/m3l-console-server/src/runs",
+              from: "./packages/m3l-console-server/src",
+              except: ["runs", "errors", "store", "stream"],
+              message:
+                "console-server: runs/ may import only errors/, store/, and stream/ (ADR-0065). Configuration arrives as arguments from main.ts; runs/ must never read the environment directly.",
+            },
+            {
               target: "./packages/m3l-console-server/src/http",
               from: "./packages/m3l-console-server/src",
               except: ["http", "errors", "auth", "lifecycle", "net", "stream"],

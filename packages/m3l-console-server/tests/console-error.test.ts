@@ -13,7 +13,7 @@ import {
 import type { M3LConsoleErrorCode } from "../src/errors/console-error.js";
 
 describe("M3LConsoleErrorCode", () => {
-  test("is the exact twenty-one-member union the contract declares (X2/X3-A1/X4)", () => {
+  test("is the exact twenty-four-member union the contract declares (X2/X3-A1/X4)", () => {
     expectTypeOf<M3LConsoleErrorCode>().toEqualTypeOf<
       | "ERR_CONSOLE_CONFIG_INVALID"
       | "ERR_CONSOLE_BAD_REQUEST"
@@ -36,6 +36,9 @@ describe("M3LConsoleErrorCode", () => {
       | "ERR_CONSOLE_STREAM_DUPLICATE"
       | "ERR_CONSOLE_RUN_NOT_FOUND"
       | "ERR_CONSOLE_RUN_TRANSITION_INVALID"
+      | "ERR_CONSOLE_RUN_SCRIPT_NOT_FOUND"
+      | "ERR_CONSOLE_RUN_CONFIRMATION_REQUIRED"
+      | "ERR_CONSOLE_RUN_CAPACITY_EXCEEDED"
     >();
   });
 
@@ -152,6 +155,18 @@ describe("M3LConsoleError", () => {
       "ERR_CONSOLE_STORE_SCHEMA_DRIFT",
       "the on-disk schema does not match the expected version",
     ],
+    [
+      "ERR_CONSOLE_RUN_SCRIPT_NOT_FOUND",
+      "no script directory was found for the requested run",
+    ],
+    [
+      "ERR_CONSOLE_RUN_CONFIRMATION_REQUIRED",
+      "the run requires explicit confirmation before it will execute",
+    ],
+    [
+      "ERR_CONSOLE_RUN_CAPACITY_EXCEEDED",
+      "the run queue is at capacity and cannot accept another request",
+    ],
   ])(
     "constructs %s and is caught by isConsoleError and instanceof Core.M3LError (X3-A1)",
     (code, message) => {
@@ -163,9 +178,10 @@ describe("M3LConsoleError", () => {
       expect(error).toBeInstanceOf(Core.M3LError);
       expect(error).toBeInstanceOf(Error);
       // ERR_CONSOLE_* is deliberately absent from Core's own classification
-      // catalog (see the module doc comment) — every one of these seven new
-      // codes stays unclassified by Core.classifyErrorCode, same as every
-      // existing ERR_CONSOLE_* code.
+      // catalog (see the module doc comment) — every one of these ten new
+      // codes (the seven ERR_CONSOLE_STORE_* codes plus the three X4
+      // run-governor codes) stays unclassified by Core.classifyErrorCode,
+      // same as every existing ERR_CONSOLE_* code.
       expect(Core.classifyErrorCode(error.code)).toBeUndefined();
     },
   );
