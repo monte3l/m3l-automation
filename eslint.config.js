@@ -735,6 +735,29 @@ export default tseslint.config(
     },
   },
   {
+    // Playwright's config and specs run under Node (via `playwright test`'s
+    // own loader), not the browser — the opposite of every other file under
+    // packages/m3l-console-web (ADR-0067's X9b Playwright harness). The
+    // broader `tests/**` glob in the browser/JSX zone above (browser
+    // globals, the node: import ban, the type-aware ruleset) still matches
+    // `tests/e2e/**` too since it's a subset path, so this LATER zone resets
+    // what that inheritance gets wrong — flat config overrides a rule's
+    // value per matching block, later wins, so only what's redeclared here
+    // actually changes.
+    files: [
+      "packages/m3l-console-web/playwright.config.ts",
+      "packages/m3l-console-web/tests/e2e/**/*.ts",
+    ],
+    languageOptions: {
+      globals: globals.node,
+      parserOptions: { projectService: false },
+    },
+    extends: [tseslint.configs.disableTypeChecked],
+    rules: {
+      "@typescript-eslint/no-restricted-imports": "off",
+    },
+  },
+  {
     // `internal/` is private and MUST NOT be re-exported through a public
     // barrel (rules 04 / ADR 0004 — the exports map stays at three entries).
     // Forbid the public entry points from importing it at all.

@@ -27,6 +27,7 @@
     "test": "vitest run && vitest run --config vitest.web.config.ts && vitest run --config vitest.integration.config.ts",
     "test:coverage": "vitest run --coverage && vitest run --coverage --config vitest.bin.config.ts && vitest run --coverage --config vitest.web.config.ts && vitest run --config vitest.integration.config.ts",
     "test:watch": "vitest",
+    "test:e2e": "pnpm --filter @m3l-automation/m3l-console-web test:e2e",
     "knip": "knip",
     "verify": "node bin/verify-all.mjs",
     "check:verify-parity": "node bin/check-verify-parity.mjs",
