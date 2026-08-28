@@ -25,6 +25,8 @@ const LOG_LEVEL_KEY = "m3l.console.log.level";
 const DB_PATH_KEY = "m3l.console.db.path";
 /** Dotted config key the database busy-timeout setting is stored under. */
 const DB_BUSY_TIMEOUT_KEY = "m3l.console.db.busy.timeout.ms";
+/** Dotted config key the request-body byte cap setting is stored under. */
+const MAX_BODY_BYTES_KEY = "m3l.console.max.body.bytes";
 
 /** Hermetic data dir injected via `LoadConsoleConfigOptions.resolveDataDir`. */
 const TEST_DATA_DIR = "/test-data";
@@ -73,6 +75,7 @@ describe("M3LConsoleConfig", () => {
       readonly logLevel: Core.M3LLogLevelFloor;
       readonly databasePath: string;
       readonly databaseBusyTimeoutMs: number;
+      readonly maxBodyBytes: number;
     }>();
   });
 });
@@ -102,6 +105,7 @@ describe("loadConsoleConfig — defaults", () => {
       logLevel: "info",
       databasePath: DEFAULT_DB_PATH,
       databaseBusyTimeoutMs: 5000,
+      maxBodyBytes: 65536,
     });
   });
 });
@@ -118,6 +122,7 @@ describe("loadConsoleConfig — every setting overridden", () => {
         M3L_CONSOLE_LOG_LEVEL: "debug",
         M3L_CONSOLE_DB_PATH: "custom/console.sqlite",
         M3L_CONSOLE_DB_BUSY_TIMEOUT_MS: "1234",
+        M3L_CONSOLE_MAX_BODY_BYTES: "131072",
       }),
       resolveDataDir: () => TEST_DATA_DIR,
     });
@@ -131,6 +136,7 @@ describe("loadConsoleConfig — every setting overridden", () => {
       logLevel: "debug",
       databasePath: path.resolve(TEST_DATA_DIR, "custom/console.sqlite"),
       databaseBusyTimeoutMs: 1234,
+      maxBodyBytes: 131072,
     });
   });
 });
@@ -437,6 +443,53 @@ describe("loadConsoleConfig — database busy-timeout validation", () => {
       const error = thrown as M3LConsoleError;
       expect(error.code).toBe("ERR_CONSOLE_CONFIG_INVALID");
       expect(error.message).toContain(DB_BUSY_TIMEOUT_KEY);
+      expect(error.message).not.toContain(rawValue);
+    },
+  );
+});
+
+describe("loadConsoleConfig — max body bytes validation", () => {
+  test("resolves the documented default of 65536 bytes when unset", () => {
+    const config = loadConsoleConfig({
+      env: buildEnv(),
+      resolveDataDir: () => TEST_DATA_DIR,
+    });
+
+    expect(config.maxBodyBytes).toBe(65536);
+  });
+
+  test("resolves M3L_CONSOLE_MAX_BODY_BYTES when set", () => {
+    const config = loadConsoleConfig({
+      env: buildEnv({ M3L_CONSOLE_MAX_BODY_BYTES: "1048576" }),
+      resolveDataDir: () => TEST_DATA_DIR,
+    });
+
+    expect(config.maxBodyBytes).toBe(1048576);
+  });
+
+  // Unlike the drain/busy timeouts, this is a byte count, not a timer delay,
+  // so MAX_TIMER_DELAY_MS does not bound it (see resolveMaxBodyBytes's
+  // TSDoc in src/config/env.ts) — only non-positive and non-integer values
+  // are rejected. A non-integer string ("5.5") fails at the earlier
+  // INT-coercion step rather than the `<= 0` check below; both sites must
+  // still satisfy the same naming/never-echo contract.
+  test.each<[string]>([["0"], ["-5"], ["5.5"]])(
+    "throws ERR_CONSOLE_CONFIG_INVALID naming the key, never the value, for the invalid max body bytes %s",
+    (rawValue) => {
+      let thrown: unknown;
+      try {
+        loadConsoleConfig({
+          env: buildEnv({ M3L_CONSOLE_MAX_BODY_BYTES: rawValue }),
+          resolveDataDir: () => TEST_DATA_DIR,
+        });
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toBeInstanceOf(M3LConsoleError);
+      const error = thrown as M3LConsoleError;
+      expect(error.code).toBe("ERR_CONSOLE_CONFIG_INVALID");
+      expect(error.message).toContain(MAX_BODY_BYTES_KEY);
       expect(error.message).not.toContain(rawValue);
     },
   );

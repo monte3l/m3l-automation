@@ -1380,3 +1380,95 @@ describe("createConsoleRuntime — logger secrets port covers near-synonym query
     },
   );
 });
+
+// =============================================================================
+// M3L_CONSOLE_MAX_BODY_BYTES config -> live requestListener wiring. Neither
+// `tests/env.test.ts` (proves the loader resolves the env var) nor
+// `tests/handler-body.test.ts` (proves the listener honours an explicitly
+// PASSED `maxBodyBytes`) can catch `createConsoleRuntime` failing to thread
+// `config.maxBodyBytes` into `createConsoleRequestListener` — each covers one
+// end of the wire, not the wire itself. This drives the SAME claimed
+// `content-length` — between the 65_536-byte default and a larger configured
+// override — through the real composed `runtime.requestListener` under both
+// configs: rejected as too-large under the default, accepted once the env
+// var raises the cap. If `main.ts` stops passing `config.maxBodyBytes`
+// through, the override case starts rejecting identically to the baseline
+// and this test fails.
+// =============================================================================
+describe("createConsoleRuntime — M3L_CONSOLE_MAX_BODY_BYTES actually caps the live requestListener", () => {
+  /** A claimed `content-length` above the 65_536-byte default but below the override this suite configures. */
+  const OVER_DEFAULT_CONTENT_LENGTH = 70_000;
+  const OVERRIDE_MAX_BODY_BYTES = 100_000;
+
+  const echoRoute: M3LRoute = {
+    method: "POST",
+    path: "/api/v1/echo",
+    auth: "exempt",
+    handler: () => jsonResponse(200, { ok: true }),
+  };
+
+  /**
+   * A body-bearing `IncomingMessage` double: an `EventEmitter` (mirroring
+   * `createFakeIncomingMessage` above) plus the `data`/`end` events
+   * `http/body.ts`'s `readJsonBody` actually listens on, and a no-op
+   * `destroy()` — called synchronously on the over-cap fast path, before any
+   * `data`/`end` listener is ever attached, so the microtask-deferred emits
+   * below are simply never observed in that case.
+   */
+  function createBodyBearingRequest(
+    headers: Record<string, string | undefined>,
+  ): IncomingMessage {
+    const req = new EventEmitter() as unknown as IncomingMessage & {
+      destroy: () => void;
+    };
+    Object.assign(req, {
+      method: "POST",
+      url: "/api/v1/echo",
+      headers,
+      destroy: () => undefined,
+    });
+    queueMicrotask(() => {
+      req.emit("data", Buffer.from("{}", "utf8"));
+      req.emit("end");
+    });
+    return req;
+  }
+
+  test("rejects that content-length as 413 under the default cap (no override set)", async () => {
+    const runtime = createConsoleRuntime({
+      env: buildEnv(),
+      routes: [echoRoute],
+    });
+    const req = createBodyBearingRequest({
+      host: "127.0.0.1",
+      "content-type": "application/json",
+      "content-length": String(OVER_DEFAULT_CONTENT_LENGTH),
+    });
+    const { res, written, finished } = createRecordingServerResponse();
+
+    runtime.requestListener(req, res);
+    await withTimeout(finished, "requestListener never called res.end()");
+
+    expect(written.status).toBe(413);
+  });
+
+  test("accepts that same content-length once M3L_CONSOLE_MAX_BODY_BYTES raises the cap", async () => {
+    const runtime = createConsoleRuntime({
+      env: buildEnv({
+        M3L_CONSOLE_MAX_BODY_BYTES: String(OVERRIDE_MAX_BODY_BYTES),
+      }),
+      routes: [echoRoute],
+    });
+    const req = createBodyBearingRequest({
+      host: "127.0.0.1",
+      "content-type": "application/json",
+      "content-length": String(OVER_DEFAULT_CONTENT_LENGTH),
+    });
+    const { res, written, finished } = createRecordingServerResponse();
+
+    runtime.requestListener(req, res);
+    await withTimeout(finished, "requestListener never called res.end()");
+
+    expect(written.status).toBe(200);
+  });
+});

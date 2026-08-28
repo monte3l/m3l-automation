@@ -30,6 +30,8 @@ const STATUS_CONFLICT = 409;
 const STATUS_TOO_MANY_REQUESTS = 429;
 const STATUS_INTERNAL = 500;
 const STATUS_UNAVAILABLE = 503;
+const STATUS_PAYLOAD_TOO_LARGE = 413;
+const STATUS_UNSUPPORTED_MEDIA_TYPE = 415;
 
 /** The status/origin/retryable/fault decision for one {@link M3LConsoleErrorCode}. */
 interface ErrorClassification {
@@ -225,6 +227,18 @@ const CLASSIFICATION_BY_CODE: Record<M3LConsoleErrorCode, ErrorClassification> =
       retryable: true,
       fault: false,
     },
+    ERR_CONSOLE_BODY_TOO_LARGE: {
+      status: STATUS_PAYLOAD_TOO_LARGE,
+      origin: "caller",
+      retryable: false,
+      fault: false,
+    },
+    ERR_CONSOLE_UNSUPPORTED_MEDIA_TYPE: {
+      status: STATUS_UNSUPPORTED_MEDIA_TYPE,
+      origin: "caller",
+      retryable: false,
+      fault: false,
+    },
   };
 
 /**
@@ -328,17 +342,38 @@ export interface M3LConsoleErrorEnvelope {
  * would let a caller remotely steer log severity by choosing which routine
  * error to trigger.
  *
+ * A THIRD, targeted exemption alongside the two above: an instance of
+ * {@link Core.M3LOperationAbortedError} also returns `false`, even though it
+ * is not an {@link M3LConsoleError} at all (every other non-`M3LConsoleError`
+ * value is a fault, per the general rule below). `http/body.ts`'s
+ * `readJsonBody` rejects with this exact error when its request's
+ * `AbortSignal` fires mid-read, and that signal is always the composite of
+ * the drain signal and the per-connection abort controller (see
+ * `http/handler.ts`'s `beginRequest`) — so an abort here means either the
+ * client disconnected or the server is draining, never a server defect.
+ * Without this exemption, every ordinary mid-body client disconnect would
+ * log a spurious "unhandled failure handling POST /api/v1/runs"-style
+ * diagnostic line. This does NOT change what HTTP status the aborted
+ * request's envelope carries (still the fixed generic-internal status
+ * `envelopeForForeignValue` gives any non-`M3LConsoleError` value) — the
+ * socket is already gone by the time that status would matter, so there is
+ * nothing to re-map it to.
+ *
  * @param error - Any value caught while handling a request.
  * @returns `true` when `error` is a genuine fault.
  * @example
  * ```ts
+ * import { Core } from "@m3l-automation/m3l-common";
+ *
  * isFaultError(
  *   new M3LConsoleError("ERR_CONSOLE_NOT_FOUND", "route not found"),
  * ); // false
  * isFaultError(new Error("boom")); // true
+ * isFaultError(new Core.M3LOperationAbortedError()); // false — routine abort
  * ```
  */
 export function isFaultError(error: unknown): boolean {
+  if (error instanceof Core.M3LOperationAbortedError) return false;
   if (!(error instanceof M3LConsoleError)) return true;
   return classificationForCode(error.code).fault;
 }
