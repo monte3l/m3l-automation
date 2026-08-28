@@ -17,7 +17,7 @@
 // all-false — three review rounds each found a different unmatched path
 // (a config file, a snapshot, a template) before this net was added.
 
-/** @typedef {"ts" | "deps" | "scripts" | "claude" | "workflows" | "docs" | "md"} ChangeCategory */
+/** @typedef {"ts" | "deps" | "scripts" | "claude" | "workflows" | "docs" | "md" | "console"} ChangeCategory */
 
 /** @type {ChangeCategory[]} */
 export const CHANGE_CATEGORIES = [
@@ -28,6 +28,7 @@ export const CHANGE_CATEGORIES = [
   "workflows",
   "docs",
   "md",
+  "console",
 ];
 
 /**
@@ -41,6 +42,8 @@ export const CHANGE_CATEGORIES = [
 const PREDICATES = {
   ts: (path) =>
     path.endsWith(".ts") ||
+    // .tsx: packages/m3l-console-web (ADR-0067) is the only source of these.
+    path.endsWith(".tsx") ||
     path === "eslint.config.js" ||
     path === "package.json" ||
     path.endsWith("/package.json") ||
@@ -84,6 +87,14 @@ const PREDICATES = {
     // rumdl reads this file as its config (markdownlint-compatible format);
     // configures `pnpm lint:md`, gated on `md`.
     path === ".markdownlint.json",
+  // ADR-0067's X9b Playwright job triggers on this category rather than the
+  // broad `ts` one — Playwright is expensive enough (browser install +
+  // runtime) that the CI-cost decision was to path-scope it to the two
+  // packages that make up the console (frontend + backend), not run it on
+  // every TypeScript change repo-wide.
+  console: (path) =>
+    path.startsWith("packages/m3l-console-web/") ||
+    path.startsWith("packages/m3l-console-server/"),
 };
 
 /**

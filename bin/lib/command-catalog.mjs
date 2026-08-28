@@ -76,6 +76,11 @@ export const COMMAND_CATALOG = [
       "Runs Vitest in watch mode for interactive TDD (RED → GREEN → refactor) against the files you're actively editing.",
   },
   {
+    name: "test:e2e",
+    description:
+      "Runs the m3l-console-web Playwright suite (packages/m3l-console-web/tests/e2e, ADR-0067): builds the production bundle, serves it via `vite preview`, and drives it with Chromium. CI runs this job only when packages/m3l-console-web{,-server}/** changed, on a PR carrying the `e2e` label, or on push to main — not on every PR by default.",
+  },
+  {
     name: "knip",
     description:
       "Detects unused files, exports, and dependencies across the workspace. CI-only dead-code gate; run locally after removing a symbol or dependency.",
@@ -216,6 +221,11 @@ export const COMMAND_CATALOG = [
       "Runs the m3l operations-console backend (packages/m3l-console-server, ADR-0064/0065) in the foreground: binds a loopback-only listener, serves /health and /ready, and drains gracefully on SIGINT/SIGTERM/SIGQUIT. Requires M3L_CONSOLE_OPERATOR_NAME (ADR-0071). Settings: the package README's Configuration table.",
   },
   {
+    name: "console:web",
+    description:
+      "Runs the m3l operations-console frontend's Vite dev server (packages/m3l-console-web, ADR-0064/0067). Proxies /health and /ready to console:server's default loopback bind so the shell's health check works against the real backend.",
+  },
+  {
     name: "check:agents",
     description:
       "Verifies every skill/CLAUDE.md agent reference resolves to a real subagent or built-in, and that no spoke is granted the Agent tool (the no-nesting invariant). Run after editing .claude/agents/** or a skill's dispatch prompt.",
@@ -324,6 +334,16 @@ export const COMMAND_CATALOG = [
     name: "check:worktree",
     description:
       ".worktreeinclude hygiene gate: every literal entry is gitignored and every path resolves, so `pnpm worktree:setup` provisions a fresh worktree correctly. Run after editing .worktreeinclude.",
+  },
+  {
+    name: "check:host-resources",
+    description:
+      "Warn-only preflight (ADR-0080) reporting missing OOM-livelock mitigations on this host — earlyoom/systemd-oomd inactive, no zram swap, no user-.slice MemoryMax, CLAUDE_CODE_TOOL_MEMORY_LIMIT unset, another claude process already running. Never exits non-zero; runs automatically once per session via a SessionStart hook. Run setup:host-resources to apply the fixes it reports.",
+  },
+  {
+    name: "setup:host-resources",
+    description:
+      "Idempotent host-level applier (ADR-0080) for the mitigations check:host-resources reports — earlyoom, zram, vm.swappiness, user-.slice MemoryMax, claude-rc.service ceiling, CLAUDE_CODE_TOOL_MEMORY_LIMIT. Dry-run by default; pass --apply to mutate the host (uses sudo). Never weakens an existing stricter setting it finds.",
   },
   {
     name: "check:signed-range",

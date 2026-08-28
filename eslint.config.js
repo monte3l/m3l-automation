@@ -7,6 +7,7 @@ import { importX } from "eslint-plugin-import-x";
 import { createTypeScriptImportResolver } from "eslint-import-resolver-typescript";
 import tsdoc from "eslint-plugin-tsdoc";
 import sonarjs from "eslint-plugin-sonarjs";
+import reactHooks from "eslint-plugin-react-hooks";
 import globals from "globals";
 
 // Generated from the scripts/ directory listing (not hand-maintained) so a
@@ -49,7 +50,13 @@ export default tseslint.config(
   importX.flatConfigs.recommended,
   importX.flatConfigs.typescript,
   {
-    files: ["**/*.ts"],
+    // `.tsx` widened on for ADR-0067's console-web package (the repo's first
+    // JSX source) — every rule below (the .js-extension check, no-any,
+    // no-floating-promises, the CommonJS bans, ...) applies equally to
+    // browser source, so widening this shared zone's `files` is simpler and
+    // less duplicative than re-declaring the same rule block in the new
+    // browser-only zone below.
+    files: ["**/*.ts", "**/*.tsx"],
     linterOptions: {
       // Stale eslint-disable directives are always a bug: they either never
       // suppressed anything or the underlying finding was fixed, leaving
@@ -110,8 +117,15 @@ export default tseslint.config(
   {
     // Source-only design rules (rules 01, 03). Scoped to shipped source so the
     // checks never trip on tests, config (vitest.config.ts uses a default
-    // export), or tooling.
-    files: ["packages/*/src/**/*.ts", "scripts/*/src/**/*.ts"],
+    // export), or tooling. `.tsx` widened on for packages/m3l-console-web
+    // (ADR-0067) — TSDoc, named-exports-only, and the complexity/naming
+    // rules apply to a React component exactly as they do to any other
+    // shipped module.
+    files: [
+      "packages/*/src/**/*.ts",
+      "packages/*/src/**/*.tsx",
+      "scripts/*/src/**/*.ts",
+    ],
     plugins: { tsdoc, sonarjs },
     rules: {
       // TSDoc must be well-formed on shipped source (rules 01: documentation).
@@ -674,6 +688,100 @@ export default tseslint.config(
     },
   },
   {
+    // The repo's first browser/JSX zone (ADR-0067). `packages/m3l-console-web`
+    // runs under the DOM, not Node — it gets `globals.browser` instead of the
+    // `globals.node` the no-cycle zone below sets for every tsc-only package,
+    // and it may not import a `node:` builtin at all (the inverse of the
+    // m3l-cli/console-server zones above, which ban everything EXCEPT
+    // `node:` and `@m3l-automation/m3l-common`).
+    files: [
+      "packages/m3l-console-web/src/**/*.{ts,tsx}",
+      "packages/m3l-console-web/tests/**/*.{ts,tsx}",
+      "packages/m3l-console-web/vitest.setup.ts",
+    ],
+    plugins: { "react-hooks": reactHooks },
+    languageOptions: {
+      globals: globals.browser,
+    },
+    rules: {
+      "react-hooks/rules-of-hooks": "error",
+      "react-hooks/exhaustive-deps": "error",
+      "@typescript-eslint/no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              regex: "^node:",
+              allowTypeImports: false,
+              message:
+                "packages/m3l-console-web is browser-target (ADR-0067) — it cannot import a node: builtin.",
+            },
+          ],
+        },
+      ],
+      // Re-declared (not merged) from the source-design zone above: flat
+      // config replaces a rule's value per matching block rather than deep-
+      // merging it, so this zone must restate the FULL naming-convention
+      // array to keep every other selector's constraint, adding only the
+      // "function" selector PascalCase needs for a React component
+      // (`export function HealthBanner()`) alongside the camelCase every
+      // other function in the workspace already uses.
+      "@typescript-eslint/naming-convention": [
+        "error",
+        {
+          selector: "default",
+          format: ["camelCase"],
+          leadingUnderscore: "allow",
+        },
+        {
+          selector: "function",
+          format: ["camelCase", "PascalCase"],
+          leadingUnderscore: "allow",
+        },
+        {
+          selector: "variable",
+          format: ["camelCase", "UPPER_CASE", "PascalCase"],
+          leadingUnderscore: "allow",
+        },
+        {
+          selector: "parameter",
+          format: ["camelCase"],
+          leadingUnderscore: "allow",
+        },
+        { selector: "typeLike", format: ["PascalCase"] },
+        { selector: "enumMember", format: ["PascalCase", "UPPER_CASE"] },
+        { selector: "import", format: ["camelCase", "PascalCase"] },
+        {
+          selector: ["objectLiteralProperty", "typeProperty"],
+          format: null,
+        },
+      ],
+    },
+  },
+  {
+    // Playwright's config and specs run under Node (via `playwright test`'s
+    // own loader), not the browser — the opposite of every other file under
+    // packages/m3l-console-web (ADR-0067's X9b Playwright harness). The
+    // broader `tests/**` glob in the browser/JSX zone above (browser
+    // globals, the node: import ban, the type-aware ruleset) still matches
+    // `tests/e2e/**` too since it's a subset path, so this LATER zone resets
+    // what that inheritance gets wrong — flat config overrides a rule's
+    // value per matching block, later wins, so only what's redeclared here
+    // actually changes.
+    files: [
+      "packages/m3l-console-web/playwright.config.ts",
+      "packages/m3l-console-web/tests/e2e/**/*.ts",
+    ],
+    languageOptions: {
+      globals: globals.node,
+      parserOptions: { projectService: false },
+    },
+    extends: [tseslint.configs.disableTypeChecked],
+    rules: {
+      "@typescript-eslint/no-restricted-imports": "off",
+    },
+  },
+  {
     // `internal/` is private and MUST NOT be re-exported through a public
     // barrel (rules 04 / ADR 0004 — the exports map stays at three entries).
     // Forbid the public entry points from importing it at all.
@@ -908,6 +1016,8 @@ export default tseslint.config(
       "scripts/*/src/**/*.ts",
       "packages/m3l-cli/src/**/*.ts",
       "packages/m3l-console-server/src/**/*.ts",
+      "packages/m3l-console-web/src/**/*.ts",
+      "packages/m3l-console-web/src/**/*.tsx",
     ],
     rules: {
       "import-x/no-cycle": ["error", { maxDepth: Infinity }],
@@ -953,7 +1063,13 @@ export default tseslint.config(
     // (the #25 smell: mkdtempSync/writeFileSync against /tmp in pure unit tests).
     // Read-only methods tests legitimately vi.spyOn (existsSync, readdirSync,
     // accessSync) are NOT banned. Use vi.spyOn(fs, method) for everything else.
-    files: ["**/tests/**/*.ts", "**/*.test.ts"],
+    // `.tsx` widened on for packages/m3l-console-web's component tests.
+    files: [
+      "**/tests/**/*.ts",
+      "**/tests/**/*.tsx",
+      "**/*.test.ts",
+      "**/*.test.tsx",
+    ],
     rules: {
       "import-x/no-extraneous-dependencies": "off",
       "no-restricted-syntax": [

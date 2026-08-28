@@ -1,0 +1,30 @@
+{
+  "//": "Tooling project (editor + ESLint typed linting + test type-checking). Includes tests; emits nothing. The build uses tsconfig.build.json, but Vite (not tsc) is what actually bundles — this project exists so `tsc -p` gives the editor and CI a real type-check surface.",
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // ADR-0067's scoped bundler exception: this is the repo's first
+    // browser-target tsconfig, so it deliberately diverges from
+    // tsconfig.base.json's Node-only defaults rather than extending them
+    // unmodified. Every other package keeps the base's nodenext/no-DOM
+    // shape; only this one (and X10/X11 alongside it) opts into DOM +
+    // bundler resolution.
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2025", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "types": ["vite/client"],
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "noEmit": true
+  },
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "tests/**/*.ts",
+    "tests/**/*.tsx",
+    "vite.config.ts",
+    "vitest.setup.ts"
+  ],
+  "exclude": ["dist", "node_modules"]
+}

@@ -33,6 +33,7 @@ export const ALLOWED_LICENSES = new Set([
   "0BSD",
   "CC0-1.0",
   "Unlicense",
+  "CC-BY-4.0",
 ]);
 
 /**
