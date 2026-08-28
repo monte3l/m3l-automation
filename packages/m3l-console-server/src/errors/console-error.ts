@@ -54,6 +54,13 @@ import { Core } from "@m3l-automation/m3l-common";
  * run exists, but its current status was not the one the caller's transition
  * expected, so the write that would have advanced its FSM never applied.
  *
+ * The three further `ERR_CONSOLE_RUN_*` codes are the X4 run-governor's
+ * caller-facing failure modes: `ERR_CONSOLE_RUN_SCRIPT_NOT_FOUND` when the
+ * resolver finds no script directory for the requested name,
+ * `ERR_CONSOLE_RUN_CONFIRMATION_REQUIRED` when a non-dry-run request arrives
+ * without `confirmed: true`, and `ERR_CONSOLE_RUN_CAPACITY_EXCEEDED` when the
+ * run governor's queue is full.
+ *
  * @example
  * ```ts
  * function isConfigError(code: M3LConsoleErrorCode): boolean {
@@ -82,7 +89,10 @@ export type M3LConsoleErrorCode =
   | "ERR_CONSOLE_STREAM_CLOSED"
   | "ERR_CONSOLE_STREAM_DUPLICATE"
   | "ERR_CONSOLE_RUN_NOT_FOUND"
-  | "ERR_CONSOLE_RUN_TRANSITION_INVALID";
+  | "ERR_CONSOLE_RUN_TRANSITION_INVALID"
+  | "ERR_CONSOLE_RUN_SCRIPT_NOT_FOUND"
+  | "ERR_CONSOLE_RUN_CONFIRMATION_REQUIRED"
+  | "ERR_CONSOLE_RUN_CAPACITY_EXCEEDED";
 
 /**
  * Constructor options for {@link M3LConsoleError}.

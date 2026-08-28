@@ -182,6 +182,24 @@ const CLASSIFICATION_TABLE: Record<
     retryable: false,
     fault: true,
   },
+  ERR_CONSOLE_RUN_SCRIPT_NOT_FOUND: {
+    status: 404,
+    origin: "caller",
+    retryable: false,
+    fault: false,
+  },
+  ERR_CONSOLE_RUN_CONFIRMATION_REQUIRED: {
+    status: 409,
+    origin: "caller",
+    retryable: false,
+    fault: false,
+  },
+  ERR_CONSOLE_RUN_CAPACITY_EXCEEDED: {
+    status: 429,
+    origin: "caller",
+    retryable: true,
+    fault: false,
+  },
 };
 
 // `Object.entries` widens the key to `string`; `CLASSIFICATION_TABLE`'s
