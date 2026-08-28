@@ -5,6 +5,16 @@
  * types directly. See ADR-0059 for why this module exists and its scope
  * boundary against V5 (tool-use loop primitives).
  *
+ * `invoke()`'s single-shot request/response mapping lives here in full;
+ * `invokeStream()` is a thin delegation into `stream.ts`'s exported
+ * `invokeStream` function, which holds the entire streaming implementation
+ * (kept in a separate file per ADR-0072's per-file size ratchet). Machinery
+ * genuinely shared by both — abort-signal helpers, the SDK exception-`name`
+ * classifier, the retry-runner construction, and the request-mapping
+ * helpers — lives in `shared.ts`, imported by both this file and
+ * `stream.ts` (see `shared.ts`'s own doc comment for why `stream.ts` cannot
+ * import from this file directly).
+ *
  * @packageDocumentation
  */
 
@@ -15,197 +25,36 @@ import {
 } from "@aws-sdk/client-bedrock-runtime";
 
 import { M3LOperationAbortedError } from "../../core/errors/index.js";
-import { M3LBackoff } from "../../core/polling/M3LBackoff.js";
-import { combineClassifiers } from "../../core/polling/classifiers.js";
-import { M3LRetryRunner } from "../../core/polling/M3LRetryRunner.js";
-import type { M3LRetryClassifier } from "../../core/polling/M3LRetryRunner.js";
 
 import {
-  M3LBedrockRuntimeModelError,
   M3LBedrockRuntimeNoModelError,
   M3LBedrockRuntimeOperationError,
 } from "./error.js";
+import {
+  buildConverseInput,
+  buildRetryRunner,
+  classifySendFailure,
+  isAborted,
+  isAbortError,
+  mapRole,
+  STOP_REASON_LOOKUP,
+} from "./shared.js";
+import { invokeStream as invokeStreamImpl } from "./stream.js";
 import type {
   M3LBedrockContentBlock,
   M3LBedrockInvocationResult,
   M3LBedrockInvokeOptions,
   M3LBedrockInvokeRequest,
-  M3LBedrockMessage,
   M3LBedrockRuntimeOptions,
-  M3LBedrockRuntimeRole,
-  M3LBedrockStopReason,
+  M3LBedrockStreamEvent,
 } from "./types.js";
 
-/** Retry-runner backoff tuning: 200ms start, 5s cap (matches `M3LPollingPolicies.awsThrottling()`). */
-const RETRY_START_MS = 200;
-const RETRY_CAP_MS = 5_000;
-
-/** SDK exception names retried on the same model via {@link buildRetryRunner}. */
-const SAME_MODEL_RETRY_NAMES: ReadonlySet<string> = new Set([
-  "ThrottlingException",
-  "InternalServerException",
-]);
-
-/** SDK exception names that advance fallback immediately — no same-model retry. */
-const ADVANCE_FALLBACK_NAMES: ReadonlySet<string> = new Set([
-  "ModelNotReadyException",
-  "ModelTimeoutException",
-  "ServiceUnavailableException",
-]);
-
-/** SDK exception names that surface as a caller/permission fault, no retry, no fallback. */
-const CALLER_FAULT_NAMES: ReadonlySet<string> = new Set([
-  "ValidationException",
-  "AccessDeniedException",
-  "ResourceNotFoundException",
-  "ServiceQuotaExceededException",
-]);
-
-/**
- * The nine canonical {@link M3LBedrockStopReason} members, as a `Record`
- * rather than a hand-listed array — mirroring `internal/logging/levels.ts`'s
- * `LOG_LEVEL_FLOOR_MEMBERS` idiom. This makes the vocabulary a
- * **compile-time exhaustiveness check**: widening or narrowing
- * `M3LBedrockStopReason` without updating this object is a missing- or
- * excess-property TS error here, not a silent runtime drift between the type
- * and the set actually validated against.
- */
-const STOP_REASON_MEMBERS: Record<M3LBedrockStopReason, true> = {
-  end_turn: true,
-  tool_use: true,
-  max_tokens: true,
-  stop_sequence: true,
-  guardrail_intervened: true,
-  content_filtered: true,
-  malformed_tool_use: true,
-  malformed_model_output: true,
-  model_context_window_exceeded: true,
-};
-
-/**
- * Fast membership lookup for the closed {@link M3LBedrockStopReason}
- * vocabulary. AWS's Smithy enums are open at the wire level, so a
- * `stopReason` outside this set is a genuinely unexpected AWS response
- * shape, not a client-side type error — see `mapConverseResponse`.
- */
-const STOP_REASON_LOOKUP: ReadonlySet<string> = new Set(
-  Object.keys(STOP_REASON_MEMBERS),
-);
-
-/**
- * Returns `true` when `signal` is defined and has fired. A named function
- * rather than an inline `signal?.aborted` check prevents TypeScript's
- * control-flow narrowing from producing a TS2367 false-alarm on a second
- * check that follows an `await` (matches `aws/athena/client.ts`).
- */
-function isAborted(signal: AbortSignal | undefined): boolean {
-  return signal !== undefined && signal.aborted;
-}
-
-/**
- * Returns `true` when `err` is an `AbortError` thrown by the AWS SDK when
- * an `abortSignal` fires during an in-flight `send()`.
- */
-function isAbortError(err: unknown): boolean {
-  return err instanceof Error && err.name === "AbortError";
-}
-
-/** Reads `err.name` when `err` is an `Error`-shaped value, `undefined` otherwise. */
-function readErrorName(err: unknown): string | undefined {
-  return err instanceof Error ? err.name : undefined;
-}
-
-/**
- * Classifies a thrown value by SDK exception `name`: retriable exactly for
- * {@link SAME_MODEL_RETRY_NAMES}, `"unknown"` for everything else — including
- * names this module's own catch-based classification handles by advancing
- * fallback or throwing directly (never `"fatal"` here — the runner's own
- * `unknownDecision: "fatal"` is what actually stops the runner and rethrows
- * the original error unchanged).
- */
-const bedrockSameModelRetryClassifier: M3LRetryClassifier = (err: unknown) => {
-  const name = readErrorName(err);
-  return name !== undefined && SAME_MODEL_RETRY_NAMES.has(name)
-    ? "retriable"
-    : "unknown";
-};
-
-/**
- * Builds a fresh {@link M3LRetryRunner} for one Converse `send()` attempt,
- * so `signal` can be threaded per call (matching `aws/athena/client.ts`'s
- * per-call runner pattern). Retries only `ThrottlingException`/
- * `InternalServerException` by name, over the same backoff as
- * `M3LPollingPolicies.awsThrottling()` — deliberately NOT that policy's
- * broader status-code classifier, which would incorrectly retry a 503
- * `ServiceUnavailableException` on the same model (see
- * `docs/reference/aws/bedrock-runtime.md`'s "Retry classifier note").
- */
-function buildRetryRunner(signal: AbortSignal | undefined): M3LRetryRunner {
-  return new M3LRetryRunner({
-    classifier: combineClassifiers(bedrockSameModelRetryClassifier),
-    backoff: M3LBackoff.exponentialJittered(RETRY_START_MS, RETRY_CAP_MS),
-    unknownDecision: "fatal",
-    ...(signal !== undefined && { signal }),
-  });
-}
-
-/** Converts a {@link M3LBedrockMessage} into the shape `ConverseCommandInput.messages` expects. */
-function toSdkMessage(message: M3LBedrockMessage): {
-  role: M3LBedrockRuntimeRole;
-  content: { text: string }[];
-} {
-  return {
-    role: message.role,
-    content: message.content.map((block) => ({ text: block.text })),
-  };
-}
-
-/**
- * Builds the `ConverseCommand` for one model attempt. `system` and
- * `inferenceConfig` are included only when present on `request` — a
- * conditional spread, never a key set to `undefined`
- * (`exactOptionalPropertyTypes` convention). `inferenceConfig.stopSequences`
- * is copied into a fresh mutable array since the SDK's field is
- * `string[] | undefined`, not `readonly string[]`.
- */
+/** Builds the `ConverseCommand` for one model attempt. See `shared.ts`'s `buildConverseInput`. */
 function buildConverseCommand(
   modelId: string,
   request: M3LBedrockInvokeRequest,
 ): ConverseCommand {
-  const inferenceConfig = request.inferenceConfig;
-  return new ConverseCommand({
-    modelId,
-    messages: request.messages.map(toSdkMessage),
-    ...(request.system !== undefined && {
-      system: [{ text: request.system }],
-    }),
-    ...(inferenceConfig !== undefined && {
-      inferenceConfig: {
-        ...(inferenceConfig.maxTokens !== undefined && {
-          maxTokens: inferenceConfig.maxTokens,
-        }),
-        ...(inferenceConfig.temperature !== undefined && {
-          temperature: inferenceConfig.temperature,
-        }),
-        ...(inferenceConfig.topP !== undefined && {
-          topP: inferenceConfig.topP,
-        }),
-        ...(inferenceConfig.stopSequences !== undefined && {
-          stopSequences: [...inferenceConfig.stopSequences],
-        }),
-      },
-    }),
-  });
-}
-
-/**
- * Maps a response `role` to {@link M3LBedrockRuntimeRole}. The SDK's
- * `ConversationRole` also carries `"system"` (request-only in practice); any
- * value other than `"user"` maps to `"assistant"`, the only other member of
- * this V4 slice's role vocabulary.
- */
-function mapRole(role: string | undefined): M3LBedrockRuntimeRole {
-  return role === "user" ? "user" : "assistant";
+  return new ConverseCommand(buildConverseInput(modelId, request));
 }
 
 /**
@@ -285,52 +134,6 @@ function mapConverseResponse(
 type ModelAttemptOutcome =
   | { readonly type: "success"; readonly result: M3LBedrockInvocationResult }
   | { readonly type: "advance"; readonly cause: unknown };
-
-/**
- * Classifies a `client.send()` rejection (after any same-model retry has
- * exhausted) into either advancing fallback (returning the fault as the
- * advance cause), or throwing one of this module's typed errors immediately.
- * See the fault-handling table in `docs/reference/aws/bedrock-runtime.md`.
- *
- * `ThrottlingException`/`InternalServerException` reach this function only
- * after {@link buildRetryRunner}'s retries are exhausted — that exhaustion
- * always advances fallback, never throws
- * {@link M3LBedrockRuntimeOperationError} (see the doc's "highest-value
- * regression" test).
- *
- * @returns `error` unchanged, for the two advance-fallback tiers — the
- *   caller threads it through as {@link M3LBedrockRuntimeNoModelError}'s
- *   `cause` on eventual fallback exhaustion.
- * @throws {@link M3LBedrockRuntimeModelError} For `ModelErrorException`.
- * @throws {@link M3LBedrockRuntimeOperationError} For a caller/permission
- *   fault or any other unclassified rejection.
- */
-function classifySendFailure(error: unknown, modelId: string): unknown {
-  const name = readErrorName(error);
-
-  if (name !== undefined && SAME_MODEL_RETRY_NAMES.has(name)) {
-    return error;
-  }
-  if (name !== undefined && ADVANCE_FALLBACK_NAMES.has(name)) {
-    return error;
-  }
-  if (name === "ModelErrorException") {
-    throw new M3LBedrockRuntimeModelError(
-      `model ${modelId} faulted while processing the request`,
-      { modelId, cause: error },
-    );
-  }
-  if (name !== undefined && CALLER_FAULT_NAMES.has(name)) {
-    throw new M3LBedrockRuntimeOperationError(
-      `Converse request rejected for model ${modelId}`,
-      { cause: error, origin: "caller", retryable: false },
-    );
-  }
-  throw new M3LBedrockRuntimeOperationError(
-    `Converse request failed for model ${modelId}`,
-    { cause: error },
-  );
-}
 
 /**
  * Typed wrapper over the Amazon Bedrock Converse API
@@ -489,5 +292,65 @@ export class M3LBedrockRuntimeOperations {
     }
 
     return { type: "success", result: mapConverseResponse(response, modelId) };
+  }
+
+  /**
+   * Streams one `ConverseStream` request, walking `models[]` in order on a
+   * pre-first-yield availability fault until one model fully serves the
+   * request or every model is exhausted. An `async function*`: calling it
+   * synchronously returns a generator and performs no I/O yet — model
+   * selection, `client.send()`, and every fault surface only once the
+   * caller starts iterating (the first `.next()`/`for await`). The entire
+   * implementation lives in `stream.ts`'s `invokeStream` — this method is a
+   * one-line `yield*` delegation into it.
+   *
+   * @param request - The conversation messages, optional system prompt, and
+   *   optional inference tuning.
+   * @param options - Optional `signal` for cooperative cancellation.
+   * @returns An `AsyncGenerator` yielding {@link M3LBedrockStreamEvent}s —
+   *   exactly one `message-start` (before any text), zero or more
+   *   `text-delta`, and exactly one `message-stop`, last. There is no
+   *   error-shaped event; every fault below is a rejection of `.next()`.
+   * @throws {@link M3LBedrockRuntimeOperationError} For a transport/API-call
+   *   failure not covered by the other error classes, a malformed-but-
+   *   successful `send()` response (`stream === undefined`), or a malformed
+   *   terminal `stopReason`/`usage` value — never retried or fallen back
+   *   from, even after events have already been yielded to the caller.
+   * @throws {@link M3LBedrockRuntimeModelError} When the serving model
+   *   itself faults on this specific input (`ModelErrorException`/
+   *   `ModelStreamErrorException`), on either side of the `hasYielded`
+   *   commit boundary.
+   * @throws {@link M3LBedrockRuntimeNoModelError} When every model in the
+   *   fallback order is exhausted by a pre-first-yield availability fault.
+   * @throws {@link M3LBedrockRuntimeStreamError} For two distinct cases: (1)
+   *   a streaming-lifecycle fault once at least one event has already been
+   *   yielded to the caller — past that point retry and fallback are both
+   *   retired, since falling back would silently start a second, unrelated
+   *   generation appended to a half-delivered reply (`retrySafe: false`);
+   *   and (2), **unconditionally, independent of `hasYielded`**, a stream
+   *   that drains cleanly without ever fusing a `message-stop` event,
+   *   including the zero-event case (`retrySafe: true` only there).
+   * @throws {@link M3LOperationAbortedError} When `options.signal` aborts
+   *   before the initial `send()`, during a same-model retry backoff,
+   *   between fallback attempts, while awaiting the next stream chunk, or
+   *   immediately after a `yield` resumes. The mid-stream check is
+   *   order-reversed from `invoke`'s: `isAborted(signal)` is tested first,
+   *   before any name-based classification, since a destroyed socket
+   *   post-`send()` is not reliably `AbortError`-shaped.
+   * @example
+   * ```ts
+   * let reply = "";
+   * for await (const event of ops.invokeStream({
+   *   messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+   * })) {
+   *   if (event.type === "text-delta") reply += event.text;
+   * }
+   * ```
+   */
+  async *invokeStream(
+    request: M3LBedrockInvokeRequest,
+    options?: M3LBedrockInvokeOptions,
+  ): AsyncGenerator<M3LBedrockStreamEvent, void, void> {
+    yield* invokeStreamImpl(this.#client, this.#models, request, options);
   }
 }
