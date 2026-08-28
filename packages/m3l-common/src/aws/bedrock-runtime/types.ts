@@ -114,6 +114,14 @@ export interface M3LBedrockInvocationResult {
 
 /** Constructor options for {@link M3LBedrockRuntimeOperations}. */
 export interface M3LBedrockRuntimeOptions {
-  /** Ordered, non-empty fallback list; `models[0]` is the primary model id. */
-  readonly models: readonly string[];
+  /**
+   * Ordered, **type-level non-empty** fallback list; `models[0]` is the
+   * primary model id. The tuple type makes an empty array a compile error
+   * for a caller passing a literal — but a config- or JSON-sourced
+   * `string[]` can still arrive empty after being downcast to satisfy this
+   * type, so the constructor also throws
+   * {@link M3LBedrockRuntimeNoModelError} at construction as defense-in-depth
+   * for exactly that case.
+   */
+  readonly models: readonly [string, ...(readonly string[])];
 }

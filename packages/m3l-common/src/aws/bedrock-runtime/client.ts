@@ -33,6 +33,7 @@ import type {
   M3LBedrockMessage,
   M3LBedrockRuntimeOptions,
   M3LBedrockRuntimeRole,
+  M3LBedrockStopReason,
 } from "./types.js";
 
 /** Retry-runner backoff tuning: 200ms start, 5s cap (matches `M3LPollingPolicies.awsThrottling()`). */
@@ -59,6 +60,37 @@ const CALLER_FAULT_NAMES: ReadonlySet<string> = new Set([
   "ResourceNotFoundException",
   "ServiceQuotaExceededException",
 ]);
+
+/**
+ * The nine canonical {@link M3LBedrockStopReason} members, as a `Record`
+ * rather than a hand-listed array — mirroring `internal/logging/levels.ts`'s
+ * `LOG_LEVEL_FLOOR_MEMBERS` idiom. This makes the vocabulary a
+ * **compile-time exhaustiveness check**: widening or narrowing
+ * `M3LBedrockStopReason` without updating this object is a missing- or
+ * excess-property TS error here, not a silent runtime drift between the type
+ * and the set actually validated against.
+ */
+const STOP_REASON_MEMBERS: Record<M3LBedrockStopReason, true> = {
+  end_turn: true,
+  tool_use: true,
+  max_tokens: true,
+  stop_sequence: true,
+  guardrail_intervened: true,
+  content_filtered: true,
+  malformed_tool_use: true,
+  malformed_model_output: true,
+  model_context_window_exceeded: true,
+};
+
+/**
+ * Fast membership lookup for the closed {@link M3LBedrockStopReason}
+ * vocabulary. AWS's Smithy enums are open at the wire level, so a
+ * `stopReason` outside this set is a genuinely unexpected AWS response
+ * shape, not a client-side type error — see `mapConverseResponse`.
+ */
+const STOP_REASON_LOOKUP: ReadonlySet<string> = new Set(
+  Object.keys(STOP_REASON_MEMBERS),
+);
 
 /**
  * Returns `true` when `signal` is defined and has fired. A named function
@@ -191,8 +223,13 @@ function mapContent(
  * Maps a successful `ConverseCommandOutput` onto {@link M3LBedrockInvocationResult}.
  *
  * @throws {@link M3LBedrockRuntimeOperationError} When `output`/`stopReason`/
- *   `usage` is missing, or `output` matches the `$UnknownMember` arm rather
- *   than carrying a `message` — a malformed-but-HTTP-successful response.
+ *   `usage` is missing, `output` matches the `$UnknownMember` arm rather than
+ *   carrying a `message` (a malformed-but-HTTP-successful response), or
+ *   `stopReason` is not one of the nine documented
+ *   {@link M3LBedrockStopReason} members — AWS's Smithy enums are open at the
+ *   wire level, so a future SDK/service value is not a client-side type
+ *   error, but it is still a shape this wrapper refuses to silently admit
+ *   into a type callers switch on exhaustively.
  */
 function mapConverseResponse(
   response: ConverseCommandOutput,
@@ -208,7 +245,8 @@ function mapConverseResponse(
     usage === undefined ||
     usage.inputTokens === undefined ||
     usage.outputTokens === undefined ||
-    usage.totalTokens === undefined
+    usage.totalTokens === undefined ||
+    !STOP_REASON_LOOKUP.has(stopReason)
   ) {
     throw new M3LBedrockRuntimeOperationError(
       `Converse response for model ${modelId} was missing output/stopReason/usage`,
@@ -221,7 +259,7 @@ function mapConverseResponse(
       role: mapRole(message.role),
       content: mapContent(message.content),
     },
-    stopReason,
+    stopReason: stopReason,
     usage: {
       inputTokens: usage.inputTokens,
       outputTokens: usage.outputTokens,
@@ -233,13 +271,13 @@ function mapConverseResponse(
 /** The outcome of one model attempt: a mapped result, or a signal to advance fallback. */
 type ModelAttemptOutcome =
   | { readonly type: "success"; readonly result: M3LBedrockInvocationResult }
-  | { readonly type: "advance" };
+  | { readonly type: "advance"; readonly cause: unknown };
 
 /**
  * Classifies a `client.send()` rejection (after any same-model retry has
- * exhausted) into either advancing fallback, or throwing one of this
- * module's typed errors immediately. See the fault-handling table in
- * `docs/reference/aws/bedrock-runtime.md`.
+ * exhausted) into either advancing fallback (returning the fault as the
+ * advance cause), or throwing one of this module's typed errors immediately.
+ * See the fault-handling table in `docs/reference/aws/bedrock-runtime.md`.
  *
  * `ThrottlingException`/`InternalServerException` reach this function only
  * after {@link buildRetryRunner}'s retries are exhausted — that exhaustion
@@ -247,18 +285,21 @@ type ModelAttemptOutcome =
  * {@link M3LBedrockRuntimeOperationError} (see the doc's "highest-value
  * regression" test).
  *
+ * @returns `error` unchanged, for the two advance-fallback tiers — the
+ *   caller threads it through as {@link M3LBedrockRuntimeNoModelError}'s
+ *   `cause` on eventual fallback exhaustion.
  * @throws {@link M3LBedrockRuntimeModelError} For `ModelErrorException`.
  * @throws {@link M3LBedrockRuntimeOperationError} For a caller/permission
  *   fault or any other unclassified rejection.
  */
-function classifySendFailure(error: unknown, modelId: string): void {
+function classifySendFailure(error: unknown, modelId: string): unknown {
   const name = readErrorName(error);
 
   if (name !== undefined && SAME_MODEL_RETRY_NAMES.has(name)) {
-    return;
+    return error;
   }
   if (name !== undefined && ADVANCE_FALLBACK_NAMES.has(name)) {
-    return;
+    return error;
   }
   if (name === "ModelErrorException") {
     throw new M3LBedrockRuntimeModelError(
@@ -362,6 +403,8 @@ export class M3LBedrockRuntimeOperations {
   ): Promise<M3LBedrockInvocationResult> {
     const signal = options?.signal;
     const attemptedModels: string[] = [];
+    let lastCause: unknown;
+    let hasLastCause = false;
 
     for (const modelId of this.#models) {
       if (isAborted(signal)) {
@@ -374,8 +417,13 @@ export class M3LBedrockRuntimeOperations {
         return outcome.result;
       }
 
-      // outcome.type === "advance": re-check abort before trying the next
-      // model — an abort mid-fallback must stop the walk entirely.
+      // outcome.type === "advance": track the most recent fault so it can
+      // chain into M3LBedrockRuntimeNoModelError's cause on exhaustion.
+      lastCause = outcome.cause;
+      hasLastCause = true;
+
+      // Re-check abort before trying the next model — an abort mid-fallback
+      // must stop the walk entirely.
       if (isAborted(signal)) {
         throw new M3LOperationAbortedError();
       }
@@ -383,7 +431,10 @@ export class M3LBedrockRuntimeOperations {
 
     throw new M3LBedrockRuntimeNoModelError(
       "every model in the fallback list was exhausted",
-      { attemptedModels },
+      {
+        attemptedModels,
+        ...(hasLastCause && { cause: lastCause }),
+      },
     );
   }
 
@@ -420,8 +471,8 @@ export class M3LBedrockRuntimeOperations {
       if (isAborted(signal)) {
         throw new M3LOperationAbortedError();
       }
-      classifySendFailure(error, modelId);
-      return { type: "advance" };
+      const cause = classifySendFailure(error, modelId);
+      return { type: "advance", cause };
     }
 
     return { type: "success", result: mapConverseResponse(response, modelId) };

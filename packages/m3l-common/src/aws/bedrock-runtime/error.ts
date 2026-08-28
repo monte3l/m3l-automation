@@ -155,21 +155,32 @@ export class M3LBedrockRuntimeModelError extends M3LError {
 interface M3LBedrockRuntimeNoModelErrorOptions {
   /** Every model id tried, in order (empty when `models` was empty at construction). */
   readonly attemptedModels: readonly string[];
+  /**
+   * The last attempt's fault, chaining the most recent evidence of why the
+   * fallback list as a whole failed. Absent when `models` was empty at
+   * construction (no attempt was ever made).
+   */
+  readonly cause?: unknown;
 }
 
 /**
- * Thrown when `models` is empty at construction (`attemptedModels: []`), or
- * by {@link M3LBedrockRuntimeOperations.invoke} when every model in the
- * fallback order has been exhausted by availability faults
+ * Thrown when `models` is empty at construction (`attemptedModels: []`, no
+ * `cause`), or by {@link M3LBedrockRuntimeOperations.invoke} when every model
+ * in the fallback order has been exhausted by availability faults
  * (`ModelNotReadyException`/`ModelTimeoutException`/
  * `ServiceUnavailableException`, or an exhausted
- * `ThrottlingException`/`InternalServerException` retry).
- * `attemptedModels` lists every model id tried, in order. `origin: caller`,
+ * `ThrottlingException`/`InternalServerException` retry). `attemptedModels`
+ * lists every model id tried, in order, and `cause` chains the **last**
+ * attempt's fault — the most recent evidence of why the fallback list as a
+ * whole failed, not a synthetic message. `origin: caller`,
  * `retryable: false` — the caller's model list is the fault, not AWS.
  *
  * `attemptedModels` is both an own field and mirrored into
  * `context.attemptedModels`, for the same `toJSON()`/diagnostics reason as
- * {@link M3LBedrockRuntimeModelError.modelId}.
+ * {@link M3LBedrockRuntimeModelError.modelId}. `cause` is the standard
+ * `M3LError` chain (not an own field) — without it, a caller whose every
+ * model failed for a genuine, diagnosable AWS-side reason would see only a
+ * bare `attemptedModels` list with no evidence of _why_.
  *
  * @example
  * ```ts
@@ -196,12 +207,14 @@ export class M3LBedrockRuntimeNoModelError extends M3LError {
    *
    * @param message - Human-readable description of the failure.
    * @param options - `attemptedModels` (carried in `context` and exposed
-   *   directly as a typed instance property).
+   *   directly as a typed instance property), and an optional `cause`
+   *   chaining the last attempt's fault.
    */
   constructor(message: string, options: M3LBedrockRuntimeNoModelErrorOptions) {
     super(message, {
       code: "ERR_BEDROCK_RUNTIME_NO_MODEL",
       context: { attemptedModels: options.attemptedModels },
+      ...(options.cause !== undefined && { cause: options.cause }),
     });
     this.attemptedModels = options.attemptedModels;
   }

@@ -100,14 +100,56 @@ function fakeClient(): BedrockRuntimeClient {
   return new h.BedrockRuntimeClient() as unknown as BedrockRuntimeClient;
 }
 
-/** Builds `M3LBedrockRuntimeOptions` from an ordered model-id list. */
+/**
+ * Builds `M3LBedrockRuntimeOptions` from an ordered model-id list.
+ *
+ * Deliberately keeps its parameter typed as `readonly string[]`, NOT the
+ * type-level non-empty tuple `M3LBedrockRuntimeOptions["models"]` — the
+ * empty-`models` test below (exercising the constructor's runtime guard)
+ * must keep compiling. The cast on return models exactly the doc's "a
+ * config- or JSON-sourced `string[]` can still arrive empty after being
+ * downcast to satisfy the type" scenario.
+ */
 function buildOptions(models: readonly string[]): M3LBedrockRuntimeOptions {
-  return { models };
+  return { models } as M3LBedrockRuntimeOptions;
 }
 
 /** Builds a fake SDK exception carrying the given `name`, matching how `@aws-sdk` errors surface their exception type. */
 function sdkError(name: string, message = name): Error {
   return Object.assign(new Error(message), { name });
+}
+
+/**
+ * Fires `controller.abort()` after exactly `ticks` microtask turns, by
+ * nesting `queueMicrotask` `ticks` levels deep before aborting on the
+ * innermost turn.
+ *
+ * Used to land an abort precisely between two internal checks in
+ * `client.ts` that are each separated from a settled `send()` rejection by
+ * one microtask hop under V8's single-tick `await` optimization:
+ * `M3LRetryRunner.run`'s own catch-time `isAborted` check (0 ticks after
+ * `send()` rejects), `#invokeOnModel`'s own catch-time `isAborted`
+ * re-check (2 ticks — after the retry runner's classifier resolves and
+ * rethrows), and `invoke()`'s loop-level `isAborted` re-check between
+ * fallback attempts (3 ticks — one more hop, after `#invokeOnModel`
+ * returns its `"advance"` outcome). Verified empirically via the coverage
+ * gate (`pnpm --filter @m3l-automation/m3l-common exec vitest run
+ * tests/bedrock-runtime.test.ts --coverage...`) that these tick counts
+ * land on the intended branch; a behavior-preserving refactor that changes
+ * the number of `await` hops between these checks would require
+ * recalibrating the tick count here, not rewriting the test's intent.
+ */
+function scheduleAbortAfterTicks(
+  controller: AbortController,
+  ticks: number,
+): void {
+  if (ticks <= 0) {
+    controller.abort();
+    return;
+  }
+  queueMicrotask(() => {
+    scheduleAbortAfterTicks(controller, ticks - 1);
+  });
 }
 
 const USER_ROLE: M3LBedrockRuntimeRole = "user";
@@ -192,6 +234,8 @@ describe("M3LBedrockRuntimeOperations constructor", () => {
     expect((thrown as M3LBedrockRuntimeNoModelError).attemptedModels).toEqual(
       [],
     );
+    // Construction-time throw carries no cause — no attempt was ever made.
+    expect((thrown as M3LBedrockRuntimeNoModelError).cause).toBeUndefined();
     expect(h.send).not.toHaveBeenCalled();
   });
 
@@ -398,8 +442,9 @@ describe("M3LBedrockRuntimeOperations.invoke() — model fallback state machine"
     },
   );
 
-  test("every model exhausted by availability faults throws M3LBedrockRuntimeNoModelError naming every attempted model id, in order", async () => {
-    h.send.mockRejectedValue(sdkError("ModelNotReadyException"));
+  test("every model exhausted by availability faults throws M3LBedrockRuntimeNoModelError naming every attempted model id, in order, with cause chaining the LAST attempt's fault", async () => {
+    const notReadyError = sdkError("ModelNotReadyException");
+    h.send.mockRejectedValue(notReadyError);
     const ops = new M3LBedrockRuntimeOperations(
       fakeClient(),
       buildOptions([MODEL_A, MODEL_B]),
@@ -420,6 +465,9 @@ describe("M3LBedrockRuntimeOperations.invoke() — model fallback state machine"
     expect(
       (thrown as M3LBedrockRuntimeNoModelError).context["attemptedModels"],
     ).toEqual([MODEL_A, MODEL_B]);
+    // cause chains the LAST attempted model's rejection (models[1]'s fault,
+    // since h.send.mockRejectedValue reuses the same instance for every call).
+    expect((thrown as M3LBedrockRuntimeNoModelError).cause).toBe(notReadyError);
     expect(h.send).toHaveBeenCalledTimes(2);
   });
 
@@ -449,6 +497,8 @@ describe("M3LBedrockRuntimeOperations.invoke() — model fallback state machine"
     expect((thrown as M3LBedrockRuntimeNoModelError).attemptedModels).toEqual([
       MODEL_A,
     ]);
+    // cause chains the last (10th) attempt's rejection.
+    expect((thrown as M3LBedrockRuntimeNoModelError).cause).toBe(throttleError);
     // Default M3LRetryRunner exhaustion bound (see M3LRetryRunner.ts
     // DEFAULT_RETRY_MAX_ATTEMPTS = 10, and tests/sqs.test.ts's identical
     // "exhausted after exactly 10 attempts" assertion for the same default).
@@ -457,6 +507,32 @@ describe("M3LBedrockRuntimeOperations.invoke() — model fallback state machine"
 
   test("an unclassified rejection (unknown exception name) throws M3LBedrockRuntimeOperationError with the default external/true classification", async () => {
     const cause = new Error("boom");
+    h.send.mockRejectedValueOnce(cause);
+    const ops = new M3LBedrockRuntimeOperations(
+      fakeClient(),
+      buildOptions([MODEL_A]),
+    );
+
+    let thrown: unknown;
+    try {
+      await settleWithTimers(ops.invoke(BASE_REQUEST));
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LBedrockRuntimeOperationError);
+    expect((thrown as M3LBedrockRuntimeOperationError).origin).toBe("external");
+    expect((thrown as M3LBedrockRuntimeOperationError).retryable).toBe(true);
+    expect((thrown as M3LBedrockRuntimeOperationError).cause).toBe(cause);
+  });
+
+  // Covers readErrorName's non-Error branch: a rejection value with no
+  // `.name` to classify by falls through every named-exception check to the
+  // "any other rejection" row, same default classification as the
+  // unclassified-Error case above.
+  test("a non-Error rejection value (no name to classify) throws M3LBedrockRuntimeOperationError with the default external/true classification", async () => {
+    const cause = "boom";
+
     h.send.mockRejectedValueOnce(cause);
     const ops = new M3LBedrockRuntimeOperations(
       fakeClient(),
@@ -555,6 +631,14 @@ describe("M3LBedrockRuntimeOperations.invoke() — request/response mapping", ()
         usage: FULL_USAGE,
       },
     ],
+    [
+      "a stopReason outside the 9 documented M3LBedrockStopReason members (a well-formed response otherwise)",
+      {
+        output: { message: { role: "assistant", content: [{ text: "x" }] } },
+        stopReason: "some_future_reason",
+        usage: FULL_USAGE,
+      },
+    ],
   ];
 
   test.each(MALFORMED_RESPONSE_CASES)(
@@ -581,6 +665,46 @@ describe("M3LBedrockRuntimeOperations.invoke() — request/response mapping", ()
       expect(h.send).toHaveBeenCalledTimes(1);
     },
   );
+
+  test('a response message.role of "user" maps through to M3LBedrockRuntimeRole "user" (mapRole\'s true branch)', async () => {
+    h.send.mockResolvedValueOnce({
+      output: {
+        message: { role: "user", content: [{ text: "echoed" }] },
+      },
+      stopReason: "end_turn",
+      usage: FULL_USAGE,
+    });
+    const ops = new M3LBedrockRuntimeOperations(
+      fakeClient(),
+      buildOptions([MODEL_A]),
+    );
+
+    const result: M3LBedrockInvocationResult = await settleWithTimers(
+      ops.invoke(BASE_REQUEST),
+    );
+
+    expect(result.message.role).toBe("user");
+  });
+
+  test("a response message with no content field maps to an empty content array (mapContent's ?? [] fallback)", async () => {
+    h.send.mockResolvedValueOnce({
+      output: {
+        message: { role: "assistant" },
+      },
+      stopReason: "end_turn",
+      usage: FULL_USAGE,
+    });
+    const ops = new M3LBedrockRuntimeOperations(
+      fakeClient(),
+      buildOptions([MODEL_A]),
+    );
+
+    const result: M3LBedrockInvocationResult = await settleWithTimers(
+      ops.invoke(BASE_REQUEST),
+    );
+
+    expect(result.message.content).toEqual([]);
+  });
 
   test("a non-text content block in the reply is dropped silently, keeping only text blocks (no throw)", async () => {
     h.send.mockResolvedValueOnce(
@@ -655,6 +779,63 @@ describe("M3LBedrockRuntimeOperations.invoke() — cancellation", () => {
     const [command] = h.send.mock.calls[0] as [{ input: { modelId: string } }];
     expect(command.input.modelId).toBe(MODEL_A);
   });
+
+  // Targets invoke()'s own loop-level `isAborted` re-check between fallback
+  // attempts — distinct from #invokeOnModel's catch-time re-check (the next
+  // test) and from M3LRetryRunner's own catch-time check (the mid-retry-backoff
+  // test above). ModelNotReadyException advances fallback WITHOUT entering the
+  // retry runner's backoff, so #invokeOnModel must return its "advance"
+  // outcome normally (not aborted yet) before the abort lands in the gap
+  // right before invoke() would try models[1].
+  test("an abort landing in the gap between fallback attempts stops the walk before trying the next model — models[1] is never called", async () => {
+    const controller = new AbortController();
+    h.send.mockImplementationOnce(() => {
+      scheduleAbortAfterTicks(controller, 3);
+      return Promise.reject(sdkError("ModelNotReadyException"));
+    });
+    const ops = new M3LBedrockRuntimeOperations(
+      fakeClient(),
+      buildOptions([MODEL_A, MODEL_B]),
+    );
+
+    const thrown = await settleWithTimers(
+      ops
+        .invoke(BASE_REQUEST, { signal: controller.signal })
+        .catch((error: unknown) => error),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LOperationAbortedError);
+    expect(h.send).toHaveBeenCalledTimes(1);
+    const [command] = h.send.mock.calls[0] as [{ input: { modelId: string } }];
+    expect(command.input.modelId).toBe(MODEL_A);
+  });
+
+  // Targets #invokeOnModel's own catch-time `isAborted` re-check — distinct
+  // from the pre-send() abort check (first test above) and from the
+  // loop-level fallback-gap check (previous test). A plain unclassified
+  // rejection (not M3LOperationAbortedError, not retriable) reaches the
+  // catch block; the signal happens to already be aborted by the time that
+  // check runs, so abort still wins per the doc's unconditional-check design.
+  test("a non-aborted rejection surfaces as M3LOperationAbortedError when the signal is already aborted by catch time", async () => {
+    const controller = new AbortController();
+    h.send.mockImplementationOnce(() => {
+      scheduleAbortAfterTicks(controller, 2);
+      return Promise.reject(new Error("boom"));
+    });
+    const ops = new M3LBedrockRuntimeOperations(
+      fakeClient(),
+      buildOptions([MODEL_A]),
+    );
+
+    const thrown = await settleWithTimers(
+      ops
+        .invoke(BASE_REQUEST, { signal: controller.signal })
+        .catch((error: unknown) => error),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LOperationAbortedError);
+    expect(h.send).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("Bedrock runtime error classes", () => {
@@ -685,6 +866,16 @@ describe("Bedrock runtime error classes", () => {
     expect(error.context["attemptedModels"]).toEqual([MODEL_A, MODEL_B]);
     expect(error.origin).toBe("caller");
     expect(error.retryable).toBe(false);
+  });
+
+  test("M3LBedrockRuntimeNoModelError constructed WITH a cause option carries it as error.cause (matching M3LBedrockRuntimeModelError's cause pattern above)", () => {
+    const cause = sdkError("ModelNotReadyException");
+    const error = new M3LBedrockRuntimeNoModelError("no model available", {
+      attemptedModels: [MODEL_A, MODEL_B],
+      cause,
+    });
+
+    expect(error.cause).toBe(cause);
   });
 
   test("type pins: the three error classes extend M3LError; modelId/attemptedModels are real, non-optional members", () => {
