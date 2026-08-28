@@ -117,6 +117,7 @@ interface M3LSpawnedProcess {
 interface M3LSpawnCallOptions {
   readonly cwd: string;
   readonly stdio: readonly ["ignore", "pipe", "pipe"];
+  readonly env: NodeJS.ProcessEnv;
 }
 
 /**
@@ -145,6 +146,7 @@ function defaultSpawn(
   return spawn(command, [...args], {
     cwd: options.cwd,
     stdio: ["ignore", "pipe", "pipe"],
+    env: options.env,
   }) as unknown as M3LSpawnedProcess;
 }
 
@@ -203,6 +205,14 @@ function awaitSpawnedChild(
       );
     };
 
+    if (signal.aborted) {
+      killRequested = true;
+      child.kill("SIGTERM");
+      killTimer = timerImpl((): void => {
+        if (!settled) child.kill("SIGKILL");
+      }, killTimeoutMs);
+    }
+
     signal.addEventListener(
       "abort",
       (): void => {
@@ -253,11 +263,16 @@ export function createSpawnExecutor(
 
   return {
     execute(executeOptions: M3LRunExecutorOptions): Promise<M3LSpawnExitInfo> {
-      const { scriptDir, dryRun, signal, onLine } = executeOptions;
+      const { scriptDir, parameters, dryRun, signal, onLine } = executeOptions;
       const args = dryRun ? ["dist/main.js", "--dry-run"] : ["dist/main.js"];
+      const env: NodeJS.ProcessEnv = {
+        ...process.env,
+        M3L_RUN_PARAMETERS: JSON.stringify(parameters),
+      };
       const child = spawnImpl("node", args, {
         cwd: scriptDir,
         stdio: ["ignore", "pipe", "pipe"],
+        env,
       });
 
       pipeLines(child.stdout, onLine);
@@ -339,7 +354,16 @@ export function createInProcessExecutor(
     async execute(options: M3LRunExecutorOptions): Promise<M3LSpawnExitInfo> {
       const { scriptDir, parameters, dryRun, signal, onLine } = options;
       const specifier = join(scriptDir, "dist/command.js");
-      const imported = await importImpl(specifier);
+      let imported: unknown;
+      try {
+        imported = await importImpl(specifier);
+      } catch (cause: unknown) {
+        throw new M3LConsoleError(
+          "ERR_CONSOLE_INTERNAL",
+          `failed to load command module from ${specifier}`,
+          { cause },
+        );
+      }
       const candidate = (imported as Record<string, unknown>)["commandModule"];
       if (!Core.isM3LCommandModule(candidate)) {
         throw new M3LConsoleError(

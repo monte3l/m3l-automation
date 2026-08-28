@@ -177,6 +177,58 @@ describe("createSpawnExecutor — argv (--dry-run flag)", () => {
   });
 });
 
+describe("createSpawnExecutor — env (parameters)", () => {
+  test("passes parameters as M3L_RUN_PARAMETERS JSON env var merged into process.env", async () => {
+    const fakeChild = createFakeChild();
+    const spawnImpl = vi.fn(() => fakeChild);
+    const executor = createSpawnExecutor(
+      { killTimeoutMs: 5000 },
+      { spawnImpl },
+    );
+    const resultPromise = executor.execute({
+      ...baseExecuteOptions(),
+      parameters: { region: "us-east-1", queue: "my-q" },
+    });
+    fakeChild.emit("close", 0, null);
+    await resultPromise;
+
+    expect(spawnImpl).toHaveBeenCalledWith(
+      "node",
+      expect.any(Array),
+      expect.objectContaining({
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- expect.objectContaining returns any; safe in test assertions
+        env: expect.objectContaining({
+          M3L_RUN_PARAMETERS: JSON.stringify({
+            region: "us-east-1",
+            queue: "my-q",
+          }),
+        }),
+      }),
+    );
+  });
+
+  test("passes M3L_RUN_PARAMETERS as '{}' when parameters is empty", async () => {
+    const fakeChild = createFakeChild();
+    const spawnImpl = vi.fn(() => fakeChild);
+    const executor = createSpawnExecutor(
+      { killTimeoutMs: 5000 },
+      { spawnImpl },
+    );
+    const resultPromise = executor.execute(baseExecuteOptions());
+    fakeChild.emit("close", 0, null);
+    await resultPromise;
+
+    expect(spawnImpl).toHaveBeenCalledWith(
+      "node",
+      expect.any(Array),
+      expect.objectContaining({
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- expect.objectContaining returns any; safe in test assertions
+        env: expect.objectContaining({ M3L_RUN_PARAMETERS: "{}" }),
+      }),
+    );
+  });
+});
+
 describe("createSpawnExecutor — stdout/stderr line piping", () => {
   test("calls onLine for each non-empty stdout line, skipping blank lines", async () => {
     const fakeChild = createFakeChild();
@@ -270,6 +322,67 @@ describe("createSpawnExecutor — abort (SIGTERM then SIGKILL)", () => {
     );
 
     controller.abort();
+    await flush();
+
+    expect(fakeChild.kill).toHaveBeenCalledWith("SIGTERM");
+    expect(timerImpl).toHaveBeenCalledWith(expect.any(Function), 5000);
+
+    if (scheduled === undefined) throw new Error("timerImpl was not scheduled");
+    scheduled.callback();
+
+    expect(fakeChild.kill).toHaveBeenCalledWith("SIGKILL");
+
+    fakeChild.emit("close", null, "SIGKILL");
+    const info = await resultPromise;
+    expect(info.killRequested).toBe(true);
+  });
+
+  test("sends SIGTERM immediately when signal is already aborted before execute() is called", async () => {
+    const fakeChild = createFakeChild();
+    const spawnImpl = vi.fn(() => fakeChild);
+    const executor = createSpawnExecutor(
+      { killTimeoutMs: 5000 },
+      { spawnImpl },
+    );
+    const controller = new AbortController();
+    controller.abort(); // aborted BEFORE execute() is called
+
+    const resultPromise = executor.execute(
+      baseExecuteOptions({ signal: controller.signal }),
+    );
+
+    // give the synchronous pre-aborted branch a tick to fire
+    await flush();
+
+    expect(fakeChild.kill).toHaveBeenCalledWith("SIGTERM");
+
+    fakeChild.emit("close", null, "SIGTERM");
+    const info = await resultPromise;
+    expect(info.killRequested).toBe(true);
+  });
+
+  test("sends SIGKILL after killTimeoutMs elapses when signal is pre-aborted before execute() is called", async () => {
+    let scheduled:
+      { readonly callback: () => void; readonly delayMs: number } | undefined;
+    const timerImpl = vi.fn((callback: () => void, delayMs?: number) => {
+      scheduled = { callback, delayMs: delayMs ?? 0 };
+      return 0 as unknown as NodeJS.Timeout;
+    }) as unknown as typeof setTimeout;
+
+    const fakeChild = createFakeChild();
+    const spawnImpl = vi.fn(() => fakeChild);
+    const executor = createSpawnExecutor(
+      { killTimeoutMs: 5000 },
+      { spawnImpl, timerImpl },
+    );
+    const controller = new AbortController();
+    controller.abort(); // aborted BEFORE execute() is called
+
+    const resultPromise = executor.execute(
+      baseExecuteOptions({ signal: controller.signal }),
+    );
+
+    // give the synchronous pre-aborted branch a tick to fire
     await flush();
 
     expect(fakeChild.kill).toHaveBeenCalledWith("SIGTERM");
@@ -544,6 +657,25 @@ describe("createInProcessExecutor — invalid command module", () => {
       expect((thrown as M3LConsoleError).code).toBe("ERR_CONSOLE_INTERNAL");
     },
   );
+});
+
+describe("createInProcessExecutor — importImpl rejection", () => {
+  test("wraps a rejected importImpl as ERR_CONSOLE_INTERNAL with the original error as cause", async () => {
+    const loadError = new Error("Cannot find module 'dist/command.js'");
+    const importImpl = vi.fn(() => Promise.reject(loadError));
+    const executor = createInProcessExecutor({ importImpl });
+
+    let thrown: unknown;
+    try {
+      await executor.execute(baseExecuteOptions());
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).code).toBe("ERR_CONSOLE_INTERNAL");
+    expect((thrown as M3LConsoleError).cause).toBe(loadError);
+  });
 });
 
 describe("createInProcessExecutor — return type", () => {
