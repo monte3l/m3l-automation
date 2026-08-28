@@ -320,3 +320,45 @@ export function loadRunsConfig(
     queueTimeoutMs,
   };
 }
+
+/**
+ * The env var naming the X4 scripts directory — the one setting that gates
+ * {@link tryLoadRunsConfig}'s optional-vs-throwing behaviour.
+ */
+const SCRIPTS_DIR_ENV = "M3L_CONSOLE_RUNS_SCRIPTS_DIR";
+
+/**
+ * The optional counterpart to {@link loadRunsConfig}: resolves the X4
+ * run-governor's config from `env`, or `undefined` when run orchestration
+ * was never configured at all.
+ *
+ * {@link loadRunsConfig} THROWS on a missing `scriptsDir` — the right
+ * behaviour for a caller that has already decided run orchestration is
+ * mandatory. `main.ts`'s boot path has NOT decided that: it needs to tell
+ * "configured" apart from "deliberately not configured" so it can log a
+ * loud, one-line disabled posture instead of crashing the whole console
+ * server over an optional subsystem. This function is that separate,
+ * explicitly-optional entry point — it belongs here in `config/`, not in
+ * `runs/`, because the `runs/` zone's own ESLint rule forbids reading the
+ * environment directly ("Configuration arrives as arguments from `main.ts`").
+ *
+ * @param env - The environment variable map to check and (if non-blank) resolve from.
+ * @returns The resolved {@link M3LConsoleRunsConfig}, or `undefined` when
+ *   `M3L_CONSOLE_RUNS_SCRIPTS_DIR` is absent, empty, or whitespace-only.
+ * @throws {@link M3LConsoleError} When the variable is set but any setting
+ *   fails validation — same as {@link loadRunsConfig}.
+ *
+ * @example
+ * ```ts
+ * import { tryLoadRunsConfig } from "./config/runs.js";
+ *
+ * const config = tryLoadRunsConfig(process.env);
+ * // undefined when M3L_CONSOLE_RUNS_SCRIPTS_DIR is unset
+ * ```
+ */
+export function tryLoadRunsConfig(
+  env: NodeJS.ProcessEnv,
+): M3LConsoleRunsConfig | undefined {
+  if ((env[SCRIPTS_DIR_ENV] ?? "").trim().length === 0) return undefined;
+  return loadRunsConfig({ env });
+}

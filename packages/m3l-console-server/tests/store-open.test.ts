@@ -21,10 +21,16 @@
  */
 import { DatabaseSync } from "node:sqlite";
 
-import { describe, expect, test } from "vitest";
+import { describe, expect, expectTypeOf, test } from "vitest";
 
 import { M3LConsoleError } from "../src/errors/console-error.js";
+import type { M3LConsoleMetaRepository } from "../src/store/meta-repository.js";
+import type {
+  M3LConsoleRunsRepository,
+  M3LRunInsert,
+} from "../src/store/runs-repository.js";
 import { openConsoleStore } from "../src/store/store.js";
+import type { M3LConsoleStoreUnit } from "../src/store/store.js";
 
 /**
  * Calls `run`, capturing whatever it throws synchronously as a single
@@ -460,6 +466,79 @@ describe("openConsoleStore — transaction()", () => {
     // one would leave two persisted rows here regardless of the throw.
     const row = store.get("SELECT COUNT(*) AS count FROM console_meta");
     expect(row?.["count"]).toBe(0);
+  });
+});
+
+describe("openConsoleStore — runs repository (X4 slice 6, round 3a)", () => {
+  // store.ts's M3LConsoleStoreUnit grows a second repository field (`runs`,
+  // store/runs-repository.js's createConsoleRunsRepository) alongside `meta`.
+  // Until this lands, `store.runs` does not exist on the returned handle at
+  // all — a TS2339 at compile time, not a runtime assertion failure.
+  function buildInsert(id: string): M3LRunInsert {
+    return {
+      id,
+      script: "sqs-etl",
+      dryRun: true,
+      executionMode: "spawn",
+      parameters: {},
+      operator: "ada",
+      correlationId: "corr-1",
+      queuedAtMs: 1_000,
+    };
+  }
+
+  test("the top-level store exposes a working runs repository — insert a queued run and read it back", () => {
+    const store = openConsoleStore({ location: ":memory:" });
+
+    store.runs.insertQueued(buildInsert("run-top-level"));
+    const record = store.runs.get("run-top-level");
+
+    expect(record?.id).toBe("run-top-level");
+    expect(record?.status).toBe("queued");
+  });
+
+  test("a repository reached through transaction((unit) => unit.runs...) writes through THAT transaction — a throw inside work rolls the run row back", () => {
+    const store = openConsoleStore({ location: ":memory:" });
+    const originalError = new Error("synthetic work failure");
+
+    let thrown: unknown;
+    try {
+      store.transaction((unit) => {
+        // If unit.runs were bound to the top-level executor instead of the
+        // transaction's own (the exact defect this test exists to catch),
+        // this insert would commit directly and survive the rollback below.
+        unit.runs.insertQueued(buildInsert("run-rolled-back"));
+        throw originalError;
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBe(originalError);
+
+    // The load-bearing assertion: the row must never be visible via the
+    // TOP-LEVEL store.runs, proving the insert ran inside — and was rolled
+    // back with — the transaction, not around it.
+    expect(store.runs.get("run-rolled-back")).toBeUndefined();
+  });
+
+  test("a run inserted inside a COMMITTING transaction is visible via the top-level store.runs afterward", () => {
+    const store = openConsoleStore({ location: ":memory:" });
+
+    store.transaction((unit) => {
+      unit.runs.insertQueued(buildInsert("run-committed"));
+    });
+
+    expect(store.runs.get("run-committed")?.id).toBe("run-committed");
+  });
+});
+
+describe("M3LConsoleStoreUnit — exported and carries both meta and runs (X4 slice 6, round 3a)", () => {
+  test("is exported (a compile-time check: this import must resolve) and structurally carries meta and runs", () => {
+    expectTypeOf<M3LConsoleStoreUnit>().toExtend<{
+      readonly meta: M3LConsoleMetaRepository;
+      readonly runs: M3LConsoleRunsRepository;
+    }>();
   });
 });
 

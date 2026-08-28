@@ -58,7 +58,7 @@ import type { M3LStoreQueryExecutor, M3LStoreRow } from "./types.js";
 type RunColumnValue = string | number | bigint | null | Uint8Array | undefined;
 
 /** The closed `execution_mode` vocabulary `console_runs`' own `CHECK` constraint enforces. */
-type RunExecutionMode = "spawn" | "in-process";
+export type RunExecutionMode = "spawn" | "in-process";
 
 /**
  * One `console_runs` row, projected into camelCase fields with SQLite's
@@ -247,6 +247,20 @@ export interface M3LConsoleRunsRepository {
    * @returns The number of rows changed.
    */
   reconcileOrphaned(endedAtMs: number): number;
+  /**
+   * Guarded `queued` to `interrupted` transition, for a run that timed out
+   * while still waiting in the queue — it never started, so `started_at_ms`
+   * is deliberately left `NULL` rather than fabricated. See
+   * `store/migrations/registry.ts`'s `CREATE_CONSOLE_RUNS_TABLE` TSDoc for why
+   * `'interrupted'` is the one status the schema's own `CHECK` constraints
+   * permit to end without ever having started, and why fabricating a
+   * `started_at_ms` here would destroy that distinction.
+   *
+   * @returns `true` when this call's own write applied (the run was still
+   *   `queued`); `false` when it was not (already started, already
+   *   terminal, or unknown id) — a lost race reports `false`, never throws.
+   */
+  abandonQueued(id: string, endedAtMs: number): boolean;
 }
 
 /**
@@ -518,6 +532,25 @@ function reconcileOrphanedRows(
 }
 
 /**
+ * The guarded `queued` to `interrupted` write; see
+ * {@link M3LConsoleRunsRepository.abandonQueued}'s own TSDoc for why
+ * `started_at_ms` is never written here.
+ */
+function abandonQueuedRow(
+  executor: M3LStoreQueryExecutor,
+  id: string,
+  endedAtMs: number,
+): boolean {
+  const result = executor.run(
+    `UPDATE console_runs
+     SET status = 'interrupted', outcome = 'interrupted', ended_at_ms = ?
+     WHERE id = ? AND status = 'queued'`,
+    [endedAtMs, id],
+  );
+  return result.changes === 1;
+}
+
+/**
  * Builds a {@link M3LConsoleRunsRepository} over `executor`.
  *
  * @param executor - The {@link M3LStoreQueryExecutor} port this repository
@@ -594,6 +627,12 @@ export function createConsoleRunsRepository(
       return runRunsOperation(
         () => reconcileOrphanedRows(executor, endedAtMs),
         "console runs repository reconcileOrphaned failed",
+      );
+    },
+    abandonQueued(id: string, endedAtMs: number): boolean {
+      return runRunsOperation(
+        () => abandonQueuedRow(executor, id, endedAtMs),
+        "console runs repository abandonQueued failed",
       );
     },
   };
