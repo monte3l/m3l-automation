@@ -32,8 +32,17 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"] },
     },
   ],
+  // Calls `vite` directly (not the `build`/`preview` package.json scripts)
+  // deliberately: `pnpm preview -- --port 4173 --host 127.0.0.1` silently
+  // drops both forwarded flags (a pnpm arg-forwarding quirk, verified
+  // empirically — vite then falls back to its own default port/host,
+  // which happened to still work locally but left the CI runner's preview
+  // server listening somewhere Playwright's readiness check never found,
+  // timing out after 60s with no error). Bypassing the script layer and
+  // pinning --host explicitly removes the ambiguity entirely.
   webServer: {
-    command: "pnpm build && pnpm preview -- --port 4173",
+    command:
+      "pnpm exec vite build && pnpm exec vite preview --port 4173 --host 127.0.0.1",
     url: "http://127.0.0.1:4173",
     reuseExistingServer: !process.env["CI"],
     timeout: 60_000,
