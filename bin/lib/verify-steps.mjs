@@ -227,6 +227,29 @@ export const VERIFY_STEPS = [
     conditional: true,
   },
   {
+    ciStepName: "Cache Playwright browsers",
+    id: "cache-playwright",
+    skipReason:
+      "CI-only actions/cache plumbing for the installed browser binary across runners; a local checkout already has whatever it installed on a prior run with nothing to restore",
+  },
+  {
+    ciStepName: "Install Playwright browsers",
+    id: "install-playwright",
+    cmd: () =>
+      "pnpm --filter @m3l-automation/m3l-console-web exec playwright install --with-deps chromium",
+    skipReason:
+      "a full Chromium install is exactly the per-run cost ADR-0067's X9 row path-scoped e2e to avoid paying by default; pass --full to install and run the suite locally",
+    conditional: true,
+  },
+  {
+    ciStepName: "Run e2e suite",
+    id: "test-e2e",
+    cmd: () => "pnpm test:e2e",
+    skipReason:
+      "path-scoped like CI's own e2e job (ADR-0067) — expensive enough that a routine `pnpm verify` shouldn't pay for it on every run regardless of what changed; pass --full to run it",
+    conditional: true,
+  },
+  {
     ciStepName: "Check test counts",
     id: "check-test-counts",
     cmd: () => "pnpm check:test-counts",

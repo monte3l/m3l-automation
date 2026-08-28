@@ -29,15 +29,15 @@ Seven PRs, per ADR-0072's docs-vs-code split axis. PRs 1 and 3 are docs-only
 and measure ~0 reviewable chars against `claude-pr-review.yml`'s `is_ignored`
 predicate, so they are free to review.
 
-| PR  | Branch                                 | Contents                                                    |
-| --- | -------------------------------------- | ----------------------------------------------------------- |
-| 1   | `docs/hub-board-restructure-decisions` | ADR-0073, the ADR status/Update notes, `filing-work.md`     |
-| 2   | `feat/tracker-type-vocabulary`         | `project-hub.mjs` cell classifiers + the 3 section headings |
-| 3   | `docs/tracker-programme-split`         | the 42-row move, `Type` column, re-tiering, slice sub-rows  |
-| 4   | `feat/hub-sync-planners`               | `hub-sync.mjs` tables, epics, `planParentLinks`, defs files |
-| 5   | `feat/hub-sync-runner`                 | `sync-hub-issues.mjs` — milestones, parents, preflight      |
-| 6   | `feat/hub-board-views`                 | `hub-views.mjs` rewrite, view pruning, `Programme` field    |
-| 7   | `feat/check-hub-views-gate`            | the new `check:hub-views` gate and its 4-place registration |
+| PR  | Branch                                 | Contents                                                                         |
+| --- | -------------------------------------- | -------------------------------------------------------------------------------- |
+| 1   | `docs/hub-board-restructure-decisions` | ADR-0073, the ADR status/Update notes, `filing-work.md`                          |
+| 2   | `feat/tracker-type-vocabulary`         | `project-hub.mjs` cell classifiers + the 3 section headings                      |
+| 3   | `docs/tracker-programme-split`         | the 42-row move, `Type` column, re-tiering, slice sub-rows                       |
+| 4   | `feat/hub-sync-planners`               | `hub-sync.mjs` tables, epics, `planParentLinks`, defs files                      |
+| 5   | `feat/hub-sync-runner`                 | `sync-hub-issues.mjs` — milestones, parents, preflight                           |
+| 6   | `feat/hub-board-views`                 | `hub-views.mjs` rewrite, view pruning (`Programme` field not shipped, see below) |
+| 7   | `feat/check-hub-views-gate`            | the new `check:hub-views` gate and its 4-place registration                      |
 
 A maintainer-local apply session follows PR 7; `sync:hub` needs the `project`
 OAuth scope and never runs in CI.
@@ -412,9 +412,11 @@ gate cannot assert an option set it cannot import.
 
 `Programme` is deferred, and `filing-work.md` had wrongly listed it among the
 fields the sync writes. With slices cut at pickup there are no depth-2 rows, so
-every item's `Parent issue` already _is_ its programme epic. This leaves an
-Accepted ADR's decision (ADR-0073 § `Programme`) unimplemented by design — noted
-in the docs rather than ratified, since ratifying it would want its own ADR.
+every item's `Parent issue` already _is_ its programme epic. This left an
+Accepted ADR's decision (ADR-0073 § `Programme`) unimplemented by design, noted
+in the docs rather than ratified — since ratified by
+[ADR-0081](../adr/0081-deferring-the-programme-board-field.md), which carries
+the revival condition as an explicit gate.
 
 **Sort loss is now detectable rather than unknowable.** The plan listed this as
 unresolved and offered a scratch board or an instrumented apply. Instrumented

@@ -15,6 +15,7 @@ import { createDrainController } from "../src/lifecycle/drain.js";
 import { createHealthRoutes } from "../src/http/routes/health.js";
 import type { M3LRoute } from "../src/http/router.js";
 import type { M3LConsoleResponse } from "../src/http/respond.js";
+import { isStreamResponse } from "../src/http/stream-response.js";
 
 /** Builds a bare GET request context against `path`, for driving a route handler directly. */
 function buildContext(path: string): M3LRequestContext {
@@ -39,12 +40,25 @@ function findRoute(
   return route;
 }
 
-/** Runs `route`'s handler against a bare GET context for `path`. */
+/**
+ * Runs `route`'s handler against a bare GET context for `path`. Every health
+ * route is buffered, never a stream, so this narrows `M3LRoute["handler"]`'s
+ * widened `M3LConsoleResult` back down to `M3LConsoleResponse` rather than
+ * loosening the helper's own return type — a stream result here would be a
+ * genuine regression in `src/http/routes/health.ts`, not something this test
+ * suite should silently tolerate.
+ */
 async function runRoute(
   route: M3LRoute,
   path: string,
 ): Promise<M3LConsoleResponse> {
-  return route.handler(buildContext(path));
+  const result = await route.handler(buildContext(path));
+  if (isStreamResponse(result)) {
+    throw new Error(
+      `expected a buffered response from ${route.method} ${route.path}, got a stream`,
+    );
+  }
+  return result;
 }
 
 /** Parses a `M3LConsoleResponse` body as JSON, typed loosely for field-presence checks. */

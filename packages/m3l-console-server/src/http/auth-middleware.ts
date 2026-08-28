@@ -11,7 +11,7 @@ import { M3LConsoleError } from "../errors/console-error.js";
 import { withOperator } from "./context.js";
 import type { M3LRequestContext } from "./context.js";
 import type { M3LConsoleHandler, M3LConsoleMiddleware } from "./middleware.js";
-import type { M3LConsoleResponse } from "./respond.js";
+import type { M3LConsoleResult } from "./stream-response.js";
 
 /**
  * Resolves `ctx`'s operator via `provider.resolve(ctx.headers)`, throwing
@@ -65,7 +65,7 @@ export function createAuthMiddleware(
   return (
     ctx: M3LRequestContext,
     next: M3LConsoleHandler,
-  ): Promise<M3LConsoleResponse> | M3LConsoleResponse => {
+  ): Promise<M3LConsoleResult> | M3LConsoleResult => {
     if (ctx.accessMode === "exempt") return next(ctx);
     return next(resolveAuthenticated(provider, ctx));
   };

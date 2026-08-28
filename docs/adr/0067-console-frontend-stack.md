@@ -84,6 +84,33 @@ We chose **option 3**.
 - **Semver impact:** none from this ADR (docs only). X9 adds a new
   private 0.x package; no `m3l-common` change.
 
+## Update 2026-08-28 — Playwright CI-cost decision (X9b)
+
+This ADR deferred one decision to X9's own PR: how expensive `ci.yml`
+makes the Playwright suite by default. Landed as **path-scoped plus
+label override**: `.github/workflows/ci.yml`'s `e2e` job runs when
+`packages/m3l-console-web/**` or `packages/m3l-console-server/**`
+changed (`bin/lib/changed-paths.mjs`'s new `console` category — narrower
+than the broad `ts` one every other TypeScript change gates on), on any
+PR carrying the `e2e` label regardless of what it touched, and
+unconditionally on every push to `main`.
+
+Considered and rejected: **label-gated only** (cheapest on PRs, but a
+console change with no label would ship unverified until it hit `main`
+— the opposite of what an e2e gate exists to catch); **main-only +
+scheduled** (never blocks a PR, but pushes discovery of a broken drill-
+down flow to post-merge, and X11's SQS scenario is exactly the kind of
+regression a PR-time signal should catch before merge); **no CI job at
+all, harness only** (ships `playwright.config.ts` and a smoke spec
+runnable via `pnpm test:e2e` with zero CI wiring, deferring the
+decision itself to X11 — rejected as not actually deciding what this
+ADR named as X9's job to decide).
+
+`pnpm verify` does not run the e2e suite by default either (a full
+Chromium install is exactly the per-run cost being avoided) — `pnpm
+verify -- --full` opts in locally, mirroring the `ci.yml` job's own
+default-off-until-scoped posture.
+
 ## Links
 
 - Programme: [ADR-0064](./0064-m3l-console-programme.md). Consumes:

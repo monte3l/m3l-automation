@@ -98,6 +98,28 @@ faults reuse `M3LRetryRunner` conventions.
   **additive minor** on `m3l-common` (new barrel submodule; AWS 19 → 20;
   no new `exports` subpath — `check:api` unaffected).
 
+## Update 2026-08-28 — "first `AsyncIterable` contract" premise refuted
+
+Implementation-time verification (`implementing-submodules` Step 4's
+contract-settling pass, before V4's RED/GREEN) found this ADR's and the V4
+tracker row's claim that Bedrock runtime would be "the library's first
+`AsyncIterable` contract" is **false**. `AsyncGenerator`/`AsyncIterable` is
+already public API in four places: `aws/s3/operations.ts`'s `listObjects`,
+`aws/dynamodb/operations.ts`'s `queryItems`/`scanSegment`,
+`core/importers/M3LListImporter.ts`'s `importStream`, and
+`core/messaging/M3LMessenger.ts`'s `read`.
+
+This does not change the Decision — `aws/bedrock-runtime` is still the right
+home for the wrapper and its own streaming shape is still submodule-scoped,
+not a general library-wide streaming framework — but it removes a false
+"first" claim and, more usefully, gives V4's `invokeStream` an established
+house pattern to mirror rather than a novel one to invent: `s3.listObjects`
+yields pages (not individual items) so a caller can checkpoint between
+chunks without buffering the whole response — the same shape `invokeStream`
+adopts for Bedrock's `ConverseStreamOutput` events. Status stays Accepted;
+this update corrects a premise, not the decision built on it. See
+`docs/reference/aws/bedrock-runtime.md` for the settled contract.
+
 ## Links
 
 - Fires the gate of: [ADR-0039](./0039-llm-integration-out-of-scope.md)

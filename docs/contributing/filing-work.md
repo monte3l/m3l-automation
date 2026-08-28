@@ -292,12 +292,12 @@ projection of the issue's own sub-issue link, so the sync sets the link, never
 the field).
 
 ADR-0073 also specifies a `Programme` single-select, **deferred and not
-implemented**. With slices cut at pickup rather than in advance, the board has
-no depth-2 rows, so every item's `Parent issue` already _is_ its programme epic
-— the field would duplicate a populated, free column at the cost of ~60 extra
-board writes per sync. It earns its keep the day a slice row exists, whose
-parent is its item rather than the epic (which is exactly the non-redundancy
-case ADR-0073 argues from).
+implemented** — [ADR-0081](../adr/0081-deferring-the-programme-board-field.md)
+ratifies the deferral and carries the full rationale and revival gate. In
+short: with slices cut at pickup rather than in advance, the board has no
+depth-2 rows, so every item's `Parent issue` already _is_ its programme epic,
+and the field would duplicate that free column at the cost of ~60 extra board
+writes per sync.
 
 ### Board workflows
 
@@ -321,7 +321,8 @@ unless the maintainer decides to promote them into one.
 - [ADR-0032](../adr/0032-project-management-visibility-hub.md) — the
   visibility hub this whole sync pipeline implements.
 - [ADR-0073](../adr/0073-hub-board-classification-and-hierarchy.md) — the
-  current Issue Type / `Programme` / four-tier Priority taxonomy, the
+  current Issue Type and four-tier Priority taxonomy (`Programme` is deferred,
+  see [ADR-0081](../adr/0081-deferring-the-programme-board-field.md)), the
   epic-and-slice issue hierarchy, the single authoritative view, and the
   milestone title set. **Read this one first** — it amends or partially
   supersedes both of the next two.

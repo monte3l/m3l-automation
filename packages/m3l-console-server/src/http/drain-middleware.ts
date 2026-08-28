@@ -9,7 +9,8 @@
 import type { M3LDrainController } from "../lifecycle/drain.js";
 import type { M3LConsoleHandler, M3LConsoleMiddleware } from "./middleware.js";
 import type { M3LRequestContext } from "./context.js";
-import type { M3LConsoleResponse } from "./respond.js";
+import { withStreamCompletion } from "./stream-response.js";
+import type { M3LConsoleResult } from "./stream-response.js";
 
 /**
  * Builds the middleware that tracks one unit of in-flight work against
@@ -50,10 +51,38 @@ import type { M3LConsoleResponse } from "./respond.js";
  * the code's `fault: false` classification (`http/envelope.ts`) keeps a
  * routine drain refusal out of the error-level diagnostic log.
  *
- * Once tracking succeeds, `next` runs and the release function returned by
- * `track()` is called in a `finally`, so it runs on both the resolve and the
- * throw path — a rejected `next` still releases the tracked unit before its
- * error propagates unchanged.
+ * Once tracking succeeds, `next` runs. Releasing the tracked unit is NOT a
+ * plain `finally { release(); }` (Bug 3, X4 ADR-0066): for a streaming
+ * result, `next()` resolves at the point the route calls `open()`, not at
+ * the point the stream actually finishes — a `finally` there would let
+ * `inFlight` reach 0 while a watcher is still attached, so a shutdown would
+ * hand every open stream an abrupt `ECONNRESET` instead of a clean end.
+ * Release is instead deferred via {@link withStreamCompletion}: for a
+ * buffered result it fires immediately (unchanged behavior), and for a
+ * stream it is wrapped into the result's own `open()`, firing exactly once
+ * whether `open()` resolves or rejects. `release` is called directly on both
+ * the `next(ctx)` throw path and the `withStreamCompletion` path below —
+ * this is NOT a double-release risk: the two paths are mutually exclusive
+ * (a throw from `next(ctx)` means `withStreamCompletion` never runs at all).
+ * The exactly-once guarantee for the surviving path belongs to
+ * `withStreamCompletion`'s own internal `once()` guard, pinned by its
+ * dedicated coverage in `stream-response.test.ts` (the case asserting that
+ * `onComplete` fires exactly once even when `open()` settles more than
+ * once) — not to this middleware. Do not re-add a local once-guard here: it
+ * would guard a state this code cannot reach, since the two call sites are
+ * mutually exclusive by construction. A double release would silently
+ * decrement {@link M3LDrainController.inFlight} below its true value, after
+ * which it never reaches `0` and every future shutdown times out into a
+ * non-graceful drain.
+ *
+ * KNOWN INVARIANT the caller must preserve: `release` only ever fires once
+ * a stream result's `open()` is actually invoked (via
+ * {@link withStreamCompletion}'s wrapping). If some future outer layer ever
+ * discarded a stream result without calling `open()` on it, the tracked
+ * unit would leak and `inFlight` would never return to `0`. Today
+ * `http/handler.ts`'s `resolveDispatchedResult` always calls `writeStream`,
+ * which always calls `open()`, so this cannot happen — but the coupling is
+ * implicit, not mechanically enforced here.
  *
  * @param controller - The drain controller every non-exempt request is
  *   tracked against.
@@ -74,14 +103,19 @@ export function createDrainMiddleware(
   return async (
     ctx: M3LRequestContext,
     next: M3LConsoleHandler,
-  ): Promise<M3LConsoleResponse> => {
+  ): Promise<M3LConsoleResult> => {
     if (ctx.accessMode === "exempt") return next(ctx);
 
     const release = controller.track();
     try {
-      return await next(ctx);
-    } finally {
+      // `release` is passed straight through, unguarded: the exactly-once
+      // guarantee is `withStreamCompletion`'s own `once()`, not this
+      // middleware's — see the TSDoc above for why a local guard here would
+      // be unreachable, not merely untested.
+      return withStreamCompletion(await next(ctx), release);
+    } catch (error) {
       release();
+      throw error;
     }
   };
 }

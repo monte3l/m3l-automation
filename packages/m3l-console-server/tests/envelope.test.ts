@@ -158,6 +158,18 @@ const CLASSIFICATION_TABLE: Record<
     retryable: false,
     fault: true,
   },
+  ERR_CONSOLE_STREAM_CLOSED: {
+    status: INTERNAL_STATUS,
+    origin: "library",
+    retryable: false,
+    fault: true,
+  },
+  ERR_CONSOLE_STREAM_DUPLICATE: {
+    status: INTERNAL_STATUS,
+    origin: "library",
+    retryable: false,
+    fault: true,
+  },
   ERR_CONSOLE_RUN_NOT_FOUND: {
     status: 404,
     origin: "caller",

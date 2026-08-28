@@ -76,6 +76,11 @@ export const COMMAND_CATALOG = [
       "Runs Vitest in watch mode for interactive TDD (RED → GREEN → refactor) against the files you're actively editing.",
   },
   {
+    name: "test:e2e",
+    description:
+      "Runs the m3l-console-web Playwright suite (packages/m3l-console-web/tests/e2e, ADR-0067): builds the production bundle, serves it via `vite preview`, and drives it with Chromium. CI runs this job only when packages/m3l-console-web{,-server}/** changed, on a PR carrying the `e2e` label, or on push to main — not on every PR by default.",
+  },
+  {
     name: "knip",
     description:
       "Detects unused files, exports, and dependencies across the workspace. CI-only dead-code gate; run locally after removing a symbol or dependency.",
@@ -214,6 +219,11 @@ export const COMMAND_CATALOG = [
     name: "console:server",
     description:
       "Runs the m3l operations-console backend (packages/m3l-console-server, ADR-0064/0065) in the foreground: binds a loopback-only listener, serves /health and /ready, and drains gracefully on SIGINT/SIGTERM/SIGQUIT. Requires M3L_CONSOLE_OPERATOR_NAME (ADR-0071). Settings: the package README's Configuration table.",
+  },
+  {
+    name: "console:web",
+    description:
+      "Runs the m3l operations-console frontend's Vite dev server (packages/m3l-console-web, ADR-0064/0067). Proxies /health and /ready to console:server's default loopback bind so the shell's health check works against the real backend.",
   },
   {
     name: "check:agents",

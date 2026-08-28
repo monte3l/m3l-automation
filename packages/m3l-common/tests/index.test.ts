@@ -120,6 +120,7 @@ const AWS_REACHABILITY_CASES: ReadonlyArray<
   ["credentials", "M3LAWSCredentialsManager", "function"],
   ["clients", "AWSClientProvider", "function"],
   ["dynamodb", "getItem", "function"],
+  ["bedrock-runtime", "M3LBedrockRuntimeOperations", "function"],
   ["cloudwatch-logs-insights", "M3LLogsInsightsClient", "function"],
   ["sqs", "M3LSQSOperations", "function"],
   ["signing", "M3LRequestSigner", "function"],

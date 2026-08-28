@@ -38,6 +38,13 @@ import { Core } from "@m3l-automation/m3l-common";
  * migration, or an already-applied migration whose recorded history no
  * longer matches its declared SQL.
  *
+ * `ERR_CONSOLE_STREAM_CLOSED` and `ERR_CONSOLE_STREAM_DUPLICATE` are raised
+ * by `stream/event-stream.ts` (X4, ADR-0065, ADR-0066). Neither is
+ * reachable from an HTTP request: the SSE route only ever *subscribes* to
+ * an already-open stream, while `publish`/`end`/`open` are called by
+ * `runs/` — so a caller can never trigger either code, and both are genuine
+ * internal defects rather than a routine, expected outcome.
+ *
  * The two `ERR_CONSOLE_RUN_*` codes are the X4 run-registry's own failure
  * modes, layered on top of `console_runs` (`store/migrations/registry.ts`'s
  * v3). `ERR_CONSOLE_RUN_NOT_FOUND` is raised when a lookup by run id matches
@@ -72,6 +79,8 @@ export type M3LConsoleErrorCode =
   | "ERR_CONSOLE_STORE_QUERY_FAILED"
   | "ERR_CONSOLE_STORE_MIGRATION_FAILED"
   | "ERR_CONSOLE_STORE_SCHEMA_DRIFT"
+  | "ERR_CONSOLE_STREAM_CLOSED"
+  | "ERR_CONSOLE_STREAM_DUPLICATE"
   | "ERR_CONSOLE_RUN_NOT_FOUND"
   | "ERR_CONSOLE_RUN_TRANSITION_INVALID";
 

@@ -20,9 +20,14 @@ import { errorResponse } from "./envelope.js";
 import { M3LConsoleError } from "../errors/console-error.js";
 import { composeMiddleware } from "./middleware.js";
 import type { M3LConsoleHandler, M3LConsoleMiddleware } from "./middleware.js";
+import { toHeaderMap } from "./request-validation.js";
 import { writeResponse } from "./respond.js";
 import type { M3LConsoleResponse } from "./respond.js";
 import type { M3LRouteAuth, M3LRouteLookup, M3LRouter } from "./router.js";
+import { resolveDispatchedResult } from "./stream-dispatch.js";
+import type { M3LConsoleResult } from "./stream-response.js";
+import { validateStreamOptions } from "./stream-options.js";
+import type { M3LStreamWriteOutcome } from "./stream-writer.js";
 
 /** Logged in place of a request's path when it failed to parse — never the raw, unparsed target. */
 const PATH_PLACEHOLDER_UNPARSED = "(unparsed)";
@@ -74,6 +79,23 @@ export interface CreateConsoleRequestListenerOptions {
   readonly newCorrelationId?: () => string;
   /** Injectable clock; defaults to `Date.now`. */
   readonly now?: () => number;
+  /**
+   * Heartbeat interval (ms) a stream response emits while `open()` is
+   * pending (X4, ADR-0066); see `stream-writer.ts`. Optional because `http`
+   * may not import `config/` — a caller (e.g. `main.ts`) supplies its own
+   * configured value once one exists. Defaults to `30_000`.
+   */
+  readonly heartbeatMs?: number;
+  /**
+   * The unflushed-backlog ceiling (bytes) past which a stream response drops
+   * a route frame rather than writing it. Defaults to `1_000_000`.
+   */
+  readonly maxPendingBytes?: number;
+  /**
+   * The SSE `retry:` interval (ms) a stream response tells a reconnecting
+   * client. Defaults to `2_000`.
+   */
+  readonly retryMs?: number;
 }
 
 /**
@@ -94,69 +116,6 @@ export type M3LConsoleRequestListener = (
   req: IncomingMessage,
   res: ServerResponse,
 ) => void;
-
-/**
- * Throws `ERR_CONSOLE_BAD_REQUEST` when `rawHeaders` carries more than one
- * `Host` field-line, per RFC 9110 §7.2 ("a server MUST respond with a 400...
- * status code to any request message that contains more than one Host
- * header field"). MEASURED on a real `node:http` server (Node v26.7.0):
- * `req.headers` collapses a duplicate `Host` down to the FIRST value, so a
- * request sending the loopback host first and an attacker host second was
- * served 200 — the second value was invisible to every downstream check,
- * including the origin guard. `rawHeaders` is the only place a duplicate is
- * still observable: it is the flat, alternating
- * `[name, value, name, value, ...]` list Node never collapses, so this steps
- * by 2. Matching is case-insensitive (`Host` and `host` name the same field)
- * and this is a malformed-framing check, not a content check — it rejects
- * even when both values happen to be loopback.
- *
- * `rawHeaders` is typed as always present on a real `IncomingMessage`, but
- * is accepted here as possibly `undefined` and treated as "nothing to
- * check" rather than thrown on: a real socket-backed request always
- * populates it, so an absent value only ever occurs in a lightweight test
- * double that never claimed to model wire-level duplicate framing in the
- * first place — this guard exists to catch a real duplicate, not to reject
- * a caller that has no rawHeaders to offer.
- */
-/**
- * `rawHeaders` interleaves names and values as
- * `[name, value, name, value, ...]`, so scanning for field-line names steps
- * by two rather than iterating one entry at a time.
- */
-const RAW_HEADER_STRIDE = 2;
-
-function assertSingleHostHeader(
-  rawHeaders: readonly string[] | undefined,
-): void {
-  if (rawHeaders === undefined) return;
-  let hostFieldLines = 0;
-  for (let index = 0; index < rawHeaders.length; index += RAW_HEADER_STRIDE) {
-    if (rawHeaders[index]?.toLowerCase() === "host") hostFieldLines += 1;
-  }
-  if (hostFieldLines > 1) {
-    throw new M3LConsoleError(
-      "ERR_CONSOLE_BAD_REQUEST",
-      "request carries more than one Host header field-line",
-    );
-  }
-}
-
-/**
- * Coerces Node's header map to the plain string map `createRequestContext`
- * expects, first rejecting a duplicate `Host` field-line that `headers`
- * itself cannot represent (see {@link assertSingleHostHeader}).
- */
-function toHeaderMap(
-  headers: IncomingMessage["headers"],
-  rawHeaders: readonly string[] | undefined,
-): Readonly<Record<string, string | undefined>> {
-  assertSingleHostHeader(rawHeaders);
-  // `IncomingHttpHeaders` types every value as `string | string[] | undefined`
-  // only to accommodate a handful of headers (`set-cookie`) that never occur
-  // on an inbound server request; every header this package reads
-  // (`x-correlation-id`) is always a single string in practice.
-  return headers as unknown as Readonly<Record<string, string | undefined>>;
-}
 
 /** Builds the response for a router lookup that did not reach a route handler. */
 function responseForUnmatchedLookup(
@@ -238,9 +197,9 @@ function writeResponseGuarded(
   }
 }
 
-/** The result of dispatching a request: the response, and the auth mode of any matched route. */
+/** The result of dispatching a request: the route's result (buffered or a stream), and the auth mode of any matched route. */
 interface DispatchResult {
-  readonly response: M3LConsoleResponse;
+  readonly response: M3LConsoleResult;
   readonly accessMode: M3LRouteAuth | undefined;
 }
 
@@ -284,10 +243,10 @@ async function dispatch(
  * unlike `middlewares`, which only wraps a matched route's handler.
  *
  * `composeMiddleware` yields an {@link M3LConsoleHandler} returning a plain
- * {@link M3LConsoleResponse}, with no room to carry {@link DispatchResult}'s
+ * {@link M3LConsoleResult}, with no room to carry {@link DispatchResult}'s
  * `accessMode` back out without widening every middleware layer to carry
  * routing detail — a leak of routing internals into a seam that should stay
- * response-shaped. So the terminal handler passed to the `preRouting` chain
+ * result-shaped. So the terminal handler passed to the `preRouting` chain
  * reports `accessMode` to `onDispatched` as a side effect instead;
  * `onDispatched` is only invoked once {@link dispatch} actually runs, never
  * when a `preRouting` member short-circuits before reaching it.
@@ -298,7 +257,7 @@ function dispatchThroughPreRouting(
   middlewares: readonly M3LConsoleMiddleware[],
   preRouting: readonly M3LConsoleMiddleware[],
   onDispatched: (accessMode: M3LRouteAuth | undefined) => void,
-): Promise<M3LConsoleResponse> {
+): Promise<M3LConsoleResult> {
   const terminal: M3LConsoleHandler = async (routedCtx) => {
     const result = await dispatch(routedCtx, router, middlewares);
     onDispatched(result.accessMode);
@@ -389,6 +348,59 @@ function responseForThrownError(
   return response;
 }
 
+/** What dispatching and resolving one already-built request context produces. */
+interface DispatchOutcome {
+  readonly accessMode: M3LRouteAuth | undefined;
+  readonly response: M3LConsoleResponse;
+  readonly wroteAlready: boolean;
+  readonly streamOutcome?: M3LStreamWriteOutcome;
+}
+
+/**
+ * Dispatches `ctx` through pre-routing/routing/middleware and resolves the
+ * result via {@link resolveDispatchedResult} — split out of `runRequest`'s
+ * own `try` purely to stay under this file's `max-lines-per-function`
+ * budget. `ctx` (and therefore `runRequest`'s `method`/`path`/
+ * `correlationId`) MUST already be resolved by the caller before this runs:
+ * a throw from dispatch must still let `runRequest`'s `catch` log the real
+ * method/path, not the pre-parse placeholder. Left to throw on any failure;
+ * `runRequest`'s `catch` is what turns a rejection into an error response.
+ */
+async function dispatchAndResolve(
+  ctx: M3LRequestContext,
+  res: ServerResponse,
+  options: CreateConsoleRequestListenerOptions,
+): Promise<DispatchOutcome> {
+  let accessMode: M3LRouteAuth | undefined;
+  const result = await dispatchThroughPreRouting(
+    ctx,
+    options.router,
+    options.middlewares,
+    options.preRouting,
+    (mode) => {
+      accessMode = mode;
+    },
+  );
+  // Awaited HERE, inside the same `try` `runRequest` wraps this call in: for
+  // a stream result this only settles once the stream itself ends, not at
+  // `open()` — fixing Bugs 1 and 2 without scattering `isStreamResponse`
+  // checks through the rest of the pipeline.
+  const resolved = await resolveDispatchedResult(
+    res,
+    result,
+    ctx.correlationId,
+    options,
+  );
+  return {
+    accessMode,
+    response: resolved.response,
+    wroteAlready: resolved.wroteAlready,
+    ...(resolved.streamOutcome !== undefined && {
+      streamOutcome: resolved.streamOutcome,
+    }),
+  };
+}
+
 /**
  * Runs one request end-to-end: context, dispatch, response, and its logging.
  * Exactly one outcome line is logged per request; a failure additionally
@@ -411,6 +423,8 @@ async function runRequest(
   let correlationId = began.fallbackCorrelationId;
   let accessMode: M3LRouteAuth | undefined;
   let response: M3LConsoleResponse;
+  let wroteAlready = false;
+  let streamOutcome: M3LStreamWriteOutcome | undefined;
 
   try {
     const ctx = buildRequestContext(
@@ -424,15 +438,11 @@ async function runRequest(
     method = ctx.method;
     path = ctx.path;
 
-    response = await dispatchThroughPreRouting(
-      ctx,
-      options.router,
-      options.middlewares,
-      options.preRouting,
-      (mode) => {
-        accessMode = mode;
-      },
-    );
+    const outcome = await dispatchAndResolve(ctx, res, options);
+    accessMode = outcome.accessMode;
+    response = outcome.response;
+    wroteAlready = outcome.wroteAlready;
+    streamOutcome = outcome.streamOutcome;
   } catch (error) {
     response = responseForThrownError(error, options.logger, {
       method,
@@ -452,6 +462,8 @@ async function runRequest(
     now,
     accessMode,
     logger: options.logger,
+    write: !wroteAlready,
+    ...(streamOutcome !== undefined && { streamOutcome }),
   });
 }
 
@@ -465,6 +477,14 @@ interface FinishRequestInputs {
   readonly now: () => number;
   readonly accessMode: M3LRouteAuth | undefined;
   readonly logger: Core.M3LLogger;
+  /**
+   * `false` for a stream result: `resolveDispatchedResult` already wrote the
+   * head and every frame via `writeStream`, and writing `response` here too
+   * (a synthetic, empty-bodied stand-in) would double-write the socket.
+   */
+  readonly write: boolean;
+  /** The stream's frame/drop counts and stop reason, present only for a stream result. */
+  readonly streamOutcome?: M3LStreamWriteOutcome;
 }
 
 /**
@@ -485,20 +505,25 @@ interface FinishRequestInputs {
  * (2xx, a thrown/rejected handler, an unmatched 404/405, or a `preRouting`
  * short-circuit).
  *
- * ORDER IS LOAD-BEARING: the abort MUST run after {@link writeResponseGuarded},
- * never before — aborting first would cancel the very write it is meant to
- * follow (a listener on `ctx.signal` could tear down mid-write). This is
- * NOT redundant with the `onClose` listener in {@link runRequest}: that only
- * fires on an early client disconnect, not on ordinary completion, so most
- * requests would otherwise never release the pin.
+ * ORDER IS LOAD-BEARING: the abort MUST run after the write — after
+ * {@link writeResponseGuarded} for a buffered response (`inputs.write`), or,
+ * for a stream, after `resolveDispatchedResult`'s own {@link writeStream}
+ * call has already returned by the time `finishRequest` is even invoked —
+ * never before either. Aborting first would cancel the very write/stream it
+ * is meant to follow (a listener on `ctx.signal` could tear down mid-write).
+ * This is NOT redundant with the `onClose` listener in {@link runRequest}:
+ * that only fires on an early client disconnect, not on ordinary completion,
+ * so most requests would otherwise never release the pin.
  */
 function finishRequest(inputs: FinishRequestInputs): void {
-  writeResponseGuarded(
-    inputs.res,
-    inputs.response,
-    inputs.context,
-    inputs.logger,
-  );
+  if (inputs.write) {
+    writeResponseGuarded(
+      inputs.res,
+      inputs.response,
+      inputs.context,
+      inputs.logger,
+    );
+  }
 
   inputs.connectionController.abort();
 
@@ -509,6 +534,9 @@ function finishRequest(inputs: FinishRequestInputs): void {
     durationMs: inputs.now() - inputs.startedAt,
     correlationId: inputs.context.correlationId,
     accessMode: inputs.accessMode,
+    ...(inputs.streamOutcome !== undefined && {
+      streamOutcome: inputs.streamOutcome,
+    }),
   });
 }
 
@@ -530,6 +558,11 @@ function finishRequest(inputs: FinishRequestInputs): void {
  *
  * @param options - See {@link CreateConsoleRequestListenerOptions}.
  * @returns The `node:http` request listener.
+ * @throws {@link M3LConsoleError} with code `"ERR_CONSOLE_CONFIG_INVALID"`
+ *   when a supplied `heartbeatMs`, `maxPendingBytes`, or `retryMs` is not a
+ *   non-negative integer — checked synchronously here, before any request is
+ *   accepted (PR #718 review, defect 1), rather than left to surface much
+ *   later out of `stream-writer.ts`'s `writeStream`.
  *
  * @example
  * ```ts
@@ -548,6 +581,7 @@ function finishRequest(inputs: FinishRequestInputs): void {
 export function createConsoleRequestListener(
   options: CreateConsoleRequestListenerOptions,
 ): M3LConsoleRequestListener {
+  validateStreamOptions(options);
   const newCorrelationId = options.newCorrelationId ?? randomUUID;
   const now = options.now ?? Date.now;
 
