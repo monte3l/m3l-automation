@@ -20,181 +20,26 @@ import type { M3LRunAuditSink } from "./audit.js";
 import type { M3LRunEventSink } from "./events.js";
 import type { M3LRunExecutor } from "./executor.js";
 import type { M3LRunGovernor } from "./governor.js";
+import type {
+  M3LRunHandle,
+  M3LRunLaunchRequest,
+  M3LRunOrchestrator,
+  M3LRunOrchestratorConfig,
+  M3LRunOrchestratorOptions,
+} from "./orchestrator-types.js";
 import { mapSpawnOutcome } from "./outcome.js";
 import type { M3LRunRequestBody } from "./parameters.js";
 import type { M3LRunPolicy } from "./policy.js";
 import type { M3LRunRegistry } from "./registry.js";
 import type { M3LResolvedScript } from "./resolver.js";
 
-/**
- * The X4 run-governor's boot-time configuration, as the orchestrator needs
- * it. Declared locally — field for field identical to
- * `../config/runs.js`'s `M3LConsoleRunsConfig` — rather than imported: zone
- * rules let `runs/` import only `runs/`, `errors/`, `store/`, `stream/`, and
- * `config/` is not among them. `M3LConsoleRunsConfig` satisfies this
- * interface exactly — the same declared-not-imported trick
- * `lifecycle/shutdown.ts`'s `M3LShutdownDisposable` uses — and `main.ts`
- * (Round 3) passing the real config object is the compile-time proof.
- *
- * @example
- * ```ts
- * const config: M3LRunOrchestratorConfig = {
- *   scriptsDir: "/opt/scripts",
- *   maxPerScript: 1,
- *   queueCapacity: 16,
- *   streamRetention: 256,
- *   killTimeoutMs: 5000,
- *   maxConcurrency: 4,
- *   queueTimeoutMs: 30_000,
- * };
- * ```
- */
-export interface M3LRunOrchestratorConfig {
-  /** The resolved, absolute path to the scripts directory. */
-  readonly scriptsDir: string;
-  /** The maximum number of concurrent runs allowed per script. */
-  readonly maxPerScript: number;
-  /** The maximum number of runs the queue may hold once every slot is busy. */
-  readonly queueCapacity: number;
-  /** How many output lines a run's stream retains for replay. */
-  readonly streamRetention: number;
-  /** How long a killed run is given to exit before it is force-killed. */
-  readonly killTimeoutMs: number;
-  /** The maximum number of runs allowed to execute concurrently, across every script. */
-  readonly maxConcurrency: number;
-  /** How long a queued run waits for a free slot before it times out. */
-  readonly queueTimeoutMs: number;
-}
-
-/**
- * Constructor options for {@link createRunOrchestrator}: every collaborator
- * the launch → start → finish lifecycle depends on.
- *
- * @example
- * ```ts
- * function describeOptions(options: M3LRunOrchestratorOptions): string {
- *   return options.config.scriptsDir;
- * }
- * ```
- */
-export interface M3LRunOrchestratorOptions {
-  /** The run governor's resolved boot-time configuration. */
-  readonly config: M3LRunOrchestratorConfig;
-  /** The run-persistence port. */
-  readonly registry: M3LRunRegistry;
-  /** The admission-control port. */
-  readonly governor: M3LRunGovernor;
-  /** The launch-confirmation policy port. */
-  readonly policy: M3LRunPolicy;
-  /** The run-lifecycle audit port. */
-  readonly audit: M3LRunAuditSink;
-  /** The run-event publication port. */
-  readonly events: M3LRunEventSink;
-  /** The executor used for a script with no opted-in command module. */
-  readonly spawnExecutor: M3LRunExecutor;
-  /** The executor used for a script that opted into ADR-0054's in-process command module. */
-  readonly inProcessExecutor: M3LRunExecutor;
-  /** The logger warnings/errors/reconciliation counts are recorded through. */
-  readonly logger: Core.M3LLogger;
-}
-
-/**
- * One validated launch request.
- *
- * @example
- * ```ts
- * const request: M3LRunLaunchRequest = {
- *   body: { scriptName: "sqs-etl", confirmed: true, dryRun: false, parameters: {} },
- *   operator: "ada",
- *   correlationId: "c-1",
- * };
- * ```
- */
-export interface M3LRunLaunchRequest {
-  /** The validated request body — see `runs/parameters`'s `parseRunRequest`. */
-  readonly body: M3LRunRequestBody;
-  /** The operator requesting the launch. */
-  readonly operator: string;
-  /** The correlation id this run's diagnostics are tagged with. */
-  readonly correlationId: string;
-}
-
-/**
- * The handle {@link M3LRunOrchestrator.launch} returns for a newly launched
- * run.
- *
- * @example
- * ```ts
- * function describe(handle: M3LRunHandle): string {
- *   return `${handle.id} (${handle.status})`;
- * }
- * ```
- */
-export interface M3LRunHandle {
-  /** The run's id. */
-  readonly id: string;
-  /** The script identifier this run invokes. */
-  readonly scriptName: string;
-  /** Whether the run started immediately or is waiting in the queue. */
-  readonly status: "queued" | "running";
-  /** Whether this run executes in dry-run mode. */
-  readonly dryRun: boolean;
-  /** Whether this run executes as a spawned subprocess or in-process. */
-  readonly executionMode: RunExecutionMode;
-}
-
-/**
- * The run orchestrator port: the X4 run-governor's single write path for a
- * script run's full lifecycle.
- *
- * @example
- * ```ts
- * declare const orchestrator: M3LRunOrchestrator;
- * orchestrator.activeCount; // 0
- * ```
- */
-export interface M3LRunOrchestrator {
-  /**
-   * Resolves, policy-checks, admission-controls, persists, and — when a slot
-   * is free — starts a run.
-   *
-   * @param request - See {@link M3LRunLaunchRequest}.
-   * @returns The launched run's {@link M3LRunHandle}.
-   * @throws {@link M3LConsoleError} propagated unchanged from `resolveScript`
-   *   (`"ERR_CONSOLE_BAD_REQUEST"` / `"ERR_CONSOLE_RUN_SCRIPT_NOT_FOUND"`), or
-   *   raised here with `"ERR_CONSOLE_RUN_CONFIRMATION_REQUIRED"` (policy
-   *   denial) / `"ERR_CONSOLE_RUN_CAPACITY_EXCEEDED"` (governor rejection).
-   */
-  launch(request: M3LRunLaunchRequest): M3LRunHandle;
-  /**
-   * Cancels an ACTIVE (already-started) run by aborting its signal. Acts
-   * only on the active map: a queued run (not yet started) or an
-   * already-finished run is not cancellable in this slice, and both report
-   * `false` exactly like an unknown id — `false` here never means merely
-   * "not found", it means "there is nothing this call can cancel".
-   *
-   * @param id - The run's id.
-   * @returns `true` when an active run was found and aborted, `false`
-   *   otherwise (unknown id, still queued, or already terminal).
-   */
-  cancel(id: string): boolean;
-  /**
-   * Transitions every orphaned (`queued`/`running`) row left over from a
-   * killed previous process to `interrupted`. Call once at boot, before the
-   * listener binds.
-   *
-   * @returns The number of rows reconciled.
-   */
-  reconcileOnBoot(): number;
-  /** The number of runs currently active (started and not yet settled). */
-  readonly activeCount: number;
-  /**
-   * Aborts every active run's signal and resolves once every one of them has
-   * settled. Each executor's own kill-signal escalation bounds how long that
-   * takes.
-   */
-  drain(): Promise<void>;
-}
+export type {
+  M3LRunHandle,
+  M3LRunLaunchRequest,
+  M3LRunOrchestrator,
+  M3LRunOrchestratorConfig,
+  M3LRunOrchestratorOptions,
+} from "./orchestrator-types.js";
 
 /**
  * The test-only injection seam for {@link createRunOrchestrator}. Deliberately
@@ -247,6 +92,19 @@ interface M3LOrchestratorContext {
   readonly active: Map<string, M3LActiveRun>;
   readonly queueTimers: Map<string, ReturnType<typeof setTimeout>>;
   readonly pendingQueued: Map<string, M3LPendingQueuedRun>;
+  /**
+   * The drain flag, as a closure-backed pair rather than a mutable context
+   * field: `M3LOrchestratorContext` is deeply `readonly`, and
+   * `no-param-reassign` correctly forbids mutating it through a parameter, so
+   * the flag itself lives in {@link createRunOrchestrator}'s closure and
+   * these two functions are its only access. `markDraining` is never
+   * reversible — once called, `isDraining` never reports `false` again, a
+   * drained orchestrator being terminal, matching the shutdown-sequence
+   * lifecycle (there is no "un-drain" to support).
+   */
+  readonly isDraining: () => boolean;
+  /** See {@link M3LOrchestratorContext.isDraining}'s TSDoc. */
+  readonly markDraining: () => void;
 }
 
 /** The optional fields a terminal `finish` write carries, on top of `outcome`/`endedAtMs`. */
@@ -509,8 +367,15 @@ function startRun(
  * behind whichever script happens to be busy — every other queued run,
  * regardless of script, would wait for that one script to free up before
  * any of them could ever be considered.
+ *
+ * Returns immediately, before ever consulting the registry, once
+ * `ctx.isDraining()` reports `true`. A drain in progress (or already
+ * completed — the flag is never reset) must never start a queued run; queued
+ * rows are left `'queued'` for the next boot's `reconcileOnBoot` to
+ * reconcile.
  */
 function pumpQueue(ctx: M3LOrchestratorContext): void {
+  if (ctx.isDraining()) return;
   const limit = ctx.config.queueCapacity + ctx.config.maxConcurrency;
   const queuedRows = ctx.registry.list({ status: "queued", limit });
   for (const row of queuedRows) {
@@ -684,15 +549,27 @@ function reconcileOnBoot(ctx: M3LOrchestratorContext): number {
   return count;
 }
 
-/** Aborts every active run's signal, then awaits every one of them settling — see {@link M3LRunOrchestrator.drain}'s own TSDoc. */
-function drainActive(ctx: M3LOrchestratorContext): Promise<void> {
-  const entries = [...ctx.active.values()];
-  for (const entry of entries) {
-    entry.controller.abort();
+/**
+ * Aborts every active run's signal, then awaits every one of them settling —
+ * see {@link M3LRunOrchestrator.drain}'s own TSDoc.
+ *
+ * Calls `ctx.markDraining()` first, which permanently closes {@link pumpQueue}
+ * (never reset — a drained orchestrator is terminal). Then loops rather than
+ * snapshotting `ctx.active` once: aborting the current snapshot can itself
+ * cause a new entry to appear (a straggler from any source, not only a
+ * `pumpQueue` start — `pumpQueue` is closed by the flag above, but e.g. a
+ * `launch()` racing in during drain is not), so each iteration re-snapshots
+ * and re-awaits until the active map is empty.
+ */
+async function drainActive(ctx: M3LOrchestratorContext): Promise<void> {
+  ctx.markDraining();
+  while (ctx.active.size > 0) {
+    const entries = [...ctx.active.values()];
+    for (const entry of entries) {
+      entry.controller.abort();
+    }
+    await Promise.allSettled(entries.map((entry) => entry.promise));
   }
-  return Promise.allSettled(entries.map((entry) => entry.promise)).then(
-    () => undefined,
-  );
 }
 
 /**
@@ -715,6 +592,10 @@ export function createRunOrchestrator(
   options: M3LRunOrchestratorOptions,
   internals: M3LRunOrchestratorInternals = {},
 ): M3LRunOrchestrator {
+  // Backs `ctx.isDraining`/`ctx.markDraining` — see
+  // `M3LOrchestratorContext.isDraining`'s TSDoc for why this lives in the
+  // closure rather than as a mutable field on the (deeply readonly) context.
+  let draining = false;
   const ctx: M3LOrchestratorContext = {
     config: options.config,
     registry: options.registry,
@@ -731,6 +612,10 @@ export function createRunOrchestrator(
     active: new Map<string, M3LActiveRun>(),
     queueTimers: new Map<string, ReturnType<typeof setTimeout>>(),
     pendingQueued: new Map<string, M3LPendingQueuedRun>(),
+    isDraining: () => draining,
+    markDraining: () => {
+      draining = true;
+    },
   };
 
   return {

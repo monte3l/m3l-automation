@@ -393,6 +393,21 @@ function mockScriptExists(hasCommandModule: boolean): void {
   );
 }
 
+/**
+ * A deterministic id generator producing `${prefix}-1`, `${prefix}-2`, ... in
+ * call order. Only the drain tests below launch more than one run per test,
+ * so the single-id `newId: () => "run-1"` override used elsewhere in this
+ * file is not enough — mirrors `runs-orchestrator-queue.test.ts`'s own
+ * `createIdSequence` helper.
+ */
+function createIdSequence(prefix: string): () => string {
+  let counter = 0;
+  return (): string => {
+    counter += 1;
+    return `${prefix}-${counter}`;
+  };
+}
+
 /** Yields to the microtask queue so pending `.then`/`.catch` chains settle. */
 function flush(): Promise<void> {
   return new Promise((resolve) => {
@@ -1463,6 +1478,274 @@ describe("createRunOrchestrator — drain", () => {
     });
 
     await expect(orchestrator.drain()).resolves.toBeUndefined();
+  });
+
+  // PR #730 must-fix: `drainActive` (src/runs/orchestrator.ts:688) snapshots
+  // `ctx.active` exactly once into a fixed array. Each aborted run settles
+  // through `finishActiveRun`, whose last statement is `pumpQueue`, which
+  // can start a queued run and add it to `ctx.active` — but that new entry
+  // is never part of the fixed snapshot `Promise.allSettled` was handed, so
+  // `drain()` can resolve while that run is still executing.
+  test("[PR#730] a queued run for the same script is never started during drain, and drain resolves only once the active run has settled", async () => {
+    mockScriptExists(false);
+    const log: string[] = [];
+    const registry = createFakeRegistry(log);
+    const governor = createFakeGovernor(log, {
+      "sqs-etl": ["accept", "queue"],
+    });
+    const policy = createFakePolicy(log, { kind: "allow" });
+    const audit = createFakeAudit(log);
+    const events = createFakeEvents(log);
+    const spawnExecutor = createControllableExecutor(log, "spawn");
+    const inProcessExecutor = createControllableExecutor(log, "inProcess");
+    const { logger } = buildLogger();
+    const orchestrator = createRunOrchestrator(
+      {
+        config: buildConfig({ maxPerScript: 1 }),
+        registry,
+        governor,
+        policy,
+        audit,
+        events,
+        spawnExecutor,
+        inProcessExecutor,
+        logger,
+      },
+      { newId: createIdSequence("run") },
+    );
+
+    orchestrator.launch(buildRequest()); // run-1: accepted, starts immediately
+    await flush();
+    const callA = spawnExecutor.calls[0];
+    if (callA === undefined) throw new Error("run-1 did not start");
+
+    const handleB = orchestrator.launch(buildRequest()); // run-2: governor says queue
+    expect(handleB.status).toBe("queued");
+
+    let drainResolved = false;
+    const drainPromise = orchestrator.drain().then(() => {
+      drainResolved = true;
+    });
+    await flush();
+    expect(drainResolved).toBe(false);
+
+    callA.resolve({ exitCode: 0, killRequested: true, dryRun: false });
+    await drainPromise;
+
+    expect(drainResolved).toBe(true);
+    // Only run-1 should ever have reached an executor — run-2 must stay
+    // queued for boot reconciliation, never started by drain's own pump.
+    expect(spawnExecutor.calls).toHaveLength(1);
+    expect(orchestrator.activeCount).toBe(0);
+    expect(registry.rows.get(handleB.id)?.status).toBe("queued");
+  });
+
+  // The loop-based fix must generalise beyond the `pumpQueue` path: ANY run
+  // that enters `ctx.active` after `drainActive`'s first snapshot — not only
+  // one started by a pump — must still be awaited. A `launch()` call is used
+  // here (rather than a queued run) specifically to isolate that more
+  // general guarantee from the `pumpQueue`-specific scenario above. The
+  // `launch()` call below happens synchronously, in the same microtask turn
+  // as the `drain()` call that precedes it (no `await` sits between them),
+  // so it is guaranteed to run AFTER `drainActive` already captured its
+  // snapshot of `ctx.active` and BEFORE that snapshot's promises settle.
+  test("[PR#730] drain awaits a straggler that enters ctx.active after the initial snapshot was taken", async () => {
+    mockScriptExists(false);
+    const log: string[] = [];
+    const registry = createFakeRegistry(log);
+    const governor = createFakeGovernor(log, {
+      "sqs-etl": ["accept"],
+      "straggler-script": ["accept"],
+    });
+    const policy = createFakePolicy(log, { kind: "allow" });
+    const audit = createFakeAudit(log);
+    const events = createFakeEvents(log);
+    const spawnExecutor = createControllableExecutor(log, "spawn");
+    const inProcessExecutor = createControllableExecutor(log, "inProcess");
+    const { logger } = buildLogger();
+    const orchestrator = createRunOrchestrator(
+      {
+        config: buildConfig(),
+        registry,
+        governor,
+        policy,
+        audit,
+        events,
+        spawnExecutor,
+        inProcessExecutor,
+        logger,
+      },
+      { newId: createIdSequence("run") },
+    );
+
+    orchestrator.launch(buildRequest());
+    await flush();
+    const callA = spawnExecutor.calls[0];
+    if (callA === undefined) throw new Error("run-1 did not start");
+
+    let drainResolved = false;
+    const drainPromise = orchestrator.drain().then(() => {
+      drainResolved = true;
+    });
+
+    // No `await` above this line: this launch runs in the same synchronous
+    // turn as `drain()`, strictly after whatever snapshot `drainActive` took
+    // of `ctx.active`, and strictly before run-1 settles.
+    orchestrator.launch(
+      buildRequest({ body: { scriptName: "straggler-script" } }),
+    );
+    const callStraggler = spawnExecutor.calls[1];
+    if (callStraggler === undefined) {
+      throw new Error("straggler run did not start");
+    }
+
+    callA.resolve({ exitCode: 0, killRequested: true, dryRun: false });
+    await flush();
+
+    // The straggler has not settled yet — a correct drain must still be
+    // waiting on it, not resolved already.
+    expect(drainResolved).toBe(false);
+
+    callStraggler.resolve({
+      exitCode: 0,
+      killRequested: false,
+      dryRun: false,
+    });
+    await drainPromise;
+
+    expect(drainResolved).toBe(true);
+    expect(orchestrator.activeCount).toBe(0);
+  });
+
+  // Regression lock: two ordinary active runs with nothing queued — the
+  // scenario the pre-fix implementation already handles correctly (mirrors
+  // the sibling "no queued run" test above, with a second concurrent active
+  // run added). This is expected to already pass against the pre-fix
+  // implementation; it exists to prove the drain-loop rewrite required by
+  // PR #730 does not regress the already-correct "no straggler" path.
+  test("regression: two active runs with nothing queued are both aborted and both awaited before drain resolves", async () => {
+    mockScriptExists(false);
+    const log: string[] = [];
+    const registry = createFakeRegistry(log);
+    const governor = createFakeGovernor(log, {
+      "sqs-etl": ["accept"],
+      "another-script": ["accept"],
+    });
+    const policy = createFakePolicy(log, { kind: "allow" });
+    const audit = createFakeAudit(log);
+    const events = createFakeEvents(log);
+    const spawnExecutor = createControllableExecutor(log, "spawn");
+    const inProcessExecutor = createControllableExecutor(log, "inProcess");
+    const { logger } = buildLogger();
+    const orchestrator = createRunOrchestrator(
+      {
+        config: buildConfig(),
+        registry,
+        governor,
+        policy,
+        audit,
+        events,
+        spawnExecutor,
+        inProcessExecutor,
+        logger,
+      },
+      { newId: createIdSequence("run") },
+    );
+
+    orchestrator.launch(buildRequest());
+    orchestrator.launch(
+      buildRequest({ body: { scriptName: "another-script" } }),
+    );
+    await flush();
+    const callA = spawnExecutor.calls[0];
+    const callB = spawnExecutor.calls[1];
+    if (callA === undefined || callB === undefined) {
+      throw new Error("both runs did not start");
+    }
+
+    let drainResolved = false;
+    const drainPromise = orchestrator.drain().then(() => {
+      drainResolved = true;
+    });
+    await flush();
+
+    expect(callA.options.signal.aborted).toBe(true);
+    expect(callB.options.signal.aborted).toBe(true);
+    expect(drainResolved).toBe(false);
+
+    callA.resolve({ exitCode: 0, killRequested: true, dryRun: false });
+    await flush();
+    expect(drainResolved).toBe(false);
+
+    callB.resolve({ exitCode: 0, killRequested: true, dryRun: false });
+    await drainPromise;
+
+    expect(drainResolved).toBe(true);
+    expect(orchestrator.activeCount).toBe(0);
+  });
+
+  // The `ctx.draining` guard must never be reset — it protects `pumpQueue`
+  // permanently, not only for the duration of the initial drain. A second,
+  // later `launch()`/finish cycle for an unrelated script (launching after
+  // drain is out of scope for this fix — only `pumpQueue` is guarded) must
+  // still find the queue closed when ITS finish tries to pump again.
+  test("[PR#730] pumpQueue stays closed for a finish that happens after drain has already resolved", async () => {
+    mockScriptExists(false);
+    const log: string[] = [];
+    const registry = createFakeRegistry(log);
+    const governor = createFakeGovernor(log, {
+      "sqs-etl": ["accept", "queue"],
+      "post-drain-script": ["accept"],
+    });
+    const policy = createFakePolicy(log, { kind: "allow" });
+    const audit = createFakeAudit(log);
+    const events = createFakeEvents(log);
+    const spawnExecutor = createControllableExecutor(log, "spawn");
+    const inProcessExecutor = createControllableExecutor(log, "inProcess");
+    const { logger } = buildLogger();
+    const orchestrator = createRunOrchestrator(
+      {
+        config: buildConfig(),
+        registry,
+        governor,
+        policy,
+        audit,
+        events,
+        spawnExecutor,
+        inProcessExecutor,
+        logger,
+      },
+      { newId: createIdSequence("run") },
+    );
+
+    orchestrator.launch(buildRequest()); // run-1: active on "sqs-etl"
+    await flush();
+    const callA = spawnExecutor.calls[0];
+    if (callA === undefined) throw new Error("run-1 did not start");
+
+    const handleB = orchestrator.launch(buildRequest()); // run-2: queued on "sqs-etl"
+    expect(handleB.status).toBe("queued");
+
+    const drainPromise = orchestrator.drain();
+    callA.resolve({ exitCode: 0, killRequested: true, dryRun: false });
+    await drainPromise;
+
+    // Drain has now fully resolved. A run on an unrelated script is still
+    // free to launch; when IT finishes, its own `finishActiveRun` calls
+    // `pumpQueue` again. That second, post-drain pump attempt must ALSO
+    // leave the still-queued run-2 alone.
+    const handleD = orchestrator.launch(
+      buildRequest({ body: { scriptName: "post-drain-script" } }),
+    );
+    expect(handleD.status).toBe("running");
+    const callD = spawnExecutor.calls[1];
+    if (callD === undefined) throw new Error("run-D did not start");
+
+    callD.resolve({ exitCode: 0, killRequested: false, dryRun: false });
+    await flush();
+
+    expect(registry.rows.get(handleB.id)?.status).toBe("queued");
+    expect(spawnExecutor.calls).toHaveLength(2);
   });
 });
 
