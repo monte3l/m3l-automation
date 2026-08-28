@@ -293,6 +293,16 @@ describe("writeStream — response head", () => {
     expect(headerKeys).not.toContain("content-length");
   });
 
+  test("writes the route's own status code rather than always 200 (PR #718 review, defect 3)", async () => {
+    const { res, calls } = createFakeServerResponse();
+    const options = buildOptions(res, buildStreamResponse({ status: 201 }));
+
+    await writeStream(options);
+
+    const head = calls.find((call) => call.kind === "writeHead");
+    expect(head?.status).toBe(201);
+  });
+
   test("emits one retry: frame at open, from options.retryMs", async () => {
     const { res, calls } = createFakeServerResponse();
     const options = buildOptions(res, buildStreamResponse(), {
@@ -333,6 +343,29 @@ describe("writeStream — response head", () => {
     expect(frameIndex).toBeGreaterThan(-1);
     expect(retryIndex).toBeLessThan(frameIndex);
   });
+});
+
+describe("writeStream — an invalid retryMs reaching it directly (PR #718 review, defect 1)", () => {
+  // `encodeSseRetry` legitimately throws for a bad retryMs (sse.ts's own
+  // documented contract for an internal control value) — but writeStream's
+  // own contract is "never throws and never rejects". Today the call sits
+  // outside any try, so the throw propagates straight out of writeStream
+  // as a rejection, after writeStreamHead has already written the head —
+  // meaning a caller can no longer send a fallback error response either.
+  test.each([
+    ["a negative retryMs", -1],
+    ["a non-integer retryMs", 1.5],
+  ])(
+    "does not throw or reject for %s — the stream still completes instead of crashing",
+    async (_label, retryMs) => {
+      const { res } = createFakeServerResponse();
+      const options = buildOptions(res, buildStreamResponse(), { retryMs });
+
+      const outcome = await writeStream(options);
+
+      expect(outcome.reason).toBe("completed");
+    },
+  );
 });
 
 describe("writeStream — frame pumping", () => {
@@ -413,6 +446,80 @@ describe("writeStream — frame pumping", () => {
     const endIndex = calls.findIndex((call) => call.kind === "end");
     expect(writeIndex).toBeGreaterThan(-1);
     expect(endIndex).toBeGreaterThan(writeIndex);
+  });
+});
+
+describe("writeStream — sink.emit never throws, even for an invalid frame (PR #718 review, defect 4)", () => {
+  // `encodeSseFrame` legitimately throws for a non-positive-integer `id` or a
+  // newline-bearing `event` — sse.ts's own documented contract for those
+  // internal control values. But `M3LStreamSink.emit`'s own documented
+  // contract is "Never throws". Today the encode call sits outside
+  // `attemptWrite`'s try, so the throw propagates straight out of
+  // `sink.emit`, aborting the route's `open()` mid-stream. One bad frame
+  // must not abort the whole stream: a later, valid frame from the same
+  // route must still reach the wire.
+  test.each([
+    ["a non-positive id", { id: -1, event: "run.output", data: "bad" }],
+    ["a non-integer id", { id: 1.5, event: "run.output", data: "bad" }],
+  ])(
+    "does not throw for a frame with %s, and a later valid frame from the same route is still written",
+    async (_label, badFrame) => {
+      const { res, calls } = createFakeServerResponse();
+      const goodFrame = { id: 1, event: "run.output", data: "good" };
+      // Captured locally rather than wrapped in `expect(...).not.toThrow()`
+      // inside `open`: a throw from `sink.emit` there would reject `open()`
+      // itself, which writeStream's own try/catch silently absorbs as a
+      // generic "open failed" outcome — masking the real assertion failure
+      // behind an unrelated one. Catching it here instead lets the "never
+      // throws" contract be asserted directly, decoupled from whether a
+      // later frame also happens to flow.
+      let emitThrew = false;
+      const response = buildStreamResponse({
+        open: async (sink) => {
+          try {
+            sink.emit(badFrame);
+          } catch {
+            emitThrew = true;
+          }
+          sink.emit(goodFrame);
+          await Promise.resolve();
+        },
+      });
+      const options = buildOptions(res, response);
+
+      await writeStream(options);
+
+      expect(emitThrew).toBe(false);
+      const writes = routeFrameWritesOf(calls);
+      expect(writes).toContain(encodeSseFrame(goodFrame));
+      expect(writes.some((payload) => payload.includes("bad"))).toBe(false);
+    },
+  );
+
+  test("does not throw for an event name containing a newline, and a later valid frame from the same route is still written", async () => {
+    const { res, calls } = createFakeServerResponse();
+    const badFrame = { event: "run.output\ninjected", data: "bad" };
+    const goodFrame = { id: 1, event: "run.output", data: "good" };
+    let emitThrew = false;
+    const response = buildStreamResponse({
+      open: async (sink) => {
+        try {
+          sink.emit(badFrame);
+        } catch {
+          emitThrew = true;
+        }
+        sink.emit(goodFrame);
+        await Promise.resolve();
+      },
+    });
+    const options = buildOptions(res, response);
+
+    await writeStream(options);
+
+    expect(emitThrew).toBe(false);
+    const writes = routeFrameWritesOf(calls);
+    expect(writes).toContain(encodeSseFrame(goodFrame));
+    expect(writes.some((payload) => payload.includes("injected"))).toBe(false);
   });
 });
 
@@ -634,6 +741,41 @@ describe("writeStream — write failure is logged, never thrown", () => {
       events.some((event) => event.category === Core.M3LLogEventCategory.ERROR),
     ).toBe(true);
     expect(calls.some((call) => call.kind === "end")).toBe(true);
+  });
+
+  test("open() rejecting only AFTER the client has already disconnected still reaches options.logger (PR #718 review, defect 2)", async () => {
+    // `Promise.race([open(sink), closeSignal.promise])` settles on
+    // `closeSignal` the moment the client disconnects, and writeStream
+    // returns — but the route's own `open()` promise is still pending at
+    // that point. If it later rejects, that rejection is absorbed by the
+    // already-settled race and today is never logged or surfaced anywhere.
+    const { res } = createFakeServerResponse();
+    const deferred = createDeferred<void>();
+    const response = buildStreamResponse({
+      open: () => deferred.promise,
+    });
+    const { logger, events } = createCapturingLogger();
+    const options = buildOptions(res, response, { logger });
+
+    const outcomePromise = writeStream(options);
+    await flushMicrotasks();
+
+    res.emit("close");
+    const outcome = await outcomePromise;
+
+    // Sanity: the race genuinely settled on the close signal, with open()
+    // still pending — otherwise the later rejection below would land inside
+    // the try/catch that already logs an open() failure, proving nothing
+    // about the absorbed-rejection path this test targets.
+    expect(outcome.reason).toBe("client-disconnected");
+    expect(events).toHaveLength(0);
+
+    deferred.reject(new Error("route blew up after the client disconnected"));
+    await flushMicrotasks();
+
+    expect(
+      events.some((event) => event.category === Core.M3LLogEventCategory.ERROR),
+    ).toBe(true);
   });
 
   test("a failing res.end() is logged and does not shadow the computed outcome", async () => {

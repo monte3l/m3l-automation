@@ -32,6 +32,7 @@ import { describe, expect, test } from "vitest";
 
 import { Core } from "@m3l-automation/m3l-common";
 
+import { M3LConsoleError } from "../src/errors/console-error.js";
 import { createConsoleRequestListener } from "../src/http/handler.js";
 import type { M3LRequestContext } from "../src/http/context.js";
 import { jsonResponse } from "../src/http/respond.js";
@@ -221,6 +222,48 @@ function outcomeEventsOf(
 ): readonly Core.M3LLogEvent[] {
   return events.filter((event) => event.message.includes(" -> "));
 }
+
+describe("createConsoleRequestListener — invalid stream options are rejected at construction (PR #718 review, defect 1)", () => {
+  // `retryMs`/`heartbeatMs`/`maxPendingBytes` arrive unvalidated from this
+  // public options bag and flow, unvalidated, all the way down to
+  // `writeStream` (via `stream-dispatch.ts`) — where an invalid `retryMs` in
+  // particular throws `ERR_CONSOLE_INTERNAL` out of a module documented as
+  // "never throws and never rejects", and only after the stream head has
+  // already been written, so no fallback error response can be sent. The
+  // fix validates at this boundary instead: reject a bad value synchronously
+  // at construction, before any request is ever accepted.
+  test.each([
+    ["a negative retryMs", { retryMs: -1 }],
+    ["a non-integer retryMs", { retryMs: 1.5 }],
+    ["a negative heartbeatMs", { heartbeatMs: -1 }],
+    ["a negative maxPendingBytes", { maxPendingBytes: -1 }],
+  ])(
+    "throws M3LConsoleError(ERR_CONSOLE_CONFIG_INVALID) for %s, before any request is accepted",
+    (_label, overrides) => {
+      const { logger } = createResolvingLogger();
+      const router = createRouter([]);
+
+      let thrown: unknown;
+      try {
+        createConsoleRequestListener({
+          router,
+          middlewares: [],
+          preRouting: [],
+          logger,
+          signal: new AbortController().signal,
+          ...overrides,
+        });
+      } catch (error: unknown) {
+        thrown = error;
+      }
+
+      expect(thrown).toBeInstanceOf(M3LConsoleError);
+      expect((thrown as M3LConsoleError).code).toBe(
+        "ERR_CONSOLE_CONFIG_INVALID",
+      );
+    },
+  );
+});
 
 describe("createConsoleRequestListener — Bug 1: disconnect detector survives past stream open", () => {
   test("a mid-stream client disconnect still aborts ctx.signal", async () => {

@@ -26,6 +26,7 @@ import type { M3LConsoleResponse } from "./respond.js";
 import type { M3LRouteAuth, M3LRouteLookup, M3LRouter } from "./router.js";
 import { resolveDispatchedResult } from "./stream-dispatch.js";
 import type { M3LConsoleResult } from "./stream-response.js";
+import { validateStreamOptions } from "./stream-options.js";
 import type { M3LStreamWriteOutcome } from "./stream-writer.js";
 
 /** Logged in place of a request's path when it failed to parse — never the raw, unparsed target. */
@@ -557,6 +558,11 @@ function finishRequest(inputs: FinishRequestInputs): void {
  *
  * @param options - See {@link CreateConsoleRequestListenerOptions}.
  * @returns The `node:http` request listener.
+ * @throws {@link M3LConsoleError} with code `"ERR_CONSOLE_CONFIG_INVALID"`
+ *   when a supplied `heartbeatMs`, `maxPendingBytes`, or `retryMs` is not a
+ *   non-negative integer — checked synchronously here, before any request is
+ *   accepted (PR #718 review, defect 1), rather than left to surface much
+ *   later out of `stream-writer.ts`'s `writeStream`.
  *
  * @example
  * ```ts
@@ -575,6 +581,7 @@ function finishRequest(inputs: FinishRequestInputs): void {
 export function createConsoleRequestListener(
   options: CreateConsoleRequestListenerOptions,
 ): M3LConsoleRequestListener {
+  validateStreamOptions(options);
   const newCorrelationId = options.newCorrelationId ?? randomUUID;
   const now = options.now ?? Date.now;
 

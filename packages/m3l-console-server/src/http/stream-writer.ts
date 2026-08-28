@@ -24,8 +24,6 @@ import type {
   M3LStreamSink,
 } from "./stream-response.js";
 
-/** The status this module always writes — a stream response is always 200. */
-const STATUS_OK = 200;
 /** The `content-type` every SSE stream is served as. */
 const SSE_CONTENT_TYPE = "text/event-stream";
 /** A stream is always dynamic; never cache it. */
@@ -212,17 +210,21 @@ function stripContentLength(
 
 /**
  * Writes the SSE-critical status/headers and flushes them, so the client
- * sees the head before the first frame. Stream-critical headers are merged
- * in *after* the route's own `response.headers`, so a route cannot
- * accidentally override any of them — and `content-length` is stripped
- * outright, since its absence is what makes the response a stream.
+ * sees the head before the first frame. The status written is
+ * `response.status` (PR #718 review, defect 3) — a route's own status is
+ * honoured, never silently overridden by a fixed constant, since a stream
+ * result is not always 200 (e.g. a resumed stream might reasonably answer
+ * `206`). Stream-critical headers are merged in *after* the route's own
+ * `response.headers`, so a route cannot accidentally override any of them —
+ * and `content-length` is stripped outright, since its absence is what
+ * makes the response a stream.
  */
 function writeStreamHead(
   res: ServerResponse,
   response: M3LConsoleStreamResponse,
   correlationId: string,
 ): void {
-  res.writeHead(STATUS_OK, {
+  res.writeHead(response.status, {
     ...stripContentLength(response.headers),
     "content-type": SSE_CONTENT_TYPE,
     "cache-control": CACHE_CONTROL_NO_STORE,
@@ -281,12 +283,39 @@ function writeControlFrame(
 }
 
 /**
+ * Encodes `frame`, or `undefined` if it is invalid. `encodeSseFrame` throws
+ * on a non-positive-integer `id` or a newline-bearing `event` — its own
+ * documented contract for those internal control values — but
+ * `M3LStreamSink.emit`'s contract is "never throws" (PR #718 review, defect
+ * 4), so a bad frame from a route must be logged and skipped, never let the
+ * throw escape mid-stream and abort every later, valid frame from the same
+ * route.
+ */
+function encodeSinkFrame(
+  frame: M3LSseFrame,
+  logger: Core.M3LLogger,
+  correlationId: string,
+): string | undefined {
+  try {
+    return encodeSseFrame(frame);
+  } catch (cause) {
+    logger.errorFrom(
+      cause,
+      `dropped an invalid SSE frame (run ${correlationId})`,
+    );
+    return undefined;
+  }
+}
+
+/**
  * Writes one route-emitted frame, or drops it. Backpressure is `>=`,
  * checked *before* writing: once the backlog left by earlier frames reaches
  * `maxPendingBytes`, this frame is dropped without ever calling
  * `res.write` — a frame's own size is never counted toward its own
  * admission, so `maxPendingBytes` states a real, reachable ceiling rather
- * than a value every frame overshoots by construction.
+ * than a value every frame overshoots by construction. An invalid frame
+ * (see {@link encodeSinkFrame}) is likewise never written, but is not
+ * counted as a backpressure drop — it never reached the backlog at all.
  */
 function writeSinkFrame(
   res: ServerResponse,
@@ -301,13 +330,9 @@ function writeSinkFrame(
     state.recordDrop();
     return;
   }
-  const wrote = attemptWrite(
-    res,
-    state,
-    encodeSseFrame(frame),
-    logger,
-    correlationId,
-  );
+  const encoded = encodeSinkFrame(frame, logger, correlationId);
+  if (encoded === undefined) return;
+  const wrote = attemptWrite(res, state, encoded, logger, correlationId);
   if (!wrote) return;
   state.recordFrameWritten(frame.id);
 }
@@ -447,12 +472,40 @@ function finishStream(res: ServerResponse, options: WriteStreamOptions): void {
 }
 
 /**
+ * Encodes the initial `retry:` directive, or `undefined` if `retryMs` is
+ * invalid. `encodeSseRetry` throws on a non-negative-integer violation of
+ * `retryMs` — its own documented contract for that internal control value —
+ * but
+ * `writeStream`'s own contract is "never throws and never rejects" (PR #718
+ * review, defect 1), so an invalid value reaching it directly must be
+ * logged and skipped, never thrown after {@link writeStreamHead} has
+ * already written the head (which would leave a caller with no way to send
+ * a fallback error response).
+ */
+function encodeRetryFrame(
+  retryMs: number,
+  logger: Core.M3LLogger,
+  correlationId: string,
+): string | undefined {
+  try {
+    return encodeSseRetry(retryMs);
+  } catch (cause) {
+    logger.errorFrom(
+      cause,
+      `skipped an invalid retry: directive (run ${correlationId})`,
+    );
+    return undefined;
+  }
+}
+
+/**
  * Writes an SSE stream response to completion: the head, the trailing
  * `retry:` directive, every route-emitted frame (backpressure-aware), a
  * heartbeat while the route is producing, and independent client-disconnect
- * detection. Never throws and never rejects — a route's `open()` rejecting,
- * or a `res.write` throwing, is caught, logged via `options.logger`, and
- * reflected in the returned outcome instead of propagating.
+ * detection. Never throws and never rejects — an invalid `retryMs`/frame, a
+ * route's `open()` rejecting, or a `res.write` throwing, is caught, logged
+ * via `options.logger`, and reflected in the returned outcome instead of
+ * propagating.
  *
  * @param options - See {@link WriteStreamOptions}.
  * @returns The outcome once the stream is done (see {@link M3LStreamWriteOutcome}).
@@ -493,21 +546,53 @@ export async function writeStream(
   // received, so this must go out before any route frame — an abrupt
   // disconnect (network drop, SIGKILL) never gives a trailing write a
   // chance to run, and that is exactly the failure mode retry: exists for.
-  writeControlFrame(
-    options.res,
-    state,
-    options.maxPendingBytes,
-    encodeSseRetry(options.retryMs),
+  // The encode is guarded (see encodeRetryFrame) rather than evaluated as a
+  // bare argument, so an invalid retryMs is logged and skipped instead of
+  // throwing out of writeStream after the head is already written.
+  const retryFrame = encodeRetryFrame(
+    options.retryMs,
     options.logger,
     options.correlationId,
   );
+  if (retryFrame !== undefined) {
+    writeControlFrame(
+      options.res,
+      state,
+      options.maxPendingBytes,
+      retryFrame,
+      options.logger,
+      options.correlationId,
+    );
+  }
   attachDrainListener(options.res, state, options);
   const closeSignal = createCloseSignal(options.res, state);
   const sink = createSink(options.res, state, options);
   const stopHeartbeat = startHeartbeat(options.res, state, options);
 
+  // Raced by literal-tagged branch rather than racing options.response.open(sink)
+  // directly: that would make it impossible to tell, once the race settles,
+  // whether openPromise itself was the winner (a rejection already handled
+  // by the catch below) or closeSignal won while openPromise is still
+  // pending — the latter is exactly the case a late .catch() must be
+  // attached for (PR #718 review, defect 2), and attaching it unconditionally
+  // would double-log a rejection that already settled the race itself.
+  const openPromise = options.response.open(sink);
   try {
-    await Promise.race([options.response.open(sink), closeSignal.promise]);
+    const winner = await Promise.race([
+      openPromise.then(() => "open" as const),
+      closeSignal.promise.then(() => "closed" as const),
+    ]);
+    if (winner === "closed") {
+      // The client disconnected first; open() is still pending. Without
+      // this, a later rejection would be silently absorbed by the
+      // already-settled race and never surface anywhere.
+      void openPromise.catch((cause) => {
+        options.logger.errorFrom(
+          cause,
+          `stream open() rejected after client disconnected (run ${options.correlationId})`,
+        );
+      });
+    }
   } catch (cause) {
     options.logger.errorFrom(
       cause,
