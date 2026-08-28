@@ -424,7 +424,12 @@ describe("createConsoleMetaRepository — history()", () => {
     expect(secondEntry.nodeVersion).toBe(process.version);
   });
 
-  test("returns exactly the two rows for a store migrated to v2, unaffected by console_meta's own rows", () => {
+  test("returns one row per applied migration, unaffected by console_meta's own rows", () => {
+    // createMigratedDatabase() applies the WHOLE real CONSOLE_MIGRATIONS
+    // registry (not a fixed v1+v2 slice), so the expected count is derived
+    // from CONSOLE_MIGRATIONS.length rather than a literal — a literal here
+    // would silently go stale (as it did for X4's v3 addition) every time a
+    // migration joins the registry.
     const database = createMigratedDatabase();
     seedHistoryReversed(database);
     const repository = createRepository(database);
@@ -435,7 +440,7 @@ describe("createConsoleMetaRepository — history()", () => {
 
     const history = repository.history();
 
-    expect(history).toHaveLength(2);
+    expect(history).toHaveLength(CONSOLE_MIGRATIONS.length);
   });
 });
 

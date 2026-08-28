@@ -11,6 +11,8 @@
  * @packageDocumentation
  */
 
+import { runStatusCheckList } from "../run-status.js";
+
 /**
  * One schema migration. Declared entirely as data — `version`, `name`, and
  * the `statements` it applies — never as an `up(executor)` function.
@@ -90,6 +92,97 @@ const CREATE_META_TABLE = `
 `;
 
 /**
+ * The exact DDL for `console_runs`, `CONSOLE_MIGRATIONS`' v3 (X4
+ * run-registry). The `status` vocabulary is generated from
+ * {@link runStatusCheckList} rather than hand-typed here a second time —
+ * that function's entire purpose is to be the one place this list is
+ * spelled out.
+ *
+ * Two measured findings about the FSM-shaped `CHECK` constraints below, from
+ * exercising them against a real `:memory:` database — record both here so a
+ * later edit does not reintroduce either hole:
+ *
+ * **(a) The `ended_at_ms >= started_at_ms` and `started_at_ms IS NOT NULL`
+ * checks are load-bearing as a PAIR for every status except one deliberate
+ * exemption.** SQLite treats a `CHECK` that evaluates to SQL `NULL` as
+ * *satisfied*, not violated — so
+ * `CHECK (ended_at_ms IS NULL OR ended_at_ms >= started_at_ms)` does **not**
+ * fire when `started_at_ms` is `NULL` and `ended_at_ms` is not: the
+ * comparison itself evaluates to `NULL`. For every status other than
+ * `'interrupted'`, that state (`ended_at_ms` set, `started_at_ms` `NULL`) is
+ * rejected only because the sibling
+ * `CHECK (ended_at_ms IS NULL OR started_at_ms IS NOT NULL OR status = 'interrupted')`
+ * independently forbids it — so for those statuses the pair must still be
+ * edited, or removed, together, or this hole silently reopens.
+ *
+ * For `status = 'interrupted'`, the NULL-satisfaction is **deliberate, not a
+ * hole**: a run can end without ever having started — a `SIGKILL` while it
+ * sat `queued` produces exactly this — and boot reconciliation
+ * (`reconcileOrphaned`, `store/runs-repository.ts`) must be able to record
+ * that outcome without fabricating a `started_at_ms`. Fabricating one would
+ * destroy an operationally decisive distinction (`started_at_ms IS NULL`
+ * means "never executed, safe to re-launch"; `IS NOT NULL` means "killed
+ * mid-execution, may have left side effects") and would make any
+ * `ended - started` duration silently include the queue wait. Only
+ * `'interrupted'` is exempted — no other terminal status may legitimately
+ * end without starting, so the pairing still holds everywhere else.
+ *
+ * **(b) The status/ended_at_ms pairing check is NOT vulnerable to that
+ * trap**, and it is worth saying why: `status` is `NOT NULL`, so
+ * `status IN ('queued','running')` is always a determinate `0`/`1`, never
+ * `NULL` — and `x IS NULL` is *itself* always determinate (`IS NULL` never
+ * evaluates to `NULL`). So
+ * `CHECK ((status IN ('queued','running')) = (ended_at_ms IS NULL))` can
+ * never be satisfied-by-`NULL`; it genuinely means "pending iff not yet
+ * ended, terminal iff ended" with no gap.
+ *
+ * **This constant was edited in place, not additively migrated, and that is
+ * only safe right now.** `store/migrations/runner.ts` digests each
+ * migration's `statements` to detect an already-applied migration being
+ * edited underneath a deployment. v3 has never shipped — X4 is unmerged — so
+ * no deployment can observe this edit as drift. This window closes at merge:
+ * once v3 has been applied anywhere, correcting it further would need a new,
+ * additive v4 migration instead.
+ */
+const CREATE_CONSOLE_RUNS_TABLE = `
+  CREATE TABLE console_runs (
+    id TEXT PRIMARY KEY,
+    script TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (${runStatusCheckList()}),
+    dry_run INTEGER NOT NULL CHECK (dry_run IN (0, 1)),
+    execution_mode TEXT NOT NULL CHECK (execution_mode IN ('spawn','in-process')),
+    parameters_json TEXT NOT NULL,
+    operator TEXT NOT NULL,
+    correlation_id TEXT NOT NULL,
+    queued_at_ms INTEGER NOT NULL,
+    started_at_ms INTEGER,
+    ended_at_ms INTEGER,
+    outcome TEXT,
+    exit_code INTEGER,
+    failure_message TEXT,
+    CHECK (started_at_ms IS NULL OR started_at_ms >= queued_at_ms),
+    CHECK (
+      ended_at_ms IS NULL
+      OR started_at_ms IS NOT NULL
+      OR status = 'interrupted'
+    ),
+    CHECK (ended_at_ms IS NULL OR ended_at_ms >= started_at_ms),
+    CHECK ((status IN ('queued','running')) = (ended_at_ms IS NULL)),
+    CHECK ((outcome IS NULL) = (ended_at_ms IS NULL))
+  ) STRICT
+`;
+
+/** `console_runs`' first index: the run queue/board scan order. */
+const CREATE_CONSOLE_RUNS_STATUS_INDEX = `
+  CREATE INDEX console_runs_status_queued_at ON console_runs (status, queued_at_ms)
+`;
+
+/** `console_runs`' second index: per-script status lookups. */
+const CREATE_CONSOLE_RUNS_SCRIPT_INDEX = `
+  CREATE INDEX console_runs_script_status ON console_runs (script, status)
+`;
+
+/**
  * The console store's ordered migration set, applied in full by
  * `store/migrations/runner.ts`'s `applyMigrations` at every store open.
  *
@@ -100,7 +193,12 @@ const CREATE_META_TABLE = `
  * enforcement its name suggests. `STRICT` is kept here for the failure mode
  * it does prevent: a `BLOB` or `NULL` landing in a column that was never
  * declared to accept one, which a non-`STRICT` table would otherwise store
- * without complaint.
+ * without complaint. A further measured refinement, from v3's own
+ * `console_runs`: `node:sqlite` binds a plain JS `number` as `SQLITE_FLOAT`,
+ * so an integer bound into a `TEXT STRICT` column (e.g. `script`) stores as
+ * `"12345.0"` — a REAL-to-TEXT storage-class cast, not `"12345"` — and is
+ * still accepted, not rejected. Three tables now share this same
+ * `STRICT`-is-not-type-enforcement caveat.
  *
  * - **v1** creates `console_schema_migrations`, the audit trail
  *   `applyMigrations` writes one row into per successfully applied
@@ -110,6 +208,13 @@ const CREATE_META_TABLE = `
  * - **v2** creates `console_meta`, a closed key/value table backing the
  *   metadata repository built on top of it elsewhere in this package. This
  *   migration only creates the table; it does not populate it.
+ * - **v3** creates `console_runs` (X4 run-registry) and its two indexes: one
+ *   run per script invocation, its FSM-shaped lifecycle enforced entirely by
+ *   `CHECK` constraints (see the DDL constant just above this one for two
+ *   measured findings about how those constraints interact). The `status`
+ *   vocabulary is `store/run-status.ts`'s `M3LRunStatus`, generated into the
+ *   `CHECK` via {@link runStatusCheckList} rather than spelled out a second
+ *   time here.
  *
  * Forward-only, deliberately with no `down`: ADR-0069's `node:sqlite` store
  * only *indexes* authoritative JSONL, so recovering from a bad migration is
@@ -135,5 +240,14 @@ export const CONSOLE_MIGRATIONS: readonly M3LMigration[] = [
     version: 2,
     name: "create_console_meta",
     statements: [CREATE_META_TABLE],
+  },
+  {
+    version: 3,
+    name: "create_console_runs",
+    statements: [
+      CREATE_CONSOLE_RUNS_TABLE,
+      CREATE_CONSOLE_RUNS_STATUS_INDEX,
+      CREATE_CONSOLE_RUNS_SCRIPT_INDEX,
+    ],
   },
 ];
