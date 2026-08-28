@@ -4,8 +4,14 @@
  * `dist/main.js` as a child process, and {@link createInProcessExecutor}
  * dynamically imports and invokes a script's opted-in `dist/command.js`
  * in-process (ADR-0054). Both report their observed result as
- * {@link M3LSpawnExitInfo}, the vocabulary `runs/outcome` maps onto
- * `Core.M3LRunOutcome`.
+ * {@link M3LSpawnExitInfo}, exactly the vocabulary `runs/outcome` maps onto
+ * `Core.M3LRunOutcome` — now including its optional explicit `outcome` arm:
+ * the in-process executor sets it directly from the command's own
+ * `M3LCommandOutcome.status`, since a plain exit code cannot express every
+ * `Core.M3LRunOutcome` member (`"partial"`, or a self-reported
+ * `"interrupted"` the caller never asked for); the spawn executor leaves it
+ * absent because a child process has nothing more than an exit code and a
+ * kill signal to report.
  *
  * @packageDocumentation
  */
@@ -306,7 +312,12 @@ interface M3LInProcessExecutorInternals {
 /**
  * Maps a hosted command's resolved {@link Core.M3LCommandOutcome} onto
  * {@link M3LSpawnExitInfo}, mirroring the exit codes `runs/outcome` and
- * `core/cli-contract` already assign to the same status vocabulary.
+ * `core/cli-contract` already assign to the same status vocabulary — and
+ * additionally setting the explicit `outcome` field to the command's own
+ * `status` for every arm, so `mapSpawnOutcome` reports the command's real
+ * terminal status instead of re-deriving it from an exit code that cannot
+ * distinguish `"partial"` from `"failure"`, or a self-reported
+ * `"interrupted"` from one the caller's own signal actually requested.
  */
 function mapCommandOutcome(
   outcome: Core.M3LCommandOutcome,
@@ -315,15 +326,25 @@ function mapCommandOutcome(
 ): M3LSpawnExitInfo {
   switch (outcome.status) {
     case "success":
-      return { exitCode: 0, killRequested: false, dryRun };
+      return { exitCode: 0, killRequested: false, dryRun, outcome: "success" };
     case "dry-run":
-      return { exitCode: 0, killRequested: false, dryRun: true };
+      return {
+        exitCode: 0,
+        killRequested: false,
+        dryRun: true,
+        outcome: "dry-run",
+      };
     case "interrupted":
-      return { exitCode: 130, killRequested: signal.aborted, dryRun };
+      return {
+        exitCode: 130,
+        killRequested: signal.aborted,
+        dryRun,
+        outcome: "interrupted",
+      };
     case "partial":
-      return { exitCode: 2, killRequested: false, dryRun };
+      return { exitCode: 2, killRequested: false, dryRun, outcome: "partial" };
     case "failure":
-      return { exitCode: 1, killRequested: false, dryRun };
+      return { exitCode: 1, killRequested: false, dryRun, outcome: "failure" };
     default: {
       const exhaustive: never = outcome;
       throw new M3LConsoleError(

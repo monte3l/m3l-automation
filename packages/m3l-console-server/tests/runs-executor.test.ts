@@ -23,6 +23,7 @@ import {
   createSpawnExecutor,
 } from "../src/runs/executor.js";
 import type { M3LLineSink, M3LRunExecutor } from "../src/runs/executor.js";
+import { mapSpawnOutcome } from "../src/runs/outcome.js";
 import type { M3LSpawnExitInfo } from "../src/runs/outcome.js";
 
 const scriptDir = "/scripts/example";
@@ -444,48 +445,74 @@ function createFakeCommandModule(
 }
 
 describe("createInProcessExecutor — outcome mapping", () => {
+  // NOTE: each `expected` below carries an `outcome` field equal to the
+  // command's own reported `status` — a sweep required by the fix under
+  // test (M3LSpawnExitInfo gains an optional `outcome`, and the in-process
+  // executor sets it from `M3LCommandOutcome.status` for every status, not
+  // just "interrupted"/"partial"). Before the fix, `expected` here carried
+  // no `outcome` key at all; see the row below flagged "regression guard"
+  // for the specific PR #721 review finding this corrects.
   test.each<[Core.M3LCommandOutcome, boolean, boolean, M3LSpawnExitInfo]>([
     [
       { status: "success" },
       false,
       false,
-      { exitCode: 0, killRequested: false, dryRun: false },
+      { exitCode: 0, killRequested: false, dryRun: false, outcome: "success" },
     ],
     [
       { status: "success" },
       true,
       false,
-      { exitCode: 0, killRequested: false, dryRun: true },
+      { exitCode: 0, killRequested: false, dryRun: true, outcome: "success" },
     ],
     [
       { status: "dry-run" },
       false,
       false,
-      { exitCode: 0, killRequested: false, dryRun: true },
+      { exitCode: 0, killRequested: false, dryRun: true, outcome: "dry-run" },
     ],
     [
       { status: "interrupted" },
       false,
       true,
-      { exitCode: 130, killRequested: true, dryRun: false },
+      {
+        exitCode: 130,
+        killRequested: true,
+        dryRun: false,
+        outcome: "interrupted",
+      },
     ],
+    // Regression guard (PR #721 review): a hosted command self-reports
+    // "interrupted" without the caller's signal being aborted
+    // (killRequested: false). Before the fix, `expected` here had NO
+    // `outcome` key — it only asserted the raw, information-losing exit
+    // info {exitCode: 130, killRequested: false, dryRun: false}, which
+    // `mapSpawnOutcome` then degrades to "failure" (see
+    // runs-executor-outcome round-trip test below). The corrected
+    // expectation adds `outcome: "interrupted"` so the fidelity survives
+    // the round trip.
     [
       { status: "interrupted" },
       false,
       false,
-      { exitCode: 130, killRequested: false, dryRun: false },
+      {
+        exitCode: 130,
+        killRequested: false,
+        dryRun: false,
+        outcome: "interrupted",
+      },
     ],
     [
       { status: "partial", recovered: 3 },
       false,
       false,
-      { exitCode: 2, killRequested: false, dryRun: false },
+      { exitCode: 2, killRequested: false, dryRun: false, outcome: "partial" },
     ],
     [
       { status: "failure", error: new Error("boom") },
       false,
       false,
-      { exitCode: 1, killRequested: false, dryRun: false },
+      { exitCode: 1, killRequested: false, dryRun: false, outcome: "failure" },
     ],
   ])(
     "maps %o (dryRun=%s, aborted=%s) to %o",
@@ -505,6 +532,53 @@ describe("createInProcessExecutor — outcome mapping", () => {
       expect(info).toEqual(expected);
     },
   );
+});
+
+describe("createInProcessExecutor — outcome field fidelity (PR #721 regression)", () => {
+  // Enumerates all five `Core.M3LCommandOutcome` statuses (not a sample):
+  // asserts both that the in-process executor sets `M3LSpawnExitInfo.outcome`
+  // to the command's own status, AND that piping the returned exit info back
+  // through `mapSpawnOutcome` reproduces that same status — the round-trip
+  // fidelity the defect broke for "interrupted"/"partial" specifically.
+  test.each<Core.M3LCommandOutcome>([
+    { status: "success" },
+    { status: "dry-run" },
+    { status: "interrupted" },
+    { status: "partial", recovered: 3 },
+    { status: "failure", error: new Error("boom") },
+  ])(
+    "sets outcome to the command's own status %o, and mapSpawnOutcome round-trips it",
+    async (outcome) => {
+      const commandModule = createFakeCommandModule(() =>
+        Promise.resolve(outcome),
+      );
+      const importImpl = vi.fn(() => Promise.resolve({ commandModule }));
+      const executor = createInProcessExecutor({ importImpl });
+
+      const info = await executor.execute(baseExecuteOptions());
+
+      expect(info.outcome).toBe(outcome.status);
+      expect(mapSpawnOutcome(info)).toBe(outcome.status);
+    },
+  );
+});
+
+describe("createSpawnExecutor — does not set outcome (regression guard)", () => {
+  test("a spawned process's exit info has no explicit outcome — mapSpawnOutcome keeps deriving from exit codes", async () => {
+    const fakeChild = createFakeChild();
+    const spawnImpl = vi.fn(() => fakeChild);
+    const executor = createSpawnExecutor(
+      { killTimeoutMs: 5000 },
+      { spawnImpl },
+    );
+
+    const resultPromise = executor.execute(baseExecuteOptions());
+    fakeChild.emit("close", 0, null);
+    const info = await resultPromise;
+
+    expect(info.outcome).toBeUndefined();
+    expect(mapSpawnOutcome(info)).toBe("success");
+  });
 });
 
 describe("createInProcessExecutor — output routing", () => {
