@@ -219,6 +219,18 @@ ADR-0013 (its durable home), not a per-plan caveat.
    write the tests now") rather than re-dispatching fresh — its exploration
    context is still loaded. Update the state file: that module → 🧪 tests-written.
 
+   **If the hub authored the doc/contract directly instead of running
+   `scaffolding-submodules` first (e.g. a greenfield module specced from an
+   ADR + SDK research rather than scaffolded-then-implemented), RED will trip
+   the `pre-commit` eslint hook the same way an under-scaffolded script's does**
+   (see `implementing-scripts`' equivalent note) — `scaffolding-submodules`
+   normally pre-creates a throwing placeholder per planned export so RED's
+   imports resolve; skipping that step forfeits the benefit, and type-aware
+   `no-unsafe-*` hard-fails on a test file importing symbols that don't exist
+   yet. Don't try to land a standalone RED commit in this case — commit RED
+   and GREEN together (`aws/bedrock-runtime`, 2026-08-28,
+   `docs/logs/2026-08-28-aws-bedrock-runtime.md`).
+
 7. **Phase 3 — GREEN.** Dispatch `code-implementer` with the contract and
    the failing tests. It writes the minimal `src/<ns>/<module>/index.ts`
    (private helpers under `src/internal/`), re-exports from the namespace barrel

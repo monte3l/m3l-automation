@@ -7,6 +7,7 @@
 
 import { APIGatewayClient } from "@aws-sdk/client-api-gateway";
 import { AthenaClient } from "@aws-sdk/client-athena";
+import { BedrockRuntimeClient } from "@aws-sdk/client-bedrock-runtime";
 import { CloudFormationClient } from "@aws-sdk/client-cloudformation";
 import { CloudWatchClient } from "@aws-sdk/client-cloudwatch";
 import { CloudWatchLogsClient } from "@aws-sdk/client-cloudwatch-logs";
@@ -71,7 +72,8 @@ type AWSServiceName =
   | "ssm"
   | "sqs"
   | "secretsManager"
-  | "rdsData";
+  | "rdsData"
+  | "bedrockRuntime";
 
 /** The subset of an AWS SDK v3 client's shape this provider relies on. */
 interface DestroyableClient {
@@ -271,6 +273,14 @@ export class AWSClientProvider {
     return this.getOrConstruct(
       "rdsData",
       (config) => new RDSDataClient(config),
+    );
+  }
+
+  /** The `BedrockRuntimeClient` for this provider's profile, constructed on first access. */
+  get bedrockRuntime(): BedrockRuntimeClient {
+    return this.getOrConstruct(
+      "bedrockRuntime",
+      (config) => new BedrockRuntimeClient(config),
     );
   }
 

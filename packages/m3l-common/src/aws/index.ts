@@ -7,7 +7,7 @@
  * `clients`, `dynamodb`, `cloudwatch-logs-insights`, `sqs`, `signing`, `s3`,
  * `athena`, `eventbridge`, `lambda`, `ecs`, `cloudformation`, `codepipeline`,
  * `eks`, `cloudwatch-alarms`, `cloudwatch-metrics`, `secrets-manager`,
- * `rds-data`.
+ * `rds-data`, `bedrock-runtime`.
  *
  * @packageDocumentation
  */
@@ -18,6 +18,7 @@ export * from "./clients/index.js";
 export * from "./dynamodb/index.js";
 export * from "./cloudwatch-logs-insights/index.js";
 export * from "./sqs/index.js";
+export * from "./bedrock-runtime/index.js";
 export * from "./signing/index.js";
 export * from "./s3/index.js";
 export * from "./athena/index.js";
