@@ -8,13 +8,14 @@ import {
 } from "../lib/licenses.mjs";
 
 describe("ALLOWED_LICENSES", () => {
-  test("contains exactly the nine documented permissive/public-domain ids", () => {
+  test("contains exactly the ten documented permissive/public-domain ids", () => {
     expect([...ALLOWED_LICENSES].sort()).toEqual(
       [
         "0BSD",
         "Apache-2.0",
         "BSD-2-Clause",
         "BSD-3-Clause",
+        "CC-BY-4.0",
         "CC0-1.0",
         "ISC",
         "MIT",

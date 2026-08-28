@@ -58,11 +58,19 @@ WTFPL)`, `(MIT AND Zlib)`, `(BSD-2-Clause OR MIT OR Apache-2.0)`) and must
 
 We gate at **two layers**, both using the same allow-list: `MIT`, `MIT-0`,
 `Apache-2.0`, `BSD-2-Clause`, `BSD-3-Clause`, `ISC`, `0BSD`, `CC0-1.0`,
-`Unlicense`. No copyleft, no share-alike, nothing requiring downstream
-disclosure — matching ADR-0006's Apache-2.0 rationale. `MIT-0` ("MIT No
-Attribution") is OSI-approved and strictly more permissive than `MIT`; it was
-added (2026-08-17) when `nodemailer`'s `MIT-0` surfaced in the Dependency
-Review diff gate during the `deepmerge-ts` security bump.
+`Unlicense`, `CC-BY-4.0`. No copyleft, no share-alike, nothing requiring
+downstream disclosure — matching ADR-0006's Apache-2.0 rationale. `MIT-0`
+("MIT No Attribution") is OSI-approved and strictly more permissive than
+`MIT`; it was added (2026-08-17) when `nodemailer`'s `MIT-0` surfaced in the
+Dependency Review diff gate during the `deepmerge-ts` security bump.
+`CC-BY-4.0` (attribution-only; no share-alike or copyleft term) was added
+(2026-08-28) when `caniuse-lite` — a `browserslist` data package pulled in
+transitively by `@vitejs/plugin-react`'s Babel toolchain, build-time-only
+and never bundled into a shipped artifact — surfaced in the Dependency
+Review diff gate on X9's `packages/m3l-console-web` skeleton (ADR-0067's
+first browser dependency tree; that ADR's own Consequences section already
+named "grows the update/audit surface" as an accepted cost of the stack
+choice).
 
 **Layer 1 — `dependency-review.yml`:** `allow-licenses` set to the same
 list, PR-time, GitHub-native, zero added script.
