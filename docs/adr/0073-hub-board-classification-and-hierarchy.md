@@ -197,6 +197,11 @@ instead of silently defaulted.
 
 ### `Programme` — the second axis, board-side
 
+[**Deferred (2026-08-28):** not implemented — see
+[ADR-0081](0081-deferring-the-programme-board-field.md), which defers this
+field behind an explicit revival gate. The design below is adopted unchanged;
+only its timing is amended.]
+
 The wave axis becomes a board single-select with one option per tracker section,
 written per item by `sync-hub-projects.mjs` alongside Status and Priority. It is
 a board field rather than an Issue Type because it is a _this-repo_ fact, not an
@@ -350,7 +355,10 @@ cause, for a setting nothing in the pipeline writes, would be noise.
 ## Consequences
 
 - **Positive:** the two fields meant to answer "what kind of work is this" and
-  "which wave does it serve" answer them independently, with the worst bucket
+  "which wave does it serve" answer them independently
+  [**Deferred (2026-08-28):** only Issue Type shipped — `Programme` is
+  deferred per [ADR-0081](0081-deferring-the-programme-board-field.md)], with
+  the worst bucket
   going from 48/60 to a spread across ten types; the backlog's biggest priority
   bucket splits along a distinction the tracker already made in prose; every
   API-unwritable board setting that previously lived in prose becomes declared
