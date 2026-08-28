@@ -14,7 +14,13 @@ import { Core } from "@m3l-automation/m3l-common";
 
 import { logDiagnosticIfFault, logOutcome } from "./access-log.js";
 import type { RequestFaultContext } from "./access-log.js";
-import { createRequestContext, withAccessMode, withParams } from "./context.js";
+import { readJsonBody } from "./body.js";
+import {
+  createRequestContext,
+  withAccessMode,
+  withBody,
+  withParams,
+} from "./context.js";
 import type { M3LRequestContext } from "./context.js";
 import { errorResponse } from "./envelope.js";
 import { M3LConsoleError } from "../errors/console-error.js";
@@ -33,6 +39,25 @@ import type { M3LStreamWriteOutcome } from "./stream-writer.js";
 const PATH_PLACEHOLDER_UNPARSED = "(unparsed)";
 /** The status the last-resort fallback response writes when {@link writeResponse} itself throws. */
 const STATUS_INTERNAL_SERVER_ERROR = 500;
+/** `maxBodyBytes` default when the caller supplies none (mirrors `config/env.ts`'s own default; `http/` cannot import `config/`). */
+const DEFAULT_MAX_BODY_BYTES = 65_536;
+/** HTTP methods whose request may carry a JSON body worth reading (X4 slice 7-pre). */
+const BODY_BEARING_METHODS: ReadonlySet<string> = new Set([
+  "POST",
+  "PUT",
+  "PATCH",
+]);
+
+/** Throws `ERR_CONSOLE_CONFIG_INVALID` unless `value` is a positive integer. */
+function assertPositiveInteger(key: string, value: number): void {
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new M3LConsoleError(
+      "ERR_CONSOLE_CONFIG_INVALID",
+      `${key} must be a positive integer, got ${String(value)}`,
+      { context: { key } },
+    );
+  }
+}
 
 /**
  * Constructor options for {@link createConsoleRequestListener}.
@@ -96,6 +121,13 @@ export interface CreateConsoleRequestListenerOptions {
    * client. Defaults to `2_000`.
    */
   readonly retryMs?: number;
+  /**
+   * The request-body byte cap threaded into `http/body.ts`'s `readJsonBody`
+   * for a `POST`/`PUT`/`PATCH` request. Optional because `http` may not
+   * import `config/` — a caller supplies its own configured value
+   * (`M3L_CONSOLE_MAX_BODY_BYTES`). Defaults to `65_536` (64 KiB).
+   */
+  readonly maxBodyBytes?: number;
 }
 
 /**
@@ -203,11 +235,36 @@ interface DispatchResult {
   readonly accessMode: M3LRouteAuth | undefined;
 }
 
-/** Resolves the router lookup for `ctx` and dispatches to its handler through the middleware chain. */
+/**
+ * Reads and attaches the request body via {@link readJsonBody} for a method
+ * that may carry one ({@link BODY_BEARING_METHODS}), else returns `ctx`
+ * unchanged. Called from {@link dispatch}'s terminal handler, so it only
+ * runs once auth (`middlewares`) has already called `next()`.
+ */
+async function attachBodyIfApplicable(
+  req: IncomingMessage,
+  ctx: M3LRequestContext,
+  maxBodyBytes: number,
+): Promise<M3LRequestContext> {
+  if (!BODY_BEARING_METHODS.has(ctx.method.toUpperCase())) return ctx;
+  const body = await readJsonBody(req, {
+    maxBytes: maxBodyBytes,
+    signal: ctx.signal,
+  });
+  return withBody(ctx, body);
+}
+
+/**
+ * Resolves the router lookup for `ctx` and dispatches to its handler through
+ * the middleware chain. The terminal handler reads the body (see
+ * {@link attachBodyIfApplicable}) before the route handler — after auth.
+ */
 async function dispatch(
+  req: IncomingMessage,
   ctx: M3LRequestContext,
   router: M3LRouter,
   middlewares: readonly M3LConsoleMiddleware[],
+  maxBodyBytes: number,
 ): Promise<DispatchResult> {
   const lookup: M3LRouteLookup = router.lookup(ctx.method, ctx.path);
 
@@ -232,7 +289,11 @@ async function dispatch(
     withParams(ctx, lookup.params),
     lookup.route.auth,
   );
-  const dispatched = composeMiddleware(middlewares)(lookup.route.handler);
+  const terminal: M3LConsoleHandler = async (routedCtx) => {
+    const bodyCtx = await attachBodyIfApplicable(req, routedCtx, maxBodyBytes);
+    return lookup.route.handler(bodyCtx);
+  };
+  const dispatched = composeMiddleware(middlewares)(terminal);
   const response = await dispatched(matchedCtx);
   return { response, accessMode: lookup.route.auth };
 }
@@ -252,14 +313,22 @@ async function dispatch(
  * when a `preRouting` member short-circuits before reaching it.
  */
 function dispatchThroughPreRouting(
+  req: IncomingMessage,
   ctx: M3LRequestContext,
   router: M3LRouter,
   middlewares: readonly M3LConsoleMiddleware[],
   preRouting: readonly M3LConsoleMiddleware[],
+  maxBodyBytes: number,
   onDispatched: (accessMode: M3LRouteAuth | undefined) => void,
 ): Promise<M3LConsoleResult> {
   const terminal: M3LConsoleHandler = async (routedCtx) => {
-    const result = await dispatch(routedCtx, router, middlewares);
+    const result = await dispatch(
+      req,
+      routedCtx,
+      router,
+      middlewares,
+      maxBodyBytes,
+    );
     onDispatched(result.accessMode);
     return result.response;
   };
@@ -367,16 +436,20 @@ interface DispatchOutcome {
  * `runRequest`'s `catch` is what turns a rejection into an error response.
  */
 async function dispatchAndResolve(
+  req: IncomingMessage,
   ctx: M3LRequestContext,
   res: ServerResponse,
   options: CreateConsoleRequestListenerOptions,
 ): Promise<DispatchOutcome> {
   let accessMode: M3LRouteAuth | undefined;
+  const maxBodyBytes = options.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES;
   const result = await dispatchThroughPreRouting(
+    req,
     ctx,
     options.router,
     options.middlewares,
     options.preRouting,
+    maxBodyBytes,
     (mode) => {
       accessMode = mode;
     },
@@ -438,7 +511,7 @@ async function runRequest(
     method = ctx.method;
     path = ctx.path;
 
-    const outcome = await dispatchAndResolve(ctx, res, options);
+    const outcome = await dispatchAndResolve(req, ctx, res, options);
     accessMode = outcome.accessMode;
     response = outcome.response;
     wroteAlready = outcome.wroteAlready;
@@ -582,6 +655,9 @@ export function createConsoleRequestListener(
   options: CreateConsoleRequestListenerOptions,
 ): M3LConsoleRequestListener {
   validateStreamOptions(options);
+  if (options.maxBodyBytes !== undefined) {
+    assertPositiveInteger("maxBodyBytes", options.maxBodyBytes);
+  }
   const newCorrelationId = options.newCorrelationId ?? randomUUID;
   const now = options.now ?? Date.now;
 

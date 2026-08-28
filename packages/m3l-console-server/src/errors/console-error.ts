@@ -61,6 +61,14 @@ import { Core } from "@m3l-automation/m3l-common";
  * without `confirmed: true`, and `ERR_CONSOLE_RUN_CAPACITY_EXCEEDED` when the
  * run governor's queue is full.
  *
+ * The two final codes are `http/body.ts`'s request-body reading failures
+ * (X4 slice 7-pre): `ERR_CONSOLE_BODY_TOO_LARGE` when a body exceeds the
+ * configured byte cap (checked from `content-length` before any byte is read
+ * when possible, otherwise enforced while streaming), and
+ * `ERR_CONSOLE_UNSUPPORTED_MEDIA_TYPE` when a non-empty body's `content-type`
+ * is not `application/json`. Both are caller-origin, non-retryable, non-fault
+ * outcomes — see `http/envelope.ts`'s classification table.
+ *
  * @example
  * ```ts
  * function isConfigError(code: M3LConsoleErrorCode): boolean {
@@ -92,7 +100,9 @@ export type M3LConsoleErrorCode =
   | "ERR_CONSOLE_RUN_TRANSITION_INVALID"
   | "ERR_CONSOLE_RUN_SCRIPT_NOT_FOUND"
   | "ERR_CONSOLE_RUN_CONFIRMATION_REQUIRED"
-  | "ERR_CONSOLE_RUN_CAPACITY_EXCEEDED";
+  | "ERR_CONSOLE_RUN_CAPACITY_EXCEEDED"
+  | "ERR_CONSOLE_BODY_TOO_LARGE"
+  | "ERR_CONSOLE_UNSUPPORTED_MEDIA_TYPE";
 
 /**
  * Constructor options for {@link M3LConsoleError}.
