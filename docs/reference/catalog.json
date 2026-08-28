@@ -697,6 +697,31 @@
   },
   {
     "namespace": "aws",
+    "name": "bedrock-runtime",
+    "importPath": "@m3l-automation/m3l-common/aws",
+    "status": "✅",
+    "wired": true,
+    "docPath": "docs/reference/aws/bedrock-runtime.md",
+    "symbols": [
+      "M3LBedrockRuntimeOperations",
+      "M3LBedrockRuntimeOperationError",
+      "M3LBedrockRuntimeModelError",
+      "M3LBedrockRuntimeNoModelError",
+      "M3LBedrockMessage",
+      "M3LBedrockTextBlock",
+      "M3LBedrockContentBlock",
+      "M3LBedrockRuntimeRole",
+      "M3LBedrockStopReason",
+      "M3LBedrockTokenUsage",
+      "M3LBedrockInferenceConfig",
+      "M3LBedrockInvokeRequest",
+      "M3LBedrockInvokeOptions",
+      "M3LBedrockInvocationResult",
+      "M3LBedrockRuntimeOptions"
+    ]
+  },
+  {
+    "namespace": "aws",
     "name": "clients",
     "importPath": "@m3l-automation/m3l-common/aws",
     "status": "✅",
