@@ -1,6 +1,36 @@
 [
   {
     "namespace": "core",
+    "name": "agent",
+    "importPath": "@m3l-automation/m3l-common/core",
+    "status": "✅",
+    "wired": true,
+    "docPath": "docs/reference/core/agent.md",
+    "symbols": [
+      "M3LAgentActionKind",
+      "M3LAgentAction",
+      "M3LAgentActionRecord",
+      "M3L_AGENT_MAX_PARAMETER_NAMES",
+      "M3LAgentScriptGrant",
+      "M3LAgentPolicyDeclaration",
+      "M3LAgentPolicy",
+      "M3L_AGENT_MAX_SCRIPT_GRANTS",
+      "M3L_AGENT_MAX_OPERATIONS_PER_GRANT",
+      "M3L_AGENT_MAX_SENSITIVE_TARGET_ENTRIES",
+      "M3LAgentVerdict",
+      "M3LAgentPolicyRuleId",
+      "M3LAgentDecision",
+      "isAgentPolicyRuleId",
+      "isAgentActionAutoApproved",
+      "validateAgentPolicy",
+      "M3LAgentEvaluationOptions",
+      "evaluateAgentAction",
+      "M3LAgentPolicyDeclarationError",
+      "M3LAgentActionValidationError"
+    ]
+  },
+  {
+    "namespace": "core",
     "name": "analysis",
     "importPath": "@m3l-automation/m3l-common/core",
     "status": "✅",

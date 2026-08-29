@@ -12,7 +12,7 @@
 <a href="https://nodejs.org/api/esm.html"><img src="https://img.shields.io/badge/esm-only-66D9EF?style=flat-square&labelColor=272822" alt="ESM only"></a>
 <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-strict-66D9EF?style=flat-square&labelColor=272822" alt="TypeScript strict"></a>
 <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-A6E22E?style=flat-square&labelColor=272822" alt="Apache-2.0"></a>
-<a href="docs/implementation-status.md"><img src="https://img.shields.io/badge/library%20modules-44%2F44-A6E22E?style=flat-square&labelColor=272822" alt="library modules: 44/44"></a>
+<a href="docs/implementation-status.md"><img src="https://img.shields.io/badge/library%20modules-45%2F45-A6E22E?style=flat-square&labelColor=272822" alt="library modules: 45/45"></a>
 </p>
 
 <p align="center">
@@ -150,11 +150,11 @@ import { Core, AWS } from "@m3l-automation/m3l-common";
 - **`Core`** — application scaffolding, configuration, logging, prompts, I/O, data utilities, and resilience primitives.
 - **`AWS`** — AWS credential management and SDK client providers.
 
-> **All 44 of 44 library submodules are implemented and reviewed.** Implemented
+> **All 45 of 45 library submodules are implemented and reviewed.** Implemented
 > submodules:
 > <!-- BEGIN GENERATED SUBMODULE-LIST -->
 >
-> `errors`, `events`, `security`, `environment`, `utils`, `json`, `analysis`, `messaging`, `config`, `logging`, `files`, `network`, `polling`, `prompt`, `importers`, `exporters`, `storage`, `text`, `script`, `diagnostics`, `checkpoint`, `pipeline`, `procedure`, `cli-contract`, `aws/models`, `aws/credentials`, `aws/clients`, `aws/dynamodb`, `aws/cloudwatch-logs-insights`, `aws/sqs`, `aws/signing`, `aws/s3`, `aws/athena`, `aws/eventbridge`, `aws/lambda`, `aws/ecs`, `aws/codepipeline`, `aws/cloudformation`, `aws/eks`, `aws/cloudwatch-alarms`, `aws/cloudwatch-metrics`, `aws/secrets-manager`, `aws/rds-data`, `aws/bedrock-runtime`.
+> `errors`, `events`, `security`, `environment`, `utils`, `json`, `analysis`, `messaging`, `config`, `logging`, `files`, `network`, `polling`, `prompt`, `importers`, `exporters`, `storage`, `text`, `script`, `diagnostics`, `checkpoint`, `pipeline`, `procedure`, `cli-contract`, `agent`, `aws/models`, `aws/credentials`, `aws/clients`, `aws/dynamodb`, `aws/cloudwatch-logs-insights`, `aws/sqs`, `aws/signing`, `aws/s3`, `aws/athena`, `aws/eventbridge`, `aws/lambda`, `aws/ecs`, `aws/codepipeline`, `aws/cloudformation`, `aws/eks`, `aws/cloudwatch-alarms`, `aws/cloudwatch-metrics`, `aws/secrets-manager`, `aws/rds-data`, `aws/bedrock-runtime`.
 > <!-- END GENERATED SUBMODULE-LIST -->
 >
 > See [Implementation status](docs/implementation-status.md) for the per-module breakdown.
