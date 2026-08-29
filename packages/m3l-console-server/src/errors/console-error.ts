@@ -87,6 +87,16 @@ import { Core } from "@m3l-automation/m3l-common";
  * `ERR_CONSOLE_RUN_CAPACITY_EXCEEDED`'s shape: raised when a later slice's
  * concurrent-open-session cap is reached.
  *
+ * `ERR_CONSOLE_SESSION_REFERENCE_INVALID` is X6 slice 2's own addition
+ * (`sessions/reference.ts`, ADR-0068): raised by `parseStepReference` when
+ * caller-facing reference text does not match the
+ * `step-<ordinal>.output(.<ident> | [<index>] | ["<quoted>"])*` grammar, and
+ * by `resolveStepReference` when a well-formed reference no longer matches
+ * the data it names (an impossible walk, or a forbidden prototype-pollution
+ * property name). Either way it is a caller-facing "your reference string is
+ * malformed, or no longer matches the data it names" outcome, never a server
+ * fault.
+ *
  * @example
  * ```ts
  * function isConfigError(code: M3LConsoleErrorCode): boolean {
@@ -125,7 +135,8 @@ export type M3LConsoleErrorCode =
   | "ERR_CONSOLE_SESSION_STEP_NOT_FOUND"
   | "ERR_CONSOLE_SESSION_TRANSITION_INVALID"
   | "ERR_CONSOLE_SESSION_CLOSED"
-  | "ERR_CONSOLE_SESSION_LIMIT_EXCEEDED";
+  | "ERR_CONSOLE_SESSION_LIMIT_EXCEEDED"
+  | "ERR_CONSOLE_SESSION_REFERENCE_INVALID";
 
 /**
  * Constructor options for {@link M3LConsoleError}.

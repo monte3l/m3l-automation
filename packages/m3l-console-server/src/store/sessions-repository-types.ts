@@ -125,7 +125,11 @@ export interface M3LSessionStepRecord {
   readonly id: string;
   /** The session this step belongs to. */
   readonly sessionId: string;
-  /** This step's position within its session's ordered plan, 0-based. */
+  /**
+   * This step's position within its session's ordered plan. 1-based,
+   * matching `sessions/reference.ts`'s addressable-reference grammar
+   * (`step-1`, `step-2`, ...; `step-0` is invalid).
+   */
   readonly ordinal: number;
   /** The operation (e.g. a script identifier) this step invokes. */
   readonly operation: string;
@@ -159,7 +163,7 @@ export interface M3LSessionStepRecord {
  * const input: M3LSessionStepInsert = {
  *   id: "step-1",
  *   sessionId: "session-1",
- *   ordinal: 0,
+ *   ordinal: 1,
  *   operation: "scripts/example",
  *   parameters: { mode: "batch" },
  *   queuedAtMs: Date.now(),
@@ -171,7 +175,11 @@ export interface M3LSessionStepInsert {
   readonly id: string;
   /** The session this step belongs to. */
   readonly sessionId: string;
-  /** This step's position within its session's ordered plan, 0-based. */
+  /**
+   * This step's position within its session's ordered plan. 1-based,
+   * matching `sessions/reference.ts`'s addressable-reference grammar
+   * (`step-1`, `step-2`, ...; `step-0` is invalid).
+   */
   readonly ordinal: number;
   /** The operation (e.g. a script identifier) this step invokes. */
   readonly operation: string;

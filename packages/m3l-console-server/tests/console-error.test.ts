@@ -13,7 +13,7 @@ import {
 import type { M3LConsoleErrorCode } from "../src/errors/console-error.js";
 
 describe("M3LConsoleErrorCode", () => {
-  test("is the exact thirty-one-member union the contract declares (X2/X3-A1/X4/X6)", () => {
+  test("is the exact thirty-two-member union the contract declares (X2/X3-A1/X4/X6)", () => {
     expectTypeOf<M3LConsoleErrorCode>().toEqualTypeOf<
       | "ERR_CONSOLE_CONFIG_INVALID"
       | "ERR_CONSOLE_BAD_REQUEST"
@@ -46,6 +46,7 @@ describe("M3LConsoleErrorCode", () => {
       | "ERR_CONSOLE_SESSION_TRANSITION_INVALID"
       | "ERR_CONSOLE_SESSION_CLOSED"
       | "ERR_CONSOLE_SESSION_LIMIT_EXCEEDED"
+      | "ERR_CONSOLE_SESSION_REFERENCE_INVALID"
     >();
   });
 
@@ -243,6 +244,25 @@ describe("M3LConsoleError", () => {
       expect(Core.classifyErrorCode(error.code)).toBeUndefined();
     },
   );
+});
+
+describe("M3LConsoleError — ERR_CONSOLE_SESSION_REFERENCE_INVALID (X6 slice 2)", () => {
+  test("constructs and is caught by isConsoleError and instanceof Core.M3LError", () => {
+    const error = new M3LConsoleError(
+      "ERR_CONSOLE_SESSION_REFERENCE_INVALID",
+      "malformed step reference: unterminated bracket",
+    );
+
+    expect(error.code).toBe("ERR_CONSOLE_SESSION_REFERENCE_INVALID");
+    expect(isConsoleError(error)).toBe(true);
+    expect(error).toBeInstanceOf(Core.M3LError);
+    expect(error).toBeInstanceOf(Error);
+    // ERR_CONSOLE_* is deliberately absent from Core's own classification
+    // catalog (see the module doc comment) — this new reference-grammar code
+    // stays unclassified by Core.classifyErrorCode, same as every existing
+    // ERR_CONSOLE_* code.
+    expect(Core.classifyErrorCode(error.code)).toBeUndefined();
+  });
 });
 
 describe("isConsoleError", () => {
