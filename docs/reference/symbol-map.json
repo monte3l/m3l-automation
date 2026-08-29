@@ -19,6 +19,11 @@
     "namespace": "core",
     "file": "packages/m3l-common/src/core/agent/action-types.ts"
   },
+  "agentActionShapeKey": {
+    "submodule": "agent",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/agent/shape-key.ts"
+  },
   "M3LAgentScriptGrant": {
     "submodule": "agent",
     "namespace": "core",
@@ -28,6 +33,21 @@
     "submodule": "agent",
     "namespace": "core",
     "file": "packages/m3l-common/src/core/agent/policy-types.ts"
+  },
+  "M3LAgentBudgets": {
+    "submodule": "agent",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/agent/policy-types.ts"
+  },
+  "M3L_AGENT_MAX_DRY_RUN_SHAPES": {
+    "submodule": "agent",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/agent/ledger-types.ts"
+  },
+  "M3LAgentRunLedger": {
+    "submodule": "agent",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/agent/ledger-types.ts"
   },
   "M3LAgentPolicy": {
     "submodule": "agent",
