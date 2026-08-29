@@ -24,6 +24,33 @@ Public surface (`errors/index.ts`):
   `M3LErrorRetryable`, `M3LErrorClassification`, `M3L_ERROR_CATALOG`,
   `classifyErrorCode`, `isM3LErrorCode`
 
+### Browser-safe import: `@m3l-automation/m3l-common/core/errors`
+
+This submodule's whole transitive import graph is free of `node:` builtins
+and third-party dependencies, so — unlike every other Core/AWS submodule,
+which is reachable only through the `.`/`./core`/`./aws` namespace barrels —
+it also has its own dedicated `exports` subpath, admitted under
+[ADR-0004](../../adr/0004-exports-map-contract.md)'s dated Update as a
+narrow, machine-enforced exception (`pnpm check:browser-safe-subpath`
+re-verifies the node-free invariant in CI on every PR). A browser-target
+package that needs a real _value_ import — `extends M3LError`,
+`instanceof`, `classifyErrorCode(...)` — from this module without pulling
+in the rest of the Node-oriented library imports it directly:
+
+```typescript
+import { M3LError } from "@m3l-automation/m3l-common/core/errors";
+
+class M3LFrontendError extends M3LError {}
+```
+
+A _type-only_ reference (`M3LErrorOrigin`, `M3LErrorRetryable`, …) does not
+need this subpath at all: this repo's `verbatimModuleSyntax: true` setting
+erases `import type` at build time, so `import type { M3LErrorOrigin } from
+"@m3l-automation/m3l-common/core"` already costs zero bundle bytes through
+the ordinary `./core` barrel. Every other consumer keeps importing via
+`Core.M3LError` from `.`/`./core` as shown below — this subpath exists for
+the one case that barrel can't serve cheaply.
+
 ### `M3LError`
 
 `M3LError` extends `Error` and adds:

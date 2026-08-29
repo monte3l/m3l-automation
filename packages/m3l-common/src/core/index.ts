@@ -10,8 +10,10 @@
  *
  * Each submodule lives in its own directory with a barrel `index.ts` and is
  * surfaced through this namespace — the package `exports` map stays at three
- * entries (`.`, `./core`, `./aws`), so submodules are reached via the namespace,
- * not via per-module subpaths.
+ * namespace entries (`.`, `./core`, `./aws`) plus any machine-proven
+ * browser-safe leaf subpath (see the dated Update in
+ * `docs/adr/0004-exports-map-contract.md`), so submodules are otherwise
+ * reached via the namespace, not via per-module subpaths.
  *
  * @packageDocumentation
  */

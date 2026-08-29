@@ -18,6 +18,7 @@
     "declarationMap": false,
     "noEmit": true
   },
+  "references": [{ "path": "../m3l-common/tsconfig.build.json" }],
   "include": [
     "src/**/*.ts",
     "src/**/*.tsx",

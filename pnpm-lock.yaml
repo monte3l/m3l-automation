@@ -296,6 +296,9 @@ importers:
 
   packages/m3l-console-web:
     dependencies:
+      '@m3l-automation/m3l-common':
+        specifier: workspace:*
+        version: link:../m3l-common
       react:
         specifier: 19.2.8
         version: 19.2.8

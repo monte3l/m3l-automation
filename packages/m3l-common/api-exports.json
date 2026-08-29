@@ -10,5 +10,9 @@
   "./core": {
     "default": "./dist/core/index.js",
     "types": "./dist/core/index.d.ts"
+  },
+  "./core/errors": {
+    "default": "./dist/core/errors/index.js",
+    "types": "./dist/core/errors/index.d.ts"
   }
 }

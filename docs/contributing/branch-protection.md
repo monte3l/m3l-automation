@@ -33,15 +33,19 @@ In **Settings → Branches → Branch protection rules**, add a rule for `main`:
   fallback; it still requires a genuine review.
 - **Require status checks to pass before merging**, and mark these as required:
   - `verify` — the aggregator job in `.github/workflows/ci.yml`. It carries no
-    checks itself (`needs:` on all eight jobs — the `changes` path-classifier
-    plus the seven parallel lanes: `secrets`, `deps`, `lint`, `format`,
-    `build`, `test`, `gates` — plus `if: always()`); it passes when every
-    lane succeeded or was skipped, and fails on any lane failure or
-    cancellation, or if `changes` itself failed (checked explicitly, so a
-    classifier crash can't read as "every lane skipped" and pass). The
-    actual checks (lint, typecheck, public API snapshot, coverage-gated
-    tests, build, `check:exports`, `knip`, …) run inside those lanes, most
-    of them path-scoped on `changes`'s output.
+    checks itself (`needs:` on all ten jobs — the `changes` path-classifier
+    plus the nine parallel lanes: `secrets`, `deps`, `lint-library`,
+    `lint-workspace`, `format`, `build`, `test`, `gates`, `e2e` — plus
+    `if: always()`); it passes when every lane succeeded or was skipped, and
+    fails on any lane failure or cancellation, or if `changes` itself failed
+    (checked explicitly, so a classifier crash can't read as "every lane
+    skipped" and pass). `lint` runs as two separate jobs on separate runners
+    (`lint-library` for `packages/m3l-common` alone, `lint-workspace` for
+    everything else, both `--concurrency=1`) rather than one — see `ci.yml`'s
+    dated comment on the `lint-library` job for why. The actual checks (lint,
+    typecheck, public API snapshot, coverage-gated tests, build,
+    `check:exports`, `knip`, …) run inside those lanes, most of them
+    path-scoped on `changes`'s output.
   - `review` — the job in `.github/workflows/claude-pr-review.yml`. It fails
     unless the verdict is `PASS`, so a failing review blocks the merge
     (fail-closed if the review never runs). The reviewer runs in `--safe-mode`

@@ -2,8 +2,9 @@
 /**
  * PostToolUse reminder (Write|Edit): the `exports` map is the public contract.
  *
- * The three-entry `exports` map of `@m3l-automation/m3l-common` (`.`, `./core`,
- * `./aws`) IS the public API surface. Adding, removing, or retyping an entry is
+ * The `exports` map of `@m3l-automation/m3l-common` (`.`, `./core`, `./aws`,
+ * and the ADR-0004-exception `./core/errors`) IS the public API surface.
+ * Adding, removing, or retyping an entry is
  * a semver event that must ship as a `feat!:` / `BREAKING CHANGE:` commit and
  * should have been planned. This does NOT hard-block (the map legitimately
  * changes, and `guard-protected-paths.mjs` already blocks the `version` field);
@@ -40,18 +41,21 @@ if (!/packages\/m3l-common\/package\.json$/.test(filePath)) process.exit(0);
 // Heuristic: did this edit touch the exports map? `"exports"`, the subpath keys,
 // or the `types`/`default` conditions that only appear inside that map here.
 const touchesExports = contentToCheck(input).some((s) =>
-  /"exports"\s*:|"\.\/(core|aws)"|"types"\s*:|"default"\s*:/.test(s),
+  /"exports"\s*:|"\.\/(core|aws)(\/errors)?"|"types"\s*:|"default"\s*:/.test(s),
 );
 if (!touchesExports) process.exit(0);
 
 process.stderr.write(
   `Reminder: this edit touches the \`exports\` map of @m3l-automation/m3l-common, ` +
-    `which is the public API contract (\`.\`, \`./core\`, \`./aws\`). ` +
+    `which is the public API contract (\`.\`, \`./core\`, \`./aws\`, and the ` +
+    `ADR-0004-exception \`./core/errors\`). ` +
     `Adding/removing/retyping an entry is a SEMVER event:\n` +
     `  - it must ship as \`feat!:\` or carry a \`BREAKING CHANGE:\` footer, and\n` +
     `  - it should have been planned (see .claude/rules/library-src.md).\n` +
     `New submodules should surface through the namespace barrel ` +
-    `(src/core|aws/index.ts), NOT a new subpath entry. If this change is ` +
-    `intentional and correctly committed, proceed.\n`,
+    `(src/core|aws/index.ts), NOT a new subpath entry — the sole exception is ` +
+    `ADR-0004's dated Update (a machine-proven browser-safe leaf), not a ` +
+    `general allowance. If this change is intentional and correctly ` +
+    `committed, proceed.\n`,
 );
 process.exit(2);

@@ -19,7 +19,9 @@
   "scripts": {
     "build": "turbo run build",
     "typecheck": "turbo run typecheck && tsc -p bin/tsconfig.json",
-    "lint": "eslint . --concurrency=2",
+    "lint": "pnpm lint:library && pnpm lint:workspace",
+    "lint:library": "eslint packages/m3l-common --concurrency=1",
+    "lint:workspace": "eslint . --ignore-pattern 'packages/m3l-common/**' --concurrency=1",
     "lint:commit": "node bin/lint-commit.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -38,6 +40,7 @@
     "check:command-catalog": "node bin/check-command-catalog.mjs",
     "check:workflow-build-order": "node bin/check-workflow-build-order.mjs",
     "check:api": "node bin/check-exports-snapshot.mjs",
+    "check:browser-safe-subpath": "node bin/check-browser-safe-subpath.mjs",
     "check:provenance": "node bin/check-doc-provenance.mjs",
     "check:doc-counts": "node bin/check-doc-counts.mjs",
     "check:impl-counts": "node bin/check-impl-counts.mjs",

@@ -1,3 +1,8 @@
+import type {
+  M3LErrorOrigin,
+  M3LErrorRetryable,
+} from "@m3l-automation/m3l-common/core";
+
 /**
  * Shape of a fetch failure surfaced by {@link fetchConsoleJson}. Every
  * failure mode (network, HTTP error, malformed body) is represented as a
@@ -10,6 +15,8 @@ export interface M3LConsoleFetchError {
   readonly status?: number;
   readonly code?: string;
   readonly correlationId?: string;
+  readonly origin?: M3LErrorOrigin;
+  readonly retryable?: M3LErrorRetryable;
 }
 
 /**
@@ -23,7 +30,12 @@ export type M3LConsoleFetchResult<T> =
 /**
  * Structural shape of the console-server's error envelope
  * (`M3LConsoleErrorEnvelope`), checked without importing the server
- * package.
+ * package. `origin`/`retryable` mirror the same two optional classification
+ * fields the server envelope carries. They stay `unknown` here — envelope
+ * recognition depends only on the required fields below, never on these two,
+ * so an unrecognized/invalid classification value can never sink an
+ * otherwise well-formed envelope (see {@link buildHttpError}, which validates
+ * and conditionally includes each one individually).
  */
 interface ConsoleErrorEnvelope {
   readonly error: {
@@ -31,11 +43,38 @@ interface ConsoleErrorEnvelope {
     readonly message: string;
     readonly status: number;
     readonly correlationId: string;
+    readonly origin?: unknown;
+    readonly retryable?: unknown;
   };
 }
 
+const CONSOLE_ERROR_ORIGINS: Record<M3LErrorOrigin, true> = {
+  caller: true,
+  library: true,
+  external: true,
+};
+
 function deriveErrorMessage(caught: unknown): string {
   return caught instanceof Error ? caught.message : String(caught);
+}
+
+function isValidOrigin(value: unknown): value is M3LErrorOrigin {
+  return (
+    typeof value === "string" && Object.hasOwn(CONSOLE_ERROR_ORIGINS, value)
+  );
+}
+
+function isValidRetryable(value: unknown): value is M3LErrorRetryable {
+  return typeof value === "boolean" || value === "situational";
+}
+
+function hasRequiredErrorFields(candidate: Record<string, unknown>): boolean {
+  return (
+    typeof candidate["code"] === "string" &&
+    typeof candidate["message"] === "string" &&
+    typeof candidate["status"] === "number" &&
+    typeof candidate["correlationId"] === "string"
+  );
 }
 
 function isConsoleErrorEnvelope(body: unknown): body is ConsoleErrorEnvelope {
@@ -46,13 +85,7 @@ function isConsoleErrorEnvelope(body: unknown): body is ConsoleErrorEnvelope {
   if (typeof error !== "object" || error === null) {
     return false;
   }
-  const candidate = error as Record<string, unknown>;
-  return (
-    typeof candidate["code"] === "string" &&
-    typeof candidate["message"] === "string" &&
-    typeof candidate["status"] === "number" &&
-    typeof candidate["correlationId"] === "string"
-  );
+  return hasRequiredErrorFields(error as Record<string, unknown>);
 }
 
 async function buildHttpError(
@@ -61,12 +94,15 @@ async function buildHttpError(
   try {
     const body: unknown = await response.json();
     if (isConsoleErrorEnvelope(body)) {
+      const { origin, retryable } = body.error;
       return {
         kind: "http",
         message: body.error.message,
         status: body.error.status,
         code: body.error.code,
         correlationId: body.error.correlationId,
+        ...(isValidOrigin(origin) && { origin }),
+        ...(isValidRetryable(retryable) && { retryable }),
       };
     }
   } catch {

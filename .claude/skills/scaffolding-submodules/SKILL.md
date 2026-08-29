@@ -18,11 +18,15 @@ the _greenfield_ entry point for a **net-new** module — one beyond the bootstr
 catalog that has no `docs/reference` page and no `src/` directory yet. It creates
 the seams (folder, failing test, barrel re-export, doc stub) and updates the
 status tracker, then hands the actual implementation to `implementing-submodules`.
-The package `exports` map stays at three entries (`.`, `./core`, `./aws`) — new
-submodules are surfaced through the namespace barrel, **never** a new subpath
-entry (that would be a semver event; see `docs/contributing/contributing.md`).
-The skill's name is about adding a new module, not a new `exports` subpath — the
-two are deliberately kept separate.
+The package `exports` map stays at its three namespace entries (`.`, `./core`,
+`./aws`) — new submodules are surfaced through the namespace barrel, **never**
+a new subpath entry (that would be a semver event; see
+`docs/contributing/contributing.md`). The sole exception is ADR-0004's dated
+Update (`./core/errors`, admitted only for a proven browser-safe leaf a
+browser-target package needed a real value import from) — it is not a
+precedent for scaffolding a new submodule's own subpath. The skill's name is
+about adding a new module, not a new `exports` subpath — the two are
+deliberately kept separate.
 
 ## Role boundaries (hub-and-spoke)
 

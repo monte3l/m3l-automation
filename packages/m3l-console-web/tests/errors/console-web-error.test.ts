@@ -1,3 +1,4 @@
+import { M3LError } from "@m3l-automation/m3l-common/core/errors";
 import { describe, expect, test } from "vitest";
 
 import type { M3LConsoleWebErrorCode } from "../../src/errors/console-web-error.js";
@@ -40,6 +41,15 @@ describe("M3LConsoleWebError", () => {
     expect(error).toBeInstanceOf(M3LConsoleWebError);
   });
 
+  test("is a real M3LError subclass, not just a code/message lookalike", () => {
+    const error = new M3LConsoleWebError(
+      "ERR_CONSOLE_WEB_ROOT_MISSING",
+      "#root element not found",
+    );
+
+    expect(error).toBeInstanceOf(M3LError);
+  });
+
   test("preserves a cause passed via options", () => {
     const cause = new Error("original DOM failure");
 
@@ -59,5 +69,42 @@ describe("M3LConsoleWebError", () => {
     );
 
     expect(error.cause).toBeUndefined();
+  });
+
+  test("classifies every instance as origin: caller", () => {
+    const error = new M3LConsoleWebError(
+      "ERR_CONSOLE_WEB_ROOT_MISSING",
+      "#root element not found",
+    );
+
+    expect(error.origin).toBe("caller");
+  });
+
+  test("classifies every instance as retryable: false", () => {
+    const error = new M3LConsoleWebError(
+      "ERR_CONSOLE_WEB_ROOT_MISSING",
+      "#root element not found",
+    );
+
+    expect(error.retryable).toBe(false);
+  });
+
+  test("defaults context to an empty object when no options are passed", () => {
+    const error = new M3LConsoleWebError(
+      "ERR_CONSOLE_WEB_ROOT_MISSING",
+      "#root element not found",
+    );
+
+    expect(error.context).toEqual({});
+  });
+
+  test("preserves a context object passed via options", () => {
+    const error = new M3LConsoleWebError(
+      "ERR_CONSOLE_WEB_ROOT_MISSING",
+      "#root element not found",
+      { context: { foo: "bar" } },
+    );
+
+    expect(error.context).toEqual({ foo: "bar" });
   });
 });

@@ -360,7 +360,9 @@ ADR-0013 (its durable home), not a per-plan caveat.
    Then report the new exports, the review verdict, any deps added (with
    approval), and the state-file transitions. Remind the user the commit should
    be a `feat:` (a new submodule surfaced through the barrel is a minor, not a
-   breaking change, because the three-entry `exports` map is unchanged). Finally
+   breaking change, because the namespace-entry `exports` map is unchanged —
+   see ADR-0004, whose dated Update names `./core/errors` as the one
+   admitted subpath exception, not a general allowance). Finally
    invoke `/writing-work-logs` to write `docs/logs/YYYY-MM-DD-<ns>-<module>.md` while
    the conversation context is intact — this is the durable record of what
    shipped, what diverged, and the lessons for the next submodule. If this
