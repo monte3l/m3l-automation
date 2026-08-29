@@ -1,4 +1,104 @@
 {
+  "M3LAgentActionKind": {
+    "submodule": "agent",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/agent/action-types.ts"
+  },
+  "M3LAgentAction": {
+    "submodule": "agent",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/agent/action-types.ts"
+  },
+  "M3LAgentActionRecord": {
+    "submodule": "agent",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/agent/action-types.ts"
+  },
+  "M3L_AGENT_MAX_PARAMETER_NAMES": {
+    "submodule": "agent",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/agent/action-types.ts"
+  },
+  "M3LAgentScriptGrant": {
+    "submodule": "agent",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/agent/policy-types.ts"
+  },
+  "M3LAgentPolicyDeclaration": {
+    "submodule": "agent",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/agent/policy-types.ts"
+  },
+  "M3LAgentPolicy": {
+    "submodule": "agent",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/agent/policy-types.ts"
+  },
+  "M3L_AGENT_MAX_SCRIPT_GRANTS": {
+    "submodule": "agent",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/agent/policy-types.ts"
+  },
+  "M3L_AGENT_MAX_OPERATIONS_PER_GRANT": {
+    "submodule": "agent",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/agent/policy-types.ts"
+  },
+  "M3L_AGENT_MAX_SENSITIVE_TARGET_ENTRIES": {
+    "submodule": "agent",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/agent/policy-types.ts"
+  },
+  "M3LAgentVerdict": {
+    "submodule": "agent",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/agent/verdict-types.ts"
+  },
+  "M3LAgentPolicyRuleId": {
+    "submodule": "agent",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/agent/verdict-types.ts"
+  },
+  "M3LAgentDecision": {
+    "submodule": "agent",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/agent/verdict-types.ts"
+  },
+  "isAgentPolicyRuleId": {
+    "submodule": "agent",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/agent/guards.ts"
+  },
+  "isAgentActionAutoApproved": {
+    "submodule": "agent",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/agent/guards.ts"
+  },
+  "validateAgentPolicy": {
+    "submodule": "agent",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/agent/validate-policy.ts"
+  },
+  "M3LAgentEvaluationOptions": {
+    "submodule": "agent",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/agent/evaluate.ts"
+  },
+  "evaluateAgentAction": {
+    "submodule": "agent",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/agent/evaluate.ts"
+  },
+  "M3LAgentPolicyDeclarationError": {
+    "submodule": "agent",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/agent/M3LAgentPolicyDeclarationError.ts"
+  },
+  "M3LAgentActionValidationError": {
+    "submodule": "agent",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/agent/M3LAgentActionValidationError.ts"
+  },
   "M3LThresholdEvaluator": {
     "submodule": "analysis",
     "namespace": "core",

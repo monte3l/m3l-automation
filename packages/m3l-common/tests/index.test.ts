@@ -45,6 +45,7 @@ const CORE_REACHABILITY_CASES: ReadonlyArray<
     expectedType: "function" | "object",
   ]
 > = [
+  ["agent", "validateAgentPolicy", "function"],
   ["analysis", "M3LThresholdEvaluator", "function"],
   ["checkpoint", "M3LCheckpointStore", "function"],
   ["cli-contract", "mapCommandOutcomeToExitCode", "function"],
