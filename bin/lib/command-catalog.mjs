@@ -116,6 +116,11 @@ export const COMMAND_CATALOG = [
       "Diffs the live `exports` map against a committed snapshot so any change to the public API contract (`.`, `./core`, `./aws`) shows up as a deliberate, reviewed diff. Run after touching a namespace barrel.",
   },
   {
+    name: "check:browser-safe-subpath",
+    description:
+      "Walks each ADR-0004-exception exports subpath's (currently `./core/errors`) transitive TS-source import graph and fails if it reaches a `node:` builtin or a bare third-party specifier. Run after editing a file reachable from a browser-safe subpath's entry point.",
+  },
+  {
     name: "check:provenance",
     description:
       "Verifies every docs/reference/**.provenance.json sidecar's heading/source/symbol still resolves and warns on staleness. Run after editing a submodule's source or its reference page.",

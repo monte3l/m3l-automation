@@ -163,6 +163,12 @@ export const VERIFY_STEPS = [
     conditional: true,
   },
   {
+    ciStepName: "Check browser-safe exports subpaths",
+    id: "check-browser-safe-subpath",
+    cmd: () => "pnpm check:browser-safe-subpath",
+    conditional: true,
+  },
+  {
     ciStepName: "Check exports semver labeling",
     id: "check-exports-semver",
     prOnly: true,

@@ -1,3 +1,8 @@
+import type {
+  M3LErrorOrigin,
+  M3LErrorRetryable,
+} from "@m3l-automation/m3l-common/core/errors";
+
 /**
  * Shape of a fetch failure surfaced by {@link fetchConsoleJson}. Every
  * failure mode (network, HTTP error, malformed body) is represented as a
@@ -10,6 +15,8 @@ export interface M3LConsoleFetchError {
   readonly status?: number;
   readonly code?: string;
   readonly correlationId?: string;
+  readonly origin?: M3LErrorOrigin;
+  readonly retryable?: M3LErrorRetryable;
 }
 
 /**
@@ -23,7 +30,9 @@ export type M3LConsoleFetchResult<T> =
 /**
  * Structural shape of the console-server's error envelope
  * (`M3LConsoleErrorEnvelope`), checked without importing the server
- * package.
+ * package. `origin`/`retryable` mirror the same two optional classification
+ * fields the server envelope carries, typed against the shared library's
+ * leaf error subpath rather than duplicated as ad hoc literal unions.
  */
 interface ConsoleErrorEnvelope {
   readonly error: {
@@ -31,11 +40,54 @@ interface ConsoleErrorEnvelope {
     readonly message: string;
     readonly status: number;
     readonly correlationId: string;
+    readonly origin?: M3LErrorOrigin;
+    readonly retryable?: M3LErrorRetryable;
   };
 }
 
+const CONSOLE_ERROR_ORIGINS: ReadonlySet<M3LErrorOrigin> = new Set([
+  "caller",
+  "library",
+  "external",
+]);
+
 function deriveErrorMessage(caught: unknown): string {
   return caught instanceof Error ? caught.message : String(caught);
+}
+
+function isValidOrigin(value: unknown): value is M3LErrorOrigin {
+  return (
+    typeof value === "string" &&
+    CONSOLE_ERROR_ORIGINS.has(value as M3LErrorOrigin)
+  );
+}
+
+function isValidRetryable(value: unknown): value is M3LErrorRetryable {
+  return typeof value === "boolean" || value === "situational";
+}
+
+function hasRequiredErrorFields(candidate: Record<string, unknown>): boolean {
+  return (
+    typeof candidate["code"] === "string" &&
+    typeof candidate["message"] === "string" &&
+    typeof candidate["status"] === "number" &&
+    typeof candidate["correlationId"] === "string"
+  );
+}
+
+function hasValidOptionalClassificationFields(
+  candidate: Record<string, unknown>,
+): boolean {
+  if (
+    Object.hasOwn(candidate, "origin") &&
+    !isValidOrigin(candidate["origin"])
+  ) {
+    return false;
+  }
+  return (
+    !Object.hasOwn(candidate, "retryable") ||
+    isValidRetryable(candidate["retryable"])
+  );
 }
 
 function isConsoleErrorEnvelope(body: unknown): body is ConsoleErrorEnvelope {
@@ -48,10 +100,8 @@ function isConsoleErrorEnvelope(body: unknown): body is ConsoleErrorEnvelope {
   }
   const candidate = error as Record<string, unknown>;
   return (
-    typeof candidate["code"] === "string" &&
-    typeof candidate["message"] === "string" &&
-    typeof candidate["status"] === "number" &&
-    typeof candidate["correlationId"] === "string"
+    hasRequiredErrorFields(candidate) &&
+    hasValidOptionalClassificationFields(candidate)
   );
 }
 
@@ -67,6 +117,10 @@ async function buildHttpError(
         status: body.error.status,
         code: body.error.code,
         correlationId: body.error.correlationId,
+        ...(body.error.origin !== undefined && { origin: body.error.origin }),
+        ...(body.error.retryable !== undefined && {
+          retryable: body.error.retryable,
+        }),
       };
     }
   } catch {

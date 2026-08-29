@@ -111,6 +111,25 @@ Chromium install is exactly the per-run cost being avoided) — `pnpm
 verify -- --full` opts in locally, mirroring the `ci.yml` job's own
 default-off-until-scoped posture.
 
+## Update 2026-08-29 — `m3l-common` becomes a real dependency (F32 / #724)
+
+This ADR's original Consequences claimed X9 needed "no `m3l-common`
+change." That held only until `claude-pr-review` flagged
+`M3LConsoleWebError extends Error` (a local class, not
+`Core.M3LError`) on PR #723 — reaching `M3LError` through the `./core`
+barrel would have pulled the whole Node-oriented library (4,823
+transformed Vite modules vs. 20) into this package's bundle, which the
+"deliberately thin dependency policy" above exists to prevent.
+
+Resolved via [ADR-0004](./0004-exports-map-contract.md)'s dated Update:
+a new, machine-proven-node-free `./core/errors` exports subpath.
+`packages/m3l-console-web` now depends on
+`@m3l-automation/m3l-common` (`workspace:*`) for real, but imports only
+that leaf subpath — never `.` or `./core` — so the thin-dependency
+policy this ADR states is unchanged in spirit; only the previously-false
+"no dependency at all" claim is corrected. `M3LConsoleWebError` now
+`extends M3LError`.
+
 ## Links
 
 - Programme: [ADR-0064](./0064-m3l-console-programme.md). Consumes:

@@ -1,3 +1,4 @@
+import { M3LError } from "@m3l-automation/m3l-common/core/errors";
 import { describe, expect, test } from "vitest";
 
 import type { M3LConsoleWebErrorCode } from "../../src/errors/console-web-error.js";
@@ -38,6 +39,15 @@ describe("M3LConsoleWebError", () => {
 
     expect(error).toBeInstanceOf(Error);
     expect(error).toBeInstanceOf(M3LConsoleWebError);
+  });
+
+  test("is a real M3LError subclass, not just a code/message lookalike", () => {
+    const error = new M3LConsoleWebError(
+      "ERR_CONSOLE_WEB_ROOT_MISSING",
+      "#root element not found",
+    );
+
+    expect(error).toBeInstanceOf(M3LError);
   });
 
   test("preserves a cause passed via options", () => {

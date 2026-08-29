@@ -38,6 +38,7 @@
     "check:command-catalog": "node bin/check-command-catalog.mjs",
     "check:workflow-build-order": "node bin/check-workflow-build-order.mjs",
     "check:api": "node bin/check-exports-snapshot.mjs",
+    "check:browser-safe-subpath": "node bin/check-browser-safe-subpath.mjs",
     "check:provenance": "node bin/check-doc-provenance.mjs",
     "check:doc-counts": "node bin/check-doc-counts.mjs",
     "check:impl-counts": "node bin/check-impl-counts.mjs",

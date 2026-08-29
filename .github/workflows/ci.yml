@@ -192,6 +192,14 @@ jobs:
       - name: Check public API snapshot
         run: pnpm check:api
 
+      # ADR-0004's dated Update admits a subpath beyond the three namespace
+      # entries only when its whole transitive source-import graph is
+      # provably free of node:/third-party imports — this is the machine
+      # backstop for that invariant, run against TS source (pre-build) so it
+      # sits next to check:api rather than after the build step.
+      - name: Check browser-safe exports subpaths
+        run: pnpm check:browser-safe-subpath
+
       # check:api forces the snapshot to be updated; this forces a BREAKING change
       # to it to be LABELED breaking (a `BREAKING CHANGE:` footer / `!` subject) in
       # the PR commit range. PR-only — it needs the base and head commits.
