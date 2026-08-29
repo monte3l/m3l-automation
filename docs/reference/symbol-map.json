@@ -610,13 +610,13 @@
   "M3LErrorCode": {
     "submodule": "errors",
     "namespace": "core",
-    "file": "packages/m3l-common/src/core/errors/M3LError.ts",
+    "file": "packages/m3l-common/src/core/errors/codes.ts",
     "lines": "172-172"
   },
   "M3L_ERROR_CODES": {
     "submodule": "errors",
     "namespace": "core",
-    "file": "packages/m3l-common/src/core/errors/M3LError.ts",
+    "file": "packages/m3l-common/src/core/errors/codes.ts",
     "lines": "88-147"
   },
   "M3LResultOk": {
