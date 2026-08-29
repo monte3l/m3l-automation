@@ -169,20 +169,20 @@ summary only — the item source for sync is the V-series in
 per-phase detail in
 [`2026-08-20-agent-operator.md`](./plans/2026-08-20-agent-operator.md).
 
-| Item    | What                                                            | Status      |
-| ------- | --------------------------------------------------------------- | ----------- |
-| **V1**  | Decisions & governance docs — ADR-0058…0063 + trackers          | Done        |
-| **V2**  | CLI machine-surface hardening (`run --json` envelope, `--help`) | Done        |
-| **V3**  | Secrets-delivery hardening (gated on a future ADR)              | To Do       |
-| **V4**  | `aws/bedrock-runtime` wrapper (AWS 19 → 20, additive minor)     | To Do       |
-| **V5**  | Tool-use loop primitives                                        | To Do       |
-| **V6**  | Agent policy layer (graded autonomy as authorization)           | In Progress |
-| **V7**  | Agent decision log (append-only, names-never-values)            | To Do       |
-| **V8**  | `agent-operator` script + fleet-health-checks workload          | To Do       |
-| **V9**  | Workload expansion (ETL; log triage; queue flow after U10)      | To Do       |
-| **V10** | `packages/m3l-mcp` stdio MCP surface                            | To Do       |
-| **V11** | Headless/scheduled operation                                    | To Do       |
-| **V12** | Remote/HTTP MCP (gated on a future ADR)                         | Deferred    |
+| Item    | What                                                            | Status   |
+| ------- | --------------------------------------------------------------- | -------- |
+| **V1**  | Decisions & governance docs — ADR-0058…0063 + trackers          | Done     |
+| **V2**  | CLI machine-surface hardening (`run --json` envelope, `--help`) | Done     |
+| **V3**  | Secrets-delivery hardening (gated on a future ADR)              | To Do    |
+| **V4**  | `aws/bedrock-runtime` wrapper (AWS 19 → 20, additive minor)     | To Do    |
+| **V5**  | Tool-use loop primitives                                        | To Do    |
+| **V6**  | Agent policy layer (graded autonomy as authorization)           | Done     |
+| **V7**  | Agent decision log (append-only, names-never-values)            | To Do    |
+| **V8**  | `agent-operator` script + fleet-health-checks workload          | To Do    |
+| **V9**  | Workload expansion (ETL; log triage; queue flow after U10)      | To Do    |
+| **V10** | `packages/m3l-mcp` stdio MCP surface                            | To Do    |
+| **V11** | Headless/scheduled operation                                    | To Do    |
+| **V12** | Remote/HTTP MCP (gated on a future ADR)                         | Deferred |
 
 ### m3l console wave (X-series) — ADR-0064/0065/0066/0067/0068/0069/0070/0071
 
