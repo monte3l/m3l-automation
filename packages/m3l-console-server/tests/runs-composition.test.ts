@@ -31,7 +31,7 @@ import type {
   M3LRunSubsystem,
   M3LRunSubsystemOptions,
 } from "../src/runs/composition.js";
-import type { M3LRunEvent } from "../src/runs/events.js";
+import type { M3LRunEvent, M3LRunEventSink } from "../src/runs/events.js";
 import type {
   M3LRunOrchestrator,
   M3LRunOrchestratorConfig,
@@ -354,6 +354,7 @@ describe("M3LRunSubsystemOptions / M3LRunSubsystem", () => {
       readonly config: M3LRunOrchestratorConfig;
       readonly logger: Core.M3LLogger;
       readonly registry: M3LRunRegistry;
+      readonly extraEventSinks?: readonly M3LRunEventSink[];
     }>();
 
     expectTypeOf<M3LRunSubsystem>().toEqualTypeOf<{
@@ -362,5 +363,75 @@ describe("M3LRunSubsystemOptions / M3LRunSubsystem", () => {
       drain(): Promise<void>;
       endStreams(): void;
     }>();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// extraEventSinks (Part B, slice 4 round 1, issue #554) — a pluggable hook
+// so a caller outside this module (the sessions composition root) can
+// receive every run event fanned out alongside the existing logger/stream
+// sinks, without this module importing `sessions/` (which would invert the
+// `runs` zone's own declared allowance).
+// ---------------------------------------------------------------------------
+
+describe("createRunSubsystem — extraEventSinks", () => {
+  test("publishes every run event to each injected extra sink, in addition to the existing logger/stream sinks", async () => {
+    mockScriptResolvable();
+    const { childHandle } = createHangingSpawnedProcess();
+    mockSpawnReturns(childHandle);
+
+    // Named separately (not `extraSink.publish`) so the assertions below
+    // reference the standalone mock rather than a detached method access off
+    // `extraSink` (`@typescript-eslint/unbound-method`).
+    const publish = vi.fn();
+    const extraSink: M3LRunEventSink = { publish };
+    const subsystem = createRunSubsystem({
+      ...buildOptions(),
+      extraEventSinks: [extraSink],
+    });
+
+    subsystem.orchestrator.launch(buildDryRunRequest("sqs-etl"));
+
+    expect(publish).toHaveBeenCalledWith(
+      expect.objectContaining({ event: "run.started" }),
+    );
+
+    await subsystem.drain();
+
+    expect(publish).toHaveBeenCalledWith(
+      expect.objectContaining({ event: "run.ended" }),
+    );
+  });
+
+  test("publishes to multiple injected extra sinks, not just the first", () => {
+    mockScriptResolvable();
+    const { childHandle } = createHangingSpawnedProcess();
+    mockSpawnReturns(childHandle);
+
+    const firstPublish = vi.fn();
+    const secondPublish = vi.fn();
+    const firstSink: M3LRunEventSink = { publish: firstPublish };
+    const secondSink: M3LRunEventSink = { publish: secondPublish };
+    const subsystem = createRunSubsystem({
+      ...buildOptions(),
+      extraEventSinks: [firstSink, secondSink],
+    });
+
+    subsystem.orchestrator.launch(buildDryRunRequest("sqs-etl"));
+
+    expect(firstPublish).toHaveBeenCalled();
+    expect(secondPublish).toHaveBeenCalled();
+  });
+
+  test("omitting extraEventSinks entirely still works — it is optional, matching every existing passing test above", () => {
+    mockScriptResolvable();
+    const { childHandle } = createHangingSpawnedProcess();
+    mockSpawnReturns(childHandle);
+
+    const subsystem = createRunSubsystem(buildOptions());
+
+    const handle = subsystem.orchestrator.launch(buildDryRunRequest("sqs-etl"));
+
+    expect(handle.status).toBe("running");
   });
 });
