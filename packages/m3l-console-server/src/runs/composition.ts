@@ -1,22 +1,36 @@
 /**
  * `runs/composition` — `createRunSubsystem`, the X4 run-governor's one-call
  * factory: builds every Round 1 collaborator a real deployment needs (the
- * governor, the confirmation policy, both logger-backed sinks, both
- * executors) from `config` and `registry` alone, and wires them into a real
- * {@link M3LRunOrchestrator}.
+ * governor, the confirmation policy, an audit sink, the run-event stream hub
+ * and its composite logger+stream sink, both executors) from `config` and
+ * `registry` alone, and wires them into a real {@link M3LRunOrchestrator}.
  *
  * This exists so `main.ts` grows by one line of wiring
  * (`createRunSubsystem({ config, logger, registry })`) instead of eight
  * separate factory calls — `main.ts` sits at 21,990 of its 25,000-char
  * budget, and inlining this slice's wiring there would have pushed it over.
  *
+ * Slice 7a also makes this factory the run-event stream hub's owner, for the
+ * same budget reason plus a better one: `main.ts` has essentially no
+ * headroom left, but more importantly the hub's lifecycle (open at boot,
+ * `endAll("draining")` at shutdown) genuinely belongs beside the orchestrator
+ * that publishes into it, not in the composition root. `main.ts` reaches it
+ * at `subsystem.eventHub` to wire the HTTP stream route.
+ *
  * @packageDocumentation
  */
 
 import type { Core } from "@m3l-automation/m3l-common";
 
+import { createEventStreamHub } from "../stream/event-stream.js";
+import type { M3LEventStreamHub } from "../stream/event-stream.js";
+
 import { createLoggerAuditSink } from "./audit.js";
-import { createLoggerRunEventSink } from "./events.js";
+import {
+  createCompositeRunEventSink,
+  createLoggerRunEventSink,
+} from "./events.js";
+import type { M3LRunEvent } from "./events.js";
 import { createInProcessExecutor, createSpawnExecutor } from "./executor.js";
 import { createRunGovernor } from "./governor.js";
 import { createRunOrchestrator } from "./orchestrator.js";
@@ -26,6 +40,7 @@ import type {
 } from "./orchestrator.js";
 import { createConfirmationPolicy } from "./policy.js";
 import type { M3LRunRegistry } from "./registry.js";
+import { createStreamRunEventSink } from "./stream-events.js";
 
 /**
  * Constructor options for {@link createRunSubsystem}.
@@ -91,27 +106,66 @@ export interface M3LRunSubsystemOptions {
  *
  * declare const subsystem: M3LRunSubsystem;
  * subsystem.orchestrator.activeCount; // 0
+ * subsystem.eventHub.openCount; // 0
  * ```
  */
 export interface M3LRunSubsystem {
   /** The wired run orchestrator. */
   readonly orchestrator: M3LRunOrchestrator;
   /**
-   * Aborts every in-flight run and resolves once they have all settled.
-   * Delegates to {@link M3LRunOrchestrator.drain} — see this interface's own
-   * TSDoc for why the method is duplicated at this top level rather than
-   * left reachable only via `orchestrator.drain()`.
+   * The run-event stream hub this subsystem owns: created with
+   * `bufferSize: config.streamRetention` and wired as one member of the
+   * orchestrator's composite event sink (see {@link createRunSubsystem}'s
+   * own TSDoc for why ownership sits here rather than in `main.ts`). The HTTP
+   * layer subscribes to it to serve `GET /api/v1/runs/:id/stream`, but never
+   * creates or closes it itself.
+   */
+  readonly eventHub: M3LEventStreamHub<M3LRunEvent>;
+  /**
+   * Aborts every in-flight run, waits for {@link M3LRunOrchestrator.drain} to
+   * resolve once they have all settled, and only THEN ends every still-open
+   * stream on {@link eventHub} with reason `"draining"` — see
+   * {@link createRunSubsystem}'s own TSDoc for why that ordering (not the
+   * reverse) is required. Delegating to `orchestrator.drain()` for the first
+   * half is why this method is duplicated at this top level rather than left
+   * reachable only via `orchestrator.drain()`.
    */
   drain(): Promise<void>;
+  /**
+   * Synchronously ends every still-open stream on {@link eventHub} with
+   * reason `"draining"`, WITHOUT waiting on {@link M3LRunOrchestrator.drain}
+   * first — the seam `lifecycle/shutdown.ts`'s `runShutdownSequence` calls as
+   * its very first statement, before `runtime.drain.drain()` synchronously
+   * aborts every in-flight request signal. That HTTP-drain abort is what
+   * severs an SSE watcher's connection; calling this first gives each watcher
+   * its `stream.end` frame while the connection is still alive, rather than
+   * severing it before the watcher can be told anything at all.
+   *
+   * This makes {@link drain}'s own `endAll("draining")` call a safety net,
+   * not a double-end: `EventStreamImpl.end` starts with
+   * `if (this.endInfo !== undefined) return;`, so calling `endAll` twice with
+   * the same reason is a genuine no-op the second time, not a re-notification
+   * of already-ended streams. The safety net exists for a direct `drain()`
+   * call made with no shutdown sequence in front of it (e.g. a test, or a
+   * future caller that drains the run subsystem standalone).
+   */
+  endStreams(): void;
 }
 
 /**
  * Builds a working {@link M3LRunSubsystem} from `options.config` and
  * `options.registry` alone: a governor sized from `config`'s concurrency and
- * queue knobs, the confirmation policy, a logger-backed audit sink and a
- * logger-backed event sink (both over `options.logger`), a spawn executor
- * sized from `config.killTimeoutMs`, and an in-process executor — then wires
- * every one of them into a real {@link createRunOrchestrator}.
+ * queue knobs, the confirmation policy, a logger-backed audit sink, a
+ * run-event stream hub sized by `config.streamRetention` plus the composite
+ * event sink that fans out to both a logger-backed sink and a
+ * stream-backed sink (both over `options.logger` / the new hub), a spawn
+ * executor sized from `config.killTimeoutMs`, and an in-process executor —
+ * then wires every one of them into a real {@link createRunOrchestrator}.
+ *
+ * The fan-out is deliberate, not redundant: the logger sink keeps recording
+ * lifecycle events so a console with no stream watcher still logs run
+ * activity, while the stream sink receives everything — including
+ * `run.line`, which the logger sink drops (see `events.ts`'s own TSDoc).
  *
  * @param options - See {@link M3LRunSubsystemOptions}.
  * @returns The wired {@link M3LRunSubsystem}.
@@ -152,7 +206,13 @@ export function createRunSubsystem(
   });
   const policy = createConfirmationPolicy();
   const audit = createLoggerAuditSink(logger);
-  const events = createLoggerRunEventSink(logger);
+  const eventHub = createEventStreamHub<M3LRunEvent>({
+    bufferSize: config.streamRetention,
+  });
+  const events = createCompositeRunEventSink(
+    [createLoggerRunEventSink(logger), createStreamRunEventSink(eventHub)],
+    logger,
+  );
   const spawnExecutor = createSpawnExecutor({
     killTimeoutMs: config.killTimeoutMs,
   });
@@ -172,8 +232,30 @@ export function createRunSubsystem(
 
   return {
     orchestrator,
-    drain(): Promise<void> {
-      return orchestrator.drain();
+    eventHub,
+    async drain(): Promise<void> {
+      // Order is deliberate, not arbitrary, WHEN THIS METHOD RUNS ON ITS OWN
+      // (e.g. a direct `drain()` call with no shutdown sequence in front of
+      // it — see `endStreams()`'s own TSDoc for the composed-shutdown case,
+      // where `endStreams()` has already run by the time this executes, and
+      // the `endAll` below is consequently a no-op safety net rather than the
+      // first end). In that standalone case, `orchestrator.drain()` MUST run
+      // first: draining aborts every in-flight run, and each aborted run
+      // still publishes its own terminal `run.ended` through `events` above
+      // — which `stream-events.ts`'s sink turns into a `stream.end("completed")`
+      // for that run's watcher (addendum Correction 2). Ending every stream
+      // here FIRST would mean that sink's own `stream.ended` guard silently
+      // swallows every one of those terminal events, so a watcher would
+      // learn the server is shutting down but never learn what actually
+      // happened to the run it was watching. Draining first lets each
+      // watched run deliver its real outcome; `endAll("draining")` then
+      // closes whatever is still open (a run with no live watcher, or one
+      // that never reached a terminal event at all).
+      await orchestrator.drain();
+      eventHub.endAll("draining");
+    },
+    endStreams(): void {
+      eventHub.endAll("draining");
     },
   };
 }

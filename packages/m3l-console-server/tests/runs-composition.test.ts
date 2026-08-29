@@ -31,11 +31,13 @@ import type {
   M3LRunSubsystem,
   M3LRunSubsystemOptions,
 } from "../src/runs/composition.js";
+import type { M3LRunEvent } from "../src/runs/events.js";
 import type {
   M3LRunOrchestrator,
   M3LRunOrchestratorConfig,
 } from "../src/runs/orchestrator.js";
 import type { M3LRunRegistry } from "../src/runs/registry.js";
+import type { M3LEventStreamHub } from "../src/stream/event-stream.js";
 import type {
   M3LRunFinish,
   M3LRunInsert,
@@ -356,7 +358,9 @@ describe("M3LRunSubsystemOptions / M3LRunSubsystem", () => {
 
     expectTypeOf<M3LRunSubsystem>().toEqualTypeOf<{
       readonly orchestrator: M3LRunOrchestrator;
+      readonly eventHub: M3LEventStreamHub<M3LRunEvent>;
       drain(): Promise<void>;
+      endStreams(): void;
     }>();
   });
 });
