@@ -91,6 +91,20 @@ describe("validateBindingValue — multiSelect: true, array-of-shape checks", ()
   });
 });
 
+describe("validateBindingValue — expectedType outside the compile-time union", () => {
+  test("exercises the exhaustiveness-check default branch, unreachable through the typed public API — coverage only", () => {
+    const offUnionExpectedType =
+      "unknown-type" as unknown as M3LBindingExpectedType;
+
+    expect(() =>
+      validateBindingValue("anything", {
+        expectedType: offUnionExpectedType,
+        multiSelect: false,
+      }),
+    ).not.toThrow();
+  });
+});
+
 describe("validateBindingValue — never throws", () => {
   test.each<[unknown]>([
     [undefined],
