@@ -27,11 +27,11 @@ import {
 
 import { M3LOperationAbortedError } from "../../core/errors/index.js";
 
-import { readCallerValueOrElse } from "./document.js";
 import {
   M3LBedrockRuntimeNoModelError,
   M3LBedrockRuntimeOperationError,
 } from "./error.js";
+import { sanitizeForMessage } from "./message-safety.js";
 import {
   buildConverseInput,
   buildRetryRunner,
@@ -42,6 +42,7 @@ import {
   STOP_REASON_LOOKUP,
 } from "./shared.js";
 import { invokeStream as invokeStreamImpl } from "./stream.js";
+import { buildStreamSafeRequest } from "./stream-guard.js";
 import {
   buildToolConfig,
   mapNarrowedToolUse,
@@ -192,13 +193,13 @@ function mapConverseResponse(
     !isCompleteUsage(usage)
   ) {
     throw new M3LBedrockRuntimeOperationError(
-      `Converse response for model ${modelId} was missing output/stopReason/usage`,
+      `Converse response for model ${sanitizeForMessage(modelId)} was missing output/stopReason/usage`,
     );
   }
 
   if (!STOP_REASON_LOOKUP.has(stopReason)) {
     throw new M3LBedrockRuntimeOperationError(
-      `Converse response for model ${modelId} had an unrecognized stopReason`,
+      `Converse response for model ${sanitizeForMessage(modelId)} had an unrecognized stopReason`,
     );
   }
 
@@ -209,7 +210,7 @@ function mapConverseResponse(
     mappedContent.toolUseMappedCount === 0
   ) {
     throw new M3LBedrockRuntimeOperationError(
-      `Converse response for model ${modelId} had stopReason tool_use but every toolUse-shaped content block (${mappedContent.toolUseShapedCount}) was malformed`,
+      `Converse response for model ${sanitizeForMessage(modelId)} had stopReason tool_use but every toolUse-shaped content block (${mappedContent.toolUseShapedCount}) was malformed`,
     );
   }
 
@@ -471,74 +472,7 @@ export class M3LBedrockRuntimeOperations {
     request: M3LBedrockInvokeRequest,
     options?: M3LBedrockInvokeOptions,
   ): AsyncGenerator<M3LBedrockStreamEvent, void, void> {
-    if (hasUnsupportedStreamingContent(request)) {
-      throw new M3LBedrockRuntimeOperationError(
-        "invokeStream does not support tools/toolChoice or non-text message content blocks — streaming tool-use is out of scope for V5; use invoke() instead",
-        { origin: "caller", retryable: false },
-      );
-    }
-    yield* invokeStreamImpl(this.#client, this.#models, request, options);
+    const safeRequest = buildStreamSafeRequest(request);
+    yield* invokeStreamImpl(this.#client, this.#models, safeRequest, options);
   }
-}
-
-/**
- * Returns `true` when `request` is unsupported by `invokeStream`'s
- * text-only scope: it carries an own `tools`/`toolChoice` property (even
- * though its declared type, {@link M3LBedrockInvokeRequest}, has neither
- * field), OR any `messages[].content` block is not `type: "text"`.
- *
- * The `tools`/`toolChoice` half of this guard is load-bearing, not
- * decorative: a compile probe confirmed that TypeScript's structural typing
- * rejects a tool-bearing **object literal** passed directly to
- * `invokeStream` (an excess-property error — see the dedicated
- * `@ts-expect-error` test), but still **admits** a structurally-typed
- * non-literal `M3LBedrockToolInvokeRequest` value assigned through a
- * variable or a downcast, since structural width subtyping only rejects
- * excess properties on literals. Without this runtime check, that
- * non-literal case would silently reach `stream.ts` and have its
- * `tools`/`toolChoice` fields dropped mid-stream rather than refused.
- *
- * The content-block half exists for the same reason at a different seam:
- * `M3LBedrockInvokeRequest.messages[].content` is typed
- * {@link M3LBedrockContentBlock}, which V5 widened to include `toolUse`/
- * `toolResult` — nothing in `stream.ts` (frozen for this fix — see
- * `docs/reference/aws/bedrock-runtime.md`) rejects one of those blocks
- * inside `messages`, so without this check here a caller-constructed
- * request carrying one would flow unchallenged into `ConverseStream`.
- * Checking own top-level `tools`/`toolChoice` alone (the previous shape of
- * this guard) does not cover that case.
- */
-function hasUnsupportedStreamingContent(
-  request: M3LBedrockInvokeRequest,
-): boolean {
-  if (Object.hasOwn(request, "tools") || Object.hasOwn(request, "toolChoice")) {
-    return true;
-  }
-  // Guarded (M2, round 3): a malformed/duck-typed `messages`/`content` (no
-  // real `.some()`) must surface as this module's typed error, never a raw
-  // `TypeError` escaping `invokeStream()`.
-  try {
-    return request.messages.some((message) =>
-      message.content.some((block) => !isTextTypeBlock(block)),
-    );
-  } catch (cause) {
-    throw new M3LBedrockRuntimeOperationError(
-      "invokeStream could not read request.messages/content",
-      { origin: "caller", retryable: false, cause },
-    );
-  }
-}
-
-/**
- * Returns `true` when `block.type === "text"`, `false` for any other value
- * OR when reading `.type` itself throws. `block` is caller-supplied data —
- * `.type` could be a throwing getter — so the read is guarded rather than
- * compared directly (`block.type !== "text"`); an unreadable discriminant is
- * treated the same as a non-`"text"` one, which is exactly what this
- * function's only caller, {@link hasUnsupportedStreamingContent}, already
- * does for a genuine non-text block (refuse streaming with a typed error
- * rather than let a raw exception escape `invokeStream`).
- */
-function isTextTypeBlock(block: M3LBedrockContentBlock): boolean {
-  return readCallerValueOrElse(() => block.type === "text", false);
 }

@@ -37,13 +37,17 @@ const HEX_ESCAPE_DIGIT_COUNT = 2;
  * Matches every C0/C1 control character — including `\n`/`\r` (log-line
  * forging) and ESC `\x1B` (the lead byte of every ANSI escape sequence) —
  * plus U+2028/U+2029 (LINE/PARAGRAPH SEPARATOR, treated as line terminators
- * by some log viewers even though `\n`-splitting code ignores them) and
- * U+202E (RIGHT-TO-LEFT OVERRIDE, which can visually reorder the rest of a
- * rendered message) (Should-fix #3, 2026-08-29 security pass round 3).
+ * by some log viewers even though `\n`-splitting code ignores them),
+ * U+202D/U+202E (LEFT-/RIGHT-TO-LEFT OVERRIDE, either of which can visually
+ * reorder the rest of a rendered message), and U+2066–U+2069 (the
+ * directional-isolate formatting characters LRI/RLI/FSI/PDI, which can
+ * scope a reordering override to an attacker-chosen span without an
+ * unpaired override character — Should-fix #2, 2026-08-29 security pass
+ * round 5, widening round 3's Should-fix #3).
  */
 const UNSAFE_CONTROL_CHAR_PATTERN =
   // eslint-disable-next-line no-control-regex -- matches control characters so they can be escaped; the rule is inapplicable here.
-  /[\u0000-\u001f\u007f-\u009f\u2028\u2029\u202e]/g;
+  /[\u0000-\u001f\u007f-\u009f\u2028\u2029\u202d\u202e\u2066-\u2069]/g;
 
 /**
  * Renders a caller/model-controlled string safely for interpolation into an

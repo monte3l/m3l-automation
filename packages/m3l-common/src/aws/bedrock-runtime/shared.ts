@@ -1,10 +1,12 @@
 /**
- * `aws/bedrock-runtime/shared` — machinery genuinely shared by both
+ * `aws/bedrock-runtime/shared` -- machinery genuinely shared by both
  * `client.ts` (`M3LBedrockRuntimeOperations.invoke`) and `stream.ts`
  * (`invokeStream`'s implementation): abort-signal helpers, the SDK
  * exception-`name` classifier, the retry-runner construction, the
  * `ConverseCommandInput`/`ConverseStreamCommandInput`-shared request
- * mapping, and the closed {@link M3LBedrockStopReason} membership check.
+ * mapping (delegated to `field-readers.ts`'s exhaustive field table -- see
+ * that module's doc comment), and the closed {@link M3LBedrockStopReason}
+ * membership check.
  *
  * Split out as its own leaf module (rather than living in `client.ts`, with
  * `stream.ts` importing from it) specifically to avoid a `client.ts` ⇄
@@ -12,7 +14,7 @@
  * `invokeStream` for `M3LBedrockRuntimeOperations.invokeStream()`'s thin
  * delegation, so `stream.ts` cannot also import from `client.ts`
  * (`import-x/no-cycle`, `maxDepth: Infinity`, is a hard repo-wide gate).
- * Internal module — nothing here is re-exported through
+ * Internal module -- nothing here is re-exported through
  * `aws/bedrock-runtime/index`.
  *
  * @packageDocumentation
@@ -25,32 +27,21 @@ import { combineClassifiers } from "../../core/polling/classifiers.js";
 import { M3LRetryRunner } from "../../core/polling/M3LRetryRunner.js";
 import type { M3LRetryClassifier } from "../../core/polling/M3LRetryRunner.js";
 
+import { DocumentCopyBudget } from "./document.js";
 import {
   M3LBedrockRuntimeModelError,
   M3LBedrockRuntimeOperationError,
 } from "./error.js";
-import {
-  copyDocument,
-  DocumentCopyBudget,
-  readCallerString,
-  readCallerValue,
-  requireCallerArray,
-} from "./document.js";
-import type { M3LBedrockPlainDocument } from "./document.js";
+import { buildRequestFields } from "./field-readers.js";
+import type { ConverseInput } from "./field-readers.js";
 import { sanitizeForMessage } from "./message-safety.js";
 import type {
-  M3LBedrockContentBlock,
   M3LBedrockInvokeRequest,
-  M3LBedrockMessage,
   M3LBedrockRuntimeRole,
   M3LBedrockStopReason,
-  M3LBedrockTextBlock,
-  M3LBedrockToolResultBlock,
-  M3LBedrockToolResultContent,
-  M3LBedrockToolResultJsonBlock,
-  M3LBedrockToolResultStatus,
-  M3LBedrockToolUseBlock,
 } from "./types.js";
+
+export type { ConverseInput } from "./field-readers.js";
 
 /** Retry-runner backoff tuning: 200ms start, 5s cap (matches `M3LPollingPolicies.awsThrottling()`). */
 const RETRY_START_MS = 200;
@@ -62,7 +53,7 @@ const SAME_MODEL_RETRY_NAMES: ReadonlySet<string> = new Set([
   "InternalServerException",
 ]);
 
-/** SDK exception names that advance fallback immediately — no same-model retry. */
+/** SDK exception names that advance fallback immediately -- no same-model retry. */
 const ADVANCE_FALLBACK_NAMES: ReadonlySet<string> = new Set([
   "ModelNotReadyException",
   "ModelTimeoutException",
@@ -79,7 +70,7 @@ const CALLER_FAULT_NAMES: ReadonlySet<string> = new Set([
 
 /**
  * The nine canonical {@link M3LBedrockStopReason} members, as a `Record`
- * rather than a hand-listed array — mirroring `internal/logging/levels.ts`'s
+ * rather than a hand-listed array -- mirroring `internal/logging/levels.ts`'s
  * `LOG_LEVEL_FLOOR_MEMBERS` idiom. This makes the vocabulary a
  * **compile-time exhaustiveness check**: widening or narrowing
  * `M3LBedrockStopReason` without updating this object is a missing- or
@@ -102,7 +93,7 @@ const STOP_REASON_MEMBERS: Record<M3LBedrockStopReason, true> = {
  * Fast membership lookup for the closed {@link M3LBedrockStopReason}
  * vocabulary. AWS's Smithy enums are open at the wire level, so a
  * `stopReason` outside this set is a genuinely unexpected AWS response
- * shape, not a client-side type error — see `client.ts`'s
+ * shape, not a client-side type error -- see `client.ts`'s
  * `mapConverseResponse` and `stream.ts`'s `isKnownStopReason`.
  */
 export const STOP_REASON_LOOKUP: ReadonlySet<string> = new Set(
@@ -134,9 +125,9 @@ export function readErrorName(err: unknown): string | undefined {
 
 /**
  * Classifies a thrown value by SDK exception `name`: retriable exactly for
- * {@link SAME_MODEL_RETRY_NAMES}, `"unknown"` for everything else — including
+ * {@link SAME_MODEL_RETRY_NAMES}, `"unknown"` for everything else -- including
  * names this module's own catch-based classification handles by advancing
- * fallback or throwing directly (never `"fatal"` here — the runner's own
+ * fallback or throwing directly (never `"fatal"` here -- the runner's own
  * `unknownDecision: "fatal"` is what actually stops the runner and rethrows
  * the original error unchanged).
  */
@@ -152,7 +143,7 @@ const bedrockSameModelRetryClassifier: M3LRetryClassifier = (err: unknown) => {
  * so `signal` can be threaded per call (matching `aws/athena/client.ts`'s
  * per-call runner pattern). Retries only `ThrottlingException`/
  * `InternalServerException` by name, over the same backoff as
- * `M3LPollingPolicies.awsThrottling()` — deliberately NOT that policy's
+ * `M3LPollingPolicies.awsThrottling()` -- deliberately NOT that policy's
  * broader status-code classifier, which would incorrectly retry a 503
  * `ServiceUnavailableException` on the same model (see
  * `docs/reference/aws/bedrock-runtime.md`'s "Retry classifier note").
@@ -169,361 +160,34 @@ export function buildRetryRunner(
 }
 
 /**
- * The shape one mapped {@link M3LBedrockContentBlock} takes in
- * `ConverseCommandInput.messages[].content` — a 3-arm union mirroring the
- * SDK's `ContentBlock`'s `text`/`toolUse`/`toolResult` members exactly (see
- * `types.ts`'s "Why the tool discriminants are camelCase" note). Declared
- * locally, rather than importing the SDK's own `ContentBlock`, so this
- * module states exactly the subset it produces.
+ * Renders `modelId` safely for interpolation into an error message
+ * (Should-fix #1, 2026-08-29 security pass round 5): `modelId` normally
+ * comes from this instance's own configured `models[]` list, but
+ * `classifySendFailure` has no way to distinguish that from a future call
+ * site threading a caller-influenced value through, and an uncapped/raw
+ * interpolation here is exactly the M2/M4 pattern this round closed
+ * everywhere else. Cheap defense in depth: `sanitizeForMessage` is a no-op
+ * in both cost and output for the short, printable model ids this module
+ * actually sees.
  */
-type SdkContentItem =
-  | { readonly text: string }
-  | {
-      readonly toolUse: {
-        readonly toolUseId: string;
-        readonly name: string;
-        // `| undefined`, never optional (`?:`) — mirrors the SDK's own
-        // `ToolUseBlock.input` field exactly (`__DocumentType | undefined`,
-        // a REQUIRED property whose value can be `undefined`; under this
-        // repo's `exactOptionalPropertyTypes`, an optional `input?:` field
-        // is NOT structurally assignable to that required field, so this
-        // must stay a required property). The value itself is `undefined`
-        // whenever `block.input` is `undefined` (e.g. replaying a
-        // no-argument tool call from conversation history — see
-        // `types.ts`'s `M3LBedrockToolUseBlock.input` doc) — never derived
-        // by calling `copyDocument` on `undefined`, which throws (not
-        // JSON-serializable) (R2-2, 2026-08-29 security pass).
-        readonly input: M3LBedrockPlainDocument | undefined;
-      };
-    }
-  | {
-      readonly toolResult: {
-        readonly toolUseId: string;
-        // NOT `readonly (...)[]` — the SDK's `ToolResultBlock.content` field
-        // is a plain mutable array (`ToolResultContentBlock[] | undefined`);
-        // a `readonly` array type is not assignable to it, and this literal
-        // is what `client.ts`/`stream.ts` hand straight to `new
-        // ConverseCommand(...)`.
-        readonly content: (
-          { readonly text: string } | { readonly json: M3LBedrockPlainDocument }
-        )[];
-        readonly status?: M3LBedrockToolResultStatus;
-      };
-    };
-
-/**
- * Formats an already-read discriminant value for a diagnosable-but-safe
- * error message, once an exhaustive `switch`'s `default` arm has determined
- * `value` doesn't match any recognized member.
- *
- * `value` here is the SAME read this module's callers already performed
- * (once, guarded) to select their `switch` — never re-read here, since the
- * value's own `.type`-style property access is exactly what a throwing
- * getter could hijack; formatting a plain value already in hand cannot
- * trigger that. It is never trusted or interpolated whole (`String(value)`
- * on a string-typed content block would leak the block's full
- * caller-supplied text into `error.message`, which `M3LError.toJSON()`
- * projects into a log sink) — only a string value is read, through
- * `sanitizeForMessage` (length-capped, control-character-escaped) rather
- * than raw, since an uncapped value would let a 200 KB string produce a
- * 400 KB `toJSON()` and let ANSI/newline injection reach a log sink (M2
- * finding, 2026-08-29 security pass).
- */
-function formatDiscriminant(value: unknown): string {
-  return typeof value === "string" ? sanitizeForMessage(value) : "unknown";
-}
-
-/**
- * Maps one {@link M3LBedrockToolResultContent} member to the SDK's
- * `ToolResultContentBlock` shape, recursively copying a `json` payload — see
- * `document.ts`'s `copyDocument`.
- *
- * `item` is caller-supplied data, so `item.type` could be a throwing
- * getter. It is read exactly once, inside the `try`/`catch` below, into
- * `discriminant` — a bare `switch (item.type)` would read `.type`
- * unprotected, letting a throwing getter's exception escape as a raw
- * `Error` before this function's own `default` arm (and its typed error) is
- * ever reached; re-reading `.type` a second time there (e.g. for the error
- * message) would suffer the exact same problem one statement later. Do not
- * inline this back into the `switch` line.
- */
-function mapToolResultContentItem(
-  item: M3LBedrockToolResultContent,
-  budget: DocumentCopyBudget,
-): { readonly text: string } | { readonly json: M3LBedrockPlainDocument } {
-  let discriminant: M3LBedrockToolResultContent["type"];
-  try {
-    discriminant = item.type;
-  } catch (cause) {
-    // Structurally caller-side, same as the `default` arm below.
-    throw new M3LBedrockRuntimeOperationError(
-      "unhandled tool-result content type: reading the discriminant raised an unexpected error",
-      { origin: "caller", retryable: false, cause },
-    );
-  }
-  switch (discriminant) {
-    case "text":
-      return {
-        text: readCallerString(
-          () => (item as M3LBedrockTextBlock).text,
-          "a toolResult content item's text",
-        ),
-      };
-    case "json": {
-      const json = readCallerValue(
-        () => (item as M3LBedrockToolResultJsonBlock).json,
-        "a toolResult content item's json",
-      );
-      return { json: copyDocument(json, 0, budget) };
-    }
-    default: {
-      const exhaustive: never = discriminant;
-      // A `never`-arm violation is structurally caller-side — this value
-      // was constructed (or passed through) by the caller, not received
-      // from the model — so `origin: caller`, `retryable: false` overrides
-      // the catalog default.
-      throw new M3LBedrockRuntimeOperationError(
-        `unhandled tool-result content type: ${formatDiscriminant(exhaustive)}`,
-        { origin: "caller", retryable: false },
-      );
-    }
-  }
-}
-
-/**
- * Maps one {@link M3LBedrockContentBlock} to `ConverseCommandInput`'s
- * per-block shape. An exhaustive `switch` over the 3-member union — adding
- * a fourth member becomes a compile error here, not a silent drop.
- *
- * `toolUse.input` is recursively copied via `document.ts`'s `copyDocument` —
- * the same treatment as `inputSchema` and a `json` tool-result payload —
- * rather than cast directly to {@link M3LBedrockPlainDocument}: a `toolUse`
- * block can be caller-constructed (e.g. replaying conversation history
- * programmatically), so `block.input` is not guaranteed to already be a
- * document-shaped value the SDK's mutable `DocumentType` boundary can
- * safely walk. A bare cast would let a caller-supplied bigint/function/cycle
- * escape as a raw `TypeError`/`RangeError` instead of this module's typed
- * error. `copyDocument` is only called when `block.input !== undefined` —
- * an absent `input` (a no-argument tool call replayed as history) is
- * legitimate per `types.ts`'s `M3LBedrockToolUseBlock.input` doc comment,
- * and `copyDocument` itself throws on `undefined` (not JSON-serializable),
- * so `input` is set to `undefined` directly rather than derived by copying
- * it in that case (R2-2, 2026-08-29 security pass) — the key itself stays
- * present, matching the SDK's own `ToolUseBlock.input` field exactly (a
- * required `__DocumentType | undefined` property, not an optional one; see
- * {@link SdkContentItem}'s comment). `toolResult.status` is included only
- * when present (a conditional spread, never a key set to `undefined` —
- * `exactOptionalPropertyTypes`).
- *
- * `block` is caller-supplied data, so `block.type` could be a throwing
- * getter — see {@link mapToolResultContentItem}'s analogous note. It is
- * read exactly once, inside the `try`/`catch` below, into `discriminant`;
- * do not inline this back into the `switch` line.
- */
-function mapToolUseBlockToSdk(
-  block: M3LBedrockToolUseBlock,
-  budget: DocumentCopyBudget,
-): SdkContentItem {
-  const toolUseId = readCallerString(
-    () => block.toolUseId,
-    "a toolUse block's toolUseId",
-  );
-  const name = readCallerString(() => block.name, "a toolUse block's name");
-  const input = readCallerValue(() => block.input, "a toolUse block's input");
-  return {
-    toolUse: {
-      toolUseId,
-      name,
-      input: input === undefined ? undefined : copyDocument(input, 0, budget),
-    },
-  };
-}
-
-/** {@link mapContentBlockToSdk}'s `toolResult` arm, split out to keep the parent function's line/complexity count under the repo's lint ceiling. */
-function mapToolResultBlockToSdk(
-  block: M3LBedrockToolResultBlock,
-  budget: DocumentCopyBudget,
-): SdkContentItem {
-  const toolUseId = readCallerString(
-    () => block.toolUseId,
-    "a toolResult block's toolUseId",
-  );
-  const rawContent = readCallerValue(
-    () => block.content,
-    "a toolResult block's content",
-  );
-  const content = requireCallerArray<M3LBedrockToolResultContent>(
-    rawContent,
-    "a toolResult block's content",
-  );
-  const contentCount = content.length;
-  const mappedContent: (
-    { readonly text: string } | { readonly json: M3LBedrockPlainDocument }
-  )[] = [];
-  for (let index = 0; index < contentCount; index += 1) {
-    mappedContent.push(
-      mapToolResultContentItem(
-        content[index] as M3LBedrockToolResultContent,
-        budget,
-      ),
-    );
-  }
-  const status = readCallerValue(
-    () => block.status,
-    "a toolResult block's status",
-  );
-  if (status !== undefined && status !== "success" && status !== "error") {
-    throw new M3LBedrockRuntimeOperationError(
-      `a toolResult block's status must be "success" or "error"`,
-      { origin: "caller", retryable: false },
-    );
-  }
-  return {
-    toolResult: {
-      toolUseId,
-      content: mappedContent,
-      ...(status !== undefined && { status }),
-    },
-  };
-}
-
-function mapContentBlockToSdk(
-  block: M3LBedrockContentBlock,
-  budget: DocumentCopyBudget,
-): SdkContentItem {
-  let discriminant: M3LBedrockContentBlock["type"];
-  try {
-    discriminant = block.type;
-  } catch (cause) {
-    throw new M3LBedrockRuntimeOperationError(
-      "unhandled content block type: reading the discriminant raised an unexpected error",
-      { origin: "caller", retryable: false, cause },
-    );
-  }
-  switch (discriminant) {
-    case "text":
-      return {
-        text: readCallerString(
-          () => (block as M3LBedrockTextBlock).text,
-          "a content block's text",
-        ),
-      };
-    case "toolUse":
-      return mapToolUseBlockToSdk(block as M3LBedrockToolUseBlock, budget);
-    case "toolResult":
-      return mapToolResultBlockToSdk(
-        block as M3LBedrockToolResultBlock,
-        budget,
-      );
-    default: {
-      const exhaustive: never = discriminant;
-      // See `mapToolResultContentItem`'s analogous note: a `never`-arm
-      // violation here is structurally caller-side.
-      throw new M3LBedrockRuntimeOperationError(
-        `unhandled content block type: ${formatDiscriminant(exhaustive)}`,
-        { origin: "caller", retryable: false },
-      );
-    }
-  }
-}
-
-/**
- * Converts a {@link M3LBedrockMessage} into the shape
- * `ConverseCommandInput.messages` expects — `role`/`content` are guarded,
- * validated reads; `content` is walked with an index loop, never `.map()`
- * (M1/M2/M3, round 3).
- */
-function toSdkMessage(
-  message: M3LBedrockMessage,
-  budget: DocumentCopyBudget,
-): {
-  role: M3LBedrockRuntimeRole;
-  content: SdkContentItem[];
-} {
-  const role = readCallerString(() => message.role, "a message's role");
-  if (role !== "user" && role !== "assistant") {
-    throw new M3LBedrockRuntimeOperationError(
-      `a message's role must be "user" or "assistant"`,
-      { origin: "caller", retryable: false },
-    );
-  }
-  const rawContent = readCallerValue(
-    () => message.content,
-    "a message's content",
-  );
-  const content = requireCallerArray<M3LBedrockContentBlock>(
-    rawContent,
-    "a message's content",
-  );
-  const contentCount = content.length;
-  const mapped: SdkContentItem[] = [];
-  for (let index = 0; index < contentCount; index += 1) {
-    mapped.push(
-      mapContentBlockToSdk(content[index] as M3LBedrockContentBlock, budget),
-    );
-  }
-  return { role, content: mapped };
-}
-
-/**
- * Maps `inferenceConfig.stopSequences` into a fresh mutable `string[]`,
- * `undefined` when `raw` is — never `[...raw]` (a spread invokes the
- * value's own iterator, the same bypass class as `.map()`), and validates
- * each entry is a `string` (M1/M2/M3, round 3).
- */
-function mapStopSequences(
-  raw: readonly string[] | undefined,
-): string[] | undefined {
-  if (raw === undefined) return undefined;
-  const list = requireCallerArray<unknown>(
-    raw,
-    "inferenceConfig.stopSequences",
-  );
-  const count = list.length;
-  const result: string[] = [];
-  for (let index = 0; index < count; index += 1) {
-    result.push(readCallerString(() => list[index], "a stopSequences entry"));
-  }
-  return result;
-}
-
-/**
- * Shape shared by `ConverseCommandInput` and `ConverseStreamCommandInput`
- * for this slice — both request types are field-identical for the
- * `modelId`/`messages`/`system`/`inferenceConfig`/`toolConfig` surface this
- * wrapper exposes. `toolConfig` is only ever populated by `client.ts`
- * (`invoke`'s `M3LBedrockToolInvokeRequest`) — `stream.ts` never supplies
- * one, since `invokeStream` keeps the narrower V4 request type.
- */
-export interface ConverseInput {
-  readonly modelId: string;
-  readonly messages: {
-    role: M3LBedrockRuntimeRole;
-    content: SdkContentItem[];
-  }[];
-  readonly system?: { text: string }[];
-  readonly inferenceConfig?: {
-    readonly maxTokens?: number;
-    readonly temperature?: number;
-    readonly topP?: number;
-    readonly stopSequences?: string[];
-  };
-  readonly toolConfig?: ToolConfiguration;
+function safeModelId(modelId: string): string {
+  return sanitizeForMessage(modelId);
 }
 
 /**
  * Builds the plain request-input object shared by `client.ts`'s
- * `buildConverseCommand` and `stream.ts`'s `buildConverseStreamCommand` —
+ * `buildConverseCommand` and `stream.ts`'s `buildConverseStreamCommand` --
  * `ConverseCommandInput` and `ConverseStreamCommandInput` are field-identical
- * for this slice's surface. `system`, `inferenceConfig`, and `toolConfig`
- * are included only when present — a conditional spread, never a key set to
- * `undefined` (`exactOptionalPropertyTypes` convention).
- * `inferenceConfig.stopSequences` is copied into a fresh mutable array since
- * the SDK's field is `string[] | undefined`, not `readonly string[]`.
+ * for this slice's surface. Delegates the actual field-by-field
+ * construction to `field-readers.ts`'s {@link buildRequestFields} -- see
+ * that module's doc comment for the exhaustive-field-table mechanism this
+ * function is a thin, stable entry point over (kept here, rather than
+ * re-pointing every import, so `stream.ts` -- frozen -- and `client.ts`
+ * keep importing `buildConverseInput` from this file unchanged).
  *
  * `toolConfig` is already-built (via `tools.ts`'s `buildToolConfig`, called
  * once by `client.ts`'s `invoke` before the fallback loop) rather than
- * derived from `request` here — `request`'s own type stays
+ * derived from `request` here -- `request`'s own type stays
  * `M3LBedrockInvokeRequest`, so `stream.ts` can keep calling this function
  * without ever naming `tools`/`toolChoice`.
  */
@@ -532,51 +196,12 @@ export function buildConverseInput(
   request: M3LBedrockInvokeRequest,
   toolConfig?: ToolConfiguration,
 ): ConverseInput {
-  const inferenceConfig = request.inferenceConfig;
-  // One budget shared across every message's content (Should-fix #1).
-  const budget = new DocumentCopyBudget();
-  const rawMessages = readCallerValue(
-    () => request.messages,
-    "request.messages",
-  );
-  const messages = requireCallerArray<M3LBedrockMessage>(
-    rawMessages,
-    "request.messages",
-  );
-  const messageCount = messages.length;
-  const mappedMessages: {
-    role: M3LBedrockRuntimeRole;
-    content: SdkContentItem[];
-  }[] = [];
-  for (let index = 0; index < messageCount; index += 1) {
-    mappedMessages.push(
-      toSdkMessage(messages[index] as M3LBedrockMessage, budget),
-    );
-  }
-  const stopSequences = mapStopSequences(inferenceConfig?.stopSequences);
-
-  return {
+  return buildRequestFields({
     modelId,
-    messages: mappedMessages,
-    ...(request.system !== undefined && {
-      system: [{ text: request.system }],
-    }),
-    ...(inferenceConfig !== undefined && {
-      inferenceConfig: {
-        ...(inferenceConfig.maxTokens !== undefined && {
-          maxTokens: inferenceConfig.maxTokens,
-        }),
-        ...(inferenceConfig.temperature !== undefined && {
-          temperature: inferenceConfig.temperature,
-        }),
-        ...(inferenceConfig.topP !== undefined && {
-          topP: inferenceConfig.topP,
-        }),
-        ...(stopSequences !== undefined && { stopSequences }),
-      },
-    }),
-    ...(toolConfig !== undefined && { toolConfig }),
-  };
+    request,
+    toolConfig,
+    budget: new DocumentCopyBudget(),
+  });
 }
 
 /**
@@ -596,17 +221,17 @@ export function mapRole(role: string | undefined): M3LBedrockRuntimeRole {
  * See the fault-handling table in `docs/reference/aws/bedrock-runtime.md`.
  *
  * `ThrottlingException`/`InternalServerException` reach this function only
- * after {@link buildRetryRunner}'s retries are exhausted — that exhaustion
+ * after {@link buildRetryRunner}'s retries are exhausted -- that exhaustion
  * always advances fallback, never throws
  * {@link M3LBedrockRuntimeOperationError} (see the doc's "highest-value
  * regression" test).
  *
- * @returns `error` unchanged, for the two advance-fallback tiers — the
+ * @returns `error` unchanged, for the two advance-fallback tiers -- the
  *   caller threads it through as `M3LBedrockRuntimeNoModelError`'s `cause`
  *   on eventual fallback exhaustion.
  * @throws {@link M3LBedrockRuntimeModelError} For `ModelErrorException`
  *   (single-shot, from `send()`) or `ModelStreamErrorException` (streaming,
- *   only ever observed from iterating a stream — `invoke` never sees this
+ *   only ever observed from iterating a stream -- `invoke` never sees this
  *   name since it never reaches `send()` for `ConverseStreamCommand`).
  * @throws {@link M3LBedrockRuntimeOperationError} For a caller/permission
  *   fault or any other unclassified rejection.
@@ -622,18 +247,18 @@ export function classifySendFailure(error: unknown, modelId: string): unknown {
   }
   if (name === "ModelErrorException" || name === "ModelStreamErrorException") {
     throw new M3LBedrockRuntimeModelError(
-      `model ${modelId} faulted while processing the request`,
+      `model ${safeModelId(modelId)} faulted while processing the request`,
       { modelId, cause: error },
     );
   }
   if (name !== undefined && CALLER_FAULT_NAMES.has(name)) {
     throw new M3LBedrockRuntimeOperationError(
-      `Converse request rejected for model ${modelId}`,
+      `Converse request rejected for model ${safeModelId(modelId)}`,
       { cause: error, origin: "caller", retryable: false },
     );
   }
   throw new M3LBedrockRuntimeOperationError(
-    `Converse request failed for model ${modelId}`,
+    `Converse request failed for model ${safeModelId(modelId)}`,
     { cause: error },
   );
 }

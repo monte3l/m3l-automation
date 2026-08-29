@@ -91,6 +91,54 @@ export class DocumentCopyBudget {
 }
 
 /**
+ * Charges one {@link DocumentCopyBudget} unit for pulling one element out of
+ * a caller-supplied array (a message, a content block, a tool, a stop
+ * sequence, ...) -- sharing the SAME counter/ceiling {@link copyDocument}
+ * already uses for constructed document nodes, deliberately, rather than a
+ * second independent ceiling (Should-fix #3, 2026-08-29 security pass round
+ * 5): `Array.isArray` (see {@link requireCallerArray}) says nothing about
+ * how much work a `.length` read actually licenses -- a Proxy `get` trap can
+ * report a huge `length` while returning cheap values per index, and
+ * without a per-element charge every request-build loop (messages,
+ * content, tools, stop sequences) had no ceiling of its own at all. Proven:
+ * a ~150-byte Proxy drove a 65 MB request body and a 331 MB heap before
+ * this charge existed.
+ *
+ * @throws {@link M3LBedrockRuntimeOperationError} (`origin: caller`,
+ *   `retryable: false`) once the shared ceiling is exceeded.
+ */
+export function chargeElementBudget(
+  budget: DocumentCopyBudget,
+  fieldLabel: string,
+): void {
+  if (budget.visit()) {
+    throw new M3LBedrockRuntimeOperationError(
+      `request build exceeded ${MAX_DOCUMENT_NODES} constructed nodes/elements while reading ${fieldLabel} -- a caller-supplied array can report far more elements than it actually holds`,
+      { origin: "caller", retryable: false },
+    );
+  }
+}
+
+/**
+ * Reads one element out of an already-{@link requireCallerArray}-guarded
+ * array through {@link readCallerValue}'s try/catch, rather than a raw
+ * `array[index]` -- a Proxy `get` trap can throw on one SPECIFIC numeric
+ * index while every other index reads cleanly, which a bare index
+ * expression would let escape as a raw, un-typed error (M6, 2026-08-29
+ * security pass round 5). Generalizes the guarded-read pattern this
+ * module's stop-sequence handling already used for every other
+ * caller-array element read in `field-readers.ts`'s/`tools.ts`'s
+ * request-build loops.
+ */
+export function readCallerElement<T>(
+  array: readonly T[],
+  index: number,
+  fieldLabel: string,
+): T {
+  return readCallerValue(() => array[index] as T, fieldLabel);
+}
+
+/**
  * A JSON-serializable document value, structurally identical to
  * `@smithy/types`' `DocumentType` (verified against installed dist-types,
  * 2026-08-29: `null | boolean | number | string | DocumentType[] | { [key: string]: DocumentType }`)
