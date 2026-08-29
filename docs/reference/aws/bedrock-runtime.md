@@ -111,11 +111,14 @@ unchanged.
 
 ⁵ `invokeStream`'s `request` stays the narrower `M3LBedrockInvokeRequest`, and
 `invokeStream` **throws** `M3LBedrockRuntimeOperationError` (`origin: caller`,
-`retryable: false`) if a structurally-typed value carrying an own `tools` or
-`toolChoice` property reaches it anyway — presence alone is enough, so
-`tools: []` is refused too — see the scope-boundary note in "Overview".
-Because `invokeStream` is an `async function*`, that throw surfaces on the
-first `.next()`, not at call time.
+`retryable: false`) in **two** cases: a structurally-typed value carrying an
+own `tools` or `toolChoice` property (presence alone is enough, so `tools: []`
+is refused too), **or** a `messages[].content` entry that is not a `text`
+block. The second case matters because `M3LBedrockContentBlock` is shared by
+both methods, so V5's widening would otherwise have let a `toolUse` block
+reach `ConverseStream` — where this wrapper has no event for it. Both cases
+throw the same message. Because `invokeStream` is an `async function*`, the
+throw surfaces on the first `.next()`, not at call time.
 
 **`AbortSignal` cancellation.** `options?.signal` is checked against a
 module-private `isAborted(signal)` helper (the ADR-0049 named-function
@@ -203,13 +206,24 @@ absent **or empty** — a conditional spread, never a key set to `undefined`
 array is therefore equivalent to an absent one, so a caller building the list
 programmatically does not have to special-case "I found no tools this run".
 
-`invokeStream`'s guard is deliberately stricter, and keys off **presence, not
-emptiness**: it refuses a request carrying an own `tools` or `toolChoice`
-property at all, including `tools: []`. The asymmetry is intentional. The
-mapping rule answers "how many tools did the caller end up with?", where
-empty and absent genuinely coincide; the guard answers "did the caller reach
-for the tool surface on a method that cannot serve it?", where passing the key
-at all signals an intent this method must refuse rather than quietly ignore.
+`invokeStream` is governed by a stricter **text-only policy**, applied by the
+same request builder that serves `invoke` rather than by a separate pre-check
+— so streaming inherits the identical reads, element budget, and
+module-owned rebuild instead of re-deriving them. The policy has two halves:
+
+1. A top-level refusal of any request carrying an own `tools` or `toolChoice`
+   property, keyed off **presence, not emptiness**, so `tools: []` is refused
+   too. The asymmetry against the mapping rule above is intentional: the
+   mapping rule answers "how many tools did the caller end up with?", where
+   empty and absent genuinely coincide, while the policy answers "did the
+   caller reach for the tool surface on a method that cannot serve it?" —
+   where passing the key at all signals an intent to refuse rather than
+   quietly ignore.
+2. A per-block refusal of any `messages[].content` entry that is not a `text`
+   block. This half exists because `M3LBedrockContentBlock` is shared by both
+   methods: without it, V5's widening would silently let a `toolUse` or
+   `toolResult` block reach `ConverseStream`, which this wrapper has no
+   stream event to represent.
 
 Two caller errors, both `M3LBedrockRuntimeOperationError`
 (`origin: caller`, `retryable: false`), both raised before anything is sent:

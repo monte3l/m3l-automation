@@ -737,7 +737,7 @@ describe("document.ts guard coverage — readCallerValue/readCallerString/requir
 });
 
 describe("field-readers.ts guard coverage — invokeStream's textOnly field-table build guards a non-array-shaped request.messages/content", () => {
-  test("invokeStream: a messages value lacking a real .some() surfaces as M3LBedrockRuntimeOperationError, never a raw TypeError, on the first .next()", async () => {
+  test("invokeStream: the text-only field-table build rejects a non-array-shaped request.messages, surfacing as M3LBedrockRuntimeOperationError, never a raw TypeError, on the first .next()", async () => {
     const { ops } = newWireOps();
     const request = {
       messages: { length: 1 },
@@ -753,7 +753,7 @@ describe("field-readers.ts guard coverage — invokeStream's textOnly field-tabl
     );
   });
 
-  test("invokeStream: a message content value lacking a real .some() surfaces as M3LBedrockRuntimeOperationError, never a raw TypeError, on the first .next()", async () => {
+  test("invokeStream: the text-only field-table build rejects a non-array-shaped message content value, surfacing as M3LBedrockRuntimeOperationError, never a raw TypeError, on the first .next()", async () => {
     const { ops } = newWireOps();
     const request = {
       messages: [{ role: "user", content: { length: 1 } }],

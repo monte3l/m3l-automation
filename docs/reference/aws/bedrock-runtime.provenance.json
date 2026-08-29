@@ -8,22 +8,22 @@
         {
           "file": "packages/m3l-common/src/aws/bedrock-runtime/client.ts",
           "symbol": "M3LBedrockRuntimeOperations",
-          "blob": "095eb89ddece81d1cd0f5ca0691d5807e546a717"
+          "blob": "ac8c182c7dd3c8403ae6ea320817f1d88f0f19ab"
         },
         {
           "file": "packages/m3l-common/src/aws/bedrock-runtime/error.ts",
           "symbol": "M3LBedrockRuntimeOperationError",
-          "blob": "9cc6b40bb9d2455e9fe28d907a64c7b8659b6e20"
+          "blob": "900c2aedab406d3ee8a5c20585f91db3149a654f"
         },
         {
           "file": "packages/m3l-common/src/aws/bedrock-runtime/error.ts",
           "symbol": "M3LBedrockRuntimeModelError",
-          "blob": "9cc6b40bb9d2455e9fe28d907a64c7b8659b6e20"
+          "blob": "900c2aedab406d3ee8a5c20585f91db3149a654f"
         },
         {
           "file": "packages/m3l-common/src/aws/bedrock-runtime/error.ts",
           "symbol": "M3LBedrockRuntimeNoModelError",
-          "blob": "9cc6b40bb9d2455e9fe28d907a64c7b8659b6e20"
+          "blob": "900c2aedab406d3ee8a5c20585f91db3149a654f"
         },
         {
           "file": "packages/m3l-common/src/aws/bedrock-runtime/types.ts",
@@ -103,7 +103,52 @@
         {
           "file": "packages/m3l-common/src/aws/bedrock-runtime/error.ts",
           "symbol": "M3LBedrockRuntimeStreamError",
-          "blob": "9cc6b40bb9d2455e9fe28d907a64c7b8659b6e20"
+          "blob": "900c2aedab406d3ee8a5c20585f91db3149a654f"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/bedrock-runtime/types.ts",
+          "symbol": "M3LBedrockToolUseBlock",
+          "blob": "a1b70a84a70321f5fa9c99d29852da047ebf4429"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/bedrock-runtime/types.ts",
+          "symbol": "M3LBedrockToolResultBlock",
+          "blob": "a1b70a84a70321f5fa9c99d29852da047ebf4429"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/bedrock-runtime/types.ts",
+          "symbol": "M3LBedrockToolResultContent",
+          "blob": "a1b70a84a70321f5fa9c99d29852da047ebf4429"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/bedrock-runtime/types.ts",
+          "symbol": "M3LBedrockToolResultJsonBlock",
+          "blob": "a1b70a84a70321f5fa9c99d29852da047ebf4429"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/bedrock-runtime/types.ts",
+          "symbol": "M3LBedrockToolResultStatus",
+          "blob": "a1b70a84a70321f5fa9c99d29852da047ebf4429"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/bedrock-runtime/types.ts",
+          "symbol": "M3LBedrockToolDefinition",
+          "blob": "a1b70a84a70321f5fa9c99d29852da047ebf4429"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/bedrock-runtime/types.ts",
+          "symbol": "M3LBedrockToolInputSchema",
+          "blob": "a1b70a84a70321f5fa9c99d29852da047ebf4429"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/bedrock-runtime/types.ts",
+          "symbol": "M3LBedrockToolChoice",
+          "blob": "a1b70a84a70321f5fa9c99d29852da047ebf4429"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/bedrock-runtime/types.ts",
+          "symbol": "M3LBedrockToolInvokeRequest",
+          "blob": "a1b70a84a70321f5fa9c99d29852da047ebf4429"
         }
       ],
       "retrieved": "2026-08-29"
@@ -114,7 +159,7 @@
         {
           "file": "packages/m3l-common/src/aws/bedrock-runtime/client.ts",
           "symbol": "M3LBedrockRuntimeOperations",
-          "blob": "095eb89ddece81d1cd0f5ca0691d5807e546a717"
+          "blob": "ac8c182c7dd3c8403ae6ea320817f1d88f0f19ab"
         }
       ],
       "retrieved": "2026-08-29"
@@ -125,6 +170,17 @@
         {
           "file": "packages/m3l-common/src/aws/bedrock-runtime/types.ts",
           "symbol": "M3LBedrockInvokeRequest",
+          "blob": "a1b70a84a70321f5fa9c99d29852da047ebf4429"
+        }
+      ],
+      "retrieved": "2026-08-29"
+    },
+    {
+      "heading": "`M3LBedrockToolInvokeRequest`",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/bedrock-runtime/types.ts",
+          "symbol": "M3LBedrockToolInvokeRequest",
           "blob": "a1b70a84a70321f5fa9c99d29852da047ebf4429"
         }
       ],
@@ -184,10 +240,10 @@
         {
           "file": "packages/m3l-common/src/aws/bedrock-runtime/error.ts",
           "symbol": "M3LBedrockRuntimeStreamError",
-          "blob": "9cc6b40bb9d2455e9fe28d907a64c7b8659b6e20"
+          "blob": "900c2aedab406d3ee8a5c20585f91db3149a654f"
         }
       ],
-      "retrieved": "2026-08-28"
+      "retrieved": "2026-08-29"
     },
     {
       "heading": "Plain types",
@@ -231,6 +287,46 @@
           "file": "packages/m3l-common/src/aws/bedrock-runtime/types.ts",
           "symbol": "M3LBedrockRuntimeOptions",
           "blob": "a1b70a84a70321f5fa9c99d29852da047ebf4429"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/bedrock-runtime/types.ts",
+          "symbol": "M3LBedrockToolUseBlock",
+          "blob": "a1b70a84a70321f5fa9c99d29852da047ebf4429"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/bedrock-runtime/types.ts",
+          "symbol": "M3LBedrockToolResultBlock",
+          "blob": "a1b70a84a70321f5fa9c99d29852da047ebf4429"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/bedrock-runtime/types.ts",
+          "symbol": "M3LBedrockToolResultContent",
+          "blob": "a1b70a84a70321f5fa9c99d29852da047ebf4429"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/bedrock-runtime/types.ts",
+          "symbol": "M3LBedrockToolResultJsonBlock",
+          "blob": "a1b70a84a70321f5fa9c99d29852da047ebf4429"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/bedrock-runtime/types.ts",
+          "symbol": "M3LBedrockToolResultStatus",
+          "blob": "a1b70a84a70321f5fa9c99d29852da047ebf4429"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/bedrock-runtime/types.ts",
+          "symbol": "M3LBedrockToolDefinition",
+          "blob": "a1b70a84a70321f5fa9c99d29852da047ebf4429"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/bedrock-runtime/types.ts",
+          "symbol": "M3LBedrockToolInputSchema",
+          "blob": "a1b70a84a70321f5fa9c99d29852da047ebf4429"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/bedrock-runtime/types.ts",
+          "symbol": "M3LBedrockToolChoice",
+          "blob": "a1b70a84a70321f5fa9c99d29852da047ebf4429"
         }
       ],
       "retrieved": "2026-08-29"
@@ -241,10 +337,10 @@
         {
           "file": "packages/m3l-common/src/aws/bedrock-runtime/error.ts",
           "symbol": "M3LBedrockRuntimeOperationError",
-          "blob": "9cc6b40bb9d2455e9fe28d907a64c7b8659b6e20"
+          "blob": "900c2aedab406d3ee8a5c20585f91db3149a654f"
         }
       ],
-      "retrieved": "2026-08-28"
+      "retrieved": "2026-08-29"
     },
     {
       "heading": "`M3LBedrockRuntimeModelError`",
@@ -252,10 +348,10 @@
         {
           "file": "packages/m3l-common/src/aws/bedrock-runtime/error.ts",
           "symbol": "M3LBedrockRuntimeModelError",
-          "blob": "9cc6b40bb9d2455e9fe28d907a64c7b8659b6e20"
+          "blob": "900c2aedab406d3ee8a5c20585f91db3149a654f"
         }
       ],
-      "retrieved": "2026-08-28"
+      "retrieved": "2026-08-29"
     },
     {
       "heading": "`M3LBedrockRuntimeNoModelError`",
@@ -263,10 +359,10 @@
         {
           "file": "packages/m3l-common/src/aws/bedrock-runtime/error.ts",
           "symbol": "M3LBedrockRuntimeNoModelError",
-          "blob": "9cc6b40bb9d2455e9fe28d907a64c7b8659b6e20"
+          "blob": "900c2aedab406d3ee8a5c20585f91db3149a654f"
         }
       ],
-      "retrieved": "2026-08-28"
+      "retrieved": "2026-08-29"
     },
     {
       "heading": "Fault handling and model fallback",
@@ -274,7 +370,7 @@
         {
           "file": "packages/m3l-common/src/aws/bedrock-runtime/client.ts",
           "symbol": "M3LBedrockRuntimeOperations",
-          "blob": "095eb89ddece81d1cd0f5ca0691d5807e546a717"
+          "blob": "ac8c182c7dd3c8403ae6ea320817f1d88f0f19ab"
         }
       ],
       "retrieved": "2026-08-29"
@@ -285,7 +381,7 @@
         {
           "file": "packages/m3l-common/src/aws/bedrock-runtime/client.ts",
           "symbol": "M3LBedrockRuntimeOperations",
-          "blob": "095eb89ddece81d1cd0f5ca0691d5807e546a717"
+          "blob": "ac8c182c7dd3c8403ae6ea320817f1d88f0f19ab"
         }
       ],
       "retrieved": "2026-08-29"
