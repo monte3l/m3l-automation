@@ -12,7 +12,7 @@
  * @packageDocumentation
  */
 
-import type { M3LErrorCode } from "./M3LError.js";
+import type { M3LErrorCode } from "./codes.js";
 
 /**
  * Who must act to fix a failure classified under this origin.

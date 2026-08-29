@@ -8,7 +8,6 @@
   "packages/m3l-common/src/core/diagnostics/breadcrumbs.ts": 32561,
   "packages/m3l-common/src/core/diagnostics/format-error.ts": 25629,
   "packages/m3l-common/src/core/diagnostics/run-report.ts": 65630,
-  "packages/m3l-common/src/core/errors/M3LError.ts": 26012,
   "packages/m3l-common/src/core/logging/redact.ts": 28767,
   "packages/m3l-common/src/core/network/M3LHttpClient.ts": 40251,
   "packages/m3l-common/src/core/pipeline/types.ts": 28210,
