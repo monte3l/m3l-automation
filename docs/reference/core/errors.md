@@ -32,7 +32,7 @@ which is reachable only through the `.`/`./core`/`./aws` namespace barrels —
 it also has its own dedicated `exports` subpath, admitted under
 [ADR-0004](../../adr/0004-exports-map-contract.md)'s dated Update as a
 narrow, machine-enforced exception (`pnpm check:browser-safe-subpath`
-re-verifies the node-free invariant on every change). A browser-target
+re-verifies the node-free invariant in CI on every PR). A browser-target
 package that needs a real _value_ import — `extends M3LError`,
 `instanceof`, `classifyErrorCode(...)` — from this module without pulling
 in the rest of the Node-oriented library imports it directly:

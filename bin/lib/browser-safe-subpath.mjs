@@ -14,50 +14,76 @@
 // NodeNext-style ESM source resolve to sibling `.ts` files at the type level.
 import { readFileSync, existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-
-// Matches the specifier string in any `import`/`export … from "…"` form
-// (named, namespace, default, type-only, and bare side-effect imports) plus
-// a dynamic `import("…")` call. `[^;]*?` bounds the `import`/`export` branch
-// to a single statement (this repo's Prettier formatting always terminates
-// one with `;`) rather than `[\s\S]*?`, which would let a lazy match skip
-// past an unrelated `from` token years later in the file (e.g. inside a
-// large string-literal array like `M3L_ERROR_CODES`) and misattribute it —
-// the class still matches newlines within one statement (a multi-line named
-// import list), just not across statement boundaries.
-const IMPORT_SPECIFIER_RE =
-  /(?:import|export)(?:\s+type)?[^;]*?from\s*["']([^"']+)["']|import\s*["']([^"']+)["']|import\s*\(\s*["']([^"']+)["']/g;
+import {
+  createSourceFile,
+  forEachChild,
+  isCallExpression,
+  isExportDeclaration,
+  isImportDeclaration,
+  isStringLiteral,
+  ScriptKind,
+  ScriptTarget,
+  SyntaxKind,
+} from "typescript";
 
 /**
- * Strips `/* … *\/` block comments and `// …` line comments from TypeScript
- * source text. Required before scanning for imports: this library's TSDoc
- * `@example` blocks routinely show a *published* import path
- * (`@m3l-automation/m3l-common/core`) that would otherwise read as a real
- * bare-specifier violation despite never executing.
+ * Extracts every static and dynamic import/export specifier string from a
+ * TypeScript source file's text, in appearance order, via a real AST parse
+ * (`ts.createSourceFile`) rather than regex text-scanning. This is
+ * deliberate, not incidental: a regex-based extractor (the first
+ * implementation of this function) has two failure modes a parser
+ * structurally cannot —
  *
- * @param {string} source
- * @returns {string}
- */
-export function stripComments(source) {
-  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
-}
-
-/**
- * Extracts every import/export specifier string from a TypeScript source
- * file's text, in appearance order, ignoring anything inside a comment (see
- * {@link stripComments}). All three capture groups of
- * {@link IMPORT_SPECIFIER_RE} are read: a bare side-effect import
- * (`import "./x.js"`) has no `from` clause, and a dynamic `import(...)` call
- * has neither `from` nor the static keyword form.
+ * 1. **False negative**: a comment-stripping pre-pass driven by
+ *    `/\/\*…\*\//`/`//` regexes silently deletes everything between two
+ *    ordinary string literals that happen to contain `/*`/`*\/` sequences,
+ *    which can delete a real import sitting between them — the gate reports
+ *    zero violations for a file that actually has one.
+ * 2. **False positive**: text inside a string or template literal that
+ *    merely *looks* like an import statement (e.g. a fixture string in a
+ *    future browser-safe subpath's source) reads as a real specifier.
+ *
+ * A parser sees neither problem: `ts.forEachChild` only visits real
+ * `ImportDeclaration`/`ExportDeclaration` nodes and real dynamic-`import`
+ * `CallExpression` nodes, so comment and string-literal content is never
+ * inspected at all — including this library's TSDoc `@example` blocks that
+ * routinely show the *published* import path
+ * (`@m3l-automation/m3l-common/core`), which would otherwise read as a real
+ * bare-specifier violation despite never executing.
  *
  * @param {string} source
  * @returns {string[]}
  */
 export function extractImportSpecifiers(source) {
+  const sourceFile = createSourceFile(
+    "source.ts",
+    source,
+    ScriptTarget.Latest,
+    false,
+    ScriptKind.TS,
+  );
   const specifiers = [];
-  for (const match of stripComments(source).matchAll(IMPORT_SPECIFIER_RE)) {
-    const specifier = match[1] ?? match[2] ?? match[3];
-    if (specifier !== undefined) specifiers.push(specifier);
+
+  /** @param {import("typescript").Node} node */
+  function visit(node) {
+    if (
+      (isImportDeclaration(node) || isExportDeclaration(node)) &&
+      node.moduleSpecifier !== undefined &&
+      isStringLiteral(node.moduleSpecifier)
+    ) {
+      specifiers.push(node.moduleSpecifier.text);
+    } else if (
+      isCallExpression(node) &&
+      node.expression.kind === SyntaxKind.ImportKeyword &&
+      node.arguments.length > 0 &&
+      isStringLiteral(node.arguments[0])
+    ) {
+      specifiers.push(node.arguments[0].text);
+    }
+    forEachChild(node, visit);
   }
+  visit(sourceFile);
+
   return specifiers;
 }
 
@@ -105,7 +131,17 @@ export function walkImportGraph(entryFile, deps = {}) {
     if (visited.has(file)) continue;
     visited.add(file);
 
-    const source = readFile(file, "utf8");
+    let source;
+    try {
+      source = readFile(file, "utf8");
+    } catch (cause) {
+      throw new Error(
+        `check:browser-safe-subpath could not read "${file}" while walking ` +
+          `its import graph — check for a broken relative import in this ` +
+          `browser-safe subpath.`,
+        { cause },
+      );
+    }
     for (const specifier of extractImportSpecifiers(source)) {
       if (specifier.startsWith(".")) {
         const resolved = resolveRelativeSpecifier(file, specifier);

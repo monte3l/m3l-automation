@@ -105,8 +105,8 @@ exception to it:
    free of `node:` builtins and third-party bare specifiers.** Enforced by
    `pnpm check:browser-safe-subpath` (`bin/check-browser-safe-subpath.mjs`,
    walking TS source via `bin/lib/browser-safe-subpath.mjs`), which fails
-   the build the moment any file reachable from the subpath's entry point
-   adds one such import. Without this, the exception is a comment someone
+   CI the moment any file reachable from the subpath's entry point adds
+   one such import. Without this, the exception is a comment someone
    could invalidate by adding one `node:crypto` import three hops deep in
    the graph — exactly the class of drift `check:api`/`check:exports`
    don't catch, since they validate the map's shape, not what its entries
