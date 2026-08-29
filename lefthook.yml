@@ -74,8 +74,15 @@ pre-push:
     # multi-line scalar here (block `|`, folded `>`, or a folded `>-` that
     # still wraps across lines) silently drops every chained check from the
     # cadence-doc comparison. Verified: `pnpm check:cadence` after this change.
+    #
+    # check:provenance and check:index joined this lane after PR #736 went red
+    # in CI twice for the same reason: both gates anchor a symbol to a source
+    # FILE PATH (provenance sidecars' sources[].file, symbol-map.json's file),
+    # so any refactor that relocates an exported symbol invalidates them — and
+    # both were CI-only, so a fully green pre-push was no evidence either way.
+    # They cost ~0.15s combined, well inside this lane's slack.
     checks:
-      run: node bin/verify-signed-range.mjs && pnpm check:control-chars && pnpm check:file-budget && pnpm check:agents && pnpm check:script-docs && pnpm check:cli-docs && pnpm check:review-size && pnpm check:context-budget
+      run: node bin/verify-signed-range.mjs && pnpm check:control-chars && pnpm check:file-budget && pnpm check:agents && pnpm check:script-docs && pnpm check:cli-docs && pnpm check:review-size && pnpm check:context-budget && pnpm check:provenance && pnpm check:index
 
 # Fire after `git rebase` completes (including a no-op rebase with nothing to
 # replay) and after `git merge` completes. Regenerates the derived files the

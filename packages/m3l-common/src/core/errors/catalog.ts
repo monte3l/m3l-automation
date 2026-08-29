@@ -111,6 +111,8 @@ export interface M3LErrorClassification {
 export const M3L_ERROR_CATALOG: Readonly<
   Record<M3LErrorCode, M3LErrorClassification>
 > = {
+  ERR_AGENT_INVALID_ACTION: { origin: "caller", retryable: false },
+  ERR_AGENT_POLICY_DECLARATION: { origin: "caller", retryable: false },
   ERR_ANALYSIS_INVALID_RULE: { origin: "caller", retryable: false },
   ERR_ATHENA_QUERY_FAILED: { origin: "external", retryable: "situational" },
   ERR_ATHENA_START_QUERY: { origin: "external", retryable: true },
