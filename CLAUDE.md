@@ -103,14 +103,14 @@ every `check:*`, `knip`, `lint:md`, `audit`, and gitleaks secret scanning
 takes minutes — background it rather than `--no-verify`, since CI re-runs
 everything anyway.
 
-| Stage                   | Checks                                                                        | Scope  |
-| ----------------------- | ----------------------------------------------------------------------------- | ------ |
-| `pre-commit` (lefthook) | `eslint`, `prettier`                                                          | staged |
-| `commit-msg` (lefthook) | `lint-commit`                                                                 | commit |
-| `pre-push` (lefthook)   | `format:check`, `lint`, `typecheck`, `test:coverage`                          | repo   |
-| `pre-push` (lefthook)   | `build`, `check:exports`, `verify-signed-range`, `check:control-chars`        | repo   |
-| `pre-push` (lefthook)   | `check:file-budget`, `check:agents`, `check:test-counts`, `check:script-docs` | repo   |
-| `pre-push` (lefthook)   | `check:cli-docs`, `check:review-size`, `check:context-budget`                 | repo   |
+| Stage                   | Checks                                                                       | Scope  |
+| ----------------------- | ---------------------------------------------------------------------------- | ------ |
+| `pre-commit` (lefthook) | `eslint`, `prettier`                                                         | staged |
+| `commit-msg` (lefthook) | `lint-commit`                                                                | commit |
+| `pre-push` (lefthook)   | `format:check`, `lint`, `typecheck`, `test:coverage`, `check:test-counts`    | repo   |
+| `pre-push` (lefthook)   | `build`, `check:exports`, `verify-signed-range`, `check:control-chars`       | repo   |
+| `pre-push` (lefthook)   | `check:file-budget`, `check:agents`, `check:script-docs`, `check:provenance` | repo   |
+| `pre-push` (lefthook)   | `check:cli-docs`, `check:review-size`, `check:context-budget`, `check:index` | repo   |
 
 `pnpm verify` reproduces every CI check locally; `pnpm check:verify-parity`
 keeps its step list in sync with `ci.yml`. `pre-push` splits across several
