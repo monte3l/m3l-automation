@@ -41,7 +41,12 @@ import {
   STOP_REASON_LOOKUP,
 } from "./shared.js";
 import { invokeStream as invokeStreamImpl } from "./stream.js";
-import { buildToolConfig, mapToolUseBlock } from "./tools.js";
+import {
+  buildToolConfig,
+  isToolUseShaped,
+  mapToolUseBlock,
+  refuseServerToolUse,
+} from "./tools.js";
 import type {
   M3LBedrockContentBlock,
   M3LBedrockInvocationResult,
@@ -61,39 +66,94 @@ function buildConverseCommand(
   return new ConverseCommand(buildConverseInput(modelId, request, toolConfig));
 }
 
+/** {@link mapContent}'s result: the mapped blocks plus the counts `mapConverseResponse` needs to detect an all-malformed `toolUse` reply. */
+interface MappedContent {
+  readonly blocks: M3LBedrockContentBlock[];
+  /** How many reply blocks were `toolUse`-shaped at all (mapped or not). */
+  readonly toolUseShapedCount: number;
+  /** How many of those shaped blocks mapped successfully. */
+  readonly toolUseMappedCount: number;
+}
+
 /**
  * Maps a response message's content blocks onto {@link M3LBedrockContentBlock},
  * keeping both `text` and well-formed `toolUse` blocks (V4 dropped every
  * non-`text` member; V5 keeps `toolUse` since `result.message.content` is the
  * caller's input to the tool-use loop). Any other block this wrapper cannot
  * represent — including a malformed `toolUse` (missing/non-string
- * `toolUseId`/`name`) — is dropped rather than thrown on: the model's reply
- * is external data, not a caller mistake. See
+ * `toolUseId`/`name`) — is dropped from `blocks` rather than thrown on here:
+ * the model's reply is external data, not a caller mistake. See
  * `docs/reference/aws/bedrock-runtime.md`'s "Unrepresentable content blocks
- * in a reply" note for the drop-vs-refuse rule.
+ * in a reply" note for the drop-vs-refuse rule; `mapConverseResponse` is
+ * what turns an all-malformed `stopReason: "tool_use"` reply (every shaped
+ * block dropped) into a thrown error, using this function's returned
+ * counts.
  *
- * @throws {@link M3LBedrockRuntimeOperationError} When a `toolUse` block
- *   carries the SDK marker `type: "server_tool_use"` (see `tools.ts`'s
- *   `mapToolUseBlock`) — Bedrock already executed that tool server-side, so
- *   mapping it would risk a second, duplicate execution.
+ * The `server_tool_use` refusal (`tools.ts`'s `refuseServerToolUse`) runs
+ * **unconditionally, per block, before the `text`-member check** — never
+ * behind it — since the SDK's deserializer does not enforce single-member
+ * unions and a reply block can carry both `text` and a
+ * `server_tool_use`-marked `toolUse` member at once.
+ *
+ * @throws {@link M3LBedrockRuntimeOperationError} When a block carries the
+ *   SDK marker `type: "server_tool_use"` (see `tools.ts`'s
+ *   `refuseServerToolUse`) — Bedrock already executed that tool
+ *   server-side, so mapping it would risk a second, duplicate execution.
  */
 function mapContent(
   content:
     | readonly { readonly text?: string; readonly toolUse?: unknown }[]
     | undefined,
-): M3LBedrockContentBlock[] {
+): MappedContent {
   const blocks: M3LBedrockContentBlock[] = [];
+  let toolUseShapedCount = 0;
+  let toolUseMappedCount = 0;
   for (const block of content ?? []) {
+    refuseServerToolUse(block);
     if (typeof block.text === "string") {
       blocks.push({ type: "text", text: block.text });
       continue;
     }
+    if (!isToolUseShaped(block)) {
+      continue;
+    }
+    toolUseShapedCount += 1;
     const toolUse = mapToolUseBlock(block);
     if (toolUse !== undefined) {
+      toolUseMappedCount += 1;
       blocks.push(toolUse);
     }
   }
-  return blocks;
+  return { blocks, toolUseShapedCount, toolUseMappedCount };
+}
+
+/**
+ * `ConverseCommandOutput["usage"]`'s three token-count fields, all present.
+ * A hand-written interface, not `Required<TokenUsage>` — the SDK's
+ * `TokenUsage` fields are declared `number | undefined` (a union, not an
+ * optional `?:` modifier), so `Required<>` is a no-op on them and would not
+ * actually narrow away `undefined`.
+ */
+interface CompleteTokenUsage {
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+  readonly totalTokens: number;
+}
+
+/**
+ * Type predicate: `true` when `usage`'s three token counts are all present
+ * — split out of `mapConverseResponse` to keep its branch count under the
+ * repo's complexity ceiling.
+ */
+function isCompleteUsage(
+  usage: NonNullable<ConverseCommandOutput["usage"]> | undefined,
+): usage is CompleteTokenUsage {
+  return (
+    usage !== undefined &&
+    usage.inputTokens !== undefined &&
+    usage.outputTokens !== undefined &&
+    usage.totalTokens !== undefined
+  );
 }
 
 /**
@@ -101,12 +161,16 @@ function mapContent(
  *
  * @throws {@link M3LBedrockRuntimeOperationError} When `output`/`stopReason`/
  *   `usage` is missing, `output` matches the `$UnknownMember` arm rather than
- *   carrying a `message` (a malformed-but-HTTP-successful response), or
+ *   carrying a `message` (a malformed-but-HTTP-successful response),
  *   `stopReason` is not one of the nine documented
  *   {@link M3LBedrockStopReason} members — AWS's Smithy enums are open at the
  *   wire level, so a future SDK/service value is not a client-side type
  *   error, but it is still a shape this wrapper refuses to silently admit
- *   into a type callers switch on exhaustively.
+ *   into a type callers switch on exhaustively — or `stopReason` is
+ *   `"tool_use"` while every `toolUse`-shaped reply block was malformed (see
+ *   {@link mapContent}): a caller acting on `stopReason: "tool_use"` must
+ *   never see an empty `content` array indistinguishable from "no tool call
+ *   was made at all".
  */
 function mapConverseResponse(
   response: ConverseCommandOutput,
@@ -119,10 +183,7 @@ function mapConverseResponse(
   if (
     message === undefined ||
     stopReason === undefined ||
-    usage === undefined ||
-    usage.inputTokens === undefined ||
-    usage.outputTokens === undefined ||
-    usage.totalTokens === undefined
+    !isCompleteUsage(usage)
   ) {
     throw new M3LBedrockRuntimeOperationError(
       `Converse response for model ${modelId} was missing output/stopReason/usage`,
@@ -135,13 +196,24 @@ function mapConverseResponse(
     );
   }
 
+  const mappedContent = mapContent(message.content);
+  if (
+    stopReason === "tool_use" &&
+    mappedContent.toolUseShapedCount > 0 &&
+    mappedContent.toolUseMappedCount === 0
+  ) {
+    throw new M3LBedrockRuntimeOperationError(
+      `Converse response for model ${modelId} had stopReason tool_use but every toolUse-shaped content block (${mappedContent.toolUseShapedCount}) was malformed`,
+    );
+  }
+
   return {
     modelId,
     message: {
       role: mapRole(message.role),
-      content: mapContent(message.content),
+      content: mappedContent.blocks,
     },
-    stopReason: stopReason,
+    stopReason,
     usage: {
       inputTokens: usage.inputTokens,
       outputTokens: usage.outputTokens,
@@ -353,9 +425,11 @@ export class M3LBedrockRuntimeOperations {
    *   successful `send()` response (`stream === undefined`), a malformed
    *   terminal `stopReason`/`usage` value, or — checked first, before model
    *   selection — a structurally-typed `request` that carries `tools`/
-   *   `toolChoice` anyway (`origin: caller`, `retryable: false`; see the
-   *   module doc's scope-boundary note). Never retried or fallen back
-   *   from, even after events have already been yielded to the caller.
+   *   `toolChoice` anyway, or whose `messages[].content` carries any
+   *   non-`text` block (`origin: caller`, `retryable: false`; see
+   *   `hasUnsupportedStreamingContent` and the module doc's scope-boundary
+   *   note). Never retried or fallen back from, even after events have
+   *   already been yielded to the caller.
    * @throws {@link M3LBedrockRuntimeModelError} When the serving model
    *   itself faults on this specific input (`ModelErrorException`/
    *   `ModelStreamErrorException`), on either side of the `hasYielded`
@@ -391,9 +465,9 @@ export class M3LBedrockRuntimeOperations {
     request: M3LBedrockInvokeRequest,
     options?: M3LBedrockInvokeOptions,
   ): AsyncGenerator<M3LBedrockStreamEvent, void, void> {
-    if (hasToolConfig(request)) {
+    if (hasUnsupportedStreamingContent(request)) {
       throw new M3LBedrockRuntimeOperationError(
-        "invokeStream does not support tools/toolChoice — streaming tool-use is out of scope for V5; use invoke() instead",
+        "invokeStream does not support tools/toolChoice or non-text message content blocks — streaming tool-use is out of scope for V5; use invoke() instead",
         { origin: "caller", retryable: false },
       );
     }
@@ -402,21 +476,39 @@ export class M3LBedrockRuntimeOperations {
 }
 
 /**
- * Returns `true` when `request` carries an own `tools` or `toolChoice`
- * property, even though its declared type is the narrower
- * {@link M3LBedrockInvokeRequest} (which has neither field). This guard is
- * load-bearing, not decorative: a compile probe confirmed that TypeScript's
- * structural typing rejects a tool-bearing **object literal** passed
- * directly to `invokeStream` (an excess-property error — see the dedicated
+ * Returns `true` when `request` is unsupported by `invokeStream`'s
+ * text-only scope: it carries an own `tools`/`toolChoice` property (even
+ * though its declared type, {@link M3LBedrockInvokeRequest}, has neither
+ * field), OR any `messages[].content` block is not `type: "text"`.
+ *
+ * The `tools`/`toolChoice` half of this guard is load-bearing, not
+ * decorative: a compile probe confirmed that TypeScript's structural typing
+ * rejects a tool-bearing **object literal** passed directly to
+ * `invokeStream` (an excess-property error — see the dedicated
  * `@ts-expect-error` test), but still **admits** a structurally-typed
  * non-literal `M3LBedrockToolInvokeRequest` value assigned through a
  * variable or a downcast, since structural width subtyping only rejects
  * excess properties on literals. Without this runtime check, that
  * non-literal case would silently reach `stream.ts` and have its
  * `tools`/`toolChoice` fields dropped mid-stream rather than refused.
+ *
+ * The content-block half exists for the same reason at a different seam:
+ * `M3LBedrockInvokeRequest.messages[].content` is typed
+ * {@link M3LBedrockContentBlock}, which V5 widened to include `toolUse`/
+ * `toolResult` — nothing in `stream.ts` (frozen for this fix — see
+ * `docs/reference/aws/bedrock-runtime.md`) rejects one of those blocks
+ * inside `messages`, so without this check here a caller-constructed
+ * request carrying one would flow unchallenged into `ConverseStream`.
+ * Checking own top-level `tools`/`toolChoice` alone (the previous shape of
+ * this guard) does not cover that case.
  */
-function hasToolConfig(request: M3LBedrockInvokeRequest): boolean {
-  return (
-    Object.hasOwn(request, "tools") || Object.hasOwn(request, "toolChoice")
+function hasUnsupportedStreamingContent(
+  request: M3LBedrockInvokeRequest,
+): boolean {
+  if (Object.hasOwn(request, "tools") || Object.hasOwn(request, "toolChoice")) {
+    return true;
+  }
+  return request.messages.some((message) =>
+    message.content.some((block) => block.type !== "text"),
   );
 }

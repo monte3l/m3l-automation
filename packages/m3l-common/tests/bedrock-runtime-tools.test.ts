@@ -340,6 +340,43 @@ describe("the recursive document copy (inputSchema/json)", () => {
     expect((thrown as M3LBedrockRuntimeOperationError).retryable).toBe(false);
     expect(h.send).not.toHaveBeenCalled();
   });
+
+  // The 40-level test above is well past the 32-level ceiling and cannot
+  // catch an off-by-one in MAX_DOCUMENT_DEPTH's comparison — these two pin
+  // the exact boundary. `buildNested(n)` wraps a "leaf" string in `n` levels
+  // of `{ nested: ... }`, used directly as the root inputSchema (rather than
+  // nested one level deeper inside `{ type: "object", value: ... }` as
+  // above), so `n` is exactly the depth `copyDocument` sees at the leaf.
+  test("a document nested exactly 32 levels deep — at the ceiling — is accepted, reaching send()", async () => {
+    h.send.mockResolvedValueOnce(converseOutput());
+    const schema = buildNested(32) as M3LBedrockToolInputSchema;
+
+    await newOps().invoke({
+      messages: [USER_MESSAGE_TEXT],
+      tools: [{ name: "t", inputSchema: schema }],
+    });
+
+    expect(h.send).toHaveBeenCalledTimes(1);
+  });
+
+  test("a document nested 33 levels deep — one past the ceiling — throws the typed error", async () => {
+    const schema = buildNested(33) as M3LBedrockToolInputSchema;
+
+    let thrown: unknown;
+    try {
+      await newOps().invoke({
+        messages: [USER_MESSAGE_TEXT],
+        tools: [{ name: "t", inputSchema: schema }],
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LBedrockRuntimeOperationError);
+    expect((thrown as M3LBedrockRuntimeOperationError).origin).toBe("caller");
+    expect((thrown as M3LBedrockRuntimeOperationError).retryable).toBe(false);
+    expect(h.send).not.toHaveBeenCalled();
+  });
 });
 
 describe("the two documented caller errors (M3LBedrockRuntimeOperationError, origin: caller, retryable: false)", () => {
@@ -565,6 +602,71 @@ describe("toSdkMessage widening over the 3-member M3LBedrockContentBlock union",
       },
     ]);
   });
+
+  // MUST-FIX 4: a request-side toolUse block's `input` is caller-constructed
+  // (e.g. replaying conversation history programmatically), so — like
+  // inputSchema and a json tool-result payload — it is now recursively
+  // copied via copyDocument rather than cast straight through. A bare cast
+  // would have let a bigint/cyclic value escape as a raw
+  // TypeError/RangeError instead of this module's typed error.
+  test("a request-side toolUse block whose input holds a bigint throws the typed error, not a raw TypeError", async () => {
+    let thrown: unknown;
+    try {
+      await newOps().invoke({
+        messages: [
+          {
+            role: "assistant",
+            content: [
+              {
+                type: "toolUse",
+                toolUseId: "call-1",
+                name: "get_weather",
+                input: { limit: 10n },
+              },
+            ],
+          },
+        ],
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LBedrockRuntimeOperationError);
+    expect((thrown as M3LBedrockRuntimeOperationError).origin).toBe("caller");
+    expect((thrown as M3LBedrockRuntimeOperationError).retryable).toBe(false);
+    expect(h.send).not.toHaveBeenCalled();
+  });
+
+  test("a request-side toolUse block whose input is a cyclic object throws the depth-bound typed error rather than a stack overflow", async () => {
+    const cyclic: Record<string, unknown> = {};
+    cyclic["self"] = cyclic;
+
+    let thrown: unknown;
+    try {
+      await newOps().invoke({
+        messages: [
+          {
+            role: "assistant",
+            content: [
+              {
+                type: "toolUse",
+                toolUseId: "call-1",
+                name: "get_weather",
+                input: cyclic,
+              },
+            ],
+          },
+        ],
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LBedrockRuntimeOperationError);
+    expect((thrown as M3LBedrockRuntimeOperationError).origin).toBe("caller");
+    expect((thrown as M3LBedrockRuntimeOperationError).retryable).toBe(false);
+    expect(h.send).not.toHaveBeenCalled();
+  });
 });
 
 describe("response-side mapping: toolUse blocks are kept, not dropped", () => {
@@ -646,6 +748,12 @@ describe("response-side mapping: toolUse blocks are kept, not dropped", () => {
     ]);
   });
 
+  // A well-formed sibling toolUse block is included alongside each malformed
+  // one so toolUseMappedCount > 0 — otherwise MUST-FIX 5's cross-check (see
+  // client.ts's mapConverseResponse) throws instead of dropping, since every
+  // toolUse-shaped block in the reply would be malformed. This still proves
+  // the drop rule: the malformed block never appears in the mapped content,
+  // while the good one still flows.
   test.each<[string, Record<string, unknown>]>([
     ["missing toolUseId", { toolUse: { name: "get_weather", input: {} } }],
     ["missing name", { toolUse: { toolUseId: "call-1", input: {} } }],
@@ -658,17 +766,24 @@ describe("response-side mapping: toolUse blocks are kept, not dropped", () => {
       { toolUse: { toolUseId: "call-1", name: 1, input: {} } },
     ],
   ])(
-    "a malformed toolUse block (%s) is dropped, not thrown on — external data, not a caller mistake",
+    "a malformed toolUse block (%s) is dropped, not thrown on — a well-formed sibling toolUse block still maps",
     async (_label, malformedBlock) => {
       h.send.mockResolvedValueOnce(
         converseOutput({
-          content: [{ text: "ok" }, malformedBlock],
+          content: [
+            { text: "ok" },
+            malformedBlock,
+            { toolUse: { toolUseId: "good-1", name: "good_tool", input: {} } },
+          ],
           stopReason: "tool_use",
         }),
       );
       const result = await newOps().invoke({ messages: [USER_MESSAGE_TEXT] });
 
-      expect(result.message.content).toEqual([{ type: "text", text: "ok" }]);
+      expect(result.message.content).toEqual([
+        { type: "text", text: "ok" },
+        { type: "toolUse", toolUseId: "good-1", name: "good_tool", input: {} },
+      ]);
       expect(result.stopReason).toBe("tool_use");
     },
   );
@@ -717,17 +832,93 @@ describe("response-side mapping: toolUse blocks are kept, not dropped", () => {
     expect(h.send).toHaveBeenCalledTimes(1);
   });
 
-  test("stopReason: tool_use whose only toolUse block was malformed yields empty content plus stopReason tool_use — invoke never cross-validates the two", async () => {
+  // MUST-FIX 2: the SDK's deserializer does not enforce single-member
+  // unions, so one reply block can carry both a `text` member and a
+  // `server_tool_use`-marked `toolUse` member at once. Before the fix, the
+  // `text`-member short-circuit in `client.ts`'s `mapContent` ran first and
+  // never reached the refusal — this proves the refusal now runs
+  // unconditionally, per block, before any `text` check.
+  test("a reply block carrying BOTH text and a server_tool_use-marked toolUse still throws — the text short-circuit does not bypass the refusal", async () => {
+    h.send.mockResolvedValueOnce(
+      converseOutput({
+        content: [
+          {
+            text: "some visible text",
+            toolUse: {
+              toolUseId: "call-1",
+              name: "get_weather",
+              input: {},
+              type: "server_tool_use",
+            },
+          },
+        ],
+        stopReason: "tool_use",
+      }),
+    );
+
+    await expect(
+      newOps([MODEL_A, MODEL_B]).invoke({ messages: [USER_MESSAGE_TEXT] }),
+    ).rejects.toBeInstanceOf(M3LBedrockRuntimeOperationError);
+    expect(h.send).toHaveBeenCalledTimes(1);
+  });
+
+  test("the server_tool_use refusal message includes toolUseId/name when both are strings, for log correlation", async () => {
+    h.send.mockResolvedValueOnce(
+      converseOutput({
+        content: [
+          {
+            toolUse: {
+              toolUseId: "call-42",
+              name: "get_weather",
+              input: {},
+              type: "server_tool_use",
+            },
+          },
+        ],
+        stopReason: "tool_use",
+      }),
+    );
+
+    let thrown: unknown;
+    try {
+      await newOps().invoke({ messages: [USER_MESSAGE_TEXT] });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LBedrockRuntimeOperationError);
+    const message = (thrown as Error).message;
+    expect(message).toContain("toolUseId=call-42");
+    expect(message).toContain("name=get_weather");
+  });
+
+  // MUST-FIX 5: a caller acting on stopReason: "tool_use" must never see an
+  // empty content array indistinguishable from "no tool call was made at
+  // all" — so when every toolUse-shaped block in the reply was malformed,
+  // invoke() now throws instead of silently returning empty content. This
+  // supersedes the old "yields empty content" contract this test used to pin.
+  test("stopReason: tool_use whose only toolUse-shaped block was malformed throws M3LBedrockRuntimeOperationError instead of yielding empty content", async () => {
     h.send.mockResolvedValueOnce(
       converseOutput({
         content: [{ toolUse: { name: "get_weather", input: {} } }],
         stopReason: "tool_use",
       }),
     );
-    const result = await newOps().invoke({ messages: [USER_MESSAGE_TEXT] });
 
-    expect(result.message.content).toEqual([]);
-    expect(result.stopReason).toBe("tool_use");
+    let thrown: unknown;
+    try {
+      await newOps([MODEL_A, MODEL_B]).invoke({
+        messages: [USER_MESSAGE_TEXT],
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LBedrockRuntimeOperationError);
+    expect((thrown as Error).message).toContain("stopReason tool_use");
+    // No fallback advance on a response-shape refusal, matching the
+    // server_tool_use precedent above.
+    expect(h.send).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -798,6 +989,102 @@ describe("invokeStream's tool-config rejection guard", () => {
     expect(h.send).toHaveBeenCalledTimes(1);
   });
 
+  // MUST-FIX 6: M3LBedrockContentBlock widened (V5) to include toolUse/
+  // toolResult, and `messages[].content` is part of M3LBedrockInvokeRequest
+  // itself — so, unlike the top-level tools/toolChoice cases above, a
+  // caller-constructed request carrying one of these blocks compiles
+  // directly against invokeStream's parameter type, with no downcast needed.
+  // `stream.ts` itself is frozen for this fix, so the guard must catch this
+  // before ever reaching it.
+  test("the first .next() rejects with M3LBedrockRuntimeOperationError (origin: caller, retryable: false) when messages[].content carries a toolUse block", async () => {
+    const request: M3LBedrockInvokeRequest = {
+      messages: [
+        {
+          role: "assistant",
+          content: [
+            {
+              type: "toolUse",
+              toolUseId: "call-1",
+              name: "get_weather",
+              input: {},
+            },
+          ],
+        },
+      ],
+    };
+
+    let thrown: unknown;
+    try {
+      await newOps().invokeStream(request).next();
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LBedrockRuntimeOperationError);
+    expect((thrown as M3LBedrockRuntimeOperationError).origin).toBe("caller");
+    expect((thrown as M3LBedrockRuntimeOperationError).retryable).toBe(false);
+    expect(h.send).not.toHaveBeenCalled();
+  });
+
+  test("the first .next() rejects when messages[].content carries a toolResult block", async () => {
+    const request: M3LBedrockInvokeRequest = {
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "toolResult",
+              toolUseId: "call-1",
+              content: [{ type: "text", text: "42 degrees" }],
+            },
+          ],
+        },
+      ],
+    };
+
+    await expect(newOps().invokeStream(request).next()).rejects.toBeInstanceOf(
+      M3LBedrockRuntimeOperationError,
+    );
+    expect(h.send).not.toHaveBeenCalled();
+  });
+
+  test("the content-block guard fires before model selection — fallback never advances", async () => {
+    const request: M3LBedrockInvokeRequest = {
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "toolResult",
+              toolUseId: "call-1",
+              content: [{ type: "text", text: "42 degrees" }],
+            },
+          ],
+        },
+      ],
+    };
+
+    await expect(
+      newOps([MODEL_A, MODEL_B]).invokeStream(request).next(),
+    ).rejects.toBeInstanceOf(M3LBedrockRuntimeOperationError);
+    expect(h.send).not.toHaveBeenCalled();
+  });
+
+  test("a multi-turn, text-only conversation still reaches send() — the content-block guard does not misfire on legitimate text history", async () => {
+    h.send.mockRejectedValueOnce(new Error("boom"));
+    const request: M3LBedrockInvokeRequest = {
+      messages: [
+        { role: "user", content: [{ type: "text", text: "hi" }] },
+        { role: "assistant", content: [{ type: "text", text: "hello" }] },
+        { role: "user", content: [{ type: "text", text: "bye" }] },
+      ],
+    };
+
+    const gen = newOps().invokeStream(request);
+    await expect(gen.next()).rejects.toBeDefined();
+    expect(h.send).toHaveBeenCalledTimes(1);
+  });
+
   test("a literal request carrying tools does not compile against invokeStream's M3LBedrockInvokeRequest parameter", () => {
     const ops = newOps();
     // @ts-expect-error -- `tools` is not a member of M3LBedrockInvokeRequest;
@@ -853,6 +1140,89 @@ describe("shared.ts exhaustiveness default arms — unreachable via the public t
       "unhandled tool-result content type",
     );
     expect(h.send).not.toHaveBeenCalled();
+  });
+
+  // MUST-FIX 3 / SHOULD-FIX 3: the default arms now interpolate only the
+  // discriminant tag, never the full caller-supplied value — and both now
+  // report origin: "caller", retryable: false (this override is per-arm,
+  // NOT shared with mapConverseResponse's own all-malformed throw a few
+  // describe blocks up, which keeps the catalog default origin: "external",
+  // retryable: true since it passes no override).
+  test("mapContentBlockToSdk's default arm reports only the discriminant — a long caller string elsewhere on the block never reaches error.message or toJSON()", async () => {
+    const SENTINEL = "S".repeat(200);
+    const invalidBlock = {
+      type: "nope",
+      text: SENTINEL,
+    } as unknown as M3LBedrockContentBlock;
+
+    let thrown: unknown;
+    try {
+      await newOps().invoke({
+        messages: [{ role: "user", content: [invalidBlock] }],
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LBedrockRuntimeOperationError);
+    const error = thrown as M3LBedrockRuntimeOperationError;
+    expect(error.message).toContain("nope");
+    expect(error.message).not.toContain(SENTINEL);
+    expect(error.origin).toBe("caller");
+    expect(error.retryable).toBe(false);
+    expect(JSON.stringify(error.toJSON())).not.toContain(SENTINEL);
+  });
+
+  test("mapToolResultContentItem's default arm reports only the discriminant — a long caller string elsewhere on the item never reaches error.message or toJSON()", async () => {
+    const SENTINEL = "T".repeat(200);
+    const invalidResultItem = {
+      type: "nope",
+      text: SENTINEL,
+    } as unknown as M3LBedrockToolResultContent;
+    const block: M3LBedrockToolResultBlock = {
+      type: "toolResult",
+      toolUseId: "call-1",
+      content: [invalidResultItem],
+    };
+
+    let thrown: unknown;
+    try {
+      await newOps().invoke({
+        messages: [{ role: "user", content: [block] }],
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LBedrockRuntimeOperationError);
+    const error = thrown as M3LBedrockRuntimeOperationError;
+    expect(error.message).toContain("nope");
+    expect(error.message).not.toContain(SENTINEL);
+    expect(error.origin).toBe("caller");
+    expect(error.retryable).toBe(false);
+    expect(JSON.stringify(error.toJSON())).not.toContain(SENTINEL);
+  });
+
+  // readUnknownDiscriminant's own fallback: when the off-contract value's
+  // `.type` field is not a string at all (rather than merely an
+  // unrecognized string), the message reports the literal tag "unknown"
+  // rather than attempting to stringify a non-string `.type`.
+  test("the default arm reports the literal tag 'unknown' when the off-contract value's type field is not a string", async () => {
+    const invalidBlock = { type: 42 } as unknown as M3LBedrockContentBlock;
+
+    let thrown: unknown;
+    try {
+      await newOps().invoke({
+        messages: [{ role: "user", content: [invalidBlock] }],
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LBedrockRuntimeOperationError);
+    expect((thrown as Error).message).toContain(
+      "unhandled content block type: unknown",
+    );
   });
 });
 
@@ -948,6 +1318,146 @@ describe("copyDocument boundary behavior (tools.ts)", () => {
   });
 });
 
+describe("copyDocument's prototype-pollution refusal (CRITICAL fix): __proto__/constructor/prototype own keys", () => {
+  const DANGEROUS_KEYS = ["__proto__", "constructor", "prototype"] as const;
+  const POSITIONS = ["top-level", "nested"] as const;
+
+  /**
+   * Builds a document carrying an own `key` (via computed-property syntax,
+   * which — unlike an object-literal `__proto__:` key — always creates a
+   * real own enumerable property rather than invoking the accessor that
+   * sets the object's prototype instead) at either the top level or one
+   * level of nesting under a `wrapper` key.
+   */
+  function buildDangerousDocument(
+    key: string,
+    position: "top-level" | "nested",
+  ): Record<string, unknown> {
+    const poisoned: Record<string, unknown> = { safe: "x", [key]: "injected" };
+    return position === "top-level" ? poisoned : { wrapper: poisoned };
+  }
+
+  const CASES = DANGEROUS_KEYS.flatMap((key) =>
+    POSITIONS.map((position) => [key, position] as const),
+  );
+
+  test.each(CASES)(
+    "an inputSchema carrying own key %s at %s position throws M3LBedrockRuntimeOperationError(origin: caller, retryable: false), never reaching send()",
+    async (key, position) => {
+      const schema = buildDangerousDocument(key, position);
+
+      let thrown: unknown;
+      try {
+        await newOps().invoke({
+          messages: [USER_MESSAGE_TEXT],
+          tools: [{ name: "t", inputSchema: schema }],
+        });
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toBeInstanceOf(M3LBedrockRuntimeOperationError);
+      expect((thrown as M3LBedrockRuntimeOperationError).origin).toBe("caller");
+      expect((thrown as M3LBedrockRuntimeOperationError).retryable).toBe(false);
+      expect(h.send).not.toHaveBeenCalled();
+    },
+  );
+
+  test.each(CASES)(
+    "a json tool-result payload carrying own key %s at %s position throws the same error, reached from the other copyDocument call site",
+    async (key, position) => {
+      const payload = buildDangerousDocument(key, position);
+      const block: M3LBedrockToolResultBlock = {
+        type: "toolResult",
+        toolUseId: "call-1",
+        content: [{ type: "json", json: payload }],
+      };
+
+      let thrown: unknown;
+      try {
+        await newOps().invoke({
+          messages: [{ role: "user", content: [block] }],
+        });
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toBeInstanceOf(M3LBedrockRuntimeOperationError);
+      expect((thrown as M3LBedrockRuntimeOperationError).origin).toBe("caller");
+      expect((thrown as M3LBedrockRuntimeOperationError).retryable).toBe(false);
+      expect(h.send).not.toHaveBeenCalled();
+    },
+  );
+
+  test("[regression] an inputSchema containing a JSON.parse-produced own __proto__ key throws rather than reaching the sent command", async () => {
+    // JSON.parse (unlike an object literal) produces `__proto__` as a real
+    // own property — this is the exact adversarial shape the CRITICAL fix
+    // targets: a caller round-tripping untrusted JSON straight into
+    // inputSchema.
+    const parsed: unknown = JSON.parse('{"a":1,"__proto__":{"injected":"X"}}');
+
+    let thrown: unknown;
+    try {
+      await newOps().invoke({
+        messages: [USER_MESSAGE_TEXT],
+        tools: [
+          { name: "t", inputSchema: parsed as M3LBedrockToolInputSchema },
+        ],
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LBedrockRuntimeOperationError);
+    // The regression this guards: the key must never reach the sent
+    // ConverseCommand at all — asserting the throw is the proof, since a
+    // pre-fix `{}`-based copy would have silently spliced `injected` onto
+    // the copy's own prototype instead of throwing, and send() would have
+    // been reached.
+    expect(h.send).not.toHaveBeenCalled();
+  });
+
+  test("the __proto__/constructor/prototype refusal does not pollute Object.prototype globally, even after repeated poisoned attempts", async () => {
+    for (const key of DANGEROUS_KEYS) {
+      const schema = buildDangerousDocument(key, "top-level");
+      await expect(
+        newOps().invoke({
+          messages: [USER_MESSAGE_TEXT],
+          tools: [{ name: "t", inputSchema: schema }],
+        }),
+      ).rejects.toBeInstanceOf(M3LBedrockRuntimeOperationError);
+    }
+
+    expect(Object.hasOwn(Object.prototype, "injected")).toBe(false);
+    const freshObject: Record<string, unknown> = {};
+    expect(freshObject["injected"]).toBeUndefined();
+  });
+
+  test("a deeply-nested reserved key includes a JSON-path-like trail (keys/indices only) in the error message — never the offending value", async () => {
+    const SECRET_VALUE = "super-secret-value-must-not-leak";
+    const schema = {
+      level1: {
+        level2: [{ level3: { ["__proto__"]: SECRET_VALUE } }],
+      },
+    };
+
+    let thrown: unknown;
+    try {
+      await newOps().invoke({
+        messages: [USER_MESSAGE_TEXT],
+        tools: [{ name: "t", inputSchema: schema }],
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LBedrockRuntimeOperationError);
+    const message = (thrown as Error).message;
+    expect(message).toContain("$.level1.level2[0].level3.__proto__");
+    expect(message).not.toContain(SECRET_VALUE);
+  });
+});
+
 describe("mapToolUseBlock: raw reply block is not a plain object at all", () => {
   test("a non-plain-object content-array entry (a bare string) is dropped, not thrown on", async () => {
     h.send.mockResolvedValueOnce(
@@ -964,6 +1474,8 @@ describe("mapToolUseBlock: raw reply block is not a plain object at all", () => 
 });
 
 describe("response-side: empty-string toolUseId/name is malformed and dropped (Slice B keys toolResult by toolUseId; an empty id would collide)", () => {
+  // A well-formed sibling toolUse block is included (see the analogous note
+  // above the malformed-toolUse test.each) so this stays a drop, not a throw.
   test.each<[string, Record<string, unknown>]>([
     [
       "empty toolUseId",
@@ -971,17 +1483,24 @@ describe("response-side: empty-string toolUseId/name is malformed and dropped (S
     ],
     ["empty name", { toolUse: { toolUseId: "call-1", name: "", input: {} } }],
   ])(
-    "a toolUse block with %s is dropped, not kept",
+    "a toolUse block with %s is dropped, not kept — a well-formed sibling toolUse block still maps",
     async (_label, malformedBlock) => {
       h.send.mockResolvedValueOnce(
         converseOutput({
-          content: [{ text: "ok" }, malformedBlock],
+          content: [
+            { text: "ok" },
+            malformedBlock,
+            { toolUse: { toolUseId: "good-1", name: "good_tool", input: {} } },
+          ],
           stopReason: "tool_use",
         }),
       );
       const result = await newOps().invoke({ messages: [USER_MESSAGE_TEXT] });
 
-      expect(result.message.content).toEqual([{ type: "text", text: "ok" }]);
+      expect(result.message.content).toEqual([
+        { type: "text", text: "ok" },
+        { type: "toolUse", toolUseId: "good-1", name: "good_tool", input: {} },
+      ]);
       expect(result.stopReason).toBe("tool_use");
     },
   );

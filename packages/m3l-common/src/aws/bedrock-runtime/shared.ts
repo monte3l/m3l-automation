@@ -190,6 +190,23 @@ type SdkContentItem =
     };
 
 /**
+ * Reads a defensive `.type` discriminant off an exhaustive-`switch` default
+ * arm's `never`-typed value, for a diagnosable-but-safe error message.
+ *
+ * At runtime, reaching a `default` arm means the value is by definition
+ * off-contract data — a caller-constructed or otherwise malformed value
+ * this module's exhaustive switch doesn't recognize — so it is never
+ * trusted or interpolated **whole** (`String(value)` on a string-typed
+ * content block would leak the block's full caller-supplied text into
+ * `error.message`, which `M3LError.toJSON()` projects into a log sink).
+ * Only the string tag, if present, is read.
+ */
+function readUnknownDiscriminant(value: never): string {
+  const candidate = value as { readonly type?: unknown };
+  return typeof candidate.type === "string" ? candidate.type : "unknown";
+}
+
+/**
  * Maps one {@link M3LBedrockToolResultContent} member to the SDK's
  * `ToolResultContentBlock` shape, recursively copying a `json` payload — see
  * `tools.ts`'s `copyDocument`.
@@ -204,8 +221,13 @@ function mapToolResultContentItem(
       return { json: copyDocument(item.json, 0) };
     default: {
       const exhaustive: never = item;
+      // A `never`-arm violation is structurally caller-side — this value
+      // was constructed (or passed through) by the caller, not received
+      // from the model — so `origin: caller`, `retryable: false` overrides
+      // the catalog default.
       throw new M3LBedrockRuntimeOperationError(
-        `unhandled tool-result content type: ${String(exhaustive)}`,
+        `unhandled tool-result content type: ${readUnknownDiscriminant(exhaustive)}`,
+        { origin: "caller", retryable: false },
       );
     }
   }
@@ -216,12 +238,16 @@ function mapToolResultContentItem(
  * per-block shape. An exhaustive `switch` over the 3-member union — adding
  * a fourth member becomes a compile error here, not a silent drop.
  *
- * `toolUse.input` is forwarded exactly as supplied (a cast to
- * {@link M3LBedrockPlainDocument}, never a recursive copy) — the doc's
- * recursive-copy rule names only `inputSchema` and a `json` tool-result
- * payload, not `toolUse.input`. `toolResult.status` is included only when
- * present (a conditional spread, never a key set to `undefined` —
- * `exactOptionalPropertyTypes`).
+ * `toolUse.input` is recursively copied via `tools.ts`'s `copyDocument` —
+ * the same treatment as `inputSchema` and a `json` tool-result payload —
+ * rather than cast directly to {@link M3LBedrockPlainDocument}: a `toolUse`
+ * block can be caller-constructed (e.g. replaying conversation history
+ * programmatically), so `block.input` is not guaranteed to already be a
+ * document-shaped value the SDK's mutable `DocumentType` boundary can
+ * safely walk. A bare cast would let a caller-supplied bigint/function/cycle
+ * escape as a raw `TypeError`/`RangeError` instead of this module's typed
+ * error. `toolResult.status` is included only when present (a conditional
+ * spread, never a key set to `undefined` — `exactOptionalPropertyTypes`).
  */
 function mapContentBlockToSdk(block: M3LBedrockContentBlock): SdkContentItem {
   switch (block.type) {
@@ -232,7 +258,7 @@ function mapContentBlockToSdk(block: M3LBedrockContentBlock): SdkContentItem {
         toolUse: {
           toolUseId: block.toolUseId,
           name: block.name,
-          input: block.input as M3LBedrockPlainDocument,
+          input: copyDocument(block.input, 0),
         },
       };
     case "toolResult":
@@ -245,8 +271,11 @@ function mapContentBlockToSdk(block: M3LBedrockContentBlock): SdkContentItem {
       };
     default: {
       const exhaustive: never = block;
+      // See `mapToolResultContentItem`'s analogous note: a `never`-arm
+      // violation here is structurally caller-side.
       throw new M3LBedrockRuntimeOperationError(
-        `unhandled content block type: ${String(exhaustive)}`,
+        `unhandled content block type: ${readUnknownDiscriminant(exhaustive)}`,
+        { origin: "caller", retryable: false },
       );
     }
   }
