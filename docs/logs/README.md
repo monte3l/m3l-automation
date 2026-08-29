@@ -67,10 +67,11 @@ deliberately do not.
 
 ## m3l console wave (X-series)
 
-| Date       | Change                                                        | Log                                                                |
-| ---------- | ------------------------------------------------------------- | ------------------------------------------------------------------ |
-| 2026-08-27 | X3 — console persistence foundation (`node:sqlite`, ADR-0069) | [x3-console-persistence](./2026-08-27-x3-console-persistence.md)   |
-| 2026-08-28 | X9 — `m3l-console-web` skeleton (Vite/React 19, ADR-0067)     | [x9-console-web-skeleton](./2026-08-28-x9-console-web-skeleton.md) |
+| Date       | Change                                                        | Log                                                                          |
+| ---------- | ------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| 2026-08-27 | X3 — console persistence foundation (`node:sqlite`, ADR-0069) | [x3-console-persistence](./2026-08-27-x3-console-persistence.md)             |
+| 2026-08-28 | X9 — `m3l-console-web` skeleton (Vite/React 19, ADR-0067)     | [x9-console-web-skeleton](./2026-08-28-x9-console-web-skeleton.md)           |
+| 2026-08-29 | X4 — run orchestration (registry, governor, REST + SSE)       | [x4-console-run-orchestration](./2026-08-29-x4-console-run-orchestration.md) |
 
 > X1 (governance docs) and X2 (`m3l-console-server` skeleton) shipped without
 > logs; X3 is the first entry in this wave.
