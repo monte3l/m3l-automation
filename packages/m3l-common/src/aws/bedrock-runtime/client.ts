@@ -5,15 +5,25 @@
  * types directly. See ADR-0059 for why this module exists and its scope
  * boundary against V5 (tool-use loop primitives).
  *
- * `invoke()`'s single-shot request/response mapping lives here in full;
- * `invokeStream()` is a thin delegation into `stream.ts`'s exported
- * `invokeStream` function, which holds the entire streaming implementation
- * (kept in a separate file per ADR-0072's per-file size ratchet). Machinery
- * genuinely shared by both — abort-signal helpers, the SDK exception-`name`
- * classifier, the retry-runner construction, and the request-mapping
- * helpers — lives in `shared.ts`, imported by both this file and
- * `stream.ts` (see `shared.ts`'s own doc comment for why `stream.ts` cannot
- * import from this file directly).
+ * `invoke()`'s single-shot request/response mapping lives here in full.
+ * `invokeStream()` builds its `ConverseInput` ONCE, up front, via
+ * `shared.ts`'s `buildConverseInput` with `field-readers.ts`'s `textOnly`
+ * policy (refusing `tools`/`toolChoice` and any non-`text` content block —
+ * see that module's doc comment's "The `textOnly` policy" section), then
+ * delegates into `stream.ts`'s exported `invokeStream` function, which holds
+ * the per-model-attempt fallback/retry/abort state machine (kept in a
+ * separate file per ADR-0072's per-file size ratchet) and swaps only
+ * `modelId` on that already-built input for each attempt. This replaces the
+ * former `stream-guard.ts` — a second, parallel request-construction path
+ * that ran before `field-readers.ts`'s field table and so inherited none of
+ * its guards (2026-08-29 security pass round 5, Must-fix F1/F2); deleted
+ * entirely once `invokeStream`'s scope became a mode of the one shared
+ * table instead. Machinery genuinely shared by both `invoke`/`invokeStream`
+ * — abort-signal helpers, the SDK exception-`name` classifier, the
+ * retry-runner construction, and the request-mapping helpers — lives in
+ * `shared.ts`, imported by both this file and `stream.ts` (see `shared.ts`'s
+ * own doc comment for why `stream.ts` cannot import from this file
+ * directly).
  *
  * @packageDocumentation
  */
@@ -32,8 +42,8 @@ import {
   M3LBedrockRuntimeOperationError,
 } from "./error.js";
 import { sanitizeForMessage } from "./message-safety.js";
+import { buildConverseInput } from "./request-builder.js";
 import {
-  buildConverseInput,
   buildRetryRunner,
   classifySendFailure,
   isAborted,
@@ -42,7 +52,6 @@ import {
   STOP_REASON_LOOKUP,
 } from "./shared.js";
 import { invokeStream as invokeStreamImpl } from "./stream.js";
-import { buildStreamSafeRequest } from "./stream-guard.js";
 import {
   buildToolConfig,
   mapNarrowedToolUse,
@@ -58,6 +67,17 @@ import type {
   M3LBedrockStreamEvent,
   M3LBedrockToolInvokeRequest,
 } from "./types.js";
+
+/**
+ * Placeholder `modelId` used only while building `invokeStream`'s once-built,
+ * `textOnly` `ConverseInput` — `stream.ts`'s per-attempt loop always
+ * overwrites `modelId` (`{ ...input, modelId }`) before constructing any
+ * `ConverseStreamCommand`, so this value is never read for any actual
+ * attempt; it exists purely to satisfy `buildConverseInput`'s required
+ * `modelId` parameter at the one call site that doesn't yet know which
+ * model will serve the request.
+ */
+const STREAM_BUILD_PLACEHOLDER_MODEL_ID = "";
 
 /** Builds the `ConverseCommand` for one model attempt. See `shared.ts`'s `buildConverseInput`. */
 function buildConverseCommand(
@@ -434,9 +454,9 @@ export class M3LBedrockRuntimeOperations {
    *   selection — a structurally-typed `request` that carries `tools`/
    *   `toolChoice` anyway, or whose `messages[].content` carries any
    *   non-`text` block (`origin: caller`, `retryable: false`; see
-   *   `hasUnsupportedStreamingContent` and the module doc's scope-boundary
-   *   note). Never retried or fallen back from, even after events have
-   *   already been yielded to the caller.
+   *   `field-readers.ts`'s `textOnly` policy and this module's doc comment's
+   *   scope-boundary note). Never retried or fallen back from, even after
+   *   events have already been yielded to the caller.
    * @throws {@link M3LBedrockRuntimeModelError} When the serving model
    *   itself faults on this specific input (`ModelErrorException`/
    *   `ModelStreamErrorException`), on either side of the `hasYielded`
@@ -472,7 +492,17 @@ export class M3LBedrockRuntimeOperations {
     request: M3LBedrockInvokeRequest,
     options?: M3LBedrockInvokeOptions,
   ): AsyncGenerator<M3LBedrockStreamEvent, void, void> {
-    const safeRequest = buildStreamSafeRequest(request);
-    yield* invokeStreamImpl(this.#client, this.#models, safeRequest, options);
+    // Built ONCE, up front — before model selection, matching `invoke`'s own
+    // "validate before the fallback loop" ordering. `modelId` here is a
+    // placeholder only: `stream.ts` swaps it to the actual attempted model
+    // on every fallback attempt (`{ ...input, modelId }`), so this value is
+    // never read for any real attempt.
+    const input = buildConverseInput(
+      STREAM_BUILD_PLACEHOLDER_MODEL_ID,
+      request,
+      undefined,
+      { textOnly: true },
+    );
+    yield* invokeStreamImpl(this.#client, this.#models, input, options);
   }
 }

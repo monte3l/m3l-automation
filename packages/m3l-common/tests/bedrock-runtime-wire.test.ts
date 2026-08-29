@@ -736,7 +736,7 @@ describe("document.ts guard coverage — readCallerValue/readCallerString/requir
   });
 });
 
-describe("client.ts guard coverage — hasUnsupportedStreamingContent's guarded messages/content read", () => {
+describe("field-readers.ts guard coverage — invokeStream's textOnly field-table build guards a non-array-shaped request.messages/content", () => {
   test("invokeStream: a messages value lacking a real .some() surfaces as M3LBedrockRuntimeOperationError, never a raw TypeError, on the first .next()", async () => {
     const { ops } = newWireOps();
     const request = {
@@ -849,6 +849,370 @@ describe("tools.ts guard coverage — refuseServerToolUse's toolUseId/name suffi
     expect(message).not.toContain("toolUseId=");
     expect(message).not.toContain(" name=");
     expect(sent).toHaveLength(1);
+  });
+});
+
+describe("flip-flopping getters — a value read twice could diverge between validation and send; every reader here reads its source exactly once, so only the FIRST read can ever reach the wire", () => {
+  test("invoke(): a content block's `type` flipping text -> toolUse never lets the toolUse-only fields reach the wire", async () => {
+    const { ops, sent } = newWireOps();
+    let reads = 0;
+    const flip = {
+      get type(): string {
+        reads += 1;
+        return reads === 1 ? "text" : "toolUse";
+      },
+      text: "FLIP_VALIDATED_TEXT",
+      toolUseId: "FLIP_UNVALIDATED_ID",
+      name: "FLIP_UNVALIDATED_NAME",
+    } as unknown as M3LBedrockContentBlock;
+
+    const result = await ops.invoke({
+      messages: [{ role: "user", content: [flip] }],
+    });
+
+    expect(result.stopReason).toBe("end_turn");
+    expect(sent).toHaveLength(1);
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- length asserted above
+    expect(sent[0]!).toContain("FLIP_VALIDATED_TEXT");
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- length asserted above
+    expect(sent[0]!).not.toContain("FLIP_UNVALIDATED_ID");
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- length asserted above
+    expect(sent[0]!).not.toContain("FLIP_UNVALIDATED_NAME");
+  });
+
+  test("invokeStream(): a content block's `type` flipping text -> toolUse never lets the toolUse-only fields reach the wire", async () => {
+    const { ops, sent } = newWireOps();
+    let reads = 0;
+    const flip = {
+      get type(): string {
+        reads += 1;
+        return reads === 1 ? "text" : "toolUse";
+      },
+      text: "FLIP_STREAM_VALIDATED_TEXT",
+      toolUseId: "FLIP_STREAM_UNVALIDATED_ID",
+      name: "FLIP_STREAM_UNVALIDATED_NAME",
+    } as unknown as M3LBedrockContentBlock;
+
+    const stream = ops.invokeStream({
+      messages: [{ role: "user", content: [flip] }],
+    });
+    const thrown = await captureThrow(() => stream.next());
+
+    // The unvalidated marker must never reach the wire, regardless of
+    // whether the streamed response itself later resolves or rejects (this
+    // stub `requestHandler` returns a plain JSON body, not a real event
+    // stream, so what happens AFTER the request is captured is out of
+    // scope here — only the captured bytes matter).
+    for (const body of sent) {
+      expect(body).not.toContain("FLIP_STREAM_UNVALIDATED_ID");
+      expect(body).not.toContain("FLIP_STREAM_UNVALIDATED_NAME");
+    }
+    if (sent.length > 0) {
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- length checked above
+      expect(sent[0]!).toContain("FLIP_STREAM_VALIDATED_TEXT");
+    } else {
+      expect(thrown).toBeInstanceOf(M3LBedrockRuntimeOperationError);
+    }
+  });
+
+  test("invoke(): a text block's `text` value flipping between two reads never lets the second value reach the wire", async () => {
+    const { ops, sent } = newWireOps();
+    let reads = 0;
+    const flip = {
+      type: "text",
+      get text(): string {
+        reads += 1;
+        return reads === 1 ? "FIRST_TEXT_VALUE" : "SECOND_TEXT_VALUE";
+      },
+    } as unknown as M3LBedrockContentBlock;
+
+    const result = await ops.invoke({
+      messages: [{ role: "user", content: [flip] }],
+    });
+
+    expect(result.stopReason).toBe("end_turn");
+    expect(sent).toHaveLength(1);
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- length asserted above
+    expect(sent[0]!).toContain("FIRST_TEXT_VALUE");
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- length asserted above
+    expect(sent[0]!).not.toContain("SECOND_TEXT_VALUE");
+  });
+
+  test("invoke(): request.system flipping between two reads never lets the second value reach the wire", async () => {
+    const { ops, sent } = newWireOps();
+    let reads = 0;
+    const request = {
+      messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+      get system(): string {
+        reads += 1;
+        return reads === 1 ? "SYS_VALIDATED" : "SYS_UNVALIDATED";
+      },
+    } as unknown as M3LBedrockInvokeRequest;
+
+    const result = await ops.invoke(request);
+
+    expect(result.stopReason).toBe("end_turn");
+    expect(sent).toHaveLength(1);
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- length asserted above
+    expect(sent[0]!).toContain("SYS_VALIDATED");
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- length asserted above
+    expect(sent[0]!).not.toContain("SYS_UNVALIDATED");
+  });
+
+  test("invoke(): inferenceConfig.maxTokens flipping between two reads never lets the second value reach the wire", async () => {
+    const { ops, sent } = newWireOps();
+    let reads = 0;
+    const inferenceConfig = {
+      get maxTokens(): number {
+        reads += 1;
+        return reads === 1 ? 7 : 99_999;
+      },
+    };
+
+    const result = await ops.invoke({
+      messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+      inferenceConfig,
+    } as unknown as M3LBedrockInvokeRequest);
+
+    expect(result.stopReason).toBe("end_turn");
+    expect(sent).toHaveLength(1);
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- length asserted above
+    expect(sent[0]!).toContain('"maxTokens":7');
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- length asserted above
+    expect(sent[0]!).not.toContain("99999");
+  });
+
+  test("invoke(): toolChoice.tool flipping between two reads never lets the second (non-matching) value reach the wire", async () => {
+    const { ops, sent } = newWireOps();
+    let reads = 0;
+    const toolChoice = {
+      get tool(): string {
+        reads += 1;
+        return reads === 1 ? "toolA" : "toolB_UNVALIDATED";
+      },
+    };
+
+    const result = await ops.invoke({
+      messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+      tools: [{ name: "toolA", inputSchema: {} }],
+      toolChoice,
+    } as unknown as M3LBedrockToolInvokeRequest);
+
+    expect(result.stopReason).toBe("end_turn");
+    expect(sent).toHaveLength(1);
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- length asserted above
+    expect(sent[0]!).toContain('"toolA"');
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- length asserted above
+    expect(sent[0]!).not.toContain("toolB_UNVALIDATED");
+  });
+});
+
+describe("document.ts's chargeElementBudget — a Proxy reporting a huge .length cannot amplify a tiny input into a huge request", () => {
+  /** A well-formed message every numeric index of a huge-`.length` Proxy resolves to. */
+  const VALID_MESSAGE = { role: "user", content: [] };
+
+  /**
+   * A `Proxy` wrapping a real (tiny) array but reporting a huge `.length`,
+   * and resolving every numeric-index `get` to {@link VALID_MESSAGE} — so a
+   * regression that dropped the per-element budget charge would walk this
+   * "array" tens of thousands of times, each iteration producing a
+   * plausible element, rather than failing on shape/read at index 3 the way
+   * a naive out-of-range Proxy would.
+   */
+  function hugeLengthMessagesArray(): unknown[] {
+    const target: unknown[] = [VALID_MESSAGE];
+    return new Proxy(target, {
+      get(_target, prop, receiver: unknown): unknown {
+        if (prop === "length") return 100_000_000;
+        if (typeof prop === "string" && /^\d+$/.test(prop)) {
+          return VALID_MESSAGE;
+        }
+        return Reflect.get(target, prop, receiver);
+      },
+    });
+  }
+
+  test(
+    "invoke(): a Proxy over a real array reporting a 100M length rejects quickly with M3LBedrockRuntimeOperationError, never hangs or amplifies the request",
+    // Short, explicit timeout: a regression that drops the per-element
+    // charge must fail FAST once the shared node ceiling is reintroduced,
+    // not walk 100M reported elements.
+    { timeout: 2_000 },
+    async () => {
+      const { ops, sent } = newWireOps();
+
+      const thrown = await captureThrow(() =>
+        ops.invoke({
+          messages: hugeLengthMessagesArray() as M3LBedrockMessage[],
+        }),
+      );
+
+      expect(thrown).toBeInstanceOf(M3LBedrockRuntimeOperationError);
+      expect((thrown as Error).message).toContain("constructed nodes/elements");
+      expect(sent).toHaveLength(0);
+    },
+  );
+
+  test(
+    "invokeStream(): a Proxy over a real array reporting a 100M length rejects quickly with M3LBedrockRuntimeOperationError, never hangs or amplifies the request — the streaming path shares the SAME budget invoke() uses",
+    { timeout: 2_000 },
+    async () => {
+      const { ops, sent } = newWireOps();
+
+      const stream = ops.invokeStream({
+        messages: hugeLengthMessagesArray() as M3LBedrockMessage[],
+      });
+      const thrown = await captureThrow(() => stream.next());
+
+      expect(thrown).toBeInstanceOf(M3LBedrockRuntimeOperationError);
+      expect((thrown as Error).message).toContain("constructed nodes/elements");
+      expect(sent).toHaveLength(0);
+    },
+  );
+
+  /** Builds a flat object with `keyCount` own primitive-valued keys — cheap to construct, `keyCount + 1` budget nodes each (the object itself, plus one per key). */
+  function bigFlatSchema(keyCount: number): Record<string, number> {
+    const object: Record<string, number> = {};
+    for (let index = 0; index < keyCount; index += 1) {
+      object[`k${index}`] = index;
+    }
+    return object;
+  }
+
+  test("invoke(): ONE tool whose inputSchema alone is under the shared node ceiling succeeds", async () => {
+    const { ops, sent } = newWireOps();
+
+    const result = await ops.invoke({
+      messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+      tools: [{ name: "toolA", inputSchema: bigFlatSchema(3_400) }],
+    });
+
+    expect(result.stopReason).toBe("end_turn");
+    expect(sent).toHaveLength(1);
+  });
+
+  test("invoke(): the node/element budget is shared across the WHOLE request — three tools, each individually under the ceiling, sum past it and reject", async () => {
+    const { ops, sent } = newWireOps();
+
+    const thrown = await captureThrow(() =>
+      ops.invoke({
+        messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+        tools: [
+          { name: "toolA", inputSchema: bigFlatSchema(3_400) },
+          { name: "toolB", inputSchema: bigFlatSchema(3_400) },
+          { name: "toolC", inputSchema: bigFlatSchema(3_400) },
+        ],
+      }),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LBedrockRuntimeOperationError);
+    expect(sent).toHaveLength(0);
+  });
+});
+
+describe("round 5 field-typing regressions — request.system / inferenceConfig / toolChoice never reach the wire when mistyped", () => {
+  test("request.system as a non-string (an object with toJSON) throws M3LBedrockRuntimeOperationError, never reaching the wire", async () => {
+    const { ops, sent } = newWireOps();
+    const sneaky = {
+      toJSON(): string {
+        return "SNEAKY_SYSTEM_VALUE";
+      },
+    };
+
+    const thrown = await captureThrow(() =>
+      ops.invoke({
+        messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+        system: sneaky,
+      } as unknown as M3LBedrockInvokeRequest),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LBedrockRuntimeOperationError);
+    expect(sent).toHaveLength(0);
+  });
+
+  const INFERENCE_CONFIG_CASES: readonly (readonly [
+    string,
+    Record<string, unknown>,
+  ])[] = [
+    ["maxTokens non-integer (3.5)", { maxTokens: 3.5 }],
+    ["maxTokens <= 0 (0)", { maxTokens: 0 }],
+    ["temperature non-finite (NaN)", { temperature: Number.NaN }],
+    [
+      "temperature non-finite (Infinity)",
+      { temperature: Number.POSITIVE_INFINITY },
+    ],
+    ["topP non-finite (Infinity)", { topP: Number.POSITIVE_INFINITY }],
+    ["stopSequences containing a non-string", { stopSequences: ["ok", 123] }],
+  ];
+
+  test.each(INFERENCE_CONFIG_CASES)(
+    "inferenceConfig with %s throws M3LBedrockRuntimeOperationError, never reaching the wire",
+    async (_label, inferenceConfig) => {
+      const { ops, sent } = newWireOps();
+
+      const thrown = await captureThrow(() =>
+        ops.invoke({
+          messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+          inferenceConfig,
+        } as unknown as M3LBedrockInvokeRequest),
+      );
+
+      expect(thrown).toBeInstanceOf(M3LBedrockRuntimeOperationError);
+      expect(sent).toHaveLength(0);
+    },
+  );
+
+  test("toolChoice: null throws M3LBedrockRuntimeOperationError, never reaching the wire", async () => {
+    const { ops, sent } = newWireOps();
+
+    const thrown = await captureThrow(() =>
+      ops.invoke({
+        messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+        tools: [{ name: "toolA", inputSchema: {} }],
+        toolChoice: null,
+      } as unknown as M3LBedrockToolInvokeRequest),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LBedrockRuntimeOperationError);
+    expect(sent).toHaveLength(0);
+  });
+
+  test("toolChoice.tool as a non-string throws M3LBedrockRuntimeOperationError, never reaching the wire", async () => {
+    const { ops, sent } = newWireOps();
+
+    const thrown = await captureThrow(() =>
+      ops.invoke({
+        messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+        tools: [{ name: "toolA", inputSchema: {} }],
+        toolChoice: { tool: 123 },
+      } as unknown as M3LBedrockToolInvokeRequest),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LBedrockRuntimeOperationError);
+    expect(sent).toHaveLength(0);
+  });
+
+  test("a 200 KB toolChoice.tool never reaches the wire, and both error.message and JSON.stringify(error.toJSON()) are length-capped, never proportional to input size", async () => {
+    const { ops, sent } = newWireOps();
+    const hugeToolName = "T".repeat(200_000);
+
+    const thrown = await captureThrow(() =>
+      ops.invoke({
+        messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+        tools: [{ name: "toolA", inputSchema: {} }],
+        toolChoice: { tool: hugeToolName },
+      }),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LBedrockRuntimeOperationError);
+    const error = thrown as M3LBedrockRuntimeOperationError;
+    expect(error.message.length).toBeLessThan(1_000);
+    // Bounded, not proportional to the 200,000-character input — `toJSON()`
+    // also carries a stack trace, so the cap here is generous relative to
+    // `error.message`'s own cap, but still orders of magnitude below what an
+    // uncapped rendering of a 200 KB string would produce.
+    expect(JSON.stringify(error.toJSON()).length).toBeLessThan(10_000);
+    expect(sent).toHaveLength(0);
   });
 });
 

@@ -2,11 +2,13 @@
  * `aws/bedrock-runtime/shared` -- machinery genuinely shared by both
  * `client.ts` (`M3LBedrockRuntimeOperations.invoke`) and `stream.ts`
  * (`invokeStream`'s implementation): abort-signal helpers, the SDK
- * exception-`name` classifier, the retry-runner construction, the
- * `ConverseCommandInput`/`ConverseStreamCommandInput`-shared request
- * mapping (delegated to `field-readers.ts`'s exhaustive field table -- see
- * that module's doc comment), and the closed {@link M3LBedrockStopReason}
- * membership check.
+ * exception-`name` classifier, the retry-runner construction, and the
+ * closed {@link M3LBedrockStopReason} membership check. The actual
+ * `ConverseCommandInput`/`ConverseStreamCommandInput` request-mapping table
+ * lives in `request-builder.ts` (not here) -- `client.ts` imports
+ * `buildConverseInput` directly from there, and `stream.ts` imports its
+ * `ConverseInput` type from there too, so this module has no dependency on
+ * either `request-builder.ts` or `field-readers.ts`.
  *
  * Split out as its own leaf module (rather than living in `client.ts`, with
  * `stream.ts` importing from it) specifically to avoid a `client.ts` ⇄
@@ -20,28 +22,17 @@
  * @packageDocumentation
  */
 
-import type { ToolConfiguration } from "@aws-sdk/client-bedrock-runtime";
-
 import { M3LBackoff } from "../../core/polling/M3LBackoff.js";
 import { combineClassifiers } from "../../core/polling/classifiers.js";
 import { M3LRetryRunner } from "../../core/polling/M3LRetryRunner.js";
 import type { M3LRetryClassifier } from "../../core/polling/M3LRetryRunner.js";
 
-import { DocumentCopyBudget } from "./document.js";
 import {
   M3LBedrockRuntimeModelError,
   M3LBedrockRuntimeOperationError,
 } from "./error.js";
-import { buildRequestFields } from "./field-readers.js";
-import type { ConverseInput } from "./field-readers.js";
 import { sanitizeForMessage } from "./message-safety.js";
-import type {
-  M3LBedrockInvokeRequest,
-  M3LBedrockRuntimeRole,
-  M3LBedrockStopReason,
-} from "./types.js";
-
-export type { ConverseInput } from "./field-readers.js";
+import type { M3LBedrockRuntimeRole, M3LBedrockStopReason } from "./types.js";
 
 /** Retry-runner backoff tuning: 200ms start, 5s cap (matches `M3LPollingPolicies.awsThrottling()`). */
 const RETRY_START_MS = 200;
@@ -172,36 +163,6 @@ export function buildRetryRunner(
  */
 function safeModelId(modelId: string): string {
   return sanitizeForMessage(modelId);
-}
-
-/**
- * Builds the plain request-input object shared by `client.ts`'s
- * `buildConverseCommand` and `stream.ts`'s `buildConverseStreamCommand` --
- * `ConverseCommandInput` and `ConverseStreamCommandInput` are field-identical
- * for this slice's surface. Delegates the actual field-by-field
- * construction to `field-readers.ts`'s {@link buildRequestFields} -- see
- * that module's doc comment for the exhaustive-field-table mechanism this
- * function is a thin, stable entry point over (kept here, rather than
- * re-pointing every import, so `stream.ts` -- frozen -- and `client.ts`
- * keep importing `buildConverseInput` from this file unchanged).
- *
- * `toolConfig` is already-built (via `tools.ts`'s `buildToolConfig`, called
- * once by `client.ts`'s `invoke` before the fallback loop) rather than
- * derived from `request` here -- `request`'s own type stays
- * `M3LBedrockInvokeRequest`, so `stream.ts` can keep calling this function
- * without ever naming `tools`/`toolChoice`.
- */
-export function buildConverseInput(
-  modelId: string,
-  request: M3LBedrockInvokeRequest,
-  toolConfig?: ToolConfiguration,
-): ConverseInput {
-  return buildRequestFields({
-    modelId,
-    request,
-    toolConfig,
-    budget: new DocumentCopyBudget(),
-  });
 }
 
 /**
