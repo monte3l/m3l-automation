@@ -754,7 +754,16 @@
       "M3LBedrockStreamStartEvent",
       "M3LBedrockStreamTextDeltaEvent",
       "M3LBedrockStreamStopEvent",
-      "M3LBedrockRuntimeStreamError"
+      "M3LBedrockRuntimeStreamError",
+      "M3LBedrockToolUseBlock",
+      "M3LBedrockToolResultBlock",
+      "M3LBedrockToolResultContent",
+      "M3LBedrockToolResultJsonBlock",
+      "M3LBedrockToolResultStatus",
+      "M3LBedrockToolDefinition",
+      "M3LBedrockToolInputSchema",
+      "M3LBedrockToolChoice",
+      "M3LBedrockToolInvokeRequest"
     ]
   },
   {

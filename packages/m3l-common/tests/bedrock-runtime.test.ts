@@ -88,6 +88,8 @@ import type {
   M3LBedrockStopReason,
   M3LBedrockTextBlock,
   M3LBedrockTokenUsage,
+  M3LBedrockToolResultBlock,
+  M3LBedrockToolUseBlock,
 } from "../src/aws/index.js";
 
 import type { BedrockRuntimeClient } from "@aws-sdk/client-bedrock-runtime";
@@ -706,11 +708,36 @@ describe("M3LBedrockRuntimeOperations.invoke() — request/response mapping", ()
     expect(result.message.content).toEqual([]);
   });
 
-  test("a non-text content block in the reply is dropped silently, keeping only text blocks (no throw)", async () => {
+  test("a well-formed toolUse content block in the reply is kept alongside text, in wire order (V5)", async () => {
     h.send.mockResolvedValueOnce(
       converseOutput({
         content: [
           { toolUse: { toolUseId: "t-1", name: "lookup", input: {} } },
+          { text: "kept" },
+        ],
+      }),
+    );
+    const ops = new M3LBedrockRuntimeOperations(
+      fakeClient(),
+      buildOptions([MODEL_A]),
+    );
+
+    const result: M3LBedrockInvocationResult = await settleWithTimers(
+      ops.invoke(BASE_REQUEST),
+    );
+
+    const expectedContent: readonly M3LBedrockContentBlock[] = [
+      { type: "toolUse", toolUseId: "t-1", name: "lookup", input: {} },
+      { type: "text", text: "kept" },
+    ];
+    expect(result.message.content).toEqual(expectedContent);
+  });
+
+  test("a content block this wrapper cannot represent at all is dropped silently, keeping only representable blocks (no throw)", async () => {
+    h.send.mockResolvedValueOnce(
+      converseOutput({
+        content: [
+          { image: { format: "png", source: { bytes: new Uint8Array() } } },
           { text: "kept" },
         ],
       }),
@@ -949,8 +976,17 @@ describe("Bedrock runtime error classes", () => {
     >();
   });
 
-  test("M3LBedrockContentBlock is a single-member tagged union (M3LBedrockTextBlock) in this V4 slice", () => {
-    expectTypeOf<M3LBedrockContentBlock>().toEqualTypeOf<M3LBedrockTextBlock>();
+  test("M3LBedrockContentBlock is the V5-widened 3-member union: text | toolUse | toolResult (no longer the V4 single-member union)", () => {
+    // Rewritten for V5 Slice A (docs/reference/aws/bedrock-runtime.md,
+    // updated 2026-08-29): M3LBedrockContentBlock widens from a
+    // single-member tagged union (M3LBedrockTextBlock alone) to three
+    // members. The old pin (`toEqualTypeOf<M3LBedrockTextBlock>()`) no
+    // longer compiles once the union widens — full behavioral coverage of
+    // the two new members lives in tests/bedrock-runtime-tools.test.ts;
+    // this file's pin only needs to track the shape of the type it imports.
+    expectTypeOf<M3LBedrockContentBlock>().toEqualTypeOf<
+      M3LBedrockTextBlock | M3LBedrockToolUseBlock | M3LBedrockToolResultBlock
+    >();
   });
 
   test("M3LBedrockStopReason mirrors the SDK's StopReason enum verbatim", () => {

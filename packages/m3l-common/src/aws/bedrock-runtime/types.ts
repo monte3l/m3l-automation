@@ -17,15 +17,97 @@ export interface M3LBedrockTextBlock {
   readonly text: string;
 }
 
+/** `"success"` or `"error"` for a {@link M3LBedrockToolResultBlock}; omitted means `"success"`. */
+export type M3LBedrockToolResultStatus = "success" | "error";
+
+/**
+ * A model-generated request to call a tool, carried in an assistant reply's
+ * `message.content` when `stopReason` is `"tool_use"`.
+ */
+export interface M3LBedrockToolUseBlock {
+  /** Discriminant tag for {@link M3LBedrockContentBlock}. */
+  readonly type: "toolUse";
+  /** Opaque id correlating this call to the matching {@link M3LBedrockToolResultBlock} reply. */
+  readonly toolUseId: string;
+  /** The tool's name, as declared in the matching {@link M3LBedrockToolDefinition}. */
+  readonly name: string;
+  /**
+   * The model-generated call arguments, exactly as the SDK decoded them —
+   * never re-parsed, re-shaped, or validated against the tool's own
+   * `inputSchema`. Narrow before use.
+   */
+  readonly input: unknown;
+}
+
+/** A JSON-valued {@link M3LBedrockToolResultContent} member. */
+export interface M3LBedrockToolResultJsonBlock {
+  /** Discriminant tag for {@link M3LBedrockToolResultContent}. */
+  readonly type: "json";
+  /** The JSON-serializable payload. Recursively copied on the way out — see `document.ts`'s `copyDocument`. */
+  readonly json: unknown;
+}
+
+/**
+ * The content carried by a {@link M3LBedrockToolResultBlock} — a deliberate
+ * 2-of-6 subset of the SDK's `ToolResultContentBlock` union (`image`,
+ * `document`, `video`, and `searchResult` members are out of scope; a tool
+ * handler needing one constructs a raw `ConverseCommand` directly).
+ */
+export type M3LBedrockToolResultContent =
+  M3LBedrockTextBlock | M3LBedrockToolResultJsonBlock;
+
+/**
+ * A caller's answer to a previous {@link M3LBedrockToolUseBlock}, sent on the
+ * next turn. Request-side only in practice — the service never emits one in
+ * an assistant reply, though it is part of {@link M3LBedrockContentBlock} and
+ * so mappable in either direction.
+ */
+export interface M3LBedrockToolResultBlock {
+  /** Discriminant tag for {@link M3LBedrockContentBlock}. */
+  readonly type: "toolResult";
+  /** Correlates this reply to the {@link M3LBedrockToolUseBlock} it answers. */
+  readonly toolUseId: string;
+  /** The tool's result content, in order. */
+  readonly content: readonly M3LBedrockToolResultContent[];
+  /** Whether the tool call succeeded; omitted means `"success"`. */
+  readonly status?: M3LBedrockToolResultStatus;
+}
+
 /**
  * A single content block within a {@link M3LBedrockMessage}.
  *
- * Deliberately a single-member tagged union in this V4 slice — see
- * `docs/reference/aws/bedrock-runtime.md`'s scope-boundary note. V5 widens
- * this with `toolUse`/`toolResult` members; the `type` discriminant exists
- * from V4 onward specifically so that widening is additive.
+ * A 3-member tagged union as of V5 — widened from V4's single-member union
+ * (`M3LBedrockTextBlock` alone) with `toolUse`/`toolResult` members; the
+ * `type` discriminant existed from V4 onward specifically so that this
+ * widening would be additive. See `docs/reference/aws/bedrock-runtime.md`'s
+ * "One honest caveat on 'additive'" note: a consumer exhaustively
+ * `switch`ing over `block.type`, or mapping every block to `.text`, now
+ * fails to compile — deliberate, and pre-announced.
  */
-export type M3LBedrockContentBlock = M3LBedrockTextBlock;
+export type M3LBedrockContentBlock =
+  M3LBedrockTextBlock | M3LBedrockToolUseBlock | M3LBedrockToolResultBlock;
+
+/** A JSON-Schema-shaped object describing a tool's call arguments. Not validated by this library — see `M3LBedrockToolUseBlock.input`. */
+export type M3LBedrockToolInputSchema = Readonly<Record<string, unknown>>;
+
+/** One tool the model may call, declared in {@link M3LBedrockToolInvokeRequest.tools}. */
+export interface M3LBedrockToolDefinition {
+  /** The tool's name, referenced verbatim (case-sensitive) by {@link M3LBedrockToolChoice}'s `{ tool }` form and by reply {@link M3LBedrockToolUseBlock.name}. */
+  readonly name: string;
+  /** Optional human-readable description shown to the model. */
+  readonly description?: string;
+  /** The tool's call-argument schema, forwarded to the Converse API's `toolSpec.inputSchema.json` — recursively copied, never passed by reference. */
+  readonly inputSchema: M3LBedrockToolInputSchema;
+}
+
+/**
+ * Constrains which tool(s), if any, the model must call on this turn:
+ * `"auto"` lets the model decide, `"any"` forces some tool call, and
+ * `{ tool: name }` forces that specific tool. Deliberately **not** a tagged
+ * union — the two string literals and the object arm are distinguished
+ * structurally, matching the Converse API's own `toolChoice` shape.
+ */
+export type M3LBedrockToolChoice = "auto" | "any" | { readonly tool: string };
 
 /** A single message in a Converse conversation. */
 export interface M3LBedrockMessage {
@@ -89,6 +171,25 @@ export interface M3LBedrockInvokeRequest {
   readonly system?: string;
   /** Optional inference tuning parameters. */
   readonly inferenceConfig?: M3LBedrockInferenceConfig;
+}
+
+/**
+ * The request to {@link M3LBedrockRuntimeOperations.invoke} — the V4
+ * {@link M3LBedrockInvokeRequest} widened with optional `tools`/`toolChoice`.
+ * Both added fields are optional, so every V4 request literal remains a
+ * valid `invoke` argument.
+ *
+ * `tools` and `toolChoice` are mapped together into the Converse API's
+ * single `toolConfig` field, omitted entirely when `tools` is absent **or
+ * empty** — an empty array is treated as equivalent to absent throughout.
+ * `invokeStream` deliberately keeps the narrower {@link M3LBedrockInvokeRequest}
+ * — see the module doc's scope-boundary note.
+ */
+export interface M3LBedrockToolInvokeRequest extends M3LBedrockInvokeRequest {
+  /** The tools the model may call this turn. An empty array is equivalent to absent. */
+  readonly tools?: readonly M3LBedrockToolDefinition[];
+  /** Constrains which tool(s) the model must call. A caller error when present while `tools` is absent/empty, or names a tool not in `tools`. */
+  readonly toolChoice?: M3LBedrockToolChoice;
 }
 
 /** Per-call options for {@link M3LBedrockRuntimeOperations.invoke}. */

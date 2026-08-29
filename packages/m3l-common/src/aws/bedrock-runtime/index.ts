@@ -5,9 +5,13 @@
  * types directly. See ADR-0059.
  *
  * Slice 1: `invoke()` single-shot Converse call, the model fallback
- * registry, token usage capture, and the three error classes. Slice 2 (this
- * update): `invokeStream()` over `ConverseStream`, `M3LBedrockStreamEvent`
- * and its three members, and `M3LBedrockRuntimeStreamError`.
+ * registry, token usage capture, and the three error classes. Slice 2:
+ * `invokeStream()` over `ConverseStream`, `M3LBedrockStreamEvent` and its
+ * three members, and `M3LBedrockRuntimeStreamError`. Slice 3 (V5, this
+ * update): the tool vocabulary — `toolUse`/`toolResult` content blocks, the
+ * tool definition/choice/schema types, and `M3LBedrockToolInvokeRequest`.
+ * `invokeStream` stays text-only; see the reference page's scope-boundary
+ * note.
  *
  * @packageDocumentation
  */
@@ -35,4 +39,13 @@ export type {
   M3LBedrockStreamTextDeltaEvent,
   M3LBedrockTextBlock,
   M3LBedrockTokenUsage,
+  M3LBedrockToolChoice,
+  M3LBedrockToolDefinition,
+  M3LBedrockToolInputSchema,
+  M3LBedrockToolInvokeRequest,
+  M3LBedrockToolResultBlock,
+  M3LBedrockToolResultContent,
+  M3LBedrockToolResultJsonBlock,
+  M3LBedrockToolResultStatus,
+  M3LBedrockToolUseBlock,
 } from "./types.js";

@@ -2593,6 +2593,51 @@
     "namespace": "aws",
     "file": "packages/m3l-common/src/aws/bedrock-runtime/error.ts"
   },
+  "M3LBedrockToolUseBlock": {
+    "submodule": "bedrock-runtime",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/bedrock-runtime/types.ts"
+  },
+  "M3LBedrockToolResultBlock": {
+    "submodule": "bedrock-runtime",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/bedrock-runtime/types.ts"
+  },
+  "M3LBedrockToolResultContent": {
+    "submodule": "bedrock-runtime",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/bedrock-runtime/types.ts"
+  },
+  "M3LBedrockToolResultJsonBlock": {
+    "submodule": "bedrock-runtime",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/bedrock-runtime/types.ts"
+  },
+  "M3LBedrockToolResultStatus": {
+    "submodule": "bedrock-runtime",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/bedrock-runtime/types.ts"
+  },
+  "M3LBedrockToolDefinition": {
+    "submodule": "bedrock-runtime",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/bedrock-runtime/types.ts"
+  },
+  "M3LBedrockToolInputSchema": {
+    "submodule": "bedrock-runtime",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/bedrock-runtime/types.ts"
+  },
+  "M3LBedrockToolChoice": {
+    "submodule": "bedrock-runtime",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/bedrock-runtime/types.ts"
+  },
+  "M3LBedrockToolInvokeRequest": {
+    "submodule": "bedrock-runtime",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/bedrock-runtime/types.ts"
+  },
   "AWSClientProvider": {
     "submodule": "clients",
     "namespace": "aws",

@@ -4,8 +4,10 @@
 `BedrockRuntimeClient`'s Converse API, so callers never import
 `@aws-sdk/client-bedrock-runtime` command classes or touch its `Converse*`
 types directly. See [ADR-0059](../../adr/0059-bedrock-runtime-wrapper-and-loop-primitives.md)
-for why this module exists and its scope boundary against V5 (tool-use loop
-primitives, a separate future change).
+for why this module exists. ADR-0059 option 3 places V5's tool-use loop
+primitives in **this same submodule** rather than a new one — so the tool
+vocabulary below is an additive widening of the V4 surface, not a new
+`exports` subpath.
 
 ## Overview
 
@@ -18,16 +20,23 @@ touches an `@aws-sdk/client-bedrock-runtime` type. Built on `Converse` /
 model-agnostic Messages surface, so the wrapper never hand-rolls or parses a
 per-model JSON request/response body.
 
-**Scope boundary (V4 vs. V5):** this submodule's V4 slice covers **text-only**
-single-shot and streaming invocation, the model-id fallback registry, and
-token usage capture. `M3LBedrockContentBlock` is deliberately a
-single-member tagged union (`{ type: "text"; text: string }`) even though the
-underlying `ConverseCommandInput`/`Output` already support tool-use content —
-V5 (a separate future change, ADR-0059) widens it to include
-`toolUse`/`toolResult` members and adds the `tools`/`toolConfig` request
-surface. The `type` discriminant exists from V4 onward specifically so that
-widening is additive (a new union member), not a breaking change to an
-existing shape.
+**Scope boundary (V5): `invoke()` is tool-aware, `invokeStream()` is not.**
+V4 shipped `M3LBedrockContentBlock` as a deliberately single-member tagged
+union so that V5's widening would be additive — that widening has now landed:
+the union carries `toolUse` and `toolResult` members alongside `text`, and
+`invoke()` accepts a `M3LBedrockToolInvokeRequest` carrying `tools` and
+`toolChoice`.
+
+`invokeStream()` deliberately stays **text-only** and keeps the narrower V4
+`M3LBedrockInvokeRequest`. The Converse _stream_ event union has no tool-use
+member in this wrapper, so forwarding a tool config into a stream would let
+the model emit tool requests that are silently dropped mid-stream — the same
+failure class already documented for reasoning deltas below. Keeping the two
+request types distinct makes passing a tool-bearing **literal** to
+`invokeStream` a compile error rather than a silent drop; because structural
+typing still admits a non-literal, `invokeStream` **also** throws
+`M3LBedrockRuntimeOperationError` (`origin: caller`) at runtime rather than
+ignoring the tools. Streaming tool-use is out of scope for V5.
 
 - `M3LBedrockRuntimeOperations` — the wrapper class, constructed from a raw
   `BedrockRuntimeClient` and an ordered model-id fallback list. Exposes
@@ -44,6 +53,11 @@ existing shape.
   `M3LBedrockInvocationResult`, `M3LBedrockRuntimeOptions`,
   `M3LBedrockStreamEvent` (and its three members: `M3LBedrockStreamStartEvent`,
   `M3LBedrockStreamTextDeltaEvent`, `M3LBedrockStreamStopEvent`).
+- Tool vocabulary (V5): `M3LBedrockToolUseBlock`, `M3LBedrockToolResultBlock`,
+  `M3LBedrockToolResultContent`, `M3LBedrockToolResultJsonBlock`,
+  `M3LBedrockToolResultStatus`, `M3LBedrockToolDefinition`,
+  `M3LBedrockToolInputSchema`, `M3LBedrockToolChoice`, and
+  `M3LBedrockToolInvokeRequest`.
 
 ## Public API
 
@@ -68,10 +82,10 @@ being downcast to satisfy the type, so the constructor **also** throws
 is a caller/config error, not deferred to the first `invoke` call, and stays
 as defense-in-depth for exactly that downcast case.
 
-| Method                             | Retried? | Returns                                             | Throws / rejects with                                                                                                         |
-| ---------------------------------- | -------- | --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `invoke(request, options?)`        | Yes¹     | `Promise<M3LBedrockInvocationResult>`               | `M3LBedrockRuntimeOperationError`, `M3LBedrockRuntimeModelError`, `M3LBedrockRuntimeNoModelError`, `M3LOperationAbortedError` |
-| `invokeStream(request, options?)`² | Yes¹ ³   | `AsyncGenerator<M3LBedrockStreamEvent, void, void>` | Same four as `invoke`, **plus** `M3LBedrockRuntimeStreamError` for a fault after at least one event has already been yielded  |
+| Method                               | Retried? | Returns                                             | Throws / rejects with                                                                                                         |
+| ------------------------------------ | -------- | --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `invoke(request, options?)`⁴         | Yes¹     | `Promise<M3LBedrockInvocationResult>`               | `M3LBedrockRuntimeOperationError`, `M3LBedrockRuntimeModelError`, `M3LBedrockRuntimeNoModelError`, `M3LOperationAbortedError` |
+| `invokeStream(request, options?)`² ⁵ | Yes¹ ³   | `AsyncGenerator<M3LBedrockStreamEvent, void, void>` | Same four as `invoke`, **plus** `M3LBedrockRuntimeStreamError` for a fault after at least one event has already been yielded  |
 
 ¹ `ThrottlingException`/`InternalServerException` retry on the **same** model
 via `M3LRetryRunner` before any fallback is attempted; see "Fault handling and
@@ -89,6 +103,22 @@ fault is a rejection of `.next()`, never a yielded value.
 is yielded** — see "Fault handling and model fallback" below for the
 `hasYielded` commit boundary and why nothing retries or falls back after
 that point.
+
+⁴ `invoke`'s `request` is `M3LBedrockToolInvokeRequest` — the V4
+`M3LBedrockInvokeRequest` widened with optional `tools`/`toolChoice`. Since
+every field it adds is optional, a V4 request literal still type-checks
+unchanged.
+
+⁵ `invokeStream`'s `request` stays the narrower `M3LBedrockInvokeRequest`, and
+`invokeStream` **throws** `M3LBedrockRuntimeOperationError` (`origin: caller`,
+`retryable: false`) in **two** cases: a structurally-typed value carrying an
+own `tools` or `toolChoice` property (presence alone is enough, so `tools: []`
+is refused too), **or** a `messages[].content` entry that is not a `text`
+block. The second case matters because `M3LBedrockContentBlock` is shared by
+both methods, so V5's widening would otherwise have let a `toolUse` block
+reach `ConverseStream` — where this wrapper has no event for it. Both cases
+throw the same message. Because `invokeStream` is an `async function*`, the
+throw surfaces on the first `.next()`, not at call time.
 
 **`AbortSignal` cancellation.** `options?.signal` is checked against a
 module-private `isAborted(signal)` helper (the ADR-0049 named-function
@@ -142,6 +172,97 @@ interface M3LBedrockInvokeRequest {
 text member (`[{ text: system }]`) — the SDK's richer system-block union
 (guard content, cache points) is not exposed; a caller needing those
 constructs a raw `ConverseCommand` directly.
+
+This is the request type `invokeStream` accepts. `invoke` accepts the wider
+`M3LBedrockToolInvokeRequest` below.
+
+### `M3LBedrockToolInvokeRequest`
+
+```ts
+interface M3LBedrockToolInvokeRequest extends M3LBedrockInvokeRequest {
+  readonly tools?: readonly M3LBedrockToolDefinition[];
+  readonly toolChoice?: M3LBedrockToolChoice;
+}
+```
+
+The request type `invoke` accepts. Both added fields are optional, so every
+V4 `M3LBedrockInvokeRequest` remains a valid `invoke` argument — the widening
+is additive for construction as well as consumption.
+
+**One honest caveat on "additive".** `M3LBedrockContentBlock` also appears in
+an _output_ position (`M3LBedrockInvocationResult.message.content`), and
+widening a union is not free there: a consumer that `switch`es over
+`block.type` with an exhaustive `never` arm, or writes
+`content.map((b) => b.text)`, now fails to compile. Nothing in this repo does
+either — verified — and V4 pre-announced the widening in the type's own TSDoc,
+in this page, and in ADR-0059 precisely so that consumers could avoid those
+two shapes. It ships as an additive minor on that basis, but the failure mode
+is named here rather than left for a consumer to discover.
+
+`tools` and `toolChoice` are mapped together into the Converse API's single
+`toolConfig` field, and that field is **omitted entirely** when `tools` is
+absent **or empty** — a conditional spread, never a key set to `undefined`
+(`exactOptionalPropertyTypes`). For **mapping** purposes an empty `tools`
+array is therefore equivalent to an absent one, so a caller building the list
+programmatically does not have to special-case "I found no tools this run".
+
+`invokeStream` is governed by a stricter **text-only policy**, applied by the
+same request builder that serves `invoke` rather than by a separate pre-check
+— so streaming inherits the identical reads, element budget, and
+module-owned rebuild instead of re-deriving them. The policy has two halves:
+
+1. A top-level refusal of any request carrying an own `tools` or `toolChoice`
+   property, keyed off **presence, not emptiness**, so `tools: []` is refused
+   too. The asymmetry against the mapping rule above is intentional: the
+   mapping rule answers "how many tools did the caller end up with?", where
+   empty and absent genuinely coincide, while the policy answers "did the
+   caller reach for the tool surface on a method that cannot serve it?" —
+   where passing the key at all signals an intent to refuse rather than
+   quietly ignore.
+2. A per-block refusal of any `messages[].content` entry that is not a `text`
+   block. This half exists because `M3LBedrockContentBlock` is shared by both
+   methods: without it, V5's widening would silently let a `toolUse` or
+   `toolResult` block reach `ConverseStream`, which this wrapper has no
+   stream event to represent.
+
+Two caller errors, both `M3LBedrockRuntimeOperationError`
+(`origin: caller`, `retryable: false`), both raised before anything is sent:
+
+1. `toolChoice` present while `tools` is absent or empty — a choice
+   constraining a vocabulary that isn't there. Forwarding it would earn a
+   service-side `ValidationException` with a far worse diagnostic.
+2. `toolChoice` of `{ tool: name }` naming a tool that is not in `tools`.
+
+Validation of `tools`/`toolChoice` — including the `inputSchema` copy — runs
+**before** the `AbortSignal` check, not after: a malformed request is malformed
+regardless of whether it was also cancelled, and reporting
+`M3LOperationAbortedError` for a request that could never have been sent would
+hide a caller bug behind a timing coincidence.
+
+That ordering guarantee is deliberately scoped to the tool config. Validation
+of **message content** — a `toolResult`'s `json` payload, or a request-side
+`toolUse.input` — happens later, when the command for a given model attempt is
+built, and therefore _after_ the first abort check. So a request that is both
+cancelled and carries a non-serializable value inside `messages` reports the
+cancellation, not the bad value. This is stated rather than smoothed over: the
+tool config is validated once up front, while message mapping is part of
+building each per-model attempt.
+
+**Response side.** When the model asks for a tool, `stopReason` is
+`"tool_use"` and the reply's `message.content` carries one or more
+`toolUse` blocks; `invoke` now **keeps** them (V4 dropped every non-`text`
+block) so `result.message.content` is the caller's input to the tool-use
+loop. `toolUse.input` is handed back **exactly as the SDK decoded it**, typed
+`unknown` and never re-parsed, re-shaped, or validated against the tool's own
+`inputSchema` — validating model output against a caller-supplied JSON Schema
+is a whole schema engine this library does not have, so narrowing is the
+handler's job. See "Unrepresentable content blocks in a reply" below for the
+drop-vs-refuse rule that governs malformed and server-executed blocks.
+
+A `toolResult` block is **request-side only** in practice: it is how a caller
+answers a `toolUse` on the next turn. It is part of `M3LBedrockContentBlock`
+— and so mappable in either direction — but the service does not emit one in
+an assistant reply.
 
 ### `M3LBedrockInvokeOptions`
 
@@ -273,7 +394,42 @@ interface M3LBedrockTextBlock {
   readonly text: string;
 }
 
-type M3LBedrockContentBlock = M3LBedrockTextBlock; // widened in V5
+type M3LBedrockToolResultStatus = "success" | "error";
+
+interface M3LBedrockToolUseBlock {
+  readonly type: "toolUse";
+  readonly toolUseId: string;
+  readonly name: string;
+  readonly input: unknown; // model-generated: narrow before use
+}
+
+interface M3LBedrockToolResultJsonBlock {
+  readonly type: "json";
+  readonly json: unknown;
+}
+
+type M3LBedrockToolResultContent =
+  M3LBedrockTextBlock | M3LBedrockToolResultJsonBlock;
+
+interface M3LBedrockToolResultBlock {
+  readonly type: "toolResult";
+  readonly toolUseId: string;
+  readonly content: readonly M3LBedrockToolResultContent[];
+  readonly status?: M3LBedrockToolResultStatus; // omitted means "success"
+}
+
+type M3LBedrockContentBlock =
+  M3LBedrockTextBlock | M3LBedrockToolUseBlock | M3LBedrockToolResultBlock;
+
+type M3LBedrockToolInputSchema = Readonly<Record<string, unknown>>;
+
+interface M3LBedrockToolDefinition {
+  readonly name: string;
+  readonly description?: string;
+  readonly inputSchema: M3LBedrockToolInputSchema;
+}
+
+type M3LBedrockToolChoice = "auto" | "any" | { readonly tool: string };
 
 interface M3LBedrockMessage {
   readonly role: M3LBedrockRuntimeRole;
@@ -313,6 +469,57 @@ interface M3LBedrockRuntimeOptions {
 (verified against installed `dist-types`, 2026-08-28) — no library-side
 renaming, since callers reasoning about "why did the model stop" benefit from
 the same vocabulary AWS's own docs use.
+
+**Why the tool discriminants are camelCase.** `"toolUse"` and `"toolResult"`
+mirror the SDK's `ContentBlock` member keys exactly, the same rule that gives
+`M3LBedrockTextBlock` its `"text"` tag. The kebab-case used by
+`M3LBedrockStreamEvent` (`"message-start"`) is reserved for library-invented
+_fusions_ — `"message-stop"` fuses two distinct SDK events, so borrowing
+either name alone would mislead — which is not the case here: both tool
+members are 1:1 with a single SDK member, and they land in the same union as
+the already-mirrored `"text"`.
+
+One consequence is worth stating rather than leaving to be tripped over:
+after V5, `stopReason === "tool_use"` (snake_case) and
+`block.type === "toolUse"` (camelCase) coexist. That is the correct result of
+mirroring two _different_ SDK vocabularies verbatim, not an inconsistency;
+harmonizing them into a library dialect would make both unpredictable.
+
+**`input`, `json`, and `inputSchema` are `unknown`, not a JSON-value type.**
+The library owns no `JsonValue` type (`core/json` exports only
+format/detection types), JSON Schema is an open, versioned vocabulary that a
+partial hand-rolled model would wrongly reject, and re-exporting the SDK's own
+`__DocumentType` would leak an `@aws-sdk`/`@smithy` type straight through the
+wrapper boundary this submodule exists to seal (ADR-0027). `unknown` forces
+the caller to narrow, which is the correct obligation for a
+**model-generated** value.
+
+Because the SDK's document type is **mutable** (`@smithy/types`' `DocumentType`
+declares its array arm as `DocumentType[]`, not `readonly`), a `readonly`
+library value is not assignable to it. `inputSchema` and a `json` tool result
+are therefore **recursively copied** into fresh mutable structures on the way
+out, not spread or passed through — the same reason `inferenceConfig.stopSequences`
+is already copied. That copy is bounded: nesting deeper than **32** levels
+throws `M3LBedrockRuntimeOperationError` (`origin: caller`, `retryable: false`)
+rather than letting an unbounded recursion over caller input escape the public
+boundary as a bare `RangeError`. A value that cannot round-trip through JSON
+at all is likewise a caller error, not a silent mis-serialization at send
+time: a `bigint`, a function, a symbol, `undefined`, a cycle — and also any
+**non-plain object**, such as a `Date`, a `Map`, or a class instance, since
+those serialize to something the caller almost never intended.
+
+The copy additionally **refuses the reserved keys** `__proto__`,
+`constructor`, and `prototype` outright, and builds every copied object on a
+null prototype. This is not decorative: `JSON.parse` produces `__proto__` as a
+real own property, and the AWS SDK serializes a document with `for...in`,
+which walks the prototype chain — so an unguarded copy would hoist such a
+key's nested contents into the document Bedrock actually receives. The error
+names the offending key and its JSON path; it never includes the value.
+
+`M3LBedrockToolResultContent` is a deliberate 2-of-6 subset of the SDK's
+`ToolResultContentBlock` union: `image`, `document`, `video`, and
+`searchResult` members are out of scope, and a tool handler needing one
+constructs a raw `ConverseCommand` directly.
 
 ### `M3LBedrockRuntimeOperationError`
 
@@ -665,25 +872,48 @@ const ops = new M3LBedrockRuntimeOperations(client, {
   callers switch on exhaustively — `content_filtered`/`guardrail_intervened`
   are exactly the values a caller checks for a blocked generation, so a
   silently-wrong value here is a correctness risk, not just a type nicety.
-- **Non-text content blocks in a reply.** V4's `M3LBedrockContentBlock` is
-  text-only, but the SDK's `ContentBlock` union on the reply side can in
-  principle carry non-text members. Per the style guide's caller-vs-external
-  distinction, the model's reply is _external_ data, not a caller mistake,
-  so `invoke` tolerates rather than rejects it: any non-`text` content block
-  in `output.message.content` is dropped when building the result's
-  `message.content` array. In practice this is unreachable in V4 — the
-  request never sends `toolConfig`, so the model has no tool to invoke — but
-  the tolerance is documented so a future response shape doesn't throw an
-  unexplained "malformed response" error for a legitimately-absent library
-  feature.
+- **Unrepresentable content blocks in a reply: drop when ignorable, refuse
+  when unsafe.** The SDK's `ContentBlock` union has 15 arms; this wrapper
+  represents three (`text`, `toolUse`, `toolResult`). The model's reply is
+  _external_ data, not a caller mistake, so the default is tolerance: any
+  block `invoke` cannot represent is **dropped** when building the result's
+  `message.content`, rather than failing the whole call. A `toolUse` block
+  whose `toolUseId` or `name` is missing, not a string, or the empty string is
+  dropped on the same grounds — it is not a well-formed request for anything.
+  (Emptiness counts because the V5 loop keys one `toolResult` per `toolUse` by
+  `toolUseId` and rejects duplicates within a turn; an empty id would both fail
+  the Converse round-trip and let two independently-empty ids collide.)
+  **One exception to the drop rule is itself a throw.** If `stopReason` is
+  `"tool_use"` and at least one `toolUse`-shaped block was present but _every_
+  one of them was malformed, `invoke` throws
+  `M3LBedrockRuntimeOperationError` rather than returning
+  `stopReason: "tool_use"` with empty content. Dropping all of them would hand
+  the caller a reply that says "I want to call a tool" with nothing to call and
+  nothing to catch — a silent failure rather than a tolerated one. The error
+  carries only a count, never block payloads. The deliberate exception is a `toolUse`
+  block carrying the SDK marker
+  `type: "server_tool_use"`, which means **Bedrock already executed that tool
+  server-side**. That one throws `M3LBedrockRuntimeOperationError`. Dropping
+  it would be merely lossy, but _mapping_ it like an ordinary tool request is
+  actively unsafe: the V5 tool-use loop would hand it to a caller handler and
+  execute the side effect a **second** time. The governing rule is therefore
+  "drop when a block is ignorable; refuse when acting on it would be unsafe" —
+  the same instinct that already makes an unrecognized `stopReason` throw
+  rather than pass through. This is unreachable by construction — a
+  `server_tool_use` block can only appear if the request opted in via a
+  `systemTool` entry in `toolConfig.tools`, and this wrapper only ever emits
+  `toolSpec` entries — and is refused anyway, because "unreachable" is
+  exactly the reasoning that quietly stops being true after an SDK upgrade.
 - **`invokeStream`'s reasoning-content deltas are silently dropped.** A
   reasoning-capable model can emit `contentBlockDelta` events whose delta is
-  `reasoningContent` rather than text. V4's `M3LBedrockStreamEvent` has no
-  member for this — consistent with `M3LBedrockContentBlock` being
-  text-only — so a caller streaming such a model sees only the model's final
-  answer text, with its reasoning trace silently omitted. This is a
-  deliberate V4 scope boundary, not a bug; V5 (ADR-0059) is where tool-use
-  and richer content members are added.
+  `reasoningContent` rather than text. `M3LBedrockStreamEvent` has no member
+  for this — consistent with `invokeStream`'s **text-only scope boundary**,
+  which V5 did not change — so a caller streaming such a model sees only the
+  model's final answer text, with its reasoning trace silently omitted. Note
+  this is a property of the _stream event_ union specifically, not of
+  `M3LBedrockContentBlock`, which V5 widened to three members: `invoke` is
+  tool-aware, `invokeStream` is not, and richer streaming content members
+  remain out of scope.
 - **`invokeStream`'s underlying connection release on early exit is
   best-effort, not guaranteed.** The AWS SDK's event-stream deserializer
   wraps the raw HTTP response in an `AsyncIterable` whose own `.return()`
@@ -710,7 +940,18 @@ Two independently-landable PRs (ADR-0072):
    yield) fault-handling state machine, including `M3LBedrockRuntimeStreamError`.
    Tests: `packages/m3l-common/tests/bedrock-runtime-streaming.test.ts`,
    importing only the streaming symbols so `perFile` v8 coverage binds within
-   the slice.
+   the slice. **Shipped** — PR #728, merged into `main`.
+3. **Slice 3 — tool vocabulary (V5).** The `toolUse`/`toolResult` content
+   blocks, the tool definition/choice/schema types, `M3LBedrockToolInvokeRequest`,
+   the request- and response-side mapping, and `invokeStream`'s
+   tool-config rejection guard. `stream.ts` is untouched.
+   Tests: `packages/m3l-common/tests/bedrock-runtime-tools.test.ts`.
+4. **Slice 4 — conversation state and the tool-use loop (V5).** The immutable
+   conversation value and its pure helpers, the bounded and cancellable
+   invoke → `tool_use` → execute → `tool_result` state machine, the outcome
+   ledger with cumulative token usage and optional cost, and
+   `M3LBedrockToolLoopError`.
+   Tests: `packages/m3l-common/tests/bedrock-runtime-loop.test.ts`.
 
 ## See also
 
