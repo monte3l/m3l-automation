@@ -318,6 +318,18 @@ const CREATE_CONSOLE_SESSION_DECISIONS_INDEX = `
 `;
 
 /**
+ * `console_session_steps`' second index (X6 slice 4, Part A):
+ * `attachStepRun`/`getStepByRunId` (`store/sessions-repository.ts`) both key
+ * off `run_id`, so this index makes both a direct lookup rather than a table
+ * scan. Purely additive — v4 has already shipped to `main` and its own TSDoc
+ * says it may not be edited in place, so this ships as its own v5 migration
+ * rather than folding into v4's `CREATE TABLE console_session_steps`.
+ */
+const CREATE_CONSOLE_SESSION_STEPS_RUN_ID_INDEX = `
+  CREATE INDEX console_session_steps_run_id ON console_session_steps (run_id)
+`;
+
+/**
  * The console store's ordered migration set, applied in full by
  * `store/migrations/runner.ts`'s `applyMigrations` at every store open.
  *
@@ -359,6 +371,10 @@ const CREATE_CONSOLE_SESSION_DECISIONS_INDEX = `
  *   `console_session_steps` and `console_session_decisions` carry `REFERENCES`
  *   foreign keys — enforced only once `store/store.ts`'s own
  *   `PRAGMA foreign_keys = ON` is set, per that pragma's documented ordering.
+ * - **v5** (X6 slice 4, Part A) adds one index,
+ *   `console_session_steps_run_id`, on the `run_id` column v4 already
+ *   created — purely additive, since v4 has already shipped to `main` and may
+ *   not be edited in place.
  *
  * Forward-only, deliberately with no `down`: ADR-0069's `node:sqlite` store
  * only *indexes* authoritative JSONL, so recovering from a bad migration is
@@ -407,5 +423,10 @@ export const CONSOLE_MIGRATIONS: readonly M3LMigration[] = [
       CREATE_CONSOLE_SESSION_DECISIONS_TABLE,
       CREATE_CONSOLE_SESSION_DECISIONS_INDEX,
     ],
+  },
+  {
+    version: 5,
+    name: "create_console_session_steps_run_id_index",
+    statements: [CREATE_CONSOLE_SESSION_STEPS_RUN_ID_INDEX],
   },
 ];

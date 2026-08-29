@@ -32,6 +32,7 @@ import { M3LConsoleError } from "../errors/console-error.js";
 import { classifyStoreFailure, storeError } from "./failures.js";
 import {
   answerDecisionRow,
+  attachStepRunRow,
   claimStepForStartRow,
   closeSessionRow,
   countOpenSessionsRow,
@@ -39,6 +40,7 @@ import {
   getDecisionRow,
   getSessionRow,
   getStepByOrdinalRow,
+  getStepByRunIdRow,
   getStepRow,
   insertBindingRow,
   insertDecisionRow,
@@ -208,6 +210,29 @@ function buildStepMethods(
   };
 }
 
+/**
+ * The `console_session_steps.run_id`-scoped slice (X6 slice 4, Part A) — see
+ * {@link buildSessionMethods}'s own TSDoc for why this is split out.
+ */
+function buildStepRunMethods(
+  executor: M3LStoreQueryExecutor,
+): Pick<M3LConsoleSessionsRepository, "attachStepRun" | "getStepByRunId"> {
+  return {
+    attachStepRun(id: string, runId: string): boolean {
+      return runSessionsOperation(
+        () => attachStepRunRow(executor, id, runId),
+        "console sessions repository attachStepRun failed",
+      );
+    },
+    getStepByRunId(runId: string): M3LSessionStepRecord | undefined {
+      return runSessionsOperation(
+        () => getStepByRunIdRow(executor, runId),
+        "console sessions repository getStepByRunId failed",
+      );
+    },
+  };
+}
+
 /** The `console_session_bindings`-scoped slice — see {@link buildSessionMethods}'s own TSDoc for why this is split out. */
 function buildBindingMethods(
   executor: M3LStoreQueryExecutor,
@@ -302,6 +327,7 @@ export function createConsoleSessionsRepository(
   return {
     ...buildSessionMethods(executor),
     ...buildStepMethods(executor),
+    ...buildStepRunMethods(executor),
     ...buildBindingMethods(executor),
     ...buildDecisionMethods(executor),
   };

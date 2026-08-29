@@ -172,6 +172,8 @@ const stubSessionsRepository: M3LConsoleSessionsRepository = {
   getDecision: unexpectedSessionsCall,
   listDecisionsForSession: unexpectedSessionsCall,
   countOpenSessions: unexpectedSessionsCall,
+  attachStepRun: unexpectedSessionsCall,
+  getStepByRunId: unexpectedSessionsCall,
 };
 
 /** Builds a {@link FakeConsoleStoreHandle} whose `runs` field is `runsRepository`. */
