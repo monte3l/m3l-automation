@@ -28,7 +28,7 @@
         {
           "file": "packages/m3l-common/src/aws/clients/error.ts",
           "symbol": "M3LAWSClientError",
-          "blob": "3f0bc7819dda0629b8c979a66965725d47505574"
+          "blob": "7028e85c5a529480987e9f8874cf530665af5cc4"
         },
         {
           "file": "packages/m3l-common/src/aws/clients/service-provider.ts",
@@ -36,7 +36,7 @@
           "blob": "525749955c204dae2c1d0a1cd4f363afff408894"
         }
       ],
-      "retrieved": "2026-08-28"
+      "retrieved": "2026-08-29"
     },
     {
       "heading": "`AWSClientProvider`",
@@ -88,10 +88,10 @@
         {
           "file": "packages/m3l-common/src/aws/clients/error.ts",
           "symbol": "M3LAWSClientError",
-          "blob": "3f0bc7819dda0629b8c979a66965725d47505574"
+          "blob": "7028e85c5a529480987e9f8874cf530665af5cc4"
         }
       ],
-      "retrieved": "2026-07-11"
+      "retrieved": "2026-08-29"
     },
     {
       "heading": "Notes and behavior",

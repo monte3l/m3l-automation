@@ -116,9 +116,9 @@ Available providers: `M3LCommandLineConfigProvider`, `M3LJSONConfigProvider`, `M
 
 #### `errors` — Structured error handling
 
-**Public surface** (`errors/index.ts`): `M3LError`, `M3LErrorOptions`, `M3LResult`, `M3LResultOk`, `M3LResultErr`, and the full set of `M3LErrorUtils` functions (`getErrorMessage`, `toError`, `wrapError`, `getErrorStack`, `hasErrorName`, `errorMessageContains`), plus `ok`, `err`, `isOk`, `isErr`, `unwrap`, `unwrapOr`, `map`, `mapErr`, `andThen`, `fromPromise`, `tryCatch`.
+**Public surface** (`errors/index.ts`): `M3LError`, `M3LErrorOptions`, `M3LErrorJSON`, `M3LErrorCauseJSON`, `M3LResult`, `M3LResultOk`, `M3LResultErr`, and the full set of `M3LErrorUtils` functions (`getErrorMessage`, `toError`, `wrapError`, `getErrorStack`, `hasErrorName`, `errorMessageContains`), plus `ok`, `err`, `isOk`, `isErr`, `unwrap`, `unwrapOr`, `map`, `mapErr`, `andThen`, `fromPromise`, `tryCatch`.
 
-`errors/M3LError.ts`: `M3LError` extends `Error` and adds `code` (string), `context` (arbitrary object), and a properly-typed `cause`. `toJSON()` serializes all fields including the stack.
+`errors/M3LError.ts`: `M3LError` extends `Error` and adds `code` (string), `context` (arbitrary object), and a properly-typed `cause`. `toJSON()` carries `name`/`message`/`code`/`context`/`stack`/`origin`/`retryable` verbatim, but allowlists `cause` rather than returning it by reference (F31, GitHub #727) — a foreign cause's own-enumerable properties can carry secrets (e.g. an AWS SDK exception's response body), so `toJSON()` projects `cause` down to a safe type name, recursing into the full record only for a genuinely-constructed nested `M3LError`. See `docs/reference/core/errors.md`'s `toJSON()`'s `cause` allowlist section and ADR-0005's 2026-08-29 amendment.
 
 `errors/M3LResult.ts`: `M3LResult<T, E>` is a discriminated union of `M3LResultOk<T>` and `M3LResultErr<E>`, modeled after Rust's `Result`. The `andThen`, `map`, `fromPromise`, and `tryCatch` operators enable chainable, exception-free error handling.
 

@@ -55,7 +55,9 @@ import type { M3LFtsIndexError } from "../src/core/storage/index.js";
 import type { M3LTextExtractionError } from "../src/core/text/index.js";
 
 import type {
+  M3LErrorCauseJSON,
   M3LErrorCode,
+  M3LErrorJSON,
   M3LErrorOptions,
   M3LResult,
   M3LResultErr,
@@ -166,21 +168,30 @@ describe("M3LError class", () => {
     expect(json.message).toBe("wrapper");
     expect(json.code).toBe("ERR_W");
     expect(json.context).toEqual({ key: "val" });
-    expect(json.cause).toBe(root);
+    // F31: a foreign (non-M3LError) cause is allowlisted down to its `name`
+    // only — never returned by reference, which would leak every
+    // own-enumerable property of the original Error (see the SDK-shape
+    // regression test below).
+    expect(json.cause).toEqual({ name: "Error" });
     // stack must be present (may be undefined in some environments, but the key must exist)
     expect(Object.prototype.hasOwnProperty.call(json, "stack")).toBe(true);
   });
 
-  test("toJSON with an Error cause is safe for JSON.stringify (serialisation boundary)", () => {
-    // Documents the intentional passthrough: a normal Error cause does not
-    // break JSON.stringify because toJSON returns it verbatim, and the default
-    // JSON serialiser converts an Error to {}.
+  test("toJSON allowlists a foreign Error cause to its name only", () => {
+    // F31: a plain (non-M3LError) Error cause is normalized to
+    // `{ name: cause.name }` — no `message`, no other own-enumerable
+    // properties survive. This retires the old "verbatim passthrough is
+    // intentional" documentation: a caught SDK exception can carry
+    // sensitive own-enumerable fields (headers, response bodies) that must
+    // never reach a log or run report by reference.
     const cause = new Error("underlying io failure");
     const e = new M3LError("operation failed", {
       code: "ERR_IO",
       cause,
     });
-    expect(() => JSON.stringify(e.toJSON())).not.toThrow();
+    const json = e.toJSON();
+    expect(json.cause).toEqual({ name: cause.name });
+    expect(() => JSON.stringify(json)).not.toThrow();
   });
 
   test("toJSON on a subclass includes the subclass name", () => {
@@ -202,6 +213,563 @@ describe("M3LError class", () => {
     } finally {
       Error.captureStackTrace = original;
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F31 (GitHub #727) — toJSON().cause allowlist
+//
+// `toJSON()`'s `cause` field must never expose an arbitrary foreign value's
+// own-enumerable properties by reference. It is normalized to:
+//   - undefined                    -> undefined
+//   - instanceof M3LError          -> recursed M3LErrorJSON (capped depth)
+//   - instanceof Error (not M3LError) -> { name: cause.name } only
+//   - anything else                -> { name: <safe type identifier> } only
+// `name`/`message`/`code`/`context`/`stack`/`origin`/`retryable` on M3LError
+// itself are unchanged by this fix.
+// ---------------------------------------------------------------------------
+describe("M3LError toJSON cause allowlist (F31)", () => {
+  // gitleaks scans source literals, not runtime-built strings — assembling
+  // planted secret markers at runtime keeps these fixtures from reading as
+  // real credentials while still proving the leak-shaped path.
+  const SECRET_PART_A = "SECRET_";
+  const SECRET_PART_B = "abc123XYZ";
+  const PLANTED_SECRET = SECRET_PART_A + SECRET_PART_B;
+  const AUTH_PREFIX = "Bear" + "er ";
+
+  test("[security] a smithy-ServiceException-shaped cause never leaks its own-enumerable fields", () => {
+    // Faithfully reproduces the shape of a caught AWS SDK ServiceException:
+    // own-enumerable $fault/$response/$metadata, plus `message` assigned as a
+    // plain property post-construction (not via the Error constructor) —
+    // exactly the shape that leaked verbatim under the pre-fix `cause: this.cause`.
+    class FakeServiceException extends Error {
+      readonly $fault: "client" | "server" = "client";
+      readonly $response: {
+        statusCode: number;
+        headers: Record<string, string>;
+        body: string;
+      };
+      readonly $metadata: { requestId: string } = { requestId: "req-123" };
+
+      constructor() {
+        super(undefined);
+        this.name = "ValidationException";
+        this.$response = {
+          statusCode: 400,
+          headers: { authorization: AUTH_PREFIX + PLANTED_SECRET },
+          body: PLANTED_SECRET,
+        };
+      }
+    }
+    const sdkException = new FakeServiceException();
+    // message set as a plain enumerable property, as SDK response unmarshalling does.
+    Object.defineProperty(sdkException, "message", {
+      value: `validation failed: ${PLANTED_SECRET}`,
+      enumerable: true,
+      writable: true,
+      configurable: true,
+    });
+
+    const wrapper = new M3LError("sdk call failed", {
+      code: "ERR_AWS_CLIENT",
+      cause: sdkException,
+    });
+
+    const serialized = JSON.stringify(wrapper.toJSON());
+    expect(serialized).not.toContain(PLANTED_SECRET);
+    expect(serialized).not.toContain(AUTH_PREFIX + PLANTED_SECRET);
+    expect(serialized).not.toContain("$response");
+    expect(serialized).not.toContain("$fault");
+    expect(serialized).not.toContain("$metadata");
+    // The safe discriminator (name) does survive.
+    expect(serialized).toContain("ValidationException");
+  });
+
+  test("a chained M3LError cause recurses to the nested error's full JSON shape", () => {
+    const inner = new M3LError("inner failure", {
+      code: "ERR_INNER",
+      context: { x: 1 },
+      origin: "external",
+      retryable: true,
+    });
+    const outer = new M3LError("outer failure", {
+      code: "ERR_OUTER",
+      cause: inner,
+    });
+
+    expect(outer.toJSON().cause).toEqual(inner.toJSON());
+    expect(outer.toJSON().cause).toMatchObject({
+      name: "M3LError",
+      message: "inner failure",
+      code: "ERR_INNER",
+      context: { x: 1 },
+      origin: "external",
+      retryable: true,
+    });
+  });
+
+  test("[cycle guard] a genuine cause cycle does not infinite-loop and JSON.stringify succeeds", () => {
+    const a = new M3LError("a", { code: "ERR_A" });
+    const b = new M3LError("b", { code: "ERR_B", cause: a });
+    // `cause` is `readonly` at the TYPE level only — M3LError never freezes
+    // its instances, so this direct mutation creates a genuine runtime
+    // reference cycle (a.cause -> b -> a) to prove the cycle guard, not just
+    // the depth cap below.
+    (a as unknown as { cause: unknown }).cause = b;
+
+    expect(() => JSON.stringify(a.toJSON())).not.toThrow();
+  });
+
+  test("a chain of M3LErrors deeper than the recursion cap terminates without throwing", () => {
+    const DEPTH = 20;
+    let current = new M3LError("level-0", { code: "ERR_LEVEL" });
+    for (let level = 1; level <= DEPTH; level += 1) {
+      current = new M3LError(`level-${String(level)}`, {
+        code: "ERR_LEVEL",
+        context: { level },
+        cause: current,
+      });
+    }
+
+    let serialized = "";
+    expect(() => {
+      serialized = JSON.stringify(current.toJSON());
+    }).not.toThrow();
+    expect(serialized.length).toBeGreaterThan(0);
+
+    // The load-bearing assertion for "there is a depth cap": walk the cause
+    // chain in the JSON output and require that *some* level before the
+    // bottom collapses to the terminal { name }-only shape rather than
+    // carrying `code`/`context` all the way down. A numeric byte-size bound
+    // is deliberately not asserted here — the implementer's chosen cap value
+    // isn't part of this contract, only that one exists.
+    let node: M3LErrorJSON | M3LErrorCauseJSON | undefined = current.toJSON();
+    let sawTerminalCollapse = false;
+    for (let i = 0; i < DEPTH + 1 && node !== undefined; i += 1) {
+      if (!("code" in node)) {
+        sawTerminalCollapse = true;
+        expect(Object.keys(node)).toEqual(["name"]);
+        break;
+      }
+      node = node.cause;
+    }
+    expect(sawTerminalCollapse).toBe(true);
+  });
+
+  test("a plain object cause is allowlisted to a safe constructor-derived name only", () => {
+    const secretField = SECRET_PART_A + "planted-in-object";
+    const objectCause = { token: secretField, nested: { apiKey: secretField } };
+    const e = new M3LError("op failed", { code: "ERR_X", cause: objectCause });
+
+    const json = e.toJSON();
+    const serialized = JSON.stringify(json);
+    expect(serialized).not.toContain(secretField);
+    expect(json.cause).toEqual({ name: "Object" });
+  });
+
+  test("a string cause is allowlisted, never returned verbatim", () => {
+    const secretString = SECRET_PART_A + "planted-in-string";
+    const e = new M3LError("op failed", { code: "ERR_X", cause: secretString });
+
+    const serialized = JSON.stringify(e.toJSON());
+    expect(serialized).not.toContain(secretString);
+  });
+
+  test("a null cause is allowlisted to a safe fixed shape, not passed through", () => {
+    const e = new M3LError("op failed", { code: "ERR_X", cause: null });
+    const json = e.toJSON();
+    expect(json.cause).not.toBeNull();
+    expect(() => JSON.stringify(json)).not.toThrow();
+  });
+
+  test("an undefined cause resolves to an undefined cause field", () => {
+    const e = new M3LError("op failed", { code: "ERR_X" });
+    expect(e.toJSON().cause).toBeUndefined();
+  });
+
+  test("a null-prototype object cause does not throw and falls back to a safe fixed name", () => {
+    const nullProtoCause = Object.create(null) as Record<string, unknown>;
+    nullProtoCause["token"] = SECRET_PART_A + "planted-null-proto";
+    const e = new M3LError("op failed", {
+      code: "ERR_X",
+      cause: nullProtoCause,
+    });
+
+    let json: M3LErrorJSON | undefined;
+    expect(() => {
+      json = e.toJSON();
+    }).not.toThrow();
+    expect(() => JSON.stringify(json)).not.toThrow();
+    expect(JSON.stringify(json)).not.toContain("planted-null-proto");
+  });
+
+  test("a Symbol cause does not throw and is allowlisted to a safe fixed shape", () => {
+    const e = new M3LError("op failed", {
+      code: "ERR_X",
+      cause: Symbol("planted"),
+    });
+
+    let json: M3LErrorJSON | undefined;
+    expect(() => {
+      json = e.toJSON();
+    }).not.toThrow();
+    expect(() => JSON.stringify(json)).not.toThrow();
+  });
+
+  test("[hostile] a cause whose `name` getter throws does not propagate and falls back to a safe string", () => {
+    class HostileName extends Error {
+      override get name(): string {
+        throw new Error("hostile name getter");
+      }
+    }
+    const hostileCause = new HostileName("boom");
+    const e = new M3LError("op failed", { code: "ERR_X", cause: hostileCause });
+
+    let json: M3LErrorJSON | undefined;
+    expect(() => {
+      json = e.toJSON();
+    }).not.toThrow();
+    // readNameSafely's catch swallows the throw and returns undefined;
+    // deriveErrorCauseName falls through to the safe constructor-derived
+    // name instead of some unsafe raw value.
+    expect(json?.cause).toEqual({ name: "HostileName" });
+    expect(() => JSON.stringify(json)).not.toThrow();
+  });
+
+  test("[hostile] a cause whose `constructor` getter throws does not propagate and falls back to a safe string", () => {
+    const hostileCause: Record<string, unknown> = {};
+    Object.defineProperty(hostileCause, "constructor", {
+      get() {
+        throw new Error("hostile constructor getter");
+      },
+      enumerable: false,
+      configurable: true,
+    });
+    const e = new M3LError("op failed", { code: "ERR_X", cause: hostileCause });
+
+    let json: M3LErrorJSON | undefined;
+    expect(() => {
+      json = e.toJSON();
+    }).not.toThrow();
+    // The throwing `constructor` getter is an OWN property of `hostileCause`,
+    // not of its prototype -- readConstructorNameSafely reads
+    // Object.getPrototypeOf(value).constructor, which resolves the untouched
+    // Object.prototype.constructor and never trips the throwing getter at
+    // all. This confirms the safe reader is immune to a poisoned own
+    // `constructor` property, landing on the plain "Object" name.
+    expect(json?.cause).toEqual({ name: "Object" });
+    expect(() => JSON.stringify(json)).not.toThrow();
+  });
+
+  test("a cause whose prototype's own `constructor` is not a function falls back to a safe fixed name", () => {
+    // Covers readConstructorNameSafely's `typeof constructor !== "function"`
+    // branch: the prototype chain resolves cleanly, but the resolved
+    // `constructor` property itself is a non-function value.
+    const weirdProto: Record<string, unknown> = { constructor: 123 };
+    const weirdCause: object = Object.create(weirdProto) as object;
+    const e = new M3LError("op failed", { code: "ERR_X", cause: weirdCause });
+
+    const json = e.toJSON();
+    expect(json.cause).toEqual({ name: "[unknown]" });
+    expect(() => JSON.stringify(json)).not.toThrow();
+  });
+
+  test("[hostile] a Proxy whose `getPrototypeOf` trap throws is safely rejected by both instanceof guards and the constructor-name reader", () => {
+    // A single fixture exercises three independent catch blocks: `instanceof
+    // M3LError` and `instanceof Error` both walk the prototype chain via
+    // [[GetPrototypeOf]], so a throwing trap trips isM3LErrorInstance's and
+    // isErrorInstance's catch clauses; falling through to the foreign-cause
+    // path then trips readConstructorNameSafely's own catch via
+    // Object.getPrototypeOf.
+    const hostileProxyCause: object = new Proxy(
+      {},
+      {
+        getPrototypeOf(): object {
+          throw new Error("hostile getPrototypeOf trap");
+        },
+      },
+    );
+    const e = new M3LError("op failed", {
+      code: "ERR_X",
+      cause: hostileProxyCause,
+    });
+
+    let json: M3LErrorJSON | undefined;
+    expect(() => {
+      json = e.toJSON();
+    }).not.toThrow();
+    expect(json?.cause).toEqual({ name: "[unknown]" });
+    expect(() => JSON.stringify(json)).not.toThrow();
+  });
+
+  test("[security] a foreign Error cause with an unsafe `.name` (smuggled text) falls back to its constructor name, not the raw name", () => {
+    // Covers readNameSafely's ternary false-path: `.name` is present as a
+    // string but fails the identifier-shaped safety check (here: a colon,
+    // spaces, and `=` — exactly the "smuggled text in .name" shape the F31
+    // security contract calls out). The derived constructor name is used
+    // instead, and the planted secret must never survive into the JSON.
+    class NamedButUnsafe extends Error {}
+    const hostileNamedCause = new NamedButUnsafe("boom");
+    hostileNamedCause.name = "Error: token=" + PLANTED_SECRET;
+
+    const e = new M3LError("op failed", {
+      code: "ERR_X",
+      cause: hostileNamedCause,
+    });
+
+    const json = e.toJSON();
+    expect(json.cause).toEqual({ name: "NamedButUnsafe" });
+    const serialized = JSON.stringify(json);
+    expect(serialized).not.toContain(PLANTED_SECRET);
+  });
+
+  test("[security] a foreign cause whose derived constructor name is unsafe falls back to the safe fixed name", () => {
+    // Covers readConstructorNameSafely's own ternary false-path: the
+    // constructor is a real function, but its `.name` was reassigned to
+    // smuggled, non-identifier-shaped text. This is exercised on the
+    // foreign-object path (not deriveErrorCauseName's fallback) so it is
+    // distinct from the "both readers fail" case below.
+    function EvilCtor(): void {
+      /* no-op */
+    }
+    Object.defineProperty(EvilCtor, "name", {
+      value: "Evil Ctor=" + PLANTED_SECRET,
+      configurable: true,
+    });
+    const evilProto: Record<string, unknown> = { constructor: EvilCtor };
+    const evilCause: object = Object.create(evilProto) as object;
+
+    const e = new M3LError("op failed", { code: "ERR_X", cause: evilCause });
+
+    const json = e.toJSON();
+    expect(json.cause).toEqual({ name: "[unknown]" });
+    const serialized = JSON.stringify(json);
+    expect(serialized).not.toContain(PLANTED_SECRET);
+  });
+
+  test("a foreign Error cause where both the own name and the derived constructor name are unsafe falls back to the fixed literal 'Error'", () => {
+    // Covers deriveErrorCauseName's final `?? "Error"` fallback: both
+    // readNameSafely(cause) and readConstructorNameSafely(cause) must return
+    // undefined for this to fire. The instance's own `.name` is overwritten
+    // with unsafe text, and the class's own `.name` (which the constructor
+    // reader falls back to) is also reassigned to unsafe text.
+    class HostileBoth extends Error {}
+    Object.defineProperty(HostileBoth, "name", {
+      value: "Hostile Ctor=" + PLANTED_SECRET,
+      configurable: true,
+    });
+    const hostileBothCause = new HostileBoth("boom");
+    hostileBothCause.name = SECRET_PART_A + "=" + SECRET_PART_B;
+
+    const e = new M3LError("op failed", {
+      code: "ERR_X",
+      cause: hostileBothCause,
+    });
+
+    const json = e.toJSON();
+    expect(json.cause).toEqual({ name: "Error" });
+    const serialized = JSON.stringify(json);
+    expect(serialized).not.toContain(PLANTED_SECRET);
+  });
+
+  test("[hostile] a Proxy wrapping a genuine M3LError whose `get` trap throws is rejected by the WeakSet identity check and degrades via the foreign-Error branch", () => {
+    // `real` is genuinely constructed (added to GENUINE_M3L_ERROR_INSTANCES
+    // by reference at construction time), but `hostile` — the Proxy — is a
+    // *different* object identity than `real`. WeakSet membership is a
+    // strict identity check, so isGenuineM3LErrorInstance(hostile) is false
+    // regardless of the Proxy's traps: it falls through to the ordinary
+    // isErrorInstance/deriveErrorCauseName branch (M3LError.prototype chains
+    // through Error.prototype), where the throwing `name` trap is caught by
+    // readNameSafely and the safe constructor-derived name ("M3LError",
+    // forwarded through the Proxy's default getPrototypeOf trap) is used
+    // instead — never a full recursive serialise of `real`'s own fields.
+    const real = new M3LError("inner", { code: "ERR_INNER" });
+    const hostile = new Proxy(real, {
+      get(target, property, receiver): unknown {
+        if (property === "name") {
+          throw new Error("trap");
+        }
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    const outer = new M3LError("outer", {
+      code: "ERR_OUTER",
+      cause: hostile,
+    });
+
+    let json: M3LErrorJSON | undefined;
+    expect(() => {
+      json = outer.toJSON();
+    }).not.toThrow();
+    // deriveM3LErrorCauseFallbackName's own readNameSafely(cause) read also
+    // goes through the same throwing trap, so it too falls through to
+    // readConstructorNameSafely -> the fixed "M3LError" literal.
+    expect(json?.cause).toEqual({ name: "M3LError" });
+    expect(() => JSON.stringify(json)).not.toThrow();
+  });
+
+  test("[hostile] a genuine M3LError whose own name AND derived constructor name are both unsafe, with a poisoned field, falls back to the fixed literal 'M3LError'", () => {
+    // Covers deriveM3LErrorCauseFallbackName's final `?? "M3LError"`
+    // fallback (only reachable when both readNameSafely and
+    // readConstructorNameSafely return undefined): the subclass's own
+    // `.name` is reassigned to unsafe text *before* construction, so
+    // `new.target.name` bakes the unsafe value straight into the instance's
+    // own `name` field, and the same reassignment also poisons the
+    // constructor-derived name (both readers consult the same unsafe
+    // string). `context` is poisoned separately to force
+    // serializeM3LErrorCauseSafely's `try` to throw and reach its `catch`.
+    class HostileGenuineBoth extends M3LError {}
+    Object.defineProperty(HostileGenuineBoth, "name", {
+      value: "Hostile Ctor=" + PLANTED_SECRET,
+      configurable: true,
+    });
+    const real = new HostileGenuineBoth("inner", { code: "ERR_INNER" });
+    Object.defineProperty(real, "context", {
+      get(): never {
+        throw new Error("poisoned");
+      },
+      configurable: true,
+    });
+    const outer = new M3LError("outer", { code: "ERR_OUTER", cause: real });
+
+    let json: M3LErrorJSON | undefined;
+    expect(() => {
+      json = outer.toJSON();
+    }).not.toThrow();
+    expect(json?.cause).toEqual({ name: "M3LError" });
+    const serialized = JSON.stringify(json);
+    expect(serialized).not.toContain(PLANTED_SECRET);
+  });
+
+  test("[security] a forged object wearing M3LError.prototype (not a genuine instance) collapses to the foreign-Error-branch name-only shape, not a full recursive serialise", () => {
+    // `forged` passes `instanceof M3LError` (the prototype chain includes
+    // M3LError.prototype) but was never run through `new M3LError(...)`, so
+    // it is absent from GENUINE_M3L_ERROR_INSTANCES. Every property is a
+    // plain, non-throwing data descriptor -- a forgery that a bare
+    // `instanceof` check (or a try/catch around ordinary reads) cannot
+    // distinguish from the real thing.
+    const secretField = SECRET_PART_A + "planted-forged";
+    const forged: object = Object.create(M3LError.prototype) as object;
+    Object.defineProperty(forged, "name", {
+      value: "M3LError",
+      enumerable: true,
+    });
+    Object.defineProperty(forged, "message", {
+      value: "forged",
+      enumerable: true,
+    });
+    Object.defineProperty(forged, "code", {
+      value: "FORGED",
+      enumerable: true,
+    });
+    Object.defineProperty(forged, "context", {
+      value: { authorization: AUTH_PREFIX + secretField },
+      enumerable: true,
+    });
+
+    const e = new M3LError("op failed", { code: "ERR_X", cause: forged });
+
+    const json = e.toJSON();
+    // Rejected by isGenuineM3LErrorInstance's WeakSet check, so it falls
+    // through to the isErrorInstance branch (M3LError.prototype chains
+    // through Error.prototype) and collapses to { name: cause.name } only --
+    // never the full recursive M3LErrorJSON shape with its own context/code.
+    expect(json.cause).toEqual({ name: "M3LError" });
+    const serialized = JSON.stringify(json);
+    expect(serialized).not.toContain(secretField);
+    expect(serialized).not.toContain("FORGED");
+    expect(serialized).not.toContain("authorization");
+  });
+
+  test("[hostile] a genuine M3LError instance whose field is poisoned post-construction via a throwing getter degrades to the safe fallback shape", () => {
+    // `real` is genuinely constructed (in the WeakSet), so
+    // isGenuineM3LErrorInstance accepts it and serializeM3LErrorCauseSafely
+    // attempts the full recursive read -- which then throws when `context`
+    // is read, exercising the try/catch's `catch` branch directly (as
+    // opposed to the Proxy test above, which throws via a trap).
+    const real = new M3LError("inner", { code: "ERR_INNER" });
+    Object.defineProperty(real, "context", {
+      get(): never {
+        throw new Error("poisoned");
+      },
+      configurable: true,
+    });
+    const outer = new M3LError("outer", { code: "ERR_OUTER", cause: real });
+
+    let json: M3LErrorJSON | undefined;
+    expect(() => {
+      json = outer.toJSON();
+    }).not.toThrow();
+    expect(json?.cause).toEqual({ name: "M3LError" });
+    expect(() => JSON.stringify(json)).not.toThrow();
+  });
+
+  test("[security] a foreign object's spoofed Symbol.toStringTag is never consulted for the derived name", () => {
+    // The safe name-derivation path reads the constructor off the prototype
+    // (readConstructorNameSafely), never Object.prototype.toString.call --
+    // planting a Symbol.toStringTag proves that a would-be attacker cannot
+    // smuggle an arbitrary "type name" string through this channel.
+    const plantedTag = "SECRET_TAG_" + SECRET_PART_B;
+    const spoofed: Record<PropertyKey, unknown> = {
+      [Symbol.toStringTag]: plantedTag,
+    };
+    const e = new M3LError("op failed", { code: "ERR_X", cause: spoofed });
+
+    const json = e.toJSON();
+    expect(json.cause).toEqual({ name: "Object" });
+    const serialized = JSON.stringify(json);
+    expect(serialized).not.toContain(plantedTag);
+    expect(serialized).not.toContain("SECRET_TAG_");
+  });
+
+  test("[security] a foreign Error whose `.name` is forged to a literal cycle/depth marker is rejected and falls back to the constructor-derived name", () => {
+    // "[circular]" is one of this module's own fixed terminal markers for a
+    // genuine cause cycle. If a foreign Error's own `.name` were trusted
+    // verbatim, an attacker could forge that exact string to make a
+    // non-cyclic cause masquerade as "this was a real cycle" in downstream
+    // log analysis. isSafeCauseName's identifier-shaped pattern excludes `[`
+    // and `]`, so this must fall through to the constructor-derived name
+    // instead of being accepted as-is.
+    class ForgedMarker extends Error {}
+    const forgedMarkerCause = new ForgedMarker("boom");
+    forgedMarkerCause.name = "[circular]";
+
+    const e = new M3LError("op failed", {
+      code: "ERR_X",
+      cause: forgedMarkerCause,
+    });
+
+    const json = e.toJSON();
+    expect(json.cause).not.toEqual({ name: "[circular]" });
+    expect(json.cause).toEqual({ name: "ForgedMarker" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// M3LErrorJSON / M3LErrorCauseJSON — type-level contract (F31)
+// ---------------------------------------------------------------------------
+describe("M3LErrorJSON / M3LErrorCauseJSON types", () => {
+  test("M3LErrorCauseJSON is the terminal { readonly name: string } shape", () => {
+    expectTypeOf<M3LErrorCauseJSON>().toEqualTypeOf<{
+      readonly name: string;
+    }>();
+  });
+
+  test("M3LErrorJSON has the full readonly field set matching toJSON()'s return type", () => {
+    expectTypeOf<M3LErrorJSON>().toEqualTypeOf<{
+      readonly name: string;
+      readonly message: string;
+      readonly code: string;
+      readonly context: Readonly<Record<string, unknown>>;
+      readonly cause: M3LErrorJSON | M3LErrorCauseJSON | undefined;
+      readonly stack: string | undefined;
+      readonly origin: M3LErrorOrigin | undefined;
+      readonly retryable: M3LErrorRetryable | undefined;
+    }>();
+  });
+
+  test("toJSON()'s return type is exactly M3LErrorJSON", () => {
+    expectTypeOf<M3LError["toJSON"]>().returns.toEqualTypeOf<M3LErrorJSON>();
   });
 });
 

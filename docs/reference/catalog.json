@@ -204,6 +204,8 @@
       "isM3LErrorCode",
       "classifyErrorCode",
       "M3LOperationAbortedError",
+      "M3LErrorJSON",
+      "M3LErrorCauseJSON",
       "M3LErrorOptions",
       "ok",
       "err",

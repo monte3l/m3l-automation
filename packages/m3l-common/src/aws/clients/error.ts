@@ -30,10 +30,14 @@ interface M3LAWSClientErrorOptions {
  *
  * The originating SDK error is chained via `cause`, so callers can narrow
  * on `code === "ERR_AWS_CLIENT"` and inspect `error.cause` for the root
- * failure. `cause` may carry raw SDK internals; this class does not redact
- * it — as with the rest of the {@link M3LError} hierarchy, redaction before
- * persistence or transmission is delegated to the logging sink via
- * `toJSON`.
+ * failure. `cause` may carry raw SDK internals (e.g. a smithy
+ * `ServiceException` with `$response`/`$metadata` fields); the live
+ * `error.cause` field is unredacted, but {@link M3LError.toJSON} allowlists a
+ * foreign `cause` down to its type name only. This covers `toJSON()`'s own
+ * projection; `core/diagnostics`'s `formatErrorChain`/`serializeErrorChain`
+ * walk the live `cause` chain directly and emit each level's own
+ * (heuristically redacted) `message` and `stack` — they do not go through
+ * `toJSON()`. See {@link M3LError.toJSON}'s documentation for the full rule.
  *
  * @example
  * ```ts
