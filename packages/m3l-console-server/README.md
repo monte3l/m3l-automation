@@ -1,9 +1,9 @@
 # @m3l-automation/m3l-console-server
 
 Backend for the m3l operations console (ADR-0064): a modular monolith over
-`node:http` with an internal router, health/readiness probes, and graceful
-drain. It is the repo's first long-running process (ADR-0065) — everything
-else here is batch-shaped.
+`node:http` with an internal router, health/readiness probes, run
+orchestration with resumable SSE streams, and graceful drain. It is the repo's
+first long-running process (ADR-0065) — everything else here is batch-shaped.
 
 ## Usage
 
@@ -21,10 +21,23 @@ curl -s localhost:8787/health   # {"status":"ok","uptimeMs":42}
 curl -s localhost:8787/ready    # {"status":"ready","uptimeMs":57}
 ```
 
-Beyond those two probes there is nothing to call yet: the run-orchestration,
-session, and audit routes arrive with X4 onward. What exists today is the
-transport tier, the lifecycle, and the security posture the rest will be
-built on.
+Add `M3L_CONSOLE_RUNS_SCRIPTS_DIR` to enable run orchestration (X4) — the
+`/api/v1/runs` routes, the per-run SSE stream, and the run registry:
+
+```bash
+M3L_CONSOLE_OPERATOR_NAME="your name" \
+M3L_CONSOLE_RUNS_SCRIPTS_DIR="$PWD/scripts" \
+  pnpm console:server
+```
+
+That variable is the whole gate: absent, the server boots with run
+orchestration disabled and logs that posture once, rather than refusing to
+start over an optional subsystem. The session and workbench routes arrive with
+X6/X10 and do not exist yet.
+
+The full HTTP contract — every route, the error envelope, the SSE frame
+vocabulary and its resume semantics — is
+[`docs/reference/console.md`](../../docs/reference/console.md).
 
 ## Posture
 
@@ -68,11 +81,35 @@ Every setting is one dotted `m3l.console.<area>.<name>` name, read through
 | `m3l.console.operator.email`   | `M3L_CONSOLE_OPERATOR_EMAIL`   | unset       |
 | `m3l.console.drain.timeout.ms` | `M3L_CONSOLE_DRAIN_TIMEOUT_MS` | `15000`     |
 | `m3l.console.log.level`        | `M3L_CONSOLE_LOG_LEVEL`        | `info`      |
+| `m3l.console.max.body.bytes`   | `M3L_CONSOLE_MAX_BODY_BYTES`   | `65536`     |
 
 | Setting                          | Env var                          | Default                            |
 | -------------------------------- | -------------------------------- | ---------------------------------- |
 | `m3l.console.db.path`            | `M3L_CONSOLE_DB_PATH`            | `<dataDir>/console/console.sqlite` |
 | `m3l.console.db.busy.timeout.ms` | `M3L_CONSOLE_DB_BUSY_TIMEOUT_MS` | `5000`                             |
+
+Run orchestration (X4) is configured separately and read only when
+`M3L_CONSOLE_RUNS_SCRIPTS_DIR` is set. What each limit _means_ for a caller —
+which error code a full queue returns, what happens to a run that times out
+while queued — is in
+[`docs/reference/console.md`](../../docs/reference/console.md); this table is
+just the knobs.
+
+| Setting                             | Env var                             | Default |
+| ----------------------------------- | ----------------------------------- | ------- |
+| `m3l.console.runs.scripts.dir`      | `M3L_CONSOLE_RUNS_SCRIPTS_DIR`      | — unset |
+| `m3l.console.runs.max.per.script`   | `M3L_CONSOLE_RUNS_MAX_PER_SCRIPT`   | `1`     |
+| `m3l.console.runs.max.concurrency`  | `M3L_CONSOLE_RUNS_MAX_CONCURRENCY`  | `4`     |
+| `m3l.console.runs.queue.capacity`   | `M3L_CONSOLE_RUNS_QUEUE_CAPACITY`   | `16`    |
+| `m3l.console.runs.queue.timeout.ms` | `M3L_CONSOLE_RUNS_QUEUE_TIMEOUT_MS` | `30000` |
+| `m3l.console.runs.stream.retention` | `M3L_CONSOLE_RUNS_STREAM_RETENTION` | `256`   |
+| `m3l.console.runs.kill.timeout.ms`  | `M3L_CONSOLE_RUNS_KILL_TIMEOUT_MS`  | `5000`  |
+
+`m3l.console.runs.scripts.dir` is the one setting with no usable default:
+absent, empty, or whitespace-only, the whole subsystem stays off at boot. A
+relative value resolves against the process's working directory. Every other
+value is validated at boot, and a bad one is `ERR_CONSOLE_CONFIG_INVALID`
+naming the offending key — the process never binds a socket on a bad config.
 
 `m3l.console.db.path` is anchored to the workspace `data/` tree resolved by
 `Core.M3LPaths().getDataDir()` — the same anchor every other data artifact in
@@ -87,17 +124,37 @@ ADR-0071's "a declared operator profile is required to use the console",
 enforced earlier than a runtime 401.
 
 `m3l.console.host` must resolve to a loopback address, rejected fail-closed by
-`isLoopbackHost`. Once the listener slice lands, the constraint is asserted a
-second time at the only place that calls `listen`, so a programmatic caller
-that bypasses config still cannot open a non-loopback listener (ADR-0071).
+`isLoopbackHost`. The constraint is asserted a second time inside
+`startConsoleServer`, at the only place that calls `listen`, so a programmatic
+caller that bypasses config still cannot open a non-loopback listener
+(ADR-0071).
 
 ## Contract
 
+**[`docs/reference/console.md`](../../docs/reference/console.md) is the wire
+contract** — every route, the request/response shapes, the error envelope and
+its code-to-status table, the SSE event vocabulary, and the resume semantics.
+Read it before writing a client; this README covers how to run and reason
+about the process, not what to send it.
+
 The architecture record is ADR-0065 (modular monolith, layering, graceful
 drain), the API shape is ADR-0066 (REST commands, SSE live streams, the error
-envelope), and the deployment posture is ADR-0071 (loopback-only binding,
-required operator profile). The REST/SSE contract ships as a
-`docs/reference/` page with X4/X10, per ADR-0066.
+envelope — see its 2026-08-29 Update for the four corrections X4 made), and
+the deployment posture is ADR-0071 (loopback-only binding, required operator
+profile).
+
+Two properties of that contract are worth naming here, because they are
+posture decisions rather than API details:
+
+- **Every `/api/v1/*` route is `auth: "required"`, and nothing checks a
+  credential.** The ADR-0071 seam is real and every route sits behind it, but
+  the only wired `M3LOperatorProvider` resolves the configured operator for
+  any request. Loopback binding plus the `Host`/`Origin` guard is what
+  actually keeps the API private today.
+- **Run parameters are persisted and echoed back.** They round-trip through
+  SQLite and are returned by the read routes verbatim, so they must not carry
+  secrets — pass a reference the script resolves itself (ADR-0070's
+  display-vs-persist split).
 
 ## Boundaries
 
@@ -113,14 +170,16 @@ required operator profile). The REST/SSE contract ships as a
   mechanism:
 
   ```text
-  net                                        (m3l-common + node: only)
-  errors                                     (m3l-common + node: only)
+  net                                                (m3l-common + node: only)
+  errors                                             (m3l-common + node: only)
   config    -> errors, net
   auth      -> errors
   lifecycle -> errors, net
-  store     -> errors                        (persistence; ADR-0069)
-  http      -> errors, auth, lifecycle, net  (transport; may NOT import config)
-  main.ts   -> everything                    (composition root; nothing imports it)
+  store     -> errors                                (persistence; ADR-0069)
+  stream    -> errors                                (generic event streams; no node:http)
+  runs      -> errors, store, stream                 (run orchestration)
+  http      -> errors, auth, lifecycle, net, stream  (transport; NOT config, runs, store)
+  main.ts   -> everything                            (composition root; nothing imports it)
   ```
 
   `net/` holds the pure loopback-address predicates. They live in a leaf
@@ -137,6 +196,25 @@ required operator profile). The REST/SSE contract ships as a
   ADR-0065's "modules speak only to typed repositories". `/ready` reports
   store health through a structural probe declared inside `http/routes/`,
   which needs no import and therefore no edge.
+
+  `stream/` exists as its own leaf, generic over its payload type, precisely
+  so `http/` can serve a run's SSE channel without an `http -> runs` edge. Had
+  the ring buffer lived in `runs/` — its most obvious home — serving the
+  stream would have forced exactly the edge this table exists to forbid. The
+  run routes reach the registry and the orchestrator the same way `/ready`
+  reaches the store: through narrow ports **declared** in `http/routes/`, with
+  `main.ts` passing the real objects as the compiler-checked proof that they
+  conform.
+
+  The cost of that is real and worth naming: the run-status vocabulary, the
+  `scriptName` pattern, and the launch-body validation rules each exist twice —
+  once in `runs/`/`store/` and once, verbatim, in `http/routes/runs.ts`. Tests
+  are exempt from the zone rules (they restrict `src -> tests`, not the
+  reverse), so a duplication _can_ be pinned by a test importing both sides.
+  Today only the status vocabulary is: `RUN_STATUS_VALUES` is asserted equal
+  to `store/run-status.ts`'s `RUN_STATUSES`. The `scriptName` pattern and the
+  body-validation rules are duplicated **without** such a guard, and are the
+  obvious next thing to pin.
 
 ## Persistence
 

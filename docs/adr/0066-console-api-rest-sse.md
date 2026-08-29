@@ -87,6 +87,52 @@ We chose **option 4**.
 - **Semver impact:** none from this ADR (docs only). The contract ships
   with X4/X10 and becomes part of the console's reference docs then.
 
+## Update (2026-08-29) — X4 shipped the run half; four contract corrections
+
+X4 (issue #552) implemented the run-orchestration half of this contract:
+`POST /api/v1/runs`, `GET /api/v1/runs`, `GET /api/v1/runs/:id`, and
+`GET /api/v1/runs/:id/stream`. The contract page this ADR promised now exists
+at [`docs/reference/console.md`](../reference/console.md). Sessions,
+discovery, cancellation, and telemetry summaries remain unbuilt — they are
+X6/X10.
+
+Four places where the implementation differs from the text above. Each is a
+correction to this ADR, not a deviation to be fixed later:
+
+1. **The correlation header is `x-correlation-id`, not
+   `m3l-correlation-id`.** X2 shipped the `x-` spelling
+   (`http/context.ts`'s `CORRELATION_ID_HEADER`, echoed by `respond.ts` and
+   `stream-writer.ts`, asserted in tests). It is the conventional prefix for
+   a non-registered header, and it was already logged and load-bearing by
+   the time the divergence was noticed. **Decision: keep `x-correlation-id`
+   and correct this ADR** — no code change. ADR-0070 inherits the corrected
+   spelling for its propagation mechanics.
+2. **A terminal `stream.end` frame was added.** This ADR specified the
+   explicit gap signal but nothing that tells a watcher _why_ a stream
+   stopped. Without it, a run completing, a server draining, and a dead
+   socket are indistinguishable to the client — all three are simply the
+   response ending. `stream.end` carries
+   `reason: "completed" | "draining"`, and the shutdown sequence emits it
+   before the HTTP drain aborts in-flight requests. Like `stream.gap` it
+   carries no `id:` line: neither names a published event, so neither should
+   ever become a client's resume point.
+3. **The ring-buffer size cap is configurable, not "fixed at
+   implementation".** It is `m3l.console.runs.stream.retention` (256
+   events per run by default). Fixing it in code would have made the
+   retention/memory trade untunable by the operator who actually pays for
+   it.
+4. **Ended streams are retained for the process's lifetime.** This ADR is
+   silent on when a stream's buffer is released; the answer is "never, until
+   restart". That keeps a late watcher's replay of a finished run correct and
+   the implementation free of an eviction policy, at a cost of
+   `O(total runs × retention)` memory. It is a deliberate trade for a
+   single-operator, loopback-bound console and would not survive a
+   multi-tenant deployment — a bound is a prerequisite for any such move,
+   and would need a further Update here.
+
+**Semver impact:** none (the console server is unpublished and has no
+`exports` map).
+
 ## Links
 
 - Programme: [ADR-0064](./0064-m3l-console-programme.md). Server:
