@@ -36,6 +36,7 @@ import * as routerModule from "../src/http/router.js";
 import type { M3LRoute } from "../src/http/router.js";
 import type { M3LConsoleMetaRepository } from "../src/store/meta-repository.js";
 import type { M3LConsoleRunsRepository } from "../src/store/runs-repository.js";
+import type { M3LConsoleSessionsRepository } from "../src/store/sessions-repository.js";
 import type { M3LConsoleStoreUnit } from "../src/store/store.js";
 
 /** A minimal valid env: only the required operator name set. */
@@ -182,6 +183,7 @@ interface FakeConsoleStoreHandle {
   script(): never;
   readonly meta: M3LConsoleMetaRepository;
   readonly runs: M3LConsoleRunsRepository;
+  readonly sessions: M3LConsoleSessionsRepository;
   transaction<T>(work: (unit: M3LConsoleStoreUnit) => T): T;
 }
 
@@ -193,6 +195,33 @@ const unexpectedMetaCall = (): never => {
 /** Throws when a `runs`-repository method is called unexpectedly on a fake store. */
 const unexpectedRunsCall = (): never => {
   throw new Error("unexpected runs-repository call on the fake store");
+};
+
+/** Throws when a `sessions`-repository method is called unexpectedly on a fake store. */
+const unexpectedSessionsCall = (): never => {
+  throw new Error("unexpected sessions-repository call on the fake store");
+};
+
+/** A loud-throwing `sessions` stub, shared by every fake store in this file (added for X6 slice 1's `M3LConsoleStoreUnit.sessions` field — none of this file's tests exercise it). */
+const stubSessionsRepository: M3LConsoleSessionsRepository = {
+  insertSession: unexpectedSessionsCall,
+  getSession: unexpectedSessionsCall,
+  listSessions: unexpectedSessionsCall,
+  closeSession: unexpectedSessionsCall,
+  reopenSession: unexpectedSessionsCall,
+  insertStep: unexpectedSessionsCall,
+  claimStepForStart: unexpectedSessionsCall,
+  finishStep: unexpectedSessionsCall,
+  getStep: unexpectedSessionsCall,
+  getStepByOrdinal: unexpectedSessionsCall,
+  listStepsForSession: unexpectedSessionsCall,
+  insertBinding: unexpectedSessionsCall,
+  listBindingsForSession: unexpectedSessionsCall,
+  insertDecision: unexpectedSessionsCall,
+  answerDecision: unexpectedSessionsCall,
+  getDecision: unexpectedSessionsCall,
+  listDecisionsForSession: unexpectedSessionsCall,
+  countOpenSessions: unexpectedSessionsCall,
 };
 
 /** Throws when `transaction()` is called unexpectedly on a fake store. */
@@ -253,6 +282,7 @@ function createFakeStore(
     script: unexpectedCall,
     meta: stubMetaRepository,
     runs: stubRunsRepository,
+    sessions: stubSessionsRepository,
     transaction: unexpectedTransactionCall,
   };
   return { store, closeCallCount: () => closeCalls };
@@ -282,6 +312,7 @@ function createClosedFakeStore(): FakeConsoleStoreHandle {
     script: unexpectedCall,
     meta: stubMetaRepository,
     runs: stubRunsRepository,
+    sessions: stubSessionsRepository,
     transaction: unexpectedTransactionCall,
   };
 }

@@ -36,6 +36,7 @@ import type {
   M3LRunRecord,
 } from "../src/store/runs-repository.js";
 import type { M3LRunStatus } from "../src/store/run-status.js";
+import type { M3LConsoleSessionsRepository } from "../src/store/sessions-repository.js";
 import type { M3LConsoleStoreUnit } from "../src/store/store.js";
 import type { M3LRunRegistry } from "../src/runs/registry.js";
 
@@ -142,8 +143,36 @@ interface FakeConsoleStoreHandle {
   script(): never;
   readonly meta: M3LConsoleMetaRepository;
   readonly runs: M3LConsoleRunsRepository;
+  readonly sessions: M3LConsoleSessionsRepository;
   transaction<T>(work: (unit: M3LConsoleStoreUnit) => T): T;
 }
+
+/** Throws when a `sessions`-repository method is called unexpectedly on a fake store (added for X6 slice 1's `M3LConsoleStoreUnit.sessions` field — none of this file's tests exercise it). */
+const unexpectedSessionsCall = (): never => {
+  throw new Error("unexpected sessions-repository call on the fake store");
+};
+
+/** A loud-throwing `sessions` stub, shared by every fake store in this file. */
+const stubSessionsRepository: M3LConsoleSessionsRepository = {
+  insertSession: unexpectedSessionsCall,
+  getSession: unexpectedSessionsCall,
+  listSessions: unexpectedSessionsCall,
+  closeSession: unexpectedSessionsCall,
+  reopenSession: unexpectedSessionsCall,
+  insertStep: unexpectedSessionsCall,
+  claimStepForStart: unexpectedSessionsCall,
+  finishStep: unexpectedSessionsCall,
+  getStep: unexpectedSessionsCall,
+  getStepByOrdinal: unexpectedSessionsCall,
+  listStepsForSession: unexpectedSessionsCall,
+  insertBinding: unexpectedSessionsCall,
+  listBindingsForSession: unexpectedSessionsCall,
+  insertDecision: unexpectedSessionsCall,
+  answerDecision: unexpectedSessionsCall,
+  getDecision: unexpectedSessionsCall,
+  listDecisionsForSession: unexpectedSessionsCall,
+  countOpenSessions: unexpectedSessionsCall,
+};
 
 /** Builds a {@link FakeConsoleStoreHandle} whose `runs` field is `runsRepository`. */
 function createFakeStore(runsRepository: M3LConsoleRunsRepository): {
@@ -170,6 +199,7 @@ function createFakeStore(runsRepository: M3LConsoleRunsRepository): {
     script: unexpectedCall,
     meta: { describe: unexpectedMetaCall, history: unexpectedMetaCall },
     runs: runsRepository,
+    sessions: stubSessionsRepository,
     transaction: <T>(): T => {
       throw new Error("unexpected transaction() call on the fake store");
     },

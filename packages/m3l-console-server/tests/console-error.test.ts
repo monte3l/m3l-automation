@@ -13,7 +13,7 @@ import {
 import type { M3LConsoleErrorCode } from "../src/errors/console-error.js";
 
 describe("M3LConsoleErrorCode", () => {
-  test("is the exact twenty-six-member union the contract declares (X2/X3-A1/X4)", () => {
+  test("is the exact thirty-one-member union the contract declares (X2/X3-A1/X4/X6)", () => {
     expectTypeOf<M3LConsoleErrorCode>().toEqualTypeOf<
       | "ERR_CONSOLE_CONFIG_INVALID"
       | "ERR_CONSOLE_BAD_REQUEST"
@@ -41,6 +41,11 @@ describe("M3LConsoleErrorCode", () => {
       | "ERR_CONSOLE_RUN_CAPACITY_EXCEEDED"
       | "ERR_CONSOLE_BODY_TOO_LARGE"
       | "ERR_CONSOLE_UNSUPPORTED_MEDIA_TYPE"
+      | "ERR_CONSOLE_SESSION_NOT_FOUND"
+      | "ERR_CONSOLE_SESSION_STEP_NOT_FOUND"
+      | "ERR_CONSOLE_SESSION_TRANSITION_INVALID"
+      | "ERR_CONSOLE_SESSION_CLOSED"
+      | "ERR_CONSOLE_SESSION_LIMIT_EXCEEDED"
     >();
   });
 

@@ -212,6 +212,42 @@ const CLASSIFICATION_TABLE: Record<
     retryable: false,
     fault: false,
   },
+  // X6 workbench-sessions module, slice 1 (ADR-0068/ADR-0069). Unlike
+  // ERR_CONSOLE_RUN_TRANSITION_INVALID (server-internal — only the
+  // orchestrator ever calls that transition), a session/step/decision
+  // transition IS reachable directly from an HTTP caller in a later slice
+  // (e.g. answering an already-answered decision, a double-submit race), so
+  // this is caller-facing, not a fault.
+  ERR_CONSOLE_SESSION_NOT_FOUND: {
+    status: 404,
+    origin: "caller",
+    retryable: false,
+    fault: false,
+  },
+  ERR_CONSOLE_SESSION_STEP_NOT_FOUND: {
+    status: 404,
+    origin: "caller",
+    retryable: false,
+    fault: false,
+  },
+  ERR_CONSOLE_SESSION_TRANSITION_INVALID: {
+    status: 409,
+    origin: "caller",
+    retryable: false,
+    fault: false,
+  },
+  ERR_CONSOLE_SESSION_CLOSED: {
+    status: 409,
+    origin: "caller",
+    retryable: false,
+    fault: false,
+  },
+  ERR_CONSOLE_SESSION_LIMIT_EXCEEDED: {
+    status: 429,
+    origin: "caller",
+    retryable: true,
+    fault: false,
+  },
 };
 
 // `Object.entries` widens the key to `string`; `CLASSIFICATION_TABLE`'s

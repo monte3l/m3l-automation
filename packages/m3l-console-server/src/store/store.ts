@@ -49,6 +49,8 @@ import { createConsoleMetaRepository } from "./meta-repository.js";
 import type { M3LConsoleMetaRepository } from "./meta-repository.js";
 import { createConsoleRunsRepository } from "./runs-repository.js";
 import type { M3LConsoleRunsRepository } from "./runs-repository.js";
+import { createConsoleSessionsRepository } from "./sessions-repository.js";
+import type { M3LConsoleSessionsRepository } from "./sessions-repository.js";
 import type { M3LStoreQueryExecutor } from "./types.js";
 
 /** The permission mode applied to the console store's parent directory. */
@@ -167,7 +169,9 @@ export interface M3LConsoleStoreUnit {
   readonly meta: M3LConsoleMetaRepository;
   /** The console store's run-persistence repository (X4's run governor). */
   readonly runs: M3LConsoleRunsRepository;
-  // X6: readonly sessions; X7: readonly audit
+  /** The console store's workbench-sessions repository (X6, slice 1). */
+  readonly sessions: M3LConsoleSessionsRepository;
+  // X7: readonly audit
 }
 
 /**
@@ -206,6 +210,7 @@ function buildConsoleStoreUnit(
   return {
     meta: createConsoleMetaRepository(executor),
     runs: createConsoleRunsRepository(executor),
+    sessions: createConsoleSessionsRepository(executor),
   };
 }
 

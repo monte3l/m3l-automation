@@ -239,6 +239,44 @@ const CLASSIFICATION_BY_CODE: Record<M3LConsoleErrorCode, ErrorClassification> =
       retryable: false,
       fault: false,
     },
+    // X6 workbench-sessions module, slice 1 (ADR-0068/ADR-0069). Unlike
+    // ERR_CONSOLE_RUN_TRANSITION_INVALID (server-internal — only the run
+    // orchestrator ever calls that transition), a session/step/decision
+    // transition IS reachable directly from an HTTP caller in a later slice
+    // (e.g. answering an already-answered decision, a double-submit race),
+    // so ERR_CONSOLE_SESSION_TRANSITION_INVALID is caller-facing, not a
+    // fault — see `errors/console-error.ts`'s own TSDoc for the full
+    // rationale on all five codes below.
+    ERR_CONSOLE_SESSION_NOT_FOUND: {
+      status: STATUS_NOT_FOUND,
+      origin: "caller",
+      retryable: false,
+      fault: false,
+    },
+    ERR_CONSOLE_SESSION_STEP_NOT_FOUND: {
+      status: STATUS_NOT_FOUND,
+      origin: "caller",
+      retryable: false,
+      fault: false,
+    },
+    ERR_CONSOLE_SESSION_TRANSITION_INVALID: {
+      status: STATUS_CONFLICT,
+      origin: "caller",
+      retryable: false,
+      fault: false,
+    },
+    ERR_CONSOLE_SESSION_CLOSED: {
+      status: STATUS_CONFLICT,
+      origin: "caller",
+      retryable: false,
+      fault: false,
+    },
+    ERR_CONSOLE_SESSION_LIMIT_EXCEEDED: {
+      status: STATUS_TOO_MANY_REQUESTS,
+      origin: "caller",
+      retryable: true,
+      fault: false,
+    },
   };
 
 /**
