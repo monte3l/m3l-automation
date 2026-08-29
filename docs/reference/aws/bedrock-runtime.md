@@ -219,10 +219,20 @@ Two caller errors, both `M3LBedrockRuntimeOperationError`
    service-side `ValidationException` with a far worse diagnostic.
 2. `toolChoice` of `{ tool: name }` naming a tool that is not in `tools`.
 
-Request-shape validation runs **before** the `AbortSignal` check, not after: a
-malformed request is malformed regardless of whether it was also cancelled,
-and reporting `M3LOperationAbortedError` for a request that could never have
-been sent would hide a caller bug behind a timing coincidence.
+Validation of `tools`/`toolChoice` — including the `inputSchema` copy — runs
+**before** the `AbortSignal` check, not after: a malformed request is malformed
+regardless of whether it was also cancelled, and reporting
+`M3LOperationAbortedError` for a request that could never have been sent would
+hide a caller bug behind a timing coincidence.
+
+That ordering guarantee is deliberately scoped to the tool config. Validation
+of **message content** — a `toolResult`'s `json` payload, or a request-side
+`toolUse.input` — happens later, when the command for a given model attempt is
+built, and therefore _after_ the first abort check. So a request that is both
+cancelled and carries a non-serializable value inside `messages` reports the
+cancellation, not the bad value. This is stated rather than smoothed over: the
+tool config is validated once up front, while message mapping is part of
+building each per-model attempt.
 
 **Response side.** When the model asks for a tool, `stopReason` is
 `"tool_use"` and the reply's `message.content` carries one or more
@@ -479,8 +489,18 @@ is already copied. That copy is bounded: nesting deeper than **32** levels
 throws `M3LBedrockRuntimeOperationError` (`origin: caller`, `retryable: false`)
 rather than letting an unbounded recursion over caller input escape the public
 boundary as a bare `RangeError`. A value that cannot round-trip through JSON
-at all (a `bigint`, a function, `undefined`, a cycle) is likewise a caller
-error, not a silent mis-serialization at send time.
+at all is likewise a caller error, not a silent mis-serialization at send
+time: a `bigint`, a function, a symbol, `undefined`, a cycle — and also any
+**non-plain object**, such as a `Date`, a `Map`, or a class instance, since
+those serialize to something the caller almost never intended.
+
+The copy additionally **refuses the reserved keys** `__proto__`,
+`constructor`, and `prototype` outright, and builds every copied object on a
+null prototype. This is not decorative: `JSON.parse` produces `__proto__` as a
+real own property, and the AWS SDK serializes a document with `for...in`,
+which walks the prototype chain — so an unguarded copy would hoist such a
+key's nested contents into the document Bedrock actually receives. The error
+names the offending key and its JSON path; it never includes the value.
 
 `M3LBedrockToolResultContent` is a deliberate 2-of-6 subset of the SDK's
 `ToolResultContentBlock` union: `image`, `document`, `video`, and
@@ -844,8 +864,19 @@ const ops = new M3LBedrockRuntimeOperations(client, {
   _external_ data, not a caller mistake, so the default is tolerance: any
   block `invoke` cannot represent is **dropped** when building the result's
   `message.content`, rather than failing the whole call. A `toolUse` block
-  missing `toolUseId` or `name` is dropped on the same grounds — it is not a
-  well-formed request for anything. The deliberate exception is a `toolUse`
+  whose `toolUseId` or `name` is missing, not a string, or the empty string is
+  dropped on the same grounds — it is not a well-formed request for anything.
+  (Emptiness counts because the V5 loop keys one `toolResult` per `toolUse` by
+  `toolUseId` and rejects duplicates within a turn; an empty id would both fail
+  the Converse round-trip and let two independently-empty ids collide.)
+  **One exception to the drop rule is itself a throw.** If `stopReason` is
+  `"tool_use"` and at least one `toolUse`-shaped block was present but _every_
+  one of them was malformed, `invoke` throws
+  `M3LBedrockRuntimeOperationError` rather than returning
+  `stopReason: "tool_use"` with empty content. Dropping all of them would hand
+  the caller a reply that says "I want to call a tool" with nothing to call and
+  nothing to catch — a silent failure rather than a tolerated one. The error
+  carries only a count, never block payloads. The deliberate exception is a `toolUse`
   block carrying the SDK marker
   `type: "server_tool_use"`, which means **Bedrock already executed that tool
   server-side**. That one throws `M3LBedrockRuntimeOperationError`. Dropping
@@ -861,12 +892,14 @@ const ops = new M3LBedrockRuntimeOperations(client, {
   exactly the reasoning that quietly stops being true after an SDK upgrade.
 - **`invokeStream`'s reasoning-content deltas are silently dropped.** A
   reasoning-capable model can emit `contentBlockDelta` events whose delta is
-  `reasoningContent` rather than text. V4's `M3LBedrockStreamEvent` has no
-  member for this — consistent with `M3LBedrockContentBlock` being
-  text-only — so a caller streaming such a model sees only the model's final
-  answer text, with its reasoning trace silently omitted. This is a
-  deliberate V4 scope boundary, not a bug; V5 (ADR-0059) is where tool-use
-  and richer content members are added.
+  `reasoningContent` rather than text. `M3LBedrockStreamEvent` has no member
+  for this — consistent with `invokeStream`'s **text-only scope boundary**,
+  which V5 did not change — so a caller streaming such a model sees only the
+  model's final answer text, with its reasoning trace silently omitted. Note
+  this is a property of the _stream event_ union specifically, not of
+  `M3LBedrockContentBlock`, which V5 widened to three members: `invoke` is
+  tool-aware, `invokeStream` is not, and richer streaming content members
+  remain out of scope.
 - **`invokeStream`'s underlying connection release on early exit is
   best-effort, not guaranteed.** The AWS SDK's event-stream deserializer
   wraps the raw HTTP response in an `AsyncIterable` whose own `.return()`

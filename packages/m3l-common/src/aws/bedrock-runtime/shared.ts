@@ -29,16 +29,20 @@ import {
   M3LBedrockRuntimeModelError,
   M3LBedrockRuntimeOperationError,
 } from "./error.js";
-import { copyDocument } from "./tools.js";
-import type { M3LBedrockPlainDocument } from "./tools.js";
+import { copyDocument, sanitizeForMessage } from "./document.js";
+import type { M3LBedrockPlainDocument } from "./document.js";
 import type {
   M3LBedrockContentBlock,
   M3LBedrockInvokeRequest,
   M3LBedrockMessage,
   M3LBedrockRuntimeRole,
   M3LBedrockStopReason,
+  M3LBedrockTextBlock,
+  M3LBedrockToolResultBlock,
   M3LBedrockToolResultContent,
+  M3LBedrockToolResultJsonBlock,
   M3LBedrockToolResultStatus,
+  M3LBedrockToolUseBlock,
 } from "./types.js";
 
 /** Retry-runner backoff tuning: 200ms start, 5s cap (matches `M3LPollingPolicies.awsThrottling()`). */
@@ -171,7 +175,18 @@ type SdkContentItem =
       readonly toolUse: {
         readonly toolUseId: string;
         readonly name: string;
-        readonly input: M3LBedrockPlainDocument;
+        // `| undefined`, never optional (`?:`) — mirrors the SDK's own
+        // `ToolUseBlock.input` field exactly (`__DocumentType | undefined`,
+        // a REQUIRED property whose value can be `undefined`; under this
+        // repo's `exactOptionalPropertyTypes`, an optional `input?:` field
+        // is NOT structurally assignable to that required field, so this
+        // must stay a required property). The value itself is `undefined`
+        // whenever `block.input` is `undefined` (e.g. replaying a
+        // no-argument tool call from conversation history — see
+        // `types.ts`'s `M3LBedrockToolUseBlock.input` doc) — never derived
+        // by calling `copyDocument` on `undefined`, which throws (not
+        // JSON-serializable) (R2-2, 2026-08-29 security pass).
+        readonly input: M3LBedrockPlainDocument | undefined;
       };
     }
   | {
@@ -190,43 +205,69 @@ type SdkContentItem =
     };
 
 /**
- * Reads a defensive `.type` discriminant off an exhaustive-`switch` default
- * arm's `never`-typed value, for a diagnosable-but-safe error message.
+ * Formats an already-read discriminant value for a diagnosable-but-safe
+ * error message, once an exhaustive `switch`'s `default` arm has determined
+ * `value` doesn't match any recognized member.
  *
- * At runtime, reaching a `default` arm means the value is by definition
- * off-contract data — a caller-constructed or otherwise malformed value
- * this module's exhaustive switch doesn't recognize — so it is never
- * trusted or interpolated **whole** (`String(value)` on a string-typed
- * content block would leak the block's full caller-supplied text into
- * `error.message`, which `M3LError.toJSON()` projects into a log sink).
- * Only the string tag, if present, is read.
+ * `value` here is the SAME read this module's callers already performed
+ * (once, guarded) to select their `switch` — never re-read here, since the
+ * value's own `.type`-style property access is exactly what a throwing
+ * getter could hijack; formatting a plain value already in hand cannot
+ * trigger that. It is never trusted or interpolated whole (`String(value)`
+ * on a string-typed content block would leak the block's full
+ * caller-supplied text into `error.message`, which `M3LError.toJSON()`
+ * projects into a log sink) — only a string value is read, through
+ * `sanitizeForMessage` (length-capped, control-character-escaped) rather
+ * than raw, since an uncapped value would let a 200 KB string produce a
+ * 400 KB `toJSON()` and let ANSI/newline injection reach a log sink (M2
+ * finding, 2026-08-29 security pass).
  */
-function readUnknownDiscriminant(value: never): string {
-  const candidate = value as { readonly type?: unknown };
-  return typeof candidate.type === "string" ? candidate.type : "unknown";
+function formatDiscriminant(value: unknown): string {
+  return typeof value === "string" ? sanitizeForMessage(value) : "unknown";
 }
 
 /**
  * Maps one {@link M3LBedrockToolResultContent} member to the SDK's
  * `ToolResultContentBlock` shape, recursively copying a `json` payload — see
- * `tools.ts`'s `copyDocument`.
+ * `document.ts`'s `copyDocument`.
+ *
+ * `item` is caller-supplied data, so `item.type` could be a throwing
+ * getter. It is read exactly once, inside the `try`/`catch` below, into
+ * `discriminant` — a bare `switch (item.type)` would read `.type`
+ * unprotected, letting a throwing getter's exception escape as a raw
+ * `Error` before this function's own `default` arm (and its typed error) is
+ * ever reached; re-reading `.type` a second time there (e.g. for the error
+ * message) would suffer the exact same problem one statement later. Do not
+ * inline this back into the `switch` line.
  */
 function mapToolResultContentItem(
   item: M3LBedrockToolResultContent,
 ): { readonly text: string } | { readonly json: M3LBedrockPlainDocument } {
-  switch (item.type) {
+  let discriminant: M3LBedrockToolResultContent["type"];
+  try {
+    discriminant = item.type;
+  } catch (cause) {
+    // Structurally caller-side, same as the `default` arm below.
+    throw new M3LBedrockRuntimeOperationError(
+      "unhandled tool-result content type: reading the discriminant raised an unexpected error",
+      { origin: "caller", retryable: false, cause },
+    );
+  }
+  switch (discriminant) {
     case "text":
-      return { text: item.text };
+      return { text: (item as M3LBedrockTextBlock).text };
     case "json":
-      return { json: copyDocument(item.json, 0) };
+      return {
+        json: copyDocument((item as M3LBedrockToolResultJsonBlock).json, 0),
+      };
     default: {
-      const exhaustive: never = item;
+      const exhaustive: never = discriminant;
       // A `never`-arm violation is structurally caller-side — this value
       // was constructed (or passed through) by the caller, not received
       // from the model — so `origin: caller`, `retryable: false` overrides
       // the catalog default.
       throw new M3LBedrockRuntimeOperationError(
-        `unhandled tool-result content type: ${readUnknownDiscriminant(exhaustive)}`,
+        `unhandled tool-result content type: ${formatDiscriminant(exhaustive)}`,
         { origin: "caller", retryable: false },
       );
     }
@@ -238,7 +279,7 @@ function mapToolResultContentItem(
  * per-block shape. An exhaustive `switch` over the 3-member union — adding
  * a fourth member becomes a compile error here, not a silent drop.
  *
- * `toolUse.input` is recursively copied via `tools.ts`'s `copyDocument` —
+ * `toolUse.input` is recursively copied via `document.ts`'s `copyDocument` —
  * the same treatment as `inputSchema` and a `json` tool-result payload —
  * rather than cast directly to {@link M3LBedrockPlainDocument}: a `toolUse`
  * block can be caller-constructed (e.g. replaying conversation history
@@ -246,35 +287,67 @@ function mapToolResultContentItem(
  * document-shaped value the SDK's mutable `DocumentType` boundary can
  * safely walk. A bare cast would let a caller-supplied bigint/function/cycle
  * escape as a raw `TypeError`/`RangeError` instead of this module's typed
- * error. `toolResult.status` is included only when present (a conditional
- * spread, never a key set to `undefined` — `exactOptionalPropertyTypes`).
+ * error. `copyDocument` is only called when `block.input !== undefined` —
+ * an absent `input` (a no-argument tool call replayed as history) is
+ * legitimate per `types.ts`'s `M3LBedrockToolUseBlock.input` doc comment,
+ * and `copyDocument` itself throws on `undefined` (not JSON-serializable),
+ * so `input` is set to `undefined` directly rather than derived by copying
+ * it in that case (R2-2, 2026-08-29 security pass) — the key itself stays
+ * present, matching the SDK's own `ToolUseBlock.input` field exactly (a
+ * required `__DocumentType | undefined` property, not an optional one; see
+ * {@link SdkContentItem}'s comment). `toolResult.status` is included only
+ * when present (a conditional spread, never a key set to `undefined` —
+ * `exactOptionalPropertyTypes`).
+ *
+ * `block` is caller-supplied data, so `block.type` could be a throwing
+ * getter — see {@link mapToolResultContentItem}'s analogous note. It is
+ * read exactly once, inside the `try`/`catch` below, into `discriminant`;
+ * do not inline this back into the `switch` line.
  */
 function mapContentBlockToSdk(block: M3LBedrockContentBlock): SdkContentItem {
-  switch (block.type) {
+  let discriminant: M3LBedrockContentBlock["type"];
+  try {
+    discriminant = block.type;
+  } catch (cause) {
+    throw new M3LBedrockRuntimeOperationError(
+      "unhandled content block type: reading the discriminant raised an unexpected error",
+      { origin: "caller", retryable: false, cause },
+    );
+  }
+  switch (discriminant) {
     case "text":
-      return { text: block.text };
-    case "toolUse":
+      return { text: (block as M3LBedrockTextBlock).text };
+    case "toolUse": {
+      const toolUse = block as M3LBedrockToolUseBlock;
       return {
         toolUse: {
-          toolUseId: block.toolUseId,
-          name: block.name,
-          input: copyDocument(block.input, 0),
+          toolUseId: toolUse.toolUseId,
+          name: toolUse.name,
+          input:
+            toolUse.input === undefined
+              ? undefined
+              : copyDocument(toolUse.input, 0),
         },
       };
-    case "toolResult":
+    }
+    case "toolResult": {
+      const toolResult = block as M3LBedrockToolResultBlock;
       return {
         toolResult: {
-          toolUseId: block.toolUseId,
-          content: block.content.map(mapToolResultContentItem),
-          ...(block.status !== undefined && { status: block.status }),
+          toolUseId: toolResult.toolUseId,
+          content: toolResult.content.map(mapToolResultContentItem),
+          ...(toolResult.status !== undefined && {
+            status: toolResult.status,
+          }),
         },
       };
+    }
     default: {
-      const exhaustive: never = block;
+      const exhaustive: never = discriminant;
       // See `mapToolResultContentItem`'s analogous note: a `never`-arm
       // violation here is structurally caller-side.
       throw new M3LBedrockRuntimeOperationError(
-        `unhandled content block type: ${readUnknownDiscriminant(exhaustive)}`,
+        `unhandled content block type: ${formatDiscriminant(exhaustive)}`,
         { origin: "caller", retryable: false },
       );
     }

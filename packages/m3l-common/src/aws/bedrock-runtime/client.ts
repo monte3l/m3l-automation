@@ -43,8 +43,8 @@ import {
 import { invokeStream as invokeStreamImpl } from "./stream.js";
 import {
   buildToolConfig,
-  isToolUseShaped,
-  mapToolUseBlock,
+  mapNarrowedToolUse,
+  narrowToolUseMember,
   refuseServerToolUse,
 } from "./tools.js";
 import type {
@@ -93,7 +93,13 @@ interface MappedContent {
  * **unconditionally, per block, before the `text`-member check** — never
  * behind it — since the SDK's deserializer does not enforce single-member
  * unions and a reply block can carry both `text` and a
- * `server_tool_use`-marked `toolUse` member at once.
+ * `server_tool_use`-marked `toolUse` member at once. The shaped-count
+ * bookkeeping (`tools.ts`'s `narrowToolUseMember`) runs the same way: a
+ * block carrying both a non-empty `text` member and a malformed `toolUse`
+ * member must still count toward `toolUseShapedCount`, or the all-malformed
+ * cross-check below never fires for it (the same bypass shape the
+ * `server_tool_use` refusal already guards against, applied to this
+ * bookkeeping too).
  *
  * @throws {@link M3LBedrockRuntimeOperationError} When a block carries the
  *   SDK marker `type: "server_tool_use"` (see `tools.ts`'s
@@ -112,16 +118,15 @@ function mapContent(
     refuseServerToolUse(block);
     if (typeof block.text === "string") {
       blocks.push({ type: "text", text: block.text });
-      continue;
     }
-    if (!isToolUseShaped(block)) {
-      continue;
-    }
-    toolUseShapedCount += 1;
-    const toolUse = mapToolUseBlock(block);
+    const toolUse = narrowToolUseMember(block);
     if (toolUse !== undefined) {
-      toolUseMappedCount += 1;
-      blocks.push(toolUse);
+      toolUseShapedCount += 1;
+      const mapped = mapNarrowedToolUse(toolUse);
+      if (mapped !== undefined) {
+        toolUseMappedCount += 1;
+        blocks.push(mapped);
+      }
     }
   }
   return { blocks, toolUseShapedCount, toolUseMappedCount };
@@ -509,6 +514,24 @@ function hasUnsupportedStreamingContent(
     return true;
   }
   return request.messages.some((message) =>
-    message.content.some((block) => block.type !== "text"),
+    message.content.some((block) => !isTextTypeBlock(block)),
   );
+}
+
+/**
+ * Returns `true` when `block.type === "text"`, `false` for any other value
+ * OR when reading `.type` itself throws. `block` is caller-supplied data —
+ * `.type` could be a throwing getter — so the read is guarded rather than
+ * compared directly (`block.type !== "text"`); an unreadable discriminant is
+ * treated the same as a non-`"text"` one, which is exactly what this
+ * function's only caller, {@link hasUnsupportedStreamingContent}, already
+ * does for a genuine non-text block (refuse streaming with a typed error
+ * rather than let a raw exception escape `invokeStream`).
+ */
+function isTextTypeBlock(block: M3LBedrockContentBlock): boolean {
+  try {
+    return block.type === "text";
+  } catch {
+    return false;
+  }
 }

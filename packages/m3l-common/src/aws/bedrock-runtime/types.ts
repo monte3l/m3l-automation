@@ -43,7 +43,7 @@ export interface M3LBedrockToolUseBlock {
 export interface M3LBedrockToolResultJsonBlock {
   /** Discriminant tag for {@link M3LBedrockToolResultContent}. */
   readonly type: "json";
-  /** The JSON-serializable payload. Recursively copied on the way out — see `tools.ts`'s `copyDocument`. */
+  /** The JSON-serializable payload. Recursively copied on the way out — see `document.ts`'s `copyDocument`. */
   readonly json: unknown;
 }
 

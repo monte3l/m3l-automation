@@ -1,0 +1,597 @@
+/**
+ * Wire-level security tests for aws/bedrock-runtime's V5 Slice A tool
+ * vocabulary (ADR-0059) — `tests/bedrock-runtime-tools.test.ts` (and
+ * `tests/bedrock-runtime.test.ts`) `vi.mock()` the whole
+ * `@aws-sdk/client-bedrock-runtime` module (module-level, hoisted), so
+ * every one of that file's 125+ tests inspects a captured `.send()` call
+ * argument — never a serialized byte. That mock cannot observe a prototype-
+ * chain/species injection surviving into the actual request the SDK's own
+ * serializer would put on the wire (two rounds of exactly that were found
+ * in an adversarial pass, 2026-08-29 security pass, both invisible to the
+ * mocked suite at 100% line coverage).
+ *
+ * This file constructs a REAL `BedrockRuntimeClient` with a stub
+ * `requestHandler` (no network, no real credentials) so the genuine AWS
+ * request serializer runs; `handle()` captures the already-serialized
+ * request body before returning a stubbed, minimal Converse HTTP response.
+ * Deliberately a SEPARATE file from `bedrock-runtime-tools.test.ts` — that
+ * file's `vi.mock("@aws-sdk/client-bedrock-runtime", ...)` is hoisted and
+ * applies to every import of that module within the file, so a real client
+ * cannot coexist with it there (confirmed against the file; not retrofitted).
+ *
+ * Every "no leak" assertion below inspects the CAPTURED WIRE BYTES
+ * (`sent[]`, the decoded UTF-8 request body), never an internal call
+ * argument — that is this file's entire reason to exist. See the first
+ * `describe` block for the harness itself and a control case proving it
+ * actually threads a marker through the real serializer (a "no leak"
+ * assertion is vacuous if the harness never really serializes anything).
+ *
+ * Where this file's assertions diverge from a prior brief's expectations,
+ * the divergence is called out inline: `copyDocument` (`document.ts`)
+ * already fixed the M1 array-arm species bypass by never reading
+ * `constructor`/`Symbol.species` at all (an index loop, not `.map()`), so a
+ * species-poisoned-but-otherwise-ordinary array does not throw — it copies
+ * cleanly with no injection, which is the stronger property (structurally
+ * neutralized, not merely rejected). A genuinely hostile Proxy trap that
+ * throws when read (not just species-poisoned) is used to prove the "no
+ * raw error escapes" invariant instead, since it is the construction that
+ * actually reaches that code path.
+ */
+
+import { describe, expect, test } from "vitest";
+
+import { BedrockRuntimeClient } from "@aws-sdk/client-bedrock-runtime";
+
+import {
+  M3LBedrockRuntimeOperationError,
+  M3LBedrockRuntimeOperations,
+} from "../src/aws/index.js";
+import type {
+  M3LBedrockContentBlock,
+  M3LBedrockToolInvokeRequest,
+} from "../src/aws/index.js";
+
+/** A minimal, well-formed Converse HTTP response body (`end_turn`, one text block). */
+function stubConverseResponsePayload(): Record<string, unknown> {
+  return {
+    output: { message: { role: "assistant", content: [{ text: "ok" }] } },
+    stopReason: "end_turn",
+    usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+  };
+}
+
+/** The stub `requestHandler`'s `handle()` argument shape — only what this file reads. */
+interface StubHttpRequest {
+  readonly body: unknown;
+}
+
+/**
+ * Builds a REAL `BedrockRuntimeClient` (genuine request serializer, genuine
+ * response deserializer) wired to a stub `requestHandler` that never
+ * touches the network: `handle()` decodes and records the already-
+ * serialized request body (a `Uint8Array` — the SDK's JSON codec, not a
+ * readable stream, for this client version) into `sent`, then returns a
+ * minimal successful HTTP response whose body is itself a `Uint8Array` (the
+ * deserializer's `collectBody` fast path for `body instanceof Uint8Array`,
+ * needing no stream/stream-collector machinery).
+ *
+ * No real region/credentials reach anywhere — `requestHandler.handle` is
+ * the only thing ever invoked; nothing here performs I/O.
+ */
+function newWireClient(): {
+  readonly client: BedrockRuntimeClient;
+  readonly sent: string[];
+} {
+  const sent: string[] = [];
+  const client = new BedrockRuntimeClient({
+    region: "us-east-1",
+    credentials: { accessKeyId: "x", secretAccessKey: "y" },
+    requestHandler: {
+      handle(request: StubHttpRequest) {
+        sent.push(new TextDecoder().decode(request.body as Uint8Array));
+        const body = new TextEncoder().encode(
+          JSON.stringify(stubConverseResponsePayload()),
+        );
+        return Promise.resolve({
+          response: { statusCode: 200, headers: {}, body },
+        });
+      },
+    },
+  });
+  return { client, sent };
+}
+
+/** Constructs `M3LBedrockRuntimeOperations` against a fresh wire client. */
+function newWireOps(): {
+  readonly ops: M3LBedrockRuntimeOperations;
+  readonly sent: string[];
+} {
+  const { client, sent } = newWireClient();
+  return {
+    ops: new M3LBedrockRuntimeOperations(client, { models: ["m1"] }),
+    sent,
+  };
+}
+
+/** Captures a thrown value from an async call without a try/catch at every call site. */
+async function captureThrow(fn: () => Promise<unknown>): Promise<unknown> {
+  try {
+    await fn();
+    return undefined;
+  } catch (error) {
+    return error;
+  }
+}
+
+describe("wire harness sanity — proves the real serializer actually runs", () => {
+  test("a benign marker placed in inputSchema IS present in the captured wire body", async () => {
+    const { ops, sent } = newWireOps();
+    const MARKER = "WIRE_HARNESS_CONTROL_MARKER_9f3a";
+
+    const result = await ops.invoke({
+      messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+      tools: [
+        {
+          name: "toolA",
+          inputSchema: { note: MARKER },
+        },
+      ],
+    });
+
+    expect(result.stopReason).toBe("end_turn");
+    expect(sent).toHaveLength(1);
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- length asserted above
+    expect(sent[0]!).toContain(MARKER);
+  });
+});
+
+/** A fake array-species constructor: if ever actually constructed, it would inject `marker`. Typed `unknown` for `[Symbol.species]`'s own sake — the fixed `copyDocument` never invokes it either way. */
+function fakeSpeciesConstructor(marker: string): unknown {
+  function EvilCtor(): Record<string, unknown> {
+    return { [marker]: "SCHEMA_INJECT" };
+  }
+  return EvilCtor;
+}
+
+/** A species-poisoned array via an own `constructor` property + `[Symbol.species]`. */
+function speciesArrayOwnConstructor(marker: string): unknown[] {
+  const array: unknown[] = [1, 2, 3];
+  class Evil {
+    static get [Symbol.species](): unknown {
+      return fakeSpeciesConstructor(marker);
+    }
+  }
+  Object.defineProperty(array, "constructor", {
+    value: Evil,
+    enumerable: false,
+    configurable: true,
+  });
+  return array;
+}
+
+/** A species-poisoned array where `constructor` is supplied ONLY via a Proxy `get` trap — no own property at all. */
+function speciesArrayProxyConstructor(marker: string): unknown[] {
+  const target: unknown[] = [1, 2, 3];
+  class Evil {
+    static get [Symbol.species](): unknown {
+      return fakeSpeciesConstructor(marker);
+    }
+  }
+  return new Proxy(target, {
+    get(t, prop, receiver: unknown): unknown {
+      if (prop === "constructor") return Evil;
+      const value: unknown = Reflect.get(t, prop, receiver);
+      return value;
+    },
+  });
+}
+
+const SPECIES_VARIANTS: readonly (readonly [
+  string,
+  (marker: string) => unknown[],
+])[] = [
+  ["own constructor property + Symbol.species", speciesArrayOwnConstructor],
+  [
+    "Proxy get-trap constructor (no own property)",
+    speciesArrayProxyConstructor,
+  ],
+];
+
+const MARKER_KEY = "INJECTED_KEY";
+
+/** Builds a request driving the malicious array through `tools[].inputSchema`. */
+function requestViaInputSchema(
+  evilArray: unknown,
+): M3LBedrockToolInvokeRequest {
+  return {
+    messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+    tools: [
+      {
+        name: "toolA",
+        inputSchema: { evil: evilArray },
+      },
+    ],
+  };
+}
+
+/** Builds a request driving the malicious array through a request-side `toolResult` `json` payload. */
+function requestViaToolResultJson(
+  evilArray: unknown,
+): M3LBedrockToolInvokeRequest {
+  const block = {
+    type: "toolResult",
+    toolUseId: "call-1",
+    content: [{ type: "json", json: { evil: evilArray } }],
+  } as unknown as M3LBedrockContentBlock;
+  return { messages: [{ role: "user", content: [block] }] };
+}
+
+/** Builds a request driving the malicious array through a request-side `toolUse.input`. */
+function requestViaToolUseInput(
+  evilArray: unknown,
+): M3LBedrockToolInvokeRequest {
+  const block = {
+    type: "toolUse",
+    toolUseId: "call-1",
+    name: "toolA",
+    input: { evil: evilArray },
+  } as unknown as M3LBedrockContentBlock;
+  return { messages: [{ role: "assistant", content: [block] }] };
+}
+
+const DOCUMENT_SINKS: readonly (readonly [
+  string,
+  (evilArray: unknown) => M3LBedrockToolInvokeRequest,
+])[] = [
+  ["tools[].inputSchema", requestViaInputSchema],
+  ["request-side toolResult json payload", requestViaToolResultJson],
+  ["request-side toolUse.input", requestViaToolUseInput],
+];
+
+describe("M1 regression — array-arm species injection is structurally neutralized, not merely rejected", () => {
+  test.each(
+    SPECIES_VARIANTS.flatMap(([variantName, buildArray]) =>
+      DOCUMENT_SINKS.map(
+        ([sinkName, buildRequest]) =>
+          [variantName, sinkName, buildArray, buildRequest] as const,
+      ),
+    ),
+  )(
+    "%s via %s: resolves cleanly, and the injected marker never reaches the wire body (copyDocument's index loop never reads constructor/Symbol.species — see file doc comment for why this is 'resolves', not 'rejects')",
+    async (_variantName, _sinkName, buildArray, buildRequest) => {
+      const { ops, sent } = newWireOps();
+      const evilArray = buildArray(MARKER_KEY);
+
+      const result = await ops.invoke(buildRequest(evilArray));
+
+      expect(result.stopReason).toBe("end_turn");
+      expect(sent).toHaveLength(1);
+      for (const body of sent) {
+        expect(body).not.toContain(MARKER_KEY);
+        expect(body).not.toContain("SCHEMA_INJECT");
+        expect(body).not.toContain("TOOLUSE_INJECT");
+      }
+    },
+  );
+});
+
+describe("Round-1 regression — a literal __proto__ own property never reaches the wire or pollutes the global prototype", () => {
+  test("__proto__ as an inputSchema value: throws M3LBedrockRuntimeOperationError, no wire leak, no global pollution", async () => {
+    const { ops, sent } = newWireOps();
+    const polluted = JSON.parse(
+      '{"a":1,"__proto__":{"injected":"X"}}',
+    ) as Record<string, unknown>;
+
+    const thrown = await captureThrow(() =>
+      ops.invoke({
+        messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+        tools: [{ name: "toolA", inputSchema: polluted }],
+      }),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LBedrockRuntimeOperationError);
+    expect(sent).toHaveLength(0);
+    expect(Object.hasOwn(Object.prototype, "injected")).toBe(false);
+  });
+
+  test("__proto__ as a request-side toolResult json payload: throws M3LBedrockRuntimeOperationError, no wire leak, no global pollution", async () => {
+    const { ops, sent } = newWireOps();
+    const polluted = JSON.parse(
+      '{"a":1,"__proto__":{"injected":"X"}}',
+    ) as Record<string, unknown>;
+    const block = {
+      type: "toolResult",
+      toolUseId: "call-1",
+      content: [{ type: "json", json: polluted }],
+    } as unknown as M3LBedrockContentBlock;
+
+    const thrown = await captureThrow(() =>
+      ops.invoke({ messages: [{ role: "user", content: [block] }] }),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LBedrockRuntimeOperationError);
+    expect(sent).toHaveLength(0);
+    expect(Object.hasOwn(Object.prototype, "injected")).toBe(false);
+  });
+});
+
+describe("M2 — no raw error escapes the copyDocument boundary", () => {
+  test("a Proxy `get` trap that throws on numeric-index access surfaces as M3LBedrockRuntimeOperationError, never a bare TypeError", async () => {
+    const { ops, sent } = newWireOps();
+    const hostileArray = new Proxy([1, 2, 3], {
+      get(target, prop, receiver: unknown): unknown {
+        if (prop === "1") throw new TypeError("hostile trap boom");
+        const value: unknown = Reflect.get(target, prop, receiver);
+        return value;
+      },
+    });
+
+    const thrown = await captureThrow(() =>
+      ops.invoke(requestViaInputSchema(hostileArray)),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LBedrockRuntimeOperationError);
+    expect(thrown).not.toBeInstanceOf(TypeError);
+    const error = thrown as M3LBedrockRuntimeOperationError;
+    expect(error.code).toBe("ERR_BEDROCK_RUNTIME_OPERATION");
+    expect(sent).toHaveLength(0);
+  });
+
+  test("a Proxy `get` trap that throws on `length` access surfaces as M3LBedrockRuntimeOperationError, never a bare TypeError", async () => {
+    const { ops, sent } = newWireOps();
+    const hostileArray = new Proxy([1, 2, 3], {
+      get(target, prop, receiver: unknown): unknown {
+        if (prop === "length") throw new TypeError("hostile trap boom");
+        const value: unknown = Reflect.get(target, prop, receiver);
+        return value;
+      },
+    });
+
+    const thrown = await captureThrow(() =>
+      ops.invoke(requestViaToolResultJson(hostileArray)),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LBedrockRuntimeOperationError);
+    expect(thrown).not.toBeInstanceOf(TypeError);
+    const error = thrown as M3LBedrockRuntimeOperationError;
+    expect(error.code).toBe("ERR_BEDROCK_RUNTIME_OPERATION");
+    expect(sent).toHaveLength(0);
+  });
+
+  // `mapContentBlockToSdk`/`mapToolResultContentItem` read the caller-supplied
+  // discriminant ONCE into a local inside a try/catch, rather than
+  // `switch`ing on the property expression directly. A bare
+  // `switch (block.type)` evaluates the discriminant unprotected, so a
+  // throwing `type` getter would escape as a raw, un-normalized `Error`
+  // before the `default` arm's typed-error handling is ever reached. Do not
+  // "simplify" the guarded local read back into the `switch` line — that
+  // reintroduces the unprotected read this test guards against.
+  test("a throwing `type` getter on a request-side content block surfaces as M3LBedrockRuntimeOperationError, not a raw Error", async () => {
+    const { ops, sent } = newWireOps();
+    const evilBlock = {
+      get type(): string {
+        throw new Error("evil getter boom");
+      },
+    } as unknown as M3LBedrockContentBlock;
+
+    const thrown = await captureThrow(() =>
+      ops.invoke({ messages: [{ role: "user", content: [evilBlock] }] }),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LBedrockRuntimeOperationError);
+    expect(sent).toHaveLength(0);
+  });
+
+  // Same guard, via the toolResult content-item read
+  // (`mapToolResultContentItem`) instead of the top-level content block read.
+  test("a throwing `type` getter on a toolResult content item surfaces as M3LBedrockRuntimeOperationError, not a raw Error", async () => {
+    const { ops, sent } = newWireOps();
+    const evilItem = {
+      get type(): string {
+        throw new Error("evil getter boom");
+      },
+    };
+    const block = {
+      type: "toolResult",
+      toolUseId: "call-1",
+      content: [evilItem],
+    } as unknown as M3LBedrockContentBlock;
+
+    const thrown = await captureThrow(() =>
+      ops.invoke({ messages: [{ role: "user", content: [block] }] }),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LBedrockRuntimeOperationError);
+    expect(sent).toHaveLength(0);
+  });
+});
+
+describe("M3 — the document node/depth budget bails fast on adversarial sizing", () => {
+  /** Builds `{ nest: { nest: ... "leaf" } }`, `levels` deep. */
+  function makeDeep(levels: number): unknown {
+    let value: unknown = "leaf";
+    for (let index = 0; index < levels; index += 1) {
+      value = { nest: value };
+    }
+    return value;
+  }
+
+  test("depth 32 is accepted", async () => {
+    const { ops, sent } = newWireOps();
+    const result = await ops.invoke({
+      messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+      tools: [
+        { name: "toolA", inputSchema: makeDeep(32) as Record<string, unknown> },
+      ],
+    });
+
+    expect(result.stopReason).toBe("end_turn");
+    expect(sent).toHaveLength(1);
+  });
+
+  test("depth 33 throws M3LBedrockRuntimeOperationError", async () => {
+    const { ops, sent } = newWireOps();
+
+    const thrown = await captureThrow(() =>
+      ops.invoke({
+        messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+        tools: [
+          {
+            name: "toolA",
+            inputSchema: makeDeep(33) as Record<string, unknown>,
+          },
+        ],
+      }),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LBedrockRuntimeOperationError);
+    expect(sent).toHaveLength(0);
+  });
+
+  test(
+    "a cyclic document still bails via the depth ceiling, never hangs",
+    { timeout: 2_000 },
+    async () => {
+      const { ops, sent } = newWireOps();
+      const cyclic: Record<string, unknown> = {};
+      cyclic["self"] = cyclic;
+
+      const thrown = await captureThrow(() =>
+        ops.invoke({
+          messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+          tools: [{ name: "toolA", inputSchema: cyclic }],
+        }),
+      );
+
+      expect(thrown).toBeInstanceOf(M3LBedrockRuntimeOperationError);
+      expect(sent).toHaveLength(0);
+    },
+  );
+
+  test(
+    "a shared (2-way, 24-level) DAG that would expand exponentially rejects quickly via the node budget, never hangs or OOMs",
+    // Short, explicit timeout: a regression that reintroduces exponential
+    // blowup here must fail FAST, not hang the runner until a global
+    // timeout (or OOM the process outright, as the pre-fix implementation
+    // did against a 2 GB heap — 2026-08-29 security pass).
+    { timeout: 2_000 },
+    async () => {
+      const { ops, sent } = newWireOps();
+      // Each level shares the SAME previous-level object under two keys —
+      // node count doubles per level (2^24 ~ 16.7M) while depth never
+      // exceeds MAX_DOCUMENT_DEPTH (32) on any single path; see
+      // document.ts's MAX_DOCUMENT_NODES doc comment for the exact proof.
+      let level: unknown = { leaf: true };
+      for (let index = 0; index < 24; index += 1) {
+        level = { a: level, b: level };
+      }
+
+      const thrown = await captureThrow(() =>
+        ops.invoke({
+          messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+          tools: [
+            { name: "toolA", inputSchema: level as Record<string, unknown> },
+          ],
+        }),
+      );
+
+      expect(thrown).toBeInstanceOf(M3LBedrockRuntimeOperationError);
+      expect((thrown as Error).message).toContain("constructed nodes");
+      expect(sent).toHaveLength(0);
+    },
+  );
+});
+
+describe("Error-channel sanitization — a secret-shaped KEY, control characters, and oversized strings never reach error.message/toJSON() unsanitized", () => {
+  test("a secret used as a document KEY is escaped (control chars) and never appears raw in error.message or toJSON()", async () => {
+    const { ops, sent } = newWireOps();
+    const secretKey = "sk-live-SECRETVALUE\ndef\x1b[31mred\x1b[0m";
+    // Nests the secret key one level above a reserved "__proto__" own
+    // property (via JSON.parse, a real own property) so copyDocument
+    // throws WHILE the secret key is part of the error's path — the
+    // channel this test actually proves.
+    const inner = JSON.parse('{"__proto__":{"injected":1}}') as Record<
+      string,
+      unknown
+    >;
+
+    const thrown = await captureThrow(() =>
+      ops.invoke({
+        messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+        tools: [{ name: "toolA", inputSchema: { [secretKey]: inner } }],
+      }),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LBedrockRuntimeOperationError);
+    const error = thrown as M3LBedrockRuntimeOperationError;
+    expect(error.message).not.toContain(secretKey);
+    expect(error.message).not.toContain("\n");
+    expect(error.message).not.toContain("\x1b");
+    // The escaped form of the newline/ESC is still present (proves the key
+    // itself, sanitized, is diagnosable — not merely dropped).
+    expect(error.message).toContain("sk-live-SECRETVALUE");
+    expect(error.message).toContain("\\x0a");
+    expect(error.message).toContain("\\x1b");
+    const json = JSON.stringify(error.toJSON());
+    expect(json).not.toContain(secretKey);
+    expect(sent).toHaveLength(0);
+  });
+
+  test("an oversized (150 KB) document KEY is length-capped in error.message, never proportional to input size", async () => {
+    const { ops, sent } = newWireOps();
+    const hugeKey = "K".repeat(150_000);
+    const inner = JSON.parse('{"__proto__":{"injected":1}}') as Record<
+      string,
+      unknown
+    >;
+
+    const thrown = await captureThrow(() =>
+      ops.invoke({
+        messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+        tools: [{ name: "toolA", inputSchema: { [hugeKey]: inner } }],
+      }),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LBedrockRuntimeOperationError);
+    const error = thrown as M3LBedrockRuntimeOperationError;
+    expect(error.message.length).toBeLessThan(1_000);
+    expect(sent).toHaveLength(0);
+  });
+
+  test("an oversized (150 KB) off-contract `type` discriminant is length-capped in error.message, never proportional to input size", async () => {
+    const { ops, sent } = newWireOps();
+    const hugeType = "T".repeat(150_000);
+    const invalidBlock = {
+      type: hugeType,
+    } as unknown as M3LBedrockContentBlock;
+
+    const thrown = await captureThrow(() =>
+      ops.invoke({ messages: [{ role: "user", content: [invalidBlock] }] }),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LBedrockRuntimeOperationError);
+    const error = thrown as M3LBedrockRuntimeOperationError;
+    expect(error.message.length).toBeLessThan(1_000);
+    expect(sent).toHaveLength(0);
+  });
+
+  test("newline/ANSI escape sequences in an off-contract `type` discriminant are escaped, never raw, in error.message", async () => {
+    const { ops, sent } = newWireOps();
+    const hostileType = "nope\ninjected\x1b[31m";
+    const invalidBlock = {
+      type: hostileType,
+    } as unknown as M3LBedrockContentBlock;
+
+    const thrown = await captureThrow(() =>
+      ops.invoke({ messages: [{ role: "user", content: [invalidBlock] }] }),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LBedrockRuntimeOperationError);
+    const error = thrown as M3LBedrockRuntimeOperationError;
+    expect(error.message).not.toContain("\n");
+    expect(error.message).not.toContain("\x1b");
+    expect(error.message).toContain("\\x0a");
+    expect(error.message).toContain("\\x1b");
+    expect(sent).toHaveLength(0);
+  });
+});
