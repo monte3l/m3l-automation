@@ -846,14 +846,16 @@ describe("M3LThresholdEvaluator", () => {
   });
 
   describe("M3LThresholdRuleValidationError — direct construction", () => {
-    test("cause round-trips through the instance and toJSON()", () => {
+    test("the live cause field round-trips through the instance; toJSON() allowlists it to name-only", () => {
       const underlying = new Error("boom");
       const err = new M3LThresholdRuleValidationError("bad rule", {
         cause: underlying,
       });
 
       expect(err.cause).toBe(underlying);
-      expect(err.toJSON().cause).toBe(underlying);
+      // F31 (GitHub #727): toJSON()'s `cause` projection no longer returns
+      // the underlying Error by reference — only its safe `name` survives.
+      expect(err.toJSON().cause).toEqual({ name: underlying.name });
     });
   });
 

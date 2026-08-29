@@ -6,7 +6,7 @@ Structured error handling for `@m3l-automation/m3l-common`: a typed error base c
 
 The `errors` module provides two complementary tools:
 
-- **`M3LError`** — an `Error` subclass that carries a stable `code`, an arbitrary `context` object, a properly-typed `cause`, a fault-origin classification (`origin`/`retryable`), and a `toJSON()` serializer.
+- **`M3LError`** — an `Error` subclass that carries a stable `code`, an arbitrary `context` object, a properly-typed `cause`, a fault-origin classification (`origin`/`retryable`), and a `toJSON()` serializer whose `cause` is allowlisted rather than returned verbatim (see [`toJSON()`'s `cause` allowlist](#tojsons-cause-allowlist)).
 - **`M3LResult<T, E>`** — a discriminated union modeled after Rust's `Result`, with a set of operators (`map`, `mapErr`, `andThen`, `unwrap`, `unwrapOr`, `fromPromise`, `tryCatch`, …) that let code propagate failures as values rather than throwing.
 
 A set of `M3LErrorUtils` helper functions normalize `unknown` thrown values (as caught in `catch` blocks) into well-typed errors.
@@ -15,7 +15,7 @@ A set of `M3LErrorUtils` helper functions normalize `unknown` thrown values (as 
 
 Public surface (`errors/index.ts`):
 
-- Types and classes: `M3LError`, `M3LErrorCode`, `M3LErrorOptions`, `M3LOperationAbortedError`, `M3LResult`, `M3LResultOk`, `M3LResultErr`
+- Types and classes: `M3LError`, `M3LErrorCode`, `M3LErrorOptions`, `M3LErrorJSON`, `M3LErrorCauseJSON`, `M3LOperationAbortedError`, `M3LResult`, `M3LResultOk`, `M3LResultErr`
 - `M3L_ERROR_CODES` — the runtime `as const` tuple of every built-in error code (the source of truth `M3LErrorCode` derives from)
 - `M3LErrorUtils` functions: `getErrorMessage`, `toError`, `wrapError`, `getErrorStack`, `hasErrorName`, `errorMessageContains`
 - Result operators: `ok`, `err`, `isOk`, `isErr`, `unwrap`, `unwrapOr`, `map`, `mapErr`, `andThen`, `fromPromise`, `tryCatch`
@@ -33,9 +33,61 @@ Public surface (`errors/index.ts`):
 - `cause` — a properly-typed underlying error, set via `M3LErrorOptions`.
 - `origin` / `retryable` — the fault-origin classification, defaulted from the
   [error-code catalog](#error-code-catalog) (see [Fault origin](#fault-origin)).
-- `toJSON()` — serializes all fields, including the `stack`.
+- `toJSON()` — returns an `M3LErrorJSON`-shaped record. `name`,
+  `message`, `code`, `context`, `stack`, `origin`, and `retryable` are carried
+  verbatim; `cause` is **not** — see [`toJSON()`'s `cause`
+  allowlist](#tojsons-cause-allowlist) below.
 
 Subclass `M3LError` per failure mode rather than throwing bare strings.
+
+### `toJSON()`'s `cause` allowlist
+
+`M3LError.toJSON()`'s `cause` field is projected onto an allowlist (GitHub
+[#727](https://github.com/monte3l/m3l-automation/issues/727), tracker F31),
+not returned by reference:
+
+- `undefined` → the `cause` field is `undefined`.
+- a genuinely-constructed `M3LError` cause → recurses into that error's own
+  full `M3LErrorJSON` record, so the library-authored chain (`code`,
+  `context`, `origin`, `retryable`, and its own nested `cause`) survives — up
+  to a fixed depth cap, beyond which the chain collapses to the terminal
+  marker `{ name: "[max cause depth reached]" }`; a genuine cycle in the chain
+  is detected separately and collapses to `{ name: "[circular]" }` instead of
+  exhausting the depth budget.
+- any other `Error` → `{ name: <safe name> }` only — the cause's own `.name`
+  when it is a plain identifier, else its constructor name, else the literal
+  `"Error"`. This branch also catches an object that merely _wears_
+  `M3LError.prototype` without being a genuine instance (a hostile `Proxy`, or
+  a forged object with the prototype grafted on) — `instanceof M3LError`
+  alone cannot tell a forgery from a real instance, so only an object this
+  library actually constructed gets the full recursive treatment above.
+- anything else (a plain object, a null-prototype object, a primitive, a
+  `Symbol`, a function) → `{ name: <safe constructor-derived type name> }`
+  only, derived without ever reading the value's own data.
+
+This closes the defect where a caught AWS SDK exception's own-enumerable
+fields (e.g. a smithy `ServiceException`'s `$response`/`$metadata`, or a
+`message` set as a plain property after construction) reached a log or run
+report by reference through `JSON.stringify(err.toJSON())`.
+
+**`context` is explicitly out of scope for this allowlist** — it is a
+deliberate, pre-existing library-authored diagnostic channel with a known,
+enumerable shape, passed through `toJSON()` verbatim and unredacted, same as
+before this fix. Redacting its contents (some subclasses put caller-supplied
+payloads there, e.g. `aws/dynamodb`'s `item`/`patch`) is `core/logging`'s
+`redactSensitiveLogValue`'s job, not this method's.
+
+**The live `error.cause` field itself is unchanged.** A caller can still
+narrow on it via `instanceof` or read its full contents directly — only the
+`toJSON()` projection is allowlisted. Similarly, [`core/diagnostics`](./diagnostics.md)'s
+`formatErrorChain`/`serializeErrorChain` walk the live `cause` chain directly
+and never go through `toJSON()`; they emit each level's own (heuristically
+redacted) `message` and `stack` under their own, separate rules.
+
+The two new types, `M3LErrorJSON` (the full record `toJSON()` returns) and
+`M3LErrorCauseJSON` (the name-only terminal shape for a non-`M3LError`
+cause), are both exported from the `errors` module and reachable through the
+`Core` namespace barrel.
 
 ### `M3L_ERROR_CODES` / `M3LErrorCode`
 
@@ -372,6 +424,7 @@ const port = Core.mapErr(
 - `toError` and `getErrorMessage` are designed for `catch (error: unknown)` blocks — use them to narrow `unknown` instead of using `any`.
 - `hasErrorName` and `errorMessageContains` are predicates useful for branching on error identity without instanceof chains; `getErrorStack` safely extracts a stack when present.
 - `M3LOperationAbortedError` is the one built-in error that intentionally omits `cause`; see its section above for why.
+- `toJSON()`'s `cause` field is allowlisted, not verbatim — see [`toJSON()`'s `cause` allowlist](#tojsons-cause-allowlist); the live `error.cause` field itself is unaffected.
 - `isOk` / `isErr` are type guards that narrow `M3LResult<T, E>` to `M3LResultOk<T>` / `M3LResultErr<E>`.
 - `unwrap()` throws on an error result; prefer `unwrapOr` (or `isOk` narrowing) when you want to stay exception-free.
 

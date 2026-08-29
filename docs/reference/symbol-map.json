@@ -750,6 +750,18 @@
     "namespace": "core",
     "file": "packages/m3l-common/src/core/errors/M3LOperationAbortedError.ts"
   },
+  "M3LErrorJSON": {
+    "submodule": "errors",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/errors/M3LError.ts",
+    "lines": "534-560"
+  },
+  "M3LErrorCauseJSON": {
+    "submodule": "errors",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/errors/M3LError.ts",
+    "lines": "506-514"
+  },
   "M3LErrorOptions": {
     "submodule": "errors",
     "namespace": "core",
