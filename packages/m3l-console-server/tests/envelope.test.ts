@@ -248,6 +248,16 @@ const CLASSIFICATION_TABLE: Record<
     retryable: true,
     fault: false,
   },
+  // X6 workbench-sessions module, slice 2 (ADR-0068). A malformed reference
+  // (bad grammar) or one that no longer matches the data it names (a
+  // forbidden/impossible walk) is a caller-facing input problem, not a
+  // server fault — same reasoning as ERR_CONSOLE_BAD_REQUEST.
+  ERR_CONSOLE_SESSION_REFERENCE_INVALID: {
+    status: 400,
+    origin: "caller",
+    retryable: false,
+    fault: false,
+  },
 };
 
 // `Object.entries` widens the key to `string`; `CLASSIFICATION_TABLE`'s

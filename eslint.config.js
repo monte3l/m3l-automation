@@ -677,6 +677,13 @@ export default tseslint.config(
                 "console-server: runs/ may import only errors/, store/, and stream/ (ADR-0065). Configuration arrives as arguments from main.ts; runs/ must never read the environment directly.",
             },
             {
+              target: "./packages/m3l-console-server/src/sessions",
+              from: "./packages/m3l-console-server/src",
+              except: ["sessions", "errors", "store"],
+              message:
+                "console-server: sessions/ may import only errors/ and store/ (ADR-0068, ADR-0065). It receives its bindings from the launched-run event sink via a declared port passed in from main.ts, never by importing runs/ directly.",
+            },
+            {
               target: "./packages/m3l-console-server/src/http",
               from: "./packages/m3l-console-server/src",
               except: ["http", "errors", "auth", "lifecycle", "net", "stream"],
