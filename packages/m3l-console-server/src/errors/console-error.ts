@@ -97,6 +97,22 @@ import { Core } from "@m3l-automation/m3l-common";
  * malformed, or no longer matches the data it names" outcome, never a server
  * fault.
  *
+ * The two final codes are X6 slice 3's own addition (`sessions/artifacts.ts`,
+ * ADR-0068/ADR-0069): the session artifact store's own failure modes.
+ * `ERR_CONSOLE_SESSION_ARTIFACT_TOO_LARGE` is raised by `put` when a
+ * payload's JSON-serialized byte size exceeds either the configured
+ * per-artifact cap or the caller-supplied running session-total cap — a
+ * caller-facing "you tried to persist more data than this deployment
+ * allows" outcome. `ERR_CONSOLE_SESSION_ARTIFACT_CORRUPT` is raised by `put`
+ * when an exclusive-create write collides with an existing artifact file
+ * (`EEXIST`, never silently overwritten) or otherwise fails to persist, by
+ * `readArtifact` when a file-backed artifact's on-disk bytes no longer match
+ * its recorded digest, and by `decodeArtifactRef` when persisted reference
+ * text cannot be parsed or does not match the reference envelope shape —
+ * every one of these means the store or filesystem drifted from what this
+ * module itself wrote, so it is a genuine internal fault, not a caller
+ * mistake.
+ *
  * @example
  * ```ts
  * function isConfigError(code: M3LConsoleErrorCode): boolean {
@@ -136,7 +152,9 @@ export type M3LConsoleErrorCode =
   | "ERR_CONSOLE_SESSION_TRANSITION_INVALID"
   | "ERR_CONSOLE_SESSION_CLOSED"
   | "ERR_CONSOLE_SESSION_LIMIT_EXCEEDED"
-  | "ERR_CONSOLE_SESSION_REFERENCE_INVALID";
+  | "ERR_CONSOLE_SESSION_REFERENCE_INVALID"
+  | "ERR_CONSOLE_SESSION_ARTIFACT_TOO_LARGE"
+  | "ERR_CONSOLE_SESSION_ARTIFACT_CORRUPT";
 
 /**
  * Constructor options for {@link M3LConsoleError}.
