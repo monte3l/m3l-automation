@@ -821,6 +821,50 @@ describe("encodeArtifactRef / decodeArtifactRef — round trip", () => {
   });
 });
 
+describe("encodeArtifactRef — a non-JSON-serializable inline value throws ERR_CONSOLE_BAD_REQUEST via toParametersJson", () => {
+  // toParametersJson (src/store/parameters-json.ts) has two distinct
+  // internal failure branches: a raw TypeError that JSON.stringify itself
+  // throws (a BigInt, or a cycle its own circularity detection catches) is
+  // caught by the generic catch-all and chained as-is; a function/symbol/
+  // undefined value is instead detected explicitly by the path-tracking
+  // replacer and raised as its own UnserializableParameterValue before ever
+  // reaching JSON.stringify's native detection (see the "put — an
+  // unparseable ... payload" describe above for that second branch). Both
+  // fixtures below exercise the FIRST branch — BigInt and a circular
+  // reference are the two shapes JSON.stringify's native serializer itself
+  // rejects, as opposed to the replacer-detected shapes.
+  test("a BigInt value in the payload: JSON.stringify's own TypeError is chained as cause", () => {
+    let thrown: unknown;
+    try {
+      encodeArtifactRef({ kind: "inline", value: { count: 10n } });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    const error = thrown as M3LConsoleError;
+    expect(error.code).toBe("ERR_CONSOLE_BAD_REQUEST");
+    expect(error.cause).toBeInstanceOf(TypeError);
+  });
+
+  test("a circular-reference object value: JSON.stringify's own circularity detection TypeError is chained as cause", () => {
+    const cyclic: Record<string, unknown> = {};
+    cyclic["self"] = cyclic;
+
+    let thrown: unknown;
+    try {
+      encodeArtifactRef({ kind: "inline", value: cyclic });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    const error = thrown as M3LConsoleError;
+    expect(error.code).toBe("ERR_CONSOLE_BAD_REQUEST");
+    expect(error.cause).toBeInstanceOf(TypeError);
+  });
+});
+
 describe("decodeArtifactRef — path must decompose into <sessionId>/<stepId>.json, both segments safe-id charset", () => {
   /** Builds a `"file"`-kind envelope JSON text with a given `path`, otherwise-valid `sizeBytes`/`digest`. */
   function fileEnvelope(path: string): string {

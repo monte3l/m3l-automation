@@ -495,6 +495,10 @@ export function createSessionArtifactStore(
  *
  * @param ref - The ref to serialize.
  * @returns The serialized text — the exact inverse of {@link decodeArtifactRef}.
+ * @throws {@link M3LConsoleError} with code `"ERR_CONSOLE_BAD_REQUEST"` when
+ *   `ref` is not JSON-serializable — only reachable via an `"inline"` ref
+ *   whose `value` contains a `BigInt`, a circular reference, or another
+ *   non-serializable value.
  *
  * @example
  * ```ts
@@ -505,7 +509,7 @@ export function createSessionArtifactStore(
  * ```
  */
 export function encodeArtifactRef(ref: M3LSessionArtifactRef): string {
-  return JSON.stringify(ref);
+  return toParametersJson(ref);
 }
 
 /**
