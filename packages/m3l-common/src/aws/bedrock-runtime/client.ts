@@ -27,6 +27,7 @@ import {
 
 import { M3LOperationAbortedError } from "../../core/errors/index.js";
 
+import { readCallerValueOrElse } from "./document.js";
 import {
   M3LBedrockRuntimeNoModelError,
   M3LBedrockRuntimeOperationError,
@@ -513,9 +514,19 @@ function hasUnsupportedStreamingContent(
   if (Object.hasOwn(request, "tools") || Object.hasOwn(request, "toolChoice")) {
     return true;
   }
-  return request.messages.some((message) =>
-    message.content.some((block) => !isTextTypeBlock(block)),
-  );
+  // Guarded (M2, round 3): a malformed/duck-typed `messages`/`content` (no
+  // real `.some()`) must surface as this module's typed error, never a raw
+  // `TypeError` escaping `invokeStream()`.
+  try {
+    return request.messages.some((message) =>
+      message.content.some((block) => !isTextTypeBlock(block)),
+    );
+  } catch (cause) {
+    throw new M3LBedrockRuntimeOperationError(
+      "invokeStream could not read request.messages/content",
+      { origin: "caller", retryable: false, cause },
+    );
+  }
 }
 
 /**
@@ -529,9 +540,5 @@ function hasUnsupportedStreamingContent(
  * rather than let a raw exception escape `invokeStream`).
  */
 function isTextTypeBlock(block: M3LBedrockContentBlock): boolean {
-  try {
-    return block.type === "text";
-  } catch {
-    return false;
-  }
+  return readCallerValueOrElse(() => block.type === "text", false);
 }

@@ -1433,7 +1433,7 @@ describe("copyDocument's prototype-pollution refusal (CRITICAL fix): __proto__/c
     expect(freshObject["injected"]).toBeUndefined();
   });
 
-  test("a deeply-nested reserved key includes a JSON-path-like trail (keys/indices only) in the error message — never the offending value", async () => {
+  test("a deeply-nested reserved key includes a positional (keys-as-ordinals, indices-as-numbers) trail in the error message — never the caller's key names or the offending value", async () => {
     const SECRET_VALUE = "super-secret-value-must-not-leak";
     const schema = {
       level1: {
@@ -1453,8 +1453,19 @@ describe("copyDocument's prototype-pollution refusal (CRITICAL fix): __proto__/c
 
     expect(thrown).toBeInstanceOf(M3LBedrockRuntimeOperationError);
     const message = (thrown as Error).message;
-    expect(message).toContain("$.level1.level2[0].level3.__proto__");
+    // Each of the three object levels above `__proto__` carries exactly one
+    // own key, so every `key` step's ordinal is 1; the array step in
+    // between is rendered as its (derived, safe) numeric index `[0]`. Only
+    // the reserved `__proto__` step is named — see formatDocumentPath's doc
+    // comment for why that one is the exception.
+    expect(message).toContain("$.<key#1>.<key#1>[0].<key#1>.__proto__");
     expect(message).not.toContain(SECRET_VALUE);
+    // Strengthened: the caller's real key names must never appear in the
+    // message at all — positional paths exist precisely because a key
+    // name (unlike a derived index) can itself be a secret.
+    expect(message).not.toContain("level1");
+    expect(message).not.toContain("level2");
+    expect(message).not.toContain("level3");
   });
 });
 

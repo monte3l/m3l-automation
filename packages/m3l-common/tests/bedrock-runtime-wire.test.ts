@@ -48,6 +48,8 @@ import {
 } from "../src/aws/index.js";
 import type {
   M3LBedrockContentBlock,
+  M3LBedrockInvokeRequest,
+  M3LBedrockMessage,
   M3LBedrockToolInvokeRequest,
 } from "../src/aws/index.js";
 
@@ -121,6 +123,37 @@ async function captureThrow(fn: () => Promise<unknown>): Promise<unknown> {
   } catch (error) {
     return error;
   }
+}
+
+/**
+ * Like {@link newWireOps}, but the stub `requestHandler` returns `payload`
+ * verbatim (still through the REAL deserializer) instead of
+ * {@link stubConverseResponsePayload}'s fixed body — for response-side
+ * coverage gaps (e.g. `tools.ts`'s `refuseServerToolUse`) that need control
+ * over the reply shape itself, not just what reaches the request wire.
+ */
+function newWireOpsWithResponsePayload(payload: Record<string, unknown>): {
+  readonly ops: M3LBedrockRuntimeOperations;
+  readonly sent: string[];
+} {
+  const sent: string[] = [];
+  const client = new BedrockRuntimeClient({
+    region: "us-east-1",
+    credentials: { accessKeyId: "x", secretAccessKey: "y" },
+    requestHandler: {
+      handle(request: StubHttpRequest) {
+        sent.push(new TextDecoder().decode(request.body as Uint8Array));
+        const body = new TextEncoder().encode(JSON.stringify(payload));
+        return Promise.resolve({
+          response: { statusCode: 200, headers: {}, body },
+        });
+      },
+    },
+  });
+  return {
+    ops: new M3LBedrockRuntimeOperations(client, { models: ["m1"] }),
+    sent,
+  };
 }
 
 describe("wire harness sanity — proves the real serializer actually runs", () => {
@@ -503,7 +536,7 @@ describe("M3 — the document node/depth budget bails fast on adversarial sizing
 });
 
 describe("Error-channel sanitization — a secret-shaped KEY, control characters, and oversized strings never reach error.message/toJSON() unsanitized", () => {
-  test("a secret used as a document KEY is escaped (control chars) and never appears raw in error.message or toJSON()", async () => {
+  test("a secret used as a document KEY never appears in error.message or toJSON() — in any form (raw, escaped, or truncated)", async () => {
     const { ops, sent } = newWireOps();
     const secretKey = "sk-live-SECRETVALUE\ndef\x1b[31mred\x1b[0m";
     // Nests the secret key one level above a reserved "__proto__" own
@@ -524,14 +557,44 @@ describe("Error-channel sanitization — a secret-shaped KEY, control characters
 
     expect(thrown).toBeInstanceOf(M3LBedrockRuntimeOperationError);
     const error = thrown as M3LBedrockRuntimeOperationError;
+    // An ordinary object `key` step is rendered positionally
+    // (`.<key#N>`) — the key never reaches the message at all, so
+    // there is nothing left to escape: not raw, not escaped, not
+    // truncated. Assert both the full key and its recognizable prefix
+    // are absent, plus (defense in depth) the control chars and their
+    // escaped forms it contains.
     expect(error.message).not.toContain(secretKey);
+    expect(error.message).not.toContain("sk-live-SECRETVALUE");
     expect(error.message).not.toContain("\n");
     expect(error.message).not.toContain("\x1b");
-    // The escaped form of the newline/ESC is still present (proves the key
-    // itself, sanitized, is diagnosable — not merely dropped).
-    expect(error.message).toContain("sk-live-SECRETVALUE");
-    expect(error.message).toContain("\\x0a");
-    expect(error.message).toContain("\\x1b");
+    expect(error.message).not.toContain("\\x0a");
+    expect(error.message).not.toContain("\\x1b");
+    expect(error.message).toContain("<key#1>");
+    const json = JSON.stringify(error.toJSON());
+    expect(json).not.toContain(secretKey);
+    expect(json).not.toContain("sk-live-SECRETVALUE");
+    expect(sent).toHaveLength(0);
+  });
+
+  test("a plain, control-char-free secret used as a document KEY is also absent from error.message and toJSON() (no control chars to escape — the exact leak an escaping-only fix cannot catch)", async () => {
+    const { ops, sent } = newWireOps();
+    const secretKey = "sk-live-PLAINSECRET";
+    const inner = JSON.parse('{"__proto__":{"injected":1}}') as Record<
+      string,
+      unknown
+    >;
+
+    const thrown = await captureThrow(() =>
+      ops.invoke({
+        messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+        tools: [{ name: "toolA", inputSchema: { [secretKey]: inner } }],
+      }),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LBedrockRuntimeOperationError);
+    const error = thrown as M3LBedrockRuntimeOperationError;
+    expect(error.message).not.toContain(secretKey);
+    expect(error.message).toContain("<key#1>");
     const json = JSON.stringify(error.toJSON());
     expect(json).not.toContain(secretKey);
     expect(sent).toHaveLength(0);
@@ -592,6 +655,241 @@ describe("Error-channel sanitization — a secret-shaped KEY, control characters
     expect(error.message).not.toContain("\x1b");
     expect(error.message).toContain("\\x0a");
     expect(error.message).toContain("\\x1b");
+    expect(sent).toHaveLength(0);
+  });
+});
+
+describe("document.ts guard coverage — readCallerValue/readCallerString/requireCallerArray rejection arms", () => {
+  test("a throwing getter on a toolResult block's status surfaces as M3LBedrockRuntimeOperationError, not a raw Error (readCallerValue's catch)", async () => {
+    const { ops, sent } = newWireOps();
+    const block = {
+      type: "toolResult",
+      toolUseId: "call-1",
+      content: [],
+      get status(): string {
+        throw new Error("evil getter boom");
+      },
+    } as unknown as M3LBedrockContentBlock;
+
+    const thrown = await captureThrow(() =>
+      ops.invoke({ messages: [{ role: "user", content: [block] }] }),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LBedrockRuntimeOperationError);
+    expect(thrown).not.toBeInstanceOf(TypeError);
+    expect(sent).toHaveLength(0);
+  });
+
+  test("a non-string text value on a request-side text content block throws M3LBedrockRuntimeOperationError (readCallerString's type guard)", async () => {
+    const { ops, sent } = newWireOps();
+    const block = {
+      type: "text",
+      text: { NOT_A_STRING: 1 },
+    } as unknown as M3LBedrockContentBlock;
+
+    const thrown = await captureThrow(() =>
+      ops.invoke({ messages: [{ role: "user", content: [block] }] }),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LBedrockRuntimeOperationError);
+    expect(thrown).not.toBeInstanceOf(TypeError);
+    expect(sent).toHaveLength(0);
+  });
+
+  test("a duck-typed (non-array) message content value throws M3LBedrockRuntimeOperationError (requireCallerArray's shape guard)", async () => {
+    const { ops, sent } = newWireOps();
+    const duckContent = { length: 1 };
+    const message = {
+      role: "user",
+      content: duckContent,
+    } as unknown as M3LBedrockMessage;
+
+    const thrown = await captureThrow(() =>
+      ops.invoke({ messages: [message] }),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LBedrockRuntimeOperationError);
+    expect(thrown).not.toBeInstanceOf(TypeError);
+    expect(sent).toHaveLength(0);
+  });
+
+  // Proves readCallerValueOrElse's fallback arm (document.ts): an unreadable
+  // discriminant is treated the same as a non-"text" one, never a raw throw.
+  test("invokeStream: a throwing `type` getter on a message content block is treated as non-text, rejecting with M3LBedrockRuntimeOperationError on the first .next()", async () => {
+    const { ops } = newWireOps();
+    const evilBlock = {
+      get type(): string {
+        throw new Error("evil getter boom");
+      },
+    } as unknown as M3LBedrockContentBlock;
+
+    const stream = ops.invokeStream({
+      messages: [{ role: "user", content: [evilBlock] }],
+    });
+    const thrown = await captureThrow(() => stream.next());
+
+    expect(thrown).toBeInstanceOf(M3LBedrockRuntimeOperationError);
+    expect(thrown).not.toBeInstanceOf(TypeError);
+    expect((thrown as Error).message).toContain(
+      "non-text message content blocks",
+    );
+  });
+});
+
+describe("client.ts guard coverage — hasUnsupportedStreamingContent's guarded messages/content read", () => {
+  test("invokeStream: a messages value lacking a real .some() surfaces as M3LBedrockRuntimeOperationError, never a raw TypeError, on the first .next()", async () => {
+    const { ops } = newWireOps();
+    const request = {
+      messages: { length: 1 },
+    } as unknown as M3LBedrockInvokeRequest;
+
+    const stream = ops.invokeStream(request);
+    const thrown = await captureThrow(() => stream.next());
+
+    expect(thrown).toBeInstanceOf(M3LBedrockRuntimeOperationError);
+    expect(thrown).not.toBeInstanceOf(TypeError);
+    expect((thrown as Error).message).toContain(
+      "could not read request.messages/content",
+    );
+  });
+
+  test("invokeStream: a message content value lacking a real .some() surfaces as M3LBedrockRuntimeOperationError, never a raw TypeError, on the first .next()", async () => {
+    const { ops } = newWireOps();
+    const request = {
+      messages: [{ role: "user", content: { length: 1 } }],
+    } as unknown as M3LBedrockInvokeRequest;
+
+    const stream = ops.invokeStream(request);
+    const thrown = await captureThrow(() => stream.next());
+
+    expect(thrown).toBeInstanceOf(M3LBedrockRuntimeOperationError);
+    expect(thrown).not.toBeInstanceOf(TypeError);
+    expect((thrown as Error).message).toContain(
+      "could not read request.messages/content",
+    );
+  });
+});
+
+describe("shared.ts guard coverage — toolResult status, message role, and toolUse.input's undefined arm", () => {
+  test("a toolResult block with an invalid status value throws M3LBedrockRuntimeOperationError", async () => {
+    const { ops, sent } = newWireOps();
+    const block = {
+      type: "toolResult",
+      toolUseId: "call-1",
+      content: [],
+      status: "pending",
+    } as unknown as M3LBedrockContentBlock;
+
+    const thrown = await captureThrow(() =>
+      ops.invoke({ messages: [{ role: "user", content: [block] }] }),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LBedrockRuntimeOperationError);
+    expect(sent).toHaveLength(0);
+  });
+
+  test("a message with a role outside user/assistant throws M3LBedrockRuntimeOperationError", async () => {
+    const { ops, sent } = newWireOps();
+    const message = {
+      role: "system",
+      content: [{ type: "text", text: "hi" }],
+    } as unknown as M3LBedrockMessage;
+
+    const thrown = await captureThrow(() =>
+      ops.invoke({ messages: [message] }),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LBedrockRuntimeOperationError);
+    expect(sent).toHaveLength(0);
+  });
+
+  // A no-argument tool call replayed as history: `input` is legitimately
+  // absent, so `toolUse.input` must be forwarded as `undefined` rather than
+  // derived by calling `copyDocument` on it (which throws on `undefined`).
+  test("a request-side toolUse block with no input is forwarded successfully with input omitted, not derived by copying", async () => {
+    const { ops, sent } = newWireOps();
+    const block = {
+      type: "toolUse",
+      toolUseId: "call-1",
+      name: "toolA",
+    } as unknown as M3LBedrockContentBlock;
+
+    const result = await ops.invoke({
+      messages: [{ role: "assistant", content: [block] }],
+    });
+
+    expect(result.stopReason).toBe("end_turn");
+    expect(sent).toHaveLength(1);
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- length asserted above
+    expect(sent[0]!).not.toContain('"input"');
+  });
+});
+
+describe("tools.ts guard coverage — refuseServerToolUse's toolUseId/name suffix ternaries", () => {
+  test("a server_tool_use reply block with no toolUseId or name throws without appending either suffix to the message", async () => {
+    const { ops, sent } = newWireOpsWithResponsePayload({
+      output: {
+        message: {
+          role: "assistant",
+          content: [{ toolUse: { type: "server_tool_use" } }],
+        },
+      },
+      stopReason: "tool_use",
+      usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+    });
+
+    const thrown = await captureThrow(() =>
+      ops.invoke({
+        messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+      }),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LBedrockRuntimeOperationError);
+    const message = (thrown as Error).message;
+    expect(message).not.toContain("toolUseId=");
+    expect(message).not.toContain(" name=");
+    expect(sent).toHaveLength(1);
+  });
+});
+
+describe("message-safety.ts — sanitizeForMessage's length cap and U+2028/U+2029/U+202E escapes", () => {
+  test("an oversized off-contract `type` discriminant is truncated with an ellipsis marker, never left unbounded", async () => {
+    const { ops, sent } = newWireOps();
+    const hugeType = "T".repeat(500);
+    const invalidBlock = {
+      type: hugeType,
+    } as unknown as M3LBedrockContentBlock;
+
+    const thrown = await captureThrow(() =>
+      ops.invoke({ messages: [{ role: "user", content: [invalidBlock] }] }),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LBedrockRuntimeOperationError);
+    const error = thrown as M3LBedrockRuntimeOperationError;
+    expect(error.message).toContain("…");
+    expect(error.message).not.toContain("T".repeat(500));
+    expect(sent).toHaveLength(0);
+  });
+
+  test("U+2028/U+2029/U+202E in an off-contract `type` discriminant are escaped to \\xNN, never left as raw line/direction-override characters", async () => {
+    const { ops, sent } = newWireOps();
+    const hostileType = "before\u2028mid\u2029more\u202eend";
+    const invalidBlock = {
+      type: hostileType,
+    } as unknown as M3LBedrockContentBlock;
+
+    const thrown = await captureThrow(() =>
+      ops.invoke({ messages: [{ role: "user", content: [invalidBlock] }] }),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LBedrockRuntimeOperationError);
+    const error = thrown as M3LBedrockRuntimeOperationError;
+    expect(error.message).not.toContain("\u2028");
+    expect(error.message).not.toContain("\u2029");
+    expect(error.message).not.toContain("\u202e");
+    expect(error.message).toContain("\\x2028");
+    expect(error.message).toContain("\\x2029");
+    expect(error.message).toContain("\\x202e");
     expect(sent).toHaveLength(0);
   });
 });

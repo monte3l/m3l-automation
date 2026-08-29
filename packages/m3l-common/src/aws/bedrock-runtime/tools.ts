@@ -21,11 +21,15 @@ import type {
 
 import {
   copyDocument,
+  DocumentCopyBudget,
   isPlainObject,
+  readCallerString,
+  readCallerValue,
   readOwn,
-  sanitizeForMessage,
+  requireCallerArray,
 } from "./document.js";
 import { M3LBedrockRuntimeOperationError } from "./error.js";
+import { sanitizeForMessage } from "./message-safety.js";
 import type {
   M3LBedrockToolChoice,
   M3LBedrockToolDefinition,
@@ -40,15 +44,39 @@ function mapToolChoice(choice: M3LBedrockToolChoice): ToolChoice {
   return { tool: { name: choice.tool } };
 }
 
-/** Maps one {@link M3LBedrockToolDefinition} to the SDK's `Tool.ToolSpecMember` shape, recursively copying `inputSchema` — see {@link copyDocument}. */
-function mapToolDefinition(tool: M3LBedrockToolDefinition): Tool {
+/**
+ * Maps one {@link M3LBedrockToolDefinition} to the SDK's `Tool.ToolSpecMember`
+ * shape, recursively copying `inputSchema` — see {@link copyDocument}.
+ * `budget` is shared across every tool in `buildToolConfig`'s loop, so the
+ * node ceiling bounds the whole tool list, not each schema in isolation
+ * (Should-fix #1, round 3). `name`/`description` are guarded, string-typed
+ * reads (M2/M3, round 3) — a throwing getter or a non-string value on either
+ * is a typed caller error rather than a raw exception or a forged non-string
+ * reaching the wire.
+ */
+function mapToolDefinition(
+  tool: M3LBedrockToolDefinition,
+  budget: DocumentCopyBudget,
+): Tool {
+  const name = readCallerString(() => tool.name, "a tool's name");
+  const description = readCallerValue(
+    () => tool.description,
+    "a tool's description",
+  );
+  const inputSchema = readCallerValue(
+    () => tool.inputSchema,
+    "a tool's inputSchema",
+  );
   return {
     toolSpec: {
-      name: tool.name,
-      ...(tool.description !== undefined && {
-        description: tool.description,
+      name,
+      ...(description !== undefined && {
+        description: readCallerString(
+          () => description,
+          "a tool's description",
+        ),
       }),
-      inputSchema: { json: copyDocument(tool.inputSchema, 0) },
+      inputSchema: { json: copyDocument(inputSchema, 0, budget) },
     },
   };
 }
@@ -71,10 +99,21 @@ function mapToolDefinition(tool: M3LBedrockToolDefinition): Tool {
 export function buildToolConfig(
   request: M3LBedrockToolInvokeRequest,
 ): ToolConfiguration | undefined {
-  const tools = request.tools;
+  const rawTools = request.tools;
   const toolChoice = request.toolChoice;
+  // `Array.isArray` FIRST, before any `.length`/index read — a duck-typed
+  // object exposing `length`/`map` but not a real array defeats a bare
+  // `.map()` call (M1, round 3); a real array is the only shape this
+  // function ever walks. `rawTools === undefined` is legitimate (no tools
+  // at all), so it is handled separately, never routed through the array
+  // guard.
+  const tools =
+    rawTools === undefined
+      ? []
+      : requireCallerArray<M3LBedrockToolDefinition>(rawTools, "request.tools");
+  const toolCount = tools.length;
 
-  if (tools === undefined || tools.length === 0) {
+  if (toolCount === 0) {
     if (toolChoice !== undefined) {
       throw new M3LBedrockRuntimeOperationError(
         "toolChoice was provided but tools is absent or empty — a choice cannot constrain a vocabulary that isn't there",
@@ -84,18 +123,39 @@ export function buildToolConfig(
     return undefined;
   }
 
-  if (
-    typeof toolChoice === "object" &&
-    !tools.some((tool) => tool.name === toolChoice.tool)
-  ) {
-    throw new M3LBedrockRuntimeOperationError(
-      `toolChoice named tool "${toolChoice.tool}" which is not present in tools`,
-      { origin: "caller", retryable: false },
+  if (typeof toolChoice === "object") {
+    let matched = false;
+    for (let index = 0; index < toolCount; index += 1) {
+      const tool = tools[index] as M3LBedrockToolDefinition;
+      if (
+        readCallerString(() => tool.name, "a tool's name") === toolChoice.tool
+      ) {
+        matched = true;
+        break;
+      }
+    }
+    if (!matched) {
+      throw new M3LBedrockRuntimeOperationError(
+        `toolChoice named tool "${toolChoice.tool}" which is not present in tools`,
+        { origin: "caller", retryable: false },
+      );
+    }
+  }
+
+  // One budget shared across the whole tool list (Should-fix #1, round 3) —
+  // see `mapToolDefinition`'s doc comment. Never `.map()` here: `tools` is
+  // caller data (see the array guard above), so the loop reads `toolCount`
+  // once and pushes into a module-owned literal.
+  const budget = new DocumentCopyBudget();
+  const mappedTools: Tool[] = [];
+  for (let index = 0; index < toolCount; index += 1) {
+    mappedTools.push(
+      mapToolDefinition(tools[index] as M3LBedrockToolDefinition, budget),
     );
   }
 
   return {
-    tools: tools.map(mapToolDefinition),
+    tools: mappedTools,
     ...(toolChoice !== undefined && { toolChoice: mapToolChoice(toolChoice) }),
   };
 }

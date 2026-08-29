@@ -29,8 +29,15 @@ import {
   M3LBedrockRuntimeModelError,
   M3LBedrockRuntimeOperationError,
 } from "./error.js";
-import { copyDocument, sanitizeForMessage } from "./document.js";
+import {
+  copyDocument,
+  DocumentCopyBudget,
+  readCallerString,
+  readCallerValue,
+  requireCallerArray,
+} from "./document.js";
 import type { M3LBedrockPlainDocument } from "./document.js";
+import { sanitizeForMessage } from "./message-safety.js";
 import type {
   M3LBedrockContentBlock,
   M3LBedrockInvokeRequest,
@@ -242,6 +249,7 @@ function formatDiscriminant(value: unknown): string {
  */
 function mapToolResultContentItem(
   item: M3LBedrockToolResultContent,
+  budget: DocumentCopyBudget,
 ): { readonly text: string } | { readonly json: M3LBedrockPlainDocument } {
   let discriminant: M3LBedrockToolResultContent["type"];
   try {
@@ -255,11 +263,19 @@ function mapToolResultContentItem(
   }
   switch (discriminant) {
     case "text":
-      return { text: (item as M3LBedrockTextBlock).text };
-    case "json":
       return {
-        json: copyDocument((item as M3LBedrockToolResultJsonBlock).json, 0),
+        text: readCallerString(
+          () => (item as M3LBedrockTextBlock).text,
+          "a toolResult content item's text",
+        ),
       };
+    case "json": {
+      const json = readCallerValue(
+        () => (item as M3LBedrockToolResultJsonBlock).json,
+        "a toolResult content item's json",
+      );
+      return { json: copyDocument(json, 0, budget) };
+    }
     default: {
       const exhaustive: never = discriminant;
       // A `never`-arm violation is structurally caller-side — this value
@@ -304,7 +320,77 @@ function mapToolResultContentItem(
  * read exactly once, inside the `try`/`catch` below, into `discriminant`;
  * do not inline this back into the `switch` line.
  */
-function mapContentBlockToSdk(block: M3LBedrockContentBlock): SdkContentItem {
+function mapToolUseBlockToSdk(
+  block: M3LBedrockToolUseBlock,
+  budget: DocumentCopyBudget,
+): SdkContentItem {
+  const toolUseId = readCallerString(
+    () => block.toolUseId,
+    "a toolUse block's toolUseId",
+  );
+  const name = readCallerString(() => block.name, "a toolUse block's name");
+  const input = readCallerValue(() => block.input, "a toolUse block's input");
+  return {
+    toolUse: {
+      toolUseId,
+      name,
+      input: input === undefined ? undefined : copyDocument(input, 0, budget),
+    },
+  };
+}
+
+/** {@link mapContentBlockToSdk}'s `toolResult` arm, split out to keep the parent function's line/complexity count under the repo's lint ceiling. */
+function mapToolResultBlockToSdk(
+  block: M3LBedrockToolResultBlock,
+  budget: DocumentCopyBudget,
+): SdkContentItem {
+  const toolUseId = readCallerString(
+    () => block.toolUseId,
+    "a toolResult block's toolUseId",
+  );
+  const rawContent = readCallerValue(
+    () => block.content,
+    "a toolResult block's content",
+  );
+  const content = requireCallerArray<M3LBedrockToolResultContent>(
+    rawContent,
+    "a toolResult block's content",
+  );
+  const contentCount = content.length;
+  const mappedContent: (
+    { readonly text: string } | { readonly json: M3LBedrockPlainDocument }
+  )[] = [];
+  for (let index = 0; index < contentCount; index += 1) {
+    mappedContent.push(
+      mapToolResultContentItem(
+        content[index] as M3LBedrockToolResultContent,
+        budget,
+      ),
+    );
+  }
+  const status = readCallerValue(
+    () => block.status,
+    "a toolResult block's status",
+  );
+  if (status !== undefined && status !== "success" && status !== "error") {
+    throw new M3LBedrockRuntimeOperationError(
+      `a toolResult block's status must be "success" or "error"`,
+      { origin: "caller", retryable: false },
+    );
+  }
+  return {
+    toolResult: {
+      toolUseId,
+      content: mappedContent,
+      ...(status !== undefined && { status }),
+    },
+  };
+}
+
+function mapContentBlockToSdk(
+  block: M3LBedrockContentBlock,
+  budget: DocumentCopyBudget,
+): SdkContentItem {
   let discriminant: M3LBedrockContentBlock["type"];
   try {
     discriminant = block.type;
@@ -316,32 +402,19 @@ function mapContentBlockToSdk(block: M3LBedrockContentBlock): SdkContentItem {
   }
   switch (discriminant) {
     case "text":
-      return { text: (block as M3LBedrockTextBlock).text };
-    case "toolUse": {
-      const toolUse = block as M3LBedrockToolUseBlock;
       return {
-        toolUse: {
-          toolUseId: toolUse.toolUseId,
-          name: toolUse.name,
-          input:
-            toolUse.input === undefined
-              ? undefined
-              : copyDocument(toolUse.input, 0),
-        },
+        text: readCallerString(
+          () => (block as M3LBedrockTextBlock).text,
+          "a content block's text",
+        ),
       };
-    }
-    case "toolResult": {
-      const toolResult = block as M3LBedrockToolResultBlock;
-      return {
-        toolResult: {
-          toolUseId: toolResult.toolUseId,
-          content: toolResult.content.map(mapToolResultContentItem),
-          ...(toolResult.status !== undefined && {
-            status: toolResult.status,
-          }),
-        },
-      };
-    }
+    case "toolUse":
+      return mapToolUseBlockToSdk(block as M3LBedrockToolUseBlock, budget);
+    case "toolResult":
+      return mapToolResultBlockToSdk(
+        block as M3LBedrockToolResultBlock,
+        budget,
+      );
     default: {
       const exhaustive: never = discriminant;
       // See `mapToolResultContentItem`'s analogous note: a `never`-arm
@@ -354,15 +427,64 @@ function mapContentBlockToSdk(block: M3LBedrockContentBlock): SdkContentItem {
   }
 }
 
-/** Converts a {@link M3LBedrockMessage} into the shape `ConverseCommandInput.messages` expects. */
-function toSdkMessage(message: M3LBedrockMessage): {
+/**
+ * Converts a {@link M3LBedrockMessage} into the shape
+ * `ConverseCommandInput.messages` expects — `role`/`content` are guarded,
+ * validated reads; `content` is walked with an index loop, never `.map()`
+ * (M1/M2/M3, round 3).
+ */
+function toSdkMessage(
+  message: M3LBedrockMessage,
+  budget: DocumentCopyBudget,
+): {
   role: M3LBedrockRuntimeRole;
   content: SdkContentItem[];
 } {
-  return {
-    role: message.role,
-    content: message.content.map(mapContentBlockToSdk),
-  };
+  const role = readCallerString(() => message.role, "a message's role");
+  if (role !== "user" && role !== "assistant") {
+    throw new M3LBedrockRuntimeOperationError(
+      `a message's role must be "user" or "assistant"`,
+      { origin: "caller", retryable: false },
+    );
+  }
+  const rawContent = readCallerValue(
+    () => message.content,
+    "a message's content",
+  );
+  const content = requireCallerArray<M3LBedrockContentBlock>(
+    rawContent,
+    "a message's content",
+  );
+  const contentCount = content.length;
+  const mapped: SdkContentItem[] = [];
+  for (let index = 0; index < contentCount; index += 1) {
+    mapped.push(
+      mapContentBlockToSdk(content[index] as M3LBedrockContentBlock, budget),
+    );
+  }
+  return { role, content: mapped };
+}
+
+/**
+ * Maps `inferenceConfig.stopSequences` into a fresh mutable `string[]`,
+ * `undefined` when `raw` is — never `[...raw]` (a spread invokes the
+ * value's own iterator, the same bypass class as `.map()`), and validates
+ * each entry is a `string` (M1/M2/M3, round 3).
+ */
+function mapStopSequences(
+  raw: readonly string[] | undefined,
+): string[] | undefined {
+  if (raw === undefined) return undefined;
+  const list = requireCallerArray<unknown>(
+    raw,
+    "inferenceConfig.stopSequences",
+  );
+  const count = list.length;
+  const result: string[] = [];
+  for (let index = 0; index < count; index += 1) {
+    result.push(readCallerString(() => list[index], "a stopSequences entry"));
+  }
+  return result;
 }
 
 /**
@@ -411,9 +533,31 @@ export function buildConverseInput(
   toolConfig?: ToolConfiguration,
 ): ConverseInput {
   const inferenceConfig = request.inferenceConfig;
+  // One budget shared across every message's content (Should-fix #1).
+  const budget = new DocumentCopyBudget();
+  const rawMessages = readCallerValue(
+    () => request.messages,
+    "request.messages",
+  );
+  const messages = requireCallerArray<M3LBedrockMessage>(
+    rawMessages,
+    "request.messages",
+  );
+  const messageCount = messages.length;
+  const mappedMessages: {
+    role: M3LBedrockRuntimeRole;
+    content: SdkContentItem[];
+  }[] = [];
+  for (let index = 0; index < messageCount; index += 1) {
+    mappedMessages.push(
+      toSdkMessage(messages[index] as M3LBedrockMessage, budget),
+    );
+  }
+  const stopSequences = mapStopSequences(inferenceConfig?.stopSequences);
+
   return {
     modelId,
-    messages: request.messages.map(toSdkMessage),
+    messages: mappedMessages,
     ...(request.system !== undefined && {
       system: [{ text: request.system }],
     }),
@@ -428,9 +572,7 @@ export function buildConverseInput(
         ...(inferenceConfig.topP !== undefined && {
           topP: inferenceConfig.topP,
         }),
-        ...(inferenceConfig.stopSequences !== undefined && {
-          stopSequences: [...inferenceConfig.stopSequences],
-        }),
+        ...(stopSequences !== undefined && { stopSequences }),
       },
     }),
     ...(toolConfig !== undefined && { toolConfig }),

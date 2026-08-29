@@ -3,10 +3,12 @@
  * recursive document copy ({@link copyDocument}) both `tools.ts` (request-
  * side `inputSchema`) and `shared.ts` (a `json` tool-result payload, a
  * `toolUse` block's `input`) share for the SDK's mutable `DocumentType`
- * boundary, plus the plain-object guard ({@link isPlainObject}), own-property
- * reader ({@link readOwn}), and caller/model-string sanitizer
- * ({@link sanitizeForMessage}) it and `tools.ts`'s toolUse-narrowing
- * machinery both need.
+ * boundary, plus the plain-object guard ({@link isPlainObject}) and
+ * own-property reader ({@link readOwn}) it and `tools.ts`'s toolUse-narrowing
+ * machinery both need. The caller/model-string sanitizer and the path-trail
+ * renderer this module's error messages use live in the sibling
+ * `message-safety.ts` leaf module (split out there, not here — that's a
+ * "render safely for a message" concern, not a "copy a document" concern).
  *
  * Split out of `tools.ts` as its own leaf module (ADR-0072's per-file size
  * ratchet) — the document copier is a self-contained concern with its own
@@ -21,6 +23,8 @@
  */
 
 import { M3LBedrockRuntimeOperationError } from "./error.js";
+import { formatDocumentPath } from "./message-safety.js";
+import type { M3LBedrockDocumentPath } from "./message-safety.js";
 
 /**
  * Nesting ceiling for {@link copyDocument} — see
@@ -32,7 +36,7 @@ import { M3LBedrockRuntimeOperationError } from "./error.js";
 const MAX_DOCUMENT_DEPTH = 32;
 
 /**
- * Total constructed-node ceiling for one {@link copyDocument} call — a
+ * Total constructed-node ceiling for one {@link DocumentCopyBudget} — a
  * budget threaded through the recursion via {@link copyDocumentImpl}, in
  * addition to (never instead of) {@link MAX_DOCUMENT_DEPTH}. Depth alone
  * does not bound work: a **shared** (not merely deep) DAG of caller input —
@@ -44,14 +48,30 @@ const MAX_DOCUMENT_DEPTH = 32;
  * 2 GB heap; depth 22 alone takes over 2s). Set on the order of 10,000 —
  * generous for any legitimate `inputSchema`/tool-result payload, small
  * enough to bound work to low milliseconds regardless of sharing.
+ *
+ * As of Should-fix #1 (round 3), a single ceiling bounds a WHOLE
+ * request-build pass (every tool's `inputSchema` in one `buildToolConfig`
+ * call, or every message's content in one `buildConverseInput` call) — see
+ * {@link DocumentCopyBudget}'s doc comment. Previously a fresh budget was
+ * constructed per individual {@link copyDocument} call, so 200 tools each
+ * carrying a ~9,000-node `inputSchema` (each individually under this
+ * ceiling) summed to 1.8M constructed nodes across one `invoke()` without
+ * ever tripping it.
  */
 const MAX_DOCUMENT_NODES = 10_000;
 
 /**
- * Per-call node counter threaded through {@link copyDocumentImpl}'s
- * recursion. Never exposed on {@link copyDocument}'s public signature — a
- * fresh budget is constructed for every top-level call, so the ceiling
- * bounds one document copy, not the whole process lifetime.
+ * Node counter threaded through {@link copyDocumentImpl}'s recursion,
+ * exported so `tools.ts`'s `buildToolConfig` and `shared.ts`'s
+ * `buildConverseInput` can each construct exactly ONE instance and pass it
+ * into every {@link copyDocument} call their own loop makes — bounding the
+ * WHOLE loop's total constructed-node count, not each individual tool's/
+ * block's document in isolation (Should-fix #1, round 3; see
+ * {@link MAX_DOCUMENT_NODES}'s doc comment for the exploit this closes).
+ * {@link copyDocument} still defaults to constructing a fresh instance when
+ * a caller (e.g. `stream.ts`'s `buildConverseInput` call, frozen for this
+ * fix) does not supply one, so every existing call site keeps working
+ * unchanged.
  *
  * A class (rather than a plain mutable `{ count }` object threaded through
  * every recursive call) so the counter mutates its own instance field
@@ -60,7 +80,7 @@ const MAX_DOCUMENT_NODES = 10_000;
  * `internal/procedure/evaluate.ts`'s `EvaluationBudget` for the identical
  * shape of problem.
  */
-class DocumentCopyBudget {
+export class DocumentCopyBudget {
   private count = 0;
 
   /** Records one more constructed node; returns `true` once {@link MAX_DOCUMENT_NODES} is exceeded. */
@@ -130,84 +150,89 @@ const DANGEROUS_DOCUMENT_KEYS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * Max length one {@link sanitizeForMessage}-rendered segment is allowed
- * before truncation — a length cap discards an implausibly long
- * caller/model-controlled string in favour of a safe, bounded rendering,
- * mirroring `core/errors/M3LError.ts`'s `SAFE_CAUSE_NAME_PATTERN` length-cap
- * reasoning for the same class of problem (an external string reaching
- * `error.message`, and from there `M3LError.toJSON()`'s log projection).
+ * Reads `read()` under a `try`/`catch`, rethrowing anything that isn't
+ * already this module's typed error as {@link M3LBedrockRuntimeOperationError}
+ * naming `fieldLabel` (never the field's own value) — the single shared
+ * boundary every caller-supplied-property read in `shared.ts`/`tools.ts`
+ * goes through, rather than a hand-rolled `try`/`catch` per call site (M2,
+ * 2026-08-29 security pass round 3: a throwing getter on `text`/`toolUseId`/
+ * `name`/`input`/`content`/`status`/`inputSchema` escaped as a raw, un-typed
+ * error before this consolidation).
  */
-const MAX_SANITIZED_MESSAGE_SEGMENT_LENGTH = 100;
-
-/** Radix for {@link sanitizeForMessage}'s `\xNN` control-character escape — hex, matching the escape's own name. */
-const HEX_RADIX = 16;
-
-/** Zero-padded digit count for {@link sanitizeForMessage}'s `\xNN` escape — exactly two hex digits per byte. */
-const HEX_ESCAPE_DIGIT_COUNT = 2;
-
-/**
- * Matches every C0/C1 control character — including `\n`/`\r` (log-line
- * forging) and ESC `\x1B` (the lead byte of every ANSI escape sequence).
- */
-// eslint-disable-next-line no-control-regex -- the sanitizer's entire purpose is matching control characters so it can escape them; the rule is inapplicable here.
-const UNSAFE_CONTROL_CHAR_PATTERN = /[\u0000-\u001f\u007f-\u009f]/g;
-
-/**
- * Renders a caller/model-controlled string safely for interpolation into an
- * `M3LError.message`: length-capped **before** any expansion (so an
- * oversized input is never fully processed), then every control character
- * escaped to `\xNN` so no newline, carriage return, or ANSI escape sequence
- * can pass through. Used by {@link formatDocumentPath} (a document object
- * key), `shared.ts`'s `formatDiscriminant` (a content-block `type`
- * discriminant), and {@link refuseServerToolUse} (a model-supplied
- * `toolUseId`/`name`) — all three interpolate an external string directly
- * into a thrown error's message (M2 finding: an unsanitized, uncapped value
- * here let a 200 KB `type` string produce a 400 KB `toJSON()` and let ANSI
- * injection reach a log sink, 2026-08-29 security pass).
- *
- * `core/errors/M3LError.ts`'s `isSafeCauseName`/`SAFE_CAUSE_NAME_PATTERN` is
- * the right pattern for this problem but is a private, unexported module
- * symbol (not re-exported from `core/errors/index.ts`) — `aws/**`'s ESLint
- * island (ADR-0059) may import only `core/errors`'s PUBLIC surface, so
- * widening that export just for this call site would widen the island;
- * replicated locally instead, deliberately with a wider allowed charset than
- * an identifier pattern — a JSON document key or a model-supplied tool name
- * is not identifier-shaped in general, so rejecting anything outside
- * `[A-Za-z0-9_$]` would discard legitimate diagnostic information for the
- * common case. Do not export this from `core/errors` just to reuse it here.
- */
-export function sanitizeForMessage(value: string): string {
-  const truncated =
-    value.length > MAX_SANITIZED_MESSAGE_SEGMENT_LENGTH
-      ? `${value.slice(0, MAX_SANITIZED_MESSAGE_SEGMENT_LENGTH)}…`
-      : value;
-  return truncated.replace(
-    UNSAFE_CONTROL_CHAR_PATTERN,
-    (char) =>
-      `\\x${char.codePointAt(0)?.toString(HEX_RADIX).padStart(HEX_ESCAPE_DIGIT_COUNT, "0") ?? "00"}`,
-  );
+export function readCallerValue<T>(read: () => T, fieldLabel: string): T {
+  try {
+    return read();
+  } catch (cause) {
+    throw new M3LBedrockRuntimeOperationError(
+      `reading ${fieldLabel} raised an unexpected error`,
+      { origin: "caller", retryable: false, cause },
+    );
+  }
 }
 
 /**
- * Formats a {@link copyDocument} key/index trail as a JSON-path-like string
- * for an error message — e.g. `$.tools[0].inputSchema.__proto__`. Every
- * string segment here is a caller-supplied object KEY (an array INDEX is a
- * `number`, rendered directly), never a VALUE, so the corresponding value is
- * never included — but a key itself is still external, caller/model-supplied
- * data, so it is rendered through {@link sanitizeForMessage} rather than
- * interpolated raw (a secret used as a document key would otherwise reach
- * `error.message` verbatim, unbounded and unescaped — M2 finding, 2026-08-29
- * security pass).
+ * Like {@link readCallerValue}, but returns `fallback` instead of throwing —
+ * for the one call site (`client.ts`'s `isTextTypeBlock`) that treats an
+ * unreadable discriminant the same as a non-matching one rather than as a
+ * fatal request error.
  */
-function formatDocumentPath(path: readonly (string | number)[]): string {
-  let rendered = "$";
-  for (const segment of path) {
-    rendered +=
-      typeof segment === "number"
-        ? `[${segment}]`
-        : `.${sanitizeForMessage(segment)}`;
+export function readCallerValueOrElse<T>(read: () => T, fallback: T): T {
+  try {
+    return read();
+  } catch {
+    return fallback;
   }
-  return rendered;
+}
+
+/**
+ * {@link readCallerValue}, additionally requiring the result to be a
+ * `string` — every string-typed position on the request path (`text`,
+ * `toolUseId`, `name`, `role`, a tool's `description`) must satisfy this, not
+ * merely "did not throw" (M3, 2026-08-29 security pass round 3: an object
+ * masquerading as `{ text: { NOT_A_STRING: "..." } }` previously reached the
+ * wire because only the read, never the type, was checked).
+ *
+ * @throws {@link M3LBedrockRuntimeOperationError} When `read()` throws, or
+ *   returns a non-`string` value.
+ */
+export function readCallerString(
+  read: () => unknown,
+  fieldLabel: string,
+): string {
+  const raw = readCallerValue(read, fieldLabel);
+  if (typeof raw !== "string") {
+    throw new M3LBedrockRuntimeOperationError(
+      `${fieldLabel} must be a string`,
+      { origin: "caller", retryable: false },
+    );
+  }
+  return raw;
+}
+
+/**
+ * Guards a caller-supplied array-typed field before any element access:
+ * throws when `value` fails `Array.isArray` (a duck-typed object exposing
+ * `length`/`map` but not a real array defeats a bare `Array.isArray`-less
+ * `.map()` call — see {@link copyDocumentImpl}'s array-arm comment; the same
+ * shape of bypass applies one level up, at `shared.ts`'s/`tools.ts`'s own
+ * caller-supplied arrays, M1 2026-08-29 security pass round 3). Callers walk
+ * the returned array with an index loop over `.length` read ONCE, never
+ * `.map()`/`.filter()`/spread/`for...of` on it directly.
+ *
+ * @throws {@link M3LBedrockRuntimeOperationError} When `value` is not a real
+ *   array.
+ */
+export function requireCallerArray<T>(
+  value: unknown,
+  fieldLabel: string,
+): readonly T[] {
+  if (!Array.isArray(value)) {
+    throw new M3LBedrockRuntimeOperationError(
+      `${fieldLabel} must be an array`,
+      { origin: "caller", retryable: false },
+    );
+  }
+  return value as readonly T[];
 }
 
 /**
@@ -251,8 +276,13 @@ function formatDocumentPath(path: readonly (string | number)[]): string {
  *   tool-result payload, or a `toolUse.input`, all typed `unknown` at the
  *   public boundary.
  * @param depth - The current nesting depth; callers pass `0`.
- * @param path - The key/index trail from the root call, for error messages
- *   only; callers omit it (defaults to `[]`, meaning the root).
+ * @param budget - The node-count ceiling to thread through this call.
+ *   Defaults to a fresh {@link DocumentCopyBudget} when omitted (every
+ *   pre-existing call site, including `stream.ts`, frozen for this fix,
+ *   keeps working unchanged); `tools.ts`'s `buildToolConfig` and
+ *   `shared.ts`'s `buildConverseInput` each construct ONE instance and pass
+ *   it into every call their own loop makes, so the ceiling bounds the
+ *   whole loop, not each document in isolation (Should-fix #1, round 3).
  * @throws {@link M3LBedrockRuntimeOperationError} (`origin: caller`,
  *   `retryable: false`) when nesting exceeds {@link MAX_DOCUMENT_DEPTH}, the
  *   total constructed-node count exceeds {@link MAX_DOCUMENT_NODES}, `value`
@@ -266,10 +296,11 @@ function formatDocumentPath(path: readonly (string | number)[]): string {
 export function copyDocument(
   value: unknown,
   depth = 0,
-  path: readonly (string | number)[] = [],
+  budget: DocumentCopyBudget = new DocumentCopyBudget(),
 ): M3LBedrockPlainDocument {
+  const path: M3LBedrockDocumentPath = [];
   try {
-    return copyDocumentImpl(value, depth, path, new DocumentCopyBudget());
+    return copyDocumentImpl(value, depth, path, budget);
   } catch (cause) {
     if (cause instanceof M3LBedrockRuntimeOperationError) {
       throw cause;
@@ -292,7 +323,7 @@ export function copyDocument(
 function copyDocumentImpl(
   value: unknown,
   depth: number,
-  path: readonly (string | number)[],
+  path: M3LBedrockDocumentPath,
   budget: DocumentCopyBudget,
 ): M3LBedrockPlainDocument {
   if (budget.visit()) {
@@ -324,7 +355,12 @@ function copyDocumentImpl(
     const copy: M3LBedrockPlainDocument[] = [];
     for (let index = 0; index < value.length; index += 1) {
       copy.push(
-        copyDocumentImpl(value[index], depth + 1, [...path, index], budget),
+        copyDocumentImpl(
+          value[index],
+          depth + 1,
+          [...path, { kind: "index", index }],
+          budget,
+        ),
       );
     }
     return copy;
@@ -367,20 +403,30 @@ function copyDocumentImpl(
 function copyPlainObjectDocument(
   value: Record<string, unknown>,
   depth: number,
-  path: readonly (string | number)[],
+  path: M3LBedrockDocumentPath,
   budget: DocumentCopyBudget,
 ): M3LBedrockPlainDocument {
   const copy: Record<string, M3LBedrockPlainDocument> = Object.create(
     null,
   ) as Record<string, M3LBedrockPlainDocument>;
-  for (const key of Object.keys(value)) {
+  const keys = Object.keys(value);
+  for (let ordinal = 0; ordinal < keys.length; ordinal += 1) {
+    const key = keys[ordinal];
+    if (key === undefined) {
+      continue;
+    }
     if (DANGEROUS_DOCUMENT_KEYS.has(key)) {
       throw new M3LBedrockRuntimeOperationError(
-        `an inputSchema/tool-result value used the reserved key "${key}" at ${formatDocumentPath([...path, key])} — this cannot round-trip safely through the Converse API's document type`,
+        `an inputSchema/tool-result value used the reserved key "${key}" at ${formatDocumentPath([...path, { kind: "reservedKey", key }])} — this cannot round-trip safely through the Converse API's document type`,
         { origin: "caller", retryable: false },
       );
     }
-    copy[key] = copyDocumentImpl(value[key], depth + 1, [...path, key], budget);
+    copy[key] = copyDocumentImpl(
+      value[key],
+      depth + 1,
+      [...path, { kind: "key", ordinal: ordinal + 1 }],
+      budget,
+    );
   }
   return copy;
 }
