@@ -600,33 +600,41 @@ const ops = new M3LBedrockRuntimeOperations(client, {
   its public boundary — every request/response field is translated to a
   plain, library-owned type.
 - **A caller's prompt content can round-trip out through a chained SDK
-  exception's `.message` — including through `toJSON()` and structured/JSON
-  log sinks, not just a text renderer.** `ValidationException` and similar
-  faults from the Bedrock service can quote the offending request content in
-  the SDK exception's own message; this wrapper chains that exception
-  unchanged via `cause` (the standing library-wide `M3LError` contract — this
-  module introduces no new leak). **Correction (2026-08-28, slice 2):** an
-  earlier version of this page claimed `toJSON()` serializes only
-  `cause.name` and is therefore safe for structured/JSON sinks. Verified
-  false by execution against the built library: `M3LError.toJSON()`
-  (`core/errors/M3LError.ts`) serializes `cause` itself, and the shipped AWS
-  SDK builds its exception instances (both the `client.send()`-thrown path
-  and the in-band `ConverseStreamOutput` exception-member path) with
-  `message` as an **enumerable own property** — so `JSON.stringify(err.toJSON())`
-  renders `cause.message` verbatim, exactly like a text-renderer log sink
-  does. This is a library-wide `M3LError` behavior, not specific to this
-  module — the root-cause fix is tracked separately (not part of this
-  module's PRs); until it lands, treat every sink, structured or not, as
-  equally exposed. Redaction in this library is key-name-scoped (`key=value`
-  / `"key": "value"` patterns), so unkeyed prompt prose in a message string
-  is not caught by it, in `toJSON()` output or otherwise. Unlike most AWS
-  wrappers, this submodule's request payload is routinely the
-  highest-sensitivity data in a run — a caller logging a caught
-  `M3LBedrockRuntimeOperationError`'s, `M3LBedrockRuntimeModelError`'s,
-  `M3LBedrockRuntimeNoModelError`'s, **or `M3LBedrockRuntimeStreamError`'s**
-  full chain (by any means — `.toString()`, a text-rendering log sink, or
-  `JSON.stringify(err.toJSON())`) should be aware `cause.message` may echo
-  back what was sent (`M3LBedrockRuntimeNoModelError` chains the last
+  exception's `.message`** — via `String(err.cause)`/`err.cause.toString()`
+  directly (note: `err.toString()` on the wrapper itself does _not_ render
+  `cause`; `Error.prototype.toString()` renders only the receiver's own
+  `name`/`message`, and every bedrock-runtime wrapper message is
+  library-constructed with no `cause` interpolation), `util.inspect`/
+  `console.error(err)` (which does walk `cause`), or a text-rendering log
+  sink.**
+  `ValidationException` and similar faults from the Bedrock service can quote
+  the offending request content in the SDK exception's own message; this
+  wrapper chains that exception unchanged via `cause` (the standing
+  library-wide `M3LError` contract — this module introduces no new leak).
+  **Correction (2026-08-28, slice 2), superseded 2026-08-29:** an earlier
+  version of this page claimed `toJSON()` serializes only `cause.name` and is
+  therefore safe for structured/JSON sinks; that was verified false by
+  execution and the root-cause fix was tracked separately as GitHub
+  [#727](https://github.com/monte3l/m3l-automation/issues/727) (F31). **That
+  fix has since landed**: `M3LError.toJSON()`
+  (`core/errors/M3LError.ts`) now allowlists a foreign `cause` down to its
+  type name only — `JSON.stringify(err.toJSON())` no longer renders
+  `cause.message`, `$response`, or `$metadata` verbatim (see
+  `docs/reference/core/errors.md`'s `toJSON()`'s `cause` allowlist section).
+  **This does not close every channel**, though: `core/diagnostics`'s
+  `formatErrorChain`/`serializeErrorChain` walk the live `cause` chain
+  directly and never call `toJSON()`, so they still emit each level's own
+  `message` (heuristically redacted, `key=value`-scoped — unkeyed prompt
+  prose is not caught). Unlike most AWS wrappers, this submodule's request
+  payload is routinely the highest-sensitivity data in a run — a caller
+  logging a caught `M3LBedrockRuntimeOperationError`'s,
+  `M3LBedrockRuntimeModelError`'s, `M3LBedrockRuntimeNoModelError`'s, **or
+  `M3LBedrockRuntimeStreamError`'s** full chain via `util.inspect`/
+  `console.error(error)`, a text-rendering log sink
+  (`formatErrorChain`/`serializeErrorChain`), or `String(error.cause)`
+  directly should still be aware `cause.message`
+  may echo back what was sent — `JSON.stringify(err.toJSON())` is the one
+  channel now closed (`M3LBedrockRuntimeNoModelError` chains the last
   fallback attempt's fault the same way, once every model is exhausted;
   `M3LBedrockRuntimeStreamError` chains whichever mid-stream fault triggered
   it).

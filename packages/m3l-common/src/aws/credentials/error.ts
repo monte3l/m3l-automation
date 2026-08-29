@@ -49,9 +49,13 @@ interface M3LAWSCredentialsErrorOptions {
  * underlying SDK, spawn, or dynamic-import failure is chained via `cause`.
  *
  * `cause` may carry provider/SDK internals (e.g. raw STS or credential
- * provider errors); this class does not redact it — as with the rest of the
- * {@link M3LError} hierarchy, redaction before persistence or transmission
- * is delegated to the logging sink via `toJSON`.
+ * provider errors); the live `error.cause` field is unredacted, but
+ * {@link M3LError.toJSON} allowlists a foreign `cause` down to its type name
+ * only. This covers `toJSON()`'s own projection; `core/diagnostics`'s
+ * `formatErrorChain`/`serializeErrorChain` walk the live `cause` chain
+ * directly and emit each level's own (heuristically redacted) `message` and
+ * `stack` — they do not go through `toJSON()`. See
+ * {@link M3LError.toJSON}'s documentation for the full rule.
  *
  * @example
  * ```ts

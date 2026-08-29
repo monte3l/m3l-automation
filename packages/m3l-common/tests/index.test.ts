@@ -1,6 +1,7 @@
 import { expect, test } from "vitest";
 
 import * as m3l from "../src/index.js";
+import type { Core } from "../src/index.js";
 
 test("public barrel exposes the Core and AWS namespaces", () => {
   expect(m3l).toHaveProperty("Core");
@@ -89,6 +90,35 @@ test.each(CORE_REACHABILITY_CASES)(
     expect(typeof value).toBe(expectedType);
   },
 );
+
+/**
+ * `M3LErrorJSON` and `M3LErrorCauseJSON` (core/errors, F31) are type-only
+ * exports — they have no runtime value, so the `typeof`-based
+ * `CORE_REACHABILITY_CASES` table above cannot express them. Reachability is
+ * proven at the type level instead: importing the `Core` namespace *type*
+ * (not a deep `src/core/errors/...` import) and constructing a value that
+ * must satisfy the shape re-exported through it. This still catches a
+ * dropped `export * from "./errors/index.js"` line the same way the runtime
+ * table does for value exports.
+ */
+test("Core.M3LErrorCauseJSON is reachable as a type through the public namespace", () => {
+  const shape: Core.M3LErrorCauseJSON = { name: "Error" };
+  expect(shape.name).toBe("Error");
+});
+
+test("Core.M3LErrorJSON is reachable as a type through the public namespace", () => {
+  const shape: Core.M3LErrorJSON = {
+    name: "M3LError",
+    message: "msg",
+    code: "ERR_X",
+    context: {},
+    cause: undefined,
+    stack: undefined,
+    origin: undefined,
+    retryable: undefined,
+  };
+  expect(shape.code).toBe("ERR_X");
+});
 
 /**
  * `confirmDestructive` (core/prompt) is a second export from a submodule

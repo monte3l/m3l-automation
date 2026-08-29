@@ -175,8 +175,14 @@ const secretsManagerOperations = new AWS.M3LSecretsManagerOperations(
   message text: every method chains the raw SDK rejection via `cause`
   unmodified, and a real AWS error does not echo request parameters, but the
   `cause` chain is not independently sanitized by this module — a caller
-  that logs `error.cause` or `error.toJSON()` verbatim inherits whatever the
-  underlying rejection actually contained. The library does not log by
+  that logs `error.cause` directly (e.g. via `.toString()`, `console.error`,
+  or `core/diagnostics`'s `formatErrorChain`/`serializeErrorChain`, which walk
+  the live chain and never call `toJSON()`) inherits whatever the underlying
+  rejection actually contained. `error.toJSON()` is narrower: since F31
+  (GitHub #727) it allowlists a foreign `cause` down to its type name only,
+  so `JSON.stringify(error.toJSON())` does not carry the raw rejection's
+  contents — see `docs/reference/core/errors.md`'s `toJSON()`'s `cause`
+  allowlist section. The library does not log by
   default and this module carries no logging call of its own; a consumer
   script that chooses to log a retrieved `M3LSecretValue` itself can route it
   through [`redactSensitiveLogValue`](../core/logging.md) — the field names

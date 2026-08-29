@@ -35,6 +35,61 @@
 - **Negative / trade-offs:** two error-handling idioms require documentation discipline to avoid confusion. The dual model is explicitly documented with worked examples for each pattern.
 - **Semver impact:** once published, changing `M3LError`'s public fields or `M3LResult`'s operator signatures is a breaking change (major).
 
+## Amendment (2026-08-29)
+
+Corrects the Decision's claim, at point 1, that "`toJSON()` serializes all
+fields including the stack for structured logging" — true of every field
+_except_ `cause`, which this amendment retires.
+
+**Problem.** `toJSON()` returned `cause: this.cause` by reference. Whatever
+own-**enumerable** properties the caught value happened to carry were then
+emitted verbatim by `JSON.stringify`. Filed as GitHub
+[#727](https://github.com/monte3l/m3l-automation/issues/727) (tracker F31)
+from the `aws/bedrock-runtime` streaming security-review round: an AWS SDK
+`ServiceException` declares `$fault`/`$response`/`$retryable`/`$metadata` as
+class fields (own-enumerable by construction) and constructs with an
+`undefined` message, so `Error` never creates the non-enumerable `message`
+slot — the SDK's own `decorateServiceException` then assigns `message`,
+creating an **enumerable** own one. Verified by execution against the built
+library: `JSON.stringify(err.toJSON())` rendered a caught SDK exception's
+response headers, response body, request metadata, and message verbatim —
+not just `.message`, the full own-enumerable surface of whatever `cause`
+held.
+
+**Decision.** `toJSON()`'s `cause` field is now projected onto an
+**allowlist** rather than returned verbatim: `undefined` stays `undefined`; a
+_genuinely constructed_ `M3LError` cause (identity-checked, not merely
+`instanceof`-checked — an `instanceof M3LError` check alone cannot
+distinguish a real instance from a forged object with `M3LError.prototype`
+grafted on) recurses into that error's own full record, up to a fixed depth
+cap with a separate cycle guard — a genuine instance whose fields were
+poisoned _after_ construction degrades the same way instead of propagating
+the poisoned read's throw; any other `Error` collapses to `{ name:
+<safe name> }` only; anything else collapses to `{ name: <safe
+constructor-derived type name> }` only, or a fixed `"[unknown]"` marker when
+no safe name can be derived at all. Two new exported types,
+`M3LErrorJSON` (the full record) and `M3LErrorCauseJSON` (the name-only
+terminal shape), replace the previous unnamed inline return type. Full
+resolution rule and rationale:
+[`docs/reference/core/errors.md`'s `toJSON()`'s `cause`
+allowlist](../reference/core/errors.md#tojsons-cause-allowlist).
+
+**Scope.** This closes the `cause` channel only. `context` is unchanged — it
+is a separate, pre-existing, library-authored diagnostic channel (not an
+opaque foreign value), and redacting it remains `core/logging`'s job. The
+live `error.cause` instance field is unchanged; only the `toJSON()`
+projection changed. `core/diagnostics`'s `formatErrorChain`/
+`serializeErrorChain` walk the live `cause` chain directly and never call
+`toJSON()` — they are a separate code path with their own (heuristically
+redacted) rendering, not affected by and not fixed by this change.
+
+**Semver.** Breaking to `toJSON()`'s return contract for every `M3LError`
+subclass — none override `toJSON()`, so this is a single-point fix with
+library-wide effect. The package is internal and unpublished (ADR-0020,
+manual versioning), so this amendment records the decision rather than
+triggering a release.
+
 ## Links
 
 - Related: `docs/reference/core/errors.md` (full spec with code examples), `docs/m3l-common-architecture.md`, `docs/contributing/coding-standards.md`.
+- F31 / GitHub #727: `docs/plans/IMPLEMENTATION.md`'s Library friction (F-series) table.
