@@ -258,6 +258,26 @@ const CLASSIFICATION_TABLE: Record<
     retryable: false,
     fault: false,
   },
+  // X6 workbench-sessions module, slice 3. A payload that exceeds the
+  // deployment's configured artifact/session cap is a caller-facing input
+  // problem (the operation itself produced more data than this deployment
+  // allows) — 413, non-retryable, not a fault.
+  ERR_CONSOLE_SESSION_ARTIFACT_TOO_LARGE: {
+    status: 413,
+    origin: "caller",
+    retryable: false,
+    fault: false,
+  },
+  // A persisted artifact reference that can't be decoded, or a file-backed
+  // artifact whose content no longer matches its recorded digest, means the
+  // store or filesystem drifted from what this module itself wrote — an
+  // internal fault, not a caller mistake.
+  ERR_CONSOLE_SESSION_ARTIFACT_CORRUPT: {
+    status: INTERNAL_STATUS,
+    origin: "library",
+    retryable: false,
+    fault: true,
+  },
 };
 
 // `Object.entries` widens the key to `string`; `CLASSIFICATION_TABLE`'s

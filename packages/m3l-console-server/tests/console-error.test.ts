@@ -13,7 +13,7 @@ import {
 import type { M3LConsoleErrorCode } from "../src/errors/console-error.js";
 
 describe("M3LConsoleErrorCode", () => {
-  test("is the exact thirty-two-member union the contract declares (X2/X3-A1/X4/X6)", () => {
+  test("is the exact thirty-four-member union the contract declares (X2/X3-A1/X4/X6)", () => {
     expectTypeOf<M3LConsoleErrorCode>().toEqualTypeOf<
       | "ERR_CONSOLE_CONFIG_INVALID"
       | "ERR_CONSOLE_BAD_REQUEST"
@@ -47,6 +47,8 @@ describe("M3LConsoleErrorCode", () => {
       | "ERR_CONSOLE_SESSION_CLOSED"
       | "ERR_CONSOLE_SESSION_LIMIT_EXCEEDED"
       | "ERR_CONSOLE_SESSION_REFERENCE_INVALID"
+      | "ERR_CONSOLE_SESSION_ARTIFACT_TOO_LARGE"
+      | "ERR_CONSOLE_SESSION_ARTIFACT_CORRUPT"
     >();
   });
 
@@ -263,6 +265,35 @@ describe("M3LConsoleError — ERR_CONSOLE_SESSION_REFERENCE_INVALID (X6 slice 2)
     // ERR_CONSOLE_* code.
     expect(Core.classifyErrorCode(error.code)).toBeUndefined();
   });
+});
+
+describe("M3LConsoleError — ERR_CONSOLE_SESSION_ARTIFACT_* (X6 slice 3)", () => {
+  test.each<[M3LConsoleErrorCode, string]>([
+    [
+      "ERR_CONSOLE_SESSION_ARTIFACT_TOO_LARGE",
+      "the artifact payload exceeds the configured cap",
+    ],
+    [
+      "ERR_CONSOLE_SESSION_ARTIFACT_CORRUPT",
+      "the persisted artifact reference could not be decoded",
+    ],
+  ])(
+    "constructs %s and is caught by isConsoleError and instanceof Core.M3LError",
+    (code, message) => {
+      const error = new M3LConsoleError(code, message);
+
+      expect(error.code).toBe(code);
+      expect(error.message).toBe(message);
+      expect(isConsoleError(error)).toBe(true);
+      expect(error).toBeInstanceOf(Core.M3LError);
+      expect(error).toBeInstanceOf(Error);
+      // ERR_CONSOLE_* is deliberately absent from Core's own classification
+      // catalog (see the module doc comment) — these two new session-
+      // artifact codes stay unclassified by Core.classifyErrorCode, same as
+      // every existing ERR_CONSOLE_* code.
+      expect(Core.classifyErrorCode(error.code)).toBeUndefined();
+    },
+  );
 });
 
 describe("isConsoleError", () => {
