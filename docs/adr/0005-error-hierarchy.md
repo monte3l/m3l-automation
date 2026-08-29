@@ -62,9 +62,12 @@ _genuinely constructed_ `M3LError` cause (identity-checked, not merely
 `instanceof`-checked — an `instanceof M3LError` check alone cannot
 distinguish a real instance from a forged object with `M3LError.prototype`
 grafted on) recurses into that error's own full record, up to a fixed depth
-cap with a separate cycle guard; any other `Error` collapses to `{ name:
+cap with a separate cycle guard — a genuine instance whose fields were
+poisoned _after_ construction degrades the same way instead of propagating
+the poisoned read's throw; any other `Error` collapses to `{ name:
 <safe name> }` only; anything else collapses to `{ name: <safe
-constructor-derived type name> }` only. Two new exported types,
+constructor-derived type name> }` only, or a fixed `"[unknown]"` marker when
+no safe name can be derived at all. Two new exported types,
 `M3LErrorJSON` (the full record) and `M3LErrorCauseJSON` (the name-only
 terminal shape), replace the previous unnamed inline return type. Full
 resolution rule and rationale:

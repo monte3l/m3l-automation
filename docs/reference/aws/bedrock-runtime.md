@@ -600,7 +600,13 @@ const ops = new M3LBedrockRuntimeOperations(client, {
   its public boundary — every request/response field is translated to a
   plain, library-owned type.
 - **A caller's prompt content can round-trip out through a chained SDK
-  exception's `.message` via `.toString()` or a text-rendering log sink.**
+  exception's `.message`** — via `String(err.cause)`/`err.cause.toString()`
+  directly (note: `err.toString()` on the wrapper itself does _not_ render
+  `cause`; `Error.prototype.toString()` renders only the receiver's own
+  `name`/`message`, and every bedrock-runtime wrapper message is
+  library-constructed with no `cause` interpolation), `util.inspect`/
+  `console.error(err)` (which does walk `cause`), or a text-rendering log
+  sink.**
   `ValidationException` and similar faults from the Bedrock service can quote
   the offending request content in the SDK exception's own message; this
   wrapper chains that exception unchanged via `cause` (the standing
@@ -623,9 +629,10 @@ const ops = new M3LBedrockRuntimeOperations(client, {
   payload is routinely the highest-sensitivity data in a run — a caller
   logging a caught `M3LBedrockRuntimeOperationError`'s,
   `M3LBedrockRuntimeModelError`'s, `M3LBedrockRuntimeNoModelError`'s, **or
-  `M3LBedrockRuntimeStreamError`'s** full chain via `.toString()` or a
-  text-rendering log sink (`formatErrorChain`/`serializeErrorChain`, or
-  `console.error(error)`/`util.inspect`) should still be aware `cause.message`
+  `M3LBedrockRuntimeStreamError`'s** full chain via `util.inspect`/
+  `console.error(error)`, a text-rendering log sink
+  (`formatErrorChain`/`serializeErrorChain`), or `String(error.cause)`
+  directly should still be aware `cause.message`
   may echo back what was sent — `JSON.stringify(err.toJSON())` is the one
   channel now closed (`M3LBedrockRuntimeNoModelError` chains the last
   fallback attempt's fault the same way, once every model is exhausted;

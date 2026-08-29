@@ -52,8 +52,12 @@ not returned by reference:
   `context`, `origin`, `retryable`, and its own nested `cause`) survives — up
   to a fixed depth cap, beyond which the chain collapses to the terminal
   marker `{ name: "[max cause depth reached]" }`; a genuine cycle in the chain
-  is detected separately and collapses to `{ name: "[circular]" }` instead of
-  exhausting the depth budget.
+  is detected separately (checked _before_ the depth cap) and collapses to
+  `{ name: "[circular]" }` instead of exhausting the depth budget. A
+  genuinely-constructed cause whose fields were poisoned _after_
+  construction (e.g. via `Object.defineProperty` on a reference the caller
+  still holds) degrades the same way, to `{ name: <safe fallback> }`, rather
+  than propagating the poisoned read's throw.
 - any other `Error` → `{ name: <safe name> }` only — the cause's own `.name`
   when it is a plain identifier, else its constructor name, else the literal
   `"Error"`. This branch also catches an object that merely _wears_
@@ -61,9 +65,15 @@ not returned by reference:
   a forged object with the prototype grafted on) — `instanceof M3LError`
   alone cannot tell a forgery from a real instance, so only an object this
   library actually constructed gets the full recursive treatment above.
-- anything else (a plain object, a null-prototype object, a primitive, a
-  `Symbol`, a function) → `{ name: <safe constructor-derived type name> }`
-  only, derived without ever reading the value's own data.
+- `null` → `{ name: "null" }`.
+- a primitive (a `string`, `number`, `boolean`, `bigint`, or `Symbol`) →
+  `{ name: <its lowercase typeof tag> }` (e.g. `"string"`, `"symbol"`) —
+  zero property reads on the value itself.
+- any other object or function (a plain object, a null-prototype object) →
+  `{ name: <safe constructor-derived type name> }`, or the fixed marker
+  `{ name: "[unknown]" }` when no safe name can be derived (e.g. a
+  null-prototype object has no `constructor` to read) — never the value's
+  own data.
 
 This closes the defect where a caught AWS SDK exception's own-enumerable
 fields (e.g. a smithy `ServiceException`'s `$response`/`$metadata`, or a
