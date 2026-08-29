@@ -20,13 +20,19 @@ import { EventEmitter } from "node:events";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, expectTypeOf, test, vi } from "vitest";
 
 import { Core } from "@m3l-automation/m3l-common";
 
 import { createConsoleRuntime, startConsole } from "../src/main.js";
-import type { StartConsoleOptions } from "../src/main.js";
+import type {
+  M3LConsoleRuntime,
+  M3LConsoleRuntimeOptions,
+  StartConsoleOptions,
+} from "../src/main.js";
 import type { M3LConsoleRunsConfig } from "../src/config/runs.js";
+import type { M3LConsoleSessionsConfig } from "../src/config/sessions.js";
+import type { M3LSessionSubsystem } from "../src/sessions/composition.js";
 import type { M3LConsoleMetaRepository } from "../src/store/meta-repository.js";
 import type {
   M3LConsoleRunsRepository,
@@ -36,7 +42,20 @@ import type {
   M3LRunRecord,
 } from "../src/store/runs-repository.js";
 import type { M3LRunStatus } from "../src/store/run-status.js";
-import type { M3LConsoleSessionsRepository } from "../src/store/sessions-repository.js";
+import type {
+  M3LConsoleSessionsRepository,
+  M3LSessionBindingInsert,
+  M3LSessionBindingRecord,
+  M3LSessionDecisionAnswer,
+  M3LSessionDecisionInsert,
+  M3LSessionDecisionRecord,
+  M3LSessionInsert,
+  M3LSessionListQuery,
+  M3LSessionRecord,
+  M3LSessionStepFinish,
+  M3LSessionStepInsert,
+  M3LSessionStepRecord,
+} from "../src/store/sessions-repository.js";
 import type { M3LConsoleStoreUnit } from "../src/store/store.js";
 import type { M3LRunRegistry } from "../src/runs/registry.js";
 
@@ -176,8 +195,16 @@ const stubSessionsRepository: M3LConsoleSessionsRepository = {
   getStepByRunId: unexpectedSessionsCall,
 };
 
-/** Builds a {@link FakeConsoleStoreHandle} whose `runs` field is `runsRepository`. */
-function createFakeStore(runsRepository: M3LConsoleRunsRepository): {
+/**
+ * Builds a {@link FakeConsoleStoreHandle} whose `runs` field is
+ * `runsRepository` and whose `sessions` field is `sessionsRepository` — the
+ * latter defaults to {@link stubSessionsRepository} so every pre-existing
+ * caller in this file (none of which touch `store.sessions`) is unaffected.
+ */
+function createFakeStore(
+  runsRepository: M3LConsoleRunsRepository,
+  sessionsRepository: M3LConsoleSessionsRepository = stubSessionsRepository,
+): {
   readonly store: FakeConsoleStoreHandle;
   readonly closeCallCount: () => number;
 } {
@@ -201,12 +228,197 @@ function createFakeStore(runsRepository: M3LConsoleRunsRepository): {
     script: unexpectedCall,
     meta: { describe: unexpectedMetaCall, history: unexpectedMetaCall },
     runs: runsRepository,
-    sessions: stubSessionsRepository,
+    sessions: sessionsRepository,
     transaction: <T>(): T => {
       throw new Error("unexpected transaction() call on the fake store");
     },
   };
   return { store, closeCallCount: () => closeCalls };
+}
+
+/**
+ * A full `Map`-backed fake {@link M3LConsoleSessionsRepository}, duplicated
+ * from `tests/main-sessions.test.ts` per `.claude/rules/tests.md` (small
+ * helpers are not shared across test files) — needed here only for the
+ * `startConsole` sessions-wiring test below, which requires a *working*
+ * `sessions` repository (unlike this file's other tests, which never touch
+ * `store.sessions` and use `stubSessionsRepository` instead).
+ */
+function createFakeSessionsRepository(): M3LConsoleSessionsRepository {
+  const sessions = new Map<string, M3LSessionRecord>();
+  const steps = new Map<string, M3LSessionStepRecord>();
+  const bindings = new Map<string, M3LSessionBindingRecord>();
+  const decisions = new Map<string, M3LSessionDecisionRecord>();
+  const stepIdByRunId = new Map<string, string>();
+
+  return {
+    insertSession(input: M3LSessionInsert): void {
+      sessions.set(input.id, {
+        id: input.id,
+        status: "open",
+        operator: input.operator,
+        correlationId: input.correlationId,
+        createdAtMs: input.createdAtMs,
+        updatedAtMs: input.createdAtMs,
+      });
+    },
+    getSession(id: string): M3LSessionRecord | undefined {
+      return sessions.get(id);
+    },
+    listSessions(query: M3LSessionListQuery): readonly M3LSessionRecord[] {
+      const filtered = [...sessions.values()]
+        .filter(
+          (row) => query.status === undefined || row.status === query.status,
+        )
+        .filter(
+          (row) =>
+            query.operator === undefined || row.operator === query.operator,
+        )
+        .sort((a, b) => a.createdAtMs - b.createdAtMs);
+      return filtered.slice(0, query.limit);
+    },
+    closeSession(id: string, closedAtMs: number): boolean {
+      const row = sessions.get(id);
+      if (row === undefined || row.status !== "open") return false;
+      sessions.set(id, {
+        id: row.id,
+        status: "closed",
+        operator: row.operator,
+        correlationId: row.correlationId,
+        createdAtMs: row.createdAtMs,
+        updatedAtMs: closedAtMs,
+        closedAtMs,
+      });
+      return true;
+    },
+    reopenSession(id: string, updatedAtMs: number): boolean {
+      const row = sessions.get(id);
+      if (row === undefined || row.status !== "closed") return false;
+      sessions.set(id, {
+        id: row.id,
+        status: "open",
+        operator: row.operator,
+        correlationId: row.correlationId,
+        createdAtMs: row.createdAtMs,
+        updatedAtMs,
+      });
+      return true;
+    },
+    countOpenSessions(): number {
+      return [...sessions.values()].filter((row) => row.status === "open")
+        .length;
+    },
+    insertStep(input: M3LSessionStepInsert): void {
+      steps.set(input.id, {
+        id: input.id,
+        sessionId: input.sessionId,
+        ordinal: input.ordinal,
+        operation: input.operation,
+        parameters: input.parameters,
+        runId: undefined,
+        status: "queued",
+        resultRef: undefined,
+        queuedAtMs: input.queuedAtMs,
+        startedAtMs: undefined,
+        endedAtMs: undefined,
+        outcome: undefined,
+        failureMessage: undefined,
+      });
+    },
+    claimStepForStart(id: string, startedAtMs: number): boolean {
+      const row = steps.get(id);
+      if (row === undefined || row.status !== "queued") return false;
+      steps.set(id, { ...row, status: "running", startedAtMs });
+      return true;
+    },
+    finishStep(id: string, result: M3LSessionStepFinish): boolean {
+      const row = steps.get(id);
+      if (row === undefined || row.status !== "running") return false;
+      steps.set(id, {
+        ...row,
+        status: result.outcome,
+        outcome: result.outcome,
+        endedAtMs: result.endedAtMs,
+        resultRef: result.resultRef,
+        failureMessage: result.failureMessage,
+      });
+      return true;
+    },
+    getStep(id: string): M3LSessionStepRecord | undefined {
+      return steps.get(id);
+    },
+    getStepByOrdinal(
+      sessionId: string,
+      ordinal: number,
+    ): M3LSessionStepRecord | undefined {
+      return [...steps.values()].find(
+        (row) => row.sessionId === sessionId && row.ordinal === ordinal,
+      );
+    },
+    listStepsForSession(sessionId: string): readonly M3LSessionStepRecord[] {
+      return [...steps.values()]
+        .filter((row) => row.sessionId === sessionId)
+        .sort((a, b) => a.ordinal - b.ordinal);
+    },
+    attachStepRun(id: string, runId: string): boolean {
+      const row = steps.get(id);
+      if (row === undefined || row.runId !== undefined) return false;
+      steps.set(id, { ...row, runId });
+      stepIdByRunId.set(runId, id);
+      return true;
+    },
+    getStepByRunId(runId: string): M3LSessionStepRecord | undefined {
+      const stepId = stepIdByRunId.get(runId);
+      return stepId === undefined ? undefined : steps.get(stepId);
+    },
+    insertBinding(input: M3LSessionBindingInsert): void {
+      bindings.set(input.id, { ...input });
+    },
+    listBindingsForSession(
+      sessionId: string,
+    ): readonly M3LSessionBindingRecord[] {
+      return [...bindings.values()].filter(
+        (row) => row.sessionId === sessionId,
+      );
+    },
+    insertDecision(input: M3LSessionDecisionInsert): void {
+      decisions.set(input.id, {
+        id: input.id,
+        sessionId: input.sessionId,
+        stepId: input.stepId,
+        prompt: input.prompt,
+        options: input.options,
+        status: "pending",
+        createdAtMs: input.createdAtMs,
+      });
+    },
+    answerDecision(id: string, answer: M3LSessionDecisionAnswer): boolean {
+      const row = decisions.get(id);
+      if (row === undefined || row.status !== "pending") return false;
+      decisions.set(id, {
+        id: row.id,
+        sessionId: row.sessionId,
+        stepId: row.stepId,
+        prompt: row.prompt,
+        options: row.options,
+        status: "answered",
+        answer: answer.answer,
+        answeredAtMs: answer.answeredAtMs,
+        createdAtMs: row.createdAtMs,
+      });
+      return true;
+    },
+    getDecision(id: string): M3LSessionDecisionRecord | undefined {
+      return decisions.get(id);
+    },
+    listDecisionsForSession(
+      sessionId: string,
+    ): readonly M3LSessionDecisionRecord[] {
+      return [...decisions.values()]
+        .filter((row) => row.sessionId === sessionId)
+        .sort((a, b) => a.createdAtMs - b.createdAtMs);
+    },
+  };
 }
 
 /** Builds a TCP `AddressInfo` fixture for a fake server's `address()`. */
@@ -417,5 +629,74 @@ describe("startConsole — the shutdown sequence drains the run subsystem", () =
     await shutdownPromise;
 
     expect(drainSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+// =============================================================================
+// X6 slice 4 round 3 (issue #554): `M3LConsoleRuntimeOptions` gains
+// `sessions`/`sessionsConfig`, mirroring the existing `runs`/`runsConfig`
+// fields exactly, and `M3LConsoleRuntime` gains `sessions`, mirroring the
+// existing `runs` field exactly (same "present only when a sessions
+// subsystem was actually built" semantics). Pinned narrowly (per-field,
+// mirroring `tests/shutdown.test.ts`'s own established style for pinning
+// `M3LConsoleRuntime["runs"]`) rather than an exhaustive `toEqualTypeOf` of
+// the whole interface — no such exhaustive pin exists for either type today,
+// and a whole-interface pin is needlessly brittle against unrelated field
+// changes.
+// =============================================================================
+
+describe("M3LConsoleRuntimeOptions / M3LConsoleRuntime — sessions fields (X6 slice 4 round 3, issue #554)", () => {
+  test("M3LConsoleRuntimeOptions declares 'sessions'/'sessionsConfig', mirroring the existing 'runs'/'runsConfig' fields exactly", () => {
+    expectTypeOf<M3LConsoleRuntimeOptions["sessions"]>().toEqualTypeOf<
+      M3LConsoleSessionsRepository | undefined
+    >();
+    expectTypeOf<M3LConsoleRuntimeOptions["sessionsConfig"]>().toEqualTypeOf<
+      M3LConsoleSessionsConfig | undefined
+    >();
+  });
+
+  test("M3LConsoleRuntime declares 'sessions', mirroring the existing 'runs' field exactly", () => {
+    expectTypeOf<M3LConsoleRuntime["sessions"]>().toEqualTypeOf<
+      M3LSessionSubsystem | undefined
+    >();
+  });
+});
+
+// =============================================================================
+// `startConsole` sessions wiring — `buildRuntimeAndBindListener` fix round 3
+// (issue #554): it now passes `sessions: store.sessions` alongside
+// `runs: store.runs` into `createConsoleRuntime`. No prior test drove
+// `startConsole` (as opposed to `createConsoleRuntime` directly) with a
+// store whose `sessions` field is a working repository, so this exact path
+// — store handle -> `buildRuntimeAndBindListener` -> `createConsoleRuntime`
+// -> built session subsystem — went unexercised.
+// =============================================================================
+
+describe("startConsole — sessions: store.sessions reaches createConsoleRuntime (issue #554 fix)", () => {
+  test("running.runtime.sessions is a working M3LSessionSubsystem built from store.sessions", async () => {
+    const calls: string[] = [];
+    const registry = createOrderRecordingRegistry(calls);
+    const { store } = createFakeStore(
+      toRunsRepository(registry),
+      createFakeSessionsRepository(),
+    );
+    const { promise, fake } = startWithFakeServer(calls, {
+      runsConfig: MINIMAL_RUNS_CONFIG,
+      openStore: () => store,
+    });
+
+    const running = await promise;
+
+    expect(running.runtime.sessions).not.toBeUndefined();
+    const created = running.runtime.sessions?.service.createSession(
+      "ada",
+      "corr-1",
+    );
+    expect(created?.status).toBe("open");
+    expect(created?.operator).toBe("ada");
+
+    const shutdownPromise = running.shutdown();
+    fake.resolveClose();
+    await shutdownPromise;
   });
 });

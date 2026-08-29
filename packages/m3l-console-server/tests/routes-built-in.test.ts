@@ -17,14 +17,21 @@ import { describe, expect, test } from "vitest";
 
 import { createDrainController } from "../src/lifecycle/drain.js";
 import {
+  adaptSessionService,
   createBuiltInRoutes,
   toRunsRouteOptions,
+  toSessionsRouteOptions,
 } from "../src/http/routes/built-in.js";
+import { M3LConsoleError } from "../src/errors/console-error.js";
 import type {
   M3LRunLauncherPort,
   M3LRunReaderPort,
 } from "../src/http/routes/runs.js";
 import type { M3LRunStreamRegistryPort } from "../src/http/routes/run-stream.js";
+import type {
+  SessionRouteReaderPort,
+  SessionRouteWriterPort,
+} from "../src/http/routes/sessions.js";
 import type { M3LRoute } from "../src/http/router.js";
 import { createEventStreamHub } from "../src/stream/event-stream.js";
 
@@ -66,6 +73,41 @@ const RUN_ROUTE_SIGNATURES: readonly { method: string; path: string }[] = [
   { method: "GET", path: "/api/v1/runs/:id/stream" },
 ];
 
+/**
+ * A minimal fixture conforming to BOTH `SessionRouteReaderPort` and
+ * `SessionRouteWriterPort` — mirroring `SessionRouteOptions`'s own doc
+ * comment (`main.ts` passes the real `M3LSessionService`, which conforms to
+ * both structurally). Never invoked by these tests; only its identity and
+ * its structural shape matter here.
+ */
+const fakeSessionService: SessionRouteReaderPort & SessionRouteWriterPort = {
+  getSession: () => undefined,
+  listSessions: () => [],
+  createSession: () => ({
+    id: "session-1",
+    operator: "alice",
+    correlationId: "corr-1",
+    status: "open",
+    createdAtMs: Date.now(),
+    updatedAtMs: Date.now(),
+  }),
+  closeSession: () => true,
+  addStep: () => Promise.resolve({ step: { id: "step-1" } }),
+  raiseDecision: () => ({ id: "decision-1" }),
+  answerDecision: () => true,
+};
+
+/** The seven session-module routes `createBuiltInRoutes` must add when `options.sessions` is supplied. */
+const SESSION_ROUTE_SIGNATURES: readonly { method: string; path: string }[] = [
+  { method: "POST", path: "/api/v1/sessions" },
+  { method: "GET", path: "/api/v1/sessions" },
+  { method: "GET", path: "/api/v1/sessions/:id" },
+  { method: "POST", path: "/api/v1/sessions/:id/steps" },
+  { method: "POST", path: "/api/v1/sessions/:id/steps/:stepId/decision" },
+  { method: "POST", path: "/api/v1/sessions/:id/decisions/:decisionId" },
+  { method: "POST", path: "/api/v1/sessions/:id/close" },
+];
+
 describe("toRunsRouteOptions", () => {
   test("both registry and subsystem present builds RunsRouteOptions wired from their sources", () => {
     const hub = createEventStreamHub<{ event: string }>({ bufferSize: 10 });
@@ -92,6 +134,73 @@ describe("toRunsRouteOptions", () => {
 
   test("both registry and subsystem undefined returns undefined", () => {
     expect(toRunsRouteOptions(undefined, undefined)).toBeUndefined();
+  });
+});
+
+describe("toSessionsRouteOptions", () => {
+  test("a supplied subsystem shape builds SessionRouteOptions with both reader and writer wired to the same service object", () => {
+    const result = toSessionsRouteOptions({ service: fakeSessionService });
+
+    expect(result).toBeDefined();
+    expect(result?.reader).toBe(fakeSessionService);
+    expect(result?.writer).toBe(fakeSessionService);
+  });
+
+  test("undefined subsystem returns undefined", () => {
+    expect(toSessionsRouteOptions(undefined)).toBeUndefined();
+  });
+});
+
+describe("adaptSessionService", () => {
+  test("a service whose createSession returns an 'open' record is passed through with the same fields", () => {
+    const record = {
+      id: "session-1",
+      operator: "alice",
+      correlationId: "corr-1",
+      status: "open" as const,
+      createdAtMs: Date.now(),
+      updatedAtMs: Date.now(),
+    };
+    const service = {
+      ...fakeSessionService,
+      createSession: () => record,
+    };
+
+    const adapted = adaptSessionService(service);
+    const result = adapted.createSession("alice", "corr-1");
+
+    expect(result).toEqual(record);
+  });
+
+  // `sessions/service.ts` documents `createSession` as always returning an
+  // "open" record on success; `status: "closed"` here simulates the
+  // theoretically-impossible case the adapter still defends against.
+  test("a service whose createSession returns a 'closed' record throws ERR_CONSOLE_INTERNAL", () => {
+    const service = {
+      ...fakeSessionService,
+      createSession: () => ({
+        id: "session-1",
+        operator: "alice",
+        correlationId: "corr-1",
+        status: "closed" as const,
+        createdAtMs: Date.now(),
+        updatedAtMs: Date.now(),
+      }),
+    };
+
+    const adapted = adaptSessionService(service);
+
+    expect(() => adapted.createSession("alice", "corr-1")).toThrowError(
+      M3LConsoleError,
+    );
+    let thrown: unknown;
+    try {
+      adapted.createSession("alice", "corr-1");
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).code).toBe("ERR_CONSOLE_INTERNAL");
   });
 });
 
@@ -145,6 +254,75 @@ describe("createBuiltInRoutes — with options.runs", () => {
       ).toBeDefined();
       expect(match?.auth).toBe("required");
     }
+  });
+});
+
+describe("createBuiltInRoutes — without options.sessions", () => {
+  test("returns no session routes — there is no 'registered but always 404' middle state", () => {
+    const routes = createBuiltInRoutes({
+      drain: buildDrain(),
+      startedAt: Date.now(),
+      routes: [],
+    });
+
+    expect(
+      routes.some((route) => route.path.startsWith("/api/v1/sessions")),
+    ).toBe(false);
+  });
+});
+
+describe("createBuiltInRoutes — with options.sessions", () => {
+  test("additionally includes every session-module route", () => {
+    const routes = createBuiltInRoutes({
+      drain: buildDrain(),
+      startedAt: Date.now(),
+      routes: [],
+      sessions: { reader: fakeSessionService, writer: fakeSessionService },
+    });
+
+    for (const signature of SESSION_ROUTE_SIGNATURES) {
+      const match = routes.find(
+        (route) =>
+          route.method === signature.method && route.path === signature.path,
+      );
+      expect(
+        match,
+        `expected a registered route for ${signature.method} ${signature.path}`,
+      ).toBeDefined();
+      expect(match?.auth).toBe("required");
+    }
+  });
+
+  test("session routes are positioned AFTER run routes and BEFORE caller routes (health, runs, sessions, caller)", () => {
+    const hub = createEventStreamHub<{ event: string }>({ bufferSize: 10 });
+    const callerRoute: M3LRoute = {
+      method: "GET",
+      path: "/api/v1/custom",
+      auth: "required",
+      handler: () => ({ status: 200, headers: {}, body: "custom" }),
+    };
+
+    const routes = createBuiltInRoutes({
+      drain: buildDrain(),
+      startedAt: Date.now(),
+      routes: [callerRoute],
+      runs: { orchestrator: fakeOrchestrator, registry: fakeRegistry, hub },
+      sessions: { reader: fakeSessionService, writer: fakeSessionService },
+    });
+
+    const healthIndex = routes.findIndex((route) => route.path === "/health");
+    const firstRunIndex = routes.findIndex((route) =>
+      route.path.startsWith("/api/v1/runs"),
+    );
+    const firstSessionIndex = routes.findIndex((route) =>
+      route.path.startsWith("/api/v1/sessions"),
+    );
+    const callerIndex = routes.indexOf(callerRoute);
+
+    expect(healthIndex).toBeGreaterThanOrEqual(0);
+    expect(firstRunIndex).toBeGreaterThan(healthIndex);
+    expect(firstSessionIndex).toBeGreaterThan(firstRunIndex);
+    expect(callerIndex).toBeGreaterThan(firstSessionIndex);
   });
 });
 
