@@ -187,3 +187,70 @@ describe("createRunSubsystem — drain() ends open run streams (Correction 3)", 
     expect(subsystem.eventHub.openCount).toBe(0);
   });
 });
+
+// Regression coverage for the SIGTERM-with-a-watcher-attached failure
+// (X4 slice 7a acceptance-step-5): `lifecycle/shutdown.ts`'s
+// `runShutdownSequence` called `runtime.drain.drain()` — which aborts every
+// in-flight request signal SYNCHRONOUSLY — before the run subsystem ever
+// reached `eventHub.endAll("draining")` via the (asynchronous)
+// `orchestrator.drain()` path above. `endStreams()` is the new SYNCHRONOUS
+// seam that lets `runShutdownSequence` end every stream BEFORE starting the
+// HTTP drain, so a watcher learns the server is draining immediately rather
+// than being severed with no explanation.
+describe("createRunSubsystem — endStreams() (the new synchronous drain seam)", () => {
+  test("ends every open stream synchronously with reason 'draining'; a subscriber's onEnd receives exactly that", () => {
+    const subsystem = createRunSubsystem({
+      config: buildConfig(),
+      logger: new Core.M3LLogger([]),
+      registry: buildEmptyRegistry(),
+    });
+
+    const stream = subsystem.eventHub.open("run-x");
+    let receivedReason: M3LStreamEndReason | undefined;
+    stream.subscribe({
+      onEvent: () => undefined,
+      onEnd: (reason) => {
+        receivedReason = reason;
+      },
+      onGap: () => undefined,
+    });
+
+    subsystem.endStreams();
+
+    expect(receivedReason).toBe("draining");
+    expect(stream.ended).toBe(true);
+  });
+
+  test("is safe to call twice, and safe when followed by drain() — no subscriber sees a second onEnd", async () => {
+    const subsystem = createRunSubsystem({
+      config: buildConfig(),
+      logger: new Core.M3LLogger([]),
+      registry: buildEmptyRegistry(),
+    });
+
+    const stream = subsystem.eventHub.open("run-x");
+    let endCallCount = 0;
+    let lastReason: M3LStreamEndReason | undefined;
+    stream.subscribe({
+      onEvent: () => undefined,
+      onEnd: (reason) => {
+        endCallCount += 1;
+        lastReason = reason;
+      },
+      onGap: () => undefined,
+    });
+
+    subsystem.endStreams();
+    expect(() => {
+      subsystem.endStreams();
+    }).not.toThrow();
+
+    // `EventStreamImpl.end` early-returns once already ended, so a second
+    // `endStreams()` call — and the `drain()` call below, which also ends
+    // whatever is still open on `eventHub` — must not double-fire `onEnd`.
+    await expect(subsystem.drain()).resolves.toBeUndefined();
+
+    expect(endCallCount).toBe(1);
+    expect(lastReason).toBe("draining");
+  });
+});

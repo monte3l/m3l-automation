@@ -131,6 +131,25 @@ export interface M3LRunSubsystem {
    * reachable only via `orchestrator.drain()`.
    */
   drain(): Promise<void>;
+  /**
+   * Synchronously ends every still-open stream on {@link eventHub} with
+   * reason `"draining"`, WITHOUT waiting on {@link M3LRunOrchestrator.drain}
+   * first — the seam `lifecycle/shutdown.ts`'s `runShutdownSequence` calls as
+   * its very first statement, before `runtime.drain.drain()` synchronously
+   * aborts every in-flight request signal. That HTTP-drain abort is what
+   * severs an SSE watcher's connection; calling this first gives each watcher
+   * its `stream.end` frame while the connection is still alive, rather than
+   * severing it before the watcher can be told anything at all.
+   *
+   * This makes {@link drain}'s own `endAll("draining")` call a safety net,
+   * not a double-end: `EventStreamImpl.end` starts with
+   * `if (this.endInfo !== undefined) return;`, so calling `endAll` twice with
+   * the same reason is a genuine no-op the second time, not a re-notification
+   * of already-ended streams. The safety net exists for a direct `drain()`
+   * call made with no shutdown sequence in front of it (e.g. a test, or a
+   * future caller that drains the run subsystem standalone).
+   */
+  endStreams(): void;
 }
 
 /**
@@ -215,8 +234,13 @@ export function createRunSubsystem(
     orchestrator,
     eventHub,
     async drain(): Promise<void> {
-      // Order is deliberate, not arbitrary: `orchestrator.drain()` MUST run
-      // first. Draining aborts every in-flight run, and each aborted run
+      // Order is deliberate, not arbitrary, WHEN THIS METHOD RUNS ON ITS OWN
+      // (e.g. a direct `drain()` call with no shutdown sequence in front of
+      // it — see `endStreams()`'s own TSDoc for the composed-shutdown case,
+      // where `endStreams()` has already run by the time this executes, and
+      // the `endAll` below is consequently a no-op safety net rather than the
+      // first end). In that standalone case, `orchestrator.drain()` MUST run
+      // first: draining aborts every in-flight run, and each aborted run
       // still publishes its own terminal `run.ended` through `events` above
       // — which `stream-events.ts`'s sink turns into a `stream.end("completed")`
       // for that run's watcher (addendum Correction 2). Ending every stream
@@ -228,6 +252,9 @@ export function createRunSubsystem(
       // closes whatever is still open (a run with no live watcher, or one
       // that never reached a terminal event at all).
       await orchestrator.drain();
+      eventHub.endAll("draining");
+    },
+    endStreams(): void {
       eventHub.endAll("draining");
     },
   };

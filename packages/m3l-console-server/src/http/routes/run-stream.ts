@@ -20,6 +20,15 @@
  * arrive in the narrow window before the sink ends the stream, or after), so
  * it must resolve promptly either way rather than betting on the ordering.
  *
+ * Both paths emit a terminal `stream.end` frame (see {@link buildEndFrame})
+ * BEFORE the response ends, whenever `onEnd` fires with `!sink.closed` —
+ * live, when the stream this watcher is subscribed to ends (a run completing,
+ * or the server draining); synchronously during `subscribe()`, on the replay
+ * path, for a stream that was already ended by the time this route's handler
+ * ran. A watcher can therefore always distinguish "the run finished" from
+ * "the server is shutting down" from "the network just died" (no frame at
+ * all reaches it in that last case).
+ *
  * @packageDocumentation
  */
 
@@ -27,6 +36,7 @@ import { M3LConsoleError } from "../../errors/console-error.js";
 import type {
   M3LEventStream,
   M3LEventStreamHub,
+  M3LStreamEndReason,
   M3LStreamEvent,
   M3LStreamSubscription,
 } from "../../stream/event-stream.js";
@@ -45,6 +55,8 @@ const STATUS_OK = 200;
 const SSE_CONTENT_TYPE = "text/event-stream";
 /** The event name a resume gap is surfaced under (see this module's own TSDoc). */
 const GAP_EVENT_NAME = "stream.gap";
+/** The event name a stream's terminal frame is surfaced under (see {@link buildEndFrame}). */
+const END_EVENT_NAME = "stream.end";
 /** The (lower-cased, per Node's own header normalization) resume header this route reads. */
 const LAST_EVENT_ID_HEADER = "last-event-id";
 
@@ -109,6 +121,19 @@ function buildGapFrame(oldestRetainedId: number): M3LSseFrame {
   };
 }
 
+/**
+ * Builds the `stream.end` terminal frame — no `id:` line, since (like
+ * {@link buildGapFrame}) it names no real published event. Carries `reason`
+ * so a watcher can distinguish a run that finished (`"completed"`) from the
+ * server shutting down with the watcher still attached (`"draining"`).
+ */
+function buildEndFrame(reason: M3LStreamEndReason): M3LSseFrame {
+  return {
+    event: END_EVENT_NAME,
+    data: JSON.stringify({ reason }),
+  };
+}
+
 /** Parses the `Last-Event-ID` header into a non-negative integer, or `undefined` when absent/malformed. */
 function parseLastEventId(
   headers: Readonly<Record<string, string | undefined>>,
@@ -160,7 +185,10 @@ function openActiveStream(
       onGap: (oldestRetainedId) => {
         if (!sink.closed) sink.emit(buildGapFrame(oldestRetainedId));
       },
-      onEnd: () => finish(),
+      onEnd: (reason) => {
+        if (!sink.closed) sink.emit(buildEndFrame(reason));
+        finish();
+      },
       ...(lastEventId !== undefined && { lastEventId }),
     });
     if (signal.aborted) {
@@ -174,12 +202,29 @@ function openActiveStream(
 /**
  * Replays whatever `hub` has retained for `id` (if any) and resolves
  * immediately — the terminal-run path (see this module's own TSDoc for why
- * it never subscribes live).
+ * it never subscribes live). Honours `lastEventId` exactly as the active path
+ * does: `subscribe` on an already-ended stream runs `dispatchResume`
+ * synchronously, so the backlog (or a single `onGap` frame, when the
+ * requested id has fallen off retention) is fully delivered to `sink` before
+ * `subscribe` returns — `unsubscribe()` immediately after is safe and needed
+ * only to release the subscription, not to wait for delivery.
+ *
+ * A header-less watcher defaults to `0` (full retained replay) explicitly,
+ * rather than relying on `subscribe`'s own "omitted `lastEventId` on an
+ * already-ended stream substitutes `0`" behaviour: that substitution keys off
+ * whether the *hub stream itself* has had `.end()` called on it, which is not
+ * the same moment as this route's registry-status "terminal" check — a
+ * watcher can arrive in the narrow window where the run is registry-terminal
+ * but `runs/stream-events.ts`'s sink has not yet called `stream.end()`. In
+ * that window an omitted `lastEventId` would leave `subscribe`'s own default
+ * as `undefined`, and `dispatchResume` no-ops on `undefined` — silently
+ * dropping the entire backlog instead of replaying it.
  */
 function replayTerminalStream(
   hub: M3LEventStreamHub<M3LRunStreamEvent>,
   id: string,
   sink: M3LStreamSink,
+  lastEventId: number | undefined,
 ): Promise<void> {
   const stream = hub.get(id);
   if (stream === undefined) return Promise.resolve();
@@ -187,13 +232,16 @@ function replayTerminalStream(
     onEvent: (event) => {
       if (!sink.closed) sink.emit(frameForEvent(event));
     },
-    onGap: () => {
-      // Unreachable: `lastEventId: 0` never produces a gap
-      // (`resolveResumeDecision`'s own contract) — kept only so this
-      // subscription satisfies `M3LSubscribeOptions` in full.
+    onGap: (oldestRetainedId) => {
+      if (!sink.closed) sink.emit(buildGapFrame(oldestRetainedId));
     },
-    onEnd: () => {},
-    lastEventId: 0,
+    // Fires synchronously, inside this very `subscribe()` call, when `stream`
+    // has already been ended (the common case here — see this function's own
+    // TSDoc) — so the terminal frame lands before this function returns.
+    onEnd: (reason) => {
+      if (!sink.closed) sink.emit(buildEndFrame(reason));
+    },
+    lastEventId: lastEventId ?? 0,
   });
   subscription.unsubscribe();
   return Promise.resolve();
@@ -219,12 +267,14 @@ function buildActiveStreamResponse(
 function buildTerminalStreamResponse(
   hub: M3LEventStreamHub<M3LRunStreamEvent>,
   id: string,
+  ctx: M3LRequestContext,
 ): M3LConsoleStreamResponse {
+  const lastEventId = parseLastEventId(ctx.headers);
   return {
     kind: "stream",
     status: STATUS_OK,
     headers: { "content-type": SSE_CONTENT_TYPE },
-    open: (sink) => replayTerminalStream(hub, id, sink),
+    open: (sink) => replayTerminalStream(hub, id, sink, lastEventId),
   };
 }
 
@@ -247,7 +297,7 @@ function buildStreamHandler(options: RunStreamRouteOptions): M3LConsoleHandler {
     }
     return isActiveStatus(row.status)
       ? buildActiveStreamResponse(options.hub, id, ctx)
-      : buildTerminalStreamResponse(options.hub, id);
+      : buildTerminalStreamResponse(options.hub, id, ctx);
   };
 }
 

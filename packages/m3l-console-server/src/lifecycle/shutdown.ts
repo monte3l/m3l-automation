@@ -65,27 +65,49 @@ export interface M3LShutdownDisposable {
  *
  * @example
  * ```ts
- * const drainable: M3LShutdownDrainable = { drain: () => Promise.resolve() };
+ * const drainable: M3LShutdownDrainable = {
+ *   drain: () => Promise.resolve(),
+ *   endStreams: () => undefined,
+ * };
  * ```
  */
 export interface M3LShutdownDrainable {
   drain(): Promise<void>;
+  /**
+   * Synchronously ends every open stream this drainable owns, with reason
+   * `"draining"` — the run subsystem's `endStreams()`. Declared here purely
+   * as a structural port (see this interface's own TSDoc) so
+   * {@link runShutdownSequence} can call it without importing `runs/`.
+   */
+  endStreams(): void;
 }
 
 /** The exit code forced on a second shutdown signal. */
 const FORCED_SECOND_SIGNAL_EXIT_CODE = 1;
 
 /**
- * Runs the shutdown sequence: starts the drain BEFORE closing the listener.
+ * Runs the shutdown sequence: ends any open run streams FIRST, then starts
+ * the drain, then closes the listener.
  *
- * `M3LDrainController.drain()` aborts its signal SYNCHRONOUSLY before
- * returning, so calling it first (and only then calling `server.close()`)
- * guarantees the drain signal is already aborted by the instant the listener
- * stops accepting connections — measured on Node v26.7.0, `close()` refuses
- * new connections with `ECONNREFUSED` the instant it is *called*, not once
- * its callback settles, so closing first would leave a window where the
- * server is unreachable yet nothing has observed a drain in progress.
- * `server.close()` already runs its own idle-connection sweep internally
+ * `runtime.runs?.endStreams()` runs as the very first statement, before
+ * `runtime.drain.drain()`. That ordering is load-bearing, not incidental:
+ * `M3LDrainController.drain()` aborts every in-flight request signal
+ * SYNCHRONOUSLY, and an SSE watcher's request is one of those in-flight
+ * requests — its connection is severed the instant that abort fires. Ending
+ * the run streams first lets each still-attached watcher receive its
+ * `stream.end` frame (see `http/routes/run-stream.ts`) and complete its
+ * response normally, BEFORE the drain's abort would otherwise sever it with
+ * no explanation at all. `endStreams()` is synchronous (see
+ * `M3LShutdownDrainable`'s own TSDoc), so this ordering needs no `await`.
+ *
+ * `M3LDrainController.drain()` also aborts its signal SYNCHRONOUSLY before
+ * returning, so calling it before `server.close()` guarantees the drain
+ * signal is already aborted by the instant the listener stops accepting
+ * connections — measured on Node v26.7.0, `close()` refuses new connections
+ * with `ECONNREFUSED` the instant it is *called*, not once its callback
+ * settles, so closing first would leave a window where the server is
+ * unreachable yet nothing has observed a drain in progress. `server.close()`
+ * already runs its own idle-connection sweep internally
  * (`lifecycle/http-server.ts`'s `createCloseOnce`) — not duplicated here.
  *
  * `disposable` closes only after ALL THREE — the HTTP drain, the listener
@@ -112,6 +134,7 @@ async function runShutdownSequence(
   server: M3LListeningServer,
   disposable: M3LShutdownDisposable,
 ): Promise<M3LDrainOutcome> {
+  runtime.runs?.endStreams();
   const runsPromise = runtime.runs?.drain() ?? Promise.resolve();
   const drainPromise = runtime.drain.drain();
   const closePromise = server.close();

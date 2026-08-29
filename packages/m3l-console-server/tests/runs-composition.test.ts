@@ -360,6 +360,7 @@ describe("M3LRunSubsystemOptions / M3LRunSubsystem", () => {
       readonly orchestrator: M3LRunOrchestrator;
       readonly eventHub: M3LEventStreamHub<M3LRunEvent>;
       drain(): Promise<void>;
+      endStreams(): void;
     }>();
   });
 });

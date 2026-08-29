@@ -509,4 +509,358 @@ describe("createRunStreamRoutes — GET /api/v1/runs/:id/stream", () => {
     expect(sink.frames).toHaveLength(0);
     expect(hub.openCount).toBe(0);
   });
+
+  // Regression coverage for a defect found during manual acceptance of X4
+  // slice 7a: the terminal path ignored `Last-Event-ID` entirely, always
+  // replaying the full retained buffer regardless of what the client had
+  // already seen. Each of the next three tests builds the SAME retained
+  // window honestly (publish 9 events at bufferSize 3, so ids 7, 8, and 9
+  // are retained and `oldestRetainedId` is 7) and drives a different resume
+  // header through it. Every test asserts the `open()` promise itself
+  // resolves (not just that it eventually returns frames) — a hanging
+  // implementation would leave the `await` unsettled and the test would
+  // time out, per this file's existing terminal-path proof pattern.
+  test("a terminal run's precise Last-Event-ID resume replays only the missed retained event", async () => {
+    const hub = createEventStreamHub<FakeRunEvent>({ bufferSize: 3 });
+    const preOpened = hub.open("run-1");
+    for (let sequence = 1; sequence <= 9; sequence += 1) {
+      preOpened.publish({
+        event: "run.line",
+        runId: "run-1",
+        line: `line-${String(sequence)}`,
+      });
+    }
+    preOpened.end("completed");
+
+    const registry: FakeRegistry = {
+      get: () => ({ id: "run-1", status: "success" }),
+    };
+    const routes = createRunStreamRoutes({ hub, registry });
+
+    const result = await runStreamRoute(
+      findRoute(routes, "GET", "/api/v1/runs/:id/stream"),
+      buildContext({
+        path: "/api/v1/runs/run-1/stream",
+        params: { id: "run-1" },
+        lastEventId: "8",
+      }),
+    );
+
+    const sink = buildSink();
+    await expect(result.open(sink)).resolves.toBeUndefined();
+
+    // Only id 9 was missed; ids 7 and 8 (already seen by the client) must
+    // not be replayed again. The stream was already ended before this
+    // route ever subscribed, so a trailing `stream.end` frame (carrying no
+    // `id`) is expected after the replay — see the acceptance-step-5 tests
+    // above for that frame's own dedicated coverage.
+    expect(sink.frames.map((frame) => frame.event)).toEqual([
+      "run.line",
+      "stream.end",
+    ]);
+    expect(sink.frames.map((frame) => frame.id)).toEqual([9, undefined]);
+    expect(sink.frames.every((frame) => frame.event !== "stream.gap")).toBe(
+      true,
+    );
+  });
+
+  test("a terminal run's stranded Last-Event-ID produces the explicit gap signal, never a silent partial replay", async () => {
+    const hub = createEventStreamHub<FakeRunEvent>({ bufferSize: 3 });
+    const preOpened = hub.open("run-1");
+    for (let sequence = 1; sequence <= 9; sequence += 1) {
+      preOpened.publish({
+        event: "run.line",
+        runId: "run-1",
+        line: `line-${String(sequence)}`,
+      });
+    }
+    // Same retained window as the previous test: ids 7, 8, 9 retained,
+    // oldestRetainedId is 7. Resuming from id 2 is a genuine gap
+    // (2 < oldestRetainedId (7) - 1 == 6), distinct from the
+    // oldestRetainedId - 1 "still replayable" boundary the active-path
+    // suite already pins above — this is the terminal path.
+    preOpened.end("completed");
+
+    const registry: FakeRegistry = {
+      get: () => ({ id: "run-1", status: "success" }),
+    };
+    const routes = createRunStreamRoutes({ hub, registry });
+
+    const result = await runStreamRoute(
+      findRoute(routes, "GET", "/api/v1/runs/:id/stream"),
+      buildContext({
+        path: "/api/v1/runs/run-1/stream",
+        params: { id: "run-1" },
+        lastEventId: "2",
+      }),
+    );
+
+    const sink = buildSink();
+    await expect(result.open(sink)).resolves.toBeUndefined();
+
+    // Exactly one gap frame — never a silent replay of 7, 8, and 9 — plus
+    // the trailing `stream.end` frame the stream's own prior `.end()` call
+    // now produces (see the acceptance-step-5 tests above).
+    expect(sink.frames.map((frame) => frame.event)).toEqual([
+      "stream.gap",
+      "stream.end",
+    ]);
+    const gapPayload: unknown = JSON.parse(sink.frames[0]?.data ?? "{}");
+    expect(gapPayload).toMatchObject({ oldestRetainedId: 7 });
+  });
+
+  test("a terminal run with no Last-Event-ID header still replays the full retained buffer, unchanged", async () => {
+    const hub = createEventStreamHub<FakeRunEvent>({ bufferSize: 3 });
+    const preOpened = hub.open("run-1");
+    for (let sequence = 1; sequence <= 9; sequence += 1) {
+      preOpened.publish({
+        event: "run.line",
+        runId: "run-1",
+        line: `line-${String(sequence)}`,
+      });
+    }
+    preOpened.end("completed");
+
+    const registry: FakeRegistry = {
+      get: () => ({ id: "run-1", status: "success" }),
+    };
+    const routes = createRunStreamRoutes({ hub, registry });
+
+    const result = await runStreamRoute(
+      findRoute(routes, "GET", "/api/v1/runs/:id/stream"),
+      buildContext({
+        path: "/api/v1/runs/run-1/stream",
+        params: { id: "run-1" },
+      }),
+    );
+
+    const sink = buildSink();
+    await expect(result.open(sink)).resolves.toBeUndefined();
+
+    // Guards against the fix over-correcting: an absent header must still
+    // deliver the whole retained window, exactly as it did before the fix —
+    // plus the trailing `stream.end` frame the stream's own prior `.end()`
+    // call now produces (see the acceptance-step-5 tests above).
+    expect(sink.frames.map((frame) => frame.event)).toEqual([
+      "run.line",
+      "run.line",
+      "run.line",
+      "stream.end",
+    ]);
+    expect(sink.frames.map((frame) => frame.id)).toEqual([7, 8, 9, undefined]);
+    expect(sink.frames.every((frame) => frame.event !== "stream.gap")).toBe(
+      true,
+    );
+  });
+
+  // Regression coverage for the SIGTERM-with-a-watcher-attached failure: the
+  // route never emitted any terminal SSE frame, so a watcher's connection
+  // was severed with no explanation. The fix adds a `stream.end` frame,
+  // emitted right before `open()` settles, on every path that can end a
+  // stream while a watcher holds it: a live watcher whose stream is ended
+  // (draining or an ordinary run completion), and the terminal-replay path
+  // for a stream that is already ended by the time a late watcher arrives.
+  test("a live watcher whose stream ends with 'draining' receives a final stream.end frame, ordered after every prior event", async () => {
+    const hub = createEventStreamHub<FakeRunEvent>({ bufferSize: 10 });
+    const registry: FakeRegistry = {
+      get: () => ({ id: "run-1", status: "running" }),
+    };
+    const routes = createRunStreamRoutes({ hub, registry });
+    const controller = new AbortController();
+
+    const result = await runStreamRoute(
+      findRoute(routes, "GET", "/api/v1/runs/:id/stream"),
+      buildContext({
+        path: "/api/v1/runs/run-1/stream",
+        params: { id: "run-1" },
+        signal: controller.signal,
+      }),
+    );
+
+    const sink = buildSink();
+    const openPromise = result.open(sink);
+
+    const stream = hub.get("run-1");
+    if (stream === undefined) {
+      throw new Error("expected the route to have opened a stream for run-1");
+    }
+    stream.publish({ event: "run.line", runId: "run-1", line: "one" });
+    stream.end("draining");
+
+    await expect(openPromise).resolves.toBeUndefined();
+
+    // Ordering, not just presence: the terminal frame must be LAST.
+    expect(sink.frames.map((frame) => frame.event)).toEqual([
+      "run.line",
+      "stream.end",
+    ]);
+    const finalFrame = sink.frames.at(-1);
+    const payload: unknown = JSON.parse(finalFrame?.data ?? "{}");
+    expect(payload).toEqual({ reason: "draining" });
+  });
+
+  test("a live watcher whose stream ends with 'completed' receives a final stream.end frame, ordered after every prior event", async () => {
+    const hub = createEventStreamHub<FakeRunEvent>({ bufferSize: 10 });
+    const registry: FakeRegistry = {
+      get: () => ({ id: "run-1", status: "running" }),
+    };
+    const routes = createRunStreamRoutes({ hub, registry });
+    const controller = new AbortController();
+
+    const result = await runStreamRoute(
+      findRoute(routes, "GET", "/api/v1/runs/:id/stream"),
+      buildContext({
+        path: "/api/v1/runs/run-1/stream",
+        params: { id: "run-1" },
+        signal: controller.signal,
+      }),
+    );
+
+    const sink = buildSink();
+    const openPromise = result.open(sink);
+
+    const stream = hub.get("run-1");
+    if (stream === undefined) {
+      throw new Error("expected the route to have opened a stream for run-1");
+    }
+    stream.publish({ event: "run.started", runId: "run-1" });
+    stream.publish({ event: "run.ended", runId: "run-1" });
+    stream.end("completed");
+
+    await expect(openPromise).resolves.toBeUndefined();
+
+    expect(sink.frames.map((frame) => frame.event)).toEqual([
+      "run.started",
+      "run.ended",
+      "stream.end",
+    ]);
+    const finalFrame = sink.frames.at(-1);
+    const payload: unknown = JSON.parse(finalFrame?.data ?? "{}");
+    expect(payload).toEqual({ reason: "completed" });
+  });
+
+  test("the stream.end frame carries no 'id' — it names no real published event", async () => {
+    const hub = createEventStreamHub<FakeRunEvent>({ bufferSize: 10 });
+    const registry: FakeRegistry = {
+      get: () => ({ id: "run-1", status: "running" }),
+    };
+    const routes = createRunStreamRoutes({ hub, registry });
+    const controller = new AbortController();
+
+    const result = await runStreamRoute(
+      findRoute(routes, "GET", "/api/v1/runs/:id/stream"),
+      buildContext({
+        path: "/api/v1/runs/run-1/stream",
+        params: { id: "run-1" },
+        signal: controller.signal,
+      }),
+    );
+
+    const sink = buildSink();
+    const openPromise = result.open(sink);
+
+    const stream = hub.get("run-1");
+    if (stream === undefined) {
+      throw new Error("expected the route to have opened a stream for run-1");
+    }
+    stream.publish({ event: "run.started", runId: "run-1" });
+    stream.end("completed");
+
+    await expect(openPromise).resolves.toBeUndefined();
+
+    const finalFrame = sink.frames.at(-1);
+    expect(finalFrame?.event).toBe("stream.end");
+    expect(finalFrame).not.toHaveProperty("id");
+  });
+
+  test("the terminal-replay path also emits a trailing stream.end frame after replaying the retained backlog", async () => {
+    const hub = createEventStreamHub<FakeRunEvent>({ bufferSize: 10 });
+    const preOpened = hub.open("run-1");
+    preOpened.publish({ event: "run.started", runId: "run-1" });
+    preOpened.publish({ event: "run.ended", runId: "run-1" });
+    // Unlike the pre-existing "already terminal, no live end" test above,
+    // this scenario ends the stream BEFORE the watcher arrives — the common
+    // case once `runs/stream-events.ts`'s sink reliably ends the stream on
+    // `run.ended`, and the case the fix's terminal-replay `onEnd` arm exists
+    // for.
+    preOpened.end("completed");
+
+    const registry: FakeRegistry = {
+      get: () => ({ id: "run-1", status: "success" }),
+    };
+    const routes = createRunStreamRoutes({ hub, registry });
+
+    const result = await runStreamRoute(
+      findRoute(routes, "GET", "/api/v1/runs/:id/stream"),
+      buildContext({
+        path: "/api/v1/runs/run-1/stream",
+        params: { id: "run-1" },
+      }),
+    );
+
+    const sink = buildSink();
+    await expect(result.open(sink)).resolves.toBeUndefined();
+
+    expect(sink.frames.map((frame) => frame.event)).toEqual([
+      "run.started",
+      "run.ended",
+      "stream.end",
+    ]);
+    const finalFrame = sink.frames.at(-1);
+    expect(finalFrame).not.toHaveProperty("id");
+    const payload: unknown = JSON.parse(finalFrame?.data ?? "{}");
+    expect(payload).toEqual({ reason: "completed" });
+  });
+
+  test.each([
+    ["draining" as const, "live"] as const,
+    ["completed" as const, "live"] as const,
+    ["completed" as const, "terminal"] as const,
+  ])(
+    "open() resolves (never hangs) when the stream ends with reason '%s' on the %s path",
+    async (reason, path) => {
+      const hub = createEventStreamHub<FakeRunEvent>({ bufferSize: 10 });
+
+      if (path === "terminal") {
+        const preOpened = hub.open("run-1");
+        preOpened.publish({ event: "run.started", runId: "run-1" });
+        preOpened.end(reason);
+      }
+
+      const registry: FakeRegistry = {
+        get: () => ({
+          id: "run-1",
+          status: path === "terminal" ? "success" : "running",
+        }),
+      };
+      const routes = createRunStreamRoutes({ hub, registry });
+      const controller = new AbortController();
+
+      const result = await runStreamRoute(
+        findRoute(routes, "GET", "/api/v1/runs/:id/stream"),
+        buildContext({
+          path: "/api/v1/runs/run-1/stream",
+          params: { id: "run-1" },
+          signal: controller.signal,
+        }),
+      );
+
+      const sink = buildSink();
+      const openPromise = result.open(sink);
+
+      if (path === "live") {
+        const stream = hub.get("run-1");
+        if (stream === undefined) {
+          throw new Error(
+            "expected the route to have opened a stream for run-1",
+          );
+        }
+        stream.end(reason);
+      }
+
+      // No fake timers, no manual abort: a hanging implementation would
+      // leave this `await` unsettled and the test would time out.
+      await expect(openPromise).resolves.toBeUndefined();
+    },
+  );
 });
