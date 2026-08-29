@@ -134,9 +134,15 @@ export const VERIFY_STEPS = [
       `node bin/check-review-size.mjs --base ${baseRef} --head HEAD`,
   },
   {
-    ciStepName: "Lint",
-    id: "lint",
-    cmd: () => "pnpm lint",
+    ciStepName: "Lint (library)",
+    id: "lint-library",
+    cmd: () => "pnpm lint:library",
+    conditional: true,
+  },
+  {
+    ciStepName: "Lint (workspace)",
+    id: "lint-workspace",
+    cmd: () => "pnpm lint:workspace",
     conditional: true,
   },
   {
@@ -160,6 +166,12 @@ export const VERIFY_STEPS = [
     ciStepName: "Check public API snapshot",
     id: "check-api",
     cmd: () => "pnpm check:api",
+    conditional: true,
+  },
+  {
+    ciStepName: "Check browser-safe exports subpaths",
+    id: "check-browser-safe-subpath",
+    cmd: () => "pnpm check:browser-safe-subpath",
     conditional: true,
   },
   {
@@ -224,6 +236,14 @@ export const VERIFY_STEPS = [
     ciStepName: "Test (with coverage gate)",
     id: "test-coverage",
     cmd: () => "pnpm test:coverage",
+    conditional: true,
+  },
+  {
+    ciStepName: "Build m3l-common",
+    id: "build-m3l-common-for-e2e",
+    cmd: () => "pnpm --filter @m3l-automation/m3l-common build",
+    skipReason:
+      "prerequisite for the e2e lane's own vite build, which bypasses turbo's dependsOn graph — path-scoped like the rest of this lane (pass --full to run it)",
     conditional: true,
   },
   {

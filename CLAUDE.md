@@ -77,7 +77,7 @@ packages/m3l-cli/       # @m3l-automation/m3l-cli
 scripts/<name>/src/     # automations consuming the library via workspace:*
 ```
 
-`exports` exposes exactly `.`, `./core`, `./aws` — Core namespace barrel (24 documented submodules) and AWS namespace barrel (20 documented submodules) surface through it; a new submodule joins the barrel, never a new subpath (semver event). `internal/` is NOT exported, may change freely. Full tree: `docs/contributing/contributing.md` § Repository Layout.
+`exports` exposes `.`, `./core`, `./aws`, `./core/errors` — Core namespace barrel (24 documented submodules) and AWS namespace barrel (20 documented submodules) surface through the namespace entries; `./core/errors` is ADR-0004's gated exception. New submodules join the barrel, never a new subpath (semver event). `internal/` is NOT exported, may change freely. Full tree: `docs/contributing/contributing.md` § Repository Layout.
 
 ## Environment Setup
 

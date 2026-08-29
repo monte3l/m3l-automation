@@ -121,7 +121,15 @@ is a semver event:
 - Removing or renaming a subpath → major (`feat!:`).
 - Retyping an existing exported signature in a breaking way → major.
 
-Plan these changes deliberately; they ripple out to every consumer.
+Plan these changes deliberately; they ripple out to every consumer. In
+practice, a _new subpath_ is rarely the right shape: ADR-0004 keeps the map
+at three namespace entries (`.`, `./core`, `./aws`) plus, as of its dated
+Update, one narrow exception — `./core/errors`, a leaf whose transitive
+import graph is machine-proven free of `node:`/third-party imports
+(`pnpm check:browser-safe-subpath`), admitted because a browser-target
+package (`m3l-console-web`) needed a real value import it could not reach
+any other way. A new submodule still surfaces through the namespace barrel,
+not a new subpath, unless it clears both of that exception's conditions.
 
 ### `internal/` Is Private
 

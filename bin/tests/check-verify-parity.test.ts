@@ -427,7 +427,7 @@ describe("VERIFY_STEPS needsLiveState flags", () => {
   });
 
   test("a step not named as a push-only live-state check does not carry needsLiveState: true", () => {
-    const step = VERIFY_STEPS.find((s) => s.ciStepName === "Lint");
+    const step = VERIFY_STEPS.find((s) => s.ciStepName === "Lint (library)");
     expect(step).toBeDefined();
     expect(step?.needsLiveState).toBeFalsy();
   });

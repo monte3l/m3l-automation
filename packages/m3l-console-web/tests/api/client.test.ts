@@ -91,6 +91,130 @@ describe("fetchConsoleJson", () => {
     });
   });
 
+  test("maps a console error envelope's optional origin and retryable fields through", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 503,
+        statusText: "Service Unavailable",
+        json: () =>
+          Promise.resolve({
+            error: {
+              code: "ERR_CONSOLE_UPSTREAM",
+              message: "upstream unavailable",
+              status: 503,
+              correlationId: "corr-2",
+              origin: "external",
+              retryable: true,
+            },
+          }),
+      }),
+    );
+
+    await expect(fetchConsoleJson<SamplePayload>("/upstream")).resolves.toEqual(
+      {
+        ok: false,
+        error: {
+          kind: "http",
+          message: "upstream unavailable",
+          status: 503,
+          code: "ERR_CONSOLE_UPSTREAM",
+          correlationId: "corr-2",
+          origin: "external",
+          retryable: true,
+        },
+      },
+    );
+  });
+
+  test("round-trips a retryable value of 'situational'", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 429,
+        statusText: "Too Many Requests",
+        json: () =>
+          Promise.resolve({
+            error: {
+              code: "ERR_CONSOLE_RATE_LIMITED",
+              message: "rate limited",
+              status: 429,
+              correlationId: "corr-3",
+              retryable: "situational",
+            },
+          }),
+      }),
+    );
+
+    const result = await fetchConsoleJson<SamplePayload>("/rate-limited");
+    if (result.ok) {
+      throw new Error("expected a failure result");
+    }
+    expect(result.error.retryable).toBe("situational");
+  });
+
+  test("drops an invalid origin but keeps the rest of a well-formed envelope", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 500,
+        statusText: "Internal Server Error",
+        json: () =>
+          Promise.resolve({
+            error: {
+              code: "ERR_CONSOLE_BAD_ORIGIN",
+              message: "bad origin",
+              status: 500,
+              correlationId: "corr-4",
+              origin: "nonsense",
+            },
+          }),
+      }),
+    );
+
+    const result = await fetchConsoleJson<SamplePayload>("/bad-origin");
+    if (result.ok) {
+      throw new Error("expected a failure result");
+    }
+    expect(result.error.code).toBe("ERR_CONSOLE_BAD_ORIGIN");
+    expect(result.error.correlationId).toBe("corr-4");
+    expect(result.error.message).toBe("bad origin");
+    expect(result.error.origin).toBeUndefined();
+  });
+
+  test("drops an invalid retryable but keeps the rest of a well-formed envelope", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 500,
+        statusText: "Internal Server Error",
+        json: () =>
+          Promise.resolve({
+            error: {
+              code: "ERR_CONSOLE_BAD_RETRYABLE",
+              message: "bad retryable",
+              status: 500,
+              correlationId: "corr-5",
+              retryable: 2,
+            },
+          }),
+      }),
+    );
+
+    const result = await fetchConsoleJson<SamplePayload>("/bad-retryable");
+    if (result.ok) {
+      throw new Error("expected a failure result");
+    }
+    expect(result.error.code).toBe("ERR_CONSOLE_BAD_RETRYABLE");
+    expect(result.error.correlationId).toBe("corr-5");
+    expect(result.error.message).toBe("bad retryable");
+    expect(result.error.retryable).toBeUndefined();
+  });
+
   test("falls back to status text when the body is not the envelope shape", async () => {
     vi.stubGlobal(
       "fetch",

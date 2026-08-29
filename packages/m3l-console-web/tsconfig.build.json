@@ -1,6 +1,7 @@
 {
   "//": "Satisfies bin/check-scaffold.mjs's root-tsconfig-reference requirement and gives `tsc -b` from the repo root a real project to walk. Vite (`vite build`, the package's own `build` script) owns the actual browser bundle and is what ships; this project's only job is to prove `src/` type-checks in isolation with `composite`/`incremental` on, gitignored dist/.typecheck output and all — no other package references this one's declarations, so isolatedDeclarations is deliberately NOT set here (unlike the tsc-emitting packages): it would force an explicit return-type annotation on every exported React component for a .d.ts tree nothing consumes.",
   "extends": "./tsconfig.json",
+  "references": [{ "path": "../m3l-common/tsconfig.build.json" }],
   "compilerOptions": {
     "rootDir": "src",
     "outDir": "dist/.typecheck",
