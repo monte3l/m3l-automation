@@ -277,6 +277,15 @@ const CLASSIFICATION_BY_CODE: Record<M3LConsoleErrorCode, ErrorClassification> =
       retryable: true,
       fault: false,
     },
+    // X6 workbench-sessions module, slice 2 (ADR-0068). Malformed reference
+    // text or a reference that no longer matches the data it names is
+    // always caller-facing — see `errors/console-error.ts`'s own TSDoc.
+    ERR_CONSOLE_SESSION_REFERENCE_INVALID: {
+      status: STATUS_BAD_REQUEST,
+      origin: "caller",
+      retryable: false,
+      fault: false,
+    },
   };
 
 /**
