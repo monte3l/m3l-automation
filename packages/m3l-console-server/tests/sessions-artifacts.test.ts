@@ -1,5 +1,5 @@
 /**
- * Tests for src/sessions/artifacts.ts — the session artifact store
+ * Unit tests for src/sessions/artifacts.ts — the session artifact store
  * (m3l-console-server X6 workbench-sessions module, slice 3, ADR-0068/
  * ADR-0069).
  *
@@ -10,27 +10,26 @@
  * `readArtifact` is the inverse, verifying a file-backed artifact's SHA-256
  * digest on every read.
  *
- * Every filesystem-touching test uses a real temp directory (bare
- * `node:fs/promises` named-function imports, never a `fs.`/`fsp.`
- * member-expression call — see `eslint.config.js`'s `no-restricted-syntax`
- * block and `tests/integration/store.integration.test.ts`'s own header for
- * the rationale), cleaned up in `afterEach`. Nothing here touches the real
- * repo `data/` directory.
+ * This file lives in the UNIT project (`vitest.config.ts`) — no real
+ * filesystem access. `node:fs/promises`'s `mkdir`, `open`, and `writeFile`
+ * are mocked via `vi.mock`, and `open`'s resolved `FileHandle` is a fake
+ * object whose `stat`/`readFile`/`close` methods are individually
+ * controllable `vi.fn()`s. This drives every one of `artifacts.ts`'s own
+ * branches (success, `EEXIST`, a non-regular-file `stat`, a size mismatch,
+ * a digest mismatch, `ELOOP`, a generic fs error, a post-open failure, a
+ * failing `close()`) without ever touching a real path, which is what
+ * recovers this module's unit-tier coverage per `vitest.config.ts`'s
+ * `perFile` gate.
+ *
+ * Real-filesystem cases (permission bits actually honored by the OS, a
+ * genuine `EEXIST` collision, a real symlink/FIFO at rest, digest
+ * verification against externally-tampered bytes, and the file-backed
+ * Date round-trip) live in
+ * `tests/integration/sessions-artifacts.integration.test.ts` instead —
+ * see that file's header for the split rationale (this file previously
+ * shelled out to `mkfifo` and spawned real child processes, which does not
+ * belong in the unit tier: `docs/logs/` PR #740 review).
  */
-import { execFileSync, spawn } from "node:child_process";
-import { createHash } from "node:crypto";
-import {
-  mkdir,
-  mkdtemp,
-  readFile,
-  rm,
-  stat,
-  symlink,
-  writeFile,
-} from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-
 import {
   afterEach,
   beforeEach,
@@ -38,7 +37,30 @@ import {
   expect,
   expectTypeOf,
   test,
+  vi,
 } from "vitest";
+
+import type * as FsPromises from "node:fs/promises";
+
+vi.mock("node:fs/promises", async () => {
+  const actual = await vi.importActual<typeof FsPromises>("node:fs/promises");
+  return {
+    ...actual,
+    mkdir: vi.fn(),
+    open: vi.fn(),
+    writeFile: vi.fn(),
+  };
+});
+
+import { createHash } from "node:crypto";
+import {
+  constants as fsConstants,
+  mkdir,
+  open,
+  writeFile,
+} from "node:fs/promises";
+import type { FileHandle } from "node:fs/promises";
+import { join } from "node:path";
 
 import { M3LConsoleError } from "../src/errors/console-error.js";
 import type { M3LConsoleSessionsConfig } from "../src/config/sessions.js";
@@ -56,6 +78,11 @@ const CONFIG: M3LConsoleSessionsConfig = {
   sessionTotalMaxBytes: 1000,
   openSessionsMax: 10,
 };
+
+const ROOT = "/fake/artifacts-root";
+
+const EXPECTED_OPEN_FLAGS =
+  fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW | fsConstants.O_NONBLOCK;
 
 /**
  * Builds a JSON string payload (a plain string value) whose
@@ -77,14 +104,31 @@ async function captureFailure(run: () => unknown): Promise<unknown> {
   }
 }
 
-let dir: string;
+/** A fake `FileHandle` whose `stat`/`readFile`/`close` are independently controllable `vi.fn()`s. */
+interface FakeFileHandle {
+  readonly stat: ReturnType<typeof vi.fn>;
+  readonly readFile: ReturnType<typeof vi.fn>;
+  readonly close: ReturnType<typeof vi.fn>;
+}
 
-beforeEach(async () => {
-  dir = await mkdtemp(join(tmpdir(), "m3l-console-artifacts-"));
+function createFakeHandle(): FakeFileHandle {
+  return {
+    stat: vi.fn(),
+    readFile: vi.fn(),
+    close: vi.fn().mockResolvedValue(undefined),
+  };
+}
+
+beforeEach(() => {
+  vi.mocked(mkdir).mockReset();
+  vi.mocked(open).mockReset();
+  vi.mocked(writeFile).mockReset();
 });
 
-afterEach(async () => {
-  await rm(dir, { recursive: true, force: true });
+afterEach(() => {
+  vi.mocked(mkdir).mockReset();
+  vi.mocked(open).mockReset();
+  vi.mocked(writeFile).mockReset();
 });
 
 describe("M3LSessionArtifactRef — discriminated union shape", () => {
@@ -97,33 +141,29 @@ describe("M3LSessionArtifactRef — discriminated union shape", () => {
 });
 
 describe("createSessionArtifactStore — the factory itself does no I/O", () => {
-  test("does not create the root directory merely by being called", async () => {
-    const root = join(dir, "artifacts-root");
+  test("performs no mkdir/open/writeFile merely by being called", () => {
+    createSessionArtifactStore({ root: ROOT, config: CONFIG });
 
-    createSessionArtifactStore({ root, config: CONFIG });
-
-    const failure = await captureFailure(() => stat(root));
-    expect(failure).toMatchObject({ code: "ENOENT" });
+    expect(mkdir).not.toHaveBeenCalled();
+    expect(open).not.toHaveBeenCalled();
+    expect(writeFile).not.toHaveBeenCalled();
   });
 });
 
 describe("put — inline branch (payload size <= artifactInlineMaxBytes)", () => {
   test("returns an inline ref carrying the payload, with no filesystem I/O at all", async () => {
-    const root = join(dir, "artifacts-root");
-    const store = createSessionArtifactStore({ root, config: CONFIG });
+    const store = createSessionArtifactStore({ root: ROOT, config: CONFIG });
     const payload = jsonSizedPayload(30);
 
     const ref = await store.put("session-1", "step-1", payload, 0);
 
     expect(ref).toEqual({ kind: "inline", value: payload });
-    // No I/O: not even the root directory should have been created.
-    const failure = await captureFailure(() => stat(root));
-    expect(failure).toMatchObject({ code: "ENOENT" });
+    expect(mkdir).not.toHaveBeenCalled();
+    expect(writeFile).not.toHaveBeenCalled();
   });
 
   test("accepts the exact boundary of artifactInlineMaxBytes as inline", async () => {
-    const root = join(dir, "artifacts-root");
-    const store = createSessionArtifactStore({ root, config: CONFIG });
+    const store = createSessionArtifactStore({ root: ROOT, config: CONFIG });
     const payload = jsonSizedPayload(CONFIG.artifactInlineMaxBytes);
 
     const ref = await store.put("session-1", "step-1", payload, 0);
@@ -133,9 +173,10 @@ describe("put — inline branch (payload size <= artifactInlineMaxBytes)", () =>
 });
 
 describe("put — file branch (artifactInlineMaxBytes < payload size <= artifactMaxBytes)", () => {
-  test("writes a real file under <root>/<sessionId>/<stepId>.json and returns a matching file ref", async () => {
-    const root = join(dir, "artifacts-root");
-    const store = createSessionArtifactStore({ root, config: CONFIG });
+  test("mkdir(sessionDir, 0700) then writeFile(absolutePath, json, wx/0600), returning a matching file ref", async () => {
+    vi.mocked(mkdir).mockResolvedValue(undefined);
+    vi.mocked(writeFile).mockResolvedValue(undefined);
+    const store = createSessionArtifactStore({ root: ROOT, config: CONFIG });
     const payload = jsonSizedPayload(100);
 
     const ref = await store.put("session-2", "step-1", payload, 0);
@@ -143,21 +184,24 @@ describe("put — file branch (artifactInlineMaxBytes < payload size <= artifact
     expect(ref.kind).toBe("file");
     if (ref.kind !== "file") throw new Error("expected a file ref");
     expect(ref.sizeBytes).toBe(100);
+    expect(ref.path).toBe(join("session-2", "step-1.json"));
     expect(ref.digest).toMatch(/^[0-9a-f]{64}$/);
 
-    const resolvedPath = join(root, "session-2", "step-1.json");
-    const written = await readFile(resolvedPath, "utf8");
-    expect(written).toBe(JSON.stringify(payload));
-
-    const independentDigest = createHash("sha256")
-      .update(written, "utf8")
-      .digest("hex");
-    expect(ref.digest).toBe(independentDigest);
+    expect(mkdir).toHaveBeenCalledWith(join(ROOT, "session-2"), {
+      recursive: true,
+      mode: 0o700,
+    });
+    expect(writeFile).toHaveBeenCalledWith(
+      join(ROOT, "session-2", "step-1.json"),
+      JSON.stringify(payload),
+      { flag: "wx", mode: 0o600 },
+    );
   });
 
   test("accepts the exact boundary of artifactMaxBytes as file-backed, not rejected", async () => {
-    const root = join(dir, "artifacts-root");
-    const store = createSessionArtifactStore({ root, config: CONFIG });
+    vi.mocked(mkdir).mockResolvedValue(undefined);
+    vi.mocked(writeFile).mockResolvedValue(undefined);
+    const store = createSessionArtifactStore({ root: ROOT, config: CONFIG });
     const payload = jsonSizedPayload(CONFIG.artifactMaxBytes);
 
     const ref = await store.put("session-boundary", "step-1", payload, 0);
@@ -167,36 +211,66 @@ describe("put — file branch (artifactInlineMaxBytes < payload size <= artifact
       expect(ref.sizeBytes).toBe(CONFIG.artifactMaxBytes);
     }
   });
-
-  test.skipIf(process.platform === "win32")(
-    "creates the session directory 0700 and the artifact file 0600",
-    async () => {
-      const originalUmask = process.umask(0o022);
-      try {
-        const root = join(dir, "artifacts-root");
-        const store = createSessionArtifactStore({ root, config: CONFIG });
-        const payload = jsonSizedPayload(100);
-
-        await store.put("session-perm", "step-1", payload, 0);
-
-        const sessionDirMode =
-          (await stat(join(root, "session-perm"))).mode & 0o777;
-        const fileMode =
-          (await stat(join(root, "session-perm", "step-1.json"))).mode & 0o777;
-
-        expect(sessionDirMode).toBe(0o700);
-        expect(fileMode).toBe(0o600);
-      } finally {
-        process.umask(originalUmask);
-      }
-    },
-  );
 });
 
-describe("put — per-artifact cap exceeded", () => {
-  test("throws ERR_CONSOLE_SESSION_ARTIFACT_TOO_LARGE and writes no partial file", async () => {
-    const root = join(dir, "artifacts-root");
-    const store = createSessionArtifactStore({ root, config: CONFIG });
+describe("put — writeArtifactFile failures wrap under one catch as ERR_CONSOLE_SESSION_ARTIFACT_CORRUPT", () => {
+  test("a mkdir rejection is wrapped, chaining the original cause", async () => {
+    const mkdirFailure = new Error("boom-mkdir");
+    vi.mocked(mkdir).mockRejectedValue(mkdirFailure);
+    const store = createSessionArtifactStore({ root: ROOT, config: CONFIG });
+    const payload = jsonSizedPayload(100);
+
+    const thrown = await captureFailure(() =>
+      store.put("session-e1", "step-1", payload, 0),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    const error = thrown as M3LConsoleError;
+    expect(error.code).toBe("ERR_CONSOLE_SESSION_ARTIFACT_CORRUPT");
+    expect(error.cause).toBe(mkdirFailure);
+    expect(writeFile).not.toHaveBeenCalled();
+  });
+
+  test("an EEXIST from writeFile (exclusive-create collision) is wrapped as CORRUPT, not silently overwritten", async () => {
+    vi.mocked(mkdir).mockResolvedValue(undefined);
+    const eexist = Object.assign(new Error("file already exists"), {
+      code: "EEXIST",
+    });
+    vi.mocked(writeFile).mockRejectedValue(eexist);
+    const store = createSessionArtifactStore({ root: ROOT, config: CONFIG });
+    const payload = jsonSizedPayload(100);
+
+    const thrown = await captureFailure(() =>
+      store.put("session-e2", "step-1", payload, 0),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    const error = thrown as M3LConsoleError;
+    expect(error.code).toBe("ERR_CONSOLE_SESSION_ARTIFACT_CORRUPT");
+    expect(error.cause).toBe(eexist);
+  });
+
+  test("a generic writeFile failure is wrapped the same way as EEXIST", async () => {
+    vi.mocked(mkdir).mockResolvedValue(undefined);
+    const genericFailure = new Error("disk full");
+    vi.mocked(writeFile).mockRejectedValue(genericFailure);
+    const store = createSessionArtifactStore({ root: ROOT, config: CONFIG });
+    const payload = jsonSizedPayload(100);
+
+    const thrown = await captureFailure(() =>
+      store.put("session-e3", "step-1", payload, 0),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).code).toBe(
+      "ERR_CONSOLE_SESSION_ARTIFACT_CORRUPT",
+    );
+  });
+});
+
+describe("put — per-artifact cap exceeded (checked before any filesystem call)", () => {
+  test("throws ERR_CONSOLE_SESSION_ARTIFACT_TOO_LARGE and never calls mkdir/writeFile", async () => {
+    const store = createSessionArtifactStore({ root: ROOT, config: CONFIG });
     const payload = jsonSizedPayload(CONFIG.artifactMaxBytes + 1);
 
     const thrown = await captureFailure(() =>
@@ -207,10 +281,8 @@ describe("put — per-artifact cap exceeded", () => {
     expect((thrown as M3LConsoleError).code).toBe(
       "ERR_CONSOLE_SESSION_ARTIFACT_TOO_LARGE",
     );
-    const failure = await captureFailure(() =>
-      stat(join(root, "session-3", "step-1.json")),
-    );
-    expect(failure).toMatchObject({ code: "ENOENT" });
+    expect(mkdir).not.toHaveBeenCalled();
+    expect(writeFile).not.toHaveBeenCalled();
   });
 });
 
@@ -224,8 +296,7 @@ describe("put — session-total cap exceeded (distinct from the per-artifact cap
       ...CONFIG,
       sessionTotalMaxBytes: 150,
     };
-    const root = join(dir, "artifacts-root");
-    const store = createSessionArtifactStore({ root, config });
+    const store = createSessionArtifactStore({ root: ROOT, config });
     const payload = jsonSizedPayload(100);
 
     const thrown = await captureFailure(() =>
@@ -236,19 +307,17 @@ describe("put — session-total cap exceeded (distinct from the per-artifact cap
     expect((thrown as M3LConsoleError).code).toBe(
       "ERR_CONSOLE_SESSION_ARTIFACT_TOO_LARGE",
     );
-    const failure = await captureFailure(() =>
-      stat(join(root, "session-4", "step-1.json")),
-    );
-    expect(failure).toMatchObject({ code: "ENOENT" });
+    expect(writeFile).not.toHaveBeenCalled();
   });
 
   test("does not reject when currentSessionTotalBytes + sizeBytes lands exactly at sessionTotalMaxBytes", async () => {
+    vi.mocked(mkdir).mockResolvedValue(undefined);
+    vi.mocked(writeFile).mockResolvedValue(undefined);
     const config: M3LConsoleSessionsConfig = {
       ...CONFIG,
       sessionTotalMaxBytes: 200,
     };
-    const root = join(dir, "artifacts-root");
-    const store = createSessionArtifactStore({ root, config });
+    const store = createSessionArtifactStore({ root: ROOT, config });
     const payload = jsonSizedPayload(100);
 
     const ref = await store.put("session-5", "step-1", payload, 100);
@@ -258,9 +327,8 @@ describe("put — session-total cap exceeded (distinct from the per-artifact cap
 });
 
 describe("put — an unparseable (not JSON-serializable) payload", () => {
-  test("rejects with ERR_CONSOLE_BAD_REQUEST from toParametersJson, never the size-cap codes", async () => {
-    const root = join(dir, "artifacts-root");
-    const store = createSessionArtifactStore({ root, config: CONFIG });
+  test("rejects with ERR_CONSOLE_BAD_REQUEST from toParametersJson, never the size-cap codes, before any filesystem call", async () => {
+    const store = createSessionArtifactStore({ root: ROOT, config: CONFIG });
 
     const thrown = await captureFailure(() =>
       store.put("session-6", "step-1", { onFinish: () => undefined }, 0),
@@ -268,33 +336,8 @@ describe("put — an unparseable (not JSON-serializable) payload", () => {
 
     expect(thrown).toBeInstanceOf(M3LConsoleError);
     expect((thrown as M3LConsoleError).code).toBe("ERR_CONSOLE_BAD_REQUEST");
-  });
-});
-
-describe("put — exclusive-create duplicate write", () => {
-  test("a second put for the same (sessionId, stepId) pair throws ERR_CONSOLE_SESSION_ARTIFACT_CORRUPT (EEXIST), never silently overwriting", async () => {
-    const root = join(dir, "artifacts-root");
-    const store = createSessionArtifactStore({ root, config: CONFIG });
-    const firstPayload = jsonSizedPayload(100);
-    const secondPayload = jsonSizedPayload(120);
-
-    const firstRef = await store.put("session-7", "step-1", firstPayload, 0);
-    const thrown = await captureFailure(() =>
-      store.put("session-7", "step-1", secondPayload, 0),
-    );
-
-    expect(thrown).toBeInstanceOf(M3LConsoleError);
-    expect((thrown as M3LConsoleError).code).toBe(
-      "ERR_CONSOLE_SESSION_ARTIFACT_CORRUPT",
-    );
-
-    // The original content survives the failed second attempt untouched.
-    const resolvedPath = join(root, "session-7", "step-1.json");
-    const onDisk = await readFile(resolvedPath, "utf8");
-    expect(onDisk).toBe(JSON.stringify(firstPayload));
-    if (firstRef.kind === "file") {
-      expect(firstRef.sizeBytes).toBe(100);
-    }
+    expect(mkdir).not.toHaveBeenCalled();
+    expect(writeFile).not.toHaveBeenCalled();
   });
 });
 
@@ -307,8 +350,7 @@ describe("put — path-traversal rejection on sessionId/stepId", () => {
   ])(
     "rejects %s with ERR_CONSOLE_BAD_REQUEST, before any filesystem write",
     async (_label, sessionId, stepId) => {
-      const root = join(dir, "artifacts-root");
-      const store = createSessionArtifactStore({ root, config: CONFIG });
+      const store = createSessionArtifactStore({ root: ROOT, config: CONFIG });
       // File-range payload — the rejection must fire before ever reaching the
       // write step, not merely because this payload happened to be inline.
       const payload = jsonSizedPayload(100);
@@ -319,14 +361,13 @@ describe("put — path-traversal rejection on sessionId/stepId", () => {
 
       expect(thrown).toBeInstanceOf(M3LConsoleError);
       expect((thrown as M3LConsoleError).code).toBe("ERR_CONSOLE_BAD_REQUEST");
-      const failure = await captureFailure(() => stat(root));
-      expect(failure).toMatchObject({ code: "ENOENT" });
+      expect(mkdir).not.toHaveBeenCalled();
+      expect(writeFile).not.toHaveBeenCalled();
     },
   );
 
   test("accepts a safe charset id (letters, digits, underscore, hyphen) and proceeds normally", async () => {
-    const root = join(dir, "artifacts-root");
-    const store = createSessionArtifactStore({ root, config: CONFIG });
+    const store = createSessionArtifactStore({ root: ROOT, config: CONFIG });
     const payload = jsonSizedPayload(10);
 
     const ref = await store.put("session_9-ok", "step-1_ok", payload, 0);
@@ -348,8 +389,7 @@ describe("put — sessionId/stepId length bound", () => {
   ])(
     "rejects %s (> 128 chars) with ERR_CONSOLE_BAD_REQUEST, not a filesystem-layer failure",
     async (_label, sessionId, stepId) => {
-      const root = join(dir, "artifacts-root");
-      const store = createSessionArtifactStore({ root, config: CONFIG });
+      const store = createSessionArtifactStore({ root: ROOT, config: CONFIG });
       // File-range payload — the rejection must fire before ever reaching the
       // write step, not merely because this payload happened to be inline.
       const payload = jsonSizedPayload(100);
@@ -371,8 +411,7 @@ describe("put — currentSessionTotalBytes validation", () => {
   ])(
     "rejects currentSessionTotalBytes of %s with ERR_CONSOLE_BAD_REQUEST",
     async (_label, currentSessionTotalBytes) => {
-      const root = join(dir, "artifacts-root");
-      const store = createSessionArtifactStore({ root, config: CONFIG });
+      const store = createSessionArtifactStore({ root: ROOT, config: CONFIG });
       const payload = jsonSizedPayload(30);
 
       const thrown = await captureFailure(() =>
@@ -385,8 +424,7 @@ describe("put — currentSessionTotalBytes validation", () => {
   );
 
   test("still accepts a valid non-negative integer currentSessionTotalBytes (existing legitimate usage)", async () => {
-    const root = join(dir, "artifacts-root");
-    const store = createSessionArtifactStore({ root, config: CONFIG });
+    const store = createSessionArtifactStore({ root: ROOT, config: CONFIG });
     const payload = jsonSizedPayload(30);
 
     const ref = await store.put("session-15", "step-1", payload, 0);
@@ -395,12 +433,10 @@ describe("put — currentSessionTotalBytes validation", () => {
   });
 });
 
-describe("put + readArtifact — inline and file branches return representationally consistent values", () => {
-  const isoWhen = "2024-01-01T00:00:00.000Z";
-
+describe("put + readArtifact — inline branch round-trip is representationally consistent", () => {
   test("a Date-valued field round-trips to its JSON (ISO string) form on the inline branch, not a live Date instance", async () => {
-    const root = join(dir, "artifacts-root");
-    const store = createSessionArtifactStore({ root, config: CONFIG });
+    const isoWhen = "2024-01-01T00:00:00.000Z";
+    const store = createSessionArtifactStore({ root: ROOT, config: CONFIG });
     const payload = { when: new Date(isoWhen) };
     // Sanity: this payload's JSON form is small enough to land inline.
     expect(
@@ -416,132 +452,242 @@ describe("put + readArtifact — inline and file branches return representationa
     // branch already produces via JSON.parse — never a live Date instance.
     expect(result).toEqual({ when: isoWhen });
   });
-
-  test("the same Date-valued field round-trips identically on the file branch (control)", async () => {
-    const root = join(dir, "artifacts-root");
-    const store = createSessionArtifactStore({ root, config: CONFIG });
-    const payload = { when: new Date(isoWhen), padding: "x".repeat(100) };
-    const sizeBytes = Buffer.byteLength(JSON.stringify(payload), "utf8");
-    // Sanity: this payload's JSON form is large enough to force file storage
-    // but still within the per-artifact cap.
-    expect(sizeBytes).toBeGreaterThan(CONFIG.artifactInlineMaxBytes);
-    expect(sizeBytes).toBeLessThanOrEqual(CONFIG.artifactMaxBytes);
-
-    const ref = await store.put("session-17", "step-1", payload, 0);
-    expect(ref.kind).toBe("file");
-
-    const result = await store.readArtifact(ref);
-
-    expect(result).toMatchObject({ when: isoWhen });
-  });
 });
 
 describe("readArtifact — inline", () => {
-  test("returns the inline value directly", async () => {
-    const root = join(dir, "artifacts-root");
-    const store = createSessionArtifactStore({ root, config: CONFIG });
+  test("returns the inline value directly, with no filesystem I/O", async () => {
+    const store = createSessionArtifactStore({ root: ROOT, config: CONFIG });
     const payload = jsonSizedPayload(30);
     const ref = await store.put("session-10", "step-1", payload, 0);
 
     const result = await store.readArtifact(ref);
 
     expect(result).toBe(payload);
+    expect(open).not.toHaveBeenCalled();
   });
 });
 
-describe("readArtifact — file happy path", () => {
-  test("reads the file, verifies the digest, and returns the parsed JSON value", async () => {
-    const root = join(dir, "artifacts-root");
-    const store = createSessionArtifactStore({ root, config: CONFIG });
-    const payload = jsonSizedPayload(100);
-    const ref = await store.put("session-11", "step-1", payload, 0);
+describe("readArtifact — ref.path shape rejection (pre-flight, before any filesystem access)", () => {
+  test.each<[string, string]>([
+    ["a parent-directory traversal", "../outside-secret.json"],
+    ["an absolute path", "/etc/passwd"],
+    ["a single segment (missing the sessionId/ prefix)", "step-1.json"],
+    ["an extra segment", "a/b/c.json"],
+    ["a final segment not ending in .json", "session-1/step-1.txt"],
+  ])(
+    "rejects %s with ERR_CONSOLE_SESSION_ARTIFACT_CORRUPT and never calls open()",
+    async (_label, path) => {
+      const store = createSessionArtifactStore({ root: ROOT, config: CONFIG });
+      const ref: M3LSessionArtifactRef = {
+        kind: "file",
+        path,
+        sizeBytes: 10,
+        digest: "a".repeat(64),
+      };
+
+      const thrown = await captureFailure(() => store.readArtifact(ref));
+
+      expect(thrown).toBeInstanceOf(M3LConsoleError);
+      expect((thrown as M3LConsoleError).code).toBe(
+        "ERR_CONSOLE_SESSION_ARTIFACT_CORRUPT",
+      );
+      expect(open).not.toHaveBeenCalled();
+    },
+  );
+});
+
+describe("readArtifact — rejects ref.sizeBytes over caps.artifactMaxBytes, before any filesystem access", () => {
+  test("throws ERR_CONSOLE_SESSION_ARTIFACT_TOO_LARGE and never calls open(), even for an otherwise well-formed ref", async () => {
+    const store = createSessionArtifactStore({ root: ROOT, config: CONFIG });
+    const ref: M3LSessionArtifactRef = {
+      kind: "file",
+      path: "session-1/step-1.json",
+      sizeBytes: CONFIG.artifactMaxBytes + 1,
+      digest: "a".repeat(64),
+    };
+
+    const thrown = await captureFailure(() => store.readArtifact(ref));
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).code).toBe(
+      "ERR_CONSOLE_SESSION_ARTIFACT_TOO_LARGE",
+    );
+    expect(open).not.toHaveBeenCalled();
+  });
+});
+
+describe("readArtifact — file happy path (mocked open/stat/readFile/close)", () => {
+  test("opens with O_RDONLY|O_NOFOLLOW|O_NONBLOCK, verifies size via the same descriptor, verifies digest, JSON.parses, and closes", async () => {
+    const value = jsonSizedPayload(100);
+    const json = JSON.stringify(value);
+    const buffer = Buffer.from(json, "utf8");
+    const digest = createHash("sha256").update(buffer).digest("hex");
+    const handle = createFakeHandle();
+    handle.stat.mockResolvedValue({ isFile: () => true, size: buffer.length });
+    handle.readFile.mockResolvedValue(buffer);
+    vi.mocked(open).mockResolvedValue(handle as unknown as FileHandle);
+
+    const store = createSessionArtifactStore({ root: ROOT, config: CONFIG });
+    const ref: M3LSessionArtifactRef = {
+      kind: "file",
+      path: "session-1/step-1.json",
+      sizeBytes: buffer.length,
+      digest,
+    };
 
     const result = await store.readArtifact(ref);
 
-    expect(result).toBe(payload);
+    expect(result).toBe(value);
+    expect(open).toHaveBeenCalledWith(
+      join(ROOT, "session-1", "step-1.json"),
+      EXPECTED_OPEN_FLAGS,
+    );
+    expect(handle.stat).toHaveBeenCalled();
+    expect(handle.close).toHaveBeenCalled();
   });
 });
 
-describe("readArtifact — digest mismatch on a tampered file", () => {
-  test("throws ERR_CONSOLE_SESSION_ARTIFACT_CORRUPT when the on-disk bytes no longer match the recorded digest", async () => {
-    const root = join(dir, "artifacts-root");
-    const store = createSessionArtifactStore({ root, config: CONFIG });
-    const payload = jsonSizedPayload(100);
-    const ref = await store.put("session-12", "step-1", payload, 0);
-    if (ref.kind !== "file") throw new Error("expected a file ref");
+describe("readArtifact — a non-regular-file stat() result is rejected before any content is read", () => {
+  test("throws ERR_CONSOLE_SESSION_ARTIFACT_CORRUPT and never calls readFile() when stats.isFile() is false", async () => {
+    const handle = createFakeHandle();
+    handle.stat.mockResolvedValue({ isFile: () => false, size: 100 });
+    vi.mocked(open).mockResolvedValue(handle as unknown as FileHandle);
 
-    // Mutate the on-disk bytes directly — simulates external tampering or
-    // silent corruption, independent of this module's own write path.
-    const resolvedPath = join(root, "session-12", "step-1.json");
-    await writeFile(
-      resolvedPath,
-      JSON.stringify(jsonSizedPayload(100)).replace("x", "y"),
-    );
-
-    const thrown = await captureFailure(() => store.readArtifact(ref));
-
-    expect(thrown).toBeInstanceOf(M3LConsoleError);
-    expect((thrown as M3LConsoleError).code).toBe(
-      "ERR_CONSOLE_SESSION_ARTIFACT_CORRUPT",
-    );
-  });
-});
-
-describe("readArtifact — size bound (unbounded-read finding)", () => {
-  test("[regression lock] rejects when the on-disk file has been replaced with content far larger than the recorded sizeBytes, using the original ref", async () => {
-    const root = join(dir, "artifacts-root");
-    const store = createSessionArtifactStore({ root, config: CONFIG });
-    const payload = jsonSizedPayload(100);
-    const ref = await store.put("session-18", "step-1", payload, 0);
-    if (ref.kind !== "file") throw new Error("expected a file ref");
-
-    // Externally overwrite the artifact file with content far larger than
-    // the recorded sizeBytes (100) — big enough to prove a bound is real,
-    // small enough to keep the test fast.
-    const resolvedPath = join(root, "session-18", "step-1.json");
-    const oversizedContent = JSON.stringify("x".repeat(2_000_000));
-    await writeFile(resolvedPath, oversizedContent, "utf8");
-
-    const thrown = await captureFailure(() => store.readArtifact(ref));
-
-    expect(thrown).toBeInstanceOf(M3LConsoleError);
-    expect((thrown as M3LConsoleError).code).toBe(
-      "ERR_CONSOLE_SESSION_ARTIFACT_CORRUPT",
-    );
-  });
-
-  test("[KNOWN BUG discriminator] rejects a file whose actual size disagrees with ref.sizeBytes even when its digest matches the actual (oversized) bytes exactly", async () => {
-    // The digest-mismatch check alone cannot catch this: here the crafted
-    // ref's digest is computed from the ACTUAL (oversized) on-disk bytes, so
-    // it matches. Only an explicit size check — actual file size vs.
-    // ref.sizeBytes, verified via stat before/without reading the full
-    // content — can catch a ref whose recorded sizeBytes lies about the
-    // real file size. This isolates the "unbounded read" finding from the
-    // digest check that already exists, proving a dedicated size bound is
-    // required (not just incidentally provided by the digest check).
-    const root = join(dir, "artifacts-root");
-    const store = createSessionArtifactStore({ root, config: CONFIG });
-    const payload = jsonSizedPayload(100);
-    const ref = await store.put("session-19", "step-1", payload, 0);
-    if (ref.kind !== "file") throw new Error("expected a file ref");
-
-    const resolvedPath = join(root, "session-19", "step-1.json");
-    const oversizedContent = JSON.stringify("x".repeat(2_000_000));
-    await writeFile(resolvedPath, oversizedContent, "utf8");
-    const oversizedDigest = createHash("sha256")
-      .update(oversizedContent, "utf8")
-      .digest("hex");
-
-    // sizeBytes intentionally still claims the ORIGINAL (small) recorded
-    // size, while digest correctly matches the actual (oversized) bytes.
-    const craftedRef: M3LSessionArtifactRef = {
+    const store = createSessionArtifactStore({ root: ROOT, config: CONFIG });
+    const ref: M3LSessionArtifactRef = {
       kind: "file",
-      path: ref.path,
-      sizeBytes: ref.sizeBytes,
-      digest: oversizedDigest,
+      path: "session-1/step-1.json",
+      sizeBytes: 100,
+      digest: "a".repeat(64),
     };
 
-    const thrown = await captureFailure(() => store.readArtifact(craftedRef));
+    const thrown = await captureFailure(() => store.readArtifact(ref));
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).code).toBe(
+      "ERR_CONSOLE_SESSION_ARTIFACT_CORRUPT",
+    );
+    expect(handle.readFile).not.toHaveBeenCalled();
+    expect(handle.close).toHaveBeenCalled();
+  });
+});
+
+describe("readArtifact — actual stats.size disagreeing with ref.sizeBytes is rejected before any content is read", () => {
+  test("throws ERR_CONSOLE_SESSION_ARTIFACT_CORRUPT and never calls readFile() on a size mismatch (the unbounded-read defense)", async () => {
+    const handle = createFakeHandle();
+    handle.stat.mockResolvedValue({ isFile: () => true, size: 2_000_000 });
+    vi.mocked(open).mockResolvedValue(handle as unknown as FileHandle);
+
+    const store = createSessionArtifactStore({ root: ROOT, config: CONFIG });
+    const ref: M3LSessionArtifactRef = {
+      kind: "file",
+      path: "session-1/step-1.json",
+      sizeBytes: 100,
+      digest: "a".repeat(64),
+    };
+
+    const thrown = await captureFailure(() => store.readArtifact(ref));
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).code).toBe(
+      "ERR_CONSOLE_SESSION_ARTIFACT_CORRUPT",
+    );
+    expect(handle.readFile).not.toHaveBeenCalled();
+    expect(handle.close).toHaveBeenCalled();
+  });
+});
+
+describe("readArtifact — digest mismatch is rejected before JSON.parse ever runs", () => {
+  test("throws ERR_CONSOLE_SESSION_ARTIFACT_CORRUPT with no cause and no content leak, even for otherwise-valid JSON content", async () => {
+    const buffer = Buffer.from(JSON.stringify("this is not what it claims"));
+    const handle = createFakeHandle();
+    handle.stat.mockResolvedValue({ isFile: () => true, size: buffer.length });
+    handle.readFile.mockResolvedValue(buffer);
+    vi.mocked(open).mockResolvedValue(handle as unknown as FileHandle);
+
+    const store = createSessionArtifactStore({ root: ROOT, config: CONFIG });
+    const ref: M3LSessionArtifactRef = {
+      kind: "file",
+      path: "session-1/step-1.json",
+      sizeBytes: buffer.length,
+      // Deliberately wrong: does not match the buffer's real SHA-256.
+      digest: "0".repeat(64),
+    };
+
+    const thrown = await captureFailure(() => store.readArtifact(ref));
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    const error = thrown as M3LConsoleError;
+    expect(error.code).toBe("ERR_CONSOLE_SESSION_ARTIFACT_CORRUPT");
+    expect(error.cause).toBeUndefined();
+    expect(error.message).not.toContain("this is not what it claims");
+  });
+});
+
+describe("readArtifact — a digest-verified but non-JSON file surfaces as CORRUPT, chaining the SyntaxError", () => {
+  test("only once the digest matches does JSON.parse run; a parse failure at that point is safe to chain as cause", async () => {
+    const buffer = Buffer.from("not json at all", "utf8");
+    const digest = createHash("sha256").update(buffer).digest("hex");
+    const handle = createFakeHandle();
+    handle.stat.mockResolvedValue({ isFile: () => true, size: buffer.length });
+    handle.readFile.mockResolvedValue(buffer);
+    vi.mocked(open).mockResolvedValue(handle as unknown as FileHandle);
+
+    const store = createSessionArtifactStore({ root: ROOT, config: CONFIG });
+    const ref: M3LSessionArtifactRef = {
+      kind: "file",
+      path: "session-1/step-1.json",
+      sizeBytes: buffer.length,
+      digest,
+    };
+
+    const thrown = await captureFailure(() => store.readArtifact(ref));
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    const error = thrown as M3LConsoleError;
+    expect(error.code).toBe("ERR_CONSOLE_SESSION_ARTIFACT_CORRUPT");
+    expect(error.cause).toBeInstanceOf(SyntaxError);
+  });
+});
+
+describe("readArtifact — an open() failure (ELOOP from O_NOFOLLOW, or any other errno) surfaces as CORRUPT, chaining the cause", () => {
+  test("ELOOP (symlink at the final path component) is wrapped, and close() is never called since no handle was ever acquired", async () => {
+    const eloop = Object.assign(new Error("too many symbolic links"), {
+      code: "ELOOP",
+    });
+    vi.mocked(open).mockRejectedValue(eloop);
+
+    const store = createSessionArtifactStore({ root: ROOT, config: CONFIG });
+    const ref: M3LSessionArtifactRef = {
+      kind: "file",
+      path: "session-1/step-1.json",
+      sizeBytes: 100,
+      digest: "a".repeat(64),
+    };
+
+    const thrown = await captureFailure(() => store.readArtifact(ref));
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    const error = thrown as M3LConsoleError;
+    expect(error.code).toBe("ERR_CONSOLE_SESSION_ARTIFACT_CORRUPT");
+    expect(error.cause).toBe(eloop);
+  });
+
+  test("a generic open() failure (e.g. ENOENT) is wrapped the same way", async () => {
+    const enoent = Object.assign(new Error("no such file"), {
+      code: "ENOENT",
+    });
+    vi.mocked(open).mockRejectedValue(enoent);
+
+    const store = createSessionArtifactStore({ root: ROOT, config: CONFIG });
+    const ref: M3LSessionArtifactRef = {
+      kind: "file",
+      path: "session-1/step-1.json",
+      sizeBytes: 100,
+      digest: "a".repeat(64),
+    };
+
+    const thrown = await captureFailure(() => store.readArtifact(ref));
 
     expect(thrown).toBeInstanceOf(M3LConsoleError);
     expect((thrown as M3LConsoleError).code).toBe(
@@ -550,50 +696,100 @@ describe("readArtifact — size bound (unbounded-read finding)", () => {
   });
 });
 
-describe("readArtifact — digest verified before content is trusted/parsed, and never leaked into the thrown message", () => {
-  test("invalid-JSON AND digest-mismatched content: rejects via the digest-mismatch path (no SyntaxError cause), proving digest verification runs before JSON.parse", async () => {
-    const root = join(dir, "artifacts-root");
-    const store = createSessionArtifactStore({ root, config: CONFIG });
-    const payload = jsonSizedPayload(100);
-    const ref = await store.put("session-20", "step-1", payload, 0);
-    if (ref.kind !== "file") throw new Error("expected a file ref");
+describe("readArtifact — a post-acquire failure (stat()/readFile() rejecting after a successful open()) still surfaces as CORRUPT, and close() still runs", () => {
+  test("a stat() rejection after a successful open() is wrapped, and close() is still called in finally", async () => {
+    const statFailure = new Error("stat exploded");
+    const handle = createFakeHandle();
+    handle.stat.mockRejectedValue(statFailure);
+    vi.mocked(open).mockResolvedValue(handle as unknown as FileHandle);
 
-    const resolvedPath = join(root, "session-20", "step-1.json");
-    const replacementContent = "not json at all, and definitely wrong content";
-    await writeFile(resolvedPath, replacementContent, "utf8");
+    const store = createSessionArtifactStore({ root: ROOT, config: CONFIG });
+    const ref: M3LSessionArtifactRef = {
+      kind: "file",
+      path: "session-1/step-1.json",
+      sizeBytes: 100,
+      digest: "a".repeat(64),
+    };
 
     const thrown = await captureFailure(() => store.readArtifact(ref));
 
     expect(thrown).toBeInstanceOf(M3LConsoleError);
     const error = thrown as M3LConsoleError;
     expect(error.code).toBe("ERR_CONSOLE_SESSION_ARTIFACT_CORRUPT");
-    // Digest-first ordering: the failure must be a digest mismatch, not a
-    // wrapped JSON.parse SyntaxError — the digest-mismatch path never
-    // attaches a `cause`, whereas a parse-failure path always would.
-    expect(error.cause).toBeUndefined();
-    // No file-content leak into the thrown error's own message.
-    expect(error.message).not.toContain(replacementContent);
+    expect(error.cause).toBe(statFailure);
+    expect(handle.close).toHaveBeenCalled();
   });
 
-  test("valid-JSON but digest-mismatched content: still rejects on the digest, not merely because parsing happened to fail", async () => {
-    const root = join(dir, "artifacts-root");
-    const store = createSessionArtifactStore({ root, config: CONFIG });
-    const payload = jsonSizedPayload(100);
-    const ref = await store.put("session-21", "step-1", payload, 0);
-    if (ref.kind !== "file") throw new Error("expected a file ref");
+  test("a readFile() rejection after a successful open()+stat() is wrapped, and close() is still called in finally", async () => {
+    const readFailure = new Error("readFile exploded");
+    const handle = createFakeHandle();
+    handle.stat.mockResolvedValue({ isFile: () => true, size: 100 });
+    handle.readFile.mockRejectedValue(readFailure);
+    vi.mocked(open).mockResolvedValue(handle as unknown as FileHandle);
 
-    const resolvedPath = join(root, "session-21", "step-1.json");
-    const replacementValue = "not json at all, and definitely wrong content";
-    const replacementContent = JSON.stringify(replacementValue);
-    await writeFile(resolvedPath, replacementContent, "utf8");
+    const store = createSessionArtifactStore({ root: ROOT, config: CONFIG });
+    const ref: M3LSessionArtifactRef = {
+      kind: "file",
+      path: "session-1/step-1.json",
+      sizeBytes: 100,
+      digest: "a".repeat(64),
+    };
 
     const thrown = await captureFailure(() => store.readArtifact(ref));
 
     expect(thrown).toBeInstanceOf(M3LConsoleError);
     const error = thrown as M3LConsoleError;
     expect(error.code).toBe("ERR_CONSOLE_SESSION_ARTIFACT_CORRUPT");
-    expect(error.cause).toBeUndefined();
-    expect(error.message).not.toContain(replacementValue);
+    expect(error.cause).toBe(readFailure);
+    expect(handle.close).toHaveBeenCalled();
+  });
+});
+
+describe("readArtifact — a failing close() never shadows the primary outcome (best-effort, ignored)", () => {
+  test("a close() rejection does not mask a successful read", async () => {
+    const value = jsonSizedPayload(30);
+    const json = JSON.stringify(value);
+    const buffer = Buffer.from(json, "utf8");
+    const digest = createHash("sha256").update(buffer).digest("hex");
+    const handle = createFakeHandle();
+    handle.stat.mockResolvedValue({ isFile: () => true, size: buffer.length });
+    handle.readFile.mockResolvedValue(buffer);
+    handle.close.mockRejectedValue(new Error("close exploded"));
+    vi.mocked(open).mockResolvedValue(handle as unknown as FileHandle);
+
+    const store = createSessionArtifactStore({ root: ROOT, config: CONFIG });
+    const ref: M3LSessionArtifactRef = {
+      kind: "file",
+      path: "session-1/step-1.json",
+      sizeBytes: buffer.length,
+      digest,
+    };
+
+    const result = await store.readArtifact(ref);
+
+    expect(result).toBe(value);
+  });
+
+  test("a close() rejection does not mask an earlier typed error (stat/size/digest failure)", async () => {
+    const handle = createFakeHandle();
+    handle.stat.mockResolvedValue({ isFile: () => false, size: 100 });
+    handle.close.mockRejectedValue(new Error("close exploded"));
+    vi.mocked(open).mockResolvedValue(handle as unknown as FileHandle);
+
+    const store = createSessionArtifactStore({ root: ROOT, config: CONFIG });
+    const ref: M3LSessionArtifactRef = {
+      kind: "file",
+      path: "session-1/step-1.json",
+      sizeBytes: 100,
+      digest: "a".repeat(64),
+    };
+
+    const thrown = await captureFailure(() => store.readArtifact(ref));
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).code).toBe(
+      "ERR_CONSOLE_SESSION_ARTIFACT_CORRUPT",
+    );
   });
 });
 
@@ -705,6 +901,50 @@ describe("decodeArtifactRef — sizeBytes and digest validation", () => {
   );
 });
 
+describe("decodeArtifactRef — the parsed JSON value itself must be an object", () => {
+  test.each<[string, string]>([
+    ["a JSON array", JSON.stringify([1, 2, 3])],
+    ["a JSON string primitive", JSON.stringify("just a string")],
+    ["a JSON number primitive", JSON.stringify(42)],
+    ["a JSON null", JSON.stringify(null)],
+  ])("rejects %s with ERR_CONSOLE_SESSION_ARTIFACT_CORRUPT", (_label, text) => {
+    let thrown: unknown;
+    try {
+      decodeArtifactRef(text);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).code).toBe(
+      "ERR_CONSOLE_SESSION_ARTIFACT_CORRUPT",
+    );
+  });
+});
+
+describe('decodeArtifactRef — a "file"-kind envelope whose path field is not a string', () => {
+  test("rejects with ERR_CONSOLE_SESSION_ARTIFACT_CORRUPT before ever reaching assertSafeArtifactFilePath's shape check", () => {
+    const text = JSON.stringify({
+      kind: "file",
+      path: 12345,
+      sizeBytes: 123,
+      digest: "a".repeat(64),
+    });
+
+    let thrown: unknown;
+    try {
+      decodeArtifactRef(text);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).code).toBe(
+      "ERR_CONSOLE_SESSION_ARTIFACT_CORRUPT",
+    );
+  });
+});
+
 describe("decodeArtifactRef — malformed input", () => {
   test("throws ERR_CONSOLE_SESSION_ARTIFACT_CORRUPT on unparseable JSON text", () => {
     let thrown: unknown;
@@ -735,261 +975,6 @@ describe("decodeArtifactRef — malformed input", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// X6 slice 3 — live re-verification pass (2026-08-29). Two prior
-// exploit-demonstrated defects were fixed already; a second pass found the
-// fix incomplete. The five describe blocks below each correspond to one
-// re-verification finding.
-// ---------------------------------------------------------------------------
-
-describe("readArtifact — validates ref.path itself, independent of decodeArtifactRef", () => {
-  test("throws ERR_CONSOLE_SESSION_ARTIFACT_CORRUPT for a hand-constructed ref whose path traverses outside the store root, even though it was never passed through decodeArtifactRef", async () => {
-    const root = join(dir, "artifacts-root");
-    const store = createSessionArtifactStore({ root, config: CONFIG });
-
-    // A real file outside the configured root, at the location the
-    // traversal-reachable path resolves to (root/../outside-secret.json ==
-    // dir/outside-secret.json).
-    const sentinelPath = join(dir, "outside-secret.json");
-    const sentinelContent = JSON.stringify("outside-secret-sentinel-value");
-    await writeFile(sentinelPath, sentinelContent, "utf8");
-    const sentinelDigest = createHash("sha256")
-      .update(sentinelContent, "utf8")
-      .digest("hex");
-
-    // M3LSessionArtifactRef and readArtifact are both exported — a caller
-    // constructing this object literal directly, skipping decodeArtifactRef
-    // entirely, is a legitimate call shape, not a hypothetical.
-    const handCraftedRef: M3LSessionArtifactRef = {
-      kind: "file",
-      path: "../outside-secret.json",
-      sizeBytes: Buffer.byteLength(sentinelContent, "utf8"),
-      digest: sentinelDigest,
-    };
-
-    const thrown = await captureFailure(() =>
-      store.readArtifact(handCraftedRef),
-    );
-
-    expect(thrown).toBeInstanceOf(M3LConsoleError);
-    expect((thrown as M3LConsoleError).code).toBe(
-      "ERR_CONSOLE_SESSION_ARTIFACT_CORRUPT",
-    );
-  });
-});
-
-describe("readArtifact — rejects a non-regular file at the artifact's resolved location", () => {
-  test.skipIf(process.platform === "win32")(
-    "throws ERR_CONSOLE_SESSION_ARTIFACT_CORRUPT for a real named pipe (FIFO) at the artifact's path, never trusting its streamed content as if it were a normal artifact file (closes the /dev/zero-style and same-machine-FIFO unbounded-read gap)",
-    async () => {
-      const root = join(dir, "artifacts-root");
-      const store = createSessionArtifactStore({ root, config: CONFIG });
-      const sessionDir = join(root, "session-fifo");
-      await mkdir(sessionDir, { recursive: true });
-      const fifoPath = join(sessionDir, "step-1.json");
-
-      // Node has no built-in mkfifo; `mkfifo` is a standard coreutils binary
-      // present on this repo's Linux dev/CI target.
-      execFileSync("mkfifo", [fifoPath]);
-
-      // The FIFO's reported stat().size (0 on Linux, independent of
-      // whatever byte stream a writer later sends through it) is used
-      // verbatim as ref.sizeBytes, so the EXISTING size check (actual size
-      // vs. ref.sizeBytes) is made to pass by construction — isolating the
-      // missing regular-file check from the already-fixed size check.
-      const fifoStats = await stat(fifoPath);
-      const pipeContent = JSON.stringify("fifo-leaked-content");
-      const pipeDigest = createHash("sha256")
-        .update(pipeContent, "utf8")
-        .digest("hex");
-      const ref: M3LSessionArtifactRef = {
-        kind: "file",
-        path: "session-fifo/step-1.json",
-        sizeBytes: fifoStats.size,
-        digest: pipeDigest,
-      };
-
-      // A writer connects out-of-process: opening a FIFO for read blocks
-      // (no O_NONBLOCK) until a writer connects. Rather than opening the
-      // writer end from THIS process (which would itself block on Node's
-      // thread pool forever if the fix rejects the FIFO before ever
-      // opening it — hanging the suite), a detached, unref'd shell child
-      // does the blocking `> fifo` open on its own thread/process. If the
-      // fixed implementation never opens the FIFO, this child simply
-      // lingers blocked in the background — harmless, and it never keeps
-      // the Node process or this test's promise alive.
-      const writer = spawn("sh", ["-c", `cat > ${fifoPath}`], {
-        detached: true,
-        stdio: ["pipe", "ignore", "ignore"],
-      });
-      writer.unref();
-      writer.stdin?.write(pipeContent);
-      writer.stdin?.end();
-
-      const thrown = await captureFailure(() => store.readArtifact(ref));
-
-      expect(thrown).toBeInstanceOf(M3LConsoleError);
-      expect((thrown as M3LConsoleError).code).toBe(
-        "ERR_CONSOLE_SESSION_ARTIFACT_CORRUPT",
-      );
-    },
-    10000,
-  );
-});
-
-describe("readArtifact — a FIFO with no writer must not block the fs thread pool forever (missing O_NONBLOCK denial-of-service)", () => {
-  test.skipIf(process.platform === "win32")(
-    "rejects promptly with ERR_CONSOLE_SESSION_ARTIFACT_CORRUPT for a FIFO at the artifact's path with no writer ever connected, instead of blocking open() forever and starving every other fs operation in the process",
-    async () => {
-      const root = join(dir, "artifacts-root");
-      const store = createSessionArtifactStore({ root, config: CONFIG });
-      const sessionDir = join(root, "session-fifo-no-writer");
-      await mkdir(sessionDir, { recursive: true });
-      const fifoPath = join(sessionDir, "step-1.json");
-
-      // Same mkfifo idiom as the "writer connects" FIFO test above — but
-      // here, deliberately, no writer is ever spawned or connected. A
-      // blocking O_RDONLY open() (no O_NONBLOCK) on a FIFO with zero
-      // writers blocks INSIDE the kernel until a writer shows up, which
-      // never happens here. That blocking call runs on one of Node's
-      // libuv fs threadpool threads (4 by default) — a handful of such
-      // refs starves every other filesystem operation in the process, a
-      // real denial-of-service. The sizeBytes/digest values below never
-      // matter: the fix must reject before ever reaching either
-      // comparison.
-      execFileSync("mkfifo", [fifoPath]);
-      const fifoStats = await stat(fifoPath);
-      const ref: M3LSessionArtifactRef = {
-        kind: "file",
-        path: "session-fifo-no-writer/step-1.json",
-        sizeBytes: fifoStats.size,
-        digest: "0".repeat(64),
-      };
-
-      // Bounded race, not an unbounded await: if the fix (O_NONBLOCK) is
-      // present, readArtifact settles well within the deadline below. If
-      // the underlying bug (a blocking open()) is still present, the
-      // deadline branch wins the race instead — the test then FAILS FAST
-      // on a clean assertion mismatch (the sentinel is not an
-      // M3LConsoleError) rather than hanging past a vitest-level test
-      // timeout, or hanging the whole suite.
-      const DEADLINE_MS = 2000;
-      const timeoutSentinel = Symbol("readArtifact-fifo-no-writer-timeout");
-      const deadline = new Promise<typeof timeoutSentinel>((resolve) => {
-        setTimeout(() => {
-          resolve(timeoutSentinel);
-        }, DEADLINE_MS);
-      });
-
-      const outcome = await Promise.race([
-        captureFailure(() => store.readArtifact(ref)),
-        deadline,
-      ]);
-
-      expect(outcome).not.toBe(timeoutSentinel);
-      expect(outcome).toBeInstanceOf(M3LConsoleError);
-      expect((outcome as M3LConsoleError).code).toBe(
-        "ERR_CONSOLE_SESSION_ARTIFACT_CORRUPT",
-      );
-    },
-    5000,
-  );
-});
-
-describe("readArtifact — the size check and the content read happen against the SAME resolved location, not two independently re-resolved path lookups (deterministic TOCTOU regression lock)", () => {
-  test.skipIf(process.platform === "win32")(
-    "throws rather than following a symlink planted at the artifact's expected file path, even when the symlink target's real size/digest match the ref exactly",
-    async () => {
-      const root = join(dir, "artifacts-root");
-      const store = createSessionArtifactStore({ root, config: CONFIG });
-      const sessionDir = join(root, "session-toctou");
-      await mkdir(sessionDir, { recursive: true });
-      const resolvedPath = join(sessionDir, "step-1.json");
-
-      // Deterministic version of the TOCTOU finding: rather than racing a
-      // live symlink swap between the stat() and readFile() calls (the
-      // original exploit succeeded on the FIRST attempt, but a
-      // race-dependent regression test would be flaky), this test plants
-      // the symlink AT REST before readArtifact ever runs — a weaker
-      // precondition than a live race (an attacker who can place a symlink
-      // at the expected artifact path), but one the real fix must also
-      // close. The real fix — opening the file once via a descriptor that
-      // refuses to follow a symlink at the final path component, then
-      // stat-ing and reading that SAME descriptor — closes both this
-      // at-rest case and the live-race case the security review
-      // demonstrated.
-      const sentinelPath = join(dir, "toctou-out-of-root-sentinel.json");
-      const sentinelContent = JSON.stringify("toctou-sentinel-value");
-      await writeFile(sentinelPath, sentinelContent, "utf8");
-      await symlink(sentinelPath, resolvedPath);
-
-      const ref: M3LSessionArtifactRef = {
-        kind: "file",
-        path: "session-toctou/step-1.json",
-        sizeBytes: Buffer.byteLength(sentinelContent, "utf8"),
-        digest: createHash("sha256")
-          .update(sentinelContent, "utf8")
-          .digest("hex"),
-      };
-
-      const thrown = await captureFailure(() => store.readArtifact(ref));
-
-      expect(thrown).toBeInstanceOf(M3LConsoleError);
-      expect((thrown as M3LConsoleError).code).toBe(
-        "ERR_CONSOLE_SESSION_ARTIFACT_CORRUPT",
-      );
-    },
-  );
-});
-
-describe("readArtifact — rejects a ref whose sizeBytes exceeds the store's configured artifactMaxBytes cap, before touching the filesystem", () => {
-  test("throws ERR_CONSOLE_SESSION_ARTIFACT_TOO_LARGE for an oversized-but-internally-consistent ref (claimed size matches the real on-disk size and digest), distinct from the already-enforced actual-size-mismatch check", async () => {
-    const smallCapConfig: M3LConsoleSessionsConfig = {
-      ...CONFIG,
-      artifactMaxBytes: 150,
-    };
-    const root = join(dir, "artifacts-root");
-    const store = createSessionArtifactStore({ root, config: smallCapConfig });
-    const sessionDir = join(root, "session-cap");
-    await mkdir(sessionDir, { recursive: true });
-    const resolvedPath = join(sessionDir, "step-1.json");
-
-    // Hand-write the file directly (bypassing store.put, which already
-    // enforces this cap at write time) — simulating a ref that was
-    // persisted under a formerly-larger cap, or any other route by which
-    // an internally consistent but over-cap ref reaches readArtifact. Kept
-    // small in absolute bytes (well under 1KB) so this test isolates the
-    // missing cap check itself, not memory pressure.
-    const payloadValue = jsonSizedPayload(
-      smallCapConfig.artifactMaxBytes + 100,
-    );
-    const json = JSON.stringify(payloadValue);
-    await writeFile(resolvedPath, json, "utf8");
-    const digest = createHash("sha256").update(json, "utf8").digest("hex");
-    const sizeBytes = Buffer.byteLength(json, "utf8");
-
-    const ref: M3LSessionArtifactRef = {
-      kind: "file",
-      path: "session-cap/step-1.json",
-      sizeBytes,
-      digest,
-    };
-    // Sanity: the ref IS internally consistent with the real file — this
-    // isolates the missing cap check from the already-fixed actual-size-
-    // mismatch check above.
-    expect(sizeBytes).toBeGreaterThan(smallCapConfig.artifactMaxBytes);
-    const actualFileStats = await stat(resolvedPath);
-    expect(actualFileStats.size).toBe(sizeBytes);
-
-    const thrown = await captureFailure(() => store.readArtifact(ref));
-
-    expect(thrown).toBeInstanceOf(M3LConsoleError);
-    expect((thrown as M3LConsoleError).code).toBe(
-      "ERR_CONSOLE_SESSION_ARTIFACT_TOO_LARGE",
-    );
-  });
-});
-
 describe("decodeArtifactRef — never lets a raw (non-M3LConsoleError) exception escape on a wrong-runtime-type kind field", () => {
   // NOTE ON THIS TEST'S CURRENT STATUS: verified directly against the source
   // (parseArtifactRefShape's final branch does `String(parsed["kind"])`,
@@ -998,9 +983,7 @@ describe("decodeArtifactRef — never lets a raw (non-M3LConsoleError) exception
   // throw) — the two fixtures below already pass against the CURRENT
   // implementation via that existing "unrecognized kind" fallback. Kept as a
   // regression lock for the documented guarantee (never a raw TypeError) even
-  // though it does not currently discriminate a bug; see this suite's
-  // handback report for the flagged discrepancy against the finding that
-  // motivated it.
+  // though it does not currently discriminate a bug.
   test.each<[string, string]>([
     [
       "kind as a nested object",
