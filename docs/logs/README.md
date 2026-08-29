@@ -76,6 +76,13 @@ deliberately do not.
 > X1 (governance docs) and X2 (`m3l-console-server` skeleton) shipped without
 > logs; X3 is the first entry in this wave.
 
+## Agent operator wave (V-series)
+
+| Date       | Change                                                      | Log                                                                            |
+| ---------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| 2026-08-29 | V6 slice 1 — `core/agent` policy layer, verdicts (ADR-0060) | [v6-agent-policy-layer](./2026-08-29-v6-agent-policy-layer.md)                 |
+| 2026-08-29 | V6 slice 2 — budgets, dry-run-first, `kind` cross-check     | [v6-agent-policy-layer-slice-2](./2026-08-29-v6-agent-policy-layer-slice-2.md) |
+
 ## Workflow / infra
 
 | Date       | Change                                               | Log                                                                                |

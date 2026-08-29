@@ -44,12 +44,12 @@ output. See [The trust boundary](#the-trust-boundary).
 
 ADR-0072 slice record.
 
-| Slice                          | Scope                                                                                                                            | Status  |
-| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| V6 slice 1 — verdicts          | The action/policy/verdict vocabulary, the declaration validator, and the evaluator's allowlist + autonomy-tier arms. 20 exports. | Landed  |
-| V6 slice 2 — budgets + dry-run | Per-run/per-day budgets and ceilings, the run ledger, named exhaustion outcomes, and the dry-run-first discipline.               | Pending |
+| Slice                          | Scope                                                                                                                            | Status |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| V6 slice 1 — verdicts          | The action/policy/verdict vocabulary, the declaration validator, and the evaluator's allowlist + autonomy-tier arms. 20 exports. | Landed |
+| V6 slice 2 — budgets + dry-run | Per-run/per-day budgets and ceilings, the run ledger, named exhaustion outcomes, and the dry-run-first discipline. 4 exports.    | Landed |
 
-Deliberately **not** in this slice, and why:
+Deliberately **not** in either slice, and why:
 
 - **The agent decision log.** [ADR-0061](../../adr/0061-agent-decision-log.md)
   is V7 and co-lands in this same submodule later. Slice 1 makes the log
@@ -65,7 +65,9 @@ Deliberately **not** in this slice, and why:
   [Why an ungraded target is sensitive](#why-an-ungraded-target-is-sensitive).
   Nothing here waits on it.
 
-This slice takes Core from 24 to 25 submodules (fleet total 44 → 45).
+Slice 1 took Core from 24 to 25 submodules (fleet total 44 → 45). Slice 2 adds
+no submodule: four exports join the same barrel, taking the module from twenty
+to twenty-four, and one field joins `M3LAgentActionRecord`.
 
 ## Public API
 
@@ -74,7 +76,7 @@ import { Core } from "@m3l-automation/m3l-common";
 // or: import { ... } from "@m3l-automation/m3l-common/core";
 ```
 
-Exported symbols — twenty in slice 1.
+Exported symbols — twenty from slice 1, four more from slice 2.
 
 **The action under judgement** — what a caller describes:
 
@@ -84,11 +86,14 @@ Exported symbols — twenty in slice 1.
   carried on every verdict.
 - `M3L_AGENT_MAX_PARAMETER_NAMES` — `256`, the ceiling on
   `M3LAgentAction.parameterNames`.
+- `agentActionShapeKey` — the dry-run shape key for an action, so a caller can
+  seed a ledger without first producing a decision.
 
 **The declared authority** — what a deployment writes down:
 
 - `M3LAgentScriptGrant` — one script's grant.
 - `M3LAgentPolicyDeclaration` — the plain-JSON, preset-storable declaration.
+- `M3LAgentBudgets` — the declared per-run and per-day ceilings.
 - `M3LAgentPolicy` — a validated, deep-frozen, **branded** policy. Only
   `validateAgentPolicy` can produce one.
 - `validateAgentPolicy` — the boundary parser/validator.
@@ -97,6 +102,14 @@ Exported symbols — twenty in slice 1.
   `M3L_AGENT_MAX_SENSITIVE_TARGET_ENTRIES` (`256`) — the declared structural
   ceilings. Every one is a **reject-above** bound: `length > MAX` throws,
   `length === MAX` is accepted.
+
+**The run ledger** — what a caller observes and hands back:
+
+- `M3LAgentRunLedger` — the observed state of the current run: counts, spend,
+  loop depth, the completed dry-run shapes, and the one sampled timestamp.
+- `M3L_AGENT_MAX_DRY_RUN_SHAPES` — `256`, the ceiling on
+  `M3LAgentRunLedger.dryRunCompletedShapes`. Reject-above, like every other
+  structural ceiling.
 
 **The verdict** — what the evaluator returns:
 
@@ -188,6 +201,7 @@ interface M3LAgentActionRecord {
   readonly target: M3LAgentActionRecordTarget | undefined;
   readonly parameterNames: readonly string[];
   readonly dryRun: boolean;
+  readonly shapeKey: string;
 }
 ```
 
@@ -199,9 +213,9 @@ compiler believed: `if ("region" in target)` narrowed `target.region` to
 `string`, compiled, and read `undefined` at runtime. The type moved to match
 the runtime, not the other way round — see
 [Why absent keys are materialised](#why-absent-keys-are-materialised).
-`M3LAgentActionRecordTarget` is not surfaced through the barrel (slice 1's
-public surface is fixed at twenty exports); name it as
-`NonNullable<M3LAgentActionRecord["target"]>`.
+`M3LAgentActionRecordTarget` is not surfaced through the barrel — it is the
+type of one field on a record the library builds, not a symbol a caller names;
+write `NonNullable<M3LAgentActionRecord["target"]>` instead.
 
 The two `sensitivity` predicates — the declared spec's and the caller's
 `additionalSensitiveTargets` — still receive a genuine `M3LDestructiveTarget`,
@@ -210,11 +224,29 @@ is what ADR-0048's predicate contract promises, and a grading list is always a
 non-empty list of non-blank strings, so an omitted scalar and an `undefined`
 one grade identically.
 
+`shapeKey` is slice 2's addition and is the only field the record gained after
+slice 1 shipped. It is the dry-run shape key described under
+[Dry-run-first](#dry-run-first), computed during the same step-0 traversal that
+builds the rest of the record — so the key a decision carries is provably the
+key the evaluator judged, not a recomputation that could drift. It is on the
+**record** rather than the decision because ADR-0061's log entry is written
+from the record.
+
 The required-holding-`undefined` form is deliberate and follows the reasoning
 already written for `M3LCommandContext.signal` in `core/cli-contract`: this is
 a **library-built** record handed to callee code — the ADR-0061 writer — so the
-stricter form applies. `dryRun` is required here now, so slice 2 adds no
-required field to a type test fakes construct.
+stricter form applies.
+
+An earlier draft of this section claimed slice 2 would add no required field to
+this type. That was wrong — `shapeKey` is one — and it is recorded here rather
+than quietly deleted, because the claim is what made the field look free. Two
+shipped tests construct an `M3LAgentActionRecord` literal or assert on the
+whole record with `toEqual`, and both had to be updated in the slice-2 commit.
+For a consumer the same migration applies: a hand-built record needs the field,
+and a whole-record `toEqual` needs to expect it. The field is required anyway,
+because an optional `shapeKey` would defeat the guarantee in the paragraph
+above — a decision could then carry no key at all, and the caller would be back
+to recomputing one.
 
 The record exists to satisfy a rule this module cannot afford to break:
 validate once, then never let anything re-read the caller's object.
@@ -234,7 +266,16 @@ guarantee the previous paragraph makes.
 
 ### Validating the action
 
-Step 0 validates the evaluator's whole options bag before any rule runs. Every
+Step 0 validates the evaluator's whole options bag before any rule runs — the
+twelve rules slice 1 shipped, plus slice 2's three for the run ledger.
+
+Ahead of all fifteen, and not numbered among them, the bag itself must be an
+object: otherwise the walk throws with `field: "options"` and violation
+`not-an-object`. That check is deliberately weaker than ACT-1's
+`isPlainObject` — an array or a class instance passes it and is caught by the
+key sweep instead — because the bag is a call-site literal rather than parsed
+JSON, so the prototype-shadowing hazard ACT-1 exists to stop does not apply to
+it. Every
 violation throws `M3LAgentActionValidationError` (`ERR_AGENT_INVALID_ACTION`),
 whose `context` names the offending field and the violation kind and — exactly
 as for the declaration error — **never a value**. Each check is an allowlist:
@@ -268,8 +309,8 @@ prove the shape valid, never try to recognise it as invalid.
     function. A non-function must surface as this module's typed error, not as
     a bare `TypeError` from the call site.
 11. **ACT-11** **Any unknown own key on the options bag itself** throws — the
-    bag is allowlisted to `action`, `policy`, and
-    `additionalSensitiveTargets`, exactly as `action` is allowlisted by ACT-8.
+    bag is allowlisted to `action`, `policy`, `additionalSensitiveTargets`,
+    and — since slice 2 — `run`, exactly as `action` is allowlisted by ACT-8.
     Two reasons. A typo'd `additionalSensitiveTarget` — one `s` short — is
     caught by TypeScript only for a fresh call-site object literal, never for
     a bag built as a variable, and silently evaluates with **no** extra
@@ -279,9 +320,57 @@ prove the shape valid, never try to recognise it as invalid.
 12. **ACT-12** `options.policy` is a policy `validateAgentPolicy` itself
     produced — see [The trust boundary](#the-trust-boundary). Absent, `undefined`,
     and forged all reject identically.
+13. **ACT-13** `options.run`, when present, is a plain object, and **any**
+    unknown own key on it throws. The ledger is the one input whose fields are
+    all individually optional, which makes a typo'd `invocationsThisRun`
+    indistinguishable from an honest omission on a plain read — and an
+    omission is what turns a declared budget into an escalation. Rejecting the
+    unknown key is what keeps that distinction observable.
+14. **ACT-14** every present numeric ledger field is a **finite** number and
+    is not negative. `invocationsThisRun`, `invocationsToday`,
+    `loopIterations`, `tokensThisRun`, `todayCountedAt`, and `now` must be
+    safe **integers**; `costThisRun` may be fractional. `NaN`, `Infinity`,
+    `-1`, and a numeric string all throw. `NaN` matters most: every
+    exhaustion comparison below is a `>=`, and `NaN >= ceiling` is `false`, so
+    a `NaN` that validated would silently disable the budget it was measuring.
+15. **ACT-15** `dryRunCompletedShapes`, when present, is an array of non-blank
+    strings no longer than `M3L_AGENT_MAX_DRY_RUN_SHAPES`, with no duplicates.
+    It is never truncated, for the reason ACT-6 gives. Its length is read
+    **once into a local**, and both the bound check and the walk are driven
+    from that one value, by index rather than through the array's own
+    iterator. Both halves are load-bearing and an earlier draft of this page
+    claimed only the second: the indexed walk alone stops a hostile
+    `Symbol.iterator`, but `Array.isArray` is `true` for a `Proxy` wrapping an
+    array, so a `length` trap answering `1` and then the real length walked
+    5,000 entries past a 256 bound while the check itself passed. Reading
+    `length` twice is the bug; reading it once is the fix. Note the
+    deliberate asymmetry with ACT-6: `parameterNames` **preserves** duplicates
+    and `dryRunCompletedShapes` **rejects** them. Both run through the same
+    list helper with different rules, so the difference looks like an oversight
+    and is not. A repeated parameter name is data — it changes the shape being
+    hashed. A repeated shape key is a set membership written twice, which in a
+    hand-advanced ledger is a bug worth surfacing. Do not harmonise them.
 
 Field presence is read with `Object.hasOwn`, never `field !== undefined`, so a
-non-own `"__proto__"` resolves as absent.
+non-own `"__proto__"` resolves as absent. One consequence is worth stating
+because it is easy to under- or over-constrain in a test: an own key holding an
+explicit `undefined` is **present**, so `{ action, policy, run: undefined }`
+throws rather than reading as "no ledger". That matches how
+`additionalSensitiveTargets` already behaves. At the _declaration_ boundary the
+answer differs and legitimately so — an explicit `undefined` cannot survive
+`JSON.parse`, so it can only come from a hand-built object.
+
+The ACT rules are numbered for reading, not for evaluation. Their **evaluation
+order** is fixed separately and is observable whenever two are violated at once:
+the options bag's own key sweep first, then `policy`, then `action`, then
+`additionalSensitiveTargets`, then `run`. So `{ policy: forged, run: { typo: 1 } }`
+reports the forged policy, every time.
+
+The ledger is validated **unconditionally**, not only when the policy consults
+it. A malformed `run` throws even against a slice-1 declaration that declares no
+`budgets` and no `dryRunFirst` — step 0 runs before any policy field is read.
+That is the one new way slice 2 can throw where slice 1 did not, and it is
+reachable only by a caller that opts into the new field.
 
 A throwing accessor or a `Proxy` trap can make even an allowlist walk fail:
 `{ get script() { throw } }` and a `Proxy` whose `ownKeys` throws both raise a
@@ -366,8 +455,10 @@ rule, and no amount of validation here can notice. The guarantee this module
 offers is precisely: _given a truthful `kind`, these are the bounds._ Callers
 must derive `kind` from the script's own contract — its `M3LCommandModule`
 descriptor or its ADR-0055 operation declaration — and never from model output.
-Slice 2 adds an optional declared cross-check (`readOnlyOperations` on a grant)
-for deployments that want the policy to hold the second opinion.
+Slice 2 delivers the declared cross-check this paragraph promised —
+`readOnlyOperations` on a grant — for deployments that want the policy to hold
+the second opinion. See
+[The declared cross-check on `kind`](#the-declared-cross-check-on-kind).
 
 ## The policy declaration
 
@@ -376,12 +467,23 @@ interface M3LAgentScriptGrant {
   readonly script: string;
   readonly operations?: readonly string[];
   readonly allOperations?: boolean;
+  readonly readOnlyOperations?: readonly string[];
 }
 
 interface M3LAgentPolicyDeclaration {
   readonly version: 1;
   readonly scripts: readonly M3LAgentScriptGrant[];
   readonly sensitiveTargets?: M3LSensitiveTargetSpec;
+  readonly budgets?: M3LAgentBudgets;
+  readonly dryRunFirst?: boolean;
+}
+
+interface M3LAgentBudgets {
+  readonly invocationsPerRun?: number;
+  readonly invocationsPerDay?: number;
+  readonly tokensPerRun?: number;
+  readonly costPerRun?: number;
+  readonly loopIterations?: number;
 }
 ```
 
@@ -397,6 +499,37 @@ typo'd key can never silently widen authority.
 **presence** is the grading opt-in. A deployment therefore writes one
 sensitivity policy and both the destructive gate and this authorization layer
 read it.
+
+`budgets` and `dryRunFirst` are slice 2's two additions, and both are
+**opt-ins**: a declaration written against slice 1 carries neither, so steps 3
+and 6 are skipped and its `verdict`, `rule`, and `reason` are exactly what slice
+1 produced. The **decision object** is not byte-identical — `decision.action`
+gained `shapeKey`, so `JSON.stringify(decision)` changed for every caller. The
+verdict is what a policy layer promises; the serialisation is not.
+
+That second break is the quieter one and deserves naming separately. The typed
+break — a hand-built `M3LAgentActionRecord` missing the field — is a compile
+error that names the missing property, which is the best kind. But a consumer
+holding a **snapshot or golden-file assertion** over a serialised decision, or
+over an ADR-0061 log line, breaks at _test_ time instead, with a diff rather
+than a message. Given this module's sibling ADR writes a decision log, that is
+the more likely encounter, and it belongs in a release note rather than only
+here.
+That is the whole reason dry-run-first is a declared key rather than an
+unconditional rule — an unconditional step 6 would have turned every existing
+caller's `graded-mutation-auto-approved` into an escalation inside a minor.
+
+`dryRunFirst` takes the **strict-`true`** polarity `allOperations` takes, and
+for the mirror-image reason. `allOperations` is strict because a truthy
+non-`true` must never _widen_ authority; `dryRunFirst` is strict because a
+deployment that writes down a discipline should get it or get an error, never a
+silent downgrade to no discipline at all. `false` is accepted and means the
+same as absent — a deployment is allowed to write the default down.
+
+The Bedrock cost ceiling in `costPerRun` is a plain number of the deployment's
+own unit. No type from `aws/*` crosses into this module: an ADR-0009 zone
+forbids it, and the policy layer has no business knowing how a token was
+priced.
 
 ### `validateAgentPolicy`
 
@@ -460,14 +593,37 @@ index or key and the violation kind, **never a value**. The rejected cases:
     authorization declaration a repeat is a mistake worth surfacing, and OR
     semantics make it inert rather than harmful, which is exactly why it would
     otherwise never be noticed;
-11. **any unknown key**, at the top level, on a grant, **or on the
-    `sensitiveTargets` object**. An unrecognised key in an authorization
+11. **any unknown key**, at the top level, on a grant, on the
+    `sensitiveTargets` object, **or on `budgets`**. An unrecognised key in an authorization
     declaration is overwhelmingly a typo'd `operations` or `sensitiveTargets` —
     an accidental widening. Reject, never ignore. The grading spec is included
     deliberately: `{ profiles: ["prod"], regionz: ["eu-west-1"] }` satisfies
     rules 9 and 10 and silently drops every region grading, which is rule 9's
     own fail-open one level down;
-12. any key rejected by `isDangerousKey` (defence in depth beyond 11).
+12. any key rejected by `isDangerousKey` (defence in depth beyond 11);
+13. `budgets` present but not a plain object, or present with **all five**
+    ceilings omitted. This is rule 9's shape one module over: an empty
+    `budgets` object reads as "this deployment governs spend" in a diff while
+    enforcing nothing at all, so it is rejected rather than treated as absent.
+    An unknown key on it is rejected by rule 11;
+14. a budget ceiling that is present and is not a **positive finite** number —
+    `invocationsPerRun`, `invocationsPerDay`, `tokensPerRun`, and
+    `loopIterations` must be safe **integers**, `costPerRun` may be
+    fractional. Zero is rejected along with negatives and `NaN`: a ceiling of
+    `0` is exhausted before the run begins, which is a way of spelling "deny
+    this script" that the `scripts` allowlist already spells properly, and
+    accepting it would make a mistyped ceiling look like a working one;
+15. `readOnlyOperations` present but not a non-empty array of non-blank,
+    non-duplicate strings within `M3L_AGENT_MAX_OPERATIONS_PER_GRANT`, or —
+    on an operation-scoped grant — containing an entry that is not also in
+    `operations`. An unreachable entry is always a typo: step 2 denies the
+    operation before step 4 could consult the list. On an `allOperations`
+    grant there is no list to cross-check against and only the shape rules
+    apply;
+16. `dryRunFirst` present and not a boolean. Unlike `allOperations` — where
+    only `true` is accepted, because the key exists solely to widen — `false`
+    is accepted here and means the same as absent, so a deployment can write
+    the default down. A non-boolean throws rather than coercing.
 
 Field reads use `Object.hasOwn(record, field)` rather than
 `record[field] !== undefined`, because the input is a parsed JSON document and
@@ -477,17 +633,71 @@ The traversal is **one pass**: validate and project into a fresh, deep-frozen
 structure in the same walk, then brand. Nothing downstream re-reads the
 caller's object.
 
+### The declared cross-check on `kind`
+
+`kind` is asserted by the caller and cannot be verified by the library — that
+is [the trust boundary](#the-trust-boundary), and it is the one place where a
+wrong answer skips grading entirely, because step 4's read-only arm returns
+before step 5 ever runs.
+
+`readOnlyOperations` lets the declaration hold a second opinion. It names the
+operations this grant considers read-only; when it is declared, a `read-only`
+claim is only honoured for an operation on that list:
+
+```json
+{
+  "script": "dynamodb-crud",
+  "operations": ["get-item", "put-item", "delete-item"],
+  "readOnlyOperations": ["get-item"]
+}
+```
+
+An action claiming `kind: "read-only"` for `delete-item` under that grant
+escalates with `kind-cross-check-escalated` instead of auto-approving. The
+declaration and the action disagree about what the operation does, and a
+disagreement is exactly the unclassifiable state the fail-closed table sends to
+a human.
+
+The check is **one-directional on purpose**: it doubts a `read-only` claim and
+never a `mutating` one. Only a false `read-only` claim is dangerous, because
+only it skips grading; an action that over-declares itself mutating merely
+takes the long route through step 5 and arrives at the same or a stricter
+verdict. Doubting that direction too would add a failure mode and close no
+hole.
+
+The cross-check applies to an `allOperations: true` grant too, and the effect
+is worth stating because it looks surprising: a whole-script grant that also
+declares `readOnlyOperations` escalates a `read-only` claim for any operation
+outside that list. That is the key doing its job, not a hidden narrowing — it
+never blocks a mutation, it only refuses to believe a _read-only_ claim the
+declaration does not corroborate. A deployment that wants the whole script
+auto-approvable for reads simply omits the key.
+
+This is also the only route by which the pseudocode's "`record.operation` is
+absent" clause is reachable: on an operation-scoped grant step 2 has already
+denied an absent operation, so only a whole-script grant can arrive at step 4
+with no operation to cross-check. An unnamed operation cannot be corroborated,
+so it escalates.
+
+It stays **optional** for the same reason `sensitiveTargets` is: a deployment
+that has not enumerated its read-only operations should not be forced to
+guess, and a wrong list is worse than no list. Absent means the trust boundary
+stands exactly where slice 1 left it, and this page says plainly that it does.
+`validateAgentPolicy` rule 15 rejects a `readOnlyOperations` entry that is not
+also in `operations` on an operation-scoped grant — such an entry can never be
+reached, since step 2 denies the operation first, so it is always a typo.
+
 ## The tier decision table
 
 The evaluation order below is normative. Each numbered arm is terminal.
 
 ```text
-evaluateAgentAction({ action, policy, additionalSensitiveTargets }):
+evaluateAgentAction({ action, policy, additionalSensitiveTargets, run }):
 
   Step 0 — boundary validation + single-traversal projection
       record := the frozen M3LAgentActionRecord projected from `action`
       A malformed options bag THROWS M3LAgentActionValidationError, per the
-      twelve ACT rules. `kind` outside the two literals throws HERE, not at
+      fifteen ACT rules. `kind` outside the two literals throws HERE, not at
       step 4. Every step below reads `record`, never `action`; every
       decision below carries `record`.
 
@@ -500,11 +710,25 @@ evaluateAgentAction({ action, policy, additionalSensitiveTargets }):
           if record.operation is absent           -> denied "operation-not-allowlisted"
           if not grant.operations.includes(...)   -> denied "operation-not-allowlisted"
 
-  Step 3 — budgets and ceilings                             [slice 2]
-      if a declared budget is exhausted -> escalate "budget.<kind>"
+  Step 3 — budgets and ceilings
+      if policy.budgets is absent       -> skip this step
+      for each declared ceiling, IN THIS FIXED ORDER:
+          invocationsPerRun, invocationsPerDay, tokensPerRun,
+          costPerRun, loopIterations
+        if its observation is absent    -> escalate "budget.<kind>.unobservable"
+        if observed >= ceiling          -> escalate "budget.<kind>"
+      (`invocationsPerDay` also needs `todayCountedAt` and `now`; when the two
+       fall in different UTC days the observed count is read as 0.)
+      (a declared ceiling that is not a finite number escalates on that
+       ceiling's `.unobservable` id too — it is the same "cannot evaluate this
+       budget" state. Unreachable behind validator rule 14, and kept as the
+       same second line of defence `allOperations !== true` is.)
 
   Step 4 — autonomy tier
-      if record.kind === "read-only"    -> auto-approved "read-only-auto-approved"
+      if record.kind === "read-only":
+          if grant.readOnlyOperations is declared, and record.operation
+             is absent or not on it     -> escalate "kind-cross-check-escalated"
+          otherwise                     -> auto-approved "read-only-auto-approved"
       if record.kind === "mutating"     -> continue
       otherwise                         -> escalate "unclassifiable-escalated"
       (the `otherwise` arm is unreachable at RUNTIME — ACT-3 rejects any
@@ -519,16 +743,19 @@ evaluateAgentAction({ action, policy, additionalSensitiveTargets }):
          OR additionalSensitiveTargets(target) is truthy
                                         -> escalate "sensitive-target-escalated"
 
-  Step 6 — dry-run-first                                    [slice 2]
-      if the shape has not been dry-run in this run
-                                        -> escalate "dry-run-first"
+  Step 6 — dry-run-first
+      if policy.dryRunFirst !== true    -> skip this step  (strict true: opt-in)
+      if record.dryRun === true         -> skip this step  (this IS the dry run)
+      if record.shapeKey is in run.dryRunCompletedShapes -> skip this step
+      otherwise                         -> escalate "dry-run-first"
 
   Step 7 — graded, non-sensitive mutation inside the allowlist
                                         -> auto-approved "graded-mutation-auto-approved"
 ```
 
-Steps 3 and 6 are slice-2 arms, shown here so the full order is stated once.
-Slice 1 evaluates 0, 1, 2, 4, 5, 7 and nothing else.
+Both slice-2 arms are **skipped entirely** when the declaration opts out, which
+is what makes slice 2 additive: a slice-1 declaration reaches exactly the arms
+slice 1 evaluated, in the same order, and gets the same verdict.
 
 **Budgets gate read-only actions too** (step 3 sits above step 4). ADR-0060's
 tier sentence reads "read-only/introspection actions: `auto-approved`"
@@ -557,6 +784,10 @@ resolves to `auto-approved`.
 | A sensitivity predicate returns a truthy non-boolean                     | `escalate` / `sensitive-target-escalated`       |
 | A sensitivity predicate throws                                           | propagates; no verdict exists, nothing proceeds |
 | Script or operation not positively proven present                        | `denied`                                        |
+| A declared budget whose observation the ledger does not carry            | `escalate` / `budget.<kind>.unobservable`       |
+| A declared budget the ledger reports as reached                          | `escalate` / `budget.<kind>`                    |
+| A `read-only` claim the grant's `readOnlyOperations` contradicts         | `escalate` / `kind-cross-check-escalated`       |
+| `dryRunFirst` declared, shape not yet dry-run in this run                | `escalate` / `dry-run-first`                    |
 
 The line between the throwing rows and the escalating rows is the one sentence
 worth memorising: **a malformed input is a bug to surface loudly; a well-formed
@@ -577,9 +808,21 @@ asymmetry is load-bearing and must not be "harmonised".
   auto-approve. `=== true` here would be a fail-open hole in the one place with
   the widest blast radius.
 
+Slice 2 adds a third check on the opt-in side. `policy.dryRunFirst !== true`
+skips step 6, so it demands strict `true` for the same reason `allOperations`
+does — a truthy non-`true` must never decide an authorization question. Note
+that the two opt-ins move authority in opposite directions (`allOperations`
+widens it, `dryRunFirst` narrows it) and still take the same polarity: strict
+`true` is not about which way the key leans, it is about a declaration meaning
+what it says.
+
 `additionalSensitiveTargets === undefined` resolves to `false` through an
 explicit ternary rather than `pred?.(t) ?? false`, so "absent, contributes
-nothing" stays visually distinct from "present and returned falsy".
+nothing" stays visually distinct from "present and returned falsy". The budget
+comparisons keep the same discipline: an absent observation takes its own
+explicit escalate arm rather than defaulting to `0`, because defaulting would
+make "I have spent nothing" and "I did not tell you what I spent"
+indistinguishable — and only one of those is safe to auto-approve.
 
 ## Why an ungraded target is sensitive
 
@@ -625,6 +868,10 @@ type M3LAgentDecision =
     };
 ```
 
+The block above spells `M3LAgentVerdict` out for readability; the source derives
+it as `M3LAgentDecision["verdict"]`, which is the same type and cannot drift
+from the union it names.
+
 **`M3LAgentVerdict` is closed and will never gain a member.** ADR-0060 fixes it
 at three words. Budget exhaustion is an `escalate` carrying a new rule id — "a
 named outcome, never a silent stop" — not a fourth verdict.
@@ -641,18 +888,50 @@ type M3LAgentPolicyRuleId =
   | "policy-ungraded-escalated"
   | "sensitive-target-escalated"
   | "graded-mutation-auto-approved"
-  | "unclassifiable-escalated";
+  | "unclassifiable-escalated"
+  | "budget.invocations-per-run"
+  | "budget.invocations-per-day"
+  | "budget.tokens-per-run"
+  | "budget.cost-per-run"
+  | "budget.loop-iterations"
+  | "dry-run-first"
+  | "kind-cross-check-escalated"
+  | "budget.invocations-per-run.unobservable"
+  | "budget.invocations-per-day.unobservable"
+  | "budget.tokens-per-run.unobservable"
+  | "budget.cost-per-run.unobservable"
+  | "budget.loop-iterations.unobservable";
 ```
 
-Slice 2 adds `"budget.invocations-per-run"`, `"budget.invocations-per-day"`,
-`"budget.tokens-per-run"`, `"budget.cost-per-run"`,
-`"budget.loop-iterations"`, and `"dry-run-first"`; V7 adds its own.
+Slice 2 added the last twelve. V7 adds its own.
+
+Two naming inconsistencies in that list are deliberate and now permanent, since
+these strings are ADR-0061's wire format. The ten budget ids use a `.`
+namespace separator no other id uses, because they are one family with a shared
+cause and an operator filtering a log wants `budget.` as a prefix — and the
+second segment lets `budget.*.unobservable` be filtered on its own, which is
+the whole point of splitting them. And
+`dry-run-first` is the only `escalate` id without an `-escalated` suffix,
+because it names a **precondition** rather than a judgement — the others say
+what the evaluator concluded, this one says what has not happened yet. Both
+spellings were fixed by slice 1's page before either was implemented; renaming
+them now would break a log format for a consistency no reader of a log would
+benefit from. Growing the union is exactly the
+additive change the paragraph below describes, and slice 2 is the first proof
+of it: a slice-1 consumer that logged `decision.rule` as an opaque label keeps
+compiling and keeps working; one that wrote the exhaustive `switch` this page
+told it not to write does not.
 
 Growing it is **additive, not breaking**, because the type appears only in
 **return** position: no caller constructs an `M3LAgentDecision`, so a new
 member cannot invalidate a caller's value. What a new member _can_ break is an
-exhaustive `switch`, so consumers must **not** write one. Treat an unrecognised
-id as an opaque label — log it, render it, branch on `verdict` instead.
+exhaustive `switch`, so consumers must **not** write one — nor a
+`Record<M3LAgentPolicyRuleId, T>`, which is the same hazard in the shape a
+consumer reaches for more often. A rule-id-keyed lookup table for log rendering
+looks harmless and stops compiling on every added id, for exactly the reason
+this module uses one internally in `guards.ts` to force that break on itself.
+Treat an unrecognised id as an opaque label — log it, render it, branch on
+`verdict` instead.
 
 A closed union is chosen over a `string`-assignable open type because it is the
 only form that gives autocomplete on the known ids and lets
@@ -674,21 +953,34 @@ across minors, an older library reading a log written by a newer one returns
 `false` for an id that is perfectly valid. That is a version-skew answer, not a
 validity answer, and a caller must not treat `false` as "corrupt log". It is
 backed at runtime by a module-private `Record<M3LAgentPolicyRuleId, true>`
-table rather than an array, so adding a ninth id is a compile error here
-instead of a silently drifting runtime set.
+table rather than an array, so adding a twenty-first id is a compile error here
+instead of a silently drifting runtime set. The same sentence is written in
+`guards.ts` and moves with the count.
 
-Slice 1's eight ids:
+The twenty ids, slice 1's eight first:
 
-| Rule id                         | Verdict         | Produced when                                          |
-| ------------------------------- | --------------- | ------------------------------------------------------ |
-| `script-not-allowlisted`        | `denied`        | No grant names the script.                             |
-| `operation-not-allowlisted`     | `denied`        | Operation-scoped grant, operation absent or unlisted.  |
-| `read-only-auto-approved`       | `auto-approved` | Allowlisted read-only action.                          |
-| `target-ungraded-escalated`     | `escalate`      | Mutation carrying no ADR-0048 target.                  |
-| `policy-ungraded-escalated`     | `escalate`      | Mutation, but the policy declares no grading.          |
-| `sensitive-target-escalated`    | `escalate`      | The target graded sensitive.                           |
-| `graded-mutation-auto-approved` | `auto-approved` | Allowlisted mutation on a graded non-sensitive target. |
-| `unclassifiable-escalated`      | `escalate`      | Reserved: a future `kind` no rule handles.             |
+| Rule id                                   | Verdict         | Produced when                                             |
+| ----------------------------------------- | --------------- | --------------------------------------------------------- |
+| `script-not-allowlisted`                  | `denied`        | No grant names the script.                                |
+| `operation-not-allowlisted`               | `denied`        | Operation-scoped grant, operation absent or unlisted.     |
+| `read-only-auto-approved`                 | `auto-approved` | Allowlisted read-only action.                             |
+| `target-ungraded-escalated`               | `escalate`      | Mutation carrying no ADR-0048 target.                     |
+| `policy-ungraded-escalated`               | `escalate`      | Mutation, but the policy declares no grading.             |
+| `sensitive-target-escalated`              | `escalate`      | The target graded sensitive.                              |
+| `graded-mutation-auto-approved`           | `auto-approved` | Allowlisted mutation on a graded non-sensitive target.    |
+| `unclassifiable-escalated`                | `escalate`      | Reserved: a future `kind` no rule handles.                |
+| `budget.invocations-per-run`              | `escalate`      | Per-run invocation ceiling reached (observed >= ceiling). |
+| `budget.invocations-per-day`              | `escalate`      | Per-day invocation ceiling reached (observed >= ceiling). |
+| `budget.tokens-per-run`                   | `escalate`      | Per-run token ceiling reached (observed >= ceiling).      |
+| `budget.cost-per-run`                     | `escalate`      | Per-run cost ceiling reached (observed >= ceiling).       |
+| `budget.loop-iterations`                  | `escalate`      | Loop-iteration ceiling reached (observed >= ceiling).     |
+| `dry-run-first`                           | `escalate`      | The shape has not been dry-run in this run.               |
+| `kind-cross-check-escalated`              | `escalate`      | A `read-only` claim `readOnlyOperations` contradicts.     |
+| `budget.invocations-per-run.unobservable` | `escalate`      | Per-run invocation ceiling declared, not observable.      |
+| `budget.invocations-per-day.unobservable` | `escalate`      | Per-day invocation ceiling declared, not observable.      |
+| `budget.tokens-per-run.unobservable`      | `escalate`      | Token ceiling declared, not observable.                   |
+| `budget.cost-per-run.unobservable`        | `escalate`      | Cost ceiling declared, not observable.                    |
+| `budget.loop-iterations.unobservable`     | `escalate`      | Loop-iteration ceiling declared, not observable.          |
 
 `rule` is typed as the whole union on every arm, so
 `{ verdict: "denied", rule: "read-only-auto-approved" }` is representable and
@@ -706,8 +998,13 @@ The flat union keeps reassignment a runtime-behaviour change with a test to
 prove it, which is where it belongs.
 
 `reason` is library-authored prose composed only from `script`, `operation`,
-`kind`, and the target's `profile` / `region` / `accountId`. It never embeds a
-parameter value. It is not run through `escapeTerminalControls`: it is a data
+`kind`, the target's `profile` / `region` / `accountId`, and — for the budget
+arms — the budget's own key, its declared ceiling, and the observed value. It
+never embeds a parameter value. The budget numbers are admitted deliberately:
+every one is either a ceiling the deployment declared or a count the caller
+itself reported, so none is data read out of the action under judgement, and an
+escalation that cannot say _which_ budget and _by how much_ is an escalation an
+operator cannot act on. It is not run through `escapeTerminalControls`: it is a data
 value flowing to a log sink, not a display channel, and `core/logging`'s
 redaction operates on unmodified text.
 
@@ -730,6 +1027,7 @@ interface M3LAgentEvaluationOptions {
   readonly action: M3LAgentAction;
   readonly policy: M3LAgentPolicy;
   readonly additionalSensitiveTargets?: M3LDestructiveTargetPredicate;
+  readonly run?: M3LAgentRunLedger;
 }
 
 function evaluateAgentAction(
@@ -737,10 +1035,10 @@ function evaluateAgentAction(
 ): M3LAgentDecision;
 ```
 
-A single options bag rather than positional parameters, chosen so slice 2 is
-additive: its per-run state becomes a new **optional** field on a bag callers
-already construct. A required field there would be source-breaking for every
-test fake.
+A single options bag rather than positional parameters, chosen so slice 2 could
+be additive — and it was: `run` arrived as a new **optional** field on a bag
+callers already construct, and no slice-1 call site changed. A required field
+there would have been source-breaking for every test fake.
 
 `additionalSensitiveTargets` is OR-ed with the declared spec, so it can only
 add sensitivity and can never remove it. A deployment that classifies
@@ -755,42 +1053,304 @@ count either way. It is likewise never invoked when step 5's first two arms
 have already returned, since those arms are terminal.
 
 `evaluateAgentAction` throws **on its own authority** only for a malformed
-options bag (the twelve ACT rules). It never throws to signal a verdict. It can
+options bag (the fifteen ACT rules). It never throws to signal a verdict. It can
 still propagate a throw raised inside a caller-supplied
 `additionalSensitiveTargets`, unchanged — that exception is the caller's, not
 this module's.
 
 ## Budgets and exhaustion
 
-_Slice 2 — not yet landed._ Per-run and per-day invocation counts, token and
-Bedrock cost ceilings, and a loop-iteration ceiling, declared additively on
-`M3LAgentPolicyDeclaration`. Exhaustion is an `escalate` carrying a named
-exhaustion outcome (which budget, its ceiling, the observed value), evaluated
-at step 3 — above the read-only arm, per the decision recorded above.
+ADR-0025 records that this repo has "no token/cost governance of any kind".
+Step 3 is where that gap closes for an autonomous operator: a deployment
+declares ceilings, the caller reports what it has observed, and the evaluator
+compares the two. It performs no counting itself.
 
-The Bedrock cost ceiling is a plain number. No type from `aws/*` crosses into
-this module: an ADR-0009 zone forbids it, and the policy layer has no business
-knowing how a token was priced.
+```typescript
+interface M3LAgentRunLedger {
+  readonly invocationsThisRun?: number;
+  readonly invocationsToday?: number;
+  readonly todayCountedAt?: number;
+  readonly now?: number;
+  readonly tokensThisRun?: number;
+  readonly costThisRun?: number;
+  readonly loopIterations?: number;
+  readonly dryRunCompletedShapes?: readonly string[];
+}
+```
 
-Per-day windows are driven by a **caller-supplied timestamp**, not an ambient
-clock read. There is no injected-clock precedent anywhere in `core/`, and a
-callable a library reads more than once can return a different value on each
-read; one sampled number, read once, keeps the evaluator pure and
-deterministic under test.
+The ledger is **caller-owned and immutable**. `evaluateAgentAction` reads it,
+never writes it, and holds nothing between calls — the function is documented
+pure, and a library that quietly accumulated per-run state would be a different
+function on its second call than on its first. Advancing the ledger after an
+approved action is the caller's job, and passing a fresh object each time is
+what keeps two concurrent runs from sharing a budget.
+
+**The ledger is projected at step 0, exactly like the action, and steps 3 and 6
+decide from the projection alone.** This is not symmetry for its own sake. The
+rule this module cannot afford to break is _validate once, then never re-read
+the caller's object_, and the ledger is the input where breaking it would be
+easiest to miss: `dryRunCompletedShapes` is validated at step 0 but consulted at
+step 6, and a live re-read across that gap is a time-of-check/time-of-use hole
+of precisely the shape `projectStringList` was already hardened against — a
+hostile `Symbol.iterator` or a getter that answers differently on its second
+call would let a shape pass step 6 that never passed ACT-15. So step 0 emits a
+frozen internal projection with every numeric field materialised as an own key
+holding `undefined` when absent, and nothing downstream touches `options.run`
+again.
+
+An earlier draft of this section said only that the evaluator "reads it, never
+writes it". That was true and insufficient — _when_ it reads it is the part that
+matters.
+
+### The exhaustion comparison
+
+A budget is exhausted when `observed >= ceiling`.
+
+That is a **reject-at** bound, and it is deliberately the opposite polarity to
+every structural ceiling on this page, all of which are reject-above. The two
+measure different things. `M3L_AGENT_MAX_SCRIPT_GRANTS` bounds a declaration
+that already exists, so a declaration _of_ exactly 128 grants is within it. A
+budget bounds a run that is still going: `invocationsThisRun` counts what has
+already happened, and the action under judgement would be the next one. With
+a ceiling of 10 and 10 already spent, approving would make 11.
+
+`NaN` is why ACT-14 rejects it rather than treating it as absent: `NaN >= 10`
+is `false`, so a `NaN` observation that reached this comparison would report
+every budget as unexhausted — a fail-open hole in the arm whose entire job is
+to stop a runaway.
+
+Zero points in two directions here, and both are deliberate:
+
+| Value                             | Legal | Why                                                                                                                                                        |
+| --------------------------------- | ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A **ceiling** of `0`              | no    | Exhausted before the run starts. The `scripts` allowlist already spells "deny this script" properly, and a mistyped ceiling would look like a working one. |
+| An **observation** of `0`         | yes   | "I have spent nothing" is the normal state at the start of a run.                                                                                          |
+| A negative ceiling or observation | no    | Neither a bound nor a count can run backwards.                                                                                                             |
+| `todayCountedAt` / `now` of `0`   | yes   | The epoch is a real instant; only negatives are rejected.                                                                                                  |
+
+### Which ceilings count as declared
+
+A ceiling is declared when `Object.hasOwn(budgets, key)` says so — never
+`budgets.key !== undefined`. The whole module reads presence that way, and this
+is the arm where a dot read would be worst: with
+`Object.prototype.tokensPerRun = 1`, a validated policy that declared no token
+ceiling would grow one, and every action under it would escalate for a budget
+nobody wrote down. `budgets` itself is read the same way, so a polluted
+`Object.prototype.budgets` cannot make step 3 run at all for a policy that
+declared none.
+
+### Evaluation order, and why it is fixed
+
+The five ceilings are checked in a fixed order — `invocationsPerRun`,
+`invocationsPerDay`, `tokensPerRun`, `costPerRun`, `loopIterations` — not in
+declaration order. Two budgets can be exhausted at once, and the rule id on the
+verdict is what an ADR-0061 log entry records; if the order came from the
+declaration, the same run against two declarations that differ only in key
+order would produce different log entries. The order is a property of the
+library, and it is tested.
+
+### An absent observation escalates, on its own id
+
+A declared ceiling whose observation the ledger does not carry escalates with
+that ceiling's **`.unobservable`** id — `budget.tokens-per-run.unobservable`,
+not `budget.tokens-per-run`. So does a policy that declares `budgets` while the
+caller passes no `run` at all: the first declared ceiling in the fixed order
+above names the verdict, with the `.unobservable` suffix.
+
+**The two states are opposite and must not share a label.** "You have spent
+your budget" is the control working exactly as the deployment intended;
+"I cannot see your ledger" is a wiring mistake in the caller. An operator
+should page on the second and not on the first, and a rule id is what an
+ADR-0061 log line carries — `reason` is library-authored prose this page
+explicitly declines to make a contract, so collapsing the distinction into it
+would leave a caller regex-matching English to tell a working budget from a
+broken integration.
+
+An earlier draft of this page did collapse them, and named the cost honestly
+("a stream of escalations is easy to stop reading") without fixing it. Splitting
+the ids is the fix: it is a return-position vocabulary addition, so it costs
+nothing in semver, and it makes the wiring mistake machine-detectable at the
+only place a consumer is allowed to branch.
+
+This is the module's standing posture applied once more: the evaluator cannot
+prove the budget unexhausted, and an unprovable state escalates rather than
+auto-approving. The alternatives were both worse. Throwing would crash a
+running agent over a caller's wiring mistake, when degrading to human review is
+available and strictly safer. Skipping the budget silently would mean a
+declared ceiling could be disabled by omitting an argument — which is the exact
+shape of all four fail-open defects slice 1 shipped with and had to fix.
+
+A caller that wires the ledger up wrongly still gets a stream of escalations
+rather than one loud error, and a stream of escalations is easy to stop
+reading — but every one of them now carries a `.unobservable` rule id, so the
+stream is machine-distinguishable from a budget doing its job. ACT-13's
+unknown-key rejection is the other half: it converts the most likely wiring
+mistake, a typo'd field name, from a silent omission into a throw.
+
+### The per-day window
+
+`invocationsPerDay` needs to know when the window rolled, and the evaluator may
+not read a clock. So the caller supplies both halves: `invocationsToday`, and
+`todayCountedAt` — the epoch-millisecond instant those invocations were counted
+in — plus `now`, sampled **once** by the caller for this evaluation.
+
+If `now` and `todayCountedAt` fall in different **UTC** days, the library reads
+`invocationsToday` as `0`: the window has rolled and yesterday's count does not
+constrain today. "Different day" is a same-day test, not an ordering test — a
+`now` that runs _backwards_ into a previous day rolls the window just as a
+forward one does, because a caller whose clock jumped is a caller whose count is
+not trustworthy either way.
+
+All three fields are required together whenever `invocationsPerDay` is declared,
+and **presence is checked before the window is**: any one of the three absent
+escalates, even when the two timestamps that _are_ present would have rolled the
+window and made the count irrelevant. Absence is a statement about the caller's
+wiring, and answering it with a window calculation would hide the wiring bug
+behind a pass.
+
+Two things this deliberately does not do. It does not read `Date.now()` — a
+value a library reads more than once can differ between reads, and one sampled
+number keeps the evaluator deterministic under test, which is what lets the
+window-roll rule be tested at all rather than only observed. And it takes no
+timezone: UTC is the only day boundary that needs no input and cannot drift
+between a caller and the library. A deployment that needs local midnight rolls
+its own counter and leaves `invocationsPerDay` undeclared.
 
 ## Dry-run-first
 
-_Slice 2 — not yet landed._ The first execution of a mutating script and
-parameter shape in a run must be a dry run whose outcome the agent inspects
-before the real run becomes eligible for `auto-approved`. The shape key is
-computed with the **existing** `canonicalJsonHash` from `core/json`, over a
-validated projection of the parameters rather than over the caller's object.
+The first execution of a mutating script and parameter shape in a run must be
+a dry run whose outcome the agent inspects, before the real run becomes
+eligible for `auto-approved`.
 
-The verdict for an unsatisfied dry-run-first requirement is `escalate`, not
-`denied`. Denial is a statement about **authority** — the agent may not do this
-at all, and no runtime event changes that. Dry-run-first is a statement about
-**sequence** — the agent may do it, just not yet, and there is a legitimate
-in-run path to `auto-approved`.
+```typescript
+function agentActionShapeKey(action: M3LAgentAction): string;
+```
+
+The shape key is `canonicalJsonHash` from `core/json` — the existing one, not a
+new hash — over exactly this value, built from the library's own validated
+projection and from nothing else:
+
+```typescript
+canonicalJsonHash({
+  script: record.script,
+  operation: record.operation, // dropped from the digest when undefined
+  kind: record.kind,
+  parameterNames: [...record.parameterNames].sort(compareByCodePoint),
+});
+```
+
+Every part of that literal is normative, because **the key is a stored value**.
+This page endorses seeding a ledger from a durable store, which means a key
+written by one version must equal the key computed by the next. Changing the
+field set, the key names, the nesting, or the comparator is therefore a
+**breaking change** needing a major, not an implementation detail.
+
+Three specifics the literal fixes:
+
+- `operation` is passed as `undefined` when absent, and `canonicalJsonStringify`
+  drops keys that serialise to `undefined` — so an action with no operation
+  hashes as if the key were never written. Harmless, since a present
+  `operation` is always non-blank, but it is the observable behaviour and a
+  reimplementation must match it.
+- The names are sorted with **the same code-point comparator `core/json` already
+  uses for object keys**, not a bare `.sort()`. Default `Array.prototype.sort`
+  orders by UTF-16 code unit, which disagrees with code-point order above the
+  BMP; `core/json` chose the code-point comparator for exactly that reason and
+  the two must not diverge inside one hash.
+- The array is **copied** before sorting. `record.parameterNames` is frozen, so
+  an in-place sort would throw — and sorting the record itself would change what
+  the decision log reports the caller asked for.
+
+Hashing the caller's object instead of the projection would key on property
+order and on fields the projection deliberately drops.
+
+**The hash itself had to be hardened for this to hold.** `canonicalJsonHash`
+defers to a value's `toJSON()` before deciding its shape, matching
+`JSON.stringify` — and that lookup walks the prototype chain, which is the one
+read in this whole path that is not an `Object.hasOwn` presence check. With
+`Object.prototype.toJSON = () => 0` every value hashed identically, so every
+shape key collapsed to one digest and a completed dry run of `get-item`
+auto-approved a `delete-table` on the same script. `core/json` now ignores a
+`toJSON` whose owning prototype is `Object.prototype` or `Array.prototype` —
+neither natively defines one, so a `toJSON` found there is a pollution gadget by
+construction — while `Date` and any custom `toJSON`, own or inherited, keep
+working unchanged. Hardening the module and then routing its authorization
+token through an unhardened primitive is the mistake this records.
+
+Sorting the names makes the key a property of the parameter **set**: an agent
+that reorders its arguments between the dry run and the real run has not
+changed what it is about to do. Duplicates are preserved rather than collapsed,
+because ACT-6 records the list verbatim and a list with a repeat is a different
+list.
+
+`target` is **not** in the key. That looks like the fail-open choice and is
+not, because step 5 grades the target on **every** evaluation and returns
+before step 6 is ever reached — a dry run against a sandbox profile cannot
+smuggle a production one past, since the production target escalates at step 5
+regardless of what the ledger says. Including the target would multiply the
+dry runs a deployment owes by every profile and region it touches, and buy no
+authorization property that step 5 does not already hold.
+
+`agentActionShapeKey` and `M3LAgentActionRecord.shapeKey` are two doors to one
+computation, and both exist because the caller needs the key at two different
+moments. After an escalation the key is already on the decision
+(`decision.action.shapeKey`) and recomputing it would be a second code path
+that has to agree with the first forever. Before any evaluation — seeding a
+ledger from a previous run, or from a durable store — there is no decision to
+read it from, and the exported function is the only way. It validates its
+argument by **ACT-1 through ACT-9** — every rule that is about the action itself
+— plus the same `traversal-threw` wrapper, throwing
+`M3LAgentActionValidationError`. It cannot apply ACT-10 through ACT-15: those
+judge the options bag, its policy, its predicate, and its ledger, and this
+function receives none of them. So it cannot produce a key for an action the
+evaluator would reject, and it demands nothing the evaluator would not.
+
+Its `context.field` reads `"action"` for **every** failure, not only a
+top-level one: a nested violation like `action.target.profile` still reports
+`"action"`, because the whole argument is the action and there is no outer bag
+to distinguish it from. That is deliberately unlike the evaluator's wrapper,
+which reports `"options"`. There is no options bag here, and
+naming one would send a reader looking for a parameter that does not exist.
+
+### Seeding a ledger from a durable store
+
+`M3L_AGENT_MAX_DRY_RUN_SHAPES` is reject-above and never truncates, and a
+long-lived deployment's store will eventually hold more than 256 distinct
+shapes. At that point a naive seed throws `M3LAgentActionValidationError` rather
+than silently dropping entries — which is the correct half of the behaviour,
+since a silently dropped shape would demand a dry run the agent already
+performed.
+
+The half this module does **not** decide is _which_ shapes to carry when the
+store outgrows the bound. That is a deployment policy, not a library one: most
+recent, most frequent, or scoped to the current run all defend themselves, and
+the library has no basis to choose. A caller seeding from a store must therefore
+bound its own selection to 256, and should expect to, rather than discovering
+the throw in production.
+
+### Why `escalate` and not `denied`
+
+Denial is a statement about **authority**: the agent may not do this at all,
+and no runtime event changes that. Dry-run-first is a statement about
+**sequence**: the agent may do it, just not yet, and there is a legitimate
+in-run path to `auto-approved` that the agent can take by itself.
+
+That difference is the one an operator acts on. `denied` means stop and change
+the declaration; `escalate` means a human looks, or the agent performs the dry
+run and asks again.
+
+### What the discipline can and cannot move
+
+Step 6 sits below step 5 and above step 7, so it can only move a verdict from
+`auto-approved` to `escalate` — never the reverse. A sensitive target still
+escalates at step 5 whether or not it has been dry-run, and a non-allowlisted
+script is still `denied` at step 1. Dry-run-first adds a requirement; it
+removes none.
+
+An action that declares `dryRun: true` **is** the dry run and skips step 6.
+It does not skip step 5: dry-running against a production target is still an
+escalation, because a dry run is a real call to a real account and ADR-0048
+grades the target, not the intent.
 
 ## Compatibility with `core/prompt`
 
@@ -847,6 +1407,47 @@ if (Core.isAgentActionAutoApproved(decision)) {
 }
 ```
 
+With slice 2's budgets and dry-run-first declared, the caller also hands over
+what it has observed, and advances that ledger itself:
+
+```typescript
+const governed = Core.validateAgentPolicy({
+  version: 1,
+  scripts: [
+    {
+      script: "dynamodb-crud",
+      operations: ["get-item", "put-item"],
+      readOnlyOperations: ["get-item"],
+    },
+  ],
+  sensitiveTargets: { profiles: ["prod"] },
+  budgets: { invocationsPerRun: 50, costPerRun: 5 },
+  dryRunFirst: true,
+});
+
+let run: Core.M3LAgentRunLedger = {
+  invocationsThisRun: 12,
+  costThisRun: 0.42,
+  dryRunCompletedShapes: [],
+  now: Date.now(), // sampled by the CALLER, once — the library reads no clock
+};
+
+const first = Core.evaluateAgentAction({ policy: governed, action, run });
+// first.verdict === "escalate", first.rule === "dry-run-first"
+
+// ... the agent performs the dry run and inspects it, then records the shape:
+run = {
+  ...run,
+  dryRunCompletedShapes: [
+    ...(run.dryRunCompletedShapes ?? []),
+    first.action.shapeKey,
+  ],
+};
+
+const second = Core.evaluateAgentAction({ policy: governed, action, run });
+// second.verdict === "auto-approved"
+```
+
 ## Out of scope
 
 - Writing anything. The decision log is ADR-0061 / V7 and co-lands here later.
@@ -854,8 +1455,13 @@ if (Core.isAgentActionAutoApproved(decision)) {
   I/O, exactly as every other pure Core module does.
 - Enforcing the verdict. This layer decides; a caller that ignores the decision
   is not bounded by it.
-- Detecting whether an action mutates. See
+- Detecting whether an action mutates. `readOnlyOperations` lets a
+  declaration hold a second opinion, but it is still a declaration — see
   [The trust boundary](#the-trust-boundary).
+- Counting anything. Budgets are compared, never accumulated: the caller owns
+  the ledger and advances it, which is what keeps the evaluator pure and two
+  concurrent runs from sharing a ceiling.
+- Reading a clock. Per-day windows roll from a timestamp the caller sampled.
 
 ## See also
 

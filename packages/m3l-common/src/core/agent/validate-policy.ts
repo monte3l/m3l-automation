@@ -34,8 +34,14 @@ import type { M3LAgentPolicy } from "./policy-types.js";
  * non-empty array of non-blank strings, contains duplicates, or whose entries
  * summed across the three lists exceed
  * `M3L_AGENT_MAX_SENSITIVE_TARGET_ENTRIES`; any unknown key at the top level,
- * on a grant, or on the grading spec; and any key rejected by
- * `isDangerousKey`.
+ * on a grant, on the grading spec, or on `budgets`; any key rejected by
+ * `isDangerousKey`; a `budgets` that is not a plain object or omits all five
+ * ceilings; a budget ceiling present and not a positive finite number
+ * (`costPerRun` may be fractional, the rest must be safe integers);
+ * a `readOnlyOperations` that is not a non-empty, non-duplicated array of
+ * non-blank strings within `M3L_AGENT_MAX_OPERATIONS_PER_GRANT`, or that names
+ * an operation not also in `operations` on an operation-scoped grant; and a
+ * `dryRunFirst` present and not a boolean.
  *
  * The traversal is one pass: validate and project into a fresh, deep-frozen
  * structure in the same walk, then brand. Nothing downstream re-reads the

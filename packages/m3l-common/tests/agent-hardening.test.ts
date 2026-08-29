@@ -21,11 +21,14 @@
 import { describe, expect, test, vi } from "vitest";
 
 import {
+  M3L_AGENT_MAX_DRY_RUN_SHAPES,
   M3L_AGENT_MAX_OPERATIONS_PER_GRANT,
   M3L_AGENT_MAX_PARAMETER_NAMES,
+  M3L_AGENT_MAX_SCRIPT_GRANTS,
   M3LAgentActionValidationError,
   M3LAgentPolicyDeclarationError,
   M3LError,
+  agentActionShapeKey,
   evaluateAgentAction,
   validateAgentPolicy,
 } from "../src/core/index.js";
@@ -34,6 +37,7 @@ import type {
   M3LAgentDecision,
   M3LAgentEvaluationOptions,
   M3LAgentPolicy,
+  M3LAgentRunLedger,
 } from "../src/core/index.js";
 
 /* -------------------------------------------------------------------------- */
@@ -136,7 +140,24 @@ function withPollutedObjectPrototype<T>(
   value: unknown,
   run: () => T,
 ): T {
-  Object.defineProperty(Object.prototype, key, {
+  return withPollutedPrototype(Object.prototype, key, value, run);
+}
+
+/**
+ * The shared implementation behind {@link withPollutedObjectPrototype} and
+ * {@link withPollutedArrayPrototype}: installs `key` on `proto` — a
+ * FUNCTION value works exactly like a data value here, since
+ * `Object.defineProperty`'s `value` slot does not care what it holds — and
+ * always removes it in a `finally`, so a leaked pollution cannot corrupt a
+ * later test in the run.
+ */
+function withPollutedPrototype<T>(
+  proto: object,
+  key: string,
+  value: unknown,
+  run: () => T,
+): T {
+  Object.defineProperty(proto, key, {
     configurable: true,
     enumerable: false,
     value,
@@ -145,8 +166,47 @@ function withPollutedObjectPrototype<T>(
   try {
     return run();
   } finally {
-    Reflect.deleteProperty(Object.prototype, key);
+    Reflect.deleteProperty(proto, key);
   }
+}
+
+/**
+ * The narrower sibling of {@link withPollutedObjectPrototype}: pollutes
+ * `Array.prototype` instead. Neither prototype natively defines the keys
+ * these hardening tests plant, so this is the same gadget shape targeting
+ * the other built-in `canonicalJsonStringify` special-cases.
+ */
+function withPollutedArrayPrototype<T>(
+  key: string,
+  value: unknown,
+  run: () => T,
+): T {
+  return withPollutedPrototype(Array.prototype, key, value, run);
+}
+
+/**
+ * Wraps a real array behind a `Proxy` whose `length` trap answers `1` on its
+ * very first read and the array's TRUE length on every read after that —
+ * the exact two-read TOCTOU shape from the vulnerability report: a bound
+ * check and a per-iteration (or second) read that disagree. `Array.isArray`
+ * still passes: a `Proxy` over an array target forwards the exotic
+ * `[[Class]]` check straight through, so this clears every array guard and
+ * only whether `.length` is captured ONCE stands between it and a ceiling
+ * bypass. A fresh instance must be used per call site under test — reading
+ * `.length` even once for a "is this thing live" sanity check consumes the
+ * lying first read and leaves only honest reads for whatever comes after.
+ */
+function withLengthTrap<T>(target: readonly T[]): readonly T[] {
+  let reads = 0;
+  return new Proxy(target as T[], {
+    get(source, property, receiver): unknown {
+      if (property === "length") {
+        reads += 1;
+        return reads === 1 ? 1 : source.length;
+      }
+      return Reflect.get(source, property, receiver);
+    },
+  });
 }
 
 /**
@@ -919,4 +979,426 @@ describe("F7: the record's target carries region and accountId as own keys", () 
     mutableTarget.profile = "prod";
     expect(decision.action.target?.profile).toBe("sandbox");
   });
+});
+
+/* -------------------------------------------------------------------------- */
+/* F8 — canonicalJsonHash pollution must never collide two distinct shapes    */
+/* -------------------------------------------------------------------------- */
+
+describe("F8: a polluted toJSON must never collapse two distinct dry-run shapes", () => {
+  test("Object.prototype.toJSON = () => 0 still yields different shape keys for two materially different actions", () => {
+    // Pre-fix: `canonicalJsonStringify` deferred to `toJSON()` via a bare
+    // prototype-chain lookup, so `Object.prototype.toJSON = () => 0` made
+    // EVERY value serialize as "0" and hash identically — the shape-key
+    // fields (script, operation, kind, parameterNames) never mattered.
+    const harmlessKey = withPollutedObjectPrototype(
+      "toJSON",
+      () => 0,
+      () =>
+        agentActionShapeKey({
+          script: "dynamodb-crud",
+          operation: "get-item",
+          kind: "read-only",
+          parameterNames: ["table"],
+        }),
+    );
+    const dangerousKey = withPollutedObjectPrototype(
+      "toJSON",
+      () => 0,
+      () =>
+        agentActionShapeKey({
+          script: "s3-report",
+          operation: "delete-bucket",
+          kind: "mutating",
+          parameterNames: ["bucket", "force"],
+        }),
+    );
+
+    expect(harmlessKey).not.toBe(dangerousKey);
+  });
+
+  test("Object.prototype.toJSON = () => 0: a dry-run-first ledger seeded with only the harmless shape still escalates the dangerous one", () => {
+    // The full authorization consequence, reproduced end-to-end: pre-fix,
+    // BOTH actions' shape keys collapsed to the same hash regardless of
+    // content, so a ledger that had only ever dry-run the harmless
+    // read-only action satisfied `dryRunCompletedShapes.includes(...)` for
+    // the dangerous mutation too, and it came back auto-approved instead of
+    // escalating — the exact "delete-table verdict with only get-item
+    // dry-run" reproduction from the vulnerability report.
+    const policy = validateAgentPolicy({
+      version: 1,
+      scripts: [
+        { script: "dynamodb-crud", operations: ["get-item", "delete-table"] },
+      ],
+      sensitiveTargets: { profiles: ["prod"] },
+      dryRunFirst: true,
+    });
+    const harmlessAction: M3LAgentAction = {
+      script: "dynamodb-crud",
+      operation: "get-item",
+      kind: "read-only",
+    };
+    const dangerousAction: M3LAgentAction = {
+      script: "dynamodb-crud",
+      operation: "delete-table",
+      kind: "mutating",
+      target: { profile: "sandbox" },
+    };
+
+    const decision = withPollutedObjectPrototype(
+      "toJSON",
+      () => 0,
+      () => {
+        const harmlessKey = agentActionShapeKey(harmlessAction);
+        const run: M3LAgentRunLedger = { dryRunCompletedShapes: [harmlessKey] };
+        return evaluateAgentAction({ policy, action: dangerousAction, run });
+      },
+    );
+
+    expect(decision.verdict).toBe("escalate");
+    expect(decision.rule).toBe("dry-run-first");
+  });
+
+  test("Array.prototype.toJSON = () => 0 still yields different shape keys for two actions differing only in parameterNames", () => {
+    // The narrower sibling: Array.prototype.toJSON only collapses ARRAYS
+    // encountered during serialization, so script/operation/kind (plain
+    // strings) still hash correctly regardless. The only channel this
+    // pollution can collide through is `parameterNames` itself — so these
+    // two actions are built to differ ONLY there, deliberately not the
+    // broader collision shape used above.
+    const withParameters = (parameterNames: readonly string[]): string =>
+      withPollutedArrayPrototype(
+        "toJSON",
+        () => 0,
+        () =>
+          agentActionShapeKey({
+            script: "dynamodb-crud",
+            operation: "put-item",
+            kind: "mutating",
+            parameterNames,
+          }),
+      );
+
+    expect(withParameters(["table"])).not.toBe(
+      withParameters(["table", "admin-override"]),
+    );
+  });
+
+  test("Array.prototype.toJSON = () => 0: a dry-run-first ledger seeded with a safe parameter shape still escalates a differently-parameterized one", () => {
+    const policy = validateAgentPolicy({
+      version: 1,
+      scripts: [{ script: "dynamodb-crud", operations: ["put-item"] }],
+      sensitiveTargets: { profiles: ["prod"] },
+      dryRunFirst: true,
+    });
+    const harmlessAction: M3LAgentAction = {
+      script: "dynamodb-crud",
+      operation: "put-item",
+      kind: "mutating",
+      target: { profile: "sandbox" },
+      parameterNames: ["table"],
+    };
+    const dangerousAction: M3LAgentAction = {
+      script: "dynamodb-crud",
+      operation: "put-item",
+      kind: "mutating",
+      target: { profile: "sandbox" },
+      parameterNames: ["table", "admin-override"],
+    };
+
+    const decision = withPollutedArrayPrototype(
+      "toJSON",
+      () => 0,
+      () => {
+        const harmlessKey = agentActionShapeKey(harmlessAction);
+        const run: M3LAgentRunLedger = { dryRunCompletedShapes: [harmlessKey] };
+        return evaluateAgentAction({ policy, action: dangerousAction, run });
+      },
+    );
+
+    expect(decision.verdict).toBe("escalate");
+    expect(decision.rule).toBe("dry-run-first");
+  });
+
+  test("Object.prototype.toJSON = () => ({}) never surfaces as a raw RangeError", () => {
+    // Pre-fix, a naive owner-unaware `hasToJSON` recursed forever here: the
+    // polluted `toJSON()` returns a fresh plain object, which ALSO inherits
+    // the same polluted `toJSON`, forever — a stack overflow. Whatever the
+    // fix's shape, the failure mode this action reaches (if any) must stay
+    // the module's own typed error, never a bare RangeError breaking the
+    // `instanceof M3LError` triage every other hardening case in this file
+    // relies on.
+    const action: M3LAgentAction = {
+      script: "dynamodb-crud",
+      operation: "get-item",
+      kind: "read-only",
+    };
+    const policy = validateAgentPolicy({
+      version: 1,
+      scripts: [{ script: "dynamodb-crud", operations: ["get-item"] }],
+    });
+
+    let thrown: unknown;
+    let decision: M3LAgentDecision | undefined;
+    withPollutedObjectPrototype(
+      "toJSON",
+      () => ({}),
+      () => {
+        try {
+          decision = evaluateAgentAction({ policy, action });
+        } catch (error) {
+          thrown = error;
+        }
+      },
+    );
+
+    if (thrown !== undefined) {
+      expect(thrown).toBeInstanceOf(M3LAgentActionValidationError);
+      expect(thrown).not.toBeInstanceOf(RangeError);
+    } else {
+      // A fixed `hasToJSON` that correctly excludes `Object.prototype` as an
+      // owner never calls the polluted `toJSON()` at all, so evaluation
+      // completes normally — also an acceptable outcome, so long as it is
+      // never a raw, unwrapped RangeError.
+      expect(decision).toBeDefined();
+      expect(decision?.verdict).toBe("auto-approved");
+    }
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* F9 — a hostile length-trap Proxy must not smuggle entries past a ceiling   */
+/* -------------------------------------------------------------------------- */
+
+describe("F9: a two-read length-trap Proxy cannot walk any list past its ceiling", () => {
+  test("a 5 000-element length-trap parameterNames is rejected, never projected whole", () => {
+    // Pre-fix: `.length` was read once for the bound check and again
+    // (per-iteration) for the loop condition — a trap answering `1` then the
+    // TRUE length passes the bound check trivially and then walks all 5 000
+    // entries into the projection, past the 256 ceiling.
+    const hostile = withLengthTrap(
+      Array.from(
+        { length: 5000 },
+        (_unused, index) => `smuggled-${String(index)}`,
+      ),
+    );
+
+    let thrown: unknown;
+    let decision: M3LAgentDecision | undefined;
+    try {
+      decision = evaluateAgentAction({
+        policy: ungradedPolicy(),
+        action: {
+          script: "dynamodb-crud",
+          operation: "get-item",
+          kind: "read-only",
+          parameterNames: hostile,
+        },
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    if (thrown !== undefined) {
+      expect(thrown).toBeInstanceOf(M3LAgentActionValidationError);
+    } else {
+      // Not vacuous: a captured-once fix may legitimately read the trap's
+      // lying first answer (1) and stop there, but it must never come back
+      // with anywhere near the 5 000 entries the true length would allow.
+      expect(decision).toBeDefined();
+      expect(decision?.action.parameterNames.length).toBeLessThanOrEqual(
+        M3L_AGENT_MAX_PARAMETER_NAMES,
+      );
+    }
+  });
+
+  test("the same length-trap Proxy against run.dryRunCompletedShapes (ACT-15) never explodes past 256", () => {
+    // Rewritten: the previous form asserted only `decision?.verdict` is
+    // defined in the untampered branch — unconditionally true whether or
+    // not the bound held, so the test could never fail. Reverting the
+    // `.length`-capture fix in internal/agent/validation.ts and re-running
+    // the suite proved it: the sibling `parameterNames` case correctly
+    // failed (`expected 5000 to be less than or equal to 256`), but this
+    // one stayed green. A mutation run is what exposed it — do not
+    // "simplify" this back to an unconditional `toBeDefined()`.
+    //
+    // This form discriminates by construction. The action is a graded,
+    // non-sensitive mutation under a `dryRunFirst: true` policy, so it
+    // would otherwise escalate "dry-run-first" unless its shape key is
+    // already in `run.dryRunCompletedShapes`. The real key is planted at
+    // the END of a 5 000-entry backing array (every entry below it is
+    // junk that cannot match). Per ACT-15, `.length` must be read once
+    // into a local and both the bound check and the indexed walk driven
+    // from that single value: the trap's lying first answer (1) makes the
+    // walk see only index 0 (junk), so the real key is never found and the
+    // action escalates. A bypass that re-reads `.length` walks all 5 000
+    // entries, finds the real key at the end, skips step 6, and
+    // auto-approves instead — the failure this test exists to catch.
+    const policy = validateAgentPolicy({
+      version: 1,
+      scripts: [{ script: "dynamodb-crud", operations: ["delete-table"] }],
+      sensitiveTargets: { profiles: ["prod"] },
+      dryRunFirst: true,
+    });
+    const action: M3LAgentAction = {
+      script: "dynamodb-crud",
+      operation: "delete-table",
+      kind: "mutating",
+      target: { profile: "sandbox" }, // graded, but not on the sensitive list
+    };
+    const realShapeKey = agentActionShapeKey(action);
+    const shapes = Array.from({ length: 5000 }, (_unused, index) =>
+      index === 4999 ? realShapeKey : `junk-${String(index)}`,
+    );
+    const hostile = withLengthTrap(shapes);
+
+    let thrown: unknown;
+    let decision: M3LAgentDecision | undefined;
+    try {
+      decision = evaluateAgentAction({
+        policy,
+        action,
+        run: { dryRunCompletedShapes: hostile },
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    if (thrown !== undefined) {
+      expect(thrown).toBeInstanceOf(M3LAgentActionValidationError);
+    } else {
+      // Enforced: only the trap's first (lying) answer is ever consulted,
+      // so the real shape key at index 4999 is never seen and step 6 must
+      // escalate.
+      expect(decision?.verdict).toBe("escalate");
+      expect(decision?.rule).toBe("dry-run-first");
+    }
+
+    // Unconditional — outside both branches — so a bypass that walks the
+    // full 5 000 entries and auto-approves cannot slip past either arm
+    // above.
+    expect(decision?.verdict).not.toBe("auto-approved");
+  });
+
+  test("a length-trap Proxy on a policy's scripts list is rejected (ACT declaration, 128)", () => {
+    expect(M3L_AGENT_MAX_SCRIPT_GRANTS).toBe(128);
+    const hostile = withLengthTrap(
+      Array.from({ length: 5000 }, (_unused, index) => ({
+        script: `script-${String(index)}`,
+        allOperations: true,
+      })),
+    );
+
+    const thrown = catchThrown(() =>
+      validateAgentPolicy({ version: 1, scripts: hostile }),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LAgentPolicyDeclarationError);
+    const error = thrown as M3LAgentPolicyDeclarationError;
+    expect(error.code).toBe("ERR_AGENT_POLICY_DECLARATION");
+    expect(error.context["field"]).toBe("scripts");
+    expect(error.context["violation"]).toBe("too-many-grants");
+  });
+
+  test("a length-trap Proxy on a grant's operations list is rejected (ACT declaration, 128)", () => {
+    const hostile = withLengthTrap(
+      Array.from({ length: 5000 }, (_unused, index) => `op-${String(index)}`),
+    );
+
+    const thrown = catchThrown(() =>
+      validateAgentPolicy({
+        version: 1,
+        scripts: [{ script: "dynamodb-crud", operations: hostile }],
+      }),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LAgentPolicyDeclarationError);
+    const error = thrown as M3LAgentPolicyDeclarationError;
+    expect(error.code).toBe("ERR_AGENT_POLICY_DECLARATION");
+    expect(error.context["field"]).toBe("scripts.operations");
+    expect(error.context["violation"]).toBe("too-many-entries");
+  });
+
+  test.each<[string, number, boolean]>([
+    [
+      "parameterNames at exactly the ceiling",
+      M3L_AGENT_MAX_PARAMETER_NAMES,
+      true,
+    ],
+    [
+      "parameterNames one past the ceiling",
+      M3L_AGENT_MAX_PARAMETER_NAMES + 1,
+      false,
+    ],
+  ])(
+    "control: %s (an honest array, no trap) — the fix does not reject everything",
+    (_label, count, shouldPass) => {
+      const names = Array.from(
+        { length: count },
+        (_unused, index) => `parameter-${String(index)}`,
+      );
+
+      if (shouldPass) {
+        const decision = evaluateAgentAction({
+          policy: ungradedPolicy(),
+          action: {
+            script: "dynamodb-crud",
+            operation: "get-item",
+            kind: "read-only",
+            parameterNames: names,
+          },
+        });
+        expect(decision.action.parameterNames).toHaveLength(count);
+      } else {
+        expect(() =>
+          evaluateAgentAction({
+            policy: ungradedPolicy(),
+            action: {
+              script: "dynamodb-crud",
+              operation: "get-item",
+              kind: "read-only",
+              parameterNames: names,
+            },
+          }),
+        ).toThrow(M3LAgentActionValidationError);
+      }
+    },
+  );
+
+  test.each<[string, number, boolean]>([
+    [
+      "dryRunCompletedShapes at exactly the ceiling",
+      M3L_AGENT_MAX_DRY_RUN_SHAPES,
+      true,
+    ],
+    [
+      "dryRunCompletedShapes one past the ceiling",
+      M3L_AGENT_MAX_DRY_RUN_SHAPES + 1,
+      false,
+    ],
+  ])(
+    "control: %s (an honest array, no trap) — the fix does not reject everything",
+    (_label, count, shouldPass) => {
+      const shapes = Array.from(
+        { length: count },
+        (_unused, index) => `shape-${String(index)}`,
+      );
+      const run: M3LAgentRunLedger = { dryRunCompletedShapes: shapes };
+      const action: M3LAgentAction = {
+        script: "dynamodb-crud",
+        operation: "get-item",
+        kind: "read-only",
+      };
+
+      if (shouldPass) {
+        expect(() =>
+          evaluateAgentAction({ policy: ungradedPolicy(), action, run }),
+        ).not.toThrow();
+      } else {
+        expect(() =>
+          evaluateAgentAction({ policy: ungradedPolicy(), action, run }),
+        ).toThrow(M3LAgentActionValidationError);
+      }
+    },
+  );
 });

@@ -1,21 +1,24 @@
 /**
  * `internal/agent/decide` — the tier decision table behind
  * `Core.evaluateAgentAction`: the script allowlist (step 1), the operation
- * allowlist (step 2), the autonomy tier (step 4), ADR-0048's grading arms
- * (step 5), and the graded non-sensitive mutation arm (step 7).
+ * allowlist (step 2), budgets and ceilings (step 3), the autonomy tier and
+ * its declared cross-check (step 4), ADR-0048's grading arms (step 5),
+ * dry-run-first (step 6), and the graded non-sensitive mutation arm (step 7).
  *
- * Private to `core/agent`; never re-exported through a public barrel. Steps 3
- * (budgets) and 6 (dry-run-first) are slice-2 arms and are not evaluated
- * here. Every arm is terminal, every arm reads the frozen record projected at
- * step 0 rather than the caller's action, and every arm carries that
- * projection on its decision.
+ * Private to `core/agent`; never re-exported through a public barrel. Every
+ * arm is terminal, every arm reads the frozen record projected at step 0
+ * rather than the caller's action, and every arm carries that projection on
+ * its decision.
  */
 
 import type {
   M3LAgentActionRecord,
   M3LAgentActionRecordTarget,
 } from "../../core/agent/action-types.js";
-import type { M3LAgentPolicy } from "../../core/agent/policy-types.js";
+import type {
+  M3LAgentPolicy,
+  M3LAgentScriptGrant,
+} from "../../core/agent/policy-types.js";
 import type {
   M3LAgentDecision,
   M3LAgentPolicyRuleId,
@@ -25,6 +28,8 @@ import type {
   M3LDestructiveTargetPredicate,
 } from "../../core/prompt/index.js";
 import { sensitiveTargets } from "../../core/prompt/index.js";
+import type { M3LAgentProjectedRunLedger } from "./budgets.js";
+import { evaluateBudgets } from "./budgets.js";
 
 /**
  * The action under judgement, as library-authored prose composed only from
@@ -96,13 +101,38 @@ function autoApproved(
 }
 
 /**
- * Steps 5 and 7: ADR-0048's grading, ridden rather than reinterpreted, and
- * the graded non-sensitive mutation arm.
+ * Step 6: dry-run-first, applied only to the would-be step-7 auto-approval.
+ * `policy.dryRunFirst !== true` is an opt-in and skips this step, exactly
+ * like `allOperations`'s polarity; `record.dryRun === true` also skips it —
+ * that IS the dry run. Otherwise the record's `shapeKey` must already be in
+ * the ledger's `dryRunCompletedShapes`, read by the array's own `.includes`
+ * — safe here because that list is OUR OWN frozen projection built at step 0
+ * via an indexed walk, not the caller's original (possibly hostile) array.
+ */
+function isDryRunFirstSatisfied(
+  record: M3LAgentActionRecord,
+  policy: M3LAgentPolicy,
+  run: M3LAgentProjectedRunLedger | undefined,
+): boolean {
+  const dryRunFirst = Object.hasOwn(policy, "dryRunFirst")
+    ? policy.dryRunFirst
+    : undefined;
+  if (dryRunFirst !== true || record.dryRun === true) {
+    return true;
+  }
+  const completedShapes = run?.dryRunCompletedShapes ?? [];
+  return completedShapes.includes(record.shapeKey);
+}
+
+/**
+ * Steps 5 through 7: ADR-0048's grading, ridden rather than reinterpreted,
+ * dry-run-first, and the graded non-sensitive mutation arm.
  */
 function decideMutation(
   record: M3LAgentActionRecord,
   policy: M3LAgentPolicy,
   additionalSensitiveTargets: M3LDestructiveTargetPredicate | undefined,
+  run: M3LAgentProjectedRunLedger | undefined,
   subject: string,
 ): M3LAgentDecision {
   const target = record.target;
@@ -156,9 +186,91 @@ function decideMutation(
     );
   }
 
+  // Step 6 — dry-run-first. Sits below step 5 and above step 7, so it can
+  // only move a verdict from auto-approved to escalate, never the reverse: a
+  // sensitive target has already returned above regardless of dry-run state.
+  if (!isDryRunFirstSatisfied(record, policy, run)) {
+    return escalate(
+      "dry-run-first",
+      `${subject} on ${describeTarget(target)} is escalated: dry-run-first is declared and this parameter shape has not yet been dry-run in this run.`,
+      record,
+    );
+  }
+
   return autoApproved(
     "graded-mutation-auto-approved",
     `${subject} on ${describeTarget(target)} is auto-approved: an allowlisted mutation on a graded, non-sensitive target.`,
+    record,
+  );
+}
+
+/**
+ * Step 2 — the operation allowlist, as a plain boolean. Guard polarity,
+ * deliberately opposite to the truthiness verdict in `decideMutation` above:
+ * `allOperations` is an OPT-IN that widens a grant from a named operation set
+ * to the entire script, so it demands strict `true` and a truthy non-`true`
+ * value must never widen authority. `validateAgentPolicy` already rejects a
+ * non-boolean; this is the documented second line of defence, not a
+ * redundancy. Do NOT "harmonise" the two polarities.
+ *
+ * Both keys are read through `Object.hasOwn` for the same reason
+ * `sensitiveTargets` is in `decideMutation`: a grant carries exactly ONE of
+ * them, so the other is an absent own key and a plain `grant.allOperations`
+ * walks to `Object.prototype`. With `Object.prototype.allOperations = true` a
+ * grant of `operations: ["get-item"]` widened to the whole script and this
+ * entire step was skipped.
+ */
+function isOperationAllowed(
+  grant: M3LAgentScriptGrant,
+  record: M3LAgentActionRecord,
+): boolean {
+  const allOperations = Object.hasOwn(grant, "allOperations")
+    ? grant.allOperations
+    : undefined;
+  if (allOperations === true) {
+    return true;
+  }
+  const operations = Object.hasOwn(grant, "operations")
+    ? grant.operations
+    : undefined;
+  return (
+    record.operation !== undefined &&
+    operations !== undefined &&
+    operations.includes(record.operation)
+  );
+}
+
+/**
+ * Step 4's `read-only` arm, plus its declared cross-check on `kind`.
+ * `Object.hasOwn`: a grant carries `readOnlyOperations` only when the
+ * deployment declared it, and a polluted
+ * `Object.prototype.readOnlyOperations = []` must not fabricate a
+ * cross-check for a grant that declared none. One-directional by design:
+ * only a false `read-only` CLAIM is dangerous, because only it skips
+ * grading — a `mutating` claim is never doubted here.
+ */
+function decideReadOnly(
+  record: M3LAgentActionRecord,
+  grant: M3LAgentScriptGrant,
+  subject: string,
+): M3LAgentDecision {
+  const readOnlyOperations = Object.hasOwn(grant, "readOnlyOperations")
+    ? grant.readOnlyOperations
+    : undefined;
+  if (
+    readOnlyOperations !== undefined &&
+    (record.operation === undefined ||
+      !readOnlyOperations.includes(record.operation))
+  ) {
+    return escalate(
+      "kind-cross-check-escalated",
+      `${subject} is escalated: the grant's readOnlyOperations does not corroborate this read-only claim.`,
+      record,
+    );
+  }
+  return autoApproved(
+    "read-only-auto-approved",
+    `${subject} is auto-approved: read-only actions inside the allowlist need no review.`,
     record,
   );
 }
@@ -171,6 +283,8 @@ function decideMutation(
  * @param policy - The validated, branded policy.
  * @param additionalSensitiveTargets - The caller's extra sensitivity
  *   predicate, or `undefined` when absent.
+ * @param run - The step-0 projection of the run ledger, or `undefined` when
+ *   the caller passed none.
  * @returns The decision — verdict, rule id, library-authored reason, and the
  *   frozen record.
  */
@@ -178,6 +292,7 @@ export function decideAgentAction(
   record: M3LAgentActionRecord,
   policy: M3LAgentPolicy,
   additionalSensitiveTargets: M3LDestructiveTargetPredicate | undefined,
+  run: M3LAgentProjectedRunLedger | undefined,
 ): M3LAgentDecision {
   const subject = describeSubject(record);
 
@@ -194,52 +309,39 @@ export function decideAgentAction(
     );
   }
 
-  // Step 2 — the operation allowlist. Guard polarity, deliberately opposite
-  // to the truthiness verdict in `decideMutation` above: `allOperations` is
-  // an OPT-IN that widens a grant from a named operation set to the entire
-  // script, so it demands strict `true` and a truthy non-`true` value must
-  // never widen authority. `validateAgentPolicy` already rejects a
-  // non-boolean; this is the documented second line of defence, not a
-  // redundancy. Do NOT "harmonise" the two polarities.
-  //
-  // Both keys are read through `Object.hasOwn` for the same reason
-  // `sensitiveTargets` is in `decideMutation`: a grant carries exactly ONE of
-  // them, so the other is an absent own key and a plain `grant.allOperations`
-  // walks to `Object.prototype`. With `Object.prototype.allOperations = true`
-  // a grant of `operations: ["get-item"]` widened to the whole script and
-  // this entire step was skipped.
-  const allOperations = Object.hasOwn(grant, "allOperations")
-    ? grant.allOperations
-    : undefined;
-  if (allOperations !== true) {
-    const operations = Object.hasOwn(grant, "operations")
-      ? grant.operations
-      : undefined;
-    if (
-      record.operation === undefined ||
-      operations === undefined ||
-      !operations.includes(record.operation)
-    ) {
-      return denied(
-        "operation-not-allowlisted",
-        `${subject} is denied: the grant allowlists named operations and this is not one of them.`,
-        record,
-      );
-    }
+  // Step 2 — the operation allowlist.
+  if (!isOperationAllowed(grant, record)) {
+    return denied(
+      "operation-not-allowlisted",
+      `${subject} is denied: the grant allowlists named operations and this is not one of them.`,
+      record,
+    );
   }
 
-  // Step 3 — budgets and ceilings — is slice 2 and is not evaluated here.
+  // Step 3 — budgets and ceilings. Sits ABOVE step 4: budgets gate a
+  // read-only action too, since an agent burning tokens on read-only
+  // introspection is squarely inside the "no token/cost governance" gap
+  // ADR-0025 records. `policy.budgets` is read through `Object.hasOwn` so a
+  // polluted `Object.prototype.budgets` cannot make this step run for a
+  // policy that declared none.
+  const budgets = Object.hasOwn(policy, "budgets") ? policy.budgets : undefined;
+  const budgetVerdict = evaluateBudgets(budgets, run, subject);
+  if (budgetVerdict !== undefined) {
+    return escalate(budgetVerdict.rule, budgetVerdict.reason, record);
+  }
 
-  // Step 4 — the autonomy tier.
+  // Step 4 — the autonomy tier, plus its declared cross-check on `kind`.
   switch (record.kind) {
     case "read-only":
-      return autoApproved(
-        "read-only-auto-approved",
-        `${subject} is auto-approved: read-only actions inside the allowlist need no review.`,
-        record,
-      );
+      return decideReadOnly(record, grant, subject);
     case "mutating":
-      break;
+      return decideMutation(
+        record,
+        policy,
+        additionalSensitiveTargets,
+        run,
+        subject,
+      );
     default: {
       /* v8 ignore next 3 -- unreachable: ACT-3 rejects any other kind at step 0;
          this is a compile-time exhaustiveness assertion, not a runtime path. */
@@ -248,8 +350,4 @@ export function decideAgentAction(
       return escalate("unclassifiable-escalated", reason, record);
     }
   }
-
-  // Step 6 — dry-run-first — is slice 2 and is not evaluated here.
-
-  return decideMutation(record, policy, additionalSensitiveTargets, subject);
 }

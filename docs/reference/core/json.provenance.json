@@ -63,15 +63,15 @@
         {
           "file": "packages/m3l-common/src/core/json/canonicalJson.ts",
           "symbol": "canonicalJsonStringify",
-          "blob": "b93e7adca9c91eae80355a2e35f3ad41269ada34"
+          "blob": "96256cb8c15769507cdefa39330e8e45f31a2e31"
         },
         {
           "file": "packages/m3l-common/src/core/json/canonicalJson.ts",
           "symbol": "canonicalJsonHash",
-          "blob": "b93e7adca9c91eae80355a2e35f3ad41269ada34"
+          "blob": "96256cb8c15769507cdefa39330e8e45f31a2e31"
         }
       ],
-      "retrieved": "2026-08-11"
+      "retrieved": "2026-08-29"
     },
     {
       "heading": "Notes and behavior",
