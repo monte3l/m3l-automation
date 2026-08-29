@@ -45,7 +45,7 @@ const DRAIN_OUTCOME: M3LDrainOutcome = {
  * SETTLED, which is what distinguishes "started concurrently" from "ran
  * sequentially after".
  */
-function createControllableDrainController(): {
+function createControllableDrainController(order?: string[]): {
   readonly controller: M3LDrainController;
   readonly calls: number;
   resolve: () => void;
@@ -59,6 +59,7 @@ function createControllableDrainController(): {
     track: () => () => undefined,
     drain: () => {
       state.calls += 1;
+      order?.push("http.drain");
       return new Promise<M3LDrainOutcome>((resolve) => {
         resolveFn = resolve;
       });
@@ -104,17 +105,30 @@ function createControllableServer(): {
   };
 }
 
-/** A controllable fake `M3LShutdownDrainable` whose `drain()` does not settle until `resolve()` is invoked. */
-function createControllableDrainable(): {
+/**
+ * A controllable fake `M3LShutdownDrainable` whose `drain()` does not settle
+ * until `resolve()` is invoked, and whose synchronous `endStreams()` records
+ * every call. Both methods push a labeled entry onto `order` when supplied —
+ * shared with a sibling fake's own order-recording so a test can assert
+ * cross-collaborator call ordering (see the ordering-guarantee describe
+ * block below), not just each fake's own call count in isolation.
+ */
+function createControllableDrainable(order?: string[]): {
   readonly drainable: M3LShutdownDrainable;
   readonly calls: number;
+  readonly endStreamsCalls: number;
   resolve: () => void;
 } {
-  const state = { calls: 0 };
+  const state = { calls: 0, endStreamsCalls: 0 };
   let resolveFn: (() => void) | undefined;
   const drainable: M3LShutdownDrainable = {
+    endStreams: () => {
+      state.endStreamsCalls += 1;
+      order?.push("runs.endStreams");
+    },
     drain: () => {
       state.calls += 1;
+      order?.push("runs.drain");
       return new Promise<void>((resolve) => {
         resolveFn = resolve;
       });
@@ -124,6 +138,9 @@ function createControllableDrainable(): {
     drainable,
     get calls() {
       return state.calls;
+    },
+    get endStreamsCalls() {
+      return state.endStreamsCalls;
     },
     resolve: () => {
       resolveFn?.();
@@ -284,6 +301,58 @@ describe("createShutdown — runtime.runs absent (the common case today) still w
 
     expect(recordingDisposable.closeCallCount).toBe(1);
     expect(outcome).toEqual(DRAIN_OUTCOME);
+  });
+});
+
+// Regression coverage for the SIGTERM-with-a-watcher-attached failure (X4
+// slice 7a acceptance-step-5): `M3LDrainController.drain()` aborts every
+// in-flight request signal SYNCHRONOUSLY, so calling it before the run
+// subsystem has ended its streams would sever an SSE watcher's connection
+// with no explanation. The fix adds a synchronous `endStreams()` to
+// `M3LShutdownDrainable` and calls it as the FIRST statement of
+// `runShutdownSequence`, strictly before `runtime.drain.drain()`.
+describe("createShutdown — endStreams() runs before drain.drain() (the ordering the fix guarantees)", () => {
+  test("runtime.runs.endStreams() is invoked before runtime.drain.drain() — asserting order, not just that both were called", async () => {
+    // A single shared array recording BOTH collaborators' calls in the
+    // order they actually happen: asserting each fake's own call count
+    // (as the sibling describe blocks above do) cannot distinguish
+    // "endStreams first" from "drain first" — only a shared, ordered log
+    // can. This is the test that would still pass under the exact bug
+    // being fixed if it merely asserted `calls === 1` on each side; instead
+    // it fails unless `endStreams` genuinely precedes `drain.drain()`.
+    const order: string[] = [];
+    const httpDrain = createControllableDrainController(order);
+    const server = createControllableServer();
+    const runsDrain = createControllableDrainable(order);
+    const { disposable } = createRecordingDisposable();
+    const runtime: M3LShutdownRuntime = {
+      drain: httpDrain.controller,
+      logger: new Core.M3LLogger([]),
+      runs: runsDrain.drainable,
+    };
+
+    const shutdown = createShutdown(
+      runtime,
+      server.server,
+      disposable,
+      () => undefined,
+      () => undefined,
+    );
+    const settled = shutdown();
+
+    // `runShutdownSequence`'s synchronous portion (every `.endStreams()` /
+    // `.drain()` / `.close()` call) has already run to completion by this
+    // point — nothing here has been awaited yet.
+    expect(order[0]).toBe("runs.endStreams");
+    expect(order.indexOf("runs.endStreams")).toBeLessThan(
+      order.indexOf("http.drain"),
+    );
+    expect(runsDrain.endStreamsCalls).toBe(1);
+
+    httpDrain.resolve();
+    server.resolve();
+    runsDrain.resolve();
+    await settled;
   });
 });
 
