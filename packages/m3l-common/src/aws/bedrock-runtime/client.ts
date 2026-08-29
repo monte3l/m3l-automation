@@ -5,15 +5,25 @@
  * types directly. See ADR-0059 for why this module exists and its scope
  * boundary against V5 (tool-use loop primitives).
  *
- * `invoke()`'s single-shot request/response mapping lives here in full;
- * `invokeStream()` is a thin delegation into `stream.ts`'s exported
- * `invokeStream` function, which holds the entire streaming implementation
- * (kept in a separate file per ADR-0072's per-file size ratchet). Machinery
- * genuinely shared by both — abort-signal helpers, the SDK exception-`name`
- * classifier, the retry-runner construction, and the request-mapping
- * helpers — lives in `shared.ts`, imported by both this file and
- * `stream.ts` (see `shared.ts`'s own doc comment for why `stream.ts` cannot
- * import from this file directly).
+ * `invoke()`'s single-shot request/response mapping lives here in full.
+ * `invokeStream()` builds its `ConverseInput` ONCE, up front, via
+ * `shared.ts`'s `buildConverseInput` with `field-readers.ts`'s `textOnly`
+ * policy (refusing `tools`/`toolChoice` and any non-`text` content block —
+ * see that module's doc comment's "The `textOnly` policy" section), then
+ * delegates into `stream.ts`'s exported `invokeStream` function, which holds
+ * the per-model-attempt fallback/retry/abort state machine (kept in a
+ * separate file per ADR-0072's per-file size ratchet) and swaps only
+ * `modelId` on that already-built input for each attempt. This replaces the
+ * former `stream-guard.ts` — a second, parallel request-construction path
+ * that ran before `field-readers.ts`'s field table and so inherited none of
+ * its guards (2026-08-29 security pass round 5, Must-fix F1/F2); deleted
+ * entirely once `invokeStream`'s scope became a mode of the one shared
+ * table instead. Machinery genuinely shared by both `invoke`/`invokeStream`
+ * — abort-signal helpers, the SDK exception-`name` classifier, the
+ * retry-runner construction, and the request-mapping helpers — lives in
+ * `shared.ts`, imported by both this file and `stream.ts` (see `shared.ts`'s
+ * own doc comment for why `stream.ts` cannot import from this file
+ * directly).
  *
  * @packageDocumentation
  */
@@ -22,6 +32,7 @@ import {
   ConverseCommand,
   type BedrockRuntimeClient,
   type ConverseCommandOutput,
+  type ToolConfiguration,
 } from "@aws-sdk/client-bedrock-runtime";
 
 import { M3LOperationAbortedError } from "../../core/errors/index.js";
@@ -30,8 +41,9 @@ import {
   M3LBedrockRuntimeNoModelError,
   M3LBedrockRuntimeOperationError,
 } from "./error.js";
+import { sanitizeForMessage } from "./message-safety.js";
+import { buildConverseInput } from "./request-builder.js";
 import {
-  buildConverseInput,
   buildRetryRunner,
   classifySendFailure,
   isAborted,
@@ -40,6 +52,12 @@ import {
   STOP_REASON_LOOKUP,
 } from "./shared.js";
 import { invokeStream as invokeStreamImpl } from "./stream.js";
+import {
+  buildToolConfig,
+  mapNarrowedToolUse,
+  narrowToolUseMember,
+  refuseServerToolUse,
+} from "./tools.js";
 import type {
   M3LBedrockContentBlock,
   M3LBedrockInvocationResult,
@@ -47,33 +65,122 @@ import type {
   M3LBedrockInvokeRequest,
   M3LBedrockRuntimeOptions,
   M3LBedrockStreamEvent,
+  M3LBedrockToolInvokeRequest,
 } from "./types.js";
+
+/**
+ * Placeholder `modelId` used only while building `invokeStream`'s once-built,
+ * `textOnly` `ConverseInput` — `stream.ts`'s per-attempt loop always
+ * overwrites `modelId` (`{ ...input, modelId }`) before constructing any
+ * `ConverseStreamCommand`, so this value is never read for any actual
+ * attempt; it exists purely to satisfy `buildConverseInput`'s required
+ * `modelId` parameter at the one call site that doesn't yet know which
+ * model will serve the request.
+ */
+const STREAM_BUILD_PLACEHOLDER_MODEL_ID = "";
 
 /** Builds the `ConverseCommand` for one model attempt. See `shared.ts`'s `buildConverseInput`. */
 function buildConverseCommand(
   modelId: string,
   request: M3LBedrockInvokeRequest,
+  toolConfig: ToolConfiguration | undefined,
 ): ConverseCommand {
-  return new ConverseCommand(buildConverseInput(modelId, request));
+  return new ConverseCommand(buildConverseInput(modelId, request, toolConfig));
+}
+
+/** {@link mapContent}'s result: the mapped blocks plus the counts `mapConverseResponse` needs to detect an all-malformed `toolUse` reply. */
+interface MappedContent {
+  readonly blocks: M3LBedrockContentBlock[];
+  /** How many reply blocks were `toolUse`-shaped at all (mapped or not). */
+  readonly toolUseShapedCount: number;
+  /** How many of those shaped blocks mapped successfully. */
+  readonly toolUseMappedCount: number;
 }
 
 /**
- * Filters a response message's content blocks down to text blocks, dropping
- * (never throwing on) any non-`text` member — the model's reply is external
- * data, not a caller mistake, so a future non-text member is tolerated
- * rather than rejected. See `docs/reference/aws/bedrock-runtime.md`'s
- * "Non-text content blocks in a reply" note.
+ * Maps a response message's content blocks onto {@link M3LBedrockContentBlock},
+ * keeping both `text` and well-formed `toolUse` blocks (V4 dropped every
+ * non-`text` member; V5 keeps `toolUse` since `result.message.content` is the
+ * caller's input to the tool-use loop). Any other block this wrapper cannot
+ * represent — including a malformed `toolUse` (missing/non-string
+ * `toolUseId`/`name`) — is dropped from `blocks` rather than thrown on here:
+ * the model's reply is external data, not a caller mistake. See
+ * `docs/reference/aws/bedrock-runtime.md`'s "Unrepresentable content blocks
+ * in a reply" note for the drop-vs-refuse rule; `mapConverseResponse` is
+ * what turns an all-malformed `stopReason: "tool_use"` reply (every shaped
+ * block dropped) into a thrown error, using this function's returned
+ * counts.
+ *
+ * The `server_tool_use` refusal (`tools.ts`'s `refuseServerToolUse`) runs
+ * **unconditionally, per block, before the `text`-member check** — never
+ * behind it — since the SDK's deserializer does not enforce single-member
+ * unions and a reply block can carry both `text` and a
+ * `server_tool_use`-marked `toolUse` member at once. The shaped-count
+ * bookkeeping (`tools.ts`'s `narrowToolUseMember`) runs the same way: a
+ * block carrying both a non-empty `text` member and a malformed `toolUse`
+ * member must still count toward `toolUseShapedCount`, or the all-malformed
+ * cross-check below never fires for it (the same bypass shape the
+ * `server_tool_use` refusal already guards against, applied to this
+ * bookkeeping too).
+ *
+ * @throws {@link M3LBedrockRuntimeOperationError} When a block carries the
+ *   SDK marker `type: "server_tool_use"` (see `tools.ts`'s
+ *   `refuseServerToolUse`) — Bedrock already executed that tool
+ *   server-side, so mapping it would risk a second, duplicate execution.
  */
 function mapContent(
-  content: readonly { readonly text?: string }[] | undefined,
-): M3LBedrockContentBlock[] {
+  content:
+    | readonly { readonly text?: string; readonly toolUse?: unknown }[]
+    | undefined,
+): MappedContent {
   const blocks: M3LBedrockContentBlock[] = [];
+  let toolUseShapedCount = 0;
+  let toolUseMappedCount = 0;
   for (const block of content ?? []) {
+    refuseServerToolUse(block);
     if (typeof block.text === "string") {
       blocks.push({ type: "text", text: block.text });
     }
+    const toolUse = narrowToolUseMember(block);
+    if (toolUse !== undefined) {
+      toolUseShapedCount += 1;
+      const mapped = mapNarrowedToolUse(toolUse);
+      if (mapped !== undefined) {
+        toolUseMappedCount += 1;
+        blocks.push(mapped);
+      }
+    }
   }
-  return blocks;
+  return { blocks, toolUseShapedCount, toolUseMappedCount };
+}
+
+/**
+ * `ConverseCommandOutput["usage"]`'s three token-count fields, all present.
+ * A hand-written interface, not `Required<TokenUsage>` — the SDK's
+ * `TokenUsage` fields are declared `number | undefined` (a union, not an
+ * optional `?:` modifier), so `Required<>` is a no-op on them and would not
+ * actually narrow away `undefined`.
+ */
+interface CompleteTokenUsage {
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+  readonly totalTokens: number;
+}
+
+/**
+ * Type predicate: `true` when `usage`'s three token counts are all present
+ * — split out of `mapConverseResponse` to keep its branch count under the
+ * repo's complexity ceiling.
+ */
+function isCompleteUsage(
+  usage: NonNullable<ConverseCommandOutput["usage"]> | undefined,
+): usage is CompleteTokenUsage {
+  return (
+    usage !== undefined &&
+    usage.inputTokens !== undefined &&
+    usage.outputTokens !== undefined &&
+    usage.totalTokens !== undefined
+  );
 }
 
 /**
@@ -81,12 +188,16 @@ function mapContent(
  *
  * @throws {@link M3LBedrockRuntimeOperationError} When `output`/`stopReason`/
  *   `usage` is missing, `output` matches the `$UnknownMember` arm rather than
- *   carrying a `message` (a malformed-but-HTTP-successful response), or
+ *   carrying a `message` (a malformed-but-HTTP-successful response),
  *   `stopReason` is not one of the nine documented
  *   {@link M3LBedrockStopReason} members — AWS's Smithy enums are open at the
  *   wire level, so a future SDK/service value is not a client-side type
  *   error, but it is still a shape this wrapper refuses to silently admit
- *   into a type callers switch on exhaustively.
+ *   into a type callers switch on exhaustively — or `stopReason` is
+ *   `"tool_use"` while every `toolUse`-shaped reply block was malformed (see
+ *   {@link mapContent}): a caller acting on `stopReason: "tool_use"` must
+ *   never see an empty `content` array indistinguishable from "no tool call
+ *   was made at all".
  */
 function mapConverseResponse(
   response: ConverseCommandOutput,
@@ -99,19 +210,27 @@ function mapConverseResponse(
   if (
     message === undefined ||
     stopReason === undefined ||
-    usage === undefined ||
-    usage.inputTokens === undefined ||
-    usage.outputTokens === undefined ||
-    usage.totalTokens === undefined
+    !isCompleteUsage(usage)
   ) {
     throw new M3LBedrockRuntimeOperationError(
-      `Converse response for model ${modelId} was missing output/stopReason/usage`,
+      `Converse response for model ${sanitizeForMessage(modelId)} was missing output/stopReason/usage`,
     );
   }
 
   if (!STOP_REASON_LOOKUP.has(stopReason)) {
     throw new M3LBedrockRuntimeOperationError(
-      `Converse response for model ${modelId} had an unrecognized stopReason`,
+      `Converse response for model ${sanitizeForMessage(modelId)} had an unrecognized stopReason`,
+    );
+  }
+
+  const mappedContent = mapContent(message.content);
+  if (
+    stopReason === "tool_use" &&
+    mappedContent.toolUseShapedCount > 0 &&
+    mappedContent.toolUseMappedCount === 0
+  ) {
+    throw new M3LBedrockRuntimeOperationError(
+      `Converse response for model ${sanitizeForMessage(modelId)} had stopReason tool_use but every toolUse-shaped content block (${mappedContent.toolUseShapedCount}) was malformed`,
     );
   }
 
@@ -119,9 +238,9 @@ function mapConverseResponse(
     modelId,
     message: {
       role: mapRole(message.role),
-      content: mapContent(message.content),
+      content: mappedContent.blocks,
     },
-    stopReason: stopReason,
+    stopReason,
     usage: {
       inputTokens: usage.inputTokens,
       outputTokens: usage.outputTokens,
@@ -196,14 +315,18 @@ export class M3LBedrockRuntimeOperations {
    * Sends one `Converse` request, walking `models[]` in order on an
    * availability fault until one succeeds or every model is exhausted.
    *
-   * @param request - The conversation messages, optional system prompt, and
-   *   optional inference tuning.
+   * @param request - The conversation messages, optional system prompt,
+   *   optional inference tuning, and (V5) optional `tools`/`toolChoice`.
    * @param options - Optional `signal` for cooperative cancellation.
    * @returns The mapped result from whichever model actually served the
    *   request.
    * @throws {@link M3LBedrockRuntimeOperationError} For a transport/API-call
-   *   failure not covered by the other two error classes, or a
-   *   malformed-but-successful response.
+   *   failure not covered by the other two error classes, a
+   *   malformed-but-successful response, or one of the two documented
+   *   caller errors for a malformed `tools`/`toolChoice` combination (see
+   *   `tools.ts`'s `buildToolConfig`) — request-shape validation runs
+   *   **before** the `AbortSignal` check below, so a malformed request is
+   *   refused even under an already-aborted signal.
    * @throws {@link M3LBedrockRuntimeModelError} When the serving model itself
    *   faults on this specific input (`ModelErrorException`).
    * @throws {@link M3LBedrockRuntimeNoModelError} When every model in the
@@ -214,9 +337,16 @@ export class M3LBedrockRuntimeOperations {
    *   never advances to the next model on abort.
    */
   async invoke(
-    request: M3LBedrockInvokeRequest,
+    request: M3LBedrockToolInvokeRequest,
     options?: M3LBedrockInvokeOptions,
   ): Promise<M3LBedrockInvocationResult> {
+    // Validated and built once, up front — before the AbortSignal check
+    // below and before any model is attempted — so both documented caller
+    // errors (`toolChoice` without `tools`, or naming a tool absent from
+    // `tools`) are never promoted to M3LOperationAbortedError under an
+    // already-aborted signal, and never depend on which model is tried
+    // first.
+    const toolConfig = buildToolConfig(request);
     const signal = options?.signal;
     const attemptedModels: string[] = [];
     let lastCause: unknown;
@@ -228,7 +358,12 @@ export class M3LBedrockRuntimeOperations {
       }
       attemptedModels.push(modelId);
 
-      const outcome = await this.#invokeOnModel(modelId, request, signal);
+      const outcome = await this.#invokeOnModel(
+        modelId,
+        request,
+        toolConfig,
+        signal,
+      );
       if (outcome.type === "success") {
         return outcome.result;
       }
@@ -270,9 +405,10 @@ export class M3LBedrockRuntimeOperations {
   async #invokeOnModel(
     modelId: string,
     request: M3LBedrockInvokeRequest,
+    toolConfig: ToolConfiguration | undefined,
     signal: AbortSignal | undefined,
   ): Promise<ModelAttemptOutcome> {
-    const command = buildConverseCommand(modelId, request);
+    const command = buildConverseCommand(modelId, request, toolConfig);
     const runner = buildRetryRunner(signal);
 
     let response: ConverseCommandOutput;
@@ -313,9 +449,14 @@ export class M3LBedrockRuntimeOperations {
    *   error-shaped event; every fault below is a rejection of `.next()`.
    * @throws {@link M3LBedrockRuntimeOperationError} For a transport/API-call
    *   failure not covered by the other error classes, a malformed-but-
-   *   successful `send()` response (`stream === undefined`), or a malformed
-   *   terminal `stopReason`/`usage` value — never retried or fallen back
-   *   from, even after events have already been yielded to the caller.
+   *   successful `send()` response (`stream === undefined`), a malformed
+   *   terminal `stopReason`/`usage` value, or — checked first, before model
+   *   selection — a structurally-typed `request` that carries `tools`/
+   *   `toolChoice` anyway, or whose `messages[].content` carries any
+   *   non-`text` block (`origin: caller`, `retryable: false`; see
+   *   `field-readers.ts`'s `textOnly` policy and this module's doc comment's
+   *   scope-boundary note). Never retried or fallen back from, even after
+   *   events have already been yielded to the caller.
    * @throws {@link M3LBedrockRuntimeModelError} When the serving model
    *   itself faults on this specific input (`ModelErrorException`/
    *   `ModelStreamErrorException`), on either side of the `hasYielded`
@@ -351,6 +492,17 @@ export class M3LBedrockRuntimeOperations {
     request: M3LBedrockInvokeRequest,
     options?: M3LBedrockInvokeOptions,
   ): AsyncGenerator<M3LBedrockStreamEvent, void, void> {
-    yield* invokeStreamImpl(this.#client, this.#models, request, options);
+    // Built ONCE, up front — before model selection, matching `invoke`'s own
+    // "validate before the fallback loop" ordering. `modelId` here is a
+    // placeholder only: `stream.ts` swaps it to the actual attempted model
+    // on every fallback attempt (`{ ...input, modelId }`), so this value is
+    // never read for any real attempt.
+    const input = buildConverseInput(
+      STREAM_BUILD_PLACEHOLDER_MODEL_ID,
+      request,
+      undefined,
+      { textOnly: true },
+    );
+    yield* invokeStreamImpl(this.#client, this.#models, input, options);
   }
 }

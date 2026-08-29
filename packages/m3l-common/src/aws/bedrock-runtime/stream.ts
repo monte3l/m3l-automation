@@ -33,7 +33,6 @@ import {
   M3LBedrockRuntimeStreamError,
 } from "./error.js";
 import {
-  buildConverseInput,
   buildRetryRunner,
   classifySendFailure,
   isAborted,
@@ -42,19 +41,25 @@ import {
   readErrorName,
   STOP_REASON_LOOKUP,
 } from "./shared.js";
+import type { ConverseInput } from "./request-builder.js";
 import type {
   M3LBedrockInvokeOptions,
-  M3LBedrockInvokeRequest,
   M3LBedrockStopReason,
   M3LBedrockStreamEvent,
 } from "./types.js";
 
-/** Builds the `ConverseStreamCommand` for one model attempt. See `shared.ts`'s `buildConverseInput`. */
+/**
+ * Builds the `ConverseStreamCommand` for one model attempt from `client.ts`'s
+ * `invokeStream`'s once-built, `textOnly` `ConverseInput` — swapping only
+ * `modelId` per attempt, never rebuilding the rest of the input. See
+ * `shared.ts`'s `buildConverseInput` and `field-readers.ts`'s `textOnly`
+ * policy for how `input` was constructed.
+ */
 function buildConverseStreamCommand(
   modelId: string,
-  request: M3LBedrockInvokeRequest,
+  input: ConverseInput,
 ): ConverseStreamCommand {
-  return new ConverseStreamCommand(buildConverseInput(modelId, request));
+  return new ConverseStreamCommand({ ...input, modelId });
 }
 
 /**
@@ -370,10 +375,10 @@ type StreamPullOutcome =
 async function requestStream(
   client: BedrockRuntimeClient,
   modelId: string,
-  request: M3LBedrockInvokeRequest,
+  input: ConverseInput,
   signal: AbortSignal | undefined,
 ): Promise<StreamRequestOutcome> {
-  const command = buildConverseStreamCommand(modelId, request);
+  const command = buildConverseStreamCommand(modelId, input);
   const runner = buildRetryRunner(signal);
 
   let output: ConverseStreamCommandOutput;
@@ -547,10 +552,10 @@ async function* drainStream(
 async function* attemptStream(
   client: BedrockRuntimeClient,
   modelId: string,
-  request: M3LBedrockInvokeRequest,
+  input: ConverseInput,
   signal: AbortSignal | undefined,
 ): AsyncGenerator<M3LBedrockStreamEvent, StreamAttemptOutcome, void> {
-  const requested = await requestStream(client, modelId, request, signal);
+  const requested = await requestStream(client, modelId, input, signal);
   if (requested.type === "advance") {
     return requested;
   }
@@ -570,8 +575,12 @@ async function* attemptStream(
  *
  * @param client - The already-provisioned `BedrockRuntimeClient`.
  * @param models - The ordered model-id fallback list.
- * @param request - The conversation messages, optional system prompt, and
- *   optional inference tuning.
+ * @param input - The once-built `ConverseInput` from `client.ts`'s
+ *   `invokeStream` (`shared.ts`'s `buildConverseInput` with
+ *   `field-readers.ts`'s `textOnly` policy) — built once, before model
+ *   selection; each fallback attempt swaps only `modelId` onto it (see
+ *   {@link buildConverseStreamCommand}), never rebuilding `messages`/
+ *   `system`/`inferenceConfig`.
  * @param options - Optional `signal` for cooperative cancellation.
  * @returns An `AsyncGenerator` yielding {@link M3LBedrockStreamEvent}s —
  *   exactly one `message-start` (before any text), zero or more
@@ -607,7 +616,7 @@ async function* attemptStream(
 export async function* invokeStream(
   client: BedrockRuntimeClient,
   models: readonly string[],
-  request: M3LBedrockInvokeRequest,
+  input: ConverseInput,
   options?: M3LBedrockInvokeOptions,
 ): AsyncGenerator<M3LBedrockStreamEvent, void, void> {
   const signal = options?.signal;
@@ -621,7 +630,7 @@ export async function* invokeStream(
     }
     attemptedModels.push(modelId);
 
-    const outcome = yield* attemptStream(client, modelId, request, signal);
+    const outcome = yield* attemptStream(client, modelId, input, signal);
     if (outcome === undefined) {
       // Fully drained: the fused message-stop event was already yielded.
       return;

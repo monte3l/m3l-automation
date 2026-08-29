@@ -7,6 +7,8 @@
 
 import { M3LError } from "../../core/errors/index.js";
 
+import { sanitizeForMessage } from "./message-safety.js";
+
 /**
  * Constructor options for {@link M3LBedrockRuntimeOperationError}.
  *
@@ -105,9 +107,12 @@ interface M3LBedrockRuntimeModelErrorOptions {
  * ADR-0059 treats this as the caller's decision (`origin: external`,
  * `retryable: "situational"`).
  *
- * `modelId` is both an own field (`error.modelId`) and mirrored into
- * `context.modelId` — `context` is what `toJSON()` serializes and what
- * ADR-0035 diagnostics tooling reads.
+ * `modelId` is both an own field (`error.modelId`, carried verbatim) and
+ * mirrored into `context.modelId` (2026-08-29 security pass round 5,
+ * Must-fix F4: `context` — unlike `modelId`, unlike `error.modelId` — is
+ * what `toJSON()` serializes verbatim and unredacted, so `context.modelId`
+ * is rendered through `message-safety.ts`'s `sanitizeForMessage` before
+ * storage, capping length and escaping control characters).
  *
  * @example
  * ```ts
@@ -140,7 +145,7 @@ export class M3LBedrockRuntimeModelError extends M3LError {
   constructor(message: string, options: M3LBedrockRuntimeModelErrorOptions) {
     super(message, {
       code: "ERR_BEDROCK_RUNTIME_MODEL",
-      context: { modelId: options.modelId },
+      context: { modelId: sanitizeForMessage(options.modelId) },
       ...(options.cause !== undefined && { cause: options.cause }),
     });
     this.modelId = options.modelId;
@@ -175,9 +180,10 @@ interface M3LBedrockRuntimeNoModelErrorOptions {
  * whole failed, not a synthetic message. `origin: caller`,
  * `retryable: false` — the caller's model list is the fault, not AWS.
  *
- * `attemptedModels` is both an own field and mirrored into
- * `context.attemptedModels`, for the same `toJSON()`/diagnostics reason as
- * {@link M3LBedrockRuntimeModelError.modelId}. `cause` is the standard
+ * `attemptedModels` is both an own field (carried verbatim) and mirrored
+ * into `context.attemptedModels` (each entry rendered through
+ * `sanitizeForMessage`, same F4 rationale as
+ * {@link M3LBedrockRuntimeModelError.modelId}). `cause` is the standard
  * `M3LError` chain (not an own field) — without it, a caller whose every
  * model failed for a genuine, diagnosable AWS-side reason would see only a
  * bare `attemptedModels` list with no evidence of _why_.
@@ -213,7 +219,9 @@ export class M3LBedrockRuntimeNoModelError extends M3LError {
   constructor(message: string, options: M3LBedrockRuntimeNoModelErrorOptions) {
     super(message, {
       code: "ERR_BEDROCK_RUNTIME_NO_MODEL",
-      context: { attemptedModels: options.attemptedModels },
+      context: {
+        attemptedModels: options.attemptedModels.map(sanitizeForMessage),
+      },
       ...(options.cause !== undefined && { cause: options.cause }),
     });
     this.attemptedModels = options.attemptedModels;
@@ -255,9 +263,10 @@ interface M3LBedrockRuntimeStreamErrorOptions {
  * and a `metadata` event — a truncated stream is a lifecycle fault, the
  * same tier as any other post-first-byte failure.
  *
- * `modelId`, `eventsEmitted`, and `retrySafe` are all own fields and
- * mirrored into `context`, for the same `toJSON()`/ADR-0035-diagnostics
- * reason as {@link M3LBedrockRuntimeModelError.modelId}. `retrySafe` is the
+ * `modelId`, `eventsEmitted`, and `retrySafe` are all own fields (`modelId`
+ * carried verbatim) and mirrored into `context` (`context.modelId` rendered
+ * through `sanitizeForMessage`, same F4 rationale as
+ * {@link M3LBedrockRuntimeModelError.modelId}). `retrySafe` is the
  * type-visible, programmatically-checkable answer to "did the caller
  * already receive output that a retry would duplicate?" — `true` only for
  * the zero-event clean-drain case, `false` for every mid-stream fault; a
@@ -313,7 +322,7 @@ export class M3LBedrockRuntimeStreamError extends M3LError {
     super(message, {
       code: "ERR_BEDROCK_RUNTIME_STREAM",
       context: {
-        modelId: options.modelId,
+        modelId: sanitizeForMessage(options.modelId),
         eventsEmitted: options.eventsEmitted,
         retrySafe: options.retrySafe,
       },
