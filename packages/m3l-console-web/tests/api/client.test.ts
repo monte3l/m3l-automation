@@ -155,7 +155,7 @@ describe("fetchConsoleJson", () => {
     expect(result.error.retryable).toBe("situational");
   });
 
-  test("falls back to status text when origin is present but invalid", async () => {
+  test("drops an invalid origin but keeps the rest of a well-formed envelope", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
@@ -179,12 +179,13 @@ describe("fetchConsoleJson", () => {
     if (result.ok) {
       throw new Error("expected a failure result");
     }
-    expect(result.error.code).toBeUndefined();
-    expect(result.error.correlationId).toBeUndefined();
-    expect(result.error.message.length).toBeGreaterThan(0);
+    expect(result.error.code).toBe("ERR_CONSOLE_BAD_ORIGIN");
+    expect(result.error.correlationId).toBe("corr-4");
+    expect(result.error.message).toBe("bad origin");
+    expect(result.error.origin).toBeUndefined();
   });
 
-  test("falls back to status text when retryable is present but invalid", async () => {
+  test("drops an invalid retryable but keeps the rest of a well-formed envelope", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
@@ -208,9 +209,10 @@ describe("fetchConsoleJson", () => {
     if (result.ok) {
       throw new Error("expected a failure result");
     }
-    expect(result.error.code).toBeUndefined();
-    expect(result.error.correlationId).toBeUndefined();
-    expect(result.error.message.length).toBeGreaterThan(0);
+    expect(result.error.code).toBe("ERR_CONSOLE_BAD_RETRYABLE");
+    expect(result.error.correlationId).toBe("corr-5");
+    expect(result.error.message).toBe("bad retryable");
+    expect(result.error.retryable).toBeUndefined();
   });
 
   test("falls back to status text when the body is not the envelope shape", async () => {

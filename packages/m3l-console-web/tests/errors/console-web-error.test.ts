@@ -70,4 +70,41 @@ describe("M3LConsoleWebError", () => {
 
     expect(error.cause).toBeUndefined();
   });
+
+  test("classifies every instance as origin: caller", () => {
+    const error = new M3LConsoleWebError(
+      "ERR_CONSOLE_WEB_ROOT_MISSING",
+      "#root element not found",
+    );
+
+    expect(error.origin).toBe("caller");
+  });
+
+  test("classifies every instance as retryable: false", () => {
+    const error = new M3LConsoleWebError(
+      "ERR_CONSOLE_WEB_ROOT_MISSING",
+      "#root element not found",
+    );
+
+    expect(error.retryable).toBe(false);
+  });
+
+  test("defaults context to an empty object when no options are passed", () => {
+    const error = new M3LConsoleWebError(
+      "ERR_CONSOLE_WEB_ROOT_MISSING",
+      "#root element not found",
+    );
+
+    expect(error.context).toEqual({});
+  });
+
+  test("preserves a context object passed via options", () => {
+    const error = new M3LConsoleWebError(
+      "ERR_CONSOLE_WEB_ROOT_MISSING",
+      "#root element not found",
+      { context: { foo: "bar" } },
+    );
+
+    expect(error.context).toEqual({ foo: "bar" });
+  });
 });

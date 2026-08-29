@@ -42,6 +42,8 @@ export type M3LConsoleWebErrorCode = "ERR_CONSOLE_WEB_ROOT_MISSING";
 interface M3LConsoleWebErrorOptions {
   /** The underlying failure that caused this error, if any. */
   readonly cause?: unknown;
+  /** Structured diagnostic detail. Defaults to `{}` when omitted. */
+  readonly context?: Record<string, unknown>;
 }
 
 /**
@@ -49,6 +51,14 @@ interface M3LConsoleWebErrorOptions {
  * {@link M3LConsoleWebErrorCode}. Extends `M3LError` (from the
  * `@m3l-automation/m3l-common/core/errors` leaf subpath), so callers can
  * still narrow via `instanceof M3LError`.
+ *
+ * Every instance is classified `origin: "caller"` and `retryable: false`:
+ * none of this class's codes appear in `M3LError`'s own catalog (they are
+ * console-web-specific, not library codes), so without an explicit
+ * classification the base constructor would otherwise leave both
+ * `undefined`. The one existing failure mode — a missing DOM `#root`
+ * element — is unambiguously a hosting-page configuration problem, not a
+ * transient fault a retry could resolve.
  *
  * @example
  * ```ts
@@ -75,7 +85,7 @@ export class M3LConsoleWebError extends M3LError {
    *
    * @param code - The specific failure mode.
    * @param message - Human-readable description of the failure.
-   * @param options - Optional `cause`.
+   * @param options - Optional `cause` and `context`.
    */
   constructor(
     code: M3LConsoleWebErrorCode,
@@ -84,7 +94,10 @@ export class M3LConsoleWebError extends M3LError {
   ) {
     super(message, {
       code,
+      origin: "caller",
+      retryable: false,
       ...(options.cause !== undefined && { cause: options.cause }),
+      ...(options.context !== undefined && { context: options.context }),
     });
     this.code = code;
   }
