@@ -729,6 +729,18 @@ const KNOWN_RULE_IDS = [
   "sensitive-target-escalated",
   "graded-mutation-auto-approved",
   "unclassifiable-escalated",
+  "budget.invocations-per-run",
+  "budget.invocations-per-day",
+  "budget.tokens-per-run",
+  "budget.cost-per-run",
+  "budget.loop-iterations",
+  "dry-run-first",
+  "kind-cross-check-escalated",
+  "budget.invocations-per-run.unobservable",
+  "budget.invocations-per-day.unobservable",
+  "budget.tokens-per-run.unobservable",
+  "budget.cost-per-run.unobservable",
+  "budget.loop-iterations.unobservable",
 ] as const;
 
 describe("isAgentPolicyRuleId", () => {
@@ -736,13 +748,17 @@ describe("isAgentPolicyRuleId", () => {
     expect(isAgentPolicyRuleId(ruleId)).toBe(true);
   });
 
-  test("recognises exactly the eight ids this build knows", () => {
-    expect(KNOWN_RULE_IDS).toHaveLength(8);
+  test("recognises exactly the twenty ids this build knows", () => {
+    expect(KNOWN_RULE_IDS).toHaveLength(20);
   });
 
   test.each([
-    ["an id from a later minor", "budget.tokens-per-run"],
+    ["an id from a later minor", "budget.tokens-per-minute"],
     ["a near-miss id", "script-not-allowed"],
+    [
+      "a near-miss of the .unobservable suffix (misspelled)",
+      "budget.invocations-per-run.unobserved",
+    ],
     ["an empty string", ""],
     ["a non-string", 7],
     ["null", null],
@@ -780,6 +796,11 @@ describe("isAgentActionAutoApproved", () => {
     target: undefined,
     parameterNames: [],
     dryRun: false,
+    // Plain placeholder: `shapeKey` is typed `string`, and this fixture only
+    // exercises `isAgentActionAutoApproved`'s verdict-only polarity, not the
+    // dry-run-first discipline that gives the field meaning (see
+    // agent-dry-run.test.ts for the real `agentActionShapeKey` contract).
+    shapeKey: "placeholder-shape-key",
   };
 
   test.each([
@@ -858,7 +879,7 @@ describe("type-level contract", () => {
     >();
   });
 
-  test("M3LAgentPolicyRuleId is the closed eight-member union this build knows", () => {
+  test("M3LAgentPolicyRuleId is the closed twenty-member union this build knows", () => {
     expectTypeOf<M3LAgentPolicyRuleId>().toEqualTypeOf<
       (typeof KNOWN_RULE_IDS)[number]
     >();

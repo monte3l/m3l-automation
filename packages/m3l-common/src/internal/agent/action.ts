@@ -1,7 +1,7 @@
 /**
- * `internal/agent/action` — step 0 of the evaluator: the twelve ACT rules over
- * the options bag, and the single traversal that projects the caller's action
- * into a frozen {@link M3LAgentActionRecord}.
+ * `internal/agent/action` — step 0 of the evaluator: the fifteen ACT rules
+ * over the options bag, and the single traversal that projects the caller's
+ * action into a frozen {@link M3LAgentActionRecord}.
  *
  * Private to `core/agent`; never re-exported through a public barrel.
  * `evaluateAgentAction` (`core/agent/evaluate.ts`) validates here first and
@@ -17,6 +17,7 @@ import type {
   M3LAgentActionRecordTarget,
 } from "../../core/agent/action-types.js";
 import { M3L_AGENT_MAX_PARAMETER_NAMES } from "../../core/agent/action-types.js";
+import { M3L_AGENT_MAX_DRY_RUN_SHAPES } from "../../core/agent/ledger-types.js";
 import { M3LAgentActionValidationError } from "../../core/agent/M3LAgentActionValidationError.js";
 import type { M3LAgentPolicy } from "../../core/agent/policy-types.js";
 import { M3LError } from "../../core/errors/index.js";
@@ -27,6 +28,8 @@ import {
   isPlainObject,
 } from "../../core/utils/guards.js";
 import { isValidatedAgentPolicy } from "./brand.js";
+import type { M3LAgentProjectedRunLedger } from "./budgets.js";
+import { computeAgentActionShapeKey } from "./shape.js";
 import {
   assertAllowedKeys,
   isNonBlankString,
@@ -46,6 +49,7 @@ const OPTIONS_KEYS: ReadonlySet<string> = new Set([
   "action",
   "policy",
   "additionalSensitiveTargets",
+  "run",
 ]);
 
 /** The only own keys an action may carry (ACT-8 and ACT-9). */
@@ -65,6 +69,32 @@ const TARGET_KEYS: ReadonlySet<string> = new Set([
   "accountId",
 ]);
 
+/** The only own keys the run ledger may carry (ACT-13). */
+const RUN_LEDGER_KEYS: ReadonlySet<string> = new Set([
+  "invocationsThisRun",
+  "invocationsToday",
+  "todayCountedAt",
+  "now",
+  "tokensThisRun",
+  "costThisRun",
+  "loopIterations",
+  "dryRunCompletedShapes",
+]);
+
+/**
+ * The ledger fields that must be safe, non-negative INTEGERS (ACT-14).
+ * `costThisRun` is the one exception — validated separately as a finite,
+ * non-negative number that may be fractional.
+ */
+const INTEGER_LEDGER_FIELDS = [
+  "invocationsThisRun",
+  "invocationsToday",
+  "todayCountedAt",
+  "now",
+  "tokensThisRun",
+  "loopIterations",
+] as const;
+
 /**
  * Every {@link M3LAgentActionKind}, keyed for an `Object.hasOwn` membership
  * check rather than a hand-maintained array — adding a kind without updating
@@ -79,6 +109,9 @@ const AGENT_ACTION_KINDS: Record<M3LAgentActionKind, true> = {
 /** The shared frozen default for an action declaring no parameter names. */
 const NO_PARAMETER_NAMES: readonly string[] = Object.freeze([]);
 
+/** The shared frozen default for a run declaring no completed dry-run shapes. */
+const NO_DRY_RUN_SHAPES: readonly string[] = Object.freeze([]);
+
 /** The validated options bag, reduced to what the decision arms read. */
 export interface M3LAgentEvaluationInput {
   /** The library's own frozen projection of the caller's action. */
@@ -92,6 +125,11 @@ export interface M3LAgentEvaluationInput {
   /** The caller's extra sensitivity predicate, or `undefined` when absent. */
   readonly additionalSensitiveTargets:
     M3LDestructiveTargetPredicate | undefined;
+  /**
+   * The step-0 projection of the run ledger, or `undefined` when the caller
+   * passed no `run` at all. Steps 3 and 6 read this projection alone.
+   */
+  readonly run: M3LAgentProjectedRunLedger | undefined;
 }
 
 /**
@@ -188,8 +226,13 @@ function readDryRun(record: Readonly<Record<string, unknown>>): boolean {
   return value;
 }
 
-/** ACT-1 through ACT-9: the action, projected into a frozen record. */
-function projectAction(value: unknown): M3LAgentActionRecord {
+/**
+ * ACT-1 through ACT-9: the action, projected into a frozen record. Exported
+ * so `core/agent/shape-key.ts`'s standalone `agentActionShapeKey` can share
+ * this exact projection (and therefore this exact `shapeKey` computation)
+ * rather than a second implementation that could drift.
+ */
+export function projectAction(value: unknown): M3LAgentActionRecord {
   if (!isPlainObject(value)) {
     throw actionFailure("action", "not-a-plain-object");
   }
@@ -230,6 +273,12 @@ function projectAction(value: unknown): M3LAgentActionRecord {
       )
     : NO_PARAMETER_NAMES;
   const dryRun = readDryRun(value);
+  const shapeKey = computeAgentActionShapeKey({
+    script,
+    operation,
+    kind,
+    parameterNames,
+  });
 
   return Object.freeze({
     script,
@@ -238,6 +287,7 @@ function projectAction(value: unknown): M3LAgentActionRecord {
     target,
     parameterNames,
     dryRun,
+    shapeKey,
   });
 }
 
@@ -286,6 +336,103 @@ function readValidatedPolicy(
   return policy;
 }
 
+/**
+ * Reads an optional, safe, non-negative INTEGER ledger field (ACT-14).
+ * `Number.isSafeInteger` already excludes `NaN`, `Infinity`, fractions, and
+ * any non-number value, so only the sign needs a separate check.
+ */
+function readOptionalSafeNonNegativeInteger(
+  ledger: Readonly<Record<string, unknown>>,
+  key: string,
+): number | undefined {
+  if (!Object.hasOwn(ledger, key)) {
+    return undefined;
+  }
+  const value = ledger[key];
+  if (!(
+    typeof value === "number" &&
+    Number.isSafeInteger(value) &&
+    value >= 0
+  )) {
+    throw actionFailure(
+      `options.run.${key}`,
+      "not-a-safe-non-negative-integer",
+    );
+  }
+  return value;
+}
+
+/**
+ * Reads the optional `costThisRun` ledger field (ACT-14): a finite,
+ * non-negative number that MAY be fractional, unlike every other numeric
+ * ledger field.
+ */
+function readOptionalNonNegativeFiniteNumber(
+  ledger: Readonly<Record<string, unknown>>,
+  key: string,
+): number | undefined {
+  if (!Object.hasOwn(ledger, key)) {
+    return undefined;
+  }
+  const value = ledger[key];
+  if (!(typeof value === "number" && Number.isFinite(value) && value >= 0)) {
+    throw actionFailure(
+      `options.run.${key}`,
+      "not-a-non-negative-finite-number",
+    );
+  }
+  return value;
+}
+
+/**
+ * ACT-13/14/15: the run ledger, when present, projected into a frozen
+ * internal record with every numeric field materialised as an own key
+ * holding `undefined` when absent. Unconditional: a malformed `run` throws
+ * even against a policy that declares no `budgets` and no `dryRunFirst` —
+ * this runs before any policy field is read.
+ */
+function projectRunLedger(
+  bag: Readonly<Record<string, unknown>>,
+): M3LAgentProjectedRunLedger | undefined {
+  if (!Object.hasOwn(bag, "run")) {
+    return undefined;
+  }
+  const value = bag["run"];
+  if (!isPlainObject(value)) {
+    throw actionFailure("options.run", "not-a-plain-object");
+  }
+  assertAllowedKeys(value, RUN_LEDGER_KEYS, "options.run", actionFailure);
+
+  const integers: Record<string, number | undefined> = {};
+  for (const key of INTEGER_LEDGER_FIELDS) {
+    integers[key] = readOptionalSafeNonNegativeInteger(value, key);
+  }
+  const costThisRun = readOptionalNonNegativeFiniteNumber(value, "costThisRun");
+  const dryRunCompletedShapes = Object.hasOwn(value, "dryRunCompletedShapes")
+    ? projectStringList(
+        value["dryRunCompletedShapes"],
+        "options.run.dryRunCompletedShapes",
+        {
+          allowEmpty: true,
+          maxEntries: M3L_AGENT_MAX_DRY_RUN_SHAPES,
+          rejectDuplicates: true,
+        },
+        actionFailure,
+      )
+    : NO_DRY_RUN_SHAPES;
+
+  return Object.freeze({
+    invocationsThisRun: integers["invocationsThisRun"],
+    invocationsToday: integers["invocationsToday"],
+    todayCountedAt: integers["todayCountedAt"],
+    now: integers["now"],
+    tokensThisRun: integers["tokensThisRun"],
+    costThisRun,
+    loopIterations: integers["loopIterations"],
+    dryRunCompletedShapes,
+  });
+}
+
 /** The ACT rules, run in order over an options bag already proven an object. */
 function validateBag(
   bag: Readonly<Record<string, unknown>>,
@@ -295,11 +442,9 @@ function validateBag(
   const record = projectAction(
     Object.hasOwn(bag, "action") ? bag["action"] : undefined,
   );
-  return {
-    record,
-    policy,
-    additionalSensitiveTargets: readSensitivityPredicate(bag),
-  };
+  const additionalSensitiveTargets = readSensitivityPredicate(bag);
+  const run = projectRunLedger(bag);
+  return { record, policy, additionalSensitiveTargets, run };
 }
 
 /**
@@ -307,8 +452,8 @@ function validateBag(
  * the action once into a frozen record.
  *
  * @param options - The caller's options bag, trusted for nothing.
- * @returns The frozen action projection, the validated policy, and the
- *   validated extra predicate.
+ * @returns The frozen action projection, the validated policy, the validated
+ *   extra predicate, and the projected run ledger.
  * @throws M3LAgentActionValidationError On any ACT-rule violation; its
  *   `context` names the offending field and the violation kind, never a
  *   value.

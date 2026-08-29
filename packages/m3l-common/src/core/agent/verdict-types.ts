@@ -32,11 +32,12 @@ export type M3LAgentVerdict = M3LAgentDecision["verdict"];
  * Names the rule that produced a verdict.
  *
  * @remarks
- * A closed literal union that **grows in later minors** — slice 2 adds the
- * budget ids and `"dry-run-first"`, and ADR-0061 (V7) adds its own. Growing it
- * is additive, not breaking, because the type appears only in **return**
- * position: no caller constructs an `M3LAgentDecision`, so a new member cannot
- * invalidate a caller's value.
+ * A closed literal union that **grows in later minors** — slice 2 adds twelve
+ * ids (the five `"budget.*"` ids, `"dry-run-first"`,
+ * `"kind-cross-check-escalated"`, and the five `"budget.*.unobservable"`
+ * ids), and ADR-0061 (V7) adds its own. Growing it is additive, not breaking,
+ * because the type appears only in **return** position: no caller constructs
+ * an `M3LAgentDecision`, so a new member cannot invalidate a caller's value.
  *
  * What a new member *can* break is an exhaustive `switch`, so consumers must
  * **not** write one. Treat an unrecognised id as an opaque label — log it,
@@ -57,7 +58,19 @@ export type M3LAgentPolicyRuleId =
   | "policy-ungraded-escalated"
   | "sensitive-target-escalated"
   | "graded-mutation-auto-approved"
-  | "unclassifiable-escalated";
+  | "unclassifiable-escalated"
+  | "budget.invocations-per-run"
+  | "budget.invocations-per-day"
+  | "budget.tokens-per-run"
+  | "budget.cost-per-run"
+  | "budget.loop-iterations"
+  | "dry-run-first"
+  | "kind-cross-check-escalated"
+  | "budget.invocations-per-run.unobservable"
+  | "budget.invocations-per-day.unobservable"
+  | "budget.tokens-per-run.unobservable"
+  | "budget.cost-per-run.unobservable"
+  | "budget.loop-iterations.unobservable";
 
 /**
  * The discriminated verdict `evaluateAgentAction` returns.
@@ -80,10 +93,13 @@ export type M3LAgentPolicyRuleId =
  * it, which is where it belongs.
  *
  * `reason` is library-authored prose composed only from `script`,
- * `operation`, `kind`, and the target's `profile` / `region` / `accountId`. It
- * never embeds a parameter value, and it is not run through
- * `escapeTerminalControls`: it is a data value flowing to a log sink, not a
- * display channel.
+ * `operation`, `kind`, the target's `profile` / `region` / `accountId`, and —
+ * for the budget arms — the budget's own key, its declared ceiling, and the
+ * observed value. It never embeds a parameter value: every budget number
+ * admitted is either a ceiling the deployment declared or a count the caller
+ * itself reported, never data read out of the action under judgement. It is
+ * not run through `escapeTerminalControls`: it is a data value flowing to a
+ * log sink, not a display channel.
  *
  * @example
  * ```ts

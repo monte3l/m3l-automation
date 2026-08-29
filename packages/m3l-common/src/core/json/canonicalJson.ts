@@ -14,40 +14,7 @@
 import { createHash } from "node:crypto";
 
 import { M3LError } from "../errors/index.js";
-
-/**
- * Splits a string into its Unicode code points (not UTF-16 code units) via
- * the string iterator protocol, which is surrogate-pair aware.
- */
-function toCodePoints(value: string): readonly number[] {
-  const points: number[] = [];
-  for (const character of value) {
-    // character.codePointAt(0) is safe: the string iterator protocol never
-    // yields an empty substring, so codePointAt(0) is always defined here.
-    points.push(character.codePointAt(0) as number);
-  }
-  return points;
-}
-
-/**
- * Compares two strings by Unicode code point, not by `Array.prototype.sort`'s
- * default UTF-16 code-unit comparator — which orders an astral-plane
- * character (a surrogate pair, leading unit `0xD800`-`0xDBFF`) before a
- * higher-valued BMP character, the opposite of true code-point order.
- */
-function compareByCodePoint(a: string, b: string): number {
-  const aPoints = toCodePoints(a);
-  const bPoints = toCodePoints(b);
-  const length = Math.min(aPoints.length, bPoints.length);
-  for (let index = 0; index < length; index++) {
-    // aPoints[index] and bPoints[index] are safe: length is
-    // Math.min(aPoints.length, bPoints.length), so index is always in-bounds
-    // for both arrays here.
-    const diff = (aPoints[index] as number) - (bPoints[index] as number);
-    if (diff !== 0) return diff;
-  }
-  return aPoints.length - bPoints.length;
-}
+import { compareByCodePoint } from "../../internal/json/compare-code-points.js";
 
 /** Throws when `value` is a non-finite number — canonical JSON has no representation for it. */
 function assertFiniteNumber(value: number): void {
@@ -79,9 +46,32 @@ function assertNotCircular(value: object, path: WeakSet<object>): void {
  * Narrows `value` to an object exposing a callable `toJSON` method, mirroring
  * the check `JSON.stringify` itself performs before deciding how to serialize
  * a non-null object.
+ *
+ * The property lookup walks the prototype chain — that part must stay, for
+ * `JSON.stringify` parity: `Date.prototype` (not any `Date` instance) is
+ * where `toJSON` actually lives, so an own-property-only check would stop
+ * every `Date` from serializing via its `toJSON()` result. But the walk also
+ * finds a `toJSON` planted directly on `Object.prototype` or
+ * `Array.prototype` via prototype pollution (e.g.
+ * `Object.prototype.toJSON = () => 0`) — neither prototype natively defines
+ * `toJSON`, so anything found owned by one of them is a pollution gadget by
+ * construction, never a legitimate value. Once the OWNER of the found
+ * `toJSON` is identified, this rejects exactly those two owners and nothing
+ * else, so `Date`, class instances, and any other custom `toJSON` keep
+ * resolving unchanged.
  */
 function hasToJSON(value: object): value is { toJSON(): unknown } {
-  return typeof (value as { toJSON?: unknown }).toJSON === "function";
+  let owner: object | null = value;
+  while (owner !== null) {
+    if (Object.hasOwn(owner, "toJSON")) {
+      if (owner === Object.prototype || owner === Array.prototype) {
+        return false;
+      }
+      return typeof (owner as { toJSON?: unknown }).toJSON === "function";
+    }
+    owner = Object.getPrototypeOf(owner) as object | null;
+  }
+  return false;
 }
 
 /** Serializes an array, preserving element order — arrays are never sorted. */

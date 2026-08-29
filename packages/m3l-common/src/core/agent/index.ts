@@ -2,11 +2,11 @@
  * `core/agent` — the authorization layer for an autonomous operator
  * (ADR-0060).
  *
- * This barrel surfaces slice 1's verdict vocabulary: the action, policy, and
- * verdict types, the declaration validator, the two guards, the two typed
- * errors, and the evaluator's allowlist plus autonomy-tier arms — twenty
- * exports total per the landing plan in `docs/reference/core/agent.md`. Slice
- * 2's budgets, ceilings, and dry-run-first discipline land here later.
+ * This barrel surfaces the action, policy, and verdict types, the
+ * declaration validator, the two guards, the two typed errors, the
+ * evaluator's allowlist plus autonomy-tier arms (slice 1), and slice 2's
+ * budgets, ceilings, run ledger, and dry-run-first discipline — twenty-four
+ * exports total per the landing plan in `docs/reference/core/agent.md`.
  *
  * The exports are listed explicitly rather than star-re-exported so each
  * slice's added surface is visible in one diff.
@@ -26,7 +26,10 @@ export type {
   M3LAgentActionRecord,
 } from "./action-types.js";
 export { M3L_AGENT_MAX_PARAMETER_NAMES } from "./action-types.js";
+export type { M3LAgentRunLedger } from "./ledger-types.js";
+export { M3L_AGENT_MAX_DRY_RUN_SHAPES } from "./ledger-types.js";
 export type {
+  M3LAgentBudgets,
   M3LAgentPolicy,
   M3LAgentPolicyDeclaration,
   M3LAgentScriptGrant,
@@ -47,3 +50,4 @@ export { M3LAgentPolicyDeclarationError } from "./M3LAgentPolicyDeclarationError
 export { validateAgentPolicy } from "./validate-policy.js";
 export type { M3LAgentEvaluationOptions } from "./evaluate.js";
 export { evaluateAgentAction } from "./evaluate.js";
+export { agentActionShapeKey } from "./shape-key.js";

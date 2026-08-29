@@ -97,10 +97,9 @@ export interface M3LAgentAction {
  * that. Never "tidy" this into a conditional spread — the type moved to match
  * the runtime, not the other way round.
  *
- * Not surfaced through the `core/agent` barrel: it is the shape of one field
- * on {@link M3LAgentActionRecord}, reachable as
- * `NonNullable<M3LAgentActionRecord["target"]>`, and slice 1's public surface
- * is fixed at twenty exports.
+ * Not surfaced through the `core/agent` barrel: it is not a named export at
+ * all, only the type of one field on a library-built record — reachable, when
+ * needed, as `NonNullable<M3LAgentActionRecord["target"]>`.
  */
 export interface M3LAgentActionRecordTarget {
   /** The AWS CLI profile name; always a non-blank string. */
@@ -161,6 +160,15 @@ export interface M3LAgentActionRecord {
   readonly parameterNames: readonly string[];
   /** The action's `dryRun` flag; `false` when absent. */
   readonly dryRun: boolean;
+  /**
+   * The dry-run shape key — the same value `agentActionShapeKey` computes —
+   * calculated during the same step-0 traversal that builds the rest of this
+   * record, so the key a decision carries is provably the key the evaluator
+   * judged, never a recomputation that could drift. Required rather than
+   * optional: an optional `shapeKey` would defeat that guarantee by letting a
+   * decision carry no key at all.
+   */
+  readonly shapeKey: string;
 }
 
 /**

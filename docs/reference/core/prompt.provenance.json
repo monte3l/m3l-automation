@@ -8,12 +8,12 @@
         {
           "file": "packages/m3l-common/src/core/prompt/M3LDestructiveGate.ts",
           "symbol": "confirmDestructive",
-          "blob": "264ed8226ab8ecea561d2fb011a9a38cf5ccc6f7"
+          "blob": "719ad411cabfb285c213e4371fa978b354100b7e"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/M3LDestructiveGate.ts",
           "symbol": "M3LConfirmDestructiveOptions",
-          "blob": "264ed8226ab8ecea561d2fb011a9a38cf5ccc6f7"
+          "blob": "719ad411cabfb285c213e4371fa978b354100b7e"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/M3LPrompt.ts",
@@ -78,25 +78,25 @@
         {
           "file": "packages/m3l-common/src/core/prompt/M3LDestructiveGate.ts",
           "symbol": "M3LDestructiveTarget",
-          "blob": "264ed8226ab8ecea561d2fb011a9a38cf5ccc6f7"
+          "blob": "719ad411cabfb285c213e4371fa978b354100b7e"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/M3LDestructiveGate.ts",
           "symbol": "M3LDestructiveTargetPredicate",
-          "blob": "264ed8226ab8ecea561d2fb011a9a38cf5ccc6f7"
+          "blob": "719ad411cabfb285c213e4371fa978b354100b7e"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/M3LDestructiveGate.ts",
           "symbol": "M3LSensitiveTargetSpec",
-          "blob": "264ed8226ab8ecea561d2fb011a9a38cf5ccc6f7"
+          "blob": "719ad411cabfb285c213e4371fa978b354100b7e"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/M3LDestructiveGate.ts",
           "symbol": "sensitiveTargets",
-          "blob": "264ed8226ab8ecea561d2fb011a9a38cf5ccc6f7"
+          "blob": "719ad411cabfb285c213e4371fa978b354100b7e"
         }
       ],
-      "retrieved": "2026-08-18"
+      "retrieved": "2026-08-29"
     },
     {
       "heading": "`M3LPrompt`",
