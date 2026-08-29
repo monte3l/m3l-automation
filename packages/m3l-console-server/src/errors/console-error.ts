@@ -61,13 +61,31 @@ import { Core } from "@m3l-automation/m3l-common";
  * without `confirmed: true`, and `ERR_CONSOLE_RUN_CAPACITY_EXCEEDED` when the
  * run governor's queue is full.
  *
- * The two final codes are `http/body.ts`'s request-body reading failures
+ * Two further codes are `http/body.ts`'s request-body reading failures
  * (X4 slice 7-pre): `ERR_CONSOLE_BODY_TOO_LARGE` when a body exceeds the
  * configured byte cap (checked from `content-length` before any byte is read
  * when possible, otherwise enforced while streaming), and
  * `ERR_CONSOLE_UNSUPPORTED_MEDIA_TYPE` when a non-empty body's `content-type`
  * is not `application/json`. Both are caller-origin, non-retryable, non-fault
  * outcomes — see `http/envelope.ts`'s classification table.
+ *
+ * The five final codes are the X6 workbench-sessions module's own failure
+ * modes, layered on top of `console_sessions`/`console_session_steps`/
+ * `console_session_bindings`/`console_session_decisions`
+ * (`store/migrations/registry.ts`'s v4). `ERR_CONSOLE_SESSION_NOT_FOUND` and
+ * `ERR_CONSOLE_SESSION_STEP_NOT_FOUND` are raised when a lookup by session or
+ * step id matches no row — routine, caller-facing "not found" outcomes, not
+ * faults. `ERR_CONSOLE_SESSION_TRANSITION_INVALID` is raised when a guarded
+ * session/step/decision status transition's guarded `UPDATE` matches zero
+ * rows: unlike `ERR_CONSOLE_RUN_TRANSITION_INVALID`
+ * (server-internal — only the run orchestrator ever calls that transition),
+ * this code IS reachable directly from an HTTP caller in a later slice (e.g.
+ * answering an already-answered decision, a double-submit race), so it is
+ * caller-facing rather than a fault. `ERR_CONSOLE_SESSION_CLOSED` is raised
+ * when a caller attempts to write a step to a session that is already
+ * `closed`. `ERR_CONSOLE_SESSION_LIMIT_EXCEEDED` mirrors
+ * `ERR_CONSOLE_RUN_CAPACITY_EXCEEDED`'s shape: raised when a later slice's
+ * concurrent-open-session cap is reached.
  *
  * @example
  * ```ts
@@ -102,7 +120,12 @@ export type M3LConsoleErrorCode =
   | "ERR_CONSOLE_RUN_CONFIRMATION_REQUIRED"
   | "ERR_CONSOLE_RUN_CAPACITY_EXCEEDED"
   | "ERR_CONSOLE_BODY_TOO_LARGE"
-  | "ERR_CONSOLE_UNSUPPORTED_MEDIA_TYPE";
+  | "ERR_CONSOLE_UNSUPPORTED_MEDIA_TYPE"
+  | "ERR_CONSOLE_SESSION_NOT_FOUND"
+  | "ERR_CONSOLE_SESSION_STEP_NOT_FOUND"
+  | "ERR_CONSOLE_SESSION_TRANSITION_INVALID"
+  | "ERR_CONSOLE_SESSION_CLOSED"
+  | "ERR_CONSOLE_SESSION_LIMIT_EXCEEDED";
 
 /**
  * Constructor options for {@link M3LConsoleError}.

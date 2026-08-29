@@ -29,6 +29,10 @@ import type {
   M3LConsoleRunsRepository,
   M3LRunInsert,
 } from "../src/store/runs-repository.js";
+import type {
+  M3LConsoleSessionsRepository,
+  M3LSessionInsert,
+} from "../src/store/sessions-repository.js";
 import { openConsoleStore } from "../src/store/store.js";
 import type { M3LConsoleStoreUnit } from "../src/store/store.js";
 
@@ -533,12 +537,69 @@ describe("openConsoleStore — runs repository (X4 slice 6, round 3a)", () => {
   });
 });
 
-describe("M3LConsoleStoreUnit — exported and carries both meta and runs (X4 slice 6, round 3a)", () => {
-  test("is exported (a compile-time check: this import must resolve) and structurally carries meta and runs", () => {
+describe("M3LConsoleStoreUnit — exported and carries meta, runs, and sessions (X4 slice 6, round 3a; X6 slice 1)", () => {
+  test("is exported (a compile-time check: this import must resolve) and structurally carries meta, runs, and sessions", () => {
     expectTypeOf<M3LConsoleStoreUnit>().toExtend<{
       readonly meta: M3LConsoleMetaRepository;
       readonly runs: M3LConsoleRunsRepository;
+      readonly sessions: M3LConsoleSessionsRepository;
     }>();
+  });
+});
+
+describe("openConsoleStore — sessions repository (X6 slice 1)", () => {
+  // Mirrors "openConsoleStore — runs repository" above: `M3LConsoleStoreUnit`
+  // grows a `sessions` field (`store/sessions-repository.js`'s
+  // `createConsoleSessionsRepository`) alongside `meta` and `runs`. Until
+  // this lands, `store.sessions` does not exist on the returned handle at
+  // all — a TS2339 at compile time, not a runtime assertion failure.
+  function buildSessionInsert(id: string): M3LSessionInsert {
+    return {
+      id,
+      operator: "ada",
+      correlationId: "corr-1",
+      createdAtMs: 1_000,
+    };
+  }
+
+  test("the top-level store exposes a working sessions repository — insert an open session and read it back", () => {
+    const store = openConsoleStore({ location: ":memory:" });
+
+    store.sessions.insertSession(buildSessionInsert("session-top-level"));
+    const record = store.sessions.getSession("session-top-level");
+
+    expect(record?.id).toBe("session-top-level");
+    expect(record?.status).toBe("open");
+  });
+
+  test("a repository reached through transaction((unit) => unit.sessions...) writes through THAT transaction — a throw inside work rolls the session row back", () => {
+    const store = openConsoleStore({ location: ":memory:" });
+    const originalError = new Error("synthetic work failure");
+
+    let thrown: unknown;
+    try {
+      store.transaction((unit) => {
+        unit.sessions.insertSession(buildSessionInsert("session-rolled-back"));
+        throw originalError;
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBe(originalError);
+    expect(store.sessions.getSession("session-rolled-back")).toBeUndefined();
+  });
+
+  test("a session inserted inside a COMMITTING transaction is visible via the top-level store.sessions afterward", () => {
+    const store = openConsoleStore({ location: ":memory:" });
+
+    store.transaction((unit) => {
+      unit.sessions.insertSession(buildSessionInsert("session-committed"));
+    });
+
+    expect(store.sessions.getSession("session-committed")?.id).toBe(
+      "session-committed",
+    );
   });
 });
 

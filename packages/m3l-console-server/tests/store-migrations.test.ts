@@ -721,9 +721,9 @@ function insertRun(database: DatabaseSync, row: RunRowFixture): void {
 }
 
 describe("CONSOLE_MIGRATIONS — the real registry (v3: console_runs)", () => {
-  test("has exactly three migrations, versions strictly increasing and gap-free (1, 2, 3)", () => {
+  test("has exactly four migrations, versions strictly increasing and gap-free (1, 2, 3, 4)", () => {
     expect(CONSOLE_MIGRATIONS.map((migration) => migration.version)).toEqual([
-      1, 2, 3,
+      1, 2, 3, 4,
     ]);
   });
 
@@ -734,6 +734,15 @@ describe("CONSOLE_MIGRATIONS — the real registry (v3: console_runs)", () => {
     const v3 = CONSOLE_MIGRATIONS.find((migration) => migration.version === 3);
     expect(v3).toBeDefined();
     expect(v3?.name.length).toBeGreaterThan(0);
+  });
+
+  test("v4 (X6 workbench sessions) has a stable, non-empty name distinct from every earlier migration's", () => {
+    const names = CONSOLE_MIGRATIONS.map((migration) => migration.name);
+
+    expect(new Set(names).size).toBe(names.length);
+    const v4 = CONSOLE_MIGRATIONS.find((migration) => migration.version === 4);
+    expect(v4).toBeDefined();
+    expect(v4?.name.length).toBeGreaterThan(0);
   });
 
   test("applying every migration succeeds and creates console_runs with both its indexes", () => {
@@ -902,5 +911,671 @@ describe("CONSOLE_MIGRATIONS — the real registry (v3: console_runs)", () => {
     // and stored as text at all, whatever its exact textual form.
     expect(typeof stored?.["script"]).toBe("string");
     expect(stored?.["script"]).toBe("12345.0");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// CONSOLE_MIGRATIONS — the real registry (v4: workbench sessions, X6 slice 1)
+//
+// Exercises the ACTUAL v4 migration's four STRICT tables and their CHECK
+// constraints directly, mirroring the v3 block above. Unlike v3,
+// `console_session_steps` and `console_session_decisions` carry `REFERENCES`
+// foreign keys — SQLite only enforces those with `PRAGMA foreign_keys = ON`,
+// so the FK-rejection tests below apply that pragma explicitly (replicating
+// `store/store.ts`'s own pragma sequence) rather than relying on the plain
+// `:memory:` fixture the CHECK-constraint tests use.
+// ---------------------------------------------------------------------------
+
+/** One `console_sessions` row, in the column order the raw insert below binds positionally. */
+interface SessionRowFixture {
+  readonly id: string;
+  readonly status: string;
+  readonly operator: string;
+  readonly correlation_id: string;
+  readonly created_at_ms: number;
+  readonly updated_at_ms: number;
+  readonly closed_at_ms: number | null;
+}
+
+function validOpenSessionRow(id: string): SessionRowFixture {
+  return {
+    id,
+    status: "open",
+    operator: "alice",
+    correlation_id: `corr-${id}`,
+    created_at_ms: 1000,
+    updated_at_ms: 1000,
+    closed_at_ms: null,
+  };
+}
+
+function validClosedSessionRow(id: string): SessionRowFixture {
+  return {
+    id,
+    status: "closed",
+    operator: "alice",
+    correlation_id: `corr-${id}`,
+    created_at_ms: 1000,
+    updated_at_ms: 2000,
+    closed_at_ms: 2000,
+  };
+}
+
+function insertSessionRow(
+  database: DatabaseSync,
+  row: SessionRowFixture,
+): void {
+  database
+    .prepare(
+      `INSERT INTO console_sessions (
+        id, status, operator, correlation_id, created_at_ms, updated_at_ms, closed_at_ms
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      row.id,
+      row.status,
+      row.operator,
+      row.correlation_id,
+      row.created_at_ms,
+      row.updated_at_ms,
+      row.closed_at_ms,
+    );
+}
+
+/** One `console_session_steps` row, in the column order the raw insert below binds positionally. */
+interface SessionStepRowFixture {
+  readonly id: string;
+  readonly session_id: string;
+  readonly ordinal: number;
+  readonly operation: string;
+  readonly parameters_json: string;
+  readonly run_id: string | null;
+  readonly status: string;
+  readonly result_ref: string | null;
+  readonly queued_at_ms: number;
+  readonly started_at_ms: number | null;
+  readonly ended_at_ms: number | null;
+  readonly outcome: string | null;
+  readonly failure_message: string | null;
+}
+
+function validQueuedStepRow(
+  id: string,
+  sessionId: string,
+  ordinal = 0,
+): SessionStepRowFixture {
+  return {
+    id,
+    session_id: sessionId,
+    ordinal,
+    operation: "scripts/example",
+    parameters_json: "{}",
+    run_id: null,
+    status: "queued",
+    result_ref: null,
+    queued_at_ms: 1000,
+    started_at_ms: null,
+    ended_at_ms: null,
+    outcome: null,
+    failure_message: null,
+  };
+}
+
+function validTerminalStepRow(
+  id: string,
+  sessionId: string,
+  ordinal = 0,
+): SessionStepRowFixture {
+  return {
+    id,
+    session_id: sessionId,
+    ordinal,
+    operation: "scripts/example",
+    parameters_json: "{}",
+    run_id: null,
+    status: "success",
+    result_ref: "s3://bucket/result.json",
+    queued_at_ms: 1000,
+    started_at_ms: 1500,
+    ended_at_ms: 2000,
+    outcome: "success",
+    failure_message: null,
+  };
+}
+
+function insertStepRow(
+  database: DatabaseSync,
+  row: SessionStepRowFixture,
+): void {
+  database
+    .prepare(
+      `INSERT INTO console_session_steps (
+        id, session_id, ordinal, operation, parameters_json, run_id, status,
+        result_ref, queued_at_ms, started_at_ms, ended_at_ms, outcome, failure_message
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      row.id,
+      row.session_id,
+      row.ordinal,
+      row.operation,
+      row.parameters_json,
+      row.run_id,
+      row.status,
+      row.result_ref,
+      row.queued_at_ms,
+      row.started_at_ms,
+      row.ended_at_ms,
+      row.outcome,
+      row.failure_message,
+    );
+}
+
+/** One `console_session_decisions` row, in the column order the raw insert below binds positionally. */
+interface SessionDecisionRowFixture {
+  readonly id: string;
+  readonly session_id: string;
+  readonly step_id: string;
+  readonly prompt: string;
+  readonly options_json: string | null;
+  readonly status: string;
+  readonly answer_json: string | null;
+  readonly created_at_ms: number;
+  readonly answered_at_ms: number | null;
+}
+
+function validPendingDecisionRow(
+  id: string,
+  sessionId: string,
+  stepId: string,
+): SessionDecisionRowFixture {
+  return {
+    id,
+    session_id: sessionId,
+    step_id: stepId,
+    prompt: "Proceed?",
+    options_json: null,
+    status: "pending",
+    answer_json: null,
+    created_at_ms: 1000,
+    answered_at_ms: null,
+  };
+}
+
+function validAnsweredDecisionRow(
+  id: string,
+  sessionId: string,
+  stepId: string,
+): SessionDecisionRowFixture {
+  return {
+    id,
+    session_id: sessionId,
+    step_id: stepId,
+    prompt: "Proceed?",
+    options_json: '["yes","no"]',
+    status: "answered",
+    answer_json: '"yes"',
+    created_at_ms: 1000,
+    answered_at_ms: 2000,
+  };
+}
+
+function insertDecisionRow(
+  database: DatabaseSync,
+  row: SessionDecisionRowFixture,
+): void {
+  database
+    .prepare(
+      `INSERT INTO console_session_decisions (
+        id, session_id, step_id, prompt, options_json, status, answer_json,
+        created_at_ms, answered_at_ms
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      row.id,
+      row.session_id,
+      row.step_id,
+      row.prompt,
+      row.options_json,
+      row.status,
+      row.answer_json,
+      row.created_at_ms,
+      row.answered_at_ms,
+    );
+}
+
+/** One `console_session_bindings` row. */
+interface SessionBindingRowFixture {
+  readonly id: string;
+  readonly session_id: string;
+  readonly reference: string;
+  readonly expected_type: string;
+  readonly multi_select: number;
+  readonly created_at_ms: number;
+}
+
+function validBindingRow(
+  id: string,
+  sessionId: string,
+): SessionBindingRowFixture {
+  return {
+    id,
+    session_id: sessionId,
+    reference: "step-1.result",
+    expected_type: "string",
+    multi_select: 0,
+    created_at_ms: 1000,
+  };
+}
+
+function insertBindingRow(
+  database: DatabaseSync,
+  row: SessionBindingRowFixture,
+): void {
+  database
+    .prepare(
+      `INSERT INTO console_session_bindings (
+        id, session_id, reference, expected_type, multi_select, created_at_ms
+      ) VALUES (?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      row.id,
+      row.session_id,
+      row.reference,
+      row.expected_type,
+      row.multi_select,
+      row.created_at_ms,
+    );
+}
+
+/** Applies the real `CONSOLE_MIGRATIONS` registry to a fresh `:memory:` database with `PRAGMA foreign_keys = ON` set first — replicating `store/store.ts`'s own pragma sequence, since the FK-rejection tests below depend on it. */
+function createRealMigratedDatabaseWithForeignKeys(): DatabaseSync {
+  const database = new DatabaseSync(":memory:");
+  database.exec("PRAGMA foreign_keys = ON");
+  applyMigrations(database, CONSOLE_MIGRATIONS);
+  return database;
+}
+
+describe("CONSOLE_MIGRATIONS — the real registry (v4: workbench sessions)", () => {
+  test("applying every migration creates all four session tables with their five indexes", () => {
+    const database = createRealMigratedDatabase();
+
+    expect(tableExists(database, "console_sessions")).toBe(true);
+    expect(tableExists(database, "console_session_steps")).toBe(true);
+    expect(tableExists(database, "console_session_bindings")).toBe(true);
+    expect(tableExists(database, "console_session_decisions")).toBe(true);
+
+    expect(indexExists(database, "console_sessions_status_updated_at")).toBe(
+      true,
+    );
+    expect(indexExists(database, "console_session_steps_session_ordinal")).toBe(
+      true,
+    );
+    expect(indexExists(database, "console_session_bindings_session")).toBe(
+      true,
+    );
+    expect(
+      indexExists(database, "console_session_decisions_session_status"),
+    ).toBe(true);
+  });
+
+  test("a valid open session inserts successfully", () => {
+    const database = createRealMigratedDatabase();
+
+    expect(() =>
+      insertSessionRow(database, validOpenSessionRow("session-open")),
+    ).not.toThrow();
+  });
+
+  test("a valid closed session inserts successfully", () => {
+    const database = createRealMigratedDatabase();
+
+    expect(() =>
+      insertSessionRow(database, validClosedSessionRow("session-closed")),
+    ).not.toThrow();
+  });
+
+  const SESSION_CHECK_VIOLATIONS: readonly [string, SessionRowFixture][] = [
+    [
+      "status closed with closed_at_ms NULL",
+      {
+        ...validClosedSessionRow("v-session-closed-no-ts"),
+        closed_at_ms: null,
+      },
+    ],
+    [
+      "status open with closed_at_ms set",
+      { ...validOpenSessionRow("v-session-open-with-ts"), closed_at_ms: 5000 },
+    ],
+    [
+      "an unknown status value",
+      { ...validOpenSessionRow("v-session-bogus"), status: "bogus" },
+    ],
+  ];
+
+  test.each(SESSION_CHECK_VIOLATIONS)(
+    "rejects a console_sessions row with %s",
+    (_label, row) => {
+      const database = createRealMigratedDatabase();
+
+      expect(() => insertSessionRow(database, row)).toThrow();
+    },
+  );
+
+  test("a valid queued step inserts successfully, referencing an existing session", () => {
+    const database = createRealMigratedDatabase();
+    insertSessionRow(database, validOpenSessionRow("session-for-step"));
+
+    expect(() =>
+      insertStepRow(
+        database,
+        validQueuedStepRow("step-queued", "session-for-step"),
+      ),
+    ).not.toThrow();
+  });
+
+  test("a valid terminal step inserts successfully", () => {
+    const database = createRealMigratedDatabase();
+    insertSessionRow(database, validOpenSessionRow("session-for-terminal"));
+
+    expect(() =>
+      insertStepRow(
+        database,
+        validTerminalStepRow("step-terminal", "session-for-terminal"),
+      ),
+    ).not.toThrow();
+  });
+
+  // Every case below is a single-field departure from an otherwise fully
+  // valid step row, mirroring the v3 console_runs CHECK-violation table:
+  // exactly one documented CHECK constraint is violated per case.
+  test("rejects a console_session_steps row with an unknown status value", () => {
+    const database = createRealMigratedDatabase();
+    insertSessionRow(database, validOpenSessionRow("session-checks-1"));
+
+    expect(() =>
+      insertStepRow(database, {
+        ...validQueuedStepRow("v-step-status", "session-checks-1"),
+        status: "bogus",
+      }),
+    ).toThrow();
+  });
+
+  test("rejects a console_session_steps row with started_at_ms before queued_at_ms", () => {
+    const database = createRealMigratedDatabase();
+    insertSessionRow(database, validOpenSessionRow("session-checks-2"));
+
+    expect(() =>
+      insertStepRow(database, {
+        ...validQueuedStepRow(
+          "v-step-started-before-queued",
+          "session-checks-2",
+        ),
+        status: "running",
+        queued_at_ms: 1000,
+        started_at_ms: 500,
+      }),
+    ).toThrow();
+  });
+
+  test("rejects a console_session_steps row with ended_at_ms set while started_at_ms is NULL, for a non-interrupted terminal status", () => {
+    const database = createRealMigratedDatabase();
+    insertSessionRow(database, validOpenSessionRow("session-checks-3"));
+
+    expect(() =>
+      insertStepRow(database, {
+        ...validTerminalStepRow("v-step-ended-no-started", "session-checks-3"),
+        started_at_ms: null,
+      }),
+    ).toThrow();
+  });
+
+  test("rejects a console_session_steps row with ended_at_ms before started_at_ms", () => {
+    const database = createRealMigratedDatabase();
+    insertSessionRow(database, validOpenSessionRow("session-checks-4"));
+
+    expect(() =>
+      insertStepRow(database, {
+        ...validTerminalStepRow(
+          "v-step-ended-before-started",
+          "session-checks-4",
+        ),
+        started_at_ms: 2000,
+        ended_at_ms: 1000,
+      }),
+    ).toThrow();
+  });
+
+  test("rejects a console_session_steps row with a terminal status and ended_at_ms NULL", () => {
+    const database = createRealMigratedDatabase();
+    insertSessionRow(database, validOpenSessionRow("session-checks-5"));
+
+    expect(() =>
+      insertStepRow(database, {
+        ...validTerminalStepRow("v-step-terminal-no-ended", "session-checks-5"),
+        ended_at_ms: null,
+        outcome: null,
+      }),
+    ).toThrow();
+  });
+
+  test("rejects a console_session_steps row with a pending status and ended_at_ms set", () => {
+    const database = createRealMigratedDatabase();
+    insertSessionRow(database, validOpenSessionRow("session-checks-6"));
+
+    expect(() =>
+      insertStepRow(database, {
+        ...validQueuedStepRow("v-step-pending-ended-set", "session-checks-6"),
+        started_at_ms: 1500,
+        ended_at_ms: 2000,
+        outcome: "success",
+      }),
+    ).toThrow();
+  });
+
+  // The two measured `CHECK`-interaction findings from `console_runs`' own
+  // v3 apply identically here: SQLite treats a `CHECK` evaluating to `NULL`
+  // as satisfied, and the `'interrupted'`-without-`started_at_ms` exemption
+  // is deliberate — a step that ended without ever starting (e.g. the
+  // session process was killed while it sat `queued`).
+  test("accepts an interrupted step row with ended_at_ms set and started_at_ms NULL — a step that ended without ever starting", () => {
+    const database = createRealMigratedDatabase();
+    insertSessionRow(database, validOpenSessionRow("session-interrupted"));
+    const row: SessionStepRowFixture = {
+      ...validQueuedStepRow(
+        "v-step-interrupted-never-started",
+        "session-interrupted",
+      ),
+      status: "interrupted",
+      ended_at_ms: 9000,
+      outcome: "interrupted",
+    };
+
+    expect(() => insertStepRow(database, row)).not.toThrow();
+
+    const stored = database
+      .prepare(
+        "SELECT status, started_at_ms FROM console_session_steps WHERE id = ?",
+      )
+      .get("v-step-interrupted-never-started");
+    expect(stored?.["status"]).toBe("interrupted");
+    expect(stored?.["started_at_ms"]).toBeNull();
+  });
+
+  test("rejects a duplicate (session_id, ordinal) pair via the UNIQUE constraint", () => {
+    const database = createRealMigratedDatabase();
+    insertSessionRow(database, validOpenSessionRow("session-unique"));
+    insertStepRow(
+      database,
+      validQueuedStepRow("v-step-unique-first", "session-unique", 0),
+    );
+
+    expect(() =>
+      insertStepRow(
+        database,
+        validQueuedStepRow("v-step-unique-second", "session-unique", 0),
+      ),
+    ).toThrow();
+  });
+
+  test("a valid pending decision inserts successfully, referencing an existing session and step", () => {
+    const database = createRealMigratedDatabase();
+    insertSessionRow(database, validOpenSessionRow("session-decision"));
+    insertStepRow(
+      database,
+      validQueuedStepRow("step-decision", "session-decision"),
+    );
+
+    expect(() =>
+      insertDecisionRow(
+        database,
+        validPendingDecisionRow(
+          "decision-pending",
+          "session-decision",
+          "step-decision",
+        ),
+      ),
+    ).not.toThrow();
+  });
+
+  test("a valid answered decision inserts successfully", () => {
+    const database = createRealMigratedDatabase();
+    insertSessionRow(database, validOpenSessionRow("session-decision-2"));
+    insertStepRow(
+      database,
+      validQueuedStepRow("step-decision-2", "session-decision-2"),
+    );
+
+    expect(() =>
+      insertDecisionRow(
+        database,
+        validAnsweredDecisionRow(
+          "decision-answered",
+          "session-decision-2",
+          "step-decision-2",
+        ),
+      ),
+    ).not.toThrow();
+  });
+
+  const DECISION_CHECK_VIOLATIONS: readonly [
+    string,
+    (sessionId: string, stepId: string) => SessionDecisionRowFixture,
+  ][] = [
+    [
+      "status answered with answered_at_ms NULL",
+      (sessionId, stepId) => ({
+        ...validAnsweredDecisionRow("v-decision-a", sessionId, stepId),
+        answered_at_ms: null,
+      }),
+    ],
+    [
+      "status pending with answered_at_ms set",
+      (sessionId, stepId) => ({
+        ...validPendingDecisionRow("v-decision-b", sessionId, stepId),
+        answered_at_ms: 5000,
+      }),
+    ],
+    [
+      "status answered with answer_json NULL",
+      (sessionId, stepId) => ({
+        ...validAnsweredDecisionRow("v-decision-c", sessionId, stepId),
+        answer_json: null,
+      }),
+    ],
+    [
+      "status pending with answer_json set",
+      (sessionId, stepId) => ({
+        ...validPendingDecisionRow("v-decision-d", sessionId, stepId),
+        answer_json: '"unexpected"',
+      }),
+    ],
+  ];
+
+  test.each(DECISION_CHECK_VIOLATIONS)(
+    "rejects a console_session_decisions row with %s",
+    (_label, buildRow) => {
+      const database = createRealMigratedDatabase();
+      insertSessionRow(
+        database,
+        validOpenSessionRow("session-decision-checks"),
+      );
+      insertStepRow(
+        database,
+        validQueuedStepRow("step-decision-checks", "session-decision-checks"),
+      );
+
+      expect(() =>
+        insertDecisionRow(
+          database,
+          buildRow("session-decision-checks", "step-decision-checks"),
+        ),
+      ).toThrow();
+    },
+  );
+
+  test("a valid binding inserts successfully, referencing an existing session", () => {
+    const database = createRealMigratedDatabase();
+    insertSessionRow(database, validOpenSessionRow("session-binding"));
+
+    expect(() =>
+      insertBindingRow(
+        database,
+        validBindingRow("binding-1", "session-binding"),
+      ),
+    ).not.toThrow();
+  });
+
+  // FOREIGN KEY enforcement requires PRAGMA foreign_keys = ON — replicated
+  // here via createRealMigratedDatabaseWithForeignKeys, not the plain
+  // createRealMigratedDatabase the CHECK-constraint tests above use.
+  describe("foreign key enforcement (PRAGMA foreign_keys = ON, replicating store/store.ts's own pragma sequence)", () => {
+    test("a console_session_steps row referencing a nonexistent session_id is rejected", () => {
+      const database = createRealMigratedDatabaseWithForeignKeys();
+
+      expect(() =>
+        insertStepRow(
+          database,
+          validQueuedStepRow("v-fk-step", "session-does-not-exist"),
+        ),
+      ).toThrow();
+    });
+
+    test("a console_session_decisions row referencing a nonexistent step_id is rejected", () => {
+      const database = createRealMigratedDatabaseWithForeignKeys();
+      insertSessionRow(database, validOpenSessionRow("session-fk-decision"));
+
+      expect(() =>
+        insertDecisionRow(
+          database,
+          validPendingDecisionRow(
+            "v-fk-decision",
+            "session-fk-decision",
+            "step-does-not-exist",
+          ),
+        ),
+      ).toThrow();
+    });
+
+    test("a console_session_bindings row referencing a nonexistent session_id is rejected", () => {
+      const database = createRealMigratedDatabaseWithForeignKeys();
+
+      expect(() =>
+        insertBindingRow(
+          database,
+          validBindingRow("v-fk-binding", "session-does-not-exist"),
+        ),
+      ).toThrow();
+    });
+
+    // No negative control against a plain createRealMigratedDatabase() here:
+    // node:sqlite's DatabaseSync defaults enableForeignKeyConstraints to ON
+    // (see store/sqlite-driver.ts's measured-behavior table and
+    // tests/store-driver.test.ts's own enableForeignKeyConstraints coverage),
+    // so a raw, un-pragma'd connection already enforces foreign keys and
+    // would reject the same row — asserting otherwise would codify a false
+    // premise. The three rejection tests above already exercise the real
+    // application path (createRealMigratedDatabaseWithForeignKeys, matching
+    // store/store.ts's own pragma sequence), which is what matters.
   });
 });
