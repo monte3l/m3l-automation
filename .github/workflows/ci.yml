@@ -284,6 +284,17 @@ jobs:
 
       - uses: ./.github/actions/setup
 
+      # Playwright's webServer (playwright.config.ts) calls `vite build`
+      # directly rather than through turbo, so turbo's `dependsOn: ["^build"]`
+      # graph never runs here — this step is the only thing that builds
+      # @m3l-automation/m3l-common before Vite needs its dist/ output.
+      # console-web has depended on m3l-common since the browser-safe
+      # ./core/errors exports subpath (ADR-0004's dated Update): without this,
+      # Vite/Rolldown fails to resolve "@m3l-automation/m3l-common/core/errors"
+      # because packages/m3l-common/dist/ doesn't exist yet on a fresh runner.
+      - name: Build m3l-common
+        run: pnpm --filter @m3l-automation/m3l-common build
+
       # Keyed on the lockfile the same way the turbo cache is — a Playwright
       # version bump changes the lockfile hash and correctly invalidates the
       # installed browser build alongside it.

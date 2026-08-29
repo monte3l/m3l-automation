@@ -233,6 +233,14 @@ export const VERIFY_STEPS = [
     conditional: true,
   },
   {
+    ciStepName: "Build m3l-common",
+    id: "build-m3l-common-for-e2e",
+    cmd: () => "pnpm --filter @m3l-automation/m3l-common build",
+    skipReason:
+      "prerequisite for the e2e lane's own vite build, which bypasses turbo's dependsOn graph — path-scoped like the rest of this lane (pass --full to run it)",
+    conditional: true,
+  },
+  {
     ciStepName: "Cache Playwright browsers",
     id: "cache-playwright",
     skipReason:
