@@ -30,7 +30,11 @@ import { createConsoleRequestListener } from "./http/handler.js";
 import type { M3LConsoleRequestListener } from "./http/handler.js";
 import { createRouter } from "./http/router.js";
 import type { M3LRoute, M3LRouter } from "./http/router.js";
-import { createBuiltInRoutes } from "./http/routes/built-in.js";
+import {
+  createBuiltInRoutes,
+  toRunsRouteOptions,
+} from "./http/routes/built-in.js";
+import type { RunsRouteOptions } from "./http/routes/built-in.js";
 import { createOriginGuard } from "./http/origin-guard.js";
 import { createDrainMiddleware } from "./http/drain-middleware.js";
 import { createAuthMiddleware } from "./http/auth-middleware.js";
@@ -245,12 +249,14 @@ function buildDispatchRouter(
   drain: M3LDrainController,
   routes: readonly M3LRoute[],
   store: M3LConsoleStoreLifecycle | undefined,
+  runs: RunsRouteOptions | undefined,
 ): M3LRouter {
   return createRouter(
     createBuiltInRoutes({
       drain,
       startedAt: Date.now(),
       ...(store !== undefined && { store }),
+      ...(runs !== undefined && { runs }),
       routes,
     }),
   );
@@ -342,7 +348,12 @@ export function createConsoleRuntime(
   // full rationale). It runs ahead of auth so a drain refusal never pays the
   // cost of resolving an operator first.
   const requestListener = createConsoleRequestListener({
-    router: buildDispatchRouter(drain, routes, options.store),
+    router: buildDispatchRouter(
+      drain,
+      routes,
+      options.store,
+      toRunsRouteOptions(options.runs, runs),
+    ),
     middlewares: [
       createDrainMiddleware(drain),
       createAuthMiddleware(operatorProvider),

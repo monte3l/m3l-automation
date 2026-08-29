@@ -122,10 +122,13 @@ export interface M3LRunSubsystem {
    */
   readonly eventHub: M3LEventStreamHub<M3LRunEvent>;
   /**
-   * Aborts every in-flight run and resolves once they have all settled.
-   * Delegates to {@link M3LRunOrchestrator.drain} — see this interface's own
-   * TSDoc for why the method is duplicated at this top level rather than
-   * left reachable only via `orchestrator.drain()`.
+   * Aborts every in-flight run, waits for {@link M3LRunOrchestrator.drain} to
+   * resolve once they have all settled, and only THEN ends every still-open
+   * stream on {@link eventHub} with reason `"draining"` — see
+   * {@link createRunSubsystem}'s own TSDoc for why that ordering (not the
+   * reverse) is required. Delegating to `orchestrator.drain()` for the first
+   * half is why this method is duplicated at this top level rather than left
+   * reachable only via `orchestrator.drain()`.
    */
   drain(): Promise<void>;
 }
@@ -211,8 +214,21 @@ export function createRunSubsystem(
   return {
     orchestrator,
     eventHub,
-    drain(): Promise<void> {
-      return orchestrator.drain();
+    async drain(): Promise<void> {
+      // Order is deliberate, not arbitrary: `orchestrator.drain()` MUST run
+      // first. Draining aborts every in-flight run, and each aborted run
+      // still publishes its own terminal `run.ended` through `events` above
+      // — which `stream-events.ts`'s sink turns into a `stream.end("completed")`
+      // for that run's watcher (addendum Correction 2). Ending every stream
+      // here FIRST would mean that sink's own `stream.ended` guard silently
+      // swallows every one of those terminal events, so a watcher would
+      // learn the server is shutting down but never learn what actually
+      // happened to the run it was watching. Draining first lets each
+      // watched run deliver its real outcome; `endAll("draining")` then
+      // closes whatever is still open (a run with no live watcher, or one
+      // that never reached a terminal event at all).
+      await orchestrator.drain();
+      eventHub.endAll("draining");
     },
   };
 }
