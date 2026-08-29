@@ -134,9 +134,15 @@ export const VERIFY_STEPS = [
       `node bin/check-review-size.mjs --base ${baseRef} --head HEAD`,
   },
   {
-    ciStepName: "Lint",
-    id: "lint",
-    cmd: () => "pnpm lint",
+    ciStepName: "Lint (library)",
+    id: "lint-library",
+    cmd: () => "pnpm lint:library",
+    conditional: true,
+  },
+  {
+    ciStepName: "Lint (workspace)",
+    id: "lint-workspace",
+    cmd: () => "pnpm lint:workspace",
     conditional: true,
   },
   {

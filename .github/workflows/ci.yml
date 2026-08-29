@@ -106,8 +106,43 @@ jobs:
       - name: Check dependency licenses
         run: pnpm check:licenses
 
-  lint:
-    name: Lint
+  # Split from one "Lint" job into two (2026-08-29): typescript-eslint's
+  # projectService gives each of eslint's --concurrency worker threads its
+  # own independent TypeScript program, so a single `eslint . --concurrency=2`
+  # invocation can end up building TWO full copies of packages/m3l-common's
+  # program (its files split across both workers) at once — confirmed by
+  # memory-profiling `eslint . --concurrency=1` locally at ~4.6GB vs
+  # `--concurrency=2` at ~9.0GB, almost exactly double. That pushed a
+  # 4-vCPU/16GB runner into ERR_WORKER_OUT_OF_MEMORY after M3LError.ts grew
+  # ~370 lines (#734, its cause-allowlist fix) — M3LError.ts sits on nearly
+  # every submodule's error hierarchy, so the whole-repo type graph it drives
+  # got proportionally bigger. Splitting into two jobs on two separate
+  # runners, each --concurrency=1 (so no worker-thread duplication is
+  # possible within a job either), profiled at ~3.1GB and ~3.8GB peak —
+  # comfortable margin instead of sitting at the ceiling — while running in
+  # parallel keeps wall-clock at roughly the slower half (~54s measured
+  # locally) rather than adding the two together. Verified the split is
+  # exhaustive and non-overlapping: `eslint packages/m3l-common` (409 files)
+  # plus `eslint . --ignore-pattern packages/m3l-common/**` (710 files) sums
+  # to exactly the unsplit `eslint .` run's 1,119 files, zero overlap.
+  lint-library:
+    name: Lint (library)
+    needs: changes
+    if: needs.changes.outputs.ts == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+
+      - uses: ./.github/actions/setup
+
+      - name: Lint (library)
+        run: pnpm lint:library
+
+  lint-workspace:
+    name: Lint (workspace)
     needs: changes
     # ts || claude: eslint also lints .claude/hooks/**/*.mjs
     # (eslint.config.js), so a hooks-only change must not skip this lane.
@@ -121,8 +156,8 @@ jobs:
 
       - uses: ./.github/actions/setup
 
-      - name: Lint
-        run: pnpm lint
+      - name: Lint (workspace)
+        run: pnpm lint:workspace
 
   format:
     name: Format & Markdown
@@ -661,7 +696,19 @@ jobs:
   # deliberately skipped by path-scoping.
   verify:
     name: verify
-    needs: [changes, secrets, deps, lint, format, build, test, gates, e2e]
+    needs:
+      [
+        changes,
+        secrets,
+        deps,
+        lint-library,
+        lint-workspace,
+        format,
+        build,
+        test,
+        gates,
+        e2e,
+      ]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5

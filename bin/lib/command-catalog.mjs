@@ -38,7 +38,17 @@ export const COMMAND_CATALOG = [
   {
     name: "lint",
     description:
-      "Runs the flat ESLint config (strict TS, no any, ESM-only, dependency-direction zones) over the whole repo. Pre-push gate; pre-commit only lints staged files.",
+      "Runs lint:library then lint:workspace (the flat ESLint config — strict TS, no any, ESM-only, dependency-direction zones — split across two sequential single-threaded passes to keep peak memory bounded). Pre-push gate; pre-commit only lints staged files.",
+  },
+  {
+    name: "lint:library",
+    description:
+      "Lints packages/m3l-common alone at --concurrency=1. Split out from `lint` (2026-08-29) because two concurrent ESLint workers can each build their own full copy of this package's TypeScript program, roughly doubling peak memory on a large project.",
+  },
+  {
+    name: "lint:workspace",
+    description:
+      "Lints everything except packages/m3l-common (its own pass keeps that package's large TypeScript program from being loaded twice under --concurrency>1) at --concurrency=1.",
   },
   {
     name: "lint:commit",

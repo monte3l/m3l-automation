@@ -19,7 +19,9 @@
   "scripts": {
     "build": "turbo run build",
     "typecheck": "turbo run typecheck && tsc -p bin/tsconfig.json",
-    "lint": "eslint . --concurrency=2",
+    "lint": "pnpm lint:library && pnpm lint:workspace",
+    "lint:library": "eslint packages/m3l-common --concurrency=1",
+    "lint:workspace": "eslint . --ignore-pattern 'packages/m3l-common/**' --concurrency=1",
     "lint:commit": "node bin/lint-commit.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
