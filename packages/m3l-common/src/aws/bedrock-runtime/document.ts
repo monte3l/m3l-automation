@@ -219,20 +219,6 @@ export function readCallerValue<T>(read: () => T, fieldLabel: string): T {
 }
 
 /**
- * Like {@link readCallerValue}, but returns `fallback` instead of throwing —
- * for the one call site (`client.ts`'s `isTextTypeBlock`) that treats an
- * unreadable discriminant the same as a non-matching one rather than as a
- * fatal request error.
- */
-export function readCallerValueOrElse<T>(read: () => T, fallback: T): T {
-  try {
-    return read();
-  } catch {
-    return fallback;
-  }
-}
-
-/**
  * {@link readCallerValue}, additionally requiring the result to be a
  * `string` — every string-typed position on the request path (`text`,
  * `toolUseId`, `name`, `role`, a tool's `description`) must satisfy this, not

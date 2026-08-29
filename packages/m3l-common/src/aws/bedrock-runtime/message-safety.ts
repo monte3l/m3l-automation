@@ -125,7 +125,7 @@ export function sanitizeForMessage(value: string): string {
  * `prototype`), so naming which of those three fired is safe and is the
  * single most useful diagnostic in that error.
  */
-export type M3LBedrockDocumentPathSegment =
+type M3LBedrockDocumentPathSegment =
   | { readonly kind: "index"; readonly index: number }
   | { readonly kind: "key"; readonly ordinal: number }
   | { readonly kind: "reservedKey"; readonly key: string };

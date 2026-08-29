@@ -69,10 +69,10 @@ export interface ConverseInput {
 }
 
 /** Every field {@link ConverseInput} carries -- the exhaustive wire-field vocabulary {@link FIELDS} is checked against. */
-export type WireField = keyof ConverseInput;
+type WireField = keyof ConverseInput;
 
 /** The inputs every {@link FIELDS} reader needs; threaded through unchanged rather than closed over, so `FIELDS` stays a plain, inspectable table. */
-export interface FieldReaderContext {
+interface FieldReaderContext {
   readonly modelId: string;
   readonly request: M3LBedrockInvokeRequest;
   readonly toolConfig: ToolConfiguration | undefined;
@@ -142,7 +142,7 @@ const FIELDS = {
  * selection and before any other field is read (see
  * {@link assertNoToolsForStreaming}).
  */
-export function buildRequestFields(ctx: FieldReaderContext): ConverseInput {
+function buildRequestFields(ctx: FieldReaderContext): ConverseInput {
   if (ctx.textOnly === true) {
     assertNoToolsForStreaming(ctx.request);
   }
