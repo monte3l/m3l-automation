@@ -111,8 +111,9 @@ unchanged.
 
 ⁵ `invokeStream`'s `request` stays the narrower `M3LBedrockInvokeRequest`, and
 `invokeStream` **throws** `M3LBedrockRuntimeOperationError` (`origin: caller`,
-`retryable: false`) if a structurally-typed value carrying `tools` or
-`toolChoice` reaches it anyway — see the scope-boundary note in "Overview".
+`retryable: false`) if a structurally-typed value carrying an own `tools` or
+`toolChoice` property reaches it anyway — presence alone is enough, so
+`tools: []` is refused too — see the scope-boundary note in "Overview".
 Because `invokeStream` is an `async function*`, that throw surfaces on the
 first `.next()`, not at call time.
 
@@ -198,9 +199,17 @@ is named here rather than left for a consumer to discover.
 `tools` and `toolChoice` are mapped together into the Converse API's single
 `toolConfig` field, and that field is **omitted entirely** when `tools` is
 absent **or empty** — a conditional spread, never a key set to `undefined`
-(`exactOptionalPropertyTypes`). An empty `tools` array is treated as
-equivalent to an absent one throughout, so a caller building the list
+(`exactOptionalPropertyTypes`). For **mapping** purposes an empty `tools`
+array is therefore equivalent to an absent one, so a caller building the list
 programmatically does not have to special-case "I found no tools this run".
+
+`invokeStream`'s guard is deliberately stricter, and keys off **presence, not
+emptiness**: it refuses a request carrying an own `tools` or `toolChoice`
+property at all, including `tools: []`. The asymmetry is intentional. The
+mapping rule answers "how many tools did the caller end up with?", where
+empty and absent genuinely coincide; the guard answers "did the caller reach
+for the tool surface on a method that cannot serve it?", where passing the key
+at all signals an intent this method must refuse rather than quietly ignore.
 
 Two caller errors, both `M3LBedrockRuntimeOperationError`
 (`origin: caller`, `retryable: false`), both raised before anything is sent:

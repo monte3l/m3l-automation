@@ -18,6 +18,8 @@
  * @packageDocumentation
  */
 
+import type { ToolConfiguration } from "@aws-sdk/client-bedrock-runtime";
+
 import { M3LBackoff } from "../../core/polling/M3LBackoff.js";
 import { combineClassifiers } from "../../core/polling/classifiers.js";
 import { M3LRetryRunner } from "../../core/polling/M3LRetryRunner.js";
@@ -27,11 +29,16 @@ import {
   M3LBedrockRuntimeModelError,
   M3LBedrockRuntimeOperationError,
 } from "./error.js";
+import { copyDocument } from "./tools.js";
+import type { M3LBedrockPlainDocument } from "./tools.js";
 import type {
+  M3LBedrockContentBlock,
   M3LBedrockInvokeRequest,
   M3LBedrockMessage,
   M3LBedrockRuntimeRole,
   M3LBedrockStopReason,
+  M3LBedrockToolResultContent,
+  M3LBedrockToolResultStatus,
 } from "./types.js";
 
 /** Retry-runner backoff tuning: 200ms start, 5s cap (matches `M3LPollingPolicies.awsThrottling()`). */
@@ -150,28 +157,125 @@ export function buildRetryRunner(
   });
 }
 
+/**
+ * The shape one mapped {@link M3LBedrockContentBlock} takes in
+ * `ConverseCommandInput.messages[].content` — a 3-arm union mirroring the
+ * SDK's `ContentBlock`'s `text`/`toolUse`/`toolResult` members exactly (see
+ * `types.ts`'s "Why the tool discriminants are camelCase" note). Declared
+ * locally, rather than importing the SDK's own `ContentBlock`, so this
+ * module states exactly the subset it produces.
+ */
+type SdkContentItem =
+  | { readonly text: string }
+  | {
+      readonly toolUse: {
+        readonly toolUseId: string;
+        readonly name: string;
+        readonly input: M3LBedrockPlainDocument;
+      };
+    }
+  | {
+      readonly toolResult: {
+        readonly toolUseId: string;
+        // NOT `readonly (...)[]` — the SDK's `ToolResultBlock.content` field
+        // is a plain mutable array (`ToolResultContentBlock[] | undefined`);
+        // a `readonly` array type is not assignable to it, and this literal
+        // is what `client.ts`/`stream.ts` hand straight to `new
+        // ConverseCommand(...)`.
+        readonly content: (
+          { readonly text: string } | { readonly json: M3LBedrockPlainDocument }
+        )[];
+        readonly status?: M3LBedrockToolResultStatus;
+      };
+    };
+
+/**
+ * Maps one {@link M3LBedrockToolResultContent} member to the SDK's
+ * `ToolResultContentBlock` shape, recursively copying a `json` payload — see
+ * `tools.ts`'s `copyDocument`.
+ */
+function mapToolResultContentItem(
+  item: M3LBedrockToolResultContent,
+): { readonly text: string } | { readonly json: M3LBedrockPlainDocument } {
+  switch (item.type) {
+    case "text":
+      return { text: item.text };
+    case "json":
+      return { json: copyDocument(item.json, 0) };
+    default: {
+      const exhaustive: never = item;
+      throw new M3LBedrockRuntimeOperationError(
+        `unhandled tool-result content type: ${String(exhaustive)}`,
+      );
+    }
+  }
+}
+
+/**
+ * Maps one {@link M3LBedrockContentBlock} to `ConverseCommandInput`'s
+ * per-block shape. An exhaustive `switch` over the 3-member union — adding
+ * a fourth member becomes a compile error here, not a silent drop.
+ *
+ * `toolUse.input` is forwarded exactly as supplied (a cast to
+ * {@link M3LBedrockPlainDocument}, never a recursive copy) — the doc's
+ * recursive-copy rule names only `inputSchema` and a `json` tool-result
+ * payload, not `toolUse.input`. `toolResult.status` is included only when
+ * present (a conditional spread, never a key set to `undefined` —
+ * `exactOptionalPropertyTypes`).
+ */
+function mapContentBlockToSdk(block: M3LBedrockContentBlock): SdkContentItem {
+  switch (block.type) {
+    case "text":
+      return { text: block.text };
+    case "toolUse":
+      return {
+        toolUse: {
+          toolUseId: block.toolUseId,
+          name: block.name,
+          input: block.input as M3LBedrockPlainDocument,
+        },
+      };
+    case "toolResult":
+      return {
+        toolResult: {
+          toolUseId: block.toolUseId,
+          content: block.content.map(mapToolResultContentItem),
+          ...(block.status !== undefined && { status: block.status }),
+        },
+      };
+    default: {
+      const exhaustive: never = block;
+      throw new M3LBedrockRuntimeOperationError(
+        `unhandled content block type: ${String(exhaustive)}`,
+      );
+    }
+  }
+}
+
 /** Converts a {@link M3LBedrockMessage} into the shape `ConverseCommandInput.messages` expects. */
 function toSdkMessage(message: M3LBedrockMessage): {
   role: M3LBedrockRuntimeRole;
-  content: { text: string }[];
+  content: SdkContentItem[];
 } {
   return {
     role: message.role,
-    content: message.content.map((block) => ({ text: block.text })),
+    content: message.content.map(mapContentBlockToSdk),
   };
 }
 
 /**
  * Shape shared by `ConverseCommandInput` and `ConverseStreamCommandInput`
- * for this V4 slice — both request types are field-identical for the
- * `modelId`/`messages`/`system`/`inferenceConfig` surface this wrapper
- * exposes.
+ * for this slice — both request types are field-identical for the
+ * `modelId`/`messages`/`system`/`inferenceConfig`/`toolConfig` surface this
+ * wrapper exposes. `toolConfig` is only ever populated by `client.ts`
+ * (`invoke`'s `M3LBedrockToolInvokeRequest`) — `stream.ts` never supplies
+ * one, since `invokeStream` keeps the narrower V4 request type.
  */
 export interface ConverseInput {
   readonly modelId: string;
   readonly messages: {
     role: M3LBedrockRuntimeRole;
-    content: { text: string }[];
+    content: SdkContentItem[];
   }[];
   readonly system?: { text: string }[];
   readonly inferenceConfig?: {
@@ -180,21 +284,29 @@ export interface ConverseInput {
     readonly topP?: number;
     readonly stopSequences?: string[];
   };
+  readonly toolConfig?: ToolConfiguration;
 }
 
 /**
  * Builds the plain request-input object shared by `client.ts`'s
  * `buildConverseCommand` and `stream.ts`'s `buildConverseStreamCommand` —
  * `ConverseCommandInput` and `ConverseStreamCommandInput` are field-identical
- * for this V4 slice's surface. `system` and `inferenceConfig` are included
- * only when present on `request` — a conditional spread, never a key set to
+ * for this slice's surface. `system`, `inferenceConfig`, and `toolConfig`
+ * are included only when present — a conditional spread, never a key set to
  * `undefined` (`exactOptionalPropertyTypes` convention).
  * `inferenceConfig.stopSequences` is copied into a fresh mutable array since
  * the SDK's field is `string[] | undefined`, not `readonly string[]`.
+ *
+ * `toolConfig` is already-built (via `tools.ts`'s `buildToolConfig`, called
+ * once by `client.ts`'s `invoke` before the fallback loop) rather than
+ * derived from `request` here — `request`'s own type stays
+ * `M3LBedrockInvokeRequest`, so `stream.ts` can keep calling this function
+ * without ever naming `tools`/`toolChoice`.
  */
 export function buildConverseInput(
   modelId: string,
   request: M3LBedrockInvokeRequest,
+  toolConfig?: ToolConfiguration,
 ): ConverseInput {
   const inferenceConfig = request.inferenceConfig;
   return {
@@ -219,6 +331,7 @@ export function buildConverseInput(
         }),
       },
     }),
+    ...(toolConfig !== undefined && { toolConfig }),
   };
 }
 

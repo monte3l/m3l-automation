@@ -22,6 +22,7 @@ import {
   ConverseCommand,
   type BedrockRuntimeClient,
   type ConverseCommandOutput,
+  type ToolConfiguration,
 } from "@aws-sdk/client-bedrock-runtime";
 
 import { M3LOperationAbortedError } from "../../core/errors/index.js";
@@ -40,6 +41,7 @@ import {
   STOP_REASON_LOOKUP,
 } from "./shared.js";
 import { invokeStream as invokeStreamImpl } from "./stream.js";
+import { buildToolConfig, mapToolUseBlock } from "./tools.js";
 import type {
   M3LBedrockContentBlock,
   M3LBedrockInvocationResult,
@@ -47,30 +49,48 @@ import type {
   M3LBedrockInvokeRequest,
   M3LBedrockRuntimeOptions,
   M3LBedrockStreamEvent,
+  M3LBedrockToolInvokeRequest,
 } from "./types.js";
 
 /** Builds the `ConverseCommand` for one model attempt. See `shared.ts`'s `buildConverseInput`. */
 function buildConverseCommand(
   modelId: string,
   request: M3LBedrockInvokeRequest,
+  toolConfig: ToolConfiguration | undefined,
 ): ConverseCommand {
-  return new ConverseCommand(buildConverseInput(modelId, request));
+  return new ConverseCommand(buildConverseInput(modelId, request, toolConfig));
 }
 
 /**
- * Filters a response message's content blocks down to text blocks, dropping
- * (never throwing on) any non-`text` member — the model's reply is external
- * data, not a caller mistake, so a future non-text member is tolerated
- * rather than rejected. See `docs/reference/aws/bedrock-runtime.md`'s
- * "Non-text content blocks in a reply" note.
+ * Maps a response message's content blocks onto {@link M3LBedrockContentBlock},
+ * keeping both `text` and well-formed `toolUse` blocks (V4 dropped every
+ * non-`text` member; V5 keeps `toolUse` since `result.message.content` is the
+ * caller's input to the tool-use loop). Any other block this wrapper cannot
+ * represent — including a malformed `toolUse` (missing/non-string
+ * `toolUseId`/`name`) — is dropped rather than thrown on: the model's reply
+ * is external data, not a caller mistake. See
+ * `docs/reference/aws/bedrock-runtime.md`'s "Unrepresentable content blocks
+ * in a reply" note for the drop-vs-refuse rule.
+ *
+ * @throws {@link M3LBedrockRuntimeOperationError} When a `toolUse` block
+ *   carries the SDK marker `type: "server_tool_use"` (see `tools.ts`'s
+ *   `mapToolUseBlock`) — Bedrock already executed that tool server-side, so
+ *   mapping it would risk a second, duplicate execution.
  */
 function mapContent(
-  content: readonly { readonly text?: string }[] | undefined,
+  content:
+    | readonly { readonly text?: string; readonly toolUse?: unknown }[]
+    | undefined,
 ): M3LBedrockContentBlock[] {
   const blocks: M3LBedrockContentBlock[] = [];
   for (const block of content ?? []) {
     if (typeof block.text === "string") {
       blocks.push({ type: "text", text: block.text });
+      continue;
+    }
+    const toolUse = mapToolUseBlock(block);
+    if (toolUse !== undefined) {
+      blocks.push(toolUse);
     }
   }
   return blocks;
@@ -196,14 +216,18 @@ export class M3LBedrockRuntimeOperations {
    * Sends one `Converse` request, walking `models[]` in order on an
    * availability fault until one succeeds or every model is exhausted.
    *
-   * @param request - The conversation messages, optional system prompt, and
-   *   optional inference tuning.
+   * @param request - The conversation messages, optional system prompt,
+   *   optional inference tuning, and (V5) optional `tools`/`toolChoice`.
    * @param options - Optional `signal` for cooperative cancellation.
    * @returns The mapped result from whichever model actually served the
    *   request.
    * @throws {@link M3LBedrockRuntimeOperationError} For a transport/API-call
-   *   failure not covered by the other two error classes, or a
-   *   malformed-but-successful response.
+   *   failure not covered by the other two error classes, a
+   *   malformed-but-successful response, or one of the two documented
+   *   caller errors for a malformed `tools`/`toolChoice` combination (see
+   *   `tools.ts`'s `buildToolConfig`) — request-shape validation runs
+   *   **before** the `AbortSignal` check below, so a malformed request is
+   *   refused even under an already-aborted signal.
    * @throws {@link M3LBedrockRuntimeModelError} When the serving model itself
    *   faults on this specific input (`ModelErrorException`).
    * @throws {@link M3LBedrockRuntimeNoModelError} When every model in the
@@ -214,9 +238,16 @@ export class M3LBedrockRuntimeOperations {
    *   never advances to the next model on abort.
    */
   async invoke(
-    request: M3LBedrockInvokeRequest,
+    request: M3LBedrockToolInvokeRequest,
     options?: M3LBedrockInvokeOptions,
   ): Promise<M3LBedrockInvocationResult> {
+    // Validated and built once, up front — before the AbortSignal check
+    // below and before any model is attempted — so both documented caller
+    // errors (`toolChoice` without `tools`, or naming a tool absent from
+    // `tools`) are never promoted to M3LOperationAbortedError under an
+    // already-aborted signal, and never depend on which model is tried
+    // first.
+    const toolConfig = buildToolConfig(request);
     const signal = options?.signal;
     const attemptedModels: string[] = [];
     let lastCause: unknown;
@@ -228,7 +259,12 @@ export class M3LBedrockRuntimeOperations {
       }
       attemptedModels.push(modelId);
 
-      const outcome = await this.#invokeOnModel(modelId, request, signal);
+      const outcome = await this.#invokeOnModel(
+        modelId,
+        request,
+        toolConfig,
+        signal,
+      );
       if (outcome.type === "success") {
         return outcome.result;
       }
@@ -270,9 +306,10 @@ export class M3LBedrockRuntimeOperations {
   async #invokeOnModel(
     modelId: string,
     request: M3LBedrockInvokeRequest,
+    toolConfig: ToolConfiguration | undefined,
     signal: AbortSignal | undefined,
   ): Promise<ModelAttemptOutcome> {
-    const command = buildConverseCommand(modelId, request);
+    const command = buildConverseCommand(modelId, request, toolConfig);
     const runner = buildRetryRunner(signal);
 
     let response: ConverseCommandOutput;
@@ -313,8 +350,11 @@ export class M3LBedrockRuntimeOperations {
    *   error-shaped event; every fault below is a rejection of `.next()`.
    * @throws {@link M3LBedrockRuntimeOperationError} For a transport/API-call
    *   failure not covered by the other error classes, a malformed-but-
-   *   successful `send()` response (`stream === undefined`), or a malformed
-   *   terminal `stopReason`/`usage` value — never retried or fallen back
+   *   successful `send()` response (`stream === undefined`), a malformed
+   *   terminal `stopReason`/`usage` value, or — checked first, before model
+   *   selection — a structurally-typed `request` that carries `tools`/
+   *   `toolChoice` anyway (`origin: caller`, `retryable: false`; see the
+   *   module doc's scope-boundary note). Never retried or fallen back
    *   from, even after events have already been yielded to the caller.
    * @throws {@link M3LBedrockRuntimeModelError} When the serving model
    *   itself faults on this specific input (`ModelErrorException`/
@@ -351,6 +391,32 @@ export class M3LBedrockRuntimeOperations {
     request: M3LBedrockInvokeRequest,
     options?: M3LBedrockInvokeOptions,
   ): AsyncGenerator<M3LBedrockStreamEvent, void, void> {
+    if (hasToolConfig(request)) {
+      throw new M3LBedrockRuntimeOperationError(
+        "invokeStream does not support tools/toolChoice — streaming tool-use is out of scope for V5; use invoke() instead",
+        { origin: "caller", retryable: false },
+      );
+    }
     yield* invokeStreamImpl(this.#client, this.#models, request, options);
   }
+}
+
+/**
+ * Returns `true` when `request` carries an own `tools` or `toolChoice`
+ * property, even though its declared type is the narrower
+ * {@link M3LBedrockInvokeRequest} (which has neither field). This guard is
+ * load-bearing, not decorative: a compile probe confirmed that TypeScript's
+ * structural typing rejects a tool-bearing **object literal** passed
+ * directly to `invokeStream` (an excess-property error — see the dedicated
+ * `@ts-expect-error` test), but still **admits** a structurally-typed
+ * non-literal `M3LBedrockToolInvokeRequest` value assigned through a
+ * variable or a downcast, since structural width subtyping only rejects
+ * excess properties on literals. Without this runtime check, that
+ * non-literal case would silently reach `stream.ts` and have its
+ * `tools`/`toolChoice` fields dropped mid-stream rather than refused.
+ */
+function hasToolConfig(request: M3LBedrockInvokeRequest): boolean {
+  return (
+    Object.hasOwn(request, "tools") || Object.hasOwn(request, "toolChoice")
+  );
 }
