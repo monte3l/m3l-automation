@@ -265,13 +265,43 @@ describe("BROWSER_SAFE_SUBPATHS", () => {
 // ---------------------------------------------------------------------------
 
 describe("runCheck", () => {
-  test("against the real core/errors submodule reports success and no violations", () => {
+  const [registeredSubpath] = BROWSER_SAFE_SUBPATHS;
+  if (registeredSubpath === undefined) {
+    throw new Error(
+      "BROWSER_SAFE_SUBPATHS must have at least one entry for this test file",
+    );
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  test("reports success and no violations when every registered subpath's graph is clean", () => {
+    vi.spyOn(fs, "readFileSync").mockReturnValue("export {};");
     const reporter = { error: vi.fn(), succeed: vi.fn() };
 
     const ok = runCheck(reporter);
 
     expect(ok).toBe(true);
-    expect(reporter.succeed).toHaveBeenCalled();
+    expect(reporter.succeed).toHaveBeenCalledWith(
+      expect.stringContaining(registeredSubpath.subpath),
+    );
     expect(reporter.error).not.toHaveBeenCalled();
+  });
+
+  test("reports failure and the violating specifier when a registered subpath's graph is not browser-safe", () => {
+    vi.spyOn(fs, "readFileSync").mockReturnValue(
+      'import { readFileSync } from "node:fs";',
+    );
+    const reporter = { error: vi.fn(), succeed: vi.fn() };
+
+    const ok = runCheck(reporter);
+
+    expect(ok).toBe(false);
+    expect(reporter.succeed).not.toHaveBeenCalled();
+    expect(reporter.error).toHaveBeenCalledWith(
+      expect.stringContaining('"node:fs"'),
+      expect.objectContaining({ file: registeredSubpath.entry }),
+    );
   });
 });
