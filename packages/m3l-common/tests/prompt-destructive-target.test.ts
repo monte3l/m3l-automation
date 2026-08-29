@@ -800,6 +800,92 @@ describe("sensitiveTargets", () => {
 });
 
 // ---------------------------------------------------------------------------
+// matchesSensitiveList three-way rule: absent → no match, array → membership,
+// present-but-not-array → fail-closed match. This fix landed with zero test
+// coverage (no existing assertion changed outcome), and the fail-closed
+// direction — returning `true` for a malformed own field rather than `false`
+// — was a deliberate maintainer choice: an uninterpretable grading spec is an
+// unprovable state, so it must grade sensitive rather than silently pass.
+// ---------------------------------------------------------------------------
+describe("sensitiveTargets — malformed spec field fails closed (matchesSensitiveList)", () => {
+  test("profiles as an array: matches a listed profile", () => {
+    const predicate = sensitiveTargets({ profiles: ["prod"] });
+    expect(predicate({ profile: "prod" })).toBe(true);
+  });
+
+  test("profiles as an array: does not match an unlisted profile", () => {
+    const predicate = sensitiveTargets({ profiles: ["prod"] });
+    expect(predicate({ profile: "sandbox" })).toBe(false);
+  });
+
+  test("profiles as a malformed (non-array) string: matches the exact value", () => {
+    // Deliberately models a JavaScript caller that TypeScript would reject
+    // (M3LSensitiveTargetSpec.profiles is `readonly string[] | undefined`) —
+    // exactly the caller this fail-closed guard exists for.
+    const predicate = sensitiveTargets({
+      profiles: "prod" as unknown as readonly string[],
+    });
+    expect(predicate({ profile: "prod" })).toBe(true);
+  });
+
+  test("profiles as a malformed (non-array) string still matches a NON-matching profile (fail-closed, not substring)", () => {
+    // The sharpest case: a malformed own `profiles` field grades even a
+    // target whose profile is nowhere near "prod" as sensitive, because the
+    // spec is uninterpretable and an uninterpretable grading spec is an
+    // unprovable state — this is the fail-closed direction, not a substring
+    // or exact-match test.
+    const predicate = sensitiveTargets({
+      profiles: "prod" as unknown as readonly string[],
+    });
+    expect(predicate({ profile: "sandbox" })).toBe(true);
+  });
+
+  test("profiles as a malformed (non-array) number: fails closed", () => {
+    const predicate = sensitiveTargets({
+      profiles: 42 as unknown as readonly string[],
+    });
+    expect(predicate({ profile: "sandbox" })).toBe(true);
+  });
+
+  test("profiles as a malformed (non-array) object: fails closed", () => {
+    const predicate = sensitiveTargets({
+      profiles: {} as unknown as readonly string[],
+    });
+    expect(predicate({ profile: "sandbox" })).toBe(true);
+  });
+
+  test("regions spec present but target has no region: never matches, even when regions is malformed", () => {
+    const predicate = sensitiveTargets({ regions: ["x"] });
+    expect(predicate({ profile: "sandbox" })).toBe(false);
+  });
+
+  test("empty spec: never matches", () => {
+    const predicate = sensitiveTargets({});
+    expect(predicate({ profile: "prod" })).toBe(false);
+  });
+
+  test("regions as a malformed (non-array) string: fails closed for a present, non-matching region", () => {
+    const predicate = sensitiveTargets({
+      regions: "us-east-1" as unknown as readonly string[],
+    });
+    expect(predicate({ profile: "prod", region: "eu-west-1" })).toBe(true);
+  });
+
+  test("accountIds as a malformed (non-array) number: fails closed for a present, non-matching accountId", () => {
+    const predicate = sensitiveTargets({
+      accountIds: 42 as unknown as readonly string[],
+    });
+    expect(
+      predicate({
+        profile: "prod",
+        region: "us-east-1",
+        accountId: "999988887777",
+      }),
+    ).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Type-level contract
 // ---------------------------------------------------------------------------
 

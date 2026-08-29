@@ -41,6 +41,17 @@ export interface M3LAgentScriptGrant {
    * strict opt-in: only the boolean `true` is accepted.
    */
   readonly allOperations?: boolean;
+  /**
+   * The declared cross-check on `kind`: the operations this grant considers
+   * read-only. When declared, a `read-only` claim for an operation NOT on
+   * this list escalates with `kind-cross-check-escalated` instead of
+   * auto-approving (see docs/reference/core/agent.md
+   * § The declared cross-check on `kind`). One-directional by design: it
+   * never doubts a `mutating` claim, since only a false `read-only` claim is
+   * dangerous. Optional — a deployment that has not enumerated its read-only
+   * operations should not be forced to guess.
+   */
+  readonly readOnlyOperations?: readonly string[];
 }
 
 /**
@@ -75,6 +86,60 @@ export interface M3LAgentPolicyDeclaration {
    * absent means every mutation escalates as ungraded.
    */
   readonly sensitiveTargets?: M3LSensitiveTargetSpec;
+  /**
+   * The declared per-run and per-day ceilings (step 3). Absent means step 3
+   * is skipped entirely — a slice-1 declaration reaches exactly the arms
+   * slice 1 evaluated, in the same order, and gets the same verdict.
+   */
+  readonly budgets?: M3LAgentBudgets;
+  /**
+   * Opts into the dry-run-first discipline (step 6). Takes the same
+   * strict-`true` polarity as `allOperations`, for the mirror-image reason: a
+   * deployment that writes down a discipline should get it or get an error,
+   * never a silent downgrade to no discipline at all. `false` is accepted and
+   * means the same as absent.
+   */
+  readonly dryRunFirst?: boolean;
+}
+
+/**
+ * The declared per-run and per-day ceilings a deployment writes down (step 3).
+ *
+ * @remarks
+ * Every field is optional; at least one must be declared (an empty `budgets`
+ * object is rejected — it would read as "this deployment governs spend" in a
+ * diff while enforcing nothing). `invocationsPerRun`, `invocationsPerDay`,
+ * `tokensPerRun`, and `loopIterations` must be positive, finite safe
+ * integers; `costPerRun` may be fractional but must still be positive and
+ * finite. A ceiling of `0` is rejected: it would be exhausted before the run
+ * begins, which is a way of spelling "deny this script" that the `scripts`
+ * allowlist already spells properly.
+ *
+ * The five ceilings are checked in a **fixed order** —
+ * `invocationsPerRun`, `invocationsPerDay`, `tokensPerRun`, `costPerRun`,
+ * `loopIterations` — independent of the order they are declared in.
+ *
+ * @example
+ * ```ts
+ * import type { M3LAgentBudgets } from "@m3l-automation/m3l-common/core";
+ *
+ * const budgets: M3LAgentBudgets = { invocationsPerRun: 50, costPerRun: 5 };
+ * ```
+ */
+export interface M3LAgentBudgets {
+  /** The per-run invocation ceiling; compared against `invocationsThisRun`. */
+  readonly invocationsPerRun?: number;
+  /** The per-day invocation ceiling; compared against `invocationsToday`. */
+  readonly invocationsPerDay?: number;
+  /** The per-run token ceiling; compared against `tokensThisRun`. */
+  readonly tokensPerRun?: number;
+  /**
+   * The per-run cost ceiling, in the deployment's own unit; compared
+   * against `costThisRun`. No type from `aws/*` crosses into this module.
+   */
+  readonly costPerRun?: number;
+  /** The loop-iteration ceiling; compared against `loopIterations`. */
+  readonly loopIterations?: number;
 }
 
 /**

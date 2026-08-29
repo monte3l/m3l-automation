@@ -12,8 +12,8 @@ import type {
 
 /**
  * The rule ids **this build** knows, as a `Record` rather than an array so
- * that adding a ninth {@link M3LAgentPolicyRuleId} member is a compile error
- * here instead of a silently drifting runtime set.
+ * that adding a twenty-first {@link M3LAgentPolicyRuleId} member is a compile
+ * error here instead of a silently drifting runtime set.
  */
 const AGENT_POLICY_RULE_IDS: Record<M3LAgentPolicyRuleId, true> = {
   "script-not-allowlisted": true,
@@ -24,6 +24,18 @@ const AGENT_POLICY_RULE_IDS: Record<M3LAgentPolicyRuleId, true> = {
   "sensitive-target-escalated": true,
   "graded-mutation-auto-approved": true,
   "unclassifiable-escalated": true,
+  "budget.invocations-per-run": true,
+  "budget.invocations-per-day": true,
+  "budget.tokens-per-run": true,
+  "budget.cost-per-run": true,
+  "budget.loop-iterations": true,
+  "dry-run-first": true,
+  "kind-cross-check-escalated": true,
+  "budget.invocations-per-run.unobservable": true,
+  "budget.invocations-per-day.unobservable": true,
+  "budget.tokens-per-run.unobservable": true,
+  "budget.cost-per-run.unobservable": true,
+  "budget.loop-iterations.unobservable": true,
 };
 
 /**

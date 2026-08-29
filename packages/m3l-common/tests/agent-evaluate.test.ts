@@ -953,6 +953,11 @@ describe("unclassifiable-escalated — the fail-closed forward-compat arm", () =
         target: undefined,
         parameterNames: [],
         dryRun: false,
+        // Plain placeholder: this fixture only exercises the
+        // escalate/"unclassifiable-escalated" pairing, not the
+        // dry-run-first discipline that gives `shapeKey` meaning (see
+        // agent-dry-run.test.ts for the real `agentActionShapeKey` contract).
+        shapeKey: "placeholder-shape-key",
       },
     };
 
@@ -1061,6 +1066,8 @@ describe("the action projection carried on the decision", () => {
       },
       parameterNames: ["table"],
       dryRun: true,
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- vitest's expect.any() is typed `any`; this only asserts shapeKey is a string, not a fixed value
+      shapeKey: expect.any(String),
     });
   });
 });

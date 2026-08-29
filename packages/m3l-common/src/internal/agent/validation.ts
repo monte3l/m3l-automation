@@ -91,7 +91,16 @@ export function projectStringList(
   if (!rules.allowEmpty && value.length === 0) {
     throw failure(field, "empty-list", detail);
   }
-  if (value.length > rules.maxEntries) {
+  // Captured ONCE. `value.length` is a `Proxy` trap surface too: a
+  // `length` getter can return a small value here and the real (huge) one on
+  // every subsequent read, so checking the bound against one read and
+  // driving the loop off a second (or per-iteration) read lets a hostile
+  // proxy walk straight past the ceiling this line exists to enforce. Both
+  // the bound check and the loop below must derive from this single capture
+  // — this is a latent defect from this file's original slice-1 shape, not
+  // new in this change.
+  const length = value.length;
+  if (length > rules.maxEntries) {
     throw failure(field, "too-many-entries", detail);
   }
 
@@ -101,8 +110,9 @@ export function projectStringList(
   // own `Symbol.iterator` has been overridden, so an iterator-driven walk can
   // yield an arbitrary number of entries after `length` was checked against
   // the ceiling above — projecting thousands of names past a 256 bound. The
-  // loop must read the same `length` the bound was checked on.
-  for (let index = 0; index < value.length; index++) {
+  // loop must read the same `length` the bound was checked on (captured
+  // above, not re-read from `value.length`).
+  for (let index = 0; index < length; index++) {
     const entry = value[index];
     if (!isNonBlankString(entry)) {
       throw failure(field, "blank-or-non-string-entry", detail);

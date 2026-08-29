@@ -118,6 +118,11 @@ export interface M3LSensitiveTargetSpec {
  * A target whose `accountId` is absent is never matched by `spec.accountIds`,
  * regardless of the list contents. An all-omitted spec matches nothing.
  *
+ * Every field above — `spec.profiles`/`.regions`/`.accountIds` and
+ * `target.profile`/`.region`/`.accountId` — is read via an `Object.hasOwn`
+ * presence check, never a plain dot read, so a polluted
+ * `Object.prototype` cannot inject a grading list or a stray target field.
+ *
  * @param spec - The declarative classification spec.
  * @returns A predicate that returns `true` when the target is sensitive.
  * @example
@@ -151,26 +156,56 @@ export interface M3LSensitiveTargetSpec {
 export function sensitiveTargets(
   spec: M3LSensitiveTargetSpec,
 ): M3LDestructiveTargetPredicate {
-  return (target: M3LDestructiveTarget): boolean => {
-    if (spec.profiles !== undefined && spec.profiles.includes(target.profile)) {
-      return true;
-    }
-    if (
-      spec.regions !== undefined &&
-      target.region !== undefined &&
-      spec.regions.includes(target.region)
-    ) {
-      return true;
-    }
-    if (
-      spec.accountIds !== undefined &&
-      target.accountId !== undefined &&
-      spec.accountIds.includes(target.accountId)
-    ) {
-      return true;
-    }
+  return (target: M3LDestructiveTarget): boolean =>
+    matchesSensitiveList(spec, "profiles", ownField(target, "profile")) ||
+    matchesSensitiveList(spec, "regions", ownField(target, "region")) ||
+    matchesSensitiveList(spec, "accountIds", ownField(target, "accountId"));
+}
+
+/**
+ * Reads `key` off `record` via an `Object.hasOwn` presence check rather than
+ * a plain dot read, so an absent key never resolves up a polluted
+ * `Object.prototype` — `undefined` is returned for both a genuinely absent
+ * key and a key whose own value is `undefined`.
+ */
+function ownField<T extends object, K extends keyof T>(
+  record: T,
+  key: K,
+): T[K] | undefined {
+  return Object.hasOwn(record, key) ? record[key] : undefined;
+}
+
+/**
+ * Tests whether `value` is present and listed in `spec[key]`, guarding
+ * against a polluted or malformed `spec[key]` — which would otherwise throw
+ * a raw `TypeError` out of `.includes` — rather than letting that throw
+ * escape. Three cases, in order:
+ *
+ * 1. `key` absent from `spec` (via `Object.hasOwn`, for the same
+ *    prototype-pollution reason as {@link ownField}): no match.
+ * 2. `key` present and an array: ordinary membership test.
+ * 3. `key` present but **not** an array (a malformed own spec, e.g.
+ *    `{ profiles: "prod" }`): **match** — fails closed.
+ *
+ * This check only fails **closed**: a spurious match can make a target look
+ * *more* sensitive (an extra confirmation prompt in {@link confirmDestructive},
+ * an `escalate` verdict in `core/agent`), never bypass one. Case 3 is
+ * deliberate: a grading spec this function cannot interpret is an unprovable
+ * state, and every unprovable state in this area resolves toward *more*
+ * confirmation, never less — returning `false` there would silently treat an
+ * author's malformed spec as "not sensitive," the one direction this check
+ * must never take.
+ */
+function matchesSensitiveList(
+  spec: M3LSensitiveTargetSpec,
+  key: keyof M3LSensitiveTargetSpec,
+  value: string | undefined,
+): boolean {
+  if (value === undefined || !Object.hasOwn(spec, key)) {
     return false;
-  };
+  }
+  const list: unknown = spec[key];
+  return !Array.isArray(list) || list.includes(value);
 }
 
 /**

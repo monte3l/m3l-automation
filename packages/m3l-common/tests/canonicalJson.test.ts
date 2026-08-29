@@ -41,6 +41,34 @@ import {
   canonicalJsonStringify,
 } from "../src/core/json/canonicalJson.js";
 
+/**
+ * Runs `run` with `key` present on `proto` (`Object.prototype` or
+ * `Array.prototype`), then removes it in a `finally` — a leaked prototype
+ * mutation would corrupt every later test in this file (and this suite),
+ * since `hasToJSON`'s prototype-chain walk is exactly what these tests
+ * pollute. `configurable: true` is what makes the removal possible;
+ * `enumerable: false` matches how real prototype pollution reads (a `for...in`
+ * or `Object.keys` scan is untouched).
+ */
+function withPollutedPrototype<T>(
+  proto: object,
+  key: string,
+  value: unknown,
+  run: () => T,
+): T {
+  Object.defineProperty(proto, key, {
+    configurable: true,
+    enumerable: false,
+    value,
+    writable: true,
+  });
+  try {
+    return run();
+  } finally {
+    Reflect.deleteProperty(proto, key);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // canonicalJsonStringify
 // ---------------------------------------------------------------------------
@@ -252,5 +280,116 @@ describe("canonicalJsonHash", () => {
 
   test("has a string-returning signature", () => {
     expectTypeOf(canonicalJsonHash).returns.toBeString();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Prototype-pollution hardening (Vulnerability 1) — `hasToJSON` must resolve
+// `toJSON` by OWNER, not merely by a truthy prototype-chain lookup: an
+// `Object.prototype.toJSON` or `Array.prototype.toJSON` gadget must never
+// be honored, while a genuinely inherited `toJSON` (`Date.prototype`, a
+// custom class prototype) still must.
+// ---------------------------------------------------------------------------
+describe("hasToJSON hardening: pollution never collapses distinct values", () => {
+  test("Object.prototype.toJSON = () => 0 does not make two different objects hash identically", () => {
+    // Pre-fix: `hasToJSON` was a bare `typeof value.toJSON === "function"`
+    // check that walks the prototype chain with no regard for WHERE the
+    // method was found, so `Object.prototype.toJSON = () => 0` made every
+    // plain object serialize as "0" and hash identically — the exact
+    // reproduction in the vulnerability report (`harmless` and `dangerous`
+    // hashing the same).
+    const firstHash = withPollutedPrototype(
+      Object.prototype,
+      "toJSON",
+      () => 0,
+      () => canonicalJsonHash({ a: 1 }),
+    );
+    const secondHash = withPollutedPrototype(
+      Object.prototype,
+      "toJSON",
+      () => 0,
+      () => canonicalJsonHash({ b: 2 }),
+    );
+
+    expect(firstHash).not.toBe(secondHash);
+  });
+
+  test("a Date still serializes via its own toJSON(), both with and without Object.prototype polluted", () => {
+    // *** THE GUARD AGAINST THE WRONG FIX ***
+    // `Date.prototype.toJSON` is itself an INHERITED method — no `Date`
+    // instance owns `toJSON` directly. A naive fix that swapped the bare
+    // lookup for `Object.hasOwn(value, "toJSON")` (own-property only, no
+    // chain walk at all) would "fix" the pollution gadget by breaking every
+    // `Date` in the process: `hasToJSON` MUST keep walking the prototype
+    // chain, and must reject a `toJSON` only when its OWNER is specifically
+    // `Object.prototype` or `Array.prototype` — never every inherited
+    // `toJSON` from every user of the built-in prototype chain. If this test
+    // ever starts failing on the "polluted" half after a fix lands, the fix
+    // is the own-property-only shape this test exists to forbid.
+    const date = new Date("2020-01-01T00:00:00.000Z");
+    const expected = '"2020-01-01T00:00:00.000Z"';
+
+    expect(canonicalJsonStringify(date)).toBe(expected);
+
+    const polluted = withPollutedPrototype(
+      Object.prototype,
+      "toJSON",
+      () => 0,
+      () => canonicalJsonStringify(date),
+    );
+    expect(polluted).toBe(expected);
+  });
+
+  test("Array.prototype.toJSON = () => 0 does not collapse an array nested inside an object", () => {
+    // The narrower sibling: Array.prototype.toJSON only affects values that
+    // are themselves arrays encountered during the walk.
+    const firstHash = withPollutedPrototype(
+      Array.prototype,
+      "toJSON",
+      () => 0,
+      () => canonicalJsonHash({ list: [1, 2, 3] }),
+    );
+    const secondHash = withPollutedPrototype(
+      Array.prototype,
+      "toJSON",
+      () => 0,
+      () => canonicalJsonHash({ list: [4, 5, 6] }),
+    );
+
+    expect(firstHash).not.toBe(secondHash);
+  });
+
+  test("a custom class's own-property toJSON (set in the constructor) is still honored", () => {
+    class OwnPropertyToJSON {
+      readonly toJSON: () => unknown;
+      constructor(value: unknown) {
+        this.toJSON = () => ({ custom: value });
+      }
+    }
+
+    const result = canonicalJsonStringify(new OwnPropertyToJSON("own"));
+
+    expect(result).toBe('{"custom":"own"}');
+  });
+
+  test("a custom class's prototype-level toJSON (a class method) is still honored", () => {
+    class PrototypeToJSON {
+      constructor(private readonly value: unknown) {}
+      toJSON(): unknown {
+        return { custom: this.value };
+      }
+    }
+
+    const result = canonicalJsonStringify(new PrototypeToJSON("proto"));
+
+    expect(result).toBe('{"custom":"proto"}');
+    // The contested half: this method lives on `PrototypeToJSON.prototype`,
+    // not on the instance — proving the owner-based fix distinguishes a
+    // legitimate custom prototype from `Object.prototype`/`Array.prototype`
+    // rather than rejecting every inherited `toJSON`.
+    expect(Object.hasOwn(new PrototypeToJSON("x"), "toJSON")).toBe(false);
+    expect(Object.hasOwn(PrototypeToJSON.prototype as object, "toJSON")).toBe(
+      true,
+    );
   });
 });
