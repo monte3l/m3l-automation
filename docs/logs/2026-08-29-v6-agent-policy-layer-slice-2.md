@@ -117,6 +117,36 @@ cost four round-trips.
 GREEN by layer (types → validation → decision arms) rather than dispatching
 the whole implementation at once.
 
+### Two CI hazards that are invisible locally
+
+Both cost a round on this slice, and neither is discoverable from the code.
+
+**`check:review-size` diffs against the main tip, not the merge-base.** This
+branch's true diff was 212,809 chars, comfortably inside the 300,000 ceiling.
+CI computed **576,107** and rejected the PR, because `main` gained #741 while
+the branch was open and every file that PR touched counted as a reversed
+deletion. Slice 1 hit the identical failure against #737/#738.
+
+The tell is the gate's own "largest contributors" list naming files the branch
+never opened — here `bedrock-runtime-tools.test.ts`,
+`bedrock-runtime-wire.test.ts`, `sessions-artifacts.test.ts`. **The gate's
+remediation text actively misleads**: it says "Split it — docs vs. code", which
+would mean carving up a correctly-sized PR to chase a phantom. The fix is
+always `git rebase origin/main`, and the diagnosis is always comparing the
+merge-base number against the main-tip number before touching anything.
+
+**A rebase can silently drop entries from the generated reference index.**
+Resolving `catalog.json` / `symbol-map.json` in main's favour dropped this
+branch's four new symbols. Nothing a developer runs by reflex would notice: the
+build passes, `tsc` passes, and all 11,805 tests pass, because those files are
+documentation metadata rather than code. Only `check:index` and
+`check:provenance` read them, and both source from the provenance sidecars, not
+from `src/`.
+
+The post-rewrite `regen` hook is what caught it. After any rebase that touches
+a generated index, re-run the regen and diff before assuming the rebase was
+clean.
+
 ## Lessons learned
 
 1. **A guard documented on one module does not extend to the modules it
