@@ -1,18 +1,22 @@
 /**
  * Tests for src/config/paths.ts — `resolveStoreDatabasePath` (X3 console-
- * persistence, slice A2, ADR-0069). Drives only `src/config/paths.ts`; keep
- * `env.ts` out of this file so v8's `perFile` coverage binds this src slice
- * to this test file alone (see `tests.md`'s per-file-size note).
+ * persistence, slice A2, ADR-0069) and `resolveSessionArtifactRoot` (X6
+ * workbench-sessions module, slice 3). Drives only `src/config/paths.ts`;
+ * keep `env.ts` out of this file so v8's `perFile` coverage binds this src
+ * slice to this test file alone (see `tests.md`'s per-file-size note).
  *
- * No filesystem I/O anywhere in this file: `resolveStoreDatabasePath` is a
- * pure path computation, so the tests need none either.
+ * No filesystem I/O anywhere in this file: both functions are pure path
+ * computations, so the tests need none either.
  */
 import * as path from "node:path";
 
 import { afterEach, describe, expect, expectTypeOf, test } from "vitest";
 
 import { M3LConsoleError } from "../src/errors/console-error.js";
-import { resolveStoreDatabasePath } from "../src/config/paths.js";
+import {
+  resolveSessionArtifactRoot,
+  resolveStoreDatabasePath,
+} from "../src/config/paths.js";
 import type { ResolveStoreDatabasePathOptions } from "../src/config/paths.js";
 
 /** Dotted config key every rejection must name (never the rejected value). */
@@ -208,5 +212,106 @@ describe("resolveStoreDatabasePath — path traversal / absolute paths (accepted
     expect(result).toBe(absolute);
     const relative = path.relative(dataDir, result);
     expect(relative.startsWith("..")).toBe(true);
+  });
+});
+
+describe("resolveSessionArtifactRoot — default (X6 slice 3)", () => {
+  test("resolves <dataDir>/console/artifacts when configuredPath is absent", () => {
+    const result = resolveSessionArtifactRoot({
+      resolveDataDir: () => "/data",
+    });
+
+    expect(result).toBe(path.join("/data", "console", "artifacts"));
+  });
+
+  test("resolveSessionArtifactRoot is callable with no options at all", () => {
+    expectTypeOf(resolveSessionArtifactRoot).toBeCallableWith();
+  });
+});
+
+describe("resolveSessionArtifactRoot — configuredPath resolution", () => {
+  test("resolves a relative configuredPath against the injected data dir", () => {
+    const result = resolveSessionArtifactRoot({
+      configuredPath: "custom/artifacts",
+      resolveDataDir: () => "/data",
+    });
+
+    expect(result).toBe(path.resolve("/data", "custom/artifacts"));
+  });
+
+  test("passes an absolute configuredPath through path.resolve unchanged", () => {
+    const absolute = path.resolve(path.sep, "abs", "artifacts");
+
+    const result = resolveSessionArtifactRoot({
+      configuredPath: absolute,
+      resolveDataDir: () => "/data",
+    });
+
+    expect(result).toBe(absolute);
+  });
+});
+
+describe("resolveSessionArtifactRoot — a directory path may have no extension (unlike the database FILE path)", () => {
+  test("accepts a configuredPath with no file extension — the natural shape for a directory root", () => {
+    const result = resolveSessionArtifactRoot({
+      configuredPath: "artifacts-root",
+      resolveDataDir: () => "/data",
+    });
+
+    expect(result).toBe(path.resolve("/data", "artifacts-root"));
+  });
+});
+
+describe("resolveSessionArtifactRoot — rejects an unsafe configuredPath", () => {
+  // Only the two rejections the contract explicitly commits to for a
+  // DIRECTORY root (as opposed to resolveStoreDatabasePath's FILE path,
+  // which additionally rejects the `:memory:` sentinel and a trailing path
+  // separator — neither of those two checks is meaningful for a directory
+  // target, so this file deliberately does not pin either one here).
+  test.each<[string, string]>([
+    ["a blank string", ""],
+    ["a whitespace-only string", "   "],
+    ["a file: prefix", "file:///tmp/artifacts"],
+  ])("rejects %s as ERR_CONSOLE_CONFIG_INVALID", (_label, rejectedValue) => {
+    let thrown: unknown;
+    try {
+      resolveSessionArtifactRoot({
+        configuredPath: rejectedValue,
+        resolveDataDir: () => "/data",
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    const error = thrown as M3LConsoleError;
+    expect(error.code).toBe("ERR_CONSOLE_CONFIG_INVALID");
+    if (rejectedValue.trim().length > 0) {
+      expect(error.message).not.toContain(rejectedValue);
+    }
+  });
+});
+
+describe("resolveSessionArtifactRoot — resolveDataDir failure", () => {
+  test("wraps a thrown resolveDataDir failure as M3LConsoleError, chaining the original as cause", () => {
+    const original = new Error(
+      "boom - simulates M3LPathResolutionError/M3LEnvironmentDetectionError escaping M3LPaths",
+    );
+
+    let thrown: unknown;
+    try {
+      resolveSessionArtifactRoot({
+        resolveDataDir: () => {
+          throw original;
+        },
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    const error = thrown as M3LConsoleError;
+    expect(error.code).toBe("ERR_CONSOLE_CONFIG_INVALID");
+    expect(error.cause).toBe(original);
   });
 });

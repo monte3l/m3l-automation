@@ -22,6 +22,15 @@ const DB_PATH_KEY = "m3l.console.db.path";
 /** The path segments appended to the data dir for the default database path. */
 const DEFAULT_DB_RELATIVE_SEGMENTS = ["console", "console.sqlite"] as const;
 
+/** Dotted config key named in every session-artifact-root rejection message. */
+const ARTIFACT_ROOT_KEY = "m3l.console.sessions.artifact.root";
+
+/** The path segments appended to the data dir for the default session artifact root. */
+const DEFAULT_ARTIFACT_ROOT_RELATIVE_SEGMENTS = [
+  "console",
+  "artifacts",
+] as const;
+
 /**
  * The literal SQLite in-memory sentinel, rejected as a `configuredPath`.
  * In-memory storage is available only programmatically, via
@@ -77,6 +86,33 @@ function rejectUnsafeConfiguredPath(configuredPath: string): void {
       CODE,
       `configuration key '${DB_PATH_KEY}' must name a file, not a directory (it must not end in a path separator)`,
       { context: { key: DB_PATH_KEY } },
+    );
+  }
+}
+
+/**
+ * Validates a supplied session-artifact-root `configuredPath`, throwing
+ * {@link M3LConsoleError} (never echoing `configuredPath` itself) when it is
+ * blank or a `file:`-prefixed URI. Unlike
+ * {@link rejectUnsafeConfiguredPath} (the database FILE path's validator),
+ * this deliberately does NOT reject the `":memory:"` literal or a trailing
+ * path separator — neither check is meaningful for a directory target: a
+ * directory path may legitimately end in a separator, and there is no
+ * in-memory-store sentinel to guard against for a filesystem root.
+ */
+function rejectUnsafeArtifactRootPath(configuredPath: string): void {
+  if (configuredPath.trim().length === 0) {
+    throw new M3LConsoleError(
+      CODE,
+      `configuration key '${ARTIFACT_ROOT_KEY}' must not be blank`,
+      { context: { key: ARTIFACT_ROOT_KEY } },
+    );
+  }
+  if (configuredPath.startsWith(FILE_URI_PREFIX)) {
+    throw new M3LConsoleError(
+      CODE,
+      `configuration key '${ARTIFACT_ROOT_KEY}' must be a filesystem path, not a 'file:' URI`,
+      { context: { key: ARTIFACT_ROOT_KEY } },
     );
   }
 }
@@ -172,5 +208,75 @@ export function resolveStoreDatabasePath(
   }
 
   rejectUnsafeConfiguredPath(configuredPath);
+  return path.resolve(runResolveDataDir(resolveDataDir), configuredPath);
+}
+
+/**
+ * Constructor options for {@link resolveSessionArtifactRoot}.
+ *
+ * @example
+ * ```ts
+ * const options: ResolveSessionArtifactRootOptions = {
+ *   configuredPath: "custom/artifacts",
+ * };
+ * ```
+ */
+export interface ResolveSessionArtifactRootOptions {
+  /** The operator-supplied path, if any (typically from `M3L_CONSOLE_SESSIONS_ARTIFACT_ROOT`). */
+  readonly configuredPath?: string | undefined;
+  /** Resolves the base data directory; defaults to `Core.M3LPaths().getDataDir()`. */
+  readonly resolveDataDir?: () => string;
+}
+
+/**
+ * Resolves the console server's session artifact storage root (X6 workbench-
+ * sessions module, slice 3, ADR-0068/ADR-0069) — the directory under which
+ * {@link "../sessions/artifacts.js".createSessionArtifactStore} writes
+ * file-backed artifacts.
+ *
+ * Performs no filesystem I/O whatsoever — it is a pure path computation,
+ * mirroring {@link resolveStoreDatabasePath}'s own shape. Creating the
+ * directory itself is the artifact store's own responsibility, not this
+ * module's.
+ *
+ * When `options.configuredPath` is absent, the result defaults to
+ * `<dataDir>/console/artifacts`. A relative `configuredPath` resolves against
+ * the data directory; an absolute one passes through {@link path.resolve}
+ * unchanged.
+ *
+ * A `configuredPath` that is blank/whitespace-only or `file:`-prefixed is
+ * rejected — see {@link rejectUnsafeArtifactRootPath}. Unlike
+ * {@link resolveStoreDatabasePath}'s FILE-path validator, this deliberately
+ * does not reject the `":memory:"` literal or a trailing path separator:
+ * neither check is meaningful for a directory root.
+ *
+ * @param options - See {@link ResolveSessionArtifactRootOptions}.
+ * @returns The resolved, absolute session artifact root directory.
+ * @throws {@link M3LConsoleError} `ERR_CONSOLE_CONFIG_INVALID` — for a
+ * rejected `configuredPath`, or when `resolveDataDir` throws.
+ *
+ * @example
+ * ```ts
+ * import { resolveSessionArtifactRoot } from "./config/paths.js";
+ *
+ * const root = resolveSessionArtifactRoot({
+ *   configuredPath: process.env["M3L_CONSOLE_SESSIONS_ARTIFACT_ROOT"],
+ * });
+ * ```
+ */
+export function resolveSessionArtifactRoot(
+  options: ResolveSessionArtifactRootOptions = {},
+): string {
+  const resolveDataDir = options.resolveDataDir ?? defaultResolveDataDir;
+  const configuredPath = options.configuredPath;
+
+  if (configuredPath === undefined) {
+    return path.join(
+      runResolveDataDir(resolveDataDir),
+      ...DEFAULT_ARTIFACT_ROOT_RELATIVE_SEGMENTS,
+    );
+  }
+
+  rejectUnsafeArtifactRootPath(configuredPath);
   return path.resolve(runResolveDataDir(resolveDataDir), configuredPath);
 }
