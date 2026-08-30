@@ -24,12 +24,23 @@ followed by the same `Consensus / best practices`, `Contradictions / drift`,
 
 ## Refresh
 
-These are point-in-time snapshots, not living trackers — Anthropic's guidance
-changes, so treat a snapshot's age as a signal to re-run the skill rather than
-as a standing source of truth. There is no automated staleness check on this
-directory (unlike the provenance-sidecar / doc-count machinery that covers
-`docs/reference/`); re-run `researching-anthropic-guidance` on the same topic
-when a snapshot looks out of date.
+The dated snapshots below are point-in-time, not living trackers — Anthropic's
+guidance changes, so treat a snapshot's age as a signal to re-run
+`researching-anthropic-guidance` on the same topic rather than as a standing
+source of truth. There is no automated staleness check for an individual
+topic snapshot.
+
+The **whole-harness** question — is the harness itself (agents, skills,
+hooks, rules, workflows, `CLAUDE.md`) still current with Anthropic's
+guidance — is different: it's answered by
+[`harness-refresh.md`](harness-refresh.md), a **living tracker** updated in
+place by the
+[`refreshing-anthropic-guidance`](../../.claude/skills/refreshing-anthropic-guidance/SKILL.md)
+skill rather than a new dated file per run. Unlike the topic snapshots below,
+it carries a machine-readable `last-verified` header for a (planned)
+`check:harness-freshness` gate to read and warn on once the harness hasn't
+been swept in a while — see that skill and its tracker for the current
+cadence mechanism.
 
 ## Index
 

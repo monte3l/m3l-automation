@@ -1,0 +1,78 @@
+{
+  "skill_name": "refreshing-anthropic-guidance",
+  "note": "plan_mode_entered-style assertions are checked via the aggregated-summary/report content, not by observing EnterPlanMode directly — mirrors the auditing skill's eval note (EnterPlanMode is unavailable in a subagent eval context).",
+  "evals": [
+    {
+      "id": 0,
+      "prompt": "/refreshing-anthropic-guidance is our Claude Code harness still up to date with what Anthropic recommends? we haven't checked in a while",
+      "expected_output": "The skill reads docs/research/harness-refresh.md for the last-verified state, fetches the Claude Code CHANGELOG and derives a delta since the recorded version, fans out five fixed facet agents (models-tiering, cc-features-settings, agent-subagent-design, skills-context-engineering, hooks-lifecycle) in one message, each diffing recorded claims against re-fetched sources with UNCHANGED/CHANGED/GONE verdicts. Findings are aggregated, the tracker is updated in place, and the skill enters plan mode with a remediation plan for any confirmed drift.",
+      "files": [],
+      "assertions": [
+        {
+          "name": "tracker_read_first",
+          "description": "docs/research/harness-refresh.md is read before dispatching agents, and its recorded last-verified date/version are used to scope the sweep"
+        },
+        {
+          "name": "changelog_delta_derived",
+          "description": "The Claude Code CHANGELOG is fetched and a delta since the tracker's recorded version is computed before or alongside the facet fan-out"
+        },
+        {
+          "name": "five_fixed_facets",
+          "description": "Exactly five agents are dispatched, one per fixed facet (models/tiering, Claude Code features/settings, agent/subagent design, skills/context engineering, hooks/lifecycle), not an ad-hoc or adaptive facet list"
+        },
+        {
+          "name": "parallel_dispatch",
+          "description": "All five facet agents are dispatched in a single message, not sequentially"
+        },
+        {
+          "name": "verdict_format_used",
+          "description": "Each facet's findings use the UNCHANGED/CHANGED/GONE per-claim verdict format, not a free-form summary"
+        },
+        {
+          "name": "tracker_updated",
+          "description": "docs/research/harness-refresh.md is updated in place (last-verified date, per-source claims) as part of this run — not left untouched and not replaced with a new dated file"
+        },
+        {
+          "name": "no_harness_files_edited_directly",
+          "description": "No .claude/agents, .claude/skills, .claude/settings.json, or hook file is edited directly by the skill — only the tracker is written outside plan mode"
+        },
+        {
+          "name": "plan_mode_entered_or_clean_sweep_reported",
+          "description": "The skill either enters plan mode with a remediation plan for confirmed drift, or explicitly reports a clean sweep if no drift was confirmed"
+        }
+      ]
+    },
+    {
+      "id": 1,
+      "prompt": "did Claude Code change anything recently around hooks or subagent tool grants that we should know about? check it against what our settings.json and agent frontmatter actually do",
+      "expected_output": "The skill treats this as a full sweep rather than narrowing to only the named facets — it still runs all five fixed facets so the tracker stays comparable run-to-run — but the changelog delta and repo-impact analysis pay particular attention to hooks-lifecycle and agent-subagent-design. Repo-impact citations point at concrete files: .claude/settings.json hook wiring, .claude/agents/*.md frontmatter fields.",
+      "files": [],
+      "assertions": [
+        {
+          "name": "all_five_facets_still_run",
+          "description": "Even though the user named specific areas of interest, all five fixed facets are dispatched, not a subset — the skill does not narrow scope based on the prompt's phrasing"
+        },
+        {
+          "name": "repo_impact_cites_real_files",
+          "description": "REPO-IMPACT entries for hooks/agent-design findings cite actual repo paths (.claude/settings.json, .claude/agents/*.md), not generic descriptions"
+        },
+        {
+          "name": "hub_verifies_repo_impact_claims",
+          "description": "Before treating a facet agent's REPO-IMPACT claim as real drift, the hub (not just the dispatched agent) checks the cited file itself"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "we just wrote a new skill for X, can you check if Anthropic has any new guidance we should follow for it?",
+      "expected_output": "This is a single-topic, on-demand question about one new skill, not a whole-harness sweep — the correct skill is researching-anthropic-guidance, not refreshing-anthropic-guidance. refreshing-anthropic-guidance should not trigger here.",
+      "files": [],
+      "assertions": [
+        {
+          "name": "does_not_trigger_refresh_skill",
+          "description": "refreshing-anthropic-guidance is not invoked for a single-topic on-demand question about one skill; researching-anthropic-guidance is the correct choice instead"
+        }
+      ]
+    }
+  ]
+}
