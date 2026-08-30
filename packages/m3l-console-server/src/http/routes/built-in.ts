@@ -5,9 +5,12 @@
  *
  * The health/readiness pair from {@link createHealthRoutes} comes first,
  * followed (X4 slice 7a) by the run-governor REST routes
- * ({@link createRunRoutes}) and the run SSE stream route
- * ({@link createRunStreamRoutes}) — only when `options.runs` is supplied
- * (run orchestration is optional; see `main.ts`'s `buildRunSubsystem`). A
+ * ({@link createRunRoutes}), the run SSE stream route
+ * ({@link createRunStreamRoutes}), and (X10b) the script-discovery routes
+ * ({@link createScriptRoutes}) — all three gated on `options.runs` being
+ * supplied (run orchestration is optional; see `main.ts`'s
+ * `buildRunSubsystem`), since script discovery registers on the same
+ * `M3L_CONSOLE_RUNS_SCRIPTS_DIR` presence gate as the run-governor routes. A
  * caller's own routes are appended AFTER every built-in group, never before —
  * `main.ts`'s `buildDispatchRouter` relies on that ordering so a caller can
  * never accidentally shadow a built-in path with a route of its own; see
@@ -26,6 +29,8 @@ import type {
   M3LRunStreamRegistryPort,
   RunStreamRouteOptions,
 } from "./run-stream.js";
+import { createScriptRoutes } from "./scripts.js";
+import type { M3LScriptCatalogPort } from "./scripts.js";
 import { createSessionRoutes } from "./sessions.js";
 import type {
   SessionRouteOptions,
@@ -38,8 +43,9 @@ import { M3LConsoleError } from "../../errors/console-error.js";
 
 /**
  * Constructor options for the X4 run-governor route groups
- * ({@link createRunRoutes}, {@link createRunStreamRoutes}), bundled into one
- * object since both groups are wired together or not at all — see
+ * ({@link createRunRoutes}, {@link createRunStreamRoutes}) and (X10b) the
+ * script-discovery route group ({@link createScriptRoutes}), bundled into
+ * one object since all three groups are wired together or not at all — see
  * {@link BuiltInRouteOptions.runs}.
  *
  * @example
@@ -50,6 +56,7 @@ import { M3LConsoleError } from "../../errors/console-error.js";
  *   orchestrator: { launch: () => ({ id: "run-1", scriptName: "sqs-etl", status: "running", dryRun: false, executionMode: "spawn" }) },
  *   registry: { list: () => [], get: () => undefined },
  *   hub: createEventStreamHub({ bufferSize: 100 }),
+ *   catalog: { list: () => [], describe: (name) => Promise.resolve({ name }) },
  * };
  * ```
  */
@@ -64,6 +71,13 @@ export interface RunsRouteOptions {
   readonly registry: M3LRunReaderPort & M3LRunStreamRegistryPort;
   /** The run-event stream hub; `main.ts` passes the real subsystem's `eventHub`. */
   readonly hub: RunStreamRouteOptions["hub"];
+  /**
+   * The script-catalog port (X10b); `main.ts` passes the real subsystem's
+   * `catalog`. Registers on the same presence gate as `orchestrator`/
+   * `registry`/`hub` above — script discovery and run orchestration are
+   * enabled or disabled together.
+   */
+  readonly catalog: M3LScriptCatalogPort;
 }
 
 /**
@@ -135,6 +149,7 @@ export function toRunsRouteOptions(
     | {
         readonly orchestrator: M3LRunLauncherPort;
         readonly eventHub: RunStreamRouteOptions["hub"];
+        readonly catalog: M3LScriptCatalogPort;
       }
     | undefined,
 ): RunsRouteOptions | undefined {
@@ -143,12 +158,14 @@ export function toRunsRouteOptions(
     orchestrator: subsystem.orchestrator,
     registry,
     hub: subsystem.eventHub,
+    catalog: subsystem.catalog,
   };
 }
 
 /**
- * Builds the run-governor route groups from `options.runs`, or an empty
- * table when run orchestration is disabled.
+ * Builds the run-governor route groups, the run SSE stream route, and (X10b)
+ * the script-discovery routes from `options.runs`, or an empty table when
+ * run orchestration is disabled.
  */
 function buildRunRoutes(
   runs: RunsRouteOptions | undefined,
@@ -160,6 +177,7 @@ function buildRunRoutes(
       registry: runs.registry,
     }),
     ...createRunStreamRoutes({ hub: runs.hub, registry: runs.registry }),
+    ...createScriptRoutes({ catalog: runs.catalog }),
   ];
 }
 

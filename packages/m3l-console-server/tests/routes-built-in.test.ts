@@ -28,6 +28,7 @@ import type {
   M3LRunReaderPort,
 } from "../src/http/routes/runs.js";
 import type { M3LRunStreamRegistryPort } from "../src/http/routes/run-stream.js";
+import type { M3LScriptCatalogPort } from "../src/http/routes/scripts.js";
 import type {
   SessionRouteReaderPort,
   SessionRouteWriterPort,
@@ -58,6 +59,19 @@ const fakeOrchestrator: M3LRunLauncherPort = {
 const fakeRegistry: M3LRunReaderPort & M3LRunStreamRegistryPort = {
   list: () => [],
   get: () => undefined,
+};
+
+/**
+ * A minimal `M3LScriptCatalogPort` fixture (X10b) — `RunsRouteOptions` gains
+ * this field alongside `orchestrator`/`registry`/`hub`, since the
+ * script-discovery routes register on the same `options.runs` presence gate
+ * as the run-governor routes. Never invoked by the pre-existing tests below
+ * (only its identity and structural shape matter to them); the dedicated
+ * script-route tests further down exercise its return values directly.
+ */
+const fakeCatalog: M3LScriptCatalogPort = {
+  list: () => [],
+  describe: () => Promise.resolve({}),
 };
 
 /** Builds a bare drain controller for `createBuiltInRoutes`'s required `drain` field. */
@@ -115,7 +129,11 @@ const SESSION_ROUTE_SIGNATURES: readonly { method: string; path: string }[] = [
 describe("toRunsRouteOptions", () => {
   test("both registry and subsystem present builds RunsRouteOptions wired from their sources", () => {
     const hub = createEventStreamHub<{ event: string }>({ bufferSize: 10 });
-    const subsystem = { orchestrator: fakeOrchestrator, eventHub: hub };
+    const subsystem = {
+      orchestrator: fakeOrchestrator,
+      eventHub: hub,
+      catalog: fakeCatalog,
+    };
 
     const result = toRunsRouteOptions(fakeRegistry, subsystem);
 
@@ -123,6 +141,10 @@ describe("toRunsRouteOptions", () => {
     expect(result?.orchestrator).toBe(subsystem.orchestrator);
     expect(result?.registry).toBe(fakeRegistry);
     expect(result?.hub).toBe(hub);
+    // X10b: `toRunsRouteOptions` forwards the subsystem's `catalog` through
+    // to `RunsRouteOptions.catalog` verbatim, same identity — the field
+    // `buildRunRoutes` reads to wire `createScriptRoutes({ catalog })`.
+    expect(result?.catalog).toBe(fakeCatalog);
   });
 
   test("registry present, subsystem undefined returns undefined", () => {
@@ -131,7 +153,11 @@ describe("toRunsRouteOptions", () => {
 
   test("subsystem present, registry undefined returns undefined", () => {
     const hub = createEventStreamHub<{ event: string }>({ bufferSize: 10 });
-    const subsystem = { orchestrator: fakeOrchestrator, eventHub: hub };
+    const subsystem = {
+      orchestrator: fakeOrchestrator,
+      eventHub: hub,
+      catalog: fakeCatalog,
+    };
 
     expect(toRunsRouteOptions(undefined, subsystem)).toBeUndefined();
   });
@@ -230,6 +256,23 @@ describe("createBuiltInRoutes — without options.runs", () => {
     );
     expect(routes.at(-1)).toBe(callerRoute);
   });
+
+  // X10b: the script-discovery routes register on the SAME `options.runs`
+  // presence gate as the run-governor routes (`M3L_CONSOLE_RUNS_SCRIPTS_DIR`
+  // gates both) — absent `options.runs` means neither `/api/v1/scripts*`
+  // route is registered, mirroring the "no registered but always 404 middle
+  // state" guarantee this module's own TSDoc already promises for `runs`.
+  test("registers no /api/v1/scripts* route when options.runs is absent", () => {
+    const routes = createBuiltInRoutes({
+      drain: buildDrain(),
+      startedAt: Date.now(),
+      routes: [],
+    });
+
+    expect(
+      routes.some((route) => route.path.startsWith("/api/v1/scripts")),
+    ).toBe(false);
+  });
 });
 
 describe("createBuiltInRoutes — with options.runs", () => {
@@ -244,10 +287,45 @@ describe("createBuiltInRoutes — with options.runs", () => {
         orchestrator: fakeOrchestrator,
         registry: fakeRegistry,
         hub,
+        catalog: fakeCatalog,
       },
     });
 
     for (const signature of RUN_ROUTE_SIGNATURES) {
+      const match = routes.find(
+        (route) =>
+          route.method === signature.method && route.path === signature.path,
+      );
+      expect(
+        match,
+        `expected a registered route for ${signature.method} ${signature.path}`,
+      ).toBeDefined();
+      expect(match?.auth).toBe("required");
+    }
+  });
+
+  // X10b: `buildRunRoutes` appends `createScriptRoutes({ catalog:
+  // runs.catalog })` after the existing run + run-stream routes, whenever
+  // `options.runs` is supplied.
+  test("additionally includes GET /api/v1/scripts and GET /api/v1/scripts/:name", () => {
+    const hub = createEventStreamHub<{ event: string }>({ bufferSize: 10 });
+
+    const routes = createBuiltInRoutes({
+      drain: buildDrain(),
+      startedAt: Date.now(),
+      routes: [],
+      runs: {
+        orchestrator: fakeOrchestrator,
+        registry: fakeRegistry,
+        hub,
+        catalog: fakeCatalog,
+      },
+    });
+
+    for (const signature of [
+      { method: "GET", path: "/api/v1/scripts" },
+      { method: "GET", path: "/api/v1/scripts/:name" },
+    ]) {
       const match = routes.find(
         (route) =>
           route.method === signature.method && route.path === signature.path,
@@ -310,7 +388,12 @@ describe("createBuiltInRoutes — with options.sessions", () => {
       drain: buildDrain(),
       startedAt: Date.now(),
       routes: [callerRoute],
-      runs: { orchestrator: fakeOrchestrator, registry: fakeRegistry, hub },
+      runs: {
+        orchestrator: fakeOrchestrator,
+        registry: fakeRegistry,
+        hub,
+        catalog: fakeCatalog,
+      },
       sessions: { reader: fakeSessionService, writer: fakeSessionService },
     });
 
@@ -386,6 +469,7 @@ describe("createBuiltInRoutes — built-in routes always win over a colliding ca
         orchestrator: fakeOrchestrator,
         registry: fakeRegistry,
         hub,
+        catalog: fakeCatalog,
       },
     });
 

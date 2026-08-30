@@ -44,9 +44,19 @@ const MAX_ECHOED_STATUS_LENGTH = 32;
 /**
  * The pattern a valid `scriptName` must match — duplicated verbatim from
  * `runs/parameters.ts`'s `SCRIPT_NAME_PATTERN` (`http/` may not import
- * `runs/`; see this module's own TSDoc).
+ * `runs/`; see this module's own TSDoc). Exported so
+ * `tests/routes-scripts.test.ts` can assert the duplication has not
+ * drifted, alongside `http/routes/scripts.ts`'s own THIRD copy
+ * (`SCRIPT_ROUTE_NAME_PATTERN`).
+ *
+ * @example
+ * ```ts
+ * import { SCRIPT_NAME_PATTERN } from "@m3l-automation/m3l-console-server/http/routes/runs.js";
+ *
+ * SCRIPT_NAME_PATTERN.test("sqs-etl"); // true
+ * ```
  */
-const SCRIPT_NAME_PATTERN = /^[a-z][a-z0-9-]*$/;
+export const SCRIPT_NAME_PATTERN: RegExp = /^[a-z][a-z0-9-]*$/;
 
 /**
  * The accepted `?status=` vocabulary — duplicated verbatim, in the same

@@ -31,6 +31,7 @@ import { mapSpawnOutcome } from "./outcome.js";
 import type { M3LRunRequestBody } from "./parameters.js";
 import type { M3LRunPolicy } from "./policy.js";
 import type { M3LRunRegistry } from "./registry.js";
+import { executionModeForScript } from "./resolver.js";
 import type { M3LResolvedScript } from "./resolver.js";
 
 export type {
@@ -111,11 +112,6 @@ interface M3LOrchestratorContext {
 interface M3LFinishExtra {
   readonly exitCode?: number;
   readonly failureMessage?: string;
-}
-
-/** Whether a resolved script runs as a spawned subprocess or in-process (ADR-0054). */
-function computeExecutionMode(resolved: M3LResolvedScript): RunExecutionMode {
-  return resolved.hasCommandModule ? "in-process" : "spawn";
 }
 
 /**
@@ -479,7 +475,7 @@ function launchRun(
   const { resolved } = admission;
   const accepted = admission.kind === "accept";
   const id = ctx.newId();
-  const executionMode = computeExecutionMode(resolved);
+  const executionMode = executionModeForScript(resolved);
 
   persistQueuedRow(
     ctx,

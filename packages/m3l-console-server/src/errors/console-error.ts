@@ -113,6 +113,18 @@ import { Core } from "@m3l-automation/m3l-common";
  * module itself wrote, so it is a genuine internal fault, not a caller
  * mistake.
  *
+ * The final code is X10b's own addition (`runs/catalog.ts`,
+ * `runs/descriptors.ts`): `ERR_CONSOLE_SCRIPT_INTROSPECTION_FAILED` is
+ * raised by `describe` when a script's config module resolved (so it
+ * passed the same `resolveConfigModulePath` check `runs/catalog.ts` uses to
+ * decide a directory is a launchable script at all) but then fails to load
+ * its parameter/operation descriptors — an `ERR_CONFIG_MODULE_INVALID`, any
+ * other `Core.M3LError`, a plain `Error`, or a thrown non-`Error` value. A
+ * config module that resolves but will not load is a real server-side
+ * defect an operator should see an error-level diagnostic for, not a
+ * caller mistake — unlike the directory-not-found case, which instead maps
+ * to `ERR_CONSOLE_RUN_SCRIPT_NOT_FOUND`.
+ *
  * @example
  * ```ts
  * function isConfigError(code: M3LConsoleErrorCode): boolean {
@@ -154,7 +166,8 @@ export type M3LConsoleErrorCode =
   | "ERR_CONSOLE_SESSION_LIMIT_EXCEEDED"
   | "ERR_CONSOLE_SESSION_REFERENCE_INVALID"
   | "ERR_CONSOLE_SESSION_ARTIFACT_TOO_LARGE"
-  | "ERR_CONSOLE_SESSION_ARTIFACT_CORRUPT";
+  | "ERR_CONSOLE_SESSION_ARTIFACT_CORRUPT"
+  | "ERR_CONSOLE_SCRIPT_INTROSPECTION_FAILED";
 
 /**
  * Constructor options for {@link M3LConsoleError}.
