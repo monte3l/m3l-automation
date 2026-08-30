@@ -125,39 +125,47 @@ const exporterCandidate: M3LCliScriptCandidate = {
 
 const knownCandidates = [jsonEtlCandidate, exporterCandidate];
 
+/** Builds a minimal `M3LCliParameterDescriptor` fixture; only `name` is required. */
+function makeDescriptor(
+  overrides: Partial<M3LCliParameterDescriptor> &
+    Pick<M3LCliParameterDescriptor, "name">,
+): M3LCliParameterDescriptor {
+  return {
+    aliases: [],
+    type: "STRING",
+    required: false,
+    defaultValue: undefined,
+    description: "",
+    secret: false,
+    operations: [],
+    ...overrides,
+  };
+}
+
 const descriptors: readonly M3LCliParameterDescriptor[] = [
-  {
+  makeDescriptor({
     name: "region",
     aliases: ["r", "aws-region"],
-    type: "STRING",
     required: true,
-    defaultValue: undefined,
     description: "AWS region",
-  },
-  {
+  }),
+  makeDescriptor({
     name: "verbose",
     aliases: ["v"],
     type: "BOOL",
-    required: false,
-    defaultValue: undefined,
     description: "Verbose logging",
-  },
-  {
+  }),
+  makeDescriptor({
     name: "tags",
-    aliases: [],
     type: "STRING_ARRAY",
-    required: false,
-    defaultValue: undefined,
     description: "Tags",
-  },
-  {
+  }),
+  makeDescriptor({
     name: "batchSize",
-    aliases: [],
     type: "INT",
-    required: false,
     defaultValue: "10",
     description: "Rows per batch",
-  },
+  }),
 ];
 
 describe("runDynamic — unknown script", () => {
@@ -251,12 +259,9 @@ describe("runDynamic — --help/-h delegation", () => {
   test("delegates to the real runInspect for --help, which renders the Operations table when a descriptor declares operations (U8)", async () => {
     discoverScriptsMock.mockReturnValue(knownCandidates);
     const descriptorsWithOperations: readonly M3LCliParameterDescriptor[] = [
-      {
+      makeDescriptor({
         name: "command",
-        aliases: [],
-        type: "STRING",
         required: true,
-        defaultValue: undefined,
         description: "Operation to perform",
         operations: [
           {
@@ -265,7 +270,7 @@ describe("runDynamic — --help/-h delegation", () => {
             requiredParameters: ["key"],
           },
         ],
-      },
+      }),
     ];
     loadParametersCachedMock.mockResolvedValue(descriptorsWithOperations);
     const actualInspect = await vi.importActual<{
@@ -422,22 +427,8 @@ describe("runDynamic — config collision", () => {
   test("throws ERR_CLI_CONFIG_IMPORT naming both colliding parameters when two descriptors share a name/alias", async () => {
     discoverScriptsMock.mockReturnValue(knownCandidates);
     const collidingDescriptors: readonly M3LCliParameterDescriptor[] = [
-      {
-        name: "foo",
-        aliases: ["x"],
-        type: "STRING",
-        required: false,
-        defaultValue: undefined,
-        description: "Foo",
-      },
-      {
-        name: "bar",
-        aliases: ["x"],
-        type: "STRING",
-        required: false,
-        defaultValue: undefined,
-        description: "Bar",
-      },
+      makeDescriptor({ name: "foo", aliases: ["x"], description: "Foo" }),
+      makeDescriptor({ name: "bar", aliases: ["x"], description: "Bar" }),
     ];
     loadParametersCachedMock.mockResolvedValue(collidingDescriptors);
 
@@ -614,14 +605,11 @@ describe("runDynamic — reserved --json flag shadowing (V2 slice 1)", () => {
   test("'--json' for a script that DOES declare a json parameter shadows the declared parameter — no error, and the declared parameter is not toggled via the reserved flag", async () => {
     discoverScriptsMock.mockReturnValue(knownCandidates);
     const descriptorsWithJsonParameter: readonly M3LCliParameterDescriptor[] = [
-      {
+      makeDescriptor({
         name: "json",
-        aliases: [],
         type: "BOOL",
-        required: false,
-        defaultValue: undefined,
         description: "Emit JSON output",
-      },
+      }),
     ];
     loadParametersCachedMock.mockResolvedValue(descriptorsWithJsonParameter);
     executeScriptMock.mockResolvedValue(0);
@@ -728,14 +716,11 @@ describe("runDynamic — in-process execution (U7)", () => {
   test("'--in-process' is stripped before the script's own parseArgs runs, even when the script declares its own same-named parameter (shadowing, mirrors --json)", async () => {
     discoverScriptsMock.mockReturnValue(knownCandidates);
     const descriptorsWithReservedName: readonly M3LCliParameterDescriptor[] = [
-      {
+      makeDescriptor({
         name: "in-process",
-        aliases: [],
         type: "BOOL",
-        required: false,
-        defaultValue: undefined,
         description: "Conflicting name",
-      },
+      }),
     ];
     loadParametersCachedMock.mockResolvedValue(descriptorsWithReservedName);
     runInProcessMock.mockResolvedValue(0);
@@ -920,14 +905,10 @@ describe("runDynamic — in-process execution (U7)", () => {
   test("a parameter literally named '__proto__' becomes a genuine own key in the parameterValues bag passed to runInProcess, not silently absorbed into the object's prototype", async () => {
     discoverScriptsMock.mockReturnValue(knownCandidates);
     const descriptorsWithProtoName: readonly M3LCliParameterDescriptor[] = [
-      {
+      makeDescriptor({
         name: "__proto__",
-        aliases: [],
-        type: "STRING",
-        required: false,
-        defaultValue: undefined,
         description: "Prototype-pollution-shaped parameter name",
-      },
+      }),
     ];
     loadParametersCachedMock.mockResolvedValue(descriptorsWithProtoName);
     runInProcessMock.mockResolvedValue(0);
@@ -971,14 +952,11 @@ describe("runDynamic — in-process execution (U7)", () => {
     discoverScriptsMock.mockReturnValue(knownCandidates);
     const descriptorsWithProtoArrayName: readonly M3LCliParameterDescriptor[] =
       [
-        {
+        makeDescriptor({
           name: "__proto__",
-          aliases: [],
           type: "STRING_ARRAY",
-          required: false,
-          defaultValue: undefined,
           description: "Prototype-pollution-shaped STRING_ARRAY parameter name",
-        },
+        }),
       ];
     loadParametersCachedMock.mockResolvedValue(descriptorsWithProtoArrayName);
     runInProcessMock.mockResolvedValue(0);
@@ -1145,14 +1123,11 @@ describe("runDynamic — in-process execution (U7)", () => {
   test("a BOOL parameter literally named '__proto__' passed as a bare flag is restored as boolean true, not a string", async () => {
     discoverScriptsMock.mockReturnValue(knownCandidates);
     const descriptorsWithProtoBoolName: readonly M3LCliParameterDescriptor[] = [
-      {
+      makeDescriptor({
         name: "__proto__",
-        aliases: [],
         type: "BOOL",
-        required: false,
-        defaultValue: undefined,
         description: "Prototype-pollution-shaped BOOL parameter name",
-      },
+      }),
     ];
     loadParametersCachedMock.mockResolvedValue(descriptorsWithProtoBoolName);
     runInProcessMock.mockResolvedValue(0);

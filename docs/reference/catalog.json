@@ -138,6 +138,14 @@
       "M3LOperationDeclarationList",
       "deriveOperationNames",
       "deriveOperationValidators",
+      "M3LConfigParameterDescriptor",
+      "M3LConfigOperationDescriptor",
+      "M3LConfigParameterLike",
+      "M3LConfigParameterValue",
+      "describeConfigParameters",
+      "M3LConfigModuleLocation",
+      "resolveConfigModulePath",
+      "loadScriptConfigDescriptors",
       "M3LConfigAccessorOptions"
     ]
   },
