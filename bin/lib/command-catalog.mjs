@@ -316,6 +316,11 @@ export const COMMAND_CATALOG = [
       "ADR-0078: resolves CLAUDE.md's @-imports before measuring the always-loaded budget (CLAUDE.md is injected in full into every session and every custom subagent launch), ratchets .claude/rules/*.md conditional-load weight against a committed baseline, and reports .claude/skills/*/SKILL.md description weight. Run after editing CLAUDE.md, a rule file, or a skill's frontmatter description; --update refreshes the rules baseline.",
   },
   {
+    name: "check:harness-freshness",
+    description:
+      "ADR-0082: warns (non-blocking) when docs/research/harness-refresh.md's last-verified date is more than 90 days old, or the tracker has never been swept (last-verified=unset) — the self-polling half of the refreshing-anthropic-guidance cadence. Reads only the tracker's header comment; no network call. Run after editing the tracker, or let pre-push catch staleness.",
+  },
+  {
     name: "check:tracker-coverage",
     description:
       "Verifies every status-bearing table in ROADMAP.md/IMPLEMENTATION.md is registered with the sync:hub extractor (bin/lib/project-hub.mjs), so a newly added tracker table can't silently go unsynced. Run after adding a new '## ' section with a Status column to either tracker.",

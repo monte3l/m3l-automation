@@ -126,3 +126,4 @@ surface).
 | 0079 | [Demote the live-GitHub-state drift gates to a non-blocking alarm](./0079-hub-drift-non-blocking-alarm.md)                                                | Accepted                                              |
 | 0080 | [Host resource budgeting for concurrent Claude Code sessions](./0080-host-resource-budgeting.md)                                                          | Accepted; amends ADR-0013                             |
 | 0081 | [Defer ADR-0073's `Programme` board field behind an explicit revival gate](./0081-deferring-the-programme-board-field.md)                                 | Accepted; amends ADR-0073                             |
+| 0082 | [Self-polling cadence for harness-vs-Anthropic freshness](./0082-harness-refresh-cadence.md)                                                              | Accepted                                              |
