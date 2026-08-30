@@ -36,7 +36,14 @@
  * direction discriminates the ceiling regardless of which the writer uses.
  */
 
-import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -600,5 +607,203 @@ describe("entry-size ceiling", () => {
       const content = await readFile(path.join(dir, name), "utf8");
       expect(content).toBe("");
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 10. Branch-coverage closures: stray directory entries, an already-typed
+//     re-throw, cross-date segment selection, the mtimeMs fallback, and the
+//     date-rollover sequence reset.
+// ---------------------------------------------------------------------------
+
+describe("stray, non-segment directory entries are ignored", () => {
+  test("a directory entry that doesn't match the segment name pattern is skipped, not mis-parsed or thrown on", async () => {
+    const dir = path.join(workDir, "agent-log");
+    await mkdir(dir, { recursive: true });
+    // Neither name matches `<YYYY-MM-DD>-<NNNN>.jsonl`.
+    await writeFile(path.join(dir, "README.txt"), "not a segment");
+    await writeFile(path.join(dir, ".DS_Store"), "");
+
+    const log = new M3LAgentDecisionLog({ directory: dir });
+    const entry = makeEntry(Date.now());
+    await log.write(entry);
+
+    const today = new Date().toISOString().slice(0, 10);
+    const expectedSegmentName = `${today}-0001.jsonl`;
+    const segments = await listSegments(dir);
+    // The stray entries are still there, plus exactly one fresh segment —
+    // proving cold-start discovery found no valid "best" and started a new
+    // segment at sequence 1, rather than choking on the stray names.
+    expect(segments).toEqual(
+      [".DS_Store", "README.txt", expectedSegmentName].sort(),
+    );
+
+    const lines = await readLines(path.join(dir, expectedSegmentName));
+    expect(lines).toHaveLength(1);
+    expect(JSON.parse(definedOrThrow(lines[0], "the only line"))).toEqual(
+      JSON.parse(serializeAgentDecisionLogEntry(entry)),
+    );
+
+    // The stray files themselves were never touched.
+    expect(await readFile(path.join(dir, "README.txt"), "utf8")).toBe(
+      "not a segment",
+    );
+    expect(await readFile(path.join(dir, ".DS_Store"), "utf8")).toBe("");
+  });
+});
+
+describe("an already-typed error is re-thrown unchanged", () => {
+  test("an M3LError surfacing from inside the write is thrown as the exact same instance, not double-wrapped", async () => {
+    const dir = path.join(workDir, "agent-log");
+    const log = new M3LAgentDecisionLog({ directory: dir });
+
+    const alreadyTyped = new M3LAgentDecisionLogWriteError(
+      "already typed from a lower layer",
+      { context: {} },
+    );
+    vi.spyOn(fsp, "appendFile").mockRejectedValue(alreadyTyped);
+
+    let thrown: unknown;
+    try {
+      await log.write(makeEntry(BASE_NOW));
+    } catch (error) {
+      thrown = error;
+    }
+
+    // Re-thrown unchanged: the exact instance, not a new wrapper around it.
+    expect(thrown).toBe(alreadyTyped);
+  });
+});
+
+describe("segment selection across dates and out-of-order sequences", () => {
+  test("skips a different-date segment (even one with a higher sequence number) and picks today's highest-sequence segment regardless of directory listing order", async () => {
+    const dir = path.join(workDir, "agent-log");
+    await mkdir(dir, { recursive: true });
+
+    const today = new Date().toISOString().slice(0, 10);
+    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000)
+      .toISOString()
+      .slice(0, 10);
+
+    // Seeded in NON-ascending order for today, plus an older-date segment
+    // whose sequence number is higher than every one of today's — proving
+    // the date filter (not just the sequence comparison) drives selection.
+    await writeFile(path.join(dir, `${yesterday}-9999.jsonl`), "");
+    await writeFile(path.join(dir, `${today}-0003.jsonl`), "");
+    await writeFile(path.join(dir, `${today}-0001.jsonl`), "");
+    await writeFile(path.join(dir, `${today}-0005.jsonl`), "");
+
+    const log = new M3LAgentDecisionLog({ directory: dir });
+    const entry = makeEntry(Date.now());
+    await log.write(entry);
+
+    // No new segment was created: the writer appended to today's highest
+    // (0005), leaving the segment count unchanged at 4.
+    const segments = await listSegments(dir);
+    expect(segments).toHaveLength(4);
+
+    const chosenPath = path.join(dir, `${today}-0005.jsonl`);
+    const lines = await readLines(chosenPath);
+    expect(lines).toHaveLength(1);
+    expect(JSON.parse(definedOrThrow(lines[0], "the only line"))).toEqual(
+      JSON.parse(serializeAgentDecisionLogEntry(entry)),
+    );
+
+    // Every other segment — including yesterday's higher-numbered one —
+    // stays untouched (still empty).
+    for (const name of [
+      `${yesterday}-9999.jsonl`,
+      `${today}-0001.jsonl`,
+      `${today}-0003.jsonl`,
+    ]) {
+      const content = await readFile(path.join(dir, name), "utf8");
+      expect(content).toBe("");
+    }
+  });
+});
+
+describe("segment age falls back to mtimeMs when the filesystem reports no birth time", () => {
+  test("a stat() reporting birthtimeMs 0 still drives age-based rotation off mtimeMs", async () => {
+    const dir = path.join(workDir, "agent-log");
+    await mkdir(dir, { recursive: true });
+
+    const today = new Date().toISOString().slice(0, 10);
+    const segmentName = `${today}-0001.jsonl`;
+    const segmentPath = path.join(dir, segmentName);
+    await writeFile(segmentPath, "");
+
+    const realStats = await fsp.stat(segmentPath);
+    const maxSegmentAgeMs = 1000;
+    // A filesystem that reports no birth time (birthtimeMs === 0), whose
+    // mtimeMs is old enough to already be past the age ceiling.
+    const staleMtimeMs = Date.now() - maxSegmentAgeMs - 60_000;
+    vi.spyOn(fsp, "stat").mockResolvedValue({
+      ...realStats,
+      size: 0,
+      birthtimeMs: 0,
+      mtimeMs: staleMtimeMs,
+    });
+
+    const log = new M3LAgentDecisionLog({ directory: dir, maxSegmentAgeMs });
+    await log.write(makeEntry(Date.now()));
+
+    // Age-based rotation fired off the mtimeMs fallback: a new segment was
+    // opened rather than appending to the (empty, but "old" per mtimeMs)
+    // existing one.
+    const segments = await listSegments(dir);
+    expect(segments).toHaveLength(2);
+    expect(await readFile(segmentPath, "utf8")).toBe("");
+  });
+});
+
+describe("a date rollover across a rotation resets the sequence to 1", () => {
+  test("the new segment's sequence starts over at 1 under the new date rather than continuing the prior day's sequence", async () => {
+    const dir = path.join(workDir, "agent-log");
+    const dayOneStart = Date.UTC(2026, 0, 1, 12, 0, 0);
+    vi.useFakeTimers();
+    vi.setSystemTime(dayOneStart);
+
+    const entryA = makeEntry(dayOneStart, { reason: "A".repeat(50) });
+    const byteA = Buffer.byteLength(
+      serializeAgentDecisionLogEntry(entryA),
+      "utf8",
+    );
+    // A ceiling below even one line's size: every single write already
+    // crosses it, forcing the very next write to rotate.
+    const maxSegmentBytes = byteA - 1;
+    const log = new M3LAgentDecisionLog({ directory: dir, maxSegmentBytes });
+
+    await log.write(entryA); // day-one, sequence 1
+
+    vi.setSystemTime(dayOneStart + 1);
+    await log.write(makeEntry(dayOneStart + 1, { reason: "B".repeat(50) })); // rotates -> sequence 2, same date
+
+    vi.setSystemTime(dayOneStart + 2);
+    await log.write(makeEntry(dayOneStart + 2, { reason: "C".repeat(50) })); // rotates -> sequence 3, same date
+
+    const dayTwoStart = Date.UTC(2026, 0, 2, 1, 0, 0);
+    vi.setSystemTime(dayTwoStart);
+    // Rotates again, but the date has rolled over — sequence must reset to
+    // 1 rather than continuing to 4.
+    await log.write(makeEntry(dayTwoStart, { reason: "D".repeat(50) }));
+
+    vi.useRealTimers();
+
+    const dayOnePrefix = new Date(dayOneStart).toISOString().slice(0, 10);
+    const dayTwoPrefix = new Date(dayTwoStart).toISOString().slice(0, 10);
+
+    const segments = await listSegments(dir);
+    expect(segments).toHaveLength(4);
+    expect(segments).toContain(`${dayOnePrefix}-0001.jsonl`);
+    expect(segments).toContain(`${dayOnePrefix}-0002.jsonl`);
+    expect(segments).toContain(`${dayOnePrefix}-0003.jsonl`);
+    expect(segments).toContain(`${dayTwoPrefix}-0001.jsonl`);
+    // Never continues the prior day's sequence across the rollover.
+    expect(segments).not.toContain(`${dayTwoPrefix}-0004.jsonl`);
+
+    const rolloverLines = await readLines(
+      path.join(dir, `${dayTwoPrefix}-0001.jsonl`),
+    );
+    expect(rolloverLines).toHaveLength(1);
   });
 });
