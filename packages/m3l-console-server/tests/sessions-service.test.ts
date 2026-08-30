@@ -40,7 +40,7 @@
  * array recording every guarded-write call, so "no write beyond the failed
  * lookup" assertions are provable, not merely "did not throw").
  */
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 
 import { M3LConsoleError } from "../src/errors/console-error.js";
 import { encodeArtifactRef } from "../src/sessions/artifacts.js";
@@ -643,6 +643,48 @@ describe("M3LSessionService — reopenSession()", () => {
       "ERR_CONSOLE_SESSION_NOT_FOUND",
     );
   });
+
+  // Conformance gap (issue #554 follow-up): reopening a previously-closed
+  // session also increases the open-session count, exactly like
+  // `createSession` does — so it must be gated by the same
+  // `openSessionsMax` cap. Mirrors the `createSession()` fixture/assertion
+  // style above (`openSessionsMax: 0`/at-cap harness, `.code` check, and a
+  // "never wrote" log assertion) rather than inventing a new one.
+  test("throws ERR_CONSOLE_SESSION_LIMIT_EXCEEDED before ever reopening, when countOpenSessions >= openSessionsMax", () => {
+    const { service, log } = buildHarness({ openSessionsMax: 1 });
+    const toReopen = service.createSession("alice", "corr-1");
+    service.closeSession(toReopen.id);
+    // Fills the single open-session slot back up, so the cap is hit again
+    // by the time `reopenSession` is attempted below.
+    service.createSession("bob", "corr-2");
+
+    const logLengthBeforeReopen = log.length;
+    const thrown = captureFailure(() => service.reopenSession(toReopen.id));
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).code).toBe(
+      "ERR_CONSOLE_SESSION_LIMIT_EXCEEDED",
+    );
+    expect(log.slice(logLengthBeforeReopen)).not.toContain(
+      `reopenSession:${toReopen.id}`,
+    );
+    expect(service.getSession(toReopen.id)?.status).toBe("closed");
+  });
+
+  // Bug fix (PR #746 review): the target session's own open slot must not
+  // count against itself. Reopening an *already-open* session at capacity is
+  // a no-op — it returns `false` (per the "already-open" contract above)
+  // without ever throwing `ERR_CONSOLE_SESSION_LIMIT_EXCEEDED`, unlike the
+  // closed-target case above, which genuinely increases the open count and
+  // must stay gated.
+  test("on an already-open session at capacity: returns false, does not throw ERR_CONSOLE_SESSION_LIMIT_EXCEEDED", () => {
+    const { service } = buildHarness({ openSessionsMax: 1 });
+    const created = service.createSession("alice", "corr-1");
+
+    expect(() => service.reopenSession(created.id)).not.toThrow();
+    expect(service.reopenSession(created.id)).toBe(false);
+    expect(service.getSession(created.id)?.status).toBe("open");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -880,6 +922,162 @@ describe("M3LSessionService — addStep()", () => {
     expect(log.some((entry) => entry.startsWith("claimStepForStart:"))).toBe(
       false,
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// addStep — binding persistence (ADR-0068 audit trail; previously unwired —
+// `resolveBindingValue`/`resolveLaunchParameters` resolved each binding but
+// nothing ever called `sessionsRepository.insertBinding`).
+// ---------------------------------------------------------------------------
+
+describe("M3LSessionService — addStep() persists each resolved binding via insertBinding()", () => {
+  test("calls insertBinding once per binding, with the exact fields insertBinding's contract documents", async () => {
+    const { service, repository, clock } = buildHarness();
+    const insertBindingSpy = vi.spyOn(repository, "insertBinding");
+    const sessionId = seedOpenSession(repository);
+    seedFinishedStep(repository, {
+      sessionId,
+      ordinal: 1,
+      resultRef: encodeArtifactRef({
+        kind: "inline",
+        value: { Queues: ["queue-a", "queue-b"] },
+      }),
+    });
+    const binding = {
+      reference: "step-1.output.Queues[0]",
+      expectedType: "string" as const,
+      multiSelect: false,
+      parameterName: "queueName",
+    };
+
+    await service.addStep(sessionId, {
+      operation: "scripts/example",
+      bindings: [binding],
+      confirmed: true,
+      dryRun: false,
+      operator: "alice",
+      correlationId: "corr-2",
+    });
+
+    expect(insertBindingSpy).toHaveBeenCalledTimes(1);
+    expect(insertBindingSpy).toHaveBeenCalledWith({
+      id: expect.any(String) as string,
+      sessionId,
+      reference: binding.reference,
+      expectedType: binding.expectedType,
+      multiSelect: binding.multiSelect,
+      createdAtMs: clock.ms,
+    });
+  });
+
+  test("persists every binding when addStep is given several, one insertBinding call each", async () => {
+    const { service, repository } = buildHarness();
+    const insertBindingSpy = vi.spyOn(repository, "insertBinding");
+    const sessionId = seedOpenSession(repository);
+    seedFinishedStep(repository, {
+      sessionId,
+      ordinal: 1,
+      resultRef: encodeArtifactRef({
+        kind: "inline",
+        value: { name: "queue-a", count: 3 },
+      }),
+    });
+
+    await service.addStep(sessionId, {
+      operation: "scripts/example",
+      bindings: [
+        {
+          reference: "step-1.output.name",
+          expectedType: "string",
+          multiSelect: false,
+          parameterName: "name",
+        },
+        {
+          reference: "step-1.output.count",
+          expectedType: "number",
+          multiSelect: false,
+          parameterName: "count",
+        },
+      ],
+      confirmed: true,
+      dryRun: false,
+      operator: "alice",
+      correlationId: "corr-2",
+    });
+
+    expect(insertBindingSpy).toHaveBeenCalledTimes(2);
+    expect(insertBindingSpy).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ reference: "step-1.output.name" }),
+    );
+    expect(insertBindingSpy).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ reference: "step-1.output.count" }),
+    );
+  });
+
+  test("persists a binding only after its own successful resolution; a later binding's failure never reaches insertBinding and does not roll back the earlier persisted binding", async () => {
+    const { service, repository } = buildHarness();
+    const insertBindingSpy = vi.spyOn(repository, "insertBinding");
+    const sessionId = seedOpenSession(repository);
+    seedFinishedStep(repository, {
+      sessionId,
+      ordinal: 1,
+      resultRef: encodeArtifactRef({
+        kind: "inline",
+        value: { name: "queue-a", value: "not-a-number" },
+      }),
+    });
+    const goodBinding = {
+      reference: "step-1.output.name",
+      expectedType: "string" as const,
+      multiSelect: false,
+      parameterName: "name",
+    };
+    const badBinding = {
+      reference: "step-1.output.value",
+      expectedType: "number" as const,
+      multiSelect: false,
+      parameterName: "value",
+    };
+
+    const thrown = await captureAsyncFailure(() =>
+      service.addStep(sessionId, {
+        operation: "scripts/example",
+        bindings: [goodBinding, badBinding],
+        confirmed: true,
+        dryRun: false,
+        operator: "alice",
+        correlationId: "corr-2",
+      }),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).code).toBe(
+      "ERR_CONSOLE_SESSION_REFERENCE_INVALID",
+    );
+    expect(insertBindingSpy).toHaveBeenCalledTimes(1);
+    expect(insertBindingSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ reference: goodBinding.reference }),
+    );
+  });
+
+  test("addStep with zero bindings never calls insertBinding", async () => {
+    const { service, repository } = buildHarness();
+    const insertBindingSpy = vi.spyOn(repository, "insertBinding");
+    const sessionId = seedOpenSession(repository);
+
+    await service.addStep(sessionId, {
+      operation: "scripts/example",
+      bindings: [],
+      confirmed: true,
+      dryRun: false,
+      operator: "alice",
+      correlationId: "corr-2",
+    });
+
+    expect(insertBindingSpy).not.toHaveBeenCalled();
   });
 });
 
@@ -1370,5 +1568,82 @@ describe("M3LSessionService — listDecisionsForSession()", () => {
     const sessionId = seedOpenSession(repository);
 
     expect(service.listDecisionsForSession(sessionId)).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// listBindingsForSession — new service method, delegating straight to the
+// repository (mirrors listDecisionsForSession's own test style).
+// ---------------------------------------------------------------------------
+
+describe("M3LSessionService — listBindingsForSession()", () => {
+  test("returns every binding persisted for the session via addStep", async () => {
+    const { service, repository } = buildHarness();
+    const sessionId = seedOpenSession(repository);
+    seedFinishedStep(repository, {
+      sessionId,
+      ordinal: 1,
+      resultRef: encodeArtifactRef({
+        kind: "inline",
+        value: { name: "queue-a" },
+      }),
+    });
+
+    await service.addStep(sessionId, {
+      operation: "scripts/example",
+      bindings: [
+        {
+          reference: "step-1.output.name",
+          expectedType: "string",
+          multiSelect: false,
+          parameterName: "name",
+        },
+      ],
+      confirmed: true,
+      dryRun: false,
+      operator: "alice",
+      correlationId: "corr-2",
+    });
+
+    const bindings = service.listBindingsForSession(sessionId);
+    expect(bindings).toHaveLength(1);
+    expect(bindings[0]).toMatchObject({
+      sessionId,
+      reference: "step-1.output.name",
+      expectedType: "string",
+      multiSelect: false,
+    });
+  });
+
+  test("delegates straight to the repository, returning an empty array for a session with no bindings", () => {
+    const { service, repository } = buildHarness();
+    const sessionId = seedOpenSession(repository);
+
+    expect(service.listBindingsForSession(sessionId)).toEqual(
+      repository.listBindingsForSession(sessionId),
+    );
+    expect(service.listBindingsForSession(sessionId)).toEqual([]);
+  });
+
+  // [RED — review-round Must-fix, Defect 1] `listBindingsForSession` never
+  // calls `requireSession` the way every sibling method
+  // (`closeSession`/`reopenSession`/`addStep`/`raiseDecision`) does — see
+  // this file's own `closeSession()`/`reopenSession()` "on an unknown id"
+  // tests immediately above for the exact assertion style this mirrors. A
+  // typo'd session id is today indistinguishable from "this real session
+  // has zero bindings": `repository.listBindingsForSession` on an in-memory
+  // Map-backed fake simply returns `[]` for any id it has never seen,
+  // exactly as it would for a genuinely empty, real session.
+  test("on an unknown id: throws ERR_CONSOLE_SESSION_NOT_FOUND", () => {
+    const { service } = buildHarness();
+
+    const thrown = captureFailure(() =>
+      service.listBindingsForSession("does-not-exist"),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).code).toBe(
+      "ERR_CONSOLE_SESSION_NOT_FOUND",
+    );
   });
 });

@@ -144,6 +144,8 @@ export interface SessionRouteReaderPort {
   getSession(id: string): unknown;
   /** Lists session rows matching `query`. */
   listSessions(query: M3LSessionListQuery): readonly unknown[];
+  /** Lists every binding persisted for `sessionId` via a prior `addStep` call. */
+  listBindingsForSession(sessionId: string): readonly unknown[];
 }
 
 /**
@@ -207,6 +209,8 @@ export interface SessionRouteWriterPort {
   createSession(operator: string, correlationId: string): M3LSessionRouteRecord;
   /** Closes the session with `id`; `true` when a transition applied. */
   closeSession(id: string): boolean;
+  /** Reopens the closed session with `id`; `true` when a transition applied. */
+  reopenSession(id: string): boolean;
   /** Appends a validated step to session `sessionId`. */
   addStep(sessionId: string, input: M3LSessionAddStepInput): Promise<unknown>;
   /** Raises a decision on step `stepId` within session `sessionId`. */
@@ -574,6 +578,25 @@ function buildCloseHandler(writer: SessionRouteWriterPort): M3LConsoleHandler {
   };
 }
 
+/** Builds the `POST /api/v1/sessions/:id/reopen` handler. */
+function buildReopenHandler(writer: SessionRouteWriterPort): M3LConsoleHandler {
+  return (ctx) => {
+    const id = requireParam(ctx, "id");
+    const applied = writer.reopenSession(id);
+    return jsonResponse(STATUS_OK, { applied });
+  };
+}
+
+/** Builds the `GET /api/v1/sessions/:id/bindings` handler: the bare binding row array; 404s via the service's `requireSession` guard for an unknown session id. */
+function buildListBindingsHandler(
+  reader: SessionRouteReaderPort,
+): M3LConsoleHandler {
+  return (ctx) => {
+    const id = requireParam(ctx, "id");
+    return jsonResponse(STATUS_OK, reader.listBindingsForSession(id));
+  };
+}
+
 /**
  * Builds the X6 workbench-sessions module's REST route table: creating,
  * listing, reading, and closing sessions, appending steps, and raising and
@@ -581,7 +604,7 @@ function buildCloseHandler(writer: SessionRouteWriterPort): M3LConsoleHandler {
  * never an unauthenticated caller.
  *
  * @param options - See {@link SessionRouteOptions}.
- * @returns The seven-route table.
+ * @returns The nine-route table.
  *
  * @example
  * ```ts
@@ -651,6 +674,18 @@ export function createSessionRoutes(
       path: "/api/v1/sessions/:id/close",
       auth: "required",
       handler: buildCloseHandler(options.writer),
+    },
+    {
+      method: "POST",
+      path: "/api/v1/sessions/:id/reopen",
+      auth: "required",
+      handler: buildReopenHandler(options.writer),
+    },
+    {
+      method: "GET",
+      path: "/api/v1/sessions/:id/bindings",
+      auth: "required",
+      handler: buildListBindingsHandler(options.reader),
     },
   ];
 }
