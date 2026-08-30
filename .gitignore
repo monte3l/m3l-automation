@@ -62,6 +62,11 @@ lefthook-local.yml
 # is machine state, not source.
 data/agent-log/
 
+# The `m3l` CLI's script-discovery cache (`cli/paths.ts` → `resolveCacheDir`).
+# Written by any `m3l list`/`doctor`/`inspect` invocation, so V8's agent-operator
+# regenerates it on every health-check run. Derived machine state, not source.
+data/cache/
+
 # Playwright run artifacts (packages/m3l-console-web). `playwright.config.ts`
 # sets no explicit outputDir, so a FAILING e2e run drops traces, screenshots,
 # and an error-context.md into these defaults next to the package. A passing

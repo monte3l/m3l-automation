@@ -322,6 +322,12 @@ importers:
         specifier: 8.2.2
         version: 8.2.2(@types/node@26.1.1)(jiti@2.7.0)(yaml@2.9.0)
 
+  scripts/agent-operator:
+    dependencies:
+      '@m3l-automation/m3l-common':
+        specifier: workspace:*
+        version: link:../../packages/m3l-common
+
   scripts/api-gateway-client:
     dependencies:
       '@m3l-automation/m3l-common':
