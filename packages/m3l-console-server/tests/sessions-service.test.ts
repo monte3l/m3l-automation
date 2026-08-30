@@ -828,6 +828,59 @@ describe("M3LSessionService — addStep()", () => {
       "step-1.output.value",
     );
   });
+
+  test('catches up a step\'s status to "running" when the launcher\'s returned handle already reports "running" (the real orchestrator published run.started synchronously, before this step existed to attach to)', async () => {
+    // `createFakeLauncher()`'s default `buildHandle` already returns
+    // `status: "running"` — mirroring the real orchestrator's
+    // synchronous-accept-and-start path — so no override is needed here.
+    const { service, repository, log } = buildHarness();
+    const sessionId = seedOpenSession(repository);
+
+    const result = await service.addStep(sessionId, {
+      operation: "scripts/example",
+      bindings: [],
+      confirmed: true,
+      dryRun: false,
+      operator: "alice",
+      correlationId: "corr-2",
+    });
+
+    expect(result.handle.status).toBe("running");
+    // Pre-fix, this step would be permanently stuck at "queued": the missed
+    // `run.started` event never re-fires, and `handleRunEvent`'s `run.ended`
+    // branch bails because `step.status !== "running"`.
+    expect(result.step.status).toBe("running");
+    expect(repository.getStep(result.step.id)?.status).toBe("running");
+    expect(log).toContain(`claimStepForStart:${result.step.id}`);
+  });
+
+  test("does not eagerly claim the step for start when the launcher's returned handle still reports \"queued\" (that stays handleRunStarted's job, on the real run.started event)", async () => {
+    const launcher = createFakeLauncher((request, index) => ({
+      id: `run-${String(index)}`,
+      scriptName: request.body.scriptName,
+      status: "queued",
+      dryRun: request.body.dryRun,
+      executionMode: "spawn",
+    }));
+    const { service, repository, log } = buildHarness({}, { launcher });
+    const sessionId = seedOpenSession(repository);
+
+    const result = await service.addStep(sessionId, {
+      operation: "scripts/example",
+      bindings: [],
+      confirmed: true,
+      dryRun: false,
+      operator: "alice",
+      correlationId: "corr-2",
+    });
+
+    expect(result.handle.status).toBe("queued");
+    expect(result.step.status).toBe("queued");
+    expect(repository.getStep(result.step.id)?.status).toBe("queued");
+    expect(log.some((entry) => entry.startsWith("claimStepForStart:"))).toBe(
+      false,
+    );
+  });
 });
 
 // ---------------------------------------------------------------------------

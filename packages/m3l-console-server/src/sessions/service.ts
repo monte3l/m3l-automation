@@ -53,8 +53,6 @@ import { parseStepReference, resolveStepReference } from "./reference.js";
  *
  * @example
  * ```ts
- * import type { M3LSessionAddStepBinding } from "@m3l-automation/m3l-console-server/sessions/service";
- *
  * const binding: M3LSessionAddStepBinding = {
  *   reference: "step-1.output.Queues[0]",
  *   expectedType: "string",
@@ -63,7 +61,7 @@ import { parseStepReference, resolveStepReference } from "./reference.js";
  * };
  * ```
  */
-export interface M3LSessionAddStepBinding {
+interface M3LSessionAddStepBinding {
   /** The step-output reference this binding resolves — see `sessions/reference.ts`'s `parseStepReference`. */
   readonly reference: string;
   /** The shape the resolved value must have. */
@@ -81,8 +79,6 @@ export interface M3LSessionAddStepBinding {
  *
  * @example
  * ```ts
- * import type { M3LSessionAddStepInput } from "@m3l-automation/m3l-console-server/sessions/service";
- *
  * const input: M3LSessionAddStepInput = {
  *   operation: "scripts/example",
  *   bindings: [
@@ -100,7 +96,7 @@ export interface M3LSessionAddStepBinding {
  * };
  * ```
  */
-export interface M3LSessionAddStepInput {
+interface M3LSessionAddStepInput {
   /** The operation (e.g. a script identifier) this step invokes. */
   readonly operation: string;
   /** The bindings to resolve before launch. */
@@ -122,14 +118,12 @@ export interface M3LSessionAddStepInput {
  *
  * @example
  * ```ts
- * import type { M3LSessionAddStepResult } from "@m3l-automation/m3l-console-server/sessions/service";
- *
  * function describe(result: M3LSessionAddStepResult): string {
  *   return `${result.step.id} -> ${result.handle.id}`;
  * }
  * ```
  */
-export interface M3LSessionAddStepResult {
+interface M3LSessionAddStepResult {
   /** The inserted step, carrying the attached `runId`. */
   readonly step: M3LSessionStepRecord;
   /** The launched run's handle. */
@@ -208,7 +202,12 @@ export interface M3LSessionService {
   reopenSession(id: string): boolean;
   /**
    * Resolves `input`'s bindings against prior steps' recorded output,
-   * launches the run, and records the new step.
+   * launches the run, records the new step, and attaches the launched run
+   * to it. When the launcher's returned handle already reports `"running"`
+   * — the real orchestrator can publish `run.started` synchronously inside
+   * `launch()`, before this call ever gets the handle back to attach —
+   * claims the step for start immediately rather than relying on an event
+   * that has already fired and been missed.
    *
    * @throws {@link M3LConsoleError} with code `"ERR_CONSOLE_SESSION_NOT_FOUND"`
    *   when `sessionId` names no session.
@@ -425,6 +424,19 @@ async function addStep(
       "ERR_CONSOLE_INTERNAL",
       `failed to attach run "${handle.id}" to freshly inserted step "${stepId}"`,
     );
+  }
+  // The real orchestrator can publish `run.started` synchronously inside
+  // `launch()`, before this function ever gets a handle back to attach —
+  // `handleRunStarted`'s `getStepByRunId` then finds nothing attached yet
+  // and silently no-ops (correct behavior for a genuinely unrelated run,
+  // wrong here). If the returned handle already reports "running", that
+  // event has already fired and been missed — catch up explicitly rather
+  // than waiting for an event that already happened. `claimStepForStart`'s
+  // guarded WHERE-clause (`status = 'queued'`) makes this idempotent/safe
+  // even if a genuine `run.started` event for this step also arrives
+  // through the normal event path shortly after.
+  if (handle.status === "running") {
+    sessionsRepository.claimStepForStart(stepId, nowMs());
   }
 
   return { step: requireStep(sessionsRepository, stepId), handle };

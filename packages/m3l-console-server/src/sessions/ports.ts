@@ -31,8 +31,6 @@ import type { RunExecutionMode } from "../store/runs-repository.js";
  *
  * @example
  * ```ts
- * import type { M3LSessionLaunchRequestBody } from "@m3l-automation/m3l-console-server/sessions/ports";
- *
  * const body: M3LSessionLaunchRequestBody = {
  *   scriptName: "sqs-etl",
  *   confirmed: true,
@@ -41,7 +39,7 @@ import type { RunExecutionMode } from "../store/runs-repository.js";
  * };
  * ```
  */
-export interface M3LSessionLaunchRequestBody {
+interface M3LSessionLaunchRequestBody {
   /** The kebab-case name of the script to run. */
   readonly scriptName: string;
   /** Whether the caller explicitly confirmed a non-dry-run execution. */

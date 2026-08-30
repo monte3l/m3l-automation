@@ -165,7 +165,7 @@ export interface SessionRouteReaderPort {
  * };
  * ```
  */
-export interface M3LSessionRouteRecord {
+interface M3LSessionRouteRecord {
   /** The session's id, unique within the store. */
   readonly id: string;
   /** The operator this session belongs to. */
