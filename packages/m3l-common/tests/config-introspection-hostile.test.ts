@@ -39,7 +39,10 @@ import {
   describeConfigParameters,
   loadScriptConfigDescriptors,
 } from "../src/core/config/index.js";
-import type { M3LConfigParameterLike } from "../src/core/config/index.js";
+import type {
+  M3LConfigParameterLike,
+  M3LConfigParameterValue,
+} from "../src/core/config/index.js";
 
 /** Captures the thrown value from a synchronous call, or `undefined`. */
 function captureThrown(fn: () => unknown): unknown {
@@ -296,4 +299,53 @@ describe("Fix 4 — no raw TypeError/Error may escape the two public functions",
     expect(thrown).toBeInstanceOf(M3LError);
     expect((thrown as M3LError).code).toBe("ERR_CONFIG_MODULE_INVALID");
   });
+});
+
+describe("M3LConfigParameterValue membership check (isConfigParameterValue) — security-relevant, since this gate is what stands between a getDefaultValue() returning a plain object and it rendering as the literal string '[object Object]'", () => {
+  test.each<[string, M3LConfigParameterValue, string]>([
+    ["a string", "us-east-1", "us-east-1"],
+    ["a number", 3000, "3000"],
+    ["a boolean", true, "true"],
+    ["a readonly string[]", ["a", "b"], "a,b"],
+    ["a readonly number[]", [1, 2, 3], "1,2,3"],
+    ["a Buffer", Buffer.from("hi"), "hi"],
+  ])(
+    "accepts %s as getDefaultValue()'s return value and renders it via String(...)",
+    (_label, defaultValue, rendered) => {
+      const parameter = buildWellFormedElement({
+        getName: () => "ACCEPTED",
+        getDefaultValue: () => defaultValue,
+      });
+
+      const [descriptor] = describeConfigParameters([parameter]);
+
+      expect(descriptor?.defaultValue).toBe(rendered);
+    },
+  );
+
+  test.each<[string, unknown]>([
+    ["a plain object", { nested: true }],
+    ["null", null],
+    ["a function", (): void => undefined],
+    ["a symbol", Symbol("hostile")],
+    ["a mixed-type array", ["a", 1]],
+    ["a nested array", [["a"]]],
+  ])(
+    "rejects %s as getDefaultValue()'s return value with ERR_CONFIG_MODULE_INVALID, never rendering '[object Object]' or otherwise silently coercing it",
+    (_label, hostileDefault) => {
+      const parameter = buildWellFormedElement({
+        getName: () => "REJECTED",
+        // Deliberate cast through unknown: every one of these fixtures is,
+        // by design, NOT a legal M3LConfigParameterValue — that is exactly
+        // what this test proves gets rejected.
+        getDefaultValue: () => hostileDefault as never,
+      });
+
+      const thrown = captureThrown(() => describeConfigParameters([parameter]));
+
+      expect(thrown).toBeInstanceOf(M3LError);
+      expect((thrown as M3LError).code).toBe("ERR_CONFIG_MODULE_INVALID");
+      expect((thrown as M3LError).message).toContain("getDefaultValue");
+    },
+  );
 });

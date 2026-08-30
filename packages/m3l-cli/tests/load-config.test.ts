@@ -177,6 +177,100 @@ describe("describeParameters", () => {
 
     expect(descriptor?.secret).toBe(false);
   });
+
+  test("wraps Core.describeConfigParameters's ERR_CONFIG_MODULE_INVALID (a required-getter validation failure) in M3LCliError ERR_CLI_CONFIG_IMPORT, with cause the Core M3LError itself when Core attached no cause of its own", () => {
+    // getName() returning a non-string fails Core's six-required-getter
+    // validation gate (Core.M3LError has no `cause` for this failure), so
+    // the CLI boundary's `error.cause ?? error` fallback lands on `error`.
+    const malformedParameterLike = {
+      getName: () => 42,
+      getAliases: () => [],
+      getType: () => "STRING",
+      isRequired: () => false,
+      getDefaultValue: () => undefined,
+      getDescription: () => undefined,
+      // Cast through unknown: getName()'s declared return type is `string`;
+      // this fixture models a hostile/broken dist build returning the wrong
+      // runtime type, which TypeScript itself would reject at the call site.
+    } as unknown as Core.M3LConfigParameterLike;
+
+    expect(() => describeParameters([malformedParameterLike])).toThrowError(
+      M3LCliError,
+    );
+
+    let thrown: unknown;
+    try {
+      describeParameters([malformedParameterLike]);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(M3LCliError);
+    expect((thrown as M3LCliError).code).toBe("ERR_CLI_CONFIG_IMPORT");
+    // The fallback landed on the Core M3LError itself (not `undefined`):
+    // Core's own throwInvalidGetter attaches no cause of its own.
+    const cliCause = (thrown as M3LCliError).cause;
+    expect(cliCause).toBeInstanceOf(Core.M3LError);
+    expect((cliCause as Core.M3LError).cause).toBeUndefined();
+    expect((cliCause as Core.M3LError).message).toContain("getName");
+  });
+
+  test("wraps a Core.M3LError that DOES carry its own cause, threading that inner original through rather than the Core.M3LError itself", () => {
+    // A Proxy whose get trap throws on `isSecret` access reproduces
+    // describeConfigParameters's Fix-4 wrapping path (see
+    // config-introspection-hostile.test.ts): the raw thrown Error becomes
+    // the Core M3LError's own `cause`, so the CLI boundary's
+    // `error.cause ?? error` fallback must thread THAT inner original
+    // through, not the Core M3LError wrapping it.
+    const innerCause = new Error("hostile trap: isSecret access denied");
+    const base = {
+      getName: () => "API_TOKEN",
+      getAliases: () => [],
+      getType: () => "STRING",
+      isRequired: () => false,
+      getDefaultValue: () => undefined,
+      getDescription: () => undefined,
+    };
+    const hostileParameterLike = new Proxy(base, {
+      get(target, property, receiver): unknown {
+        if (property === "isSecret") {
+          throw innerCause;
+        }
+        return Reflect.get(target, property, receiver) as unknown;
+      },
+    });
+
+    let thrown: unknown;
+    try {
+      describeParameters([hostileParameterLike]);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(M3LCliError);
+    expect((thrown as M3LCliError).code).toBe("ERR_CLI_CONFIG_IMPORT");
+    expect((thrown as M3LCliError).cause).toBe(innerCause);
+  });
+
+  test("propagates a non-Core.M3LError thrown while describing untouched, never wrapping it as M3LCliError", () => {
+    // A hostile array-like whose `length` getter throws escapes
+    // toTrustedArray/describeConfigParameters entirely unwrapped (outside
+    // their own per-element try/catch), so rethrowAsCliConfigImportError's
+    // "not a Core.M3LError" branch re-throws it verbatim.
+    const lengthGetterError = new TypeError("hostile length getter");
+    const hostileParameters = {
+      get length(): number {
+        throw lengthGetterError;
+      },
+    } as unknown as readonly Core.M3LConfigParameterLike[];
+
+    let thrown: unknown;
+    try {
+      describeParameters(hostileParameters);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBe(lengthGetterError);
+    expect(thrown).not.toBeInstanceOf(M3LCliError);
+  });
 });
 
 describe("describeParameters — operations (U8)", () => {
@@ -480,6 +574,25 @@ describe("resolveConfigModulePath", () => {
     expect(thrown).toBeInstanceOf(M3LCliError);
     expect((thrown as M3LCliError).code).toBe("ERR_CLI_CONFIG_IMPORT");
   });
+
+  test("propagates a non-Core.M3LError thrown by fs.existsSync untouched, never wrapping it as M3LCliError", () => {
+    // Core.resolveConfigModulePath has no try/catch of its own — a raw fs
+    // failure (e.g. a permission error) escapes it unwrapped, so this
+    // boundary's "not a Core.M3LError" branch must re-throw it verbatim.
+    const permissionError = new Error("EACCES: permission denied");
+    vi.spyOn(fs, "existsSync").mockImplementation(() => {
+      throw permissionError;
+    });
+
+    let thrown: unknown;
+    try {
+      resolveConfigModulePath(scriptDirectory);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBe(permissionError);
+    expect(thrown).not.toBeInstanceOf(M3LCliError);
+  });
 });
 
 describe("loadScriptParameters", () => {
@@ -587,6 +700,29 @@ describe("loadScriptParameters", () => {
     await expect(loadScriptParameters(scriptDirectory)).rejects.toBeInstanceOf(
       M3LCliError,
     );
+  });
+
+  test("propagates a non-Core.M3LError thrown by fs.existsSync (inside Core.resolveConfigModulePath) untouched, never wrapping it as M3LCliError", async () => {
+    // loadScriptConfigDescriptors calls resolveConfigModulePath OUTSIDE its
+    // own try/catch (deliberately — its own M3LError must propagate
+    // unwrapped), so a raw fs failure there escapes both Core functions
+    // unwrapped, and this boundary's "not a Core.M3LError" branch must
+    // re-throw it verbatim.
+    const permissionError = new Error("EACCES: permission denied");
+    vi.spyOn(fs, "existsSync").mockImplementation(() => {
+      throw permissionError;
+    });
+    const importModule = vi.fn(async () => Promise.resolve({}));
+
+    let thrown: unknown;
+    try {
+      await loadScriptParameters(scriptDirectory, importModule);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBe(permissionError);
+    expect(thrown).not.toBeInstanceOf(M3LCliError);
+    expect(importModule).not.toHaveBeenCalled();
   });
 });
 
