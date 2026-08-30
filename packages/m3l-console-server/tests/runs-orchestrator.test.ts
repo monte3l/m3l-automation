@@ -3,7 +3,9 @@
  * X4 slice 6 round 2 contract): `launch`, starting a claimed run, `cancel`,
  * `reconcileOnBoot`, `activeCount`, and `drain`. Queue pumping and the
  * queue-timeout timer are covered separately in
- * `runs-orchestrator-queue.test.ts` to keep this file under the per-file
+ * `runs-orchestrator-queue.test.ts`, and the audit-trail assertions (the two
+ * launch refusals that audit before they throw, and `reconcileOnBoot`) in
+ * `runs-orchestrator-audit.test.ts`, to keep each file under the per-file
  * budget.
  *
  * Every collaborator (`M3LRunRegistry`, `M3LRunGovernor`, `M3LRunPolicy`,
@@ -513,116 +515,6 @@ describe("createRunOrchestrator — launch: resolveScript failures propagate unc
       "ERR_CONSOLE_RUN_SCRIPT_NOT_FOUND",
     );
     expect(log).toEqual([]);
-  });
-});
-
-describe("createRunOrchestrator — launch: policy denial is audited BEFORE it throws", () => {
-  test("a denied launch calls audit.record(run.launch-denied) then throws ERR_CONSOLE_RUN_CONFIRMATION_REQUIRED carrying the verdict's reason", () => {
-    mockScriptExists(false);
-    const log: string[] = [];
-    const registry = createFakeRegistry(log);
-    const governor = createFakeGovernor(log);
-    const deniedVerdict: M3LRunPolicyVerdict = {
-      kind: "deny",
-      reason: "explicit confirmation is required",
-    };
-    const policy = createFakePolicy(log, deniedVerdict);
-    const audit = createFakeAudit(log);
-    const events = createFakeEvents(log);
-    const spawnExecutor = createImmediateExecutor(log, "spawn", {
-      exitCode: 0,
-      killRequested: false,
-      dryRun: false,
-    });
-    const inProcessExecutor = createImmediateExecutor(log, "inProcess", {
-      exitCode: 0,
-      killRequested: false,
-      dryRun: false,
-    });
-    const { logger } = buildLogger();
-    const orchestrator = createRunOrchestrator({
-      config: buildConfig(),
-      registry,
-      governor,
-      policy,
-      audit,
-      events,
-      spawnExecutor,
-      inProcessExecutor,
-      logger,
-    });
-
-    let thrown: unknown;
-    try {
-      orchestrator.launch(buildRequest({ body: { confirmed: false } }));
-    } catch (error) {
-      thrown = error;
-    }
-
-    expect(log).toEqual(["policy.evaluate:sqs-etl", "audit:run.launch-denied"]);
-    expect(thrown).toBeInstanceOf(M3LConsoleError);
-    expect((thrown as M3LConsoleError).code).toBe(
-      "ERR_CONSOLE_RUN_CONFIRMATION_REQUIRED",
-    );
-    expect((thrown as M3LConsoleError).message).toContain(
-      "explicit confirmation is required",
-    );
-    expect(audit.records[0]?.runId).toBeUndefined();
-    expect(governor.activeCount).toBe(0);
-    expect(governor.queuedCount).toBe(0);
-    expect(registry.rows.size).toBe(0);
-  });
-});
-
-describe("createRunOrchestrator — launch: governor rejection is audited BEFORE it throws", () => {
-  test("a rejected launch calls audit.record(run.launch-rejected) then throws ERR_CONSOLE_RUN_CAPACITY_EXCEEDED", () => {
-    mockScriptExists(false);
-    const log: string[] = [];
-    const registry = createFakeRegistry(log);
-    const governor = createFakeGovernor(log, { "sqs-etl": ["reject"] });
-    const policy = createFakePolicy(log, { kind: "allow" });
-    const audit = createFakeAudit(log);
-    const events = createFakeEvents(log);
-    const spawnExecutor = createImmediateExecutor(log, "spawn", {
-      exitCode: 0,
-      killRequested: false,
-      dryRun: false,
-    });
-    const inProcessExecutor = createImmediateExecutor(log, "inProcess", {
-      exitCode: 0,
-      killRequested: false,
-      dryRun: false,
-    });
-    const { logger } = buildLogger();
-    const orchestrator = createRunOrchestrator({
-      config: buildConfig(),
-      registry,
-      governor,
-      policy,
-      audit,
-      events,
-      spawnExecutor,
-      inProcessExecutor,
-      logger,
-    });
-
-    let thrown: unknown;
-    try {
-      orchestrator.launch(buildRequest());
-    } catch (error) {
-      thrown = error;
-    }
-
-    expect(log).toEqual([
-      "policy.evaluate:sqs-etl",
-      "governor.decide:sqs-etl:reject",
-      "audit:run.launch-rejected",
-    ]);
-    expect(thrown).toBeInstanceOf(M3LConsoleError);
-    expect((thrown as M3LConsoleError).code).toBe(
-      "ERR_CONSOLE_RUN_CAPACITY_EXCEEDED",
-    );
-    expect(registry.rows.size).toBe(0);
   });
 });
 
@@ -1263,107 +1155,6 @@ describe("createRunOrchestrator — cancel", () => {
 
     expect(cancelled).toBe(false);
     expect(log).not.toContain("audit:run.cancelled");
-  });
-});
-
-describe("createRunOrchestrator — reconcileOnBoot", () => {
-  test("zero orphaned rows: returns 0 and never audits run.reconciled", () => {
-    const log: string[] = [];
-    const registry = createFakeRegistry(log);
-    const governor = createFakeGovernor(log);
-    const policy = createFakePolicy(log, { kind: "allow" });
-    const audit = createFakeAudit(log);
-    const events = createFakeEvents(log);
-    const spawnExecutor = createImmediateExecutor(log, "spawn", {
-      exitCode: 0,
-      killRequested: false,
-      dryRun: false,
-    });
-    const inProcessExecutor = createImmediateExecutor(log, "inProcess", {
-      exitCode: 0,
-      killRequested: false,
-      dryRun: false,
-    });
-    const { logger, handler } = buildLogger();
-    const orchestrator = createRunOrchestrator(
-      {
-        config: buildConfig(),
-        registry,
-        governor,
-        policy,
-        audit,
-        events,
-        spawnExecutor,
-        inProcessExecutor,
-        logger,
-      },
-      { nowMs: () => 5_000 },
-    );
-
-    const count = orchestrator.reconcileOnBoot();
-
-    expect(count).toBe(0);
-    expect(log).not.toContain("audit:run.reconciled");
-    expect(
-      handler.events.some(
-        (event) => event.category === Core.M3LLogEventCategory.INFO,
-      ),
-    ).toBe(true);
-  });
-
-  test("non-zero orphaned rows: returns the count and audits run.reconciled", () => {
-    const log: string[] = [];
-    const registry = createFakeRegistry(log);
-    registry.rows.set("orphan-1", {
-      id: "orphan-1",
-      script: "sqs-etl",
-      status: "running",
-      dryRun: false,
-      executionMode: "spawn",
-      parameters: {},
-      operator: "ada",
-      correlationId: "corr-0",
-      queuedAtMs: 100,
-      startedAtMs: 200,
-      endedAtMs: undefined,
-      outcome: undefined,
-      exitCode: undefined,
-      failureMessage: undefined,
-    });
-    const governor = createFakeGovernor(log);
-    const policy = createFakePolicy(log, { kind: "allow" });
-    const audit = createFakeAudit(log);
-    const events = createFakeEvents(log);
-    const spawnExecutor = createImmediateExecutor(log, "spawn", {
-      exitCode: 0,
-      killRequested: false,
-      dryRun: false,
-    });
-    const inProcessExecutor = createImmediateExecutor(log, "inProcess", {
-      exitCode: 0,
-      killRequested: false,
-      dryRun: false,
-    });
-    const { logger } = buildLogger();
-    const orchestrator = createRunOrchestrator(
-      {
-        config: buildConfig(),
-        registry,
-        governor,
-        policy,
-        audit,
-        events,
-        spawnExecutor,
-        inProcessExecutor,
-        logger,
-      },
-      { nowMs: () => 5_000 },
-    );
-
-    const count = orchestrator.reconcileOnBoot();
-
-    expect(count).toBe(1);
-    expect(log).toContain("audit:run.reconciled");
   });
 });
 
