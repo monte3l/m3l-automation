@@ -105,3 +105,48 @@ We chose **option 3**. `m3l-console-server`'s `sessions` module owns:
   (its 2026-08-20 Update records that U10 consumes this design);
   distinct from [ADR-0046](./0046-codified-procedure-engine.md)
   (per-script procedures, B2).
+
+## Update (2026-08-30) — X6 fixed the deferred decisions
+
+X6 shipped across five PRs (#737, #738, #740, #743, #746) and resolved every
+decision this ADR left to implementation:
+
+- **Reference grammar fixed:** `step-<ordinal>.output(.<ident> | [<index>] |
+["<quoted>"])*` — a 1-based step ordinal, then dotted-identifier,
+  bracket-quoted, or numeric-index path segments, each walked against the
+  step's recorded output. `docs/reference/console.md`'s Reference grammar
+  section has worked examples.
+- **Caps fixed:** an artifact-inline threshold (64 KiB default), a
+  per-artifact cap (32 MiB), a session-total running cap (256 MiB), and an
+  open-session cap (32) — all four under `m3l.console.sessions.*`,
+  configurable, validated at boot.
+- **Console-local type home confirmed** — the binding/artifact convention
+  types (`sessions/launch-parameters.ts`, `sessions/binding.ts`,
+  `sessions/reference.ts`) stay `packages/m3l-console-server`-local, per this
+  ADR's own decision; `m3l-common` promotion remains gated on U10 starting.
+- **The deferred age-based sweep**: no retention sweep shipped with X6 — it
+  is ADR-0070's regime, tracked under X8. A session's artifacts live until
+  the process's data directory is cleared by hand.
+
+Two contracts this ADR stated needed a follow-up round after the first four
+slices (#737/#738/#740/#743) landed, closed by #746:
+
+- **"Bindings are first-class session records ... appear in the audit
+  trail"** — `addStep` now persists each resolved binding immediately after
+  its own resolution succeeds, and `GET /api/v1/sessions/:id/bindings`
+  exposes the trail. Known gap: a persisted binding record carries no
+  step-linkage column, so a launch failure followed by a client retry with
+  identical bindings persists duplicate (not lost or corrupted) audit rows —
+  closing this needs a store migration, tracked as a future refinement
+  rather than blocking X6.
+- **"Sessions are resumable"** — `POST /api/v1/sessions/:id/reopen` exposes
+  the service's `reopenSession` (which existed since the first `addStep`
+  slice but had no REST route) over the API, gated by the same open-session
+  cap `createSession` enforces on the count-increasing case only.
+
+A step's addressable output remains outcome-only (`{ outcome, exitCode }`)
+— the canonical "select a field out of a real output dump" walk is provable
+today only by seeding a step's artifact directly (as X6's own acceptance
+integration test does), not yet through a real script's `run.ended` payload.
+This does not block X6 or X11; it is recorded in `docs/reference/console.md`'s
+Known limits.
