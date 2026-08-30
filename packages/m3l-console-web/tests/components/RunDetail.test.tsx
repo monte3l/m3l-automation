@@ -18,6 +18,45 @@ function errorFetchRun(
     Promise.resolve({ ok: false, error: { kind: "network", message } });
 }
 
+/**
+ * Resolves ok on the first call (the initial load), then ok:false on every
+ * subsequent call (a gap-triggered resync that fails cleanly).
+ */
+function okThenErrorFetchRun(
+  run: M3LRunRecord,
+  errorMessage: string,
+): (id: string) => Promise<M3LConsoleFetchResult<M3LRunRecord>> {
+  let calls = 0;
+  return () => {
+    calls += 1;
+    if (calls === 1) {
+      return Promise.resolve({ ok: true, data: run });
+    }
+    return Promise.resolve({
+      ok: false,
+      error: { kind: "network", message: errorMessage },
+    });
+  };
+}
+
+/**
+ * Resolves ok on the first call (the initial load), then rejects on every
+ * subsequent call (a gap-triggered resync whose fetch itself throws).
+ */
+function okThenRejectingFetchRun(
+  run: M3LRunRecord,
+  rejection: Error,
+): (id: string) => Promise<M3LConsoleFetchResult<M3LRunRecord>> {
+  let calls = 0;
+  return () => {
+    calls += 1;
+    if (calls === 1) {
+      return Promise.resolve({ ok: true, data: run });
+    }
+    return Promise.reject(rejection);
+  };
+}
+
 const SAMPLE_RUN: M3LRunRecord = {
   id: "run-123",
   script: "demo-script",
@@ -192,5 +231,179 @@ describe("RunDetail", () => {
 
     expect(consoleErrorSpy).not.toHaveBeenCalled();
     consoleErrorSpy.mockRestore();
+  });
+});
+
+/**
+ * Minimal stream-state shape RunDetail's injected `useRunStream` seam is
+ * expected to return. Deliberately not imported from
+ * `src/hooks/useRunStream.js`'s `M3LRunStreamState` — that module (and its
+ * own tests) belong to a different, concurrently-in-flight test author;
+ * this inline shape only needs to match structurally.
+ */
+interface FakeRunStreamState {
+  readonly lines: readonly string[];
+  readonly phase: "connecting" | "open" | "ended";
+  readonly endReason: string | null;
+  readonly gapCount: number;
+}
+
+describe("RunDetail — live tail wiring", () => {
+  test("mounts the run log tail for a non-terminal (queued/running) run", async () => {
+    const openStream: FakeRunStreamState = {
+      lines: ["line one"],
+      phase: "open",
+      endReason: null,
+      gapCount: 0,
+    };
+    const useRunStreamFake = vi.fn(() => openStream);
+    const queuedRun: M3LRunRecord = { ...SAMPLE_RUN, status: "queued" };
+
+    render(
+      <RunDetail
+        id="run-123"
+        fetchRun={okFetchRun(queuedRun)}
+        useRunStream={useRunStreamFake}
+      />,
+    );
+
+    const detail = await screen.findByTestId("run-detail");
+    const tail = detail.querySelector('[data-testid="run-log-tail"]');
+    expect(tail).not.toBeNull();
+    expect(tail?.textContent).toContain("line one");
+    expect(useRunStreamFake).toHaveBeenCalledWith(
+      "run-123",
+      expect.any(Function),
+    );
+  });
+
+  test("a terminal run still gets the tail (the server replays the ring buffer and closes)", async () => {
+    const endedStream: FakeRunStreamState = {
+      lines: ["line one", "line two"],
+      phase: "ended",
+      endReason: "completed",
+      gapCount: 0,
+    };
+    const useRunStreamFake = vi.fn(() => endedStream);
+
+    render(
+      <RunDetail
+        id="run-123"
+        fetchRun={okFetchRun(SAMPLE_RUN)}
+        useRunStream={useRunStreamFake}
+      />,
+    );
+
+    const detail = await screen.findByTestId("run-detail");
+    expect(detail.querySelector('[data-testid="run-log-tail"]')).not.toBeNull();
+  });
+
+  test("onResync (passed to useRunStream) re-fetches the run record on a gap", async () => {
+    let capturedOnResync: (() => void) | undefined;
+    const useRunStreamFake = vi.fn((_id: string, onResync: () => void) => {
+      capturedOnResync = onResync;
+      return {
+        lines: [],
+        phase: "open",
+        endReason: null,
+        gapCount: 0,
+      } satisfies FakeRunStreamState;
+    });
+    const fetchRunSpy = vi.fn(okFetchRun(SAMPLE_RUN));
+
+    render(
+      <RunDetail
+        id="run-123"
+        fetchRun={fetchRunSpy}
+        useRunStream={useRunStreamFake}
+      />,
+    );
+    await screen.findByTestId("run-detail");
+
+    expect(fetchRunSpy).toHaveBeenCalledTimes(1);
+    expect(capturedOnResync).toBeInstanceOf(Function);
+
+    capturedOnResync?.();
+
+    await vi.waitFor(() => {
+      expect(fetchRunSpy).toHaveBeenCalledTimes(2);
+    });
+  });
+});
+
+describe("RunDetail — resync failure visibility", () => {
+  // [KNOWN BUG] src/components/RunDetail.tsx:118-125's handleResync drops
+  // `result.error` and has no `.catch()` — a failed gap-triggered resync
+  // silently leaves the operator looking at pre-gap (already-known-stale)
+  // status/outcome/exitCode with no indication anything went wrong.
+  test("surfaces an error when a gap-triggered resync fetch returns ok:false, instead of silently keeping the stale pre-gap record", async () => {
+    let capturedOnResync: (() => void) | undefined;
+    const useRunStreamFake = vi.fn((_id: string, onResync: () => void) => {
+      capturedOnResync = onResync;
+      return {
+        lines: [],
+        phase: "open",
+        endReason: null,
+        gapCount: 1,
+      } satisfies FakeRunStreamState;
+    });
+    const fetchRunSpy = vi.fn(okThenErrorFetchRun(SAMPLE_RUN, "resync failed"));
+
+    render(
+      <RunDetail
+        id="run-123"
+        fetchRun={fetchRunSpy}
+        useRunStream={useRunStreamFake}
+      />,
+    );
+    await screen.findByTestId("run-detail");
+    expect(capturedOnResync).toBeInstanceOf(Function);
+
+    capturedOnResync?.();
+
+    await vi.waitFor(() => {
+      expect(fetchRunSpy).toHaveBeenCalledTimes(2);
+    });
+
+    const detail = screen.getByTestId("run-detail");
+    expect(detail.textContent).toContain("resync failed");
+  });
+
+  // [KNOWN BUG] same site as above — handleResync's `.then()` has no
+  // `.catch()`, so a rejecting resync fetch becomes an unhandled rejection
+  // rather than a surfaced error.
+  test("surfaces an error when a gap-triggered resync fetch rejects, instead of becoming an unhandled rejection", async () => {
+    let capturedOnResync: (() => void) | undefined;
+    const useRunStreamFake = vi.fn((_id: string, onResync: () => void) => {
+      capturedOnResync = onResync;
+      return {
+        lines: [],
+        phase: "open",
+        endReason: null,
+        gapCount: 1,
+      } satisfies FakeRunStreamState;
+    });
+    const fetchRunSpy = vi.fn(
+      okThenRejectingFetchRun(SAMPLE_RUN, new Error("resync network failure")),
+    );
+
+    render(
+      <RunDetail
+        id="run-123"
+        fetchRun={fetchRunSpy}
+        useRunStream={useRunStreamFake}
+      />,
+    );
+    await screen.findByTestId("run-detail");
+    expect(capturedOnResync).toBeInstanceOf(Function);
+
+    capturedOnResync?.();
+
+    await vi.waitFor(() => {
+      expect(fetchRunSpy).toHaveBeenCalledTimes(2);
+    });
+
+    const detail = screen.getByTestId("run-detail");
+    expect(detail.textContent).toContain("resync network failure");
   });
 });

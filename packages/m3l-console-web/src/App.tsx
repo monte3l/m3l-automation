@@ -10,11 +10,12 @@ import { ScriptList } from "./components/ScriptList.js";
 import type { M3LRoute } from "./routing/useHashRoute.js";
 import { useHashRoute } from "./routing/useHashRoute.js";
 
-// Wires ScriptList/RunList's onSelectScript/onSelectRun callbacks to
-// `navigate` so activating a row drives the hash route (`#/scripts/:name`,
-// `#/runs/:id`) — without this, clicking a script/run in its list would do
-// nothing, and the detail routes would only be reachable by hand-typing a
-// URL hash.
+// Wires ScriptList/RunList's onSelectScript/onSelectRun callbacks, plus
+// ScriptDetail's onLaunched, to `navigate` so activating a row (or
+// launching a run) drives the hash route (`#/scripts/:name`, `#/runs/:id`)
+// — without this, clicking a script/run in its list would do nothing, and
+// a successful launch would strand the operator on the form with no way to
+// reach the run it just created.
 function renderRoute(
   route: M3LRoute,
   navigate: (route: M3LRoute) => void,
@@ -29,7 +30,21 @@ function renderRoute(
         />
       );
     case "script":
-      return <ScriptDetail name={route.name} />;
+      return (
+        // `key` forces a full remount on a route change (e.g.
+        // #/scripts/alpha -> #/scripts/beta) rather than reusing the same
+        // mounted instance — without it, ParameterForm's per-instance
+        // values/dryRun/confirmed state (and ScriptDetail's own fetch
+        // state) would carry the previous script's still-typed values and
+        // confirmation forward into a launch for a different script.
+        <ScriptDetail
+          key={route.name}
+          name={route.name}
+          onLaunched={(id) => {
+            navigate({ kind: "run", id });
+          }}
+        />
+      );
     case "runs":
       return (
         <RunList

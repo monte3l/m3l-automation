@@ -179,3 +179,99 @@ export async function fetchRun(
   }
   return result;
 }
+
+/**
+ * Body of a `POST /api/v1/runs` launch request. `parameters` is a flat
+ * string-valued map — the server coerces each value to the declared
+ * parameter type. `confirmed: true` is required for any non-dry-run launch;
+ * a `dryRun: true` request is exempt. This is a discriminated union rather
+ * than two independent booleans specifically so the combination
+ * `dryRun: false` with `confirmed: false` — a shape the server always
+ * rejects with a 409 — cannot be constructed at all; the invariant moves
+ * from a runtime 409 to a compile error.
+ */
+export type M3LRunLaunchRequest = {
+  readonly scriptName: string;
+  readonly parameters: Readonly<Record<string, string>>;
+} & (
+  | { readonly dryRun: true; readonly confirmed?: false }
+  | { readonly dryRun: false; readonly confirmed: true }
+);
+
+/**
+ * The subset of {@link M3LRunStatus} a freshly-launched run can report — a
+ * launch either enters the queue or starts running immediately, so it
+ * cannot already be terminal.
+ */
+const M3L_RUN_HANDLE_STATUSES = [
+  "queued",
+  "running",
+] as const satisfies readonly M3LRunStatus[];
+
+/**
+ * Handle returned by a successful `POST /api/v1/runs` launch (201). The
+ * field is `scriptName` here — the persisted {@link M3LRunRecord} uses
+ * `script` instead. The two shapes are deliberately distinct; see that
+ * interface's TSDoc.
+ */
+export interface M3LRunHandle {
+  readonly id: string;
+  readonly scriptName: string;
+  readonly status: (typeof M3L_RUN_HANDLE_STATUSES)[number];
+  readonly dryRun: boolean;
+  readonly executionMode: string;
+}
+
+function isM3LRunHandleStatus(value: unknown): value is M3LRunHandle["status"] {
+  return (
+    typeof value === "string" &&
+    (M3L_RUN_HANDLE_STATUSES as readonly string[]).includes(value)
+  );
+}
+
+function isM3LRunHandle(value: unknown): value is M3LRunHandle {
+  return (
+    isRecord(value) &&
+    typeof value["id"] === "string" &&
+    typeof value["scriptName"] === "string" &&
+    isM3LRunHandleStatus(value["status"]) &&
+    typeof value["dryRun"] === "boolean" &&
+    typeof value["executionMode"] === "string"
+  );
+}
+
+/**
+ * Launches a run via `POST /api/v1/runs`.
+ *
+ * @example
+ * ```ts
+ * import { launchRun } from "@m3l-automation/m3l-console-web/api/runs.js";
+ *
+ * const result = await launchRun({
+ *   scriptName: "json-etl",
+ *   parameters: { input: "a.json" },
+ *   dryRun: true,
+ * });
+ * if (result.ok) {
+ *   console.log(result.data.id);
+ * }
+ * ```
+ */
+export async function launchRun(
+  request: M3LRunLaunchRequest,
+): Promise<M3LConsoleFetchResult<M3LRunHandle>> {
+  const result = await fetchConsoleJson<M3LRunHandle>("/api/v1/runs", {
+    method: "POST",
+    body: request,
+  });
+  if (result.ok && !isM3LRunHandle(result.data)) {
+    return {
+      ok: false,
+      error: {
+        kind: "malformed-body",
+        message: "unexpected POST /api/v1/runs response shape",
+      },
+    };
+  }
+  return result;
+}
