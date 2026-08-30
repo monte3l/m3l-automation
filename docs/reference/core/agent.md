@@ -1682,6 +1682,12 @@ the directory listing is the state. A freshly spawned process and a long-lived
 one therefore agree about which segment is active, which is the only way the
 concurrency stance above survives a restart.
 
+One limitation is worth stating in the same register as the NFS caveat: a
+segment's age is taken from `birthtimeMs`, falling back to `mtimeMs` on a
+filesystem that reports no birth time. Under that fallback the age measures time
+since the last _write_ rather than since creation, so a continuously appended
+segment keeps resetting its own age and rotates on the byte ceiling alone.
+
 ### Rotation
 
 - `M3L_AGENT_LOG_MAX_SEGMENT_BYTES` — 8 MiB.
@@ -1689,6 +1695,12 @@ concurrency stance above survives a restart.
 
 Both are exported and both are caller-overridable through the options bag.
 Crossing either ceiling seals the active segment and opens a new one.
+
+A **third** trigger has no constant: the active segment is also sealed when its
+date prefix is no longer today's. Without it a long-lived process that crossed
+midnight under both ceilings would keep appending into yesterday's file while a
+process spawned beside it started today's — which would make the cold-start
+guarantee below false exactly when two processes are running.
 
 **Segments are retained, never pruned and never truncated in place.** A
 retention policy is a deployment decision, and a library that silently deletes
@@ -1708,6 +1720,39 @@ the host.
 
 Like both existing errors on this module, its `context` names the offending
 field and the failure kind and **never carries caller data**.
+
+### Bad input is a caller error, not a write error
+
+The two failure kinds are deliberately not the same error.
+
+- **`M3LError` with `ERR_INVALID_ARGUMENT`** — the caller handed the writer
+  something it cannot use: an options bag with an unknown key, a `directory`
+  that is not a non-blank string, a `maxSegmentBytes` or `maxSegmentAgeMs` that
+  is not a finite positive integer, or an `entry` that is not an object or
+  cannot be serialized at all (a circular reference, a `BigInt` field). This is
+  a bare `M3LError` with an existing code rather than a new class, following the
+  same house pattern as `aws/s3/uri.ts` and `internal/logging/levels.ts`.
+- **`M3LAgentDecisionLogWriteError`** — the append itself failed, or the entry
+  is well-formed but larger than `M3L_AGENT_MAX_LOG_ENTRY_BYTES`. What an
+  oversized entry violates is the atomic-append limit, not the type contract,
+  which is why the ceiling stays with the write error.
+
+Validation matters more here than at a typical boundary because the failure
+modes are silent rather than loud. `maxSegmentBytes: 0` would make the rotation
+check true on every call — one new file per entry, forever — and `NaN` would
+make it false on every call, so a single segment grows without bound. Neither
+raises anything on its own.
+
+Nothing reaches the filesystem when input is rejected: validation and
+serialization both run before any handle is opened.
+
+### Concurrent writes on one instance
+
+Appends through a single `M3LAgentDecisionLog` are serialized. `O_APPEND` keeps
+two _processes_ from tearing each other's lines, but it says nothing about the
+writer's own in-memory accounting: two overlapping `write()` calls would each
+resolve the active segment independently and each add only their own line to the
+running size, so the byte ceiling would be crossed before rotation noticed.
 
 ## Escalating when the log is unavailable
 
@@ -1757,6 +1802,18 @@ Immediately **after** budgets (step 3) and **before** the autonomy tier
   that was true first.
 - **Below the two deny arms** (steps 1 and 2), so a denied action stays denied.
   A denial needs no audit record to be safe, because nothing runs.
+
+Sitting above the whole `switch` means the check also **supersedes the escalate
+arms below it**, not only the two auto-approval arms. A sensitive-target
+mutation with the log unavailable reports `decision-log-unavailable` rather than
+`sensitive-target-escalated`.
+
+That is intended, and there are regression tests pinning it. The verdict is
+`escalate` either way, so nothing runs unreviewed on either path; of the two
+rules, the one naming a broken log is the one an operator can act on. Moving the
+check below the grading arms to preserve the more specific rule would cost the
+single-site property outright — step 4's read-only auto-approval arm sits
+_above_ the grading arms, so the check would have to exist in two places.
 
 ## Compatibility with `core/prompt`
 

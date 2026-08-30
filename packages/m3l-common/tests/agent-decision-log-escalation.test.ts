@@ -455,6 +455,50 @@ describe("6. step 3b's ordering: below the deny arms, after budgets, above steps
     expect(decision.rule).toBe("decision-log-unavailable");
   });
 
+  test("supersedes the step-5 sensitive-target ESCALATE arm too, reporting decision-log-unavailable", () => {
+    // INTENDED, NOT A BUG — do not "fix" this to report
+    // `sensitive-target-escalated`.
+    //
+    // Step 3b sits above the whole `switch (record.kind)`, so it supersedes
+    // the escalate arms below it as well as the two auto-approval arms its
+    // own comment names. That placement is deliberate: it is what lets ONE
+    // check cover the read-only auto-approval arm (step 4) and the graded
+    // mutation arm (step 7) at a single site. The verdict is `escalate`
+    // either way, so no authority is widened or narrowed by the
+    // supersession, and "the decision log is unavailable" is the more
+    // actionable signal for the human the escalation is handed to — the
+    // sensitivity of the target is still recoverable from the recorded
+    // action.
+    const decision = evaluateAgentAction({
+      policy: gradedPolicyWith({ requireDecisionLog: true }),
+      action: SENSITIVE_MUTATING_ACTION,
+      run: ledger({ decisionLogAvailable: false }),
+    });
+
+    expect(decision.verdict).toBe("escalate");
+    expect(decision.rule).toBe("decision-log-unavailable");
+  });
+
+  test("with the log available, the same sensitive action reports sensitive-target-escalated", () => {
+    // The mirror of the case above: step 3b declines, and step 5 is reached
+    // exactly as it would have been without `requireDecisionLog` at all — so
+    // the supersession above is the log check firing, not the sensitive-target
+    // arm having become unreachable.
+    const gated = evaluateAgentAction({
+      policy: gradedPolicyWith({ requireDecisionLog: true }),
+      action: SENSITIVE_MUTATING_ACTION,
+      run: ledger({ decisionLogAvailable: true }),
+    });
+    const ungated = evaluateAgentAction({
+      policy: gradedPolicyWith(),
+      action: SENSITIVE_MUTATING_ACTION,
+    });
+
+    expect(gated.verdict).toBe("escalate");
+    expect(gated.rule).toBe("sensitive-target-escalated");
+    expect(gated.reason).toBe(ungated.reason);
+  });
+
   test("covers the step-7 graded-mutation auto-approval arm", () => {
     const decision = evaluateAgentAction({
       policy: gradedPolicyWith({ requireDecisionLog: true }),

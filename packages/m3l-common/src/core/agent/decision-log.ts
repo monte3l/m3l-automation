@@ -7,7 +7,10 @@
 
 import path from "node:path";
 
-import { AgentDecisionLogWriter } from "../../internal/agent/decision-log-writer.js";
+import {
+  AgentDecisionLogWriter,
+  validateAgentDecisionLogOptions,
+} from "../../internal/agent/decision-log-writer.js";
 import { M3LPaths } from "../utils/M3LPaths.js";
 import type { M3LAgentDecisionLogEntry } from "./decision-log-types.js";
 
@@ -65,11 +68,26 @@ export interface M3LAgentDecisionLogOptions {
   /**
    * Overrides the resolved target directory entirely. Defaults to
    * `new M3LPaths().getDataDir()` joined with `"agent-log"`.
+   *
+   * Must be a non-blank string when present: `""` and `"   "` are caller
+   * mistakes, not directories.
    */
   readonly directory?: string;
-  /** Overrides {@link M3L_AGENT_LOG_MAX_SEGMENT_BYTES}. */
+  /**
+   * Overrides {@link M3L_AGENT_LOG_MAX_SEGMENT_BYTES}.
+   *
+   * Must be a finite positive integer (`>= 1`) when present. `0` and a
+   * negative would rotate on or before every write; a fractional, `NaN`, or
+   * `Infinity` ceiling would make the comparison silently never fire.
+   */
   readonly maxSegmentBytes?: number;
-  /** Overrides {@link M3L_AGENT_LOG_MAX_SEGMENT_AGE_MS}. */
+  /**
+   * Overrides {@link M3L_AGENT_LOG_MAX_SEGMENT_AGE_MS}.
+   *
+   * Must be a finite positive integer number of milliseconds (`>= 1`) when
+   * present, on the same reasoning as
+   * {@link M3LAgentDecisionLogOptions.maxSegmentBytes}.
+   */
   readonly maxSegmentAgeMs?: number;
 }
 
@@ -140,16 +158,30 @@ export class M3LAgentDecisionLog {
   /**
    * Creates a new `M3LAgentDecisionLog`.
    *
+   * The options bag is validated eagerly, here rather than on the first
+   * `write()`, so a misconfiguration fails at construction instead of
+   * halfway through a run. Omitting it entirely is legal — every field has a
+   * documented default — but a `null` bag is not: it is a caller mistake
+   * that optional chaining would silently read as "absent".
+   *
    * @param options - Optional options bag; see
    *   {@link M3LAgentDecisionLogOptions}.
+   * @throws {@link M3LError} with `code: "ERR_INVALID_ARGUMENT"` when
+   *   `options` is present but is not a plain object, carries an unknown
+   *   key, has a blank or non-string `directory`, or has a `maxSegmentBytes`
+   *   / `maxSegmentAgeMs` that is not a finite positive integer. The error
+   *   names the offending field and the violation kind, never the rejected
+   *   value — a directory path can carry tenant or customer identifiers.
    */
   constructor(options?: M3LAgentDecisionLogOptions) {
+    const overrides = validateAgentDecisionLogOptions(options);
     const directory =
-      options?.directory ?? path.join(new M3LPaths().getDataDir(), "agent-log");
+      overrides.directory ??
+      path.join(new M3LPaths().getDataDir(), "agent-log");
     const maxSegmentBytes =
-      options?.maxSegmentBytes ?? M3L_AGENT_LOG_MAX_SEGMENT_BYTES;
+      overrides.maxSegmentBytes ?? M3L_AGENT_LOG_MAX_SEGMENT_BYTES;
     const maxSegmentAgeMs =
-      options?.maxSegmentAgeMs ?? M3L_AGENT_LOG_MAX_SEGMENT_AGE_MS;
+      overrides.maxSegmentAgeMs ?? M3L_AGENT_LOG_MAX_SEGMENT_AGE_MS;
     this.writer = new AgentDecisionLogWriter(
       directory,
       maxSegmentBytes,
@@ -160,11 +192,26 @@ export class M3LAgentDecisionLog {
   /**
    * Appends one decision-log entry.
    *
+   * @remarks
+   * Concurrent calls on one instance are serialized: each append awaits the
+   * previous one's completion, so the segment bookkeeping that drives
+   * byte-ceiling rotation cannot be lost to a last-writer-wins race. A
+   * rejected call is reported to its own caller only and does not affect
+   * subsequent ones.
+   *
    * @param entry - A frozen {@link M3LAgentDecisionLogEntry}, normally
    *   produced by `agentDecisionLogEntry`.
-   * @throws M3LAgentDecisionLogWriteError When the serialized entry exceeds
-   *   `M3L_AGENT_MAX_LOG_ENTRY_BYTES`, or when the append itself fails for
-   *   any reason.
+   * @throws {@link M3LError} with `code: "ERR_INVALID_ARGUMENT"` when `entry`
+   *   is not a plain object, or cannot be serialized to JSON at all (a
+   *   circular reference, a `BigInt` field). Such an entry is an argument
+   *   this writer cannot represent — a caller-side violation — so it is not
+   *   reported as a write failure.
+   * @throws {@link M3LAgentDecisionLogWriteError} when the appended line
+   *   (`JSON.stringify(entry)` plus its newline) exceeds
+   *   `M3L_AGENT_MAX_LOG_ENTRY_BYTES` — a well-formed entry that is simply
+   *   larger than this writer can durably append in one atomic write — or
+   *   when the append itself fails for any reason. Nothing is written to
+   *   disk in either case.
    */
   async write(entry: M3LAgentDecisionLogEntry): Promise<void> {
     await this.writer.write(entry);

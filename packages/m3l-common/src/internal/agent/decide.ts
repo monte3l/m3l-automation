@@ -220,6 +220,20 @@ function decideMutation(
  * above by the time this runs): a denied action needs no audit record,
  * because nothing runs.
  *
+ * Sitting above the whole `switch` means this step also supersedes the
+ * ESCALATE arms below it — step 5's `sensitive-target-escalated`, step 6's
+ * `dry-run-first` — not only the two auto-approval arms named above. That is
+ * INTENDED, and a future reader should not "fix" it by pushing the check
+ * down into the individual arms: the verdict is `escalate` either way, so no
+ * authority is widened or narrowed by the supersession, and covering both
+ * auto-approval arms from a single site is exactly what this position buys.
+ * "The decision log is unavailable" is also the more actionable signal for
+ * the human the escalation is handed to — the target's sensitivity is still
+ * recoverable from the action recorded on the decision. Regression tests in
+ * `tests/agent-decision-log-escalation.test.ts` pin both directions: the
+ * supersession itself, and the same action reporting
+ * `sensitive-target-escalated` once the log is available.
+ *
  * `policy.requireDecisionLog` is read through `Object.hasOwn`, matching step
  * 3's own `policy.budgets` read: a polluted `Object.prototype.requireDecisionLog`
  * must not make this step run for a policy that declared none.
