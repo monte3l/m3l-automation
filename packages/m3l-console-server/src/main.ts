@@ -16,6 +16,14 @@ import type { Server } from "node:http";
 
 import { Core } from "@m3l-automation/m3l-common";
 
+import { buildDispatchRouter } from "./boot/dispatch-router.js";
+import {
+  createRuntimeLogger,
+  logDrainCompletion,
+  logListening,
+  logPosture,
+  logStoreReady,
+} from "./boot/logging.js";
 import type { M3LConsoleConfig } from "./config/env.js";
 import { loadConsoleConfig } from "./config/env.js";
 import type { M3LConsoleRunsConfig } from "./config/runs.js";
@@ -31,13 +39,8 @@ import { createRouter } from "./http/router.js";
 import type { M3LRoute, M3LRouter } from "./http/router.js";
 import {
   adaptSessionService,
-  createBuiltInRoutes,
   toRunsRouteOptions,
   toSessionsRouteOptions,
-} from "./http/routes/built-in.js";
-import type {
-  RunsRouteOptions,
-  SessionRouteOptions,
 } from "./http/routes/built-in.js";
 import { createOriginGuard } from "./http/origin-guard.js";
 import { createDrainMiddleware } from "./http/drain-middleware.js";
@@ -169,121 +172,6 @@ export interface M3LConsoleRuntime {
 }
 
 /**
- * Builds this runtime's default log sinks: a single JSON-lines handler
- * floored at `logLevel`.
- */
-function buildDefaultHandlers(
-  logLevel: Core.M3LLogLevelFloor,
-): readonly Core.M3LLoggerHandler[] {
-  return [new Core.M3LJsonLoggerHandler({ minLevel: logLevel })];
-}
-
-/**
- * Names the config/context fields this runtime's logger treats as secret, on
- * top of `M3LLogger`'s built-in key-name heuristic. `operatorEmail`/`email`
- * is NOT in the library's built-in `SENSITIVE_KEY_NAMES` set
- * (`core/logging/redact.ts`), so without this port, a later layer doing
- * something as ordinary as `logger.info(msg, { ...runtime.config })` would
- * print the operator's email verbatim — {@link M3LConsoleConfig.operatorEmail}'s
- * "Never logged" TSDoc would then be convention, not a control. Wiring this
- * once here, at the logger's construction, makes the guarantee structural
- * for every later slice that writes through this logger, not just the
- * boot-line log call in {@link logPosture}.
- *
- * `headers`/`cookie` are the same structural fix applied to a second leak:
- * `M3LRequestContext` (`http/context.ts`) now carries the inbound request
- * headers, and MEASURED behavior of `M3LLogger`'s redaction is that it
- * recurses and DOES redact a nested `authorization` header (it is in the
- * library's `SENSITIVE_KEY_NAMES`), but `cookie` is NOT in that set and
- * would leak an operator's session cookie verbatim. Naming `"headers"`
- * redacts the whole object regardless of which keys it happens to contain;
- * naming `"cookie"` also catches a cookie value hoisted to a top-level field
- * by some future call site. The library's key-name heuristic cannot know a
- * consumer's vocabulary — which is exactly what `M3LSecretNamesPort` exists
- * for.
- *
- * `sql`/`parameters`/`bindings`/`expandedSQL` are the same structural fix
- * for the ADR-0069 store: a repository logging a failed query's context as
- * ordinary as `logger.error(msg, { sql, parameters })` must never print the
- * raw SQL, its bound parameters/bindings, or its interpolated `expandedSQL`
- * form — the sqlite driver's own TSDoc documents `expandedSQL` as
- * interpolating bound values, so it is never loggable. `query`/`statement`
- * (near-synonyms for `sql`) and `params`/`values`/`args` (near-synonyms for
- * `parameters`/`bindings`) round out the same store vocabulary: a security
- * probe measured all five leaking verbatim through the real logger, and
- * `params` in particular is an entirely ordinary shorthand at a real call
- * site, not an exotic one this port can afford to skip.
- */
-const RUNTIME_SECRET_NAMES: ReadonlySet<string> = new Set([
-  "operatorEmail",
-  "email",
-  "headers",
-  "cookie",
-  "sql",
-  "parameters",
-  "bindings",
-  "expandedSQL",
-  "query",
-  "statement",
-  "params",
-  "values",
-  "args",
-]);
-
-const runtimeSecrets: Core.M3LSecretNamesPort = {
-  isSecret: (name) => RUNTIME_SECRET_NAMES.has(name),
-};
-
-/**
- * Emits the one posture line every boot logs: the resolved host, port,
- * operator name, drain timeout, and log level. The operator email is
- * deliberately never included — it is caller PII, and the library does not
- * log caller data by default.
- */
-function logPosture(logger: Core.M3LLogger, config: M3LConsoleConfig): void {
-  logger.info("console server configuration resolved", {
-    host: config.host,
-    port: config.port,
-    operatorName: config.operatorName,
-    drainTimeoutMs: config.drainTimeoutMs,
-    logLevel: config.logLevel,
-  });
-}
-
-/**
- * Builds the router the request listener actually dispatches through: the
- * built-in routes (see {@link createBuiltInRoutes}) ahead of `routes`, so a
- * caller can never accidentally shadow `/health`/`/ready`. Deliberately a
- * SEPARATE router instance from the one exposed as
- * {@link M3LConsoleRuntime.router} — that field reflects `options.routes`
- * verbatim, not an implementation detail of how liveness/readiness are
- * served.
- *
- * This call site is also the compiler-checked proof that
- * {@link M3LConsoleStoreLifecycle} (and the full {@link M3LConsoleStoreHandle}
- * that satisfies it) structurally conforms to {@link createBuiltInRoutes}'s
- * store-probe shape, without creating an `http -> store` ESLint zone edge.
- */
-function buildDispatchRouter(
-  drain: M3LDrainController,
-  routes: readonly M3LRoute[],
-  store: M3LConsoleStoreLifecycle | undefined,
-  runs: RunsRouteOptions | undefined,
-  sessions: SessionRouteOptions | undefined,
-): M3LRouter {
-  return createRouter(
-    createBuiltInRoutes({
-      drain,
-      startedAt: Date.now(),
-      ...(store !== undefined && { store }),
-      ...(runs !== undefined && { runs }),
-      ...(sessions !== undefined && { sessions }),
-      routes,
-    }),
-  );
-}
-
-/**
  * Resolves the console server's configuration, builds its logger, and
  * composes its router/middleware chains. Does not bind a socket, start
  * listening, or register any process signal handler — this is a pure
@@ -317,11 +205,7 @@ export function createConsoleRuntime(
   options: M3LConsoleRuntimeOptions = {},
 ): M3LConsoleRuntime {
   const config = resolveConfig(options);
-  const handlers = options.handlers ?? buildDefaultHandlers(config.logLevel);
-  const logger = new Core.M3LLogger(handlers, {
-    minLevel: config.logLevel,
-    secrets: runtimeSecrets,
-  });
+  const logger = createRuntimeLogger(config, options.handlers);
 
   logPosture(logger, config);
   const { runs, sessions } = buildConsoleSubsystems(options, logger);
@@ -461,40 +345,6 @@ export interface M3LRunningConsole {
    * what starts the drain.
    */
   shutdown(): Promise<M3LDrainOutcome>;
-}
-
-/** Logs the one line every boot emits once the listener is verified. Never the operator email. */
-function logListening(
-  logger: Core.M3LLogger,
-  server: M3LListeningServer,
-): void {
-  logger.info("console server listening", {
-    host: server.host,
-    port: server.port,
-  });
-}
-
-/** Logs the one line every shutdown emits once the drain has settled. */
-function logDrainCompletion(
-  logger: Core.M3LLogger,
-  outcome: M3LDrainOutcome,
-): void {
-  logger.info("console server drain completed", {
-    graceful: outcome.graceful,
-    abandoned: outcome.abandoned,
-    durationMs: outcome.durationMs,
-  });
-}
-
-/** Logs the one line every boot emits once the console store is confirmed open. */
-function logStoreReady(
-  logger: Core.M3LLogger,
-  store: M3LConsoleStoreHandle,
-): void {
-  logger.info("console store ready", {
-    location: store.location,
-    schemaVersion: store.schemaVersion,
-  });
 }
 
 /**
