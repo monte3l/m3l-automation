@@ -23,7 +23,8 @@ browser needing CORS handling. The `/api` entry is load-bearing, not
 cosmetic: without it every `/api/v1/*` fetch resolves against the Vite dev
 server and 404s.
 
-X10c shipped the read half of the console. A hand-rolled hash router
+X10c shipped the read half of the console and X10d the write half. A
+hand-rolled hash router
 (`src/routing/useHashRoute.ts`, no runtime dependency — ADR-0067's thin-stack
 policy) drives four routes:
 
@@ -38,8 +39,30 @@ Anything unrecognised — an empty hash, a malformed percent-escape, a name
 failing the server's own kebab-case pattern — falls back to `#/scripts`
 rather than throwing or rendering blank.
 
-The parameter form, launching a run, and the live SSE log tail are **X10d**;
-`#/scripts/:name` is read-only today.
+`#/scripts/:name` carries the launch form. Controls are derived from the
+script's own declared parameters: a `BOOL` renders a checkbox, `INT`/`DOUBLE`
+a number input, everything else a text input. Operation scoping mirrors U8's
+wizard rule — a parameter declared `required` is always shown, one scoped to
+another operation is hidden, and one the selected operation lists in
+`requiredParameters` is shown and enforced even when its own `required` is
+`false`. An optional parameter left empty is omitted from the request rather
+than sent as `""`.
+
+`dryRun` defaults **on**. Turning it off reveals an explicit confirm control,
+and re-checking `dryRun` resets that confirmation — a stale confirm must not
+survive a toggle round-trip. `M3LRunLaunchRequest` is a discriminated union
+over `dryRun`, so an unconfirmed real run is a compile error rather than a
+guaranteed 400.
+
+A successful launch navigates to `#/runs/:id`, where an `EventSource` tails
+`GET /api/v1/runs/:id/stream`. `run.ended` does not close the stream —
+`stream.end` is the sole close signal, and closing early would truncate the
+replayed tail of an already-terminal run. The `error` listener terminates only
+when `readyState` is `CLOSED`, because a native `EventSource` auto-reconnects
+and treating a transient reconnect as fatal would be worse than the frozen
+tail it fixes. A `stream.gap` means one thing — re-fetch the snapshot and keep
+streaming — and its payload is deliberately never read, because the server
+ships two different bodies for it.
 
 Every fetcher validates its response shape at runtime before returning it —
 `fetchConsoleJson` decodes with a bare `as T`, so a wrong-shaped body is
@@ -49,7 +72,16 @@ renders as text: a script's `description` comes from a `package.json` in the
 scripts directory and a run's `failureMessage` from script stderr, so nothing
 in this package uses `dangerouslySetInnerHTML`. A secret parameter's default
 arrives already masked from `m3l-common`'s descriptor seam and is rendered
-exactly as received — the UI never re-derives or re-masks it.
+exactly as received in the read-only table — the UI never re-derives or
+re-masks it.
+
+A `secret: true` parameter gets **no editable control in the launch form** and
+its key never reaches the request body. The console server persists run
+`parameters` verbatim and echoes them back (see `docs/reference/console.md` —
+"Do not pass secrets as run parameters"), and `#/runs/:id` renders that echo
+in cleartext, so offering a password field would signal the opposite of the
+truth. The value must come from the script's own environment or secret
+resolution at execution time.
 
 ```bash
 pnpm --filter @m3l-automation/m3l-console-web build     # vite build -> dist/
