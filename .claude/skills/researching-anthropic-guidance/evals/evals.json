@@ -16,6 +16,10 @@
           "description": "Each agent brief restricts WebSearch to the official Anthropic domain allowlist (anthropic.com, claude.com, platform.claude.com, code.claude.com, docs.claude.com, docs.anthropic.com and their www variants)"
         },
         {
+          "name": "reference_file_consulted",
+          "description": "Before building briefs, references/official-sources.md is read and its allowlist/GitHub-caveat content is what gets pasted into each agent brief, rather than a re-derived or inlined copy"
+        },
+        {
           "name": "github_scoped_correctly",
           "description": "If GitHub is mentioned, the brief scopes acceptance to github.com/anthropics/* only, not bare github.com"
         },
@@ -94,6 +98,30 @@
         {
           "name": "no_non_anthropic_sources",
           "description": "No community blog, third-party summary, or non-anthropics GitHub org is substituted or cited"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "/researching-anthropic-guidance has Claude Code shipped anything in the last few releases around hooks or subagent tool grants? I want to know before we touch our settings.json",
+      "expected_output": "Explore agents fan out over facets of recent Claude Code changes (e.g. hooks/lifecycle events, subagent/tool-grant behavior, settings schema), with at least one agent directed to the Claude Code CHANGELOG (raw.githubusercontent.com/anthropics/claude-code/main/CHANGELOG.md) as a first-class source rather than relying on WebSearch ranking to surface it, plus the release-notes page. Synthesis cites specific version entries alongside any docs coverage.",
+      "files": [],
+      "assertions": [
+        {
+          "name": "parallel_explore_agents",
+          "description": "3-5 Explore agents dispatched in one message"
+        },
+        {
+          "name": "changelog_consulted",
+          "description": "At least one agent brief directs fetching the Claude Code CHANGELOG (raw.githubusercontent.com/anthropics/claude-code/main/CHANGELOG.md) or the release-notes page as a first-class source, not just a generic github.com/anthropics/* search"
+        },
+        {
+          "name": "changelog_entries_cited",
+          "description": "The synthesized briefing cites specific CHANGELOG version entries (not just docs pages) when reporting on recent Claude Code changes"
+        },
+        {
+          "name": "github_raw_path_scoped_correctly",
+          "description": "The raw.githubusercontent.com/anthropics/... citation is treated as in-scope per the GitHub caveat, not rejected for lacking a github.com/anthropics/ prefix"
         }
       ]
     }
