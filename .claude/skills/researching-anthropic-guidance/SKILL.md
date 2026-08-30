@@ -56,31 +56,23 @@ grounded in the full findings instead of a lossy summary.
 
 ### 2 — Fan out Explore agents (parallel)
 
+Before building briefs, read
+[`references/official-sources.md`](references/official-sources.md) — the
+domain allowlist, the GitHub caveat, the first-class sources to enumerate
+directly (including the Claude Code CHANGELOG and the blog/news/engineering
+index pages), and the current-date-anchor requirement. It's shared with
+`refreshing-anthropic-guidance` so the two skills' source lists cannot drift
+apart; edit it, not this file, when Anthropic moves or adds a domain.
+
 Spawn all agents **in a single message** so they run concurrently. Each agent
 receives:
 
 - A focused brief scoped to exactly one facet of the research topic.
 - The run directory from Step 1 and the exact filename to write:
   `<run-dir>/<facet-slug>.md`.
-- The **official-sources allowlist**, to be passed as `WebSearch`'s
-  `allowed_domains`:
-
-  ```
-  anthropic.com, www.anthropic.com, claude.com, www.claude.com,
-  platform.claude.com, code.claude.com, docs.claude.com, docs.anthropic.com
-  ```
-
-  Anthropic's engineering posts, research papers, and news all live under
-  `anthropic.com` (including `/engineering`, `/research`, `/news`), so this
-  one allowlist covers whitepapers and blog posts as well as docs — no
-  separate domain list is needed per source type.
-
-- The **GitHub caveat**: `allowed_domains` filters by domain, not path, so a
-  bare `github.com` allowance would let through any repo. Instead, tell the
-  agent it may include `github.com` and `raw.githubusercontent.com` in its
-  search domains, but must **only cite or fetch URLs whose path starts with
-  `github.com/anthropics/`** (the official org — SDKs, cookbooks, model
-  cards) — drop any other GitHub result, even a highly-ranked one.
+- The **official-sources allowlist and GitHub caveat**, pasted verbatim from
+  `references/official-sources.md`, plus today's date per that file's
+  current-date-anchor requirement.
 
 - An instruction to **not stop at the first matching source** — search
   broadly enough to surface every distinct official source touching the
@@ -111,8 +103,9 @@ receives:
   budget for synthesis rather than for re-reading verbose per-agent output.
 
 Use `subagent_type: "Explore"` with breadth `"very thorough"` for every
-agent — it is the only spoke granted `WebSearch`/`WebFetch`. Do not write any
-files yourself in this step; the agents write their own scratchpad files.
+agent — check `.claude/agents/*.md` if unsure which spokes carry
+`WebSearch`/`WebFetch` before assuming Explore is the only one. Do not write
+any files yourself in this step; the agents write their own scratchpad files.
 
 ### 3 — Aggregate and synthesize
 
@@ -162,13 +155,14 @@ passes don't need it.
 ### 5 — Offer an optional snapshot
 
 Ask whether the user wants the briefing persisted as a durable record at
-`docs/research/<topic-slug>.md`, assembled from the Step-1 scratchpad files
+`docs/research/<topic-slug>.md`, assembled from the Step-2 scratchpad files
 (not re-fetched). Only write it on explicit confirmation — the default is
 inline-only, since most research feeds directly into the task that asked for
 it and doesn't need a standing file.
 
-If confirmed, write the snapshot with this provenance header (matching the
-`references/*.md` snapshot convention used elsewhere in this repo):
+If confirmed, write the snapshot with this provenance header (matching this
+skill's own `references/*.md` convention and `docs/research/README.md`'s
+snapshot format):
 
 ```
 > **Provenance** — Synthesized via `/researching-anthropic-guidance` from
