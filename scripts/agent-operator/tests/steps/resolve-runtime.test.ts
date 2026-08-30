@@ -138,6 +138,52 @@ describe("resolveAgentOperatorRuntime — model rate parsing", () => {
       "ERR_AGENT_OPERATOR_CONFIG",
     );
   });
+
+  // Regression for the trim bug the claude-pr-review bot found on PR #763:
+  // `parseModelRates` used to validate `modelId.trim() === ""` but key the
+  // map with the UNTRIMMED capture, so `" my-model =3,15"` was stored under
+  // `" my-model "` and every `rates.get("my-model")` missed — silently
+  // making cost unobservable. The chosen fix rejects a padded id outright
+  // rather than trimming it, since this repo fails loud at the config
+  // boundary rather than silently coercing caller/config input.
+  it.each([
+    ["a leading space", " my-model=3,15"],
+    ["a trailing space", "my-model =3,15"],
+    ["a tab", "my-model\t=3,15"],
+  ])(
+    "[regression] rejects a modelRates entry whose model id has %s, rather than silently keying the map under the padded id",
+    (_label, entry) => {
+      const config = buildConfig({ modelRates: [entry] });
+
+      expect(() =>
+        resolveAgentOperatorRuntime({
+          config,
+          policy: minimalPolicy(),
+          paths: new Core.M3LPaths(),
+        }),
+      ).toThrowError(M3LAgentOperatorCliError);
+
+      let thrown: unknown;
+      try {
+        resolveAgentOperatorRuntime({
+          config,
+          policy: minimalPolicy(),
+          paths: new Core.M3LPaths(),
+        });
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toBeInstanceOf(M3LAgentOperatorCliError);
+      expect((thrown as M3LAgentOperatorCliError).code).toBe(
+        "ERR_AGENT_OPERATOR_CONFIG",
+      );
+      // The file's convention: never echo the offending entry back in the
+      // thrown message.
+      expect((thrown as M3LAgentOperatorCliError).message).not.toContain(
+        "my-model",
+      );
+    },
+  );
 });
 
 describe("resolveAgentOperatorRuntime — maxIterations vs. policy.budgets.loopIterations", () => {

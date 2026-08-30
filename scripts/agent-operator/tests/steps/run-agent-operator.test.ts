@@ -1,18 +1,20 @@
 /**
  * Tests for `steps/run-agent-operator` — the top-level dispatcher that wires
  * `config` -> `loadAgentPolicy` -> `resolveAgentOperatorRuntime` ->
- * `explainPolicy` (PR 1, ADR-0055).
+ * `createAgentCliSurface` -> `explainPolicy` (PR 1, ADR-0055).
  *
- * PR A scope: this dispatcher no longer builds an `AgentCliSurface` —
- * `createAgentCliSurface` and `../../src/lib/cli-surface.js` return in PR B,
- * the `m3l` CLI seam. `runAgentOperator` is exercised here through its REAL
- * collaborators (`loadAgentPolicy`, `resolveAgentOperatorRuntime`,
- * `explainPolicy`) against a real `Core.M3LPaths` pointed at a temp input dir
- * (the same `M3L_INPUT_DIR` pattern `load-policy.test.ts` already established
- * in this package) — nothing is mocked in this file, since there is no
- * process-spawning collaborator left to isolate. A wrong argument order, a
- * dropped `paths`, or a policy file threaded incorrectly is invisible to any
- * test that doesn't run the real wiring end to end.
+ * Backfill (GREEN): `runAgentOperator` already exists and is exercised here
+ * through its REAL collaborators (`loadAgentPolicy`,
+ * `resolveAgentOperatorRuntime`) against a real `Core.M3LPaths` pointed at a
+ * temp input dir (the same `M3L_INPUT_DIR` pattern `load-policy.test.ts`
+ * already established in this package). `runAgentOperator` builds
+ * `createAgentCliSurface` internally — it is not an injected `deps` field —
+ * so that one collaborator seam (`../../src/lib/cli-surface.js`, a relative
+ * module import, never the library barrel) is mocked so no real `m3l` CLI
+ * process is ever spawned. Every other collaborator runs for real, which is
+ * the whole point: a wrong argument order, a dropped `paths`, or a surface
+ * built from stale/default settings is invisible to any test that mocks more
+ * than this one seam.
  */
 
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -23,9 +25,35 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { Core } from "@m3l-automation/m3l-common";
 
+import type { AgentCliSurface } from "../../src/lib/cli-surface.js";
+import type { AgentOperatorDoctorCheck } from "../../src/lib/cli-envelopes.js";
 import { M3LAgentOperatorCliError } from "../../src/lib/errors.js";
+import {
+  projectDoctorReport,
+  type AgentOperatorProjectedDoctorReport,
+} from "../../src/lib/model-safety.js";
 import { runAgentOperator } from "../../src/steps/run-agent-operator.js";
 import { fullPolicyDeclaration } from "../support/policyFixtures.js";
+
+/**
+ * Builds a real, nominally-branded {@link AgentOperatorProjectedDoctorReport}
+ * by running the actual `projectDoctorReport` projector over raw check
+ * fixtures — the brand on `AgentOperatorProjectedDoctorCheck` can only be
+ * minted inside `model-safety.ts`, so this fake surface must go through the
+ * real projector rather than hand-writing an object literal (which would
+ * need a disallowed cast).
+ */
+function buildDoctorReport(
+  checks: readonly AgentOperatorDoctorCheck[],
+): AgentOperatorProjectedDoctorReport {
+  return projectDoctorReport(checks);
+}
+
+vi.mock("../../src/lib/cli-surface.js", () => ({
+  createAgentCliSurface: vi.fn(),
+}));
+
+import { createAgentCliSurface } from "../../src/lib/cli-surface.js";
 
 /** Records every event handed to it, for assertion without pinning exact prose. */
 class RecordingLoggerHandler implements Core.M3LLoggerHandler {
@@ -53,6 +81,50 @@ function createLogger(): {
   return { logger: new Core.M3LLogger([handler]), handler };
 }
 
+/**
+ * A fake `AgentCliSurface` recording which methods were invoked. `inspect`
+ * and `dryRun` throw if ever called — `explain-policy` never needs a script
+ * name, so a call into either proves a wiring bug.
+ */
+function createFakeSurface(): {
+  readonly surface: AgentCliSurface;
+  readonly calls: string[];
+} {
+  const calls: string[] = [];
+  const surface: AgentCliSurface = {
+    list() {
+      calls.push("list");
+      return Promise.resolve([
+        {
+          name: "agent-operator",
+          description: "…",
+          parameterCount: 20,
+          configLoadFailed: false,
+        },
+      ]);
+    },
+    doctor() {
+      calls.push("doctor");
+      return Promise.resolve(
+        buildDoctorReport([
+          { name: "workspace-root", status: "ok", detail: "ok" },
+        ]),
+      );
+    },
+    inspect(): Promise<never> {
+      calls.push("inspect");
+      throw new Error("unexpected surface.inspect() call");
+    },
+    dryRun(): Promise<never> {
+      calls.push("dryRun");
+      throw new Error("unexpected surface.dryRun() call");
+    },
+  };
+  return { surface, calls };
+}
+
+const DEFAULT_ENTRYPOINT = "/fake/repo/packages/m3l-cli/bin/m3l.mjs";
+
 let inputDir: string;
 
 beforeEach(async () => {
@@ -61,6 +133,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   vi.unstubAllEnvs();
+  vi.mocked(createAgentCliSurface).mockReset();
   await rm(inputDir, { recursive: true, force: true });
 });
 
@@ -94,7 +167,7 @@ function buildConfig(
   config.set(Core.AWS_PROFILE_PARAM_NAME, "sandbox");
   config.set("command", "explain-policy");
   config.set("modelId", "anthropic.claude-3-5-sonnet-20241022-v2:0");
-  config.set("cliEntrypoint", "/fake/repo/packages/m3l-cli/bin/m3l.mjs");
+  config.set("cliEntrypoint", DEFAULT_ENTRYPOINT);
   for (const [name, value] of Object.entries(overrides)) {
     config.set(name, value);
   }
@@ -102,17 +175,24 @@ function buildConfig(
 }
 
 describe("runAgentOperator — explain-policy wiring", () => {
-  it("loads the policy, resolves the runtime, and renders through explainPolicy", async () => {
+  it("loads the policy, resolves the runtime, builds the CLI surface from it, and renders through explainPolicy", async () => {
     // A non-default `policyFile` name: proves the config value is actually
     // read and threaded through, not a hardcoded "agent-policy.json".
     const policyFileName = "custom-agent-policy.json";
     await writePolicyFixture(policyFileName, fullPolicyDeclaration());
+
+    const { surface, calls } = createFakeSurface();
+    vi.mocked(createAgentCliSurface).mockReturnValue(surface);
 
     const { logger, handler } = createLogger();
     const controller = new AbortController();
     const reportRecovery = vi.fn();
     const config = buildConfig({
       policyFile: policyFileName,
+      cliTimeoutMs: 12_345,
+      dryRunTimeoutMs: 67_890,
+      maxOutputBytes: 2_000_000,
+      dryRunAllowlist: ["json-etl"],
     });
 
     await runAgentOperator({
@@ -123,12 +203,36 @@ describe("runAgentOperator — explain-policy wiring", () => {
       reportRecovery,
     });
 
+    // The CLI seam was genuinely exercised on the real explainPolicy code
+    // path — not skipped, not mocked away.
+    expect(calls.filter((call) => call === "list")).toHaveLength(1);
+    expect(calls.filter((call) => call === "doctor")).toHaveLength(1);
+    expect(calls).not.toContain("inspect");
+    expect(calls).not.toContain("dryRun");
+
     // The rendered text carries the loaded fixture's OWN content (from
     // fullPolicyDeclaration(), not a default/empty policy) — proving
     // load -> resolve -> render actually threaded the right file through.
     const text = flattenLoggedText(handler.events);
     expect(text).toContain("s3-objects");
     expect(text).toMatch(/1000/); // tokensPerRun
+
+    // Wiring correctness: createAgentCliSurface received the settings
+    // resolve-runtime derived from THIS config/paths — not defaults, and
+    // not a value dropped in argument shuffling.
+    expect(createAgentCliSurface).toHaveBeenCalledTimes(1);
+    expect(createAgentCliSurface).toHaveBeenCalledWith(
+      expect.objectContaining({
+        entrypoint: DEFAULT_ENTRYPOINT,
+        cwd: path.dirname(DEFAULT_ENTRYPOINT),
+        nodeExecPath: process.execPath,
+        cliTimeoutMs: 12_345,
+        dryRunTimeoutMs: 67_890,
+        maxOutputBytes: 2_000_000,
+        dryRunAllowlist: new Set(["json-etl"]),
+        signal: controller.signal,
+      }),
+    );
 
     // This offline slice absorbs no per-action failure — reportRecovery is
     // threaded onto the seam for a later slice but unused today.
@@ -162,6 +266,7 @@ describe("runAgentOperator — health-check", () => {
     expect(asError.message).toMatch(/declared/);
     expect(asError.message).toMatch(/not implemented/);
     expect(asError.message).toMatch(/follow-up slice/);
+    expect(createAgentCliSurface).not.toHaveBeenCalled();
   });
 });
 
@@ -203,6 +308,7 @@ describe("runAgentOperator — command validation", () => {
       // `code: "ERR_AGENT_OPERATOR_CONFIG"`.
       expect(thrown).toBeInstanceOf(Core.M3LError);
       expect((thrown as Core.M3LError).code).toBe("ERR_AGENT_OPERATOR_CONFIG");
+      expect(createAgentCliSurface).not.toHaveBeenCalled();
     },
   );
 
@@ -241,6 +347,8 @@ describe("runAgentOperator — maxIterations vs. policy budget cross-check", () 
       budgets: { loopIterations: 2 },
     });
 
+    const { surface } = createFakeSurface();
+    vi.mocked(createAgentCliSurface).mockReturnValue(surface);
     const { logger } = createLogger();
     const config = buildConfig({
       policyFile: policyFileName,
@@ -264,5 +372,9 @@ describe("runAgentOperator — maxIterations vs. policy budget cross-check", () 
     const asError = thrown as M3LAgentOperatorCliError;
     expect(asError.code).toBe("ERR_AGENT_OPERATOR_CONFIG");
     expect(asError.message).toMatch(/loopIterations/);
+    // The failure happened before the CLI surface was ever built — proving
+    // it propagated out of resolve-runtime rather than being absorbed and
+    // the run continuing regardless.
+    expect(createAgentCliSurface).not.toHaveBeenCalled();
   });
 });

@@ -3,21 +3,45 @@
  * that renders a validated policy's grants, operations, budgets, and flags
  * (PR 1).
  *
- * PR A scope: the `AgentCliSurface` dependency (and its `list()`/`doctor()`
- * rendering) has been dropped from `explainPolicy` — that CLI seam returns in
- * PR B, alongside `../../src/lib/cli-surface.js` and `../../src/lib/model-safety.js`,
- * both deleted from the working tree for this split. `explainPolicy` now
- * takes only `{ policy, logger }` and still returns the same
+ * Contract pins for this RED phase (test-author decision, since the PR 1
+ * spec fixes the behaviour but not every export name): the step is named
+ * `explainPolicy`, taking `{ policy, logger, surface }` and returning an
  * `AgentOperatorExplainPolicySummary` shaped `{ grantCount, requireDecisionLog,
- * dryRunFirst, hasBudgets }`.
+ * dryRunFirst, hasBudgets }`. It must call `surface.list()` and
+ * `surface.doctor()` (the "CLI seam genuinely exercised on a real code
+ * path" requirement) and must never call `surface.inspect()` or
+ * `surface.dryRun()` — those need a script name and this operation carries
+ * none.
  */
 
 import { describe, expect, it } from "vitest";
 
 import { Core } from "@m3l-automation/m3l-common";
 
+import type { AgentCliSurface } from "../../src/lib/cli-surface.js";
+import type { AgentOperatorDoctorCheck } from "../../src/lib/cli-envelopes.js";
+import {
+  projectDoctorReport,
+  type AgentOperatorProjectedDoctorReport,
+  type AgentOperatorProjectedListRow,
+  type AgentOperatorProjectedRunEnvelope,
+} from "../../src/lib/model-safety.js";
 import { explainPolicy } from "../../src/steps/explain-policy.js";
 import { fullPolicy, minimalPolicy } from "../support/policyFixtures.js";
+
+/**
+ * Builds a real, nominally-branded {@link AgentOperatorProjectedDoctorReport}
+ * by running the actual `projectDoctorReport` projector over raw check
+ * fixtures — the brand on `AgentOperatorProjectedDoctorCheck` can only be
+ * minted inside `model-safety.ts`, so a fake surface must go through the
+ * real projector rather than hand-writing an object literal (which would
+ * need a disallowed cast).
+ */
+function buildDoctorReport(
+  checks: readonly AgentOperatorDoctorCheck[],
+): AgentOperatorProjectedDoctorReport {
+  return projectDoctorReport(checks);
+}
 
 /** Records every event handed to it, for assertion without pinning exact prose. */
 class RecordingLoggerHandler implements Core.M3LLoggerHandler {
@@ -37,6 +61,65 @@ function flattenLoggedText(events: readonly Core.M3LLogEvent[]): string {
     .join("\n");
 }
 
+/** A fake `AgentCliSurface` recording which methods were invoked, in call order. */
+function createFakeSurface(): {
+  readonly surface: AgentCliSurface;
+  readonly calls: string[];
+} {
+  const calls: string[] = [];
+  const surface: AgentCliSurface = {
+    list() {
+      calls.push("list");
+      const rows: AgentOperatorProjectedListRow[] = [
+        {
+          name: "agent-operator",
+          description: "…",
+          parameterCount: 20,
+          configLoadFailed: false,
+        },
+        {
+          name: "sqs-etl",
+          description: "…",
+          parameterCount: 14,
+          configLoadFailed: false,
+        },
+      ];
+      return Promise.resolve(rows);
+    },
+    doctor() {
+      calls.push("doctor");
+      return Promise.resolve(
+        buildDoctorReport([
+          { name: "workspace-root", status: "ok", detail: "ok" },
+        ]),
+      );
+    },
+    inspect() {
+      calls.push("inspect");
+      return Promise.resolve([]);
+    },
+    dryRun() {
+      calls.push("dryRun");
+      const envelope: AgentOperatorProjectedRunEnvelope = {
+        script: "agent-operator",
+        startedAt: new Date(0).toISOString(),
+        finishedAt: new Date(0).toISOString(),
+        durationMs: 0,
+        exitCode: 0,
+        exitCodeName: "SUCCESS",
+        outcome: "dry-run",
+        reportAvailable: false,
+        reportUnavailable: null,
+        timelineCount: null,
+        timelineSourceCount: null,
+        recoveryTotal: null,
+      };
+      return Promise.resolve(envelope);
+    },
+  };
+  return { surface, calls };
+}
+
 function createLogger(): {
   readonly logger: Core.M3LLogger;
   readonly handler: RecordingLoggerHandler;
@@ -48,8 +131,9 @@ function createLogger(): {
 describe("explainPolicy", () => {
   it("renders every grant, its operations, the budgets, and both flags through the injected logger", async () => {
     const { logger, handler } = createLogger();
+    const { surface } = createFakeSurface();
 
-    await explainPolicy({ policy: fullPolicy(), logger });
+    await explainPolicy({ policy: fullPolicy(), logger, surface });
 
     const text = flattenLoggedText(handler.events);
     expect(text).toContain("agent-operator");
@@ -64,10 +148,12 @@ describe("explainPolicy", () => {
 
   it("returns a plain summary object reflecting the policy's grants, budgets, and flags", async () => {
     const { logger } = createLogger();
+    const { surface } = createFakeSurface();
 
     const summary = await explainPolicy({
       policy: fullPolicy(),
       logger,
+      surface,
     });
 
     expect(summary.grantCount).toBe(2);
@@ -78,10 +164,12 @@ describe("explainPolicy", () => {
 
   it("handles a minimal policy (no budgets, no flags, no sensitiveTargets) without throwing", async () => {
     const { logger } = createLogger();
+    const { surface } = createFakeSurface();
 
     const summary = await explainPolicy({
       policy: minimalPolicy(),
       logger,
+      surface,
     });
 
     expect(summary.grantCount).toBe(1);
@@ -90,15 +178,65 @@ describe("explainPolicy", () => {
     expect(summary.hasBudgets).toBe(false);
   });
 
-  it("constructs no Bedrock client and spawns nothing — the deps bag carries only policy and logger", async () => {
-    const { logger } = createLogger();
+  it("resolves with the correct summary even when the injected logger handler throws on every event — explainPolicy has no reachable failure mode of its own", async () => {
+    // M3LLogger.dispatch() (core/logging/M3LLogger.ts:573-597) isolates
+    // handler failures by design: it catches every handler throw
+    // synchronously and writes a best-effort stderr diagnostic instead of
+    // rethrowing, so a throwing handler can never propagate back through
+    // explainPolicy's logger.header()/logger.info() calls. That means
+    // explainPolicy genuinely has no reachable failure mode of its own — this
+    // is the failure-path test for this function. Assert on stderr content is
+    // out of scope here — that is M3LLogger's own contract, not this step's.
+    let invocations = 0;
+    const throwingHandler: Core.M3LLoggerHandler = {
+      handle(): void {
+        invocations += 1;
+        throw new Error("handler boom");
+      },
+      reset(): void {
+        // No handler-internal state to reset — this handler exists only to
+        // count invocations and throw.
+      },
+    };
+    const logger = new Core.M3LLogger([throwingHandler]);
+    const { surface } = createFakeSurface();
 
-    // The call succeeds with exactly these two deps and nothing
-    // Bedrock-shaped or CLI-shaped (no client, no modelId, no credentials, no
-    // CLI surface) — proving this operation cannot reach the network or spawn
-    // a process even by accident.
     await expect(
-      explainPolicy({ policy: minimalPolicy(), logger }),
+      explainPolicy({ policy: fullPolicy(), logger, surface }),
+    ).resolves.toEqual({
+      grantCount: 2,
+      requireDecisionLog: true,
+      dryRunFirst: true,
+      hasBudgets: true,
+    });
+
+    // Proves the throwing handler was actually reached — without this, the
+    // assertion above would trivially pass for a handler that was never
+    // invoked at all, proving nothing about isolation.
+    expect(invocations).toBeGreaterThan(0);
+  });
+
+  it("calls surface.list() and surface.doctor() exactly once each, and never inspect()/dryRun()", async () => {
+    const { logger } = createLogger();
+    const { surface, calls } = createFakeSurface();
+
+    await explainPolicy({ policy: fullPolicy(), logger, surface });
+
+    expect(calls.filter((call) => call === "list")).toHaveLength(1);
+    expect(calls.filter((call) => call === "doctor")).toHaveLength(1);
+    expect(calls).not.toContain("inspect");
+    expect(calls).not.toContain("dryRun");
+  });
+
+  it("constructs no Bedrock client — the deps bag carries only policy, logger, and the CLI surface", async () => {
+    const { logger } = createLogger();
+    const { surface } = createFakeSurface();
+
+    // The call succeeds with exactly these three deps and nothing
+    // Bedrock-shaped (no client, no modelId, no credentials) — proving this
+    // operation cannot reach the network even by accident.
+    await expect(
+      explainPolicy({ policy: minimalPolicy(), logger, surface }),
     ).resolves.toBeDefined();
   });
 });

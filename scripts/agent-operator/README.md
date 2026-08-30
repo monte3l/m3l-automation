@@ -83,11 +83,9 @@ Every script composes through `Core.runScript` (ADR-0035), so these work uniform
   script-local error, `4` unhandled/unexpected. A non-zero exit always accompanies
   a logged error.
 
-Ctrl-C exits `5` (`INTERRUPTED`). This slice spawns nothing, so that is the
-in-process path only; the CLI-seam slice extends the same classification to an
-aborted tool call by raising `Core.M3LOperationAbortedError` rather than a
-script-local code, keeping ADR-0049's code-based classification consistent
-across both paths.
+Ctrl-C exits `5` (`INTERRUPTED`) on both the in-process and the spawned-tool
+path: an aborted CLI tool call raises `Core.M3LOperationAbortedError`, never a
+script-local code, so ADR-0049's code-based classification stays consistent.
 
 ## Environment (`.env`)
 

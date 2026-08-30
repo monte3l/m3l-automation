@@ -22,25 +22,16 @@ Its tools drive the CLI rather than the AWS SDK directly: `m3l list --json`,
 policy before it runs, and every verdict is written to the append-only decision
 log before the action executes.
 
-**This slice** ships the foundation: the config schema, the committed policy,
-policy loading and runtime resolution, and the deterministic `explain-policy`
-operation. There is no Bedrock client, no agent loop, no child process, and no
-network call anywhere in it — the whole surface is exercisable without AWS.
+**With this slice** the whole offline half is in place: the config schema, the
+committed policy, and policy loading landed first; this one adds the typed
+`m3l` CLI seam and wires `explain-policy`'s fleet snapshot onto it. There is
+still no Bedrock client, no agent loop, and no network call anywhere — every
+CLI call is a locally spawned child process, so the whole surface is
+exercisable without AWS.
 
-Two later slices complete the picture. The **CLI seam** (`lib/cli-process`,
-`lib/cli-surface`, `lib/cli-envelopes`, `lib/model-safety`) lands next and is
-what gives `explain-policy` its `list`/`doctor` snapshot and the agent its
-tools. The **workload** slice then adds the Bedrock tool loop, the policy gate,
-the run ledger, and the decision-log writer. The `health-check` operation is
-declared in the schema from the start but fails fast with
-`ERR_AGENT_OPERATOR_CONFIG` until that slice lands, rather than silently
-succeeding.
-
-Several config parameters here (`cliEntrypoint`, `cliTimeoutMs`,
-`dryRunTimeoutMs`, `maxOutputBytes`, `dryRunAllowlist`, `includeDryRunProbes`)
-are declared and validated now but consumed by the CLI seam slice. They are
-declared up front so the schema — and the `maxIterations` ≤
-`budgets.loopIterations` cross-check that guards it — does not churn twice.
+The `health-check` operation stays declared-but-unimplemented, failing fast
+with `ERR_AGENT_OPERATOR_CONFIG`; the model-driven workload, the gate ordering,
+the decision-log writer, and the run ledger land in the final slice.
 
 Explicitly out of scope: mutations of any kind (the policy grants only
 `inspect`/`dry-run` on fleet scripts, all declared `readOnlyOperations`); a
@@ -108,9 +99,8 @@ No `yes`/`yesSensitive` — this workload never calls `confirmDestructive`.
   performs the `maxIterations` ≤ `budgets.loopIterations` cross-check so a
   ceiling the policy declares cannot be widened from argv.
 - `explain-policy` — the deterministic, no-Bedrock operation: renders grants,
-  operations, budgets, and the `requireDecisionLog`/`dryRunFirst` flags through
-  the injected logger, and returns a plain summary. The CLI-seam slice adds its
-  `list`/`doctor` fleet snapshot.
+  operations, budgets, and the `requireDecisionLog`/`dryRunFirst` flags, and
+  exercises the CLI seam via `list` and `doctor`.
 - `run-agent-operator` — dispatches the two operations over a closed `switch`
   with a `never` exhaustiveness arm.
 
@@ -118,40 +108,139 @@ Non-step helpers live in `src/lib/` (the established location — precedent:
 `scripts/json-etl/src/lib/field-spec.ts`, `scripts/rds-data-sql/src/lib/defaults.ts`):
 
 - `lib/errors` — `M3LAgentOperatorCliError` and the `ERR_AGENT_OPERATOR_*` codes.
-  The class is parameterized by a closed code union rather than split into one
-  subclass per code, because ADR-0049 classifies by `code`, not by class. A
-  `declare readonly code` re-narrow gives a catch-site `switch (error.code)`
-  real exhaustiveness, which the base class's `code: string` would not.
-- `lib/cli-names` — the script-name allowlist, and the branded
-  `AgentOperatorScriptName` it mints. The regex is copied verbatim from
+- `lib/cli-names` — the script-name allowlist. The regex is copied verbatim from
   `packages/m3l-cli/src/scaffold/manifest.ts` (it cannot be imported — ADR-0029
   allows a script exactly one dependency), with a drift-guard test that reads
   that file as text. A length cap of 64 is added on top; the CLI's own regex
-  imposes none, and the length is checked **before** the regex. The brand is
-  what stops an unvalidated, model-proposed string reaching an argv array once
-  the CLI seam lands.
+  imposes none.
+- `lib/cli-envelopes` — local mirror types and parse-don't-trust functions
+  returning `{ ok: true, value } | { ok: false, reason }` over a closed reason
+  vocabulary.
+- `lib/model-safety` — the outbound sanitizer and the per-shape projections.
+- `lib/cli-process` — the **only** module importing `node:child_process`.
+- `lib/cli-surface` — the typed `m3l` adapter: argv table, exit-code policy,
+  error minting.
 
-The CLI-seam slice adds `lib/cli-envelopes`, `lib/model-safety`,
-`lib/cli-process`, and `lib/cli-surface` alongside these.
+### The CLI seam
+
+The executable entrypoint is `packages/m3l-cli/bin/m3l.mjs`, spawned as
+`process.execPath` with an argv array. `packages/m3l-cli/dist/main.js` is
+import-inert (it exports `runCli` and runs nothing), so it is not a valid
+spawn target.
+
+| Method    | argv after entrypoint                          | Acceptable exit |
+| --------- | ---------------------------------------------- | --------------- |
+| `list`    | `["list", "--json"]`                           | `{0}`           |
+| `doctor`  | `["doctor", "--json"]`                         | `{0, 1}`        |
+| `inspect` | `["inspect", <name>, "--json"]`                | `{0}`           |
+| `dryRun`  | `["run", <name>, "--json", "--", "--dry-run"]` | any             |
+
+`doctor` accepting exit `1` is the most important asymmetry here: **a failing
+health check is the answer, not an error.** `dryRun` accepts any exit code
+because the `m3l.run.result` envelope carries `exitCode` and `outcome` itself.
+
+The `dryRun` ordering is load-bearing and verified against
+`packages/m3l-cli/src/main.ts`: `splitAtFirstDoubleDash` runs first, so `--json`
+must precede the bare `--` for `partitionJsonFlag` to strip it, and `--dry-run`
+must follow it to be forwarded to the child script.
+
+`doctor --json`, `list --json`, and `inspect --json` each emit a **bare JSON
+array with no `schemaVersion`**. Only the run envelope carries
+`kind: "m3l.run.result"` and `schemaVersion: 1`, and only its parser fails
+closed on a version bump. `blocking` is not a CLI field — it is derived
+script-side as `checks.some((c) => c.status === "fail")`.
+
+An aborted call raises `Core.M3LOperationAbortedError`, never a script-local
+code: ADR-0049 classifies by code, and `deriveCommandOutcome` maps
+`ERR_OPERATION_ABORTED` to exit `5`. A local code would make Ctrl-C exit `1` on
+the spawn path and `5` in-process.
+
+## Model-facing safety boundary
+
+Everything the model can read passes through `lib/model-safety`.
+
+**Argument-injection defence, in order:**
+
+1. `shell: false` plus an argv array — no command line exists to inject into.
+2. The anchored, ReDoS-safe name regex — a name cannot begin with `-` and admits
+   no shell metacharacter.
+3. Membership in the `m3l list` set, and for probes in `dryRunAllowlist`.
+4. The V6 policy gate.
+5. Fixed argv positions built from a closed `switch`.
+
+Net effect: **the model supplies exactly one value across the whole tool
+surface — a script name.** Every future tool should have to argue against that
+sentence.
+
+`--dry-run` is a per-script convention (all 17 scripts opt in via
+`process.argv.includes("--dry-run")` in their `main.ts`), **not** a CLI
+contract. Nothing enforces it, which is why the dry-run tool carries a declared
+allowlist rather than trusting the convention.
+
+**Sanitization order** in `sanitizeForModel`: `Core.redactSensitiveLogText`
+**first**, so truncation cannot slide a secret out of the redactor's matching
+window; then the workspace-root path is replaced with `<workspace>`; then C0,
+`U+007F`, C1, and `U+2028 U+2029 U+202D U+202E U+2066`–`U+2069` are escaped as
+literal `\uXXXX` text; then the string is capped **by code point** using
+`for...of` — never `.slice()`, which bisects a surrogate pair.
+
+**Per-field policy, and why it is asymmetric:**
+
+| Field                     | Treatment                                 | Why                                                  |
+| ------------------------- | ----------------------------------------- | ---------------------------------------------------- |
+| doctor `detail`           | **kept**, sanitized                       | It is the diagnostic value the check exists to carry |
+| list `loadError`          | **dropped** → `configLoadFailed: boolean` | The model needs the fact, not the text               |
+| envelope `reportPath`     | **dropped** → `reportAvailable: boolean`  | A host path is not the model's business              |
+| descriptor `defaultValue` | **dropped** when `secret === true`        | A secret's default must never be rendered unmasked   |
+
+That asymmetry is deliberate; do not "fix" one side of it.
+
+Tool results are emitted as `{ type: "json", json: … }` blocks, so untrusted
+text only ever appears as a JSON leaf value — never concatenated into prose the
+model reads as instruction.
+
+**Honest limits.** Three, stated plainly rather than papered over:
+
+1. **Escaping control characters does not neutralize instruction-shaped
+   English** inside a `detail`. The mitigation is structural: untrusted text
+   appears only as JSON leaves, and the policy gate — not the model —
+   authorizes every action. This is not injection-proof and does not claim
+   to be.
+2. **`redactSensitiveLogText` is a denylist, not a parser.** Its own TSDoc
+   says so. It catches `key=value`-shaped secrets, but a bare AWS key pair
+   (`AKIA…` / a 40-char secret), a JWT, and a `postgres://user:pass@host` URL
+   all pass through unredacted. `doctor`'s `detail` is the one field where
+   un-allowlisted upstream text crosses to the model — it is kept because it
+   is the diagnostic value the check exists to carry, but treat it as
+   best-effort, not as a guarantee. `inspect`'s known `secret: true` parameter
+   names are threaded in as an explicit `secrets` list to widen coverage where
+   the script does know them.
+3. **`sensitiveTargets` matches exactly, never by substring.**
+   `matchesSensitiveList` (`core/prompt/M3LDestructiveGate.ts:208`) is
+   `list.includes(value)`, so the committed policy's
+   `profiles: ["prod", "production"]` grades a profile named exactly `prod`
+   but **not** one named `acme-prod-admin`. A deployment whose profile naming
+   differs must enumerate its own names in `data/input/agent-policy.json`.
+   This does not bite the read-only health-check workload — grading only
+   changes the verdict for mutations — but it will matter at V9.
 
 ## Error codes
 
-`M3LAgentOperatorErrorCode` declares the whole family up front so the union does
-not churn across slices. The right-hand column marks which are reachable today.
+| Code                                | Meaning                                                                    |
+| ----------------------------------- | -------------------------------------------------------------------------- |
+| `ERR_AGENT_OPERATOR_CONFIG`         | A required parameter is missing or a cross-check failed                    |
+| `ERR_AGENT_OPERATOR_CLI_ENTRYPOINT` | The CLI entrypoint could not be derived and was not supplied               |
+| `ERR_AGENT_OPERATOR_CLI_SPAWN`      | Spawn failed, timed out, was signalled, or breached the output byte cap    |
+| `ERR_AGENT_OPERATOR_CLI_OUTPUT`     | An unacceptable exit code, or a CLI payload that failed to parse           |
+| `ERR_AGENT_OPERATOR_SCRIPT_NAME`    | A script name failed the allowlist, or is absent from `dryRunAllowlist`    |
+| `ERR_AGENT_OPERATOR_POLICY`         | The policy file is missing, unreadable, malformed, or structurally invalid |
 
-| Code                                | Meaning                                                                    | Reachable      |
-| ----------------------------------- | -------------------------------------------------------------------------- | -------------- |
-| `ERR_AGENT_OPERATOR_CONFIG`         | A required parameter is missing or a cross-check failed                    | yes            |
-| `ERR_AGENT_OPERATOR_POLICY`         | The policy file is missing, unreadable, malformed, or structurally invalid | yes            |
-| `ERR_AGENT_OPERATOR_SCRIPT_NAME`    | A script name failed the allowlist, or is absent from `dryRunAllowlist`    | yes            |
-| `ERR_AGENT_OPERATOR_CLI_ENTRYPOINT` | The CLI entrypoint could not be derived and was not supplied               | yes            |
-| `ERR_AGENT_OPERATOR_CLI_SPAWN`      | Spawn failed, timed out, was signalled, or breached the output byte cap    | CLI-seam slice |
-| `ERR_AGENT_OPERATOR_CLI_OUTPUT`     | An unacceptable exit code, or a CLI payload that failed to parse           | CLI-seam slice |
+A caller-driven abort raises `Core.M3LOperationAbortedError`
+(`ERR_OPERATION_ABORTED`), not a code from this family — see § The CLI seam.
 
-No thrown message ever carries a `SyntaxError.message` from a failed parse (it
-embeds a snippet of the file — the F10/W5 rule) or a model-supplied script name.
-The CLI-seam slice extends that rule to spawn `error.message` (an `ENOENT`
-message embeds the resolved path) and raw CLI stdout.
+No thrown message ever carries a spawn `error.message` (an `ENOENT` message
+embeds the resolved path), a `SyntaxError.message` from a failed parse (it
+embeds a snippet of the file), raw CLI stdout, or a model-supplied script name.
 
 ## Inputs and outputs
 
@@ -163,12 +252,11 @@ rather than a silent fallback. It declares `version: 1`, 17 script grants, a
 `dryRunFirst: true`. Every grant declares `readOnlyOperations`, including the
 `agent-operator` grant covering its own run.
 
-**Writes.** In this slice, structured log output only — nothing is persisted.
-The workload slice adds a JSON artifact under `M3L_OUTPUT_DIR` via
-`M3LJSONFileExporter` and JSONL decision records under `data/agent-log/`
-(gitignored). Once the CLI seam lands, the `m3l` CLI's discovery cache lands in
-`data/cache/` on every spawned call; it is derived machine state and is
-gitignored ahead of that slice so a stray cache never reaches a diff.
+**Writes.** In this slice, structured log output only. The workload slice adds a
+JSON artifact under `M3L_OUTPUT_DIR` via `M3LJSONFileExporter` and JSONL decision
+records under `data/agent-log/` (gitignored). The `m3l` CLI's discovery cache
+lands in `data/cache/` on every spawned call; it is derived machine state and is
+gitignored.
 
 ## Command module
 

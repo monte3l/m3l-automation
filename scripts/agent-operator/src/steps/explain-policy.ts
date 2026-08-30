@@ -5,14 +5,22 @@
  * plain summary.
  *
  * This operation never constructs a Bedrock client, spawns a process
- * directly, or touches the network by itself. It has no dependency on the
- * `m3l` CLI seam in this slice — that wiring (via `AgentCliSurface`) lands
- * in the follow-up PR alongside the rest of the CLI-spawning code.
+ * directly, or touches the network by itself — its only external contact is
+ * the injected {@link AgentCliSurface}, whose `list`/`doctor` methods are
+ * exercised here so the CLI seam stays a real, tested code path rather than
+ * only a test double. `inspect`/`dryRun` both require a script name this
+ * operation never has, so they are never called.
  *
  * @packageDocumentation
  */
 
 import type { Core } from "@m3l-automation/m3l-common";
+
+import type { AgentCliSurface } from "../lib/cli-surface.js";
+import type {
+  AgentOperatorProjectedDoctorReport,
+  AgentOperatorProjectedListRow,
+} from "../lib/model-safety.js";
 
 /**
  * The plain summary {@link explainPolicy} returns, mirroring the policy
@@ -47,6 +55,8 @@ export interface ExplainPolicyDeps {
   readonly policy: Core.M3LAgentPolicy;
   /** The injected logger every rendered line is written through. */
   readonly logger: Core.M3LLogger;
+  /** The typed CLI adapter; only `list`/`doctor` are called here. */
+  readonly surface: AgentCliSurface;
 }
 
 /** Renders one script grant's name, operations, and read-only cross-check. */
@@ -87,6 +97,26 @@ function renderFlags(
   });
 }
 
+/**
+ * Exercises the CLI seam: calls `surface.list()` and `surface.doctor()`
+ * exactly once each and logs a short snapshot of each result. Never calls
+ * `inspect()`/`dryRun()` — both need a script name this operation has none
+ * of.
+ */
+async function renderCliSnapshot(
+  logger: Core.M3LLogger,
+  surface: AgentCliSurface,
+): Promise<void> {
+  const rows: readonly AgentOperatorProjectedListRow[] = await surface.list();
+  logger.info("CLI scripts available", { scriptCount: rows.length });
+
+  const report: AgentOperatorProjectedDoctorReport = await surface.doctor();
+  logger.info("CLI doctor snapshot", {
+    blocking: report.blocking,
+    counts: report.counts,
+  });
+}
+
 /** Projects `policy` into the plain summary {@link explainPolicy} returns. */
 function buildSummary(
   policy: Core.M3LAgentPolicy,
@@ -101,30 +131,42 @@ function buildSummary(
 
 /**
  * Renders `deps.policy`'s grants, operations, budgets, and discipline flags
- * through `deps.logger` and returns a plain summary of the policy.
- * Deterministic and offline: it never constructs a Bedrock client, spawns a
- * process, or touches the network directly.
+ * through `deps.logger`, exercises `deps.surface.list()`/`.doctor()` exactly
+ * once each, and returns a plain summary of the policy. Deterministic and
+ * offline: it never constructs a Bedrock client, spawns a process, or
+ * touches the network directly.
  *
- * @param deps - The validated policy and the injected logger.
+ * @param deps - The validated policy, the injected logger, and the typed CLI
+ *   surface.
  * @returns The rendered policy's summary.
  * @example
  * ```ts
  * import { Core } from "@m3l-automation/m3l-common";
  * import { explainPolicy } from "./explain-policy.js";
+ * import { createAgentCliSurface } from "../lib/cli-surface.js";
  *
  * const policy = Core.validateAgentPolicy({
  *   version: 1,
  *   scripts: [{ script: "s3-report", allOperations: true }],
  * });
  * const logger = new Core.M3LLogger([new Core.M3LConsoleLoggerHandler()]);
+ * const surface = createAgentCliSurface({
+ *   entrypoint: "/repo/packages/m3l-cli/bin/m3l.mjs",
+ *   cwd: "/repo",
+ *   nodeExecPath: process.execPath,
+ *   cliTimeoutMs: 30_000,
+ *   dryRunTimeoutMs: 120_000,
+ *   maxOutputBytes: 1_048_576,
+ *   dryRunAllowlist: new Set(),
+ * });
  *
- * const summary = await explainPolicy({ policy, logger });
+ * const summary = await explainPolicy({ policy, logger, surface });
  * ```
  */
-export function explainPolicy(
+export async function explainPolicy(
   deps: ExplainPolicyDeps,
 ): Promise<AgentOperatorExplainPolicySummary> {
-  const { policy, logger } = deps;
+  const { policy, logger, surface } = deps;
 
   logger.header("Agent policy");
   for (const grant of policy.scripts) {
@@ -132,6 +174,7 @@ export function explainPolicy(
   }
   renderBudgets(logger, policy.budgets);
   renderFlags(logger, policy);
+  await renderCliSnapshot(logger, surface);
 
-  return Promise.resolve(buildSummary(policy));
+  return buildSummary(policy);
 }
