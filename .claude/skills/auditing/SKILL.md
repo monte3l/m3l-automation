@@ -17,7 +17,9 @@ description: >-
 Audit a topic in the `m3l-automation` codebase by fanning out parallel read-only
 Explore agents, aggregating their findings, and then producing a structured plan.
 **No code, config, or test files are written during this skill** — it ends with an
-approved plan in plan mode.
+approved plan in plan mode. Findings travel entirely through structured return
+values, never the filesystem, so this skill is safe to invoke even when plan
+mode is already active.
 
 **This skill must only run in the main (hub) agent, never inside a subagent.**
 Step 5 calls `EnterPlanMode`, which is only available to the hub. If you find
@@ -39,12 +41,6 @@ becomes one Explore agent brief in the next step. Good facets are orthogonal and
 independently checkable (e.g. for "CI pipeline": step ordering, cache config,
 gate thresholds, secret handling, trigger conditions).
 
-Derive a short kebab-case topic slug (e.g. `ci-pipeline`) and a run directory
-under the session scratchpad: `<session-scratchpad-dir>/audit-<topic-slug>/`.
-Every agent in Step 2 writes into this directory — it is what keeps a
-thorough agent's full findings out of its return payload (see below) while
-still being available to you in full during aggregation.
-
 ### 2 — Fan out via the `audit-fanout` workflow
 
 Invoke the **`Workflow` tool** with the named workflow `audit-fanout`
@@ -53,7 +49,6 @@ Invoke the **`Workflow` tool** with the named workflow `audit-fanout`
 ```json
 {
   "topic": "<the audit target>",
-  "runDir": "<run-dir from Step 1>",
   "facets": [{ "name": "...", "slug": "...", "brief": "..." }]
 }
 ```
@@ -67,18 +62,22 @@ extra user confirmation is needed.
 
 The workflow owns the mechanical slice end-to-end:
 
-- **Find:** one read-only Explore agent per facet writes a full report in the
-  fixed format below to `<run-dir>/<facet-slug>.md` and returns a compact
-  digest only (facet, counts, one entry per GAP/INCONSISTENCY) — keeping both
-  the agents' and your context budgets intact.
+- **Find:** one read-only Explore agent per facet returns a structured
+  payload with two parts — `reportMarkdown` (the full report in the fixed
+  format below, capped at ~8000 characters) and a compact digest (facet,
+  counts, one entry per GAP/INCONSISTENCY). Explore holds no `Write`/`Edit`
+  tool and the repo's read-only Bash guard blocks every shell write route, so
+  the report travels only in the return value — never a scratchpad file.
 - **Verify:** each GAP/INCONSISTENCY finding gets an independent adversarial
   refute agent (the security-reviewer refute-mode pattern) that returns
   `confirmed` only when a genuine refutation attempt fails.
-- **Return:** `{ confirmed, refuted, unverified, facets }` — findings past the
-  workflow's verify budget arrive in `unverified` for you to check manually
-  in Step 3.
+- **Return:** `{ confirmed, refuted, unverified, facets }`, where each
+  `facets[]` entry carries `{ facet, counts, reportMarkdown }` — findings past
+  the workflow's verify budget arrive in `unverified` for you to check
+  manually in Step 3.
 
-The fixed report format every finder uses verbatim:
+The fixed report format every finder uses verbatim, as the value of
+`reportMarkdown`:
 
 ```
 ## Findings: <facet name>
@@ -89,23 +88,20 @@ The fixed report format every finder uses verbatim:
 
 **Fallback — Workflow tool unavailable in the session:** dispatch the fan-out
 manually instead: one `subagent_type: "Explore"` agent per facet, all in a
-single message, each given the facet brief, the exact scratchpad path, the
-fixed report format above, an instruction to read relevant files in full, the
-mark-EXISTING-only-when-confirmed rule, and the compact-digest return rule.
-The adversarial refute pass is then skipped — every finding lands in Step 3
-for your own verification, which is the backstop either way.
-
-Do not write any files yourself in this step; the agents write their own
-scratchpad files.
+single message, each given the facet brief, the fixed report format above, an
+instruction to read relevant files in full, the mark-EXISTING-only-when-
+confirmed rule, and an instruction to return the full report **inline in its
+response** — never tell a read-only Explore agent to write a scratchpad file;
+it holds no write tool and the repo's read-only Bash guard blocks every shell
+write route regardless. The adversarial refute pass is then skipped — every
+finding lands in Step 3 for your own verification, which is the backstop
+either way.
 
 ### 3 — Aggregate and verify (hub judgment)
 
-Read every scratchpad file in the run directory **in full** — digests and
-workflow verdicts are for triage, not final judgment; an item's exact wording
-and the file/line it cites matter for the plan. If a facet's report file is
-missing (a finder can fail to write it even after returning a digest), its
-digest items still arrived — treat them like `unverified` and check each one
-yourself. Then:
+Read every facet's `reportMarkdown` from the workflow result **in full** —
+digests and workflow verdicts are for triage, not final judgment; an item's
+exact wording and the file/line it cites matter for the plan. Then:
 
 1. Personally verify every `unverified` item (findings past the workflow's
    verify budget, refuters that died mid-run, or the whole set on the manual

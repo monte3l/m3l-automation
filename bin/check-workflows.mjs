@@ -11,7 +11,7 @@
  * documentation; this one guards Claude Code dynamic-workflow scripts. The
  * two are deliberately separate checks; never merge them as "redundant."
  *
- * Canonical rules (R1–R7), documented in the "Enforcement" section of
+ * Canonical rules (R1–R8), documented in the "Enforcement" section of
  * docs/contributing/model-selection.md:
  *   R1 every `workflow-script` matrix row names an existing script file;
  *   R2 every script has exactly one file-level matrix row;
@@ -24,17 +24,30 @@
  *   R6 `model:`/`effort:` values must be string literals — a dynamic value
  *      cannot be statically audited;
  *   R7 every script declares `// max-agents: <N>` near the top, with
- *      1 <= N <= MAX_WORKFLOW_AGENTS.
+ *      1 <= N <= MAX_WORKFLOW_AGENTS;
+ *   R8 every `agentType:` string literal names a defined `.claude/agents/*.md`
+ *      spoke (R8a), and when that spoke is structurally read-only
+ *      (bin/lib/agent-roster.mjs's `readOnlyAgentNames()`), the script must
+ *      not carry a write-instruction phrase for it (R8b — see Known
+ *      limitations; this is the rule that would have caught
+ *      audit-fanout.js instructing a read-only Explore spoke to write a
+ *      scratchpad file, docs/logs/2026-07-16-audit-fanout-workflow.md).
  *
  * Known limitations (deliberately regex-based — no JS-parser dependency):
- * - the scan sees the whole file, so the tokens `model:` / `effort:` must not
- *   appear in a workflow script's prose, comments, or schema property names;
- *   rephrase instead.
+ * - the scan sees the whole file, so the tokens `model:` / `effort:` /
+ *   `agentType:` must not appear in a workflow script's prose, comments, or
+ *   schema property names; rephrase instead.
  * - R3/R4 check literal presence, not call-site association: a step row's
  *   model/effort/label each only need to appear somewhere in the file, so two
  *   `agent()` calls with swapped model-to-label pairings still pass. Binding a
  *   literal to its specific call would need a real JS parser; PR review
  *   remains the guard for that association.
+ * - R8b is prose-matching over the whole file, not bound to the specific
+ *   `agentType:` call site — a false positive is possible if unrelated prose
+ *   happens to match a write-instruction pattern, and a differently-worded
+ *   write instruction can evade it. It is a heuristic safety net, not a
+ *   guarantee; R8a (the literal-names-a-real-agent check) is the load-bearing
+ *   half of R8.
  *
  * Exit codes:
  *   0  Surface matches the matrix (trivially valid when no scripts exist).
@@ -50,6 +63,35 @@ import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { isValidEffort, isValidWorkflowModel } from "./lib/claude-models.mjs";
 import { parseJsonFlag, createReporter, repoRoot } from "./lib/report.mjs";
+import { frontmatter, readOnlyAgentNames, walk } from "./lib/agent-roster.mjs";
+
+/**
+ * R8b's write-instruction phrase list — a small, explicit denylist (see the
+ * module header's "Known limitations" entry for why this stays a heuristic
+ * rather than a call-site-bound check).
+ */
+const WRITE_INSTRUCTION_PATTERNS = [
+  /write your .*? to .*?\.md/i,
+  /to exactly this file/i,
+];
+
+/**
+ * Every agent name defined under `.claude/agents/*.md` — the R8a "does this
+ * agentType literal name a real spoke" universe. Reuses the same
+ * `walk`/`frontmatter` primitives `readOnlyAgentNames()` is built from
+ * (bin/lib/agent-roster.mjs), so the two can't drift apart.
+ *
+ * @param {string} agentsDir Absolute path to .claude/agents/
+ * @returns {Set<string>}
+ */
+export function definedAgentNames(agentsDir) {
+  const names = new Set();
+  for (const file of walk(agentsDir, (n) => n.endsWith(".md"))) {
+    const fm = frontmatter(file);
+    if (fm !== null && fm.name !== undefined) names.add(fm.name);
+  }
+  return names;
+}
 
 const root = repoRoot(import.meta.url);
 
@@ -160,9 +202,12 @@ export function parseWorkflowScriptRows(docText) {
  *   `.claude/workflows/*.js|*.mjs` file (empty Map when the directory is
  *   absent — the surface is then trivially valid, but R1 still runs).
  * @param {WorkflowScriptRow[]} rows
+ * @param {{ definedNames: Set<string>, readOnlyNames: Set<string> } | null} [agentRoster]
+ *   R8's agent-name universe. `null` (the default) skips R8 entirely — used
+ *   by callers (unit tests) that don't need the agent-roster dependency.
  * @returns {string[]}
  */
-export function validateWorkflowSurface(scripts, rows) {
+export function validateWorkflowSurface(scripts, rows, agentRoster = null) {
   const errors = [];
 
   for (const row of rows) {
@@ -272,6 +317,30 @@ export function validateWorkflowSurface(scripts, rows) {
           `outside the allowed 1..${MAX_WORKFLOW_AGENTS} (R7 guardrail).`,
       );
     }
+
+    if (agentRoster !== null) {
+      const { literals: agentTypes } = extractPropLiterals(source, "agentType");
+      for (const literal of new Set(agentTypes)) {
+        if (!agentRoster.definedNames.has(literal)) {
+          errors.push(
+            `.claude/workflows/${file} dispatches \`agentType: "${literal}"\`, ` +
+              `which names no defined agent under .claude/agents/ (R8a).`,
+          );
+          continue;
+        }
+        if (agentRoster.readOnlyNames.has(literal)) {
+          const hit = WRITE_INSTRUCTION_PATTERNS.find((p) => p.test(source));
+          if (hit !== undefined) {
+            errors.push(
+              `.claude/workflows/${file} dispatches read-only agent ` +
+                `\`agentType: "${literal}"\` alongside a write-instruction ` +
+                `phrase matching ${hit} — a read-only spoke cannot write a ` +
+                `file (R8b).`,
+            );
+          }
+        }
+      }
+    }
   }
 
   return errors;
@@ -296,7 +365,12 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
         }
       }
     }
-    errors = validateWorkflowSurface(scripts, rows);
+    const agentsDir = join(root, ".claude", "agents");
+    const agentRoster = {
+      definedNames: definedAgentNames(agentsDir),
+      readOnlyNames: readOnlyAgentNames(agentsDir),
+    };
+    errors = validateWorkflowSurface(scripts, rows, agentRoster);
   } catch (error) {
     reporter.error(error instanceof Error ? error.message : String(error));
     reporter.finish();
