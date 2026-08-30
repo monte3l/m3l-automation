@@ -1,8 +1,8 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import type { M3LScriptDetail, M3LScriptSummary } from "../src/api/scripts.js";
-import type { M3LRunRecord } from "../src/api/runs.js";
+import type { M3LRunHandle, M3LRunRecord } from "../src/api/runs.js";
 import { App } from "../src/App.js";
 
 /**
@@ -11,10 +11,10 @@ import { App } from "../src/App.js";
  * rather than constructing a real `Response`, since jsdom's `Response` body
  * handling isn't exercised by these tests).
  */
-function jsonResponse(data: unknown): Response {
+function jsonResponse(data: unknown, status = 200): Response {
   return {
     ok: true,
-    status: 200,
+    status,
     statusText: "OK",
     json: () => Promise.resolve(data),
   } as unknown as Response;
@@ -55,9 +55,15 @@ function mockConsoleFetch(routes: {
   readonly scriptDetail?: M3LScriptDetail;
   readonly runs?: readonly M3LRunRecord[];
   readonly runDetail?: M3LRunRecord;
+  /** Handle returned by a `POST /api/v1/runs` launch call, if provided. */
+  readonly launchHandle?: M3LRunHandle;
 }): void {
-  vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+  vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
     const url = requestUrl(input);
+    const method = init?.method ?? "GET";
+    if (routes.launchHandle && url === "/api/v1/runs" && method === "POST") {
+      return Promise.resolve(jsonResponse(routes.launchHandle, 201));
+    }
     if (
       routes.scriptDetail &&
       url === `/api/v1/scripts/${encodeURIComponent(routes.scriptDetail.name)}`
@@ -100,6 +106,31 @@ const DEMO_SCRIPT_DETAIL: M3LScriptDetail = {
     },
   ],
   operations: [],
+};
+
+const LAUNCHED_RUN_HANDLE: M3LRunHandle = {
+  id: "run-999",
+  scriptName: "demo-script",
+  status: "queued",
+  dryRun: true,
+  executionMode: "spawn",
+};
+
+const LAUNCHED_RUN_RECORD: M3LRunRecord = {
+  id: "run-999",
+  script: "demo-script",
+  status: "queued",
+  dryRun: true,
+  executionMode: "spawn",
+  parameters: {},
+  operator: "boot-operator",
+  correlationId: "corr-2",
+  queuedAtMs: 1_700_000_003_000,
+  startedAtMs: null,
+  endedAtMs: null,
+  outcome: null,
+  exitCode: null,
+  failureMessage: null,
 };
 
 const DEMO_RUN: M3LRunRecord = {
@@ -256,5 +287,132 @@ describe("App route switching", () => {
     expect(window.location.hash).toBe("#/scripts");
     expect(await screen.findByTestId("script-list")).toBeInTheDocument();
     expect(screen.queryByTestId("script-detail")).not.toBeInTheDocument();
+  });
+
+  // This wiring has been deleted-as-untested once before in this
+  // programme (the analogous onSelectScript/onSelectRun -> navigate wiring
+  // above) — without an onLaunched -> navigate hookup, a successful launch
+  // would leave the operator stranded on the form with no way to reach the
+  // run it just created.
+  test("a successful launch from the script detail route navigates to #/runs/:id", async () => {
+    window.location.hash = "#/scripts/demo-script";
+    mockConsoleFetch({
+      scriptDetail: DEMO_SCRIPT_DETAIL,
+      launchHandle: LAUNCHED_RUN_HANDLE,
+      runDetail: LAUNCHED_RUN_RECORD,
+    });
+
+    render(<App />);
+
+    await screen.findByTestId("script-detail");
+    const launchButton = await screen.findByRole("button", {
+      name: /launch/i,
+    });
+    fireEvent.click(launchButton);
+
+    await vi.waitFor(() => {
+      expect(window.location.hash).toBe("#/runs/run-999");
+    });
+    const detail = await screen.findByTestId("run-detail");
+    expect(detail.textContent).toContain("run-999");
+  });
+
+  // X10d CRITICAL security finding, reproduced empirically: renderRoute puts
+  // no `key` on <ScriptDetail>, so navigating #/scripts/alpha ->
+  // #/scripts/beta reuses the same mounted ParameterForm instance instead of
+  // remounting it. A stale `confirmed: true` (and any typed parameter
+  // value) from the FIRST script then rides along into the launch request
+  // for the SECOND script, which the operator never explicitly confirmed.
+  test("navigating from one script's detail to a different script's resets the launch form instead of carrying stale confirmed/values forward", async () => {
+    const alphaDetail: M3LScriptDetail = {
+      name: "alpha-script",
+      description: "Alpha script description",
+      hasCommandModule: false,
+      executionMode: "spawn",
+      parameters: [
+        {
+          name: "region",
+          aliases: [],
+          type: "STRING",
+          required: false,
+          defaultValue: null,
+          description: "",
+          secret: false,
+          operations: [],
+        },
+      ],
+      operations: [],
+    };
+    const betaDetail: M3LScriptDetail = {
+      ...alphaDetail,
+      name: "beta-script",
+      description: "Beta script description",
+    };
+    const launchRequests: Array<Record<string, unknown>> = [];
+
+    window.location.hash = "#/scripts/alpha-script";
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url = requestUrl(input);
+      const method = init?.method ?? "GET";
+      if (url === "/api/v1/scripts/alpha-script") {
+        return Promise.resolve(jsonResponse(alphaDetail));
+      }
+      if (url === "/api/v1/scripts/beta-script") {
+        return Promise.resolve(jsonResponse(betaDetail));
+      }
+      if (url === "/api/v1/runs" && method === "POST") {
+        const bodyText = init?.body;
+        launchRequests.push(
+          typeof bodyText === "string"
+            ? (JSON.parse(bodyText) as Record<string, unknown>)
+            : {},
+        );
+        return Promise.resolve(
+          jsonResponse(
+            {
+              id: "run-launched",
+              scriptName: "beta-script",
+              status: "queued",
+              dryRun: true,
+              executionMode: "spawn",
+            },
+            201,
+          ),
+        );
+      }
+      return Promise.resolve(UNREACHABLE_RESPONSE);
+    });
+
+    render(<App />);
+    await screen.findByText("Alpha script description");
+
+    fireEvent.change(screen.getByLabelText("region"), {
+      target: { value: "leaked-value" },
+    });
+    fireEvent.click(screen.getByLabelText("Dry run"));
+    fireEvent.click(screen.getByLabelText("Confirm real run"));
+    expect(screen.getByRole("button", { name: /launch/i })).not.toBeDisabled();
+
+    window.location.hash = "#/scripts/beta-script";
+    window.dispatchEvent(new Event("hashchange"));
+    await screen.findByText("Beta script description");
+
+    expect(screen.getByLabelText("Dry run")).toBeChecked();
+    expect(screen.queryByLabelText("Confirm real run")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /launch/i }));
+
+    await vi.waitFor(() => {
+      expect(launchRequests).toHaveLength(1);
+    });
+    const [request] = launchRequests;
+    expect(request?.["scriptName"]).toBe("beta-script");
+    expect(request?.["dryRun"]).toBe(true);
+    expect(request?.["confirmed"]).toBe(false);
+    expect(
+      (request?.["parameters"] as Record<string, unknown> | undefined)?.[
+        "region"
+      ],
+    ).not.toBe("leaked-value");
   });
 });

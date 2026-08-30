@@ -242,6 +242,27 @@ describe("fetchConsoleJson", () => {
     expect(result.error.correlationId).toBeUndefined();
   });
 
+  test("names the status in the fallback message when statusText is empty (HTTP/2 responses and many reverse proxies omit it)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 502,
+        statusText: "",
+        json: () => Promise.reject(new Error("not json")),
+      }),
+    );
+
+    const result = await fetchConsoleJson<SamplePayload>("/upstream-fail");
+    if (result.ok) {
+      throw new Error("expected a failure result");
+    }
+    expect(result.error.kind).toBe("http");
+    expect(result.error.status).toBe(502);
+    expect(result.error.message.length).toBeGreaterThan(0);
+    expect(result.error.message).toContain("502");
+  });
+
   test("returns a malformed-body error when a 2xx body fails to parse", async () => {
     vi.stubGlobal(
       "fetch",
@@ -266,5 +287,91 @@ describe("fetchConsoleJson", () => {
     await expect(
       fetchConsoleJson<SamplePayload>("/widgets/1"),
     ).resolves.toMatchObject({ ok: false });
+  });
+});
+
+describe("fetchConsoleJson request options", () => {
+  test("keeps the default GET path unchanged when no options are passed", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ some: "payload" }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await fetchConsoleJson<SamplePayload>("/widgets/1");
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(init.method).toBeUndefined();
+    expect(init.body).toBeUndefined();
+    expect(
+      (init.headers as Record<string, string>)["content-type"],
+    ).toBeUndefined();
+  });
+
+  test("a POST with a JSON body stringifies it and sets content-type", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ some: "payload" }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await fetchConsoleJson<SamplePayload>("/widgets", {
+      method: "POST",
+      body: { scriptName: "json-etl" },
+    });
+
+    const [path, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(path).toBe("/widgets");
+    expect(init.method).toBe("POST");
+    expect(init.body).toBe(JSON.stringify({ scriptName: "json-etl" }));
+    expect((init.headers as Record<string, string>)["content-type"]).toBe(
+      "application/json",
+    );
+  });
+
+  test("a correlationId sets the x-correlation-id header with the exact lowercase spelling", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ some: "payload" }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await fetchConsoleJson<SamplePayload>("/widgets/1", {
+      correlationId: "corr-42",
+    });
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const headers = init.headers as Record<string, string>;
+    expect(headers["x-correlation-id"]).toBe("corr-42");
+    expect(headers["m3l-correlation-id"]).toBeUndefined();
+  });
+
+  test("an unserializable body (a circular object) resolves ok:false rather than throwing", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const circular: Record<string, unknown> = {};
+    circular["self"] = circular;
+
+    const result = await fetchConsoleJson<SamplePayload>("/widgets", {
+      method: "POST",
+      body: circular,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test("an unserializable body (a BigInt) resolves ok:false rather than throwing", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await fetchConsoleJson<SamplePayload>("/widgets", {
+      method: "POST",
+      body: { amount: 10n },
+    });
+
+    expect(result.ok).toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

@@ -406,10 +406,19 @@ Four run events, each carrying a monotonically increasing `id:`:
 Two control frames carry **no `id:` line**, because neither names a published
 event and neither should ever become a client's resume point:
 
-| Event        | Payload                | Meaning                                    |
-| ------------ | ---------------------- | ------------------------------------------ |
-| `stream.gap` | `{ oldestRetainedId }` | Requested id fell off retention; re-sync.  |
-| `stream.end` | `{ reason }`           | The stream is over. See the reasons below. |
+| Event        | Payload      | Meaning                                    |
+| ------------ | ------------ | ------------------------------------------ |
+| `stream.gap` | see below    | Events were lost; re-sync.                 |
+| `stream.end` | `{ reason }` | The stream is over. See the reasons below. |
+
+**Do not read a field off a `stream.gap` payload.** The frame is emitted
+from two different places with two different bodies: the retention gap
+sends `{ oldestRetainedId }` (`http/routes/run-stream.ts`) and the
+backpressure gap sends `{ lastEventId }` (`http/stream-writer.ts`). Both
+mean the same one thing to a client, which is the only thing a client
+should act on: events were lost, so re-read `GET /api/v1/runs/:id` for
+authoritative status and keep streaming. A client that branches on the
+payload shape works against one emitter and silently misses the other.
 
 `stream.end`'s `reason` is `"completed"` when the run itself ended, and
 `"draining"` when the server is shutting down with the watcher still attached.

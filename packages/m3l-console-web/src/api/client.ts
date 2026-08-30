@@ -110,8 +110,77 @@ async function buildHttpError(
   }
   return {
     kind: "http",
-    message: response.statusText,
+    // `statusText` is legitimately empty for HTTP/2 responses and many
+    // reverse proxies — falling back to a status-naming message keeps the
+    // operator from seeing a blank error.
+    message: response.statusText || `HTTP ${String(response.status)}`,
     status: response.status,
+  };
+}
+
+/**
+ * Optional per-call overrides for {@link fetchConsoleJson}. All fields are
+ * optional so every existing single-argument call site keeps compiling
+ * unchanged.
+ */
+export interface M3LConsoleRequestOptions {
+  /** HTTP method; defaults to the browser's implicit `GET` when omitted. */
+  readonly method?: "GET" | "POST";
+  /**
+   * A JSON-serializable request body. When present, the body is
+   * JSON-stringified and `content-type: application/json` is set. A value
+   * that cannot be serialized (a `BigInt`, a circular object) resolves
+   * `{ ok: false }` rather than throwing — see {@link fetchConsoleJson}'s
+   * never-throws contract.
+   */
+  readonly body?: unknown;
+  /**
+   * When present, set as the `x-correlation-id` request header. This exact
+   * lowercase spelling is fixed by ADR-0066's 2026-08-29 correction; it is
+   * not `m3l-correlation-id`.
+   */
+  readonly correlationId?: string;
+}
+
+/**
+ * Result of serializing a request body: either the (possibly `undefined`,
+ * when no body was given) JSON string, or a typed error when serialization
+ * itself threw. Split out of {@link fetchConsoleJson} purely to keep that
+ * function's cyclomatic complexity down.
+ */
+type SerializedRequestBody =
+  | { readonly ok: true; readonly bodyString: string | undefined }
+  | { readonly ok: false; readonly error: M3LConsoleFetchError };
+
+function serializeRequestBody(body: unknown): SerializedRequestBody {
+  if (body === undefined) {
+    return { ok: true, bodyString: undefined };
+  }
+  try {
+    return { ok: true, bodyString: JSON.stringify(body) };
+  } catch (caught) {
+    return {
+      ok: false,
+      error: { kind: "malformed-body", message: deriveErrorMessage(caught) },
+    };
+  }
+}
+
+function buildRequestInit(
+  options: M3LConsoleRequestOptions | undefined,
+  bodyString: string | undefined,
+): RequestInit {
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (bodyString !== undefined) {
+    headers["content-type"] = "application/json";
+  }
+  if (options?.correlationId !== undefined) {
+    headers["x-correlation-id"] = options.correlationId;
+  }
+  return {
+    headers,
+    ...(options?.method !== undefined && { method: options.method }),
+    ...(bodyString !== undefined && { body: bodyString }),
   };
 }
 
@@ -129,13 +198,32 @@ async function buildHttpError(
  *   console.error(result.error.message);
  * }
  * ```
+ *
+ * @example
+ * Launching a run with a JSON body and a correlation id:
+ * ```ts
+ * import { fetchConsoleJson } from "@m3l-automation/m3l-console-web/api/client.js";
+ *
+ * const result = await fetchConsoleJson<{ id: string }>("/api/v1/runs", {
+ *   method: "POST",
+ *   body: { scriptName: "json-etl" },
+ *   correlationId: "corr-42",
+ * });
+ * ```
  */
 export async function fetchConsoleJson<T>(
   path: string,
+  options?: M3LConsoleRequestOptions,
 ): Promise<M3LConsoleFetchResult<T>> {
+  const serialized = serializeRequestBody(options?.body);
+  if (!serialized.ok) {
+    return { ok: false, error: serialized.error };
+  }
+  const init = buildRequestInit(options, serialized.bodyString);
+
   let response: Response;
   try {
-    response = await fetch(path, { headers: { Accept: "application/json" } });
+    response = await fetch(path, init);
   } catch (caught) {
     return {
       ok: false,

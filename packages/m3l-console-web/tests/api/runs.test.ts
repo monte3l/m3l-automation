@@ -1,12 +1,17 @@
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, expectTypeOf, test, vi } from "vitest";
 
 import type {
   M3LConsoleFetchError,
   M3LConsoleFetchResult,
 } from "../../src/api/client.js";
 import { fetchConsoleJson } from "../../src/api/client.js";
-import type { M3LRunRecord, M3LRunStatus } from "../../src/api/runs.js";
-import { fetchRun, fetchRuns } from "../../src/api/runs.js";
+import type {
+  M3LRunHandle,
+  M3LRunLaunchRequest,
+  M3LRunRecord,
+  M3LRunStatus,
+} from "../../src/api/runs.js";
+import { fetchRun, fetchRuns, launchRun } from "../../src/api/runs.js";
 
 vi.mock("../../src/api/client.js", () => ({
   fetchConsoleJson: vi.fn(),
@@ -314,5 +319,190 @@ describe("fetchRun", () => {
     expect(mockedFetchConsoleJson).toHaveBeenCalledWith(
       `/api/v1/runs/${pendingRun.id}`,
     );
+  });
+});
+
+const dryRunRequest: M3LRunLaunchRequest = {
+  scriptName: "json-etl",
+  parameters: { input: "a.json" },
+  dryRun: true,
+  confirmed: false,
+};
+
+// A launch *handle* uses `scriptName` (this is the field the launch route
+// itself returns) — deliberately distinct from the stored M3LRunRecord's
+// `script` field exercised above, per the contract's own warning.
+const queuedHandle: M3LRunHandle = {
+  id: "0193f0c2-3333-7abc-9def-000000000003",
+  scriptName: "json-etl",
+  status: "queued",
+  dryRun: true,
+  executionMode: "spawn",
+};
+
+describe("launchRun", () => {
+  test("calls fetchConsoleJson with the launch path, POST, and the request body", async () => {
+    mockedFetchConsoleJson.mockResolvedValue({ ok: true, data: queuedHandle });
+
+    await launchRun(dryRunRequest);
+
+    expect(mockedFetchConsoleJson).toHaveBeenCalledWith("/api/v1/runs", {
+      method: "POST",
+      body: dryRunRequest,
+    });
+  });
+
+  test("resolves to the ok result with a well-formed handle, unwrapped", async () => {
+    const okResult: M3LConsoleFetchResult<M3LRunHandle> = {
+      ok: true,
+      data: queuedHandle,
+    };
+    mockedFetchConsoleJson.mockResolvedValue(okResult);
+
+    await expect(launchRun(dryRunRequest)).resolves.toEqual(okResult);
+  });
+
+  test("downgrades a malformed 201 body (scriptName replaced by script) to a malformed-body error", async () => {
+    // The handle uses `scriptName`; feeding it the run-record shape
+    // (`script`) instead proves the guard is checking the handle's own
+    // field, not accidentally reusing isM3LRunRecord.
+    const { scriptName: _scriptName, ...rest } = queuedHandle;
+    mockedFetchConsoleJson.mockResolvedValue({
+      ok: true,
+      data: { ...rest, script: "json-etl" },
+    });
+
+    await expect(launchRun(dryRunRequest)).resolves.toMatchObject({
+      ok: false,
+      error: { kind: "malformed-body", message: expect.any(String) as string },
+    });
+  });
+
+  test("downgrades a 201 body with an invalid status to a malformed-body error", async () => {
+    mockedFetchConsoleJson.mockResolvedValue({
+      ok: true,
+      data: { ...queuedHandle, status: "success" },
+    });
+
+    await expect(launchRun(dryRunRequest)).resolves.toMatchObject({
+      ok: false,
+      error: { kind: "malformed-body", message: expect.any(String) as string },
+    });
+  });
+
+  test("downgrades a non-object 201 body to a malformed-body error", async () => {
+    mockedFetchConsoleJson.mockResolvedValue({ ok: true, data: null });
+
+    await expect(launchRun(dryRunRequest)).resolves.toMatchObject({
+      ok: false,
+      error: { kind: "malformed-body", message: expect.any(String) as string },
+    });
+  });
+
+  test("surfaces a 409 ERR_CONSOLE_RUN_CONFIRMATION_REQUIRED envelope with its code and status intact", async () => {
+    const error: M3LConsoleFetchError = {
+      kind: "http",
+      message: "confirmation is required for a non-dry-run launch",
+      status: 409,
+      code: "ERR_CONSOLE_RUN_CONFIRMATION_REQUIRED",
+      correlationId: "corr-confirm",
+    };
+    mockedFetchConsoleJson.mockResolvedValue({ ok: false, error });
+
+    // The client-side union now forbids constructing an unconfirmed
+    // real-run request (see the type-level review block below) — this test's
+    // subject is the 409 envelope surfacing intact, not the client's ability
+    // to send an illegal shape, so provoke it with a *legal* confirmed
+    // request. The server can still return 409 for its own reasons
+    // (e.g. a stale confirmation token) regardless of what the client sent.
+    const result = await launchRun({
+      ...dryRunRequest,
+      dryRun: false,
+      confirmed: true,
+    });
+
+    expect(result).toEqual({ ok: false, error });
+    if (result.ok) {
+      throw new Error("expected a failure result");
+    }
+    expect(result.error.status).toBe(409);
+    expect(result.error.code).toBe("ERR_CONSOLE_RUN_CONFIRMATION_REQUIRED");
+  });
+
+  test("surfaces a 429 ERR_CONSOLE_RUN_CAPACITY_EXCEEDED envelope with its code and status intact", async () => {
+    const error: M3LConsoleFetchError = {
+      kind: "http",
+      message: "the run queue is full",
+      status: 429,
+      code: "ERR_CONSOLE_RUN_CAPACITY_EXCEEDED",
+      correlationId: "corr-capacity",
+    };
+    mockedFetchConsoleJson.mockResolvedValue({ ok: false, error });
+
+    const result = await launchRun(dryRunRequest);
+
+    expect(result).toEqual({ ok: false, error });
+    if (result.ok) {
+      throw new Error("expected a failure result");
+    }
+    expect(result.error.status).toBe(429);
+    expect(result.error.code).toBe("ERR_CONSOLE_RUN_CAPACITY_EXCEEDED");
+  });
+});
+
+// X10d security/type-design review: `dryRun` and `confirmed` are two
+// independent booleans today, so `{ dryRun: false, confirmed: false }`
+// type-checks despite the server always rejecting it with a 409. The fix is
+// a discriminated union: `{ dryRun: true } | { dryRun: false; confirmed:
+// true }`.
+//
+// `expectTypeOf` is a compile-time-only assertion — it is a runtime no-op,
+// so `vitest run` reports this describe block green regardless. The actual
+// signal is `pnpm typecheck`: today it FAILS on the `.not.toMatchTypeOf`
+// assertion below (the illegal shape still structurally matches
+// `M3LRunLaunchRequest`) and on the two legal-shape assertions (both are
+// missing a `confirmed` field the current, non-union type still requires
+// unconditionally). Once the union lands, `pnpm typecheck` must pass all
+// three.
+describe("M3LRunLaunchRequest — dryRun/confirmed shape (type-level)", () => {
+  test("[KNOWN BUG] the illegal dryRun:false/confirmed:false combination is not assignable to M3LRunLaunchRequest", () => {
+    expectTypeOf<{
+      readonly scriptName: string;
+      readonly parameters: Readonly<Record<string, string>>;
+      readonly dryRun: false;
+      readonly confirmed: false;
+    }>().not.toMatchTypeOf<M3LRunLaunchRequest>();
+  });
+
+  test("a dryRun: true request is assignable without a confirmed field", () => {
+    expectTypeOf<{
+      readonly scriptName: string;
+      readonly parameters: Readonly<Record<string, string>>;
+      readonly dryRun: true;
+    }>().toMatchTypeOf<M3LRunLaunchRequest>();
+  });
+
+  test("a dryRun: false request carrying confirmed: true is assignable", () => {
+    expectTypeOf<{
+      readonly scriptName: string;
+      readonly parameters: Readonly<Record<string, string>>;
+      readonly dryRun: false;
+      readonly confirmed: true;
+    }>().toMatchTypeOf<M3LRunLaunchRequest>();
+  });
+});
+
+// X10d type-design review: M3L_RUN_HANDLE_STATUSES (["queued", "running"])
+// has no typed link to the seven-value M3L_RUN_STATUSES it is meant to
+// subset. This assertion is a regression lock, not a currently-failing
+// proof — no drift has happened yet, so it passes `pnpm typecheck` today.
+// Its value is future: renaming "queued" in the seven-value list without
+// touching this file would otherwise keep compiling clean while
+// `isM3LRunHandleStatus` silently rejects every real 201 as
+// `malformed-body`; with this pin in place, that rename trips `pnpm
+// typecheck` here instead.
+describe("M3LRunHandle status vocabulary — drift guard (type-level)", () => {
+  test("every M3LRunHandle status is a member of M3LRunStatus", () => {
+    expectTypeOf<M3LRunHandle["status"]>().toMatchTypeOf<M3LRunStatus>();
   });
 });
