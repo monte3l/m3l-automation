@@ -212,6 +212,8 @@ const sampleParameters: readonly M3LCliParameterDescriptor[] = [
     required: true,
     defaultValue: undefined,
     description: "",
+    secret: false,
+    operations: [],
   },
   {
     name: "verbose",
@@ -220,6 +222,8 @@ const sampleParameters: readonly M3LCliParameterDescriptor[] = [
     required: false,
     defaultValue: undefined,
     description: "",
+    secret: false,
+    operations: [],
   },
 ];
 

@@ -53,6 +53,7 @@ const regionDescriptor: M3LCliParameterDescriptor = {
   // fail since an absent `secret` field is treated exactly like a proven
   // secret.
   secret: false,
+  operations: [],
 };
 
 /**
@@ -60,28 +61,29 @@ const regionDescriptor: M3LCliParameterDescriptor = {
  * key — genuinely absent), proving writePreset's fail-closed rule: only an
  * explicit `secret: false` proves a key safe to persist, so an absent field
  * is skipped exactly like a proven secret (see src/presets/store.ts).
+ *
+ * `secret`/`operations` are now required on `M3LConfigParameterDescriptor`
+ * (X10a), but `writePreset` still only receives a plain object at runtime —
+ * a descriptor cached by an older CLI version, or a duck-typed export from a
+ * foreign module compiled against a dist predating both fields, can still
+ * lack `secret` in practice. This literal models exactly that skew, so the
+ * cast is narrow (through `unknown`, never a direct `as
+ * M3LCliParameterDescriptor`) to keep the loose runtime shape visible
+ * instead of silently satisfying the compile-time contract.
  */
-const unflaggedDescriptor: M3LCliParameterDescriptor = {
+const unflaggedDescriptor = {
   name: "unflagged",
   aliases: [],
   type: "STRING",
   required: false,
   defaultValue: undefined,
   description: "no secret field declared at all",
-};
+} as unknown as M3LCliParameterDescriptor;
 
-/**
- * `M3LCliParameterDescriptor` gains a `secret` field per the 8f contract —
- * not yet present on the type until `discovery/load-config.ts` is extended.
- * A local extension (rather than an `as` cast) keeps the object literal
- * type-checked against a real declared shape in RED, and becomes an
- * identical (harmless) extension of the real field once GREEN lands.
- */
-interface M3LCliParameterDescriptorWithSecret extends M3LCliParameterDescriptor {
-  readonly secret: boolean;
-}
-
-const apiKeyDescriptor: M3LCliParameterDescriptorWithSecret = {
+// `secret` is now a required field on `M3LConfigParameterDescriptor` (X10a)
+// — the local `WithSecret` extension this fixture used to need under the
+// prior optional-field RED-state contract is no longer necessary.
+const apiKeyDescriptor: M3LCliParameterDescriptor = {
   name: "apiKey",
   aliases: [],
   type: "STRING",
@@ -89,6 +91,7 @@ const apiKeyDescriptor: M3LCliParameterDescriptorWithSecret = {
   defaultValue: undefined,
   description: "API key",
   secret: true,
+  operations: [],
 };
 
 const verboseDescriptor: M3LCliParameterDescriptor = {
@@ -98,6 +101,8 @@ const verboseDescriptor: M3LCliParameterDescriptor = {
   required: false,
   defaultValue: undefined,
   description: "",
+  secret: false,
+  operations: [],
 };
 
 describe("listPresetFiles", () => {
@@ -187,6 +192,8 @@ describe("buildSchemaFromDescriptors", () => {
       required: false,
       defaultValue: undefined,
       description: "",
+      secret: false,
+      operations: [],
     };
 
     const schema = buildSchemaFromDescriptors([oddDescriptor]);

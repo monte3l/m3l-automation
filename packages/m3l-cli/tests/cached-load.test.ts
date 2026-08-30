@@ -60,6 +60,8 @@ const exporterParameters: readonly M3LCliParameterDescriptor[] = [
     required: true,
     defaultValue: undefined,
     description: "AWS region",
+    secret: false,
+    operations: [],
   },
 ];
 
