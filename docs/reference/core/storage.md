@@ -1,10 +1,12 @@
-# `storage` — Full-text Search Index
+# `storage` — Full-text Search & Append-only Streams
 
-The `storage` module provides `M3LFtsIndex`, an embedded, zero-network full-text search index backed by SQLite's FTS5 extension.
+The `storage` module provides two embedded, zero-network persistence primitives: `M3LFtsIndex`, a full-text search index backed by SQLite's FTS5 extension, and `M3LAppendOnlyStream`, a segmented append-only JSONL stream for audit trails.
 
 ## Overview
 
 `M3LFtsIndex` wraps `better-sqlite3` (a native, synchronous SQLite binding) and exposes an FTS5 virtual table for in-process search. It is appropriate for searching over **thousands to low-millions of documents** without standing up an external search service.
+
+`M3LAppendOnlyStream` is the durable-append half. It writes one JSON line per entry into date-stamped, rotating segment files, and is the primitive behind both `M3LAgentDecisionLog` (ADR-0061) and the console server's human-action audit trail (ADR-0070). It is deliberately loud: an entry it cannot durably append raises rather than being dropped, because the caller of an audit write is usually a caller that must be refused.
 
 Two search modes cover distinct needs: a `full-text` mode using FTS5 `MATCH` with BM25 ranking and snippet extraction, and a `literal` mode that performs a case-insensitive substring scan for tokens with punctuation (such as UUIDs) that a tokenizer would otherwise split. For anything the typed API does not cover, `getDatabase()` exposes the raw database handle.
 
@@ -25,6 +27,17 @@ Exported from `@m3l-automation/m3l-common/core` (`storage` subpath):
 | `M3LSqliteStatement`       | type  | Type of a prepared statement.                                  |
 | `M3LFtsIndexError`         | class | Thrown when caller config or search input fails validation.    |
 | `M3LFtsIndexErrorCode`     | type  | Machine-readable code union carried by `M3LFtsIndexError`.     |
+
+| Symbol                               | Kind  | Purpose                                                               |
+| ------------------------------------ | ----- | --------------------------------------------------------------------- |
+| `M3LAppendOnlyStream`                | class | Segmented append-only JSONL stream with byte/age/date rotation.       |
+| `M3LAppendOnlyStreamOptions`         | type  | Constructor options (directory plus the three optional ceilings).     |
+| `M3LAppendOnlyEntry`                 | type  | One entry: a read-only map of `M3LAppendOnlyValue`.                   |
+| `M3LAppendOnlyValue`                 | type  | The closed value union an entry field may carry.                      |
+| `M3LAppendOnlyStreamError`           | class | Thrown when an append fails or the rendered line exceeds the ceiling. |
+| `M3L_APPEND_ONLY_MAX_SEGMENT_BYTES`  | const | Default segment size ceiling, 8 MiB.                                  |
+| `M3L_APPEND_ONLY_MAX_SEGMENT_AGE_MS` | const | Default segment age ceiling, 24 h.                                    |
+| `M3L_APPEND_ONLY_MAX_LINE_BYTES`     | const | Default per-line ceiling, 64 KiB.                                     |
 
 ### Schema
 
@@ -105,6 +118,23 @@ const db = index.getDatabase(); // raw better-sqlite3 handle
 const row = db.prepare("SELECT COUNT(*) AS n FROM documents").get();
 ```
 
+### Append-only stream
+
+```ts
+import { M3LAppendOnlyStream } from "@m3l-automation/m3l-common/core";
+
+const stream = new M3LAppendOnlyStream({ directory: "/var/lib/m3l/audit" });
+await stream.append({
+  atMs: Date.now(),
+  action: "run.launch",
+  operator: "ada",
+});
+```
+
+Segments are named `<YYYY-MM-DD>-<NNNN>.jsonl` in UTC, sequence zero-padded to four digits. The active segment is re-derived on every cold start from a directory listing plus one `stat`, so a freshly spawned process and a long-lived one always agree — no index file is kept and no state crosses a process boundary.
+
+Rotation seals the active segment (by no longer writing to it) and opens the next; it never prunes or truncates. It fires when the segment's **current** size has already reached `maxSegmentBytes`, when its age has reached `maxSegmentAgeMs`, or when its UTC date prefix is no longer today's. Because the ceiling is compared against the current size rather than the size the incoming line would produce, a segment may end one line beyond it.
+
 ## Notes & behavior
 
 - **Synchronous.** `better-sqlite3` is synchronous; index operations do not return promises.
@@ -113,6 +143,15 @@ const row = db.prepare("SELECT COUNT(*) AS n FROM documents").get();
 - **Batch in transactions.** `upsertMany` runs inside a transaction for atomicity and throughput.
 - **Scale.** Designed for in-process search over thousands to low-millions of documents; for larger or distributed workloads, use a dedicated search service.
 - **`getDatabase()`** returns the raw `better-sqlite3` handle (`M3LSqliteDatabase`) for queries the typed API does not express; prepared statements have type `M3LSqliteStatement`.
+
+### `M3LAppendOnlyStream`
+
+- **Atomic whole-line appends.** Each entry is written with `O_APPEND | O_CREAT | O_WRONLY`, so concurrent writers interleave whole lines rather than corrupting one another. This does not hold across NFS, and does not cover a write larger than the pipe buffer — which is why the line ceiling is enforced _before_ any filesystem call.
+- **Symlink refusal.** `O_NOFOLLOW` is added where the platform has it, so a segment path replaced by a symlink is **refused** (`ELOOP`) rather than followed. Without it, anyone able to create a file in the directory could redirect or silently sink the audit trail. On Windows, where Node reports the flag as absent, this defence does not apply.
+- **Entries are re-projected before serialization.** What reaches disk is never the caller's object: every node is rebuilt with a null prototype, so an inherited `toJSON` gadget can neither forge the persisted record nor launder `undefined` into the stream as a line no reader can parse. Own `__proto__` / `constructor` / `prototype` keys, non-finite numbers, `bigint`, functions, symbols, `undefined`, and structures nested past 512 levels (which is also what bounds a circular reference) are rejected as `ERR_INVALID_ARGUMENT` before any write.
+- **Serialized appends.** Concurrent `append()` calls on one instance are chained onto a tail promise, so byte accounting stays exact and rotation fires on time rather than a whole batch late. A rejected append is reported to its own caller only and never poisons the chain.
+- **Loud, typed failures.** An append that fails, or a rendered line exceeding `maxLineBytes`, throws `M3LAppendOnlyStreamError` (`ERR_APPEND_ONLY_STREAM_WRITE`). Neither its message nor its `context` ever carries caller data — a directory path can carry tenant identifiers and an entry carries payload — but the underlying filesystem error is always chained as `cause`, since it is the only diagnostic an operator has.
+- **Cache drop on failure.** A failed append clears the cached active segment, so the next call cold-starts (`mkdir`, then re-discover). A log directory removed under a long-lived writer therefore recovers instead of wedging every later write.
 
 ## See also
 

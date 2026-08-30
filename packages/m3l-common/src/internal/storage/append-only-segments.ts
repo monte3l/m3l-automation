@@ -1,13 +1,12 @@
 /**
- * `internal/agent/decision-log-segments` — the decision log's segment layer:
- * segment naming, cold-start discovery, and opening the next segment
+ * `internal/storage/append-only-segments` — the append-only stream's segment
+ * layer: segment naming, cold-start discovery, and opening the next segment
  * (ADR-0061, V7 slice 2).
  *
- * Private to `core/agent`; never re-exported through a public barrel. Split
- * out of `internal/agent/decision-log-writer.ts` so that module keeps only the
- * append itself, the rotation decision, and the options boundary — the two
- * concerns had grown past what one file can hold under
- * `check:file-budget`'s ratchet.
+ * Library-internal; never re-exported through a public barrel. Split out of
+ * the append-only writer (`./append-only-writer.js`) so that module keeps
+ * only the append itself and the rotation decision — the two concerns had
+ * grown past what one file can hold under `check:file-budget`'s ratchet.
  *
  * Everything here is a free function over an explicit `directory`: the layer
  * holds no state at all. That is the module's actual contract — no index file
