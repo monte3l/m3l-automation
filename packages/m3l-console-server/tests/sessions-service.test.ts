@@ -670,6 +670,21 @@ describe("M3LSessionService — reopenSession()", () => {
     );
     expect(service.getSession(toReopen.id)?.status).toBe("closed");
   });
+
+  // Bug fix (PR #746 review): the target session's own open slot must not
+  // count against itself. Reopening an *already-open* session at capacity is
+  // a no-op — it returns `false` (per the "already-open" contract above)
+  // without ever throwing `ERR_CONSOLE_SESSION_LIMIT_EXCEEDED`, unlike the
+  // closed-target case above, which genuinely increases the open count and
+  // must stay gated.
+  test("on an already-open session at capacity: returns false, does not throw ERR_CONSOLE_SESSION_LIMIT_EXCEEDED", () => {
+    const { service } = buildHarness({ openSessionsMax: 1 });
+    const created = service.createSession("alice", "corr-1");
+
+    expect(() => service.reopenSession(created.id)).not.toThrow();
+    expect(service.reopenSession(created.id)).toBe(false);
+    expect(service.getSession(created.id)?.status).toBe("open");
+  });
 });
 
 // ---------------------------------------------------------------------------

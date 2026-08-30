@@ -513,8 +513,10 @@ function buildSessionLifecycleMethods(
       return sessionsRepository.closeSession(id, nowMs());
     },
     reopenSession(id: string): boolean {
-      requireSession(sessionsRepository, id);
-      requireOpenSessionCapacity(sessionsRepository, openSessionsMax);
+      const session = requireSession(sessionsRepository, id);
+      if (session.status === "closed") {
+        requireOpenSessionCapacity(sessionsRepository, openSessionsMax);
+      }
       return sessionsRepository.reopenSession(id, nowMs());
     },
     addStep(
