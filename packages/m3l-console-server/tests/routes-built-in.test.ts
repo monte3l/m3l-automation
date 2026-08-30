@@ -92,12 +92,14 @@ const fakeSessionService: SessionRouteReaderPort & SessionRouteWriterPort = {
     updatedAtMs: Date.now(),
   }),
   closeSession: () => true,
+  reopenSession: () => true,
   addStep: () => Promise.resolve({ step: { id: "step-1" } }),
   raiseDecision: () => ({ id: "decision-1" }),
   answerDecision: () => true,
+  listBindingsForSession: () => [],
 };
 
-/** The seven session-module routes `createBuiltInRoutes` must add when `options.sessions` is supplied. */
+/** The nine session-module routes `createBuiltInRoutes` must add when `options.sessions` is supplied. */
 const SESSION_ROUTE_SIGNATURES: readonly { method: string; path: string }[] = [
   { method: "POST", path: "/api/v1/sessions" },
   { method: "GET", path: "/api/v1/sessions" },
@@ -106,6 +108,8 @@ const SESSION_ROUTE_SIGNATURES: readonly { method: string; path: string }[] = [
   { method: "POST", path: "/api/v1/sessions/:id/steps/:stepId/decision" },
   { method: "POST", path: "/api/v1/sessions/:id/decisions/:decisionId" },
   { method: "POST", path: "/api/v1/sessions/:id/close" },
+  { method: "POST", path: "/api/v1/sessions/:id/reopen" },
+  { method: "GET", path: "/api/v1/sessions/:id/bindings" },
 ];
 
 describe("toRunsRouteOptions", () => {
