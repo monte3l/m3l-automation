@@ -1,7 +1,8 @@
 /**
  * `core/agent/ledger-types` — the caller-owned run ledger `evaluateAgentAction`
- * reads for budgets (step 3) and dry-run-first (step 6), and its structural
- * ceiling (ADR-0060, slice 2).
+ * reads for budgets (step 3), the decision-log-unavailable escalation
+ * (step 3b), and dry-run-first (step 6), and its structural ceiling
+ * (ADR-0060, slice 2).
  *
  * @packageDocumentation
  */
@@ -58,6 +59,16 @@ export interface M3LAgentRunLedger {
   readonly loopIterations?: number;
   /** The dry-run shape keys already exercised in this run. */
   readonly dryRunCompletedShapes?: readonly string[];
+  /**
+   * The caller's observation of whether the decision log is currently
+   * writable, read by step 3b when
+   * {@link M3LAgentPolicyDeclaration.requireDecisionLog} is declared `true`.
+   * This evaluator never probes the log itself — it is pure and synchronous —
+   * so absent is treated the same as "unobservable", exactly like an absent
+   * budget observation: a declared discipline this module cannot prove
+   * satisfied escalates rather than auto-approving.
+   */
+  readonly decisionLogAvailable?: boolean;
 }
 
 /**

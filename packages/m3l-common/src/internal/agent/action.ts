@@ -1,5 +1,5 @@
 /**
- * `internal/agent/action` — step 0 of the evaluator: the fifteen ACT rules
+ * `internal/agent/action` — step 0 of the evaluator: the sixteen ACT rules
  * over the options bag, and the single traversal that projects the caller's
  * action into a frozen {@link M3LAgentActionRecord}.
  *
@@ -79,6 +79,7 @@ const RUN_LEDGER_KEYS: ReadonlySet<string> = new Set([
   "costThisRun",
   "loopIterations",
   "dryRunCompletedShapes",
+  "decisionLogAvailable",
 ]);
 
 /**
@@ -385,11 +386,32 @@ function readOptionalNonNegativeFiniteNumber(
 }
 
 /**
- * ACT-13/14/15: the run ledger, when present, projected into a frozen
+ * Reads an optional boolean ledger field (ACT-16), unconditionally — like
+ * every other ledger field, no policy needs to declare `requireDecisionLog`
+ * for a malformed `decisionLogAvailable` to be rejected. Present-but-not-a-
+ * boolean is malformed input, not "absent": the same discipline
+ * {@link readDryRun} applies to the action's own `dryRun` field.
+ */
+function readOptionalBoolean(
+  ledger: Readonly<Record<string, unknown>>,
+  key: string,
+): boolean | undefined {
+  if (!Object.hasOwn(ledger, key)) {
+    return undefined;
+  }
+  const value = ledger[key];
+  if (typeof value !== "boolean") {
+    throw actionFailure(`options.run.${key}`, "not-a-boolean");
+  }
+  return value;
+}
+
+/**
+ * ACT-13/14/15/16: the run ledger, when present, projected into a frozen
  * internal record with every numeric field materialised as an own key
  * holding `undefined` when absent. Unconditional: a malformed `run` throws
- * even against a policy that declares no `budgets` and no `dryRunFirst` —
- * this runs before any policy field is read.
+ * even against a policy that declares no `budgets`, no `dryRunFirst`, and no
+ * `requireDecisionLog` — this runs before any policy field is read.
  */
 function projectRunLedger(
   bag: Readonly<Record<string, unknown>>,
@@ -420,6 +442,10 @@ function projectRunLedger(
         actionFailure,
       )
     : NO_DRY_RUN_SHAPES;
+  const decisionLogAvailable = readOptionalBoolean(
+    value,
+    "decisionLogAvailable",
+  );
 
   return Object.freeze({
     invocationsThisRun: integers["invocationsThisRun"],
@@ -430,6 +456,7 @@ function projectRunLedger(
     costThisRun,
     loopIterations: integers["loopIterations"],
     dryRunCompletedShapes,
+    decisionLogAvailable,
   });
 }
 

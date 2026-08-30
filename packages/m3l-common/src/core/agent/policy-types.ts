@@ -100,6 +100,18 @@ export interface M3LAgentPolicyDeclaration {
    * means the same as absent.
    */
   readonly dryRunFirst?: boolean;
+  /**
+   * Opts into requiring an auditable decision log for every evaluated action
+   * (step 3b). Takes the same strict-`true` polarity as `dryRunFirst`, for
+   * the mirror-image reason: a deployment that writes down this discipline
+   * should get it or get an error, never a silent downgrade to no discipline
+   * at all. `false` is accepted and means the same as absent. Gated so a
+   * declaration that never opts in reaches exactly the arms it reached
+   * before this field existed, in the same order, with the same verdict —
+   * see docs/reference/core/agent.md § Escalating when the log is
+   * unavailable § Why the opt-in is not optional.
+   */
+  readonly requireDecisionLog?: boolean;
 }
 
 /**

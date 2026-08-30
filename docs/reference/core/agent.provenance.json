@@ -33,87 +33,87 @@
         {
           "file": "packages/m3l-common/src/core/agent/policy-types.ts",
           "symbol": "M3LAgentScriptGrant",
-          "blob": "a8587f181748b6ce2eaeec4c496023f44024646b"
+          "blob": "fc60e5e2da55e3a77996d0cd208a12394950012a"
         },
         {
           "file": "packages/m3l-common/src/core/agent/policy-types.ts",
           "symbol": "M3LAgentPolicyDeclaration",
-          "blob": "a8587f181748b6ce2eaeec4c496023f44024646b"
+          "blob": "fc60e5e2da55e3a77996d0cd208a12394950012a"
         },
         {
           "file": "packages/m3l-common/src/core/agent/policy-types.ts",
           "symbol": "M3LAgentBudgets",
-          "blob": "a8587f181748b6ce2eaeec4c496023f44024646b"
+          "blob": "fc60e5e2da55e3a77996d0cd208a12394950012a"
         },
         {
           "file": "packages/m3l-common/src/core/agent/ledger-types.ts",
           "symbol": "M3L_AGENT_MAX_DRY_RUN_SHAPES",
-          "blob": "8fc62e4dc38e51d79c916e414c278d793e7d63d2"
+          "blob": "d01b367618ec9a2017657b5e0497ae3776c6f708"
         },
         {
           "file": "packages/m3l-common/src/core/agent/ledger-types.ts",
           "symbol": "M3LAgentRunLedger",
-          "blob": "8fc62e4dc38e51d79c916e414c278d793e7d63d2"
+          "blob": "d01b367618ec9a2017657b5e0497ae3776c6f708"
         },
         {
           "file": "packages/m3l-common/src/core/agent/policy-types.ts",
           "symbol": "M3LAgentPolicy",
-          "blob": "a8587f181748b6ce2eaeec4c496023f44024646b"
+          "blob": "fc60e5e2da55e3a77996d0cd208a12394950012a"
         },
         {
           "file": "packages/m3l-common/src/core/agent/policy-types.ts",
           "symbol": "M3L_AGENT_MAX_SCRIPT_GRANTS",
-          "blob": "a8587f181748b6ce2eaeec4c496023f44024646b"
+          "blob": "fc60e5e2da55e3a77996d0cd208a12394950012a"
         },
         {
           "file": "packages/m3l-common/src/core/agent/policy-types.ts",
           "symbol": "M3L_AGENT_MAX_OPERATIONS_PER_GRANT",
-          "blob": "a8587f181748b6ce2eaeec4c496023f44024646b"
+          "blob": "fc60e5e2da55e3a77996d0cd208a12394950012a"
         },
         {
           "file": "packages/m3l-common/src/core/agent/policy-types.ts",
           "symbol": "M3L_AGENT_MAX_SENSITIVE_TARGET_ENTRIES",
-          "blob": "a8587f181748b6ce2eaeec4c496023f44024646b"
+          "blob": "fc60e5e2da55e3a77996d0cd208a12394950012a"
         },
         {
           "file": "packages/m3l-common/src/core/agent/verdict-types.ts",
           "symbol": "M3LAgentVerdict",
-          "blob": "07af86cef89c084ab16a10698a507512ec7414fe"
+          "blob": "f5b3b3f34b1d0a119d9f4652699efc93d803e400"
         },
         {
           "file": "packages/m3l-common/src/core/agent/verdict-types.ts",
           "symbol": "M3LAgentPolicyRuleId",
-          "blob": "07af86cef89c084ab16a10698a507512ec7414fe"
+          "blob": "f5b3b3f34b1d0a119d9f4652699efc93d803e400"
         },
         {
           "file": "packages/m3l-common/src/core/agent/verdict-types.ts",
           "symbol": "M3LAgentDecision",
-          "blob": "07af86cef89c084ab16a10698a507512ec7414fe"
+          "blob": "f5b3b3f34b1d0a119d9f4652699efc93d803e400"
         },
         {
           "file": "packages/m3l-common/src/core/agent/guards.ts",
           "symbol": "isAgentPolicyRuleId",
-          "blob": "6fb472c0dd16aaed07dd1ceed237df6e5bdebf52"
+          "blob": "362aa5e54591ceb543c09480c89cb0d6be9bdedd"
         },
         {
           "file": "packages/m3l-common/src/core/agent/guards.ts",
           "symbol": "isAgentActionAutoApproved",
-          "blob": "6fb472c0dd16aaed07dd1ceed237df6e5bdebf52"
+          "blob": "362aa5e54591ceb543c09480c89cb0d6be9bdedd"
         },
         {
           "file": "packages/m3l-common/src/core/agent/validate-policy.ts",
           "symbol": "validateAgentPolicy",
-          "blob": "aa48d1d0f74a0a31900b005441c1e74f9f4bc6cf"
+          "blob": "2b291bf8524a086b5728b1447d5737c853998c3c"
         },
         {
           "file": "packages/m3l-common/src/core/agent/evaluate.ts",
           "symbol": "M3LAgentEvaluationOptions",
-          "blob": "3c16ee61ed5c4e2b8ad920b1af468ed06865605a"
+          "blob": "378537f377ef36bfbeed36c47eae25fa06296346"
         },
         {
           "file": "packages/m3l-common/src/core/agent/evaluate.ts",
           "symbol": "evaluateAgentAction",
-          "blob": "3c16ee61ed5c4e2b8ad920b1af468ed06865605a"
+          "blob": "378537f377ef36bfbeed36c47eae25fa06296346"
         },
         {
           "file": "packages/m3l-common/src/core/agent/M3LAgentPolicyDeclarationError.ts",
@@ -159,6 +159,31 @@
           "file": "packages/m3l-common/src/core/agent/decision-log-entry.ts",
           "symbol": "serializeAgentDecisionLogEntry",
           "blob": "d09b5654d43fa532e5c49dfcf1486b0f9f5545d5"
+        },
+        {
+          "file": "packages/m3l-common/src/core/agent/decision-log.ts",
+          "symbol": "M3LAgentDecisionLog",
+          "blob": "38f552742b5db1e6990f17b5a1300c792686ec63"
+        },
+        {
+          "file": "packages/m3l-common/src/core/agent/decision-log.ts",
+          "symbol": "M3LAgentDecisionLogOptions",
+          "blob": "38f552742b5db1e6990f17b5a1300c792686ec63"
+        },
+        {
+          "file": "packages/m3l-common/src/core/agent/decision-log.ts",
+          "symbol": "M3L_AGENT_LOG_MAX_SEGMENT_BYTES",
+          "blob": "38f552742b5db1e6990f17b5a1300c792686ec63"
+        },
+        {
+          "file": "packages/m3l-common/src/core/agent/decision-log.ts",
+          "symbol": "M3L_AGENT_LOG_MAX_SEGMENT_AGE_MS",
+          "blob": "38f552742b5db1e6990f17b5a1300c792686ec63"
+        },
+        {
+          "file": "packages/m3l-common/src/core/agent/M3LAgentDecisionLogWriteError.ts",
+          "symbol": "M3LAgentDecisionLogWriteError",
+          "blob": "2801b73a349423a7275419f169b69378d77684a7"
         }
       ],
       "retrieved": "2026-08-30"
@@ -195,35 +220,35 @@
         {
           "file": "packages/m3l-common/src/core/agent/policy-types.ts",
           "symbol": "M3LAgentScriptGrant",
-          "blob": "a8587f181748b6ce2eaeec4c496023f44024646b"
+          "blob": "fc60e5e2da55e3a77996d0cd208a12394950012a"
         },
         {
           "file": "packages/m3l-common/src/core/agent/policy-types.ts",
           "symbol": "M3LAgentPolicyDeclaration",
-          "blob": "a8587f181748b6ce2eaeec4c496023f44024646b"
+          "blob": "fc60e5e2da55e3a77996d0cd208a12394950012a"
         },
         {
           "file": "packages/m3l-common/src/core/agent/policy-types.ts",
           "symbol": "M3LAgentPolicy",
-          "blob": "a8587f181748b6ce2eaeec4c496023f44024646b"
+          "blob": "fc60e5e2da55e3a77996d0cd208a12394950012a"
         },
         {
           "file": "packages/m3l-common/src/core/agent/policy-types.ts",
           "symbol": "M3L_AGENT_MAX_SCRIPT_GRANTS",
-          "blob": "a8587f181748b6ce2eaeec4c496023f44024646b"
+          "blob": "fc60e5e2da55e3a77996d0cd208a12394950012a"
         },
         {
           "file": "packages/m3l-common/src/core/agent/policy-types.ts",
           "symbol": "M3L_AGENT_MAX_OPERATIONS_PER_GRANT",
-          "blob": "a8587f181748b6ce2eaeec4c496023f44024646b"
+          "blob": "fc60e5e2da55e3a77996d0cd208a12394950012a"
         },
         {
           "file": "packages/m3l-common/src/core/agent/policy-types.ts",
           "symbol": "M3L_AGENT_MAX_SENSITIVE_TARGET_ENTRIES",
-          "blob": "a8587f181748b6ce2eaeec4c496023f44024646b"
+          "blob": "fc60e5e2da55e3a77996d0cd208a12394950012a"
         }
       ],
-      "retrieved": "2026-08-29"
+      "retrieved": "2026-08-30"
     },
     {
       "heading": "`validateAgentPolicy`",
@@ -231,7 +256,7 @@
         {
           "file": "packages/m3l-common/src/core/agent/validate-policy.ts",
           "symbol": "validateAgentPolicy",
-          "blob": "aa48d1d0f74a0a31900b005441c1e74f9f4bc6cf"
+          "blob": "2b291bf8524a086b5728b1447d5737c853998c3c"
         },
         {
           "file": "packages/m3l-common/src/core/agent/M3LAgentPolicyDeclarationError.ts",
@@ -239,7 +264,7 @@
           "blob": "f658577d4eb40fb098603bc87b6ea3b5d8032bd4"
         }
       ],
-      "retrieved": "2026-08-29"
+      "retrieved": "2026-08-30"
     },
     {
       "heading": "The tier decision table",
@@ -247,10 +272,10 @@
         {
           "file": "packages/m3l-common/src/core/agent/evaluate.ts",
           "symbol": "evaluateAgentAction",
-          "blob": "3c16ee61ed5c4e2b8ad920b1af468ed06865605a"
+          "blob": "378537f377ef36bfbeed36c47eae25fa06296346"
         }
       ],
-      "retrieved": "2026-08-29"
+      "retrieved": "2026-08-30"
     },
     {
       "heading": "Verdicts and rule ids",
@@ -258,20 +283,20 @@
         {
           "file": "packages/m3l-common/src/core/agent/verdict-types.ts",
           "symbol": "M3LAgentVerdict",
-          "blob": "07af86cef89c084ab16a10698a507512ec7414fe"
+          "blob": "f5b3b3f34b1d0a119d9f4652699efc93d803e400"
         },
         {
           "file": "packages/m3l-common/src/core/agent/verdict-types.ts",
           "symbol": "M3LAgentPolicyRuleId",
-          "blob": "07af86cef89c084ab16a10698a507512ec7414fe"
+          "blob": "f5b3b3f34b1d0a119d9f4652699efc93d803e400"
         },
         {
           "file": "packages/m3l-common/src/core/agent/verdict-types.ts",
           "symbol": "M3LAgentDecision",
-          "blob": "07af86cef89c084ab16a10698a507512ec7414fe"
+          "blob": "f5b3b3f34b1d0a119d9f4652699efc93d803e400"
         }
       ],
-      "retrieved": "2026-08-29"
+      "retrieved": "2026-08-30"
     },
     {
       "heading": "`isAgentPolicyRuleId`",
@@ -279,10 +304,10 @@
         {
           "file": "packages/m3l-common/src/core/agent/guards.ts",
           "symbol": "isAgentPolicyRuleId",
-          "blob": "6fb472c0dd16aaed07dd1ceed237df6e5bdebf52"
+          "blob": "362aa5e54591ceb543c09480c89cb0d6be9bdedd"
         }
       ],
-      "retrieved": "2026-08-29"
+      "retrieved": "2026-08-30"
     },
     {
       "heading": "`isAgentActionAutoApproved`",
@@ -290,10 +315,10 @@
         {
           "file": "packages/m3l-common/src/core/agent/guards.ts",
           "symbol": "isAgentActionAutoApproved",
-          "blob": "6fb472c0dd16aaed07dd1ceed237df6e5bdebf52"
+          "blob": "362aa5e54591ceb543c09480c89cb0d6be9bdedd"
         }
       ],
-      "retrieved": "2026-08-29"
+      "retrieved": "2026-08-30"
     },
     {
       "heading": "The evaluator",
@@ -301,12 +326,12 @@
         {
           "file": "packages/m3l-common/src/core/agent/evaluate.ts",
           "symbol": "M3LAgentEvaluationOptions",
-          "blob": "3c16ee61ed5c4e2b8ad920b1af468ed06865605a"
+          "blob": "378537f377ef36bfbeed36c47eae25fa06296346"
         },
         {
           "file": "packages/m3l-common/src/core/agent/evaluate.ts",
           "symbol": "evaluateAgentAction",
-          "blob": "3c16ee61ed5c4e2b8ad920b1af468ed06865605a"
+          "blob": "378537f377ef36bfbeed36c47eae25fa06296346"
         },
         {
           "file": "packages/m3l-common/src/core/agent/M3LAgentActionValidationError.ts",
@@ -353,6 +378,37 @@
           "file": "packages/m3l-common/src/core/agent/decision-log-entry.ts",
           "symbol": "serializeAgentDecisionLogEntry",
           "blob": "d09b5654d43fa532e5c49dfcf1486b0f9f5545d5"
+        }
+      ],
+      "retrieved": "2026-08-30"
+    },
+    {
+      "heading": "Writing the decision log",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/agent/decision-log.ts",
+          "symbol": "M3LAgentDecisionLog",
+          "blob": "38f552742b5db1e6990f17b5a1300c792686ec63"
+        },
+        {
+          "file": "packages/m3l-common/src/core/agent/decision-log.ts",
+          "symbol": "M3LAgentDecisionLogOptions",
+          "blob": "38f552742b5db1e6990f17b5a1300c792686ec63"
+        },
+        {
+          "file": "packages/m3l-common/src/core/agent/decision-log.ts",
+          "symbol": "M3L_AGENT_LOG_MAX_SEGMENT_BYTES",
+          "blob": "38f552742b5db1e6990f17b5a1300c792686ec63"
+        },
+        {
+          "file": "packages/m3l-common/src/core/agent/decision-log.ts",
+          "symbol": "M3L_AGENT_LOG_MAX_SEGMENT_AGE_MS",
+          "blob": "38f552742b5db1e6990f17b5a1300c792686ec63"
+        },
+        {
+          "file": "packages/m3l-common/src/core/agent/M3LAgentDecisionLogWriteError.ts",
+          "symbol": "M3LAgentDecisionLogWriteError",
+          "blob": "2801b73a349423a7275419f169b69378d77684a7"
         }
       ],
       "retrieved": "2026-08-30"

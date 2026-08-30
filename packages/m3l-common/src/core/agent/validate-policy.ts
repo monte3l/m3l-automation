@@ -40,8 +40,9 @@ import type { M3LAgentPolicy } from "./policy-types.js";
  * (`costPerRun` may be fractional, the rest must be safe integers);
  * a `readOnlyOperations` that is not a non-empty, non-duplicated array of
  * non-blank strings within `M3L_AGENT_MAX_OPERATIONS_PER_GRANT`, or that names
- * an operation not also in `operations` on an operation-scoped grant; and a
- * `dryRunFirst` present and not a boolean.
+ * an operation not also in `operations` on an operation-scoped grant; a
+ * `dryRunFirst` present and not a boolean; and a `requireDecisionLog` present
+ * and not a boolean.
  *
  * The traversal is one pass: validate and project into a fresh, deep-frozen
  * structure in the same walk, then brand. Nothing downstream re-reads the
