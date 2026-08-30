@@ -136,8 +136,8 @@ Full table — triggers, purpose, required status checks:
 Canonical **Style Guide**: `docs/contributing/style-guide.md` (`[enforced]` vs `[advisory]` per rule). Its `.claude/rules/*.md` extracts load only on matching files (cost nothing otherwise):
 
 - `packages/m3l-common/src/**` → `library-src.md` — ESM imports, no `any`, TSDoc, `M3LError`, `internal/` privacy
-- `**/tests/**`, `*.test.ts` → `tests.md` — Vitest, coverage gate
-- `packages/m3l-common/src/**`, `scripts/**`, `**/tests/**` → `refactoring.md` — behavior-preserving changes
+- `**/tests/**`, `**/*.test.ts` → `tests.md` — Vitest, coverage gate
+- `packages/m3l-common/src/**`, `scripts/**`, `**/tests/**`, `**/*.test.ts` → `refactoring.md` — behavior-preserving changes
 - `scripts/**` → `scripts.md` — `workspace:*` (ADR-0029), naming (ADR-0028)
 - `packages/**/*.ts`, `scripts/**/*.ts`, `**/*.test.ts` → `domain-knowledge.md`
 - `.claude/skills/**`, `.claude/agents/**` → `subagent-dispatch.md` — truncation recovery

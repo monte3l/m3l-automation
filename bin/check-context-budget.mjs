@@ -396,6 +396,55 @@ export function collectRuleFiles(rulesDir) {
 }
 
 /**
+ * Parse CLAUDE.md's "Coding, errors & tests (path-scoped)" rule-glob bullet
+ * list — the prose description of which `.claude/rules/*.md` extract loads
+ * for which path glob(s) — into a map of rule filename -> declared globs.
+ * This is the CLAUDE.md-side half of the parity check against each rule
+ * file's own `paths:` frontmatter in {@link diffRuleGlobParity}: the two
+ * drifted apart twice with no gate catching it before this one existed
+ * (2026-08-31 audit against Anthropic's AI-native SDLC playbook).
+ *
+ * @param {string} claudeMdContent raw CLAUDE.md text
+ * @returns {Map<string, string[]>} rule filename -> globs, in bullet order
+ */
+export function parseClaudeMdRuleGlobs(claudeMdContent) {
+  /** @type {Map<string, string[]>} */
+  const result = new Map();
+  const bulletRe = /^- ((?:`[^`]+`(?:,\s*)?)+)\s*→\s*`([\w.-]+\.md)`/gm;
+  let match;
+  while ((match = bulletRe.exec(claudeMdContent)) !== null) {
+    const globs = [...match[1].matchAll(/`([^`]+)`/g)].map((m) => m[1]);
+    result.set(match[2], globs);
+  }
+  return result;
+}
+
+/**
+ * Diff CLAUDE.md's declared rule-glob prose against each rule file's actual
+ * `paths:` frontmatter — an order-insensitive set comparison, since the
+ * prose lists read most naturally in a hand-chosen order that need not match
+ * the frontmatter array order.
+ *
+ * @param {Map<string, string[]>} claudeMdGlobs from {@link parseClaudeMdRuleGlobs}
+ * @param {RuleFile[]} rules from {@link collectRuleFiles}
+ * @returns {Array<{ rule: string, documented: string[], actual: string[] }>}
+ */
+export function diffRuleGlobParity(claudeMdGlobs, rules) {
+  const mismatches = [];
+  for (const rule of rules) {
+    const documented = claudeMdGlobs.get(rule.name);
+    if (documented === undefined) continue;
+    const a = [...documented].sort();
+    const b = [...rule.globs].sort();
+    const same = a.length === b.length && a.every((g, i) => g === b[i]);
+    if (!same) {
+      mismatches.push({ rule: rule.name, documented, actual: rule.globs });
+    }
+  }
+  return mismatches;
+}
+
+/**
  * @typedef {Object} ScenarioTotal
  * @property {string} probe representative path for this scenario
  * @property {string[]} rules matching rule file names, sorted
@@ -642,6 +691,19 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     }
   }
 
+  // --- 2b. CLAUDE.md rule-glob prose vs. rule-file frontmatter parity ---
+  const claudeMdRuleGlobs = parseClaudeMdRuleGlobs(raw);
+  const ruleGlobMismatches = diffRuleGlobParity(claudeMdRuleGlobs, rules);
+  for (const m of ruleGlobMismatches) {
+    hardFail = true;
+    reporter.error(
+      `CLAUDE.md's rule-glob list for \`${m.rule}\` says [${m.documented.join(", ")}] but ` +
+        `.claude/rules/${m.rule}'s \`paths:\` frontmatter declares [${m.actual.join(", ")}] — ` +
+        `update CLAUDE.md's "Coding, errors & tests" bullet to match.`,
+      { file: "CLAUDE.md" },
+    );
+  }
+
   // --- 3. .claude/skills/*/SKILL.md description weight (informational) ---
   const skillsDir = join(root, ".claude", "skills");
   const skillDescriptions = collectSkillDescriptions(skillsDir);
@@ -669,6 +731,9 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     `Rules ratchet: ${rules.length} file(s) checked, ${ruleViolations.length} violation(s).`,
   );
   reporter.info(
+    `Rule-glob parity: ${claudeMdRuleGlobs.size} documented, ${ruleGlobMismatches.length} mismatch(es).`,
+  );
+  reporter.info(
     `Skill listing: ${skillDescriptions.length} description(s), ${totalSkillDescChars} total chars.`,
   );
   for (const scenario of scenarios.slice(0, 10)) {
@@ -682,6 +747,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     approxTokens: totalTokens,
     perBlock,
     ruleViolations,
+    ruleGlobMismatches,
     scenarios,
     skillDescriptions,
     totalSkillDescChars,

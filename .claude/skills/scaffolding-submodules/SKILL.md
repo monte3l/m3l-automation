@@ -79,9 +79,8 @@ separation intact here by handing off rather than implementing inline.
    must be enumerated before it can be partitioned; the page's de-facto spine is
    `## Overview` → `## Public API` → module-specific sections → `## Usage` →
    `## Notes and behavior` → `## See also`, and `## Landing plan` slots in
-   alongside the module-specific sections. `check:scaffold-seam` is being
-   extended to require this heading on any module not yet ✅ (ADR-0072) — add
-   it regardless of whether that extension has landed yet on your branch.
+   alongside the module-specific sections. `check:scaffold-seam` requires this
+   heading on any module not yet ✅ (ADR-0072, `LANDING_PLAN_HEADING`).
 6. Hand off: tell the user (or proceed, if asked) to run `implementing-submodules`
    for `<module>` to turn the red tests green under review.
 

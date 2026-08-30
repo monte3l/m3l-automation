@@ -3,6 +3,10 @@ import {
   KNOWN_EVENTS,
   extractHookScriptName,
   validateHooksConfig,
+  extractIfGlob,
+  collectSettingsIfGlobs,
+  parseHooksReferenceTable,
+  diffHooksReferenceIfGlobs,
 } from "../../bin/check-hooks.mjs";
 
 describe("extractHookScriptName", () => {
@@ -148,5 +152,149 @@ describe("validateHooksConfig", () => {
     expect(result.errors).toEqual([]);
     expect(result.warnings).toEqual([]);
     expect(result.referenced).toEqual(new Set());
+  });
+});
+
+describe("extractIfGlob", () => {
+  test("extracts the glob from a Write(...) if-rule", () => {
+    expect(extractIfGlob("Write(*.md)")).toBe("*.md");
+  });
+
+  test("extracts the glob from an Edit(...) if-rule", () => {
+    expect(extractIfGlob("Edit(packages/m3l-common/package.json)")).toBe(
+      "packages/m3l-common/package.json",
+    );
+  });
+
+  test("returns null for a rule that is neither Write(...) nor Edit(...)", () => {
+    expect(extractIfGlob("Bash(gh pr view *)")).toBeNull();
+  });
+
+  test("returns null for an empty or missing rule", () => {
+    expect(extractIfGlob("")).toBeNull();
+    // @ts-expect-error exercising the runtime guard
+    expect(extractIfGlob(undefined)).toBeNull();
+  });
+});
+
+describe("collectSettingsIfGlobs", () => {
+  test("groups if-scoped globs by event::hookName, deduplicating Write+Edit pairs", () => {
+    const settings = {
+      hooks: {
+        PostToolUse: [
+          {
+            hooks: [
+              {
+                command:
+                  'node "$CLAUDE_PROJECT_DIR/.claude/hooks/guard-doc-counts.mjs"',
+                timeout: 120,
+                if: "Write(README.md)",
+              },
+              {
+                command:
+                  'node "$CLAUDE_PROJECT_DIR/.claude/hooks/guard-doc-counts.mjs"',
+                timeout: 120,
+                if: "Edit(README.md)",
+              },
+            ],
+          },
+        ],
+      },
+    };
+    const result = collectSettingsIfGlobs(settings);
+    expect(result.get("PostToolUse::guard-doc-counts.mjs")).toEqual(
+      new Set(["README.md"]),
+    );
+  });
+
+  test("a hook with no if field contributes nothing", () => {
+    const settings = {
+      hooks: {
+        PreToolUse: [
+          {
+            hooks: [
+              {
+                command:
+                  'node "$CLAUDE_PROJECT_DIR/.claude/hooks/guard-js-extension.mjs"',
+                timeout: 30,
+              },
+            ],
+          },
+        ],
+      },
+    };
+    expect(collectSettingsIfGlobs(settings).size).toBe(0);
+  });
+});
+
+describe("parseHooksReferenceTable", () => {
+  test("parses a row with a single if-scoped glob out of the Matcher cell", () => {
+    const md =
+      "| Event | Matcher | Hook | Purpose | Mode |\n" +
+      "| - | - | - | - | - |\n" +
+      "| PostToolUse | `Write\\|Edit` if `packages/m3l-common/package.json` | `guard-exports-semver.mjs` | x | advisory |\n";
+    const rows = parseHooksReferenceTable(md);
+    expect(rows).toEqual([
+      {
+        event: "PostToolUse",
+        hookName: "guard-exports-semver.mjs",
+        ifGlobs: ["packages/m3l-common/package.json"],
+      },
+    ]);
+  });
+
+  test("a row with no if-clause parses with an empty ifGlobs array", () => {
+    const md =
+      "| Event | Matcher | Hook | Purpose | Mode |\n" +
+      "| - | - | - | - | - |\n" +
+      "| PreToolUse | `Bash` | `guard-git-push-signed.mjs` | x | blocking |\n";
+    const rows = parseHooksReferenceTable(md);
+    expect(rows).toEqual([
+      {
+        event: "PreToolUse",
+        hookName: "guard-git-push-signed.mjs",
+        ifGlobs: [],
+      },
+    ]);
+  });
+
+  test("ignores the header and separator rows", () => {
+    const md =
+      "| Event | Matcher | Hook | Purpose | Mode |\n" +
+      "| - | - | - | - | - |\n";
+    expect(parseHooksReferenceTable(md)).toEqual([]);
+  });
+});
+
+describe("diffHooksReferenceIfGlobs", () => {
+  test("no mismatch when documented globs equal the actual wired globs", () => {
+    const docRows = [
+      {
+        event: "PostToolUse",
+        hookName: "guard-doc-counts.mjs",
+        ifGlobs: ["README.md"],
+      },
+    ];
+    const actual = new Map([
+      ["PostToolUse::guard-doc-counts.mjs", new Set(["README.md"])],
+    ]);
+    expect(diffHooksReferenceIfGlobs(docRows, actual)).toEqual([]);
+  });
+
+  test("flags a doc row whose Matcher cell omits an if-glob settings.json actually wires", () => {
+    const docRows = [
+      { event: "PostToolUse", hookName: "guard-doc-counts.mjs", ifGlobs: [] },
+    ];
+    const actual = new Map([
+      ["PostToolUse::guard-doc-counts.mjs", new Set(["README.md"])],
+    ]);
+    expect(diffHooksReferenceIfGlobs(docRows, actual)).toEqual([
+      {
+        event: "PostToolUse",
+        hookName: "guard-doc-counts.mjs",
+        documented: [],
+        actual: ["README.md"],
+      },
+    ]);
   });
 });
