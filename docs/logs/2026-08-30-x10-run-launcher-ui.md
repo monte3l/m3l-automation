@@ -3,7 +3,7 @@
 This log covers issue #558 (X10 — run-launcher UI MVP), shipped as four
 PRs: #749 (X10a, the `core/config` introspection seam), #755 (X10b,
 `GET /api/v1/scripts` discovery), #757 (X10c, web shell + hash router +
-read views), and #758 (X10d, parameter form + launch + live SSE tail).
+read views), and #762 (X10d, parameter form + launch + live SSE tail).
 
 Plan of record: `on-issue-545-the-snuggly-avalanche.md` (local plan file; not
 committed to the repo).
