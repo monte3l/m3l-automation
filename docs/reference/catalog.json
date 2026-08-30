@@ -30,7 +30,14 @@
       "M3LAgentEvaluationOptions",
       "evaluateAgentAction",
       "M3LAgentPolicyDeclarationError",
-      "M3LAgentActionValidationError"
+      "M3LAgentActionValidationError",
+      "M3LAgentIdentity",
+      "M3LAgentDecisionOutcome",
+      "M3LAgentDecisionLogEntry",
+      "M3LAgentDecisionLogEntryOptions",
+      "M3L_AGENT_MAX_LOG_ENTRY_BYTES",
+      "agentDecisionLogEntry",
+      "serializeAgentDecisionLogEntry"
     ]
   },
   {

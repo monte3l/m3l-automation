@@ -44,18 +44,22 @@ output. See [The trust boundary](#the-trust-boundary).
 
 ADR-0072 slice record.
 
-| Slice                          | Scope                                                                                                                            | Status |
-| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| V6 slice 1 — verdicts          | The action/policy/verdict vocabulary, the declaration validator, and the evaluator's allowlist + autonomy-tier arms. 20 exports. | Landed |
-| V6 slice 2 — budgets + dry-run | Per-run/per-day budgets and ceilings, the run ledger, named exhaustion outcomes, and the dry-run-first discipline. 4 exports.    | Landed |
+| Slice                           | Scope                                                                                                                            | Status |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| V6 slice 1 — verdicts           | The action/policy/verdict vocabulary, the declaration validator, and the evaluator's allowlist + autonomy-tier arms. 20 exports. | Landed |
+| V6 slice 2 — budgets + dry-run  | Per-run/per-day budgets and ceilings, the run ledger, named exhaustion outcomes, and the dry-run-first discipline. 4 exports.    | Landed |
+| V7 slice 1 — decision-log entry | The decision-log entry schema, the pure projector from a decision, and the JSONL serializer. No I/O. 7 exports.                  | Landed |
 
 Deliberately **not** in either slice, and why:
 
-- **The agent decision log.** [ADR-0061](../../adr/0061-agent-decision-log.md)
-  is V7 and co-lands in this same submodule later. Slice 1 makes the log
-  possible — every verdict names the rule that produced it, and carries the
-  library's own frozen projection of the action rather than the caller's
-  object — but writes nothing anywhere.
+- **Writing the agent decision log.**
+  [ADR-0061](../../adr/0061-agent-decision-log.md) is V7 and co-lands in this
+  same submodule. Its V6 slices made the log possible — every verdict names the
+  rule that produced it, and carries the library's own frozen projection of the
+  action rather than the caller's object. **V7 slice 1 adds the entry itself**
+  (schema, projector, serializer) and still writes nothing; the appender, its
+  rotation, and the loud write failure are V7 slice 2. See
+  [The decision-log entry](#the-decision-log-entry).
 - **ADR-0055's richer operation vocabulary.** A grant allowlists operation
   **names**, plain strings. `core/config`'s `M3LOperationDeclaration` is a soft
   dependency and stays soft; a caller derives the names it allowlists and hands
@@ -76,7 +80,8 @@ import { Core } from "@m3l-automation/m3l-common";
 // or: import { ... } from "@m3l-automation/m3l-common/core";
 ```
 
-Exported symbols — twenty from slice 1, four more from slice 2.
+Exported symbols — twenty from V6 slice 1, four more from V6 slice 2, and
+seven more from V7 slice 1.
 
 **The action under judgement** — what a caller describes:
 
@@ -119,6 +124,22 @@ Exported symbols — twenty from slice 1, four more from slice 2.
 - `M3LAgentDecision` — the discriminated verdict.
 - `isAgentPolicyRuleId` — type predicate over the ids **this build** knows.
 - `isAgentActionAutoApproved` — the one correct approval gate.
+
+**The decision log** — what a caller records (V7 slice 1, no I/O):
+
+- `M3LAgentIdentity` — the caller-supplied identity of the acting agent: a
+  required logical `name`, and an optional `modelId` / `awsPrincipal`. The
+  library resolves none of it.
+- `M3LAgentDecisionOutcome` — what happened after an approved action ran.
+  Absent when nothing ran, which is most of what the log is for.
+- `M3LAgentDecisionLogEntry` — one audit record: the decision, the identity,
+  and the outcome, flat and plain-JSON.
+- `M3LAgentDecisionLogEntryOptions` — the projector's options bag.
+- `agentDecisionLogEntry` — the pure projector from a decision to an entry.
+- `serializeAgentDecisionLogEntry` — an entry to one JSONL line, no trailing
+  newline.
+- `M3L_AGENT_MAX_LOG_ENTRY_BYTES` — `65536`, the ceiling on that line's UTF-8
+  byte length. Exported here, **enforced by slice 2's writer**.
 
 **The evaluator** — the entry point itself:
 
@@ -1351,6 +1372,220 @@ An action that declares `dryRun: true` **is** the dry run and skips step 6.
 It does not skip step 5: dry-running against a production target is still an
 escalation, because a dry run is a real call to a real account and ADR-0048
 grades the target, not the intent.
+
+## The decision-log entry
+
+[ADR-0061](../../adr/0061-agent-decision-log.md) is V7, and it lands in this
+submodule in two slices. **This slice adds the entry only** — a schema, a pure
+projector from a decision to one record, and a serializer to one JSONL line. It
+writes nothing. The appender, its segment rotation, and the loud write failure
+are slice 2, and they are what will qualify the purity claim in
+[Overview](#overview); after this slice that claim still holds unqualified.
+
+### Why a log at all
+
+ADR-0060 decides and records nothing. Without a durable trail the programme's
+autonomy claim is unreviewable: the CLI history is a 100-entry
+overwrite-on-cap ring buffer, and `run-report.json` is classified by ADR-0035
+as a **sensitive** crash-dump artifact that only exists when a run happened. So
+the two verdicts an auditor most needs — `denied` and `escalate`, where by
+construction nothing ran — leave no trace anywhere today.
+
+ADR-0035's 2026-08-20 Update already registers the third artifact class this
+fills: append-only, non-sensitive **by construction**, retained rather than
+pruned.
+
+### Names, never values — structurally
+
+The projector never sees the caller's action object. Its input is
+`M3LAgentDecision.action`, which is already this library's own frozen
+`M3LAgentActionRecord`: `parameterNames` is a copy of the **names**, and no
+parameter value was ever admitted into it in the first place.
+
+That is worth stating precisely, because it is a stronger guarantee than the
+usual one. This is not a redaction pass that has to be complete to be correct —
+ADR-0035 records how badly that class of argument converges. There is simply
+nothing in the projector's reach to redact.
+
+`tokens` and `cost` are plain structural numbers, exactly as
+`M3LAgentRunLedger.tokensThisRun` and `.costThisRun` already are. This module
+cannot import `aws/bedrock-runtime`'s token-usage type — ADR-0009's zone 3b
+forbids `core/**` from reaching `aws/**`, and `bin/check-eslint-zones.mjs`
+enforces it — and should not want to: the log has to stay readable in a
+deployment that never invokes Bedrock at all.
+
+### Every verdict is recorded
+
+`agentDecisionLogEntry` takes **any** `M3LAgentDecision` and filters nothing.
+Recording only what ran would reproduce exactly the gap that motivates the log.
+
+### The clock stays outside the module
+
+`now` is caller-sampled, the same discipline `M3LAgentRunLedger.now` already
+imposes. `timestamp` is the ISO-8601 UTC rendering of that instant, derived
+purely — the same `now` always yields the same string — because an audit line
+an operator greps should be readable without a converter.
+
+`now` must be a finite safe integer within the range `Date` can represent.
+Anything else throws rather than emitting a record stamped `Invalid Date`: an
+audit entry that cannot be placed in time is worse than a loud failure.
+
+### Identity is caller-supplied
+
+`M3LAgentIdentity` carries a required logical `name` and an optional `modelId`
+and `awsPrincipal`. The library resolves **none** of it, and could not: no
+principal resolver exists in `core/`, and `aws/` is unreachable from here.
+
+Its optional fields are typed `?: string` — the plain narrow spelling, not
+the `?: T | undefined` widening and not the "required, holding `undefined`" form
+`M3LAgentActionRecord` uses. The record uses that third form because it is
+built by the library and handed to callee code; `M3LAgentIdentity` is written
+by a caller, so it follows `M3LAgentAction`'s precedent instead.
+
+The narrow spelling works in both directions because the projector emits
+**omitted** keys rather than `undefined`-holding ones, so a returned identity
+re-passes cleanly. It is also the stricter choice, and deliberately so: the
+validator reads presence with `Object.hasOwn`, so a key present holding
+`undefined` is malformed input rather than an absent field. The narrow type
+makes `{ name: "bot", modelId: undefined }` a **compile** error instead of a
+runtime throw. The same applies to `M3LAgentDecisionOutcome`'s and
+`M3LAgentDecisionLogEntryOptions`' optionals.
+
+### What an entry carries
+
+`M3LAgentDecisionLogEntry` is a flat, frozen, plain-JSON record:
+
+- `timestamp` — ISO-8601 UTC, derived from the caller's `now`.
+- `identity` — a frozen copy of the supplied `M3LAgentIdentity`.
+- `script` / `operation` / `kind` / `target` / `parameterNames` / `shapeKey` —
+  copied from the decision's frozen `M3LAgentActionRecord`.
+- `verdict` / `rule` / `reason` — the decision itself.
+- `outcome` — an `M3LAgentDecisionOutcome`, present only when something ran.
+  An `auto-approved` action runs, and so does an `escalate` a human then
+  approves, so both can carry one. A `denied` action never runs, so in practice
+  it never should — but the type does not forbid the pairing, deliberately: an
+  audit log that cannot represent a thing that should not have happened cannot
+  record one either.
+- `tokens` / `cost` — plain numbers, present only when the caller reported
+  them.
+
+`kind` and `reason` are recorded deliberately. `kind` is the module's one trust
+boundary (see [The trust boundary](#the-trust-boundary)) — a log that omits
+whether an action was declared read-only or mutating omits the single claim an
+auditor most needs to check. `reason` is library-authored prose that ADR-0060
+already documents as safe for a log sink: it is composed only from the script,
+operation, kind, target coordinates, and a budget's own declared ceiling and
+observed count, and it never embeds a parameter value.
+
+`target` carries only `profile` / `region` / `accountId` — the coordinates the
+verdict `reason` already names in prose. Recording them as fields as well is
+what makes a log queryable rather than merely readable.
+
+### What an outcome carries
+
+`M3LAgentDecisionOutcome` is the "and then what happened" half of an entry, and
+its fields reach the audit schema verbatim:
+
+- `dryRun` — **required** `boolean`. Whether the run that happened was a dry
+  run. Required rather than optional because "we did not record whether this
+  was a rehearsal" is not a state an audit trail should be able to express.
+- `exitCode` — optional integer, the process exit code where there was one.
+- `registryName` — optional non-blank string, the name the run was recorded
+  under in the caller's own registry, so a log line can be joined back to it.
+
+The whole outcome is optional on the entry, because most entries record a
+decision that never ran.
+
+### `M3L_AGENT_MAX_LOG_ENTRY_BYTES`
+
+`65536` — the ceiling on one serialized line's UTF-8 byte length.
+
+It is exported in this slice but **enforced in slice 2**, by the writer, where
+it belongs: the reason for a ceiling is that a single oversized `write()` is
+where a line-delimited append can tear, and only the writer performs one.
+`serializeAgentDecisionLogEntry` deliberately does not enforce it — a caller
+that wants to check can measure the string it just received.
+
+It is a bloat and tear-risk bound, not a proof of atomicity; slice 2 records
+the durability stance in full.
+
+### `agentDecisionLogEntry`
+
+```typescript
+function agentDecisionLogEntry(
+  options: M3LAgentDecisionLogEntryOptions,
+): M3LAgentDecisionLogEntry;
+```
+
+An options bag rather than positional parameters, for the reason
+`M3LAgentEvaluationOptions` already records: slice 2 needs to add fields, and
+on a bag that is additive.
+
+- `decision` — the `M3LAgentDecision` to record. Required.
+- `identity` — the acting agent. Required.
+- `now` — the caller-sampled instant, epoch milliseconds. Required.
+- `outcome` / `tokens` / `cost` — optional; omitted fields are omitted from the
+  entry rather than written as `null`.
+
+The returned entry is deep-frozen and shares no object by reference with
+either argument, so a caller mutating its identity afterwards cannot make two
+entries disagree — the same rule step 0 already applies to the action.
+
+**Throws `M3LAgentActionValidationError`** when the bag is structurally
+malformed. The full set:
+
+- `options` itself is not a plain object, or carries an unknown or **dangerous**
+  key.
+- `identity` is missing or not a plain object; `identity.name` is blank or not a
+  string; `identity.modelId` or `identity.awsPrincipal` is present but blank or
+  not a string.
+- `now` is missing, is not a number, is not an integer, is `NaN` or `±Infinity`,
+  or falls outside the range `Date` can represent.
+- `tokens` or `cost` is negative or non-finite.
+- `outcome` is present but not a plain object; `outcome.dryRun` is missing or
+  not a boolean; `outcome.exitCode` is not an integer; `outcome.registryName` is
+  blank or not a string.
+- `decision` is missing, is not a plain object, or is structurally malformed —
+  a non-object `decision.action`, a blank `decision.action.script`, `.kind` or
+  `.shapeKey`, a malformed `.parameterNames` or `.dryRun`, or a blank
+  `decision.verdict`, `.rule` or `.reason`.
+- A throwing accessor or `Proxy` trap encountered while reading the bag, which
+  surfaces as a wrapped failure with the underlying error chained as `cause`.
+
+Its `context` names the offending field and the violation kind, **never a
+value** — the same discipline both existing errors on this module follow.
+
+`decision` is validated rather than trusted even though `evaluateAgentAction`
+is the only thing that produces one. In a fully-typed call graph a malformed
+decision cannot arise; the moment one crosses a process, queue, or
+serialization boundary it can, and an unvalidated projection would answer with
+a **frozen, plausible, throw-free entry silently missing `script`, `kind`,
+`shapeKey` and `target`**. A false audit record is worse than no audit record,
+so a malformed input is a bug to surface loudly; it is never folded into an
+entry.
+
+### `serializeAgentDecisionLogEntry`
+
+```typescript
+function serializeAgentDecisionLogEntry(
+  entry: M3LAgentDecisionLogEntry,
+): string;
+```
+
+One entry to one JSONL line, **without** a trailing newline — the writer owns
+the separator, so a caller composing lines cannot end up with a blank record
+between them. Absent optional fields are omitted from the JSON, not emitted as
+`null`.
+
+A parser must therefore treat `outcome`, `tokens` and `cost` as possibly-absent
+keys — and `operation` and `target` too. Those two are "required, holding
+`undefined`" on the entry, inherited from `M3LAgentActionRecord`, and
+`JSON.stringify` drops an `undefined`-valued key just the same. An action with
+no operation and no target produces a line with neither key present.
+
+JSONL rather than a JSON array was chosen for the reason slice 2 depends on: a
+line-delimited format is the one shape that survives two processes appending
+concurrently.
 
 ## Compatibility with `core/prompt`
 

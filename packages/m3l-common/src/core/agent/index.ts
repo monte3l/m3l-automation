@@ -4,9 +4,11 @@
  *
  * This barrel surfaces the action, policy, and verdict types, the
  * declaration validator, the two guards, the two typed errors, the
- * evaluator's allowlist plus autonomy-tier arms (slice 1), and slice 2's
- * budgets, ceilings, run ledger, and dry-run-first discipline — twenty-four
- * exports total per the landing plan in `docs/reference/core/agent.md`.
+ * evaluator's allowlist plus autonomy-tier arms (slice 1), slice 2's
+ * budgets, ceilings, run ledger, and dry-run-first discipline, and V7 slice
+ * 1's decision-log entry schema, pure projector, and JSONL serializer —
+ * thirty-one exports total per the landing plan in
+ * `docs/reference/core/agent.md`.
  *
  * The exports are listed explicitly rather than star-re-exported so each
  * slice's added surface is visible in one diff.
@@ -51,3 +53,14 @@ export { validateAgentPolicy } from "./validate-policy.js";
 export type { M3LAgentEvaluationOptions } from "./evaluate.js";
 export { evaluateAgentAction } from "./evaluate.js";
 export { agentActionShapeKey } from "./shape-key.js";
+export type {
+  M3LAgentDecisionLogEntry,
+  M3LAgentDecisionLogEntryOptions,
+  M3LAgentDecisionOutcome,
+  M3LAgentIdentity,
+} from "./decision-log-types.js";
+export { M3L_AGENT_MAX_LOG_ENTRY_BYTES } from "./decision-log-types.js";
+export {
+  agentDecisionLogEntry,
+  serializeAgentDecisionLogEntry,
+} from "./decision-log-entry.js";
