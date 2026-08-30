@@ -126,6 +126,7 @@ export const M3L_ERROR_CATALOG: Readonly<
   ERR_BEDROCK_RUNTIME_NO_MODEL: { origin: "caller", retryable: false },
   ERR_BEDROCK_RUNTIME_OPERATION: { origin: "external", retryable: true },
   ERR_BEDROCK_RUNTIME_STREAM: { origin: "external", retryable: "situational" },
+  ERR_BEDROCK_RUNTIME_TOOL_LOOP: { origin: "caller", retryable: false },
   ERR_BINARY_FILE_EXPORT: { origin: "external", retryable: false },
   ERR_CHECKPOINT_CORRUPT: { origin: "external", retryable: false },
   ERR_CHECKPOINT_DEFINITION: { origin: "caller", retryable: false },

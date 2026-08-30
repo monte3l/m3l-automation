@@ -767,7 +767,23 @@
       "M3LBedrockToolDefinition",
       "M3LBedrockToolInputSchema",
       "M3LBedrockToolChoice",
-      "M3LBedrockToolInvokeRequest"
+      "M3LBedrockToolInvokeRequest",
+      "M3LBedrockConversation",
+      "createBedrockConversation",
+      "appendBedrockMessage",
+      "appendBedrockUserText",
+      "M3LBedrockToolContext",
+      "M3LBedrockToolHandler",
+      "M3LBedrockToolRegistration",
+      "M3LBedrockToolRegistry",
+      "M3LBedrockToolLoopInvoker",
+      "M3LBedrockToolLoopOptions",
+      "runBedrockToolLoop",
+      "M3LBedrockModelRate",
+      "M3LBedrockToolExecution",
+      "M3LBedrockToolLoopIteration",
+      "M3LBedrockToolLoopOutcome",
+      "M3LBedrockToolLoopError"
     ]
   },
   {

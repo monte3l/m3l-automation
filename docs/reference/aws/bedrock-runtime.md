@@ -521,6 +521,180 @@ names the offending key and its JSON path; it never includes the value.
 `searchResult` members are out of scope, and a tool handler needing one
 constructs a raw `ConverseCommand` directly.
 
+### Conversation state
+
+An `M3LBedrockConversation` is an **immutable value the caller holds** — the
+client keeps no hidden conversation state (ADR-0059). Every helper returns a
+new value and none mutates its argument; `createBedrockConversation` copies
+the `messages` array you pass rather than aliasing it.
+
+```ts
+interface M3LBedrockConversation {
+  readonly messages: readonly M3LBedrockMessage[];
+  readonly system?: string;
+}
+
+function createBedrockConversation(options?: {
+  readonly system?: string;
+  readonly messages?: readonly M3LBedrockMessage[];
+}): M3LBedrockConversation;
+
+function appendBedrockMessage(
+  conversation: M3LBedrockConversation,
+  message: M3LBedrockMessage,
+): M3LBedrockConversation;
+
+function appendBedrockUserText(
+  conversation: M3LBedrockConversation,
+  text: string,
+): M3LBedrockConversation;
+```
+
+### Tool handlers and the registry
+
+```ts
+interface M3LBedrockToolContext {
+  readonly toolUseId: string;
+  readonly name: string;
+  readonly signal?: AbortSignal;
+}
+
+type M3LBedrockToolHandler = (
+  input: unknown,
+  context: M3LBedrockToolContext,
+) => Promise<readonly M3LBedrockToolResultContent[]>;
+
+interface M3LBedrockToolRegistration {
+  readonly description?: string;
+  readonly inputSchema: M3LBedrockToolInputSchema;
+  readonly handler: M3LBedrockToolHandler;
+}
+
+type M3LBedrockToolRegistry = ReadonlyMap<string, M3LBedrockToolRegistration>;
+```
+
+`input` is typed `unknown` deliberately: it is model-generated, and the
+library shape-guards it but never validates it against your `inputSchema` —
+the handler owns that. The registry is a `ReadonlyMap`, not a plain record,
+and `M3LBedrockToolRegistration` has **no `name` field** because the name _is_
+the map key. Both choices are structural rather than defensive: a record
+lookup for a model-chosen tool named `"constructor"` resolves an inherited
+function that the loop would then call as a handler, and a separate `name`
+field could drift from the key it is filed under. `Map.get` returns
+`undefined` for every prototype-chain name, so that whole class of hazard is
+unrepresentable instead of merely guarded.
+
+Write the registry with an explicit type argument —
+`new Map<string, M3LBedrockToolRegistration>([...])`. A multi-entry inline
+`new Map([...])` whose handlers differ fails to compile (TS2769), because
+TypeScript infers the value type from the array literal rather than
+contextually.
+
+### `runBedrockToolLoop`
+
+```ts
+interface M3LBedrockToolLoopInvoker {
+  invoke(
+    request: M3LBedrockToolInvokeRequest,
+    options?: M3LBedrockInvokeOptions,
+  ): Promise<M3LBedrockInvocationResult>;
+}
+
+interface M3LBedrockToolLoopOptions {
+  readonly tools: M3LBedrockToolRegistry;
+  readonly maxIterations?: number;
+  readonly maxToolsPerTurn?: number;
+  readonly signal?: AbortSignal;
+  readonly rates?: ReadonlyMap<string, M3LBedrockModelRate>;
+  readonly inferenceConfig?: M3LBedrockInferenceConfig;
+}
+
+function runBedrockToolLoop(
+  ops: M3LBedrockToolLoopInvoker,
+  conversation: M3LBedrockConversation,
+  options: M3LBedrockToolLoopOptions,
+): Promise<M3LBedrockToolLoopOutcome>;
+```
+
+It is a **free function over a port interface**, not a method on
+`M3LBedrockRuntimeOperations`, and that is deliberate.
+`M3LBedrockRuntimeOperations` declares private `#` fields, which makes it
+_nominally_ typed: a structural test double is rejected with TS2345. A method
+would therefore force every caller and every test through the concrete class.
+`M3LBedrockToolLoopInvoker` is the narrowest port both the real class and a
+plain `{ invoke }` fake satisfy, so the loop stays testable without a live
+Bedrock client. Pass the real operations object directly — it satisfies the
+port structurally.
+
+Both ceilings are validated at the boundary with
+`Number.isInteger(n) && n >= 1`, which **rejects `Infinity`** so that "no
+ceiling" is unrepresentable rather than merely discouraged. `maxIterations`
+(default 10) bounds model invocations; `maxToolsPerTurn` (default 8) bounds a
+single turn's tool batch, because a turn's block count is just as much a loop
+over model-chosen structure as the turn count is. An invalid ceiling throws
+`M3LBedrockRuntimeOperationError` (`origin: caller`, `retryable: false`)
+before any request is sent.
+
+The loop never sends `toolChoice`. A persisted `"any"` would force a tool call
+on every turn, making `end_turn` unreachable and quietly converting
+`maxIterations` from a safety net into the normal exit path.
+
+### The outcome ledger
+
+```ts
+interface M3LBedrockModelRate {
+  readonly inputPer1kTokens: number;
+  readonly outputPer1kTokens: number;
+}
+
+type M3LBedrockToolExecution =
+  | {
+      readonly toolUseId: string;
+      readonly name: string;
+      readonly status: "success";
+    }
+  | {
+      readonly toolUseId: string;
+      readonly name: string;
+      readonly status: "error";
+    }
+  | {
+      readonly toolUseId: string;
+      readonly name: string;
+      readonly status: "error";
+      readonly cause: unknown;
+    };
+
+interface M3LBedrockToolLoopIteration {
+  readonly index: number;
+  readonly modelId: string;
+  readonly stopReason: M3LBedrockStopReason;
+  readonly usage: M3LBedrockTokenUsage;
+  readonly toolExecutions: readonly M3LBedrockToolExecution[];
+}
+
+interface M3LBedrockToolLoopOutcome {
+  readonly conversation: M3LBedrockConversation;
+  readonly message: M3LBedrockMessage;
+  readonly stopReason: M3LBedrockStopReason;
+  readonly usage: M3LBedrockTokenUsage;
+  readonly iterations: readonly M3LBedrockToolLoopIteration[];
+  readonly cost?: number;
+}
+```
+
+`usage` is cumulative across every iteration. `cost` is present **only** when
+you supply a `rates` table; with no table the key is omitted entirely rather
+than set to `undefined`, and a table missing the served `modelId` omits it too
+rather than reporting a partial or `NaN` figure. `rates` is a `ReadonlyMap`
+for the same structural reason as the registry.
+
+`M3LBedrockToolExecution` is a discriminated union so that `"cause" in
+execution` narrows: a handler rejection carries its `cause`, while an
+unknown-tool or malformed-input disposition is an `"error"` with no cause at
+all. This is what keeps a handler failure from being _both_ reported to the
+model as `status: "error"` _and_ invisible to you.
+
 ### `M3LBedrockRuntimeOperationError`
 
 Thrown immediately, with no fallback advance, for: `ValidationException`,
@@ -586,6 +760,29 @@ class M3LBedrockRuntimeNoModelError extends M3LError {
 failed for a genuine, diagnosable AWS-side reason (a throttling storm, a
 region misconfiguration surfacing as `ModelNotReadyException` everywhere)
 would see only a bare `attemptedModels` list with no evidence of _why_.
+
+### `M3LBedrockToolLoopError`
+
+Code `ERR_BEDROCK_RUNTIME_TOOL_LOOP` (`origin: caller`, `retryable: false`).
+Thrown for **exactly two** conditions: `maxIterations` was exhausted while the
+model was still requesting tools, and one turn's batch exceeded
+`maxToolsPerTurn`. Everything else the loop rejects — an invalid ceiling
+argument, or a malformed reply — throws `M3LBedrockRuntimeOperationError`
+instead.
+
+That narrow scope is load-bearing. Because the error is only ever constructed
+at points where a model invocation has already happened, its `context` can be
+_total_: exactly `maxIterations`, `iterationsCompleted`, `lastStopReason`, the
+three `usage` numbers, `modelId`, `pendingToolCount`, and `toolErrorCount`.
+`M3LError.context` is serialized verbatim by `toJSON()`, so that allowlist is
+a security boundary. The constructor accepts **no `cause` parameter at all**
+and declares `readonly cause: undefined`, which makes the guarantee structural
+— verifiable by reading one constructor rather than auditing every call site —
+and the message template interpolates numbers only.
+
+`iterationsCompleted` and `usage` are consistent with each other: the turn
+that breached a ceiling contributes both a ledger entry and its tokens, so the
+two never disagree about how much work was billed.
 
 ## Fault handling and model fallback
 
@@ -924,6 +1121,39 @@ const ops = new M3LBedrockRuntimeOperations(client, {
   connection torn down deterministically (rather than left to Node's normal
   socket/keep-alive lifecycle) should abort the `AbortSignal` passed via
   `options.signal` rather than relying on breaking out of a `for await` loop.
+- **A V4 error thrown mid-loop propagates unwrapped, and therefore carries no
+  accumulated usage.** `M3LBedrockRuntimeNoModelError` and
+  `M3LBedrockRuntimeModelError` raised by `invoke()` inside the loop pass
+  through unchanged rather than being re-wrapped, so only
+  `M3LBedrockToolLoopError` reports cumulative tokens. Propagating the
+  original error unwrapped is worth more than the usage figure would be:
+  re-wrapping would obscure which model actually faulted.
+- **The outcome ledger is deliberately not redaction-safe.** It carries the
+  full conversation and each handler failure's `cause` by design, because its
+  whole purpose is telling you what happened. Unlike `M3LError.context`, it is
+  not an allowlist — do not log it wholesale, and do not feed it into an error
+  context.
+- **An aborted batch loses the ledger entries for tool calls that already
+  completed in that turn.** The loop assembles a turn's executions before
+  recording them, so an abort partway through a multi-tool batch discards the
+  earlier entries along with the turn — even though those handlers really ran
+  and their AWS side effects really happened. No partial `toolResult` turn is
+  ever appended (a Converse turn whose results do not cover every `toolUse`
+  block is invalid on resume), but the caller learns nothing about the
+  completed calls. Handlers that mutate state should be independently
+  idempotent or independently logged.
+- **A tool handler rejection's message is transmitted to the model.** The text
+  is escaped for control characters and capped at 1,024 characters, but it is
+  not redacted — the model needs some failure signal to recover. Do not put
+  secrets, credentials, or caller data in an exception a tool handler throws.
+- **The request-side document budget is per-invoke, but the conversation
+  grows.** `copyDocument` charges a fresh 10,000-node budget on every request
+  build, while the conversation accumulates every prior turn, so cumulative
+  model output is re-charged each iteration. A model emitting large tool
+  inputs can therefore exhaust the budget several iterations in, after real
+  handler side effects have occurred. The budget was sized for a one-shot
+  `invoke()` and this interaction is a known limitation, not a designed
+  behavior.
 
 ## Landing plan
 
@@ -950,8 +1180,10 @@ Two independently-landable PRs (ADR-0072):
    conversation value and its pure helpers, the bounded and cancellable
    invoke → `tool_use` → execute → `tool_result` state machine, the outcome
    ledger with cumulative token usage and optional cost, and
-   `M3LBedrockToolLoopError`.
-   Tests: `packages/m3l-common/tests/bedrock-runtime-loop.test.ts`.
+   `M3LBedrockToolLoopError`. Tests:
+   `packages/m3l-common/tests/bedrock-runtime-conversation.test.ts`,
+   `bedrock-runtime-loop.test.ts`, and `bedrock-runtime-loop-wire.test.ts`
+   (wire-level, against a real `BedrockRuntimeClient`).
 
 ## See also
 
