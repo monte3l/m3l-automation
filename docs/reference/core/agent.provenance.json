@@ -163,27 +163,27 @@
         {
           "file": "packages/m3l-common/src/core/agent/decision-log.ts",
           "symbol": "M3LAgentDecisionLog",
-          "blob": "0a504e8df7c7338d65e7b9d3f67a47ac60e3d8c1"
+          "blob": "ec3bddbcf806a9abdae7e40cfda56abc987d56b9"
         },
         {
           "file": "packages/m3l-common/src/core/agent/decision-log.ts",
           "symbol": "M3LAgentDecisionLogOptions",
-          "blob": "0a504e8df7c7338d65e7b9d3f67a47ac60e3d8c1"
+          "blob": "ec3bddbcf806a9abdae7e40cfda56abc987d56b9"
         },
         {
           "file": "packages/m3l-common/src/core/agent/decision-log.ts",
           "symbol": "M3L_AGENT_LOG_MAX_SEGMENT_BYTES",
-          "blob": "0a504e8df7c7338d65e7b9d3f67a47ac60e3d8c1"
+          "blob": "ec3bddbcf806a9abdae7e40cfda56abc987d56b9"
         },
         {
           "file": "packages/m3l-common/src/core/agent/decision-log.ts",
           "symbol": "M3L_AGENT_LOG_MAX_SEGMENT_AGE_MS",
-          "blob": "0a504e8df7c7338d65e7b9d3f67a47ac60e3d8c1"
+          "blob": "ec3bddbcf806a9abdae7e40cfda56abc987d56b9"
         },
         {
           "file": "packages/m3l-common/src/core/agent/M3LAgentDecisionLogWriteError.ts",
           "symbol": "M3LAgentDecisionLogWriteError",
-          "blob": "2801b73a349423a7275419f169b69378d77684a7"
+          "blob": "32fd76ef2df108d73c81973c1b30b0dae07a9f32"
         }
       ],
       "retrieved": "2026-08-30"
@@ -388,27 +388,27 @@
         {
           "file": "packages/m3l-common/src/core/agent/decision-log.ts",
           "symbol": "M3LAgentDecisionLog",
-          "blob": "0a504e8df7c7338d65e7b9d3f67a47ac60e3d8c1"
+          "blob": "ec3bddbcf806a9abdae7e40cfda56abc987d56b9"
         },
         {
           "file": "packages/m3l-common/src/core/agent/decision-log.ts",
           "symbol": "M3LAgentDecisionLogOptions",
-          "blob": "0a504e8df7c7338d65e7b9d3f67a47ac60e3d8c1"
+          "blob": "ec3bddbcf806a9abdae7e40cfda56abc987d56b9"
         },
         {
           "file": "packages/m3l-common/src/core/agent/decision-log.ts",
           "symbol": "M3L_AGENT_LOG_MAX_SEGMENT_BYTES",
-          "blob": "0a504e8df7c7338d65e7b9d3f67a47ac60e3d8c1"
+          "blob": "ec3bddbcf806a9abdae7e40cfda56abc987d56b9"
         },
         {
           "file": "packages/m3l-common/src/core/agent/decision-log.ts",
           "symbol": "M3L_AGENT_LOG_MAX_SEGMENT_AGE_MS",
-          "blob": "0a504e8df7c7338d65e7b9d3f67a47ac60e3d8c1"
+          "blob": "ec3bddbcf806a9abdae7e40cfda56abc987d56b9"
         },
         {
           "file": "packages/m3l-common/src/core/agent/M3LAgentDecisionLogWriteError.ts",
           "symbol": "M3LAgentDecisionLogWriteError",
-          "blob": "2801b73a349423a7275419f169b69378d77684a7"
+          "blob": "32fd76ef2df108d73c81973c1b30b0dae07a9f32"
         }
       ],
       "retrieved": "2026-08-30"

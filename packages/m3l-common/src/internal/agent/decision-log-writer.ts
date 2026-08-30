@@ -3,31 +3,55 @@
  * behind `core/agent`'s public `M3LAgentDecisionLog` class (ADR-0061, V7
  * slice 2).
  *
- * Private to `core/agent`; never re-exported through a public barrel. All
- * filesystem access — directory creation, cold-start segment discovery, the
- * rotation decision, and the append itself — lives here so
- * `core/agent/decision-log.ts` stays a thin, documented wrapper, together
- * with the constructor's own options validation (so the public class holds
- * no validation logic of its own).
+ * Private to `core/agent`; never re-exported through a public barrel. This
+ * module owns the rotation decision, the append itself, and the constructor's
+ * options validation, so `core/agent/decision-log.ts` stays a thin, documented
+ * wrapper holding no validation logic of its own. The segment layer beneath it
+ * — naming, cold-start discovery, and opening the next segment — lives in
+ * `./decision-log-segments.js`, and the entry's structural proof and detached
+ * projection in `./decision-log-projection.js`.
  *
  * Two error vocabularies meet here and are kept apart deliberately:
  *
- * - a **caller-side** violation — a malformed options bag, a non-object
- *   entry, an entry `JSON.stringify` cannot serialize at all — throws a bare
+ * - a **caller-side** violation — a malformed options bag, or an entry that
+ *   is not structurally an `M3LAgentDecisionLogEntry` — throws a bare
  *   `M3LError` with `code: "ERR_INVALID_ARGUMENT"`, matching the house
  *   pattern in `aws/s3/uri.ts` and `internal/logging/levels.ts`;
  * - a failure of the **append itself**, including a well-formed entry that is
- *   simply larger than one atomic write can durably carry, throws
+ *   simply larger than one atomic write can durably carry and a segment path
+ *   that turns out to be a symlink, throws
  *   `M3LAgentDecisionLogWriteError` (`ERR_AGENT_DECISION_LOG_WRITE`).
  *
- * No error message or `context` built here ever carries a value read out of
- * the caller's input: they name the field and the violation kind only. A
- * directory path can carry tenant or customer identifiers, and an entry
- * carries identity and reason text.
+ * No error message, and no `context` built here, ever carries a value read
+ * out of the caller's input: they name the field and the violation kind only.
+ * A directory path can carry tenant or customer identifiers, and an entry
+ * carries identity and reason text. The one path by which a caller-supplied
+ * string can still be reached from an error raised here is a **chained
+ * filesystem `cause`** — Node's own `ENOENT`/`EACCES`/`ELOOP` errors quote
+ * the path they failed on. That cause is deliberately kept: it is the only
+ * diagnostic an operator has for a broken log directory, it is Node's error
+ * rather than one composed here, and it is reached only by code that walks
+ * `error.cause` explicitly.
+ *
+ * Two limitations are accepted rather than fixed, in the same register as the
+ * `O_APPEND`/NFS caveat on {@link AgentDecisionLogWriter.append} and the
+ * `birthtimeMs` one in `./decision-log-segments.js`:
+ *
+ * - a `maxSegmentBytes` below `M3L_AGENT_MAX_LOG_ENTRY_BYTES` yields one
+ *   entry per segment — every write finds the ceiling already crossed and
+ *   rotates. That is left legal on purpose: rotation has to stay testable at
+ *   sizes a test can reach in a handful of writes, and a floor tied to the
+ *   line ceiling would forbid exactly those. The behaviour is correct, just
+ *   wasteful, and never loses or truncates a record.
+ * - `createdAtMs` on a freshly opened segment is read from the wall clock, so
+ *   a clock that steps **forward** and then back can leave a segment stamped
+ *   in the future, making `maxSegmentAgeMs` unreachable for it. The size
+ *   ceiling and the UTC-date rollover both still bound that segment, so it
+ *   cannot grow without limit or outlive its day.
  */
 
-import { appendFile, mkdir, readdir, stat } from "node:fs/promises";
-import path from "node:path";
+import { constants } from "node:fs";
+import { appendFile } from "node:fs/promises";
 
 import { serializeAgentDecisionLogEntry } from "../../core/agent/decision-log-entry.js";
 import { M3LAgentDecisionLogWriteError } from "../../core/agent/M3LAgentDecisionLogWriteError.js";
@@ -35,22 +59,40 @@ import type { M3LAgentDecisionLogEntry } from "../../core/agent/decision-log-typ
 import { M3L_AGENT_MAX_LOG_ENTRY_BYTES } from "../../core/agent/decision-log-types.js";
 import { M3LError } from "../../core/errors/index.js";
 import { isNumber, isPlainObject } from "../../core/utils/guards.js";
+import { projectAgentDecisionLogEntry } from "./decision-log-projection.js";
+import type { ActiveSegment } from "./decision-log-segments.js";
+import {
+  currentDatePrefix,
+  discoverActiveSegment,
+  nextSegment,
+} from "./decision-log-segments.js";
 import { assertAllowedKeys, isNonBlankString } from "./validation.js";
 
-/** One segment file name's parsed parts: its UTC date prefix and sequence. */
-interface ParsedSegmentName {
-  readonly datePrefix: string;
-  readonly sequence: number;
-}
+/**
+ * `O_NOFOLLOW` where the platform has it. Typed `number | undefined` rather
+ * than trusting `@types/node`'s unconditional `number`: the flag is POSIX-only
+ * and Node genuinely reports it as `undefined` on Windows, where a numeric
+ * `NaN` flag would make every append fail.
+ */
+const O_NOFOLLOW: number | undefined = constants.O_NOFOLLOW;
 
-/** Matches this writer's own segment naming, `<YYYY-MM-DD>-<NNNN>.jsonl`. */
-const SEGMENT_NAME_PATTERN = /^(\d{4}-\d{2}-\d{2})-(\d{4,})\.jsonl$/;
-
-/** The length of the `YYYY-MM-DD` date prefix within an ISO-8601 timestamp. */
-const DATE_PREFIX_LENGTH = 10;
-
-/** The zero-padded width of a segment's sequence number in its file name. */
-const SEQUENCE_WIDTH = 4;
+/**
+ * The open flags for one append: the three the `"a"` shorthand stands for —
+ * append, create, write-only — plus `O_NOFOLLOW`, so a segment path that has
+ * been replaced by a symlink is **refused** rather than followed.
+ *
+ * Without it, anyone who can create a file in the log directory can redirect
+ * (or silently sink) the audit trail by planting the next segment name as a
+ * symlink — the append would resolve it and write outside the directory. With
+ * it, `open` fails `ELOOP` and the write is reported as the loud failure it
+ * is. On a platform without the flag (Windows) the value falls back to the
+ * plain `"a"` trio and this defence simply does not apply.
+ */
+const APPEND_FLAGS: number =
+  constants.O_APPEND |
+  constants.O_CREAT |
+  constants.O_WRONLY |
+  (O_NOFOLLOW ?? 0);
 
 /** The only own keys `M3LAgentDecisionLogOptions` may carry. */
 const WRITER_OPTIONS_KEYS: ReadonlySet<string> = new Set([
@@ -58,15 +100,6 @@ const WRITER_OPTIONS_KEYS: ReadonlySet<string> = new Set([
   "maxSegmentBytes",
   "maxSegmentAgeMs",
 ]);
-
-/** The writer's in-memory record of the currently active segment. */
-interface ActiveSegment {
-  readonly path: string;
-  readonly datePrefix: string;
-  readonly sequence: number;
-  size: number;
-  createdAtMs: number;
-}
 
 /**
  * Builds the caller-side boundary error: a bare {@link M3LError} carrying
@@ -178,64 +211,34 @@ export function validateAgentDecisionLogOptions(
   };
 }
 
-/** Renders a segment file name from its date prefix and sequence number. */
-function segmentFileName(datePrefix: string, sequence: number): string {
-  return `${datePrefix}-${String(sequence).padStart(SEQUENCE_WIDTH, "0")}.jsonl`;
-}
-
 /**
- * Parses one directory entry name, or `undefined` if it isn't a name this
- * writer would itself have produced.
+ * Proves `entry` structurally, rebuilds it as this library's own detached
+ * copy, and renders the exact line the filesystem will receive:
+ * `JSON.stringify(projection) + "\n"`.
  *
- * The round-trip check is load-bearing, not belt-and-braces. The pattern
- * accepts `\d{4,}` while {@link segmentFileName} re-pads to width four, so
- * `2026-01-01-00005.jsonl` would parse to sequence 5 and be rebuilt as
- * `-0005.jsonl` — a path that does not exist, whose `stat` ENOENTs and turns
- * every subsequent write into that directory into a wrapped write error.
- * Only zero-padding *wider* than four is lossy: a genuinely wide sequence
- * such as `10000` round-trips, because `padStart(4)` is a no-op above four
- * digits. Of the two legal repairs (round-trip the foreign name faithfully,
- * or decline it), declining is chosen: a name this writer cannot itself
- * render was written by something else, and adopting another producer's
- * file as our active segment is the more surprising of the two.
- */
-function parseSegmentName(name: string): ParsedSegmentName | undefined {
-  const match = SEGMENT_NAME_PATTERN.exec(name);
-  if (match === null) {
-    return undefined;
-  }
-  const [, datePrefix, sequenceText] = match;
-  if (datePrefix === undefined || sequenceText === undefined) {
-    return undefined;
-  }
-  const sequence = Number.parseInt(sequenceText, 10);
-  if (segmentFileName(datePrefix, sequence) !== name) {
-    return undefined;
-  }
-  return { datePrefix, sequence };
-}
-
-/** Today's UTC date prefix, `YYYY-MM-DD`. */
-function currentDatePrefix(): string {
-  return new Date(Date.now()).toISOString().slice(0, DATE_PREFIX_LENGTH);
-}
-
-/**
- * Validates `entry` and renders the exact line the filesystem will receive:
- * `JSON.stringify(entry) + "\n"`.
+ * What is serialized is **never the caller's object**. `JSON.stringify`
+ * dispatches an inherited `toJSON`, and returns `undefined` — without
+ * throwing — for one that yields `undefined`, so serializing the argument
+ * directly would let a gadget on `Object.prototype` either forge the
+ * persisted record or launder the text `undefined` into the log as a line no
+ * reader can parse. `projectAgentDecisionLogEntry` closes both by rebuilding
+ * every node with a null prototype; see that module's header. The `typeof`
+ * check below is the belt to that projection's braces — the projection is
+ * provably serializable, so nothing should be able to make `stringify` yield
+ * a non-string here, and if something does the line is never written.
  *
- * The serialization runs here, ahead of (and outside) the writer's own
- * append guard, because an entry that cannot be serialized is a caller
- * error, not a write failure: wrapping it in
+ * The validation and serialization run here, ahead of (and outside) the
+ * writer's own append guard, because an entry that cannot be serialized is a
+ * caller error, not a write failure: wrapping it in
  * {@link M3LAgentDecisionLogWriteError} would tell an operator the
  * filesystem is unhealthy when the argument was.
  *
  * @throws {@link M3LError} with `code: "ERR_INVALID_ARGUMENT"` when `entry`
- *   is not a plain object, or holds a circular reference or a `BigInt` —
- *   values `JSON.stringify` throws on. The plain-object guard also rules out
- *   the inputs (`undefined`, a function, a symbol) for which
- *   `JSON.stringify` returns `undefined` rather than throwing, which would
- *   otherwise reach `Buffer.byteLength` as a raw Node `ERR_INVALID_ARG_TYPE`.
+ *   is not a plain object, carries an unknown or dangerous own key, or holds
+ *   a field of the wrong shape — which also rules out every value
+ *   `JSON.stringify` throws on (a circular reference, a `BigInt`) and every
+ *   value it returns `undefined` for, since neither can survive the
+ *   projection.
  * @throws {@link M3LAgentDecisionLogWriteError} when the rendered line
  *   exceeds `M3L_AGENT_MAX_LOG_ENTRY_BYTES`. The ceiling governs the LINE,
  *   not the serialization alone: the newline is part of what one `write()`
@@ -243,21 +246,12 @@ function currentDatePrefix(): string {
  *   one byte too large.
  */
 function renderLogLine(entry: M3LAgentDecisionLogEntry): string {
-  if (!isPlainObject(entry)) {
-    throw invalidArgument("entry", "not-an-object");
-  }
-  let json: string;
-  try {
-    json = serializeAgentDecisionLogEntry(entry);
-  } catch (cause) {
-    throw new M3LError(
-      'agent decision log: "entry" is invalid (not-json-serializable)',
-      {
-        code: "ERR_INVALID_ARGUMENT",
-        context: { field: "entry", violation: "not-json-serializable" },
-        cause,
-      },
-    );
+  const projection = projectAgentDecisionLogEntry(entry, invalidArgument);
+  // Typed `unknown` on purpose: the declared return type is `string`, and the
+  // whole point of this check is that a return type is not a runtime proof.
+  const json: unknown = serializeAgentDecisionLogEntry(projection);
+  if (typeof json !== "string") {
+    throw invalidArgument("entry", "not-json-serializable");
   }
   const line = `${json}\n`;
   const lineBytes = Buffer.byteLength(line, "utf8");
@@ -276,8 +270,9 @@ function renderLogLine(entry: M3LAgentDecisionLogEntry): string {
 }
 
 /**
- * The append-only segmented writer's guts: cold-start discovery, the
- * byte/age/date rotation decision, and one `appendFile` call per entry.
+ * The append-only segmented writer's guts: the byte/age/date rotation
+ * decision and one `appendFile` call per entry, over the stateless segment
+ * layer in `./decision-log-segments.js`.
  *
  * No index file is kept and no state is carried across processes — a fresh
  * instance always re-derives the active segment from a directory listing
@@ -315,19 +310,22 @@ export class AgentDecisionLogWriter {
   }
 
   /**
-   * Appends one entry as a single `JSON.stringify(entry) + "\n"` line,
-   * rotating the active segment first when any ceiling is already crossed.
-   * Validates and renders the line before touching the filesystem at all, so
-   * a rejected entry leaves nothing behind.
+   * Appends one entry as a single JSON line, rotating the active segment
+   * first when any ceiling is already crossed. Validates the entry, rebuilds
+   * it as this library's own detached copy, and renders the line before
+   * touching the filesystem at all, so a rejected entry leaves nothing
+   * behind — and what reaches disk is the projection, never the caller's
+   * object (see {@link renderLogLine}).
    *
    * @throws {@link M3LError} with `code: "ERR_INVALID_ARGUMENT"` when `entry`
-   *   is not a plain object, or cannot be serialized at all (a circular
-   *   reference, a `BigInt`) — a caller-side violation, not a write failure.
+   *   is not structurally a decision-log entry — a caller-side violation, not
+   *   a write failure.
    * @throws {@link M3LAgentDecisionLogWriteError} when the rendered line
    *   exceeds `M3L_AGENT_MAX_LOG_ENTRY_BYTES` — well-formed, but larger than
    *   this writer can durably append in one atomic write — or when the
-   *   append itself fails for any reason. The underlying cause is always
-   *   chained; neither message nor `context` ever carries caller data.
+   *   append itself fails for any reason, including a segment path that has
+   *   been replaced by a symlink. The underlying cause is always chained;
+   *   neither message nor `context` ever carries caller data.
    */
   async write(entry: M3LAgentDecisionLogEntry): Promise<void> {
     const line = renderLogLine(entry);
@@ -348,7 +346,7 @@ export class AgentDecisionLogWriter {
     try {
       const current = await this.resolveActiveSegment();
       const segment = this.shouldRotate(current)
-        ? this.openNewSegment(current)
+        ? await nextSegment(this.directory, current)
         : current;
 
       // O_APPEND: seeking to the end and writing are one atomic step from
@@ -357,17 +355,31 @@ export class AgentDecisionLogWriter {
       // not hold across NFS, and does not cover a write() larger than the
       // pipe/write buffer — which is exactly why `renderLogLine`'s ceiling
       // check runs before any of this.
-      await appendFile(segment.path, line, { encoding: "utf8", flag: "a" });
+      await appendFile(segment.path, line, {
+        encoding: "utf8",
+        flag: APPEND_FLAGS,
+      });
       segment.size += Buffer.byteLength(line, "utf8");
       this.active = segment;
     } catch (cause) {
+      // Drop the cached segment. `this.active` is assigned before an append
+      // is known to have succeeded, and `mkdir` runs only on the
+      // `this.active === undefined` branch of `resolveActiveSegment` — so a
+      // log directory removed under a long-lived writer would wedge every
+      // later write on this instance for the rest of the process, while a
+      // freshly constructed writer recreated it and carried on. Clearing it
+      // makes the next write cold-start: mkdir, then re-discover.
+      this.active = undefined;
       // Already typed — re-throw unchanged rather than double-wrapping.
       if (cause instanceof M3LError) {
         throw cause;
       }
+      // No `context`: everything worth naming here is the directory path,
+      // which is caller input. The chained `cause` is Node's own error and
+      // carries the operational detail — see this module's header.
       throw new M3LAgentDecisionLogWriteError(
         "agent decision log: failed to append an entry",
-        { context: { directory: this.directory }, cause },
+        { cause },
       );
     }
   }
@@ -393,77 +405,14 @@ export class AgentDecisionLogWriter {
 
   /**
    * Returns the writer's in-memory active segment, discovering it from the
-   * directory (cold-start) on this instance's first call.
-   *
-   * A discovered segment's age is taken from `birthtimeMs`, falling back to
-   * `mtimeMs` on a filesystem that reports no birth time (it reports `0`).
-   * That fallback is a known, accepted approximation, in the same register
-   * as the O_APPEND/NFS caveat above: `mtimeMs` is the time of the last
-   * *write*, so on such a filesystem a continuously appended segment keeps
-   * resetting its own measured age and may never reach `maxSegmentAgeMs`.
-   * The byte ceiling and the date rollover both still bound it. Carrying an
-   * in-memory creation time to paper over this is deliberately NOT done: it
-   * would be state that a freshly spawned process cannot reconstruct, and
-   * cold-start agreement between processes is the stronger guarantee.
+   * directory (cold-start) on this instance's first call — including creating
+   * the directory. Every later call on this instance reuses the cached
+   * record, until an append fails and clears it.
    */
   private async resolveActiveSegment(): Promise<ActiveSegment> {
-    if (this.active !== undefined) {
-      return this.active;
+    if (this.active === undefined) {
+      this.active = await discoverActiveSegment(this.directory);
     }
-    await mkdir(this.directory, { recursive: true });
-    const datePrefix = currentDatePrefix();
-    const names = await readdir(this.directory);
-
-    let best: ParsedSegmentName | undefined;
-    for (const name of names) {
-      const parsed = parseSegmentName(name);
-      if (
-        parsed !== undefined &&
-        parsed.datePrefix === datePrefix &&
-        (best === undefined || parsed.sequence > best.sequence)
-      ) {
-        best = parsed;
-      }
-    }
-
-    if (best === undefined) {
-      this.active = this.newSegment(datePrefix, 1);
-      return this.active;
-    }
-
-    const segmentPath = path.join(
-      this.directory,
-      segmentFileName(best.datePrefix, best.sequence),
-    );
-    const stats = await stat(segmentPath);
-    this.active = {
-      path: segmentPath,
-      datePrefix: best.datePrefix,
-      sequence: best.sequence,
-      size: stats.size,
-      createdAtMs: stats.birthtimeMs > 0 ? stats.birthtimeMs : stats.mtimeMs,
-    };
     return this.active;
-  }
-
-  /** Seals `prior` (by no longer writing to it) and opens the next segment. */
-  private openNewSegment(prior: ActiveSegment): ActiveSegment {
-    const datePrefix = currentDatePrefix();
-    const sequence = datePrefix === prior.datePrefix ? prior.sequence + 1 : 1;
-    return this.newSegment(datePrefix, sequence);
-  }
-
-  /**
-   * Builds a fresh, empty in-memory segment record. The file itself is
-   * created by the first `appendFile` call against it.
-   */
-  private newSegment(datePrefix: string, sequence: number): ActiveSegment {
-    return {
-      path: path.join(this.directory, segmentFileName(datePrefix, sequence)),
-      datePrefix,
-      sequence,
-      size: 0,
-      createdAtMs: Date.now(),
-    };
   }
 }
