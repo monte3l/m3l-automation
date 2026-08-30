@@ -28,7 +28,7 @@ const EVENT_SOURCE_READY_STATE_CLOSED = 2;
  * with "hasn't ended yet", or an unparseable reason renders as if the
  * stream were still healthy.
  */
-export type M3LRunStreamEndReason = "completed" | "draining" | "unknown";
+type M3LRunStreamEndReason = "completed" | "draining" | "unknown";
 
 /**
  * Live state accumulated from a run's `GET /api/v1/runs/:id/stream` SSE
