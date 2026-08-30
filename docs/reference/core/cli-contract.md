@@ -30,34 +30,6 @@ did-you-mean suggestions, table layout, the discovery cache, and the concrete
 `packages/m3l-cli`. What crosses into the library is the _shape_ a script must
 present and the _shape_ a host must supply — nothing that renders anything.
 
-## Landing plan
-
-ADR-0072 slice record.
-
-| Slice                          | Scope                                                                                                                                    | Status |
-| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| U3 — the contract              | The descriptor types, the outcome→exit-code mapper, and the output port. 5 exports.                                                      | Landed |
-| U7a — the host seams (library) | The logger factory, the output-stream shape + default factory, the two descriptor/outcome guards, and `deriveCommandOutcome`. See below. | Landed |
-
-Deliberately **not** in this slice, and why:
-
-- **ADR-0055's operation declaration.** The declarative, enumerable operations
-  field lands in `core/config` at U4; the descriptor is widened then, as a
-  second additive minor. No placeholder type ships here.
-- **The `M3LScript`/`runScript` composition.** See
-  [Compatibility with `core/script`](#compatibility-with-corescript) — an
-  ADR-0009 layering zone puts it out of reach, so it lands in the adopting
-  script (U6) and the CLI's in-process host (U7).
-- **The CLI's own in-process execution path.** U7a lands the library seams a
-  host needs; `packages/m3l-cli`'s consumption of them — locating and
-  dynamically importing a script's `dist/command.js`, building the context,
-  wiring `--in-process` — is U7's second slice and is not in this diff.
-
-This slice takes Core from 23 to 24 submodules (fleet total 42 → 43). ADR-0054,
-`docs/ROADMAP.md`, and `docs/plans/IMPLEMENTATION.md` all originally recorded
-"22 → 23"; that was authored on 2026-08-20, one day before `core/procedure`
-landed and consumed 22 → 23. The tracker rows are corrected in the same PR.
-
 ## Public API
 
 ```typescript
@@ -98,6 +70,34 @@ them here would not merely duplicate — it would **break the barrel**:
 `export * from "./<mod>/index.js"`, and the same name arriving from two star
 exports is TS2308 at compile time and a _silently dropped_ export under ES
 module semantics.
+
+## Landing plan
+
+ADR-0072 slice record.
+
+| Slice                          | Scope                                                                                                                                    | Status |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| U3 — the contract              | The descriptor types, the outcome→exit-code mapper, and the output port. 5 exports.                                                      | Landed |
+| U7a — the host seams (library) | The logger factory, the output-stream shape + default factory, the two descriptor/outcome guards, and `deriveCommandOutcome`. See below. | Landed |
+
+Deliberately **not** in this slice, and why:
+
+- **ADR-0055's operation declaration.** The declarative, enumerable operations
+  field lands in `core/config` at U4; the descriptor is widened then, as a
+  second additive minor. No placeholder type ships here.
+- **The `M3LScript`/`runScript` composition.** See
+  [Compatibility with `core/script`](#compatibility-with-corescript) — an
+  ADR-0009 layering zone puts it out of reach, so it lands in the adopting
+  script (U6) and the CLI's in-process host (U7).
+- **The CLI's own in-process execution path.** U7a lands the library seams a
+  host needs; `packages/m3l-cli`'s consumption of them — locating and
+  dynamically importing a script's `dist/command.js`, building the context,
+  wiring `--in-process` — is U7's second slice and is not in this diff.
+
+This slice takes Core from 23 to 24 submodules (fleet total 42 → 43). ADR-0054,
+`docs/ROADMAP.md`, and `docs/plans/IMPLEMENTATION.md` all originally recorded
+"22 → 23"; that was authored on 2026-08-20, one day before `core/procedure`
+landed and consumed 22 → 23. The tracker rows are corrected in the same PR.
 
 ## The command-module descriptor
 

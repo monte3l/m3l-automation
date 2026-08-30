@@ -36,9 +36,9 @@ command (fail-fast by default), including `hub-alarm`'s (skipped by default —
 see below); `pnpm check:verify-parity` keeps its step list
 (`bin/lib/verify-steps.mjs`) from drifting out of sync with `ci.yml`'s lane
 jobs regardless of which job a step lives in. `ci.yml`'s own `verify` job is
-the required-status-check aggregator (`needs:` on eight of the nine lanes —
-`hub-alarm` is deliberately excluded, ADR-0079) — it carries no project
-checks itself.
+the required-status-check aggregator (`needs:` on all ten jobs — the
+`changes` path-classifier plus the nine parallel lanes; `hub-alarm` is
+deliberately excluded, ADR-0079) — it carries no project checks itself.
 
 The `secrets` lane (`gitleaks/gitleaks-action`, config at `.gitleaks.toml`)
 has no local `pnpm` equivalent — `verify` skips it — and this repo carries no

@@ -23,6 +23,8 @@ import { fileURLToPath } from "node:url";
 import { join, basename } from "node:path";
 import { parseJsonFlag, createReporter, repoRoot } from "./lib/report.mjs";
 
+const hooksReferenceRel = "docs/contributing/hooks-reference.md";
+
 // The full set of Claude Code hook lifecycle events, per the official hooks
 // reference: https://code.claude.com/docs/en/hooks
 export const KNOWN_EVENTS = new Set([
@@ -116,6 +118,115 @@ export function validateHooksConfig(
   return { errors, warnings, referenced };
 }
 
+/**
+ * Extract the bare glob from a Claude Code `if:` permission-rule string
+ * like `Write(dist/glob-here)` or `Edit(*.md)`.
+ *
+ * @param {string} ifRule
+ * @returns {string | null}
+ */
+export function extractIfGlob(ifRule) {
+  const m = (ifRule ?? "").match(/^(?:Write|Edit)\(([^)]*)\)$/);
+  return m === null ? null : m[1];
+}
+
+/**
+ * Group every `if:`-scoped glob actually wired in `.claude/settings.json`,
+ * keyed by `${event}::${hookScriptName}`, deduplicated — a guard scoped to
+ * one glob is typically wired twice (once for `Write`, once for `Edit`).
+ *
+ * @param {{ hooks?: Record<string, Array<{ hooks?: Array<{ command?: string, if?: string }> }>> }} settings
+ * @returns {Map<string, Set<string>>}
+ */
+export function collectSettingsIfGlobs(settings) {
+  /** @type {Map<string, Set<string>>} */
+  const byKey = new Map();
+  for (const [event, entries] of Object.entries(settings.hooks ?? {})) {
+    for (const entry of entries) {
+      for (const hook of entry.hooks ?? []) {
+        const name = extractHookScriptName(hook.command ?? "");
+        if (name === null) continue;
+        const glob = extractIfGlob(hook.if ?? "");
+        if (glob === null) continue;
+        const key = `${event}::${name}`;
+        if (!byKey.has(key)) byKey.set(key, new Set());
+        byKey.get(key).add(glob);
+      }
+    }
+  }
+  return byKey;
+}
+
+/**
+ * Parse `docs/contributing/hooks-reference.md`'s hook inventory table into
+ * one row per (event, hook), pulling any `if \`glob\`[, \`glob\`...]` clause
+ * out of the Matcher cell. A markdown table cell escapes a literal pipe as
+ * `\|` (e.g. `` `Write\|Edit` ``) — that escape is honored so the cell isn't
+ * mis-split on it.
+ *
+ * @param {string} markdown
+ * @returns {Array<{ event: string, hookName: string, ifGlobs: string[] }>}
+ */
+export function parseHooksReferenceTable(markdown) {
+  const ESCAPED_PIPE = "\u0000PIPE\u0000";
+  /** @type {Array<{ event: string, hookName: string, ifGlobs: string[] }>} */
+  const rows = [];
+  for (const line of markdown.split("\n")) {
+    if (!line.startsWith("|")) continue;
+    const cells = line
+      .replace(/\\\|/g, ESCAPED_PIPE)
+      .split("|")
+      .slice(1, -1)
+      .map((c) => c.trim().replaceAll(ESCAPED_PIPE, "|"));
+    if (cells.length < 3) continue;
+    const [eventCell, matcherCell, hookCell] = cells;
+    if (eventCell === "Event" || /^-+$/.test(eventCell.replace(/\s/g, "")))
+      continue;
+    const hookMatch = hookCell.match(/^`([\w.-]+\.mjs)`$/);
+    if (hookMatch === null) continue;
+    const ifMatch = matcherCell.match(/\bif\b(.+)$/);
+    const ifGlobs =
+      ifMatch === null
+        ? []
+        : [...ifMatch[1].matchAll(/`([^`]+)`/g)].map((m) => m[1]);
+    rows.push({ event: eventCell, hookName: hookMatch[1], ifGlobs });
+  }
+  return rows;
+}
+
+/**
+ * Diff `docs/contributing/hooks-reference.md`'s documented `if:` globs
+ * against what `.claude/settings.json` actually wires, in both directions —
+ * a stale doc that still shows a bare matcher for a since-scoped guard is
+ * exactly the drift a 2026-08-31 audit against Anthropic's AI-native SDLC
+ * playbook found in 9 of the table's rows.
+ *
+ * @param {Array<{ event: string, hookName: string, ifGlobs: string[] }>} docRows
+ * @param {Map<string, Set<string>>} settingsIfGlobs from {@link collectSettingsIfGlobs}
+ * @returns {Array<{ event: string, hookName: string, documented: string[], actual: string[] }>}
+ */
+export function diffHooksReferenceIfGlobs(docRows, settingsIfGlobs) {
+  const mismatches = [];
+  for (const row of docRows) {
+    const key = `${row.event}::${row.hookName}`;
+    const actualSet = settingsIfGlobs.get(key) ?? new Set();
+    const documented = [...new Set(row.ifGlobs)].sort();
+    const actual = [...actualSet].sort();
+    const same =
+      documented.length === actual.length &&
+      documented.every((g, i) => g === actual[i]);
+    if (!same) {
+      mismatches.push({
+        event: row.event,
+        hookName: row.hookName,
+        documented,
+        actual,
+      });
+    }
+  }
+  return mismatches;
+}
+
 // Main execution — only run when invoked directly, not when imported for testing.
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const root = repoRoot(import.meta.url);
@@ -134,6 +245,29 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     onDiskHookNames,
   });
 
+  // hooks-reference.md's documented `if:` globs vs. what's actually wired —
+  // catches the doc-vs-settings drift a matcher-column edit can silently
+  // leave behind (2026-08-31 audit).
+  const hooksReferencePath = join(root, hooksReferenceRel);
+  const hooksReferenceMd = existsSync(hooksReferencePath)
+    ? readFileSync(hooksReferencePath, "utf8")
+    : null;
+  const docRows =
+    hooksReferenceMd === null ? [] : parseHooksReferenceTable(hooksReferenceMd);
+  const settingsIfGlobs = collectSettingsIfGlobs(settings);
+  const ifGlobMismatches = diffHooksReferenceIfGlobs(docRows, settingsIfGlobs);
+
+  if (hooksReferenceMd === null) {
+    errors.push(`${hooksReferenceRel} does not exist — cannot verify parity.`);
+  }
+  for (const m of ifGlobMismatches) {
+    errors.push(
+      `${hooksReferenceRel}'s "${m.hookName}" row (${m.event}) documents ` +
+        `if-scope [${m.documented.join(", ")}] but .claude/settings.json wires ` +
+        `[${m.actual.join(", ")}] — update the Matcher cell to match.`,
+    );
+  }
+
   for (const warning of warnings) {
     reporter.warn(warning, { file: ".claude/settings.json" });
   }
@@ -148,7 +282,8 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   }
 
   reporter.succeed(
-    `${referenced.size} wired hooks valid: every referenced script exists.`,
+    `${referenced.size} wired hooks valid: every referenced script exists; ` +
+      `${docRows.length} hooks-reference.md row(s) match settings.json's if-scoping.`,
   );
   reporter.finish();
 }
