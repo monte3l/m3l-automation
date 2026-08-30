@@ -866,6 +866,128 @@ describe("[decision.action.target] structural validation", () => {
   });
 });
 
+describe("[decision.action.operation] structural validation", () => {
+  // [CRITICAL] Value-leak regression pin: the review bot's exact finding.
+  // Before `readRequiredHoldingUndefinedString` was called on `operation`,
+  // it was read and copied verbatim into the entry (`projectEntry`) without
+  // ever being validated -- so a caller-supplied
+  // `action.operation = { apiKey: "SECRET-VALUE" }` landed straight in the
+  // audit log, breaking the module's names-never-values guarantee outright.
+  // This is the worst instance of the class this module has shipped: unlike
+  // the `target` regression (an empty target), this one carries an actual
+  // secret-shaped value into the log. Deleting the validation call on
+  // `operation` in `assertValidDecisionAction` must make this test fail.
+  test("[CRITICAL] an object action.operation throws, and the secret value never leaks into the thrown error", () => {
+    const decision = autoApprovedDecision();
+    const error = expectLogEntryRejected(() =>
+      callWithOptions(
+        optionsWithDecision({
+          ...decision,
+          action: {
+            ...decision.action,
+            operation: { apiKey: "SECRET-VALUE" },
+          },
+        }),
+      ),
+    );
+    expect(error.context["field"]).toBe("decision.action.operation");
+    expect(error.context["violation"]).toBe("blank-or-non-string");
+    expect(error.message).not.toContain("SECRET-VALUE");
+    expect(JSON.stringify(error.context)).not.toContain("SECRET-VALUE");
+    // `JSON.stringify` on an `Error` instance calls its `toJSON()` when
+    // present -- `M3LError.toJSON()` is the allowlisted projection this
+    // module's own docs point to for "never a value read out of the
+    // caller's input" -- so this is the serialized-form check the value
+    // must not survive either.
+    expect(JSON.stringify(error)).not.toContain("SECRET-VALUE");
+  });
+
+  test("a non-string, non-object action.operation throws the same qualified label", () => {
+    const decision = autoApprovedDecision();
+    const error = expectLogEntryRejected(() =>
+      callWithOptions(
+        optionsWithDecision({
+          ...decision,
+          action: { ...decision.action, operation: 42 },
+        }),
+      ),
+    );
+    expect(error.context["field"]).toBe("decision.action.operation");
+    expect(error.context["violation"]).toBe("blank-or-non-string");
+    expect(Object.values(error.context)).not.toContain(42);
+  });
+
+  test("an absent action.operation is accepted", () => {
+    // `evaluateAgentAction` always emits `operation` as an own key (holding
+    // `undefined` when the caller declared none) -- the "required, holding
+    // `undefined`" shape covered by the next test -- so a genuinely *absent*
+    // key (no own property at all) can only be built by hand here, mirroring
+    // how the `[decision.action.target]` block above builds its own
+    // malformed-but-not-really-malformed fixtures.
+    const decision = autoApprovedDecision();
+    const { operation: _operation, ...actionWithoutOperation } =
+      decision.action;
+    expect(Object.hasOwn(actionWithoutOperation, "operation")).toBe(false);
+    // `actionWithoutOperation` deliberately no longer satisfies
+    // `M3LAgentActionRecord` (which declares `operation` as an own,
+    // required-holding-`undefined` field) -- exactly the shape this test
+    // means to exercise -- so the bag goes through `callWithOptions`'s
+    // `unknown` seam rather than the typed `agentDecisionLogEntry` call.
+    const entry = callWithOptions(
+      optionsWithDecision({ ...decision, action: actionWithoutOperation }),
+    ) as M3LAgentDecisionLogEntry;
+    expect(entry.operation).toBeUndefined();
+  });
+
+  // `M3LAgentActionRecord.operation` uses the "required, holding `undefined`"
+  // shape (`core/agent/action-types.ts`) -- an own key present but holding
+  // `undefined` is legitimate input, not "absent", so it must be accepted
+  // rather than rejected as malformed. Getting this wrong would break the
+  // library's own projection of a real action record.
+  test("an own operation key holding undefined is accepted, not rejected", () => {
+    const decision = autoApprovedDecision();
+    const entry = agentDecisionLogEntry({
+      decision: {
+        ...decision,
+        action: { ...decision.action, operation: undefined },
+      },
+      identity: IDENTITY_MINIMAL,
+      now: NOW_MS,
+    });
+    expect(entry.operation).toBeUndefined();
+  });
+
+  test("a blank or whitespace-only action.operation throws", () => {
+    const decision = autoApprovedDecision();
+    const error = expectLogEntryRejected(() =>
+      callWithOptions(
+        optionsWithDecision({
+          ...decision,
+          action: { ...decision.action, operation: "   " },
+        }),
+      ),
+    );
+    expect(error.context["field"]).toBe("decision.action.operation");
+    expect(error.context["violation"]).toBe("blank-or-non-string");
+  });
+
+  test("a valid action.operation round-trips into the entry and the serialized line", () => {
+    const decision = autoApprovedDecision();
+    const entry = agentDecisionLogEntry({
+      decision,
+      identity: IDENTITY_MINIMAL,
+      now: NOW_MS,
+    });
+    expect(entry.operation).toBe(decision.action.operation);
+    expect(entry.operation).toBe("get-item");
+    const parsed = JSON.parse(serializeAgentDecisionLogEntry(entry)) as Record<
+      string,
+      unknown
+    >;
+    expect(parsed["operation"]).toBe("get-item");
+  });
+});
+
 describe("[decision] closed-vocabulary validation (verdict / rule / kind)", () => {
   test("decision.verdict outside the closed vocabulary is a distinct violation from blank-or-non-string", () => {
     const decision = autoApprovedDecision();

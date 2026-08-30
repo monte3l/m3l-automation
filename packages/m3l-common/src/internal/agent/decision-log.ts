@@ -9,8 +9,27 @@
  * `internal/agent/action.ts` already uses for the caller's action. Everything
  * else in the options bag (`identity`, `now`, `outcome`, `tokens`, `cost`,
  * and the bag's own key set) is validated the same way.
+ *
+ * Every field the projector (`projectEntry`) reads off `decision` is proven
+ * here — this claim has needed three review rounds to become true
+ * (`decision` itself, then `decision.action.target`, then
+ * `decision.action.operation`), so it is now backed by more than prose:
+ * {@link DECISION_KEYS_PROOF}, {@link DECISION_ACTION_KEYS_PROOF}, and
+ * {@link DECISION_ACTION_TARGET_KEYS_PROOF} are `Record<keyof T, true>`
+ * literals that only type-check when their key set exactly matches the
+ * mirrored interface's (`M3LAgentDecision`, `M3LAgentActionRecord`,
+ * `M3LAgentActionRecordTarget`), so a field added to one of those
+ * interfaces without a matching edit here is a compile error. That proves
+ * the *allowlist* stays complete; it cannot prove a validation call exists
+ * for a key the allowlist admits, which is the half that slipped for
+ * `operation` — see the read-set/proven-set ledger on
+ * {@link assertValidDecisionAction} for that half.
  */
 
+import type {
+  M3LAgentActionRecord,
+  M3LAgentActionRecordTarget,
+} from "../../core/agent/action-types.js";
 import type { M3LAgentDecision } from "../../core/agent/verdict-types.js";
 import { M3LAgentActionValidationError } from "../../core/agent/M3LAgentActionValidationError.js";
 import type {
@@ -56,37 +75,81 @@ const OUTCOME_KEYS: ReadonlySet<string> = new Set([
   "registryName",
 ]);
 
-/** The only own keys a decision may carry (mirrors `M3LAgentDecision`). */
-const DECISION_KEYS: ReadonlySet<string> = new Set([
-  "action",
-  "verdict",
-  "rule",
-  "reason",
-]);
+/**
+ * Compile-time proof that {@link DECISION_KEYS} names every field of
+ * `M3LAgentDecision` — this object literal type-checks only when its key set
+ * exactly matches `keyof M3LAgentDecision`; a field added to (or removed
+ * from) that type without a matching edit here is a `TS2741` (missing
+ * property) or `TS2353` (excess property) compile error, not a silent gap.
+ * It does not, by itself, prove the field is *validated* — see the header
+ * comment above {@link assertValidDecision} for that half of the claim.
+ */
+const DECISION_KEYS_PROOF: Record<keyof M3LAgentDecision, true> = {
+  action: true,
+  verdict: true,
+  rule: true,
+  reason: true,
+};
+
+/**
+ * The only own keys a decision may carry (mirrors `M3LAgentDecision`).
+ *
+ * @remarks
+ * Derived from {@link DECISION_KEYS_PROOF} rather than a hand-written array:
+ * see that constant for why this Set can never silently drift from the type
+ * it mirrors.
+ */
+const DECISION_KEYS: ReadonlySet<string> = new Set(
+  Object.keys(DECISION_KEYS_PROOF),
+);
+
+/**
+ * Compile-time proof that {@link DECISION_ACTION_KEYS} names every field of
+ * `M3LAgentActionRecord`. This is the record a field added to the interface
+ * (e.g. `operation`, the field this module's third review round found
+ * unvalidated) must now also join, or the file fails to compile.
+ */
+const DECISION_ACTION_KEYS_PROOF: Record<keyof M3LAgentActionRecord, true> = {
+  script: true,
+  operation: true,
+  kind: true,
+  target: true,
+  parameterNames: true,
+  dryRun: true,
+  shapeKey: true,
+};
 
 /**
  * The only own keys a decision's action record may carry (mirrors
- * `M3LAgentActionRecord`).
+ * `M3LAgentActionRecord`). Derived from {@link DECISION_ACTION_KEYS_PROOF};
+ * see {@link DECISION_KEYS_PROOF} for the mechanism.
  */
-const DECISION_ACTION_KEYS: ReadonlySet<string> = new Set([
-  "script",
-  "operation",
-  "kind",
-  "target",
-  "parameterNames",
-  "dryRun",
-  "shapeKey",
-]);
+const DECISION_ACTION_KEYS: ReadonlySet<string> = new Set(
+  Object.keys(DECISION_ACTION_KEYS_PROOF),
+);
+
+/**
+ * Compile-time proof that {@link DECISION_ACTION_TARGET_KEYS} names every
+ * field of `M3LAgentActionRecordTarget`.
+ */
+const DECISION_ACTION_TARGET_KEYS_PROOF: Record<
+  keyof M3LAgentActionRecordTarget,
+  true
+> = {
+  profile: true,
+  region: true,
+  accountId: true,
+};
 
 /**
  * The only own keys a decision's action `target` may carry (mirrors
- * `M3LAgentActionRecordTarget`).
+ * `M3LAgentActionRecordTarget`). Derived from
+ * {@link DECISION_ACTION_TARGET_KEYS_PROOF}; see {@link DECISION_KEYS_PROOF}
+ * for the mechanism.
  */
-const DECISION_ACTION_TARGET_KEYS: ReadonlySet<string> = new Set([
-  "profile",
-  "region",
-  "accountId",
-]);
+const DECISION_ACTION_TARGET_KEYS: ReadonlySet<string> = new Set(
+  Object.keys(DECISION_ACTION_TARGET_KEYS_PROOF),
+);
 
 /** The three `M3LAgentVerdict` members — this build's closed vocabulary. */
 const AGENT_VERDICTS: ReadonlySet<string> = new Set([
@@ -144,13 +207,16 @@ function readOptionalNonBlankString(
 }
 
 /**
- * Reads an optional non-blank string field of a decision's action `target`,
- * where an own key holding `undefined` is legitimate input — not merely
- * "absent" — matching `M3LAgentActionRecordTarget`'s "required, holding
- * `undefined`" shape (`core/agent/action-types.ts`). A present-but-blank or a
- * present-non-string, non-`undefined` value is malformed and throws.
+ * Reads an optional non-blank string field where an own key holding
+ * `undefined` is legitimate input — not merely "absent" — matching the
+ * "required, holding `undefined`" shape `M3LAgentActionRecordTarget` and
+ * `M3LAgentActionRecord.operation` both use (`core/agent/action-types.ts`).
+ * A present-but-blank or a present-non-string, non-`undefined` value is
+ * malformed and throws. Shared by `decision.action.target`'s own fields and
+ * `decision.action.operation` — every field this module reads that has this
+ * exact shape goes through here, so the shape is proven once.
  */
-function readOptionalTargetString(
+function readRequiredHoldingUndefinedString(
   record: Readonly<Record<string, unknown>>,
   key: string,
   field: string,
@@ -189,9 +255,17 @@ function assertValidDecisionActionTarget(value: unknown): void {
     "decision.action.target",
     logFailure,
   );
-  readOptionalTargetString(value, "profile", "decision.action.target.profile");
-  readOptionalTargetString(value, "region", "decision.action.target.region");
-  readOptionalTargetString(
+  readRequiredHoldingUndefinedString(
+    value,
+    "profile",
+    "decision.action.target.profile",
+  );
+  readRequiredHoldingUndefinedString(
+    value,
+    "region",
+    "decision.action.target.region",
+  );
+  readRequiredHoldingUndefinedString(
     value,
     "accountId",
     "decision.action.target.accountId",
@@ -391,6 +465,21 @@ function requireNonBlankString(
 /**
  * Validates `decision.action`: a plain object carrying exactly the fields
  * `projectEntry` copies verbatim into the entry.
+ *
+ * @remarks
+ * READ-SET / PROVEN-SET LEDGER — every field `projectEntry` reads off
+ * `action` (`action.script`, `action.operation`, `action.kind`,
+ * `action.target`, `action.parameterNames`, `action.shapeKey`) is proven by
+ * a call below; `action.dryRun` is proven too even though `projectEntry`
+ * does not read it (it is deliberately excluded from the entry — see
+ * `M3LAgentDecisionLogEntry`'s remarks). {@link DECISION_ACTION_KEYS_PROOF}
+ * forces this function to be revisited — a missing case here plus a missing
+ * row there is now two compile errors, not one — whenever
+ * `M3LAgentActionRecord` gains a field: add the field to the proof record,
+ * then add a validation call in this function proving it, in the same edit.
+ * `operation`'s absence here (a caller-supplied `{ apiKey: "…" }` copied
+ * straight into the audit log) was this ledger's third and, so far, last
+ * gap — see the module header.
  */
 function assertValidDecisionAction(
   value: unknown,
@@ -401,6 +490,11 @@ function assertValidDecisionAction(
   assertAllowedKeys(value, DECISION_ACTION_KEYS, "decision.action", logFailure);
 
   requireNonBlankString(value, "script", "decision.action.script");
+  readRequiredHoldingUndefinedString(
+    value,
+    "operation",
+    "decision.action.operation",
+  );
   requireStringInUnion(
     value,
     "kind",

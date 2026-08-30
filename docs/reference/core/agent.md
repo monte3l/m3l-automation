@@ -1548,7 +1548,8 @@ malformed. The full set:
 - `decision` is missing, is not a plain object, or is structurally malformed —
   a non-object `decision.action`; a blank `decision.action.script` or
   `.shapeKey`; a malformed `.parameterNames` or `.dryRun`; a blank
-  `decision.reason`; a `decision.action.target` that is present but not a plain
+  `decision.reason`; a `decision.action.operation` that is present and neither
+  `undefined` nor a non-blank string; a `decision.action.target` that is present but not a plain
   object, or whose `profile` / `region` / `accountId` is present-and-blank or
   non-string, or which carries an unknown key.
 - `decision.verdict`, `decision.rule` or `decision.action.kind` holds a string
@@ -1565,11 +1566,22 @@ malformed. The full set:
 Its `context` names the offending field and the violation kind, **never a
 value** — the same discipline both existing errors on this module follow.
 
-**Every field the projector reads is proven**, `target` included. That last
+**Every field the projector reads is proven** — `target` and `operation`
+included. That last
 one is not a footnote: `target` is read and copied field-by-field, so an
 unvalidated `action.target = "prod"` produced `"target":{}` — an entry that
 silently lost the account and region coordinates an auditor needs, while
-looking entirely well-formed.
+looking entirely well-formed. An unvalidated `operation` was worse still: a
+non-string one carried a **caller-supplied value** straight into the log,
+breaking the names-never-values guarantee this module exists to provide.
+
+That gap was found three times, on three different fields, before it was closed
+as a class. The key allowlists are now derived from `Record<keyof T, true>`
+proof objects mirroring `M3LAgentDecision`, `M3LAgentActionRecord` and
+`M3LAgentActionRecordTarget`, so a field added to any of them without a
+matching proof entry is a **compile error**, not a silent hole. That closes
+allowlist drift; it cannot prove a validation _call_ exists per admitted key,
+which is recorded in the source as a known limit rather than papered over.
 
 `decision` is validated rather than trusted even though `evaluateAgentAction`
 is the only thing that produces one. In a fully-typed call graph a malformed
