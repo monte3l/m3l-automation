@@ -223,10 +223,12 @@ number>` already relies on (found A4b: `LOG_LEVEL_FLOORS`).
   re-read it.** That is two observations of a mutable, caller-controlled
   graph, and it is defeated by making them disagree — a non-idempotent
   getter, a non-enumerable own `toJSON` invisible to `Object.keys` but
-  applied by the serializer, own non-index properties on an array, a
-  `length` re-read mid-loop. Do the traversal **once**: validate and project
-  into a fresh structure, then derive the downstream artifact (hash, digest,
-  persisted bytes) from the projection, never from the original.
+  applied by the serializer, an **inherited** `toJSON` that `Object.freeze`
+  cannot stop `JSON.stringify` from dispatching to, own non-index properties
+  on an array, a `length` re-read mid-loop. Do the traversal **once**:
+  validate and project into a fresh structure, then derive the downstream
+  artifact (hash, digest, persisted bytes) from the projection, never from
+  the original.
   `core/checkpoint`'s A4 fingerprint proved it — three guards were refuted in
   a row, each by a new route from the caller's object to the hash, until the
   two reads were collapsed into one
@@ -254,7 +256,14 @@ number>` already relies on (found A4b: `LOG_LEVEL_FLOORS`).
   carry the previous round's clean result forward. A4 shipped two regressions
   this way: a `cause` chained around `JSON.stringify` leaked caller property
   paths, and moving `JSON.stringify` ahead of `canonicalJsonHash` turned a loud
-  non-finite rejection into a silent `null` substitution.
+  non-finite rejection into a silent `null` substitution. V7 reproduced both
+  halves (`docs/logs/2026-08-30-v7-agent-decision-log.md`); grep this file by
+  mechanism (`try`, `stringify`, `cause`), not by the module you are editing.
+- **`JSON.stringify` is typed `string` and returns `undefined`** — for a bare
+  `undefined`, a function, a symbol, or a plain object whose `toJSON()` returns
+  one. A template literal launders that into the text `"undefined"`, which
+  writes and hashes cleanly and parses as nothing. Assert it is a string before
+  measuring, writing, or digesting it.
 - **Parse untrusted text (caller input, file/HTTP/SDK payloads, model output)
   with a string-first approach** (`indexOf`/`slice`/`startsWith`/`codePointAt`)
   where it suffices; when a regex is the right tool, keep it structurally
