@@ -26,6 +26,7 @@ import { loadAgentPolicy } from "../../src/steps/load-policy.js";
 import {
   castPolicy,
   invalidPolicyDeclarations,
+  realAgentPolicy,
 } from "../support/policyFixtures.js";
 
 const POLICY_FILE = "agent-policy.json";
@@ -181,6 +182,33 @@ describe("loadAgentPolicy", () => {
       "ERR_AGENT_OPERATOR_POLICY",
     );
     expect(({} as Record<string, unknown>)["polluted"]).toBeUndefined();
+  });
+});
+
+describe("policyFixtures.realAgentPolicy (the committed, deployed policy)", () => {
+  // Reads and validates the REAL committed data/input/agent-policy.json
+  // unmocked, per .claude/rules/tests.md's "when the subject IS a committed
+  // artifact, read the real filesystem unmocked" rule — this proves the
+  // policy actually shipped is valid and shaped the way the docs claim, and
+  // guards against someone editing it into an invalid or over-granted state.
+  it("validates and matches the documented shape: version 1, 17 grants, every grant read-only-annotated, both discipline flags, and all five budget ceilings", async () => {
+    const policy = await realAgentPolicy();
+
+    expect(policy.version).toBe(1);
+    expect(policy.scripts).toHaveLength(17);
+    for (const grant of policy.scripts) {
+      expect(grant.readOnlyOperations).toBeDefined();
+      expect(grant.readOnlyOperations?.length).toBeGreaterThan(0);
+    }
+    expect(policy.requireDecisionLog).toBe(true);
+    expect(policy.dryRunFirst).toBe(true);
+    expect(policy.budgets).toEqual({
+      invocationsPerRun: expect.any(Number) as number,
+      invocationsPerDay: expect.any(Number) as number,
+      tokensPerRun: expect.any(Number) as number,
+      costPerRun: expect.any(Number) as number,
+      loopIterations: expect.any(Number) as number,
+    });
   });
 });
 

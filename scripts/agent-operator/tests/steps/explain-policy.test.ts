@@ -178,6 +178,44 @@ describe("explainPolicy", () => {
     expect(summary.hasBudgets).toBe(false);
   });
 
+  it("resolves with the correct summary even when the injected logger handler throws on every event — explainPolicy has no reachable failure mode of its own", async () => {
+    // M3LLogger.dispatch() (core/logging/M3LLogger.ts:573-597) isolates
+    // handler failures by design: it catches every handler throw
+    // synchronously and writes a best-effort stderr diagnostic instead of
+    // rethrowing, so a throwing handler can never propagate back through
+    // explainPolicy's logger.header()/logger.info() calls. That means
+    // explainPolicy genuinely has no reachable failure mode of its own — this
+    // is the failure-path test for this function. Assert on stderr content is
+    // out of scope here — that is M3LLogger's own contract, not this step's.
+    let invocations = 0;
+    const throwingHandler: Core.M3LLoggerHandler = {
+      handle(): void {
+        invocations += 1;
+        throw new Error("handler boom");
+      },
+      reset(): void {
+        // No handler-internal state to reset — this handler exists only to
+        // count invocations and throw.
+      },
+    };
+    const logger = new Core.M3LLogger([throwingHandler]);
+    const { surface } = createFakeSurface();
+
+    await expect(
+      explainPolicy({ policy: fullPolicy(), logger, surface }),
+    ).resolves.toEqual({
+      grantCount: 2,
+      requireDecisionLog: true,
+      dryRunFirst: true,
+      hasBudgets: true,
+    });
+
+    // Proves the throwing handler was actually reached — without this, the
+    // assertion above would trivially pass for a handler that was never
+    // invoked at all, proving nothing about isolation.
+    expect(invocations).toBeGreaterThan(0);
+  });
+
   it("calls surface.list() and surface.doctor() exactly once each, and never inspect()/dryRun()", async () => {
     const { logger } = createLogger();
     const { surface, calls } = createFakeSurface();

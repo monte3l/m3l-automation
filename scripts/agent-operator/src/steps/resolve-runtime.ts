@@ -104,7 +104,8 @@ export interface ResolveAgentOperatorRuntimeDeps {
  * @returns A map of model id to its per-1k-token input/output rate.
  * @throws {@link M3LAgentOperatorCliError} coded `ERR_AGENT_OPERATOR_CONFIG`
  *   when an entry does not match the grammar, the captured model id is
- *   missing or blank, or either rate is not a non-negative finite number.
+ *   missing, blank, or carries leading/trailing whitespace, or either rate
+ *   is not a non-negative finite number.
  */
 function parseModelRates(
   entries: readonly string[],
@@ -119,9 +120,13 @@ function parseModelRates(
       );
     }
     const [, modelId, inputText, outputText] = match;
-    if (modelId === undefined || modelId.trim() === "") {
+    if (
+      modelId === undefined ||
+      modelId.trim() === "" ||
+      modelId !== modelId.trim()
+    ) {
       throw new M3LAgentOperatorCliError(
-        "'modelRates' entry must declare a non-blank model id",
+        "'modelRates' entry must declare a non-blank model id with no leading or trailing whitespace",
         "ERR_AGENT_OPERATOR_CONFIG",
       );
     }

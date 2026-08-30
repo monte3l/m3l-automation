@@ -11,7 +11,7 @@ import { dirname } from "node:path";
 import { Core } from "@m3l-automation/m3l-common";
 
 import type { AGENT_OPERATOR_COMMAND_DECLARATIONS } from "../config.js";
-import { AGENT_OPERATOR_COMMANDS } from "../config.js";
+import { AGENT_OPERATOR_COMMANDS, POLICY_FILE_DEFAULT } from "../config.js";
 import { createAgentCliSurface } from "../lib/cli-surface.js";
 import { M3LAgentOperatorCliError } from "../lib/errors.js";
 import { explainPolicy } from "./explain-policy.js";
@@ -102,7 +102,7 @@ async function runExplainPolicy(deps: RunAgentOperatorDeps): Promise<void> {
     code: "ERR_AGENT_OPERATOR_CONFIG",
   });
   const policyFile =
-    accessor.optionalString("policyFile") ?? "agent-policy.json";
+    accessor.optionalString("policyFile") ?? POLICY_FILE_DEFAULT;
   const policy = await loadAgentPolicy({ paths: deps.paths, policyFile });
   const runtime = resolveAgentOperatorRuntime({
     config: deps.config,

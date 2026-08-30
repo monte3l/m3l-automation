@@ -32,7 +32,8 @@ const MAX_OUTPUT_BYTES_MIN = 1024;
 const MAX_OUTPUT_BYTES_MAX = 16_777_216;
 /** Declared default for `maxOutputBytes` — see {@link MAX_ITERATIONS_DEFAULT}. */
 export const MAX_OUTPUT_BYTES_DEFAULT = 1_048_576;
-const POLICY_FILE_DEFAULT = "agent-policy.json";
+/** Declared default for `policyFile` — see {@link MAX_ITERATIONS_DEFAULT}. */
+export const POLICY_FILE_DEFAULT = "agent-policy.json";
 /** Declared default for `agentName` — see {@link MAX_ITERATIONS_DEFAULT}. */
 export const AGENT_NAME_DEFAULT = "agent-operator";
 const INCLUDE_DRY_RUN_PROBES_DEFAULT = false;
