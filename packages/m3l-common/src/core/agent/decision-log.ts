@@ -118,11 +118,20 @@ export interface M3LAgentDecisionLogOptions {
  * and opens a new one; it never prunes or truncates an existing segment in
  * place.
  *
+ * The entry is proven structurally on the way in and re-built as the
+ * library's own copy before serialization: what reaches disk is never the
+ * object the caller passed, so neither an inherited `toJSON` nor any other
+ * accessor can rewrite — or blank out — the persisted record. Segments are
+ * opened `O_NOFOLLOW` for the same reason: a segment path replaced by a
+ * symlink is refused, not followed out of the log directory.
+ *
  * A failed append is always loud: it throws
  * {@link M3LAgentDecisionLogWriteError} with the underlying cause chained,
  * never swallowed or downgraded to a warning, and never carrying caller
  * data (no parameter names, no identity, no reason text) in its message or
- * `context`.
+ * `context`. A failure also drops the cached active segment, so the next
+ * `write()` re-creates the directory and re-discovers its segment rather
+ * than failing forever on a directory that has since been removed.
  *
  * @example
  * ```ts
@@ -202,16 +211,19 @@ export class M3LAgentDecisionLog {
    * @param entry - A frozen {@link M3LAgentDecisionLogEntry}, normally
    *   produced by `agentDecisionLogEntry`.
    * @throws {@link M3LError} with `code: "ERR_INVALID_ARGUMENT"` when `entry`
-   *   is not a plain object, or cannot be serialized to JSON at all (a
-   *   circular reference, a `BigInt` field). Such an entry is an argument
-   *   this writer cannot represent — a caller-side violation — so it is not
-   *   reported as a write failure.
+   *   is not structurally a decision-log entry: not a plain object, carrying
+   *   an unknown or dangerous own key, missing a required field, or holding
+   *   one of the wrong shape. Such an entry is an argument this writer cannot
+   *   represent faithfully — a caller-side violation — so it is not reported
+   *   as a write failure. The error names the offending field and the
+   *   violation kind, never the rejected value.
    * @throws {@link M3LAgentDecisionLogWriteError} when the appended line
    *   (`JSON.stringify(entry)` plus its newline) exceeds
    *   `M3L_AGENT_MAX_LOG_ENTRY_BYTES` — a well-formed entry that is simply
    *   larger than this writer can durably append in one atomic write — or
-   *   when the append itself fails for any reason. Nothing is written to
-   *   disk in either case.
+   *   when the append itself fails for any reason, including a segment path
+   *   that has been replaced by a symlink. Nothing is written to disk in
+   *   either case.
    */
   async write(entry: M3LAgentDecisionLogEntry): Promise<void> {
     await this.writer.write(entry);

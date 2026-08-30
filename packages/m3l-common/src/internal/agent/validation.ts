@@ -1,17 +1,21 @@
 /**
- * `internal/agent/validation` — the allowlist primitives both `core/agent`
+ * `internal/agent/validation` — the allowlist primitives `core/agent`'s
  * boundary validators share: the non-blank string predicate, the own-key
- * allowlist walk, and the bounded string-list projection.
+ * allowlist walk, the bounded string-list projection, and the single-field
+ * readers (required / optional / required-holding-`undefined` strings, a
+ * closed-vocabulary member, an integer, a non-negative finite number).
  *
- * Private to `core/agent`; never re-exported through a public barrel. Both
- * validators are allowlists — prove the shape valid, never try to recognise
- * it as invalid — and both read presence with `Object.hasOwn`, so a non-own
- * `"__proto__"` on a parsed JSON document resolves as absent.
+ * Private to `core/agent`; never re-exported through a public barrel. Every
+ * validator built on these is an allowlist — prove the shape valid, never try
+ * to recognise it as invalid — and every read here is `Object.hasOwn`, so a
+ * non-own `"__proto__"` on a parsed JSON document resolves as absent.
  *
- * The two boundaries throw different error classes, so every helper here
- * takes a failure **factory** and throws what the factory builds. The factory
- * composes the `context` that names the offending field and the violation
- * kind — never a value.
+ * The boundaries throw different error classes — `evaluateAgentAction` and
+ * `agentDecisionLogEntry` throw `M3LAgentActionValidationError`, the decision
+ * log's writer throws a bare `M3LError` with `ERR_INVALID_ARGUMENT` — so
+ * every helper here takes a failure **factory** and throws what the factory
+ * builds. The factory composes the `context` that names the offending field
+ * and the violation kind — never a value.
  */
 
 import type { M3LError } from "../../core/errors/index.js";
@@ -124,4 +128,131 @@ export function projectStringList(
     projected.push(entry);
   }
   return Object.freeze(projected);
+}
+
+/**
+ * Reads a required non-blank string field. Presence is `Object.hasOwn`;
+ * absent, blank, or non-string all throw the same `"blank-or-non-string"`
+ * violation for `field` — neither boundary has a notion of "absent is fine"
+ * for a required string.
+ */
+export function requireNonBlankString(
+  record: Readonly<Record<string, unknown>>,
+  key: string,
+  field: string,
+  failure: M3LAgentValidationFailureFactory,
+): string {
+  const value = Object.hasOwn(record, key) ? record[key] : undefined;
+  if (!isNonBlankString(value)) {
+    throw failure(field, "blank-or-non-string");
+  }
+  return value;
+}
+
+/**
+ * Reads an optional non-blank string field. Presence is `Object.hasOwn`, so a
+ * non-own `"__proto__"` resolves as absent; a present-but-blank or
+ * non-string value is malformed input, not "absent", and throws.
+ */
+export function readOptionalNonBlankString(
+  record: Readonly<Record<string, unknown>>,
+  key: string,
+  field: string,
+  failure: M3LAgentValidationFailureFactory,
+): string | undefined {
+  if (!Object.hasOwn(record, key)) {
+    return undefined;
+  }
+  const value = record[key];
+  if (!isNonBlankString(value)) {
+    throw failure(field, "blank-or-non-string");
+  }
+  return value;
+}
+
+/**
+ * Reads a non-blank string field whose declared type is "required, holding
+ * `undefined`" rather than optional — the shape `M3LAgentActionRecord` and
+ * `M3LAgentDecisionLogEntry` both use for a field the library always emits as
+ * an own key (`operation`, `target.region`, `target.accountId`). An absent
+ * key and an own key holding `undefined` both read as `undefined`; a
+ * present-but-blank or present-non-string value is malformed and throws.
+ */
+export function readRequiredHoldingUndefinedString(
+  record: Readonly<Record<string, unknown>>,
+  key: string,
+  field: string,
+  failure: M3LAgentValidationFailureFactory,
+): string | undefined {
+  if (!Object.hasOwn(record, key)) {
+    return undefined;
+  }
+  const value = record[key];
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!isNonBlankString(value)) {
+    throw failure(field, "blank-or-non-string");
+  }
+  return value;
+}
+
+/**
+ * Requires a non-blank string field that is also a member of a closed
+ * vocabulary, narrowing to that vocabulary's type. Distinguishes "not a
+ * string at all" (`blank-or-non-string`, from {@link requireNonBlankString})
+ * from "a string, but not a recognised member" (`notInUnionLabel`), so the
+ * two failures stay distinguishable — the failure carries neither value.
+ *
+ * `isMember` is a type predicate rather than a plain boolean check so the
+ * narrowed member can be returned as its own union type, with no cast at the
+ * call site.
+ */
+export function requireStringInUnion<T extends string>(
+  record: Readonly<Record<string, unknown>>,
+  key: string,
+  field: string,
+  isMember: (value: string) => value is T,
+  notInUnionLabel: string,
+  failure: M3LAgentValidationFailureFactory,
+): T {
+  const value = requireNonBlankString(record, key, field, failure);
+  if (!isMember(value)) {
+    throw failure(field, notInUnionLabel);
+  }
+  return value;
+}
+
+/** Reads an optional integer field. A present-but-non-integer value throws. */
+export function readOptionalInteger(
+  record: Readonly<Record<string, unknown>>,
+  key: string,
+  field: string,
+  failure: M3LAgentValidationFailureFactory,
+): number | undefined {
+  if (!Object.hasOwn(record, key)) {
+    return undefined;
+  }
+  const value = record[key];
+  if (typeof value !== "number" || !Number.isInteger(value)) {
+    throw failure(field, "not-an-integer");
+  }
+  return value;
+}
+
+/** A negative or non-finite `tokens` / `cost` is malformed input. */
+export function readOptionalNonNegativeFiniteNumber(
+  record: Readonly<Record<string, unknown>>,
+  key: string,
+  field: string,
+  failure: M3LAgentValidationFailureFactory,
+): number | undefined {
+  if (!Object.hasOwn(record, key)) {
+    return undefined;
+  }
+  const value = record[key];
+  if (!(typeof value === "number" && Number.isFinite(value) && value >= 0)) {
+    throw failure(field, "negative-or-non-finite");
+  }
+  return value;
 }

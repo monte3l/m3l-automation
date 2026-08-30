@@ -16,9 +16,11 @@ import { M3LError } from "../errors/index.js";
  */
 interface M3LAgentDecisionLogWriteErrorOptions {
   /**
-   * Structured detail about the failure — a directory or segment path, byte
-   * counts, and similar operational facts. **Never** caller data: no
-   * parameter names, no identity, no reason text.
+   * Structured detail about the failure — byte counts, ceilings, and similar
+   * operational facts the library computed itself. **Never** caller data,
+   * and that includes a path: the log directory is caller input, so it names
+   * neither the directory nor a segment within it. No parameter names, no
+   * identity, no reason text either.
    */
   readonly context?: Record<string, unknown>;
   /** The underlying cause, when this failure wraps another error. */
@@ -33,8 +35,17 @@ interface M3LAgentDecisionLogWriteErrorOptions {
  * A write failure is always loud — this error is thrown, the underlying
  * cause is always chained as `cause`, and it is never swallowed or
  * downgraded to a warning. Its message and `context` never carry caller
- * data: no parameter names, no identity, no reason text — only operational
- * facts such as a directory path or a byte count.
+ * data: no parameter names, no identity, no reason text, and no path —
+ * only operational facts the library computed itself, such as a byte count
+ * against its ceiling.
+ *
+ * The chained `cause` is the deliberate exception. A filesystem failure
+ * arrives as Node's own `ENOENT` / `EACCES` / `ELOOP` error, which quotes
+ * the path it failed on; that error is passed through unmodified because it
+ * is the only diagnostic an operator has for a broken log directory. Code
+ * that forwards one of these errors to a log sink should therefore report
+ * `message` and `context`, and walk `cause` only where a caller-supplied
+ * path is acceptable to record.
  *
  * @example
  * ```ts
