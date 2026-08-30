@@ -123,7 +123,7 @@ describe("resolveAgentOperatorRuntime — model rate parsing", () => {
         policy: minimalPolicy(),
         paths: new Core.M3LPaths(),
       }),
-    ).toThrowError(M3LAgentOperatorCliError);
+    ).toThrow(M3LAgentOperatorCliError);
     let thrown: unknown;
     try {
       resolveAgentOperatorRuntime({
@@ -170,6 +170,249 @@ describe("resolveAgentOperatorRuntime — model rate parsing", () => {
       expect(asError.message).not.toContain("my-model");
     },
   );
+});
+
+/**
+ * PR #769 finding 3 — the `modelRates` grammar's two remaining
+ * inconsistencies, both of which today produce a silently WRONG rate map
+ * rather than a rejection:
+ *
+ * 1. A duplicate model id across two entries overwrites the first
+ *    (`Map.set`), so the operator's earlier declaration disappears without a
+ *    word and cost accounting silently uses the later one.
+ * 2. Rates are coerced with a bare `Number(...)`, which tolerates surrounding
+ *    whitespace (`Number("  3 ") === 3`) and treats a blank string as zero
+ *    (`Number(" ") === 0`) — while a whitespace-padded model id is explicitly
+ *    rejected on the very next line. One half of an entry may be padded and
+ *    the other may not, which is not a grammar so much as an accident.
+ *
+ * Both must throw `M3LAgentOperatorCliError` coded
+ * `ERR_AGENT_OPERATOR_CONFIG`, like every other `modelRates` rejection.
+ */
+describe("resolveAgentOperatorRuntime — model rate grammar consistency", () => {
+  /** Resolves `modelRates` and returns whatever the step threw, if anything. */
+  function captureFailure(entries: readonly string[]): unknown {
+    try {
+      resolveAgentOperatorRuntime({
+        config: buildConfig({ modelRates: entries }),
+        policy: minimalPolicy(),
+        paths: new Core.M3LPaths(),
+      });
+    } catch (error) {
+      return error;
+    }
+    return undefined;
+  }
+
+  it("rejects a duplicate model id instead of silently overwriting the first entry", () => {
+    const thrown = captureFailure([
+      "anthropic.claude-repeated-v1:0=1,2",
+      "anthropic.claude-repeated-v1:0=3,4",
+    ]);
+
+    expect(thrown).toBeInstanceOf(M3LAgentOperatorCliError);
+    const asError = thrown as M3LAgentOperatorCliError;
+    expect(asError.code).toBe("ERR_AGENT_OPERATOR_CONFIG");
+    // Same non-echo rule as every other message in this module: a model id can
+    // be operator- or model-supplied text and never belongs in an error.
+    expect(asError.message).not.toContain("claude-repeated");
+  });
+
+  // Distinct ids must still coexist — the duplicate check must key on the id,
+  // not merely on "more than one entry was supplied".
+  it("still accepts two entries with distinct model ids", () => {
+    const settings = resolveAgentOperatorRuntime({
+      config: buildConfig({
+        modelRates: ["model-a=1,2", "model-b=3,4"],
+      }),
+      policy: minimalPolicy(),
+      paths: new Core.M3LPaths(),
+    });
+
+    expect(settings.modelRates.size).toBe(2);
+    expect(settings.modelRates.get("model-a")).toEqual({
+      inputPer1kTokens: 1,
+      outputPer1kTokens: 2,
+    });
+    expect(settings.modelRates.get("model-b")).toEqual({
+      inputPer1kTokens: 3,
+      outputPer1kTokens: 4,
+    });
+  });
+
+  it.each([
+    ["a padded input rate", "model-a=  3 ,15"],
+    ["a leading-space input rate", "model-a= 3,15"],
+    ["a padded output rate", "model-a=3, 15 "],
+    ["a tab-padded output rate", "model-a=3,\t15"],
+    ["a blank input rate", "model-a= ,15"],
+    ["a blank output rate", "model-a=3,   "],
+  ])(
+    "rejects a modelRates entry with %s, matching how a padded model id is treated",
+    (_label, entry) => {
+      const thrown = captureFailure([entry]);
+
+      expect(thrown).toBeInstanceOf(M3LAgentOperatorCliError);
+      expect((thrown as M3LAgentOperatorCliError).code).toBe(
+        "ERR_AGENT_OPERATOR_CONFIG",
+      );
+    },
+  );
+
+  // The counterweight to the padded-rate rejections above: tightening the
+  // grammar must not start rejecting the ordinary numeric forms the reference
+  // page documents. These pass against today's code too — they are a
+  // regression lock on the fix, not a proof of it.
+  it.each([
+    ["plain integers", "model-a=3,15", 3, 15],
+    ["plain decimals", "model-a=0.003,0.015", 0.003, 0.015],
+    ["a leading-zero decimal pair", "model-a=0.25,1.25", 0.25, 1.25],
+    ["zero rates", "model-a=0,0", 0, 0],
+  ])(
+    "still parses a well-formed entry with %s",
+    (_label, entry, expectedInput, expectedOutput) => {
+      const settings = resolveAgentOperatorRuntime({
+        config: buildConfig({ modelRates: [entry] }),
+        policy: minimalPolicy(),
+        paths: new Core.M3LPaths(),
+      });
+
+      expect(settings.modelRates.get("model-a")).toEqual({
+        inputPer1kTokens: expectedInput,
+        outputPer1kTokens: expectedOutput,
+      });
+    },
+  );
+});
+
+/**
+ * PR #769 audit — a `modelRates` model id may today contain an EMBEDDED
+ * control character, and a rate of `-0` passes a guard whose own message
+ * promises "non-negative".
+ *
+ * `MODEL_RATE_ENTRY_RE`'s id capture is `[^=]+`: it admits every character
+ * except `=`, including a newline, a NUL, an ANSI CSI escape, a DEL, a C1
+ * control, and a bidi override. The only id guard compares the capture with
+ * its own `.trim()`, and `.trim()` strips the ENDS only — so an id whose
+ * control character sits in the MIDDLE passes the guard unchanged and becomes
+ * a `Map` key.
+ *
+ * That is inert while `modelRates` is unconsumed (`run-agent-operator.ts`
+ * binds the runtime to `_runtime`), but the follow-up slice logs and renders
+ * model ids, at which point an operator-supplied CSI sequence in a config
+ * value is terminal injection and an embedded line feed is log-line
+ * injection. Closing it here, before the first consumer exists, is cheaper
+ * than auditing every future render site.
+ *
+ * Every case must throw `M3LAgentOperatorCliError` coded
+ * `ERR_AGENT_OPERATOR_CONFIG`, and — per this module's standing rule that
+ * config-supplied text never enters a message — must not echo the id.
+ *
+ * Control characters are assembled with `String.fromCodePoint(...)` rather
+ * than pasted as literals: `pnpm check:control-chars` scans tracked files and
+ * a literal control byte in this file would fail that gate.
+ */
+describe("resolveAgentOperatorRuntime — model id character safety", () => {
+  /** Resolves `modelRates` and returns whatever the step threw, if anything. */
+  function captureFailure(entries: readonly string[]): unknown {
+    try {
+      resolveAgentOperatorRuntime({
+        config: buildConfig({ modelRates: entries }),
+        policy: minimalPolicy(),
+        paths: new Core.M3LPaths(),
+      });
+    } catch (error) {
+      return error;
+    }
+    return undefined;
+  }
+
+  /**
+   * Builds a `modelRates` entry whose model id carries `injected` between two
+   * ordinary marker halves, so the character under test is unambiguously
+   * EMBEDDED (not leading/trailing, which `.trim()` already catches) and the
+   * markers give the non-echo assertion something specific to look for.
+   */
+  function entryWithInjectedId(injected: string): string {
+    return `alpha${injected}omega=3,15`;
+  }
+
+  it.each([
+    ["a line feed", String.fromCodePoint(0x0a)],
+    ["a carriage return", String.fromCodePoint(0x0d)],
+    ["a tab", String.fromCodePoint(0x09)],
+    ["a NUL", String.fromCodePoint(0x00)],
+    ["an ANSI CSI escape", `${String.fromCodePoint(0x1b)}[2J`],
+    ["a DEL", String.fromCodePoint(0x7f)],
+    ["a C1 control (NEL)", String.fromCodePoint(0x85)],
+    ["a bidi override (RLO)", String.fromCodePoint(0x202e)],
+  ])(
+    "rejects a modelRates entry whose model id embeds %s, without echoing the id",
+    (_label, injected) => {
+      const thrown = captureFailure([entryWithInjectedId(injected)]);
+
+      expect(thrown).toBeInstanceOf(M3LAgentOperatorCliError);
+      const asError = thrown as M3LAgentOperatorCliError;
+      expect(asError.code).toBe("ERR_AGENT_OPERATOR_CONFIG");
+      expect(asError.message).not.toContain("alpha");
+      expect(asError.message).not.toContain("omega");
+      expect(asError.message).not.toContain(injected);
+    },
+  );
+
+  // The counterweight: rejecting control characters must not narrow the id
+  // grammar down to something the real Bedrock ids no longer fit. Dots,
+  // hyphens, underscores and the `:0` inference-profile suffix all stay legal.
+  it.each([
+    ["a full Bedrock model id", "anthropic.claude-sonnet-4-5-20250929-v1:0"],
+    ["a bare hyphenated id", "model-a"],
+    ["dot, underscore, hyphen and colon", "a.b_c-d:0"],
+  ])("still parses a well-formed model id (%s)", (_label, modelId) => {
+    const settings = resolveAgentOperatorRuntime({
+      config: buildConfig({ modelRates: [`${modelId}=3,15`] }),
+      policy: minimalPolicy(),
+      paths: new Core.M3LPaths(),
+    });
+
+    expect(settings.modelRates.get(modelId)).toEqual({
+      inputPer1kTokens: 3,
+      outputPer1kTokens: 15,
+    });
+  });
+
+  // `parseModelRateValue` rejects with `rate < 0`, which is `false` for `-0`
+  // (`-0 < 0` is `false`), so `-0` survives a guard whose message says
+  // "non-negative finite numbers". The stored rate then renders as `0`
+  // everywhere, so the damage is cosmetic — but the guard should mean what it
+  // says, and `Object.is(rate, -0)` is observable to any future consumer.
+  it.each([
+    ["a negative-zero output rate", "m=1,-0"],
+    ["a negative-zero input rate", "m=-0,1"],
+    ["a negative-zero decimal output rate", "m=1,-0.0"],
+  ])("rejects a modelRates entry with %s", (_label, entry) => {
+    const thrown = captureFailure([entry]);
+
+    expect(thrown).toBeInstanceOf(M3LAgentOperatorCliError);
+    expect((thrown as M3LAgentOperatorCliError).code).toBe(
+      "ERR_AGENT_OPERATOR_CONFIG",
+    );
+  });
+
+  // The counterweight to the `-0` rejections: a plain `0` is a legitimate
+  // rate and must still parse — as POSITIVE zero, which `toEqual` would not
+  // distinguish from `-0`, hence `Object.is`.
+  it("still parses a zero rate, as positive zero", () => {
+    const settings = resolveAgentOperatorRuntime({
+      config: buildConfig({ modelRates: ["m=0,0"] }),
+      policy: minimalPolicy(),
+      paths: new Core.M3LPaths(),
+    });
+
+    const rate = settings.modelRates.get("m");
+    expect(rate).toBeDefined();
+    expect(Object.is(rate?.inputPer1kTokens, 0)).toBe(true);
+    expect(Object.is(rate?.outputPer1kTokens, 0)).toBe(true);
+  });
 });
 
 describe("resolveAgentOperatorRuntime — maxIterations vs. policy.budgets.loopIterations", () => {
@@ -246,9 +489,7 @@ describe("resolveAgentOperatorRuntime — cliEntrypoint default", () => {
     const paths = new Core.M3LPaths();
 
     // Sanity: this really is the standalone-mode throw the step must catch.
-    expect(() => paths.getProjectRoot()).toThrowError(
-      Core.M3LPathResolutionError,
-    );
+    expect(() => paths.getProjectRoot()).toThrow(Core.M3LPathResolutionError);
 
     let thrown: unknown;
     try {

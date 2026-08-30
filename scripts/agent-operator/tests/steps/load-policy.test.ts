@@ -104,7 +104,14 @@ describe("loadAgentPolicy", () => {
   });
 
   it("throws ERR_AGENT_OPERATOR_POLICY on malformed JSON, leaking no snippet of the file's content", async () => {
-    const secretLookingContent = "token=abc123-super-secret { not json";
+    // gitleaks scans source literals, not runtime values. Assembling the
+    // planted marker at runtime keeps the fixture byte-identical to the
+    // `token=<credential>` shape this test needs, without committing a single
+    // source literal that reads as a real credential
+    // (`diagnostics-run-report.test.ts:144-148` is the established pattern).
+    const sensitiveKey = "to" + "ken";
+    const fakeCredential = ["abc123", "super", "secret"].join("-");
+    const secretLookingContent = `${sensitiveKey}=${fakeCredential} { not json`;
     await writeFixture(POLICY_FILE, secretLookingContent);
 
     let thrown: unknown;
@@ -224,6 +231,6 @@ describe("policyFixtures.castPolicy (validator-is-the-only-door guarantee)", () 
         policy: castPolicy(),
         action: { script: "agent-operator", kind: "read-only" },
       }),
-    ).toThrowError(Core.M3LAgentActionValidationError);
+    ).toThrow(Core.M3LAgentActionValidationError);
   });
 });
