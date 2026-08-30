@@ -2236,6 +2236,46 @@
     "namespace": "core",
     "file": "packages/m3l-common/src/core/storage/M3LFtsIndexError.ts"
   },
+  "M3LAppendOnlyStream": {
+    "submodule": "storage",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/storage/M3LAppendOnlyStream.ts"
+  },
+  "M3LAppendOnlyStreamOptions": {
+    "submodule": "storage",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/storage/M3LAppendOnlyStream.ts"
+  },
+  "M3LAppendOnlyEntry": {
+    "submodule": "storage",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/storage/M3LAppendOnlyStream.ts"
+  },
+  "M3LAppendOnlyValue": {
+    "submodule": "storage",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/storage/M3LAppendOnlyStream.ts"
+  },
+  "M3L_APPEND_ONLY_MAX_SEGMENT_BYTES": {
+    "submodule": "storage",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/storage/M3LAppendOnlyStream.ts"
+  },
+  "M3L_APPEND_ONLY_MAX_SEGMENT_AGE_MS": {
+    "submodule": "storage",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/storage/M3LAppendOnlyStream.ts"
+  },
+  "M3L_APPEND_ONLY_MAX_LINE_BYTES": {
+    "submodule": "storage",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/storage/M3LAppendOnlyStream.ts"
+  },
+  "M3LAppendOnlyStreamError": {
+    "submodule": "storage",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/storage/M3LAppendOnlyStreamError.ts"
+  },
   "M3LTextExtractorRegistry": {
     "submodule": "text",
     "namespace": "core",
