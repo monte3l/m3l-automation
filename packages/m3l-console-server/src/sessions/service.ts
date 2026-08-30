@@ -5,11 +5,12 @@
  * Built entirely on the `sessions` zone's own allowance (`sessions`,
  * `errors`, `store` — `bin/check-eslint-zones.mjs`'s `CONSOLE_SERVER_LAYERS`):
  * `store/sessions-repository.ts` for session/step/binding/decision CRUD,
- * `sessions/reference.ts`/`sessions/binding.ts` for resolving a caller
- * reference into a prior step's recorded output, `sessions/artifacts.ts` for
- * reading/persisting that output, and `sessions/ports.ts`'s
- * declared-not-imported mirrors of `runs/`'s launch/event shapes so this
- * service never imports `runs/` directly.
+ * `sessions/launch-parameters.ts` for resolving a step's bindings (each a
+ * caller reference into a prior step's recorded output) into the launched
+ * run's parameter map, `sessions/artifacts.ts` for reading/persisting that
+ * output, and `sessions/ports.ts`'s declared-not-imported mirrors of
+ * `runs/`'s launch/event shapes so this service never imports `runs/`
+ * directly.
  *
  * `addStep` and `handleRunEvent` are both `Promise`-returning: `addStep`
  * `await`s `M3LSessionArtifactStore.readArtifact` to resolve a binding
@@ -25,6 +26,7 @@
 import { M3LConsoleError } from "../errors/console-error.js";
 import type {
   M3LConsoleSessionsRepository,
+  M3LSessionBindingRecord,
   M3LSessionDecisionRecord,
   M3LSessionListQuery,
   M3LSessionRecord,
@@ -36,80 +38,16 @@ import type {
   M3LSessionArtifactStore,
 } from "./artifacts.js";
 import { decodeArtifactRef, encodeArtifactRef } from "./artifacts.js";
-import type { M3LBindingExpectedType } from "./binding.js";
-import { validateBindingValue } from "./binding.js";
+import type {
+  M3LSessionAddStepBinding,
+  M3LSessionAddStepInput,
+} from "./launch-parameters.js";
+import { resolveBindingValue } from "./launch-parameters.js";
 import type {
   M3LSessionRunEvent,
   M3LSessionRunHandle,
   M3LSessionRunLauncherPort,
 } from "./ports.js";
-import { parseStepReference, resolveStepReference } from "./reference.js";
-
-/**
- * One binding an {@link M3LSessionAddStepInput} resolves before launch: a
- * reference into a prior step's recorded output, the shape the resolved
- * value must have, whether it must be a single value or an array, and the
- * launch-parameter name the resolved value binds to.
- *
- * @example
- * ```ts
- * const binding: M3LSessionAddStepBinding = {
- *   reference: "step-1.output.Queues[0]",
- *   expectedType: "string",
- *   multiSelect: false,
- *   parameterName: "queueName",
- * };
- * ```
- */
-interface M3LSessionAddStepBinding {
-  /** The step-output reference this binding resolves — see `sessions/reference.ts`'s `parseStepReference`. */
-  readonly reference: string;
-  /** The shape the resolved value must have. */
-  readonly expectedType: M3LBindingExpectedType;
-  /** Whether the resolved value must be a single value or an array of them. */
-  readonly multiSelect: boolean;
-  /** The launch-parameter name this binding's resolved value binds to. */
-  readonly parameterName: string;
-}
-
-/**
- * The input {@link M3LSessionService.addStep} resolves and launches. Each
- * `bindings[i]` resolves to that same binding's own `parameterName`'s
- * launch-parameter value.
- *
- * @example
- * ```ts
- * const input: M3LSessionAddStepInput = {
- *   operation: "scripts/example",
- *   bindings: [
- *     {
- *       reference: "step-1.output.Queues[0]",
- *       expectedType: "string",
- *       multiSelect: false,
- *       parameterName: "queueName",
- *     },
- *   ],
- *   confirmed: true,
- *   dryRun: false,
- *   operator: "alice",
- *   correlationId: "corr-1",
- * };
- * ```
- */
-interface M3LSessionAddStepInput {
-  /** The operation (e.g. a script identifier) this step invokes. */
-  readonly operation: string;
-  /** The bindings to resolve before launch. */
-  readonly bindings: readonly M3LSessionAddStepBinding[];
-  /** Whether the caller explicitly confirmed a non-dry-run execution. */
-  readonly confirmed: boolean;
-  /** Whether the run should execute in dry-run mode. */
-  readonly dryRun: boolean;
-  /** The operator adding this step. */
-  readonly operator: string;
-  /** The correlation id this step's diagnostics are tagged with. */
-  readonly correlationId: string;
-}
 
 /**
  * The result {@link M3LSessionService.addStep} resolves to: the inserted
@@ -283,6 +221,14 @@ export interface M3LSessionService {
   listDecisionsForSession(
     sessionId: string,
   ): readonly M3LSessionDecisionRecord[];
+  /**
+   * Lists every binding persisted for `sessionId` via a prior
+   * {@link M3LSessionService.addStep} call.
+   *
+   * @throws {@link M3LConsoleError} with code `"ERR_CONSOLE_SESSION_NOT_FOUND"`
+   *   when `sessionId` names no session.
+   */
+  listBindingsForSession(sessionId: string): readonly M3LSessionBindingRecord[];
 }
 
 /** Throws `ERR_CONSOLE_SESSION_NOT_FOUND`, or returns the found session record. */
@@ -298,61 +244,6 @@ function requireSession(
     );
   }
   return session;
-}
-
-/** Resolves one binding's value: parses its reference, finds the referenced step, reads and walks its recorded output, and validates the shape. */
-async function resolveBindingValue(
-  sessionsRepository: M3LConsoleSessionsRepository,
-  artifactStore: M3LSessionArtifactStore,
-  sessionId: string,
-  binding: M3LSessionAddStepBinding,
-): Promise<unknown> {
-  const parsed = parseStepReference(binding.reference);
-  const step = sessionsRepository.getStepByOrdinal(sessionId, parsed.ordinal);
-  if (step === undefined) {
-    throw new M3LConsoleError(
-      "ERR_CONSOLE_SESSION_STEP_NOT_FOUND",
-      `no step at ordinal ${String(parsed.ordinal)} in session "${sessionId}" for reference "${binding.reference}"`,
-    );
-  }
-  if (step.resultRef === undefined) {
-    throw new M3LConsoleError(
-      "ERR_CONSOLE_SESSION_REFERENCE_INVALID",
-      `step at ordinal ${String(parsed.ordinal)} has no recorded result yet for reference "${binding.reference}"`,
-    );
-  }
-  const output = await artifactStore.readArtifact(
-    decodeArtifactRef(step.resultRef),
-  );
-  const value = resolveStepReference(parsed, output);
-  if (!validateBindingValue(value, binding)) {
-    throw new M3LConsoleError(
-      "ERR_CONSOLE_SESSION_REFERENCE_INVALID",
-      `binding "${binding.reference}" resolved to a value that does not match its expected shape`,
-    );
-  }
-  return value;
-}
-
-/** Resolves every binding into the launch-parameter map: string values pass through, everything else is `JSON.stringify`'d. */
-async function resolveLaunchParameters(
-  sessionsRepository: M3LConsoleSessionsRepository,
-  artifactStore: M3LSessionArtifactStore,
-  sessionId: string,
-  input: M3LSessionAddStepInput,
-): Promise<Record<string, string>> {
-  const parameters: Record<string, string> = {};
-  for (const binding of input.bindings) {
-    const value = await resolveBindingValue(
-      sessionsRepository,
-      artifactStore,
-      sessionId,
-      binding,
-    );
-    parameters[binding.parameterName] =
-      typeof value === "string" ? value : JSON.stringify(value);
-  }
-  return parameters;
 }
 
 /** The 1-based ordinal the next inserted step should take: one past the highest existing ordinal, or 1 for an empty session. */
@@ -375,13 +266,51 @@ function requireStep(
   return step;
 }
 
+/**
+ * Resolves each of `bindings` in order via `resolveBindingValue`, persisting
+ * a {@link M3LSessionBindingRecord} for a binding via `insertBinding`
+ * immediately after that binding's own resolution succeeds — never before,
+ * and never for a binding whose resolution has not yet been attempted. A
+ * later binding's resolution failure therefore leaves every already-resolved
+ * binding's persisted record in place (no rollback) while never persisting
+ * the failed binding itself, matching this audit trail's "what was actually
+ * resolved" contract.
+ */
+async function resolveAndPersistBindings(
+  options: CreateSessionServiceOptions,
+  sessionId: string,
+  bindings: readonly M3LSessionAddStepBinding[],
+): Promise<Record<string, string>> {
+  const { sessionsRepository, artifactStore, newId, nowMs } = options;
+  const parameters: Record<string, string> = {};
+  for (const binding of bindings) {
+    const value = await resolveBindingValue(
+      sessionsRepository,
+      artifactStore,
+      sessionId,
+      binding,
+    );
+    parameters[binding.parameterName] =
+      typeof value === "string" ? value : JSON.stringify(value);
+    sessionsRepository.insertBinding({
+      id: newId(),
+      sessionId,
+      reference: binding.reference,
+      expectedType: binding.expectedType,
+      multiSelect: binding.multiSelect,
+      createdAtMs: nowMs(),
+    });
+  }
+  return parameters;
+}
+
 /** The `addStep` implementation, split out of {@link buildSessionService} purely to keep that function short. */
 async function addStep(
   options: CreateSessionServiceOptions,
   sessionId: string,
   input: M3LSessionAddStepInput,
 ): Promise<M3LSessionAddStepResult> {
-  const { sessionsRepository, artifactStore, launcher, newId, nowMs } = options;
+  const { sessionsRepository, launcher, newId, nowMs } = options;
   const session = requireSession(sessionsRepository, sessionId);
   if (session.status !== "open") {
     throw new M3LConsoleError(
@@ -390,11 +319,10 @@ async function addStep(
     );
   }
 
-  const parameters = await resolveLaunchParameters(
-    sessionsRepository,
-    artifactStore,
+  const parameters = await resolveAndPersistBindings(
+    options,
     sessionId,
-    input,
+    input.bindings,
   );
   const handle = launcher.launch({
     body: {
@@ -650,6 +578,27 @@ function buildDecisionServiceMethods(
 }
 
 /**
+ * The binding-audit-trail slice of {@link M3LSessionService} — a
+ * single-method delegate, split into its own tiny builder purely to keep
+ * {@link buildSessionLifecycleMethods} and {@link buildDecisionServiceMethods}
+ * under the 60-line function cap.
+ */
+function buildBindingServiceMethods(
+  options: CreateSessionServiceOptions,
+): Pick<M3LSessionService, "listBindingsForSession"> {
+  const { sessionsRepository } = options;
+
+  return {
+    listBindingsForSession(
+      sessionId: string,
+    ): readonly M3LSessionBindingRecord[] {
+      requireSession(sessionsRepository, sessionId);
+      return sessionsRepository.listBindingsForSession(sessionId);
+    },
+  };
+}
+
+/**
  * Creates a {@link M3LSessionService} over `options`.
  *
  * @param options - See {@link CreateSessionServiceOptions}.
@@ -670,5 +619,6 @@ export function createSessionService(
   return {
     ...buildSessionLifecycleMethods(options),
     ...buildDecisionServiceMethods(options),
+    ...buildBindingServiceMethods(options),
   };
 }
