@@ -721,9 +721,9 @@ function insertRun(database: DatabaseSync, row: RunRowFixture): void {
 }
 
 describe("CONSOLE_MIGRATIONS — the real registry (v3: console_runs)", () => {
-  test("has exactly four migrations, versions strictly increasing and gap-free (1, 2, 3, 4)", () => {
+  test("has exactly five migrations, versions strictly increasing and gap-free (1, 2, 3, 4, 5)", () => {
     expect(CONSOLE_MIGRATIONS.map((migration) => migration.version)).toEqual([
-      1, 2, 3, 4,
+      1, 2, 3, 4, 5,
     ]);
   });
 
@@ -743,6 +743,15 @@ describe("CONSOLE_MIGRATIONS — the real registry (v3: console_runs)", () => {
     const v4 = CONSOLE_MIGRATIONS.find((migration) => migration.version === 4);
     expect(v4).toBeDefined();
     expect(v4?.name.length).toBeGreaterThan(0);
+  });
+
+  test("v5 (X6 slice 4: console_session_steps.run_id index) has a stable, non-empty name distinct from every earlier migration's", () => {
+    const names = CONSOLE_MIGRATIONS.map((migration) => migration.name);
+
+    expect(new Set(names).size).toBe(names.length);
+    const v5 = CONSOLE_MIGRATIONS.find((migration) => migration.version === 5);
+    expect(v5).toBeDefined();
+    expect(v5?.name.length).toBeGreaterThan(0);
   });
 
   test("applying every migration succeeds and creates console_runs with both its indexes", () => {
@@ -1577,5 +1586,35 @@ describe("CONSOLE_MIGRATIONS — the real registry (v4: workbench sessions)", ()
     // premise. The three rejection tests above already exercise the real
     // application path (createRealMigratedDatabaseWithForeignKeys, matching
     // store/store.ts's own pragma sequence), which is what matters.
+  });
+});
+
+// ---------------------------------------------------------------------------
+// CONSOLE_MIGRATIONS — the real registry (v5: console_session_steps.run_id
+// index, X6 slice 4, Part A)
+//
+// v4 has already shipped to main, so it may not be edited in place — v5 is a
+// purely additive migration: one CREATE INDEX statement on the already
+// existing console_session_steps.run_id column. No new table, no new CHECK
+// constraint, so this block only proves the index exists on a freshly opened
+// store — mirroring the "applying every migration creates all four session
+// tables with their five indexes" test in the v4 block above, extended by one
+// more index.
+// ---------------------------------------------------------------------------
+
+describe("CONSOLE_MIGRATIONS — the real registry (v5: console_session_steps.run_id index)", () => {
+  test("applying every migration creates the console_session_steps_run_id index on a fresh store", () => {
+    const database = createRealMigratedDatabase();
+
+    expect(indexExists(database, "console_session_steps_run_id")).toBe(true);
+  });
+
+  test("v5 adds no new table — every v4 table still exists unchanged", () => {
+    const database = createRealMigratedDatabase();
+
+    expect(tableExists(database, "console_sessions")).toBe(true);
+    expect(tableExists(database, "console_session_steps")).toBe(true);
+    expect(tableExists(database, "console_session_bindings")).toBe(true);
+    expect(tableExists(database, "console_session_decisions")).toBe(true);
   });
 });

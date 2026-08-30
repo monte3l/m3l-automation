@@ -919,6 +919,86 @@ describe("createConsoleSessionsRepository — listStepsForSession()", () => {
 });
 
 // ---------------------------------------------------------------------------
+// attachStepRun — the guarded one-shot run_id attach (X6 slice 4, Part A)
+// ---------------------------------------------------------------------------
+
+describe("createConsoleSessionsRepository — attachStepRun()", () => {
+  test("on a step with no run_id yet: returns true and sets runId to the given value", () => {
+    const database = createMigratedDatabase();
+    const repository = createRepository(database);
+    const { stepId } = seedSessionAndStep(repository);
+
+    const attached = repository.attachStepRun(stepId, "run-1");
+
+    expect(attached).toBe(true);
+    expect(repository.getStep(stepId)?.runId).toBe("run-1");
+  });
+
+  test("on a step already attached to a run: returns false and leaves runId unchanged", () => {
+    const database = createMigratedDatabase();
+    const repository = createRepository(database);
+    const { stepId } = seedSessionAndStep(repository);
+    repository.attachStepRun(stepId, "run-1");
+
+    const attachedAgain = repository.attachStepRun(stepId, "run-2");
+
+    expect(attachedAgain).toBe(false);
+    expect(repository.getStep(stepId)?.runId).toBe("run-1");
+  });
+
+  test("on an unknown id: returns false", () => {
+    const database = createMigratedDatabase();
+    const repository = createRepository(database);
+
+    expect(repository.attachStepRun("does-not-exist", "run-1")).toBe(false);
+  });
+
+  test("two competing attachStepRun calls for the same step: exactly one succeeds — a real guarded race", () => {
+    const database = createMigratedDatabase();
+    const repository = createRepository(database);
+    const { stepId } = seedSessionAndStep(repository);
+
+    const firstCallerWon = repository.attachStepRun(stepId, "run-first");
+    const secondCallerWon = repository.attachStepRun(stepId, "run-second");
+
+    expect([firstCallerWon, secondCallerWon].filter(Boolean)).toHaveLength(1);
+    expect(firstCallerWon).toBe(true);
+    expect(secondCallerWon).toBe(false);
+    expect(repository.getStep(stepId)?.runId).toBe("run-first");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getStepByRunId — read path for the attached run_id (X6 slice 4, Part A)
+// ---------------------------------------------------------------------------
+
+describe("createConsoleSessionsRepository — getStepByRunId()", () => {
+  test("returns the step attached to the given run id", () => {
+    const database = createMigratedDatabase();
+    const repository = createRepository(database);
+    const { stepId } = seedSessionAndStep(repository);
+    repository.attachStepRun(stepId, "run-target");
+
+    expect(repository.getStepByRunId("run-target")?.id).toBe(stepId);
+  });
+
+  test("returns undefined for a run id with no attached step", () => {
+    const database = createMigratedDatabase();
+    const repository = createRepository(database);
+
+    expect(repository.getStepByRunId("does-not-exist")).toBeUndefined();
+  });
+
+  test("returns undefined for a step's own id (never confuses step id with run id)", () => {
+    const database = createMigratedDatabase();
+    const repository = createRepository(database);
+    const { stepId } = seedSessionAndStep(repository);
+
+    expect(repository.getStepByRunId(stepId)).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // insertBinding + listBindingsForSession
 // ---------------------------------------------------------------------------
 

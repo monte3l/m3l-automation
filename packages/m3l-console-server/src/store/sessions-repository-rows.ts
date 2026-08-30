@@ -417,6 +417,31 @@ export function listStepsForSessionRows(
   return rows.map((row) => toStepRecord(row));
 }
 
+/** The guarded one-shot `run_id` attach write (X6 slice 4, Part A). */
+export function attachStepRunRow(
+  executor: M3LStoreQueryExecutor,
+  id: string,
+  runId: string,
+): boolean {
+  const result = executor.run(
+    "UPDATE console_session_steps SET run_id = ? WHERE id = ? AND run_id IS NULL",
+    [runId, id],
+  );
+  return result.changes === 1;
+}
+
+/** Reads one `console_session_steps` row by its attached `run_id`, or `undefined` when absent (X6 slice 4, Part A). */
+export function getStepByRunIdRow(
+  executor: M3LStoreQueryExecutor,
+  runId: string,
+): M3LSessionStepRecord | undefined {
+  const row = executor.get(
+    "SELECT * FROM console_session_steps WHERE run_id = ?",
+    [runId],
+  );
+  return row === undefined ? undefined : toStepRecord(row);
+}
+
 /** Inserts one `console_session_bindings` row. */
 export function insertBindingRow(
   executor: M3LStoreQueryExecutor,
