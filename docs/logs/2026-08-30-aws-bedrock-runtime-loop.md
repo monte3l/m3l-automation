@@ -192,7 +192,7 @@ slice is not done when CI passes but when its log exists.
 - **A reviewer's diagnosis and its prescription deserve separate trust.** Two
   spokes this round diagnosed correctly and prescribed a fix that would have
   introduced a new defect. Check the prescription against existing precedent
-  in the codebase before dispatching it.
+  in the codebase before dispatching it. _(promoted → `.claude/skills/resolving-pr-comments/SKILL.md`)_
 - **Copy a constraint's rationale, not just the constraint.** An unexplained
   rule cannot be scoped correctly by whoever receives it — mine nearly forced
   a worse abort fix than the one V4 already demonstrated.
@@ -201,7 +201,7 @@ slice is not done when CI passes but when its log exists.
   and it failed on three new files.
 - **Mutation-test the guard before believing the test.** Disabling
   `validateToolUseInputShape` failed exactly the five tests claiming to guard
-  it — which is the only evidence that those tests are not passing vacuously.
+  it — which is the only evidence that those tests are not passing vacuously. _(promoted → `.claude/rules/tests.md`)_
 - **Adding an optional parameter breaks point-free call sites silently.**
   `.map(fn)` feeds the index in as the new argument, and neither `tsc` nor
   ESLint objects.
