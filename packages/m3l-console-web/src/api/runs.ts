@@ -1,13 +1,15 @@
 import type { M3LConsoleFetchResult } from "./client.js";
 import { fetchConsoleJson } from "./client.js";
+import { encodePathSegment } from "../internal/path-segment.js";
 
 /**
  * The closed vocabulary of run statuses the console server can report.
- * Exported as a runtime array (not just a type) so callers — and this
- * module's own shape guard — can validate a decoded `status` value against
- * it without re-declaring the list.
+ * A runtime array (not just a type) so this module's own shape guard can
+ * validate a decoded `status` value against it without re-declaring the
+ * list. Not exported — it is referenced only within this file (the derived
+ * {@link M3LRunStatus} type is the public vocabulary surface).
  */
-export const M3L_RUN_STATUSES = [
+const M3L_RUN_STATUSES = [
   "queued",
   "running",
   "success",
@@ -142,7 +144,13 @@ export async function fetchRuns(): Promise<
 }
 
 /**
- * Fetches one run record by id.
+ * Fetches one run record by id, URL-encoding `id` into the path.
+ *
+ * `id` is external input — it flows from `location.hash` through the
+ * router, which only rejects empty and `/`-containing values — so it is
+ * encoded via {@link encodePathSegment} rather than interpolated raw. See
+ * that helper's TSDoc for why plain `encodeURIComponent` alone is not
+ * enough to stop a `".."` id from resolving the request path up a level.
  *
  * @example
  * ```ts
@@ -157,7 +165,9 @@ export async function fetchRuns(): Promise<
 export async function fetchRun(
   id: string,
 ): Promise<M3LConsoleFetchResult<M3LRunRecord>> {
-  const result = await fetchConsoleJson<M3LRunRecord>(`/api/v1/runs/${id}`);
+  const result = await fetchConsoleJson<M3LRunRecord>(
+    `/api/v1/runs/${encodePathSegment(id)}`,
+  );
   if (result.ok && !isM3LRunRecord(result.data)) {
     return {
       ok: false,

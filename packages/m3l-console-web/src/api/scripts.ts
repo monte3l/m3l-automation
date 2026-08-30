@@ -1,5 +1,6 @@
 import type { M3LConsoleFetchResult } from "./client.js";
 import { fetchConsoleJson } from "./client.js";
+import { encodePathSegment } from "../internal/path-segment.js";
 
 /** Summary of one discoverable script, as returned by `GET /api/v1/scripts`. */
 export interface M3LScriptSummary {
@@ -9,8 +10,13 @@ export interface M3LScriptSummary {
   readonly executionMode: string;
 }
 
-/** One operation a script parameter can be scoped to. */
-export interface M3LScriptOperation {
+/**
+ * One operation a script parameter can be scoped to. Not exported — it is
+ * referenced only within this file; the exported {@link M3LScriptParameter}
+ * and {@link M3LScriptDetail} interfaces expose its shape structurally
+ * through their `operations` field.
+ */
+interface M3LScriptOperation {
   readonly name: string;
   readonly description: string;
   readonly requiredParameters: readonly string[];
@@ -141,6 +147,12 @@ export async function fetchScripts(): Promise<
 /**
  * Fetches full detail for one script, URL-encoding `name` into the path.
  *
+ * `name` is encoded via {@link encodePathSegment} rather than plain
+ * `encodeURIComponent` — see that helper's TSDoc for why encoding alone
+ * does not stop a `"."`/`".."` name from resolving the request path up a
+ * level (the WHATWG URL parser's dot-segment normalisation collapses a
+ * bare or percent-escaped dot segment identically either way).
+ *
  * @example
  * ```ts
  * import { fetchScript } from "@m3l-automation/m3l-console-web/api/scripts.js";
@@ -155,7 +167,7 @@ export async function fetchScript(
   name: string,
 ): Promise<M3LConsoleFetchResult<M3LScriptDetail>> {
   const result = await fetchConsoleJson<M3LScriptDetail>(
-    `/api/v1/scripts/${encodeURIComponent(name)}`,
+    `/api/v1/scripts/${encodePathSegment(name)}`,
   );
   if (result.ok && !isM3LScriptDetail(result.data)) {
     return {

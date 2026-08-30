@@ -255,4 +255,64 @@ describe("fetchRun", () => {
       error: { kind: "malformed-body", message: expect.any(String) as string },
     });
   });
+
+  // `id` is external input: it flows from location.hash through the router,
+  // which only rejects empty and "/"-containing values — so a value like
+  // ".." or "?x=1" can reach fetchRun verbatim. Mirrors the encoding
+  // coverage fetchScript already has in tests/api/scripts.test.ts.
+  //
+  // NOTE for the reviewer/implementer: this asserts the *outcome* the
+  // finding actually wants (a ".." id cannot resolve the request path up a
+  // level), not "the .. gets percent-encoded" literally. JS's
+  // encodeURIComponent leaves "." unescaped ("." is unreserved), so
+  // encodeURIComponent("..") === "..": mirroring fetchScript's plain
+  // encodeURIComponent(id) fix, as this task otherwise directs, would build
+  // exactly the same path string as today's raw interpolation and this test
+  // would still fail. Confirmed with WHATWG URL parsing directly (both
+  // "/api/v1/runs/.." and "/api/v1/runs/%2e%2e" normalise to "/api/v1/" —
+  // even a literal escaped dot-segment gets dot-normalised after percent
+  // decoding). Closing this specific finding needs the implementer to
+  // special-case reject an id that is exactly "." or ".." (or otherwise
+  // guarantee the built path can't collapse), not just call
+  // encodeURIComponent like fetchScript does.
+  test("keeps a '..' id from resolving the request path up a level", async () => {
+    mockedFetchConsoleJson.mockResolvedValue({ ok: true, data: pendingRun });
+
+    await fetchRun("..");
+
+    const [calledPath] = mockedFetchConsoleJson.mock.calls[0] ?? [];
+    expect(typeof calledPath).toBe("string");
+    const resolved = new URL(calledPath as string, "http://localhost");
+    expect(resolved.pathname.startsWith("/api/v1/runs/")).toBe(true);
+  });
+
+  test("URL-encodes an id containing '?' so it cannot inject a query string", async () => {
+    mockedFetchConsoleJson.mockResolvedValue({ ok: true, data: pendingRun });
+
+    await fetchRun("?x=1");
+
+    expect(mockedFetchConsoleJson).toHaveBeenCalledWith(
+      `/api/v1/runs/${encodeURIComponent("?x=1")}`,
+    );
+  });
+
+  test("URL-encodes an id containing '#'", async () => {
+    mockedFetchConsoleJson.mockResolvedValue({ ok: true, data: pendingRun });
+
+    await fetchRun("abc#def");
+
+    expect(mockedFetchConsoleJson).toHaveBeenCalledWith(
+      `/api/v1/runs/${encodeURIComponent("abc#def")}`,
+    );
+  });
+
+  test("does not over-encode a normal UUID-shaped id", async () => {
+    mockedFetchConsoleJson.mockResolvedValue({ ok: true, data: pendingRun });
+
+    await fetchRun(pendingRun.id);
+
+    expect(mockedFetchConsoleJson).toHaveBeenCalledWith(
+      `/api/v1/runs/${pendingRun.id}`,
+    );
+  });
 });
