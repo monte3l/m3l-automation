@@ -173,37 +173,37 @@
         {
           "file": "packages/m3l-common/src/aws/bedrock-runtime/tool-dispatch.ts",
           "symbol": "M3LBedrockToolContext",
-          "blob": "11c47d787f45d2fcc108a51b790d3e324757d4dc"
+          "blob": "d532220bed6e200a37b258445f64e2afab720ac3"
         },
         {
           "file": "packages/m3l-common/src/aws/bedrock-runtime/tool-dispatch.ts",
           "symbol": "M3LBedrockToolHandler",
-          "blob": "11c47d787f45d2fcc108a51b790d3e324757d4dc"
+          "blob": "d532220bed6e200a37b258445f64e2afab720ac3"
         },
         {
           "file": "packages/m3l-common/src/aws/bedrock-runtime/tool-dispatch.ts",
           "symbol": "M3LBedrockToolRegistration",
-          "blob": "11c47d787f45d2fcc108a51b790d3e324757d4dc"
+          "blob": "d532220bed6e200a37b258445f64e2afab720ac3"
         },
         {
           "file": "packages/m3l-common/src/aws/bedrock-runtime/tool-dispatch.ts",
           "symbol": "M3LBedrockToolRegistry",
-          "blob": "11c47d787f45d2fcc108a51b790d3e324757d4dc"
+          "blob": "d532220bed6e200a37b258445f64e2afab720ac3"
         },
         {
           "file": "packages/m3l-common/src/aws/bedrock-runtime/loop.ts",
           "symbol": "M3LBedrockToolLoopInvoker",
-          "blob": "5355647861fe71b1836359161761a2321750cb2f"
+          "blob": "e706d111bbd30a8554aae2827422c68ea44e5319"
         },
         {
           "file": "packages/m3l-common/src/aws/bedrock-runtime/loop.ts",
           "symbol": "M3LBedrockToolLoopOptions",
-          "blob": "5355647861fe71b1836359161761a2321750cb2f"
+          "blob": "e706d111bbd30a8554aae2827422c68ea44e5319"
         },
         {
           "file": "packages/m3l-common/src/aws/bedrock-runtime/loop.ts",
           "symbol": "runBedrockToolLoop",
-          "blob": "5355647861fe71b1836359161761a2321750cb2f"
+          "blob": "e706d111bbd30a8554aae2827422c68ea44e5319"
         },
         {
           "file": "packages/m3l-common/src/aws/bedrock-runtime/tool-ledger.ts",
@@ -443,22 +443,22 @@
         {
           "file": "packages/m3l-common/src/aws/bedrock-runtime/tool-dispatch.ts",
           "symbol": "M3LBedrockToolContext",
-          "blob": "11c47d787f45d2fcc108a51b790d3e324757d4dc"
+          "blob": "d532220bed6e200a37b258445f64e2afab720ac3"
         },
         {
           "file": "packages/m3l-common/src/aws/bedrock-runtime/tool-dispatch.ts",
           "symbol": "M3LBedrockToolHandler",
-          "blob": "11c47d787f45d2fcc108a51b790d3e324757d4dc"
+          "blob": "d532220bed6e200a37b258445f64e2afab720ac3"
         },
         {
           "file": "packages/m3l-common/src/aws/bedrock-runtime/tool-dispatch.ts",
           "symbol": "M3LBedrockToolRegistration",
-          "blob": "11c47d787f45d2fcc108a51b790d3e324757d4dc"
+          "blob": "d532220bed6e200a37b258445f64e2afab720ac3"
         },
         {
           "file": "packages/m3l-common/src/aws/bedrock-runtime/tool-dispatch.ts",
           "symbol": "M3LBedrockToolRegistry",
-          "blob": "11c47d787f45d2fcc108a51b790d3e324757d4dc"
+          "blob": "d532220bed6e200a37b258445f64e2afab720ac3"
         }
       ],
       "retrieved": "2026-08-30"
@@ -469,17 +469,17 @@
         {
           "file": "packages/m3l-common/src/aws/bedrock-runtime/loop.ts",
           "symbol": "M3LBedrockToolLoopInvoker",
-          "blob": "5355647861fe71b1836359161761a2321750cb2f"
+          "blob": "e706d111bbd30a8554aae2827422c68ea44e5319"
         },
         {
           "file": "packages/m3l-common/src/aws/bedrock-runtime/loop.ts",
           "symbol": "M3LBedrockToolLoopOptions",
-          "blob": "5355647861fe71b1836359161761a2321750cb2f"
+          "blob": "e706d111bbd30a8554aae2827422c68ea44e5319"
         },
         {
           "file": "packages/m3l-common/src/aws/bedrock-runtime/loop.ts",
           "symbol": "runBedrockToolLoop",
-          "blob": "5355647861fe71b1836359161761a2321750cb2f"
+          "blob": "e706d111bbd30a8554aae2827422c68ea44e5319"
         }
       ],
       "retrieved": "2026-08-30"
