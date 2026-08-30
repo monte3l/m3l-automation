@@ -54,11 +54,6 @@ describe("fetchHealth", () => {
     await expect(fetchHealth()).resolves.toEqual(errorResult);
   });
 
-  // [KNOWN BUG] fetchHealth() is currently a thin passthrough over
-  // fetchConsoleJson, which decodes the body with a bare `as T` cast and
-  // therefore cannot validate the shape at runtime. A syntactically valid
-  // but wrong-shaped /health body should be downgraded to a
-  // "malformed-body" error instead of sailing through as ok: true.
   test("downgrades an empty ok body to a malformed-body error", async () => {
     mockedFetchConsoleJson.mockResolvedValue({
       ok: true,

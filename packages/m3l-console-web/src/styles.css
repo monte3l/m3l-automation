@@ -1,0 +1,74 @@
+/*
+ * m3l console — base layout and table legibility styles.
+ *
+ * Deliberately plain: Vite handles CSS natively (no CSS-in-JS or
+ * preprocessor dependency, per ADR-0067's thin-stack policy), and this
+ * slice is read-only views, so styling stays minimal.
+ */
+
+body {
+  margin: 0;
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
+  color: #1a1a1a;
+  background: #fafafa;
+}
+
+main {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+nav {
+  display: flex;
+  gap: 0.75rem;
+  border-bottom: 1px solid #ddd;
+  padding-bottom: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+nav button {
+  background: none;
+  border: none;
+  font: inherit;
+  cursor: pointer;
+  padding: 0.25rem 0.5rem;
+}
+
+nav button[aria-current="page"] {
+  font-weight: 700;
+  border-bottom: 2px solid #333;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 0.35rem 0.6rem;
+  border-bottom: 1px solid #e0e0e0;
+  vertical-align: top;
+}
+
+pre {
+  background: #f0f0f0;
+  padding: 0.75rem;
+  overflow-x: auto;
+}
+
+ul {
+  list-style: none;
+  padding: 0;
+}
+
+li {
+  padding: 0.35rem 0;
+  border-bottom: 1px solid #eee;
+}

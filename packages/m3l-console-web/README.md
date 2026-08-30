@@ -17,12 +17,39 @@ pnpm console:web      # this package's dev server, another terminal
 ```
 
 `pnpm console:web` starts Vite's dev server. Its dev-only proxy forwards
-`/health` and `/ready` to the console server's default loopback bind
-(`127.0.0.1:8787`), so the shell's health check works against the real
-backend without the browser needing CORS handling. Nothing else is wired
-yet — the run-launcher, session drill-down, and every other feature arrive
-with X10 onward. What exists today is the toolchain and one working
-round trip: a page load, a fetch to `/health`, and a rendered result.
+`/health`, `/ready`, and `/api` to the console server's default loopback bind
+(`127.0.0.1:8787`), so the app works against the real backend without the
+browser needing CORS handling. The `/api` entry is load-bearing, not
+cosmetic: without it every `/api/v1/*` fetch resolves against the Vite dev
+server and 404s.
+
+X10c shipped the read half of the console. A hand-rolled hash router
+(`src/routing/useHashRoute.ts`, no runtime dependency — ADR-0067's thin-stack
+policy) drives four routes:
+
+| Hash              | View                                            |
+| ----------------- | ----------------------------------------------- |
+| `#/scripts`       | Every launchable script under the scripts dir   |
+| `#/scripts/:name` | One script's declared parameters and operations |
+| `#/runs`          | The run registry                                |
+| `#/runs/:id`      | One run record                                  |
+
+Anything unrecognised — an empty hash, a malformed percent-escape, a name
+failing the server's own kebab-case pattern — falls back to `#/scripts`
+rather than throwing or rendering blank.
+
+The parameter form, launching a run, and the live SSE log tail are **X10d**;
+`#/scripts/:name` is read-only today.
+
+Every fetcher validates its response shape at runtime before returning it —
+`fetchConsoleJson` decodes with a bare `as T`, so a wrong-shaped body is
+downgraded to a `malformed-body` error rather than reaching a component
+(the pattern `src/api/health.ts` established). Every server-supplied string
+renders as text: a script's `description` comes from a `package.json` in the
+scripts directory and a run's `failureMessage` from script stderr, so nothing
+in this package uses `dangerouslySetInnerHTML`. A secret parameter's default
+arrives already masked from `m3l-common`'s descriptor seam and is rendered
+exactly as received — the UI never re-derives or re-masks it.
 
 ```bash
 pnpm --filter @m3l-automation/m3l-console-web build     # vite build -> dist/
