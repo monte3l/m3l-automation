@@ -231,16 +231,17 @@ curl -sS localhost:8787/api/v1/scripts/json-etl
 ```json
 {
   "name": "json-etl",
-  "description": "JSON and NDJSON file ETL",
-  "hasCommandModule": true,
-  "executionMode": "in-process",
+  "description": "JSON and NDJSON file ETL: extract fields, filter records, export to json, jsonl, csv, or html",
+  "hasCommandModule": false,
+  "executionMode": "spawn",
   "parameters": [
     {
       "name": "input",
-      "aliases": ["i"],
-      "type": "string",
+      "aliases": [],
+      "type": "STRING",
       "required": true,
-      "description": "Source file to read",
+      "defaultValue": null,
+      "description": "",
       "secret": false,
       "operations": []
     }
@@ -250,9 +251,12 @@ curl -sS localhost:8787/api/v1/scripts/json-etl
 ```
 
 `parameters` is the `M3LConfigParameterDescriptor[]` the Core seam produces,
-passed through verbatim. A parameter that declares no default has no
-`defaultValue` key at all — `undefined` is dropped by JSON serialisation, not
-rendered as `null`. `operations` is the de-duplicated union of every
+passed through verbatim. A parameter that declares no default serialises as
+`"defaultValue": null`, and one that declares no description as
+`"description": ""` — a client must treat both as "absent", not as a declared
+empty value. `type` is the parameter's declared `M3LConfigParameterType`
+member spelled exactly as the enum does (`STRING`, `STRING_ARRAY`, …), not a
+lowercased JSON-schema type. `operations` is the de-duplicated union of every
 operation any parameter declares (ADR-0055), in first-seen order, so a form
 can build its operation selector from one field.
 
