@@ -7,22 +7,47 @@
  * Slice 1: `invoke()` single-shot Converse call, the model fallback
  * registry, token usage capture, and the three error classes. Slice 2:
  * `invokeStream()` over `ConverseStream`, `M3LBedrockStreamEvent` and its
- * three members, and `M3LBedrockRuntimeStreamError`. Slice 3 (V5, this
- * update): the tool vocabulary — `toolUse`/`toolResult` content blocks, the
- * tool definition/choice/schema types, and `M3LBedrockToolInvokeRequest`.
- * `invokeStream` stays text-only; see the reference page's scope-boundary
- * note.
+ * three members, and `M3LBedrockRuntimeStreamError`. Slice 3: the tool
+ * vocabulary — `toolUse`/`toolResult` content blocks, the tool
+ * definition/choice/schema types, and `M3LBedrockToolInvokeRequest`. Slice B
+ * (V5, this update): the tool-use loop (`runBedrockToolLoop`), its
+ * handler/registry contract (`M3LBedrockToolHandler`,
+ * `M3LBedrockToolRegistry`, `M3LBedrockToolContext`), and the per-execution/
+ * per-iteration ledger types (`M3LBedrockToolExecution`,
+ * `M3LBedrockToolLoopIteration`, `M3LBedrockToolLoopOutcome`), plus
+ * `M3LBedrockToolLoopError` for a ceiling breach. `invokeStream` stays
+ * text-only; see the reference page's scope-boundary note.
  *
  * @packageDocumentation
  */
 
 export { M3LBedrockRuntimeOperations } from "./client.js";
 export {
+  appendBedrockMessage,
+  appendBedrockUserText,
+  createBedrockConversation,
+} from "./conversation.js";
+export type { M3LBedrockConversation } from "./conversation.js";
+export {
   M3LBedrockRuntimeModelError,
   M3LBedrockRuntimeNoModelError,
   M3LBedrockRuntimeOperationError,
   M3LBedrockRuntimeStreamError,
+  M3LBedrockToolLoopError,
 } from "./error.js";
+export { runBedrockToolLoop } from "./loop.js";
+export type {
+  M3LBedrockModelRate,
+  M3LBedrockToolContext,
+  M3LBedrockToolExecution,
+  M3LBedrockToolHandler,
+  M3LBedrockToolLoopInvoker,
+  M3LBedrockToolLoopIteration,
+  M3LBedrockToolLoopOptions,
+  M3LBedrockToolLoopOutcome,
+  M3LBedrockToolRegistration,
+  M3LBedrockToolRegistry,
+} from "./loop.js";
 export type {
   M3LBedrockContentBlock,
   M3LBedrockInferenceConfig,

@@ -18,12 +18,18 @@
  */
 
 /**
- * Max length one {@link sanitizeForMessage}-rendered segment is allowed
- * before truncation — a length cap discards an implausibly long
+ * Default max length one {@link sanitizeForMessage}-rendered segment is
+ * allowed before truncation — a length cap discards an implausibly long
  * caller/model-controlled string in favour of a safe, bounded rendering,
  * mirroring `core/errors/M3LError.ts`'s `SAFE_CAUSE_NAME_PATTERN` length-cap
  * reasoning for the same class of problem (an external string reaching
  * `error.message`, and from there `M3LError.toJSON()`'s log projection).
+ * Every existing call site (a `toolUseId`, a `name`, a `modelId`, a
+ * `formatDocumentPath` reserved-key segment) wants this short, internal-facing
+ * cap; `tool-dispatch.ts`'s `describeToolFailure` is the one caller that
+ * passes a wider explicit `maxLength` (M2, 2026-08 security pass) — a
+ * `toolResult` rendered for the MODEL, not an `M3LError.message`, can
+ * reasonably carry more diagnostic text than this.
  */
 const MAX_SANITIZED_MESSAGE_SEGMENT_LENGTH = 100;
 
@@ -83,6 +89,11 @@ const UNSAFE_CONTROL_CHAR_PATTERN =
  * discard legitimate diagnostic information for the common case. Do not
  * export this from `core/errors` just to reuse it here.
  *
+ * @param value - The caller/model-controlled string to render.
+ * @param maxLength - The code-point cap, defaulting to
+ *   {@link MAX_SANITIZED_MESSAGE_SEGMENT_LENGTH} — override only for a
+ *   deliberately wider rendering context (see this module's constant's own
+ *   doc comment).
  * @example
  * ```ts
  * import { M3LError } from "@m3l-automation/m3l-common/core";
@@ -92,12 +103,15 @@ const UNSAFE_CONTROL_CHAR_PATTERN =
  * }
  * ```
  */
-export function sanitizeForMessage(value: string): string {
+export function sanitizeForMessage(
+  value: string,
+  maxLength: number = MAX_SANITIZED_MESSAGE_SEGMENT_LENGTH,
+): string {
   let text = "";
   let count = 0;
   let wasTruncated = false;
   for (const codePoint of value) {
-    if (count >= MAX_SANITIZED_MESSAGE_SEGMENT_LENGTH) {
+    if (count >= maxLength) {
       wasTruncated = true;
       break;
     }
