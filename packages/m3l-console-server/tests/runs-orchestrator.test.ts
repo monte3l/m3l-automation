@@ -385,12 +385,22 @@ function createControllableExecutor(
   };
 }
 
-/** Configures `existsSync` so `resolveScript` resolves a script with (or without) a command module. */
+/**
+ * Configures `existsSync` so `resolveScript` resolves a script with (or
+ * without) a command module. Also stubs `fs.lstatSync` to report a plain
+ * (non-symlink) directory entry — `resolveScript`'s symlink containment
+ * guard fails CLOSED when a path cannot be stat'd, and the fictional
+ * `SCRIPTS_ROOT` used throughout this file does not exist on the real
+ * filesystem (mirrors `runs-resolver.test.ts`'s `mockLstatSyncNotSymlink`).
+ */
 function mockScriptExists(hasCommandModule: boolean): void {
   vi.spyOn(fs, "existsSync").mockImplementation(
     (target: fs.PathLike) =>
       !(String(target).endsWith("command.js") && !hasCommandModule),
   );
+  vi.spyOn(fs, "lstatSync").mockImplementation((() => ({
+    isSymbolicLink: () => false,
+  })) as unknown as typeof fs.lstatSync);
 }
 
 /**

@@ -26,6 +26,8 @@ import { createEventStreamHub } from "../stream/event-stream.js";
 import type { M3LEventStreamHub } from "../stream/event-stream.js";
 
 import { createLoggerAuditSink } from "./audit.js";
+import { createScriptCatalog } from "./descriptors.js";
+import type { M3LScriptCatalog } from "./descriptors.js";
 import {
   createCompositeRunEventSink,
   createLoggerRunEventSink,
@@ -121,6 +123,8 @@ export interface M3LRunSubsystemOptions {
 export interface M3LRunSubsystem {
   /** The wired run orchestrator. */
   readonly orchestrator: M3LRunOrchestrator;
+  /** The script catalog serving `GET /api/v1/scripts*`, built from `config.scriptsDir`. */
+  readonly catalog: M3LScriptCatalog;
   /**
    * The run-event stream hub this subsystem owns: created with
    * `bufferSize: config.streamRetention` and wired as one member of the
@@ -230,6 +234,7 @@ export function createRunSubsystem(
     killTimeoutMs: config.killTimeoutMs,
   });
   const inProcessExecutor = createInProcessExecutor();
+  const catalog = createScriptCatalog({ scriptsRoot: config.scriptsDir });
 
   const orchestrator = createRunOrchestrator({
     config,
@@ -246,6 +251,7 @@ export function createRunSubsystem(
   return {
     orchestrator,
     eventHub,
+    catalog,
     async drain(): Promise<void> {
       // Order is deliberate, not arbitrary, WHEN THIS METHOD RUNS ON ITS OWN
       // (e.g. a direct `drain()` call with no shutdown sequence in front of

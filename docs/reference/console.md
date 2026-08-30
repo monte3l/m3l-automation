@@ -42,9 +42,18 @@ persisted binding audit trail:
 | `POST` | `/api/v1/sessions/:id/reopen`                 | required | X6         |
 | `GET`  | `/api/v1/sessions/:id/bindings`               | required | X6         |
 
-Discovery (`GET /scripts`), cancellation, and telemetry summaries are X10 and
-are deliberately absent — ADR-0066 describes them as the contract's eventual
-shape, not as anything the server answers today.
+X10 shipped script discovery: enumerate the launchable scripts under the
+configured scripts directory, and read one script's declared parameters and
+operations without running it.
+
+| Method | Path                    | Auth     | Shipped in |
+| ------ | ----------------------- | -------- | ---------- |
+| `GET`  | `/api/v1/scripts`       | required | X10        |
+| `GET`  | `/api/v1/scripts/:name` | required | X10        |
+
+Cancellation and telemetry summaries remain deliberately absent — ADR-0066
+describes them as the contract's eventual shape, not as anything the server
+answers today.
 
 ## Enabling run orchestration
 
@@ -159,8 +168,114 @@ The X6 session codes:
 server-fault code — a persisted artifact's on-disk bytes no longer match its
 recorded digest, or its reference envelope cannot be parsed.
 
+`ERR_CONSOLE_SCRIPT_INTROSPECTION_FAILED` (500, `origin: "library"`) is the
+other server-fault code a caller can provoke: a script's config module exists
+but will not load or does not export a well-formed `configParameters` array.
+Its message names only the script, never a filesystem path — the underlying
+`M3LError` is chained as `cause` and reaches the server's diagnostics, not the
+response body.
+
 Server-fault codes (`ERR_CONSOLE_INTERNAL`, the `ERR_CONSOLE_STORE_*` family,
 `ERR_CONSOLE_STREAM_*`) map to 500/503 and are not caller-actionable.
+
+## `GET /api/v1/scripts`
+
+Lists every launchable script under `M3L_CONSOLE_RUNS_SCRIPTS_DIR`, sorted by
+name. This is the read that populates the console's script list, and the
+prerequisite for building a launch form without knowing a script's parameters
+in advance.
+
+```bash
+curl -sS localhost:8787/api/v1/scripts
+```
+
+```json
+[
+  {
+    "name": "json-etl",
+    "description": "JSON and NDJSON file ETL: extract fields, filter records, export to json, jsonl, csv, or html",
+    "hasCommandModule": true,
+    "executionMode": "in-process"
+  }
+]
+```
+
+A directory qualifies as a script when its name is a kebab-case identifier
+**and** a config module resolves for it — `dist/config.js`, else
+`src/config.ts` (`Core.resolveConfigModulePath`, the same dist-first rule the
+CLI's `m3l inspect` uses). Anything else under the scripts directory is
+skipped rather than reported: a file, a symlink, a `.`-prefixed directory, or
+a directory carrying no config module. The list and
+`GET /api/v1/scripts/:name` therefore always agree — the UI can never render a
+row that then 404s.
+
+`description` is read best-effort from the script's own `package.json` and is
+`""` when that file is missing, unreadable, invalid JSON, or has no string
+`description`. It is truncated at 500 characters.
+
+`executionMode` is derived exactly as a launch derives it (ADR-0054):
+`"in-process"` when `dist/command.js` exists, else `"spawn"`.
+
+## `GET /api/v1/scripts/:name`
+
+Reads one script's declared parameters and operations, loaded through
+`m3l-common`'s `core/config` introspection seam. The script's config module is
+imported, never executed as a command, and no value is resolved from any
+provider — this describes what the script _declares_, not what it would
+resolve to in a given environment.
+
+```bash
+curl -sS localhost:8787/api/v1/scripts/json-etl
+```
+
+```json
+{
+  "name": "json-etl",
+  "description": "JSON and NDJSON file ETL: extract fields, filter records, export to json, jsonl, csv, or html",
+  "hasCommandModule": false,
+  "executionMode": "spawn",
+  "parameters": [
+    {
+      "name": "input",
+      "aliases": [],
+      "type": "STRING",
+      "required": true,
+      "defaultValue": null,
+      "description": "",
+      "secret": false,
+      "operations": []
+    }
+  ],
+  "operations": []
+}
+```
+
+`parameters` is the `M3LConfigParameterDescriptor[]` the Core seam produces,
+passed through verbatim. A parameter that declares no default serialises as
+`"defaultValue": null`, and one that declares no description as
+`"description": ""` — a client must treat both as "absent", not as a declared
+empty value. `type` is the parameter's declared `M3LConfigParameterType`
+member spelled exactly as the enum does (`STRING`, `STRING_ARRAY`, …), not a
+lowercased JSON-schema type. `operations` is the de-duplicated union of every
+operation any parameter declares (ADR-0055), in first-seen order, so a form
+can build its operation selector from one field.
+
+**A secret-flagged parameter's default is always the eight-asterisk mask**,
+never its real value. The masking happens at the descriptor source in
+`m3l-common`, not in this route, so every consumer of that seam inherits it.
+
+Descriptors are cached in memory, keyed by the resolved config module's path
+**and** its mtime — rebuilding a script or editing its `src/config.ts`
+invalidates the entry on the next read, with no server restart.
+
+| Failure                                         | Code                                      | Status |
+| ----------------------------------------------- | ----------------------------------------- | ------ |
+| `:name` missing, or not a kebab-case identifier | `ERR_CONSOLE_BAD_REQUEST`                 | 400    |
+| No such directory, or no config module in it    | `ERR_CONSOLE_RUN_SCRIPT_NOT_FOUND`        | 404    |
+| Config module exists but will not load          | `ERR_CONSOLE_SCRIPT_INTROSPECTION_FAILED` | 500    |
+
+The name is validated at the HTTP boundary, before the filesystem is touched
+at all.
 
 ## `POST /api/v1/runs`
 
@@ -673,8 +788,49 @@ Stated plainly rather than left to be discovered:
   body cap that transitively limits both.
 - **No cancellation route.** A running run can only be stopped by draining the
   server.
+- **`GET /api/v1/scripts` stats the scripts directory on every request.** It
+  is deliberately uncached — a freshly scaffolded script must appear without a
+  restart — so the cost is `O(scripts)` `stat` calls per call, synchronously,
+  on the event loop, with no cap on entries or response size. Measured: 3,000
+  script directories block the loop for ~48 ms and return a ~1.75 MB body per
+  request. Only the per-script _descriptors_ are cached.
+- **A parameter's own `description` and `defaultValue` are not length-capped**
+  (only the `package.json` `description` is, at 500 characters). One declared
+  parameter can therefore produce a multi-hundred-KB
+  `GET /api/v1/scripts/:name` body. See the trust boundary below for why this
+  is not treated as an attack surface.
+- **Every distinct config-module mtime leaves a permanent entry in Node's ESM
+  registry.** Reloading after a rebuild works by importing under a
+  cache-busting `?mtime=` specifier, and an imported module is never
+  unloadable, so a script rebuilt many times within one server lifetime grows
+  process memory monotonically. Restart to reclaim it.
 - **HTTP/1.1 per-origin connection limits** cap how many SSE streams one
   browser can hold open at once (six, typically). Moot behind HTTP/2.
+
+## The scripts directory is a trust boundary
+
+`GET /api/v1/scripts/:name` **imports and executes** a script's config module
+inside the console-server process, with that process's environment and
+credentials — including for scripts whose `executionMode` is `"spawn"`, where
+ADR-0054 otherwise treats the process boundary as an isolation feature. A
+read-shaped `GET` is the trigger, and `auth` has no read-only/read-write split,
+so any authenticated operator can drive it. Imported modules are never
+unloadable, so top-level side effects (timers, open handles, memory) persist
+for the process's lifetime.
+
+The consequence worth stating plainly: **anyone who can write into the scripts
+directory already has in-process code execution by design.** The unbounded
+listing and uncapped parameter strings above are therefore not attack surfaces
+— an adversary who could trigger them could simply run code instead. The
+controls that do matter are the ones keeping content _outside_ that directory
+unreachable:
+
+- `:name` must match `/^[a-z][a-z0-9-]*$/`, validated at the HTTP boundary
+  before any filesystem call.
+- The resolved script directory is `realpath`'d and must be a **direct child**
+  of the `realpath`'d scripts root. A symlink inside the scripts root pointing
+  anywhere else resolves to `ERR_CONSOLE_RUN_SCRIPT_NOT_FOUND`, so it can
+  neither be listed nor introspected.
 
 ## Links
 

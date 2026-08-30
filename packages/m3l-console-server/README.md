@@ -22,7 +22,8 @@ curl -s localhost:8787/ready    # {"status":"ready","uptimeMs":57}
 ```
 
 Add `M3L_CONSOLE_RUNS_SCRIPTS_DIR` to enable run orchestration (X4) — the
-`/api/v1/runs` routes, the per-run SSE stream, and the run registry:
+`/api/v1/runs` routes, the per-run SSE stream, the run registry, and the X10
+script-discovery routes (`/api/v1/scripts`, `/api/v1/scripts/:name`):
 
 ```bash
 M3L_CONSOLE_OPERATOR_NAME="your name" \
@@ -30,9 +31,11 @@ M3L_CONSOLE_RUNS_SCRIPTS_DIR="$PWD/scripts" \
   pnpm console:server
 ```
 
-That variable is the whole gate: absent, the server boots with run
-orchestration disabled and logs that posture once, rather than refusing to
-start over an optional subsystem. The X6 workbench-sessions routes
+That variable is the whole gate — for discovery as much as for launching:
+absent, the server boots with run orchestration disabled and logs that posture
+once, rather than refusing to start over an optional subsystem. Discovery
+deliberately shares it rather than taking a gate of its own, so the two halves
+of the launch flow can never disagree about whether a script exists. The X6 workbench-sessions routes
 (`/api/v1/sessions*`) have no separate enable/disable gate of their own — see
 `docs/reference/console.md`'s Sessions section.
 

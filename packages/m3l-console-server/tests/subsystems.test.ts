@@ -271,13 +271,21 @@ function buildDryRunRequest(scriptName: string): {
  * Configures `fs.existsSync` so `resolveScript` succeeds for any kebab-case
  * name under the configured scripts root with no `dist/command.js` — i.e.
  * every launch below runs the SPAWN executor, the one whose underlying
- * `spawn` call is mocked, never the in-process one. Duplicated from
+ * `spawn` call is mocked, never the in-process one. Also stubs
+ * `fs.lstatSync` to report a plain (non-symlink) directory entry —
+ * `resolveScript`'s symlink containment guard fails CLOSED when a path
+ * cannot be stat'd, and the fictional scripts root used throughout this
+ * file does not exist on the real filesystem (mirrors
+ * `runs-resolver.test.ts`'s `mockLstatSyncNotSymlink`). Duplicated from
  * `tests/runs-composition.test.ts`.
  */
 function mockScriptResolvable(): void {
   vi.spyOn(fs, "existsSync").mockImplementation(
     (target: fs.PathLike) => !String(target).endsWith("command.js"),
   );
+  vi.spyOn(fs, "lstatSync").mockImplementation((() => ({
+    isSymbolicLink: () => false,
+  })) as unknown as typeof fs.lstatSync);
 }
 
 /** A listener a fake spawned process's `once()` may be given. */
