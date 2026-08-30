@@ -57,3 +57,7 @@ lefthook-local.yml
 
 # Claude
 .claire/
+# ADR-0061 (V7): the agent decision log. Non-sensitive by construction
+# (parameter names, never values), but retained rather than pruned, so it
+# is machine state, not source.
+data/agent-log/

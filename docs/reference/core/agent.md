@@ -20,8 +20,12 @@ authority is **declared, tested, repo-owned data** — a plain structured object
 a deployment stores next to its config and a reviewer reads in one place — not
 harness configuration and not the absence of a prompt.
 
-The module is pure: it performs no I/O, reads no clock, opens no file, and
-holds no module-level state. A caller feeds it the parsed contents of a JSON or
+The **evaluator** is pure: `evaluateAgentAction` performs no I/O, reads no
+clock, opens no file, and holds no module-level state. That claim covered the
+whole module until V7 slice 2, which adds the decision-log **writer** — the one
+deliberately impure thing here, and the reason the claim is now scoped rather
+than dropped. Everything the evaluator touches is still a total function; see
+[Writing the decision log](#writing-the-decision-log). A caller feeds it the parsed contents of a JSON or
 YAML policy preset; the module validates that value at its own boundary and
 returns a branded, frozen policy. Everything after that is a total function
 from `(policy, action)` to a verdict.
@@ -49,6 +53,7 @@ ADR-0072 slice record.
 | V6 slice 1 — verdicts           | The action/policy/verdict vocabulary, the declaration validator, and the evaluator's allowlist + autonomy-tier arms. 20 exports. | Landed |
 | V6 slice 2 — budgets + dry-run  | Per-run/per-day budgets and ceilings, the run ledger, named exhaustion outcomes, and the dry-run-first discipline. 4 exports.    | Landed |
 | V7 slice 1 — decision-log entry | The decision-log entry schema, the pure projector from a decision, and the JSONL serializer. No I/O. 7 exports.                  | Landed |
+| V7 slice 2 — the writer         | The append-only segmented writer, its rotation ceilings, the loud write error, and the log-unavailable escalation. 5 exports.    | Landed |
 
 Deliberately **not** in either slice, and why:
 
@@ -80,8 +85,8 @@ import { Core } from "@m3l-automation/m3l-common";
 // or: import { ... } from "@m3l-automation/m3l-common/core";
 ```
 
-Exported symbols — twenty from V6 slice 1, four more from V6 slice 2, and
-seven more from V7 slice 1.
+Exported symbols — twenty from V6 slice 1, four more from V6 slice 2, seven
+more from V7 slice 1, and five more from V7 slice 2.
 
 **The action under judgement** — what a caller describes:
 
@@ -146,10 +151,20 @@ seven more from V7 slice 1.
 - `M3LAgentEvaluationOptions` — the options bag.
 - `evaluateAgentAction` — the evaluator.
 
-**Errors** — both thrown, never returned:
+**Writing the log** — the one impure surface (V7 slice 2):
+
+- `M3LAgentDecisionLog` — the append-only segmented writer.
+- `M3LAgentDecisionLogOptions` — its options bag: the directory override and
+  both rotation ceilings.
+- `M3L_AGENT_LOG_MAX_SEGMENT_BYTES` (8 MiB) /
+  `M3L_AGENT_LOG_MAX_SEGMENT_AGE_MS` (24 h) — the default rotation ceilings,
+  both caller-overridable.
+
+**Errors** — all thrown, never returned:
 
 - `M3LAgentPolicyDeclarationError` (`ERR_AGENT_POLICY_DECLARATION`).
 - `M3LAgentActionValidationError` (`ERR_AGENT_INVALID_ACTION`).
+- `M3LAgentDecisionLogWriteError` (`ERR_AGENT_DECISION_LOG_WRITE`).
 
 Both take the repo's standard error-subclass shape, and both narrow `code` to
 their own literal:
@@ -1615,6 +1630,191 @@ JSONL rather than a JSON array was chosen for the reason slice 2 depends on: a
 line-delimited format is the one shape that survives two processes appending
 concurrently.
 
+## Writing the decision log
+
+V7 slice 2. This is the slice that makes the module impure, and the
+[Overview](#overview) purity claim is rescoped accordingly: **the evaluator**
+is pure — `evaluateAgentAction` still performs no I/O, reads no clock, and
+holds no module-level state. The writer is not, by design.
+
+### The writer
+
+`M3LAgentDecisionLog` appends serialized entries to a segmented, append-only
+JSONL stream under `data/agent-log/`. It creates the directory itself.
+
+The default directory is `new M3LPaths().getDataDir()` + `"agent-log"`, and is
+overridable through the options bag. That override, plus the `M3L_DATA_DIR`
+environment override `M3LPaths` already honours, is what keeps a test out of
+the real `data/`.
+
+### Durability and concurrency, stated rather than assumed
+
+The active segment is opened with `O_APPEND` (`flag: "a"`) and each call writes
+one `JSON.stringify(entry) + "\n"`.
+
+`O_APPEND` makes the seek-to-end and the write a **single atomic step** against
+other writers on a local filesystem, so two concurrent agent processes
+interleave whole lines rather than corrupting one. That is exactly the
+guarantee a line-delimited format needs, and it is why JSONL was chosen over a
+JSON array — an array would need every writer to rewrite the closing bracket.
+
+Two limits are recorded rather than papered over:
+
+- The guarantee does **not** hold across NFS.
+- A single `write()` larger than the pipe buffer is not guaranteed atomic. The
+  writer therefore enforces `M3L_AGENT_MAX_LOG_ENTRY_BYTES` and throws rather
+  than emitting a line that might tear.
+
+ADR-0061 already records that "append-only" here is **filesystem-honest, not
+cryptographically tamper-evident**. Anyone who can write the file can rewrite
+it; the property being bought is that the library itself never rewrites or
+truncates, so an operator's own audit trail is not silently edited by the tool
+it is auditing.
+
+### Cold-start segment discovery
+
+On first write the writer lists `data/agent-log/`, picks the highest-numbered
+segment for the current date prefix, and `stat`s it to decide seal-vs-append
+against both ceilings.
+
+There is **no index file and no in-memory state carried across processes** —
+the directory listing is the state. A freshly spawned process and a long-lived
+one therefore agree about which segment is active, which is the only way the
+concurrency stance above survives a restart.
+
+One limitation is worth stating in the same register as the NFS caveat: a
+segment's age is taken from `birthtimeMs`, falling back to `mtimeMs` on a
+filesystem that reports no birth time. Under that fallback the age measures time
+since the last _write_ rather than since creation, so a continuously appended
+segment keeps resetting its own age and rotates on the byte ceiling alone.
+
+### Rotation
+
+- `M3L_AGENT_LOG_MAX_SEGMENT_BYTES` — 8 MiB.
+- `M3L_AGENT_LOG_MAX_SEGMENT_AGE_MS` — 24 hours.
+
+Both are exported and both are caller-overridable through the options bag.
+Crossing either ceiling seals the active segment and opens a new one.
+
+A **third** trigger has no constant: the active segment is also sealed when its
+date prefix is no longer today's. Without it a long-lived process that crossed
+midnight under both ceilings would keep appending into yesterday's file while a
+process spawned beside it started today's — which would make the cold-start
+guarantee below false exactly when two processes are running.
+
+**Segments are retained, never pruned and never truncated in place.** A
+retention policy is a deployment decision, and a library that silently deletes
+an audit trail is worse than one that grows.
+
+### Write failure is loud
+
+A failed append throws `M3LAgentDecisionLogWriteError`
+(`ERR_AGENT_DECISION_LOG_WRITE`). It is never swallowed and never downgraded to
+a warning.
+
+The reasoning is the whole point of the slice: an action that cannot be audited
+must not run unaudited. A silent write failure would produce exactly the
+condition ADR-0061 exists to prevent — an autonomous operator acting with no
+record — and would produce it precisely when something is already wrong with
+the host.
+
+Like both existing errors on this module, its `context` names the offending
+field and the failure kind and **never carries caller data**.
+
+### Bad input is a caller error, not a write error
+
+The two failure kinds are deliberately not the same error.
+
+- **`M3LError` with `ERR_INVALID_ARGUMENT`** — the caller handed the writer
+  something it cannot use: an options bag with an unknown key, a `directory`
+  that is not a non-blank string, a `maxSegmentBytes` or `maxSegmentAgeMs` that
+  is not a finite positive integer, or an `entry` that is not an object or
+  cannot be serialized at all (a circular reference, a `BigInt` field). This is
+  a bare `M3LError` with an existing code rather than a new class, following the
+  same house pattern as `aws/s3/uri.ts` and `internal/logging/levels.ts`.
+- **`M3LAgentDecisionLogWriteError`** — the append itself failed, or the entry
+  is well-formed but larger than `M3L_AGENT_MAX_LOG_ENTRY_BYTES`. What an
+  oversized entry violates is the atomic-append limit, not the type contract,
+  which is why the ceiling stays with the write error.
+
+Validation matters more here than at a typical boundary because the failure
+modes are silent rather than loud. `maxSegmentBytes: 0` would make the rotation
+check true on every call — one new file per entry, forever — and `NaN` would
+make it false on every call, so a single segment grows without bound. Neither
+raises anything on its own.
+
+Nothing reaches the filesystem when input is rejected: validation and
+serialization both run before any handle is opened.
+
+### Concurrent writes on one instance
+
+Appends through a single `M3LAgentDecisionLog` are serialized. `O_APPEND` keeps
+two _processes_ from tearing each other's lines, but it says nothing about the
+writer's own in-memory accounting: two overlapping `write()` calls would each
+resolve the active segment independently and each add only their own line to the
+running size, so the byte ceiling would be crossed before rotation noticed.
+
+## Escalating when the log is unavailable
+
+The evaluator stays **pure and synchronous**. It does not probe the filesystem,
+because a pure function cannot, and because a probe would be a
+time-of-check-to-time-of-use lie anyway.
+
+Instead this follows the budgets and dry-run-first idiom exactly: the caller
+observes, and hands the observation back.
+
+1. **Policy-declared opt-in.** `M3LAgentPolicyDeclaration.requireDecisionLog`
+   takes the same **strict-`true`** polarity as `dryRunFirst` — `false` means
+   the same as absent.
+2. **Caller-observed health.** `M3LAgentRunLedger.decisionLogAvailable`
+   reports what the caller found.
+3. **Two new rule ids**, taking the union from 20 to 22:
+   - `decision-log-unavailable` — declared, and observed `false`.
+   - `decision-log-unavailable.unobservable` — declared, but the caller
+     supplied no observation at all.
+
+The declared-vs-unobservable split is the one the five `budget.*.unobservable`
+ids already use, and for the same reason: "you asked for a discipline and gave
+me nothing to check it with" is a different operational fault from "the thing
+you asked me to check is broken", and an operator needs to tell them apart.
+
+### Why the opt-in is not optional
+
+Without the policy gate, this rule would escalate actions for every existing
+caller that never passes the new ledger field — a behavioural break shipped as
+an additive minor.
+
+Gated on `requireDecisionLog`, a policy that does not declare it reaches
+exactly the arms it reaches today, in the same order, with the same verdict.
+That is a property the existing test suite proves, not a claim.
+
+### Where it sits: step 3b
+
+Immediately **after** budgets (step 3) and **before** the autonomy tier
+(step 4).
+
+- **Above step 4** for the reason step 3's own comment already argues for
+  budgets: an unauditable _read-only_ action is unauditable too. Placing it
+  here covers both auto-approval arms — `read-only-auto-approved` at step 4 and
+  `graded-mutation-auto-approved` at step 7 — in one place rather than two.
+- **After step 3**, so an action that is already budget-exhausted keeps
+  reporting its budget rule. The first fault an operator sees should be the one
+  that was true first.
+- **Below the two deny arms** (steps 1 and 2), so a denied action stays denied.
+  A denial needs no audit record to be safe, because nothing runs.
+
+Sitting above the whole `switch` means the check also **supersedes the escalate
+arms below it**, not only the two auto-approval arms. A sensitive-target
+mutation with the log unavailable reports `decision-log-unavailable` rather than
+`sensitive-target-escalated`.
+
+That is intended, and there are regression tests pinning it. The verdict is
+`escalate` either way, so nothing runs unreviewed on either path; of the two
+rules, the one naming a broken log is the one an operator can act on. Moving the
+check below the grading arms to preserve the more specific rule would cost the
+single-site property outright — step 4's read-only auto-approval arm sits
+_above_ the grading arms, so the check would have to exist in two places.
+
 ## Compatibility with `core/prompt`
 
 This module **rides** ADR-0048's grades. Three consequences worth stating
@@ -1713,7 +1913,13 @@ const second = Core.evaluateAgentAction({ policy: governed, action, run });
 
 ## Out of scope
 
-- Writing anything. The decision log is ADR-0061 / V7 and co-lands here later.
+- **Retaining or pruning** the decision log. Segments are sealed and rotated,
+  never deleted and never truncated in place: a retention policy is a
+  deployment decision, and a library that silently drops an audit trail is
+  worse than one that grows.
+- **Probing** whether the log is writable, from the evaluator. It reports what
+  the caller observed; a probe from a pure function is impossible and would be
+  a time-of-check-to-time-of-use lie besides.
 - Reading a policy file. The module takes a parsed value; a caller owns the
   I/O, exactly as every other pure Core module does.
 - Enforcing the verdict. This layer decides; a caller that ignores the decision

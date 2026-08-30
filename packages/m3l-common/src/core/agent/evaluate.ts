@@ -54,10 +54,12 @@ export interface M3LAgentEvaluationOptions {
    */
   readonly additionalSensitiveTargets?: M3LDestructiveTargetPredicate;
   /**
-   * The caller's observed run state, read for step 3 (budgets) and step 6
-   * (dry-run-first). Absent means every declared budget is unobservable and
-   * every dry-run-first shape is un-dry-run — see
-   * docs/reference/core/agent.md § Budgets and exhaustion and § Dry-run-first.
+   * The caller's observed run state, read for step 3 (budgets), step 3b (the
+   * decision-log-unavailable escalation), and step 6 (dry-run-first). Absent
+   * means every declared budget is unobservable, the decision log is
+   * unobservable, and every dry-run-first shape is un-dry-run — see
+   * docs/reference/core/agent.md § Budgets and exhaustion,
+   * § Escalating when the log is unavailable, and § Dry-run-first.
    */
   readonly run?: M3LAgentRunLedger;
 }
@@ -70,12 +72,14 @@ export interface M3LAgentEvaluationOptions {
  * The evaluation order is normative and every arm is terminal: boundary
  * validation and single-traversal projection (step 0), the script allowlist
  * (step 1), the operation allowlist (step 2), budgets and ceilings (step 3),
- * the autonomy tier and its declared cross-check (step 4), the ADR-0048
- * grading arms (step 5), dry-run-first (step 6), and the graded non-sensitive
- * mutation arm (step 7). Steps 3 and 6 are skipped entirely when the policy
- * declares no `budgets` and no `dryRunFirst`, respectively — a slice-1
- * declaration reaches exactly the arms slice 1 evaluated, in the same order,
- * and gets the same verdict.
+ * the decision-log-unavailable escalation (step 3b), the autonomy tier and
+ * its declared cross-check (step 4), the ADR-0048 grading arms (step 5),
+ * dry-run-first (step 6), and the graded non-sensitive mutation arm (step 7).
+ * Steps 3, 3b, and 6 are skipped entirely when the policy declares no
+ * `budgets`, no `requireDecisionLog`, and no `dryRunFirst`, respectively — a
+ * declaration that declares none of the three reaches exactly the arms it
+ * reached before those fields existed, in the same order, with the same
+ * verdict.
  *
  * Every step reads the frozen `M3LAgentActionRecord` projected at step 0,
  * never the caller's object, and every decision carries that projection — so a

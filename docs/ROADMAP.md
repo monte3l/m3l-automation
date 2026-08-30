@@ -177,7 +177,7 @@ per-phase detail in
 | **V4**  | `aws/bedrock-runtime` wrapper (AWS 19 → 20, additive minor)     | Done     |
 | **V5**  | Tool-use loop primitives                                        | Done     |
 | **V6**  | Agent policy layer (graded autonomy as authorization)           | Done     |
-| **V7**  | Agent decision log (append-only, names-never-values)            | To Do    |
+| **V7**  | Agent decision log (append-only, names-never-values)            | Done     |
 | **V8**  | `agent-operator` script + fleet-health-checks workload          | To Do    |
 | **V9**  | Workload expansion (ETL; log triage; queue flow after U10)      | To Do    |
 | **V10** | `packages/m3l-mcp` stdio MCP surface                            | To Do    |

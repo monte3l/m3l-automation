@@ -48,6 +48,7 @@ import type {
   M3LAgentDecision,
   M3LAgentDecisionLogEntry,
   M3LAgentDecisionLogEntryOptions,
+  M3LAgentDecisionLogOptions,
   M3LAgentDecisionOutcome,
   M3LAgentEvaluationOptions,
   M3LAgentIdentity,
@@ -1061,6 +1062,18 @@ const SLICE_1_RULE_IDS = [
 
 const ALL_TWENTY_RULE_IDS = [...SLICE_1_RULE_IDS, ...NEW_RULE_IDS] as const;
 
+/**
+ * `M3LAgentPolicyRuleId`'s full twenty-two-member union, adding V7 slice 2's
+ * `decision-log-unavailable` pair on top of this file's twenty. Only used by
+ * the type-level union pin below — recognition of the two new ids is
+ * `agent-decision-log-escalation.test.ts`'s responsibility, not this file's.
+ */
+const ALL_TWENTY_TWO_RULE_IDS = [
+  ...ALL_TWENTY_RULE_IDS,
+  "decision-log-unavailable",
+  "decision-log-unavailable.unobservable",
+] as const;
+
 describe("39. isAgentPolicyRuleId over the twenty-id vocabulary", () => {
   test.each(ALL_TWENTY_RULE_IDS)("recognises %s", (ruleId: string) => {
     expect(isAgentPolicyRuleId(ruleId)).toBe(true);
@@ -1232,9 +1245,17 @@ describe("40. all twelve new rule ids pair with the escalate verdict", () => {
 });
 
 describe("41-42. type-level contract", () => {
-  test("41. M3LAgentPolicyRuleId is the closed twenty-member union", () => {
+  test("41. M3LAgentPolicyRuleId is the closed twenty-two-member union", () => {
+    // Runtime half: the guard must agree with the type on every member,
+    // including the two V7 slice 2 adds — this is what makes
+    // ALL_TWENTY_TWO_RULE_IDS load-bearing rather than a type-only fixture.
+    expect(ALL_TWENTY_TWO_RULE_IDS).toHaveLength(22);
+    for (const ruleId of ALL_TWENTY_TWO_RULE_IDS) {
+      expect(isAgentPolicyRuleId(ruleId)).toBe(true);
+    }
+
     expectTypeOf<M3LAgentPolicyRuleId>().toEqualTypeOf<
-      (typeof ALL_TWENTY_RULE_IDS)[number]
+      (typeof ALL_TWENTY_TWO_RULE_IDS)[number]
     >();
   });
 
@@ -1279,12 +1300,16 @@ describe("41-42. type-level contract", () => {
 });
 
 /**
- * The fifteen runtime (value) exports V7 slice 1 leaves the submodule barrel
- * with: slice 1/2's twelve plus the three the decision-log entry adds
+ * The nineteen runtime (value) exports the submodule barrel carries as of
+ * V7 slice 2: slice 1/2's twelve, the three the decision-log entry adds
  * (`agentDecisionLogEntry`, `serializeAgentDecisionLogEntry`,
- * `M3L_AGENT_MAX_LOG_ENTRY_BYTES`). The three additions are exercised below
- * so a dropped export fails this file at both runtime and typecheck, not
- * just the barrel-inventory count.
+ * `M3L_AGENT_MAX_LOG_ENTRY_BYTES`), and the four V7 slice 2's decision-log
+ * writer adds (`M3LAgentDecisionLog`, `M3LAgentDecisionLogWriteError`,
+ * `M3L_AGENT_LOG_MAX_SEGMENT_BYTES`, `M3L_AGENT_LOG_MAX_SEGMENT_AGE_MS`).
+ * The decision-log-entry trio is exercised below so a dropped export fails
+ * this file at both runtime and typecheck, not just the barrel-inventory
+ * count; the writer's own contract lives in
+ * `agent-decision-log-writer.test.ts`.
  */
 const RUNTIME_EXPORTS = [
   "M3L_AGENT_MAX_PARAMETER_NAMES",
@@ -1302,12 +1327,16 @@ const RUNTIME_EXPORTS = [
   "M3L_AGENT_MAX_LOG_ENTRY_BYTES",
   "agentDecisionLogEntry",
   "serializeAgentDecisionLogEntry",
+  "M3L_AGENT_LOG_MAX_SEGMENT_AGE_MS",
+  "M3L_AGENT_LOG_MAX_SEGMENT_BYTES",
+  "M3LAgentDecisionLog",
+  "M3LAgentDecisionLogWriteError",
 ] as const;
 
 /**
- * The sixteen type-only exports. Not independently runtime-checkable — this
- * file's own top-level `import type { ... }` block already imports all of
- * them, so a missing one fails the whole file at typecheck.
+ * The seventeen type-only exports. Not independently runtime-checkable —
+ * this file's own top-level `import type { ... }` block already imports all
+ * of them, so a missing one fails the whole file at typecheck.
  */
 const TYPE_ONLY_EXPORTS = [
   "M3LAgentAction",
@@ -1326,14 +1355,15 @@ const TYPE_ONLY_EXPORTS = [
   "M3LAgentDecisionOutcome",
   "M3LAgentDecisionLogEntry",
   "M3LAgentDecisionLogEntryOptions",
+  "M3LAgentDecisionLogOptions",
 ] as const;
 
 test("43. M3L_AGENT_MAX_DRY_RUN_SHAPES is 256", () => {
   expect(M3L_AGENT_MAX_DRY_RUN_SHAPES).toBe(256);
 });
 
-test("43. core/agent barrel surfaces exactly thirty-one named exports (15 runtime + 16 type-only)", async () => {
-  expect(RUNTIME_EXPORTS.length + TYPE_ONLY_EXPORTS.length).toBe(31);
+test("43. core/agent barrel surfaces exactly thirty-six named exports (19 runtime + 17 type-only)", async () => {
+  expect(RUNTIME_EXPORTS.length + TYPE_ONLY_EXPORTS.length).toBe(36);
 
   const barrel: Record<string, unknown> =
     await import("../src/core/agent/index.js");
@@ -1363,6 +1393,18 @@ describe("43. the V7 slice 1 decision-log additions are live on the barrel", () 
     } satisfies M3LAgentDecisionLogEntryOptions);
 
     expect(typeof serializeAgentDecisionLogEntry(entry)).toBe("string");
+  });
+});
+
+describe("43. M3LAgentDecisionLogOptions (V7 slice 2's type-only addition) is live on the barrel", () => {
+  test("every field is optional — an empty bag is a valid options value", () => {
+    // The full options-bag shape (directory / maxSegmentBytes /
+    // maxSegmentAgeMs) is asserted in agent-decision-log-writer.test.ts; this
+    // is only a liveness check for the barrel-inventory test above, proving
+    // the type import is not decorative.
+    const options: M3LAgentDecisionLogOptions = {};
+
+    expect(options).toEqual({});
   });
 });
 

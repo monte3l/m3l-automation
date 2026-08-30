@@ -743,6 +743,18 @@ const KNOWN_RULE_IDS = [
   "budget.loop-iterations.unobservable",
 ] as const;
 
+/**
+ * `M3LAgentPolicyRuleId`'s full twenty-two-member union, adding V7 slice 2's
+ * `decision-log-unavailable` pair on top of this file's twenty. Only used by
+ * the type-level union pin below — recognition of the two new ids is
+ * `agent-decision-log-escalation.test.ts`'s responsibility, not this file's.
+ */
+const ALL_KNOWN_RULE_IDS = [
+  ...KNOWN_RULE_IDS,
+  "decision-log-unavailable",
+  "decision-log-unavailable.unobservable",
+] as const;
+
 describe("isAgentPolicyRuleId", () => {
   test.each(KNOWN_RULE_IDS)("recognises %s", (ruleId: string) => {
     expect(isAgentPolicyRuleId(ruleId)).toBe(true);
@@ -879,9 +891,17 @@ describe("type-level contract", () => {
     >();
   });
 
-  test("M3LAgentPolicyRuleId is the closed twenty-member union this build knows", () => {
+  test("M3LAgentPolicyRuleId is the closed twenty-two-member union this build knows", () => {
+    // Runtime half: the guard must agree with the type on every member,
+    // including the two V7 slice 2 adds — this is what makes
+    // ALL_KNOWN_RULE_IDS load-bearing rather than a type-only fixture.
+    expect(ALL_KNOWN_RULE_IDS).toHaveLength(22);
+    for (const ruleId of ALL_KNOWN_RULE_IDS) {
+      expect(isAgentPolicyRuleId(ruleId)).toBe(true);
+    }
+
     expectTypeOf<M3LAgentPolicyRuleId>().toEqualTypeOf<
-      (typeof KNOWN_RULE_IDS)[number]
+      (typeof ALL_KNOWN_RULE_IDS)[number]
     >();
   });
 });
