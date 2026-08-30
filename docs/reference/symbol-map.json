@@ -2658,6 +2658,86 @@
     "namespace": "aws",
     "file": "packages/m3l-common/src/aws/bedrock-runtime/types.ts"
   },
+  "M3LBedrockConversation": {
+    "submodule": "bedrock-runtime",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/bedrock-runtime/conversation.ts"
+  },
+  "createBedrockConversation": {
+    "submodule": "bedrock-runtime",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/bedrock-runtime/conversation.ts"
+  },
+  "appendBedrockMessage": {
+    "submodule": "bedrock-runtime",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/bedrock-runtime/conversation.ts"
+  },
+  "appendBedrockUserText": {
+    "submodule": "bedrock-runtime",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/bedrock-runtime/conversation.ts"
+  },
+  "M3LBedrockToolContext": {
+    "submodule": "bedrock-runtime",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/bedrock-runtime/tool-dispatch.ts"
+  },
+  "M3LBedrockToolHandler": {
+    "submodule": "bedrock-runtime",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/bedrock-runtime/tool-dispatch.ts"
+  },
+  "M3LBedrockToolRegistration": {
+    "submodule": "bedrock-runtime",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/bedrock-runtime/tool-dispatch.ts"
+  },
+  "M3LBedrockToolRegistry": {
+    "submodule": "bedrock-runtime",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/bedrock-runtime/tool-dispatch.ts"
+  },
+  "M3LBedrockToolLoopInvoker": {
+    "submodule": "bedrock-runtime",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/bedrock-runtime/loop.ts"
+  },
+  "M3LBedrockToolLoopOptions": {
+    "submodule": "bedrock-runtime",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/bedrock-runtime/loop.ts"
+  },
+  "runBedrockToolLoop": {
+    "submodule": "bedrock-runtime",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/bedrock-runtime/loop.ts"
+  },
+  "M3LBedrockModelRate": {
+    "submodule": "bedrock-runtime",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/bedrock-runtime/tool-ledger.ts"
+  },
+  "M3LBedrockToolExecution": {
+    "submodule": "bedrock-runtime",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/bedrock-runtime/tool-ledger.ts"
+  },
+  "M3LBedrockToolLoopIteration": {
+    "submodule": "bedrock-runtime",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/bedrock-runtime/tool-ledger.ts"
+  },
+  "M3LBedrockToolLoopOutcome": {
+    "submodule": "bedrock-runtime",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/bedrock-runtime/tool-ledger.ts"
+  },
+  "M3LBedrockToolLoopError": {
+    "submodule": "bedrock-runtime",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/bedrock-runtime/error.ts"
+  },
   "AWSClientProvider": {
     "submodule": "clients",
     "namespace": "aws",

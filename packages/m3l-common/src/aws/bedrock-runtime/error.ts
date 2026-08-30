@@ -8,6 +8,7 @@
 import { M3LError } from "../../core/errors/index.js";
 
 import { sanitizeForMessage } from "./message-safety.js";
+import type { M3LBedrockStopReason, M3LBedrockTokenUsage } from "./types.js";
 
 /**
  * Constructor options for {@link M3LBedrockRuntimeOperationError}.
@@ -220,7 +221,9 @@ export class M3LBedrockRuntimeNoModelError extends M3LError {
     super(message, {
       code: "ERR_BEDROCK_RUNTIME_NO_MODEL",
       context: {
-        attemptedModels: options.attemptedModels.map(sanitizeForMessage),
+        attemptedModels: options.attemptedModels.map((modelId) =>
+          sanitizeForMessage(modelId),
+        ),
       },
       ...(options.cause !== undefined && { cause: options.cause }),
     });
@@ -331,5 +334,145 @@ export class M3LBedrockRuntimeStreamError extends M3LError {
     this.modelId = options.modelId;
     this.eventsEmitted = options.eventsEmitted;
     this.retrySafe = options.retrySafe;
+  }
+}
+
+/**
+ * Constructor options for {@link M3LBedrockToolLoopError}.
+ *
+ * Not exported — callers _catch_ this error, they don't construct it
+ * (precedent: every options interface in this module stays internal).
+ */
+interface M3LBedrockToolLoopErrorOptions {
+  /** The configured iteration ceiling (`M3LBedrockToolLoopOptions.maxIterations`) that was reached. */
+  readonly maxIterations: number;
+  /** How many iterations actually completed before the ceiling fired — see {@link M3LBedrockToolLoopError}'s own doc comment for the "completed" convention this shares with `usage`. */
+  readonly iterationsCompleted: number;
+  /** The `stopReason` from the last completed iteration. */
+  readonly lastStopReason: M3LBedrockStopReason;
+  /** Cumulative token usage across every completed iteration — see {@link M3LBedrockToolLoopError}'s own doc comment for the "completed" convention this shares with `iterationsCompleted`. */
+  readonly usage: M3LBedrockTokenUsage;
+  /** The model that served the last completed iteration. */
+  readonly modelId: string;
+  /** How many `toolUse` blocks from the last turn were never dispatched to a handler. */
+  readonly pendingToolCount: number;
+  /** How many tool executions, across every iteration, ended in `status: "error"`. */
+  readonly toolErrorCount: number;
+}
+
+/**
+ * Thrown by `runBedrockToolLoop` (`loop.ts`) for exactly two conditions
+ * (V5 Slice B contract C5): (a) `maxIterations` is reached while the model is
+ * still requesting tools (`stopReason: "tool_use"`), or (b) a single turn's
+ * `toolUse` batch exceeds `maxToolsPerTurn`. Every other loop-owned failure —
+ * ceiling-*parameter* validation, and a malformed-reply disposition such as a
+ * missing/empty `toolUseId`/`name` or a duplicate `toolUseId` — throws
+ * {@link M3LBedrockRuntimeOperationError} instead, deliberately, so that this
+ * class's `context` can stay a TOTAL nine-key set: every field named below is
+ * always available by the time either of these two conditions is reached
+ * (there is no "ceiling breached before the first invoke" case here — that
+ * one has no `lastStopReason`/`modelId`/usage yet, and routes through
+ * `M3LBedrockRuntimeOperationError` for exactly that reason).
+ *
+ * `origin: "caller"`, `retryable: false` — the caller's `maxIterations`/
+ * `maxToolsPerTurn`/registered tools are what need to change, not a retry.
+ *
+ * `usage` and `modelId` are both own fields (`modelId` carried verbatim) and
+ * mirrored into `context` — `usage` FLATTENED into three numeric keys
+ * (`inputTokens`/`outputTokens`/`totalTokens`), `modelId` rendered through
+ * `sanitizeForMessage` (same F4 rationale as
+ * {@link M3LBedrockRuntimeModelError.modelId}: `M3LError.context` is
+ * serialized **verbatim** by `toJSON()`, so every string value entering it
+ * must be sanitized first). The message template interpolates numbers only —
+ * `modelId` never reaches `message`.
+ *
+ * `iterationsCompleted` and `usage` share ONE convention (S1, 2026-08
+ * security-pass follow-up): "completed" means "performed an `invoke()`
+ * round-trip", independent of whether the tool dispatch that would have
+ * followed it was itself allowed to proceed. For the `maxToolsPerTurn`
+ * breach specifically, `loop.ts`'s `enforceToolsPerTurnCeiling` records this
+ * iteration's own ledger entry (empty `toolExecutions`, since no handler
+ * ever ran) BEFORE throwing, so both fields count it — `usage` always did
+ * (it is computed from the already-summed `nextUsage`), and
+ * `iterationsCompleted` now matches rather than silently excluding the one
+ * invoke that triggered the error.
+ *
+ * @example
+ * ```ts
+ * import { M3LBedrockToolLoopError } from "@m3l-automation/m3l-common/aws";
+ *
+ * try {
+ *   await runBedrockToolLoop(ops, conversation, { tools });
+ * } catch (error) {
+ *   if (error instanceof M3LBedrockToolLoopError) {
+ *     console.error(error.iterationsCompleted, error.pendingToolCount);
+ *   }
+ * }
+ * ```
+ */
+export class M3LBedrockToolLoopError extends M3LError {
+  /** Narrows the inherited `code` property to the literal `"ERR_BEDROCK_RUNTIME_TOOL_LOOP"`. */
+  override readonly code = "ERR_BEDROCK_RUNTIME_TOOL_LOOP" as const;
+
+  /**
+   * Narrows `cause` to `undefined`: this error never chains an underlying
+   * fault, only a ceiling breach. Structurally enforced (mirrors
+   * {@link M3LOperationAbortedError}) because the constructor accepts no
+   * `cause` parameter at all — see this class's own constructor.
+   */
+  declare readonly cause: undefined;
+
+  /** The configured iteration ceiling that was reached. */
+  readonly maxIterations: number;
+
+  /** How many iterations actually completed before the ceiling fired — see {@link M3LBedrockToolLoopError}'s own doc comment for the "completed" convention this shares with `usage`. */
+  readonly iterationsCompleted: number;
+
+  /** The `stopReason` from the last completed iteration. */
+  readonly lastStopReason: M3LBedrockStopReason;
+
+  /** Cumulative token usage across every completed iteration — see {@link M3LBedrockToolLoopError}'s own doc comment for the "completed" convention this shares with `iterationsCompleted`. */
+  readonly usage: M3LBedrockTokenUsage;
+
+  /** The model that served the last completed iteration. */
+  readonly modelId: string;
+
+  /** How many `toolUse` blocks from the last turn were never dispatched to a handler. */
+  readonly pendingToolCount: number;
+
+  /** How many tool executions, across every iteration, ended in `status: "error"`. */
+  readonly toolErrorCount: number;
+
+  /**
+   * Creates a new `M3LBedrockToolLoopError`. Accepts no `cause` parameter —
+   * see this class's doc comment.
+   *
+   * @param message - Human-readable description of the ceiling breach.
+   * @param options - The full loop-termination context: iteration/tool
+   *   counters, the last stop reason, cumulative usage, and the serving
+   *   model id.
+   */
+  constructor(message: string, options: M3LBedrockToolLoopErrorOptions) {
+    super(message, {
+      code: "ERR_BEDROCK_RUNTIME_TOOL_LOOP",
+      context: {
+        maxIterations: options.maxIterations,
+        iterationsCompleted: options.iterationsCompleted,
+        lastStopReason: options.lastStopReason,
+        inputTokens: options.usage.inputTokens,
+        outputTokens: options.usage.outputTokens,
+        totalTokens: options.usage.totalTokens,
+        modelId: sanitizeForMessage(options.modelId),
+        pendingToolCount: options.pendingToolCount,
+        toolErrorCount: options.toolErrorCount,
+      },
+    });
+    this.maxIterations = options.maxIterations;
+    this.iterationsCompleted = options.iterationsCompleted;
+    this.lastStopReason = options.lastStopReason;
+    this.usage = options.usage;
+    this.modelId = options.modelId;
+    this.pendingToolCount = options.pendingToolCount;
+    this.toolErrorCount = options.toolErrorCount;
   }
 }
