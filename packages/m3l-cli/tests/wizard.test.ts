@@ -213,6 +213,7 @@ function makeDescriptor(
     defaultValue: undefined,
     description: "",
     secret: false,
+    operations: [],
     ...overrides,
   };
 }

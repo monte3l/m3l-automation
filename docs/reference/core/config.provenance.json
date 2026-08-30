@@ -189,9 +189,49 @@
           "file": "packages/m3l-common/src/core/config/deriveOperationValidators.ts",
           "symbol": "deriveOperationValidators",
           "blob": "e8f7d200eda60dddeddbee9ee093bf3fc2f6d361"
+        },
+        {
+          "file": "packages/m3l-common/src/core/config/M3LConfigParameterDescriptor.ts",
+          "symbol": "M3LConfigParameterDescriptor",
+          "blob": "8b5e1a83171efed5acabfedc1ff7d2364ce128d0"
+        },
+        {
+          "file": "packages/m3l-common/src/core/config/M3LConfigParameterDescriptor.ts",
+          "symbol": "M3LConfigOperationDescriptor",
+          "blob": "8b5e1a83171efed5acabfedc1ff7d2364ce128d0"
+        },
+        {
+          "file": "packages/m3l-common/src/core/config/M3LConfigParameterDescriptor.ts",
+          "symbol": "M3LConfigParameterLike",
+          "blob": "8b5e1a83171efed5acabfedc1ff7d2364ce128d0"
+        },
+        {
+          "file": "packages/m3l-common/src/core/config/M3LConfigParameterDescriptor.ts",
+          "symbol": "M3LConfigParameterValue",
+          "blob": "8b5e1a83171efed5acabfedc1ff7d2364ce128d0"
+        },
+        {
+          "file": "packages/m3l-common/src/core/config/M3LConfigParameterDescriptor.ts",
+          "symbol": "describeConfigParameters",
+          "blob": "8b5e1a83171efed5acabfedc1ff7d2364ce128d0"
+        },
+        {
+          "file": "packages/m3l-common/src/core/config/M3LConfigModuleLocator.ts",
+          "symbol": "M3LConfigModuleLocation",
+          "blob": "6eff0db836be68c5c3e76168df320e7a7c88f8a6"
+        },
+        {
+          "file": "packages/m3l-common/src/core/config/M3LConfigModuleLocator.ts",
+          "symbol": "resolveConfigModulePath",
+          "blob": "6eff0db836be68c5c3e76168df320e7a7c88f8a6"
+        },
+        {
+          "file": "packages/m3l-common/src/core/config/loadScriptConfigDescriptors.ts",
+          "symbol": "loadScriptConfigDescriptors",
+          "blob": "6974fb8bec2939cb0b05f82e659801d745e17348"
         }
       ],
-      "retrieved": "2026-08-26"
+      "retrieved": "2026-08-30"
     },
     {
       "heading": "Defensive typed reads (`M3LConfigAccessor`)",
@@ -359,6 +399,52 @@
         }
       ],
       "retrieved": "2026-08-26"
+    },
+    {
+      "heading": "Script introspection",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/config/M3LConfigParameterDescriptor.ts",
+          "symbol": "M3LConfigParameterDescriptor",
+          "blob": "8b5e1a83171efed5acabfedc1ff7d2364ce128d0"
+        },
+        {
+          "file": "packages/m3l-common/src/core/config/M3LConfigParameterDescriptor.ts",
+          "symbol": "M3LConfigOperationDescriptor",
+          "blob": "8b5e1a83171efed5acabfedc1ff7d2364ce128d0"
+        },
+        {
+          "file": "packages/m3l-common/src/core/config/M3LConfigParameterDescriptor.ts",
+          "symbol": "M3LConfigParameterLike",
+          "blob": "8b5e1a83171efed5acabfedc1ff7d2364ce128d0"
+        },
+        {
+          "file": "packages/m3l-common/src/core/config/M3LConfigParameterDescriptor.ts",
+          "symbol": "M3LConfigParameterValue",
+          "blob": "8b5e1a83171efed5acabfedc1ff7d2364ce128d0"
+        },
+        {
+          "file": "packages/m3l-common/src/core/config/M3LConfigParameterDescriptor.ts",
+          "symbol": "describeConfigParameters",
+          "blob": "8b5e1a83171efed5acabfedc1ff7d2364ce128d0"
+        },
+        {
+          "file": "packages/m3l-common/src/core/config/M3LConfigModuleLocator.ts",
+          "symbol": "M3LConfigModuleLocation",
+          "blob": "6eff0db836be68c5c3e76168df320e7a7c88f8a6"
+        },
+        {
+          "file": "packages/m3l-common/src/core/config/M3LConfigModuleLocator.ts",
+          "symbol": "resolveConfigModulePath",
+          "blob": "6eff0db836be68c5c3e76168df320e7a7c88f8a6"
+        },
+        {
+          "file": "packages/m3l-common/src/core/config/loadScriptConfigDescriptors.ts",
+          "symbol": "loadScriptConfigDescriptors",
+          "blob": "6974fb8bec2939cb0b05f82e659801d745e17348"
+        }
+      ],
+      "retrieved": "2026-08-30"
     }
   ]
 }

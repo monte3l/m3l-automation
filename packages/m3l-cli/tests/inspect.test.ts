@@ -105,6 +105,8 @@ const exporterParameters: readonly M3LCliParameterDescriptor[] = [
     required: true,
     defaultValue: undefined,
     description: "AWS region",
+    secret: false,
+    operations: [],
   },
   {
     name: "batchSize",
@@ -113,6 +115,8 @@ const exporterParameters: readonly M3LCliParameterDescriptor[] = [
     required: false,
     defaultValue: "10",
     description: "Rows per batch",
+    secret: false,
+    operations: [],
   },
 ];
 
@@ -129,6 +133,7 @@ const parametersWithOperations: readonly M3LCliParameterDescriptor[] = [
     required: true,
     defaultValue: undefined,
     description: "Operation to perform",
+    secret: false,
     operations: commandOperations,
   },
   {
@@ -138,6 +143,7 @@ const parametersWithOperations: readonly M3LCliParameterDescriptor[] = [
     required: false,
     defaultValue: undefined,
     description: "AWS region",
+    secret: false,
     operations: [],
   },
 ];
@@ -278,6 +284,7 @@ describe("runInspect — operations rendering (U8)", () => {
         required: true,
         defaultValue: undefined,
         description: "The action to run",
+        secret: false,
         operations: [
           { name: "sync", description: "Synchronize.", requiredParameters: [] },
         ],
@@ -338,6 +345,7 @@ describe("runInspect — operations rendering (U8)", () => {
         required: true,
         defaultValue: undefined,
         description: "Operation to perform",
+        secret: false,
         operations: maliciousOperations,
       },
     ];
@@ -368,8 +376,8 @@ describe("runInspect — type contract", () => {
       readonly required: boolean;
       readonly defaultValue: string | undefined;
       readonly description: string;
-      readonly secret?: boolean;
-      readonly operations?: readonly M3LCliOperationDescriptor[];
+      readonly secret: boolean;
+      readonly operations: readonly M3LCliOperationDescriptor[];
     }>();
   });
 });

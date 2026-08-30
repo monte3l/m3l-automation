@@ -96,6 +96,8 @@ const regionDescriptor: M3LCliParameterDescriptor = {
   required: false,
   defaultValue: undefined,
   description: "",
+  secret: false,
+  operations: [],
 };
 
 const prodPresetFile: M3LCliPresetFile = {

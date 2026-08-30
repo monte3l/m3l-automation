@@ -415,6 +415,38 @@ describe("readDiscoveryCache", () => {
       "extraParameterField",
     );
   });
+
+  // X10a security hardening (Fix 5): projectCachedParameter previously copied
+  // `defaultValue` through verbatim regardless of `secret`. A cache entry on
+  // disk with `secret: true` AND an unmasked `defaultValue` — e.g. written by
+  // a version predating this masking, or hand-edited — validates against
+  // isValidCachedParameter (both fields have the right primitive type) and
+  // was returned with the raw secret intact. The read path must re-apply the
+  // mask rather than trusting the writer to have always applied it, since a
+  // persisted cache crosses versions and (X10b) an HTTP boundary.
+  test("re-masks defaultValue on read when a cache entry claims secret: true but its stored defaultValue is unmasked (X10a security hardening)", () => {
+    const RAW_SECRET_DEFAULT = "raw-secret-in-cache-on-disk";
+    const payload = {
+      exporter: {
+        srcMtimeMs: 1,
+        distMtimeMs: 2,
+        parameters: [
+          {
+            ...wellFormedParameter,
+            secret: true,
+            defaultValue: RAW_SECRET_DEFAULT,
+          },
+        ],
+      },
+    };
+    vi.spyOn(fs, "readFileSync").mockReturnValue(JSON.stringify(payload));
+
+    const result = readDiscoveryCache("/cache/discovery.json");
+
+    expect(result["exporter"]?.parameters[0]?.secret).toBe(true);
+    expect(result["exporter"]?.parameters[0]?.defaultValue).toBe("********");
+    expect(JSON.stringify(result)).not.toContain(RAW_SECRET_DEFAULT);
+  });
 });
 
 describe("writeDiscoveryCache", () => {

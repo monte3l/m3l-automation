@@ -20,6 +20,16 @@ import type {
 const CACHE_JSON_INDENT = 2;
 
 /**
+ * Mask re-applied to a secret-flagged cache entry's `defaultValue` on read
+ * (X10a security hardening, Fix 5). Mirrors `M3LConfigHelpFormatter`'s own
+ * `SECRET_MASK` in `m3l-common` — the same 8-asterisk convention — but is
+ * deliberately its own module-private copy rather than an import: the public
+ * discriminator this package exposes is `secret === true`, not a string
+ * comparison against the mask, so the mask itself is not exported from Core.
+ */
+const SECRET_MASK = "********";
+
+/**
  * The recorded `src`/`dist` config-module mtimes a cache entry carries, and
  * the shape a fresh {@link configMtimes} probe returns for comparison against
  * one — factored out so both sides of the freshness check
@@ -185,6 +195,16 @@ function projectCachedOperation(
  * declared fields, so a hand-added extra field on a parsed cache element
  * cannot pass through into a `list`/`inspect --json` output.
  *
+ * Re-applies the secret mask to `defaultValue` when `secret` is `true` (X10a
+ * security hardening, Fix 5), rather than trusting the on-disk value to
+ * already be masked: the cache persists across versions (a pre-masking
+ * write, or a hand-edited file, can carry `secret: true` alongside an
+ * unmasked `defaultValue`), and a cached descriptor will (X10b) be served
+ * over HTTP — the read path must be the same unconditional choke point
+ * `describeConfigParameters` is on the write side. A parameter with no
+ * declared default (`defaultValue === undefined`) is left as `undefined`
+ * even when `secret` is `true` — there is no default to mask.
+ *
  * @param parameter - An element already confirmed well-formed by
  *   {@link isValidCachedParameter}.
  * @returns A new object carrying only the declared fields.
@@ -197,18 +217,16 @@ function projectCachedParameter(
     aliases: [...parameter.aliases],
     type: parameter.type,
     required: parameter.required,
-    defaultValue: parameter.defaultValue,
+    defaultValue:
+      parameter.secret && parameter.defaultValue !== undefined
+        ? SECRET_MASK
+        : parameter.defaultValue,
     description: parameter.description,
-    // `isValidCachedParameter` already proved `secret` is a `boolean` (never
-    // `undefined`) on every element reaching this function; the `?? false`
-    // only satisfies the public descriptor type's optional `secret?:
-    // boolean`, it never actually observes the fallback at runtime.
-    secret: parameter.secret ?? false,
-    // Same reasoning as `secret` above: `isValidCachedParameter` already
-    // proved `operations` is a real array on every element reaching this
-    // function; the `?? []` only satisfies the public descriptor type's
-    // optional `operations?`, it never actually observes the fallback.
-    operations: (parameter.operations ?? []).map(projectCachedOperation),
+    // `secret` and `operations` are required fields on
+    // `M3LCliParameterDescriptor` (X10a) — no `?? false` / `?? []` fallback
+    // is needed or possible here; both are always present.
+    secret: parameter.secret,
+    operations: parameter.operations.map(projectCachedOperation),
   };
 }
 

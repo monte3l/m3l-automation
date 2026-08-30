@@ -599,8 +599,8 @@ describe("M3LCliParameterDescriptor contract", () => {
       readonly required: boolean;
       readonly defaultValue: string | undefined;
       readonly description: string;
-      readonly secret?: boolean;
-      readonly operations?: readonly M3LCliOperationDescriptor[];
+      readonly secret: boolean;
+      readonly operations: readonly M3LCliOperationDescriptor[];
     }>();
   });
 });

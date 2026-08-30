@@ -34,6 +34,8 @@ Exported from `@m3l-automation/m3l-common/core` (the `config` sub-module):
 - `M3LConfigSchemaValidator` (type: a `(config) => true | string` cross-parameter, schema-level validator)
 - `M3LConfigSchemaValidators` (stock schema-level validators: `requires`)
 - `M3LConfigAccessor` (defensive typed re-reads of an already-resolved `M3LConfig` value, plus `M3LConfigAccessorOptions`)
+- Script introspection: `describeConfigParameters`, `resolveConfigModulePath`, `loadScriptConfigDescriptors` (read a script's declared `configParameters` from outside its own process — see [Script introspection](#script-introspection))
+- `M3LConfigParameterDescriptor`, `M3LConfigOperationDescriptor`, `M3LConfigModuleLocation`, `M3LConfigParameterLike`, `M3LConfigParameterValue` (the display-safe descriptor shapes those three functions produce and the duck type they accept)
 - Errors: `M3LConfigCoercionError`, `M3LConfigParseError`, `M3LUnsafeConfigKeyError`, `M3LConfigValidationError`, `M3LConfigMissingError`
 
 ## Provider priority chain
@@ -449,6 +451,237 @@ design, not by omission. Two independent reasons:
   direction but still hits the type gap above.)
 
 Declaring both is correct, and neither should be "fixed" to feed the other.
+
+## Script introspection
+
+`m3l inspect`, the `m3l` wizard, and the console server's
+`GET /api/v1/scripts/:name` all need the same thing: a script's declared
+`configParameters`, read from **outside** that script's own process and
+rendered into display-safe plain data. These three functions are that seam.
+
+They deliberately never construct an `M3LConfig` and never resolve a value
+from any provider — they describe what a script _declares_, not what it
+would resolve to in a given environment.
+
+### `M3LConfigParameterLike`
+
+```typescript
+interface M3LConfigParameterLike {
+  getName(): string;
+  getAliases(): readonly string[];
+  getType(): string;
+  isRequired(): boolean;
+  getDefaultValue(): M3LConfigParameterValue | undefined;
+  getDescription(): string | undefined;
+  isSecret?(): boolean;
+  getOperations?(): unknown;
+}
+```
+
+The minimal duck type `describeConfigParameters` accepts — the public getters
+`M3LConfigParameter` declares. A real `M3LConfigParameter` satisfies it, but so
+does a structurally-equivalent export from a dynamically imported module
+compiled against a different version of this library, which is the point: a
+script's `config.js` is loaded out-of-process and cannot be assumed to share
+this package's class identity.
+
+`isSecret` and `getOperations` are **optional** on purpose. A script compiled
+against a `dist/` predating secret-threading or the ADR-0055 operation
+declarations simply will not have them; their absence is read as
+"not secret" and "declares no operations" rather than rejecting the whole
+parameter.
+
+When `isSecret` is _present_ but misbehaves — it is not a function, it throws,
+or it returns a non-boolean — the parameter is treated as **secret**, not as
+non-secret. This fails closed on purpose: masking a default that was not
+actually secret only hides a value the script's own source already shows,
+whereas trusting a broken flag the other way would print a real credential.
+An absent `isSecret` still reads as non-secret — that is version skew, not
+misbehaviour.
+
+`M3LConfigParameterValue` is the union every `M3LCoercedValue<T>` resolves to
+(`string | number | boolean | readonly string[] | readonly number[] | Buffer`).
+It is scoped to that union rather than `unknown` so rendering a default via
+`String(...)` can never produce the `[object Object]` fallback.
+
+Two members render lossily, and callers should not treat a rendered default as
+round-trippable. An array default goes through `Array.prototype.toString`, so
+`["a,b"]` and `["a", "b"]` both render `a,b`. A `Buffer` default goes through
+`Buffer.prototype.toString()` — a raw UTF-8 decode of arbitrary bytes — so for
+that one member "display-safe" means only "a string, never `[object Object]`",
+not "fit to show a user verbatim".
+
+### `M3LConfigParameterDescriptor` / `M3LConfigOperationDescriptor`
+
+```typescript
+interface M3LConfigOperationDescriptor {
+  readonly name: string;
+  readonly description: string;
+  readonly requiredParameters: readonly string[];
+}
+
+interface M3LConfigParameterDescriptor {
+  readonly name: string;
+  readonly aliases: readonly string[];
+  readonly type: string;
+  readonly required: boolean;
+  readonly defaultValue: string | undefined;
+  readonly description: string;
+  readonly secret: boolean;
+  readonly operations: readonly M3LConfigOperationDescriptor[];
+}
+```
+
+A display-safe rendering of one declared parameter: every value coerced to a
+primitive, so the whole array is JSON-serializable without a replacer and can
+cross a process or an HTTP boundary unchanged.
+
+`description` is always a `string`: a parameter that declares none — its
+`getDescription()` returns `undefined` — renders as `""`, not as a missing or
+`undefined` field. `defaultValue` is the only field that stays `undefined`, and
+there it means "no default was declared".
+
+`M3LConfigOperationDescriptor` is the same
+`name`/`description`/`requiredParameters` shape as
+`M3LOperationDeclaration`, except `requiredParameters` is always an array —
+never optional — so every consumer can read it unconditionally.
+
+`secret` and `operations` are **required**. `describeConfigParameters` always
+assigns both explicitly, so an absent one was a state the sole producer never
+produced — and under this repo's `exactOptionalPropertyTypes: true`, a `?`
+marker means "may be absent", which would have forced a `?? false` / `?? []`
+fallback on every consumer to satisfy a case that never occurs.
+
+Because `secret` is always present, it — not a sentinel comparison against the
+mask string — is how a consumer tells a masked default from a real one. The
+mask is deliberately not exported: `secret === true` is the check.
+
+### `describeConfigParameters`
+
+```typescript
+function describeConfigParameters(
+  parameters: readonly M3LConfigParameterLike[],
+): readonly M3LConfigParameterDescriptor[];
+```
+
+Maps declared parameters to their descriptor form, one descriptor per input,
+in input order.
+
+The six **required** getters are validated, not merely called: each projected
+value must have its declared type (`getName()` a `string`, `getAliases()` an
+array of strings, and so on). A foreign module whose getter returns something
+else throws `M3LError` with code `ERR_CONFIG_MODULE_INVALID` rather than
+producing a descriptor that lies about its own type — without this, a
+`getDefaultValue()` returning a plain object would render as the
+`[object Object]` string this type exists to make impossible.
+
+The two **optional** methods are treated the opposite way, because they exist
+for version skew rather than correctness: `isSecret` and `getOperations` may be
+absent, may not be functions, and may throw when called, and none of that
+rejects the parameter. That asymmetry is the rule — a required getter that
+misbehaves is a broken module, an optional one that misbehaves is an old one.
+
+**A secret-flagged parameter's default is replaced with an eight-asterisk
+mask (`********`), never its real value.** An env-sourced secret default
+materializes at import time, so masking happens here — at the single point
+every descriptor is built — rather than being left to each renderer (the CLI
+discovery cache, `inspect`'s table, its `--json` output, the console's
+parameter form) to remember independently. The mask matches
+`M3LConfigHelpFormatter`'s own.
+
+Operation normalization is all-or-nothing: if any element of a
+`getOperations()` return value is malformed, the whole list falls back to `[]`
+rather than silently dropping just the bad element, since a
+partially-normalized list could hide a config-authoring mistake behind an
+apparently-valid parameter listing.
+
+```typescript
+const port = new M3LConfigParameter({
+  name: "PORT",
+  type: M3LConfigParameterType.INT,
+  defaultValue: 3000,
+});
+const [descriptor] = describeConfigParameters([port]);
+// descriptor.defaultValue === "3000"
+```
+
+### `resolveConfigModulePath`
+
+```typescript
+interface M3LConfigModuleLocation {
+  readonly path: string;
+  readonly source: "dist" | "src";
+}
+
+function resolveConfigModulePath(
+  scriptDirectory: string,
+): M3LConfigModuleLocation;
+```
+
+Resolves which module a script's `configParameters` export should be loaded
+from, preferring the compiled `dist/config.js` over the type-stripped
+`src/config.ts` whenever the compiled output is **at least as fresh** (its
+mtime is `>=` the source's). A stale `dist/` therefore loses to `src/`, so an
+edit that has not been rebuilt is still introspected correctly.
+
+Throws `M3LError` with code `ERR_CONFIG_MODULE_NOT_FOUND` when neither file
+exists.
+
+**`scriptDirectory` is trusted, and validating it is the caller's job.** It is
+joined into a filesystem path and, via `loadScriptConfigDescriptors`, into a
+`file://` URL that is dynamically `import()`ed — so whatever module it resolves
+to **executes**. `join()` normalizes `..` away cleanly, so a traversing string
+escapes any intended root: passing `"../../etc"` resolves to `/etc/config.js`.
+The library deliberately does not police this, because it has no way to know
+what root a given caller considers legitimate.
+
+A caller that derives the directory from untrusted input — an HTTP path
+segment, say — MUST constrain it first. In this repo that means routing through
+`m3l-console-server`'s `resolveScript()`, which gates the name on an anchored
+`SCRIPT_NAME_PATTERN` (no `.`, no `/`) _before_ touching the filesystem and
+joins only under its configured scripts root.
+
+The existence check and the freshness check are two separate filesystem calls,
+so a module deleted between them — a concurrent rebuild replacing `dist/`, for
+instance — surfaces the underlying Node filesystem error rather than an
+`M3LError`. Callers that must not see an untyped throw should treat any
+non-`M3LError` from this function as a transient filesystem fault and retry.
+
+### `loadScriptConfigDescriptors`
+
+```typescript
+function loadScriptConfigDescriptors(
+  scriptDirectory: string,
+  importModule?: (specifier: string) => Promise<unknown>,
+): Promise<readonly M3LConfigParameterDescriptor[]>;
+```
+
+Resolves the config module via `resolveConfigModulePath`, imports it,
+validates that it exports an array `configParameters` whose every element is
+parameter-like, and describes them via `describeConfigParameters`.
+
+`importModule` defaults to a dynamic `import()` of the resolved module's
+`file://` URL; callers (and tests) may inject their own.
+
+Throws `M3LError` with code:
+
+- `ERR_CONFIG_MODULE_NOT_FOUND` — propagated **unwrapped** from
+  `resolveConfigModulePath`, so a missing module is not reported as an
+  invalid one.
+- `ERR_CONFIG_MODULE_INVALID` — the import rejected, or the module did not
+  export an object, or its `configParameters` export is missing, is not an
+  array, or contains an element that is not parameter-like. The rejection
+  that caused it is chained as `cause`.
+
+An element is trusted as parameter-like only when **all six** required
+getters are present as functions. Checking just `getName` let a malformed
+export through, to fail later as a raw `TypeError` deep inside
+`describeConfigParameters`.
+
+```typescript
+const descriptors = await loadScriptConfigDescriptors("/repo/scripts/json-etl");
+// one M3LConfigParameterDescriptor per declared config parameter
+```
 
 ## Typo suggestions
 

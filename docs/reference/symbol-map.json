@@ -454,6 +454,46 @@
     "namespace": "core",
     "file": "packages/m3l-common/src/core/config/deriveOperationValidators.ts"
   },
+  "M3LConfigParameterDescriptor": {
+    "submodule": "config",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/config/M3LConfigParameterDescriptor.ts"
+  },
+  "M3LConfigOperationDescriptor": {
+    "submodule": "config",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/config/M3LConfigParameterDescriptor.ts"
+  },
+  "M3LConfigParameterLike": {
+    "submodule": "config",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/config/M3LConfigParameterDescriptor.ts"
+  },
+  "M3LConfigParameterValue": {
+    "submodule": "config",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/config/M3LConfigParameterDescriptor.ts"
+  },
+  "describeConfigParameters": {
+    "submodule": "config",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/config/M3LConfigParameterDescriptor.ts"
+  },
+  "M3LConfigModuleLocation": {
+    "submodule": "config",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/config/M3LConfigModuleLocator.ts"
+  },
+  "resolveConfigModulePath": {
+    "submodule": "config",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/config/M3LConfigModuleLocator.ts"
+  },
+  "loadScriptConfigDescriptors": {
+    "submodule": "config",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/config/loadScriptConfigDescriptors.ts"
+  },
   "M3LConfigAccessorOptions": {
     "submodule": "config",
     "namespace": "core",

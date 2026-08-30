@@ -140,6 +140,8 @@ export const M3L_ERROR_CATALOG: Readonly<
   ERR_CODEPIPELINE_OPERATION: { origin: "external", retryable: true },
   ERR_CONFIG_COERCION: { origin: "caller", retryable: false },
   ERR_CONFIG_MISSING: { origin: "caller", retryable: false },
+  ERR_CONFIG_MODULE_INVALID: { origin: "caller", retryable: false },
+  ERR_CONFIG_MODULE_NOT_FOUND: { origin: "caller", retryable: false },
   ERR_CONFIG_PARSE: { origin: "caller", retryable: false },
   ERR_CONFIG_UNSAFE_KEY: { origin: "external", retryable: false },
   ERR_CONFIG_VALIDATION: { origin: "caller", retryable: false },

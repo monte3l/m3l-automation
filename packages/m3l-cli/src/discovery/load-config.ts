@@ -1,256 +1,62 @@
 /**
- * `discovery/load-config` — parameter-descriptor mapping, dist-first
- * config-module resolution, and the injectable-importer config loader.
+ * `discovery/load-config` — a thin CLI-facing adapter over
+ * `@m3l-automation/m3l-common`'s `core/config` seam
+ * (`M3LConfigParameterDescriptor`, `M3LConfigModuleLocator`,
+ * `loadScriptConfigDescriptors`), which now owns parameter-descriptor
+ * mapping, dist-first config-module resolution, and the
+ * injectable-importer config loader (X10a promotion).
+ *
+ * This module re-exports the Core shapes under their historical CLI names
+ * and maps every `Core.M3LError` this seam throws to the CLI's own
+ * `M3LCliError` (code `ERR_CLI_CONFIG_IMPORT`) at the boundary, so callers
+ * elsewhere in the CLI keep observing exactly one error class. See the Core
+ * modules for the algorithm itself.
  *
  * @packageDocumentation
  */
 
-import { existsSync, statSync } from "node:fs";
-import { join } from "node:path";
-import { pathToFileURL } from "node:url";
+import { Core } from "@m3l-automation/m3l-common";
 
 import { M3LCliError } from "../cli/errors.js";
 
 /**
- * Mask rendered in place of a secret-flagged parameter's default value.
- * Mirrors `Core.M3LConfigHelpFormatter`'s own `SECRET_MASK` — the same
- * 8-asterisk convention, applied here so masking happens once, at the
- * descriptor source, rather than being left to every renderer (the
- * discovery cache, `inspect`'s table, its `--json` output) to remember
- * independently.
+ * A CLI-facing rendering of a config parameter's declaration. A type alias
+ * for `Core.M3LConfigParameterDescriptor` — see that type for field
+ * documentation.
  */
-const SECRET_MASK = "********";
+export type M3LCliParameterDescriptor = Core.M3LConfigParameterDescriptor;
 
 /**
- * A CLI-facing rendering of a config parameter's declaration, with every
- * value coerced to a display-safe primitive.
+ * A CLI-facing rendering of one declared operation (ADR-0055). A type alias
+ * for `Core.M3LConfigOperationDescriptor` — see that type for field
+ * documentation.
  */
-export interface M3LCliParameterDescriptor {
-  /** The parameter's canonical name. */
-  readonly name: string;
-  /** The parameter's declared aliases. */
-  readonly aliases: readonly string[];
-  /** The parameter's declared coercion target type, as a string. */
-  readonly type: string;
-  /** Whether the parameter is required. */
-  readonly required: boolean;
-  /** The parameter's default value, rendered via `String(...)`, or `undefined`. */
-  readonly defaultValue: string | undefined;
-  /** The parameter's human-readable description, or `""` when absent. */
-  readonly description: string;
-  /**
-   * Whether the parameter is declared secret (see `Core.M3LConfigParameter.isSecret`).
-   * A secret-flagged parameter's resolved value must never be persisted or
-   * rendered unmasked by any consumer of this descriptor (the preset writer
-   * skips it entirely; a display surface must hard-mask it). Declared
-   * optional so a hand-built fixture literal predating the 8f
-   * secret-threading addition remains a valid `M3LCliParameterDescriptor`;
-   * {@link describeParameters} itself always assigns an explicit `true`/`false`,
-   * never leaves it `undefined`.
-   */
-  readonly secret?: boolean;
-  /**
-   * The parameter's declared operations (ADR-0055), normalized from
-   * `Core.M3LConfigParameter.getOperations`. Declared optional so a
-   * hand-built fixture literal predating the U8 operation-threading
-   * addition remains a valid `M3LCliParameterDescriptor`;
-   * {@link describeParameters} itself always assigns an array (never leaves
-   * it `undefined`), falling back to `[]` when the parameter declares no
-   * operations or its `getOperations()` returns a malformed shape.
-   */
-  readonly operations?: readonly M3LCliOperationDescriptor[];
-}
+export type M3LCliOperationDescriptor = Core.M3LConfigOperationDescriptor;
 
 /**
- * A CLI-facing rendering of one declared operation (ADR-0055) — the same
- * name/description/requiredParameters shape as
- * `Core.M3LOperationDeclaration`, but with `requiredParameters` always an
- * array (never optional) so every consumer of
- * {@link M3LCliParameterDescriptor.operations} can read it unconditionally.
+ * The resolved config module's absolute path and origin. A type alias for
+ * `Core.M3LConfigModuleLocation` — see that type for field documentation.
  */
-export interface M3LCliOperationDescriptor {
-  /** The operation's canonical name. */
-  readonly name: string;
-  /** A human-readable description. */
-  readonly description: string;
-  /** Names of other declared parameters this operation requires to be set. */
-  readonly requiredParameters: readonly string[];
-}
-
-/**
- * The set of value shapes a config parameter's default can take — the union
- * every `M3LCoercedValue<T>` (`@m3l-automation/m3l-common`'s
- * `core/config/M3LConfigParameterType`) resolves to. Scoped to this
- * primitive/array/`Buffer` union (rather than `unknown`) so `String(...)`
- * never risks the `[object Object]` fallback.
- */
-type M3LCliParameterValue =
-  string | number | boolean | readonly string[] | readonly number[] | Buffer;
-
-/**
- * The minimal shape a `configParameters` element must expose — the public
- * getters `Core.M3LConfigParameter` (`@m3l-automation/m3l-common`) declares —
- * so a duck-typed export from a dynamically imported module can be described
- * without requiring it to be a real `M3LConfigParameter` instance.
- */
-interface M3LCliParameterLike {
-  getName(): string;
-  getAliases(): readonly string[];
-  getType(): string;
-  isRequired(): boolean;
-  getDefaultValue(): M3LCliParameterValue | undefined;
-  getDescription(): string | undefined;
-  /**
-   * Optional — NOT part of the six-getter parameter-like gate
-   * ({@link PARAMETER_LIKE_GETTER_NAMES}). A duck-typed export compiled
-   * against a dist predating the 8f secret-threading addition simply won't
-   * have this method; {@link describeParameters} treats its absence as
-   * non-secret rather than rejecting the whole element.
-   */
-  isSecret?(): boolean;
-  /**
-   * Optional — NOT part of the six-getter parameter-like gate
-   * ({@link PARAMETER_LIKE_GETTER_NAMES}). A duck-typed export compiled
-   * against a dist predating the U8 operation-threading addition simply
-   * won't have this method; {@link describeParameters} treats its absence
-   * (or a malformed return value) as declaring no operations, falling back
-   * to `[]`, rather than rejecting the whole element.
-   */
-  getOperations?(): unknown;
-}
-
-/**
- * Renders a parameter's default value for the {@link M3LCliParameterDescriptor}
- * shape: `undefined` stays `undefined` (no default was declared), a secret
- * default renders as {@link SECRET_MASK} rather than the raw value — an
- * env-sourced secret default materializes at import time, so masking here
- * (the one place every descriptor is built) covers the discovery cache and
- * every renderer downstream in one change — and every other default renders
- * via `String(...)`.
- *
- * @param value - The parameter's raw default value, or `undefined`.
- * @param secret - Whether the parameter is declared secret.
- * @returns The display-safe rendering.
- */
-function renderDefaultValue(
-  value: M3LCliParameterValue | undefined,
-  secret: boolean,
-): string | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-  return secret ? SECRET_MASK : String(value);
-}
-
-/**
- * Validates and projects a single candidate operation element (one entry of
- * a `getOperations()` return value) onto {@link M3LCliOperationDescriptor}.
- * Every field is read into a local variable at validation time via
- * `Object.hasOwn` + direct property access, and the returned descriptor is
- * built from those same locals — the candidate object is never re-read
- * after being validated, so a mutable/accessor property on it cannot
- * disagree with what was checked.
- *
- * @param candidate - One element of a `getOperations()` return value.
- * @returns The normalized descriptor, or `undefined` when `candidate` is
- *   not a well-formed operation.
- */
-function normalizeOperationCandidate(
-  candidate: unknown,
-): M3LCliOperationDescriptor | undefined {
-  if (typeof candidate !== "object" || candidate === null) {
-    return undefined;
-  }
-  if (
-    !Object.hasOwn(candidate, "name") ||
-    !Object.hasOwn(candidate, "description")
-  ) {
-    return undefined;
-  }
-
-  const name: unknown = (candidate as Record<string, unknown>)["name"];
-  const description: unknown = (candidate as Record<string, unknown>)[
-    "description"
-  ];
-  if (typeof name !== "string" || typeof description !== "string") {
-    return undefined;
-  }
-
-  if (!Object.hasOwn(candidate, "requiredParameters")) {
-    return { name, description, requiredParameters: [] };
-  }
-  const requiredParameters: unknown = (candidate as Record<string, unknown>)[
-    "requiredParameters"
-  ];
-  if (
-    !Array.isArray(requiredParameters) ||
-    !requiredParameters.every((item) => typeof item === "string")
-  ) {
-    return undefined;
-  }
-  return { name, description, requiredParameters };
-}
-
-/**
- * Normalizes a `getOperations()` return value onto
- * {@link M3LCliOperationDescriptor} array, never throwing: any malformed
- * shape (not an array, or containing even one malformed element — see
- * {@link normalizeOperationCandidate}) falls back to `[]` for the whole
- * list, rather than silently dropping just the bad element, since a
- * partially-normalized operations list could hide a config-authoring
- * mistake behind an apparently-valid `--<parameter>` help table.
- *
- * @param value - The raw `getOperations()` return value (or `undefined`
- *   when the duck-typed element has no such method).
- * @returns The normalized operations list, or `[]` on any malformed shape.
- */
-function describeOperations(
-  value: unknown,
-): readonly M3LCliOperationDescriptor[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  const normalized: M3LCliOperationDescriptor[] = [];
-  for (const candidate of value) {
-    const operation = normalizeOperationCandidate(candidate);
-    if (operation === undefined) {
-      return [];
-    }
-    normalized.push(operation);
-  }
-  return normalized;
-}
-
-/**
- * Safely invokes a duck-typed `getOperations()`. Extends the tolerance
- * `isSecret` already gets for a non-function property, and additionally
- * survives a throw from the call itself: a non-function `getOperations` or
- * one that throws when called degrades to `undefined` (normalized to
- * `operations: []` by {@link describeOperations}) rather than escaping as a
- * raw `TypeError` and failing the whole script's config load.
- *
- * @param parameter - The duck-typed parameter-like element to inspect.
- * @returns The raw `getOperations()` return value, or `undefined` when the
- *   method is absent, not a function, or throws when invoked.
- */
-function safeGetOperations(parameter: M3LCliParameterLike): unknown {
-  if (typeof parameter.getOperations !== "function") {
-    return undefined;
-  }
-  try {
-    return parameter.getOperations();
-  } catch {
-    return undefined;
-  }
-}
+export type M3LCliConfigModuleLocation = Core.M3LConfigModuleLocation;
 
 /**
  * Maps declared config parameters (real `Core.M3LConfigParameter` instances,
  * or any duck-typed equivalent) to their display-safe
- * {@link M3LCliParameterDescriptor} form.
+ * {@link M3LCliParameterDescriptor} form. Delegates to
+ * `Core.describeConfigParameters`, mapping its `Core.M3LError` (code
+ * `ERR_CONFIG_MODULE_INVALID`, thrown when a required getter of a
+ * duck-typed element returns a value outside its declared runtime type) to
+ * an `M3LCliError` at this boundary — the same treatment
+ * {@link resolveConfigModulePath} and {@link loadScriptParameters} already
+ * give their own Core calls, so every entry point in this module surfaces
+ * exactly one error class rather than leaking a raw `Core.M3LError` from
+ * just this one.
  *
  * @param parameters - The declared parameters to describe.
  * @returns One descriptor per input parameter, in the same order.
+ * @throws {@link M3LCliError} with code `ERR_CLI_CONFIG_IMPORT` when a
+ *   required getter of a `parameters` element returns a value outside its
+ *   declared runtime type.
  *
  * @example
  * ```ts
@@ -265,46 +71,41 @@ function safeGetOperations(parameter: M3LCliParameterLike): unknown {
  * ```
  */
 export function describeParameters(
-  parameters: readonly M3LCliParameterLike[],
+  parameters: readonly Core.M3LConfigParameterLike[],
 ): readonly M3LCliParameterDescriptor[] {
-  return parameters.map((parameter) => {
-    const defaultValue = parameter.getDefaultValue();
-    const secret =
-      typeof parameter.isSecret === "function" ? parameter.isSecret() : false;
-    const operations = describeOperations(safeGetOperations(parameter));
-    return {
-      name: parameter.getName(),
-      aliases: parameter.getAliases(),
-      type: parameter.getType(),
-      required: parameter.isRequired(),
-      defaultValue: renderDefaultValue(defaultValue, secret),
-      description: parameter.getDescription() ?? "",
-      secret,
-      operations,
-    };
-  });
+  try {
+    return Core.describeConfigParameters(parameters);
+  } catch (error) {
+    rethrowAsCliConfigImportError(error);
+  }
 }
 
 /**
- * Where a script's config module was resolved from. Not exported: nothing
- * outside this module needs to reference the string-literal union by name —
- * only through {@link M3LCliConfigModuleLocation.source}, which is.
+ * Maps a caught `Core.M3LError` to an `M3LCliError` coded
+ * `ERR_CLI_CONFIG_IMPORT`, preserving the original message verbatim and
+ * threading the original `cause` through (falling back to the caught error
+ * itself when Core did not attach one) so the causal chain is never
+ * silently dropped at this boundary. Anything else re-throws unchanged —
+ * only a `Core.M3LError` from this seam is ever relabelled here.
+ *
+ * @param error - The value caught from a Core `core/config` call.
+ * @returns Never returns; always throws.
  */
-type M3LCliConfigModuleSource = "dist" | "src";
-
-/** The resolved config module's absolute path and origin. */
-export interface M3LCliConfigModuleLocation {
-  /** The absolute path to the resolved config module. */
-  readonly path: string;
-  /** Whether the resolved module came from `dist/` or `src/`. */
-  readonly source: M3LCliConfigModuleSource;
+function rethrowAsCliConfigImportError(error: unknown): never {
+  if (error instanceof Core.M3LError) {
+    throw new M3LCliError("ERR_CLI_CONFIG_IMPORT", error.message, {
+      cause: error.cause ?? error,
+    });
+  }
+  throw error;
 }
 
 /**
  * Resolves the config module a script's `configParameters` export should be
  * loaded from, preferring the compiled `dist/config.js` over the
  * type-stripped `src/config.ts` whenever the compiled output is at least as
- * fresh.
+ * fresh. Delegates to `Core.resolveConfigModulePath`, mapping its
+ * `M3LError` (code `ERR_CONFIG_MODULE_NOT_FOUND`) to an `M3LCliError`.
  *
  * @param scriptDirectory - The script's root directory.
  * @returns The resolved module's path and source.
@@ -320,84 +121,20 @@ export interface M3LCliConfigModuleLocation {
 export function resolveConfigModulePath(
   scriptDirectory: string,
 ): M3LCliConfigModuleLocation {
-  const distPath = join(scriptDirectory, "dist", "config.js");
-  const srcPath = join(scriptDirectory, "src", "config.ts");
-
-  const distExists = existsSync(distPath);
-  const srcExists = existsSync(srcPath);
-
-  if (
-    distExists &&
-    (!srcExists || statSync(distPath).mtimeMs >= statSync(srcPath).mtimeMs)
-  ) {
-    return { path: distPath, source: "dist" };
+  try {
+    return Core.resolveConfigModulePath(scriptDirectory);
+  } catch (error) {
+    rethrowAsCliConfigImportError(error);
   }
-
-  if (srcExists) {
-    return { path: srcPath, source: "src" };
-  }
-
-  throw new M3LCliError(
-    "ERR_CLI_CONFIG_IMPORT",
-    `no config module found for script at '${scriptDirectory}' (checked dist/config.js and src/config.ts)`,
-  );
 }
 
 /**
- * Imports `specifier` as an ES module and returns its namespace object.
- * The default importer {@link loadScriptParameters} uses when the caller
- * does not inject one.
- *
- * @param specifier - A module specifier, typically a `file://` URL.
- * @returns The imported module's namespace object.
- */
-async function defaultImportModule(specifier: string): Promise<unknown> {
-  const moduleExports: unknown = await import(specifier);
-  return moduleExports;
-}
-
-/**
- * The full set of getter method names {@link M3LCliParameterLike} declares —
- * every one of these must be a function on a candidate value for it to be
- * trusted as parameter-like (checking only `getName` let a malformed export
- * missing the other five getters through, to fail later as a raw
- * `TypeError` inside {@link describeParameters}).
- */
-const PARAMETER_LIKE_GETTER_NAMES: readonly (keyof M3LCliParameterLike)[] = [
-  "getName",
-  "getAliases",
-  "getType",
-  "isRequired",
-  "getDefaultValue",
-  "getDescription",
-];
-
-/**
- * Checks whether `value` exposes the minimal duck-type
- * {@link M3LCliParameterLike} requires — every getter in
- * {@link PARAMETER_LIKE_GETTER_NAMES} must be present as a function.
- *
- * @param value - The candidate `configParameters` array element.
- * @returns Whether `value` is parameter-like.
- */
-function isParameterLike(value: unknown): value is M3LCliParameterLike {
-  if (typeof value !== "object" || value === null) {
-    return false;
-  }
-  const candidate = value as Record<string, unknown>;
-  return PARAMETER_LIKE_GETTER_NAMES.every(
-    (getterName) => typeof candidate[getterName] === "function",
-  );
-}
-
-/**
- * Loads and describes a script's declared `configParameters`.
- *
- * Resolves the script's config module via {@link resolveConfigModulePath}
- * (a failure here propagates unwrapped — it is already an
- * {@link M3LCliError}), imports it, validates the module exports an array
- * `configParameters` whose elements are parameter-like, and describes them
- * via {@link describeParameters}.
+ * Loads and describes a script's declared `configParameters`. Delegates to
+ * `Core.loadScriptConfigDescriptors` (which itself resolves the module via
+ * `Core.resolveConfigModulePath`, imports it, and validates its
+ * `configParameters` export) in a single call, so a resolution failure is
+ * caught and mapped exactly once here — never double-wrapped by also
+ * calling this module's own {@link resolveConfigModulePath} first.
  *
  * @param scriptDirectory - The script's root directory.
  * @param importModule - The module importer to use; defaults to a dynamic
@@ -405,8 +142,9 @@ function isParameterLike(value: unknown): value is M3LCliParameterLike {
  *   stub here.
  * @returns The script's described parameters.
  * @throws {@link M3LCliError} with code `ERR_CLI_CONFIG_IMPORT` when the
- *   import rejects, or the module's `configParameters` export is missing,
- *   not an array, or contains a non-parameter-like element.
+ *   module cannot be resolved, the import rejects, or the module's
+ *   `configParameters` export is missing, not an array, or contains a
+ *   non-parameter-like element.
  *
  * @example
  * ```ts
@@ -416,44 +154,14 @@ function isParameterLike(value: unknown): value is M3LCliParameterLike {
  */
 export async function loadScriptParameters(
   scriptDirectory: string,
-  importModule: (specifier: string) => Promise<unknown> = defaultImportModule,
+  importModule?: (specifier: string) => Promise<unknown>,
 ): Promise<readonly M3LCliParameterDescriptor[]> {
-  const { path } = resolveConfigModulePath(scriptDirectory);
-
-  let moduleExports: unknown;
   try {
-    moduleExports = await importModule(pathToFileURL(path).href);
-  } catch (cause) {
-    throw new M3LCliError(
-      "ERR_CLI_CONFIG_IMPORT",
-      `failed to import config module '${path}'`,
-      { cause },
+    return await Core.loadScriptConfigDescriptors(
+      scriptDirectory,
+      importModule,
     );
+  } catch (error) {
+    rethrowAsCliConfigImportError(error);
   }
-
-  if (typeof moduleExports !== "object" || moduleExports === null) {
-    throw new M3LCliError(
-      "ERR_CLI_CONFIG_IMPORT",
-      `config module '${path}' did not export an object`,
-    );
-  }
-
-  const configParameters = (moduleExports as Record<string, unknown>)[
-    "configParameters"
-  ];
-  if (!Array.isArray(configParameters)) {
-    throw new M3LCliError(
-      "ERR_CLI_CONFIG_IMPORT",
-      `config module '${path}' does not export an array 'configParameters'`,
-    );
-  }
-
-  if (!configParameters.every(isParameterLike)) {
-    throw new M3LCliError(
-      "ERR_CLI_CONFIG_IMPORT",
-      `config module '${path}' exports a 'configParameters' element that is not parameter-like`,
-    );
-  }
-
-  return describeParameters(configParameters);
 }
