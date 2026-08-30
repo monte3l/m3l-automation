@@ -358,6 +358,54 @@ describe("ScriptDetail — launch wiring", () => {
       );
     });
   });
+
+  // Only reachable end-to-end submission shape besides the dry-run default:
+  // Dry run unchecked, Confirm real run checked. buildLaunchRequest's
+  // `submission.confirmed` arm (dryRun: false, confirmed: true) is otherwise
+  // never exercised by the sibling tests above, which all launch in dry-run
+  // mode.
+  test("a confirmed real run (dryRun off, confirmed on) sends { dryRun: false, confirmed: true } to launchRun", async () => {
+    const launchRunSpy = vi.fn(okLaunchRun(SAMPLE_HANDLE));
+    render(
+      <ScriptDetail
+        name="demo-script"
+        fetchScript={okFetchScript(LAUNCHABLE_DETAIL)}
+        launchRun={launchRunSpy}
+      />,
+    );
+
+    await screen.findByTestId("script-detail");
+    fireEvent.click(screen.getByLabelText("Dry run"));
+    fireEvent.click(screen.getByLabelText("Confirm real run"));
+    fireEvent.click(screen.getByRole("button", { name: /launch/i }));
+
+    await vi.waitFor(() => {
+      expect(launchRunSpy).toHaveBeenCalledWith({
+        scriptName: "demo-script",
+        parameters: {},
+        dryRun: false,
+        confirmed: true,
+      });
+    });
+  });
+
+  test("surfaces the rejection message when launchRun rejects (.catch arm)", async () => {
+    render(
+      <ScriptDetail
+        name="demo-script"
+        fetchScript={okFetchScript(LAUNCHABLE_DETAIL)}
+        launchRun={() => Promise.reject(new Error("network down"))}
+      />,
+    );
+
+    await screen.findByTestId("script-detail");
+    fireEvent.click(screen.getByRole("button", { name: /launch/i }));
+
+    const detail = await screen.findByTestId("script-detail");
+    await vi.waitFor(() => {
+      expect(detail.textContent).toContain("network down");
+    });
+  });
 });
 
 // X10d CRITICAL security finding, reproduced empirically: App.tsx puts no
