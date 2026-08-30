@@ -18,6 +18,10 @@ import type {
   M3LAgentDecisionOutcome,
   M3LAgentIdentity,
 } from "../../core/agent/decision-log-types.js";
+// `core/agent/guards.js` imports only types from `./verdict-types.js` — no
+// cycle back into `internal/agent` — so its rule-id membership check is
+// reused here rather than hand-written a second time.
+import { isAgentPolicyRuleId } from "../../core/agent/guards.js";
 import { M3LError } from "../../core/errors/index.js";
 import {
   isArray,
@@ -75,6 +79,29 @@ const DECISION_ACTION_KEYS: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * The only own keys a decision's action `target` may carry (mirrors
+ * `M3LAgentActionRecordTarget`).
+ */
+const DECISION_ACTION_TARGET_KEYS: ReadonlySet<string> = new Set([
+  "profile",
+  "region",
+  "accountId",
+]);
+
+/** The three `M3LAgentVerdict` members — this build's closed vocabulary. */
+const AGENT_VERDICTS: ReadonlySet<string> = new Set([
+  "auto-approved",
+  "escalate",
+  "denied",
+]);
+
+/** The two `M3LAgentActionKind` members. */
+const AGENT_ACTION_KINDS: ReadonlySet<string> = new Set([
+  "read-only",
+  "mutating",
+]);
+
+/**
  * The maximum (and, negated, the minimum) time value `Date` can represent —
  * ECMA-262's own bound, ±100,000,000 days from the epoch in milliseconds.
  */
@@ -112,6 +139,82 @@ function readOptionalNonBlankString(
   const value = record[key];
   if (!isNonBlankString(value)) {
     throw logFailure(field, "blank-or-non-string");
+  }
+  return value;
+}
+
+/**
+ * Reads an optional non-blank string field of a decision's action `target`,
+ * where an own key holding `undefined` is legitimate input — not merely
+ * "absent" — matching `M3LAgentActionRecordTarget`'s "required, holding
+ * `undefined`" shape (`core/agent/action-types.ts`). A present-but-blank or a
+ * present-non-string, non-`undefined` value is malformed and throws.
+ */
+function readOptionalTargetString(
+  record: Readonly<Record<string, unknown>>,
+  key: string,
+  field: string,
+): string | undefined {
+  if (!Object.hasOwn(record, key)) {
+    return undefined;
+  }
+  const value = record[key];
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!isNonBlankString(value)) {
+    throw logFailure(field, "blank-or-non-string");
+  }
+  return value;
+}
+
+/**
+ * Validates `decision.action.target`: absent (or an own key holding
+ * `undefined`), or a plain object carrying only `profile` / `region` /
+ * `accountId`, each an optional non-blank string. Proving this shape closes
+ * the gap where a non-object `target` (or one whose fields were never
+ * checked) silently produced an entry that lost its target coordinates
+ * instead of throwing.
+ */
+function assertValidDecisionActionTarget(value: unknown): void {
+  if (value === undefined) {
+    return;
+  }
+  if (!isPlainObject(value)) {
+    throw logFailure("decision.action.target", "not-a-plain-object");
+  }
+  assertAllowedKeys(
+    value,
+    DECISION_ACTION_TARGET_KEYS,
+    "decision.action.target",
+    logFailure,
+  );
+  readOptionalTargetString(value, "profile", "decision.action.target.profile");
+  readOptionalTargetString(value, "region", "decision.action.target.region");
+  readOptionalTargetString(
+    value,
+    "accountId",
+    "decision.action.target.accountId",
+  );
+}
+
+/**
+ * Requires a non-blank string field that is also a member of a closed
+ * vocabulary. Distinguishes "not a string at all" (`blank-or-non-string`,
+ * from {@link requireNonBlankString}) from "a string, but not a recognised
+ * member" (`notInUnionLabel`), so the two failures stay distinguishable —
+ * `context` never carries the offending value either way.
+ */
+function requireStringInUnion(
+  record: Readonly<Record<string, unknown>>,
+  key: string,
+  field: string,
+  isMember: (value: string) => boolean,
+  notInUnionLabel: string,
+): string {
+  const value = requireNonBlankString(record, key, field);
+  if (!isMember(value)) {
+    throw logFailure(field, notInUnionLabel);
   }
   return value;
 }
@@ -298,8 +401,17 @@ function assertValidDecisionAction(
   assertAllowedKeys(value, DECISION_ACTION_KEYS, "decision.action", logFailure);
 
   requireNonBlankString(value, "script", "decision.action.script");
-  requireNonBlankString(value, "kind", "decision.action.kind");
+  requireStringInUnion(
+    value,
+    "kind",
+    "decision.action.kind",
+    (kind) => AGENT_ACTION_KINDS.has(kind),
+    "not-a-known-kind",
+  );
   requireNonBlankString(value, "shapeKey", "decision.action.shapeKey");
+
+  const target = Object.hasOwn(value, "target") ? value["target"] : undefined;
+  assertValidDecisionActionTarget(target);
 
   const parameterNames = Object.hasOwn(value, "parameterNames")
     ? value["parameterNames"]
@@ -342,8 +454,20 @@ function assertValidDecision(
   const action = Object.hasOwn(value, "action") ? value["action"] : undefined;
   assertValidDecisionAction(action);
 
-  requireNonBlankString(value, "verdict", "decision.verdict");
-  requireNonBlankString(value, "rule", "decision.rule");
+  requireStringInUnion(
+    value,
+    "verdict",
+    "decision.verdict",
+    (verdict) => AGENT_VERDICTS.has(verdict),
+    "not-a-known-verdict",
+  );
+  requireStringInUnion(
+    value,
+    "rule",
+    "decision.rule",
+    isAgentPolicyRuleId,
+    "not-a-known-rule-id",
+  );
   requireNonBlankString(value, "reason", "decision.reason");
 }
 

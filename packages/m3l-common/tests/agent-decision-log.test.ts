@@ -461,6 +461,15 @@ describe("optional fields are omitted, never null", () => {
 /* -------------------------------------------------------------------------- */
 
 describe("serializeAgentDecisionLogEntry", () => {
+  // No failure-path test here by design, not by omission: the only argument
+  // `serializeAgentDecisionLogEntry` accepts is `M3LAgentDecisionLogEntry`,
+  // and the only place that type is ever produced is `agentDecisionLogEntry`
+  // itself, which returns nothing but an already-validated, frozen, JSON-safe
+  // entry (a `Date`-derived ISO string, frozen arrays/objects, and no
+  // caller-supplied reference — see `projectEntry` above). There is no
+  // reachable value of that type `JSON.stringify` can fail on (no `bigint`,
+  // no function, no circular reference), so this function has no failure
+  // mode by construction to characterize.
   test("returns exactly one line without a trailing newline", () => {
     const entry = agentDecisionLogEntry({
       decision: autoApprovedDecision(),
@@ -702,6 +711,198 @@ describe("[decision] structural validation (no runtime brand — validated here)
     );
     expect(error.context["field"]).toBe("decision.action.script");
     expect(error.context["violation"]).toBe("blank-or-non-string");
+  });
+});
+
+describe("[decision.action.target] structural validation", () => {
+  // [CRITICAL] Regression pin: the review bot's exact finding. Before
+  // `assertValidDecisionActionTarget` existed, `action.target` was read and
+  // copied verbatim into the entry (`projectEntry`) without ever being
+  // validated, so a hand-built decision with `action.target = "prod"` (a
+  // bare string, not a target object) produced a frozen entry whose
+  // `target` was silently `{}` — an audit record missing its coordinates
+  // instead of throwing. Deleting the `assertValidDecisionActionTarget`
+  // call in `assertValidDecisionAction` must make this test fail.
+  test("[CRITICAL] a string action.target throws instead of silently producing an entry with an empty target", () => {
+    const decision = autoApprovedDecision();
+    const error = expectLogEntryRejected(() =>
+      callWithOptions(
+        optionsWithDecision({
+          ...decision,
+          action: { ...decision.action, target: "prod" },
+        }),
+      ),
+    );
+    expect(error.context["field"]).toBe("decision.action.target");
+    expect(error.context["violation"]).toBe("not-a-plain-object");
+    expect(JSON.stringify(error.context)).not.toContain("prod");
+  });
+
+  // A `null` target must be rejected with this same precise label — never
+  // the generic `traversal-threw` backstop, which the module's own header
+  // comment reserves for a hostile Proxy/accessor trap breaking the
+  // traversal, not for merely malformed input.
+  test("a null action.target throws the same not-a-plain-object label, not the traversal-threw backstop", () => {
+    const decision = autoApprovedDecision();
+    const error = expectLogEntryRejected(() =>
+      callWithOptions(
+        optionsWithDecision({
+          ...decision,
+          action: { ...decision.action, target: null },
+        }),
+      ),
+    );
+    expect(error.context["field"]).toBe("decision.action.target");
+    expect(error.context["violation"]).toBe("not-a-plain-object");
+    expect(error.context["violation"]).not.toBe("traversal-threw");
+  });
+
+  test("an absent action.target is accepted", () => {
+    const decision = escalateDecision();
+    expect(decision.action.target).toBeUndefined();
+    const entry = agentDecisionLogEntry({
+      decision,
+      identity: IDENTITY_MINIMAL,
+      now: NOW_MS,
+    });
+    expect(entry.target).toBeUndefined();
+  });
+
+  test("a valid target round-trips into the entry unchanged", () => {
+    const decision = autoApprovedDecision();
+    const entry = agentDecisionLogEntry({
+      decision,
+      identity: IDENTITY_MINIMAL,
+      now: NOW_MS,
+    });
+    expect(entry.target).toEqual({
+      profile: SAFE_TARGET.profile,
+      region: SAFE_TARGET.region,
+      accountId: undefined,
+    });
+  });
+
+  // `M3LAgentActionRecordTarget` uses the "required, holding `undefined`"
+  // shape for `region` / `accountId` (`core/agent/action-types.ts`) — an own
+  // key present but holding `undefined` is legitimate input, not "absent",
+  // so it must be accepted rather than rejected as malformed. Getting this
+  // wrong would break the library's own projection of a real action record.
+  test("an own target key holding undefined is accepted, not rejected", () => {
+    const decision = autoApprovedDecision();
+    const entry = agentDecisionLogEntry({
+      decision: {
+        ...decision,
+        action: {
+          ...decision.action,
+          target: { profile: "p", region: undefined, accountId: undefined },
+        },
+      },
+      identity: IDENTITY_MINIMAL,
+      now: NOW_MS,
+    });
+    expect(entry.target).toEqual({
+      profile: "p",
+      region: undefined,
+      accountId: undefined,
+    });
+  });
+
+  test.each(["profile", "region", "accountId"] as const)(
+    "throws its own qualified label when target.%s is blank",
+    (key) => {
+      const decision = autoApprovedDecision();
+      const error = expectLogEntryRejected(() =>
+        callWithOptions(
+          optionsWithDecision({
+            ...decision,
+            action: {
+              ...decision.action,
+              target: { ...SAFE_TARGET, [key]: "   " },
+            },
+          }),
+        ),
+      );
+      expect(error.context["field"]).toBe(`decision.action.target.${key}`);
+      expect(error.context["violation"]).toBe("blank-or-non-string");
+    },
+  );
+
+  test.each(["profile", "region", "accountId"] as const)(
+    "throws its own qualified label when target.%s is non-string",
+    (key) => {
+      const decision = autoApprovedDecision();
+      const error = expectLogEntryRejected(() =>
+        callWithOptions(
+          optionsWithDecision({
+            ...decision,
+            action: {
+              ...decision.action,
+              target: { ...SAFE_TARGET, [key]: 42 },
+            },
+          }),
+        ),
+      );
+      expect(error.context["field"]).toBe(`decision.action.target.${key}`);
+      expect(error.context["violation"]).toBe("blank-or-non-string");
+      expect(Object.values(error.context)).not.toContain(42);
+    },
+  );
+
+  test("rejects an unknown key on target", () => {
+    const decision = autoApprovedDecision();
+    const error = expectLogEntryRejected(() =>
+      callWithOptions(
+        optionsWithDecision({
+          ...decision,
+          action: {
+            ...decision.action,
+            target: { ...SAFE_TARGET, az: "eu-central-1a" },
+          },
+        }),
+      ),
+    );
+    expect(error.context["field"]).toBe("decision.action.target");
+    expect(error.context["violation"]).toBe("unknown-key");
+  });
+});
+
+describe("[decision] closed-vocabulary validation (verdict / rule / kind)", () => {
+  test("decision.verdict outside the closed vocabulary is a distinct violation from blank-or-non-string", () => {
+    const decision = autoApprovedDecision();
+    const error = expectLogEntryRejected(() =>
+      callWithOptions(optionsWithDecision({ ...decision, verdict: "banana" })),
+    );
+    expect(error.context["field"]).toBe("decision.verdict");
+    expect(error.context["violation"]).toBe("not-a-known-verdict");
+    expect(error.context["violation"]).not.toBe("blank-or-non-string");
+    expect(JSON.stringify(error.context)).not.toContain("banana");
+  });
+
+  test("decision.rule outside the closed vocabulary is a distinct violation from blank-or-non-string", () => {
+    const decision = autoApprovedDecision();
+    const error = expectLogEntryRejected(() =>
+      callWithOptions(optionsWithDecision({ ...decision, rule: "r" })),
+    );
+    expect(error.context["field"]).toBe("decision.rule");
+    expect(error.context["violation"]).toBe("not-a-known-rule-id");
+    expect(error.context["violation"]).not.toBe("blank-or-non-string");
+    expect(JSON.stringify(error.context)).not.toContain('"r"');
+  });
+
+  test("decision.action.kind outside the closed vocabulary is a distinct violation from blank-or-non-string", () => {
+    const decision = autoApprovedDecision();
+    const error = expectLogEntryRejected(() =>
+      callWithOptions(
+        optionsWithDecision({
+          ...decision,
+          action: { ...decision.action, kind: "sideways" },
+        }),
+      ),
+    );
+    expect(error.context["field"]).toBe("decision.action.kind");
+    expect(error.context["violation"]).toBe("not-a-known-kind");
+    expect(error.context["violation"]).not.toBe("blank-or-non-string");
+    expect(JSON.stringify(error.context)).not.toContain("sideways");
   });
 });
 

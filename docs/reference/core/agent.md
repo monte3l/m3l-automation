@@ -1546,14 +1546,30 @@ malformed. The full set:
   not a boolean; `outcome.exitCode` is not an integer; `outcome.registryName` is
   blank or not a string.
 - `decision` is missing, is not a plain object, or is structurally malformed —
-  a non-object `decision.action`, a blank `decision.action.script`, `.kind` or
-  `.shapeKey`, a malformed `.parameterNames` or `.dryRun`, or a blank
-  `decision.verdict`, `.rule` or `.reason`.
+  a non-object `decision.action`; a blank `decision.action.script` or
+  `.shapeKey`; a malformed `.parameterNames` or `.dryRun`; a blank
+  `decision.reason`; a `decision.action.target` that is present but not a plain
+  object, or whose `profile` / `region` / `accountId` is present-and-blank or
+  non-string, or which carries an unknown key.
+- `decision.verdict`, `decision.rule` or `decision.action.kind` holds a string
+  that is **not a member of its union**. These get their own violation
+  vocabulary — `not-a-known-verdict`, `not-a-known-rule-id`,
+  `not-a-known-kind` — kept distinct from `blank-or-non-string` so "you sent
+  nothing" and "you sent something we do not recognise" stay tellable apart.
+  Membership matters because the projection **asserts** these types onto the
+  entry: without the check, an entry could carry `verdict: "banana"` typed as
+  `M3LAgentVerdict`.
 - A throwing accessor or `Proxy` trap encountered while reading the bag, which
   surfaces as a wrapped failure with the underlying error chained as `cause`.
 
 Its `context` names the offending field and the violation kind, **never a
 value** — the same discipline both existing errors on this module follow.
+
+**Every field the projector reads is proven**, `target` included. That last
+one is not a footnote: `target` is read and copied field-by-field, so an
+unvalidated `action.target = "prod"` produced `"target":{}` — an entry that
+silently lost the account and region coordinates an auditor needs, while
+looking entirely well-formed.
 
 `decision` is validated rather than trusted even though `evaluateAgentAction`
 is the only thing that produces one. In a fully-typed call graph a malformed
