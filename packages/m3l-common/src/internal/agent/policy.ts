@@ -37,6 +37,7 @@ const DECLARATION_KEYS: ReadonlySet<string> = new Set([
   "sensitiveTargets",
   "budgets",
   "dryRunFirst",
+  "requireDecisionLog",
 ]);
 
 /** The only own keys a grant may carry (rules 11 and 12). */
@@ -421,12 +422,30 @@ function projectDryRunFirst(
 }
 
 /**
+ * Rule 17: `requireDecisionLog`, when present, is a boolean. Same polarity as
+ * `dryRunFirst` (rule 16) and for the same reason: `false` is accepted and
+ * means the same as absent, so a deployment can write the default down.
+ */
+function projectRequireDecisionLog(
+  declaration: Readonly<Record<string, unknown>>,
+): boolean | undefined {
+  if (!Object.hasOwn(declaration, "requireDecisionLog")) {
+    return undefined;
+  }
+  const value = declaration["requireDecisionLog"];
+  if (typeof value !== "boolean") {
+    throw declarationFailure("requireDecisionLog", "not-a-boolean");
+  }
+  return value;
+}
+
+/**
  * Validates a parsed policy document and projects it into a fresh,
  * deep-frozen declaration in the same walk.
  *
  * @param declaration - The parsed document, trusted for nothing.
  * @returns The validated, deep-frozen declaration, ready to be branded.
- * @throws M3LAgentPolicyDeclarationError On any of the sixteen rule
+ * @throws M3LAgentPolicyDeclarationError On any of the seventeen rule
  *   violations; its `context` names the offending grant index or key and
  *   the violation kind, never a value.
  */
@@ -471,7 +490,7 @@ export function validateAgentPolicyDeclaration(
   }
 }
 
-/** The sixteen rules, run over a document already proven a plain object. */
+/** The seventeen rules, run over a document already proven a plain object. */
 function walkDeclaration(
   declaration: Readonly<Record<string, unknown>>,
 ): M3LAgentPolicyDeclaration {
@@ -491,6 +510,7 @@ function walkDeclaration(
   const sensitiveTargets = projectGradingSpec(declaration);
   const budgets = projectBudgets(declaration);
   const dryRunFirst = projectDryRunFirst(declaration);
+  const requireDecisionLog = projectRequireDecisionLog(declaration);
   // Keys are omitted when undeclared rather than materialised as an own
   // `undefined`, for the reason given on the grant projection above: the
   // declaration type is the caller's own preset-storable shape and an own
@@ -499,15 +519,17 @@ function walkDeclaration(
   // `Object.prototype.sensitiveTargets = {}`, a plain dot read made the most
   // cautious deployment of all (the one that declared no grading precisely so
   // every mutation would escalate) auto-approve a prod mutation instead. Note
-  // `dryRunFirst` IS materialised when its value is the boolean `false` —
-  // `false` is not `undefined`, and the spread guard below only omits truly
-  // undeclared keys, so a declaration that wrote the default down keeps it.
+  // `dryRunFirst` and `requireDecisionLog` ARE materialised when their value
+  // is the boolean `false` — `false` is not `undefined`, and the spread guard
+  // below only omits truly undeclared keys, so a declaration that wrote the
+  // default down keeps it.
   const projected: M3LAgentPolicyDeclaration = {
     version: 1,
     scripts,
     ...(sensitiveTargets !== undefined ? { sensitiveTargets } : {}),
     ...(budgets !== undefined ? { budgets } : {}),
     ...(dryRunFirst !== undefined ? { dryRunFirst } : {}),
+    ...(requireDecisionLog !== undefined ? { requireDecisionLog } : {}),
   };
   return Object.freeze(projected);
 }

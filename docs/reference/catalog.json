@@ -37,7 +37,12 @@
       "M3LAgentDecisionLogEntryOptions",
       "M3L_AGENT_MAX_LOG_ENTRY_BYTES",
       "agentDecisionLogEntry",
-      "serializeAgentDecisionLogEntry"
+      "serializeAgentDecisionLogEntry",
+      "M3LAgentDecisionLog",
+      "M3LAgentDecisionLogOptions",
+      "M3L_AGENT_LOG_MAX_SEGMENT_BYTES",
+      "M3L_AGENT_LOG_MAX_SEGMENT_AGE_MS",
+      "M3LAgentDecisionLogWriteError"
     ]
   },
   {

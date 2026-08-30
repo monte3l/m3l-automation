@@ -154,6 +154,31 @@
     "namespace": "core",
     "file": "packages/m3l-common/src/core/agent/decision-log-entry.ts"
   },
+  "M3LAgentDecisionLog": {
+    "submodule": "agent",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/agent/decision-log.ts"
+  },
+  "M3LAgentDecisionLogOptions": {
+    "submodule": "agent",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/agent/decision-log.ts"
+  },
+  "M3L_AGENT_LOG_MAX_SEGMENT_BYTES": {
+    "submodule": "agent",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/agent/decision-log.ts"
+  },
+  "M3L_AGENT_LOG_MAX_SEGMENT_AGE_MS": {
+    "submodule": "agent",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/agent/decision-log.ts"
+  },
+  "M3LAgentDecisionLogWriteError": {
+    "submodule": "agent",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/agent/M3LAgentDecisionLogWriteError.ts"
+  },
   "M3LThresholdEvaluator": {
     "submodule": "analysis",
     "namespace": "core",

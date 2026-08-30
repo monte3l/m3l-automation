@@ -35,9 +35,12 @@ export type M3LAgentVerdict = M3LAgentDecision["verdict"];
  * A closed literal union that **grows in later minors** — slice 2 adds twelve
  * ids (the five `"budget.*"` ids, `"dry-run-first"`,
  * `"kind-cross-check-escalated"`, and the five `"budget.*.unobservable"`
- * ids), and ADR-0061 (V7) adds its own. Growing it is additive, not breaking,
- * because the type appears only in **return** position: no caller constructs
- * an `M3LAgentDecision`, so a new member cannot invalidate a caller's value.
+ * ids), and ADR-0061 (V7) adds its own: V7 slice 2 adds two more,
+ * `"decision-log-unavailable"` and `"decision-log-unavailable.unobservable"`
+ * (the log-unavailable escalation, step 3b), taking the union from twenty to
+ * twenty-two. Growing it is additive, not breaking, because the type appears
+ * only in **return** position: no caller constructs an `M3LAgentDecision`, so
+ * a new member cannot invalidate a caller's value.
  *
  * What a new member *can* break is an exhaustive `switch`, so consumers must
  * **not** write one. Treat an unrecognised id as an opaque label — log it,
@@ -70,7 +73,9 @@ export type M3LAgentPolicyRuleId =
   | "budget.invocations-per-day.unobservable"
   | "budget.tokens-per-run.unobservable"
   | "budget.cost-per-run.unobservable"
-  | "budget.loop-iterations.unobservable";
+  | "budget.loop-iterations.unobservable"
+  | "decision-log-unavailable"
+  | "decision-log-unavailable.unobservable";
 
 /**
  * The discriminated verdict `evaluateAgentAction` returns.

@@ -64,3 +64,10 @@ export {
   agentDecisionLogEntry,
   serializeAgentDecisionLogEntry,
 } from "./decision-log-entry.js";
+export type { M3LAgentDecisionLogOptions } from "./decision-log.js";
+export {
+  M3L_AGENT_LOG_MAX_SEGMENT_AGE_MS,
+  M3L_AGENT_LOG_MAX_SEGMENT_BYTES,
+  M3LAgentDecisionLog,
+} from "./decision-log.js";
+export { M3LAgentDecisionLogWriteError } from "./M3LAgentDecisionLogWriteError.js";

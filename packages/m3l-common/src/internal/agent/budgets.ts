@@ -14,10 +14,11 @@ const MS_PER_DAY = 86_400_000;
 /**
  * The step-0 projection of {@link M3LAgentRunLedger}: every numeric field is
  * materialised as an own key holding `undefined` when the caller omitted it,
- * and `dryRunCompletedShapes` defaults to a frozen empty list. Step 3 and
- * step 6 read this projection alone — never `options.run` again — which is
- * what closes the TOCTOU hole a live re-read of the caller's ledger would
- * open.
+ * `dryRunCompletedShapes` defaults to a frozen empty list, and
+ * `decisionLogAvailable` is materialised as an own key holding `undefined`
+ * the same way the numeric fields are. Step 3, step 3b, and step 6 read this
+ * projection alone — never `options.run` again — which is what closes the
+ * TOCTOU hole a live re-read of the caller's ledger would open.
  */
 export interface M3LAgentProjectedRunLedger {
   readonly invocationsThisRun: number | undefined;
@@ -28,6 +29,7 @@ export interface M3LAgentProjectedRunLedger {
   readonly costThisRun: number | undefined;
   readonly loopIterations: number | undefined;
   readonly dryRunCompletedShapes: readonly string[];
+  readonly decisionLogAvailable: boolean | undefined;
 }
 
 /** The projection for a run with no ledger supplied at all. */
@@ -40,6 +42,7 @@ const EMPTY_PROJECTED_RUN_LEDGER: M3LAgentProjectedRunLedger = Object.freeze({
   costThisRun: undefined,
   loopIterations: undefined,
   dryRunCompletedShapes: Object.freeze([]),
+  decisionLogAvailable: undefined,
 });
 
 /** The ten budget rule ids `evaluateBudgets` can produce. */

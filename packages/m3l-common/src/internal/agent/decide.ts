@@ -1,8 +1,9 @@
 /**
  * `internal/agent/decide` — the tier decision table behind
  * `Core.evaluateAgentAction`: the script allowlist (step 1), the operation
- * allowlist (step 2), budgets and ceilings (step 3), the autonomy tier and
- * its declared cross-check (step 4), ADR-0048's grading arms (step 5),
+ * allowlist (step 2), budgets and ceilings (step 3), the
+ * decision-log-unavailable escalation (step 3b), the autonomy tier and its
+ * declared cross-check (step 4), ADR-0048's grading arms (step 5),
  * dry-run-first (step 6), and the graded non-sensitive mutation arm (step 7).
  *
  * Private to `core/agent`; never re-exported through a public barrel. Every
@@ -205,6 +206,69 @@ function decideMutation(
 }
 
 /**
+ * Step 3b — escalates when the policy requires an auditable decision log and
+ * the caller's ledger observation says it is unavailable or absent.
+ *
+ * Placement is deliberate, mirroring step 3's own comment above it: it sits
+ * ABOVE step 4's `switch (record.kind)` because an unauditable **read-only**
+ * action is unauditable too, and because this one position covers BOTH
+ * auto-approval arms — step 4's `read-only-auto-approved` and step 7's
+ * `graded-mutation-auto-approved` — rather than needing a copy of this check
+ * in each. It sits AFTER step 3 so a budget-exhausted action keeps reporting
+ * its own budget rule; this step never overrides a verdict step 3 already
+ * produced. It sits BELOW the deny arms (steps 1 and 2, already returned
+ * above by the time this runs): a denied action needs no audit record,
+ * because nothing runs.
+ *
+ * Sitting above the whole `switch` means this step also supersedes the
+ * ESCALATE arms below it — step 5's `sensitive-target-escalated`, step 6's
+ * `dry-run-first` — not only the two auto-approval arms named above. That is
+ * INTENDED, and a future reader should not "fix" it by pushing the check
+ * down into the individual arms: the verdict is `escalate` either way, so no
+ * authority is widened or narrowed by the supersession, and covering both
+ * auto-approval arms from a single site is exactly what this position buys.
+ * "The decision log is unavailable" is also the more actionable signal for
+ * the human the escalation is handed to — the target's sensitivity is still
+ * recoverable from the action recorded on the decision. Regression tests in
+ * `tests/agent-decision-log-escalation.test.ts` pin both directions: the
+ * supersession itself, and the same action reporting
+ * `sensitive-target-escalated` once the log is available.
+ *
+ * `policy.requireDecisionLog` is read through `Object.hasOwn`, matching step
+ * 3's own `policy.budgets` read: a polluted `Object.prototype.requireDecisionLog`
+ * must not make this step run for a policy that declared none.
+ */
+function decideDecisionLogAvailability(
+  record: M3LAgentActionRecord,
+  policy: M3LAgentPolicy,
+  run: M3LAgentProjectedRunLedger | undefined,
+  subject: string,
+): M3LAgentDecision | undefined {
+  const requireDecisionLog = Object.hasOwn(policy, "requireDecisionLog")
+    ? policy.requireDecisionLog
+    : undefined;
+  if (requireDecisionLog !== true) {
+    return undefined;
+  }
+  const decisionLogAvailable = run?.decisionLogAvailable;
+  if (decisionLogAvailable === true) {
+    return undefined;
+  }
+  if (decisionLogAvailable === false) {
+    return escalate(
+      "decision-log-unavailable",
+      `${subject} is escalated: the policy requires an auditable decision log and the run ledger reports it is unavailable.`,
+      record,
+    );
+  }
+  return escalate(
+    "decision-log-unavailable.unobservable",
+    `${subject} is escalated: the policy requires an auditable decision log and the run ledger reports no decisionLogAvailable observation.`,
+    record,
+  );
+}
+
+/**
  * Step 2 — the operation allowlist, as a plain boolean. Guard polarity,
  * deliberately opposite to the truthiness verdict in `decideMutation` above:
  * `allOperations` is an OPT-IN that widens a grant from a named operation set
@@ -328,6 +392,21 @@ export function decideAgentAction(
   const budgetVerdict = evaluateBudgets(budgets, run, subject);
   if (budgetVerdict !== undefined) {
     return escalate(budgetVerdict.rule, budgetVerdict.reason, record);
+  }
+
+  // Step 3b — the decision-log-unavailable escalation. See
+  // `decideDecisionLogAvailability`'s own comment for why it sits here:
+  // after step 3 (so a budget-exhausted action keeps its budget rule) and
+  // before step 4 (so it covers both auto-approval arms, steps 4 and 7, in
+  // one place).
+  const decisionLogVerdict = decideDecisionLogAvailability(
+    record,
+    policy,
+    run,
+    subject,
+  );
+  if (decisionLogVerdict !== undefined) {
+    return decisionLogVerdict;
   }
 
   // Step 4 — the autonomy tier, plus its declared cross-check on `kind`.
