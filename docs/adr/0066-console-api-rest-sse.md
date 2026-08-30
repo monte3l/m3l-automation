@@ -133,6 +133,64 @@ correction to this ADR, not a deviation to be fixed later:
 **Semver impact:** none (the console server is unpublished and has no
 `exports` map).
 
+## Update (2026-08-30) — X10 shipped discovery; the response shape it settled
+
+The 2026-08-29 Update recorded discovery (`GET /scripts`) as deferred to X10.
+X10b shipped it. Three things this ADR left open are now fixed by the
+implementation, recorded here rather than left to be inferred from code:
+
+1. **The paths are `/api/v1/scripts` and `/api/v1/scripts/:name`**, not the
+   unversioned `/scripts` this ADR's prose used. Every other route in the
+   contract carries the `/api/v1` prefix; discovery is not an exception.
+2. **Discovery registers on the run gate, not its own.** Both routes appear
+   only when `M3L_CONSOLE_RUNS_SCRIPTS_DIR` is set — there is nothing to
+   enumerate without a scripts directory, and a second gate would let the two
+   halves of the launch flow disagree about whether a script exists. Absent
+   the variable, the routes are not registered at all and fall through to the
+   router's own `ERR_CONSOLE_NOT_FOUND`, matching how `/api/v1/runs*` behaves.
+3. **`GET /api/v1/scripts/:name` returns `operations` as a top-level field**,
+   the de-duplicated union of every operation any parameter declares
+   (ADR-0055), alongside the per-parameter `operations` the descriptors
+   already carry. The duplication is deliberate: a launch form needs one flat
+   list to build its operation selector, and needs the per-parameter lists to
+   decide which inputs each selection scopes.
+
+One new code joins the envelope vocabulary:
+`ERR_CONSOLE_SCRIPT_INTROSPECTION_FAILED` (500, `origin: "library"`,
+`retryable: false`), raised when a script's config module resolves but will
+not load. Its message names only the script — a filesystem path must never
+reach a response body — and the underlying `M3LError` is chained as `cause`
+for the server's own diagnostics.
+
+A script's parameter descriptors cross this boundary exactly as
+`m3l-common`'s `core/config` seam produces them, secret defaults already
+replaced by the eight-asterisk mask. The route re-derives nothing: masking
+lives at the descriptor source so no consumer can forget it.
+
+Two constraints this ADR did not anticipate, both found by probing the shipped
+implementation rather than by reading it, are now part of the contract:
+
+- **Path confinement is by `realpath`, not by name.** `:name` matching a
+  kebab-case pattern is necessary but not sufficient: a symlink inside the
+  scripts directory follows to wherever it points, and `describe` **imports**
+  what it finds. The resolved script directory must therefore be a direct
+  child of the `realpath`'d scripts root, checked in `runs/resolver.ts` so the
+  X4 launch path inherits the same confinement.
+- **Descriptor freshness requires a cache-busting import specifier.** Node's
+  ESM registry memoizes by resolved URL for the process's lifetime, so keying
+  a descriptor cache on the module's mtime is inert on its own — a guaranteed
+  cache miss still returns the first namespace ever imported. Concretely: an
+  operator who discovers a parameter should have been marked secret, flips
+  `isSecret`, and rebuilds would keep serving the raw value until restart.
+  The import specifier therefore carries the mtime.
+
+Both are stated here because they are contract-level, not implementation
+detail: any future re-implementation of discovery that drops either one
+reintroduces a confirmed defect.
+
+**Semver impact:** none (the console server is unpublished and has no
+`exports` map).
+
 ## Links
 
 - Programme: [ADR-0064](./0064-m3l-console-programme.md). Server:
