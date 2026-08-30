@@ -208,6 +208,11 @@ export const VERIFY_STEPS = [
     cmd: () => "pnpm check:context-budget",
   },
   {
+    ciStepName: "Check harness freshness",
+    id: "check-harness-freshness",
+    cmd: () => "pnpm check:harness-freshness",
+  },
+  {
     ciStepName: "Check tracker coverage",
     id: "check-tracker-coverage",
     cmd: () => "pnpm check:tracker-coverage",

@@ -81,8 +81,14 @@ pre-push:
     # so any refactor that relocates an exported symbol invalidates them — and
     # both were CI-only, so a fully green pre-push was no evidence either way.
     # They cost ~0.15s combined, well inside this lane's slack.
+    #
+    # check:harness-freshness (ADR-0082) joined the same way: it reads one
+    # local file's header comment, makes no network call, and always exits 0
+    # (advisory-only, like check:context-budget above) — negligible cost, and
+    # a warning surfaced here is a warning a maintainer sees before push
+    # rather than never, since nothing else in the repo polls the tracker.
     checks:
-      run: node bin/verify-signed-range.mjs && pnpm check:control-chars && pnpm check:file-budget && pnpm check:agents && pnpm check:script-docs && pnpm check:cli-docs && pnpm check:review-size && pnpm check:context-budget && pnpm check:provenance && pnpm check:index
+      run: node bin/verify-signed-range.mjs && pnpm check:control-chars && pnpm check:file-budget && pnpm check:agents && pnpm check:script-docs && pnpm check:cli-docs && pnpm check:review-size && pnpm check:context-budget && pnpm check:provenance && pnpm check:index && pnpm check:harness-freshness
 
 # Fire after `git rebase` completes (including a no-op rebase with nothing to
 # replay) and after `git merge` completes. Regenerates the derived files the

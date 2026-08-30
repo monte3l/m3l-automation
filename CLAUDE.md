@@ -111,12 +111,11 @@ everything anyway.
 | `pre-push` (lefthook)   | `build`, `check:exports`, `verify-signed-range`, `check:control-chars`       | repo   |
 | `pre-push` (lefthook)   | `check:file-budget`, `check:agents`, `check:script-docs`, `check:provenance` | repo   |
 | `pre-push` (lefthook)   | `check:cli-docs`, `check:review-size`, `check:context-budget`, `check:index` | repo   |
+| `pre-push` (lefthook)   | `check:harness-freshness`                                                    | repo   |
 
 `pnpm verify` reproduces every CI check locally; `pnpm check:verify-parity`
-keeps its step list in sync with `ci.yml`. `pre-push` splits across several
-rows above to stay under the table-width warning (`check:context-budget`);
-`check:cadence` unions them back into one set per stage before comparing
-against `lefthook.yml`.
+keeps it in sync with `ci.yml`. The table splits across rows for width;
+`check:cadence` unions rows per stage against `lefthook.yml`.
 
 ## Compact Instructions
 

@@ -37,10 +37,10 @@ guidance — is different: it's answered by
 place by the
 [`refreshing-anthropic-guidance`](../../.claude/skills/refreshing-anthropic-guidance/SKILL.md)
 skill rather than a new dated file per run. Unlike the topic snapshots below,
-it carries a machine-readable `last-verified` header for a (planned)
-`check:harness-freshness` gate to read and warn on once the harness hasn't
-been swept in a while — see that skill and its tracker for the current
-cadence mechanism.
+it carries a machine-readable `last-verified` header the `check:harness-freshness`
+`pre-push` gate (ADR-0082) reads to warn once the harness hasn't been swept
+in over 90 days — see that skill and its tracker for the current cadence
+mechanism.
 
 ## Index
 

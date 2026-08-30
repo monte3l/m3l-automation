@@ -12,9 +12,9 @@ here rather than listing dated copies. Read
 conventions and the `refreshing-anthropic-guidance` skill for how this file
 is produced and consumed.
 
-This is a stub — no sweep has run yet, hence `last-verified=unset`. A
-follow-up PR adds `check:harness-freshness`, which treats `unset` the same as
-"more than the staleness threshold old": it warns immediately until the first
+This is a stub — no sweep has run yet, hence `last-verified=unset`.
+`check:harness-freshness` (ADR-0082) treats `unset` the same as "more than
+the staleness threshold old": it warns on every `pre-push` until the first
 real sweep sets a real date, rather than a scaffolded-but-empty tracker
 silently reading as fresh. The five facet sections below are seeded empty —
 the first real sweep populates them with recorded claims and replaces both
