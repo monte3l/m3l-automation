@@ -53,10 +53,6 @@ describe("HealthBanner", () => {
     expect(fetchHealthSpy).toHaveBeenCalledTimes(1);
   });
 
-  // [KNOWN BUG] HealthBanner's effect never attaches a .catch() to the
-  // load().then(...) chain, so a rejecting fetchHealth becomes an
-  // unhandled promise rejection and the banner is stuck at "checking"
-  // forever instead of reaching the unreachable state.
   test("renders the unreachable state when fetchHealth rejects", async () => {
     const rejectingFetchHealth = vi.fn(() => Promise.reject(new Error("boom")));
 
