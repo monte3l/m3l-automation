@@ -587,7 +587,7 @@ function buildReopenHandler(writer: SessionRouteWriterPort): M3LConsoleHandler {
   };
 }
 
-/** Builds the `GET /api/v1/sessions/:id/bindings` handler: the bare binding row array, never a 404 (an unknown session simply lists empty, mirroring {@link buildListHandler}). */
+/** Builds the `GET /api/v1/sessions/:id/bindings` handler: the bare binding row array; 404s via the service's `requireSession` guard for an unknown session id. */
 function buildListBindingsHandler(
   reader: SessionRouteReaderPort,
 ): M3LConsoleHandler {

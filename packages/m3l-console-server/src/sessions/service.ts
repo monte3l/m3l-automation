@@ -134,6 +134,10 @@ export interface M3LSessionService {
    *
    * @throws {@link M3LConsoleError} with code `"ERR_CONSOLE_SESSION_NOT_FOUND"`
    *   when `id` names no session.
+   * @throws {@link M3LConsoleError} with code `"ERR_CONSOLE_SESSION_LIMIT_EXCEEDED"`
+   *   when the number of currently open sessions has already reached
+   *   `openSessionsMax` — checked after confirming `id` exists, before the
+   *   reopen write.
    * @returns `true` when this call's own write applied; `false` when the
    *   session was already open.
    */
@@ -244,6 +248,25 @@ function requireSession(
     );
   }
   return session;
+}
+
+/**
+ * Throws `ERR_CONSOLE_SESSION_LIMIT_EXCEEDED` when the number of currently
+ * open sessions has already reached `openSessionsMax` — shared by
+ * `createSession` (before the new row is inserted) and `reopenSession`
+ * (after the target is confirmed to exist, before its status write) so both
+ * open-session-count-increasing paths enforce the identical cap.
+ */
+function requireOpenSessionCapacity(
+  sessionsRepository: M3LConsoleSessionsRepository,
+  openSessionsMax: number,
+): void {
+  if (sessionsRepository.countOpenSessions() >= openSessionsMax) {
+    throw new M3LConsoleError(
+      "ERR_CONSOLE_SESSION_LIMIT_EXCEEDED",
+      `the open-session limit of ${String(openSessionsMax)} has been reached`,
+    );
+  }
 }
 
 /** The 1-based ordinal the next inserted step should take: one past the highest existing ordinal, or 1 for an empty session. */
@@ -469,12 +492,7 @@ function buildSessionLifecycleMethods(
 
   return {
     createSession(operator: string, correlationId: string): M3LSessionRecord {
-      if (sessionsRepository.countOpenSessions() >= openSessionsMax) {
-        throw new M3LConsoleError(
-          "ERR_CONSOLE_SESSION_LIMIT_EXCEEDED",
-          `the open-session limit of ${String(openSessionsMax)} has been reached`,
-        );
-      }
+      requireOpenSessionCapacity(sessionsRepository, openSessionsMax);
       const id = newId();
       sessionsRepository.insertSession({
         id,
@@ -496,6 +514,7 @@ function buildSessionLifecycleMethods(
     },
     reopenSession(id: string): boolean {
       requireSession(sessionsRepository, id);
+      requireOpenSessionCapacity(sessionsRepository, openSessionsMax);
       return sessionsRepository.reopenSession(id, nowMs());
     },
     addStep(

@@ -643,6 +643,33 @@ describe("M3LSessionService — reopenSession()", () => {
       "ERR_CONSOLE_SESSION_NOT_FOUND",
     );
   });
+
+  // Conformance gap (issue #554 follow-up): reopening a previously-closed
+  // session also increases the open-session count, exactly like
+  // `createSession` does — so it must be gated by the same
+  // `openSessionsMax` cap. Mirrors the `createSession()` fixture/assertion
+  // style above (`openSessionsMax: 0`/at-cap harness, `.code` check, and a
+  // "never wrote" log assertion) rather than inventing a new one.
+  test("throws ERR_CONSOLE_SESSION_LIMIT_EXCEEDED before ever reopening, when countOpenSessions >= openSessionsMax", () => {
+    const { service, log } = buildHarness({ openSessionsMax: 1 });
+    const toReopen = service.createSession("alice", "corr-1");
+    service.closeSession(toReopen.id);
+    // Fills the single open-session slot back up, so the cap is hit again
+    // by the time `reopenSession` is attempted below.
+    service.createSession("bob", "corr-2");
+
+    const logLengthBeforeReopen = log.length;
+    const thrown = captureFailure(() => service.reopenSession(toReopen.id));
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).code).toBe(
+      "ERR_CONSOLE_SESSION_LIMIT_EXCEEDED",
+    );
+    expect(log.slice(logLengthBeforeReopen)).not.toContain(
+      `reopenSession:${toReopen.id}`,
+    );
+    expect(service.getSession(toReopen.id)?.status).toBe("closed");
+  });
 });
 
 // ---------------------------------------------------------------------------
