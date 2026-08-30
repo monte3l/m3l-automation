@@ -181,13 +181,13 @@ export function validateAgentDecisionLogOptions(
  * header.
  */
 const AGENT_DECISION_LOG_ERRORS: AppendOnlyWriterErrors = {
-  oversize(lineBytes: number, maxLineBytes: number): Error {
+  oversize(lineBytes: number, maxLineBytes: number): M3LError {
     return new M3LAgentDecisionLogWriteError(
       "agent decision log: serialized entry exceeds the maximum line size",
       { context: { lineBytes, maxLineBytes } },
     );
   },
-  appendFailed(cause: unknown): Error {
+  appendFailed(cause: unknown): M3LError {
     // No `context`: everything worth naming here is the directory path,
     // which is caller input. The chained `cause` is Node's own error and
     // carries the operational detail — see this module's header.

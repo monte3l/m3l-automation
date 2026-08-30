@@ -21,7 +21,7 @@
  * error raised here is a **chained filesystem `cause`** — Node's own
  * `ENOENT`/`EACCES`/`ELOOP` errors quote the path they failed on. That cause
  * is deliberately kept: it is the only diagnostic an operator has for a
- * broken log directory, it is Node's error rather than one composed here, and
+ * broken stream directory, it is Node's error rather than one composed here, and
  * it is reached only by code that walks `error.cause` explicitly.
  *
  * Two limitations are accepted rather than fixed, in the same register as the
@@ -39,10 +39,17 @@
  *   in the future, making `maxSegmentAgeMs` unreachable for it. The size
  *   ceiling and the UTC-date rollover both still bound that segment, so it
  *   cannot grow without limit or outlive its day.
+ * - an append resolves once the write has reached the operating system's page
+ *   cache, not once it has reached the platter: nothing here calls `fsync`.
+ *   A machine that loses power immediately after a resolved append can come
+ *   back up without that line. An owner that needs crash durability has to
+ *   flush at its own artifact boundary; per-append `fsync` is deliberately
+ *   not paid on a path a shipped consumer already writes on every decision.
  */
 
 import { constants } from "node:fs";
-import { appendFile } from "node:fs/promises";
+import type { FileHandle } from "node:fs/promises";
+import { appendFile, open } from "node:fs/promises";
 
 import { M3LError } from "../../core/errors/index.js";
 import type { ActiveSegment } from "./append-only-segments.js";
@@ -65,18 +72,46 @@ const O_NOFOLLOW: number | undefined = constants.O_NOFOLLOW;
  * append, create, write-only — plus `O_NOFOLLOW`, so a segment path that has
  * been replaced by a symlink is **refused** rather than followed.
  *
- * Without it, anyone who can create a file in the log directory can redirect
- * (or silently sink) the audit trail by planting the next segment name as a
- * symlink — the append would resolve it and write outside the directory. With
- * it, `open` fails `ELOOP` and the write is reported as the loud failure it
- * is. On a platform without the flag (Windows) the value falls back to the
- * plain `"a"` trio and this defence simply does not apply.
+ * Without it, anyone who can create a file in the stream directory can
+ * redirect (or silently sink) the audit trail by planting the next segment
+ * name as a symlink — the append would resolve it and write outside the
+ * directory. With it, `open` fails `ELOOP` and the write is reported as the
+ * loud failure it is. On a platform without the flag (Windows) the value
+ * falls back to the plain `"a"` trio and this defence simply does not apply.
+ *
+ * `O_NOFOLLOW` covers a **symlink** at the final path component and nothing
+ * else; a **hardlink** is a second directory entry for one inode, so `open`
+ * succeeds and the flag never fires. That half is closed separately, by the
+ * `nlink` check in {@link AppendOnlyWriter.append}.
  */
 const APPEND_FLAGS: number =
   constants.O_APPEND |
   constants.O_CREAT |
   constants.O_WRONLY |
   (O_NOFOLLOW ?? 0);
+
+/**
+ * The permission mode a segment file is **created** with: owner read/write
+ * only, matching the mode this repo already applies to a console session's
+ * artifacts (`m3l-console-server/src/sessions/artifacts.ts`) for the same
+ * class of data.
+ *
+ * The mode is applied by `open` on creation only, and the process umask can
+ * only **remove** bits from it — never add one. A segment that already exists
+ * keeps whatever mode it was created with, and a directory a caller has
+ * loosened by hand is not tightened back here.
+ */
+const SEGMENT_FILE_MODE = 0o600;
+
+/**
+ * The number of directory entries a segment this writer owns may have.
+ *
+ * Exactly one. A freshly created segment has one name; a segment adopted on a
+ * cold start was created by this same writer and has one too. More than one
+ * means somebody else has linked the inode into a second place, which is the
+ * hardlink variant of the redirection `O_NOFOLLOW` refuses for symlinks.
+ */
+const SEGMENT_EXPECTED_LINK_COUNT = 1;
 
 /**
  * How a writer turns one entry into the JSON text of its line.
@@ -96,12 +131,17 @@ export type AppendOnlyRenderEntry<TEntry> = (entry: TEntry) => string;
  * surface documents, so this module never has to name a domain it does not
  * know. Neither may carry a value read out of the caller's input; the byte
  * counts and the chained `cause` handed in here are all the detail there is.
+ *
+ * Both return an {@link M3LError}, not a bare `Error`: this writer's own
+ * recovery path keys on `instanceof M3LError` to re-throw an already-typed
+ * failure unchanged, so an owner satisfying the port with a plain `Error`
+ * would silently fall out of it and have its error wrapped a second time.
  */
 export interface AppendOnlyWriterErrors {
   /** The rendered line is larger than one atomic write may carry. */
-  oversize(lineBytes: number, maxLineBytes: number): Error;
-  /** The append itself failed (ELOOP, EACCES, ENOSPC, ...). */
-  appendFailed(cause: unknown): Error;
+  oversize(lineBytes: number, maxLineBytes: number): M3LError;
+  /** The append itself failed (ELOOP, EACCES, ENOSPC, a planted link, ...). */
+  appendFailed(cause: unknown): M3LError;
 }
 
 /** The fully resolved settings one {@link AppendOnlyWriter} runs under. */
@@ -121,9 +161,29 @@ export interface AppendOnlyWriterOptions<TEntry> {
 }
 
 /**
+ * The `cause` chained under the owner's `appendFailed(...)` when a segment
+ * path turns out to carry more than one directory entry.
+ *
+ * The kernel reports no failure for this — `open` on a hardlink succeeds —
+ * so there is no Node error to chain and one has to be composed. It is a
+ * plain `Error` rather than an {@link M3LError} on purpose: it occupies
+ * exactly the slot Node's own `ELOOP`/`EACCES` errors occupy on this path, it
+ * is never thrown (what is thrown is always the owner's typed error), and
+ * minting a library error code here would put a domain this module does not
+ * own into the shared catalog. It names the link count and nothing else —
+ * never the segment path, which is caller input.
+ */
+function plantedLinkCause(linkCount: number): Error {
+  return new Error(
+    `append-only writer: segment has ${String(linkCount)} directory entries, ` +
+      `expected ${String(SEGMENT_EXPECTED_LINK_COUNT)}`,
+  );
+}
+
+/**
  * The append-only segmented writer's guts: the byte/age/date rotation
- * decision and one `appendFile` call per entry, over the stateless segment
- * layer in `./append-only-segments.js`.
+ * decision and one guarded `open`-`fstat`-`write`-`close` per entry, over the
+ * stateless segment layer in `./append-only-segments.js`.
  *
  * No index file is kept and no state is carried across processes — a fresh
  * instance always re-derives the active segment from a directory listing
@@ -172,10 +232,13 @@ export class AppendOnlyWriter<TEntry> {
    *   entry it refuses — a caller-side violation, raised before any
    *   filesystem call.
    * @throws The owner's `errors.oversize(...)` when the rendered line exceeds
-   *   `maxLineBytes` — well-formed, but larger than this writer can durably
-   *   append in one atomic write — or its `errors.appendFailed(...)` when the
-   *   append itself fails for any reason, including a segment path that has
-   *   been replaced by a symlink.
+   *   `maxLineBytes` — well-formed, but larger than this writer can append in
+   *   one atomic write — or its `errors.appendFailed(...)` when the append
+   *   itself fails for any reason, including a segment path that has been
+   *   replaced by a symlink or hardlinked into a second directory entry.
+   *
+   * @remarks Resolving means the line has reached the operating system's page
+   *   cache, not the platter — see this module's header on `fsync`.
    */
   async write(entry: TEntry): Promise<void> {
     const line = this.renderLine(entry);
@@ -192,6 +255,49 @@ export class AppendOnlyWriter<TEntry> {
   }
 
   /**
+   * Refuses an entry that cannot possibly fit, **before** the owner's
+   * renderer projects and serializes it.
+   *
+   * The ceiling in {@link AppendOnlyWriter.renderLine} is exact but is only
+   * reached after a full walk of the caller's graph and a `JSON.stringify`
+   * of it — up to a second of synchronous, event-loop-blocking work to refuse
+   * one entry, and past the engine's maximum string length a raw
+   * `RangeError` escapes outside the owner's documented vocabulary. One own
+   * string value longer than `maxLineBytes` is enough to know the line cannot
+   * fit: a UTF-8 encoding is never shorter than the string's UTF-16 length
+   * (ASCII is one byte per unit, everything else more), so the comparison
+   * needs no encoding pass at all.
+   *
+   * Only own **data** properties at the top level are read. An accessor is
+   * left uninvoked on purpose — the projection in the owner's renderer is
+   * where the caller's graph is read, and reading it twice would run a
+   * getter's side effects twice. The check is therefore an early-out, never
+   * the ceiling itself: everything it does not catch is caught exactly by
+   * `renderLine`.
+   *
+   * The byte count handed to `errors.oversize` is the offending value's own
+   * encoded size — a strict lower bound on the line it would have produced,
+   * which also carries that value's JSON escaping, its key, and every sibling
+   * field. Reporting the exact figure would need the serialization this check
+   * exists to avoid, and it is already over the ceiling either way.
+   */
+  private rejectObviouslyOversize(entry: TEntry): void {
+    if (typeof entry !== "object" || entry === null) {
+      return;
+    }
+    for (const key of Object.keys(entry)) {
+      const descriptor = Object.getOwnPropertyDescriptor(entry, key);
+      const value: unknown = descriptor?.value;
+      if (typeof value === "string" && value.length > this.maxLineBytes) {
+        throw this.errors.oversize(
+          Buffer.byteLength(value, "utf8"),
+          this.maxLineBytes,
+        );
+      }
+    }
+  }
+
+  /**
    * Renders the exact line the filesystem will receive and proves it fits in
    * one atomic write.
    *
@@ -202,6 +308,7 @@ export class AppendOnlyWriter<TEntry> {
    * write is not a filesystem failure and must not be reported as one.
    */
   private renderLine(entry: TEntry): string {
+    this.rejectObviouslyOversize(entry);
     const line = `${this.renderEntry(entry)}\n`;
     const lineBytes = Buffer.byteLength(line, "utf8");
     if (lineBytes > this.maxLineBytes) {
@@ -210,13 +317,47 @@ export class AppendOnlyWriter<TEntry> {
     return line;
   }
 
-  /** Resolves the target segment, rotating if needed, and appends `line`. */
+  /**
+   * Resolves the target segment, rotating if needed, proves the file the
+   * write will land in is one this writer owns, and appends `line` to it.
+   *
+   * The whole lifecycle — `open`, `fstat`, `write`, `close` — sits under one
+   * guard, so a failure at any step is reported in the owner's vocabulary
+   * rather than leaking a raw Node error from the middle of it.
+   *
+   * The `nlink` check is what closes the hardlink half of segment
+   * redirection. `O_NOFOLLOW` refuses a **symlink** at the final path
+   * component, but a **hardlink** is simply a second name for one inode:
+   * `open` succeeds, `stat` reports the target's real size, and the record
+   * lands in a file somebody else owns with no error and no signal. Checking
+   * that the file has exactly one directory entry refuses that.
+   *
+   * It is deliberately `fstat` on the handle the write then goes through,
+   * never a path-based `stat`: a path check would prove something about
+   * whatever the name resolved to at check time and leave a window for it to
+   * be re-pointed before the write. There is no such window for a file
+   * descriptor — it names the inode itself.
+   *
+   * What the check buys is narrow and worth stating: it refuses an **already
+   * planted** link at a segment path. It cannot stop somebody hardlinking a
+   * segment this writer has already created and is holding open, and it
+   * cannot see a link created between two appends to the same cached segment
+   * (each append opens afresh, so that one is caught on the next write, not
+   * mid-write).
+   */
   private async append(line: string): Promise<void> {
+    let handle: FileHandle | undefined;
     try {
       const current = await this.resolveActiveSegment();
       const segment = this.shouldRotate(current)
         ? await nextSegment(this.directory, current)
         : current;
+
+      handle = await open(segment.path, APPEND_FLAGS, SEGMENT_FILE_MODE);
+      const stats = await handle.stat();
+      if (stats.nlink !== SEGMENT_EXPECTED_LINK_COUNT) {
+        throw this.errors.appendFailed(plantedLinkCause(stats.nlink));
+      }
 
       // O_APPEND: seeking to the end and writing are one atomic step from
       // the kernel's point of view on a local filesystem, so two writers
@@ -224,22 +365,25 @@ export class AppendOnlyWriter<TEntry> {
       // not hold across NFS, and does not cover a write() larger than the
       // pipe/write buffer — which is exactly why `renderLine`'s ceiling
       // check runs before any of this.
-      await appendFile(segment.path, line, {
-        encoding: "utf8",
-        flag: APPEND_FLAGS,
-      });
+      //
+      // `appendFile` is handed the HANDLE, not the path: the bytes must go
+      // through the very descriptor `nlink` was proven on, or the proof is a
+      // check-then-open race against whatever the name resolves to next.
+      await appendFile(handle, line, { encoding: "utf8" });
       segment.size += Buffer.byteLength(line, "utf8");
       this.active = segment;
     } catch (cause) {
       // Drop the cached segment. `this.active` is assigned before an append
       // is known to have succeeded, and `mkdir` runs only on the
       // `this.active === undefined` branch of `resolveActiveSegment` — so a
-      // log directory removed under a long-lived writer would wedge every
+      // stream directory removed under a long-lived writer would wedge every
       // later write on this instance for the rest of the process, while a
       // freshly constructed writer recreated it and carried on. Clearing it
       // makes the next write cold-start: mkdir, then re-discover.
       this.active = undefined;
-      // Already typed — re-throw unchanged rather than double-wrapping.
+      // Already typed — re-throw unchanged rather than double-wrapping. The
+      // planted-link refusal above arrives here already built by the owner's
+      // port, and takes this branch.
       if (cause instanceof M3LError) {
         throw cause;
       }
@@ -248,6 +392,15 @@ export class AppendOnlyWriter<TEntry> {
       // chained `cause` is Node's own error and carries the operational
       // detail — see this module's header.
       throw this.errors.appendFailed(cause);
+    } finally {
+      // Best-effort: a failing close must not replace the real outcome above
+      // — on the success path the bytes are already handed to the kernel, and
+      // on the failure path the caller needs the original cause, not EBADF.
+      try {
+        await handle?.close();
+      } catch {
+        /* ignore — the append outcome above is what matters */
+      }
     }
   }
 

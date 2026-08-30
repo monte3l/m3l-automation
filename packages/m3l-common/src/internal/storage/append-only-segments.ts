@@ -37,6 +37,22 @@ const SEGMENT_NAME_PATTERN = /^(\d{4}-\d{2}-\d{2})-(\d{4,})\.jsonl$/;
 /** The length of the `YYYY-MM-DD` date prefix within an ISO-8601 timestamp. */
 const DATE_PREFIX_LENGTH = 10;
 
+/**
+ * The permission mode the stream directory is **created** with: owner-only
+ * read/write/traverse, matching the mode this repo already applies to a
+ * console session's artifact directory
+ * (`m3l-console-server/src/sessions/artifacts.ts`) for the same class of
+ * data.
+ *
+ * An audit trail left group- or world-readable under a default umask is a
+ * disclosure on its own, and it widens the planted-link problem the writer
+ * guards: anyone who can create a file in the directory can plant the next
+ * segment name. The process umask can only **remove** bits from a mode passed
+ * explicitly, never add one, so a stricter umask still wins; a directory that
+ * already exists keeps the mode it was created with.
+ */
+const DIRECTORY_MODE = 0o700;
+
 /** The zero-padded width of a segment's sequence number in its file name. */
 const SEQUENCE_WIDTH = 4;
 
@@ -106,7 +122,7 @@ function isFileNotFound(cause: unknown): boolean {
 
 /**
  * Builds a fresh, empty in-memory segment record. The file itself is created
- * by the first `appendFile` call against it.
+ * by the writer's first `open` against it.
  */
 function newSegment(
   directory: string,
@@ -173,8 +189,8 @@ export function currentDatePrefix(): string {
 }
 
 /**
- * Creates `directory` if needed and derives the active segment from what is
- * already in it: today's highest-sequence segment, adopted with its real size
+ * Creates `directory` if needed — owner-only, see {@link DIRECTORY_MODE} —
+ * and derives the active segment from what is already in it: today's highest-sequence segment, adopted with its real size
  * and age, or a fresh sequence-1 record when the directory holds none.
  *
  * Only names this writer would itself have produced, carrying today's date
@@ -184,7 +200,7 @@ export function currentDatePrefix(): string {
 export async function discoverActiveSegment(
   directory: string,
 ): Promise<ActiveSegment> {
-  await mkdir(directory, { recursive: true });
+  await mkdir(directory, { recursive: true, mode: DIRECTORY_MODE });
   const datePrefix = currentDatePrefix();
   const names = await readdir(directory);
 

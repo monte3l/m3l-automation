@@ -63,37 +63,37 @@
         {
           "file": "packages/m3l-common/src/core/storage/M3LAppendOnlyStream.ts",
           "symbol": "M3LAppendOnlyStream",
-          "blob": "c956d71225f7680b74730631070faed44f87e5d7"
+          "blob": "f83a036a75d838c3d8f56d0794d36943af9729d0"
         },
         {
           "file": "packages/m3l-common/src/core/storage/M3LAppendOnlyStream.ts",
           "symbol": "M3LAppendOnlyStreamOptions",
-          "blob": "c956d71225f7680b74730631070faed44f87e5d7"
+          "blob": "f83a036a75d838c3d8f56d0794d36943af9729d0"
         },
         {
           "file": "packages/m3l-common/src/core/storage/M3LAppendOnlyStream.ts",
           "symbol": "M3LAppendOnlyEntry",
-          "blob": "c956d71225f7680b74730631070faed44f87e5d7"
+          "blob": "f83a036a75d838c3d8f56d0794d36943af9729d0"
         },
         {
           "file": "packages/m3l-common/src/core/storage/M3LAppendOnlyStream.ts",
           "symbol": "M3LAppendOnlyValue",
-          "blob": "c956d71225f7680b74730631070faed44f87e5d7"
+          "blob": "f83a036a75d838c3d8f56d0794d36943af9729d0"
         },
         {
           "file": "packages/m3l-common/src/core/storage/M3LAppendOnlyStream.ts",
           "symbol": "M3L_APPEND_ONLY_MAX_SEGMENT_BYTES",
-          "blob": "c956d71225f7680b74730631070faed44f87e5d7"
+          "blob": "f83a036a75d838c3d8f56d0794d36943af9729d0"
         },
         {
           "file": "packages/m3l-common/src/core/storage/M3LAppendOnlyStream.ts",
           "symbol": "M3L_APPEND_ONLY_MAX_SEGMENT_AGE_MS",
-          "blob": "c956d71225f7680b74730631070faed44f87e5d7"
+          "blob": "f83a036a75d838c3d8f56d0794d36943af9729d0"
         },
         {
           "file": "packages/m3l-common/src/core/storage/M3LAppendOnlyStream.ts",
           "symbol": "M3L_APPEND_ONLY_MAX_LINE_BYTES",
-          "blob": "c956d71225f7680b74730631070faed44f87e5d7"
+          "blob": "f83a036a75d838c3d8f56d0794d36943af9729d0"
         },
         {
           "file": "packages/m3l-common/src/core/storage/M3LAppendOnlyStreamError.ts",
@@ -129,7 +129,7 @@
         {
           "file": "packages/m3l-common/src/core/storage/M3LAppendOnlyStream.ts",
           "symbol": "M3LAppendOnlyStream",
-          "blob": "c956d71225f7680b74730631070faed44f87e5d7"
+          "blob": "f83a036a75d838c3d8f56d0794d36943af9729d0"
         },
         {
           "file": "packages/m3l-common/src/core/storage/M3LAppendOnlyStreamError.ts",

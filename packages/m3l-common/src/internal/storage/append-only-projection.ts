@@ -140,17 +140,40 @@ function projectObject(
 }
 
 /**
+ * Proves one number is a value JSON carries back out unchanged.
+ *
+ * Two are not. A non-finite number (`NaN`, either infinity) serializes as
+ * `null`. And `-0` — which `Number.isFinite` reports as finite — survives
+ * `JSON.stringify` as `0`, so `JSON.parse(JSON.stringify({ a: -0 })).a` is
+ * `+0` and the persisted line disagrees with the entry the caller handed
+ * over. That is the one thing this module exists to prevent; normalising it
+ * silently would be the same defect wearing a friendlier face.
+ */
+function projectNumber(
+  value: number,
+  failure: AppendOnlyProjectionFailure,
+): number {
+  if (!Number.isFinite(value)) {
+    throw failure("entry", "non-finite-number");
+  }
+  if (Object.is(value, -0)) {
+    throw failure("entry", "negative-zero");
+  }
+  return value;
+}
+
+/**
  * Projects one value of any depth, accepting only what JSON can carry back
- * out unchanged: `null`, a **finite** number, a string, a boolean, an array,
- * or a plain object.
+ * out unchanged: `null`, a **finite, non-negative-zero** number, a string, a
+ * boolean, an array, or a plain object.
  *
  * Everything else is a caller-side violation rather than something to coerce.
  * `undefined`, a function and a symbol all vanish under `JSON.stringify` (or
- * become `null` inside an array); a non-finite number becomes `null`; a
- * `bigint` throws from the serializer; and a class instance would serialize
- * through whatever `toJSON` it carries. Each would make the persisted line
- * disagree with the entry the caller handed over, which for an audit stream
- * is a defect, not a convenience.
+ * become `null` inside an array); a non-finite number becomes `null`; `-0`
+ * round-trips as `+0`; a `bigint` throws from the serializer; and a class
+ * instance would serialize through whatever `toJSON` it carries. Each would
+ * make the persisted line disagree with the entry the caller handed over,
+ * which for an audit stream is a defect, not a convenience.
  *
  * @param value - The value to prove and rebuild.
  * @param depth - The depth of the node this value sits in.
@@ -168,10 +191,7 @@ function projectValue(
     return value;
   }
   if (typeof value === "number") {
-    if (!Number.isFinite(value)) {
-      throw failure("entry", "non-finite-number");
-    }
-    return value;
+    return projectNumber(value, failure);
   }
   if (typeof value !== "object") {
     // `undefined`, a `bigint`, a function and a symbol all land here.

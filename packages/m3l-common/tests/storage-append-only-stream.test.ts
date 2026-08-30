@@ -1,12 +1,13 @@
 /**
- * Tests for `core/storage`'s public append-only segmented JSONL stream
- * (X7 slice 2, RED phase — `M3LAppendOnlyStream` does not exist yet; the
- * equivalent machinery currently lives private to `core/agent`).
+ * Tests for `core/storage`'s public append-only segmented JSONL stream:
+ * `M3LAppendOnlyStream` (X7 slice 2) — the primitive that persists one JSON
+ * object per line, appends it atomically, and rotates segments by size, by
+ * age and by UTC date without ever rewriting one in place.
  *
- * Contract source: the X7 slice 2 contract § "Part B — the public Core
- * surface", step 6, plus the behaviours the sibling
- * `agent-decision-log-writer.test.ts` already pins for the private writer
- * this primitive is extracted from.
+ * Contract source: the class's own TSDoc plus the X7 slice 2 contract
+ * § "Part B — the public Core surface", and the behaviours the sibling
+ * `agent-decision-log-writer.test.ts` pins for the private writer this
+ * primitive shares with `core/agent`'s decision log.
  *
  * Exports under test (all reached through the `core/storage` barrel):
  * `M3LAppendOnlyStream` (class), `M3LAppendOnlyStreamError`
@@ -22,15 +23,17 @@
  * concurrency. A mocked filesystem would assert the mock, not the guarantee.
  * Each test gets its own `mkdtemp` directory, removed in `afterEach`.
  *
- * ASSUMPTIONS FLAGGED FOR THE IMPLEMENTER (derived from the extraction
- * source, not invented here):
- *   - segment file names are `<YYYY-MM-DD>-<NNNN>.jsonl`, the date being the
- *     UTC date, the sequence zero-padded to four digits;
- *   - rotation is evaluated against the ACTIVE segment's CURRENT size, not
- *     against `size + the incoming line` (a segment may therefore end one
- *     line beyond the ceiling) — this is the behaviour
- *     `agent-decision-log-writer.test.ts` § "rotation by bytes" already pins;
- *   - the ceilings reuse the agent decision log's own default numbers.
+ * Two naming/rotation conventions the assertions below predict rather than
+ * read back: segment file names are `<YYYY-MM-DD>-<NNNN>.jsonl` (UTC date,
+ * sequence zero-padded to four digits), and rotation is evaluated against the
+ * ACTIVE segment's CURRENT size, not against `size + the incoming line` — so
+ * a segment may end one line beyond its byte ceiling, the same behaviour
+ * `agent-decision-log-writer.test.ts` § "rotation by bytes" pins.
+ *
+ * The filesystem-HARDENING behaviours raised by the slice 2 security review
+ * — hardlink refusal, restrictive creation modes, and the oversize
+ * pre-check — live in `storage-append-only-hardening.test.ts`, split out of
+ * this file only to keep it inside the repository's per-file byte budget.
  *
  * @packageDocumentation
  */
@@ -59,6 +62,11 @@ import {
   vi,
 } from "vitest";
 
+import {
+  M3L_AGENT_LOG_MAX_SEGMENT_AGE_MS,
+  M3L_AGENT_LOG_MAX_SEGMENT_BYTES,
+  M3L_AGENT_MAX_LOG_ENTRY_BYTES,
+} from "../src/core/agent/index.js";
 import { M3LError } from "../src/core/errors/index.js";
 import {
   M3L_APPEND_ONLY_MAX_LINE_BYTES,
@@ -316,6 +324,35 @@ describe("type contracts", () => {
     expectTypeOf<Date>().not.toExtend<M3LAppendOnlyValue>();
   });
 
+  test("an entry literal rejects, at compile time, every value JSON cannot carry back out unchanged", () => {
+    // The `expectTypeOf(...).not.toExtend` assertions above state the closure
+    // in the type system's own vocabulary; these pin it where a CALLER meets
+    // it — an object literal annotated as an entry. Each `@ts-expect-error`
+    // turns into a typecheck FAILURE the moment the type widens to admit
+    // that value, which is what makes the class's headline TSDoc claim ("a
+    // `Date`, a `Map`, an `Error` are all excluded") falsifiable rather than
+    // prose. The runtime half of each rejection is pinned separately, in
+    // "entry projection rejects values it cannot faithfully persist".
+    const rejected: M3LAppendOnlyEntry[] = [
+      // @ts-expect-error a Date persists through its toJSON, not as itself
+      { at: new Date(FIXED_CLOCK) },
+      // @ts-expect-error a Map serializes as {} — every entry is dropped
+      { index: new Map<string, string>() },
+      // @ts-expect-error a Set serializes as {} — every member is dropped
+      { tags: new Set<string>() },
+      // @ts-expect-error an Error serializes as {} — message and stack are lost
+      { failure: new Error("boom") },
+      // @ts-expect-error a bigint makes JSON.stringify throw
+      { count: 1n },
+      // @ts-expect-error a function value is dropped without a trace
+      { render: () => "x" },
+      // @ts-expect-error undefined is dropped without a trace
+      { missing: undefined },
+    ];
+
+    expect(rejected).toHaveLength(7);
+  });
+
   test("the options bag requires a directory and makes every ceiling optional", () => {
     expectTypeOf<M3LAppendOnlyStreamOptions>().toMatchObjectType<{
       readonly directory: string;
@@ -378,6 +415,28 @@ describe("documented ceilings", () => {
 
   test("the line ceiling is 64 KiB, matching the agent decision log's entry ceiling", () => {
     expect(M3L_APPEND_ONLY_MAX_LINE_BYTES).toBe(65_536);
+  });
+
+  // Each constant's TSDoc claims it is "the same number `core/agent`'s
+  // decision log uses", but the two are independent literals: the pins above
+  // hold each VALUE, and would stay green while one side moved and the prose
+  // silently became wrong. These three pin the claimed RELATIONSHIP instead,
+  // so a change to either side fails here rather than in a reader's
+  // expectations about how the library's two append-only artifacts rotate.
+  test("the segment byte ceiling is the agent decision log's segment byte ceiling", () => {
+    expect(M3L_APPEND_ONLY_MAX_SEGMENT_BYTES).toBe(
+      M3L_AGENT_LOG_MAX_SEGMENT_BYTES,
+    );
+  });
+
+  test("the segment age ceiling is the agent decision log's segment age ceiling", () => {
+    expect(M3L_APPEND_ONLY_MAX_SEGMENT_AGE_MS).toBe(
+      M3L_AGENT_LOG_MAX_SEGMENT_AGE_MS,
+    );
+  });
+
+  test("the line ceiling is the agent decision log's per-entry ceiling", () => {
+    expect(M3L_APPEND_ONLY_MAX_LINE_BYTES).toBe(M3L_AGENT_MAX_LOG_ENTRY_BYTES);
   });
 });
 
@@ -1084,6 +1143,38 @@ describe("constructor validation", () => {
     );
   });
 
+  // `maxLineBytes` is the one ceiling bounded ABOVE as well as below: it is
+  // what lets a whole line ride a single `write()`, so raising it past the
+  // documented maximum would void the atomic-whole-line guarantee rather than
+  // relax a caller's own budget. Both sides of the bound are pinned — a
+  // reject-only test would pass against an off-by-one that also refused the
+  // legal maximum.
+  test.each([
+    { label: "double the documented maximum", value: 131_072 },
+    {
+      label: "one byte above the documented maximum",
+      value: M3L_APPEND_ONLY_MAX_LINE_BYTES + 1,
+    },
+  ])("rejects $label as maxLineBytes", ({ value }) => {
+    expectInvalidArgument(
+      catchThrown(() =>
+        construct({
+          directory: path.join(workDir, "audit"),
+          maxLineBytes: value,
+        }),
+      ),
+    );
+  });
+
+  test("accepts exactly the documented maximum as maxLineBytes", () => {
+    const dir = path.join(workDir, "audit");
+    const stream = new M3LAppendOnlyStream({
+      directory: dir,
+      maxLineBytes: M3L_APPEND_ONLY_MAX_LINE_BYTES,
+    });
+    expect(stream.directory).toBe(dir);
+  });
+
   test("accepts a directory plus every ceiling and exposes the directory", () => {
     const dir = path.join(workDir, "audit");
     const stream = new M3LAppendOnlyStream({
@@ -1133,6 +1224,13 @@ describe("entry projection rejects values it cannot faithfully persist", () => {
       label: "-Infinity",
       build: () => ({ count: Number.NEGATIVE_INFINITY }),
     },
+    // `Number.isFinite(-0)` is true, so the projection lets it through, but
+    // `JSON.parse(JSON.stringify({ a: -0 })).a` is `+0`: the persisted line
+    // would disagree with the entry the caller handed over — the one thing
+    // the closed value type exists to prevent. Rejected in the same terms as
+    // `NaN` and the infinities rather than silently normalised.
+    { label: "-0", build: () => ({ count: -0 }) },
+    { label: "-0 nested inside an array", build: () => ({ counts: [1, -0] }) },
     { label: "a bigint", build: () => ({ count: 10n }) },
     { label: "a function", build: () => ({ render: () => "x" }) },
     { label: "a symbol", build: () => ({ marker: Symbol("marker") }) },
@@ -1198,5 +1296,82 @@ describe("entry projection rejects values it cannot faithfully persist", () => {
     expect(JSON.parse(definedOrThrow(lines[0], "the only line"))).toEqual(
       entry,
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Interface-typed entries — the shape a real consumer actually declares
+// ---------------------------------------------------------------------------
+
+/**
+ * An entry declared the way a consumer declares one: an `interface`, not an
+ * inline object literal type. X7 slice 3's `M3LHumanActionRecord` is exactly
+ * this shape, and it is the reason the parameter type has to accept one.
+ */
+interface HumanActionRecordShape {
+  readonly at: string;
+  readonly event: string;
+  readonly actorId: string;
+  readonly approved: boolean;
+  readonly tags: readonly string[];
+}
+
+/** The same shape, carrying one field the value type must keep out. */
+interface RecordCarryingADate {
+  readonly at: Date;
+  readonly event: string;
+}
+
+describe("interface-typed entries", () => {
+  test("appends an interface-typed entry with no cast at the call site", async () => {
+    // An interface carries no implicit index signature, so a parameter typed
+    // `M3LAppendOnlyEntry` refuses one outright: "Index signature for type
+    // 'string' is missing in type 'HumanActionRecordShape'". A consumer's
+    // only way through is `as unknown as M3LAppendOnlyEntry` — a cast that
+    // discards exactly the closure the parameter type exists to provide, on
+    // every call site that accretes it. The absence of a cast below IS the
+    // assertion; the round trip is here so the test also proves the entry
+    // reaches the segment intact.
+    const dir = path.join(workDir, "audit");
+    const stream = new M3LAppendOnlyStream({ directory: dir });
+    const record: HumanActionRecordShape = {
+      at: "2026-06-15T12:00:00.000Z",
+      event: "approval.granted",
+      actorId: "u-1",
+      approved: true,
+      tags: ["console", "human"],
+    };
+
+    await stream.append(record);
+
+    const segments = await listSegments(dir);
+    const lines = await readLines(
+      path.join(dir, definedOrThrow(segments[0], "the only segment")),
+    );
+    expect(lines).toHaveLength(1);
+    expect(JSON.parse(definedOrThrow(lines[0], "the only line"))).toEqual(
+      record,
+    );
+  });
+
+  test("still refuses an interface carrying a field JSON cannot carry back out", async () => {
+    // The companion to the test above: accepting interfaces must not be
+    // bought by opening the value closure. A `Date` field has to stay a
+    // compile-time error — and a runtime rejection, for a caller who reaches
+    // the method through `any`.
+    const dir = path.join(workDir, "audit");
+    const stream = new M3LAppendOnlyStream({ directory: dir });
+    const record: RecordCarryingADate = {
+      at: new Date(FIXED_CLOCK),
+      event: "approval.granted",
+    };
+
+    const thrown = await catchRejected(() =>
+      // @ts-expect-error accepting interfaces must not admit a Date-valued field
+      stream.append(record),
+    );
+
+    expectInvalidArgument(thrown);
+    await expectNothingWritten(dir);
   });
 });

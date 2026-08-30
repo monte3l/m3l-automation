@@ -1,7 +1,7 @@
 /**
  * `core/storage/M3LAppendOnlyStream` — the public append-only segmented JSONL
- * stream: one durable, tamper-evident line per entry, rotated by size, age
- * and UTC date (ADR-0061, X7 slice 2).
+ * stream: one append-only, tamper-evident line per entry, rotated by size,
+ * age and UTC date (ADR-0061, X7 slice 2).
  *
  * This is the reusable Core primitive behind every append-only audit artifact
  * this library writes. The append itself — segment naming and cold-start
@@ -19,9 +19,9 @@
  *   `M3LError` with `code: "ERR_INVALID_ARGUMENT"`, matching the house
  *   pattern in `aws/s3/uri.ts` and `internal/logging/levels.ts`;
  * - a failure of the **append itself**, including a well-formed entry that is
- *   simply larger than one atomic write can durably carry and a segment path
- *   that turns out to be a symlink, throws {@link M3LAppendOnlyStreamError}
- *   (`ERR_APPEND_ONLY_STREAM_WRITE`).
+ *   simply larger than one atomic write can carry and a segment path that
+ *   turns out to be a symlink or a hardlink, throws
+ *   {@link M3LAppendOnlyStreamError} (`ERR_APPEND_ONLY_STREAM_WRITE`).
  *
  * No error message, and no `context` built here, ever carries a value read
  * out of the caller's input: they name the field and the violation kind only.
@@ -34,10 +34,23 @@
  * Node's error rather than one composed here, and it is reached only by code
  * that walks `error.cause` explicitly.
  *
- * Two limitations are accepted rather than fixed — a `maxSegmentBytes` below
- * `maxLineBytes` yielding one entry per segment, and a segment's wall-clock
- * `createdAtMs` — both documented where they live, in
- * `internal/storage/append-only-writer.js`'s header.
+ * Three limitations are part of the public contract and are stated here
+ * rather than deferred to a private module that may change freely:
+ *
+ * - a `maxSegmentBytes` below `maxLineBytes` yields **one entry per
+ *   segment** — every append finds the byte ceiling already crossed and
+ *   rotates first. It is legal on purpose (rotation has to stay testable at
+ *   sizes a test can reach in a handful of writes) and never loses or
+ *   truncates a record; it is simply wasteful.
+ * - a segment's age is measured from a wall-clock stamp, so a clock that
+ *   steps **forward** and then back can leave a segment stamped in the
+ *   future and make `maxSegmentAgeMs` unreachable for it. The size ceiling
+ *   and the UTC-date rollover still bound that segment.
+ * - `append()` resolves once the line has reached the operating system's
+ *   page cache — **not** the platter. Nothing here calls `fsync`, so a
+ *   machine that loses power immediately after a resolved append can come
+ *   back up without that line. A consumer that needs crash durability has to
+ *   flush at its own artifact boundary.
  *
  * @packageDocumentation
  */
@@ -138,6 +151,15 @@ export type M3LAppendOnlyValue =
  * null-prototype copy first — so an entry may be handed over and then
  * mutated without changing what was written.
  *
+ * This is the **shape** an entry has — the type to annotate a value with. It
+ * is not the constraint {@link M3LAppendOnlyStream.append} imposes: an
+ * `interface` carries no index signature, so a record declared as one (the
+ * normal way a consumer models an audit record) does not satisfy this alias
+ * and would need a cast that throws away the closure the alias provides.
+ * `append` constrains its own type parameter instead, admitting any object
+ * type whose properties are all {@link M3LAppendOnlyValue}s. Everything
+ * assignable to this alias satisfies that constraint.
+ *
  * @example
  * ```ts
  * import type { M3LAppendOnlyEntry } from "@m3l-automation/m3l-common/core";
@@ -175,6 +197,12 @@ export interface M3LAppendOnlyStreamOptions {
   /**
    * Rotate once the active segment has reached this many bytes. Defaults to
    * {@link M3L_APPEND_ONLY_MAX_SEGMENT_BYTES}.
+   *
+   * A value below `maxLineBytes` is legal but degenerate: every append finds
+   * the ceiling already crossed and rotates first, so the stream writes one
+   * entry per segment. Nothing is lost or truncated — it is simply wasteful,
+   * and it is left legal so rotation stays testable at sizes a test can
+   * reach in a handful of writes.
    */
   readonly maxSegmentBytes?: number;
   /**
@@ -184,7 +212,13 @@ export interface M3LAppendOnlyStreamOptions {
   readonly maxSegmentAgeMs?: number;
   /**
    * The largest line, newline included, one append may carry. Defaults to
-   * {@link M3L_APPEND_ONLY_MAX_LINE_BYTES}.
+   * — and may not exceed — {@link M3L_APPEND_ONLY_MAX_LINE_BYTES}.
+   *
+   * Lowering it is a caller's business; raising it is refused. The ceiling
+   * exists *because* `O_APPEND`'s whole-line atomicity does not cover a write
+   * larger than the operating system's write buffer, so raising it to, say,
+   * 8 MiB would silently void the "two writers interleave whole lines rather
+   * than corrupting one another" guarantee this same class advertises.
    */
   readonly maxLineBytes?: number;
 }
@@ -259,6 +293,25 @@ interface ResolvedStreamOptions {
 }
 
 /**
+ * Reads the optional line ceiling, which is bounded **above** as well as
+ * below — see {@link M3LAppendOnlyStreamOptions.maxLineBytes}. Every other
+ * ceiling is a caller's own business at any positive size; this one is the
+ * reason the stream may claim whole-line atomicity at all, so raising it is
+ * refused where it is made rather than discovered as a torn line later.
+ */
+function readLineCeiling(bag: Readonly<Record<string, unknown>>): number {
+  const value = readOptionalCeiling(
+    bag,
+    "maxLineBytes",
+    M3L_APPEND_ONLY_MAX_LINE_BYTES,
+  );
+  if (value > M3L_APPEND_ONLY_MAX_LINE_BYTES) {
+    throw invalidArgument("maxLineBytes", "above-the-maximum-line-size");
+  }
+  return value;
+}
+
+/**
  * Validates the options bag at the public boundary and resolves every
  * omitted ceiling to its documented default.
  *
@@ -289,11 +342,7 @@ function validateStreamOptions(options: unknown): ResolvedStreamOptions {
       "maxSegmentAgeMs",
       M3L_APPEND_ONLY_MAX_SEGMENT_AGE_MS,
     ),
-    maxLineBytes: readOptionalCeiling(
-      options,
-      "maxLineBytes",
-      M3L_APPEND_ONLY_MAX_LINE_BYTES,
-    ),
+    maxLineBytes: readLineCeiling(options),
   };
 }
 
@@ -306,13 +355,13 @@ function validateStreamOptions(options: unknown): ResolvedStreamOptions {
  * header.
  */
 const APPEND_ONLY_STREAM_ERRORS: AppendOnlyWriterErrors = {
-  oversize(lineBytes: number, maxLineBytes: number): Error {
+  oversize(lineBytes: number, maxLineBytes: number): M3LError {
     return new M3LAppendOnlyStreamError(
       "append-only stream: serialized entry exceeds the maximum line size",
       { context: { lineBytes, maxLineBytes } },
     );
   },
-  appendFailed(cause: unknown): Error {
+  appendFailed(cause: unknown): M3LError {
     // No `context`: everything worth naming here is the directory path,
     // which is caller input. The chained `cause` is Node's own error and
     // carries the operational detail — see this module's header.
@@ -346,8 +395,14 @@ const APPEND_ONLY_STREAM_ERRORS: AppendOnlyWriterErrors = {
  * caller error, not a write failure: wrapping it in
  * {@link M3LAppendOnlyStreamError} would tell an operator the filesystem is
  * unhealthy when the argument was.
+ *
+ * The parameter is `unknown` rather than {@link M3LAppendOnlyEntry} because
+ * that is what it honestly is: `append` is a public method reached by callers
+ * with no types at all, and this function's whole job is to prove the shape
+ * at runtime rather than assume it. It is also what lets `append` accept an
+ * `interface`-typed record, which carries no index signature.
  */
-function renderEntryLine(entry: M3LAppendOnlyEntry): string {
+function renderEntryLine(entry: unknown): string {
   const projection = projectAppendOnlyEntry(entry, invalidArgument);
   // Typed `unknown` on purpose: the declared return type is `string`, and the
   // whole point of this check is that a return type is not a runtime proof.
@@ -372,10 +427,22 @@ function renderEntryLine(entry: M3LAppendOnlyEntry): string {
  * instance always re-derives the active segment from a directory listing plus
  * one `stat`, so a long-lived process and a freshly spawned one agree, and
  * two instances over one directory interleave whole lines rather than
- * corrupting one another (`O_APPEND`; this does not hold across NFS). A
- * segment path that has been replaced by a symlink is **refused**, not
- * followed (`O_NOFOLLOW`, where the platform has it), so nobody who can
- * create a file in the directory can redirect the trail out of it.
+ * corrupting one another (`O_APPEND`; this does not hold across NFS).
+ *
+ * A link **already planted** at the path of the segment an append is about to
+ * open is refused in either form: a symlink, by `O_NOFOLLOW` where the
+ * platform has it; a hardlink — a second directory entry for one inode, which
+ * `O_NOFOLLOW` does not see at all — by checking on the opened descriptor
+ * itself that the file has exactly one link. Either way the append fails
+ * loudly rather than writing the record into a file somebody else owns. That
+ * is the precise guarantee: a link planted *before* the segment is opened is
+ * refused; hardlinking a segment the stream has already created is not
+ * prevented. The directory is created owner-only (`0o700`) and each segment
+ * owner-read/write (`0o600`), which keeps the planting precondition out of
+ * reach to begin with; a process umask can only remove bits, never add one.
+ *
+ * An append resolves once the line has reached the operating system's page
+ * cache, **not** the platter — see this module's header.
  *
  * @example
  * ```ts
@@ -396,7 +463,7 @@ export class M3LAppendOnlyStream {
   /** The directory the segments live in, as validated at construction. */
   private readonly streamDirectory: string;
   /** The generic writer this stream's rendering and errors are bound to. */
-  private readonly writer: AppendOnlyWriter<M3LAppendOnlyEntry>;
+  private readonly writer: AppendOnlyWriter<unknown>;
 
   /**
    * Creates a stream over `options.directory`. Nothing touches the
@@ -406,12 +473,13 @@ export class M3LAppendOnlyStream {
    * @param options - The stream's directory and its optional ceilings.
    * @throws {@link M3LError} with `code: "ERR_INVALID_ARGUMENT"` when the bag
    *   is not a plain object, carries an unknown key, has a blank/non-string
-   *   `directory`, or a ceiling that is not a finite positive integer.
+   *   `directory`, a ceiling that is not a finite positive integer, or a
+   *   `maxLineBytes` above {@link M3L_APPEND_ONLY_MAX_LINE_BYTES}.
    */
   constructor(options: M3LAppendOnlyStreamOptions) {
     const resolved = validateStreamOptions(options);
     this.streamDirectory = resolved.directory;
-    this.writer = new AppendOnlyWriter<M3LAppendOnlyEntry>({
+    this.writer = new AppendOnlyWriter<unknown>({
       directory: resolved.directory,
       maxSegmentBytes: resolved.maxSegmentBytes,
       maxSegmentAgeMs: resolved.maxSegmentAgeMs,
@@ -449,21 +517,30 @@ export class M3LAppendOnlyStream {
    * that crosses it rather than a whole batch late. A rejected append is
    * reported to its own caller only and never poisons the chain.
    *
+   * The parameter is constrained rather than typed {@link M3LAppendOnlyEntry}
+   * so an `interface`-declared record — the normal way a consumer models an
+   * audit record, and one that carries no index signature — is accepted
+   * without a cast. The closure is unchanged: every property still has to be
+   * an {@link M3LAppendOnlyValue}, so a `Date`- or `bigint`-valued field is
+   * still a compile error.
+   *
+   * @typeParam T - The caller's own record type; every property must be an
+   *   {@link M3LAppendOnlyValue}.
    * @param entry - The record to append; a plain object of
    *   {@link M3LAppendOnlyValue}s.
    * @throws {@link M3LError} with `code: "ERR_INVALID_ARGUMENT"` when `entry`
    *   is not a plain object, carries an own `__proto__` / `constructor` /
    *   `prototype` key, or holds a value JSON cannot carry back out unchanged
-   *   (a non-finite number, a `bigint`, a function, a symbol, `undefined`, a
-   *   class instance) at any depth — including a structure nested past the
-   *   documented depth cap, which is what bounds a circular entry. A
-   *   caller-side violation, not a write failure.
-   * @throws {@link M3LAppendOnlyStreamError} when the rendered line exceeds
-   *   the stream's `maxLineBytes` — well-formed, but larger than one atomic
-   *   write can durably carry — or when the append itself fails for any
-   *   reason, including a segment path that has been replaced by a symlink.
-   *   The underlying cause is always chained; neither message nor `context`
-   *   ever carries caller data.
+   *   (a non-finite number, `-0`, a `bigint`, a function, a symbol,
+   *   `undefined`, a class instance) at any depth — including a structure
+   *   nested past the documented depth cap, which is what bounds a circular
+   *   entry. A caller-side violation, not a write failure.
+   * @throws {@link M3LAppendOnlyStreamError} when the entry exceeds the
+   *   stream's `maxLineBytes` — well-formed, but larger than one atomic write
+   *   can carry — or when the append itself fails for any reason, including a
+   *   segment path that has been replaced by a symlink or hardlinked into a
+   *   second directory entry. The underlying cause is always chained; neither
+   *   message nor `context` ever carries caller data.
    *
    * @example
    * ```ts
@@ -484,7 +561,9 @@ export class M3LAppendOnlyStream {
    * }
    * ```
    */
-  async append(entry: M3LAppendOnlyEntry): Promise<void> {
+  async append<T extends { readonly [K in keyof T]: M3LAppendOnlyValue }>(
+    entry: T,
+  ): Promise<void> {
     await this.writer.write(entry);
   }
 }

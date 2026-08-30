@@ -1,7 +1,9 @@
 /**
- * `core/storage` — durable local storage primitives: an embedded, synchronous
+ * `core/storage` — local storage primitives: an embedded, synchronous
  * full-text search index backed by SQLite's FTS5 extension, and an
- * append-only segmented JSONL stream for audit trails.
+ * append-only segmented JSONL stream for audit trails. Both write through the
+ * operating system's page cache and neither calls `fsync`, so "persisted"
+ * here means "handed to the OS", not "survives a power cut".
  *
  * Re-exports all public symbols from the implementation modules.
  * No logic lives here; this file is a barrel only.
