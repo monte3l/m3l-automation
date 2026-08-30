@@ -222,6 +222,8 @@ const stubSessionsRepository: M3LConsoleSessionsRepository = {
   getDecision: unexpectedSessionsCall,
   listDecisionsForSession: unexpectedSessionsCall,
   countOpenSessions: unexpectedSessionsCall,
+  attachStepRun: unexpectedSessionsCall,
+  getStepByRunId: unexpectedSessionsCall,
 };
 
 /** Throws when `transaction()` is called unexpectedly on a fake store. */

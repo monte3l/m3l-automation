@@ -450,6 +450,21 @@ export interface M3LConsoleSessionsRepository {
   /** Lists every step for `sessionId`, ordinal-ascending. */
   listStepsForSession(sessionId: string): readonly M3LSessionStepRecord[];
   /**
+   * Guarded one-shot attach of the underlying `console_runs` id a step
+   * claimed, once its launch is known (X6 slice 4, Part A).
+   *
+   * @returns `true` when this call's own write applied (the step had no
+   *   `run_id` yet); `false` when it was not (already attached, or unknown
+   *   id) — a lost race reports `false`, never throws.
+   */
+  attachStepRun(id: string, runId: string): boolean;
+  /**
+   * Reads one step by the underlying `console_runs` id it was attached to
+   * via {@link attachStepRun}, or `undefined` when no step is attached to
+   * `runId` (X6 slice 4, Part A).
+   */
+  getStepByRunId(runId: string): M3LSessionStepRecord | undefined;
+  /**
    * Inserts a new binding.
    *
    * @throws {@link M3LConsoleError} with code `"ERR_CONSOLE_STORE_QUERY_FAILED"`

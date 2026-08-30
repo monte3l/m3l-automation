@@ -26,7 +26,15 @@ import type {
   M3LRunStreamRegistryPort,
   RunStreamRouteOptions,
 } from "./run-stream.js";
+import { createSessionRoutes } from "./sessions.js";
+import type {
+  SessionRouteOptions,
+  SessionRouteReaderPort,
+  SessionRouteWriterPort,
+} from "./sessions.js";
+export type { SessionRouteOptions } from "./sessions.js";
 import type { M3LRoute } from "../router.js";
+import { M3LConsoleError } from "../../errors/console-error.js";
 
 /**
  * Constructor options for the X4 run-governor route groups
@@ -84,6 +92,14 @@ export interface BuiltInRouteOptions {
    * "routes registered but always 404" middle state.
    */
   readonly runs?: RunsRouteOptions;
+  /**
+   * The X6 workbench-sessions route group's wiring, present only when the
+   * session subsystem built successfully (see `subsystems.ts`'s
+   * `buildSessionSubsystem`). Absent entirely means no `/api/v1/sessions*`
+   * route is registered — mirrors {@link runs}'s own "no registered but
+   * always 404 middle state" guarantee.
+   */
+  readonly sessions?: SessionRouteOptions;
   /**
    * Caller-supplied routes, appended AFTER every built-in route group — see
    * this module's headline TSDoc for why that ordering is never reversed.
@@ -148,6 +164,134 @@ function buildRunRoutes(
 }
 
 /**
+ * Builds {@link SessionRouteOptions} from the session subsystem's single
+ * `service` object, or `undefined` when it is absent (the session workbench
+ * is disabled). Unlike {@link toRunsRouteOptions}, this is a SINGLE-argument
+ * function: the session subsystem has only one source object
+ * (`M3LSessionSubsystem.service`), which itself structurally satisfies BOTH
+ * {@link SessionRouteReaderPort} and {@link SessionRouteWriterPort} — there
+ * is no second collaborator (like the run subsystem's separate
+ * registry/orchestrator pair) to wire in.
+ *
+ * `subsystem` is typed as the SAME structural shape this module already
+ * declares, rather than imported from `sessions/` — `main.ts`'s real
+ * `M3LSessionSubsystem` conforms structurally, and importing it here would
+ * cross the `http` zone's `sessions/` boundary for no reason.
+ *
+ * @example
+ * ```ts
+ * import { toSessionsRouteOptions } from "@m3l-automation/m3l-console-server/http/routes/built-in.js";
+ *
+ * const options = toSessionsRouteOptions(undefined); // undefined
+ * ```
+ */
+export function toSessionsRouteOptions(
+  subsystem:
+    | { readonly service: SessionRouteReaderPort & SessionRouteWriterPort }
+    | undefined,
+): SessionRouteOptions | undefined {
+  if (subsystem === undefined) return undefined;
+  return { reader: subsystem.service, writer: subsystem.service };
+}
+
+/**
+ * The shape the real session service's `createSession` returns — the FULL
+ * `"open" | "closed"` union (`store/sessions-repository-types.ts`'s
+ * `M3LSessionRecord`), declared locally rather than imported for the same
+ * zone reason as {@link M3LRunLauncherPort} above. Wider than
+ * {@link SessionRouteWriterPort}'s own `M3LSessionRouteRecord`, which is
+ * `"open"`-only — see {@link adaptSessionService}.
+ */
+interface M3LSessionRecordLike {
+  readonly id: string;
+  readonly operator: string;
+  readonly correlationId: string;
+  readonly status: "open" | "closed";
+  readonly createdAtMs: number;
+  readonly updatedAtMs: number;
+}
+
+/**
+ * The real session service's writer surface: identical to
+ * {@link SessionRouteWriterPort} except `createSession` returns the WIDER
+ * {@link M3LSessionRecordLike} — mirrors `sessions/service.ts`'s
+ * `M3LSessionService.createSession`, which is declared to return its full
+ * `M3LSessionRecord` union even though a freshly created session is always
+ * `"open"`.
+ */
+interface M3LRealSessionWriterPort extends Omit<
+  SessionRouteWriterPort,
+  "createSession"
+> {
+  /** Creates a new open session; the return type is the full open/closed union — see {@link adaptSessionService}. */
+  createSession(operator: string, correlationId: string): M3LSessionRecordLike;
+}
+
+/**
+ * Adapts the real session service (whose reader half already satisfies
+ * {@link SessionRouteReaderPort} — that port's methods return `unknown`, so
+ * no adaptation is needed there — and whose writer half is
+ * {@link M3LRealSessionWriterPort}) into a strict
+ * `SessionRouteReaderPort & SessionRouteWriterPort`, narrowing
+ * `createSession`'s wider return down to the `"open"`-only shape
+ * {@link SessionRouteWriterPort} requires.
+ *
+ * A freshly created session is always `"open"` (`sessions/service.ts`'s own
+ * documented contract for `createSession`), so the `else` branch below is an
+ * invariant guard, not a real code path — it throws rather than silently
+ * coercing, per this codebase's never-swallow-a-broken-invariant convention.
+ * `main.ts` calls this once, ahead of {@link toSessionsRouteOptions}, since
+ * that function's own identity-preserving contract (`reader`/`writer` are
+ * literally `subsystem.service`) means the narrowing cannot happen inside it
+ * without breaking that guarantee for a caller who already has an exactly-
+ * conforming service (e.g. this module's own unit tests).
+ *
+ * @example
+ * ```ts
+ * import { adaptSessionService } from "@m3l-automation/m3l-console-server/http/routes/built-in.js";
+ *
+ * declare const service: SessionRouteReaderPort & M3LRealSessionWriterPort;
+ * const adapted = adaptSessionService(service);
+ * ```
+ */
+export function adaptSessionService(
+  service: SessionRouteReaderPort & M3LRealSessionWriterPort,
+): SessionRouteReaderPort & SessionRouteWriterPort {
+  return {
+    ...service,
+    createSession(
+      operator: string,
+      correlationId: string,
+    ): ReturnType<SessionRouteWriterPort["createSession"]> {
+      const record = service.createSession(operator, correlationId);
+      const { status } = record;
+      if (status !== "open") {
+        throw new M3LConsoleError(
+          "ERR_CONSOLE_INTERNAL",
+          "a freshly created session was not open",
+        );
+      }
+      // `status`, not `record.status`, is what carries the narrowing above —
+      // TypeScript narrows a `const`-destructured binding's control flow, but
+      // does not retroactively narrow the WIDER `record.status` property
+      // access it came from.
+      return { ...record, status };
+    },
+  };
+}
+
+/**
+ * Builds the X6 workbench-sessions route group from `options.sessions`, or
+ * an empty table when the session workbench is disabled.
+ */
+function buildSessionRoutes(
+  sessions: SessionRouteOptions | undefined,
+): readonly M3LRoute[] {
+  if (sessions === undefined) return [];
+  return createSessionRoutes(sessions);
+}
+
+/**
  * Builds the console server's full built-in route table: the
  * health/readiness pair from {@link createHealthRoutes}, then (X4 slice 7a)
  * the run-governor routes when `options.runs` is supplied, then
@@ -180,5 +324,10 @@ export function createBuiltInRoutes(
     startedAt: options.startedAt,
     ...(options.store !== undefined && { store: options.store }),
   });
-  return [...healthRoutes, ...buildRunRoutes(options.runs), ...options.routes];
+  return [
+    ...healthRoutes,
+    ...buildRunRoutes(options.runs),
+    ...buildSessionRoutes(options.sessions),
+    ...options.routes,
+  ];
 }

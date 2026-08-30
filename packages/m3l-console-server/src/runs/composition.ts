@@ -30,7 +30,7 @@ import {
   createCompositeRunEventSink,
   createLoggerRunEventSink,
 } from "./events.js";
-import type { M3LRunEvent } from "./events.js";
+import type { M3LRunEvent, M3LRunEventSink } from "./events.js";
 import { createInProcessExecutor, createSpawnExecutor } from "./executor.js";
 import { createRunGovernor } from "./governor.js";
 import { createRunOrchestrator } from "./orchestrator.js";
@@ -84,6 +84,15 @@ export interface M3LRunSubsystemOptions {
   readonly logger: Core.M3LLogger;
   /** The run-persistence port — `main.ts` passes the real store's `runs` repository. */
   readonly registry: M3LRunRegistry;
+  /**
+   * Additional run-event sinks to fan every event out to, alongside the
+   * logger-backed and stream-backed sinks this factory always builds — the
+   * pluggable hook a caller outside this module (the sessions composition
+   * root) uses to receive every run event without `runs/` ever importing
+   * `sessions/` (which would invert the `runs` zone's own declared
+   * allowance). Optional; defaults to no additional sinks.
+   */
+  readonly extraEventSinks?: readonly M3LRunEventSink[];
 }
 
 /**
@@ -197,7 +206,7 @@ export interface M3LRunSubsystem {
 export function createRunSubsystem(
   options: M3LRunSubsystemOptions,
 ): M3LRunSubsystem {
-  const { config, logger, registry } = options;
+  const { config, logger, registry, extraEventSinks } = options;
 
   const governor = createRunGovernor({
     maxConcurrency: config.maxConcurrency,
@@ -210,7 +219,11 @@ export function createRunSubsystem(
     bufferSize: config.streamRetention,
   });
   const events = createCompositeRunEventSink(
-    [createLoggerRunEventSink(logger), createStreamRunEventSink(eventHub)],
+    [
+      createLoggerRunEventSink(logger),
+      createStreamRunEventSink(eventHub),
+      ...(extraEventSinks ?? []),
+    ],
     logger,
   );
   const spawnExecutor = createSpawnExecutor({

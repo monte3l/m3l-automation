@@ -19,7 +19,6 @@ import { Core } from "@m3l-automation/m3l-common";
 import type { M3LConsoleConfig } from "./config/env.js";
 import { loadConsoleConfig } from "./config/env.js";
 import type { M3LConsoleRunsConfig } from "./config/runs.js";
-import { tryLoadRunsConfig } from "./config/runs.js";
 import { chainSecondaryFailure } from "./errors/chain-secondary-failure.js";
 import { createSingleOperatorProvider } from "./auth/identity.js";
 import type {
@@ -31,10 +30,15 @@ import type { M3LConsoleRequestListener } from "./http/handler.js";
 import { createRouter } from "./http/router.js";
 import type { M3LRoute, M3LRouter } from "./http/router.js";
 import {
+  adaptSessionService,
   createBuiltInRoutes,
   toRunsRouteOptions,
+  toSessionsRouteOptions,
 } from "./http/routes/built-in.js";
-import type { RunsRouteOptions } from "./http/routes/built-in.js";
+import type {
+  RunsRouteOptions,
+  SessionRouteOptions,
+} from "./http/routes/built-in.js";
 import { createOriginGuard } from "./http/origin-guard.js";
 import { createDrainMiddleware } from "./http/drain-middleware.js";
 import { createAuthMiddleware } from "./http/auth-middleware.js";
@@ -46,9 +50,10 @@ import {
   createShutdown,
   registerConsoleShutdownSignals,
 } from "./lifecycle/shutdown.js";
-import { createRunSubsystem } from "./runs/composition.js";
 import type { M3LRunSubsystem } from "./runs/composition.js";
 import type { M3LRunRegistry } from "./runs/registry.js";
+import type { M3LSessionSubsystem } from "./sessions/composition.js";
+import { buildConsoleSubsystems } from "./subsystems.js";
 import { openConsoleStore } from "./store/store.js";
 import type {
   M3LConsoleStore,
@@ -56,6 +61,8 @@ import type {
   M3LConsoleStoreLifecycle,
   OpenConsoleStoreOptions,
 } from "./store/store.js";
+import type { M3LConsoleSessionsRepository } from "./store/sessions-repository.js";
+import type { M3LConsoleSessionsConfig } from "./config/sessions.js";
 
 /**
  * Constructor options for {@link createConsoleRuntime}.
@@ -89,6 +96,10 @@ export interface M3LConsoleRuntimeOptions {
   readonly runsConfig?: M3LConsoleRunsConfig;
   /** The run-persistence port the X4 run subsystem builds from; see {@link createConsoleRuntime}. */
   readonly runs?: M3LRunRegistry;
+  /** Pre-resolved X6 workbench-sessions config; skips `loadSessionsConfig` (mirrors {@link runsConfig}). */
+  readonly sessionsConfig?: M3LConsoleSessionsConfig;
+  /** The workbench-sessions persistence port the X6 session subsystem builds from; see {@link createConsoleRuntime}. */
+  readonly sessions?: M3LConsoleSessionsRepository;
 }
 
 /**
@@ -147,6 +158,14 @@ export interface M3LConsoleRuntime {
    * `drain()` runs alongside the HTTP drain with no `runs/` import there.
    */
   readonly runs?: M3LRunSubsystem;
+  /**
+   * The wired X6 session subsystem, present only when
+   * {@link M3LConsoleRuntimeOptions.sessions} was supplied AND {@link runs}
+   * built successfully (a session step launches a run through
+   * `runs.orchestrator`). Mirrors {@link runs}'s own "present only when its
+   * own preconditions were met" semantics.
+   */
+  readonly sessions?: M3LSessionSubsystem;
 }
 
 /**
@@ -250,6 +269,7 @@ function buildDispatchRouter(
   routes: readonly M3LRoute[],
   store: M3LConsoleStoreLifecycle | undefined,
   runs: RunsRouteOptions | undefined,
+  sessions: SessionRouteOptions | undefined,
 ): M3LRouter {
   return createRouter(
     createBuiltInRoutes({
@@ -257,6 +277,7 @@ function buildDispatchRouter(
       startedAt: Date.now(),
       ...(store !== undefined && { store }),
       ...(runs !== undefined && { runs }),
+      ...(sessions !== undefined && { sessions }),
       routes,
     }),
   );
@@ -272,7 +293,9 @@ function buildDispatchRouter(
  * @param options - See {@link M3LConsoleRuntimeOptions}.
  * @returns The resolved {@link M3LConsoleRuntime}.
  * @throws {@link M3LConsoleError} When configuration resolution fails (see
- *   {@link loadConsoleConfig}) — propagated, never swallowed.
+ *   {@link loadConsoleConfig}), and, when `options.sessions` is supplied, when
+ *   {@link buildConsoleSubsystems}'s session-config resolution fails
+ *   (`ERR_CONSOLE_CONFIG_INVALID`) — all propagated, never swallowed.
  *
  * @example
  * ```ts
@@ -290,35 +313,6 @@ function resolveConfig(options: M3LConsoleRuntimeOptions): M3LConsoleConfig {
   );
 }
 
-/** The env var naming the X4 scripts directory, named in the disabled-orchestration posture line. */
-const RUNS_SCRIPTS_DIR_ENV = "M3L_CONSOLE_RUNS_SCRIPTS_DIR";
-
-/**
- * Builds the X4 run subsystem when `options.runs` was supplied AND a runs
- * config resolved (`options.runsConfig` verbatim, else
- * `tryLoadRunsConfig`); else `undefined`, logging one `warning` posture
- * line. Checks `options.runs` FIRST — nothing to wire a resolved config to
- * without a registry, and skipping config resolution (and the warning)
- * entirely when no registry was ever supplied is what keeps every existing
- * caller that never mentions `runs` silent; the warning only fires once a
- * caller has actually opted in by supplying one.
- */
-function buildRunSubsystem(
-  options: M3LConsoleRuntimeOptions,
-  logger: Core.M3LLogger,
-): M3LRunSubsystem | undefined {
-  if (options.runs === undefined) return undefined;
-  const config: M3LConsoleRunsConfig | undefined =
-    options.runsConfig ?? tryLoadRunsConfig(options.env ?? process.env);
-  if (config === undefined) {
-    logger.warning("run orchestration disabled: scripts directory unset", {
-      variable: RUNS_SCRIPTS_DIR_ENV,
-    });
-    return undefined;
-  }
-  return createRunSubsystem({ config, logger, registry: options.runs });
-}
-
 export function createConsoleRuntime(
   options: M3LConsoleRuntimeOptions = {},
 ): M3LConsoleRuntime {
@@ -330,7 +324,7 @@ export function createConsoleRuntime(
   });
 
   logPosture(logger, config);
-  const runs = buildRunSubsystem(options, logger);
+  const { runs, sessions } = buildConsoleSubsystems(options, logger);
 
   const operator: M3LOperatorProfile = {
     name: config.operatorName,
@@ -353,6 +347,11 @@ export function createConsoleRuntime(
       routes,
       options.store,
       toRunsRouteOptions(options.runs, runs),
+      toSessionsRouteOptions(
+        sessions !== undefined
+          ? { service: adaptSessionService(sessions.service) }
+          : undefined,
+      ),
     ),
     middlewares: [
       createDrainMiddleware(drain),
@@ -375,6 +374,7 @@ export function createConsoleRuntime(
     signal: drain.signal,
     ...(options.store !== undefined && { store: options.store }),
     ...(runs !== undefined && { runs }),
+    ...(sessions !== undefined && { sessions }),
   };
 }
 
@@ -527,6 +527,7 @@ async function buildRuntimeAndBindListener(
       config,
       store,
       runs: store.runs,
+      sessions: store.sessions,
     });
     // A database write (reconciling SIGKILL-orphaned rows), so it belongs
     // here — not in createConsoleRuntime, a pure composition step — and
