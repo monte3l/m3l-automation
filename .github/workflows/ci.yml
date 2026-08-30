@@ -441,6 +441,12 @@ jobs:
       - name: Check context budget
         run: pnpm check:context-budget
 
+      # Warns (non-blocking) when docs/research/harness-refresh.md's
+      # last-verified date is stale or unset — the self-polling half of the
+      # refreshing-anthropic-guidance cadence (ADR-0082).
+      - name: Check harness freshness
+        run: pnpm check:harness-freshness
+
       # Every status-bearing ("## ", has a Status column) table in ROADMAP.md
       # and IMPLEMENTATION.md must be registered with the sync:hub extractor —
       # otherwise a newly added tracker table is a silent no-op forever.
