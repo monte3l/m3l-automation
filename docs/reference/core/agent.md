@@ -44,40 +44,6 @@ and that is the layer's one trust boundary: the authorization guarantee holds
 only when `kind` is derived from the script's own contract, never from model
 output. See [The trust boundary](#the-trust-boundary).
 
-## Landing plan
-
-ADR-0072 slice record.
-
-| Slice                           | Scope                                                                                                                            | Status |
-| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| V6 slice 1 — verdicts           | The action/policy/verdict vocabulary, the declaration validator, and the evaluator's allowlist + autonomy-tier arms. 20 exports. | Landed |
-| V6 slice 2 — budgets + dry-run  | Per-run/per-day budgets and ceilings, the run ledger, named exhaustion outcomes, and the dry-run-first discipline. 4 exports.    | Landed |
-| V7 slice 1 — decision-log entry | The decision-log entry schema, the pure projector from a decision, and the JSONL serializer. No I/O. 7 exports.                  | Landed |
-| V7 slice 2 — the writer         | The append-only segmented writer, its rotation ceilings, the loud write error, and the log-unavailable escalation. 5 exports.    | Landed |
-
-Deliberately **not** in either slice, and why:
-
-- **Writing the agent decision log.**
-  [ADR-0061](../../adr/0061-agent-decision-log.md) is V7 and co-lands in this
-  same submodule. Its V6 slices made the log possible — every verdict names the
-  rule that produced it, and carries the library's own frozen projection of the
-  action rather than the caller's object. **V7 slice 1 adds the entry itself**
-  (schema, projector, serializer) and still writes nothing; the appender, its
-  rotation, and the loud write failure are V7 slice 2. See
-  [The decision-log entry](#the-decision-log-entry).
-- **ADR-0055's richer operation vocabulary.** A grant allowlists operation
-  **names**, plain strings. `core/config`'s `M3LOperationDeclaration` is a soft
-  dependency and stays soft; a caller derives the names it allowlists and hands
-  them over as data. No type from `core/config` is imported.
-- **The A2 target-grading retrofit.** It is a soft prerequisite, neutralised by
-  the fail-closed default in
-  [Why an ungraded target is sensitive](#why-an-ungraded-target-is-sensitive).
-  Nothing here waits on it.
-
-Slice 1 took Core from 24 to 25 submodules (fleet total 44 → 45). Slice 2 adds
-no submodule: four exports join the same barrel, taking the module from twenty
-to twenty-four, and one field joins `M3LAgentActionRecord`.
-
 ## Public API
 
 ```typescript
@@ -187,6 +153,40 @@ as `Core.*`. Re-exporting any of them here would not merely duplicate — the
 Core barrel is `export * from "./<mod>/index.js"` per submodule, so the same
 name arriving from two star exports is TS2308 at compile time and a silently
 dropped export under ES module semantics.
+
+## Landing plan
+
+ADR-0072 slice record.
+
+| Slice                           | Scope                                                                                                                            | Status |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| V6 slice 1 — verdicts           | The action/policy/verdict vocabulary, the declaration validator, and the evaluator's allowlist + autonomy-tier arms. 20 exports. | Landed |
+| V6 slice 2 — budgets + dry-run  | Per-run/per-day budgets and ceilings, the run ledger, named exhaustion outcomes, and the dry-run-first discipline. 4 exports.    | Landed |
+| V7 slice 1 — decision-log entry | The decision-log entry schema, the pure projector from a decision, and the JSONL serializer. No I/O. 7 exports.                  | Landed |
+| V7 slice 2 — the writer         | The append-only segmented writer, its rotation ceilings, the loud write error, and the log-unavailable escalation. 5 exports.    | Landed |
+
+Deliberately **not** in either slice, and why:
+
+- **Writing the agent decision log.**
+  [ADR-0061](../../adr/0061-agent-decision-log.md) is V7 and co-lands in this
+  same submodule. Its V6 slices made the log possible — every verdict names the
+  rule that produced it, and carries the library's own frozen projection of the
+  action rather than the caller's object. **V7 slice 1 adds the entry itself**
+  (schema, projector, serializer) and still writes nothing; the appender, its
+  rotation, and the loud write failure are V7 slice 2. See
+  [The decision-log entry](#the-decision-log-entry).
+- **ADR-0055's richer operation vocabulary.** A grant allowlists operation
+  **names**, plain strings. `core/config`'s `M3LOperationDeclaration` is a soft
+  dependency and stays soft; a caller derives the names it allowlists and hands
+  them over as data. No type from `core/config` is imported.
+- **The A2 target-grading retrofit.** It is a soft prerequisite, neutralised by
+  the fail-closed default in
+  [Why an ungraded target is sensitive](#why-an-ungraded-target-is-sensitive).
+  Nothing here waits on it.
+
+Slice 1 took Core from 24 to 25 submodules (fleet total 44 → 45). Slice 2 adds
+no submodule: four exports join the same barrel, taking the module from twenty
+to twenty-four, and one field joins `M3LAgentActionRecord`.
 
 ## The action under judgement
 

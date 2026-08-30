@@ -39,6 +39,8 @@ import {
   checkRuleBudget,
   buildRuleBaseline,
   collectSkillDescriptions,
+  parseClaudeMdRuleGlobs,
+  diffRuleGlobParity,
 } from "../check-context-budget.mjs";
 
 // check-context-budget.mjs computes `root` via repoRoot(import.meta.url) from
@@ -812,6 +814,75 @@ describe("deriveScenarioTotals", () => {
     expect(combined?.bytes).toBe(8000);
     // The combined scenario is the largest one (sorted descending, first).
     expect(scenarios[0]).toBe(combined);
+  });
+});
+
+describe("parseClaudeMdRuleGlobs", () => {
+  test("parses a bullet with multiple globs into an ordered array keyed by filename", () => {
+    const result = parseClaudeMdRuleGlobs(
+      "- `packages/m3l-common/src/**`, `scripts/**` → `refactoring.md` — behavior-preserving changes\n",
+    );
+    expect(result.get("refactoring.md")).toEqual([
+      "packages/m3l-common/src/**",
+      "scripts/**",
+    ]);
+  });
+
+  test("returns an empty map when no bullet matches the expected shape", () => {
+    const result = parseClaudeMdRuleGlobs(
+      "Just prose, no rule-glob bullets here.\n- an unrelated bullet\n",
+    );
+    expect(result.size).toBe(0);
+  });
+});
+
+describe("diffRuleGlobParity", () => {
+  test("no mismatch when a rule's documented globs equal its frontmatter globs (any order)", () => {
+    const claudeMdGlobs = new Map([
+      ["tests.md", ["**/*.test.ts", "**/tests/**"]],
+    ]);
+    const rules = [
+      {
+        name: "tests.md",
+        relPath: ".claude/rules/tests.md",
+        bytes: 100,
+        globs: ["**/tests/**", "**/*.test.ts"],
+      },
+    ];
+    expect(diffRuleGlobParity(claudeMdGlobs, rules)).toEqual([]);
+  });
+
+  test("flags a rule whose documented globs omit one the frontmatter declares", () => {
+    const claudeMdGlobs = new Map([["refactoring.md", ["scripts/**"]]]);
+    const rules = [
+      {
+        name: "refactoring.md",
+        relPath: ".claude/rules/refactoring.md",
+        bytes: 100,
+        globs: ["scripts/**", "**/*.test.ts"],
+      },
+    ];
+    const mismatches = diffRuleGlobParity(claudeMdGlobs, rules);
+    expect(mismatches).toEqual([
+      {
+        rule: "refactoring.md",
+        documented: ["scripts/**"],
+        actual: ["scripts/**", "**/*.test.ts"],
+      },
+    ]);
+  });
+
+  test("a rule with no CLAUDE.md bullet at all is skipped, not flagged", () => {
+    const claudeMdGlobs = new Map<string, string[]>();
+    const rules = [
+      {
+        name: "undocumented.md",
+        relPath: ".claude/rules/undocumented.md",
+        bytes: 100,
+        globs: ["**/*.ts"],
+      },
+    ];
+    expect(diffRuleGlobParity(claudeMdGlobs, rules)).toEqual([]);
   });
 });
 
