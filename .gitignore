@@ -61,3 +61,11 @@ lefthook-local.yml
 # (parameter names, never values), but retained rather than pruned, so it
 # is machine state, not source.
 data/agent-log/
+
+# Playwright run artifacts (packages/m3l-console-web). `playwright.config.ts`
+# sets no explicit outputDir, so a FAILING e2e run drops traces, screenshots,
+# and an error-context.md into these defaults next to the package. A passing
+# run cleans up after itself, which is exactly why this is easy to miss until
+# a red run leaves them staged.
+test-results/
+playwright-report/

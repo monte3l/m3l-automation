@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 
 import { App } from "./App.js";
 import { M3LConsoleWebError } from "./errors/console-web-error.js";
+import "./styles.css";
 
 const container = document.getElementById("root");
 if (container === null) {
