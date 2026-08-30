@@ -425,6 +425,93 @@ describe("validateWorkflowSurface", () => {
   test("passes an empty surface (no scripts, no rows) with an empty error array", () => {
     expect(validateWorkflowSurface(new Map<string, string>(), [])).toEqual([]);
   });
+
+  describe("R8: agentType capability check", () => {
+    const compliantRows = [
+      {
+        name: "a.js",
+        file: "a.js",
+        label: null,
+        model: "sonnet",
+        effort: "n/a",
+      },
+    ];
+
+    test("R8a: flags an agentType literal that names no defined agent", () => {
+      const scripts = new Map([
+        ["a.js", '// max-agents: 5\nagent({ agentType: "NotARealAgent" });\n'],
+      ]);
+      const agentRoster = {
+        definedNames: new Set(["Explore", "code-implementer"]),
+        readOnlyNames: new Set(["Explore"]),
+      };
+      const errors = validateWorkflowSurface(
+        scripts,
+        compliantRows,
+        agentRoster,
+      );
+      expect(
+        errors.some((e) => /names no defined agent/.test(e) && /R8a/.test(e)),
+      ).toBe(true);
+    });
+
+    test("R8a: does not flag an agentType literal that names a defined agent", () => {
+      const scripts = new Map([
+        ["a.js", '// max-agents: 5\nagent({ agentType: "Explore" });\n'],
+      ]);
+      const agentRoster = {
+        definedNames: new Set(["Explore", "code-implementer"]),
+        readOnlyNames: new Set(["Explore"]),
+      };
+      const errors = validateWorkflowSurface(
+        scripts,
+        compliantRows,
+        agentRoster,
+      );
+      expect(errors.some((e) => /R8a/.test(e))).toBe(false);
+      expect(errors.some((e) => /R8b/.test(e))).toBe(false);
+    });
+
+    test("R8b: flags a read-only agentType paired with a write-instruction phrase", () => {
+      const scripts = new Map([
+        [
+          "a.js",
+          [
+            "// max-agents: 5",
+            "const prompt = [",
+            '  "Explore the codebase for X.",',
+            '  "Write your findings to exactly this file: report.md",',
+            '].join("\\n");',
+            'agent({ agentType: "Explore", prompt });',
+            "",
+          ].join("\n"),
+        ],
+      ]);
+      const agentRoster = {
+        definedNames: new Set(["Explore", "code-implementer"]),
+        readOnlyNames: new Set(["Explore"]),
+      };
+      const errors = validateWorkflowSurface(
+        scripts,
+        compliantRows,
+        agentRoster,
+      );
+      expect(
+        errors.some(
+          (e) =>
+            /a read-only spoke cannot write a file/.test(e) && /R8b/.test(e),
+        ),
+      ).toBe(true);
+    });
+
+    test("R8: skips all checks when agentRoster is null (the default)", () => {
+      const scripts = new Map([
+        ["a.js", '// max-agents: 5\nagent({ agentType: "NotARealAgent" });\n'],
+      ]);
+      const errors = validateWorkflowSurface(scripts, compliantRows);
+      expect(errors.some((e) => /R8/.test(e))).toBe(false);
+    });
+  });
 });
 
 describe("check-agents.mjs §5 row-regex boundary", () => {
