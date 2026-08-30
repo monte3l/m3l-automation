@@ -31,6 +31,7 @@ import type {
   M3LRunSubsystem,
   M3LRunSubsystemOptions,
 } from "../src/runs/composition.js";
+import type { M3LScriptCatalog } from "../src/runs/descriptors.js";
 import type { M3LRunEvent, M3LRunEventSink } from "../src/runs/events.js";
 import type {
   M3LRunOrchestrator,
@@ -67,12 +68,19 @@ const SCRIPTS_ROOT = "/scripts";
  * Configures `fs.existsSync` so `resolveScript` succeeds for any kebab-case
  * name under `SCRIPTS_ROOT` with no `dist/command.js` — i.e. every launch
  * below runs the SPAWN executor, the one whose underlying `spawn` call is
- * mocked, never the in-process one.
+ * mocked, never the in-process one. Also stubs `fs.lstatSync` to report a
+ * plain (non-symlink) directory entry — `resolveScript`'s symlink
+ * containment guard fails CLOSED when a path cannot be stat'd, and the
+ * fictional `SCRIPTS_ROOT` below does not exist on the real filesystem
+ * (mirrors `runs-resolver.test.ts`'s `mockLstatSyncNotSymlink`).
  */
 function mockScriptResolvable(): void {
   vi.spyOn(fs, "existsSync").mockImplementation(
     (target: fs.PathLike) => !String(target).endsWith("command.js"),
   );
+  vi.spyOn(fs, "lstatSync").mockImplementation((() => ({
+    isSymbolicLink: () => false,
+  })) as unknown as typeof fs.lstatSync);
 }
 
 /** A listener a fake spawned process's `once()` may be given. */
@@ -280,6 +288,13 @@ describe("createRunSubsystem — builds a working subsystem", () => {
 
     expect(handle.status).toBe("running");
     expect(subsystem.orchestrator.activeCount).toBe(1);
+    // The catalog is wired from config.scriptsDir alongside the orchestrator —
+    // asserted structurally (not invoked) since `list()`/`describe()` hit the
+    // real filesystem, which is `catalog.test.ts`'s own subject, not this
+    // wiring test's.
+    expect(subsystem.catalog).toBeDefined();
+    expect(typeof subsystem.catalog.list).toBe("function");
+    expect(typeof subsystem.catalog.describe).toBe("function");
 
     await expect(subsystem.drain()).resolves.toBeUndefined();
     expect(subsystem.orchestrator.activeCount).toBe(0);
@@ -359,6 +374,7 @@ describe("M3LRunSubsystemOptions / M3LRunSubsystem", () => {
 
     expectTypeOf<M3LRunSubsystem>().toEqualTypeOf<{
       readonly orchestrator: M3LRunOrchestrator;
+      readonly catalog: M3LScriptCatalog;
       readonly eventHub: M3LEventStreamHub<M3LRunEvent>;
       drain(): Promise<void>;
       endStreams(): void;

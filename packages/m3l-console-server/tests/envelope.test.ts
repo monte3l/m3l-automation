@@ -278,6 +278,16 @@ const CLASSIFICATION_TABLE: Record<
     retryable: false,
     fault: true,
   },
+  // X10b console-server script discovery. A config module that resolved
+  // (per `runs/catalog.ts`'s `resolveConfigModulePath` check) but then
+  // fails to load its descriptors is a real server-side defect an operator
+  // should see an error-level diagnostic for — not a caller mistake.
+  ERR_CONSOLE_SCRIPT_INTROSPECTION_FAILED: {
+    status: INTERNAL_STATUS,
+    origin: "library",
+    retryable: false,
+    fault: true,
+  },
 };
 
 // `Object.entries` widens the key to `string`; `CLASSIFICATION_TABLE`'s

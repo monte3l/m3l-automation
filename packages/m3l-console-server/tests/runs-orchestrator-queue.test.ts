@@ -382,11 +382,22 @@ function createBareHandleTimer(): {
   return { timerImpl, scheduled };
 }
 
-/** Configures `existsSync` so every `resolveScript` call resolves a spawn-mode script (no command module). */
+/**
+ * Configures `existsSync` so every `resolveScript` call resolves a
+ * spawn-mode script (no command module). Also stubs `fs.lstatSync` to
+ * report a plain (non-symlink) directory entry — `resolveScript`'s symlink
+ * containment guard fails CLOSED when a path cannot be stat'd, and the
+ * fictional scripts root used throughout this file does not exist on the
+ * real filesystem (mirrors `runs-resolver.test.ts`'s
+ * `mockLstatSyncNotSymlink`).
+ */
 function mockSpawnModeScripts(): void {
   vi.spyOn(fs, "existsSync").mockImplementation(
     (target: fs.PathLike) => !String(target).endsWith("command.js"),
   );
+  vi.spyOn(fs, "lstatSync").mockImplementation((() => ({
+    isSymbolicLink: () => false,
+  })) as unknown as typeof fs.lstatSync);
 }
 
 /** Yields to the microtask queue so pending `.then`/`.catch` chains settle. */
