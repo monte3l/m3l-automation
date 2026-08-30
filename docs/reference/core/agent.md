@@ -1696,6 +1696,12 @@ segment keeps resetting its own age and rotates on the byte ceiling alone.
 Both are exported and both are caller-overridable through the options bag.
 Crossing either ceiling seals the active segment and opens a new one.
 
+When rotation lands on a name that already exists — a sibling process created
+it, or the clock stepped backwards — the existing file is adopted with its
+**real** size rather than a fresh zero. Restarting the byte accounting at zero
+on a non-empty file would leave `maxSegmentBytes` silently unenforced for a
+whole segment.
+
 A **third** trigger has no constant: the active segment is also sealed when its
 date prefix is no longer today's. Without it a long-lived process that crossed
 midnight under both ceilings would keep appending into yesterday's file while a
@@ -1711,6 +1717,12 @@ an audit trail is worse than one that grows.
 A failed append throws `M3LAgentDecisionLogWriteError`
 (`ERR_AGENT_DECISION_LOG_WRITE`). It is never swallowed and never downgraded to
 a warning.
+
+A failed append also drops the cached active segment, so the next call re-runs
+`mkdir` and cold-start discovery. Without that, a log directory removed under a
+long-lived writer would wedge it permanently — every later write failing on a
+condition the writer already knows how to repair, and therefore halting every
+auditable action.
 
 The reasoning is the whole point of the slice: an action that cannot be audited
 must not run unaudited. A silent write failure would produce exactly the
@@ -1728,14 +1740,21 @@ The two failure kinds are deliberately not the same error.
 - **`M3LError` with `ERR_INVALID_ARGUMENT`** — the caller handed the writer
   something it cannot use: an options bag with an unknown key, a `directory`
   that is not a non-blank string, a `maxSegmentBytes` or `maxSegmentAgeMs` that
-  is not a finite positive integer, or an `entry` that is not an object or
-  cannot be serialized at all (a circular reference, a `BigInt` field). This is
-  a bare `M3LError` with an existing code rather than a new class, following the
-  same house pattern as `aws/s3/uri.ts` and `internal/logging/levels.ts`.
-- **`M3LAgentDecisionLogWriteError`** — the append itself failed, or the entry
-  is well-formed but larger than `M3L_AGENT_MAX_LOG_ENTRY_BYTES`. What an
-  oversized entry violates is the atomic-append limit, not the type contract,
-  which is why the ceiling stays with the write error.
+  is not a finite positive integer, or an `entry` that fails the structural
+  check below. This is a bare `M3LError` with an existing code rather than a new
+  class, following the same house pattern as `aws/s3/uri.ts` and
+  `internal/logging/levels.ts`.
+- **`M3LAgentDecisionLogWriteError`** — the append itself failed, the segment
+  path turned out to be a symlink, or the entry is well-formed but larger than
+  `M3L_AGENT_MAX_LOG_ENTRY_BYTES`. What an oversized entry violates is the
+  atomic-append limit, not the type contract, which is why the ceiling stays
+  with the write error.
+
+Neither error's `context` carries a value read out of the caller's input — it
+names the offending field and the violation kind only. A chained filesystem
+`cause` is the one exception: Node's own `ENOENT`/`EACCES`/`ELOOP` message
+quotes the path, and dropping the `cause` to hide that would cost the only
+diagnostic an operator has for a permissions failure.
 
 Validation matters more here than at a typical boundary because the failure
 modes are silent rather than loud. `maxSegmentBytes: 0` would make the rotation
@@ -1745,6 +1764,49 @@ raises anything on its own.
 
 Nothing reaches the filesystem when input is rejected: validation and
 serialization both run before any handle is opened.
+
+A `maxSegmentBytes` below `M3L_AGENT_MAX_LOG_ENTRY_BYTES` stays legal even
+though it yields one entry per segment. Forbidding it would buy tidiness at the
+cost of making rotation untestable at small sizes, which is worse.
+
+### The entry is validated, then rebuilt — never serialized as given
+
+`write()` does not hand the caller's object to `JSON.stringify`. It validates
+the entry field by field with `Object.hasOwn` reads, rebuilds it as a
+**null-prototype projection**, and serializes that.
+
+Both halves are load-bearing, and each closes a defect found by executing
+probes against the built output:
+
+- **Rebuilding** stops an inherited `toJSON` from deciding what gets persisted.
+  `JSON.stringify` dispatches to `toJSON` whether it is an own property or
+  inherited, so a gadget planted on `Object.prototype` could make a frozen,
+  library-built entry with `verdict: "escalate"` persist as
+  `{"verdict":"auto-approved"}`. `Object.freeze` does not help — the property is
+  not on the object. A null-prototype projection has no `toJSON` to reach.
+- **Validating** stops an unvetted record entering the log at all. Without it
+  `write({})` persists `{}` as an audit record, and a `JSON.parse`d document
+  carrying an own `__proto__` key persists verbatim. The names-never-values rule
+  was enforced only by the projector, never by the thing that writes.
+
+This is the same rule `M3LAgentActionRecord` already follows: validate once,
+then never re-read the caller's object.
+
+The serialized result is also checked to be a string before it is measured or
+written. `JSON.stringify` is typed `string` but returns `undefined` for a plain
+object whose `toJSON()` returns `undefined`, and a template literal would
+launder that into the six-character text `undefined` — a line that writes
+cleanly and parses as nothing.
+
+### A segment path is never followed through a symlink
+
+The append opens with `O_NOFOLLOW` alongside the append flags, so a symlink
+planted at the segment path is refused rather than followed. Without it, anyone
+who could write into the log directory could redirect the audit trail into a
+file of their choosing — or away from where anyone would look for it.
+
+Where `O_NOFOLLOW` is unavailable (Windows), the flag is omitted and the
+previous behaviour stands.
 
 ### Concurrent writes on one instance
 

@@ -27,10 +27,14 @@
  */
 
 import type {
+  M3LAgentActionKind,
   M3LAgentActionRecord,
   M3LAgentActionRecordTarget,
 } from "../../core/agent/action-types.js";
-import type { M3LAgentDecision } from "../../core/agent/verdict-types.js";
+import type {
+  M3LAgentDecision,
+  M3LAgentVerdict,
+} from "../../core/agent/verdict-types.js";
 import { M3LAgentActionValidationError } from "../../core/agent/M3LAgentActionValidationError.js";
 import type {
   M3LAgentDecisionLogEntry,
@@ -49,7 +53,16 @@ import {
   isPlainObject,
   isString,
 } from "../../core/utils/guards.js";
-import { assertAllowedKeys, isNonBlankString } from "./validation.js";
+import {
+  assertAllowedKeys,
+  isNonBlankString,
+  readOptionalInteger,
+  readOptionalNonBlankString,
+  readOptionalNonNegativeFiniteNumber,
+  readRequiredHoldingUndefinedString,
+  requireNonBlankString,
+  requireStringInUnion,
+} from "./validation.js";
 
 /** The only own keys the options bag may carry. */
 const OPTIONS_KEYS: ReadonlySet<string> = new Set([
@@ -61,15 +74,23 @@ const OPTIONS_KEYS: ReadonlySet<string> = new Set([
   "cost",
 ]);
 
-/** The only own keys an identity may carry. */
-const IDENTITY_KEYS: ReadonlySet<string> = new Set([
+/**
+ * The only own keys an identity may carry. Exported so the decision log's
+ * writer proves the identity carried by an entry handed straight to
+ * `write()` against the same allowlist this projector proves the caller's
+ * against.
+ */
+export const IDENTITY_KEYS: ReadonlySet<string> = new Set([
   "name",
   "modelId",
   "awsPrincipal",
 ]);
 
-/** The only own keys an outcome may carry. */
-const OUTCOME_KEYS: ReadonlySet<string> = new Set([
+/**
+ * The only own keys an outcome may carry. Exported for the same reason as
+ * {@link IDENTITY_KEYS}.
+ */
+export const OUTCOME_KEYS: ReadonlySet<string> = new Set([
   "dryRun",
   "exitCode",
   "registryName",
@@ -145,9 +166,10 @@ const DECISION_ACTION_TARGET_KEYS_PROOF: Record<
  * The only own keys a decision's action `target` may carry (mirrors
  * `M3LAgentActionRecordTarget`). Derived from
  * {@link DECISION_ACTION_TARGET_KEYS_PROOF}; see {@link DECISION_KEYS_PROOF}
- * for the mechanism.
+ * for the mechanism. An entry's `target` mirrors the same three coordinates,
+ * so the decision log's writer proves it against this same set.
  */
-const DECISION_ACTION_TARGET_KEYS: ReadonlySet<string> = new Set(
+export const DECISION_ACTION_TARGET_KEYS: ReadonlySet<string> = new Set(
   Object.keys(DECISION_ACTION_TARGET_KEYS_PROOF),
 );
 
@@ -163,6 +185,20 @@ const AGENT_ACTION_KINDS: ReadonlySet<string> = new Set([
   "read-only",
   "mutating",
 ]);
+
+/**
+ * Narrows a string to this build's verdict vocabulary. Exported — rather than
+ * {@link AGENT_VERDICTS} itself — so the decision log's writer reuses the
+ * membership rule without being handed the Set behind it.
+ */
+export function isAgentVerdict(value: string): value is M3LAgentVerdict {
+  return AGENT_VERDICTS.has(value);
+}
+
+/** Narrows a string to `M3LAgentActionKind`; see {@link isAgentVerdict}. */
+export function isAgentActionKind(value: string): value is M3LAgentActionKind {
+  return AGENT_ACTION_KINDS.has(value);
+}
 
 /**
  * The maximum (and, negated, the minimum) time value `Date` can represent —
@@ -184,54 +220,6 @@ function logFailure(
     `agent decision-log entry: "${field}" is invalid (${violation})`,
     { context: { field, violation, ...detail } },
   );
-}
-
-/**
- * Reads an optional non-blank string field. Presence is `Object.hasOwn`, so a
- * non-own `"__proto__"` resolves as absent; a present-but-blank or
- * non-string value is malformed input, not "absent", and throws.
- */
-function readOptionalNonBlankString(
-  record: Readonly<Record<string, unknown>>,
-  key: string,
-  field: string,
-): string | undefined {
-  if (!Object.hasOwn(record, key)) {
-    return undefined;
-  }
-  const value = record[key];
-  if (!isNonBlankString(value)) {
-    throw logFailure(field, "blank-or-non-string");
-  }
-  return value;
-}
-
-/**
- * Reads an optional non-blank string field where an own key holding
- * `undefined` is legitimate input — not merely "absent" — matching the
- * "required, holding `undefined`" shape `M3LAgentActionRecordTarget` and
- * `M3LAgentActionRecord.operation` both use (`core/agent/action-types.ts`).
- * A present-but-blank or a present-non-string, non-`undefined` value is
- * malformed and throws. Shared by `decision.action.target`'s own fields and
- * `decision.action.operation` — every field this module reads that has this
- * exact shape goes through here, so the shape is proven once.
- */
-function readRequiredHoldingUndefinedString(
-  record: Readonly<Record<string, unknown>>,
-  key: string,
-  field: string,
-): string | undefined {
-  if (!Object.hasOwn(record, key)) {
-    return undefined;
-  }
-  const value = record[key];
-  if (value === undefined) {
-    return undefined;
-  }
-  if (!isNonBlankString(value)) {
-    throw logFailure(field, "blank-or-non-string");
-  }
-  return value;
 }
 
 /**
@@ -259,38 +247,20 @@ function assertValidDecisionActionTarget(value: unknown): void {
     value,
     "profile",
     "decision.action.target.profile",
+    logFailure,
   );
   readRequiredHoldingUndefinedString(
     value,
     "region",
     "decision.action.target.region",
+    logFailure,
   );
   readRequiredHoldingUndefinedString(
     value,
     "accountId",
     "decision.action.target.accountId",
+    logFailure,
   );
-}
-
-/**
- * Requires a non-blank string field that is also a member of a closed
- * vocabulary. Distinguishes "not a string at all" (`blank-or-non-string`,
- * from {@link requireNonBlankString}) from "a string, but not a recognised
- * member" (`notInUnionLabel`), so the two failures stay distinguishable —
- * `context` never carries the offending value either way.
- */
-function requireStringInUnion(
-  record: Readonly<Record<string, unknown>>,
-  key: string,
-  field: string,
-  isMember: (value: string) => boolean,
-  notInUnionLabel: string,
-): string {
-  const value = requireNonBlankString(record, key, field);
-  if (!isMember(value)) {
-    throw logFailure(field, notInUnionLabel);
-  }
-  return value;
 }
 
 /** The identity, projected into a fresh frozen object. */
@@ -308,11 +278,13 @@ function projectIdentity(value: unknown): M3LAgentIdentity {
     value,
     "modelId",
     "identity.modelId",
+    logFailure,
   );
   const awsPrincipal = readOptionalNonBlankString(
     value,
     "awsPrincipal",
     "identity.awsPrincipal",
+    logFailure,
   );
 
   // A fresh object, never the caller's reference — so a later mutation of
@@ -342,37 +314,6 @@ function readNow(bag: Readonly<Record<string, unknown>>): number {
   return value;
 }
 
-/** A negative or non-finite `tokens` / `cost` is malformed input. */
-function readOptionalNonNegativeFiniteNumber(
-  bag: Readonly<Record<string, unknown>>,
-  key: string,
-): number | undefined {
-  if (!Object.hasOwn(bag, key)) {
-    return undefined;
-  }
-  const value = bag[key];
-  if (!(typeof value === "number" && Number.isFinite(value) && value >= 0)) {
-    throw logFailure(key, "negative-or-non-finite");
-  }
-  return value;
-}
-
-/** Reads an optional integer field. A present-but-non-integer value throws. */
-function readOptionalInteger(
-  record: Readonly<Record<string, unknown>>,
-  key: string,
-  field: string,
-): number | undefined {
-  if (!Object.hasOwn(record, key)) {
-    return undefined;
-  }
-  const value = record[key];
-  if (typeof value !== "number" || !Number.isInteger(value)) {
-    throw logFailure(field, "not-an-integer");
-  }
-  return value;
-}
-
 /** The outcome, projected into a fresh frozen object. */
 function projectOutcome(value: unknown): M3LAgentDecisionOutcome {
   if (!isPlainObject(value)) {
@@ -384,11 +325,17 @@ function projectOutcome(value: unknown): M3LAgentDecisionOutcome {
   if (!isBoolean(dryRun)) {
     throw logFailure("outcome.dryRun", "not-a-boolean");
   }
-  const exitCode = readOptionalInteger(value, "exitCode", "outcome.exitCode");
+  const exitCode = readOptionalInteger(
+    value,
+    "exitCode",
+    "outcome.exitCode",
+    logFailure,
+  );
   const registryName = readOptionalNonBlankString(
     value,
     "registryName",
     "outcome.registryName",
+    logFailure,
   );
 
   return Object.freeze({
@@ -445,24 +392,6 @@ function projectEntry(
 }
 
 /**
- * Reads a required non-blank string field. Presence is `Object.hasOwn`;
- * absent, blank, or non-string all throw the same `"blank-or-non-string"`
- * violation for `field` — this validator has no notion of "absent is fine"
- * for any of these fields.
- */
-function requireNonBlankString(
-  record: Readonly<Record<string, unknown>>,
-  key: string,
-  field: string,
-): string {
-  const value = Object.hasOwn(record, key) ? record[key] : undefined;
-  if (!isNonBlankString(value)) {
-    throw logFailure(field, "blank-or-non-string");
-  }
-  return value;
-}
-
-/**
  * Validates `decision.action`: a plain object carrying exactly the fields
  * `projectEntry` copies verbatim into the entry.
  *
@@ -489,20 +418,27 @@ function assertValidDecisionAction(
   }
   assertAllowedKeys(value, DECISION_ACTION_KEYS, "decision.action", logFailure);
 
-  requireNonBlankString(value, "script", "decision.action.script");
+  requireNonBlankString(value, "script", "decision.action.script", logFailure);
   readRequiredHoldingUndefinedString(
     value,
     "operation",
     "decision.action.operation",
+    logFailure,
   );
   requireStringInUnion(
     value,
     "kind",
     "decision.action.kind",
-    (kind) => AGENT_ACTION_KINDS.has(kind),
+    isAgentActionKind,
     "not-a-known-kind",
+    logFailure,
   );
-  requireNonBlankString(value, "shapeKey", "decision.action.shapeKey");
+  requireNonBlankString(
+    value,
+    "shapeKey",
+    "decision.action.shapeKey",
+    logFailure,
+  );
 
   const target = Object.hasOwn(value, "target") ? value["target"] : undefined;
   assertValidDecisionActionTarget(target);
@@ -552,8 +488,9 @@ function assertValidDecision(
     value,
     "verdict",
     "decision.verdict",
-    (verdict) => AGENT_VERDICTS.has(verdict),
+    isAgentVerdict,
     "not-a-known-verdict",
+    logFailure,
   );
   requireStringInUnion(
     value,
@@ -561,8 +498,9 @@ function assertValidDecision(
     "decision.rule",
     isAgentPolicyRuleId,
     "not-a-known-rule-id",
+    logFailure,
   );
-  requireNonBlankString(value, "reason", "decision.reason");
+  requireNonBlankString(value, "reason", "decision.reason", logFailure);
 }
 
 /**
@@ -594,8 +532,18 @@ export function buildAgentDecisionLogEntry(
     const outcome = Object.hasOwn(bag, "outcome")
       ? projectOutcome(bag["outcome"])
       : undefined;
-    const tokens = readOptionalNonNegativeFiniteNumber(bag, "tokens");
-    const cost = readOptionalNonNegativeFiniteNumber(bag, "cost");
+    const tokens = readOptionalNonNegativeFiniteNumber(
+      bag,
+      "tokens",
+      "tokens",
+      logFailure,
+    );
+    const cost = readOptionalNonNegativeFiniteNumber(
+      bag,
+      "cost",
+      "cost",
+      logFailure,
+    );
     return projectEntry(decision, identity, now, outcome, tokens, cost);
   } catch (cause) {
     // Already typed — re-throw unchanged rather than double-wrapping.
