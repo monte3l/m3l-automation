@@ -114,6 +114,16 @@ The rule in parentheses maps to a fix category (TypeScript, ESM imports, Error h
 Security, Testing, Exports map). Parse each section separately and tag every bullet with
 its severity tier and its rule/category.
 
+**Split every finding into its claim, its concern, and its prescription, and
+trust the three separately.** Verify the claim against the raw artifact — a
+wrong claim routinely wraps a correct concern. Check the prescription against
+existing precedent before dispatching it: two spokes on `aws/bedrock-runtime`
+diagnosed correctly and prescribed a fix that would have introduced a new
+defect, a reviewer on `sqs-etl` suggested reusing a shared primitive whose
+generic bound made the flagged duplication load-bearing, and a reviewer on
+`x9-console-web` called a file's imports clean when only a real build showed
+what the module graph actually reached.
+
 Print a three-section preview to the user before starting any edits. Omit a section if
 it has no findings:
 

@@ -262,7 +262,7 @@ the test — decide which is wrong before letting the test enshrine it.
 - **A mutation proof proves nothing until the mutation is confirmed to change
   behaviour.** Anchor the pattern so it cannot match a comment, and prefer a
   runtime expression — Vitest does not typecheck, so a type-level mutation is
-  invisible to it.
+  invisible to it. _(promoted → `.claude/rules/tests.md`)_
 
 - **Instruct spokes to report unexpected changes, never revert them.** In a
   shared checkout with parallel spokes, a spoke policing files outside its scope

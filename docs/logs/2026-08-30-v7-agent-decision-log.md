@@ -187,7 +187,7 @@ as an error condition worth stopping on.
 - **Own-key discipline is worthless if one call still walks the prototype
   chain.** This module guarded every field read with `Object.hasOwn` and then
   handed the whole object to a function that re-opened the door. Audit the
-  weakest read, not the average one.
+  weakest read, not the average one. _(promoted → `.claude/rules/tests.md`)_
 
 - **Parallelising an audit against a merge is a race you can lose.** Dispatching
   reviewers alongside CI saves a cycle only when nothing can merge in between.
@@ -197,7 +197,7 @@ as an error condition worth stopping on.
   file once it reaches 100%, and after a full `pnpm test:coverage` the root
   `coverage/coverage-final.json` holds only the **last** lane to finish — which
   is not `bin/` any more, it is `m3l-console-web`. Read per-file numbers from a
-  scoped run's JSON, and state measured figures rather than "should be covered".
+  scoped run's JSON, and state measured figures rather than "should be covered". _(promoted → `.claude/rules/tests.md`)_
 
 - **Splitting on a real seam beats raising the ratchet.** `decision-log-writer.ts`
   crossed the 25 KB budget by 341 bytes. Extracting the segment layer as free

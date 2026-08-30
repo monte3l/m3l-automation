@@ -25,6 +25,13 @@ paths:
   Damerau-Levenshtein helper at ~10%, asserting nothing). If a behavioral stage's
   only test is "doesn't throw", it is a coverage gap — read
   `coverage/coverage-final.json` to catch a named-but-unexercised path.
+- **A test that claims to guard something must be mutation-tested before you
+  believe it guards anything.** Break the thing the test names — delete the
+  guard clause, invert the flag, drop the `.then()` wrapper — and confirm the
+  test fails. V7's promise-chain comment asserted that a rejected write could
+  not poison later writes; replacing `this.tail = appended.then(...)` with
+  `this.tail = appended` left the entire suite green. Say in the log what you
+  mutated and what you saw.
 - **A test that names a precedence, an ordering, or an "every X" guarantee must
   make every arm reachable in its own setup.** Distinct from the proxy rule
   above: the assertion can be exactly right and still prove nothing, because the
@@ -209,7 +216,12 @@ throw "a string";
 - **Read coverage from `coverage/coverage-final.json`, not the
   `pnpm test:coverage` text table.** The v8 text reporter omits files that are
   100% on all four metrics, so an "absent" file in the table is not an uncovered
-  file — the JSON is the source of truth.
+  file — the JSON is the source of truth. **After a full-workspace run that
+  JSON holds only the _last project to finish_**, not the merged result, so
+  reading it for a `m3l-common` file yields nothing or stale numbers from an
+  earlier run. Scope the run
+  (`vitest run --coverage --coverage.reporter=json <paths>`) and read that
+  output, and report measured figures rather than "should be covered now".
 - **A suite that fails while a spoke fan-out is running may be contention, not
   a regression — re-run it alone before believing it.** `pnpm test:coverage`
   exited non-zero once with five review spokes in flight, then passed twice in

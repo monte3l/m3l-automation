@@ -166,7 +166,7 @@ cheap," and only the build proves which one is true.
   reachable module graph, not the file in isolation.** A leaf module with
   clean imports can still be unreachable-except-through-a-heavy-barrel; the
   only way to know is a real build, not a `grep` of the target file
-  (divergence #3).
+  (divergence #3). _(promoted → `.claude/skills/resolving-pr-comments/SKILL.md`)_
 - **A new toolchain's first transitive dependency license is predictable,
   not novel.** Vite/Babel-based frontends pull in `browserslist` →
   `caniuse-lite` (`CC-BY-4.0`) essentially every time; the next browser-target
@@ -185,4 +185,4 @@ cheap," and only the build proves which one is true.
 - **Mutation-testing a hardcoded-conjunction guard (like the no-cycle zone's
   four-then-five-glob check) is cheap and catches real regressions.** Drop
   the new predicate, confirm the checker fails, restore — takes seconds and
-  proves the guard isn't decorative before it ships.
+  proves the guard isn't decorative before it ships. _(promoted → `.claude/rules/tests.md`)_
