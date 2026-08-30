@@ -30,6 +30,14 @@ interface M3LAgentActionValidationErrorOptions {
  * a non-function `additionalSensitiveTargets`, or any unknown or dangerous
  * key.
  *
+ * Also thrown by {@link agentDecisionLogEntry} when **its** options bag is
+ * structurally malformed — a blank `identity.name`, a non-string `modelId` or
+ * `awsPrincipal`, a `now` outside the range `Date` can represent, a negative
+ * or non-finite `tokens` or `cost`, a non-integer `outcome.exitCode`, or any
+ * unknown or dangerous key. Both boundaries share this one error class rather
+ * than each minting its own, and both follow the same "`context` names the
+ * field and the violation kind, never a value" discipline.
+ *
  * A malformed input is a bug to surface loudly; a well-formed input the
  * current rule set cannot classify is a condition to escalate. This error is
  * therefore only ever thrown, never returned as a verdict.

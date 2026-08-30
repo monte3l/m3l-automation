@@ -28,13 +28,16 @@ import { describe, expect, expectTypeOf, test } from "vitest";
 
 import {
   M3L_AGENT_MAX_DRY_RUN_SHAPES,
+  M3L_AGENT_MAX_LOG_ENTRY_BYTES,
   M3L_AGENT_MAX_OPERATIONS_PER_GRANT,
   M3LAgentActionValidationError,
   M3LAgentPolicyDeclarationError,
   agentActionShapeKey,
+  agentDecisionLogEntry,
   canonicalJsonHash,
   evaluateAgentAction,
   isAgentPolicyRuleId,
+  serializeAgentDecisionLogEntry,
   validateAgentPolicy,
 } from "../src/core/index.js";
 import type {
@@ -43,7 +46,11 @@ import type {
   M3LAgentActionRecord,
   M3LAgentBudgets,
   M3LAgentDecision,
+  M3LAgentDecisionLogEntry,
+  M3LAgentDecisionLogEntryOptions,
+  M3LAgentDecisionOutcome,
   M3LAgentEvaluationOptions,
+  M3LAgentIdentity,
   M3LAgentPolicy,
   M3LAgentPolicyDeclaration,
   M3LAgentPolicyRuleId,
@@ -1271,7 +1278,14 @@ describe("41-42. type-level contract", () => {
   });
 });
 
-/** The twelve runtime (value) exports slice 2 leaves the submodule barrel with. */
+/**
+ * The fifteen runtime (value) exports V7 slice 1 leaves the submodule barrel
+ * with: slice 1/2's twelve plus the three the decision-log entry adds
+ * (`agentDecisionLogEntry`, `serializeAgentDecisionLogEntry`,
+ * `M3L_AGENT_MAX_LOG_ENTRY_BYTES`). The three additions are exercised below
+ * so a dropped export fails this file at both runtime and typecheck, not
+ * just the barrel-inventory count.
+ */
 const RUNTIME_EXPORTS = [
   "M3L_AGENT_MAX_PARAMETER_NAMES",
   "M3L_AGENT_MAX_OPERATIONS_PER_GRANT",
@@ -1285,10 +1299,13 @@ const RUNTIME_EXPORTS = [
   "validateAgentPolicy",
   "evaluateAgentAction",
   "agentActionShapeKey",
+  "M3L_AGENT_MAX_LOG_ENTRY_BYTES",
+  "agentDecisionLogEntry",
+  "serializeAgentDecisionLogEntry",
 ] as const;
 
 /**
- * The twelve type-only exports. Not independently runtime-checkable — this
+ * The sixteen type-only exports. Not independently runtime-checkable — this
  * file's own top-level `import type { ... }` block already imports all of
  * them, so a missing one fails the whole file at typecheck.
  */
@@ -1305,19 +1322,48 @@ const TYPE_ONLY_EXPORTS = [
   "M3LAgentEvaluationOptions",
   "M3LAgentBudgets",
   "M3LAgentRunLedger",
+  "M3LAgentIdentity",
+  "M3LAgentDecisionOutcome",
+  "M3LAgentDecisionLogEntry",
+  "M3LAgentDecisionLogEntryOptions",
 ] as const;
 
 test("43. M3L_AGENT_MAX_DRY_RUN_SHAPES is 256", () => {
   expect(M3L_AGENT_MAX_DRY_RUN_SHAPES).toBe(256);
 });
 
-test("43. core/agent barrel surfaces exactly twenty-four named exports (12 runtime + 12 type-only)", async () => {
-  expect(RUNTIME_EXPORTS.length + TYPE_ONLY_EXPORTS.length).toBe(24);
+test("43. core/agent barrel surfaces exactly thirty-one named exports (15 runtime + 16 type-only)", async () => {
+  expect(RUNTIME_EXPORTS.length + TYPE_ONLY_EXPORTS.length).toBe(31);
 
   const barrel: Record<string, unknown> =
     await import("../src/core/agent/index.js");
 
   expect(Object.keys(barrel).sort()).toEqual([...RUNTIME_EXPORTS].sort());
+});
+
+describe("43. the V7 slice 1 decision-log additions are live on the barrel", () => {
+  test("agentDecisionLogEntry / serializeAgentDecisionLogEntry / M3L_AGENT_MAX_LOG_ENTRY_BYTES round-trip", () => {
+    expect(M3L_AGENT_MAX_LOG_ENTRY_BYTES).toBe(65536);
+
+    const decision = evaluateAgentAction({
+      policy: noDryRunFirstPolicy(),
+      action: {
+        script: "dynamodb-crud",
+        operation: "get-item",
+        kind: "read-only",
+      },
+    });
+    const identity: M3LAgentIdentity = { name: "agent-x" };
+    const outcome: M3LAgentDecisionOutcome = { dryRun: false, exitCode: 0 };
+    const entry: M3LAgentDecisionLogEntry = agentDecisionLogEntry({
+      decision,
+      identity,
+      now: Date.UTC(2026, 7, 30),
+      outcome,
+    } satisfies M3LAgentDecisionLogEntryOptions);
+
+    expect(typeof serializeAgentDecisionLogEntry(entry)).toBe("string");
+  });
 });
 
 describe("44. every slice-1 scenario keeps its verdict, rule, and reason", () => {
