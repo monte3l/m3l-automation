@@ -1,0 +1,102 @@
+{
+  "version": 1,
+  "requireDecisionLog": true,
+  "dryRunFirst": true,
+  "sensitiveTargets": {
+    "profiles": ["prod", "production"]
+  },
+  "budgets": {
+    "invocationsPerRun": 60,
+    "invocationsPerDay": 400,
+    "tokensPerRun": 200000,
+    "costPerRun": 2,
+    "loopIterations": 8
+  },
+  "scripts": [
+    {
+      "script": "agent-operator",
+      "operations": ["list", "doctor", "explain-policy", "health-check"],
+      "readOnlyOperations": ["list", "doctor", "explain-policy", "health-check"]
+    },
+    {
+      "script": "api-gateway-client",
+      "operations": ["inspect", "dry-run"],
+      "readOnlyOperations": ["inspect", "dry-run"]
+    },
+    {
+      "script": "athena-query",
+      "operations": ["inspect", "dry-run"],
+      "readOnlyOperations": ["inspect", "dry-run"]
+    },
+    {
+      "script": "cloudformation-stacks",
+      "operations": ["inspect", "dry-run"],
+      "readOnlyOperations": ["inspect", "dry-run"]
+    },
+    {
+      "script": "cloudwatch-logs-analysis",
+      "operations": ["inspect", "dry-run"],
+      "readOnlyOperations": ["inspect", "dry-run"]
+    },
+    {
+      "script": "cloudwatch-logs-insights",
+      "operations": ["inspect", "dry-run"],
+      "readOnlyOperations": ["inspect", "dry-run"]
+    },
+    {
+      "script": "codepipeline-ops",
+      "operations": ["inspect", "dry-run"],
+      "readOnlyOperations": ["inspect", "dry-run"]
+    },
+    {
+      "script": "dynamodb-crud",
+      "operations": ["inspect", "dry-run"],
+      "readOnlyOperations": ["inspect", "dry-run"]
+    },
+    {
+      "script": "ecs-ops",
+      "operations": ["inspect", "dry-run"],
+      "readOnlyOperations": ["inspect", "dry-run"]
+    },
+    {
+      "script": "eks-ops",
+      "operations": ["inspect", "dry-run"],
+      "readOnlyOperations": ["inspect", "dry-run"]
+    },
+    {
+      "script": "eventbridge-schedules",
+      "operations": ["inspect", "dry-run"],
+      "readOnlyOperations": ["inspect", "dry-run"]
+    },
+    {
+      "script": "json-etl",
+      "operations": ["inspect", "dry-run"],
+      "readOnlyOperations": ["inspect", "dry-run"]
+    },
+    {
+      "script": "lambda-ops",
+      "operations": ["inspect", "dry-run"],
+      "readOnlyOperations": ["inspect", "dry-run"]
+    },
+    {
+      "script": "rds-data-sql",
+      "operations": ["inspect", "dry-run"],
+      "readOnlyOperations": ["inspect", "dry-run"]
+    },
+    {
+      "script": "s3-objects",
+      "operations": ["inspect", "dry-run"],
+      "readOnlyOperations": ["inspect", "dry-run"]
+    },
+    {
+      "script": "sqs-dead-letter-triage",
+      "operations": ["inspect", "dry-run"],
+      "readOnlyOperations": ["inspect", "dry-run"]
+    },
+    {
+      "script": "sqs-etl",
+      "operations": ["inspect", "dry-run"],
+      "readOnlyOperations": ["inspect", "dry-run"]
+    }
+  ]
+}
