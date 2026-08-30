@@ -123,10 +123,45 @@
         {
           "file": "packages/m3l-common/src/core/agent/M3LAgentActionValidationError.ts",
           "symbol": "M3LAgentActionValidationError",
-          "blob": "b829e588c6487964ccff5d1f237e02ea2fca697e"
+          "blob": "9cc2b4688f4a4911e9c8fb10ccdf8e89eb9a2e3d"
+        },
+        {
+          "file": "packages/m3l-common/src/core/agent/decision-log-types.ts",
+          "symbol": "M3LAgentIdentity",
+          "blob": "d55bb836df4ffb016849e106fdb6ab5fea8b92b6"
+        },
+        {
+          "file": "packages/m3l-common/src/core/agent/decision-log-types.ts",
+          "symbol": "M3LAgentDecisionOutcome",
+          "blob": "d55bb836df4ffb016849e106fdb6ab5fea8b92b6"
+        },
+        {
+          "file": "packages/m3l-common/src/core/agent/decision-log-types.ts",
+          "symbol": "M3LAgentDecisionLogEntry",
+          "blob": "d55bb836df4ffb016849e106fdb6ab5fea8b92b6"
+        },
+        {
+          "file": "packages/m3l-common/src/core/agent/decision-log-types.ts",
+          "symbol": "M3LAgentDecisionLogEntryOptions",
+          "blob": "d55bb836df4ffb016849e106fdb6ab5fea8b92b6"
+        },
+        {
+          "file": "packages/m3l-common/src/core/agent/decision-log-types.ts",
+          "symbol": "M3L_AGENT_MAX_LOG_ENTRY_BYTES",
+          "blob": "d55bb836df4ffb016849e106fdb6ab5fea8b92b6"
+        },
+        {
+          "file": "packages/m3l-common/src/core/agent/decision-log-entry.ts",
+          "symbol": "agentDecisionLogEntry",
+          "blob": "d09b5654d43fa532e5c49dfcf1486b0f9f5545d5"
+        },
+        {
+          "file": "packages/m3l-common/src/core/agent/decision-log-entry.ts",
+          "symbol": "serializeAgentDecisionLogEntry",
+          "blob": "d09b5654d43fa532e5c49dfcf1486b0f9f5545d5"
         }
       ],
-      "retrieved": "2026-08-29"
+      "retrieved": "2026-08-30"
     },
     {
       "heading": "The action under judgement",
@@ -276,10 +311,51 @@
         {
           "file": "packages/m3l-common/src/core/agent/M3LAgentActionValidationError.ts",
           "symbol": "M3LAgentActionValidationError",
-          "blob": "b829e588c6487964ccff5d1f237e02ea2fca697e"
+          "blob": "9cc2b4688f4a4911e9c8fb10ccdf8e89eb9a2e3d"
         }
       ],
-      "retrieved": "2026-08-29"
+      "retrieved": "2026-08-30"
+    },
+    {
+      "heading": "The decision-log entry",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/agent/decision-log-types.ts",
+          "symbol": "M3LAgentIdentity",
+          "blob": "d55bb836df4ffb016849e106fdb6ab5fea8b92b6"
+        },
+        {
+          "file": "packages/m3l-common/src/core/agent/decision-log-types.ts",
+          "symbol": "M3LAgentDecisionOutcome",
+          "blob": "d55bb836df4ffb016849e106fdb6ab5fea8b92b6"
+        },
+        {
+          "file": "packages/m3l-common/src/core/agent/decision-log-types.ts",
+          "symbol": "M3LAgentDecisionLogEntry",
+          "blob": "d55bb836df4ffb016849e106fdb6ab5fea8b92b6"
+        },
+        {
+          "file": "packages/m3l-common/src/core/agent/decision-log-types.ts",
+          "symbol": "M3LAgentDecisionLogEntryOptions",
+          "blob": "d55bb836df4ffb016849e106fdb6ab5fea8b92b6"
+        },
+        {
+          "file": "packages/m3l-common/src/core/agent/decision-log-types.ts",
+          "symbol": "M3L_AGENT_MAX_LOG_ENTRY_BYTES",
+          "blob": "d55bb836df4ffb016849e106fdb6ab5fea8b92b6"
+        },
+        {
+          "file": "packages/m3l-common/src/core/agent/decision-log-entry.ts",
+          "symbol": "agentDecisionLogEntry",
+          "blob": "d09b5654d43fa532e5c49dfcf1486b0f9f5545d5"
+        },
+        {
+          "file": "packages/m3l-common/src/core/agent/decision-log-entry.ts",
+          "symbol": "serializeAgentDecisionLogEntry",
+          "blob": "d09b5654d43fa532e5c49dfcf1486b0f9f5545d5"
+        }
+      ],
+      "retrieved": "2026-08-30"
     }
   ]
 }
