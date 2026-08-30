@@ -1,5 +1,18 @@
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
+import * as fs from "node:fs";
+import type { NonSharedBuffer } from "node:buffer";
+
+// Spread the actual fs so vi.spyOn can intercept individual methods (ESM
+// namespace objects are non-writable by default — the spread makes them
+// plain, writable object properties). Only definedAgentNames() touches the
+// filesystem in this file; every other export here is pure.
+vi.mock("node:fs", async () => {
+  const actual = await vi.importActual<typeof fs>("node:fs");
+  return { ...actual };
+});
+
 import {
+  definedAgentNames,
   extractMaxAgents,
   extractPropLiterals,
   MAX_WORKFLOW_AGENTS,
@@ -7,9 +20,107 @@ import {
   validateWorkflowSurface,
 } from "../check-workflows.mjs";
 
+/**
+ * A minimal `fs.Dirent`-shaped fixture — only the members `walk()`
+ * (bin/lib/agent-roster.mjs) reads: `name` and `isDirectory()`. Cast through
+ * `unknown` because `readdirSync`'s `{ withFileTypes: true }` overload types
+ * its return as `Dirent<NonSharedBuffer>[]` (the buffer-name variant) even
+ * though the runtime `name` is always a string — the fixture only needs to
+ * satisfy `walk()`'s actual reads, not the full `Dirent` shape.
+ */
+function fileEntry(name: string) {
+  return {
+    name,
+    isDirectory: () => false,
+  } as unknown as fs.Dirent<NonSharedBuffer>;
+}
+
 describe("MAX_WORKFLOW_AGENTS", () => {
   test("pins the ADR-0025 guardrail ceiling at 25", () => {
     expect(MAX_WORKFLOW_AGENTS).toBe(25);
+  });
+});
+
+describe("definedAgentNames", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  test("collects every name field from valid .md frontmatter in the directory", () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(true);
+    vi.spyOn(fs, "readdirSync").mockReturnValue([
+      fileEntry("code-implementer.md"),
+      fileEntry("test-author.md"),
+    ]);
+    vi.spyOn(fs, "readFileSync").mockImplementation((path) => {
+      const file = String(path);
+      if (file.endsWith("code-implementer.md")) {
+        return "---\nname: code-implementer\ndescription: writes code\n---\nBody.\n";
+      }
+      return "---\nname: test-author\ndescription: writes tests\n---\nBody.\n";
+    });
+
+    const result = definedAgentNames("/repo/.claude/agents");
+
+    expect(result).toEqual(new Set(["code-implementer", "test-author"]));
+  });
+
+  test("excludes a .md file with no frontmatter delimiter at all", () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(true);
+    vi.spyOn(fs, "readdirSync").mockReturnValue([
+      fileEntry("no-frontmatter.md"),
+    ]);
+    vi.spyOn(fs, "readFileSync").mockReturnValue(
+      "# Just a heading\n\nNo frontmatter block here at all.\n",
+    );
+
+    const result = definedAgentNames("/repo/.claude/agents");
+
+    expect(result).toEqual(new Set());
+  });
+
+  test("excludes a .md file whose frontmatter block has no name field", () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(true);
+    vi.spyOn(fs, "readdirSync").mockReturnValue([
+      fileEntry("no-name-field.md"),
+    ]);
+    vi.spyOn(fs, "readFileSync").mockReturnValue(
+      "---\ndescription: some agent with no name field\n---\nBody.\n",
+    );
+
+    const result = definedAgentNames("/repo/.claude/agents");
+
+    expect(result).toEqual(new Set());
+  });
+
+  test("ignores non-.md files in the same directory", () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(true);
+    vi.spyOn(fs, "readdirSync").mockReturnValue([
+      fileEntry("code-implementer.md"),
+      fileEntry("README"),
+      fileEntry("notes.txt"),
+    ]);
+    const readFileSync = vi
+      .spyOn(fs, "readFileSync")
+      .mockReturnValue("---\nname: code-implementer\n---\nBody.\n");
+
+    const result = definedAgentNames("/repo/.claude/agents");
+
+    expect(result).toEqual(new Set(["code-implementer"]));
+    expect(readFileSync).toHaveBeenCalledTimes(1);
+  });
+
+  test("returns an empty set for an absent directory without throwing", () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(false);
+    const readdirSync = vi.spyOn(fs, "readdirSync");
+
+    expect(() =>
+      definedAgentNames("/repo/.claude/agents-missing"),
+    ).not.toThrow();
+    expect(definedAgentNames("/repo/.claude/agents-missing")).toEqual(
+      new Set(),
+    );
+    expect(readdirSync).not.toHaveBeenCalled();
   });
 });
 
