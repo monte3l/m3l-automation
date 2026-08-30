@@ -32,8 +32,9 @@ M3L_CONSOLE_RUNS_SCRIPTS_DIR="$PWD/scripts" \
 
 That variable is the whole gate: absent, the server boots with run
 orchestration disabled and logs that posture once, rather than refusing to
-start over an optional subsystem. The session and workbench routes arrive with
-X6/X10 and do not exist yet.
+start over an optional subsystem. The X6 workbench-sessions routes
+(`/api/v1/sessions*`) have no separate enable/disable gate of their own — see
+`docs/reference/console.md`'s Sessions section.
 
 The full HTTP contract — every route, the error envelope, the SSE frame
 vocabulary and its resume semantics — is

@@ -209,7 +209,7 @@ per-phase detail in
 | **X3**  | Persistence foundation (`node:sqlite` + repository seam)         | Done     |
 | **X4**  | Run orchestration (registry, concurrency, SSE streams)           | Done     |
 | **X5**  | `sqs-etl` list-queues operation (fleet PR)                       | Done     |
-| **X6**  | Workbench sessions (addressable results, bindings; U10 consumes) | To Do    |
+| **X6**  | Workbench sessions (addressable results, bindings; U10 consumes) | Done     |
 | **X7**  | Human-action audit + correlation threading                       | To Do    |
 | **X8**  | Self-telemetry + retention tooling                               | To Do    |
 | **X9**  | `m3l-console-web` skeleton (Vite/React/Playwright, zones)        | Done     |
