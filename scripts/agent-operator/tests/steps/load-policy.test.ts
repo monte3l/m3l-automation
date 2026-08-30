@@ -26,6 +26,7 @@ import { loadAgentPolicy } from "../../src/steps/load-policy.js";
 import {
   castPolicy,
   invalidPolicyDeclarations,
+  realAgentPolicy,
 } from "../support/policyFixtures.js";
 
 const POLICY_FILE = "agent-policy.json";
@@ -181,6 +182,38 @@ describe("loadAgentPolicy", () => {
       "ERR_AGENT_OPERATOR_POLICY",
     );
     expect(({} as Record<string, unknown>)["polluted"]).toBeUndefined();
+  });
+});
+
+describe("the committed data/input/agent-policy.json (realAgentPolicy)", () => {
+  it("validates and holds the shape the docs claim: 17 grants, both discipline flags, every budget ceiling, and a non-empty readOnlyOperations per grant", async () => {
+    // Guards against someone hand-editing the committed policy into an
+    // invalid or over-granted state without exercising the real deployed
+    // file through the real validator (not a synthetic stand-in).
+    const policy = await realAgentPolicy();
+
+    expect(policy.version).toBe(1);
+    expect(policy.scripts).toHaveLength(17);
+    expect(policy.requireDecisionLog).toBe(true);
+    expect(policy.dryRunFirst).toBe(true);
+
+    const budgets = policy.budgets;
+    expect(budgets).toBeDefined();
+    const ceilings: ReadonlyArray<keyof Core.M3LAgentBudgets> = [
+      "invocationsPerRun",
+      "invocationsPerDay",
+      "tokensPerRun",
+      "costPerRun",
+      "loopIterations",
+    ];
+    for (const ceiling of ceilings) {
+      expect(typeof budgets?.[ceiling]).toBe("number");
+    }
+
+    for (const grant of policy.scripts) {
+      expect(grant.readOnlyOperations).toBeDefined();
+      expect(grant.readOnlyOperations?.length).toBeGreaterThan(0);
+    }
   });
 });
 

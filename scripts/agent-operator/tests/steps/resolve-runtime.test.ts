@@ -138,6 +138,38 @@ describe("resolveAgentOperatorRuntime — model rate parsing", () => {
       "ERR_AGENT_OPERATOR_CONFIG",
     );
   });
+
+  // Regression: the parser used to validate the model id against its
+  // trimmed form but key the resulting map entry with the UNTRIMMED
+  // capture, so " my-model =3,15" was stored under " my-model " and every
+  // later `settings.modelRates.get("my-model")` lookup silently missed —
+  // making the model's cost unobservable rather than throwing. The fix
+  // rejects a padded id outright; this locks that in for a leading space, a
+  // trailing space, and an embedded tab.
+  it.each([
+    ["a leading space", " my-model=3,15"],
+    ["a trailing space", "my-model =3,15"],
+    ["a tab", "my-model\t=3,15"],
+  ])(
+    "rejects a modelRates entry whose model id has %s, without echoing the id",
+    (_label, entry) => {
+      const config = buildConfig({ modelRates: [entry] });
+      let thrown: unknown;
+      try {
+        resolveAgentOperatorRuntime({
+          config,
+          policy: minimalPolicy(),
+          paths: new Core.M3LPaths(),
+        });
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toBeInstanceOf(M3LAgentOperatorCliError);
+      const asError = thrown as M3LAgentOperatorCliError;
+      expect(asError.code).toBe("ERR_AGENT_OPERATOR_CONFIG");
+      expect(asError.message).not.toContain("my-model");
+    },
+  );
 });
 
 describe("resolveAgentOperatorRuntime — maxIterations vs. policy.budgets.loopIterations", () => {
