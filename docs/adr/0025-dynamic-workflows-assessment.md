@@ -127,6 +127,19 @@ be premature.
   `check:workflows` (`bin/check-workflows.mjs`) and the `workflow-script`
   MODEL-MATRIX surface; 3 is documented in
   `docs/contributing/model-selection.md` § Enforcement.
+- **Amendment (2026-08-30):** the `audit-fanout.js` pilot's original report
+  mechanism — each read-only Explore finder writing a full report to a hub-
+  supplied scratchpad directory, returning only a compact digest — never
+  actually worked. Explore holds no `Write`/`Edit` tool and
+  `guard-readonly-bash.mjs` blocks every shell write route (path-blind, no
+  scratchpad exemption), so the instruction was silently unsatisfiable in
+  every invocation, not only under plan mode as first suspected. The
+  mechanism now returns each report inline in the digest under a hard
+  `maxLength` schema cap instead, preserving this ADR's context-leanness
+  intent without the filesystem indirection. `check:workflows` gained rule R8
+  (agentType capability check) so a future workflow can't repeat the mismatch
+  invisibly. See `docs/contributing/model-selection.md` § Enforcement and
+  `.claude/workflows/audit-fanout.js`.
 - **Semver impact:** none — this is a tooling/process decision with no effect
   on `@m3l-automation/m3l-common`'s public contract.
 

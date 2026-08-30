@@ -2,14 +2,16 @@
 //
 // audit-fanout — the ADR-0025 pilot dynamic workflow. Owns the mechanical
 // slice of the auditing skill: fan out one read-only Explore agent per audit
-// facet (fixed EXISTING/GAP/INCONSISTENCY report format, full report written
-// into the run directory, compact digest returned), then adversarially verify
-// each GAP/INCONSISTENCY finding with an independent refute agent following
-// the security-reviewer refute-mode pattern. The hub keeps the judgment half:
-// aggregation, clarifying questions, and plan mode (see
-// .claude/skills/auditing/SKILL.md). The tier pins below are enforced against
-// the MODEL-MATRIX workflow-script rows by `pnpm check:workflows`, which also
-// enforces the max-agents header above (5 finders + 15 refuters = 20 <= 25).
+// facet (fixed EXISTING/GAP/INCONSISTENCY report format, full report returned
+// inline in the digest under a hard size cap — Explore holds no write tool
+// and guard-readonly-bash.mjs blocks every shell write route, so nothing here
+// touches the filesystem), then adversarially verify each GAP/INCONSISTENCY
+// finding with an independent refute agent following the security-reviewer
+// refute-mode pattern. The hub keeps the judgment half: aggregation,
+// clarifying questions, and plan mode (see .claude/skills/auditing/SKILL.md).
+// The tier pins below are enforced against the MODEL-MATRIX workflow-script
+// rows by `pnpm check:workflows`, which also enforces the max-agents header
+// above (5 finders + 15 refuters = 20 <= 25).
 //
 // Runtime contract (Workflow tool): agent/parallel/pipeline/phase/log/args/
 // budget are ambient globals, and the body runs inside an async function
@@ -45,13 +47,18 @@ const VERIFY_MAX = 15;
 // honestly unverified one.
 const MIN_VERIFY_TOKEN_BUDGET = 50_000;
 
+// Worst case 5 facets x REPORT_MAX_CHARS ~= 40 KB of hub context — bounded
+// and predictable, replacing the file-write indirection that never worked
+// under Explore's read-only tool grant (see the header comment above).
+const REPORT_MAX_CHARS = 8000;
+
 const DIGEST_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["facet", "reportPath", "counts", "items"],
+  required: ["facet", "reportMarkdown", "counts", "items"],
   properties: {
     facet: { type: "string" },
-    reportPath: { type: "string" },
+    reportMarkdown: { type: "string", maxLength: REPORT_MAX_CHARS },
     counts: {
       type: "object",
       additionalProperties: false,
@@ -108,24 +115,15 @@ if (
   parsedArgs === null ||
   typeof parsedArgs !== "object"
 ) {
-  throw invalidArgs("expected { topic, runDir, facets }");
+  throw invalidArgs("expected { topic, facets }");
 }
-const { topic, runDir, facets } = parsedArgs;
+const { topic, facets } = parsedArgs;
 if (typeof topic !== "string" || topic.length === 0) {
   throw invalidArgs("topic must be a non-empty string");
-}
-if (typeof runDir !== "string" || runDir.length === 0) {
-  throw invalidArgs(
-    "runDir must be a non-empty path created by the hub (scripts cannot mint timestamps)",
-  );
 }
 if (!Array.isArray(facets) || facets.length < 1 || facets.length > FACETS_MAX) {
   throw invalidArgs(`facets must be an array of 1..${FACETS_MAX} entries`);
 }
-// Finders write their report via whatever shell they pick; forward slashes
-// survive both PowerShell and Git Bash on Windows, backslashes don't (the
-// first live acceptance run lost a report file to separator mangling).
-const runDirPosix = runDir.replace(/\\/g, "/");
 const seenSlugs = new Set();
 for (const facet of facets) {
   if (
@@ -143,7 +141,7 @@ for (const facet of facets) {
     );
   }
   if (seenSlugs.has(facet.slug)) {
-    // Two finders with one slug would clobber the same report file.
+    // Two finders with one slug would collide as facet identity downstream.
     throw invalidArgs(`duplicate facet slug "${facet.slug}"`);
   }
   seenSlugs.add(facet.slug);
@@ -159,17 +157,17 @@ function findPrompt(facet) {
     "",
     "Method:",
     "- Read the relevant files IN FULL (not just search); excerpts miss content past the read window.",
-    `- Write your full findings to exactly this file: ${runDirPosix}/${facet.slug}.md`,
-    "- After writing, confirm the file actually exists at that exact path (e.g. list it) before returning your digest — a digest whose report file is missing forces the hub to redo your work.",
-    "- Use this report format verbatim in that file:",
+    "- You hold no write tool and cannot write any file — this is by design (you are a structurally read-only spoke). Your full report travels back in your structured return value, not on disk.",
+    "- Use this report format verbatim, as the value of the reportMarkdown field:",
     "",
     `  ## Findings: ${facet.name}`,
     "  - EXISTING: <description of what is already in place>",
     "  - GAP: <something absent that would be expected>",
     "  - INCONSISTENCY: <something that conflicts with another part of the repo>",
     "",
+    `- reportMarkdown has a hard ${REPORT_MAX_CHARS}-character ceiling — write concisely and prioritize GAP/INCONSISTENCY detail over exhaustive EXISTING prose if you'd otherwise run over.`,
     "- Mark an item EXISTING only when you can confirm it is implemented — not merely because you found no evidence of a gap.",
-    "- Your structured return value is a compact digest ONLY: the facet name, the report file path, per-type counts, and one entry per GAP or INCONSISTENCY (the claim plus the repo path it cites). Do not restate EXISTING items or the full report.",
+    "- Your structured return value has two parts: reportMarkdown (the full report above) and a compact digest — the facet name, per-type counts, and one entry per GAP or INCONSISTENCY (the claim plus the repo path it cites). The digest must not restate EXISTING items; those live in reportMarkdown only.",
   ].join("\n");
 }
 
@@ -179,7 +177,6 @@ function refutePrompt(finding) {
     "",
     `Finding (${finding.type}, facet "${finding.facet}"): ${finding.claim}`,
     `Cited path: ${finding.citedPath}`,
-    `Full facet report for context: ${finding.reportPath}`,
     "",
     "- Hunt for the claimed-missing thing under other names, paths, or conventions (search widely; read candidate files in full).",
     "- For an INCONSISTENCY, check whether the two sides are actually reconciled somewhere (a doc, a config, a generated artifact).",
@@ -206,13 +203,12 @@ const digests = (
 )
   // parallel() preserves index alignment (nulls for dead thunks), so stamp
   // each digest's facet linkage from the input array rather than trusting the
-  // agent's self-reported facet/reportPath echo.
+  // agent's self-reported facet echo.
   .map((digest, index) =>
     digest
       ? {
           ...digest,
           facet: facets[index].name,
-          reportPath: `${runDirPosix}/${facets[index].slug}.md`,
         }
       : null,
   )
@@ -222,7 +218,6 @@ const findings = digests.flatMap((digest) =>
   digest.items.map((item) => ({
     ...item,
     facet: digest.facet,
-    reportPath: digest.reportPath,
   })),
 );
 
@@ -285,10 +280,9 @@ log(
 
 return {
   topic,
-  runDir: runDirPosix,
-  facets: digests.map(({ facet, reportPath, counts }) => ({
+  facets: digests.map(({ facet, reportMarkdown, counts }) => ({
     facet,
-    reportPath,
+    reportMarkdown,
     counts,
   })),
   confirmed,

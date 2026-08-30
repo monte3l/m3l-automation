@@ -1,5 +1,18 @@
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
+import * as fs from "node:fs";
+import type { NonSharedBuffer } from "node:buffer";
+
+// Spread the actual fs so vi.spyOn can intercept individual methods (ESM
+// namespace objects are non-writable by default — the spread makes them
+// plain, writable object properties). Only definedAgentNames() touches the
+// filesystem in this file; every other export here is pure.
+vi.mock("node:fs", async () => {
+  const actual = await vi.importActual<typeof fs>("node:fs");
+  return { ...actual };
+});
+
 import {
+  definedAgentNames,
   extractMaxAgents,
   extractPropLiterals,
   MAX_WORKFLOW_AGENTS,
@@ -7,9 +20,107 @@ import {
   validateWorkflowSurface,
 } from "../check-workflows.mjs";
 
+/**
+ * A minimal `fs.Dirent`-shaped fixture — only the members `walk()`
+ * (bin/lib/agent-roster.mjs) reads: `name` and `isDirectory()`. Cast through
+ * `unknown` because `readdirSync`'s `{ withFileTypes: true }` overload types
+ * its return as `Dirent<NonSharedBuffer>[]` (the buffer-name variant) even
+ * though the runtime `name` is always a string — the fixture only needs to
+ * satisfy `walk()`'s actual reads, not the full `Dirent` shape.
+ */
+function fileEntry(name: string) {
+  return {
+    name,
+    isDirectory: () => false,
+  } as unknown as fs.Dirent<NonSharedBuffer>;
+}
+
 describe("MAX_WORKFLOW_AGENTS", () => {
   test("pins the ADR-0025 guardrail ceiling at 25", () => {
     expect(MAX_WORKFLOW_AGENTS).toBe(25);
+  });
+});
+
+describe("definedAgentNames", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  test("collects every name field from valid .md frontmatter in the directory", () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(true);
+    vi.spyOn(fs, "readdirSync").mockReturnValue([
+      fileEntry("code-implementer.md"),
+      fileEntry("test-author.md"),
+    ]);
+    vi.spyOn(fs, "readFileSync").mockImplementation((path) => {
+      const file = String(path);
+      if (file.endsWith("code-implementer.md")) {
+        return "---\nname: code-implementer\ndescription: writes code\n---\nBody.\n";
+      }
+      return "---\nname: test-author\ndescription: writes tests\n---\nBody.\n";
+    });
+
+    const result = definedAgentNames("/repo/.claude/agents");
+
+    expect(result).toEqual(new Set(["code-implementer", "test-author"]));
+  });
+
+  test("excludes a .md file with no frontmatter delimiter at all", () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(true);
+    vi.spyOn(fs, "readdirSync").mockReturnValue([
+      fileEntry("no-frontmatter.md"),
+    ]);
+    vi.spyOn(fs, "readFileSync").mockReturnValue(
+      "# Just a heading\n\nNo frontmatter block here at all.\n",
+    );
+
+    const result = definedAgentNames("/repo/.claude/agents");
+
+    expect(result).toEqual(new Set());
+  });
+
+  test("excludes a .md file whose frontmatter block has no name field", () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(true);
+    vi.spyOn(fs, "readdirSync").mockReturnValue([
+      fileEntry("no-name-field.md"),
+    ]);
+    vi.spyOn(fs, "readFileSync").mockReturnValue(
+      "---\ndescription: some agent with no name field\n---\nBody.\n",
+    );
+
+    const result = definedAgentNames("/repo/.claude/agents");
+
+    expect(result).toEqual(new Set());
+  });
+
+  test("ignores non-.md files in the same directory", () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(true);
+    vi.spyOn(fs, "readdirSync").mockReturnValue([
+      fileEntry("code-implementer.md"),
+      fileEntry("README"),
+      fileEntry("notes.txt"),
+    ]);
+    const readFileSync = vi
+      .spyOn(fs, "readFileSync")
+      .mockReturnValue("---\nname: code-implementer\n---\nBody.\n");
+
+    const result = definedAgentNames("/repo/.claude/agents");
+
+    expect(result).toEqual(new Set(["code-implementer"]));
+    expect(readFileSync).toHaveBeenCalledTimes(1);
+  });
+
+  test("returns an empty set for an absent directory without throwing", () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(false);
+    const readdirSync = vi.spyOn(fs, "readdirSync");
+
+    expect(() =>
+      definedAgentNames("/repo/.claude/agents-missing"),
+    ).not.toThrow();
+    expect(definedAgentNames("/repo/.claude/agents-missing")).toEqual(
+      new Set(),
+    );
+    expect(readdirSync).not.toHaveBeenCalled();
   });
 });
 
@@ -424,6 +535,93 @@ describe("validateWorkflowSurface", () => {
 
   test("passes an empty surface (no scripts, no rows) with an empty error array", () => {
     expect(validateWorkflowSurface(new Map<string, string>(), [])).toEqual([]);
+  });
+
+  describe("R8: agentType capability check", () => {
+    const compliantRows = [
+      {
+        name: "a.js",
+        file: "a.js",
+        label: null,
+        model: "sonnet",
+        effort: "n/a",
+      },
+    ];
+
+    test("R8a: flags an agentType literal that names no defined agent", () => {
+      const scripts = new Map([
+        ["a.js", '// max-agents: 5\nagent({ agentType: "NotARealAgent" });\n'],
+      ]);
+      const agentRoster = {
+        definedNames: new Set(["Explore", "code-implementer"]),
+        readOnlyNames: new Set(["Explore"]),
+      };
+      const errors = validateWorkflowSurface(
+        scripts,
+        compliantRows,
+        agentRoster,
+      );
+      expect(
+        errors.some((e) => /names no defined agent/.test(e) && /R8a/.test(e)),
+      ).toBe(true);
+    });
+
+    test("R8a: does not flag an agentType literal that names a defined agent", () => {
+      const scripts = new Map([
+        ["a.js", '// max-agents: 5\nagent({ agentType: "Explore" });\n'],
+      ]);
+      const agentRoster = {
+        definedNames: new Set(["Explore", "code-implementer"]),
+        readOnlyNames: new Set(["Explore"]),
+      };
+      const errors = validateWorkflowSurface(
+        scripts,
+        compliantRows,
+        agentRoster,
+      );
+      expect(errors.some((e) => /R8a/.test(e))).toBe(false);
+      expect(errors.some((e) => /R8b/.test(e))).toBe(false);
+    });
+
+    test("R8b: flags a read-only agentType paired with a write-instruction phrase", () => {
+      const scripts = new Map([
+        [
+          "a.js",
+          [
+            "// max-agents: 5",
+            "const prompt = [",
+            '  "Explore the codebase for X.",',
+            '  "Write your findings to exactly this file: report.md",',
+            '].join("\\n");',
+            'agent({ agentType: "Explore", prompt });',
+            "",
+          ].join("\n"),
+        ],
+      ]);
+      const agentRoster = {
+        definedNames: new Set(["Explore", "code-implementer"]),
+        readOnlyNames: new Set(["Explore"]),
+      };
+      const errors = validateWorkflowSurface(
+        scripts,
+        compliantRows,
+        agentRoster,
+      );
+      expect(
+        errors.some(
+          (e) =>
+            /a read-only spoke cannot write a file/.test(e) && /R8b/.test(e),
+        ),
+      ).toBe(true);
+    });
+
+    test("R8: skips all checks when agentRoster is null (the default)", () => {
+      const scripts = new Map([
+        ["a.js", '// max-agents: 5\nagent({ agentType: "NotARealAgent" });\n'],
+      ]);
+      const errors = validateWorkflowSurface(scripts, compliantRows);
+      expect(errors.some((e) => /R8/.test(e))).toBe(false);
+    });
   });
 });
 
