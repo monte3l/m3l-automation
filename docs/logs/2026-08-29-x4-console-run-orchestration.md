@@ -310,11 +310,11 @@ section or a tracker row — before moving on.
 
 - **Mutation-test the assertion, not just the code.** Stashing the fix and
   watching the test still pass is what proved the hub's brief wrong — a passing
-  test is not evidence until you have seen it fail for the intended reason.
+  test is not evidence until you have seen it fail for the intended reason. _(promoted → `.claude/rules/tests.md`)_
 
 - **Split a bot finding into its claim and its concern.** Verify the claim
   against the raw artifact and act on the concern independently; a wrong claim
-  routinely wraps a correct concern (divergence 6).
+  routinely wraps a correct concern (divergence 6). _(promoted → `.claude/skills/resolving-pr-comments/SKILL.md`)_
 
 - **Treat the composition root as growing every slice.** Its byte-budget
   headroom should be checked at the _start_ of a slice, not discovered at the
