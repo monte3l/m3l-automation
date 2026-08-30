@@ -45,6 +45,7 @@ import {
   symlink,
   writeFile,
 } from "node:fs/promises";
+import type * as NodeFsPromises from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -71,6 +72,46 @@ import type {
   M3LAppendOnlyStreamOptions,
   M3LAppendOnlyValue,
 } from "../src/core/storage/index.js";
+
+// ---------------------------------------------------------------------------
+// The one seam where a real filesystem cannot reach
+// ---------------------------------------------------------------------------
+
+/**
+ * A single, opt-in override for `stat`, used by exactly one test below (the
+ * non-`ENOENT` stat failure) and inert for every other test in this file.
+ *
+ * Everything else here runs against a REAL temporary directory on purpose —
+ * see the header. This one behaviour cannot be reached that way. The
+ * guarantee under test is that a `stat` failure which is not `ENOENT` is
+ * re-thrown rather than read as "the file is absent, size 0", and it is only
+ * observable when the `stat` fails and the append that follows would
+ * otherwise SUCCEED. Every real non-`ENOENT` stat failure reachable on a
+ * segment path also breaks the `appendFile` on that same path — a symlink
+ * loop fails `ELOOP` for `open` too (the writer opens `O_NOFOLLOW`), a
+ * log directory left `r--` fails `EACCES` for `open` too (both `stat` and
+ * `open` need the directory's search bit), a non-directory component fails
+ * `ENOTDIR` for both — so a correct implementation and one that swallowed
+ * the error would both raise, and the assertion would prove nothing.
+ * Overriding `stat` alone is what separates the two.
+ */
+const fsProbe = vi.hoisted(() => ({
+  /** Set to make the next `stat` reject; cleared in `afterEach`. */
+  statFailure: undefined as Error | undefined,
+}));
+
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof NodeFsPromises>();
+  return {
+    ...actual,
+    stat: (...args: Parameters<typeof actual.stat>) => {
+      if (fsProbe.statFailure !== undefined) {
+        return Promise.reject(fsProbe.statFailure);
+      }
+      return actual.stat(...args);
+    },
+  };
+});
 
 // ---------------------------------------------------------------------------
 // Fixture helpers
@@ -241,6 +282,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   vi.useRealTimers();
+  fsProbe.statFailure = undefined;
   await rm(workDir, { recursive: true, force: true });
 });
 
@@ -584,6 +626,49 @@ describe("cold-start segment discovery", () => {
 });
 
 // ---------------------------------------------------------------------------
+// A stat failure that is not ENOENT is never read as absence
+// ---------------------------------------------------------------------------
+
+describe("non-ENOENT stat failures", () => {
+  test("a stat failure that is not ENOENT fails the append loudly instead of adopting the segment at size zero", async () => {
+    const today = pinClock();
+    const dir = path.join(workDir, "audit");
+    await mkdir(dir, { recursive: true });
+
+    // A segment that genuinely exists and genuinely holds bytes. Only the
+    // `stat` of it fails; the file, the directory and the append itself are
+    // all real and all writable.
+    const seededPath = path.join(dir, segmentName(today, 1));
+    const seeded = '{"event":"already-here"}\n';
+    await writeFile(seededPath, seeded, "utf8");
+
+    const failure: NodeJS.ErrnoException = Object.assign(
+      new Error("EACCES: permission denied, stat"),
+      { code: "EACCES", syscall: "stat" },
+    );
+    fsProbe.statFailure = failure;
+
+    const stream = new M3LAppendOnlyStream({ directory: dir });
+    const thrown = await catchRejected(() =>
+      stream.append({ event: "must-not-land" }),
+    );
+    fsProbe.statFailure = undefined;
+
+    // Loud: the raw filesystem error surfaces as the documented append
+    // failure, with the original chained as its cause.
+    const error = expectStreamWriteError(thrown);
+    expect(error.cause).toBe(failure);
+
+    // ... and nothing was written. An implementation that read ANY stat
+    // failure as "absent" would instead adopt this 24-byte segment at size 0
+    // and append to it happily — the audited defect class, a byte count
+    // silently restarting at zero on a file that is already full.
+    expect(await readFile(seededPath, "utf8")).toBe(seeded);
+    expect(await listSegments(dir)).toEqual([segmentName(today, 1)]);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Rotation
 // ---------------------------------------------------------------------------
 
@@ -670,6 +755,49 @@ describe("rotation by age", () => {
     expect(
       JSON.parse(definedOrThrow(newLines[0], "the only new line")),
     ).toEqual({ event: "old" });
+  });
+});
+
+describe("rotation by UTC date rollover", () => {
+  test("a long-lived stream crossing UTC midnight opens today's segment instead of appending to yesterday's", async () => {
+    const dir = path.join(workDir, "audit");
+    const dayOneAt = Date.UTC(2026, 5, 15, 23, 59, 0);
+    const dayTwoAt = Date.UTC(2026, 5, 16, 0, 1, 0);
+
+    // BOTH other ceilings stay at their generous defaults (8 MiB, 24 h), so
+    // neither can fire across the two minutes below: the UTC date itself is
+    // the only thing that may rotate. This is what makes the module's "a
+    // freshly spawned process and a long-lived one always agree" guarantee
+    // true — cold-start discovery only ever considers today's prefix.
+    const dayOnePrefix = pinClock(dayOneAt);
+    const stream = new M3LAppendOnlyStream({ directory: dir });
+    await stream.append({ event: "written on day one" });
+
+    const dayTwoPrefix = pinClock(dayTwoAt);
+    expect(dayTwoPrefix).not.toBe(dayOnePrefix);
+    await stream.append({ event: "written on day two" });
+
+    // Day one's segment is left sealed at the single line it already held.
+    const dayOnePath = path.join(dir, segmentName(dayOnePrefix, 1));
+    expect(await readLines(dayOnePath)).toHaveLength(1);
+
+    // Day two opened its own sequence 1 rather than continuing day one's.
+    const dayTwoPath = path.join(dir, segmentName(dayTwoPrefix, 1));
+    const dayTwoLines = await readLines(dayTwoPath);
+    expect(dayTwoLines).toHaveLength(1);
+    expect(
+      JSON.parse(definedOrThrow(dayTwoLines[0], "day two's only line")),
+    ).toEqual({ event: "written on day two" });
+    expect(await listSegments(dir)).toEqual(
+      [segmentName(dayOnePrefix, 1), segmentName(dayTwoPrefix, 1)].sort(),
+    );
+
+    // ... and a process freshly spawned at the same instant agrees, finding
+    // and appending to that same day-two segment rather than a rival one.
+    const freshProcess = new M3LAppendOnlyStream({ directory: dir });
+    await freshProcess.append({ event: "written by a fresh process" });
+    expect(await readLines(dayTwoPath)).toHaveLength(2);
+    expect(await readLines(dayOnePath)).toHaveLength(1);
   });
 });
 
