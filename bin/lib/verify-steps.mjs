@@ -373,6 +373,11 @@ export const VERIFY_STEPS = [
     cmd: () => "pnpm check:node-version",
   },
   {
+    ciStepName: "Check Claude Code CLI pin",
+    id: "check-claude-cli-version",
+    cmd: () => "pnpm check:claude-cli-version",
+  },
+  {
     ciStepName: "Check GitHub-integration stance (integration-stance)",
     id: "check-integration-stance",
     cmd: () => "pnpm check:integration-stance",
