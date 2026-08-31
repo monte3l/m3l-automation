@@ -79,19 +79,17 @@ jobs:
 
           # There is no top-level `paths-ignore` trigger filter — the job must
           # run (and report a status) on every non-draft PR touching main, so
-          # this predicate alone decides what's reviewable, for both a
+          # the ignore set alone decides what's reviewable, for both a
           # brand-new PR (Gate 0 below) and a re-review since the last PASS
           # (further down).
-          is_ignored() {
-            case "$1" in
-              *.md) return 0 ;;
-              docs/*) return 0 ;;
-              .github/dependabot.yml) return 0 ;;
-              pnpm-lock.yaml) return 0 ;;
-              *) return 1 ;;
-            esac
-          }
-
+          #
+          # That set lives in bin/lib/pr-diff-filter.mjs and is reached through
+          # `bin/pr-diff-filter.mjs reviewable`. It used to be hand-copied into
+          # this step, the awk filter below, and the changed-file filter below
+          # that — three copies the file told you to keep "in lockstep", which
+          # had already drifted. `node` is safe to call here: actions/checkout
+          # is itself a JavaScript action, so the runner cannot run this job
+          # without it.
           review() {
             echo "should_review=true" >> "$GITHUB_OUTPUT"
             echo "$1"
@@ -112,13 +110,16 @@ jobs:
             exit 0
           fi
 
-          non_ignored_files=""
-          while IFS= read -r f; do
-            [ -z "$f" ] && continue
-            if ! is_ignored "$f"; then
-              non_ignored_files="${non_ignored_files}${f}"$'\n'
-            fi
-          done <<< "$full_files"
+          # Fail-safe, like every other gate in this step: if the filter itself
+          # fails, review rather than silently treating the PR as unreviewable
+          # (an empty list here would otherwise read as "docs-only" and skip).
+          non_ignored_files="$(printf '%s\n' "$full_files" \
+            | node "$GITHUB_WORKSPACE/bin/pr-diff-filter.mjs" reviewable \
+            || echo "__ERROR__")"
+          if [ "$non_ignored_files" = "__ERROR__" ]; then
+            review "pr-diff-filter failed — running review."
+            exit 0
+          fi
           non_ignored_count="$(printf '%s' "$non_ignored_files" | grep -c . || true)"
 
           # Whether this PR's only reviewable change is the review-gate
@@ -187,13 +188,18 @@ jobs:
             exit 0
           fi
 
-          while IFS= read -r f; do
-            [ -z "$f" ] && continue
-            if ! is_ignored "$f"; then
-              review "Reviewable file changed since PASS ($f) — running review."
-              exit 0
-            fi
-          done <<< "$files"
+          changed_reviewable="$(printf '%s\n' "$files" \
+            | node "$GITHUB_WORKSPACE/bin/pr-diff-filter.mjs" reviewable \
+            || echo "__ERROR__")"
+          if [ "$changed_reviewable" = "__ERROR__" ]; then
+            review "pr-diff-filter failed — running review."
+            exit 0
+          fi
+          first_reviewable="$(printf '%s' "$changed_reviewable" | head -n1)"
+          if [ -n "$first_reviewable" ]; then
+            review "Reviewable file changed since PASS ($first_reviewable) — running review."
+            exit 0
+          fi
 
           echo "should_review=false" >> "$GITHUB_OUTPUT"
           echo "Prior verdict PASS and only ignored files changed since $reviewed_sha — skipping review."
@@ -236,87 +242,35 @@ jobs:
             || rm -f "$GITHUB_WORKSPACE/.claude-pr-changed-files.txt"
 
           # Strip from the patch every file the reviewer is not meant to read,
-          # in one pass:
+          # then filter the changed-file list the same way. Both use the single
+          # ignore set in bin/lib/pr-diff-filter.mjs, reached through
+          # `bin/pr-diff-filter.mjs`; the guard step above uses the same one.
           #
-          #   * the ignore predicate — `*.md`, `docs/**`,
-          #     `.github/dependabot.yml`. This MUST stay in lockstep with
-          #     `is_ignored()` in the `Check prior review verdict` step above;
-          #     that predicate decides *whether* to review, this one decides
-          #     *what* is handed over, and they have to mean the same thing.
-          #     Until 2026-08-20 only the first half existed, so the reviewer
-          #     was handed megabytes of docs it was explicitly told to ignore:
-          #     across the 14 PRs merged before this change, reviewable content
-          #     was 0-84% of the patch (`24f7dea`: 575,724 chars total,
-          #     74,676 reviewable — 87% waste). This repo's markdown makes it
-          #     worse than it sounds, since lines run up to 6,315 chars, so a
-          #     5-line edit to `docs/implementation-status.md` contributed
-          #     61KB of patch.
-          #   * `pnpm-lock.yaml` — mechanically regenerated and already
-          #     validated elsewhere (`pnpm install --frozen-lockfile` in CI,
-          #     dependency-review.yml), so its diff is volume without review
-          #     value. Not matched by the ignore predicate, hence separate.
+          # Why the filtering exists at all: until 2026-08-20 the patch was
+          # handed over unfiltered, so the reviewer was given megabytes of docs
+          # it was explicitly told to ignore. Across the 14 PRs merged before
+          # that change, reviewable content was 0-84% of the patch (`24f7dea`:
+          # 575,724 chars total, 74,676 reviewable — 87% waste). This repo's
+          # markdown makes it worse than it sounds, since lines run up to 6,315
+          # chars, so a 5-line edit to `docs/implementation-status.md`
+          # contributed 61KB of patch. Filtering the file list matters for the
+          # same reason: an unfiltered list invites the reviewer to `Read` the
+          # very files the patch just told it to ignore, which costs turns for
+          # nothing.
           #
           # Each omitted file keeps its `diff --git` header plus a one-line
           # marker, so the reviewer can still see that the file changed and
-          # never mistakes an omission for an unchanged file. Non-fatal: on any
-          # failure the original patch is left as-is rather than aborting.
+          # never mistakes an omission for an unchanged file. Non-fatal on
+          # purpose: on any failure the original file is left as-is rather
+          # than aborting the job.
           patch="$GITHUB_WORKSPACE/.claude-pr-diff.patch"
           if [ -f "$patch" ]; then
-            awk '
-              function ignored(p) {
-                if (p ~ /\.md$/) return 1
-                if (p ~ /^docs\//) return 1
-                if (p == ".github/dependabot.yml") return 1
-                return 0
-              }
-              /^diff --git / {
-                path = $3; sub(/^a\//, "", path)
-                skip = 0
-                if (ignored(path)) {
-                  print
-                  print "(diff omitted — not reviewable by this gate: *.md,"
-                  print " docs/**, .github/dependabot.yml. Listed so you know"
-                  print " the file changed; do not review or Read it.)"
-                  skip = 1
-                  next
-                }
-                if (path == "pnpm-lock.yaml") {
-                  print
-                  print "(diff omitted — pnpm-lock.yaml is mechanically generated;"
-                  print " validated by `pnpm install --frozen-lockfile` in CI and"
-                  print " dependency-review.yml, not by this reviewer)"
-                  skip = 1
-                  next
-                }
-              }
-              skip { next }
-              { print }
-            ' "$patch" > "$patch.stripped" 2>/dev/null \
-              && mv "$patch.stripped" "$patch" \
-              || rm -f "$patch.stripped"
+            node "$GITHUB_WORKSPACE/bin/pr-diff-filter.mjs" patch "$patch" || true
           fi
 
-          # Filter the changed-file list the same way. An unfiltered list
-          # invites the reviewer to `Read` files the patch just told it to
-          # ignore, which costs turns for nothing.
           files="$GITHUB_WORKSPACE/.claude-pr-changed-files.txt"
           if [ -f "$files" ]; then
-            is_ignored() {
-              case "$1" in
-                *.md) return 0 ;;
-                docs/*) return 0 ;;
-                .github/dependabot.yml) return 0 ;;
-                *) return 1 ;;
-              esac
-            }
-            : > "$files.filtered"
-            while IFS= read -r f; do
-              [ -z "$f" ] && continue
-              if ! is_ignored "$f"; then
-                printf '%s\n' "$f" >> "$files.filtered"
-              fi
-            done < "$files"
-            mv "$files.filtered" "$files"
+            node "$GITHUB_WORKSPACE/bin/pr-diff-filter.mjs" changed-files "$files" || true
           fi
 
           # Measure what is actually left to review and decide whether a
