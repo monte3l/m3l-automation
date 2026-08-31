@@ -58,64 +58,18 @@
 import { M3LError } from "../errors/index.js";
 import { isNumber, isPlainObject, isString } from "../utils/guards.js";
 import { projectAppendOnlyEntry } from "../../internal/storage/append-only-projection.js";
+import { readAppendOnlySegments } from "../../internal/storage/append-only-reader.js";
 import type { AppendOnlyWriterErrors } from "../../internal/storage/append-only-writer.js";
 import { AppendOnlyWriter } from "../../internal/storage/append-only-writer.js";
+import {
+  assertOnTruncatedTailIsCallable,
+  M3L_APPEND_ONLY_MAX_LINE_BYTES,
+  M3L_APPEND_ONLY_MAX_SEGMENT_AGE_MS,
+  M3L_APPEND_ONLY_MAX_SEGMENT_BYTES,
+} from "./append-only-read-types.js";
+import type { M3LAppendOnlyReadOptions } from "./append-only-read-types.js";
 import { M3LAppendOnlyStreamError } from "./M3LAppendOnlyStreamError.js";
-
-/**
- * The default segment size ceiling: 8 MiB.
- *
- * The same number `core/agent`'s decision log uses
- * (`M3L_AGENT_LOG_MAX_SEGMENT_BYTES`), reused so the two append-only audit
- * artifacts this library writes rotate on identical terms. It is small enough
- * that one segment stays comfortably readable with a line-oriented tool and
- * large enough that rotation is rare under normal traffic.
- *
- * @example
- * ```ts
- * import { M3L_APPEND_ONLY_MAX_SEGMENT_BYTES } from "@m3l-automation/m3l-common/core";
- *
- * console.log(M3L_APPEND_ONLY_MAX_SEGMENT_BYTES); // 8388608
- * ```
- */
-export const M3L_APPEND_ONLY_MAX_SEGMENT_BYTES = 8_388_608;
-
-/**
- * The default segment age ceiling: 24 hours, in milliseconds.
- *
- * The same number `core/agent`'s decision log uses
- * (`M3L_AGENT_LOG_MAX_SEGMENT_AGE_MS`). A stream that is written to rarely
- * would otherwise keep one segment open indefinitely; a daily ceiling keeps
- * a segment's contents bounded in time as well as in size, which is what
- * makes archiving and retention a per-file decision.
- *
- * @example
- * ```ts
- * import { M3L_APPEND_ONLY_MAX_SEGMENT_AGE_MS } from "@m3l-automation/m3l-common/core";
- *
- * console.log(M3L_APPEND_ONLY_MAX_SEGMENT_AGE_MS); // 86400000
- * ```
- */
-export const M3L_APPEND_ONLY_MAX_SEGMENT_AGE_MS = 86_400_000;
-
-/**
- * The default ceiling on one serialized line, newline included: 64 KiB.
- *
- * The same number `core/agent`'s decision log applies to one entry
- * (`M3L_AGENT_MAX_LOG_ENTRY_BYTES`). The ceiling governs the LINE rather than
- * the serialization alone, because the newline is part of what one `write()`
- * must carry atomically — an entry serializing to exactly the ceiling is one
- * byte too large. An entry above it is rejected **before any filesystem
- * call**, so an oversized record never half-lands.
- *
- * @example
- * ```ts
- * import { M3L_APPEND_ONLY_MAX_LINE_BYTES } from "@m3l-automation/m3l-common/core";
- *
- * console.log(M3L_APPEND_ONLY_MAX_LINE_BYTES); // 65536
- * ```
- */
-export const M3L_APPEND_ONLY_MAX_LINE_BYTES = 65_536;
+import { M3LAppendOnlyStreamReadError } from "./M3LAppendOnlyStreamReadError.js";
 
 /**
  * A value an append-only stream entry may carry. Closed on purpose: exactly
@@ -462,6 +416,8 @@ function renderEntryLine(entry: unknown): string {
 export class M3LAppendOnlyStream {
   /** The directory the segments live in, as validated at construction. */
   private readonly streamDirectory: string;
+  /** The resolved line ceiling `read()` enforces against a torn fragment. */
+  private readonly streamMaxLineBytes: number;
   /** The generic writer this stream's rendering and errors are bound to. */
   private readonly writer: AppendOnlyWriter<unknown>;
 
@@ -479,6 +435,7 @@ export class M3LAppendOnlyStream {
   constructor(options: M3LAppendOnlyStreamOptions) {
     const resolved = validateStreamOptions(options);
     this.streamDirectory = resolved.directory;
+    this.streamMaxLineBytes = resolved.maxLineBytes;
     this.writer = new AppendOnlyWriter<unknown>({
       directory: resolved.directory,
       maxSegmentBytes: resolved.maxSegmentBytes,
@@ -565,5 +522,45 @@ export class M3LAppendOnlyStream {
     entry: T,
   ): Promise<void> {
     await this.writer.write(entry);
+  }
+
+  /**
+   * Reads back every entry, oldest `(date, sequence)` first — the order
+   * `append()` produced them — proving and rebuilding each line through the
+   * same {@link projectAppendOnlyEntry} the writer serializes through, so a
+   * value `append()` could never itself have written (a bare array, `-0`, a
+   * too-deep structure) throws rather than being handed back as genuine. A
+   * missing directory yields nothing. See
+   * `internal/storage/append-only-reader.ts` for the full read contract.
+   *
+   * @param options - `onTruncatedTail` tolerates an unterminated trailing
+   *   fragment on the LAST segment only; the same fragment mid-stream — data
+   *   loss, not a torn tail — always throws regardless.
+   * @throws {@link M3LError} `ERR_INVALID_ARGUMENT` for a non-callable
+   *   `onTruncatedTail`.
+   * @throws {@link M3LAppendOnlyStreamReadError} for a malformed/oversized
+   *   line, a missing sequence, an intolerable fragment, or a read failure.
+   *
+   * @example
+   * ```ts
+   * import { M3LAppendOnlyStream } from "@m3l-automation/m3l-common/core";
+   *
+   * const stream = new M3LAppendOnlyStream({ directory: "data/output/audit" });
+   * for await (const entry of stream.read()) console.log(entry);
+   * ```
+   */
+  read(options?: M3LAppendOnlyReadOptions): AsyncIterable<M3LAppendOnlyEntry> {
+    assertOnTruncatedTailIsCallable(options);
+    return readAppendOnlySegments({
+      directory: this.streamDirectory,
+      maxLineBytes: this.streamMaxLineBytes,
+      // Conditional spread, not a direct assignment: `exactOptionalPropertyTypes`
+      // forbids setting an optional property to a value typed `T | undefined`.
+      ...(options?.onTruncatedTail !== undefined && {
+        onTruncatedTail: options.onTruncatedTail,
+      }),
+      buildError: (message, errorOptions) =>
+        new M3LAppendOnlyStreamReadError(message, errorOptions),
+    }) as AsyncIterable<M3LAppendOnlyEntry>;
   }
 }

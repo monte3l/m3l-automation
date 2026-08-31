@@ -11,8 +11,10 @@
  * @packageDocumentation
  */
 
+export * from "./append-only-read-types.js";
 export * from "./M3LAppendOnlyStream.js";
 export * from "./M3LAppendOnlyStreamError.js";
+export * from "./M3LAppendOnlyStreamReadError.js";
 export * from "./M3LFtsIndex.js";
 export * from "./M3LFtsIndexError.js";
 export * from "./types.js";

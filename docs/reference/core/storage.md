@@ -28,16 +28,20 @@ Exported from `@m3l-automation/m3l-common/core` (`storage` subpath):
 | `M3LFtsIndexError`         | class | Thrown when caller config or search input fails validation.    |
 | `M3LFtsIndexErrorCode`     | type  | Machine-readable code union carried by `M3LFtsIndexError`.     |
 
-| Symbol                               | Kind  | Purpose                                                               |
-| ------------------------------------ | ----- | --------------------------------------------------------------------- |
-| `M3LAppendOnlyStream`                | class | Segmented append-only JSONL stream with byte/age/date rotation.       |
-| `M3LAppendOnlyStreamOptions`         | type  | Constructor options (directory plus the three optional ceilings).     |
-| `M3LAppendOnlyEntry`                 | type  | One entry: a read-only map of `M3LAppendOnlyValue`.                   |
-| `M3LAppendOnlyValue`                 | type  | The closed value union an entry field may carry.                      |
-| `M3LAppendOnlyStreamError`           | class | Thrown when an append fails or the rendered line exceeds the ceiling. |
-| `M3L_APPEND_ONLY_MAX_SEGMENT_BYTES`  | const | Default segment size ceiling, 8 MiB.                                  |
-| `M3L_APPEND_ONLY_MAX_SEGMENT_AGE_MS` | const | Default segment age ceiling, 24 h.                                    |
-| `M3L_APPEND_ONLY_MAX_LINE_BYTES`     | const | Default per-line ceiling, 64 KiB.                                     |
+| Symbol                               | Kind   | Purpose                                                                                                                                            |
+| ------------------------------------ | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `M3LAppendOnlyStream`                | class  | Segmented append-only JSONL stream with byte/age/date rotation.                                                                                    |
+| `M3LAppendOnlyStreamOptions`         | type   | Constructor options (directory plus the three optional ceilings).                                                                                  |
+| `M3LAppendOnlyEntry`                 | type   | One entry: a read-only map of `M3LAppendOnlyValue`.                                                                                                |
+| `M3LAppendOnlyValue`                 | type   | The closed value union an entry field may carry.                                                                                                   |
+| `M3LAppendOnlyStreamError`           | class  | Thrown when an append fails or the rendered line exceeds the ceiling.                                                                              |
+| `M3L_APPEND_ONLY_MAX_SEGMENT_BYTES`  | const  | Default segment size ceiling, 8 MiB.                                                                                                               |
+| `M3L_APPEND_ONLY_MAX_SEGMENT_AGE_MS` | const  | Default segment age ceiling, 24 h.                                                                                                                 |
+| `M3L_APPEND_ONLY_MAX_LINE_BYTES`     | const  | Default per-line ceiling, 64 KiB.                                                                                                                  |
+| `M3LAppendOnlyStream.read`           | method | Reads every entry back, across every date-stamped segment, in append order (X7 slice 4a).                                                          |
+| `M3LAppendOnlyReadOptions`           | type   | Options for `read()` — an optional `onTruncatedTail` callback.                                                                                     |
+| `M3LAppendOnlyTruncatedSegment`      | type   | The payload reported to `onTruncatedTail`: byte length and segment position.                                                                       |
+| `M3LAppendOnlyStreamReadError`       | class  | Thrown when a read fails: a malformed/oversized line, a missing sequence, an intolerable torn tail, a planted link/FIFO, or a segment I/O failure. |
 
 ### Schema
 
@@ -135,6 +139,46 @@ Segments are named `<YYYY-MM-DD>-<NNNN>.jsonl` in UTC, sequence zero-padded to f
 
 Rotation seals the active segment (by no longer writing to it) and opens the next; it never prunes or truncates. It fires when the segment's **current** size has already reached `maxSegmentBytes`, when its age has reached `maxSegmentAgeMs`, or when its UTC date prefix is no longer today's. Because the ceiling is compared against the current size rather than the size the incoming line would produce, a segment may end one line beyond it.
 
+### Reading an append-only stream
+
+```ts
+import {
+  M3LAppendOnlyStream,
+  M3LAppendOnlyStreamReadError,
+} from "@m3l-automation/m3l-common/core";
+
+const stream = new M3LAppendOnlyStream({ directory: "/var/lib/m3l/audit" });
+try {
+  for await (const entry of stream.read({
+    onTruncatedTail: (segment) => {
+      console.warn(`dropped ${segment.byteLength} torn trailing bytes`);
+    },
+  })) {
+    console.log(entry);
+  }
+} catch (error) {
+  if (error instanceof M3LAppendOnlyStreamReadError) {
+    // the trail is corrupt -- an operator incident, not a caller mistake
+    throw error;
+  }
+  throw error;
+}
+```
+
+`read(options?)` returns an `AsyncIterable<M3LAppendOnlyEntry>` that walks every segment in `(date, sequence)` ascending order -- every date the stream has ever rotated through, not just today's -- and yields lines in file order within each segment, reproducing append order exactly **over an untampered directory**. See "Limitations" below for what tampering `read()` can and cannot detect. It observes every entry whose `append()` has already resolved, since the writer keeps no buffer of its own.
+
+Every line is parsed and then proven through the exact same `projectAppendOnlyEntry` the writer serializes through, so read and write share one definition of "a value this stream can hold." A line the writer could never have produced -- a bare array or scalar, an own `__proto__`/`constructor`/`prototype` key, a non-finite number, `-0` (which does not round-trip through JSON), or a structure nested past the depth cap -- throws `M3LAppendOnlyStreamReadError` rather than being handed back as though it were genuine: a segment holding one was tampered with or hand-edited, and an audit trail that quietly reads back bytes it could not have written is not an audit trail. This is never skipped and there is no callback escape for it.
+
+A **torn tail** -- a trailing fragment with no terminating newline, left by a process that died mid-append -- is tolerated only on the stream's **last** segment, and only if `onTruncatedTail` is supplied; it is then invoked once with `{ byteLength, segmentIndex, segmentCount }` and the fragment is dropped. With no callback, the same last-segment fragment throws instead -- there is no silent path, so a caller that wants to tolerate a lost final record has to write that decision down explicitly. The identical fragment in a **mid-stream** segment is a different situation entirely: the writer only ever rotates after a complete line, so a fragment there is data loss, not a normal torn tail, and it **always throws**, callback or not.
+
+A missing directory yields nothing rather than throwing -- a rebuild against a stream nothing has ever been appended to is a normal, empty case. Each opened segment is checked on the descriptor itself, mirroring the writer's own append-time guard: `O_NOFOLLOW` refuses a path replaced by a **symlink**, `O_NONBLOCK` plus an `fstat` refuses a path replaced by a **FIFO** (or any other non-regular file) rather than blocking `open()` forever, and the same `fstat`'s `nlink === 1` check refuses a **hardlink** planted at a segment name -- a hardlink lets a lower-privilege actor nominate a file it cannot read for a higher-privilege reader to read and republish into the audit index, so it is refused here too, not treated as harmless. Segments are read through `handle.read(...)` in chunks bounded by `maxLineBytes`, never `readFile`/`createReadStream`, so a tampered segment holding one arbitrarily large unterminated line is abandoned after a small, bounded multiple of `maxLineBytes` rather than buffered into memory whole. A line's bytes are decoded as strict UTF-8 (`TextDecoder` with `fatal: true`); an invalid byte throws rather than being silently repaired to U+FFFD, since two distinct on-disk byte sequences must never collapse into one accepted entry.
+
+#### Limitations: what gap detection proves, and what it does not
+
+`read()` rejects a gap in `(datePrefix, sequence)` within one date -- a missing sequence number, or a segment present on disk but truncated all the way to zero bytes before its date's numbering could roll past it -- because the writer always starts a date at sequence 1 and increments by exactly one on every rotation, so any other shape is unaccounted-for data, not a normal stream. This catches **whole-segment deletion** and **zero-truncation** of a segment that is not the stream's last for its date, using only information already gathered during discovery.
+
+It is explicitly **not** proof that a stream is complete, and it does not attempt to detect **line-boundary truncation inside a segment** (a segment cut off partway through, at a line boundary, so every remaining line still parses cleanly) -- that would require a per-segment entry count or a chained digest, which is a writer format change and is out of scope here. Two further gaps are worth stating plainly: this check cannot detect deletion of a date's own **last** segment (the remaining segments are still perfectly contiguous starting at 1), and it can false-positive if a caller ever prunes an old segment out-of-band mid-date. An attacker with write access to the stream directory can also renumber the remaining segments to close a gap before `read()` ever sees it. Gap detection raises the bar against accidental and casual tampering; it is not a completeness proof.
+
 ## Notes & behavior
 
 - **Synchronous.** `better-sqlite3` is synchronous; index operations do not return promises.
@@ -154,6 +198,10 @@ Rotation seals the active segment (by no longer writing to it) and opens the nex
 - **Serialized appends.** Concurrent `append()` calls on one instance are chained onto a tail promise, so byte accounting stays exact and rotation fires on time rather than a whole batch late. A rejected append is reported to its own caller only and never poisons the chain.
 - **Loud, typed failures.** An append that fails, or a rendered line exceeding `maxLineBytes`, throws `M3LAppendOnlyStreamError` (`ERR_APPEND_ONLY_STREAM_WRITE`). Neither its message nor its `context` ever carries caller data — a directory path can carry tenant identifiers and an entry carries payload — but the underlying filesystem error is always chained as `cause`, since it is the only diagnostic an operator has.
 - **Cache drop on failure.** A failed append clears the cached active segment, so the next call cold-starts (`mkdir`, then re-discover). A log directory removed under a long-lived writer therefore recovers instead of wedging every later write.
+- **Read and write share one error vocabulary boundary, split in two.** `M3LAppendOnlyStreamError` (`ERR_APPEND_ONLY_STREAM_WRITE`) means the trail is **unwritable** -- a filesystem or ceiling failure on `append()`. `M3LAppendOnlyStreamReadError` (`ERR_APPEND_ONLY_STREAM_READ`) means the trail is **corrupt** -- a malformed or oversized line, an intolerable torn tail, or a segment I/O failure on `read()`. These are deliberately two distinct classes rather than one shared code: "my audit trail is unwritable" (a 503, retry elsewhere) and "my audit trail is corrupt" (an operator page) are not the same incident, and `instanceof` is how a caller tells them apart without parsing a message string.
+- **A torn tail is tolerable only on the last segment.** A trailing fragment with no terminating newline reflects a process that died mid-append. On the stream's LAST segment (in `(date, sequence)` order), supplying `onTruncatedTail` tolerates it -- the callback fires once and the fragment is dropped; with no callback, the default is to throw, so there is no silent path. The identical fragment in any earlier, mid-stream segment is data loss rather than a torn tail -- the writer only ever rotates after a complete line -- and it always throws, callback or not.
+- **A corrupt line throws rather than being skipped.** `read()` proves every line through the exact same `projectAppendOnlyEntry` the writer serializes through, so read and write share one definition of what the stream can hold. A line the writer could never have produced (a bare array or scalar, `-0`, a dangerous key, a too-deep structure, invalid UTF-8) means the file was tampered with or hand-edited; an audit trail that quietly reads back bytes it could not have written is not an audit trail, so this is never skipped and carries no callback escape.
+- **A read mirrors the writer's own link refusal, plus a FIFO refusal of its own.** `read()` applies the same `O_NOFOLLOW`/symlink and `fstat`-based `nlink === 1`/hardlink checks the writer applies at append time -- a hardlinked segment is refused, not treated as harmless, because it lets a lower-privilege actor nominate unreadable content for a higher-privilege reader to republish. The same `fstat` also refuses any non-regular file (a planted FIFO in particular) rather than letting `open()` block forever; see "Limitations" above for what gap detection between segments does and does not prove.
 
 ## See also
 
