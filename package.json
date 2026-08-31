@@ -25,7 +25,7 @@
     "lint:commit": "node bin/lint-commit.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "lint:md": "rumdl check . --no-cache --exclude \"node_modules/**,.claude/**,**/dist/**,tmp/**,CHANGELOG.md,.github/pull_request_template.md,docs/adr/template.md,docs/plans/archive/**\"",
+    "lint:md": "rumdl check . --no-cache --deny-config-warnings --exclude \"node_modules/**,.claude/**,**/dist/**,tmp/**,CHANGELOG.md,.github/pull_request_template.md,docs/adr/template.md,docs/plans/archive/**\"",
     "test": "vitest run && vitest run --config vitest.web.config.ts && vitest run --config vitest.integration.config.ts",
     "test:coverage": "vitest run --coverage && vitest run --coverage --config vitest.bin.config.ts && vitest run --coverage --config vitest.web.config.ts && vitest run --config vitest.integration.config.ts",
     "test:watch": "vitest",
