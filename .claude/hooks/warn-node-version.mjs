@@ -2,11 +2,15 @@
 /**
  * SessionStart advisory: surfaces bin/check-node-version.mjs's findings before
  * any work starts, which is the only moment they're cheap. A session running
- * on the wrong Node major produces failures that look like regressions and
- * aren't — the m3l-console-server `readBigInts` case fails on Node 26 and is
- * green on CI's 24 — and that costs debugging time only until someone thinks
- * to check `node -v`. This makes the check unmissable instead. See ADR-0003's
- * 2026-08-31 amendment.
+ * on the wrong Node major can produce failures that look like regressions and
+ * aren't, and that costs debugging time only until someone thinks to check
+ * `node -v`. This makes the check unmissable instead.
+ *
+ * Deliberately cites no specific example: the two ADR-0003 ever named were
+ * both later found to have another cause (the `@types/node` pin closed one,
+ * #807's `run()` defect the other), so any named case here rots into a
+ * misleading claim. See ADR-0003's 2026-08-31 amendment and its 2026-09-01
+ * update.
  *
  * Runs once per session (SessionStart, not PreToolUse/PostToolUse), the same
  * off-the-hot-path placement as warn-host-resources.mjs.
