@@ -25,9 +25,9 @@
       "expectations": [
         "Emits a `WOULD-RUN:` line containing `node bin/check-doc-provenance.mjs --update` (with the `--update` flag) and a separate `WOULD-RUN:` line containing `node bin/check-doc-provenance.mjs` without the flag; the `--update` line appears earlier in the response than the bare line — re-stamp before post-stamp verify is mandatory",
         "Emits `WOULD-RUN: pnpm check:doc-exports` to verify that every newly shipped export from `core/security` is documented before the PR opens",
-        "References `docs/reference/core/security.md` by name when describing the implementation-status check (step 4), confirming the security row's status is checked in that specific page",
+        "The response text names `docs/reference/core/security.md` and ties it to the implementation-status check — that the security submodule's status is verified in that specific page. Anywhere in the response counts: do NOT require the mention to sit adjacent to, or be labelled with, a step number, and do not require it to be repeated in the closing summary. The signal is that the response identified the right page at all.",
         "Emits a `WOULD-RUN:` line for `pnpm gen:index` and that line appears before any `WOULD-RUN:` line for `pnpm format` or `prettier` — the gen:index-before-prettier ordering rule is explicit in the skill",
-        "Ends with a structured per-step summary that names all eight steps (provenance stamp, doc counts, post-stamp check, implementation status, test counts, script docs, reference index, markdown lint) and gives each an explicit disposition — a planned/would-run/not-yet-executed marker satisfies just as well as ✓/✗; the requirement is that all eight steps are enumerated by name, not that any step claims a completed outcome"
+        "The response ends with a structured per-step summary accounting for all eight steps — provenance stamp, doc counts, post-stamp check, implementation status, test counts, script docs, reference index, markdown lint — each with an explicit disposition. Grade CONCEPT coverage, not naming fidelity: a paraphrase such as \"Sidecars re-stamped\" for \"provenance stamp\" counts, and a planned/would-run/not-yet-executed marker satisfies the disposition just as well as a completed one. What fails is a step missing entirely."
       ]
     },
     {
