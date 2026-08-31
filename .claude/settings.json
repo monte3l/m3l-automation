@@ -1,7 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "cleanupPeriodDays": 14,
-  "claudeMdExcludes": ["/home/enri3l/CLAUDE.md"],
   "permissions": {
     "allow": [
       "Bash(pnpm check:*)",
@@ -25,9 +24,12 @@
       "Bash(pnpm exec tsc *)",
       "Bash(pnpm exec vitest run *)",
       "Bash(gh auth status)",
-      "Bash(gh auth *)",
-      "Bash(gh api *)",
-      "Bash(gh repo *)",
+      "Bash(gh repo view *)",
+      "Bash(gh api repos/monte3l/m3l-automation/code-scanning/alerts*)",
+      "Bash(gh api repos/monte3l/m3l-automation/issues/*)",
+      "Bash(gh api repos/monte3l/m3l-automation/commits/*)",
+      "Bash(gh api repos/monte3l/m3l-automation/rulesets*)",
+      "Bash(gh api repos/monte3l/m3l-automation/branches/main/protection*)",
       "Bash(gh run list *)",
       "Bash(pnpm vitest run *)",
       "Bash(pnpm exec eslint *)",
@@ -41,6 +43,21 @@
       "mcp__github__search_pull_requests",
       "mcp__github__get_me",
       "mcp__github__add_issue_comment"
+    ],
+    "deny": [
+      "Read(**/.env)",
+      "Read(**/.env.*)",
+      "Read(**/*.pem)",
+      "Read(~/.aws/**)",
+      "Read(~/.ssh/**)",
+      "Bash(curl)",
+      "Bash(curl *)",
+      "Bash(wget)",
+      "Bash(wget *)",
+      "Bash(gh auth token)",
+      "Bash(gh auth token *)",
+      "Bash(gh auth refresh)",
+      "Bash(gh auth refresh *)"
     ]
   },
   "availableModels": ["fable", "opus", "sonnet", "haiku"],
