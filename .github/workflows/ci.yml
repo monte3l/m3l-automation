@@ -596,6 +596,16 @@ jobs:
       - name: Check Node version pin
         run: pnpm check:node-version
 
+      # `.claude-code-version` is the single authority for the Claude Code CLI
+      # that skill-evals.yml and maintain-scan.yml install (Scorecard alert
+      # #17, PinnedDependenciesID). The deliberate inverse of the Node gate
+      # above: a `run:` step cannot read a version file, and Scorecard parses
+      # the command text, so the literal is required and this gate pins it.
+      # Dependabot never bumps a version inside a `run:` step, so nothing
+      # else would notice the two sites drifting apart.
+      - name: Check Claude Code CLI pin
+        run: pnpm check:claude-cli-version
+
       # GitHub-integration stance (ADR-0030 amendment, 2026-07-27): every
       # GitHub-talking skill cites the governing ADR, carries no retired policy
       # claim, and names the mechanism (gh CLI vs GitHub MCP) it actually uses.
