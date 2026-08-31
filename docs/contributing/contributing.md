@@ -5,19 +5,45 @@ fixing bugs, and changing the public API. If you are _consuming_ the
 package, this is not the document you want.
 
 `@m3l-automation/m3l-common` is a TypeScript 6.x library, **ESM-only**,
-targeting **Node.js 24 LTS+**, managed with `pnpm`, built with `tsc`, and
+targeting **Node.js 24 LTS+** (developed and CI-tested on exactly the
+`.node-version` major), managed with `pnpm`, built with `tsc`, and
 tested with `vitest`. It is an internal package, not published to npm. The
 public contract is the `exports` map; treat changes to it with care.
 
 ## Environment Setup
 
-You need Node.js 24 LTS or newer and `pnpm`.
+You need **exactly the Node major pinned in `.node-version`** (24) and
+`pnpm`. `.node-version` is the single authority for the development and CI
+runtime — CI provisions from it (`node-version-file: .node-version`), and
+`pnpm check:node-version` fails if any `engines.node` floor or workflow has
+drifted from it. Note the deliberate asymmetry: `engines.node` stays `">=24"`
+because that is the _consumer_ contract, so a green `typecheck` on a newer
+Node does not prove the code runs on the floor. Develop on the pin.
+
+`fnm` is the version manager this repo assumes, because Homebrew's `node`
+formula tracks the newest major (other CLIs depend on it) and cannot be pinned
+to 24 without breaking them. `fnm` switches per-directory instead:
 
 ```bash
-pnpm install        # install deps from the lockfile
+brew install fnm
+fnm install 24                                  # the .node-version major
+eval "$(fnm env --use-on-cd --shell zsh)"       # add to your shell rc
+```
+
+`--use-on-cd` is what makes `.node-version` take effect on entering the repo,
+leaving Homebrew's `node` free to stay on the newest major. `nvm` and `mise`
+read the same file if you already use one. Rationale: ADR-0003's 2026-08-31
+amendment.
+
+```bash
+pnpm install        # install deps from the lockfile (+ lefthook hooks)
 pnpm build          # tsc -> dist/ (ESM .js + .d.ts)
 pnpm test           # run the suite once
 ```
+
+There is no `corepack enable` step: pnpm self-manages from the
+`packageManager` field, and Corepack is not used in CI either (see ADR-0001's
+2026-08-31 update).
 
 **Hardware:** 16 GB RAM is the recommended floor for one Claude Code session
 doing normal TDD work in this repo — `git push` alone fans `lefthook`'s

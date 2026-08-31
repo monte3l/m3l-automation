@@ -10,7 +10,7 @@
 # using this action at all — gitleaks needs no pnpm install, so bundling it
 # here would cost every push a needless ~10s.
 name: Setup pnpm workspace
-description: pnpm + Node 24, pnpm store cache, and a frozen-lockfile install.
+description: pnpm + Node (from .node-version), pnpm store cache, and a frozen-lockfile install.
 
 runs:
   using: composite
@@ -19,7 +19,7 @@ runs:
 
     - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
       with:
-        node-version: 24
+        node-version-file: .node-version
         cache: pnpm
 
     # Records the runner's real specs in the log so the job-split's assumed

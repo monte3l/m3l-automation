@@ -51,8 +51,9 @@ try {
 } catch {
   console.error(
     "✗  worktree:setup: `pnpm install` failed (see the error above).\n" +
-      "   Common fixes: run `corepack enable`, check your Node version against\n" +
-      "   `.node-version`, then re-run `pnpm worktree:setup`.",
+      "   Common fixes: check your active Node major against `.node-version`\n" +
+      "   (`pnpm check:node-version`, or `fnm use` in this directory), then\n" +
+      "   re-run `pnpm worktree:setup`.",
   );
   process.exit(1);
 }

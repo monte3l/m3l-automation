@@ -31,7 +31,93 @@ We chose **Node 24 LTS** as the runtime floor because it is the active LTS relea
 - **Negative / trade-offs:** consumers cannot run the library on Node 18 or 20. For automation scripts in controlled environments this is an acceptable trade-off; it would be a concern for a general-purpose library targeting broader Node audiences.
 - **Semver impact:** none (Node 24+ from day one; no existing consumers).
 
+## Amendment (2026-08-31) — the pin is now enforced, and `fnm` is the version manager
+
+Two enforcement claims above are wrong, and the cost of that was measurable.
+Corrected here rather than by rewriting the original decision, per this
+directory's append-only amendment convention.
+
+- **`engine-strict=true` does not enforce this floor.** Decision drivers
+  (line 15) and the Decision (line 26) both claim `engine-strict=true` in
+  `.npmrc` makes developers and CI "fail loudly if the wrong Node version is
+  active". That is false in the direction that actually occurs. `engines.node`
+  is `">=24"` — a floor with **no ceiling** — so a machine running Node 26
+  satisfies the range and `engine-strict` can never fire. The mechanism only
+  ever guarded the _below-floor_ case, which no development machine here has
+  hit; the case that did occur, and that cost real debugging time, was running
+  _above_ it.
+- **`.node-version` was authoritative for nobody.** The Decision says the
+  floor "is pinned in `.node-version` (for local version managers like
+  fnm/nvm/mise)" and that "`ci.yml` is locked to `node-version: 24`". Those
+  were two independent pins that happened to agree. All four workflows plus
+  `.github/actions/setup/action.yml` hardcoded the literal `24`; nothing read
+  the file, and nothing compared the two. A Node bump therefore meant
+  hand-editing `.node-version`, 22 `engines` fields, 4 workflows and the
+  composite action, with no gate detecting a straggler.
+- **Observed cost.** `packages/m3l-console-server`'s `readBigInts` test fails
+  locally on Node 26 and is green in CI on Node 24 — a false failure produced
+  purely by the version split, and indistinguishable from a real regression
+  until someone thinks to check `node -v`.
+
+### What changed
+
+- **`bin/check-node-version.mjs`** (`pnpm check:node-version`) is the
+  enforcement `engine-strict` never provided. Its static half asserts every
+  workspace manifest's `engines.node` floor agrees with `.node-version` and
+  that every `actions/setup-node` site in `.github/` reads
+  `node-version-file: .node-version`; it exits non-zero on drift. Its runtime
+  half compares the executing Node's major against the pin and is **warn-only**
+  — CI passes it trivially, and a developer mid-session gets an advisory rather
+  than a blocked `pnpm verify`.
+- **All five provisioning sites now read the file**: `ci.yml:53`,
+  `.github/actions/setup/action.yml:22`, `security-audit.yml:36`,
+  `main-health.yml:62`, `skill-evals.yml:44`. `.node-version` is the single
+  authority; the literals are gone and the gate keeps them gone.
+- **`.claude/hooks/warn-node-version.mjs`** renders the same findings once per
+  session at `SessionStart`, non-blocking, so a wrong-major machine is visible
+  before work starts instead of after a confusing test failure.
+- **Wired into CI and `pnpm verify`** via the `gates` lane and a matching
+  `bin/lib/verify-steps.mjs` entry. Deliberately **not** added to
+  `lefthook.yml` `pre-push`: the static half cannot drift without a tracked
+  file changing (CI catches it on the PR), and the runtime half is advisory, so
+  paying for it on every push would buy nothing.
+
+### `fnm` is the chosen version manager
+
+ADR-0001's decision 4 pinned the runtime with "`.node-version` (Node 24) +
+Corepack + the existing `packageManager` field. No new tool (mise/Volta
+rejected as heavier all-in-ones)." That "no new tool" stance is **amended to
+admit `fnm`** (see ADR-0001's own 2026-08-31 amendment). The constraint that
+forced it: every development machine installs Node via Homebrew, and the
+`ctx7` formula requires the _unversioned_ `node` formula, so Homebrew keeps
+`node` tracking the newest major. Nothing repo-side can change that, and
+pinning Homebrew's `node` to 24 would break the unrelated CLIs that depend on
+it.
+
+`fnm` resolves the conflict rather than trading one breakage for another:
+`eval "$(fnm env --use-on-cd --shell zsh)"` makes `.node-version` take effect
+**per-directory**, so this repo gets Node 24 while Homebrew's `node` stays on
+the newest major for everything else. mise and Volta remain rejected on the
+original grounds — both are heavier all-in-ones that would also want to own
+package-manager and tool versioning, which `packageManager` + pnpm's own
+self-management already handle.
+
+Version-manager setup is a machine-side step, not a repo change; the install
+commands live in `docs/contributing/contributing.md` § Environment Setup, and
+the shell-rc line belongs in the maintainer's own dotfiles.
+
+### What did _not_ change
+
+`engines.node` stays **`">=24"`** in all 22 manifests. That field is the
+**consumer** contract, and a consumer running the library on Node 26 is fine
+and should stay fine. What is pinned exactly is the **development and CI
+runtime**, via `.node-version` plus the gate above. Narrowing `engines` to
+`">=24 <25"` would be a contract change with no benefit and was explicitly
+rejected. The `.npmrc` `engine-strict=true` line also stays: it still guards
+the below-floor case correctly, which is the only case it ever guarded.
+
 ## Links
 
 - Related: `.node-version`, `.npmrc` (`engine-strict=true`), root `package.json` (`engines`), `packages/m3l-common/package.json` (`engines`), `.github/workflows/ci.yml`.
+- Enforcement (2026-08-31 amendment): `bin/check-node-version.mjs`, `.claude/hooks/warn-node-version.mjs`, `bin/lib/verify-steps.mjs`, `.github/actions/setup/action.yml`.
 - Related: ADR 0001 (toolchain choices), ADR 0002 (ESM-only output — also requires Node 22+ for consumers, but Node 24 is the producer floor).
