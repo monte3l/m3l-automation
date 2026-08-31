@@ -6,6 +6,8 @@ import {
   EVAL_ALLOWED_TOOLS,
   VERDICT_SCHEMA,
   buildClaudeArgs,
+  DEFAULT_MAX_BUDGET_USD,
+  EVAL_AVAILABLE_TOOLS,
   buildGradedPrompt,
   parseVerdictEnvelope,
   renderChecklistEntry,
@@ -360,22 +362,29 @@ describe("buildGradedPrompt checklist section", () => {
   });
 });
 
+const FORBIDDEN_TOOLS = [
+  "Bash",
+  "BashOutput",
+  "PowerShell",
+  "REPL",
+  "WebFetch",
+  "WebSearch",
+  "Agent",
+  "Task",
+];
+
 describe("EVAL_ALLOWED_TOOLS", () => {
-  // THE safety invariant of the sandbox. Mutating/network capability is
-  // denied by omission from this list, not by a blunt mode, so this test is
-  // the thing standing between the harness and a live `git push`.
-  test.each([
-    "Bash",
-    "BashOutput",
-    "PowerShell",
-    "REPL",
-    "WebFetch",
-    "WebSearch",
-    "Agent",
-    "Task",
-  ])("never grants %s — no command-running or network tool", (tool) => {
-    expect(EVAL_ALLOWED_TOOLS).not.toContain(tool);
-  });
+  // Kept, but note what it does and does not prove. `--allowedTools`
+  // pre-approves permission; it never removed a tool, so this block states a
+  // real invariant about the permission grant while saying nothing about
+  // what EXISTS in the session. The existence invariant lives in the
+  // EVAL_AVAILABLE_TOOLS block below.
+  test.each(FORBIDDEN_TOOLS)(
+    "never pre-approves %s — no command-running or network tool",
+    (tool) => {
+      expect(EVAL_ALLOWED_TOOLS).not.toContain(tool);
+    },
+  );
 
   test("grants exactly the read plus confined-write set the evals need", () => {
     expect(EVAL_ALLOWED_TOOLS).toEqual([
@@ -385,6 +394,31 @@ describe("EVAL_ALLOWED_TOOLS", () => {
       "Write",
       "Edit",
     ]);
+  });
+});
+
+describe("EVAL_AVAILABLE_TOOLS", () => {
+  // THE safety AND hermeticity invariant of the sandbox. `--tools` is the
+  // only flag that removes a built-in, so this list is what stands between
+  // the harness and a live `git push` — or a subagent fanning out to the
+  // network via WebFetch.
+  test.each(FORBIDDEN_TOOLS)(
+    "never makes %s exist — no command-running, network or subagent tool",
+    (tool) => {
+      expect(EVAL_AVAILABLE_TOOLS).not.toContain(tool);
+    },
+  );
+
+  test("includes Skill, without which skills are invisible to the session", () => {
+    // Measured, not assumed: with --tools "Read,Grep,Glob,Write,Edit" a probe
+    // session rooted at a dir containing .claude/skills/ could not see the
+    // skill under test; adding Skill restored visibility AND invocation.
+    // Dropping this reproduces the CI-run-33390425486 defect silently.
+    expect(EVAL_AVAILABLE_TOOLS).toContain("Skill");
+  });
+
+  test("is the permission grant plus Skill, and nothing else", () => {
+    expect(EVAL_AVAILABLE_TOOLS).toEqual([...EVAL_ALLOWED_TOOLS, "Skill"]);
   });
 });
 
@@ -408,11 +442,53 @@ describe("buildClaudeArgs", () => {
     expect(args[args.indexOf("--setting-sources") + 1]).toBe("project");
   });
 
-  test("passes the allowlist as the tool grant", () => {
+  test("passes the allowlist as the permission pre-approval", () => {
     expect(args).toContain("--allowedTools");
     expect(args[args.indexOf("--allowedTools") + 1]).toBe(
       EVAL_ALLOWED_TOOLS.join(","),
     );
+  });
+
+  test("restricts the built-in set with --tools, the flag that removes", () => {
+    // The assertion the previous suite lacked. Checking EVAL_ALLOWED_TOOLS'
+    // CONTENTS was literally true and guarded nothing: the argv carried no
+    // restricting flag at all, so Bash and Agent existed in every graded
+    // session. Only emitting --tools removes them, so only this asserts it.
+    expect(args).toContain("--tools");
+    expect(args[args.indexOf("--tools") + 1]).toBe(
+      EVAL_AVAILABLE_TOOLS.join(","),
+    );
+  });
+
+  test.each(FORBIDDEN_TOOLS)(
+    "argv never makes %s available to a graded session",
+    (tool) => {
+      // Resolve the index first and assert it: reading
+      // `args[indexOf(...) + 1]` on an absent flag yields args[0], which
+      // trivially contains no tool name — so without this the whole block
+      // stays green when --tools is deleted, guarding nothing.
+      const flagIndex = args.indexOf("--tools");
+      expect(flagIndex).toBeGreaterThan(-1);
+      expect(args[flagIndex + 1]?.split(",")).not.toContain(tool);
+    },
+  );
+
+  test("bounds per-case spend with --max-budget-usd", () => {
+    // A wall-clock job timeout cannot express this: one runaway case can burn
+    // the run's whole budget inside the timeout and starve the rest.
+    expect(args).toContain("--max-budget-usd");
+    expect(args[args.indexOf("--max-budget-usd") + 1]).toBe(
+      String(DEFAULT_MAX_BUDGET_USD),
+    );
+  });
+
+  test("lets a caller override the per-case budget", () => {
+    const custom = buildClaudeArgs("p", {
+      model: "claude-sonnet-5",
+      effort: "medium",
+      maxBudgetUsd: 1.25,
+    });
+    expect(custom[custom.indexOf("--max-budget-usd") + 1]).toBe("1.25");
   });
 
   test("runs non-interactively with the verdict schema and the given model", () => {
