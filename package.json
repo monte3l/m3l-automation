@@ -103,7 +103,7 @@
     "prepare": "lefthook install && node bin/install-merge-drivers.mjs"
   },
   "devDependencies": {
-    "@arethetypeswrong/cli": "0.18.4",
+    "@arethetypeswrong/cli": "0.18.5",
     "@commitlint/config-conventional": "21.2.2",
     "@commitlint/lint": "21.2.2",
     "@commitlint/load": "21.2.2",
@@ -113,8 +113,8 @@
     "@testing-library/jest-dom": "7.0.1",
     "@testing-library/react": "16.3.2",
     "@types/node": "24.13.3",
-    "@vitest/coverage-v8": "4.1.10",
-    "eslint": "10.6.0",
+    "@vitest/coverage-v8": "4.1.11",
+    "eslint": "10.9.1",
     "eslint-import-resolver-typescript": "4.4.5",
     "eslint-plugin-import-x": "4.17.1",
     "eslint-plugin-react-hooks": "7.1.1",
@@ -123,15 +123,15 @@
     "globals": "17.9.0",
     "jscpd": "5.0.15",
     "jsdom": "30.0.1",
-    "knip": "6.25.0",
-    "lefthook": "2.1.9",
-    "prettier": "3.9.4",
-    "publint": "0.3.21",
+    "knip": "6.33.0",
+    "lefthook": "2.1.12",
+    "prettier": "3.9.6",
+    "publint": "0.3.24",
     "rumdl": "0.2.62",
-    "turbo": "2.10.4",
+    "turbo": "2.10.12",
     "typescript": "6.0.3",
     "typescript-eslint": "8.63.0",
-    "vitest": "4.1.10",
+    "vitest": "4.1.11",
     "zod": "4.4.3"
   }
 }
