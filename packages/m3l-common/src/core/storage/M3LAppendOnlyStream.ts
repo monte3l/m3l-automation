@@ -58,11 +58,13 @@
 import { M3LError } from "../errors/index.js";
 import { isNumber, isPlainObject, isString } from "../utils/guards.js";
 import { projectAppendOnlyEntry } from "../../internal/storage/append-only-projection.js";
-import { readAppendOnlySegments } from "../../internal/storage/append-only-reader.js";
+import {
+  assertOnTruncatedTailIsCallable,
+  readAppendOnlySegments,
+} from "../../internal/storage/append-only-reader.js";
 import type { AppendOnlyWriterErrors } from "../../internal/storage/append-only-writer.js";
 import { AppendOnlyWriter } from "../../internal/storage/append-only-writer.js";
 import {
-  assertOnTruncatedTailIsCallable,
   M3L_APPEND_ONLY_MAX_LINE_BYTES,
   M3L_APPEND_ONLY_MAX_SEGMENT_AGE_MS,
   M3L_APPEND_ONLY_MAX_SEGMENT_BYTES,

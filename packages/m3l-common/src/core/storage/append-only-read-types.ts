@@ -16,9 +16,6 @@
  * @packageDocumentation
  */
 
-import { M3LError } from "../errors/index.js";
-import { isFunction, isPlainObject } from "../utils/guards.js";
-
 /**
  * The default segment size ceiling: 8 MiB.
  *
@@ -127,35 +124,4 @@ export interface M3LAppendOnlyReadOptions {
    * situation throws instead.
    */
   readonly onTruncatedTail?: (segment: M3LAppendOnlyTruncatedSegment) => void;
-}
-
-/**
- * Validates {@link M3LAppendOnlyReadOptions.onTruncatedTail} at the public
- * boundary: `options` is typed, but a JS caller (or one bypassing the type)
- * can still hand `read()` a truthy non-function there. Left unchecked, that
- * value silently disables the torn-tail throw at the exact call site meant
- * to invoke it (`context.onTruncatedTail?.(tornTail)`), which is too close to
- * the invariant the whole feature exists to enforce to fail any way but
- * loudly and immediately.
- *
- * @param options - The read options bag exactly as the caller supplied it,
- *   `unknown` because a public method's own static parameter type is never a
- *   runtime guarantee.
- * @throws {@link M3LError} with `code: "ERR_INVALID_ARGUMENT"` when
- *   `onTruncatedTail` is present and truthy but not callable.
- */
-export function assertOnTruncatedTailIsCallable(options: unknown): void {
-  if (!isPlainObject(options)) {
-    return;
-  }
-  const onTruncatedTail = options["onTruncatedTail"];
-  if (onTruncatedTail && !isFunction(onTruncatedTail)) {
-    throw new M3LError(
-      'append-only stream: "onTruncatedTail" is invalid (not-a-function)',
-      {
-        code: "ERR_INVALID_ARGUMENT",
-        context: { field: "onTruncatedTail", violation: "not-a-function" },
-      },
-    );
-  }
 }

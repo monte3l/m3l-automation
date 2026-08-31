@@ -62,7 +62,11 @@ import { open, readdir } from "node:fs/promises";
 import path from "node:path";
 
 import { M3LError } from "../../core/errors/index.js";
-import { isEnoentError } from "../../core/utils/guards.js";
+import {
+  isEnoentError,
+  isFunction,
+  isPlainObject,
+} from "../../core/utils/guards.js";
 import type { AppendOnlyProjectionFailure } from "./append-only-projection.js";
 import { projectAppendOnlyEntry } from "./append-only-projection.js";
 import type { ParsedSegmentName } from "./append-only-segments.js";
@@ -553,5 +557,36 @@ export async function* readAppendOnlySegments(
       }),
       buildError: options.buildError,
     });
+  }
+}
+
+/**
+ * Validates {@link M3LAppendOnlyReadOptions.onTruncatedTail} at the public
+ * boundary: `options` is typed, but a JS caller (or one bypassing the type)
+ * can still hand `read()` a truthy non-function there. Left unchecked, that
+ * value silently disables the torn-tail throw at the exact call site meant
+ * to invoke it (`context.onTruncatedTail?.(tornTail)`), which is too close to
+ * the invariant the whole feature exists to enforce to fail any way but
+ * loudly and immediately.
+ *
+ * @param options - The read options bag exactly as the caller supplied it,
+ *   `unknown` because a public method's own static parameter type is never a
+ *   runtime guarantee.
+ * @throws {@link M3LError} with `code: "ERR_INVALID_ARGUMENT"` when
+ *   `onTruncatedTail` is present and truthy but not callable.
+ */
+export function assertOnTruncatedTailIsCallable(options: unknown): void {
+  if (!isPlainObject(options)) {
+    return;
+  }
+  const onTruncatedTail = options["onTruncatedTail"];
+  if (onTruncatedTail && !isFunction(onTruncatedTail)) {
+    throw new M3LError(
+      'append-only stream: "onTruncatedTail" is invalid (not-a-function)',
+      {
+        code: "ERR_INVALID_ARGUMENT",
+        context: { field: "onTruncatedTail", violation: "not-a-function" },
+      },
+    );
   }
 }
