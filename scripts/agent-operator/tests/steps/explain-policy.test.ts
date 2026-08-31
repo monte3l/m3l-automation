@@ -3,21 +3,102 @@
  * that renders a validated policy's grants, operations, budgets, and flags
  * (PR 1).
  *
- * PR A scope: the `AgentCliSurface` dependency (and its `list()`/`doctor()`
- * rendering) has been dropped from `explainPolicy` — that CLI seam returns in
- * PR B, alongside `../../src/lib/cli-surface.js` and `../../src/lib/model-safety.js`,
- * both deleted from the working tree for this split. `explainPolicy` now
- * takes only `{ policy, logger }` and still returns the same
+ * Contract pins for this RED phase (test-author decision, since the PR 1
+ * spec fixes the behaviour but not every export name): the step is named
+ * `explainPolicy`, taking `{ policy, logger, surface }` and returning an
  * `AgentOperatorExplainPolicySummary` shaped `{ grantCount, requireDecisionLog,
- * dryRunFirst, hasBudgets }`.
+ * dryRunFirst, hasBudgets }`. It must call `surface.list()` and
+ * `surface.doctor()` (the "CLI seam genuinely exercised on a real code
+ * path" requirement) and must never call `surface.inspect()` or
+ * `surface.dryRun()` — those need a script name and this operation carries
+ * none.
  */
 
 import { describe, expect, it } from "vitest";
 
 import { Core } from "@m3l-automation/m3l-common";
 
+import type { AgentCliSurface } from "../../src/lib/cli-surface.js";
+import type {
+  AgentOperatorDoctorCheck,
+  AgentOperatorListRow,
+  AgentOperatorRunEnvelope,
+} from "../../src/lib/cli-envelopes.js";
+import {
+  projectDoctorReport,
+  projectListRow,
+  projectRunEnvelope,
+  type AgentOperatorProjectedDoctorReport,
+  type AgentOperatorProjectedListRow,
+  type AgentOperatorProjectedRunEnvelope,
+} from "../../src/lib/model-safety.js";
 import { explainPolicy } from "../../src/steps/explain-policy.js";
 import { fullPolicy, minimalPolicy } from "../support/policyFixtures.js";
+
+/**
+ * Builds a real, nominally-branded {@link AgentOperatorProjectedDoctorReport}
+ * by running the actual `projectDoctorReport` projector over raw check
+ * fixtures — the brand on `AgentOperatorProjectedDoctorCheck` can only be
+ * minted inside `model-safety.ts`, so a fake surface must go through the
+ * real projector rather than hand-writing an object literal (which would
+ * need a disallowed cast).
+ */
+function buildDoctorReport(
+  checks: readonly AgentOperatorDoctorCheck[],
+): AgentOperatorProjectedDoctorReport {
+  return projectDoctorReport(checks);
+}
+
+/**
+ * Builds the fake surface's `list()` rows through the REAL `projectListRow`,
+ * for the same reason as {@link buildDoctorReport}: every
+ * `AgentOperatorProjected*` type is nominally branded, so only the module's
+ * own projector may mint one — a hand-written literal would need a
+ * disallowed cast. The rows carry the same observable values the previous
+ * literals did (`configLoadFailed: false` is derived from `loadError: null`).
+ */
+function buildListRows(): readonly AgentOperatorProjectedListRow[] {
+  const rows: readonly AgentOperatorListRow[] = [
+    {
+      name: "agent-operator",
+      description: "…",
+      parameterCount: 20,
+      loadError: null,
+    },
+    {
+      name: "sqs-etl",
+      description: "…",
+      parameterCount: 14,
+      loadError: null,
+    },
+  ];
+  return rows.map((row) => projectListRow(row));
+}
+
+/**
+ * Builds the fake surface's `dryRun()` envelope through the REAL
+ * `projectRunEnvelope` — same branding rationale as {@link buildListRows}.
+ * `reportAvailable: false` is derived from `reportPath: null`.
+ */
+function buildRunEnvelope(): AgentOperatorProjectedRunEnvelope {
+  const envelope: AgentOperatorRunEnvelope = {
+    kind: "m3l.run.result",
+    schemaVersion: 1,
+    script: "agent-operator",
+    startedAt: new Date(0).toISOString(),
+    finishedAt: new Date(0).toISOString(),
+    durationMs: 0,
+    exitCode: 0,
+    exitCodeName: "SUCCESS",
+    outcome: "dry-run",
+    reportPath: null,
+    reportUnavailable: null,
+    timelineCount: null,
+    timelineSourceCount: null,
+    recoveryTotal: null,
+  };
+  return projectRunEnvelope(envelope);
+}
 
 /** Records every event handed to it, for assertion without pinning exact prose. */
 class RecordingLoggerHandler implements Core.M3LLoggerHandler {
@@ -37,6 +118,37 @@ function flattenLoggedText(events: readonly Core.M3LLogEvent[]): string {
     .join("\n");
 }
 
+/** A fake `AgentCliSurface` recording which methods were invoked, in call order. */
+function createFakeSurface(): {
+  readonly surface: AgentCliSurface;
+  readonly calls: string[];
+} {
+  const calls: string[] = [];
+  const surface: AgentCliSurface = {
+    list() {
+      calls.push("list");
+      return Promise.resolve(buildListRows());
+    },
+    doctor() {
+      calls.push("doctor");
+      return Promise.resolve(
+        buildDoctorReport([
+          { name: "workspace-root", status: "ok", detail: "ok" },
+        ]),
+      );
+    },
+    inspect() {
+      calls.push("inspect");
+      return Promise.resolve([]);
+    },
+    dryRun() {
+      calls.push("dryRun");
+      return Promise.resolve(buildRunEnvelope());
+    },
+  };
+  return { surface, calls };
+}
+
 function createLogger(): {
   readonly logger: Core.M3LLogger;
   readonly handler: RecordingLoggerHandler;
@@ -48,8 +160,9 @@ function createLogger(): {
 describe("explainPolicy", () => {
   it("renders every grant, its operations, the budgets, and both flags through the injected logger", async () => {
     const { logger, handler } = createLogger();
+    const { surface } = createFakeSurface();
 
-    await explainPolicy({ policy: fullPolicy(), logger });
+    await explainPolicy({ policy: fullPolicy(), logger, surface });
 
     const text = flattenLoggedText(handler.events);
     expect(text).toContain("agent-operator");
@@ -64,10 +177,12 @@ describe("explainPolicy", () => {
 
   it("returns a plain summary object reflecting the policy's grants, budgets, and flags", async () => {
     const { logger } = createLogger();
+    const { surface } = createFakeSurface();
 
     const summary = await explainPolicy({
       policy: fullPolicy(),
       logger,
+      surface,
     });
 
     expect(summary.grantCount).toBe(2);
@@ -78,10 +193,12 @@ describe("explainPolicy", () => {
 
   it("handles a minimal policy (no budgets, no flags, no sensitiveTargets) without throwing", async () => {
     const { logger } = createLogger();
+    const { surface } = createFakeSurface();
 
     const summary = await explainPolicy({
       policy: minimalPolicy(),
       logger,
+      surface,
     });
 
     expect(summary.grantCount).toBe(1);
@@ -90,21 +207,35 @@ describe("explainPolicy", () => {
     expect(summary.hasBudgets).toBe(false);
   });
 
-  it("constructs no Bedrock client and spawns nothing — the deps bag carries only policy and logger", async () => {
+  it("calls surface.list() and surface.doctor() exactly once each, and never inspect()/dryRun()", async () => {
     const { logger } = createLogger();
+    const { surface, calls } = createFakeSurface();
 
-    // The call succeeds with exactly these two deps and nothing
-    // Bedrock-shaped or CLI-shaped (no client, no modelId, no credentials, no
-    // CLI surface) — proving this operation cannot reach the network or spawn
-    // a process even by accident.
+    await explainPolicy({ policy: fullPolicy(), logger, surface });
+
+    expect(calls.filter((call) => call === "list")).toHaveLength(1);
+    expect(calls.filter((call) => call === "doctor")).toHaveLength(1);
+    expect(calls).not.toContain("inspect");
+    expect(calls).not.toContain("dryRun");
+  });
+
+  it("constructs no Bedrock client — the deps bag carries only policy, logger, and the CLI surface", async () => {
+    const { logger } = createLogger();
+    const { surface } = createFakeSurface();
+
+    // The call succeeds with exactly these three deps and nothing
+    // Bedrock-shaped (no client, no modelId, no credentials) — proving this
+    // operation cannot reach the network even by accident.
     await expect(
-      explainPolicy({ policy: minimalPolicy(), logger }),
+      explainPolicy({ policy: minimalPolicy(), logger, surface }),
     ).resolves.toBeDefined();
   });
 
   it("still resolves with the correct summary when a handler throws on every event — the isolated failure path", async () => {
-    // explainPolicy has no reachable error path of its own: it never awaits
-    // I/O and never calls a fallible collaborator directly. Its own
+    // explainPolicy originates no error of its own: the only fallible
+    // collaborator it awaits is `deps.surface`, whose rejections it neither
+    // catches nor reshapes (they simply propagate, and their typed-error
+    // mapping is `cli-surface.test.ts`'s contract, not this step's). Its own
     // "failure path" is therefore this isolation guarantee, documented at
     // `M3LLogger.dispatch` (packages/m3l-common/src/core/logging/M3LLogger.ts:573-597):
     // a handler that throws is caught per-event, a best-effort diagnostic is
@@ -127,8 +258,16 @@ describe("explainPolicy", () => {
     }
     const handler = new ThrowingLoggerHandler();
     const logger = new Core.M3LLogger([handler]);
+    // The CLI seam is still the same recording fake the other cases use —
+    // this scenario varies only the logger, so `list`/`doctor` stay real
+    // calls on the same code path rather than being stubbed out.
+    const { surface } = createFakeSurface();
 
-    const summary = await explainPolicy({ policy: fullPolicy(), logger });
+    const summary = await explainPolicy({
+      policy: fullPolicy(),
+      logger,
+      surface,
+    });
 
     expect(handler.calls).toBeGreaterThan(0);
     expect(summary.grantCount).toBe(2);
