@@ -210,7 +210,7 @@ per-phase detail in
 | **X4**  | Run orchestration (registry, concurrency, SSE streams)           | Done     |
 | **X5**  | `sqs-etl` list-queues operation (fleet PR)                       | Done     |
 | **X6**  | Workbench sessions (addressable results, bindings; U10 consumes) | Done     |
-| **X7**  | Human-action audit + correlation threading                       | To Do    |
+| **X7**  | Human-action audit + correlation threading                       | Done     |
 | **X8**  | Self-telemetry + retention tooling                               | To Do    |
 | **X9**  | `m3l-console-web` skeleton (Vite/React/Playwright, zones)        | Done     |
 | **X10** | Run-launcher UI MVP (button-press launch + live tail)            | Done     |
