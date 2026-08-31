@@ -88,7 +88,7 @@ pre-push:
     # a warning surfaced here is a warning a maintainer sees before push
     # rather than never, since nothing else in the repo polls the tracker.
     checks:
-      run: node bin/verify-signed-range.mjs && pnpm check:control-chars && pnpm check:file-budget && pnpm check:agents && pnpm check:script-docs && pnpm check:cli-docs && pnpm check:review-size && pnpm check:context-budget && pnpm check:provenance && pnpm check:index && pnpm check:harness-freshness && pnpm check:skill-evals
+      run: node bin/verify-signed-range.mjs && pnpm check:control-chars && pnpm check:file-budget && pnpm check:agents && pnpm check:script-docs && pnpm check:cli-docs && pnpm check:review-size && pnpm check:context-budget && pnpm check:provenance && pnpm check:index && pnpm check:harness-freshness && pnpm check:skill-evals && pnpm check:claude-cli-version && pnpm check:review-policy
 
 # Fire after `git rebase` completes (including a no-op rebase with nothing to
 # replay) and after `git merge` completes. Regenerates the derived files the

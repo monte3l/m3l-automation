@@ -175,9 +175,11 @@ try {
 
 For each finding, report: severity (CRITICAL / HIGH / MEDIUM), the user impact
 in one sentence, and a corrected-code snippet. Group all findings as
-**Must-fix** (CRITICAL + HIGH), **Should-fix** (MEDIUM), **Nits**. Cite
-`file:line` and the violated rule (CLAUDE.md §Error Handling). End with a
-one-line verdict.
+**Must-fix** (CRITICAL + HIGH), **Should-fix** (MEDIUM), **Nits**. Cap each
+section at its 10 most severe findings, most-severe first (`REVIEW.md` —
+collapse a recurring issue class into one bullet rather than spilling past
+the cap). Cite `file:line` and the violated rule (CLAUDE.md §Error Handling).
+End with a one-line verdict.
 
 **Scope discipline.** Reserve CRITICAL/HIGH for a failure that is genuinely
 silenced or mistyped in a real, reachable path — don't escalate a theoretical or

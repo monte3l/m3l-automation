@@ -112,10 +112,12 @@ class M3LPrompt {
 
 ## Output
 
-Group findings as **Must-fix**, **Should-fix**, **Nits**. Cite file:line and
-the standard. Note watch-outs from rules 01: context gaps, phantom
-dependencies, over-engineering, test theater, architectural mismatch. End with
-a one-line verdict.
+Group findings as **Must-fix**, **Should-fix**, **Nits**. Cap each section at
+its 10 most severe findings, most-severe first (`REVIEW.md` — collapse a
+recurring issue class into one bullet rather than spilling past the cap).
+Cite file:line and the standard. Note watch-outs from rules 01: context gaps,
+phantom dependencies, over-engineering, test theater, architectural mismatch.
+End with a one-line verdict.
 
 **Scope discipline.** A reviewer told to find gaps will always find some — resist
 it. Reserve **Must-fix** for issues that break correctness or violate a stated

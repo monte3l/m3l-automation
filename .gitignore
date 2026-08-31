@@ -28,9 +28,6 @@ data/output/*
 # — it would be replayed against a database it does not belong to.
 data/console/
 
-# Skill eval workspaces (generated artefacts from skill-creator runs)
-.claude/skills/*/**-workspace/
-
 # Git worktrees created by `claude --worktree` / isolated spokes (nested checkouts)
 .claude/worktrees/
 

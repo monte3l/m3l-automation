@@ -213,6 +213,16 @@ export const VERIFY_STEPS = [
     cmd: () => "pnpm check:harness-freshness",
   },
   {
+    ciStepName: "Check skill evals",
+    id: "check-skill-evals",
+    cmd: () => "pnpm check:skill-evals",
+  },
+  {
+    ciStepName: "Check review policy",
+    id: "check-review-policy",
+    cmd: () => "pnpm check:review-policy",
+  },
+  {
     ciStepName: "Check tracker coverage",
     id: "check-tracker-coverage",
     cmd: () => "pnpm check:tracker-coverage",
@@ -361,6 +371,11 @@ export const VERIFY_STEPS = [
     ciStepName: "Check Node version pin",
     id: "check-node-version",
     cmd: () => "pnpm check:node-version",
+  },
+  {
+    ciStepName: "Check Claude Code CLI pin",
+    id: "check-claude-cli-version",
+    cmd: () => "pnpm check:claude-cli-version",
   },
   {
     ciStepName: "Check GitHub-integration stance (integration-stance)",
