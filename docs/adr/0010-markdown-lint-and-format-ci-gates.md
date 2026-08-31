@@ -100,11 +100,20 @@ them.
 The `lint:md` script is:
 
 ```console
-rumdl check . --no-cache --exclude "node_modules/**,.claude/**,**/dist/**,CHANGELOG.md,.github/pull_request_template.md,docs/adr/template.md"
+rumdl check . --no-cache --deny-config-warnings --exclude "node_modules/**,.claude/**,**/dist/**,tmp/**,CHANGELOG.md,.github/pull_request_template.md,docs/adr/template.md,docs/plans/archive/**"
 ```
+
+(Corrected 2026-08-31: this block had drifted from `package.json`, which had
+since added the `tmp/**` and `docs/plans/archive/**` exclusions. No gate joins
+the two, so it silently went stale.)
 
 - **`--no-cache`** prevents `rumdl` from writing a `.rumdl_cache/` directory into
   the working tree (also added to `.gitignore` as a safety net for manual runs).
+- **`--deny-config-warnings`** (added 2026-08-31) makes an unknown rule option
+  exit non-zero instead of printing a warning and passing. Without it, a
+  renamed or mistyped key in `.markdownlint.json` is silently ignored — the
+  exact way a rule this repo believes it has configured could quietly revert to
+  its default.
 - **Exclusions** mirror the surfaces other tools already ignore plus two scaffolds:
   - `.claude/**` — tooling files (agents/skills carry YAML front matter that trips
     `MD041`); already ignored by ESLint and knip.
@@ -137,9 +146,113 @@ escaped the `pre-commit` hook.
     x64 is covered).
 - **Semver impact:** none — tooling change only; no change to the public API.
 
+## Amendment (2026-08-31) — prettier wins over rumdl, and MD076 is configured
+
+The Consequences section above predicted this and prescribed the remedy: "Rule
+parity must be re-checked on `rumdl` upgrades; divergences are handled via
+config or scoped exclusions." This is the first time that played out, so it is
+recorded here as the worked example — and it exposed a rule the original
+decision left unstated.
+
+### What happened
+
+`chore(deps-dev): bump rumdl from 0.2.43 to 0.2.62 (#784)` tightened `MD076`
+(`list-item-spacing`), which began flagging
+`docs/contributing/branch-protection.md:121`. The two gates this ADR
+introduced had become **mutually unsatisfiable** on that file:
+
+- `MD076` at its default `style = "consistent"` rejects a blank line between
+  list items when sibling items are tight.
+- prettier **requires** that blank line, because the list's first item carries
+  continuation paragraphs.
+
+Deleting the line was not a fix — prettier restores it. `rumdl fmt` followed by
+`prettier --write`, iterated five times, reaches a fixed point that still fails
+`lint:md` with the file byte-identical to `HEAD`. Neither a prettier bump
+(3.9.6 behaves identically to 3.9.4) nor a rumdl bump (0.2.62 is the newest
+published version) resolves it.
+
+**The breakage was latent, not visible on `main`.** `ci.yml`'s `Lint Markdown`
+step is path-gated on `md == 'true'`, and #784's own diff touched only `ts` and
+`deps` paths — so the step was **skipped** on both that PR and the subsequent
+`main` push, and `main`'s CI stayed green (run on `5a014d6d`: job
+`Format & Markdown` = success, step `Lint Markdown` = skipped). The cost landed
+instead on the next PRs to touch a Markdown file: #785 went `FAILURE` on
+`Format & Markdown` for adding `REVIEW.md`, and it blocked this repo's
+Node-version work too. Worth noting as a gate-design lesson — a path-gated
+check can let a toolchain bump land a repo-wide breakage while reporting green.
+
+### The precedence rule this ADR was missing
+
+This ADR added `format:check` and `lint:md` as independent gates and never said
+which wins when they disagree — which is why the conflict had no obvious home.
+Stated now:
+
+> **prettier owns Markdown formatting. Where a rumdl rule contradicts
+> prettier's output, prettier wins and the rumdl rule is configured to agree.**
+
+prettier is the earlier and broader authority: it runs in `pre-commit` on every
+staged file, gates every commit through `format:check`, and formats far more
+than Markdown. A rumdl rule that fights it can only ever produce an
+unsatisfiable tree.
+
+### The fix: configure MD076, do not disable it
+
+`.markdownlint.json` gains:
+
+```json
+"MD076": { "allow_loose_continuation": true }
+```
+
+This lands in the config surface this ADR already chose — rumdl was picked
+partly because it "auto-discovers the existing `.markdownlint.json` (no config
+rewrite)" — so no new config file is introduced.
+
+**It does, however, cross a line this ADR drew.** The Decision drivers and
+Consequences both justify `.markdownlint.json` as "reused verbatim — no new
+rule dialect". `MD076` is **rumdl-native**: markdownlint 0.41.1 defines rules
+only up to `MD060` and has no `MD076` at all. So the file now carries its first
+rumdl-only key and is no longer portable back to markdownlint. That is accepted
+deliberately — the alternative is a `.rumdl.toml`, which would change config
+resolution precedence for a larger blast radius than this fix warrants — but it
+means the "no new rule dialect" property is **spent**, and a future reader
+should not assume `.markdownlint.json` is engine-agnostic. Migrating to
+`.rumdl.toml` (which supports comments and `[per-file-ignores]`, the surgical
+alternative to a repo-wide setting) is the deferred follow-up if more
+rumdl-native config accumulates.
+
+`allow_loose_continuation` was preferred over `"MD076": false` because it keeps
+the rule live: `MD076.style` remains `"consistent"`, and the rule still flags a
+genuinely inconsistent list. Verified by mutation test — a list with a stray
+blank line between two single-paragraph items is still reported, while the
+continuation-paragraph case prettier mandates is not. Disabling the rule
+outright would have silently accepted both. `style = "loose"` was rejected: it
+inverts the requirement and produced 11 violations in that one file alone.
+
+Also note **where the fix had to live**. `.claude/hooks/post-edit-md-verify.mjs`
+runs `pnpm exec rumdl check <file>` with no flags, so a `--disable MD076` added
+to the `lint:md` script would have left that hook failing on every Markdown
+edit. Config-level changes cover both call sites; script-level flags do not.
+Any future rumdl divergence should be resolved in `.markdownlint.json` for the
+same reason.
+
+### Standing consequence
+
+`.markdownlint.json` is JSON and cannot carry comments, so it has no room for
+the `eslint.config.js`-style "why" block that this repo uses for a deliberately
+disabled rule. **This ADR is therefore the rationale record for every entry in
+that file.** The pre-existing `MD013` (line length — prettier owns wrapping)
+and `MD041` (first-line heading — false-positives on docs opening with
+front-matter or a badge block) disables predate this amendment and had no
+recorded justification anywhere; they are noted here so the file is fully
+accounted for.
+
 ## Links
 
 - Supersedes: nothing
 - Related: ADR-0007 (automated dependency monitoring and security gating),
   ADR-0008 (replacing `@commitlint/cli` to drop an archived transitive dep),
   `.github/workflows/ci.yml`, `.markdownlint.json`, `package.json`
+- Amended 2026-08-31 (see above): `.markdownlint.json` (`MD076`),
+  `.claude/hooks/post-edit-md-verify.mjs`, PR #784 (the rumdl bump that
+  surfaced the conflict)
