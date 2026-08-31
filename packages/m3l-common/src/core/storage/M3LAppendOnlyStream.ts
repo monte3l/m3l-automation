@@ -239,6 +239,13 @@ function renderEntryLine(entry: unknown): string {
   // Typed `unknown` on purpose: the declared return type is `string`, and the
   // whole point of this check is that a return type is not a runtime proof.
   const json: unknown = JSON.stringify(projection);
+  /* v8 ignore next 3 -- unreachable: projectAppendOnlyEntry rebuilds every
+     node with a null prototype (Object.create(null) for objects,
+     Object.setPrototypeOf(…, null) for arrays) so an inherited toJSON gadget
+     cannot rewrite the projected record, and it already rejects undefined,
+     functions, and symbols — the only inputs that make JSON.stringify return
+     undefined. The check is kept as the last line of defence if that
+     projection contract ever regresses. */
   if (typeof json !== "string") {
     throw invalidArgument("entry", "not-json-serializable");
   }
