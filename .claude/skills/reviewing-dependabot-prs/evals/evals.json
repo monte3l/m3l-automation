@@ -1,0 +1,75 @@
+{
+  "skill_name": "reviewing-dependabot-prs",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I saved the current open Dependabot PRs for this repo into dependabot-prs.json. Use that file as the list of open Dependabot PRs and run the reviewing-dependabot-prs skill to triage them.",
+      "expected_output": "A verdict table with all four PRs showing their Shape, Semver, Verdict, and Rationale columns: #101 MERGE (patch, green), #102 MERGE (minor, green), #103 in the escalation path as a major bump requiring changelog review, #104 HOLD due to the failing verify check. The response then asks a single batch confirmation question. No WOULD-RUN: gh pr merge line appears before that confirmation question.",
+      "files": [
+        {
+          "path": "dependabot-prs.json",
+          "content": "[\n  {\n    \"number\": 101,\n    \"title\": \"Bump typescript from 5.4.5 to 5.5.2\",\n    \"body\": \"Bumps [typescript](https://github.com/microsoft/TypeScript) from 5.4.5 to 5.5.2.\\n\\nThis pull request was built based on a group rule.\",\n    \"headRefName\": \"dependabot/npm_and_yarn/toolchain/typescript-5.5.2\",\n    \"url\": \"https://github.com/m3l-automation/m3l-automation/pull/101\",\n    \"labels\": [{\"name\": \"dependencies\"}],\n    \"statusCheckRollup\": [\n      {\"name\": \"verify\", \"status\": \"COMPLETED\", \"conclusion\": \"SUCCESS\"},\n      {\"name\": \"review\", \"status\": \"COMPLETED\", \"conclusion\": \"SKIPPED\"},\n      {\"name\": \"Dependency Review\", \"status\": \"COMPLETED\", \"conclusion\": \"SUCCESS\"},\n      {\"name\": \"CodeQL\", \"status\": \"COMPLETED\", \"conclusion\": \"NEUTRAL\"}\n    ],\n    \"mergeStateStatus\": \"CLEAN\"\n  },\n  {\n    \"number\": 102,\n    \"title\": \"Bump eslint from 9.5.0 to 9.6.0\",\n    \"body\": \"Bumps [eslint](https://github.com/eslint/eslint) from 9.5.0 to 9.6.0.\\n\\nThis pull request was built based on a group rule.\",\n    \"headRefName\": \"dependabot/npm_and_yarn/toolchain/eslint-9.6.0\",\n    \"url\": \"https://github.com/m3l-automation/m3l-automation/pull/102\",\n    \"labels\": [{\"name\": \"dependencies\"}],\n    \"statusCheckRollup\": [\n      {\"name\": \"verify\", \"status\": \"COMPLETED\", \"conclusion\": \"SUCCESS\"},\n      {\"name\": \"review\", \"status\": \"COMPLETED\", \"conclusion\": \"SKIPPED\"},\n      {\"name\": \"Dependency Review\", \"status\": \"COMPLETED\", \"conclusion\": \"SUCCESS\"},\n      {\"name\": \"CodeQL\", \"status\": \"COMPLETED\", \"conclusion\": \"NEUTRAL\"}\n    ],\n    \"mergeStateStatus\": \"CLEAN\"\n  },\n  {\n    \"number\": 103,\n    \"title\": \"Bump turbo from 2.3.4 to 3.0.0\",\n    \"body\": \"Bumps [turbo](https://github.com/vercel/turborepo) from 2.3.4 to 3.0.0.\\n\\n<details>\\n<summary>Release notes</summary>\\n\\n**v3.0.0 Breaking changes:**\\n- `turbo.json#pipeline` key renamed to `turbo.json#tasks`. Automated codemod available.\\n- Remote cache authentication format changed.\\n\\n</details>\\n\\nThis pull request was built based on a group rule.\",\n    \"headRefName\": \"dependabot/npm_and_yarn/toolchain/turbo-3.0.0\",\n    \"url\": \"https://github.com/m3l-automation/m3l-automation/pull/103\",\n    \"labels\": [{\"name\": \"dependencies\"}],\n    \"statusCheckRollup\": [\n      {\"name\": \"verify\", \"status\": \"COMPLETED\", \"conclusion\": \"SUCCESS\"},\n      {\"name\": \"review\", \"status\": \"COMPLETED\", \"conclusion\": \"SKIPPED\"},\n      {\"name\": \"Dependency Review\", \"status\": \"COMPLETED\", \"conclusion\": \"SUCCESS\"},\n      {\"name\": \"CodeQL\", \"status\": \"COMPLETED\", \"conclusion\": \"NEUTRAL\"}\n    ],\n    \"mergeStateStatus\": \"CLEAN\"\n  },\n  {\n    \"number\": 104,\n    \"title\": \"Bump vitest from 2.1.0 to 2.1.3\",\n    \"body\": \"Bumps [vitest](https://github.com/vitest-dev/vitest) from 2.1.0 to 2.1.3.\\n\\nThis pull request was built based on a group rule.\",\n    \"headRefName\": \"dependabot/npm_and_yarn/toolchain/vitest-2.1.3\",\n    \"url\": \"https://github.com/m3l-automation/m3l-automation/pull/104\",\n    \"labels\": [{\"name\": \"dependencies\"}],\n    \"statusCheckRollup\": [\n      {\"name\": \"verify\", \"status\": \"COMPLETED\", \"conclusion\": \"FAILURE\"},\n      {\"name\": \"review\", \"status\": \"COMPLETED\", \"conclusion\": \"SKIPPED\"},\n      {\"name\": \"Dependency Review\", \"status\": \"COMPLETED\", \"conclusion\": \"SUCCESS\"},\n      {\"name\": \"CodeQL\", \"status\": \"COMPLETED\", \"conclusion\": \"NEUTRAL\"}\n    ],\n    \"mergeStateStatus\": \"BLOCKED\"\n  }\n]"
+        }
+      ],
+      "expectations": [
+        "The response's verdict table contains a row for PR #101 with semver 'patch' and verdict 'MERGE', citing green checks as the rationale",
+        "The response's verdict table contains a row for PR #102 with semver 'minor' and verdict 'MERGE', citing green checks as the rationale",
+        "The response describes PR #103 as a major bump and routes it to the escalation path, examining the release notes or changelog embedded in its body before assigning a verdict",
+        "The response's verdict table contains a row for PR #104 with verdict 'HOLD', citing the failing verify check as the rationale",
+        "The response contains a batch confirmation question (e.g. 'Proceed with these N merges, M holds…?') and the text of that question appears in the response before any `WOULD-RUN: gh pr merge` execution line",
+        "The response's verdict table includes a Shape column and identifies PR #101, #102, #103, and #104 as grouped PRs"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "I exported all open Dependabot PRs to dependabot-prs.json. Please run the reviewing-dependabot-prs skill using that file as the PR list.",
+      "expected_output": "The response states there are no open Dependabot PRs and stops. It does not present a verdict table and does not emit any WOULD-RUN: gh pr merge line.",
+      "files": [
+        {
+          "path": "dependabot-prs.json",
+          "content": "[]"
+        }
+      ],
+      "expectations": [
+        "The response explicitly states that there are no open Dependabot PRs (or equivalent phrasing such as 'the list is empty' or 'nothing to triage')",
+        "The response does not contain any `WOULD-RUN: gh pr merge` line",
+        "The response does not present a verdict table containing PR rows with Semver and Verdict columns"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Use dependabot-prs.json as the list of open Dependabot PRs and invoke the reviewing-dependabot-prs skill to triage them.",
+      "expected_output": "A verdict table identifying PR #201 as a solo PR with verdict REJECT and a rationale marked '⚠ may be final'. The batch confirmation question explicitly names the solo REJECT count before asking to proceed. Any WOULD-RUN: gh pr close line appears only after the confirmation question text.",
+      "files": [
+        {
+          "path": "dependabot-prs.json",
+          "content": "[\n  {\n    \"number\": 201,\n    \"title\": \"Bump @inquirer/prompts from 5.0.0 to 6.0.0\",\n    \"body\": \"Bumps [@inquirer/prompts](https://github.com/SBoudrias/Inquirer.js) from 5.0.0 to 6.0.0.\\n\\n<details>\\n<summary>Release notes</summary>\\n\\n**v6.0.0 Breaking changes:**\\n- Removed the `input` named export entirely. Callers must migrate to `new InputPrompt()` constructor API.\\n- Direct-call (non-`new`) usage throws `TypeError` at runtime; no compatibility shim provided.\\n\\n</details>\",\n    \"headRefName\": \"dependabot/npm_and_yarn/@inquirer/prompts-6.0.0\",\n    \"url\": \"https://github.com/m3l-automation/m3l-automation/pull/201\",\n    \"labels\": [{\"name\": \"dependencies\"}],\n    \"statusCheckRollup\": [\n      {\"name\": \"verify\", \"status\": \"COMPLETED\", \"conclusion\": \"SUCCESS\"},\n      {\"name\": \"review\", \"status\": \"COMPLETED\", \"conclusion\": \"SKIPPED\"},\n      {\"name\": \"Dependency Review\", \"status\": \"COMPLETED\", \"conclusion\": \"SUCCESS\"},\n      {\"name\": \"CodeQL\", \"status\": \"COMPLETED\", \"conclusion\": \"NEUTRAL\"}\n    ],\n    \"mergeStateStatus\": \"CLEAN\"\n  }\n]"
+        }
+      ],
+      "expectations": [
+        "The response's verdict table identifies PR #201 as a solo PR in the Shape column (not grouped)",
+        "The response's verdict table marks PR #201 with verdict 'REJECT' and names a concrete incompatibility from the changelog as the rationale",
+        "The response's verdict table rationale for PR #201 contains the text '⚠ may be final' or an equivalent explicit statement that this solo rejection cannot be recovered",
+        "The response's batch confirmation question explicitly mentions the number of solo PRs that cannot be recovered once closed, before asking the user to confirm",
+        "Any `WOULD-RUN: gh pr close 201` line in the response appears after the confirmation question text, not before it"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "The file dependabot-prs.json contains the open Dependabot PRs for this repo. Use the reviewing-dependabot-prs skill to triage them.",
+      "expected_output": "The response reads the changelog embedded in PR #301's body (major bump, escalation path) before assigning its verdict, and routes PR #302 directly to MERGE as a patch fast-path without reading any changelog. A verdict table is presented followed by a batch confirmation question that appears before any WOULD-RUN: gh pr merge line.",
+      "files": [
+        {
+          "path": "dependabot-prs.json",
+          "content": "[\n  {\n    \"number\": 301,\n    \"title\": \"Bump turbo from 2.3.4 to 3.0.0\",\n    \"body\": \"Bumps [turbo](https://github.com/vercel/turborepo) from 2.3.4 to 3.0.0.\\n\\n<details>\\n<summary>Release notes</summary>\\n\\n**v3.0.0 Breaking changes:**\\n- `turbo.json#pipeline` renamed to `turbo.json#tasks`; old key is ignored silently.\\n- `--filter` glob syntax changed; `packages/*` must now be written as `./packages/*`.\\n\\n</details>\\n\\nThis pull request was built based on a group rule.\",\n    \"headRefName\": \"dependabot/npm_and_yarn/toolchain/turbo-3.0.0\",\n    \"url\": \"https://github.com/m3l-automation/m3l-automation/pull/301\",\n    \"labels\": [{\"name\": \"dependencies\"}],\n    \"statusCheckRollup\": [\n      {\"name\": \"verify\", \"status\": \"COMPLETED\", \"conclusion\": \"SUCCESS\"},\n      {\"name\": \"review\", \"status\": \"COMPLETED\", \"conclusion\": \"SKIPPED\"},\n      {\"name\": \"Dependency Review\", \"status\": \"COMPLETED\", \"conclusion\": \"SUCCESS\"},\n      {\"name\": \"CodeQL\", \"status\": \"COMPLETED\", \"conclusion\": \"NEUTRAL\"}\n    ],\n    \"mergeStateStatus\": \"CLEAN\"\n  },\n  {\n    \"number\": 302,\n    \"title\": \"Bump @types/node from 20.14.0 to 20.14.2\",\n    \"body\": \"Bumps [@types/node](https://github.com/DefinitelyTyped/DefinitelyTyped) from 20.14.0 to 20.14.2.\\n\\nThis pull request was built based on a group rule.\",\n    \"headRefName\": \"dependabot/npm_and_yarn/toolchain/types-node-20.14.2\",\n    \"url\": \"https://github.com/m3l-automation/m3l-automation/pull/302\",\n    \"labels\": [{\"name\": \"dependencies\"}],\n    \"statusCheckRollup\": [\n      {\"name\": \"verify\", \"status\": \"COMPLETED\", \"conclusion\": \"SUCCESS\"},\n      {\"name\": \"review\", \"status\": \"COMPLETED\", \"conclusion\": \"SKIPPED\"},\n      {\"name\": \"Dependency Review\", \"status\": \"COMPLETED\", \"conclusion\": \"SUCCESS\"},\n      {\"name\": \"CodeQL\", \"status\": \"COMPLETED\", \"conclusion\": \"NEUTRAL\"}\n    ],\n    \"mergeStateStatus\": \"CLEAN\"\n  }\n]"
+        }
+      ],
+      "expectations": [
+        "The response describes examining the release notes or changelog embedded in PR #301's body before assigning its verdict, because PR #301 is a major bump that triggers the escalation path",
+        "The response does not describe reading a changelog for PR #302, and instead routes it directly to the fast path as a patch bump with all required checks passing",
+        "The response's verdict table marks PR #302 as MERGE, citing patch semver level and green checks",
+        "The response contains a batch confirmation question and the text of that question appears before any `WOULD-RUN: gh pr merge` line in the response"
+      ]
+    }
+  ]
+}
