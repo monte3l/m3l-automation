@@ -298,6 +298,21 @@ async function recordPreDecisionAndMaybeRefuse(
  * the caught detail. Does not decide what to (re)throw — the caller does,
  * since an abort must pass through unchanged while every other cause
  * becomes a vocabulary-only message.
+ *
+ * @remarks
+ * `cause` (the `execute()` failure) is PRIMARY: its classification (an
+ * `M3LOperationAbortedError` vs. anything else) drives the exit code per
+ * ADR-0049, and the caller's existing logic decides what to (re)throw from
+ * it. The post-execution audit write attempted here can itself fail (e.g.
+ * the decision log is unavailable) — when it does, this function observes
+ * the log as unavailable and reports the write failure loudly through
+ * `logger`/`reportRecovery`, but does NOT rethrow it. Letting the write
+ * failure escape would replace `cause` as the thrown value in the caller,
+ * discarding the original failure's classification and never running the
+ * caller's abort pass-through. This is not silently swallowing the write
+ * failure — it is still surfaced through logger, `reportRecovery`, AND
+ * `ledger.observeDecisionLog(false)` — it simply never becomes the thrown
+ * value. Do not "fix" this back into a rethrow.
  */
 async function recordExecutionFailure(
   spec: AgentToolSpec,
@@ -309,7 +324,20 @@ async function recordExecutionFailure(
   const outcome: Core.M3LAgentDecisionOutcome = {
     dryRun: decision.action.dryRun,
   };
-  await deps.recorder.record({ decision, now, outcome });
+  try {
+    await deps.recorder.record({ decision, now, outcome });
+  } catch (writeFailure) {
+    deps.ledger.observeDecisionLog(false);
+    logFailure(
+      deps,
+      now,
+      spec.name,
+      "gate-tool: the post-execution decision-log write failed after " +
+        "execute() had already rejected; the original execute() failure " +
+        "below is still what gets thrown",
+      describeCaughtChain(writeFailure),
+    );
+  }
   logFailure(
     deps,
     now,

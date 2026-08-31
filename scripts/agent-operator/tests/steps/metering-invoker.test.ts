@@ -532,16 +532,64 @@ describe("reconcileMeteredCost — the loop's own outcome.cost is the oracle", (
     );
   });
 
-  it("agrees when both are numbers within the 1e-9 tolerance", () => {
+  // The implemented tolerance is `COST_RECONCILIATION_TOLERANCE = 1e-6`
+  // (`src/steps/metering-invoker.ts`), NOT 1e-9 — a divergence this small is
+  // three orders of magnitude inside the real boundary and does not pin it.
+  // Kept as its own case (a realistic float-re-association residual, not a
+  // boundary probe) but retitled so it stops asserting a number the
+  // implementation was never built to.
+  it("agrees when the divergence is far smaller than the real 1e-6 tolerance (float re-association noise)", () => {
     expect(() => {
       reconcileMeteredCost({ metered: 1.234567891, reported: 1.23456789 });
     }).not.toThrow();
   });
 
-  it("throws when both are numbers but diverge beyond the tolerance", () => {
+  // A tolerance exists at all because both sides sum the same per-turn costs
+  // in a different order (per-turn here vs. however the library accumulates
+  // internally): realistic float re-association error lands near 1e-13,
+  // nowhere close to tripping a 1e-6 ceiling. This case is a gross,
+  // percentage-level divergence — the shape genuine formula drift takes, not
+  // float noise — so it stays a distinct scenario from the boundary probes
+  // below and is retitled only to stop implying it pins the exact tolerance
+  // value (a 0.1 divergence would still throw under a tolerance a thousand
+  // times looser or tighter, so it proves "reconciliation can fail" without
+  // proving where the line is).
+  it("throws on a gross, percentage-level divergence (genuine formula drift, not a boundary probe)", () => {
     let thrown: unknown;
     try {
       reconcileMeteredCost({ metered: 1, reported: 1.1 });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LAgentOperatorCliError);
+    expect((thrown as M3LAgentOperatorCliError).code).toBe(
+      "ERR_AGENT_OPERATOR_CONFIG",
+    );
+  });
+
+  // Boundary pair: both values are chosen far from 1e-6 itself (so the test
+  // is not sitting on the edge, where float rounding of the comparison would
+  // make the assertion flaky) but close enough together that either widening
+  // OR narrowing the real constant by an order of magnitude flips the
+  // outcome — unlike the two cases above, which used a divergence 1000x
+  // smaller (1e-9-era) or 100,000x larger (0.1) than the boundary and so
+  // cannot detect the constant moving by "only" 10x.
+  it("agrees when the divergence is comfortably inside the 1e-6 tolerance (5e-7)", () => {
+    // 5e-7 is 500x the old 1e-9-era test value, so narrowing the constant
+    // back to 1e-9 would make this throw; it is still well under 1e-6.
+    expect(() => {
+      reconcileMeteredCost({ metered: 1, reported: 1 + 5e-7 });
+    }).not.toThrow();
+  });
+
+  it("throws when the divergence is comfortably outside the 1e-6 tolerance (5e-6)", () => {
+    // 5e-6 is far below the old 0.1 "gross drift" value, so widening the
+    // constant by even one order of magnitude (to 1e-5) would make this
+    // agree instead of throw.
+    let thrown: unknown;
+    try {
+      reconcileMeteredCost({ metered: 1, reported: 1 + 5e-6 });
     } catch (error) {
       thrown = error;
     }

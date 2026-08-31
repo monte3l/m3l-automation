@@ -533,6 +533,121 @@ describe("gateToolSpec — the gate-ordering matrix (one shared `calls` list)", 
   });
 });
 
+describe("gateToolSpec — a double failure: execute() throws AND the post-execution audit write also fails", () => {
+  // Regression guard for a defect found in PR #787 review:
+  // `recordExecutionFailure` used to await `deps.recorder.record(...)` with
+  // no try/catch, unlike its sibling `recordSuccessOutcome`. When that
+  // post-execution write ALSO fails, the recorder's own wrapped error would
+  // propagate out of the `catch` block in `runApprovedExecution` uncaught —
+  // discarding the original `execute()` failure (the one whose
+  // classification drives the exit code per ADR-0049), skipping
+  // `logFailure` (so `reportRecovery`/`logger.error` never fired for the
+  // execute failure), and skipping `ledger.observeDecisionLog(false)`.
+  //
+  // The invariant these two tests protect: the execute failure is primary
+  // and must be what gets thrown/passed-through; the audit-write failure
+  // must be reported loudly (logger + reportRecovery +
+  // observeDecisionLog(false)) but must never become the thrown value.
+
+  it("an abort during execute() survives a failing post-execution write and still surfaces as M3LOperationAbortedError", async () => {
+    const calls: string[] = [];
+    const ledger = new AgentRunLedger();
+    trackLedgerCalls(ledger, calls);
+    const abort = new Core.M3LOperationAbortedError();
+    const postFailure = new Core.M3LAgentDecisionLogWriteError(
+      "append failed: ENOSPC",
+    );
+    // Pre-execution write succeeds ("ok"), so execute() is reached; the
+    // post-execution write then fails.
+    const writer = new ScriptedDecisionLogWriter(["ok", postFailure], () =>
+      calls.push("record"),
+    );
+    const reportRecovery = vi.fn();
+    const { logger, handler: loggerHandler } = createLogger();
+    const spec = trackedSpec({
+      calls,
+      action: grantedReadOnlyAction(),
+      execute: () => Promise.reject(abort),
+    });
+    const deps = makeDeps({
+      policy: minimalPolicy(),
+      ledger,
+      writer,
+      logger,
+      reportRecovery,
+    });
+    const registration = gateToolSpec(spec, deps);
+
+    const thrown = await captureRejection(() =>
+      registration.handler(undefined, toolContext(spec.name)),
+    );
+
+    // The abort must pass through instanceof-intact — ADR-0049 classifies it
+    // by instanceof, so surfacing the recorder's own error here would
+    // misclassify a Ctrl-C as an ordinary failure (exit code 1 instead of 5).
+    expect(thrown).toBe(abort);
+    expect(thrown).toBeInstanceOf(Core.M3LOperationAbortedError);
+    expect(thrown).not.toBeInstanceOf(M3LAgentOperatorCliError);
+
+    // The audit-write failure is reported loudly through all three channels,
+    // even though it never becomes the thrown value.
+    expect(reportRecovery).toHaveBeenCalled();
+    expect(calls).toContain("observeDecisionLog:false");
+    expect(flattenLoggedText(loggerHandler.events)).toContain("ENOSPC");
+    expect(
+      loggerHandler.events.some(
+        (event) => event.category === Core.M3LLogEventCategory.ERROR,
+      ),
+    ).toBe(true);
+  });
+
+  it("an ordinary execute() failure survives a failing post-execution write and still surfaces as ERR_AGENT_TOOL_EXECUTION with the original cause", async () => {
+    const calls: string[] = [];
+    const ledger = new AgentRunLedger();
+    trackLedgerCalls(ledger, calls);
+    const executeError = new Error("boom");
+    const postFailure = new Core.M3LAgentDecisionLogWriteError(
+      "append failed: ENOSPC",
+    );
+    const writer = new ScriptedDecisionLogWriter(["ok", postFailure], () =>
+      calls.push("record"),
+    );
+    const reportRecovery = vi.fn();
+    const { logger } = createLogger();
+    const spec = trackedSpec({
+      calls,
+      action: grantedReadOnlyAction(),
+      execute: () => Promise.reject(executeError),
+    });
+    const deps = makeDeps({
+      policy: minimalPolicy(),
+      ledger,
+      writer,
+      logger,
+      reportRecovery,
+    });
+    const registration = gateToolSpec(spec, deps);
+
+    const thrown = await captureRejection(() =>
+      registration.handler(undefined, toolContext(spec.name)),
+    );
+
+    expect(thrown).toBeInstanceOf(Core.M3LError);
+    const thrownError = thrown as Core.M3LError;
+    expect(thrownError.message).toBe(
+      AGENT_TOOL_REFUSAL_MESSAGES.executionFailed,
+    );
+    expect(thrownError.code).toBe("ERR_AGENT_TOOL_EXECUTION");
+    // The original execute() failure is the one reachable via `cause` — NOT
+    // the recorder's own decision-log error.
+    expect(thrownError.cause).toBe(executeError);
+    expect(thrownError.cause).not.toBe(postFailure);
+
+    expect(reportRecovery).toHaveBeenCalled();
+    expect(calls).toContain("observeDecisionLog:false");
+  });
+});
+
 describe("gateToolSpec — deps.now() is sampled once per pass", () => {
   it("reads the clock exactly once and reuses that instant for the evaluation and BOTH record() calls", async () => {
     const calls: string[] = [];

@@ -39,8 +39,8 @@ function assertValidToolName(name: string): void {
   const withinBounds = name.length > 0 && name.length <= TOOL_NAME_MAX_LENGTH;
   if (withinBounds && TOOL_NAME_PATTERN.test(name)) return;
   throw new M3LAgentOperatorCliError(
-    "a tool name must be non-blank, at most 64 characters, and match " +
-      "/^[a-z][a-z0-9]*(_[a-z0-9]+)*$/",
+    `a tool name must be non-blank, at most ${TOOL_NAME_MAX_LENGTH} ` +
+      "characters, and match /^[a-z][a-z0-9]*(_[a-z0-9]+)*$/",
     "ERR_AGENT_OPERATOR_CONFIG",
     { context: { name } },
   );
