@@ -11,7 +11,7 @@ import {
  * Contract: PR 1 spec `src/lib/errors.ts`. One class,
  * `M3LAgentOperatorCliError extends Core.M3LError`, taking `(message, code,
  * options?)` and calling `super(message, { code, ...options })`. Every
- * script-local failure pins its own `code` from the six-member
+ * script-local failure pins its own `code` from the eight-member
  * `M3LAgentOperatorErrorCode` union rather than a dedicated subclass per code.
  */
 
@@ -22,6 +22,8 @@ const ALL_CODES: readonly M3LAgentOperatorErrorCode[] = [
   "ERR_AGENT_OPERATOR_CLI_OUTPUT",
   "ERR_AGENT_OPERATOR_SCRIPT_NAME",
   "ERR_AGENT_OPERATOR_POLICY",
+  "ERR_AGENT_OPERATOR_DECISION_LOG",
+  "ERR_AGENT_OPERATOR_ESCALATED",
 ] as const;
 
 describe("M3LAgentOperatorCliError", () => {
@@ -99,7 +101,9 @@ describe("M3LAgentOperatorCliError", () => {
     expect(cliError.code).toBe("ERR_AGENT_OPERATOR_CLI_ENTRYPOINT");
   });
 
-  it("types the error code union to exactly the six documented codes", () => {
+  it("types the error code union to exactly the eight documented codes", () => {
+    // `toEqualTypeOf` is bidirectional and exact on purpose: a ninth member
+    // added to the union — or one of these eight removed — fails this pin.
     expectTypeOf<M3LAgentOperatorErrorCode>().toEqualTypeOf<
       | "ERR_AGENT_OPERATOR_CONFIG"
       | "ERR_AGENT_OPERATOR_CLI_ENTRYPOINT"
@@ -107,6 +111,8 @@ describe("M3LAgentOperatorCliError", () => {
       | "ERR_AGENT_OPERATOR_CLI_OUTPUT"
       | "ERR_AGENT_OPERATOR_SCRIPT_NAME"
       | "ERR_AGENT_OPERATOR_POLICY"
+      | "ERR_AGENT_OPERATOR_DECISION_LOG"
+      | "ERR_AGENT_OPERATOR_ESCALATED"
     >();
   });
 
