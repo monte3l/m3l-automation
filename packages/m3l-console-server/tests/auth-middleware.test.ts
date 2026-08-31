@@ -5,6 +5,7 @@
  * not exist yet; this suite is RED until implementation lands.
  */
 import { describe, expect, test, vi } from "vitest";
+import type { Mock } from "vitest";
 
 import type {
   M3LOperatorProfile,
@@ -33,13 +34,29 @@ function okResponse(): M3LConsoleResponse {
   return { status: 200, headers: {}, body: "ok" };
 }
 
-/** Builds a stub `M3LOperatorProvider` whose `resolve` returns `result`. */
-function buildProvider(
-  result: M3LOperatorProfile | undefined,
-): M3LOperatorProvider & { resolve: ReturnType<typeof vi.fn> } {
+/**
+ * Builds a stub `M3LOperatorProvider` whose `resolve` returns `result`.
+ *
+ * `resolve` is `Omit`ted from the port and re-declared as the mock's own type
+ * so an `expect(provider.resolve)...` assertion reads that mock type. Keeping
+ * `M3LOperatorProvider` whole is not enough: since 8.68.0
+ * `@typescript-eslint/unbound-method` walks every intersection constituent and
+ * reports if *any* of them declares the member with method shorthand, so the
+ * port side alone would flag all of these assertions — even though they only
+ * inspect the mock and never call it, so no `this`-scoping hazard exists. The
+ * mock type is parameterized (not a bare `ReturnType<typeof vi.fn>`) because
+ * with the port's own signature `Omit`ted away, nothing else keeps the stub
+ * assignable to `M3LOperatorProvider` at the injection site.
+ */
+function buildProvider(result: M3LOperatorProfile | undefined): Omit<
+  M3LOperatorProvider,
+  "resolve"
+> & {
+  resolve: Mock<M3LOperatorProvider["resolve"]>;
+} {
   return {
     kind: "test-provider",
-    resolve: vi.fn(() => result),
+    resolve: vi.fn<M3LOperatorProvider["resolve"]>(() => result),
   };
 }
 
