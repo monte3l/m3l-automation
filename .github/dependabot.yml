@@ -33,6 +33,29 @@ updates:
       aws-sdk:
         patterns:
           - "@aws-sdk/*"
+    # Version-anchored rather than `update-types`-anchored on purpose. An
+    # `update-types: [version-update:semver-major]` rule is evaluated against
+    # whatever the manifest declares at run time, and merging a change to THIS
+    # FILE triggers an immediate Dependabot run — so an ignore rule that landed
+    # before the matching pin would classify e.g. 26.1.1 -> 26.4.0 as a *minor*,
+    # wave it through, and clobber the pin. A `versions:` range is
+    # manifest-independent, so ordering stops mattering and the constraint reads
+    # as the intent ("the Node 24 line only") rather than as a delta.
+    #
+    # Both entries are mirrored in bin/check-deps.mjs's MAJOR_HOLDS, which
+    # carries the full rationale. Neither is enforcement on its own: an ignore
+    # rule suppresses a *proposal*, not a *state*. @types/node is genuinely
+    # enforced by check:node-version's findTypesNodeDrift.
+    ignore:
+      # .node-version pins the dev/CI runtime to Node 24, and @types/node is
+      # what decides which API surface `pnpm typecheck` validates against.
+      - dependency-name: "@types/node"
+        versions: [">=25"]
+      # TS 7 (the native port) needs its own ADR: typescript-eslint peer-caps
+      # typescript at <6.1.0, and TS 7 reshapes the compiler API that
+      # bin/lib/browser-safe-subpath.mjs depends on.
+      - dependency-name: "typescript"
+        versions: [">=7"]
     labels:
       - dependencies
     open-pull-requests-limit: 5

@@ -208,6 +208,56 @@ export function findWorkflowNodeVersionDrift(files) {
 }
 
 /**
+ * The third authority `.node-version` has to hold: `@types/node`'s major.
+ *
+ * Why this belongs in this gate rather than only in `.github/dependabot.yml`:
+ * a Dependabot `ignore` rule suppresses a *proposal*, it does not enforce a
+ * *state*. A `pnpm up`, a hand edit, or a mis-scoped ignore condition can all
+ * drift `@types/node` off the pinned line with nothing failing. This assertion
+ * runs in `ci.yml`'s `gates` lane, which deliberately carries no step-level
+ * path gating, so it fires on every PR — including Dependabot's own.
+ *
+ * What it protects: `typecheck` is only evidence that the code compiles
+ * against the Node API surface `@types/node` describes. With the pin at 24 and
+ * the types at 26, a green `typecheck` proved the code runs on Node 26 while
+ * claiming a floor of 24 — it could use a Node-26-only API and nothing would
+ * object. (It did: a `setInterval` overload in a console-server test.)
+ *
+ * Deliberately compares the MAJOR only. DefinitelyTyped ships frequent 24.x
+ * releases as it backports Node 24 additions, and `.node-version` names a bare
+ * major, so pinning the minor here would fight both.
+ *
+ * @param {number} pinMajor major from {@link parseNodeVersionFile}
+ * @param {string | undefined} typesNodeRange the declared `@types/node` version
+ * @param {string} [manifestRel] repo-relative manifest path, for the message
+ * @returns {string[]} error messages
+ */
+export function findTypesNodeDrift(
+  pinMajor,
+  typesNodeRange,
+  manifestRel = "package.json",
+) {
+  if (typesNodeRange === undefined) return [];
+  const m = /^\s*[\^~]?v?(\d+)(?:\.\d+)*\s*$/.exec(typesNodeRange);
+  if (m === null) {
+    return [
+      `${manifestRel}'s "@types/node" is ${JSON.stringify(typesNodeRange)}, ` +
+        `which this gate cannot compare against ${NODE_VERSION_FILE} — use a ` +
+        `concrete version so the typed API surface is pinned to the floor.`,
+    ];
+  }
+  const typesMajor = Number(m[1]);
+  if (typesMajor === pinMajor) return [];
+  return [
+    `${manifestRel} declares "@types/node": ${JSON.stringify(typesNodeRange)} ` +
+      `(major ${typesMajor}) but ${NODE_VERSION_FILE} pins ${pinMajor} — ` +
+      `typecheck would run against Node ${typesMajor}'s API surface while the ` +
+      `declared floor is ${pinMajor}, so a green typecheck would not prove the ` +
+      `code runs on the floor. Pin @types/node to the ${pinMajor}.x line.`,
+  ];
+}
+
+/**
  * The local-developer half: is the Node actually executing this process the
  * pinned major? Warn-only by design (see the file header).
  *
@@ -323,9 +373,17 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     text: readFileSync(join(root, file), "utf8"),
   }));
 
+  const rootManifest = JSON.parse(
+    readFileSync(join(root, "package.json"), "utf8"),
+  );
+  const typesNodeRange =
+    rootManifest.devDependencies?.["@types/node"] ??
+    rootManifest.dependencies?.["@types/node"];
+
   const errors = [
     ...findEnginesDrift(pin.major, manifests),
     ...findWorkflowNodeVersionDrift(workflows),
+    ...findTypesNodeDrift(pin.major, typesNodeRange),
   ];
   const warnings = evaluateRuntimeVersion(pin.major, process.versions.node);
 
@@ -339,6 +397,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     runtimeMajor: Number.parseInt(process.versions.node, 10),
     manifestCount: manifests.length,
     workflowCount: workflows.length,
+    typesNodeRange: typesNodeRange ?? null,
   };
 
   if (errors.length > 0) {
@@ -351,8 +410,9 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
 
   reporter.succeed(
     `${NODE_VERSION_FILE} (Node ${pin.raw}) is authoritative: ` +
-      `${manifests.length} manifest floor(s) agree and ` +
-      `${workflows.length} .github file(s) source the version from it.`,
+      `${manifests.length} manifest floor(s) agree, ` +
+      `${workflows.length} .github file(s) source the version from it, and ` +
+      `@types/node (${typesNodeRange ?? "undeclared"}) tracks the pinned major.`,
   );
   reporter.finish(extras);
   // Runtime mismatch is warn-only: exit 0. See file header.
