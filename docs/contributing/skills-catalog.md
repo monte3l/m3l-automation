@@ -43,11 +43,11 @@ correct use and still read as "zero usage" to a naive grep.
 These are incident-response skills. A quiet skill means there's nothing to
 respond to right now, not that the skill has gone stale.
 
-| Skill                      | Trigger condition                     | State as of 2026-07-17                                                        |
-| -------------------------- | ------------------------------------- | ----------------------------------------------------------------------------- |
-| `triaging-ci`              | A CI run fails                        | 0 failures in the last 50 workflow runs (44 success, 4 skipped, 1 cancelled)  |
-| `triaging-scan-alerts`     | An open CodeQL/Scorecard alert exists | 0 open alerts (5 fixed, 4 dismissed)                                          |
-| `reviewing-dependabot-prs` | An open Dependabot PR exists          | 0 open Dependabot PRs right now; 13+ already reviewed and merged historically |
+| Skill                      | Trigger condition                     | State as of 2026-07-17                                                                                                                                                                                                                      |
+| -------------------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `triaging-ci`              | A CI run fails                        | 0 failures in the last 50 workflow runs (44 success, 4 skipped, 1 cancelled)                                                                                                                                                                |
+| `triaging-scan-alerts`     | An open CodeQL/Scorecard alert exists | 0 open alerts as of 2026-08-31 (6 fixed, 7 dismissed). The previous "5 fixed, 4 dismissed" was stale: #17 never closed and #18 arrived with `maintain-scan.yml`; both were Scorecard `PinnedDependenciesID` and are now dismissed won't-fix |
+| `reviewing-dependabot-prs` | An open Dependabot PR exists          | 0 open Dependabot PRs right now; 13+ already reviewed and merged historically                                                                                                                                                               |
 
 ### Low usage by design — the trigger is structurally rare
 
