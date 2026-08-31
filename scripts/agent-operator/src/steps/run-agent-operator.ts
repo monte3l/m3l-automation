@@ -79,13 +79,25 @@ function runHealthCheck(): never {
  * `resolve-runtime.ts`'s `resolveCliEntrypoint` uses for its own default.
  * Returns `undefined` — disabling the scrub, never failing the run — when
  * `getProjectRoot()` throws `Core.M3LPathResolutionError` (standalone mode,
- * where there is no monorepo root to scrub against).
+ * where there is no monorepo root to scrub against). The degradation is
+ * logged as a warning rather than absorbed silently: with the scrub off,
+ * absolute host paths in CLI output reach the model unmasked, and an
+ * operator reading the run log must be able to see that that happened. Any
+ * other failure is rethrown unchanged — only the documented standalone-mode
+ * signal degrades.
  */
-function deriveWorkspaceRoot(paths: Core.M3LPaths): string | undefined {
+function deriveWorkspaceRoot(
+  paths: Core.M3LPaths,
+  logger: Core.M3LLogger,
+): string | undefined {
   try {
     return paths.getProjectRoot();
   } catch (cause) {
     if (!(cause instanceof Core.M3LPathResolutionError)) throw cause;
+    logger.warning(
+      "workspace-root scrub disabled: the project root could not be resolved (standalone mode), so absolute host paths in CLI output are no longer masked before the model reads them",
+      { scrub: "workspace-root", enabled: false },
+    );
     return undefined;
   }
 }
@@ -109,7 +121,7 @@ async function runExplainPolicy(deps: RunAgentOperatorDeps): Promise<void> {
     policy,
     paths: deps.paths,
   });
-  const workspaceRoot = deriveWorkspaceRoot(deps.paths);
+  const workspaceRoot = deriveWorkspaceRoot(deps.paths, deps.logger);
 
   const surface = createAgentCliSurface({
     entrypoint: runtime.cliEntrypoint,
@@ -122,7 +134,13 @@ async function runExplainPolicy(deps: RunAgentOperatorDeps): Promise<void> {
     cliTimeoutMs: runtime.cliTimeoutMs,
     dryRunTimeoutMs: runtime.dryRunTimeoutMs,
     maxOutputBytes: runtime.maxOutputBytes,
-    dryRunAllowlist: new Set(runtime.dryRunAllowlist),
+    // `includeDryRunProbes` is the gate; the allowlist is inert on its own.
+    // Fail closed — an unset or false flag hands the surface an EMPTY set, so
+    // a `dryRunAllowlist` left in config (or added ahead of the flag) can
+    // never silently arm the destructive `dry-run` tool.
+    dryRunAllowlist: runtime.includeDryRunProbes
+      ? new Set(runtime.dryRunAllowlist)
+      : new Set<string>(),
     signal: deps.signal,
     ...(workspaceRoot === undefined ? {} : { workspaceRoot }),
   });

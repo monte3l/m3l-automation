@@ -329,6 +329,65 @@ function attachAbort(
 }
 
 /**
+ * The outcome of one {@link spawnOrClassify} attempt: either a live child, or
+ * the settled {@link CliRunResult} the caller must hand straight back.
+ */
+type SpawnAttempt =
+  | { readonly spawned: true; readonly child: CliChildProcess }
+  | { readonly spawned: false; readonly result: CliRunResult };
+
+/** The arguments {@link spawnOrClassify} needs to place one spawn call. */
+interface SpawnAttemptOptions {
+  readonly spawn: SpawnLike;
+  readonly nodeExecPath: string;
+  readonly entrypoint: string;
+  readonly args: readonly string[];
+  readonly cwd: string;
+}
+
+/**
+ * Places the one `spawn` call, turning a SYNCHRONOUS failure into a
+ * `"spawn-failed"` value rather than letting it escape.
+ *
+ * This helper exists because `spawn` fails two ways and only one of them is
+ * an `error` event: an invalid argument — a NUL byte in `entrypoint`/`cwd`,
+ * which reaches here unvalidated from operator config — throws
+ * `ERR_INVALID_ARG_VALUE` inline, before any child exists and before any
+ * listener could observe it. Without this `try`, that throw would escape
+ * {@link runCliProcess} as a rejection and break its documented "a spawn
+ * failure is a value, never a throw" contract on exactly one of its two
+ * arms.
+ *
+ * Only the thrown value's `code` is read, through the same
+ * {@link readFailureCode} allow-list the asynchronous arm uses — so a
+ * non-`Error` throw yields `undefined`. Its `message` is deliberately
+ * dropped: Node embeds the offending resolved absolute path in it, and this
+ * result is read by a model.
+ */
+function spawnOrClassify(options: SpawnAttemptOptions): SpawnAttempt {
+  const { spawn, nodeExecPath, entrypoint, args, cwd } = options;
+  try {
+    const child = spawn(nodeExecPath, [entrypoint, ...args], {
+      cwd,
+      shell: false, // primary argument-injection defence: no shell, no command line to inject into
+      stdio: ["ignore", "pipe", "pipe"], // stdin ignored — a child M3LPrompt can never hang the agent
+    });
+    return { spawned: true, child };
+  } catch (cause) {
+    return {
+      spawned: false,
+      result: {
+        disposition: "spawn-failed",
+        exitCode: null,
+        stdout: "",
+        stderr: "",
+        failureCode: readFailureCode(cause),
+      },
+    };
+  }
+}
+
+/**
  * Spawns the `m3l` CLI entrypoint and resolves with its outcome as a value —
  * a spawn failure, a timeout, an abort, and a byte-cap breach are each a
  * {@link CliRunDisposition}, never a throw. The single exception the caller
@@ -392,11 +451,15 @@ export async function runCliProcess(
     };
   }
 
-  const child = spawn(nodeExecPath, [entrypoint, ...args], {
+  const attempt = spawnOrClassify({
+    spawn,
+    nodeExecPath,
+    entrypoint,
+    args,
     cwd,
-    shell: false, // primary argument-injection defence: no shell, no command line to inject into
-    stdio: ["ignore", "pipe", "pipe"], // stdin ignored — a child M3LPrompt can never hang the agent
   });
+  if (!attempt.spawned) return attempt.result;
+  const child = attempt.child;
 
   const stdoutCollector = createStreamCollector(maxOutputBytes);
   const stderrCollector = createStreamCollector(maxOutputBytes);

@@ -21,6 +21,7 @@ import type {
   AgentOperatorRunEnvelope,
   AgentOperatorRunOutcome,
 } from "./cli-envelopes.js";
+import { M3LAgentOperatorCliError } from "./errors.js";
 
 /** Default code-point cap applied by {@link sanitizeForModel} when the caller omits one. */
 const DEFAULT_MAX_CODE_POINTS = 512;
@@ -35,10 +36,15 @@ const DEFAULT_MAX_CODE_POINTS = 512;
  * declares is structurally identical to its raw counterpart. Without this
  * marker, a raw value is assignable into a projected slot with no cast at
  * all, silently defeating the sanitization {@link projectOperationDescriptor}
- * / {@link projectDoctorCheck} exist to guarantee. (The siblings
- * {@link AgentOperatorProjectedListRow} and
- * {@link AgentOperatorProjectedRunEnvelope} are deliberately NOT branded
- * with this marker — see their own TSDoc for why.) It is `declare const`-only
+ * / {@link projectDoctorCheck} exist to guarantee. EVERY exported
+ * `AgentOperatorProjected*` type carries it — the four that once did not
+ * ({@link AgentOperatorProjectedDoctorReport},
+ * {@link AgentOperatorProjectedListRow},
+ * {@link AgentOperatorProjectedParamDescriptor},
+ * {@link AgentOperatorProjectedRunEnvelope}) were plain structural
+ * interfaces any caller could fill with unsanitized CLI text, which is
+ * exactly the failure mode this marker exists to prevent; do not add a
+ * projected type without it. It is `declare const`-only
  * (ambient, never a real `Symbol()` call), so it has no runtime
  * representation whatsoever: each `project*` function "earns" the branded
  * type with an `as` assertion at the exact point every string field has just
@@ -81,31 +87,41 @@ const C1_MAX = 0x9f;
 
 const LINE_SEPARATOR = 0x2028;
 const PARAGRAPH_SEPARATOR = 0x2029;
-const LEFT_TO_RIGHT_OVERRIDE = 0x202d;
-const RIGHT_TO_LEFT_OVERRIDE = 0x202e;
-const LEFT_TO_RIGHT_ISOLATE = 0x2066;
-const RIGHT_TO_LEFT_ISOLATE = 0x2067;
-const FIRST_STRONG_ISOLATE = 0x2068;
-const POP_DIRECTIONAL_ISOLATE = 0x2069;
 
-/** Bidi/format-control code points escaped in addition to C0/DEL/C1 — see module TSDoc. */
-const EXTRA_ESCAPE_TARGETS: ReadonlySet<number> = new Set([
+/**
+ * `U+2028`/`U+2029` — the only two escape targets the `\p{Cf}` test below
+ * does NOT catch, because Unicode classifies them as `Zl`/`Zp` (line and
+ * paragraph separator), not as format characters. Enumerated here for that
+ * reason alone; every other bidi/format control comes from the category
+ * test, never from a hand-maintained list.
+ */
+const SEPARATOR_ESCAPE_TARGETS: ReadonlySet<number> = new Set([
   LINE_SEPARATOR,
   PARAGRAPH_SEPARATOR,
-  LEFT_TO_RIGHT_OVERRIDE,
-  RIGHT_TO_LEFT_OVERRIDE,
-  LEFT_TO_RIGHT_ISOLATE,
-  RIGHT_TO_LEFT_ISOLATE,
-  FIRST_STRONG_ISOLATE,
-  POP_DIRECTIONAL_ISOLATE,
 ]);
 
-/** Returns whether `codePoint` must be escaped rather than passed through as-is. */
-function isEscapeTarget(codePoint: number): boolean {
+/**
+ * Matches the whole Unicode `Cf` (format) general category — every bidi
+ * embedding/override/isolate (`U+202A`-`U+202E`, `U+2066`-`U+2069`), both
+ * directional marks (`U+200E`/`U+200F`), the Arabic letter mark (`U+061C`),
+ * the zero-width space (`U+200B`), and the BOM (`U+FEFF`), among others.
+ *
+ * Deliberately a CATEGORY test rather than an enumerated set: an enumerated
+ * list is a denylist that silently reopens this hole the moment Unicode
+ * adds a format character (the previous list omitted eight of the ones
+ * above), whereas the category is defined by the same standard that would
+ * add it. Stateless — no `g` flag, so `test` never carries `lastIndex`
+ * between calls.
+ */
+const FORMAT_CHARACTER_PATTERN = /\p{Cf}/u;
+
+/** Returns whether `character` must be escaped rather than passed through as-is. */
+function isEscapeTarget(character: string, codePoint: number): boolean {
   if (codePoint <= C0_MAX) return true;
   if (codePoint === DEL) return true;
   if (codePoint >= C1_MIN && codePoint <= C1_MAX) return true;
-  return EXTRA_ESCAPE_TARGETS.has(codePoint);
+  if (SEPARATOR_ESCAPE_TARGETS.has(codePoint)) return true;
+  return FORMAT_CHARACTER_PATTERN.test(character);
 }
 
 /**
@@ -125,8 +141,9 @@ function renderCodePointEscape(codePoint: number): string {
 
 /**
  * Replaces every C0 (`U+0000`-`U+001F`), `U+007F`, C1 (`U+0080`-`U+009F`),
- * and bidi/format-control code point (see {@link EXTRA_ESCAPE_TARGETS}) with
- * its textual `\uXXXX` escape. Iterates by code point via `for...of` so a
+ * separator (see {@link SEPARATOR_ESCAPE_TARGETS}), and Unicode `Cf` format
+ * code point (see {@link FORMAT_CHARACTER_PATTERN}) with its textual
+ * `\uXXXX` escape. Iterates by code point via `for...of` so a
  * surrogate pair is never split — control/format characters are all single
  * UTF-16 code units, but the pass-through branch must still hand back
  * astral characters whole.
@@ -136,7 +153,7 @@ function escapeControlCharacters(text: string): string {
   for (const character of text) {
     const codePoint = character.codePointAt(0);
     result +=
-      codePoint !== undefined && isEscapeTarget(codePoint)
+      codePoint !== undefined && isEscapeTarget(character, codePoint)
         ? renderCodePointEscape(codePoint)
         : character;
   }
@@ -296,6 +313,8 @@ export interface AgentOperatorProjectedDoctorReport {
     readonly fail: number;
   };
   readonly checks: readonly AgentOperatorProjectedDoctorCheck[];
+  /** Type-level-only marker — see {@link MODEL_SAFE_BRAND}. Never present at runtime. */
+  readonly [MODEL_SAFE_BRAND]: true;
 }
 
 /** Tallies each doctor status into its bucket. Unreachable statuses are simply not counted. */
@@ -354,11 +373,17 @@ export function projectDoctorReport(
   checks: readonly AgentOperatorDoctorCheck[],
   opts: AgentOperatorProjectionOptions = {},
 ): AgentOperatorProjectedDoctorReport {
+  // Annotated `readonly` deliberately: `.map` infers a MUTABLE array, and a
+  // mutable-array property makes the branded target non-comparable with the
+  // frozen literal, which would force the `as` through an `unknown` hop and
+  // throw away every field check the assertion still performs.
+  const projectedChecks: readonly AgentOperatorProjectedDoctorCheck[] =
+    checks.map((check) => projectDoctorCheck(check, opts));
   return Object.freeze({
     blocking: checks.some((check) => check.status === "fail"),
     counts: countDoctorStatuses(checks),
-    checks: checks.map((check) => projectDoctorCheck(check, opts)),
-  });
+    checks: projectedChecks,
+  }) as AgentOperatorProjectedDoctorReport;
 }
 
 /** The model-safe projection of {@link AgentOperatorListRow}. */
@@ -367,6 +392,8 @@ export interface AgentOperatorProjectedListRow {
   readonly description: string;
   readonly parameterCount: number | null;
   readonly configLoadFailed: boolean;
+  /** Type-level-only marker — see {@link MODEL_SAFE_BRAND}. Never present at runtime. */
+  readonly [MODEL_SAFE_BRAND]: true;
 }
 
 /**
@@ -400,7 +427,7 @@ export function projectListRow(
     description: sanitize(row.description, opts),
     parameterCount: row.parameterCount,
     configLoadFailed: row.loadError !== null,
-  });
+  }) as AgentOperatorProjectedListRow;
 }
 
 /**
@@ -428,17 +455,31 @@ const MAX_OPERATION_REQUIRED_PARAMETERS = 32;
 
 /**
  * Projects one operation's `requiredParameters` into a fresh, frozen,
- * sanitized, element-capped array — the array that carried
- * `"apiKey=SUPER-SECRET"`-shaped entries unsanitized before this fix.
+ * sanitized array — the array that carried `"apiKey=SUPER-SECRET"`-shaped
+ * entries unsanitized before this fix.
+ *
+ * Over the cap this FAILS CLOSED rather than slicing: a silently trimmed
+ * list is indistinguishable, to the model reading it, from an exhaustive
+ * one, so it would confidently report a subset of an operation's real
+ * requirements. `cli-envelopes.ts`'s `parseArray` sets the same precedent
+ * (`too-many-rows` rejects an over-long array). A visible marker element —
+ * the trick {@link truncateByCodePoint} uses with `…` — is not available
+ * here: inside an array of parameter NAMES, a marker is itself just another
+ * plausible name. The raised error names no entry, since every entry is
+ * unsanitized CLI text at this point.
  */
 function projectRequiredParameters(
   requiredParameters: readonly string[],
   opts: AgentOperatorProjectionOptions,
 ): readonly string[] {
+  if (requiredParameters.length > MAX_OPERATION_REQUIRED_PARAMETERS) {
+    throw new M3LAgentOperatorCliError(
+      `a declared operation lists more required inputs than this tool projects (limit ${String(MAX_OPERATION_REQUIRED_PARAMETERS)}); refusing to hand the model a silently shortened list`,
+      "ERR_AGENT_OPERATOR_CLI_OUTPUT",
+    );
+  }
   return Object.freeze(
-    requiredParameters
-      .slice(0, MAX_OPERATION_REQUIRED_PARAMETERS)
-      .map((parameter) => sanitize(parameter, opts)),
+    requiredParameters.map((parameter) => sanitize(parameter, opts)),
   );
 }
 
@@ -486,6 +527,8 @@ export interface AgentOperatorProjectedParamDescriptor {
   readonly description: string;
   readonly secret: boolean;
   readonly operations: readonly AgentOperatorProjectedOperationDescriptor[];
+  /** Type-level-only marker — see {@link MODEL_SAFE_BRAND}. Never present at runtime. */
+  readonly [MODEL_SAFE_BRAND]: true;
 }
 
 /**
@@ -512,6 +555,11 @@ function projectDefaultValue(
  * @param descriptor - The parsed param descriptor.
  * @param opts - Sanitization options (workspace-root scrubbing).
  * @returns A fresh, frozen, model-safe projection.
+ * @throws {@link M3LAgentOperatorCliError} coded
+ *   `ERR_AGENT_OPERATOR_CLI_OUTPUT` when a declared operation lists more
+ *   required inputs than {@link MAX_OPERATION_REQUIRED_PARAMETERS} — see
+ *   {@link projectRequiredParameters} for why that fails closed rather than
+ *   trimming.
  * @example
  * ```ts
  * import { projectParamDescriptor } from "./model-safety.js";
@@ -536,16 +584,21 @@ export function projectParamDescriptor(
   descriptor: AgentOperatorParamDescriptor,
   opts: AgentOperatorProjectionOptions = {},
 ): AgentOperatorProjectedParamDescriptor {
+  // `readonly` for the same comparability reason as `projectDoctorReport`'s
+  // `projectedChecks` — see the note there.
+  const aliases: readonly string[] = descriptor.aliases.map((alias) =>
+    sanitize(alias, opts),
+  );
   return Object.freeze({
     name: sanitize(descriptor.name, opts),
-    aliases: descriptor.aliases.map((alias) => sanitize(alias, opts)),
+    aliases,
     type: sanitize(descriptor.type, opts),
     required: descriptor.required,
     description: sanitize(descriptor.description, opts),
     secret: descriptor.secret,
     operations: projectOperations(descriptor.operations, opts),
     ...projectDefaultValue(descriptor, opts),
-  });
+  }) as AgentOperatorProjectedParamDescriptor;
 }
 
 /** The model-safe projection of {@link AgentOperatorRunEnvelope}. */
@@ -562,6 +615,8 @@ export interface AgentOperatorProjectedRunEnvelope {
   readonly timelineCount: number | null;
   readonly timelineSourceCount: number | null;
   readonly recoveryTotal: number | null;
+  /** Type-level-only marker — see {@link MODEL_SAFE_BRAND}. Never present at runtime. */
+  readonly [MODEL_SAFE_BRAND]: true;
 }
 
 /**
@@ -622,5 +677,5 @@ export function projectRunEnvelope(
     timelineCount: env.timelineCount,
     timelineSourceCount: env.timelineSourceCount,
     recoveryTotal: env.recoveryTotal,
-  });
+  }) as AgentOperatorProjectedRunEnvelope;
 }

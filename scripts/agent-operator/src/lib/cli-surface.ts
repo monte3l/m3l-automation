@@ -289,15 +289,28 @@ function buildOutputError(
 }
 
 /**
- * Mints an `ERR_AGENT_OPERATOR_CLI_SPAWN` error. `failureCode` is included in
- * `context` only when present — never a spawn `error.message`, which can
- * embed a resolved absolute path.
+ * The four non-`exited`, non-`aborted` dispositions this module folds into a
+ * single `ERR_AGENT_OPERATOR_CLI_SPAWN`. Named here so `context.disposition`
+ * is provably one of those literals and nothing wider.
+ */
+type CliFailedDisposition = Exclude<CliRunDisposition, "exited" | "aborted">;
+
+/**
+ * Mints an `ERR_AGENT_OPERATOR_CLI_SPAWN` error. `context` carries the
+ * settled `disposition` — a closed union of six non-sensitive literals, so
+ * an operator can tell a spawn failure from a timeout, a kill, and a
+ * byte-cap breach, all of which share one fixed model-facing message — plus
+ * `failureCode` when present. Never a spawn `error.message`, which can embed
+ * a resolved absolute path.
  */
 function buildSpawnError(
+  disposition: CliFailedDisposition,
   failureCode: string | undefined,
 ): M3LAgentOperatorCliError {
-  const context: Record<string, unknown> =
-    failureCode === undefined ? {} : { failureCode };
+  const context: Record<string, unknown> = {
+    disposition,
+    ...(failureCode === undefined ? {} : { failureCode }),
+  };
   return new M3LAgentOperatorCliError(
     CLI_SPAWN_REJECTION_MESSAGE,
     "ERR_AGENT_OPERATOR_CLI_SPAWN",
@@ -341,7 +354,7 @@ function resolveCliRunResult<T>(
     case "timed-out":
     case "signalled":
     case "output-truncated":
-      throw buildSpawnError(result.failureCode);
+      throw buildSpawnError(disposition, result.failureCode);
     default: {
       const exhaustive: never = disposition;
       throw new M3LAgentOperatorCliError(

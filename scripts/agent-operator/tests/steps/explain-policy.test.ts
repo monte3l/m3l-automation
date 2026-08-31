@@ -19,9 +19,15 @@ import { describe, expect, it } from "vitest";
 import { Core } from "@m3l-automation/m3l-common";
 
 import type { AgentCliSurface } from "../../src/lib/cli-surface.js";
-import type { AgentOperatorDoctorCheck } from "../../src/lib/cli-envelopes.js";
+import type {
+  AgentOperatorDoctorCheck,
+  AgentOperatorListRow,
+  AgentOperatorRunEnvelope,
+} from "../../src/lib/cli-envelopes.js";
 import {
   projectDoctorReport,
+  projectListRow,
+  projectRunEnvelope,
   type AgentOperatorProjectedDoctorReport,
   type AgentOperatorProjectedListRow,
   type AgentOperatorProjectedRunEnvelope,
@@ -41,6 +47,57 @@ function buildDoctorReport(
   checks: readonly AgentOperatorDoctorCheck[],
 ): AgentOperatorProjectedDoctorReport {
   return projectDoctorReport(checks);
+}
+
+/**
+ * Builds the fake surface's `list()` rows through the REAL `projectListRow`,
+ * for the same reason as {@link buildDoctorReport}: every
+ * `AgentOperatorProjected*` type is nominally branded, so only the module's
+ * own projector may mint one — a hand-written literal would need a
+ * disallowed cast. The rows carry the same observable values the previous
+ * literals did (`configLoadFailed: false` is derived from `loadError: null`).
+ */
+function buildListRows(): readonly AgentOperatorProjectedListRow[] {
+  const rows: readonly AgentOperatorListRow[] = [
+    {
+      name: "agent-operator",
+      description: "…",
+      parameterCount: 20,
+      loadError: null,
+    },
+    {
+      name: "sqs-etl",
+      description: "…",
+      parameterCount: 14,
+      loadError: null,
+    },
+  ];
+  return rows.map((row) => projectListRow(row));
+}
+
+/**
+ * Builds the fake surface's `dryRun()` envelope through the REAL
+ * `projectRunEnvelope` — same branding rationale as {@link buildListRows}.
+ * `reportAvailable: false` is derived from `reportPath: null`.
+ */
+function buildRunEnvelope(): AgentOperatorProjectedRunEnvelope {
+  const envelope: AgentOperatorRunEnvelope = {
+    kind: "m3l.run.result",
+    schemaVersion: 1,
+    script: "agent-operator",
+    startedAt: new Date(0).toISOString(),
+    finishedAt: new Date(0).toISOString(),
+    durationMs: 0,
+    exitCode: 0,
+    exitCodeName: "SUCCESS",
+    outcome: "dry-run",
+    reportPath: null,
+    reportUnavailable: null,
+    timelineCount: null,
+    timelineSourceCount: null,
+    recoveryTotal: null,
+  };
+  return projectRunEnvelope(envelope);
 }
 
 /** Records every event handed to it, for assertion without pinning exact prose. */
@@ -70,21 +127,7 @@ function createFakeSurface(): {
   const surface: AgentCliSurface = {
     list() {
       calls.push("list");
-      const rows: AgentOperatorProjectedListRow[] = [
-        {
-          name: "agent-operator",
-          description: "…",
-          parameterCount: 20,
-          configLoadFailed: false,
-        },
-        {
-          name: "sqs-etl",
-          description: "…",
-          parameterCount: 14,
-          configLoadFailed: false,
-        },
-      ];
-      return Promise.resolve(rows);
+      return Promise.resolve(buildListRows());
     },
     doctor() {
       calls.push("doctor");
@@ -100,21 +143,7 @@ function createFakeSurface(): {
     },
     dryRun() {
       calls.push("dryRun");
-      const envelope: AgentOperatorProjectedRunEnvelope = {
-        script: "agent-operator",
-        startedAt: new Date(0).toISOString(),
-        finishedAt: new Date(0).toISOString(),
-        durationMs: 0,
-        exitCode: 0,
-        exitCodeName: "SUCCESS",
-        outcome: "dry-run",
-        reportAvailable: false,
-        reportUnavailable: null,
-        timelineCount: null,
-        timelineSourceCount: null,
-        recoveryTotal: null,
-      };
-      return Promise.resolve(envelope);
+      return Promise.resolve(buildRunEnvelope());
     },
   };
   return { surface, calls };

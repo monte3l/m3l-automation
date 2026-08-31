@@ -26,11 +26,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Core } from "@m3l-automation/m3l-common";
 
 import type { AgentCliSurface } from "../../src/lib/cli-surface.js";
-import type { AgentOperatorDoctorCheck } from "../../src/lib/cli-envelopes.js";
+import type {
+  AgentOperatorDoctorCheck,
+  AgentOperatorListRow,
+} from "../../src/lib/cli-envelopes.js";
 import { M3LAgentOperatorCliError } from "../../src/lib/errors.js";
 import {
   projectDoctorReport,
+  projectListRow,
   type AgentOperatorProjectedDoctorReport,
+  type AgentOperatorProjectedListRow,
 } from "../../src/lib/model-safety.js";
 import { runAgentOperator } from "../../src/steps/run-agent-operator.js";
 import { fullPolicyDeclaration } from "../support/policyFixtures.js";
@@ -47,6 +52,25 @@ function buildDoctorReport(
   checks: readonly AgentOperatorDoctorCheck[],
 ): AgentOperatorProjectedDoctorReport {
   return projectDoctorReport(checks);
+}
+
+/**
+ * Builds the fake surface's `list()` rows through the REAL `projectListRow`
+ * for the same reason {@link buildDoctorReport} exists: every
+ * `AgentOperatorProjected*` type is nominally branded, so only the module's
+ * own projector may mint one — a hand-written object literal would need a
+ * disallowed cast.
+ */
+function buildListRows(): readonly AgentOperatorProjectedListRow[] {
+  const rows: readonly AgentOperatorListRow[] = [
+    {
+      name: "agent-operator",
+      description: "…",
+      parameterCount: 20,
+      loadError: null,
+    },
+  ];
+  return rows.map((row) => projectListRow(row));
 }
 
 vi.mock("../../src/lib/cli-surface.js", () => ({
@@ -94,14 +118,7 @@ function createFakeSurface(): {
   const surface: AgentCliSurface = {
     list() {
       calls.push("list");
-      return Promise.resolve([
-        {
-          name: "agent-operator",
-          description: "…",
-          parameterCount: 20,
-          configLoadFailed: false,
-        },
-      ]);
+      return Promise.resolve(buildListRows());
     },
     doctor() {
       calls.push("doctor");
@@ -229,7 +246,12 @@ describe("runAgentOperator — explain-policy wiring", () => {
         cliTimeoutMs: 12_345,
         dryRunTimeoutMs: 67_890,
         maxOutputBytes: 2_000_000,
-        dryRunAllowlist: new Set(["json-etl"]),
+        // `includeDryRunProbes` is unset (its default is off) in this
+        // config, so the configured allowlist must NOT arm the `dry-run`
+        // tool — the gate is the flag, and an allowlist alone is inert.
+        // (Corrected from a previous pin of `new Set(["json-etl"])`, which
+        // codified the ungated behaviour.)
+        dryRunAllowlist: new Set(),
         signal: controller.signal,
       }),
     );
@@ -375,6 +397,152 @@ describe("runAgentOperator — maxIterations vs. policy budget cross-check", () 
     // The failure happened before the CLI surface was ever built — proving
     // it propagated out of resolve-runtime rather than being absorbed and
     // the run continuing regardless.
+    expect(createAgentCliSurface).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Runs `explain-policy` with `overrides` merged into the base config and
+ * returns the options object `createAgentCliSurface` was actually built
+ * with — the observable seam for both the dry-run gate and the
+ * workspace-root scrub below.
+ */
+async function captureSurfaceOptions(
+  overrides: Readonly<Record<string, unknown>>,
+  paths?: Core.M3LPaths,
+): Promise<Parameters<typeof createAgentCliSurface>[0]> {
+  const policyFileName = "gate-policy.json";
+  await writePolicyFixture(policyFileName, fullPolicyDeclaration());
+  const { surface } = createFakeSurface();
+  vi.mocked(createAgentCliSurface).mockReturnValue(surface);
+  const { logger } = createLogger();
+
+  await runAgentOperator({
+    config: buildConfig({ policyFile: policyFileName, ...overrides }),
+    logger,
+    paths: paths ?? makePaths(),
+    signal: new AbortController().signal,
+    reportRecovery: vi.fn(),
+  });
+
+  const call = vi.mocked(createAgentCliSurface).mock.calls[0];
+  if (call === undefined) {
+    throw new Error("createAgentCliSurface was never called");
+  }
+  return call[0];
+}
+
+describe("runAgentOperator — includeDryRunProbes gates the dry-run allowlist", () => {
+  // `includeDryRunProbes` is declared (config.ts), cross-validated
+  // (configValidators), and resolved (resolve-runtime.ts) — and the
+  // reference page documents it as "Enables the `dry-run` tool". The
+  // dispatcher must therefore read it: an allowlist alone arms nothing.
+  // Fail closed — absent or false means an EMPTY allowlist reaches the
+  // surface, so a mis-set flag cannot silently enable a destructive probe.
+  it.each([
+    ["absent (schema default)", {}],
+    ["explicitly false", { includeDryRunProbes: false }],
+  ])(
+    "passes an empty dryRunAllowlist when includeDryRunProbes is %s, even with an allowlist configured",
+    async (_label, flagOverride) => {
+      const options = await captureSurfaceOptions({
+        dryRunAllowlist: ["json-etl"],
+        ...flagOverride,
+      });
+
+      expect([...options.dryRunAllowlist]).toEqual([]);
+    },
+  );
+
+  it("passes the configured allowlist through when includeDryRunProbes is true", async () => {
+    const options = await captureSurfaceOptions({
+      includeDryRunProbes: true,
+      dryRunAllowlist: ["json-etl", "sqs-etl"],
+    });
+
+    expect([...options.dryRunAllowlist].sort()).toEqual([
+      "json-etl",
+      "sqs-etl",
+    ]);
+  });
+
+  it("passes an empty dryRunAllowlist when includeDryRunProbes is true but no allowlist is configured", async () => {
+    const options = await captureSurfaceOptions({
+      includeDryRunProbes: true,
+    });
+
+    expect([...options.dryRunAllowlist]).toEqual([]);
+  });
+});
+
+describe("runAgentOperator — workspace-root scrub degradation", () => {
+  it("logs a warning when getProjectRoot fails and the absolute-path scrub is disabled", async () => {
+    const policyFileName = "standalone-policy.json";
+    await writePolicyFixture(policyFileName, fullPolicyDeclaration());
+    const { surface } = createFakeSurface();
+    vi.mocked(createAgentCliSurface).mockReturnValue(surface);
+    const { logger, handler } = createLogger();
+    const paths = makePaths();
+    // STANDALONE mode: there is no monorepo root to scrub against.
+    vi.spyOn(paths, "getProjectRoot").mockImplementation(() => {
+      throw new Core.M3LPathResolutionError(
+        "getProjectRoot() is only available in MONOREPO mode",
+      );
+    });
+
+    await runAgentOperator({
+      config: buildConfig({ policyFile: policyFileName }),
+      logger,
+      paths,
+      signal: new AbortController().signal,
+      reportRecovery: vi.fn(),
+    });
+
+    // The run continues (degrade, never fail) with the scrub off …
+    const call = vi.mocked(createAgentCliSurface).mock.calls[0];
+    expect(call?.[0].workspaceRoot).toBeUndefined();
+
+    // … but the degradation is recorded, not silent: in this mode absolute
+    // host paths reach the model unmasked, and today nothing says so.
+    const warnings = handler.events.filter(
+      (event) => event.category === Core.M3LLogEventCategory.WARNING,
+    );
+    expect(warnings.length).toBeGreaterThan(0);
+    expect(flattenLoggedText(warnings).toLowerCase()).toMatch(
+      /workspace root|workspace-root/,
+    );
+  });
+
+  it("propagates a non-M3LPathResolutionError out of getProjectRoot instead of absorbing it", async () => {
+    // Regression lock: this arm already behaves correctly today (the `if
+    // (!(cause instanceof Core.M3LPathResolutionError)) throw cause;`
+    // rethrow), but it had no coverage — so a future `catch { return
+    // undefined; }` simplification would have gone unnoticed.
+    const policyFileName = "rethrow-policy.json";
+    await writePolicyFixture(policyFileName, fullPolicyDeclaration());
+    const { surface } = createFakeSurface();
+    vi.mocked(createAgentCliSurface).mockReturnValue(surface);
+    const { logger } = createLogger();
+    const paths = makePaths();
+    const failure = new Error("EIO: readlink failed");
+    vi.spyOn(paths, "getProjectRoot").mockImplementation(() => {
+      throw failure;
+    });
+
+    let thrown: unknown;
+    try {
+      await runAgentOperator({
+        config: buildConfig({ policyFile: policyFileName }),
+        logger,
+        paths,
+        signal: new AbortController().signal,
+        reportRecovery: vi.fn(),
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBe(failure);
     expect(createAgentCliSurface).not.toHaveBeenCalled();
   });
 });
