@@ -4,11 +4,14 @@ import {
   DEFAULT_EFFORT,
   DEFAULT_MODEL,
   EVAL_ALLOWED_TOOLS,
+  EVAL_SANDBOX_PREAMBLE,
+  RESULT_EXCERPT_CHARS,
   VERDICT_SCHEMA,
   buildClaudeArgs,
-  DEFAULT_MAX_BUDGET_USD,
-  EVAL_AVAILABLE_TOOLS,
   buildGradedPrompt,
+  DEFAULT_MAX_BUDGET_USD,
+  describeSpawnFailure,
+  EVAL_AVAILABLE_TOOLS,
   parseVerdictEnvelope,
   renderChecklistEntry,
   selectChecklist,
@@ -543,5 +546,124 @@ describe("parseVerdictEnvelope diagnostics", () => {
 
     expect(error).toContain("result: <empty>");
     expect(error).toContain("stop_reason: unset");
+  });
+});
+
+describe("EVAL_SANDBOX_PREAMBLE", () => {
+  test("contains the sandbox marker, WOULD-RUN, WOULD-DISPATCH, and the no-tools contract", () => {
+    // a) Assert all required literal markers are present.
+    expect(EVAL_SANDBOX_PREAMBLE).toContain("--- EVAL SANDBOX ---");
+    expect(EVAL_SANDBOX_PREAMBLE).toContain("WOULD-RUN:");
+    expect(EVAL_SANDBOX_PREAMBLE).toContain("WOULD-DISPATCH:");
+    expect(EVAL_SANDBOX_PREAMBLE).toContain("no Bash");
+    expect(EVAL_SANDBOX_PREAMBLE).toContain("no network access");
+    expect(EVAL_SANDBOX_PREAMBLE).toContain("no subagent tool");
+  });
+
+  test("buildGradedPrompt embeds EVAL_SANDBOX_PREAMBLE verbatim in the built prompt", () => {
+    // b) Containment: the preamble must appear in the output, not just parts of it.
+    const built = buildGradedPrompt({
+      prompt: "Do the thing.",
+      expected_output: "The thing was done.",
+      expectations: ["a criterion"],
+    });
+    expect(built).toContain(EVAL_SANDBOX_PREAMBLE);
+  });
+
+  test("preamble appears after the case prompt and before the EVAL GRADING block", () => {
+    // c) Ordering: a preamble appended after the grading block would leak
+    // into the grading instructions, inverting the intended evaluation flow.
+    const evalCase = {
+      prompt: "Do the thing.",
+      expected_output: "The thing was done.",
+      expectations: ["a criterion"],
+    };
+    const built = buildGradedPrompt(evalCase);
+    const promptIdx = built.indexOf(evalCase.prompt);
+    const preambleIdx = built.indexOf(EVAL_SANDBOX_PREAMBLE);
+    const gradingIdx = built.indexOf(
+      "--- EVAL GRADING (not part of the request above) ---",
+    );
+
+    expect(preambleIdx).toBeGreaterThan(promptIdx);
+    expect(preambleIdx).toBeLessThan(gradingIdx);
+  });
+
+  test("preamble is emitted even when the case has no checklist entries", () => {
+    // d) The sandbox contract is unconditional: even the rendered.length === 0
+    // branch (no expectations, no assertions key) must still emit the preamble.
+    const built = buildGradedPrompt({
+      prompt: "Do the thing.",
+      expected_output: "The thing was done.",
+    });
+    expect(built).toContain(EVAL_SANDBOX_PREAMBLE);
+    expect(built).toContain("--- EVAL SANDBOX ---");
+  });
+});
+
+describe("describeSpawnFailure", () => {
+  test("surfaces the message and stderr, omits empty stdout", () => {
+    // a) Typical execFileSync failure: stderr has the real cause; stdout is
+    // empty and must be omitted so the error message stays readable.
+    const result = describeSpawnFailure({
+      message: "Command failed: claude -p",
+      stderr: "Invalid API key",
+      stdout: "",
+    });
+    expect(result).toContain("claude -p invocation failed");
+    expect(result).toContain("Command failed: claude -p");
+    expect(result).toContain("Invalid API key");
+    expect(result).not.toContain("stdout:");
+  });
+
+  test("surfaces stdout when stderr is absent or empty", () => {
+    // b) Some failures populate stdout instead; the error text must appear.
+    const result = describeSpawnFailure({
+      message: "Command failed: claude -p",
+      stderr: "",
+      stdout: "some output text",
+    });
+    expect(result).toContain("some output text");
+    expect(result).not.toContain("stderr:");
+  });
+
+  test("converts a Buffer stderr to readable text, not [object Object]", () => {
+    // c) Node yields stderr as a Buffer when no encoding was set on execFileSync.
+    // String(Buffer) calls toString() with the default UTF-8 encoding, so the
+    // content — not the object representation — must appear in the result.
+    const result = describeSpawnFailure({
+      message: "Command failed: claude -p",
+      stderr: Buffer.from("Buffer error text"),
+      stdout: "",
+    });
+    expect(result).toContain("Buffer error text");
+    expect(result).not.toContain("[object Object]");
+  });
+
+  test("truncates a stream longer than RESULT_EXCERPT_CHARS to a bounded length", () => {
+    // d) A 16 MB buffer cannot flood the summary: each stream is capped.
+    // Assert the result length is bounded rather than pinning an exact length.
+    const longText = "e".repeat(RESULT_EXCERPT_CHARS + 100);
+    const result = describeSpawnFailure({
+      message: "Command failed: claude -p",
+      stderr: longText,
+      stdout: "",
+    });
+    const segments = result.split(" | ");
+    const stderrSegment = segments.find((s) => s.startsWith("stderr:")) ?? "";
+    // "stderr: " prefix (8 chars) + at most RESULT_EXCERPT_CHARS + 1 ellipsis char
+    expect(stderrSegment.length).toBeLessThanOrEqual(
+      "stderr: ".length + RESULT_EXCERPT_CHARS + 1,
+    );
+    expect(result).toContain("…");
+  });
+
+  test("produces the prefix with no dangling separator when neither stderr nor stdout is present", () => {
+    // e) An error with only a message must not produce orphaned " | " segments.
+    const result = describeSpawnFailure({
+      message: "Command failed: claude -p",
+    });
+    expect(result).toContain("claude -p invocation failed:");
+    expect(result).not.toContain(" | ");
   });
 });

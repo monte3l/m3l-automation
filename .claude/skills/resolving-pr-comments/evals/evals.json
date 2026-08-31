@@ -3,134 +3,61 @@
   "evals": [
     {
       "id": 1,
-      "prompt": "The claude-pr-review bot just posted a FAIL on my PR. It flagged two things: a missing `.js` extension on a relative import in `src/core/config/index.ts` line 3, and a bare `throw 'not found'` string on line 42 of the same file. Fix both.",
-      "expected_output": "The skill fetches the open PR's claude[bot] comment, identifies the two findings (ESM import extension + bare string throw), applies both fixes, runs `pnpm typecheck` and `pnpm lint`, runs the final gate (`pnpm lint && pnpm typecheck && pnpm test:coverage && pnpm build`), commits with `fix: address claude-pr-review findings`, pushes, and posts a new top-level comment with the commit SHA.",
-      "files": [],
-      "assertions": [
+      "prompt": "The claude-pr-review bot just posted a FAIL on my open PR. It flagged exactly two Must-fix items: (1) a missing `.js` extension on the relative import on line 2 of `packages/m3l-common/src/core/config/index.ts`, and (2) a bare string throw `throw 'not found'` on line 7 of the same file. No Should-fix or Nits were listed. Fix both findings, run the required quality gates, commit, push, and post a follow-up comment on the PR.",
+      "expected_output": "The skill prints a two-item Must-fix preview, reads the seeded source file, applies both fixes (corrected import path and M3LError subclass throw), emits WOULD-RUN lines for pnpm typecheck after the ESM fix and pnpm lint after the error-handling fix, emits the final full-gate WOULD-RUN, then states it will commit and post a top-level PR comment with the commit SHA.",
+      "files": [
         {
-          "text": "Fetches the most recent claude[bot] review comment from the PR's issue thread",
-          "passed": false,
-          "evidence": ""
-        },
-        {
-          "text": "Applies the `.js` extension fix to the import in the specified file",
-          "passed": false,
-          "evidence": ""
-        },
-        {
-          "text": "Replaces the bare throw string with an M3LError subclass throw",
-          "passed": false,
-          "evidence": ""
-        },
-        {
-          "text": "Runs pnpm typecheck after ESM/TypeScript fixes",
-          "passed": false,
-          "evidence": ""
-        },
-        {
-          "text": "Runs pnpm lint after error handling fixes",
-          "passed": false,
-          "evidence": ""
-        },
-        {
-          "text": "Runs the final full gate (pnpm lint && pnpm typecheck && pnpm test:coverage && pnpm build) before committing",
-          "passed": false,
-          "evidence": ""
-        },
-        {
-          "text": "Commits with subject starting with `fix: address claude-pr-review findings`",
-          "passed": false,
-          "evidence": ""
-        },
-        {
-          "text": "Posts a new top-level comment on the PR thread with the commit SHA",
-          "passed": false,
-          "evidence": ""
+          "path": "packages/m3l-common/src/core/config/index.ts",
+          "content": "import { M3LConfigParameter } from '../parameters/index.js';\nimport { ConfigSchema } from './types';\n\n/** Loads configuration from the given schema. */\nexport function loadConfig(schema: ConfigSchema): M3LConfigParameter[] {\n  if (!schema) {\n    throw 'not found';\n  }\n  return schema.parameters.map((p) => new M3LConfigParameter(p));\n}\n"
         }
+      ],
+      "expectations": [
+        "Prints a preview listing exactly two Must-fix findings — the extensionless import and the bare string throw — before describing any file edits.",
+        "Reads the seeded `packages/m3l-common/src/core/config/index.ts` and the response includes the literal string `./types.js` showing the corrected import path.",
+        "Emits a `WOULD-RUN: pnpm typecheck` line after describing the `.js`-extension fix and before describing the error-handling fix.",
+        "Emits a `WOULD-RUN: pnpm lint` line after describing the replacement of the bare string throw.",
+        "Emits a `WOULD-RUN: pnpm lint && pnpm typecheck && pnpm test:coverage && pnpm build` line for the final full-gate check before the commit step.",
+        "States it will post a top-level PR comment referencing the commit SHA, and names that step after the push step."
       ]
     },
     {
       "id": 2,
-      "prompt": "I just opened a PR and the claude-pr-review bot reviewed it — it came back PASS. Still, run resolving-pr-comments to confirm there's nothing to do.",
-      "expected_output": "The skill detects the open PR, fetches the bot comment, sees the PASS verdict, prints a message like 'The bot review already shows PASS — nothing to fix.' and exits cleanly without making any changes.",
-      "files": [],
-      "assertions": [
-        {
-          "text": "Fetches the bot comment from the PR",
-          "passed": false,
-          "evidence": ""
-        },
-        {
-          "text": "Recognises the PASS verdict and does NOT attempt any fixes",
-          "passed": false,
-          "evidence": ""
-        },
-        {
-          "text": "Does NOT commit, push, or reply to GitHub",
-          "passed": false,
-          "evidence": ""
-        },
-        {
-          "text": "Prints a clear message explaining that no fixes are needed",
-          "passed": false,
-          "evidence": ""
-        }
+      "prompt": "I just opened a PR and the claude-pr-review bot reviewed it — it came back PASS. Still, run resolving-pr-comments to confirm there is nothing to do.",
+      "expected_output": "The skill names fetching the bot comment as its first substantive step, detects the PASS verdict, and stops immediately with a message stating the review already shows PASS and nothing needs to be fixed.",
+      "expectations": [
+        "Names fetching the claude[bot] comment from the PR thread as its first substantive step (states the intent to retrieve or read the bot comment before any other action).",
+        "Identifies the PASS verdict and explicitly states that no fixes are needed, using language such as 'already shows PASS' or 'nothing to fix'.",
+        "Emits no `WOULD-RUN: git commit` or `WOULD-RUN: git push` line anywhere in the response.",
+        "Does not describe any file edits and does not list any Must-fix findings to resolve."
       ]
     },
     {
       "id": 3,
       "prompt": "Fix the reviewer's comments on this branch.",
-      "expected_output": "The skill attempts to detect the open PR for the current branch and discovers there is none. It prints an error like 'No open PR found for the current branch' and stops without making any changes.",
-      "files": [],
-      "assertions": [
-        {
-          "text": "Attempts to detect an open PR for the current branch",
-          "passed": false,
-          "evidence": ""
-        },
-        {
-          "text": "Prints a clear error message stating no open PR was found",
-          "passed": false,
-          "evidence": ""
-        },
-        {
-          "text": "Makes no file edits, commits, pushes, or API calls beyond PR detection",
-          "passed": false,
-          "evidence": ""
-        }
+      "expected_output": "The skill identifies detecting an open PR as its first step, finds no open PR for the current branch, reports that clearly, and stops without making any changes.",
+      "expectations": [
+        "Names detecting an open PR for the current branch as its first step, describing the intent to list open pull requests or call the PR-detection step.",
+        "Reports that no open PR was found and stops, using language such as 'No open PR found for the current branch'.",
+        "Emits no `WOULD-RUN: git commit` or `WOULD-RUN: git push` line and does not describe any file edits.",
+        "Does not attempt to read any source files or describe any Must-fix fixes."
       ]
     },
     {
       "id": 4,
-      "prompt": "The bot flagged a missing `.js` extension on an import in `src/core/errors/index.ts`. Fix it. But assume that after you add the extension, `pnpm typecheck` fails with 'Cannot find module ./types' (i.e., the gate fails).",
-      "expected_output": "The skill applies the `.js` extension fix, runs `pnpm typecheck`, sees the failure, stops immediately, prints the exact typecheck error output, and does NOT proceed to commit, push, or reply to GitHub.",
-      "files": [],
-      "assertions": [
+      "prompt": "The bot flagged a single Must-fix item: a missing `.js` extension on the relative import on line 2 of `packages/m3l-common/src/core/config/index.ts`. Apply the fix. Then, assume that running `pnpm typecheck` produces this error: `error TS2307: Cannot find module './types.js' or its corresponding type declarations`. Stop appropriately given that gate failure.",
+      "expected_output": "The skill reads the seeded file, applies the `.js`-extension fix so that `./types.js` appears in the response, emits a WOULD-RUN for pnpm typecheck, then explicitly states the gate failed with the given error, stops before committing or pushing, and says it will show the error output to the user.",
+      "files": [
         {
-          "text": "Applies the `.js` extension fix to the import",
-          "passed": false,
-          "evidence": ""
-        },
-        {
-          "text": "Runs pnpm typecheck after the ESM fix",
-          "passed": false,
-          "evidence": ""
-        },
-        {
-          "text": "Detects the typecheck failure and stops processing",
-          "passed": false,
-          "evidence": ""
-        },
-        {
-          "text": "Shows the user the typecheck error output",
-          "passed": false,
-          "evidence": ""
-        },
-        {
-          "text": "Does NOT commit or push after the gate failure",
-          "passed": false,
-          "evidence": ""
+          "path": "packages/m3l-common/src/core/config/index.ts",
+          "content": "import { M3LConfigParameter } from '../parameters/index.js';\nimport { ConfigSchema } from './types';\n\n/** Loads configuration from the given schema. */\nexport function loadConfig(schema: ConfigSchema): M3LConfigParameter[] {\n  return schema.parameters.map((p) => new M3LConfigParameter(p));\n}\n"
         }
+      ],
+      "expectations": [
+        "Reads the seeded `packages/m3l-common/src/core/config/index.ts` and the response includes the literal string `./types.js` showing the corrected import path.",
+        "Emits a `WOULD-RUN: pnpm typecheck` line after describing the `.js`-extension fix.",
+        "Explicitly states that the typecheck gate failed with the error `Cannot find module './types.js'` and that it is stopping.",
+        "Emits no `WOULD-RUN: git commit` or `WOULD-RUN: git push` line anywhere in the response.",
+        "States it will show the exact typecheck error output to the user before stopping, rather than silently discarding it."
       ]
     }
   ]
