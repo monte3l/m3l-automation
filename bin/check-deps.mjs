@@ -115,9 +115,32 @@ export const MAJOR_HOLDS = {
   typescript: {
     major: 7,
     reason:
-      "TS 7 deferred — typescript-eslint (latest, 8.63.0) peer-caps typescript at " +
-      "<6.1.0, so the type-aware lint toolchain cannot run on TS 7 yet. Revisit " +
-      "when typescript-eslint ships TS 7 support and upgrade as its own PR.",
+      "TS 7 deferred. Two independent blockers, both verified against PR #780's " +
+      "failed run: (1) typescript-eslint still peer-caps typescript at <6.1.0 " +
+      "(checked at 8.68.0), so the type-aware lint toolchain cannot run on TS 7; " +
+      "(2) bin/lib/browser-safe-subpath.mjs is this repo's only consumer of the " +
+      "TypeScript compiler API, and TS 7's native port reshapes it — its " +
+      "createSourceFile call broke 16 of 20 tests in " +
+      "bin/tests/check-browser-safe-subpath.test.ts. Blocker (2) is the larger " +
+      "one and is NOT mentioned in ADR-0001 decision 4, which defers the native " +
+      "port on declaration-emit grounds alone: adopting TS 7 means porting " +
+      "extractImportSpecifiers, not just relaxing a peer range. Revisit as its " +
+      "own ADR-gated PR. Mirrored as a version-anchored ignore in " +
+      ".github/dependabot.yml — keep the two in sync.",
+  },
+  "@types/node": {
+    major: 26,
+    reason:
+      "Held at the 24.x line on purpose, not lagging: .node-version pins the " +
+      "dev/CI runtime to Node 24, and @types/node is what decides which API " +
+      "surface `pnpm typecheck` validates against. At 26 a green typecheck " +
+      "proved the code runs on Node 26 while the declared floor was 24 — it " +
+      "could use a Node-26-only API unchallenged, and did (a setInterval " +
+      "overload in packages/m3l-console-server/tests/stream-writer.test.ts). " +
+      "Enforced positively by check:node-version's findTypesNodeDrift, which " +
+      "asserts major(@types/node) === .node-version and runs in ci.yml's " +
+      "un-path-gated gates lane; this hold only keeps check:deps quiet about " +
+      "the deliberate gap. Raise both together whenever .node-version moves.",
   },
 };
 

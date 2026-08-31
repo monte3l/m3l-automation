@@ -595,12 +595,12 @@ describe("writeStream — heartbeat", () => {
     const originalSetInterval = globalThis.setInterval;
     const unrefMock = vi.fn();
     vi.spyOn(globalThis, "setInterval").mockImplementation(
-      (
-        handler: (...args: unknown[]) => void,
-        ms?: number,
-        ...args: unknown[]
-      ) => {
-        const timer = originalSetInterval(handler, ms, ...args) as unknown as {
+      // The stream writer under test only ever calls `setInterval(handler, ms)`
+      // (see stream-writer.ts:418) — no extra forwarded args — so the mock
+      // matches the `(callback: (_: void) => void, delay?: number) => Timeout`
+      // overload that `vi.spyOn` resolves to under @types/node@24.
+      (handler: (_: void) => void, ms?: number) => {
+        const timer = originalSetInterval(handler, ms) as unknown as {
           unref: () => unknown;
         };
         const originalUnref = timer.unref.bind(timer);

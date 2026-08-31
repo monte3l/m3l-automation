@@ -11,6 +11,7 @@ import {
   evaluateRuntimeVersion,
   collectWorkspaceManifests,
   collectGithubNodeSetupFiles,
+  findTypesNodeDrift,
 } from "../../bin/check-node-version.mjs";
 
 describe("parseNodeVersionFile", () => {
@@ -410,6 +411,74 @@ describe("collectGithubNodeSetupFiles", () => {
 
     const result = collectGithubNodeSetupFiles(dir);
     expect(result).toEqual([...result].sort());
+  });
+});
+
+describe("findTypesNodeDrift", () => {
+  test("returns no errors when the range is undefined (absent is not an error)", () => {
+    expect(findTypesNodeDrift(24, undefined)).toEqual([]);
+  });
+
+  test.each([
+    ["24.13.3"],
+    ["24"],
+    ["^24.13.3"],
+    ["~24.0.0"],
+    ["v24"],
+    ["  24.13.3  "],
+  ])("parses %j as major 24 and agrees with a pin of 24", (range) => {
+    expect(findTypesNodeDrift(24, range)).toEqual([]);
+  });
+
+  test.each([["*"], [">=24"], ["24.x"], ["latest"], [""]])(
+    "reports exactly one unparseable error for %j",
+    (range) => {
+      const errors = findTypesNodeDrift(24, range);
+      expect(errors).toHaveLength(1);
+      expect(errors[0]).toMatch(
+        new RegExp(
+          JSON.stringify(range).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+        ),
+      );
+      expect(errors[0]).toMatch(/cannot compare/u);
+    },
+  );
+
+  test("reports exactly one drift error naming both majors when they disagree", () => {
+    const errors = findTypesNodeDrift(24, "26.1.1");
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatch(/26/u);
+    expect(errors[0]).toMatch(/24/u);
+  });
+
+  test("uses the default manifestRel of package.json in the unparseable message", () => {
+    const errors = findTypesNodeDrift(24, "latest");
+    expect(errors[0]).toMatch(/package\.json/u);
+  });
+
+  test("uses the default manifestRel of package.json in the drift message", () => {
+    const errors = findTypesNodeDrift(24, "26.1.1");
+    expect(errors[0]).toMatch(/package\.json/u);
+  });
+
+  test("uses a custom manifestRel in the unparseable message instead of the default", () => {
+    const errors = findTypesNodeDrift(
+      24,
+      "latest",
+      "packages/foo/package.json",
+    );
+    expect(errors[0]).toMatch(/packages\/foo\/package\.json/u);
+    expect(errors[0]).not.toMatch(/^package\.json/u);
+  });
+
+  test("uses a custom manifestRel in the drift message instead of the default", () => {
+    const errors = findTypesNodeDrift(
+      24,
+      "26.1.1",
+      "packages/foo/package.json",
+    );
+    expect(errors[0]).toMatch(/packages\/foo\/package\.json/u);
+    expect(errors[0]).not.toMatch(/^package\.json/u);
   });
 });
 
