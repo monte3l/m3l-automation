@@ -95,6 +95,20 @@ describe("isValidAgentModel", () => {
   ])("rejects malformed value %s", (value) => {
     expect(isValidAgentModel(value)).toBe(false);
   });
+
+  test.each([
+    // A real Azure OpenAI deployment name: legal for a workflow pin (see
+    // isValidWorkflowModel below) but agents stay Anthropic-only.
+    ["gpt-5.6-sol"],
+    // Wrong case: AZURE_OPENAI_MODEL_ID_PATTERN is lowercase-only too.
+    ["GPT-5.6-Sol"],
+    // Trailing hyphen with nothing after it.
+    ["gpt-"],
+    // Not shaped like any known vendor prefix.
+    ["not-a-model"],
+  ])("rejects non-Anthropic value %s", (value) => {
+    expect(isValidAgentModel(value)).toBe(false);
+  });
 });
 
 describe("isValidWorkflowModel", () => {
@@ -137,6 +151,42 @@ describe("isValidWorkflowModel", () => {
   test("opusplan is valid for a workflow but not for an agent", () => {
     expect(isValidWorkflowModel("opusplan")).toBe(true);
     expect(isValidAgentModel("opusplan")).toBe(false);
+  });
+
+  // gpt-5.6-sol is the real Azure OpenAI deployment pin driving
+  // .github/workflows/gpt-pr-review.yml's advisory second-opinion review.
+  // Subagents run on Claude, so isValidAgentModel deliberately stays
+  // Anthropic-only even though isValidWorkflowModel now accepts an
+  // AZURE_OPENAI_MODEL_ID_PATTERN match — the same asymmetry as opusplan
+  // above, just from the opposite direction (a workflow-only pattern match
+  // rather than a workflow-only alias).
+  test("gpt-5.6-sol is valid for a workflow but not for an agent", () => {
+    expect(isValidWorkflowModel("gpt-5.6-sol")).toBe(true);
+    expect(isValidAgentModel("gpt-5.6-sol")).toBe(false);
+  });
+
+  test.each([["gpt-5"], ["gpt-5.6"]])(
+    // AZURE_OPENAI_MODEL_ID_PATTERN is `/^gpt-[0-9]+(?:\.[0-9]+)?-[a-z0-9-]+$/`:
+    // the trailing `-[a-z0-9-]+` segment is required, so a bare family with no
+    // deployment-name suffix stays rejected. (The `gpt-5` case duplicates
+    // "rejects a malformed model string" above by design, since it is exactly
+    // the fixture that pattern's required trailing segment must keep rejecting
+    // — do not "simplify" the regex to make the family alone match.)
+    "rejects the bare family %s (no deployment-name suffix)",
+    (value) => {
+      expect(isValidWorkflowModel(value)).toBe(false);
+    },
+  );
+
+  test.each([
+    // Wrong case: AZURE_OPENAI_MODEL_ID_PATTERN is lowercase-only.
+    ["GPT-5.6-Sol"],
+    // Trailing hyphen with nothing after it.
+    ["gpt-"],
+    // Not shaped like any known vendor prefix.
+    ["not-a-model"],
+  ])("rejects junk value %s", (value) => {
+    expect(isValidWorkflowModel(value)).toBe(false);
   });
 });
 
