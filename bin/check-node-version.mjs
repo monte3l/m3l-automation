@@ -13,7 +13,7 @@
  * failure that reads as a regression: indistinguishable from a real one until
  * someone checks `node -v`. (ADR-0003 originally cited
  * `m3l-console-server`'s `readBigInts` case here; that turned out to be a
- * genuine defect, fixed in #807 — see the ADR's 2026-09-01 update.)
+ * genuine defect, fixed in #807 — see the ADR's 2026-08-31 update.)
  *
  * Two responsibilities, deliberately in one gate:
  *
