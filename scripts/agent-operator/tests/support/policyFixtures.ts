@@ -34,8 +34,19 @@ const REAL_POLICY_PATH = fileURLToPath(
  * through the return value.
  */
 export async function realAgentPolicy(): Promise<Core.M3LAgentPolicy> {
+  return Core.validateAgentPolicy(await realAgentPolicyDeclaration());
+}
+
+/**
+ * The committed `data/input/agent-policy.json` as a raw, unvalidated
+ * declaration — for a test that must write the real deployed policy into its
+ * own temp input directory and let the step under test load and validate it
+ * (`realAgentPolicy` returns an already-validated policy, which cannot be
+ * handed to a file-reading step).
+ */
+export async function realAgentPolicyDeclaration(): Promise<unknown> {
   const text = await readFile(REAL_POLICY_PATH, "utf8");
-  return Core.validateAgentPolicy(JSON.parse(text) as unknown);
+  return JSON.parse(text) as unknown;
 }
 
 /** A minimal valid declaration: one script, one named-operation grant, nothing optional. */
@@ -160,4 +171,55 @@ export function invalidPolicyDeclarations(): ReadonlyArray<
       },
     ],
   ];
+}
+
+/**
+ * A declaration that requires the decision log but declares **no budgets**.
+ *
+ * The distinction matters: `evaluateAgentAction` runs budgets (step 3)
+ * *before* the decision-log-unavailable escalation (step 3b) and every arm is
+ * terminal, so a policy that declares any budget the caller cannot observe
+ * escalates on that budget's `.unobservable` id and step 3b is never reached.
+ * The `decision-log-unavailable*` rules are therefore only observable from a
+ * budget-free policy — which is what this fixture is for.
+ */
+export function decisionLogPolicyDeclaration(): unknown {
+  return {
+    version: 1,
+    scripts: [
+      {
+        script: "agent-operator",
+        operations: ["health-check", "explain-policy"],
+        readOnlyOperations: ["health-check", "explain-policy"],
+      },
+    ],
+    requireDecisionLog: true,
+  };
+}
+
+/** {@link decisionLogPolicyDeclaration}, run through the real validator. */
+export function decisionLogPolicy(): Core.M3LAgentPolicy {
+  return Core.validateAgentPolicy(decisionLogPolicyDeclaration());
+}
+
+/**
+ * {@link decisionLogPolicyDeclaration} plus exactly the supplied `budgets`, so
+ * a test can pin which budget ceiling the evaluator reports first without
+ * every other ceiling in `data/input/agent-policy.json` masking it.
+ */
+export function budgetPolicy(
+  budgets: Readonly<Record<string, number>>,
+): Core.M3LAgentPolicy {
+  return Core.validateAgentPolicy({
+    version: 1,
+    scripts: [
+      {
+        script: "agent-operator",
+        operations: ["health-check", "explain-policy"],
+        readOnlyOperations: ["health-check", "explain-policy"],
+      },
+    ],
+    requireDecisionLog: true,
+    budgets,
+  });
 }

@@ -50,7 +50,7 @@ jobs:
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 24
+          node-version-file: .node-version
 
       - id: classify
         run: node bin/ci-changed-paths.mjs --base "$BASE_SHA" --head "$HEAD_SHA" >> "$GITHUB_OUTPUT"
@@ -583,6 +583,18 @@ jobs:
       # .claude/hooks/*.mjs, and no hook file is left unwired.
       - name: Check hook wiring (hooks)
         run: pnpm check:hooks
+
+      # .node-version is the single authority for the dev/CI Node runtime
+      # (ADR-0003 amendment): every workspace manifest's engines.node floor
+      # agrees with the pin, and every actions/setup-node site in .github/
+      # reads `node-version-file: .node-version` rather than a literal. A
+      # Node bump touches .node-version, 22 engines fields, 4 workflows and
+      # the composite action; before this gate nothing detected a straggler.
+      # The script's runtime half (is THIS process on the pinned major?)
+      # passes trivially here — a runner provisions from the file this step
+      # just validated — and is warn-only for local developers.
+      - name: Check Node version pin
+        run: pnpm check:node-version
 
       # GitHub-integration stance (ADR-0030 amendment, 2026-07-27): every
       # GitHub-talking skill cites the governing ADR, carries no retired policy

@@ -1,7 +1,7 @@
 /**
  * `lib/errors` — the single script-local error type for `agent-operator`.
  *
- * Every failure this script raises pins one of six documented codes onto a
+ * Every failure this script raises pins one of eight documented codes onto a
  * single `M3LAgentOperatorCliError` class rather than a dedicated subclass
  * per code: the codes differ only in the string that identifies them, not in
  * shape or behaviour, so a subclass hierarchy would add nothing but ceremony
@@ -32,7 +32,22 @@ export type M3LAgentOperatorErrorCode =
   | "ERR_AGENT_OPERATOR_CLI_SPAWN"
   | "ERR_AGENT_OPERATOR_CLI_OUTPUT"
   | "ERR_AGENT_OPERATOR_SCRIPT_NAME"
-  | "ERR_AGENT_OPERATOR_POLICY";
+  | "ERR_AGENT_OPERATOR_POLICY"
+  // Distinct from `ERR_AGENT_OPERATOR_POLICY` on purpose: "your policy file is
+  // invalid" and "the decision log could not record this run" need different
+  // remediation, and collapsing both onto one code destroys the discriminant
+  // at the only place a catch site would read it. This code covers every way
+  // the audit trail itself fails: an unwritable decision-log directory, an
+  // entry that would breach the library's single-line byte ceiling, and a
+  // dry-run shape-ceiling breach.
+  | "ERR_AGENT_OPERATOR_DECISION_LOG"
+  // Also distinct from `ERR_AGENT_OPERATOR_POLICY`, and for the same reason
+  // read the other way round: `ERR_AGENT_OPERATOR_POLICY` means the policy
+  // file is missing, unreadable, malformed, or structurally invalid, whereas
+  // this code means the policy worked correctly and declined to auto-approve
+  // the run. "Fix your policy file" and "your policy declined this run" call
+  // for different responses from an operator and from a catch site.
+  | "ERR_AGENT_OPERATOR_ESCALATED";
 
 /**
  * Enrichment fields for {@link M3LAgentOperatorCliError}, forwarded verbatim

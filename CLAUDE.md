@@ -53,9 +53,11 @@ A utilities library giving automation scripts enterprise-grade abstractions for 
 ## Tech Stack
 
 - TypeScript 6.x, `strict: true`, compiled with `tsc` (no bundler); ESM only
-  (`"type": "module"`); Node.js 24 LTS floor (`.node-version`)
-- `pnpm` (lockfile authoritative, pinned via `packageManager` + Corepack);
-  `turbo` orchestrates/caches `build` + `typecheck`
+  (`"type": "module"`); Node.js 24 LTS consumer floor, and the exact dev/CI
+  runtime (`.node-version`, gated by `check:node-version`)
+- `pnpm` (lockfile authoritative, self-pinned via `packageManager`; no
+  Corepack — ADR-0001 update 2026-08-31); `turbo` orchestrates/caches
+  `build` + `typecheck`
 - Test: `vitest`. Lint/format: `eslint` (flat config) + `prettier`. Git
   hooks: `lefthook`
 - Dep/exports hygiene: `knip`, `publint` + `@arethetypeswrong/cli`
@@ -76,9 +78,15 @@ mode, anchoring `data/` at the workspace root.
 
 ## Environment Setup
 
-`corepack enable && pnpm install` (installs deps + lefthook hooks); CI uses
-`pnpm install --frozen-lockfile`. Node pinned in `.node-version` (24). A pure
-library — no services needed locally. Full setup detail:
+`pnpm install` (installs deps + lefthook hooks — no `corepack enable`, pnpm
+self-manages via `packageManager` and corepack is not used here or in CI); CI
+uses `pnpm install --frozen-lockfile`. `.node-version` (24) is the **single
+authority** for the dev/CI runtime — CI reads it via `node-version-file`, and
+`check:node-version` fails on drift between it, the 22 `engines.node` floors,
+and the workflows. Develop on that exact major (`fnm` + `--use-on-cd`);
+`engines.node` stays `">=24"` because it is the consumer contract, so a newer
+local Node typechecks green without proving the floor works. A pure library —
+no services needed locally. Full setup detail:
 `docs/contributing/contributing.md` § Environment Setup.
 
 ## Commands

@@ -381,6 +381,11 @@ export const COMMAND_CATALOG = [
       "Warn-only preflight (ADR-0080) reporting missing OOM-livelock mitigations on this host — earlyoom/systemd-oomd inactive, no zram swap, no user-.slice MemoryMax, CLAUDE_CODE_TOOL_MEMORY_LIMIT unset, another claude process already running. Never exits non-zero; runs automatically once per session via a SessionStart hook. Run setup:host-resources to apply the fixes it reports.",
   },
   {
+    name: "check:node-version",
+    description:
+      "Makes .node-version the single authority for the dev/CI Node runtime (ADR-0003 amendment). Static half (exits non-zero): every workspace manifest's engines.node floor agrees with the pin, every .github/ actions/setup-node site reads node-version-file: .node-version instead of a literal, and @types/node's major tracks the pin so typecheck validates the declared floor rather than a newer API surface. Runtime half (warn-only): the Node executing the command matches the pinned major — run it when a test fails locally but is green in CI. Also runs once per session via a SessionStart hook.",
+  },
+  {
     name: "setup:host-resources",
     description:
       "Idempotent host-level applier (ADR-0080) for the mitigations check:host-resources reports — earlyoom, zram, vm.swappiness, user-.slice MemoryMax, claude-rc.service ceiling, CLAUDE_CODE_TOOL_MEMORY_LIMIT. Dry-run by default; pass --apply to mutate the host (uses sudo). Never weakens an existing stricter setting it finds.",
