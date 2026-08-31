@@ -63,22 +63,22 @@
         {
           "file": "packages/m3l-common/src/core/storage/M3LAppendOnlyStream.ts",
           "symbol": "M3LAppendOnlyStream",
-          "blob": "d42960f0fbb38e7d2a006ef45a0b250552368fae"
+          "blob": "8adfcd896ad0c9b08ded9a0c0598741437ae7bca"
         },
         {
           "file": "packages/m3l-common/src/core/storage/M3LAppendOnlyStream.ts",
           "symbol": "M3LAppendOnlyStreamOptions",
-          "blob": "d42960f0fbb38e7d2a006ef45a0b250552368fae"
+          "blob": "8adfcd896ad0c9b08ded9a0c0598741437ae7bca"
         },
         {
           "file": "packages/m3l-common/src/core/storage/M3LAppendOnlyStream.ts",
           "symbol": "M3LAppendOnlyEntry",
-          "blob": "d42960f0fbb38e7d2a006ef45a0b250552368fae"
+          "blob": "8adfcd896ad0c9b08ded9a0c0598741437ae7bca"
         },
         {
           "file": "packages/m3l-common/src/core/storage/M3LAppendOnlyStream.ts",
           "symbol": "M3LAppendOnlyValue",
-          "blob": "d42960f0fbb38e7d2a006ef45a0b250552368fae"
+          "blob": "8adfcd896ad0c9b08ded9a0c0598741437ae7bca"
         },
         {
           "file": "packages/m3l-common/src/core/storage/append-only-read-types.ts",
@@ -144,7 +144,7 @@
         {
           "file": "packages/m3l-common/src/core/storage/M3LAppendOnlyStream.ts",
           "symbol": "M3LAppendOnlyStream",
-          "blob": "d42960f0fbb38e7d2a006ef45a0b250552368fae"
+          "blob": "8adfcd896ad0c9b08ded9a0c0598741437ae7bca"
         },
         {
           "file": "packages/m3l-common/src/core/storage/M3LAppendOnlyStreamError.ts",
