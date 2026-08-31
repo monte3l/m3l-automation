@@ -22,16 +22,46 @@ Its tools drive the CLI rather than the AWS SDK directly: `m3l list --json`,
 policy before it runs, and every verdict is written to the append-only decision
 log before the action executes.
 
-**With this slice** the whole offline half is in place: the config schema, the
-committed policy, and policy loading landed first; this one adds the typed
-`m3l` CLI seam and wires `explain-policy`'s fleet snapshot onto it. There is
-still no Bedrock client, no agent loop, and no network call anywhere — every
-CLI call is a locally spawned child process, so the whole surface is
-exercisable without AWS.
+**With this slice** the whole offline half is in place. The config schema, the
+committed policy, and policy loading landed first; the typed `m3l` CLI seam
+followed; this one adds the **audit spine** — the run ledger, the decision
+recorder, and the decision-log preflight. There is still no Bedrock client, no
+agent loop, and no network call anywhere — every CLI call is a locally spawned
+child process, so the whole surface is exercisable without AWS.
 
-The `health-check` operation stays declared-but-unimplemented, failing fast
-with `ERR_AGENT_OPERATOR_CONFIG`; the model-driven workload, the gate ordering,
-the decision-log writer, and the run ledger land in the final slice.
+The `health-check` operation now runs its **audit spine**: it loads the policy,
+builds the run ledger, and performs the decision-log preflight. The preflight
+writes **two** entries — the honest bootstrap escalation, then the verdict the
+run actually concluded on — and the run then reports that the model loop is
+still pending.
+
+It exits cleanly only when that concluding verdict is auto-approved. Otherwise
+it fails with `ERR_AGENT_OPERATOR_ESCALATED`, carrying the verdict and rule in
+`context`. A run the policy declined must not report success, and the entry the
+run concluded on must be as durable as the one it opened with — otherwise the
+log records how the run started rather than how it ended. The gate is
+`Core.isAgentActionAutoApproved`: `verdict !== "denied"` would let every
+escalation through.
+
+The Bedrock tool loop, the gate ordering, and the fleet health tools land in
+the final slice.
+
+One consequence is worth stating plainly rather than discovering later. The
+evaluator checks budgets (step 3) **before** the decision-log rule (step 3b),
+deliberately, so that a budget-exhausted action keeps reporting its own budget
+rule. Because the committed policy declares all five budgets and no metering
+exists until the workload slice, every action currently escalates on a
+`budget.*.unobservable` rule, which masks `decision-log-unavailable*`
+entirely. So the preflight ships here as tested machinery that becomes
+_operative_ only once the metering invoker lands.
+
+Concretely: against the committed policy, `health-check` fails with
+`ERR_AGENT_OPERATOR_ESCALATED` rather than succeeding — correctly, because
+nothing can yet observe the budgets that policy declares. The auto-approved
+path is exercised against a budget-free policy in the tests. The fix is the
+metering invoker, not a defaulted ledger field: reporting an unobserved budget
+as `0` would convert "unobservable" into a silently passing check, which is the
+one direction this design must never fail in.
 
 Explicitly out of scope: mutations of any kind (the policy grants only
 `inspect`/`dry-run` on fleet scripts, all declared `readOnlyOperations`); a
@@ -101,6 +131,30 @@ No `yes`/`yesSensitive` — this workload never calls `confirmDestructive`.
 - `explain-policy` — the deterministic, no-Bedrock operation: renders grants,
   operations, budgets, and the `requireDecisionLog`/`dryRunFirst` flags, and
   exercises the CLI seam via `list` and `doctor`.
+- `run-ledger` — the caller-maintained `Core.M3LAgentRunLedger` state. Every
+  ledger field is optional and presence is read with `Object.hasOwn`, so a key
+  **present but holding `undefined` throws**; snapshots are therefore built with
+  conditional spreads and only ever carry genuinely observed fields. Omission
+  means _unobservable_, not zero — which escalates rather than passes. The
+  ledger reads no clock: `now` is sampled once by the caller and passed in.
+  `dryRunCompletedShapes` is bounded at `Core.M3L_AGENT_MAX_DRY_RUN_SHAPES`
+  (256) and rejects above it rather than truncating, so a shape can never be
+  silently dropped from the dry-run-first record.
+- `decision-recorder` — the agent identity, the local `AgentDecisionLogWriter`
+  port, and the write helpers. The port exists because
+  `Core.M3LAgentDecisionLog` has a TS `private` member and is therefore
+  **nominal** — a structural fake is not assignable to it. An oversized entry
+  fails closed _before_ the writer is touched, and a write failure is wrapped
+  with the original as `cause`, never re-messaged.
+- `preflight-log` — the two-phase bootstrap probe. Under
+  `requireDecisionLog: true` the first evaluation necessarily has
+  `decisionLogAvailable` absent and escalates on
+  `decision-log-unavailable.unobservable`, so the agent could never act. The
+  resolution is to evaluate honestly, **write that decision — the write is the
+  observation** — then mark the log observed and re-evaluate.
+  `decisionLogAvailable` is never seeded, and a failed write aborts the run
+  before any model client could be constructed, so a broken audit trail costs
+  zero tokens.
 - `run-agent-operator` — dispatches the two operations over a closed `switch`
   with a `never` exhaustiveness arm.
 
@@ -226,14 +280,16 @@ model reads as instruction.
 
 ## Error codes
 
-| Code                                | Meaning                                                                    |
-| ----------------------------------- | -------------------------------------------------------------------------- |
-| `ERR_AGENT_OPERATOR_CONFIG`         | A required parameter is missing or a cross-check failed                    |
-| `ERR_AGENT_OPERATOR_CLI_ENTRYPOINT` | The CLI entrypoint could not be derived and was not supplied               |
-| `ERR_AGENT_OPERATOR_CLI_SPAWN`      | Spawn failed, timed out, was signalled, or breached the output byte cap    |
-| `ERR_AGENT_OPERATOR_CLI_OUTPUT`     | An unacceptable exit code, or a CLI payload that failed to parse           |
-| `ERR_AGENT_OPERATOR_SCRIPT_NAME`    | A script name failed the allowlist, or is absent from `dryRunAllowlist`    |
-| `ERR_AGENT_OPERATOR_POLICY`         | The policy file is missing, unreadable, malformed, or structurally invalid |
+| Code                                | Meaning                                                                     |
+| ----------------------------------- | --------------------------------------------------------------------------- |
+| `ERR_AGENT_OPERATOR_CONFIG`         | A required parameter is missing or a cross-check failed                     |
+| `ERR_AGENT_OPERATOR_CLI_ENTRYPOINT` | The CLI entrypoint could not be derived and was not supplied                |
+| `ERR_AGENT_OPERATOR_CLI_SPAWN`      | Spawn failed, timed out, was signalled, or breached the output byte cap     |
+| `ERR_AGENT_OPERATOR_CLI_OUTPUT`     | An unacceptable exit code, or a CLI payload that failed to parse            |
+| `ERR_AGENT_OPERATOR_SCRIPT_NAME`    | A script name failed the allowlist, or is absent from `dryRunAllowlist`     |
+| `ERR_AGENT_OPERATOR_POLICY`         | The policy file is missing, unreadable, malformed, or structurally invalid  |
+| `ERR_AGENT_OPERATOR_DECISION_LOG`   | A decision-log entry could not be written, or breached an entry/shape cap   |
+| `ERR_AGENT_OPERATOR_ESCALATED`      | The run concluded without an auto-approved verdict — the policy declined it |
 
 A caller-driven abort raises `Core.M3LOperationAbortedError`
 (`ERR_OPERATION_ABORTED`), not a code from this family — see § The CLI seam.
