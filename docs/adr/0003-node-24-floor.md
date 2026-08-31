@@ -76,6 +76,23 @@ directory's append-only amendment convention.
 - **`.claude/hooks/warn-node-version.mjs`** renders the same findings once per
   session at `SessionStart`, non-blocking, so a wrong-major machine is visible
   before work starts instead of after a confusing test failure.
+- **`@types/node` is pinned to the 24.x line and asserted by the same gate**
+  (added 2026-08-31, same amendment). This was the remaining hole: `typecheck`
+  only ever proves the code compiles against whatever API surface
+  `@types/node` describes, so with the types at 26 and the floor at 24 a green
+  `typecheck` proved the code runs on Node 26 while claiming 24. It could use a
+  Node-26-only API unchallenged — and did, in a `setInterval` overload in
+  `packages/m3l-console-server/tests/stream-writer.test.ts`, which surfaced the
+  moment the pin dropped to `24.13.3`. `findTypesNodeDrift` compares the
+  **major only** (DefinitelyTyped ships frequent 24.x releases and
+  `.node-version` names a bare major), and it lives in this gate rather than
+  only in `.github/dependabot.yml` because an `ignore` rule suppresses a
+  _proposal_, not a _state_ — a `pnpm up` or a hand edit would otherwise drift
+  it silently. The Dependabot `ignore` is version-anchored (`versions: [">=25"]`)
+  rather than `update-types`-anchored, because merging `dependabot.yml` triggers
+  an immediate run and an update-type rule is evaluated against the
+  then-current manifest. `bin/check-deps.mjs`'s `MAJOR_HOLDS` carries the
+  matching hold so `check:deps` reports the gap as deliberate instead of failing.
 - **Wired into CI and `pnpm verify`** via the `gates` lane and a matching
   `bin/lib/verify-steps.mjs` entry. Deliberately **not** added to
   `lefthook.yml` `pre-push`: the static half cannot drift without a tracked
@@ -119,5 +136,5 @@ the below-floor case correctly, which is the only case it ever guarded.
 ## Links
 
 - Related: `.node-version`, `.npmrc` (`engine-strict=true`), root `package.json` (`engines`), `packages/m3l-common/package.json` (`engines`), `.github/workflows/ci.yml`.
-- Enforcement (2026-08-31 amendment): `bin/check-node-version.mjs`, `.claude/hooks/warn-node-version.mjs`, `bin/lib/verify-steps.mjs`, `.github/actions/setup/action.yml`.
+- Enforcement (2026-08-31 amendment): `bin/check-node-version.mjs`, `.claude/hooks/warn-node-version.mjs`, `bin/lib/verify-steps.mjs`, `.github/actions/setup/action.yml`, `bin/check-deps.mjs` (`MAJOR_HOLDS`), `.github/dependabot.yml` (`ignore`).
 - Related: ADR 0001 (toolchain choices), ADR 0002 (ESM-only output — also requires Node 22+ for consumers, but Node 24 is the producer floor).

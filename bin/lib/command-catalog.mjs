@@ -373,7 +373,7 @@ export const COMMAND_CATALOG = [
   {
     name: "check:node-version",
     description:
-      "Makes .node-version the single authority for the dev/CI Node runtime (ADR-0003 amendment). Static half (exits non-zero): every workspace manifest's engines.node floor agrees with the pin, and every .github/ actions/setup-node site reads node-version-file: .node-version instead of a literal. Runtime half (warn-only): the Node executing the command matches the pinned major — run it when a test fails locally but is green in CI. Also runs once per session via a SessionStart hook.",
+      "Makes .node-version the single authority for the dev/CI Node runtime (ADR-0003 amendment). Static half (exits non-zero): every workspace manifest's engines.node floor agrees with the pin, every .github/ actions/setup-node site reads node-version-file: .node-version instead of a literal, and @types/node's major tracks the pin so typecheck validates the declared floor rather than a newer API surface. Runtime half (warn-only): the Node executing the command matches the pinned major — run it when a test fails locally but is green in CI. Also runs once per session via a SessionStart hook.",
   },
   {
     name: "setup:host-resources",

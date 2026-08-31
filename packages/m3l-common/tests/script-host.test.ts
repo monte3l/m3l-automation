@@ -183,7 +183,7 @@ function countAddedSignalListeners<T>(build: () => T): {
       for (const listener of process.listeners(signal)) {
         if (!previous.has(listener)) {
           added[signal] += 1;
-          process.removeListener(signal, listener as NodeJS.SignalsListener);
+          process.removeListener(signal, listener);
         }
       }
     }
