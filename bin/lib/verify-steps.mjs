@@ -302,6 +302,12 @@ export const VERIFY_STEPS = [
     conditional: true,
   },
   {
+    ciStepName: "Check published declaration dependencies",
+    id: "check-dts-deps",
+    cmd: () => "pnpm check:dts-deps",
+    conditional: true,
+  },
+  {
     ciStepName: "Check barrel re-exports (scaffold)",
     id: "check-scaffold",
     cmd: () => "pnpm check:scaffold",

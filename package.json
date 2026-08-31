@@ -52,6 +52,7 @@
     "sync:hub": "node bin/sync-hub.mjs",
     "check:doc-exports": "node bin/check-doc-exports.mjs",
     "check:exports": "publint packages/m3l-common && attw --pack packages/m3l-common --profile esm-only",
+    "check:dts-deps": "node bin/check-dts-deps.mjs",
     "check:scaffold": "node bin/check-scaffold.mjs",
     "check:scaffold-seam": "node bin/check-scaffold-seam.mjs",
     "check:script-scaffold": "node bin/check-script-scaffold.mjs",
