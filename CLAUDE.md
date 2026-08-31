@@ -46,7 +46,7 @@
 ================================================================
 -->
 
-A utilities library designed to support automation scripts with enterprise-grade abstractions for configuration management, logging, error handling, data import/export, asynchronous polling/retry mechanisms, and cross-cutting concerns. Package @m3l-automation/m3l-common, written in **TypeScript 6.x** (`strict: true`), compiled with `tsc` to **ESM-only** output, managed with `pnpm`, targeting **Node.js 24 LTS+**. Primary consumers: automation scripts. The non-negotiable constraint is: minimal runtime dependencies, no breaking changes outside a major release, strict semver, no `any` in the public API, Node 24+ only.
+A utilities library giving automation scripts enterprise-grade abstractions for config, logging, error handling, data import/export, async polling/retry, and cross-cutting concerns. Package `@m3l-automation/m3l-common`, **TypeScript 6.x** (`strict: true`) compiled with `tsc` to **ESM-only**, managed with `pnpm`. Non-negotiable: minimal runtime dependencies, no breaking changes outside a major release, strict semver, no `any` in the public API, Node 24+ only.
 
 **Owner:** the repo maintainer (single-maintainer project). Review this file whenever a submodule/script pipeline ships, or every ~6 months, whichever comes first.
 
@@ -57,7 +57,7 @@ A utilities library designed to support automation scripts with enterprise-grade
 - `pnpm` (lockfile authoritative, pinned via `packageManager` + Corepack);
   `turbo` orchestrates/caches `build` + `typecheck`
 - Test: `vitest`. Lint/format: `eslint` (flat config) + `prettier`. Git
-  hooks: `lefthook` (replaces husky + lint-staged)
+  hooks: `lefthook`
 - Dep/exports hygiene: `knip`, `publint` + `@arethetypeswrong/cli`
 - Versioning is manual (`version` hand-managed; internal, unpublished
   package, ADR-0020)
@@ -67,41 +67,27 @@ dependency set and the `exports` map.
 
 ## Repository Layout
 
-This is a **pnpm monorepo** — `pnpm-workspace.yaml` also triggers
-`M3LExecutionEnvironment`'s MONOREPO mode, anchoring `data/` at the workspace
-root.
-
-```text
-packages/m3l-common/    # @m3l-automation/m3l-common — the library
-packages/m3l-cli/       # @m3l-automation/m3l-cli
-scripts/<name>/src/     # automations consuming the library via workspace:*
-```
+This is a **pnpm monorepo** (`packages/m3l-common/` the library,
+`packages/m3l-cli/`, `scripts/<name>/src/` consuming automations) —
+`pnpm-workspace.yaml` also triggers `M3LExecutionEnvironment`'s MONOREPO
+mode, anchoring `data/` at the workspace root.
 
 `exports` exposes `.`, `./core`, `./aws`, `./core/errors` — Core namespace barrel (25 documented submodules) and AWS namespace barrel (20 documented submodules) surface through the namespace entries; `./core/errors` is ADR-0004's gated exception. New submodules join the barrel, never a new subpath (semver event). `internal/` is NOT exported, may change freely. Full tree: `docs/contributing/contributing.md` § Repository Layout.
 
 ## Environment Setup
 
-```bash
-corepack enable     # activate the pnpm version pinned in packageManager
-pnpm install        # install deps + lefthook git hooks (prepare script)
-pnpm build          # turbo -> tsc -> dist/ (ESM .js + .d.ts)
-pnpm test           # run the suite once
-```
-
-Node is pinned in `.node-version` (24). In CI, use
-`pnpm install --frozen-lockfile`. A pure library needs no services to run
-locally. Full setup detail: `docs/contributing/contributing.md`
-§ Environment Setup.
+`corepack enable && pnpm install` (installs deps + lefthook hooks); CI uses
+`pnpm install --frozen-lockfile`. Node pinned in `.node-version` (24). A pure
+library — no services needed locally. Full setup detail:
+`docs/contributing/contributing.md` § Environment Setup.
 
 ## Commands
 
-Run any task with `pnpm <script>` (`pnpm commands` lists every one with its
-scope). The table is the pre-push cadence, machine-verified against
-`lefthook.yml` by `pnpm check:cadence`; CI runs every pre-push check plus
-every `check:*`, `knip`, `lint:md`, `audit`, and gitleaks secret scanning
-(no local `pnpm` equivalent) — see `docs/contributing/ci-cd.md`. `pre-push`
-takes minutes — background it rather than `--no-verify`, since CI re-runs
-everything anyway.
+Run any task with `pnpm <script>` (`pnpm commands` lists them all). The
+table below is the pre-push cadence, verified against `lefthook.yml` by
+`check:cadence`; CI additionally runs every `check:*`, `knip`, `lint:md`,
+`audit`, and gitleaks (`docs/contributing/ci-cd.md`). `pre-push` takes
+minutes — background it, never `--no-verify` (CI re-runs everything anyway).
 
 | Stage                   | Checks                                                                       | Scope  |
 | ----------------------- | ---------------------------------------------------------------------------- | ------ |
@@ -153,7 +139,7 @@ Canonical **Style Guide**: `docs/contributing/style-guide.md` (`[enforced]` vs `
 
 - **Conventional Commits (required)**, with an AI co-authorship trailer when Claude authored/assisted. Enforced by the `commit-msg` hook. Trailer mechanics and canonical model names: `docs/contributing/contributing.md`.
 - **Before change-work, run the `starting-work` skill** — the pre-work decision gate that settles location / branch / PR / push (ADR-0016). Branch from `main`: `feat/<slug>`, `fix/<slug>`; `guard-branch-isolation.mjs` blocks `packages/*/src/**`, `scripts/*/src/**`, `**/tests/**` writes while `HEAD` is `main`.
-- Never `git push --force` to a shared branch. Commits should be small, incremental, and meaningful. **Prefer several small, independently reviewable PRs over a few large ones** (ADR-0072); run `pnpm check:review-size` before opening one.
+- Never `git push --force` to a shared branch. **Prefer several small, independently reviewable PRs over a few large ones** (ADR-0072); run `pnpm check:review-size` before opening one.
 - **Worktrees** (ADR-0013/0014): `pnpm worktree:new <slug>` / `pnpm worktree:remove <slug>` create/tear down an isolated sibling checkout. Full mechanics: the ADRs.
 
 ## Architecture & Decisions
@@ -179,20 +165,20 @@ Comment the _why_, not the _what_. TSDoc rules (every exported symbol, `@example
 
 ## Agent Operating Model
 
-This repo runs a **hub-and-spoke** model: the hub plans and dispatches to isolated spokes but never writes `src/`/test code or reviews it itself — enforced by `guard-hub-src-writes.mjs` (blocks the hub, any branch) and `disallowedTools: Agent` on every spoke (`pnpm check:agents`). Model tiering: `docs/contributing/model-selection.md`. Full spoke roster, TDD loop, and recurring-failure lessons: `docs/contributing/agent-operating-model.md`.
+This repo runs a **hub-and-spoke** model: the hub plans and dispatches to isolated spokes but never writes `src/`/test code or reviews it itself — enforced by `guard-hub-src-writes.mjs` and `disallowedTools: Agent` on every spoke (`pnpm check:agents`). Model tiering: `docs/contributing/model-selection.md`. Full spoke roster, TDD loop, and recurring-failure lessons: `docs/contributing/agent-operating-model.md`.
 
-**Hooks** (`.claude/settings.json`) add deterministic enforcement on top of this advisory file — full inventory: `docs/contributing/hooks-reference.md` (`check:hooks` validates wiring). Subagent mid-turn truncation, this repo's other recurring failure mode: `docs/contributing/subagent-context-management.md`.
+**Hooks** (`.claude/settings.json`) add deterministic enforcement on top of this advisory file — full inventory: `docs/contributing/hooks-reference.md` (`check:hooks` validates wiring). **Skills** (`.claude/skills/*/SKILL.md`) encode multi-step procedures the hub invokes by name; full catalog: `docs/contributing/skills-catalog.md`. Subagent mid-turn truncation, this repo's other recurring failure mode: `docs/contributing/subagent-context-management.md`.
 
 ## Task Workflow
 
 1. **Explore** the public API and `exports` map before editing; run `researching-anthropic-guidance` first when the task hinges on external Anthropic guidance rather than repo state. **Re-derive any authored claim** you're about to act on (an ADR's census, a tracker's scope) — these rot between authoring and use (`docs/logs/2026-08-19-hub-sync-key-namespace.md`).
 2. **Plan** in plan mode for any change to an exported signature or the `exports` map (it has semver impact).
 3. **Implement** the smallest change that satisfies the task.
-4. **Verify**: type-check, lint, tests, and `pnpm build` before reporting done.
+4. **Verify**: `pnpm verify` passes before reporting done.
 
 ## Definition of Done
 
-`pnpm typecheck`, `pnpm lint`, `pnpm test`, and `pnpm build` all pass; a public API change carries a Conventional Commit with the correct semver impact; new/changed exports have TSDoc and tests. Full checklist: `docs/contributing/contributing.md` § Definition of Done.
+`pnpm verify` passes; a public API change carries a Conventional Commit with the correct semver impact; new/changed exports have TSDoc and tests. Full checklist: `docs/contributing/contributing.md` § Definition of Done.
 
 ## Forbidden Patterns
 
