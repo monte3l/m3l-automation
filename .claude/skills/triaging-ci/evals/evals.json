@@ -2,99 +2,63 @@
   "skill_name": "triaging-ci",
   "evals": [
     {
-      "id": 0,
-      "prompt": "why did CI fail? I pushed a commit 10 minutes ago and the run is showing red",
-      "expected_output": "Skill resolves latest failed run on current branch via gh CLI, fetches log-failed output, identifies the failing step by name, reports structured diagnosis with local reproduce command.",
-      "files": [],
-      "assertions": [
-        {
-          "name": "gh_cli_used",
-          "description": "GitHub Actions run data was fetched via a real API call (not fabricated or guessed), not via ad-hoc web browsing"
-        },
-        {
-          "name": "run_resolved",
-          "description": "Skill attempted to resolve a run via gh run list on the current branch (or correctly reported no failed run)"
-        },
-        {
-          "name": "log_fetched",
-          "description": "gh run view --log-failed (or --log fallback) was called, OR skill cleanly stopped because no failed run was found"
-        },
-        {
-          "name": "step_identified",
-          "description": "Output names a specific CI pipeline step (e.g. 'Lint', 'Test coverage') OR cleanly reports no failed run exists"
-        },
-        {
-          "name": "structured_report_format",
-          "description": "Output uses the skill's structured fields: Failed step / Root cause / Reproduce locally / Error excerpt / Assessment (or a clean no-failure message)"
-        },
-        {
-          "name": "no_fix_proposed",
-          "description": "Skill ended at diagnosis; no fix was applied or auto-proposed in the response"
-        }
-      ]
-    },
-    {
       "id": 1,
-      "prompt": "investigate the CI failure for run #42 on this repo",
-      "expected_output": "Skill uses run ID 42 directly, fetches its logs via gh run view, maps to pipeline step, produces structured diagnosis.",
-      "files": [],
-      "assertions": [
+      "prompt": "Why did CI fail? I pushed a commit 10 minutes ago and the run is showing red. I've captured the failing job's log to `ci-run-33416082783.log` for reference.",
+      "expected_output": "The response emits WOULD-RUN lines for run resolution and log fetching (in that order), names 'Lint' as the failing step, cites 'JavaScript heap out of memory' as the root cause, gives `pnpm lint` as the local reproduction command, and presents 3-5 solution options without applying any fix.",
+      "files": [
         {
-          "name": "gh_cli_used",
-          "description": "gh CLI commands were used to interact with GitHub"
-        },
-        {
-          "name": "run_resolved",
-          "description": "Run ID 42 was used directly (not via gh run list)"
-        },
-        {
-          "name": "log_fetched",
-          "description": "gh run view 42 --log-failed (or --log) was called, OR skill reported run 42 was not a failure"
-        },
-        {
-          "name": "step_identified",
-          "description": "Output names a specific CI pipeline step OR reports run 42 was not a failure / does not exist"
-        },
-        {
-          "name": "structured_report_format",
-          "description": "Output uses the skill's structured report fields or an appropriate no-failure message"
-        },
-        {
-          "name": "no_fix_proposed",
-          "description": "Skill ended at diagnosis; no fix was applied or proposed"
+          "path": "ci-run-33416082783.log",
+          "content": "2026-08-31T09:12:04.3Z ##[group]Run pnpm lint\n2026-08-31T09:12:04.4Z pnpm lint\n2026-08-31T09:12:05.1Z \n2026-08-31T09:12:05.1Z > m3l-automation@ lint /home/runner/work/m3l-automation/m3l-automation\n2026-08-31T09:12:05.1Z > eslint --cache --flag unstable_ts_config .\n2026-08-31T09:12:35.2Z \n2026-08-31T09:12:35.2Z <--- Last few GCs --->\n2026-08-31T09:12:35.2Z \n2026-08-31T09:12:35.2Z [15432:0x5591a2b00000]   246882 ms: Mark-Compact (reduce) 4058.8 (4152.9) -> 4056.3 (4153.4) MB, 3117.8 / 0.0 ms  (average mu = 0.091, current mu = 0.002) allocation failure; scavenge might not succeed\n2026-08-31T09:12:35.3Z \n2026-08-31T09:12:35.3Z <--- JS stacktrace --->\n2026-08-31T09:12:35.3Z \n2026-08-31T09:12:35.3Z FATAL ERROR: CALL_AND_RETRY_LAST Allocation failed - JavaScript heap out of memory\n2026-08-31T09:12:35.4Z  1: 0xb7c6e0 node::Abort() [node]\n2026-08-31T09:12:35.4Z  2: 0xa8e175 node::FatalError(char const*, char const*) [node]\n2026-08-31T09:12:35.5Z ##[error]Process completed with exit code 1.\n2026-08-31T09:12:35.6Z ##[endgroup]\n2026-08-31T09:12:35.6Z ##[error]The operation was cancelled.\n"
         }
+      ],
+      "expectations": [
+        "Emits `WOULD-RUN: gh run list --branch $(git rev-parse --abbrev-ref HEAD) --limit 5 --json databaseId,status,conclusion,name,createdAt` before any WOULD-RUN line that begins `gh run view`",
+        "Emits a `WOULD-RUN: gh run view <id> --log-failed` line (with a numeric run ID substituted for <id>) after the run-resolution WOULD-RUN line",
+        "Names 'Lint' as the failing step, matching `##[group]Run pnpm lint` in the seeded log",
+        "Cites 'JavaScript heap out of memory' or 'CALL_AND_RETRY_LAST' as the root cause, drawn verbatim from the seeded log",
+        "Gives `pnpm lint` as the exact local reproduction command (the Lint row of the SKILL.md pipeline step table)",
+        "Presents a `## Solution Options` section listing between 3 and 5 options, with no WOULD-RUN line that mutates the repository and no applied fix",
+        "Assessment classifies the failure as 'Likely flake' because heap OOM on a CI runner is a transient resource issue, not a code defect"
       ]
     },
     {
       "id": 2,
-      "prompt": "the build is broken, can you check the CI logs and tell me what's going on",
-      "expected_output": "Skill resolves latest failed run, fetches logs, identifies step and root cause, gives exact local reproduce command, stops at diagnosis.",
-      "files": [],
-      "assertions": [
+      "prompt": "Investigate the CI failure for run #42 on this repo. I've captured the failing job's log to `ci-run-42-typecheck.log`.",
+      "expected_output": "The response uses run ID 42 directly (no gh run list step), emits WOULD-RUN for the log fetch, names 'Type check' as the failing step, cites the TS2835 missing-.js-extension error in csv-importer.ts, gives `pnpm typecheck` as the reproduction command, and presents 3-5 solution options without applying any fix.",
+      "files": [
         {
-          "name": "gh_cli_used",
-          "description": "gh CLI commands were used to interact with GitHub"
-        },
-        {
-          "name": "run_resolved",
-          "description": "Skill resolved the latest failed run via gh run list OR correctly reported no failed run"
-        },
-        {
-          "name": "log_fetched",
-          "description": "gh run view --log-failed (or --log) was called, OR clean stop on no failed run"
-        },
-        {
-          "name": "step_identified",
-          "description": "Output names a specific CI pipeline step OR cleanly reports no failed run"
-        },
-        {
-          "name": "structured_report_format",
-          "description": "Output uses the skill's structured report fields or a clean no-failure message"
-        },
-        {
-          "name": "no_fix_proposed",
-          "description": "Skill ended at diagnosis without applying or proposing a fix"
+          "path": "ci-run-42-typecheck.log",
+          "content": "2026-08-31T10:45:12.1Z ##[group]Run pnpm typecheck\n2026-08-31T10:45:12.2Z pnpm typecheck\n2026-08-31T10:45:12.8Z \n2026-08-31T10:45:12.8Z > m3l-automation@ typecheck /home/runner/work/m3l-automation/m3l-automation\n2026-08-31T10:45:12.8Z > tsc -b\n2026-08-31T10:45:28.3Z packages/m3l-common/src/core/importers/csv-importer.ts(3,28): error TS2835: Relative import paths need explicit file extensions in ECMAScript imports when '--moduleResolution' is 'node16' or 'nodenext'. Did you mean '../utils/parse-helpers.js'?\n2026-08-31T10:45:28.4Z packages/m3l-common/src/core/importers/csv-importer.ts(3,28): error TS2307: Cannot find module '../utils/parse-helpers' or its corresponding type declarations.\n2026-08-31T10:45:28.5Z ##[error]Process completed with exit code 1.\n2026-08-31T10:45:28.6Z ##[endgroup]\n"
         }
+      ],
+      "expectations": [
+        "Emits `WOULD-RUN: gh run view 42 --log-failed` using the literal run ID 42, with no preceding `WOULD-RUN: gh run list` line (the ID was supplied directly)",
+        "Names 'Type check' as the failing step, matching `##[group]Run pnpm typecheck` in the seeded log",
+        "Cites error code `TS2835` or the phrase 'explicit file extensions' as the root cause, drawn from the seeded log",
+        "Identifies `packages/m3l-common/src/core/importers/csv-importer.ts` as the file containing the error",
+        "Gives `pnpm typecheck` as the exact local reproduction command (the Type check row of the SKILL.md pipeline step table)",
+        "Presents a `## Solution Options` section listing between 3 and 5 options, with no WOULD-RUN line that mutates the repository and no applied fix"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "The build is broken, can you check the CI logs and tell me what's going on? I've captured the failing job's log to `ci-run-33421099447.log`.",
+      "expected_output": "The response emits WOULD-RUN lines for run resolution and log fetching (in that order), names 'Test coverage' as the failing step, cites the per-file threshold failure for packages/m3l-common/src/aws/sqs/index.ts with the exact percentages, gives `pnpm test:coverage` as the reproduction command, and presents 3-5 solution options without applying any fix.",
+      "files": [
+        {
+          "path": "ci-run-33421099447.log",
+          "content": "2026-08-31T11:23:45.1Z ##[group]Run pnpm test:coverage\n2026-08-31T11:23:45.2Z pnpm test:coverage\n2026-08-31T11:23:46.0Z \n2026-08-31T11:23:46.0Z > m3l-automation@ test:coverage /home/runner/work/m3l-automation/m3l-automation\n2026-08-31T11:23:46.0Z > vitest run --coverage\n2026-08-31T11:23:52.3Z \n2026-08-31T11:23:52.3Z  RUN  v3.2.1 /home/runner/work/m3l-automation/m3l-automation\n2026-08-31T11:23:52.4Z \n2026-08-31T11:24:31.7Z  Coverage report from v8\n2026-08-31T11:24:31.8Z \n2026-08-31T11:24:31.9Z  ERROR  Coverage for lines (68.42%) does not meet the threshold (80%) for packages/m3l-common/src/aws/sqs/index.ts\n2026-08-31T11:24:32.0Z  ERROR  Coverage for branches (55.17%) does not meet the threshold (80%) for packages/m3l-common/src/aws/sqs/index.ts\n2026-08-31T11:24:32.1Z ##[error]Process completed with exit code 1.\n2026-08-31T11:24:32.2Z ##[endgroup]\n"
+        }
+      ],
+      "expectations": [
+        "Emits `WOULD-RUN: gh run list --branch $(git rev-parse --abbrev-ref HEAD) --limit 5 --json databaseId,status,conclusion,name,createdAt` before any WOULD-RUN line that begins `gh run view`",
+        "Emits a `WOULD-RUN: gh run view <id> --log-failed` line (with a numeric run ID substituted for <id>) after the run-resolution WOULD-RUN line",
+        "Names 'Test coverage' as the failing step, matching `##[group]Run pnpm test:coverage` in the seeded log",
+        "Cites `packages/m3l-common/src/aws/sqs/index.ts` as the file failing the coverage threshold, drawn verbatim from the seeded log",
+        "States the line coverage percentage (68.42%) or the branch coverage percentage (55.17%) from the seeded log",
+        "Gives `pnpm test:coverage` as the exact local reproduction command (the Test coverage row of the SKILL.md pipeline step table)",
+        "Presents a `## Solution Options` section listing between 3 and 5 options, with no WOULD-RUN line that mutates the repository and no applied fix",
+        "Assessment classifies the failure as a 'Real failure' because a coverage shortfall requires new tests, not a retry"
       ]
     }
   ]
