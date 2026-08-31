@@ -244,6 +244,9 @@ importers:
       '@smithy/signature-v4':
         specifier: 5.7.3
         version: 5.7.3
+      '@types/better-sqlite3':
+        specifier: 9.6.0
+        version: 9.6.0
       better-sqlite3:
         specifier: 13.0.3
         version: 13.0.3
@@ -263,9 +266,6 @@ importers:
         specifier: 2.9.0
         version: 2.9.0
     devDependencies:
-      '@types/better-sqlite3':
-        specifier: ^9.6.0
-        version: 9.6.0
       '@types/mailparser':
         specifier: ^3.4.6
         version: 3.4.6

@@ -181,6 +181,11 @@ export const COMMAND_CATALOG = [
       "Runs publint + are-the-types-wrong against the built package to validate the exports map's shape (ESM-only, types resolution). Run after `pnpm build`, before publishing/reviewing an API change.",
   },
   {
+    name: "check:dts-deps",
+    description:
+      "Verifies every module specifier surviving into packages/m3l-common/dist/**/*.d.ts is declared in `dependencies`/`peerDependencies` with types reachable — a `@types/*` counterpart left in `devDependencies` breaks every consumer's typecheck. Run after `pnpm build`, whenever a public type aliases a third-party type.",
+  },
+  {
     name: "check:scaffold",
     description:
       "Verifies every src/{core,aws}/<module>/index.ts is re-exported from its namespace barrel (and that no barrel line points to a deleted directory), plus that every packages/* workspace has a root tsconfig.json project reference. Run after scaffolding or removing a submodule, or adding a new packages/* workspace.",

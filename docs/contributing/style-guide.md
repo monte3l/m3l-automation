@@ -216,6 +216,14 @@ const SAFE_PATTERN = /^[a-z0-9_-]+$/;
 - **Give exported functions explicit parameter and return types.** Inference is
   fine inside a body; the module boundary must be spelled out. **[enforced]**
   (`@typescript-eslint/explicit-module-boundary-types`)
+- **A public type over a third-party type makes that package's types a runtime
+  dependency.** Aliasing or referencing a type from `x` in an exported
+  declaration puts `from "x"` into the shipped `.d.ts`, so the consumer must be
+  able to resolve it — `x` itself, plus `@types/x` when `x` ships no
+  declarations of its own, in `dependencies`/`peerDependencies` and never in
+  `devDependencies`. **[enforced]** (`pnpm check:dts-deps`, which reads the
+  built `dist/**/*.d.ts`). A type-only import that stays inside `src/` and
+  never reaches a declaration is internal and unaffected.
 
 ```typescript
 export type UserId = string & { readonly __brand: unique symbol };
