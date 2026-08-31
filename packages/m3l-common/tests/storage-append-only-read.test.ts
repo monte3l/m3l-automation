@@ -51,6 +51,7 @@ import {
   vi,
 } from "vitest";
 
+import { M3LError } from "../src/core/errors/index.js";
 import {
   M3LAppendOnlyStream,
   M3LAppendOnlyStreamReadError,
@@ -579,6 +580,86 @@ describe("torn fragment mid-stream", () => {
     expect(thrown).toBeInstanceOf(M3LAppendOnlyStreamReadError);
     expect(onTruncatedTail).not.toHaveBeenCalled();
   });
+});
+
+// ---------------------------------------------------------------------------
+// 8b — Option validation: onTruncatedTail callable guard
+// ---------------------------------------------------------------------------
+
+describe("option validation: onTruncatedTail callable guard", () => {
+  // INVARIANT: a truthy non-function `onTruncatedTail` must be rejected
+  // synchronously — before `read()` returns — with a clear, machine-readable
+  // diagnostic. The guard exists because the torn-tail signal fires via
+  // `context.onTruncatedTail?.(tornTail)` inside the generator: a string, a
+  // number, or a plain object silently short-circuits that call (optional
+  // chaining tests callability before invoking), which would suppress the
+  // only mechanism that makes a torn tail fail loudly. The entire
+  // "torn tail must never fail silently" invariant collapses if this guard
+  // is absent — which is precisely why the TSDoc for
+  // `assertOnTruncatedTailIsCallable` says the failure must be "loud and
+  // immediate."
+  test.each([
+    ["string", "not-a-function"],
+    ["number", 42],
+    ["plain object", { notACallback: true }],
+  ] as [string, unknown][])(
+    "throws M3LError(ERR_INVALID_ARGUMENT) for a truthy non-function onTruncatedTail: %s",
+    (_label, value) => {
+      const reader = new M3LAppendOnlyStream({ directory: workDir });
+      let thrown: unknown;
+      try {
+        reader.read({
+          onTruncatedTail: value,
+        } as unknown as M3LAppendOnlyReadOptions);
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toBeInstanceOf(M3LError);
+      expect((thrown as M3LError).code).toBe("ERR_INVALID_ARGUMENT");
+      expect((thrown as M3LError).context).toEqual({
+        field: "onTruncatedTail",
+        violation: "not-a-function",
+      });
+    },
+  );
+
+  // INVARIANT: the throw fires EAGERLY — synchronously at the `read()` call,
+  // not on the first `next()` of the returned iterable. `read()` is a plain
+  // method (not an async generator): `assertOnTruncatedTailIsCallable` runs
+  // synchronously before `readAppendOnlySegments` is ever invoked, so the
+  // error must surface as a synchronous `throw`, not as an async rejection
+  // inside a `for await`. Proven here: `read()` is called without beginning
+  // iteration; no `await` involved; `expect(() => reader.read(...)).toThrow()`
+  // would not catch a lazy rejection, only a synchronous one.
+  test("throws synchronously — before any iteration — for a non-function onTruncatedTail", () => {
+    const reader = new M3LAppendOnlyStream({ directory: workDir });
+    expect(() => {
+      reader.read({
+        onTruncatedTail: "eager-throw-probe",
+      } as unknown as M3LAppendOnlyReadOptions);
+    }).toThrow(M3LError);
+  });
+
+  // INVARIANT: a FALSY non-function `onTruncatedTail` (e.g. `null`, `0`)
+  // takes the documented "absent callback" path — the guard condition
+  // `if (onTruncatedTail && !isFunction(onTruncatedTail))` short-circuits on
+  // any falsy value and does NOT throw. This confirms the guard is not
+  // over-eager and that legitimate "no callback" representations beyond plain
+  // `undefined` are accepted without error.
+  test.each([
+    ["null", null],
+    ["zero", 0],
+  ] as [string, unknown][])(
+    "does not throw for a falsy onTruncatedTail: %s",
+    (_label, value) => {
+      const reader = new M3LAppendOnlyStream({ directory: workDir });
+      expect(() => {
+        reader.read({
+          onTruncatedTail: value,
+        } as unknown as M3LAppendOnlyReadOptions);
+      }).not.toThrow();
+    },
+  );
 });
 
 // ---------------------------------------------------------------------------
