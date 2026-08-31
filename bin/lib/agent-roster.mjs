@@ -14,6 +14,23 @@ import { join } from "node:path";
 export const WRITER_SPOKES = new Set(["code-implementer", "test-author"]);
 
 /**
+ * Reviewer spokes whose findings report is a per-section Must-fix/Should-fix/
+ * Nits list, the shape `REVIEW.md`'s numeric finding cap fits. Consumed by
+ * `bin/check-review-policy.mjs` so the enforced set can't silently diverge
+ * from the roster `REVIEW.md`'s "Where this is enforced" table documents.
+ * Deliberately excludes `docs-consistency-reviewer` (a fixed 6-check PASS/
+ * FAIL report, not a severity-tiered list) and `spec-conformance-reviewer`
+ * (promises never to truncate a Missing/Drifted/Unmet-contract finding,
+ * which a numeric cap would contradict) — see `REVIEW.md` for the rationale.
+ */
+export const SEVERITY_CAPPED_SPOKES = new Set([
+  "code-reviewer",
+  "security-reviewer",
+  "silent-failure-hunter",
+  "type-design-analyzer",
+]);
+
+/**
  * The turn-budget ceiling every spoke's `maxTurns:` frontmatter is checked
  * against (`bin/check-agents.mjs`). Raising a spoke's `maxTurns` is not the
  * fix for truncation (`.claude/rules/subagent-dispatch.md`'s "Don't raise

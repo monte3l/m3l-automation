@@ -447,6 +447,18 @@ jobs:
       - name: Check harness freshness
         run: pnpm check:harness-freshness
 
+      # Every .claude/skills/*/SKILL.md needs a sibling evals/evals.json with
+      # >= 3 cases, except the named EXEMPT_SKILLS grandfather list (issue
+      # #775 tracks the backfill).
+      - name: Check skill evals
+        run: pnpm check:skill-evals
+
+      # REVIEW.md's review finding cap must be restated identically in
+      # claude-pr-review.yml's prompt and every SEVERITY_CAPPED_SPOKES agent
+      # file (bin/lib/agent-roster.mjs).
+      - name: Check review policy
+        run: pnpm check:review-policy
+
       # Every status-bearing ("## ", has a Status column) table in ROADMAP.md
       # and IMPLEMENTATION.md must be registered with the sync:hub extractor —
       # otherwise a newly added tracker table is a silent no-op forever.
@@ -583,6 +595,16 @@ jobs:
       # just validated — and is warn-only for local developers.
       - name: Check Node version pin
         run: pnpm check:node-version
+
+      # `.claude-code-version` is the single authority for the Claude Code CLI
+      # that skill-evals.yml and maintain-scan.yml install (Scorecard alert
+      # #17, PinnedDependenciesID). The deliberate inverse of the Node gate
+      # above: a `run:` step cannot read a version file, and Scorecard parses
+      # the command text, so the literal is required and this gate pins it.
+      # Dependabot never bumps a version inside a `run:` step, so nothing
+      # else would notice the two sites drifting apart.
+      - name: Check Claude Code CLI pin
+        run: pnpm check:claude-cli-version
 
       # GitHub-integration stance (ADR-0030 amendment, 2026-07-27): every
       # GitHub-talking skill cites the governing ADR, carries no retired policy

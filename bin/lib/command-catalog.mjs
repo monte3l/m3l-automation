@@ -323,12 +323,22 @@ export const COMMAND_CATALOG = [
   {
     name: "check:skill-evals",
     description:
-      "Verifies every .claude/skills/<name>/SKILL.md has a sibling evals/evals.json with >= 3 cases, except the named EXEMPT_SKILLS grandfather list (bin/check-skill-evals.mjs; backfill tracked at issue #775) — and that an exempt skill hasn't already been backfilled without being removed from the list. Run after adding a skill or its evals.json.",
+      "Verifies every .claude/skills/<name>/SKILL.md has a sibling evals/evals.json with >= 3 cases, AND that every case is gradeable — a prompt, an expected_output, and at least one checklist entry the runner can actually render (validated with the same renderChecklistEntry the runner uses, so the gate and the runner cannot disagree). Catches the shapes that graded against nothing: object entries interpolated as [object Object], identifier-only entries, and a case with no expectations/assertions key at all. The named EXEMPT_SKILLS grandfather list (backfill tracked at issue #775) covers both a missing file and unresolved case shape, and a redundant exemption is an error so it cannot outlive its purpose. Run after adding a skill or editing its evals.json.",
   },
   {
     name: "eval:skills",
     description:
-      "Repo-owned eval runner: drives a real `claude -p --restricted` invocation per .claude/skills/*/evals/evals.json case, asking it to self-grade against the case's expectations via --json-schema structured output, and prints a pass/fail summary. Costs real API spend — not part of pre-push; run manually or via .github/workflows/skill-evals.yml.",
+      "Repo-owned eval runner: drives a real `claude -p` invocation per .claude/skills/*/evals/evals.json case inside a disposable synthetic project root (a tmpdir holding a copy of .claude/skills/, so skills actually LOAD, but no settings.json, hooks or git tree come with it), asking it to self-grade against the case's checklist via --json-schema structured output, and prints a pass/fail summary. Read-only-plus-confined-write tool allowlist, no Bash and no network, so a case that would `git push` is denied and grades as an unmet expectation rather than executing. Costs real API spend — not part of pre-push; run manually or via .github/workflows/skill-evals.yml.",
+  },
+  {
+    name: "check:review-policy",
+    description:
+      "Verifies REVIEW.md's review finding cap (currently 10) is restated identically in claude-pr-review.yml's prompt and every SEVERITY_CAPPED_SPOKES agent file (bin/lib/agent-roster.mjs). Run after changing the cap number anywhere.",
+  },
+  {
+    name: "maintain:scan",
+    description:
+      "Runs the weekly automated maintain-scan (bin/run-maintain-scan.mjs) locally: a bounded, read-only `claude -p --restricted` triage pass against the current tree, opening a PR with unreviewed findings under docs/plans/IMPLEMENTATION.md only when it finds something concrete. Requires GH_TOKEN and CLAUDE_CODE_OAUTH_TOKEN; normally runs via .github/workflows/maintain-scan.yml on a weekly cron.",
   },
   {
     name: "check:tracker-coverage",
@@ -369,6 +379,11 @@ export const COMMAND_CATALOG = [
     name: "check:host-resources",
     description:
       "Warn-only preflight (ADR-0080) reporting missing OOM-livelock mitigations on this host — earlyoom/systemd-oomd inactive, no zram swap, no user-.slice MemoryMax, CLAUDE_CODE_TOOL_MEMORY_LIMIT unset, another claude process already running. Never exits non-zero; runs automatically once per session via a SessionStart hook. Run setup:host-resources to apply the fixes it reports.",
+  },
+  {
+    name: "check:claude-cli-version",
+    description:
+      "Makes .claude-code-version the single authority for the Claude Code CLI that skill-evals.yml and maintain-scan.yml install with `npm install -g` (Scorecard alert #17, PinnedDependenciesID). Asserts every install site names the exact pinned version, rejecting an unpinned install, a shell-substituted version (Scorecard parses the command text, so `@$(cat ...)` still reads as unpinned), a version disagreeing with the file, and a pin no workflow reads at all. The deliberate inverse of check:node-version, which forbids a literal because setup-node can read a file; a `run:` step cannot, so here the literal is required and this gate keeps it honest. Dependabot does not bump versions inside `run:` steps, so this is the only drift detector.",
   },
   {
     name: "check:node-version",

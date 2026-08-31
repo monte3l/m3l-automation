@@ -157,8 +157,10 @@ function makeUserId(raw: string): UserId {
 ## Output
 
 Rate each changed export with the four dimension scores. Group all type findings
-as **Must-fix**, **Should-fix**, **Nits**. Cite `file:line` and the violated
-rule. End with a one-line verdict.
+as **Must-fix**, **Should-fix**, **Nits**. Cap each section at its 10 most
+severe findings, most-severe first (`REVIEW.md` — collapse a recurring issue
+class into one bullet rather than spilling past the cap). Cite `file:line`
+and the violated rule. End with a one-line verdict.
 
 **Scope discipline.** The dimension scores are the review; reserve **Must-fix**
 for a type that actually admits an illegal state or erases a caller guarantee

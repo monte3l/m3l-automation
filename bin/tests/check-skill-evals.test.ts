@@ -2,11 +2,14 @@ import { afterEach, describe, expect, test } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   EXEMPT_SKILLS,
   MIN_CASES,
+  MIN_CHECKLIST_ENTRIES,
   discoverSkillEvalState,
   evaluateSkillEvals,
+  findCaseShapeViolations,
 } from "../../bin/check-skill-evals.mjs";
 
 describe("MIN_CASES", () => {
@@ -206,11 +209,37 @@ describe("discoverSkillEvalState", () => {
     expect(broken?.parseError?.length).toBeGreaterThan(0);
 
     const valid = result.find((s) => s.name === "zzz-valid-skill");
-    expect(valid).toEqual({
-      name: "zzz-valid-skill",
-      hasFile: true,
-      caseCount: 3,
-    });
+    expect(valid?.name).toBe("zzz-valid-skill");
+    expect(valid?.hasFile).toBe(true);
+    expect(valid?.caseCount).toBe(3);
+    // Each fixture case is `{ id }` only, so every shape field reads as
+    // absent — which is what lets findCaseShapeViolations reject it.
+    expect(valid?.cases).toEqual([
+      {
+        id: 1,
+        hasPrompt: false,
+        hasExpectedOutput: false,
+        checklistKey: null,
+        entryCount: 0,
+        unrenderableCount: 0,
+      },
+      {
+        id: 2,
+        hasPrompt: false,
+        hasExpectedOutput: false,
+        checklistKey: null,
+        entryCount: 0,
+        unrenderableCount: 0,
+      },
+      {
+        id: 3,
+        hasPrompt: false,
+        hasExpectedOutput: false,
+        checklistKey: null,
+        entryCount: 0,
+        unrenderableCount: 0,
+      },
+    ]);
   });
 
   test("treats a missing or non-array evals field as zero cases", () => {
@@ -226,7 +255,210 @@ describe("discoverSkillEvalState", () => {
 
     const result = discoverSkillEvalState(dir);
     expect(result).toEqual([
-      { name: "empty-evals-skill", hasFile: true, caseCount: 0 },
+      { name: "empty-evals-skill", hasFile: true, caseCount: 0, cases: [] },
     ]);
+  });
+});
+
+/** The per-case shape discoverSkillEvalState yields. */
+type CaseState = {
+  id: string | number | undefined;
+  hasPrompt: boolean;
+  hasExpectedOutput: boolean;
+  checklistKey: string | null;
+  entryCount: number;
+  unrenderableCount: number;
+};
+
+/** A case shape with every field valid; spread and override to make one bad. */
+const goodCase: CaseState = {
+  id: 1,
+  hasPrompt: true,
+  hasExpectedOutput: true,
+  checklistKey: "expectations",
+  entryCount: 3,
+  unrenderableCount: 0,
+};
+
+describe("MIN_CHECKLIST_ENTRIES", () => {
+  test("requires at least one usable entry per case", () => {
+    expect(MIN_CHECKLIST_ENTRIES).toBe(1);
+  });
+});
+
+describe("findCaseShapeViolations", () => {
+  test("accepts a fully-formed case", () => {
+    expect(findCaseShapeViolations("some-skill", [goodCase])).toEqual([]);
+  });
+
+  test("rejects a case with no checklist key at all (syncing-docs)", () => {
+    const errors = findCaseShapeViolations("syncing-docs", [
+      { ...goodCase, checklistKey: null, entryCount: 0 },
+    ]);
+
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("no usable checklist");
+    expect(errors[0]).toContain('no "expectations"/"assertions" key');
+    expect(errors[0]).toContain("not a verdict");
+  });
+
+  test("rejects a case whose checklist key exists but yields zero entries", () => {
+    const errors = findCaseShapeViolations("some-skill", [
+      { ...goodCase, entryCount: 0 },
+    ]);
+
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain('"expectations" yields 0 renderable entries');
+  });
+
+  test("rejects a case with an entry the runner cannot render", () => {
+    const errors = findCaseShapeViolations("some-skill", [
+      { ...goodCase, entryCount: 3, unrenderableCount: 1 },
+    ]);
+
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("1 checklist entry the runner cannot render");
+    expect(errors[0]).toContain("identifier-only entry grades against nothing");
+  });
+
+  test("rejects a case where every entry is unrenderable, on both counts", () => {
+    const errors = findCaseShapeViolations("some-skill", [
+      { ...goodCase, entryCount: 2, unrenderableCount: 2 },
+    ]);
+
+    // Both the "cannot render" rule and the "nothing usable left" rule fire.
+    expect(errors).toHaveLength(2);
+  });
+
+  test.each([
+    { field: "hasPrompt", needle: 'no non-empty "prompt"' },
+    { field: "hasExpectedOutput", needle: 'no non-empty "expected_output"' },
+  ])("rejects a case missing $field", ({ field, needle }) => {
+    const errors = findCaseShapeViolations("some-skill", [
+      { ...goodCase, [field]: false },
+    ]);
+
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain(needle);
+  });
+
+  test("names a case by index when it declares no id", () => {
+    const errors = findCaseShapeViolations("some-skill", [
+      { ...goodCase, id: undefined, entryCount: 0 },
+    ]);
+
+    expect(errors[0]).toContain("case #0 (no id)");
+  });
+});
+
+describe("evaluateSkillEvals case-shape integration", () => {
+  const withCases = (name: string, cases: (typeof goodCase)[]) => [
+    { name, hasFile: true, caseCount: cases.length, cases },
+  ];
+
+  test("a non-exempt skill with a shape violation errors", () => {
+    const { errors, compliant } = evaluateSkillEvals(
+      withCases("bad-skill", [
+        goodCase,
+        goodCase,
+        { ...goodCase, checklistKey: null, entryCount: 0 },
+      ]),
+      new Set(),
+    );
+
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("no usable checklist");
+    expect(compliant).toBe(0);
+  });
+
+  test("an exempt skill's shape violations warn rather than error", () => {
+    // Otherwise landing these rules would break pre-push for every push
+    // until the corpus rewrite shipped.
+    const { errors, warnings, exempt } = evaluateSkillEvals(
+      withCases("syncing-docs", [
+        { ...goodCase, checklistKey: null, entryCount: 0 },
+        { ...goodCase, checklistKey: null, entryCount: 0 },
+        { ...goodCase, checklistKey: null, entryCount: 0 },
+      ]),
+      new Set(["syncing-docs"]),
+    );
+
+    expect(errors).toHaveLength(0);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("unresolved case-shape violation");
+    expect(exempt).toBe(1);
+  });
+
+  test("an exemption that is no longer needed becomes an error", () => {
+    // The exemption cannot silently outlive its purpose: the moment the
+    // shape violations are fixed, the grandfather entry must be removed.
+    const { errors } = evaluateSkillEvals(
+      withCases("syncing-docs", [goodCase, goodCase, goodCase]),
+      new Set(["syncing-docs"]),
+    );
+
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("remove it from the exemption list");
+  });
+
+  test("a well-shaped non-exempt skill is compliant", () => {
+    const { errors, warnings, compliant } = evaluateSkillEvals(
+      withCases("good-skill", [goodCase, goodCase, goodCase]),
+      new Set(),
+    );
+
+    expect(errors).toEqual([]);
+    expect(warnings).toEqual([]);
+    expect(compliant).toBe(1);
+  });
+});
+
+describe("discoverSkillEvalState against the real corpus", () => {
+  // Reads the committed artifact unmocked. A fixture cannot catch a FIFTH
+  // checklist shape being introduced later; this can, and its absence is
+  // exactly why 123 "[object Object]" entries reached CI ungated.
+  const skillsDir = fileURLToPath(
+    new URL("../../.claude/skills", import.meta.url),
+  );
+  const skills = discoverSkillEvalState(skillsDir);
+
+  test("discovers every skill and populates per-case shape", () => {
+    expect(skills.length).toBeGreaterThan(0);
+    const withFile = skills.filter((s) => s.hasFile);
+    expect(withFile.length).toBeGreaterThan(0);
+    for (const skill of withFile) {
+      expect(skill.cases).toBeDefined();
+      expect(skill.cases).toHaveLength(skill.caseCount as number);
+    }
+  });
+
+  test("every case in the real corpus declares a prompt and expected_output", () => {
+    for (const skill of skills.filter((s) => s.hasFile)) {
+      for (const kase of skill.cases ?? []) {
+        expect(kase.hasPrompt, `${skill.name}#${kase.id} prompt`).toBe(true);
+        expect(
+          kase.hasExpectedOutput,
+          `${skill.name}#${kase.id} expected_output`,
+        ).toBe(true);
+      }
+    }
+  });
+
+  test("no case in the real corpus carries an unrenderable checklist entry", () => {
+    for (const skill of skills.filter((s) => s.hasFile)) {
+      for (const kase of skill.cases ?? []) {
+        expect(
+          kase.unrenderableCount,
+          `${skill.name}#${kase.id} has unrenderable entries — a new ` +
+            `checklist shape was introduced without teaching ` +
+            `renderChecklistEntry about it`,
+        ).toBe(0);
+      }
+    }
+  });
+
+  test("the committed corpus and exemption list together pass the gate", () => {
+    const { errors } = evaluateSkillEvals(skills, EXEMPT_SKILLS);
+    expect(errors).toEqual([]);
   });
 });

@@ -46,8 +46,10 @@ deserialization, not network perimeter.
 
 ## Output
 
-Group findings as **Must-fix**, **Should-fix**, **Nits**, each citing `file:line`
-and the rule. End with a one-line verdict.
+Group findings as **Must-fix**, **Should-fix**, **Nits**. Cap each section at
+its 10 most severe findings, most-severe first (`REVIEW.md` — collapse a
+recurring issue class into one bullet rather than spilling past the cap).
+Cite `file:line` and the rule. End with a one-line verdict.
 
 **Scope discipline.** Reserve **Must-fix** for a concrete, demonstrable path by
 which a secret, credential, or unvalidated input causes harm — not a theoretical

@@ -479,10 +479,13 @@ jobs:
             cite locations as `path/to/file.ts:line`; be concise — do not restate unchanged
             conventions):
 
-            Cap each section at its 10 most severe findings, most-severe first. If a
-            class of issue recurs, collapse it into ONE bullet listing every instance
-            (per the exhaustive-sweep rule) rather than spilling past the cap. A small
-            comment also keeps later re-reviews cheap.
+            Cap each section at its 10 most severe findings, most-severe first (this
+            number, the severity tiers, and the exclusions below are restated from this
+            repo's REVIEW.md — the canonical source `pnpm check:review-policy` keeps this
+            file in sync with; --safe-mode means this job cannot read it live, so this
+            prompt carries its own copy). If a class of issue recurs, collapse it into
+            ONE bullet listing every instance (per the exhaustive-sweep rule) rather than
+            spilling past the cap. A small comment also keeps later re-reviews cheap.
 
             ```
             ## Claude PR Review — `<pr title>`

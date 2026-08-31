@@ -78,16 +78,14 @@ mode, anchoring `data/` at the workspace root.
 
 ## Environment Setup
 
-`pnpm install` (installs deps + lefthook hooks — no `corepack enable`, pnpm
-self-manages via `packageManager` and corepack is not used here or in CI); CI
-uses `pnpm install --frozen-lockfile`. `.node-version` (24) is the **single
-authority** for the dev/CI runtime — CI reads it via `node-version-file`, and
-`check:node-version` fails on drift between it, the 22 `engines.node` floors,
+`pnpm install` (deps + lefthook hooks; no `corepack enable` — pnpm
+self-manages via `packageManager`); CI uses `--frozen-lockfile`.
+`.node-version` (24) is the **single authority** for the dev/CI runtime;
+`check:node-version` fails on drift between it, the 22 `engines.node` floors
 and the workflows. Develop on that exact major (`fnm` + `--use-on-cd`);
-`engines.node` stays `">=24"` because it is the consumer contract, so a newer
-local Node typechecks green without proving the floor works. A pure library —
-no services needed locally. Full setup detail:
-`docs/contributing/contributing.md` § Environment Setup.
+`engines.node` stays `">=24"` as the consumer contract, so a newer local Node
+typechecks green without proving the floor. A pure library — no services
+locally. Full detail: `docs/contributing/contributing.md` § Environment Setup.
 
 ## Commands
 
@@ -106,10 +104,11 @@ minutes — background it, never `--no-verify` (CI re-runs everything anyway).
 | `pre-push` (lefthook)   | `check:file-budget`, `check:agents`, `check:script-docs`, `check:provenance` | repo   |
 | `pre-push` (lefthook)   | `check:cli-docs`, `check:review-size`, `check:context-budget`, `check:index` | repo   |
 | `pre-push` (lefthook)   | `check:harness-freshness`, `check:skill-evals`                               | repo   |
+| `pre-push` (lefthook)   | `check:review-policy`, `check:claude-cli-version`                            | repo   |
 
-`pnpm verify` reproduces every CI check locally; `pnpm check:verify-parity`
-keeps it in sync with `ci.yml`. The table splits across rows for width;
-`check:cadence` unions rows per stage against `lefthook.yml`.
+`pnpm verify` reproduces every CI check locally; `check:verify-parity` keeps
+it in sync with `ci.yml`, and `check:cadence` unions the rows above (split
+for width) per stage against `lefthook.yml`.
 
 ## Compact Instructions
 
@@ -121,7 +120,7 @@ reads, passing test output) over any of the above.
 
 ## CI/CD
 
-Nine GitHub Actions workflows in `.github/workflows/` (plus Dependabot).
+Ten GitHub Actions workflows in `.github/workflows/` (plus Dependabot).
 Full table — triggers, purpose, required status checks:
 `docs/contributing/ci-cd.md`.
 
