@@ -42,7 +42,13 @@ jobs:
   evals:
     name: Run skill evals
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # 30 was too tight: run 33405684499 was cancelled at the limit having
+    # graded 30 of 46 cases. Removing subagent fan-out (the `--tools`
+    # restriction in bin/run-skill-evals.mjs) should cut wall-clock, but
+    # there is no post-fix measurement yet, so this is headroom rather than a
+    # guess at the true cost. Per-case spend is bounded separately by
+    # DEFAULT_MAX_BUDGET_USD, which a wall-clock limit cannot express.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 

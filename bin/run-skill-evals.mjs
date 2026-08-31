@@ -33,6 +33,9 @@
 //   - writes are confined to the disposable workspace, so the "blocked ...
 //     which is a sensitive file" denials from the old
 //     `.claude/skills/<name>/eval-workspace/` location cannot recur
+//   - the session is HERMETIC: no tool that reaches the network or spawns a
+//     subagent exists, so a verdict measures the SKILL.md under test and
+//     nothing a live fetch happened to return that day
 //
 // A BARE temp dir would not do: skill discovery is rooted at cwd's nearest
 // `.claude/` ancestor, so a temp dir without one loads no skills either —
@@ -40,11 +43,39 @@
 // where our own guards would deny `scaffolding-submodules`/test-author cases
 // and a stray write could pollute the tree.
 //
-// Mutating and network capability is denied by OMISSION from
-// EVAL_ALLOWED_TOOLS rather than by a blunt mode, so a case that attempts
-// `git push` is denied and surfaces as an unmet expectation instead of
-// executing. Treat a failure as "the skill's own instructions didn't produce
-// a plan meeting the bar", not as "a live command failed".
+// TOOL RESTRICTION IS THREE LAYERS, and only one of them removes anything.
+// An earlier version of this header claimed capability was denied by
+// OMISSION from `--allowedTools`. That was false, and measurably so: per
+// `claude --help` (v2.1.251) `--allowedTools` is a list of tool names to
+// ALLOW — it pre-approves permission for tools that already exist and
+// removes nothing. `--tools` is the flag that "specif[ies] the list of
+// available tools from the built-in set". So:
+//
+//   1. `--tools EVAL_AVAILABLE_TOOLS` decides what EXISTS. Bash, WebFetch,
+//      WebSearch and Agent are absent from the session entirely.
+//   2. `--allowedTools EVAL_ALLOWED_TOOLS` pre-approves permission for what
+//      remains, so a permitted Write doesn't stall on a prompt.
+//   3. `--permission-mode dontAsk` denies anything not pre-approved at call
+//      time, rather than hanging a non-interactive run on a prompt.
+//
+// Layer 1 is the one carrying the safety and hermeticity properties. Under
+// the old `--allowedTools`-only argv, `Bash` was PRESENT and merely denied
+// at call time by layer 3, and `Agent` was present and NOT permission-gated
+// at all — so a case could fan out subagents that reached the live network
+// via WebFetch, and none of the four constraints above covered it.
+//
+// `Skill` must stay in EVAL_AVAILABLE_TOOLS. A probe measured the cost of
+// omitting it: with `--tools "Read,Grep,Glob,Write,Edit"` a session rooted
+// at a directory containing `.claude/skills/` reported the skill under test
+// as not visible at all, which is the CI-run-33390425486 bug (skills loaded
+// but un-invokable) in a subtler form. Adding `Skill` restored both
+// visibility and invocation. Deleting it from that list silently reverts
+// every verdict to measuring general model competence.
+//
+// A case that attempts `git push` therefore finds no Bash tool at all, and
+// the attempt surfaces as an unmet expectation instead of executing. Treat a
+// failure as "the skill's own instructions didn't produce a plan meeting the
+// bar", not as "a live command failed".
 //
 // `--setting-sources project` is load-bearing for REPRODUCIBILITY rather
 // than for discovery: without it the session additionally loads `~/.claude`,
@@ -83,6 +114,22 @@ export const DEFAULT_MODEL = "claude-sonnet-5";
 export const DEFAULT_EFFORT = "medium";
 
 /**
+ * Per-case spend ceiling handed to `claude --max-budget-usd`.
+ *
+ * A cost ceiling, not a wall-clock one: `timeout-minutes` in
+ * `.github/workflows/skill-evals.yml` bounds the JOB, but a single runaway
+ * case can burn the whole budget inside it and starve the remaining cases.
+ * This bounds each case independently.
+ *
+ * Calibrated against measurement, not guessed: CI run 33390425486 graded all
+ * 46 cases for ~$2.31 total (~$0.05/case). 10x that average leaves ample room
+ * for a legitimately long case while still stopping one that has run away.
+ * Override with `M3L_EVAL_MAX_BUDGET_USD` when deliberately probing a
+ * heavier model or effort.
+ */
+export const DEFAULT_MAX_BUDGET_USD = 0.5;
+
+/**
  * How much of a failing envelope's own `result` text to quote back in the
  * error string. Enough to identify the cause, short enough not to bury the
  * summary.
@@ -104,17 +151,43 @@ export const CHECKLIST_KEYS = ["expectations", "assertions"];
 export const CRITERION_KEYS = ["description", "text"];
 
 /**
- * Every tool an eval session may use.
+ * The tools an eval session has PERMISSION to call without a prompt —
+ * passed to `--allowedTools`.
  *
- * The safety invariant this constant exists to state: no command-running
- * tool (Bash, PowerShell, REPL) and no network tool (WebFetch, WebSearch)
- * is EVER in it. Capability is granted by enumeration rather than removed
- * by a blunt mode, so a case whose skill instructs it to run `git push`
- * finds the tool absent, is denied, and grades as an unmet expectation
- * instead of mutating anything. `bin/tests/run-skill-evals.test.ts`
- * asserts the invariant directly, so adding "Bash" here fails the suite.
+ * This flag pre-approves; it does not restrict. A tool absent from this
+ * list but present in {@link EVAL_AVAILABLE_TOOLS} still exists and is
+ * merely denied at call time by `--permission-mode dontAsk`. The list that
+ * decides what exists — and therefore the one carrying the safety and
+ * hermeticity invariants — is {@link EVAL_AVAILABLE_TOOLS}.
+ *
+ * `Skill` is deliberately NOT here: the probe confirmed skill invocation
+ * works without a permission grant, so this list stays exactly the read
+ * plus confined-write set the graded work needs.
  */
 export const EVAL_ALLOWED_TOOLS = ["Read", "Grep", "Glob", "Write", "Edit"];
+
+/**
+ * Every tool that EXISTS in an eval session — passed to `--tools`.
+ *
+ * The safety and hermeticity invariant this constant exists to state: no
+ * command-running tool (Bash, PowerShell, REPL), no network tool (WebFetch,
+ * WebSearch) and no subagent tool (Agent, Task) is EVER in it. Because
+ * `--tools` restricts the built-in set, a case whose skill instructs it to
+ * run `git push` finds the tool genuinely absent and grades as an unmet
+ * expectation instead of mutating anything — and no case can fan out a
+ * subagent that reaches the live network, which is what keeps a verdict a
+ * measurement of the SKILL.md rather than of the day's network.
+ *
+ * `Skill` is required, not optional. Without it, skills are not visible to
+ * the session and every verdict silently measures general model competence
+ * instead of this repo's skills (the CI-run-33390425486 defect). Removing
+ * it as "unused" reintroduces that bug.
+ *
+ * `bin/tests/run-skill-evals.test.ts` asserts both the exclusions and that
+ * `buildClaudeArgs` actually EMITS this list, so adding "Bash" here — or
+ * dropping the `--tools` flag entirely — fails the suite.
+ */
+export const EVAL_AVAILABLE_TOOLS = [...EVAL_ALLOWED_TOOLS, "Skill"];
 
 export const VERDICT_SCHEMA = {
   type: "object",
@@ -302,11 +375,21 @@ export function parseVerdictEnvelope(stdout) {
  * is how a flag that silently disabled skill discovery survived a full 46-case
  * CI run. Flags that decide what the harness measures must be assertable.
  *
+ * The same lesson applies to what is ABSENT. A test asserting only
+ * {@link EVAL_ALLOWED_TOOLS}' contents is literally true and guards nothing,
+ * because that flag never restricted anything; the argv shipped for a full
+ * CI run believing it did. The assertions that matter are the ones checking
+ * this function EMITS `--tools` with {@link EVAL_AVAILABLE_TOOLS}.
+ *
  * @param {string} prompt the graded prompt from {@link buildGradedPrompt}
- * @param {{ model: string, effort: string }} options
+ * @param {{ model: string, effort: string, maxBudgetUsd?: number }} options
+ *   `maxBudgetUsd` defaults to {@link DEFAULT_MAX_BUDGET_USD}
  * @returns {string[]}
  */
-export function buildClaudeArgs(prompt, { model, effort }) {
+export function buildClaudeArgs(
+  prompt,
+  { model, effort, maxBudgetUsd = DEFAULT_MAX_BUDGET_USD },
+) {
   return [
     "-p",
     prompt,
@@ -316,6 +399,13 @@ export function buildClaudeArgs(prompt, { model, effort }) {
     "project",
     "--permission-mode",
     "dontAsk",
+    // Layer 1 of the three described in the file header: `--tools` decides
+    // what EXISTS, and is the only one of the three that removes Bash /
+    // WebFetch / Agent from the session. `--allowedTools` below only
+    // pre-approves permission for what survives, so both flags are wanted
+    // and neither substitutes for the other.
+    "--tools",
+    EVAL_AVAILABLE_TOOLS.join(","),
     "--allowedTools",
     EVAL_ALLOWED_TOOLS.join(","),
     "--strict-mcp-config",
@@ -327,6 +417,8 @@ export function buildClaudeArgs(prompt, { model, effort }) {
     model,
     "--effort",
     effort,
+    "--max-budget-usd",
+    String(maxBudgetUsd),
   ];
 }
 
@@ -340,10 +432,10 @@ export function buildClaudeArgs(prompt, { model, effort }) {
  *
  * @param {string} skillsDir
  * @param {{ prompt: string, expected_output: string, expectations?: unknown[], assertions?: unknown[], files?: { path: string, content: string }[] }} evalCase
- * @param {{ model: string, effort: string }} options
+ * @param {{ model: string, effort: string, maxBudgetUsd?: number }} options
  * @returns {{ pass: boolean, unmet_expectations: string[], reasoning: string, costUsd: number } | { error: string }}
  */
-function runCase(skillsDir, evalCase, { model, effort }) {
+function runCase(skillsDir, evalCase, { model, effort, maxBudgetUsd }) {
   const { entries } = selectChecklist(evalCase);
   const unrenderable = entries
     .map((entry, index) => ({ index, criterion: renderChecklistEntry(entry) }))
@@ -385,7 +477,11 @@ function runCase(skillsDir, evalCase, { model, effort }) {
     try {
       stdout = execFileSync(
         "claude",
-        buildClaudeArgs(buildGradedPrompt(evalCase), { model, effort }),
+        buildClaudeArgs(buildGradedPrompt(evalCase), {
+          model,
+          effort,
+          maxBudgetUsd,
+        }),
         { cwd: workspaceDir, encoding: "utf8", maxBuffer: 16 * 1024 * 1024 },
       );
     } catch (err) {
@@ -404,6 +500,9 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const reporter = createReporter(json);
   const model = process.env.M3L_EVAL_MODEL ?? DEFAULT_MODEL;
   const effort = process.env.M3L_EVAL_EFFORT ?? DEFAULT_EFFORT;
+  const maxBudgetUsd = process.env.M3L_EVAL_MAX_BUDGET_USD
+    ? Number(process.env.M3L_EVAL_MAX_BUDGET_USD)
+    : DEFAULT_MAX_BUDGET_USD;
 
   const root = repoRoot(import.meta.url);
   const skillsDir = join(root, ".claude/skills");
@@ -442,6 +541,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       const result = runCase(skillsDir, evalCase, {
         model,
         effort,
+        maxBudgetUsd,
       });
 
       if ("error" in result) {
