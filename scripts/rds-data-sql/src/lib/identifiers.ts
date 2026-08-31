@@ -21,7 +21,7 @@ import { Core } from "@m3l-automation/m3l-common";
  * `columns`/`migrations.table`, and to any column name inferred from an
  * imported record's own keys.
  */
-export const IDENTIFIER_PATTERN = /^[A-Za-z_][A-Za-z0-9_]{0,62}$/;
+export const IDENTIFIER_PATTERN: RegExp = /^[A-Za-z_][A-Za-z0-9_]{0,62}$/;
 
 /**
  * {@link validateIdentifier}'s default `code`, used when a caller has no
