@@ -1100,6 +1100,127 @@ describe("line-length ceiling on a COMPLETE line (S2)", () => {
   );
 });
 
+// ---------------------------------------------------------------------------
+// 15b — S2 exact-boundary discriminator
+//
+// WHY the 2045/2046/2047 tests above do NOT guard the 2026-08-31 fix:
+// All three values exceed `maxLineBytes` (1024) under BOTH the pre-fix rule
+// (`line.length > maxLineBytes`) and the post-fix rule
+// (`line.length + 1 > maxLineBytes`), so reverting the fix leaves every one
+// of those tests green. The boundary that discriminates the two rules is
+// content of exactly `maxLineBytes` bytes: under the old rule
+// `maxLineBytes > maxLineBytes` is false (accepted); under the new rule
+// `maxLineBytes + 1 > maxLineBytes` is true (rejected). These two tests pin
+// that exact point.
+// ---------------------------------------------------------------------------
+
+describe("line-length ceiling exact boundary — S2 fix discriminator", () => {
+  // INVARIANT: the largest content the writer can emit is `maxLineBytes - 1`
+  // bytes (the writer measures `content + "\n"` and throws when that exceeds
+  // `maxLineBytes`, so the ceiling on content is `maxLineBytes - 1`). A line
+  // of exactly that length, written to disk as `content + "\n"`, must be
+  // accepted by the reader — it is exactly `maxLineBytes` bytes on disk, which
+  // equals the limit and therefore does not exceed it. Under both the old and
+  // new ceiling rule this line passes; its presence here documents the
+  // accepted side of the boundary that the rejected-side test below can be
+  // read against.
+  test("accepts a complete line whose content is exactly maxLineBytes - 1 bytes (the writer ceiling)", async () => {
+    const dir = path.join(workDir, "audit");
+    const maxLineBytes = 1024;
+    const line = jsonLineOfExactByteLength(maxLineBytes - 1); // 1023 bytes of content
+    // Sanity on the fixture: a wrong byte count would make the boundary
+    // assertion meaningless.
+    expect(Buffer.byteLength(line, "utf8")).toBe(maxLineBytes - 1);
+    await writeSegmentFile(dir, segmentName("2026-01-01", 1), `${line}\n`);
+
+    const reader = new M3LAppendOnlyStream({ directory: dir, maxLineBytes });
+    const entries = await collectEntries(reader.read());
+
+    expect(entries).toHaveLength(1);
+  });
+
+  // REGRESSION (fix: `line.length + 1 > maxLineBytes` replacing
+  // `line.length > maxLineBytes`): content of exactly `maxLineBytes` bytes
+  // requires `maxLineBytes + 1` bytes on disk (content plus its newline), which
+  // is one byte more than the ceiling. The writer can never produce this line —
+  // its own check is `content.length + 1 > maxLineBytes`, so this content
+  // length is rejected at append time too — so reading it back as genuine is
+  // a fidelity failure. Under the old rule `maxLineBytes > maxLineBytes` is
+  // false and the line is silently accepted; under the fix `maxLineBytes + 1 >
+  // maxLineBytes` is true and the read throws.
+  //
+  // This is the test that fails when the fix is reverted and passes when it is
+  // in place. The 2045/2046/2047 cases above are both over the limit under
+  // either rule and therefore cannot make this discrimination.
+  test("throws for a complete line whose content is exactly maxLineBytes bytes (one byte over the writer ceiling)", async () => {
+    const dir = path.join(workDir, "audit");
+    const maxLineBytes = 1024;
+    const line = jsonLineOfExactByteLength(maxLineBytes); // 1024 bytes of content
+    expect(Buffer.byteLength(line, "utf8")).toBe(maxLineBytes);
+    await writeSegmentFile(dir, segmentName("2026-01-01", 1), `${line}\n`);
+
+    const reader = new M3LAppendOnlyStream({ directory: dir, maxLineBytes });
+    const { entries, thrown } = await collectUntilThrow(reader.read());
+
+    expect(entries).toEqual([]);
+    expect(thrown).toBeInstanceOf(M3LAppendOnlyStreamReadError);
+  });
+
+  // INVARIANT (trailing-fragment boundary, same fix): `nextCarry.length + 1 >
+  // maxLineBytes` replaced `nextCarry.length > maxLineBytes` in the same
+  // commit. A trailing fragment of exactly `maxLineBytes - 1` bytes has a
+  // newline-inclusive size of exactly `maxLineBytes` — it fits and the reader
+  // must not throw for oversize (though it DOES call `onTruncatedTail`, because
+  // any non-empty trailing fragment is a torn tail). Supplying the callback
+  // here lets the iteration complete normally so this path is observable.
+  test("accepts a trailing fragment of exactly maxLineBytes - 1 bytes (passes the nextCarry ceiling)", async () => {
+    const dir = path.join(workDir, "audit");
+    const maxLineBytes = 1024;
+    // Plain ASCII fill — the ceiling checks byte length, not JSON validity.
+    const fragment = "a".repeat(maxLineBytes - 1); // 1023 bytes, no trailing newline
+    await writeSegmentFile(dir, segmentName("2026-01-01", 1), fragment);
+
+    const onTruncatedTail =
+      vi.fn<(segment: M3LAppendOnlyTruncatedSegment) => void>();
+    const reader = new M3LAppendOnlyStream({ directory: dir, maxLineBytes });
+    const entries = await collectEntries(reader.read({ onTruncatedTail }));
+
+    expect(entries).toEqual([]);
+    expect(onTruncatedTail).toHaveBeenCalledOnce();
+    expect(onTruncatedTail).toHaveBeenCalledWith({
+      byteLength: maxLineBytes - 1,
+      segmentIndex: 0,
+      segmentCount: 1,
+    });
+  });
+
+  // REGRESSION (trailing-fragment counterpart of the complete-line fix above):
+  // a trailing fragment of exactly `maxLineBytes` bytes would need
+  // `maxLineBytes + 1` bytes on disk (fragment plus a newline that never
+  // arrives), which exceeds the ceiling. Under the old rule
+  // `maxLineBytes > maxLineBytes` is false and the fragment was accepted as a
+  // torn tail; under the fix `maxLineBytes + 1 > maxLineBytes` is true and
+  // the read throws even if `onTruncatedTail` is supplied, because the
+  // ceiling check fires inside `splitLines` before the torn-tail resolution.
+  test("throws for a trailing fragment of exactly maxLineBytes bytes (one byte over the nextCarry ceiling)", async () => {
+    const dir = path.join(workDir, "audit");
+    const maxLineBytes = 1024;
+    const fragment = "a".repeat(maxLineBytes); // 1024 bytes, no trailing newline
+    await writeSegmentFile(dir, segmentName("2026-01-01", 1), fragment);
+
+    const onTruncatedTail =
+      vi.fn<(segment: M3LAppendOnlyTruncatedSegment) => void>();
+    const reader = new M3LAppendOnlyStream({ directory: dir, maxLineBytes });
+    const { entries, thrown } = await collectUntilThrow(
+      reader.read({ onTruncatedTail }),
+    );
+
+    expect(entries).toEqual([]);
+    expect(thrown).toBeInstanceOf(M3LAppendOnlyStreamReadError);
+    expect(onTruncatedTail).not.toHaveBeenCalled();
+  });
+});
+
 describe("invalid UTF-8 refusal (S4)", () => {
   // EXPLOIT (S4): `lineBytes.toString("utf8")` is lossy — Node silently
   // repairs an invalid byte to U+FFFD rather than failing. The review's own

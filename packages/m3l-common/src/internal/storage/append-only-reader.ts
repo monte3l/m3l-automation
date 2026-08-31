@@ -114,7 +114,7 @@ const NEWLINE_BYTE = 0x0a;
  * module never imports that type, so a second owner is free to shape its own
  * public payload the same way without pulling in the first owner's types.
  */
-export interface AppendOnlyTruncatedSegment {
+interface AppendOnlyTruncatedSegment {
   /** Bytes in the trailing fragment that had no terminating newline. */
   readonly byteLength: number;
   /** Zero-based index of the segment in read order. */
@@ -132,7 +132,7 @@ export interface AppendOnlyTruncatedSegment {
  * stream's directory or an entry's own data — only operational facts this
  * module computed itself.
  */
-export type AppendOnlyReadFailure = (
+type AppendOnlyReadFailure = (
   message: string,
   options?: {
     readonly cause?: unknown;
@@ -356,7 +356,13 @@ function splitLines(
       break;
     }
     const line = combined.subarray(searchStart, newlineIndex);
-    if (line.length > maxLineBytes) {
+    // The writer measures one write() as `content + "\n"` together; the
+    // largest content it can emit is therefore `maxLineBytes - 1` bytes.
+    // Comparing `line.length + 1` (content re-measured with its newline)
+    // against `maxLineBytes` aligns the reader's ceiling with the writer's
+    // exactly — a line of `maxLineBytes` content bytes would need
+    // `maxLineBytes + 1` bytes on disk and is one byte over the limit.
+    if (line.length + 1 > maxLineBytes) {
       throw buildError(
         "append-only stream: a segment line exceeds the maximum line size",
         { context: { maxLineBytes } },
@@ -367,7 +373,11 @@ function splitLines(
   }
 
   const nextCarry = Buffer.from(combined.subarray(searchStart));
-  if (nextCarry.length > maxLineBytes) {
+  // A trailing fragment is a prefix of a future line that will include a
+  // newline, so the same "content + newline must fit in maxLineBytes" rule
+  // applies: if the fragment alone already fills maxLineBytes, the complete
+  // line (fragment + remaining content + newline) would exceed the ceiling.
+  if (nextCarry.length + 1 > maxLineBytes) {
     throw buildError(
       "append-only stream: a segment line exceeds the maximum line size",
       { context: { maxLineBytes } },
