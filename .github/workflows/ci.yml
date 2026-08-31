@@ -447,6 +447,18 @@ jobs:
       - name: Check harness freshness
         run: pnpm check:harness-freshness
 
+      # Every .claude/skills/*/SKILL.md needs a sibling evals/evals.json with
+      # >= 3 cases, except the named EXEMPT_SKILLS grandfather list (issue
+      # #775 tracks the backfill).
+      - name: Check skill evals
+        run: pnpm check:skill-evals
+
+      # REVIEW.md's review finding cap must be restated identically in
+      # claude-pr-review.yml's prompt and every SEVERITY_CAPPED_SPOKES agent
+      # file (bin/lib/agent-roster.mjs).
+      - name: Check review policy
+        run: pnpm check:review-policy
+
       # Every status-bearing ("## ", has a Status column) table in ROADMAP.md
       # and IMPLEMENTATION.md must be registered with the sync:hub extractor —
       # otherwise a newly added tracker table is a silent no-op forever.

@@ -1,0 +1,51 @@
+# Weekly automated maintain-scan (Anthropic AI-native SDLC harness-alignment
+# plan, Section 5) — the Deploy/Maintain loop's missing autonomous-scan half.
+# Runs bin/run-maintain-scan.mjs: a bounded, read-only `claude -p
+# --restricted` triage pass against `main`, opening a PR proposing an
+# unreviewed findings entry under docs/plans/IMPLEMENTATION.md only when it
+# reports something concrete. See that script's header comment for why every
+# mutation goes through the GitHub Content API (`gh api`) rather than a
+# native `git commit`/`git push` — this repo has no precedent for a CI job
+# authoring commits, and a raw git push would trip the local lefthook
+# pre-push battery a bot-authored commit cannot satisfy.
+name: Maintain Scan (Scheduled)
+
+on:
+  schedule:
+    - cron: "0 9 * * 3" # Wed 09:00 UTC — offset from Monday's security-audit/skill-evals crons.
+  workflow_dispatch:
+
+# Top-level: least privilege. Elevated scopes are granted per-job below,
+# matching scorecard.yml's convention — a second job added here later must
+# not silently inherit write access.
+permissions:
+  contents: read
+
+concurrency:
+  group: maintain-scan
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    name: Run maintain-scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Raw `claude -p` CLI, not claude-code-action — this script needs the
+      # findings as structured data it controls, so the actual PR/branch
+      # mutation stays deterministic Node + `gh api`, never an LLM-issued
+      # Bash command. Reuses the same OAuth token already provisioned for
+      # claude-pr-review.yml/claude-assistant.yml/skill-evals.yml.
+      - name: Install Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Run maintain-scan
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node bin/run-maintain-scan.mjs

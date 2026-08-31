@@ -331,6 +331,16 @@ export const COMMAND_CATALOG = [
       "Repo-owned eval runner: drives a real `claude -p --restricted` invocation per .claude/skills/*/evals/evals.json case, asking it to self-grade against the case's expectations via --json-schema structured output, and prints a pass/fail summary. Costs real API spend — not part of pre-push; run manually or via .github/workflows/skill-evals.yml.",
   },
   {
+    name: "check:review-policy",
+    description:
+      "Verifies REVIEW.md's review finding cap (currently 10) is restated identically in claude-pr-review.yml's prompt and every SEVERITY_CAPPED_SPOKES agent file (bin/lib/agent-roster.mjs). Run after changing the cap number anywhere.",
+  },
+  {
+    name: "maintain:scan",
+    description:
+      "Runs the weekly automated maintain-scan (bin/run-maintain-scan.mjs) locally: a bounded, read-only `claude -p --restricted` triage pass against the current tree, opening a PR with unreviewed findings under docs/plans/IMPLEMENTATION.md only when it finds something concrete. Requires GH_TOKEN and CLAUDE_CODE_OAUTH_TOKEN; normally runs via .github/workflows/maintain-scan.yml on a weekly cron.",
+  },
+  {
     name: "check:tracker-coverage",
     description:
       "Verifies every status-bearing table in ROADMAP.md/IMPLEMENTATION.md is registered with the sync:hub extractor (bin/lib/project-hub.mjs), so a newly added tracker table can't silently go unsynced. Run after adding a new '## ' section with a Status column to either tracker.",
