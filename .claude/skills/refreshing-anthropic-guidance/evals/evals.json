@@ -1,77 +1,65 @@
 {
   "skill_name": "refreshing-anthropic-guidance",
-  "note": "plan_mode_entered-style assertions are checked via the aggregated-summary/report content, not by observing EnterPlanMode directly — mirrors the auditing skill's eval note (EnterPlanMode is unavailable in a subagent eval context).",
   "evals": [
     {
-      "id": 0,
-      "prompt": "/refreshing-anthropic-guidance is our Claude Code harness still up to date with what Anthropic recommends? we haven't checked in a while",
-      "expected_output": "The skill reads docs/research/harness-refresh.md for the last-verified state, fetches the Claude Code CHANGELOG and derives a delta since the recorded version, fans out five fixed facet agents (models-tiering, cc-features-settings, agent-subagent-design, skills-context-engineering, hooks-lifecycle) in one message, each diffing recorded claims against re-fetched sources with UNCHANGED/CHANGED/GONE verdicts. Findings are aggregated, the tracker is updated in place, and the skill enters plan mode with a remediation plan for any confirmed drift.",
-      "files": [],
-      "assertions": [
-        {
-          "name": "tracker_read_first",
-          "description": "docs/research/harness-refresh.md is read before dispatching agents, and its recorded last-verified date/version are used to scope the sweep"
-        },
-        {
-          "name": "changelog_delta_derived",
-          "description": "The Claude Code CHANGELOG is fetched and a delta since the tracker's recorded version is computed before or alongside the facet fan-out"
-        },
-        {
-          "name": "five_fixed_facets",
-          "description": "Exactly five agents are dispatched, one per fixed facet (models/tiering, Claude Code features/settings, agent/subagent design, skills/context engineering, hooks/lifecycle), not an ad-hoc or adaptive facet list"
-        },
-        {
-          "name": "parallel_dispatch",
-          "description": "All five facet agents are dispatched in a single message, not sequentially"
-        },
-        {
-          "name": "verdict_format_used",
-          "description": "Each facet's findings use the UNCHANGED/CHANGED/GONE per-claim verdict format, not a free-form summary"
-        },
-        {
-          "name": "tracker_updated",
-          "description": "docs/research/harness-refresh.md is updated in place (last-verified date, per-source claims) as part of this run — not left untouched and not replaced with a new dated file"
-        },
-        {
-          "name": "no_harness_files_edited_directly",
-          "description": "No .claude/agents, .claude/skills, .claude/settings.json, or hook file is edited directly by the skill — only the tracker is written outside plan mode"
-        },
-        {
-          "name": "plan_mode_entered_or_clean_sweep_reported",
-          "description": "The skill either enters plan mode with a remediation plan for confirmed drift, or explicitly reports a clean sweep if no drift was confirmed"
-        }
-      ]
-    },
-    {
       "id": 1,
-      "prompt": "did Claude Code change anything recently around hooks or subagent tool grants that we should know about? check it against what our settings.json and agent frontmatter actually do",
-      "expected_output": "The skill treats this as a full sweep rather than narrowing to only the named facets — it still runs all five fixed facets so the tracker stays comparable run-to-run — but the changelog delta and repo-impact analysis pay particular attention to hooks-lifecycle and agent-subagent-design. Repo-impact citations point at concrete files: .claude/settings.json hook wiring, .claude/agents/*.md frontmatter fields.",
-      "files": [],
-      "assertions": [
+      "prompt": "/refreshing-anthropic-guidance is our Claude Code harness still up to date with what Anthropic recommends? we haven't checked in a while",
+      "expected_output": "The response text reads docs/research/harness-refresh.md first (its WOULD-RUN read appears before any WOULD-DISPATCH line), names all six harness surfaces, emits five consecutive WOULD-DISPATCH lines by fixed facet slug, contains the model pin string from the seeded fixture, and contains a per-facet remediation plan section with plan mode stated as next step.",
+      "files": [
         {
-          "name": "all_five_facets_still_run",
-          "description": "Even though the user named specific areas of interest, all five fixed facets are dispatched, not a subset — the skill does not narrow scope based on the prompt's phrasing"
+          "path": "docs/research/harness-refresh.md",
+          "content": "<!-- harness-refresh: last-verified=2026-06-15 claude-code-version=1.0.12 -->\n## models-tiering\n- CLAIM: Spokes use claude-sonnet-4-5 as the standard model ID — https://docs.anthropic.com/en/docs/about-claude/models (retrieved 2026-06-15)\n  - REPO-IMPACT: .claude/agents/code-implementer.md:2\n"
         },
         {
-          "name": "repo_impact_cites_real_files",
-          "description": "REPO-IMPACT entries for hooks/agent-design findings cite actual repo paths (.claude/settings.json, .claude/agents/*.md), not generic descriptions"
-        },
-        {
-          "name": "hub_verifies_repo_impact_claims",
-          "description": "Before treating a facet agent's REPO-IMPACT claim as real drift, the hub (not just the dispatched agent) checks the cited file itself"
+          "path": ".claude/agents/code-implementer.md",
+          "content": "---\nname: code-implementer\nmodel: claude-sonnet-4-5\ndescription: Writes implementation code as directed by the hub.\ndisallowedTools: [\"Agent\"]\nmaxTurns: 30\n---\n\nImplement features and fix bugs as directed.\n"
         }
+      ],
+      "expectations": [
+        "The WOULD-RUN read line for docs/research/harness-refresh.md appears earlier in the response text than any WOULD-DISPATCH line, and the response text contains the last-verified date '2026-06-15' or the claude-code-version string '1.0.12' drawn from that file.",
+        "The response text names all six harness surfaces: .claude/agents/, .claude/skills/, .claude/rules/, .claude/hooks/, .github/workflows/, and CLAUDE.md.",
+        "The response text contains exactly five WOULD-DISPATCH lines, one for each fixed facet slug (models-tiering, cc-features-settings, agent-subagent-design, skills-context-engineering, hooks-lifecycle), and those five lines appear consecutively in the response text rather than separated by unrelated content.",
+        "The response text contains the string 'claude-sonnet-4-5', the exact model pin present in the seeded .claude/agents/code-implementer.md and tracker.",
+        "The response text contains no WOULD-RUN write lines targeting .claude/agents/, .claude/rules/, .claude/skills/, or .github/workflows/.",
+        "The response text contains a section presenting a per-facet remediation plan and states plan mode as the intended next step; for any facet whose external source could not be fetched, the response text labels that facet as unresolved or pending rather than asserting a confirmed-drift or clean-sweep verdict for it."
       ]
     },
     {
       "id": 2,
-      "prompt": "we just wrote a new skill for X, can you check if Anthropic has any new guidance we should follow for it?",
-      "expected_output": "This is a single-topic, on-demand question about one new skill, not a whole-harness sweep — the correct skill is researching-anthropic-guidance, not refreshing-anthropic-guidance. refreshing-anthropic-guidance should not trigger here.",
-      "files": [],
-      "assertions": [
+      "prompt": "did Claude Code change anything recently around hooks or subagent tool grants that we should know about? I've saved a copy of our current settings config under docs/research/harness-snapshot/settings.json — check the hook declarations there and our agent frontmatter against whatever's changed",
+      "expected_output": "The response text contains five WOULD-DISPATCH lines covering all fixed facet slugs (not just the user-named two), names concrete field values from the seeded agent frontmatter and settings snapshot, and states that REPO-IMPACT claims will be verified by re-reading the named files — with the WOULD-RUN reads for those files appearing later in the text than the five WOULD-DISPATCH lines.",
+      "files": [
         {
-          "name": "does_not_trigger_refresh_skill",
-          "description": "refreshing-anthropic-guidance is not invoked for a single-topic on-demand question about one skill; researching-anthropic-guidance is the correct choice instead"
+          "path": ".claude/agents/code-reviewer.md",
+          "content": "---\nname: code-reviewer\nmodel: claude-opus-4-5\ndescription: Reviews code changes for quality, correctness, and style.\ndisallowedTools: [\"Bash\", \"Agent\"]\nmaxTurns: 20\n---\n\nReview the provided code changes and report findings.\n"
+        },
+        {
+          "path": "docs/research/harness-snapshot/settings.json",
+          "content": "{\n  \"hooks\": {\n    \"PreToolUse\": [\n      {\n        \"matcher\": \"Write\",\n        \"hooks\": [{\"type\": \"command\", \"command\": \"node bin/guard-hub-src-writes.mjs\"}]\n      }\n    ]\n  }\n}\n"
         }
+      ],
+      "expectations": [
+        "The response text contains five WOULD-DISPATCH lines covering all fixed facet slugs (models-tiering, cc-features-settings, agent-subagent-design, skills-context-engineering, hooks-lifecycle), not a subset, even though the user's prompt named only hooks and subagent tool grants.",
+        "The response text names .claude/agents/code-reviewer.md and contains at least one concrete value from the seeded file — the string 'claude-opus-4-5' (the model pin) or a reference to the disallowedTools fields ['Bash', 'Agent'].",
+        "The response text names docs/research/harness-snapshot/settings.json and contains a reference to the PreToolUse hook block within it — mentioning 'PreToolUse', 'Write', or 'guard-hub-src-writes' as something found in that file.",
+        "The response text states that REPO-IMPACT claims will be verified by re-reading the named files directly, and the WOULD-RUN read lines for .claude/agents/code-reviewer.md and docs/research/harness-snapshot/settings.json appear later in the response text than the five WOULD-DISPATCH lines."
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "we just wrote a new skill for export-to-csv, can you check if Anthropic has any new guidance we should follow for it?",
+      "expected_output": "The response text does not contain WOULD-DISPATCH lines for the five fixed harness-sweep facets, names researching-anthropic-guidance as the correct skill, contains no WOULD-RUN write to docs/research/harness-refresh.md, and — if it reads the seeded skill file — does not follow that read with sweep-facet WOULD-DISPATCH lines.",
+      "files": [
+        {
+          "path": ".claude/skills/export-to-csv/SKILL.md",
+          "content": "---\nname: export-to-csv\ndescription: >-\n  Export query results to a CSV file on disk. Use this skill whenever the\n  user asks to export data to CSV format.\n---\n\nExport data from the database to a CSV file using the configured output path.\n"
+        }
+      ],
+      "expectations": [
+        "The response text does not contain WOULD-DISPATCH lines for the five fixed harness-sweep facets (models-tiering, cc-features-settings, agent-subagent-design, skills-context-engineering, hooks-lifecycle).",
+        "The response text names 'researching-anthropic-guidance' as the correct skill for this single-topic on-demand question and explains how it differs from 'refreshing-anthropic-guidance' as a periodic whole-harness sweep.",
+        "The response text contains no WOULD-RUN write line targeting docs/research/harness-refresh.md.",
+        "If the response text contains a WOULD-RUN read of .claude/skills/export-to-csv/SKILL.md, that line is not followed by WOULD-DISPATCH lines for the five harness-sweep facets — the skill file read leads to a routing explanation, not a sweep."
       ]
     }
   ]

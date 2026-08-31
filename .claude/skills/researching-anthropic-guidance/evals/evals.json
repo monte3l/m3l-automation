@@ -2,127 +2,64 @@
   "skill_name": "researching-anthropic-guidance",
   "evals": [
     {
-      "id": 0,
-      "prompt": "we're about to redesign our subagent fleet — what does Anthropic officially recommend for subagent architecture, tool grants, and model selection? research this before we plan the redesign",
-      "expected_output": "3-5 Explore agents fanned out in one message, each scoped to one facet (e.g. architecture/composition, tool-grant philosophy, model selection, prompt conventions), each restricted to the Anthropic domain allowlist via WebSearch allowed_domains, each writing full findings to a scratchpad file and returning only a compact digest. Hub reads the scratchpad files and emits an inline briefing with Consensus, Contradictions, Coverage gaps, and Sources sections.",
-      "files": [],
-      "assertions": [
-        {
-          "name": "parallel_explore_agents",
-          "description": "3-5 Explore agents dispatched in a single message (not sequential calls)"
-        },
-        {
-          "name": "domain_allowlist_used",
-          "description": "Each agent brief restricts WebSearch to the official Anthropic domain allowlist (anthropic.com, claude.com, platform.claude.com, code.claude.com, docs.claude.com, docs.anthropic.com and their www variants)"
-        },
-        {
-          "name": "reference_file_consulted",
-          "description": "Before building briefs, references/official-sources.md is read and its allowlist/GitHub-caveat content is what gets pasted into each agent brief, rather than a re-derived or inlined copy"
-        },
-        {
-          "name": "github_scoped_correctly",
-          "description": "If GitHub is mentioned, the brief scopes acceptance to github.com/anthropics/* only, not bare github.com"
-        },
-        {
-          "name": "scratchpad_files_written",
-          "description": "Each agent is instructed to write full findings to a per-facet scratchpad file under a run directory, and to return only a compact digest plus the file path to the hub"
-        },
-        {
-          "name": "multiple_sources_per_facet",
-          "description": "Agents are instructed not to stop at the first matching source; synthesis draws on multiple distinct sources, not one per facet"
-        },
-        {
-          "name": "consensus_and_contradictions_present",
-          "description": "Final briefing includes both a Consensus/best-practices section and a Contradictions/drift section (even if the latter is empty with an explicit note, not silently omitted)"
-        },
-        {
-          "name": "no_non_anthropic_sources",
-          "description": "Every cited source URL in the final briefing is on the Anthropic domain allowlist or under github.com/anthropics/*"
-        }
-      ]
-    },
-    {
       "id": 1,
-      "prompt": "/researching-anthropic-guidance prompt caching — I want to know Anthropic's official recommendations before I redesign our prompt structure",
-      "expected_output": "3-5 Explore agents fanned out over prompt-caching facets (e.g. cache-breakpoint placement, TTL/cost tradeoffs, API usage patterns, model-specific behavior), restricted to the Anthropic allowlist, each annotating a scratchpad file and returning a digest. Hub synthesizes into the fixed briefing format with sourced consensus and any contradictions flagged.",
-      "files": [],
-      "assertions": [
+      "prompt": "we're about to redesign our subagent fleet — what does Anthropic officially recommend for subagent architecture, tool grants, and model selection? research this before we plan the redesign",
+      "expected_output": "The response emits at least 3 distinct WOULD-DISPATCH: Explore lines covering separate facets (architecture/composition, tool-grant philosophy, model selection), states it will read references/official-sources.md before composing briefs, and outlines a synthesis plan naming both Consensus/best-practices and Contradictions/drift sections explicitly.",
+      "files": [
         {
-          "name": "parallel_explore_agents",
-          "description": "3-5 Explore agents dispatched in one message"
-        },
-        {
-          "name": "domain_allowlist_used",
-          "description": "WebSearch calls restricted to the official Anthropic domain allowlist"
-        },
-        {
-          "name": "scratchpad_files_written",
-          "description": "Full findings written to scratchpad files per facet; hub response stays lean (digests only from agents)"
-        },
-        {
-          "name": "briefing_format_used",
-          "description": "Final output uses the fixed ## Research: <topic> briefing structure with Consensus, Contradictions, Coverage gaps, and Sources headings"
-        },
-        {
-          "name": "sources_cited_with_dates",
-          "description": "Each source in the Sources section includes title, URL, and a retrieved date"
-        },
-        {
-          "name": "no_files_written_without_confirmation",
-          "description": "No docs/research/*.md snapshot file is written unless the user explicitly confirmed persisting one"
+          "path": "docs/contributing/model-selection.md",
+          "content": "# Model selection\n\nCurrent pins (updated 2026-08-31):\n\n| Agent role | Model |\n|---|---|\n| Hub | claude-opus-4-5 |\n| Default spoke (code-implementer, test-author, etc.) | claude-sonnet-4-5 |\n| Explore spoke | claude-sonnet-4-5 |\n| Lightweight (linting, labelling) | claude-haiku-4-5 |\n\nRationale: hub maximises reasoning depth; spokes optimise cost and throughput.\nTiering reviewed when Anthropic releases a new frontier model.\n"
         }
+      ],
+      "expectations": [
+        "Response emits at least 3 distinct WOULD-DISPATCH: Explore lines in the response, each brief covering a different named facet of the topic — architecture/composition patterns, tool-grant philosophy, and model selection guidance must each appear as a separate dispatch with a distinct one-line brief, not merged into one.",
+        "Every WOULD-DISPATCH brief names only sources from the official Anthropic domain allowlist (anthropic.com, docs.anthropic.com, platform.claude.com, or other Anthropic-owned domains listed in references/official-sources.md); no brief mentions third-party blogs, Medium, Reddit, Stack Overflow, community sites, or vendor comparisons.",
+        "The response states it will read references/official-sources.md before composing agent briefs to obtain the domain allowlist — it does not inline a self-derived allowlist or skip this step.",
+        "The planned synthesis structure names both a Consensus/best-practices section and a Contradictions/drift section explicitly; a response that names only a generic 'summary' without the contradiction-flagging step fails this criterion.",
+        "All WOULD-DISPATCH lines appear in the response before any synthesis plan or briefing structure is described.",
+        "The research plan explicitly references the seeded docs/contributing/model-selection.md to anchor which model-selection gap the research is closing — it does not plan the research in a vacuum ignoring the existing repo model pins."
       ]
     },
     {
       "id": 2,
-      "prompt": "is there an official Anthropic engineering blog post about building effective agents? I want a synthesized summary I can cite, and flag it clearly if anything in there conflicts with the newer subagent docs",
-      "expected_output": "Explore agents fan out across facets of the 'effective agents' topic (workflow vs agent patterns, tool design, orchestration, evaluation), restricted to anthropic.com (including /engineering) and other allowlisted domains, WebFetching the blog post plus any current docs on the same topic. Synthesis explicitly compares the blog post's guidance against current docs and calls out any contradiction with a note on which is more current/authoritative.",
-      "files": [],
-      "assertions": [
-        {
-          "name": "parallel_explore_agents",
-          "description": "3-5 Explore agents dispatched in one message"
-        },
-        {
-          "name": "engineering_blog_covered",
-          "description": "anthropic.com/engineering content is treated as an in-scope official source, not excluded"
-        },
-        {
-          "name": "cross_source_conflict_check",
-          "description": "Synthesis explicitly checks the blog post's claims against other retrieved sources (e.g. current docs) and reports agreement or conflict, not just a standalone summary of the blog"
-        },
-        {
-          "name": "contradiction_recency_noted",
-          "description": "If a contradiction is found, the briefing notes which source is newer/more authoritative rather than presenting both without guidance"
-        },
-        {
-          "name": "no_non_anthropic_sources",
-          "description": "No community blog, third-party summary, or non-anthropics GitHub org is substituted or cited"
-        }
+      "prompt": "/researching-anthropic-guidance prompt caching — I want to know Anthropic's official recommendations before I redesign our prompt structure",
+      "expected_output": "The response emits at least 3 distinct WOULD-DISPATCH: Explore lines covering different facets of prompt caching (cache-breakpoint placement, TTL/cost tradeoffs, API usage patterns, model-specific behavior), each restricted to Anthropic-owned domains, followed by a synthesis plan naming both Consensus/best-practices and Contradictions/drift sections explicitly.",
+      "expectations": [
+        "Response emits at least 3 distinct WOULD-DISPATCH: Explore lines, each scoped to a different facet of prompt caching — cache-breakpoint placement, TTL and cost tradeoffs, API usage patterns, and model-specific caching behavior are the expected facets; no two briefs may cover the same facet.",
+        "Every WOULD-DISPATCH brief explicitly restricts its search to Anthropic-owned domains (anthropic.com, docs.anthropic.com, platform.claude.com, or other allowlisted domains); no brief names a third-party source, community blog, Stack Overflow answer, or documentation site not on the official allowlist.",
+        "The response indicates agents will write full findings to per-facet scratchpad files under a run directory and return only a compact digest to the hub — the full file contents are not repeated in each agent's return message.",
+        "The planned synthesis output explicitly names both a Consensus/best-practices section and a Contradictions/drift section as distinct headings; a response that merges these into a single 'summary' without naming the contradiction step fails this criterion.",
+        "WOULD-DISPATCH lines appear in the response before the synthesis plan is described; the response does not offer to write a docs/research/*.md snapshot file before the user explicitly confirms."
       ]
     },
     {
       "id": 3,
-      "prompt": "/researching-anthropic-guidance has Claude Code shipped anything in the last few releases around hooks or subagent tool grants? I want to know before we touch our settings.json",
-      "expected_output": "Explore agents fan out over facets of recent Claude Code changes (e.g. hooks/lifecycle events, subagent/tool-grant behavior, settings schema), with at least one agent directed to the Claude Code CHANGELOG (raw.githubusercontent.com/anthropics/claude-code/main/CHANGELOG.md) as a first-class source rather than relying on WebSearch ranking to surface it, plus the release-notes page. Synthesis cites specific version entries alongside any docs coverage.",
-      "files": [],
-      "assertions": [
+      "prompt": "is there an official Anthropic engineering blog post about building effective agents? I want a synthesized summary I can cite, and flag it clearly if anything in there conflicts with the newer subagent docs",
+      "expected_output": "The response emits at least 3 distinct WOULD-DISPATCH: Explore lines across different effective-agent facets, with at least one brief explicitly targeting anthropic.com/engineering as a primary source, and a synthesis plan that names a contradiction-flagging step comparing the blog post against current docs with a note on which source is more authoritative.",
+      "expectations": [
+        "Response emits at least 3 distinct WOULD-DISPATCH: Explore lines, each scoped to a different facet of the effective-agents topic — workflow vs agent patterns, tool design, orchestration, and evaluation are the expected facets; briefs must not all cover the same angle.",
+        "At least one WOULD-DISPATCH brief explicitly targets anthropic.com/engineering as a primary source for the blog post rather than relying on generic search ranking to surface it — the URL or path segment must appear in the brief.",
+        "Every WOULD-DISPATCH brief restricts sources to the official Anthropic domain allowlist; no brief directs a search at a third-party blog, community resource, non-anthropics GitHub repository, or any domain not on the allowlist in references/official-sources.md.",
+        "The synthesis plan explicitly names a contradiction-flagging step that compares the engineering blog post's guidance against current docs, and states that current docs take precedence over an older blog post when they disagree — a merged summary that averages both without naming precedence fails this criterion.",
+        "WOULD-DISPATCH lines appear in the response before the synthesis plan is described; the contradiction-checking step is named before the final briefing output structure; the response does not promise to write any repo file without explicit user confirmation."
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "/researching-anthropic-guidance has Claude Code shipped anything in the last few releases around hooks or subagent tool grants? I want to know before we touch our hook config — see docs/harness/settings-snapshot.json for what we currently have",
+      "expected_output": "The response emits at least 3 distinct WOULD-DISPATCH: Explore lines across different facets of recent Claude Code changes, with at least one brief explicitly naming the Claude Code CHANGELOG URL or the release-notes page as a first-class source to fetch directly, and a synthesis plan naming both Consensus and Contradictions/drift sections.",
+      "files": [
         {
-          "name": "parallel_explore_agents",
-          "description": "3-5 Explore agents dispatched in one message"
-        },
-        {
-          "name": "changelog_consulted",
-          "description": "At least one agent brief directs fetching the Claude Code CHANGELOG (raw.githubusercontent.com/anthropics/claude-code/main/CHANGELOG.md) or the release-notes page as a first-class source, not just a generic github.com/anthropics/* search"
-        },
-        {
-          "name": "changelog_entries_cited",
-          "description": "The synthesized briefing cites specific CHANGELOG version entries (not just docs pages) when reporting on recent Claude Code changes"
-        },
-        {
-          "name": "github_raw_path_scoped_correctly",
-          "description": "The raw.githubusercontent.com/anthropics/... citation is treated as in-scope per the GitHub caveat, not rejected for lacking a github.com/anthropics/ prefix"
+          "path": "docs/harness/settings-snapshot.json",
+          "content": "{\n  \"hooks\": {\n    \"PreToolUse\": [\n      { \"matcher\": \"Bash\", \"hooks\": [{ \"type\": \"command\", \"command\": \"node bin/guard-branch-isolation.mjs\" }] },\n      { \"matcher\": \"Write\", \"hooks\": [{ \"type\": \"command\", \"command\": \"node bin/guard-hub-src-writes.mjs\" }] }\n    ],\n    \"PostToolUse\": []\n  }\n}\n"
         }
+      ],
+      "expectations": [
+        "Response emits at least 3 distinct WOULD-DISPATCH: Explore lines, each scoped to a different facet of recent Claude Code changes — hooks/lifecycle events, subagent tool-grant behavior, and settings schema changes are the minimum expected facets.",
+        "At least one WOULD-DISPATCH brief explicitly names the Claude Code CHANGELOG URL (raw.githubusercontent.com/anthropics/claude-code/main/CHANGELOG.md) or the release-notes page (platform.claude.com/docs/en/release-notes/claude-code) as a first-class source to fetch directly, not just a generic search that may miss it.",
+        "Every WOULD-DISPATCH brief that references GitHub scopes the search to github.com/anthropics/* or raw.githubusercontent.com/anthropics/* only; no brief directs a search at bare github.com, a third-party GitHub org, or any non-Anthropic repository.",
+        "The research plan explicitly references the seeded docs/harness/settings-snapshot.json hook entries (PreToolUse, guard-branch-isolation.mjs, guard-hub-src-writes.mjs) to frame which specific hook behaviors the research is meant to validate against recent official guidance.",
+        "WOULD-DISPATCH lines appear in the response before the synthesis plan is described; the planned briefing names both a Consensus and a Contradictions/drift section as distinct headings, not a single merged summary."
       ]
     }
   ]
