@@ -6,10 +6,13 @@
  * @packageDocumentation
  */
 
+import { dirname } from "node:path";
+
 import { Core } from "@m3l-automation/m3l-common";
 
 import type { AGENT_OPERATOR_COMMAND_DECLARATIONS } from "../config.js";
 import { AGENT_OPERATOR_COMMANDS, POLICY_FILE_DEFAULT } from "../config.js";
+import { createAgentCliSurface } from "../lib/cli-surface.js";
 import { M3LAgentOperatorCliError } from "../lib/errors.js";
 import { explainPolicy } from "./explain-policy.js";
 import { loadAgentPolicy } from "./load-policy.js";
@@ -71,17 +74,39 @@ function runHealthCheck(): never {
 }
 
 /**
+ * Derives the absolute host workspace-root path for `cli-surface.ts`'s
+ * workspace-root scrub, reading the same `paths.getProjectRoot()` seam
+ * `resolve-runtime.ts`'s `resolveCliEntrypoint` uses for its own default.
+ * Returns `undefined` — disabling the scrub, never failing the run — when
+ * `getProjectRoot()` throws `Core.M3LPathResolutionError` (standalone mode,
+ * where there is no monorepo root to scrub against). The degradation is
+ * logged as a warning rather than absorbed silently: with the scrub off,
+ * absolute host paths in CLI output reach the model unmasked, and an
+ * operator reading the run log must be able to see that that happened. Any
+ * other failure is rethrown unchanged — only the documented standalone-mode
+ * signal degrades.
+ */
+function deriveWorkspaceRoot(
+  paths: Core.M3LPaths,
+  logger: Core.M3LLogger,
+): string | undefined {
+  try {
+    return paths.getProjectRoot();
+  } catch (cause) {
+    if (!(cause instanceof Core.M3LPathResolutionError)) throw cause;
+    logger.warning(
+      "workspace-root scrub disabled: the project root could not be resolved (standalone mode), so absolute host paths in CLI output are no longer masked before the model reads them",
+      { scrub: "workspace-root", enabled: false },
+    );
+    return undefined;
+  }
+}
+
+/**
  * Runs the deterministic, no-Bedrock `explain-policy` operation end to end:
  * loads the policy, resolves the typed runtime settings (including the
- * `maxIterations` vs `budgets.loopIterations` cross-check), and renders the
- * policy through {@link explainPolicy}.
- *
- * The CLI seam (`AgentCliSurface`, built from this same
- * `_runtime`/`deps.paths` pair) is not wired here in this offline slice —
- * that construction, and `explainPolicy`'s consumption of it, lands in the
- * follow-up PR alongside the rest of the `m3l`-CLI-spawning code.
- * `resolveAgentOperatorRuntime` is still called for its `maxIterations`
- * cross-check side effect even though its result is otherwise unused today.
+ * `maxIterations` vs `budgets.loopIterations` cross-check), builds the CLI
+ * seam, and renders the policy through {@link explainPolicy}.
  */
 async function runExplainPolicy(deps: RunAgentOperatorDeps): Promise<void> {
   const accessor = new Core.M3LConfigAccessor({
@@ -91,13 +116,36 @@ async function runExplainPolicy(deps: RunAgentOperatorDeps): Promise<void> {
   const policyFile =
     accessor.optionalString("policyFile") ?? POLICY_FILE_DEFAULT;
   const policy = await loadAgentPolicy({ paths: deps.paths, policyFile });
-  const _runtime = resolveAgentOperatorRuntime({
+  const runtime = resolveAgentOperatorRuntime({
     config: deps.config,
     policy,
     paths: deps.paths,
   });
+  const workspaceRoot = deriveWorkspaceRoot(deps.paths, deps.logger);
 
-  await explainPolicy({ policy, logger: deps.logger });
+  const surface = createAgentCliSurface({
+    entrypoint: runtime.cliEntrypoint,
+    // The CLI resolves its own project/data roots from its own entrypoint's
+    // location, not from this script's cwd — so the entrypoint's own
+    // directory is a stable spawn `cwd` that works whether `cliEntrypoint`
+    // came from the monorepo default or an explicit standalone override.
+    cwd: dirname(runtime.cliEntrypoint),
+    nodeExecPath: process.execPath,
+    cliTimeoutMs: runtime.cliTimeoutMs,
+    dryRunTimeoutMs: runtime.dryRunTimeoutMs,
+    maxOutputBytes: runtime.maxOutputBytes,
+    // `includeDryRunProbes` is the gate; the allowlist is inert on its own.
+    // Fail closed — an unset or false flag hands the surface an EMPTY set, so
+    // a `dryRunAllowlist` left in config (or added ahead of the flag) can
+    // never silently arm the destructive `dry-run` tool.
+    dryRunAllowlist: runtime.includeDryRunProbes
+      ? new Set(runtime.dryRunAllowlist)
+      : new Set<string>(),
+    signal: deps.signal,
+    ...(workspaceRoot === undefined ? {} : { workspaceRoot }),
+  });
+
+  await explainPolicy({ policy, logger: deps.logger, surface });
 }
 
 /**
