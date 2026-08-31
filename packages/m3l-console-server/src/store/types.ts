@@ -89,10 +89,27 @@ export interface M3LStoreReadOptions {
 /**
  * The outcome of a write (`INSERT` / `UPDATE` / `DELETE`).
  *
+ * `lastInsertRowid`'s runtime type is **value-dependent**: a `number` when the
+ * rowid fits the safe-integer range (the overwhelmingly common case, and what
+ * every caller written before #807 already assumed), a `bigint` when it does
+ * not. The alternative was returning a `number` always, which is what the
+ * executor used to do — and it silently truncated: rowid 9007199254740993 came
+ * back as ...992, off by one, with no throw and no warning. A type a caller
+ * must narrow is the documented cost of never handing back a corrupted id.
+ *
+ * A caller doing arithmetic on it must therefore handle both. `changes` is
+ * always a plain `number` and needs no such care.
+ *
  * @example
  * ```ts
  * function wasInserted(result: M3LStoreWriteResult): boolean {
  *   return result.changes > 0;
+ * }
+ *
+ * // Narrow before arithmetic — BigInt() accepts both, Number() would
+ * // re-introduce the truncation this type exists to prevent.
+ * function nextId(result: M3LStoreWriteResult): bigint {
+ *   return BigInt(result.lastInsertRowid) + 1n;
  * }
  * ```
  */
