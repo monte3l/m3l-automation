@@ -58,10 +58,6 @@ export const EXEMPT_SKILLS = new Set([
   "resolving-merge-conflicts",
   "reviewing-dependabot-prs",
   "starting-work",
-  // Has 3 cases, but none carries a checklist key at all — so all 3 grade
-  // against `expected_output` alone. Authoring a real checklist for it is
-  // the follow-up corpus PR's job; remove this entry in that same PR.
-  "syncing-docs",
   "triaging-scan-alerts",
   "tsconfig-strict-esm",
   "vitest-coverage-types-mocks",

@@ -5,19 +5,41 @@
       "id": 1,
       "prompt": "sync docs",
       "expected_output": "Runs the full doc-sync sequence (--update stamp, doc-count check, post-stamp provenance check, implementation-status reminder, markdown lint) and outputs a structured summary report.",
-      "files": []
+      "expectations": [
+        "Emits `WOULD-RUN: pnpm sync:docs` as the preferred composite entry point, OR emits `WOULD-RUN: node bin/check-doc-provenance.mjs --update` (with the `--update` flag) as the first manual step",
+        "If the manual fallback sequence is used (multiple WOULD-RUN lines), `WOULD-RUN: node bin/check-doc-provenance.mjs --update` appears earlier in the response than `WOULD-RUN: node bin/check-doc-provenance.mjs` (without any flag) — re-stamping must precede post-stamp verification, never the reverse",
+        "Emits `WOULD-RUN: pnpm lint:md` somewhere in the response to cover the mandatory markdown lint step (step 8)",
+        "Ends with a structured summary block headed `## /syncing-docs summary` (or equivalent) that enumerates each major step by name with an explicit disposition — a planned/would-run/not-yet-executed marker satisfies just as well as ✓/✗; the requirement is that every step is accounted for, not that any step claims a completed outcome"
+      ]
     },
     {
       "id": 2,
       "prompt": "I just finished implementing the core/security submodule and the PR is about to go up. Can you stamp provenance and make sure all the doc counts are right before I open it?",
       "expected_output": "Runs all syncing-docs steps in order, notes the security submodule context for the implementation-status check, stamps sidecars, verifies counts, and reports each step outcome.",
-      "files": []
+      "files": [
+        {
+          "path": "docs/reference/core/security.md",
+          "content": "---\nmodule: core/security\nstatus: implemented\n---\n\n# `core/security`\n\nUtilities for secure string comparison and secret masking.\n\n## API\n\n### `M3LSecureCompare`\n\nConstant-time string comparison to prevent timing attacks.\n"
+        }
+      ],
+      "expectations": [
+        "Emits a `WOULD-RUN:` line containing `node bin/check-doc-provenance.mjs --update` (with the `--update` flag) and a separate `WOULD-RUN:` line containing `node bin/check-doc-provenance.mjs` without the flag; the `--update` line appears earlier in the response than the bare line — re-stamp before post-stamp verify is mandatory",
+        "Emits `WOULD-RUN: pnpm check:doc-exports` to verify that every newly shipped export from `core/security` is documented before the PR opens",
+        "References `docs/reference/core/security.md` by name when describing the implementation-status check (step 4), confirming the security row's status is checked in that specific page",
+        "Emits a `WOULD-RUN:` line for `pnpm gen:index` and that line appears before any `WOULD-RUN:` line for `pnpm format` or `prettier` — the gen:index-before-prettier ordering rule is explicit in the skill",
+        "Ends with a structured per-step summary that names all eight steps (provenance stamp, doc counts, post-stamp check, implementation status, test counts, script docs, reference index, markdown lint) and gives each an explicit disposition — a planned/would-run/not-yet-executed marker satisfies just as well as ✓/✗; the requirement is that all eight steps are enumerated by name, not that any step claims a completed outcome"
+      ]
     },
     {
       "id": 3,
       "prompt": "reconcile docs — we merged two PRs today and I want to make sure the provenance metadata isn't stale",
       "expected_output": "Identifies this as a syncing-docs task, runs the full sequence starting with re-stamping sidecars before the post-stamp verify gate, and produces the summary report.",
-      "files": []
+      "expectations": [
+        "Emits `WOULD-RUN: pnpm sync:docs` or `WOULD-RUN: node bin/check-doc-provenance.mjs --update` as the first substantive WOULD-RUN line — provenance re-stamping is the entry point directly motivated by the staleness concern",
+        "If the manual sequence is emitted, `WOULD-RUN: node bin/check-doc-provenance.mjs --update` appears before any `WOULD-RUN: node bin/check-doc-provenance.mjs` line without the `--update` flag — the SKILL.md is explicit that re-stamp before verify prevents a staleness warning from aborting the run",
+        "Emits `WOULD-RUN: pnpm gen:counts` before `WOULD-RUN: pnpm check:impl-counts` — counts must be regenerated before the implementation-count verifier runs, or the verifier checks stale state",
+        "Ends with a structured per-step summary block (headed `## /syncing-docs summary` or equivalent) that names each major step and gives each an explicit disposition — a planned/would-run/not-yet-executed marker satisfies just as well as ✓/✗; the requirement is that every step is accounted for, not that any step claims a completed outcome"
+      ]
     }
   ]
 }
