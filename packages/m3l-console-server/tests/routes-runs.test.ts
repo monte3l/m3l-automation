@@ -32,6 +32,7 @@
  * server, matching `tests/health.test.ts`'s established pattern.
  */
 import { describe, expect, test, vi } from "vitest";
+import type { Mock } from "vitest";
 
 import { createRequestContext } from "../src/http/context.js";
 import type { M3LRequestContext } from "../src/http/context.js";
@@ -90,32 +91,37 @@ interface FakeRegistry {
 /**
  * Builds a bare fixture launcher whose `launch` returns `handle`.
  *
- * Widened to `& { launch: ReturnType<typeof vi.fn> }` (mirrors
- * `tests/auth-middleware.test.ts`'s `buildProvider`) so an
- * `expect(orchestrator.launch)...` assertion reads the mock function's own
- * type rather than `FakeLauncher`'s method-shorthand signature —
- * `@typescript-eslint/unbound-method` flags extracting an interface method
- * without calling it, which a plain `FakeLauncher`-typed value would trip.
+ * `launch` is `Omit`ted from `FakeLauncher` before the `vi.fn()` member is
+ * intersected in (mirrors `tests/auth-middleware.test.ts`'s `buildProvider`),
+ * so an `expect(orchestrator.launch)...` assertion reads the mock function's
+ * own type. Leaving `FakeLauncher` whole is not enough: since 8.68.0
+ * `@typescript-eslint/unbound-method` walks every intersection constituent and
+ * reports if *any* of them declares the member with method shorthand, so the
+ * interface side alone would flag all of these assertions — even though they
+ * only inspect the mock and never call it, so no `this`-scoping hazard exists.
+ * The mock type is parameterized (not a bare `ReturnType<typeof vi.fn>`)
+ * because with `FakeLauncher`'s own signature `Omit`ted away, nothing else
+ * keeps the fixture assignable to `M3LRunLauncherPort` at the injection site.
  */
 function buildLauncher(
   handle: FakeRunHandle,
-): FakeLauncher & { launch: ReturnType<typeof vi.fn> } {
-  return { launch: vi.fn().mockReturnValue(handle) };
+): Omit<FakeLauncher, "launch"> & { launch: Mock<FakeLauncher["launch"]> } {
+  return { launch: vi.fn<FakeLauncher["launch"]>().mockReturnValue(handle) };
 }
 
-/** Builds a bare fixture registry, widened the same way as {@link buildLauncher}. */
+/** Builds a bare fixture registry, retyped the same way as {@link buildLauncher}. */
 function buildRegistry(
   overrides: {
     readonly list?: readonly FakeRunRow[];
     readonly get?: FakeRunRow;
   } = {},
-): FakeRegistry & {
-  list: ReturnType<typeof vi.fn>;
-  get: ReturnType<typeof vi.fn>;
+): Omit<FakeRegistry, "list" | "get"> & {
+  list: Mock<FakeRegistry["list"]>;
+  get: Mock<FakeRegistry["get"]>;
 } {
   return {
-    list: vi.fn().mockReturnValue(overrides.list ?? []),
-    get: vi.fn().mockReturnValue(overrides.get),
+    list: vi.fn<FakeRegistry["list"]>().mockReturnValue(overrides.list ?? []),
+    get: vi.fn<FakeRegistry["get"]>().mockReturnValue(overrides.get),
   };
 }
 

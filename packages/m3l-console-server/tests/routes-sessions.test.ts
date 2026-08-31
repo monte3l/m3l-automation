@@ -39,6 +39,7 @@
  * `tests/routes-runs.test.ts`'s established pattern.
  */
 import { describe, expect, expectTypeOf, test, vi } from "vitest";
+import type { Mock } from "vitest";
 
 import { M3LConsoleError } from "../src/errors/console-error.js";
 import { createRequestContext } from "../src/http/context.js";
@@ -155,9 +156,15 @@ interface FakeWriter {
 }
 
 /**
- * Builds a bare fixture reader, widened to `vi.fn()` return types (mirrors
+ * Builds a bare fixture reader whose mocked members are `Omit`ted from
+ * `FakeReader` and re-declared as their mock types (mirrors
  * `tests/routes-runs.test.ts`'s `buildRegistry`) so `expect(reader.get...)`
- * assertions read the mock's own type.
+ * assertions read the mock's own type. Since 8.68.0
+ * `@typescript-eslint/unbound-method` walks every intersection constituent and
+ * reports if *any* declares the member with method shorthand, so an intact
+ * `FakeReader` constituent would flag them all. The mock types are
+ * parameterized because, with `FakeReader`'s signatures `Omit`ted away,
+ * nothing else keeps the fixture assignable to the port it stands in for.
  */
 function buildReader(
   overrides: {
@@ -165,19 +172,28 @@ function buildReader(
     readonly list?: readonly FakeSessionRow[];
     readonly bindings?: readonly FakeBindingRow[];
   } = {},
-): FakeReader & {
-  getSession: ReturnType<typeof vi.fn>;
-  listSessions: ReturnType<typeof vi.fn>;
-  listBindingsForSession: ReturnType<typeof vi.fn>;
+): Omit<
+  FakeReader,
+  "getSession" | "listSessions" | "listBindingsForSession"
+> & {
+  getSession: Mock<FakeReader["getSession"]>;
+  listSessions: Mock<FakeReader["listSessions"]>;
+  listBindingsForSession: Mock<FakeReader["listBindingsForSession"]>;
 } {
   return {
-    getSession: vi.fn().mockReturnValue(overrides.get),
-    listSessions: vi.fn().mockReturnValue(overrides.list ?? []),
-    listBindingsForSession: vi.fn().mockReturnValue(overrides.bindings ?? []),
+    getSession: vi
+      .fn<FakeReader["getSession"]>()
+      .mockReturnValue(overrides.get),
+    listSessions: vi
+      .fn<FakeReader["listSessions"]>()
+      .mockReturnValue(overrides.list ?? []),
+    listBindingsForSession: vi
+      .fn<FakeReader["listBindingsForSession"]>()
+      .mockReturnValue(overrides.bindings ?? []),
   };
 }
 
-/** Builds a bare fixture writer, widened the same way as {@link buildReader}. */
+/** Builds a bare fixture writer, retyped the same way as {@link buildReader}. */
 function buildWriter(
   overrides: {
     readonly created?: FakeSessionRow;
@@ -187,23 +203,41 @@ function buildWriter(
     readonly decision?: FakeDecisionRow;
     readonly answerResult?: boolean;
   } = {},
-): FakeWriter & {
-  createSession: ReturnType<typeof vi.fn>;
-  closeSession: ReturnType<typeof vi.fn>;
-  reopenSession: ReturnType<typeof vi.fn>;
-  addStep: ReturnType<typeof vi.fn>;
-  raiseDecision: ReturnType<typeof vi.fn>;
-  answerDecision: ReturnType<typeof vi.fn>;
+): Omit<
+  FakeWriter,
+  | "createSession"
+  | "closeSession"
+  | "reopenSession"
+  | "addStep"
+  | "raiseDecision"
+  | "answerDecision"
+> & {
+  createSession: Mock<FakeWriter["createSession"]>;
+  closeSession: Mock<FakeWriter["closeSession"]>;
+  reopenSession: Mock<FakeWriter["reopenSession"]>;
+  addStep: Mock<FakeWriter["addStep"]>;
+  raiseDecision: Mock<FakeWriter["raiseDecision"]>;
+  answerDecision: Mock<FakeWriter["answerDecision"]>;
 } {
   return {
-    createSession: vi.fn().mockReturnValue(overrides.created ?? SESSION_ROW),
-    closeSession: vi.fn().mockReturnValue(overrides.closeResult ?? true),
-    reopenSession: vi.fn().mockReturnValue(overrides.reopenResult ?? true),
+    createSession: vi
+      .fn<FakeWriter["createSession"]>()
+      .mockReturnValue(overrides.created ?? SESSION_ROW),
+    closeSession: vi
+      .fn<FakeWriter["closeSession"]>()
+      .mockReturnValue(overrides.closeResult ?? true),
+    reopenSession: vi
+      .fn<FakeWriter["reopenSession"]>()
+      .mockReturnValue(overrides.reopenResult ?? true),
     addStep: vi
-      .fn()
+      .fn<FakeWriter["addStep"]>()
       .mockResolvedValue(overrides.addStepResult ?? ADD_STEP_RESULT),
-    raiseDecision: vi.fn().mockReturnValue(overrides.decision ?? DECISION),
-    answerDecision: vi.fn().mockReturnValue(overrides.answerResult ?? true),
+    raiseDecision: vi
+      .fn<FakeWriter["raiseDecision"]>()
+      .mockReturnValue(overrides.decision ?? DECISION),
+    answerDecision: vi
+      .fn<FakeWriter["answerDecision"]>()
+      .mockReturnValue(overrides.answerResult ?? true),
   };
 }
 
