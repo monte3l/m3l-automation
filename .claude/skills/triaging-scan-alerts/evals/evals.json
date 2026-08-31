@@ -1,0 +1,68 @@
+{
+  "skill_name": "triaging-scan-alerts",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I exported the open code-scanning alerts to scan-alerts.json using `gh api repos/acme-org/m3l-automation/code-scanning/alerts`. Triage them for PR #99 on branch fix/auth-refactor and tell me if the PR is blocked.",
+      "expected_output": "A structured triage report with separate CodeQL and Scorecard sections, identifying js/hardcoded-credentials at src/config/database.ts:23 as the blocking error-severity alert, a non-blocking warning entry for js/unused-local-variable, a Scorecard entry for Token-Permissions, and a Remediation Options section with at least three options.",
+      "files": [
+        {
+          "path": "scan-alerts.json",
+          "content": "[\n  {\n    \"number\": 1,\n    \"state\": \"open\",\n    \"dismissed_at\": null,\n    \"rule\": {\n      \"id\": \"js/hardcoded-credentials\",\n      \"severity\": \"error\",\n      \"description\": \"Hardcoded credentials\"\n    },\n    \"tool\": {\n      \"name\": \"CodeQL\",\n      \"version\": \"2.19.3\"\n    },\n    \"most_recent_instance\": {\n      \"ref\": \"refs/heads/fix/auth-refactor\",\n      \"state\": \"open\",\n      \"location\": {\n        \"path\": \"src/config/database.ts\",\n        \"start_line\": 23\n      },\n      \"message\": {\n        \"text\": \"Hard-coded credential in source code.\"\n      }\n    }\n  },\n  {\n    \"number\": 2,\n    \"state\": \"open\",\n    \"dismissed_at\": null,\n    \"rule\": {\n      \"id\": \"js/unused-local-variable\",\n      \"severity\": \"warning\",\n      \"description\": \"Unused variable in local scope\"\n    },\n    \"tool\": {\n      \"name\": \"CodeQL\",\n      \"version\": \"2.19.3\"\n    },\n    \"most_recent_instance\": {\n      \"ref\": \"refs/heads/fix/auth-refactor\",\n      \"state\": \"open\",\n      \"location\": {\n        \"path\": \"src/utils/retry.ts\",\n        \"start_line\": 88\n      },\n      \"message\": {\n        \"text\": \"Variable 'tmp' is never used.\"\n      }\n    }\n  },\n  {\n    \"number\": 3,\n    \"state\": \"open\",\n    \"dismissed_at\": null,\n    \"rule\": {\n      \"id\": \"Token-Permissions\",\n      \"severity\": \"high\",\n      \"description\": \"Workflow does not restrict default token permissions\"\n    },\n    \"tool\": {\n      \"name\": \"Scorecard\",\n      \"version\": \"4.13.1\"\n    },\n    \"most_recent_instance\": {\n      \"ref\": \"refs/heads/fix/auth-refactor\",\n      \"state\": \"open\",\n      \"location\": {\n        \"path\": \".github/workflows/ci.yml\",\n        \"start_line\": 1\n      },\n      \"message\": {\n        \"text\": \"Default workflow token permissions should be restricted to read-only.\"\n      }\n    }\n  }\n]"
+        }
+      ],
+      "expectations": [
+        "The response emits a WOULD-RUN line containing `gh api --method GET` and `code-scanning/alerts` and `--paginate`",
+        "The response names `js/hardcoded-credentials` at `src/config/database.ts:23` in a section explicitly labelled as blocking or error-severity",
+        "The response places `js/unused-local-variable` in a non-blocking section (not in any blocking or error-severity grouping), noting its warning severity",
+        "The response groups findings under distinct CodeQL and Scorecard headings, with `Token-Permissions` appearing under the Scorecard heading and not under the CodeQL heading",
+        "The response includes a Remediation Options section listing at least three options",
+        "The response does not emit any WOULD-RUN line containing `git commit`, `git push`, or a destructive code-editing command, and does not describe editing any source file"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "I saved the code-scanning API response to scan-alerts.json using `gh api repos/acme-org/m3l-automation/code-scanning/alerts`. Run the triage for the current branch.",
+      "expected_output": "A brief report stating no open code-scanning alerts were found, without any blocking-alert section or invented rule ids.",
+      "files": [
+        {
+          "path": "scan-alerts.json",
+          "content": "[]"
+        }
+      ],
+      "expectations": [
+        "The response emits a WOULD-RUN line containing `gh api --method GET` and `code-scanning/alerts`",
+        "The response contains text stating there are no open code-scanning alerts, that the alert list is empty, or equivalent clean-result language",
+        "The response does not list any rule id beginning with `js/` or the string `Token-Permissions` as a finding",
+        "The response does not state the PR is blocked or that a merge gate is failing due to a code-scanning alert"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "My GitHub Actions workflow failed on the `build` job \u2014 the TypeScript compilation step exited with code 1. Can you diagnose what went wrong?",
+      "expected_output": "A short response explaining this is a CI workflow failure outside the scope of code-scanning triage, directing the user to the triaging-ci skill rather than running any code-scanning steps.",
+      "expectations": [
+        "The response does not emit any WOULD-RUN line containing `code-scanning/alerts`",
+        "The response names `triaging-ci` as the appropriate skill for diagnosing failed CI workflow steps",
+        "The response does not produce a Scan Triage section or any headings grouping alerts by CodeQL or Scorecard"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "I saved the code-scanning alerts to scan-alerts.json using `gh api repos/acme-org/m3l-automation/code-scanning/alerts`. PR #112 changes only these two files: `src/core/file-reader.ts` and `src/core/pipeline.ts`. Triage the alerts and identify which, if any, block the merge.",
+      "expected_output": "A triage report identifying js/path-injection at src/core/file-reader.ts:56 as the sole blocking alert (error-severity on a changed file) and placing js/prototype-pollution at src/legacy/deprecated.ts:12 in a non-blocking section because it does not touch a file in the PR's changed set.",
+      "files": [
+        {
+          "path": "scan-alerts.json",
+          "content": "[\n  {\n    \"number\": 10,\n    \"state\": \"open\",\n    \"dismissed_at\": null,\n    \"rule\": {\n      \"id\": \"js/path-injection\",\n      \"severity\": \"error\",\n      \"description\": \"Uncontrolled data used in path expression\"\n    },\n    \"tool\": {\n      \"name\": \"CodeQL\",\n      \"version\": \"2.19.3\"\n    },\n    \"most_recent_instance\": {\n      \"ref\": \"refs/heads/fix/file-handling\",\n      \"state\": \"open\",\n      \"location\": {\n        \"path\": \"src/core/file-reader.ts\",\n        \"start_line\": 56\n      },\n      \"message\": {\n        \"text\": \"This path depends on a user-provided value.\"\n      }\n    }\n  },\n  {\n    \"number\": 11,\n    \"state\": \"open\",\n    \"dismissed_at\": null,\n    \"rule\": {\n      \"id\": \"js/prototype-pollution\",\n      \"severity\": \"error\",\n      \"description\": \"Prototype pollution\"\n    },\n    \"tool\": {\n      \"name\": \"CodeQL\",\n      \"version\": \"2.19.3\"\n    },\n    \"most_recent_instance\": {\n      \"ref\": \"refs/heads/fix/file-handling\",\n      \"state\": \"open\",\n      \"location\": {\n        \"path\": \"src/legacy/deprecated.ts\",\n        \"start_line\": 12\n      },\n      \"message\": {\n        \"text\": \"Prototype pollution via assignment to computed property.\"\n      }\n    }\n  }\n]"
+        }
+      ],
+      "expectations": [
+        "The response emits a WOULD-RUN line containing `gh api --method GET` and `code-scanning/alerts` and `--paginate`",
+        "The response names `js/path-injection` at `src/core/file-reader.ts:56` in a section labelled as blocking or error-severity on a changed file",
+        "The response places `js/prototype-pollution` at `src/legacy/deprecated.ts:12` in a non-blocking or other-alerts section, with a reason that the file is not in the PR's changed set",
+        "The response does not emit any WOULD-RUN line for a code-editing or file-mutation command, and does not describe editing any source file"
+      ]
+    }
+  ]
+}

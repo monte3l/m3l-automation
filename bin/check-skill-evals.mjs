@@ -53,14 +53,10 @@ export const MIN_CASES = 3;
 export const MIN_CHECKLIST_ENTRIES = 1;
 
 export const EXEMPT_SKILLS = new Set([
-  "eslint-flat-config",
   "implementing-scripts",
   "resolving-merge-conflicts",
   "reviewing-dependabot-prs",
   "starting-work",
-  "triaging-scan-alerts",
-  "tsconfig-strict-esm",
-  "vitest-coverage-types-mocks",
 ]);
 
 /**

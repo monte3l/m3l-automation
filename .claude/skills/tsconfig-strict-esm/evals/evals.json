@@ -1,0 +1,86 @@
+{
+  "skill_name": "tsconfig-strict-esm",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "We are adding a new package `packages/m3l-analytics` to the monorepo. Create its `tsconfig.json` (tooling project: editor + typed linting + test type-checking, no emit) and `tsconfig.build.json` (emit project) following the same pattern used by `packages/m3l-common`, and add the new package to the root `tsconfig.json` solution file.",
+      "expected_output": "The response writes both `packages/m3l-analytics/tsconfig.json` (tooling: composite off, declaration off, noEmit true) and `packages/m3l-analytics/tsconfig.build.json` (emit: extends base, sets rootDir/outDir), and edits the root `tsconfig.json` to add a reference to the new build config.",
+      "files": [
+        {
+          "path": "tsconfig.base.json",
+          "content": "{\n  \"$schema\": \"https://json.schemastore.org/tsconfig\",\n  \"compilerOptions\": {\n    \"target\": \"es2025\",\n    \"lib\": [\"es2025\"],\n    \"types\": [\"node\"],\n    \"module\": \"nodenext\",\n    \"moduleResolution\": \"nodenext\",\n    \"strict\": true,\n    \"noUncheckedIndexedAccess\": true,\n    \"noImplicitOverride\": true,\n    \"noFallthroughCasesInSwitch\": true,\n    \"exactOptionalPropertyTypes\": true,\n    \"verbatimModuleSyntax\": true,\n    \"isolatedModules\": true,\n    \"declaration\": true,\n    \"declarationMap\": true,\n    \"sourceMap\": true,\n    \"composite\": true,\n    \"skipLibCheck\": true,\n    \"forceConsistentCasingInFileNames\": true\n  }\n}\n"
+        },
+        {
+          "path": "tsconfig.json",
+          "content": "{\n  \"files\": [],\n  \"references\": [\n    { \"path\": \"./packages/m3l-common/tsconfig.build.json\" }\n  ]\n}\n"
+        }
+      ],
+      "expectations": [
+        "The file written at `packages/m3l-analytics/tsconfig.json` contains `\"extends\": \"../../tsconfig.base.json\"`",
+        "The file written at `packages/m3l-analytics/tsconfig.json` contains `\"composite\": false`, `\"declaration\": false`, and `\"noEmit\": true`",
+        "The file written at `packages/m3l-analytics/tsconfig.build.json` contains `\"extends\": \"../../tsconfig.base.json\"`",
+        "The file written at `packages/m3l-analytics/tsconfig.build.json` contains `\"rootDir\": \"src\"` and `\"outDir\": \"dist\"`",
+        "The edited root `tsconfig.json` contains an entry `{ \"path\": \"./packages/m3l-analytics/tsconfig.build.json\" }` in its `references` array"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "I'm getting error TS2835 on this import in `packages/m3l-analytics/src/index.ts`:\n\n```typescript\nimport { helper } from './utils';\n```\n\nHow do I fix this?",
+      "expected_output": "The response identifies the fix as adding the `.js` extension to the import (`'./utils.js'`), explains that NodeNext module resolution requires explicit extensions because `tsc` does not rewrite them, and does not suggest changing any `tsconfig` compiler option to silence the error.",
+      "files": [
+        {
+          "path": "tsconfig.base.json",
+          "content": "{\n  \"$schema\": \"https://json.schemastore.org/tsconfig\",\n  \"compilerOptions\": {\n    \"target\": \"es2025\",\n    \"lib\": [\"es2025\"],\n    \"types\": [\"node\"],\n    \"module\": \"nodenext\",\n    \"moduleResolution\": \"nodenext\",\n    \"strict\": true,\n    \"noUncheckedIndexedAccess\": true,\n    \"exactOptionalPropertyTypes\": true,\n    \"verbatimModuleSyntax\": true,\n    \"isolatedModules\": true,\n    \"declaration\": true,\n    \"declarationMap\": true,\n    \"sourceMap\": true,\n    \"composite\": true,\n    \"skipLibCheck\": true,\n    \"forceConsistentCasingInFileNames\": true\n  }\n}\n"
+        }
+      ],
+      "expectations": [
+        "The response contains a corrected import statement using the `.js` extension, such as `import { helper } from './utils.js'` or `from './utils.js'`",
+        "The response explains that `tsc` does not rewrite relative import extensions under NodeNext resolution, and that Node requires the explicit `.js` extension to resolve ESM modules at runtime",
+        "The response states that the fix is to update the import statement in the source file itself, not to change a compiler option in any `tsconfig` file",
+        "The response does not contain any `WOULD-RUN:` line that writes to or modifies a `tsconfig` file as a means of resolving the TS2835 error"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "`pnpm typecheck` is failing with TS5110 on `packages/m3l-analytics/tsconfig.json`. The error message says option 'module' must be set to 'NodeNext' when option 'moduleResolution' is set to 'Bundler'. What is wrong and how do I fix it?",
+      "expected_output": "The response identifies the TS5110 error as a `module`/`moduleResolution` mismatch (the package tsconfig overrides `moduleResolution` to `bundler` while `module` remains `nodenext` from the base), states that both must be `\"nodenext\"` in this repo, and directs removal of the conflicting override.",
+      "files": [
+        {
+          "path": "tsconfig.base.json",
+          "content": "{\n  \"$schema\": \"https://json.schemastore.org/tsconfig\",\n  \"compilerOptions\": {\n    \"target\": \"es2025\",\n    \"lib\": [\"es2025\"],\n    \"types\": [\"node\"],\n    \"module\": \"nodenext\",\n    \"moduleResolution\": \"nodenext\",\n    \"strict\": true,\n    \"noUncheckedIndexedAccess\": true,\n    \"exactOptionalPropertyTypes\": true,\n    \"verbatimModuleSyntax\": true,\n    \"isolatedModules\": true,\n    \"declaration\": true,\n    \"declarationMap\": true,\n    \"sourceMap\": true,\n    \"composite\": true,\n    \"skipLibCheck\": true,\n    \"forceConsistentCasingInFileNames\": true\n  }\n}\n"
+        },
+        {
+          "path": "packages/m3l-analytics/tsconfig.json",
+          "content": "{\n  \"extends\": \"../../tsconfig.base.json\",\n  \"compilerOptions\": {\n    \"composite\": false,\n    \"declaration\": false,\n    \"declarationMap\": false,\n    \"noEmit\": true,\n    \"moduleResolution\": \"bundler\"\n  },\n  \"include\": [\"src/**/*.ts\", \"tests/**/*.ts\"],\n  \"exclude\": [\"dist\", \"node_modules\"]\n}\n"
+        }
+      ],
+      "expectations": [
+        "The response identifies that `\"moduleResolution\": \"bundler\"` in `packages/m3l-analytics/tsconfig.json` conflicts with `\"module\": \"nodenext\"` inherited from `tsconfig.base.json`, causing TS5110",
+        "The response states that `module` and `moduleResolution` must use compatible paired values, and in this repo both must be `\"nodenext\"`",
+        "The response states that the `\"moduleResolution\": \"bundler\"` override must be removed from `packages/m3l-analytics/tsconfig.json` (or changed to `\"nodenext\"`)",
+        "The response emits `WOULD-RUN: pnpm typecheck` or `WOULD-RUN: pnpm build` to verify the fix"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Can I set `\"declaration\": false` in `packages/m3l-analytics/tsconfig.build.json` to stop emitting `.d.ts` files? We don't publish this package externally so we don't need them.",
+      "expected_output": "The response explains that `composite: true` (inherited from `tsconfig.base.json`) requires `declaration: true` and they cannot be separated, identifies the correct pattern for a no-declaration project as disabling both `composite` and `declaration` together with `noEmit: true`, and does not suggest a configuration where `composite: true` and `declaration: false` coexist.",
+      "files": [
+        {
+          "path": "tsconfig.base.json",
+          "content": "{\n  \"$schema\": \"https://json.schemastore.org/tsconfig\",\n  \"compilerOptions\": {\n    \"target\": \"es2025\",\n    \"lib\": [\"es2025\"],\n    \"types\": [\"node\"],\n    \"module\": \"nodenext\",\n    \"moduleResolution\": \"nodenext\",\n    \"strict\": true,\n    \"noUncheckedIndexedAccess\": true,\n    \"exactOptionalPropertyTypes\": true,\n    \"verbatimModuleSyntax\": true,\n    \"isolatedModules\": true,\n    \"declaration\": true,\n    \"declarationMap\": true,\n    \"sourceMap\": true,\n    \"composite\": true,\n    \"skipLibCheck\": true,\n    \"forceConsistentCasingInFileNames\": true\n  }\n}\n"
+        },
+        {
+          "path": "packages/m3l-analytics/tsconfig.build.json",
+          "content": "{\n  \"extends\": \"../../tsconfig.base.json\",\n  \"compilerOptions\": {\n    \"rootDir\": \"src\",\n    \"outDir\": \"dist\",\n    \"tsBuildInfoFile\": \"dist/.tsbuildinfo\",\n    \"isolatedDeclarations\": true\n  },\n  \"include\": [\"src/**/*.ts\"],\n  \"exclude\": [\"dist\", \"node_modules\", \"tests\"]\n}\n"
+        }
+      ],
+      "expectations": [
+        "The response explains that `composite: true` (inherited from `tsconfig.base.json`) requires `declaration: true`, and that setting `declaration: false` while `composite` is still on is a TypeScript error",
+        "The response explains that `composite` and `declaration` must either both remain enabled (the emit/build project pattern) or both be disabled together (the tooling project pattern)",
+        "The response identifies the correct no-emit pattern as setting `\"composite\": false`, `\"declaration\": false`, and `\"noEmit\": true` together, as used by the tooling `tsconfig.json` files in the repo",
+        "The response does not suggest or write any tsconfig configuration that pairs `\"composite\": true` with `\"declaration\": false`"
+      ]
+    }
+  ]
+}

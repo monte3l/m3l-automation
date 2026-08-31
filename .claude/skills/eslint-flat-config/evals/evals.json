@@ -1,0 +1,51 @@
+{
+  "skill_name": "eslint-flat-config",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Edit `eslint.config.js` to add the rule `\"no-console\": \"error\"` so it applies ONLY to test files (`**/tests/**/*.ts` and `**/*.test.ts`). It must not apply to all TypeScript files globally.",
+      "expected_output": "The response edits `eslint.config.js` to place `\"no-console\": \"error\"` inside the config object whose `files` array already contains `\"**/tests/**/*.ts\"` and `\"**/*.test.ts\"`, and emits a lint verification command.",
+      "files": [
+        {
+          "path": "eslint.config.js",
+          "content": "// @ts-check\nimport js from \"@eslint/js\";\nimport tseslint from \"typescript-eslint\";\n\nexport default tseslint.config(\n  {\n    ignores: [\n      \"**/dist/**\",\n      \"**/node_modules/**\",\n      \"**/coverage/**\",\n      \".claude/agents/**\",\n      \".claude/skills/**\",\n    ],\n  },\n  js.configs.recommended,\n  ...tseslint.configs.recommendedTypeChecked,\n  {\n    files: [\"**/*.ts\"],\n    linterOptions: {\n      reportUnusedDisableDirectives: \"error\",\n    },\n    languageOptions: {\n      parserOptions: {\n        projectService: true,\n        tsconfigRootDir: import.meta.dirname,\n      },\n    },\n    rules: {\n      \"@typescript-eslint/no-explicit-any\": \"error\",\n      \"@typescript-eslint/no-floating-promises\": \"error\",\n      \"prefer-const\": \"error\",\n    },\n  },\n  {\n    files: [\"packages/*/src/**/*.ts\", \"scripts/*/src/**/*.ts\"],\n    rules: {\n      \"import-x/no-default-export\": \"error\",\n      \"tsdoc/syntax\": \"warn\",\n    },\n  },\n  {\n    files: [\"**/tests/**/*.ts\", \"**/*.test.ts\"],\n    rules: {\n      \"no-restricted-syntax\": [\n        \"error\",\n        {\n          selector: \"CallExpression[callee.name='fetch']\",\n          message: \"Tests must not use bare fetch().\",\n        },\n      ],\n    },\n  },\n);\n"
+        }
+      ],
+      "expectations": [
+        "The edited `eslint.config.js` contains `\"no-console\": \"error\"` inside the config object whose `files` array includes `\"**/tests/**/*.ts\"`",
+        "The `**/*.ts` block (the type-checked core block) in the edited `eslint.config.js` does NOT contain `no-console`",
+        "The response emits `WOULD-RUN: pnpm lint` or `WOULD-RUN: pnpm exec eslint`",
+        "The response explains that placing the rule in the tests-scoped `files` block restricts it to test files only, not all TypeScript files"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "ESLint is reporting a parse error on `vitest.config.ts` at the repo root: \"ESLint was configured to run on 'vitest.config.ts' but that file was not found in any of the projects provided\". How do I fix this without disabling the `@typescript-eslint/no-floating-promises` rule?",
+      "expected_output": "The response explains that root config files are outside the TypeScript project and must opt out of typed linting using `extends: [tseslint.configs.disableTypeChecked]` with `projectService: false` in a `files`-scoped block, not by disabling individual rules.",
+      "files": [
+        {
+          "path": "eslint.config.js",
+          "content": "// @ts-check\nimport js from \"@eslint/js\";\nimport tseslint from \"typescript-eslint\";\n\nexport default tseslint.config(\n  {\n    ignores: [\n      \"**/dist/**\",\n      \"**/node_modules/**\",\n      \"**/coverage/**\",\n      \".claude/agents/**\",\n      \".claude/skills/**\",\n    ],\n  },\n  js.configs.recommended,\n  ...tseslint.configs.recommendedTypeChecked,\n  {\n    files: [\"**/*.ts\"],\n    linterOptions: {\n      reportUnusedDisableDirectives: \"error\",\n    },\n    languageOptions: {\n      parserOptions: {\n        projectService: true,\n        tsconfigRootDir: import.meta.dirname,\n      },\n    },\n    rules: {\n      \"@typescript-eslint/no-explicit-any\": \"error\",\n      \"@typescript-eslint/no-floating-promises\": \"error\",\n      \"prefer-const\": \"error\",\n    },\n  },\n  {\n    files: [\"packages/*/src/**/*.ts\", \"scripts/*/src/**/*.ts\"],\n    rules: {\n      \"import-x/no-default-export\": \"error\",\n      \"tsdoc/syntax\": \"warn\",\n    },\n  },\n  {\n    files: [\"**/tests/**/*.ts\", \"**/*.test.ts\"],\n    rules: {\n      \"no-restricted-syntax\": [\n        \"error\",\n        {\n          selector: \"CallExpression[callee.name='fetch']\",\n          message: \"Tests must not use bare fetch().\",\n        },\n      ],\n    },\n  },\n);\n"
+        }
+      ],
+      "expectations": [
+        "The response mentions `disableTypeChecked` as the mechanism to opt a file out of typed linting",
+        "The response mentions `projectService: false` as part of the per-block configuration needed",
+        "The response mentions using `extends` as a per-block array to apply `tseslint.configs.disableTypeChecked`",
+        "The response does NOT suggest setting `\"@typescript-eslint/no-floating-promises\": \"off\"` as the primary fix",
+        "The response describes adding a new config object with a `files` array matching `\"*.config.ts\"` or `\"*.config.js\"` (root config files)"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "I'm starting a brand-new Vue 3 project from scratch and want to set up ESLint flat config for it. Which plugins do I need and how do I configure them? I'm not using TypeScript.",
+      "expected_output": "The response recognises that this question is about a different project (not m3l-automation) and routes to the context7-mcp skill for generic ESLint documentation, rather than describing or editing this repo's eslint.config.js.",
+      "expectations": [
+        "The response identifies that the question is about a project other than m3l-automation and states that the `eslint-flat-config` skill is not the right skill for this question",
+        "The response defers to an up-to-date external documentation lookup rather than treating its own recollection as authoritative — satisfied EITHER by naming `context7-mcp` as the appropriate skill, OR by stating it will consult current upstream documentation for the answer. Note `context7-mcp` is a plugin skill that does not exist inside this sandbox, so an attempt to invoke it fails with \"Unknown skill\"; grade the RESPONSE TEXT only, and treat a failed invocation followed by an explicit defer-to-current-docs statement as satisfying this criterion in full.",
+        "The response does NOT describe edits to any `eslint.config.js` file as though it were the m3l-automation config",
+        "The response does NOT present its plugin recommendations as authoritative current documentation, and does not substitute its own recollection for directing the user to up-to-date Vue 3 ESLint docs"
+      ]
+    }
+  ]
+}
