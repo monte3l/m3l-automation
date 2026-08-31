@@ -659,7 +659,10 @@
       "M3L_APPEND_ONLY_MAX_SEGMENT_BYTES",
       "M3L_APPEND_ONLY_MAX_SEGMENT_AGE_MS",
       "M3L_APPEND_ONLY_MAX_LINE_BYTES",
-      "M3LAppendOnlyStreamError"
+      "M3LAppendOnlyStreamError",
+      "M3LAppendOnlyReadOptions",
+      "M3LAppendOnlyTruncatedSegment",
+      "M3LAppendOnlyStreamReadError"
     ]
   },
   {

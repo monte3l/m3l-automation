@@ -25,8 +25,14 @@ import type { Stats } from "node:fs";
 import { mkdir, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 
-/** One segment file name's parsed parts: its UTC date prefix and sequence. */
-interface ParsedSegmentName {
+/**
+ * One segment file name's parsed parts: its UTC date prefix and sequence.
+ *
+ * Exported for the read side (`./append-only-reader.js`): a reader has to
+ * enumerate every date's segments, not just today's, so it needs the parser
+ * itself rather than a second copy of {@link SEGMENT_NAME_PATTERN}.
+ */
+export interface ParsedSegmentName {
   readonly datePrefix: string;
   readonly sequence: number;
 }
@@ -91,7 +97,7 @@ function segmentFileName(datePrefix: string, sequence: number): string {
  * render was written by something else, and adopting another producer's
  * file as our active segment is the more surprising of the two.
  */
-function parseSegmentName(name: string): ParsedSegmentName | undefined {
+export function parseSegmentName(name: string): ParsedSegmentName | undefined {
   const match = SEGMENT_NAME_PATTERN.exec(name);
   if (match === null) {
     return undefined;
