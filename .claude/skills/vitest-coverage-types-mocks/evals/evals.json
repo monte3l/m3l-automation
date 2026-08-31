@@ -1,0 +1,66 @@
+{
+  "skill_name": "vitest-coverage-types-mocks",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I ran `pnpm test:coverage` and the run failed with 'ERROR: Coverage for packages/m3l-common/src/core/utils/helpers.ts does not meet threshold: lines (75.00%) < 90'. But after the run completed I opened coverage/coverage-final.json and that file is not in it — the JSON contains only bin/ files. What is happening, and how do I properly diagnose the shortfall in that library file?",
+      "expected_output": "The response explains the two-pass overwrite mechanic (the bin config's second pass overwrites coverage/ with bin-only data), explains that perFile:true means each source file must individually clear the threshold, instructs to run the library vitest config pass in isolation to obtain library-only coverage-final.json, and does not suggest lowering the threshold values.",
+      "files": [
+        {
+          "path": "vitest.config.ts",
+          "content": "import { defineConfig } from \"vitest/config\";\n\nexport default defineConfig({\n  test: {\n    pool: \"forks\",\n    maxWorkers: \"50%\",\n    include: [\"**/tests/**/*.test.ts\", \"**/*.test.ts\"],\n    exclude: [\n      \"**/dist/**\",\n      \"**/node_modules/**\",\n      \"**/.claude/worktrees/**\",\n      \"bin/tests/**\",\n    ],\n    coverage: {\n      provider: \"v8\",\n      include: [\"packages/*/src/**/*.ts\"],\n      exclude: [\"**/index.ts\", \"**/*.d.ts\"],\n      // json emits coverage-final.json — the v8 text table hides 100%-covered\n      // files, so the JSON is the authoritative per-file record.\n      reporter: [\"text\", \"html\", \"json\"],\n      thresholds: {\n        lines: 90,\n        functions: 83,\n        branches: 80,\n        statements: 89,\n        // perFile: true gates each file individually, not just the aggregate.\n        perFile: true,\n      },\n    },\n  },\n});\n"
+        }
+      ],
+      "expectations": [
+        "Response explains that `pnpm test:coverage` runs two passes and the second pass (the bin config) overwrites `coverage/` with bin-only data, so the library file is absent from `coverage-final.json` after the composite run",
+        "Response includes `WOULD-RUN: pnpm exec vitest run --coverage` or an equivalent command that runs only the library vitest config (not the bin config) to obtain library coverage data",
+        "Response states that `coverage-final.json` written by the library-only pass is the authoritative per-file source, because the v8 text table hides files that are at 100% on every metric",
+        "Response explains that `perFile: true` means `packages/m3l-common/src/core/utils/helpers.ts` must individually clear the lines threshold (90%), not merely contribute to a healthy aggregate",
+        "Response does not include text proposing to reduce or lower the `lines`, `functions`, `branches`, or `statements` threshold values in `thresholds`"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "My test file `packages/m3l-common/tests/auth.test.ts` crashes at startup with 'ReferenceError: Cannot access MOCK_TOKEN before initialization'. Read the file, explain exactly what causes the error, and fix it.",
+      "expected_output": "The response identifies that vi.mock is hoisted before the const MOCK_TOKEN initializer runs, fixes the file by wrapping MOCK_TOKEN in vi.hoisted(() => ...), and emits a WOULD-RUN line to verify the fix.",
+      "files": [
+        {
+          "path": "vitest.config.ts",
+          "content": "import { defineConfig } from \"vitest/config\";\n\nexport default defineConfig({\n  test: {\n    pool: \"forks\",\n    maxWorkers: \"50%\",\n    include: [\"**/tests/**/*.test.ts\", \"**/*.test.ts\"],\n    exclude: [\n      \"**/dist/**\",\n      \"**/node_modules/**\",\n      \"**/.claude/worktrees/**\",\n      \"bin/tests/**\",\n    ],\n    coverage: {\n      provider: \"v8\",\n      include: [\"packages/*/src/**/*.ts\"],\n      exclude: [\"**/index.ts\", \"**/*.d.ts\"],\n      // json emits coverage-final.json — the v8 text table hides 100%-covered\n      // files, so the JSON is the authoritative per-file record.\n      reporter: [\"text\", \"html\", \"json\"],\n      thresholds: {\n        lines: 90,\n        functions: 83,\n        branches: 80,\n        statements: 89,\n        // perFile: true gates each file individually, not just the aggregate.\n        perFile: true,\n      },\n    },\n  },\n});\n"
+        },
+        {
+          "path": "packages/m3l-common/tests/auth.test.ts",
+          "content": "import { describe, expect, it, vi } from \"vitest\";\nimport { authenticate } from \"../src/core/auth/index.js\";\n\n// DEFECT: MOCK_TOKEN is a plain file-scope const. vi.mock is hoisted to the\n// top of the file by Vitest and runs before any const initializers, so\n// MOCK_TOKEN is not yet initialized when the factory executes.\nconst MOCK_TOKEN = \"test-token-123\";\n\nvi.mock(\"../src/core/auth/index.js\", () => ({\n  authenticate: vi.fn().mockResolvedValue(MOCK_TOKEN),\n}));\n\ndescribe(\"authenticate\", () => {\n  it(\"returns the mocked token\", async () => {\n    const result = await authenticate(\"user\", \"pass\");\n    expect(result).toBe(MOCK_TOKEN);\n  });\n});\n"
+        }
+      ],
+      "expectations": [
+        "Response explains that `vi.mock` is hoisted to the top of the file by Vitest and its factory runs before any file-scope `const` initializers, so `MOCK_TOKEN` is not yet initialized when the factory executes",
+        "The edited `packages/m3l-common/tests/auth.test.ts` contains `vi.hoisted(() =>` (the hoisted value wrapper)",
+        "The edited `packages/m3l-common/tests/auth.test.ts` assigns `MOCK_TOKEN` using a `vi.hoisted` call — that is, the file contains `MOCK_TOKEN = vi.hoisted(` or `const MOCK_TOKEN = vi.hoisted(`",
+        "The `vi.mock` factory in the edited file still references `MOCK_TOKEN`, so the mock resolves to the hoisted value rather than a hard-coded literal inside the factory",
+        "Response emits `WOULD-RUN: pnpm test` or `WOULD-RUN: pnpm exec vitest run` to verify the fix"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "I have an exported function `formatId(value: string): BrandedId` where `BrandedId` is a branded string type. I want to add type-level tests — assertions that fail at compile time if the types change, not at runtime — to verify that `formatId` accepts only `string` as its parameter and that it returns `BrandedId`. What is the Vitest pattern for this in the m3l-automation repo?",
+      "expected_output": "The response shows `expectTypeOf` usage with `.parameter(0).toEqualTypeOf<string>()` and `.returns.toEqualTypeOf<BrandedId>()`, explains these assertions surface as type errors (not runtime failures) during `pnpm test`, and does not suggest runtime assertions like `toBe` or `toEqual` as a substitute.",
+      "expectations": [
+        "Response includes `expectTypeOf(formatId)` or `expectTypeOf<typeof formatId>()` in a code example",
+        "Response includes `.parameter(0)` together with `.toEqualTypeOf<string>()` or `.toMatchTypeOf<string>()` to assert the parameter type",
+        "Response includes `.returns` together with `toEqualTypeOf<BrandedId>()` or `toMatchTypeOf<BrandedId>()` to assert the return type",
+        "Response explains that `expectTypeOf` assertions surface as type errors during the test run (under `pnpm test`) rather than as runtime assertion failures, and cost nothing at runtime"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "How do I configure Vitest with @testing-library/jest-dom so I can use DOM matchers like `toBeInTheDocument()` and `toHaveTextContent()` in my tests?",
+      "expected_output": "The response recognises this as a generic Vitest question unrelated to the m3l-automation repo, declines to apply the vitest-coverage-types-mocks skill, and routes to the context7-mcp skill instead.",
+      "expectations": [
+        "The response defers to an up-to-date external documentation lookup rather than treating its own recollection as authoritative — satisfied EITHER by naming `context7-mcp` as the appropriate skill, OR by stating it will consult current upstream documentation for the answer. Note `context7-mcp` is a plugin skill that does not exist inside this sandbox, so an attempt to invoke it fails with \"Unknown skill\"; grade the RESPONSE TEXT only, and treat a failed invocation followed by an explicit defer-to-current-docs statement as satisfying this criterion in full.",
+        "Response text explains that this question concerns generic Vitest configuration or external DOM testing libraries unrelated to the m3l-automation repo's specific setup",
+        "Response does not propose any changes to `vitest.config.ts` in the m3l-automation repo to support jest-dom matchers"
+      ]
+    }
+  ]
+}
