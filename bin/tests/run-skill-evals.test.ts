@@ -68,6 +68,51 @@ describe("buildGradedPrompt", () => {
     expect(built).toContain("EVAL GRADING");
     expect(built).not.toMatch(/^1\. /m);
   });
+
+  test("renders assertions as the numbered checklist when expectations is absent", () => {
+    const evalCase = {
+      prompt: "Write a haiku about pnpm.",
+      expected_output: "A three-line haiku mentioning pnpm.",
+      assertions: ["check one", "check two"],
+    };
+
+    const built = buildGradedPrompt(evalCase);
+
+    expect(built).toContain("1. check one");
+    expect(built).toContain("2. check two");
+  });
+
+  test("does not throw and omits numbered lines when neither expectations nor assertions is present", () => {
+    const evalCase = {
+      prompt: "Do a thing.",
+      expected_output: "A thing was done.",
+    };
+
+    let built = "";
+    expect(() => {
+      built = buildGradedPrompt(evalCase);
+    }).not.toThrow();
+
+    expect(built).toContain(evalCase.prompt);
+    expect(built).toContain(evalCase.expected_output);
+    expect(built).toContain("EVAL GRADING");
+    expect(built).not.toMatch(/^1\. /m);
+  });
+
+  test("prefers expectations over assertions when both are present", () => {
+    const evalCase = {
+      prompt: "Write a haiku about pnpm.",
+      expected_output: "A three-line haiku mentioning pnpm.",
+      expectations: ["mentions pnpm by name"],
+      assertions: ["check one", "check two"],
+    };
+
+    const built = buildGradedPrompt(evalCase);
+
+    expect(built).toContain("1. mentions pnpm by name");
+    expect(built).not.toContain("check one");
+    expect(built).not.toContain("check two");
+  });
 });
 
 describe("parseVerdictEnvelope", () => {

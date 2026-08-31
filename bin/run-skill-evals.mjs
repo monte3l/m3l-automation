@@ -58,13 +58,24 @@ export const VERDICT_SCHEMA = {
 
 /**
  * Build the single prompt sent to `claude -p`: the eval case's own prompt,
- * followed by grading instructions referencing its `expected_output` and
- * `expectations`. One turn does both the task and the self-grade.
+ * followed by grading instructions referencing its `expected_output` and its
+ * per-item checklist. One turn does both the task and the self-grade.
  *
- * @param {{ prompt: string, expected_output: string, expectations: string[] }} evalCase
+ * The 13 pre-existing `.claude/skills/<name>/evals/evals.json` files (authored
+ * before this runner existed) use three different shapes for that
+ * checklist: `expectations` (5 skills), `assertions` (7 skills), or neither
+ * — `expected_output` alone (1 skill, `syncing-docs`). `expectations` and
+ * `assertions` are treated as synonyms; a case with neither gets an empty
+ * checklist (no numbered lines), grading purely against `expected_output`.
+ * A real CI run against all 13 skills (PR #785, job 99419101309) crashed 27
+ * of 46 cases on `evalCase.expectations.map` being called on `undefined`
+ * before this fix — never assume every evals.json shares one shape.
+ *
+ * @param {{ prompt: string, expected_output: string, expectations?: string[], assertions?: string[] }} evalCase
  * @returns {string}
  */
 export function buildGradedPrompt(evalCase) {
+  const checklist = evalCase.expectations ?? evalCase.assertions ?? [];
   return [
     evalCase.prompt,
     "",
@@ -76,7 +87,7 @@ export function buildGradedPrompt(evalCase) {
     evalCase.expected_output,
     "",
     "Expectations (all must hold for pass=true):",
-    ...evalCase.expectations.map((e, i) => `${i + 1}. ${e}`),
+    ...checklist.map((e, i) => `${i + 1}. ${e}`),
     "",
     "Return ONLY the grading verdict as structured JSON — not the response",
     "to the original request.",
