@@ -31,6 +31,17 @@ const DEFAULT_ARTIFACT_ROOT_RELATIVE_SEGMENTS = [
   "artifacts",
 ] as const;
 
+/** Dotted config key named in every human-action-audit-root rejection message. */
+const AUDIT_ROOT_KEY = "m3l.console.audit.root";
+
+/**
+ * The path segments appended to the data dir for the default human-action
+ * audit root (X7 slice 3, ADR-0070). A SIBLING of the session artifact root,
+ * never a child: the artifact store owns everything beneath its own root, and
+ * an audit trail may not live inside a directory another subsystem prunes.
+ */
+const DEFAULT_AUDIT_ROOT_RELATIVE_SEGMENTS = ["console", "audit"] as const;
+
 /**
  * The literal SQLite in-memory sentinel, rejected as a `configuredPath`.
  * In-memory storage is available only programmatically, via
@@ -91,28 +102,36 @@ function rejectUnsafeConfiguredPath(configuredPath: string): void {
 }
 
 /**
- * Validates a supplied session-artifact-root `configuredPath`, throwing
+ * Validates a supplied DIRECTORY-root `configuredPath`, throwing
  * {@link M3LConsoleError} (never echoing `configuredPath` itself) when it is
- * blank or a `file:`-prefixed URI. Unlike
- * {@link rejectUnsafeConfiguredPath} (the database FILE path's validator),
- * this deliberately does NOT reject the `":memory:"` literal or a trailing
- * path separator — neither check is meaningful for a directory target: a
- * directory path may legitimately end in a separator, and there is no
- * in-memory-store sentinel to guard against for a filesystem root.
+ * blank or a `file:`-prefixed URI. `key` names the config key the rejection
+ * message and context report, so the session artifact root and the
+ * human-action audit root share one guard rather than two copies that could
+ * drift: the two resolvers are the same shape over a different default, and a
+ * divergence between them would itself be the defect.
+ *
+ * Unlike {@link rejectUnsafeConfiguredPath} (the database FILE path's
+ * validator), this deliberately does NOT reject the `":memory:"` literal or a
+ * trailing path separator — neither check is meaningful for a directory
+ * target: a directory path may legitimately end in a separator, and there is
+ * no in-memory-store sentinel to guard against for a filesystem root.
  */
-function rejectUnsafeArtifactRootPath(configuredPath: string): void {
+function rejectUnsafeDirectoryRootPath(
+  configuredPath: string,
+  key: string,
+): void {
   if (configuredPath.trim().length === 0) {
     throw new M3LConsoleError(
       CODE,
-      `configuration key '${ARTIFACT_ROOT_KEY}' must not be blank`,
-      { context: { key: ARTIFACT_ROOT_KEY } },
+      `configuration key '${key}' must not be blank`,
+      { context: { key } },
     );
   }
   if (configuredPath.startsWith(FILE_URI_PREFIX)) {
     throw new M3LConsoleError(
       CODE,
-      `configuration key '${ARTIFACT_ROOT_KEY}' must be a filesystem path, not a 'file:' URI`,
-      { context: { key: ARTIFACT_ROOT_KEY } },
+      `configuration key '${key}' must be a filesystem path, not a 'file:' URI`,
+      { context: { key } },
     );
   }
 }
@@ -130,16 +149,22 @@ function defaultResolveDataDir(): string {
  * this module's documented all-failures-are-`ERR_CONSOLE_CONFIG_INVALID`
  * contract. An already-typed `M3LConsoleError` is re-thrown unchanged rather
  * than double-wrapped.
+ *
+ * `key` is the CALLING resolver's dotted config key, not a constant: every
+ * resolver here shares this data-dir step, so hard-coding one key sent an
+ * operator whose audit-root resolution failed to fix `m3l.console.db.path`
+ * — a key they never set. Same drift class the sibling
+ * {@link rejectUnsafeDirectoryRootPath} guard takes its `key` for.
  */
-function runResolveDataDir(resolveDataDir: () => string): string {
+function runResolveDataDir(resolveDataDir: () => string, key: string): string {
   try {
     return resolveDataDir();
   } catch (cause) {
     if (cause instanceof M3LConsoleError) throw cause;
     throw new M3LConsoleError(
       CODE,
-      `failed to resolve the data directory for configuration key '${DB_PATH_KEY}'`,
-      { cause, context: { key: DB_PATH_KEY } },
+      `failed to resolve the data directory for configuration key '${key}'`,
+      { cause, context: { key } },
     );
   }
 }
@@ -202,13 +227,16 @@ export function resolveStoreDatabasePath(
 
   if (configuredPath === undefined) {
     return path.join(
-      runResolveDataDir(resolveDataDir),
+      runResolveDataDir(resolveDataDir, DB_PATH_KEY),
       ...DEFAULT_DB_RELATIVE_SEGMENTS,
     );
   }
 
   rejectUnsafeConfiguredPath(configuredPath);
-  return path.resolve(runResolveDataDir(resolveDataDir), configuredPath);
+  return path.resolve(
+    runResolveDataDir(resolveDataDir, DB_PATH_KEY),
+    configuredPath,
+  );
 }
 
 /**
@@ -245,7 +273,7 @@ export interface ResolveSessionArtifactRootOptions {
  * unchanged.
  *
  * A `configuredPath` that is blank/whitespace-only or `file:`-prefixed is
- * rejected — see {@link rejectUnsafeArtifactRootPath}. Unlike
+ * rejected — see {@link rejectUnsafeDirectoryRootPath}. Unlike
  * {@link resolveStoreDatabasePath}'s FILE-path validator, this deliberately
  * does not reject the `":memory:"` literal or a trailing path separator:
  * neither check is meaningful for a directory root.
@@ -272,11 +300,83 @@ export function resolveSessionArtifactRoot(
 
   if (configuredPath === undefined) {
     return path.join(
-      runResolveDataDir(resolveDataDir),
+      runResolveDataDir(resolveDataDir, ARTIFACT_ROOT_KEY),
       ...DEFAULT_ARTIFACT_ROOT_RELATIVE_SEGMENTS,
     );
   }
 
-  rejectUnsafeArtifactRootPath(configuredPath);
-  return path.resolve(runResolveDataDir(resolveDataDir), configuredPath);
+  rejectUnsafeDirectoryRootPath(configuredPath, ARTIFACT_ROOT_KEY);
+  return path.resolve(
+    runResolveDataDir(resolveDataDir, ARTIFACT_ROOT_KEY),
+    configuredPath,
+  );
+}
+
+/**
+ * Constructor options for {@link resolveAuditStreamRoot}.
+ *
+ * @example
+ * ```ts
+ * const options: ResolveAuditStreamRootOptions = {
+ *   configuredPath: "custom/audit",
+ * };
+ * ```
+ */
+export interface ResolveAuditStreamRootOptions {
+  /** The operator-supplied path, if any (typically from `M3L_CONSOLE_AUDIT_ROOT`). */
+  readonly configuredPath?: string | undefined;
+  /** Resolves the base data directory; defaults to `Core.M3LPaths().getDataDir()`. */
+  readonly resolveDataDir?: () => string;
+}
+
+/**
+ * Resolves the console server's human-action audit stream root (X7, slice 3,
+ * ADR-0070) — the directory `createHumanActionAuditStream` writes its
+ * append-only JSONL segments into.
+ *
+ * The same shape as {@link resolveSessionArtifactRoot} over a different
+ * default, down to sharing its unsafe-path guard: performs no filesystem I/O
+ * whatsoever, and creating the directory is the stream's own job (the Core
+ * primitive creates it on its first append).
+ *
+ * When `options.configuredPath` is absent, the result defaults to
+ * `<dataDir>/console/audit` — a sibling of the artifact root, never inside
+ * it. A relative `configuredPath` resolves against the data directory; an
+ * absolute one passes through {@link path.resolve} unchanged.
+ *
+ * A `configuredPath` that is blank/whitespace-only or `file:`-prefixed is
+ * rejected — see {@link rejectUnsafeDirectoryRootPath}.
+ *
+ * @param options - See {@link ResolveAuditStreamRootOptions}.
+ * @returns The resolved, absolute audit stream root directory.
+ * @throws {@link M3LConsoleError} `ERR_CONSOLE_CONFIG_INVALID` — for a
+ * rejected `configuredPath`, or when `resolveDataDir` throws.
+ *
+ * @example
+ * ```ts
+ * import { resolveAuditStreamRoot } from "./config/paths.js";
+ *
+ * const root = resolveAuditStreamRoot({
+ *   configuredPath: process.env["M3L_CONSOLE_AUDIT_ROOT"],
+ * });
+ * ```
+ */
+export function resolveAuditStreamRoot(
+  options: ResolveAuditStreamRootOptions = {},
+): string {
+  const resolveDataDir = options.resolveDataDir ?? defaultResolveDataDir;
+  const configuredPath = options.configuredPath;
+
+  if (configuredPath === undefined) {
+    return path.join(
+      runResolveDataDir(resolveDataDir, AUDIT_ROOT_KEY),
+      ...DEFAULT_AUDIT_ROOT_RELATIVE_SEGMENTS,
+    );
+  }
+
+  rejectUnsafeDirectoryRootPath(configuredPath, AUDIT_ROOT_KEY);
+  return path.resolve(
+    runResolveDataDir(resolveDataDir, AUDIT_ROOT_KEY),
+    configuredPath,
+  );
 }

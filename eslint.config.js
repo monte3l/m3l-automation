@@ -684,6 +684,13 @@ export default tseslint.config(
                 "console-server: sessions/ may import only errors/ and store/ (ADR-0068, ADR-0065). It receives its bindings from the launched-run event sink via a declared port passed in from main.ts, never by importing runs/ directly.",
             },
             {
+              target: "./packages/m3l-console-server/src/audit",
+              from: "./packages/m3l-console-server/src",
+              except: ["audit", "errors"],
+              message:
+                "console-server: audit/ may import only errors/ (ADR-0070, ADR-0065). It is the human-action audit trail: it receives its resolved directory and the operator profile as arguments from main.ts, and declares the shapes it records structurally rather than importing runs/ or sessions/ — an audit trail that imported the subsystems it audits would invert the dependency it exists to observe. The v6 index (X7 slice 4) is what adds `store` here, in the PR that argues for it.",
+            },
+            {
               target: "./packages/m3l-console-server/src/http",
               from: "./packages/m3l-console-server/src",
               except: ["http", "errors", "auth", "lifecycle", "net", "stream"],

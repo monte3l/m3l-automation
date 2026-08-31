@@ -316,6 +316,7 @@ const CONSOLE_SERVER_LAYERS = [
   ["stream", ["stream", "errors"]],
   ["runs", ["runs", "errors", "store", "stream"]],
   ["sessions", ["sessions", "errors", "store"]],
+  ["audit", ["audit", "errors"]],
   ["http", ["http", "errors", "auth", "lifecycle", "net", "stream"]],
 ];
 
