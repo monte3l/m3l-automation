@@ -133,7 +133,7 @@ runtime**, via `.node-version` plus the gate above. Narrowing `engines` to
 rejected. The `.npmrc` `engine-strict=true` line also stays: it still guards
 the below-floor case correctly, which is the only case it ever guarded.
 
-## Update (2026-09-01) — the `readBigInts` observation was misattributed
+## Update (2026-08-31) — the `readBigInts` observation was misattributed
 
 The Amendment above cites, as its **Observed cost**, that
 `packages/m3l-console-server`'s `readBigInts` test "fails locally on Node 26
@@ -153,7 +153,7 @@ statement inherit the bigint flag from a prior `get()` on the same SQL.
 verified on Node 24 only. The Amendment's claim about Node 26's behaviour is
 neither reconfirmed nor contradicted here — it was not retested, because the
 project is staying on Node 24 LTS and does not install other majors
-(maintainer decision, 2026-09-01). What is established is narrower and
+(maintainer decision, 2026-08-31). What is established is narrower and
 sufficient: the failure was a real defect reproducible on the pinned runtime,
 so it was never evidence for a version split in the first place.
 
