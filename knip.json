@@ -1,11 +1,10 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "ignore": [".remember/**", "commitlint.config.js"],
   "ignoreDependencies": [
     "@commitlint/config-conventional",
     "@commitlint/types"
   ],
-  "ignoreBinaries": ["claude", "gh", "mkfifo"],
+  "ignoreBinaries": ["mkfifo"],
   "ignoreIssues": {
     "packages/m3l-common/src/core/environment/index.ts": ["duplicates"],
     "packages/m3l-common/src/aws/cloudwatch-metrics/index.ts": ["types"],
