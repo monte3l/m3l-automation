@@ -73,6 +73,39 @@ ADR-0002 already drew. Nothing else changes: `m3l-common`, `m3l-cli`,
 **This exception does not unblock U14** — the Node SEA single-file binary
 still requires its own ADR per ADR-0057's gate.
 
+## Update 2026-08-31 — decision 4 corrected: no Corepack, and `fnm` is admitted
+
+Decision 4 above reads "**Runtime/pkg-manager pinning:** `.node-version`
+(Node 24) + Corepack + the existing `packageManager` field. No new tool
+(mise/Volta rejected as heavier all-in-ones)." Two parts of that no longer
+describe reality:
+
+- **Corepack is not in use, in either CI or local development.** CI provisions
+  pnpm with `pnpm/action-setup@v6.0.10` (`.github/actions/setup/action.yml`),
+  not `corepack enable`; and `corepack` is not installed on the maintainer's
+  machine at all, so the `corepack enable && pnpm install` setup line that
+  CLAUDE.md and `docs/contributing/contributing.md` both prescribed would
+  simply have failed. What actually pins pnpm is the **`packageManager` field**
+  on its own: pnpm self-manages from it — `pnpm -v` reports the pinned
+  `11.9.0` while the Homebrew Cellar holds `11.24.0`. That mechanism is
+  correct and unchanged; only the Corepack half of the claim is struck.
+  `corepack enable` has been dropped from both setup documents accordingly.
+- **The "no new tool" stance is amended to admit `fnm`,** scoped strictly to
+  Node-version switching. The forcing constraint is machine-side and outside
+  this repo's control: Homebrew's `ctx7` formula requires the _unversioned_
+  `node` formula, so Homebrew keeps `node` on the newest major (26.x) while
+  `.node-version` pins 24. `fnm env --use-on-cd` makes `.node-version` take
+  effect per-directory, so this repo runs 24 without pinning Homebrew's `node`
+  and breaking the unrelated CLIs that depend on it. mise and Volta stay
+  rejected on the original grounds — both are heavier all-in-ones that would
+  also want to own package-manager and tool versioning, which `packageManager`
+  already handles correctly on its own. Rationale and enforcement:
+  [ADR-0003](./0003-node-24-floor.md)'s 2026-08-31 amendment and
+  `bin/check-node-version.mjs`.
+
+Nothing else in decision 4 changes: `.node-version` remains the pin, and it is
+now actually authoritative rather than one of two independent literals.
+
 ## Links
 
 - Related: `CLAUDE.md` (Tech Stack, Commands, Git Workflow), `lefthook.yml`,

@@ -358,6 +358,11 @@ export const VERIFY_STEPS = [
     cmd: () => "pnpm check:hooks",
   },
   {
+    ciStepName: "Check Node version pin",
+    id: "check-node-version",
+    cmd: () => "pnpm check:node-version",
+  },
+  {
     ciStepName: "Check GitHub-integration stance (integration-stance)",
     id: "check-integration-stance",
     cmd: () => "pnpm check:integration-stance",
