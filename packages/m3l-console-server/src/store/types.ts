@@ -22,14 +22,17 @@
 type M3LStoreInputValue = string | number | bigint | null | Uint8Array;
 
 /**
- * A value a column may yield.
+ * A value a column may yield. Exported (unlike {@link M3LStoreInputValue})
+ * so an in-zone consumer — e.g. `store/audit-repository.ts`'s
+ * `AuditColumnValue` — can build its own `| undefined` variant on top of it
+ * rather than hand-redeclaring the same union.
  *
  * @example
  * ```ts
  * const value: M3LStoreOutputValue = "hello";
  * ```
  */
-type M3LStoreOutputValue = string | number | bigint | null | Uint8Array;
+export type M3LStoreOutputValue = string | number | bigint | null | Uint8Array;
 
 /**
  * Bound parameters for a statement: named (`$k` / `:k` / `@k`) or
