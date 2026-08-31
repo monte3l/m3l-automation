@@ -62,6 +62,12 @@ lefthook-local.yml
 # is machine state, not source.
 data/agent-log/
 
+# ADR-0060 (V8): the agent-operator's cross-run daily invocation counter, held
+# in a `Core.M3LCheckpointStore` envelope. Deliberately NOT under `data/output/`
+# — that directory holds run artifacts and is the natural thing for an operator
+# to clear, and clearing it must not silently reset a policy budget ceiling.
+data/agent-state/
+
 # The `m3l` CLI's script-discovery cache (`cli/paths.ts` → `resolveCacheDir`).
 # Written by any `m3l list`/`doctor`/`inspect` invocation, so V8's agent-operator
 # regenerates it on every health-check run. Derived machine state, not source.

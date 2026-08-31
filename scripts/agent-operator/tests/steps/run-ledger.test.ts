@@ -6,21 +6,29 @@
  * Written RED, before `steps/run-ledger.ts` existed; the module now exists and
  * these tests pass, so they stand as the regression pin on its contract —
  * every assertion below is the behaviour the module was built to satisfy, not
- * a description of work still outstanding.
+ * a description of work still outstanding. The metered-spend surface below
+ * (`AgentRunSpend`/`observeSpend`) is itself written RED, ahead of its own
+ * implementation, for the same reason.
+ *
+ * `takeGateDelta`/`AgentRunLedgerGateDelta` were REMOVED (V8 final slice):
+ * the method's only consumer was its own tests, since
+ * `AgentDecisionRecordInput` carries no field for a per-gate delta — the
+ * evaluator reads absolute counters, not deltas.
  *
  * The contract these tests pin:
  *
  * ```ts
- * export interface AgentRunLedgerGateDelta {
- *   readonly invocations: number;
- *   readonly dryRunShapes: number;
+ * export interface AgentRunSpend {
+ *   readonly tokensThisRun: number;
+ *   readonly loopIterations: number;
+ *   readonly costThisRun: number | undefined; // undefined => unobservable
  * }
  * export class AgentRunLedger {
  *   snapshot(now: number): Core.M3LAgentRunLedger; // frozen, omit-only
  *   recordInvocation(): void;
  *   observeDecisionLog(available: boolean): void;
  *   recordDryRunShape(shapeKey: string): void;
- *   takeGateDelta(): AgentRunLedgerGateDelta; // deltas since the last call, then resets
+ *   observeSpend(spend: AgentRunSpend): void; // fail-closed until called once
  * }
  * ```
  *
@@ -30,7 +38,11 @@
  *    script cannot honestly observe must be *absent* (`Object.hasOwn` false),
  *    which makes a declared budget escalate on its `.unobservable` rule id
  *    instead of silently passing. `toBeUndefined()` cannot tell the two apart,
- *    so these tests use `Object.hasOwn` throughout.
+ *    so these tests use `Object.hasOwn` throughout. `tokensThisRun`,
+ *    `costThisRun`, and `loopIterations` are the sharpest case of this rule:
+ *    they stay absent until `observeSpend` is called even once, so a run with
+ *    no metering seam escalates on the matching `budget.*.unobservable` rule
+ *    rather than reading as zero spend.
  * 2. **A present key holding `undefined` is malformed and throws.** The
  *    library reads presence with `Object.hasOwn`, so under
  *    `exactOptionalPropertyTypes` an absent field must be omitted with a
@@ -44,8 +56,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { Core } from "@m3l-automation/m3l-common";
 
 import { M3LAgentOperatorCliError } from "../../src/lib/errors.js";
+import type { AgentRunSpend } from "../../src/steps/run-ledger.js";
 import { AgentRunLedger } from "../../src/steps/run-ledger.js";
-import { decisionLogPolicy, minimalPolicy } from "../support/policyFixtures.js";
+import {
+  budgetPolicy,
+  decisionLogPolicy,
+  minimalPolicy,
+} from "../support/policyFixtures.js";
 
 /** A fixed, caller-sampled instant. The evaluator reads no clock; nor may the ledger. */
 const NOW = Date.UTC(2026, 7, 30, 12, 0, 0);
@@ -133,12 +150,12 @@ describe("AgentRunLedger — a virgin snapshot omits what it cannot observe", ()
   const OMITTED_LEDGER_FIELDS: ReadonlyArray<
     [field: keyof Core.M3LAgentRunLedger, why: string]
   > = [
-    ["tokensThisRun", "no token metering exists in this slice"],
-    ["costThisRun", "no cost metering exists in this slice"],
+    ["tokensThisRun", "observeSpend has not been called yet"],
+    ["costThisRun", "observeSpend has not been called yet"],
     ["invocationsToday", "no cross-run day counter exists"],
     ["todayCountedAt", "no cross-run day counter exists"],
     ["decisionLogAvailable", "the log has not been observed yet"],
-    ["loopIterations", "no model loop has run yet"],
+    ["loopIterations", "observeSpend has not been called yet"],
   ];
 
   it.each(OMITTED_LEDGER_FIELDS)("omits %s (%s)", (field, _why) => {
@@ -370,34 +387,255 @@ describe("AgentRunLedger — recordDryRunShape", () => {
   });
 });
 
-describe("AgentRunLedger — takeGateDelta", () => {
-  it("returns what accumulated since the previous call and then resets", () => {
-    const ledger = new AgentRunLedger();
-    ledger.recordInvocation();
-    ledger.recordInvocation();
-    ledger.recordDryRunShape(oneShapeKey());
+/** A well-formed observation with every field present, for tests that don't care about the values. */
+function validSpend(overrides: Partial<AgentRunSpend> = {}): AgentRunSpend {
+  return {
+    tokensThisRun: 100,
+    loopIterations: 2,
+    costThisRun: 0.5,
+    ...overrides,
+  };
+}
 
-    const first = ledger.takeGateDelta();
-    expect(first.invocations).toBe(2);
-    expect(first.dryRunShapes).toBe(1);
+describe("AgentRunLedger — observeSpend: fail-closed until observed", () => {
+  // THE single most important assertion in this wave: a run that never wires
+  // up a metering seam must escalate on the matching `budget.*.unobservable`
+  // rule, never read as zero spend. `Object.hasOwn` is required here, not
+  // `toBeUndefined()` — see the module-doc rule 1 above.
+  it("[FAIL-CLOSED] omits tokensThisRun, costThisRun, and loopIterations as own keys until observeSpend has been called at least once", () => {
+    const snapshot = new AgentRunLedger().snapshot(NOW);
 
-    const second = ledger.takeGateDelta();
-    expect(second.invocations).toBe(0);
-    expect(second.dryRunShapes).toBe(0);
-    // Two consecutive calls with no activity between them must differ: a
-    // `takeGateDelta` that returned a running total instead of a delta would
-    // pass every assertion above and fail this one.
-    expect(second).not.toEqual(first);
+    expect(Object.hasOwn(snapshot, "tokensThisRun")).toBe(false);
+    expect(Object.hasOwn(snapshot, "costThisRun")).toBe(false);
+    expect(Object.hasOwn(snapshot, "loopIterations")).toBe(false);
   });
 
-  it("keeps the cumulative snapshot counters intact across a take", () => {
-    const ledger = new AgentRunLedger();
-    ledger.recordInvocation();
-    ledger.takeGateDelta();
-    ledger.recordInvocation();
+  it.each([
+    ["tokensPerRun", "budget.tokens-per-run.unobservable"],
+    ["costPerRun", "budget.cost-per-run.unobservable"],
+    ["loopIterations", "budget.loop-iterations.unobservable"],
+  ])(
+    "a policy declaring only %s escalates on %s before any observeSpend call",
+    (budgetKey, expectedRule) => {
+      const ledger = new AgentRunLedger();
 
-    // The delta reset is bookkeeping for the gate, not a reset of the run.
-    expect(ledger.snapshot(NOW).invocationsThisRun).toBe(2);
+      const decision = Core.evaluateAgentAction({
+        action: healthCheckAction(),
+        policy: budgetPolicy({ [budgetKey]: 1000 }),
+        run: ledger.snapshot(NOW),
+      });
+
+      expect(decision.verdict).toBe("escalate");
+      expect(decision.rule).toBe(expectedRule);
+    },
+  );
+
+  // The structural guarantee: constructing the metered invoker (not any
+  // particular call count) is what makes zero spend an OBSERVED fact. This
+  // ledger-level test pins the ledger half of that guarantee — the
+  // `createMeteredInvoker` half is pinned in `metering-invoker.test.ts`.
+  it("makes tokensThisRun, costThisRun, and loopIterations observable at zero the moment observeSpend is first called, auto-approving a policy that declares those budgets", () => {
+    const ledger = new AgentRunLedger();
+    ledger.observeDecisionLog(true);
+
+    ledger.observeSpend({
+      tokensThisRun: 0,
+      loopIterations: 0,
+      costThisRun: 0,
+    });
+
+    const snapshot = ledger.snapshot(NOW);
+    expect(Object.hasOwn(snapshot, "tokensThisRun")).toBe(true);
+    expect(snapshot.tokensThisRun).toBe(0);
+    expect(Object.hasOwn(snapshot, "loopIterations")).toBe(true);
+    expect(snapshot.loopIterations).toBe(0);
+    expect(Object.hasOwn(snapshot, "costThisRun")).toBe(true);
+    expect(snapshot.costThisRun).toBe(0);
+
+    const decision = Core.evaluateAgentAction({
+      action: healthCheckAction(),
+      policy: budgetPolicy({
+        tokensPerRun: 1000,
+        costPerRun: 5,
+        loopIterations: 10,
+      }),
+      run: snapshot,
+    });
+
+    expect(Core.isAgentActionAutoApproved(decision)).toBe(true);
+  });
+
+  it("carries the latest observed tokensThisRun and loopIterations onto every subsequent snapshot", () => {
+    const ledger = new AgentRunLedger();
+    ledger.observeSpend({
+      tokensThisRun: 40,
+      loopIterations: 1,
+      costThisRun: 0.1,
+    });
+    ledger.observeSpend({
+      tokensThisRun: 90,
+      loopIterations: 3,
+      costThisRun: 0.3,
+    });
+
+    const snapshot = ledger.snapshot(NOW);
+    expect(snapshot.tokensThisRun).toBe(90);
+    expect(snapshot.loopIterations).toBe(3);
+    expect(snapshot.costThisRun).toBe(0.3);
+  });
+
+  it("omits costThisRun once observed undefined, while still emitting tokensThisRun and loopIterations as present keys", () => {
+    const ledger = new AgentRunLedger();
+
+    ledger.observeSpend({
+      tokensThisRun: 500,
+      loopIterations: 2,
+      costThisRun: undefined,
+    });
+
+    const snapshot = ledger.snapshot(NOW);
+    expect(Object.hasOwn(snapshot, "tokensThisRun")).toBe(true);
+    expect(snapshot.tokensThisRun).toBe(500);
+    expect(Object.hasOwn(snapshot, "loopIterations")).toBe(true);
+    expect(snapshot.loopIterations).toBe(2);
+    expect(Object.hasOwn(snapshot, "costThisRun")).toBe(false);
+  });
+
+  it("an unobservable cost escalates on budget.cost-per-run.unobservable even while tokensThisRun and loopIterations are observed and satisfied", () => {
+    const ledger = new AgentRunLedger();
+    ledger.observeDecisionLog(true);
+    ledger.observeSpend({
+      tokensThisRun: 10,
+      loopIterations: 1,
+      costThisRun: undefined,
+    });
+
+    const decision = Core.evaluateAgentAction({
+      action: healthCheckAction(),
+      policy: budgetPolicy({ tokensPerRun: 1000, costPerRun: 5 }),
+      run: ledger.snapshot(NOW),
+    });
+
+    expect(decision.verdict).toBe("escalate");
+    expect(decision.rule).toBe("budget.cost-per-run.unobservable");
+  });
+
+  it("never emits an own key holding undefined for costThisRun, in any observed state", () => {
+    const ledger = new AgentRunLedger();
+    ledger.observeSpend({
+      tokensThisRun: 1,
+      loopIterations: 1,
+      costThisRun: undefined,
+    });
+
+    expect(ownKeysHoldingUndefined(ledger.snapshot(NOW))).toEqual([]);
+  });
+
+  const INVALID_SPEND_CASES: ReadonlyArray<
+    [label: string, spend: AgentRunSpend]
+  > = [
+    [
+      "a non-finite tokensThisRun",
+      validSpend({ tokensThisRun: Number.POSITIVE_INFINITY }),
+    ],
+    ["a NaN tokensThisRun", validSpend({ tokensThisRun: Number.NaN })],
+    ["a negative tokensThisRun", validSpend({ tokensThisRun: -1 })],
+    [
+      "a non-safe-integer (fractional) tokensThisRun",
+      validSpend({ tokensThisRun: 1.5 }),
+    ],
+    [
+      "a non-finite loopIterations",
+      validSpend({ loopIterations: Number.POSITIVE_INFINITY }),
+    ],
+    ["a NaN loopIterations", validSpend({ loopIterations: Number.NaN })],
+    ["a negative loopIterations", validSpend({ loopIterations: -1 })],
+    [
+      "a non-safe-integer (fractional) loopIterations",
+      validSpend({ loopIterations: 2.2 }),
+    ],
+    ["a negative costThisRun", validSpend({ costThisRun: -0.01 })],
+    [
+      "a non-finite costThisRun",
+      validSpend({ costThisRun: Number.POSITIVE_INFINITY }),
+    ],
+    ["a NaN costThisRun", validSpend({ costThisRun: Number.NaN })],
+  ];
+
+  it.each(INVALID_SPEND_CASES)(
+    "rejects observeSpend given %s, naming OUR bug rather than surfacing as a policy-evaluation error",
+    (_label, spend) => {
+      const ledger = new AgentRunLedger();
+
+      let thrown: unknown;
+      try {
+        ledger.observeSpend(spend);
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toBeInstanceOf(M3LAgentOperatorCliError);
+      expect((thrown as M3LAgentOperatorCliError).code).toBe(
+        "ERR_AGENT_OPERATOR_DECISION_LOG",
+      );
+    },
+  );
+
+  it("accepts a fractional costThisRun (cost is the one field allowed to be non-integer)", () => {
+    const ledger = new AgentRunLedger();
+
+    expect(() => {
+      ledger.observeSpend(validSpend({ costThisRun: 1.23456 }));
+    }).not.toThrow();
+    expect(ledger.snapshot(NOW).costThisRun).toBe(1.23456);
+  });
+
+  it("rejects a regression: a tokensThisRun lower than the last observed value", () => {
+    const ledger = new AgentRunLedger();
+    ledger.observeSpend(validSpend({ tokensThisRun: 100 }));
+
+    let thrown: unknown;
+    try {
+      ledger.observeSpend(validSpend({ tokensThisRun: 50 }));
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LAgentOperatorCliError);
+    expect((thrown as M3LAgentOperatorCliError).code).toBe(
+      "ERR_AGENT_OPERATOR_DECISION_LOG",
+    );
+    // The regression must not corrupt the last-good observation.
+    expect(ledger.snapshot(NOW).tokensThisRun).toBe(100);
+  });
+
+  it("rejects a regression: a loopIterations lower than the last observed value", () => {
+    const ledger = new AgentRunLedger();
+    ledger.observeSpend(validSpend({ loopIterations: 3 }));
+
+    let thrown: unknown;
+    try {
+      ledger.observeSpend(validSpend({ loopIterations: 2 }));
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LAgentOperatorCliError);
+    expect((thrown as M3LAgentOperatorCliError).code).toBe(
+      "ERR_AGENT_OPERATOR_DECISION_LOG",
+    );
+    expect(ledger.snapshot(NOW).loopIterations).toBe(3);
+  });
+
+  it("does not reject observeSpend called again with an equal tokensThisRun and loopIterations", () => {
+    const ledger = new AgentRunLedger();
+    ledger.observeSpend(validSpend({ tokensThisRun: 100, loopIterations: 2 }));
+
+    expect(() => {
+      ledger.observeSpend(
+        validSpend({ tokensThisRun: 100, loopIterations: 2 }),
+      );
+    }).not.toThrow();
   });
 });
 
@@ -410,7 +648,11 @@ describe("AgentRunLedger — the caller owns the clock", () => {
     ledger.recordInvocation();
     ledger.observeDecisionLog(true);
     ledger.recordDryRunShape(key);
-    ledger.takeGateDelta();
+    ledger.observeSpend({
+      tokensThisRun: 1,
+      loopIterations: 1,
+      costThisRun: 0,
+    });
     ledger.snapshot(NOW);
 
     // `evaluateAgentAction` reads no clock — the caller samples `now` once and
