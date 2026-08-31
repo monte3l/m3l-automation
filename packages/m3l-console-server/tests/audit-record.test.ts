@@ -674,8 +674,31 @@ describe("projectHumanActionRecord — narrowing at the cast boundary", () => {
     ["null", { absent: null }],
     ["undefined", { absent: undefined }],
     ["a function", { compute: () => SECRET_VALUE }],
+    // -0 in a detail value: `detailScalar` refuses it because JSON.stringify
+    // serialises -0 as 0, so the persisted line would disagree with the record.
+    // The sibling atMs: -0 case is diagnosed by numberField; both are console-
+    // layer refusals. Do not consolidate: they exercise different code paths
+    // (detailScalar vs numberField) and both must be independently covered.
+    ["-0 (negative zero)", { amount: -0 }],
   ])("refuses %s as a detail value", (_label, detail) => {
     expectAuditRefusal(() => projectHumanActionRecord(castRecord({ detail })));
+  });
+
+  test("atMs: -0 is refused by numberField and the message names the field", () => {
+    // Two different -0 cases, two different console-layer validators — do not
+    // consolidate them:
+    //
+    //  • `detail: { val: -0 }` — `detailScalar` refuses it (see test.each above).
+    //  • `atMs: -0` — `numberField` refuses it here, after the fix that gave
+    //    numberField parity with detailScalar. The fix moved the diagnosis up from
+    //    Core (which refused -0 two layers down without naming the field) to the
+    //    console projection, where the field name is known. `audit-stream.test.ts`
+    //    covers the surviving Core-disagrees route (the __proto__ key).
+    const refusal = expectAuditRefusal(() =>
+      projectHumanActionRecord(castRecord({ atMs: -0 })),
+    );
+    // The point of diagnosing at the console layer is to name the field.
+    expect(refusal.message).toContain("atMs");
   });
 
   test("still accepts every scalar the detail map declares", () => {
@@ -1201,5 +1224,80 @@ describe("the truncation markers are a RESERVED, console-authored namespace", ()
     expect(twice.detail["parameterRefsTruncated"]).toBe(
       once.detail["parameterRefsTruncated"],
     );
+  });
+});
+
+/**
+ * A list whose own `slice` returns `returned` — something other than an
+ * array. `poisonedSliceNames` above returns an ARRAY of objects, so it is
+ * caught by the per-ENTRY check; this one has to be caught by the
+ * `slice()`-result container check (`limits.ts:504-505`), because there are
+ * no entries to walk and `read.length` on a string or an object would
+ * silently project a truncated list (or an empty one) instead of refusing.
+ */
+function poisonedSliceReturning(returned: unknown): readonly string[] {
+  return Object.defineProperty(["ok"], "slice", {
+    value: () => returned,
+    enumerable: false,
+    writable: false,
+    configurable: false,
+  });
+}
+
+/** What a hostile `slice()` can return instead of an array. */
+const NON_ARRAY_SLICE_RESULTS = [
+  ["a string", "ok"],
+  ["an object", { 0: "ok", length: 1 }],
+  ["undefined", undefined],
+  ["null", null],
+  ["a number", 1],
+] as const satisfies readonly (readonly [string, unknown])[];
+
+describe("boundedList — a slice() returning a NON-array is refused, not walked", () => {
+  // `Array.isArray(values)` proves the CONTAINER is an array; it proves
+  // nothing about what that array's own `slice` hands back. A string result
+  // has a `length` and numeric indices, so an unguarded walk would project
+  // per-CHARACTER entries; an object with a forged `length` would do the same
+  // for whatever it chose to expose; `undefined`/`null`/a number would throw
+  // a raw `TypeError` no handler classifying on `M3LConsoleError` can render.
+  // All five must land on `ERR_CONSOLE_AUDIT_RECORD_INVALID`, naming the
+  // `slice()` location rather than an entry index — the offending value is
+  // the slice RESULT, and an entry index would point at input that was never
+  // read.
+  test.each(NON_ARRAY_SLICE_RESULTS)(
+    "refuses a parameterNames whose slice() returns %s",
+    (_label, returned) => {
+      const refusal = expectAuditRefusal(() =>
+        projectHumanActionRecord(
+          castRecord({ parameterNames: poisonedSliceReturning(returned) }),
+        ),
+      );
+
+      expect(refusal.message).toContain("parameterNames slice()");
+    },
+  );
+
+  test("refuses a parameterRefs whose slice() returns a non-array too", () => {
+    const refusal = expectAuditRefusal(() =>
+      projectHumanActionRecord(
+        castRecord({ parameterRefs: poisonedSliceReturning("ok") }),
+      ),
+    );
+
+    expect(refusal.message).toContain("parameterRefs slice()");
+  });
+
+  test("the refusal names the slice() result's typeof, never an entry index", () => {
+    const refusal = expectAuditRefusal(() =>
+      projectHumanActionRecord(
+        castRecord({
+          parameterNames: poisonedSliceReturning({ leaked: SECRET_VALUE }),
+        }),
+      ),
+    );
+
+    expect(refusal.message).toContain("parameterNames slice() is a object");
+    expect(refusal.message).not.toContain("entry 0");
+    expect(refusal.message).not.toContain(SECRET_VALUE);
   });
 });

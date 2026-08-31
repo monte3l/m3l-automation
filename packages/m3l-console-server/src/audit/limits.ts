@@ -313,13 +313,14 @@ export function stringField(value: unknown, where: string): string {
 /**
  * Narrows one verbatim-copied number field.
  *
- * Non-finite values are refused for the same reason a `detail` number is (see
- * {@link detailScalar}): `JSON.stringify` writes them as `null`, so the
+ * Non-finite values and negative zero are refused for the same reason a
+ * `detail` number is (see {@link detailScalar}): `JSON.stringify` writes
+ * non-finite numbers as `null` and serialises `-0` back out as `0`, so the
  * persisted line would disagree with the record it claims to be.
  *
  * @param value - The field value as it arrived.
  * @param where - Where it sat, for the refusal message.
- * @returns `value`, narrowed to a finite `number`.
+ * @returns `value`, narrowed to a finite, non-negative-zero `number`.
  * @throws `ERR_CONSOLE_AUDIT_RECORD_INVALID` when it is not one.
  *
  * @example
@@ -330,7 +331,11 @@ export function stringField(value: unknown, where: string): string {
  * ```
  */
 export function numberField(value: unknown, where: string): number {
-  if (typeof value !== "number" || !Number.isFinite(value)) {
+  if (
+    typeof value !== "number" ||
+    !Number.isFinite(value) ||
+    Object.is(value, -0)
+  ) {
     refuseRecord(where, value);
   }
   return value;

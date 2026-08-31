@@ -478,4 +478,126 @@ describe("the port distinguishes a refused RECORD from an unwritable TRAIL", () 
     );
     expect(readAllEntries()).toHaveLength(0);
   });
+
+  test("atMs: -0 is refused by the console's own projection, naming the field", async () => {
+    // Two different -0 cases, two different diagnosis layers — do not consolidate them:
+    //
+    //  • `detail: { val: -0 }` — `detailScalar` in limits.ts refuses it (console
+    //    projection layer), diagnosed in audit-record.test.ts.
+    //  • `atMs: -0` — `numberField` in limits.ts refuses it here (console projection
+    //    layer, after the fix that gave it parity with detailScalar). The fix moved
+    //    diagnosis up a layer so that the field name reaches the caller; previously
+    //    numberField admitted -0 and Core refused it two layers down without naming
+    //    the field. The classifier describe below covers the surviving Core-disagrees
+    //    route (the __proto__ key); this test covers the console-diagnosed route.
+    const port = createHumanActionAuditStream({ directory: auditDirectory });
+
+    let thrown: unknown;
+    try {
+      await port.record(buildRecord({ atMs: -0 }));
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).code).toBe(
+      "ERR_CONSOLE_AUDIT_RECORD_INVALID",
+    );
+    // The fix names the field so the caller knows what to fix, not just that
+    // something was wrong. A generic "invalid record" message without the field
+    // name was the concrete defect the fix corrected.
+    expect((thrown as M3LConsoleError).message).toContain("atMs");
+    expect(readAllEntries()).toHaveLength(0);
+  });
+});
+
+describe("the port classifies a Core-refused RECORD as the caller fault it is", () => {
+  // `stream.ts:132-139` discriminates on the CODE Core raised, not the class:
+  // a record the console's own projection waved through but
+  // `M3LAppendOnlyStream.append` still refuses (`ERR_INVALID_ARGUMENT`) is a
+  // caller fault, and collapsing it into `ERR_CONSOLE_AUDIT_WRITE_FAILED`
+  // would tell an operator the filesystem is unhealthy when the argument was.
+  //
+  // Reaching that arm needs a record the two layers disagree about. The
+  // surviving route is an own `__proto__` key in `detail`: `projectDetail`
+  // copies it with `Object.defineProperty` (so it survives as an own,
+  // enumerable key) and `detailScalar` sees a legal string, while Core's
+  // `projectObject` rejects a dangerous key rather than carrying a
+  // prototype-pollution vector into every reader that parses the line back.
+  //
+  // Note: `atMs: -0` used to reach this classifier too (numberField admitted
+  // it while Core refused it). After the numberField fix it is now refused at
+  // the console's own projection layer — covered in the "port distinguishes"
+  // describe above, NOT here. Do not consolidate: the two routes exercise
+  // different code paths and different assert shapes (no `cause` for the
+  // console-diagnosed route; Core.M3LError `cause` for this one).
+  test("an own __proto__ detail key the console copies but Core refuses rejects as RECORD_INVALID", async () => {
+    // An object LITERAL `{ __proto__: "x" }` sets the prototype instead of
+    // adding a key, so the own key has to be defined explicitly — which is
+    // exactly what a JSON body parsed from the wire produces.
+    const port = createHumanActionAuditStream({ directory: auditDirectory });
+    const detail = Object.defineProperty({}, "__proto__", {
+      value: "poison",
+      enumerable: true,
+      writable: true,
+      configurable: true,
+    });
+
+    let thrown: unknown;
+    try {
+      await port.record(buildRecord({ detail }));
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).code).toBe(
+      "ERR_CONSOLE_AUDIT_RECORD_INVALID",
+    );
+    expect(readAllEntries()).toHaveLength(0);
+  });
+
+  test("chains Core's own ERR_INVALID_ARGUMENT as `cause`, not a write failure", async () => {
+    // The discriminator is the code, not the class: were Core's refusal
+    // wrapped in `M3LAppendOnlyStreamError`, `isRefusedRecord` would fall to
+    // the write-failure arm and this whole path would be misclassified.
+    const port = createHumanActionAuditStream({ directory: auditDirectory });
+    const detail = Object.defineProperty({}, "__proto__", {
+      value: "poison",
+      enumerable: true,
+      writable: true,
+      configurable: true,
+    });
+
+    let thrown: unknown;
+    try {
+      await port.record(buildRecord({ detail }));
+    } catch (error) {
+      thrown = error;
+    }
+
+    const cause = (thrown as M3LConsoleError).cause;
+    expect(cause).toBeInstanceOf(Core.M3LError);
+    expect(cause).not.toBeInstanceOf(Core.M3LAppendOnlyStreamError);
+    expect((cause as Core.M3LError).code).toBe("ERR_INVALID_ARGUMENT");
+  });
+
+  test("the trail stays usable after a Core-refused record", async () => {
+    const port = createHumanActionAuditStream({ directory: auditDirectory });
+    const detail = Object.defineProperty({}, "__proto__", {
+      value: "poison",
+      enumerable: true,
+      writable: true,
+      configurable: true,
+    });
+
+    await expect(port.record(buildRecord({ detail }))).rejects.toBeInstanceOf(
+      M3LConsoleError,
+    );
+    await port.record(buildRecord({ correlationId: "after-refusal" }));
+
+    const entries = readAllEntries();
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ correlationId: "after-refusal" });
+  });
 });
