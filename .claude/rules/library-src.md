@@ -17,6 +17,12 @@ paths:
   flow.
 - **Named exports only.** No default exports (tree-shakeable, refactor-safe).
 - **Export each type next to the value it describes.**
+- **A public type over a third-party type needs that package's types at
+  runtime.** `export type X = Lib.Thing` emits `from "lib"` into the `.d.ts`,
+  so `lib` — plus `@types/lib` when `lib` ships none — must be in
+  `dependencies`/`peerDependencies`, never `devDependencies`, or the consumer
+  gets `Could not find a declaration file` (#798). A type-only import that
+  never reaches a `.d.ts` is internal and fine. Gate: `pnpm check:dts-deps`.
 - **Prefer `readonly` / `const`.** Create new objects instead of mutating inputs.
 - **Don't pass `undefined` to an optional property.** Under
   `exactOptionalPropertyTypes`, an optional target field (`default?: number`)
