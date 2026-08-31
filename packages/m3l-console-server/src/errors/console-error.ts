@@ -113,7 +113,7 @@ import { Core } from "@m3l-automation/m3l-common";
  * module itself wrote, so it is a genuine internal fault, not a caller
  * mistake.
  *
- * The final code is X10b's own addition (`runs/catalog.ts`,
+ * The penultimate code is X10b's own addition (`runs/catalog.ts`,
  * `runs/descriptors.ts`): `ERR_CONSOLE_SCRIPT_INTROSPECTION_FAILED` is
  * raised by `describe` when a script's config module resolved (so it
  * passed the same `resolveConfigModulePath` check `runs/catalog.ts` uses to
@@ -124,6 +124,23 @@ import { Core } from "@m3l-automation/m3l-common";
  * defect an operator should see an error-level diagnostic for, not a
  * caller mistake — unlike the directory-not-found case, which instead maps
  * to `ERR_CONSOLE_RUN_SCRIPT_NOT_FOUND`.
+ *
+ * The final two codes are the X7 human-action audit trail's failure modes
+ * (`audit/`, ADR-0070), and they are deliberately SEPARATE because they are
+ * not the same kind of failure. `ERR_CONSOLE_AUDIT_WRITE_FAILED`
+ * (`audit/stream.ts`) is raised when an entry cannot be appended to the
+ * append-only stream. Deliberately unlike `runs/audit.ts`'s never-throwing
+ * run-lifecycle sink: an operator-initiated action the console cannot record
+ * is refused rather than performed unaudited, so this code reaches the caller
+ * as a retryable 503 — the trail may be writable again on the next attempt,
+ * and the action itself was never attempted.
+ * `ERR_CONSOLE_AUDIT_RECORD_INVALID` (`audit/record.ts`) is raised when a
+ * record cannot be BUILT: a container or field the record type forbids, a
+ * non-scalar `detail` value, a number JSON cannot carry back out, a reserved
+ * truncation-marker key, or an ADR-0068 `inline` reference (which carries the
+ * parameter VALUE rather than pointing at it). Every one of those is detected
+ * before any filesystem call, so it is a caller fault a retry cannot fix — a
+ * non-retryable 400, never the trail-outage 503 above.
  *
  * @example
  * ```ts
@@ -167,7 +184,9 @@ export type M3LConsoleErrorCode =
   | "ERR_CONSOLE_SESSION_REFERENCE_INVALID"
   | "ERR_CONSOLE_SESSION_ARTIFACT_TOO_LARGE"
   | "ERR_CONSOLE_SESSION_ARTIFACT_CORRUPT"
-  | "ERR_CONSOLE_SCRIPT_INTROSPECTION_FAILED";
+  | "ERR_CONSOLE_SCRIPT_INTROSPECTION_FAILED"
+  | "ERR_CONSOLE_AUDIT_WRITE_FAILED"
+  | "ERR_CONSOLE_AUDIT_RECORD_INVALID";
 
 /**
  * Constructor options for {@link M3LConsoleError}.

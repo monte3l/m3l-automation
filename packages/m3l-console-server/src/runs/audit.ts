@@ -7,8 +7,15 @@
  * open, so this sink is deliberately the escalate-by-default seam rather than
  * a durable audit trail: it logs each record through {@link Core.M3LLogger}
  * at `info`, which every deployment already captures somewhere, instead of
- * silently accumulating in memory until a real store exists. X7 replaces this
- * sink with one backed by the append-only stream once that lands.
+ * silently accumulating in memory until a real store exists.
+ *
+ * X7 does NOT replace this sink: it adds a SIBLING port, `audit/stream.ts`'s
+ * human-action trail, and the two record different things. Everything here is
+ * a machine transition — `run.started`/`run.finished` are the runner's own
+ * progress, and `run.reconciled` is written with `operator: "system"` — so it
+ * must never become a launch failure mode, which is why `record` returns
+ * `void` and never throws. The human-action trail records what an operator
+ * ASKED for and refuses the action when it cannot be written. This sink stays.
  *
  * @packageDocumentation
  */
@@ -46,7 +53,7 @@ export type M3LRunAuditAction =
  * values only), never `unknown`. A run's `parameters` are caller-supplied
  * data — including whatever secrets an operator passes a script — and must
  * never be representable in an audit record at all, not merely redacted
- * after the fact. (`main.ts`'s `RUNTIME_SECRET_NAMES` already redacts
+ * after the fact. (`boot/logging.ts`'s `RUNTIME_SECRET_NAMES` already redacts
  * `parameters`/`params`/`values`/`args` on the runtime logger, so a mistake
  * here would be caught by a second layer — but the type is the primary
  * control, not that redaction list.)

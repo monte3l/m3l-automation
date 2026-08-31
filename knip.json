@@ -5,7 +5,7 @@
     "@commitlint/config-conventional",
     "@commitlint/types"
   ],
-  "ignoreBinaries": ["gh", "mkfifo"],
+  "ignoreBinaries": ["claude", "gh", "mkfifo"],
   "ignoreIssues": {
     "packages/m3l-common/src/core/environment/index.ts": ["duplicates"],
     "packages/m3l-common/src/aws/cloudwatch-metrics/index.ts": ["types"],
