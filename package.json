@@ -81,6 +81,8 @@
     "check:cadence": "node bin/check-cadence-doc.mjs",
     "check:context-budget": "node bin/check-context-budget.mjs",
     "check:harness-freshness": "node bin/check-harness-freshness.mjs",
+    "check:skill-evals": "node bin/check-skill-evals.mjs",
+    "eval:skills": "node bin/run-skill-evals.mjs",
     "check:tracker-coverage": "node bin/check-tracker-coverage.mjs",
     "check:tracker-status": "node bin/check-tracker-status.mjs",
     "check:hub-keys": "node bin/check-hub-keys.mjs",

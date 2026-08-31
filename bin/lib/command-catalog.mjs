@@ -321,6 +321,16 @@ export const COMMAND_CATALOG = [
       "ADR-0082: warns (non-blocking) when docs/research/harness-refresh.md's last-verified date is more than 90 days old, or the tracker has never been swept (last-verified=unset) — the self-polling half of the refreshing-anthropic-guidance cadence. Reads only the tracker's header comment; no network call. Run after editing the tracker, or let pre-push catch staleness.",
   },
   {
+    name: "check:skill-evals",
+    description:
+      "Verifies every .claude/skills/<name>/SKILL.md has a sibling evals/evals.json with >= 3 cases, except the named EXEMPT_SKILLS grandfather list (bin/check-skill-evals.mjs; backfill tracked at issue #775) — and that an exempt skill hasn't already been backfilled without being removed from the list. Run after adding a skill or its evals.json.",
+  },
+  {
+    name: "eval:skills",
+    description:
+      "Repo-owned eval runner: drives a real `claude -p --restricted` invocation per .claude/skills/*/evals/evals.json case, asking it to self-grade against the case's expectations via --json-schema structured output, and prints a pass/fail summary. Costs real API spend — not part of pre-push; run manually or via .github/workflows/skill-evals.yml.",
+  },
+  {
     name: "check:tracker-coverage",
     description:
       "Verifies every status-bearing table in ROADMAP.md/IMPLEMENTATION.md is registered with the sync:hub extractor (bin/lib/project-hub.mjs), so a newly added tracker table can't silently go unsynced. Run after adding a new '## ' section with a Status column to either tracker.",
