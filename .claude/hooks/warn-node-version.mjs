@@ -9,7 +9,7 @@
  * Deliberately cites no specific example: the two ADR-0003 ever named were
  * both later found to have another cause (the `@types/node` pin closed one,
  * #807's `run()` defect the other), so any named case here rots into a
- * misleading claim. See ADR-0003's 2026-08-31 amendment and its 2026-09-01
+ * misleading claim. See ADR-0003's 2026-08-31 amendment and its same-day
  * update.
  *
  * Runs once per session (SessionStart, not PreToolUse/PostToolUse), the same
