@@ -28,6 +28,15 @@ export type AnalysisVerdict =
  * declare, as a runtime list the trust boundary checks against. The three
  * terminal verdicts are reserved for the codified cases in
  * `build-procedure.ts`.
+ *
+ * Deliberately declared with a bare `as const` — NOT
+ * `as const satisfies readonly AnalysisVerdict[]` — because a `satisfies`
+ * clause on this literal fails `tsc --isolatedDeclarations` (the mode this
+ * script's `tsconfig.build.json` builds under). Membership is still
+ * compile-time-checked at the narrowing use site: `load-runbook.ts`'s
+ * `parseVerdict` is annotated `: AnalysisVerdict` and returns the found
+ * member, so a typo'd entry here fails to compile there — do not re-add
+ * `satisfies` here.
  */
 export const AUTHORABLE_VERDICTS = [
   "known-no-action",
@@ -35,7 +44,7 @@ export const AUTHORABLE_VERDICTS = [
   "known-closed-issue",
   "transient-downstream",
   "unrecognised",
-] as const satisfies readonly AnalysisVerdict[];
+] as const;
 
 /**
  * Priorities `1`–`RESERVED_PRIORITY_CEILING` belong to the codified terminal

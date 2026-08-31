@@ -642,17 +642,36 @@ describe("packageManifestErrors", () => {
 describe("tsconfigShapeErrors", () => {
   // Matches templates/script/tsconfig.json.tmpl and
   // tsconfig.build.json.tmpl verbatim: both templates share the same
-  // `extends` and `references` shape.
+  // `extends` and `references` shape, and each pins its own
+  // `compilerOptions` block.
   const EXPECTED_EXTENDS = "../../tsconfig.base.json";
   const EXPECTED_REFERENCE_PATH =
     "../../packages/m3l-common/tsconfig.build.json";
+  const EXPECTED_COMPILER_OPTIONS = {
+    "tsconfig.json.tmpl": {
+      composite: false,
+      declaration: false,
+      declarationMap: false,
+      noEmit: true,
+    },
+    "tsconfig.build.json.tmpl": {
+      rootDir: "src",
+      outDir: "dist",
+      tsBuildInfoFile: "dist/.tsbuildinfo",
+      isolatedDeclarations: true,
+    },
+  } as const;
 
-  function conformantTsconfig(): {
+  function conformantTsconfig(
+    templateName: keyof typeof EXPECTED_COMPILER_OPTIONS,
+  ): {
     extends: string;
+    compilerOptions: Record<string, unknown>;
     references: { path: string }[];
   } {
     return {
       extends: EXPECTED_EXTENDS,
+      compilerOptions: { ...EXPECTED_COMPILER_OPTIONS[templateName] },
       references: [{ path: EXPECTED_REFERENCE_PATH }],
     };
   }
@@ -660,21 +679,27 @@ describe("tsconfigShapeErrors", () => {
   test.each(["tsconfig.json.tmpl", "tsconfig.build.json.tmpl"] as const)(
     "returns no errors for a conformant tsconfig checked against %s",
     (templateName) => {
-      expect(tsconfigShapeErrors(conformantTsconfig(), templateName)).toEqual(
-        [],
-      );
+      expect(
+        tsconfigShapeErrors(conformantTsconfig(templateName), templateName),
+      ).toEqual([]);
     },
   );
 
   test("flags a wrong extends value, naming the expected value", () => {
-    const tsconfig = { ...conformantTsconfig(), extends: "../wrong/base.json" };
+    const tsconfig = {
+      ...conformantTsconfig("tsconfig.json.tmpl"),
+      extends: "../wrong/base.json",
+    };
     expect(tsconfigShapeErrors(tsconfig, "tsconfig.json.tmpl")).toEqual([
       `"extends" must be ${JSON.stringify(EXPECTED_EXTENDS)} (got ${JSON.stringify("../wrong/base.json")})`,
     ]);
   });
 
   test("flags an empty references array, naming the expected reference path", () => {
-    const tsconfig = { ...conformantTsconfig(), references: [] };
+    const tsconfig = {
+      ...conformantTsconfig("tsconfig.json.tmpl"),
+      references: [],
+    };
     expect(tsconfigShapeErrors(tsconfig, "tsconfig.json.tmpl")).toEqual([
       `"references" must include { "path": ${JSON.stringify(EXPECTED_REFERENCE_PATH)} } (from tsconfig.json.tmpl) so tsc -b resolves the library`,
     ]);
@@ -682,7 +707,7 @@ describe("tsconfigShapeErrors", () => {
 
   test("flags a references array whose only entry points at a different path", () => {
     const tsconfig = {
-      ...conformantTsconfig(),
+      ...conformantTsconfig("tsconfig.build.json.tmpl"),
       references: [{ path: "../wrong/tsconfig.build.json" }],
     };
     expect(tsconfigShapeErrors(tsconfig, "tsconfig.build.json.tmpl")).toEqual([
@@ -691,7 +716,8 @@ describe("tsconfigShapeErrors", () => {
   });
 
   test("does not throw when references is entirely absent, treating it as empty and reporting the missing-reference error", () => {
-    const { references: _references, ...rest } = conformantTsconfig();
+    const { references: _references, ...rest } =
+      conformantTsconfig("tsconfig.json.tmpl");
     expect(() => tsconfigShapeErrors(rest, "tsconfig.json.tmpl")).not.toThrow();
     expect(tsconfigShapeErrors(rest, "tsconfig.json.tmpl")).toEqual([
       `"references" must include { "path": ${JSON.stringify(EXPECTED_REFERENCE_PATH)} } (from tsconfig.json.tmpl) so tsc -b resolves the library`,
@@ -699,10 +725,47 @@ describe("tsconfigShapeErrors", () => {
   });
 
   test("collects both the extends and references errors when both are wrong at once", () => {
-    const tsconfig = { extends: "wrong", references: [] };
+    const tsconfig = {
+      ...conformantTsconfig("tsconfig.build.json.tmpl"),
+      extends: "wrong",
+      references: [],
+    };
     expect(tsconfigShapeErrors(tsconfig, "tsconfig.build.json.tmpl")).toEqual([
       `"extends" must be ${JSON.stringify(EXPECTED_EXTENDS)} (got ${JSON.stringify("wrong")})`,
       `"references" must include { "path": ${JSON.stringify(EXPECTED_REFERENCE_PATH)} } (from tsconfig.build.json.tmpl) so tsc -b resolves the library`,
+    ]);
+  });
+
+  // #773: a build config missing `isolatedDeclarations` type-checks green but
+  // fails `tsc --build` with TS9010, so the flag's absence must be a checker
+  // error rather than a silently-skipped gate.
+  test("accepts a build config carrying every templated compilerOption, including isolatedDeclarations", () => {
+    const tsconfig = conformantTsconfig("tsconfig.build.json.tmpl");
+    expect(tsconfig.compilerOptions["isolatedDeclarations"]).toBe(true);
+    expect(tsconfigShapeErrors(tsconfig, "tsconfig.build.json.tmpl")).toEqual(
+      [],
+    );
+  });
+
+  test("flags a build config missing isolatedDeclarations, naming the flag", () => {
+    const {
+      compilerOptions: { isolatedDeclarations: _dropped, ...withoutFlag },
+      ...rest
+    } = conformantTsconfig("tsconfig.build.json.tmpl");
+    const tsconfig = { ...rest, compilerOptions: withoutFlag };
+    expect(tsconfigShapeErrors(tsconfig, "tsconfig.build.json.tmpl")).toEqual([
+      `"compilerOptions.isolatedDeclarations" must be true (from tsconfig.build.json.tmpl, got undefined)`,
+    ]);
+  });
+
+  test("flags a compilerOptions entry whose value drifts from the template", () => {
+    const conformant = conformantTsconfig("tsconfig.build.json.tmpl");
+    const tsconfig = {
+      ...conformant,
+      compilerOptions: { ...conformant.compilerOptions, outDir: "build" },
+    };
+    expect(tsconfigShapeErrors(tsconfig, "tsconfig.build.json.tmpl")).toEqual([
+      `"compilerOptions.outDir" must be "dist" (from tsconfig.build.json.tmpl, got "build")`,
     ]);
   });
 });

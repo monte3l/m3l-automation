@@ -38,6 +38,15 @@ export type TriageVerdict =
  * as a runtime list the trust boundary checks against. The remaining six
  * verdicts are reserved for the codified terminal cases built into the
  * procedure.
+ *
+ * Deliberately declared with a bare `as const` — NOT
+ * `as const satisfies readonly TriageVerdict[]` — because a `satisfies`
+ * clause on this literal fails `tsc --isolatedDeclarations` (the mode this
+ * script's `tsconfig.build.json` builds under). Membership is still
+ * compile-time-checked at the narrowing use site: `preset-validators.ts`'s
+ * `parseVerdict` is annotated `: TriageVerdict` and returns the found
+ * member, so a typo'd entry here fails to compile there — do not re-add
+ * `satisfies` here.
  */
 export const AUTHORABLE_VERDICTS = [
   "remove",
@@ -45,11 +54,20 @@ export const AUTHORABLE_VERDICTS = [
   "hold",
   "escalate",
   "known-no-action",
-] as const satisfies readonly TriageVerdict[];
+] as const;
 
 /**
  * Every value {@link TriageHandling} may take, as a runtime list the trust
  * boundary checks a preset's `handling` field against.
+ *
+ * Deliberately declared with a bare `as const` — NOT
+ * `as const satisfies readonly TriageHandling[]` — because a `satisfies`
+ * clause on this literal fails `tsc --isolatedDeclarations` (the mode this
+ * script's `tsconfig.build.json` builds under). Membership is still
+ * compile-time-checked at the narrowing use site: `preset-validators.ts`'s
+ * `parseHandling` is annotated `: TriageHandling` and returns the found
+ * member, so a typo'd entry here fails to compile there — do not re-add
+ * `satisfies` here.
  */
 export const HANDLING_MODES = [
   "runbook",
@@ -57,7 +75,7 @@ export const HANDLING_MODES = [
   "script",
   "ad-hoc",
   "under-analysis",
-] as const satisfies readonly TriageHandling[];
+] as const;
 
 /**
  * Case-insensitive substring keywords that make a prohibition string
