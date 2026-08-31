@@ -3,42 +3,43 @@
   "evals": [
     {
       "id": 1,
-      "prompt": "Implement the core/config submodule. It has a spec at docs/reference/core/config.md and its status in docs/implementation-status.md is 'documented'.",
-      "expected_output": "Hub dispatches spokes in order: spec-conformance-reviewer (contract), test-author (RED tests), code-implementer (GREEN impl), code-reviewer + spec-conformance-reviewer (review). Status file updated after each phase. Final verify passes. Hub never edits src/ or tests/ directly.",
-      "files": [],
+      "prompt": "Implement the core/config submodule. Its spec is at docs/reference/core/config.md and its status in docs/implementation-status.md is 'documented'.",
+      "expected_output": "A step-by-step coordination plan that emits WOULD-DISPATCH lines in exact phase order — spec-conformance-reviewer first, then test-author, then code-implementer, then code-reviewer and spec-conformance-reviewer in parallel — with no direct edits to src/ or tests/ proposed.",
+      "files": [
+        {
+          "path": "docs/reference/core/config.md",
+          "content": "# core/config — M3L Config\n\nConfiguration loading for automation scripts with typed parameters.\n\n## Exports\n\n### `M3LConfigParameterType`\n`{ STRING: \"string\", NUMBER: \"number\", BOOLEAN: \"boolean\" } as const`\nA const-object enum replacement for parameter types.\n\n### `M3LConfigParameter<T>`\nA typed configuration parameter.\n- `new M3LConfigParameter(name: string, type: M3LConfigParameterType, defaultValue?: T)`\n- `getName(): string`\n- `resolve(reader: M3LConfigReader): T`\n\n### `M3LConfigReader`\nInterface for reading raw config values: `read(name: string): string | undefined`\n\n### `loadConfig`\n`loadConfig(parameters: readonly M3LConfigParameter<unknown>[], reader?: M3LConfigReader): M3LConfig`\nThrows `M3LConfigError` if a required parameter (no default) has no value.\nReturns an `M3LConfig` instance with `get<T>(parameter: M3LConfigParameter<T>): T`.\n"
+        }
+      ],
       "expectations": [
-        "Hub reads docs/implementation-status.md to confirm the module and spec page exist",
-        "Hub dispatches spec-conformance-reviewer first to extract the contract",
-        "Hub dispatches test-author with the contract text before any implementation",
-        "Hub dispatches code-implementer only after the RED tests exist",
-        "Hub dispatches code-reviewer and spec-conformance-reviewer in parallel for review",
-        "Hub updates docs/implementation-status.md after each phase transition",
-        "Hub runs the final verification pipeline (pnpm build && pnpm test && pnpm lint && pnpm typecheck)",
-        "Hub never directly edits src/** or tests/**"
+        "Emits `WOULD-DISPATCH: spec-conformance-reviewer` before any `WOULD-DISPATCH: test-author` line — contract extraction is Phase 1 and must precede the RED phase",
+        "Emits `WOULD-DISPATCH: test-author` with a brief that names at least one of the spec's exported symbols (`M3LConfigParameter`, `loadConfig`, or `M3LConfigParameterType`) — proving the contract was derived from the spec page, not invented",
+        "`WOULD-DISPATCH: test-author` appears before `WOULD-DISPATCH: code-implementer` in the response — tests-first ordering is the defining constraint of the RED→GREEN sequence",
+        "Emits `WOULD-DISPATCH: code-reviewer` after `WOULD-DISPATCH: code-implementer`, confirming that review is a separate phase dispatched only once implementation exists",
+        "States that the hub will update `docs/implementation-status.md` after each phase transition — it is the one bookkeeping write the hub owns directly",
+        "Does not propose to directly edit any file under `src/` or `tests/` — all writes are delegated to spokes"
       ]
     },
     {
       "id": 2,
       "prompt": "Let's do the retry stuff — implement exponential back-off retries.",
-      "expected_output": "Hub checks docs/implementation-status.md and docs/reference/core/retry.md, confirms the spec exists, and proceeds through the TDD pipeline. If no spec page exists, hub stops and tells the user to run scaffolding-submodules first.",
-      "files": [],
+      "expected_output": "Hub resolves the casual phrase to core/retry, reads docs/implementation-status.md and docs/reference/core/retry.md, finds the spec page absent, and stops — recommending scaffolding-submodules be run first. No WOULD-DISPATCH: test-author or WOULD-DISPATCH: code-implementer lines appear.",
       "expectations": [
-        "Hub resolves the module name from the casual request ('retry stuff' → core/retry)",
-        "Hub reads docs/implementation-status.md to check the module status",
-        "If a docs/reference spec page exists, hub proceeds through the 4-phase pipeline",
-        "If no spec page exists, hub stops and points the user at scaffolding-submodules"
+        "Resolves the casual phrase 'retry stuff' or 'exponential back-off retries' to the module identifier `core/retry`",
+        "Attempts to verify that `docs/reference/core/retry.md` exists (or reads `docs/implementation-status.md` to check module status) before dispatching any spoke",
+        "Does not emit `WOULD-DISPATCH: test-author` or `WOULD-DISPATCH: code-implementer` — the missing spec page is a hard stop, not a soft warning",
+        "Recommends invoking the `scaffolding-submodules` skill to create the spec page before this skill can proceed"
       ]
     },
     {
       "id": 3,
       "prompt": "Implement core/storage — it needs better-sqlite3 as a runtime dependency.",
-      "expected_output": "Hub pauses at the dependency gate, lists 'better-sqlite3' with a one-line rationale, and waits for explicit user approval before allowing pnpm add to run. Hub does not add the dep without approval.",
-      "files": [],
+      "expected_output": "Hub stops at the dependency gate, lists better-sqlite3 with a one-line rationale, and explicitly waits for user approval. No WOULD-RUN: pnpm add line appears as an action to take immediately, and no WOULD-DISPATCH: test-author or WOULD-DISPATCH: code-implementer appears before the gate is cleared.",
       "expectations": [
-        "Hub identifies better-sqlite3 as a required runtime dependency",
-        "Hub stops at the dependency gate and lists the dep with a rationale",
-        "Hub waits for explicit user approval before proceeding",
-        "Hub does not instruct any spoke to run 'pnpm add' without approval"
+        "Identifies `better-sqlite3` as a required runtime dependency and provides a one-line rationale (e.g. SQLite access layer for the storage submodule)",
+        "Stops and requests explicit user approval before any implementation work starts — the gate is a pause, not a note",
+        "Does not emit `WOULD-DISPATCH: test-author` or `WOULD-DISPATCH: code-implementer` anywhere in the response before the dependency gate is cleared by the user",
+        "Does not emit `WOULD-RUN: pnpm add better-sqlite3` as an action to take without the user's approval — the command may appear only as a post-approval step"
       ]
     }
   ]
