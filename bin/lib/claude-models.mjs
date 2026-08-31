@@ -82,7 +82,11 @@ const AGENT_MODEL_ALIASES = Object.freeze([
  * {@link AGENT_MODEL_ALIASES}: workflows may also use the session-level
  * aliases `default`, `best`, and `opusplan` (opus during plan mode, sonnet
  * for execution), plus the `opus[1m]` long-context variant. Full model IDs
- * are still validated via the `claude-<family>-<n>` ID pattern.
+ * are validated by pattern rather than enumerated here — either the Anthropic
+ * `claude-<family>-<n>` form ({@link MODEL_ID_PATTERN}) or an Azure-hosted
+ * OpenAI deployment name ({@link AZURE_OPENAI_MODEL_ID_PATTERN}), because a
+ * workflow may drive a deliberately non-Anthropic reviewer. Agent frontmatter
+ * stays Anthropic-only — see {@link isValidAgentModel}.
  */
 const WORKFLOW_MODEL_ALIASES = Object.freeze([
   ...AGENT_MODEL_ALIASES,
@@ -104,8 +108,19 @@ const EFFORT_LEVELS = Object.freeze(["low", "medium", "high", "xhigh", "max"]);
 const MODEL_ID_PATTERN = /^claude-[a-z]+-[a-z0-9-]+$/;
 
 /**
+ * Matches an Azure-hosted OpenAI deployment name, e.g. `gpt-5.6-sol`. Azure's
+ * Responses API takes the *deployment* name where other providers take a model
+ * ID, so this repo keeps deployment name == model ID and one pattern covers
+ * both. Narrower than it looks: the required trailing `-[a-z0-9-]+` segment
+ * means a bare family such as `gpt-5` stays rejected.
+ */
+const AZURE_OPENAI_MODEL_ID_PATTERN = /^gpt-[0-9]+(?:\.[0-9]+)?-[a-z0-9-]+$/;
+
+/**
  * Is `value` a legal `model:` value for a `.claude/agents/*.md` subagent —
- * one of {@link AGENT_MODEL_ALIASES} or a full model ID?
+ * one of {@link AGENT_MODEL_ALIASES} or a full Anthropic model ID? Subagents
+ * run on Claude, so this stays Anthropic-only even though
+ * {@link isValidWorkflowModel} does not.
  *
  * @param {string | undefined} value
  * @returns {boolean}
@@ -117,14 +132,19 @@ export function isValidAgentModel(value) {
 
 /**
  * Is `value` a legal `--model` pin for a GitHub Actions workflow — one of
- * {@link WORKFLOW_MODEL_ALIASES} or a full model ID?
+ * {@link WORKFLOW_MODEL_ALIASES}, a full Anthropic model ID, or an
+ * Azure-hosted OpenAI deployment name?
  *
  * @param {string | undefined} value
  * @returns {boolean}
  */
 export function isValidWorkflowModel(value) {
   if (value === undefined) return false;
-  return WORKFLOW_MODEL_ALIASES.includes(value) || MODEL_ID_PATTERN.test(value);
+  return (
+    WORKFLOW_MODEL_ALIASES.includes(value) ||
+    MODEL_ID_PATTERN.test(value) ||
+    AZURE_OPENAI_MODEL_ID_PATTERN.test(value)
+  );
 }
 
 /**
