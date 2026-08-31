@@ -256,6 +256,100 @@ describe("createStoreExecutor — readBigInts", () => {
     expect(typeof plainRow?.["id"]).toBe("number");
     expect(plainRow?.["id"]).toBe(42);
   });
+
+  // #807. `run()` was the one query method that never called
+  // `setReadBigInts`, so `lastInsertRowid` came back as a JS number and any
+  // rowid above 2^53 was silently truncated — no throw, no warning. An
+  // `INTEGER PRIMARY KEY` this large is reachable in practice (an explicit
+  // id, or an `AUTOINCREMENT` sequence seeded high), and the corruption is
+  // worst where it matters most: the identity of a row just written.
+  test("run() returns an exact bigint for a rowid above Number.MAX_SAFE_INTEGER", () => {
+    const database = freshDatabase();
+    const executor = createStoreExecutor(database);
+    const huge = 9_007_199_254_740_993n; // 2^53 + 1 — not representable as a number
+
+    const result = executor.run(
+      "INSERT INTO widgets (id, name) VALUES (?, ?)",
+      [huge, "huge"],
+    );
+
+    expect(typeof result.lastInsertRowid).toBe("bigint");
+    expect(result.lastInsertRowid).toBe(huge);
+    // The precise failure this locks out: 9007199254740993 rounds to
+    // ...992 the moment it is read as a double.
+    expect(result.lastInsertRowid).not.toBe(9_007_199_254_740_992n);
+  });
+
+  test("run() still returns a plain number for a rowid inside the safe-integer range", () => {
+    const database = freshDatabase();
+    const executor = createStoreExecutor(database);
+
+    const result = executor.run("INSERT INTO widgets (name) VALUES (?)", [
+      "small",
+    ]);
+
+    expect(typeof result.lastInsertRowid).toBe("number");
+    expect(result.lastInsertRowid).toBe(1);
+    expect(result.changes).toBe(1);
+  });
+
+  // SQLite's INTEGER PRIMARY KEY accepts negative rowids, so a narrowing that
+  // only bounds the top corrupts the negative tail exactly as the original
+  // defect corrupted the positive one.
+  test("run() returns a plain number for a small negative rowid", () => {
+    const database = freshDatabase();
+    const executor = createStoreExecutor(database);
+
+    const result = executor.run(
+      "INSERT INTO widgets (id, name) VALUES (?, ?)",
+      [-42, "negative"],
+    );
+
+    expect(typeof result.lastInsertRowid).toBe("number");
+    expect(result.lastInsertRowid).toBe(-42);
+  });
+
+  // The assertion that actually pins narrowRowid's LOWER bound: a rowid this
+  // negative is only exact as a bigint. Dropping the `>= MIN_SAFE_INTEGER`
+  // half of the check leaves the small-negative test above green and only
+  // this one red — verified by mutation.
+  test("run() returns an exact bigint for a rowid below Number.MIN_SAFE_INTEGER", () => {
+    const database = freshDatabase();
+    const executor = createStoreExecutor(database);
+    const veryNegative = -9_007_199_254_740_993n; // -(2^53 + 1)
+
+    const result = executor.run(
+      "INSERT INTO widgets (id, name) VALUES (?, ?)",
+      [veryNegative, "very negative"],
+    );
+
+    expect(typeof result.lastInsertRowid).toBe("bigint");
+    expect(result.lastInsertRowid).toBe(veryNegative);
+    expect(result.lastInsertRowid).not.toBe(-9_007_199_254_740_992n);
+  });
+
+  // The second half of #807, unreported: because statements are cached by SQL
+  // text and `run()` never set the flag, a prior bigint READ of the same SQL
+  // left it set and the next `run()` silently inherited it. This mirrors the
+  // get()-side leak test above, on the write path.
+  test("a prior bigint read does not leak into a later run() on the same cached SQL", () => {
+    const database = freshDatabase();
+    const executor = createStoreExecutor(database);
+    // One SQL text reached through BOTH methods is what makes the leak
+    // possible at all — the cache is keyed on this string, so `get()` and
+    // `run()` here share a single prepared statement and its flag.
+    // `RETURNING` is what makes an INSERT legitimately readable via `get()`.
+    const sql = "INSERT INTO widgets (name) VALUES (?) RETURNING id";
+
+    const returned = executor.get(sql, ["first"], { readBigInts: true });
+    expect(typeof returned?.["id"]).toBe("bigint");
+
+    const result = executor.run(sql, ["second"]);
+
+    expect(typeof result.lastInsertRowid).toBe("number");
+    expect(result.lastInsertRowid).toBe(2);
+    expect(result.changes).toBe(1);
+  });
 });
 
 describe("createStoreExecutor — statement cache", () => {

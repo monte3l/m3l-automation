@@ -11,10 +11,13 @@
  *   Every row this module yields is normalized to an ordinary object before
  *   it ever reaches a caller.
  * - `setReadBigInts` is a **per-statement**, not per-database, flag. Because
- *   prepared statements are cached here by SQL text, the flag is set on
- *   every single call — including explicitly clearing it — so a later plain
- *   read of the same cached SQL never inherits a bigint read from an earlier
- *   call.
+ *   prepared statements are cached here by SQL text, every one of the three
+ *   query methods sets it on every single call, so no call ever inherits the
+ *   flag from an earlier one against the same cached SQL. `all`/`get` set it
+ *   from the caller's `readBigInts` option — including explicitly clearing
+ *   it — while `run` always sets it and narrows the result back
+ *   ({@link narrowRowid}), because a truncated `lastInsertRowid` is data
+ *   loss rather than a formatting preference.
  *
  * @packageDocumentation
  */
@@ -46,6 +49,28 @@ import type {
  */
 function normalizeRow(row: M3LStoreRow): M3LStoreRow {
   return { ...row };
+}
+
+/**
+ * Narrows a rowid read under `setReadBigInts(true)` back to a `number` when it
+ * is exactly representable as one, leaving it a `bigint` when it is not.
+ *
+ * `run()` reads `lastInsertRowid` with the bigint flag set unconditionally,
+ * because that is the only way to get the value SQLite actually stored — read
+ * as a double, any rowid above 2^53 is silently rounded (#807). Narrowing the
+ * common case back to `number` keeps every existing caller working: a rowid
+ * that fits the safe-integer range behaves exactly as before.
+ *
+ * Both bounds are checked deliberately. SQLite's `INTEGER PRIMARY KEY` accepts
+ * negative rowids, so an upper-bound-only check would corrupt the negative
+ * tail exactly as reading a double corrupts the positive one.
+ */
+function narrowRowid(rowid: number | bigint): number | bigint {
+  if (typeof rowid !== "bigint") return rowid;
+  return rowid >= BigInt(Number.MIN_SAFE_INTEGER) &&
+    rowid <= BigInt(Number.MAX_SAFE_INTEGER)
+    ? Number(rowid)
+    : rowid;
 }
 
 /**
@@ -136,10 +161,15 @@ function createQueryExecutor(
     run(sql: string, parameters?: M3LStoreParameters): M3LStoreWriteResult {
       return executeOrThrow(() => {
         const statement = getCachedStatement(database, cache, sql);
+        // Unconditionally, not caller-controlled: reading lastInsertRowid as
+        // a double silently truncates anything above 2^53, and a cached
+        // statement would otherwise inherit whatever flag a prior get()/all()
+        // on the same SQL left set. narrowRowid puts the common case back.
+        statement.setReadBigInts(true);
         const result = statement.run(...toStatementArguments(parameters));
         return {
           changes: Number(result.changes),
-          lastInsertRowid: result.lastInsertRowid,
+          lastInsertRowid: narrowRowid(result.lastInsertRowid),
         };
       });
     },

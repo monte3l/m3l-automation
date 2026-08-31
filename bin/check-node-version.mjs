@@ -9,9 +9,11 @@
  * occurs — `">=24"` is a floor with no ceiling, so a machine running Node 26
  * satisfies it and `engine-strict` can never fire. Meanwhile every workflow
  * hardcoded `node-version: 24` rather than reading the file, so
- * `.node-version` was authoritative for nobody. The concrete cost was a
- * false test failure: `m3l-console-server`'s `readBigInts` case fails on
- * Node 26 and is green in CI on 24.
+ * `.node-version` was authoritative for nobody. The cost is a local-only
+ * failure that reads as a regression: indistinguishable from a real one until
+ * someone checks `node -v`. (ADR-0003 originally cited
+ * `m3l-console-server`'s `readBigInts` case here; that turned out to be a
+ * genuine defect, fixed in #807 — see the ADR's 2026-09-01 update.)
  *
  * Two responsibilities, deliberately in one gate:
  *
@@ -271,8 +273,8 @@ export function evaluateRuntimeVersion(pinMajor, runtimeVersion) {
   return [
     `Running Node ${runtimeVersion} but ${NODE_VERSION_FILE} pins ` +
       `${pinMajor}. CI runs ${pinMajor}, so a local-only failure here may be ` +
-      `a version artifact rather than a real regression (the ` +
-      `m3l-console-server readBigInts case is exactly that). Fix with ` +
+      `a version artifact rather than a real regression — but confirm that ` +
+      `before assuming it, since a real defect looks identical. Fix with ` +
       `\`fnm use ${pinMajor}\` — or \`fnm install ${pinMajor}\` plus ` +
       `\`eval "$(fnm env --use-on-cd --shell zsh)"\` in your shell rc for ` +
       `per-directory switching. See ADR-0003.`,

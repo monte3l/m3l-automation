@@ -133,6 +133,40 @@ runtime**, via `.node-version` plus the gate above. Narrowing `engines` to
 rejected. The `.npmrc` `engine-strict=true` line also stays: it still guards
 the below-floor case correctly, which is the only case it ever guarded.
 
+## Update (2026-09-01) — the `readBigInts` observation was misattributed
+
+The Amendment above cites, as its **Observed cost**, that
+`packages/m3l-console-server`'s `readBigInts` test "fails locally on Node 26
+and is green in CI on Node 24 — a false failure produced purely by the version
+split". That line stays as written: it is the historical record of what was
+observed at the time. This update records that the attribution was wrong.
+
+The real cause was a defect in the code under test, not in the runtime.
+`createStoreExecutor(...).run()` was the only query method that never called
+`setReadBigInts`, so it read `lastInsertRowid` as a double and silently
+truncated any rowid above 2^53 — inserting rowid `9007199254740993` returned
+`9007199254740992`, off by one, with no throw and no warning. Reproduced and
+fixed on the pinned Node 24.20.0 (#807); the same five lines also let a cached
+statement inherit the bigint flag from a prior `get()` on the same SQL.
+
+**Scope of this verification, stated precisely:** the defect and its fix were
+verified on Node 24 only. The Amendment's claim about Node 26's behaviour is
+neither reconfirmed nor contradicted here — it was not retested, because the
+project is staying on Node 24 LTS and does not install other majors
+(maintainer decision, 2026-09-01). What is established is narrower and
+sufficient: the failure was a real defect reproducible on the pinned runtime,
+so it was never evidence for a version split in the first place.
+
+**The Decision is unaffected.** The argument for pinning the dev/CI runtime
+never depended on this example: it rests on `engines.node: ">=24"` being a
+floor with no ceiling that `engine-strict` cannot enforce upward, and on
+`@types/node`'s major deciding which API surface `pnpm typecheck` validates
+against. `bin/check-node-version.mjs` and `.claude/hooks/warn-node-version.mjs`
+now cite no specific example at all — both cases the ADR ever named turned out
+to have another cause (the `@types/node` pin closed the `setInterval` overload
+in `stream-writer.test.ts`; #807 closed this one), so a named example here
+reliably rots into a misleading claim.
+
 ## Links
 
 - Related: `.node-version`, `.npmrc` (`engine-strict=true`), root `package.json` (`engines`), `packages/m3l-common/package.json` (`engines`), `.github/workflows/ci.yml`.
