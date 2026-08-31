@@ -1,0 +1,55 @@
+{
+  "skill_name": "starting-work",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I want to implement a new submodule `core/csv` under `packages/m3l-common/src/core/csv/` with tests in `packages/m3l-common/tests/csv.test.ts`. I am currently on the `main` branch. Please run starting-work to prepare.",
+      "expected_output": "The response emits WOULD-RUN lines for git-state reads, recommends a `feat/<slug>` branch, states a PR is required because guarded source paths are involved, names `origin <branch>` as the push target, and explicitly states it will confirm all decisions with the user before writing any files or creating a branch.",
+      "expectations": [
+        "The response emits `WOULD-RUN: git rev-parse --abbrev-ref HEAD` or another git branch-inspection command before proposing any branch name",
+        "The response recommends a branch name beginning with `feat/` for the new submodule work",
+        "The response states that a PR is required or mandatory because the change touches guarded paths under `packages/*/src/**` or `tests/`",
+        "The response names `origin` as the push target for the recommended branch",
+        "The response states that no files will be written and no branch will be created until the user confirms the decisions"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "I am already working on branch `fix/config-parse-null`. I need to apply a bug fix inside `packages/m3l-common/src/core/config/` and update `packages/m3l-common/tests/config.test.ts`. Please run starting-work.",
+      "expected_output": "The response treats `fix/config-parse-null` as the confirmed branch (since the user already stated it), recommends staying on it rather than proposing a new name, states a PR is required, and presents `origin fix/config-parse-null` as the push target.",
+      "expectations": [
+        "The response treats `fix/config-parse-null` as the current or confirmed branch and does not propose an alternative `feat/` or `fix/` name as a new open decision",
+        "The response states that a PR is required because the change touches guarded paths under `packages/*/src/**` or `tests/`",
+        "The response names `origin fix/config-parse-null` as the push target",
+        "The response states that it will confirm any remaining open decisions with the user before writing anything or creating any branch"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "The task covers two independently-landable units: first, update `docs/contributing/style-guide.md` and `docs/adr/0099-new-adr.md` (docs only, no source changes); second, implement the corresponding enforcement in `packages/m3l-common/src/core/validation/` with tests in `packages/m3l-common/tests/validation.test.ts`. Please run starting-work.",
+      "expected_output": "The response identifies two independently-landable slices, recommends a PR sequence with the docs-only slice first, names a branch for each slice, and includes all five decisions in its output including the PR sequence.",
+      "files": [
+        {
+          "path": "docs/adr/0099-new-adr.md",
+          "content": "# 0099. Example enforcement ADR\n\n- **Status:** Draft\n- **Date:** 2026-08-31\n- **Deciders:** Enrico Lionello\n\n## Decision\n\nAdd a validation enforcement rule to the core submodule.\n"
+        }
+      ],
+      "expectations": [
+        "The response identifies or names multiple independently-landable units or slices in the task scope",
+        "The response recommends that the docs-only slice land first before the source code slice, placing it earlier in the proposed PR sequence",
+        "The response proposes or names a separate branch for at least two distinct slices of the work",
+        "The response states that a PR is required for the slice that touches `packages/*/src/**` or `tests/`"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Can you read through the error hierarchy in `packages/m3l-common/src/core/errors/` and explain how the M3LError subclasses are structured? I am not making any changes — this is exploratory research.",
+      "expected_output": "The response explicitly skips the starting-work gate because the task is read-only research, and proceeds to answer the technical question without presenting any branch, PR, or confirmation prompt.",
+      "expectations": [
+        "The response states that the task is read-only, exploratory, or a question, and explicitly notes that starting-work is being skipped or does not apply",
+        "The response text contains no recommendation of a branch name beginning with `feat/` or `fix/`",
+        "The response text presents no list of decisions — location, branch, PR-required, push target, or PR sequence — requiring the user's confirmation"
+      ]
+    }
+  ]
+}

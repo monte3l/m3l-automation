@@ -19,9 +19,11 @@ describe("MIN_CASES", () => {
 });
 
 describe("EXEMPT_SKILLS", () => {
-  test("is a Set of skill names", () => {
+  test("is an empty Set — the #775 backfill is complete and all 21 skills are compliant", () => {
     expect(EXEMPT_SKILLS).toBeInstanceOf(Set);
-    expect(EXEMPT_SKILLS.size).toBeGreaterThan(0);
+    // Pin the backfill completion: this must be 0. If it grows, a new entry
+    // was added that has not yet been removed after its skill became compliant.
+    expect(EXEMPT_SKILLS.size).toBe(0);
   });
 });
 
@@ -45,7 +47,7 @@ describe("evaluateSkillEvals", () => {
     );
     expect(errors).toHaveLength(0);
     expect(warnings).toHaveLength(1);
-    expect(warnings[0]).toContain("temporarily exempt");
+    expect(warnings[0]).toContain("exempt via EXEMPT_SKILLS");
     expect(compliant).toBe(0);
     expect(exempt).toBe(1);
   });
@@ -281,8 +283,8 @@ const goodCase: CaseState = {
 };
 
 describe("MIN_CHECKLIST_ENTRIES", () => {
-  test("requires at least one usable entry per case", () => {
-    expect(MIN_CHECKLIST_ENTRIES).toBe(1);
+  test("is ratcheted to 3 — one criterion cannot distinguish a passing skill from a lucky response", () => {
+    expect(MIN_CHECKLIST_ENTRIES).toBe(3);
   });
 });
 
@@ -311,14 +313,18 @@ describe("findCaseShapeViolations", () => {
     expect(errors[0]).toContain('"expectations" yields 0 renderable entries');
   });
 
-  test("rejects a case with an entry the runner cannot render", () => {
+  test("rejects a case with an entry the runner cannot render (unrenderable error AND below-floor error both fire)", () => {
+    // entryCount:3, unrenderableCount:1 → 2 usable entries < MIN_CHECKLIST_ENTRIES(3).
+    // With MIN ratcheted to 3, the below-floor rule fires alongside the
+    // unrenderable rule, producing two distinct errors.
     const errors = findCaseShapeViolations("some-skill", [
       { ...goodCase, entryCount: 3, unrenderableCount: 1 },
     ]);
 
-    expect(errors).toHaveLength(1);
+    expect(errors).toHaveLength(2);
     expect(errors[0]).toContain("1 checklist entry the runner cannot render");
     expect(errors[0]).toContain("identifier-only entry grades against nothing");
+    expect(errors[1]).toContain('"expectations" yields 0 renderable entries');
   });
 
   test("rejects a case where every entry is unrenderable, on both counts", () => {
@@ -348,6 +354,26 @@ describe("findCaseShapeViolations", () => {
     ]);
 
     expect(errors[0]).toContain("case #0 (no id)");
+  });
+
+  // Boundary pair for the MIN_CHECKLIST_ENTRIES ratchet (was 1, now 3).
+  // These two cases sit on either side of the new floor and are the
+  // regression guard for future changes to the constant.
+  test("rejects a case with exactly 2 usable checklist entries (one below the floor of 3)", () => {
+    const errors = findCaseShapeViolations("some-skill", [
+      { ...goodCase, entryCount: 2, unrenderableCount: 0 },
+    ]);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain('"expectations" yields 0 renderable entries');
+    expect(errors[0]).toContain("no usable checklist");
+  });
+
+  test("accepts a case with exactly 3 usable checklist entries (at the floor of 3)", () => {
+    expect(
+      findCaseShapeViolations("some-skill", [
+        { ...goodCase, entryCount: 3, unrenderableCount: 0 },
+      ]),
+    ).toEqual([]);
   });
 });
 

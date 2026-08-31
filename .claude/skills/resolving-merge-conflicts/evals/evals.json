@@ -1,0 +1,72 @@
+{
+  "skill_name": "resolving-merge-conflicts",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I am rebasing feat/add-p-retry onto main and package.json has a conflict in the dependencies block. HEAD added 'ms' and the incoming branch added 'p-retry'. Resolve the conflict and explain the steps you would take.",
+      "expected_output": "The skill resolves the package.json dependencies conflict by keeping both added dependencies (ms from HEAD and p-retry from the incoming branch), writes a merged package.json with no conflict markers, and emits the git staging and pnpm install commands it would run.",
+      "files": [
+        {
+          "path": "package.json",
+          "content": "{\n  \"name\": \"@m3l-automation/m3l-common\",\n  \"version\": \"0.9.0\",\n  \"type\": \"module\",\n  \"dependencies\": {\n<<<<<<< HEAD\n    \"ms\": \"^2.1.3\",\n    \"zod\": \"^3.22.4\"\n=======\n    \"p-retry\": \"^6.2.0\",\n    \"zod\": \"^3.22.4\"\n>>>>>>> feat/add-p-retry\n  }\n}\n"
+        }
+      ],
+      "expectations": [
+        "The resolved package.json written by the skill contains no line starting with `<<<<<<<`, `=======`, or `>>>>>>>`",
+        "The resolved package.json contains both `\"ms\": \"^2.1.3\"` from HEAD and `\"p-retry\": \"^6.2.0\"` from the incoming branch, alongside the shared `\"zod\"` entry",
+        "The response emits `WOULD-RUN: git add package.json` or `WOULD-RUN: git add -A` to stage the resolved file before continuing",
+        "The response emits `WOULD-RUN: pnpm install` after resolving the dependencies block to regenerate the lockfile against the merged source-of-truth"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "I am rebasing feat/add-config-error onto main and src/core/errors/errors.provenance.json has a conflict. Both branches added a new symbol to the same `exports` section — HEAD added M3LValidationError and the incoming branch added M3LConfigError. Resolve the provenance sidecar conflict.",
+      "expected_output": "The skill identifies this as a same-module provenance sidecar conflict where both sides edited the same section, hand-merges by keeping the union of both symbol sets, writes the resolved file with no conflict markers, and notes the need to re-stamp the blob with check-doc-provenance.mjs --update or /syncing-docs.",
+      "files": [
+        {
+          "path": "src/core/errors/errors.provenance.json",
+          "content": "{\n  \"version\": \"1\",\n  \"sections\": [\n    {\n      \"id\": \"exports\",\n      \"commit\": \"a1b2c3d4\",\n<<<<<<< HEAD\n      \"symbols\": [\"M3LError\", \"M3LValidationError\"]\n=======\n      \"symbols\": [\"M3LError\", \"M3LConfigError\"]\n>>>>>>> feat/add-config-error\n    }\n  ]\n}\n"
+        }
+      ],
+      "expectations": [
+        "The resolved errors.provenance.json written by the skill contains no line starting with `<<<<<<<`, `=======`, or `>>>>>>>`",
+        "The resolved file's symbols array contains both `\"M3LValidationError\"` (from HEAD) and `\"M3LConfigError\"` (from the incoming branch) alongside `\"M3LError\"`",
+        "The response classifies the conflict as a same-module provenance sidecar conflict where the same section was edited by both sides, requiring deliberate hand-merge rather than taking either side wholesale",
+        "The response mentions running `check-doc-provenance.mjs --update` or invoking the `/syncing-docs` skill to re-stamp the blob hash after the conflict is resolved"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "I am rebasing feat/handle-undefined onto main and src/core/config/index.ts has a logic conflict. HEAD throws on null only; the incoming branch throws on null-or-undefined and serialises differently. Help me resolve this conflict.",
+      "expected_output": "The skill recognises this as a src/** logic conflict it cannot auto-resolve, emits the abort command it would run, names the conflicted file, and instructs the user to resolve it manually and re-invoke the skill — it does not pick either side of the TypeScript logic.",
+      "files": [
+        {
+          "path": "src/core/config/index.ts",
+          "content": "export class M3LConfig {\n  processItem(item: unknown): string {\n<<<<<<< HEAD\n    if (item === null) {\n      throw new Error(\"null item\");\n    }\n    return String(item);\n=======\n    if (item === null || item === undefined) {\n      throw new Error(\"null or undefined item\");\n    }\n    return JSON.stringify(item);\n>>>>>>> feat/handle-undefined\n  }\n}\n"
+        }
+      ],
+      "expectations": [
+        "The response names `src/core/config/index.ts` as a logic conflict that must be resolved manually and explicitly states it will not auto-pick either side",
+        "The response emits `WOULD-RUN: git rebase --abort` or `WOULD-RUN: git merge --abort` as the action it would take because a logic conflict in src/** cannot be safely auto-merged",
+        "The response states that auto-picking a stale side in a src/** file is dangerous because it could reintroduce banned patterns that PreToolUse hooks would block",
+        "The response instructs the user to edit src/core/config/index.ts manually, stage it with git add, and then run git rebase --continue or git merge --continue before re-running this skill"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "I am in the middle of a rebase and docs/reference/catalog.json has a conflict. It looks like the merge driver did not fire. Both sides added a new module entry. How should I resolve this?",
+      "expected_output": "The skill recognises catalog.json as a driver-missed derived artifact that must NOT be hand-merged, instructs to install the missing merge driver, and states the file will be regenerated by pnpm gen:index (via /syncing-docs) rather than by manually merging the two JSON structures.",
+      "files": [
+        {
+          "path": "docs/reference/catalog.json",
+          "content": "{\n  \"version\": \"1\",\n  \"modules\": [\n    { \"id\": \"core/errors\", \"symbols\": [\"M3LError\"] },\n<<<<<<< HEAD\n    { \"id\": \"core/config\", \"symbols\": [\"M3LConfigParameter\"] }\n=======\n    { \"id\": \"core/config\", \"symbols\": [\"M3LConfigParameter\", \"M3LConfigReader\"] }\n>>>>>>> feat/add-config-reader\n  ]\n}\n"
+        }
+      ],
+      "expectations": [
+        "The response states that docs/reference/catalog.json must NOT be hand-merged and will instead be regenerated, because it is a derived artifact covered by the ADR-0024 merge driver that failed to fire",
+        "The response emits `WOULD-RUN: node bin/install-merge-drivers.mjs` or `WOULD-RUN: pnpm install` to register the missing merge driver so future rebases auto-resolve this file",
+        "The response emits `WOULD-RUN: pnpm gen:index` or states it will invoke `/syncing-docs` as the step that regenerates catalog.json from the merged provenance sidecars rather than hand-merging the JSON"
+      ]
+    }
+  ]
+}

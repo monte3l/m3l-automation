@@ -23,11 +23,13 @@
         }
       ],
       "expectations": [
-        "Emits a `WOULD-RUN:` line containing `node bin/check-doc-provenance.mjs --update` (with the `--update` flag) and a separate `WOULD-RUN:` line containing `node bin/check-doc-provenance.mjs` without the flag; the `--update` line appears earlier in the response than the bare line — re-stamp before post-stamp verify is mandatory",
-        "Emits `WOULD-RUN: pnpm check:doc-exports` to verify that every newly shipped export from `core/security` is documented before the PR opens",
-        "References `docs/reference/core/security.md` by name when describing the implementation-status check (step 4), confirming the security row's status is checked in that specific page",
-        "Emits a `WOULD-RUN:` line for `pnpm gen:index` and that line appears before any `WOULD-RUN:` line for `pnpm format` or `prettier` — the gen:index-before-prettier ordering rule is explicit in the skill",
-        "Ends with a structured per-step summary that names all eight steps (provenance stamp, doc counts, post-stamp check, implementation status, test counts, script docs, reference index, markdown lint) and gives each an explicit disposition — a planned/would-run/not-yet-executed marker satisfies just as well as ✓/✗; the requirement is that all eight steps are enumerated by name, not that any step claims a completed outcome"
+        "Emits a WOULD-RUN line containing `node bin/check-doc-provenance.mjs --update`.",
+        "Emits a WOULD-RUN line containing `node bin/check-doc-provenance.mjs` without the `--update` flag.",
+        "The `--update` line appears earlier in the response than the un-flagged one — re-stamp must precede post-stamp verification.",
+        "Emits a WOULD-RUN line containing `pnpm check:doc-exports`.",
+        "Emits a WOULD-RUN line containing `pnpm gen:index`, and no `pnpm format` or `prettier` line appears before it.",
+        "The response text contains the string `docs/reference/core/security.md`.",
+        "The response ends with a per-step summary naming all eight steps: provenance stamp, doc counts, post-stamp check, implementation status, test counts, script docs, reference index, markdown lint. Paraphrased names count; a planned/not-yet-run marker counts."
       ]
     },
     {

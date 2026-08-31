@@ -1,0 +1,84 @@
+{
+  "skill_name": "implementing-scripts",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Implement the data-sync script — it copies items from a DynamoDB source table into a destination table. The contract is at docs/reference/scripts/data-sync.md and the scaffold is already in scripts/data-sync/.",
+      "expected_output": "A coordination plan that emits WOULD-DISPATCH lines in the documented four-phase order — spec-conformance-reviewer, then test-author, then code-implementer, then code-reviewer and security-reviewer — with the test-author brief naming specific behaviours from the seeded contract and no direct edits to scripts/*/src/ or tests/ proposed by the hub itself.",
+      "files": [
+        {
+          "path": "docs/reference/scripts/data-sync.md",
+          "content": "# scripts/data-sync — Data Sync\n\nCopies items from a source DynamoDB table into a destination table.\n\n## Steps\n\n### `runFetch(deps: { correlationId: string; sourceTable: string; batchLimit: number; paths: Core.M3LPaths }): Promise<Record<string, unknown>[]>`\nScans `sourceTable` up to `batchLimit` items. Throws `M3LError` (code `ERR_DATA_SYNC_FETCH`) with `cause` chained on AWS SDK failure. Writes nothing to disk.\n\n### `runUpsert(deps: { correlationId: string; targetTable: string; items: Record<string, unknown>[]; paths: Core.M3LPaths }): Promise<{ written: number }>`\nBatch-writes items to `targetTable`. Returns `{ written: number }`. Throws `M3LError` (code `ERR_DATA_SYNC_UPSERT`) with `cause` chained on AWS SDK failure.\n\n## Config parameters\n- `SOURCE_TABLE` (string, required): DynamoDB source table name.\n- `TARGET_TABLE` (string, required): DynamoDB destination table name.\n- `BATCH_LIMIT` (number, default 100): Maximum items fetched per run.\n"
+        },
+        {
+          "path": "scripts/data-sync/src/main.ts",
+          "content": "import { Core } from \"@m3l-automation/m3l-common\";\nimport { configParameters } from \"./config.js\";\nimport { hooks } from \"./hooks.js\";\nimport { runFetch } from \"./steps/run-fetch.js\";\nimport { runUpsert } from \"./steps/run-upsert.js\";\n\nconst paths = new Core.M3LPaths();\nconst script = new Core.M3LScript({\n  metadata: { name: \"data-sync\", version: \"0.0.0\" },\n  config: { params: configParameters },\n  hooks,\n});\n\nawait Core.runScript(script, async () => {\n  const config = await script.getConfiguration();\n  // TODO: wire runFetch and runUpsert\n  void runFetch;\n  void runUpsert;\n  void config;\n  void paths;\n});\n"
+        },
+        {
+          "path": "scripts/data-sync/src/steps/run-fetch.ts",
+          "content": "import type { Core } from \"@m3l-automation/m3l-common\";\n\nexport async function runFetch(_deps: {\n  readonly correlationId: string;\n  readonly sourceTable: string;\n  readonly batchLimit: number;\n  readonly paths: Core.M3LPaths;\n}): Promise<Record<string, unknown>[]> {\n  throw new Error(\"not implemented\");\n}\n"
+        }
+      ],
+      "expectations": [
+        "Emits `WOULD-DISPATCH: spec-conformance-reviewer` before any `WOULD-DISPATCH: test-author` line in the response — Phase 1 contract extraction must precede the RED phase",
+        "Emits `WOULD-DISPATCH: test-author` with a brief that names `runFetch` or `runUpsert` — proving the brief is derived from the seeded contract page, not a generic placeholder",
+        "`WOULD-DISPATCH: test-author` appears before `WOULD-DISPATCH: code-implementer` in the response — tests-first (RED before GREEN) is the defining constraint of this pipeline",
+        "`WOULD-DISPATCH: code-reviewer` appears after `WOULD-DISPATCH: code-implementer` in the response — review is a separate spoke dispatched only once implementation exists",
+        "`WOULD-DISPATCH: security-reviewer` appears in the response — the SKILL.md states security-reviewer is always in the fan-out for every script, not conditional on content"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Fill in the export-retry script — it retries transient S3 failures with exponential backoff. The contract is at docs/reference/scripts/export-retry.md and the scaffold is in scripts/export-retry/.",
+      "expected_output": "A coordination plan that dispatches code-reviewer, security-reviewer, AND silent-failure-hunter in the Phase 4 review fan-out, with silent-failure-hunter appearing after code-implementer and a brief that names the retry or poll logic as the reason.",
+      "files": [
+        {
+          "path": "docs/reference/scripts/export-retry.md",
+          "content": "# scripts/export-retry — Export with Retry\n\nExports a dataset to S3, retrying transient AWS failures with exponential backoff.\n\n## Steps\n\n### `runExportWithRetry(deps: { correlationId: string; maxAttempts: number; backoffMs: number; bucket: string; key: string; paths: Core.M3LPaths }): Promise<void>`\nAttempts the S3 upload up to `maxAttempts` times. On `M3LTransientError`, waits `backoffMs * 2^attempt` milliseconds and retries. Propagates non-transient errors immediately without retrying. On success writes the exported object key to `output/manifest.json` via `deps.paths.outputDir`.\n\n## Config parameters\n- `S3_BUCKET` (string, required): Target S3 bucket.\n- `S3_KEY` (string, required): Target object key.\n- `MAX_ATTEMPTS` (number, default 3): Maximum retry attempts.\n- `BACKOFF_MS` (number, default 500): Base backoff interval in milliseconds.\n"
+        },
+        {
+          "path": "scripts/export-retry/src/main.ts",
+          "content": "import { Core } from \"@m3l-automation/m3l-common\";\nimport { configParameters } from \"./config.js\";\nimport { hooks } from \"./hooks.js\";\nimport { runExportWithRetry } from \"./steps/run-export-with-retry.js\";\n\nconst paths = new Core.M3LPaths();\nconst script = new Core.M3LScript({\n  metadata: { name: \"export-retry\", version: \"0.0.0\" },\n  config: { params: configParameters },\n  hooks,\n});\n\nawait Core.runScript(script, async () => {\n  const config = await script.getConfiguration();\n  // TODO: wire runExportWithRetry\n  void runExportWithRetry;\n  void config;\n  void paths;\n});\n"
+        },
+        {
+          "path": "scripts/export-retry/src/steps/run-export-with-retry.ts",
+          "content": "import type { Core } from \"@m3l-automation/m3l-common\";\n\nexport async function runExportWithRetry(_deps: {\n  readonly correlationId: string;\n  readonly maxAttempts: number;\n  readonly backoffMs: number;\n  readonly bucket: string;\n  readonly key: string;\n  readonly paths: Core.M3LPaths;\n}): Promise<void> {\n  throw new Error(\"not implemented\");\n}\n"
+        }
+      ],
+      "expectations": [
+        "`WOULD-DISPATCH: security-reviewer` appears in the response — security-reviewer is always in the Phase 4 fan-out for every script, regardless of content",
+        "`WOULD-DISPATCH: silent-failure-hunter` appears in the response — the contract describes retry/poll logic (`maxAttempts`, exponential backoff), which is the documented trigger for this spoke",
+        "`WOULD-DISPATCH: silent-failure-hunter` appears after `WOULD-DISPATCH: code-implementer` in the response — it is part of Phase 4 review, dispatched only after implementation exists",
+        "The response does not characterize `security-reviewer` as optional or conditional — its presence must be stated as always required, not as a consequence of this script's specific content"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Implement the report-batch script — generates paginated reports from a summary table.",
+      "expected_output": "The response identifies that scripts/report-batch/ does not exist, stops before dispatching any spoke, and explicitly recommends running scaffolding-scripts first. No WOULD-DISPATCH: test-author or WOULD-DISPATCH: code-implementer lines appear.",
+      "files": [
+        {
+          "path": "docs/reference/scripts/report-batch.md",
+          "content": "# scripts/report-batch — Batch Report Generator\n\nGenerates one report file per row from a DynamoDB summary table.\n\n## Steps\n\n### `runGenerateReports(deps: { correlationId: string; summaryTable: string; outputPrefix: string; paths: Core.M3LPaths }): Promise<{ count: number }>`\nScans `summaryTable` and writes one JSON report per row to `paths.outputDir/<outputPrefix>-<id>.json`. Returns `{ count }`. Throws `M3LError` (code `ERR_REPORT_GENERATE`) with `cause` chained on failure.\n\n## Config parameters\n- `SUMMARY_TABLE` (string, required): DynamoDB table name.\n- `OUTPUT_PREFIX` (string, default \"report\"): Filename prefix for generated reports.\n"
+        }
+      ],
+      "expectations": [
+        "The response states that `scripts/report-batch/` does not exist or that the scaffold directory is missing — identifying the failed precondition check",
+        "The response names `scaffolding-scripts` as the skill or step to invoke first before this skill can proceed",
+        "Does not emit `WOULD-DISPATCH: test-author` anywhere in the response — no RED phase work can begin without the scaffolded directory",
+        "Does not emit `WOULD-DISPATCH: code-implementer` anywhere in the response — no GREEN phase work can begin without the scaffolded directory"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Implement the core/config module — add typed configuration parameter support with M3LConfigParameter and loadConfig.",
+      "expected_output": "The response identifies the request as targeting a library submodule under packages/m3l-common (not a consumer script under scripts/), recommends the implementing-submodules skill, and emits no WOULD-DISPATCH lines for the scripts pipeline.",
+      "expectations": [
+        "The response identifies the request as targeting a library submodule — naming `packages/m3l-common` or `core/config` as a library module, not a consumer script under `scripts/`",
+        "The response names `implementing-submodules` as the correct skill to use for this request — the documented routing rule when the target is a library submodule",
+        "Does not emit `WOULD-DISPATCH: test-author` in the context of the scripts pipeline — no scripts pipeline RED phase is started for a library module request",
+        "Does not emit `WOULD-DISPATCH: code-implementer` for any `scripts/` path — the implementing-scripts pipeline is not the correct pipeline for packages/m3l-common work"
+      ]
+    }
+  ]
+}

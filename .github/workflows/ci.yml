@@ -456,8 +456,9 @@ jobs:
         run: pnpm check:harness-freshness
 
       # Every .claude/skills/*/SKILL.md needs a sibling evals/evals.json with
-      # >= 3 cases, except the named EXEMPT_SKILLS grandfather list (issue
-      # #775 tracks the backfill).
+      # >= 3 cases, each carrying >= 3 checklist entries. The EXEMPT_SKILLS
+      # grandfather list is empty (the #775 backfill completed) but is kept
+      # as runway for the next new skill.
       - name: Check skill evals
         run: pnpm check:skill-evals
 

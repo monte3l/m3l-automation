@@ -20,15 +20,16 @@
 // `description`/`text`. Identifier-only entries are rejected on purpose —
 // `{name}`/`{id}` alone gives the grader nothing to grade.
 //
-// EXEMPT_SKILLS is a temporary, named grandfather list for the skills that
-// had zero evals when this gate was introduced — landing the gate as a hard
+// EXEMPT_SKILLS was a named grandfather list for the skills that had zero
+// evals when this gate was introduced — landing the gate as a hard
 // requirement immediately would have failed the pre-push `checks` lane for
-// every future push until the backfill finished. Backfill is tracked at
-// https://github.com/monte3l/m3l-automation/issues/775, 2-3 skills per PR.
-// A skill must be removed from EXEMPT_SKILLS in the SAME PR that makes it
-// compliant — this script rejects a redundant exemption (an exempt skill
-// that already has a qualifying, well-shaped file) so the list cannot
-// silently outlive its purpose.
+// every future push until the backfill finished. That backfill (issue #775)
+// is COMPLETE: the list is empty and all 21 skills are compliant. The list
+// itself stays for the next new skill, under the same rule that kept it
+// honest — a skill must be removed from EXEMPT_SKILLS in the SAME PR that
+// makes it compliant, and this script rejects a redundant exemption (an
+// exempt skill that already has a qualifying, well-shaped file) so an entry
+// cannot silently outlive its purpose.
 //
 // Usage:
 //   node bin/check-skill-evals.mjs   # exits 0 on success, 1 on any violation
@@ -46,18 +47,29 @@ import {
 export const MIN_CASES = 3;
 
 /**
- * Minimum checklist entries for a case to mean anything. One is a low bar
- * deliberately: this gate's job is to reject a case that grades against
- * NOTHING, not to litigate how thorough a checklist should be.
+ * Minimum checklist entries for a case to mean anything.
+ *
+ * Was 1 while the corpus was being repaired — a floor that only rejected a
+ * case grading against NOTHING. Raised to 3 once every case cleared it: a
+ * single criterion cannot distinguish "the skill worked" from "the response
+ * happened to contain one string", and the two thinnest cases in the corpus
+ * (`refreshing-anthropic-guidance` at one entry, `writing-work-logs` at two)
+ * were both measurably weak because of it.
  */
-export const MIN_CHECKLIST_ENTRIES = 1;
+export const MIN_CHECKLIST_ENTRIES = 3;
 
-export const EXEMPT_SKILLS = new Set([
-  "implementing-scripts",
-  "resolving-merge-conflicts",
-  "reviewing-dependabot-prs",
-  "starting-work",
-]);
+/**
+ * Named grandfather list for skills that have no `evals/evals.json` yet.
+ *
+ * EMPTY, and that is the point: the backfill tracked at
+ * https://github.com/monte3l/m3l-automation/issues/775 is complete — all 21
+ * skills carry a qualifying, well-shaped file. The Set and its machinery stay
+ * because the next NEW skill will need the same runway: add it here to land
+ * the skill and its evals in separate PRs, then remove it. The redundancy
+ * check below makes that safe — an exempt skill that already has a qualifying
+ * file is an ERROR, so an entry cannot silently outlive its purpose.
+ */
+export const EXEMPT_SKILLS = new Set([]);
 
 /**
  * @typedef {object} SkillEvalCaseState
@@ -149,8 +161,8 @@ export function evaluateSkillEvals(skills, exemptSkills) {
       if (isExempt) {
         exempt++;
         warnings.push(
-          `${skill.name} has no evals/evals.json (temporarily exempt — see ` +
-            `issue #775; the exemption must be removed once the backfill lands).`,
+          `${skill.name} has no evals/evals.json (exempt via EXEMPT_SKILLS; ` +
+            `remove the entry in the same PR that adds its evals).`,
         );
         continue;
       }
@@ -191,7 +203,7 @@ export function evaluateSkillEvals(skills, exemptSkills) {
         warnings.push(
           `${skill.name} has ${skill.caseCount} case(s) but ` +
             `${shapeErrors.length} unresolved case-shape violation(s) ` +
-            `(temporarily exempt — see issue #775): ${shapeErrors[0]}`,
+            `(exempt via EXEMPT_SKILLS): ${shapeErrors[0]}`,
         );
         continue;
       }
@@ -292,7 +304,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
 
   reporter.succeed(
     `${skills.length} skill(s) checked: ${compliant} compliant, ${exempt} ` +
-      `temporarily exempt (issue #775).`,
+      `exempt.`,
   );
   reporter.finish({ skills: skills.length, compliant, exempt });
 }

@@ -21,7 +21,7 @@
         "The response text contains exactly five WOULD-DISPATCH lines, one for each fixed facet slug (models-tiering, cc-features-settings, agent-subagent-design, skills-context-engineering, hooks-lifecycle), and those five lines appear consecutively in the response text rather than separated by unrelated content.",
         "The response text contains the string 'claude-sonnet-4-5', the exact model pin present in the seeded .claude/agents/code-implementer.md and tracker.",
         "The response text contains no WOULD-RUN write lines targeting .claude/agents/, .claude/rules/, .claude/skills/, or .github/workflows/.",
-        "The response text contains a section presenting a per-facet remediation plan and states plan mode as the intended next step; for any facet whose external source could not be fetched, the response text labels that facet as unresolved or pending rather than asserting a confirmed-drift or clean-sweep verdict for it."
+        "The response text contains a per-facet remediation section — one entry per facet — and for any facet whose verdict depends on an external fetch that could not be performed, labels it unresolved or pending rather than asserting confirmed-drift or clean-sweep. It must also say what happens with plan mode: EITHER that plan mode is the next step, OR that plan mode is deferred until the unavailable fetch supplies real verdicts. Both are correct here — grade the per-facet structure and the honest labelling of unverifiable facets, not which of the two plan-mode dispositions it picks."
       ]
     },
     {
