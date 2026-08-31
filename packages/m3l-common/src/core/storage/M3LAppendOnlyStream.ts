@@ -56,7 +56,12 @@
  */
 
 import { M3LError } from "../errors/index.js";
-import { isNumber, isPlainObject, isString } from "../utils/guards.js";
+import {
+  isFunction,
+  isNumber,
+  isPlainObject,
+  isString,
+} from "../utils/guards.js";
 import { projectAppendOnlyEntry } from "../../internal/storage/append-only-projection.js";
 import {
   assertOnTruncatedTailIsCallable,
@@ -558,7 +563,11 @@ export class M3LAppendOnlyStream {
       maxLineBytes: this.streamMaxLineBytes,
       // Conditional spread, not a direct assignment: `exactOptionalPropertyTypes`
       // forbids setting an optional property to a value typed `T | undefined`.
-      ...(options?.onTruncatedTail !== undefined && {
+      // We spread only when the value is actually callable: `assertOnTruncatedTailIsCallable`
+      // rejects truthy non-functions, so any falsy non-function (e.g. `null`, `0`) must
+      // degrade to the absent-callback path rather than being passed through as a
+      // present-but-uncallable callback — which would silently swallow a torn tail.
+      ...(isFunction(options?.onTruncatedTail) && {
         onTruncatedTail: options.onTruncatedTail,
       }),
       buildError: (message, errorOptions) =>

@@ -537,6 +537,42 @@ describe("torn tail on the last segment", () => {
       segmentCount: 1,
     });
   });
+
+  // REGRESSION (fix: `...(isFunction(options?.onTruncatedTail) && { … })`):
+  // A falsy non-function `onTruncatedTail` (e.g. `null`, `0`) passes the
+  // synchronous guard (see the "option validation" describe block below) but
+  // MUST degrade to the absent-callback path at the torn-tail decision point
+  // inside the async generator.
+  //
+  // BEFORE THE FIX: the conditional spread tested `!== undefined`, so `null`
+  // (and `0`) was threaded into the read context; `resolveTornTail`'s own
+  // `=== undefined` check was therefore false; `context.onTruncatedTail?.(…)`
+  // no-opped on the falsy value via optional chaining — torn tail swallowed
+  // silently, good records yielded as if the file were complete.
+  //
+  // AFTER THE FIX: the spread gates on `isFunction(…)`, so any falsy value
+  // leaves `onTruncatedTail` absent in the context — the generator takes the
+  // same throw path it takes when no callback is supplied at all.
+  test.each([
+    ["null", null],
+    ["zero", 0],
+  ] as [string, unknown][])(
+    "throws M3LAppendOnlyStreamReadError when iteration encounters a torn tail with falsy onTruncatedTail: %s",
+    async (_label, value) => {
+      const dir = path.join(workDir, "audit");
+      await writeSegmentFile(dir, segmentName("2026-01-01", 1), tornContent());
+
+      const reader = new M3LAppendOnlyStream({ directory: dir });
+      const { entries, thrown } = await collectUntilThrow(
+        reader.read({
+          onTruncatedTail: value,
+        } as unknown as M3LAppendOnlyReadOptions),
+      );
+
+      expect(entries).toEqual(goodLines);
+      expect(thrown).toBeInstanceOf(M3LAppendOnlyStreamReadError);
+    },
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -640,12 +676,16 @@ describe("option validation: onTruncatedTail callable guard", () => {
     }).toThrow(M3LError);
   });
 
-  // INVARIANT: a FALSY non-function `onTruncatedTail` (e.g. `null`, `0`)
-  // takes the documented "absent callback" path — the guard condition
+  // INVARIANT: a FALSY non-function `onTruncatedTail` (e.g. `null`, `0`) is
+  // ACCEPTED at call time — the guard condition
   // `if (onTruncatedTail && !isFunction(onTruncatedTail))` short-circuits on
-  // any falsy value and does NOT throw. This confirms the guard is not
-  // over-eager and that legitimate "no callback" representations beyond plain
-  // `undefined` are accepted without error.
+  // any falsy value and does NOT throw synchronously. This confirms the guard
+  // is not over-eager. Note that "accepted at call time" is not the same as
+  // "treated as a real callback": the implementation degrades a falsy value to
+  // the ABSENT callback path, so a torn tail encountered during iteration will
+  // still throw — exactly as it does when no callback is supplied at all. See
+  // the "throws M3LAppendOnlyStreamReadError when iteration encounters a torn
+  // tail with falsy onTruncatedTail" test in the "torn tail" describe block.
   test.each([
     ["null", null],
     ["zero", 0],
@@ -722,11 +762,9 @@ describe("symlink refusal", () => {
   // INVARIANT: `O_NOFOLLOW` on open refuses a segment path that has been
   // replaced by a symlink — the read-side half of the same guard the writer
   // already applies (see the sibling write-path suite's "symlink refusal"
-  // describe block). The `nlink` hardlink check the writer ALSO applies is
-  // deliberately NOT mirrored here: a hardlinked segment being read is
-  // harmless (reading never redirects a write into a file somebody else
-  // owns), so restoring that check on the read side would refuse a
-  // perfectly safe rebuild for no security benefit.
+  // describe block). The reader ALSO applies the `nlink` hardlink check —
+  // see the "hardlink refusal (S1)" describe block below for that guard's
+  // rationale and regression tests.
   test("refuses to read a segment path that is a symlink", async () => {
     const dir = path.join(workDir, "audit");
     const outsideDir = path.join(workDir, "outside");
@@ -835,20 +873,30 @@ describe("type contracts", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 14 — T1: the two Must-fix exploits (slice 4a security review, RED by
-// design — the fix is not applied yet)
+// 14 — T1: regression suite for two Must-fix exploits found in the slice 4a
+// security review (M1: planted FIFO hang, M2: sequence-gap swallowed). Both
+// fixes have been applied; these tests are the regression locks.
 // ---------------------------------------------------------------------------
 
 describe("planted FIFO refusal (M1 — must never hang)", () => {
-  // EXPLOIT (M1): `mkfifo <streamDir>/2026-01-01-0001.jsonl` then read().
-  // `open()` at the reader carries no `fstat`, no `O_NONBLOCK`, and no
-  // `AbortSignal`, so `O_RDONLY` on a FIFO with no writer blocks in the
-  // kernel forever — the whole failure mode is "hangs", so this test's own
-  // pass/fail signal IS a hard timeout, not an assertion after the fact.
-  // The internal race is bounded well under the outer Vitest timeout so a
-  // regression fails loudly and quickly rather than hanging CI. If it DOES
-  // hang, the leaked `open()` call is unstuck with a writer end before this
-  // test reports failure, so the process can still exit.
+  // EXPLOIT (M1, now fixed): `mkfifo <streamDir>/2026-01-01-0001.jsonl` then
+  // read(). The original `open()` carried no `fstat`, no `O_NONBLOCK`, and no
+  // `AbortSignal`, so `O_RDONLY` on a FIFO with no writer would block in the
+  // kernel forever.
+  //
+  // THE FIX: `SEGMENT_READ_FLAGS` (`append-only-reader.ts:94`) sets
+  // `O_NONBLOCK` so the kernel returns `ENXIO` immediately for a FIFO with
+  // no writer, and the `fstat` check (`append-only-reader.ts:~419-434`) gates
+  // on `stats.isFile()` before any read — both guards reject a non-regular
+  // file before the reader ever blocks.
+  //
+  // This test's own pass/fail signal IS a hard timeout: the exploit's failure
+  // mode was "hangs", not "throws", so a missing guard manifests as an
+  // unexplained hang rather than a clean assertion failure. The internal race
+  // is bounded well under the outer Vitest timeout so a regression fails
+  // loudly and quickly rather than hanging CI. If it DOES hang, the leaked
+  // `open()` call is unstuck with a writer end before this test reports
+  // failure, so the process can still exit.
   test("refuses a FIFO planted at a segment path instead of hanging", async (ctx) => {
     if (!HAS_MKFIFO) {
       ctx.skip();
@@ -903,18 +951,23 @@ describe("planted FIFO refusal (M1 — must never hang)", () => {
 });
 
 describe("gap detection mid-stream (M2 — a hole must never read back as complete)", () => {
-  // EXPLOIT (M2, table row "unlink segment 0003" — reproduced here as the
-  // symmetric "middle segment deleted" case): segments 0001 and 0003 exist,
-  // 0002 was deleted. Today's `discoverSegmentsInOrder` sorts by
-  // `(datePrefix, sequence)` but never checks CONTINUITY, so the hole is
-  // never noticed and both remaining segments are handed back as if they
-  // were the whole trail.
+  // EXPLOIT (M2, now fixed, table row "unlink segment 0003" — reproduced here
+  // as the symmetric "middle segment deleted" case): segments 0001 and 0003
+  // existed; 0002 was deleted. The original `discoverSegmentsInOrder` sorted
+  // by `(datePrefix, sequence)` but never checked CONTINUITY, so the hole was
+  // never noticed and both remaining segments were handed back as if they were
+  // the whole trail.
   //
-  // The exact point at which a fix throws (before opening segment 0001 at
-  // all, or only once it reaches the gap) is an implementation choice this
-  // test does not pin — only that it throws, and that it never silently
-  // hands back the two segments' entries as if nothing were missing, which
-  // is the exploit's own observed shape.
+  // THE FIX: `assertNoSequenceGap` (`append-only-reader.ts:232-256`) walks
+  // the sorted segment list and throws `M3LAppendOnlyStreamReadError` if any
+  // consecutive pair has a non-unit sequence delta or a date boundary that
+  // breaks the expected monotone sequence.
+  //
+  // The exact point at which the throw fires (before opening segment 0001 at
+  // all, or only once the gap is reached) is an implementation choice this
+  // test does not pin — only that it throws, and that it never silently hands
+  // back the two segments' entries as if nothing were missing, which was the
+  // exploit's own observed shape.
   test("throws rather than silently omitting a missing sequence number", async () => {
     const dir = path.join(workDir, "audit");
     const entryA = { event: "segment-one" };
@@ -1008,17 +1061,25 @@ describe("hardlink refusal (S1 — a confused-deputy read primitive)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 15 — T2: two fidelity bugs (S2, S4 — RED by design)
+// 15 — T2: regression suite for two fidelity exploits found in the slice 4a
+// security review (S2: line-length ceiling bypass on complete lines, S4:
+// invalid UTF-8 silently normalised). Both fixes have been applied; these
+// tests are the regression locks.
 // ---------------------------------------------------------------------------
 
 describe("line-length ceiling on a COMPLETE line (S2)", () => {
-  // EXPLOIT (S2): the ceiling in `splitLines` is checked only against the
-  // accumulating trailing fragment (`nextCarry`), never against a line
-  // already extracted as complete. At `maxLineBytes: 1024`, measured
-  // accepting values were 2045, 2046 and 2047 bytes — up to just under 2x
-  // the documented ceiling — with 2048 correctly throwing. A line the writer
-  // could never have produced (its own content ceiling is 1023 bytes at this
-  // `maxLineBytes`) is handed back as genuine.
+  // EXPLOIT (S2, now fixed): the original ceiling in `splitLines` was checked
+  // only against the accumulating trailing fragment (`nextCarry`), never
+  // against a line already extracted as complete. At `maxLineBytes: 1024`, the
+  // measured accepting values were 2045, 2046 and 2047 bytes — up to just
+  // under 2x the documented ceiling — with 2048 correctly throwing. A line the
+  // writer could never have produced (its own content ceiling is 1023 bytes at
+  // this `maxLineBytes`) was handed back as genuine.
+  //
+  // THE FIX: `append-only-reader.ts:359-364` now checks the byte length of
+  // every complete, newline-terminated line against `maxLineBytes` before
+  // yielding it, so the ceiling is enforced against both the in-flight
+  // fragment and any fully extracted line.
   test.each([{ byteLength: 2045 }, { byteLength: 2046 }, { byteLength: 2047 }])(
     "throws for a complete, newline-terminated line of $byteLength bytes (> maxLineBytes, < 2x maxLineBytes)",
     async ({ byteLength }) => {
