@@ -328,7 +328,7 @@ export const COMMAND_CATALOG = [
   {
     name: "check:skill-evals",
     description:
-      "Verifies every .claude/skills/<name>/SKILL.md has a sibling evals/evals.json with >= 3 cases, AND that every case is gradeable — a prompt, an expected_output, and at least one checklist entry the runner can actually render (validated with the same renderChecklistEntry the runner uses, so the gate and the runner cannot disagree). Catches the shapes that graded against nothing: object entries interpolated as [object Object], identifier-only entries, and a case with no expectations/assertions key at all. The named EXEMPT_SKILLS grandfather list (backfill tracked at issue #775) covers both a missing file and unresolved case shape, and a redundant exemption is an error so it cannot outlive its purpose. Run after adding a skill or editing its evals.json.",
+      "Verifies every .claude/skills/<name>/SKILL.md has a sibling evals/evals.json with >= 3 cases, AND that every case is gradeable — a prompt, an expected_output, and at least one checklist entry the runner can actually render (validated with the same renderChecklistEntry the runner uses, so the gate and the runner cannot disagree). Catches the shapes that graded against nothing: object entries interpolated as [object Object], identifier-only entries, and a case with no expectations/assertions key at all. Every case needs >= 3 checklist entries. The named EXEMPT_SKILLS grandfather list (empty since the #775 backfill completed; kept for the next new skill) covers both a missing file and unresolved case shape, and a redundant exemption is an error so it cannot outlive its purpose. Run after adding a skill or editing its evals.json.",
   },
   {
     name: "eval:skills",
