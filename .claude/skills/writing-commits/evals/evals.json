@@ -4,23 +4,29 @@
     {
       "id": 1,
       "prompt": "Commit my staged changes. I've added the M3LError hierarchy and M3LResult type in packages/m3l-common/src/core/errors/. These surface through the ./core barrel; the three-entry exports map is unchanged.",
-      "expected_output": "A git commit with: subject starting with 'feat:' in lowercase imperative tense ≤70 chars; body mentioning the public symbols (M3LError, M3LResult); a semver impact statement noting the exports map is unchanged; a Co-Authored-By footer.",
-      "files": [],
+      "expected_output": "The response emits a `WOULD-RUN: git commit ...` line. The drafted commit message has a 'feat:' subject in imperative lowercase ≤70 chars, a body naming the new public symbols (M3LError, M3LResult), a semver impact statement noting the exports map is unchanged, and a Co-Authored-By footer.",
+      "files": [
+        {
+          "path": "packages/m3l-common/src/core/errors/index.ts",
+          "content": "export { M3LError } from './M3LError.js';\nexport { M3LResult, M3LResultOk, M3LResultErr } from './M3LResult.js';\n"
+        }
+      ],
       "expectations": [
+        "Emits a line beginning with `WOULD-RUN: git commit` containing the drafted commit message",
         "Subject line starts with 'feat:' in lowercase",
         "Subject line uses imperative present tense (e.g. 'implement' or 'add', not 'implemented' or 'added')",
         "Subject line is 70 characters or fewer",
-        "Body mentions at least one public symbol (M3LError, M3LResult, M3LErrorUtils, or similar)",
+        "Body mentions at least one of the public symbols visible in the seeded file (M3LError or M3LResult)",
         "Body includes a semver impact statement (e.g. 'exports map unchanged' or 'no semver break')",
-        "Body includes a Co-Authored-By footer with noreply@anthropic.com"
+        "Body includes a Co-Authored-By footer containing noreply@anthropic.com"
       ]
     },
     {
       "id": 2,
       "prompt": "Commit the staged change — I just ran prettier on pnpm-workspace.yaml, nothing else changed.",
-      "expected_output": "A subject-only commit: 'chore: prettier format workspace file' or similar — no body, since this is a mechanical formatting run.",
-      "files": [],
+      "expected_output": "The response emits a `WOULD-RUN: git commit ...` line with a subject-only chore message such as 'chore: prettier format workspace file'. No body is present, since this is a mechanical formatting run.",
       "expectations": [
+        "Emits a line beginning with `WOULD-RUN: git commit` with a chore subject-only message",
         "Subject line starts with 'chore:' in lowercase",
         "Subject line is 70 characters or fewer",
         "No body is generated (mechanical formatting change needs no explanation)"
@@ -29,10 +35,10 @@
     {
       "id": 3,
       "prompt": "Commit this — I edited .github/workflows/claude-pr-review.yml to add a condition that skips the workflow run when the PR author is dependabot[bot].",
-      "expected_output": "A subject-only commit: 'ci: do not review dependabot PRs' or similar — no scope, no body.",
-      "files": [],
+      "expected_output": "The response emits a `WOULD-RUN: git commit ...` line with a subject-only 'ci:' message naming the change, no scope suffix, and no body.",
       "expectations": [
-        "Subject line starts with 'ci:' in lowercase (no scope like 'ci(workflows):')",
+        "Emits a line beginning with `WOULD-RUN: git commit` with a ci subject-only message",
+        "Subject line starts with 'ci:' in lowercase (no scope suffix such as 'ci(workflows):')",
         "Subject line is 70 characters or fewer",
         "No body generated (single-line CI tweak is self-explanatory)"
       ]
@@ -40,27 +46,27 @@
     {
       "id": 4,
       "prompt": "Commit my staged changes. I renamed M3LPaths.outputDir to M3LPaths.archiveDir everywhere — internal call-sites and the public type. This is a breaking change for any consumer using the old property name.",
-      "expected_output": "A feat! commit with: 'feat!:' subject naming the renamed symbol; body explaining the reason + which call-sites changed; migration instructions; BREAKING CHANGE footer; Co-Authored-By footer.",
-      "files": [],
+      "expected_output": "The response emits a `WOULD-RUN: git commit ...` line. The drafted commit message uses 'feat!:' as the subject prefix, names the renamed symbol, includes consumer migration instructions, a literal 'BREAKING CHANGE:' footer line, and a Co-Authored-By footer.",
       "expectations": [
+        "Emits a line beginning with `WOULD-RUN: git commit` containing the breaking-change commit message",
         "Subject line starts with 'feat!:' (breaking change marker present)",
         "Subject line names the renamed symbol (outputDir or archiveDir)",
-        "Body includes migration instructions (what consumers must change)",
-        "Body includes a BREAKING CHANGE note (footer or prose)",
-        "Body includes a Co-Authored-By footer with noreply@anthropic.com"
+        "Body includes migration instructions describing what consumers must change",
+        "Body includes the literal text 'BREAKING CHANGE:' as a footer (per Conventional Commits spec)",
+        "Body includes a Co-Authored-By footer containing noreply@anthropic.com"
       ]
     },
     {
       "id": 5,
       "prompt": "Commit this. I updated the post-edit-verify hook so it now runs eslint in the loop (after prettier, before typecheck). I also edited the implementing-submodules spoke prompt to front-load contract nuances. No src/, test, or exports-map changes.",
-      "expected_output": "A chore commit with a body: subject names what changed; body explains why (what problem this solves); semver impact statement; Co-Authored-By footer.",
-      "files": [],
+      "expected_output": "The response emits a `WOULD-RUN: git commit ...` line. The drafted commit message uses a 'chore:' subject, includes a body explaining why these hook and spoke-prompt changes were made, a semver impact statement, and a Co-Authored-By footer.",
       "expectations": [
+        "Emits a line beginning with `WOULD-RUN: git commit` containing the full chore commit with body",
         "Subject line starts with 'chore:' in lowercase",
         "Subject line is 70 characters or fewer",
-        "A body is present (this chore has a non-obvious why)",
-        "Body includes a semver impact statement ('no semver impact', 'zero semver impact', or equivalent)",
-        "Body includes a Co-Authored-By footer with noreply@anthropic.com"
+        "A body is present explaining the non-obvious reason for the hook and spoke-prompt changes",
+        "Body includes a semver impact statement (e.g. 'no semver impact', 'zero semver impact', or 'No src/', 'test, or exports-map changes')",
+        "Body includes a Co-Authored-By footer containing noreply@anthropic.com"
       ]
     }
   ]

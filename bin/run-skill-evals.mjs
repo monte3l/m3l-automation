@@ -189,6 +189,34 @@ export const EVAL_ALLOWED_TOOLS = ["Read", "Grep", "Glob", "Write", "Edit"];
  */
 export const EVAL_AVAILABLE_TOOLS = [...EVAL_ALLOWED_TOOLS, "Skill"];
 
+/**
+ * The sandbox contract prepended to every graded prompt, between the case's
+ * own prompt and the grading block.
+ *
+ * It exists because ~30 criteria across the corpus used to assert an
+ * EXECUTED mutation ("pushes the branch", "runs `gh pr create`") that a
+ * hermetic session — no Bash, no network, no subagent tool, per
+ * {@link EVAL_AVAILABLE_TOOLS} — can never demonstrate. Those cases graded
+ * the sandbox, not the skill.
+ *
+ * Stating the convention once here, rather than repeating it in every
+ * `prompt` field, keeps the corpus declarative: a case says WHAT the skill
+ * should do and the criteria assert on the emitted `WOULD-RUN:` /
+ * `WOULD-DISPATCH:` lines, which are ordinary text a grader can check
+ * objectively and which mutate nothing.
+ *
+ * `bin/tests/run-skill-evals.test.ts` asserts {@link buildGradedPrompt}
+ * emits this ahead of the grading block; deleting it fails that test.
+ */
+export const EVAL_SANDBOX_PREAMBLE = [
+  "--- EVAL SANDBOX ---",
+  "This session has no Bash, no network access and no subagent tool. Do not",
+  "claim to have run anything. For each command you would run, emit a line",
+  "`WOULD-RUN: <exact command>`. For each subagent you would dispatch, emit",
+  "`WOULD-DISPATCH: <agent-type> \u2014 <one-line brief>`. Emit them in the order",
+  "you would perform them.",
+].join("\n");
+
 export const VERDICT_SCHEMA = {
   type: "object",
   properties: {
@@ -271,8 +299,9 @@ export function selectChecklist(evalCase) {
 
 /**
  * Build the single prompt sent to `claude -p`: the eval case's own prompt,
- * followed by grading instructions referencing its `expected_output` and its
- * per-item checklist. One turn does both the task and the self-grade.
+ * the {@link EVAL_SANDBOX_PREAMBLE} sandbox contract, then grading
+ * instructions referencing its `expected_output` and its per-item checklist.
+ * One turn does both the task and the self-grade.
  *
  * Entries are rendered through {@link renderChecklistEntry}, so every shape
  * in the corpus produces real criterion text and no identifier leaks in.
@@ -288,6 +317,8 @@ export function buildGradedPrompt(evalCase) {
 
   const lines = [
     evalCase.prompt,
+    "",
+    EVAL_SANDBOX_PREAMBLE,
     "",
     "--- EVAL GRADING (not part of the request above) ---",
     "After responding to the request above, grade your OWN response against",
@@ -423,6 +454,47 @@ export function buildClaudeArgs(
 }
 
 /**
+ * Render an `execFileSync` failure into a diagnosable one-line error.
+ *
+ * Node puts the child's captured output on `err.stderr`/`err.stdout` and
+ * leaves `err.message` as the bare "Command failed" line, so a runner that
+ * reports only `err.message` throws away the only text that says WHY —
+ * an expired token, a missing binary, an exceeded budget all collapse to
+ * the same opaque string.
+ *
+ * @param {unknown} err the value thrown by `execFileSync`
+ * @returns {string}
+ */
+export function describeSpawnFailure(err) {
+  const parts = [
+    `claude -p invocation failed: ${excerptStream(err, "message")}`,
+  ];
+  for (const stream of ["stderr", "stdout"]) {
+    const text = excerptStream(err, stream);
+    if (text !== "") parts.push(`${stream}: ${text}`);
+  }
+  return parts.join(" | ");
+}
+
+/**
+ * Read one field off a thrown value as a trimmed, length-capped string.
+ * `stderr`/`stdout` arrive as `Buffer` when no encoding was set and as
+ * `string` when one was, and either may be `null`.
+ *
+ * @param {unknown} err
+ * @param {string} field
+ * @returns {string} the excerpt, or "" when the field carries no text
+ */
+function excerptStream(err, field) {
+  const value = /** @type {Record<string, unknown> | null} */ (err)?.[field];
+  const text = typeof value === "string" ? value : String(value ?? "");
+  const trimmed = text.trim();
+  return trimmed.length > RESULT_EXCERPT_CHARS
+    ? `${trimmed.slice(0, RESULT_EXCERPT_CHARS)}…`
+    : trimmed;
+}
+
+/**
  * Build a disposable synthetic project root for one case, seed it with the
  * case's `files` ({ path, content } entries), run the graded prompt through
  * `claude -p`, and return the parsed verdict. The one impure step
@@ -485,7 +557,13 @@ function runCase(skillsDir, evalCase, { model, effort, maxBudgetUsd }) {
         { cwd: workspaceDir, encoding: "utf8", maxBuffer: 16 * 1024 * 1024 },
       );
     } catch (err) {
-      return { error: `claude -p invocation failed: ${err.message}` };
+      // `execFileSync` puts the ACTUAL reason on the error's captured
+      // `stderr`/`stdout`, not in `err.message` (which is only "Command
+      // failed: claude -p ..."). Discarding them turned a one-line auth
+      // failure into hours of misdirected diagnosis, so both are surfaced,
+      // truncated to RESULT_EXCERPT_CHARS so a 16 MB buffer cannot flood
+      // the summary.
+      return { error: describeSpawnFailure(err) };
     }
 
     return parseVerdictEnvelope(stdout);

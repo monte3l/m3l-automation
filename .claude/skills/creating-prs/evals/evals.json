@@ -3,51 +3,68 @@
   "evals": [
     {
       "id": 1,
-      "prompt": "Open a PR for this branch. I've implemented the core/errors submodule — typed error hierarchy, M3LResult, and tests. Everything passes: lint, typecheck, test, build.",
-      "expected_output": "PR created with a feat: title naming the submodule, a Summary listing the actual exported symbols, a Test plan checklist reflecting the real files changed, and a Notes line stating 'feat: → minor bump'.",
-      "files": [],
+      "prompt": "Open a PR for this branch. I've implemented the core/errors submodule — typed error hierarchy with M3LError, M3LNotFoundError, and M3LResult, plus tests. Everything passes locally.",
+      "expected_output": "A structured plan emitting WOULD-RUN lines for the preflight check, rebase-staleness check, quality gates, push, and gh pr create, plus a drafted PR body with ## Summary naming the actual exported symbols, ## Test plan with checklist items, and ## Notes stating feat: → minor bump.",
+      "files": [
+        {
+          "path": "src/core/errors/index.ts",
+          "content": "export type M3LResultOk<T> = { ok: true; value: T };\nexport type M3LResultErr<E> = { ok: false; error: E };\nexport type M3LResult<T, E = Error> = M3LResultOk<T> | M3LResultErr<E>;\n\nexport class M3LError extends Error {\n  constructor(message: string, options?: ErrorOptions) {\n    super(message, options);\n    this.name = 'M3LError';\n  }\n}\n\nexport class M3LNotFoundError extends M3LError {}\n"
+        }
+      ],
       "expectations": [
-        "Runs 'pnpm lint && pnpm typecheck && pnpm test && pnpm build' before pushing",
-        "Pushes the branch with 'git push -u origin HEAD'",
-        "PR title uses Conventional Commit format and is ≤70 characters",
-        "PR body Summary bullets name actual symbols or files (not vague paraphrases)",
-        "PR body includes a Test plan section with a markdown checklist",
-        "PR body Notes line states the commit type and the semver impact"
+        "Emits WOULD-RUN lines for all four quality gates (`pnpm lint`, `pnpm typecheck`, `pnpm test:coverage`, `pnpm build`) — notably `pnpm test:coverage` not merely `pnpm test` — and all of those lines appear before any `WOULD-RUN: git push` line",
+        "Emits `WOULD-RUN: git push -u origin HEAD` after the quality-gate lines and before any `WOULD-RUN: gh pr create` line, preserving the gates → push → PR-submit order from Steps 4, 9, and 13",
+        "Emits `WOULD-RUN: gh pr create` (with a `--title` and `--body` argument) as the final submission step",
+        "Drafted PR title starts with `feat:` and is 70 characters or fewer",
+        "Drafted `## Summary` section names at least one actual exported symbol from the fixture (e.g. `M3LError`, `M3LResult`, or `M3LNotFoundError`) rather than a vague paraphrase of the commit message",
+        "Drafted PR body contains a `## Test plan` section with at least one `- [ ]` checklist item, and a `## Notes` section that states `feat:` as the commit type and names a minor bump"
       ]
     },
     {
       "id": 2,
-      "prompt": "Make a PR — I renamed M3LPaths.outputDir to M3LPaths.archiveDir. This is a breaking change; consumers need to update after upgrading.",
-      "expected_output": "PR created with a feat!: title, Summary explaining the rename, a Test plan that includes a typecheck step to catch old usage, and Notes stating 'feat!: → major bump' with migration instructions.",
-      "files": [],
+      "prompt": "Make a PR — I renamed M3LPaths.outputDir to M3LPaths.archiveDir across the codebase. This is a breaking change; consumers need to update after upgrading.",
+      "expected_output": "A WOULD-RUN sequence for gates and push, plus a drafted PR with a feat!: title of 70 characters or fewer, ## Summary naming both the old and new property, ## Test plan with a typecheck step to catch stale call-sites, and ## Notes citing major bump with migration instructions.",
+      "files": [
+        {
+          "path": "src/core/paths/index.ts",
+          "content": "/** Resolved paths used by the M3L execution environment. */\nexport interface M3LPaths {\n  /** Directory where run archives are stored (renamed from outputDir). */\n  archiveDir: string;\n  workDir: string;\n  logsDir: string;\n}\n"
+        }
+      ],
       "expectations": [
-        "PR title starts with 'feat!:' to signal the breaking change",
-        "PR body Summary names both the old and new property (outputDir → archiveDir)",
-        "PR body Notes includes migration instructions for consumers",
-        "PR body Notes states 'major bump' or equivalent"
+        "Drafted PR title starts with `feat!:` to signal the breaking change, matching the Conventional Commit breaking-change marker the skill mandates",
+        "Drafted PR title is 70 characters or fewer",
+        "Drafted `## Summary` section names both the old property (`outputDir`) and the new name (`archiveDir`) — not merely 'renamed a property'",
+        "Drafted `## Notes` section includes explicit migration instructions for consumers (e.g. 'replace `paths.outputDir` with `paths.archiveDir`' or equivalent wording)",
+        "Drafted `## Notes` section states 'major bump' or equivalent (e.g. 'major version', 'BREAKING CHANGE') in accordance with the skill's semver-note requirement"
       ]
     },
     {
       "id": 3,
-      "prompt": "Ship this for review — I updated the claude-pr-review.yml workflow to skip Dependabot PRs. Only CI files changed, no library code.",
-      "expected_output": "PR with a ci: title, a compact Summary that names the changed workflow file, a Test plan referencing CI behaviour, and Notes stating 'ci: → no release'.",
-      "files": [],
+      "prompt": "Ship this for review — I updated the claude-pr-review.yml workflow to skip Dependabot PRs. Only CI files changed, no library source code.",
+      "expected_output": "A WOULD-RUN sequence covering preflight, gates, and push; a WOULD-DISPATCH line for docs-consistency-reviewer (not code-reviewer) because no src/** files changed; and a drafted PR with a ci: title, ## Summary naming the workflow file, and ## Notes stating no release.",
+      "files": [
+        {
+          "path": ".github/workflows/claude-pr-review.yml",
+          "content": "name: claude-pr-review\non:\n  pull_request:\n    types: [opened, synchronize, reopened]\njobs:\n  review:\n    if: github.actor != 'dependabot[bot]'\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n"
+        }
+      ],
       "expectations": [
-        "PR title starts with 'ci:' in lowercase",
-        "PR body Summary references the specific workflow file (.github/workflows/...)",
-        "PR body Notes states no release is triggered (ci: commits don't release)",
-        "Quality gates run before the push"
+        "Drafted PR title starts with `ci:` in lowercase",
+        "Drafted `## Summary` section references the specific workflow file by path (e.g. `claude-pr-review.yml` or `.github/workflows/claude-pr-review.yml`), not merely 'a workflow'",
+        "Emits a line starting with `WOULD-DISPATCH: docs-consistency-reviewer` (not `code-reviewer`) because Step 7 of the skill mandates dispatching `docs-consistency-reviewer` when the diff contains only docs/automation changes with no `src/**` files",
+        "Drafted `## Notes` section states that no release is triggered (e.g. 'no release', 'no semver bump', or 'ci: commits do not bump the version')",
+        "Emits `WOULD-RUN: git push -u origin HEAD` after the quality-gate WOULD-RUN lines"
       ]
     },
     {
       "id": 4,
       "prompt": "Get this merged — I'm on the main branch right now.",
-      "expected_output": "Skill stops with a clear error message telling the user they are on main and must branch off first before creating a PR.",
-      "files": [],
+      "expected_output": "Skill stops immediately after the preflight branch check with a clear message that the user is on main and must branch off first; no push or PR-create commands are emitted.",
       "expectations": [
-        "Skill detects the current branch is 'main' and stops",
-        "Error message tells the user to create a feature or fix branch first",
-        "No push or PR is created"
+        "Emits `WOULD-RUN: git branch --show-current` as part of the Step 1 preflight sequence before stopping",
+        "States it cannot proceed because the current branch is `main`, reproducing or closely paraphrasing the skill's stop message: 'You are on main. Branch off main first'",
+        "Instructs the user to create a feature or fix branch (e.g. `feat/<slug>` or `fix/<slug>`) before retrying",
+        "Does NOT emit any `WOULD-RUN: git push` or `WOULD-RUN: gh pr create` line"
       ]
     }
   ]
