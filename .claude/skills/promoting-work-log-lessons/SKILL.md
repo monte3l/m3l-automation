@@ -177,6 +177,14 @@ For each approved promotion:
    lesson at write time — the two skills share one convention so a log's promotion
    state is always readable from the log itself.
 
+3. **Incident → eval.** If the promoted lesson originated from a gate or CI
+   failure (not just a behavioral correction with no failing check attached),
+   check whether the owning skill's `evals/evals.json` should gain a case
+   reproducing it — a lesson that once broke a real gate is exactly the shape
+   of regression an eval case exists to catch. Add one if it's missing; skip
+   this for lessons with no gate/CI failure behind them (most behavioral
+   corrections have nothing concrete to encode as a pass/fail case).
+
 Do **not** commit. Report the files edited and the logs stamped, then hand off to
 `/writing-commits` (a `docs:` change — no `src/` or `version` is touched, so this is
 not a release event).
@@ -186,6 +194,8 @@ not a release event).
 - `pnpm lint:md` — the edited logs and any Markdown rule files stay lint-clean.
 - `pnpm check:agents` — if you edited any `.claude/agents/*.md`, confirm the agent
   references still resolve.
+- `pnpm check:skill-evals` — if you added an eval case per Step 5's item 3,
+  confirm the skill's `evals/evals.json` still clears the case-count minimum.
 - Re-read one edited target to confirm the rule reads naturally in context, not as
   a bolted-on fragment.
 

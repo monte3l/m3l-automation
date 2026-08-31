@@ -1,0 +1,61 @@
+# Runs the repo-owned skill-eval suite (bin/run-skill-evals.mjs,
+# .claude/skills/*/evals/evals.json) — the eval layer the Anthropic
+# AI-native SDLC playbook audit found was inert data with no runner
+# (Section 4 of the harness-alignment plan). Triggered on any PR touching
+# CLAUDE.md/.claude/** (the surface the evals actually exercise) plus a
+# weekly schedule so a suite that only runs on rare harness PRs doesn't go
+# stale unnoticed.
+#
+# Deliberately INFORMATIONAL, not a required status check, for its first
+# cycle: this is the suite's first time running anywhere, including CI, so
+# there is no real pass-rate baseline yet to gate merges on. `continue-on-
+# error: true` reports the run without blocking. Promote to required once a
+# baseline exists (see docs/plans/IMPLEMENTATION.md).
+name: Skill Evals
+
+on:
+  pull_request:
+    paths:
+      - "CLAUDE.md"
+      - ".claude/**"
+  schedule:
+    - cron: "0 10 * * 1" # Mon 10:00 UTC — same day as security-audit.yml, offset an hour.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: skill-evals-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  evals:
+    name: Run skill evals
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+
+      # Raw `claude -p` CLI, not claude-code-action — the action wraps one
+      # agentic task per job; this script drives many small `claude -p`
+      # invocations itself (one per eval case). Reuses the same OAuth token
+      # already provisioned for claude-pr-review.yml/claude-assistant.yml.
+      - name: Install Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Run skill evals
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: pnpm eval:skills
+        continue-on-error: true

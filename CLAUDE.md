@@ -97,7 +97,7 @@ minutes — background it, never `--no-verify` (CI re-runs everything anyway).
 | `pre-push` (lefthook)   | `build`, `check:exports`, `verify-signed-range`, `check:control-chars`       | repo   |
 | `pre-push` (lefthook)   | `check:file-budget`, `check:agents`, `check:script-docs`, `check:provenance` | repo   |
 | `pre-push` (lefthook)   | `check:cli-docs`, `check:review-size`, `check:context-budget`, `check:index` | repo   |
-| `pre-push` (lefthook)   | `check:harness-freshness`                                                    | repo   |
+| `pre-push` (lefthook)   | `check:harness-freshness`, `check:skill-evals`                               | repo   |
 
 `pnpm verify` reproduces every CI check locally; `pnpm check:verify-parity`
 keeps it in sync with `ci.yml`. The table splits across rows for width;
@@ -113,7 +113,7 @@ reads, passing test output) over any of the above.
 
 ## CI/CD
 
-Eight GitHub Actions workflows in `.github/workflows/` (plus Dependabot).
+Nine GitHub Actions workflows in `.github/workflows/` (plus Dependabot).
 Full table — triggers, purpose, required status checks:
 `docs/contributing/ci-cd.md`.
 
