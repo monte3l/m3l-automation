@@ -49,10 +49,16 @@ opusplan` or `claude --model opusplan`) — Opus during plan mode, Sonnet once
    therefore pins an exact ID (`claude-sonnet-5`, `claude-opus-5`,
    `claude-haiku-4-5`), as do the CI workflows (`claude-pr-review.yml` via
    `--model claude-opus-5`, `claude-assistant.yml` via
-   `--model claude-sonnet-5`) and the `audit-fanout.js` verify step. The cost is
+   `--model claude-sonnet-5`), and the `audit-fanout.js` verify step. The cost is
    deliberate and accepted: a new generation no longer reaches the spokes for
    free, so an upgrade becomes an explicit commit that moves frontmatter and the
-   MODEL-MATRIX block together — which `check:agents` already forces. Unpinned
+   MODEL-MATRIX block together — which `check:agents` already forces.
+   `run-skill-evals.mjs`'s per-case grading invocation pins the same way
+   (`DEFAULT_MODEL`/`DEFAULT_EFFORT` in the script, overridable via
+   `M3L_EVAL_MODEL`/`M3L_EVAL_EFFORT`), but sits outside this matrix — it is
+   a `bin/` script, not a `.claude/workflows/*.js` Workflow-tool script, so
+   `check:workflows`'s `workflow-script` row type (R1) does not apply to it.
+   Unpinned
    values still govern the surfaces that cannot or should not freeze: the
    `inherit` directive (the `audit-fanout.js` file-level row), the hub's
    user-selected `/model`, and the `availableModels` family wildcards. `ANTHROPIC_DEFAULT_OPUS_MODEL` /
