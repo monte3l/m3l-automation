@@ -1,7 +1,8 @@
 /**
  * Tests for src/config/paths.ts — `resolveStoreDatabasePath` (X3 console-
- * persistence, slice A2, ADR-0069) and `resolveSessionArtifactRoot` (X6
- * workbench-sessions module, slice 3). Drives only `src/config/paths.ts`;
+ * persistence, slice A2, ADR-0069), `resolveSessionArtifactRoot` (X6
+ * workbench-sessions module, slice 3) and `resolveAuditStreamRoot` (X7
+ * human-action audit, slice 3, ADR-0070). Drives only `src/config/paths.ts`;
  * keep `env.ts` out of this file so v8's `perFile` coverage binds this src
  * slice to this test file alone (see `tests.md`'s per-file-size note).
  *
@@ -14,6 +15,7 @@ import { afterEach, describe, expect, expectTypeOf, test } from "vitest";
 
 import { M3LConsoleError } from "../src/errors/console-error.js";
 import {
+  resolveAuditStreamRoot,
   resolveSessionArtifactRoot,
   resolveStoreDatabasePath,
 } from "../src/config/paths.js";
@@ -289,6 +291,14 @@ describe("resolveSessionArtifactRoot — rejects an unsafe configuredPath", () =
     if (rejectedValue.trim().length > 0) {
       expect(error.message).not.toContain(rejectedValue);
     }
+    // The shared guard takes the config key as a parameter, and nothing
+    // pinned it: swapping the two constants at `paths.ts:299`/`paths.ts:365`
+    // passes the whole suite otherwise — exactly the drift the
+    // generalization was meant to prevent.
+    expect(error.message).toContain("m3l.console.sessions.artifact.root");
+    expect(error.context).toMatchObject({
+      key: "m3l.console.sessions.artifact.root",
+    });
   });
 });
 
@@ -313,5 +323,167 @@ describe("resolveSessionArtifactRoot — resolveDataDir failure", () => {
     const error = thrown as M3LConsoleError;
     expect(error.code).toBe("ERR_CONSOLE_CONFIG_INVALID");
     expect(error.cause).toBe(original);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveAuditStreamRoot (X7 slice 3) — cloned from resolveSessionArtifactRoot
+// above, INCLUDING its unsafe-path guard. These cases deliberately mirror that
+// block one for one: the two resolvers are the same shape over a different
+// default, so a divergence between them is itself the defect to catch.
+//
+// RED: `resolveAuditStreamRoot` is not exported from `../src/config/paths.js`
+// yet — the import at the top of this file is expected to fail until the
+// implementer lands it.
+// ---------------------------------------------------------------------------
+
+describe("resolveAuditStreamRoot — default (X7 slice 3)", () => {
+  test("resolves <dataDir>/console/audit when configuredPath is absent", () => {
+    const result = resolveAuditStreamRoot({
+      resolveDataDir: () => "/data",
+    });
+
+    expect(result).toBe(path.join("/data", "console", "audit"));
+  });
+
+  test("resolveAuditStreamRoot is callable with no options at all", () => {
+    expectTypeOf(resolveAuditStreamRoot).toBeCallableWith();
+  });
+
+  test("does not collide with the session artifact root's default", () => {
+    // Both default under `<dataDir>/console`; the human-action trail must not
+    // land inside the directory the session artifact store owns.
+    const auditRoot = resolveAuditStreamRoot({ resolveDataDir: () => "/data" });
+    const artifactRoot = resolveSessionArtifactRoot({
+      resolveDataDir: () => "/data",
+    });
+
+    expect(auditRoot).not.toBe(artifactRoot);
+    expect(path.relative(artifactRoot, auditRoot).startsWith("..")).toBe(true);
+  });
+});
+
+describe("resolveAuditStreamRoot — configuredPath resolution", () => {
+  test("resolves a relative configuredPath against the injected data dir", () => {
+    const result = resolveAuditStreamRoot({
+      configuredPath: "custom/audit",
+      resolveDataDir: () => "/data",
+    });
+
+    expect(result).toBe(path.resolve("/data", "custom/audit"));
+  });
+
+  test("passes an absolute configuredPath through path.resolve unchanged", () => {
+    const absolute = path.resolve(path.sep, "abs", "audit");
+
+    const result = resolveAuditStreamRoot({
+      configuredPath: absolute,
+      resolveDataDir: () => "/data",
+    });
+
+    expect(result).toBe(absolute);
+  });
+
+  test("accepts a configuredPath with no file extension — the natural shape for a directory root", () => {
+    const result = resolveAuditStreamRoot({
+      configuredPath: "audit-root",
+      resolveDataDir: () => "/data",
+    });
+
+    expect(result).toBe(path.resolve("/data", "audit-root"));
+  });
+});
+
+describe("resolveAuditStreamRoot — rejects an unsafe configuredPath", () => {
+  test.each<[string, string]>([
+    ["a blank string", ""],
+    ["a whitespace-only string", "   "],
+    ["a file: prefix", "file:///tmp/audit"],
+  ])("rejects %s as ERR_CONSOLE_CONFIG_INVALID", (_label, rejectedValue) => {
+    let thrown: unknown;
+    try {
+      resolveAuditStreamRoot({
+        configuredPath: rejectedValue,
+        resolveDataDir: () => "/data",
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    const error = thrown as M3LConsoleError;
+    expect(error.code).toBe("ERR_CONSOLE_CONFIG_INVALID");
+    if (rejectedValue.trim().length > 0) {
+      expect(error.message).not.toContain(rejectedValue);
+    }
+    expect(error.message).toContain("m3l.console.audit.root");
+    expect(error.context).toMatchObject({ key: "m3l.console.audit.root" });
+  });
+});
+
+describe("resolveAuditStreamRoot — resolveDataDir failure", () => {
+  test("wraps a thrown resolveDataDir failure as M3LConsoleError, chaining the original as cause", () => {
+    const original = new Error(
+      "boom - simulates M3LPathResolutionError/M3LEnvironmentDetectionError escaping M3LPaths",
+    );
+
+    let thrown: unknown;
+    try {
+      resolveAuditStreamRoot({
+        resolveDataDir: () => {
+          throw original;
+        },
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    const error = thrown as M3LConsoleError;
+    expect(error.code).toBe("ERR_CONSOLE_CONFIG_INVALID");
+    expect(error.cause).toBe(original);
+  });
+});
+
+describe("the failing configuration key is attributed to the resolver that failed", () => {
+  // `runResolveDataDir` hard-codes `DB_PATH_KEY` in both its message and its
+  // `context.key`, so a data-dir failure raised while resolving the AUDIT or
+  // ARTIFACT root reports `m3l.console.db.path` — an operator is sent to fix
+  // a key they never set. Pre-existing, but this slice adds the third caller
+  // while fixing the same drift class in the sibling directory-root guard.
+  const original = new Error("boom - simulates M3LPaths escaping the resolver");
+
+  function keyFor(resolve: () => string): unknown {
+    let thrown: unknown;
+    try {
+      resolve();
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    return (thrown as M3LConsoleError).context["key"];
+  }
+
+  const failing = (): string => {
+    throw original;
+  };
+
+  test("resolveStoreDatabasePath attributes m3l.console.db.path", () => {
+    expect(
+      keyFor(() => resolveStoreDatabasePath({ resolveDataDir: failing })),
+    ).toBe("m3l.console.db.path");
+  });
+
+  test("resolveSessionArtifactRoot attributes m3l.console.sessions.artifact.root", () => {
+    expect(
+      keyFor(() => resolveSessionArtifactRoot({ resolveDataDir: failing })),
+    ).toBe("m3l.console.sessions.artifact.root");
+  });
+
+  test("resolveAuditStreamRoot attributes m3l.console.audit.root", () => {
+    expect(
+      keyFor(() => resolveAuditStreamRoot({ resolveDataDir: failing })),
+    ).toBe("m3l.console.audit.root");
   });
 });
