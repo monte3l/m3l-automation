@@ -317,6 +317,26 @@ const CLASSIFICATION_BY_CODE: Record<M3LConsoleErrorCode, ErrorClassification> =
       retryable: false,
       fault: true,
     },
+    // X7 human-action audit (ADR-0070). An action the console cannot audit
+    // is refused, never performed unaudited — the trail may be writable again
+    // on the next attempt, so this is a retryable 503, not a fault.
+    ERR_CONSOLE_AUDIT_WRITE_FAILED: {
+      status: STATUS_UNAVAILABLE,
+      origin: "library",
+      retryable: true,
+      fault: false,
+    },
+    // X7 human-action audit (ADR-0070), the caller-fault half of the trail's
+    // two codes. A record the console refuses to BUILD — a non-string list
+    // entry, a non-scalar `detail` value, an `inline` ADR-0068 ref carrying
+    // the parameter VALUE — is a caller mistake caught before any filesystem
+    // call: retrying it changes nothing, and it is not a server fault.
+    ERR_CONSOLE_AUDIT_RECORD_INVALID: {
+      status: STATUS_BAD_REQUEST,
+      origin: "caller",
+      retryable: false,
+      fault: false,
+    },
   };
 
 /**

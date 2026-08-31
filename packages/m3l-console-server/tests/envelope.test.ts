@@ -288,6 +288,27 @@ const CLASSIFICATION_TABLE: Record<
     retryable: false,
     fault: true,
   },
+  // X7 human-action audit (ADR-0070). An action the console cannot audit is
+  // refused rather than performed unaudited — the trail may be writable again
+  // on the next attempt, so this is a retryable 503, not a fault.
+  ERR_CONSOLE_AUDIT_WRITE_FAILED: {
+    status: 503,
+    origin: "library",
+    retryable: true,
+    fault: false,
+  },
+  // X7 human-action audit (ADR-0070), the caller-fault half of the trail's
+  // two codes. A record the console refuses to BUILD — a non-string list
+  // entry, a non-scalar `detail` value, an `inline` ADR-0068 ref that carries
+  // the parameter VALUE — is a caller mistake caught before any filesystem
+  // call: retrying it changes nothing, and it is not a server fault. Sharing
+  // `ERR_CONSOLE_AUDIT_WRITE_FAILED` would render it as a retryable 503.
+  ERR_CONSOLE_AUDIT_RECORD_INVALID: {
+    status: 400,
+    origin: "caller",
+    retryable: false,
+    fault: false,
+  },
 };
 
 // `Object.entries` widens the key to `string`; `CLASSIFICATION_TABLE`'s
@@ -674,5 +695,35 @@ describe("M3LConsoleErrorEnvelope", () => {
         readonly retryable?: Core.M3LErrorRetryable;
       };
     }>();
+  });
+});
+
+describe("the two audit codes are distinguishable classifications (X7 slice 3)", () => {
+  // The defect this pins: one code carried both a caller TYPE violation and a
+  // trail outage, so a slice-5 route would answer a malformed record with a
+  // retryable 503 telling the operator to try again.
+  test("a refused record is a non-retryable caller 4xx", () => {
+    expect(httpStatusForCode("ERR_CONSOLE_AUDIT_RECORD_INVALID")).toBe(400);
+    expect(
+      errorEnvelope(
+        new M3LConsoleError("ERR_CONSOLE_AUDIT_RECORD_INVALID", "refused"),
+        "corr-audit-invalid",
+      ).error,
+    ).toMatchObject({ status: 400, origin: "caller", retryable: false });
+    expect(
+      isFaultError(
+        new M3LConsoleError("ERR_CONSOLE_AUDIT_RECORD_INVALID", "refused"),
+      ),
+    ).toBe(false);
+  });
+
+  test("an unwritable trail stays a retryable library 503", () => {
+    expect(httpStatusForCode("ERR_CONSOLE_AUDIT_WRITE_FAILED")).toBe(503);
+    expect(
+      errorEnvelope(
+        new M3LConsoleError("ERR_CONSOLE_AUDIT_WRITE_FAILED", "unwritable"),
+        "corr-audit-write",
+      ).error,
+    ).toMatchObject({ status: 503, origin: "library", retryable: true });
   });
 });
