@@ -32,6 +32,7 @@
  * server, matching `tests/routes-runs.test.ts`'s established pattern.
  */
 import { describe, expect, test, vi } from "vitest";
+import type { Mock } from "vitest";
 
 import { createRequestContext } from "../src/http/context.js";
 import type { M3LRequestContext } from "../src/http/context.js";
@@ -84,21 +85,33 @@ const DETAIL_ETL: FakeScriptDetail = {
  * Builds a bare fixture catalog whose `list`/`describe` are `vi.fn()` spies,
  * so a test can assert call counts (in particular: zero calls, to prove a
  * rejected `:name` never reaches the catalog).
+ *
+ * Both members are `Omit`ted from the port and re-declared as their mock
+ * types: since 8.68.0 `@typescript-eslint/unbound-method` walks every
+ * intersection constituent and reports if *any* declares the member with
+ * method shorthand, so an intact `M3LScriptCatalogPort` constituent would flag
+ * every `expect(catalog.list)...` assertion here. The mock types are
+ * parameterized because, with the port's signatures `Omit`ted away, nothing
+ * else keeps the fixture assignable to the port at the injection site.
  */
 function buildCatalog(
   overrides: {
     readonly list?: readonly FakeScriptSummary[];
     readonly describeImpl?: (name: string) => Promise<FakeScriptDetail>;
   } = {},
-): M3LScriptCatalogPort & {
-  list: ReturnType<typeof vi.fn>;
-  describe: ReturnType<typeof vi.fn>;
+): Omit<M3LScriptCatalogPort, "list" | "describe"> & {
+  list: Mock<M3LScriptCatalogPort["list"]>;
+  describe: Mock<M3LScriptCatalogPort["describe"]>;
 } {
   const describeImpl =
     overrides.describeImpl ?? (() => Promise.resolve(DETAIL_ETL));
   return {
-    list: vi.fn().mockReturnValue(overrides.list ?? [SUMMARY_ETL]),
-    describe: vi.fn().mockImplementation(describeImpl),
+    list: vi
+      .fn<M3LScriptCatalogPort["list"]>()
+      .mockReturnValue(overrides.list ?? [SUMMARY_ETL]),
+    describe: vi
+      .fn<M3LScriptCatalogPort["describe"]>()
+      .mockImplementation(describeImpl),
   };
 }
 
