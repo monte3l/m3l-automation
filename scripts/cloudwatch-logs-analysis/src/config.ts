@@ -23,7 +23,14 @@ export const ANALYSIS_OPERATION_DECLARATIONS = [
     name: "analyze",
     description:
       "Load a preset, compile it, run it against CloudWatch Logs Insights, and persist the report.",
-    requiredParameters: [Core.AWS_PROFILE_PARAM_NAME, "alarm", "triggeredAt"],
+    // The literal is inlined rather than referencing
+    // `Core.AWS_PROFILE_PARAM_NAME` because a cross-module reference inside
+    // this `as const` literal cannot be resolved per-file under
+    // `isolatedDeclarations` (TS9013). The symbolic tie survives where it
+    // matters — the parameter itself is still declared
+    // `name: Core.AWS_PROFILE_PARAM_NAME` in `configParameters` below, so the
+    // two cannot drift without that declaration failing to compile.
+    requiredParameters: ["aws.profile", "alarm", "triggeredAt"],
   },
   {
     name: "validate",

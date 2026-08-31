@@ -314,30 +314,45 @@ function expectedPackageScripts() {
 }
 
 /**
- * Read tsconfig.json.tmpl / tsconfig.build.json.tmpl's `extends` and
- * `references` shape directly from the template — neither template
- * substitutes any token, so their committed text IS every scaffolded
- * script's expected value verbatim. Reads lazily, matching
+ * Read tsconfig.json.tmpl / tsconfig.build.json.tmpl's `extends`,
+ * `compilerOptions` and `references` shape directly from the template —
+ * neither template substitutes any token, so their committed text IS every
+ * scaffolded script's expected value verbatim. Reads lazily, matching
  * {@link expectedPackageScripts}.
  *
  * @param {"tsconfig.json.tmpl" | "tsconfig.build.json.tmpl"} templateName
- * @returns {{ extends: unknown, references: { path?: unknown }[] }}
+ * @returns {{ extends: unknown, compilerOptions: Record<string, unknown>, references: { path?: unknown }[] }}
  */
 function expectedTsconfigShape(templateName) {
   const parsed = JSON.parse(
     readFileSync(join(root, TEMPLATE_DIR, templateName), "utf8"),
   );
-  return { extends: parsed.extends, references: parsed.references ?? [] };
+  return {
+    extends: parsed.extends,
+    compilerOptions: parsed.compilerOptions ?? {},
+    references: parsed.references ?? [],
+  };
 }
 
 /**
  * Validate a scaffolded script's tsconfig.json or tsconfig.build.json against
  * the invariants the matching template encodes: `extends` the base config,
- * and a project `references` entry back to m3l-common (so `tsc -b` and
- * editor tooling resolve `@m3l-automation/m3l-common`'s types). Checker-only.
- * Returns human-readable problem strings (empty array = conformant).
+ * every `compilerOptions` entry the template sets, and a project `references`
+ * entry back to m3l-common (so `tsc -b` and editor tooling resolve
+ * `@m3l-automation/m3l-common`'s types). Checker-only. Returns human-readable
+ * problem strings (empty array = conformant).
  *
- * @param {{ extends?: unknown, references?: { path?: unknown }[] }} tsconfig parsed tsconfig.json or tsconfig.build.json
+ * The `compilerOptions` check is full parity with the template rather than a
+ * named-flag allow-list, so the next flag added to a template cannot silently
+ * skip the already-scaffolded fleet — how `isolatedDeclarations` came to be
+ * missing from three scripts (#773). It matters most for
+ * tsconfig.build.json's `isolatedDeclarations`, which is deliberately kept
+ * out of tsconfig.base.json: without it `pnpm typecheck` passes while
+ * `pnpm build` would fail `TS9010`, so a script missing it loses that gate
+ * entirely. Extra keys a script sets beyond the template are not flagged —
+ * only drift from a value the template pins.
+ *
+ * @param {{ extends?: unknown, compilerOptions?: Record<string, unknown>, references?: { path?: unknown }[] }} tsconfig parsed tsconfig.json or tsconfig.build.json
  * @param {"tsconfig.json.tmpl" | "tsconfig.build.json.tmpl"} templateName which template's shape to check against
  * @returns {string[]}
  */
@@ -348,6 +363,15 @@ export function tsconfigShapeErrors(tsconfig, templateName) {
     problems.push(
       `"extends" must be ${JSON.stringify(expected.extends)} (got ${JSON.stringify(tsconfig.extends)})`,
     );
+  }
+  const actualOptions = tsconfig.compilerOptions ?? {};
+  for (const [key, value] of Object.entries(expected.compilerOptions)) {
+    const actual = actualOptions[key];
+    if (JSON.stringify(actual) !== JSON.stringify(value)) {
+      problems.push(
+        `"compilerOptions.${key}" must be ${JSON.stringify(value)} (from ${templateName}, got ${JSON.stringify(actual)})`,
+      );
+    }
   }
   const actualRefPaths = (
     Array.isArray(tsconfig.references) ? tsconfig.references : []
