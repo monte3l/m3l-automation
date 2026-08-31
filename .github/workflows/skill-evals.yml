@@ -68,12 +68,19 @@ jobs:
       # already provisioned for claude-pr-review.yml/claude-assistant.yml.
       #
       # Pinned to an exact version, single-sourced with .claude-code-version
-      # and enforced by `pnpm check:claude-cli-version` (Scorecard alert #17,
-      # PinnedDependenciesID). The literal is deliberate: Scorecard parses the
-      # command TEXT, so `@$(cat .claude-code-version)` would still read as
-      # unpinned. Dependabot does NOT bump versions inside `run:` steps, so
-      # this pin is manual upkeep — that gate is the only thing standing
-      # between it and silent staleness.
+      # and enforced by `pnpm check:claude-cli-version`. Dependabot does NOT
+      # bump versions inside `run:` steps, so this pin is manual upkeep —
+      # that gate is the only thing standing between it and silent staleness.
+      # The literal is deliberate: Scorecard parses the command TEXT, so
+      # `@$(cat .claude-code-version)` would read as less pinned, not more.
+      #
+      # What this pin does NOT do is resolve Scorecard alert #17
+      # (PinnedDependenciesID, "npmCommand not pinned by hash"), and it never
+      # could: that rule wants a hash- or lockfile-backed install, which
+      # `npm install -g <pkg>@<version>` has no way to express. #17 is
+      # dismissed as won't-fix. The gate is still worth having — it prevents
+      # staleness — but crediting it with closing that alert was wrong, and
+      # the alert stayed open for a full cycle behind that claim.
       - name: Install Claude Code CLI
         run: npm install -g @anthropic-ai/claude-code@2.1.251
 
