@@ -127,3 +127,4 @@ surface).
 | 0080 | [Host resource budgeting for concurrent Claude Code sessions](./0080-host-resource-budgeting.md)                                                          | Accepted; amends ADR-0013                             |
 | 0081 | [Defer ADR-0073's `Programme` board field behind an explicit revival gate](./0081-deferring-the-programme-board-field.md)                                 | Accepted; amends ADR-0073                             |
 | 0082 | [Self-polling cadence for harness-vs-Anthropic freshness](./0082-harness-refresh-cadence.md)                                                              | Accepted                                              |
+| 0083 | [Permissions hardening and the managed-settings scope for a single-maintainer repo](./0083-permissions-hardening-and-managed-settings-scope.md)           | Accepted                                              |
