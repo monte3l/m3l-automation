@@ -3,83 +3,104 @@
   "evals": [
     {
       "id": 1,
-      "prompt": "Promote the recurring lessons from our work logs into the rules. Just show me what you'd change first — don't edit anything yet.",
-      "expected_output": "In propose (default) mode the skill reads every docs/logs/*.md, clusters lessons by meaning, and applies all three filters. It writes no files. Ground truth on the current corpus: 'run gen:index before format' recurs in core/json AND core/analysis and is NOT written down anywhere (the syncing-docs skill has no gen:index step), so it is the one surviving promotion candidate, routed to .claude/skills/syncing-docs/SKILL.md. By contrast 're-validate stored plans' (already in implementing-submodules:93 and auditing:78) and 'verify writer-spoke on-disk state' (already in implementing-submodules:146) also recur but must be DROPPED by the already-captured filter — not treated as candidates. The report must honestly show its filter counts and must not fabricate candidates.",
-      "assertions": [
+      "prompt": "Scan the work logs and show me what recurring lessons we should fold into the rules — propose only, don't edit anything yet.",
+      "expected_output": "A correct propose-mode response reads all four seeded logs, identifies the vi.fn()/vi.mock factory mock-reset lesson as the sole recurring candidate (appearing in three logs with different wording), routes it to .claude/rules/tests.md, excludes the one-log lockfile-drift lesson from candidates, and edits no files.",
+      "files": [
         {
-          "id": "no-file-writes-in-propose-mode",
-          "description": "The skill writes/edits NO files — no changes to .claude/rules, .claude/agents, .claude/skills, docs/logs, or CLAUDE.md in default propose mode"
+          "path": "docs/logs/2026-07-14-core-polling.md",
+          "content": "# Work log — `core/polling` submodule (2026-07-14)\n\nShipped `M3LPoller` and `M3LRetryPolicy` as 6 public exports.\n\n## What went as planned\n\n- RED failed for the right reason on all 18 test cases.\n- GREEN went clean first time; no reviewer must-fixes.\n\n## What didn't go as planned\n\n### 1. afterEach teardown left stale mock state\n\n`vi.restoreAllMocks()` was the only teardown in afterEach. Test 7 saw the `pollOnce` spy's call count as 2 instead of 0 — the spy came from a `vi.mock()` factory (`vi.fn()`), which restoreAllMocks ignores. Added `vi.mocked(timer.pollOnce).mockReset()` to afterEach.\n\n**Fix for future:** when a test file uses `vi.mock()` with a factory, pair `restoreAllMocks()` with an explicit `mockReset()` for every named export the factory creates.\n\n## Lessons learned\n\n- **afterEach must explicitly reset vi.mock factory mocks** — `restoreAllMocks()` alone does not zero their call history. A vi.fn() inside a vi.mock factory keeps its invocation count between tests.\n"
         },
         {
-          "id": "surfaces-gen-index-candidate",
-          "description": "Report surfaces 'run gen:index before format' as a surviving candidate, cites BOTH core/json and core/analysis as the recurrence, and routes it to the syncing-docs skill's SKILL.md"
+          "path": "docs/logs/2026-07-28-aws-sqs.md",
+          "content": "# Work log — `aws/sqs` submodule (2026-07-28)\n\nShipped `M3LSQSQueue` and related types as 8 public exports.\n\n## What went as planned\n\n- Batch-send and batch-delete covered by 24 tests; coverage 100%.\n- Gate fan-out green on first review pass.\n\n## What didn't go as planned\n\n### 1. Intermittent toHaveBeenCalledTimes failure in full suite\n\nThe `sendMessage` mock — a `vi.fn()` returned by the `vi.mock()` factory — kept its invocation count from test 3 into test 4 in a full vitest run. `vi.restoreAllMocks()` in afterEach does not touch vi.fn() born inside a module-level mock factory. Added `vi.mocked(mockSend).mockReset()` to afterEach to clear it.\n\n## Lessons learned\n\n- **vi.restoreAllMocks() is incomplete teardown when the test uses vi.mock()** — the factory's vi.fn() outlives it. Saw stale call counts bleed between tests; explicit `mockReset()` per mocked export in afterEach is the fix.\n- **Orphaned response entries must be tested** — a batch-delete whose response omits a message ID silently disappears; add a case where the response references an ID the request never sent.\n"
         },
         {
-          "id": "drops-already-captured-plan-revalidation",
-          "description": "'Re-validate stored plans' is NOT proposed as a candidate; the report notes it is already captured (implementing-submodules / auditing), i.e. dropped by the already-captured filter, not by the recurrence filter"
+          "path": "docs/logs/2026-08-11-aws-dynamodb.md",
+          "content": "# Work log — `aws/dynamodb` submodule (2026-08-11)\n\nShipped `M3LDynamoTable` and batch helpers as 10 public exports.\n\n## What went as planned\n\n- All 32 tests RED for the right reason; GREEN on first implementer pass.\n- Security reviewer found no must-fix issues.\n\n## What didn't go as planned\n\n### 1. Full suite failures not seen in isolation\n\nThe test:coverage run reported 3 failures that the individual vitest run had not caught. Each failed on `toHaveBeenCalledTimes(1)` but the actual count was 3. Root cause: `mockPut` is a `vi.fn()` returned by the `vi.mock(\"@aws-sdk/client-dynamodb\", ...)` factory; `vi.restoreAllMocks()` does not reset factory-created functions, only `vi.spyOn` targets.\n\n**Fix for future:** for any test file containing a `vi.mock()` factory, add `vi.mocked(<export>).mockReset()` per factory export in afterEach alongside `vi.restoreAllMocks()`.\n\n## Lessons learned\n\n- **Tests that pass in isolation but fail in sequence expose a mock-reset gap.** When the culprit is a vi.mock factory, restoreAllMocks alone is never enough — every factory-created vi.fn() needs its own afterEach reset.\n"
         },
         {
-          "id": "drops-already-captured-writer-spoke",
-          "description": "'Verify writer-spoke on-disk state' is NOT proposed; the report notes it is already captured in implementing-submodules"
+          "path": "docs/logs/2026-08-19-core-validation.md",
+          "content": "# Work log — `core/validation` submodule (2026-08-19)\n\nShipped `M3LValidator` and `M3LValidationRule` as 4 public exports.\n\n## What went as planned\n\n- Contract, RED, GREEN all clean; reviewer pass found nothing.\n- Coverage 100% on all validation files.\n\n## What didn't go as planned\n\n### 1. Lockfile drift after hand-bumping version\n\nAfter editing the package version in `package.json`, running `pnpm install` (without `--frozen-lockfile`) silently regenerated the lockfile with a different internal-workspace resolution. CI failed the frozen-lockfile check.\n\n**Fix for future:** use `pnpm install --frozen-lockfile` in CI; on local dev, inspect `git diff pnpm-lock.yaml` before staging.\n\n## Lessons learned\n\n- **Hand-bumping a package version can silently regenerate the lockfile** when run without `--frozen-lockfile`. This occurred once in this submodule; not observed across other logs.\n"
         },
         {
-          "id": "honest-filter-counts",
-          "description": "The report states how many themes were extracted, how many recurred across ≥2 logs, and how many were dropped as already-captured vs already-promoted — without inventing candidates"
-        },
-        {
-          "id": "filters-single-log-lessons",
-          "description": "Single-log lessons (e.g. git pull --rebase before push, or the feature-branch guard) are NOT proposed, because the recurrence filter requires ≥2 logs"
+          "path": ".claude/rules/tests.md",
+          "content": "---\npaths:\n  - \"**/tests/**\"\n  - \"**/*.test.ts\"\n---\n\n# Testing rules (`tests/**`, `*.test.ts`)\n\n- **Vitest**, files named `*.test.ts`, importing from `src/` with the `.js` extension (`../src/index.js`).\n- **Every exported function gets a happy-path test plus one failure path.**\n- **Test observable behavior, not implementation details** or private paths.\n- **Deterministic and isolated:** no network, no filesystem; mock collaborators. Prefer stubs unless interaction verification is required.\n- **Name tests by behavior**, not by the unit under test.\n- **Run both `pnpm test` and `pnpm typecheck` after writing tests** — Vitest transforms without type-checking; a passing test suite can still hide `tsc` errors inside the test file.\n"
         }
+      ],
+      "expectations": [
+        "The response names the vi.fn()/vi.mock factory mock-reset issue as a recurring promotion candidate and cites at least two of the three log filenames where it recurs: `2026-07-14-core-polling.md`, `2026-07-28-aws-sqs.md`, and `2026-08-11-aws-dynamodb.md`",
+        "The response names `.claude/rules/tests.md` as the target file for the promoted rule",
+        "The response's list of promotion candidates contains only one theme (the vi.fn()/mockReset mock-reset lesson); the lockfile-drift or `pnpm install --frozen-lockfile` lesson from `2026-08-19-core-validation.md` does not appear as a candidate",
+        "The response includes a summary line or paragraph stating how many themes were extracted and how many survived the recurrence filter (appeared in ≥2 logs)",
+        "The response contains no statement claiming it edited or wrote any file — no mention of having modified `.claude/rules/tests.md` or any `docs/logs/*.md` file"
       ]
     },
     {
       "id": 2,
-      "prompt": "/promoting-work-log-lessons --apply — I've reviewed the recurring lessons, go ahead and fold them in and mark the logs.",
-      "expected_output": "In apply mode the skill edits each routed target file to add the terse rule text, AND stamps a `_(promoted → <target>)_` provenance marker onto the originating lesson in every source log it came from. On the current corpus the one surviving candidate is 'run gen:index before format', so it adds that ordering rule to .claude/skills/syncing-docs/SKILL.md and stamps the marker in BOTH docs/logs/2026-07-01-core-json.md and docs/logs/2026-07-01-core-analysis.md. It does not commit; it reports the files edited and logs stamped and hands off to /writing-commits as a docs: change. It runs the verification (lint:md, and check:agents if agents were edited).",
-      "assertions": [
+      "prompt": "/promoting-work-log-lessons --apply — I've seen the proposal, go ahead and fold in the recurring lessons and stamp the logs.",
+      "expected_output": "A correct apply-mode response edits .claude/rules/tests.md to add a rule about mockReset in afterEach for vi.mock factory functions, stamps a `_(promoted → .claude/rules/tests.md)_` marker into all three recurring-lesson log files, omits the distractor log, and states it is handing off to /writing-commits.",
+      "files": [
         {
-          "id": "edits-target-files",
-          "description": "At least one durable target file (.claude/rules/*.md, .claude/agents/*.md, or a skill SKILL.md) is edited to add the promoted rule text"
+          "path": "docs/logs/2026-07-14-core-polling.md",
+          "content": "# Work log — `core/polling` submodule (2026-07-14)\n\nShipped `M3LPoller` and `M3LRetryPolicy` as 6 public exports.\n\n## What went as planned\n\n- RED failed for the right reason on all 18 test cases.\n- GREEN went clean first time; no reviewer must-fixes.\n\n## What didn't go as planned\n\n### 1. afterEach teardown left stale mock state\n\n`vi.restoreAllMocks()` was the only teardown in afterEach. Test 7 saw the `pollOnce` spy's call count as 2 instead of 0 — the spy came from a `vi.mock()` factory (`vi.fn()`), which restoreAllMocks ignores. Added `vi.mocked(timer.pollOnce).mockReset()` to afterEach.\n\n**Fix for future:** when a test file uses `vi.mock()` with a factory, pair `restoreAllMocks()` with an explicit `mockReset()` for every named export the factory creates.\n\n## Lessons learned\n\n- **afterEach must explicitly reset vi.mock factory mocks** — `restoreAllMocks()` alone does not zero their call history. A vi.fn() inside a vi.mock factory keeps its invocation count between tests.\n"
         },
         {
-          "id": "stamps-provenance-marker",
-          "description": "Each promoted lesson gets a '_(promoted → <path>)_' marker appended in its source docs/logs/*.md file(s)"
+          "path": "docs/logs/2026-07-28-aws-sqs.md",
+          "content": "# Work log — `aws/sqs` submodule (2026-07-28)\n\nShipped `M3LSQSQueue` and related types as 8 public exports.\n\n## What went as planned\n\n- Batch-send and batch-delete covered by 24 tests; coverage 100%.\n- Gate fan-out green on first review pass.\n\n## What didn't go as planned\n\n### 1. Intermittent toHaveBeenCalledTimes failure in full suite\n\nThe `sendMessage` mock — a `vi.fn()` returned by the `vi.mock()` factory — kept its invocation count from test 3 into test 4 in a full vitest run. `vi.restoreAllMocks()` in afterEach does not touch vi.fn() born inside a module-level mock factory. Added `vi.mocked(mockSend).mockReset()` to afterEach to clear it.\n\n## Lessons learned\n\n- **vi.restoreAllMocks() is incomplete teardown when the test uses vi.mock()** — the factory's vi.fn() outlives it. Saw stale call counts bleed between tests; explicit `mockReset()` per mocked export in afterEach is the fix.\n- **Orphaned response entries must be tested** — a batch-delete whose response omits a message ID silently disappears; add a case where the response references an ID the request never sent.\n"
         },
         {
-          "id": "marker-in-all-source-logs",
-          "description": "A lesson that recurred in two logs is stamped in BOTH source logs, not just one"
+          "path": "docs/logs/2026-08-11-aws-dynamodb.md",
+          "content": "# Work log — `aws/dynamodb` submodule (2026-08-11)\n\nShipped `M3LDynamoTable` and batch helpers as 10 public exports.\n\n## What went as planned\n\n- All 32 tests RED for the right reason; GREEN on first implementer pass.\n- Security reviewer found no must-fix issues.\n\n## What didn't go as planned\n\n### 1. Full suite failures not seen in isolation\n\nThe test:coverage run reported 3 failures that the individual vitest run had not caught. Each failed on `toHaveBeenCalledTimes(1)` but the actual count was 3. Root cause: `mockPut` is a `vi.fn()` returned by the `vi.mock(\"@aws-sdk/client-dynamodb\", ...)` factory; `vi.restoreAllMocks()` does not reset factory-created functions, only `vi.spyOn` targets.\n\n**Fix for future:** for any test file containing a `vi.mock()` factory, add `vi.mocked(<export>).mockReset()` per factory export in afterEach alongside `vi.restoreAllMocks()`.\n\n## Lessons learned\n\n- **Tests that pass in isolation but fail in sequence expose a mock-reset gap.** When the culprit is a vi.mock factory, restoreAllMocks alone is never enough — every factory-created vi.fn() needs its own afterEach reset.\n"
         },
         {
-          "id": "does-not-commit",
-          "description": "The skill does NOT run git commit; it hands off to /writing-commits and states this is a docs: change touching no src/ or version"
+          "path": "docs/logs/2026-08-19-core-validation.md",
+          "content": "# Work log — `core/validation` submodule (2026-08-19)\n\nShipped `M3LValidator` and `M3LValidationRule` as 4 public exports.\n\n## What went as planned\n\n- Contract, RED, GREEN all clean; reviewer pass found nothing.\n- Coverage 100% on all validation files.\n\n## What didn't go as planned\n\n### 1. Lockfile drift after hand-bumping version\n\nAfter editing the package version in `package.json`, running `pnpm install` (without `--frozen-lockfile`) silently regenerated the lockfile with a different internal-workspace resolution. CI failed the frozen-lockfile check.\n\n**Fix for future:** use `pnpm install --frozen-lockfile` in CI; on local dev, inspect `git diff pnpm-lock.yaml` before staging.\n\n## Lessons learned\n\n- **Hand-bumping a package version can silently regenerate the lockfile** when run without `--frozen-lockfile`. This occurred once in this submodule; not observed across other logs.\n"
         },
         {
-          "id": "runs-verification",
-          "description": "The skill runs pnpm lint:md (and pnpm check:agents if any agent file was edited) after applying"
+          "path": ".claude/rules/tests.md",
+          "content": "---\npaths:\n  - \"**/tests/**\"\n  - \"**/*.test.ts\"\n---\n\n# Testing rules (`tests/**`, `*.test.ts`)\n\n- **Vitest**, files named `*.test.ts`, importing from `src/` with the `.js` extension (`../src/index.js`).\n- **Every exported function gets a happy-path test plus one failure path.**\n- **Test observable behavior, not implementation details** or private paths.\n- **Deterministic and isolated:** no network, no filesystem; mock collaborators. Prefer stubs unless interaction verification is required.\n- **Name tests by behavior**, not by the unit under test.\n- **Run both `pnpm test` and `pnpm typecheck` after writing tests** — Vitest transforms without type-checking; a passing test suite can still hide `tsc` errors inside the test file.\n"
         }
+      ],
+      "expectations": [
+        "The response names `.claude/rules/tests.md` as the destination for the promoted rule and states the rule text verbatim — that `vi.restoreAllMocks()` does not reset a `vi.fn()` created inside a `vi.mock()` factory, and that `vi.mocked(<export>).mockReset()` must be called per factory export in `afterEach`. Grade the RESPONSE TEXT only: whether the write to that path succeeded is explicitly NOT part of this criterion, because this environment blocks writes under `.claude/` as sensitive files. A blocked edit that still names the destination and states the rule text satisfies this criterion in full.",
+        "The file `docs/logs/2026-07-14-core-polling.md` contains a `_(promoted → .claude/rules/tests.md)_` provenance marker on the relevant lesson bullet",
+        "The file `docs/logs/2026-07-28-aws-sqs.md` contains a `_(promoted → .claude/rules/tests.md)_` provenance marker on the relevant lesson bullet",
+        "The file `docs/logs/2026-08-11-aws-dynamodb.md` contains a `_(promoted → .claude/rules/tests.md)_` provenance marker on the relevant lesson bullet",
+        "The file `docs/logs/2026-08-19-core-validation.md` contains no `_(promoted →` text — the lockfile-drift lesson was a single-occurrence distractor and was not promoted",
+        "The response mentions handing off to `/writing-commits` and characterises the change as a `docs:` change"
       ]
     },
     {
       "id": 3,
-      "prompt": "Do another pass over the work logs and promote anything new that keeps coming up.",
-      "expected_output": "On a re-run, the skill must skip lessons already carrying a `_(promoted → …)_` provenance marker and lessons whose keyword already appears in the target rules (found via grep), rather than re-proposing them. If everything recurring has already been promoted, it should report that nothing new survived the filters rather than inventing candidates or re-listing promoted lessons.",
-      "assertions": [
+      "prompt": "Do another pass over the work logs — have we missed anything that keeps coming up?",
+      "expected_output": "A correct re-run response finds the vi.fn()/mockReset lesson already stamped as promoted in all three source logs and already present in .claude/rules/tests.md, then reports that no new recurring lessons survived the filters and edits no files.",
+      "files": [
         {
-          "id": "skips-already-promoted",
-          "description": "Lessons already stamped with a '_(promoted → …)_' marker are excluded from the candidate list"
+          "path": "docs/logs/2026-07-14-core-polling.md",
+          "content": "# Work log — `core/polling` submodule (2026-07-14)\n\nShipped `M3LPoller` and `M3LRetryPolicy` as 6 public exports.\n\n## What went as planned\n\n- RED failed for the right reason on all 18 test cases.\n- GREEN went clean first time; no reviewer must-fixes.\n\n## What didn't go as planned\n\n### 1. afterEach teardown left stale mock state\n\n`vi.restoreAllMocks()` was the only teardown in afterEach. Test 7 saw the `pollOnce` spy's call count as 2 instead of 0 — the spy came from a `vi.mock()` factory (`vi.fn()`), which restoreAllMocks ignores. Added `vi.mocked(timer.pollOnce).mockReset()` to afterEach.\n\n**Fix for future:** when a test file uses `vi.mock()` with a factory, pair `restoreAllMocks()` with an explicit `mockReset()` for every named export the factory creates.\n\n## Lessons learned\n\n- **afterEach must explicitly reset vi.mock factory mocks** — `restoreAllMocks()` alone does not zero their call history. A vi.fn() inside a vi.mock factory keeps its invocation count between tests. _(promoted → .claude/rules/tests.md)_\n"
         },
         {
-          "id": "greps-for-already-captured",
-          "description": "The skill greps .claude/rules / .claude/agents / .claude/skills for a lesson's keyword and drops it if already written down"
+          "path": "docs/logs/2026-07-28-aws-sqs.md",
+          "content": "# Work log — `aws/sqs` submodule (2026-07-28)\n\nShipped `M3LSQSQueue` and related types as 8 public exports.\n\n## What went as planned\n\n- Batch-send and batch-delete covered by 24 tests; coverage 100%.\n- Gate fan-out green on first review pass.\n\n## What didn't go as planned\n\n### 1. Intermittent toHaveBeenCalledTimes failure in full suite\n\nThe `sendMessage` mock — a `vi.fn()` returned by the `vi.mock()` factory — kept its invocation count from test 3 into test 4 in a full vitest run. `vi.restoreAllMocks()` in afterEach does not touch vi.fn() born inside a module-level mock factory. Added `vi.mocked(mockSend).mockReset()` to afterEach to clear it.\n\n## Lessons learned\n\n- **vi.restoreAllMocks() is incomplete teardown when the test uses vi.mock()** — the factory's vi.fn() outlives it. Saw stale call counts bleed between tests; explicit `mockReset()` per mocked export in afterEach is the fix. _(promoted → .claude/rules/tests.md)_\n- **Orphaned response entries must be tested** — a batch-delete whose response omits a message ID silently disappears; add a case where the response references an ID the request never sent.\n"
         },
         {
-          "id": "reports-empty-honestly",
-          "description": "If nothing new survives the filters, the skill says so plainly instead of re-listing already-promoted lessons or fabricating new ones"
+          "path": "docs/logs/2026-08-11-aws-dynamodb.md",
+          "content": "# Work log — `aws/dynamodb` submodule (2026-08-11)\n\nShipped `M3LDynamoTable` and batch helpers as 10 public exports.\n\n## What went as planned\n\n- All 32 tests RED for the right reason; GREEN on first implementer pass.\n- Security reviewer found no must-fix issues.\n\n## What didn't go as planned\n\n### 1. Full suite failures not seen in isolation\n\nThe test:coverage run reported 3 failures that the individual vitest run had not caught. Each failed on `toHaveBeenCalledTimes(1)` but the actual count was 3. Root cause: `mockPut` is a `vi.fn()` returned by the `vi.mock(\"@aws-sdk/client-dynamodb\", ...)` factory; `vi.restoreAllMocks()` does not reset factory-created functions, only `vi.spyOn` targets.\n\n**Fix for future:** for any test file containing a `vi.mock()` factory, add `vi.mocked(<export>).mockReset()` per factory export in afterEach alongside `vi.restoreAllMocks()`.\n\n## Lessons learned\n\n- **Tests that pass in isolation but fail in sequence expose a mock-reset gap.** When the culprit is a vi.mock factory, restoreAllMocks alone is never enough — every factory-created vi.fn() needs its own afterEach reset. _(promoted → .claude/rules/tests.md)_\n"
         },
         {
-          "id": "no-writes-without-apply",
-          "description": "Without --apply or explicit approval, the re-run writes no files"
+          "path": "docs/logs/2026-08-19-core-validation.md",
+          "content": "# Work log — `core/validation` submodule (2026-08-19)\n\nShipped `M3LValidator` and `M3LValidationRule` as 4 public exports.\n\n## What went as planned\n\n- Contract, RED, GREEN all clean; reviewer pass found nothing.\n- Coverage 100% on all validation files.\n\n## What didn't go as planned\n\n### 1. Lockfile drift after hand-bumping version\n\nAfter editing the package version in `package.json`, running `pnpm install` (without `--frozen-lockfile`) silently regenerated the lockfile with a different internal-workspace resolution. CI failed the frozen-lockfile check.\n\n**Fix for future:** use `pnpm install --frozen-lockfile` in CI; on local dev, inspect `git diff pnpm-lock.yaml` before staging.\n\n## Lessons learned\n\n- **Hand-bumping a package version can silently regenerate the lockfile** when run without `--frozen-lockfile`. This occurred once in this submodule; not observed across other logs.\n"
+        },
+        {
+          "path": ".claude/rules/tests.md",
+          "content": "---\npaths:\n  - \"**/tests/**\"\n  - \"**/*.test.ts\"\n---\n\n# Testing rules (`tests/**`, `*.test.ts`)\n\n- **Vitest**, files named `*.test.ts`, importing from `src/` with the `.js` extension (`../src/index.js`).\n- **Every exported function gets a happy-path test plus one failure path.**\n- **Test observable behavior, not implementation details** or private paths.\n- **Deterministic and isolated:** no network, no filesystem; mock collaborators. Prefer stubs unless interaction verification is required.\n- **Name tests by behavior**, not by the unit under test.\n- **Run both `pnpm test` and `pnpm typecheck` after writing tests** — Vitest transforms without type-checking; a passing test suite can still hide `tsc` errors inside the test file.\n- **`vi.restoreAllMocks()` does not reset a `vi.fn()` created inside a `vi.mock()` factory** — call `vi.mocked(<export>).mockReset()` per factory export in `afterEach` alongside `restoreAllMocks()`. Without it, call history leaks between tests, causing intermittent `toHaveBeenCalledTimes` failures only visible in the full suite run.\n"
         }
+      ],
+      "expectations": [
+        "The response states that the vi.fn()/vi.mock factory mock-reset lesson is already promoted, citing either the `_(promoted → .claude/rules/tests.md)_` markers in the source logs or the presence of the rule in `.claude/rules/tests.md`",
+        "The response reports that no new lessons survived the filters — nothing to promote in this pass — rather than re-listing already-promoted lessons as fresh candidates",
+        "The response does not list any lesson from the seeded logs as a new promotion candidate",
+        "The response makes no claim of having edited or written any file — no `.claude/rules/` or `docs/logs/` path is stated as modified"
       ]
     }
   ]
