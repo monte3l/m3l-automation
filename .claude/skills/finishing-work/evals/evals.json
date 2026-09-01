@@ -1,0 +1,50 @@
+{
+  "skill_name": "finishing-work",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "PR #612 for branch `feat/example-thing` just merged. I'm working in the shared checkout, currently still on `feat/example-thing`. Please run finishing-work.",
+      "expected_output": "The response first confirms the PR actually merged via `gh pr view --json state,mergedAt,headRefName,baseRefName` rather than trusting the claim, then checks out and pulls `main`, deletes `feat/example-thing` via `pnpm branch:cleanup feat/example-thing` (the shared-checkout path, not `pnpm worktree:remove`), runs `git fetch --prune`, and asks about a tracker-row flip and whether a work log exists before reporting a summary.",
+      "expectations": [
+        "The response runs or states it will run `gh pr view --json state,mergedAt,headRefName,baseRefName` (or an equivalent PR-state check) before taking any cleanup action",
+        "The response includes `git checkout main` and a pull step before deleting the branch",
+        "The response uses `pnpm branch:cleanup feat/example-thing` (the shared-checkout helper), not `pnpm worktree:remove`, since the task states this is the shared checkout",
+        "The response includes a `git fetch --prune` step to clear stale remote-tracking refs",
+        "The response asks the user about a tracker-row flip and about whether a work log was written, rather than silently skipping or silently deciding on the user's behalf"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "I'm working in a linked worktree at `../m3l-automation-example-thing` on branch `feat/example-thing`. The PR for it just merged. Run finishing-work.",
+      "expected_output": "The response confirms the merge, then uses `pnpm worktree:remove example-thing` (the worktree-scoped teardown) rather than `pnpm branch:cleanup`, since this session is running inside a linked worktree — it does not attempt to also run the shared-checkout branch-cleanup helper on the same branch.",
+      "expectations": [
+        "The response confirms the PR merged (via `gh pr view` or equivalent) before taking any cleanup action",
+        "The response uses `pnpm worktree:remove example-thing` or an equivalent worktree-removal command for the linked-worktree case",
+        "The response does not also invoke `pnpm branch:cleanup` on the same branch, since `worktree:remove` already handles the branch deletion for a linked worktree",
+        "The response includes a `git fetch --prune` step or explains that stale remote-tracking refs are cleared afterward"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Run finishing-work for branch `feat/still-open-thing`. I think the PR merged but I'm not 100% sure.",
+      "expected_output": "The response checks the PR's actual merge state first and, finding it is still `OPEN` (not merged), stops before performing any cleanup — it does not delete the branch, switch to main, or prune refs, and instead tells the user the PR has not merged yet.",
+      "files": [],
+      "expectations": [
+        "The response states or simulates checking the PR state via `gh pr view` (or equivalent) before any destructive action",
+        "The response explicitly states that no branch deletion, checkout, or pruning will happen because the PR has not merged",
+        "The response does not claim to have deleted the branch or switched to `main`"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "PR #700 for `feat/squash-merged-thing` merged via squash merge. Run finishing-work — I'm in the shared checkout.",
+      "expected_output": "After confirming the merge and running the shared-checkout branch-cleanup step, the response recognizes that a squash-merged branch is often not an ancestor of `main` (so `git branch -d` may report it as unmerged and keep it rather than deleting it), and if that happens, the response reports the branch was kept and asks the user before force-deleting — it does not silently force-delete with `-D`.",
+      "expectations": [
+        "The response confirms the PR merged before taking action",
+        "The response uses the shared-checkout branch-cleanup path (`pnpm branch:cleanup feat/squash-merged-thing`), not the worktree path",
+        "The response acknowledges that a squash-merged branch may be reported as kept/unmerged by a safe branch delete, rather than assuming deletion always succeeds",
+        "The response states it will ask the user before force-deleting (`-D`) a branch that was kept, rather than force-deleting automatically"
+      ]
+    }
+  ]
+}
