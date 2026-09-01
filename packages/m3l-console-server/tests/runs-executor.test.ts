@@ -63,6 +63,7 @@ function baseExecuteOptions(
   overrides: Partial<{
     readonly dryRun: boolean;
     readonly signal: AbortSignal;
+    readonly correlationId: string;
     readonly onLine: M3LLineSink;
   }> = {},
 ): {
@@ -70,6 +71,7 @@ function baseExecuteOptions(
   parameters: Record<string, string>;
   dryRun: boolean;
   signal: AbortSignal;
+  correlationId: string;
   onLine: M3LLineSink;
 } {
   return {
@@ -77,6 +79,7 @@ function baseExecuteOptions(
     parameters: {},
     dryRun: false,
     signal: new AbortController().signal,
+    correlationId: "corr-base",
     onLine: vi.fn(),
     ...overrides,
   };
@@ -174,6 +177,69 @@ describe("createSpawnExecutor — argv (--dry-run flag)", () => {
       "node",
       ["dist/main.js"],
       expect.objectContaining({ cwd: scriptDir }),
+    );
+  });
+});
+
+describe("createSpawnExecutor — env (correlation)", () => {
+  // MIRRORED LITERAL GUARD. `m3l-common`'s
+  // `internal/script/correlationId.ts` READS `M3L_CORRELATION_ID` as the
+  // tier below an explicit option — that is what makes a spawned run join
+  // the launching request's trace. This asserts the exact spelling, so a
+  // rename on either side fails here instead of silently breaking
+  // correlation across the process boundary. Its twin lives in
+  // `m3l-common`'s `tests/script-correlation.test.ts`.
+  test("passes the run's correlation id as M3L_CORRELATION_ID", async () => {
+    const fakeChild = createFakeChild();
+    const spawnImpl = vi.fn(() => fakeChild);
+    const executor = createSpawnExecutor(
+      { killTimeoutMs: 5000 },
+      { spawnImpl },
+    );
+
+    const resultPromise = executor.execute({
+      ...baseExecuteOptions(),
+      correlationId: "corr-spawned",
+    });
+    fakeChild.emit("close", 0, null);
+    await resultPromise;
+
+    expect(spawnImpl).toHaveBeenCalledWith(
+      "node",
+      expect.any(Array),
+      expect.objectContaining({
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- expect.objectContaining returns any; safe in test assertions
+        env: expect.objectContaining({ M3L_CORRELATION_ID: "corr-spawned" }),
+      }),
+    );
+  });
+
+  test("sets M3L_CORRELATION_ID alongside M3L_RUN_PARAMETERS, not instead of it", async () => {
+    const fakeChild = createFakeChild();
+    const spawnImpl = vi.fn(() => fakeChild);
+    const executor = createSpawnExecutor(
+      { killTimeoutMs: 5000 },
+      { spawnImpl },
+    );
+
+    const resultPromise = executor.execute({
+      ...baseExecuteOptions(),
+      parameters: { region: "eu-west-1" },
+      correlationId: "corr-both",
+    });
+    fakeChild.emit("close", 0, null);
+    await resultPromise;
+
+    expect(spawnImpl).toHaveBeenCalledWith(
+      "node",
+      expect.any(Array),
+      expect.objectContaining({
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- expect.objectContaining returns any; safe in test assertions
+        env: expect.objectContaining({
+          M3L_CORRELATION_ID: "corr-both",
+          M3L_RUN_PARAMETERS: JSON.stringify({ region: "eu-west-1" }),
+        }),
+      }),
     );
   });
 });
@@ -783,6 +849,68 @@ describe("createInProcessExecutor — logger and signal wiring", () => {
     expect(context.logger).toBeInstanceOf(Core.M3LLogger);
   });
 
+  test("forwards the run's correlation id onto the command context", async () => {
+    const executeSpy = vi.fn(
+      (
+        _parameters: object,
+        _context: Core.M3LCommandContext,
+      ): Promise<Core.M3LCommandOutcome> =>
+        Promise.resolve({ status: "success" }),
+    );
+    const commandModule = createFakeCommandModule(executeSpy);
+    const importImpl = vi.fn(() => Promise.resolve({ commandModule }));
+    const executor = createInProcessExecutor({ importImpl });
+
+    await executor.execute(
+      baseExecuteOptions({ correlationId: "corr-in-process" }),
+    );
+
+    const callArgs = executeSpy.mock.calls[0];
+    if (callArgs === undefined) throw new Error("execute was not called");
+    const [, context] = callArgs;
+    expect(context.correlationId).toBe("corr-in-process");
+  });
+
+  // The SECOND channel, and a separate assertion on purpose: the context
+  // half tells the command its id, the logger half stamps every event the
+  // run emits. Seeding only one of them still loses half the trail.
+  test("seeds the run's logger with the same correlation id", async () => {
+    // `M3LLogger` surfaces its correlation id only on dispatched events, so
+    // the assertion goes through an injected handler and the command's own
+    // use of `context.logger`. The seeding under test is the production
+    // constructor call, not anything this test supplies.
+    const events: Core.M3LLogEvent[] = [];
+    const handler: Core.M3LLoggerHandler = {
+      handle: (event) => {
+        events.push(event);
+      },
+      reset: () => {
+        events.length = 0;
+      },
+    };
+    const commandModule = createFakeCommandModule(
+      (
+        _parameters: object,
+        context: Core.M3LCommandContext,
+      ): Promise<Core.M3LCommandOutcome> => {
+        context.logger.info("a line the run logged");
+        return Promise.resolve({ status: "success" });
+      },
+    );
+    const importImpl = vi.fn(() => Promise.resolve({ commandModule }));
+    const executor = createInProcessExecutor({
+      importImpl,
+      logHandlers: [handler],
+    });
+
+    await executor.execute(
+      baseExecuteOptions({ correlationId: "corr-for-the-logger" }),
+    );
+
+    expect(events).toHaveLength(1);
+    expect(events[0]?.correlationId).toBe("corr-for-the-logger");
+  });
+
   test("forwards the caller's signal and parameters to execute()", async () => {
     const controller = new AbortController();
     const executeSpy = vi.fn(
@@ -801,6 +929,7 @@ describe("createInProcessExecutor — logger and signal wiring", () => {
       parameters: { region: "us-east-1" },
       dryRun: false,
       signal: controller.signal,
+      correlationId: "corr-inline",
       onLine: vi.fn(),
     });
 

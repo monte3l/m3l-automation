@@ -70,6 +70,32 @@ interface M3LPendingQueuedRun {
   readonly resolved: M3LResolvedScript;
   readonly body: M3LRunRequestBody;
   readonly operator: string;
+  /**
+   * The launching request's correlation id, carried through the queue.
+   *
+   * This is why correlation is threaded EXPLICITLY rather than through an
+   * `AsyncLocalStorage`. {@link pumpQueue} starts a queued run from inside a
+   * DIFFERENT run's completion continuation ({@link finishActiveRun}), so an
+   * ambient store would attribute this run's work to whichever request
+   * happened to finish first. `onQueueTimeout` and `reconcileOnBoot` have no
+   * ambient context at all. Only a value stored with the queued run survives
+   * the queue.
+   */
+  readonly correlationId: string;
+}
+
+/**
+ * Everything {@link startRun} needs to begin one run.
+ *
+ * A bag rather than a sixth positional parameter: {@link executeAndSettle}
+ * already took six, and the two share every field but the abort controller.
+ */
+interface M3LRunStartInput {
+  readonly id: string;
+  readonly resolved: M3LResolvedScript;
+  readonly body: M3LRunRequestBody;
+  readonly operator: string;
+  readonly correlationId: string;
 }
 
 /**
@@ -254,12 +280,10 @@ function armQueueTimeout(
  */
 function executeAndSettle(
   ctx: M3LOrchestratorContext,
-  id: string,
-  resolved: M3LResolvedScript,
-  body: M3LRunRequestBody,
-  operator: string,
+  input: M3LRunStartInput,
   controller: AbortController,
 ): Promise<void> {
+  const { id, resolved, body, operator, correlationId } = input;
   const executor = resolved.hasCommandModule
     ? ctx.inProcessExecutor
     : ctx.spawnExecutor;
@@ -270,6 +294,7 @@ function executeAndSettle(
       parameters: body.parameters,
       dryRun: body.dryRun,
       signal: controller.signal,
+      correlationId,
       onLine: (line: string): void => {
         ctx.events.publish({ event: "run.line", runId: id, line });
       },
@@ -309,13 +334,8 @@ function executeAndSettle(
  * second time — the slot was already accounted for by whichever caller won
  * the race.
  */
-function startRun(
-  ctx: M3LOrchestratorContext,
-  id: string,
-  resolved: M3LResolvedScript,
-  body: M3LRunRequestBody,
-  operator: string,
-): void {
+function startRun(ctx: M3LOrchestratorContext, input: M3LRunStartInput): void {
+  const { id, resolved, operator } = input;
   const startedAtMs = ctx.nowMs();
   if (!ctx.registry.claimForStart(id, startedAtMs)) {
     ctx.logger.warning(
@@ -336,14 +356,7 @@ function startRun(
   });
 
   const controller = new AbortController();
-  const promise = executeAndSettle(
-    ctx,
-    id,
-    resolved,
-    body,
-    operator,
-    controller,
-  );
+  const promise = executeAndSettle(ctx, input, controller);
   ctx.active.set(id, {
     controller,
     scriptName: resolved.name,
@@ -383,7 +396,13 @@ function pumpQueue(ctx: M3LOrchestratorContext): void {
     ctx.governor.dequeue();
     ctx.pendingQueued.delete(row.id);
     clearQueueTimeout(ctx, row.id);
-    startRun(ctx, row.id, pending.resolved, pending.body, pending.operator);
+    startRun(ctx, {
+      id: row.id,
+      resolved: pending.resolved,
+      body: pending.body,
+      operator: pending.operator,
+      correlationId: pending.correlationId,
+    });
     return;
   }
 }
@@ -490,9 +509,9 @@ function launchRun(
   );
 
   if (accepted) {
-    startRun(ctx, id, resolved, body, operator);
+    startRun(ctx, { id, resolved, body, operator, correlationId });
   } else {
-    ctx.pendingQueued.set(id, { resolved, body, operator });
+    ctx.pendingQueued.set(id, { resolved, body, operator, correlationId });
     armQueueTimeout(ctx, id, resolved.name, operator);
   }
 

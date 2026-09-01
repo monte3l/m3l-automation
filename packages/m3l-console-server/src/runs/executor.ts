@@ -62,6 +62,17 @@ interface M3LRunExecutorOptions {
   readonly dryRun: boolean;
   /** The cooperative cancellation signal for this run. */
   readonly signal: AbortSignal;
+  /**
+   * The launching request's correlation id (ADR-0070), threaded explicitly
+   * from the orchestrator rather than read from ambient context — a queued
+   * run is started inside a different run's completion continuation, so
+   * there is no correct ambient value to read.
+   *
+   * Required, not optional: every caller has one (the HTTP layer resolves it
+   * per request), and an optional field would let a new call site silently
+   * drop correlation for the runs it starts.
+   */
+  readonly correlationId: string;
   /** Called once per non-empty line of the run's observable output. */
   readonly onLine: M3LLineSink;
 }
@@ -310,11 +321,20 @@ export function createSpawnExecutor(
 
   return {
     execute(executeOptions: M3LRunExecutorOptions): Promise<M3LSpawnExitInfo> {
-      const { scriptDir, parameters, dryRun, signal, onLine } = executeOptions;
+      const { scriptDir, parameters, dryRun, signal, correlationId, onLine } =
+        executeOptions;
       const args = dryRun ? ["dist/main.js", "--dry-run"] : ["dist/main.js"];
       const env: NodeJS.ProcessEnv = {
         ...process.env,
         M3L_RUN_PARAMETERS: JSON.stringify(parameters),
+        // MIRRORED LITERAL. `m3l-common`'s
+        // `internal/script/correlationId.ts` READS this exact variable as
+        // the tier below an explicit option, which is what makes a spawned
+        // run join this request's trace. The two copies are deliberate —
+        // neither package needs the other's compile-time surface for a
+        // string — and each side has a test exercising the literal, so a
+        // rename fails loudly rather than silently breaking correlation.
+        M3L_CORRELATION_ID: correlationId,
       };
       const child = spawnImpl("node", args, {
         cwd: scriptDir,
@@ -342,6 +362,19 @@ export function createSpawnExecutor(
  */
 interface M3LInProcessExecutorInternals {
   readonly importImpl?: (specifier: string) => Promise<unknown>;
+  /**
+   * Handlers to construct the run's logger with, defaulting to none.
+   *
+   * Production passes none: this executor forwards a command's output
+   * through `onLine`, not through a log handler. The seam exists because
+   * `Core.M3LLogger` exposes its correlation id ONLY on events it dispatches
+   * to handlers — no getter, no attach-after-construction API — so with zero
+   * handlers "the logger was seeded with this run's id" is unobservable, and
+   * a regression that dropped the seeding would pass silently. Injecting a
+   * handler lets a test read the id off a dispatched event while the
+   * SEEDING itself stays in the production path.
+   */
+  readonly logHandlers?: readonly Core.M3LLoggerHandler[];
 }
 
 /**
@@ -411,10 +444,12 @@ export function createInProcessExecutor(
   const importImpl =
     internals.importImpl ??
     ((specifier: string): Promise<unknown> => import(specifier));
+  const logHandlers = internals.logHandlers ?? [];
 
   return {
     async execute(options: M3LRunExecutorOptions): Promise<M3LSpawnExitInfo> {
-      const { scriptDir, parameters, dryRun, signal, onLine } = options;
+      const { scriptDir, parameters, dryRun, signal, correlationId, onLine } =
+        options;
       const specifier = join(scriptDir, "dist/command.js");
       let imported: unknown;
       try {
@@ -440,12 +475,17 @@ export function createInProcessExecutor(
         error: onLine,
         heading: onLine,
       };
-      const logger = new Core.M3LLogger([]);
+      // Two independent channels, both seeded from the same id: the logger
+      // stamps every event it emits, and the context hands the id to the
+      // command itself. The logger half needs no `m3l-common` surface at
+      // all — `M3LLogger` has taken `correlationId` since it shipped.
+      const logger = new Core.M3LLogger([...logHandlers], { correlationId });
       const outcome = await candidate.execute(parameters, {
         output,
         logger,
         signal,
         dryRun,
+        correlationId,
       });
       return mapCommandOutcome(outcome, dryRun, signal);
     },
