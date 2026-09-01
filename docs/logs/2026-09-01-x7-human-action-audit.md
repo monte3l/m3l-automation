@@ -125,7 +125,7 @@ green honestly — they simply are not the same set CI runs.
 CI-only gates explicitly (`pnpm knip`, `pnpm check:file-budget`) rather than
 inferring coverage from the pre-push list. And re-run `check:file-budget` after
 any comment-sized edit to a file already near the ceiling — "it passed earlier"
-does not survive a later edit.
+does not survive a later edit. _(promoted → CLAUDE.md)_
 
 ### 4. A test suite can look exhaustive and still not discriminate the bug
 
