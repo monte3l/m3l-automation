@@ -98,9 +98,10 @@ function matchesExpectedType(
  * @returns `true` when `value` satisfies the binding's shape.
  * A sparse array (one with holes — e.g. `new Array(3)`, or an element
  * removed via `delete`) fails closed rather than vacuously passing: every
- * index from `0` to `length - 1` is visited explicitly, so a hole is
- * checked as if it held `undefined`, exactly like the dense
- * all-`undefined` equivalent.
+ * index from `0` to `length - 1` is visited explicitly, and a position
+ * holding no own element fails outright — the same outcome the dense
+ * all-`undefined` equivalent gets, since no {@link
+ * M3LBindingExpectedType} member matches `undefined`.
  *
  * @example
  * ```ts
@@ -115,18 +116,31 @@ export function validateBindingValue(
   value: unknown,
   binding: Pick<M3LStepBinding, "expectedType" | "multiSelect">,
 ): boolean {
-  if (!binding.multiSelect) {
-    return matchesExpectedType(value, binding.expectedType);
+  // Both fields are read exactly once, up front, from the caller's live
+  // object. Re-reading `expectedType` inside the element loop would let a
+  // getter answer "string" for one element and "number" for the next, so no
+  // single expected type would actually have been validated.
+  const { expectedType, multiSelect } = binding;
+  if (!multiSelect) {
+    return matchesExpectedType(value, expectedType);
   }
   if (!Array.isArray(value)) return false;
   // Deliberately NOT `value.every(...)` — `every` skips holes in a sparse
   // array entirely (never invokes its callback for them), so a hole would
   // vacuously pass regardless of `expectedType`. Indexing by `length`
-  // visits every position, including holes, which read back as
-  // `undefined` and correctly fail the type check like a real `undefined`
-  // element would.
-  for (let index = 0; index < value.length; index++) {
-    if (!matchesExpectedType(value[index], binding.expectedType)) {
+  // visits every position, including holes.
+  const elements: readonly unknown[] = value;
+  for (let index = 0; index < elements.length; index++) {
+    // A hole is checked for ABSENCE, not for the value it reads back as:
+    // `elements[index]` on a hole walks the prototype chain, so a polluted
+    // `Array.prototype[0]` could present a type-conforming value where the
+    // array holds no element at all. Gating on own-property existence fails
+    // a hole closed regardless — the same result the un-polluted read
+    // (`undefined`) produces for every `M3LBindingExpectedType` member.
+    if (
+      !Object.hasOwn(elements, index) ||
+      !matchesExpectedType(elements[index], expectedType)
+    ) {
       return false;
     }
   }

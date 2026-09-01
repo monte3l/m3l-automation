@@ -182,9 +182,21 @@ class ReferenceCursor {
     return this.#pos >= this.#text.length;
   }
 
-  /** Returns the character at the current position, or `undefined` at end of text. */
+  /**
+   * Returns the character at the current position, or `undefined` at end of
+   * text.
+   *
+   * The explicit {@link atEnd} gate is load-bearing rather than defensive
+   * noise: an out-of-bounds index read on a string primitive wraps it and
+   * consults `String.prototype`, so a polluted `String.prototype["15"]`
+   * would hand the parser a forged character past the end of the text —
+   * enough to fake the closing `]` of an unterminated bracket and have
+   * malformed text parse as valid. `length` is an own property of the
+   * wrapper and cannot be shadowed, so comparing against it keeps
+   * end-of-text authoritative.
+   */
   peek(): string | undefined {
-    return this.#text[this.#pos];
+    return this.atEnd() ? undefined : this.#text[this.#pos];
   }
 
   /** Returns `true` when `literal` appears starting at the current position. */
@@ -492,17 +504,31 @@ function resolvePropertySegment(
 
 /**
  * Resolves one array-index segment against `current`, or {@link ABSENT}
- * when the index is out of bounds.
+ * when `current` carries no OWN element at that index — whether because the
+ * index is out of bounds, or because it is an in-bounds hole in a sparse
+ * array.
+ *
+ * The gate is `Object.hasOwn`, not `index < array.length`, and mirrors
+ * {@link resolvePropertySegment}: a bounds check passes for an in-bounds
+ * hole, and the raw `array[index]` read that follows walks the prototype
+ * chain, so a polluted `Array.prototype[0]` would resolve as though it were
+ * the array's own element. Own-property existence — rather than the value
+ * read back — is also what keeps a real element holding `undefined`
+ * distinguishable from an absent one: the former resolves THROUGH the
+ * element (so a trailing segment correctly fails the walk), the latter
+ * short-circuits on {@link ABSENT} (so a trailing segment yields
+ * `undefined`).
  *
  * `segment` is a frozen snapshot from `assertStepReferenceShape`, which is
  * where the `typeof index === "number"` screen lives: `array[segment.index]`
  * is a property-key coercion consulting the index's `toString()` — not its
  * `valueOf()` — so an object whose `valueOf` reports `0` (passing a naive
- * bounds check) but whose `toString` reports `"constructor"` or an inherited
+ * range check) but whose `toString` reports `"constructor"` or an inherited
  * method name like `"at"` would reach `Array.prototype`. Rejecting
  * non-numbers at the shape boundary means no such object can ever arrive
  * here. What remains for this function is the RANGE screen — a safe,
- * non-negative integer — applied before any bounds check or array access.
+ * non-negative integer — applied before any own-property check or array
+ * access.
  */
 function resolveIndexSegment(
   current: unknown,
@@ -521,7 +547,7 @@ function resolveIndexSegment(
   }
   const array: readonly unknown[] = current;
   try {
-    return index < array.length ? array[index] : ABSENT;
+    return Object.hasOwn(array, index) ? array[index] : ABSENT;
   } catch (cause) {
     throw new M3LStepReferenceError(`reading index [${String(index)}] threw`, {
       cause,
@@ -534,7 +560,8 @@ function resolveIndexSegment(
  * reference names.
  *
  * Returns `undefined` when a segment names an absent-but-well-formed path
- * (a missing property, or an out-of-bounds array index). Throws when the
+ * (a property the object does not own, or an array index holding no own
+ * element — out of bounds, or an in-bounds hole). Throws when the
  * walk is impossible given the data actually present — e.g. indexing into a
  * non-array value, or reading a property off a non-object value — since
  * that means the reference no longer matches the data it names. Also

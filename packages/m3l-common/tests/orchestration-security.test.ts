@@ -18,8 +18,12 @@
  * `packages/m3l-common/tests/orchestration.test.ts` owns the grammar
  * (`parseStepReference`/`formatStepReference` valid input, emission,
  * canonicalization, round-tripping), the walk's happy/absent/impossible
- * paths, `validateBindingValue`, and the type-level contracts. Between them
- * they cover the same nine exports; neither is a subset of the other.
+ * paths, `validateBindingValue`'s ordinary true/false cases, and the
+ * type-level contracts. Between them they cover the same nine exports;
+ * neither is a subset of the other. `validateBindingValue`'s HOSTILE-input
+ * cases (a sparse array read through a polluted `Array.prototype`, a
+ * getter-backed `expectedType`) live here with the rest of this surface, not
+ * with its ordinary cases in the sibling.
  *
  * Contract source: docs/plans/2026-09-01-orchestration-engine.md § "Slice 2
  * — the promoted surface", plus the behavioral source of truth this module
@@ -49,8 +53,10 @@ import {
   M3LStepReferenceError,
   parseStepReference,
   resolveStepReference,
+  validateBindingValue,
 } from "../src/core/orchestration/index.js";
 import type {
+  M3LBindingExpectedType,
   M3LStepReference,
   M3LStepReferenceSegment,
 } from "../src/core/orchestration/index.js";
@@ -68,6 +74,123 @@ function expectReferenceInvalid(fn: () => unknown): void {
   expect((thrown as M3LStepReferenceError).code).toBe(
     "ERR_STEP_REFERENCE_INVALID",
   );
+}
+
+/**
+ * Asserts `fn` throws an `M3LStepReferenceError` with the reference-invalid
+ * code AND a message that names the offending `segments[index]`, matching the
+ * shape of every other element-level rejection (`assertSegmentShape` composes
+ * `${paramName}.segments[${index}] ...`). The index matters here: the whole
+ * point of element-level validation is telling the caller WHICH element is
+ * bad, and a hole in a non-first position is the case a positional-message
+ * regression would silently mislabel.
+ */
+function expectReferenceInvalidNamingSegment(
+  fn: () => unknown,
+  index: number,
+): void {
+  expectReferenceInvalid(fn);
+  let thrown: unknown;
+  try {
+    fn();
+  } catch (error) {
+    thrown = error;
+  }
+  expect((thrown as M3LStepReferenceError).message).toContain(
+    `segments[${String(index)}]`,
+  );
+}
+
+/**
+ * Sentinel distinguishing "`fn` returned normally" from "`fn` threw
+ * `undefined`" in {@link captureThrown}.
+ */
+const NOTHING_THROWN: unique symbol = Symbol("nothing-thrown");
+
+/**
+ * Returns whatever `fn` threw, or {@link NOTHING_THROWN} when it returned
+ * normally. The prototype-pollution pins below capture with this instead of
+ * asserting via {@link expectReferenceInvalid}: an `expect` evaluated while
+ * `Object.prototype`/`String.prototype` is still polluted would report its
+ * failure through vitest's serializers with every plain object inheriting
+ * the forged keys. Assert after the prototype is restored.
+ */
+function captureThrown(fn: () => unknown): unknown {
+  try {
+    fn();
+    return NOTHING_THROWN;
+  } catch (error) {
+    return error;
+  }
+}
+
+/** Asserts `thrown` is an `M3LStepReferenceError` carrying the reference-invalid code. */
+function expectCapturedReferenceInvalid(thrown: unknown): void {
+  expect(thrown).toBeInstanceOf(M3LStepReferenceError);
+  expect((thrown as M3LStepReferenceError).code).toBe(
+    "ERR_STEP_REFERENCE_INVALID",
+  );
+}
+
+/**
+ * Runs `fn` with every `[key, value]` of `pollution` installed on
+ * `Object.prototype`, always restoring it afterwards — a failing pin must
+ * not leave the forged keys visible to every plain object in the rest of the
+ * run. Also reports `pollutionWasLive`: whether a bare `{}` really presented
+ * each forged key as an INHERITED (non-own) value while `fn` ran, so a pin
+ * cannot keep passing after the pollution silently stops taking effect.
+ */
+function withObjectPrototypePollution<T>(
+  pollution: readonly (readonly [string, unknown])[],
+  fn: () => T,
+): { readonly result: T; readonly pollutionWasLive: boolean } {
+  const prototype = Object.prototype as unknown as Record<string, unknown>;
+  try {
+    for (const [key, value] of pollution) prototype[key] = value;
+    const bare: Record<string, unknown> = {};
+    const pollutionWasLive = pollution.every(
+      ([key, value]) => !Object.hasOwn(bare, key) && bare[key] === value,
+    );
+    return { result: fn(), pollutionWasLive };
+  } finally {
+    // Reflect.deleteProperty rather than `delete prototype[key]`: a computed
+    // `delete` trips @typescript-eslint/no-dynamic-delete.
+    for (const [key] of pollution) {
+      Reflect.deleteProperty(Object.prototype, key);
+    }
+  }
+}
+
+/**
+ * Asserts `array` genuinely has a HOLE at `index` — `index` is in bounds, yet
+ * the array carries no own property there.
+ *
+ * Every sparse-array test below calls this before its real assertion,
+ * because the sparse case is trivially easy to construct DENSELY by
+ * accident: `Array.from({ length: n })`, `.fill(undefined)` and an explicit
+ * `[undefined]` literal all produce own properties whose value happens to be
+ * `undefined`, for which `Object.hasOwn` is TRUE. Those exercise the exact
+ * OPPOSITE branch of the own-property gate under test, so a construction
+ * that silently densified would leave the test passing while proving
+ * nothing.
+ */
+function expectHoleAt(array: readonly unknown[], index: number): void {
+  expect(index).toBeLessThan(array.length);
+  expect(Object.hasOwn(array, index)).toBe(false);
+}
+
+/**
+ * Builds a genuinely sparse array holding `dense` followed by one hole.
+ *
+ * Growing `length` past the last assigned element is the one hole-creating
+ * construction this repo's lint config accepts unambiguously: a sparse array
+ * LITERAL (`[, x]`) trips `no-sparse-arrays`, and every `Array`-based factory
+ * either densifies or reads as a mistake.
+ */
+function withTrailingHole(dense: readonly unknown[]): unknown[] {
+  const array: unknown[] = [...dense];
+  array.length = dense.length + 1;
+  return array;
 }
 
 describe("parseStepReference — rejects dangerous segment names at parse time (fail-closed, not only at resolve time)", () => {
@@ -88,6 +211,62 @@ describe("parseStepReference — rejects dangerous segment names at parse time (
       );
     },
   );
+});
+
+describe("parseStepReference — end-of-text is authoritative, not a character read through String.prototype", () => {
+  /**
+   * `ReferenceCursor.peek()`'s `atEnd()` gate is the guard under test, not
+   * defensive noise: an out-of-bounds index read on a string primitive wraps
+   * it and consults `String.prototype`, so a polluted `String.prototype[15]`
+   * hands the parser a forged character one past the end of
+   * `"step-1.output[0"` — and `parseIndexSegment`'s `cursor.peek() !== "]"`
+   * accepts it as the closing bracket, so unterminated text parses as a
+   * valid reference, contradicting the documented "never returns a partial
+   * or best-effort result". `length` is an own property of the wrapper and
+   * cannot be shadowed, so comparing against it keeps end-of-text
+   * unforgeable.
+   */
+  const UNTERMINATED = "step-1.output[0";
+
+  /**
+   * Parses `UNTERMINATED` with `String.prototype[15]` forging a closing
+   * bracket one past its end, always restoring the prototype. Reports
+   * `forgedCharacterWasVisible` — evaluated first, inside the polluted
+   * window — because if the forged index ever stops lining up with the text
+   * length this pin would silently degrade into re-testing the ordinary
+   * unterminated-bracket case below.
+   */
+  function parseUnderForgedBracket(): {
+    readonly forgedCharacterWasVisible: boolean;
+    readonly thrown: unknown;
+  } {
+    const pollutedPrototype = String.prototype as unknown as Record<
+      string,
+      unknown
+    >;
+    pollutedPrototype[15] = "]";
+    try {
+      return {
+        forgedCharacterWasVisible: UNTERMINATED[15] === "]",
+        thrown: captureThrown(() => parseStepReference(UNTERMINATED)),
+      };
+    } finally {
+      delete pollutedPrototype[15];
+    }
+  }
+
+  test("throws for unterminated bracket text even when String.prototype forges the closing bracket past the end", () => {
+    expect(UNTERMINATED.length).toBe(15);
+
+    const { forgedCharacterWasVisible, thrown } = parseUnderForgedBracket();
+
+    expect(forgedCharacterWasVisible).toBe(true);
+    expectCapturedReferenceInvalid(thrown);
+  });
+
+  test("throws for the same unterminated bracket text on a clean runtime (the pollution changes nothing)", () => {
+    expectReferenceInvalid(() => parseStepReference(UNTERMINATED));
+  });
 });
 
 describe("resolveStepReference — forbidden prototype-pollution segments (walk-time, independent of parse-time)", () => {
@@ -178,6 +357,56 @@ describe("resolveStepReference — array-prototype leak prevention for index seg
     }
   });
 
+  // MUST-FIX (2026-09-01) — the case the test above does NOT reach. Its
+  // source is an EMPTY array, so the absent sentinel comes back for reasons
+  // unrelated to own-property existence, leaving the describe's stated
+  // guarantee unproven for the in-bounds case. `resolveIndexSegment` gated on
+  // BOUNDS only — `index < array.length ? array[index] : ABSENT` — unlike
+  // `resolvePropertySegment`, which correctly gates on `Object.hasOwn`. For a
+  // sparse array the bounds check passes while the position owns no element,
+  // so the raw read walks the prototype chain and returns the polluted value
+  // ("LEAKED") instead of `undefined`.
+  test("never returns a value inherited from Array.prototype for an IN-BOUNDS index that holds no own element (a sparse-array hole)", () => {
+    const items = withTrailingHole([]);
+    expectHoleAt(items, 0);
+
+    const pollutedPrototype = Array.prototype as unknown as Record<
+      string,
+      unknown
+    >;
+    pollutedPrototype[0] = "LEAKED";
+
+    try {
+      const reference = parseStepReference("step-1.output.items[0]");
+
+      expect(resolveStepReference(reference, { items })).toBeUndefined();
+    } finally {
+      delete pollutedPrototype[0];
+    }
+  });
+
+  // The same leak one level deeper: the hole is in a non-first position of a
+  // longer array, so a fix that special-cased "empty array" or "index 0"
+  // rather than consulting own-property existence would still leak here.
+  test("never returns a value inherited from Array.prototype for an in-bounds hole that follows real elements", () => {
+    const items = withTrailingHole(["real-0", "real-1"]);
+    expectHoleAt(items, 2);
+
+    const pollutedPrototype = Array.prototype as unknown as Record<
+      string,
+      unknown
+    >;
+    pollutedPrototype[2] = "LEAKED";
+
+    try {
+      const reference = parseStepReference("step-1.output.items[2]");
+
+      expect(resolveStepReference(reference, { items })).toBeUndefined();
+    } finally {
+      delete pollutedPrototype[2];
+    }
+  });
+
   test.each<[string, unknown]>([
     [
       "toString diverges from valueOf to name the Array constructor",
@@ -204,6 +433,50 @@ describe("resolveStepReference — array-prototype leak prevention for index seg
       expectReferenceInvalid(() => resolveStepReference(reference, source));
     },
   );
+});
+
+describe("resolveStepReference — own-property gating for index segments does not over-reject a real element", () => {
+  // The benign direction of the fix above. Gating on own-property existence
+  // rather than on the VALUE is the whole point: an element that legitimately
+  // holds `undefined` is present and must resolve through the real element,
+  // while a hole is absent. Both return `undefined` from a terminal segment,
+  // so the third test discriminates them through a trailing segment — the
+  // only externally observable difference.
+  test("resolves a dense in-bounds element normally", () => {
+    const reference = parseStepReference("step-1.output.items[0]");
+
+    expect(resolveStepReference(reference, { items: ["real"] })).toBe("real");
+  });
+
+  test("resolves an element whose real value is undefined via the element itself, not the absent sentinel", () => {
+    const items: unknown[] = [undefined];
+    expect(Object.hasOwn(items, 0)).toBe(true);
+    const reference = parseStepReference("step-1.output.items[0]");
+
+    expect(resolveStepReference(reference, { items })).toBeUndefined();
+  });
+
+  test("a trailing segment after a real undefined element makes the walk impossible", () => {
+    const reference = parseStepReference("step-1.output.items[0].x");
+    const items: unknown[] = [undefined];
+    expect(Object.hasOwn(items, 0)).toBe(true);
+
+    expectReferenceInvalid(() => resolveStepReference(reference, { items }));
+  });
+
+  // The other half of the pair above, and the reason the own-property gate
+  // must not be replaced by a `value !== undefined` check: a HOLE is absent,
+  // so the walk short-circuits on the absent sentinel and never attempts the
+  // trailing `.x` at all. Today this throws instead (the bounds-only gate
+  // hands the walk a phantom `undefined` element), so it is RED alongside the
+  // leak tests above and turns GREEN with the same fix.
+  test("a trailing segment after a hole short-circuits on the absent sentinel rather than walking a phantom undefined element", () => {
+    const reference = parseStepReference("step-1.output.items[0].x");
+    const items = withTrailingHole([]);
+    expectHoleAt(items, 0);
+
+    expect(resolveStepReference(reference, { items })).toBeUndefined();
+  });
 });
 
 describe("resolveStepReference — hostile (throwing) getters surface as a typed M3LStepReferenceError", () => {
@@ -474,6 +747,84 @@ describe("resolveStepReference — narrows a malformed SEGMENT (array element), 
 
       expectReferenceInvalid(() =>
         resolveStepReference(reference, { safe: "val" }),
+      );
+    },
+  );
+});
+
+/**
+ * MUST-FIX (2026-09-01) — a SPARSE `segments` array bypasses element
+ * validation entirely, the same hole-skipping defect class this PR already
+ * fixed once for `validateBindingValue` (see
+ * `packages/m3l-common/src/core/orchestration/binding.ts`, which deliberately
+ * avoids `Array.prototype.every` for exactly this reason).
+ *
+ * `assertStepReferenceShape` validates elements with
+ * `rawSegments.map(assertSegmentShape)`, and `Array.prototype.map` never
+ * invokes its callback for a hole AND preserves the hole in the result. So
+ * `assertSegmentShape` never runs for a hole, and the first downstream read of
+ * `segment.kind` — the `for (const segment of validated.segments)` loop in
+ * both entry points, whose iteration protocol yields `undefined` for a hole —
+ * throws a raw `TypeError`, outside the documented `@throws
+ * {@link M3LStepReferenceError}` contract.
+ *
+ * That matters beyond tidiness: `rethrowAsConsoleError` in
+ * `packages/m3l-console-server/src/sessions/reference.ts` passes a raw
+ * `TypeError` through untouched, so the HTTP envelope classifies caller input
+ * as a 500 instead of a 400 — the same misclassification the
+ * malformed-element block above exists to prevent, reached through a shape
+ * those cases cannot express (a hole is not a value, so it cannot appear in
+ * `MALFORMED_SEGMENT_CASES`).
+ *
+ * A hole in a NON-FIRST position is covered alongside the lone hole: only the
+ * lone hole is obvious, and a fix that validated `segments[0]` (or bailed on
+ * an empty-looking array) rather than every in-bounds position would still
+ * fail open on `[validProperty, <hole>]`.
+ */
+const SPARSE_SEGMENT_CASES: [
+  string,
+  readonly M3LStepReferenceSegment[],
+  number,
+][] = [
+  ["a lone hole", [], 0],
+  [
+    "a hole following a valid property segment",
+    [{ kind: "property", name: "messages" }],
+    1,
+  ],
+];
+
+describe("formatStepReference — a sparse `segments` array cannot skip element validation (Array.prototype.map does not visit holes)", () => {
+  test.each<[string, readonly M3LStepReferenceSegment[], number]>(
+    SPARSE_SEGMENT_CASES,
+  )(
+    "throws M3LStepReferenceError (code ERR_STEP_REFERENCE_INVALID) naming the offending element, not a raw TypeError, for %s",
+    (_label, denseSegments, holeIndex) => {
+      const segments = withTrailingHole(denseSegments);
+      expectHoleAt(segments, holeIndex);
+      const reference = { ordinal: 1, segments } as unknown as M3LStepReference;
+
+      expectReferenceInvalidNamingSegment(
+        () => formatStepReference(reference),
+        holeIndex,
+      );
+    },
+  );
+});
+
+describe("resolveStepReference — a sparse `segments` array cannot skip element validation (Array.prototype.map does not visit holes)", () => {
+  test.each<[string, readonly M3LStepReferenceSegment[], number]>(
+    SPARSE_SEGMENT_CASES,
+  )(
+    "throws M3LStepReferenceError (code ERR_STEP_REFERENCE_INVALID) naming the offending element, not a raw TypeError, for %s",
+    (_label, denseSegments, holeIndex) => {
+      const segments = withTrailingHole(denseSegments);
+      expectHoleAt(segments, holeIndex);
+      const reference = { ordinal: 1, segments } as unknown as M3LStepReference;
+
+      expectReferenceInvalidNamingSegment(
+        () => resolveStepReference(reference, { messages: ["hi"] }),
+        holeIndex,
       );
     },
   );
@@ -850,4 +1201,253 @@ describe("resolveStepReference — the two numeric index screens that survive th
       );
     },
   );
+});
+
+/**
+ * `validateBindingValue`'s hostile-input surface. Its ordinary true/false
+ * cases live in the canonical sibling; these two belong here because each
+ * drives a value the public types forbid — an array position that owns no
+ * element while `Array.prototype` is polluted, and an `expectedType` backed
+ * by a getter that answers differently on every read.
+ */
+describe("validateBindingValue — a sparse array fails closed even when Array.prototype supplies a conforming value", () => {
+  // Byte-for-byte the defect the index-segment walk had: the element loop
+  // read `elements[index]` gated only on the type check, so the claim that a
+  // hole "reads back as undefined and correctly fails the type check" holds
+  // ONLY on a clean prototype. A polluted `Array.prototype[0]` presents a
+  // conforming value at a position the array does not own, so the documented
+  // "a sparse array fails closed" guarantee fails open.
+  test("returns false for a hole whose polluted Array.prototype value matches expectedType", () => {
+    const value = withTrailingHole([]);
+    expectHoleAt(value, 0);
+
+    const pollutedPrototype = Array.prototype as unknown as Record<
+      string,
+      unknown
+    >;
+    pollutedPrototype[0] = "leak";
+
+    let result: boolean;
+    try {
+      result = validateBindingValue(value, {
+        expectedType: "string",
+        multiSelect: true,
+      });
+    } finally {
+      delete pollutedPrototype[0];
+    }
+
+    expect(result).toBe(false);
+  });
+
+  test("returns false for a hole that follows real conforming elements, with the prototype polluted at that index", () => {
+    const value = withTrailingHole(["a", "b"]);
+    expectHoleAt(value, 2);
+
+    const pollutedPrototype = Array.prototype as unknown as Record<
+      string,
+      unknown
+    >;
+    pollutedPrototype[2] = "leak";
+
+    let result: boolean;
+    try {
+      result = validateBindingValue(value, {
+        expectedType: "string",
+        multiSelect: true,
+      });
+    } finally {
+      delete pollutedPrototype[2];
+    }
+
+    expect(result).toBe(false);
+  });
+
+  test("returns true for the dense equivalent, so the own-property gate does not reject a real array", () => {
+    expect(
+      validateBindingValue(["a", "b", "c"], {
+        expectedType: "string",
+        multiSelect: true,
+      }),
+    ).toBe(true);
+  });
+});
+
+describe("validateBindingValue — reads expectedType exactly once, so no per-element expected type can be smuggled in", () => {
+  // `expectedType` and `multiSelect` are destructured once up front. Were
+  // `expectedType` re-read inside the element loop, the getter below would
+  // answer "string" for element 0 and "number" for element 1 — and
+  // `["a", 42]` would pass while NO single expected type was ever
+  // validated. The single-first-read semantics the shipped code has instead
+  // validate every element against the FIRST read ("string"), so element 1
+  // (`42`) fails and the result is `false`. The read count is the direct
+  // pin: one read, not one per element.
+  test("validates every element against the first read of a divergent expectedType getter, and reads it once", () => {
+    const reads: M3LBindingExpectedType[] = [];
+    const binding = {
+      multiSelect: true,
+      get expectedType(): M3LBindingExpectedType {
+        const next: M3LBindingExpectedType =
+          reads.length === 0 ? "string" : "number";
+        reads.push(next);
+        return next;
+      },
+    };
+
+    expect(validateBindingValue(["a", 42], binding)).toBe(false);
+    expect(reads).toEqual(["string"]);
+  });
+
+  test("reads multiSelect once too — a getter answering false then true cannot re-route the check", () => {
+    const reads: boolean[] = [];
+    const binding = {
+      expectedType: "string" as const,
+      get multiSelect(): boolean {
+        reads.push(reads.length === 0);
+        return reads.length === 1;
+      },
+    };
+
+    // First read is `true`, so the array branch runs; a second read
+    // answering `false` would have routed the whole array through the scalar
+    // branch instead — a different verdict from a different code path.
+    expect(validateBindingValue(["a", "b"], binding)).toBe(true);
+    expect(reads).toEqual([true]);
+  });
+});
+
+/**
+ * MUST-FIX (2026-09-01) — `shape.ts` reads `value["ordinal"]`,
+ * `value["segments"]`, `value["kind"]`, `value["name"]` and
+ * `value["index"]` WITHOUT gating on own-property existence, so under
+ * `Object.prototype` pollution absence and an inherited value are
+ * indistinguishable: `isPlainObject` (`core/utils/guards.ts`) accepts
+ * `proto === Object.prototype`, so a bare `{}` inherits a `kind:
+ * "property"` plus a `name` and validates as a real segment — or, at the
+ * reference level, inherits an `ordinal`/`segments` pair and validates as a
+ * real reference. Same hole-vs-inherited-value confusion as the sparse-array
+ * defects above, one level up, and it bypasses the boundary whose whole
+ * purpose is letting the walk/emit logic trust what it is handed.
+ *
+ * No legitimate caller shape loses to an `Object.hasOwn` gate: object
+ * literals, `JSON.parse` output and `Object.create(null)` bags all OWN their
+ * keys, and `isPlainObject` already rejects class instances. The benign
+ * block below pins that, asserting own-ness explicitly.
+ */
+describe("formatStepReference / resolveStepReference — an inherited field cannot stand in for a missing one (Object.prototype pollution)", () => {
+  const REFERENCE_LEVEL_POLLUTION: readonly (readonly [string, unknown])[] = [
+    ["ordinal", 1],
+    ["segments", []],
+  ];
+  const SEGMENT_LEVEL_POLLUTION: readonly (readonly [string, unknown])[] = [
+    ["kind", "property"],
+    ["name", "leaked"],
+  ];
+
+  test("resolveStepReference rejects a bare {} reference whose ordinal/segments are inherited", () => {
+    const reference = {} as unknown as M3LStepReference;
+
+    const { result, pollutionWasLive } = withObjectPrototypePollution(
+      REFERENCE_LEVEL_POLLUTION,
+      () => captureThrown(() => resolveStepReference(reference, { safe: "v" })),
+    );
+
+    expect(pollutionWasLive).toBe(true);
+    expectCapturedReferenceInvalid(result);
+  });
+
+  test("formatStepReference rejects a bare {} reference whose ordinal/segments are inherited", () => {
+    const reference = {} as unknown as M3LStepReference;
+
+    const { result, pollutionWasLive } = withObjectPrototypePollution(
+      REFERENCE_LEVEL_POLLUTION,
+      () => captureThrown(() => formatStepReference(reference)),
+    );
+
+    expect(pollutionWasLive).toBe(true);
+    expectCapturedReferenceInvalid(result);
+  });
+
+  test("resolveStepReference rejects a bare {} SEGMENT whose kind/name are inherited, rather than walking it", () => {
+    const reference = {
+      ordinal: 1,
+      segments: [{}],
+    } as unknown as M3LStepReference;
+
+    const { result, pollutionWasLive } = withObjectPrototypePollution(
+      SEGMENT_LEVEL_POLLUTION,
+      () =>
+        captureThrown(() =>
+          resolveStepReference(reference, { leaked: "walked-anyway" }),
+        ),
+    );
+
+    expect(pollutionWasLive).toBe(true);
+    expectCapturedReferenceInvalid(result);
+  });
+
+  test("formatStepReference rejects a bare {} SEGMENT whose kind/name are inherited, rather than emitting it", () => {
+    const reference = {
+      ordinal: 1,
+      segments: [{}],
+    } as unknown as M3LStepReference;
+
+    const { result, pollutionWasLive } = withObjectPrototypePollution(
+      SEGMENT_LEVEL_POLLUTION,
+      () => captureThrown(() => formatStepReference(reference)),
+    );
+
+    expect(pollutionWasLive).toBe(true);
+    expectCapturedReferenceInvalid(result);
+  });
+});
+
+describe("formatStepReference / resolveStepReference — own-property gating accepts every legitimate caller shape", () => {
+  test("an ordinary object literal still formats and resolves", () => {
+    const reference: M3LStepReference = {
+      ordinal: 2,
+      segments: [
+        { kind: "property", name: "items" },
+        { kind: "index", index: 0 },
+      ],
+    };
+    expect(Object.hasOwn(reference, "ordinal")).toBe(true);
+    expect(Object.hasOwn(reference, "segments")).toBe(true);
+    const [firstSegment] = reference.segments;
+    expect(firstSegment).toBeDefined();
+    if (firstSegment !== undefined) {
+      expect(Object.hasOwn(firstSegment, "kind")).toBe(true);
+      expect(Object.hasOwn(firstSegment, "name")).toBe(true);
+    }
+
+    expect(formatStepReference(reference)).toBe("step-2.output.items[0]");
+    expect(resolveStepReference(reference, { items: ["first"] })).toBe("first");
+  });
+
+  test("a JSON.parse-produced reference still formats and resolves (its keys are own)", () => {
+    const reference = JSON.parse(
+      '{"ordinal":3,"segments":[{"kind":"property","name":"items"},{"kind":"index","index":1}]}',
+    ) as M3LStepReference;
+    expect(Object.hasOwn(reference, "ordinal")).toBe(true);
+
+    expect(formatStepReference(reference)).toBe("step-3.output.items[1]");
+    expect(resolveStepReference(reference, { items: ["a", "b"] })).toBe("b");
+  });
+
+  test("an Object.create(null) bag with real own keys still formats and resolves", () => {
+    const segment = Object.create(null) as Record<string, unknown>;
+    segment["kind"] = "property";
+    segment["name"] = "items";
+    const reference = Object.create(null) as Record<string, unknown>;
+    reference["ordinal"] = 4;
+    reference["segments"] = [segment];
+    expect(Object.hasOwn(segment, "kind")).toBe(true);
+    expect(Object.hasOwn(reference, "segments")).toBe(true);
+
+    const typedReference = reference as unknown as M3LStepReference;
+    expect(formatStepReference(typedReference)).toBe("step-4.output.items");
+    expect(resolveStepReference(typedReference, { items: ["only"] })).toEqual([
+      "only",
+    ]);
+  });
 });

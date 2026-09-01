@@ -9,25 +9,25 @@
           "file": "packages/m3l-common/src/core/orchestration/step-reference.ts",
           "symbol": "M3LStepReference",
           "lines": "82-85",
-          "blob": "cb70c0b0ab581ca0a9c921e66ef14090344a1240"
+          "blob": "6e2fdee762edddc04c4cd94248148240148d4636"
         },
         {
           "file": "packages/m3l-common/src/core/orchestration/step-reference.ts",
           "symbol": "M3LStepReferenceSegment",
           "lines": "64-70",
-          "blob": "cb70c0b0ab581ca0a9c921e66ef14090344a1240"
+          "blob": "6e2fdee762edddc04c4cd94248148240148d4636"
         },
         {
           "file": "packages/m3l-common/src/core/orchestration/binding.ts",
           "symbol": "M3LBindingExpectedType",
           "lines": "29-29",
-          "blob": "a50bafc39e20e459653c93f2289e89370bc0209c"
+          "blob": "40893166efdf5c8a211ad31fe5556a95c78cf6b8"
         },
         {
           "file": "packages/m3l-common/src/core/orchestration/binding.ts",
           "symbol": "M3LStepBinding",
           "lines": "51-58",
-          "blob": "a50bafc39e20e459653c93f2289e89370bc0209c"
+          "blob": "40893166efdf5c8a211ad31fe5556a95c78cf6b8"
         },
         {
           "file": "packages/m3l-common/src/core/orchestration/M3LStepReferenceError.ts",
@@ -45,19 +45,19 @@
           "file": "packages/m3l-common/src/core/orchestration/step-reference.ts",
           "symbol": "parseStepReference",
           "lines": "356-386",
-          "blob": "cb70c0b0ab581ca0a9c921e66ef14090344a1240"
+          "blob": "6e2fdee762edddc04c4cd94248148240148d4636"
         },
         {
           "file": "packages/m3l-common/src/core/orchestration/step-reference.ts",
           "symbol": "formatStepReference",
           "lines": "389-420",
-          "blob": "cb70c0b0ab581ca0a9c921e66ef14090344a1240"
+          "blob": "6e2fdee762edddc04c4cd94248148240148d4636"
         },
         {
           "file": "packages/m3l-common/src/core/orchestration/step-reference.ts",
           "symbol": "resolveStepReference",
           "lines": "511-530",
-          "blob": "cb70c0b0ab581ca0a9c921e66ef14090344a1240"
+          "blob": "6e2fdee762edddc04c4cd94248148240148d4636"
         }
       ],
       "retrieved": "2026-09-01"
@@ -69,13 +69,13 @@
           "file": "packages/m3l-common/src/core/orchestration/binding.ts",
           "symbol": "validateBindingValue",
           "lines": "104-130",
-          "blob": "a50bafc39e20e459653c93f2289e89370bc0209c"
+          "blob": "40893166efdf5c8a211ad31fe5556a95c78cf6b8"
         },
         {
           "file": "packages/m3l-common/src/core/orchestration/binding.ts",
           "symbol": "M3LStepBinding",
           "lines": "51-58",
-          "blob": "a50bafc39e20e459653c93f2289e89370bc0209c"
+          "blob": "40893166efdf5c8a211ad31fe5556a95c78cf6b8"
         }
       ],
       "retrieved": "2026-09-01"
@@ -87,7 +87,7 @@
           "file": "packages/m3l-common/src/core/orchestration/step-reference.ts",
           "symbol": "resolveStepReference",
           "lines": "511-530",
-          "blob": "cb70c0b0ab581ca0a9c921e66ef14090344a1240"
+          "blob": "6e2fdee762edddc04c4cd94248148240148d4636"
         },
         {
           "file": "packages/m3l-common/src/core/security/DangerousKeys.ts",
