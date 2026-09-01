@@ -16,9 +16,10 @@
  */
 
 import { isDangerousKey } from "../security/index.js";
-import { isObject, isPlainObject } from "../utils/index.js";
+import { isObject } from "../utils/index.js";
 
 import { M3LStepReferenceError } from "./M3LStepReferenceError.js";
+import { assertStepReferenceShape } from "./shape.js";
 
 /** The literal prefix every valid reference text starts with. */
 const STEP_PREFIX = "step-";
@@ -307,32 +308,6 @@ function parseDottedSegment(
   return { kind: "property", name };
 }
 
-/**
- * Narrows an arbitrary `unknown` value to the well-formed shape of a
- * {@link M3LStepReference} — a plain object with a numeric `ordinal` and an
- * array `segments` — or throws {@link M3LStepReferenceError}. Used at the
- * public entry points ({@link formatStepReference}, {@link
- * resolveStepReference}) that accept an already-parsed reference rather
- * than raw caller text, so a non-object/malformed argument is classified as
- * a caller error rather than reaching a raw `TypeError` deeper in the
- * function.
- */
-function assertStepReferenceShape(
-  value: unknown,
-  paramName: string,
-): M3LStepReference {
-  if (
-    !isPlainObject(value) ||
-    typeof value["ordinal"] !== "number" ||
-    !Array.isArray(value["segments"])
-  ) {
-    throw new M3LStepReferenceError(
-      `${paramName} must be a parsed M3LStepReference object, got ${typeof value}`,
-    );
-  }
-  return value as unknown as M3LStepReference;
-}
-
 /** Parses one path segment — dotted property, bracketed index, or bracket-quoted property. */
 function parseSegment(
   text: string,
@@ -415,9 +390,11 @@ export function parseStepReference(text: string): M3LStepReference {
  * @param reference - The reference to format.
  * @returns The formatted reference text.
  * @throws {@link M3LStepReferenceError} with code `ERR_STEP_REFERENCE_INVALID`
- *   when `reference` is not a well-formed `M3LStepReference`, or when it
- *   carries an ordinal/index/property-name value {@link parseStepReference}
- *   would refuse to produce.
+ *   when `reference` is not a well-formed `M3LStepReference` — including a
+ *   `segments` array containing a malformed element (not a plain object, an
+ *   unrecognised `kind`, or a `name`/`index` of the wrong type for its
+ *   `kind`) — or when it carries an ordinal/index/property-name value
+ *   {@link parseStepReference} would refuse to produce.
  * @example
  * ```ts
  * import { formatStepReference } from "@m3l-automation/m3l-common/core";
@@ -584,9 +561,12 @@ function resolveIndexSegment(
  * @param source - The value to walk, typically a step's recorded output.
  * @returns The resolved value, or `undefined` for an absent-but-well-formed path.
  * @throws {@link M3LStepReferenceError} with code `ERR_STEP_REFERENCE_INVALID`
- *   when `reference` is not a well-formed `M3LStepReference`, when the walk
- *   is impossible given the data actually present, or when a segment names
- *   a forbidden property.
+ *   when `reference` is not a well-formed `M3LStepReference` — including a
+ *   `segments` array containing a malformed element (not a plain object, an
+ *   unrecognised `kind`, or a `name`/`index` of the wrong type for its
+ *   `kind`), which is rejected outright rather than silently resolving to
+ *   `undefined` — when the walk is impossible given the data actually
+ *   present, or when a segment names a forbidden property.
  * @example
  * ```ts
  * import {

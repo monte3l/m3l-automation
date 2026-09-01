@@ -52,7 +52,19 @@ Core.resolveStepReference(reference, {
 }); // 42
 ```
 
-`formatStepReference` and `parseStepReference` are exact inverses, and deliberately enforce the _same_ rules — the formatter applies the parser's dangerous-name screen, digit-run cap and safe-integer check, so it cannot produce text the parser would reject. A reference therefore round-trips through storage in either direction without drifting.
+`formatStepReference` **canonicalizes**: it is stable, not byte-preserving. A parsed reference always formats to text the parser accepts and re-parses to an equal reference — `parse(format(parse(s)))` equals `parse(s)` for every `s` the parser accepts — but the emitted text is the canonical spelling, which is not always the input spelling. A bracket-quoted key that happens to be a legal identifier comes back in dot form:
+
+```typescript
+Core.formatStepReference(Core.parseStepReference('step-1.output["messages"]'));
+// "step-1.output.messages"      — canonical dot form
+
+Core.formatStepReference(
+  Core.parseStepReference('step-1.output["total count"]'),
+);
+// 'step-1.output["total count"]' — unchanged; the name is not a legal identifier
+```
+
+Both directions enforce the _same_ rules — the formatter applies the parser's dangerous-name screen, digit-run cap and safe-integer check, so it cannot produce text the parser would reject. A reference therefore survives storage without ever drifting in meaning, but compare references by parsing them rather than by comparing their text.
 
 ## Typed bindings
 

@@ -9,13 +9,13 @@
           "file": "packages/m3l-common/src/core/orchestration/step-reference.ts",
           "symbol": "M3LStepReference",
           "lines": "82-85",
-          "blob": "cf55ed8b5c895f0a4bd4071325383eb5da26c7cf"
+          "blob": "ac6c1e2f7bccdc41ee82f600a1d49253136ff0be"
         },
         {
           "file": "packages/m3l-common/src/core/orchestration/step-reference.ts",
           "symbol": "M3LStepReferenceSegment",
           "lines": "64-70",
-          "blob": "cf55ed8b5c895f0a4bd4071325383eb5da26c7cf"
+          "blob": "ac6c1e2f7bccdc41ee82f600a1d49253136ff0be"
         },
         {
           "file": "packages/m3l-common/src/core/orchestration/binding.ts",
@@ -45,19 +45,19 @@
           "file": "packages/m3l-common/src/core/orchestration/step-reference.ts",
           "symbol": "parseStepReference",
           "lines": "356-386",
-          "blob": "cf55ed8b5c895f0a4bd4071325383eb5da26c7cf"
+          "blob": "ac6c1e2f7bccdc41ee82f600a1d49253136ff0be"
         },
         {
           "file": "packages/m3l-common/src/core/orchestration/step-reference.ts",
           "symbol": "formatStepReference",
           "lines": "389-420",
-          "blob": "cf55ed8b5c895f0a4bd4071325383eb5da26c7cf"
+          "blob": "ac6c1e2f7bccdc41ee82f600a1d49253136ff0be"
         },
         {
           "file": "packages/m3l-common/src/core/orchestration/step-reference.ts",
           "symbol": "resolveStepReference",
           "lines": "511-530",
-          "blob": "cf55ed8b5c895f0a4bd4071325383eb5da26c7cf"
+          "blob": "ac6c1e2f7bccdc41ee82f600a1d49253136ff0be"
         }
       ],
       "retrieved": "2026-09-01"
@@ -87,7 +87,7 @@
           "file": "packages/m3l-common/src/core/orchestration/step-reference.ts",
           "symbol": "resolveStepReference",
           "lines": "511-530",
-          "blob": "cf55ed8b5c895f0a4bd4071325383eb5da26c7cf"
+          "blob": "ac6c1e2f7bccdc41ee82f600a1d49253136ff0be"
         },
         {
           "file": "packages/m3l-common/src/core/security/DangerousKeys.ts",
