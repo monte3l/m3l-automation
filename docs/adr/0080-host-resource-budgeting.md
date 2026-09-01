@@ -156,3 +156,28 @@ kill choice is nearly as bad as the freeze it replaces.
 - `docs/logs/2026-08-27-parallel-session-oom.md` — the audit measurements.
 - `docs/logs/2026-08-19-check-test-counts-contention.md` — the earlier,
   unresolved memory-exhaustion hypothesis this ADR confirms.
+
+## Update 2026-09-01 — `lefthook-local.yml` is provisioned into new worktrees
+
+Decision 3's serial-`pre-push` fallback is delivered as a gitignored
+`lefthook-local.yml` written by `bin/setup-host-resources.mjs --apply`. Because
+it is gitignored, a worktree created by `pnpm worktree:new` did **not** receive
+it — the new checkout silently inherited lefthook's parallel default, which is
+exactly the configuration this ADR exists to prevent. It was not theoretical:
+a worktree provisioned this way lost two pushes to an ESLint heap OOM (exit 134) before the missing file was noticed.
+
+`lefthook-local.yml` therefore joins `.worktreeinclude`, whose literal entries
+`bin/worktree-setup.mjs` already copies from the main checkout. Notes on that
+choice:
+
+- It is copied, not regenerated. Re-running `setup-host-resources.mjs --apply`
+  per worktree would be more principled, but `--apply` shells out to `sudo` for
+  its systemd and earlyoom steps — prompting for a password on every
+  `worktree:new` is a worse failure mode than a copied file.
+- On a host with ≥20 GiB RAM the file does not exist, so the copy is skipped
+  silently and `check:worktree` emits the same benign "absent from the main
+  checkout" warning it already emits for `.env` and `.env.local`.
+- `.claude/hooks/guard-worktree-ready.mjs` warns at SessionStart when a
+  `.worktreeinclude` literal present in main is missing locally, so a worktree
+  created _before_ this change is flagged rather than left silently
+  under-provisioned.

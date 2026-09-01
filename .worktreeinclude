@@ -2,3 +2,11 @@
 
 .env
 .env.local
+
+# ADR-0080's per-host pre-push override (written by
+# `bin/setup-host-resources.mjs --apply` on a memory-constrained host to force
+# lefthook serial). Copied rather than regenerated because `--apply` needs sudo
+# for its systemd/earlyoom steps, and prompting for a password on every
+# `worktree:new` is worse than a stale copy. Absent on a roomy host, where
+# worktree-setup skips it silently.
+lefthook-local.yml
