@@ -4757,14 +4757,6 @@ describe("runScript() — composition-root wrapper", () => {
   });
 
   describe("type-level contract", () => {
-    test("M3LRunScriptOptions: every field is optional", () => {
-      expectTypeOf<M3LRunScriptOptions>().toEqualTypeOf<{
-        readonly dryRun?: boolean;
-        readonly report?: boolean;
-        readonly trail?: Pick<M3LBreadcrumbTrail, "entries">;
-      }>();
-    });
-
     test("runScript returns Promise<void>", () => {
       expectTypeOf(runScript).returns.toEqualTypeOf<Promise<void>>();
     });
@@ -5575,12 +5567,6 @@ describe("M3LScript — accessors (ADR-0035 phase 4a)", () => {
   });
 
   describe("type-level contract", () => {
-    test("M3LScriptRunOptions: dryRun is optional", () => {
-      expectTypeOf<M3LScriptRunOptions>().toEqualTypeOf<{
-        readonly dryRun?: boolean;
-      }>();
-    });
-
     test("M3LScriptHookContext.dryRun is exactly boolean, never boolean | undefined", () => {
       expectTypeOf<M3LScriptHookContext>().toHaveProperty("dryRun");
       expectTypeOf<M3LScriptHookContext["dryRun"]>().toEqualTypeOf<boolean>();

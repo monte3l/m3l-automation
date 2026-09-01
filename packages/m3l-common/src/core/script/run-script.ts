@@ -53,6 +53,13 @@ import type { M3LScriptRunOptions } from "./M3LScriptOptions.js";
 export interface M3LRunScriptOptions {
   /** Forwarded to `script.run(mainFn, { dryRun })`; defaults to `false`. */
   readonly dryRun?: boolean;
+  /**
+   * Forwarded to `script.run(mainFn, { correlationId })` — this run's
+   * correlation id (ADR-0070), joining it to a caller-side trace. Omitted
+   * means the script resolves its own; see
+   * {@link M3LScriptRunOptions.correlationId} for the full precedence.
+   */
+  readonly correlationId?: string;
   /** Whether to best-effort persist an `M3LRunReport`; defaults to `true`. */
   readonly report?: boolean;
   /**
@@ -63,6 +70,31 @@ export interface M3LRunScriptOptions {
    * `core/diagnostics/run-report.ts`.
    */
   readonly trail?: Pick<M3LBreadcrumbTrail, "entries">;
+}
+
+/**
+ * Builds the `M3LScriptRunOptions` bag {@link runScript} hands to
+ * `script.run`, forwarding every field rather than a hand-picked subset.
+ *
+ * This used to be an inline `Required<M3LScriptRunOptions>` literal, whose
+ * point was that a newly-added field failed to compile instead of being
+ * silently dropped (the ADR-0035 phase-2 `wrapError` defect). It can no
+ * longer be `Required<>`: `correlationId` has no total default, and
+ * `exactOptionalPropertyTypes` forbids writing `undefined` into an optional
+ * key, so it is spread only when the caller supplied one. The exhaustiveness
+ * guarantee moves to a type-level assertion in
+ * `tests/script-correlation.test.ts`, which fails the moment
+ * `M3LScriptRunOptions` gains a field this function does not forward.
+ */
+function forwardedRunOptions(
+  options: M3LRunScriptOptions | undefined,
+): M3LScriptRunOptions {
+  return {
+    dryRun: options?.dryRun ?? false,
+    ...(options?.correlationId !== undefined && {
+      correlationId: options.correlationId,
+    }),
+  };
 }
 
 /**
@@ -399,14 +431,7 @@ export async function runScript(
     ? new M3LRunReporter({ paths: script.paths, secrets })
     : undefined;
 
-  // Every field of `M3LScriptRunOptions` is forwarded explicitly via a
-  // `Required<M3LScriptRunOptions>` literal rather than a hand-picked subset
-  // (`{ dryRun: ... }`) — if `M3LScriptRunOptions` gains a second optional
-  // field, this literal fails to compile instead of silently dropping it
-  // (the ADR-0035 phase-2 `wrapError` defect this guards against).
-  const runOptions: Required<M3LScriptRunOptions> = {
-    dryRun: options?.dryRun ?? false,
-  };
+  const runOptions = forwardedRunOptions(options);
 
   try {
     await script.run(mainFn, runOptions);

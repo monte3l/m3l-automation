@@ -94,6 +94,27 @@ export interface M3LCommandContext {
    */
   readonly signal: AbortSignal | undefined;
   /**
+   * The correlation id this invocation belongs to (ADR-0070), joining the
+   * command's own work to the trace the host already opened — a console
+   * operator's click, an HTTP request, a parent run.
+   *
+   * An OPTIONAL key, deliberately breaking this interface's own
+   * required-holding-`undefined` convention for {@link M3LCommandContext.signal}
+   * and `dryRun`. Those two are values a command must **branch on**, so the
+   * required form is right: it forces every host to state them and every
+   * callee to narrow. This one is passed through — into a logger, into
+   * `M3LScriptRunOptions` — and its absence has a safe fallback (the script
+   * resolves its own id), so there is nothing to forget to handle.
+   *
+   * The asymmetry is also what keeps this additive. An `M3LCommandContext`
+   * is CONSTRUCTED at 15+ sites — `templates/script/src/main.ts.tmpl`, four
+   * shipped scripts, `m3l-cli`'s in-process runner and their test fakes —
+   * and a required field would break every one of them, making a minor into
+   * a major. This library has already paid that exact cost once: a required
+   * `dryRun` on `M3LScriptHookContext` broke seven consumer test fakes.
+   */
+  readonly correlationId?: string;
+  /**
    * Whether this invocation must perform no real work.
    *
    * Required, mirroring `M3LScriptHookContext.dryRun`: `false` is meaningful
