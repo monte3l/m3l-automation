@@ -22,32 +22,86 @@ Its tools drive the CLI rather than the AWS SDK directly: `m3l list --json`,
 policy before it runs, and every verdict is written to the append-only decision
 log before the action executes.
 
-**With this slice** the whole offline half is in place. The config schema, the
-committed policy, and policy loading landed first; the typed `m3l` CLI seam
-followed; then the **audit spine** — the run ledger, the decision recorder, and
-the decision-log preflight; this one adds the **cross-run daily invocation
-counter**, the first metering seam to make one of the policy's five declared
-budgets observable. There is still no Bedrock client, no agent loop, and no
-network call anywhere — every CLI call is a locally spawned child process, so
-the whole surface is exercisable without AWS.
+**V8 is complete with this slice.** The config schema, the committed policy,
+and policy loading landed first; the typed `m3l` CLI seam followed; then the
+**audit spine** — the run ledger, the decision recorder, and the decision-log
+preflight; then the **cross-run daily invocation counter**; and now the
+**fleet health-check workload** itself — the Bedrock tool loop, the four gated
+tools, the anomaly report, and the exit-code contract a scheduler reads.
 
-The `health-check` operation now runs its **audit spine**: it loads the policy,
-builds the run ledger, seeds the ledger's per-day baseline from the cross-run
-counter, and performs the decision-log preflight. The preflight writes **two**
-entries — the honest bootstrap escalation, then the verdict the run actually
-concluded on — the run records its consumption onto the counter, and then
-reports that the model loop is still pending.
+The `health-check` operation runs a real, policy-gated, read-only pass over
+the fleet: it loads the policy, seeds the per-day baseline from the cross-run
+counter, builds the metered Bedrock invoker, runs the decision-log preflight,
+assembles a gated tool registry, drives `runBedrockToolLoop`, and writes an
+anomaly summary. Every action the model requests is authorized before it runs,
+and every verdict reaches the append-only decision log.
 
-It exits cleanly only when that concluding verdict is auto-approved. Otherwise
-it fails with `ERR_AGENT_OPERATOR_ESCALATED`, carrying the verdict and rule in
-`context`. A run the policy declined must not report success, and the entry the
-run concluded on must be as durable as the one it opened with — otherwise the
-log records how the run started rather than how it ended. The gate is
-`Core.isAgentActionAutoApproved`: `verdict !== "denied"` would let every
-escalation through.
+It reaches the model only when the preflight's concluding verdict is
+auto-approved. Otherwise it fails with `ERR_AGENT_OPERATOR_ESCALATED`, carrying
+the verdict and rule in `context`. A run the policy declined must not report
+success, and the entry the run concluded on must be as durable as the one it
+opened with — otherwise the log records how the run started rather than how it
+ended. The gate is `Core.isAgentActionAutoApproved`: `verdict !== "denied"`
+would let every escalation through.
 
-The Bedrock tool loop, the gate ordering, and the fleet health tools land in
-the final slice.
+### An unhealthy fleet exits 6
+
+| Condition                                   | Outcome       | Exit |
+| ------------------------------------------- | ------------- | ---- |
+| Loop completed, zero anomalies              | `success`     | 0    |
+| 1+ fleet anomaly, gated refusal, or ceiling | `partial`     | 6    |
+| Ctrl-C / `signal`                           | `interrupted` | 5    |
+| A Bedrock transport/API failure             | `failure`     | 3    |
+| Every declared model exhausted              | `failure`     | 2    |
+
+**Exit 0 would be wrong.** `core/script/run-script.ts` states the governing
+principle: _"the exit code is the only thing a scheduler reads."_ This workload
+exists for unattended monitoring; exiting 0 on a blocking `doctor` failure
+means cron sees green while the fleet is broken.
+
+**Throwing would be wrong twice.** ADR-0049 classifies exit 1–4 by _fault
+origin_, and a fleet script reporting a failing status is none of them — the
+health check _worked_. Exit 3 would make "Bedrock is unreachable" and "the
+fleet is unhealthy" indistinguishable, destroying the one discrimination this
+workload exists to provide. And mechanically, throwing from `mainFn` means the
+anomaly summary — the deliverable — is never written. `partial` is defined for
+exactly this: _"the run completed with absorbed per-item failures — neither
+success nor failure"_. `steps/gate-tool` already calls `reportRecovery` on
+every refusal, so a policy refusal lands on the same 6, coherently.
+
+The last two rows differ, and the split is the library's: `core/errors/catalog.ts`
+classifies `ERR_BEDROCK_RUNTIME_OPERATION` as `origin: "external"` (exit 3) but
+`ERR_BEDROCK_RUNTIME_NO_MODEL` as `origin: "caller"` (exit 2) — "every model
+you declared is unavailable" is your model list being wrong, not an external
+fault.
+
+Note the CLI seam's documented asymmetry is scoped to the **tool** — `doctor`
+exiting 1 must _resolve_ `surface.doctor()`. That says nothing about this
+script's own exit code, and the two must not be conflated.
+
+### Three ordering constraints
+
+1. **`createMeteredInvoker` is constructed before `runDecisionLogPreflight`.**
+   It seeds `observeSpend({tokens: 0, loopIterations: 0, cost: 0})` at
+   construction, because zero spend must be an _observed_ fact. Built after
+   the preflight, the preflight escalates on
+   `budget.tokens-per-run.unobservable` and the run dies before a single tool
+   exists. Constructing the Bedrock client makes no network call, so this costs
+   nothing on a run the preflight then refuses.
+2. **`modelRates` must cover `modelId` and every `fallbackModelIds` entry.**
+   `sumObservedCost` returns `undefined` the moment a served model lacks a
+   rate, which makes `snapshot()` omit `costThisRun`, which makes _every_ gated
+   call escalate on `budget.cost-per-run.unobservable` and get refused. The
+   seeded `0` covers the preflight only — the first tool call already arrives
+   after turn 1. An operator who declares `costPerRun` but forgets a rate for
+   one fallback model gets a run that spends tokens and learns nothing.
+3. **The same `rates` map object goes to both `createMeteredInvoker` and
+   `runBedrockToolLoop`.** A conditional spread on one side only creates a
+   divergence `reconcileMeteredCost` would then correctly, confusingly, throw
+   on.
+
+Plus: **one shared recorder instance** across the preflight and the gate deps,
+or the audit trail splits across two identities.
 
 One consequence is worth stating plainly rather than discovering later. The
 evaluator checks budgets (step 3) **before** the decision-log rule (step 3b),
@@ -58,26 +112,20 @@ loopIterations` — and reports the first unsatisfied one, so a single
 unobservable ceiling masks every rule below it, `decision-log-unavailable*`
 included.
 
-The committed policy declares all five. This slice closes the second:
+The committed policy declares all five, and **all five are now observable**:
 
-| Ceiling                   | Before the counter                            | After                                    |
-| ------------------------- | --------------------------------------------- | ---------------------------------------- |
-| `invocationsPerRun` (60)  | satisfied (0)                                 | satisfied (0)                            |
-| `invocationsPerDay` (400) | **`budget.invocations-per-day.unobservable`** | satisfied                                |
-| `tokensPerRun` (200000)   | masked                                        | **`budget.tokens-per-run.unobservable`** |
+| Ceiling                   | Made observable by                                       |
+| ------------------------- | -------------------------------------------------------- |
+| `invocationsPerRun` (60)  | the run ledger's own `recordInvocation`                  |
+| `invocationsPerDay` (400) | `steps/daily-counter`, seeded before the preflight       |
+| `tokensPerRun` (200000)   | `createMeteredInvoker`, constructed before the preflight |
+| `costPerRun` (2)          | the same, given a `modelRates` entry per served model    |
+| `loopIterations` (8)      | the same                                                 |
 
-Concretely: against the committed policy, `health-check` still fails with
-`ERR_AGENT_OPERATOR_ESCALATED` rather than succeeding — correctly, because
-`tokensThisRun`/`costThisRun`/`loopIterations` stay unobservable until
-`createMeteredInvoker` seeds them, which is the workload slice. The escalation
-has moved exactly one slot, and that rule string is this slice's acceptance
-criterion. The auto-approved path is exercised against a budget-free policy in
-the tests.
-
-The fix for each ceiling is metering, never a defaulted ledger field:
-reporting an unobserved budget as `0` would convert "unobservable" into a
-silently passing check, which is the one direction this design must never fail
-in.
+So `health-check` now runs clean against the committed policy. The fix for
+each ceiling was metering, never a defaulted ledger field: reporting an
+unobserved budget as `0` would convert "unobservable" into a silently passing
+check, which is the one direction this design must never fail in.
 
 Explicitly out of scope: mutations of any kind (the policy grants only
 `inspect`/`dry-run` on fleet scripts, all declared `readOnlyOperations`); a
@@ -198,12 +246,35 @@ different and stays: relocating an audit record widens no authority.)
   resolution is to evaluate honestly, **write that decision — the write is the
   observation** — then mark the log observed and re-evaluate.
   `decisionLogAvailable` is never seeded, and a failed write aborts the run
-  before any model client could be constructed, so a broken audit trail costs
-  zero tokens. The counter is seeded **before** this step, not after: the
-  preflight snapshots the ledger twice, so an unseeded ledger escalates on the
-  per-day rule at _both_ phases and the two-phase bootstrap can never resolve.
+  before any model **invocation**, so a broken audit trail costs zero tokens.
+  (It no longer aborts before the model _client_ is constructed — the metered
+  invoker must exist before this step, per ordering constraint 1 — but
+  construction makes no network call, so the property that matters is
+  unchanged.) The counter is seeded **before** this step too: the preflight
+  snapshots the ledger twice, so an unseeded ledger escalates on the per-day
+  rule at _both_ phases and the two-phase bootstrap can never resolve.
+- `create-invoker` — the one place a Bedrock client is constructed, and
+  therefore the network seam. Its own module so a test can replace it with
+  `vi.mock` without faking anything else.
+- `health-observations` — the script-owned collector every gated tool writes
+  its **projected** result into. It exists because the loop's outcome carries
+  only `{toolUseId, name, status}` per tool execution, never the payload — so
+  fleet findings must be captured on the way past or they are gone. It stores
+  only `MODEL_SAFE_BRAND`-carrying values, so nothing unsanitized can reach the
+  artifact by construction.
+- `build-health-tools` — the four `AgentToolSpec`s (`fleet_list`,
+  `fleet_doctor`, `script_inspect`, `script_dry_run`) over `AgentCliSurface`.
+  It never gates them itself: `buildAgentToolRegistry` is the only door.
+- `health-prompt` — the system and user prompts. Every string is script- or
+  config-authored; no CLI output and no prior model output ever reaches a
+  prompt.
+- `health-report` — the `m3l.agent-operator.health-check` artifact
+  (`schemaVersion: 1`) and `deriveHealthAnomalies`.
+- `run-health-check` — the orchestrator, and the owner of the three ordering
+  constraints above.
 - `run-agent-operator` — dispatches the two operations over a closed `switch`
-  with a `never` exhaustiveness arm.
+  with a `never` exhaustiveness arm. Both operations live in their own step
+  modules; this file is a dispatcher and nothing else.
 
 Non-step helpers live in `src/lib/` (the established location — precedent:
 `scripts/json-etl/src/lib/field-spec.ts`, `scripts/rds-data-sql/src/lib/defaults.ts`):
@@ -300,6 +371,50 @@ Tool results are emitted as `{ type: "json", json: … }` blocks, so untrusted
 text only ever appears as a JSON leaf value — never concatenated into prose the
 model reads as instruction.
 
+### `describeAction` is the one trust boundary
+
+Everything a model can influence enters through it:
+
+- `scriptName` is read with `Object.hasOwn`, never a bracket or dot read — a
+  model can literally send `{"__proto__": {"scriptName": "…"}}`.
+- The name must pass `isAllowedScriptName`, **not** because the CLI surface
+  would not check (it does, immediately before any spawn) but to bound what
+  reaches the evaluator and the append-only log. Without the length cap a
+  hostile 100 KB name builds an entry that breaches the log's single-line byte
+  ceiling; the gate reads that as a _write_ failure, calls
+  `observeDecisionLog(false)`, and every subsequent action escalates on
+  `decision-log-unavailable`. **That is a model-triggerable self-DOS.**
+  Rejecting here refuses with `malformedInput`, writes nothing, and leaves the
+  ledger clean.
+- `kind` is **never** derived from input.
+- `fleet_list`/`fleet_doctor` accept any object and never read it. The ignoring
+  _is_ the guarantee that preserves "the model supplies exactly one value
+  across the whole tool surface."
+
+`script_dry_run` is fail-closed in **two independent layers**: its spec is not
+built at all unless `includeDryRunProbes` is true _and_ the allowlist is
+non-empty, and the CLI surface separately receives an empty allowlist when the
+flag is off.
+
+### The model's free text: exactly one untrusted leaf
+
+It lands at `model.summary` in the artifact and nowhere else, never
+concatenated into prose. The final message is filtered to `text` blocks
+(`toolUse`/`toolResult` are dropped, never stringified), then run through
+**`sanitizeForModel`** — the outbound sanitizer, used inbound, deliberately:
+the four hazards are identical in both directions (an echoed secret, an
+absolute host path, a bidi/C1 control that turns `cat report.json` into
+terminal injection, unbounded length), and a second denylist would be one more
+thing to keep in step. It yields `null`, never `""`, when there is no text. A
+consequence worth stating: the sanitizer escapes C0 including line feed, so
+`summary` is single-line by construction and a paragraph break renders as
+escaped text.
+
+The prompt tells the model, in as many words, that it has **no
+machine-readable output channel** — the report is assembled by the operator
+from the tool results themselves. That removes the incentive to invent one,
+and removes the temptation for a future maintainer to parse its reply.
+
 **Honest limits.** Three, stated plainly rather than papered over:
 
 1. **Escaping control characters does not neutralize instruction-shaped
@@ -356,15 +471,39 @@ rather than a silent fallback. It declares `version: 1`, 17 script grants, a
 `dryRunFirst: true`. Every grant declares `readOnlyOperations`, including the
 `agent-operator` grant covering its own run.
 
-**Writes.** Structured log output; JSONL decision records under
-`data/agent-log/`; and the cross-run daily invocation counter at
-`data/agent-state/daily-invocations.checkpoint.json`. Both directories are
-gitignored: they are machine state, not source. The counter is written only
-after the concluding verdict is auto-approved — a run the policy declined must
-not record consumption it never made. The workload slice adds a JSON artifact
-under `M3L_OUTPUT_DIR` via `M3LJSONFileExporter`. The `m3l` CLI's discovery
-cache lands in `data/cache/` on every spawned call; it is derived machine state
-and is gitignored too.
+**Writes.** Four things:
+
+- Structured log output.
+- JSONL decision records under `data/agent-log/` (gitignored). A `health-check`
+  run writes at least three: the preflight's bootstrap escalation, its
+  concluding verdict, two per approved tool call, and a **third** run-level
+  entry carrying `tokens`/`cost` — the first caller ever to populate the fields
+  ADR-0061 added. JSONL is append-only, so that is a third entry rather than an
+  amendment of the second; it re-records the concluding decision rather than
+  re-evaluating, because the question it answers is _"what did the authorized
+  run cost"_, not _"would it be authorized now"_.
+- The cross-run daily invocation counter at
+  `data/agent-state/daily-invocations.checkpoint.json` (gitignored). Written
+  from a `finally`, so a crash mid-loop cannot forget invocations already made.
+- The `m3l.agent-operator.health-check` artifact under `M3L_OUTPUT_DIR` via
+  `M3LJSONFileExporter` — `agent-operator-health-check.json` by default, or the
+  `output` override. Written **before** `reportRecovery` fires, so no later
+  branch can cost the deliverable on the unhealthy path, which is the path it
+  exists for.
+
+The `m3l` CLI's discovery cache lands in `data/cache/` on every spawned call;
+it is derived machine state and is gitignored too.
+
+### The `m3l.agent-operator.health-check` artifact
+
+`schemaVersion: 1`. `blocking` is the field a scheduler reads; `anomalies` is
+derived **only** from what the gated tools observed, never from the model's
+message, over a closed `kind` vocabulary (`doctor-check-failed`,
+`doctor-check-warned`, `script-config-load-failed`, `dry-run-probe-failed`) in
+a stable order, so two runs over the same fleet produce byte-identical
+artifacts. A `warn` counts as an anomaly deliberately — a scheduler that only
+hears about hard failures learns nothing from a fleet degrading gradually — and
+`kind` is what lets a consumer ignore warns explicitly, in its own code.
 
 ## Command module
 
