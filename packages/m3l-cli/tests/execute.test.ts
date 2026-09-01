@@ -72,6 +72,8 @@ function buildContext(
     output: createOutput(),
     jsonOutput: false,
     outputDirPath: "/data/output",
+    env: {},
+    envFile: { kind: "auto" },
     ...overrides,
   };
 }
@@ -532,6 +534,80 @@ describe("executeScript — scriptDirectory/argv passthrough", () => {
   });
 });
 
+describe("executeScript — secret/env forwarding (ADR-0085)", () => {
+  test("forwards context.env and context.envFile to spawnScript verbatim", async () => {
+    spawnScriptMock.mockResolvedValue(0);
+    const context = buildContext({
+      jsonOutput: false,
+      env: { AWS_PROFILE: "sandbox" },
+      envFile: { kind: "disabled" },
+    });
+
+    await executeScript(context, SCRIPT_NAME, SCRIPT_DIRECTORY, ARGV);
+
+    expect(spawnScriptMock).toHaveBeenCalledWith(
+      SCRIPT_DIRECTORY,
+      ARGV,
+      expect.objectContaining({
+        env: { AWS_PROFILE: "sandbox" },
+        envFile: { kind: "disabled" },
+      }),
+    );
+  });
+
+  test("forwards options.secretEnv to spawnScript verbatim", async () => {
+    spawnScriptMock.mockResolvedValue(0);
+
+    await executeScript(
+      buildContext({ jsonOutput: false }),
+      SCRIPT_NAME,
+      SCRIPT_DIRECTORY,
+      ARGV,
+      { secretEnv: { API_TOKEN: "hunter2" } },
+    );
+
+    expect(spawnScriptMock).toHaveBeenCalledWith(
+      SCRIPT_DIRECTORY,
+      ARGV,
+      expect.objectContaining({ secretEnv: { API_TOKEN: "hunter2" } }),
+    );
+  });
+
+  test("omitting secretEnv forwards no secretEnv key at all (exactOptionalPropertyTypes discipline)", async () => {
+    spawnScriptMock.mockResolvedValue(0);
+
+    await executeScript(
+      buildContext({ jsonOutput: false }),
+      SCRIPT_NAME,
+      SCRIPT_DIRECTORY,
+      ARGV,
+    );
+
+    const options = spawnScriptMock.mock.calls[0]?.[2] ?? {};
+    expect(Object.hasOwn(options, "secretEnv")).toBe(false);
+  });
+
+  test("a forwarded secret never reaches the writer facade, in JSON mode or out", async () => {
+    spawnScriptMock.mockResolvedValue(0);
+    const lines: string[] = [];
+    const context = buildContext({
+      jsonOutput: true,
+      output: {
+        colorEnabled: false,
+        info: (text: string) => lines.push(text),
+        error: (text: string) => lines.push(text),
+        heading: (text: string) => lines.push(text),
+      },
+    });
+
+    await executeScript(context, SCRIPT_NAME, SCRIPT_DIRECTORY, ARGV, {
+      secretEnv: { API_TOKEN: "hunter2" },
+    });
+
+    expect(lines.join("\n")).not.toContain("hunter2");
+  });
+});
+
 describe("executeScript — type contract", () => {
   test("returns a Promise<number> regardless of JSON mode", () => {
     expectTypeOf<typeof executeScript>().returns.toEqualTypeOf<
@@ -539,11 +615,12 @@ describe("executeScript — type contract", () => {
     >();
   });
 
-  test("M3LCliExecuteOptions fields are all optional injectable seams", () => {
+  test("M3LCliExecuteOptions fields are all optional per-invocation inputs and injectable seams", () => {
     expectTypeOf<M3LCliExecuteOptions>().toEqualTypeOf<{
       readonly spawnImpl?: M3LCliExecuteOptions["spawnImpl"];
       readonly stderrStream?: M3LCliExecuteOptions["stderrStream"];
       readonly now?: () => Date;
+      readonly secretEnv?: Readonly<Record<string, string>>;
     }>();
   });
 });

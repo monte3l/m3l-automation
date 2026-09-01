@@ -78,7 +78,7 @@ never free-form report content; read-tolerant with a named
 form. Envelope schema joins `docs/reference/cli.md` when shipped.
 Coordinate with any in-flight U-rows touching `main.ts`.
 
-### V3. Secrets-delivery hardening
+### V3. Secrets-delivery hardening — shipped
 
 **Decision:** [ADR-0085](../adr/0085-cli-secret-delivery-via-spawn-env.md)
 (the gate ADR-0058 recorded, fired 2026-09-01). Mechanism: **environment
@@ -118,6 +118,12 @@ owner-only where `cmdline` is world-readable, so this defeats a co-tenant
 `ps`/`/proc` reader — **not** root, a debugger, or the same user. Secret-store
 resolution (Secrets Manager / SSM) stays gated for want of a named consumer.
 Unblocks V11.
+
+**Shipped** across 2 PRs: the ADR (docs-only) and the implementation +
+close-out — see `docs/logs/2026-09-01-v3-secrets-delivery.md`. Core count is
+unchanged (`deriveEnvVarName` joins the existing `config` submodule's barrel;
+no new submodule), and `check:api` did not move — the symbol surfaces through
+the Core namespace barrel, not a new `exports` subpath.
 
 ### V4. `aws/bedrock-runtime` — the wrapper
 

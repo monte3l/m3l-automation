@@ -14,7 +14,9 @@ import { parseArgs } from "node:util";
 import { fileURLToPath } from "node:url";
 
 import { M3LCliError, exitCodeForError } from "./cli/errors.js";
-import { partitionJsonFlag } from "./cli/flags.js";
+import { partitionEnvFileFlags, partitionJsonFlag } from "./cli/flags.js";
+import type { M3LCliEnvFileSetting } from "./cli/flags.js";
+import { printUsage } from "./cli/usage.js";
 import {
   resolveCacheFilePath,
   resolveHistoryFilePath,
@@ -86,49 +88,6 @@ function readCliVersion(): string {
   return manifest.version;
 }
 
-/** Prints the hand-written usage text (`parseArgs` generates none). */
-function printUsage(output: M3LCliOutput): void {
-  output.info("Usage: m3l <command> [options]");
-  output.info("");
-  output.info("Commands:");
-  output.info("  list                       List every scripts/* package");
-  output.info(
-    "  inspect <script>           Show a script's declared parameters",
-  );
-  output.info(
-    "  run <script> -- [args...]  Run a script, forwarding args after '--' verbatim",
-  );
-  output.info(
-    "  doctor                     Run environment/workspace health checks",
-  );
-  output.info(
-    "  presets <script>           List a script's declared preset files",
-  );
-  output.info("  history                    Show the recorded run history");
-  output.info(
-    "  new <name> [options]       Scaffold a new scripts/<name>/ package",
-  );
-  output.info(
-    "  wizard                     Interactively build and run a script",
-  );
-  output.info(
-    "  completion <shell>         Print a bash/zsh/fish completion script",
-  );
-  output.info("  help                       Show this help message");
-  output.info("  <script> [--param value ...] [-- args...]");
-  output.info(
-    "                             Run any discovered scripts/* package,",
-  );
-  output.info(
-    "                             translating its declared parameters into flags",
-  );
-  output.info("");
-  output.info("Flags:");
-  output.info("  --json      Machine-readable output");
-  output.info("  --version   Print the CLI version");
-  output.info("  -h, --help  Show this help message");
-}
-
 /**
  * Splits `argv` at the first bare `--`, so `parseArgs` never sees anything
  * after it — the m3l-cli 8c contract for `run <script> -- [args...]`:
@@ -155,6 +114,7 @@ function buildCommandContext(
   output: M3LCliOutput,
   jsonOutput: boolean,
   env: Readonly<Record<string, string | undefined>>,
+  envFile: M3LCliEnvFileSetting,
 ): M3LCliCommandContext {
   const workspaceRoot = resolveWorkspaceRoot(cwd);
   return {
@@ -164,6 +124,8 @@ function buildCommandContext(
     cacheFilePath: resolveCacheFilePath(workspaceRoot, env),
     historyFilePath: resolveHistoryFilePath(workspaceRoot, env),
     outputDirPath: resolveOutputDirPath(workspaceRoot, env),
+    env,
+    envFile,
   };
 }
 
@@ -173,9 +135,10 @@ async function runListCommand(
   cwd: string,
   jsonOutput: boolean,
   env: Readonly<Record<string, string | undefined>>,
+  envFile: M3LCliEnvFileSetting,
 ): Promise<M3LCliExitCode> {
   const { runList } = await import("./commands/list.js");
-  return runList(buildCommandContext(cwd, output, jsonOutput, env));
+  return runList(buildCommandContext(cwd, output, jsonOutput, env, envFile));
 }
 
 /** Lazily loads and runs `inspect`; a missing `<script>` positional is a usage error. */
@@ -185,6 +148,7 @@ async function runInspectCommand(
   scriptName: string | undefined,
   jsonOutput: boolean,
   env: Readonly<Record<string, string | undefined>>,
+  envFile: M3LCliEnvFileSetting,
 ): Promise<M3LCliExitCode> {
   if (scriptName === undefined) {
     output.error(
@@ -194,7 +158,7 @@ async function runInspectCommand(
   }
   const { runInspect } = await import("./commands/inspect.js");
   return runInspect(
-    buildCommandContext(cwd, output, jsonOutput, env),
+    buildCommandContext(cwd, output, jsonOutput, env, envFile),
     scriptName,
   );
 }
@@ -213,9 +177,13 @@ async function runNewCommand(
   rawArgs: readonly string[],
   jsonOutput: boolean,
   env: Readonly<Record<string, string | undefined>>,
+  envFile: M3LCliEnvFileSetting,
 ): Promise<M3LCliExitCode> {
   const { runNew } = await import("./commands/new.js");
-  return runNew(buildCommandContext(cwd, output, jsonOutput, env), rawArgs);
+  return runNew(
+    buildCommandContext(cwd, output, jsonOutput, env, envFile),
+    rawArgs,
+  );
 }
 
 /**
@@ -230,6 +198,7 @@ async function runRunCommand(
   passthroughArgs: readonly string[],
   jsonOutput: boolean,
   env: Readonly<Record<string, string | undefined>>,
+  envFile: M3LCliEnvFileSetting,
 ): Promise<number> {
   if (scriptName === undefined) {
     output.error(
@@ -239,7 +208,7 @@ async function runRunCommand(
   }
   const { runRun } = await import("./commands/run.js");
   return runRun(
-    buildCommandContext(cwd, output, jsonOutput, env),
+    buildCommandContext(cwd, output, jsonOutput, env, envFile),
     scriptName,
     passthroughArgs,
   );
@@ -257,9 +226,10 @@ async function runDoctorCommand(
   cwd: string,
   jsonOutput: boolean,
   env: Readonly<Record<string, string | undefined>>,
+  envFile: M3LCliEnvFileSetting,
 ): Promise<number> {
   const { runDoctor } = await import("./commands/doctor.js");
-  return runDoctor(buildCommandContext(cwd, output, jsonOutput, env));
+  return runDoctor(buildCommandContext(cwd, output, jsonOutput, env, envFile));
 }
 
 /** Lazily loads and runs `presets`; a missing `<script>` positional is a usage error. */
@@ -269,6 +239,7 @@ async function runPresetsCommand(
   scriptName: string | undefined,
   jsonOutput: boolean,
   env: Readonly<Record<string, string | undefined>>,
+  envFile: M3LCliEnvFileSetting,
 ): Promise<M3LCliExitCode> {
   if (scriptName === undefined) {
     output.error(
@@ -278,7 +249,7 @@ async function runPresetsCommand(
   }
   const { runPresets } = await import("./commands/presets.js");
   return runPresets(
-    buildCommandContext(cwd, output, jsonOutput, env),
+    buildCommandContext(cwd, output, jsonOutput, env, envFile),
     scriptName,
   );
 }
@@ -289,9 +260,10 @@ async function runHistoryCommand(
   cwd: string,
   jsonOutput: boolean,
   env: Readonly<Record<string, string | undefined>>,
+  envFile: M3LCliEnvFileSetting,
 ): Promise<number> {
   const { runHistory } = await import("./commands/history.js");
-  return runHistory(buildCommandContext(cwd, output, jsonOutput, env));
+  return runHistory(buildCommandContext(cwd, output, jsonOutput, env, envFile));
 }
 
 /** Lazily loads and runs `wizard` — no positional required. */
@@ -300,9 +272,10 @@ async function runWizardCommand(
   cwd: string,
   jsonOutput: boolean,
   env: Readonly<Record<string, string | undefined>>,
+  envFile: M3LCliEnvFileSetting,
 ): Promise<number> {
   const { runWizard } = await import("./commands/wizard.js");
-  return runWizard(buildCommandContext(cwd, output, jsonOutput, env));
+  return runWizard(buildCommandContext(cwd, output, jsonOutput, env, envFile));
 }
 
 /**
@@ -317,10 +290,11 @@ async function runCompletionCommand(
   rawArgs: readonly string[],
   jsonOutput: boolean,
   env: Readonly<Record<string, string | undefined>>,
+  envFile: M3LCliEnvFileSetting,
 ): Promise<number> {
   const { runCompletion } = await import("./commands/completion.js");
   return runCompletion(
-    buildCommandContext(cwd, output, jsonOutput, env),
+    buildCommandContext(cwd, output, jsonOutput, env, envFile),
     rawArgs,
   );
 }
@@ -340,11 +314,12 @@ async function runDynamicCommand(
   args: readonly string[],
   passthroughArgs: readonly string[],
   env: Readonly<Record<string, string | undefined>>,
+  envFile: M3LCliEnvFileSetting,
 ): Promise<number> {
   const { runDynamic } = await import("./commands/dynamic.js");
   const { jsonOutput } = partitionJsonFlag(args);
   return runDynamic(
-    buildCommandContext(cwd, output, jsonOutput, env),
+    buildCommandContext(cwd, output, jsonOutput, env, envFile),
     scriptName,
     args,
     passthroughArgs,
@@ -390,6 +365,7 @@ interface StaticCommandHandlerArgs {
   readonly cwd: string;
   readonly jsonOutput: boolean;
   readonly env: Readonly<Record<string, string | undefined>>;
+  readonly envFile: M3LCliEnvFileSetting;
 }
 
 /** One entry of {@link STATIC_COMMAND_HANDLERS}. */
@@ -405,9 +381,17 @@ type StaticCommandHandler = (args: StaticCommandHandlerArgs) => Promise<number>;
  */
 const STATIC_COMMAND_HANDLERS: Readonly<Record<string, StaticCommandHandler>> =
   {
-    inspect: ({ positionals, output, cwd, jsonOutput, env }) =>
-      runInspectCommand(output, cwd, positionals[1], jsonOutput, env),
-    run: ({ positionals, passthroughArgs, output, cwd, jsonOutput, env }) =>
+    inspect: ({ positionals, output, cwd, jsonOutput, env, envFile }) =>
+      runInspectCommand(output, cwd, positionals[1], jsonOutput, env, envFile),
+    run: ({
+      positionals,
+      passthroughArgs,
+      output,
+      cwd,
+      jsonOutput,
+      env,
+      envFile,
+    }) =>
       runRunCommand(
         output,
         cwd,
@@ -415,21 +399,29 @@ const STATIC_COMMAND_HANDLERS: Readonly<Record<string, StaticCommandHandler>> =
         passthroughArgs,
         jsonOutput,
         env,
+        envFile,
       ),
-    list: ({ output, cwd, jsonOutput, env }) =>
-      runListCommand(output, cwd, jsonOutput, env),
-    doctor: ({ output, cwd, jsonOutput, env }) =>
-      runDoctorCommand(output, cwd, jsonOutput, env),
-    presets: ({ positionals, output, cwd, jsonOutput, env }) =>
-      runPresetsCommand(output, cwd, positionals[1], jsonOutput, env),
-    history: ({ output, cwd, jsonOutput, env }) =>
-      runHistoryCommand(output, cwd, jsonOutput, env),
-    new: ({ beforeArgs, output, cwd, jsonOutput, env }) =>
-      runNewCommand(output, cwd, beforeArgs.slice(1), jsonOutput, env),
-    wizard: ({ output, cwd, jsonOutput, env }) =>
-      runWizardCommand(output, cwd, jsonOutput, env),
-    completion: ({ beforeArgs, output, cwd, jsonOutput, env }) =>
-      runCompletionCommand(output, cwd, beforeArgs.slice(1), jsonOutput, env),
+    list: ({ output, cwd, jsonOutput, env, envFile }) =>
+      runListCommand(output, cwd, jsonOutput, env, envFile),
+    doctor: ({ output, cwd, jsonOutput, env, envFile }) =>
+      runDoctorCommand(output, cwd, jsonOutput, env, envFile),
+    presets: ({ positionals, output, cwd, jsonOutput, env, envFile }) =>
+      runPresetsCommand(output, cwd, positionals[1], jsonOutput, env, envFile),
+    history: ({ output, cwd, jsonOutput, env, envFile }) =>
+      runHistoryCommand(output, cwd, jsonOutput, env, envFile),
+    new: ({ beforeArgs, output, cwd, jsonOutput, env, envFile }) =>
+      runNewCommand(output, cwd, beforeArgs.slice(1), jsonOutput, env, envFile),
+    wizard: ({ output, cwd, jsonOutput, env, envFile }) =>
+      runWizardCommand(output, cwd, jsonOutput, env, envFile),
+    completion: ({ beforeArgs, output, cwd, jsonOutput, env, envFile }) =>
+      runCompletionCommand(
+        output,
+        cwd,
+        beforeArgs.slice(1),
+        jsonOutput,
+        env,
+        envFile,
+      ),
   };
 
 /**
@@ -455,6 +447,7 @@ async function dispatchStaticCommandByName(
   cwd: string,
   jsonOutput: boolean,
   env: Readonly<Record<string, string | undefined>>,
+  envFile: M3LCliEnvFileSetting,
 ): Promise<number> {
   const handler =
     command === undefined ? undefined : STATIC_COMMAND_HANDLERS[command];
@@ -472,6 +465,7 @@ async function dispatchStaticCommandByName(
     cwd,
     jsonOutput,
     env,
+    envFile,
   });
 }
 
@@ -503,13 +497,21 @@ async function dispatchStaticCommand(
   output: M3LCliOutput,
   cwd: string,
   env: Readonly<Record<string, string | undefined>>,
+  envFile: M3LCliEnvFileSetting,
 ): Promise<number> {
   const { positionals, jsonOutput, helpRequested } =
     parseStaticCommandArgs(beforeArgs);
 
   if (helpRequested) {
     if (positionals[0] === "run" && positionals[1] !== undefined) {
-      return runInspectCommand(output, cwd, positionals[1], jsonOutput, env);
+      return runInspectCommand(
+        output,
+        cwd,
+        positionals[1],
+        jsonOutput,
+        env,
+        envFile,
+      );
     }
     printUsage(output);
     return 0;
@@ -529,6 +531,7 @@ async function dispatchStaticCommand(
     cwd,
     jsonOutput,
     env,
+    envFile,
   );
 }
 
@@ -539,7 +542,18 @@ async function dispatch(
   cwd: string,
   env: Readonly<Record<string, string | undefined>>,
 ): Promise<number> {
-  const { beforeArgs, passthroughArgs } = splitAtFirstDoubleDash(argv);
+  const { beforeArgs: rawBeforeArgs, passthroughArgs } =
+    splitAtFirstDoubleDash(argv);
+  // Stripped here, ahead of the static/dynamic split, for a correctness
+  // reason and not just tidiness: `parseStaticCommandArgs` parses with
+  // `strict: false`, so a detached `--env-file staging.env` would be absorbed
+  // as a bare boolean and its value would land in `positionals` — making
+  // `m3l run --env-file staging.env json-etl` resolve "staging.env" as the
+  // script name.
+  const { envFile, rest: beforeArgs } = partitionEnvFileFlags(
+    rawBeforeArgs,
+    cwd,
+  );
 
   if (beforeArgs.length === 0) {
     printUsage(output);
@@ -557,7 +571,14 @@ async function dispatch(
   }
 
   if (STATIC_COMMAND_NAMES.includes(firstToken)) {
-    return dispatchStaticCommand(beforeArgs, passthroughArgs, output, cwd, env);
+    return dispatchStaticCommand(
+      beforeArgs,
+      passthroughArgs,
+      output,
+      cwd,
+      env,
+      envFile,
+    );
   }
 
   return runDynamicCommand(
@@ -567,6 +588,7 @@ async function dispatch(
     beforeArgs.slice(1),
     passthroughArgs,
     env,
+    envFile,
   );
 }
 

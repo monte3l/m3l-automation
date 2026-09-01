@@ -107,6 +107,8 @@ function buildContext(
     cacheFilePath: "/workspace/data/cache/m3l-cli/discovery.json",
     historyFilePath: "/workspace/data/cache/m3l-cli/history.json",
     outputDirPath: "/workspace/data/output",
+    env: {},
+    envFile: { kind: "auto" },
     ...overrides,
   };
 }
@@ -346,6 +348,7 @@ describe("runDynamic — parseArgs config building + argv translation", () => {
         "--batchSize=10",
         "--extra-passthrough",
       ],
+      { secretEnv: {} },
     );
   });
 
@@ -362,6 +365,7 @@ describe("runDynamic — parseArgs config building + argv translation", () => {
       "json-etl",
       jsonEtlCandidate.directory,
       ["--region=eu-west-1"],
+      { secretEnv: {} },
     );
   });
 
@@ -396,6 +400,7 @@ describe("runDynamic — parseArgs config building + argv translation", () => {
       "json-etl",
       jsonEtlCandidate.directory,
       ["--limit", "5"],
+      { secretEnv: {} },
     );
   });
 });
@@ -666,6 +671,7 @@ describe("runDynamic — reserved --json flag shadowing (V2 slice 1)", () => {
       "json-etl",
       jsonEtlCandidate.directory,
       ["--json"],
+      { secretEnv: {} },
     );
   });
 });
@@ -817,6 +823,7 @@ describe("runDynamic — in-process execution (U7)", () => {
       "json-etl",
       jsonEtlCandidate.directory,
       ["--region=us-east-1"],
+      { secretEnv: {} },
     );
     expect(runInProcessMock).not.toHaveBeenCalled();
   });
@@ -1192,6 +1199,7 @@ describe("runDynamic — restoreDroppedOptionTokens skips a non-option/nameless 
       "json-etl",
       jsonEtlCandidate.directory,
       ["--region=us-east-1"],
+      { secretEnv: {} },
     );
   });
 });
@@ -1217,5 +1225,136 @@ describe("toParameterError — a non-Error thrown value", () => {
     expect(error).toBeInstanceOf(M3LCliError);
     expect(error.code).toBe("ERR_CLI_UNKNOWN_PARAMETER");
     expect(error.message).toBe("unknown parameter '' for script 'json-etl'");
+  });
+});
+
+// =============================================================================
+// V3 / ADR-0085 — secret delivery through the spawn environment, not argv
+// =============================================================================
+describe("runDynamic — secret delivery (ADR-0085)", () => {
+  /** `descriptors` plus a secret-flagged parameter, exercised end to end. */
+  const secretBearingDescriptors: readonly M3LCliParameterDescriptor[] = [
+    makeDescriptor({ name: "region", aliases: ["r"], required: true }),
+    makeDescriptor({ name: "api-token", secret: true }),
+  ];
+
+  test("end to end, a secret's value reaches executeScript's secretEnv and is absent from the argv", async () => {
+    // Deliberately NOT mocking dynamic-argv here: wizard.test.ts mocks it
+    // wholesale, so this is the only place the real split is exercised
+    // through a full dispatch.
+    discoverScriptsMock.mockReturnValue(knownCandidates);
+    loadParametersCachedMock.mockResolvedValue(secretBearingDescriptors);
+    executeScriptMock.mockResolvedValue(0);
+    const context = buildContext();
+
+    const code = await runDynamic(
+      context,
+      "json-etl",
+      ["--region", "us-east-1", "--api-token", "SUPER-SECRET-9000"],
+      [],
+    );
+
+    expect(code).toBe(0);
+    expect(executeScriptMock).toHaveBeenCalledWith(
+      context,
+      "json-etl",
+      jsonEtlCandidate.directory,
+      ["--region=us-east-1"],
+      { secretEnv: { API_TOKEN: "SUPER-SECRET-9000" } },
+    );
+
+    const forwardedArgv = executeScriptMock.mock.calls[0]?.[3] ?? [];
+    expect(JSON.stringify(forwardedArgv)).not.toContain("SUPER-SECRET-9000");
+  });
+
+  test("passthrough args still append after the translated argv, unaffected by the split", async () => {
+    discoverScriptsMock.mockReturnValue(knownCandidates);
+    loadParametersCachedMock.mockResolvedValue(secretBearingDescriptors);
+    executeScriptMock.mockResolvedValue(0);
+
+    await runDynamic(
+      buildContext(),
+      "json-etl",
+      ["--region", "us-east-1", "--api-token", "SUPER-SECRET-9000"],
+      ["--dry-run"],
+    );
+
+    expect(executeScriptMock.mock.calls[0]?.[3]).toEqual([
+      "--region=us-east-1",
+      "--dry-run",
+    ]);
+  });
+
+  test("history still records the secret's canonical parameter NAME (never its value)", async () => {
+    discoverScriptsMock.mockReturnValue(knownCandidates);
+    loadParametersCachedMock.mockResolvedValue(secretBearingDescriptors);
+    executeScriptMock.mockResolvedValue(0);
+    recordHistoryEntryMock.mockReturnValue(true);
+
+    await runDynamic(
+      buildContext(),
+      "json-etl",
+      ["--region", "us-east-1", "--api-token", "SUPER-SECRET-9000"],
+      [],
+    );
+
+    const entry = recordHistoryEntryMock.mock.calls[0]?.[1];
+    expect(entry?.parameterNames).toEqual(["region", "api-token"]);
+    expect(JSON.stringify(entry)).not.toContain("SUPER-SECRET-9000");
+  });
+});
+
+describe("runDynamic — the in-process path needs no env injection (ADR-0085)", () => {
+  test("'--in-process' binds a secret straight into parameterValues and never spawns", async () => {
+    // Regression lock: there is no child process and no argv on this path, so
+    // nothing leaks and nothing needs injecting. A future refactor that
+    // routed in-process through a serialized argv would break this.
+    discoverScriptsMock.mockReturnValue(knownCandidates);
+    loadParametersCachedMock.mockResolvedValue([
+      makeDescriptor({ name: "api-token", secret: true }),
+    ]);
+    runInProcessMock.mockResolvedValue(0);
+
+    const code = await runDynamic(
+      buildContext(),
+      "json-etl",
+      ["--in-process", "--api-token", "SUPER-SECRET-9000"],
+      [],
+    );
+
+    expect(code).toBe(0);
+    expect(executeScriptMock).not.toHaveBeenCalled();
+    expect(runInProcessMock.mock.calls[0]?.[1].parameterValues).toEqual({
+      "api-token": "SUPER-SECRET-9000",
+    });
+  });
+
+  test.each([
+    [{ kind: "disabled" } as const],
+    [{ kind: "path", path: "/repo/staging.env" } as const],
+  ])(
+    "'--in-process' with envFile %j is rejected loudly rather than silently ignored",
+    async (envFile) => {
+      discoverScriptsMock.mockReturnValue(knownCandidates);
+      loadParametersCachedMock.mockResolvedValue(descriptors);
+
+      await expect(
+        runDynamic(buildContext({ envFile }), "json-etl", ["--in-process"], []),
+      ).rejects.toMatchObject({
+        code: "ERR_CLI_IN_PROCESS_UNSUPPORTED",
+        message: expect.stringContaining("--env-file") as unknown as string,
+      });
+      expect(runInProcessMock).not.toHaveBeenCalled();
+    },
+  );
+
+  test("'--in-process' with the default auto envFile is still accepted", async () => {
+    discoverScriptsMock.mockReturnValue(knownCandidates);
+    loadParametersCachedMock.mockResolvedValue(descriptors);
+    runInProcessMock.mockResolvedValue(0);
+
+    await expect(
+      runDynamic(buildContext(), "json-etl", ["--in-process"], []),
+    ).resolves.toBe(0);
   });
 });

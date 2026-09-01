@@ -10,6 +10,7 @@
  */
 
 export * from "./coerceConfigValue.js";
+export * from "./deriveEnvVarName.js";
 export * from "./deriveOperationValidators.js";
 export * from "./deriveSecretsSpecifier.js";
 export * from "./loadScriptConfigDescriptors.js";

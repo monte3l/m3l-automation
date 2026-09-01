@@ -22,6 +22,7 @@ Exported from `@m3l-automation/m3l-common/core` (the `config` sub-module):
 - Provider classes: `M3LCommandLineConfigProvider`, `M3LJSONConfigProvider`, `M3LYAMLConfigProvider`, `M3LEnvironmentConfigProvider`, `M3LInMemoryConfigProvider`, `M3LLambdaEventConfigProvider`, `M3LPresetConfigProvider`
 - `coerceConfigValue` (the value parser: coerces a raw provider value to its declared `M3LConfigParameterType`, throwing on a type mismatch; generic over the target type so its return is `M3LCoercedValue<T>`, not `unknown`)
 - `M3LSecretsSpecifier`
+- `deriveEnvVarName` (derives the SCREAMING_SNAKE_CASE environment-variable name a config key is readable under — the derivation `M3LEnvironmentConfigProvider` applies internally, promoted so an out-of-process caller can compute the same name; see [`deriveEnvVarName`](#deriveenvvarname))
 - `deriveSecretsSpecifier`, `M3LDeriveSecretsSpecifierOptions` (derives an `M3LSecretsSpecifier` from a schema's declared `secret` parameters — see [Secret parameters](#secret-parameters))
 - `M3LOperationDeclaration` (one operation a script can perform — its `name`, its `description`, and optionally the `requiredParameters` it needs — declared as plain data rather than a closure)
 - `M3LOperationDeclarationList` (type: a non-empty tuple of `M3LOperationDeclaration`, generic over the operation-name literal union)
@@ -278,6 +279,37 @@ derives one from the running script's own `configSchema` and passes it to
 manages; `M3LScript` itself derives a separate copy once at construction and
 threads it into its own lifecycle-hook and shutdown-signal diagnostics — see
 [`diagnostics`](./diagnostics.md#public-api)'s redaction-guarantees note.
+
+### `deriveEnvVarName`
+
+```typescript
+function deriveEnvVarName(key: string): string;
+```
+
+Derives the SCREAMING_SNAKE_CASE environment-variable name for a config key:
+every `.` and `-` becomes `_`, then the whole key is uppercased.
+
+```typescript
+deriveEnvVarName("region"); // "REGION"
+deriveEnvVarName("canonical.name"); // "CANONICAL_NAME"
+deriveEnvVarName("license-code"); // "LICENSE_CODE"
+deriveEnvVarName("ALREADY_UPPER"); // "ALREADY_UPPER" (idempotent)
+```
+
+This is exactly the derivation `M3LEnvironmentConfigProvider` applies when it
+resolves a key at [level 4](#provider-priority-chain) of the provider chain.
+It lived as a module-private helper inside that class until ADR-0085 needed
+an **out-of-process** caller to compute the same name: the m3l CLI injects a
+`secret: true` parameter's value into a spawned script's environment under
+this key instead of writing it into the child's argv (which is visible in the
+world-readable `/proc/<pid>/cmdline`). That only works if both sides agree on
+the derivation exactly, and two copies of a one-line transform across two
+packages is precisely the silent-drift hazard promoting it avoids — so the
+provider now calls this function rather than carrying its own copy.
+
+The transform is pure and idempotent: `deriveEnvVarName(deriveEnvVarName(k))`
+equals `deriveEnvVarName(k)`, so a key already in SCREAMING_SNAKE_CASE passes
+through untouched.
 
 ## Declarative operations
 

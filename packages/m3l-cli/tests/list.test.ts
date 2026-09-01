@@ -3,6 +3,7 @@ import { afterEach, describe, expect, expectTypeOf, test, vi } from "vitest";
 import { runList } from "../src/commands/list.js";
 import type { M3LCliListRow } from "../src/commands/list.js";
 import type { M3LCliCommandContext } from "../src/commands/context.js";
+import type { M3LCliEnvFileSetting } from "../src/cli/flags.js";
 import { discoverScripts } from "../src/discovery/discover.js";
 import type { M3LCliScriptCandidate } from "../src/discovery/discover.js";
 import { loadParametersCached } from "../src/discovery/cached-load.js";
@@ -71,6 +72,8 @@ function buildContext(overrides: Partial<M3LCliCommandContext> = {}): {
     cacheFilePath: "/workspace/data/cache/m3l-cli/discovery.json",
     historyFilePath: "/workspace/data/cache/m3l-cli/history.json",
     outputDirPath: "/workspace/data/output",
+    env: {},
+    envFile: { kind: "auto" },
     ...overrides,
   };
   return { context, infoLines, headingLines };
@@ -248,7 +251,7 @@ describe("runList — type contract", () => {
     >();
   });
 
-  test("M3LCliCommandContext is a readonly record of workspaceRoot/output/jsonOutput/cacheFilePath/historyFilePath/outputDirPath", () => {
+  test("M3LCliCommandContext is a readonly record of workspaceRoot/output/jsonOutput/cacheFilePath/historyFilePath/outputDirPath/env/envFile", () => {
     expectTypeOf<M3LCliCommandContext>().toEqualTypeOf<{
       readonly workspaceRoot: string;
       readonly output: {
@@ -261,6 +264,8 @@ describe("runList — type contract", () => {
       readonly cacheFilePath: string;
       readonly historyFilePath: string;
       readonly outputDirPath: string;
+      readonly env: Readonly<Record<string, string | undefined>>;
+      readonly envFile: M3LCliEnvFileSetting;
     }>();
   });
 });
