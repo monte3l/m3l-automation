@@ -27,19 +27,37 @@
  *   2. `.claude/rules/*.md` conditional-load weight: a RATCHET, mirroring
  *      `bin/check-file-budget.mjs` exactly — a baselined file may shrink but
  *      never grow past its recorded size; an unbaselined file must stay under
- *      RULE_CEILING_BYTES. Two of six existing rule files are already well
- *      over any reasonable per-file ceiling (library-src.md at 28,002 B is
- *      2x CLAUDE.md's own budget) — a flat cap would fail on day one, same
- *      rationale as check-file-budget.mjs.
+ *      RULE_CEILING_BYTES. Four of seven existing rule files are already well
+ *      over the 10,000-byte ceiling (library-src.md at 29,082 B is ~3x) — a
+ *      flat cap would fail on day one, same rationale as check-file-budget.mjs.
  *   3. `.claude/skills/<name>/SKILL.md` description weight: INFORMATIONAL —
  *      total listing weight plus a WARN for any single description over
  *      1,536 chars, the documented Claude Code listing-truncation threshold
  *      (`code.claude.com/docs/en/skills`). Not ratcheted: descriptions churn
  *      with normal skill-writing edits and a hard gate here would fight that.
  *
+ * A fourth, INFORMATIONAL-only measurement (2026-09-01 harness-refresh sweep)
+ * reports total `.claude/skills/*\/SKILL.md` **body** bytes (the payload
+ * injected when a skill actually runs, capped per-skill at 5,000 tokens by
+ * Claude Code itself per `code.claude.com/docs/en/context-window` — this gate
+ * does not enforce that cap, only surfaces the current total) and total
+ * `.claude/agents/*.md` **body** bytes (loaded once per spoke dispatch). Both
+ * were previously entirely unbudgeted — the two largest context surfaces in
+ * `.claude/` had no gate at all. Not ratcheted for the same reason as #3: no
+ * evidenced per-body ceiling to enforce yet, only visibility.
+ *
+ * `estimateTokens()` is a chars/4 approximation, not a real tokenizer — the
+ * same sweep confirmed the actual Claude 4.7+ tokenizer produces ~30% MORE
+ * tokens than this estimate for the same text. `--exact` calls Anthropic's
+ * real `POST /v1/messages/count_tokens` endpoint (free, no message-creation
+ * quota) for the always-loaded block and reports the true count alongside
+ * the estimate — opt-in only: it needs `ANTHROPIC_API_KEY` and a network
+ * call, neither of which a `pre-push`/CI gate should require by default.
+ *
  * Usage:
  *   node bin/check-context-budget.mjs            # verify (fails on any hard violation)
  *   node bin/check-context-budget.mjs --update    # rewrite the rules ratchet baseline
+ *   node bin/check-context-budget.mjs --exact     # also report the real token count (needs ANTHROPIC_API_KEY)
  */
 import process from "node:process";
 import {
@@ -569,6 +587,118 @@ export function collectSkillDescriptions(skillsDir) {
 }
 
 // ---------------------------------------------------------------------------
+// .claude/skills/*/SKILL.md and .claude/agents/*.md body weight (informational)
+// ---------------------------------------------------------------------------
+
+/**
+ * The text after a leading YAML frontmatter block, or the whole content when
+ * there is none — the payload actually injected at runtime (a skill's body
+ * on invocation, an agent's prompt on dispatch), as opposed to the
+ * frontmatter fields other parts of this gate already measure separately
+ * (e.g. a skill's `description`).
+ *
+ * @param {string} content
+ * @returns {string}
+ */
+export function stripFrontmatter(content) {
+  const match = content.match(/^---\n[\s\S]*?\n---\n?/);
+  return match === null ? content : content.slice(match[0].length);
+}
+
+/**
+ * @typedef {Object} BodyWeight
+ * @property {string} name skill directory name, or agent file basename
+ * @property {number} bytes body byte length (frontmatter excluded)
+ */
+
+/**
+ * @param {string} skillsDir absolute path to `.claude/skills`
+ * @returns {BodyWeight[]} sorted by name
+ */
+export function collectSkillBodyBytes(skillsDir) {
+  if (!existsSync(skillsDir)) return [];
+  /** @type {BodyWeight[]} */
+  const bodies = [];
+  for (const entry of readdirSync(skillsDir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const skillMdPath = join(skillsDir, entry.name, "SKILL.md");
+    if (!existsSync(skillMdPath)) continue;
+    const content = readFileSync(skillMdPath, "utf8");
+    const body = stripFrontmatter(content);
+    bodies.push({ name: entry.name, bytes: Buffer.byteLength(body, "utf8") });
+  }
+  return bodies.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * @param {string} agentsDir absolute path to `.claude/agents`
+ * @returns {BodyWeight[]} sorted by name
+ */
+export function collectAgentBodyBytes(agentsDir) {
+  if (!existsSync(agentsDir)) return [];
+  /** @type {BodyWeight[]} */
+  const bodies = [];
+  for (const entry of readdirSync(agentsDir, { withFileTypes: true })) {
+    if (!entry.isFile() || !entry.name.endsWith(".md")) continue;
+    const content = readFileSync(join(agentsDir, entry.name), "utf8");
+    const body = stripFrontmatter(content);
+    bodies.push({ name: entry.name, bytes: Buffer.byteLength(body, "utf8") });
+  }
+  return bodies.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+// ---------------------------------------------------------------------------
+// --exact: real token count via Anthropic's count_tokens endpoint
+// ---------------------------------------------------------------------------
+
+const COUNT_TOKENS_URL = "https://api.anthropic.com/v1/messages/count_tokens";
+const COUNT_TOKENS_MODEL = "claude-sonnet-5";
+const ANTHROPIC_VERSION = "2023-06-01";
+
+/**
+ * Call Anthropic's `POST /v1/messages/count_tokens` for `text`, under the
+ * given model's tokenizer. Free of the message-creation quota (a separate,
+ * documented rate limit) — see `platform.claude.com/docs/en/build-with-claude/token-counting`.
+ *
+ * @param {string} text
+ * @param {{ apiKey: string, model?: string, fetchImpl?: typeof fetch }} opts
+ * @returns {Promise<number>} `input_tokens` from the API response
+ * @throws {Error} on a non-OK response or a network failure — the caller
+ *   decides whether that's fatal (this gate treats it as a warning, never a
+ *   hard failure, since `--exact` is opt-in and never required for CI).
+ */
+export async function countTokensExact(
+  text,
+  { apiKey, model = COUNT_TOKENS_MODEL, fetchImpl = fetch },
+) {
+  const response = await fetchImpl(COUNT_TOKENS_URL, {
+    method: "POST",
+    headers: {
+      "x-api-key": apiKey,
+      "anthropic-version": ANTHROPIC_VERSION,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      model,
+      messages: [{ role: "user", content: text }],
+    }),
+  });
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    throw new Error(
+      `count_tokens request failed: ${response.status} ${response.statusText}${body ? ` — ${body}` : ""}`,
+    );
+  }
+  const payload = await response.json();
+  if (typeof payload.input_tokens !== "number") {
+    throw new Error(
+      `count_tokens response missing a numeric "input_tokens" field: ${JSON.stringify(payload)}`,
+    );
+  }
+  return payload.input_tokens;
+}
+
+// ---------------------------------------------------------------------------
 // CLI entry point
 // ---------------------------------------------------------------------------
 
@@ -654,6 +784,34 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     );
   }
 
+  // --- 1b. Optional --exact: real token count via Anthropic's count_tokens API ---
+  if (argv.includes("--exact")) {
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) {
+      reporter.warn(
+        "--exact requested but ANTHROPIC_API_KEY is not set — skipping the real token count.",
+      );
+    } else {
+      const combinedText = blocks
+        .map((b) => normalizeRuntimeContent(stripBlockComments(b.content)))
+        .join("\n\n");
+      try {
+        const exactTokens = await countTokensExact(combinedText, { apiKey });
+        const delta = exactTokens - totalTokens;
+        reporter.info(
+          `Exact token count (count_tokens API, ${COUNT_TOKENS_MODEL}): ${exactTokens} ` +
+            `(chars/4 estimate was ~${totalTokens}, ${delta >= 0 ? "+" : ""}${delta}).`,
+        );
+      } catch (error) {
+        // Never fatal — --exact is opt-in and must not turn a network hiccup
+        // into a broken gate.
+        reporter.warn(
+          `--exact token count failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+  }
+
   // --- 2. .claude/rules/*.md ratchet ---
   const rulesDir = join(root, ".claude", "rules");
   const rules = collectRuleFiles(rulesDir);
@@ -721,6 +879,13 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     }
   }
 
+  // --- 4. .claude/skills/*/SKILL.md + .claude/agents/*.md BODY weight (informational) ---
+  const skillBodies = collectSkillBodyBytes(skillsDir);
+  const totalSkillBodyBytes = skillBodies.reduce((sum, s) => sum + s.bytes, 0);
+  const agentsDir = join(root, ".claude", "agents");
+  const agentBodies = collectAgentBodyBytes(agentsDir);
+  const totalAgentBodyBytes = agentBodies.reduce((sum, a) => sum + a.bytes, 0);
+
   // --- Scenario totals (informational) ---
   const scenarios = deriveScenarioTotals(rules);
 
@@ -736,6 +901,22 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   reporter.info(
     `Skill listing: ${skillDescriptions.length} description(s), ${totalSkillDescChars} total chars.`,
   );
+  reporter.info(
+    `Skill bodies: ${skillBodies.length} SKILL.md body(ies), ${totalSkillBodyBytes} total bytes (not ratcheted — visibility only).`,
+  );
+  for (const skill of [...skillBodies]
+    .sort((a, b) => b.bytes - a.bytes)
+    .slice(0, 5)) {
+    reporter.info(`  ${skill.name}/SKILL.md: ${skill.bytes} bytes`);
+  }
+  reporter.info(
+    `Agent bodies: ${agentBodies.length} agent file(s), ${totalAgentBodyBytes} total bytes (not ratcheted — visibility only).`,
+  );
+  for (const agent of [...agentBodies]
+    .sort((a, b) => b.bytes - a.bytes)
+    .slice(0, 5)) {
+    reporter.info(`  .claude/agents/${agent.name}: ${agent.bytes} bytes`);
+  }
   for (const scenario of scenarios.slice(0, 10)) {
     reporter.info(
       `  scenario ${scenario.probe}: ${scenario.rules.join(" + ")} = ${scenario.bytes} bytes`,
@@ -751,6 +932,10 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     scenarios,
     skillDescriptions,
     totalSkillDescChars,
+    skillBodies,
+    totalSkillBodyBytes,
+    agentBodies,
+    totalAgentBodyBytes,
   };
 
   if (hardFail) {
