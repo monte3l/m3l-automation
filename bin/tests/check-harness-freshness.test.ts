@@ -231,16 +231,41 @@ describe("evaluateFreshness", () => {
 });
 
 describe("runHarnessFreshnessCheck", () => {
-  function run(overrides: Record<string, unknown> = {}) {
+  /**
+   * Deps are typed rather than `Record<string, unknown>` on purpose: a
+   * misspelled key (`readTacker`) would otherwise fall back to the default
+   * fixture and make the case pass vacuously instead of failing to compile.
+   */
+  type Deps = Parameters<typeof runHarnessFreshnessCheck>[0];
+
+  function run(overrides: Partial<Deps> = {}) {
+    // The runner calls reporter.finish() itself; capture that ONE call rather
+    // than calling finish() a second time, which would emit a duplicate JSON
+    // line per case in --json mode.
     const reporter = createReporter(true);
+    const realFinish = reporter.finish.bind(reporter);
+    let payload: Record<string, unknown> = {};
+    let finishCalls = 0;
+
     const outcome = runHarnessFreshnessCheck({
       readTracker: () => tracker(),
       now: NOW,
-      reporter,
       ...overrides,
+      reporter: {
+        ...reporter,
+        finish: (extra?: Parameters<typeof realFinish>[0]) => {
+          finishCalls++;
+          payload = realFinish(extra);
+          return payload;
+        },
+      },
     });
-    return { outcome, payload: reporter.finish() };
+    return { outcome, payload, finishCalls };
   }
+
+  test("the runner reports exactly once per invocation", () => {
+    expect(run().finishCalls).toBe(1);
+  });
 
   test("ok on a tracker verified two days ago", () => {
     const { outcome } = run();
@@ -261,6 +286,21 @@ describe("runHarnessFreshnessCheck", () => {
     expect(outcome.findings[0]).toContain("ENOENT");
     expect(outcome.ok).toBe(false);
     expect(outcome.lastVerified).toBeNull();
+  });
+
+  test('HONEST CAUSE: only a read failure reports "not found"', () => {
+    // The try wraps readTracker() alone. A throw raised after the read - here
+    // from a getter on the returned string's own toString path - must not be
+    // dressed up as a missing file.
+    const exploding = {
+      toString() {
+        throw new Error("parse exploded");
+      },
+    } as unknown as string;
+
+    expect(() => run({ readTracker: () => exploding })).toThrowError(
+      /parse exploded/,
+    );
   });
 
   test("a non-Error throw is still reported, not swallowed", () => {

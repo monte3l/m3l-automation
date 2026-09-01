@@ -159,13 +159,34 @@ export function evaluateFreshness(header, now) {
  * @returns {{ ok: boolean, findings: string[] } & FreshnessPayload}
  */
 export function runHarnessFreshnessCheck({ readTracker, now, reporter }) {
-  /** @type {FreshnessResult} */
-  let result;
+  /**
+   * Route one result through the reporter. Shared so the read-failure path
+   * and the evaluated path cannot drift in how they report.
+   *
+   * @param {FreshnessResult} result
+   * @returns {{ ok: boolean, findings: string[] } & FreshnessPayload}
+   */
+  const report = ({ findings, summary, payload }) => {
+    for (const finding of findings) {
+      reporter.warn(finding, { file: TRACKER_PATH });
+    }
+    if (summary !== null) reporter.succeed(summary);
 
+    reporter.finish(payload);
+    return { ok: findings.length === 0, findings, ...payload };
+  };
+
+  /** @type {string} */
+  let contents;
+
+  // ONLY readTracker() sits inside the try. Widening it to cover parsing and
+  // evaluation would report a parse/evaluate throw under the hardcoded "not
+  // found" message below — a real failure surfaced under a wrong cause, which
+  // is close kin to swallowing it.
   try {
-    result = evaluateFreshness(parseHarnessHeader(readTracker()), now);
+    contents = readTracker();
   } catch (cause) {
-    result = {
+    return report({
       findings: [
         `${TRACKER_PATH} not found — run /refreshing-anthropic-guidance to ` +
           `create it. (${
@@ -174,18 +195,10 @@ export function runHarnessFreshnessCheck({ readTracker, now, reporter }) {
       ],
       summary: null,
       payload: { lastVerified: null, staleDays: null },
-    };
+    });
   }
 
-  const { findings, summary, payload } = result;
-
-  for (const finding of findings) {
-    reporter.warn(finding, { file: TRACKER_PATH });
-  }
-  if (summary !== null) reporter.succeed(summary);
-
-  reporter.finish(payload);
-  return { ok: findings.length === 0, findings, ...payload };
+  return report(evaluateFreshness(parseHarnessHeader(contents), now));
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
