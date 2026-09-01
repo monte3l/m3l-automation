@@ -215,6 +215,17 @@ records, because nobody experiences it as an event. Read its payload for:
   whole-harness regression, most often something newly injected at session
   start.
 
+**Read `by_skill` with its attribution rule in hand.** `analyze-sessions.mjs`
+attributes every API call to the most recently invoked skill until the next
+**plain human message** resets it (`setSkill(null)`). A skill invoked early in
+a long autonomous run therefore owns that entire run's tokens. `starting-work`
+measured 1.21 B tokens across 6367 invocations over 14 days on 2026-09-01 for
+exactly that reason — it is mandated as the first call of every change session,
+not because a five-question decision gate is expensive. Compare
+`by_subagent_type` instead, where attribution is per-transcript and a per-call
+average means something, and read a `by_skill` total as "how much work followed
+this skill", never as "what this skill cost".
+
 Route these like any other lesson, with one difference: **cite the numbers**.
 A telemetry finding whose proposed edit does not carry the measurement that
 motivated it cannot be re-checked after the fix, and the next sweep has no way
