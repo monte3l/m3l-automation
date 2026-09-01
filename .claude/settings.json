@@ -1,6 +1,9 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "cleanupPeriodDays": 14,
+  "env": {
+    "CLAUDE_CODE_NO_FLICKER": "1"
+  },
   "permissions": {
     "allow": [
       "Bash(pnpm check:*)",
@@ -61,9 +64,6 @@
     ]
   },
   "availableModels": ["fable", "opus", "sonnet", "haiku"],
-  "env": {
-    "CLAUDE_CODE_NO_FLICKER": "1"
-  },
   "hooks": {
     "SessionStart": [
       {
@@ -160,26 +160,26 @@
           {
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-protected-paths.mjs\"",
-            "timeout": 30,
-            "if": "Write(**/dist/**)"
+            "if": "Write(**/dist/**)",
+            "timeout": 30
           },
           {
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-protected-paths.mjs\"",
-            "timeout": 30,
-            "if": "Edit(**/dist/**)"
+            "if": "Edit(**/dist/**)",
+            "timeout": 30
           },
           {
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-eslint-disable-red.mjs\"",
-            "timeout": 30,
-            "if": "Write(packages/m3l-common/tests/**)"
+            "if": "Write(packages/m3l-common/tests/**)",
+            "timeout": 30
           },
           {
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-eslint-disable-red.mjs\"",
-            "timeout": 30,
-            "if": "Edit(packages/m3l-common/tests/**)"
+            "if": "Edit(packages/m3l-common/tests/**)",
+            "timeout": 30
           },
           {
             "type": "command",
@@ -228,158 +228,158 @@
           {
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/post-edit-md-verify.mjs\"",
-            "timeout": 120,
-            "if": "Write(*.md)"
+            "if": "Write(*.md)",
+            "timeout": 120
           },
           {
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/post-edit-md-verify.mjs\"",
-            "timeout": 120,
-            "if": "Edit(*.md)"
+            "if": "Edit(*.md)",
+            "timeout": 120
           },
           {
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-exports-semver.mjs\"",
-            "timeout": 120,
-            "if": "Write(packages/m3l-common/package.json)"
+            "if": "Write(packages/m3l-common/package.json)",
+            "timeout": 120
           },
           {
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-exports-semver.mjs\"",
-            "timeout": 120,
-            "if": "Edit(packages/m3l-common/package.json)"
+            "if": "Edit(packages/m3l-common/package.json)",
+            "timeout": 120
           },
           {
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/post-edit-verify.mjs\"",
-            "timeout": 180,
-            "if": "Write(*.ts)"
+            "if": "Write(*.ts)",
+            "timeout": 180
           },
           {
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/post-edit-verify.mjs\"",
-            "timeout": 180,
-            "if": "Edit(*.ts)"
+            "if": "Edit(*.ts)",
+            "timeout": 180
           },
           {
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/post-edit-verify.mjs\"",
-            "timeout": 180,
-            "if": "Write(*.mts)"
+            "if": "Write(*.mts)",
+            "timeout": 180
           },
           {
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/post-edit-verify.mjs\"",
-            "timeout": 180,
-            "if": "Edit(*.mts)"
+            "if": "Edit(*.mts)",
+            "timeout": 180
           },
           {
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/post-edit-verify.mjs\"",
-            "timeout": 180,
-            "if": "Write(*.cts)"
+            "if": "Write(*.cts)",
+            "timeout": 180
           },
           {
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/post-edit-verify.mjs\"",
-            "timeout": 180,
-            "if": "Edit(*.cts)"
+            "if": "Edit(*.cts)",
+            "timeout": 180
           },
           {
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-doc-counts.mjs\"",
-            "timeout": 120,
-            "if": "Write(docs/reference/**/*.md)"
+            "if": "Write(docs/reference/**/*.md)",
+            "timeout": 120
           },
           {
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-doc-counts.mjs\"",
-            "timeout": 120,
-            "if": "Edit(docs/reference/**/*.md)"
+            "if": "Edit(docs/reference/**/*.md)",
+            "timeout": 120
           },
           {
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-doc-counts.mjs\"",
-            "timeout": 120,
-            "if": "Write(README.md)"
+            "if": "Write(README.md)",
+            "timeout": 120
           },
           {
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-doc-counts.mjs\"",
-            "timeout": 120,
-            "if": "Edit(README.md)"
+            "if": "Edit(README.md)",
+            "timeout": 120
           },
           {
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-provenance-staleness.mjs\"",
-            "timeout": 120,
-            "if": "Write(packages/m3l-common/src/**)"
+            "if": "Write(packages/m3l-common/src/**)",
+            "timeout": 120
           },
           {
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-provenance-staleness.mjs\"",
-            "timeout": 120,
-            "if": "Edit(packages/m3l-common/src/**)"
+            "if": "Edit(packages/m3l-common/src/**)",
+            "timeout": 120
           },
           {
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-index-staleness.mjs\"",
-            "timeout": 120,
-            "if": "Write(docs/reference/**/*.provenance.json)"
+            "if": "Write(docs/reference/**/*.provenance.json)",
+            "timeout": 120
           },
           {
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-index-staleness.mjs\"",
-            "timeout": 120,
-            "if": "Edit(docs/reference/**/*.provenance.json)"
+            "if": "Edit(docs/reference/**/*.provenance.json)",
+            "timeout": 120
           },
           {
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-index-staleness.mjs\"",
-            "timeout": 120,
-            "if": "Write(packages/m3l-common/src/**/index.ts)"
+            "if": "Write(packages/m3l-common/src/**/index.ts)",
+            "timeout": 120
           },
           {
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-index-staleness.mjs\"",
-            "timeout": 120,
-            "if": "Edit(packages/m3l-common/src/**/index.ts)"
+            "if": "Edit(packages/m3l-common/src/**/index.ts)",
+            "timeout": 120
           },
           {
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-index-staleness.mjs\"",
-            "timeout": 120,
-            "if": "Write(docs/implementation-status.md)"
+            "if": "Write(docs/implementation-status.md)",
+            "timeout": 120
           },
           {
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-index-staleness.mjs\"",
-            "timeout": 120,
-            "if": "Edit(docs/implementation-status.md)"
+            "if": "Edit(docs/implementation-status.md)",
+            "timeout": 120
           },
           {
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-index-staleness.mjs\"",
-            "timeout": 120,
-            "if": "Write(docs/reference/**/*.md)"
+            "if": "Write(docs/reference/**/*.md)",
+            "timeout": 120
           },
           {
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-index-staleness.mjs\"",
-            "timeout": 120,
-            "if": "Edit(docs/reference/**/*.md)"
+            "if": "Edit(docs/reference/**/*.md)",
+            "timeout": 120
           },
           {
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-red-phase-comments.mjs\"",
-            "timeout": 30,
-            "if": "Write(packages/m3l-common/src/**)"
+            "if": "Write(packages/m3l-common/src/**)",
+            "timeout": 30
           },
           {
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-red-phase-comments.mjs\"",
-            "timeout": 30,
-            "if": "Edit(packages/m3l-common/src/**)"
+            "if": "Edit(packages/m3l-common/src/**)",
+            "timeout": 30
           }
         ]
       }
@@ -396,8 +396,9 @@
     "security-guidance@claude-plugins-official": true,
     "claude-code-setup@claude-plugins-official": true,
     "commit-commands@claude-plugins-official": true,
-    "remember@claude-plugins-official": true,
     "mcp-server-dev@claude-plugins-official": true,
-    "session-report@claude-plugins-official": true
+    "session-report@claude-plugins-official": true,
+    "remember@claude-plugins-official": false,
+    "claude-security@claude-plugins-official": true
   }
 }
