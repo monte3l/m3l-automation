@@ -17,6 +17,7 @@ import type { Server } from "node:http";
 import { Core } from "@m3l-automation/m3l-common";
 
 import type { M3LHumanActionAuditPort } from "./audit/port.js";
+import { createIndexedHumanActionAuditPort } from "./boot/audit-index.js";
 import { buildDispatchRouter } from "./boot/dispatch-router.js";
 import { buildHumanActionAuditPort } from "./boot/human-action-audit.js";
 import {
@@ -66,6 +67,7 @@ import type {
   M3LConsoleStoreLifecycle,
   OpenConsoleStoreOptions,
 } from "./store/store.js";
+import type { M3LConsoleAuditRepository } from "./store/audit-repository.js";
 import type { M3LConsoleSessionsRepository } from "./store/sessions-repository.js";
 import type { M3LConsoleSessionsConfig } from "./config/sessions.js";
 
@@ -106,12 +108,29 @@ export interface M3LConsoleRuntimeOptions {
   /** The workbench-sessions persistence port the X6 session subsystem builds from; see {@link createConsoleRuntime}. */
   readonly sessions?: M3LConsoleSessionsRepository;
   /**
+   * The ADR-0070 SQLite audit INDEX every trail entry is additionally
+   * projected into (X7c). Supplied as a sibling of `runs`/`sessions` rather
+   * than reached through {@link store}, which is typed
+   * {@link M3LConsoleStoreHandle} and carries no repositories.
+   *
+   * When absent — a storeless console, which {@link store} being optional
+   * makes a supported state — {@link auditPort} stays the bare JSONL stream
+   * and no index row is written. The trail is unaffected either way: it is
+   * the source of truth, and the index is a derived projection of it (see
+   * `boot/audit-index.ts`).
+   */
+  readonly audit?: M3LConsoleAuditRepository;
+  /**
    * The ADR-0070 human-action audit port. Defaults to a JSONL stream rooted
-   * at `M3L_CONSOLE_AUDIT_ROOT` (or the data dir's `console/audit`).
+   * at `M3L_CONSOLE_AUDIT_ROOT` (or the data dir's `console/audit`), wrapped
+   * by `boot/audit-index.ts`'s dual-write port when {@link audit} is
+   * supplied.
    *
    * Injectable purely as a test seam, mirroring the existing
    * `store`/`runs`/`sessions` convention — auditing itself is not optional,
-   * and there is no configuration that turns it off.
+   * and there is no configuration that turns it off. Supplying this REPLACES
+   * the default entirely, index half included: a caller handing in its own
+   * port owns what that port writes.
    */
   readonly auditPort?: M3LHumanActionAuditPort;
 }
@@ -212,6 +231,29 @@ function resolveConfig(options: M3LConsoleRuntimeOptions): M3LConsoleConfig {
   );
 }
 
+/**
+ * Resolves the human-action audit port: `options.auditPort` verbatim when
+ * supplied (a test seam that owns what it writes), else the JSONL stream —
+ * wrapped by `boot/audit-index.ts`'s dual-write port when
+ * `options.audit` supplied an index to project into.
+ *
+ * The bare-stream fallback is not dead code: `options.store` is optional, so
+ * a storeless console is a supported state, and it must still audit.
+ */
+function resolveAuditPort(
+  options: M3LConsoleRuntimeOptions,
+  logger: Core.M3LLogger,
+): M3LHumanActionAuditPort {
+  if (options.auditPort !== undefined) return options.auditPort;
+  const inner = buildHumanActionAuditPort(options.env ?? process.env);
+  if (options.audit === undefined) return inner;
+  return createIndexedHumanActionAuditPort({
+    inner,
+    repository: options.audit,
+    logger,
+  });
+}
+
 export function createConsoleRuntime(
   options: M3LConsoleRuntimeOptions = {},
 ): M3LConsoleRuntime {
@@ -247,8 +289,7 @@ export function createConsoleRuntime(
           ? { service: adaptSessionService(sessions.service) }
           : undefined,
       ),
-      options.auditPort ??
-        buildHumanActionAuditPort(options.env ?? process.env),
+      resolveAuditPort(options, logger),
     ),
     middlewares: [
       createDrainMiddleware(drain),
@@ -391,6 +432,7 @@ async function buildRuntimeAndBindListener(
       store,
       runs: store.runs,
       sessions: store.sessions,
+      audit: store.audit,
     });
     // A database write (reconciling SIGKILL-orphaned rows), so it belongs
     // here — not in createConsoleRuntime, a pure composition step — and
