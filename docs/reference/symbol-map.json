@@ -1554,6 +1554,66 @@
     "namespace": "core",
     "file": "packages/m3l-common/src/core/network/M3LFileDownloader.ts"
   },
+  "M3LStepReference": {
+    "submodule": "orchestration",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/orchestration/step-reference.ts",
+    "lines": "82-85"
+  },
+  "M3LStepReferenceSegment": {
+    "submodule": "orchestration",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/orchestration/step-reference.ts",
+    "lines": "64-70"
+  },
+  "M3LBindingExpectedType": {
+    "submodule": "orchestration",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/orchestration/binding.ts",
+    "lines": "29-29"
+  },
+  "M3LStepBinding": {
+    "submodule": "orchestration",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/orchestration/binding.ts",
+    "lines": "51-58"
+  },
+  "M3LStepReferenceError": {
+    "submodule": "orchestration",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/orchestration/M3LStepReferenceError.ts",
+    "lines": "54-80"
+  },
+  "parseStepReference": {
+    "submodule": "orchestration",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/orchestration/step-reference.ts",
+    "lines": "356-386"
+  },
+  "formatStepReference": {
+    "submodule": "orchestration",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/orchestration/step-reference.ts",
+    "lines": "389-420"
+  },
+  "resolveStepReference": {
+    "submodule": "orchestration",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/orchestration/step-reference.ts",
+    "lines": "511-530"
+  },
+  "validateBindingValue": {
+    "submodule": "orchestration",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/orchestration/binding.ts",
+    "lines": "104-130"
+  },
+  "isDangerousKey": {
+    "submodule": "orchestration",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/security/DangerousKeys.ts",
+    "lines": "46-48"
+  },
   "M3LOperationPipeline": {
     "submodule": "pipeline",
     "namespace": "core",
@@ -2168,12 +2228,6 @@
     "submodule": "script",
     "namespace": "core",
     "file": "packages/m3l-common/src/core/script/capture-run-failures.ts"
-  },
-  "isDangerousKey": {
-    "submodule": "security",
-    "namespace": "core",
-    "file": "packages/m3l-common/src/core/security/DangerousKeys.ts",
-    "lines": "46-48"
   },
   "formatUnsafeKeyLocation": {
     "submodule": "security",

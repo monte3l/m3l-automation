@@ -226,6 +226,7 @@ export const M3L_ERROR_CATALOG: Readonly<
   ERR_SECRETS_MANAGER_OPERATION: { origin: "external", retryable: true },
   ERR_SIGNING_FAILURE: { origin: "external", retryable: false },
   ERR_SQS_OPERATION: { origin: "external", retryable: true },
+  ERR_STEP_REFERENCE_INVALID: { origin: "caller", retryable: false },
   ERR_TEXT_EXTRACTION: { origin: "external", retryable: false },
   ERR_TEXT_EXTRACTION_MISSING_DEP: { origin: "external", retryable: false },
   ERR_TEXT_EXTRACTION_UNSUPPORTED: { origin: "caller", retryable: false },

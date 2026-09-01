@@ -1,0 +1,114 @@
+{
+  "$schema": "../provenance.schema.json",
+  "doc": "core/orchestration.md",
+  "sections": [
+    {
+      "heading": "Public API",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/orchestration/step-reference.ts",
+          "symbol": "M3LStepReference",
+          "lines": "82-85",
+          "blob": "cf55ed8b5c895f0a4bd4071325383eb5da26c7cf"
+        },
+        {
+          "file": "packages/m3l-common/src/core/orchestration/step-reference.ts",
+          "symbol": "M3LStepReferenceSegment",
+          "lines": "64-70",
+          "blob": "cf55ed8b5c895f0a4bd4071325383eb5da26c7cf"
+        },
+        {
+          "file": "packages/m3l-common/src/core/orchestration/binding.ts",
+          "symbol": "M3LBindingExpectedType",
+          "lines": "29-29",
+          "blob": "a50bafc39e20e459653c93f2289e89370bc0209c"
+        },
+        {
+          "file": "packages/m3l-common/src/core/orchestration/binding.ts",
+          "symbol": "M3LStepBinding",
+          "lines": "51-58",
+          "blob": "a50bafc39e20e459653c93f2289e89370bc0209c"
+        },
+        {
+          "file": "packages/m3l-common/src/core/orchestration/M3LStepReferenceError.ts",
+          "symbol": "M3LStepReferenceError",
+          "lines": "54-80",
+          "blob": "987b1ae13f6eceb63f081f95ae9eb3bf14dc209c"
+        }
+      ],
+      "retrieved": "2026-09-01"
+    },
+    {
+      "heading": "The reference grammar",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/orchestration/step-reference.ts",
+          "symbol": "parseStepReference",
+          "lines": "356-386",
+          "blob": "cf55ed8b5c895f0a4bd4071325383eb5da26c7cf"
+        },
+        {
+          "file": "packages/m3l-common/src/core/orchestration/step-reference.ts",
+          "symbol": "formatStepReference",
+          "lines": "389-420",
+          "blob": "cf55ed8b5c895f0a4bd4071325383eb5da26c7cf"
+        },
+        {
+          "file": "packages/m3l-common/src/core/orchestration/step-reference.ts",
+          "symbol": "resolveStepReference",
+          "lines": "511-530",
+          "blob": "cf55ed8b5c895f0a4bd4071325383eb5da26c7cf"
+        }
+      ],
+      "retrieved": "2026-09-01"
+    },
+    {
+      "heading": "Typed bindings",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/orchestration/binding.ts",
+          "symbol": "validateBindingValue",
+          "lines": "104-130",
+          "blob": "a50bafc39e20e459653c93f2289e89370bc0209c"
+        },
+        {
+          "file": "packages/m3l-common/src/core/orchestration/binding.ts",
+          "symbol": "M3LStepBinding",
+          "lines": "51-58",
+          "blob": "a50bafc39e20e459653c93f2289e89370bc0209c"
+        }
+      ],
+      "retrieved": "2026-09-01"
+    },
+    {
+      "heading": "The prototype-pollution guard",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/orchestration/step-reference.ts",
+          "symbol": "resolveStepReference",
+          "lines": "511-530",
+          "blob": "cf55ed8b5c895f0a4bd4071325383eb5da26c7cf"
+        },
+        {
+          "file": "packages/m3l-common/src/core/security/DangerousKeys.ts",
+          "symbol": "isDangerousKey",
+          "lines": "46-48",
+          "blob": "9dd01aaf0eb6673c990a7a6060216a81275526e2"
+        }
+      ],
+      "retrieved": "2026-09-01"
+    },
+    {
+      "heading": "Errors",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/orchestration/M3LStepReferenceError.ts",
+          "symbol": "M3LStepReferenceError",
+          "lines": "54-80",
+          "blob": "987b1ae13f6eceb63f081f95ae9eb3bf14dc209c"
+        }
+      ],
+      "retrieved": "2026-09-01"
+    }
+  ]
+}
