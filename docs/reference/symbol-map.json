@@ -479,6 +479,11 @@
     "namespace": "core",
     "file": "packages/m3l-common/src/core/config/M3LConfigSchemaValidator.ts"
   },
+  "deriveEnvVarName": {
+    "submodule": "config",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/config/deriveEnvVarName.ts"
+  },
   "deriveSecretsSpecifier": {
     "submodule": "config",
     "namespace": "core",

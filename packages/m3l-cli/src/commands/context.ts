@@ -9,6 +9,7 @@
  * @packageDocumentation
  */
 
+import type { M3LCliEnvFileSetting } from "../cli/flags.js";
 import type { M3LCliOutput } from "../cli/output.js";
 
 /**
@@ -26,6 +27,8 @@ import type { M3LCliOutput } from "../cli/output.js";
  *   cacheFilePath: "/repo/data/cache/m3l-cli/discovery.json",
  *   historyFilePath: "/repo/data/cache/m3l-cli/history.json",
  *   outputDirPath: "/repo/data/output",
+ *   env: process.env,
+ *   envFile: { kind: "auto" },
  * };
  * ```
  */
@@ -51,4 +54,18 @@ export interface M3LCliCommandContext {
    * even for commands (`list`/`inspect`/`presets`) that don't read it.
    */
   readonly outputDirPath: string;
+  /**
+   * The environment the CLI itself was invoked with (`runCli`'s
+   * `options.env ?? process.env`) — `main.ts`'s `buildCommandContext` already
+   * consumed this map to resolve the three paths above, and now carries it so
+   * the spawn path can hand it to the child as its base environment instead
+   * of reaching for the `process.env` global (ADR-0085).
+   */
+  readonly env: Readonly<Record<string, string | undefined>>;
+  /**
+   * The resolved `--env-file`/`--no-env-file` decision (ADR-0085), populated
+   * unconditionally for every command context like {@link outputDirPath},
+   * even for commands that never spawn. Defaults to `{ kind: "auto" }`.
+   */
+  readonly envFile: M3LCliEnvFileSetting;
 }

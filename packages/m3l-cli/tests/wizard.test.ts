@@ -1,4 +1,12 @@
-import { afterEach, describe, expect, expectTypeOf, test, vi } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  expectTypeOf,
+  test,
+  vi,
+} from "vitest";
 
 import type { Core } from "@m3l-automation/m3l-common";
 
@@ -84,6 +92,15 @@ afterEach(() => {
   translateArgvMock.mockReset();
 });
 
+// `runWizard` destructures `translateArgv`'s result (ADR-0085's
+// `{ argv, secretEnv }` shape), so the bare `vi.fn()` above would return
+// `undefined` and throw before reaching the behaviour any of the
+// selection/prompt tests actually assert. Seeded per-test rather than in
+// `afterEach` so the very first test in the file gets it too.
+beforeEach(() => {
+  translateArgvMock.mockReturnValue({ argv: [], secretEnv: {} });
+});
+
 /**
  * `M3LCliCommandContext` plus the run-history file's absolute path (8f) —
  * `runWizard`'s own parameter type, narrower than the shared base, mirroring
@@ -130,6 +147,8 @@ function buildContext(
     cacheFilePath: "/workspace/data/cache/m3l-cli/discovery.json",
     historyFilePath: "/workspace/data/cache/m3l-cli/history.json",
     outputDirPath: "/workspace/data/output",
+    env: {},
+    envFile: { kind: "auto" },
     ...overrides,
   };
 }
@@ -399,7 +418,7 @@ describe("runWizard — parameter-type dispatch", () => {
     const prompt = createScriptedPrompt();
     prompt.autocomplete.mockResolvedValue("json-etl");
     prompt.text.mockResolvedValue("a, b ,, c ,");
-    translateArgvMock.mockReturnValue([]);
+    translateArgvMock.mockReturnValue({ argv: [], secretEnv: {} });
     spawnScriptMock.mockResolvedValue(0);
     prompt.confirm.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
 
@@ -488,7 +507,7 @@ describe("runWizard — terminal-text sanitization (8g addendum)", () => {
     prompt.autocomplete.mockResolvedValue("json-etl");
     prompt.select.mockResolvedValue(rawName);
     prompt.confirm.mockResolvedValueOnce(false).mockResolvedValueOnce(false);
-    translateArgvMock.mockReturnValue([]);
+    translateArgvMock.mockReturnValue({ argv: [], secretEnv: {} });
 
     await runWizard(buildContext(), { prompt, isTTY: true });
 
@@ -560,7 +579,7 @@ describe("runWizard — empty-answer handling", () => {
     prompt.autocomplete.mockResolvedValue("json-etl");
     prompt.text.mockResolvedValue("");
     prompt.confirm.mockResolvedValueOnce(false).mockResolvedValueOnce(false);
-    translateArgvMock.mockReturnValue([]);
+    translateArgvMock.mockReturnValue({ argv: [], secretEnv: {} });
 
     await runWizard(buildContext(), { prompt, isTTY: true });
 
@@ -582,7 +601,7 @@ describe("runWizard — empty-answer handling", () => {
     prompt.autocomplete.mockResolvedValue("json-etl");
     prompt.text.mockResolvedValueOnce("").mockResolvedValueOnce("");
     prompt.confirm.mockResolvedValueOnce(false).mockResolvedValueOnce(false);
-    translateArgvMock.mockReturnValue([]);
+    translateArgvMock.mockReturnValue({ argv: [], secretEnv: {} });
 
     await runWizard(buildContext({ output }), { prompt, isTTY: true });
 
@@ -606,7 +625,7 @@ describe("runWizard — empty-answer handling", () => {
     prompt.autocomplete.mockResolvedValue("json-etl");
     prompt.text.mockResolvedValueOnce("").mockResolvedValueOnce("us-east-1");
     prompt.confirm.mockResolvedValueOnce(false).mockResolvedValueOnce(false);
-    translateArgvMock.mockReturnValue([]);
+    translateArgvMock.mockReturnValue({ argv: [], secretEnv: {} });
 
     await runWizard(buildContext(), { prompt, isTTY: true });
 
@@ -619,8 +638,8 @@ describe("runWizard — empty-answer handling", () => {
   });
 });
 
-describe("runWizard — CRITICAL: secret values never rendered, only in spawn argv", () => {
-  test("a secret parameter's raw entered value never appears in any rendered stdout/stderr output, masks as ******** in the summary, and reaches spawnScript only through the translated argv", async () => {
+describe("runWizard — CRITICAL: secret values never rendered, and never in spawn argv", () => {
+  test("a secret parameter's raw entered value never appears in any rendered stdout/stderr output, masks as ******** in the summary, and reaches spawnScript through secretEnv rather than the argv", async () => {
     const secretValue = "SUPER-SECRET-VALUE-9000";
     discoverScriptsMock.mockReturnValue([jsonEtlCandidate]);
     loadParametersCachedMock.mockResolvedValue([
@@ -635,10 +654,10 @@ describe("runWizard — CRITICAL: secret values never rendered, only in spawn ar
     prompt.confirm
       .mockResolvedValueOnce(false) // save-as-preset? no
       .mockResolvedValueOnce(true); // run now? yes
-    translateArgvMock.mockReturnValue([
-      `--licenseCode=${secretValue}`,
-      "--region=us-east-1",
-    ]);
+    translateArgvMock.mockReturnValue({
+      argv: ["--region=us-east-1"],
+      secretEnv: { LICENSE_CODE: secretValue },
+    });
     spawnScriptMock.mockResolvedValue(0);
     recordHistoryEntryMock.mockReturnValue(true);
 
@@ -648,10 +667,50 @@ describe("runWizard — CRITICAL: secret values never rendered, only in spawn ar
     expect(rendered).not.toContain(secretValue);
     expect(rendered).toContain("********");
 
-    expect(spawnScriptMock).toHaveBeenCalledWith(jsonEtlCandidate.directory, [
-      `--licenseCode=${secretValue}`,
-      "--region=us-east-1",
-    ]);
+    // The wizard calls spawnScript DIRECTLY, bypassing executeScript — so the
+    // ADR-0085 routing has to be asserted here independently of dynamic.ts.
+    expect(spawnScriptMock).toHaveBeenCalledWith(
+      jsonEtlCandidate.directory,
+      ["--region=us-east-1"],
+      expect.objectContaining({
+        secretEnv: { LICENSE_CODE: secretValue },
+      }),
+    );
+
+    // Assert against the WHOLE argv array, not `.includes` of a flag name: the
+    // failure this guards is the secret surviving anywhere in the tokens that
+    // become /proc/<pid>/cmdline.
+    const spawnArgv = spawnScriptMock.mock.calls[0]?.[1] ?? [];
+    expect(JSON.stringify(spawnArgv)).not.toContain(secretValue);
+  });
+
+  test("forwards the context's env and envFile to spawnScript so the child inherits the CLI's environment", async () => {
+    discoverScriptsMock.mockReturnValue([jsonEtlCandidate]);
+    loadParametersCachedMock.mockResolvedValue([]);
+    const prompt = createScriptedPrompt();
+    prompt.autocomplete.mockResolvedValue("json-etl");
+    prompt.confirm
+      .mockResolvedValueOnce(false) // save-as-preset? no
+      .mockResolvedValueOnce(true); // run now? yes
+    translateArgvMock.mockReturnValue({ argv: [], secretEnv: {} });
+    spawnScriptMock.mockResolvedValue(0);
+
+    await runWizard(
+      buildContext({
+        env: { AWS_PROFILE: "sandbox" },
+        envFile: { kind: "disabled" },
+      }),
+      { prompt, isTTY: true },
+    );
+
+    expect(spawnScriptMock).toHaveBeenCalledWith(
+      jsonEtlCandidate.directory,
+      [],
+      expect.objectContaining({
+        env: { AWS_PROFILE: "sandbox" },
+        envFile: { kind: "disabled" },
+      }),
+    );
   });
 });
 
@@ -664,7 +723,7 @@ describe("runWizard — save-as-preset", () => {
     prompt.confirm
       .mockResolvedValueOnce(false) // save-as-preset? no
       .mockResolvedValueOnce(true); // run now? yes
-    translateArgvMock.mockReturnValue([]);
+    translateArgvMock.mockReturnValue({ argv: [], secretEnv: {} });
     spawnScriptMock.mockResolvedValue(0);
 
     const code = await runWizard(buildContext(), { prompt, isTTY: true });
@@ -692,7 +751,7 @@ describe("runWizard — save-as-preset", () => {
       written: [],
       skippedSecrets: ["licenseCode"],
     });
-    translateArgvMock.mockReturnValue([]);
+    translateArgvMock.mockReturnValue({ argv: [], secretEnv: {} });
 
     await runWizard(buildContext({ output }), { prompt, isTTY: true });
 
@@ -714,7 +773,7 @@ describe("runWizard — save-as-preset", () => {
     writePresetMock.mockImplementation(() => {
       throw new M3LCliError("ERR_CLI_PRESET_INVALID", "invalid preset name");
     });
-    translateArgvMock.mockReturnValue([]);
+    translateArgvMock.mockReturnValue({ argv: [], secretEnv: {} });
     spawnScriptMock.mockResolvedValue(0);
 
     const code = await runWizard(buildContext({ output }), {
@@ -753,16 +812,21 @@ describe("runWizard — final run decision", () => {
     const prompt = createScriptedPrompt();
     prompt.autocomplete.mockResolvedValue("json-etl");
     prompt.confirm.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
-    translateArgvMock.mockReturnValue(["--region=us-east-1"]);
+    translateArgvMock.mockReturnValue({
+      argv: ["--region=us-east-1"],
+      secretEnv: {},
+    });
     spawnScriptMock.mockResolvedValue(5);
     recordHistoryEntryMock.mockReturnValue(true);
 
     const code = await runWizard(buildContext(), { prompt, isTTY: true });
 
     expect(code).toBe(5);
-    expect(spawnScriptMock).toHaveBeenCalledWith(jsonEtlCandidate.directory, [
-      "--region=us-east-1",
-    ]);
+    expect(spawnScriptMock).toHaveBeenCalledWith(
+      jsonEtlCandidate.directory,
+      ["--region=us-east-1"],
+      expect.objectContaining({ secretEnv: {} }),
+    );
   });
 
   test("records a history entry naming the prompted canonical parameter names and the spawned exit code", async () => {
@@ -774,7 +838,10 @@ describe("runWizard — final run decision", () => {
     prompt.autocomplete.mockResolvedValue("json-etl");
     prompt.text.mockResolvedValue("us-east-1");
     prompt.confirm.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
-    translateArgvMock.mockReturnValue(["--region=us-east-1"]);
+    translateArgvMock.mockReturnValue({
+      argv: ["--region=us-east-1"],
+      secretEnv: {},
+    });
     spawnScriptMock.mockResolvedValue(3);
     recordHistoryEntryMock.mockReturnValue(true);
 
@@ -802,7 +869,7 @@ describe("runWizard — final run decision", () => {
     const prompt = createScriptedPrompt();
     prompt.autocomplete.mockResolvedValue("json-etl");
     prompt.confirm.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
-    translateArgvMock.mockReturnValue([]);
+    translateArgvMock.mockReturnValue({ argv: [], secretEnv: {} });
     spawnScriptMock.mockResolvedValue(0);
     recordHistoryEntryMock.mockImplementation(() => {
       throw new Error("disk full");
@@ -878,7 +945,7 @@ describe("runWizard — operation scoping (U8)", () => {
     prompt.select.mockResolvedValue("get");
     prompt.text.mockResolvedValue("abc123");
     prompt.confirm.mockResolvedValueOnce(false).mockResolvedValueOnce(false);
-    translateArgvMock.mockReturnValue([]);
+    translateArgvMock.mockReturnValue({ argv: [], secretEnv: {} });
 
     await runWizard(buildContext(), { prompt, isTTY: true });
 
@@ -917,7 +984,7 @@ describe("runWizard — operation scoping (U8)", () => {
     prompt.select.mockResolvedValue("get");
     prompt.text.mockResolvedValue("abc123");
     prompt.confirm.mockResolvedValueOnce(false).mockResolvedValueOnce(false);
-    translateArgvMock.mockReturnValue([]);
+    translateArgvMock.mockReturnValue({ argv: [], secretEnv: {} });
 
     await runWizard(buildContext({ output }), { prompt, isTTY: true });
 
@@ -946,7 +1013,7 @@ describe("runWizard — operation scoping (U8)", () => {
     prompt.select.mockResolvedValue("get");
     prompt.text.mockResolvedValueOnce("").mockResolvedValueOnce("");
     prompt.confirm.mockResolvedValueOnce(false).mockResolvedValueOnce(false);
-    translateArgvMock.mockReturnValue([]);
+    translateArgvMock.mockReturnValue({ argv: [], secretEnv: {} });
 
     await runWizard(buildContext({ output }), { prompt, isTTY: true });
 
@@ -975,7 +1042,7 @@ describe("runWizard — operation scoping (U8)", () => {
       .mockResolvedValueOnce("abc123")
       .mockResolvedValueOnce("us-east-1");
     prompt.confirm.mockResolvedValueOnce(false).mockResolvedValueOnce(false);
-    translateArgvMock.mockReturnValue([]);
+    translateArgvMock.mockReturnValue({ argv: [], secretEnv: {} });
 
     await runWizard(buildContext(), { prompt, isTTY: true });
 
@@ -1027,7 +1094,7 @@ describe("runWizard — operation scoping (U8)", () => {
     prompt.text.mockResolvedValue("my-bucket");
     prompt.select.mockResolvedValue("get");
     prompt.confirm.mockResolvedValueOnce(false).mockResolvedValueOnce(false);
-    translateArgvMock.mockReturnValue([]);
+    translateArgvMock.mockReturnValue({ argv: [], secretEnv: {} });
 
     await runWizard(buildContext(), { prompt, isTTY: true });
 

@@ -49,6 +49,13 @@ afterEach(() => {
   h.spawn.mockReset();
 });
 
+/**
+ * `expect.any(Object)` for the composed child environment, pre-cast to the
+ * field's real type: the bare matcher is `any`, which taints the whole
+ * options literal it sits in and trips `no-unsafe-assignment`.
+ */
+const ANY_ENV = expect.any(Object) as Readonly<Record<string, string>>;
+
 /** A minimal fake `ChildProcess`: an EventEmitter emitting `close`/`error`. */
 function createFakeChild(): EventEmitter {
   return new EventEmitter();
@@ -145,7 +152,7 @@ describe("spawnScript — argv/cwd/stdio", () => {
     expect(spawnImpl).toHaveBeenCalledWith(
       process.execPath,
       ["--env-file-if-exists=.env", "dist/main.js", "--limit", "5"],
-      { cwd: scriptDirectory, stdio: "inherit" },
+      { cwd: scriptDirectory, stdio: "inherit", env: ANY_ENV },
     );
   });
 
@@ -161,7 +168,171 @@ describe("spawnScript — argv/cwd/stdio", () => {
     expect(spawnImpl).toHaveBeenCalledWith(
       process.execPath,
       ["--env-file-if-exists=.env", "dist/main.js"],
-      { cwd: scriptDirectory, stdio: "inherit" },
+      { cwd: scriptDirectory, stdio: "inherit", env: ANY_ENV },
+    );
+  });
+});
+
+describe("spawnScript — env-file selection (ADR-0085)", () => {
+  test("the default (no envFile) keeps --env-file-if-exists=.env, unchanged", async () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(true);
+    const fakeChild = createFakeChild();
+    const spawnImpl = vi.fn<NonNullable<M3LCliSpawnOptions["spawnImpl"]>>(
+      () => fakeChild,
+    );
+
+    const resultPromise = spawnScript(scriptDirectory, [], { spawnImpl });
+    fakeChild.emit("close", 0, null);
+    await resultPromise;
+
+    expect(spawnImpl.mock.calls[0]?.[1]).toEqual([
+      "--env-file-if-exists=.env",
+      "dist/main.js",
+    ]);
+  });
+
+  test("'--no-env-file' drops the env-file token entirely", async () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(true);
+    const fakeChild = createFakeChild();
+    const spawnImpl = vi.fn<NonNullable<M3LCliSpawnOptions["spawnImpl"]>>(
+      () => fakeChild,
+    );
+
+    const resultPromise = spawnScript(scriptDirectory, [], {
+      spawnImpl,
+      envFile: { kind: "disabled" },
+    });
+    fakeChild.emit("close", 0, null);
+    await resultPromise;
+
+    expect(spawnImpl.mock.calls[0]?.[1]).toEqual(["dist/main.js"]);
+  });
+
+  test("an explicit path substitutes for .env, keeping the tolerant -if-exists form", async () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(true);
+    const fakeChild = createFakeChild();
+    const spawnImpl = vi.fn<NonNullable<M3LCliSpawnOptions["spawnImpl"]>>(
+      () => fakeChild,
+    );
+
+    const resultPromise = spawnScript(scriptDirectory, ["--limit", "5"], {
+      spawnImpl,
+      envFile: { kind: "path", path: "/repo/staging.env" },
+    });
+    fakeChild.emit("close", 0, null);
+    await resultPromise;
+
+    // -if-exists, not node's strict --env-file: a typo'd path stays the same
+    // soft miss the hardcoded .env has always been.
+    expect(spawnImpl.mock.calls[0]?.[1]).toEqual([
+      "--env-file-if-exists=/repo/staging.env",
+      "dist/main.js",
+      "--limit",
+      "5",
+    ]);
+  });
+});
+
+describe("spawnScript — child environment (ADR-0085)", () => {
+  test("composes the injected base env and passes it as the third spawn argument", async () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(true);
+    const fakeChild = createFakeChild();
+    const spawnImpl = vi.fn<NonNullable<M3LCliSpawnOptions["spawnImpl"]>>(
+      () => fakeChild,
+    );
+
+    const resultPromise = spawnScript(scriptDirectory, [], {
+      spawnImpl,
+      env: { AWS_PROFILE: "sandbox", PATH: "/usr/bin" },
+    });
+    fakeChild.emit("close", 0, null);
+    await resultPromise;
+
+    expect(spawnImpl.mock.calls[0]?.[2].env).toEqual({
+      AWS_PROFILE: "sandbox",
+      PATH: "/usr/bin",
+    });
+  });
+
+  test("secretEnv is overlaid LAST, beating a same-named ambient variable", async () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(true);
+    const fakeChild = createFakeChild();
+    const spawnImpl = vi.fn<NonNullable<M3LCliSpawnOptions["spawnImpl"]>>(
+      () => fakeChild,
+    );
+
+    const resultPromise = spawnScript(scriptDirectory, [], {
+      spawnImpl,
+      env: { AWS_PROFILE: "sandbox", API_TOKEN: "stale" },
+      secretEnv: { API_TOKEN: "fresh" },
+    });
+    fakeChild.emit("close", 0, null);
+    await resultPromise;
+
+    // The injected secret must win, matching the precedence the argv token it
+    // replaces used to have over the environment.
+    expect(spawnImpl.mock.calls[0]?.[2].env).toEqual({
+      AWS_PROFILE: "sandbox",
+      API_TOKEN: "fresh",
+    });
+  });
+
+  test("drops undefined-valued base entries so the composed map is a plain string record", async () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(true);
+    const fakeChild = createFakeChild();
+    const spawnImpl = vi.fn<NonNullable<M3LCliSpawnOptions["spawnImpl"]>>(
+      () => fakeChild,
+    );
+
+    const resultPromise = spawnScript(scriptDirectory, [], {
+      spawnImpl,
+      env: { KEPT: "yes", DROPPED: undefined },
+    });
+    fakeChild.emit("close", 0, null);
+    await resultPromise;
+
+    const composed = spawnImpl.mock.calls[0]?.[2].env ?? {};
+    expect(composed).toEqual({ KEPT: "yes" });
+    expect(Object.hasOwn(composed, "DROPPED")).toBe(false);
+  });
+
+  test("inherits process.env when no base env is injected", async () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(true);
+    const fakeChild = createFakeChild();
+    const spawnImpl = vi.fn<NonNullable<M3LCliSpawnOptions["spawnImpl"]>>(
+      () => fakeChild,
+    );
+    process.env["M3L_SPAWN_ENV_PROBE"] = "inherited";
+
+    try {
+      const resultPromise = spawnScript(scriptDirectory, [], { spawnImpl });
+      fakeChild.emit("close", 0, null);
+      await resultPromise;
+
+      expect(spawnImpl.mock.calls[0]?.[2].env["M3L_SPAWN_ENV_PROBE"]).toBe(
+        "inherited",
+      );
+    } finally {
+      delete process.env["M3L_SPAWN_ENV_PROBE"];
+    }
+  });
+
+  test("a secret's value never appears anywhere in the argv handed to spawnImpl", async () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(true);
+    const fakeChild = createFakeChild();
+    const spawnImpl = vi.fn<NonNullable<M3LCliSpawnOptions["spawnImpl"]>>(
+      () => fakeChild,
+    );
+
+    const resultPromise = spawnScript(scriptDirectory, ["--region=eu-west-1"], {
+      spawnImpl,
+      secretEnv: { API_TOKEN: "hunter2" },
+    });
+    fakeChild.emit("close", 0, null);
+    await resultPromise;
+
+    expect(JSON.stringify(spawnImpl.mock.calls[0]?.[1])).not.toContain(
+      "hunter2",
     );
   });
 });
@@ -386,7 +557,7 @@ describe("spawnScript — redirectStdoutToStderr (stdout redirected to the paren
     expect(spawnImpl).toHaveBeenCalledWith(
       process.execPath,
       ["--env-file-if-exists=.env", "dist/main.js"],
-      { cwd: scriptDirectory, stdio: "inherit" },
+      { cwd: scriptDirectory, stdio: "inherit", env: ANY_ENV },
     );
   });
 
@@ -406,7 +577,7 @@ describe("spawnScript — redirectStdoutToStderr (stdout redirected to the paren
     expect(spawnImpl).toHaveBeenCalledWith(
       process.execPath,
       ["--env-file-if-exists=.env", "dist/main.js"],
-      { cwd: scriptDirectory, stdio: "inherit" },
+      { cwd: scriptDirectory, stdio: "inherit", env: ANY_ENV },
     );
   });
 
@@ -426,7 +597,11 @@ describe("spawnScript — redirectStdoutToStderr (stdout redirected to the paren
     expect(spawnImpl).toHaveBeenCalledWith(
       process.execPath,
       ["--env-file-if-exists=.env", "dist/main.js"],
-      { cwd: scriptDirectory, stdio: ["inherit", "pipe", "inherit"] },
+      {
+        cwd: scriptDirectory,
+        stdio: ["inherit", "pipe", "inherit"],
+        env: ANY_ENV,
+      },
     );
   });
 
@@ -532,7 +707,31 @@ describe("spawnScript — real defaultSpawnImpl (mocked node:child_process, no i
     expect(h.spawn).toHaveBeenCalledWith(
       process.execPath,
       ["--env-file-if-exists=.env", "dist/main.js"],
-      { cwd: scriptDirectory, stdio: "inherit" },
+      { cwd: scriptDirectory, stdio: "inherit", env: ANY_ENV },
+    );
+  });
+
+  test("forwards the composed env and the substituted env-file token to the real node:child_process spawn", async () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(true);
+    const fakeChild = createFakeChild();
+    h.spawn.mockReturnValue(fakeChild);
+
+    const resultPromise = spawnScript(scriptDirectory, [], {
+      env: { AWS_PROFILE: "sandbox" },
+      secretEnv: { API_TOKEN: "hunter2" },
+      envFile: { kind: "path", path: "/repo/staging.env" },
+    });
+    fakeChild.emit("close", 0, null);
+
+    await expect(resultPromise).resolves.toBe(0);
+    expect(h.spawn).toHaveBeenCalledWith(
+      process.execPath,
+      ["--env-file-if-exists=/repo/staging.env", "dist/main.js"],
+      {
+        cwd: scriptDirectory,
+        stdio: "inherit",
+        env: { AWS_PROFILE: "sandbox", API_TOKEN: "hunter2" },
+      },
     );
   });
 
@@ -554,7 +753,11 @@ describe("spawnScript — real defaultSpawnImpl (mocked node:child_process, no i
     expect(h.spawn).toHaveBeenCalledWith(
       process.execPath,
       ["--env-file-if-exists=.env", "dist/main.js"],
-      { cwd: scriptDirectory, stdio: ["inherit", "pipe", "inherit"] },
+      {
+        cwd: scriptDirectory,
+        stdio: ["inherit", "pipe", "inherit"],
+        env: ANY_ENV,
+      },
     );
   });
 });

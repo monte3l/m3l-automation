@@ -135,9 +135,11 @@ Never trigger discovery.
 #### `m3l run <script> -- [args...]`
 
 Spawns the named script's built entry (`scripts/<name>/dist/main.js`) via
-`process.execPath` with `--env-file-if-exists=.env`, `cwd` set to the
-script's directory, and `stdio: "inherit"` — the terminal belongs to the
-child. Everything after the **first bare `--`** passes through verbatim
+`process.execPath` with `--env-file-if-exists=.env` (the default — see
+`--env-file`/`--no-env-file` below), `cwd` set to the script's directory,
+`stdio: "inherit"` — the terminal belongs to the child — and an environment
+composed as the CLI's own environment plus any secret-flagged parameter
+values (ADR-0085; see [Secret delivery](#secret-delivery)). Everything after the **first bare `--`** passes through verbatim
 (never parsed by the CLI's own flag handling). No config load and no cache
 involvement on the spawn path — `run` only needs discovery to resolve the
 script directory. (`run <script> --help`/`-h` is the one exception — see
@@ -171,7 +173,9 @@ configuration from the script's declared `configParameters` (BOOL →
 boolean flag; STRING_ARRAY → repeatable; every other type → string; each
 alias maps back to its canonical name), parses the pre-`--` flags strictly,
 translates the parsed values back to canonical `--name=value` child argv in
-declaration order, and delegates to the 8c spawn path — with anything after
+declaration order — **except** a parameter declared `secret: true`, which is
+routed to the child's environment instead and never appears in its argv
+(ADR-0085; see [Secret delivery](#secret-delivery)) — and delegates to the 8c spawn path — with anything after
 the first bare `--` appended verbatim.
 
 - Static commands always win the dispatch (and the reserved-name list keeps
@@ -320,8 +324,8 @@ stays the authority at run time).
 Once an operation is chosen, every subsequent declared parameter whose own
 `required` is `false` is scoped against it (U8): named by an operation of
 that _same selector_ but not the chosen one, it is skipped entirely —
-never prompted, absent from the summary, the preset, and the spawned argv
-— while one the chosen operation requires is always prompted, re-asked on
+never prompted, absent from the summary, the preset, the spawned argv, and
+the injected environment — while one the chosen operation requires is always prompted, re-asked on
 an empty answer the same way a `required: true` parameter is. A parameter
 declared `required: true` is always prompted regardless of scoping; so is
 one no operation of that selector names, or one declared before the
@@ -332,7 +336,8 @@ operations never contribute to scoping.
 
 The confirmation summary masks secret values (`********`) and routes every
 value through `redactSensitiveLogValue` — a wizard-entered secret reaches
-only the spawned child's argv, never the terminal, a preset, or history.
+only the spawned child's environment, never its argv, the terminal, a
+preset, or history.
 Save-as-preset is offered before the run decision (`writePreset`'s
 fail-closed secret skip reports any excluded names; a failed save never
 loses the composed run), then "run now?" — decline exits `0` without
@@ -341,10 +346,9 @@ builder, spawns via the 8c path, and records the prompted parameter names
 in history. Prompt UI is `Core.M3LPrompt` (terminal-control-escaped
 rendering), constructed lazily behind an injectable port.
 
-> Delivery caveat: a wizard-entered secret reaches the child **via argv**
-> (`--name=value`), exactly as invoking the script directly would — on a
-> shared host that is visible in `/proc/<pid>/cmdline`, so prefer `.env` /
-> environment delivery for secrets there and leave the prompt blank.
+A wizard-entered secret is delivered the same way a directly-invoked one is
+— through the child's environment, not its argv. See
+[Secret delivery](#secret-delivery).
 
 `wizard` completes the reserved command-name set:
 `list, inspect, run, doctor, presets, history, new, help, wizard`.
@@ -456,8 +460,8 @@ same variable name and default `@m3l-automation/m3l-common`'s own `M3LPaths`
 already uses, so setting it redirects both this scan and every spawned
 script's own output directory in agreement) for the newest directory, within
 the observed run window, whose report's `script.name` matches. Two known
-limitations: a script-local `.env` setting `M3L_OUTPUT_DIR` is visible to the
-**child only** (the parent still scans its own resolved directory, so the
+limitations: a script-local `.env` setting `M3L_OUTPUT_DIR` (whichever file
+`--env-file` resolved to) is visible to the **child only** (the parent still scans its own resolved directory, so the
 lookup reports `output-directory-missing` or misses the report); and two
 truly concurrent invocations of the **same** script can, rarely, have the
 younger run's scan match the older run's sibling report — this is accepted,
@@ -468,6 +472,93 @@ failed) emits **no** envelope at all — only stderr and the corresponding exit
 code (see [§Exit codes](#exit-codes)). An agent consuming `--json` output
 must treat "empty stdout, non-zero exit" as a CLI-side failure distinct from
 "one envelope, exit code inside it".
+
+### V3 — secrets delivery
+
+#### Secret delivery
+
+A parameter a script declares `secret: true` is delivered to the spawned
+child **through its environment, never its argv** (ADR-0085). Concretely,
+`translateArgv` returns the invocation as two halves — the `--name=value`
+tokens and a secret-only environment overlay — and the CLI spawns with
+`env: { ...<the CLI's own environment>, ...<the secret overlay> }`. Both
+spawn paths do this: the dynamic per-script dispatch and `m3l wizard`, which
+spawns directly rather than through the shared execution tail.
+
+The variable name is the SCREAMING_SNAKE_CASE form of the parameter's
+**canonical** name — every `.` and `-` becomes `_`, then the whole name is
+uppercased (`api.token` and `api-token` both give `API_TOKEN`). That is
+`Core.deriveEnvVarName`, the same derivation
+`Core.M3LEnvironmentConfigProvider` applies when it reads the value back at
+level 4 of the script's own provider chain, so **no consumer script needs
+any change**: the resolution path already existed.
+
+- Dropping the argv token is **required, not cosmetic**. Argv is level 1 of
+  that chain and the environment is level 4, so a value emitted both ways
+  would still resolve from argv and the hardening would be silently inert.
+- An alias hit still keys the variable off the canonical name.
+- A `STRING_ARRAY` secret is comma-joined, matching `coerceConfigValue`'s
+  documented contract — the same join the argv form performs.
+- A **`BOOL` secret is a contradiction** and is treated as non-secret for
+  delivery: a boolean carries no secret payload, only the fact that a flag
+  was set, which the argv already reveals. It stays a bare `--name` flag.
+- Two declared parameters whose canonical names derive the **same** variable
+  name, where at least one is secret, fail loud with
+  `ERR_CLI_CONFIG_IMPORT` — otherwise the secret would silently satisfy the
+  other parameter.
+- The injected overlay is applied **last**, so it beats a same-named ambient
+  variable, matching the precedence the argv token it replaces had.
+- `--in-process` (ADR-0054) is unaffected and needs no injection: there is no
+  child process and no argv, and the value is bound straight into the hosted
+  command's typed `parameterValues`.
+
+> **What this buys, and what it does not.** `/proc/<pid>/environ` is mode
+> `0400`, readable only by the process owner; `/proc/<pid>/cmdline` is
+> world-readable. So this defeats a co-tenant `ps` or `/proc` reader. It does
+> **not** defend against root, a debugger, another process of the same user,
+> a core dump, or the child leaking its own environment to something it
+> spawns. Secret-store resolution (Secrets Manager / SSM) remains
+> deliberately gated — see ADR-0085.
+
+#### `--env-file <path>` / `--no-env-file`
+
+Two CLI-reserved flags controlling the env file the spawned child loads
+(ADR-0085). Reserved exactly like `--json` and `--in-process`: stripped
+before the script's own strict `parseArgs` ever sees them, so a script that
+declares a same-named parameter is shadowed the same way. Unlike those two
+they are stripped in `dispatch`, ahead of the static/dynamic split — a
+detached `--env-file <path>` reaching the static path's non-strict
+`parseArgs` would otherwise be absorbed as a bare boolean and leave its value
+in `positionals`, making `m3l run --env-file staging.env json-etl` resolve
+"staging.env" as the script name.
+
+| Flags                               | Child's node argv           |
+| ----------------------------------- | --------------------------- |
+| _neither_ (default, unchanged)      | `--env-file-if-exists=.env` |
+| `--no-env-file`                     | _no env-file token at all_  |
+| `--env-file=<p>` / `--env-file <p>` | `--env-file-if-exists=<p>`  |
+
+- A relative path resolves against the **CLI's own working directory**, not
+  the script directory the child is spawned in — an operator who types
+  `--env-file staging.env` means the file they can see. The `auto` default
+  stays script-directory-relative, exactly as before.
+- A caller-supplied path keeps the tolerant `-if-exists` form on purpose: a
+  typo'd path stays the same soft miss the hardcoded `.env` has always been
+  rather than becoming a hard node startup crash.
+- Passing **both** flags exits `2` with `ERR_CLI_INVALID_PARAMETER_VALUE`
+  rather than last-wins. They express opposite intents, and letting token
+  order silently decide whether a whole configuration file reaches a command
+  that is about to receive secrets is the mistake this refuses to hide.
+- `--env-file` with no value, or followed by another flag, exits `2` the same
+  way — `--env-file --json` is rejected rather than silently swallowing the
+  `--json`.
+- On `--in-process` either flag exits `2` with
+  `ERR_CLI_IN_PROCESS_UNSUPPORTED`: there is no child process for an env file
+  to be loaded into.
+- Both are exact-token matches; `--env-file-if-exists=…` is not recognized
+  and passes through to the script untouched.
+- After the first bare `--`, both tokens pass through to the child verbatim
+  like any other passthrough argument.
 
 ### U12 — shell completion
 

@@ -1211,3 +1211,136 @@ describe("runCli — type contract", () => {
     }>();
   });
 });
+
+// =============================================================================
+// V3 / ADR-0085 — the reserved --env-file / --no-env-file pair
+// =============================================================================
+describe("runCli — --env-file / --no-env-file (V3, ADR-0085)", () => {
+  test("the default (neither flag) reaches the context as { kind: 'auto' }", async () => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    runListMock.mockResolvedValue(0);
+    const { options } = buildOptions();
+
+    await runCli(["list"], options);
+
+    expect(runListMock.mock.calls[0]?.[0].envFile).toEqual({ kind: "auto" });
+  });
+
+  test("'--no-env-file' reaches the context as { kind: 'disabled' } and is stripped from the script's args", async () => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    runDynamicMock.mockResolvedValue(0);
+    const { options } = buildOptions();
+
+    await runCli(
+      ["json-etl", "--no-env-file", "--region", "eu-west-1"],
+      options,
+    );
+
+    const call = runDynamicMock.mock.calls[0];
+    expect(call?.[0].envFile).toEqual({ kind: "disabled" });
+    expect(call?.[2]).toEqual(["--region", "eu-west-1"]);
+  });
+
+  test("'--env-file <path>' resolves against the CLI's cwd, not the script directory", async () => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    runDynamicMock.mockResolvedValue(0);
+    const { options } = buildOptions();
+
+    await runCli(["json-etl", "--env-file", "staging.env"], options);
+
+    expect(runDynamicMock.mock.calls[0]?.[0].envFile).toEqual({
+      kind: "path",
+      path: path.resolve("/workspace", "staging.env"),
+    });
+  });
+
+  test("REGRESSION: a detached '--env-file' before a static command's positional does not shift the script name", async () => {
+    // parseStaticCommandArgs parses with `strict: false`, so an unstripped
+    // `--env-file staging.env` would be absorbed as a bare boolean and
+    // "staging.env" would land in positionals — making it the resolved script
+    // name. Stripping in `dispatch`, ahead of the static/dynamic split, is
+    // what prevents that.
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    runRunMock.mockResolvedValue(0);
+    const { options } = buildOptions();
+
+    await runCli(["run", "--env-file", "staging.env", "json-etl"], options);
+
+    const call = runRunMock.mock.calls[0];
+    expect(call?.[1]).toBe("json-etl");
+    expect(call?.[0].envFile).toEqual({
+      kind: "path",
+      path: path.resolve("/workspace", "staging.env"),
+    });
+  });
+
+  test("both flags together exit 2 with the mutually-exclusive message and never dispatch", async () => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    const { options, stderrLines } = buildOptions();
+
+    const code = await runCli(
+      ["json-etl", "--env-file=a.env", "--no-env-file"],
+      options,
+    );
+
+    expect(code).toBe(2);
+    expect(stderrLines.join("\n")).toContain("mutually exclusive");
+    expect(runDynamicMock).not.toHaveBeenCalled();
+  });
+
+  test("'--env-file' with no value exits 2 and never dispatches", async () => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    const { options, stderrLines } = buildOptions();
+
+    const code = await runCli(["json-etl", "--env-file"], options);
+
+    expect(code).toBe(2);
+    expect(stderrLines.join("\n")).toContain("requires a path");
+    expect(runDynamicMock).not.toHaveBeenCalled();
+  });
+
+  test("tokens after the bare '--' are untouched — the child still receives them verbatim", async () => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    runDynamicMock.mockResolvedValue(0);
+    const { options } = buildOptions();
+
+    await runCli(["json-etl", "--", "--env-file", "x.env"], options);
+
+    const call = runDynamicMock.mock.calls[0];
+    expect(call?.[3]).toEqual(["--env-file", "x.env"]);
+    expect(call?.[0].envFile).toEqual({ kind: "auto" });
+  });
+
+  test("stripping happens before the help branch — 'm3l --env-file x.env help' still prints usage", async () => {
+    const { options, stdoutLines } = buildOptions();
+
+    const code = await runCli(["--env-file", "x.env", "help"], options);
+
+    expect(code).toBe(0);
+    expect(stdoutLines.join("\n")).toContain("Usage: m3l <command> [options]");
+  });
+
+  test("printUsage lists both new flags", async () => {
+    const { options, stdoutLines } = buildOptions();
+
+    await runCli(["help"], options);
+
+    const usage = stdoutLines.join("\n");
+    expect(usage).toContain("--env-file <path>");
+    expect(usage).toContain("--no-env-file");
+  });
+});
+
+describe("runCli — env on the command context (V3, ADR-0085)", () => {
+  test("options.env reaches the context verbatim, so the spawn path never reads the process.env global", async () => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    runListMock.mockResolvedValue(0);
+    const { options } = buildOptions();
+
+    await runCli(["list"], { ...options, env: { AWS_PROFILE: "sandbox" } });
+
+    expect(runListMock.mock.calls[0]?.[0].env).toEqual({
+      AWS_PROFILE: "sandbox",
+    });
+  });
+});

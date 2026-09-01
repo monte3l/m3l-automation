@@ -163,7 +163,8 @@ primitives firing ADR-0039's gate, a policy layer that is the authorization
 control ADR-0048 disclaims, an append-only decision log, and
 `scripts/agent-operator` over a hardened CLI machine surface), then a
 runtime MCP surface (`packages/m3l-mcp`), then headless/scheduled operation.
-Secrets delivery and remote MCP stay gated behind future ADRs. Coarse
+Remote MCP stays gated behind a future ADR; the secrets-delivery gate fired
+on 2026-09-01 (ADR-0085). Coarse
 summary only — the item source for sync is the V-series in
 [`IMPLEMENTATION.md`](./plans/IMPLEMENTATION.md#cli-evolution-wave-u-series);
 per-phase detail in
@@ -173,7 +174,7 @@ per-phase detail in
 | ------- | --------------------------------------------------------------- | -------- |
 | **V1**  | Decisions & governance docs — ADR-0058…0063 + trackers          | Done     |
 | **V2**  | CLI machine-surface hardening (`run --json` envelope, `--help`) | Done     |
-| **V3**  | Secrets-delivery hardening (gated on a future ADR)              | To Do    |
+| **V3**  | Secrets-delivery hardening — secret to env, not argv (ADR-0085) | Done     |
 | **V4**  | `aws/bedrock-runtime` wrapper (AWS 19 → 20, additive minor)     | Done     |
 | **V5**  | Tool-use loop primitives                                        | Done     |
 | **V6**  | Agent policy layer (graded autonomy as authorization)           | Done     |

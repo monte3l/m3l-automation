@@ -13,6 +13,7 @@
  * @packageDocumentation
  */
 
+import type { M3LCliEnvFileSetting } from "../cli/flags.js";
 import type { M3LCliOutput } from "../cli/output.js";
 import { spawnScript } from "./spawn.js";
 import type { M3LCliSpawnOptions } from "./spawn.js";
@@ -21,8 +22,9 @@ import { buildRunEnvelope, formatRunEnvelope } from "./envelope.js";
 
 /**
  * The subset of a command context {@link executeScript} reads: the writer
- * facade, whether `--json` was requested, and the managed output directory
- * to scan for a run report.
+ * facade, whether `--json` was requested, the managed output directory to
+ * scan for a run report, and the base environment plus env-file decision it
+ * forwards to {@link spawnScript}.
  *
  * Always populated by `main.ts`'s real `buildCommandContext` — this module
  * treats an absent value as a caller contract violation, not a case to
@@ -36,6 +38,8 @@ import { buildRunEnvelope, formatRunEnvelope } from "./envelope.js";
  *   output: { colorEnabled: false, info() {}, error() {}, heading() {} },
  *   jsonOutput: true,
  *   outputDirPath: "/repo/data/output",
+ *   env: process.env,
+ *   envFile: { kind: "auto" },
  * };
  * ```
  */
@@ -46,6 +50,10 @@ export interface M3LCliExecuteContext {
   readonly jsonOutput: boolean;
   /** The managed output directory to scan for a matching run report. */
   readonly outputDirPath: string;
+  /** The base environment the spawned child inherits (ADR-0085). */
+  readonly env: Readonly<Record<string, string | undefined>>;
+  /** The resolved `--env-file`/`--no-env-file` decision (ADR-0085). */
+  readonly envFile: M3LCliEnvFileSetting;
 }
 
 /**
@@ -66,6 +74,13 @@ export interface M3LCliExecuteOptions {
   readonly stderrStream?: M3LCliSpawnOptions["stderrStream"];
   /** Overrides the wall-clock read for `startedAt`/`finishedAt`; defaults to `() => new Date()`. */
   readonly now?: () => Date;
+  /**
+   * The secret-flagged parameter values to inject into the spawned child's
+   * environment (ADR-0085) — `translateArgv`'s `secretEnv` half, forwarded
+   * verbatim to {@link spawnScript}. Omitted when the script declares no
+   * secrets.
+   */
+  readonly secretEnv?: Readonly<Record<string, string>>;
 }
 
 /**
@@ -92,15 +107,22 @@ export interface M3LCliExecuteOptions {
  * @param scriptDirectory - The script's directory (must contain a built
  *   `dist/main.js`).
  * @param argv - Arguments forwarded verbatim to the spawned script.
- * @param options - Optional `spawnImpl`/`stderrStream` overrides and a `now`
- *   seam for deterministic timing.
+ * @param options - The optional `secretEnv` overlay plus
+ *   `spawnImpl`/`stderrStream` overrides and a `now` seam for deterministic
+ *   timing.
  * @returns The spawned child's resolved exit code, unaffected by the
  *   envelope pipeline.
  *
  * @example
  * ```ts
  * const exitCode = await executeScript(
- *   { output, jsonOutput: true, outputDirPath: "/repo/data/output" },
+ *   {
+ *     output,
+ *     jsonOutput: true,
+ *     outputDirPath: "/repo/data/output",
+ *     env: process.env,
+ *     envFile: { kind: "auto" },
+ *   },
  *   "export-users",
  *   "/repo/scripts/export-users",
  *   ["--limit", "5"],
@@ -124,6 +146,11 @@ export async function executeScript(
     ...(options.stderrStream !== undefined
       ? { stderrStream: options.stderrStream }
       : {}),
+    ...(options.secretEnv !== undefined
+      ? { secretEnv: options.secretEnv }
+      : {}),
+    env: context.env,
+    envFile: context.envFile,
     redirectStdoutToStderr: context.jsonOutput,
   });
 
