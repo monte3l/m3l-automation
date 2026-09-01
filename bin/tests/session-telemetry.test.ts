@@ -8,9 +8,13 @@ import {
   PLUGIN_CACHE_SUBPATH,
   REQUIRED_KEYS,
   buildAnalyzerArgs,
+  SINCE_PATTERN,
   missingKeys,
   parsePayload,
+  parseSince,
+  parseTop,
   pickRevision,
+  resolveAnalyzerPath,
   runTelemetry,
   shapeFailureMessage,
 } from "../../bin/session-telemetry.mjs";
@@ -152,9 +156,18 @@ describe("the shape assertion", () => {
     expect(missingKeys(payload).sort()).toEqual(["by_day", "overall"]);
   });
 
-  test("a key present but explicitly undefined still counts as present", () => {
-    // Object.hasOwn, not a truthiness check: an analyzer that legitimately
-    // emits an empty section must not be reported as a format break.
+  test("a key present but explicitly UNDEFINED still counts as present", () => {
+    // This is the case that distinguishes Object.hasOwn from a
+    // `payload[key] !== undefined` check. An empty object would NOT: it is
+    // truthy and not undefined, so both implementations agree on it and the
+    // assertion would prove nothing. Verified by mutation — swapping
+    // Object.hasOwn for `!== undefined` must make this test fail.
+    expect(
+      missingKeys({ ...parsePayload(fixtureText), by_skill: undefined }),
+    ).toEqual([]);
+  });
+
+  test("an empty section is not a format break either", () => {
     expect(missingKeys({ ...parsePayload(fixtureText), by_skill: {} })).toEqual(
       [],
     );
@@ -170,17 +183,17 @@ describe("the shape assertion", () => {
 });
 
 describe("runTelemetry", () => {
+  /** First reported error, or "" — the payload is index-signature typed. */
+  function firstError(payload: Record<string, unknown>): string {
+    return (payload["errors"] as string[])[0] ?? "";
+  }
+
   /**
    * Captures the payload runTelemetry hands to `finish()`. Calling
    * `reporter.finish()` a second time from the test would return the BASE
    * report without the script-specific extras, which is a different object
    * from the one a --json consumer actually sees.
    */
-  /** First reported error, or "" — the payload is index-signature typed. */
-  function firstError(payload: Record<string, unknown>): string {
-    return (payload["errors"] as string[])[0] ?? "";
-  }
-
   function run(overrides: Record<string, unknown> = {}) {
     const reporter = createReporter(true);
     let payload: Record<string, unknown> = {};
@@ -283,4 +296,130 @@ describe("path constants", () => {
   test("the default window is bounded, never unlimited", () => {
     expect(DEFAULT_SINCE).toMatch(/^\d+[dh]$/);
   });
+});
+
+describe("resolveAnalyzerPath", () => {
+  const enoent = Object.assign(new Error("ENOENT: no such directory"), {
+    code: "ENOENT",
+  });
+  const eacces = Object.assign(new Error("EACCES: permission denied"), {
+    code: "EACCES",
+  });
+  const dir = (name: string) => ({ name, isDirectory: () => true });
+
+  test("returns the newest revision's analyzer path", () => {
+    const path = resolveAnalyzerPath("/cache", {
+      readdir: () => [dir("old"), dir("new")],
+      stat: (p: string) => ({ mtimeMs: p.endsWith("new") ? 2 : 1 }),
+    });
+    expect(path).toBe(`/cache/new/${ANALYZER_SUBPATH}`);
+  });
+
+  test("an ABSENT cache is a normal outcome, returning null", () => {
+    expect(
+      resolveAnalyzerPath("/cache", {
+        readdir: () => {
+          throw enoent;
+        },
+        stat: () => ({ mtimeMs: 0 }),
+      }),
+    ).toBeNull();
+  });
+
+  test("an empty cache returns null rather than a bogus path", () => {
+    expect(
+      resolveAnalyzerPath("/cache", {
+        readdir: () => [],
+        stat: () => ({ mtimeMs: 0 }),
+      }),
+    ).toBeNull();
+  });
+
+  test("MUTATION: an UNREADABLE cache throws — it is not an absent plugin", () => {
+    expect(() =>
+      resolveAnalyzerPath("/cache", {
+        readdir: () => {
+          throw eacces;
+        },
+        stat: () => ({ mtimeMs: 0 }),
+      }),
+    ).toThrow(/broken\s+installation, not a missing plugin/);
+  });
+
+  test("the unreadable-cache error chains the original errno via cause", () => {
+    try {
+      resolveAnalyzerPath("/cache", {
+        readdir: () => {
+          throw eacces;
+        },
+        stat: () => ({ mtimeMs: 0 }),
+      });
+      expect.unreachable("should have thrown");
+    } catch (error) {
+      expect((error as Error).cause).toBe(eacces);
+      expect((error as Error).message).toContain("EACCES");
+    }
+  });
+
+  test("MUTATION: an unstattable revision throws rather than being skipped", () => {
+    expect(() =>
+      resolveAnalyzerPath("/cache", {
+        readdir: () => [dir("a"), dir("b")],
+        stat: (p: string) => {
+          if (p.endsWith("b")) throw eacces;
+          return { mtimeMs: 1 };
+        },
+      }),
+    ).toThrow(/partially readable cache/);
+  });
+
+  test("non-directory entries are ignored", () => {
+    const path = resolveAnalyzerPath("/cache", {
+      readdir: () => [
+        { name: "README.md", isDirectory: () => false },
+        dir("r"),
+      ],
+      stat: () => ({ mtimeMs: 1 }),
+    });
+    expect(path).toBe(`/cache/r/${ANALYZER_SUBPATH}`);
+  });
+});
+
+describe("parseSince", () => {
+  test.each(["7d", "30d", "48h", "1h"])("accepts the bounded form %s", (v) => {
+    expect(parseSince(v)).toBe(v);
+  });
+
+  test("the default passes its own validator", () => {
+    expect(parseSince(DEFAULT_SINCE)).toBe(DEFAULT_SINCE);
+    expect(SINCE_PATTERN.test(DEFAULT_SINCE)).toBe(true);
+  });
+
+  test.each(["garbage", "", "7", "d", "-7d", "7.5d", "7 d", "7dd", "7w"])(
+    "MUTATION: rejects the unbounded/malformed value %j",
+    (v) => {
+      expect(() => parseSince(v)).toThrow(/not a bounded window/);
+    },
+  );
+
+  test("the rejection explains WHY forwarding it is unsafe", () => {
+    expect(() => parseSince("garbage")).toThrow(/scan the whole store/);
+  });
+});
+
+describe("parseTop", () => {
+  test("undefined stays undefined — the flag is optional", () => {
+    expect(parseTop(undefined)).toBeUndefined();
+  });
+
+  test("parses a positive integer", () => {
+    expect(parseTop("25")).toBe(25);
+  });
+
+  test.each(["abc", "", "0", "-5", "2.5", "NaN", "Infinity"])(
+    "MUTATION: rejects %j rather than forwarding it as a literal",
+    (v) => {
+      expect(() => parseTop(v)).toThrow(/not a positive integer/);
+    },
+  );
 });

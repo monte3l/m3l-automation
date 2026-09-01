@@ -85,7 +85,6 @@
     "check:context-budget": "node bin/check-context-budget.mjs",
     "check:harness-freshness": "node bin/check-harness-freshness.mjs",
     "check:retrospective": "node bin/check-retrospective.mjs",
-    "telemetry:sessions": "node bin/session-telemetry.mjs",
     "check:skill-evals": "node bin/check-skill-evals.mjs",
     "check:review-policy": "node bin/check-review-policy.mjs",
     "maintain:scan": "node bin/run-maintain-scan.mjs",
@@ -106,6 +105,7 @@
     "worktree:remove": "node bin/worktree-remove.mjs",
     "worktree:prune": "node bin/worktree-prune.mjs",
     "spoke:recover": "node bin/spoke-recovery.mjs",
+    "telemetry:sessions": "node bin/session-telemetry.mjs",
     "prepare": "lefthook install && node bin/install-merge-drivers.mjs"
   },
   "devDependencies": {

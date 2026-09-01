@@ -58,6 +58,9 @@ export const ANALYZER_SUBPATH = join(
 /** Default window. Wide enough to span several work logs, narrow enough to stay cheap. */
 export const DEFAULT_SINCE = "30d";
 
+/** The only `--since` shapes the analyzer bounds a scan by: `<n>d` or `<n>h`. */
+export const SINCE_PATTERN = /^\d+[dh]$/;
+
 /**
  * Every top-level key `analyze-sessions.mjs --json` is contracted to emit.
  * This list IS the shape assertion — the guard against the unsupported-format
@@ -89,6 +92,111 @@ export function pickRevision(revisions) {
   return [...revisions].sort(
     (a, b) => b.mtimeMs - a.mtimeMs || a.name.localeCompare(b.name),
   )[0].name;
+}
+
+/**
+ * Resolve the analyzer beneath the plugin cache.
+ *
+ * Distinguishes the two failures a single `catch` would collapse into one:
+ * a cache directory that is **absent** (the plugin was never installed, or
+ * was removed) versus one that is **present but unreadable** — an `EACCES`,
+ * or a revision directory that cannot be stat'd. Only the first means
+ * "install the plugin"; reporting the second that way sends a maintainer
+ * after a plugin that is already there, with the errno thrown away.
+ *
+ * Absent is a normal outcome and returns `null`. Anything else throws with
+ * the original error chained via `cause`.
+ *
+ * @param {string} cacheDir
+ * @param {{
+ *   readdir: (dir: string) => { name: string, isDirectory: () => boolean }[],
+ *   stat: (path: string) => { mtimeMs: number },
+ * }} fs injected filesystem seam
+ * @returns {string | null} the analyzer path, or null when no revision is cached
+ * @throws {Error} when the cache exists but cannot be walked
+ */
+export function resolveAnalyzerPath(cacheDir, fs) {
+  /** @type {{ name: string, isDirectory: () => boolean }[]} */
+  let entries;
+  try {
+    entries = fs.readdir(cacheDir);
+  } catch (cause) {
+    if (cause instanceof Error && "code" in cause && cause.code === "ENOENT") {
+      return null;
+    }
+    throw new Error(
+      `Cannot read the session-report plugin cache at ${cacheDir} ` +
+        `(${cause instanceof Error ? cause.message : String(cause)}). The ` +
+        `cache directory exists but could not be listed — that is a broken ` +
+        `installation, not a missing plugin, and needs a different fix.`,
+      { cause },
+    );
+  }
+
+  /** @type {{ name: string, mtimeMs: number }[]} */
+  const revisions = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const path = join(cacheDir, entry.name);
+    try {
+      revisions.push({ name: entry.name, mtimeMs: fs.stat(path).mtimeMs });
+    } catch (cause) {
+      throw new Error(
+        `Cannot stat the cached session-report revision at ${path} ` +
+          `(${cause instanceof Error ? cause.message : String(cause)}). ` +
+          `Refusing to pick a revision from a partially readable cache — ` +
+          `the result would silently depend on which entries happened to be ` +
+          `readable.`,
+        { cause },
+      );
+    }
+  }
+
+  const revision = pickRevision(revisions);
+  return revision === null ? null : join(cacheDir, revision, ANALYZER_SUBPATH);
+}
+
+/**
+ * `--since` accepts only the analyzer's own bounded forms: a whole number of
+ * days or hours. Validated here rather than passed through, because an
+ * unparseable value does not error downstream — the analyzer falls back to
+ * scanning everything, which is precisely the unbounded scan reason 2 in this
+ * file's header exists to prevent.
+ *
+ * @param {string} value
+ * @returns {string}
+ * @throws {Error} on anything but `<digits>d` or `<digits>h`
+ */
+export function parseSince(value) {
+  if (!SINCE_PATTERN.test(value)) {
+    throw new Error(
+      `--since "${value}" is not a bounded window. Use <n>d or <n>h ` +
+        `(e.g. 7d, 48h). Refusing to forward it: an unrecognised value makes ` +
+        `the analyzer scan the whole store.`,
+    );
+  }
+  return value;
+}
+
+/**
+ * `--top` must be a positive integer. A bare `Number()` would turn `abc` into
+ * `NaN`, which {@link buildAnalyzerArgs} then stringifies into the literal
+ * argument `--top NaN`.
+ *
+ * @param {string | undefined} value
+ * @returns {number | undefined}
+ * @throws {Error} on a non-positive-integer value
+ */
+export function parseTop(value) {
+  if (value === undefined) return undefined;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new Error(
+      `--top "${value}" is not a positive integer. Refusing to forward it: ` +
+        `it would reach the analyzer as a literal "${String(parsed)}".`,
+    );
+  }
+  return parsed;
 }
 
 /**
@@ -234,22 +342,30 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const home = homedir();
   const cacheDir = join(home, PLUGIN_CACHE_SUBPATH);
 
-  let analyzerPath = flag("--analyzer", undefined) ?? null;
-  if (analyzerPath === null) {
-    try {
-      const revision = pickRevision(
-        readdirSync(cacheDir, { withFileTypes: true })
-          .filter((entry) => entry.isDirectory())
-          .map((entry) => ({
-            name: entry.name,
-            mtimeMs: statSync(join(cacheDir, entry.name)).mtimeMs,
-          })),
-      );
-      analyzerPath =
-        revision === null ? null : join(cacheDir, revision, ANALYZER_SUBPATH);
-    } catch {
-      analyzerPath = null;
-    }
+  /** @type {string | null} */
+  let analyzerPath;
+  /** @type {string} */
+  let since;
+  /** @type {number | undefined} */
+  let top;
+  try {
+    analyzerPath =
+      flag("--analyzer", undefined) ??
+      resolveAnalyzerPath(cacheDir, {
+        readdir: (dir) => readdirSync(dir, { withFileTypes: true }),
+        stat: (path) => statSync(path),
+      });
+    since = parseSince(flag("--since", DEFAULT_SINCE));
+    top = parseTop(flag("--top", undefined));
+  } catch (cause) {
+    reporter.error(cause instanceof Error ? cause.message : String(cause));
+    reporter.finish({
+      payload: null,
+      analyzerPath: null,
+      dir: null,
+      since: null,
+    });
+    process.exit(1);
   }
 
   const outcome = runTelemetry({
@@ -258,14 +374,17 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       (args) => execFileSync("git", args, { encoding: "utf8" }),
       home,
     ),
-    since: flag("--since", DEFAULT_SINCE),
-    top: flag("--top", undefined)
-      ? Number(flag("--top", undefined))
-      : undefined,
+    since,
+    top,
     runAnalyzer: (path, args) =>
       execFileSync(process.execPath, [path, ...args], {
         encoding: "utf8",
-        maxBuffer: 256 * 1024 * 1024,
+        // A bounded window's payload measured ~240 KB. 16 MiB matches the
+        // other bin/ scripts that capture a child's --json output and leaves
+        // three orders of magnitude of headroom; 256 MiB of buffered string
+        // plus its JSON.parse would roughly double peak RSS, against the very
+        // ADR-0080 budget reason 2 above cites.
+        maxBuffer: 16 * 1024 * 1024,
       }),
     reporter,
   });
