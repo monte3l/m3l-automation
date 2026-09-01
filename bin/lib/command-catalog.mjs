@@ -263,7 +263,7 @@ export const COMMAND_CATALOG = [
   {
     name: "check:github-features",
     description:
-      "Verifies the live repository's GitHub platform-feature flags (wiki/discussions/issues/projects) and metadata (description/homepage/topics) match ADR-0050's declared stance, and that .github/ISSUE_TEMPLATE/config.yml still links to the Discussions Ideas/Q&A categories. Needs gh auth; run push-only in CI (ci.yml), same as check:hub-drift.",
+      "Verifies the live repository's GitHub platform-feature flags (wiki/discussions/issues/projects) and metadata (description/homepage/topics) match ADR-0050's declared stance, and that .github/ISSUE_TEMPLATE/config.yml still links to the Discussions Ideas/Q&A categories. Also warns (non-blocking) when delete_branch_on_merge is disabled — the precondition bin/worktree-prune.mjs's [gone]-upstream heuristic depends on. Needs gh auth; run push-only in CI (ci.yml), same as check:hub-drift.",
   },
   {
     name: "check:label-drift",
