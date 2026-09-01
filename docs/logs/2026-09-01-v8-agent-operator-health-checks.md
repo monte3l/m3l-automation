@@ -17,13 +17,17 @@ Two PRs, both offline:
   `68e420e6`) — the cross-run daily invocation counter. Closed the
   `budget.invocations-per-day.unobservable` gap and nothing else. 523 → **583**
   tests.
-- **This PR** — the Bedrock tool loop, the gated tool registry, the fleet-health
-  workload, the anomaly report, the exit-code contract, the docs, and this
-  close-out. 583 → **665** tests.
+- **[#830](https://github.com/monte3l/m3l-automation/pull/830)** — the Bedrock
+  tool loop, the gated tool registry, the fleet-health workload, the anomaly
+  report, the exit-code contract, the docs, and this close-out. 583 → **665**
+  tests. Reviewable diff 202,652 chars — under the 300,000 ceiling, above the
+  plan's ~200,000 soft cut trigger; not cut, because the cleanest candidate
+  (`health-report.ts` to a PR 3) would remove the artifact the exit-6 contract
+  derives its anomalies from.
 
-Six PRs total across V8: #769 (scaffold), #772 (the typed `m3l` CLI seam), #778
-(the audit spine), #787 (the metering seam and the policy gate), #828, and this
-one.
+Six PRs total across V8, in order: PR #769 (scaffold), PR #772 (the typed
+`m3l` CLI seam), PR #778 (the audit spine), PR #787 (the metering seam and the
+policy gate), PR #828, and PR #830.
 
 Verification was offline and fakes-only throughout — **no live Bedrock call and
 no AWS credentials at any point**, per the confirmed `starting-work` decision.
