@@ -25,13 +25,21 @@ import {
 } from "../cli/completion-script.js";
 import type {
   M3LCliCompletionModel,
+  M3LCliCompletionOperationSet,
+  M3LCliCompletionScript,
   M3LCliCompletionShell,
 } from "../cli/completion-script.js";
 import { discoverScripts } from "../discovery/discover.js";
+import type { M3LCliScriptCandidate } from "../discovery/discover.js";
+import { loadParametersCached } from "../discovery/cached-load.js";
+import type { M3LCliParameterDescriptor } from "../discovery/load-config.js";
 import { RESERVED_CLI_NAMES } from "../scaffold/manifest.js";
 
 /** Exit code for a usage error, mirroring `main.ts`'s own constant. */
 const USAGE_EXIT_CODE: M3LCliExitCode = 2;
+
+/** An alias of this length renders as `-x`; anything longer renders as `--xy`. */
+const SHORT_FLAG_LENGTH = 1;
 
 /**
  * The static commands that take an **existing** `<script>` positional, so
@@ -63,7 +71,7 @@ const GLOBAL_FLAGS: readonly string[] = [
  * tokens after the `--` separator — but it is a token a user types on a
  * script invocation line, so completion offers it there.
  */
-const SCRIPT_FLAGS: readonly string[] = [IN_PROCESS_FLAG, "--dry-run"];
+const DYNAMIC_FLAGS: readonly string[] = [IN_PROCESS_FLAG, "--dry-run"];
 
 /** The renderer for each accepted shell. */
 const RENDERERS: Readonly<
@@ -109,21 +117,108 @@ function resolveShell(token: string): M3LCliCompletionShell {
 }
 
 /**
+ * Projects one declared parameter to its completable flags: `--<name>` plus
+ * every declared alias, each alias prefixed by `-` or `--` according to its
+ * length (the same one-vs-many-character convention the CLI's own flags use).
+ *
+ * Deliberately reads `name`, `aliases` and `operations` only — never
+ * `defaultValue`. A `secret: true` parameter's default renders as a mask,
+ * and completion is about flag names, so the value must not reach the
+ * generated file at all.
+ */
+function parameterFlags(
+  parameter: M3LCliParameterDescriptor,
+): readonly string[] {
+  return [
+    `--${parameter.name}`,
+    ...parameter.aliases.map((alias) =>
+      alias.length === SHORT_FLAG_LENGTH ? `-${alias}` : `--${alias}`,
+    ),
+  ];
+}
+
+/** Collects every parameter's flags, in declaration order. */
+function allParameterFlags(
+  parameters: readonly M3LCliParameterDescriptor[],
+): readonly string[] {
+  return parameters.flatMap(parameterFlags);
+}
+
+/**
+ * Collects one {@link M3LCliCompletionOperationSet} per operation-declaring
+ * parameter (ADR-0055), pairing that parameter's flags with its declared
+ * operation names. A parameter declaring no operations contributes nothing.
+ */
+function operationSets(
+  parameters: readonly M3LCliParameterDescriptor[],
+): readonly M3LCliCompletionOperationSet[] {
+  return parameters
+    .filter((parameter) => parameter.operations.length > 0)
+    .map((parameter) => ({
+      flags: parameterFlags(parameter),
+      operations: parameter.operations.map((operation) => operation.name),
+    }));
+}
+
+/**
+ * Resolves one discovered script to its completion entry, reading through
+ * {@link loadParametersCached}.
+ *
+ * A config-load failure degrades the script to name-only rather than
+ * aborting generation — the same tolerance `m3l list` gives a single
+ * unloadable script — and the reason is carried on `loadError` so the
+ * renderer can name it in a comment inside the generated file. It is
+ * recorded, never swallowed.
+ */
+async function resolveScript(
+  candidate: M3LCliScriptCandidate,
+  context: M3LCliCommandContext,
+): Promise<M3LCliCompletionScript> {
+  try {
+    const parameters = await loadParametersCached(
+      candidate.name,
+      candidate.directory,
+      context.cacheFilePath,
+    );
+    return {
+      name: candidate.name,
+      flags: allParameterFlags(parameters),
+      operationSets: operationSets(parameters),
+      loadError: null,
+    };
+  } catch (error) {
+    return {
+      name: candidate.name,
+      flags: [],
+      operationSets: [],
+      loadError: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+/**
  * Builds the model the renderers bake in: the ADR-0042 reserved command
  * names (`scaffold/manifest.ts`'s `RESERVED_CLI_NAMES`, the source of truth
- * `main.ts`/`dynamic.ts`/`doctor.ts` all mirror) plus the discovered script
- * names, both sorted so the generated script is byte-stable across runs.
+ * `main.ts`/`dynamic.ts`/`doctor.ts` all mirror) plus the discovered
+ * scripts with their parameter flags and operation values, both sorted so
+ * the generated script is byte-stable across runs.
  */
-function buildModel(context: M3LCliCommandContext): M3LCliCompletionModel {
-  const scripts = discoverScripts(context.workspaceRoot).map(
-    (candidate) => candidate.name,
+async function buildModel(
+  context: M3LCliCommandContext,
+): Promise<M3LCliCompletionModel> {
+  const candidates = discoverScripts(context.workspaceRoot).toSorted((a, b) =>
+    a.name.localeCompare(b.name),
   );
+  const scripts: M3LCliCompletionScript[] = [];
+  for (const candidate of candidates) {
+    scripts.push(await resolveScript(candidate, context));
+  }
   return {
     commands: [...RESERVED_CLI_NAMES].toSorted((a, b) => a.localeCompare(b)),
     scriptCommands: SCRIPT_POSITIONAL_COMMANDS,
-    scripts: scripts.toSorted((a, b) => a.localeCompare(b)),
+    scripts,
     globalFlags: GLOBAL_FLAGS,
-    scriptFlags: SCRIPT_FLAGS,
+    dynamicFlags: DYNAMIC_FLAGS,
   };
 }
 
@@ -148,14 +243,14 @@ function buildModel(context: M3LCliCommandContext): M3LCliCompletionModel {
  *
  * @example
  * ```ts
- * const exitCode = runCompletion(context, ["zsh"]);
+ * const exitCode = await runCompletion(context, ["zsh"]);
  * // 0 — the zsh completion script is on stdout
  * ```
  */
-export function runCompletion(
+export async function runCompletion(
   context: M3LCliCommandContext,
   rawArgs: readonly string[],
-): M3LCliExitCode {
+): Promise<M3LCliExitCode> {
   const positional = firstPositional(rawArgs);
   if (positional === undefined) {
     context.output.error(
@@ -165,7 +260,7 @@ export function runCompletion(
   }
 
   const shell = resolveShell(positional);
-  const lines = RENDERERS[shell](buildModel(context));
+  const lines = RENDERERS[shell](await buildModel(context));
 
   if (context.jsonOutput) {
     context.output.info(JSON.stringify({ shell, script: lines.join("\n") }));
