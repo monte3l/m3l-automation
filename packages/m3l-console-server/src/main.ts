@@ -97,6 +97,18 @@ export interface M3LConsoleRuntimeOptions {
    * Additional routes registered alongside the built-in health routes (see
    * {@link createConsoleRuntime}). Defaults to an empty table. Exposed so
    * tests can drive the request listener without a live server.
+   *
+   * **A route supplied here is NOT audited.** `boot/dispatch-router.ts`
+   * applies the ADR-0070 human-action audit gate to the console's OWN routes
+   * and then appends this table verbatim, so no entry is recorded for a route
+   * registered through this option — not even a write. That is deliberate,
+   * not an oversight: `applyHumanActionAudit`'s spec table is keyed by this
+   * console's own path templates, so it can never hold a spec for a route a
+   * caller invented, and enforcing its exhaustiveness guard against those
+   * would make this seam unusable — every caller route would fail boot. The
+   * console's own write routes are all audited, and adding an unaudited one
+   * still fails at boot. See `boot/human-action-audit.ts`'s
+   * `applyHumanActionAudit` for the full boundary.
    */
   readonly routes?: readonly M3LRoute[];
   /** Pre-resolved config; when supplied, `loadConsoleConfig` is skipped (see {@link startConsole}). */
