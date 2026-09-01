@@ -71,7 +71,7 @@ This is a **pnpm monorepo** (`packages/m3l-common/` the library,
 `pnpm-workspace.yaml` also triggers `M3LExecutionEnvironment`'s MONOREPO
 mode, anchoring `data/` at the workspace root.
 
-`exports` exposes `.`, `./core`, `./aws`, `./core/errors` — Core namespace barrel (25 documented submodules) and AWS namespace barrel (20 documented submodules) surface through the namespace entries; `./core/errors` is ADR-0004's gated exception. New submodules join the barrel, never a new subpath (semver event). `internal/` is NOT exported, may change freely. Full tree: `docs/contributing/contributing.md` § Repository Layout.
+`exports` exposes `.`, `./core`, `./aws`, `./core/errors` — Core namespace barrel (26 documented submodules) and AWS namespace barrel (20 documented submodules) surface through the namespace entries; `./core/errors` is ADR-0004's gated exception. New submodules join the barrel, never a new subpath (semver event). `internal/` is NOT exported, may change freely. Full tree: `docs/contributing/contributing.md` § Repository Layout.
 
 ## Environment Setup
 

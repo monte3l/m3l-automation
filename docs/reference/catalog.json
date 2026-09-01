@@ -453,6 +453,26 @@
   },
   {
     "namespace": "core",
+    "name": "orchestration",
+    "importPath": "@m3l-automation/m3l-common/core",
+    "status": "✅",
+    "wired": true,
+    "docPath": "docs/reference/core/orchestration.md",
+    "symbols": [
+      "M3LStepReference",
+      "M3LStepReferenceSegment",
+      "M3LBindingExpectedType",
+      "M3LStepBinding",
+      "M3LStepReferenceError",
+      "parseStepReference",
+      "formatStepReference",
+      "resolveStepReference",
+      "validateBindingValue",
+      "isDangerousKey"
+    ]
+  },
+  {
+    "namespace": "core",
     "name": "pipeline",
     "importPath": "@m3l-automation/m3l-common/core",
     "status": "✅",
