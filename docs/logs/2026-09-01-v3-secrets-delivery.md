@@ -124,7 +124,7 @@ the file's very first test unseeded.
 - **Check the file budget before threading a parameter, not after.** A
   parameter added to 14 signatures cost ~1.7 KB; the extraction that paid for
   it was a two-minute change when planned and would have been a rebase when
-  discovered at push time.
+  discovered at push time. _(promoted → CLAUDE.md)_
 - **`strict: false` `parseArgs` silently reshapes positionals.** Any new
   value-taking reserved flag must be stripped before it, and the test that
   proves it must assert the resolved _script name_, not just the flag.
