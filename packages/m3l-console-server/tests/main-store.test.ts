@@ -21,6 +21,8 @@
  * `tests/main.test.ts`) stands in for both.
  */
 import { EventEmitter } from "node:events";
+import { tmpdir } from "node:os";
+import * as path from "node:path";
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 
@@ -40,12 +42,21 @@ import type { M3LConsoleSessionsRepository } from "../src/store/sessions-reposit
 import type { M3LConsoleAuditRepository } from "../src/store/audit-repository.js";
 import type { M3LConsoleStoreUnit } from "../src/store/store.js";
 
-/** A minimal valid env: only the required operator name set. */
+/**
+ * A minimal valid env: only the required operator name set.
+ *
+ * `M3L_CONSOLE_AUDIT_ROOT` points at a path that deliberately does NOT exist:
+ * X7c's boot rebuild (`boot/audit-rebuild.ts`) reads the trail before the
+ * listener binds, and an absent directory reads as an empty trail — so these
+ * tests neither touch the real data dir nor pay for a tmpdir they never
+ * assert on.
+ */
 function buildEnv(
   overrides: Record<string, string | undefined> = {},
 ): NodeJS.ProcessEnv {
   return {
     M3L_CONSOLE_OPERATOR_NAME: "ada",
+    M3L_CONSOLE_AUDIT_ROOT: path.join(tmpdir(), "m3l-console-audit-absent"),
     ...overrides,
   };
 }
@@ -80,6 +91,8 @@ interface FakeServer {
   resolveClose: (error?: Error) => void;
   /** Emits `listening`, as a real server does once bound. */
   emitListening: () => void;
+  /** Emits `error`, as a real server does when the bind fails. */
+  emitBindError: (error: Error) => void;
   /** Registers a hook invoked synchronously the instant `close()` is called. */
   setOnCloseCalled: (hook: () => void) => void;
 }
@@ -98,6 +111,8 @@ function createFakeServer(
     listen(...args: unknown[]): Server {
       void args;
       calls.push("listen");
+      listened = true;
+      flushBind();
       return extensions as unknown as Server;
     },
     close(callback?: (error?: Error) => void): Server {
@@ -119,6 +134,37 @@ function createFakeServer(
 
   const instance = Object.assign(emitter, extensions) as unknown as Server;
 
+  /**
+   * Arms the bind outcome; {@link listen} is what actually emits it.
+   *
+   * A test calls `emitListening()` in the same synchronous turn as
+   * `startConsole(...)`, which used to be safe because everything from that
+   * call down to `server.listen()` ran without yielding. X7c's audit-index
+   * boot rebuild (`boot/audit-rebuild.ts`) put an `await` before the bind, so
+   * a bare `emitter.emit(...)` at that point goes nowhere (`listening` hangs
+   * the test; `error` is rethrown by `EventEmitter` as unhandled).
+   *
+   * Arming instead of emitting makes the order irrelevant, DETERMINISTICALLY:
+   * `lifecycle/http-server.ts` attaches both handlers BEFORE it calls
+   * `listen()` (`server.on("error"/"listening", ...)` then
+   * `server.listen(...)`), so an emit driven from inside `listen()` always
+   * finds them — no polling and no attempt bound that a slow CI runner can
+   * exhaust.
+   */
+  let listened = false;
+  let armedBind: { readonly error?: Error } | undefined;
+
+  const flushBind = (): void => {
+    if (!listened || armedBind === undefined) return;
+    const outcome = armedBind;
+    armedBind = undefined;
+    // Asynchronous, as a real `Server` reports its bind outcome.
+    setImmediate(() => {
+      if (outcome.error === undefined) emitter.emit("listening");
+      else emitter.emit("error", outcome.error);
+    });
+  };
+
   return {
     instance,
     calls,
@@ -126,7 +172,12 @@ function createFakeServer(
       state.pendingCloseCallback?.(error);
     },
     emitListening() {
-      emitter.emit("listening");
+      armedBind = {};
+      flushBind();
+    },
+    emitBindError(error: Error) {
+      armedBind = { error };
+      flushBind();
     },
     setOnCloseCalled(hook: () => void) {
       state.onCloseCalled = hook;
@@ -233,13 +284,18 @@ const unexpectedAuditCall = (): never => {
   throw new Error("unexpected audit-repository call on the fake store");
 };
 
-/** A loud-throwing `audit` stub, shared by every fake store in this file (added for X7c's `M3LConsoleStoreUnit.audit` field — none of this file's tests exercise it). */
+/** A mostly-loud `audit` stub, shared by every fake store in this file (added for X7c's `M3LConsoleStoreUnit.audit` field — none of this file's tests exercise it). */
 const stubAuditRepository: M3LConsoleAuditRepository = {
   insert: unexpectedAuditCall,
   insertAll: unexpectedAuditCall,
   deleteAll: unexpectedAuditCall,
   list: unexpectedAuditCall,
-  count: unexpectedAuditCall,
+  // Answers instead of throwing: X7c's boot rebuild legitimately calls
+  // `count()` before the bind, so a loud stub here would make every
+  // `startConsole` test in this file exercise the rebuild's degradation path
+  // and log an error. `0` plus the absent audit root above makes it a clean
+  // no-op; every write method stays loud.
+  count: (): number => 0,
 };
 
 /** Throws when `transaction()` is called unexpectedly on a fake store. */
@@ -558,7 +614,7 @@ describe("startConsole — a bind failure closes the store", () => {
       createServer: () => fake.instance,
       openStore,
     });
-    fake.instance.emit("error", bindError);
+    fake.emitBindError(bindError);
 
     await expect(promise).rejects.toThrow(M3LConsoleError);
     expect(closeCallCount()).toBe(1);
@@ -714,7 +770,7 @@ describe("startConsole — a bind failure AND a store close failure (double faul
       openStore,
       handlers: [handler],
     });
-    fake.instance.emit("error", bindError);
+    fake.emitBindError(bindError);
 
     let thrown: unknown;
     try {

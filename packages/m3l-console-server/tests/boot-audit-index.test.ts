@@ -391,6 +391,23 @@ describe("indexHumanActionAuditPort — the composition-root branch", () => {
     expect(recorded).toStrictEqual([record]);
     expect(inserted).toStrictEqual([projectHumanActionIndexInput(record)]);
   });
+
+  test("the wrapper propagates a rejecting `inner` and writes no row", async () => {
+    const cause = new M3LConsoleError(
+      "ERR_CONSOLE_AUDIT_WRITE_FAILED",
+      "the audit trail could not be appended to",
+    );
+    const { repository, inserted } = createRecordingRepository();
+
+    const port = indexHumanActionAuditPort(
+      { record: (): Promise<void> => Promise.reject(cause) },
+      repository,
+      new Core.M3LLogger([]),
+    );
+
+    await expect(port.record(buildRecord())).rejects.toBe(cause);
+    expect(inserted).toStrictEqual([]);
+  });
 });
 
 describe("the two separately-declared vocabularies must stay identical", () => {

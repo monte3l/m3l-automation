@@ -17,6 +17,8 @@
  * `buildRuntimeAndBindListener`.
  */
 import { EventEmitter } from "node:events";
+import { tmpdir } from "node:os";
+import * as path from "node:path";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 
@@ -60,12 +62,21 @@ import type { M3LConsoleAuditRepository } from "../src/store/audit-repository.js
 import type { M3LConsoleStoreUnit } from "../src/store/store.js";
 import type { M3LRunRegistry } from "../src/runs/registry.js";
 
-/** A minimal valid env: only the required operator name set — deliberately no `M3L_CONSOLE_RUNS_SCRIPTS_DIR`. */
+/**
+ * A minimal valid env: only the required operator name set — deliberately no `M3L_CONSOLE_RUNS_SCRIPTS_DIR`.
+ *
+ * `M3L_CONSOLE_AUDIT_ROOT` points at a path that deliberately does NOT exist:
+ * X7c's boot rebuild (`boot/audit-rebuild.ts`) reads the trail before the
+ * listener binds, and an absent directory reads as an empty trail — so these
+ * tests neither touch the real data dir nor pay for a tmpdir they never
+ * assert on.
+ */
 function buildEnv(
   overrides: Record<string, string | undefined> = {},
 ): NodeJS.ProcessEnv {
   return {
     M3L_CONSOLE_OPERATOR_NAME: "ada",
+    M3L_CONSOLE_AUDIT_ROOT: path.join(tmpdir(), "m3l-console-audit-absent"),
     ...overrides,
   };
 }
@@ -202,13 +213,18 @@ const unexpectedAuditCall = (): never => {
   throw new Error("unexpected audit-repository call on the fake store");
 };
 
-/** A loud-throwing `audit` stub, shared by every fake store in this file. */
+/** A mostly-loud `audit` stub, shared by every fake store in this file. */
 const stubAuditRepository: M3LConsoleAuditRepository = {
   insert: unexpectedAuditCall,
   insertAll: unexpectedAuditCall,
   deleteAll: unexpectedAuditCall,
   list: unexpectedAuditCall,
-  count: unexpectedAuditCall,
+  // Answers instead of throwing: X7c's boot rebuild legitimately calls
+  // `count()` before the bind, so a loud stub here would make every
+  // `startConsole` test in this file exercise the rebuild's degradation path
+  // and log an error. `0` plus the absent audit root above makes it a clean
+  // no-op; every write method stays loud.
+  count: (): number => 0,
 };
 
 /**
@@ -466,6 +482,8 @@ function createFakeServer(calls: string[]): FakeServer {
     listen(...args: unknown[]): Server {
       void args;
       calls.push("listen");
+      listened = true;
+      flushBind();
       return extensions as unknown as Server;
     },
     close(callback?: (error?: Error) => void): Server {
@@ -484,6 +502,38 @@ function createFakeServer(calls: string[]): FakeServer {
     },
   };
   const instance = Object.assign(emitter, extensions) as unknown as Server;
+
+  /**
+   * Arms the bind outcome; {@link listen} is what actually emits it.
+   *
+   * A test calls `emitListening()` in the same synchronous turn as
+   * `startConsole(...)`, which used to be safe because everything from that
+   * call down to `server.listen()` ran without yielding. X7c's audit-index
+   * boot rebuild (`boot/audit-rebuild.ts`) put an `await` before the bind, so
+   * a bare `emitter.emit(...)` at that point goes nowhere (`listening` hangs
+   * the test; `error` is rethrown by `EventEmitter` as unhandled).
+   *
+   * Arming instead of emitting makes the order irrelevant, DETERMINISTICALLY:
+   * `lifecycle/http-server.ts` attaches both handlers BEFORE it calls
+   * `listen()` (`server.on("error"/"listening", ...)` then
+   * `server.listen(...)`), so an emit driven from inside `listen()` always
+   * finds them — no polling and no attempt bound that a slow CI runner can
+   * exhaust.
+   */
+  let listened = false;
+  let armedBind: { readonly error?: Error } | undefined;
+
+  const flushBind = (): void => {
+    if (!listened || armedBind === undefined) return;
+    const outcome = armedBind;
+    armedBind = undefined;
+    // Asynchronous, as a real `Server` reports its bind outcome.
+    setImmediate(() => {
+      if (outcome.error === undefined) emitter.emit("listening");
+      else emitter.emit("error", outcome.error);
+    });
+  };
+
   return {
     instance,
     calls,
@@ -491,7 +541,8 @@ function createFakeServer(calls: string[]): FakeServer {
       state.pendingCloseCallback?.(error);
     },
     emitListening() {
-      emitter.emit("listening");
+      armedBind = {};
+      flushBind();
     },
   };
 }
@@ -717,3 +768,19 @@ describe("startConsole — sessions: store.sessions reaches createConsoleRuntime
     await shutdownPromise;
   });
 });
+
+// =============================================================================
+// X7c's `audit: store.audit` hand-off is deliberately NOT tested here.
+//
+// A property-access counter (a getter on the fake store's `audit`, asserting
+// it was read) was written and then removed: the boot rebuild
+// (`rebuildHumanActionIndexOnBoot`) reads `store.audit` too, and swallows the
+// stub repository's throw, so the counter stayed non-zero with
+// `audit: store.audit` deleted from `main.ts` — a guard that could not fail.
+//
+// The non-vacuous proof lives in `tests/boot-audit-rebuild.test.ts`
+// ("the dual store, end to end"): it boots `startConsole` against a REAL
+// store, performs a real audited write, and asserts a row reached
+// `store.audit`. Deleting the hand-off makes that count zero. Verified by
+// mutation, which is the only reason this file now says nothing about it.
+// =============================================================================

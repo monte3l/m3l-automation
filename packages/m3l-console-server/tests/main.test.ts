@@ -89,6 +89,8 @@ function createFakeServer(
     listen(...args: unknown[]): Server {
       void args;
       calls.push("listen");
+      listened = true;
+      flushBind();
       return extensions as unknown as Server;
     },
     close(callback?: (error?: Error) => void): Server {
@@ -111,6 +113,37 @@ function createFakeServer(
 
   const instance = Object.assign(emitter, extensions) as unknown as Server;
 
+  /**
+   * Arms the bind outcome; {@link listen} is what actually emits it.
+   *
+   * A test calls `emitListening()` in the same synchronous turn as
+   * `startConsole(...)`, which used to be safe because everything from that
+   * call down to `server.listen()` ran without yielding. X7c's audit-index
+   * boot rebuild (`boot/audit-rebuild.ts`) put an `await` before the bind, so
+   * a bare `emitter.emit(...)` at that point goes nowhere (`listening` hangs
+   * the test; `error` is rethrown by `EventEmitter` as unhandled).
+   *
+   * Arming instead of emitting makes the order irrelevant, DETERMINISTICALLY:
+   * `lifecycle/http-server.ts` attaches both handlers BEFORE it calls
+   * `listen()` (`server.on("error"/"listening", ...)` then
+   * `server.listen(...)`), so an emit driven from inside `listen()` always
+   * finds them — no polling and no attempt bound that a slow CI runner can
+   * exhaust.
+   */
+  let listened = false;
+  let armedBind: { readonly error?: Error } | undefined;
+
+  const flushBind = (): void => {
+    if (!listened || armedBind === undefined) return;
+    const outcome = armedBind;
+    armedBind = undefined;
+    // Asynchronous, as a real `Server` reports its bind outcome.
+    setImmediate(() => {
+      if (outcome.error === undefined) emitter.emit("listening");
+      else emitter.emit("error", outcome.error);
+    });
+  };
+
   return {
     instance,
     calls,
@@ -121,7 +154,8 @@ function createFakeServer(
       state.pendingCloseCallback?.(error);
     },
     emitListening() {
-      emitter.emit("listening");
+      armedBind = {};
+      flushBind();
     },
     setOnCloseCalled(hook: () => void) {
       state.onCloseCalled = hook;

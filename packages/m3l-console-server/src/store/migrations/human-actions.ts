@@ -103,13 +103,23 @@ export const CREATE_CONSOLE_HUMAN_ACTIONS_OPERATOR_INDEX = `
  * `deleteAll` + `insertAll`), so even a populated table is reconstructible
  * from the record of truth.
  *
- * **If that stops being true, this migration must change.** Should any
- * intervening slice begin populating `console_human_actions` before a later
- * vocabulary widening ships, the next such migration must become a
- * copy-through: create the new table under a temporary name, copy the rows
- * across with an insert-select, drop the old table, then rename — rather
- * than a bare drop. Do not copy this one's shape
- * without re-checking that precondition.
+ * **X7c changed the first reason, and confirmed the second.** The console now
+ * DOES write this table (`boot/audit-index.ts`'s dual-write port), so "the
+ * table is empty in every deployment" no longer holds — but the second
+ * reason became load-bearing instead of merely available:
+ * `boot/audit-rebuild.ts`'s `rebuildHumanActionIndexOnBoot` fires on exactly
+ * the empty-index-beside-a-populated-trail state a DROP + recreate leaves
+ * behind, so the rows this migration discards are restored from the trail on
+ * the next boot.
+ *
+ * **A later vocabulary widening may therefore still DROP and recreate** —
+ * a copy-through is not required, which is a change from what this TSDoc
+ * originally instructed. What IS required is that the rebuild trigger stay
+ * intact: if it is ever removed or made conditional on something else, a
+ * `CHECK`-widening migration becomes genuinely lossy and must become a
+ * copy-through (create the new table under a temporary name, copy the rows
+ * across with an insert-select, drop the old table, then rename). Re-check
+ * that the trigger exists before copying this one's shape.
  */
 export const V7_WIDEN_HUMAN_ACTION_KINDS_STATEMENTS: readonly string[] = [
   `DROP TABLE console_human_actions`,
@@ -149,15 +159,13 @@ export const V7_WIDEN_HUMAN_ACTION_KINDS_STATEMENTS: readonly string[] = [
  * THIRD table recreate. A declared-but-unused `CHECK` member costs nothing
  * at runtime; another recreate costs a migration and a review.
  *
- * Still loss-free on the same footing as v7: the write routes shipped in the
- * preceding slice populate the JSONL stream only, never this index.
- *
- * **The precondition this rests on, stated so it is checked and not
- * assumed.** If any slice between v7 and this migration began populating
- * `console_human_actions`, v8 must NOT be applied as written — it drops the
- * table. It would have to become a copy-through instead: create the new
- * table under a temporary name, copy the rows across with an insert-select,
- * drop the old table, then rename. Verify before extending this pattern.
+ * Loss-free on the same footing as v7 — see that migration's own TSDoc for
+ * the full picture, including what X7c changed. In short: the discarded rows
+ * are recoverable because `boot/audit-rebuild.ts` rebuilds this index from
+ * the JSONL trail on the next boot, and the empty table a DROP leaves behind
+ * is precisely that rebuild's trigger. Before extending this pattern to a v9,
+ * verify the trigger is still wired: without it, a bare DROP is genuinely
+ * lossy and the migration must become a copy-through instead.
  */
 export const V8_ADD_VIEW_ACTION_KINDS_STATEMENTS: readonly string[] = [
   `DROP TABLE console_human_actions`,
