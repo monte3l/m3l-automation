@@ -469,6 +469,91 @@ code (see [§Exit codes](#exit-codes)). An agent consuming `--json` output
 must treat "empty stdout, non-zero exit" as a CLI-side failure distinct from
 "one envelope, exit code inside it".
 
+### U12 — shell completion
+
+#### `m3l completion <shell>`
+
+Prints a self-contained completion script for `bash`, `zsh` or `fish` on
+stdout. The `<shell>` positional is **required** — there is no `$SHELL`
+auto-detection, so the generated script is a function of its argument alone.
+A bare `m3l completion` exits `2` with the usage line; an unrecognized shell
+exits `2` (`ERR_CLI_INVALID_PARAMETER_VALUE`) with Damerau–Levenshtein
+suggestions over `bash`/`zsh`/`fish`, the same treatment `inspect` gives an
+unknown script.
+
+**Statically generated, not callback-driven.** Every `m3l` invocation pays
+Node startup plus module load (~0.5 s, even for `--version`, which never
+touches discovery), so a completion callback that shelled back into `m3l`
+would put that cost on every TAB press. Everything this command completes is
+knowable at generation time, so it is baked in instead: TAB is instant, and
+the script goes stale — regenerate it after adding a `scripts/*` package.
+
+What the generated script completes:
+
+| Position                        | Candidates                                                                                           |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| first positional                | every static command, every discovered script name, and the always-valid flags                       |
+| after `completion`              | `bash`, `zsh`, `fish`                                                                                |
+| after `inspect`/`presets`/`run` | the discovered script names (`new` is excluded — its positional is a name that must _not_ exist yet) |
+| after a script name             | the always-valid flags plus `--in-process` and `--dry-run`                                           |
+
+Always-valid flags are `--json`, `--help`, `-h` and `--version`.
+`--in-process` (ADR-0054, U7) and `--dry-run` apply only to dynamic
+per-script dispatch; `--dry-run` is honoured among the tokens after the `--`
+separator rather than as a direct flag, but it is offered on a script
+invocation line because that is where it is typed.
+
+The command set is read from `scaffold/manifest.ts`'s `RESERVED_CLI_NAMES` —
+the ADR-0042 source of truth `main.ts`, `commands/dynamic.ts` and
+`commands/doctor.ts` all mirror — so a new reserved name becomes completable
+without a fifth literal to keep in sync. Script names come from
+`discoverScripts`, sorted, so the emitted script is byte-stable across runs.
+
+**Emitted tokens are allowlist-filtered.** Script names reach this command
+from `scripts/*` package directories and are written into an executable shell
+script, so only tokens matching `^-{0,2}[A-Za-z0-9][A-Za-z0-9._:-]*$` are
+interpolated (and each is quoted regardless). Anything else is skipped and
+named in a scrubbed `#` comment inside the generated file, never silently
+dropped. No parameter default value is ever emitted — a `secret: true`
+parameter's default renders as a mask, and completion needs flag _names_
+only.
+
+Flags: `--json` (one object on stdout, `{ "shell": "<shell>", "script":
+"<the full script text>" }`; the `<shell>` positional is still required).
+
+Exit: `0` success; `2` a missing or unrecognized `<shell>`; `1` if discovery
+itself is impossible (e.g. workspace root not found).
+
+## Completion
+
+`m3l completion <shell>` writes the script to stdout; installing it is a
+per-shell step. Regenerate after adding a `scripts/*` package or changing a
+script's declared parameters — the script is a static snapshot, not a live
+query (see [§`m3l completion <shell>`](#m3l-completion-shell)).
+
+**bash** — source it from `~/.bashrc`, or drop it into the completion
+directory:
+
+```bash
+pnpm m3l completion bash > ~/.local/share/bash-completion/completions/m3l
+```
+
+**zsh** — save it as `_m3l` on a directory in `$fpath`, ahead of `compinit`:
+
+```zsh
+pnpm m3l completion zsh > "${fpath[1]}/_m3l"
+```
+
+The emitted file carries a `#compdef m3l` header, so it autoloads from
+`$fpath`; sourcing it by hand instead registers itself via `compdef`, which
+makes `source <(pnpm m3l completion zsh)` work for a throwaway shell.
+
+**fish** — drop it into the completions directory, where fish autoloads it:
+
+```fish
+pnpm m3l completion fish > ~/.config/fish/completions/m3l.fish
+```
+
 ## Exit codes
 
 The CLI's own exit codes are `M3LCliExitCode` — exactly `0 | 1 | 2`, the

@@ -1107,8 +1107,8 @@ function extractSetLiteral(source: string, pattern: RegExp): Set<string> {
   return new Set(members);
 }
 
-describe("runDoctor — reserved-names drift guard vs packages/m3l-cli/src/scaffold/manifest.ts", () => {
-  test("RESERVED_COMMAND_NAMES stays set-equal to scaffold/manifest.ts's RESERVED_CLI_NAMES", () => {
+describe("runDoctor — reserved-names drift guard across doctor/manifest/dynamic", () => {
+  test("all three reserved-name literals stay set-equal", () => {
     const repoRoot = fileURLToPath(new URL("../../../", import.meta.url));
     const doctorSource = fs.readFileSync(
       join(repoRoot, "packages/m3l-cli/src/commands/doctor.ts"),
@@ -1116,6 +1116,10 @@ describe("runDoctor — reserved-names drift guard vs packages/m3l-cli/src/scaff
     );
     const scaffoldSource = fs.readFileSync(
       join(repoRoot, "packages/m3l-cli/src/scaffold/manifest.ts"),
+      "utf8",
+    );
+    const dynamicSource = fs.readFileSync(
+      join(repoRoot, "packages/m3l-cli/src/commands/dynamic.ts"),
       "utf8",
     );
 
@@ -1127,28 +1131,34 @@ describe("runDoctor — reserved-names drift guard vs packages/m3l-cli/src/scaff
       scaffoldSource,
       /RESERVED_CLI_NAMES[^=]*=\s*new Set\(\[([\s\S]*?)\]\)/,
     );
+    const dynamicNames = extractSetLiteral(
+      dynamicSource,
+      /STATIC_COMMAND_NAMES:\s*readonly string\[\]\s*=\s*\[([\s\S]*?)\]/,
+    );
 
-    // Both extractions must have found something real, or an equal-but-empty
-    // pair of sets would pass this test for the wrong reason (a regex that
-    // stopped matching either source file, e.g. after a rename).
+    // Every extraction must have found something real, or an equal-but-empty
+    // trio of sets would pass this test for the wrong reason (a regex that
+    // stopped matching one of the source files, e.g. after a rename).
     expect(doctorNames.size).toBeGreaterThan(0);
     expect(scaffoldNames.size).toBeGreaterThan(0);
+    expect(dynamicNames.size).toBeGreaterThan(0);
 
-    const missingFromDoctor = [...scaffoldNames].filter(
-      (name) => !doctorNames.has(name),
-    );
-    const extraInDoctor = [...doctorNames].filter(
-      (name) => !scaffoldNames.has(name),
-    );
+    // `scaffold/manifest.ts`'s RESERVED_CLI_NAMES is the ADR-0042 source of
+    // truth; the other two mirror it. Comparing sorted arrays (rather than a
+    // pairwise membership diff) reports both directions of drift at once and
+    // extends to a third literal without another block of filters —
+    // `dynamic.ts`'s copy was previously unguarded and could silently
+    // diverge, which is exactly what U12 (adding `completion`) would have hit.
+    const sorted = (names: Set<string>): string[] => [...names].toSorted();
 
     expect(
-      missingFromDoctor,
-      `doctor.ts's RESERVED_COMMAND_NAMES is missing name(s) present in scaffold/manifest.ts's RESERVED_CLI_NAMES: ${missingFromDoctor.join(", ")}`,
-    ).toEqual([]);
+      sorted(doctorNames),
+      "doctor.ts's RESERVED_COMMAND_NAMES has drifted from scaffold/manifest.ts's RESERVED_CLI_NAMES",
+    ).toEqual(sorted(scaffoldNames));
     expect(
-      extraInDoctor,
-      `doctor.ts's RESERVED_COMMAND_NAMES has name(s) not present in scaffold/manifest.ts's RESERVED_CLI_NAMES: ${extraInDoctor.join(", ")}`,
-    ).toEqual([]);
+      sorted(dynamicNames),
+      "commands/dynamic.ts's STATIC_COMMAND_NAMES has drifted from scaffold/manifest.ts's RESERVED_CLI_NAMES",
+    ).toEqual(sorted(scaffoldNames));
   });
 });
 

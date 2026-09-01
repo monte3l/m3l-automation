@@ -66,6 +66,7 @@ const STATIC_COMMAND_NAMES: readonly string[] = [
   "history",
   "new",
   "wizard",
+  "completion",
   "help",
 ];
 
