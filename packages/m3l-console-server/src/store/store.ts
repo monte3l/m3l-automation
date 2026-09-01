@@ -9,8 +9,8 @@
  * The opened store exposes the raw query executor directly (open/close
  * lifecycle plus `all`/`get`/`run`/`script`) AND the typed
  * {@link M3LConsoleStore} surface (`meta`, `transaction()`) built on top of
- * it — {@link M3LConsoleStoreUnit} is what grows one field per later
- * repository (X4's `runs`, X6's `sessions`, X7's `audit`), without
+ * it — {@link M3LConsoleStoreUnit} is the field-per-repository surface
+ * (X4's `runs`, X6's `sessions`, X7c's `audit`) that grew without
  * `store/migrations/runner.ts`, `store/executor.ts`, `store/sqlite-driver.ts`,
  * or `main.ts` ever needing to change.
  *
@@ -51,6 +51,8 @@ import { createConsoleRunsRepository } from "./runs-repository.js";
 import type { M3LConsoleRunsRepository } from "./runs-repository.js";
 import { createConsoleSessionsRepository } from "./sessions-repository.js";
 import type { M3LConsoleSessionsRepository } from "./sessions-repository.js";
+import { createConsoleAuditRepository } from "./audit-repository.js";
+import type { M3LConsoleAuditRepository } from "./audit-repository.js";
 import type { M3LStoreQueryExecutor } from "./types.js";
 
 /** The permission mode applied to the console store's parent directory. */
@@ -143,8 +145,8 @@ export interface M3LConsoleStoreHandle
 /**
  * The repositories bound to one unit of work: either the top-level store
  * (queries run outside any explicit transaction) or one call to
- * {@link M3LConsoleStore.transaction}. Grows one field per later repository
- * — X4 adds `runs`, X6 adds `sessions`, X7 adds `audit` — each wired the same
+ * {@link M3LConsoleStore.transaction}. One field per repository — X4 added
+ * `runs`, X6 added `sessions`, X7c added `audit` — each wired the same
  * way {@link meta} is here, with `store/migrations/runner.ts`,
  * `store/executor.ts`, `store/sqlite-driver.ts`, and `main.ts` untouched.
  *
@@ -171,7 +173,14 @@ export interface M3LConsoleStoreUnit {
   readonly runs: M3LConsoleRunsRepository;
   /** The console store's workbench-sessions repository (X6, slice 1). */
   readonly sessions: M3LConsoleSessionsRepository;
-  // X7: readonly audit
+  /**
+   * The console store's human-action audit INDEX (X7c) — an index over the
+   * ADR-0070 JSONL trail, never the record of truth. It carries only the
+   * queryable dimensions; `parameterNames`, `parameterRefs` and `detail`
+   * have no column here and live in the stream only, so this field cannot
+   * round-trip the trail (see `boot/audit-index.ts`).
+   */
+  readonly audit: M3LConsoleAuditRepository;
 }
 
 /**
@@ -211,6 +220,7 @@ function buildConsoleStoreUnit(
     meta: createConsoleMetaRepository(executor),
     runs: createConsoleRunsRepository(executor),
     sessions: createConsoleSessionsRepository(executor),
+    audit: createConsoleAuditRepository(executor),
   };
 }
 
