@@ -34,20 +34,23 @@ against the store at `~/.claude/projects/-home-…-m3l-automation/memory/`:
 2. **A corrupt memory** — `write-tool-control-byte-trap.md` is reported `data`
    rather than text by `file(1)`. It carries a literal `0x00` and a literal
    `0x1f` at byte offsets 446 and 448, inside the sentence describing a
-   sanitizer regex. The memory documenting the Write-tool control-byte trap was
-   itself corrupted by that exact trap. `check:control-chars` structurally
-   cannot see this: `bin/control-char-scan.mjs` scans _tracked repo files_, and
+   sanitizer regex — three bytes in total once `0x7f` is counted, which the
+   first pass missed and the gate found. The memory documenting the
+   Write-tool control-byte trap was itself corrupted by that exact trap. `check:control-chars` structurally
+   cannot see this: `bin/check-control-chars.mjs` scans _tracked repo files_, and
    the memory store lives outside the repo.
-3. **Broken `[[wikilinks]]`** — `[[build-pipeline]]` and
-   `[[mutation-test-your-guards]]` resolve to no memory `name:`; both are
-   near-misses for real files (`m3l-automation-build-pipeline`,
-   `feedback-mutation-test-your-guards`).
+3. **Broken `[[wikilinks]]`** — three links across three files resolve to no
+   memory `name:`: `[[build-pipeline]]` once and `[[mutation-test-your-guards]]`
+   twice. Both are near-misses for real files
+   (`m3l-automation-build-pipeline`, `feedback-mutation-test-your-guards`),
+   which is what makes them worth gating: a broken link here is a typo, not a
+   deliberate placeholder for a memory not yet written.
 4. **`MEMORY.md` headroom** — 52 lines / 9.7 KB against a 200-line / 25 KB
    load cap. Not yet a problem; unmonitored, and the growth is monotonic.
 
-The work-log half is as blind. Of 112 logs in `docs/logs/`, **24 carry no
-promotion marker** — and the marker scheme has no way to say _"swept, nothing
-durable found"_. An unswept log and a barren one are indistinguishable, so the
+The work-log half is as blind. Of 112 logs in `docs/logs/`, **27 carry no
+`_(promoted → …)_` marker** — and the marker scheme has no way to say
+_"swept, nothing durable found"_. An unswept log and a barren one are indistinguishable, so the
 backlog cannot even be counted, let alone worked down. The "every 5 logs"
 cadence documented in `/writing-work-logs` is checklist-only; nothing polls it,
 which is precisely the failure mode ADR-0082 named ("a reminder nobody reads is
