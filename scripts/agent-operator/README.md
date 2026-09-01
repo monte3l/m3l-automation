@@ -29,10 +29,16 @@ built-in grant.
 
 ### Examples
 
-`health-check` is declared in the config schema but is **not implemented in this
-slice** — it fails fast with `ERR_AGENT_OPERATOR_CONFIG` rather than silently
-succeeding. The model-driven workload lands in the follow-up slice; every
-example below is runnable today.
+`health-check` runs its offline **audit spine** today: it loads the policy,
+seeds the per-day invocation baseline from the cross-run counter, and writes
+both decision-log entries. It does **not** yet call Bedrock — the model-driven
+workload lands in the follow-up slice. Against the committed
+`data/input/agent-policy.json` it therefore still exits non-zero with
+`ERR_AGENT_OPERATOR_ESCALATED` on `budget.tokens-per-run.unobservable`: that
+policy declares five budgets and only two are observable so far. That is the
+correct outcome — reporting an unmeasured budget as `0` would convert
+"unobservable" into a silently passing check. Run it against a budget-free
+policy to see the auto-approved path.
 
 ```bash
 # Minimal — print the declared policy: grants, operations, budgets, and the
@@ -56,6 +62,11 @@ node dist/main.js --command explain-policy \
 # running anything (ADR-0054's context flag, read once in main.ts)
 node dist/main.js --command explain-policy --dry-run
 
+# The audit spine, end to end: two decision-log entries under data/agent-log/,
+# and the day's invocation total under data/agent-state/. Still no Bedrock
+# call, so it costs nothing.
+node dist/main.js --command health-check
+
 # Outside the monorepo — M3LPaths.getProjectRoot() is unavailable in
 # standalone mode, so the CLI entrypoint must be named explicitly or the run
 # fails with ERR_AGENT_OPERATOR_CLI_ENTRYPOINT
@@ -65,10 +76,10 @@ node dist/main.js --command explain-policy \
 
 ### Operations at a glance
 
-| Operation        | Demonstrated by                                   |
-| ---------------- | ------------------------------------------------- |
-| `explain-policy` | Minimal, Common, Production, Edge case            |
-| `health-check`   | Declared only — implemented in the workload slice |
+| Operation        | Demonstrated by                                     |
+| ---------------- | --------------------------------------------------- |
+| `explain-policy` | Minimal, Common, Production, Edge case              |
+| `health-check`   | Audit spine — the model loop lands in a later slice |
 
 ### Operational flags
 
@@ -114,8 +125,16 @@ there too — copy `data/input/agent-policy.json` across, or leave
 
 ## Data directories
 
-| Directory | Purpose                                        |
-| --------- | ---------------------------------------------- |
-| `config/` | Presets / config files passed by explicit path |
-| `input/`  | Files the script consumes                      |
-| `output/` | Run results and archived inputs/configs        |
+| Directory      | Purpose                                                   |
+| -------------- | --------------------------------------------------------- |
+| `config/`      | Presets / config files passed by explicit path            |
+| `input/`       | Files the script consumes (including `agent-policy.json`) |
+| `output/`      | Run results and archived inputs/configs                   |
+| `agent-log/`   | Append-only JSONL decision records (gitignored)           |
+| `agent-state/` | The cross-run daily invocation counter (gitignored)       |
+
+`agent-state/` deliberately sits beside `output/` rather than inside it.
+`output/` holds run artifacts and is the natural thing for an operator to
+clear between runs — and clearing it must never silently reset a policy budget
+ceiling. Deleting `agent-state/` restarts today's count at `0`; that is
+permissive, so it is stated rather than hidden.

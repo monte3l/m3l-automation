@@ -18,6 +18,7 @@ import {
 } from "../config.js";
 import { createAgentCliSurface } from "../lib/cli-surface.js";
 import { M3LAgentOperatorCliError } from "../lib/errors.js";
+import { openDailyInvocationCounter } from "./daily-counter.js";
 import { AgentDecisionRecorder, agentIdentity } from "./decision-recorder.js";
 import { explainPolicy } from "./explain-policy.js";
 import { loadAgentPolicy } from "./load-policy.js";
@@ -161,15 +162,32 @@ function assertConclusionAutoApproved(decision: Core.M3LAgentDecision): void {
 /**
  * `health-check`'s behaviour in this offline slice: the **audit spine**, and
  * nothing beyond it. It loads the declared policy, builds the run ledger,
- * and runs the two-phase decision-log preflight — then, **only if the
- * concluding verdict is an auto-approval**, reports that the model-driven
- * workload is what remains pending and resolves cleanly. A conclusion the
- * policy declined throws instead, so a declined run cannot exit 0.
+ * seeds the cross-run daily invocation baseline, and runs the two-phase
+ * decision-log preflight — then, **only if the concluding verdict is an
+ * auto-approval**, records the run's consumption, reports that the
+ * model-driven workload is what remains pending, and resolves cleanly. A
+ * conclusion the policy declined throws instead, so a declined run cannot
+ * exit 0.
  *
- * The order is load-bearing and proven by failure injection: the policy load
- * precedes the preflight, so an unloadable policy leaves no audit artefact
- * behind. Nothing here spawns the `m3l` CLI — this operation is entirely
- * offline.
+ * Every edge in the order below is load-bearing:
+ *
+ * - **The counter is opened and seeded BEFORE the preflight.**
+ *   `runDecisionLogPreflight` evaluates twice, and budgets are evaluator step
+ *   3 while the decision-log rule is step 3b. Against a policy declaring
+ *   `invocationsPerDay`, an unseeded ledger escalates on
+ *   `budget.invocations-per-day.unobservable` at *both* phases, defeating the
+ *   entire two-phase bootstrap.
+ * - **`now` is sampled once, above the counter.** The rollover decision, the
+ *   `todayCountedAt` the ledger emits, and both evaluator calls must agree on
+ *   one instant, or a run straddling UTC midnight rolls under one `now` and
+ *   is judged under another.
+ * - **The counter is opened after the policy load.** An unloadable policy must
+ *   leave no artefact behind; the audit log is already pinned to that rule and
+ *   the counter file is a second artefact under it.
+ * - **Consumption is recorded after the auto-approval gate.** A run the policy
+ *   *declined* must not record consumption it never made.
+ *
+ * Nothing here spawns the `m3l` CLI — this operation is entirely offline.
  */
 async function runHealthCheck(deps: RunAgentOperatorDeps): Promise<void> {
   const accessor = new Core.M3LConfigAccessor({
@@ -178,18 +196,29 @@ async function runHealthCheck(deps: RunAgentOperatorDeps): Promise<void> {
   });
   const policyFile =
     accessor.optionalString("policyFile") ?? POLICY_FILE_DEFAULT;
+  // Sampled once, here: the counter's rollover, the ledger's `todayCountedAt`,
+  // and both of the preflight's evaluator calls all read the clock this line
+  // hands them, so every phase of this run agrees on `now`.
+  const now = Date.now();
   const policy = await loadAgentPolicy({ paths: deps.paths, policyFile });
   deps.logger.info("agent policy loaded", { step: "policy-loaded" });
 
   const ledger = new AgentRunLedger();
+  const counter = await openDailyInvocationCounter({ paths: deps.paths, now });
+  counter.seed(ledger);
+  deps.logger.info("cross-run daily invocation baseline loaded", {
+    step: "daily-counter-loaded",
+    // The count, not the file path: an operator reads the location off their
+    // own configuration, and it has no place in a run log line.
+    priorToday: counter.priorToday,
+  });
+
   const result = await runDecisionLogPreflight({
     policy,
     ledger,
     recorder: buildDecisionRecorder(accessor),
     action: healthCheckAction(),
-    // Sampled once, here: the ledger and the evaluator both read the clock
-    // the caller hands them, so every phase of this turn agrees on `now`.
-    now: Date.now(),
+    now,
   });
   deps.logger.info("decision-log preflight complete", {
     step: "preflight-complete",
@@ -206,6 +235,14 @@ async function runHealthCheck(deps: RunAgentOperatorDeps): Promise<void> {
   // the audit trail must be complete before the escalation surfaces, or the
   // throw would lose the very verdict it is refusing on.
   assertConclusionAutoApproved(result.decision);
+
+  // Only now: a run the policy declined must not record consumption it never
+  // made. `invocationsThisRun` is necessarily 0 in this slice — no invocation
+  // can occur without the model loop — and the write is deliberately kept
+  // anyway (see `steps/daily-counter`'s migration note): it creates the state
+  // directory, exercises the atomic write in production rather than only in
+  // tests, and materialises the rollover so the file reflects today.
+  await counter.record(ledger.invocationCount);
 
   deps.logger.info(
     "health-check complete: the audit spine is in place and the model-driven workload is still pending; it lands in a follow-up slice",
@@ -297,7 +334,9 @@ async function runExplainPolicy(deps: RunAgentOperatorDeps): Promise<void> {
  *   for an unresolvable/unknown `command` value, coded
  *   `ERR_AGENT_OPERATOR_POLICY` when the declared policy file cannot be
  *   loaded, coded `ERR_AGENT_OPERATOR_DECISION_LOG` when either of
- *   `health-check`'s audit entries cannot be written, and coded
+ *   `health-check`'s audit entries cannot be written, coded
+ *   `ERR_AGENT_OPERATOR_BUDGET_STATE` when the cross-run daily invocation
+ *   counter cannot be read or written, and coded
  *   `ERR_AGENT_OPERATOR_ESCALATED` when `health-check`'s run concluded on a
  *   verdict the policy did not auto-approve (both audit entries are durable
  *   before that throw). `explain-policy`'s other failure modes are documented

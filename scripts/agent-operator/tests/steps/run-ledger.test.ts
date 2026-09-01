@@ -29,6 +29,8 @@
  *   observeDecisionLog(available: boolean): void;
  *   recordDryRunShape(shapeKey: string): void;
  *   observeSpend(spend: AgentRunSpend): void; // fail-closed until called once
+ *   observeDailyBaseline(baseline: AgentDailyBaseline): void; // ditto
+ *   get invocationCount(): number;
  * }
  * ```
  *
@@ -56,7 +58,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { Core } from "@m3l-automation/m3l-common";
 
 import { M3LAgentOperatorCliError } from "../../src/lib/errors.js";
-import type { AgentRunSpend } from "../../src/steps/run-ledger.js";
+import type {
+  AgentDailyBaseline,
+  AgentRunSpend,
+} from "../../src/steps/run-ledger.js";
 import { AgentRunLedger } from "../../src/steps/run-ledger.js";
 import {
   budgetPolicy,
@@ -152,8 +157,8 @@ describe("AgentRunLedger — a virgin snapshot omits what it cannot observe", ()
   > = [
     ["tokensThisRun", "observeSpend has not been called yet"],
     ["costThisRun", "observeSpend has not been called yet"],
-    ["invocationsToday", "no cross-run day counter exists"],
-    ["todayCountedAt", "no cross-run day counter exists"],
+    ["invocationsToday", "observeDailyBaseline has not been called yet"],
+    ["todayCountedAt", "observeDailyBaseline has not been called yet"],
     ["decisionLogAvailable", "the log has not been observed yet"],
     ["loopIterations", "observeSpend has not been called yet"],
   ];
@@ -179,6 +184,7 @@ describe("AgentRunLedger — a virgin snapshot omits what it cannot observe", ()
     ledger.recordInvocation();
     ledger.observeDecisionLog(true);
     ledger.recordDryRunShape(oneShapeKey());
+    ledger.observeDailyBaseline({ invocationsToday: 3, countedAt: NOW });
 
     expect(ownKeysHoldingUndefined(ledger.snapshot(NOW))).toEqual([]);
   });
@@ -639,6 +645,180 @@ describe("AgentRunLedger — observeSpend: fail-closed until observed", () => {
   });
 });
 
+describe("AgentRunLedger — observeDailyBaseline: the per-day pair", () => {
+  /** A baseline anchored to the same UTC day every assertion evaluates under. */
+  function baseline(invocationsToday: number): AgentDailyBaseline {
+    return { invocationsToday, countedAt: NOW };
+  }
+
+  it("[FAIL-CLOSED] omits invocationsToday and todayCountedAt until observeDailyBaseline has been called", () => {
+    const snapshot = new AgentRunLedger().snapshot(NOW);
+
+    expect(Object.hasOwn(snapshot, "invocationsToday")).toBe(false);
+    expect(Object.hasOwn(snapshot, "todayCountedAt")).toBe(false);
+    expect(
+      Core.evaluateAgentAction({
+        action: healthCheckAction(),
+        policy: budgetPolicy({ invocationsPerDay: 400 }),
+        run: snapshot,
+      }).rule,
+    ).toBe("budget.invocations-per-day.unobservable");
+  });
+
+  // The pair must be all-or-nothing. The evaluator checks presence of all
+  // three of invocationsToday/todayCountedAt/now BEFORE it applies the
+  // UTC-day window, so a half-present pair is unobservable anyway — and it
+  // *looks* observed to anyone reading the snapshot, which is strictly worse
+  // than being plainly absent. Splitting the single conditional spread in
+  // `snapshot()` into two independent spreads fails this.
+  it.each([
+    ["virgin", false, false, false],
+    ["invocations only", true, false, false],
+    ["spend only", false, true, false],
+    ["baseline only", false, false, true],
+    ["all three", true, true, true],
+  ] as ReadonlyArray<
+    readonly [
+      label: string,
+      invocations: boolean,
+      spend: boolean,
+      daily: boolean,
+    ]
+  >)(
+    "emits invocationsToday and todayCountedAt together or not at all (%s)",
+    (_label, invocations, spend, daily) => {
+      const ledger = new AgentRunLedger();
+      if (invocations) ledger.recordInvocation();
+      if (spend) {
+        ledger.observeSpend({
+          tokensThisRun: 10,
+          loopIterations: 1,
+          costThisRun: 0.5,
+        });
+      }
+      if (daily) ledger.observeDailyBaseline(baseline(5));
+
+      const snapshot = ledger.snapshot(NOW);
+
+      expect(Object.hasOwn(snapshot, "invocationsToday")).toBe(
+        Object.hasOwn(snapshot, "todayCountedAt"),
+      );
+      expect(Object.hasOwn(snapshot, "invocationsToday")).toBe(daily);
+      expect(ownKeysHoldingUndefined(snapshot)).toEqual([]);
+    },
+  );
+
+  it("composes the baseline with this run's own invocations on every snapshot", () => {
+    // A snapshot emitting the bare baseline would under-count within a long
+    // run and fail OPEN at the ceiling — the run's own calls would never
+    // count against the day.
+    const ledger = new AgentRunLedger();
+    ledger.observeDailyBaseline(baseline(5));
+
+    expect(ledger.snapshot(NOW).invocationsToday).toBe(5);
+
+    ledger.recordInvocation();
+    ledger.recordInvocation();
+    ledger.recordInvocation();
+
+    expect(ledger.snapshot(NOW).invocationsToday).toBe(8);
+  });
+
+  it("emits todayCountedAt verbatim, so the caller owns the UTC-day anchor", () => {
+    const ledger = new AgentRunLedger();
+    ledger.observeDailyBaseline({ invocationsToday: 1, countedAt: NOW });
+
+    expect(ledger.snapshot(NOW + 1000).todayCountedAt).toBe(NOW);
+  });
+
+  it("makes a declared invocationsPerDay satisfiable once observed", () => {
+    const ledger = new AgentRunLedger();
+    ledger.observeDailyBaseline(baseline(0));
+    ledger.observeDecisionLog(true);
+
+    expect(
+      Core.evaluateAgentAction({
+        action: healthCheckAction(),
+        policy: budgetPolicy({ invocationsPerDay: 400 }),
+        run: ledger.snapshot(NOW),
+      }).verdict,
+    ).toBe("auto-approved");
+  });
+
+  it("reports the reject-AT bound as budget.invocations-per-day, never .unobservable", () => {
+    const ledger = new AgentRunLedger();
+    ledger.observeDailyBaseline(baseline(399));
+    ledger.observeDecisionLog(true);
+    ledger.recordInvocation();
+
+    const decision = Core.evaluateAgentAction({
+      action: healthCheckAction(),
+      policy: budgetPolicy({ invocationsPerDay: 400 }),
+      run: ledger.snapshot(NOW),
+    });
+
+    expect(decision.verdict).toBe("escalate");
+    expect(decision.rule).toBe("budget.invocations-per-day");
+  });
+
+  it.each([
+    ["a negative invocationsToday", { invocationsToday: -1, countedAt: NOW }],
+    [
+      "a fractional invocationsToday",
+      { invocationsToday: 1.5, countedAt: NOW },
+    ],
+    ["a negative countedAt", { invocationsToday: 1, countedAt: -1 }],
+    [
+      "a non-finite countedAt",
+      { invocationsToday: 1, countedAt: Number.POSITIVE_INFINITY },
+    ],
+  ] as ReadonlyArray<readonly [label: string, baseline: AgentDailyBaseline]>)(
+    "rejects %s with ERR_AGENT_OPERATOR_BUDGET_STATE",
+    (_label, bad) => {
+      const ledger = new AgentRunLedger();
+
+      let thrown: unknown;
+      try {
+        ledger.observeDailyBaseline(bad);
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toBeInstanceOf(M3LAgentOperatorCliError);
+      // NOT ERR_AGENT_OPERATOR_DECISION_LOG: the audit log is healthy here,
+      // and sending an operator to `data/agent-log/` would waste their time
+      // on the wrong file in the wrong directory.
+      expect((thrown as M3LAgentOperatorCliError).code).toBe(
+        "ERR_AGENT_OPERATOR_BUDGET_STATE",
+      );
+      // A rejected baseline leaves the pair absent — never half-seeded.
+      const snapshot = ledger.snapshot(NOW);
+      expect(Object.hasOwn(snapshot, "invocationsToday")).toBe(false);
+      expect(Object.hasOwn(snapshot, "todayCountedAt")).toBe(false);
+    },
+  );
+});
+
+describe("AgentRunLedger — invocationCount", () => {
+  it("reports the same number snapshot() emits as invocationsThisRun", () => {
+    // The accessor exists so a caller never writes
+    // `snapshot(now).invocationsThisRun ?? 0` — every library ledger field is
+    // typed optional, and a defaulted observation is the exact mistake the
+    // omit-vs-zero discipline exists to prevent.
+    const ledger = new AgentRunLedger();
+
+    expect(ledger.invocationCount).toBe(0);
+
+    ledger.recordInvocation();
+    ledger.recordInvocation();
+
+    expect(ledger.invocationCount).toBe(2);
+    expect(ledger.snapshot(NOW).invocationsThisRun).toBe(
+      ledger.invocationCount,
+    );
+  });
+});
+
 describe("AgentRunLedger — the caller owns the clock", () => {
   it("never reads Date.now, in any operation", () => {
     const ledger = new AgentRunLedger();
@@ -653,6 +833,7 @@ describe("AgentRunLedger — the caller owns the clock", () => {
       loopIterations: 1,
       costThisRun: 0,
     });
+    ledger.observeDailyBaseline({ invocationsToday: 1, countedAt: NOW });
     ledger.snapshot(NOW);
 
     // `evaluateAgentAction` reads no clock — the caller samples `now` once and
