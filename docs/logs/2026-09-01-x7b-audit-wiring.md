@@ -159,7 +159,7 @@ been evading the ratchet, so both locks moved to
   hit its 5-second timeout once under full-suite contention and passed on
   retry, exactly as `prepush-aws-provisioning-flake` describes. Backgrounded
   commands also reported `exit code 0` while the real exit was 1 — the
-  `REAL_EXIT` logging habit is what caught a failing coverage gate.
+  `REAL_EXIT` logging habit is what caught a failing coverage gate. _(promoted → .claude/rules/subagent-dispatch.md)_
 
 ## Follow-ups
 

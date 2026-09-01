@@ -170,7 +170,7 @@ green. `M3L_DATA_DIR` is now stubbed too.
 limit` at 2 GB inside `lint:library`). Re-running with
    `NODE_OPTIONS=--max-old-space-size=6144` passed unchanged. A backgrounded
    command that ends in a pipe reports exit 0 regardless, which is why every long
-   command in this session wrote a real `REAL_EXIT` into its log.
+   command in this session wrote a real `REAL_EXIT` into its log. _(promoted → .claude/rules/subagent-dispatch.md)_
 5. **Check the worktree for artefacts even when tests are green.** A test that
    writes into the checkout still passes.
 

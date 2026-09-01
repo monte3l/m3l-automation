@@ -143,7 +143,7 @@ making every future error code free.
 
 4. **Enumerate gates from `package.json`, never from prose.**
    `node -e "console.log(Object.keys(require('./package.json').scripts).filter(k=>k.startsWith('check:')).join(' '))"`
-   Documentation tables drift; the script list cannot.
+   Documentation tables drift; the script list cannot. _(promoted → .claude/rules/tests.md)_
 
 5. **`check:*` gates that anchor to a file path break on any symbol
    relocation.** `check:provenance` and `check:index` are now in `pre-push`
@@ -157,7 +157,7 @@ making every future error code free.
    _survived_ — `allOperations !== true` → `!allOperations` — and that is
    correct rather than a gap: for any validated policy the two agree on
    every reachable input, because the runtime brand guarantees validated
-   input. A surviving mutant is a question, not automatically a defect.
+   input. A surviving mutant is a question, not automatically a defect. _(promoted → .claude/rules/tests.md)_
 
 7. **A test whose fixture cannot reach the code it names proves nothing.**
    Three tests used `Object.create({ key })` to simulate an inherited
