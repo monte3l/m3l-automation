@@ -280,6 +280,15 @@ gitignored local files, which is why `pnpm worktree:setup` exists. The `.git`
 directory (and therefore the lefthook hooks) is shared, so hooks work without a
 re-install; `node_modules`, `dist/`, and `coverage/` are per-worktree.
 
+The gitignored files it copies from the main checkout are listed in
+`.worktreeinclude`, one literal path per line, validated by
+`pnpm check:worktree`. `lefthook-local.yml` is on that list deliberately: it is
+ADR-0080's per-host override that forces `pre-push` to run its heavy lanes
+serially on a memory-constrained machine. Before it was listed, a new worktree
+inherited lefthook's parallel default and OOMed — the lefthook hooks themselves
+are shared via `.git`, but this override is not, because it is gitignored. On a
+host with enough RAM the file does not exist and the copy is skipped.
+
 When you're done, clean up merged or stale worktrees:
 
 ```bash
