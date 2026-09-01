@@ -77,7 +77,7 @@ export const BANNED_EXACT_NAMES: ReadonlyMap<string, string> = new Map([
  * short form collision-free.
  *
  * Kept as its own literal (not imported from `commands/doctor.ts` or
- * `commands/dynamic.ts`, which independently declare the same 9 names) — a
+ * `commands/dynamic.ts`, which independently declare the same 10 names) — a
  * drift guard elsewhere reads this literal by text and compares it against
  * `doctor.ts`'s.
  *
@@ -95,6 +95,7 @@ export const RESERVED_CLI_NAMES: ReadonlySet<string> = new Set([
   "history",
   "wizard",
   "new",
+  "completion",
   "help",
 ]);
 

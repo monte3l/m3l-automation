@@ -85,6 +85,7 @@ describe("RESERVED_CLI_NAMES", () => {
       "history",
       "wizard",
       "new",
+      "completion",
       "help",
     ]);
   });

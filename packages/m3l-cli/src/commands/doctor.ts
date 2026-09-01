@@ -92,6 +92,7 @@ const RESERVED_COMMAND_NAMES: readonly string[] = [
   "history",
   "wizard",
   "new",
+  "completion",
   "help",
 ];
 
