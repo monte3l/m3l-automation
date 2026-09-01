@@ -122,6 +122,98 @@ sensitive-class artifact the console touches.
   console-server work; the flagged correlation seam would be an
   `m3l-common` additive minor decided at X7.
 
+## Update (2026-09-01) — correlation is threaded explicitly; `AsyncLocalStorage` would be wrong here
+
+X7b implemented the correlation seam this ADR flagged. Two decisions
+above did not survive contact with the code, and this Update supersedes
+them; the original text stays as written, per this repo's dated-Update
+convention.
+
+### `AsyncLocalStorage` is not merely unnecessary — it would mis-attribute
+
+The Decision says the id is "carried server-side through an
+**`AsyncLocalStorage` request context**". It is not, and must not be.
+
+The evidence is `pumpQueue` in `src/runs/orchestrator.ts`. It starts a
+queued run from **inside a different run's completion continuation**
+(`finishActiveRun`), not from the request that queued it. Under an
+ambient store, run B — queued by request 2 — would execute inside
+whatever context request 1's completion happened to be running in, and
+every audit record, log line and run report for B would be filed under
+request 1's id. That is not a missing feature; it is a silently wrong
+trail, which is worse than none. Two further call sites have no ambient
+context at all to read: `onQueueTimeout` fires on a timer callback, and
+`reconcileOnBoot` runs before any request exists.
+
+So the id is threaded **explicitly**, stored on `M3LPendingQueuedRun` so
+it survives the queue, and passed as a required `correlationId` on the
+executor's options bag. `M3LRequestContext` (`src/http/context.ts`)
+already carried `correlationId`, `operator` and `accessMode` explicitly —
+the seam existed; only the run path below it was missing.
+
+The regression lock is
+`tests/runs-orchestrator-correlation.test.ts`'s "a queued run is
+correlated to its OWN launch, not the run whose completion started it",
+which fails if the stored id is ever dropped in favour of an ambient one.
+
+### The library seam: four tiers, and why the env tier exists
+
+The flagged `m3l-common` additive minor landed as three optional fields
+and one environment tier, resolving highest-first:
+
+1. `M3LScriptOptions.correlationId` — the constructor value.
+2. `M3LScriptRunOptions.correlationId`, **or** Lambda's
+   `context.awsRequestId` (mutually exclusive entry points, one tier).
+3. The `M3L_CORRELATION_ID` environment variable.
+4. A generated `crypto.randomUUID()`.
+
+Environment sits **below** both explicit values, matching this library's
+existing precedent that an explicit `--log-level` beats `M3L_LOG_LEVEL`:
+ambient environment must never override an id a caller wrote down. It
+sits **above** generation because that is the only channel that reaches a
+**spawned** script. `M3LScript`'s resolution had no environment tier, and
+the console never touches a spawned script's `main.ts` — so writing the
+variable without adding the tier would have repeated the
+`M3L_RUN_PARAMETERS` mistake, a variable this server sets and nobody
+reads. The env-var name is a deliberately mirrored literal in two
+packages, each side carrying a test that exercises the exact spelling.
+
+### Why `M3LCommandContext.correlationId` is optional
+
+It breaks its own file's required-holding-`undefined` convention (the one
+`signal` and `dryRun` follow) on purpose. Those two are values a command
+must **branch on**, so the required form is right — it forces every host
+to state them and every callee to narrow. `correlationId` is passed
+**through**, and its absence has a safe fallback: the script resolves its
+own id. There is nothing a callee can forget to handle.
+
+It is also what kept this additive. An `M3LCommandContext` is
+constructed at 15+ sites — the script template, four shipped scripts, the
+CLI's in-process runner and their test fakes — so a required field would
+have made this a **major** where this ADR budgeted a minor. The repo has
+already paid that exact cost once: a required `dryRun` on
+`M3LScriptHookContext` broke seven consumer test fakes.
+
+### Surface accounting
+
+- **`m3l-common` 4.6.1 → 4.7.0** (additive minor). Three optional fields
+  through the **existing** Core barrel: no new `exports` subpath, no new
+  named export. `check:api` — which is `bin/check-exports-snapshot.mjs`,
+  and diffs only the `exports` map — did not move, and neither did
+  `check:doc-exports` or `check:exports-semver`.
+- Console-server changes are internal: `M3LRunExecutorOptions` is
+  unexported, so its new required field is neither a semver nor a knip
+  event.
+- Promoting the env-var name to an exported constant later remains open
+  and would itself be an additive minor — no lock-in either way. It is
+  deliberately **not** exported now, because this library writes every
+  env-var name as an inline literal (`errors.test.ts`'s source scan
+  treats any `const NAME = "M3L_…"` as a declared error code).
+- A CLI flag was considered and rejected for the spawn channel: the
+  console spawns `dist/main.js` with a fixed argument list, and a script's
+  own `argv` belongs to the script, not its launcher. An environment
+  variable is the channel that does not collide with a consumer's flags.
+
 ## Links
 
 - Programme: [ADR-0064](./0064-m3l-console-programme.md). Store/index:
