@@ -32,6 +32,18 @@ export const EXPECTED_REPO_FEATURES = {
 // Insights' repo summary links somewhere real instead of nothing.
 export const EXPECTED_HOMEPAGE = "https://monte3l.github.io/m3l-automation/";
 
+// `delete_branch_on_merge` is a load-bearing precondition of
+// `bin/worktree-prune.mjs`'s `[gone]`-upstream heuristic (the common case for
+// detecting a squash/rebase merge, since ancestry alone misses those) — but
+// nothing asserted it before this check. Kept separate from
+// `EXPECTED_REPO_FEATURES`/`featureMismatches` deliberately: it is a
+// precondition of the local cleanup tooling, not an ADR-0050 platform-feature
+// stance, and warn-severity rather than a hard fail —
+// `worktree-prune`'s ancestry-based fallback still catches merged branches
+// even if this setting is ever disabled, so a regression here degrades one
+// detection path rather than breaking cleanup outright.
+export const EXPECTED_DELETE_BRANCH_ON_MERGE = true;
+
 const BLANK_ISSUES_DISABLED_PATTERN = /blank_issues_enabled:\s*false/;
 const IDEAS_CONTACT_LINK_PATTERN = /discussions\/categories\/ideas/;
 const QA_CONTACT_LINK_PATTERN = /discussions\/categories\/q-a/;
@@ -42,6 +54,7 @@ const QA_CONTACT_LINK_PATTERN = /discussions\/categories\/q-a/;
  *   has_discussions: boolean,
  *   has_issues: boolean,
  *   has_projects: boolean,
+ *   delete_branch_on_merge: boolean,
  *   description: string | null,
  *   homepage: string | null,
  *   topics: string[],
@@ -51,6 +64,7 @@ const QA_CONTACT_LINK_PATTERN = /discussions\/categories\/q-a/;
  *   featureMismatches: string[],
  *   metadataGaps: string[],
  *   templateGaps: string[],
+ *   cleanupWarnings: string[],
  * }} FeatureStanceIssues
  */
 
@@ -73,13 +87,14 @@ const QA_CONTACT_LINK_PATTERN = /discussions\/categories\/q-a/;
  *     has_discussions: true,
  *     has_issues: true,
  *     has_projects: true,
+ *     delete_branch_on_merge: true,
  *     description: "Automation utilities library",
  *     homepage: "https://monte3l.github.io/m3l-automation/",
  *     topics: ["automation"],
  *   },
  *   "blank_issues_enabled: false\ncontact_links:\n  - url: https://github.com/monte3l/m3l-automation/discussions/categories/ideas\n  - url: https://github.com/monte3l/m3l-automation/discussions/categories/q-a\n",
  * );
- * // { featureMismatches: [], metadataGaps: [], templateGaps: [] }
+ * // { featureMismatches: [], metadataGaps: [], templateGaps: [], cleanupWarnings: [] }
  * ```
  */
 export function deriveFeatureIssues(repo, issueTemplateConfigContent) {
@@ -135,5 +150,17 @@ export function deriveFeatureIssues(repo, issueTemplateConfigContent) {
     );
   }
 
-  return { featureMismatches, metadataGaps, templateGaps };
+  /** @type {string[]} */
+  const cleanupWarnings = [];
+  if (repo.delete_branch_on_merge !== EXPECTED_DELETE_BRANCH_ON_MERGE) {
+    cleanupWarnings.push(
+      `delete_branch_on_merge is ${repo.delete_branch_on_merge}, expected ` +
+        `${EXPECTED_DELETE_BRANCH_ON_MERGE} — \`bin/worktree-prune.mjs\`'s ` +
+        "`[gone]`-upstream heuristic depends on GitHub auto-deleting the " +
+        "remote branch on merge; enable it in repository settings " +
+        "(Settings → General → Pull Requests).",
+    );
+  }
+
+  return { featureMismatches, metadataGaps, templateGaps, cleanupWarnings };
 }

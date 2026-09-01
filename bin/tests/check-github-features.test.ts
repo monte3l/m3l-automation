@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
   deriveFeatureIssues,
+  EXPECTED_DELETE_BRANCH_ON_MERGE,
   EXPECTED_HOMEPAGE,
   EXPECTED_REPO_FEATURES,
 } from "../lib/github-features.mjs";
@@ -10,6 +11,7 @@ const COMPLIANT_REPO = {
   has_discussions: true,
   has_issues: true,
   has_projects: true,
+  delete_branch_on_merge: true,
   description: "Automation utilities library",
   homepage: EXPECTED_HOMEPAGE,
   topics: ["automation"],
@@ -44,6 +46,12 @@ describe("EXPECTED_HOMEPAGE", () => {
   });
 });
 
+describe("EXPECTED_DELETE_BRANCH_ON_MERGE", () => {
+  test("is true", () => {
+    expect(EXPECTED_DELETE_BRANCH_ON_MERGE).toBe(true);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // deriveFeatureIssues
 // ---------------------------------------------------------------------------
@@ -56,6 +64,7 @@ describe("deriveFeatureIssues", () => {
       featureMismatches: [],
       metadataGaps: [],
       templateGaps: [],
+      cleanupWarnings: [],
     });
   });
 
@@ -221,6 +230,43 @@ describe("deriveFeatureIssues", () => {
         "Discussions Ideas category (ADR-0050).",
       ".github/ISSUE_TEMPLATE/config.yml is missing a contact link to the " +
         "Discussions Q&A category (ADR-0050).",
+    ]);
+  });
+
+  test("flags delete_branch_on_merge disabled with the worktree-prune rationale", () => {
+    const repo = { ...COMPLIANT_REPO, delete_branch_on_merge: false };
+    const result = deriveFeatureIssues(repo, COMPLIANT_TEMPLATE_CONFIG);
+    expect(result.cleanupWarnings).toEqual([
+      "delete_branch_on_merge is false, expected true — " +
+        "`bin/worktree-prune.mjs`'s `[gone]`-upstream heuristic depends on " +
+        "GitHub auto-deleting the remote branch on merge; enable it in " +
+        "repository settings (Settings → General → Pull Requests).",
+    ]);
+  });
+
+  test("reports no cleanup warnings when delete_branch_on_merge is enabled", () => {
+    const result = deriveFeatureIssues(
+      COMPLIANT_REPO,
+      COMPLIANT_TEMPLATE_CONFIG,
+    );
+    expect(result.cleanupWarnings).toEqual([]);
+  });
+
+  test("populates cleanupWarnings independently of featureMismatches", () => {
+    const repo = {
+      ...COMPLIANT_REPO,
+      has_wiki: true,
+      delete_branch_on_merge: false,
+    };
+    const result = deriveFeatureIssues(repo, COMPLIANT_TEMPLATE_CONFIG);
+    expect(result.featureMismatches).toEqual([
+      "has_wiki is true, expected false per ADR-0050 — disable it in repository settings.",
+    ]);
+    expect(result.cleanupWarnings).toEqual([
+      "delete_branch_on_merge is false, expected true — " +
+        "`bin/worktree-prune.mjs`'s `[gone]`-upstream heuristic depends on " +
+        "GitHub auto-deleting the remote branch on merge; enable it in " +
+        "repository settings (Settings → General → Pull Requests).",
     ]);
   });
 });
