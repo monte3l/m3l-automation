@@ -140,6 +140,7 @@ const HUMAN_ACTION_INDEX_KINDS: Readonly<
   "run.cancel": true,
   "session.create": true,
   "session.step.add": true,
+  "session.decision.raise": true,
   "session.decision.answer": true,
   "session.binding.select": true,
   "session.close": true,

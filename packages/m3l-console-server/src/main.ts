@@ -16,7 +16,9 @@ import type { Server } from "node:http";
 
 import { Core } from "@m3l-automation/m3l-common";
 
+import type { M3LHumanActionAuditPort } from "./audit/port.js";
 import { buildDispatchRouter } from "./boot/dispatch-router.js";
+import { buildHumanActionAuditPort } from "./boot/human-action-audit.js";
 import {
   createRuntimeLogger,
   logDrainCompletion,
@@ -103,6 +105,15 @@ export interface M3LConsoleRuntimeOptions {
   readonly sessionsConfig?: M3LConsoleSessionsConfig;
   /** The workbench-sessions persistence port the X6 session subsystem builds from; see {@link createConsoleRuntime}. */
   readonly sessions?: M3LConsoleSessionsRepository;
+  /**
+   * The ADR-0070 human-action audit port. Defaults to a JSONL stream rooted
+   * at `M3L_CONSOLE_AUDIT_ROOT` (or the data dir's `console/audit`).
+   *
+   * Injectable purely as a test seam, mirroring the existing
+   * `store`/`runs`/`sessions` convention — auditing itself is not optional,
+   * and there is no configuration that turns it off.
+   */
+  readonly auditPort?: M3LHumanActionAuditPort;
 }
 
 /**
@@ -236,6 +247,8 @@ export function createConsoleRuntime(
           ? { service: adaptSessionService(sessions.service) }
           : undefined,
       ),
+      options.auditPort ??
+        buildHumanActionAuditPort(options.env ?? process.env),
     ),
     middlewares: [
       createDrainMiddleware(drain),
