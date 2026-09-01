@@ -59,6 +59,52 @@ export type M3LAgentOperatorErrorCode =
   | "ERR_AGENT_OPERATOR_BUDGET_STATE";
 
 /**
+ * Fault origin per code — the table that gives this family real exit codes.
+ *
+ * @remarks
+ * Without it every `ERR_AGENT_OPERATOR_*` failure exits **1**
+ * (`UNCLASSIFIED`), not the 2/3/4 the README used to claim. The reason is
+ * structural: `Core.mapErrorToExitCode` resolves an exit code from a
+ * structural `origin` field first and a `core/errors/catalog.ts` lookup by
+ * `code` second — and this family sets no `origin` and appears in no catalog
+ * (it cannot: the catalog is library-owned, and a script's codes are not the
+ * library's business). Both lookups miss, so every failure of this script
+ * collapses onto one code and a scheduler cannot tell a bad policy file from
+ * an unreachable `m3l` CLI.
+ *
+ * The split follows ADR-0049's classification by **fault origin**, read for a
+ * consumer script:
+ *
+ * - `"caller"` (exit 2) — the operator's own input is wrong or their policy
+ *   declined the run. Re-running unchanged cannot help; edit config or the
+ *   policy file. `ERR_AGENT_OPERATOR_ESCALATED` belongs here and not under
+ *   `"external"`: the policy worked exactly as written.
+ * - `"external"` (exit 3) — something outside this process failed: a spawned
+ *   `m3l` child, the decision-log directory, the cross-run counter file.
+ *
+ * Nothing maps to `"library"` (exit 4). That code means a defect inside
+ * `m3l-common`, and this script is never in a position to assert that about
+ * its own failures.
+ *
+ * A per-instance `options.origin` still wins — the constructor only
+ * *defaults* from this table — so a call site with better information can
+ * override it.
+ */
+const ORIGIN_BY_CODE: Readonly<
+  Record<M3LAgentOperatorErrorCode, Core.M3LErrorOrigin>
+> = Object.freeze({
+  ERR_AGENT_OPERATOR_CONFIG: "caller",
+  ERR_AGENT_OPERATOR_CLI_ENTRYPOINT: "caller",
+  ERR_AGENT_OPERATOR_CLI_SPAWN: "external",
+  ERR_AGENT_OPERATOR_CLI_OUTPUT: "external",
+  ERR_AGENT_OPERATOR_SCRIPT_NAME: "caller",
+  ERR_AGENT_OPERATOR_POLICY: "caller",
+  ERR_AGENT_OPERATOR_DECISION_LOG: "external",
+  ERR_AGENT_OPERATOR_ESCALATED: "caller",
+  ERR_AGENT_OPERATOR_BUDGET_STATE: "external",
+});
+
+/**
  * Enrichment fields for {@link M3LAgentOperatorCliError}, forwarded verbatim
  * to `Core.M3LError`'s options bag alongside the pinned `code`. Module-private
  * — callers catch `M3LAgentOperatorCliError` instances, they don't construct
@@ -70,7 +116,11 @@ interface M3LAgentOperatorCliErrorOptions {
   readonly context?: Record<string, unknown>;
   /** The underlying cause, if this error wraps another failure. */
   readonly cause?: unknown;
-  /** Overrides the catalog-derived origin classification for this instance. */
+  /**
+   * Overrides this instance's origin. Absent, the code's own entry in the
+   * module-private origin table applies — see that table for why a default
+   * is needed at all.
+   */
   readonly origin?: Core.M3LErrorOrigin;
   /** Overrides the catalog-derived retryable classification for this instance. */
   readonly retryable?: Core.M3LErrorRetryable;
@@ -126,13 +176,24 @@ export class M3LAgentOperatorCliError extends Core.M3LError {
    * @param code - The pinned {@link M3LAgentOperatorErrorCode} identifying
    *   the failure mode.
    * @param options - Optional `context`/`cause`/`origin`/`retryable`
-   *   enrichment forwarded to `Core.M3LError`.
+   *   enrichment forwarded to `Core.M3LError`. An absent `origin` is
+   *   defaulted from `code` — see the origin table's remarks for why this
+   *   script's failures would otherwise all exit `1`.
    */
   constructor(
     message: string,
     code: M3LAgentOperatorErrorCode,
     options?: M3LAgentOperatorCliErrorOptions,
   ) {
-    super(message, { ...options, code });
+    // The spread comes FIRST so an explicit `options.origin` still wins; the
+    // table only supplies a default. `origin` is written unconditionally
+    // (never a conditional spread) because it always resolves to a real
+    // value here — every code has a table entry, and the `Record` type makes
+    // a missing one a compile error rather than a silent `undefined`.
+    super(message, {
+      ...options,
+      origin: options?.origin ?? ORIGIN_BY_CODE[code],
+      code,
+    });
   }
 }

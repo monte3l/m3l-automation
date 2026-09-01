@@ -130,3 +130,87 @@ describe("M3LAgentOperatorCliError", () => {
     expectTypeOf<SecondParam>().toEqualTypeOf<M3LAgentOperatorErrorCode>();
   });
 });
+
+/**
+ * The exit code every `ERR_AGENT_OPERATOR_*` failure must actually produce,
+ * per code. Verified against the real `Core.mapErrorToExitCode`, never
+ * described.
+ *
+ * Before the origin table existed, EVERY code here produced `1`
+ * (`UNCLASSIFIED`): `mapErrorToExitCode` resolves from a structural `origin`
+ * field first and a `core/errors/catalog.ts` lookup by `code` second, and
+ * this family set no `origin` and appears in no catalog (grep:
+ * `ERR_AGENT_OPERATOR` has zero hits there). Both lookups missed, so a
+ * scheduler could not tell a bad policy file from an unreachable `m3l` CLI.
+ * Deleting the table's default reverts every row below to `1`.
+ */
+const EXIT_CODE_BY_CODE: ReadonlyArray<
+  readonly [code: M3LAgentOperatorErrorCode, exit: number]
+> = [
+  // The operator's own input is wrong, or their policy declined the run.
+  ["ERR_AGENT_OPERATOR_CONFIG", 2],
+  ["ERR_AGENT_OPERATOR_CLI_ENTRYPOINT", 2],
+  ["ERR_AGENT_OPERATOR_SCRIPT_NAME", 2],
+  ["ERR_AGENT_OPERATOR_POLICY", 2],
+  // The policy worked exactly as written and declined — a caller fault, not
+  // an external one.
+  ["ERR_AGENT_OPERATOR_ESCALATED", 2],
+  // Something outside this process failed: a spawned child, the decision-log
+  // directory, the cross-run counter file.
+  ["ERR_AGENT_OPERATOR_CLI_SPAWN", 3],
+  ["ERR_AGENT_OPERATOR_CLI_OUTPUT", 3],
+  ["ERR_AGENT_OPERATOR_DECISION_LOG", 3],
+  ["ERR_AGENT_OPERATOR_BUDGET_STATE", 3],
+];
+
+describe("M3LAgentOperatorCliError — fault origin drives the exit code", () => {
+  it.each(EXIT_CODE_BY_CODE)("%s exits %i", (code, exit) => {
+    const error = new M3LAgentOperatorCliError("message text", code);
+
+    expect(Core.mapErrorToExitCode(error)).toBe(exit);
+  });
+
+  it("covers every declared code, so a tenth cannot be added without a mapping", () => {
+    // The table above is a hand-written list; this pins it against the union
+    // the class actually accepts. `ALL_CODES` is itself type-checked as
+    // `readonly M3LAgentOperatorErrorCode[]`, and the bidirectional
+    // `expectTypeOf` above pins that union to exactly nine members.
+    expect(EXIT_CODE_BY_CODE.map(([code]) => code).sort()).toEqual(
+      [...ALL_CODES].sort(),
+    );
+  });
+
+  it("never maps to LIBRARY (4): this script cannot assert a defect in m3l-common", () => {
+    for (const [code] of EXIT_CODE_BY_CODE) {
+      expect(
+        Core.mapErrorToExitCode(new M3LAgentOperatorCliError("m", code)),
+      ).not.toBe(4);
+    }
+  });
+
+  it("lets an explicit options.origin win over the table's default", () => {
+    // The table only supplies a default; a call site with better information
+    // must still be able to override it.
+    const error = new M3LAgentOperatorCliError(
+      "message text",
+      "ERR_AGENT_OPERATOR_CONFIG",
+      { origin: "external" },
+    );
+
+    expect(error.origin).toBe("external");
+    expect(Core.mapErrorToExitCode(error)).toBe(3);
+  });
+
+  it("no longer collapses every failure onto UNCLASSIFIED", () => {
+    // The regression this table exists to prevent, stated as a set: the nine
+    // codes must produce more than one distinct exit code.
+    const codes = new Set(
+      EXIT_CODE_BY_CODE.map(([code]) =>
+        Core.mapErrorToExitCode(new M3LAgentOperatorCliError("m", code)),
+      ),
+    );
+
+    expect(codes.size).toBeGreaterThan(1);
+    expect(codes.has(1)).toBe(false);
+  });
+});

@@ -17,7 +17,7 @@
  * than this one seam.
  */
 
-import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -38,13 +38,7 @@ import {
   type AgentOperatorProjectedListRow,
 } from "../../src/lib/model-safety.js";
 import { runAgentOperator } from "../../src/steps/run-agent-operator.js";
-import { openDailyInvocationCounter } from "../../src/steps/daily-counter.js";
-import {
-  budgetPolicyDeclaration,
-  decisionLogPolicyDeclaration,
-  fullPolicyDeclaration,
-  realAgentPolicyDeclaration,
-} from "../support/policyFixtures.js";
+import { fullPolicyDeclaration } from "../support/policyFixtures.js";
 
 /**
  * Builds a real, nominally-branded {@link AgentOperatorProjectedDoctorReport}
@@ -83,7 +77,14 @@ vi.mock("../../src/lib/cli-surface.js", () => ({
   createAgentCliSurface: vi.fn(),
 }));
 
+// The health-check ARM is mocked, not the workload: this file tests the
+// dispatcher, and `run-health-check.test.ts` tests what the arm reaches.
+vi.mock("../../src/steps/run-health-check.js", () => ({
+  runHealthCheck: vi.fn(() => Promise.resolve()),
+}));
+
 import { createAgentCliSurface } from "../../src/lib/cli-surface.js";
+import { runHealthCheck } from "../../src/steps/run-health-check.js";
 
 /** Records every event handed to it, for assertion without pinning exact prose. */
 class RecordingLoggerHandler implements Core.M3LLoggerHandler {
@@ -159,6 +160,7 @@ beforeEach(async () => {
 afterEach(async () => {
   vi.unstubAllEnvs();
   vi.mocked(createAgentCliSurface).mockReset();
+  vi.mocked(runHealthCheck).mockClear();
   await rm(inputDir, { recursive: true, force: true });
   await rm(dataDir, { recursive: true, force: true });
 });
@@ -173,27 +175,6 @@ function makePaths(): Core.M3LPaths {
   vi.stubEnv("M3L_INPUT_DIR", inputDir);
   vi.stubEnv("M3L_DATA_DIR", dataDir);
   return new Core.M3LPaths();
-}
-
-/** The cross-run daily invocation counter file, under the stubbed data root. */
-function counterPath(): string {
-  return path.join(dataDir, "agent-state", "daily-invocations.checkpoint.json");
-}
-
-/** `true` when `health-check` left a counter file behind. */
-async function counterExists(): Promise<boolean> {
-  try {
-    await readFile(counterPath(), "utf8");
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/** The counter file's decoded payload — the day's persisted absolute total. */
-async function readCounterPayload(): Promise<Record<string, unknown>> {
-  const envelope = asRecord(JSON.parse(await readFile(counterPath(), "utf8")));
-  return asRecord(envelope["payload"]);
 }
 
 async function writePolicyFixture(
@@ -254,6 +235,7 @@ describe("runAgentOperator — explain-policy wiring", () => {
       paths: makePaths(),
       signal: controller.signal,
       reportRecovery,
+      aws: undefined,
     });
 
     // The CLI seam was genuinely exercised on the real explainPolicy code
@@ -298,406 +280,6 @@ describe("runAgentOperator — explain-policy wiring", () => {
   });
 });
 
-/** Narrows a parsed JSON value to a record without a cast. */
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-/** Asserts `value` is a record and returns it, for JSONL field reads. */
-function asRecord(value: unknown): Record<string, unknown> {
-  if (!isRecord(value)) throw new Error("expected a JSON object");
-  return value;
-}
-
-/**
- * Reads every decision-log line the real `Core.M3LAgentDecisionLog` wrote into
- * `directory`. Returns `[]` when the directory does not exist — which is the
- * assertion the abort-ordering test below needs.
- */
-async function readDecisionLogEntries(
-  directory: string,
-): Promise<readonly Record<string, unknown>[]> {
-  let names: readonly string[];
-  try {
-    names = await readdir(directory);
-  } catch {
-    return [];
-  }
-  const entries: Record<string, unknown>[] = [];
-  for (const name of [...names].sort()) {
-    const text = await readFile(path.join(directory, name), "utf8");
-    for (const line of text.split("\n")) {
-      if (line.trim() === "") continue;
-      entries.push(asRecord(JSON.parse(line) as unknown));
-    }
-  }
-  return entries;
-}
-
-/**
- * The ordered list of milestone `step` values the run logged — the ONE shared
- * call list the health-check wiring tests read, so the phase order is asserted
- * rather than inferred from end state. Each milestone is a log event carrying
- * `data.step`; extra steps are allowed, order is not.
- */
-function stepTrail(events: readonly Core.M3LLogEvent[]): readonly string[] {
-  const trail: string[] = [];
-  for (const event of events) {
-    const step = event.data?.["step"];
-    if (typeof step === "string") trail.push(step);
-  }
-  return trail;
-}
-
-describe("runAgentOperator — health-check runs the audit spine", () => {
-  // Was: "'health-check' is declared but not implemented" (it threw
-  // ERR_AGENT_OPERATOR_CONFIG). This slice replaces that fail-fast with the
-  // real audit spine — load policy, build the ledger, run the decision-log
-  // preflight — and reports the MODEL LOOP as the part still pending, exiting
-  // cleanly rather than throwing.
-  it("loads the policy, runs the preflight, and reports the model loop as pending instead of throwing", async () => {
-    const policyFileName = "health-check-policy.json";
-    await writePolicyFixture(policyFileName, decisionLogPolicyDeclaration());
-    const logDirectory = path.join(inputDir, "agent-log");
-    const { logger, handler } = createLogger();
-
-    await expect(
-      runAgentOperator({
-        config: buildConfig({
-          command: "health-check",
-          policyFile: policyFileName,
-          agentName: "audit-spine-test",
-          decisionLogDir: logDirectory,
-        }),
-        logger,
-        paths: makePaths(),
-        signal: new AbortController().signal,
-        reportRecovery: vi.fn(),
-      }),
-    ).resolves.toBeUndefined();
-
-    const trail = stepTrail(handler.events);
-    expect(trail).toContain("policy-loaded");
-    expect(trail).toContain("preflight-complete");
-    expect(trail).toContain("model-loop-pending");
-    expect(trail.indexOf("policy-loaded")).toBeLessThan(
-      trail.indexOf("preflight-complete"),
-    );
-    expect(trail.indexOf("preflight-complete")).toBeLessThan(
-      trail.indexOf("model-loop-pending"),
-    );
-
-    // The model-driven workload is what is still pending — not the operation.
-    const text = flattenLoggedText(handler.events);
-    expect(text).toMatch(/pending/i);
-    // No CLI process is spawned for health-check in this slice.
-    expect(createAgentCliSurface).not.toHaveBeenCalled();
-  });
-
-  it("writes both the bootstrap and the concluding decision-log entry through the real writer", async () => {
-    const policyFileName = "health-check-policy.json";
-    await writePolicyFixture(policyFileName, decisionLogPolicyDeclaration());
-    const logDirectory = path.join(inputDir, "agent-log");
-    const { logger } = createLogger();
-
-    await runAgentOperator({
-      config: buildConfig({
-        command: "health-check",
-        policyFile: policyFileName,
-        agentName: "audit-spine-test",
-        decisionLogDir: logDirectory,
-      }),
-      logger,
-      paths: makePaths(),
-      signal: new AbortController().signal,
-      reportRecovery: vi.fn(),
-    });
-
-    const entries = await readDecisionLogEntries(logDirectory);
-    // Was "exactly one entry": only the BOOTSTRAP decision reached the log, so
-    // the durable audit trail carried the verdict the run started from and
-    // never the one it concluded on. Both are recorded now — and "exactly",
-    // the original intent, is preserved as an exact length of two, so a
-    // duplicated or dropped write still fails.
-    expect(entries).toHaveLength(2);
-    const entry = asRecord(entries[0]);
-    // The bootstrap decision is recorded truthfully: the first evaluation of
-    // the run genuinely cannot observe the log, so it escalates on the
-    // `.unobservable` rule. A seeded `decisionLogAvailable` would show up here
-    // as an `auto-approved` entry.
-    expect(entry["verdict"]).toBe("escalate");
-    expect(entry["rule"]).toBe("decision-log-unavailable.unobservable");
-    // The identity comes from the configured `agentName`, not a hardcoded one.
-    expect(asRecord(entry["identity"])["name"]).toBe("audit-spine-test");
-
-    // The concluding entry: this budget-free fixture policy grants
-    // `health-check` as a read-only operation, so once the log has been
-    // observed the re-evaluated verdict is genuinely auto-approved — which is
-    // why this run resolves rather than surfacing an escalation.
-    const conclusion = asRecord(entries[1]);
-    expect(conclusion["verdict"]).toBe("auto-approved");
-    expect(conclusion["rule"]).not.toBe("decision-log-unavailable");
-    expect(conclusion["rule"]).not.toBe(
-      "decision-log-unavailable.unobservable",
-    );
-    expect(asRecord(conclusion["identity"])["name"]).toBe("audit-spine-test");
-  });
-
-  it("aborts before any decision-log write when the policy cannot be loaded", async () => {
-    // Ordering, proven by failure injection: the policy load precedes the
-    // preflight, so an unloadable policy leaves no audit artefact behind.
-    const logDirectory = path.join(inputDir, "agent-log");
-    const { logger, handler } = createLogger();
-
-    let thrown: unknown;
-    try {
-      await runAgentOperator({
-        config: buildConfig({
-          command: "health-check",
-          policyFile: "no-such-policy.json",
-          decisionLogDir: logDirectory,
-        }),
-        logger,
-        paths: makePaths(),
-        signal: new AbortController().signal,
-        reportRecovery: vi.fn(),
-      });
-    } catch (error) {
-      thrown = error;
-    }
-
-    expect(thrown).toBeInstanceOf(M3LAgentOperatorCliError);
-    expect((thrown as M3LAgentOperatorCliError).code).toBe(
-      "ERR_AGENT_OPERATOR_POLICY",
-    );
-    expect(await readDecisionLogEntries(logDirectory)).toEqual([]);
-    expect(stepTrail(handler.events)).not.toContain("preflight-complete");
-    expect(stepTrail(handler.events)).not.toContain("model-loop-pending");
-  });
-});
-
-describe("runAgentOperator — health-check seeds the daily invocation counter", () => {
-  /** A `health-check` config wired at this test's temp policy + log locations. */
-  function healthCheckConfig(
-    policyFileName: string,
-    logDirectory: string,
-  ): Core.M3LConfig {
-    return buildConfig({
-      command: "health-check",
-      policyFile: policyFileName,
-      agentName: "daily-counter-test",
-      decisionLogDir: logDirectory,
-    });
-  }
-
-  // THE headline test of this slice. Against a policy declaring
-  // `invocationsPerRun` + `invocationsPerDay` + `tokensPerRun`, the evaluator
-  // reports the FIRST unsatisfied ceiling in its own fixed order
-  // (`invocationsPerRun -> invocationsPerDay -> tokensPerRun -> costPerRun ->
-  // loopIterations`). Before this slice that was
-  // `budget.invocations-per-day.unobservable`; the counter moves it exactly
-  // one slot, to `budget.tokens-per-run.unobservable`, which is what the
-  // metering invoker closes in the next slice.
-  //
-  // This is deliberately a sharper assertion than "the run passes": moving
-  // `counter.seed()` below the preflight — or deleting the seeding entirely —
-  // flips the reported rule straight back to the per-day one.
-  it("moves the escalation off budget.invocations-per-day.unobservable and onto the next declared ceiling", async () => {
-    const policyFileName = "per-day-policy.json";
-    await writePolicyFixture(
-      policyFileName,
-      budgetPolicyDeclaration({
-        invocationsPerRun: 60,
-        invocationsPerDay: 400,
-        tokensPerRun: 200_000,
-      }),
-    );
-    const logDirectory = path.join(inputDir, "agent-log");
-    const { logger } = createLogger();
-
-    let thrown: unknown;
-    try {
-      await runAgentOperator({
-        config: healthCheckConfig(policyFileName, logDirectory),
-        logger,
-        paths: makePaths(),
-        signal: new AbortController().signal,
-        reportRecovery: vi.fn(),
-      });
-    } catch (error) {
-      thrown = error;
-    }
-
-    expect(thrown).toBeInstanceOf(M3LAgentOperatorCliError);
-    const asError = thrown as M3LAgentOperatorCliError;
-    expect(asError.code).toBe("ERR_AGENT_OPERATOR_ESCALATED");
-    expect(asError.context?.["rule"]).toBe(
-      "budget.tokens-per-run.unobservable",
-    );
-    expect(asError.context?.["rule"]).not.toBe(
-      "budget.invocations-per-day.unobservable",
-    );
-  });
-
-  it("logs the daily-counter step before the preflight, never after it", async () => {
-    // Ordering, stated as a trail rather than inferred from end state:
-    // `runDecisionLogPreflight` snapshots the ledger TWICE, so a baseline
-    // seeded after it would leave both phases escalating on the per-day rule.
-    const policyFileName = "health-check-policy.json";
-    await writePolicyFixture(policyFileName, decisionLogPolicyDeclaration());
-    const logDirectory = path.join(inputDir, "agent-log");
-    const { logger, handler } = createLogger();
-
-    await runAgentOperator({
-      config: healthCheckConfig(policyFileName, logDirectory),
-      logger,
-      paths: makePaths(),
-      signal: new AbortController().signal,
-      reportRecovery: vi.fn(),
-    });
-
-    const trail = stepTrail(handler.events);
-    expect(trail).toContain("daily-counter-loaded");
-    expect(trail.indexOf("policy-loaded")).toBeLessThan(
-      trail.indexOf("daily-counter-loaded"),
-    );
-    expect(trail.indexOf("daily-counter-loaded")).toBeLessThan(
-      trail.indexOf("preflight-complete"),
-    );
-  });
-
-  it("carries a persisted prior-day total into the evaluation, so a spent budget escalates as EXHAUSTED rather than unobservable", async () => {
-    // Proves the file is genuinely read — not merely created. At the
-    // reject-AT bound (`observed >= ceiling`) the rule must be the exhausted
-    // one; a counter that silently restarted at 0 would auto-approve here.
-    const policyFileName = "per-day-only-policy.json";
-    await writePolicyFixture(
-      policyFileName,
-      budgetPolicyDeclaration({ invocationsPerDay: 400 }),
-    );
-    const logDirectory = path.join(inputDir, "agent-log");
-    const paths = makePaths();
-    const planted = await openDailyInvocationCounter({
-      paths,
-      now: Date.now(),
-    });
-    await planted.record(400);
-
-    let thrown: unknown;
-    try {
-      await runAgentOperator({
-        config: healthCheckConfig(policyFileName, logDirectory),
-        logger: createLogger().logger,
-        paths,
-        signal: new AbortController().signal,
-        reportRecovery: vi.fn(),
-      });
-    } catch (error) {
-      thrown = error;
-    }
-
-    expect((thrown as M3LAgentOperatorCliError).context?.["rule"]).toBe(
-      "budget.invocations-per-day",
-    );
-  });
-
-  it("records the run's consumption only after the conclusion is auto-approved", async () => {
-    const policyFileName = "health-check-policy.json";
-    await writePolicyFixture(policyFileName, decisionLogPolicyDeclaration());
-    const logDirectory = path.join(inputDir, "agent-log");
-
-    await runAgentOperator({
-      config: healthCheckConfig(policyFileName, logDirectory),
-      logger: createLogger().logger,
-      paths: makePaths(),
-      signal: new AbortController().signal,
-      reportRecovery: vi.fn(),
-    });
-
-    // Zero, honestly: no model invocation can occur in this slice. The write
-    // is kept anyway — it creates the state directory, exercises the atomic
-    // write in production, and materialises the rollover onto today.
-    expect(await readCounterPayload()).toMatchObject({ invocations: 0 });
-  });
-
-  it("records no consumption when the policy declined the concluding verdict", async () => {
-    const policyFileName = "declining-policy.json";
-    await writePolicyFixture(
-      policyFileName,
-      budgetPolicyDeclaration({ tokensPerRun: 200_000 }),
-    );
-    const logDirectory = path.join(inputDir, "agent-log");
-
-    await expect(
-      runAgentOperator({
-        config: healthCheckConfig(policyFileName, logDirectory),
-        logger: createLogger().logger,
-        paths: makePaths(),
-        signal: new AbortController().signal,
-        reportRecovery: vi.fn(),
-      }),
-    ).rejects.toMatchObject({ code: "ERR_AGENT_OPERATOR_ESCALATED" });
-
-    // Both decision-log entries ARE durable — the audit trail records the
-    // refusal — but no consumption is claimed for a run that never ran.
-    expect(await readDecisionLogEntries(logDirectory)).toHaveLength(2);
-    expect(await counterExists()).toBe(false);
-  });
-
-  it("writes no counter file when the policy cannot be loaded", async () => {
-    // The counter is the second artefact under the rule the audit log
-    // already pins: an unloadable policy must leave nothing behind.
-    await expect(
-      runAgentOperator({
-        config: healthCheckConfig(
-          "no-such-policy.json",
-          path.join(inputDir, "agent-log"),
-        ),
-        logger: createLogger().logger,
-        paths: makePaths(),
-        signal: new AbortController().signal,
-        reportRecovery: vi.fn(),
-      }),
-    ).rejects.toMatchObject({ code: "ERR_AGENT_OPERATOR_POLICY" });
-
-    expect(await counterExists()).toBe(false);
-  });
-
-  it("samples now once, at the top, and threads that one instant into the counter write", async () => {
-    // A run straddling UTC midnight must not roll the counter under one
-    // instant and be judged under another. "Called once" is the wrong
-    // assertion — the library's own decision log reads the clock too — so
-    // the VALUE is pinned instead: a monotonically advancing clock makes a
-    // re-sample at the write site produce a different `countedAt`, while a
-    // single hoisted sample threads the FIRST reading all the way through.
-    const policyFileName = "health-check-policy.json";
-    await writePolicyFixture(policyFileName, decisionLogPolicyDeclaration());
-    const paths = makePaths();
-    const first = Date.UTC(2026, 8, 1, 12, 0, 0);
-    let tick = 0;
-    const nowSpy = vi
-      .spyOn(Date, "now")
-      .mockImplementation(() => first + tick++ * 1000);
-
-    await runAgentOperator({
-      config: healthCheckConfig(
-        policyFileName,
-        path.join(inputDir, "agent-log"),
-      ),
-      logger: createLogger().logger,
-      paths,
-      signal: new AbortController().signal,
-      reportRecovery: vi.fn(),
-    });
-
-    // More than one reading happened (so the pin below is not vacuous), and
-    // the counter still carries the FIRST one.
-    expect(nowSpy.mock.calls.length).toBeGreaterThan(1);
-    expect(await readCounterPayload()).toMatchObject({ countedAt: first });
-    nowSpy.mockRestore();
-  });
-});
-
 describe("runAgentOperator — command validation", () => {
   // `isKnownCommand` is the runtime guard that keeps the dispatch `switch`'s
   // `default: { const exhaustive: never = rawCommand; ... }` arm reachable
@@ -724,6 +306,7 @@ describe("runAgentOperator — command validation", () => {
           paths: makePaths(),
           signal: new AbortController().signal,
           reportRecovery: vi.fn(),
+          aws: undefined,
         });
       } catch (error) {
         thrown = error;
@@ -752,6 +335,7 @@ describe("runAgentOperator — command validation", () => {
         paths: makePaths(),
         signal: new AbortController().signal,
         reportRecovery: vi.fn(),
+        aws: undefined,
       });
     } catch (error) {
       thrown = error;
@@ -791,6 +375,7 @@ describe("runAgentOperator — maxIterations vs. policy budget cross-check", () 
         paths: makePaths(),
         signal: new AbortController().signal,
         reportRecovery: vi.fn(),
+        aws: undefined,
       });
     } catch (error) {
       thrown = error;
@@ -829,6 +414,7 @@ async function captureSurfaceOptions(
     paths: paths ?? makePaths(),
     signal: new AbortController().signal,
     reportRecovery: vi.fn(),
+    aws: undefined,
   });
 
   const call = vi.mocked(createAgentCliSurface).mock.calls[0];
@@ -902,6 +488,7 @@ describe("runAgentOperator — workspace-root scrub degradation", () => {
       paths,
       signal: new AbortController().signal,
       reportRecovery: vi.fn(),
+      aws: undefined,
     });
 
     // The run continues (degrade, never fail) with the scrub off …
@@ -943,6 +530,7 @@ describe("runAgentOperator — workspace-root scrub degradation", () => {
         paths,
         signal: new AbortController().signal,
         reportRecovery: vi.fn(),
+        aws: undefined,
       });
     } catch (error) {
       thrown = error;
@@ -953,259 +541,41 @@ describe("runAgentOperator — workspace-root scrub degradation", () => {
   });
 });
 
-/**
- * Narrows a JSONL field to a `readonly string[]` without a cast, so a shape
- * drift in the recorded entry fails loudly here instead of silently widening
- * the assertions below.
- */
-function asStringArray(value: unknown): readonly string[] {
-  if (!Array.isArray(value)) throw new Error("expected a JSON array");
-  const items: unknown[] = value;
-  const strings: string[] = [];
-  for (const item of items) {
-    if (typeof item !== "string")
-      throw new Error("expected an array of strings");
-    strings.push(item);
-  }
-  return strings;
-}
-
-describe("runAgentOperator — health-check's default decision-log directory", () => {
-  it("resolves with decisionLogDir absent, writing to the library's default directory", async () => {
-    // `decisionLogDir` is declared bare-optional with NO `defaultValue`
-    // (src/config.ts), so an ABSENT value is the normal deployment case — yet
-    // every other health-check test in this file sets it, leaving the default
-    // branch of `buildDecisionRecorder`'s
-    // `directory === undefined ? new Core.M3LAgentDecisionLog() : new
-    // Core.M3LAgentDecisionLog({ directory })` completely unexercised. That
-    // ternary is load-bearing: the library reads `directory` presence with
-    // `Object.hasOwn`, so an options bag carrying the key with `undefined`
-    // throws `ERR_INVALID_ARGUMENT` — an error outside this script's
-    // seven-code family — on every real run.
-    //
-    // This case passes against today's implementation: it is a mutation lock,
-    // not a proof of new behaviour. Collapse the ternary (or make the
-    // directory required) and it is the only test in the package that fails.
-    //
-    // The library default resolves to `new Core.M3LPaths().getDataDir()`
-    // joined with `"agent-log"`, i.e. this checkout's gitignored
-    // `data/agent-log/`. `makePaths()` stubs `M3L_DATA_DIR` at this test's own
-    // temp data dir purely for HERMETICITY — so the run writes neither the
-    // decision log nor the daily counter into the repo. It is not a way of
-    // configuring the script: `decisionLogDir` itself stays genuinely absent,
-    // which is the thing under test, and the assertion below asserts that
-    // absence rather than assuming it.
-    const policyFileName = "default-log-dir-policy.json";
-    await writePolicyFixture(policyFileName, decisionLogPolicyDeclaration());
-    const { logger, handler } = createLogger();
-    const config = buildConfig({
-      command: "health-check",
-      policyFile: policyFileName,
-      agentName: "audit-spine-test",
-    });
-
-    // The precondition, asserted through the same accessor the step uses.
-    expect(
-      new Core.M3LConfigAccessor({
-        config,
-        code: "ERR_AGENT_OPERATOR_CONFIG",
-      }).optionalString("decisionLogDir"),
-    ).toBeUndefined();
-
-    await expect(
-      runAgentOperator({
-        config,
-        logger,
-        paths: makePaths(),
-        signal: new AbortController().signal,
-        reportRecovery: vi.fn(),
-      }),
-    ).resolves.toBeUndefined();
-
-    // The entries landed under the LIBRARY's default location — `getDataDir()`
-    // + "agent-log" — not under a path this script invented.
-    const entries = await readDecisionLogEntries(
-      path.join(dataDir, "agent-log"),
-    );
-    expect(entries.length).toBeGreaterThan(0);
-    const entry = asRecord(entries[0]);
-    expect(entry["verdict"]).toBe("escalate");
-    expect(asRecord(entry["identity"])["name"]).toBe("audit-spine-test");
-    expect(stepTrail(handler.events)).toContain("model-loop-pending");
-  });
-});
-
-/** Sentinels planted in config so the escalation error can be proven not to echo them. */
-const SENSITIVE_AGENT_NAME = "zzagentnamezz";
-const SENSITIVE_MODEL_ID = "zzmodelidzz";
-
-describe("runAgentOperator — health-check surfaces a non-auto-approved conclusion", () => {
-  it("rejects instead of exiting 0 when the run concluded on an escalation", async () => {
-    // The committed `data/input/agent-policy.json` declares all five budgets
-    // and this slice meters none of them, so the CONCLUDING decision escalates
-    // on a `budget.*.unobservable` rule. Today `runHealthCheck` never inspects
-    // that verdict, so this run resolves — exit 0 — on a run the policy
-    // escalated, while the log carries a verdict that is not the one the run
-    // ended on.
-    //
-    // The gate must be `Core.isAgentActionAutoApproved(decision)`. NOT
-    // `verdict !== "allow"`: the closed verdict set is
-    // `auto-approved | escalate | denied`, so that literal is dead code that
-    // never fires. NOT `verdict !== "denied"` either: that lets every
-    // escalation through, which is exactly this defect.
-    const policyFileName = "committed-agent-policy.json";
-    await writePolicyFixture(
-      policyFileName,
-      await realAgentPolicyDeclaration(),
-    );
-    const logDirectory = path.join(inputDir, "agent-log");
-    const { logger, handler } = createLogger();
-
-    let thrown: unknown;
-    try {
-      await runAgentOperator({
-        config: buildConfig({
-          command: "health-check",
-          policyFile: policyFileName,
-          agentName: SENSITIVE_AGENT_NAME,
-          modelId: SENSITIVE_MODEL_ID,
-          decisionLogDir: logDirectory,
-        }),
-        logger,
-        paths: makePaths(),
-        signal: new AbortController().signal,
-        reportRecovery: vi.fn(),
-      });
-    } catch (error) {
-      thrown = error;
-    }
-
-    expect(thrown).toBeInstanceOf(M3LAgentOperatorCliError);
-    const asError = thrown as M3LAgentOperatorCliError;
-    // `ERR_AGENT_OPERATOR_ESCALATED` — its own member of this script's closed
-    // code family. Not `ERR_AGENT_OPERATOR_POLICY`: that code means the policy
-    // file is missing, unreadable, malformed or structurally invalid, and this
-    // is the opposite — the policy working correctly and declining to
-    // auto-approve. Not `ERR_AGENT_OPERATOR_DECISION_LOG` either: the log was
-    // perfectly writable here. Conflating any two of the three destroys the
-    // discriminant at the only place a catch site reads it.
-    expect(asError.code).toBe("ERR_AGENT_OPERATOR_ESCALATED");
-
-    // The surfaced text carries the library-authored verdict, never a config
-    // value read back out — an agent name, a model id, a filesystem path, or a
-    // policy file name.
-    const surfaced = `${asError.message} ${JSON.stringify(asError.context)}`;
-    expect(surfaced).not.toContain(SENSITIVE_AGENT_NAME);
-    expect(surfaced).not.toContain(SENSITIVE_MODEL_ID);
-    expect(surfaced).not.toContain(logDirectory);
-    expect(surfaced).not.toContain(policyFileName);
-
-    // The audit trail is complete BEFORE the escalation surfaces: the
-    // concluding verdict is durable, not lost to the throw.
-    const entries = await readDecisionLogEntries(logDirectory);
-    expect(entries).toHaveLength(2);
-    const conclusion = asRecord(entries[1]);
-    expect(conclusion["verdict"]).toBe("escalate");
-    expect(String(conclusion["rule"])).toMatch(/^budget\..+\.unobservable$/);
-
-    // …and the run never reported itself successful.
-    expect(stepTrail(handler.events)).not.toContain("model-loop-pending");
-  });
-
-  it("still resolves when the concluding decision IS auto-approved", async () => {
-    // The other arm, so the gate above cannot be satisfied by rejecting
-    // unconditionally: with the budget-free fixture policy the conclusion is
-    // genuinely `auto-approved` and the run must still exit cleanly.
-    const policyFileName = "auto-approved-policy.json";
-    await writePolicyFixture(policyFileName, decisionLogPolicyDeclaration());
-    const { logger, handler } = createLogger();
-
-    await expect(
-      runAgentOperator({
-        config: buildConfig({
-          command: "health-check",
-          policyFile: policyFileName,
-          agentName: "audit-spine-test",
-          decisionLogDir: path.join(inputDir, "agent-log"),
-        }),
-        logger,
-        paths: makePaths(),
-        signal: new AbortController().signal,
-        reportRecovery: vi.fn(),
-      }),
-    ).resolves.toBeUndefined();
-
-    expect(stepTrail(handler.events)).toContain("model-loop-pending");
-  });
-});
-
-/**
- * The parameters a `health-check` run actually resolves out of config:
- * `command` (the dispatcher), then `policyFile`, `decisionLogDir`,
- * `agentName` and `modelId` (the audit spine). Declared `as const` so the
- * shape-key fixture below cannot drift from the list it is derived from.
- */
-const HEALTH_CHECK_PARAMETER_NAMES = [
-  "command",
-  "policyFile",
-  "decisionLogDir",
-  "agentName",
-  "modelId",
-] as const;
-
-describe("runAgentOperator — health-check's declared parameterNames", () => {
-  it("declares every parameter the run resolves, so the shape key matches a fuller declaration of the same action", async () => {
-    // `healthCheckAction()` declares `parameterNames: ["command"]`, but the run
-    // resolves `policyFile`, `decisionLogDir`, `agentName` and `modelId` too.
-    // `parameterNames` feeds the audit record AND the shape key
-    // (`Core.agentActionShapeKey` hashes `{ script, operation, kind,
-    // parameterNames }`), so the understated list both under-reports the entry
-    // and produces a key that will not match a later, fuller declaration of
-    // the same action — silently defeating dry-run-first shape matching.
-    const policyFileName = "parameter-names-policy.json";
-    await writePolicyFixture(policyFileName, decisionLogPolicyDeclaration());
-    const logDirectory = path.join(inputDir, "agent-log");
+describe("runAgentOperator — health-check delegates to the workload step", () => {
+  // `health-check`'s behaviour moved to `steps/run-health-check` when the
+  // model loop landed. What stays this dispatcher's job — and all this test
+  // asserts — is that the arm reaches that step at all, with the SAME deps
+  // object it was handed. `run-health-check.test.ts` owns the workload's own
+  // behaviour; duplicating it here would just make two files fail for one
+  // cause.
+  it("calls runHealthCheck with the dispatcher's own deps, and never builds the explain-policy CLI surface itself", async () => {
     const { logger } = createLogger();
+    const config = buildConfig({ command: "health-check" });
+    const signal = new AbortController().signal;
+    const reportRecovery = vi.fn();
+    const paths = makePaths();
 
     await runAgentOperator({
-      config: buildConfig({
-        command: "health-check",
-        policyFile: policyFileName,
-        agentName: "audit-spine-test",
-        decisionLogDir: logDirectory,
-      }),
+      config,
       logger,
-      paths: makePaths(),
-      signal: new AbortController().signal,
-      reportRecovery: vi.fn(),
+      paths,
+      signal,
+      reportRecovery,
+      aws: undefined,
     });
 
-    const entries = await readDecisionLogEntries(logDirectory);
-    const entry = asRecord(entries[0]);
-    const recorded = asStringArray(entry["parameterNames"]);
-
-    expect(recorded).toEqual(
-      expect.arrayContaining([...HEALTH_CHECK_PARAMETER_NAMES]),
-    );
-
-    // The shape key for that declared set, computed through the library's own
-    // door — stable, and demonstrably NOT the understated `["command"]`-only
-    // key the action declares today.
-    const declaredKey = Core.agentActionShapeKey({
-      script: "agent-operator",
-      operation: "health-check",
-      kind: "read-only",
-      parameterNames: [...HEALTH_CHECK_PARAMETER_NAMES],
+    expect(runHealthCheck).toHaveBeenCalledTimes(1);
+    expect(runHealthCheck).toHaveBeenCalledWith({
+      config,
+      logger,
+      paths,
+      signal,
+      reportRecovery,
+      aws: undefined,
     });
-    const understatedKey = Core.agentActionShapeKey({
-      script: "agent-operator",
-      operation: "health-check",
-      kind: "read-only",
-      parameterNames: ["command"],
-    });
-    expect(declaredKey).not.toBe(understatedKey);
-    expect(entry["shapeKey"]).toBe(declaredKey);
-    // One action, one shape key: both entries of the run carry the same one.
-    expect(asRecord(entries[1])["shapeKey"]).toBe(declaredKey);
+    // The dispatcher builds no CLI surface of its own for this arm — the
+    // workload step owns that, and a surface built here would be a second,
+    // unused one.
+    expect(createAgentCliSurface).not.toHaveBeenCalled();
   });
 });

@@ -29,16 +29,12 @@ built-in grant.
 
 ### Examples
 
-`health-check` runs its offline **audit spine** today: it loads the policy,
-seeds the per-day invocation baseline from the cross-run counter, and writes
-both decision-log entries. It does **not** yet call Bedrock — the model-driven
-workload lands in the follow-up slice. Against the committed
-`data/input/agent-policy.json` it therefore still exits non-zero with
-`ERR_AGENT_OPERATOR_ESCALATED` on `budget.tokens-per-run.unobservable`: that
-policy declares five budgets and only two are observable so far. That is the
-correct outcome — reporting an unmeasured budget as `0` would convert
-"unobservable" into a silently passing check. Run it against a budget-free
-policy to see the auto-approved path.
+> **`health-check` is the first operation in this repo that spends money.** It
+> calls Bedrock. Rehearse with `--dry-run` first (see the Edge case example
+> below): that stops at ADR-0054's context flag, validates environment,
+> configuration, and AWS credentials, and never invokes a model.
+
+`explain-policy` remains fully offline and costs nothing.
 
 ```bash
 # Minimal — print the declared policy: grants, operations, budgets, and the
@@ -62,10 +58,23 @@ node dist/main.js --command explain-policy \
 # running anything (ADR-0054's context flag, read once in main.ts)
 node dist/main.js --command explain-policy --dry-run
 
-# The audit spine, end to end: two decision-log entries under data/agent-log/,
-# and the day's invocation total under data/agent-state/. Still no Bedrock
-# call, so it costs nothing.
-node dist/main.js --command health-check
+# Rehearse the health check without spending anything: --dry-run stops at
+# ADR-0054's context flag, so no model is ever invoked
+node dist/main.js --command health-check --dry-run
+
+# The real fleet health check. SPENDS MONEY: it drives a Bedrock tool loop.
+# Declare a rate for every model that can serve a turn — modelId AND every
+# fallbackModelIds entry — or cost goes unobservable and every gated call is
+# refused
+node dist/main.js --command health-check \
+  --modelId anthropic.claude-sonnet-4-5-20250929-v1:0 \
+  --modelRates "anthropic.claude-sonnet-4-5-20250929-v1:0=0.003,0.015"
+
+# Arm the destructive-adjacent dry-run probe. Fail-closed twice over: the tool
+# is not even built unless BOTH the flag and a non-empty allowlist are present
+node dist/main.js --command health-check \
+  --modelRates "anthropic.claude-sonnet-4-5-20250929-v1:0=0.003,0.015" \
+  --includeDryRunProbes --dryRunAllowlist json-etl,s3-objects
 
 # Outside the monorepo — M3LPaths.getProjectRoot() is unavailable in
 # standalone mode, so the CLI entrypoint must be named explicitly or the run
@@ -76,10 +85,10 @@ node dist/main.js --command explain-policy \
 
 ### Operations at a glance
 
-| Operation        | Demonstrated by                                     |
-| ---------------- | --------------------------------------------------- |
-| `explain-policy` | Minimal, Common, Production, Edge case              |
-| `health-check`   | Audit spine — the model loop lands in a later slice |
+| Operation        | Demonstrated by                                  |
+| ---------------- | ------------------------------------------------ |
+| `explain-policy` | Minimal, Common, Production, Edge case           |
+| `health-check`   | Dry-run rehearsal, the real run, and probe-armed |
 
 ### Operational flags
 
@@ -90,9 +99,20 @@ Every script composes through `Core.runScript` (ADR-0035), so these work uniform
 - `--log-level=<level>` / `--debug`, or `M3L_LOG_LEVEL=<level>` / `M3L_DEBUG=1` —
   set the log severity floor (`debug`/`info`/`success`/`warning`/`error`/`fatal`).
   CLI wins over env; an unknown value fails loud.
-- **Exit codes** map the failure origin: `0` success, `2` config/validation, `3`
-  script-local error, `4` unhandled/unexpected. A non-zero exit always accompanies
-  a logged error.
+- **Exit codes** map the failure origin: `0` success, `2` config/validation (a
+  bad policy file, a missing parameter, a policy that declined the run, or a
+  model list where every entry is unavailable), `3` an external fault (a
+  spawned `m3l` child, the decision log, the cross-run counter file), `5`
+  interrupted, `6` **partial**. A non-zero exit always accompanies a logged
+  error.
+
+  **`health-check` exits `6` when the fleet is unhealthy** — not `0`, and not a
+  throw. `partial` means "the run completed with absorbed per-item failures";
+  a blocking `doctor` check, a script whose config will not load, a failing
+  dry-run probe, a policy refusal, and a loop-ceiling breach all land there. A
+  scheduler reading only the exit code can therefore tell "the fleet is broken"
+  (`6`) from "the health check itself broke" (`2`/`3`), which is the one
+  discrimination this operation exists to provide.
 
 Ctrl-C exits `5` (`INTERRUPTED`) on both the in-process and the spawned-tool
 path: an aborted CLI tool call raises `Core.M3LOperationAbortedError`, never a
@@ -132,6 +152,9 @@ there too — copy `data/input/agent-policy.json` across, or leave
 | `output/`      | Run results and archived inputs/configs                   |
 | `agent-log/`   | Append-only JSONL decision records (gitignored)           |
 | `agent-state/` | The cross-run daily invocation counter (gitignored)       |
+
+`health-check` writes its `m3l.agent-operator.health-check` artifact to
+`output/agent-operator-health-check.json` (override with `--output`).
 
 `agent-state/` deliberately sits beside `output/` rather than inside it.
 `output/` holds run artifacts and is the natural thing for an operator to
