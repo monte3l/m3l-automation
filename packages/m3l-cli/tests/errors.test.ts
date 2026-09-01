@@ -10,7 +10,7 @@ import { exitCodeForError, M3LCliError } from "../src/cli/errors.js";
 import type { M3LCliErrorCode } from "../src/cli/errors.js";
 
 describe("M3LCliErrorCode", () => {
-  test("is the exact twenty-two-member union the contract declares (U7 adds ERR_CLI_COMMAND_MODULE_INVALID/ERR_CLI_IN_PROCESS_FAILED; a U7 follow-up splits off ERR_CLI_COMMAND_MODULE_IMPORT_FAILED for a genuine import failure, distinct from ERR_CLI_COMMAND_MODULE_INVALID's 'no adopted seam' case; a further U7 follow-up adds ERR_CLI_IN_PROCESS_UNSUPPORTED; U10 stage A adds ERR_CLI_FLOW_INVALID/ERR_CLI_UNKNOWN_FLOW for the m3l flow command; U10 stage B adds ERR_CLI_UNKNOWN_FLOW_STEP for resume-from step validation and ERR_CLI_FLOW_RECORD_WRITE_FAILED/ERR_CLI_FLOW_RECORD_INVALID for flow record persistence)", () => {
+  test("is the exact twenty-three-member union the contract declares (U7 adds ERR_CLI_COMMAND_MODULE_INVALID/ERR_CLI_IN_PROCESS_FAILED; a U7 follow-up splits off ERR_CLI_COMMAND_MODULE_IMPORT_FAILED for a genuine import failure, distinct from ERR_CLI_COMMAND_MODULE_INVALID's 'no adopted seam' case; a further U7 follow-up adds ERR_CLI_IN_PROCESS_UNSUPPORTED; U10 stage A adds ERR_CLI_FLOW_INVALID/ERR_CLI_UNKNOWN_FLOW for the m3l flow command; U10 stage B adds ERR_CLI_UNKNOWN_FLOW_STEP for resume-from step validation and ERR_CLI_FLOW_RECORD_WRITE_FAILED/ERR_CLI_FLOW_RECORD_INVALID for flow record persistence; a further U10 follow-up splits off ERR_CLI_FLOW_READ_FAILED as the machine-side counterpart to ERR_CLI_FLOW_INVALID)", () => {
     expectTypeOf<M3LCliErrorCode>().toEqualTypeOf<
       | "ERR_CLI_UNKNOWN_COMMAND"
       | "ERR_CLI_UNKNOWN_SCRIPT"
@@ -30,6 +30,7 @@ describe("M3LCliErrorCode", () => {
       | "ERR_CLI_COMMAND_MODULE_IMPORT_FAILED"
       | "ERR_CLI_IN_PROCESS_UNSUPPORTED"
       | "ERR_CLI_FLOW_INVALID"
+      | "ERR_CLI_FLOW_READ_FAILED"
       | "ERR_CLI_UNKNOWN_FLOW"
       | "ERR_CLI_UNKNOWN_FLOW_STEP"
       | "ERR_CLI_FLOW_RECORD_WRITE_FAILED"
@@ -146,6 +147,11 @@ describe("exitCodeForError", () => {
     // or unparseable flow definition and a misspelled flow name are the
     // invocation's fault, not the machine's, so both map to exit code 2.
     ["ERR_CLI_FLOW_INVALID", 2],
+    // U10 follow-up: the machine-side counterpart to ERR_CLI_FLOW_INVALID —
+    // the flows directory or file could not be read at all (e.g. EACCES),
+    // which is a fault in the machine, not the invocation, so it joins the
+    // general exit-code class (1) rather than usage (2).
+    ["ERR_CLI_FLOW_READ_FAILED", 1],
     ["ERR_CLI_UNKNOWN_FLOW", 2],
     // U10 stage B (flow resume/persistence): ERR_CLI_UNKNOWN_FLOW_STEP is
     // usage-class (2) — a misspelled --resume-from step id is the invocation's

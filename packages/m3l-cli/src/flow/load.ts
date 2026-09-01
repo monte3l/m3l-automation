@@ -52,9 +52,10 @@ function flowsDirectory(workspaceRoot: string): string {
  * @param workspaceRoot - The resolved workspace root.
  * @returns The flow names, sorted; `[]` when the flows directory does not
  *   exist or holds no `.yaml` file.
- * @throws {@link M3LCliError} coded `ERR_CLI_FLOW_INVALID` when the directory
- *   exists but cannot be listed (a permission failure, chained as `cause`) —
- *   an unreadable directory is a real fault, not an empty one.
+ * @throws {@link M3LCliError} coded `ERR_CLI_FLOW_READ_FAILED` when the
+ *   directory exists but cannot be listed (a permission failure, chained as
+ *   `cause`) — an unreadable directory is a machine-side fault, not an empty
+ *   one.
  *
  * @example
  * ```ts
@@ -73,7 +74,7 @@ export function listFlows(workspaceRoot: string): readonly string[] {
     entries = readdirSync(directory);
   } catch (cause) {
     throw new M3LCliError(
-      "ERR_CLI_FLOW_INVALID",
+      "ERR_CLI_FLOW_READ_FAILED",
       `failed to list flow definitions in '${directory}'`,
       { cause },
     );
@@ -101,6 +102,12 @@ export function listFlows(workspaceRoot: string): readonly string[] {
  *
  * @param filePath - The flow file's absolute path.
  * @returns The document's top-level keys and raw values.
+ * @throws {@link M3LCliError} coded `ERR_CLI_FLOW_INVALID` when the cause is
+ *   an authoring fault — malformed YAML ({@link Core.M3LConfigParseError}) or
+ *   a prototype-pollution key ({@link Core.M3LUnsafeConfigKeyError}); coded
+ *   `ERR_CLI_FLOW_READ_FAILED` for anything else (e.g. `EACCES`/`EIO`
+ *   reading the file), since that is a fault in the machine, not the
+ *   definition.
  */
 function readFlowRecord(filePath: string): Record<string, unknown> {
   try {
@@ -109,8 +116,11 @@ function readFlowRecord(filePath: string): Record<string, unknown> {
       provider.rawKeys().map((key) => [key, provider.getRawValue(key)]),
     );
   } catch (cause) {
+    const isAuthoringFault =
+      cause instanceof Core.M3LConfigParseError ||
+      cause instanceof Core.M3LUnsafeConfigKeyError;
     throw new M3LCliError(
-      "ERR_CLI_FLOW_INVALID",
+      isAuthoringFault ? "ERR_CLI_FLOW_INVALID" : "ERR_CLI_FLOW_READ_FAILED",
       `failed to read flow definition '${filePath}'`,
       { cause },
     );
@@ -136,9 +146,10 @@ function readFlowRecord(filePath: string): Record<string, unknown> {
  * @returns The validated flow definition.
  * @throws {@link M3LCliError} coded `ERR_CLI_UNKNOWN_FLOW` when no
  *   `<name>.yaml` exists, carrying near-miss `suggestions` from the flows
- *   that do; coded `ERR_CLI_FLOW_INVALID` when the file cannot be read or
- *   parsed (the underlying `Core` error chained as `cause`), or when its
- *   content breaks a format rule.
+ *   that do; coded `ERR_CLI_FLOW_INVALID` when the file is malformed YAML or
+ *   contains a prototype-pollution key, or when its content breaks a format
+ *   rule; coded `ERR_CLI_FLOW_READ_FAILED` when the file exists but could not
+ *   be read at all (a machine-side fault, chained as `cause`).
  *
  * @example
  * ```ts
