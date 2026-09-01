@@ -73,6 +73,8 @@ deliberately do not.
 | 2026-08-28 | X9 — `m3l-console-web` skeleton (Vite/React 19, ADR-0067)      | [x9-console-web-skeleton](./2026-08-28-x9-console-web-skeleton.md)           |
 | 2026-08-29 | X4 — run orchestration (registry, governor, REST + SSE)        | [x4-console-run-orchestration](./2026-08-29-x4-console-run-orchestration.md) |
 | 2026-08-30 | X6 — workbench sessions close-out (bindings, resume, ADR-0068) | [x6-workbench-sessions](./2026-08-30-x6-workbench-sessions.md)               |
+| 2026-09-01 | X7 — human-action audit close-out (stream, index, read path)   | [x7-human-action-audit](./2026-09-01-x7-human-action-audit.md)               |
+| 2026-09-01 | X7b — audit wiring, view actions & correlation threading       | [x7b-audit-wiring](./2026-09-01-x7b-audit-wiring.md)                         |
 
 > X1 (governance docs) and X2 (`m3l-console-server` skeleton) shipped without
 > logs; X3 is the first entry in this wave.
