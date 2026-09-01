@@ -79,6 +79,18 @@ deliberately do not.
 > X1 (governance docs) and X2 (`m3l-console-server` skeleton) shipped without
 > logs; X3 is the first entry in this wave.
 
+## CLI wave (U-series)
+
+| Date       | Change                                      | Log                                                                                    |
+| ---------- | ------------------------------------------- | -------------------------------------------------------------------------------------- |
+| 2026-08-14 | `m3l-cli` build-out (phases 8b-8g)          | [m3l-cli-build-out](./2026-08-14-m3l-cli-build-out.md)                                 |
+| 2026-08-26 | U5 — declarative operations, fleet retrofit | [u5-declarative-ops-fleet-retrofit](./2026-08-26-u5-declarative-ops-fleet-retrofit.md) |
+| 2026-09-01 | U12 — `m3l completion` (bash/zsh/fish)      | [cli-shell-completion](./2026-09-01-cli-shell-completion.md)                           |
+
+> The first two rows pre-date this section; they were written but never
+> indexed here. Adding them is an index fix, not an edit to shipped history —
+> the logs themselves are untouched.
+
 ## Agent operator wave (V-series)
 
 | Date       | Change                                                      | Log                                                                            |
