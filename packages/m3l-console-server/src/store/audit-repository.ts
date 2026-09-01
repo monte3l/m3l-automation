@@ -9,7 +9,8 @@
  * `parameterNames`, `parameterRefs`, or `detail`, which live in the stream
  * only. This repository's `deleteAll` + `insertAll` are the two halves of a
  * truncate-and-reinsert rebuild; reading the JSONL stream itself is NOT this
- * repository's job (out of scope for this slice).
+ * repository's job — `boot/audit-rebuild.ts` drives it (X7c), from outside
+ * the `store` zone, which may not import `audit/`.
  *
  * Exactly `store/runs-repository.ts`'s shape: a repository is a plain
  * FUNCTION over the injected {@link M3LStoreQueryExecutor} port, never a

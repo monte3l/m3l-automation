@@ -18,8 +18,12 @@ import { Core } from "@m3l-automation/m3l-common";
 
 import type { M3LHumanActionAuditPort } from "./audit/port.js";
 import { indexHumanActionAuditPort } from "./boot/audit-index.js";
+import { rebuildHumanActionIndexOnBoot } from "./boot/audit-rebuild.js";
 import { buildDispatchRouter } from "./boot/dispatch-router.js";
-import { buildHumanActionAuditPort } from "./boot/human-action-audit.js";
+import {
+  buildHumanActionAuditPort,
+  resolveHumanActionAuditRoot,
+} from "./boot/human-action-audit.js";
 import {
   createRuntimeLogger,
   logDrainCompletion,
@@ -420,6 +424,25 @@ async function buildRuntimeAndBindListener(
     // here — not in createConsoleRuntime, a pure composition step — and
     // strictly before the bind below.
     runtime.runs?.orchestrator.reconcileOnBoot();
+    // The same slot, for the same reason, for the ADR-0070 audit index: a
+    // database write that must land before the listener accepts a request
+    // that would query it. Skipped when the caller injected its own
+    // `auditPort`, because the console then does not know where that port's
+    // trail lives and must not rebuild from an unrelated directory.
+    if (options.auditPort === undefined) {
+      // Resolved on its own line, not at the argument position: the rebuild
+      // itself never throws, but resolving the root CAN
+      // (`ERR_CONSOLE_CONFIG_INVALID`) — it just cannot here, because
+      // `createConsoleRuntime` above already resolved the same root through
+      // `buildHumanActionAuditPort` and would have thrown first. Either way it
+      // sits inside this region's guard, so the store is still closed.
+      const auditRoot = resolveHumanActionAuditRoot(options.env ?? process.env);
+      await rebuildHumanActionIndexOnBoot({
+        directory: auditRoot,
+        store,
+        logger: runtime.logger,
+      });
+    }
     const server = await startConsoleServer({
       host: runtime.config.host,
       port: runtime.config.port,

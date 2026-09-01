@@ -507,6 +507,42 @@ export function applyHumanActionAudit(
 const AUDIT_ROOT_ENV = "M3L_CONSOLE_AUDIT_ROOT";
 
 /**
+ * Resolves the directory the human-action JSONL trail lives in.
+ *
+ * Exported because two callers now need the SAME answer:
+ * {@link buildHumanActionAuditPort} (which writes it) and
+ * `boot/audit-rebuild.ts` (which reads it back to rebuild the SQLite index).
+ * Two independent `resolveAuditStreamRoot` calls would agree today and drift
+ * silently the moment either side's env-var name or default changed, and the
+ * failure mode is a rebuild that reads an empty directory and reports
+ * "nothing to do" — the quietest possible wrong answer.
+ *
+ * @param env - The environment to read `M3L_CONSOLE_AUDIT_ROOT` from.
+ * @returns The absolute trail directory. Never created here.
+ * @throws {@link M3LConsoleError} `ERR_CONSOLE_CONFIG_INVALID` when the
+ *   configured root is unusable — wrapped, because `createConsoleRuntime`'s
+ *   own `@throws` promises an `M3LConsoleError` rather than a bare
+ *   `Core.M3LError`.
+ *
+ * @example
+ * ```ts
+ * const directory = resolveHumanActionAuditRoot(process.env);
+ * ```
+ */
+export function resolveHumanActionAuditRoot(env: NodeJS.ProcessEnv): string {
+  try {
+    return resolveAuditStreamRoot({ configuredPath: env[AUDIT_ROOT_ENV] });
+  } catch (cause) {
+    if (cause instanceof M3LConsoleError) throw cause;
+    throw new M3LConsoleError(
+      "ERR_CONSOLE_CONFIG_INVALID",
+      "the human-action audit root could not be resolved",
+      { cause },
+    );
+  }
+}
+
+/**
  * Builds the audit port the console writes its human-action trail through.
  *
  * Resolved at composition time from the environment, exactly as
@@ -520,10 +556,11 @@ const AUDIT_ROOT_ENV = "M3L_CONSOLE_AUDIT_ROOT";
  * Auditing is unconditionally on: a console that cannot resolve its audit
  * trail must not boot.
  *
- * **Scope: the JSONL stream only, not the SQLite index.** The index has no
- * reader endpoint yet and its rebuild path is truncate-and-reinsert, so
- * dual-write ordering is its own reviewable unit. Because this module is
- * zone-free, a composite port can be added here later with no zone change.
+ * **Scope: the JSONL stream only.** The SQLite index half is composed
+ * AROUND this port by `boot/audit-index.ts`'s
+ * `indexHumanActionAuditPort` (X7c), which `main.ts` applies when the console
+ * opened a store — so this function stays the one place the trail's own
+ * directory and failure classification are decided.
  *
  * @param env - The environment to read `M3L_CONSOLE_AUDIT_ROOT` from.
  * @returns The port every audited route writes through.
@@ -539,12 +576,9 @@ const AUDIT_ROOT_ENV = "M3L_CONSOLE_AUDIT_ROOT";
 export function buildHumanActionAuditPort(
   env: NodeJS.ProcessEnv,
 ): M3LHumanActionAuditPort {
+  const directory = resolveHumanActionAuditRoot(env);
   try {
-    return createHumanActionAuditStream({
-      directory: resolveAuditStreamRoot({
-        configuredPath: env[AUDIT_ROOT_ENV],
-      }),
-    });
+    return createHumanActionAuditStream({ directory });
   } catch (cause) {
     if (cause instanceof M3LConsoleError) throw cause;
     throw new M3LConsoleError(
