@@ -10,6 +10,7 @@
  * @packageDocumentation
  */
 
+import type { M3LHumanActionAuditPort } from "../audit/port.js";
 import { createRouter } from "../http/router.js";
 import type { M3LRoute, M3LRouter } from "../http/router.js";
 import { createBuiltInRoutes } from "../http/routes/built-in.js";
@@ -19,6 +20,7 @@ import type {
 } from "../http/routes/built-in.js";
 import type { M3LDrainController } from "../lifecycle/drain.js";
 import type { M3LConsoleStoreLifecycle } from "../store/store.js";
+import { applyHumanActionAudit } from "./human-action-audit.js";
 
 /**
  * Builds the router the request listener actually dispatches through: the
@@ -39,11 +41,19 @@ import type { M3LConsoleStoreLifecycle } from "../store/store.js";
  * @param store - The opened store, when one exists, for the `/ready` probe.
  * @param runs - The X4 run-route options, when the run subsystem is wired.
  * @param sessions - The X6 session-route options, when that subsystem is wired.
+ * @param auditPort - The ADR-0070 human-action trail every audited route
+ *   records through. Applied to the console's OWN routes; `routes` is
+ *   appended verbatim (see the note in the body).
  * @returns The compiled dispatch router.
+ * @throws {@link "../errors/console-error.js".M3LConsoleError}
+ *   `ERR_CONSOLE_INTERNAL` when a non-`GET` route has no audit spec; see
+ *   {@link applyHumanActionAudit}.
  *
  * @example
  * ```ts
- * const router = buildDispatchRouter(drain, [], undefined, undefined, undefined);
+ * const router = buildDispatchRouter(
+ *   drain, [], undefined, undefined, undefined, auditPort,
+ * );
  * ```
  */
 export function buildDispatchRouter(
@@ -52,15 +62,26 @@ export function buildDispatchRouter(
   store: M3LConsoleStoreLifecycle | undefined,
   runs: RunsRouteOptions | undefined,
   sessions: SessionRouteOptions | undefined,
+  auditPort: M3LHumanActionAuditPort,
 ): M3LRouter {
-  return createRouter(
-    createBuiltInRoutes({
-      drain,
-      startedAt: Date.now(),
-      ...(store !== undefined && { store }),
-      ...(runs !== undefined && { runs }),
-      ...(sessions !== undefined && { sessions }),
-      routes,
-    }),
-  );
+  // The audit gate is applied to the CONSOLE'S OWN routes only, then the
+  // caller's table is appended verbatim — the same order
+  // `createBuiltInRoutes` produces, so `/health`/`/ready` still cannot be
+  // shadowed. `applyHumanActionAudit`'s spec table is keyed by this
+  // console's own path templates, so it can never hold a spec for a route a
+  // caller invented; enforcing the guard against those would make the
+  // documented `options.routes` seam unusable. See that function's TSDoc for
+  // the boundary this draws.
+  const consoleRoutes = createBuiltInRoutes({
+    drain,
+    startedAt: Date.now(),
+    ...(store !== undefined && { store }),
+    ...(runs !== undefined && { runs }),
+    ...(sessions !== undefined && { sessions }),
+    routes: [],
+  });
+  return createRouter([
+    ...applyHumanActionAudit(consoleRoutes, auditPort),
+    ...routes,
+  ]);
 }

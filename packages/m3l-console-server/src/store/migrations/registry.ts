@@ -12,6 +12,13 @@
  */
 
 import { runStatusCheckList } from "../run-status.js";
+import {
+  CREATE_CONSOLE_HUMAN_ACTIONS_AT_MS_INDEX,
+  CREATE_CONSOLE_HUMAN_ACTIONS_CORRELATION_INDEX,
+  CREATE_CONSOLE_HUMAN_ACTIONS_OPERATOR_INDEX,
+  CREATE_CONSOLE_HUMAN_ACTIONS_TABLE,
+  V7_WIDEN_HUMAN_ACTION_KINDS_STATEMENTS,
+} from "./human-actions.js";
 
 /**
  * One schema migration. Declared entirely as data — `version`, `name`, and
@@ -330,74 +337,6 @@ const CREATE_CONSOLE_SESSION_STEPS_RUN_ID_INDEX = `
 `;
 
 /**
- * The exact DDL for `console_human_actions`, `CONSOLE_MIGRATIONS`' v6 (X7
- * human-action audit index, slice 4b). An INDEX over the JSONL audit trail,
- * never the record of truth: it carries only the queryable dimensions
- * (`store/audit-repository.ts` reads/writes it) — never `parameterNames`,
- * `parameterRefs`, or `detail`, which live in the stream only.
- *
- * `id INTEGER PRIMARY KEY` is a plain rowid alias: a row carries no natural
- * key, since the rebuild path is a full truncate-and-reinsert
- * (`store/audit-repository.ts`'s `deleteAll` + `insertAll`), so no dedupe
- * key is needed and none is invented.
- *
- * The trailing `CHECK` mirrors `M3LHumanActionTarget`'s own discriminated
- * union (`audit/record.ts`), whose `script` variant is the only one
- * carrying `scriptName`: `script_name` is present if and only if
- * `target_kind = 'script'`. This pairing is guarded by three layers, this
- * `CHECK` being the last of them, not a restatement of a guarantee the
- * others already hold unconditionally: `store/audit-repository.ts`'s own
- * `M3LHumanActionIndexInput` is a discriminated union on `targetKind`, which
- * forbids the illegal pairing at the typed call site; that module's
- * `requireValidTarget` runtime guard rejects it with
- * `ERR_CONSOLE_BAD_REQUEST` at the cast boundary, where an untyped caller
- * (e.g. a later slice's JSONL-rebuild path) can still reach `insert` past
- * the type system. Kept as a `CHECK`, not a nullable column with no
- * constraint, so the database itself is the backstop if both of those ever
- * fail to run — not because either one is dispensable.
- */
-const CREATE_CONSOLE_HUMAN_ACTIONS_TABLE = `
-  CREATE TABLE console_human_actions (
-    id INTEGER PRIMARY KEY,
-    at_ms INTEGER NOT NULL,
-    operator TEXT NOT NULL,
-    operator_email_declared INTEGER NOT NULL CHECK (operator_email_declared IN (0, 1)),
-    correlation_id TEXT NOT NULL,
-    action TEXT NOT NULL CHECK (action IN (
-      'run.launch','run.cancel','session.create','session.step.add',
-      'session.decision.answer','session.binding.select',
-      'session.close','session.reopen'
-    )),
-    target_kind TEXT NOT NULL CHECK (target_kind IN ('script','run','session','step','artifact')),
-    target_id TEXT NOT NULL,
-    script_name TEXT,
-    posture TEXT NOT NULL CHECK (posture IN ('auto','confirmed','escalated')),
-    outcome TEXT NOT NULL CHECK (outcome IN ('allowed','denied','rejected','failed','served')),
-    CHECK ((script_name IS NULL) = (target_kind <> 'script'))
-  ) STRICT
-`;
-
-/** `console_human_actions`' first index: per-correlation lookups (the "show everything tied to this run/session" query). */
-const CREATE_CONSOLE_HUMAN_ACTIONS_CORRELATION_INDEX = `
-  CREATE INDEX console_human_actions_correlation_id ON console_human_actions (correlation_id)
-`;
-
-/** `console_human_actions`' second index: time-range scans. */
-const CREATE_CONSOLE_HUMAN_ACTIONS_AT_MS_INDEX = `
-  CREATE INDEX console_human_actions_at_ms ON console_human_actions (at_ms)
-`;
-
-/**
- * `console_human_actions`' third index: composite on `(operator, at_ms)`,
- * not bare `(operator)` — every operator query in the API is "what did this
- * operator do, most recent first", and a bare `(operator)` index would still
- * make SQLite sort the result set after the lookup.
- */
-const CREATE_CONSOLE_HUMAN_ACTIONS_OPERATOR_INDEX = `
-  CREATE INDEX console_human_actions_operator ON console_human_actions (operator, at_ms)
-`;
-
-/**
  * The console store's ordered migration set, applied in full by
  * `store/migrations/runner.ts`'s `applyMigrations` at every store open.
  *
@@ -511,5 +450,10 @@ export const CONSOLE_MIGRATIONS: readonly M3LMigration[] = [
       CREATE_CONSOLE_HUMAN_ACTIONS_AT_MS_INDEX,
       CREATE_CONSOLE_HUMAN_ACTIONS_OPERATOR_INDEX,
     ],
+  },
+  {
+    version: 7,
+    name: "widen_human_action_kinds",
+    statements: V7_WIDEN_HUMAN_ACTION_KINDS_STATEMENTS,
   },
 ];

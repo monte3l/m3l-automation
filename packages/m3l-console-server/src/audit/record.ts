@@ -60,6 +60,7 @@ export type M3LHumanActionKind =
   | "run.cancel"
   | "session.create"
   | "session.step.add"
+  | "session.decision.raise"
   | "session.decision.answer"
   | "session.binding.select"
   | "session.close"
@@ -280,6 +281,7 @@ const ACTION_KINDS: ReadonlySet<M3LHumanActionKind> = new Set([
   "run.cancel",
   "session.create",
   "session.step.add",
+  "session.decision.raise",
   "session.decision.answer",
   "session.binding.select",
   "session.close",

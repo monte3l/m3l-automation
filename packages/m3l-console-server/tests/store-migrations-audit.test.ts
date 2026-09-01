@@ -169,10 +169,10 @@ describe("CONSOLE_MIGRATIONS — the real registry (v6: console_human_actions)",
     expect(v6?.name.length).toBeGreaterThan(0);
   });
 
-  test("applying every migration reaches user_version 6 and creates console_human_actions with its three indexes", () => {
+  test("applying every migration reaches user_version 7 and creates console_human_actions with its three indexes", () => {
     const database = createRealMigratedDatabase();
 
-    expect(readUserVersion(database)).toBe(6);
+    expect(readUserVersion(database)).toBe(7);
     expect(tableExists(database, "console_human_actions")).toBe(true);
     expect(indexExists(database, "console_human_actions_correlation_id")).toBe(
       true,
@@ -189,7 +189,7 @@ describe("CONSOLE_MIGRATIONS — the real registry (v6: console_human_actions)",
     const secondApplied = applyMigrations(database, CONSOLE_MIGRATIONS);
 
     expect(secondApplied).toBe(0);
-    expect(readUserVersion(database)).toBe(6);
+    expect(readUserVersion(database)).toBe(7);
     expect(tableExists(database, "console_human_actions")).toBe(true);
   });
 
@@ -271,6 +271,9 @@ describe("CONSOLE_MIGRATIONS — the real registry (v6: console_human_actions)",
     "run.cancel",
     "session.create",
     "session.step.add",
+    // X7b (migration v7): SQLite cannot ALTER a CHECK, so this member cost a
+    // full table recreate. Every future kind costs another one.
+    "session.decision.raise",
     "session.decision.answer",
     "session.binding.select",
     "session.close",
