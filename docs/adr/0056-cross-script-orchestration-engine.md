@@ -115,6 +115,55 @@ exploratory session graduates into a flow definition using the same
 references. Nothing else in this ADR changes; the engine, command name,
 and acceptance flow stand as decided.
 
+## Update 2026-09-01 — the engine needed one library seam after all
+
+This ADR said the engine is CLI-internal, with "no `m3l-common` export
+change", and that "any library seam it turns out to need gets its own
+recorded decision". Implementing U10 slice 3 turned one up, so this is that
+record.
+
+The flow definition format rejects unknown top-level keys — the property
+that makes every later addition to the format forward-safe. Reading the
+definition through `Core.M3LYAMLConfigProvider` (required: `packages/m3l-cli`
+declares no `yaml` dependency and ESLint bans every non-`node:`,
+non-`m3l-common` import from its `src/**`) made that impossible, because
+`M3LConfigProvider`'s only accessor is `getRawValue(key)`. A caller can probe
+keys it already knows; it can never discover a key it does not. Two
+alternatives were rejected on evidence: `Core.M3LScriptPresetLoader` returns a
+whole top-level record but validates every value against an
+`M3LConfigSchema`, and `M3LConfigParameterType` has no object or
+array-of-objects member, so a flow's `steps` array cannot be expressed in one;
+and switching the format to JSON to get `JSON.parse` would contradict the
+ratified `data/config/flows/<name>.yaml` shape and lose the comments the
+format's own example definition uses.
+
+`M3LConfigProvider` therefore gains **`rawKeys(): readonly string[]`**,
+reporting the top-level keys the source declared, in source order.
+`M3LYAMLConfigProvider` overrides it; the base class returns `[]`. It is a
+concrete method with a default rather than an abstract member, following the
+`getSourceLabel()` precedent in the same class — that class documents external
+subclassing, so a new abstract member would be source-breaking. The change is
+purely additive: no signature changes, no removals, and enumeration widens
+nothing, since a prototype-pollution vector key still throws
+`M3LUnsafeConfigKeyError` at construction and malformed YAML still throws
+`M3LConfigParseError` before any key can be enumerated.
+
+**Consequence for the programme:** U10 slice 3's semver is **minor
+(`m3l-common`)**, not the "none (CLI-internal)" its design doc recorded. The
+placement, command name, contract surfaces and acceptance flow this ADR fixed
+are all unchanged.
+
+Slice 3 also **ships as four PRs rather than one** — this seam, the definition
+format, the execution engine, then the CLI surface that reserves the `flow`
+name. Its design doc argued for a single PR on the grounds that an engine
+landed without its command wiring "would trip `knip` as unused exports"; that
+was measured and is false, because the vitest plugin treats `tests/**` as
+entries, so the unwired modules are reachable. What actually forces the split
+is size: the combined change is ~395,000 reviewable characters against
+`check:review-size`'s 300,000 hard ceiling, which CI rejects outright with no
+review attempted. The reserved-name lockstep the doc worried about is real but
+binds only the final surface PR, where all nine sites move together.
+
 ## Links
 
 - Fires the trigger of: [ADR-0047](./0047-cross-script-orchestration-deferred.md)

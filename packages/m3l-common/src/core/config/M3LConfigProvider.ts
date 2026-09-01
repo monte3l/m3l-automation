@@ -51,4 +51,37 @@ export abstract class M3LConfigProvider {
   getSourceLabel(): string {
     return "other";
   }
+
+  /**
+   * Returns the keys this provider actually declares, in whatever order is
+   * natural to its backing source. Deliberately a concrete method with a
+   * default implementation, not `abstract` — this class documents external
+   * subclassing (see the class-level `@example`), and adding an abstract
+   * member would be a source-breaking change for any existing subclass. A
+   * subclass overrides this to enumerate its own source; a subclass that does
+   * not override it reports no keys.
+   *
+   * Enumeration is what {@link M3LConfigProvider.getRawValue} alone cannot
+   * express: `getRawValue` answers "what is this key worth?" but never "which
+   * keys were written?", so a caller that must reject keys the source declared
+   * but its schema does not know (an unknown-key check over a config or flow
+   * document) has nothing to iterate. A provider whose backing source cannot
+   * be enumerated — an environment or CLI provider consulted key-by-key —
+   * correctly keeps the empty default.
+   *
+   * @returns The declared keys; `[]` unless overridden. Callers must treat the
+   *   result as read-only: an implementation may return a live view.
+   *
+   * @example
+   * ```ts
+   * import { M3LYAMLConfigProvider } from "@m3l-automation/m3l-common/core";
+   *
+   * const knownKeys = new Set(["region", "profile"]);
+   * const provider = new M3LYAMLConfigProvider("./data/config/app.yaml");
+   * const unknown = provider.rawKeys().filter((key) => !knownKeys.has(key));
+   * ```
+   */
+  rawKeys(): readonly string[] {
+    return [];
+  }
 }

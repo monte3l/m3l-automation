@@ -99,4 +99,33 @@ export class M3LYAMLConfigProvider extends M3LConfigProvider {
   override getSourceLabel(): string {
     return "yaml-file";
   }
+
+  /**
+   * Returns the parsed mapping's own top-level keys, in the order the YAML
+   * document declares them, unfiltered by value type — a key written with
+   * nothing beneath it (`steps:`, which parses to `null`) is still a declared
+   * key and is reported as one. A missing file yields `[]`, matching the
+   * provider's `ENOENT`-tolerant read.
+   *
+   * Source order rather than sorted: the parsed store is insertion-ordered
+   * already, so reporting keys in authoring order costs nothing and keeps a
+   * caller's "unknown key" message aligned with the file the author is about
+   * to edit.
+   *
+   * @returns The document's top-level keys in source order; `[]` for a missing
+   *   file or an empty mapping. A fresh array on every call, so mutating it
+   *   cannot reach the provider's parsed state.
+   *
+   * @example
+   * ```ts
+   * import { M3LYAMLConfigProvider } from "@m3l-automation/m3l-common/core";
+   *
+   * // app.yaml: "region: eu-west-1\nprofile: dev\n"
+   * const provider = new M3LYAMLConfigProvider("./data/config/app.yaml");
+   * provider.rawKeys(); // ["region", "profile"]
+   * ```
+   */
+  override rawKeys(): readonly string[] {
+    return [...this.values.keys()];
+  }
 }
