@@ -454,6 +454,22 @@ jobs:
             independently of this review. Focus entirely on what those checks cannot catch:
             semantic correctness and this repo's specific conventions below.
 
+            ## Severity tiers
+
+            Restated from this repo's REVIEW.md — the canonical source `pnpm check:review-policy`
+            keeps this file in sync with.
+
+            - **Must-fix** — breaks correctness, violates a stated project rule (this
+              repo's `docs/contributing/style-guide.md` and `.claude/rules/*.md`), or
+              introduces a security/silent-failure defect. Blocks merge.
+            - **Should-fix** — a real quality issue that does not block merge on its
+              own: a missed edge case, a weak type, a maintainability concern.
+            - **Nit** — style, naming, or preference. Never blocks merge.
+
+            Reserve Must-fix for what actually blocks; route preference/stylistic items
+            to Nits explicitly rather than inflating Should-fix. If a change is sound,
+            say so plainly and leave the Must-fix list empty rather than padding it.
+
             ## Error handling
 
             - Only throw instances of `M3LError` subclasses, never bare strings
