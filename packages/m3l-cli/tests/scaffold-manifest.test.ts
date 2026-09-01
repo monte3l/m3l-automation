@@ -139,21 +139,18 @@ describe("serviceNameErrors", () => {
     },
   );
 
-  test.each([
-    "list",
-    "inspect",
-    "run",
-    "doctor",
-    "presets",
-    "history",
-    "wizard",
-    "help",
-  ])("flags every reserved CLI name, not only 'new' (%s)", (name) => {
-    const problems = serviceNameErrors(name);
+  // Derived from RESERVED_CLI_NAMES rather than re-listed, so a name added
+  // to the set (U12's `completion`, U10's `flow`) is covered here the moment
+  // it lands — a hand-written copy was one more site to forget.
+  test.each([...RESERVED_CLI_NAMES])(
+    "flags every reserved CLI name, not only 'new' (%s)",
+    (name) => {
+      const problems = serviceNameErrors(name);
 
-    expect(problems).toHaveLength(1);
-    expect(problems[0]).toContain("reserved");
-  });
+      expect(problems).toHaveLength(1);
+      expect(problems[0]).toContain("reserved");
+    },
+  );
 });
 
 describe("PURPOSE_MAX_LENGTH", () => {
