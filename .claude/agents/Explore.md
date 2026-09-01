@@ -4,6 +4,11 @@ description: Fast read-only search agent for locating and understanding code. Us
 tools: Read, Grep, Glob, Bash, WebSearch, WebFetch
 disallowedTools: Agent
 model: claude-haiku-4-5
+# claude-haiku-4-5 does not support the effort parameter (confirmed against
+# platform.claude.com/docs/en/build-with-claude/effort, 2026-09-01) — this
+# value is inert on the platform, kept only because check:agents requires
+# every agent to pin a legal EFFORT_LEVELS value. See model-selection.md's
+# MODEL-MATRIX note.
 effort: low
 maxTurns: 40
 color: gray
