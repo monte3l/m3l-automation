@@ -63,6 +63,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       has_discussions: payload.has_discussions,
       has_issues: payload.has_issues,
       has_projects: payload.has_projects,
+      delete_branch_on_merge: payload.delete_branch_on_merge,
       description: payload.description,
       homepage: payload.homepage,
       topics: payload.topics ?? [],
@@ -73,7 +74,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       "utf8",
     );
 
-    const { featureMismatches, metadataGaps, templateGaps } =
+    const { featureMismatches, metadataGaps, templateGaps, cleanupWarnings } =
       deriveFeatureIssues(repo, issueTemplateConfigContent);
 
     for (const message of featureMismatches) reporter.error(message);
@@ -81,20 +82,33 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     for (const message of templateGaps) {
       reporter.error(message, { file: ISSUE_TEMPLATE_CONFIG_PATH });
     }
+    // Warn-severity, not error — see EXPECTED_DELETE_BRANCH_ON_MERGE's
+    // header comment for why this doesn't join featureMismatches.
+    for (const message of cleanupWarnings) reporter.warn(message);
 
     if (
       featureMismatches.length > 0 ||
       metadataGaps.length > 0 ||
       templateGaps.length > 0
     ) {
-      reporter.finish({ featureMismatches, metadataGaps, templateGaps });
+      reporter.finish({
+        featureMismatches,
+        metadataGaps,
+        templateGaps,
+        cleanupWarnings,
+      });
       process.exit(1);
     }
 
     reporter.succeed(
       "GitHub platform-feature stance (ADR-0050) matches the live repository.",
     );
-    reporter.finish({ featureMismatches, metadataGaps, templateGaps });
+    reporter.finish({
+      featureMismatches,
+      metadataGaps,
+      templateGaps,
+      cleanupWarnings,
+    });
   } catch (cause) {
     const message =
       cause instanceof Error && "stderr" in cause
