@@ -4,6 +4,11 @@ description: Read-only cross-cutting doc consistency auditor for m3l-common. Che
 tools: Read, Grep, Glob, Bash
 disallowedTools: Agent
 model: claude-haiku-4-5
+# claude-haiku-4-5 does not support the effort parameter (confirmed against
+# platform.claude.com/docs/en/build-with-claude/effort, 2026-09-01) — this
+# value is inert on the platform, kept only because check:agents requires
+# every agent to pin a legal EFFORT_LEVELS value. See model-selection.md's
+# MODEL-MATRIX note.
 effort: medium
 maxTurns: 40
 color: pink

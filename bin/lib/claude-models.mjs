@@ -16,6 +16,7 @@ export const CO_AUTHOR_EMAIL = "noreply@anthropic.com";
  * ships a new model; never edit history to match it.
  */
 export const CANONICAL_CLAUDE_MODELS = Object.freeze([
+  "Claude Fable 5.1",
   "Claude Fable 5",
   "Claude Opus 5",
   "Claude Opus 4.8",

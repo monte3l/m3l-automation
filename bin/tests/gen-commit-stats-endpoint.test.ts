@@ -87,6 +87,7 @@ describe("buildEndpointPayloads", () => {
     const payloads = buildEndpointPayloads(counts, 515);
     expect([...payloads.keys()]).toEqual([
       "aggregate.json",
+      "claude-fable-5-1.json",
       "claude-fable-5.json",
       "claude-opus-5.json",
       "claude-opus-4-8.json",
