@@ -61,6 +61,7 @@ const STATIC_COMMAND_NAMES: readonly string[] = [
   "history",
   "new",
   "wizard",
+  "completion",
   "help",
 ];
 
@@ -109,6 +110,9 @@ function printUsage(output: M3LCliOutput): void {
   );
   output.info(
     "  wizard                     Interactively build and run a script",
+  );
+  output.info(
+    "  completion <shell>         Print a bash/zsh/fish completion script",
   );
   output.info("  help                       Show this help message");
   output.info("  <script> [--param value ...] [-- args...]");
@@ -302,6 +306,26 @@ async function runWizardCommand(
 }
 
 /**
+ * Lazily loads and runs `completion` (U12), parsing its own `<shell>`
+ * positional out of the raw post-command argument slice — the same
+ * `parseStaticCommandArgs` bypass {@link runNewCommand} uses, so a
+ * `--json`-adjacent token can never be mistaken for the positional.
+ */
+async function runCompletionCommand(
+  output: M3LCliOutput,
+  cwd: string,
+  rawArgs: readonly string[],
+  jsonOutput: boolean,
+  env: Readonly<Record<string, string | undefined>>,
+): Promise<number> {
+  const { runCompletion } = await import("./commands/completion.js");
+  return runCompletion(
+    buildCommandContext(cwd, output, jsonOutput, env),
+    rawArgs,
+  );
+}
+
+/**
  * Lazily loads and delegates to `commands/dynamic.js`'s `runDynamic` — the
  * fallback for any first positional that isn't a
  * {@link STATIC_COMMAND_NAMES} entry (8d). Its `--help`/`-h`, unknown-script,
@@ -404,6 +428,8 @@ const STATIC_COMMAND_HANDLERS: Readonly<Record<string, StaticCommandHandler>> =
       runNewCommand(output, cwd, beforeArgs.slice(1), jsonOutput, env),
     wizard: ({ output, cwd, jsonOutput, env }) =>
       runWizardCommand(output, cwd, jsonOutput, env),
+    completion: ({ beforeArgs, output, cwd, jsonOutput, env }) =>
+      runCompletionCommand(output, cwd, beforeArgs.slice(1), jsonOutput, env),
   };
 
 /**
@@ -413,8 +439,8 @@ const STATIC_COMMAND_HANDLERS: Readonly<Record<string, StaticCommandHandler>> =
  * from inlining the lookup would make.
  *
  * `command` can only be
- * `"list"`/`"inspect"`/`"run"`/`"doctor"`/`"presets"`/`"history"`/`"new"`/`"wizard"`
- * at runtime (see {@link dispatchStaticCommand}'s doc) — anything else is a
+ * `"list"`/`"inspect"`/`"run"`/`"doctor"`/`"presets"`/`"history"`/`"new"`/
+ * `"wizard"`/`"completion"` at runtime (see {@link dispatchStaticCommand}'s doc) — anything else is a
  * caller contract violation, not a normal path, and `command`'s static type
  * is the general `string | undefined` (not a literal union `parseArgs`'s
  * `positionals` can't express), so this can't be a compile-checked `never`
