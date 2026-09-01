@@ -114,9 +114,8 @@ reads, passing test output) over any of the above.
 
 ## CI/CD
 
-Ten GitHub Actions workflows in `.github/workflows/` (plus Dependabot).
-Full table — triggers, purpose, required status checks:
-`docs/contributing/ci-cd.md`.
+Ten GitHub Actions workflows in `.github/workflows/` (plus Dependabot). Full
+table — triggers, purpose, required checks: `docs/contributing/ci-cd.md`.
 
 ## Coding, errors & tests (path-scoped)
 
@@ -128,6 +127,7 @@ Canonical **Style Guide**: `docs/contributing/style-guide.md` (`[enforced]` vs `
 - `scripts/**` → `scripts.md` — `workspace:*` (ADR-0029), naming (ADR-0028)
 - `packages/**/*.ts`, `scripts/**/*.ts`, `**/*.test.ts` → `domain-knowledge.md`
 - `.claude/skills/**`, `.claude/agents/**` → `subagent-dispatch.md` — truncation recovery
+- `.claude/hooks/**`, `.claude/workflows/**` → `harness-artifacts.md` — run it before wiring it
 
 ## Interaction Style
 
@@ -176,7 +176,7 @@ A **hub-and-spoke** model: the hub plans and dispatches to isolated spokes and n
 
 ## Definition of Done
 
-`pnpm verify` passes; a public API change carries a Conventional Commit with the correct semver impact; new/changed exports have TSDoc and tests. Full checklist: `docs/contributing/contributing.md` § Definition of Done.
+`pnpm verify` passes; a public API change carries a Conventional Commit with the correct semver impact; new/changed exports have TSDoc and tests. Full checklist: `contributing.md` § Definition of Done.
 
 ## Forbidden Patterns
 

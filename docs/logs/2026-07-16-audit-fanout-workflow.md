@@ -91,17 +91,17 @@ than trusting agent echo.
    args, separator mangling, unwritten report) were invisible to every static
    gate and both review passes — only the live acceptance run surfaced them.
    For any future workflow script, an end-to-end run on a small real input is
-   the acceptance test, not a nice-to-have.
+   the acceptance test, not a nice-to-have. _(promoted → .claude/rules/harness-artifacts.md)_
 2. **Validate args loudly at the top of a workflow script.** Scripts get no
    stack context worth reading when they die mid-orchestration; the explicit
-   guard turned a delivery-format surprise into a one-line diagnosis.
+   guard turned a delivery-format surprise into a one-line diagnosis. _(promoted → .claude/rules/harness-artifacts.md)_
 3. **Anything a subagent self-reports about the filesystem is a claim, not a
    fact.** Stamp derivable values (paths, linkage) from inputs; instruct
    agents to verify their own writes; give the hub a recovery rule for the
-   remainder.
+   remainder. _(promoted → .claude/rules/harness-artifacts.md)_
 4. **Forward slashes everywhere a path crosses an agent boundary on
    Windows.** Backslashed paths die non-deterministically depending on which
-   shell the agent picks.
+   shell the agent picks. _(promoted → .claude/rules/harness-artifacts.md)_
 5. **The 15× token multiplier is real.** A deliberately small 2-facet audit
    cost ~868k subagent tokens; a full 5-facet audit would plausibly cross the
    1.5M advisory reference. The `VERIFY_MAX` clamp and the
