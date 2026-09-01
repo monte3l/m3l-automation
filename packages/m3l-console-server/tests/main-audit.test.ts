@@ -15,7 +15,9 @@
  * @packageDocumentation
  */
 
+import { EventEmitter } from "node:events";
 import { mkdtemp, rm, readdir } from "node:fs/promises";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 
@@ -25,8 +27,14 @@ import type { Core } from "@m3l-automation/m3l-common";
 
 import type { M3LHumanActionAuditPort } from "../src/audit/port.js";
 import type { M3LHumanActionRecord } from "../src/audit/record.js";
+import type { M3LConsoleRunsConfig } from "../src/config/runs.js";
 import { M3LConsoleError } from "../src/errors/console-error.js";
 import { createConsoleRuntime } from "../src/main.js";
+import type { M3LRunRegistry } from "../src/runs/registry.js";
+import type {
+  M3LConsoleAuditRepository,
+  M3LHumanActionIndexInput,
+} from "../src/store/audit-repository.js";
 
 /** A recording `M3LLoggerHandler` fake — the sanctioned test-double pattern. */
 class RecordingHandler implements Core.M3LLoggerHandler {
@@ -174,5 +182,200 @@ describe("every write route the console serves is audited", () => {
     });
 
     expect(runtime.router.routes).toHaveLength(0);
+  });
+});
+
+// =============================================================================
+// The composition-root wiring for the X7c audit INDEX.
+//
+// `createConsoleRuntime` wraps the JSONL stream port in
+// `boot/audit-index.ts`'s dual-write port when — and only when —
+// `options.audit` supplied an index. Nothing above reaches that branch: every
+// test so far either injects `options.auditPort` (which short-circuits it) or
+// makes no request at all, so the index half of ADR-0070's dual store was
+// covered only at the unit level in `tests/boot-audit-index.test.ts`.
+//
+// These two tests drive one REAL audited request through the composed
+// `runtime.requestListener` and assert what reached the repository. Replacing
+// `options.audit` with `undefined` at either hand-off — `main.ts`'s
+// `indexHumanActionAuditPort(...)` call, or `startConsole`'s
+// `audit: store.audit` — makes the first one fail.
+//
+// `POST /api/v1/runs` is the cheapest audited route: its spec's phase is
+// `"before"`, so the entry is recorded ahead of the handler and an unresolvable
+// script name still produces one. The doubles below mirror
+// `tests/main.test.ts`'s own (duplicated per `.claude/rules/tests.md`, not
+// shared across test files).
+// =============================================================================
+
+/** A minimal resolved runs config — the `runsConfig` seam that skips `loadRunsConfig`, so `POST /api/v1/runs` is registered without a real scripts directory. */
+const MINIMAL_RUNS_CONFIG: M3LConsoleRunsConfig = {
+  scriptsDir: "/opt/scripts",
+  maxPerScript: 1,
+  queueCapacity: 16,
+  streamRetention: 256,
+  killTimeoutMs: 5000,
+  maxConcurrency: 4,
+  queueTimeoutMs: 30_000,
+};
+
+/** A loud-throwing `M3LRunRegistry` fake: the run route 404s on script resolution long before it reaches persistence. */
+function createStubRegistry(): M3LRunRegistry {
+  const unexpectedCall = (): never => {
+    throw new Error("unexpected call on the stub run registry");
+  };
+  return {
+    insertQueued: unexpectedCall,
+    claimForStart: unexpectedCall,
+    finish: unexpectedCall,
+    get: unexpectedCall,
+    list: unexpectedCall,
+    countRunningForScript: (): number => 0,
+    abandonQueued: unexpectedCall,
+    reconcileOrphaned: (): number => 0,
+  };
+}
+
+/** A recording {@link M3LConsoleAuditRepository}: `insert` collects rows, everything else fails loudly. */
+function createRecordingAuditRepository(): {
+  readonly repository: M3LConsoleAuditRepository;
+  readonly inserted: M3LHumanActionIndexInput[];
+} {
+  const inserted: M3LHumanActionIndexInput[] = [];
+  const unexpectedCall = (): never => {
+    throw new Error("unexpected audit-repository call on the dual-write path");
+  };
+  return {
+    inserted,
+    repository: {
+      insert(input: M3LHumanActionIndexInput): void {
+        inserted.push(input);
+      },
+      insertAll: unexpectedCall,
+      deleteAll: unexpectedCall,
+      list: unexpectedCall,
+      count: unexpectedCall,
+    },
+  };
+}
+
+/** A body-bearing `IncomingMessage` double — an `EventEmitter` plus the `data`/`end` events `http/body.ts` listens on. */
+function createRunLaunchRequest(): IncomingMessage {
+  const req = new EventEmitter() as unknown as IncomingMessage & {
+    destroy: () => void;
+  };
+  const body = JSON.stringify({ scriptName: "no-such-script" });
+  Object.assign(req, {
+    method: "POST",
+    url: "/api/v1/runs",
+    headers: {
+      host: "127.0.0.1",
+      "content-type": "application/json",
+      "content-length": String(Buffer.byteLength(body, "utf8")),
+    },
+    destroy: () => undefined,
+  });
+  queueMicrotask(() => {
+    req.emit("data", Buffer.from(body, "utf8"));
+    req.emit("end");
+  });
+  return req;
+}
+
+/** A `ServerResponse` double recording `writeHead`/`end`, resolving `finished` the moment `end()` is called. */
+function createRecordingServerResponse(): {
+  readonly res: ServerResponse;
+  readonly status: () => number | undefined;
+  readonly finished: Promise<void>;
+} {
+  let status: number | undefined;
+  const res = new EventEmitter() as unknown as ServerResponse & {
+    headersSent: boolean;
+    writableEnded: boolean;
+  };
+  let resolveFinished!: () => void;
+  const finished = new Promise<void>((resolve) => {
+    resolveFinished = resolve;
+  });
+  Object.assign(res, {
+    writableEnded: false,
+    headersSent: false,
+    writeHead: (code: number): ServerResponse => {
+      status = code;
+      res.headersSent = true;
+      return res;
+    },
+    end: (): ServerResponse => {
+      res.writableEnded = true;
+      resolveFinished();
+      return res;
+    },
+  });
+  return { res, status: () => status, finished };
+}
+
+/** Races `promise` against a short timeout, so a listener that never ends fails fast and legibly. */
+async function withTimeout<T>(
+  promise: Promise<T>,
+  message: string,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      reject(new Error(message));
+    }, 2000);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
+describe("options.audit reaches the composed audit port", () => {
+  test("an audited request projects a row into the supplied index", async () => {
+    const { repository, inserted } = createRecordingAuditRepository();
+    const runtime = createConsoleRuntime({
+      env: buildEnv(),
+      handlers: [new RecordingHandler()],
+      runsConfig: MINIMAL_RUNS_CONFIG,
+      runs: createStubRegistry(),
+      audit: repository,
+    });
+
+    const { res, finished } = createRecordingServerResponse();
+    runtime.requestListener(createRunLaunchRequest(), res);
+    await withTimeout(finished, "requestListener never called res.end()");
+
+    // The `"before"` entry, plus the compensating one the 404 produces —
+    // what matters is that ANY row reached the index at all.
+    expect(inserted.length).toBeGreaterThan(0);
+    expect(inserted[0]?.action).toBe("run.launch");
+    expect(inserted[0]?.operator).toBe("ada");
+    expect(inserted[0]?.targetKind).toBe("script");
+    expect(inserted[0]?.scriptName).toBe("no-such-script");
+  });
+
+  test("options.auditPort takes precedence: the index is left untouched", async () => {
+    // The documented precedence (`main.ts`'s `options.auditPort ??`): a
+    // caller handing in its own port owns what that port writes, index half
+    // included. A `count`/`insert` here would throw loudly.
+    const { repository, inserted } = createRecordingAuditRepository();
+    const port = createFakePort();
+    const runtime = createConsoleRuntime({
+      env: buildEnv(),
+      handlers: [new RecordingHandler()],
+      runsConfig: MINIMAL_RUNS_CONFIG,
+      runs: createStubRegistry(),
+      audit: repository,
+      auditPort: port,
+    });
+
+    const { res, finished } = createRecordingServerResponse();
+    runtime.requestListener(createRunLaunchRequest(), res);
+    await withTimeout(finished, "requestListener never called res.end()");
+
+    expect(port.records.length).toBeGreaterThan(0);
+    expect(inserted).toStrictEqual([]);
   });
 });

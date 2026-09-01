@@ -717,3 +717,44 @@ describe("startConsole — sessions: store.sessions reaches createConsoleRuntime
     await shutdownPromise;
   });
 });
+
+// =============================================================================
+// The sibling of the #554 test above, for X7c's `audit` hand-off.
+//
+// `buildRuntimeAndBindListener` passes `audit: store.audit` alongside
+// `runs`/`sessions`, and the runtime has no `audit` field to read it back from
+// (the index is not republished — it is consumed by the composed audit port).
+// So this asserts the hand-off directly: that `startConsole` READS
+// `store.audit` at all. Drop that line from `main.ts` and this fails.
+//
+// What the repository then does with a real request is proved end-to-end in
+// `tests/main-audit.test.ts` ("options.audit reaches the composed audit port"),
+// which drives `POST /api/v1/runs` through the composed listener.
+// =============================================================================
+describe("startConsole — audit: store.audit reaches createConsoleRuntime (X7c)", () => {
+  test("the store's audit repository is read during runtime construction", async () => {
+    const calls: string[] = [];
+    const registry = createOrderRecordingRegistry(calls);
+    const { store } = createFakeStore(toRunsRepository(registry));
+    let auditReads = 0;
+    Object.defineProperty(store, "audit", {
+      configurable: true,
+      get: (): M3LConsoleAuditRepository => {
+        auditReads += 1;
+        return stubAuditRepository;
+      },
+    });
+
+    const { promise, fake } = startWithFakeServer(calls, {
+      runsConfig: MINIMAL_RUNS_CONFIG,
+      openStore: () => store,
+    });
+    const running = await promise;
+
+    expect(auditReads).toBeGreaterThan(0);
+
+    const shutdownPromise = running.shutdown();
+    fake.resolveClose();
+    await shutdownPromise;
+  });
+});
