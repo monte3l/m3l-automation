@@ -263,9 +263,21 @@ task instead. GitHub-Actions `workflow` rows have no effort concept
 `workflow-script` file-level row may likewise carry `n/a` when the script
 never relies on a default effort.
 
+The `docs-consistency-reviewer` and `Explore` rows' `effort:` values
+(`medium`/`low`) are **inert on the platform**: `claude-haiku-4-5` is absent
+from the effort-supported model list
+(`platform.claude.com/docs/en/build-with-claude/effort`, confirmed
+2026-09-01) — Haiku 4.5's effort is "Not supported" per the models overview
+page. They cannot carry `n/a` like the workflow rows above, because
+`check:agents` requires every `agent`-surface row (and its matching
+frontmatter) to hold a legal `EFFORT_LEVELS` value, with no Haiku-specific
+exception in that check today. Kept as the closest schema-legal placeholder
+rather than a real lever for these two spokes; each agent file carries the
+same note inline above its `effort:` line.
+
 `haiku`, `sonnet`, `opus`, and `fable` are aliases that float to the current
 generation on release — as of this writing Haiku 4.5, Sonnet 5, Opus 5, and
-Fable 5 respectively. The `agent` and `workflow` rows below no longer ride that
+Fable 5.1 respectively. The `agent` and `workflow` rows below no longer ride that
 float (step 4): they pin exact IDs, and `claude-haiku-4-5` resolves to the
 `claude-haiku-4-5-20251001` snapshot. The float still reaches the hub's
 `/model` selection and the `availableModels` family wildcards above, and
