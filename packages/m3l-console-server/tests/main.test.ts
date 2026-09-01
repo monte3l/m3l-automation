@@ -111,6 +111,34 @@ function createFakeServer(
 
   const instance = Object.assign(emitter, extensions) as unknown as Server;
 
+  /**
+   * Emits a bind outcome, DEFERRING until `startConsoleServer` has actually
+   * attached its handler.
+   *
+   * A test calls this in the same synchronous turn as `startConsole(...)`,
+   * which used to be safe because everything from that call down to
+   * `server.listen()` ran without yielding. X7c's audit-index boot rebuild
+   * (`boot/audit-rebuild.ts`) put an `await` before the bind, so the handler
+   * may not exist yet — a bare `emit("listening")` would go nowhere and hang
+   * the test. A real `Server` reports its bind outcome asynchronously too, so
+   * waiting for the consumer is the FAITHFUL behaviour here, not a workaround
+   * for it. Bounded, so an implementation that never binds at all still fails
+   * on the test timeout rather than spinning forever.
+   */
+  const settleBind = (event: "listening" | "error", error?: Error): void => {
+    let attempts = 0;
+    const emit = (): void => {
+      if (emitter.listenerCount(event) === 0 && attempts < 200) {
+        attempts += 1;
+        setImmediate(emit);
+        return;
+      }
+      if (error === undefined) emitter.emit(event);
+      else emitter.emit(event, error);
+    };
+    emit();
+  };
+
   return {
     instance,
     calls,
@@ -121,7 +149,7 @@ function createFakeServer(
       state.pendingCloseCallback?.(error);
     },
     emitListening() {
-      emitter.emit("listening");
+      settleBind("listening");
     },
     setOnCloseCalled(hook: () => void) {
       state.onCloseCalled = hook;

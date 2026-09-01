@@ -18,8 +18,12 @@ import { Core } from "@m3l-automation/m3l-common";
 
 import type { M3LHumanActionAuditPort } from "./audit/port.js";
 import { indexHumanActionAuditPort } from "./boot/audit-index.js";
+import { rebuildHumanActionIndexOnBoot } from "./boot/audit-rebuild.js";
 import { buildDispatchRouter } from "./boot/dispatch-router.js";
-import { buildHumanActionAuditPort } from "./boot/human-action-audit.js";
+import {
+  buildHumanActionAuditPort,
+  resolveHumanActionAuditRoot,
+} from "./boot/human-action-audit.js";
 import {
   createRuntimeLogger,
   logDrainCompletion,
@@ -420,6 +424,19 @@ async function buildRuntimeAndBindListener(
     // here — not in createConsoleRuntime, a pure composition step — and
     // strictly before the bind below.
     runtime.runs?.orchestrator.reconcileOnBoot();
+    // The same slot, for the same reason, for the ADR-0070 audit index: a
+    // database write that must land before the listener accepts a request
+    // that would query it. Skipped when the caller injected its own
+    // `auditPort`, because the console then does not know where that port's
+    // trail lives and must not rebuild from an unrelated directory. Never
+    // throws — see `rebuildHumanActionIndexOnBoot`.
+    if (options.auditPort === undefined) {
+      await rebuildHumanActionIndexOnBoot({
+        directory: resolveHumanActionAuditRoot(options.env ?? process.env),
+        store,
+        logger: runtime.logger,
+      });
+    }
     const server = await startConsoleServer({
       host: runtime.config.host,
       port: runtime.config.port,

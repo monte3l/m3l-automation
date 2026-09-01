@@ -80,6 +80,8 @@ interface FakeServer {
   resolveClose: (error?: Error) => void;
   /** Emits `listening`, as a real server does once bound. */
   emitListening: () => void;
+  /** Emits `error`, as a real server does when the bind fails. */
+  emitBindError: (error: Error) => void;
   /** Registers a hook invoked synchronously the instant `close()` is called. */
   setOnCloseCalled: (hook: () => void) => void;
 }
@@ -119,6 +121,35 @@ function createFakeServer(
 
   const instance = Object.assign(emitter, extensions) as unknown as Server;
 
+  /**
+   * Emits a bind outcome, DEFERRING until `startConsoleServer` has actually
+   * attached its handler.
+   *
+   * A test calls this in the same synchronous turn as `startConsole(...)`,
+   * which used to be safe because everything from that call down to
+   * `server.listen()` ran without yielding. X7c's audit-index boot rebuild
+   * (`boot/audit-rebuild.ts`) put an `await` before the bind, so the handler
+   * may not exist yet — a bare `emit("listening")` would go nowhere and hang
+   * the test, and a bare `emit("error")` would be rethrown by `EventEmitter`
+   * as an unhandled `'error'`. A real `Server` reports its bind outcome
+   * asynchronously too, so waiting for the consumer is the FAITHFUL behaviour
+   * here, not a workaround for it. Bounded, so an implementation that never
+   * binds at all still fails on the test timeout rather than spinning forever.
+   */
+  const settleBind = (event: "listening" | "error", error?: Error): void => {
+    let attempts = 0;
+    const emit = (): void => {
+      if (emitter.listenerCount(event) === 0 && attempts < 200) {
+        attempts += 1;
+        setImmediate(emit);
+        return;
+      }
+      if (error === undefined) emitter.emit(event);
+      else emitter.emit(event, error);
+    };
+    emit();
+  };
+
   return {
     instance,
     calls,
@@ -126,7 +157,10 @@ function createFakeServer(
       state.pendingCloseCallback?.(error);
     },
     emitListening() {
-      emitter.emit("listening");
+      settleBind("listening");
+    },
+    emitBindError(error: Error) {
+      settleBind("error", error);
     },
     setOnCloseCalled(hook: () => void) {
       state.onCloseCalled = hook;
@@ -558,7 +592,7 @@ describe("startConsole — a bind failure closes the store", () => {
       createServer: () => fake.instance,
       openStore,
     });
-    fake.instance.emit("error", bindError);
+    fake.emitBindError(bindError);
 
     await expect(promise).rejects.toThrow(M3LConsoleError);
     expect(closeCallCount()).toBe(1);
@@ -714,7 +748,7 @@ describe("startConsole — a bind failure AND a store close failure (double faul
       openStore,
       handlers: [handler],
     });
-    fake.instance.emit("error", bindError);
+    fake.emitBindError(bindError);
 
     let thrown: unknown;
     try {
