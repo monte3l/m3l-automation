@@ -393,8 +393,25 @@ function createFakeServer(): {
 } {
   const emitter = new EventEmitter();
   let pendingClose: ((error?: Error) => void) | undefined;
+  // Armed by `emitListening()`, emitted from `listen()`. The boot rebuild
+  // under test is itself the `await` between `startConsole()` and the bind, so
+  // a bare emit at call time would go nowhere — and
+  // `lifecycle/http-server.ts` attaches its handlers BEFORE calling
+  // `listen()`, so driving the emit from there always finds them. Mirrors
+  // `tests/main-store.test.ts` (duplicated per `.claude/rules/tests.md`).
+  let listened = false;
+  let armedBind = false;
+  const flushBind = (): void => {
+    if (!listened || !armedBind) return;
+    armedBind = false;
+    setImmediate(() => {
+      emitter.emit("listening");
+    });
+  };
   const extensions = {
     listen(): Server {
+      listened = true;
+      flushBind();
       return extensions as unknown as Server;
     },
     close(callback?: (error?: Error) => void): Server {
@@ -412,26 +429,12 @@ function createFakeServer(): {
     },
   };
   const instance = Object.assign(emitter, extensions) as unknown as Server;
-  // Deferred until `startConsoleServer` has attached its handler: the boot
-  // rebuild under test is itself the `await` that sits between
-  // `startConsole()` and the bind, so a bare synchronous emit would go
-  // nowhere. Mirrors the `settleBind` helper in `tests/main-store.test.ts`
-  // (duplicated per `.claude/rules/tests.md`, not shared across files).
-  const settleBind = (): void => {
-    let attempts = 0;
-    const emit = (): void => {
-      if (emitter.listenerCount("listening") === 0 && attempts < 200) {
-        attempts += 1;
-        setImmediate(emit);
-        return;
-      }
-      emitter.emit("listening");
-    };
-    emit();
-  };
   return {
     instance,
-    emitListening: settleBind,
+    emitListening: () => {
+      armedBind = true;
+      flushBind();
+    },
     resolveClose: () => {
       pendingClose?.();
     },

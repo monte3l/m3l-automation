@@ -89,6 +89,8 @@ function createFakeServer(
     listen(...args: unknown[]): Server {
       void args;
       calls.push("listen");
+      listened = true;
+      flushBind();
       return extensions as unknown as Server;
     },
     close(callback?: (error?: Error) => void): Server {
@@ -112,31 +114,34 @@ function createFakeServer(
   const instance = Object.assign(emitter, extensions) as unknown as Server;
 
   /**
-   * Emits a bind outcome, DEFERRING until `startConsoleServer` has actually
-   * attached its handler.
+   * Arms the bind outcome; {@link listen} is what actually emits it.
    *
-   * A test calls this in the same synchronous turn as `startConsole(...)`,
-   * which used to be safe because everything from that call down to
-   * `server.listen()` ran without yielding. X7c's audit-index boot rebuild
-   * (`boot/audit-rebuild.ts`) put an `await` before the bind, so the handler
-   * may not exist yet — a bare `emit("listening")` would go nowhere and hang
-   * the test. A real `Server` reports its bind outcome asynchronously too, so
-   * waiting for the consumer is the FAITHFUL behaviour here, not a workaround
-   * for it. Bounded, so an implementation that never binds at all still fails
-   * on the test timeout rather than spinning forever.
+   * A test calls `emitListening()` in the same synchronous turn as
+   * `startConsole(...)`, which used to be safe because everything from that
+   * call down to `server.listen()` ran without yielding. X7c's audit-index
+   * boot rebuild (`boot/audit-rebuild.ts`) put an `await` before the bind, so
+   * a bare `emitter.emit(...)` at that point goes nowhere (`listening` hangs
+   * the test; `error` is rethrown by `EventEmitter` as unhandled).
+   *
+   * Arming instead of emitting makes the order irrelevant, DETERMINISTICALLY:
+   * `lifecycle/http-server.ts` attaches both handlers BEFORE it calls
+   * `listen()` (`server.on("error"/"listening", ...)` then
+   * `server.listen(...)`), so an emit driven from inside `listen()` always
+   * finds them — no polling and no attempt bound that a slow CI runner can
+   * exhaust.
    */
-  const settleBind = (event: "listening" | "error", error?: Error): void => {
-    let attempts = 0;
-    const emit = (): void => {
-      if (emitter.listenerCount(event) === 0 && attempts < 200) {
-        attempts += 1;
-        setImmediate(emit);
-        return;
-      }
-      if (error === undefined) emitter.emit(event);
-      else emitter.emit(event, error);
-    };
-    emit();
+  let listened = false;
+  let armedBind: { readonly error?: Error } | undefined;
+
+  const flushBind = (): void => {
+    if (!listened || armedBind === undefined) return;
+    const outcome = armedBind;
+    armedBind = undefined;
+    // Asynchronous, as a real `Server` reports its bind outcome.
+    setImmediate(() => {
+      if (outcome.error === undefined) emitter.emit("listening");
+      else emitter.emit("error", outcome.error);
+    });
   };
 
   return {
@@ -149,7 +154,8 @@ function createFakeServer(
       state.pendingCloseCallback?.(error);
     },
     emitListening() {
-      settleBind("listening");
+      armedBind = {};
+      flushBind();
     },
     setOnCloseCalled(hook: () => void) {
       state.onCloseCalled = hook;
