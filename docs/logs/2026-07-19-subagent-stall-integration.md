@@ -134,7 +134,7 @@ against the failure cases the heuristic was built to catch.
   examples (truncated fragments) can still misfire on legitimate output the
   author didn't think to check — the review-digest bullet-list ending here.
   Before wiring any advisory hook that fires on every event of a given type,
-  run it against a sample of known-good output from that exact event.
+  run it against a sample of known-good output from that exact event. _(promoted → .claude/rules/harness-artifacts.md)_
 - **Adversarial audit verification catches over-eager findings, not just
   under-supported ones.** 4 of 15 raw findings from the audit fan-out were
   refuted on inspection — two because the "gap" was measuring the repo
