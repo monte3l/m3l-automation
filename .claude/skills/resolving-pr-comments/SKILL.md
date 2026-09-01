@@ -104,10 +104,12 @@ comments where the author is `claude[bot]` and take the most recent one (highest
 ### 3 — Parse findings
 
 The bot groups violations under three severity headings: `### Must-fix`,
-`### Should-fix`, and `### Nits`. Each bullet has this form:
+`### Should-fix`, and `### Nits`. Each bullet has this form (trailing period
+included — REVIEW.md's Output format section is the canonical source for
+this exact template, restated verbatim in `claude-pr-review.yml`'s prompt):
 
 ```
-- **`path/to/file.ts:line`** — <violation> (<which rule>)
+- **`path/to/file.ts:line`** — <violation> (<which rule>).
 ```
 
 The rule in parentheses maps to a fix category (TypeScript, ESM imports, Error handling,

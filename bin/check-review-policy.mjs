@@ -1,10 +1,21 @@
 #!/usr/bin/env node
 // Static gate (Anthropic AI-native SDLC harness-alignment plan, Section 5):
-// REVIEW.md is the single source of truth for the review finding cap; this
-// asserts the cap number it declares is restated identically in
-// claude-pr-review.yml's prompt and every SEVERITY_CAPPED_SPOKES agent file
-// (bin/lib/agent-roster.mjs) — the same parity-gate pattern check:cadence
-// already runs for the pre-push table.
+// REVIEW.md is the single source of truth for the review policy. This asserts:
+//   1. the finding-cap number is restated identically in claude-pr-review.yml's
+//      prompt and every SEVERITY_CAPPED_SPOKES agent file (bin/lib/agent-roster.mjs)
+//   2. REVIEW.md's severity-tier descriptions, exclusion-list patterns, and
+//      output-format literal strings (headings, bullet template, verdict line)
+//      are each restated verbatim SOMEWHERE in claude-pr-review.yml's prompt —
+//      the same parity-gate pattern check:cadence already runs for the pre-push
+//      table, extended past the cap number after an audit found the prompt's own
+//      comment ("REVIEW.md — the canonical source pnpm check:review-policy keeps
+//      this file in sync with") was true only for the cap: tiers, exclusions,
+//      and output format could all drift silently before this.
+//
+// Checks 2 are scoped to the workflow prompt only, not the spoke agent files —
+// REVIEW.md's own "Where this is enforced" table documents the spoke files as
+// paraphrasing severity philosophy, not quoting it verbatim, so a literal-string
+// check against them would be a false positive by design.
 //
 // Usage:
 //   node bin/check-review-policy.mjs   # exits 0 on success, 1 on any mismatch
@@ -64,6 +75,167 @@ export function diffCapSources(canonicalCap, sources) {
   return errors;
 }
 
+/**
+ * The body of a `## <heading>` markdown section — everything up to the next
+ * `## ` heading, or end of text. Returns `null` if the heading isn't found.
+ *
+ * @param {string} markdown
+ * @param {string} heading exact heading text (no leading `##`)
+ * @returns {string | null}
+ */
+export function extractSection(markdown, heading) {
+  const headingRe = new RegExp(`^##\\s+${heading}\\s*$`, "m");
+  const match = headingRe.exec(markdown);
+  if (match === null) return null;
+  const rest = markdown.slice(match.index + match[0].length);
+  const nextHeading = /^##\s+/m.exec(rest);
+  return (nextHeading ? rest.slice(0, nextHeading.index) : rest).trim();
+}
+
+/**
+ * Collapse whitespace runs to a single space and trim — used to compare two
+ * pieces of markdown prose that must agree on words but may be reflowed to
+ * different line widths (REVIEW.md vs. the indented YAML prompt block).
+ *
+ * @param {string} text
+ * @returns {string}
+ */
+export function normalizeWhitespace(text) {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Parse REVIEW.md's "## Severity tiers" section into `{ tierName: description }`,
+ * one entry per `- **<name>** — <description>` bullet. Descriptions are
+ * whitespace-normalized so a line-wrap difference from the prompt's own
+ * copy never causes a false mismatch.
+ *
+ * @param {string} reviewMdText
+ * @returns {Record<string, string>}
+ */
+export function extractSeverityTiers(reviewMdText) {
+  const section = extractSection(reviewMdText, "Severity tiers");
+  if (section === null) return {};
+  const tierRe = /-\s+\*\*([^*]+)\*\*\s+—\s+([\s\S]*?)(?=\n-\s+\*\*|\n\n|$)/g;
+  /** @type {Record<string, string>} */
+  const tiers = {};
+  for (const match of section.matchAll(tierRe)) {
+    tiers[match[1].trim()] = normalizeWhitespace(match[2]);
+  }
+  return tiers;
+}
+
+/**
+ * Diff REVIEW.md's severity-tier descriptions against whether each one
+ * (whitespace-normalized) appears verbatim somewhere in `promptText`.
+ *
+ * @param {Record<string, string>} tiers from {@link extractSeverityTiers}
+ * @param {string} promptText raw claude-pr-review.yml text
+ * @returns {string[]} human-readable error messages, empty when all match
+ */
+export function diffSeverityTiers(tiers, promptText) {
+  const normalizedPrompt = normalizeWhitespace(promptText);
+  const errors = [];
+  for (const [name, description] of Object.entries(tiers)) {
+    if (!normalizedPrompt.includes(description)) {
+      errors.push(
+        `claude-pr-review.yml's prompt does not restate REVIEW.md's "${name}" ` +
+          `severity-tier description verbatim: "${description}"`,
+      );
+    }
+  }
+  return errors;
+}
+
+/**
+ * Parse REVIEW.md's "## Exclusions" section into the list of backtick-quoted
+ * path patterns it declares (`` `*.md` ``, `` `docs/**` ``, …).
+ *
+ * @param {string} reviewMdText
+ * @returns {string[]}
+ */
+export function extractExclusions(reviewMdText) {
+  const section = extractSection(reviewMdText, "Exclusions");
+  if (section === null) return [];
+  const patterns = [];
+  for (const match of section.matchAll(/^-\s+`([^`]+)`/gm)) {
+    patterns.push(match[1]);
+  }
+  return patterns;
+}
+
+/**
+ * Diff REVIEW.md's exclusion patterns against whether each backtick-quoted
+ * literal appears verbatim somewhere in `promptText`.
+ *
+ * @param {string[]} exclusions from {@link extractExclusions}
+ * @param {string} promptText raw claude-pr-review.yml text
+ * @returns {string[]} human-readable error messages, empty when all match
+ */
+export function diffExclusions(exclusions, promptText) {
+  const errors = [];
+  for (const pattern of exclusions) {
+    if (!promptText.includes(`\`${pattern}\``)) {
+      errors.push(
+        `claude-pr-review.yml's prompt does not mention the exclusion ` +
+          `pattern \`${pattern}\` from REVIEW.md.`,
+      );
+    }
+  }
+  return errors;
+}
+
+/**
+ * Parse REVIEW.md's "## Output format" section into the literal strings it
+ * declares every enforcing surface must restate: each fenced ` ``` ` code
+ * block's trimmed content (the bullet template and the verdict line — kept
+ * fenced rather than inline-backtick-escaped, since the bullet template
+ * itself contains a backtick-quoted path and nested backtick escaping is
+ * ambiguous to parse reliably), plus every remaining single-backtick inline
+ * span outside those fences (the four `###` headings and `_None._`).
+ *
+ * @param {string} reviewMdText
+ * @returns {string[]}
+ */
+export function extractOutputFormatLiterals(reviewMdText) {
+  const section = extractSection(reviewMdText, "Output format");
+  if (section === null) return [];
+  const literals = [];
+
+  const fenceRe = /```[a-z]*\n([\s\S]*?)```/g;
+  for (const match of section.matchAll(fenceRe)) {
+    literals.push(match[1].trim());
+  }
+
+  const withoutFences = section.replace(fenceRe, "");
+  for (const match of withoutFences.matchAll(/`([^`]+)`/g)) {
+    literals.push(match[1].trim());
+  }
+
+  return literals;
+}
+
+/**
+ * Diff REVIEW.md's output-format literals against whether each one appears
+ * verbatim somewhere in `promptText`.
+ *
+ * @param {string[]} literals from {@link extractOutputFormatLiterals}
+ * @param {string} promptText raw claude-pr-review.yml text
+ * @returns {string[]} human-readable error messages, empty when all match
+ */
+export function diffOutputFormatLiterals(literals, promptText) {
+  const errors = [];
+  for (const literal of literals) {
+    if (!promptText.includes(literal)) {
+      errors.push(
+        `claude-pr-review.yml's prompt does not restate REVIEW.md's ` +
+          `Output format literal verbatim: ${literal}`,
+      );
+    }
+  }
+  return errors;
+}
+
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const { json } = parseJsonFlag();
   const reporter = createReporter(json);
@@ -107,19 +279,55 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     }),
   ];
 
-  const errors = diffCapSources(canonicalCap, sources);
-  for (const error of errors) reporter.error(error);
+  const capErrors = diffCapSources(canonicalCap, sources);
+  for (const error of capErrors) reporter.error(error);
 
+  const reviewMdText = readFileSync(reviewMdPath, "utf8");
+  const workflowText = existsSync(workflowPath)
+    ? readFileSync(workflowPath, "utf8")
+    : null;
+
+  /** @type {string[]} */
+  let contractErrors = [];
+  if (workflowText === null) {
+    contractErrors.push(
+      "claude-pr-review.yml is missing — cannot check severity-tier, " +
+        "exclusion, or output-format parity against REVIEW.md.",
+    );
+  } else {
+    const tiers = extractSeverityTiers(reviewMdText);
+    const exclusions = extractExclusions(reviewMdText);
+    const outputFormatLiterals = extractOutputFormatLiterals(reviewMdText);
+    contractErrors = [
+      ...diffSeverityTiers(tiers, workflowText),
+      ...diffExclusions(exclusions, workflowText),
+      ...diffOutputFormatLiterals(outputFormatLiterals, workflowText),
+    ];
+  }
+  for (const error of contractErrors) reporter.error(error);
+
+  const errors = [...capErrors, ...contractErrors];
   if (errors.length > 0) {
     if (!json)
-      console.error(`\n✗  ${errors.length} review-policy cap mismatch(es).`);
-    reporter.finish({ canonicalCap, sourcesChecked: sources.length });
+      console.error(`\n✗  ${errors.length} review-policy mismatch(es).`);
+    reporter.finish({
+      canonicalCap,
+      sourcesChecked: sources.length,
+      capMismatches: capErrors.length,
+      contractMismatches: contractErrors.length,
+    });
     process.exit(1);
   }
 
   reporter.succeed(
     `Review-policy cap (${canonicalCap}) matches across REVIEW.md and ` +
-      `${sources.length} enforcing surface(s).`,
+      `${sources.length} enforcing surface(s); severity tiers, exclusions, ` +
+      `and output format all restated verbatim in claude-pr-review.yml.`,
   );
-  reporter.finish({ canonicalCap, sourcesChecked: sources.length });
+  reporter.finish({
+    canonicalCap,
+    sourcesChecked: sources.length,
+    capMismatches: 0,
+    contractMismatches: 0,
+  });
 }

@@ -12,11 +12,19 @@
  * `SOFT_TARGET_BYTES` (75,000) is this script's own addition: an authoring
  * target, not a rejection ceiling — see ADR-0072.
  *
- * Mirrors the workflow's `is_ignored` predicate exactly (`*.md`, `docs/**`,
- * `.github/dependabot.yml`, plus the separately-excluded `pnpm-lock.yaml`)
- * and measures a **unified** diff (`git diff <base>..<head>`), never a
- * per-commit series — `gh pr diff --patch` inflated PR #523 by 39% before
- * that was fixed (PR #569, `0174a5a`).
+ * Uses `bin/lib/pr-diff-filter.mjs`'s ignore set and omission markers
+ * directly — the same module the workflow's guard/pre-compute steps and the
+ * `bin/pr-diff-filter.mjs` CLI wrapper use — rather than re-implementing
+ * either, which had previously drifted (the workflow's ignore-set copies were
+ * themselves the drift #806 fixed; re-implementing a THIRD copy here for the
+ * byte measurement would have reintroduced the identical risk one script
+ * over). This is also what makes the omission-marker length match exactly:
+ * before, this script's single-line placeholder under-measured every ignored
+ * file by ~100-130 chars relative to the workflow's real 3-line marker, so a
+ * PR could measure under the soft target locally and still trip
+ * `MAX_REVIEWABLE_BYTES` in CI. Measures a **unified** diff
+ * (`git diff <base>..<head>`), never a per-commit series — `gh pr diff
+ * --patch` inflated PR #523 by 39% before that was fixed (PR #569, `0174a5a`).
  *
  * Usage:
  *   node bin/check-review-size.mjs                      # resolves base/head itself
@@ -36,6 +44,11 @@ import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
+import {
+  OMISSION_MARKERS,
+  ignoreReason,
+  isIgnored,
+} from "./lib/pr-diff-filter.mjs";
 import { parseJsonFlag, createReporter, repoRoot } from "./lib/report.mjs";
 
 const root = repoRoot(import.meta.url);
@@ -56,26 +69,6 @@ const MAX_BUFFER = 64 * 1024 * 1024;
 export function parseMaxReviewableBytes(workflowText) {
   const match = /MAX_REVIEWABLE_BYTES:\s*(\d+)/.exec(workflowText);
   return match ? Number(match[1]) : null;
-}
-
-/**
- * True when `path` is excluded from the reviewable count — the workflow's
- * `is_ignored()` predicate (`*.md`, `docs/**`, `.github/dependabot.yml`),
- * plus the separately-excluded `pnpm-lock.yaml`. Bash `case` globbing is not
- * anchored to the basename, so `*.md` matches any path ending in `.md`
- * regardless of directory — mirrored here with `endsWith`/`startsWith`
- * rather than a basename check.
- *
- * @param {string} path
- * @returns {boolean}
- */
-export function isIgnoredPath(path) {
-  return (
-    path.endsWith(".md") ||
-    path.startsWith("docs/") ||
-    path === ".github/dependabot.yml" ||
-    path === "pnpm-lock.yaml"
-  );
 }
 
 /**
@@ -109,7 +102,7 @@ export function splitDiffByFile(diffText) {
         blocks.push({
           path: currentPath,
           text: current.join("\n"),
-          ignored: isIgnoredPath(currentPath),
+          ignored: isIgnored(currentPath),
         });
       }
       current = [line];
@@ -125,7 +118,7 @@ export function splitDiffByFile(diffText) {
     blocks.push({
       path: currentPath,
       text: current.join("\n"),
-      ignored: isIgnoredPath(currentPath),
+      ignored: isIgnored(currentPath),
     });
   }
   return blocks;
@@ -133,9 +126,13 @@ export function splitDiffByFile(diffText) {
 
 /**
  * Reconstruct the filtered patch the workflow would measure: an ignored
- * file keeps only its `diff --git` header plus a short omission marker
- * (never its hunks); a reviewable file keeps its block unchanged. Returns
- * the filtered text plus each file's post-filter byte size and its
+ * file keeps only its `diff --git` header plus the same omission marker
+ * `bin/lib/pr-diff-filter.mjs` writes for its ignore reason (never its
+ * hunks); a reviewable file keeps its block unchanged. Using the identical
+ * marker text is what keeps this local measurement byte-accurate against
+ * what CI actually sees — a shorter placeholder here previously
+ * under-measured every ignored file relative to the real 3-line marker.
+ * Returns the filtered text plus each file's post-filter byte size and its
  * `ignored` flag, for the top-contributor ranking and the `--json`
  * per-file breakdown.
  *
@@ -147,9 +144,11 @@ export function filterForReview(blocks) {
   const parts = [];
   for (const block of blocks) {
     const headerLine = block.text.split("\n", 1)[0];
-    const text = block.ignored
-      ? `${headerLine}\n(diff omitted — not reviewable by this gate)\n`
-      : `${block.text}\n`;
+    const reason = block.ignored ? ignoreReason(block.path) : null;
+    const text =
+      reason !== null
+        ? `${headerLine}\n${OMISSION_MARKERS[reason].join("\n")}\n`
+        : `${block.text}\n`;
     parts.push(text);
     perFile.push({
       path: block.path,
