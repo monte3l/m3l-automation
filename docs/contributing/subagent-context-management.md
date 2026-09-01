@@ -101,6 +101,18 @@ motivated this ADR. Keep `CLAUDE.md` itself under ~200 lines —
 (`code.claude.com/docs/en/best-practices`) — and prefer moving procedural
 detail into a skill over growing `CLAUDE.md` or a broadly-scoped rule.
 
+A 2026-09-01 harness-refresh sweep found two further gaps and closed them the
+same informational-first way: the gate now also totals `.claude/skills/*/SKILL.md`
+and `.claude/agents/*.md` **body** bytes (the previously entirely-unbudgeted
+per-invocation/per-dispatch payload, as opposed to the listing-only weight
+above) — visibility only, not ratcheted, since no evidenced per-body ceiling
+exists yet — and `--exact` optionally calls Anthropic's real
+`POST /v1/messages/count_tokens` endpoint for the always-loaded block, since
+the gate's own chars/4 `estimateTokens()` under-counts by roughly the ~30%
+the current tokenizer adds over the older one it was calibrated against.
+`--exact` needs `ANTHROPIC_API_KEY` and a network call, so it stays opt-in —
+never wired into `pre-push` or CI.
+
 **Context rot**: more context is not automatically better. Anthropic: "as
 token count grows, accuracy and recall degrade, a phenomenon known as context
 rot" — curate the smallest high-signal set rather than defaulting to a larger

@@ -41,6 +41,10 @@ import {
   collectSkillDescriptions,
   parseClaudeMdRuleGlobs,
   diffRuleGlobParity,
+  stripFrontmatter,
+  collectSkillBodyBytes,
+  collectAgentBodyBytes,
+  countTokensExact,
 } from "../check-context-budget.mjs";
 
 // check-context-budget.mjs computes `root` via repoRoot(import.meta.url) from
@@ -1071,5 +1075,395 @@ describe("collectSkillDescriptions", () => {
 
     expect(collectSkillDescriptions(skillsDir)).toEqual([]);
     expect(readdirSyncSpy).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// stripFrontmatter — pure string function, no fs involved
+// ---------------------------------------------------------------------------
+
+describe("stripFrontmatter", () => {
+  test("returns the text after a leading frontmatter block", () => {
+    const content = "---\nname: foo\n---\nBody text here";
+    expect(stripFrontmatter(content)).toBe("Body text here");
+  });
+
+  test("returns the input unchanged when there is no frontmatter block", () => {
+    const content = "# Just a heading\n\nNo frontmatter at all.";
+    expect(stripFrontmatter(content)).toBe(content);
+  });
+
+  test("returns an empty string when the frontmatter block has no trailing body", () => {
+    const content = "---\nname: foo\n---\n";
+    expect(stripFrontmatter(content)).toBe("");
+  });
+
+  test("[REGRESSION] malformed frontmatter with no closing --- line is treated as no frontmatter and returned unchanged (the regex requires a closing marker)", () => {
+    const content = "---\nname: foo\nno closing marker here";
+    expect(stripFrontmatter(content)).toBe(content);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// collectSkillBodyBytes — fs-mocked, mirrors collectSkillDescriptions above
+// ---------------------------------------------------------------------------
+
+describe("collectSkillBodyBytes", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const skillsDir = "/fake/.claude/skills";
+
+  test("two skill directories each produce {name, bytes} for their SKILL.md body, sorted by name", () => {
+    const alphaBody = "Alpha skill body content.";
+    const zebraBody = "Zebra skill body content, a bit longer.";
+    const alphaContent = `---\ndescription: alpha\n---\n${alphaBody}`;
+    const zebraContent = `---\ndescription: zebra\n---\n${zebraBody}`;
+
+    vi.spyOn(fs, "existsSync").mockImplementation((p) => {
+      const path = String(p);
+      return (
+        path === skillsDir ||
+        path === join(skillsDir, "alpha", "SKILL.md") ||
+        path === join(skillsDir, "zebra", "SKILL.md")
+      );
+    });
+    vi.spyOn(fs, "readdirSync").mockImplementation(((current: string) => {
+      if (String(current) === skillsDir) {
+        return [fakeDirent("zebra", "dir"), fakeDirent("alpha", "dir")];
+      }
+      throw new Error(`unexpected readdirSync call: ${String(current)}`);
+    }) as unknown as typeof fs.readdirSync);
+    vi.spyOn(fs, "readFileSync").mockImplementation(((p: string) => {
+      const path = String(p);
+      if (path === join(skillsDir, "alpha", "SKILL.md")) return alphaContent;
+      if (path === join(skillsDir, "zebra", "SKILL.md")) return zebraContent;
+      throw new Error(`unexpected readFileSync call: ${path}`);
+    }) as typeof fs.readFileSync);
+
+    const result = collectSkillBodyBytes(skillsDir);
+
+    expect(result).toEqual([
+      { name: "alpha", bytes: Buffer.byteLength(alphaBody, "utf8") },
+      { name: "zebra", bytes: Buffer.byteLength(zebraBody, "utf8") },
+    ]);
+  });
+
+  test("a skill directory that exists but has no SKILL.md inside is silently skipped", () => {
+    vi.spyOn(fs, "existsSync").mockImplementation((p) => {
+      const path = String(p);
+      if (path === skillsDir) return true;
+      if (path === join(skillsDir, "no-skill-md", "SKILL.md")) return false;
+      return false;
+    });
+    vi.spyOn(fs, "readdirSync").mockImplementation(((current: string) => {
+      if (String(current) === skillsDir) {
+        return [fakeDirent("no-skill-md", "dir")];
+      }
+      throw new Error(`unexpected readdirSync call: ${String(current)}`);
+    }) as unknown as typeof fs.readdirSync);
+    const readFileSyncSpy = vi
+      .spyOn(fs, "readFileSync")
+      .mockImplementation(() => {
+        throw new Error("readFileSync must not be called without a SKILL.md");
+      });
+
+    expect(collectSkillBodyBytes(skillsDir)).toEqual([]);
+    expect(readFileSyncSpy).not.toHaveBeenCalled();
+  });
+
+  test("a non-directory entry sitting directly in skillsDir (e.g. a stray README.md) is skipped", () => {
+    vi.spyOn(fs, "existsSync").mockImplementation(
+      (p) => String(p) === skillsDir,
+    );
+    vi.spyOn(fs, "readdirSync").mockImplementation(((current: string) => {
+      if (String(current) === skillsDir) {
+        return [fakeDirent("README.md", "file")];
+      }
+      throw new Error(`unexpected readdirSync call: ${String(current)}`);
+    }) as unknown as typeof fs.readdirSync);
+    const readFileSyncSpy = vi
+      .spyOn(fs, "readFileSync")
+      .mockImplementation(() => {
+        throw new Error(
+          "readFileSync must not be called for a non-directory entry",
+        );
+      });
+
+    expect(collectSkillBodyBytes(skillsDir)).toEqual([]);
+    expect(readFileSyncSpy).not.toHaveBeenCalled();
+  });
+
+  test("bytes reflects the BODY only, not the frontmatter — proven by comparing against the full content's byte length", () => {
+    const body = "Just the body, nothing else.";
+    const fullContent = `---\ndescription: proof skill with a longer frontmatter block\n---\n${body}`;
+
+    vi.spyOn(fs, "existsSync").mockImplementation((p) => {
+      const path = String(p);
+      return (
+        path === skillsDir || path === join(skillsDir, "proof", "SKILL.md")
+      );
+    });
+    vi.spyOn(fs, "readdirSync").mockImplementation(((current: string) => {
+      if (String(current) === skillsDir) {
+        return [fakeDirent("proof", "dir")];
+      }
+      throw new Error(`unexpected readdirSync call: ${String(current)}`);
+    }) as unknown as typeof fs.readdirSync);
+    vi.spyOn(fs, "readFileSync").mockImplementation(((p: string) => {
+      if (String(p) === join(skillsDir, "proof", "SKILL.md"))
+        return fullContent;
+      throw new Error(`unexpected readFileSync call: ${String(p)}`);
+    }) as typeof fs.readFileSync);
+
+    const result = collectSkillBodyBytes(skillsDir);
+
+    expect(result).toEqual([
+      { name: "proof", bytes: Buffer.byteLength(body, "utf8") },
+    ]);
+    // The proof: the reported byte count is strictly less than the full
+    // (frontmatter + body) content's byte length — the frontmatter's bytes
+    // are genuinely excluded, not coincidentally equal.
+    expect(result[0]?.bytes).toBeLessThan(
+      Buffer.byteLength(fullContent, "utf8"),
+    );
+  });
+
+  test("a skillsDir that doesn't exist on disk returns [] without throwing", () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(false);
+    const readdirSyncSpy = vi.spyOn(fs, "readdirSync");
+
+    expect(collectSkillBodyBytes(skillsDir)).toEqual([]);
+    expect(readdirSyncSpy).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// collectAgentBodyBytes — fs-mocked, flat directory of *.md files (unlike
+// skills' per-directory SKILL.md structure)
+// ---------------------------------------------------------------------------
+
+describe("collectAgentBodyBytes", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const agentsDir = "/fake/.claude/agents";
+
+  test("two flat .md files each produce {name, bytes} keyed by basename INCLUDING .md, sorted by name", () => {
+    const codeReviewerBody = "Code reviewer agent body content.";
+    const testAuthorBody =
+      "Test author agent body, a bit longer than the other.";
+    const codeReviewerContent = `---\ndescription: reviews code\n---\n${codeReviewerBody}`;
+    const testAuthorContent = `---\ndescription: writes tests\n---\n${testAuthorBody}`;
+
+    vi.spyOn(fs, "existsSync").mockImplementation(
+      (p) => String(p) === agentsDir,
+    );
+    vi.spyOn(fs, "readdirSync").mockImplementation(((current: string) => {
+      if (String(current) === agentsDir) {
+        return [
+          fakeDirent("test-author.md", "file"),
+          fakeDirent("code-reviewer.md", "file"),
+        ];
+      }
+      throw new Error(`unexpected readdirSync call: ${String(current)}`);
+    }) as unknown as typeof fs.readdirSync);
+    vi.spyOn(fs, "readFileSync").mockImplementation(((p: string) => {
+      const path = String(p);
+      if (path === join(agentsDir, "code-reviewer.md"))
+        return codeReviewerContent;
+      if (path === join(agentsDir, "test-author.md")) return testAuthorContent;
+      throw new Error(`unexpected readFileSync call: ${path}`);
+    }) as typeof fs.readFileSync);
+
+    const result = collectAgentBodyBytes(agentsDir);
+
+    expect(result).toEqual([
+      {
+        name: "code-reviewer.md",
+        bytes: Buffer.byteLength(codeReviewerBody, "utf8"),
+      },
+      {
+        name: "test-author.md",
+        bytes: Buffer.byteLength(testAuthorBody, "utf8"),
+      },
+    ]);
+  });
+
+  test("a non-.md file (and a subdirectory) sitting in the same flat directory are both skipped", () => {
+    vi.spyOn(fs, "existsSync").mockImplementation(
+      (p) => String(p) === agentsDir,
+    );
+    vi.spyOn(fs, "readdirSync").mockImplementation(((current: string) => {
+      if (String(current) === agentsDir) {
+        return [fakeDirent("notes.txt", "file"), fakeDirent("subdir", "dir")];
+      }
+      throw new Error(`unexpected readdirSync call: ${String(current)}`);
+    }) as unknown as typeof fs.readdirSync);
+    const readFileSyncSpy = vi
+      .spyOn(fs, "readFileSync")
+      .mockImplementation(() => {
+        throw new Error("readFileSync must not be called for a non-.md entry");
+      });
+
+    expect(collectAgentBodyBytes(agentsDir)).toEqual([]);
+    expect(readFileSyncSpy).not.toHaveBeenCalled();
+  });
+
+  test("bytes reflects the BODY only, not the frontmatter — proven by comparing against the full content's byte length", () => {
+    const body = "Just the agent body, nothing else.";
+    const fullContent = `---\ndescription: proof agent with a longer frontmatter block\n---\n${body}`;
+
+    vi.spyOn(fs, "existsSync").mockImplementation(
+      (p) => String(p) === agentsDir,
+    );
+    vi.spyOn(fs, "readdirSync").mockImplementation(((current: string) => {
+      if (String(current) === agentsDir) {
+        return [fakeDirent("proof.md", "file")];
+      }
+      throw new Error(`unexpected readdirSync call: ${String(current)}`);
+    }) as unknown as typeof fs.readdirSync);
+    vi.spyOn(fs, "readFileSync").mockImplementation(((p: string) => {
+      if (String(p) === join(agentsDir, "proof.md")) return fullContent;
+      throw new Error(`unexpected readFileSync call: ${String(p)}`);
+    }) as typeof fs.readFileSync);
+
+    const result = collectAgentBodyBytes(agentsDir);
+
+    expect(result).toEqual([
+      { name: "proof.md", bytes: Buffer.byteLength(body, "utf8") },
+    ]);
+    expect(result[0]?.bytes).toBeLessThan(
+      Buffer.byteLength(fullContent, "utf8"),
+    );
+  });
+
+  test("a nonexistent agentsDir returns [] without throwing", () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(false);
+    const readdirSyncSpy = vi.spyOn(fs, "readdirSync");
+
+    expect(collectAgentBodyBytes(agentsDir)).toEqual([]);
+    expect(readdirSyncSpy).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// countTokensExact — network-mocked via the injected fetchImpl seam ONLY
+// (never global fetch). URL/model/version literals below mirror the
+// module-private COUNT_TOKENS_URL/COUNT_TOKENS_MODEL/ANTHROPIC_VERSION
+// constants in bin/check-context-budget.mjs, which are not exported.
+// ---------------------------------------------------------------------------
+
+describe("countTokensExact", () => {
+  const COUNT_TOKENS_URL = "https://api.anthropic.com/v1/messages/count_tokens";
+  const COUNT_TOKENS_MODEL = "claude-sonnet-5";
+  const ANTHROPIC_VERSION = "2023-06-01";
+
+  test("resolves to input_tokens on a successful response", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({ input_tokens: 1234 }),
+    });
+
+    await expect(
+      countTokensExact("some text", { apiKey: "sk-test", fetchImpl }),
+    ).resolves.toBe(1234);
+  });
+
+  test("builds the request with the documented URL, method, headers, and JSON body (default model)", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({ input_tokens: 10 }),
+    });
+
+    await countTokensExact("hello world", {
+      apiKey: "sk-verbatim-key",
+      fetchImpl,
+    });
+
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchImpl.mock.calls[0] as [
+      string,
+      { method: string; headers: Record<string, string>; body: string },
+    ];
+    expect(url).toBe(COUNT_TOKENS_URL);
+    expect(init.method).toBe("POST");
+    expect(init.headers).toEqual({
+      "x-api-key": "sk-verbatim-key",
+      "anthropic-version": ANTHROPIC_VERSION,
+      "content-type": "application/json",
+    });
+    expect(JSON.parse(init.body)).toEqual({
+      model: COUNT_TOKENS_MODEL,
+      messages: [{ role: "user", content: "hello world" }],
+    });
+  });
+
+  test("an explicit model overrides the default in the request body", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({ input_tokens: 10 }),
+    });
+
+    await countTokensExact("text", {
+      apiKey: "sk-test",
+      model: "claude-custom-model",
+      fetchImpl,
+    });
+
+    const [, init] = fetchImpl.mock.calls[0] as [string, { body: string }];
+    expect(JSON.parse(init.body)).toMatchObject({
+      model: "claude-custom-model",
+    });
+  });
+
+  test("a non-OK response rejects with an Error whose message includes the status and status text", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 401,
+      statusText: "Unauthorized",
+      text: vi.fn().mockResolvedValue(""),
+    });
+
+    await expect(
+      countTokensExact("text", { apiKey: "sk-test", fetchImpl }),
+    ).rejects.toThrow(/401.*Unauthorized/);
+  });
+
+  test("a non-OK response whose body text() resolves to text includes that text in the rejection message", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      statusText: "Internal Server Error",
+      text: vi.fn().mockResolvedValue("rate limited, retry later"),
+    });
+
+    await expect(
+      countTokensExact("text", { apiKey: "sk-test", fetchImpl }),
+    ).rejects.toThrow(/rate limited, retry later/);
+  });
+
+  test("an ok response whose JSON body is missing input_tokens rejects with a descriptive Error rather than resolving to undefined", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({}),
+    });
+
+    await expect(
+      countTokensExact("text", { apiKey: "sk-test", fetchImpl }),
+    ).rejects.toThrow(/input_tokens/);
+  });
+
+  test("an ok response whose input_tokens is not a number rejects with a descriptive Error", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({ input_tokens: "1234" }),
+    });
+
+    await expect(
+      countTokensExact("text", { apiKey: "sk-test", fetchImpl }),
+    ).rejects.toThrow(/input_tokens/);
   });
 });
