@@ -52,20 +52,17 @@ A utilities library giving automation scripts enterprise-grade abstractions for 
 
 ## Tech Stack
 
-- TypeScript 6.x, `strict: true`, compiled with `tsc` (no bundler); ESM only
-  (`"type": "module"`); Node.js 24 LTS consumer floor, and the exact dev/CI
-  runtime (`.node-version`, gated by `check:node-version`)
-- `pnpm` (lockfile authoritative, self-pinned via `packageManager`; no
-  Corepack — ADR-0001 update 2026-08-31); `turbo` orchestrates/caches
-  `build` + `typecheck`
-- Test: `vitest`. Lint/format: `eslint` (flat config) + `prettier`. Git
-  hooks: `lefthook`
-- Dep/exports hygiene: `knip`, `publint` + `@arethetypeswrong/cli`
-- Versioning is manual (`version` hand-managed; internal, unpublished
-  package, ADR-0020)
+- TypeScript 6.x, `strict: true`, `tsc` (no bundler), ESM only; Node 24
+  consumer floor plus the exact dev/CI runtime (`.node-version`, gated by
+  `check:node-version`)
+- `pnpm` (lockfile authoritative, self-pinned via `packageManager`, no
+  Corepack — ADR-0001); `turbo` orchestrates/caches `build` + `typecheck`
+- `vitest`; `eslint` (flat config) + `prettier`; `lefthook` hooks; `knip`,
+  `publint` + `@arethetypeswrong/cli` for dep/exports hygiene
+- Versioning is manual — internal, unpublished package (ADR-0020)
 
-Run `pnpm commands` for the full script list; `package.json` has the
-dependency set and the `exports` map.
+`pnpm commands` lists every script; `package.json` has the dependency set and
+the `exports` map.
 
 ## Repository Layout
 
@@ -78,14 +75,11 @@ mode, anchoring `data/` at the workspace root.
 
 ## Environment Setup
 
-`pnpm install` (deps + lefthook hooks; no `corepack enable` — pnpm
-self-manages via `packageManager`); CI uses `--frozen-lockfile`.
-`.node-version` (24) is the **single authority** for the dev/CI runtime;
-`check:node-version` fails on drift between it, the 22 `engines.node` floors
-and the workflows. Develop on that exact major (`fnm` + `--use-on-cd`);
-`engines.node` stays `">=24"` as the consumer contract, so a newer local Node
-typechecks green without proving the floor. A pure library — no services
-locally. Full detail: `docs/contributing/contributing.md` § Environment Setup.
+`pnpm install` (deps + lefthook hooks); CI uses `--frozen-lockfile`. A pure
+library — nothing to run locally. `.node-version` (24) is the **single
+authority** for the dev/CI runtime and `check:node-version` fails on drift.
+Setup, the `fnm` recipe, and why `engines.node` stays `">=24"`:
+`docs/contributing/contributing.md` § Environment Setup.
 
 ## Commands
 
@@ -144,23 +138,20 @@ Canonical **Style Guide**: `docs/contributing/style-guide.md` (`[enforced]` vs `
 
 ## Git Workflow
 
-- **Conventional Commits (required)**, with an AI co-authorship trailer when Claude authored/assisted. Enforced by the `commit-msg` hook. Trailer mechanics and canonical model names: `docs/contributing/contributing.md`.
-- **Before change-work, run the `starting-work` skill** — the pre-work decision gate that settles location / branch / PR / push (ADR-0016). Branch from `main`: `feat/<slug>`, `fix/<slug>`; `guard-branch-isolation.mjs` blocks `packages/*/src/**`, `scripts/*/src/**`, `**/tests/**` writes while `HEAD` is `main`.
-- Never `git push --force` to a shared branch. **Prefer several small, independently reviewable PRs over a few large ones** (ADR-0072); run `pnpm check:review-size` before opening one.
-- **Worktrees** (ADR-0013/0014): `pnpm worktree:new <slug>` / `pnpm worktree:remove <slug>` create/tear down an isolated sibling checkout. Full mechanics: the ADRs.
+- **Conventional Commits (required)** plus an AI co-authorship trailer when Claude assisted; enforced by the `commit-msg` hook. Trailer mechanics and canonical model names: `docs/contributing/contributing.md`.
+- **Run the `starting-work` skill before any change-work** — the gate that settles location / branch / PR / push (ADR-0016). Branch off `main` as `feat/<slug>` or `fix/<slug>`; `guard-branch-isolation.mjs` blocks `packages/*/src/**`, `scripts/*/src/**`, `**/tests/**` writes while `HEAD` is `main`.
+- Never `git push --force` a shared branch. **Prefer several small, independently reviewable PRs** (ADR-0072) — run `pnpm check:review-size` first.
+- **Worktrees** (ADR-0013/0014): `pnpm worktree:new <slug>` / `pnpm worktree:remove <slug>`.
 
 ## Architecture & Decisions
 
-The `exports` map is the public contract (semver-gated); `internal/` is private and may change freely. Full rationale: `docs/contributing/contributing.md` § The `exports` Map / § `internal/` Is Private.
-
-Decisions live in `docs/adr/`; start at `docs/adr/README.md` for the index.
+The `exports` map is the public contract (semver-gated) — full rationale: `docs/contributing/contributing.md` § The `exports` Map / § `internal/` Is Private. Decisions live in `docs/adr/`; start at `docs/adr/README.md` for the index.
 
 ## Security
 
-- The library does not log by default; never log secrets, tokens, or caller data.
-- CI has no publish credentials; tokens of any kind (`NPM_TOKEN`, `GITHUB_TOKEN`, AWS keys, `CLAUDE_CODE_OAUTH_TOKEN`) must never land in source, tests, or fixtures.
-- Validate all external input at the public API boundary before use.
-- Commits pushed to the remote must be signed (valid `%G?`). Enforced in three layers — the `guard-git-push-signed` Bash hook, the `verify-signed-range` `pre-push` backstop, and branch-protection "Require signed commits" (the authoritative one). See ADR-0016 and `docs/contributing/branch-protection.md`.
+- The library does not log by default; never log secrets, tokens, or caller data. Validate all external input at the public API boundary before use.
+- CI has no publish credentials; no token of any kind (`NPM_TOKEN`, `GITHUB_TOKEN`, AWS keys, `CLAUDE_CODE_OAUTH_TOKEN`) may land in source, tests, or fixtures.
+- Pushed commits must be signed (valid `%G?`) — three layers, with branch protection the authoritative one: ADR-0016 and `docs/contributing/branch-protection.md`.
 
 ## Performance
 
@@ -172,9 +163,9 @@ Comment the _why_, not the _what_. TSDoc rules (every exported symbol, `@example
 
 ## Agent Operating Model
 
-This repo runs a **hub-and-spoke** model: the hub plans and dispatches to isolated spokes but never writes `src/`/test code or reviews it itself — enforced by `guard-hub-src-writes.mjs` and `disallowedTools: Agent` on every spoke (`pnpm check:agents`). Model tiering: `docs/contributing/model-selection.md`. Full spoke roster, TDD loop, and recurring-failure lessons: `docs/contributing/agent-operating-model.md`.
+A **hub-and-spoke** model: the hub plans and dispatches to isolated spokes and never writes or reviews `src/`/test code itself — enforced by `guard-hub-src-writes.mjs` and `disallowedTools: Agent` on every spoke (`pnpm check:agents`). Spoke roster, TDD loop, model tiering and recurring-failure lessons: `docs/contributing/agent-operating-model.md` and `model-selection.md`.
 
-**Hooks** (`.claude/settings.json`) add deterministic enforcement on top of this advisory file — full inventory: `docs/contributing/hooks-reference.md` (`check:hooks` validates wiring). **Skills** (`.claude/skills/*/SKILL.md`) encode multi-step procedures the hub invokes by name; full catalog: `docs/contributing/skills-catalog.md`. Subagent mid-turn truncation, this repo's other recurring failure mode: `docs/contributing/subagent-context-management.md`.
+**Hooks** (`.claude/settings.json`) add deterministic enforcement on top of this advisory file (`check:hooks` validates wiring); **skills** (`.claude/skills/*/SKILL.md`) encode multi-step procedures the hub invokes by name. Full inventories: `docs/contributing/hooks-reference.md`, `skills-catalog.md`, and `subagent-context-management.md` for subagent mid-turn truncation.
 
 ## Task Workflow
 
