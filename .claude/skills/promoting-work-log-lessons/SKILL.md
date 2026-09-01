@@ -14,6 +14,9 @@ description: >-
   "review the work logs" or "what have we learned that isn't written down yet" —
   this is the skill that turns narrative logs into durable rule/agent edits.
   Distinct from /auditing (which reads live code): this reads the logged history.
+  Also reads the auto-memory store and `pnpm telemetry:sessions` output, so
+  invoke it for "what does our session telemetry say", "are our memories
+  drifting", or "which subagent is eating our token budget".
 ---
 
 # promoting-work-log-lessons
@@ -32,6 +35,29 @@ generalizes), and promotes each to the durable home where it will actually
 change future behavior. A promoted lesson is stamped back in its source logs so
 the next run skips it — that provenance marker is how the loop stays closed
 instead of re-proposing the same thing forever.
+
+**Three evidence sources, not one** (ADR-0084). Work logs are the narrative
+record, but they are not the only place this project's lived experience
+accumulates:
+
+| Source                    | What it is good for                                                      |
+| ------------------------- | ------------------------------------------------------------------------ |
+| `docs/logs/*.md`          | Narrative cause-and-effect: what was tried, what broke, what fixed it.   |
+| The auto-memory store     | Facts a past session judged durable enough to write down unprompted.     |
+| `pnpm telemetry:sessions` | Measured harness behaviour no human narrates: token share, cache breaks. |
+
+The three fail differently, which is the point. A log records what an author
+noticed; a memory records what an author chose to keep; telemetry records what
+actually happened whether or not anyone noticed. A lesson corroborated across
+two of them is much stronger evidence than one repeated twice inside a single
+system — see the extended recurrence criterion in Step 2.
+
+**Every considered log is recorded in `docs/research/retrospective.md`,
+including the ones this skill rejects.** That is not bookkeeping: without a
+`no-durable-lesson` row, a log that was read and found barren is
+indistinguishable from a log nobody has opened, and the backlog cannot be
+counted. `check:retrospective` reads that tracker's header on every
+`pre-push`.
 
 **This skill runs only in the main (hub) agent.** It reads across the whole repo
 and, in apply mode, edits rules/agents/skills — leaf spokes should not.
@@ -58,11 +84,14 @@ Copy this into your working notes and check items off as you go:
 
 ```
 - [ ] Step 1: Scan every docs/logs/*.md; extract lessons + divergences with source
-- [ ] Step 2: Aggregate by theme; keep lessons recurring across ≥2 logs; drop the
+- [ ] Step 1b: Read the auto-memory store; run `pnpm telemetry:sessions`
+- [ ] Step 2: Aggregate by theme; apply the recurrence criterion; drop the
               already-promoted (provenance marker) and already-captured (grep)
 - [ ] Step 3: Route each surviving lesson to its durable home
 - [ ] Step 4: (propose) Print the report — no writes — and stop
 - [ ] Step 5: (apply) Write the edits + stamp provenance markers, then verify
+- [ ] Step 6: Update docs/research/retrospective.md — EVERY log considered,
+              including the rejected ones, plus the header's last-swept date
 ```
 
 ## Step 1 — Scan the corpus
@@ -84,6 +113,24 @@ Note whether a lesson already carries a provenance marker (see the marker syntax
 in Step 5). A marked lesson is already promoted; carry it forward only to skip it
 in Step 2.
 
+## Step 1b — Read the other two sources
+
+**The auto-memory store.** It lives at
+`~/.claude/projects/<slug>/memory/`, outside git — `check:retrospective`
+resolves the path the same way, from `git rev-parse --git-common-dir`. Read
+`MEMORY.md` for the index, then the individual memories whose `description:`
+touches a theme you extracted in Step 1. A memory is a fact a past session
+judged durable _without being asked to_, which makes it independent evidence
+rather than a second copy of the log.
+
+**Session telemetry.** Run `pnpm telemetry:sessions` (defaults to the last
+30 days, scoped to this project). It is the only sanctioned reader of the
+transcript store, and it exits non-zero if the payload shape has changed —
+**if it fails, stop and report that**, do not fall back to reading transcripts
+directly. The transcript format is internal to Claude Code and officially
+unsupported to parse (ADR-0084); a hand-rolled reader is exactly the silent
+zero-report that adapter exists to prevent.
+
 ## Step 2 — Aggregate, then filter to what's worth promoting
 
 Group the extracted lessons by theme. Two bullets that say the same thing in
@@ -93,15 +140,25 @@ implementer's truncated summary — check the files" are one theme).
 
 Keep a theme as a **promotion candidate** only if it clears all three filters:
 
-1. **Recurs across ≥2 distinct logs.** A lesson that appears in exactly one log
-   is either already handled by that log's own Step 4 or genuinely specific to
-   that submodule. Recurrence is what distinguishes a durable convention from a
-   one-off. (If the user explicitly asks to promote a specific single-log lesson,
-   honor that — the ≥2 rule is the default discovery signal, not a hard gate.)
+1. **Recurs across ≥2 distinct logs — OR appears in ≥1 log _and_ ≥1 memory.**
+   A lesson that appears in exactly one log is either already handled by that
+   log's own Step 4 or genuinely specific to that submodule. Recurrence is what
+   distinguishes a durable convention from a one-off. (If the user explicitly
+   asks to promote a specific single-log lesson, honor that — this is the
+   default discovery signal, not a hard gate.)
+
+   The memory arm is not a loosening of the bar, it is a different and
+   stronger measurement of it. Two mentions in `docs/logs/` can be one author
+   repeating themselves across two tasks in one week. A log entry plus a
+   memory written in a _different_ session, through a _different_ mechanism,
+   with no shared authoring moment, is genuine independent capture — the
+   project noticed the same thing twice, in two systems, unprompted. Treat
+   that as at least as strong as two logs, and cite both sources in Step 4.
    Count occurrences by **grepping every log for the theme's keyword**, not from
    memory of what you read — a lesson is easy to miss in one log when that log
    also carries a louder sibling divergence, and undercounting silently drops a
    real candidate. `grep -rl "gen:index" docs/logs` is more reliable than recall.
+
 2. **Not already promoted.** Drop any theme whose source lessons already carry a
    `promoted → …` provenance marker.
 3. **Not already captured in the rules.** Before proposing, grep the likely
@@ -127,6 +184,9 @@ Route by _who needs it and when_:
   workflow's `.claude/skills/<name>/SKILL.md` (e.g. a "run `gen:index` before
   `format`" ordering lesson belongs in the `syncing-docs` skill's step sequence).
 - **Cross-cutting project constraints** with no better home → `CLAUDE.md`.
+- **Harness-shaped findings from telemetry** → the owning skill's or agent's
+  own file, or `docs/contributing/model-selection.md` when it is a tiering
+  question.
 
 If a lesson could land in two places, prefer the most specific one an agent
 actually reads while doing the relevant work — a tactic buried in `CLAUDE.md` is
@@ -137,13 +197,38 @@ explaining the _why_ (a rule the reader understands survives edge cases a bare
 imperative does not). Include a code snippet only when the exact syntax _is_ the
 lesson. Keep it to a few lines — you are adding a rule, not pasting the log.
 
+### Telemetry-derived findings
+
+`pnpm telemetry:sessions` surfaces a class of problem no work log ever
+records, because nobody experiences it as an event. Read its payload for:
+
+- **Disproportionate token share** — `by_subagent_type` or `by_skill` where one
+  entry's `total_tokens` dwarfs its `calls`. A spoke averaging several times
+  the tokens per call of its siblings is usually over-briefed (too much
+  context handed in) or under-scoped (doing work that should have been split).
+  That is a fixable prompt or dispatch problem, and its home is the agent's own
+  `.claude/agents/*.md` or the dispatching skill.
+- **Cache-break clustering** — `cache_breaks` entries repeatedly attributed to
+  the same skill or workflow. A prompt-cache break costs real tokens, and a
+  cluster means something in that path mutates early context on every run.
+- **`overall.input_tokens.pct_cached` trending down** across `by_day` — a
+  whole-harness regression, most often something newly injected at session
+  start.
+
+Route these like any other lesson, with one difference: **cite the numbers**.
+A telemetry finding whose proposed edit does not carry the measurement that
+motivated it cannot be re-checked after the fix, and the next sweep has no way
+to tell whether it worked.
+
 ## Step 4 — Propose (default mode: stop here)
 
 Print a report and **write nothing**. For each promotion candidate:
 
 ```
 ### <theme, one line>
-- Recurs in: docs/logs/<file-a>.md (#<n>), docs/logs/<file-b>.md (#<n>)
+- Evidence:  docs/logs/<file-a>.md (#<n>), docs/logs/<file-b>.md (#<n>)
+             memory/<slug>.md            (when the memory arm carried it)
+             telemetry: <the metric and its value>  (when it is a measurement)
 - Target:    .claude/rules/<file>.md  (or agents/ or a skill SKILL.md)
 - Proposed edit:
     <the terse rule text you would add, verbatim>
@@ -185,6 +270,29 @@ For each approved promotion:
    this for lessons with no gate/CI failure behind them (most behavioral
    corrections have nothing concrete to encode as a pass/fail case).
 
+## Step 6 — Record every considered log in the tracker
+
+Update `docs/research/retrospective.md` for **every log this run read**, not
+only the ones that produced an edit. A log read and found barren gets
+`no-durable-lesson`; a log carrying a candidate held back gets `deferred` with
+the reason. Skipping the rejects is what made the previous marker-only scheme
+uncountable, and it is the one step whose omission the gate cannot detect —
+`check:retrospective` compares `logs-considered` against the live log count, so
+an under-recorded sweep simply looks like a smaller backlog.
+
+Then update the header comment:
+
+```markdown
+<!-- retrospective: last-swept=<today, from `date`> logs-considered=<n> -->
+```
+
+`<n>` is the cumulative count of logs with any outcome other than
+`not-yet-swept` — not the number this run touched. Run `date` to get today;
+no gate catches a wrong-but-well-formed date.
+
+This step runs in **apply mode only**. A propose run reads the tracker and
+writes nothing, like every other target.
+
 Do **not** commit. Report the files edited and the logs stamped, then hand off to
 `/writing-commits` (a `docs:` change — no `src/` or `version` is touched, so this is
 not a release event).
@@ -196,6 +304,9 @@ not a release event).
   references still resolve.
 - `pnpm check:skill-evals` — if you added an eval case per Step 5's item 3,
   confirm the skill's `evals/evals.json` still clears the case-count minimum.
+- `pnpm check:retrospective` — confirms the tracker header parses and that the
+  backlog it now reports matches what this run actually swept. It warns and
+  never blocks, so read its output; a green push is not evidence it passed.
 - Re-read one edited target to confirm the rule reads naturally in context, not as
   a bolted-on fragment.
 
