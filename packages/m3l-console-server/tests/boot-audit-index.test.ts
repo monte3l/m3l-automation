@@ -36,6 +36,7 @@ import type {
 } from "../src/audit/record.js";
 import {
   createIndexedHumanActionAuditPort,
+  indexHumanActionAuditPort,
   projectHumanActionIndexInput,
 } from "../src/boot/audit-index.js";
 import { M3LConsoleError } from "../src/errors/console-error.js";
@@ -336,6 +337,59 @@ describe("createIndexedHumanActionAuditPort — the trail write stays fatal, and
 
     await expect(port.record(buildRecord())).rejects.toThrow(M3LConsoleError);
     expect(insert).not.toHaveBeenCalled();
+  });
+});
+
+describe("createIndexedHumanActionAuditPort — a projection failure stays LOUD", () => {
+  // The counterpart to the degradation tests above. An undeclared target kind
+  // is `ERR_CONSOLE_INTERNAL`, a programmer error, so it must NOT be folded
+  // into the index-failure log — move `projectHumanActionIndexInput` back
+  // inside the try/catch and this test fails.
+  test("an undeclared target kind rejects rather than logging a degradation", async () => {
+    const { port, inserted, handler } = buildPort();
+    const record = buildRecord({
+      target: { kind: "bogus", id: "x" } as unknown as M3LHumanActionTarget,
+    });
+
+    await expect(port.record(record)).rejects.toThrow(M3LConsoleError);
+
+    expect(inserted).toStrictEqual([]);
+    expect(handler.events).toStrictEqual([]);
+  });
+});
+
+describe("indexHumanActionAuditPort — the composition-root branch", () => {
+  test("returns `inner` UNCHANGED when there is no index (a storeless console)", () => {
+    const inner: M3LHumanActionAuditPort = {
+      record: (): Promise<void> => Promise.resolve(),
+    };
+
+    expect(
+      indexHumanActionAuditPort(inner, undefined, new Core.M3LLogger([])),
+    ).toBe(inner);
+  });
+
+  test("wraps `inner` in the dual-write port when an index is supplied", async () => {
+    const recorded: M3LHumanActionRecord[] = [];
+    const inner: M3LHumanActionAuditPort = {
+      record(record: M3LHumanActionRecord): Promise<void> {
+        recorded.push(record);
+        return Promise.resolve();
+      },
+    };
+    const { repository, inserted } = createRecordingRepository();
+
+    const port = indexHumanActionAuditPort(
+      inner,
+      repository,
+      new Core.M3LLogger([]),
+    );
+    const record = buildRecord();
+    await port.record(record);
+
+    expect(port).not.toBe(inner);
+    expect(recorded).toStrictEqual([record]);
+    expect(inserted).toStrictEqual([projectHumanActionIndexInput(record)]);
   });
 });
 

@@ -17,7 +17,7 @@ import type { Server } from "node:http";
 import { Core } from "@m3l-automation/m3l-common";
 
 import type { M3LHumanActionAuditPort } from "./audit/port.js";
-import { createIndexedHumanActionAuditPort } from "./boot/audit-index.js";
+import { indexHumanActionAuditPort } from "./boot/audit-index.js";
 import { buildDispatchRouter } from "./boot/dispatch-router.js";
 import { buildHumanActionAuditPort } from "./boot/human-action-audit.js";
 import {
@@ -231,29 +231,6 @@ function resolveConfig(options: M3LConsoleRuntimeOptions): M3LConsoleConfig {
   );
 }
 
-/**
- * Resolves the human-action audit port: `options.auditPort` verbatim when
- * supplied (a test seam that owns what it writes), else the JSONL stream —
- * wrapped by `boot/audit-index.ts`'s dual-write port when
- * `options.audit` supplied an index to project into.
- *
- * The bare-stream fallback is not dead code: `options.store` is optional, so
- * a storeless console is a supported state, and it must still audit.
- */
-function resolveAuditPort(
-  options: M3LConsoleRuntimeOptions,
-  logger: Core.M3LLogger,
-): M3LHumanActionAuditPort {
-  if (options.auditPort !== undefined) return options.auditPort;
-  const inner = buildHumanActionAuditPort(options.env ?? process.env);
-  if (options.audit === undefined) return inner;
-  return createIndexedHumanActionAuditPort({
-    inner,
-    repository: options.audit,
-    logger,
-  });
-}
-
 export function createConsoleRuntime(
   options: M3LConsoleRuntimeOptions = {},
 ): M3LConsoleRuntime {
@@ -289,7 +266,12 @@ export function createConsoleRuntime(
           ? { service: adaptSessionService(sessions.service) }
           : undefined,
       ),
-      resolveAuditPort(options, logger),
+      options.auditPort ??
+        indexHumanActionAuditPort(
+          buildHumanActionAuditPort(options.env ?? process.env),
+          options.audit,
+          logger,
+        ),
     ),
     middlewares: [
       createDrainMiddleware(drain),

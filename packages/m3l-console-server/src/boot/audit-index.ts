@@ -173,7 +173,7 @@ const INDEX_WRITE_FAILED_MESSAGE =
  *    implementation detail — `tests/boot-audit-index.test.ts` locks it by
  *    asserting no index write is attempted after a stream failure.
  * 2. **The index write is a degradation, and is never fatal.** A failed
- *    insert is logged at `error` with the correlation id and the action, and
+ *    INSERT is logged at `error` with the correlation id and the action, and
  *    `record()` resolves normally, so the operator's action succeeds. The
  *    index is a derived, rebuildable projection; failing a real action
  *    because a derived store hiccuped is strictly worse than the missing
@@ -206,8 +206,17 @@ export function createIndexedHumanActionAuditPort(
       // Fatal, and strictly first: the trail is the source of truth, so an
       // entry that never reached it must not appear in the index.
       await inner.record(record);
+      // Deliberately OUTSIDE the guard below. A projection failure is
+      // `ERR_CONSOLE_INTERNAL` — a programmer error (an arm added to
+      // `M3LHumanActionTarget` with no matching `case`), not a store hiccup —
+      // and folding it into the degradation log would silence the one failure
+      // class this module's own exhaustiveness proof exists to make loud. It
+      // is unreachable in practice from here: `inner.record` narrows the same
+      // target through `projectTarget` and would already have refused an
+      // undeclared kind with `ERR_CONSOLE_AUDIT_RECORD_INVALID`.
+      const input = projectHumanActionIndexInput(record);
       try {
-        repository.insert(projectHumanActionIndexInput(record));
+        repository.insert(input);
       } catch (cause) {
         // Deliberately not rethrown — see this function's own TSDoc. The
         // action already happened as far as the trail is concerned; the only
@@ -220,4 +229,35 @@ export function createIndexedHumanActionAuditPort(
       }
     },
   };
+}
+
+/**
+ * Applies {@link createIndexedHumanActionAuditPort} when an index is
+ * available, and returns `inner` UNCHANGED when it is not.
+ *
+ * `options.store` is optional on {@link "../main.js".M3LConsoleRuntimeOptions},
+ * so a storeless console is a supported state that must still audit — the
+ * identity branch is not dead code. Declared here rather than inline in
+ * `main.ts` so both branches are directly unit-testable and the composition
+ * root stays a wiring narrative, the same split `boot/logging.ts` applied to
+ * the boot log lines.
+ *
+ * @param inner - The JSONL trail port.
+ * @param repository - The audit index, when the console opened a store.
+ * @param logger - The logger an index-write failure is reported through.
+ * @returns `inner` itself when `repository` is `undefined`, else the
+ *   dual-write port around it.
+ *
+ * @example
+ * ```ts
+ * const port = indexHumanActionAuditPort(streamPort, store.audit, logger);
+ * ```
+ */
+export function indexHumanActionAuditPort(
+  inner: M3LHumanActionAuditPort,
+  repository: M3LConsoleAuditRepository | undefined,
+  logger: Core.M3LLogger,
+): M3LHumanActionAuditPort {
+  if (repository === undefined) return inner;
+  return createIndexedHumanActionAuditPort({ inner, repository, logger });
 }
