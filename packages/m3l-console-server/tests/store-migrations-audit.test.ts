@@ -169,10 +169,10 @@ describe("CONSOLE_MIGRATIONS — the real registry (v6: console_human_actions)",
     expect(v6?.name.length).toBeGreaterThan(0);
   });
 
-  test("applying every migration reaches user_version 7 and creates console_human_actions with its three indexes", () => {
+  test("applying every migration reaches user_version 8 and creates console_human_actions with its three indexes", () => {
     const database = createRealMigratedDatabase();
 
-    expect(readUserVersion(database)).toBe(7);
+    expect(readUserVersion(database)).toBe(8);
     expect(tableExists(database, "console_human_actions")).toBe(true);
     expect(indexExists(database, "console_human_actions_correlation_id")).toBe(
       true,
@@ -189,7 +189,7 @@ describe("CONSOLE_MIGRATIONS — the real registry (v6: console_human_actions)",
     const secondApplied = applyMigrations(database, CONSOLE_MIGRATIONS);
 
     expect(secondApplied).toBe(0);
-    expect(readUserVersion(database)).toBe(7);
+    expect(readUserVersion(database)).toBe(8);
     expect(tableExists(database, "console_human_actions")).toBe(true);
   });
 
@@ -278,6 +278,11 @@ describe("CONSOLE_MIGRATIONS — the real registry (v6: console_human_actions)",
     "session.binding.select",
     "session.close",
     "session.reopen",
+    // X7b (migration v8): all three view kinds land in ONE recreate, so the
+    // report and artifact endpoints do not each force a third one.
+    "view.run.report",
+    "view.run.stream",
+    "view.session.artifact",
   ] as const;
 
   test.each(ACTION_VOCABULARY)(

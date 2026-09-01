@@ -54,6 +54,18 @@ const REFS_TRUNCATED_KEY = "parameterRefsTruncated";
  * ```ts
  * const kind: M3LHumanActionKind = "run.launch";
  * ```
+ * * The `view.` members deliberately INVERT the `<subject>.<action>` shape the
+ * write kinds use. ADR-0070 treats a rendering as a distinct **exposure
+ * class**, not another operation on a subject, and `startsWith("view.")` is
+ * the query an auditor actually runs — "what did this operator SEE" is a
+ * different question from "what did they change". `runs/audit.ts` already
+ * uses a prefix that way.
+ *
+ * `view.run.report` and `view.session.artifact` are declared but UNWIRED:
+ * neither endpoint exists yet (the 17-route table has no run-report route,
+ * and `sessions/artifacts.ts` has no route in front of it). They are declared
+ * now anyway so the report/artifact endpoints do not each force another
+ * table recreate — see `store/migrations/human-actions.ts`.
  */
 export type M3LHumanActionKind =
   | "run.launch"
@@ -64,7 +76,10 @@ export type M3LHumanActionKind =
   | "session.decision.answer"
   | "session.binding.select"
   | "session.close"
-  | "session.reopen";
+  | "session.reopen"
+  | "view.run.report"
+  | "view.run.stream"
+  | "view.session.artifact";
 
 /**
  * What an audited action acted upon, discriminated on `kind`.
@@ -286,6 +301,9 @@ const ACTION_KINDS: ReadonlySet<M3LHumanActionKind> = new Set([
   "session.binding.select",
   "session.close",
   "session.reopen",
+  "view.run.report",
+  "view.run.stream",
+  "view.session.artifact",
 ]);
 
 /** The closed set {@link M3LHumanActionPosture} declares, as a runtime table. */

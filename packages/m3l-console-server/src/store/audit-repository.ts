@@ -145,6 +145,9 @@ const HUMAN_ACTION_INDEX_KINDS: Readonly<
   "session.binding.select": true,
   "session.close": true,
   "session.reopen": true,
+  "view.run.report": true,
+  "view.run.stream": true,
+  "view.session.artifact": true,
 };
 
 /** The closed {@link M3LHumanActionIndexTargetKind} vocabulary, exactly like {@link HUMAN_ACTION_INDEX_KINDS}. */

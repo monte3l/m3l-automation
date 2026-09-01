@@ -81,7 +81,7 @@ const OPERATOR_WITH_EMAIL: M3LOperatorProfile = {
  */
 const FILE_REF = `{"kind":"file","path":"sess-1/step-1.json","bytes":128,"sha256":"${"a".repeat(64)}"}`;
 
-/** The nine write-action kinds; X7b's view kinds land alongside the SSE wiring. */
+/** All twelve kinds: nine write actions plus X7b's three `view.*` members. */
 const ACTION_KINDS = [
   "run.launch",
   "run.cancel",
@@ -92,6 +92,9 @@ const ACTION_KINDS = [
   "session.binding.select",
   "session.close",
   "session.reopen",
+  "view.run.report",
+  "view.run.stream",
+  "view.session.artifact",
 ] as const satisfies readonly M3LHumanActionKind[];
 
 /** The five target arms, one fixture each, keyed by discriminant. */
