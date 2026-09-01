@@ -326,6 +326,11 @@ export const COMMAND_CATALOG = [
       "ADR-0082: warns (non-blocking) when docs/research/harness-refresh.md's last-verified date is more than 90 days old, or the tracker has never been swept (last-verified=unset) — the self-polling half of the refreshing-anthropic-guidance cadence. Reads only the tracker's header comment; no network call. Run after editing the tracker, or let pre-push catch staleness.",
   },
   {
+    name: "check:retrospective",
+    description:
+      "ADR-0084: warns (non-blocking) on two kinds of retrospective-loop drift. Section A audits the auto-memory store at ~/.claude/projects/<slug>/memory/ — MEMORY.md/file reconciliation both ways, literal control bytes (the blind spot check:control-chars structurally cannot reach, since it scans git-TRACKED files and the store lives outside the repo), unresolvable [[wikilinks]], frontmatter name/description/metadata.type, and MEMORY.md against the 200-line/25 KB load cap. Section B reads docs/research/retrospective.md's header and warns once the unswept work-log backlog crosses the 5-log cadence or the sweep goes stale. Offline, always exits 0, and a clean no-op when the store is absent (the CI condition). --dir points it at a fixture store.",
+  },
+  {
     name: "check:skill-evals",
     description:
       "Verifies every .claude/skills/<name>/SKILL.md has a sibling evals/evals.json with >= 3 cases, AND that every case is gradeable — a prompt, an expected_output, and at least one checklist entry the runner can actually render (validated with the same renderChecklistEntry the runner uses, so the gate and the runner cannot disagree). Catches the shapes that graded against nothing: object entries interpolated as [object Object], identifier-only entries, and a case with no expectations/assertions key at all. Every case needs >= 3 checklist entries. The named EXEMPT_SKILLS grandfather list (empty since the #775 backfill completed; kept for the next new skill) covers both a missing file and unresolved case shape, and a redundant exemption is an error so it cannot outlive its purpose. Run after adding a skill or editing its evals.json.",

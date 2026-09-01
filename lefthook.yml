@@ -87,8 +87,14 @@ pre-push:
     # (advisory-only, like check:context-budget above) — negligible cost, and
     # a warning surfaced here is a warning a maintainer sees before push
     # rather than never, since nothing else in the repo polls the tracker.
+    # check:retrospective (ADR-0084) joined for the same reason as
+    # check:harness-freshness directly above: offline, always exits 0, and it
+    # reads ~50 small files plus one header comment. It is the ONLY gate that
+    # looks outside the repo (the auto-memory store lives in ~/.claude), so
+    # `pre-push` is the only place it can ever run — CI has no such store and
+    # the gate no-ops there.
     checks:
-      run: node bin/verify-signed-range.mjs && pnpm check:control-chars && pnpm check:file-budget && pnpm check:agents && pnpm check:script-docs && pnpm check:cli-docs && pnpm check:review-size && pnpm check:context-budget && pnpm check:provenance && pnpm check:index && pnpm check:harness-freshness && pnpm check:skill-evals && pnpm check:claude-cli-version && pnpm check:review-policy
+      run: node bin/verify-signed-range.mjs && pnpm check:control-chars && pnpm check:file-budget && pnpm check:agents && pnpm check:script-docs && pnpm check:cli-docs && pnpm check:review-size && pnpm check:context-budget && pnpm check:provenance && pnpm check:index && pnpm check:harness-freshness && pnpm check:retrospective && pnpm check:skill-evals && pnpm check:claude-cli-version && pnpm check:review-policy
 
 # Fire after `git rebase` completes (including a no-op rebase with nothing to
 # replay) and after `git merge` completes. Regenerates the derived files the

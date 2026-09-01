@@ -459,6 +459,13 @@ jobs:
       # >= 3 cases, each carrying >= 3 checklist entries. The EXEMPT_SKILLS
       # grandfather list is empty (the #775 backfill completed) but is kept
       # as runway for the next new skill.
+      # Warns (non-blocking) on retrospective-loop drift: auto-memory store
+      # health and work-log sweep backlog (ADR-0084). On CI the memory store
+      # is absent entirely, so section A is a clean no-op and only the sweep
+      # tracker is read.
+      - name: Check retrospective loop
+        run: pnpm check:retrospective
+
       - name: Check skill evals
         run: pnpm check:skill-evals
 
