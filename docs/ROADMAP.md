@@ -150,7 +150,7 @@ per-phase detail in
 | **U9**  | `m3l new` + Lambda scaffold variant                          | Done     |
 | **U10** | `m3l flow` — orchestration engine + the named flow           | To Do    |
 | **U11** | Retry/resume/cancellation surfacing at the CLI layer         | To Do    |
-| **U12** | `m3l completion` (bash/zsh/fish)                             | To Do    |
+| **U12** | `m3l completion` (bash/zsh/fish)                             | Done     |
 | **U13** | Phase B — private GitHub Packages publishing                 | To Do    |
 | **U14** | Phase C — single-file binary (gated on a future ADR)         | Deferred |
 
