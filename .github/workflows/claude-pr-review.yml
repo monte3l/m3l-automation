@@ -122,21 +122,35 @@ jobs:
           fi
           non_ignored_count="$(printf '%s' "$non_ignored_files" | grep -c . || true)"
 
-          # Whether this PR's only reviewable change is the review-gate
-          # workflow itself. GitHub refuses to mint the OIDC token
-          # claude-code-action needs whenever the running workflow file
-          # differs from main's copy, so the action always self-skips on
-          # such a PR — a live review can never happen here regardless of
-          # should_review. Recorded now so the fallback step after the
-          # action can tell "structurally impossible" (safe to auto-pass)
-          # apart from "Claude ran and forgot to write a verdict" (a real
-          # bug that must keep failing). Fail-safe default: false.
-          only_workflow_gate_change=false
-          if [ "$non_ignored_count" -eq 1 ] \
-             && [ "$(printf '%s' "$non_ignored_files" | head -n1)" = ".github/workflows/claude-pr-review.yml" ]; then
-            only_workflow_gate_change=true
+          # Whether this PR's reviewable changes include the review-gate
+          # workflow itself, and what else (if anything) changed alongside
+          # it. GitHub refuses to mint the OIDC token claude-code-action
+          # needs whenever the running workflow file differs from main's
+          # copy, so the action always self-skips on such a PR — a live
+          # review can never happen here regardless of should_review, for
+          # ANY reviewable file in the PR, not just the workflow diff.
+          # Recorded now so the fallback step after the action can tell
+          # "structurally impossible" (safe to auto-pass) apart from
+          # "Claude ran and forgot to write a verdict" (a real bug that
+          # must keep failing) — and so it can say explicitly which other
+          # files, if any, went unreviewed as a result. Logic lives in
+          # bin/lib/pr-review-gate.mjs, unit-tested in
+          # bin/tests/pr-review-gate.test.ts.
+          workflow_gate_status="$(printf '%s\n' "$non_ignored_files" \
+            | node "$GITHUB_WORKSPACE/bin/pr-review-gate.mjs" workflow-gate-status \
+            || echo "__ERROR__")"
+          if [ "$workflow_gate_status" = "__ERROR__" ]; then
+            # Fail-safe default: false — matches the pre-existing default
+            # this replaces. A crash here must never silently widen the
+            # auto-pass path below.
+            workflow_gate_changed=false
+            other_reviewable_files=""
+          else
+            workflow_gate_changed="$(printf '%s\n' "$workflow_gate_status" | sed -n '1p')"
+            other_reviewable_files="$(printf '%s\n' "$workflow_gate_status" | sed -n '2p')"
           fi
-          echo "only_workflow_gate_change=$only_workflow_gate_change" >> "$GITHUB_OUTPUT"
+          echo "workflow_gate_changed=$workflow_gate_changed" >> "$GITHUB_OUTPUT"
+          echo "other_reviewable_files=$other_reviewable_files" >> "$GITHUB_OUTPUT"
 
           if [ "$non_ignored_count" -eq 0 ]; then
             echo "should_review=false" >> "$GITHUB_OUTPUT"
@@ -155,23 +169,44 @@ jobs:
           # unconditionally empty — meaning this step always fell through to
           # "No prior claude[bot] comment" and the prior-PASS skip below never
           # once fired. It failed safe (over-reviewing, never under-reviewing),
-          # which is why it went unnoticed.
-          body="$(gh api "repos/$REPO/issues/$PR/comments" --paginate --slurp 2>/dev/null \
-            | jq -r 'add | [.[] | select(.user.login == "claude[bot]")] | last // {} | .body // ""' \
-              2>/dev/null || true)"
+          # which is why it went unnoticed. gh and jq failures are now logged
+          # distinguishably from "no comment exists" so a structurally
+          # identical regression can't hide silently again.
+          body=""
+          comments_json="$GITHUB_WORKSPACE/.claude-guard-comments.json"
+          fetch_err="$GITHUB_WORKSPACE/.claude-guard-comments.err"
+          if ! gh api "repos/$REPO/issues/$PR/comments" --paginate --slurp \
+            > "$comments_json" 2>"$fetch_err"; then
+            review "gh api failed fetching the comment thread: $(cat "$fetch_err" 2>/dev/null) — running review."
+            exit 0
+          fi
+          if ! body="$(jq -r 'add | [.[] | select(.user.login == "claude[bot]")] | last // {} | .body // ""' \
+            "$comments_json" 2>"$fetch_err")"; then
+            review "jq failed parsing the comment thread: $(cat "$fetch_err" 2>/dev/null) — running review."
+            exit 0
+          fi
 
           if [ -z "$body" ]; then
             review "No prior claude[bot] comment — running review."
             exit 0
           fi
 
-          if ! printf '%s' "$body" | grep -A2 '^### Verdict' | grep -qiw 'PASS'; then
-            review "Prior verdict was not PASS — running review."
+          # Parsing logic lives in bin/lib/pr-review-gate.mjs, unit-tested in
+          # bin/tests/pr-review-gate.test.ts — replaces a bare word-search
+          # (`grep -qiw 'PASS'` over the 2 lines after the heading) that read
+          # a FAIL whose one-line reason happened to contain the word "pass"
+          # as a PASS.
+          prior_verdict="$(printf '%s' "$body" \
+            | node "$GITHUB_WORKSPACE/bin/pr-review-gate.mjs" parse-verdict \
+            || echo "__ERROR__")"
+          if [ "$prior_verdict" != "PASS" ]; then
+            review "Prior verdict was not PASS (${prior_verdict}) — running review."
             exit 0
           fi
 
           reviewed_sha="$(printf '%s' "$body" \
-            | sed -n 's/.*<!-- claude-review-sha: \([0-9a-f]*\) -->.*/\1/p' | head -n1)"
+            | node "$GITHUB_WORKSPACE/bin/pr-review-gate.mjs" parse-sha \
+            || echo "")"
           if [ -z "$reviewed_sha" ]; then
             review "Prior comment has no reviewed-sha marker — running review."
             exit 0
@@ -554,16 +589,19 @@ jobs:
             ## Verdict (REQUIRED — this gate is blocking)
 
             After posting the comment, your FINAL action MUST be to run exactly
-            one of these two Bash commands (choose based on your verdict):
+            one of these two Bash commands (choose based on your verdict), with
+            the SHA below substituted verbatim — it stamps the verdict to the
+            commit under test, so a stale verdict file left over by an earlier
+            run can never be mistaken for a fresh one:
 
-              echo -n 'PASS' > ./.claude-review-verdict
-              echo -n 'FAIL' > ./.claude-review-verdict
+              echo -n 'PASS ${{ github.event.pull_request.head.sha }}' > ./.claude-review-verdict
+              echo -n 'FAIL ${{ github.event.pull_request.head.sha }}' > ./.claude-review-verdict
 
             Use the Bash tool — do NOT use the Write tool for this step.
             Use this exact relative path, not an absolute path or
             `$GITHUB_WORKSPACE`-prefixed path — your working directory is
             already the checked-out repo root.
-            The job fails the merge gate unless the file contains exactly `PASS`.
+            The job fails the merge gate unless the file starts with `PASS `.
 
             ## What to review
 
@@ -705,19 +743,35 @@ jobs:
       # guard refuses to mint the OIDC token claude-code-action needs
       # whenever the running workflow file differs from main's copy, so the
       # action always self-skips (exits success, writes no verdict) on such
-      # a PR. Only auto-passes when the workflow file is this PR's SOLE
-      # non-ignored change (Gate 0 above) AND the action's own execution_file
-      # is empty, proving it never actually attempted a review — a
-      # non-empty execution_file means Claude ran but broke its contract by
-      # not writing a verdict, which must keep failing loudly rather than
-      # being silently waved through. The `steps.claude-review.outcome ==
-      # 'success'` check is implied by the default step condition (no
-      # always()): if the action itself errored, this step is skipped and
-      # Enforce review verdict fails as normal.
+      # a PR — for ANY reviewable file in the PR, not just the workflow
+      # diff. Widened from "workflow is the SOLE reviewable change" (which
+      # left real fix PRs like #785/#806 merging with a FAILING required
+      # check, since almost no fix to this gate is a workflow-only diff) to
+      # "workflow is AMONG the reviewable changes", still gated on the
+      # action's own execution_file being empty — proof it never actually
+      # attempted a review. A non-empty execution_file means Claude ran but
+      # broke its contract by not writing a verdict, which must keep
+      # failing loudly rather than being silently waved through. The
+      # `steps.claude-review.outcome == 'success'` check is implied by the
+      # default step condition (no always()): if the action itself errored,
+      # this step is skipped and Enforce review verdict fails as normal.
+      #
+      # The widened condition auto-passes every reviewable file in the PR,
+      # including any that has nothing to do with the workflow — there is
+      # no live-review path available for ANY of them once OIDC is refused.
+      # `other_reviewable_files` (from the guard step) is surfaced in the
+      # log and, when non-empty, as an explicit PR comment, so an author
+      # mixing a gate fix with unrelated changes sees plainly that those
+      # files were never reviewed rather than reading a silent PASS as a
+      # clean bill of health.
       - name: Auto-pass isolated review-gate self-change
-        if: steps.guard.outputs.should_review == 'true' && steps.guard.outputs.only_workflow_gate_change == 'true' && steps.claude-review.outcome == 'success'
+        if: steps.guard.outputs.should_review == 'true' && steps.guard.outputs.workflow_gate_changed == 'true' && steps.claude-review.outcome == 'success'
         env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
           EXECUTION_FILE: ${{ steps.claude-review.outputs.execution_file }}
+          OTHER_REVIEWABLE_FILES: ${{ steps.guard.outputs.other_reviewable_files }}
         run: |
           set -euo pipefail
           if [ -f "$GITHUB_WORKSPACE/.claude-review-verdict" ]; then
@@ -728,7 +782,24 @@ jobs:
             echo "Execution file is non-empty — a real review attempt happened without writing a verdict; not auto-passing."
             exit 0
           fi
-          echo "claude-pr-review.yml is this PR's only reviewable change and the action's execution_file is empty — GitHub's OIDC workflow-validation guard made a live review structurally impossible. Auto-passing."
+          echo "claude-pr-review.yml is among this PR's reviewable changes and the action's execution_file is empty — GitHub's OIDC workflow-validation guard made a live review structurally impossible. Auto-passing."
+          if [ -n "$OTHER_REVIEWABLE_FILES" ]; then
+            echo "Other reviewable files in this PR were ALSO never reviewed: $OTHER_REVIEWABLE_FILES"
+            {
+              echo "## Claude PR Review — auto-passed, not run"
+              echo ""
+              echo "This PR edits \`.github/workflows/claude-pr-review.yml\`, so GitHub"
+              echo "withheld the OIDC token this gate needs and no live review ran for"
+              echo "**any** reviewable file in this PR — not just the workflow diff."
+              echo "The following reviewable files were never reviewed by this gate:"
+              echo ""
+              printf '%s\n' "$OTHER_REVIEWABLE_FILES" | tr ',' '\n' | sed 's/^/- `/;s/$/`/'
+              echo ""
+              echo "Review them manually before merging."
+            } > "$GITHUB_WORKSPACE/.claude-autopass-comment.md"
+            gh pr comment "$PR" -R "$REPO" \
+              --body-file "$GITHUB_WORKSPACE/.claude-autopass-comment.md" || true
+          fi
           printf 'PASS' > "$GITHUB_WORKSPACE/.claude-review-verdict"
 
       # When the review was skipped (prior PASS still valid), carry that PASS
@@ -765,37 +836,65 @@ jobs:
           PR: ${{ github.event.pull_request.number }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          verdict="$(tr -d '[:space:]' < .claude-review-verdict 2>/dev/null || true)"
+          # Primary path: bin/lib/pr-review-gate.mjs's resolveVerdict() —
+          # unit-tested in bin/tests/pr-review-gate.test.ts. A verdict file
+          # the model wrote carries a SHA (see the prompt's Verdict section
+          # above) and is rejected as stale unless it matches HEAD_SHA; a
+          # bare, unstamped verdict (written by the reject/auto-pass/
+          # carry-prior-pass steps, all workflow-authored for this exact
+          # commit) is trusted unconditionally. This closes the gap where a
+          # verdict file left over from an earlier commit was previously
+          # indistinguishable from a fresh one.
+          verdict="$(node "$GITHUB_WORKSPACE/bin/pr-review-gate.mjs" resolve-verdict \
+            .claude-review-verdict "$HEAD_SHA" || echo "NONE")"
 
-          if [ -z "$verdict" ]; then
-            echo "No verdict file — falling back to the posted review comment."
-            # Piped to jq, not --jq: gh rejects --slurp with --jq (see the
-            # guard step above, where that combination silently disabled the
-            # prior-PASS skip for weeks).
-            body="$(gh api "repos/$REPO/issues/$PR/comments" --paginate --slurp 2>/dev/null \
-              | jq -r 'add | [.[] | select(.user.login == "claude[bot]")] | last // {} | .body // ""' \
-                2>/dev/null || true)"
+          if [ "$verdict" = "NONE" ]; then
+            echo "No trustworthy verdict file — falling back to the posted review comment."
+            # gh and jq failures are logged distinguishably from "no comment
+            # exists" — the previous `2>/dev/null || true` shape collapsed
+            # both into the same silent empty string, the same shape that
+            # hid the guard step's --slurp/--jq bug for weeks (see above).
+            body=""
+            comments_json="$GITHUB_WORKSPACE/.claude-enforce-comments.json"
+            fetch_err="$GITHUB_WORKSPACE/.claude-enforce-comments.err"
+            if ! gh api "repos/$REPO/issues/$PR/comments" --paginate --slurp \
+              > "$comments_json" 2>"$fetch_err"; then
+              echo "gh api failed fetching the comment thread: $(cat "$fetch_err" 2>/dev/null)"
+            elif ! body="$(jq -r 'add | [.[] | select(.user.login == "claude[bot]")] | last // {} | .body // ""' \
+              "$comments_json" 2>"$fetch_err")"; then
+              echo "jq failed parsing the comment thread: $(cat "$fetch_err" 2>/dev/null)"
+              body=""
+            fi
             if [ -z "$body" ]; then
-              echo "No claude[bot] comment found."
+              echo "No claude[bot] comment found (or the fetch above failed)."
             else
               reviewed_sha="$(printf '%s' "$body" \
-                | sed -n 's/.*<!-- claude-review-sha: \([0-9a-f]*\) -->.*/\1/p' | head -n1)"
+                | node "$GITHUB_WORKSPACE/bin/pr-review-gate.mjs" parse-sha \
+                || echo "")"
               if [ "$reviewed_sha" != "$HEAD_SHA" ]; then
                 echo "Latest claude[bot] comment reviewed ${reviewed_sha:-<none>}, not ${HEAD_SHA} — ignoring it."
-              elif printf '%s' "$body" | grep -A2 '^### Verdict' | grep -qiw 'PASS'; then
-                verdict="PASS"
-                echo "Recovered PASS from the review comment for ${HEAD_SHA}."
-              elif printf '%s' "$body" | grep -A2 '^### Verdict' | grep -qiw 'FAIL'; then
-                verdict="FAIL"
-                echo "Recovered FAIL from the review comment for ${HEAD_SHA}."
               else
-                echo "Comment for ${HEAD_SHA} has no parseable verdict line."
+                comment_verdict="$(printf '%s' "$body" \
+                  | node "$GITHUB_WORKSPACE/bin/pr-review-gate.mjs" parse-verdict \
+                  || echo "NONE")"
+                if [ "$comment_verdict" = "NONE" ]; then
+                  echo "Comment for ${HEAD_SHA} has no parseable verdict line."
+                else
+                  verdict="$comment_verdict"
+                  echo "Recovered ${verdict} from the review comment for ${HEAD_SHA}."
+                fi
               fi
             fi
           fi
 
-          echo "Claude review verdict: ${verdict:-<missing>}"
+          if [ "$verdict" = "NONE" ]; then
+            echo "Claude review verdict: <missing>"
+            echo "::error::Claude PR review did not pass (verdict: missing). See the review comment on the PR."
+            exit 1
+          fi
+
+          echo "Claude review verdict: ${verdict}"
           if [ "$verdict" != "PASS" ]; then
-            echo "::error::Claude PR review did not pass (verdict: ${verdict:-missing}). See the review comment on the PR."
+            echo "::error::Claude PR review did not pass (verdict: ${verdict}). See the review comment on the PR."
             exit 1
           fi
