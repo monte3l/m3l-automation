@@ -233,9 +233,13 @@ export async function rebuildHumanActionIndexOnBoot(
     options.logger.info(REBUILT_MESSAGE, { rows: inserted });
     return inserted;
   } catch (cause) {
-    options.logger.error(REBUILD_FAILED_MESSAGE, {
-      cause: Core.getErrorMessage(cause),
-    });
+    // `errorFrom`, not `error(msg, { cause: getErrorMessage(cause) })`: this
+    // log line is the ONLY record an operator gets of a failed rebuild, and
+    // `errorFrom` promotes the outermost `code`/`context` and serializes the
+    // whole recursive cause chain (redacted) rather than flattening it to one
+    // message string. It never throws, which matters on a path whose entire
+    // contract is that it does not.
+    options.logger.errorFrom(cause, REBUILD_FAILED_MESSAGE);
     return 0;
   }
 }

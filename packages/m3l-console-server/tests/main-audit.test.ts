@@ -28,6 +28,7 @@ import type { Core } from "@m3l-automation/m3l-common";
 import type { M3LHumanActionAuditPort } from "../src/audit/port.js";
 import type { M3LHumanActionRecord } from "../src/audit/record.js";
 import type { M3LConsoleRunsConfig } from "../src/config/runs.js";
+import { resolveHumanActionAuditRoot } from "../src/boot/human-action-audit.js";
 import { M3LConsoleError } from "../src/errors/console-error.js";
 import { createConsoleRuntime } from "../src/main.js";
 import type { M3LRunRegistry } from "../src/runs/registry.js";
@@ -149,6 +150,40 @@ describe("the audit port is composed unconditionally", () => {
     // making boot itself a filesystem write.
     const entries = await readdir(workDir);
     expect(entries).not.toContain("audit");
+  });
+});
+
+describe("resolveHumanActionAuditRoot — the one answer both halves share", () => {
+  // Exported precisely so `buildHumanActionAuditPort` (which WRITES the trail)
+  // and `boot/audit-rebuild.ts` (which READS it back) cannot disagree about
+  // where it is. Two independent `resolveAuditStreamRoot` calls would agree
+  // today and drift later into "nothing to rebuild" — the quietest possible
+  // wrong answer — so this is tested directly rather than only through boot.
+  test("returns the configured root when M3L_CONSOLE_AUDIT_ROOT is set", () => {
+    const configured = path.join(workDir, "audit");
+
+    expect(resolveHumanActionAuditRoot(buildEnv())).toBe(configured);
+  });
+
+  test("falls back to a path under the data dir when the variable is absent", () => {
+    const resolved = resolveHumanActionAuditRoot({});
+
+    expect(path.isAbsolute(resolved)).toBe(true);
+    expect(resolved).toContain("audit");
+  });
+
+  test("an unusable root raises ERR_CONSOLE_CONFIG_INVALID, never a bare Core.M3LError", () => {
+    // `createConsoleRuntime`'s own `@throws` promises an `M3LConsoleError`, so
+    // the wrapping in this function is the contract, not a convenience.
+    let thrown: unknown;
+    try {
+      resolveHumanActionAuditRoot({ M3L_CONSOLE_AUDIT_ROOT: "file:///tmp/a" });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).code).toBe("ERR_CONSOLE_CONFIG_INVALID");
   });
 });
 

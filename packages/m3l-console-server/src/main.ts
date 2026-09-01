@@ -428,11 +428,17 @@ async function buildRuntimeAndBindListener(
     // database write that must land before the listener accepts a request
     // that would query it. Skipped when the caller injected its own
     // `auditPort`, because the console then does not know where that port's
-    // trail lives and must not rebuild from an unrelated directory. Never
-    // throws — see `rebuildHumanActionIndexOnBoot`.
+    // trail lives and must not rebuild from an unrelated directory.
     if (options.auditPort === undefined) {
+      // Resolved on its own line, not at the argument position: the rebuild
+      // itself never throws, but resolving the root CAN
+      // (`ERR_CONSOLE_CONFIG_INVALID`) — it just cannot here, because
+      // `createConsoleRuntime` above already resolved the same root through
+      // `buildHumanActionAuditPort` and would have thrown first. Either way it
+      // sits inside this region's guard, so the store is still closed.
+      const auditRoot = resolveHumanActionAuditRoot(options.env ?? process.env);
       await rebuildHumanActionIndexOnBoot({
-        directory: resolveHumanActionAuditRoot(options.env ?? process.env),
+        directory: auditRoot,
         store,
         logger: runtime.logger,
       });

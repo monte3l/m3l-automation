@@ -21,6 +21,8 @@
  * `tests/main.test.ts`) stands in for both.
  */
 import { EventEmitter } from "node:events";
+import { tmpdir } from "node:os";
+import * as path from "node:path";
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 
@@ -40,12 +42,21 @@ import type { M3LConsoleSessionsRepository } from "../src/store/sessions-reposit
 import type { M3LConsoleAuditRepository } from "../src/store/audit-repository.js";
 import type { M3LConsoleStoreUnit } from "../src/store/store.js";
 
-/** A minimal valid env: only the required operator name set. */
+/**
+ * A minimal valid env: only the required operator name set.
+ *
+ * `M3L_CONSOLE_AUDIT_ROOT` points at a path that deliberately does NOT exist:
+ * X7c's boot rebuild (`boot/audit-rebuild.ts`) reads the trail before the
+ * listener binds, and an absent directory reads as an empty trail — so these
+ * tests neither touch the real data dir nor pay for a tmpdir they never
+ * assert on.
+ */
 function buildEnv(
   overrides: Record<string, string | undefined> = {},
 ): NodeJS.ProcessEnv {
   return {
     M3L_CONSOLE_OPERATOR_NAME: "ada",
+    M3L_CONSOLE_AUDIT_ROOT: path.join(tmpdir(), "m3l-console-audit-absent"),
     ...overrides,
   };
 }
@@ -267,13 +278,18 @@ const unexpectedAuditCall = (): never => {
   throw new Error("unexpected audit-repository call on the fake store");
 };
 
-/** A loud-throwing `audit` stub, shared by every fake store in this file (added for X7c's `M3LConsoleStoreUnit.audit` field — none of this file's tests exercise it). */
+/** A mostly-loud `audit` stub, shared by every fake store in this file (added for X7c's `M3LConsoleStoreUnit.audit` field — none of this file's tests exercise it). */
 const stubAuditRepository: M3LConsoleAuditRepository = {
   insert: unexpectedAuditCall,
   insertAll: unexpectedAuditCall,
   deleteAll: unexpectedAuditCall,
   list: unexpectedAuditCall,
-  count: unexpectedAuditCall,
+  // Answers instead of throwing: X7c's boot rebuild legitimately calls
+  // `count()` before the bind, so a loud stub here would make every
+  // `startConsole` test in this file exercise the rebuild's degradation path
+  // and log an error. `0` plus the absent audit root above makes it a clean
+  // no-op; every write method stays loud.
+  count: (): number => 0,
 };
 
 /** Throws when `transaction()` is called unexpectedly on a fake store. */

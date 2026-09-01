@@ -68,11 +68,11 @@ beforeEach(async () => {
 
 afterEach(async () => {
   for (const store of stores) {
-    try {
-      store.close();
-    } catch {
-      /* a test may already have closed it */
-    }
+    // Guarded rather than try/caught: `startConsole` closes the store on its
+    // way down, so a second close is expected — but a close that fails for
+    // any OTHER reason must still surface instead of vanishing into an empty
+    // catch.
+    if (store.isOpen) store.close();
   }
   await rm(workDir, { recursive: true, force: true });
 });
@@ -232,13 +232,16 @@ describe("rebuildHumanActionIndex — a corrupt trail is never indexed as a pref
     await appendFile(segment as string, "not-json\n", "utf8");
     const store = openStore();
 
+    // The NAMED failure, not merely "something threw": the documented
+    // contract is Core's own read error, and a bare `.toThrow()` would also
+    // pass for, say, a TypeError from a botched projection.
     await expect(
       rebuildHumanActionIndex({
         directory: auditDir,
         store,
         logger: new Core.M3LLogger([]),
       }),
-    ).rejects.toThrow();
+    ).rejects.toThrow(Core.M3LAppendOnlyStreamReadError);
 
     // The point: a partial index that LOOKS complete is the one outcome an
     // audit index may never produce. The whole trail is read before the

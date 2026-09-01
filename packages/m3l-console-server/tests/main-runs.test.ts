@@ -17,6 +17,8 @@
  * `buildRuntimeAndBindListener`.
  */
 import { EventEmitter } from "node:events";
+import { tmpdir } from "node:os";
+import * as path from "node:path";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 
@@ -60,12 +62,21 @@ import type { M3LConsoleAuditRepository } from "../src/store/audit-repository.js
 import type { M3LConsoleStoreUnit } from "../src/store/store.js";
 import type { M3LRunRegistry } from "../src/runs/registry.js";
 
-/** A minimal valid env: only the required operator name set — deliberately no `M3L_CONSOLE_RUNS_SCRIPTS_DIR`. */
+/**
+ * A minimal valid env: only the required operator name set — deliberately no `M3L_CONSOLE_RUNS_SCRIPTS_DIR`.
+ *
+ * `M3L_CONSOLE_AUDIT_ROOT` points at a path that deliberately does NOT exist:
+ * X7c's boot rebuild (`boot/audit-rebuild.ts`) reads the trail before the
+ * listener binds, and an absent directory reads as an empty trail — so these
+ * tests neither touch the real data dir nor pay for a tmpdir they never
+ * assert on.
+ */
 function buildEnv(
   overrides: Record<string, string | undefined> = {},
 ): NodeJS.ProcessEnv {
   return {
     M3L_CONSOLE_OPERATOR_NAME: "ada",
+    M3L_CONSOLE_AUDIT_ROOT: path.join(tmpdir(), "m3l-console-audit-absent"),
     ...overrides,
   };
 }
@@ -202,13 +213,18 @@ const unexpectedAuditCall = (): never => {
   throw new Error("unexpected audit-repository call on the fake store");
 };
 
-/** A loud-throwing `audit` stub, shared by every fake store in this file. */
+/** A mostly-loud `audit` stub, shared by every fake store in this file. */
 const stubAuditRepository: M3LConsoleAuditRepository = {
   insert: unexpectedAuditCall,
   insertAll: unexpectedAuditCall,
   deleteAll: unexpectedAuditCall,
   list: unexpectedAuditCall,
-  count: unexpectedAuditCall,
+  // Answers instead of throwing: X7c's boot rebuild legitimately calls
+  // `count()` before the bind, so a loud stub here would make every
+  // `startConsole` test in this file exercise the rebuild's degradation path
+  // and log an error. `0` plus the absent audit root above makes it a clean
+  // no-op; every write method stays loud.
+  count: (): number => 0,
 };
 
 /**
@@ -749,42 +765,17 @@ describe("startConsole — sessions: store.sessions reaches createConsoleRuntime
 });
 
 // =============================================================================
-// The sibling of the #554 test above, for X7c's `audit` hand-off.
+// X7c's `audit: store.audit` hand-off is deliberately NOT tested here.
 //
-// `buildRuntimeAndBindListener` passes `audit: store.audit` alongside
-// `runs`/`sessions`, and the runtime has no `audit` field to read it back from
-// (the index is not republished — it is consumed by the composed audit port).
-// So this asserts the hand-off directly: that `startConsole` READS
-// `store.audit` at all. Drop that line from `main.ts` and this fails.
+// A property-access counter (a getter on the fake store's `audit`, asserting
+// it was read) was written and then removed: the boot rebuild
+// (`rebuildHumanActionIndexOnBoot`) reads `store.audit` too, and swallows the
+// stub repository's throw, so the counter stayed non-zero with
+// `audit: store.audit` deleted from `main.ts` — a guard that could not fail.
 //
-// What the repository then does with a real request is proved end-to-end in
-// `tests/main-audit.test.ts` ("options.audit reaches the composed audit port"),
-// which drives `POST /api/v1/runs` through the composed listener.
+// The non-vacuous proof lives in `tests/boot-audit-rebuild.test.ts`
+// ("the dual store, end to end"): it boots `startConsole` against a REAL
+// store, performs a real audited write, and asserts a row reached
+// `store.audit`. Deleting the hand-off makes that count zero. Verified by
+// mutation, which is the only reason this file now says nothing about it.
 // =============================================================================
-describe("startConsole — audit: store.audit reaches createConsoleRuntime (X7c)", () => {
-  test("the store's audit repository is read during runtime construction", async () => {
-    const calls: string[] = [];
-    const registry = createOrderRecordingRegistry(calls);
-    const { store } = createFakeStore(toRunsRepository(registry));
-    let auditReads = 0;
-    Object.defineProperty(store, "audit", {
-      configurable: true,
-      get: (): M3LConsoleAuditRepository => {
-        auditReads += 1;
-        return stubAuditRepository;
-      },
-    });
-
-    const { promise, fake } = startWithFakeServer(calls, {
-      runsConfig: MINIMAL_RUNS_CONFIG,
-      openStore: () => store,
-    });
-    const running = await promise;
-
-    expect(auditReads).toBeGreaterThan(0);
-
-    const shutdownPromise = running.shutdown();
-    fake.resolveClose();
-    await shutdownPromise;
-  });
-});
