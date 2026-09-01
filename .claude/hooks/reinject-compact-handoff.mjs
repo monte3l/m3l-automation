@@ -77,6 +77,26 @@ export function formatHandoff(handoff) {
 }
 
 /**
+ * Belt-and-suspenders alongside the settings.json `matcher: "compact"`
+ * registration — if the harness ever routes an unmatched `SessionStart` here,
+ * stay silent rather than injecting a compaction handoff into a fresh,
+ * non-compacted session. `input` can itself be `null` (valid JSON, e.g. a
+ * bare `null` payload) or any other shape — read defensively rather than
+ * assume it's an object. Extracted from the CLI entry block so this check is
+ * unit-testable without spawning the script as a subprocess.
+ *
+ * @param {unknown} input the parsed `SessionStart` hook payload
+ * @returns {boolean} true when this SessionStart fired after a compaction
+ */
+export function shouldReinject(input) {
+  return (
+    typeof input === "object" &&
+    input !== null &&
+    /** @type {{ source?: unknown }} */ (input).source === "compact"
+  );
+}
+
+/**
  * @param {string} handoffPath absolute path to the handoff artifact
  * @returns {Record<string, any> | null} parsed payload, or null if absent
  *   or unreadable/malformed
@@ -101,13 +121,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     process.exit(0);
   }
 
-  // Belt-and-suspenders alongside the settings.json `matcher: "compact"`
-  // registration — if the harness ever routes an unmatched SessionStart
-  // here, stay silent rather than injecting a compaction handoff into a
-  // fresh, non-compacted session. `input` can itself be `null` (valid JSON,
-  // e.g. a bare `null` payload) — read defensively rather than assume it's
-  // an object.
-  if (input?.source !== "compact") process.exit(0);
+  if (!shouldReinject(input)) process.exit(0);
 
   const handoffPath = join(root, HANDOFF_REL_PATH);
   const handoff = readHandoff(handoffPath);

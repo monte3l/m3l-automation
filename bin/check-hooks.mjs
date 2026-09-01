@@ -47,6 +47,20 @@ export const KNOWN_EVENTS = new Set([
   "PermissionDenied",
 ]);
 
+// Events whose `matcher` field is a documented, closed set of values rather
+// than a free-form tool-name pattern (PreToolUse/PostToolUse's `matcher` is
+// the latter — a tool name or `Tool1|Tool2` alternation — and has no fixed
+// enum to validate against). A typo here (e.g. `matcher: "compct"`) would
+// otherwise silently no-op the entry with no gate catching it — the exact
+// failure mode that can disable post-compaction re-injection
+// (`.claude/hooks/reinject-compact-handoff.mjs`, `SessionStart` + `matcher:
+// "compact"`). Source: https://code.claude.com/docs/en/hooks (2026-09-01).
+export const KNOWN_MATCHERS = new Map([
+  ["SessionStart", new Set(["startup", "resume", "clear", "compact", "fork"])],
+  ["PreCompact", new Set(["manual", "auto"])],
+  ["PostCompact", new Set(["manual", "auto"])],
+]);
+
 /**
  * Pull the `.claude/hooks/<name>.mjs` script name out of a hook `command`
  * string, regardless of the `$CLAUDE_PROJECT_DIR` prefix / quoting around it.
@@ -65,7 +79,7 @@ export function extractHookScriptName(command) {
  * collaborators needed to check disk state, so it is unit-testable without
  * touching the filesystem.
  *
- * @param {{ hooks?: Record<string, Array<{ hooks?: Array<{ command?: string, timeout?: number }> }>> }} settings
+ * @param {{ hooks?: Record<string, Array<{ matcher?: string, hooks?: Array<{ command?: string, timeout?: number }> }>> }} settings
  * @param {{ hookFileExists: (name: string) => boolean, onDiskHookNames: string[] }} deps
  * @returns {{ errors: string[], warnings: string[], referenced: Set<string> }}
  */
@@ -85,7 +99,21 @@ export function validateHooksConfig(
       );
     }
 
+    const knownMatchers = KNOWN_MATCHERS.get(event);
     for (const entry of entries) {
+      if (knownMatchers !== undefined && typeof entry.matcher === "string") {
+        for (const token of entry.matcher.split("|")) {
+          if (!knownMatchers.has(token)) {
+            errors.push(
+              `.claude/settings.json's "${event}" entry has matcher ` +
+                `"${entry.matcher}" — "${token}" is not one of the ` +
+                `documented values [${[...knownMatchers].join(", ")}] ` +
+                `(typo? a mismatched matcher silently never fires).`,
+            );
+          }
+        }
+      }
+
       for (const hook of entry.hooks ?? []) {
         const name = extractHookScriptName(hook.command ?? "");
         if (name === null) continue;
