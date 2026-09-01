@@ -490,12 +490,13 @@ the script goes stale — regenerate it after adding a `scripts/*` package.
 
 What the generated script completes:
 
-| Position                        | Candidates                                                                                           |
-| ------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| first positional                | every static command, every discovered script name, and the always-valid flags                       |
-| after `completion`              | `bash`, `zsh`, `fish`                                                                                |
-| after `inspect`/`presets`/`run` | the discovered script names (`new` is excluded — its positional is a name that must _not_ exist yet) |
-| after a script name             | the always-valid flags plus `--in-process` and `--dry-run`                                           |
+| Position                                      | Candidates                                                                                           |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| first positional                              | every static command, every discovered script name, and the always-valid flags                       |
+| after `completion`                            | `bash`, `zsh`, `fish`                                                                                |
+| after `inspect`/`presets`/`run`               | the discovered script names (`new` is excluded — its positional is a name that must _not_ exist yet) |
+| after a script name                           | that script's own parameter flags, plus the always-valid flags, `--in-process` and `--dry-run`       |
+| after an operation-declaring parameter's flag | that parameter's declared operation names                                                            |
 
 Always-valid flags are `--json`, `--help`, `-h` and `--version`.
 `--in-process` (ADR-0054, U7) and `--dry-run` apply only to dynamic
@@ -503,20 +504,47 @@ per-script dispatch; `--dry-run` is honoured among the tokens after the `--`
 separator rather than as a direct flag, but it is offered on a script
 invocation line because that is where it is typed.
 
+**Parameter and operation enumeration.** Each script's parameters come from
+`loadParametersCached`, the same mtime-keyed discovery cache `m3l list` and
+`m3l inspect` read through. A parameter contributes `--<name>` plus one flag
+per declared alias (a one-character alias renders `-x`, a longer one `--xy`);
+a parameter that declares an operation set (ADR-0055) additionally
+contributes its operation names as the value set for **each** of its own
+flags, so `m3l sqs-etl --command <TAB>` and `m3l sqs-etl -c <TAB>` offer the
+same operations. A parameter declaring no operations contributes no value
+set.
+
+A script whose config will not load degrades to **name-only** completion
+rather than aborting generation — the same tolerance `m3l list` gives a
+single unloadable script — and the reason is written into the generated file
+as a comment:
+
+```bash
+# broken-etl: parameters unavailable (dist missing) — completing by name only
+```
+
+The failure is recorded, never swallowed. One script's failure never
+suppresses another script's flags.
+
 The command set is read from `scaffold/manifest.ts`'s `RESERVED_CLI_NAMES` —
 the ADR-0042 source of truth `main.ts`, `commands/dynamic.ts` and
 `commands/doctor.ts` all mirror — so a new reserved name becomes completable
 without a fifth literal to keep in sync. Script names come from
 `discoverScripts`, sorted, so the emitted script is byte-stable across runs.
 
-**Emitted tokens are allowlist-filtered.** Script names reach this command
-from `scripts/*` package directories and are written into an executable shell
-script, so only tokens matching `^-{0,2}[A-Za-z0-9][A-Za-z0-9._:-]*$` are
-interpolated (and each is quoted regardless). Anything else is skipped and
-named in a scrubbed `#` comment inside the generated file, never silently
-dropped. No parameter default value is ever emitted — a `secret: true`
-parameter's default renders as a mask, and completion needs flag _names_
-only.
+**Emitted tokens are allowlist-filtered.** Script, parameter and operation
+names reach this command from `scripts/*` config modules and are written into
+an executable shell script, so only tokens matching
+`^-{0,2}[A-Za-z0-9][A-Za-z0-9._:-]*$` are interpolated (and each is quoted
+regardless). Anything else is skipped and named in a `#` comment scrubbed to
+the same allowlist — a space is allowed, since a load reason is prose, but a
+newline is not, because it would end the comment and let the rest start a
+statement. Nothing is silently dropped.
+
+**No default value is ever emitted.** Completion covers flag _names_ and
+operation _values_ only. `defaultValue` is never read: a `secret: true`
+parameter's default renders as a mask (`"********"`), and no default of any
+kind reaches the generated file.
 
 Flags: `--json` (one object on stdout, `{ "shell": "<shell>", "script":
 "<the full script text>" }`; the `<shell>` positional is still required).
@@ -527,9 +555,11 @@ itself is impossible (e.g. workspace root not found).
 ## Completion
 
 `m3l completion <shell>` writes the script to stdout; installing it is a
-per-shell step. Regenerate after adding a `scripts/*` package or changing a
-script's declared parameters — the script is a static snapshot, not a live
-query (see [§`m3l completion <shell>`](#m3l-completion-shell)).
+per-shell step. **Regenerate after adding a `scripts/*` package, adding or
+renaming a script parameter, or changing a parameter's declared operation
+set** — the script is a static snapshot, not a live query (see
+[§`m3l completion <shell>`](#m3l-completion-shell)). Nothing detects
+staleness for you; a stale script simply completes the previous surface.
 
 **bash** — source it from `~/.bashrc`, or drop it into the completion
 directory:

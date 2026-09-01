@@ -36,19 +36,71 @@ export const M3L_CLI_COMPLETION_SHELLS = ["bash", "zsh", "fish"] as const;
 export type M3LCliCompletionShell = (typeof M3L_CLI_COMPLETION_SHELLS)[number];
 
 /**
+ * One operation-declaring parameter of a script (ADR-0055): the flags that
+ * select it, and the operation names that are its valid values.
+ *
+ * @example
+ * ```ts
+ * const set: M3LCliCompletionOperationSet = {
+ *   flags: ["--command", "-c"],
+ *   operations: ["drain", "replay"],
+ * };
+ * ```
+ */
+export interface M3LCliCompletionOperationSet {
+  /** The declaring parameter's flags — `--<name>` plus each declared alias. */
+  readonly flags: readonly string[];
+  /** The declared operation names, in declaration order. */
+  readonly operations: readonly string[];
+}
+
+/**
+ * One discovered `scripts/*` package as the renderers see it. A script whose
+ * config would not load degrades to name-only (`flags` and `operationSets`
+ * empty, `loadError` set) rather than aborting generation — the same
+ * tolerance `m3l list` gives a single unloadable script.
+ *
+ * Deliberately carries no parameter **default**: a `secret: true`
+ * parameter's `defaultValue` renders as a mask, and completion needs flag
+ * *names* only, so the value never enters this shape at all.
+ *
+ * @example
+ * ```ts
+ * const script: M3LCliCompletionScript = {
+ *   name: "sqs-etl",
+ *   flags: ["--queue", "--command"],
+ *   operationSets: [{ flags: ["--command"], operations: ["drain"] }],
+ *   loadError: null,
+ * };
+ * ```
+ */
+export interface M3LCliCompletionScript {
+  /** The script's name (its directory basename). */
+  readonly name: string;
+  /** Every completable flag: `--<name>` plus each alias, for each parameter. */
+  readonly flags: readonly string[];
+  /** One entry per operation-declaring parameter; `[]` when none declares one. */
+  readonly operationSets: readonly M3LCliCompletionOperationSet[];
+  /** The config-load failure message, or `null` when the config loaded. */
+  readonly loadError: string | null;
+}
+
+/**
  * Everything a renderer bakes into its emitted script. Built by
- * `commands/completion.ts` from `discoverScripts`; kept as plain string
- * arrays so a renderer can be unit-tested against a fixed model with no
- * discovery involved.
+ * `commands/completion.ts` from `discoverScripts` + `loadParametersCached`;
+ * kept as plain data so a renderer can be unit-tested against a fixed model
+ * with no discovery involved.
  *
  * @example
  * ```ts
  * const model: M3LCliCompletionModel = {
  *   commands: ["completion", "list"],
  *   scriptCommands: ["inspect"],
- *   scripts: ["sqs-etl"],
+ *   scripts: [
+ *     { name: "sqs-etl", flags: [], operationSets: [], loadError: null },
+ *   ],
  *   globalFlags: ["--json"],
- *   scriptFlags: ["--in-process"],
+ *   dynamicFlags: ["--in-process"],
  * };
  * ```
  */
@@ -57,12 +109,12 @@ export interface M3LCliCompletionModel {
   readonly commands: readonly string[];
   /** The {@link commands} subset taking an existing `<script>` positional. */
   readonly scriptCommands: readonly string[];
-  /** The discovered `scripts/*` package names, sorted. */
-  readonly scripts: readonly string[];
+  /** The discovered `scripts/*` packages, sorted by name. */
+  readonly scripts: readonly M3LCliCompletionScript[];
   /** CLI-reserved flags valid on any invocation. */
   readonly globalFlags: readonly string[];
   /** CLI-reserved flags valid only on dynamic per-script dispatch. */
-  readonly scriptFlags: readonly string[];
+  readonly dynamicFlags: readonly string[];
 }
 
 /**
@@ -75,8 +127,14 @@ export interface M3LCliCompletionModel {
  */
 const SAFE_TOKEN_PATTERN = /^-{0,2}[A-Za-z0-9][A-Za-z0-9._:-]*$/;
 
-/** Characters a rejected token is scrubbed down to before it is named in a comment. */
-const COMMENT_SAFE_PATTERN = /[^A-Za-z0-9._:-]/g;
+/**
+ * Characters a rejected token or a config-load reason is scrubbed down to
+ * before it is named in a `#` comment. A space is permitted (a load reason is
+ * prose, and unreadable without one) but nothing else outside the token
+ * allowlist is — crucially not a newline, which would end the comment and let
+ * the rest of the text start a statement.
+ */
+const COMMENT_SAFE_PATTERN = /[^A-Za-z0-9._:\- ]/g;
 
 /** The placeholder a scrubbed character becomes in a skip comment. */
 const SCRUB_PLACEHOLDER = "?";
@@ -156,10 +214,176 @@ function header(shell: M3LCliCompletionShell): readonly string[] {
   ];
 }
 
+/**
+ * A script reduced to what the renderers can safely emit: its own name (or
+ * `null` when even that is unsafe), its allowlist-filtered flags, its
+ * allowlist-filtered operation sets, and every `#` comment line explaining
+ * what was dropped or why parameters are missing.
+ */
+interface SafeScript {
+  readonly name: string | null;
+  readonly flags: readonly string[];
+  readonly operationSets: readonly M3LCliCompletionOperationSet[];
+  readonly comments: readonly string[];
+}
+
+/**
+ * Filters one script through {@link isSafeCompletionToken}, collecting a
+ * comment line for every rejected token and for a config-load failure.
+ *
+ * A load failure is **named in the generated file**, not swallowed: the
+ * script still completes by name, and the reason says why its flags are
+ * absent. The reason is scrubbed like any other untrusted text.
+ */
+function toSafeScript(script: M3LCliCompletionScript): SafeScript {
+  const comments: string[] = [];
+  if (!isSafeCompletionToken(script.name)) {
+    return {
+      name: null,
+      flags: [],
+      operationSets: [],
+      comments: [
+        `# skipped script '${scrubForComment(script.name)}' — name is not shell-safe`,
+      ],
+    };
+  }
+  if (script.loadError !== null) {
+    comments.push(
+      `# ${script.name}: parameters unavailable (${scrubForComment(script.loadError)}) — completing by name only`,
+    );
+  }
+
+  const flags = partitionTokens(script.flags);
+  comments.push(
+    ...skipComments(flags.rejected, `${script.name} parameter flag`),
+  );
+
+  const operationSets: M3LCliCompletionOperationSet[] = [];
+  for (const set of script.operationSets) {
+    const setFlags = partitionTokens(set.flags);
+    const operations = partitionTokens(set.operations);
+    comments.push(
+      ...skipComments(setFlags.rejected, `${script.name} parameter flag`),
+      ...skipComments(operations.rejected, `${script.name} operation`),
+    );
+    if (setFlags.safe.length > 0 && operations.safe.length > 0) {
+      operationSets.push({ flags: setFlags.safe, operations: operations.safe });
+    }
+  }
+
+  return { name: script.name, flags: flags.safe, operationSets, comments };
+}
+
+/** Filters every script in `model`, preserving order. */
+function toSafeScripts(
+  scripts: readonly M3LCliCompletionScript[],
+): readonly SafeScript[] {
+  return scripts.map(toSafeScript);
+}
+
+/** The names of the scripts that survived filtering. */
+function safeScriptNames(scripts: readonly SafeScript[]): readonly string[] {
+  return scripts
+    .map((script) => script.name)
+    .filter((name): name is string => name !== null);
+}
+
+/** Every comment line the filtered scripts produced, in order. */
+function safeScriptComments(scripts: readonly SafeScript[]): readonly string[] {
+  return scripts.flatMap((script) => script.comments);
+}
+
 /** Joins tokens for a bash `compgen -W` word list. */
 function bashWords(tokens: readonly string[]): string {
   return tokens.join(" ");
 }
+
+/**
+ * Renders the `case` arms of `_m3l_flags_for_script` — one per script that
+ * declares at least one safe flag. A script with none (or whose config
+ * failed to load) simply has no arm, so the lookup returns empty and the
+ * caller falls back to the CLI-reserved flags alone.
+ */
+function bashFlagArms(scripts: readonly SafeScript[]): readonly string[] {
+  return scripts
+    .filter((script) => script.name !== null && script.flags.length > 0)
+    .map(
+      (script) =>
+        `    '${script.name ?? ""}') echo '${bashWords(script.flags)}' ;;`,
+    );
+}
+
+/**
+ * Renders the `case` arms of `_m3l_operations_for_flag`, keyed on
+ * `"<script> <flag>"`. Every flag of an operation-declaring parameter gets
+ * its own arm (aliases included), so `--command` and `-c` both complete the
+ * same operation set.
+ */
+function bashOperationArms(scripts: readonly SafeScript[]): readonly string[] {
+  return scripts.flatMap((script) =>
+    script.operationSets.flatMap((set) =>
+      set.flags.map(
+        (flag) =>
+          `    '${script.name ?? ""} ${flag}') echo '${bashWords(set.operations)}' ;;`,
+      ),
+    ),
+  );
+}
+
+/**
+ * The model-independent tail of the bash script: the completion function
+ * itself, over the variables and lookup functions the renderer emits above
+ * it. Hoisted out of {@link renderBashCompletion} to keep that function
+ * under the ESLint `max-lines-per-function` ceiling — nothing is
+ * interpolated into any line here.
+ */
+const BASH_COMPLETE_BODY: readonly string[] = [
+  "_m3l_complete() {",
+  '  local cur="${COMP_WORDS[COMP_CWORD]}"',
+  '  local prev="${COMP_WORDS[COMP_CWORD-1]}"',
+  '  local command="${COMP_WORDS[1]}"',
+  "  COMPREPLY=()",
+  "",
+  '  if [ "${COMP_CWORD}" -eq 1 ]; then',
+  "    # shellcheck disable=SC2207",
+  '    COMPREPLY=($(compgen -W "${_m3l_commands} ${_m3l_scripts} ${_m3l_global_flags}" -- "${cur}"))',
+  "    return 0",
+  "  fi",
+  "",
+  '  if [ "${command}" = "completion" ]; then',
+  "    # shellcheck disable=SC2207",
+  '    COMPREPLY=($(compgen -W "${_m3l_shells}" -- "${cur}"))',
+  "    return 0",
+  "  fi",
+  "",
+  '  if [ "${COMP_CWORD}" -eq 2 ] && [[ " ${_m3l_script_commands} " == *" ${command} "* ]]; then',
+  "    # shellcheck disable=SC2207",
+  '    COMPREPLY=($(compgen -W "${_m3l_scripts}" -- "${cur}"))',
+  "    return 0",
+  "  fi",
+  "",
+  '  if [[ " ${_m3l_scripts} " == *" ${command} "* ]]; then',
+  "    local operations",
+  '    operations="$(_m3l_operations_for_flag "${command}" "${prev}")"',
+  '    if [ -n "${operations}" ]; then',
+  "      # shellcheck disable=SC2207",
+  '      COMPREPLY=($(compgen -W "${operations}" -- "${cur}"))',
+  "      return 0",
+  "    fi",
+  "    local flags",
+  '    flags="$(_m3l_flags_for_script "${command}")"',
+  "    # shellcheck disable=SC2207",
+  '    COMPREPLY=($(compgen -W "${flags} ${_m3l_global_flags} ${_m3l_dynamic_flags}" -- "${cur}"))',
+  "    return 0",
+  "  fi",
+  "",
+  "  # shellcheck disable=SC2207",
+  '  COMPREPLY=($(compgen -W "${_m3l_global_flags}" -- "${cur}"))',
+  "  return 0",
+  "}",
+  "",
+  "complete -F _m3l_complete m3l",
+];
 
 /**
  * Renders the bash completion script for `model`.
@@ -167,7 +391,9 @@ function bashWords(tokens: readonly string[]): string {
  * The emitted script registers `_m3l_complete` via `complete -F`, completing
  * the command set plus the discovered script names at the first positional,
  * the shell names after `completion`, a script name after each
- * `scriptCommands` entry, and the CLI-reserved flags everywhere else.
+ * `scriptCommands` entry, and — after a script name — that script's own
+ * parameter flags, or the operation values of whichever flag precedes the
+ * cursor.
  *
  * @param model - The baked-in command/script/flag surface.
  * @returns The script's lines, without trailing newlines.
@@ -182,61 +408,66 @@ export function renderBashCompletion(
   model: M3LCliCompletionModel,
 ): readonly string[] {
   const commands = partitionTokens(model.commands);
-  const scripts = partitionTokens(model.scripts);
   const scriptCommands = partitionTokens(model.scriptCommands);
   const globalFlags = partitionTokens(model.globalFlags);
-  const scriptFlags = partitionTokens(model.scriptFlags);
+  const dynamicFlags = partitionTokens(model.dynamicFlags);
+  const scripts = toSafeScripts(model.scripts);
 
   return [
     ...header("bash"),
     ...skipComments(commands.rejected, "command"),
-    ...skipComments(scripts.rejected, "script"),
     ...skipComments(scriptCommands.rejected, "script command"),
     ...skipComments(globalFlags.rejected, "flag"),
-    ...skipComments(scriptFlags.rejected, "flag"),
+    ...skipComments(dynamicFlags.rejected, "flag"),
+    ...safeScriptComments(scripts),
     `_m3l_commands='${bashWords(commands.safe)}'`,
-    `_m3l_scripts='${bashWords(scripts.safe)}'`,
+    `_m3l_scripts='${bashWords(safeScriptNames(scripts))}'`,
     `_m3l_script_commands='${bashWords(scriptCommands.safe)}'`,
     `_m3l_global_flags='${bashWords(globalFlags.safe)}'`,
-    `_m3l_script_flags='${bashWords(scriptFlags.safe)}'`,
+    `_m3l_dynamic_flags='${bashWords(dynamicFlags.safe)}'`,
     `_m3l_shells='${bashWords(M3L_CLI_COMPLETION_SHELLS)}'`,
     "",
-    "_m3l_complete() {",
-    '  local cur="${COMP_WORDS[COMP_CWORD]}"',
-    '  local command="${COMP_WORDS[1]}"',
-    "  COMPREPLY=()",
-    "",
-    '  if [ "${COMP_CWORD}" -eq 1 ]; then',
-    "    # shellcheck disable=SC2207",
-    '    COMPREPLY=($(compgen -W "${_m3l_commands} ${_m3l_scripts} ${_m3l_global_flags}" -- "${cur}"))',
-    "    return 0",
-    "  fi",
-    "",
-    '  if [ "${command}" = "completion" ]; then',
-    "    # shellcheck disable=SC2207",
-    '    COMPREPLY=($(compgen -W "${_m3l_shells}" -- "${cur}"))',
-    "    return 0",
-    "  fi",
-    "",
-    '  if [ "${COMP_CWORD}" -eq 2 ] && [[ " ${_m3l_script_commands} " == *" ${command} "* ]]; then',
-    "    # shellcheck disable=SC2207",
-    '    COMPREPLY=($(compgen -W "${_m3l_scripts}" -- "${cur}"))',
-    "    return 0",
-    "  fi",
-    "",
-    '  if [[ " ${_m3l_scripts} " == *" ${command} "* ]]; then',
-    "    # shellcheck disable=SC2207",
-    '    COMPREPLY=($(compgen -W "${_m3l_global_flags} ${_m3l_script_flags}" -- "${cur}"))',
-    "    return 0",
-    "  fi",
-    "",
-    "  # shellcheck disable=SC2207",
-    '  COMPREPLY=($(compgen -W "${_m3l_global_flags}" -- "${cur}"))',
-    "  return 0",
+    "_m3l_flags_for_script() {",
+    '  case "$1" in',
+    ...bashFlagArms(scripts),
+    "  esac",
     "}",
     "",
-    "complete -F _m3l_complete m3l",
+    "_m3l_operations_for_flag() {",
+    '  case "$1 $2" in',
+    ...bashOperationArms(scripts),
+    "  esac",
+    "}",
+    "",
+    ...BASH_COMPLETE_BODY,
   ];
+}
+
+/** Joins tokens for a zsh array literal, quoting each. */
+function zshWords(tokens: readonly string[]): string {
+  return tokens.map((token) => `'${token}'`).join(" ");
+}
+
+/** Renders the `case` arms of the zsh `_m3l_flags_for_script` lookup. */
+function zshFlagArms(scripts: readonly SafeScript[]): readonly string[] {
+  return scripts
+    .filter((script) => script.name !== null && script.flags.length > 0)
+    .map(
+      (script) =>
+        `    '${script.name ?? ""}') echo '${script.flags.join(" ")}' ;;`,
+    );
+}
+
+/** Renders the `case` arms of the zsh `_m3l_operations_for_flag` lookup. */
+function zshOperationArms(scripts: readonly SafeScript[]): readonly string[] {
+  return scripts.flatMap((script) =>
+    script.operationSets.flatMap((set) =>
+      set.flags.map(
+        (flag) =>
+          `    '${script.name ?? ""} ${flag}') echo '${set.operations.join(" ")}' ;;`,
+      ),
+    ),
+  );
 }
 
 /**
@@ -268,8 +499,17 @@ const ZSH_DISPATCH_BODY: readonly string[] = [
   "  fi",
   "",
   "  if (( ${m3l_scripts[(I)${command}]} )); then",
+  '    local prev="${words[CURRENT-1]}"',
+  "    local -a m3l_operations m3l_parameters",
+  '    m3l_operations=(${(z)"$(_m3l_operations_for_flag "${command}" "${prev}")"})',
+  "    if (( ${#m3l_operations} )); then",
+  "      _describe -t operations 'operation' m3l_operations",
+  "      return",
+  "    fi",
+  '    m3l_parameters=(${(z)"$(_m3l_flags_for_script "${command}")"})',
+  "    _describe -t flags 'm3l parameter' m3l_parameters",
   "    _describe -t flags 'm3l flag' m3l_global_flags",
-  "    _describe -t flags 'm3l script flag' m3l_script_flags",
+  "    _describe -t flags 'm3l script flag' m3l_dynamic_flags",
   "    return",
   "  fi",
   "",
@@ -285,17 +525,14 @@ const ZSH_DISPATCH_BODY: readonly string[] = [
   "fi",
 ];
 
-/** Joins tokens for a zsh array literal, quoting each. */
-function zshWords(tokens: readonly string[]): string {
-  return tokens.map((token) => `'${token}'`).join(" ");
-}
-
 /**
  * Renders the zsh completion script for `model`.
  *
  * The emitted script carries a `#compdef m3l` header so it autoloads when
  * saved as `_m3l` on `$fpath`, and its trailing dispatch also registers
  * itself via `compdef` when the file is simply `source`d after `compinit`.
+ * After a script name it completes that script's parameter flags, or the
+ * operation values of whichever flag precedes the cursor.
  *
  * @param model - The baked-in command/script/flag surface.
  * @returns The script's lines, without trailing newlines.
@@ -310,26 +547,38 @@ export function renderZshCompletion(
   model: M3LCliCompletionModel,
 ): readonly string[] {
   const commands = partitionTokens(model.commands);
-  const scripts = partitionTokens(model.scripts);
   const scriptCommands = partitionTokens(model.scriptCommands);
   const globalFlags = partitionTokens(model.globalFlags);
-  const scriptFlags = partitionTokens(model.scriptFlags);
+  const dynamicFlags = partitionTokens(model.dynamicFlags);
+  const scripts = toSafeScripts(model.scripts);
 
   return [
     "#compdef m3l",
     ...header("zsh"),
     ...skipComments(commands.rejected, "command"),
-    ...skipComments(scripts.rejected, "script"),
     ...skipComments(scriptCommands.rejected, "script command"),
     ...skipComments(globalFlags.rejected, "flag"),
-    ...skipComments(scriptFlags.rejected, "flag"),
+    ...skipComments(dynamicFlags.rejected, "flag"),
+    ...safeScriptComments(scripts),
+    "_m3l_flags_for_script() {",
+    '  case "$1" in',
+    ...zshFlagArms(scripts),
+    "  esac",
+    "}",
+    "",
+    "_m3l_operations_for_flag() {",
+    '  case "$1 $2" in',
+    ...zshOperationArms(scripts),
+    "  esac",
+    "}",
+    "",
     "_m3l() {",
-    "  local -a m3l_commands m3l_scripts m3l_script_commands m3l_global_flags m3l_script_flags m3l_shells",
+    "  local -a m3l_commands m3l_scripts m3l_script_commands m3l_global_flags m3l_dynamic_flags m3l_shells",
     `  m3l_commands=(${zshWords(commands.safe)})`,
-    `  m3l_scripts=(${zshWords(scripts.safe)})`,
+    `  m3l_scripts=(${zshWords(safeScriptNames(scripts))})`,
     `  m3l_script_commands=(${zshWords(scriptCommands.safe)})`,
     `  m3l_global_flags=(${zshWords(globalFlags.safe)})`,
-    `  m3l_script_flags=(${zshWords(scriptFlags.safe)})`,
+    `  m3l_dynamic_flags=(${zshWords(dynamicFlags.safe)})`,
     `  m3l_shells=(${zshWords(M3L_CLI_COMPLETION_SHELLS)})`,
     ...ZSH_DISPATCH_BODY,
   ];
@@ -362,11 +611,33 @@ function fishFlags(
 }
 
 /**
+ * Renders every per-script registration: the script's own parameter flags,
+ * and each operation-declaring parameter's operation values gated on
+ * `__fish_prev_arg_in` over that parameter's flags.
+ */
+function fishScriptLines(scripts: readonly SafeScript[]): readonly string[] {
+  return scripts.flatMap((script) => {
+    if (script.name === null) return [];
+    const seen = `__fish_seen_subcommand_from ${script.name}`;
+    return [
+      ...fishFlags(script.flags, seen, `${script.name} parameter`),
+      ...script.operationSets.flatMap((set) =>
+        fishCandidates(
+          set.operations,
+          `${seen}; and __fish_prev_arg_in ${set.flags.join(" ")}`,
+          `${script.name} operation`,
+        ),
+      ),
+    ];
+  });
+}
+
+/**
  * Renders the fish completion script for `model`.
  *
  * fish has no single completion function: the emitted script is a flat list
- * of `complete -c m3l` registrations, each gated by a `__fish_use_subcommand`
- * or `__fish_seen_subcommand_from` condition.
+ * of `complete -c m3l` registrations, each gated by a `__fish_use_subcommand`,
+ * `__fish_seen_subcommand_from` or `__fish_prev_arg_in` condition.
  *
  * @param model - The baked-in command/script/flag surface.
  * @returns The script's lines, without trailing newlines.
@@ -381,31 +652,32 @@ export function renderFishCompletion(
   model: M3LCliCompletionModel,
 ): readonly string[] {
   const commands = partitionTokens(model.commands);
-  const scripts = partitionTokens(model.scripts);
   const scriptCommands = partitionTokens(model.scriptCommands);
   const globalFlags = partitionTokens(model.globalFlags);
-  const scriptFlags = partitionTokens(model.scriptFlags);
+  const dynamicFlags = partitionTokens(model.dynamicFlags);
+  const scripts = toSafeScripts(model.scripts);
+  const scriptNames = safeScriptNames(scripts);
 
-  const scriptCommandCondition =
+  const afterScriptCommand =
     scriptCommands.safe.length > 0
       ? `__fish_seen_subcommand_from ${scriptCommands.safe.join(" ")}`
       : "false";
-  const scriptCondition =
-    scripts.safe.length > 0
-      ? `__fish_seen_subcommand_from ${scripts.safe.join(" ")}`
+  const afterScript =
+    scriptNames.length > 0
+      ? `__fish_seen_subcommand_from ${scriptNames.join(" ")}`
       : "false";
 
   return [
     ...header("fish"),
     ...skipComments(commands.rejected, "command"),
-    ...skipComments(scripts.rejected, "script"),
     ...skipComments(scriptCommands.rejected, "script command"),
     ...skipComments(globalFlags.rejected, "flag"),
-    ...skipComments(scriptFlags.rejected, "flag"),
+    ...skipComments(dynamicFlags.rejected, "flag"),
+    ...safeScriptComments(scripts),
     "complete -c m3l -e",
     "",
     ...fishCandidates(commands.safe, "__fish_use_subcommand", "m3l command"),
-    ...fishCandidates(scripts.safe, "__fish_use_subcommand", "m3l script"),
+    ...fishCandidates(scriptNames, "__fish_use_subcommand", "m3l script"),
     "",
     ...fishCandidates(
       M3L_CLI_COMPLETION_SHELLS,
@@ -413,9 +685,11 @@ export function renderFishCompletion(
       "shell",
     ),
     "",
-    ...fishCandidates(scripts.safe, scriptCommandCondition, "m3l script"),
+    ...fishCandidates(scriptNames, afterScriptCommand, "m3l script"),
     "",
     ...fishFlags(globalFlags.safe, "true", "m3l flag"),
-    ...fishFlags(scriptFlags.safe, scriptCondition, "m3l script flag"),
+    ...fishFlags(dynamicFlags.safe, afterScript, "m3l script flag"),
+    "",
+    ...fishScriptLines(scripts),
   ];
 }
