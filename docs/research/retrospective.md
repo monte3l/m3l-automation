@@ -1,6 +1,6 @@
 # Retrospective sweep tracker
 
-<!-- retrospective: last-swept=2026-09-01 logs-considered=112 -->
+<!-- retrospective: last-swept=2026-09-01 logs-considered=113 -->
 
 Living ledger of `/promoting-work-log-lessons` sweeps — one row per work log,
 recording whether it has been swept and what came out of it. Updated **in
@@ -16,11 +16,13 @@ letting a scaffolded-but-empty tracker read as fresh. The gate also compares
 the backlog reaches 5 logs, the cadence `/writing-work-logs` documents and
 that, before this tracker, nothing polled.
 
-**The gate still warns, and should.** The first real sweep (2026-09-01)
-cleared the 14-log forward window, leaving 13 older logs (2026-06-29 →
-2026-08-16) outstanding — still over the 5-log cadence. That is the honest
-state, not a gate to silence: the remaining backlog is real work, and the
-cadence is what picks it up.
+**The backlog is currently zero.** The first real sweep (2026-09-01) cleared
+the 14-log forward window; a follow-up pass the same day cleared the
+remaining 13 older logs (2026-06-29 → 2026-08-16). A same-day sweep then
+picked up the one log (`2026-09-01-v3-secrets-delivery.md`) that landed after
+the backlog-clearing pass, so `logs-considered` tracks the live count exactly.
+The gate stays quiet on the count arm until the next 5-log cadence produces a
+gap — that is the mechanism working, not evidence it can be removed.
 
 ## Why a ledger and not just the in-log marker
 
@@ -178,6 +180,7 @@ was earned by a sweep reading that log in full.
 | [2026-09-01-v8-agent-operator-health-checks.md](../logs/2026-09-01-v8-agent-operator-health-checks.md)                         | 2026-09-01 | `promoted`          | .claude/rules/subagent-dispatch.md                                                                                                                                                                                           |
 | [2026-09-01-x7-human-action-audit.md](../logs/2026-09-01-x7-human-action-audit.md)                                             | 2026-09-01 | `promoted`          | .claude/rules/tests.md<br>CLAUDE.md                                                                                                                                                                                          |
 | [2026-09-01-x7b-audit-wiring.md](../logs/2026-09-01-x7b-audit-wiring.md)                                                       | 2026-09-01 | `promoted`          | .claude/rules/subagent-dispatch.md                                                                                                                                                                                           |
+| [2026-09-01-v3-secrets-delivery.md](../logs/2026-09-01-v3-secrets-delivery.md)                                                 | 2026-09-01 | `promoted`          | CLAUDE.md                                                                                                                                                                                                                    |
 
 <!-- prettier-ignore -->
-**Totals** — 112 logs: 93 `promoted`, 19 `no-durable-lesson`, 0 `not-yet-swept`, 0 `deferred`.
+**Totals** — 113 logs: 94 `promoted`, 19 `no-durable-lesson`, 0 `not-yet-swept`, 0 `deferred`.
