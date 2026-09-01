@@ -7,10 +7,12 @@
   [ADR-0060](../adr/0060-agent-policy-layer.md),
   [ADR-0061](../adr/0061-agent-decision-log.md),
   [ADR-0062](../adr/0062-runtime-mcp-surface.md),
-  [ADR-0063](../adr/0063-cli-structured-run-results.md), plus 2026-08-20
-  Update blocks on ADR-0039 (gate fired) and ADR-0035 (third artifact
-  class) and the 2026-08-20 amendment on ADR-0030 (dev-time vs runtime MCP
-  split).
+  [ADR-0063](../adr/0063-cli-structured-run-results.md),
+  [ADR-0085](../adr/0085-cli-secret-delivery-via-spawn-env.md) (V3's gate,
+  fired 2026-09-01), plus 2026-08-20 Update blocks on ADR-0039 (gate fired)
+  and ADR-0035 (third artifact class), the 2026-08-20 amendment on ADR-0030
+  (dev-time vs runtime MCP split), and the 2026-09-01 Update block on
+  ADR-0058 (secrets gate fired).
 - **Research:** [`../research/agent-cli-integration.md`](../research/agent-cli-integration.md).
 - **Trackers:** [`../ROADMAP.md`](../ROADMAP.md) §_Agent-operator wave_ and
   [`IMPLEMENTATION.md`](./IMPLEMENTATION.md) §_m3l-cli build-out_ (V-series
@@ -32,12 +34,12 @@ V-series.
 
 ## Scope and sequencing
 
-| Stage | Contents                                                                            | Shape                                         |
-| ----- | ----------------------------------------------------------------------------------- | --------------------------------------------- |
-| **1** | V2, V4–V9 — machine surface, wrapper/loop, policy, log, operator script + workloads | Repo-native; independently shippable rows     |
-| **2** | V10 — `packages/m3l-mcp` stdio surface                                              | Depends on V2; informed by Stage-1 experience |
-| **3** | V11 — headless/scheduled operation                                                  | Depends on V8 + the gated V3 secrets decision |
-| Gated | V3 (secrets-delivery ADR), V12 (remote MCP ADR)                                     | Recorded; nothing built until each ADR exists |
+| Stage | Contents                                                                            | Shape                                           |
+| ----- | ----------------------------------------------------------------------------------- | ----------------------------------------------- |
+| **1** | V2, V4–V9 — machine surface, wrapper/loop, policy, log, operator script + workloads | Repo-native; independently shippable rows       |
+| **2** | V10 — `packages/m3l-mcp` stdio surface                                              | Depends on V2; informed by Stage-1 experience   |
+| **3** | V11 — headless/scheduled operation                                                  | Depends on V8; V3's secrets decision has landed |
+| Gated | V12 (remote MCP ADR)                                                                | Recorded; nothing built until that ADR exists   |
 
 **Non-coupling.** The U-series proceeds independently — the only hard edge
 is U10 (`m3l flow`) for the queue-reconciliation workload; U4/U8
@@ -76,13 +78,46 @@ never free-form report content; read-tolerant with a named
 form. Envelope schema joins `docs/reference/cli.md` when shipped.
 Coordinate with any in-flight U-rows touching `main.ts`.
 
-### V3. Secrets-delivery hardening — gated
+### V3. Secrets-delivery hardening
 
-Recorded, not designed: CLI-managed secret delivery beyond argv (visible
-in `/proc/<pid>/cmdline`) and the passive `.env` flag. **Unblock
-condition: a dedicated future ADR** settling the mechanism (env-var
-injection at spawn, secret-store resolution, or both). Prerequisite for
-V11; the longest-lead open decision in the programme.
+**Decision:** [ADR-0085](../adr/0085-cli-secret-delivery-via-spawn-env.md)
+(the gate ADR-0058 recorded, fired 2026-09-01). Mechanism: **environment
+injection at spawn**. `translateArgv` returns both halves of the invocation
+(`{ argv, secretEnv }`) so "a value is in exactly one of these" lives in one
+place; a `secret: true` parameter's value is **dropped from argv** — required,
+not optional, since argv outranks env in `M3LScriptConfigLoader`'s chain and a
+value emitted both ways would resolve from argv and leave the hardening
+silently inert — and injected into the child's environment under
+`Core.deriveEnvVarName(descriptor.name)`, the SCREAMING_SNAKE_CASE key
+`M3LEnvironmentConfigProvider` already reads at precedence level 4. **No
+consumer-script change**: the resolution path already exists. `spawnScript`
+spawns with `env: { ...baseEnv, ...secretEnv }` — inherit, then overlay, never
+an allowlist — with `baseEnv` injected from the command context rather than
+read as a global.
+
+The `.env` half becomes explicit: `--env-file <path>` / `--no-env-file` join
+`--json` and `--in-process` as CLI-reserved tokens in `cli/flags.ts`, stripped
+before the script's own strict `parseArgs`. Default behaviour is **unchanged**
+(`--env-file-if-exists=.env`); both flags together is an error, exit `2`.
+
+Both spawn paths are in scope — dynamic dispatch (`commands/dynamic.ts`) and
+the wizard (`commands/wizard.ts`), which calls `spawnScript` directly and
+bypasses `executeScript`. The in-process path (`--in-process`, ADR-0054) needs
+no change: it binds a typed in-memory record with no child process and no argv.
+
+Mechanical cost: `toEnvKey` is promoted out of
+`M3LEnvironmentConfigProvider`'s module privacy into
+`core/config/deriveEnvVarName.ts` so there is exactly one implementation
+across both packages — one additive **Core namespace-barrel** export
+(semver-minor on `m3l-common`, no new `exports` subpath), paying the standard
+`docs/reference/core/config.md` + `gen:counts` + `gen:index` + provenance
+re-stamp set.
+
+Scope honesty, carried from the ADR: `/proc/<pid>/environ` is `0400`
+owner-only where `cmdline` is world-readable, so this defeats a co-tenant
+`ps`/`/proc` reader — **not** root, a debugger, or the same user. Secret-store
+resolution (Secrets Manager / SSM) stays gated for want of a named consumer.
+Unblocks V11.
 
 ### V4. `aws/bedrock-runtime` — the wrapper
 
@@ -170,7 +205,9 @@ second).
 **Decision:** ADR-0058. cron/EventBridge-triggered agent-operator under
 policy, budget, and the decision log; unattended posture per the
 secure-deployment guidance (least privilege, boundary audit). Hard deps:
-V8, V6, V7, and **V3's secrets ADR** for any secret-bearing script.
+V8, V6, V7. **V3's secrets decision has landed**
+([ADR-0085](../adr/0085-cli-secret-delivery-via-spawn-env.md)) — a
+secret-bearing script no longer blocks this row.
 
 ### V12. Remote/HTTP MCP — recorded, not built
 
