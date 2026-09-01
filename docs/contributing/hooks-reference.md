@@ -8,7 +8,16 @@ lives here so it stays in one place instead of drifting across sections.
 every event name is a real Claude Code lifecycle event, every hook carries
 an explicit timeout, and this table's Matcher column stays in parity with
 each hook's actual `if:`-scoping in `.claude/settings.json` (ADR-0080-driven
-drift found and closed 2026-08-31).
+drift found and closed 2026-08-31). For `SessionStart`, `PreCompact`, and
+`PostCompact` — the three events with a documented, closed `matcher` value
+set rather than a free-form tool-name pattern — it additionally rejects any
+wired `matcher` token outside that set (`startup`/`resume`/`clear`/`compact`/
+`fork` for `SessionStart`; `manual`/`auto` for `PreCompact`/`PostCompact`),
+so a typo like `matcher: "compct"` fails the gate instead of silently never
+firing (2026-09-01, closing a gap the harness-refresh sweep found in
+ADR-0078's `SessionStart`+`compact` re-injection route). This is a separate
+check from the `if:`-scoping parity above — the Matcher column here still
+reflects the event `matcher`, not the guard-scoping `if:` clause.
 
 CLAUDE.md is advisory only (Claude reads it as context); everything in this
 table is deterministic enforcement that runs whether or not Claude "remembers"
