@@ -25,12 +25,17 @@ In **Settings → Branches → Branch protection rules**, add a rule for `main`:
   live Claude review: GitHub refuses to mint the OIDC token
   `claude-code-action` needs whenever the running workflow file differs from
   `main`'s copy, so the action always self-skips on such a PR. A dedicated
-  guard-step fallback auto-passes this one case — only when the workflow file
-  is the PR's sole non-ignored change and the action's own execution trace is
+  guard-step fallback auto-passes this case whenever the workflow file is
+  among the PR's non-ignored changes and the action's own execution trace is
   empty (proving no review was ever attempted, not that one ran and silently
-  dropped its verdict) — otherwise the check stays failing. Bundling other
-  changes alongside a workflow-gate edit does not ride along on this
-  fallback; it still requires a genuine review.
+  dropped its verdict) — otherwise the check stays failing. Widened from
+  "workflow is the PR's SOLE non-ignored change" after that stricter version
+  left real fixes to this gate (PRs #785, #806) merging with a permanently
+  failing required check, since almost no fix to this file is a workflow-only
+  diff; any other reviewable file bundled alongside the workflow edit is also
+  auto-passed under the same proof-of-no-attempt condition, and the auto-pass
+  step posts a PR comment naming those files so they're flagged for manual
+  review rather than silently waved through.
 - **Require status checks to pass before merging**, and mark these as required:
   - `verify` — the aggregator job in `.github/workflows/ci.yml`. It carries no
     checks itself (`needs:` on all ten jobs — the `changes` path-classifier
@@ -64,10 +69,13 @@ In **Settings → Branches → Branch protection rules**, add a rule for `main`:
     reviews: `*.md`, `docs/**`, `.github/dependabot.yml` and `pnpm-lock.yaml`
     keep their `diff --git` header but have their hunks replaced by a
     `(diff omitted — …)` marker, and `.claude-pr-changed-files.txt` is
-    filtered the same way. The filter deliberately mirrors the guard step's
-    `is_ignored` predicate — that one decides _whether_ to review, this one
-    decides _what_ is handed over, and the two must keep meaning the same
-    thing.
+    filtered the same way. Both filters, the guard step's own "is there
+    anything reviewable at all" check, and `pnpm check:review-size`'s local
+    byte measurement all share the single ignore set in
+    `bin/lib/pr-diff-filter.mjs` — that module decides _whether_ a path is
+    reviewable, its consumers each decide what to do with that answer, and
+    they cannot drift out of meaning the same thing the way three hand-copied
+    predicates once did.
 
     **Size limit.** If the _reviewable_ patch exceeds `MAX_REVIEWABLE_BYTES`
     (300,000 chars), Claude never starts: the job posts a comment naming the
@@ -83,7 +91,13 @@ In **Settings → Branches → Branch protection rules**, add a rule for `main`:
     and for the split axes to use when a PR runs over it.
 
     **Where the verdict comes from.** Primarily `.claude-review-verdict`, a
-    file the reviewer writes as its final action. Because a `>` redirect
+    file the reviewer writes as its final action, stamped with the commit SHA
+    (`PASS <sha>` / `FAIL <sha>`) so a verdict left over from an earlier
+    commit can never be mistaken for a fresh one — `resolveVerdict()`
+    (`bin/lib/pr-review-gate.mjs`) rejects a stamped verdict whose SHA doesn't
+    match `HEAD_SHA`; only an unstamped verdict, written solely by the
+    workflow's own reject/auto-pass/carry-prior-pass steps for the exact
+    commit under test, is trusted unconditionally. Because a `>` redirect
     target is checked separately from the command — a command-prefix rule
     like `Bash(echo:*)` authorizes `echo` but never the redirect target, and
     `Write(path)` rules are silently not consulted — every writable path needs
@@ -107,11 +121,11 @@ In **Settings → Branches → Branch protection rules**, add a rule for `main`:
 
     **When it's skipped** (the verdict is written as `PASS` directly, or
     carried forward from a prior `PASS`), in two cases: the PR's entire diff
-    is docs/config-only per `is_ignored` (nothing to review at all), or the
-    latest verdict was `PASS` and only `is_ignored`-matching files changed
-    since the reviewed commit, tracked via the `claude-review-sha` marker. Any
-    reviewable change re-triggers a full review. None of this weakens the
-    fail-closed gate.
+    is docs/config-only per `bin/lib/pr-diff-filter.mjs`'s ignore set (nothing
+    to review at all), or the latest verdict was `PASS` and only files that
+    same ignore set matches changed since the reviewed commit, tracked via
+    the `claude-review-sha` marker. Any reviewable change re-triggers a full
+    review. None of this weakens the fail-closed gate.
 
     A separate, non-blocking step logs run metrics (turns used against the
     cap, wall/API duration, cost, prompt-cache read/write tokens, reviewable
