@@ -129,3 +129,4 @@ surface).
 | 0082 | [Self-polling cadence for harness-vs-Anthropic freshness](./0082-harness-refresh-cadence.md)                                                              | Accepted                                              |
 | 0083 | [Permissions hardening and the managed-settings scope for a single-maintainer repo](./0083-permissions-hardening-and-managed-settings-scope.md)           | Accepted                                              |
 | 0084 | [Which improvement signals the retrospective loop consumes](./0084-retrospective-signal-sources.md)                                                       | Accepted                                              |
+| 0085 | [CLI secret delivery via the spawn environment, not argv](./0085-cli-secret-delivery-via-spawn-env.md)                                                    | Accepted                                              |
