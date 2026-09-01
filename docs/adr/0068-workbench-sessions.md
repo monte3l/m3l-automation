@@ -150,3 +150,54 @@ today only by seeding a step's artifact directly (as X6's own acceptance
 integration test does), not yet through a real script's `run.ended` payload.
 This does not block X6 or X11; it is recorded in `docs/reference/console.md`'s
 Known limits.
+
+## Update (2026-09-01) — the promotion trigger fired; the type home moved
+
+This ADR's decision recorded the convention types as console-local, with
+"promotion to `m3l-common` … triggered by U10 starting". U10 started, so the
+gate opened and the types moved.
+
+The promotion is not optional. `packages/m3l-cli` depends on `m3l-common`
+plus the sixteen consumer scripts and **cannot** import
+`m3l-console-server`, so ADR-0056's flow engine can only consume this
+convention — which its own 2026-08-20 Update commits it to doing — after the
+types leave the console. This is the "additive minor at that moment" this ADR
+flagged in advance, and it also discharges ADR-0056's standing condition that
+"any library seam it turns out to need gets its own recorded decision".
+
+**What moved.** `parseStepReference`, `formatStepReference`,
+`resolveStepReference` and the `M3LStepReference` type from
+`sessions/reference.ts`, plus `M3LBindingExpectedType`,
+`validateBindingValue` and the binding type from `sessions/binding.ts`, into
+a new `core/orchestration` Core submodule surfaced through the Core namespace
+barrel (never a new `exports` subpath). The grammar is unchanged:
+`step-<ordinal>.output(.<ident> | [<index>] | ["<quoted>"])*`, 1-based
+ordinal, 0-based indices, trailing garbage rejected.
+
+`sessions/launch-parameters.ts` is untouched. `M3LSessionBinding` is renamed
+`M3LStepBinding` in the library — "session" is a console concept with no
+meaning to a flow — and the console keeps its original name as a local alias,
+so the console's own API is unchanged.
+
+**The one place this is not a pure move.** The moved functions threw
+`M3LConsoleError` with code `ERR_CONSOLE_SESSION_REFERENCE_INVALID`, and a
+console-specific error class cannot live in `m3l-common`. The promoted
+functions therefore throw a library-owned `M3LError` subclass with a
+library-owned code, and `sessions/reference.ts` and `sessions/binding.ts`
+remain in place as thin adapters that re-export the promoted types and
+catch-and-rewrap the promoted error as `M3LConsoleError` with the existing
+code.
+
+Adapters rather than deletion, deliberately: the console's HTTP envelope
+classifies `ERR_CONSOLE_SESSION_REFERENCE_INVALID` as a 400/caller/
+non-retryable fault, so letting a raw library error escape would silently
+reclassify those responses to 500. The adapters preserve that mapping and
+leave both console test suites unchanged — which also keeps those suites
+covering the adapters' own throw paths.
+
+**Semver impact:** additive minor on `@m3l-automation/m3l-common` — a new
+Core submodule and a new error code, no removals and no signature changes.
+No change to `m3l-console-server`'s public API.
+
+Nothing else in this ADR changes. The convention, the grammar, the caps, and
+X6's shipped surface all stand as decided; only the types' home moved.
