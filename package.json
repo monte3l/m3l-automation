@@ -105,6 +105,7 @@
     "worktree:remove": "node bin/worktree-remove.mjs",
     "worktree:prune": "node bin/worktree-prune.mjs",
     "spoke:recover": "node bin/spoke-recovery.mjs",
+    "telemetry:sessions": "node bin/session-telemetry.mjs",
     "prepare": "lefthook install && node bin/install-merge-drivers.mjs"
   },
   "devDependencies": {
