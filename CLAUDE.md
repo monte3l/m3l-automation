@@ -98,7 +98,7 @@ minutes — background it, never `--no-verify` (CI re-runs everything anyway).
 | `pre-push` (lefthook)   | `check:file-budget`, `check:agents`, `check:script-docs`, `check:provenance` | repo   |
 | `pre-push` (lefthook)   | `check:cli-docs`, `check:review-size`, `check:context-budget`, `check:index` | repo   |
 | `pre-push` (lefthook)   | `check:harness-freshness`, `check:skill-evals`, `check:retrospective`        | repo   |
-| `pre-push` (lefthook)   | `check:review-policy`, `check:claude-cli-version`                            | repo   |
+| `pre-push` (lefthook)   | `check:review-policy`, `check:claude-cli-version`, `check:hooks`             | repo   |
 
 `pnpm verify` reproduces every CI check locally; `check:verify-parity` keeps
 it in sync with `ci.yml`, and `check:cadence` unions the rows above (split

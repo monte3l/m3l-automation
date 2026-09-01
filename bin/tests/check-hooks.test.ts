@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
   KNOWN_EVENTS,
+  KNOWN_MATCHERS,
   extractHookScriptName,
   validateHooksConfig,
   extractIfGlob,
@@ -152,6 +153,226 @@ describe("validateHooksConfig", () => {
     expect(result.errors).toEqual([]);
     expect(result.warnings).toEqual([]);
     expect(result.referenced).toEqual(new Set());
+  });
+});
+
+describe("KNOWN_MATCHERS", () => {
+  test("holds the documented matcher sets for SessionStart, PreCompact, PostCompact", () => {
+    expect(KNOWN_MATCHERS.get("SessionStart")).toEqual(
+      new Set(["startup", "resume", "clear", "compact", "fork"]),
+    );
+    expect(KNOWN_MATCHERS.get("PreCompact")).toEqual(
+      new Set(["manual", "auto"]),
+    );
+    expect(KNOWN_MATCHERS.get("PostCompact")).toEqual(
+      new Set(["manual", "auto"]),
+    );
+  });
+});
+
+describe("matcher validation", () => {
+  function hook(command: string, timeout?: number) {
+    return timeout === undefined ? { command } : { command, timeout };
+  }
+
+  test("a SessionStart entry with a known-good matcher produces no matcher error", () => {
+    const settings = {
+      hooks: {
+        SessionStart: [
+          {
+            matcher: "compact",
+            hooks: [
+              hook(
+                'node "$CLAUDE_PROJECT_DIR/.claude/hooks/reinject-compact-handoff.mjs"',
+                30,
+              ),
+            ],
+          },
+        ],
+      },
+    };
+    const result = validateHooksConfig(settings, {
+      hookFileExists: () => true,
+      onDiskHookNames: [],
+    });
+    expect(result.errors).toEqual([]);
+  });
+
+  test("a SessionStart entry with an unknown matcher is exactly one error naming the event, value, and undocumented-ness", () => {
+    const settings = {
+      hooks: {
+        SessionStart: [
+          {
+            matcher: "compct",
+            hooks: [
+              hook(
+                'node "$CLAUDE_PROJECT_DIR/.claude/hooks/reinject-compact-handoff.mjs"',
+                30,
+              ),
+            ],
+          },
+        ],
+      },
+    };
+    const result = validateHooksConfig(settings, {
+      hookFileExists: () => true,
+      onDiskHookNames: [],
+    });
+    expect(result.errors).toEqual([expect.stringContaining('"SessionStart"')]);
+    expect(result.errors[0]).toContain("compct");
+    expect(result.errors[0]).toContain("not one of the documented values");
+  });
+
+  test.each([["manual"], ["auto"]])(
+    "a PreCompact entry with matcher %s produces no error",
+    (matcher) => {
+      const settings = {
+        hooks: {
+          PreCompact: [
+            {
+              matcher,
+              hooks: [
+                hook(
+                  'node "$CLAUDE_PROJECT_DIR/.claude/hooks/some-precompact-hook.mjs"',
+                  30,
+                ),
+              ],
+            },
+          ],
+        },
+      };
+      const result = validateHooksConfig(settings, {
+        hookFileExists: () => true,
+        onDiskHookNames: [],
+      });
+      expect(result.errors).toEqual([]);
+    },
+  );
+
+  test("a PreCompact entry with an unknown matcher is an error", () => {
+    const settings = {
+      hooks: {
+        PreCompact: [
+          {
+            matcher: "sometimes",
+            hooks: [
+              hook(
+                'node "$CLAUDE_PROJECT_DIR/.claude/hooks/some-precompact-hook.mjs"',
+                30,
+              ),
+            ],
+          },
+        ],
+      },
+    };
+    const result = validateHooksConfig(settings, {
+      hookFileExists: () => true,
+      onDiskHookNames: [],
+    });
+    expect(result.errors).toEqual([expect.stringContaining("sometimes")]);
+  });
+
+  test("an event with no known matcher set (e.g. PreToolUse) is never checked against KNOWN_MATCHERS", () => {
+    const settings = {
+      hooks: {
+        PreToolUse: [
+          {
+            matcher: "NotARealTool",
+            hooks: [
+              hook(
+                'node "$CLAUDE_PROJECT_DIR/.claude/hooks/guard-js-extension.mjs"',
+                30,
+              ),
+            ],
+          },
+        ],
+      },
+    };
+    const result = validateHooksConfig(settings, {
+      hookFileExists: () => true,
+      onDiskHookNames: [],
+    });
+    expect(result.errors).toEqual([]);
+  });
+
+  test("an entry with no matcher field at all produces no matcher error, for a known- or unknown-matcher event", () => {
+    const settings = {
+      hooks: {
+        SessionStart: [
+          {
+            hooks: [
+              hook(
+                'node "$CLAUDE_PROJECT_DIR/.claude/hooks/reinject-compact-handoff.mjs"',
+                30,
+              ),
+            ],
+          },
+        ],
+        PreToolUse: [
+          {
+            hooks: [
+              hook(
+                'node "$CLAUDE_PROJECT_DIR/.claude/hooks/guard-js-extension.mjs"',
+                30,
+              ),
+            ],
+          },
+        ],
+      },
+    };
+    const result = validateHooksConfig(settings, {
+      hookFileExists: () => true,
+      onDiskHookNames: [],
+    });
+    expect(result.errors).toEqual([]);
+  });
+
+  test("a pipe-alternation matcher with all-valid tokens produces no error", () => {
+    const settings = {
+      hooks: {
+        SessionStart: [
+          {
+            matcher: "compact|fork",
+            hooks: [
+              hook(
+                'node "$CLAUDE_PROJECT_DIR/.claude/hooks/reinject-compact-handoff.mjs"',
+                30,
+              ),
+            ],
+          },
+        ],
+      },
+    };
+    const result = validateHooksConfig(settings, {
+      hookFileExists: () => true,
+      onDiskHookNames: [],
+    });
+    expect(result.errors).toEqual([]);
+  });
+
+  test("a pipe-alternation matcher with one bad token is exactly one error naming only the bad token", () => {
+    const settings = {
+      hooks: {
+        SessionStart: [
+          {
+            matcher: "compact|bogus",
+            hooks: [
+              hook(
+                'node "$CLAUDE_PROJECT_DIR/.claude/hooks/reinject-compact-handoff.mjs"',
+                30,
+              ),
+            ],
+          },
+        ],
+      },
+    };
+    const result = validateHooksConfig(settings, {
+      hookFileExists: () => true,
+      onDiskHookNames: [],
+    });
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]).toContain("bogus");
+    expect(result.errors[0]).not.toContain('"compact" is not');
   });
 });
 

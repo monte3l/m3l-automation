@@ -93,8 +93,15 @@ pre-push:
     # looks outside the repo (the auto-memory store lives in ~/.claude), so
     # `pre-push` is the only place it can ever run — CI has no such store and
     # the gate no-ops there.
+    # check:hooks joined the same way: it was CI-only, meaning a locally
+    # green pre-push was no evidence a broken hook wiring (a bad event name,
+    # a missing script, or — since this addition — an unrecognized `matcher`
+    # value on SessionStart/PreCompact/PostCompact) hadn't slipped through.
+    # A matcher typo can silently disable the ADR-0078 compaction-handoff
+    # re-injection with no other symptom. Reads settings.json and the hooks
+    # dir, no network call, negligible cost.
     checks:
-      run: node bin/verify-signed-range.mjs && pnpm check:control-chars && pnpm check:file-budget && pnpm check:agents && pnpm check:script-docs && pnpm check:cli-docs && pnpm check:review-size && pnpm check:context-budget && pnpm check:provenance && pnpm check:index && pnpm check:harness-freshness && pnpm check:retrospective && pnpm check:skill-evals && pnpm check:claude-cli-version && pnpm check:review-policy
+      run: node bin/verify-signed-range.mjs && pnpm check:control-chars && pnpm check:file-budget && pnpm check:agents && pnpm check:script-docs && pnpm check:cli-docs && pnpm check:review-size && pnpm check:context-budget && pnpm check:provenance && pnpm check:index && pnpm check:harness-freshness && pnpm check:retrospective && pnpm check:skill-evals && pnpm check:claude-cli-version && pnpm check:review-policy && pnpm check:hooks
 
 # Fire after `git rebase` completes (including a no-op rebase with nothing to
 # replay) and after `git merge` completes. Regenerates the derived files the
