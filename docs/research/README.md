@@ -30,6 +30,15 @@ guidance changes, so treat a snapshot's age as a signal to re-run
 source of truth. There is no automated staleness check for an individual
 topic snapshot.
 
+A second living tracker sits alongside it:
+[`retrospective.md`](retrospective.md) is the per-log ledger of
+`/promoting-work-log-lessons` sweeps (ADR-0084), carrying its own
+machine-readable `last-swept` / `logs-considered` header that the
+`check:retrospective` `pre-push` gate reads. Same in-place convention as
+`harness-refresh.md` below, different question: that one asks whether the
+harness still matches Anthropic's guidance, this one asks whether the
+project's own logged experience has reached its durable rules.
+
 The **whole-harness** question — is the harness itself (agents, skills,
 hooks, rules, workflows, `CLAUDE.md`) still current with Anthropic's
 guidance — is different: it's answered by
