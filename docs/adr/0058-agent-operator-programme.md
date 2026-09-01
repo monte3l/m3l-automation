@@ -156,3 +156,23 @@ the layer-based Issue Types — `Library capability` for V4–V7,
 `CLI capability` for V2/V3, `Consumer script` for V8/V9, `Package capability`
 for V10, `Infrastructure` for V11/V12, and `Governance` for V1. Programme scope
 and phasing are unaffected.
+
+## Update 2026-09-01 — secrets gate fired; ADR-0085 settles the mechanism
+
+The first of the two gates recorded above ("a **secrets-delivery mechanism**
+beyond argv/.env") has been opened deliberately, by its own terms:
+[ADR-0085](./0085-cli-secret-delivery-via-spawn-env.md) settles the mechanism
+as **environment injection at spawn** — a `secret: true` parameter's value is
+dropped from the child's argv and injected into its environment under the
+SCREAMING_SNAKE_CASE name the library's own provider chain already reads at
+precedence level 4 — paired with explicit `--env-file` / `--no-env-file`
+control over the previously hardcoded, passive `.env` load. Secret-store
+resolution (AWS Secrets Manager / SSM) is **not** opened by implication: ADR-0085
+records it as still gated, deferred for want of a named consumer.
+
+Consequently, "Stage 3 waits on the gated secrets-delivery decision" (line 128
+above) is discharged — V11 is now blocked only on its Stage-1 dependencies
+(V8, V6, V7). The **remote/HTTP MCP transport** gate
+([ADR-0062](./0062-runtime-mcp-surface.md), V12) stays closed and untouched.
+The Status stays Accepted; this update fires a revisit path this ADR recorded
+rather than reversing anything it decided.
