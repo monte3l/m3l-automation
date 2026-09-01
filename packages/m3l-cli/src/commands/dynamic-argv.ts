@@ -3,11 +3,14 @@
  * declared-parameter translation layer shared by the dynamic per-script
  * dispatch and the wizard — turns a script's declared `configParameters`
  * plus parsed `parseArgs` values into either canonical `--name[=value]`
- * child argv (`translateArgv`, spawn path) or a typed `Record` for direct
+ * child argv paired with the secret-only environment overlay
+ * (`translateArgv`, spawn path, ADR-0085) or a typed `Record` for direct
  * in-process binding (`buildParameterValues`, ADR-0054/U7).
  *
  * @packageDocumentation
  */
+
+import { Core } from "@m3l-automation/m3l-common";
 
 import { M3LCliError } from "../cli/errors.js";
 import { suggestNames } from "../cli/suggest.js";
@@ -271,32 +274,165 @@ function pushTranslatedArg(
 }
 
 /**
- * Translates parsed `values` back to canonical `--name[=value]` child argv,
- * in `descriptors`' declaration order (see {@link pushTranslatedArg} for the
- * per-type translation). An alias hit maps back to its canonical
- * `descriptor.name`.
+ * Rejects a declared parameter set in which two canonical names derive the
+ * same environment-variable name and at least one of them is secret.
+ *
+ * `api.token` and `api-token` are two distinct, individually legal declared
+ * parameters that both normalize to `API_TOKEN`. Injecting one of them as a
+ * secret would then silently satisfy the *other* parameter whenever that
+ * other one is absent from argv — a swapped secret, delivered quietly. No
+ * script in the fleet declares such a pair today; this guard is what keeps
+ * that true.
+ *
+ * Only pairs involving a secret are rejected. Two non-secret parameters
+ * colliding is pre-existing, unchanged behaviour (neither is ever injected),
+ * and failing on it here would break scripts this change has no business
+ * breaking.
+ *
+ * @throws {@link M3LCliError} coded `ERR_CLI_CONFIG_IMPORT` — the same code
+ *   {@link buildParseArgsOptions}'s name/alias collision guard raises, since
+ *   this is likewise an invalid declared config rather than bad user input.
+ */
+function assertNoEnvVarNameCollision(
+  descriptors: readonly M3LCliParameterDescriptor[],
+): void {
+  const ownerByEnvName = new Map<string, M3LCliParameterDescriptor>();
+  for (const descriptor of descriptors) {
+    const envName = Core.deriveEnvVarName(descriptor.name);
+    const existing = ownerByEnvName.get(envName);
+    if (existing === undefined) {
+      ownerByEnvName.set(envName, descriptor);
+      continue;
+    }
+    if (existing.secret === true || descriptor.secret === true) {
+      throw new M3LCliError(
+        "ERR_CLI_CONFIG_IMPORT",
+        `parameters '${existing.name}' and '${descriptor.name}' both derive the environment variable '${envName}', and at least one is secret`,
+      );
+    }
+  }
+}
+
+/**
+ * Renders one present secret-flagged parameter's value for environment
+ * delivery, mirroring {@link pushTranslatedArg}'s per-type translation onto
+ * the string forms `Core.coerceConfigValue` accepts on the way back in:
+ * `STRING_ARRAY` → the comma-joined items (the same `splitCsv` contract
+ * {@link buildParameterValues} already honours), everything else →
+ * `String(value)`.
+ *
+ * `BOOL` is deliberately absent: see {@link translateArgv}'s note on why a
+ * secret boolean is routed to argv instead.
+ */
+function secretEnvValue(
+  descriptor: M3LCliParameterDescriptor,
+  value: M3LCliParsedValues[string],
+): string {
+  if (descriptor.type === "STRING_ARRAY") {
+    /* istanbul ignore next -- unreachable: buildParseArgsOptions always
+       configures a STRING_ARRAY descriptor's key with `multiple: true`, so
+       parseArgs only ever yields an array for a present key of this type. */
+    const items = Array.isArray(value) ? value : [];
+    return items.map(String).join(",");
+  }
+  return String(value);
+}
+
+/**
+ * The two halves of a spawn invocation {@link translateArgv} produces: the
+ * public `--name[=value]` argv tokens, and the secret-only environment
+ * overlay the CLI injects into the child instead of writing it into
+ * `/proc/<pid>/cmdline` (ADR-0085).
+ *
+ * Returned as one object rather than split across two functions on purpose:
+ * "a declared parameter's value is in exactly one of these" is the invariant
+ * the whole hardening rests on, and it is only checkable in one place if
+ * both halves are produced in one place.
+ *
+ * @example
+ * ```ts
+ * import type { M3LCliTranslatedInvocation } from "./dynamic-argv.js";
+ *
+ * const invocation: M3LCliTranslatedInvocation = {
+ *   argv: ["--region=us-east-1"],
+ *   secretEnv: { API_TOKEN: "hunter2" },
+ * };
+ * ```
+ */
+export interface M3LCliTranslatedInvocation {
+  /** The translated `--name[=value]` tokens, in declaration order. */
+  readonly argv: readonly string[];
+  /**
+   * One entry per present secret-flagged parameter, keyed by the
+   * SCREAMING_SNAKE_CASE name `Core.deriveEnvVarName` derives from the
+   * descriptor's canonical `name` — the exact key
+   * `M3LEnvironmentConfigProvider` looks up at level 4 of the child's own
+   * provider chain. Empty when the script declares no secrets, or none were
+   * supplied.
+   */
+  readonly secretEnv: Readonly<Record<string, string>>;
+}
+
+/**
+ * Translates parsed `values` into the spawn invocation's two halves: the
+ * canonical `--name[=value]` child argv, in `descriptors`' declaration order
+ * (see {@link pushTranslatedArg} for the per-type translation), and the
+ * secret-only environment overlay. An alias hit maps back to its canonical
+ * `descriptor.name` in both.
+ *
+ * A parameter declared `secret: true` is routed to `secretEnv` and its argv
+ * token is **dropped**. Dropping it is required, not cosmetic: argv is level
+ * 1 of `M3LScriptConfigLoader`'s provider chain and the environment is level
+ * 4, so a value emitted both ways would still resolve from argv and the
+ * hardening would be silently inert while every "the secret reaches the
+ * environment" assertion still passed.
+ *
+ * A `secret: true` **`BOOL`** parameter is a contradiction — a boolean
+ * carries no secret payload, only the fact that a flag was set, which its
+ * mere presence in the argv already reveals. Rather than crash or invent a
+ * `"true"`/`"false"` environment encoding whose absent case is ambiguous, it
+ * is treated as non-secret for delivery purposes and keeps going to argv as
+ * a bare `--name` flag.
  *
  * Exported (8g refactor) so `commands/wizard.ts` can reuse the exact same
  * translation instead of duplicating it — both modules build a
  * `{descriptor.name: value}`-shaped record and hand it to this one shared
- * routine to produce the spawned script's argv.
+ * routine.
  *
  * @param descriptors - The script's declared parameters, in declaration order.
  * @param values - The parsed/collected values, keyed by canonical name or
  *   alias.
- * @returns The translated `--name[=value]` argv tokens, in declaration order.
+ * @returns The translated argv tokens and the secret environment overlay.
+ * @throws {@link M3LCliError} coded `ERR_CLI_CONFIG_IMPORT` when two declared
+ *   parameters' canonical names derive the same environment-variable name
+ *   (`api.token` and `api-token` both yield `API_TOKEN`) and at least one of
+ *   them is secret — an invalid declared config, not a user error, and one
+ *   that would otherwise feed a secret to the wrong parameter.
  *
  * @example
  * ```ts
- * const argv = translateArgv(descriptors, { region: "us-east-1", verbose: true });
- * // ["--region=us-east-1", "--verbose"]
+ * const { argv, secretEnv } = translateArgv(descriptors, {
+ *   region: "us-east-1",
+ *   "api-token": "hunter2",
+ * });
+ * // argv === ["--region=us-east-1"]
+ * // secretEnv === { API_TOKEN: "hunter2" }
  * ```
  */
 export function translateArgv(
   descriptors: readonly M3LCliParameterDescriptor[],
   values: M3LCliParsedValues,
-): readonly string[] {
+): M3LCliTranslatedInvocation {
   const argv: string[] = [];
+  // Object.create(null) for the same reason buildParseArgsOptions uses it: a
+  // declared parameter named "__proto__" must become a genuine own key rather
+  // than reach the inherited setter.
+  const secretEnv: Record<string, string> = Object.create(null) as Record<
+    string,
+    string
+  >;
+
+  assertNoEnvVarNameCollision(descriptors);
 
   for (const descriptor of descriptors) {
     const names = [descriptor.name, ...descriptor.aliases];
@@ -304,10 +440,18 @@ export function translateArgv(
     if (presentKey === undefined) {
       continue;
     }
-    pushTranslatedArg(argv, descriptor, values[presentKey]);
+    const value = values[presentKey];
+    if (descriptor.secret === true && descriptor.type !== "BOOL") {
+      secretEnv[Core.deriveEnvVarName(descriptor.name)] = secretEnvValue(
+        descriptor,
+        value,
+      );
+      continue;
+    }
+    pushTranslatedArg(argv, descriptor, value);
   }
 
-  return argv;
+  return { argv, secretEnv };
 }
 
 /**

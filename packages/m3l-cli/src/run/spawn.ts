@@ -1,7 +1,9 @@
 /**
  * `run/spawn` — spawns a script's compiled `dist/main.js` as a child process,
  * resolving to its exit code (or the signal-derived `128 + signal number`
- * when the child died from a signal).
+ * when the child died from a signal), with the caller's secret-parameter
+ * values delivered through the child's environment rather than its argv
+ * (ADR-0085).
  *
  * @packageDocumentation
  */
@@ -12,6 +14,8 @@ import { constants as osConstants } from "node:os";
 import { join } from "node:path";
 
 import { M3LCliError } from "../cli/errors.js";
+import { AUTO_ENV_FILE } from "../cli/flags.js";
+import type { M3LCliEnvFileSetting } from "../cli/flags.js";
 
 /**
  * The subset of a spawned child process's interface `spawnScript` relies on
@@ -72,7 +76,11 @@ export interface M3LCliSpawnOptions {
   readonly spawnImpl?: (
     command: string,
     args: readonly string[],
-    options: { readonly cwd: string; readonly stdio: M3LCliSpawnStdio },
+    options: {
+      readonly cwd: string;
+      readonly stdio: M3LCliSpawnStdio;
+      readonly env: Readonly<Record<string, string>>;
+    },
   ) => M3LCliSpawnedProcess;
   /**
    * When `true`, spawns with `stdio: ["inherit", "pipe", "inherit"]` and
@@ -88,6 +96,29 @@ export interface M3LCliSpawnOptions {
    * Ignored when `redirectStdoutToStderr` is not `true`.
    */
   readonly stderrStream?: { write(chunk: unknown): unknown };
+  /**
+   * The base environment the child inherits; defaults to `process.env`.
+   * Injected rather than read as a global so a caller (and a test) owns it —
+   * `main.ts` threads the same map it already uses to resolve the
+   * cache/history/output paths.
+   *
+   * Entries whose value is `undefined` are dropped, so the composed map
+   * handed to `spawnImpl` is a plain `Record<string, string>`.
+   */
+  readonly env?: Readonly<Record<string, string | undefined>>;
+  /**
+   * Secret-flagged parameter values keyed by their derived
+   * SCREAMING_SNAKE_CASE names (ADR-0085). Merged over {@link env} **last**,
+   * so an injected secret beats a stale ambient variable of the same name —
+   * matching the precedence the argv token it replaces used to have.
+   */
+  readonly secretEnv?: Readonly<Record<string, string>>;
+  /**
+   * The env-file decision for the child (ADR-0085); defaults to
+   * {@link AUTO_ENV_FILE}, which reproduces the pre-ADR-0085 behaviour
+   * exactly.
+   */
+  readonly envFile?: M3LCliEnvFileSetting;
 }
 
 /**
@@ -105,7 +136,41 @@ const defaultSpawnImpl: NonNullable<M3LCliSpawnOptions["spawnImpl"]> = (
     cwd: spawnOptions.cwd,
     stdio:
       spawnOptions.stdio === "inherit" ? "inherit" : [...spawnOptions.stdio],
+    env: { ...spawnOptions.env },
   });
+
+/**
+ * Builds the child's node-argv prefix from the resolved env-file decision.
+ *
+ * A caller-supplied path keeps the `--env-file-if-exists` form rather than
+ * node's strict `--env-file`, deliberately: a typo'd path then stays the same
+ * soft miss the hardcoded `.env` has always been, instead of turning into a
+ * hard node startup crash the CLI never surfaces a useful message for.
+ */
+function envFileArgs(setting: M3LCliEnvFileSetting): readonly string[] {
+  if (setting.kind === "disabled") {
+    return [];
+  }
+  const path = setting.kind === "path" ? setting.path : ".env";
+  return [`--env-file-if-exists=${path}`];
+}
+
+/**
+ * Composes the child's environment: the inherited base with every
+ * `undefined`-valued entry dropped, then the secret overlay applied last.
+ */
+function composeChildEnv(
+  base: Readonly<Record<string, string | undefined>>,
+  secretEnv: Readonly<Record<string, string>>,
+): Record<string, string> {
+  const composed: Record<string, string> = {};
+  for (const [key, value] of Object.entries(base)) {
+    if (value !== undefined) {
+      composed[key] = value;
+    }
+  }
+  return { ...composed, ...secretEnv };
+}
 
 /** Exit-code offset applied to a signal's numeric value (POSIX shell convention). */
 const SIGNAL_EXIT_CODE_OFFSET = 128;
@@ -135,13 +200,52 @@ function resolveExitCode(code: number | null, signal: string | null): number {
 }
 
 /**
+ * Resolves everything about the child that does not depend on the promise
+ * executor: which `spawn` to call, the node argv (env-file prefix, entry
+ * point, passthrough), and the options object (cwd, stdio, composed
+ * environment). Extracted so {@link spawnScript} itself stays under the
+ * per-function line budget.
+ */
+function resolveSpawnPlan(
+  scriptDirectory: string,
+  passthroughArgs: readonly string[],
+  options: M3LCliSpawnOptions,
+): {
+  readonly spawnImpl: NonNullable<M3LCliSpawnOptions["spawnImpl"]>;
+  readonly nodeArgs: readonly string[];
+  readonly spawnOptions: {
+    readonly cwd: string;
+    readonly stdio: M3LCliSpawnStdio;
+    readonly env: Readonly<Record<string, string>>;
+  };
+} {
+  return {
+    spawnImpl: options.spawnImpl ?? defaultSpawnImpl,
+    nodeArgs: [
+      ...envFileArgs(options.envFile ?? AUTO_ENV_FILE),
+      "dist/main.js",
+      ...passthroughArgs,
+    ],
+    spawnOptions: {
+      cwd: scriptDirectory,
+      stdio:
+        options.redirectStdoutToStderr === true
+          ? ["inherit", "pipe", "inherit"]
+          : "inherit",
+      env: composeChildEnv(options.env ?? process.env, options.secretEnv ?? {}),
+    },
+  };
+}
+
+/**
  * Spawns `<scriptDirectory>/dist/main.js` via `process.execPath`, passing
  * `passthroughArgs` through unchanged, and resolves the child's exit code.
  *
  * @param scriptDirectory - The script's directory (must contain a built
  *   `dist/main.js`).
  * @param passthroughArgs - Arguments forwarded verbatim after `dist/main.js`.
- * @param options - Optional `spawnImpl` override for testing.
+ * @param options - Optional `spawnImpl`/`env`/`secretEnv`/`envFile`
+ *   overrides; see {@link M3LCliSpawnOptions}.
  * @returns The child's numeric exit code; when the child died from a signal,
  *   `128 + <signal number>` (or `1` when the signal name is unrecognized).
  * @throws {@link M3LCliError} coded `ERR_CLI_SCRIPT_NOT_BUILT` when
@@ -168,20 +272,16 @@ export async function spawnScript(
     );
   }
 
-  const spawnImpl = options.spawnImpl ?? defaultSpawnImpl;
-  const stdio: M3LCliSpawnStdio =
-    options.redirectStdoutToStderr === true
-      ? ["inherit", "pipe", "inherit"]
-      : "inherit";
+  const { spawnImpl, nodeArgs, spawnOptions } = resolveSpawnPlan(
+    scriptDirectory,
+    passthroughArgs,
+    options,
+  );
 
   return new Promise<number>((resolve, reject) => {
     let child: M3LCliSpawnedProcess;
     try {
-      child = spawnImpl(
-        process.execPath,
-        ["--env-file-if-exists=.env", "dist/main.js", ...passthroughArgs],
-        { cwd: scriptDirectory, stdio },
-      );
+      child = spawnImpl(process.execPath, nodeArgs, spawnOptions);
     } catch (cause) {
       reject(
         new M3LCliError(

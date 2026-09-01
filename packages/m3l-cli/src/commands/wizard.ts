@@ -551,7 +551,10 @@ export async function runWizard(
     descriptors,
     context.output,
   );
-  const translatedArgs = translateArgv(descriptors, values);
+  const { argv: translatedArgs, secretEnv } = translateArgv(
+    descriptors,
+    values,
+  );
 
   renderSummary(context.output, descriptors, values);
 
@@ -566,7 +569,14 @@ export async function runWizard(
     return 0;
   }
 
-  const exitCode = await spawnScript(candidate.directory, translatedArgs);
+  // The wizard spawns directly rather than through `executeScript`, so the
+  // ADR-0085 secret/env-file plumbing has to be repeated here — a prompted
+  // secret reaches the child through `secretEnv`, never `translatedArgs`.
+  const exitCode = await spawnScript(candidate.directory, translatedArgs, {
+    env: context.env,
+    envFile: context.envFile,
+    secretEnv,
+  });
   recordWizardHistory(
     context.historyFilePath,
     candidate.name,

@@ -10,6 +10,7 @@
 import { parseArgs } from "node:util";
 
 import { M3LCliError } from "../cli/errors.js";
+import type { M3LCliEnvFileSetting } from "../cli/flags.js";
 import { partitionInProcessFlag, partitionJsonFlag } from "../cli/flags.js";
 import { suggestNames } from "../cli/suggest.js";
 import type { M3LCliCommandContext } from "./context.js";
@@ -80,12 +81,18 @@ const STATIC_COMMAND_NAMES: readonly string[] = [
  * Either condition previously produced a silent no-op — the extra tokens
  * dropped, or `--json` simply never honored — rather than a loud failure.
  *
- * @throws {@link M3LCliError} coded `ERR_CLI_IN_PROCESS_UNSUPPORTED` when
- *   either unsupported combination is present.
+ * `--env-file`/`--no-env-file` is rejected for the same reason: there is no
+ * child process for an env file to be loaded into, so honoring the flag is
+ * impossible and ignoring it would silently change what configuration the
+ * run resolved from.
+ *
+ * @throws {@link M3LCliError} coded `ERR_CLI_IN_PROCESS_UNSUPPORTED` when any
+ *   unsupported combination is present.
  */
 function assertInProcessSupported(
   passthroughArgs: readonly string[],
   jsonOutput: boolean,
+  envFile: M3LCliEnvFileSetting,
 ): void {
   const unsupportedPassthrough = passthroughArgs.filter(
     (token) => token !== "--dry-run",
@@ -100,6 +107,12 @@ function assertInProcessSupported(
     throw new M3LCliError(
       "ERR_CLI_IN_PROCESS_UNSUPPORTED",
       "--in-process does not yet support --json (no result envelope is emitted on this path) — drop one flag or the other",
+    );
+  }
+  if (envFile.kind !== "auto") {
+    throw new M3LCliError(
+      "ERR_CLI_IN_PROCESS_UNSUPPORTED",
+      "--in-process does not support --env-file/--no-env-file — there is no child process for a .env to be loaded into; drop --in-process to spawn instead",
     );
   }
 }
@@ -129,17 +142,29 @@ async function dispatchDynamicRun(
   inProcess: boolean,
 ): Promise<number> {
   if (inProcess) {
-    assertInProcessSupported(passthroughArgs, context.jsonOutput);
+    assertInProcessSupported(
+      passthroughArgs,
+      context.jsonOutput,
+      context.envFile,
+    );
+    // No child process, no argv, no serialization: a secret-flagged
+    // parameter's value is bound straight into the hosted command's typed
+    // `parameterValues` and never leaves this process's heap, so there is
+    // nothing here for ADR-0085's environment injection to protect.
     return runInProcess(scriptDirectory, {
       output: context.output,
       parameterValues: buildParameterValues(descriptors, values),
       dryRun: passthroughArgs.includes("--dry-run"),
     });
   }
-  return executeScript(context, scriptName, scriptDirectory, [
-    ...translateArgv(descriptors, values),
-    ...passthroughArgs,
-  ]);
+  const { argv, secretEnv } = translateArgv(descriptors, values);
+  return executeScript(
+    context,
+    scriptName,
+    scriptDirectory,
+    [...argv, ...passthroughArgs],
+    { secretEnv },
+  );
 }
 
 /**

@@ -97,6 +97,7 @@ deliberately do not.
 | ---------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------ |
 | 2026-08-29 | V6 slice 1 — `core/agent` policy layer, verdicts (ADR-0060) | [v6-agent-policy-layer](./2026-08-29-v6-agent-policy-layer.md)                 |
 | 2026-08-29 | V6 slice 2 — budgets, dry-run-first, `kind` cross-check     | [v6-agent-policy-layer-slice-2](./2026-08-29-v6-agent-policy-layer-slice-2.md) |
+| 2026-09-01 | V3 — secrets to the spawn env, not argv (ADR-0085)          | [v3-secrets-delivery](./2026-09-01-v3-secrets-delivery.md)                     |
 
 ## Workflow / infra
 

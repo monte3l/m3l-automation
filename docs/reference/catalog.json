@@ -143,6 +143,7 @@
       "M3LConfigMissingError",
       "M3LConfigAccessor",
       "M3LConfigSchemaValidator",
+      "deriveEnvVarName",
       "deriveSecretsSpecifier",
       "M3LDeriveSecretsSpecifierOptions",
       "M3LConfigSchemaValidators",

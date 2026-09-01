@@ -68,7 +68,7 @@
         {
           "file": "packages/m3l-common/src/core/config/M3LEnvironmentConfigProvider.ts",
           "symbol": "M3LEnvironmentConfigProvider",
-          "blob": "22ca5dccc855e5c972b6f4e497438572fdd0cb75"
+          "blob": "d8444bf67b93723e839f7eaf25ab759100832634"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LInMemoryConfigProvider.ts",
@@ -156,6 +156,11 @@
           "blob": "59bdba62320799392ab10640c9e6e56a8258522b"
         },
         {
+          "file": "packages/m3l-common/src/core/config/deriveEnvVarName.ts",
+          "symbol": "deriveEnvVarName",
+          "blob": "09758ee4421f1135d64b63642c0fa5d742c87477"
+        },
+        {
           "file": "packages/m3l-common/src/core/config/deriveSecretsSpecifier.ts",
           "symbol": "deriveSecretsSpecifier",
           "blob": "7e6f72e6b149f6cab73374391d872f6a13439c7a"
@@ -231,7 +236,7 @@
           "blob": "6974fb8bec2939cb0b05f82e659801d745e17348"
         }
       ],
-      "retrieved": "2026-08-30"
+      "retrieved": "2026-09-01"
     },
     {
       "heading": "Defensive typed reads (`M3LConfigAccessor`)",
