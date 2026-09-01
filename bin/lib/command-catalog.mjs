@@ -461,6 +461,11 @@ export const COMMAND_CATALOG = [
       "Cleans up every worktree whose branch is merged into main by ancestry, whose upstream reports [gone] (the marker left after a squash/rebase/merge-commit PR lands and the remote branch auto-deletes), a detached (--from) worktree whose HEAD is itself merged, or that git reports prunable. Refreshes remote-tracking refs first (git fetch --prune) unless `-- --no-fetch` is passed. `-- --dry-run` to preview, `-- --force` to also remove ones with uncommitted changes.",
   },
   {
+    name: "telemetry:sessions",
+    description:
+      "ADR-0084: the ONLY sanctioned reader of Claude Code's session transcripts — a thin adapter over the session-report plugin's bundled analyze-sessions.mjs, invoked on demand by /promoting-work-log-lessons and NEVER a pre-push gate. Always pins --dir to this project's transcript directory and bounds --since (default 30d); the full store measured 1,759 files / 932 MB and an unscoped scan is the workload ADR-0080 budgets against. Asserts every required top-level key (overall, by_project, by_subagent_type, by_skill, cache_breaks, top_prompts, by_day) and exits NON-ZERO naming the transcript-format instability when one is missing — the format is internal to Claude Code and officially unsupported to parse, so without this a version upgrade degrades silently to zeros. --analyzer pins a specific cached revision.",
+  },
+  {
     name: "spoke:recover",
     description:
       "Automates the first step of the subagent-truncation recovery playbook: cross-references a spoke's journal against `git status`/`git diff` and recommends resume/redispatch/none. `-- --journal <path>` (required); the MCP `spoke_recover` tool wraps this same script.",
