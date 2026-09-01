@@ -589,7 +589,16 @@ async function concludeHealthCheck(
     (total, iteration) => total + iteration.usage.totalTokens,
     0,
   );
-  const cost = loop.outcome?.cost;
+  // THIS script's own figure, not the library's: `createMeteredInvoker` pushes
+  // `sumObservedCost(...)` onto the ledger through `observeSpend`, so the
+  // ledger's `costThisRun` IS the locally computed cost — omitted (and so read
+  // as `undefined`) exactly when a served model had no declared rate.
+  //
+  // Reading it back from `loop.outcome.cost` instead would compare the
+  // library's figure to itself: the check could never fail, and the local
+  // re-implementation of `AWS.computeCost` that `steps/metering-invoker`
+  // documents as "made safe by `reconcileMeteredCost`" would be unguarded.
+  const cost = setup.ledger.snapshot(setup.now).costThisRun;
   // Only meaningful when the loop actually completed: a ceiling breach has no
   // library-side figure to reconcile against.
   if (loop.outcome !== undefined) {

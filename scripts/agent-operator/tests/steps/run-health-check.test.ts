@@ -19,6 +19,7 @@
  * precisely the bugs this file exists to catch.
  */
 
+import { readdirSync } from "node:fs";
 import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -443,6 +444,49 @@ describe("runHealthCheck — ordering constraint 1: the metered invoker precedes
   });
 });
 
+describe("runHealthCheck — the cost reconciliation is live", () => {
+  it("compares THIS script's metered cost against the library's, not against itself", async () => {
+    // `steps/metering-invoker` re-implements `AWS.computeCost` locally
+    // (ADR-0029 forbids importing it) and documents the duplication as "made
+    // safe by `reconcileMeteredCost`". That guard is only safe if the two
+    // sides come from DIFFERENT computations: `metered` from the ledger,
+    // which is where `sumObservedCost` pushed our figure, and `reported`
+    // from the loop's own outcome.
+    //
+    // Passing `loop.outcome.cost` as both sides — which is what this code did
+    // before review — makes the check vacuous: it can never diverge, and a
+    // drift in the local pricing formula would pass silently while the
+    // ledger's budget figures went wrong.
+    //
+    // This test pins the wiring by asserting the two figures AGREE on a real
+    // run. Drift the local formula (change `TOKENS_PER_RATE_UNIT`) and the
+    // happy-path runs in this file start throwing on the divergence —
+    // verified by mutation. With the vacuous version they stayed green.
+    const config = await fleetConfig();
+    scriptCli([makeDoctorPayload()]);
+    scriptModel([toolUseReply("fleet_doctor"), textReply("healthy")]);
+
+    await expect(run({ config })).resolves.toBeUndefined();
+
+    // Both sides priced the run, and the artifact carries the metered figure.
+    const cost = asRecord((await readReport())["loop"])["cost"];
+    expect(typeof cost).toBe("number");
+    expect(cost).toBeGreaterThan(0);
+  });
+
+  it("reports cost as null when no rate covered the served model, on BOTH sides", async () => {
+    // The other arm of `reconcileMeteredCost`: both sides unobservable is
+    // agreement, not divergence, so the run must not throw.
+    const config = await fleetConfig({ modelRates: [] });
+    scriptCli([makeDoctorPayload()]);
+    scriptModel([toolUseReply("fleet_doctor"), textReply("healthy")]);
+
+    await expect(run({ config })).resolves.toBeUndefined();
+
+    expect(asRecord((await readReport())["loop"])["cost"]).toBeNull();
+  });
+});
+
 describe("runHealthCheck — ordering constraint 2: modelRates must cover every served model", () => {
   it("refuses EVERY gated call when the served model has no declared rate", async () => {
     // The seeded `0` covers the PREFLIGHT and nothing more — `sumObservedCost`
@@ -715,19 +759,19 @@ describe("runHealthCheck — outcome and ordering after the loop", () => {
     ]);
     scriptModel([toolUseReply("fleet_doctor"), textReply("bad")]);
 
-    let artifactPresentAtFirstRecovery = false;
-    let seen = false;
+    let artifactsAtFirstRecovery = -1;
     const reportRecovery = (): void => {
-      if (seen) return;
-      seen = true;
-      // Synchronous probe: the write already resolved, so the directory is
-      // non-empty by now.
-      artifactPresentAtFirstRecovery = true;
+      if (artifactsAtFirstRecovery !== -1) return;
+      // Probe the OUTPUT DIRECTORY, synchronously, from inside the callback.
+      // Setting a flag here would prove only that `reportRecovery` was called
+      // at all — moving `writeHealthReport` after `reportAnomalies` would keep
+      // such a test green while breaking the very property it names.
+      artifactsAtFirstRecovery = readdirSync(outputDir).length;
     };
 
     await run({ config, reportRecovery });
 
-    expect(artifactPresentAtFirstRecovery).toBe(true);
+    expect(artifactsAtFirstRecovery).toBe(1);
     expect(await readdir(outputDir)).toHaveLength(1);
   });
 
