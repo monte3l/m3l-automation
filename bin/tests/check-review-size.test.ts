@@ -2,12 +2,12 @@ import { describe, expect, test, vi } from "vitest";
 import {
   SOFT_TARGET_BYTES,
   filterForReview,
-  isIgnoredPath,
   parseArgs,
   parseMaxReviewableBytes,
   splitDiffByFile,
   suggestSplitAxis,
 } from "../../bin/check-review-size.mjs";
+import { filterPatch } from "../../bin/lib/pr-diff-filter.mjs";
 import { createReporter } from "../lib/report.mjs";
 
 /** Build a single-file unified diff block's text (no trailing newline). */
@@ -41,23 +41,6 @@ describe("parseMaxReviewableBytes", () => {
 
   test("returns null when the constant is absent", () => {
     expect(parseMaxReviewableBytes("jobs:\n  review:\n    env: {}")).toBeNull();
-  });
-});
-
-describe("isIgnoredPath", () => {
-  test.each([
-    ["a Markdown file anywhere", "packages/m3l-common/README.md", true],
-    ["a docs/** path", "docs/adr/0072-review-size.md", true],
-    ["a non-Markdown docs/** path", "docs/assets/diagram.png", true],
-    [".github/dependabot.yml exactly", ".github/dependabot.yml", true],
-    ["pnpm-lock.yaml exactly", "pnpm-lock.yaml", true],
-    [
-      "a reviewable src path",
-      "packages/m3l-common/src/core/foo/index.ts",
-      false,
-    ],
-  ])("%s -> %s", (_label, path, expected) => {
-    expect(isIgnoredPath(path)).toBe(expected);
   });
 });
 
@@ -135,6 +118,17 @@ describe("filterForReview", () => {
       "diff --git a/docs/notes.md b/docs/notes.md",
     );
     expect(filteredText).toContain("(diff omitted");
+    // Strengthened: the exact 3-line GATE-reason marker bin/lib/pr-diff-filter.mjs
+    // would emit, not just a substring that happens to still match.
+    expect(filteredText).toContain(
+      "(diff omitted — not reviewable by this gate: *.md,",
+    );
+    expect(filteredText).toContain(
+      " docs/**, .github/dependabot.yml. Listed so you know",
+    );
+    expect(filteredText).toContain(
+      " the file changed; do not review or Read it.)",
+    );
     expect(perFile).toEqual([
       {
         path: "docs/notes.md",
@@ -142,6 +136,26 @@ describe("filterForReview", () => {
         ignored: true,
       },
     ]);
+  });
+
+  test("the omission marker for an ignored file is byte-identical to bin/lib/pr-diff-filter.mjs's own filterPatch output (the local/CI measurement must agree)", () => {
+    const path = "docs/notes.md";
+    const rawPatch = `${makeDiffText(path, ["+secret plan text"])}\n`;
+    const blocks = splitDiffByFile(rawPatch);
+    const { filteredText } = filterForReview(blocks);
+    const expectedFromPrDiffFilter = filterPatch(rawPatch);
+    expect(filteredText).toBe(expectedFromPrDiffFilter);
+  });
+
+  test("uses the LOCKFILE-reason marker for pnpm-lock.yaml, byte-identical to filterPatch's output", () => {
+    const path = "pnpm-lock.yaml";
+    const rawPatch = `${makeDiffText(path, ["+some lockfile churn"])}\n`;
+    const blocks = splitDiffByFile(rawPatch);
+    const { filteredText } = filterForReview(blocks);
+    expect(filteredText).toContain(
+      "(diff omitted — pnpm-lock.yaml is mechanically generated;",
+    );
+    expect(filteredText).toBe(filterPatch(rawPatch));
   });
 
   test("keeps the full text unchanged for a reviewable file", () => {

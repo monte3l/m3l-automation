@@ -263,7 +263,7 @@ export const COMMAND_CATALOG = [
   {
     name: "check:github-features",
     description:
-      "Verifies the live repository's GitHub platform-feature flags (wiki/discussions/issues/projects) and metadata (description/homepage/topics) match ADR-0050's declared stance, and that .github/ISSUE_TEMPLATE/config.yml still links to the Discussions Ideas/Q&A categories. Needs gh auth; run push-only in CI (ci.yml), same as check:hub-drift.",
+      "Verifies the live repository's GitHub platform-feature flags (wiki/discussions/issues/projects) and metadata (description/homepage/topics) match ADR-0050's declared stance, and that .github/ISSUE_TEMPLATE/config.yml still links to the Discussions Ideas/Q&A categories. Also warns (non-blocking) when delete_branch_on_merge is disabled — the precondition bin/worktree-prune.mjs's [gone]-upstream heuristic depends on. Needs gh auth; run push-only in CI (ci.yml), same as check:hub-drift.",
   },
   {
     name: "check:label-drift",
@@ -459,6 +459,11 @@ export const COMMAND_CATALOG = [
     name: "worktree:prune",
     description:
       "Cleans up every worktree whose branch is merged into main by ancestry, whose upstream reports [gone] (the marker left after a squash/rebase/merge-commit PR lands and the remote branch auto-deletes), a detached (--from) worktree whose HEAD is itself merged, or that git reports prunable. Refreshes remote-tracking refs first (git fetch --prune) unless `-- --no-fetch` is passed. `-- --dry-run` to preview, `-- --force` to also remove ones with uncommitted changes.",
+  },
+  {
+    name: "branch:cleanup",
+    description:
+      "Shared-checkout equivalent of `worktree:remove`'s branch-delete step — deletes a merged local branch from the CURRENT checkout without any worktree-specific bookkeeping. `-- <branch>` (required, `git branch -d`; refuses `main` and the currently-checked-out branch), `-- <branch> --force` (`git branch -D`). The primary caller is `/finishing-work`, the post-merge close-out skill.",
   },
   {
     name: "telemetry:sessions",

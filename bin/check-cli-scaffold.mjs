@@ -100,6 +100,7 @@ export const CLI_SRC_LAYERS = Object.freeze([
   "cli",
   "commands",
   "discovery",
+  "flow",
   "history",
   "presets",
   "run",

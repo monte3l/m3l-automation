@@ -57,19 +57,57 @@ A behavior claim needs a `file:line` citation in the source. Never report
 anything inferred from a name alone, or anything not confirmed by reading
 the diff or the cited file.
 
+## Output format
+
+Every review surface using this cap follows the same section order and
+markers, so a reviewer or a parser reading multiple surfaces' output never
+has to special-case one of them:
+
+- Headings, in order: `### Must-fix`, `### Should-fix`, `### Nits`, `### Verdict`
+- An empty section reads `_None._` rather than an empty bullet list.
+- Each finding is one bullet, exactly:
+
+  ```text
+  - **`path/to/file.ts:line`** — <violation> (<which rule>).
+  ```
+
+- The verdict line, exactly:
+
+  ```text
+  - PASS|FAIL — <one-line reason>
+  ```
+
+`pnpm check:review-policy` verifies each of the six literal strings above
+is restated somewhere in `claude-pr-review.yml`'s prompt. `claude-pr-review.yml`
+additionally requires a trailing HTML-comment marker naming the reviewed
+commit SHA after the Verdict section — that is CI plumbing (it lets a later
+run tell what commit a verdict reviewed), not part of this policy, and not
+backtick-quoted above precisely so it stays outside what this gate compares.
+
+## Re-review convergence
+
+Tell the reviewer how to behave when a PR has already been reviewed, so a
+one-line fix doesn't reach round seven on style alone:
+
+- Re-check all Must-fix items from prior rounds, plus newly changed lines.
+- Post Must-fix findings only. Suppress new Should-fix/Nit findings entirely
+  — report them as a single count in the summary line, not as bullets.
+- If all prior Must-fix items are resolved and no new Must-fix items exist,
+  the verdict is PASS even if unaddressed nits remain.
+
 ## Where this is enforced
 
 Four spokes report findings in the exact Must-fix/Should-fix/Nits per-section
 shape this cap fits: the numeric cap is restated in each, and
 `pnpm check:review-policy` fails if any one drifts from the number below.
 
-| Surface                                   | What it restates                                                                                |
-| ----------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `.github/workflows/claude-pr-review.yml`  | Finding cap, Must-fix/Should-fix/Nit output format, exclusions (`is_ignored`), verification bar |
-| `.claude/agents/code-reviewer.md`         | Finding cap, severity tiers                                                                     |
-| `.claude/agents/security-reviewer.md`     | Finding cap, severity tiers                                                                     |
-| `.claude/agents/silent-failure-hunter.md` | Finding cap, severity tiers                                                                     |
-| `.claude/agents/type-design-analyzer.md`  | Finding cap, severity tiers                                                                     |
+| Surface                                   | What it restates                                                                                                               |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `.github/workflows/claude-pr-review.yml`  | Finding cap, severity tiers, output format, re-review convergence, exclusions (`bin/lib/pr-diff-filter.mjs`), verification bar |
+| `.claude/agents/code-reviewer.md`         | Finding cap, severity tiers                                                                                                    |
+| `.claude/agents/security-reviewer.md`     | Finding cap, severity tiers                                                                                                    |
+| `.claude/agents/silent-failure-hunter.md` | Finding cap, severity tiers                                                                                                    |
+| `.claude/agents/type-design-analyzer.md`  | Finding cap, severity tiers                                                                                                    |
 
 Two spokes share the same severity philosophy but a structurally different
 report shape, and are **deliberately not** numerically capped:

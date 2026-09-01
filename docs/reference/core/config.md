@@ -58,6 +58,27 @@ When no provider supplies a value, resolution continues to the static default, t
 
 Every provider declares its label via `getSourceLabel()`, an overridable method on the `M3LConfigProvider` base class (default `"other"`). `M3LConfigReader.resolveForKeys(keys)` returns the winning provider's value paired with that label as an `M3LConfigResolution`; `getRawValueForKeys(keys)` delegates to it and returns just the value, unchanged from before. `M3LInMemoryConfigProvider` reports `"in-memory"` by default, or an explicit `sourceLabel` passed as its optional second constructor argument (`new M3LInMemoryConfigProvider(values, { sourceLabel })`) — added so `core/script`'s hosted-run seam (ADR-0054, U7) can report `"cli"` for a value a host bound in place of the command-line provider, keeping a hosted run's `run-report.json` provenance indistinguishable from a spawned one's. See `docs/reference/core/script.md`'s "Hosted runs" section.
 
+## Key enumeration
+
+`rawKeys()` reports the top-level keys a provider's source actually declared, in
+source order. Like `getSourceLabel()` it is an **overridable method with a
+default, not an abstract member** — the base class documents external
+subclassing, so adding an abstract member would be a source-breaking change; a
+subclass that does not override it returns `[]`. `M3LYAMLConfigProvider`
+overrides it to report its parsed mapping's own keys, unfiltered by value type,
+so a key written with no value under it (`steps:`) still counts as declared.
+
+It exists because `getRawValue(key)` can only answer questions about keys the
+caller already knows. A caller that must reject a key the _file_ declared but
+the _schema_ does not recognise — the forward-safety property that makes later
+format additions safe — cannot do so without enumeration. `packages/m3l-cli`'s
+`m3l flow` definition loader (U10, ADR-0056) is the first such caller.
+
+Enumeration never widens what the provider accepts: a prototype-pollution
+vector key still throws `M3LUnsafeConfigKeyError` at construction, and
+malformed YAML still throws `M3LConfigParseError`, so neither can reach
+`rawKeys()`.
+
 ## Alias resolution
 
 `getRawValueForKeys(keys)` implements alias support: for each provider, all alias keys are tried before moving to the next lower-priority provider. This guarantees that a higher-priority provider's alias always wins over a lower-priority provider's canonical key — for example, a CLI `--alias-name` wins over a JSON file's canonical `canonical.name`, even though both refer to the same parameter.
