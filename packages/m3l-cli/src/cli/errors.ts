@@ -37,7 +37,12 @@ export type M3LCliErrorCode =
   | "ERR_CLI_COMMAND_MODULE_INVALID"
   | "ERR_CLI_IN_PROCESS_FAILED"
   | "ERR_CLI_COMMAND_MODULE_IMPORT_FAILED"
-  | "ERR_CLI_IN_PROCESS_UNSUPPORTED";
+  | "ERR_CLI_IN_PROCESS_UNSUPPORTED"
+  | "ERR_CLI_FLOW_INVALID"
+  | "ERR_CLI_UNKNOWN_FLOW"
+  | "ERR_CLI_UNKNOWN_FLOW_STEP"
+  | "ERR_CLI_FLOW_RECORD_WRITE_FAILED"
+  | "ERR_CLI_FLOW_RECORD_INVALID";
 
 /**
  * The closed set of process exit codes the m3l CLI ever resolves to: `0`
@@ -131,6 +136,17 @@ const EXIT_CODE_BY_ERROR_CODE: Record<M3LCliErrorCode, M3LCliExitCode> = {
   ERR_CLI_IN_PROCESS_FAILED: GENERAL_EXIT_CODE,
   ERR_CLI_COMMAND_MODULE_IMPORT_FAILED: GENERAL_EXIT_CODE,
   ERR_CLI_IN_PROCESS_UNSUPPORTED: 2,
+  // Both flow codes are usage-class: a malformed definition and a misspelled
+  // flow name are equally the invocation's fault, not the machine's.
+  ERR_CLI_FLOW_INVALID: 2,
+  ERR_CLI_UNKNOWN_FLOW: 2,
+  // A misspelled `--resume-from` step id is the invocation's fault, exactly
+  // like an unknown flow or script name — so it joins them at exit code 2.
+  ERR_CLI_UNKNOWN_FLOW_STEP: 2,
+  // Machine-side faults, not usage: the definition was fine and the run
+  // happened; only persisting or re-reading its record failed.
+  ERR_CLI_FLOW_RECORD_WRITE_FAILED: GENERAL_EXIT_CODE,
+  ERR_CLI_FLOW_RECORD_INVALID: GENERAL_EXIT_CODE,
 };
 
 /**

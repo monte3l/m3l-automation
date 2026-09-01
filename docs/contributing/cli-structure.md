@@ -46,7 +46,7 @@ whatever shipped last.
 Every directory directly under `src/` must be one of:
 
 ```text
-cli  commands  discovery  history  presets  run  scaffold
+cli  commands  discovery  flow  history  presets  run  scaffold
 ```
 
 `main.ts` is the only file allowed to sit directly under `src/`. A new
@@ -65,6 +65,24 @@ holds the `scripts/<name>/` generation manifest and emitter that
 re-exports from the built CLI, so the generator and `bin/check-script-scaffold.mjs`'s
 checker cannot drift apart. Allowed but not required, for the same reason as
 `history`/`presets`: it exists once `new` ships, not before.
+
+`src/flow` (U10, ADR-0056) holds the `m3l flow` orchestration engine that
+`commands/flow.ts` calls: the definition types, the pure boundary validator,
+the loader, the branch classifier, single-step execution, the step loop, the
+run record, the `--json` envelope and the human renderer. It is a layer rather
+than a few files under `src/run` because the engine _drives_ the execution
+layer instead of belonging to it — it composes `run/execute.ts`,
+`run/in-process.ts`, `run/report-lookup.ts` and `run/envelope.ts` without any
+of them knowing a flow exists, so the dependency runs one way only. Allowed
+but not required, for the same reason as `history`/`presets`/`scaffold`: it
+exists once `flow` ships, not before.
+
+Its internal split is a per-file budget consequence as much as a design one —
+the boundary validator alone is ~20 KB against `check:file-budget`'s 25 KB
+source ceiling — but the seams are the honest ones: `validate.ts` is pure and
+does no I/O, `load.ts` does I/O and no validation, `classify.ts` is a single
+pure function over an observed step result, and `run.ts` performs no I/O at
+all so the step loop stays directly testable.
 
 `packages/m3l-cli/bin/` must hold **exactly** `m3l.mjs` — the machine-checked
 form of the contract page's "the only process entry is the `bin/m3l.mjs`
