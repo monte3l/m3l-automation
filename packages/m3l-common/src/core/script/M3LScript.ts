@@ -5,7 +5,6 @@
  * @packageDocumentation
  */
 
-import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import { extname, join } from "node:path";
 
@@ -39,6 +38,7 @@ import { CLI_CONFIG_SOURCE_LABEL } from "../../internal/config/sourceLabels.js";
 import { runDirectoryName } from "../../internal/diagnostics/runDirectoryName.js";
 import { buildScriptLogger } from "../../internal/logging/buildScriptLogger.js";
 import { M3LAWSProvisioningError } from "../../internal/script/M3LAWSProvisioningError.js";
+import { resolveRunCorrelationId } from "../../internal/script/correlationId.js";
 import { logBestEffortDiagnostic } from "../../internal/script/diagnostics.js";
 import {
   bridgeHostSignal,
@@ -1015,7 +1015,7 @@ export class M3LScript {
     this.resetForInvocation();
     await this.runWithErrorHandling(
       mainFn,
-      undefined,
+      options?.correlationId,
       options?.dryRun ?? false,
     );
   }
@@ -1143,31 +1143,24 @@ export class M3LScript {
    * Resolves and caches the current run's/invocation's correlation id —
    * called once, at the very top of {@link M3LScript.runPipeline} (before
    * stage 1), so `currentCorrelationId` is guaranteed set before any stage
-   * can throw. Resolution precedence: `options.correlationId` (verbatim,
-   * when non-empty), then `preferredId` (the platform request id, e.g.
-   * Lambda's `context.awsRequestId`, when the caller supplied one via
-   * {@link M3LScript.createLambdaHandler}), then a freshly generated
-   * `crypto.randomUUID()`. A blank (empty-string) configured id or preferred
-   * id is treated as absent — mirroring `extractAwsRequestId`'s own
-   * `length > 0` guard — so the resolved id is always a non-empty string.
+   * can throw.
    *
-   * Also aligns {@link setProcessGuardRequestId} to the same id.
+   * The precedence chain itself lives in
+   * {@link resolveRunCorrelationId} (`internal/script/correlationId.ts`);
+   * this wrapper adds only the two side effects that belong to the instance:
+   * caching the resolved id, and aligning
+   * {@link setProcessGuardRequestId} to it.
    *
-   * @param preferredId - An optional platform-supplied id (e.g.
-   *   `context.awsRequestId`) to prefer over generating a new one, when no
-   *   explicit `options.correlationId` was configured.
+   * @param preferredId - An optional per-invocation id — `run()`'s
+   *   `options.correlationId`, or a platform-supplied one such as
+   *   `context.awsRequestId` — preferred over the environment and over
+   *   generating a new id, but never over a configured `options.correlationId`.
    */
   private resolveCorrelationId(preferredId?: string): string {
-    const configured =
-      this.configuredCorrelationId !== undefined &&
-      this.configuredCorrelationId.length > 0
-        ? this.configuredCorrelationId
-        : undefined;
-    const preferred =
-      preferredId !== undefined && preferredId.length > 0
-        ? preferredId
-        : undefined;
-    const resolved = configured ?? preferred ?? randomUUID();
+    const resolved = resolveRunCorrelationId({
+      configured: this.configuredCorrelationId,
+      preferred: preferredId,
+    });
     this.currentCorrelationId = resolved;
     setProcessGuardRequestId(resolved);
     return resolved;

@@ -222,6 +222,49 @@ describe("M3LCommandContext shape locks", () => {
     expect(context.signal?.aborted).toBe(false);
   });
 
+  // ADR-0070. `correlationId` breaks this interface's own
+  // required-holding-`undefined` convention on purpose: `signal` and `dryRun`
+  // are values a command must BRANCH on, so the required form is right;
+  // this one is passed through and its absence has a safe fallback (the
+  // script resolves its own id). Making it required would also be
+  // source-breaking at 15+ construction sites, turning an additive minor
+  // into a major.
+  test("omitting `correlationId` entirely DOES compile — it is an optional key", () => {
+    const context: M3LCommandContext = {
+      output: createRecordingOutput().port,
+      logger: new M3LLogger([]),
+      signal: undefined,
+      dryRun: false,
+    };
+
+    expect(context.correlationId).toBeUndefined();
+  });
+
+  test("a context carrying a correlationId exposes it verbatim", () => {
+    const context: M3LCommandContext = createContext({
+      correlationId: "trace-42",
+    });
+
+    expect(context.correlationId).toBe("trace-42");
+  });
+
+  test("writing `correlationId: undefined` does not compile — contrast `signal`", () => {
+    // @ts-expect-error -- an OPTIONAL key under exactOptionalPropertyTypes
+    // cannot be assigned `undefined`. The sibling case above writes
+    // `signal: undefined` and compiles, precisely because `signal` is
+    // REQUIRED-holding-`undefined`. That contrast is the whole point: the
+    // two fields are shaped differently on purpose.
+    const context: M3LCommandContext = {
+      output: createRecordingOutput().port,
+      logger: new M3LLogger([]),
+      signal: undefined,
+      dryRun: false,
+      correlationId: undefined,
+    };
+
+    expect(context.dryRun).toBe(false);
+  });
+
   test("omitting `signal` entirely does not compile — it is required, not optional", () => {
     // @ts-expect-error -- `signal` is a REQUIRED property holding
     // `AbortSignal | undefined` (the M3LProcedureContext convention), not an
@@ -252,6 +295,9 @@ describe("M3LCommandContext shape locks", () => {
       AbortSignal | undefined
     >();
     expectTypeOf<M3LCommandContext["dryRun"]>().toEqualTypeOf<boolean>();
+    expectTypeOf<M3LCommandContext["correlationId"]>().toEqualTypeOf<
+      string | undefined
+    >();
     expectTypeOf<
       M3LCommandContext["output"]
     >().toEqualTypeOf<M3LCommandOutput>();

@@ -155,6 +155,7 @@ interface M3LCommandContext {
   readonly logger: M3LLogger;
   readonly signal: AbortSignal | undefined;
   readonly dryRun: boolean;
+  readonly correlationId?: string;
 }
 ```
 
@@ -171,6 +172,23 @@ handed to callee code, so the stricter form applies.
 `M3LScriptHookContext.dryRun`: `false` is meaningful information (this
 invocation performs real work), not an absence of it, and a command branches on
 it directly without a `?? false` at every call site.
+
+**Correlation (ADR-0070).** `correlationId` is the trace the host already
+opened — an operator's click, an HTTP request, a parent run — so a command's
+own work files under the same id. It is an _optional key_, deliberately
+breaking the convention the two fields above follow, and the asymmetry is the
+point: `signal` and `dryRun` are values a command must **branch on**, so the
+required form is right — it forces every host to state them and every callee to
+narrow. `correlationId` is passed **through** (into a logger, into
+`M3LScriptRunOptions`) and its absence has a safe fallback, since the script
+resolves its own id. There is nothing to forget to handle.
+
+Making it required would also be source-breaking: an `M3LCommandContext` is
+constructed at 15+ sites — the script template, four shipped scripts, the CLI's
+in-process runner and their test fakes — so a required field would turn an
+additive minor into a major. This library has already paid that exact cost
+once, when a required `dryRun` on `M3LScriptHookContext` broke seven consumer
+test fakes.
 
 **Logging.** `logger` is `core/logging`'s existing `M3LLogger`, assignable
 straight into `M3LScriptOptions.logger`. A host routes command output into its
