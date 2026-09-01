@@ -287,7 +287,8 @@ export interface M3LScriptOptions {
   readonly prompt?: M3LPrompt;
   /**
    * An optional per-run correlation id used verbatim for the whole run when
-   * supplied (a blank string is treated as omitted). When omitted,
+   * supplied (an EMPTY string is treated as omitted; a whitespace-only one
+   * such as `"   "` is not — the check is `length > 0`, not `trim()`). When omitted,
    * {@link M3LScript.run} generates one via `crypto.randomUUID()`;
    * {@link M3LScript.createLambdaHandler} resolves a fresh id per invocation
    * (preferring `context.awsRequestId` over a generated id) unless this
@@ -383,4 +384,19 @@ export interface M3LScriptRunOptions {
    * {@link M3LScript.run}'s own TSDoc for why. Defaults to `false`.
    */
   readonly dryRun?: boolean;
+  /**
+   * The correlation id for THIS run, joining it to a caller-side trace
+   * (ADR-0070) — an HTTP request, a console operator action, a parent job.
+   *
+   * Sits below a constructor-level `M3LScriptOptions.correlationId`, which
+   * is fixed for the script's lifetime and always wins, and above both the
+   * `M3L_CORRELATION_ID` environment variable and a generated UUID. An empty
+   * string falls through to the next tier; a whitespace-only one is used
+   * verbatim, matching the constructor option's own long-standing rule.
+   *
+   * Optional rather than required-holding-`undefined`: this is a
+   * caller-built per-call options bag, the shape `M3LCommandContext.signal`'s
+   * own TSDoc explicitly excludes from that convention.
+   */
+  readonly correlationId?: string;
 }

@@ -8,17 +8,17 @@
         {
           "file": "packages/m3l-common/src/core/cli-contract/types.ts",
           "symbol": "M3LCommandModule",
-          "blob": "d0091bc69cfaa8e9ca11ec8b7a312ca421474cf5"
+          "blob": "13823000474d76e00e9ab2f5d6f2ac97b1b1a327"
         },
         {
           "file": "packages/m3l-common/src/core/cli-contract/types.ts",
           "symbol": "M3LCommandContext",
-          "blob": "d0091bc69cfaa8e9ca11ec8b7a312ca421474cf5"
+          "blob": "13823000474d76e00e9ab2f5d6f2ac97b1b1a327"
         },
         {
           "file": "packages/m3l-common/src/core/cli-contract/types.ts",
           "symbol": "M3LCommandOutcome",
-          "blob": "d0091bc69cfaa8e9ca11ec8b7a312ca421474cf5"
+          "blob": "13823000474d76e00e9ab2f5d6f2ac97b1b1a327"
         },
         {
           "file": "packages/m3l-common/src/core/cli-contract/exit-codes.ts",
@@ -76,7 +76,7 @@
           "blob": "428680af29f145b20052bf862f05654063011b92"
         }
       ],
-      "retrieved": "2026-08-26"
+      "retrieved": "2026-09-01"
     },
     {
       "heading": "The command-module descriptor",
@@ -84,10 +84,10 @@
         {
           "file": "packages/m3l-common/src/core/cli-contract/types.ts",
           "symbol": "M3LCommandModule",
-          "blob": "d0091bc69cfaa8e9ca11ec8b7a312ca421474cf5"
+          "blob": "13823000474d76e00e9ab2f5d6f2ac97b1b1a327"
         }
       ],
-      "retrieved": "2026-08-26"
+      "retrieved": "2026-09-01"
     },
     {
       "heading": "The execution context",
@@ -95,10 +95,10 @@
         {
           "file": "packages/m3l-common/src/core/cli-contract/types.ts",
           "symbol": "M3LCommandContext",
-          "blob": "d0091bc69cfaa8e9ca11ec8b7a312ca421474cf5"
+          "blob": "13823000474d76e00e9ab2f5d6f2ac97b1b1a327"
         }
       ],
-      "retrieved": "2026-08-26"
+      "retrieved": "2026-09-01"
     },
     {
       "heading": "Outcomes",
@@ -106,10 +106,10 @@
         {
           "file": "packages/m3l-common/src/core/cli-contract/types.ts",
           "symbol": "M3LCommandOutcome",
-          "blob": "d0091bc69cfaa8e9ca11ec8b7a312ca421474cf5"
+          "blob": "13823000474d76e00e9ab2f5d6f2ac97b1b1a327"
         }
       ],
-      "retrieved": "2026-08-26"
+      "retrieved": "2026-09-01"
     },
     {
       "heading": "Exit-code mapping",

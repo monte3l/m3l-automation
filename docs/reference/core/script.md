@@ -497,6 +497,11 @@ interface M3LScriptOptions {
   readonly preset?: string; // optional path to a YAML/JSON preset file (see Preset loader)
 }
 
+interface M3LScriptRunOptions {
+  readonly dryRun?: boolean;
+  readonly correlationId?: string; // optional; this run's id (ADR-0070)
+}
+
 interface M3LScriptHookContext {
   readonly config: M3LReadonlyConfig;
   readonly correlationId: string; // always resolved by the first hook
@@ -504,16 +509,43 @@ interface M3LScriptHookContext {
 }
 ```
 
-- **Resolution.** When `options.correlationId` is supplied it is used verbatim
-  for the run. When omitted, `run()` generates one per process run via
-  `crypto.randomUUID()`. The id is resolved before the first hook fires, so
-  `ctx.correlationId` on `M3LScriptHookContext` is always a non-empty string.
+- **Resolution.** Four tiers, highest first:
+
+  1. `M3LScriptOptions.correlationId` — the constructor value, fixed for the
+     script's lifetime.
+  2. `M3LScriptRunOptions.correlationId` passed to `run()`, **or** Lambda's
+     `context.awsRequestId`. These are mutually exclusive entry points, so they
+     share one tier rather than competing.
+  3. The `M3L_CORRELATION_ID` environment variable.
+  4. A freshly generated `crypto.randomUUID()`.
+
+  Environment sits **below** both explicit values, matching this library's own
+  precedent that an explicit `--log-level` beats `M3L_LOG_LEVEL`: an inherited
+  environment is ambient context and must never override an id a caller wrote
+  down. It sits **above** generation so a spawned child joins its parent's
+  trace instead of starting a new one.
+
+  An **empty** string at any tier falls through to the next. A whitespace-only
+  one such as `"   "` does **not** — the check is `length > 0`, not `trim()`.
+  The id is resolved before the first hook fires, so `ctx.correlationId` on
+  `M3LScriptHookContext` is always a non-empty string.
+
+- **Spawned processes.** A script launched as a child process inherits its
+  parent's trace through `M3L_CORRELATION_ID`. A parent that sets that variable
+  on the child's environment — as the console server's run executor does — gets
+  the child's run report, logs, and failure diagnostics filed under the same id,
+  with no change to the child's `main.ts`. An explicit `correlationId` in either
+  options bag still wins over it.
 - **Lambda.** `createLambdaHandler()` resolves an id **per invocation**,
   preferring the platform request id when the runtime context exposes one
   (`context.awsRequestId`) over a generated UUID — so a run's logs line up with
   the Lambda request in CloudWatch. An explicit `options.correlationId` still
   wins if provided. This aligns with `setProcessGuardRequestId()`, which
   attributes guard-caught faults to the same invocation.
+- **Through `runScript`.** `M3LRunScriptOptions.correlationId` is forwarded
+  straight to `script.run(mainFn, { correlationId })`, so a composition root
+  that already knows the caller's trace id passes it in one place and it
+  reaches the persisted `M3LRunReport`.
 - **Logs.** Correlated logging is opt-in: `M3LScript` does not emit log lines of
   its own, so it stamps no logger for you. To tie your log lines to the run,
   construct a logger with the id — `new M3LLogger(handlers, { correlationId })` —
