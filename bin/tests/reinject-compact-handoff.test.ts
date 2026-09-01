@@ -13,6 +13,7 @@ vi.mock("node:fs", async () => {
 import {
   readHandoff,
   formatHandoff,
+  shouldReinject,
 } from "../../.claude/hooks/reinject-compact-handoff.mjs";
 
 afterEach(() => {
@@ -182,4 +183,48 @@ describe("formatHandoff", () => {
       expect(lastLine.toLowerCase()).toContain("git status");
     }
   });
+});
+
+describe("shouldReinject", () => {
+  test("returns true for the exact valid SessionStart-after-compact payload", () => {
+    expect(shouldReinject({ source: "compact" })).toBe(true);
+  });
+
+  test.each([["startup"], ["resume"], ["clear"], ["fork"]])(
+    "returns false when source is the other documented SessionStart matcher %s",
+    (source) => {
+      expect(shouldReinject({ source })).toBe(false);
+    },
+  );
+
+  test("returns false, not throws, when input is null", () => {
+    expect(() => shouldReinject(null)).not.toThrow();
+    expect(shouldReinject(null)).toBe(false);
+  });
+
+  test.each([
+    ["undefined", undefined],
+    ["a plain string", "compact"],
+    ["a number", 42],
+    ["an array", ["compact"]],
+  ])("returns false, not throws, when input is %s", (_description, input) => {
+    expect(() => shouldReinject(input)).not.toThrow();
+    expect(shouldReinject(input)).toBe(false);
+  });
+
+  test("returns false when input is an object with no source key at all", () => {
+    expect(shouldReinject({})).toBe(false);
+  });
+
+  test.each([
+    ["a number", { source: 123 }],
+    ["null", { source: null }],
+    ["an array", { source: ["compact"] }],
+  ])(
+    "returns false, not throws, when source is not a string: %s",
+    (_description, input) => {
+      expect(() => shouldReinject(input)).not.toThrow();
+      expect(shouldReinject(input)).toBe(false);
+    },
+  );
 });
