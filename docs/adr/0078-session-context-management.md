@@ -186,6 +186,34 @@ enforcement, four correctness fixes surfaced by the original audit, and the
 `subagent-dispatch.md` bounded-output-instruction gap in three skills) closes
 out the sequence.
 
+## Update (2026-09-01) — Part C's shipped scope corrected
+
+A `/auditing` sweep on 2026-09-01 (context management, token optimization,
+and compaction) found the "PRs 1-4 (Parts A-C) landed as described" claim
+above does not hold for Part C. The Decision text specifies the `PreCompact`
+artifact carry the **PR number**, **open spoke journal paths** (discovered by
+reusing `bin/spoke-recovery.mjs`'s journal-discovery logic), and **pending
+gates**, written to the **session scratchpad**. What shipped in
+`.claude/hooks/write-compact-handoff.mjs` is narrower by deliberate design,
+documented in the hook's own header comment: no `gh` lookup (a `PreCompact`
+hook runs on every compaction's hot path; a network round-trip was judged too
+costly), no `bin/spoke-recovery.mjs` reuse (that script takes an explicit
+`--journal <path>` rather than discovering journals itself, and a hook has no
+documented way to address the ephemeral session-scratchpad directory a
+subagent may have journaled to), "pending gates" approximated as `git status
+--porcelain` rather than a live `pnpm verify` re-run, and the artifact written
+to this repo's gitignored `tmp/` rather than the session scratchpad. These are
+sound engineering trade-offs, made and recorded at implementation time — the
+defect is this ADR's summary line, not the hook.
+
+Per the immutability convention, the Decision section's Part C text is left
+as originally written; this note is the correction. `bin/check-hooks.mjs`
+also does not validate `matcher` values on `PreCompact`/`SessionStart`
+entries, so a wiring regression on either hook (e.g. a typo in
+`matcher: "compact"`) would not be caught by any gate today — tracked as a
+follow-up in the same sweep's remediation plan
+(`docs/research/harness-refresh.md`, first populated by this sweep).
+
 ## Links
 
 - Supersedes / superseded by: none.
