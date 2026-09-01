@@ -26,6 +26,7 @@ export type M3LHumanActionIndexKind =
   | "run.cancel"
   | "session.create"
   | "session.step.add"
+  | "session.decision.raise"
   | "session.decision.answer"
   | "session.binding.select"
   | "session.close"

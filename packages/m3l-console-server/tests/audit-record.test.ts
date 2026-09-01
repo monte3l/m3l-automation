@@ -81,12 +81,13 @@ const OPERATOR_WITH_EMAIL: M3LOperatorProfile = {
  */
 const FILE_REF = `{"kind":"file","path":"sess-1/step-1.json","bytes":128,"sha256":"${"a".repeat(64)}"}`;
 
-/** The eight human-action kinds slices 3-5 wire; slice 6 adds the view kinds. */
+/** The nine write-action kinds; X7b's view kinds land alongside the SSE wiring. */
 const ACTION_KINDS = [
   "run.launch",
   "run.cancel",
   "session.create",
   "session.step.add",
+  "session.decision.raise",
   "session.decision.answer",
   "session.binding.select",
   "session.close",
