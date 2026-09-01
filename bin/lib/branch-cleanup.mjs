@@ -74,7 +74,7 @@ export function validateDeletable(branch, currentBranch) {
 
 /**
  * @typedef {{ deleted: true, kept: false, message: string } |
- *           { deleted: false, kept: true, message: string }} DeleteBranchResult
+ *           { deleted: false, kept: true, message: string, cause: string }} DeleteBranchResult
  */
 
 /**
@@ -82,7 +82,12 @@ export function validateDeletable(branch, currentBranch) {
  * `worktree-remove.mjs`'s keep-and-notify shape: an unmerged branch, or one
  * checked out in another worktree (git itself refuses that), is left in
  * place with an explanatory result rather than thrown — deletion failure is
- * an expected, non-fatal outcome here, not an error condition.
+ * an expected, non-fatal outcome here, not an error condition. The
+ * underlying git failure is still captured and surfaced via `cause` rather
+ * than swallowed, though — an "unmerged branch" and a nonexistent one, a
+ * corrupt ref, or git itself failing to run are different problems, and
+ * collapsing them all into one fixed message hides which one actually
+ * happened.
  *
  * @param {string} branch
  * @param {{ force?: boolean, runGit?: (args: string[], opts?: object) => string }} [opts]
@@ -102,14 +107,25 @@ export function deleteBranch(
   try {
     runGit(["branch", force ? "-D" : "-d", branch], { stdio: "pipe" });
     return { deleted: true, kept: false, message: `Deleted branch ${branch}.` };
-  } catch {
+  } catch (cause) {
+    const causeMessage =
+      cause &&
+      typeof cause === "object" &&
+      "stderr" in cause &&
+      typeof cause.stderr === "string" &&
+      cause.stderr.trim() !== ""
+        ? cause.stderr.trim()
+        : cause instanceof Error
+          ? cause.message
+          : String(cause);
     return {
       deleted: false,
       kept: true,
       message:
-        `Kept branch ${branch} (not merged into its base, or checked out ` +
-        `in another worktree). Delete manually with \`git branch -D ${branch}\` ` +
-        "once you're sure.",
+        `Kept branch ${branch} (${causeMessage}). Delete manually with ` +
+        `\`git branch -D ${branch}\` once you're sure, or investigate the ` +
+        "error above if this branch name looks wrong.",
+      cause: causeMessage,
     };
   }
 }

@@ -88,17 +88,78 @@ describe("deleteBranch", () => {
     });
   });
 
-  test("returns deleted:false, kept:true when runGit throws, with a manual-fallback message", () => {
+  test("returns deleted:false, kept:true when runGit throws an Error, surfacing the injected error text and cause", () => {
     const runGit = () => {
       throw new Error("not fully merged");
     };
     const result = deleteBranch("feat/unmerged", { runGit });
     expect(result.deleted).toBe(false);
     expect(result.kept).toBe(true);
+    expect(result.message).toContain("not fully merged");
     expect(result.message).toBe(
-      "Kept branch feat/unmerged (not merged into its base, or checked " +
-        "out in another worktree). Delete manually with `git branch -D " +
-        "feat/unmerged` once you're sure.",
+      "Kept branch feat/unmerged (not fully merged). Delete manually with " +
+        "`git branch -D feat/unmerged` once you're sure, or investigate " +
+        "the error above if this branch name looks wrong.",
     );
+    expect(result).toMatchObject({ cause: "not fully merged" });
+  });
+
+  // [KNOWN BUG regression] Prior to the fix, every deleteBranch failure — no
+  // matter its actual git error — collapsed into the same fixed "not merged
+  // into its base, or checked out in another worktree" message, hiding
+  // which failure actually happened (claude[bot] Must-fix on PR #857). This
+  // asserts two distinct injected failures now produce two distinct,
+  // distinguishable results.
+  test("distinguishes a nonexistent-branch failure from an unmerged-branch failure via cause/message", () => {
+    const unmerged = deleteBranch("feat/unmerged", {
+      runGit: () => {
+        throw new Error("not fully merged");
+      },
+    });
+    const missing = deleteBranch("feat/typo", {
+      runGit: () => {
+        throw new Error("error: branch 'feat/typo' not found");
+      },
+    });
+
+    if (unmerged.kept !== true || missing.kept !== true) {
+      throw new Error("expected both deleteBranch calls to be kept:true");
+    }
+
+    expect(missing.cause).toBe("error: branch 'feat/typo' not found");
+    expect(missing.message).toContain("error: branch 'feat/typo' not found");
+    expect(missing.cause).not.toBe(unmerged.cause);
+    expect(missing.message).not.toBe(unmerged.message);
+  });
+
+  test("prefers a trimmed cause.stderr over cause.message when runGit throws an execFileSync-shaped error", () => {
+    const runGit = () => {
+      // eslint-disable-next-line @typescript-eslint/only-throw-error -- simulates the shape of a Node execFileSync error, which is not necessarily `instanceof Error` and carries a `.stderr` string
+      throw {
+        message: "Command failed",
+        stderr: "error: branch 'feat/missing' not found\n",
+      };
+    };
+    const result = deleteBranch("feat/missing", { runGit });
+    expect(result.deleted).toBe(false);
+    if (result.kept !== true) {
+      throw new Error("expected deleteBranch to return kept:true");
+    }
+    expect(result.cause).toBe("error: branch 'feat/missing' not found");
+    expect(result.message).toContain("error: branch 'feat/missing' not found");
+    expect(result.message).not.toContain("Command failed");
+  });
+
+  test("falls back to String(cause) when the thrown value has no stderr and is not an Error", () => {
+    const runGit = () => {
+      // eslint-disable-next-line @typescript-eslint/only-throw-error -- proves the unknown-throw channel is still normalized to a string
+      throw "boom";
+    };
+    const result = deleteBranch("feat/weird", { runGit });
+    if (result.kept !== true) {
+      throw new Error("expected deleteBranch to return kept:true");
+    }
+    expect(result.cause).toBe("boom");
+    expect(result.message).toContain("boom");
   });
 });
