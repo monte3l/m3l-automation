@@ -114,12 +114,7 @@ function scriptDescription(): string {
 async function runMain(script: Core.M3LScript): Promise<void> {
   // Resolve the declared config (CLI + preset + env + defaults) and inject
   // what the step needs as a single options object — never reach for
-  // `process.env` or a global. This script declares
-  // `Core.AWS_PROFILE_PARAM_NAME`, so `script.aws`/`script.awsTarget` are
-  // provisioned before this point too — but PR 1 is offline (no Bedrock
-  // client), so neither is threaded here: only what `runAgentOperator`
-  // actually consumes is passed, never a dead "assert AWS is provisioned"
-  // guard for a value this slice never reads.
+  // `process.env` or a global.
   const config = await script.getConfiguration();
   await runAgentOperator({
     config,
@@ -127,9 +122,17 @@ async function runMain(script: Core.M3LScript): Promise<void> {
     paths: script.paths,
     signal: script.signal,
     // Bound from `script.reportRecovery` (never the whole `script` object)
-    // so a future per-action absorbed failure demotes this run's outcome to
-    // `"partial"` instead of a silent `"success"`.
+    // so an absorbed per-action failure demotes this run's outcome to
+    // `"partial"` (exit 6) instead of a silent `"success"` — which is how a
+    // detected fleet anomaly reaches a scheduler.
     reportRecovery: script.reportRecovery.bind(script),
+    // This script declares `Core.AWS_PROFILE_PARAM_NAME`, so stage 5 has
+    // already provisioned `script.aws` by the time this runs. It is passed
+    // through rather than asserted here: `explain-policy` never reads it, and
+    // a guard at this seam would make a deterministic, offline operation
+    // require AWS. `steps/create-invoker` asserts it at the one place a
+    // Bedrock client is actually built.
+    aws: script.aws,
   });
 }
 
