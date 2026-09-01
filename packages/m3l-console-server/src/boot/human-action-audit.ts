@@ -197,6 +197,25 @@ function bindingParameterNames(
 }
 
 /**
+ * `{ lastEventId }` when the client is RESUMING an SSE stream, else empty.
+ *
+ * A resume is a genuinely different exposure event from a first open — it
+ * replays history the operator may not have seen — so it is recorded as its
+ * own entry, distinguishable by this field. Header name and parse rule
+ * mirror `http/routes/run-stream.ts`'s own `parseLastEventId`: a
+ * non-integer or negative value is treated as absent rather than recorded
+ * as caller-controlled text.
+ */
+function resumeDetail(
+  ctx: M3LRequestContext,
+): Readonly<Record<string, string | number | boolean>> {
+  const raw = ctx.headers["last-event-id"];
+  if (raw === undefined) return {};
+  const parsed = Number(raw);
+  return Number.isInteger(parsed) && parsed >= 0 ? { lastEventId: parsed } : {};
+}
+
+/**
  * Every audited route, keyed `"<METHOD> <path-template>"`.
  *
  * `run.launch` targets the SCRIPT, not the run — `M3LHumanActionTarget`'s
@@ -299,6 +318,41 @@ const HUMAN_ACTION_SPECS: ReadonlyMap<string, HumanActionSpec> = new Map<
       project: (ctx) => ({
         target: { kind: "session", id: param(ctx, "id") },
         posture: "confirmed",
+      }),
+    },
+  ],
+  [
+    // The ONLY wireable sensitive view: enumerating the whole 17-route table
+    // shows there is no run-report endpoint and no session-artifact-content
+    // endpoint (`GET /sessions/:id/bindings` returns binding ROWS, and
+    // `sessions/artifacts.ts` has no route in front of it). `/health`,
+    // `/ready` and every list/collection endpoint are out of scope by
+    // decision — `view.*` covers sensitive-class renderings only.
+    //
+    // ONE entry per subscription, not per event. Per-event would write
+    // thousands of lines per watcher into a trail with no pruning path
+    // shipped, and ADR-0070 describes the rendering as an audited view
+    // action per rendering ACT — i.e. per subscription. Reconnects stay
+    // visible regardless, since a resume is a new request with a new
+    // correlation id.
+    //
+    // `phase: "after"` is REQUIRED here, not a preference.
+    // `buildStreamHandler` does its 404 check INSIDE the handler, so
+    // recording first would write `"served"` for a run that was never
+    // served — the trail would lie. Recording after the handler resolves is
+    // honest and still refuses: `open(sink)` has not run yet, so no SSE byte
+    // has reached the operator when a rejected append throws. Note that
+    // `buildActiveStreamResponse`'s `hub.get(id) ?? hub.open(id)` is a side
+    // effect that renders nothing, so it does not violate
+    // display-vs-persist.
+    "GET /api/v1/runs/:id/stream",
+    {
+      action: "view.run.stream",
+      phase: "after",
+      project: (ctx) => ({
+        target: { kind: "run", id: param(ctx, "id") },
+        posture: "confirmed",
+        detail: resumeDetail(ctx),
       }),
     },
   ],

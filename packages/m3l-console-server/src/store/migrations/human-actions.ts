@@ -137,3 +137,52 @@ export const V7_WIDEN_HUMAN_ACTION_KINDS_STATEMENTS: readonly string[] = [
   CREATE_CONSOLE_HUMAN_ACTIONS_AT_MS_INDEX,
   CREATE_CONSOLE_HUMAN_ACTIONS_OPERATOR_INDEX,
 ];
+
+/**
+ * `console_human_actions` recreated with the three ADR-0070 `view.*` kinds
+ * added — `CONSOLE_MIGRATIONS`' v8 (X7b).
+ *
+ * All twelve kinds in ONE migration, not one per endpoint. Only
+ * `view.run.stream` has a route today (`GET /api/v1/runs/:id/stream`);
+ * `view.run.report` and `view.session.artifact` are declared unwired
+ * deliberately, so that when those endpoints land they do not each force a
+ * THIRD table recreate. A declared-but-unused `CHECK` member costs nothing
+ * at runtime; another recreate costs a migration and a review.
+ *
+ * Still loss-free on the same footing as v7: the write routes shipped in the
+ * preceding slice populate the JSONL stream only, never this index.
+ *
+ * **The precondition this rests on, stated so it is checked and not
+ * assumed.** If any slice between v7 and this migration began populating
+ * `console_human_actions`, v8 must NOT be applied as written — it drops the
+ * table. It would have to become a copy-through instead: create the new
+ * table under a temporary name, copy the rows across with an insert-select,
+ * drop the old table, then rename. Verify before extending this pattern.
+ */
+export const V8_ADD_VIEW_ACTION_KINDS_STATEMENTS: readonly string[] = [
+  `DROP TABLE console_human_actions`,
+  `
+  CREATE TABLE console_human_actions (
+    id INTEGER PRIMARY KEY,
+    at_ms INTEGER NOT NULL,
+    operator TEXT NOT NULL,
+    operator_email_declared INTEGER NOT NULL CHECK (operator_email_declared IN (0, 1)),
+    correlation_id TEXT NOT NULL,
+    action TEXT NOT NULL CHECK (action IN (
+      'run.launch','run.cancel','session.create','session.step.add',
+      'session.decision.raise','session.decision.answer',
+      'session.binding.select','session.close','session.reopen',
+      'view.run.report','view.run.stream','view.session.artifact'
+    )),
+    target_kind TEXT NOT NULL CHECK (target_kind IN ('script','run','session','step','artifact')),
+    target_id TEXT NOT NULL,
+    script_name TEXT,
+    posture TEXT NOT NULL CHECK (posture IN ('auto','confirmed','escalated')),
+    outcome TEXT NOT NULL CHECK (outcome IN ('allowed','denied','rejected','failed','served')),
+    CHECK ((script_name IS NULL) = (target_kind <> 'script'))
+  ) STRICT
+`,
+  CREATE_CONSOLE_HUMAN_ACTIONS_CORRELATION_INDEX,
+  CREATE_CONSOLE_HUMAN_ACTIONS_AT_MS_INDEX,
+  CREATE_CONSOLE_HUMAN_ACTIONS_OPERATOR_INDEX,
+];
