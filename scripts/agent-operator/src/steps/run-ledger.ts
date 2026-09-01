@@ -12,11 +12,13 @@
  * 2. **Omitted means *unobservable*, not zero.** `tokensThisRun`,
  *    `costThisRun`, and `loopIterations` stay absent until
  *    {@link AgentRunLedger.observeSpend} has been called at least once, and
- *    there is no cross-run day counter in this slice, so those fields stay
- *    absent too. A deployment that declares the matching budget escalates on
- *    that budget's `.unobservable` rule. Reporting a fabricated `0` would
- *    fail OPEN — it would tell the evaluator a ceiling is satisfied when
- *    nothing was ever measured.
+ *    `invocationsToday`/`todayCountedAt` stay absent until
+ *    {@link AgentRunLedger.observeDailyBaseline} has been called with a
+ *    baseline read off the cross-run counter (`steps/daily-counter.ts`). A
+ *    deployment that declares the matching budget escalates on that budget's
+ *    `.unobservable` rule. Reporting a fabricated `0` would fail OPEN — it
+ *    would tell the evaluator a ceiling is satisfied when nothing was ever
+ *    measured.
  *
  * The ledger reads **no clock**: `now` is sampled once by the caller and
  * passed in, so two evaluations in one turn cannot disagree about the
@@ -133,6 +135,64 @@ function assertNoRegression(
 }
 
 /**
+ * Validates one field of a daily baseline: a non-negative safe integer.
+ *
+ * Coded `ERR_AGENT_OPERATOR_BUDGET_STATE`, not
+ * `ERR_AGENT_OPERATOR_DECISION_LOG`: the fault is in the cross-run counter
+ * file under `data/agent-state/`, and an operator sent to `data/agent-log/`
+ * would find nothing wrong there.
+ *
+ * @throws {@link M3LAgentOperatorCliError} coded
+ *   `ERR_AGENT_OPERATOR_BUDGET_STATE` when `value` is not a non-negative safe
+ *   integer.
+ */
+function assertBaselineField(value: number, field: string): void {
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new M3LAgentOperatorCliError(
+      `the run ledger cannot observe a daily baseline: ${field} must be a non-negative safe integer`,
+      "ERR_AGENT_OPERATOR_BUDGET_STATE",
+      { context: { field } },
+    );
+  }
+}
+
+/**
+ * The cross-run per-day starting point handed to
+ * {@link AgentRunLedger.observeDailyBaseline}: how many invocations this
+ * agent has already made *today*, and the instant that count is anchored to.
+ *
+ * @remarks
+ * `countedAt` must be an instant inside the SAME UTC day as every `now` the
+ * run will later evaluate under — the library rolls the window with
+ * `Math.floor(t / 86_400_000)` and reads the count as `0` when
+ * `todayCountedAt` and `now` fall in different UTC days. `steps/daily-counter`
+ * therefore passes the run's own single `now` sample here, never the instant
+ * stored in the counter file (which may belong to a previous day, and whose
+ * count has already been rolled to `0` by then).
+ *
+ * `invocationsToday` is the count of invocations made *before this run
+ * started*. The ledger adds `invocationsThisRun` on every snapshot rather
+ * than storing a combined total, because both names describe the same event
+ * and a stored total would go stale the moment the run makes a call.
+ *
+ * @example
+ * ```ts
+ * import type { AgentDailyBaseline } from "./run-ledger.js";
+ *
+ * const baseline: AgentDailyBaseline = {
+ *   invocationsToday: 12,
+ *   countedAt: Date.now(),
+ * };
+ * ```
+ */
+export interface AgentDailyBaseline {
+  /** Invocations already made today, before this run started. */
+  readonly invocationsToday: number;
+  /** An instant inside today's UTC day the count is anchored to. */
+  readonly countedAt: number;
+}
+
+/**
  * The mutable run counters, and the frozen snapshots the policy evaluator
  * judges actions against.
  *
@@ -143,8 +203,9 @@ function assertNoRegression(
  * observes unconditionally: `now` (handed in) and `invocationsThisRun` /
  * `dryRunCompletedShapes` (counted here). `tokensThisRun`, `loopIterations`,
  * and `decisionLogAvailable` are present only once observed; `costThisRun`
- * only once observed AND priceable. Everything else is omitted until
- * observed.
+ * only once observed AND priceable; `invocationsToday`/`todayCountedAt` only
+ * once a daily baseline has been observed, and then always as a *pair*.
+ * Everything else is omitted until observed.
  *
  * @example
  * ```ts
@@ -191,6 +252,14 @@ export class AgentRunLedger {
   private loopIterations = 0;
   /** Last-observed cumulative cost, or `undefined` when cost is unobservable. */
   private costThisRun: number | undefined = undefined;
+  /**
+   * `undefined` until {@link observeDailyBaseline} has read the cross-run
+   * counter. While absent, `snapshot` omits BOTH `invocationsToday` and
+   * `todayCountedAt`, so a declared `invocationsPerDay` escalates on
+   * `budget.invocations-per-day.unobservable` — the honest outcome, since
+   * nothing has read yesterday's file yet.
+   */
+  private dailyBaseline: AgentDailyBaseline | undefined = undefined;
 
   /**
    * Builds a frozen, omit-only ledger snapshot for the caller-sampled
@@ -232,6 +301,22 @@ export class AgentRunLedger {
       ...(this.spendObserved && this.costThisRun !== undefined
         ? { costThisRun: this.costThisRun }
         : {}),
+      // ONE spread emitting BOTH fields, never two independent spreads. The
+      // evaluator checks presence of all three of `invocationsToday` /
+      // `todayCountedAt` / `now` BEFORE it applies the UTC-day window, so a
+      // half-present pair is unobservable anyway — and it would *look*
+      // observed to anyone reading the snapshot, which is strictly worse than
+      // being plainly absent. Today's count is COMPOSED here rather than
+      // stored: the baseline is what happened before this run, and
+      // `invocationsThisRun` is what has happened since, and they are counts
+      // of the same event.
+      ...(this.dailyBaseline === undefined
+        ? {}
+        : {
+            invocationsToday:
+              this.dailyBaseline.invocationsToday + this.invocationsThisRun,
+            todayCountedAt: this.dailyBaseline.countedAt,
+          }),
     });
   }
 
@@ -248,6 +333,70 @@ export class AgentRunLedger {
    */
   recordInvocation(): void {
     this.invocationsThisRun += 1;
+  }
+
+  /**
+   * The invocations counted onto this run so far — the same number
+   * {@link snapshot} emits as `invocationsThisRun`.
+   *
+   * @remarks
+   * It exists because `Core.M3LAgentRunLedger` types **every** field optional
+   * (the library's presence contract is `Object.hasOwn`), so
+   * `snapshot(now).invocationsThisRun` is `number | undefined` at the type
+   * level even though this ledger always emits it. A caller that needs the
+   * count — `steps/daily-counter`'s `record` — would otherwise reach for
+   * `?? 0`, and a defaulted observation is exactly the mistake the whole
+   * omit-vs-zero discipline exists to prevent.
+   *
+   * @returns The cumulative invocation count for this run.
+   *
+   * @example
+   * ```ts
+   * import { AgentRunLedger } from "./run-ledger.js";
+   *
+   * const ledger = new AgentRunLedger();
+   * ledger.recordInvocation();
+   * ledger.invocationCount; // 1
+   * ```
+   */
+  get invocationCount(): number {
+    return this.invocationsThisRun;
+  }
+
+  /**
+   * Records the cross-run per-day starting point read off
+   * `steps/daily-counter`, making `invocationsPerDay` OBSERVABLE for the rest
+   * of the run.
+   *
+   * @remarks
+   * Call this **before** the first `Core.evaluateAgentAction` of the run —
+   * including both phases of the decision-log preflight. Budgets are step 3
+   * of the evaluator and the decision-log rule is step 3b, so an unseeded
+   * ledger escalates on `budget.invocations-per-day.unobservable` at *both*
+   * preflight phases and the two-phase bootstrap can never resolve.
+   *
+   * Nothing is seeded speculatively: a baseline is only ever passed here
+   * after the counter file has actually been read (an absent file reads as a
+   * genuine, observed zero for today, which is a different claim from "not
+   * measured").
+   *
+   * @param baseline - See {@link AgentDailyBaseline}.
+   * @throws {@link M3LAgentOperatorCliError} coded
+   *   `ERR_AGENT_OPERATOR_BUDGET_STATE` when either field is not a
+   *   non-negative safe integer.
+   *
+   * @example
+   * ```ts
+   * import { AgentRunLedger } from "./run-ledger.js";
+   *
+   * const ledger = new AgentRunLedger();
+   * ledger.observeDailyBaseline({ invocationsToday: 12, countedAt: Date.now() });
+   * ```
+   */
+  observeDailyBaseline(baseline: AgentDailyBaseline): void {
+    assertBaselineField(baseline.invocationsToday, "invocationsToday");
+    assertBaselineField(baseline.countedAt, "countedAt");
+    this.dailyBaseline = baseline;
   }
 
   /**

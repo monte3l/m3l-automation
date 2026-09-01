@@ -38,7 +38,9 @@ import {
   type AgentOperatorProjectedListRow,
 } from "../../src/lib/model-safety.js";
 import { runAgentOperator } from "../../src/steps/run-agent-operator.js";
+import { openDailyInvocationCounter } from "../../src/steps/daily-counter.js";
 import {
+  budgetPolicyDeclaration,
   decisionLogPolicyDeclaration,
   fullPolicyDeclaration,
   realAgentPolicyDeclaration,
@@ -147,21 +149,51 @@ function createFakeSurface(): {
 const DEFAULT_ENTRYPOINT = "/fake/repo/packages/m3l-cli/bin/m3l.mjs";
 
 let inputDir: string;
+let dataDir: string;
 
 beforeEach(async () => {
   inputDir = await mkdtemp(path.join(tmpdir(), "agent-operator-run-"));
+  dataDir = await mkdtemp(path.join(tmpdir(), "agent-operator-run-data-"));
 });
 
 afterEach(async () => {
   vi.unstubAllEnvs();
   vi.mocked(createAgentCliSurface).mockReset();
   await rm(inputDir, { recursive: true, force: true });
+  await rm(dataDir, { recursive: true, force: true });
 });
 
-/** A real `Core.M3LPaths`, pointed at this test's temp input dir. */
+/**
+ * A real `Core.M3LPaths`, pointed at this test's temp input dir **and** temp
+ * data dir. `M3L_DATA_DIR` is stubbed for the same reason `M3L_INPUT_DIR` is:
+ * `health-check` now writes the cross-run daily invocation counter under
+ * `getDataDir()/agent-state`, and a test must never write into the checkout.
+ */
 function makePaths(): Core.M3LPaths {
   vi.stubEnv("M3L_INPUT_DIR", inputDir);
+  vi.stubEnv("M3L_DATA_DIR", dataDir);
   return new Core.M3LPaths();
+}
+
+/** The cross-run daily invocation counter file, under the stubbed data root. */
+function counterPath(): string {
+  return path.join(dataDir, "agent-state", "daily-invocations.checkpoint.json");
+}
+
+/** `true` when `health-check` left a counter file behind. */
+async function counterExists(): Promise<boolean> {
+  try {
+    await readFile(counterPath(), "utf8");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** The counter file's decoded payload — the day's persisted absolute total. */
+async function readCounterPayload(): Promise<Record<string, unknown>> {
+  const envelope = asRecord(JSON.parse(await readFile(counterPath(), "utf8")));
+  return asRecord(envelope["payload"]);
 }
 
 async function writePolicyFixture(
@@ -441,6 +473,228 @@ describe("runAgentOperator — health-check runs the audit spine", () => {
     expect(await readDecisionLogEntries(logDirectory)).toEqual([]);
     expect(stepTrail(handler.events)).not.toContain("preflight-complete");
     expect(stepTrail(handler.events)).not.toContain("model-loop-pending");
+  });
+});
+
+describe("runAgentOperator — health-check seeds the daily invocation counter", () => {
+  /** A `health-check` config wired at this test's temp policy + log locations. */
+  function healthCheckConfig(
+    policyFileName: string,
+    logDirectory: string,
+  ): Core.M3LConfig {
+    return buildConfig({
+      command: "health-check",
+      policyFile: policyFileName,
+      agentName: "daily-counter-test",
+      decisionLogDir: logDirectory,
+    });
+  }
+
+  // THE headline test of this slice. Against a policy declaring
+  // `invocationsPerRun` + `invocationsPerDay` + `tokensPerRun`, the evaluator
+  // reports the FIRST unsatisfied ceiling in its own fixed order
+  // (`invocationsPerRun -> invocationsPerDay -> tokensPerRun -> costPerRun ->
+  // loopIterations`). Before this slice that was
+  // `budget.invocations-per-day.unobservable`; the counter moves it exactly
+  // one slot, to `budget.tokens-per-run.unobservable`, which is what the
+  // metering invoker closes in the next slice.
+  //
+  // This is deliberately a sharper assertion than "the run passes": moving
+  // `counter.seed()` below the preflight — or deleting the seeding entirely —
+  // flips the reported rule straight back to the per-day one.
+  it("moves the escalation off budget.invocations-per-day.unobservable and onto the next declared ceiling", async () => {
+    const policyFileName = "per-day-policy.json";
+    await writePolicyFixture(
+      policyFileName,
+      budgetPolicyDeclaration({
+        invocationsPerRun: 60,
+        invocationsPerDay: 400,
+        tokensPerRun: 200_000,
+      }),
+    );
+    const logDirectory = path.join(inputDir, "agent-log");
+    const { logger } = createLogger();
+
+    let thrown: unknown;
+    try {
+      await runAgentOperator({
+        config: healthCheckConfig(policyFileName, logDirectory),
+        logger,
+        paths: makePaths(),
+        signal: new AbortController().signal,
+        reportRecovery: vi.fn(),
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LAgentOperatorCliError);
+    const asError = thrown as M3LAgentOperatorCliError;
+    expect(asError.code).toBe("ERR_AGENT_OPERATOR_ESCALATED");
+    expect(asError.context?.["rule"]).toBe(
+      "budget.tokens-per-run.unobservable",
+    );
+    expect(asError.context?.["rule"]).not.toBe(
+      "budget.invocations-per-day.unobservable",
+    );
+  });
+
+  it("logs the daily-counter step before the preflight, never after it", async () => {
+    // Ordering, stated as a trail rather than inferred from end state:
+    // `runDecisionLogPreflight` snapshots the ledger TWICE, so a baseline
+    // seeded after it would leave both phases escalating on the per-day rule.
+    const policyFileName = "health-check-policy.json";
+    await writePolicyFixture(policyFileName, decisionLogPolicyDeclaration());
+    const logDirectory = path.join(inputDir, "agent-log");
+    const { logger, handler } = createLogger();
+
+    await runAgentOperator({
+      config: healthCheckConfig(policyFileName, logDirectory),
+      logger,
+      paths: makePaths(),
+      signal: new AbortController().signal,
+      reportRecovery: vi.fn(),
+    });
+
+    const trail = stepTrail(handler.events);
+    expect(trail).toContain("daily-counter-loaded");
+    expect(trail.indexOf("policy-loaded")).toBeLessThan(
+      trail.indexOf("daily-counter-loaded"),
+    );
+    expect(trail.indexOf("daily-counter-loaded")).toBeLessThan(
+      trail.indexOf("preflight-complete"),
+    );
+  });
+
+  it("carries a persisted prior-day total into the evaluation, so a spent budget escalates as EXHAUSTED rather than unobservable", async () => {
+    // Proves the file is genuinely read — not merely created. At the
+    // reject-AT bound (`observed >= ceiling`) the rule must be the exhausted
+    // one; a counter that silently restarted at 0 would auto-approve here.
+    const policyFileName = "per-day-only-policy.json";
+    await writePolicyFixture(
+      policyFileName,
+      budgetPolicyDeclaration({ invocationsPerDay: 400 }),
+    );
+    const logDirectory = path.join(inputDir, "agent-log");
+    const paths = makePaths();
+    const planted = await openDailyInvocationCounter({
+      paths,
+      now: Date.now(),
+    });
+    await planted.record(400);
+
+    let thrown: unknown;
+    try {
+      await runAgentOperator({
+        config: healthCheckConfig(policyFileName, logDirectory),
+        logger: createLogger().logger,
+        paths,
+        signal: new AbortController().signal,
+        reportRecovery: vi.fn(),
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect((thrown as M3LAgentOperatorCliError).context?.["rule"]).toBe(
+      "budget.invocations-per-day",
+    );
+  });
+
+  it("records the run's consumption only after the conclusion is auto-approved", async () => {
+    const policyFileName = "health-check-policy.json";
+    await writePolicyFixture(policyFileName, decisionLogPolicyDeclaration());
+    const logDirectory = path.join(inputDir, "agent-log");
+
+    await runAgentOperator({
+      config: healthCheckConfig(policyFileName, logDirectory),
+      logger: createLogger().logger,
+      paths: makePaths(),
+      signal: new AbortController().signal,
+      reportRecovery: vi.fn(),
+    });
+
+    // Zero, honestly: no model invocation can occur in this slice. The write
+    // is kept anyway — it creates the state directory, exercises the atomic
+    // write in production, and materialises the rollover onto today.
+    expect(await readCounterPayload()).toMatchObject({ invocations: 0 });
+  });
+
+  it("records no consumption when the policy declined the concluding verdict", async () => {
+    const policyFileName = "declining-policy.json";
+    await writePolicyFixture(
+      policyFileName,
+      budgetPolicyDeclaration({ tokensPerRun: 200_000 }),
+    );
+    const logDirectory = path.join(inputDir, "agent-log");
+
+    await expect(
+      runAgentOperator({
+        config: healthCheckConfig(policyFileName, logDirectory),
+        logger: createLogger().logger,
+        paths: makePaths(),
+        signal: new AbortController().signal,
+        reportRecovery: vi.fn(),
+      }),
+    ).rejects.toMatchObject({ code: "ERR_AGENT_OPERATOR_ESCALATED" });
+
+    // Both decision-log entries ARE durable — the audit trail records the
+    // refusal — but no consumption is claimed for a run that never ran.
+    expect(await readDecisionLogEntries(logDirectory)).toHaveLength(2);
+    expect(await counterExists()).toBe(false);
+  });
+
+  it("writes no counter file when the policy cannot be loaded", async () => {
+    // The counter is the second artefact under the rule the audit log
+    // already pins: an unloadable policy must leave nothing behind.
+    await expect(
+      runAgentOperator({
+        config: healthCheckConfig(
+          "no-such-policy.json",
+          path.join(inputDir, "agent-log"),
+        ),
+        logger: createLogger().logger,
+        paths: makePaths(),
+        signal: new AbortController().signal,
+        reportRecovery: vi.fn(),
+      }),
+    ).rejects.toMatchObject({ code: "ERR_AGENT_OPERATOR_POLICY" });
+
+    expect(await counterExists()).toBe(false);
+  });
+
+  it("samples now once, at the top, and threads that one instant into the counter write", async () => {
+    // A run straddling UTC midnight must not roll the counter under one
+    // instant and be judged under another. "Called once" is the wrong
+    // assertion — the library's own decision log reads the clock too — so
+    // the VALUE is pinned instead: a monotonically advancing clock makes a
+    // re-sample at the write site produce a different `countedAt`, while a
+    // single hoisted sample threads the FIRST reading all the way through.
+    const policyFileName = "health-check-policy.json";
+    await writePolicyFixture(policyFileName, decisionLogPolicyDeclaration());
+    const paths = makePaths();
+    const first = Date.UTC(2026, 8, 1, 12, 0, 0);
+    let tick = 0;
+    const nowSpy = vi
+      .spyOn(Date, "now")
+      .mockImplementation(() => first + tick++ * 1000);
+
+    await runAgentOperator({
+      config: healthCheckConfig(
+        policyFileName,
+        path.join(inputDir, "agent-log"),
+      ),
+      logger: createLogger().logger,
+      paths,
+      signal: new AbortController().signal,
+      reportRecovery: vi.fn(),
+    });
+
+    // More than one reading happened (so the pin below is not vacuous), and
+    // the counter still carries the FIRST one.
+    expect(nowSpy.mock.calls.length).toBeGreaterThan(1);
+    expect(await readCounterPayload()).toMatchObject({ countedAt: first });
+    nowSpy.mockRestore();
   });
 });
 
@@ -735,12 +989,12 @@ describe("runAgentOperator — health-check's default decision-log directory", (
     //
     // The library default resolves to `new Core.M3LPaths().getDataDir()`
     // joined with `"agent-log"`, i.e. this checkout's gitignored
-    // `data/agent-log/`. `M3L_DATA_DIR` is therefore stubbed at this test's
-    // own temp dir purely for HERMETICITY — so the run writes nothing into the
-    // repo. It is not a way of configuring the script: `decisionLogDir` itself
-    // stays genuinely absent, which is the thing under test, and the assertion
-    // below asserts that absence rather than assuming it.
-    vi.stubEnv("M3L_DATA_DIR", inputDir);
+    // `data/agent-log/`. `makePaths()` stubs `M3L_DATA_DIR` at this test's own
+    // temp data dir purely for HERMETICITY — so the run writes neither the
+    // decision log nor the daily counter into the repo. It is not a way of
+    // configuring the script: `decisionLogDir` itself stays genuinely absent,
+    // which is the thing under test, and the assertion below asserts that
+    // absence rather than assuming it.
     const policyFileName = "default-log-dir-policy.json";
     await writePolicyFixture(policyFileName, decisionLogPolicyDeclaration());
     const { logger, handler } = createLogger();
@@ -771,7 +1025,7 @@ describe("runAgentOperator — health-check's default decision-log directory", (
     // The entries landed under the LIBRARY's default location — `getDataDir()`
     // + "agent-log" — not under a path this script invented.
     const entries = await readDecisionLogEntries(
-      path.join(inputDir, "agent-log"),
+      path.join(dataDir, "agent-log"),
     );
     expect(entries.length).toBeGreaterThan(0);
     const entry = asRecord(entries[0]);

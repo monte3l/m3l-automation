@@ -210,7 +210,19 @@ export function decisionLogPolicy(): Core.M3LAgentPolicy {
 export function budgetPolicy(
   budgets: Readonly<Record<string, number>>,
 ): Core.M3LAgentPolicy {
-  return Core.validateAgentPolicy({
+  return Core.validateAgentPolicy(budgetPolicyDeclaration(budgets));
+}
+
+/**
+ * {@link budgetPolicy}'s declaration, unvalidated — for a test that must write
+ * a budget-declaring policy into its own temp input directory and let
+ * `loadAgentPolicy` read and validate it. `budgetPolicy` returns an
+ * already-validated policy, which cannot be handed to a file-reading step.
+ */
+export function budgetPolicyDeclaration(
+  budgets: Readonly<Record<string, number>>,
+): unknown {
+  return {
     version: 1,
     scripts: [
       {
@@ -221,5 +233,5 @@ export function budgetPolicy(
     ],
     requireDecisionLog: true,
     budgets,
-  });
+  };
 }

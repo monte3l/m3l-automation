@@ -24,16 +24,19 @@ log before the action executes.
 
 **With this slice** the whole offline half is in place. The config schema, the
 committed policy, and policy loading landed first; the typed `m3l` CLI seam
-followed; this one adds the **audit spine** — the run ledger, the decision
-recorder, and the decision-log preflight. There is still no Bedrock client, no
-agent loop, and no network call anywhere — every CLI call is a locally spawned
-child process, so the whole surface is exercisable without AWS.
+followed; then the **audit spine** — the run ledger, the decision recorder, and
+the decision-log preflight; this one adds the **cross-run daily invocation
+counter**, the first metering seam to make one of the policy's five declared
+budgets observable. There is still no Bedrock client, no agent loop, and no
+network call anywhere — every CLI call is a locally spawned child process, so
+the whole surface is exercisable without AWS.
 
 The `health-check` operation now runs its **audit spine**: it loads the policy,
-builds the run ledger, and performs the decision-log preflight. The preflight
-writes **two** entries — the honest bootstrap escalation, then the verdict the
-run actually concluded on — and the run then reports that the model loop is
-still pending.
+builds the run ledger, seeds the ledger's per-day baseline from the cross-run
+counter, and performs the decision-log preflight. The preflight writes **two**
+entries — the honest bootstrap escalation, then the verdict the run actually
+concluded on — the run records its consumption onto the counter, and then
+reports that the model loop is still pending.
 
 It exits cleanly only when that concluding verdict is auto-approved. Otherwise
 it fails with `ERR_AGENT_OPERATOR_ESCALATED`, carrying the verdict and rule in
@@ -49,19 +52,32 @@ the final slice.
 One consequence is worth stating plainly rather than discovering later. The
 evaluator checks budgets (step 3) **before** the decision-log rule (step 3b),
 deliberately, so that a budget-exhausted action keeps reporting its own budget
-rule. Because the committed policy declares all five budgets and no metering
-exists until the workload slice, every action currently escalates on a
-`budget.*.unobservable` rule, which masks `decision-log-unavailable*`
-entirely. So the preflight ships here as tested machinery that becomes
-_operative_ only once the metering invoker lands.
+rule. It checks the five ceilings in a **fixed** order —
+`invocationsPerRun -> invocationsPerDay -> tokensPerRun -> costPerRun ->
+loopIterations` — and reports the first unsatisfied one, so a single
+unobservable ceiling masks every rule below it, `decision-log-unavailable*`
+included.
 
-Concretely: against the committed policy, `health-check` fails with
+The committed policy declares all five. This slice closes the second:
+
+| Ceiling                   | Before the counter                            | After                                    |
+| ------------------------- | --------------------------------------------- | ---------------------------------------- |
+| `invocationsPerRun` (60)  | satisfied (0)                                 | satisfied (0)                            |
+| `invocationsPerDay` (400) | **`budget.invocations-per-day.unobservable`** | satisfied                                |
+| `tokensPerRun` (200000)   | masked                                        | **`budget.tokens-per-run.unobservable`** |
+
+Concretely: against the committed policy, `health-check` still fails with
 `ERR_AGENT_OPERATOR_ESCALATED` rather than succeeding — correctly, because
-nothing can yet observe the budgets that policy declares. The auto-approved
-path is exercised against a budget-free policy in the tests. The fix is the
-metering invoker, not a defaulted ledger field: reporting an unobserved budget
-as `0` would convert "unobservable" into a silently passing check, which is the
-one direction this design must never fail in.
+`tokensThisRun`/`costThisRun`/`loopIterations` stay unobservable until
+`createMeteredInvoker` seeds them, which is the workload slice. The escalation
+has moved exactly one slot, and that rule string is this slice's acceptance
+criterion. The auto-approved path is exercised against a budget-free policy in
+the tests.
+
+The fix for each ceiling is metering, never a defaulted ledger field:
+reporting an unobserved budget as `0` would convert "unobservable" into a
+silently passing check, which is the one direction this design must never fail
+in.
 
 Explicitly out of scope: mutations of any kind (the policy grants only
 `inspect`/`dry-run` on fleet scripts, all declared `readOnlyOperations`); a
@@ -115,7 +131,12 @@ run — so it is a value-based inline predicate, the `sqs-etl` shape.)
 
 **Deliberately absent.** No budget parameters (see § Purpose and scope). No
 `dryRun` parameter — that is ADR-0054's context flag, read once in `main.ts`.
-No `yes`/`yesSensitive` — this workload never calls `confirmDestructive`.
+No `yes`/`yesSensitive` — this workload never calls `confirmDestructive`. No
+`agentStateDir`, and no `agentName`-derived counter filename: `agentName` is
+argv-settable, so either one would let `--agentName foo` mint a fresh
+400-invocation per-day budget with no policy diff — the same objection
+ADR-0060 raises against budget parameters on argv. (`decisionLogDir` is
+different and stays: relocating an audit record widens no authority.)
 
 ## Steps
 
@@ -139,7 +160,31 @@ No `yes`/`yesSensitive` — this workload never calls `confirmDestructive`.
   ledger reads no clock: `now` is sampled once by the caller and passed in.
   `dryRunCompletedShapes` is bounded at `Core.M3L_AGENT_MAX_DRY_RUN_SHAPES`
   (256) and rejects above it rather than truncating, so a shape can never be
-  silently dropped from the dry-run-first record.
+  silently dropped from the dry-run-first record. `invocationsToday` and
+  `todayCountedAt` are emitted by a **single** conditional spread — both or
+  neither — because the evaluator checks presence of all three of
+  `invocationsToday`/`todayCountedAt`/`now` _before_ it applies the UTC-day
+  window: a half-present pair is unobservable anyway, and looks observed to a
+  reader, which is worse. `invocationsToday` is **composed**
+  (`baseline + invocationsThisRun`), never stored, because both names count the
+  same event.
+- `daily-counter` — the cross-run daily invocation counter, and the only reason
+  `budgets.invocationsPerDay` is observable at all. It counts model
+  **invocations**, not runs: the library defines the unit, and the two counters
+  share one `M3LAgentBudgets` bag, so a per-day counter of runs would read the
+  committed `60`/`400` pair as 24,000 turns a day. State is a
+  `Core.M3LCheckpointStore` envelope under `getDataDir()/agent-state` — never
+  `getOutputDir()`, which an operator clears between runs — behind a fixed
+  filename. The day boundary is **UTC**, re-deriving the library's own
+  `Math.floor(t / 86_400_000)` (it is `internal/`, so ADR-0029 forbids
+  importing it) with a drift-guard test; a local-day roll would disagree with
+  the evaluator by up to fourteen hours. A corrupt or unverifiable file
+  **rejects** with `ERR_AGENT_OPERATOR_BUDGET_STATE` — it never degrades to
+  zero, which would turn tampering into a budget reset. Two caveats, both
+  permissive and both deliberate: concurrent runs lose updates (last write
+  wins, bounded by concurrent runs x `invocationsPerRun`; `data/agent-log/` is
+  the compensating control, since every verdict is durably recorded), and a
+  deleted file starts today at `0`.
 - `decision-recorder` — the agent identity, the local `AgentDecisionLogWriter`
   port, and the write helpers. The port exists because
   `Core.M3LAgentDecisionLog` has a TS `private` member and is therefore
@@ -154,7 +199,9 @@ No `yes`/`yesSensitive` — this workload never calls `confirmDestructive`.
   observation** — then mark the log observed and re-evaluate.
   `decisionLogAvailable` is never seeded, and a failed write aborts the run
   before any model client could be constructed, so a broken audit trail costs
-  zero tokens.
+  zero tokens. The counter is seeded **before** this step, not after: the
+  preflight snapshots the ledger twice, so an unseeded ledger escalates on the
+  per-day rule at _both_ phases and the two-phase bootstrap can never resolve.
 - `run-agent-operator` — dispatches the two operations over a closed `switch`
   with a `never` exhaustiveness arm.
 
@@ -280,16 +327,17 @@ model reads as instruction.
 
 ## Error codes
 
-| Code                                | Meaning                                                                     |
-| ----------------------------------- | --------------------------------------------------------------------------- |
-| `ERR_AGENT_OPERATOR_CONFIG`         | A required parameter is missing or a cross-check failed                     |
-| `ERR_AGENT_OPERATOR_CLI_ENTRYPOINT` | The CLI entrypoint could not be derived and was not supplied                |
-| `ERR_AGENT_OPERATOR_CLI_SPAWN`      | Spawn failed, timed out, was signalled, or breached the output byte cap     |
-| `ERR_AGENT_OPERATOR_CLI_OUTPUT`     | An unacceptable exit code, or a CLI payload that failed to parse            |
-| `ERR_AGENT_OPERATOR_SCRIPT_NAME`    | A script name failed the allowlist, or is absent from `dryRunAllowlist`     |
-| `ERR_AGENT_OPERATOR_POLICY`         | The policy file is missing, unreadable, malformed, or structurally invalid  |
-| `ERR_AGENT_OPERATOR_DECISION_LOG`   | A decision-log entry could not be written, or breached an entry/shape cap   |
-| `ERR_AGENT_OPERATOR_ESCALATED`      | The run concluded without an auto-approved verdict — the policy declined it |
+| Code                                | Meaning                                                                                       |
+| ----------------------------------- | --------------------------------------------------------------------------------------------- |
+| `ERR_AGENT_OPERATOR_CONFIG`         | A required parameter is missing or a cross-check failed                                       |
+| `ERR_AGENT_OPERATOR_CLI_ENTRYPOINT` | The CLI entrypoint could not be derived and was not supplied                                  |
+| `ERR_AGENT_OPERATOR_CLI_SPAWN`      | Spawn failed, timed out, was signalled, or breached the output byte cap                       |
+| `ERR_AGENT_OPERATOR_CLI_OUTPUT`     | An unacceptable exit code, or a CLI payload that failed to parse                              |
+| `ERR_AGENT_OPERATOR_SCRIPT_NAME`    | A script name failed the allowlist, or is absent from `dryRunAllowlist`                       |
+| `ERR_AGENT_OPERATOR_POLICY`         | The policy file is missing, unreadable, malformed, or structurally invalid                    |
+| `ERR_AGENT_OPERATOR_DECISION_LOG`   | A decision-log entry could not be written, or breached an entry/shape cap                     |
+| `ERR_AGENT_OPERATOR_ESCALATED`      | The run concluded without an auto-approved verdict — the policy declined it                   |
+| `ERR_AGENT_OPERATOR_BUDGET_STATE`   | The cross-run daily invocation counter could not be read, is corrupt, or could not be written |
 
 A caller-driven abort raises `Core.M3LOperationAbortedError`
 (`ERR_OPERATION_ABORTED`), not a code from this family — see § The CLI seam.
@@ -308,11 +356,15 @@ rather than a silent fallback. It declares `version: 1`, 17 script grants, a
 `dryRunFirst: true`. Every grant declares `readOnlyOperations`, including the
 `agent-operator` grant covering its own run.
 
-**Writes.** In this slice, structured log output only. The workload slice adds a
-JSON artifact under `M3L_OUTPUT_DIR` via `M3LJSONFileExporter` and JSONL decision
-records under `data/agent-log/` (gitignored). The `m3l` CLI's discovery cache
-lands in `data/cache/` on every spawned call; it is derived machine state and is
-gitignored.
+**Writes.** Structured log output; JSONL decision records under
+`data/agent-log/`; and the cross-run daily invocation counter at
+`data/agent-state/daily-invocations.checkpoint.json`. Both directories are
+gitignored: they are machine state, not source. The counter is written only
+after the concluding verdict is auto-approved — a run the policy declined must
+not record consumption it never made. The workload slice adds a JSON artifact
+under `M3L_OUTPUT_DIR` via `M3LJSONFileExporter`. The `m3l` CLI's discovery
+cache lands in `data/cache/` on every spawned call; it is derived machine state
+and is gitignored too.
 
 ## Command module
 
