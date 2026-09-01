@@ -111,12 +111,16 @@ repo's history; report what you found rather than chasing diminishing
 returns.
 
 **Bounded output (survive a turn limit).** A long contract (Mode 1) or a large
-conformance diff (Mode 2) can itself run you out of turn budget mid-report. If
-the output would run long, write the full detail — the complete checklist in
-Mode 1, or every finding in Mode 2 — to a scratchpad file (the path the hub
-gives you, or `<scratchpad>/spec-conformance-reviewer-<target>.md`) and return
-a **capped digest** instead: in Mode 1, the checklist's section headings plus
-item counts and the scratchpad path; in Mode 2, the one-line verdict, every
-Missing/Drifted/Unmet-contract item in full (these block downstream work —
-never truncate them), and a count plus the scratchpad path for Extra/nit-level
-items.
+conformance diff (Mode 2) can itself run you out of turn budget mid-report.
+Return your output **inline in your response** — you hold no write tool and
+cannot write any file (this repo's read-only Bash guard,
+`guard-readonly-bash.mjs`, blocks every shell write route regardless), so a
+scratchpad handoff is never an option here. If the output would otherwise run
+long, keep it within roughly 8,000 characters (~2,000 tokens — the sub-agent
+output band Anthropic documents, and the cap
+`.claude/workflows/audit-fanout.js` already enforces mechanically for its own
+read-only fan-out): in Mode 1, the checklist's section headings plus item
+counts if the full checklist would overflow; in Mode 2, the one-line verdict
+and every Missing/Drifted/Unmet-contract item in full (these block downstream
+work — never truncate them), with a count plus a one-line summary per
+Extra/nit-level item rather than every body.

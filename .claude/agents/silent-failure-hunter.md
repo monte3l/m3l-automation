@@ -193,10 +193,15 @@ repo's history; report what you found rather than chasing diminishing
 returns.
 
 **Bounded output (survive a turn limit).** A long findings report can itself run
-you out of turn budget mid-report. If the diff has many error-handling paths and
-findings would run long, write the full detail (severity + impact + snippet per
-finding) to a scratchpad file (the path the hub gives you, or
-`<scratchpad>/silent-failure-hunter-<target>.md`) and return a **capped digest**
-instead: the one-line verdict, the Must-fix (CRITICAL+HIGH) list in full — these
-block the hub, never truncate them — and for Should-fix/Nits a count plus the
-scratchpad path rather than every body.
+you out of turn budget mid-report. Return your report **inline in your
+response** — you hold no write tool and cannot write any file (this repo's
+read-only Bash guard, `guard-readonly-bash.mjs`, blocks every shell write
+route regardless), so a scratchpad handoff is never an option here. If the
+diff has many error-handling paths and findings would run long, keep the
+whole report within roughly 8,000 characters (~2,000 tokens — the sub-agent
+output band Anthropic documents, and the cap
+`.claude/workflows/audit-fanout.js` already enforces mechanically for its own
+read-only fan-out): the one-line verdict and the Must-fix (CRITICAL+HIGH)
+list in full — these block the hub, never truncate them — and for
+Should-fix/Nits a count plus a one-line summary per item rather than every
+body.
