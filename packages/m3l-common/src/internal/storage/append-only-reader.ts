@@ -62,11 +62,8 @@ import { open, readdir } from "node:fs/promises";
 import path from "node:path";
 
 import { M3LError } from "../../core/errors/index.js";
-import {
-  isEnoentError,
-  isFunction,
-  isPlainObject,
-} from "../../core/utils/guards.js";
+import { isEnoentError } from "../../core/utils/guards.js";
+import { chainSecondaryFailure } from "../errors/chain-secondary-failure.js";
 import type { AppendOnlyProjectionFailure } from "./append-only-projection.js";
 import { projectAppendOnlyEntry } from "./append-only-projection.js";
 import type { ParsedSegmentName } from "./append-only-segments.js";
@@ -469,6 +466,39 @@ function assertMidStreamSegmentNotEmpty(
   }
 }
 
+/** Raised when a segment's handle cannot be released. */
+const CLOSE_FAILURE_MESSAGE =
+  "append-only stream: failed to close a segment after reading it";
+
+/**
+ * Releases a segment handle on a NON-success path — a read failure, or the
+ * consumer's early `break` (which resumes the generator at its `finally` via
+ * `.return()`).
+ *
+ * Never throws. With a primary error already in flight the close failure is
+ * CHAINED onto it ({@link chainSecondaryFailure}) rather than replacing it:
+ * the read failure is what the caller must act on, but a descriptor the OS
+ * refused to release is a real second fault. With no primary error this is
+ * the early-`break` path — a normal, successful way to stop reading — so it
+ * stays silent.
+ */
+async function releaseAfterFailure(
+  handle: FileHandle,
+  primaryError: unknown,
+  context: SegmentReadContext,
+): Promise<void> {
+  try {
+    await handle.close();
+  } catch (closeError) {
+    if (primaryError !== undefined) {
+      chainSecondaryFailure(
+        primaryError,
+        context.buildError(CLOSE_FAILURE_MESSAGE, { cause: closeError }),
+      );
+    }
+  }
+}
+
 /**
  * Reads one segment's complete lines, in file order, and resolves its
  * trailing fragment (if any) against this read's torn-tail policy.
@@ -479,12 +509,23 @@ function assertMidStreamSegmentNotEmpty(
  * {@link assertSegmentIsReadable}, {@link assertMidStreamSegmentNotEmpty},
  * {@link splitLines}, or {@link resolveTornTail}) is wrapped in it, so
  * nothing leaks a raw Node error out of `read()`.
+ *
+ * `close` is split across two paths. On the SUCCESS path it closes inside
+ * the `try` and a failure throws: the segment was read to completion, so
+ * there is no other outcome for it to displace, and swallowing it reports a
+ * clean read over a descriptor the OS never released. Every other path
+ * defers to {@link releaseAfterFailure}. `closeAttempted` keeps the two
+ * apart — without it the `finally` would double-close after success, and
+ * folding the success close INTO the `finally` would make an early `break`
+ * start throwing.
  */
 async function* readSegmentEntries(
   segment: DiscoveredSegment,
   context: SegmentReadContext,
 ): AsyncGenerator<Readonly<Record<string, unknown>>> {
   let handle: FileHandle | undefined;
+  let closeAttempted = false;
+  let primaryError: unknown;
   try {
     handle = await open(segment.path, SEGMENT_READ_FLAGS);
     await assertSegmentIsReadable(handle, context.buildError);
@@ -512,24 +553,31 @@ async function* readSegmentEntries(
     if (tornTail !== undefined) {
       context.onTruncatedTail?.(tornTail);
     }
+
+    // Claim the close before attempting it, so the `finally` stands down
+    // whether it succeeds or throws.
+    closeAttempted = true;
+    try {
+      await handle.close();
+    } catch (cause) {
+      throw context.buildError(CLOSE_FAILURE_MESSAGE, { cause });
+    }
   } catch (cause) {
     // Already the owner's own typed error — built by `context.buildError`
     // above, or one it threw through `parseAndProjectLine`/the projection
     // failure port. Re-throw unchanged rather than double-wrapping. A raw
     // Node error (ENOENT/EACCES/ELOOP from `open`/`read`) falls through to
     // the wrap below instead.
-    if (cause instanceof M3LError) {
-      throw cause;
-    }
-    throw context.buildError("append-only stream: failed to read a segment", {
-      cause,
-    });
+    primaryError =
+      cause instanceof M3LError
+        ? cause
+        : context.buildError("append-only stream: failed to read a segment", {
+            cause,
+          });
+    throw primaryError;
   } finally {
-    // Best-effort: a failing close must not replace the real outcome above.
-    try {
-      await handle?.close();
-    } catch {
-      /* ignore — the read outcome above is what matters */
+    if (!closeAttempted && handle !== undefined) {
+      await releaseAfterFailure(handle, primaryError, context);
     }
   }
 }
@@ -567,36 +615,5 @@ export async function* readAppendOnlySegments(
       }),
       buildError: options.buildError,
     });
-  }
-}
-
-/**
- * Validates {@link M3LAppendOnlyReadOptions.onTruncatedTail} at the public
- * boundary: `options` is typed, but a JS caller (or one bypassing the type)
- * can still hand `read()` a truthy non-function there. Left unchecked, that
- * value silently disables the torn-tail throw at the exact call site meant
- * to invoke it (`context.onTruncatedTail?.(tornTail)`), which is too close to
- * the invariant the whole feature exists to enforce to fail any way but
- * loudly and immediately.
- *
- * @param options - The read options bag exactly as the caller supplied it,
- *   `unknown` because a public method's own static parameter type is never a
- *   runtime guarantee.
- * @throws {@link M3LError} with `code: "ERR_INVALID_ARGUMENT"` when
- *   `onTruncatedTail` is present and truthy but not callable.
- */
-export function assertOnTruncatedTailIsCallable(options: unknown): void {
-  if (!isPlainObject(options)) {
-    return;
-  }
-  const onTruncatedTail = options["onTruncatedTail"];
-  if (onTruncatedTail && !isFunction(onTruncatedTail)) {
-    throw new M3LError(
-      'append-only stream: "onTruncatedTail" is invalid (not-a-function)',
-      {
-        code: "ERR_INVALID_ARGUMENT",
-        context: { field: "onTruncatedTail", violation: "not-a-function" },
-      },
-    );
   }
 }
