@@ -1,7 +1,7 @@
 /**
  * `lib/errors` — the single script-local error type for `agent-operator`.
  *
- * Every failure this script raises pins one of eight documented codes onto a
+ * Every failure this script raises pins one of nine documented codes onto a
  * single `M3LAgentOperatorCliError` class rather than a dedicated subclass
  * per code: the codes differ only in the string that identifies them, not in
  * shape or behaviour, so a subclass hierarchy would add nothing but ceremony
@@ -47,7 +47,16 @@ export type M3LAgentOperatorErrorCode =
   // this code means the policy worked correctly and declined to auto-approve
   // the run. "Fix your policy file" and "your policy declined this run" call
   // for different responses from an operator and from a catch site.
-  | "ERR_AGENT_OPERATOR_ESCALATED";
+  | "ERR_AGENT_OPERATOR_ESCALATED"
+  // A fourth distinct remediation, and the reason it is not folded onto
+  // `ERR_AGENT_OPERATOR_DECISION_LOG`: that code sends an operator to
+  // `data/agent-log/`, which in this failure mode is perfectly healthy. The
+  // real fault is a DIFFERENT file, in a DIFFERENT directory
+  // (`data/agent-state/`), with a different fix — delete the corrupt counter
+  // and accept that today's prior spend is forgotten. Named for the concern
+  // ("budget state"), not for the file, so a second piece of cross-run
+  // budget state needs no tenth code.
+  | "ERR_AGENT_OPERATOR_BUDGET_STATE";
 
 /**
  * Enrichment fields for {@link M3LAgentOperatorCliError}, forwarded verbatim
