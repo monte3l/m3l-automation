@@ -31,18 +31,26 @@ import type {
  * once, at the entry-point boundary — never scattered through the later
  * walk/format logic, which can therefore trust every segment it's handed.
  *
- * Returns the ORIGINAL `value` reference (cast, never cloned) once its shape
- * is confirmed — cloning would hoist a getter-backed `name`/`index` into a
- * frozen literal and silently defeat `resolvePropertySegment`'s TOCTOU
- * re-read guard, which depends on re-reading the same live property a second
- * time.
+ * Returns a FRESH frozen own-property snapshot built from the single
+ * validated read of each field, never the caller's live object. This is what
+ * closes the check-read/use-read (TOCTOU) gap: `kind` and `name`/`index` are
+ * each read exactly once, and every downstream consumer sees only the inert
+ * snapshot, so a getter cannot present a safe value to the validator and a
+ * hostile one (a `"__proto__"`-coercing object, a divergent `kind` that
+ * routes an unvalidated field into the wrong resolver) to the walk/format
+ * logic afterwards. A well-behaved getter is unaffected — its value is
+ * simply captured.
+ *
+ * The caller's own object is neither frozen nor mutated; only the returned
+ * snapshot is frozen, so a later call legitimately re-validates from scratch
+ * and observes whatever the caller has since changed.
  *
  * @param value - The raw, unvalidated segment element.
  * @param index - The element's position in the `segments` array, used only
  *   to name the offending element in a thrown error.
  * @param paramName - The name of the top-level parameter being validated,
  *   used only to compose a caller-facing error message.
- * @returns The original `value`, narrowed to {@link M3LStepReferenceSegment}.
+ * @returns A frozen {@link M3LStepReferenceSegment} snapshot of `value`.
  * @throws {@link M3LStepReferenceError} when `value` is not a plain object,
  *   has an unrecognised `kind`, or carries a `name`/`index` of the wrong
  *   type for its `kind`.
@@ -65,7 +73,7 @@ function assertSegmentShape(
         `${paramName}.segments[${String(index)}] is a property segment but "name" must be a string, got ${typeof name}`,
       );
     }
-    return value as unknown as M3LStepReferenceSegment;
+    return Object.freeze({ kind: "property", name });
   }
   if (kind === "index") {
     const segmentIndex = value["index"];
@@ -74,7 +82,7 @@ function assertSegmentShape(
         `${paramName}.segments[${String(index)}] is an index segment but "index" must be a number, got ${typeof segmentIndex}`,
       );
     }
-    return value as unknown as M3LStepReferenceSegment;
+    return Object.freeze({ kind: "index", index: segmentIndex });
   }
   throw new M3LStepReferenceError(
     `${paramName}.segments[${String(index)}] has an unrecognised "kind": ${String(kind)}`,
@@ -94,10 +102,15 @@ function assertSegmentShape(
  * raw `TypeError` (or, worse, silently resolving to `undefined`) deeper in
  * the function.
  *
+ * `ordinal` is read exactly once and returned in a fresh object alongside
+ * the per-element snapshots from {@link assertSegmentShape}, so downstream
+ * logic never re-reads a caller-supplied accessor.
+ *
  * @param value - The raw, unvalidated candidate reference.
  * @param paramName - The name of the parameter being validated, used only to
  *   compose a caller-facing error message.
- * @returns The original object, narrowed to {@link M3LStepReference}.
+ * @returns A fresh {@link M3LStepReference} holding the validated `ordinal`
+ *   and the validated segment snapshots.
  * @throws {@link M3LStepReferenceError} when `value` is not a plain object,
  *   its `ordinal` is not a number, its `segments` is not an array, or any
  *   element of `segments` fails {@link assertSegmentShape}.

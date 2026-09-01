@@ -1,25 +1,43 @@
 /**
- * Tests for core/orchestration submodule. The module is implemented and
- * every test in this file passes GREEN. The additional `describe` blocks
- * appended below the original port document fail-open defects found during
- * the U10 security review (2026-09-01) and since fixed in
- * `src/core/orchestration/{binding,step-reference}.ts` — each block's
- * BEFORE/AFTER comment records what the defect was and why the test exists,
- * even though the defect no longer reproduces against the shipped module.
+ * Tests for core/orchestration submodule — the GRAMMAR and BINDING half:
+ * `parseStepReference`/`formatStepReference` over valid input (emission,
+ * canonicalization, round-tripping), `resolveStepReference`'s happy,
+ * absent-but-well-formed and impossible-walk paths, `validateBindingValue`,
+ * and the type-level contracts. Some `describe` blocks document fail-open
+ * defects found during the U10 security review (2026-09-01) and since fixed
+ * in `src/core/orchestration/{binding,step-reference,shape}.ts` — each
+ * block's BEFORE/AFTER comment records what the defect was and why the test
+ * exists, even though the defect no longer reproduces against the shipped
+ * module. Every test in this file passes GREEN.
+ *
+ * The HOSTILE-INPUT half lives in the sibling
+ * `packages/m3l-common/tests/orchestration-security.test.ts`: the
+ * `isDangerousKey` prototype-pollution screens at parse, walk and format
+ * time; the `valueOf`/`toString`-divergent index and array-prototype leak
+ * blocks; the throwing-getter/Proxy-trap blocks; the typed-error narrowing
+ * for a non-reference argument or a malformed `segments[]` element; and the
+ * validated-snapshot (TOCTOU) discipline in `shape.ts`. It was split out
+ * because the combined suite crossed `pnpm check:file-budget`'s 60,000-byte
+ * per-test-file ceiling (ADR-0072), and because that surface is cohesive in
+ * its own right — every block there drives a value the public types forbid.
+ * Neither file is a subset of the other; assertions about hostile input
+ * belong there, not here.
  *
  * Contract source: docs/plans/2026-09-01-orchestration-engine.md § "Slice 2
  * — the promoted surface", plus the behavioral source of truth this module
  * is promoted from —
  * `packages/m3l-console-server/src/sessions/reference.ts` and
- * `packages/m3l-console-server/src/sessions/binding.ts` (ADR-0068). This
- * file is a port of those two modules' test suites
+ * `packages/m3l-console-server/src/sessions/binding.ts` (ADR-0068). Both
+ * files together are a port of those two modules' test suites
  * (`sessions-reference.test.ts`, `sessions-binding.test.ts`), retargeted at
  * the promoted surface.
  *
- * Exports under test: `M3LStepReference`, `M3LStepReferenceSegment`,
- *   `parseStepReference`, `formatStepReference`, `resolveStepReference`,
- *   `M3LStepReferenceError`, `M3LBindingExpectedType`, `M3LStepBinding`,
- *   `validateBindingValue`.
+ * Exports under test here: `M3LStepReference`, `parseStepReference`,
+ *   `formatStepReference`, `resolveStepReference`, `M3LStepReferenceError`,
+ *   `M3LBindingExpectedType`, `M3LStepBinding`, `validateBindingValue` —
+ *   plus `M3LStepReferenceSegment`'s discriminated shape, pinned
+ *   structurally through `M3LStepReference.segments` rather than by naming
+ *   the type.
  *
  * The ONE behavioral change from the console originals: the console throws
  * `M3LConsoleError` with code `ERR_CONSOLE_SESSION_REFERENCE_INVALID`
@@ -39,11 +57,7 @@
  * (`.messages`), while a non-identifier-safe key (e.g. `["total count"]`)
  * has no dotted equivalent and so does round-trip byte-identically. See the
  * canonicalization `describe` blocks below for both properties pinned
- * explicitly. `resolveStepReference` must refuse the three
- * prototype-pollution vector names outright rather than silently walking
- * them — this repo's standard `isDangerousKey` guard applied to this
- * promoted surface, screened at BOTH parse time and walk time
- * independently.
+ * explicitly.
  */
 import { describe, expect, expectTypeOf, test } from "vitest";
 
@@ -59,7 +73,6 @@ import type {
   M3LBindingExpectedType,
   M3LStepBinding,
   M3LStepReference,
-  M3LStepReferenceSegment,
 } from "../src/core/orchestration/index.js";
 
 /** A binding-shape pick, ignoring `reference` (not consumed by `validateBindingValue`). */
@@ -207,6 +220,24 @@ describe("parseStepReference — rejected input", () => {
     expectReferenceInvalid(() => parseStepReference('step-1.output["ok"'));
   });
 
+  test("throws for a step prefix with no ordinal digits at all", () => {
+    expectReferenceInvalid(() => parseStepReference("step-.output"));
+  });
+
+  test("throws for an index segment whose digits are present but whose closing bracket is missing", () => {
+    // Distinct from "step-1.output[" (no digits at all, rejected as
+    // "expected a numeric index inside [...]"): here the digits parse fine
+    // and the cursor runs out where "]" must be.
+    expectReferenceInvalid(() => parseStepReference("step-1.output[0"));
+  });
+
+  test("throws for a quoted segment that ends on a dangling backslash, with no character left to escape", () => {
+    // The text is: step-1.output["a\  — the escape handler peeks past the
+    // backslash and finds end-of-input, distinct from the unterminated-quote
+    // case above where a real character follows.
+    expectReferenceInvalid(() => parseStepReference('step-1.output["a\\'));
+  });
+
   test("never returns a partial/best-effort result — throws rather than truncating at the failure point", () => {
     // "step-3.output.foo bar" has a fully valid prefix ("step-3.output.foo")
     // — a best-effort parser might silently return that prefix. Assert it
@@ -289,26 +320,6 @@ describe("parseStepReference — integer-safety ceiling on ordinal/index digit r
       parseStepReference(`step-1.output.items[${hugeIndex}]`),
     );
   });
-});
-
-describe("parseStepReference — rejects dangerous segment names at parse time (fail-closed, not only at resolve time)", () => {
-  test.each<[string]>([["__proto__"], ["constructor"], ["prototype"]])(
-    "throws for the dotted dangerous segment .%s",
-    (dangerousName) => {
-      expectReferenceInvalid(() =>
-        parseStepReference(`step-1.output.${dangerousName}`),
-      );
-    },
-  );
-
-  test.each<[string]>([["__proto__"], ["constructor"], ["prototype"]])(
-    'throws for the bracket-quoted dangerous segment ["%s"]',
-    (dangerousName) => {
-      expectReferenceInvalid(() =>
-        parseStepReference(`step-1.output["${dangerousName}"]`),
-      );
-    },
-  );
 });
 
 describe("formatStepReference — canonicalization: bracket-quoted only when required", () => {
@@ -453,190 +464,6 @@ describe("resolveStepReference — impossible walk (data/reference mismatch)", (
     const source = { foo: "not-an-array" };
 
     expectReferenceInvalid(() => resolveStepReference(reference, source));
-  });
-});
-
-describe("resolveStepReference — forbidden prototype-pollution segments (walk-time, independent of parse-time)", () => {
-  // These construct an `M3LStepReference` object literal directly rather
-  // than going through `parseStepReference`, so they exercise the walk-time
-  // guard (inside the resolver) independently of the parse-time guard.
-  test.each<[string]>([["__proto__"], ["constructor"], ["prototype"]])(
-    "throws rather than walking the forbidden property-name segment %s",
-    (forbiddenName) => {
-      const reference: M3LStepReference = {
-        ordinal: 1,
-        segments: [{ kind: "property", name: forbiddenName }],
-      };
-      const source = { safe: "value" };
-
-      expectReferenceInvalid(() => resolveStepReference(reference, source));
-    },
-  );
-
-  test("refuses a forbidden segment even when it appears mid-path, before reaching a well-formed remainder", () => {
-    const reference: M3LStepReference = {
-      ordinal: 1,
-      segments: [
-        { kind: "property", name: "__proto__" },
-        { kind: "property", name: "polluted" },
-      ],
-    };
-    const source = { safe: "value" };
-
-    expectReferenceInvalid(() => resolveStepReference(reference, source));
-  });
-
-  // Regression lock-in for the module's own TSDoc claim ("checked... at
-  // every segment, not just the first"): unlike the test above, the
-  // forbidden segment here is NOT the first one — the walk passes through
-  // two real, well-formed intermediate objects (`a`, then `b`) before
-  // reaching `__proto__`. A guard that only checked segment index 0 would
-  // let this walk through undetected.
-  test("refuses a forbidden segment reached mid-path, after walking through real well-formed intermediate objects", () => {
-    const reference: M3LStepReference = {
-      ordinal: 1,
-      segments: [
-        { kind: "property", name: "a" },
-        { kind: "property", name: "b" },
-        { kind: "property", name: "__proto__" },
-        { kind: "property", name: "c" },
-      ],
-    };
-    const source = { a: { b: {} } };
-
-    expectReferenceInvalid(() => resolveStepReference(reference, source));
-  });
-});
-
-describe("resolveStepReference — array-prototype leak prevention for index segments", () => {
-  // BEFORE (2026-09-01 security review): this describe's only test proved
-  // prototype pollution is screened for a real numeric index into an empty
-  // array — `segment.index < array.length` correctly gates that one case.
-  // It never constructed an index whose `valueOf`/`toString` disagree, so
-  // the describe's own title ("leak prevention for index segments",
-  // general) was unproven for the actual leak vector: `resolveIndexSegment`
-  // does a raw `array[segment.index]`, and property-key coercion
-  // (`ToPropertyKey`) consults `toString()` — not `valueOf()` — when the
-  // index is an object, not a `number`. An index object that reports `0` to
-  // `valueOf` (passing the bounds check) but a dangerous name to
-  // `toString` reaches `Array.prototype`/the `Array` constructor
-  // undetected. AFTER: the test.each below proves that specific claim, and
-  // passes GREEN — `resolveIndexSegment` now requires `typeof index ===
-  // "number"` up front, before the index is ever used as a property key,
-  // which rejects a `valueOf`/`toString`-divergent index outright.
-  test("never returns a value inherited from Array.prototype for an index that has no real element", () => {
-    const pollutedPrototype = Array.prototype as unknown as Record<
-      string,
-      unknown
-    >;
-    pollutedPrototype[0] = "LEAKED";
-
-    try {
-      const reference = parseStepReference("step-1.output.items[0]");
-      const source = { items: [] as unknown[] };
-
-      expect(resolveStepReference(reference, source)).toBeUndefined();
-    } finally {
-      delete pollutedPrototype[0];
-    }
-  });
-
-  test.each<[string, unknown]>([
-    [
-      "toString diverges from valueOf to name the Array constructor",
-      { valueOf: () => 0, toString: () => "constructor" },
-    ],
-    [
-      "toString diverges from valueOf to name an inherited Array.prototype method",
-      { valueOf: () => 0, toString: () => "at" },
-    ],
-  ])(
-    "throws rather than resolving to an Array.prototype/constructor member when an index segment's %s",
-    (_label, coercingIndex) => {
-      const reference: M3LStepReference = {
-        ordinal: 1,
-        segments: [
-          {
-            kind: "index",
-            index: coercingIndex as number,
-          },
-        ],
-      };
-      const source = ["a"];
-
-      expectReferenceInvalid(() => resolveStepReference(reference, source));
-    },
-  );
-});
-
-describe("resolveStepReference — hostile (throwing) getters surface as a typed M3LStepReferenceError", () => {
-  test("wraps a throwing property getter as M3LStepReferenceError with the reference-invalid code, not the raw thrown value", () => {
-    const source: Record<string, unknown> = {};
-    Object.defineProperty(source, "x", {
-      get(): never {
-        throw new Error("boom");
-      },
-      enumerable: true,
-      configurable: true,
-    });
-    const reference = parseStepReference("step-1.output.x");
-
-    expectReferenceInvalid(() => resolveStepReference(reference, source));
-
-    let thrown: unknown;
-    try {
-      resolveStepReference(reference, source);
-    } catch (error) {
-      thrown = error;
-    }
-    expect((thrown as M3LStepReferenceError).message).not.toContain("boom");
-  });
-
-  test("wraps a throwing Proxy get trap as M3LStepReferenceError with the reference-invalid code, not the raw thrown value", () => {
-    const target = { x: "value" };
-    const hostile = new Proxy(target, {
-      get(): never {
-        throw new Error("proxy trap boom");
-      },
-    });
-    const reference = parseStepReference("step-1.output.x");
-
-    expectReferenceInvalid(() => resolveStepReference(reference, hostile));
-
-    let thrown: unknown;
-    try {
-      resolveStepReference(reference, hostile);
-    } catch (error) {
-      thrown = error;
-    }
-    expect((thrown as M3LStepReferenceError).message).not.toContain(
-      "proxy trap boom",
-    );
-  });
-
-  test("wraps a throwing array-index getter as M3LStepReferenceError with the reference-invalid code", () => {
-    const array: unknown[] = [];
-    Object.defineProperty(array, 0, {
-      get(): never {
-        throw new Error("index getter boom");
-      },
-      enumerable: true,
-      configurable: true,
-    });
-    const reference = parseStepReference("step-1.output.items[0]");
-    const source = { items: array };
-
-    expectReferenceInvalid(() => resolveStepReference(reference, source));
-
-    let thrown: unknown;
-    try {
-      resolveStepReference(reference, source);
-    } catch (error) {
-      thrown = error;
-    }
-    expect((thrown as M3LStepReferenceError).message).not.toContain(
-      "index getter boom",
-    );
   });
 });
 
@@ -863,49 +690,6 @@ describe("validateBindingValue — off-union expectedType fails CLOSED (returns 
   );
 });
 
-/**
- * DEFECT 2 — `formatStepReference` must apply the SAME fail-closed screens
- * `parseStepReference` applies (the `isDangerousKey` prototype-pollution
- * guard, the 15-digit run cap, and a safe-integer check), so it can never
- * emit reference text the parser turns around and rejects. Before this fix
- * the format guard only checked `Number.isInteger`/`>= 0`, so a hand-built
- * or deserialized `M3LStepReference` — most seriously one carrying a
- * `__proto__`/`constructor`/`prototype` property segment, which
- * `parseStepReference` refuses to produce and `resolveStepReference`
- * refuses to walk — could format into text that LOOKS like a legitimate
- * reference but is actually unparseable/unwalkable. `formatStepReference`
- * now re-applies the same `isDangerousKey`/digit-run/safe-integer screens
- * the parser applies, so this can no longer happen.
- */
-describe("formatStepReference — fails closed on inputs parseStepReference would reject (screens must match the parser exactly)", () => {
-  test.each<[string]>([["__proto__"], ["constructor"], ["prototype"]])(
-    "throws ERR_STEP_REFERENCE_INVALID for a dangerous property-segment name %s, instead of emitting text the parser (and resolver) refuse",
-    (dangerousName) => {
-      const reference: M3LStepReference = {
-        ordinal: 1,
-        segments: [{ kind: "property", name: dangerousName }],
-      };
-
-      expectReferenceInvalid(() => formatStepReference(reference));
-    },
-  );
-
-  test("throws ERR_STEP_REFERENCE_INVALID for an ordinal beyond the safe-integer ceiling (1e21), instead of emitting exponential-notation text the parser rejects", () => {
-    const reference: M3LStepReference = { ordinal: 1e21, segments: [] };
-
-    expectReferenceInvalid(() => formatStepReference(reference));
-  });
-
-  test("throws ERR_STEP_REFERENCE_INVALID for an index beyond the 15-digit run cap (2**53), instead of emitting a 16-digit run the parser's ceiling rejects", () => {
-    const reference: M3LStepReference = {
-      ordinal: 1,
-      segments: [{ kind: "index", index: 2 ** 53 }],
-    };
-
-    expectReferenceInvalid(() => formatStepReference(reference));
-  });
-});
-
 /** Every reference text `parseStepReference` accepts, reused below for the format/parse round-trip property assertion. */
 const VALID_REFERENCE_TEXTS: readonly string[] = [
   "step-3.output",
@@ -983,60 +767,6 @@ describe("formatStepReference — text→format canonicalizes a bracket-quoted b
 });
 
 /**
- * DEFECT 3 — TOCTOU on `segment.name` (2026-09-01 security review). The
- * resolver's `resolvePropertySegment` reads `segment.name` three times: the
- * `isDangerousKey` guard, the `Object.hasOwn` check, and the actual
- * property read. A segment whose `name` is a getter that returns a safe
- * value on the guard's read and `"__proto__"` on the subsequent reads
- * defeats the guard entirely — the check-then-use gap between the read the
- * guard inspects and the read the walk actually uses.
- */
-describe("resolveStepReference — TOCTOU on a getter-backed segment.name defeats the dangerous-key guard", () => {
-  test("a segment.name getter that returns a safe name to the guard but __proto__ to the actual read must still throw, not leak the polluted value", () => {
-    let reads = 0;
-    const segment: M3LStepReferenceSegment = {
-      kind: "property",
-      get name(): string {
-        reads += 1;
-        return reads === 1 ? "safe" : "__proto__";
-      },
-    };
-    const reference: M3LStepReference = { ordinal: 1, segments: [segment] };
-    // JSON.parse creates "__proto__" as a literal OWN property (via
-    // CreateDataProperty), not the object's actual prototype — this is
-    // exactly the shape a deserialized step output can legitimately have.
-    const source: unknown = JSON.parse(
-      '{"__proto__":{"leak":"PWNED"},"safe":"ok"}',
-    );
-
-    let thrown: unknown;
-    try {
-      resolveStepReference(reference, source);
-    } catch (error) {
-      thrown = error;
-    }
-
-    expect(thrown).toBeInstanceOf(M3LStepReferenceError);
-    expect((thrown as M3LStepReferenceError).code).toBe(
-      "ERR_STEP_REFERENCE_INVALID",
-    );
-  });
-
-  test("a segment.name getter that returns a STABLE value across every read still resolves normally (the guard must not reject well-behaved getters)", () => {
-    const segment: M3LStepReferenceSegment = {
-      kind: "property",
-      get name(): string {
-        return "safe";
-      },
-    };
-    const reference: M3LStepReference = { ordinal: 1, segments: [segment] };
-    const source = { safe: "ok" };
-
-    expect(resolveStepReference(reference, source)).toBe("ok");
-  });
-});
-
-/**
  * DEFECT 5 — sparse arrays fail open in `validateBindingValue`'s
  * `multiSelect: true` path (2026-09-01 security review).
  * `Array.prototype.every` skips holes entirely rather than visiting
@@ -1093,153 +823,5 @@ describe("validateBindingValue — multiSelect: true fails closed on sparse arra
         multiSelect: true,
       }),
     ).toBe(false);
-  });
-});
-
-/**
- * DEFECT 6 — no argument narrowing at the three public entry points
- * (2026-09-01 security review). `parseStepReference`, `formatStepReference`,
- * and `resolveStepReference` all document `@throws {@link
- * M3LStepReferenceError}` with code `ERR_STEP_REFERENCE_INVALID`, but a
- * non-string `text` / non-object `reference` argument currently reaches a
- * raw, un-narrowed `TypeError` (or similar) instead — violating the
- * documented contract and, at the console adapter boundary, misclassifying
- * caller input as a server fault.
- */
-describe("parseStepReference — narrows a non-string argument to M3LStepReferenceError instead of a raw TypeError", () => {
-  test.each<[string, unknown]>([
-    ["null", null],
-    ["undefined", undefined],
-    ["a number", 42],
-    ["an object", { not: "text" }],
-  ])(
-    "throws M3LStepReferenceError (code ERR_STEP_REFERENCE_INVALID), not a raw TypeError, for text = %s",
-    (_label, badText) => {
-      expectReferenceInvalid(() => parseStepReference(badText as string));
-    },
-  );
-});
-
-describe("formatStepReference — narrows a non-M3LStepReference argument to M3LStepReferenceError instead of a raw TypeError", () => {
-  test.each<[string, unknown]>([
-    ["null", null],
-    ["undefined", undefined],
-    ["a number", 42],
-    [
-      "a string (raw reference text, not a parsed M3LStepReference)",
-      "step-1.output",
-    ],
-  ])(
-    "throws M3LStepReferenceError (code ERR_STEP_REFERENCE_INVALID), not a raw TypeError, for reference = %s",
-    (_label, badReference) => {
-      expectReferenceInvalid(() =>
-        formatStepReference(badReference as M3LStepReference),
-      );
-    },
-  );
-});
-
-describe("resolveStepReference — narrows a non-M3LStepReference `reference` argument to M3LStepReferenceError instead of a raw TypeError", () => {
-  test.each<[string, unknown]>([
-    ["null", null],
-    ["undefined", undefined],
-    ["a number", 42],
-    [
-      "a string (raw reference text, not a parsed M3LStepReference)",
-      "step-1.output",
-    ],
-  ])(
-    "throws M3LStepReferenceError (code ERR_STEP_REFERENCE_INVALID), not a raw TypeError, for reference = %s",
-    (_label, badReference) => {
-      expectReferenceInvalid(() =>
-        resolveStepReference(badReference as M3LStepReference, {}),
-      );
-    },
-  );
-});
-
-/**
- * MUST-FIX — `assertStepReferenceShape` (used by both `formatStepReference`
- * and `resolveStepReference`) validates only the OUTER object — that
- * `ordinal` is a number and `segments` is an array — and never validates
- * the array's ELEMENTS. A malformed segment therefore escapes the
- * documented `@throws M3LStepReferenceError` contract entirely: today it
- * surfaces as a raw `TypeError` (e.g. `formatStepReference` reading
- * `.length` off an `undefined` segment name), or — worse, for
- * `resolveStepReference` walking a `{ kind: "property" }` segment with a
- * missing/non-string `name` — as no error at all, silently resolving to
- * `undefined` via the "absent" sentinel instead of rejecting the malformed
- * input. Both manifestations misclassify caller input as a server fault at
- * the console adapter boundary, and both are reachable from a deserialized
- * flow/session definition. Every case below must throw
- * `M3LStepReferenceError` (code `ERR_STEP_REFERENCE_INVALID`) once element
- * validation lands; the index-segment rows already do today (assert
- * anyway, to lock that in against a future regression).
- */
-const MALFORMED_SEGMENT_CASES: [string, unknown][] = [
-  ["null", null],
-  ["undefined", undefined],
-  ["a number", 42],
-  ["a string", "oops"],
-  ["an array", []],
-  ["a plain object with kind missing entirely", {}],
-  ['an unrecognised discriminant (kind: "bogus")', { kind: "bogus" }],
-  ["a property segment missing `name`", { kind: "property" }],
-  [
-    "a property segment with a non-string `name`",
-    { kind: "property", name: 123 },
-  ],
-  [
-    "an index segment missing `index` (already screened today — assert anyway)",
-    { kind: "index" },
-  ],
-  [
-    "an index segment with a non-number `index` (already screened today — assert anyway)",
-    { kind: "index", index: "abc" },
-  ],
-];
-
-describe("formatStepReference — narrows a malformed SEGMENT (array element), not just the outer object, to M3LStepReferenceError", () => {
-  test.each<[string, unknown]>(MALFORMED_SEGMENT_CASES)(
-    "throws M3LStepReferenceError (code ERR_STEP_REFERENCE_INVALID), not a raw TypeError, for a segments array containing %s",
-    (_label, malformedSegment) => {
-      const reference = {
-        ordinal: 1,
-        segments: [malformedSegment],
-      } as unknown as M3LStepReference;
-
-      expectReferenceInvalid(() => formatStepReference(reference));
-    },
-  );
-});
-
-describe("resolveStepReference — narrows a malformed SEGMENT (array element), not just the outer object, to M3LStepReferenceError", () => {
-  test.each<[string, unknown]>(MALFORMED_SEGMENT_CASES)(
-    "throws M3LStepReferenceError (code ERR_STEP_REFERENCE_INVALID), not a raw TypeError (and never silently resolves to undefined), for a segments array containing %s",
-    (_label, malformedSegment) => {
-      const reference = {
-        ordinal: 1,
-        segments: [malformedSegment],
-      } as unknown as M3LStepReference;
-
-      expectReferenceInvalid(() =>
-        resolveStepReference(reference, { safe: "val" }),
-      );
-    },
-  );
-});
-
-describe("formatStepReference / resolveStepReference — element validation does not over-tighten a well-formed segment list", () => {
-  test("a valid mixed property/index segment list still formats and resolves normally", () => {
-    const reference: M3LStepReference = {
-      ordinal: 1,
-      segments: [
-        { kind: "property", name: "messages" },
-        { kind: "index", index: 0 },
-      ],
-    };
-
-    expect(formatStepReference(reference)).toBe("step-1.output.messages[0]");
-    expect(resolveStepReference(reference, { messages: ["hi"] })).toBe("hi");
   });
 });

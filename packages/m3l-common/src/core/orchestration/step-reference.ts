@@ -458,31 +458,19 @@ const ABSENT: unique symbol = Symbol("step-reference-absent");
  * Resolves one property-name segment against `current`, or {@link ABSENT}
  * when the property doesn't exist.
  *
- * `segment.name` is hoisted into a local on first read, then re-read once
- * more to confirm stability — a getter-backed `name` that returns a safe
- * value on one read and `"__proto__"` on the next would otherwise defeat
- * the {@link isDangerousKey} guard entirely (check the safe read, use the
- * dangerous one): a TOCTOU gap between the check and the use. Any observed
- * change between the two reads is rejected outright, since there is no way
- * to know which of the two values the caller actually intended; every
- * subsequent reference to the segment's name in this function then uses
- * the hoisted local, never `segment.name` again.
+ * `segment` is a frozen snapshot produced by `assertStepReferenceShape` at
+ * the entry-point boundary, not a caller-supplied object: `name` was read
+ * exactly once there and screened to be a `string`, so it carries no getter
+ * and re-reading it cannot yield a different value. There is therefore no
+ * check-read/use-read gap to defend against here, and the {@link
+ * isDangerousKey} screen below is guaranteed to run against the very same
+ * string that reaches `Object.hasOwn`/the property access.
  */
 function resolvePropertySegment(
   current: unknown,
   segment: M3LStepReferencePropertySegment,
 ): unknown {
   const name = segment.name;
-  // A getter-backed `name` that returns a DIFFERENT value on a second read
-  // than it did on the first is exactly the TOCTOU shape this guard exists
-  // to defeat — reading once cannot tell which of the two values is the
-  // "real" one, so any observed instability is treated as untrusted input
-  // and rejected outright, before it ever reaches the dangerous-key check.
-  if (segment.name !== name) {
-    throw new M3LStepReferenceError(
-      "refuses to walk a property segment whose name changed between reads",
-    );
-  }
   if (isDangerousKey(name)) {
     throw new M3LStepReferenceError(
       `refuses to walk the forbidden property name "${name}"`,
@@ -506,24 +494,22 @@ function resolvePropertySegment(
  * Resolves one array-index segment against `current`, or {@link ABSENT}
  * when the index is out of bounds.
  *
- * `segment.index` is read exactly ONCE into a local (the same TOCTOU
- * discipline as {@link resolvePropertySegment}), and that local is required
- * to be an actual `number` and a safe non-negative integer BEFORE any bounds
- * check or array access is attempted. This closes an `Array.prototype`/
- * `Array` constructor leak: `array[segment.index]` is a property-key
- * coercion, which consults the index's `toString()` — not its `valueOf()` —
- * when the index is an object. An index whose `valueOf` reports `0` (passing
- * a naive numeric bounds check) but whose `toString` reports `"constructor"`
- * or an inherited method name like `"at"` would reach `Array.prototype`
- * undetected; requiring `typeof index === "number"` up front rejects any
- * such object outright, before it can be coerced into a property key.
+ * `segment` is a frozen snapshot from `assertStepReferenceShape`, which is
+ * where the `typeof index === "number"` screen lives: `array[segment.index]`
+ * is a property-key coercion consulting the index's `toString()` — not its
+ * `valueOf()` — so an object whose `valueOf` reports `0` (passing a naive
+ * bounds check) but whose `toString` reports `"constructor"` or an inherited
+ * method name like `"at"` would reach `Array.prototype`. Rejecting
+ * non-numbers at the shape boundary means no such object can ever arrive
+ * here. What remains for this function is the RANGE screen — a safe,
+ * non-negative integer — applied before any bounds check or array access.
  */
 function resolveIndexSegment(
   current: unknown,
   segment: M3LStepReferenceIndexSegment,
 ): unknown {
   const index = segment.index;
-  if (typeof index !== "number" || !Number.isSafeInteger(index) || index < 0) {
+  if (!Number.isSafeInteger(index) || index < 0) {
     throw new M3LStepReferenceError(
       `index must be a non-negative safe integer, got ${String(index)}`,
     );
