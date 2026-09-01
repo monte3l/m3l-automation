@@ -171,7 +171,7 @@ inherited claim in one is indistinguishable from a verified one.
 
 - **An unpushed commit is unreviewed work.** No gate has run on it, however
   confident its commit message is. Landing an orphaned branch is an
-  implementation task with a full gate loop, not a merge formality.
+  implementation task with a full gate loop, not a merge formality. _(promoted → docs/contributing/contributing.md)_
 
 - **A green gate can be a vacuous gate.** `check:index` passed while the index
   was missing three exports, because generator and committed artifact were
@@ -181,7 +181,7 @@ inherited claim in one is indistinguishable from a verified one.
 
 - **Enumerate gates from `package.json`, not from the pre-push list.** `knip`
   and `check:file-budget` are real gates that the pre-push cadence does not
-  cover; both failed after a fully-green local run.
+  cover; both failed after a fully-green local run. _(promoted → .claude/rules/tests.md)_
 
 - **Pin both sides of a numeric boundary.** A test at 2x the limit passes
   whether the limit is right or one byte loose. Assert `limit - 1` accepted and
@@ -197,7 +197,7 @@ inherited claim in one is indistinguishable from a verified one.
   layer passed every gate in the repo while having zero production consumers,
   because no gate asserts that an exported port is imported anywhere. "The
   slices merged" and "the tracker row is done" are different claims, and only
-  the first is machine-checked.
+  the first is machine-checked. _(promoted → docs/contributing/contributing.md)_
 
 - **Two review spokes can disagree, and the specific one can be right.**
   `silent-failure-hunter` reasoned that `context.onTruncatedTail?.(…)` "cannot

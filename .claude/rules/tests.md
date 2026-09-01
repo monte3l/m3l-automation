@@ -32,6 +32,23 @@ paths:
   not poison later writes; replacing `this.tail = appended.then(...)` with
   `this.tail = appended` left the entire suite green. Say in the log what you
   mutated and what you saw.
+- **A surviving mutant is a question, not automatically a defect — and a
+  mutation that never applied is not a survivor at all.** Two different readings
+  of "the suite stayed green". V6 flipped `allOperations !== true` to
+  `!allOperations` and nothing failed; that mutant is _equivalent_ (the runtime
+  brand guarantees validated input, so both agree on every reachable input) and
+  the right answer was to say so, not to add a test. Separately, a scripted
+  mutation whose pattern no longer matches — because Prettier reflowed the
+  line — silently edits nothing and reports a false survivor. Assert the
+  replacement actually changed the file before trusting a green result.
+- **Enumerate the gates from `package.json`, never from the `pre-push` list or
+  the cadence table.**
+  `node -e "console.log(Object.keys(require('./package.json').scripts).filter(k=>k.startsWith('check:')).join(' '))"`.
+  `pnpm verify` and `pre-push` are different sets, and both are proper subsets
+  of CI: `knip`, `check:file-budget`, `check:provenance` and `check:index` have
+  each failed after a fully green local run. `bin/tests/**` runs only under
+  `vitest.bin.config.ts`, so a green `pnpm verify` is no evidence it passes —
+  run that config explicitly when a change touches anything `bin/` pins.
 - **A test that names a precedence, an ordering, or an "every X" guarantee must
   make every arm reachable in its own setup.** Distinct from the proxy rule
   above: the assertion can be exactly right and still prove nothing, because the

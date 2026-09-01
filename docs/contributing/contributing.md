@@ -340,6 +340,15 @@ Before you report a change as done:
       failure path; `expectTypeOf` where the type is the contract).
 - [ ] The change carries a Conventional Commit reflecting the correct
       semver impact.
+- [ ] The branch is **pushed**. An unpushed commit is unreviewed work — no
+      gate has run on it, however confident its message. Landing an orphaned
+      branch is an implementation task with a full gate loop, not a merge
+      formality.
+- [ ] A new exported symbol has an **importer**. No gate asserts that an
+      exported port is imported anywhere, so a whole layer can pass every
+      check in the repo with zero production consumers. "The slices merged"
+      and "the tracker row is done" are different claims, and only the first
+      is machine-checked.
 
 ## See also
 

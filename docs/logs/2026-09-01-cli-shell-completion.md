@@ -144,7 +144,7 @@ PR bodies state that plainly rather than implying otherwise.
 - **`pnpm verify` and `pre-push` are not the same set.** `bin/tests/**` runs in
   the second and not the first. When a change touches something `bin/` pins,
   run `pnpm vitest run --config vitest.bin.config.ts` explicitly before
-  pushing.
+  pushing. _(promoted → .claude/rules/tests.md)_
 - **Read a gate's source before designing around it.** `check:cli-docs`
   already knew about U12; discovering the bidirectional `## Commands`
   cross-check by reading `bin/check-cli-docs.mjs` was cheaper than discovering

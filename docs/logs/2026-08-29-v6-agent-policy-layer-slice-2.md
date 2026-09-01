@@ -186,7 +186,7 @@ Mutating each guard and watching the suite:
 The second row exposed
 `"the same length-trap Proxy against run.dryRunCompletedShapes"` as decorative:
 its `else` arm asserted `expect(decision?.verdict).toBeDefined()`, which is
-unconditionally true, so a real bypass passed. The `parameterNames` sibling
+unconditionally true, so a real bypass passed. _(promoted → .claude/rules/tests.md)_ The `parameterNames` sibling
 works only because the record echoes the array back and there is a length to
 assert. Rewritten to discriminate on the **verdict** instead — the action's real
 `shapeKey` planted at index 4999 behind 256 junk entries, so an enforced bound

@@ -158,6 +158,14 @@ status`/`git diff`, re-run `tsc`/`eslint`/`vitest`/coverage) before deciding
   prompt to apply the "never trust a final report" step below, not as a
   replacement for it; it's a heuristic over prose, not a parse of the SDK's
   actual truncation signal.
+- **A backgrounded or piped command reports the wrong exit code.** A command
+  ending in a pipe, or in `echo "…$?"`, notifies success regardless of what
+  happened; a long `git push` that dies in `pre-push` looks identical to one
+  that landed. Write a real sentinel into the log (`rc=$?; printf
+'REAL_EXIT=%s\n' "$rc" >>log`) from a script FILE, not an inline multi-line
+  command — a multi-line command's newlines can collapse, corrupting the
+  sentinel and making a waiter fire early. Then confirm the outcome against
+  ground truth (`git ls-remote`), never against the log.
 - **Don't raise `maxTurns` as the fix.** More context/turns is not free —
   Anthropic's context-rot finding says accuracy degrades as token count grows.
   Scoping, journaling, and pacing are the preferred levers.
