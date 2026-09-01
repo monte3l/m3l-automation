@@ -56,6 +56,7 @@ import type {
   M3LSessionStepInsert,
   M3LSessionStepRecord,
 } from "../src/store/sessions-repository.js";
+import type { M3LConsoleAuditRepository } from "../src/store/audit-repository.js";
 import type { M3LConsoleStoreUnit } from "../src/store/store.js";
 import type { M3LRunRegistry } from "../src/runs/registry.js";
 
@@ -163,6 +164,7 @@ interface FakeConsoleStoreHandle {
   readonly meta: M3LConsoleMetaRepository;
   readonly runs: M3LConsoleRunsRepository;
   readonly sessions: M3LConsoleSessionsRepository;
+  readonly audit: M3LConsoleAuditRepository;
   transaction<T>(work: (unit: M3LConsoleStoreUnit) => T): T;
 }
 
@@ -193,6 +195,20 @@ const stubSessionsRepository: M3LConsoleSessionsRepository = {
   countOpenSessions: unexpectedSessionsCall,
   attachStepRun: unexpectedSessionsCall,
   getStepByRunId: unexpectedSessionsCall,
+};
+
+/** Throws when an `audit`-repository method is called unexpectedly on a fake store (added for X7c's `M3LConsoleStoreUnit.audit` field — none of this file's tests exercise it). */
+const unexpectedAuditCall = (): never => {
+  throw new Error("unexpected audit-repository call on the fake store");
+};
+
+/** A loud-throwing `audit` stub, shared by every fake store in this file. */
+const stubAuditRepository: M3LConsoleAuditRepository = {
+  insert: unexpectedAuditCall,
+  insertAll: unexpectedAuditCall,
+  deleteAll: unexpectedAuditCall,
+  list: unexpectedAuditCall,
+  count: unexpectedAuditCall,
 };
 
 /**
@@ -229,6 +245,7 @@ function createFakeStore(
     meta: { describe: unexpectedMetaCall, history: unexpectedMetaCall },
     runs: runsRepository,
     sessions: sessionsRepository,
+    audit: stubAuditRepository,
     transaction: <T>(): T => {
       throw new Error("unexpected transaction() call on the fake store");
     },

@@ -37,6 +37,7 @@ import type { M3LRoute } from "../src/http/router.js";
 import type { M3LConsoleMetaRepository } from "../src/store/meta-repository.js";
 import type { M3LConsoleRunsRepository } from "../src/store/runs-repository.js";
 import type { M3LConsoleSessionsRepository } from "../src/store/sessions-repository.js";
+import type { M3LConsoleAuditRepository } from "../src/store/audit-repository.js";
 import type { M3LConsoleStoreUnit } from "../src/store/store.js";
 
 /** A minimal valid env: only the required operator name set. */
@@ -184,6 +185,7 @@ interface FakeConsoleStoreHandle {
   readonly meta: M3LConsoleMetaRepository;
   readonly runs: M3LConsoleRunsRepository;
   readonly sessions: M3LConsoleSessionsRepository;
+  readonly audit: M3LConsoleAuditRepository;
   transaction<T>(work: (unit: M3LConsoleStoreUnit) => T): T;
 }
 
@@ -224,6 +226,20 @@ const stubSessionsRepository: M3LConsoleSessionsRepository = {
   countOpenSessions: unexpectedSessionsCall,
   attachStepRun: unexpectedSessionsCall,
   getStepByRunId: unexpectedSessionsCall,
+};
+
+/** Throws when an `audit`-repository method is called unexpectedly on a fake store. */
+const unexpectedAuditCall = (): never => {
+  throw new Error("unexpected audit-repository call on the fake store");
+};
+
+/** A loud-throwing `audit` stub, shared by every fake store in this file (added for X7c's `M3LConsoleStoreUnit.audit` field — none of this file's tests exercise it). */
+const stubAuditRepository: M3LConsoleAuditRepository = {
+  insert: unexpectedAuditCall,
+  insertAll: unexpectedAuditCall,
+  deleteAll: unexpectedAuditCall,
+  list: unexpectedAuditCall,
+  count: unexpectedAuditCall,
 };
 
 /** Throws when `transaction()` is called unexpectedly on a fake store. */
@@ -285,6 +301,7 @@ function createFakeStore(
     meta: stubMetaRepository,
     runs: stubRunsRepository,
     sessions: stubSessionsRepository,
+    audit: stubAuditRepository,
     transaction: unexpectedTransactionCall,
   };
   return { store, closeCallCount: () => closeCalls };
@@ -315,6 +332,7 @@ function createClosedFakeStore(): FakeConsoleStoreHandle {
     meta: stubMetaRepository,
     runs: stubRunsRepository,
     sessions: stubSessionsRepository,
+    audit: stubAuditRepository,
     transaction: unexpectedTransactionCall,
   };
 }
