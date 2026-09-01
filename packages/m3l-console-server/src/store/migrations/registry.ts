@@ -18,6 +18,7 @@ import {
   CREATE_CONSOLE_HUMAN_ACTIONS_OPERATOR_INDEX,
   CREATE_CONSOLE_HUMAN_ACTIONS_TABLE,
   V7_WIDEN_HUMAN_ACTION_KINDS_STATEMENTS,
+  V8_ADD_VIEW_ACTION_KINDS_STATEMENTS,
 } from "./human-actions.js";
 
 /**
@@ -455,5 +456,10 @@ export const CONSOLE_MIGRATIONS: readonly M3LMigration[] = [
     version: 7,
     name: "widen_human_action_kinds",
     statements: V7_WIDEN_HUMAN_ACTION_KINDS_STATEMENTS,
+  },
+  {
+    version: 8,
+    name: "add_view_action_kinds",
+    statements: V8_ADD_VIEW_ACTION_KINDS_STATEMENTS,
   },
 ];

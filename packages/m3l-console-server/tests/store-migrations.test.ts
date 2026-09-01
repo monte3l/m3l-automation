@@ -721,9 +721,9 @@ function insertRun(database: DatabaseSync, row: RunRowFixture): void {
 }
 
 describe("CONSOLE_MIGRATIONS — the real registry (v3: console_runs)", () => {
-  test("has exactly seven migrations, versions strictly increasing and gap-free (1..7)", () => {
+  test("has exactly eight migrations, versions strictly increasing and gap-free (1..8)", () => {
     expect(CONSOLE_MIGRATIONS.map((migration) => migration.version)).toEqual([
-      1, 2, 3, 4, 5, 6, 7,
+      1, 2, 3, 4, 5, 6, 7, 8,
     ]);
   });
 

@@ -30,7 +30,10 @@ export type M3LHumanActionIndexKind =
   | "session.decision.answer"
   | "session.binding.select"
   | "session.close"
-  | "session.reopen";
+  | "session.reopen"
+  | "view.run.report"
+  | "view.run.stream"
+  | "view.session.artifact";
 
 /** The closed target-kind vocabulary `console_human_actions.target_kind`'s own `CHECK` constraint enforces. */
 export type M3LHumanActionIndexTargetKind =
