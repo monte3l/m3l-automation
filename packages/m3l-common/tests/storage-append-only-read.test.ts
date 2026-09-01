@@ -632,7 +632,7 @@ describe("option validation: onTruncatedTail callable guard", () => {
   // only mechanism that makes a torn tail fail loudly. The entire
   // "torn tail must never fail silently" invariant collapses if this guard
   // is absent — which is precisely why the TSDoc for
-  // `assertOnTruncatedTailIsCallable` says the failure must be "loud and
+  // `validateReadOptions` says the failure must be "loud and
   // immediate."
   test.each([
     ["string", "not-a-function"],
@@ -661,7 +661,7 @@ describe("option validation: onTruncatedTail callable guard", () => {
 
   // INVARIANT: the throw fires EAGERLY — synchronously at the `read()` call,
   // not on the first `next()` of the returned iterable. `read()` is a plain
-  // method (not an async generator): `assertOnTruncatedTailIsCallable` runs
+  // method (not an async generator): `validateReadOptions` runs
   // synchronously before `readAppendOnlySegments` is ever invoked, so the
   // error must surface as a synchronous `throw`, not as an async rejection
   // inside a `for await`. Proven here: `read()` is called without beginning

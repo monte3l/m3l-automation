@@ -58,14 +58,12 @@
 import type { M3LError } from "../errors/index.js";
 import { isFunction } from "../utils/guards.js";
 import { projectAppendOnlyEntry } from "../../internal/storage/append-only-projection.js";
-import {
-  assertOnTruncatedTailIsCallable,
-  readAppendOnlySegments,
-} from "../../internal/storage/append-only-reader.js";
+import { readAppendOnlySegments } from "../../internal/storage/append-only-reader.js";
 import type { AppendOnlyWriterErrors } from "../../internal/storage/append-only-writer.js";
 import { AppendOnlyWriter } from "../../internal/storage/append-only-writer.js";
 import {
   invalidArgument,
+  validateReadOptions,
   validateStreamOptions,
 } from "../../internal/storage/append-only-options.js";
 import type { M3LAppendOnlyReadOptions } from "./append-only-read-types.js";
@@ -421,7 +419,8 @@ export class M3LAppendOnlyStream {
    * @param options - `onTruncatedTail` tolerates an unterminated trailing
    *   fragment on the LAST segment only; the same fragment mid-stream — data
    *   loss, not a torn tail — always throws regardless.
-   * @throws {@link M3LError} `ERR_INVALID_ARGUMENT` for a non-callable
+   * @throws {@link M3LError} `ERR_INVALID_ARGUMENT` for a non-object
+   *   `options`, an unknown own key on it, or a non-callable
    *   `onTruncatedTail`.
    * @throws {@link M3LAppendOnlyStreamReadError} for a malformed/oversized
    *   line, a missing sequence, an intolerable fragment, or a read failure.
@@ -435,13 +434,13 @@ export class M3LAppendOnlyStream {
    * ```
    */
   read(options?: M3LAppendOnlyReadOptions): AsyncIterable<M3LAppendOnlyEntry> {
-    assertOnTruncatedTailIsCallable(options);
+    validateReadOptions(options);
     return readAppendOnlySegments({
       directory: this.streamDirectory,
       maxLineBytes: this.streamMaxLineBytes,
       // Conditional spread, not a direct assignment: `exactOptionalPropertyTypes`
       // forbids setting an optional property to a value typed `T | undefined`.
-      // We spread only when the value is actually callable: `assertOnTruncatedTailIsCallable`
+      // We spread only when the value is actually callable: `validateReadOptions`
       // rejects truthy non-functions, so any falsy non-function (e.g. `null`, `0`) must
       // degrade to the absent-callback path rather than being passed through as a
       // present-but-uncallable callback — which would silently swallow a torn tail.

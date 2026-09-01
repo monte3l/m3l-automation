@@ -32,8 +32,8 @@ interface M3LAppendOnlyStreamReadErrorOptions {
  * Thrown by `M3LAppendOnlyStream.read` when a segment cannot be read back
  * faithfully: a line that fails to parse or projects to a value the stream
  * could never itself have written, an unterminated trailing fragment this
- * call does not tolerate, or a filesystem failure opening or reading a
- * segment.
+ * call does not tolerate, or a filesystem failure opening, reading or
+ * closing a segment.
  *
  * A read failure is always loud — this error is thrown, the underlying cause
  * is always chained as `cause` where one exists, and it is never swallowed
@@ -48,7 +48,11 @@ interface M3LAppendOnlyStreamReadErrorOptions {
  * arrives as V8's own `SyntaxError`, which embeds a short (roughly 10-30
  * byte) snippet of the offending input directly in its message — so `cause`
  * can carry a fragment of **record content**, not only a directory or
- * segment path. Either way it is passed through unmodified because it is the
+ * segment path. A segment whose `close` failed after a complete read
+ * chains Node's `close` error the same way, and when a read failure and a
+ * cleanup-path `close` failure happen together the close error is chained
+ * DEEPER in the same `cause` chain rather than replacing the read failure —
+ * so code walking `cause` must expect more than one link. Either way it is passed through unmodified because it is the
  * only diagnostic an operator has for a broken stream or a corrupt segment.
  * Code that forwards one of these errors to a log sink should therefore
  * report `message` and `context`, and walk `cause` only where a
