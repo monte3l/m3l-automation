@@ -16,17 +16,18 @@
         "Reads the seeded `packages/m3l-common/src/core/config/index.ts` and the response includes the literal string `./types.js` showing the corrected import path.",
         "Emits a `WOULD-RUN: pnpm typecheck` line after describing the `.js`-extension fix and before describing the error-handling fix.",
         "Emits a `WOULD-RUN: pnpm lint` line after describing the replacement of the bare string throw.",
-        "Emits a `WOULD-RUN: pnpm lint && pnpm typecheck && pnpm test:coverage && pnpm build` line for the final full-gate check before the commit step.",
+        "Emits a `WOULD-RUN: pnpm verify` line for the final full-gate check before the commit step.",
         "States it will post a top-level PR comment referencing the commit SHA, and names that step after the push step."
       ]
     },
     {
       "id": 2,
-      "prompt": "I just opened a PR and the claude-pr-review bot reviewed it — it came back PASS. Still, run resolving-pr-comments to confirm there is nothing to do.",
-      "expected_output": "The skill names fetching the bot comment as its first substantive step, detects the PASS verdict, and stops immediately with a message stating the review already shows PASS and nothing needs to be fixed.",
+      "prompt": "I just opened a PR and the claude-pr-review bot reviewed it. The comment shows a PASS verdict, an empty Must-fix section, one Should-fix item (missing `@example` on `loadConfig` in `packages/m3l-common/src/core/config/index.ts`), and one Nit (prefer `const` over `let` on line 4 of the same file). Run resolving-pr-comments to confirm there is nothing to do.",
+      "expected_output": "The skill names fetching the bot comment as its first substantive step, detects the PASS verdict, still prints the Should-fix and Nit items for context (Must-fix omitted as empty), and stops without editing, committing, or pushing anything.",
       "expectations": [
         "Names fetching the claude[bot] comment from the PR thread as its first substantive step (states the intent to retrieve or read the bot comment before any other action).",
-        "Identifies the PASS verdict and explicitly states that no fixes are needed, using language such as 'already shows PASS' or 'nothing to fix'.",
+        "Identifies the PASS verdict and explicitly states nothing is blocking, using language such as 'already shows PASS' or 'nothing blocking'.",
+        "Prints the Should-fix item (missing `@example` on `loadConfig`) and the Nit item (prefer `const` over `let`) for context, rather than silently dropping them because the verdict is PASS.",
         "Emits no `WOULD-RUN: git commit` or `WOULD-RUN: git push` line anywhere in the response.",
         "Does not describe any file edits and does not list any Must-fix findings to resolve."
       ]
@@ -58,6 +59,57 @@
         "Explicitly states that the typecheck gate failed with the error `Cannot find module './types.js'` and that it is stopping.",
         "Emits no `WOULD-RUN: git commit` or `WOULD-RUN: git push` line anywhere in the response.",
         "States it will show the exact typecheck error output to the user before stopping, rather than silently discarding it."
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "There's an open PR on this branch. The only comment on the PR thread is from `github-actions[bot]`, posted just now. Its body begins with the line `## Claude PR Review — not run`, followed by prose stating the reviewable diff is 340,000 characters, over the 300,000-character limit for a single-pass review, lists the largest contributing files, and says to split the PR. No `claude[bot]` comment exists anywhere on the thread. Run resolving-pr-comments.",
+      "expected_output": "The skill detects the PR, fetches the comment thread, recognizes the sole comment as the oversize-rejection path (body starts with `## Claude PR Review — not run`, posted by github-actions[bot] rather than claude[bot]) rather than a normal review, and stops immediately telling the user the PR was too large for a single-pass review and must be split — without attempting to parse or fix any Must-fix findings.",
+      "expectations": [
+        "Names fetching the PR's comment thread as an early step, describing the intent to look for a bot review comment.",
+        "Explicitly identifies the sole comment as the oversize-rejection path — its body begins with `## Claude PR Review — not run` — rather than treating it as a completed claude[bot] review.",
+        "Tells the user the PR's reviewable diff was too large for a single-pass review and that no review ran, using language such as 'too large' or 'split the PR'.",
+        "References splitting the PR into smaller pieces (optionally citing `docs/contributing/branch-protection.md`) as the recommended next action.",
+        "Emits no `WOULD-RUN: git commit` or `WOULD-RUN: git push` line, and does not list or describe any Must-fix findings to fix."
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "There's an open PR on this branch with a 150-comment thread, fetched in pages of 100. Page 1 (the first 100 comments, oldest first) ends with a `claude[bot]` review comment — call it comment A — showing a PASS verdict. Page 2 (comments 101-150) contains further human discussion and ends with a second `claude[bot]` review comment — call it comment B — which is the true most recent comment on the whole thread, showing a FAIL verdict with exactly one Must-fix item: a bare string throw `throw 'invalid input'` on line 9 of `packages/m3l-common/src/core/config/index.ts`. Fetch the full comment thread, act on the correct (most recent) verdict, fix the Must-fix item, run the required quality gates, commit, push, and post a follow-up comment.",
+      "expected_output": "The skill describes paging past the first 100-comment page to reach the second page, correctly identifies comment B (not the stale comment A) as the most recent bot comment, acts on its FAIL verdict, fixes the single Must-fix item, runs the gates, and proceeds to commit and post a follow-up comment — rather than stopping early on comment A's stale PASS.",
+      "files": [
+        {
+          "path": "packages/m3l-common/src/core/config/index.ts",
+          "content": "import { M3LConfigParameter } from '../parameters/index.js';\nimport { ConfigSchema } from './types.js';\n\n/**\n * Loads configuration from the given schema.\n */\nexport function loadConfig(schema: ConfigSchema): M3LConfigParameter[] {\n  if (!schema) {\n    throw 'invalid input';\n  }\n  return schema.parameters.map((p) => new M3LConfigParameter(p));\n}\n"
+        }
+      ],
+      "expectations": [
+        "Describes paging past the first 100-comment page to retrieve the second page, rather than stopping after the first page's results.",
+        "Acts on comment B's FAIL verdict (the true most recent comment), not comment A's stale PASS — does not stop early claiming the review already shows PASS or that there is nothing to fix.",
+        "Prints a one-item Must-fix preview naming the bare string throw on line 9 of `packages/m3l-common/src/core/config/index.ts`.",
+        "Reads the seeded file and the response describes replacing the bare string throw with an `M3LError` subclass rather than a plain string throw.",
+        "Emits a `WOULD-RUN: pnpm lint` line after describing the fix, and a `WOULD-RUN: pnpm verify` line before the commit step.",
+        "States it will commit, push, and post a top-level PR comment referencing the commit SHA."
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "The claude-pr-review bot posted a FAIL on my open PR against `packages/m3l-common/src/core/config/index.ts`. It flagged: one Must-fix (a missing `.js` extension on the relative import on line 2), one Should-fix (missing TSDoc/`@example` on `loadConfig`, line 6), and two Nits — Nit A: prefer double quotes over single quotes for the import path string literal on line 2 (the same line as the Must-fix), and Nit B: prefer `const` with a setter over the mutable `let cache` on line 4 (an unrelated line no other fix touches). Fix what should be fixed given this project's tiered fix policy, run the required quality gates, commit, push, and post a follow-up comment.",
+      "expected_output": "The skill prints a preview showing all four findings across their tiers, fixes the Must-fix import, fixes the Should-fix TSDoc gap, folds Nit A into the same edit as the Must-fix (since it shares line 2), leaves Nit B untouched (since line 4 is never otherwise edited), then runs gates, commits with tier-separated bullets, and posts a follow-up comment listing Must-fix/Should-fix resolved, Nit A folded in, and Nit B as not addressed.",
+      "files": [
+        {
+          "path": "packages/m3l-common/src/core/config/index.ts",
+          "content": "import { M3LConfigParameter } from '../parameters/index.js';\nimport { ConfigSchema } from './types';\n\nlet cache: M3LConfigParameter[] | null = null;\n\nexport function loadConfig(schema: ConfigSchema): M3LConfigParameter[] {\n  return schema.parameters.map((p) => new M3LConfigParameter(p));\n}\n"
+        }
+      ],
+      "expectations": [
+        "Prints a preview listing all four findings (the Must-fix, the Should-fix, and both Nits) across their correct tiers before describing any file edits.",
+        "Reads the seeded file and the response includes the literal string `./types.js` showing the corrected, double-quoted import path — resolving the Must-fix and folding in Nit A (the quote-style Nit) in the same edit, since both touch line 2.",
+        "The response describes adding a TSDoc block with `@example` to `loadConfig`, resolving the Should-fix item.",
+        "Explicitly states or implies that the `let cache` declaration on line 4 (Nit B) is left untouched, since no Must-fix or Should-fix edit in this pass touches that line.",
+        "Emits a `WOULD-RUN: pnpm typecheck` line covering the ESM-imports-category fixes, and a `WOULD-RUN: pnpm verify` line before the commit step.",
+        "Describes the commit body as separating Must-fix, Should-fix, and folded-in-Nits into distinct groups rather than one flat list.",
+        "States the follow-up comment will list the Must-fix and Should-fix items resolved, Nit A as folded in, and Nit B under Not addressed."
       ]
     }
   ]
