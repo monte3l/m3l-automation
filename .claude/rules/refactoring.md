@@ -36,6 +36,13 @@ It is not feature, performance, or behavior work — those are separate commits.
   tests that no longer assert a contract, refactor a shared fixture once (not every
   caller), and update a mock target the moment the impl's I/O primitive changes (a
   stale mock silently intercepts nothing).
+- **A full test-file rewrite must name what it must NOT touch.** A general
+  instruction ("don't drop tests for unchanged functions") is easy to satisfy
+  partially in a large rewrite without anyone noticing which specific cases got
+  lost — a spoke prompt asking for a rewrite (not additions) should enumerate the
+  functions whose existing coverage must survive untouched, not just restate the
+  rule. `claude-pr-review` caught ~22 dropped regression tests for six unchanged
+  functions this way (`docs/logs/2026-09-03-statusline-redesign.md`).
 - **Removing a lint suppression cannot be its own commit.** `reportUnusedDisableDirectives:
 "error"` (`eslint.config.js`) makes a stale `eslint-disable-next-line` a lint error
   the instant the finding it suppressed no longer fires — so the extraction step that
