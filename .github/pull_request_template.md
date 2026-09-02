@@ -8,7 +8,7 @@
 
 ## Test plan
 
-- [ ] `pnpm lint && pnpm typecheck && pnpm test:coverage && pnpm build` pass locally
+- [ ] `pnpm lint && pnpm typecheck && pnpm turbo run build --filter=@m3l-automation/m3l-cli && pnpm test:coverage && pnpm build` pass locally
 - [ ] `pnpm check:api` confirms the exports map is unchanged (or semver impact is documented below)
 - [ ] New or changed exports have TSDoc and tests (happy-path + failure-path)
 - [ ] No `any`, no missing `.js` extensions on relative imports, no CommonJS
