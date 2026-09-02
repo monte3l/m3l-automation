@@ -1,15 +1,11 @@
 ---
 name: writing-work-logs
 description: >-
-  Invoked by /writing-work-logs or any request to write, add, create, or document
-  a work log. Also triggers for: "document this task", "log the lessons from
-  this task", "log what happened", "record what we built", or similar phrasing
-  where the user wants a written record of completed implementation work.
-  Produces a structured Markdown file saved to docs/logs/ with sections covering
-  what shipped, what went as planned, what diverged and why, and durable lessons
-  learned. Invoke proactively when a significant coding task wraps up and the
-  user signals they're done — real-time context (test results, decisions,
-  divergences) is permanently lost once the session closes.
+  Produces a structured Markdown work log in docs/logs/ covering what shipped,
+  what went as planned, what diverged and why, and durable lessons. Invoked by
+  /writing-work-logs or "document this task", "log what happened", "record what
+  we built". Invoke proactively when a significant task wraps up — real-time
+  context is lost once the session closes.
 ---
 
 # writing-work-logs

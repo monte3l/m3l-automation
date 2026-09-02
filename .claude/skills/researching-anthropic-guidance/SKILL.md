@@ -1,22 +1,11 @@
 ---
 name: researching-anthropic-guidance
 description: >-
-  Fan out parallel Explore subagents to search the web for best practices,
-  whitepapers, recommendations, engineering blog posts, guides, and
-  documentation from **official Anthropic sources only**, scoped to the topic
-  of the invoking task, then synthesize overlaps into consensus and flag any
-  contradictions. Use this skill whenever the user says
-  /researching-anthropic-guidance, "what does Anthropic recommend for X",
-  "find the official Anthropic guidance on X", "research Anthropic best
-  practices for X", "pull the Anthropic docs/blog on X", "what's the official
-  Claude Code guidance on X", "is there an Anthropic whitepaper on X", or any
-  variant of "check what Anthropic says about X" — even without the word
-  "research". Also invoke mid-task whenever a design or audit decision hinges
-  on official Anthropic positioning (agent/subagent design, model selection,
-  prompt engineering, tool use, MCP, context management) rather than on
-  something already decided in this repo. Not for general library/framework
-  documentation lookups (use the context7-mcp skill for those) and not for
-  open-ended web research on non-Anthropic topics.
+  Fan out parallel Explore subagents to search official Anthropic sources only
+  for best practices on a topic, then synthesize consensus and flag
+  contradictions. Use for /researching-anthropic-guidance, "what does Anthropic
+  recommend for X", or mid-task when a decision hinges on Anthropic's position.
+  Not for general library docs or non-Anthropic web research.
 ---
 
 Research a topic by fanning out parallel web-search agents restricted to

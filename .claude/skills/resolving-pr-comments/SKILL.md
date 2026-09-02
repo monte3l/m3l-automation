@@ -1,33 +1,11 @@
 ---
 name: resolving-pr-comments
-description: >
-  This skill resolves automated PR review bot findings end-to-end, across all three
-  severity tiers. When a review bot (especially claude-pr-review) has posted a comment
-  with findings — TypeScript errors, missing .js extensions, TSDoc gaps, coverage holes
-  — and the user wants them fixed, committed, and replied to: invoke this skill. It owns
-  the full loop: fetch bot comment → parse findings across all tiers → fix every
-  Must-fix (mandatory), fix each Should-fix that resolves as a targeted line fix
-  (best-effort — skipped, not blocked on, if it needs a structural change), fold in
-  Nits only where an edit already touches that file/region → run quality gates →
-  reconcile docs (/syncing-docs) → commit → push → reply to bot.
-
-  Invoke for: "fix what the bot flagged", "address the bot review", "make the
-  auto-review pass", "claude-pr-review posted FAIL", "clear blocking findings from the
-  reviewer", "fix the PR review comments", "address the review findings", "resolve the
-  bot's review", "fix the claude review", "address PR feedback", "the review failed fix
-  it", "fix what the reviewer flagged".
-
-  Also invoke proactively when the user pushes a branch and mentions a FAIL verdict, or
-  pastes a snippet of the bot's review comment. Even if they say "fix the issues on this
-  PR" — if there is an open PR on the current branch with a bot FAIL comment, this is
-  the right skill.
-
-  Skip for: manual code reviews, general CI/build failures without a review bot,
-  creating PRs.
-
-  GitHub-integration stance: ADR-0030 (amended 2026-07-27) — this skill runs
-  hub-only, in-process, never inside a spoke or headless CI, so it has full
-  GitHub MCP coverage and uses `mcp__github__*` tools rather than the gh CLI.
+description: >-
+  Resolves automated PR review bot findings end-to-end: fetch the bot comment,
+  fix every Must-fix, best-effort Should-fix, fold in Nits already in-region,
+  run gates, reconcile docs, commit, push, reply. Use for "fix what the bot
+  flagged", "claude-pr-review posted FAIL", "address PR feedback". Skip manual
+  reviews/generic CI failures. GitHub stance: hub-only, GitHub MCP.
 ---
 
 # resolving-pr-comments

@@ -1,21 +1,13 @@
 ---
 name: resolving-merge-conflicts
 description: >-
-  Check for and resolve Git merge or rebase conflicts in this repo. Detects an
-  in-progress rebase/merge and lists the conflicted paths. Most derived-artifact
-  conflicts (catalog.json, symbol-map.json, pnpm-lock.yaml) never reach this
-  skill at all — a registered git merge driver (ADR-0024) auto-resolves them and
-  a post-rewrite/post-merge hook regenerates them. The remaining scope is real
-  src/** or tests/** logic conflicts (handed back), same-module provenance-sidecar
-  conflicts, the package.json dependencies block, and same-row tracker/count
-  collisions — resolved here, then quality-gated and pushed with signed commits.
-  Use this skill whenever the user says /resolving-merge-conflicts, "resolve the
-  merge conflicts", "fix the rebase conflict", "the rebase is conflicting", "the
-  merge is conflicting", "I have conflict markers", "git says CONFLICT", "help me
-  finish this rebase", or when creating-prs / resolving-pr-comments hands back
-  because a rebase hit conflicts. Skip for: diagnosing a failed CI run (use
-  triaging-ci), fixing review-bot findings (use resolving-pr-comments), and
-  code-scanning alerts (use triaging-scan-alerts).
+  Detects an in-progress rebase/merge and resolves real conflicts here:
+  src/**/tests/** logic (handed back), provenance sidecars, package.json
+  dependencies, tracker collisions — gated, pushed signed. Derived-artifact
+  conflicts auto-resolve via ADR-0024 first. Use for /resolving-merge-conflicts,
+  "resolve the merge conflicts", "the rebase is conflicting", "git says
+  CONFLICT", or "help me finish this rebase". Skip for CI failures or bot
+  findings.
 ---
 
 # resolving-merge-conflicts

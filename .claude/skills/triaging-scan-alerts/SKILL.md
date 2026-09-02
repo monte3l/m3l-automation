@@ -1,20 +1,11 @@
 ---
 name: triaging-scan-alerts
 description: >-
-  Triage GitHub code-scanning alerts on a PR or branch in this repo using the gh
-  CLI: fetch the open alerts, group them by tool (CodeQL vs Scorecard) and
-  severity, map each to its file:line and rule, gate on error-severity CodeQL
-  alerts that block merge, and present remediation options — without editing any
-  code. Use this skill whenever the user says /triaging-scan-alerts, "check the
-  CodeQL alerts", "code scanning alerts", "security scanning alerts", "any CodeQL
-  findings", "check the security tab", "what's in the security tab", "did CodeQL
-  flag anything", "review the scanning alerts", or asks whether a PR is blocked
-  by a required code-scanning check. Uses the gh CLI (GitHub-integration
-  stance: ADR-0030, amended 2026-07-27 — the configured GitHub MCP default
-  toolset has no code-scanning tools, so this skill stays gh-CLI-based).
-  Skip for: fixing claude-pr-review bot findings
-  (use resolving-pr-comments), and diagnosing failed CI workflow steps (use
-  triaging-ci).
+  Triage GitHub code-scanning alerts on a PR/branch via gh CLI: fetch open
+  alerts, group by tool and severity, map to file:line, gate on error-severity
+  CodeQL blocking merge, present remediation — no code edited. Use for
+  /triaging-scan-alerts, "check the CodeQL alerts". Skip for bot findings or CI
+  failures.
 ---
 
 Diagnose the GitHub **code-scanning alerts** on a PR or branch via `gh`, group

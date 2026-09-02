@@ -1,15 +1,12 @@
 ---
 name: implementing-submodules
 description: >-
-  Implement a documented-but-empty Core or AWS submodule of @m3l-automation/m3l-common
-  end-to-end, from its docs/reference spec, under a strict TDD + hub-and-spoke workflow.
-  Use this whenever the user asks to "implement", "build", "fill in", "flesh out", or
-  "write the code for" a submodule, capability, or feature that already has a
-  docs/reference/{core,aws}/<name>.md page (e.g. errors, config, polling, logging,
-  importers, storage, text, aws credentials, script). Use it even when the user names
-  the module casually ("let's do the retry stuff", "wire up the HTTP client") rather
-  than saying "submodule". For a brand-new module that has NO spec page yet, use
-  scaffolding-submodules first to scaffold, then this skill to implement.
+  Implement a documented-but-empty Core or AWS submodule of
+  @m3l-automation/m3l-common end-to-end from its docs/reference spec, under
+  strict TDD + hub-and-spoke. Use for "implement"/"build"/"flesh out" a
+  submodule that already has a docs/reference/{core,aws}/<name>.md page, even
+  named casually ("the retry stuff"). No spec page yet → scaffolding-submodules
+  first.
 ---
 
 # implementing-submodules

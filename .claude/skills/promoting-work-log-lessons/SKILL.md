@@ -1,22 +1,10 @@
 ---
 name: promoting-work-log-lessons
 description: >-
-  Closes the work-log → rules feedback loop for m3l-automation. Reads every
-  docs/logs/*.md work log, finds the lessons that recur across multiple logs,
-  and promotes them into their durable home (.claude/rules/*.md,
-  .claude/agents/*.md, or an existing skill's SKILL.md) so the project's rules
-  track lived experience instead of drifting from it. Invoke whenever the user
-  says /promoting-work-log-lessons, "promote work-log lessons", "sync the work
-  logs into the rules", "which lessons keep recurring", "fold the log lessons
-  into the rules/agents", "close the work-log loop", "audit the work logs for
-  recurring lessons", or after several submodules have shipped and the hub wants
-  to check the logs against the rules. Use it even when the user only says
-  "review the work logs" or "what have we learned that isn't written down yet" —
-  this is the skill that turns narrative logs into durable rule/agent edits.
-  Distinct from /auditing (which reads live code): this reads the logged history.
-  Also reads the auto-memory store and `pnpm telemetry:sessions` output, so
-  invoke it for "what does our session telemetry say", "are our memories
-  drifting", or "which subagent is eating our token budget".
+  Closes the work-log → rules loop: reads docs/logs/*.md, finds lessons
+  recurring across logs, promotes them into .claude/rules, agents, or a skill's
+  SKILL.md. Use for /promoting-work-log-lessons, "promote work-log lessons",
+  "which lessons keep recurring", "what does our session telemetry say".
 ---
 
 # promoting-work-log-lessons
