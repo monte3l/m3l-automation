@@ -67,7 +67,8 @@
   "preferredNotifChannel": "terminal_bell",
   "statusLine": {
     "type": "command",
-    "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/statusline-context-pressure.mjs\""
+    "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/statusline-context-pressure.mjs\"",
+    "refreshInterval": 30
   },
   "hooks": {
     "SessionStart": [
