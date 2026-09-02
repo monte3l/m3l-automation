@@ -43,7 +43,8 @@ export type M3LCliErrorCode =
   | "ERR_CLI_UNKNOWN_FLOW"
   | "ERR_CLI_UNKNOWN_FLOW_STEP"
   | "ERR_CLI_FLOW_RECORD_WRITE_FAILED"
-  | "ERR_CLI_FLOW_RECORD_INVALID";
+  | "ERR_CLI_FLOW_RECORD_INVALID"
+  | "ERR_CLI_FLOW_RESUME_REFUSED";
 
 /**
  * The closed set of process exit codes the m3l CLI ever resolves to: `0`
@@ -152,6 +153,13 @@ const EXIT_CODE_BY_ERROR_CODE: Record<M3LCliErrorCode, M3LCliExitCode> = {
   // happened; only persisting or re-reading its record failed.
   ERR_CLI_FLOW_RECORD_WRITE_FAILED: GENERAL_EXIT_CODE,
   ERR_CLI_FLOW_RECORD_INVALID: GENERAL_EXIT_CODE,
+  // State-guard, not a usage error: the invocation is well-formed (the flag
+  // is valid and the flow name is known), but the engine's preconditions are
+  // not met (no prior run, no resumable step, or definition changed). Same
+  // class as ERR_CLI_FLOW_RECORD_INVALID (1) — not a misspelled argument
+  // like ERR_CLI_UNKNOWN_FLOW_STEP (2), which is 2 because a wrong step id
+  // IS the invocation's fault.
+  ERR_CLI_FLOW_RESUME_REFUSED: GENERAL_EXIT_CODE,
 };
 
 /**

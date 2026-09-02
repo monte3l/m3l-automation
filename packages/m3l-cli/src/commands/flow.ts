@@ -1,10 +1,10 @@
 /**
- * `commands/flow` — `m3l flow list` and `m3l flow run <name>` (U10): the thin
+ * `commands/flow` — `m3l flow list` and `m3l flow run <name>` (U11): the thin
  * wiring between the flow engine's modules and the shared command context.
  *
  * ```
- * m3l flow list                             # the available flow names
- * m3l flow run <name> [--dry-run] [--json]  # execute a named flow
+ * m3l flow list                                       # the available flow names
+ * m3l flow run <name> [--dry-run] [--json] [--resume] # execute a named flow
  * ```
  *
  * Deliberately thin. Every decision lives one module down — `flow/load`
@@ -12,10 +12,12 @@
  * `flow/envelope` and `flow/render` format — so this module only orders those
  * calls and maps their results onto the writer facade and an exit code.
  *
- * **No `--resume` in U10.** `runFlow` already accepts `resumeFromStepId`, but
- * nothing here may pass it, and `--resume` is REJECTED rather than silently
- * ignored: a user who typed it would otherwise get a full re-run from step one
- * while believing they had resumed.
+ * **`--resume` (U11).** `runFlow` accepts `resumeFromStepId` and
+ * `stepExecutionCount`; this module reads the saved run record and forwards
+ * those values when the flag is present. The three resume preconditions —
+ * record existence, non-null `resumeStepId`, and definition hash match — are
+ * enforced by `flow/record`'s `validateResumeRecord`, which throws
+ * `ERR_CLI_FLOW_RESUME_REFUSED` with a distinguishable message for each.
  *
  * **Every extra argument is REJECTED, never dropped.** `--dry-run=false` and
  * `--json=false` do not disable the flag they name — a value-bearing form of
@@ -36,7 +38,12 @@ import type { M3LCliScriptCandidate } from "../discovery/discover.js";
 import { loadParametersCached } from "../discovery/cached-load.js";
 import { buildFlowEnvelope, formatFlowEnvelope } from "../flow/envelope.js";
 import { listFlows, loadFlowDefinition } from "../flow/load.js";
-import { buildFlowRunRecord, writeFlowRunRecord } from "../flow/record.js";
+import {
+  buildFlowRunRecord,
+  readFlowRunRecord,
+  validateResumeRecord,
+  writeFlowRunRecord,
+} from "../flow/record.js";
 import { formatFlowListLines, formatFlowRunLines } from "../flow/render.js";
 import { runFlow } from "../flow/run.js";
 import type { M3LCliFlowRunResult } from "../flow/run.js";
@@ -49,11 +56,7 @@ const USAGE_EXIT_CODE = 2;
 /** The flow-level dry-run flag every fleet script also accepts (ADR-0022). */
 const DRY_RUN_FLAG = "--dry-run";
 
-/**
- * The flag U11 will own. Named here only so U10 can REFUSE it: `runFlow`'s
- * resume seam exists already, so a silently-ignored `--resume` would re-run a
- * flow from its first step while the operator believed it had resumed.
- */
+/** The resume flag activated in U11: resumes from the last saved step. */
 const RESUME_FLAG = "--resume";
 
 /** The two subcommands `m3l flow` dispatches. */
@@ -64,7 +67,7 @@ const FLOW_RECORD_DIRECTORY = "flows";
 
 /**
  * What {@link parseFlowArgs} resolved from the raw argument slice: the
- * positionals with every flag-shaped token removed, plus the two flags this
+ * positionals with every flag-shaped token removed, plus the three flags this
  * command recognizes.
  */
 interface ParsedFlowArgs {
@@ -74,6 +77,8 @@ interface ParsedFlowArgs {
   readonly dryRun: boolean;
   /** Whether `--json` was given. */
   readonly json: boolean;
+  /** Whether `--resume` was given. */
+  readonly resume: boolean;
 }
 
 /**
@@ -99,10 +104,11 @@ function flagName(token: string): string {
  * `new`/`completion`), so it must be TOLERATED here, never treated as
  * unknown.
  *
- * `--dry-run` and `--json` are boolean SWITCHES, not value-bearing options:
- * only the bare token enables one. `--dry-run=false` is REFUSED rather than
- * matched loosely and coerced to `true` — a caller who wrote `=false`
- * expecting a real run must see a usage error, not a silent dry run.
+ * `--dry-run`, `--json`, and `--resume` are boolean SWITCHES, not
+ * value-bearing options: only the bare token enables one. `--dry-run=false`
+ * is REFUSED rather than matched loosely and coerced to `true` — a caller who
+ * wrote `=false` expecting a real run must see a usage error, not a silent dry
+ * run.
  *
  * @param rawArgs - The raw post-command argument slice.
  * @returns The parsed positionals and flags, or the offending flag token when
@@ -115,6 +121,7 @@ function parseFlowArgs(
   const positionals: string[] = [];
   let dryRun = false;
   let json = false;
+  let resume = false;
 
   for (const token of rawArgs) {
     if (!token.startsWith("-")) {
@@ -129,15 +136,22 @@ function parseFlowArgs(
       json = true;
       continue;
     }
+    if (token === RESUME_FLAG) {
+      resume = true;
+      continue;
+    }
     const name = flagName(token);
-    // A value-bearing form of a boolean flag (`--dry-run=false`) is reported
-    // with the FULL token, not the stripped name, so the offending `=value`
-    // is visible in the error rather than swallowed like a recognized flag.
+    // A value-bearing form of a boolean flag (`--dry-run=false`,
+    // `--resume=dump`) is reported with the FULL token, not the stripped name,
+    // so the offending `=value` is visible in the error rather than swallowed.
     return {
-      unknownFlag: name === DRY_RUN_FLAG || name === JSON_FLAG ? token : name,
+      unknownFlag:
+        name === DRY_RUN_FLAG || name === JSON_FLAG || name === RESUME_FLAG
+          ? token
+          : name,
     };
   }
-  return { positionals, dryRun, json };
+  return { positionals, dryRun, json, resume };
 }
 
 /**
@@ -154,15 +168,12 @@ function isUnknownFlag(
 
 /**
  * Reports an unrecognized flag — or a value-bearing form of a boolean flag —
- * as a usage error, naming `--resume` and a misused `--dry-run`/`--json`
- * specifically so a user who reached for either learns exactly what is wrong
- * rather than merely that something is unknown.
+ * as a usage error.
  *
  * @param context - The command context, for the writer facade.
  * @param flag - The offending flag token, as returned by
  *   {@link parseFlowArgs} — stripped of any `=<value>` suffix, except when the
- *   value-bearing form itself is the defect, in which case it is passed
- *   whole.
+ *   value-bearing form itself is the defect, in which case it is passed whole.
  * @returns The usage exit code.
  */
 function reportUnknownFlag(
@@ -170,23 +181,44 @@ function reportUnknownFlag(
   flag: string,
 ): number {
   const baseName = flagName(flag);
-  if (baseName === RESUME_FLAG) {
-    context.output.error(
-      `m3l flow does not accept ${RESUME_FLAG} yet — resuming a flow run is not part of this release`,
-    );
-  } else if (
+  if (
     flag !== baseName &&
-    (baseName === DRY_RUN_FLAG || baseName === JSON_FLAG)
+    (baseName === DRY_RUN_FLAG ||
+      baseName === JSON_FLAG ||
+      baseName === RESUME_FLAG)
   ) {
     context.output.error(
       `${baseName} does not take a value — write ${baseName} alone, not '${flag}'`,
     );
   } else {
     context.output.error(
-      `unknown flag '${flag}' — m3l flow run accepts ${DRY_RUN_FLAG} and ${JSON_FLAG}`,
+      `unknown flag '${flag}' — m3l flow accepts ${JSON_FLAG} on any subcommand, and ${DRY_RUN_FLAG} and ${RESUME_FLAG} on 'run'`,
     );
   }
   return USAGE_EXIT_CODE;
+}
+
+/**
+ * Returns the canonical path for the run record of a named flow.
+ *
+ * Extracted so both the write site and the resume read site resolve the SAME
+ * path from the same inputs — if either computed it inline, the two could
+ * silently drift apart and the resume reader would never find what the writer
+ * persisted.
+ *
+ * @param context - The command context, for the cache file path anchor.
+ * @param flowName - The flow whose record path is needed.
+ * @returns The absolute path to the flow's JSON run record.
+ */
+function flowRecordPath(
+  context: M3LCliCommandContext,
+  flowName: string,
+): string {
+  return join(
+    dirname(context.cacheFilePath),
+    FLOW_RECORD_DIRECTORY,
+    `${flowName}.json`,
+  );
 }
 
 /**
@@ -235,6 +267,41 @@ async function buildParametersByScript(
     }
   }
   return parametersByScript;
+}
+
+/**
+ * Dispatches the `list` subcommand, after enforcing its own argument
+ * constraints — specifically that `--resume` does not apply to `list`.
+ *
+ * Extracted from {@link runFlowCommand} to keep that function's cyclomatic
+ * complexity within the project's allowed maximum of 10.
+ *
+ * @param context - The command context.
+ * @param rest - Tokens after the `list` subcommand (must be empty).
+ * @param resume - Whether `--resume` was given.
+ * @param json - Whether `--json` was given.
+ * @returns `0` on success, `2` on a usage error.
+ * @throws Whatever `listFlows` throws, unchanged.
+ */
+function dispatchFlowList(
+  context: M3LCliCommandContext,
+  rest: readonly string[],
+  resume: boolean,
+  json: boolean,
+): number {
+  if (resume) {
+    context.output.error(
+      `--resume applies to 'run', not 'list' — usage: m3l flow run <name> [${RESUME_FLAG}]`,
+    );
+    return USAGE_EXIT_CODE;
+  }
+  if (rest.length > 0) {
+    context.output.error(
+      `m3l flow list does not accept a positional argument — got '${rest.join(" ")}', usage: m3l flow list`,
+    );
+    return USAGE_EXIT_CODE;
+  }
+  return runFlowList(context, json);
 }
 
 /**
@@ -313,10 +380,17 @@ function emitFlowRun(
  * Runs `m3l flow run <name>`.
  *
  * **Ordering.** Discovery and the cached parameter load build the validation
- * context, `loadFlowDefinition` validates, `runFlow` executes,
- * `buildFlowRunRecord` assembles the ledger, the result is EMITTED, and only
- * then is the ledger written. Nothing here recomputes the definition hash the
- * record already carries.
+ * context, `loadFlowDefinition` validates, (optionally) the resume record is
+ * read, `runFlow` executes, `buildFlowRunRecord` assembles the ledger, the
+ * result is EMITTED, and only then is the ledger written. Nothing here
+ * recomputes the definition hash the record already carries.
+ *
+ * **Resume.** When `resume` is true, the saved run record is read and
+ * forwarded to `flow/record`'s `validateResumeRecord`, which enforces the
+ * three preconditions (record exists, `resumeStepId` non-null, definition
+ * hash matches). Any violation throws `ERR_CLI_FLOW_RESUME_REFUSED`. A
+ * corrupt record (`ERR_CLI_FLOW_RECORD_INVALID`) propagates UNCHANGED —
+ * never caught here.
  *
  * The record write is not wrapped: `ERR_CLI_FLOW_RECORD_WRITE_FAILED`
  * propagates and DOES change the resolved exit code, the exact inverse of
@@ -329,20 +403,33 @@ function emitFlowRun(
  * @param name - The flow to run.
  * @param dryRun - Whether to run every step in dry-run mode.
  * @param json - Whether to emit the machine-readable form.
+ * @param resume - Whether to resume from the last saved step.
  * @returns The flow's own exit code, verbatim.
- * @throws Whatever `loadFlowDefinition`, `runFlow` or `writeFlowRunRecord`
- *   throws, unchanged — each is already a typed {@link M3LCliError}.
+ * @throws {@link M3LCliError} coded `ERR_CLI_UNKNOWN_FLOW` or
+ *   `ERR_CLI_FLOW_INVALID` from validation, `ERR_CLI_FLOW_RESUME_REFUSED`
+ *   when a resume precondition is not met, `ERR_CLI_FLOW_RECORD_INVALID`
+ *   when the saved record is corrupt, `ERR_CLI_FLOW_RECORD_WRITE_FAILED`
+ *   when the resume ledger cannot be written, and whatever a step execution
+ *   throws — each unchanged.
  */
 async function runNamedFlow(
   context: M3LCliCommandContext,
   name: string,
   dryRun: boolean,
   json: boolean,
+  resume: boolean,
 ): Promise<number> {
   const candidates = discoverScripts(context.workspaceRoot);
   const definition = loadFlowDefinition(context.workspaceRoot, name, {
     parametersByScript: await buildParametersByScript(context, candidates),
   });
+
+  const resumeOptions = resume
+    ? validateResumeRecord(
+        readFlowRunRecord(flowRecordPath(context, definition.name)),
+        definition,
+      )
+    : undefined;
 
   const runId = randomUUID();
   const result = await runFlow(
@@ -362,7 +449,7 @@ async function runNamedFlow(
       jsonOutput: json,
     },
     definition,
-    { dryRun },
+    { dryRun, ...resumeOptions },
   );
 
   const record = buildFlowRunRecord({ runId, definition, result });
@@ -376,14 +463,7 @@ async function runNamedFlow(
     json,
   );
 
-  writeFlowRunRecord(
-    join(
-      dirname(context.cacheFilePath),
-      FLOW_RECORD_DIRECTORY,
-      `${definition.name}.json`,
-    ),
-    record,
-  );
+  writeFlowRunRecord(flowRecordPath(context, definition.name), record);
   return result.exitCode;
 }
 
@@ -400,13 +480,15 @@ async function runNamedFlow(
  * @returns The flow's own exit code, verbatim (`4` stays `4`, `137` stays
  *   `137`), `0` for `flow list`, or `2` for a usage error.
  * @throws {@link M3LCliError} coded `ERR_CLI_UNKNOWN_FLOW` or
- *   `ERR_CLI_FLOW_INVALID` from validation, `ERR_CLI_FLOW_RECORD_WRITE_FAILED`
+ *   `ERR_CLI_FLOW_INVALID` from validation, `ERR_CLI_FLOW_RESUME_REFUSED`
+ *   when a resume precondition is not met, `ERR_CLI_FLOW_RECORD_INVALID`
+ *   when the saved record is corrupt, `ERR_CLI_FLOW_RECORD_WRITE_FAILED`
  *   when the resume ledger cannot be written, and whatever a step execution
  *   throws — each unchanged.
  *
  * @example
  * ```ts
- * const exitCode = await runFlowCommand(context, ["run", "dlq-reconcile"]);
+ * const exitCode = await runFlowCommand(context, ["run", "dlq-reconcile", "--resume"]);
  * ```
  */
 export async function runFlowCommand(
@@ -429,26 +511,20 @@ export async function runFlowCommand(
     return USAGE_EXIT_CODE;
   }
   if (subcommand === "list") {
-    if (rest.length > 0) {
-      context.output.error(
-        `m3l flow list does not accept a positional argument — got '${rest.join(" ")}', usage: m3l flow list`,
-      );
-      return USAGE_EXIT_CODE;
-    }
-    return runFlowList(context, json);
+    return dispatchFlowList(context, rest, parsed.resume, json);
   }
   const [name, ...surplus] = rest;
   if (name === undefined) {
     context.output.error(
-      `m3l flow run requires a <name> positional — usage: m3l flow run <name> [${DRY_RUN_FLAG}] [${JSON_FLAG}]`,
+      `m3l flow run requires a <name> positional — usage: m3l flow run <name> [${DRY_RUN_FLAG}] [${JSON_FLAG}] [${RESUME_FLAG}]`,
     );
     return USAGE_EXIT_CODE;
   }
   if (surplus.length > 0) {
     context.output.error(
-      `m3l flow run accepts only one <name> positional — got surplus '${surplus.join(" ")}', usage: m3l flow run <name> [${DRY_RUN_FLAG}] [${JSON_FLAG}]`,
+      `m3l flow run accepts only one <name> positional — got surplus '${surplus.join(" ")}', usage: m3l flow run <name> [${DRY_RUN_FLAG}] [${JSON_FLAG}] [${RESUME_FLAG}]`,
     );
     return USAGE_EXIT_CODE;
   }
-  return runNamedFlow(context, name, parsed.dryRun, json);
+  return runNamedFlow(context, name, parsed.dryRun, json, parsed.resume);
 }

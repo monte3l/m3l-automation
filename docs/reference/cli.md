@@ -475,7 +475,7 @@ must treat "empty stdout, non-zero exit" as a CLI-side failure distinct from
 
 ### U10 — orchestration engine
 
-#### `m3l flow list|run <name> [--dry-run] [--json]`
+#### `m3l flow list|run <name> [--resume] [--dry-run] [--json]`
 
 Runs a **named flow** — an ordered, branching sequence of `scripts/*`
 invocations declared in `data/config/flows/<name>.yaml` (ADR-0056). The
@@ -522,11 +522,30 @@ it is a resume ledger, so a failed write is reported and changes the exit code
 rather than being swallowed. Rendering happens before persistence, so the
 result is still on stdout either way.
 
-**U10 ships no `--resume` flag.** The engine's entry point already accepts a
-resume-from step id and the record already carries everything a resume needs,
-but the flag itself is U11's, and `--resume` is **rejected** at exit `2` rather
-than silently ignored — a silently-dropped `--resume` would re-run a flow from
-its first step.
+**`--resume` continues the recorded run** instead of starting over. It is a
+boolean switch, valid only on `run`: the command reads
+`data/cache/m3l-cli/flows/<name>.json` and hands the engine that record's
+`resumeStepId` and its cumulative `stepExecutionCount`, so a resumed run
+cannot re-spend the whole loop-guard budget. `--resume=<stepId>` is **not** a
+form — a value-bearing token is a usage error at exit `2`, exactly as
+`--dry-run=false` is — and `--resume <stepId>` reads the bare word as a
+surplus positional, also exit `2`.
+
+A resume is **refused** rather than silently downgraded to a fresh run, with
+`ERR_CLI_FLOW_RESUME_REFUSED` at exit `1`, in three cases: the flow has no
+record (it has never run), the record's `resumeStepId` is `null` (the last run
+left nothing to continue), or the record's `definitionHash` no longer matches
+the current definition. That last guard mirrors
+[ADR-0045](../adr/0045-streaming-safe-resume-contract.md)'s
+`ERR_CHECKPOINT_FINGERPRINT_MISMATCH`: resuming a flow whose steps changed
+since the recorded run would skip steps the operator never ran, so the
+divergence is reported instead. Since `hashFlowDefinition` canonicalizes
+mapping order but preserves array order, a re-indented definition file still
+resumes while a reordered `steps` list does not.
+
+A **corrupt** record is not a refusal: `ERR_CLI_FLOW_RECORD_INVALID`
+propagates unchanged, keeping "never ran" distinct from "cannot be trusted".
+Without `--resume` the record is never read at all.
 
 Under `--json` a single line is emitted on stdout: a `m3l.flow.result` envelope
 carrying the flow-level fields above plus one nested entry per step execution.
@@ -827,13 +846,13 @@ passthrough from a spawned script. The `M3LCliErrorCode` → exit-code mapping
 lives in `src/cli/errors.ts` as a `Record` keyed by the full union, so adding
 an error code is a compile error until its exit code is chosen.
 
-| Code    | Meaning             | Raised by                                                                                                                                                                                                                                                                                                                                                |
-| ------- | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `0`     | Success             | every happy path — including `list` with some configs unloadable, `doctor` with no `fail` row (a `warn` never affects the code), `wizard` declining "run now?", and an empty `presets` listing                                                                                                                                                           |
-| `1`     | Operational failure | `ERR_CLI_CONFIG_IMPORT`, `ERR_CLI_WORKSPACE_NOT_FOUND`, `ERR_CLI_SCRIPT_NOT_BUILT`, `ERR_CLI_SPAWN_FAILED`, `ERR_CLI_DOCTOR_FAILED`, `ERR_CLI_PRESET_INVALID`, `ERR_CLI_SCAFFOLD_FAILED`, `ERR_CLI_COMMAND_MODULE_INVALID`, `ERR_CLI_COMMAND_MODULE_IMPORT_FAILED`, `ERR_CLI_IN_PROCESS_FAILED` — and any non-`M3LCliError` value reaching the top level |
-| `2`     | Usage error         | `ERR_CLI_UNKNOWN_COMMAND`, `ERR_CLI_UNKNOWN_SCRIPT`, `ERR_CLI_UNKNOWN_PARAMETER`, `ERR_CLI_INVALID_PARAMETER_VALUE`, `ERR_CLI_SCAFFOLD_INVALID`, `ERR_CLI_SCAFFOLD_EXISTS`; a missing required positional; `wizard` on a non-interactive stdin                                                                                                           |
-| child's | Passthrough         | `run <script>` and dynamic per-script dispatch return the child's code **verbatim**, preserving the ADR-0035 registry end-to-end                                                                                                                                                                                                                         |
-| `128+N` | Signal-terminated   | a signal-killed child, e.g. SIGTERM → `143`                                                                                                                                                                                                                                                                                                              |
+| Code    | Meaning             | Raised by                                                                                                                                                                                                                                                                                                                                                                               |
+| ------- | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `0`     | Success             | every happy path — including `list` with some configs unloadable, `doctor` with no `fail` row (a `warn` never affects the code), `wizard` declining "run now?", and an empty `presets` listing                                                                                                                                                                                          |
+| `1`     | Operational failure | `ERR_CLI_CONFIG_IMPORT`, `ERR_CLI_WORKSPACE_NOT_FOUND`, `ERR_CLI_SCRIPT_NOT_BUILT`, `ERR_CLI_SPAWN_FAILED`, `ERR_CLI_DOCTOR_FAILED`, `ERR_CLI_PRESET_INVALID`, `ERR_CLI_SCAFFOLD_FAILED`, `ERR_CLI_COMMAND_MODULE_INVALID`, `ERR_CLI_COMMAND_MODULE_IMPORT_FAILED`, `ERR_CLI_IN_PROCESS_FAILED`, `ERR_CLI_FLOW_RESUME_REFUSED` — and any non-`M3LCliError` value reaching the top level |
+| `2`     | Usage error         | `ERR_CLI_UNKNOWN_COMMAND`, `ERR_CLI_UNKNOWN_SCRIPT`, `ERR_CLI_UNKNOWN_PARAMETER`, `ERR_CLI_INVALID_PARAMETER_VALUE`, `ERR_CLI_SCAFFOLD_INVALID`, `ERR_CLI_SCAFFOLD_EXISTS`; a missing required positional; `wizard` on a non-interactive stdin                                                                                                                                          |
+| child's | Passthrough         | `run <script>` and dynamic per-script dispatch return the child's code **verbatim**, preserving the ADR-0035 registry end-to-end                                                                                                                                                                                                                                                        |
+| `128+N` | Signal-terminated   | a signal-killed child, e.g. SIGTERM → `143`                                                                                                                                                                                                                                                                                                                                             |
 
 Under `--json`, the envelope's `exitCodeName` carries the ADR-0035 registry
 name for `exitCode` when it falls in `0`–`6`, and `null` for anything else
