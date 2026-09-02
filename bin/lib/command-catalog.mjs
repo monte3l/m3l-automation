@@ -491,6 +491,11 @@ export const COMMAND_CATALOG = [
       "Automates the first step of the subagent-truncation recovery playbook: cross-references a spoke's journal against `git status`/`git diff` and recommends resume/redispatch/none. `-- --journal <path>` (required); the MCP `spoke_recover` tool wraps this same script.",
   },
   {
+    name: "session:launch",
+    description:
+      "ADR-0088: launches Claude Code already named `<kind>-<slug>`, applying ADR-0087's session-naming convention at process start instead of a user-run `/rename`. On a `feat/<slug>`/`fix/<slug>` branch, derives the name with no other input; otherwise requires `-- --kind <kind> <slug>` (main-resident kinds have no branch to derive from). `-- -- <args>` forwards a literal `--`-prefixed tail to the underlying `claude` invocation. A session already open can't be renamed by this launcher — that residual case still needs `/rename` by hand.",
+  },
+  {
     name: "prepare",
     description:
       "Lifecycle script (auto-runs on `pnpm install`): installs the lefthook git hooks and registers the m3l-generated merge driver. Never run directly; re-run manually only to repair a broken hook install.",
