@@ -16,6 +16,7 @@ import { runWizard } from "../src/commands/wizard.js";
 import { runNew } from "../src/commands/new.js";
 import { runFlowCommand } from "../src/commands/flow.js";
 import { resolveWorkspaceRoot } from "../src/discovery/discover.js";
+import { createCancellationScope } from "../src/run/cancellation.js";
 import type { M3LCliCommandContext } from "../src/commands/context.js";
 
 /**
@@ -65,6 +66,9 @@ vi.mock("../src/commands/flow.js", () => ({ runFlowCommand: vi.fn() }));
 vi.mock("../src/discovery/discover.js", () => ({
   resolveWorkspaceRoot: vi.fn(),
 }));
+vi.mock("../src/run/cancellation.js", () => ({
+  createCancellationScope: vi.fn(),
+}));
 
 const runListMock = vi.mocked(runList);
 const runInspectMock = vi.mocked(runInspect);
@@ -77,6 +81,14 @@ const runWizardMock = vi.mocked(runWizard);
 const runNewMock = vi.mocked(runNew);
 const runFlowCommandMock = vi.mocked(runFlowCommand);
 const resolveWorkspaceRootMock = vi.mocked(resolveWorkspaceRoot);
+const createCancellationScopeMock = vi.mocked(createCancellationScope);
+
+// Provide a safe default so every runCli call has a usable scope.
+// The U11 describe block below overrides this per-test with its own spies.
+createCancellationScopeMock.mockReturnValue({
+  signal: new AbortController().signal,
+  dispose: vi.fn(),
+});
 
 afterEach(() => {
   runListMock.mockReset();
@@ -90,6 +102,12 @@ afterEach(() => {
   runNewMock.mockReset();
   runFlowCommandMock.mockReset();
   resolveWorkspaceRootMock.mockReset();
+  createCancellationScopeMock.mockReset();
+  // Restore the default after each reset so subsequent tests keep a usable scope.
+  createCancellationScopeMock.mockReturnValue({
+    signal: new AbortController().signal,
+    dispose: vi.fn(),
+  });
 });
 
 interface M3LCliOutputStreamLike {

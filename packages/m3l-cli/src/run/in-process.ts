@@ -152,19 +152,48 @@ export interface M3LCliInProcessOptions {
   readonly parameterValues: Readonly<Record<string, unknown>>;
   /** Forwarded verbatim as `context.dryRun`. */
   readonly dryRun: boolean;
+  /**
+   * Forwarded verbatim as `context.signal` — `undefined` when the caller
+   * has no cancellation signal to propagate. Required (not optional) per the
+   * `exactOptionalPropertyTypes`-safe required-holding-`undefined` convention
+   * that {@link Core.M3LCommandContext.signal} itself documents: callers must
+   * be explicit about whether they hold a signal, preventing accidental
+   * omission from silently disabling cancellation.
+   *
+   * U11: wired by `commands/dynamic.ts`'s in-process dispatch path, which
+   * now creates a `createCancellationScope` scope and passes its signal here.
+   */
+  readonly signal: AbortSignal | undefined;
+}
+
+/**
+ * Returns `true` when `error` is a cooperative-cancellation abort, identified
+ * by `error.code === "ERR_OPERATION_ABORTED"` (ADR-0049) rather than by class,
+ * so a structurally-equivalent abort produced across a module boundary
+ * classifies correctly without relying on prototype-chain identity.
+ *
+ * Mirrors `core/script/run-script.ts:156` (`isAbortError`) and its use at
+ * `:327`. Neither is publicly exported from that module, so the predicate is
+ * duplicated here with this citation — any change to the upstream predicate
+ * should be mirrored here.
+ */
+function isAbortError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    "code" in error &&
+    error.code === "ERR_OPERATION_ABORTED"
+  );
 }
 
 /**
  * Loads a script's in-process command module, invokes its `execute`, and
  * resolves the exit code its outcome maps to (ADR-0054, U7).
  *
- * `context.signal` is always `undefined` in this slice: no in-process host
- * owns process signals yet. Wiring real Ctrl-C → `AbortSignal` cancellation
- * through the CLI is a separate, later tracker item (U11, "retry/resume/
- * cancellation surfacing") that explicitly depends on this seam existing
- * first — this slice only wires the `context.signal` PORT through correctly,
- * the same as every pilot script's own spawn-path `main.ts`, which also
- * always passes `signal: undefined` to `runScript`.
+ * `context.signal` is forwarded verbatim from `options.signal` — `undefined`
+ * when the caller has no live abort signal, or a real {@link AbortSignal}
+ * when cooperative cancellation is active (U11, ADR-0049). The in-process
+ * dispatch path in `commands/dynamic.ts` creates a cancellation scope and
+ * passes its signal here so the hosted command module can observe Ctrl-C.
  *
  * @param scriptDirectory - The script's root directory.
  * @param options - The output sink, parameter values, and `dryRun` flag to
@@ -233,10 +262,21 @@ export async function runInProcess(
     outcome = await commandModule.execute(options.parameterValues, {
       output: options.output,
       logger,
-      signal: undefined,
+      signal: options.signal,
       dryRun: options.dryRun,
     });
   } catch (cause) {
+    // Abort-shaped throws resolve to INTERRUPTED rather than failing — the
+    // command module observed the AbortSignal and exited cooperatively.
+    // Classification is code-based (ADR-0049): `error.code ===
+    // "ERR_OPERATION_ABORTED"` so a structurally-equivalent abort produced
+    // across a module boundary still classifies correctly without relying on
+    // prototype-chain identity. Mirrors core/script/run-script.ts:156
+    // (`isAbortError`) and its use at :327; neither is exported, so the
+    // predicate is duplicated locally with a citation.
+    if (isAbortError(cause)) {
+      return Core.M3L_EXIT_CODES.INTERRUPTED;
+    }
     throw new M3LCliError(
       "ERR_CLI_IN_PROCESS_FAILED",
       `script at '${scriptDirectory}' failed while running in-process`,

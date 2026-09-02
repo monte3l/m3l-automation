@@ -191,6 +191,10 @@ export async function executeScript(
   const now = options.now ?? ((): Date => new Date());
   const startedAt = now();
 
+  // Parent survival is now guaranteed by the single scope in runCli (main.ts),
+  // which wraps the entire dispatch — including all teardown — so a SIGINT
+  // never kills the parent before history recording or envelope emission
+  // completes (SF-2, U11 ADR-0049). No scope is needed here.
   const exitCode = await spawnScript(
     scriptDirectory,
     argv,

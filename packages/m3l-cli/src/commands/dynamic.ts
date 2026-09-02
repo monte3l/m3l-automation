@@ -18,6 +18,7 @@ import { discoverScripts } from "../discovery/discover.js";
 import type { M3LCliScriptCandidate } from "../discovery/discover.js";
 import { loadParametersCached } from "../discovery/cached-load.js";
 import type { M3LCliParameterDescriptor } from "../discovery/load-config.js";
+import { createCancellationScope } from "../run/cancellation.js";
 import { executeScript } from "../run/execute.js";
 import { runInProcess } from "../run/in-process.js";
 import { runInspect } from "./inspect.js";
@@ -152,11 +153,23 @@ async function dispatchDynamicRun(
     // parameter's value is bound straight into the hosted command's typed
     // `parameterValues` and never leaves this process's heap, so there is
     // nothing here for ADR-0085's environment injection to protect.
-    return runInProcess(scriptDirectory, {
-      output: context.output,
-      parameterValues: buildParameterValues(descriptors, values),
-      dryRun: passthroughArgs.includes("--dry-run"),
-    });
+    //
+    // Install a cancellation scope for the duration of the in-process run
+    // so SIGINT aborts the command's signal rather than killing the parent
+    // immediately — the command module can observe `context.signal` and
+    // unwind cooperatively (U11, ADR-0049). dispose() in finally so a
+    // thrown error still cleans up the SIGINT/SIGTERM listeners.
+    const scope = createCancellationScope();
+    try {
+      return await runInProcess(scriptDirectory, {
+        output: context.output,
+        parameterValues: buildParameterValues(descriptors, values),
+        dryRun: passthroughArgs.includes("--dry-run"),
+        signal: scope.signal,
+      });
+    } finally {
+      scope.dispose();
+    }
   }
   const { argv, secretEnv } = translateArgv(descriptors, values);
   return executeScript(

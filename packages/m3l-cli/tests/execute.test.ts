@@ -6,9 +6,6 @@
  * one JSON envelope on stdout. It depends on three sibling modules
  * (`run/spawn.js`, `run/report-lookup.js`, `run/envelope.js`), every one of
  * which is mocked here — this file never calls a real implementation.
- *
- * RED phase: `src/run/execute.ts` does not exist yet, so every import below
- * fails to resolve. That is the expected failure for this phase.
  */
 import { afterEach, describe, expect, expectTypeOf, test, vi } from "vitest";
 
@@ -655,5 +652,115 @@ describe("executeScript — type contract", () => {
       readonly secretEnv?: Readonly<Record<string, string>>;
       readonly redirectStdoutToStderr?: boolean;
     }>();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// U11 — D11/D12: executeScript exit-code fidelity and envelope pipeline
+//
+// executeScript's contract: return exactly the exit code spawnScript resolves
+// with, and — when --json was requested — run the full envelope pipeline
+// (locateRunReport → buildRunEnvelope → formatRunEnvelope → output.info)
+// regardless of how spawn ends.
+//
+// Parent survival after SIGINT is owned by main.ts's runCli, which installs
+// a cancellation scope around every dispatch path. execute.ts itself does not
+// create a scope (see execute.ts:194-197) and is not responsible for signal
+// suppression. Coverage for the scope's lifecycle is in main-cancellation.test.ts.
+//
+// The assertions "code is 5, not 130" name 130 explicitly because that is the
+// value that would appear if the parent were killed by Node's default SIGINT
+// disposition (128 + os.constants.signals.SIGINT (2) = 130), pinning that
+// executeScript never performs that conversion.
+// ---------------------------------------------------------------------------
+
+describe("executeScript — exit-code fidelity and envelope pipeline (U11 D11/D12)", () => {
+  test("D11 — resolves with the child's own exit code (5), not 130 (128+SIGINT)", async () => {
+    // executeScript returns exactly the code spawnScript resolves with.
+    // 130 would appear if the parent were killed by Node's default SIGINT
+    // disposition (128 + 2); parent survival is runCli's responsibility.
+    let resolveSpawn!: (code: number) => void;
+    const pendingSpawn = new Promise<number>((resolve) => {
+      resolveSpawn = resolve;
+    });
+    spawnScriptMock.mockReturnValue(pendingSpawn);
+
+    const context = buildContext({ jsonOutput: false });
+    const resultPromise = executeScript(
+      context,
+      SCRIPT_NAME,
+      SCRIPT_DIRECTORY,
+      ARGV,
+    );
+
+    resolveSpawn(5);
+
+    const code = await resultPromise;
+    expect(code).toBe(5);
+    expect(code).not.toBe(130); // not 128+SIGINT
+  });
+
+  test("D12 — --json envelope pipeline executes and reports exit code from the child", async () => {
+    // Pins that when --json is requested, the full envelope pipeline
+    // (locateRunReport → buildRunEnvelope → formatRunEnvelope → output.info)
+    // runs and the exit code returned is still the child's own code.
+    let resolveSpawn!: (code: number) => void;
+    const pendingSpawn = new Promise<number>((resolve) => {
+      resolveSpawn = resolve;
+    });
+    spawnScriptMock.mockReturnValue(pendingSpawn);
+
+    locateRunReportMock.mockReturnValue(FOUND_LOOKUP);
+    buildRunEnvelopeMock.mockReturnValue(SAMPLE_ENVELOPE);
+    formatRunEnvelopeMock.mockReturnValue(SAMPLE_FORMATTED);
+
+    const infoSpy = vi.fn();
+    const context = buildContext({
+      jsonOutput: true,
+      output: createOutput({ info: infoSpy }),
+    });
+    const resultPromise = executeScript(
+      context,
+      SCRIPT_NAME,
+      SCRIPT_DIRECTORY,
+      ARGV,
+    );
+
+    resolveSpawn(5);
+
+    const code = await resultPromise;
+
+    expect(locateRunReportMock).toHaveBeenCalledTimes(1);
+    expect(buildRunEnvelopeMock).toHaveBeenCalledTimes(1);
+    expect(formatRunEnvelopeMock).toHaveBeenCalledTimes(1);
+    expect(infoSpy).toHaveBeenCalledTimes(1);
+    expect(infoSpy).toHaveBeenCalledWith(SAMPLE_FORMATTED);
+    expect(code).toBe(5);
+  });
+
+  test("D12 — exit code passed to buildRunEnvelope is the child's code (5), not 130", async () => {
+    let resolveSpawn!: (code: number) => void;
+    spawnScriptMock.mockReturnValue(
+      new Promise<number>((resolve) => {
+        resolveSpawn = resolve;
+      }),
+    );
+
+    locateRunReportMock.mockReturnValue(FOUND_LOOKUP);
+    buildRunEnvelopeMock.mockReturnValue(SAMPLE_ENVELOPE);
+    formatRunEnvelopeMock.mockReturnValue(SAMPLE_FORMATTED);
+
+    const resultPromise = executeScript(
+      buildContext({ jsonOutput: true }),
+      SCRIPT_NAME,
+      SCRIPT_DIRECTORY,
+      ARGV,
+    );
+
+    resolveSpawn(5);
+    await resultPromise;
+
+    const envelopeArg = buildRunEnvelopeMock.mock.calls[0]?.[0];
+    expect(envelopeArg).toMatchObject({ exitCode: 5 });
   });
 });
