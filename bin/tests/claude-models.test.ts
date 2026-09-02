@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import {
   CANONICAL_CLAUDE_MODELS,
   CO_AUTHOR_EMAIL,
+  FORBIDDEN_TRAILER_PATTERN,
   HISTORICAL_ALIASES,
   isValidAgentModel,
   isValidEffort,
@@ -204,6 +205,54 @@ describe("isValidEffort", () => {
 
   test("rejects an unknown effort level", () => {
     expect(isValidEffort("extreme")).toBe(false);
+  });
+});
+
+describe("FORBIDDEN_TRAILER_PATTERN", () => {
+  test("matches a harness-injected Claude-Session trailer", () => {
+    expect(
+      FORBIDDEN_TRAILER_PATTERN.test(
+        "Claude-Session: https://claude.ai/code/session_01ABC",
+      ),
+    ).toBe(true);
+  });
+
+  test("matches case-insensitively", () => {
+    expect(
+      FORBIDDEN_TRAILER_PATTERN.test(
+        "claude-session: https://claude.ai/code/session_01ABC",
+      ),
+    ).toBe(true);
+  });
+
+  test("matches a hypothetical future Claude-* key", () => {
+    expect(
+      FORBIDDEN_TRAILER_PATTERN.test("Claude-Run: https://example.com"),
+    ).toBe(true);
+  });
+
+  test("does not match the sanctioned Co-Authored-By trailer", () => {
+    expect(
+      FORBIDDEN_TRAILER_PATTERN.test(
+        "Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
+      ),
+    ).toBe(false);
+  });
+
+  test("does not match an unrelated trailer line", () => {
+    expect(FORBIDDEN_TRAILER_PATTERN.test("Refs: #123")).toBe(false);
+  });
+
+  test("does not match a plain body sentence containing the word Claude", () => {
+    expect(
+      FORBIDDEN_TRAILER_PATTERN.test(
+        "This change was reviewed by Claude before merge.",
+      ),
+    ).toBe(false);
+  });
+
+  test("does not match when the key is preceded by leading whitespace", () => {
+    expect(FORBIDDEN_TRAILER_PATTERN.test("  Claude-Session: x")).toBe(false);
   });
 });
 

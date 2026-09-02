@@ -94,6 +94,7 @@
     "check:hub-keys": "node bin/check-hub-keys.mjs",
     "check:worktree": "node bin/check-worktree-include.mjs",
     "check:signed-range": "node bin/verify-signed-range.mjs",
+    "check:commit-trailers": "node bin/check-commit-trailers.mjs",
     "check:dup": "jscpd",
     "gen:index": "node bin/gen-reference-index.mjs",
     "gen:commit-stats-endpoint": "node bin/gen-commit-stats-endpoint.mjs",
