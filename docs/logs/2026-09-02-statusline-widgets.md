@@ -4,9 +4,10 @@ This log covers issue #879: broadening `.claude/hooks/statusline-context-pressur
 from a single `ctx NN%` segment into a 4-line, multi-widget statusline. It ran
 through `starting-work` → parallel `test-author`/`code-implementer` spokes →
 `code-reviewer`/`silent-failure-hunter` review → a fix-batch round → `pnpm
-verify` → `syncing-docs` → `creating-prs`. Records what shipped, what matched
-the plan, one real divergence (a stale type-checking claim in this repo's own
-rules), and durable lessons.
+verify` → `syncing-docs` → `creating-prs` → `finishing-work`. Records what
+shipped, what matched the plan, three divergences (two gate-command misses, a
+stale type-checking claim in this repo's own rules, and a real push-vs-auto-merge
+race during close-out), and durable lessons.
 
 Plan of record: `~/.claude/plans/on-issue-879-dreamy-pearl.md` (a session-local
 plan-mode file, not committed to `docs/plans/` — this task's scope didn't clear
@@ -35,11 +36,13 @@ the archival bar for a durable `docs/plans/archive/` entry).
   and a `tsc` error, both fixed — see divergence #1).
 - **Follow-up filed**: issue #889 (deferred `/usage`-API weekly-usage
   widgets).
-- **PR**: [#892](https://github.com/monte3l/m3l-automation/pull/892), pushed
-  clean through pre-push, `MERGEABLE`/`BLOCKED` (pending required checks) at
-  time of writing.
+- **PR**: [#892](https://github.com/monte3l/m3l-automation/pull/892) — merged
+  (squash). This work log and the `tests.md` correction (this very commit)
+  landed too late to make that PR — GitHub's auto-merge fired against #892's
+  first-push state before the second `git push` (carrying this commit)
+  completed, so they ship instead via a follow-up PR — see divergence #3.
 - **Skills used**: starting-work, writing-commits, creating-prs, syncing-docs,
-  writing-work-logs.
+  writing-work-logs, finishing-work.
 - **Spoke incidents**: none — `tmp/session-incidents.jsonl` absent (no
   truncations), no review-spoke stall over 15 min (longest was ~5.5 min), no
   `SendMessage` resumes needed. 6 spokes dispatched total: 2×`test-author`,
@@ -127,8 +130,54 @@ non-turbo `tsc -p bin/tsconfig.json` invocation (with `checkJs: false` on the
 `.mjs` internals it also includes), so a real type error there is caught, not
 silent — and that a per-package `turbo run typecheck` alone won't see it.
 Originally deferred to a separate docs-only PR per ADR-0072's docs-vs-code
-split discipline; the user asked for it to land in this PR instead, so it's
-folded in here rather than filed as a follow-up.
+split discipline; the user asked for it to land in the same PR as the feature
+instead of a later follow-up (#892 at the time) — it ended up in a genuine
+follow-up PR anyway, but because of the race in divergence #3, not by design.
+
+### 3. The second push (carrying this commit) lost a race with GitHub auto-merge, then compounded when the worktree was removed mid-hook
+
+After committing the work log and `tests.md` correction, `git push` was
+backgrounded (branch `feat/statusline-widgets`, PR #892 already open with
+auto-merge presumably enabled). While that push's pre-push hook was still
+running its multi-minute `lint`/`typecheck`/`test` lanes, the user reported
+"#892 got auto-merged" — GitHub had merged the PR against its state as of the
+_first_ push, before the second push's commit ever reached the remote. The
+`finishing-work` close-out then ran `pnpm worktree:remove statusline-widgets`,
+which deleted the linked worktree directory — the same directory the still-running
+backgrounded push's pre-push hook was executing inside. `node_modules`
+vanished out from under `eslint`/`vitest`/`tsc` mid-run
+(`Cannot find module '../package.json'`, then `chdir: no such file or
+directory` for the `test`/`typecheck` lanes), and the push failed outright.
+Recovery: the commit was never lost (it lived in the local git object
+database, reachable from the kept — not deleted — local branch pointer;
+`worktree:remove` only removes the _worktree_, not the branch when `git
+branch -d` refuses it as unmerged-by-ancestry). Rebuilt as a fresh branch off
+the now-current `main` (which already contained the squash-merged first
+commit) and cherry-picked the orphaned commit onto it — clean, no conflicts,
+signature intact.
+
+**Why it happened:** Two independent assumptions broke at once. First,
+backgrounding a `git push` and then immediately treating "the user says it
+merged" as license to run destructive cleanup (`finishing-work`'s worktree
+removal) without first confirming the _backgrounded push itself_ had finished
+— the skill's own Step 1 verifies the PR merged, but nothing in the flow
+checks whether an unrelated in-flight background job depends on the very
+directory a later step is about to delete. Second, GitHub auto-merge acts on
+whatever HEAD a PR has _at the moment its required checks pass_, not
+necessarily the latest commit the author intended to include before merge —
+a second push made after opening the PR is not guaranteed to land before an
+armed auto-merge fires.
+
+**Fix for future:** Before running any destructive `finishing-work`/cleanup
+step on a worktree or branch, check for a still-running backgrounded command
+scoped to that same directory (this session had no ready-made way to query
+that; treat any recent `run_in_background` Bash call touching the target path
+as a hold until it reports done, exactly like the `Agent`-tool background
+convention). Separately: once a PR has GitHub auto-merge armed, a further
+`git push` to update it is racing the merge, not safely queued behind it — if
+a follow-up commit must land in the _same_ PR, either disable auto-merge
+first, or accept upfront that it may miss the window and need a follow-up PR
+instead of treating that as a failure.
 
 ## Lessons learned
 
@@ -160,3 +209,11 @@ folded in here rather than filed as a follow-up.
   correct fix when a defensive function's real contract is broader than its
   annotation.** `resolveBranch`'s body already checked `typeof startDir !==
 "string"`; the type annotation was simply behind the implementation.
+- **A backgrounded push can lose the race against both GitHub auto-merge and
+  a later `finishing-work` cleanup step in the very same session.** "The PR
+  merged" only confirms the PR merged — not that every command this session
+  started against that branch/worktree has finished. `pnpm worktree:remove`
+  deleted the directory a still-running backgrounded push's pre-push hook was
+  executing inside, crashing it mid-lane; the commit survived (git object
+  database + kept branch pointer) but had to be rebuilt as a follow-up PR via
+  cherry-pick. See divergence #3. _(promoted → .claude/skills/finishing-work/SKILL.md)_
