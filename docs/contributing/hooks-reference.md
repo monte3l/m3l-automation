@@ -87,6 +87,25 @@ their events (`SessionStart`, `PreCompact`, `UserPromptSubmit`,
 `PreToolUse: Agent`, `SubagentStop`, `Stop`) have no "already happened"
 tool call for exit 2 to react to.
 
+**`statusLine` (not a lifecycle hook — a separate `.claude/settings.json` key).**
+`statusline-context-pressure.mjs` renders live `context_window.used_percentage`
+pressure (color-coded at 70%/90%) and, once past 90%, a ready-to-run
+`/compact` suggestion built from `pr.number`/`workspace.git_worktree` already
+in the same payload — mirroring CLAUDE.md's `## Compact Instructions`
+preserve-list dynamically instead of leaving it as prose to remember.
+`statusLine` was confirmed as the only documented surface exposing live
+context-window data to a local script; no hook event carries it
+(`docs/research/harness-refresh.md` Outstanding drift #10), so this composes
+with rather than replaces the `PreCompact`/`SessionStart(compact)` handoff
+pair above — the statusline tells the user _when_, those hooks handle _what
+survives_ once `/compact` actually runs. Pure JSON-in/string-out, no
+`git`/network calls, so it doesn't reintroduce the `npx`-resolved
+third-party-statusline resource cost `docs/adr/0080-host-resource-budgeting.md`
+and `docs/contributing/host-resources.md` warn about — this is a plain local
+`node` invocation, identical in cost to every hook row above. `pnpm check:hooks`
+does not validate `statusLine` (it validates the `hooks` object only); this
+script is instead covered by `bin/tests/statusline-context-pressure.test.ts`.
+
 **Known gap (accepted risk, issue #210 retired 2026-08-17):** the write-time
 _content_ `Write|Edit` guards (`guard-secret-writes`, `guard-js-extension`,
 etc.) are not wired to `Bash`. This is narrower than it sounds:
