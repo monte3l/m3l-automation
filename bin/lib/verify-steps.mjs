@@ -369,6 +369,11 @@ export const VERIFY_STEPS = [
     cmd: () => "pnpm check:agents",
   },
   {
+    ciStepName: "Check skill frontmatter",
+    id: "check-skill-frontmatter",
+    cmd: () => "pnpm check:skill-frontmatter",
+  },
+  {
     ciStepName: "Check dynamic-workflow surface (workflows)",
     id: "check-workflows",
     cmd: () => "pnpm check:workflows",

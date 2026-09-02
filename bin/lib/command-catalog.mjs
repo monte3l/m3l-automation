@@ -251,6 +251,11 @@ export const COMMAND_CATALOG = [
       "Verifies every skill/CLAUDE.md agent reference resolves to a real subagent or built-in, and that no spoke is granted the Agent tool (the no-nesting invariant). Run after editing .claude/agents/** or a skill's dispatch prompt.",
   },
   {
+    name: "check:skill-frontmatter",
+    description:
+      "Verifies every .claude/skills/*/SKILL.md has a non-empty description, its name: matches the directory, and every skill has a row in docs/contributing/skills-catalog.md; warns (never fails) on description-vocabulary overlap between skill pairs. Run after adding or editing a skill.",
+  },
+  {
     name: "check:hooks",
     description:
       "Verifies every .claude/settings.json hook command resolves to a real .claude/hooks/*.mjs file, every event name is a real Claude Code lifecycle event, and no hook file is left unwired. Run after editing hooks or settings.json.",

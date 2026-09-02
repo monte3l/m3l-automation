@@ -104,8 +104,17 @@ pre-push:
     # A matcher typo can silently disable the ADR-0078 compaction-handoff
     # re-injection with no other symptom. Reads settings.json and the hooks
     # dir, no network call, negligible cost.
+    # check:skill-frontmatter joined the same way: it reads 22 small SKILL.md
+    # files plus one catalog doc, no network call, negligible cost. It closes
+    # the gap check:agents already covers for .claude/agents/*.md (a hard
+    # fail on an empty description) but had no skill-side equivalent for —
+    # collectSkillDescriptions in check-context-budget.mjs reads `description`
+    # only to measure length, so an empty one there silently passed as
+    # `chars: 0` — plus a name-matches-directory check and catalog-coverage
+    # check with no prior equivalent (finishing-work shipped with no catalog
+    # row and nothing caught it, docs/logs/2026-09-02-finishing-work-skill.md).
     checks:
-      run: node bin/verify-signed-range.mjs && node bin/check-commit-trailers.mjs && pnpm check:control-chars && pnpm check:file-budget && pnpm check:agents && pnpm check:script-docs && pnpm check:cli-docs && pnpm check:review-size && pnpm check:context-budget && pnpm check:provenance && pnpm check:index && pnpm check:harness-freshness && pnpm check:retrospective && pnpm check:skill-evals && pnpm check:claude-cli-version && pnpm check:review-policy && pnpm check:hooks
+      run: node bin/verify-signed-range.mjs && node bin/check-commit-trailers.mjs && pnpm check:control-chars && pnpm check:file-budget && pnpm check:agents && pnpm check:script-docs && pnpm check:cli-docs && pnpm check:review-size && pnpm check:context-budget && pnpm check:provenance && pnpm check:index && pnpm check:harness-freshness && pnpm check:retrospective && pnpm check:skill-evals && pnpm check:claude-cli-version && pnpm check:review-policy && pnpm check:hooks && pnpm check:skill-frontmatter
 
 # Fire after `git rebase` completes (including a no-op rebase with nothing to
 # replay) and after `git merge` completes. Regenerates the derived files the
