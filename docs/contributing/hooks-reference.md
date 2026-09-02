@@ -103,8 +103,11 @@ survives_ once `/compact` actually runs. Pure JSON-in/string-out, no
 third-party-statusline resource cost `docs/adr/0080-host-resource-budgeting.md`
 and `docs/contributing/host-resources.md` warn about — this is a plain local
 `node` invocation, identical in cost to every hook row above. `pnpm check:hooks`
-does not validate `statusLine` (it validates the `hooks` object only); this
-script is instead covered by `bin/tests/statusline-context-pressure.test.ts`.
+resolves `statusLine.command` too — so a broken reference errors and a valid
+one no longer false-positives as a "dead hook?" warning — though it checks
+only that the referenced script exists, not the `type`/other fields of the
+`statusLine` config itself; behavioral coverage of the script's own output is
+`bin/tests/statusline-context-pressure.test.ts`'s job.
 
 **Known gap (accepted risk, issue #210 retired 2026-08-17):** the write-time
 _content_ `Write|Edit` guards (`guard-secret-writes`, `guard-js-extension`,
