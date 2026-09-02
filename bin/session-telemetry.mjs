@@ -121,6 +121,16 @@ export const SESSION_NAME_PATTERN =
 export const SESSION_NAME_MAX_LENGTH = 40;
 
 /**
+ * How much of a non-conforming name survives into the compliance report
+ * (see {@link sanitizeNonConformingName}). Deliberately a separate constant
+ * from {@link SESSION_NAME_MAX_LENGTH} — that one is ADR-0087's naming
+ * *convention* length; this one is a redaction-exposure bound with a
+ * different reason to exist, and the two happening to share a value today
+ * shouldn't couple them to always changing together.
+ */
+export const NON_CONFORMING_NAME_PREVIEW_LENGTH = SESSION_NAME_MAX_LENGTH;
+
+/**
  * Read up to {@link SESSION_NAME_SCAN_BYTE_CAP} bytes from the START of one
  * transcript file — a fixed synchronous read (matching this file's existing
  * `execFileSync`/`readdirSync`/`statSync` style) rather than a streaming
@@ -148,8 +158,25 @@ export function readTranscriptPrefix(path, fs) {
   }
   try {
     const buffer = Buffer.alloc(SESSION_NAME_SCAN_BYTE_CAP);
-    const bytesRead = fs.read(fd, buffer, 0, buffer.length, 0);
-    return buffer.toString("utf8", 0, bytesRead);
+    // A single readSync call may legitimately return fewer bytes than
+    // requested (a pipe, a partial OS-level read) — loop until the buffer
+    // is full or the file is exhausted, rather than trusting one call to
+    // have filled it. A short single read would otherwise leave the
+    // scanned prefix silently shorter than SESSION_NAME_SCAN_BYTE_CAP, and
+    // a name record just past the short read would misread as "unnamed".
+    let totalRead = 0;
+    while (totalRead < buffer.length) {
+      const bytesRead = fs.read(
+        fd,
+        buffer,
+        totalRead,
+        buffer.length - totalRead,
+        totalRead,
+      );
+      if (bytesRead === 0) break; // end of file reached
+      totalRead += bytesRead;
+    }
+    return buffer.toString("utf8", 0, totalRead);
   } catch {
     // A read failure on a file that vanished between open and stat/readdir
     // (a concurrent Claude Code session still writing) is exactly the
@@ -217,14 +244,26 @@ export function classifySessionName(name) {
 }
 
 /**
- * Parse the bounded `<n>d`/`<n>h` window `parseSince` already validates,
- * shared here so the naming-compliance window matches the aggregate
- * telemetry window exactly.
+ * Parse the bounded `<n>d`/`<n>h` window `parseSince` already validates at
+ * the CLI boundary, shared here so the naming-compliance window matches the
+ * aggregate telemetry window exactly. Re-validates against
+ * {@link SINCE_PATTERN} rather than trusting the caller — this function is
+ * also exported and callable directly (as the naming-compliance tests do),
+ * so "already validated by parseSince" is a caller convention, not an
+ * enforced precondition; without this check `sinceToMs("7")` would
+ * silently return `0` instead of failing loudly.
  *
- * @param {string} since already validated by {@link parseSince}
+ * @param {string} since
  * @returns {number} milliseconds
+ * @throws {Error} when `since` isn't `<n>d` or `<n>h`
  */
 export function sinceToMs(since) {
+  if (!SINCE_PATTERN.test(since)) {
+    throw new Error(
+      `sinceToMs: "${since}" is not a bounded window. Use <n>d or <n>h ` +
+        `(e.g. 7d, 48h).`,
+    );
+  }
   const amount = Number(since.slice(0, -1));
   return since.endsWith("d") ? amount * 86_400_000 : amount * 3_600_000;
 }
@@ -290,6 +329,7 @@ export function listRecentTranscripts(dir, sinceMs, nowMs, fs) {
  *   conforming: number,
  *   non_conforming: number,
  *   unnamed: number,
+ *   unreadable: number,
  *   non_conforming_names: string[],
  * }} NamingComplianceReport
  */
@@ -312,19 +352,26 @@ export function listRecentTranscripts(dir, sinceMs, nowMs, fs) {
  * @returns {string}
  */
 export function sanitizeNonConformingName(name) {
+  // Strip full ANSI/CSI escape sequences (ESC '[' ... final byte), not just
+  // the bare ESC byte — removing only \x1b from "\x1b[31mtext\x1b[0m" would
+  // otherwise leave "[31mtext[0m" behind in the report.
+  // eslint-disable-next-line no-control-regex -- deliberately stripping CSI/C0/DEL
+  const withoutAnsi = name.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "");
   // eslint-disable-next-line no-control-regex -- deliberately stripping C0/DEL
-  const stripped = name.replace(/[\x00-\x1f\x7f]/g, "");
-  return stripped.length > SESSION_NAME_MAX_LENGTH
-    ? `${stripped.slice(0, SESSION_NAME_MAX_LENGTH)}…`
+  const stripped = withoutAnsi.replace(/[\x00-\x1f\x7f]/g, "");
+  return stripped.length > NON_CONFORMING_NAME_PREVIEW_LENGTH
+    ? `${stripped.slice(0, NON_CONFORMING_NAME_PREVIEW_LENGTH)}…`
     : stripped;
 }
 
 /**
  * Compute session-naming compliance (ADR-0087) for one project directory's
  * recent transcripts. Throws — rather than returning a zero-filled report —
- * on the two cases this file's header exists to prevent: no transcripts in
- * the window at all, and transcripts present but carrying zero recognizable
- * name records (the unsupported-format-drift signal).
+ * on the three cases this file's header exists to prevent: no transcripts
+ * in the window at all, every transcript found being unreadable (a
+ * permissions/access problem, distinct from format drift), and transcripts
+ * present and readable but carrying zero recognizable name records (the
+ * unsupported-format-drift signal).
  *
  * Known limitations, both inherent to a presence-only drift check (the same
  * shape as this file's `REQUIRED_KEYS` assertion for the analyzer payload):
@@ -332,10 +379,13 @@ export function sanitizeNonConformingName(name) {
  * (or the `agentName`/`aiTitle` field under a still-recognized type) would
  * not trip the zero-records throw below, since the other type would still
  * be found — those sessions would silently read as "unnamed" rather than
- * as a detected format drift. And `sessions_scanned` counts every file this
- * scan attempted, including ones `readTranscriptPrefix` could not open —
- * such a file contributes to neither `named` nor `unnamed`, so the three
- * counts are not guaranteed to sum to `sessions_scanned`.
+ * as a detected format drift. `sessions_scanned` counts every file this
+ * scan attempted; a file `readTranscriptPrefix` could not open contributes
+ * to `unreadable` instead of `named`/`unnamed`, so
+ * `named + unnamed + unreadable === sessions_scanned` always holds. When
+ * every file in the window is unreadable, the throw below reports a
+ * permissions/access problem rather than misdiagnosing it as ADR-0084
+ * format drift — those are different problems needing different fixes.
  *
  * @param {{
  *   dir: string,
@@ -350,8 +400,9 @@ export function sanitizeNonConformingName(name) {
  *   },
  * }} options
  * @returns {NamingComplianceReport}
- * @throws {Error} when no transcripts exist in the window, or when every
- *   transcript found carries zero `agent-name`/`ai-title` records
+ * @throws {Error} when no transcripts exist in the window, when every
+ *   transcript found is unreadable, or when every readable transcript
+ *   carries zero `agent-name`/`ai-title` records
  */
 export function computeNamingCompliance({ dir, since, now, fs }) {
   const files = listRecentTranscripts(dir, sinceToMs(since), now(), fs);
@@ -367,12 +418,16 @@ export function computeNamingCompliance({ dir, since, now, fs }) {
   let conforming = 0;
   let nonConforming = 0;
   let unnamed = 0;
+  let unreadable = 0;
   /** @type {string[]} */
   const nonConformingNames = [];
 
   for (const path of files) {
     const prefix = readTranscriptPrefix(path, fs);
-    if (prefix === null) continue; // unreadable file — skip, not fatal
+    if (prefix === null) {
+      unreadable += 1; // unreadable file — skip, not fatal
+      continue;
+    }
     const name = extractSessionName(prefix);
 
     const classification = classifySessionName(name);
@@ -390,15 +445,26 @@ export function computeNamingCompliance({ dir, since, now, fs }) {
     }
   }
 
+  if (unreadable === files.length) {
+    throw new Error(
+      `Scanned ${files.length} transcript file(s) under ${dir} within the ` +
+        `last ${since} and could not open ANY of them. This looks like a ` +
+        `permissions or access problem with ${dir}, not a transcript-format ` +
+        `issue — check that this process can read that directory before ` +
+        `re-running.`,
+    );
+  }
+
   if (named === 0) {
     throw new Error(
       `Scanned ${files.length} transcript file(s) under ${dir} within the ` +
         `last ${since} and found ZERO agent-name/ai-title records in their ` +
-        `first ${SESSION_NAME_SCAN_BYTE_CAP} bytes. Either every session in ` +
-        `this window is genuinely both unnamed AND untitled (very unlikely — ` +
-        `Claude Code auto-titles nearly every session), or the transcript's ` +
-        `record shape has changed and this scan's field names are stale. ` +
-        `The JSONL format is officially unsupported and can change between ` +
+        `first ${SESSION_NAME_SCAN_BYTE_CAP} bytes (${unreadable} of them ` +
+        `unreadable). Either every readable session in this window is ` +
+        `genuinely both unnamed AND untitled (very unlikely — Claude Code ` +
+        `auto-titles nearly every session), or the transcript's record ` +
+        `shape has changed and this scan's field names are stale. The ` +
+        `JSONL format is officially unsupported and can change between ` +
         `Claude Code versions (ADR-0084) — refusing to report zeros that ` +
         `would read like a healthy answer. Re-verify readTranscriptPrefix/ ` +
         `extractSessionName against a fresh transcript sample before ` +
@@ -412,6 +478,7 @@ export function computeNamingCompliance({ dir, since, now, fs }) {
     conforming,
     non_conforming: nonConforming,
     unnamed,
+    unreadable,
     non_conforming_names: nonConformingNames,
   };
 }
@@ -657,14 +724,19 @@ export function runTelemetry({
   computeNaming = computeNamingCompliance,
   now = Date.now,
 }) {
+  // ADR-0087: "measured, not gated" — the naming-compliance scan is advisory
+  // and must never take down this tool's primary output (the analyzer
+  // payload). reporter.warn() records the failure without flipping
+  // report.ok, unlike reporter.error() below for the analyzer's own
+  // failures, which ARE this tool's core contract.
   /** @type {NamingComplianceReport | null} */
   let naming = null;
   try {
     naming = computeNaming({ dir, since, now, fs: REAL_NAMING_FS });
   } catch (cause) {
-    reporter.error(
-      `Session-naming compliance scan failed: ` +
-        `${cause instanceof Error ? cause.message : String(cause)}`,
+    reporter.warn(
+      `Session-naming compliance scan failed (advisory, does not fail the ` +
+        `run): ${cause instanceof Error ? cause.message : String(cause)}`,
     );
   }
 

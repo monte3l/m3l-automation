@@ -5,6 +5,7 @@ import { describe, expect, test } from "vitest";
 import {
   ANALYZER_SUBPATH,
   DEFAULT_SINCE,
+  NON_CONFORMING_NAME_PREVIEW_LENGTH,
   PLUGIN_CACHE_SUBPATH,
   REQUIRED_KEYS,
   SESSION_NAME_SCAN_BYTE_CAP,
@@ -197,6 +198,11 @@ describe("runTelemetry", () => {
     return (payload["errors"] as string[])[0] ?? "";
   }
 
+  /** First reported warning, or "" — the payload is index-signature typed. */
+  function firstWarning(payload: Record<string, unknown>): string {
+    return (payload["warnings"] as string[])[0] ?? "";
+  }
+
   /**
    * Captures the payload runTelemetry hands to `finish()`. Calling
    * `reporter.finish()` a second time from the test would return the BASE
@@ -223,6 +229,7 @@ describe("runTelemetry", () => {
         conforming: 1,
         non_conforming: 0,
         unnamed: 0,
+        unreadable: 0,
         non_conforming_names: [],
       }),
       reporter,
@@ -306,6 +313,7 @@ describe("runTelemetry", () => {
       conforming: 1,
       non_conforming: 2,
       unnamed: 2,
+      unreadable: 0,
       non_conforming_names: ["some ai title", "another one"],
     };
     const { outcome, payload } = run({ computeNaming: () => namingReport });
@@ -314,16 +322,16 @@ describe("runTelemetry", () => {
     expect(payload["naming"]).toEqual(namingReport);
   });
 
-  test("MUTATION: a failed naming scan fails the run but still returns the payload", () => {
+  test("MUTATION: a failed naming scan does NOT fail the run — the payload survives as a warning", () => {
     const { outcome, payload } = run({
       computeNaming: () => {
         throw new Error("transcript format drift detected");
       },
     });
-    expect(outcome.ok).toBe(false);
+    expect(outcome.ok).toBe(true);
     expect(outcome.payload).not.toBeNull();
     expect(outcome.naming).toBeNull();
-    expect(firstError(payload)).toContain("transcript format drift detected");
+    expect(firstWarning(payload)).toContain("transcript format drift detected");
   });
 });
 
@@ -816,5 +824,108 @@ describe("listRecentTranscripts — path containment", () => {
     expect(listRecentTranscripts("/safe/dir", 10000, 6000, fs)).toEqual([
       "/safe/dir/good.jsonl",
     ]);
+  });
+});
+
+describe("computeNamingCompliance — unreadable tracking", () => {
+  const now = () => 10_000;
+
+  test("counts unreadable files and keeps named+unnamed+unreadable === sessions_scanned", () => {
+    const fs = {
+      readdir: () => [entry("a.jsonl"), entry("b.jsonl")],
+      stat: () => ({ mtimeMs: 5000 }),
+      open: (path: string) => {
+        if (path.endsWith("b.jsonl")) throw new Error("EACCES");
+        return 0;
+      },
+      read: (
+        _fd: number,
+        buffer: Buffer,
+        offset: number,
+        length: number,
+        position: number,
+      ) => {
+        const buf = Buffer.from(
+          '{"type":"agent-name","agentName":"feat-x"}\n',
+          "utf8",
+        );
+        const bytesToCopy = Math.min(length, buf.length - position);
+        if (bytesToCopy <= 0) return 0;
+        buf.copy(buffer, offset, position, position + bytesToCopy);
+        return bytesToCopy;
+      },
+      close: () => {},
+    };
+    const report = computeNamingCompliance({ dir: "/p", since: "7d", now, fs });
+    expect(report.unreadable).toBe(1);
+    expect(report.named + report.unnamed + report.unreadable).toBe(
+      report.sessions_scanned,
+    );
+  });
+
+  test("MUTATION: when every file is unreadable, throws a permissions message, not the ADR-0084 drift message", () => {
+    const fs = {
+      readdir: () => [entry("a.jsonl")],
+      stat: () => ({ mtimeMs: 5000 }),
+      open: () => {
+        throw new Error("EACCES");
+      },
+      read: () => 0,
+      close: () => {},
+    };
+    expect(() =>
+      computeNamingCompliance({ dir: "/p", since: "7d", now, fs }),
+    ).toThrow(/permissions or access problem/);
+  });
+});
+
+describe("sinceToMs — validation", () => {
+  test("MUTATION: rejects a value not shaped <n>d or <n>h", () => {
+    expect(() => sinceToMs("7")).toThrow(/not a bounded window/);
+  });
+
+  test("MUTATION: rejects an empty string rather than returning 0 silently", () => {
+    expect(() => sinceToMs("")).toThrow(/not a bounded window/);
+  });
+});
+
+describe("readTranscriptPrefix — partial reads", () => {
+  test("assembles the full prefix across multiple short reads", () => {
+    const full = Buffer.from(
+      '{"type":"agent-name","agentName":"feat-partial-read"}\n',
+      "utf8",
+    );
+    const fs = {
+      open: () => 3,
+      read: (
+        _fd: number,
+        buffer: Buffer,
+        offset: number,
+        length: number,
+        position: number,
+      ) => {
+        if (position >= full.length) return 0;
+        const n = Math.min(5, length, full.length - position); // short read
+        full.copy(buffer, offset, position, position + n);
+        return n;
+      },
+      close: () => {},
+    };
+    expect(readTranscriptPrefix("/p", fs)).toBe(full.toString("utf8"));
+  });
+});
+
+describe("sanitizeNonConformingName — ANSI and constant", () => {
+  test("strips a full ANSI/CSI escape sequence, not just the ESC byte", () => {
+    expect(sanitizeNonConformingName("\x1b[31mred\x1b[0m text")).toBe(
+      "red text",
+    );
+  });
+
+  test("truncates using NON_CONFORMING_NAME_PREVIEW_LENGTH, decoupled from SESSION_NAME_MAX_LENGTH", () => {
+    expect(NON_CONFORMING_NAME_PREVIEW_LENGTH).toBe(SESSION_NAME_MAX_LENGTH);
+    const long = "a".repeat(NON_CONFORMING_NAME_PREVIEW_LENGTH + 10);
+    const result = sanitizeNonConformingName(long);
+    expect(result.length).toBe(NON_CONFORMING_NAME_PREVIEW_LENGTH + 1);
   });
 });
