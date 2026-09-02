@@ -797,6 +797,14 @@ Stated plainly rather than left to be discovered:
   body cap that transitively limits both.
 - **No cancellation route.** A running run can only be stopped by draining the
   server.
+- **A route registered through `M3LConsoleRuntimeOptions.routes` is not
+  audited.** The ADR-0070 human-action audit gate is applied to the console's
+  own route table, and a caller's routes are appended after it — so a write
+  route supplied that way records no audit entry. The audit spec table is
+  keyed by this console's own path templates and can hold no entry for a
+  caller-invented route; enforcing its exhaustiveness guard against those
+  would make the `routes` seam unusable instead. Every write route the console
+  itself serves IS audited, and adding an unaudited one fails at boot.
 - **`GET /api/v1/scripts` stats the scripts directory on every request.** It
   is deliberately uncached — a freshly scaffolded script must appear without a
   restart — so the cost is `O(scripts)` `stat` calls per call, synchronously,
