@@ -62,11 +62,6 @@ count-tokens`) exists as the accurate alternative.
 9. **ADR-0078's "PRs 1-4 (Parts A-C) landed as described" claim is false for
    Part C** — corrected in the ADR's own 2026-09-01 Update note rather than
    here; see `docs/adr/0078-session-context-management.md`.
-10. **`statusLine` is the only documented live context-pressure surface in
-    the product and is entirely unconfigured** in `.claude/settings.json`.
-    No hook payload (not even `PreCompact`'s) carries token/context-size
-    data — a hook-based "context pressure" monitor has no supported
-    implementation route; only a `statusLine` script does.
 
 **Resolved since the last sweep:** item 11 (seven read-only spokes
 instructed to write overflow findings to a scratchpad file they hold no
@@ -74,7 +69,15 @@ instructed to write overflow findings to a scratchpad file they hold no
 character-capped digest pattern into all seven agent prompts plus
 `researching-anthropic-guidance/SKILL.md` (which carried the same defect via
 its own Explore fan-out), and correcting `docs/contributing/subagent-context-management.md`'s
-false claims about which surfaces already used which pattern.
+false claims about which surfaces already used which pattern. Item 10
+(`statusLine` "entirely unconfigured") — wired at PR #869, broadened into a
+multi-widget dashboard with a `refreshInterval: 30` timer at PR #892
+(issue #879), and given an in-flight-spoke segment at the PR this line ships
+in; the underlying fact this item recorded (no hook payload carries
+token/context-size data, so `statusLine` remains the only implementation
+route for a context-pressure surface) is still true and now lives in
+`docs/contributing/hooks-reference.md`'s `statusLine` section instead of
+here as a stale "unconfigured" claim.
 
 ## Facets
 
