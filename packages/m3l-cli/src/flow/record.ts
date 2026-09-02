@@ -125,7 +125,7 @@ function canonicalizeForHash(value: unknown): unknown {
   if (typeof value === "object" && value !== null) {
     const canonical: Record<string, unknown> = {};
     for (const key of Object.keys(value).sort((left, right) =>
-      left < right ? -1 : 1,
+      left < right ? -1 : left > right ? 1 : 0,
     )) {
       canonical[key] = canonicalizeForHash(
         (value as Record<string, unknown>)[key],
@@ -347,6 +347,26 @@ function isValidNullableString(value: unknown): boolean {
 }
 
 /**
+ * Checks whether `value` is a non-negative integer — the only numeric shape
+ * this module ever persists or reads back.
+ *
+ * `typeof value === "number"` alone is not enough: `NaN`, `Infinity`, and
+ * negative or fractional values all satisfy it. That is not cosmetic here —
+ * `stepExecutionCount` from a resumed record seeds `run.ts`'s loop guard
+ * (`stepExecutionCount >= definition.maxStepExecutions`), and `NaN >= 50` is
+ * `false`, so a record carrying `NaN` would make the loop guard never trip at
+ * all; a negative value would widen the bound by that amount.
+ * `Number.isInteger` already rejects `NaN`, `Infinity`, and fractions, so only
+ * the `>= 0` bound needs adding on top.
+ *
+ * @param value - Any parsed JSON value.
+ * @returns Whether it is a finite, non-negative integer.
+ */
+function isNonNegativeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0;
+}
+
+/**
  * Checks whether `value` is a well-formed {@link M3LCliFlowStepExecution}.
  *
  * @param value - Any parsed JSON value.
@@ -362,8 +382,8 @@ function isValidStepExecution(
   return (
     typeof entry["stepId"] === "string" &&
     typeof entry["script"] === "string" &&
-    typeof entry["attempt"] === "number" &&
-    typeof entry["exitCode"] === "number" &&
+    isNonNegativeInteger(entry["attempt"]) &&
+    isNonNegativeInteger(entry["exitCode"]) &&
     isValidNullableOutcome(entry["outcome"]) &&
     isValidNullableString(entry["reportPath"]) &&
     isValidBranch(entry["branch"])
@@ -401,8 +421,8 @@ function hasValidRecordVerdict(record: Record<string, unknown>): boolean {
   return (
     typeof status === "string" &&
     RECOGNIZED_STATUSES.has(status) &&
-    typeof record["exitCode"] === "number" &&
-    typeof record["stepExecutionCount"] === "number" &&
+    isNonNegativeInteger(record["exitCode"]) &&
+    isNonNegativeInteger(record["stepExecutionCount"]) &&
     isValidNullableString(record["haltingStepId"]) &&
     isValidNullableString(record["resumeStepId"])
   );
@@ -435,6 +455,24 @@ function isValidFlowRunRecord(value: unknown): value is M3LCliFlowRunRecord {
 }
 
 /**
+ * Projects a validated {@link M3LCliFlowBranch} onto exactly its declared
+ * shape.
+ *
+ * The two string forms (`"continue"` / `"stop"`) need no rebuilding, but the
+ * `{ goto: string }` form is copied by reference from the parsed JSON unless
+ * rebuilt here — and {@link isValidBranch} only requires that `goto` be a
+ * string, so an object carrying extra keys alongside it passes validation.
+ * Rebuilding a fresh object with only `goto` is what keeps the record
+ * projection genuinely total rather than shallow at this one field.
+ *
+ * @param branch - An already-validated branch.
+ * @returns The projected branch.
+ */
+function projectFlowBranch(branch: M3LCliFlowBranch): M3LCliFlowBranch {
+  return typeof branch === "string" ? branch : { goto: branch.goto };
+}
+
+/**
  * Projects a validated record onto exactly the declared shape, so an
  * unrecognized extra key in the file cannot ride along into the typed value.
  *
@@ -464,7 +502,7 @@ function projectFlowRunRecord(
       exitCode: entry.exitCode,
       outcome: entry.outcome,
       reportPath: entry.reportPath,
-      branch: entry.branch,
+      branch: projectFlowBranch(entry.branch),
     })),
   };
 }

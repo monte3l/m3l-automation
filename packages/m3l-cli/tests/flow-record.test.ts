@@ -868,6 +868,194 @@ describe("readFlowRunRecord", () => {
   });
 });
 
+/*
+ * A JSON-text fixture can never carry a literal `NaN`, `-1`, or `1.5` for a
+ * field the real writer only ever emits as a valid non-negative integer — but
+ * `isNonNegativeInteger` has to defend the READ path against a record that
+ * was hand-edited, produced by a future writer bug, or corrupted on disk.
+ * `JSON.parse` itself cannot produce `NaN` from any valid JSON text (there is
+ * no such token), so these fixtures spy on the global `JSON.parse` to hand
+ * `readFlowRunRecord` an already-parsed value carrying the bad number
+ * directly — the same seam the module itself reads from, one call deeper.
+ */
+const VALID_RECORD_FOR_NUMERIC_FIXTURES = buildFlowRunRecord(buildInput());
+
+const VALID_STEP_EXECUTION_FOR_NUMERIC_FIXTURES: M3LCliFlowStepExecution = {
+  stepId: "dump",
+  script: "sqs-etl",
+  attempt: 1,
+  exitCode: 0,
+  outcome: "success",
+  reportPath: null,
+  branch: "continue",
+};
+
+/** One mutator per numeric field this module validates on read. */
+const NUMERIC_FIELD_MUTATIONS: readonly (readonly [
+  label: string,
+  mutate: (value: number) => unknown,
+])[] = [
+  [
+    "record-level exitCode",
+    (value) => ({ ...VALID_RECORD_FOR_NUMERIC_FIXTURES, exitCode: value }),
+  ],
+  [
+    "record-level stepExecutionCount",
+    (value) => ({
+      ...VALID_RECORD_FOR_NUMERIC_FIXTURES,
+      stepExecutionCount: value,
+    }),
+  ],
+  [
+    "a step execution's attempt",
+    (value) => ({
+      ...VALID_RECORD_FOR_NUMERIC_FIXTURES,
+      stepExecutions: [
+        { ...VALID_STEP_EXECUTION_FOR_NUMERIC_FIXTURES, attempt: value },
+      ],
+    }),
+  ],
+  [
+    "a step execution's exitCode",
+    (value) => ({
+      ...VALID_RECORD_FOR_NUMERIC_FIXTURES,
+      stepExecutions: [
+        { ...VALID_STEP_EXECUTION_FOR_NUMERIC_FIXTURES, exitCode: value },
+      ],
+    }),
+  ],
+];
+
+describe("readFlowRunRecord — rejects a negative or fractional numeric field", () => {
+  test.each(
+    NUMERIC_FIELD_MUTATIONS.flatMap(([label, mutate]) => [
+      [`${label} is negative`, mutate(-1)] as const,
+      [`${label} is fractional`, mutate(1.5)] as const,
+    ]),
+  )("rejects when %s", (_label, corrupted) => {
+    vi.spyOn(JSON, "parse").mockReturnValueOnce(corrupted);
+    vi.spyOn(fs, "readFileSync").mockReturnValue("ignored");
+
+    let thrown: unknown;
+    try {
+      readFlowRunRecord(RECORD_PATH);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCliError);
+    expect((thrown as M3LCliError).code).toBe("ERR_CLI_FLOW_RECORD_INVALID");
+  });
+});
+
+describe("readFlowRunRecord — rejects NaN specifically", () => {
+  // `NaN` gets its own block, not a row in the table above: `typeof NaN ===
+  // "number"` is `true`, so a bare `typeof` check lets it through. That is
+  // not cosmetic for `stepExecutionCount` — it seeds `run.ts`'s loop guard
+  // (`stepExecutionCount >= definition.maxStepExecutions`), and `NaN >= 50`
+  // evaluates to `false`, so a record carrying `NaN` there would make the
+  // loop guard never trip at all. The other three fields share the same
+  // `isNonNegativeInteger` guard, so they are pinned here too.
+  test("rejects a record whose stepExecutionCount is NaN — the loop guard would never trip", () => {
+    vi.spyOn(JSON, "parse").mockReturnValueOnce({
+      ...VALID_RECORD_FOR_NUMERIC_FIXTURES,
+      stepExecutionCount: NaN,
+    });
+    vi.spyOn(fs, "readFileSync").mockReturnValue("ignored");
+
+    expect(() => readFlowRunRecord(RECORD_PATH)).toThrow(M3LCliError);
+  });
+
+  test("rejects a record whose exitCode is NaN", () => {
+    vi.spyOn(JSON, "parse").mockReturnValueOnce({
+      ...VALID_RECORD_FOR_NUMERIC_FIXTURES,
+      exitCode: NaN,
+    });
+    vi.spyOn(fs, "readFileSync").mockReturnValue("ignored");
+
+    expect(() => readFlowRunRecord(RECORD_PATH)).toThrow(M3LCliError);
+  });
+
+  test("rejects a step execution whose attempt is NaN", () => {
+    vi.spyOn(JSON, "parse").mockReturnValueOnce({
+      ...VALID_RECORD_FOR_NUMERIC_FIXTURES,
+      stepExecutions: [
+        { ...VALID_STEP_EXECUTION_FOR_NUMERIC_FIXTURES, attempt: NaN },
+      ],
+    });
+    vi.spyOn(fs, "readFileSync").mockReturnValue("ignored");
+
+    expect(() => readFlowRunRecord(RECORD_PATH)).toThrow(M3LCliError);
+  });
+
+  test("rejects a step execution whose exitCode is NaN", () => {
+    vi.spyOn(JSON, "parse").mockReturnValueOnce({
+      ...VALID_RECORD_FOR_NUMERIC_FIXTURES,
+      stepExecutions: [
+        { ...VALID_STEP_EXECUTION_FOR_NUMERIC_FIXTURES, exitCode: NaN },
+      ],
+    });
+    vi.spyOn(fs, "readFileSync").mockReturnValue("ignored");
+
+    expect(() => readFlowRunRecord(RECORD_PATH)).toThrow(M3LCliError);
+  });
+});
+
+describe("readFlowRunRecord — projects an object-form branch onto exactly { goto }", () => {
+  test("strips an unrecognized key from a { goto, extra } branch", () => {
+    const validRecord = buildFlowRunRecord(
+      buildInput({
+        result: buildResult({
+          stepExecutionCount: 1,
+          stepExecutions: [DUMP_ATTEMPT_1],
+        }),
+      }),
+    );
+    const stepExecutionWithExtraBranchKey = {
+      stepId: "dump",
+      script: "sqs-etl",
+      attempt: 1,
+      exitCode: 0,
+      outcome: "success",
+      reportPath: "/workspace/data/output/a/run-report.json",
+      branch: { goto: "dump", extra: 1 },
+    };
+
+    vi.spyOn(fs, "readFileSync").mockReturnValue(
+      JSON.stringify({
+        ...validRecord,
+        stepExecutions: [stepExecutionWithExtraBranchKey],
+      }),
+    );
+
+    const read = readFlowRunRecord(RECORD_PATH);
+
+    // `toEqual`, not `toMatchObject`: an implementation that persisted the
+    // parsed branch object unchanged would carry `extra` along, and
+    // `toMatchObject` would pass regardless — this assertion must fail then.
+    expect(read?.stepExecutions[0]?.branch).toEqual({ goto: "dump" });
+  });
+
+  test.each(["continue", "stop"] as const)(
+    "round-trips the '%s' string-form branch unchanged",
+    (branch) => {
+      const record = buildFlowRunRecord(
+        buildInput({
+          result: buildResult({
+            stepExecutionCount: 1,
+            stepExecutions: [{ ...DUMP_ATTEMPT_1, branch }],
+          }),
+        }),
+      );
+      vi.spyOn(fs, "readFileSync").mockReturnValue(JSON.stringify(record));
+
+      const read = readFlowRunRecord(RECORD_PATH);
+
+      expect(read?.stepExecutions[0]?.branch).toBe(branch);
+    },
+  );
+});
+
 describe("flow/record — types", () => {
   test("the record's declared shape", () => {
     expectTypeOf<M3LCliFlowRunRecord>().toEqualTypeOf<{
