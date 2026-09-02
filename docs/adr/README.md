@@ -142,3 +142,4 @@ surface).
 | 0086 | [Per-attempt retry metadata leaves `core/polling` by a sibling detailed method](./0086-retry-attempt-metadata-seam.md)                                    | Accepted                                              |
 | 0087 | [Claude Code session naming convention](./0087-claude-code-session-naming-convention.md)                                                                  | Accepted; amended by ADR-0088                         |
 | 0088 | [Automatic session naming via a launcher wrapper](./0088-automatic-session-naming-via-launcher.md)                                                        | Accepted; amends ADR-0087                             |
+| 0089 | [Skill invocation stance, the listing-budget ceiling, and where routing guidance lives](./0089-skill-invocation-stance-and-listing-budget.md)             | Accepted                                              |

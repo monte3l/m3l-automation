@@ -1083,6 +1083,109 @@ describe("collectSkillDescriptions", () => {
     expect(collectSkillDescriptions(skillsDir)).toEqual([]);
     expect(readdirSyncSpy).not.toHaveBeenCalled();
   });
+
+  test("a skill with disable-model-invocation: true is excluded entirely", () => {
+    vi.spyOn(fs, "existsSync").mockImplementation((p) => {
+      const path = String(p);
+      return (
+        path === skillsDir ||
+        path === join(skillsDir, "harness-guide", "SKILL.md")
+      );
+    });
+    vi.spyOn(fs, "readdirSync").mockImplementation(((current: string) => {
+      if (String(current) === skillsDir) {
+        return [fakeDirent("harness-guide", "dir")];
+      }
+      throw new Error(`unexpected readdirSync call: ${String(current)}`);
+    }) as unknown as typeof fs.readdirSync);
+    const skillMdContent = [
+      "---",
+      "name: harness-guide",
+      "description: some description text",
+      "disable-model-invocation: true",
+      "---",
+    ].join("\n");
+    vi.spyOn(fs, "readFileSync").mockImplementation(((p: string) => {
+      const path = String(p);
+      if (path === join(skillsDir, "harness-guide", "SKILL.md"))
+        return skillMdContent;
+      throw new Error(`unexpected readFileSync call: ${path}`);
+    }) as typeof fs.readFileSync);
+
+    expect(collectSkillDescriptions(skillsDir)).toEqual([]);
+  });
+
+  test("a mix of an excluded skill and a normal skill returns only the normal skill", () => {
+    vi.spyOn(fs, "existsSync").mockImplementation((p) => {
+      const path = String(p);
+      return (
+        path === skillsDir ||
+        path === join(skillsDir, "harness-guide", "SKILL.md") ||
+        path === join(skillsDir, "auditing", "SKILL.md")
+      );
+    });
+    vi.spyOn(fs, "readdirSync").mockImplementation(((current: string) => {
+      if (String(current) === skillsDir) {
+        return [
+          fakeDirent("harness-guide", "dir"),
+          fakeDirent("auditing", "dir"),
+        ];
+      }
+      throw new Error(`unexpected readdirSync call: ${String(current)}`);
+    }) as unknown as typeof fs.readdirSync);
+    const excludedContent = [
+      "---",
+      "name: harness-guide",
+      "description: some description text",
+      "disable-model-invocation: true",
+      "---",
+    ].join("\n");
+    const auditDesc = "audit things";
+    vi.spyOn(fs, "readFileSync").mockImplementation(((p: string) => {
+      const path = String(p);
+      if (path === join(skillsDir, "harness-guide", "SKILL.md"))
+        return excludedContent;
+      if (path === join(skillsDir, "auditing", "SKILL.md"))
+        return `---\ndescription: ${auditDesc}\n---`;
+      throw new Error(`unexpected readFileSync call: ${path}`);
+    }) as typeof fs.readFileSync);
+
+    expect(collectSkillDescriptions(skillsDir)).toEqual([
+      { name: "auditing", chars: auditDesc.length },
+    ]);
+  });
+
+  test("a skill with disable-model-invocation: false is not excluded", () => {
+    vi.spyOn(fs, "existsSync").mockImplementation((p) => {
+      const path = String(p);
+      return (
+        path === skillsDir || path === join(skillsDir, "auditing", "SKILL.md")
+      );
+    });
+    vi.spyOn(fs, "readdirSync").mockImplementation(((current: string) => {
+      if (String(current) === skillsDir) {
+        return [fakeDirent("auditing", "dir")];
+      }
+      throw new Error(`unexpected readdirSync call: ${String(current)}`);
+    }) as unknown as typeof fs.readdirSync);
+    const auditDesc = "audit things";
+    const skillMdContent = [
+      "---",
+      `description: ${auditDesc}`,
+      "disable-model-invocation: false",
+      "---",
+    ].join("\n");
+    vi.spyOn(fs, "readFileSync").mockImplementation(((p: string) => {
+      const path = String(p);
+      if (path === join(skillsDir, "auditing", "SKILL.md"))
+        return skillMdContent;
+      throw new Error(`unexpected readFileSync call: ${path}`);
+    }) as typeof fs.readFileSync);
+
+    expect(collectSkillDescriptions(skillsDir)).toEqual([
+      { name: "auditing", chars: auditDesc.length },
+    ]);
+  });
 });
 
 // ---------------------------------------------------------------------------

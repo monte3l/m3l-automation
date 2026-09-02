@@ -478,13 +478,25 @@ export function extractResultEnvelope(events) {
  * Whether a case's fired-skill requirement was met.
  *
  * Every case defaults to requiring the skill under test to actually fire —
- * `expect_skill_fired: false` opts a case OUT for the rare case that tests
- * the skill's own contract to skip itself (`.claude/skills/starting-work/
- * evals/evals.json`#4: a read-only research prompt, where the SKILL.md's own
- * description says "Skip for research/questions"). That case exists to grade
- * whether the model correctly does NOT gate a read-only question — asserting
- * `starting-work` must fire there would penalize the exact behavior it's
- * testing for.
+ * `expect_skill_fired: false` opts a case OUT for two distinct reasons:
+ *
+ * 1. The case tests the skill's own contract to skip itself
+ *    (`.claude/skills/starting-work/evals/evals.json`#4: a read-only
+ *    research prompt, where the SKILL.md's own description says "Skip for
+ *    research/questions"). That case grades whether the model correctly
+ *    does NOT gate a read-only question — asserting `starting-work` must
+ *    fire there would penalize the exact behavior it's testing for.
+ * 2. The case's prompt invokes the skill via a literal leading `/slug`
+ *    rather than prose (needed for any `disable-model-invocation: true`
+ *    skill, e.g. `harness-guide`, which is never prose-reachable at all). A
+ *    probe confirmed a `/slug`-prefixed prompt is resolved by the CLI
+ *    BEFORE the model's turn — the skill's instructions are genuinely
+ *    followed, verified by the model's response correctly using seeded file
+ *    content, but no `Skill` tool_use block ever appears in the stream to
+ *    observe, because the model never autonomously chose to call the tool;
+ *    the choice was already made for it. {@link extractInvokedSkills} can
+ *    only see the PROSE-triggered path, where the model itself decides to
+ *    call `Skill` as an explicit tool use.
  *
  * @param {string} skillName the skill under test (the evals.json directory)
  * @param {string[]} invokedSkills from {@link extractInvokedSkills}
