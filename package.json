@@ -63,6 +63,7 @@
     "check:template-format": "node bin/check-template-format.mjs",
     "scaffold:script": "node bin/scaffold-script.mjs",
     "check:agents": "node bin/check-agents.mjs",
+    "check:skill-frontmatter": "node bin/check-skill-frontmatter.mjs",
     "check:hooks": "node bin/check-hooks.mjs",
     "check:host-resources": "node bin/check-host-resources.mjs",
     "check:node-version": "node bin/check-node-version.mjs",

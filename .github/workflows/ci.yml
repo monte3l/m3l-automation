@@ -588,6 +588,14 @@ jobs:
       - name: Check subagent configuration (agents)
         run: pnpm check:agents
 
+      # Skill frontmatter: every .claude/skills/*/SKILL.md has a non-empty
+      # description, its name: matches the directory, and every skill has a
+      # row in docs/contributing/skills-catalog.md — the skill-side
+      # counterpart to "Check subagent configuration (agents)" above, which
+      # had no equivalent for skills before this gate.
+      - name: Check skill frontmatter
+        run: pnpm check:skill-frontmatter
+
       # Dynamic-workflow surface (ADR-0025): .claude/workflows/* model/effort
       # choices match the MODEL-MATRIX and every script declares its max-agents
       # guardrail. Distinct from "Check workflow docs" above, which reconciles
