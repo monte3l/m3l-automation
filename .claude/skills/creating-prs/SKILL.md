@@ -258,6 +258,15 @@ local safety net and CI re-runs everything regardless. (Warming turbo with
 `pnpm build` first only speeds `build`/`typecheck`, not the `test:coverage`/`lint`
 dominators, so it won't save the push.)
 
+**A session-level process restart drops harness-tracked background jobs and
+can wipe the scratchpad their logs were written into**, leaving a
+`task-notification` that reports `status: stopped` with no completion record
+even though the underlying `git push`/`pnpm verify` was still running on the
+host. If a restart is a realistic risk for this session, detach the command
+from the harness process instead — `nohup <cmd> > <log-in-a-durable-path>
+2>&1 & disown` — and poll it by PID and log path rather than relying solely
+on the task-notification (`docs/logs/2026-09-02-reinject-compact-resume.md`).
+
 If the push is rejected as non-fast-forward (the branch was rebased in Step 2
 after a previous push), re-push with lease protection — this is safe on **your
 own feature branch** but never on a shared branch (per CLAUDE.md, "never

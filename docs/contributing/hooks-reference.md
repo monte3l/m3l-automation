@@ -2,7 +2,7 @@
 
 The single authoritative inventory of every hook wired into `.claude/settings.json`
 (implemented under `.claude/hooks/*.mjs`). CLAUDE.md's "Claude Code hooks" note
-is deliberately a one-paragraph pointer to this file — the full 25-hook list
+is deliberately a one-paragraph pointer to this file — the full 26-hook list
 lives here so it stays in one place instead of drifting across sections.
 `pnpm check:hooks` validates that every command below resolves to a real file,
 every event name is a real Claude Code lifecycle event, every hook carries
@@ -50,6 +50,7 @@ below), unlike the three above.
 | SessionStart     | `compact\|resume\|startup`                                                                                                                               | `reinject-compact-handoff.mjs`      | Reads the `PreCompact`-written handoff artifact back as `additionalContext` after a compaction, a resumed session, or a fresh startup on a dirty branch (ADR-0078); flags a >24h-old handoff as likely stale; one-shot, deletes the artifact once consumed. | advisory |
 | SessionStart     | —                                                                                                                                                        | `warn-host-resources.mjs`           | Runs `bin/check-host-resources.mjs` and warns when an OOM-livelock mitigation (earlyoom/oomd, zram, `MemoryMax`, `CLAUDE_CODE_TOOL_MEMORY_LIMIT`) is missing, or another `claude` process is already running (ADR-0080).                                    | advisory |
 | SessionStart     | —                                                                                                                                                        | `warn-node-version.mjs`             | Runs `bin/check-node-version.mjs` and warns when `.node-version` has drifted from an `engines.node` floor or a workflow's Node provisioning, or when this machine is on a different Node major than the pin (ADR-0003 amendment).                           | advisory |
+| SessionStart     | `startup\|clear`                                                                                                                                         | `rotate-session-incidents.mjs`      | Deletes `tmp/session-incidents.jsonl` if present, so the durable spoke-incident log `detect-spoke-truncation.mjs` writes doesn't accumulate across sessions; scoped away from `compact`/`resume` so it never wipes an in-flight session's own records.      | advisory |
 | PreCompact       | —                                                                                                                                                        | `write-compact-handoff.mjs`         | Writes branch/worktree, last commit + signature, uncommitted files, and any `tmp/`-scratch journals to `tmp/compact-handoff.json` before compaction (ADR-0078).                                                                                             | advisory |
 | UserPromptSubmit | —                                                                                                                                                        | `inject-decision-gate.mjs`          | Injects a decision-gate reminder (location/branch/PR/push) when a prompt looks like change-work; one of two hooks that inject context rather than blocking (the other is `reinject-compact-handoff.mjs` above).                                             | advisory |
 | PreToolUse       | `Bash`                                                                                                                                                   | `guard-git-push-signed.mjs`         | Blocks a `git push` issued via Bash when any outgoing commit is unsigned/invalid — the agent-side layer of the 3-layer signed-commit scheme.                                                                                                                | blocking |
@@ -69,7 +70,7 @@ below), unlike the three above.
 | PostToolUse      | `Write\|Edit` if `packages/m3l-common/src/**`                                                                                                            | `guard-provenance-staleness.mjs`    | Warns when a `packages/m3l-common/src/**` edit makes a provenance sidecar's recorded commit stale.                                                                                                                                                          | advisory |
 | PostToolUse      | `Write\|Edit` if `docs/reference/**/*.provenance.json`, `packages/m3l-common/src/**/index.ts`, `docs/implementation-status.md`, `docs/reference/**/*.md` | `guard-index-staleness.mjs`         | Warns when an edit to a reference-index input causes `catalog.json` / `symbol-map.json` / README to drift.                                                                                                                                                  | advisory |
 | PostToolUse      | `Write\|Edit` if `packages/m3l-common/src/**`                                                                                                            | `guard-red-phase-comments.mjs`      | Warns when implementation lands but the paired test file still carries a stale RED-phase header comment.                                                                                                                                                    | advisory |
-| SubagentStop     | —                                                                                                                                                        | `detect-spoke-truncation.mjs`       | Flags a finished spoke whose last message looks cut off mid-turn (empty, a trailing ellipsis, or an unclosed intent phrase) and reminds the hub to verify before trusting it.                                                                               | advisory |
+| SubagentStop     | —                                                                                                                                                        | `detect-spoke-truncation.mjs`       | Flags a finished spoke whose last message looks cut off mid-turn (empty, a trailing ellipsis, or an unclosed intent phrase), reminds the hub to verify before trusting it, and appends a `kind: "truncation"` record to `tmp/session-incidents.jsonl`.      | advisory |
 | Stop             | —                                                                                                                                                        | `remind-sync-docs.mjs`              | Session-end reminders: run `/syncing-docs` if `docs/implementation-status.md` changed, run `check:test-counts` if tests changed, delete stray scratch/repro test files.                                                                                     | advisory |
 
 **Blocking** hooks exit 2 and reject the tool call outright. **Advisory**
@@ -78,12 +79,15 @@ hooks split by event: the seven `PostToolUse` ones (`post-edit-md-verify`,
 `guard-provenance-staleness`, `guard-index-staleness`,
 `guard-red-phase-comments`) also exit 2 to print a reminder to stderr — the
 edit already landed by the time `PostToolUse` fires, so this never stops it,
-only surfaces context back to Claude. The remaining nine advisory hooks
+only surfaces context back to Claude. The remaining ten advisory hooks
 (`guard-worktree-ready`, `reinject-compact-handoff`, `warn-host-resources`,
-`warn-node-version`, `write-compact-handoff`, `inject-decision-gate`,
-`guard-writer-dispatch-journal`, `detect-spoke-truncation`,
-`remind-sync-docs`) exit 0 and inject their message via stdout/JSON instead —
-their events (`SessionStart`, `PreCompact`, `UserPromptSubmit`,
+`warn-node-version`, `rotate-session-incidents`, `write-compact-handoff`,
+`inject-decision-gate`, `guard-writer-dispatch-journal`,
+`detect-spoke-truncation`, `remind-sync-docs`) exit 0, optionally injecting
+a message via stdout/JSON when there is something worth reporting —
+`rotate-session-incidents` is silent even on a successful rotation, since it
+never has anything to report. Their events (`SessionStart`,
+`PreCompact`, `UserPromptSubmit`,
 `PreToolUse: Agent`, `SubagentStop`, `Stop`) have no "already happened"
 tool call for exit 2 to react to.
 
