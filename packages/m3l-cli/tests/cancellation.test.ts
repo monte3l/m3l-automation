@@ -11,15 +11,21 @@
  * keep the tests below injecting a `vi.fn()` spy — never pass a real
  * `process.kill` callback here.
  *
- * RED phase: `src/run/cancellation.ts` does not exist yet — every import
- * below will fail to resolve. That is the expected failure for this phase.
+ * Contract coverage: `createCancellationScope` (three-phase signal handling,
+ * dispose cleanup, idempotency) and `escalateBySignal` (listener-removal
+ * ordering — the assertion that catches the shipped Must-fix bug where the
+ * re-raise preceded listener removal, causing the signal to round-trip into
+ * the still-registered scope handlers instead of terminating the process).
  */
 
 import { EventEmitter } from "node:events";
 
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import { createCancellationScope } from "../src/run/cancellation.js";
+import {
+  createCancellationScope,
+  escalateBySignal,
+} from "../src/run/cancellation.js";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -246,4 +252,101 @@ describe("createCancellationScope — default emitter uses process", () => {
 
     scope.dispose(); // clean up real process listeners immediately
   });
+});
+
+// ---------------------------------------------------------------------------
+// escalateBySignal — ordering invariant and signal/pid threading
+//
+// WHY THIS SUITE EXISTS (Must-fix bug post-mortem):
+// The original implementation called process.kill BEFORE removing listeners.
+// Node.js suppresses a signal's OS default disposition whenever any listener
+// is registered for it, so the re-raised signal round-tripped into the still-
+// registered scope handlers (hitting the `escalated === true` no-op) instead
+// of terminating the process. The operator was trapped, requiring SIGKILL
+// from another terminal.
+//
+// The previous 13 tests all inject a `killer` spy. They prove "the killer was
+// called" — necessary but not sufficient. They never exercise the real
+// escalation path (escalateBySignal), so they could not catch the wrong order.
+//
+// UNCOVERABLE BRANCH: the `target = process` default cannot be exercised in
+// tests — it would call process.removeAllListeners(signal) and then
+// process.kill(process.pid, signal), killing the Vitest worker. This is
+// exactly why the defect shipped originally: without an injectable `target`,
+// there was no safe way to assert the ordering, so the ordering was never
+// tested. Do not "simplify" the injectable target away — it is the only seam
+// that makes this ordering assertion safe to run.
+// ---------------------------------------------------------------------------
+
+describe("escalateBySignal — ordering and forwarding", () => {
+  test.each(["SIGINT", "SIGTERM"] as const)(
+    "%s: removeAllListeners is called before kill (ordering assertion)",
+    (signal) => {
+      // Record both operations into a single ordered array so the sequence
+      // can be asserted. Two separate toHaveBeenCalled() assertions are
+      // insufficient: they pass even when kill fires before removeAllListeners
+      // (the exact bug this test exists to catch). The ordered-array form
+      // fails immediately when the statements are swapped or when
+      // removeAllListeners is deleted entirely.
+      const ops: string[] = [];
+      const target = {
+        pid: 99999,
+        removeAllListeners(event: string): void {
+          ops.push(`remove:${event}`);
+        },
+        kill(_pid: number, sig: string): void {
+          ops.push(`kill:${sig}`);
+        },
+      };
+
+      escalateBySignal(signal, target);
+
+      // "remove" must come first; if the implementation swaps the two
+      // statements (kill before removeAllListeners), this assertion fails
+      // because ops[0] would be `kill:${signal}` instead of
+      // `remove:${signal}`. If removeAllListeners is deleted entirely, ops
+      // would be [`kill:${signal}`] (length 1) and the assertion also fails.
+      expect(ops).toEqual([`remove:${signal}`, `kill:${signal}`]);
+    },
+  );
+
+  test("pid is forwarded from the target, not hardcoded", () => {
+    const receivedPids: number[] = [];
+    const distinctPid = 12345;
+    const target = {
+      pid: distinctPid,
+      removeAllListeners(_event: string): void {},
+      kill(pid: number, _sig: string): void {
+        receivedPids.push(pid);
+      },
+    };
+
+    escalateBySignal("SIGINT", target);
+
+    expect(receivedPids).toHaveLength(1);
+    // Proves target.pid is read at call time, not hardcoded as e.g. 0 or 1.
+    expect(receivedPids[0]).toBe(distinctPid);
+  });
+
+  test.each(["SIGINT", "SIGTERM"] as const)(
+    "%s: signal string is threaded to both removeAllListeners and kill",
+    (signal) => {
+      const removedEvents: string[] = [];
+      const killedSignals: string[] = [];
+      const target = {
+        pid: 1,
+        removeAllListeners(event: string): void {
+          removedEvents.push(event);
+        },
+        kill(_pid: number, sig: string): void {
+          killedSignals.push(sig);
+        },
+      };
+
+      escalateBySignal(signal, target);
+
+      expect(removedEvents).toEqual([signal]);
+      expect(killedSignals).toEqual([signal]);
+    },
+  );
 });

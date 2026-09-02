@@ -50,7 +50,9 @@ vi.mock("../src/commands/inspect.js", () => ({
 vi.mock("../src/history/store.js", () => ({
   recordHistoryEntry: vi.fn(),
 }));
-// U11: cancellation scope — required RED failure until src/run/cancellation.ts exists
+// U11: cancellation scope — dynamic.ts creates a scope for the in-process
+// branch only, to deliver context.signal. The spawn path delegates parent
+// survival to main.ts's runCli (see execute.ts:194-197).
 vi.mock("../src/run/cancellation.js", () => ({
   createCancellationScope: vi.fn(),
 }));
@@ -1469,7 +1471,9 @@ describe("runDynamic — in-process branch installs a cancellation scope (U11 C1
 
   test("does NOT create a cancellation scope for the non-in-process spawn path", async () => {
     // Regression guard: scope creation must be gated on the in-process flag.
-    // The spawn path (executeScript) has its own scope in execute.ts.
+    // Parent survival for the spawn path is owned by main.ts's runCli, which
+    // installs a scope around every dispatch; dynamic.ts must not add a second
+    // scope for the spawn branch (execute.ts:194-197).
     discoverScriptsMock.mockReturnValue(knownCandidates);
     loadParametersCachedMock.mockResolvedValue(descriptors);
     executeScriptMock.mockResolvedValue(0);

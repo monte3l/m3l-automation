@@ -54,24 +54,89 @@ export interface M3LCancellationScopeOptions {
    */
   readonly emitter?: EventEmitter;
   /**
-   * Called exactly once when the second signal arrives, to re-raise it at
-   * this process so its default OS disposition (termination) applies. Defaults
-   * to `(sig) => process.kill(process.pid, sig)`. Tests inject a spy so the
-   * real `process.kill` path is never reached from within the test suite.
+   * Called exactly once when the second signal arrives, to restore the OS's
+   * default termination disposition and re-raise the signal. Defaults to
+   * {@link escalateBySignal}, which removes all listeners for the signal
+   * before calling `process.kill` so Node's default disposition is not
+   * suppressed. Tests inject a spy so the real escalation path is never
+   * reached from within the test suite.
    */
   readonly killer?: (signal: string) => void;
 }
 
 /**
- * The default escalation killer: re-raises the received signal at this
- * process so the OS's default disposition (immediate termination) applies.
+ * Restores the OS's default signal disposition for `signal` by removing all
+ * listeners for that signal, then re-raises it at the target process so the
+ * OS's default termination disposition (exit code 128 + signo) actually
+ * applies.
+ *
+ * **Why listener removal must precede the re-raise:** Node.js suppresses a
+ * signal's OS default disposition whenever at least one listener is registered
+ * for it. Calling `process.kill(pid, sig)` while this scope's own
+ * `sigintHandler`/`sigtermHandler` — or any sibling scope's listeners (e.g.
+ * the `main.ts` survival scope and the `dynamic.ts` per-dispatch scope that
+ * can both be live simultaneously) — are still attached delivers the signal
+ * right back into those handlers instead of terminating the process. Using
+ * `removeAllListeners` rather than removing only this scope's two handlers is
+ * correct and intentional: an operator sending a second signal means
+ * "force-terminate regardless of what is in flight", overriding every
+ * in-process signal handler, including sibling scopes.
+ *
+ * The `target` parameter is injectable so tests can assert that
+ * `removeAllListeners` is called *before* `kill` without actually killing the
+ * Vitest worker.
+ *
+ * @param signal - The signal string to restore and re-raise (e.g. `"SIGINT"`).
+ * @param target - The object whose listeners are cleared and whose `kill` is
+ *   called. Defaults to `process`. Tests inject a fake target.
+ *
+ * @example
+ * ```ts
+ * import { escalateBySignal } from "./cancellation.js";
+ *
+ * // In a test: verify ordering without killing the Vitest worker
+ * const ops: string[] = [];
+ * escalateBySignal("SIGINT", {
+ *   pid: 1,
+ *   removeAllListeners(event: string) { ops.push(`remove:${event}`); },
+ *   kill(_pid: number, sig: string) { ops.push(`kill:${sig}`); },
+ * });
+ * // ops === ["remove:SIGINT", "kill:SIGINT"]
+ * ```
+ */
+export function escalateBySignal(
+  signal: string,
+  target: {
+    readonly pid: number;
+    removeAllListeners(event: string): void;
+    kill(pid: number, signal: string): void;
+  } = process,
+): void {
+  // Remove all listeners for this signal before re-raising so that Node's
+  // default OS disposition (terminate) is restored. Without this, the signal
+  // is re-delivered into the still-registered handlers and the process never
+  // exits. See TSDoc above for the full rationale.
+  target.removeAllListeners(signal);
+  target.kill(target.pid, signal);
+}
+
+/**
+ * The default escalation killer: removes all listeners for `signal` to restore
+ * the OS's default disposition, then re-raises the signal at this process so
+ * termination actually applies.
+ *
+ * Listener removal is required because Node.js suppresses a signal's OS
+ * default disposition whenever any listener is registered for it. Without it,
+ * `process.kill` delivers the signal back into the still-registered handlers
+ * (including sibling scopes) rather than terminating the process. See
+ * {@link escalateBySignal} for the full rationale.
  *
  * Defined as a named module-level function — not an inline arrow inside
  * {@link createCancellationScope} — so tests that inject their own `killer`
- * spy have no path to this real `process.kill` call.
+ * spy have no path to this real escalation code.
  */
 function defaultKiller(signal: string): void {
-  process.kill(process.pid, signal);
+  escalateBySignal(signal);
 }
 
 /**
@@ -95,7 +160,9 @@ function defaultKiller(signal: string): void {
  * listener accumulation across successive calls.
  *
  * @param options - Optional emitter and killer overrides; defaults to
- *   `process` and `process.kill(process.pid, sig)`.
+ *   `process` and {@link escalateBySignal} (which removes all listeners for
+ *   the signal before re-raising, restoring the OS's default termination
+ *   disposition).
  * @returns A {@link M3LCancellationScope} with an {@link AbortSignal} and an
  *   idempotent `dispose` function.
  *
@@ -137,7 +204,9 @@ export function createCancellationScope(
     } else if (!escalated) {
       // Second signal: escalate via the injected killer. An operator
       // sending two Ctrl-C must always be able to force-terminate the
-      // process (A2 — no operator trapping).
+      // process (A2 — no operator trapping). The default killer removes all
+      // listeners for the signal before re-raising so Node's OS default
+      // disposition (terminate) applies; see escalateBySignal.
       escalated = true;
       killer(sig);
     }

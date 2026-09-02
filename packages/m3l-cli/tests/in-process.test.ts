@@ -641,13 +641,10 @@ describe("runInProcess — outcome-to-exit-code parity", () => {
 // ---------------------------------------------------------------------------
 // U11 additions — B6: signal forwarding
 //
-// RED failure expected: M3LCliInProcessOptions does not yet carry a `signal`
-// field — the type assertion and the `buildOptions({ signal })` call will
-// produce "Object literal may only specify known properties" until the
-// implementer adds `readonly signal: AbortSignal | undefined` to the
-// interface. The runtime forwarding tests will also fail because the
-// implementation currently hardcodes `signal: undefined` in the built
-// context rather than reading it from `options`.
+// runInProcess must accept a signal on M3LCliInProcessOptions and forward it
+// into the command context so the script can observe cancellation. The field
+// uses the required-holding-undefined convention (`signal: AbortSignal |
+// undefined`, not `signal?`) so callers must be explicit.
 // ---------------------------------------------------------------------------
 
 describe("runInProcess — signal forwarding (U11 B6)", () => {
@@ -794,11 +791,10 @@ describe("runInProcess — non-abort execute throw still ERR_CLI_IN_PROCESS_FAIL
       Object.assign(new Error("other error"), { code: "ERR_UNRELATED" }),
     ],
     [
-      "an error with code ERR_OPERATION_ABORTED but no message (edge)",
-      // An error with the abort code AND `aborted: false` on its signal
-      // is still treated as abort-shaped by code alone — but an error
-      // with a completely different code must not be caught.
-      Object.assign(new Error(""), { code: "ERR_NETWORK_CHANGED" }),
+      "an error with an unrecognised network error code (ERR_NETWORK_CHANGED)",
+      Object.assign(new Error("network topology changed"), {
+        code: "ERR_NETWORK_CHANGED",
+      }),
     ],
   ])(
     "wraps '%s' into ERR_CLI_IN_PROCESS_FAILED, not INTERRUPTED",

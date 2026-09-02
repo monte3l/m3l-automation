@@ -6,9 +6,6 @@
  * one JSON envelope on stdout. It depends on three sibling modules
  * (`run/spawn.js`, `run/report-lookup.js`, `run/envelope.js`), every one of
  * which is mocked here — this file never calls a real implementation.
- *
- * RED phase: `src/run/execute.ts` does not exist yet, so every import below
- * fails to resolve. That is the expected failure for this phase.
  */
 import { afterEach, describe, expect, expectTypeOf, test, vi } from "vitest";
 
@@ -17,10 +14,6 @@ vi.mock("../src/run/report-lookup.js", () => ({ locateRunReport: vi.fn() }));
 vi.mock("../src/run/envelope.js", () => ({
   buildRunEnvelope: vi.fn(),
   formatRunEnvelope: vi.fn(),
-}));
-// U11: cancellation scope — RED failure until src/run/cancellation.ts exists
-vi.mock("../src/run/cancellation.js", () => ({
-  createCancellationScope: vi.fn(),
 }));
 
 import { executeScript } from "../src/run/execute.js";
@@ -37,20 +30,17 @@ import type {
   M3LCliRunReportUnavailableReason,
 } from "../src/run/envelope.js";
 import type { M3LCliOutput } from "../src/cli/output.js";
-import { createCancellationScope } from "../src/run/cancellation.js";
 
 const spawnScriptMock = vi.mocked(spawnScript);
 const locateRunReportMock = vi.mocked(locateRunReport);
 const buildRunEnvelopeMock = vi.mocked(buildRunEnvelope);
 const formatRunEnvelopeMock = vi.mocked(formatRunEnvelope);
-const createCancellationScopeMock = vi.mocked(createCancellationScope);
 
 afterEach(() => {
   spawnScriptMock.mockReset();
   locateRunReportMock.mockReset();
   buildRunEnvelopeMock.mockReset();
   formatRunEnvelopeMock.mockReset();
-  createCancellationScopeMock.mockReset();
 });
 
 /**
@@ -666,54 +656,34 @@ describe("executeScript — type contract", () => {
 });
 
 // ---------------------------------------------------------------------------
-// U11 — D11/D12: spawn-path parent survival after SIGINT
+// U11 — D11/D12: executeScript exit-code fidelity and envelope pipeline
 //
-// RED failure expected: `src/run/cancellation.ts` does not exist yet, so the
-// `vi.mock("../src/run/cancellation.js")` factory above and the
-// `createCancellationScope` import cannot resolve. Additionally,
-// `execute.ts` does not yet call `createCancellationScope`, so the
-// "called exactly once" assertion and the dispose-guard assertion both fail.
+// executeScript's contract: return exactly the exit code spawnScript resolves
+// with, and — when --json was requested — run the full envelope pipeline
+// (locateRunReport → buildRunEnvelope → formatRunEnvelope → output.info)
+// regardless of how spawn ends.
 //
-// History-entry half of item 12: `recordHistoryEntry` is called by
-// `dynamic.ts`, not `execute.ts` — that half is covered by part C
-// (dynamic.test.ts) rather than here. The execute-level contract is that the
-// `--json` envelope pipeline (locateRunReport / buildRunEnvelope /
-// formatRunEnvelope) still runs after a signal, which is what items D11/D12
-// below assert.
+// Parent survival after SIGINT is owned by main.ts's runCli, which installs
+// a cancellation scope around every dispatch path. execute.ts itself does not
+// create a scope (see execute.ts:194-197) and is not responsible for signal
+// suppression. Coverage for the scope's lifecycle is in main-cancellation.test.ts.
 //
-// NEVER fire a real SIGINT at the Vitest process. All signal delivery is
-// simulated via the scope's AbortController — `controller.abort()` mimics
-// "scope caught SIGINT, aborted its signal" without raising a signal. The
-// injected `processEmitter` seam on `M3LCliExecuteOptions` keeps any real
-// `process.on("SIGINT")` handler out of the test.
-//
-// MUTATION TEST for dispose: removing `dispose()` from execute.ts's `finally`
-// block causes `disposeSpy.toHaveBeenCalledTimes(1)` to fail in the test
-// "disposes scope in finally even on spawnScript rejection". That is the
-// discriminating guard.
+// The assertions "code is 5, not 130" name 130 explicitly because that is the
+// value that would appear if the parent were killed by Node's default SIGINT
+// disposition (128 + os.constants.signals.SIGINT (2) = 130), pinning that
+// executeScript never performs that conversion.
 // ---------------------------------------------------------------------------
 
-describe("executeScript — parent survival after SIGINT (U11 D11/D12)", () => {
-  test("D11 — resolves with the child's own exit code (5) when a signal fires while spawnScript is pending, not 130 (128+SIGINT)", async () => {
-    // Simulate: SIGINT arrives while the child is still running.
-    // The scope catches the signal (no re-raise on first hit, per A1), aborts
-    // its AbortSignal, and the child eventually closes with code 5 — the
-    // interrupted code the real child's runScript already sets.
-    // The parent resolves with 5, not 130 (which is what a parent killed by
-    // Node's default SIGINT disposition would produce via signal→exit-code
-    // conversion: 128 + os.constants.signals.SIGINT (2) = 130).
+describe("executeScript — exit-code fidelity and envelope pipeline (U11 D11/D12)", () => {
+  test("D11 — resolves with the child's own exit code (5), not 130 (128+SIGINT)", async () => {
+    // executeScript returns exactly the code spawnScript resolves with.
+    // 130 would appear if the parent were killed by Node's default SIGINT
+    // disposition (128 + 2); parent survival is runCli's responsibility.
     let resolveSpawn!: (code: number) => void;
     const pendingSpawn = new Promise<number>((resolve) => {
       resolveSpawn = resolve;
     });
     spawnScriptMock.mockReturnValue(pendingSpawn);
-
-    const controller = new AbortController();
-    const disposeSpy = vi.fn();
-    createCancellationScopeMock.mockReturnValue({
-      signal: controller.signal,
-      dispose: disposeSpy,
-    });
 
     const context = buildContext({ jsonOutput: false });
     const resultPromise = executeScript(
@@ -723,10 +693,6 @@ describe("executeScript — parent survival after SIGINT (U11 D11/D12)", () => {
       ARGV,
     );
 
-    // Scope caught SIGINT — aborts its signal, keeps the parent alive
-    controller.abort();
-
-    // Child eventually exits with code 5 (interrupted)
     resolveSpawn(5);
 
     const code = await resultPromise;
@@ -734,21 +700,15 @@ describe("executeScript — parent survival after SIGINT (U11 D11/D12)", () => {
     expect(code).not.toBe(130); // not 128+SIGINT
   });
 
-  test("D12 — --json envelope is emitted after a signal fires while spawnScript is pending", async () => {
-    // THE ACTUAL DEFECT: today the parent dies before locateRunReport and
-    // buildRunEnvelope ever run when SIGINT arrives. This test pins that
-    // the envelope pipeline still executes after the signal.
+  test("D12 — --json envelope pipeline executes and reports exit code from the child", async () => {
+    // Pins that when --json is requested, the full envelope pipeline
+    // (locateRunReport → buildRunEnvelope → formatRunEnvelope → output.info)
+    // runs and the exit code returned is still the child's own code.
     let resolveSpawn!: (code: number) => void;
     const pendingSpawn = new Promise<number>((resolve) => {
       resolveSpawn = resolve;
     });
     spawnScriptMock.mockReturnValue(pendingSpawn);
-
-    const controller = new AbortController();
-    createCancellationScopeMock.mockReturnValue({
-      signal: controller.signal,
-      dispose: vi.fn(),
-    });
 
     locateRunReportMock.mockReturnValue(FOUND_LOOKUP);
     buildRunEnvelopeMock.mockReturnValue(SAMPLE_ENVELOPE);
@@ -766,20 +726,15 @@ describe("executeScript — parent survival after SIGINT (U11 D11/D12)", () => {
       ARGV,
     );
 
-    // Scope catches SIGINT; parent survives
-    controller.abort();
-    // Child closes with code 5
     resolveSpawn(5);
 
     const code = await resultPromise;
 
-    // Envelope pipeline ran despite the signal
     expect(locateRunReportMock).toHaveBeenCalledTimes(1);
     expect(buildRunEnvelopeMock).toHaveBeenCalledTimes(1);
     expect(formatRunEnvelopeMock).toHaveBeenCalledTimes(1);
     expect(infoSpy).toHaveBeenCalledTimes(1);
     expect(infoSpy).toHaveBeenCalledWith(SAMPLE_FORMATTED);
-    // Exit code still comes from the child, not from signal conversion
     expect(code).toBe(5);
   });
 
@@ -790,12 +745,6 @@ describe("executeScript — parent survival after SIGINT (U11 D11/D12)", () => {
         resolveSpawn = resolve;
       }),
     );
-
-    const controller = new AbortController();
-    createCancellationScopeMock.mockReturnValue({
-      signal: controller.signal,
-      dispose: vi.fn(),
-    });
 
     locateRunReportMock.mockReturnValue(FOUND_LOOKUP);
     buildRunEnvelopeMock.mockReturnValue(SAMPLE_ENVELOPE);
@@ -808,7 +757,6 @@ describe("executeScript — parent survival after SIGINT (U11 D11/D12)", () => {
       ARGV,
     );
 
-    controller.abort();
     resolveSpawn(5);
     await resultPromise;
 
