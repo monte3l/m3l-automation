@@ -40,6 +40,7 @@ import type { M3LConsoleMetaRepository } from "../src/store/meta-repository.js";
 import type { M3LConsoleRunsRepository } from "../src/store/runs-repository.js";
 import type { M3LConsoleSessionsRepository } from "../src/store/sessions-repository.js";
 import type { M3LConsoleAuditRepository } from "../src/store/audit-repository.js";
+import type { M3LConsoleTelemetryRepository } from "../src/store/telemetry-repository.js";
 import type { M3LConsoleStoreUnit } from "../src/store/store.js";
 
 /**
@@ -237,6 +238,7 @@ interface FakeConsoleStoreHandle {
   readonly runs: M3LConsoleRunsRepository;
   readonly sessions: M3LConsoleSessionsRepository;
   readonly audit: M3LConsoleAuditRepository;
+  readonly telemetry: M3LConsoleTelemetryRepository;
   transaction<T>(work: (unit: M3LConsoleStoreUnit) => T): T;
 }
 
@@ -296,6 +298,20 @@ const stubAuditRepository: M3LConsoleAuditRepository = {
   // and log an error. `0` plus the absent audit root above makes it a clean
   // no-op; every write method stays loud.
   count: (): number => 0,
+};
+
+/** Throws when a `telemetry`-repository method is called unexpectedly on a fake store. */
+const unexpectedTelemetryCall = (): never => {
+  throw new Error("unexpected telemetry-repository call on the fake store");
+};
+
+/** A loud-throwing `telemetry` stub, shared by every fake store in this file (added for X8 slice 1\'s `M3LConsoleStoreUnit.telemetry` field — none of this file\'s tests exercise it). */
+const stubTelemetryRepository: M3LConsoleTelemetryRepository = {
+  record: unexpectedTelemetryCall,
+  recordAll: unexpectedTelemetryCall,
+  list: unexpectedTelemetryCall,
+  count: unexpectedTelemetryCall,
+  prune: unexpectedTelemetryCall,
 };
 
 /** Throws when `transaction()` is called unexpectedly on a fake store. */
@@ -358,6 +374,7 @@ function createFakeStore(
     runs: stubRunsRepository,
     sessions: stubSessionsRepository,
     audit: stubAuditRepository,
+    telemetry: stubTelemetryRepository,
     transaction: unexpectedTransactionCall,
   };
   return { store, closeCallCount: () => closeCalls };
@@ -389,6 +406,7 @@ function createClosedFakeStore(): FakeConsoleStoreHandle {
     runs: stubRunsRepository,
     sessions: stubSessionsRepository,
     audit: stubAuditRepository,
+    telemetry: stubTelemetryRepository,
     transaction: unexpectedTransactionCall,
   };
 }
