@@ -71,7 +71,7 @@ dispatched.
 
 ## What didn't go as planned, and why
 
-### 1. Core's append-only reader hands back null-prototype nodes
+### 1. Core's append-only reader hands back null-prototype nodes _(one-source vacuity promoted → .claude/rules/tests.md)_
 
 `rebuildHumanActionIndex` passed each entry from
 `Core.M3LAppendOnlyStream.read()` straight into `projectHumanActionRecord` —
@@ -149,7 +149,7 @@ observes indirectly (a property read, a call count, a log line), re-mutate the
 tests that watch it. Prefer a guard that asserts an _outcome only the intended
 path can produce_ over one that counts an access.
 
-### 4. Two PRs were merged or moved externally while work was in flight
+### 4. Two PRs were merged or moved externally while work was in flight _(promoted → .claude/skills/creating-prs/SKILL.md)_
 
 PR #853 was squash-merged upstream while a follow-up commit addressing the
 review bot's findings was still being pushed; the push was rejected because the branch

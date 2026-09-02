@@ -353,6 +353,18 @@ number>` already relies on (found A4b: `LOG_LEVEL_FLOORS`).
   symbols that use them is **not** an escape from this: tests exercise only
   the public barrel, so an internal-only slice ships `src/` with zero
   coverage and still trips `perFile` once the public symbol lands.
+- **A budget-forced extraction moves coverage, and can need TWO modules.**
+  Splitting to pay `check:file-budget` is not free in two ways. (1) The obvious
+  split often creates an import cycle — U10's `validate.ts` needed `branch.ts`
+  PLUS a `validate-guards.ts` holding the shared primitives, so both depend on
+  it one-directionally; X7d's `session-body.ts` is a leaf for the same reason.
+  Check the direction of every edge before choosing the seam. (2) The per-file
+  coverage gate measures a RATIO, so moving covered code out can fail the file
+  left behind without anything getting worse — X7d hit this twice, once
+  dropping `boot/human-action-audit.ts` to 78.94% against an 80% threshold.
+  Fix the real gap (fold duplicate branches, add the missing test); never edit
+  the threshold. A types-only file has no coverage to fail, which is the tell
+  that a lone unexercised guard is in the wrong module.
 - **In a top-level catch whose job is to set an exit code, set it first.**
   Assign `process.exitCode` (or the equivalent scheduler signal) immediately,
   before any report/log work that could throw — the exit code is the only thing

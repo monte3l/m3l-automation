@@ -1,6 +1,6 @@
 # Retrospective sweep tracker
 
-<!-- retrospective: last-swept=2026-09-01 logs-considered=113 -->
+<!-- retrospective: last-swept=2026-09-02 logs-considered=122 -->
 
 Living ledger of `/promoting-work-log-lessons` sweeps — one row per work log,
 recording whether it has been swept and what came out of it. Updated **in
@@ -22,7 +22,10 @@ remaining 13 older logs (2026-06-29 → 2026-08-16). A same-day sweep then
 picked up the one log (`2026-09-01-v3-secrets-delivery.md`) that landed after
 the backlog-clearing pass, so `logs-considered` tracks the live count exactly.
 The gate stays quiet on the count arm until the next 5-log cadence produces a
-gap — that is the mechanism working, not evidence it can be removed.
+gap — that is the mechanism working, not evidence it can be removed. It
+produced exactly that gap on 2026-09-02: nine logs accumulated in a single
+day's work, the gate warned at the cadence, and the sweep below cleared them
+back to zero.
 
 ## Why a ledger and not just the in-log marker
 
@@ -181,6 +184,15 @@ was earned by a sweep reading that log in full.
 | [2026-09-01-x7-human-action-audit.md](../logs/2026-09-01-x7-human-action-audit.md)                                             | 2026-09-01 | `promoted`          | .claude/rules/tests.md<br>CLAUDE.md                                                                                                                                                                                          |
 | [2026-09-01-x7b-audit-wiring.md](../logs/2026-09-01-x7b-audit-wiring.md)                                                       | 2026-09-01 | `promoted`          | .claude/rules/subagent-dispatch.md                                                                                                                                                                                           |
 | [2026-09-01-v3-secrets-delivery.md](../logs/2026-09-01-v3-secrets-delivery.md)                                                 | 2026-09-01 | `promoted`          | CLAUDE.md                                                                                                                                                                                                                    |
+| [2026-08-27-adr-0078-session-context-management.md](../logs/2026-08-27-adr-0078-session-context-management.md)                 | 2026-09-02 | `deferred`          | single-log: never plain-`.trim()` a leading-significant value; one-shot artifact cleanup must not be gated behind use (filter 1)                                                                                             |
+| [2026-09-02-finishing-work-skill.md](../logs/2026-09-02-finishing-work-skill.md)                                               | 2026-09-02 | `deferred`          | single-log: a keep-and-notify fallback must carry the real `cause` (filter 1)                                                                                                                                                |
+| [2026-09-02-notification-floor.md](../logs/2026-09-02-notification-floor.md)                                                   | 2026-09-02 | `deferred`          | single-log: re-fetch the primary source before trusting a subagent's claim about a documented VALUE (filter 1); canonical-`pnpm verify` arm already promoted                                                                 |
+| [2026-09-02-reinject-compact-resume.md](../logs/2026-09-02-reinject-compact-resume.md)                                         | 2026-09-02 | `no-durable-lesson` | `nohup`/`disown` and the stale-doctrine-doc grep already promoted (filter 2)                                                                                                                                                 |
+| [2026-09-02-session-incidents-counter.md](../logs/2026-09-02-session-incidents-counter.md)                                     | 2026-09-02 | `no-durable-lesson` | matcher scoping already promoted to `harness-artifacts.md`; journal path already at `subagent-dispatch.md:98` (filters 2, 3)                                                                                                 |
+| [2026-09-02-statusline-widgets.md](../logs/2026-09-02-statusline-widgets.md)                                                   | 2026-09-02 | `no-durable-lesson` | push-vs-auto-merge race already promoted to `finishing-work`; corroborating evidence only for this run's auto-merge-window theme (filter 2)                                                                                  |
+| [2026-09-02-u10-orchestration-engine.md](../logs/2026-09-02-u10-orchestration-engine.md)                                       | 2026-09-02 | `promoted`          | `.claude/rules/tests.md`<br>`.claude/rules/library-src.md`<br>`.claude/skills/creating-prs/SKILL.md`                                                                                                                         |
+| [2026-09-02-x7c-audit-index-writer.md](../logs/2026-09-02-x7c-audit-index-writer.md)                                           | 2026-09-02 | `promoted`          | `.claude/rules/tests.md`<br>`.claude/skills/creating-prs/SKILL.md`                                                                                                                                                           |
+| [2026-09-02-x7d-remaining-action-kinds.md](../logs/2026-09-02-x7d-remaining-action-kinds.md)                                   | 2026-09-02 | `promoted`          | `.claude/rules/tests.md`<br>`.claude/rules/library-src.md`                                                                                                                                                                   |
 
 <!-- prettier-ignore -->
-**Totals** — 113 logs: 94 `promoted`, 19 `no-durable-lesson`, 0 `not-yet-swept`, 0 `deferred`.
+**Totals** — 122 logs: 97 `promoted`, 22 `no-durable-lesson`, 0 `not-yet-swept`, 3 `deferred`.

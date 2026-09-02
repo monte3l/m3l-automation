@@ -44,6 +44,13 @@ paths:
   mutation whose pattern no longer matches — because Prettier reflowed the
   line — silently edits nothing and reports a false survivor. Assert the
   replacement actually changed the file before trusting a green result.
+- **A check whose two sides come from ONE source can never fail.** X7d's
+  "resolves through the store, not by inspecting the ref" used a fake store that
+  ECHOES `ref.value`, so it passed whether the code delegated or short-circuited;
+  the fix was a stub returning a value the ref does not contain. Same shape: a
+  faked trail plus a faked repository cannot disagree, and `check:index` passes
+  vacuously on a missing sidecar. When a test reconciles two things, pin at least
+  one side by hand.
 - **A mutation-tested guard can go vacuous LATER, and nothing re-checks it.**
   Mutation-testing proves teeth only at the moment you run it. X7c's
   `auditReads` counter proved a `startConsole` hand-off — until the next PR
@@ -58,10 +65,14 @@ paths:
   load (X7c burned a CI round on it). Anchor the emit to a structural guarantee
   in the code under test instead — there, that `startConsoleServer` attaches
   both handlers BEFORE calling `listen()`.
-- **After pulling a merge that touches `packages/m3l-common`, run `pnpm build`
-  before trusting `test:coverage`.** Consumers resolve the library through its
-  BUILT output, so a merge adding an export leaves `dist` stale and fails tests
-  in a package you never edited. A failure in an untouched package is the tell.
+- **Consumers resolve `m3l-common` through `dist`, so run `pnpm build` before
+  trusting any cross-package result.** Two triggers. After pulling a merge that
+  adds an export, a stale `dist` fails tests in a package you never edited — a
+  failure in an untouched package is the tell. And a mutation applied to library
+  `src/` never reaches a consumer's suite at all: U10 deleted `__proto__` from
+  Core's `DANGEROUS_KEYS`, saw 212 tests pass, and got 7 failures once rebuilt
+  with the mutation still in place. That second one is silent and points the
+  WRONG way — it manufactures evidence that a working guard is hollow.
 - **Enumerate the gates from `package.json`, never from the `pre-push` list or
   the cadence table.**
   `node -e "console.log(Object.keys(require('./package.json').scripts).filter(k=>k.startsWith('check:')).join(' '))"`.
