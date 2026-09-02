@@ -341,4 +341,35 @@ describe("what a record may never carry", () => {
     expect(port.records[0]?.operatorEmailDeclared).toBe(true);
     expect(port.records[0]?.correlationId).toBe("corr-1");
   });
+
+  // INVARIANT: an audited route is `auth: "required"`, so reaching one with no
+  // resolved operator is a wiring defect, not a caller fault — it must fail
+  // loudly as ERR_CONSOLE_INTERNAL rather than record an unattributed entry.
+  // Mutation-tested: dropping `operatorOf`'s guard makes this pass an
+  // undefined operator into `humanActionRecordFrom` instead of throwing here.
+  test("refuses an audited route reached with no resolved operator", async () => {
+    const port = createFakePort();
+    const [route] = applyHumanActionAudit([launchRoute(() => OK)], port);
+
+    const thrown = await invokeAndCatch(
+      route,
+      withBody(
+        withParams(
+          createRequestContext({
+            method: "POST",
+            url: "http://127.0.0.1/api/v1/runs",
+            headers: { "x-correlation-id": "corr-1" },
+            signal: new AbortController().signal,
+          }),
+          {},
+        ),
+        VALID_BODY,
+      ),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).code).toBe("ERR_CONSOLE_INTERNAL");
+    expect((thrown as M3LConsoleError).message).toContain("POST /api/v1/runs");
+    expect(port.records).toHaveLength(0);
+  });
 });
