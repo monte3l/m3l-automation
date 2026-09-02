@@ -207,6 +207,32 @@ export function requireValidBucketStartMs(bucketStartMs: number): number {
 }
 
 /**
+ * Throws `ERR_CONSOLE_BAD_REQUEST` unless `atMs` is a finite, non-negative
+ * number no greater than `Number.MAX_SAFE_INTEGER`. Fractional values are
+ * accepted — only the resulting *bucket* must be an integer, not the input
+ * timestamp.
+ *
+ * **Why this guard exists:** `Math.floor(NaN / 60_000) * 60_000` returns
+ * `NaN`, and a negative `atMs` yields a pre-epoch bucket. Without this guard,
+ * both conditions surfaced downstream as an error naming `bucketStartMs` —
+ * a parameter the caller never passed, making the root cause invisible.
+ *
+ * **Why `Number.MAX_SAFE_INTEGER` is the upper bound:** `telemetryBucketStartMs`
+ * floors `atMs` down to a multiple of the granularity width. Flooring is
+ * monotone-decreasing, so a valid `atMs ≤ MAX_SAFE_INTEGER` can never produce
+ * a bucket outside the safe-integer range. No separate output check is needed.
+ */
+export function requireValidAtMs(atMs: number): number {
+  if (!Number.isFinite(atMs) || atMs < 0 || atMs > Number.MAX_SAFE_INTEGER) {
+    throw new M3LConsoleError(
+      "ERR_CONSOLE_BAD_REQUEST",
+      "atMs must be a finite, non-negative number no greater than Number.MAX_SAFE_INTEGER",
+    );
+  }
+  return atMs;
+}
+
+/**
  * Throws `ERR_CONSOLE_BAD_REQUEST` unless `bucketStartMs` is aligned to
  * the given granularity. The alignment `CHECK` in the DDL would surface the
  * violation as a store error — the wrong classification.
@@ -240,17 +266,29 @@ export function requireValidMeasure(value: number, label: string): number {
 }
 
 /**
- * Throws `ERR_CONSOLE_BAD_REQUEST` unless `value` is a non-empty,
- * non-whitespace-only string — used for required dimensions.
+ * Throws `ERR_CONSOLE_BAD_REQUEST` unless `value` is non-empty after
+ * trimming, then returns the **trimmed** value — used for required dimensions.
+ *
+ * **Why trim on return:** the untrimmed form allowed `" /api/v1/runs"` and
+ * `"/api/v1/runs"` to both pass the guard and land as two distinct primary-key
+ * rows in `console_telemetry_rollup`, silently splitting one rollup bucket in
+ * two. Returning `value.trim()` collapses those duplicates at the write
+ * boundary before any SQL statement sees them.
+ *
+ * **Decided boundary:** only outer (leading/trailing) whitespace is stripped.
+ * Internal whitespace is significant and is preserved — `"/api/v1/ runs"` is
+ * a distinct route from `"/api/v1/runs"` and must remain so. A test pins this
+ * invariant to prevent accidental tightening.
  */
 export function requireNonEmptyDimension(value: string, label: string): string {
-  if (value.trim().length === 0) {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
     throw new M3LConsoleError(
       "ERR_CONSOLE_BAD_REQUEST",
       `${label} must not be empty or whitespace-only`,
     );
   }
-  return value;
+  return trimmed;
 }
 
 /**

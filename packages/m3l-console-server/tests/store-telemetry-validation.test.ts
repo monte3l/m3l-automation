@@ -18,6 +18,7 @@ import {
   requireAligned,
   requireColumn,
   requireNonEmptyDimension,
+  requireValidAtMs,
   requireValidBucketStartMs,
   requireValidGranularity,
   requireValidLimit,
@@ -33,6 +34,7 @@ import {
   toTelemetryGranularity,
   toTelemetryMetric,
 } from "../src/store/telemetry-validation.js";
+import { telemetryBucketStartMs } from "../src/store/telemetry-repository.js";
 import type {
   M3LTelemetryGranularity,
   M3LTelemetryMeasurement,
@@ -364,6 +366,53 @@ describe("requireValidBucketStartMs", () => {
 });
 
 // ---------------------------------------------------------------------------
+// requireValidAtMs
+// ---------------------------------------------------------------------------
+
+describe("requireValidAtMs", () => {
+  const invalidValues: readonly [string, number][] = [
+    ["NaN", Number.NaN],
+    ["Infinity", Number.POSITIVE_INFINITY],
+    ["-Infinity", Number.NEGATIVE_INFINITY],
+    ["negative", -1],
+    ["unsafe integer", Number.MAX_SAFE_INTEGER + 1],
+  ];
+
+  test.each(invalidValues)(
+    "throws ERR_CONSOLE_BAD_REQUEST for %s",
+    (_label, value) => {
+      const thrown = captureSync(() => requireValidAtMs(value));
+      expect(thrown).toBeInstanceOf(M3LConsoleError);
+      expect((thrown as M3LConsoleError).code).toBe("ERR_CONSOLE_BAD_REQUEST");
+    },
+  );
+
+  test("returns 0 (non-negative boundary)", () => {
+    expect(requireValidAtMs(0)).toBe(0);
+  });
+
+  test("returns a positive safe integer", () => {
+    expect(requireValidAtMs(75_000)).toBe(75_000);
+  });
+
+  test("returns MAX_SAFE_INTEGER (upper boundary)", () => {
+    expect(requireValidAtMs(Number.MAX_SAFE_INTEGER)).toBe(
+      Number.MAX_SAFE_INTEGER,
+    );
+  });
+
+  test("returns a fractional millisecond timestamp unchanged", () => {
+    // A fractional atMs is legal input — only the bucket must be an integer.
+    expect(requireValidAtMs(75_000.5)).toBe(75_000.5);
+  });
+
+  test("error message mentions 'atMs'", () => {
+    const thrown = captureSync(() => requireValidAtMs(-1));
+    expect((thrown as M3LConsoleError).message).toContain("atMs");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // requireAligned
 // ---------------------------------------------------------------------------
 
@@ -449,11 +498,42 @@ describe("requireNonEmptyDimension", () => {
     expect((thrown as M3LConsoleError).code).toBe("ERR_CONSOLE_BAD_REQUEST");
   });
 
-  test("returns the value unchanged for a non-empty string", () => {
+  test("returns an already-trimmed value unchanged", () => {
     expect(requireNonEmptyDimension("/api/v1/runs", "route")).toBe(
       "/api/v1/runs",
     );
   });
+
+  test.each([
+    ["leading whitespace", " /api/v1/runs"],
+    ["trailing whitespace", "/api/v1/runs "],
+    ["both leading and trailing whitespace", "  /api/v1/runs  "],
+    ["tab and newline mix", "\t/api/v1/runs\n"],
+  ] as const)(
+    "returns the trimmed value for a string with %s",
+    (_label, value) => {
+      expect(requireNonEmptyDimension(value, "route")).toBe("/api/v1/runs");
+    },
+  );
+
+  test.each([
+    // Outer whitespace stripped, but the two-space run inside is preserved
+    // byte-for-byte. A single internal space is invariant under .replace(/\s+/g,
+    // " ") — the run of spaces must contain ≥2 chars to detect that mutation.
+    [
+      "two-space run with outer whitespace",
+      "  /api/v1/  runs  ",
+      "/api/v1/  runs",
+    ],
+    // An internal tab must also survive; \s+ collapses it to a space, so this
+    // fixture would fail under that mutation.
+    ["internal tab", "a\tb", "a\tb"],
+  ] as const)(
+    "preserves internal whitespace (%s) — only outer whitespace is stripped",
+    (_label, value, expected) => {
+      expect(requireNonEmptyDimension(value, "route")).toBe(expected);
+    },
+  );
 
   test("includes the label in the error message", () => {
     const thrown = captureSync(() => requireNonEmptyDimension("", "outcome"));
@@ -642,6 +722,54 @@ describe("requireValidMeasurementBase", () => {
   test("returns an object with the validated bucketStartMs for a valid measurement", () => {
     const result = requireValidMeasurementBase(baseMeasurement());
     expect(result.bucketStartMs).toBe(60_000);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// telemetryBucketStartMs — atMs guard wiring
+//
+// `store-telemetry-repository.test.ts` has only 807 chars of headroom under
+// the 60,000-char check:file-budget ceiling, so the requireValidAtMs wiring
+// tests for telemetryBucketStartMs live here, beside the guard itself.
+// ---------------------------------------------------------------------------
+
+describe("telemetryBucketStartMs — requireValidAtMs guard wiring", () => {
+  // Mirror the cast pattern from store-telemetry-repository.test.ts:1258.
+  const BAD_GRAN = "second" as unknown as M3LTelemetryGranularity;
+
+  test.each([
+    ["NaN", Number.NaN],
+    ["negative", -1],
+    ["Infinity", Number.POSITIVE_INFINITY],
+  ] as const)(
+    "throws ERR_CONSOLE_BAD_REQUEST for atMs=%s with a valid granularity",
+    (_label, atMs) => {
+      const thrown = captureSync(() => telemetryBucketStartMs(atMs, "minute"));
+      expect(thrown).toBeInstanceOf(M3LConsoleError);
+      expect((thrown as M3LConsoleError).code).toBe("ERR_CONSOLE_BAD_REQUEST");
+    },
+  );
+
+  test("granularity is validated first — bad granularity wins over bad atMs", () => {
+    // When BOTH atMs and granularity are invalid, the granularity guard fires
+    // first. The thrown message must mention "granularity", not "atMs", so a
+    // future reordering of the two guards breaks this test visibly.
+    const thrown = captureSync(() =>
+      telemetryBucketStartMs(Number.NaN, BAD_GRAN),
+    );
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).code).toBe("ERR_CONSOLE_BAD_REQUEST");
+    expect((thrown as M3LConsoleError).message).toContain("granularity");
+    expect((thrown as M3LConsoleError).message).not.toContain("atMs");
+  });
+
+  test("75_000 ms with 'minute' granularity returns the 60_000 bucket (behavior preserved)", () => {
+    expect(telemetryBucketStartMs(75_000, "minute")).toBe(60_000);
+  });
+
+  test("fractional atMs 75_000.5 with 'minute' granularity still floors to 60_000", () => {
+    // A fractional atMs is legal; Math.floor rounds down to the correct bucket.
+    expect(telemetryBucketStartMs(75_000.5, "minute")).toBe(60_000);
   });
 });
 
