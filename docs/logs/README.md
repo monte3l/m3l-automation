@@ -75,6 +75,8 @@ deliberately do not.
 | 2026-08-30 | X6 — workbench sessions close-out (bindings, resume, ADR-0068) | [x6-workbench-sessions](./2026-08-30-x6-workbench-sessions.md)               |
 | 2026-09-01 | X7 — human-action audit close-out (stream, index, read path)   | [x7-human-action-audit](./2026-09-01-x7-human-action-audit.md)               |
 | 2026-09-01 | X7b — audit wiring, view actions & correlation threading       | [x7b-audit-wiring](./2026-09-01-x7b-audit-wiring.md)                         |
+| 2026-09-02 | X7c — audit index writer & the `options.routes` boundary       | [x7c-audit-index-writer](./2026-09-02-x7c-audit-index-writer.md)             |
+| 2026-09-02 | X7d — the last four human-action kinds & their routes          | [x7d-remaining-action-kinds](./2026-09-02-x7d-remaining-action-kinds.md)     |
 
 > X1 (governance docs) and X2 (`m3l-console-server` skeleton) shipped without
 > logs; X3 is the first entry in this wave.
