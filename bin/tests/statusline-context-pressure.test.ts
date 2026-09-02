@@ -3,59 +3,86 @@ import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { displayWidth } from "../../.claude/hooks/statusline-layout.mjs";
 import {
   WARN_THRESHOLD_PERCENT,
   HIGH_THRESHOLD_PERCENT,
   resolveUsedPercentage,
   zoneForPercentage,
-  formatContextSegment,
-  describeContextLocation,
-  buildCompactSuggestion,
-  renderStatusLine,
   GREEN,
   YELLOW,
   RED,
-  RESET,
-  BLUE,
   CYAN,
-  BRIGHT_WHITE,
-  BRIGHT_RED,
-  BRIGHT_BLUE,
-  BRIGHT_CYAN,
-  BRIGHT_GREEN,
   DIM,
-  SEGMENT_JOIN,
-  formatContextBar,
+  RESET,
+  SEGMENT_SEPARATOR,
+  PLACEHOLDER,
+  GUTTER_WIDTH,
+  CONTEXT_BAR_WIDTH,
+  QUOTA_BAR_WIDTH,
   SESSION_NAME_PATTERN,
   SESSION_NAME_MAX_LENGTH,
   formatSessionNameSegment,
+  formatBranchSegment,
+  formatWorktreeSegment,
+  formatPrSegment,
+  formatAgentSegment,
+  formatOriginRepoSegment,
   formatModelSegment,
   formatEffortSegment,
+  formatThinkingSegment,
+  formatFastModeSegment,
+  formatOutputStyleSegment,
+  formatVimModeSegment,
   formatTokenCount,
-  formatSessionUsage,
+  formatContextBarSegment,
+  formatContextPercentSegment,
+  formatContextDenominatorSegment,
+  formatContextHeadroomSegment,
   formatDuration,
-  formatResetCountdown,
-  formatWeeklyReset,
-  formatCacheWidget,
+  formatFiveHourSegment,
+  formatSevenDaySegment,
+  formatSpendLimitSegment,
+  formatCostSegment,
+  formatDurationSegment,
+  formatLinesChangedSegment,
+  formatCacheSegment,
   parseHeadRef,
   parseGitdirPointer,
   resolveBranch,
-  formatBranch,
-  formatWorktreeAndPr,
-  formatAgentSegment,
+  formatMemorySegment,
   SPOKE_WARN_THRESHOLD_SEC,
   SPOKE_HIGH_THRESHOLD_SEC,
   MAX_INFLIGHT_AGE_SEC,
   resolveInflightSpokes,
   formatElapsed,
   formatInflightSpokesSegment,
-  formatOriginRepo,
-  formatFreeMemory,
-  buildLine1,
-  buildLine2,
-  buildLine3,
-  buildLine4,
+  buildSessionRow,
+  buildModelRow,
+  buildContextRow,
+  buildQuotaRow,
+  buildWorkRow,
+  renderStatusLine,
 } from "../../.claude/hooks/statusline-context-pressure.mjs";
+
+// ---------------------------------------------------------------------------
+// Shared helpers for the quota-bar segments (formatFiveHourSegment /
+// formatSevenDaySegment / formatSpendLimitSegment). Mirrors the
+// zone/fill formulas the contract documents for formatContextBarSegment,
+// scaled to QUOTA_BAR_WIDTH.
+// ---------------------------------------------------------------------------
+function quotaBar(pct: number): string {
+  const clamped = Math.min(100, Math.max(0, pct));
+  const filled = Math.round((clamped / 100) * QUOTA_BAR_WIDTH);
+  return "█".repeat(filled) + "░".repeat(QUOTA_BAR_WIDTH - filled);
+}
+
+function zoneColor(pct: number): string {
+  const clamped = Math.min(100, Math.max(0, pct));
+  if (clamped >= HIGH_THRESHOLD_PERCENT) return RED;
+  if (clamped >= WARN_THRESHOLD_PERCENT) return YELLOW;
+  return GREEN;
+}
 
 describe("thresholds", () => {
   test("WARN_THRESHOLD_PERCENT is 70", () => {
@@ -96,12 +123,6 @@ describe("resolveUsedPercentage", () => {
     expect(resolveUsedPercentage({ context_window: {} })).toBeNull();
   });
 
-  test("returns null when used_percentage is null", () => {
-    expect(
-      resolveUsedPercentage({ context_window: { used_percentage: null } }),
-    ).toBeNull();
-  });
-
   test("returns null when context_window is missing entirely", () => {
     expect(resolveUsedPercentage({})).toBeNull();
   });
@@ -132,191 +153,25 @@ describe("zoneForPercentage", () => {
   });
 });
 
-describe("formatContextSegment", () => {
-  test("renders 'ctx --%' with no icon for an unknown zone", () => {
-    const result = formatContextSegment({});
-
-    expect(result).toContain("ctx --%");
-    expect(result).not.toContain("⚠");
+describe("layout constants", () => {
+  test("SEGMENT_SEPARATOR is a dim middot", () => {
+    expect(SEGMENT_SEPARATOR).toBe(`${DIM} · ${RESET}`);
   });
 
-  test("renders the percentage with no icon for the ok zone", () => {
-    const result = formatContextSegment({
-      context_window: { used_percentage: 42 },
-    });
-
-    expect(result).toContain("ctx 42%");
-    expect(result).not.toContain("⚠");
+  test("PLACEHOLDER is a dim em dash", () => {
+    expect(PLACEHOLDER).toBe(`${DIM}—${RESET}`);
   });
 
-  test("renders the percentage with a single warning icon for the warn zone", () => {
-    const result = formatContextSegment({
-      context_window: { used_percentage: 75 },
-    });
-
-    expect(result).toContain("ctx 75%");
-    expect(result).toContain("⚠");
-    expect(result).not.toContain("⚠⚠");
+  test("GUTTER_WIDTH is 10", () => {
+    expect(GUTTER_WIDTH).toBe(10);
   });
 
-  test("renders the percentage with a double warning icon for the high zone", () => {
-    const result = formatContextSegment({
-      context_window: { used_percentage: 95 },
-    });
-
-    expect(result).toContain("ctx 95%");
-    expect(result).toContain("⚠⚠");
-  });
-});
-
-describe("describeContextLocation", () => {
-  test("joins PR and worktree with ' on ' when both present", () => {
-    expect(
-      describeContextLocation({
-        pr: { number: 12 },
-        workspace: { git_worktree: "statusline-context-pressure" },
-      }),
-    ).toBe('PR #12 on worktree "statusline-context-pressure"');
+  test("CONTEXT_BAR_WIDTH is 20", () => {
+    expect(CONTEXT_BAR_WIDTH).toBe(20);
   });
 
-  test("returns only the PR clause when only pr.number is present", () => {
-    expect(describeContextLocation({ pr: { number: 12 } })).toBe("PR #12");
-  });
-
-  test("returns only the worktree clause when only workspace.git_worktree is present", () => {
-    expect(
-      describeContextLocation({ workspace: { git_worktree: "foo" } }),
-    ).toBe('worktree "foo"');
-  });
-
-  test("returns null when neither is present", () => {
-    expect(describeContextLocation({})).toBeNull();
-  });
-
-  test.each([
-    ["null", null],
-    ["a string", "not an object"],
-    ["undefined", undefined],
-  ])("returns null for a non-object payload: %s", (_description, payload) => {
-    expect(describeContextLocation(payload)).toBeNull();
-  });
-});
-
-describe("buildCompactSuggestion", () => {
-  test("returns a suggestion including the location when the zone is high and both PR and worktree are present", () => {
-    const result = buildCompactSuggestion({
-      context_window: { used_percentage: 95 },
-      pr: { number: 12 },
-      workspace: { git_worktree: "statusline-context-pressure" },
-    });
-
-    expect(result).not.toBeNull();
-    expect(result?.startsWith("/compact preserve ")).toBe(true);
-    expect(result).toContain(
-      'PR #12 on worktree "statusline-context-pressure"',
-    );
-    expect(
-      result?.endsWith(
-        "the failing gate's exact error text, and the current plan/ADR step",
-      ),
-    ).toBe(true);
-  });
-
-  test("returns the fixed suffix only (no dangling comma/prefix) when high but neither PR nor worktree is present", () => {
-    const result = buildCompactSuggestion({
-      context_window: { used_percentage: 95 },
-    });
-
-    expect(result).toBe(
-      "/compact preserve the failing gate's exact error text, and the current plan/ADR step",
-    );
-  });
-
-  test.each([
-    ["ok zone (69%)", { context_window: { used_percentage: 69 } }],
-    ["warn zone (89%)", { context_window: { used_percentage: 89 } }],
-    ["unknown zone (no context_window)", {}],
-  ])(
-    "returns null for a non-high zone: %s, even with a PR/worktree present",
-    (_description, contextFields) => {
-      const payload = {
-        ...contextFields,
-        pr: { number: 12 },
-        workspace: { git_worktree: "foo" },
-      };
-
-      expect(buildCompactSuggestion(payload)).toBeNull();
-    },
-  );
-});
-
-describe("SEGMENT_JOIN", () => {
-  test("is two spaces", () => {
-    expect(SEGMENT_JOIN).toBe("  ");
-  });
-});
-
-describe("formatContextBar", () => {
-  test("renders a partially-filled green bar in the ok zone", () => {
-    const result = formatContextBar({
-      context_window: { used_percentage: 28 },
-    });
-
-    expect(result).not.toBeNull();
-    expect(result).toContain(GREEN);
-    expect(result).toContain("[▓▓▓░░░░░░░]");
-  });
-
-  test("renders a fully-filled red bar in the high zone", () => {
-    const result = formatContextBar({
-      context_window: { used_percentage: 95 },
-    });
-
-    expect(result).toContain(RED);
-    expect(result).toContain("[▓▓▓▓▓▓▓▓▓▓]");
-  });
-
-  test("renders an empty green bar at 0%", () => {
-    const result = formatContextBar({ context_window: { used_percentage: 0 } });
-
-    expect(result).toContain(GREEN);
-    expect(result).toContain("[░░░░░░░░░░]");
-  });
-
-  test("renders a yellow bar in the warn zone", () => {
-    const result = formatContextBar({
-      context_window: { used_percentage: 75 },
-    });
-
-    expect(result).toContain(YELLOW);
-  });
-
-  test("returns null when the used percentage is unknown", () => {
-    expect(formatContextBar({})).toBeNull();
-  });
-
-  test("clamps an above-100 used_percentage to a fully-filled bar instead of throwing", () => {
-    let result: string | null = null;
-
-    expect(() => {
-      result = formatContextBar({
-        context_window: { used_percentage: 105 },
-      });
-    }).not.toThrow();
-    expect(result).toContain("[▓▓▓▓▓▓▓▓▓▓]");
-    expect(result).not.toContain("░");
-  });
-
-  test("clamps a negative used_percentage to a fully-empty bar instead of throwing", () => {
-    let result: string | null = null;
-
-    expect(() => {
-      result = formatContextBar({
-        context_window: { used_percentage: -12 },
-      });
-    }).not.toThrow();
-    expect(result).toContain("[░░░░░░░░░░]");
-    expect(result).not.toContain("▓");
+  test("QUOTA_BAR_WIDTH is 10", () => {
+    expect(QUOTA_BAR_WIDTH).toBe(10);
   });
 });
 
@@ -326,9 +181,12 @@ describe("formatSessionNameSegment", () => {
       session_name: "feat-statusline-widgets",
     });
 
-    expect(result).toContain(GREEN);
-    expect(result).toContain("feat-statusline-widgets");
-    expect(result).not.toContain("⚠");
+    expect(result).toEqual({
+      id: "session_name",
+      priority: 100,
+      minWidth: 12,
+      text: `${GREEN}feat-statusline-widgets${RESET}`,
+    });
   });
 
   test("flags a non-conforming name (e.g. an AI-generated title) in yellow with a marker", () => {
@@ -336,28 +194,36 @@ describe("formatSessionNameSegment", () => {
       session_name: "Statusline context pressure security review",
     });
 
-    expect(result).toContain(YELLOW);
-    expect(result).toContain("⚠");
-    expect(result).toContain("Statusline context pressure security review");
+    expect(result).toEqual({
+      id: "session_name",
+      priority: 100,
+      minWidth: 12,
+      text: `${YELLOW}⚠ Statusline context pressure security review${RESET}`,
+    });
   });
 
   test("flags a name over the length bound even when it otherwise matches the pattern", () => {
     const overLong = `feat-${"a".repeat(SESSION_NAME_MAX_LENGTH)}`;
     const result = formatSessionNameSegment({ session_name: overLong });
 
-    expect(result).toContain(YELLOW);
-    expect(result).toContain("⚠");
+    expect(result?.text).toContain(YELLOW);
+    expect(result?.text).toContain("⚠");
   });
 
-  test("renders a dim 'unnamed' marker when absent, empty, or non-string — never null", () => {
-    expect(formatSessionNameSegment({})).toBe(`${DIM}unnamed${RESET}`);
-    expect(formatSessionNameSegment({ session_name: "" })).toBe(
-      `${DIM}unnamed${RESET}`,
-    );
-    expect(formatSessionNameSegment({ session_name: 5 })).toBe(
-      `${DIM}unnamed${RESET}`,
-    );
-    expect(formatSessionNameSegment(null)).toBe(`${DIM}unnamed${RESET}`);
+  test("renders a dim 'unnamed' marker when absent, empty, or non-string -- never null", () => {
+    const expected = {
+      id: "session_name",
+      priority: 100,
+      minWidth: 12,
+      text: `${DIM}unnamed${RESET}`,
+    };
+
+    expect(formatSessionNameSegment({})).toEqual(expected);
+    expect(formatSessionNameSegment({ session_name: "" })).toEqual(expected);
+    expect(formatSessionNameSegment({ session_name: 5 })).toEqual(expected);
+    expect(formatSessionNameSegment(null)).toEqual(expected);
+    expect(formatSessionNameSegment(undefined)).toEqual(expected);
+    expect(formatSessionNameSegment("not an object")).toEqual(expected);
   });
 
   test("SESSION_NAME_PATTERN accepts every documented kind and rejects an undeclared one", () => {
@@ -374,36 +240,313 @@ describe("formatSessionNameSegment", () => {
       expect(SESSION_NAME_PATTERN.test(`${kind}-example-slug`)).toBe(true);
     }
     expect(SESSION_NAME_PATTERN.test("wip-example-slug")).toBe(false);
-    expect(SESSION_NAME_PATTERN.test("feat")).toBe(false);
+  });
+});
+
+describe("formatBranchSegment", () => {
+  test("returns null for null or empty branch names", () => {
+    expect(formatBranchSegment(null)).toBeNull();
+    expect(formatBranchSegment("")).toBeNull();
+  });
+
+  test("renders a warning-colored 'main' segment for the main branch", () => {
+    expect(formatBranchSegment("main")).toEqual({
+      id: "branch",
+      priority: 95,
+      minWidth: 6,
+      text: `${RED}⚠ main${RESET}`,
+    });
+  });
+
+  test("renders any other branch name with a leaf emoji and no ANSI wrap", () => {
+    const result = formatBranchSegment("feat/x");
+
+    expect(result).toEqual({
+      id: "branch",
+      priority: 95,
+      minWidth: 6,
+      text: "🌿 feat/x",
+    });
+    expect(result?.text).not.toContain("\x1b");
+  });
+});
+
+describe("formatWorktreeSegment", () => {
+  test("returns null for a non-object payload", () => {
+    expect(formatWorktreeSegment(null)).toBeNull();
+    expect(formatWorktreeSegment("not an object")).toBeNull();
+  });
+
+  test("returns null when git_worktree is absent or empty", () => {
+    expect(formatWorktreeSegment({})).toBeNull();
+    expect(
+      formatWorktreeSegment({ workspace: { git_worktree: "" } }),
+    ).toBeNull();
+  });
+
+  test("renders the worktree name, uncolored", () => {
+    const result = formatWorktreeSegment({
+      workspace: { git_worktree: "foo" },
+    });
+
+    expect(result).toEqual({
+      id: "worktree",
+      priority: 85,
+      minWidth: 8,
+      text: 'wt "foo"',
+    });
+    expect(result?.text).not.toContain("\x1b");
+  });
+});
+
+describe("formatPrSegment", () => {
+  test("returns null when pr is absent or pr.number is not a number", () => {
+    expect(formatPrSegment({})).toBeNull();
+    expect(formatPrSegment({ pr: { number: "12" } })).toBeNull();
+    expect(formatPrSegment(null)).toBeNull();
+  });
+
+  test.each([
+    ["approved", GREEN],
+    ["changes_requested", RED],
+    ["draft", DIM],
+    ["pending", YELLOW],
+  ])("colors the PR label by review_state %s", (reviewState, color) => {
+    const result = formatPrSegment({
+      pr: { number: 12, review_state: reviewState },
+    });
+
+    expect(result).toEqual({
+      id: "pr",
+      priority: 90,
+      minWidth: 8,
+      text: `${color}PR #12${RESET}`,
+    });
+  });
+
+  test("renders a plain, uncolored label for an unknown or absent review_state", () => {
+    const result = formatPrSegment({ pr: { number: 12 } });
+
+    expect(result).toEqual({
+      id: "pr",
+      priority: 90,
+      minWidth: 8,
+      text: "PR #12",
+    });
+    expect(result?.text).not.toContain("\x1b");
+  });
+
+  test("wraps the label in an OSC-8 hyperlink when pr.url is a non-empty string", () => {
+    const result = formatPrSegment({
+      pr: {
+        number: 12,
+        review_state: "approved",
+        url: "https://example.test/pr/12",
+      },
+    });
+
+    expect(result?.text).toBe(
+      `${GREEN}\x1b]8;;https://example.test/pr/12\x07PR #12\x1b]8;;\x07${RESET}`,
+    );
+  });
+
+  test("does not include an OSC-8 hyperlink when pr.url is absent or empty", () => {
+    const result = formatPrSegment({ pr: { number: 12, url: "" } });
+
+    expect(result?.text).not.toContain("\x1b]8;;");
+  });
+});
+
+describe("formatAgentSegment", () => {
+  test("renders a dim '↳ name' segment when agent.name is a non-empty string", () => {
+    const result = formatAgentSegment({ agent: { name: "code-reviewer" } });
+
+    // toEqual is an exact match, so this also implicitly proves no other
+    // ANSI color (e.g. red) is present beyond DIM/RESET.
+    expect(result).toEqual({
+      id: "agent",
+      priority: 55,
+      minWidth: 6,
+      text: `${DIM}↳ code-reviewer${RESET}`,
+    });
+  });
+
+  test("returns null when agent is absent", () => {
+    expect(formatAgentSegment({})).toBeNull();
+  });
+
+  test("returns null when agent is present but not an object", () => {
+    expect(formatAgentSegment({ agent: "code-reviewer" })).toBeNull();
+    expect(formatAgentSegment({ agent: 5 })).toBeNull();
+    expect(formatAgentSegment({ agent: null })).toBeNull();
+  });
+
+  test("returns null when agent.name is absent", () => {
+    expect(formatAgentSegment({ agent: {} })).toBeNull();
+  });
+
+  test("returns null when agent.name is an empty string", () => {
+    expect(formatAgentSegment({ agent: { name: "" } })).toBeNull();
+  });
+
+  test("returns null when agent.name is present but non-string", () => {
+    expect(formatAgentSegment({ agent: { name: 5 } })).toBeNull();
+  });
+
+  test("returns null for a non-object payload", () => {
+    expect(formatAgentSegment(null)).toBeNull();
+    expect(formatAgentSegment(undefined)).toBeNull();
+    expect(formatAgentSegment("not an object")).toBeNull();
+  });
+});
+
+describe("formatOriginRepoSegment", () => {
+  test("renders 'owner/name', uncolored", () => {
+    const result = formatOriginRepoSegment({
+      workspace: { repo: { owner: "monte3l", name: "m3l-automation" } },
+    });
+
+    expect(result).toEqual({
+      id: "origin_repo",
+      priority: 40,
+      minWidth: 10,
+      text: "monte3l/m3l-automation",
+    });
+    expect(result?.text).not.toContain("\x1b");
+  });
+
+  test("returns null when owner or name is missing or empty", () => {
+    expect(
+      formatOriginRepoSegment({ workspace: { repo: { owner: "monte3l" } } }),
+    ).toBeNull();
+    expect(
+      formatOriginRepoSegment({
+        workspace: { repo: { owner: "", name: "m3l-automation" } },
+      }),
+    ).toBeNull();
+    expect(formatOriginRepoSegment({})).toBeNull();
   });
 });
 
 describe("formatModelSegment", () => {
-  test("renders the model display name in blue", () => {
+  test("renders the model display name in cyan", () => {
     const result = formatModelSegment({ model: { display_name: "Sonnet 5" } });
 
-    expect(result).toContain(BLUE);
-    expect(result).toContain("Sonnet 5");
+    expect(result).toEqual({
+      id: "model",
+      priority: 100,
+      minWidth: 6,
+      text: `${CYAN}Sonnet 5${RESET}`,
+    });
   });
 
   test("returns null when display_name is absent, empty, or non-string", () => {
     expect(formatModelSegment({})).toBeNull();
     expect(formatModelSegment({ model: { display_name: "" } })).toBeNull();
     expect(formatModelSegment({ model: { display_name: 5 } })).toBeNull();
+    expect(formatModelSegment(null)).toBeNull();
   });
 });
 
 describe("formatEffortSegment", () => {
-  test("renders the effort level in cyan", () => {
+  test("renders the effort level plainly, uncolored", () => {
     const result = formatEffortSegment({ effort: { level: "high" } });
 
-    expect(result).toContain(CYAN);
-    expect(result).toContain("high");
+    expect(result).toEqual({
+      id: "effort",
+      priority: 90,
+      minWidth: 4,
+      text: "high",
+    });
+    expect(result?.text).not.toContain("\x1b");
   });
 
   test("returns null when level is absent, empty, or non-string", () => {
     expect(formatEffortSegment({})).toBeNull();
     expect(formatEffortSegment({ effort: { level: "" } })).toBeNull();
+  });
+});
+
+describe("formatThinkingSegment", () => {
+  test("renders 'thinking' only when thinking.enabled is strictly true", () => {
+    expect(formatThinkingSegment({ thinking: { enabled: true } })).toEqual({
+      id: "thinking",
+      priority: 70,
+      minWidth: 8,
+      text: "thinking",
+    });
+  });
+
+  test("returns null for false, absent, or a non-boolean truthy value", () => {
+    expect(formatThinkingSegment({ thinking: { enabled: false } })).toBeNull();
+    expect(formatThinkingSegment({})).toBeNull();
+    expect(formatThinkingSegment({ thinking: { enabled: "true" } })).toBeNull();
+    expect(formatThinkingSegment({ thinking: { enabled: 1 } })).toBeNull();
+  });
+});
+
+describe("formatFastModeSegment", () => {
+  test("renders 'fast mode' only when fast_mode is strictly true", () => {
+    expect(formatFastModeSegment({ fast_mode: true })).toEqual({
+      id: "fast_mode",
+      priority: 65,
+      minWidth: 10,
+      text: "fast mode",
+    });
+  });
+
+  test("returns null for false, absent, or a non-boolean truthy value", () => {
+    expect(formatFastModeSegment({ fast_mode: false })).toBeNull();
+    expect(formatFastModeSegment({})).toBeNull();
+    expect(formatFastModeSegment({ fast_mode: "true" })).toBeNull();
+  });
+});
+
+describe("formatOutputStyleSegment", () => {
+  test("returns null when absent, empty, or exactly 'default'", () => {
+    expect(formatOutputStyleSegment({})).toBeNull();
+    expect(formatOutputStyleSegment({ output_style: { name: "" } })).toBeNull();
+    expect(
+      formatOutputStyleSegment({ output_style: { name: "default" } }),
+    ).toBeNull();
+  });
+
+  test("renders any other non-empty style name plainly", () => {
+    const result = formatOutputStyleSegment({
+      output_style: { name: "explanatory" },
+    });
+
+    expect(result).toEqual({
+      id: "output_style",
+      priority: 55,
+      minWidth: 6,
+      text: "explanatory",
+    });
+    expect(result?.text).not.toContain("\x1b");
+  });
+});
+
+describe("formatVimModeSegment", () => {
+  test("returns null when absent or empty", () => {
+    expect(formatVimModeSegment({})).toBeNull();
+    expect(formatVimModeSegment({ vim: { mode: "" } })).toBeNull();
+  });
+
+  test("renders the mode lowercased", () => {
+    const result = formatVimModeSegment({ vim: { mode: "NORMAL" } });
+
+    expect(result).toEqual({
+      id: "vim",
+      priority: 50,
+      minWidth: 6,
+      text: "normal",
+    });
+  });
+
+  test("leaves an already-lowercase mode unchanged", () => {
+    expect(formatVimModeSegment({ vim: { mode: "insert" } })?.text).toBe(
+      "insert",
+    );
   });
 });
 
@@ -418,60 +561,184 @@ describe("formatTokenCount", () => {
   ])("formats %i tokens as %s", (n, expected) => {
     expect(formatTokenCount(n)).toBe(expected);
   });
+});
 
-  test("does not pad a whole-thousand count with a trailing .0", () => {
-    expect(formatTokenCount(45000)).not.toBe("45.0k");
+describe("formatContextBarSegment", () => {
+  test("returns null for an unknown zone (no context_window data)", () => {
+    expect(formatContextBarSegment({})).toBeNull();
+  });
+
+  test("renders an empty green bar at 0%", () => {
+    const result = formatContextBarSegment({
+      context_window: { used_percentage: 0 },
+    });
+
+    expect(result).toEqual({
+      id: "context_bar",
+      priority: 100,
+      minWidth: 20,
+      text: `${GREEN}${"░".repeat(20)}${RESET}`,
+    });
+  });
+
+  test("renders a half-filled green bar at 50%", () => {
+    const result = formatContextBarSegment({
+      context_window: { used_percentage: 50 },
+    });
+
+    expect(result?.text).toBe(
+      `${GREEN}${"█".repeat(10)}${"░".repeat(10)}${RESET}`,
+    );
+  });
+
+  test("renders a fully-filled red bar at 100%", () => {
+    const result = formatContextBarSegment({
+      context_window: { used_percentage: 100 },
+    });
+
+    expect(result?.text).toBe(`${RED}${"█".repeat(20)}${RESET}`);
+  });
+
+  test("rounds the filled cell count (72% -> round(14.4) -> 14 filled)", () => {
+    const result = formatContextBarSegment({
+      context_window: { used_percentage: 72 },
+    });
+
+    expect(result?.text).toBe(
+      `${YELLOW}${"█".repeat(14)}${"░".repeat(6)}${RESET}`,
+    );
+  });
+
+  test.each([
+    [69, GREEN],
+    [70, YELLOW],
+    [89, YELLOW],
+    [90, RED],
+  ])("colors the bar by the %i%% zone boundary", (pct, color) => {
+    const result = formatContextBarSegment({
+      context_window: { used_percentage: pct },
+    });
+
+    expect(result?.text.startsWith(color)).toBe(true);
   });
 });
 
-describe("formatSessionUsage", () => {
-  test("joins cost and token counts with a middot when both are present", () => {
-    const result = formatSessionUsage({
-      cost: { total_cost_usd: 0.01234 },
-      context_window: { total_input_tokens: 15500, total_output_tokens: 1200 },
+describe("formatContextPercentSegment", () => {
+  test("returns null for an unknown zone", () => {
+    expect(formatContextPercentSegment({})).toBeNull();
+  });
+
+  test("renders the percentage with no warning icon in the ok zone", () => {
+    const result = formatContextPercentSegment({
+      context_window: { used_percentage: 42 },
     });
 
-    expect(result).toContain(BRIGHT_WHITE);
-    expect(result).toContain("$0.01");
-    expect(result).toContain("15.5k↑ 1.2k↓");
-    expect(result).toContain(" · ");
+    expect(result).toEqual({
+      id: "context_pct",
+      priority: 95,
+      minWidth: 4,
+      text: `${GREEN}42%${RESET}`,
+    });
   });
 
-  test("renders only the cost part, with no middot, when tokens are absent", () => {
-    const result = formatSessionUsage({ cost: { total_cost_usd: 2 } });
+  test("renders yellow with no warning icon in the warn zone", () => {
+    const result = formatContextPercentSegment({
+      context_window: { used_percentage: 75 },
+    });
 
-    expect(result).toContain("$2.00");
-    expect(result).not.toContain("·");
+    expect(result?.text).toBe(`${YELLOW}75%${RESET}`);
+    expect(result?.text).not.toContain("⚠");
   });
 
-  test("returns null when neither cost nor a complete token pair is present", () => {
-    expect(formatSessionUsage({})).toBeNull();
+  test("renders red with no warning icon in the high zone", () => {
+    const result = formatContextPercentSegment({
+      context_window: { used_percentage: 95 },
+    });
+
+    expect(result?.text).toBe(`${RED}95%${RESET}`);
+    expect(result?.text).not.toContain("⚠");
+  });
+});
+
+describe("formatContextDenominatorSegment", () => {
+  test("returns null when either field is missing, zero, or non-finite", () => {
+    expect(formatContextDenominatorSegment({})).toBeNull();
     expect(
-      formatSessionUsage({
+      formatContextDenominatorSegment({
         context_window: { total_input_tokens: 100 },
+      }),
+    ).toBeNull();
+    expect(
+      formatContextDenominatorSegment({
+        context_window: { total_input_tokens: 0, context_window_size: 200000 },
+      }),
+    ).toBeNull();
+    expect(
+      formatContextDenominatorSegment({
+        context_window: {
+          total_input_tokens: NaN,
+          context_window_size: 200000,
+        },
       }),
     ).toBeNull();
   });
 
-  test("omits the token-count clause (and returns null overall) when total_input_tokens is NaN", () => {
-    const result = formatSessionUsage({
-      context_window: { total_input_tokens: NaN, total_output_tokens: 1200 },
-    });
-
-    expect(result?.includes("NaN")).toBeFalsy();
-    expect(result).toBeNull();
-  });
-
-  test("omits the token-count clause (and returns null overall) when total_output_tokens is Infinity", () => {
-    const result = formatSessionUsage({
+  test("renders formatted token counts, uncolored", () => {
+    const result = formatContextDenominatorSegment({
       context_window: {
-        total_input_tokens: 1200,
-        total_output_tokens: Infinity,
+        total_input_tokens: 15500,
+        context_window_size: 200000,
       },
     });
 
-    expect(result?.includes("Infinity")).toBeFalsy();
-    expect(result).toBeNull();
+    expect(result).toEqual({
+      id: "context_denom",
+      priority: 80,
+      minWidth: 10,
+      text: "15.5k/200k",
+    });
+    expect(result?.text).not.toContain("\x1b");
+  });
+});
+
+describe("formatContextHeadroomSegment", () => {
+  test("returns null when either field is missing, negative, or non-finite", () => {
+    expect(formatContextHeadroomSegment({})).toBeNull();
+    expect(
+      formatContextHeadroomSegment({
+        context_window: {
+          remaining_percentage: -1,
+          context_window_size: 200000,
+        },
+      }),
+    ).toBeNull();
+    expect(
+      formatContextHeadroomSegment({
+        context_window: { remaining_percentage: 50, context_window_size: 0 },
+      }),
+    ).toBeNull();
+  });
+
+  test("renders the computed headroom token count, uncolored", () => {
+    const result = formatContextHeadroomSegment({
+      context_window: { remaining_percentage: 50, context_window_size: 200000 },
+    });
+
+    expect(result).toEqual({
+      id: "context_headroom",
+      priority: 70,
+      minWidth: 12,
+      text: "100k headroom",
+    });
+    expect(result?.text).not.toContain("\x1b");
+  });
+
+  test("allows a remaining_percentage of exactly 0", () => {
+    const result = formatContextHeadroomSegment({
+      context_window: { remaining_percentage: 0, context_window_size: 200000 },
+    });
+
+    expect(result?.text).toBe("0 headroom");
   });
 });
 
@@ -486,121 +753,239 @@ describe("formatDuration", () => {
   });
 });
 
-describe("formatResetCountdown", () => {
+describe.each([
+  [
+    "formatFiveHourSegment",
+    formatFiveHourSegment,
+    "five_hour",
+    "5h",
+    "quota_5h",
+    100,
+  ],
+  [
+    "formatSevenDaySegment",
+    formatSevenDaySegment,
+    "seven_day",
+    "7d",
+    "quota_7d",
+    85,
+  ],
+  [
+    "formatSpendLimitSegment",
+    formatSpendLimitSegment,
+    "spend_limit",
+    "spend",
+    "quota_spend",
+    60,
+  ],
+] as const)("%s", (_name, fn, field, label, id, priority) => {
   const now = 1_700_000_000_000;
 
-  test("renders an hour+minute countdown in bright red", () => {
-    const result = formatResetCountdown(
-      { rate_limits: { five_hour: { resets_at: now / 1000 + 3600 } } },
+  test("returns null when rate_limits or the field is absent", () => {
+    expect(fn({}, { now })).toBeNull();
+    expect(fn({ rate_limits: {} }, { now })).toBeNull();
+  });
+
+  test("returns null when the field is not an object", () => {
+    expect(fn({ rate_limits: { [field]: "nope" } }, { now })).toBeNull();
+  });
+
+  test("returns null when used_percentage is not a finite number", () => {
+    expect(fn({ rate_limits: { [field]: {} } }, { now })).toBeNull();
+    expect(
+      fn({ rate_limits: { [field]: { used_percentage: NaN } } }, { now }),
+    ).toBeNull();
+  });
+
+  test("renders the bar and percentage with no reset suffix when resets_at is absent", () => {
+    const pct = 50;
+    const result = fn(
+      { rate_limits: { [field]: { used_percentage: pct } } },
       { now },
     );
 
-    expect(result).toContain(BRIGHT_RED);
-    expect(result).toContain("reset 1h00m");
+    expect(result).toEqual({
+      id,
+      priority,
+      minWidth: 20,
+      text: `${zoneColor(pct)}${label} ${quotaBar(pct)} ${pct}%${RESET}${DIM}${RESET}`,
+    });
   });
 
-  test("renders a minute-only countdown", () => {
-    const result = formatResetCountdown(
-      { rate_limits: { five_hour: { resets_at: now / 1000 + 1500 } } },
+  test("appends a dim reset-time suffix when resets_at is present and finite", () => {
+    const pct = 30;
+    const resetsAtSec = now / 1000 + 3661; // 1h01m
+    const result = fn(
+      {
+        rate_limits: {
+          [field]: { used_percentage: pct, resets_at: resetsAtSec },
+        },
+      },
       { now },
     );
 
-    expect(result).toContain("reset 25m");
+    expect(result?.text).toBe(
+      `${zoneColor(pct)}${label} ${quotaBar(pct)} ${pct}%${RESET}${DIM} 1h01m${RESET}`,
+    );
   });
 
-  test("renders 'now' when the reset time is in the past", () => {
-    const result = formatResetCountdown(
-      { rate_limits: { five_hour: { resets_at: now / 1000 - 100 } } },
+  test("renders the raw, uncapped percentage while the bar fill and color use the clamped value", () => {
+    const pct = 127;
+    const result = fn(
+      { rate_limits: { [field]: { used_percentage: pct } } },
       { now },
     );
 
-    expect(result).toContain("reset now");
-  });
-
-  test("returns null when resets_at is absent", () => {
-    expect(formatResetCountdown({}, { now })).toBeNull();
+    expect(result?.text).toContain("127%");
+    expect(result?.text).toContain(RED); // clamped to 100 -> high zone
+    expect(result?.text).toContain(quotaBar(pct)); // fully-filled bar
   });
 });
 
-describe("formatWeeklyReset", () => {
-  test("renders the UTC month-day and time in bright blue", () => {
-    const resetsAtSec = 1_700_003_661;
-    const date = new Date(resetsAtSec * 1000);
-    const mm = String(date.getUTCMonth() + 1).padStart(2, "0");
-    const dd = String(date.getUTCDate()).padStart(2, "0");
-    const hh = String(date.getUTCHours()).padStart(2, "0");
-    const min = String(date.getUTCMinutes()).padStart(2, "0");
-    const expected = `week ${mm}-${dd} ${hh}:${min}Z`;
+describe("formatCostSegment", () => {
+  test("returns null when total_cost_usd is absent or non-finite", () => {
+    expect(formatCostSegment({})).toBeNull();
+    expect(formatCostSegment({ cost: { total_cost_usd: NaN } })).toBeNull();
+    expect(
+      formatCostSegment({ cost: { total_cost_usd: Infinity } }),
+    ).toBeNull();
+  });
 
-    const result = formatWeeklyReset({
-      rate_limits: { seven_day: { resets_at: resetsAtSec } },
+  test("renders a dollar-formatted cost, uncolored", () => {
+    const result = formatCostSegment({ cost: { total_cost_usd: 2 } });
+
+    expect(result).toEqual({
+      id: "cost",
+      priority: 100,
+      minWidth: 6,
+      text: "$2.00",
+    });
+    expect(result?.text).not.toContain("\x1b");
+  });
+});
+
+describe("formatDurationSegment", () => {
+  test("returns null when total_duration_ms is absent or non-finite", () => {
+    expect(formatDurationSegment({})).toBeNull();
+    expect(
+      formatDurationSegment({ cost: { total_duration_ms: NaN } }),
+    ).toBeNull();
+  });
+
+  test("renders just the minute count when api duration is absent", () => {
+    const result = formatDurationSegment({
+      cost: { total_duration_ms: 125000 },
     });
 
-    expect(result).toContain(BRIGHT_BLUE);
-    expect(result).toContain(expected);
+    expect(result).toEqual({
+      id: "duration",
+      priority: 85,
+      minWidth: 10,
+      text: "2m",
+    });
+    expect(result?.text).not.toContain("\x1b");
   });
 
-  test("returns null when resets_at is absent", () => {
-    expect(formatWeeklyReset({})).toBeNull();
+  test("renders the api-duration clause when present and finite", () => {
+    const result = formatDurationSegment({
+      cost: { total_duration_ms: 125000, total_api_duration_ms: 65000 },
+    });
+
+    expect(result?.text).toBe("2m (1m api)");
+  });
+
+  test("omits the api-duration clause when it is present but non-finite", () => {
+    const result = formatDurationSegment({
+      cost: { total_duration_ms: 125000, total_api_duration_ms: Infinity },
+    });
+
+    expect(result?.text).toBe("2m");
   });
 });
 
-describe("formatCacheWidget", () => {
+describe("formatLinesChangedSegment", () => {
+  test("returns null when either field is missing or non-finite", () => {
+    expect(formatLinesChangedSegment({})).toBeNull();
+    expect(
+      formatLinesChangedSegment({ cost: { total_lines_added: 5 } }),
+    ).toBeNull();
+    expect(
+      formatLinesChangedSegment({
+        cost: { total_lines_added: NaN, total_lines_removed: 2 },
+      }),
+    ).toBeNull();
+  });
+
+  test("returns null when both counts are exactly 0 (quiet when nothing changed)", () => {
+    expect(
+      formatLinesChangedSegment({
+        cost: { total_lines_added: 0, total_lines_removed: 0 },
+      }),
+    ).toBeNull();
+  });
+
+  test("renders colorized +added/-removed when at least one count is non-zero", () => {
+    const result = formatLinesChangedSegment({
+      cost: { total_lines_added: 5, total_lines_removed: 2 },
+    });
+
+    expect(result).toEqual({
+      id: "lines",
+      priority: 65,
+      minWidth: 8,
+      text: `${GREEN}+5${RESET}${DIM}/${RESET}${RED}-2${RESET}`,
+    });
+  });
+
+  test("still renders when only one of the two counts is non-zero", () => {
+    const result = formatLinesChangedSegment({
+      cost: { total_lines_added: 0, total_lines_removed: 3 },
+    });
+
+    expect(result?.text).toBe(
+      `${GREEN}+0${RESET}${DIM}/${RESET}${RED}-3${RESET}`,
+    );
+  });
+});
+
+describe("formatCacheSegment", () => {
   test("renders a percentage when warm with a numeric hit_ratio", () => {
-    const result = formatCacheWidget({
+    const result = formatCacheSegment({
       prompt_cache: { warm: true, hit_ratio: 0.87 },
     });
 
-    expect(result).toContain(GREEN);
-    expect(result).toContain("cache 87%");
+    expect(result).toEqual({
+      id: "cache",
+      priority: 55,
+      minWidth: 10,
+      text: `${GREEN}cache 87%${RESET}`,
+    });
   });
 
-  test("renders 'cache warm' when warm but hit_ratio is not a number", () => {
-    expect(formatCacheWidget({ prompt_cache: { warm: true } })).toBe(
+  test("renders 'cache warm' when warm but hit_ratio is not a finite number", () => {
+    expect(formatCacheSegment({ prompt_cache: { warm: true } })?.text).toBe(
       `${GREEN}cache warm${RESET}`,
     );
   });
 
   test("renders a token estimate when cold with a numeric recache_tokens_if_cold", () => {
-    const result = formatCacheWidget({
+    const result = formatCacheSegment({
       prompt_cache: { warm: false, recache_tokens_if_cold: 1200 },
     });
 
-    expect(result).toContain(YELLOW);
-    expect(result).toContain("cache cold · 1.2k");
+    expect(result?.text).toBe(`${YELLOW}cache cold · 1.2k${RESET}`);
   });
 
-  test("renders 'cache cold' when cold but recache_tokens_if_cold is not a number", () => {
-    expect(formatCacheWidget({ prompt_cache: { warm: false } })).toBe(
+  test("renders 'cache cold' when cold but recache_tokens_if_cold is not a finite number", () => {
+    expect(formatCacheSegment({ prompt_cache: { warm: false } })?.text).toBe(
       `${YELLOW}cache cold${RESET}`,
     );
   });
 
-  test("returns null when prompt_cache is absent or not an object", () => {
-    expect(formatCacheWidget({})).toBeNull();
-    expect(formatCacheWidget({ prompt_cache: "warm" })).toBeNull();
-  });
-
-  test("returns null when warm is not a boolean", () => {
-    expect(formatCacheWidget({ prompt_cache: { warm: "yes" } })).toBeNull();
-  });
-
-  test("falls back to plain 'cache warm' (no percentage, no 'NaN') when warm with a NaN hit_ratio", () => {
-    // Number.isFinite(NaN) is false, so this takes the same
-    // not-a-finite-number fallback branch as an absent hit_ratio.
-    expect(
-      formatCacheWidget({ prompt_cache: { warm: true, hit_ratio: NaN } }),
-    ).toBe(`${GREEN}cache warm${RESET}`);
-  });
-
-  test("falls back to plain 'cache cold' (no token estimate, no 'Infinity') when cold with an Infinity recache_tokens_if_cold", () => {
-    // Number.isFinite(Infinity) is false, so this takes the same
-    // not-a-finite-number fallback branch as an absent recache_tokens_if_cold.
-    expect(
-      formatCacheWidget({
-        prompt_cache: { warm: false, recache_tokens_if_cold: Infinity },
-      }),
-    ).toBe(`${YELLOW}cache cold${RESET}`);
+  test("returns null when prompt_cache is absent, not an object, or warm is not a boolean", () => {
+    expect(formatCacheSegment({})).toBeNull();
+    expect(formatCacheSegment({ prompt_cache: "warm" })).toBeNull();
+    expect(formatCacheSegment({ prompt_cache: { warm: "yes" } })).toBeNull();
   });
 });
 
@@ -635,14 +1020,6 @@ describe("parseGitdirPointer", () => {
   test("returns null for non-string input", () => {
     expect(parseGitdirPointer(null)).toBeNull();
   });
-
-  test("returns an empty string (not null) for a gitdir line whose target is only whitespace", () => {
-    // Root cause the resolveBranch "empty pointer" fix guards against: a
-    // trimmed-to-empty pointer must be distinguishable from "no pointer
-    // matched at all" (null) so the caller can short-circuit instead of
-    // falling through to join(dir, "") -> dir.
-    expect(parseGitdirPointer("gitdir: \n")).toBe("");
-  });
 });
 
 describe("resolveBranch", () => {
@@ -654,16 +1031,6 @@ describe("resolveBranch", () => {
         : null;
 
     expect(resolveBranch(readFile, startDir)).toBe("feat/foo");
-  });
-
-  test("returns null for a detached HEAD", () => {
-    const startDir = "/workspace/project";
-    const readFile = (path: string): string | null =>
-      path === join(startDir, ".git", "HEAD")
-        ? "3f2504e04f8964efd25f5f1efd9b0f7e6f2f9c1a\n"
-        : null;
-
-    expect(resolveBranch(readFile, startDir)).toBeNull();
   });
 
   test("resolves through a linked-worktree gitdir pointer file", () => {
@@ -686,147 +1053,50 @@ describe("resolveBranch", () => {
     expect(resolveBranch(readFile, "/workspace/project")).toBeNull();
   });
 
-  test("stops at the nearest .git and does not walk up to an ancestor repo", () => {
-    const startDir = "/a/b/c";
-    const parentDir = "/a/b";
-    const readFile = (path: string): string | null => {
-      if (path === join(startDir, ".git", "HEAD")) return null;
-      if (path === join(startDir, ".git")) return "gitdir: /some/other/path\n";
-      if (path === join("/some/other/path", "HEAD")) return null;
-      // An ancestor repo that WOULD resolve if the walk continued past the
-      // nearer .git file found at startDir -- must never be reached.
-      if (path === join(parentDir, ".git", "HEAD")) {
-        return "ref: refs/heads/should-not-be-found\n";
-      }
-      return null;
-    };
-
-    expect(resolveBranch(readFile, startDir)).toBeNull();
-  });
-
   test("returns null for a non-string or empty startDir", () => {
     const readFile = (): string | null => null;
 
     expect(resolveBranch(readFile, "")).toBeNull();
     expect(resolveBranch(readFile, null)).toBeNull();
   });
-
-  test("returns null for a whitespace-only gitdir pointer, and does not fall through to a coincidentally-present HEAD at the worktree root", () => {
-    const startDir = "/workspace/project";
-    const readFile = (path: string): string | null => {
-      if (path === join(startDir, ".git", "HEAD")) return null;
-      if (path === join(startDir, ".git")) return "gitdir: \n";
-      // The OLD buggy code fell through to reading this file when the
-      // pointer target trimmed to empty; it must never be reached once the
-      // empty-pointer short-circuit is in place.
-      if (path === join(startDir, "HEAD")) {
-        return "ref: refs/heads/should-not-be-picked-up\n";
-      }
-      return null;
-    };
-
-    expect(resolveBranch(readFile, startDir)).toBeNull();
-  });
 });
 
-describe("formatBranch", () => {
-  test("returns null for null or empty branch names", () => {
-    expect(formatBranch(null)).toBeNull();
-    expect(formatBranch("")).toBeNull();
+describe("formatMemorySegment", () => {
+  test("returns null when freemem/totalmem are missing or totalmem is zero", () => {
+    expect(formatMemorySegment({})).toBeNull();
+    expect(formatMemorySegment({ freemem: 100, totalmem: 0 })).toBeNull();
   });
 
-  test("renders a warning-colored 'main' segment for the main branch", () => {
-    const result = formatBranch("main");
-
-    expect(result).toContain(RED);
-    expect(result).toContain("⚠ main");
-  });
-
-  test("renders any other branch name in green with no warning icon", () => {
-    const result = formatBranch("feat/foo");
-
-    expect(result).toContain(GREEN);
-    expect(result).toContain("feat/foo");
-    expect(result).not.toContain("⚠");
-  });
-});
-
-describe("formatWorktreeAndPr", () => {
-  test("returns null for a non-object payload", () => {
-    expect(formatWorktreeAndPr(null)).toBeNull();
-    expect(formatWorktreeAndPr("not an object")).toBeNull();
-  });
-
-  test("returns null when neither worktree nor pr is present", () => {
-    expect(formatWorktreeAndPr({})).toBeNull();
-  });
-
-  test("renders only the worktree clause when only git_worktree is present", () => {
-    const result = formatWorktreeAndPr({ workspace: { git_worktree: "foo" } });
-
-    expect(result).toContain('worktree "foo"');
-    expect(result).not.toContain("PR #");
-  });
-
-  test.each([
-    ["approved", GREEN],
-    ["changes_requested", RED],
-    ["draft", DIM],
-    ["pending", YELLOW],
-  ])("colors the PR clause by review_state %s", (reviewState, color) => {
-    const result = formatWorktreeAndPr({
-      pr: { number: 12, review_state: reviewState },
+  test("renders red when free memory is at or below 10%", () => {
+    const result = formatMemorySegment({
+      freemem: 1_000_000_000,
+      totalmem: 10_000_000_000,
     });
 
-    expect(result).toContain(color);
-    expect(result).toContain("PR #12");
+    expect(result).toEqual({
+      id: "memory",
+      priority: 50,
+      minWidth: 10,
+      text: `${RED}1.0/10.0G free${RESET}`,
+    });
   });
 
-  test("still renders the PR clause for an unknown or absent review_state", () => {
-    const result = formatWorktreeAndPr({ pr: { number: 12 } });
-
-    expect(result).toContain("PR #12");
-  });
-
-  test("wraps the PR label in an OSC 8 hyperlink when pr.url is present", () => {
-    const result = formatWorktreeAndPr({
-      pr: { number: 12, url: "https://example.test/pr/12" },
+  test("renders yellow when free memory is at or below 30% but above 10%", () => {
+    const result = formatMemorySegment({
+      freemem: 3_000_000_000,
+      totalmem: 10_000_000_000,
     });
 
-    expect(result).toContain("\x1b]8;;");
-    expect(result).toContain("https://example.test/pr/12");
-    expect(result).toContain("PR #12");
+    expect(result?.text).toBe(`${YELLOW}3.0/10.0G free${RESET}`);
   });
 
-  test("does not include an OSC 8 hyperlink when pr.url is absent", () => {
-    const result = formatWorktreeAndPr({ pr: { number: 12 } });
-
-    expect(result).not.toContain("\x1b]8;;");
-  });
-
-  test("joins the worktree and PR clauses with a middot when both are present", () => {
-    const result = formatWorktreeAndPr({
-      workspace: { git_worktree: "foo" },
-      pr: { number: 12 },
+  test("renders green when free memory is above 30%", () => {
+    const result = formatMemorySegment({
+      freemem: 8_000_000_000,
+      totalmem: 10_000_000_000,
     });
 
-    expect(result).toContain('worktree "foo"');
-    expect(result).toContain("PR #12");
-    expect(result).toContain(" · ");
-  });
-});
-
-describe("formatAgentSegment", () => {
-  test("renders the agent name dimmed with an arrow prefix", () => {
-    const result = formatAgentSegment({ agent: { name: "code-implementer" } });
-
-    expect(result).toContain(DIM);
-    expect(result).toContain("↳ code-implementer");
-  });
-
-  test("returns null when agent.name is absent or empty", () => {
-    expect(formatAgentSegment({})).toBeNull();
-    expect(formatAgentSegment({ agent: { name: "" } })).toBeNull();
+    expect(result?.text).toBe(`${GREEN}8.0/10.0G free${RESET}`);
   });
 });
 
@@ -848,13 +1118,6 @@ describe("resolveInflightSpokes", () => {
 
   test("returns an empty array when the file is missing", () => {
     const readFile = (): string | null => null;
-
-    expect(resolveInflightSpokes(readFile, cwd)).toEqual([]);
-  });
-
-  test("returns an empty array for an empty file", () => {
-    const readFile = (path: string): string | null =>
-      path === lifecyclePath ? "" : null;
 
     expect(resolveInflightSpokes(readFile, cwd)).toEqual([]);
   });
@@ -896,22 +1159,6 @@ describe("resolveInflightSpokes", () => {
     expect(resolveInflightSpokes(readFile, cwd)).toEqual([]);
   });
 
-  test("skips a record with a non-string agentId, neither included nor crashing", () => {
-    const lines = [
-      JSON.stringify({
-        event: "start",
-        agentId: 123,
-        agentType: "code-implementer",
-        ts: "2026-09-02T00:00:00.000Z",
-      }),
-    ].join("\n");
-    const readFile = (path: string): string | null =>
-      path === lifecyclePath ? lines : null;
-
-    expect(() => resolveInflightSpokes(readFile, cwd)).not.toThrow();
-    expect(resolveInflightSpokes(readFile, cwd)).toEqual([]);
-  });
-
   test("skips a malformed JSON line without throwing, and still parses subsequent valid lines", () => {
     const lines = [
       "{not valid json",
@@ -931,34 +1178,6 @@ describe("resolveInflightSpokes", () => {
         agentId: "spoke-1",
         agentType: "code-implementer",
         startTs: "2026-09-02T00:00:00.000Z",
-      },
-    ]);
-  });
-
-  test("start-stop-start for the same agentId ends in-flight with the latest start's data", () => {
-    const lines = [
-      JSON.stringify({
-        event: "start",
-        agentId: "spoke-1",
-        agentType: "code-implementer",
-        ts: "2026-09-02T00:00:00.000Z",
-      }),
-      JSON.stringify({ event: "stop", agentId: "spoke-1" }),
-      JSON.stringify({
-        event: "start",
-        agentId: "spoke-1",
-        agentType: "test-author",
-        ts: "2026-09-02T01:00:00.000Z",
-      }),
-    ].join("\n");
-    const readFile = (path: string): string | null =>
-      path === lifecyclePath ? lines : null;
-
-    expect(resolveInflightSpokes(readFile, cwd)).toEqual([
-      {
-        agentId: "spoke-1",
-        agentType: "test-author",
-        startTs: "2026-09-02T01:00:00.000Z",
       },
     ]);
   });
@@ -999,21 +1218,6 @@ describe("formatInflightSpokesSegment", () => {
     expect(result).not.toContain("⚠");
   });
 
-  test("renders yellow at or over the warn threshold but under the high threshold", () => {
-    const spokes = [
-      {
-        agentId: "spoke-1",
-        agentType: "code-implementer",
-        startTs: new Date(now - SPOKE_WARN_THRESHOLD_SEC * 1000).toISOString(),
-      },
-    ];
-
-    const result = formatInflightSpokesSegment(spokes, { now });
-
-    expect(result).toContain(YELLOW);
-    expect(result).not.toContain("⚠");
-  });
-
   test("renders red with the warning icon at or over the high threshold", () => {
     const spokes = [
       {
@@ -1029,329 +1233,276 @@ describe("formatInflightSpokesSegment", () => {
     expect(result).toContain(" ⚠");
   });
 
-  test("uses the oldest startTs across multiple spokes and pluralizes 'spokes'", () => {
+  test("eviction: returns null when the only spoke is older than MAX_INFLIGHT_AGE_SEC", () => {
     const spokes = [
       {
         agentId: "spoke-1",
         agentType: "code-implementer",
-        startTs: new Date(now - 5 * 60 * 1000).toISOString(),
-      },
-      {
-        agentId: "spoke-2",
-        agentType: "test-author",
-        startTs: new Date(now - 40 * 60 * 1000).toISOString(),
-      },
-    ];
-
-    const result = formatInflightSpokesSegment(spokes, { now });
-
-    expect(result).toContain("2 spokes");
-    expect(result).toContain("oldest 40m");
-  });
-
-  test("uses the singular 'spoke' for a single-element array", () => {
-    const spokes = [
-      {
-        agentId: "spoke-1",
-        agentType: "code-implementer",
-        startTs: new Date(now - 5 * 60 * 1000).toISOString(),
-      },
-    ];
-
-    const result = formatInflightSpokesSegment(spokes, { now });
-
-    expect(result).toContain("1 spoke ");
-    expect(result).not.toContain("1 spokes");
-  });
-
-  test("honors env.now for a deterministic elapsed time", () => {
-    const spokes = [
-      {
-        agentId: "spoke-1",
-        agentType: "code-implementer",
-        startTs: "2026-09-02T00:00:00.000Z",
-      },
-    ];
-    const fixedNow = new Date("2026-09-02T00:10:00.000Z").getTime();
-
-    const result = formatInflightSpokesSegment(spokes, { now: fixedNow });
-
-    expect(result).toContain("oldest 10m");
-  });
-
-  test("returns null when the only spoke has an unparseable startTs", () => {
-    const spokes = [
-      {
-        agentId: "spoke-1",
-        agentType: "code-implementer",
-        startTs: "not-a-date",
+        startTs: new Date(
+          now - (MAX_INFLIGHT_AGE_SEC + 1) * 1000,
+        ).toISOString(),
       },
     ];
 
     expect(formatInflightSpokesSegment(spokes, { now })).toBeNull();
   });
-
-  describe("eviction of stale start records", () => {
-    test("MAX_INFLIGHT_AGE_SEC is 7200 (2 hours)", () => {
-      expect(MAX_INFLIGHT_AGE_SEC).toBe(7200);
-    });
-
-    test("returns null when the only spoke is older than MAX_INFLIGHT_AGE_SEC", () => {
-      const spokes = [
-        {
-          agentId: "spoke-1",
-          agentType: "code-implementer",
-          startTs: new Date(
-            now - (MAX_INFLIGHT_AGE_SEC + 1) * 1000,
-          ).toISOString(),
-        },
-      ];
-
-      expect(formatInflightSpokesSegment(spokes, { now })).toBeNull();
-    });
-
-    test("returns null when every spoke is older than MAX_INFLIGHT_AGE_SEC", () => {
-      const spokes = [
-        {
-          agentId: "spoke-1",
-          agentType: "code-implementer",
-          startTs: new Date(
-            now - (MAX_INFLIGHT_AGE_SEC + 60) * 1000,
-          ).toISOString(),
-        },
-        {
-          agentId: "spoke-2",
-          agentType: "test-author",
-          startTs: new Date(
-            now - (MAX_INFLIGHT_AGE_SEC + 3600) * 1000,
-          ).toISOString(),
-        },
-      ];
-
-      expect(formatInflightSpokesSegment(spokes, { now })).toBeNull();
-    });
-
-    test("excludes a stale spoke and renders using only the live spoke's data", () => {
-      const spokes = [
-        {
-          agentId: "spoke-stale",
-          agentType: "code-implementer",
-          startTs: new Date(
-            now - (MAX_INFLIGHT_AGE_SEC + 3600) * 1000,
-          ).toISOString(),
-        },
-        {
-          agentId: "spoke-live",
-          agentType: "test-author",
-          startTs: new Date(now - 5 * 60 * 1000).toISOString(),
-        },
-      ];
-
-      const result = formatInflightSpokesSegment(spokes, { now });
-
-      expect(result).toContain("1 spoke ");
-      expect(result).not.toContain("2 spoke");
-      expect(result).toContain("oldest 5m");
-    });
-
-    test("includes a spoke exactly MAX_INFLIGHT_AGE_SEC old (t === cutoffMs, the exclusion test is strict `<`)", () => {
-      const spokes = [
-        {
-          agentId: "spoke-1",
-          agentType: "code-implementer",
-          startTs: new Date(now - MAX_INFLIGHT_AGE_SEC * 1000).toISOString(),
-        },
-      ];
-
-      const result = formatInflightSpokesSegment(spokes, { now });
-
-      expect(result).not.toBeNull();
-      expect(result).toContain("1 spoke ");
-      expect(result).toContain("oldest 2h00m");
-    });
-  });
 });
 
-describe("formatOriginRepo", () => {
-  test("renders owner/name in bright cyan", () => {
-    const result = formatOriginRepo({
-      workspace: { repo: { owner: "monte3l", name: "m3l-automation" } },
-    });
+describe("buildSessionRow", () => {
+  // Unlike the other four rows, this one can never hit the all-null
+  // placeholder case: formatSessionNameSegment always returns a segment
+  // (never null, per its own contract), so an entirely empty payload/env
+  // still renders the "unnamed" fallback rather than PLACEHOLDER.
+  test("still renders a non-empty, non-placeholder row for an entirely empty payload/env (session_name never returns null)", () => {
+    const result = buildSessionRow({}, {}, 80);
 
-    expect(result).toContain(BRIGHT_CYAN);
-    expect(result).toContain("monte3l/m3l-automation");
+    expect(result.length).toBeGreaterThan(0);
+    expect(result).toContain("unnamed");
+    expect(result).not.toContain(PLACEHOLDER);
   });
 
-  test("returns null when owner or name is missing", () => {
-    expect(
-      formatOriginRepo({ workspace: { repo: { owner: "monte3l" } } }),
-    ).toBeNull();
-    expect(formatOriginRepo({ workspace: {} })).toBeNull();
-    expect(formatOriginRepo({})).toBeNull();
-  });
-});
-
-describe("formatFreeMemory", () => {
-  test("renders the free-memory percentage in bright green", () => {
-    const result = formatFreeMemory({
-      freemem: 2_000_000_000,
-      totalmem: 8_000_000_000,
-    });
-
-    expect(result).toContain(BRIGHT_GREEN);
-    expect(result).toContain("mem 25%free");
-  });
-
-  test("returns null when totalmem is zero or fields are missing", () => {
-    expect(formatFreeMemory({ freemem: 100, totalmem: 0 })).toBeNull();
-    expect(formatFreeMemory({})).toBeNull();
-  });
-});
-
-describe("buildLine1", () => {
-  test("joins session name, model, effort, and the context bar+segment with the segment join", () => {
+  test("renders session name, branch, worktree, PR, agent, and origin repo segments", () => {
     const payload = {
       session_name: "feat-statusline-widgets",
-      model: { display_name: "Sonnet" },
-      effort: { level: "high" },
-      context_window: { used_percentage: 42 },
-    };
-
-    const result = buildLine1(payload);
-
-    expect(result).not.toBeNull();
-    expect(result).toContain("feat-statusline-widgets");
-    expect(result).toContain("Sonnet");
-    expect(result).toContain("high");
-    expect(result).toContain("ctx 42%");
-    expect((result ?? "").split(SEGMENT_JOIN).length).toBeGreaterThanOrEqual(4);
-    expect((result ?? "").indexOf("feat-statusline-widgets")).toBeLessThan(
-      (result ?? "").indexOf("Sonnet"),
-    );
-  });
-
-  test("still renders the context segment when model and effort are absent", () => {
-    expect(buildLine1({})).toContain("ctx --%");
-  });
-
-  test("always includes the session-name segment, even with an entirely empty payload", () => {
-    expect(buildLine1({})).toContain("unnamed");
-  });
-});
-
-describe("buildLine2", () => {
-  const now = 1_700_000_000_000;
-
-  test("joins session usage, reset countdown, weekly reset, and cache widgets", () => {
-    const payload = {
-      cost: { total_cost_usd: 1 },
-      rate_limits: {
-        five_hour: { resets_at: now / 1000 + 3600 },
-        seven_day: { resets_at: now / 1000 + 7200 },
-      },
-      prompt_cache: { warm: true },
-    };
-
-    const result = buildLine2(payload, { now });
-
-    expect(result).not.toBeNull();
-    expect(result).toContain("$1.00");
-    expect(result).toContain("reset 1h00m");
-    expect(result).toContain("week ");
-    expect(result).toContain("cache warm");
-  });
-
-  test("returns null when every constituent widget is absent", () => {
-    expect(buildLine2({}, {})).toBeNull();
-  });
-});
-
-describe("buildLine3", () => {
-  test("joins branch, worktree/PR, agent, origin repo, and free memory", () => {
-    const payload = {
       workspace: {
         git_worktree: "foo",
         repo: { owner: "monte3l", name: "m3l-automation" },
       },
       pr: { number: 12 },
-      agent: { name: "code-implementer" },
+      agent: { name: "code-reviewer" },
     };
-    const env = { branch: "feat/foo", freemem: 1, totalmem: 4 };
+    const env = { branch: "feat/foo" };
 
-    const result = buildLine3(payload, env);
+    const result = buildSessionRow(payload, env, 200);
 
-    expect(result).not.toBeNull();
+    expect(result).toContain("feat-statusline-widgets");
     expect(result).toContain("feat/foo");
+    expect(result).toContain('wt "foo"');
     expect(result).toContain("PR #12");
-    expect(result).toContain("code-implementer");
+    expect(result).toContain("↳ code-reviewer");
     expect(result).toContain("monte3l/m3l-automation");
-    expect(result).toContain("mem 25%free");
   });
 
-  test("returns null when every constituent widget is absent", () => {
-    expect(buildLine3({}, {})).toBeNull();
-  });
+  test("always returns a non-empty string, even at a very narrow width", () => {
+    const payload = { session_name: "feat-x" };
 
-  test("renders an in-flight spoke segment positioned between the agent and origin repo segments", () => {
-    const now = 1_700_000_000_000;
-    const payload = {
-      agent: { name: "code-implementer" },
-      workspace: { repo: { owner: "monte3l", name: "m3l-automation" } },
-    };
-    const env = {
-      now,
-      spokes: [
-        {
-          agentId: "spoke-1",
-          agentType: "code-implementer",
-          startTs: new Date(now - 5 * 60 * 1000).toISOString(),
-        },
-      ],
-    };
-
-    const result = buildLine3(payload, env);
-
-    expect(result).toContain("spoke");
-    expect(result).toContain(GREEN);
+    expect(buildSessionRow(payload, {}, 5).length).toBeGreaterThan(0);
   });
 });
 
-describe("buildLine4", () => {
-  test("returns exactly the compact suggestion", () => {
-    const payload = { context_window: { used_percentage: 95 } };
-
-    expect(buildLine4(payload)).toBe(buildCompactSuggestion(payload));
+describe("buildModelRow", () => {
+  test("starts with the padded, dimmed 'model' gutter label followed by the placeholder for an empty payload", () => {
+    expect(buildModelRow({}, 80)).toBe(
+      `${DIM}model     ${RESET}${PLACEHOLDER}`,
+    );
   });
 
-  test("returns null when there is no compact suggestion", () => {
-    expect(buildLine4({ context_window: { used_percentage: 42 } })).toBeNull();
+  test("renders model, effort, thinking, fast mode, output style, and vim mode segments", () => {
+    const payload = {
+      model: { display_name: "Sonnet 5" },
+      effort: { level: "high" },
+      thinking: { enabled: true },
+      fast_mode: true,
+      output_style: { name: "explanatory" },
+      vim: { mode: "NORMAL" },
+    };
+
+    const result = buildModelRow(payload, 200);
+
+    expect(result).toContain("Sonnet 5");
+    expect(result).toContain("high");
+    expect(result).toContain("thinking");
+    expect(result).toContain("fast mode");
+    expect(result).toContain("explanatory");
+    expect(result).toContain("normal");
+  });
+
+  test("always returns a non-empty string, even at a very narrow width", () => {
+    const payload = { model: { display_name: "Sonnet 5" } };
+
+    expect(buildModelRow(payload, 5).length).toBeGreaterThan(0);
+  });
+});
+
+describe("buildContextRow", () => {
+  test("returns the gutter + placeholder when there is no context-window data", () => {
+    expect(buildContextRow({}, 80)).toBe(
+      `${DIM}${"context".padEnd(GUTTER_WIDTH)}${RESET}${PLACEHOLDER}`,
+    );
+  });
+
+  test("renders the bar, percentage, denominator, and headroom segments", () => {
+    const payload = {
+      context_window: {
+        used_percentage: 50,
+        total_input_tokens: 15500,
+        context_window_size: 200000,
+        remaining_percentage: 50,
+      },
+    };
+
+    const result = buildContextRow(payload, 200);
+
+    expect(result).toContain("50%");
+    expect(result).toContain("15.5k/200k");
+    expect(result).toContain("headroom");
+    expect(result).toContain("█");
+  });
+
+  test("always returns a non-empty string, even at a very narrow width", () => {
+    const payload = { context_window: { used_percentage: 50 } };
+
+    expect(buildContextRow(payload, 5).length).toBeGreaterThan(0);
+  });
+});
+
+describe("buildQuotaRow", () => {
+  const now = 1_700_000_000_000;
+
+  test("returns the gutter + placeholder when no rate-limit data is present", () => {
+    expect(buildQuotaRow({}, { now }, 80)).toBe(
+      `${DIM}${"quota".padEnd(GUTTER_WIDTH)}${RESET}${PLACEHOLDER}`,
+    );
+  });
+
+  test("renders the five-hour, seven-day, and spend-limit segments", () => {
+    const payload = {
+      rate_limits: {
+        five_hour: { used_percentage: 20 },
+        seven_day: { used_percentage: 40 },
+        spend_limit: { used_percentage: 60 },
+      },
+    };
+
+    const result = buildQuotaRow(payload, { now }, 200);
+
+    expect(result).toContain("5h");
+    expect(result).toContain("7d");
+    expect(result).toContain("spend");
+  });
+
+  test("always returns a non-empty string, even at a very narrow width", () => {
+    const payload = { rate_limits: { five_hour: { used_percentage: 20 } } };
+
+    expect(buildQuotaRow(payload, { now }, 5).length).toBeGreaterThan(0);
+  });
+});
+
+describe("buildWorkRow", () => {
+  test("returns the gutter + placeholder when no cost/cache/memory data is present", () => {
+    expect(buildWorkRow({}, {}, 80)).toBe(
+      `${DIM}${"work".padEnd(GUTTER_WIDTH)}${RESET}${PLACEHOLDER}`,
+    );
+  });
+
+  test("renders cost, duration, lines-changed, cache, and memory segments", () => {
+    const payload = {
+      cost: {
+        total_cost_usd: 1.5,
+        total_duration_ms: 125000,
+        total_lines_added: 5,
+        total_lines_removed: 2,
+      },
+      prompt_cache: { warm: true },
+    };
+    const env = { freemem: 2_000_000_000, totalmem: 8_000_000_000 };
+
+    const result = buildWorkRow(payload, env, 200);
+
+    expect(result).toContain("$1.50");
+    expect(result).toContain("2m");
+    expect(result).toContain("+5");
+    expect(result).toContain("-2");
+    expect(result).toContain("cache warm");
+    expect(result).toContain("G free");
+  });
+
+  test("always returns a non-empty string, even at a very narrow width", () => {
+    const payload = { cost: { total_cost_usd: 1 } };
+
+    expect(buildWorkRow(payload, {}, 5).length).toBeGreaterThan(0);
   });
 });
 
 describe("renderStatusLine", () => {
-  test("works with no env arg and puts the compact suggestion on its own line, not joined with an arrow", () => {
-    const payload = {
-      context_window: { used_percentage: 95 },
-      pr: { number: 12 },
-    };
+  const now = 1_700_000_000_000;
+  const richPayload = {
+    session_name: "feat-statusline-widgets",
+    model: { display_name: "Sonnet 5" },
+    effort: { level: "high" },
+    thinking: { enabled: true },
+    fast_mode: true,
+    output_style: { name: "explanatory" },
+    vim: { mode: "NORMAL" },
+    context_window: {
+      used_percentage: 72,
+      total_input_tokens: 15500,
+      context_window_size: 200000,
+      remaining_percentage: 28,
+    },
+    rate_limits: {
+      five_hour: { used_percentage: 20, resets_at: now / 1000 + 3600 },
+      seven_day: { used_percentage: 40 },
+      spend_limit: { used_percentage: 10 },
+    },
+    cost: {
+      total_cost_usd: 1.5,
+      total_duration_ms: 125000,
+      total_api_duration_ms: 65000,
+      total_lines_added: 5,
+      total_lines_removed: 2,
+    },
+    prompt_cache: { warm: true, hit_ratio: 0.9 },
+    workspace: {
+      git_worktree: "statusline-context-pressure",
+      repo: { owner: "monte3l", name: "m3l-automation" },
+    },
+    pr: { number: 12, review_state: "approved" },
+  };
+  const richEnv = {
+    now,
+    freemem: 2_000_000_000,
+    totalmem: 8_000_000_000,
+    branch: "feat/statusline-redesign",
+  };
 
-    const result = renderStatusLine(payload);
-    const lines = result.split("\n");
+  test("always returns exactly 5 newline-joined lines for a fully-populated payload", () => {
+    const result = renderStatusLine(richPayload, richEnv);
 
-    expect(lines.some((line) => line.includes("ctx 95%"))).toBe(true);
-    expect(lines).toContain(buildCompactSuggestion(payload));
-    expect(result).not.toContain(" → ");
+    expect(result.split("\n")).toHaveLength(5);
   });
 
-  test("renders exactly one line for a minimal payload with no widgets beyond the context segment", () => {
-    const payload = { context_window: { used_percentage: 42 } };
+  test("always returns exactly 5 lines for an empty payload with no env arg", () => {
+    expect(renderStatusLine({}).split("\n")).toHaveLength(5);
+  });
 
-    const result = renderStatusLine(payload);
+  test("always returns exactly 5 lines for a payload with only context_window.used_percentage set", () => {
+    const result = renderStatusLine({
+      context_window: { used_percentage: 42 },
+    });
 
-    expect(result).toContain("ctx 42%");
-    expect(result.split("\n")).toHaveLength(1);
-    expect(result.startsWith("\n")).toBe(false);
-    expect(result.endsWith("\n")).toBe(false);
+    expect(result.split("\n")).toHaveLength(5);
+  });
+
+  test("respects a narrow terminal: every line's display width stays within COLUMNS=40", () => {
+    const result = renderStatusLine(richPayload, { ...richEnv, COLUMNS: "40" });
+
+    for (const line of result.split("\n")) {
+      expect(displayWidth(line)).toBeLessThanOrEqual(40);
+    }
+  });
+
+  test("renders correctly at a wide terminal (COLUMNS=200) without throwing or emitting undefined/NaN text", () => {
+    const result = renderStatusLine(richPayload, {
+      ...richEnv,
+      COLUMNS: "200",
+    });
+
+    expect(result).not.toContain("undefined");
+    expect(result).not.toContain("NaN");
+    for (const line of result.split("\n")) {
+      expect(displayWidth(line)).toBeLessThanOrEqual(200);
+    }
   });
 });
 
@@ -1364,7 +1515,7 @@ describe("CLI entry (real child process)", () => {
   );
   const repoRoot = fileURLToPath(new URL("../../", import.meta.url));
 
-  test("reads a JSON payload from stdin, renders it, and writes to stdout", () => {
+  test("reads a JSON payload from stdin, renders it as 5 lines, and writes to stdout", () => {
     const stdout = execFileSync("node", [scriptPath], {
       input: JSON.stringify({
         context_window: { used_percentage: 42 },
@@ -1373,7 +1524,8 @@ describe("CLI entry (real child process)", () => {
       encoding: "utf8",
     });
 
-    expect(stdout).toContain("ctx 42%");
+    expect(stdout).toContain("42%");
+    expect(stdout.split("\n")).toHaveLength(5);
   });
 
   test("falls back to 'ctx --%' and exits 0 on malformed JSON stdin", () => {

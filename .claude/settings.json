@@ -68,7 +68,8 @@
   "statusLine": {
     "type": "command",
     "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/statusline-context-pressure.mjs\"",
-    "refreshInterval": 30
+    "refreshInterval": 30,
+    "padding": 1
   },
   "hooks": {
     "SessionStart": [
