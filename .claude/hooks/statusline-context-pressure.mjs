@@ -187,6 +187,44 @@ export function formatContextBar(payload) {
 }
 
 /**
+ * The repo's Claude Code session-naming convention (ADR-0087,
+ * `docs/contributing/contributing.md` § Session naming): `<kind>-<slug>`,
+ * `kind` from a closed set reusing the branch-prefix/Conventional-Commit
+ * vocabulary.
+ */
+export const SESSION_NAME_PATTERN =
+  /^(feat|fix|audit|research|docs|review|ci|merge)-[a-z0-9]+(?:-[a-z0-9]+)*$/;
+export const SESSION_NAME_MAX_LENGTH = 40;
+
+/**
+ * Always renders, unlike most segments here — absence of a conforming name
+ * is exactly the signal this segment exists to surface (ADR-0087). No hook
+ * can set a session name, so `payload.session_name` carries whatever the
+ * session happens to have: the AI-generated first-prompt title when nothing
+ * was set explicitly. A present/absent check alone would therefore pass most
+ * sessions while conforming to nothing — this validates the *value* against
+ * the convention's pattern instead, the same way `formatBranch` flags `main`
+ * rather than merely checking a branch name is present.
+ *
+ * @param {unknown} payload
+ * @returns {string} the colorized session name when it conforms to the
+ *   convention, or a dim/flagged marker (`unnamed`, or the non-conforming
+ *   name itself) otherwise — never null.
+ */
+export function formatSessionNameSegment(payload) {
+  const name =
+    typeof payload === "object" && payload !== null
+      ? /** @type {{ session_name?: unknown }} */ (payload).session_name
+      : undefined;
+  if (typeof name !== "string" || name.length === 0) {
+    return `${DIM}unnamed${RESET}`;
+  }
+  const conforms =
+    name.length <= SESSION_NAME_MAX_LENGTH && SESSION_NAME_PATTERN.test(name);
+  return conforms ? `${GREEN}${name}${RESET}` : `${YELLOW}⚠ ${name}${RESET}`;
+}
+
+/**
  * @param {unknown} payload
  * @returns {string | null} colorized model display name, or null when
  *   absent.
@@ -663,10 +701,12 @@ function joinSegments(list) {
 
 /**
  * @param {unknown} payload
- * @returns {string | null} line 1: model, effort, context bar + segment.
+ * @returns {string | null} line 1: session name, model, effort, context bar
+ *   + segment.
  */
 export function buildLine1(payload) {
   return joinSegments([
+    formatSessionNameSegment(payload),
     formatModelSegment(payload),
     formatEffortSegment(payload),
     joinSegments([formatContextBar(payload), formatContextSegment(payload)]),
