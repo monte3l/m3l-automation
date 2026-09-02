@@ -21,6 +21,10 @@ import {
   MAX_TABLE_LINE_WIDTH,
   RULE_CEILING_BYTES,
   SKILL_DESC_WARN_CHARS,
+  SKILL_LISTING_BUDGET_FRACTION,
+  SKILL_LISTING_REFERENCE_WINDOWS,
+  SKILL_LISTING_ENFORCED_WINDOW,
+  checkSkillListingBudget,
   stripBlockComments,
   normalizeRuntimeContent,
   countRuntimeLines,
@@ -69,6 +73,9 @@ describe("exported constants", () => {
     expect(MAX_TABLE_LINE_WIDTH).toBe(200);
     expect(RULE_CEILING_BYTES).toBe(10_000);
     expect(SKILL_DESC_WARN_CHARS).toBe(1536);
+    expect(SKILL_LISTING_BUDGET_FRACTION).toBe(0.01);
+    expect(SKILL_LISTING_REFERENCE_WINDOWS).toEqual([200_000, 1_000_000]);
+    expect(SKILL_LISTING_ENFORCED_WINDOW).toBe(200_000);
   });
 });
 
@@ -1075,6 +1082,74 @@ describe("collectSkillDescriptions", () => {
 
     expect(collectSkillDescriptions(skillsDir)).toEqual([]);
     expect(readdirSyncSpy).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// checkSkillListingBudget — pure function, no fs involved
+// ---------------------------------------------------------------------------
+
+describe("checkSkillListingBudget", () => {
+  test("totalChars comfortably under both budgets is not over budget at either window", () => {
+    const result = checkSkillListingBudget(1000);
+
+    expect(result).toEqual([
+      {
+        contextWindow: 200_000,
+        budgetTokens: 2000,
+        budgetChars: 8000,
+        overBudget: false,
+      },
+      {
+        contextWindow: 1_000_000,
+        budgetTokens: 10_000,
+        budgetChars: 40_000,
+        overBudget: false,
+      },
+    ]);
+  });
+
+  test("totalChars over the 200k budget but under the 1M budget flags only the 200k window", () => {
+    const result = checkSkillListingBudget(21_684);
+
+    expect(result).toEqual([
+      {
+        contextWindow: 200_000,
+        budgetTokens: 2000,
+        budgetChars: 8000,
+        overBudget: true,
+      },
+      {
+        contextWindow: 1_000_000,
+        budgetTokens: 10_000,
+        budgetChars: 40_000,
+        overBudget: false,
+      },
+    ]);
+  });
+
+  test("totalChars exactly equal to a window's budgetChars is not over budget (strict >)", () => {
+    const result = checkSkillListingBudget(8000);
+    const window200k = result.find((entry) => entry.contextWindow === 200_000);
+
+    expect(window200k).toEqual({
+      contextWindow: 200_000,
+      budgetTokens: 2000,
+      budgetChars: 8000,
+      overBudget: false,
+    });
+  });
+
+  test("a custom fraction scales the computed budgets proportionally", () => {
+    const result = checkSkillListingBudget(1000, 0.02);
+    const window200k = result.find((entry) => entry.contextWindow === 200_000);
+
+    expect(window200k).toEqual({
+      contextWindow: 200_000,
+      budgetTokens: 4000,
+      budgetChars: 16_000,
+      overBudget: false,
+    });
   });
 });
 

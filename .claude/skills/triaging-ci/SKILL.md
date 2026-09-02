@@ -1,19 +1,11 @@
 ---
 name: triaging-ci
 description: >-
-  Diagnose a CI failure in this repo using the gh CLI: resolve the failing run,
-  fetch its logs, map the failure to the specific pipeline step, report the root
-  cause plus the exact local command to reproduce it, and present 3–5 solution
-  options for the user to choose from. Use this skill whenever the user says /triaging-ci,
-  "investigate the CI failure", "why did CI fail", "what failed in CI", "CI is
-  failing", "triage the CI failure", "check the CI logs", "debug the CI run",
-  "look at the failing run", or provides a specific run ID or URL (e.g. "run
-  #12345 failed", "https://github.com/.../actions/runs/12345"). Also invoke when
-  the user asks "what's wrong with CI" or "the build is broken" — any time the
-  goal is to understand why a GitHub Actions run failed rather than to fix it.
-  Uses the gh CLI (GitHub-integration stance: ADR-0030, amended 2026-07-27 —
-  the configured GitHub MCP default toolset has no Actions tools, so this
-  skill stays gh-CLI-based).
+  Diagnose a CI failure via gh CLI: resolve the failing run, fetch logs, map the
+  failure to its pipeline step, report root cause plus the exact local repro
+  command, and present 3-5 fix options. Use for /triaging-ci, "why did CI fail",
+  "CI is failing", "debug the CI run", or a specific run ID/URL. GitHub stance:
+  gh CLI (ADR-0030; no Actions tools in the MCP toolset).
 ---
 
 Diagnose why a GitHub Actions CI run failed by fetching its logs via `gh` and

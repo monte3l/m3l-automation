@@ -1,17 +1,11 @@
 ---
 name: vitest-coverage-types-mocks
 description: >-
-  How this repo runs Vitest — the vitest.config.ts coverage gate, the v8 per-file
-  thresholds, and the mocking / type-testing patterns the tests rely on. Use
-  whenever you are editing vitest.config.ts, changing coverage thresholds or
-  include/exclude, writing or fixing a mock (vi.mock, vi.spyOn, vi.hoisted), adding
-  expectTypeOf type-level assertions, or debugging a coverage-threshold failure or
-  a hoisting/"cannot access before initialization" mock error in m3l-automation.
-  Reach for it even when the user says "coverage is failing", "mock this module",
-  "why is my spy not working", "test the types", or "adjust the vitest config" —
-  anything touching Vitest here. Pairs with the tests.md rule (which carries the
-  project's testing philosophy); this skill is the config + mocking mechanics. Not
-  for generic Vitest questions unrelated to this repo (use the context7-mcp skill).
+  How this repo runs Vitest — coverage gate, v8 per-file thresholds,
+  mocking/type-testing patterns. Use for "coverage is failing", "mock this
+  module", or when editing vitest.config.ts, writing/fixing a mock (vi.mock,
+  vi.spyOn, vi.hoisted), or adding expectTypeOf assertions. Pairs with tests.md.
+  Not for generic Vitest questions unrelated to this repo.
 ---
 
 # Vitest coverage, types & mocks (m3l-automation)

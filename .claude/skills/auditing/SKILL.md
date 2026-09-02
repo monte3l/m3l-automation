@@ -1,17 +1,11 @@
 ---
 name: auditing
 description: >-
-  Fan out parallel Explore subagents to audit a topic in the codebase, aggregate
-  and dedupe their findings against current repo state, ask focused clarifying
-  questions, then enter plan mode with a structured plan — without touching any
-  code. Use this skill whenever the user says /auditing, "audit the codebase",
-  "audit [topic]", "do an audit of", "audit and plan", "fan out agents to audit",
-  "spawn Explore subagents to audit", "review the current state of", "investigate
-  and plan", or any variant of 'look at X and make a plan'. Also invoke when the
-  user asks to "audit X and then plan how to fix it" or "find gaps in X and plan
-  the fixes" — even without the word audit. This is always the right skill when
-  the intent is: read the codebase broadly on a topic, surface what's missing or
-  wrong, and produce a plan.
+  Fan out parallel Explore subagents to audit a topic, aggregate findings
+  against current repo state, ask clarifying questions, enter plan mode with a
+  plan — no code written. Use for /auditing, "audit the codebase", "audit
+  [topic]", "review the current state of", "investigate and plan", or "find gaps
+  in X and plan the fixes".
 ---
 
 Audit a topic in the `m3l-automation` codebase by fanning out parallel read-only

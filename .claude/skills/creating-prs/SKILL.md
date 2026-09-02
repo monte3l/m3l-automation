@@ -1,17 +1,10 @@
 ---
 name: creating-prs
 description: >-
-  Verify all quality gates, push the current branch, and submit a pull request
-  with a Conventional Commit title and a well-structured body derived from the
-  commit history. Use this whenever the user says "open a PR", "create a pull
-  request", "submit this branch", "push and PR", "make a PR", "ship this for
-  review", or has just finished implementing a feature or fix and wants it
-  reviewed. Also invoke when the user asks to "submit my changes" or "get this
-  merged" — even without the words "pull request". Requires gh CLI authentication.
-
-  GitHub-integration stance: ADR-0030 (amended 2026-07-27) — uses the gh CLI
-  because the CodeQL pre-push probe needs the code-scanning-alerts endpoint,
-  which is outside the configured GitHub MCP default toolset.
+  Verify quality gates, push the branch, and open a PR with a Conventional
+  Commit title and body from commit history. Use for /creating-prs, "open a PR",
+  "create a pull request", "ship this for review", or after finishing a fix.
+  Requires gh CLI auth. GitHub stance: gh CLI (ADR-0030).
 ---
 
 # creating-prs
