@@ -1,18 +1,12 @@
 ---
 name: tsconfig-strict-esm
 description: >-
-  How this repo's TypeScript project is configured — the strict/ESM compiler
-  options in tsconfig.base.json and the composite build-vs-tooling split — and how
-  to change it without breaking the build. Use whenever you are editing any
-  tsconfig*.json here, standing up a new package's tsconfig, adding a project
-  reference, or debugging a compiler error tied to module resolution or strictness
-  (TS5110 module/moduleResolution mismatch, TS2834/2835 missing ".js" extension,
-  "composite may not disable declaration", exactOptionalPropertyTypes or
-  noUncheckedIndexedAccess surprises). Reach for it even when the user says "add a
-  package", "the build can't find my import", "why do I need .js in imports", or
-  "loosen this compiler flag" — anything touching tsconfig in m3l-automation. Not
-  for generic TypeScript language questions unrelated to this repo's config (use
-  the context7-mcp skill for those).
+  How this repo's TypeScript project is configured — strict/ESM options in
+  tsconfig.base.json, the build-vs-tooling split — and how to change it safely.
+  Use when editing tsconfig*.json, adding a project reference, or debugging
+  TS5110/TS2834/2835 errors, even phrased as "add a package", "the build can't
+  find my import", or "why do I need .js in imports". Not for generic TypeScript
+  questions.
 ---
 
 # TypeScript strict ESM config (m3l-automation)

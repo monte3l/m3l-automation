@@ -1,15 +1,11 @@
 ---
 name: implementing-scripts
 description: >-
-  Implement the real business logic of an already-scaffolded consumer script under
-  scripts/<name>/ — the TDD + hub-and-spoke loop that turns the script's contract page
-  (docs/reference/scripts/<name>.md) into reviewed, tested steps/ modules. Use this
-  whenever the user asks to "implement", "fill in", "wire up", "finish", or "write the
-  logic for" an automation script, job, or CLI that already has a scripts/<name>/
-  directory — even phrased casually like "make the data-sync script actually sync" or
-  "hook the export script up to S3", and even if they never say "script". For a script
-  with NO directory yet, run scaffolding-scripts first; for library submodules under
-  packages/m3l-common, use implementing-submodules instead.
+  Implement the real business logic of an already-scaffolded consumer script
+  under scripts/<name>/ — the TDD + hub-and-spoke loop turning its contract page
+  into tested steps/ modules. Use for "implement"/"fill in"/"wire up" a script
+  that already has a directory. No directory yet → scaffolding-scripts first;
+  library modules → implementing-submodules instead.
 ---
 
 # implementing-scripts

@@ -1,27 +1,12 @@
 ---
 name: finishing-work
 description: >-
-  Runs the post-merge close-out tail that no other skill owns — return to
-  main and pull, delete the merged branch (shared checkout or linked
-  worktree), prune stale remote-tracking refs, prompt for a tracker-row
-  flip and `sync:hub`, and prompt for a work log if none was written. Use
-  this skill whenever the user says /finishing-work, "clean up after this
-  PR", "the PR merged, wrap this up", "finish up this branch", "close this
-  out", or after `creating-prs` reports a PR as merged and the user wants
-  the workspace tidied. Also invoke proactively when a merged PR's branch,
-  worktree, or stale remote-tracking refs are still lying around — verified
-  live in this repo's own checkout after four consecutive merges (4 stale
-  remote-tracking refs, 1 stale local branch, 1 stale worktree, 1 orphaned
-  spoke journal, none of it cleaned up automatically). Distinct from
-  `creating-prs`, which owns everything up to and including "confirm
-  mergeability" — this is the step after that one, which nothing else in
-  the repo runs.
-
-  GitHub-integration stance: ADR-0030 (amended 2026-07-27) — uses the gh CLI,
-  matching `creating-prs` (this skill's direct predecessor in the same
-  session): Step 1's merge-state check needs nothing beyond `gh pr view`,
-  which has no GitHub MCP toolset gap to work around, so there is no reason
-  to switch tools mid-workflow.
+  Runs the post-merge close-out tail creating-prs doesn't: return to main and
+  pull, delete the merged branch, prune stale remote refs, prompt for a tracker
+  flip + sync:hub, prompt for a work log. Use for /finishing-work, "clean up
+  after this PR", "the PR merged, wrap this up", or when a merged
+  branch/worktree/refs linger. GitHub stance: gh CLI (ADR-0030), matching
+  creating-prs.
 ---
 
 # finishing-work

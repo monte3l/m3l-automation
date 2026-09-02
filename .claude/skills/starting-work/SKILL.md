@@ -1,21 +1,11 @@
 ---
 name: starting-work
 description: >-
-  The pre-work decision gate for m3l-automation. Before any change-work begins,
-  it inspects git state, infers and recommends six decisions — where to work
-  (shared checkout vs an opt-in linked worktree), the branch (feat/<slug> or
-  fix/<slug> off main), the Claude Code session name (<kind>-<slug>, ADR-0087),
-  whether the change must land via PR, the push target,
-  and — when the inferred scope spans several independently-landable units —
-  the PR sequence (ADR-0072) — then confirms every one with the user before a
-  single file is written or a branch is created. Invoke this whenever a task
-  will edit code, tests, or scripts: the user says "implement", "build",
-  "add", "fix", "edit", "refactor",
-  "scaffold", "write the code for", or otherwise starts real work — even when
-  they don't name a branch or say "starting-work". It is the mandatory Step 0 that
-  implementing-submodules, scaffolding-submodules, scaffolding-scripts, and auditing all run first, so
-  isolation is decided up front instead of discovered when guard-branch-isolation
-  blocks a write mid-run. Skip it only for pure research, reads, or questions.
+  The pre-work decision gate: inspects git state, recommends location, branch
+  (feat/fix <slug>), session name (ADR-0087), PR requirement, push target, and
+  PR sequence (ADR-0072) for multi-unit scope — confirmed before any write.
+  Invoke for "implement", "build", "fix", "refactor", even unnamed. Skip for
+  research/questions.
 ---
 
 # starting-work

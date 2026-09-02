@@ -1,20 +1,11 @@
 ---
 name: scaffolding-scripts
 description: >-
-  Scaffold a brand-new automation script package under scripts/<name>/ that consumes
-  @m3l-automation/m3l-common via workspace:* — the greenfield entry point for a consumer
-  script that has no directory yet. Runs the deterministic generator (pnpm scaffold:script),
-  which emits the ratified modular skeleton (thin main.ts composition root + config.ts +
-  hooks.ts + command.ts (the ADR-0054 command-module seam) + starter steps/ module +
-  config smoke test + command-module test + README + contract page) from
-  templates/script/ and wires the root tsconfig reference; then installs, builds, smoke-runs,
-  and hands off to implementing-scripts for the real logic. Use this whenever the user asks
-  to add, create, or scaffold a new automation/consumer script, job, or CLI under scripts/ —
-  even phrased casually like "set up a new export script", "add a report-generator
-  automation", or "create a script that syncs S3 to Dynamo", and even if they never say
-  "scaffold". This is for consumer scripts under scripts/, NOT library code: for a new
-  Core/AWS library module use scaffolding-submodules, and to fill in an existing documented
-  submodule use implementing-submodules.
+  Scaffold a brand-new script package under scripts/<name>/ via workspace:* —
+  runs pnpm scaffold:script, installs, builds, smoke-runs, hands off to
+  implementing-scripts. Use for "add"/"create"/"scaffold" a script/job/CLI under
+  scripts/ with no directory yet. Library modules → scaffolding-submodules;
+  existing documented submodule → implementing-submodules.
 ---
 
 # scaffolding-scripts

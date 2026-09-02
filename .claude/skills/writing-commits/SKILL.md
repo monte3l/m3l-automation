@@ -1,15 +1,10 @@
 ---
 name: writing-commits
 description: >-
-  Inspect the staged diff (and optionally unstaged changes the user names),
-  select the correct Conventional Commit type, draft a subject line ≤ 70 chars
-  in imperative present tense, decide whether a body is needed, structure the
-  body as What → bullet Why/How → semver impact, add Co-Authored-By when
-  AI-assisted, then run the commit. Use whenever the user says "commit this",
-  "write a commit", "create a commit message", "make a commit", "commit my
-  changes", "stage and commit", "draft a commit message", or similar. Always
-  invoke before git push or creating-prs if no commit exists yet. Required for
-  this m3l-automation monorepo — don't skip it even if the change looks small.
+  Inspect the staged diff, select the Conventional Commit type, draft an
+  imperative subject ≤70 chars, decide whether a body is needed, structure it as
+  What → Why/How → semver impact, add Co-Authored-By when AI-assisted, then
+  commit. Use for "commit this", "write a commit", "stage and commit".
 ---
 
 # writing-commits

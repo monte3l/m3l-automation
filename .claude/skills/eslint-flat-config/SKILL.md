@@ -1,16 +1,11 @@
 ---
 name: eslint-flat-config
 description: >-
-  How this repo's ESLint flat config (eslint.config.js) is structured and how to
-  change it safely. Use whenever you are adding, removing, or scoping a lint rule;
-  adding or editing an override block; adjusting `ignores`; wiring a new plugin;
-  or debugging a typescript-eslint type-checked lint error (projectService,
-  "parserOptions.project", TS5110/no-unresolved) in m3l-automation. Reach for it
-  even when the user just says "our linter is complaining", "turn off this rule for
-  tests", "why is eslint failing on this file", or "add an eslint rule" — anything
-  touching eslint.config.js here. Not for generic ESLint questions about other
-  projects (use the context7-mcp skill for those); this skill is specifically the
-  m3l-automation flat config.
+  How this repo's ESLint flat config (eslint.config.js) works and how to change
+  it safely — scoping rules, override blocks, `ignores`, plugins, or
+  type-checked lint errors (projectService, TS5110). Use for "eslint is
+  complaining", "turn off this rule for tests", "why is eslint failing", or "add
+  an eslint rule" — anything touching eslint.config.js here.
 ---
 
 # ESLint flat config (m3l-automation)

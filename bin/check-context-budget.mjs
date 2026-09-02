@@ -18,7 +18,7 @@
  * (comment-stripped, blank-line-collapsed, same as before) and the totals are
  * summed — not a single merged/re-normalized text.
  *
- * Three checks, three different enforcement shapes:
+ * Four checks, four different enforcement shapes:
  *
  *   1. Always-loaded budget (CLAUDE.md + resolved imports): a HARD ceiling,
  *      MAX_RUNTIME_LINES / MAX_APPROX_TOKENS — no ratchet. This surface is
@@ -30,11 +30,25 @@
  *      RULE_CEILING_BYTES. Four of seven existing rule files are already well
  *      over the 10,000-byte ceiling (library-src.md at 29,082 B is ~3x) — a
  *      flat cap would fail on day one, same rationale as check-file-budget.mjs.
- *   3. `.claude/skills/<name>/SKILL.md` description weight: INFORMATIONAL —
- *      total listing weight plus a WARN for any single description over
- *      1,536 chars, the documented Claude Code listing-truncation threshold
- *      (`code.claude.com/docs/en/skills`). Not ratcheted: descriptions churn
- *      with normal skill-writing edits and a hard gate here would fight that.
+ *   3. `.claude/skills/<name>/SKILL.md` per-skill description weight: a WARN
+ *      for any single description over 1,536 chars, the documented Claude
+ *      Code listing-truncation threshold (`code.claude.com/docs/en/skills`).
+ *      Not ratcheted: descriptions churn with normal skill-writing edits and
+ *      a hard per-file gate here would fight that.
+ *   3b. Aggregate skill-listing weight vs. Claude Code's documented ~1%-of-
+ *      context-window listing budget: a HARD ceiling at the
+ *      SKILL_LISTING_ENFORCED_WINDOW reference window (200k tokens — the
+ *      floor a session can run at), reported informationally against every
+ *      window in SKILL_LISTING_REFERENCE_WINDOWS. Unlike #3, this one is
+ *      enforced: on overflow Claude Code silently drops descriptions
+ *      starting with the least-invoked skills (`code.claude.com/docs/en/
+ *      skills`), so a 22-skill repo whose combined descriptions already ran
+ *      2.7x over the 200k-window budget (21,684 chars vs. an ~8,000-char
+ *      budget, measured 2026-09-02) was degrading prose-triggered invocation
+ *      silently, for exactly the skills a naive read would expect it least —
+ *      the low-usage ones a truncation drops first. A per-skill WARN alone
+ *      cannot catch this: 22 descriptions each under the 1,536-char
+ *      per-skill threshold can still sum well past the aggregate budget.
  *
  * A fourth, INFORMATIONAL-only measurement (2026-09-01 harness-refresh sweep)
  * reports total `.claude/skills/*\/SKILL.md` **body** bytes (the payload
@@ -82,6 +96,25 @@ export const MAX_TABLE_LINE_WIDTH = 200;
 export const RULE_CEILING_BYTES = 10_000;
 /** Claude Code's documented listing-truncation threshold for a single skill's description. */
 export const SKILL_DESC_WARN_CHARS = 1536;
+/**
+ * Claude Code's documented fraction of the context window budgeted for the
+ * skill-description listing (`code.claude.com/docs/en/skills`). Named to
+ * track the `skillListingBudgetFraction` settings.json key, if this repo
+ * ever raises it — this gate should keep measuring against whatever the
+ * live setting says, not a value hardcoded independently of it.
+ */
+export const SKILL_LISTING_BUDGET_FRACTION = 0.01;
+/** Reference context windows the aggregate skill-listing budget is reported against. */
+export const SKILL_LISTING_REFERENCE_WINDOWS = Object.freeze([
+  200_000, 1_000_000,
+]);
+/**
+ * The context window whose listing budget is HARD-enforced — the smallest
+ * window a session can plausibly run this repo at, so it is the binding
+ * constraint; the larger windows in {@link SKILL_LISTING_REFERENCE_WINDOWS}
+ * are reported for visibility only.
+ */
+export const SKILL_LISTING_ENFORCED_WINDOW = 200_000;
 
 // ---------------------------------------------------------------------------
 // Shared measurement primitives (unchanged from check-claude-md-budget.mjs)
@@ -586,6 +619,39 @@ export function collectSkillDescriptions(skillsDir) {
   return descriptions.sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/**
+ * @typedef {Object} SkillListingBudget
+ * @property {number} contextWindow reference context window, in tokens
+ * @property {number} budgetTokens `contextWindow * fraction`, floored
+ * @property {number} budgetChars `budgetTokens * 4` (chars/4 estimate, matching {@link estimateTokens})
+ * @property {boolean} overBudget whether `totalChars` exceeds `budgetChars`
+ */
+
+/**
+ * Compares total skill-description chars against Claude Code's documented
+ * skill-listing budget (`code.claude.com/docs/en/skills`) for every window
+ * in {@link SKILL_LISTING_REFERENCE_WINDOWS}.
+ *
+ * @param {number} totalChars sum of every skill's `description` length
+ * @param {number} [fraction] defaults to {@link SKILL_LISTING_BUDGET_FRACTION}
+ * @returns {SkillListingBudget[]}
+ */
+export function checkSkillListingBudget(
+  totalChars,
+  fraction = SKILL_LISTING_BUDGET_FRACTION,
+) {
+  return SKILL_LISTING_REFERENCE_WINDOWS.map((contextWindow) => {
+    const budgetTokens = Math.floor(contextWindow * fraction);
+    const budgetChars = budgetTokens * 4;
+    return {
+      contextWindow,
+      budgetTokens,
+      budgetChars,
+      overBudget: totalChars > budgetChars,
+    };
+  });
+}
+
 // ---------------------------------------------------------------------------
 // .claude/skills/*/SKILL.md and .claude/agents/*.md body weight (informational)
 // ---------------------------------------------------------------------------
@@ -879,6 +945,24 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     }
   }
 
+  // --- 3b. Aggregate skill-listing budget vs. Claude Code's ~1%-of-context-window cap (HARD at SKILL_LISTING_ENFORCED_WINDOW) ---
+  const listingBudgets = checkSkillListingBudget(totalSkillDescChars);
+  const estListingTokens = Math.ceil(totalSkillDescChars / 4);
+  const enforcedBudget = listingBudgets.find(
+    (b) => b.contextWindow === SKILL_LISTING_ENFORCED_WINDOW,
+  );
+  if (enforcedBudget?.overBudget) {
+    hardFail = true;
+    reporter.error(
+      `Skill listing is ${totalSkillDescChars} chars (~${estListingTokens} tokens) — over the ` +
+        `${enforcedBudget.budgetTokens}-token (~${enforcedBudget.budgetChars}-char) listing budget ` +
+        `Claude Code enforces at a ${SKILL_LISTING_ENFORCED_WINDOW.toLocaleString()}-token context ` +
+        `window (${SKILL_LISTING_BUDGET_FRACTION * 100}% of context, code.claude.com/docs/en/skills). ` +
+        `On overflow Claude Code drops descriptions starting with the least-invoked skills — trim the ` +
+        `longest descriptions below, or raise skillListingBudgetFraction in settings.json.`,
+    );
+  }
+
   // --- 4. .claude/skills/*/SKILL.md + .claude/agents/*.md BODY weight (informational) ---
   const skillBodies = collectSkillBodyBytes(skillsDir);
   const totalSkillBodyBytes = skillBodies.reduce((sum, s) => sum + s.bytes, 0);
@@ -899,8 +983,15 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     `Rule-glob parity: ${claudeMdRuleGlobs.size} documented, ${ruleGlobMismatches.length} mismatch(es).`,
   );
   reporter.info(
-    `Skill listing: ${skillDescriptions.length} description(s), ${totalSkillDescChars} total chars.`,
+    `Skill listing: ${skillDescriptions.length} description(s), ${totalSkillDescChars} total chars ` +
+      `(~${estListingTokens} tokens).`,
   );
+  for (const b of listingBudgets) {
+    reporter.info(
+      `  listing budget @ ${b.contextWindow.toLocaleString()}-token context: ` +
+        `${b.budgetTokens.toLocaleString()}-token budget — ${b.overBudget ? "OVER" : "within budget"}.`,
+    );
+  }
   reporter.info(
     `Skill bodies: ${skillBodies.length} SKILL.md body(ies), ${totalSkillBodyBytes} total bytes (not ratcheted — visibility only).`,
   );
@@ -932,6 +1023,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     scenarios,
     skillDescriptions,
     totalSkillDescChars,
+    listingBudgets,
     skillBodies,
     totalSkillBodyBytes,
     agentBodies,

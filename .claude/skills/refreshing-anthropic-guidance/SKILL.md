@@ -1,24 +1,12 @@
 ---
 name: refreshing-anthropic-guidance
 description: >-
-  Sweep the whole local Claude Code harness — agents, skills, hooks, rules,
-  workflows, and CLAUDE.md — against Anthropic's current guidance, the
-  Claude Code changelog, and the newest Claude models, then diff against the
-  last verified state and enter plan mode with a remediation plan. Use this
-  skill whenever the user says /refreshing-anthropic-guidance, "is our
-  harness still up to date with Anthropic", "check the harness against
-  Anthropic's latest guidance", "did Claude Code change anything we rely
-  on", "refresh our Anthropic guidance", "are our agent model pins still
-  current", "audit the harness for drift from Anthropic recommendations", or
-  any variant of "has anything we built gone stale relative to what
-  Anthropic recommends now". Distinct from `researching-anthropic-guidance`,
-  which answers a single topic question on demand and does not touch repo
-  state — this skill is push-shaped, sweeps fixed facets of the harness
-  itself against those same sources, and always ends in a remediation plan.
-  Also distinct from `auditing`, which reads the repo against itself; this
-  skill reads the repo against an external, time-varying source and is the
-  only one of the three that tracks what a page said last time versus what
-  it says now.
+  Sweeps the local Claude Code harness — agents, skills, hooks, rules,
+  workflows, CLAUDE.md — against Anthropic's current guidance/models, diffs
+  last-verified state, plans remediation. Use for
+  /refreshing-anthropic-guidance, "is our harness up to date with Anthropic",
+  "model pins current". Distinct from researching-anthropic-guidance and
+  auditing.
 ---
 
 Sweep the local Claude Code harness against Anthropic's current guidance and

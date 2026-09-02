@@ -1,28 +1,11 @@
 ---
 name: reviewing-dependabot-prs
 description: >-
-  Reviews every open Dependabot pull request on this repo's GitHub remote and
-  proposes a merge / hold / reject verdict for each, then executes the
-  confirmed batch: enables GitHub-native auto-merge for safe bumps, posts an
-  explanatory comment and leaves risky ones open for hold, or closes clearly
-  bad ones with a rationale comment. Classifies each PR by semver level
-  (patch/minor/major) and required-check status first; only reads the
-  dependency's changelog/release notes for major bumps or red checks. Use
-  this skill whenever the user says /reviewing-dependabot-prs, "review the
-  dependabot PRs", "check the open dependency PRs", "triage the dependabot
-  PRs", "merge the safe dependabot updates", "clean up the dependency PRs",
-  "go through the dependabot backlog", or asks what to do with the open
-  Dependabot / dependency-update pull requests. Also invoke when the user
-  mentions dependency PRs piling up, wants to auto-merge patch/minor bumps,
-  or asks whether any open Dependabot PR is safe to merge. This skill never
-  runs on its own — it only acts when explicitly invoked, and never touches
-  a PR without first showing its proposed verdicts and getting one batch
-  confirmation.
-
-  GitHub-integration stance: ADR-0030 (amended 2026-07-27) — uses the gh CLI
-  because `gh pr merge --auto --squash` has no GitHub MCP equivalent
-  (`mcp__github__merge_pull_request` merges immediately, with no auto-merge
-  option).
+  Reviews every open Dependabot PR, proposes merge/hold/reject by semver level
+  and check status, executes the confirmed batch: auto-merge safe bumps, hold
+  risky ones, close bad ones. Use for /reviewing-dependabot-prs, "review the
+  dependabot PRs", "merge the safe dependabot updates". Only acts on explicit
+  invocation after batch confirmation. GitHub stance: gh CLI (ADR-0030).
 ---
 
 # reviewing-dependabot-prs

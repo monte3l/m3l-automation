@@ -1,6 +1,11 @@
 ---
 name: syncing-docs
-description: Reconciles all doc metadata in the m3l-automation monorepo after a submodule or consumer script ships or before a release. Re-stamps provenance sidecars to the current git HEAD, regenerates every "N of 22" doc-count site and the implemented-list block via gen:counts and verifies them, confirms every public export is documented, verifies script scaffold/doc conformance (check:script-scaffold), regenerates the reference index (library catalog + consumer-scripts catalog), and runs markdown lint — the single doc-reconciliation authority, all in one repeatable pass. Use this skill whenever the user says /syncing-docs, "sync docs", "reconcile docs", "update doc provenance", "stamp provenance", "sync doc metadata", or after the implementing-submodules or implementing-scripts pipeline finishes and the hub needs to reconcile doc state.
+description: >-
+  Reconciles doc metadata after a submodule/script ships or before release:
+  re-stamps provenance sidecars, regenerates "N of 22" doc-count sites, confirms
+  exports documented, verifies script conformance, regenerates the reference
+  index, runs markdown lint. Use for /syncing-docs, "sync docs", "reconcile
+  docs", "stamp provenance", or after implementing pipelines finish.
 ---
 
 Reconcile all documentation metadata for `@m3l-automation/m3l-common`. This

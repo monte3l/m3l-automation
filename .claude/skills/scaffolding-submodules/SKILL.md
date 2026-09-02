@@ -1,14 +1,11 @@
 ---
 name: scaffolding-submodules
 description: >-
-  Scaffold a brand-new Core or AWS submodule inside packages/m3l-common — the one that
-  has NO docs/reference page or src directory yet. Creates the module folder, a failing
-  placeholder test (the TDD seam), the namespace-barrel re-export, and a docs/reference
-  stub, then hands off to implementing-submodules to fill it in. Use this whenever the user
-  asks to add, create, or scaffold a new library module, capability, or feature area that does
-  not already exist — even when phrased casually like "set up a new cache module" or "add a
-  polling thing", and even if they never say "submodule". If the submodule already has a
-  docs/reference/{core,aws}/<name>.md spec, skip this and use implementing-submodules directly.
+  Scaffold a brand-new Core or AWS submodule with no docs/reference page or src
+  dir yet: module folder, failing placeholder test, barrel re-export, docs stub
+  — hands off to implementing-submodules. Use for "add"/"create"/"scaffold" a
+  new library module, even named casually ("a cache module"). Already has a spec
+  page → implementing-submodules directly.
 ---
 
 # scaffolding-submodules
