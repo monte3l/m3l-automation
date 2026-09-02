@@ -11,7 +11,11 @@ import {
   buildGradedPrompt,
   DEFAULT_MAX_BUDGET_USD,
   describeSpawnFailure,
+  evaluateSkillFired,
   EVAL_AVAILABLE_TOOLS,
+  extractInvokedSkills,
+  extractResultEnvelope,
+  parseStreamEvents,
   parseVerdictEnvelope,
   renderChecklistEntry,
   selectChecklist,
@@ -499,7 +503,10 @@ describe("buildClaudeArgs", () => {
     expect(args[1]).toBe("the graded prompt");
     expect(args[args.indexOf("--permission-mode") + 1]).toBe("dontAsk");
     expect(args).toContain("--strict-mcp-config");
-    expect(args[args.indexOf("--output-format") + 1]).toBe("json");
+    expect(args[args.indexOf("--output-format") + 1]).toBe("stream-json");
+    // `claude -p --output-format stream-json` without `--verbose` fails fast
+    // with "requires --verbose" instead of streaming anything.
+    expect(args).toContain("--verbose");
     expect(args[args.indexOf("--json-schema") + 1]).toBe(
       JSON.stringify(VERDICT_SCHEMA),
     );
@@ -665,5 +672,276 @@ describe("describeSpawnFailure", () => {
     });
     expect(result).toContain("claude -p invocation failed:");
     expect(result).not.toContain(" | ");
+  });
+});
+
+describe("parseStreamEvents", () => {
+  test("parses multi-line NDJSON into an array of event objects", () => {
+    const stdout = [
+      JSON.stringify({ type: "system", subtype: "init" }),
+      JSON.stringify({ type: "assistant", message: { content: [] } }),
+      JSON.stringify({ type: "result", is_error: false }),
+    ].join("\n");
+
+    expect(parseStreamEvents(stdout)).toEqual([
+      { type: "system", subtype: "init" },
+      { type: "assistant", message: { content: [] } },
+      { type: "result", is_error: false },
+    ]);
+  });
+
+  test("skips blank lines, including the trailing newline", () => {
+    const stdout = `${JSON.stringify({ type: "system" })}\n\n${JSON.stringify({
+      type: "result",
+    })}\n`;
+
+    expect(parseStreamEvents(stdout)).toEqual([
+      { type: "system" },
+      { type: "result" },
+    ]);
+  });
+
+  test("parses a single JSON object with no trailing newline", () => {
+    const stdout = JSON.stringify({ type: "result", is_error: false });
+    expect(parseStreamEvents(stdout)).toEqual([
+      { type: "result", is_error: false },
+    ]);
+  });
+
+  test("throws when a non-blank line is not valid JSON", () => {
+    const stdout = `${JSON.stringify({ type: "system" })}\nnot json\n`;
+    expect(() => parseStreamEvents(stdout)).toThrow();
+  });
+});
+
+describe("extractInvokedSkills", () => {
+  test("extracts the skill name from a Skill tool_use block, ignoring other tool_use blocks", () => {
+    // Real captured shape: a Skill invocation alongside a Read tool_use in the
+    // same assistant message. Only the Skill block's `input.skill` counts.
+    const events = [
+      {
+        type: "assistant",
+        message: {
+          content: [
+            {
+              type: "tool_use",
+              id: "toolu_01UK1nExhWvhLYW7Ugv1Yqmg",
+              name: "Skill",
+              input: { skill: "triaging-ci", args: "12345" },
+              caller: { type: "direct" },
+            },
+            {
+              type: "tool_use",
+              id: "toolu_01Vm5z6F6b69fUWLdVkPnnZj",
+              name: "Read",
+              input: { file_path: "/some/path" },
+              caller: { type: "direct" },
+            },
+          ],
+        },
+      },
+    ];
+
+    expect(extractInvokedSkills(events)).toEqual(["triaging-ci"]);
+  });
+
+  test("returns an empty array when an assistant event has no content array", () => {
+    const events = [{ type: "assistant", message: {} }];
+    expect(extractInvokedSkills(events)).toEqual([]);
+  });
+
+  test("returns an empty array when content has no tool_use blocks", () => {
+    const events = [
+      {
+        type: "assistant",
+        message: { content: [{ type: "text", text: "hello" }] },
+      },
+    ];
+    expect(extractInvokedSkills(events)).toEqual([]);
+  });
+
+  test("ignores non-assistant events entirely", () => {
+    const events = [
+      { type: "system", subtype: "init" },
+      { type: "result", is_error: false },
+    ];
+    expect(extractInvokedSkills(events)).toEqual([]);
+  });
+
+  test("keeps every invocation in call order when a skill fires more than once", () => {
+    const events = [
+      {
+        type: "assistant",
+        message: {
+          content: [
+            {
+              type: "tool_use",
+              name: "Skill",
+              input: { skill: "triaging-ci" },
+            },
+          ],
+        },
+      },
+      {
+        type: "assistant",
+        message: {
+          content: [
+            {
+              type: "tool_use",
+              name: "Skill",
+              input: { skill: "starting-work" },
+            },
+          ],
+        },
+      },
+    ];
+
+    expect(extractInvokedSkills(events)).toEqual([
+      "triaging-ci",
+      "starting-work",
+    ]);
+  });
+
+  test("keeps a duplicate entry when the same skill fires twice", () => {
+    const events = [
+      {
+        type: "assistant",
+        message: {
+          content: [
+            {
+              type: "tool_use",
+              name: "Skill",
+              input: { skill: "triaging-ci" },
+            },
+            {
+              type: "tool_use",
+              name: "Skill",
+              input: { skill: "triaging-ci" },
+            },
+          ],
+        },
+      },
+    ];
+
+    expect(extractInvokedSkills(events)).toEqual([
+      "triaging-ci",
+      "triaging-ci",
+    ]);
+  });
+});
+
+describe("extractResultEnvelope", () => {
+  test("returns null when no result-typed event is present", () => {
+    const events = [
+      { type: "system", subtype: "init" },
+      { type: "assistant", message: { content: [] } },
+    ];
+    expect(extractResultEnvelope(events)).toBeNull();
+  });
+
+  test("returns the LAST result event's JSON text when multiple are present", () => {
+    const firstResult = {
+      type: "result",
+      is_error: false,
+      subtype: "success",
+      total_cost_usd: 0.01,
+      structured_output: {
+        pass: true,
+        unmet_expectations: [],
+        reasoning: "first, should be superseded",
+      },
+    };
+    const secondResult = {
+      type: "result",
+      is_error: false,
+      subtype: "success",
+      total_cost_usd: 0.2,
+      structured_output: {
+        pass: false,
+        unmet_expectations: ["did not meet criterion"],
+        reasoning: "second, and authoritative",
+      },
+    };
+    const events = [
+      { type: "system", subtype: "init" },
+      firstResult,
+      { type: "assistant", message: { content: [] } },
+      secondResult,
+    ];
+
+    const envelope = extractResultEnvelope(events);
+    expect(envelope).not.toBeNull();
+    expect(JSON.parse(envelope as string)).toEqual(secondResult);
+  });
+
+  test("chains into parseVerdictEnvelope to produce a real verdict", () => {
+    // Integration-style: prove the JSON text this function returns is exactly
+    // what parseVerdictEnvelope expects — the same envelope shape the old
+    // single-object `--output-format json` used to return directly.
+    const resultEvent = {
+      type: "result",
+      is_error: false,
+      subtype: "success",
+      total_cost_usd: 0.05,
+      structured_output: {
+        pass: true,
+        unmet_expectations: [],
+        reasoning: "chained from stream-json",
+      },
+    };
+    const events = [{ type: "system", subtype: "init" }, resultEvent];
+
+    const envelope = extractResultEnvelope(events);
+    expect(envelope).not.toBeNull();
+
+    const verdict = parseVerdictEnvelope(envelope as string);
+    expect(verdict).toEqual({
+      pass: true,
+      unmet_expectations: [],
+      reasoning: "chained from stream-json",
+      costUsd: 0.05,
+    });
+  });
+});
+
+describe("evaluateSkillFired", () => {
+  test.each([
+    {
+      label: "required and fired",
+      evalCase: {},
+      invokedSkills: ["triaging-ci"],
+      expected: { required: true, fired: true, met: true },
+    },
+    {
+      label: "required and not fired",
+      evalCase: {},
+      invokedSkills: [],
+      expected: { required: true, fired: false, met: false },
+    },
+    {
+      label: "opted out (expect_skill_fired: false) and fired anyway",
+      evalCase: { expect_skill_fired: false },
+      invokedSkills: ["triaging-ci"],
+      expected: { required: false, fired: true, met: true },
+    },
+    {
+      label:
+        "opted out (expect_skill_fired: false) and not fired — the deliberate skip case",
+      evalCase: { expect_skill_fired: false },
+      invokedSkills: [],
+      expected: { required: false, fired: false, met: true },
+    },
+  ])("$label", ({ evalCase, invokedSkills, expected }) => {
+    expect(evaluateSkillFired("triaging-ci", invokedSkills, evalCase)).toEqual(
+      expected,
+    );
+  });
+
+  test("treats any non-literal-false value (e.g. true) as required", () => {
+    expect(
+      evaluateSkillFired("starting-work", ["starting-work"], {
+        expect_skill_fired: true,
+      }),
+    ).toEqual({ required: true, fired: true, met: true });
   });
 });
