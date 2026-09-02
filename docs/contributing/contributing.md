@@ -237,10 +237,11 @@ survives, and `check:commit-trailers` is the `pre-push` backstop for a
   B's own commits. Used three times without conflict in the ADR-0030 tooling
   program (`docs/logs/2026-07-17-adr-0030-workflow-tooling-mcp.md`).
 
-### Session naming (ADR-0087)
+### Session naming (ADR-0087, ADR-0088)
 
-Name every Claude Code session `<kind>-<slug>` before its first substantive
-prompt, via `claude -n <name>` at launch or `/rename <name>` mid-session:
+Every Claude Code session is named `<kind>-<slug>` before its first
+substantive prompt, applied automatically by launching through
+`pnpm session:launch` (ADR-0088) rather than a manual `/rename`:
 
 ```text
 <kind>-<slug>
@@ -251,10 +252,22 @@ slug matches ^[a-z0-9]+(?:-[a-z0-9]+)*$   (the same SLUG_PATTERN
 whole name ≤ 40 characters, never begins with "/"
 ```
 
+```bash
+pnpm session:launch                          # on feat/<slug> or fix/<slug>:
+                                              # derives kind+slug from the
+                                              # current branch, no other input
+pnpm session:launch --kind audit some-slug   # main-resident kinds (no branch
+                                              # to derive from): explicit kind
+                                              # + slug, still validated
+pnpm session:launch -- --resume              # passthrough after `--` reaches
+                                              # the underlying `claude` call
+```
+
 `feat`/`fix` mirror the branch prefix above, so a branch-bearing session's
-name is derivable from its branch (`feat/statusline-widgets` →
-`feat-statusline-widgets`). The remaining kinds cover `main`-resident harness
-work that has no branch to mirror:
+name is derivable from its branch alone (`feat/statusline-widgets` →
+`feat-statusline-widgets` — `pnpm session:launch` needs no arguments). The
+remaining kinds cover `main`-resident harness work that has no branch to
+mirror, and need `--kind`:
 
 | Session                           | Name                          |
 | --------------------------------- | ----------------------------- |
@@ -265,16 +278,20 @@ work that has no branch to mirror:
 | `/finishing-work` after a merge   | `merge-cleanup-pr-895`        |
 
 `starting-work` proposes the name alongside the branch and hands you the exact
-command to run — no hook can set a session name for you (hooks receive
-`session_id` read-only and cannot invoke slash commands), so this is a
-recommendation to act on, not an automatic step. If a name is already taken by
-another live session on the machine, Claude Code appends a `-word-word` suffix
-(v2.1.232+) rather than rejecting it; the disambiguated name still satisfies
-the pattern above. The statusline flags a session whose `session_name` doesn't
-match the pattern (including an unnamed session, whose `session_name` field
-otherwise carries the AI-generated first-prompt title). See
-[ADR-0087](../adr/0087-claude-code-session-naming-convention.md) for the full
-rationale and the constraints that rule out automatic enforcement.
+`pnpm session:launch` invocation to run instead of typing `claude` directly —
+no hook can set a session name for you (hooks receive `session_id` read-only
+and cannot invoke slash commands), so the wrapper computes and applies the
+name at launch instead. A session already open before you switch to the
+wrapper (or one started with a bare `claude`) still needs `/rename` by hand —
+there's no way to inject a launch-time flag into a running process. If a name
+is already taken by another live session on the machine, Claude Code appends a
+`-word-word` suffix (v2.1.232+) rather than rejecting it; the disambiguated
+name still satisfies the pattern above. The statusline flags a session whose
+`session_name` doesn't match the pattern (including an unnamed session, whose
+`session_name` field otherwise carries the AI-generated first-prompt title).
+See [ADR-0087](../adr/0087-claude-code-session-naming-convention.md) for the
+vocabulary rationale and [ADR-0088](../adr/0088-automatic-session-naming-via-launcher.md)
+for the launcher mechanism.
 
 ### PR size (ADR-0072)
 

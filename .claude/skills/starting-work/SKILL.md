@@ -2,7 +2,7 @@
 name: starting-work
 description: >-
   The pre-work decision gate: inspects git state, recommends location, branch
-  (feat/fix <slug>), session name (ADR-0087), PR requirement, push target, and
+  (feat/fix <slug>), session name (ADR-0087/0088), PR requirement, push target, and
   PR sequence (ADR-0072) for multi-unit scope — confirmed before any write.
   Invoke for "implement", "build", "fix", "refactor", even unnamed. Skip for
   research/questions.
@@ -107,14 +107,18 @@ Derive a concrete default for all decisions from steps 1–2:
   that a PR is optional but still recommended.
 - **Push target** — `origin <the recommended branch>`. Never `origin main`.
 - **Session name** — recommend `<kind>-<slug>` for the _Claude Code session_
-  itself (ADR-0087, `docs/contributing/contributing.md` § Session naming),
-  reusing the same slug just decided for the branch so the two cannot
-  disagree: `kind` is `feat`/`fix` when a branch was recommended (mirroring
-  its prefix), or `audit`/`research`/`docs`/`review`/`ci`/`merge` for
-  `main`-resident work with no branch to mirror. No hook can set this for
-  the user, so the recommendation must give the literal command to run —
-  `claude -n <kind>-<slug>` when a new session/worktree is about to open,
-  `/rename <kind>-<slug>` when continuing the current one.
+  itself (ADR-0087/ADR-0088, `docs/contributing/contributing.md` § Session
+  naming), reusing the same slug just decided for the branch so the two
+  cannot disagree: `kind` is `feat`/`fix` when a branch was recommended
+  (mirroring its prefix), or `audit`/`research`/`docs`/`review`/`ci`/`merge`
+  for `main`-resident work with no branch to mirror. No hook can apply this
+  for the user, so the recommendation must give the literal command to
+  run — `pnpm session:launch` (no arguments) when a new session/worktree is
+  about to open on a `feat/<slug>`/`fix/<slug>` branch, since the branch
+  alone determines the name; `pnpm session:launch --kind <kind> <slug>` for
+  `main`-resident work with no branch to derive from. A session already
+  running (continuing the current one) has no launch-time hook left to use —
+  that residual case still needs `/rename <kind>-<slug>` by hand.
 - **PR sequence** — only surfaced when Step 2 found several landable units.
   Recommend the order (docs-first when the scope mixes docs and code — that
   slice is free to review and unblocks the rest; otherwise by path cluster or
@@ -171,10 +175,13 @@ Once confirmed:
   may have fallen behind, resync it with `origin/main` before working (or defer
   to the resync step in `creating-prs`) so the branch does not drift from the
   base over multiple sessions.
-- **Session name:** state the confirmed `/rename <kind>-<slug>` (or
-  `claude -n <kind>-<slug>` when a new worktree/session is about to open) for
-  the user to run — this skill cannot invoke it on their behalf (ADR-0087: no
-  hook or skill step can set a Claude Code session name).
+- **Session name:** state the confirmed `pnpm session:launch` (or
+  `pnpm session:launch --kind <kind> <slug>` for `main`-resident work) command
+  to open a new session/worktree already named — this skill cannot invoke it
+  on the user's behalf (ADR-0087/ADR-0088: no hook or skill step can set a
+  Claude Code session name; the launcher wrapper applies it at process start
+  instead). Continuing an already-open session still needs `/rename
+<kind>-<slug>` by hand — no launch-time hook is left to use for it.
 
 ### 6 — Hand back
 
@@ -183,7 +190,7 @@ session name, PR (yes/no), push target, and the PR sequence when one was
 confirmed — so the calling skill or the user proceeds with the context
 recorded. The enforcement backdrop (why this matters) lives in
 `guard-branch-isolation.mjs` and ADR-0013/0014; the PR-sequence rationale
-lives in ADR-0072; the session-naming rationale lives in ADR-0087.
+lives in ADR-0072; the session-naming rationale lives in ADR-0087/ADR-0088.
 
 ## Notes for callers
 
