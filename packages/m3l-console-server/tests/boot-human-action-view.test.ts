@@ -301,7 +301,11 @@ describe("view.run.report (X7d)", () => {
   // Mutation-tested: adding the body to the projection's `detail` fails here.
   test("records the reference, never the report's contents", async () => {
     const port = createFakePort();
-    const secret = "AKIAIOSFODNN7EXAMPLE";
+    // Assembled at runtime, never a single source literal: gitleaks scans
+    // source text and this repo has no `.gitleaksignore`
+    // (`.claude/rules/tests.md`). Same pattern as
+    // `boot-human-action-audit.test.ts`'s planted-parameter fixture.
+    const secret = ["AKIA", "EXAMPLE", "NOTREAL"].join("");
     const decorated = decorate(
       reportRoute({ outcome: "failure", failureMessage: secret }),
       port,
@@ -389,7 +393,11 @@ describe("view.session.artifact (X7d)", () => {
   // projection fails here.
   test("records nothing of the artifact's contents", async () => {
     const port = createFakePort();
-    const secret = "AKIAIOSFODNN7EXAMPLE";
+    // Assembled at runtime, never a single source literal: gitleaks scans
+    // source text and this repo has no `.gitleaksignore`
+    // (`.claude/rules/tests.md`). Same pattern as
+    // `boot-human-action-audit.test.ts`'s planted-parameter fixture.
+    const secret = ["AKIA", "EXAMPLE", "NOTREAL"].join("");
     const decorated = decorate(
       artifactRoute({ credentials: { accessKeyId: secret } }),
       port,
