@@ -1,39 +1,37 @@
 /**
  * Contract: `packages/m3l-cli/src/commands/flow.ts` — the thin `m3l flow`
- * handler (U10 slice 3, stage C).
+ * handler (U11 slice 2: `--resume` wired into `m3l flow run`).
  *
  * ```
- * m3l flow list                             # the available flow names
- * m3l flow run <name> [--dry-run] [--json]  # execute a named flow
- * m3l flow                                  # usage error, exit 2
+ * m3l flow list                                       # the available flow names
+ * m3l flow run <name> [--dry-run] [--json] [--resume] # execute a named flow
+ * m3l flow                                            # usage error, exit 2
  * ```
  *
- * There is **no `--resume` flag** in U10 — that is U11. `runFlow` already
- * accepts `resumeFromStepId`, but nothing here may pass it, and
- * `m3l flow run x --resume` must be REJECTED rather than silently ignored.
+ * U11 activates the `--resume` boolean switch on `run`. Before delegating to
+ * `runFlow`, the command reads the saved run record and refuses with
+ * `ERR_CLI_FLOW_RESUME_REFUSED` in three cases: no record exists, the last run
+ * left nothing to resume (`resumeStepId === null`), or the definition changed
+ * since the recorded run (fingerprint mismatch). On an accepted resume it
+ * forwards `resumeFromStepId` and `stepExecutionCount` from the record to the
+ * engine.
  *
  * Every collaborator is mocked at its own module seam (`discovery/*`,
  * `flow/load`, `flow/run`, `flow/record`, `flow/envelope`, `flow/render`) —
  * never at a barrel — so this suite characterizes the WIRING and nothing
- * else. `flow/record.js` keeps its real pure exports (only
- * `writeFlowRunRecord` is replaced), so the record's `definitionHash` under
- * test is the genuine `hashFlowDefinition` digest.
+ * else. `flow/record.js` keeps its real pure exports (`hashFlowDefinition`,
+ * `buildFlowRunRecord`; only `writeFlowRunRecord` and `readFlowRunRecord` are
+ * replaced), so the record's `definitionHash` under test is the genuine
+ * `hashFlowDefinition` digest. The fingerprint-mismatch test is built from
+ * two genuinely different definitions — not a hand-written fake hash — so
+ * removing the comparison in the implementation makes the test fail.
  *
  * No filesystem is touched: nothing here mocks `node:fs`, because every
  * module that would reach it is mocked one level up.
  *
- * Stage-B contract revision (stage-C review): the command synthesizes NOTHING
- * per step any more. `M3LCliFlowRunResult.stepExecutions` carries each
- * execution's own observed window and unavailable reason
- * (`M3LCliFlowStepOutcome`), and `M3LCliFlowEnvelopeInput` has no parallel
- * `stepRuns` array — so the command hands the engine's result straight to
- * `buildFlowEnvelope` and the nested per-step windows are the engine's, never
- * the run's window stamped onto every step.
- *
- * RED phase: `src/commands/flow.ts`, `src/flow/envelope.ts` and
- * `src/flow/render.ts` do not exist yet, and `M3LCliFlowStepOutcome` is not yet
- * exported from `src/flow/types.ts`, so the imports below fail to resolve. That
- * is the expected failure for this phase.
+ * RED phase: `ERR_CLI_FLOW_RESUME_REFUSED` does not yet exist in
+ * `M3LCliErrorCode`, so `_resumeRefusedCode` below produces TS2322. That is
+ * the expected typecheck failure for this phase; do not suppress it.
  */
 import { afterEach, describe, expect, expectTypeOf, test, vi } from "vitest";
 import { dirname, join } from "node:path";
@@ -51,7 +49,7 @@ vi.mock("../src/flow/load.js", () => ({
 vi.mock("../src/flow/run.js", () => ({ runFlow: vi.fn() }));
 vi.mock("../src/flow/record.js", async (importOriginal) => {
   const actual = await importOriginal<FlowRecordModule>();
-  return { ...actual, writeFlowRunRecord: vi.fn() };
+  return { ...actual, readFlowRunRecord: vi.fn(), writeFlowRunRecord: vi.fn() };
 });
 vi.mock("../src/flow/envelope.js", () => ({
   buildFlowEnvelope: vi.fn(),
@@ -73,6 +71,7 @@ type FlowRecordModule = typeof flowRecordModule;
 
 import { runFlowCommand } from "../src/commands/flow.js";
 import { M3LCliError } from "../src/cli/errors.js";
+import type { M3LCliErrorCode } from "../src/cli/errors.js";
 import type { M3LCliCommandContext } from "../src/commands/context.js";
 import type { M3LCliOutput } from "../src/cli/output.js";
 import { discoverScripts } from "../src/discovery/discover.js";
@@ -102,6 +101,7 @@ const loadParametersCachedMock = vi.mocked(loadParametersCached);
 const listFlowsMock = vi.mocked(listFlows);
 const loadFlowDefinitionMock = vi.mocked(loadFlowDefinition);
 const runFlowMock = vi.mocked(runFlow);
+const readFlowRunRecordMock = vi.mocked(flowRecordModule.readFlowRunRecord);
 const writeFlowRunRecordMock = vi.mocked(flowRecordModule.writeFlowRunRecord);
 const buildFlowEnvelopeMock = vi.mocked(buildFlowEnvelope);
 const formatFlowEnvelopeMock = vi.mocked(formatFlowEnvelope);
@@ -117,6 +117,7 @@ afterEach(() => {
   listFlowsMock.mockReset();
   loadFlowDefinitionMock.mockReset();
   runFlowMock.mockReset();
+  readFlowRunRecordMock.mockReset();
   writeFlowRunRecordMock.mockReset();
   buildFlowEnvelopeMock.mockReset();
   formatFlowEnvelopeMock.mockReset();
@@ -273,6 +274,70 @@ function armHappyPath(result: M3LCliFlowRunResult = runResult()): void {
   formatFlowEnvelopeMock.mockReturnValue('{"kind":"m3l.flow.result"}');
 }
 
+/**
+ * A definition that is GENUINELY DIFFERENT from `definition()` — the extra
+ * step makes `hashFlowDefinition` produce a different 64-char digest, so the
+ * fingerprint-mismatch test is built on a real hash collision absence rather
+ * than a hand-written fake string.
+ *
+ * Mutation-test guarantee: if the implementation drops the `definitionHash`
+ * comparison, `runFlow` gets called when it should not. The test asserts
+ * `runFlow` was NOT called, so removing the comparison makes the test FAIL.
+ */
+function altDefinition(): M3LCliFlowDefinition {
+  return definition({
+    steps: [
+      step(),
+      step({ id: "republish", script: "json-etl" }),
+      step({ id: "cleanup", script: "sqs-etl" }),
+    ],
+  });
+}
+
+/**
+ * A saved run record that is ready for a resume: `resumeStepId` is non-null,
+ * and `definitionHash` matches the hash of `definition()` by default.
+ *
+ * The hash is the REAL `hashFlowDefinition` output, not a hand-written string,
+ * so the fingerprint guard is tested against the genuine digest.
+ */
+function resumeRecord(
+  overrides: Partial<M3LCliFlowRunRecord> = {},
+): M3LCliFlowRunRecord {
+  return {
+    kind: "m3l.flow.record",
+    schemaVersion: 1,
+    runId: "prev-run-id-abc123",
+    flowName: "dlq-reconcile",
+    definitionHash: flowRecordModule.hashFlowDefinition(definition()),
+    startedAt: "2026-09-01T09:00:00.000Z",
+    finishedAt: "2026-09-01T09:00:10.000Z",
+    status: "failed",
+    exitCode: 1,
+    stepExecutionCount: 3,
+    haltingStepId: "republish",
+    resumeStepId: "republish",
+    stepExecutions: [],
+    ...overrides,
+  };
+}
+
+/**
+ * Arms every collaborator for a successful `flow run dlq-reconcile --resume`.
+ * Calls `armHappyPath` and additionally stubs `readFlowRunRecord` to return a
+ * resumable record and `readFlowRunRecord` is reset by the shared `afterEach`.
+ */
+function armResumePath(record: M3LCliFlowRunRecord = resumeRecord()): void {
+  armHappyPath();
+  readFlowRunRecordMock.mockReturnValue(record);
+}
+
+// RED-phase type probe: `ERR_CLI_FLOW_RESUME_REFUSED` does not yet exist in
+// `M3LCliErrorCode`. This annotation produces TS2322 until the implementation
+// spoke adds it — the expected typecheck failure for this phase.
+// Do not suppress: it self-resolves when the code is added to the union.
+const _resumeRefusedCode: M3LCliErrorCode = "ERR_CLI_FLOW_RESUME_REFUSED";
+
 describe("runFlowCommand — usage errors", () => {
   test("a bare `m3l flow` is a usage error at exit 2, naming both subcommands", async () => {
     const { context, errorLines } = buildContext();
@@ -318,21 +383,68 @@ describe("runFlowCommand — usage errors", () => {
   });
 });
 
-describe("runFlowCommand — U10 ships no --resume flag", () => {
+describe("runFlowCommand — --resume flag: parsing and placement", () => {
+  /*
+   * Item 1: A value-bearing form of --resume (`--resume=<anything>`) is a
+   * usage error at exit 2, with the FULL offending token in the error message.
+   * This mirrors how `--dry-run=false` is already treated.
+   */
   test.each<[string, readonly string[]]>([
-    ["bare --resume", ["run", "dlq-reconcile", "--resume"]],
-    ["--resume with a step id", ["run", "dlq-reconcile", "--resume", "dump"]],
     ["--resume=<id>", ["run", "dlq-reconcile", "--resume=dump"]],
-  ])("rejects %s rather than silently ignoring it", async (_label, rawArgs) => {
+    ["--resume=true", ["run", "dlq-reconcile", "--resume=true"]],
+  ])(
+    "rejects value-bearing %s as a usage error at exit 2, full token in message",
+    async (_label, rawArgs) => {
+      armHappyPath();
+      const { context, errorLines } = buildContext();
+
+      const code = await runFlowCommand(context, rawArgs);
+
+      expect(code).toBe(2);
+      // The FULL token (e.g. "--resume=dump") must appear in the message so
+      // the operator sees exactly what they typed, not just the flag name.
+      const message = errorLines.join("\n");
+      expect(message).toContain("--resume=");
+      expect(runFlowMock).not.toHaveBeenCalled();
+      expect(writeFlowRunRecordMock).not.toHaveBeenCalled();
+    },
+  );
+
+  /*
+   * Item 2: `--resume dump` (boolean switch, then a bare word) makes `dump`
+   * a surplus positional — a usage error at exit 2 naming the surplus word,
+   * not an unknown-flag error.
+   */
+  test("--resume followed by a bare word makes the word a surplus positional (exit 2)", async () => {
     armHappyPath();
     const { context, errorLines } = buildContext();
 
-    const code = await runFlowCommand(context, rawArgs);
+    const code = await runFlowCommand(context, [
+      "run",
+      "dlq-reconcile",
+      "--resume",
+      "dump",
+    ]);
+
+    expect(code).toBe(2);
+    // The surplus word must be named so the operator knows what went wrong.
+    expect(errorLines.join("\n")).toContain("dump");
+    expect(runFlowMock).not.toHaveBeenCalled();
+    expect(writeFlowRunRecordMock).not.toHaveBeenCalled();
+  });
+
+  /*
+   * Item 3: `--resume` on `flow list` is a usage error at exit 2.
+   */
+  test("`flow list --resume` is a usage error at exit 2", async () => {
+    listFlowsMock.mockReturnValue(["dlq-reconcile"]);
+    const { context, errorLines } = buildContext();
+
+    const code = await runFlowCommand(context, ["list", "--resume"]);
 
     expect(code).toBe(2);
     expect(errorLines.join("\n")).toContain("--resume");
     expect(runFlowMock).not.toHaveBeenCalled();
-    expect(writeFlowRunRecordMock).not.toHaveBeenCalled();
   });
 
   test("rejects any other unknown flag at exit 2", async () => {
@@ -351,7 +463,13 @@ describe("runFlowCommand — U10 ships no --resume flag", () => {
     expect(runFlowMock).not.toHaveBeenCalled();
   });
 
-  test("never passes resumeFromStepId or stepExecutionCount to runFlow", async () => {
+  /*
+   * Item 7 (no-flag case regression guard): without `--resume`, `runFlow`
+   * receives no resume options and the record is NOT READ — asserting the mock
+   * was never called is the regression guard that keeps the resume-only code
+   * path resume-only.
+   */
+  test("without --resume, runFlow gets no resumeFromStepId or stepExecutionCount and the record is never read", async () => {
     armHappyPath();
     const { context } = buildContext();
 
@@ -364,6 +482,215 @@ describe("runFlowCommand — U10 ships no --resume flag", () => {
     ];
     expect(options?.resumeFromStepId).toBeUndefined();
     expect(options?.stepExecutionCount).toBeUndefined();
+    // The record must NOT be read on a plain run — regression guard.
+    expect(readFlowRunRecordMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("runFlowCommand — --resume: refusal cases", () => {
+  /*
+   * Item 4a: No record exists → the flow has never run. `readFlowRunRecord`
+   * returns `undefined`. Must refuse with ERR_CLI_FLOW_RESUME_REFUSED,
+   * NOT call runFlow, NOT call writeFlowRunRecord.
+   */
+  test("refuses when no run record exists (flow has never run)", async () => {
+    armHappyPath();
+    readFlowRunRecordMock.mockReturnValue(undefined);
+    const { context, errorLines } = buildContext();
+
+    let thrown: unknown;
+    try {
+      await runFlowCommand(context, ["run", "dlq-reconcile", "--resume"]);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCliError);
+    expect((thrown as M3LCliError).code).toBe("ERR_CLI_FLOW_RESUME_REFUSED");
+    // The message must be distinguishable from the other two refusal reasons.
+    // Actual: "it has never run (no record found)".
+    const message = (thrown as M3LCliError).message;
+    expect(message.toLowerCase()).toMatch(/has never run|no record found/);
+    expect(runFlowMock).not.toHaveBeenCalled();
+    expect(writeFlowRunRecordMock).not.toHaveBeenCalled();
+    // The error channel should also carry a user-facing explanation.
+    expect(errorLines.join("\n") + message).toContain("dlq-reconcile");
+  });
+
+  /*
+   * Item 4b: Record exists but `resumeStepId === null` — the last run left
+   * nothing to resume (e.g. completed successfully with no halted step).
+   */
+  test("refuses when the last run left nothing to resume (resumeStepId is null)", async () => {
+    armHappyPath();
+    readFlowRunRecordMock.mockReturnValue(
+      resumeRecord({ resumeStepId: null, status: "completed", exitCode: 0 }),
+    );
+    const { context } = buildContext();
+
+    let thrown: unknown;
+    try {
+      await runFlowCommand(context, ["run", "dlq-reconcile", "--resume"]);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCliError);
+    expect((thrown as M3LCliError).code).toBe("ERR_CLI_FLOW_RESUME_REFUSED");
+    // Must be distinguishable from the other two refusal reasons.
+    const message = (thrown as M3LCliError).message;
+    expect(message.toLowerCase()).toMatch(/nothing left|no resumable step/);
+    expect(runFlowMock).not.toHaveBeenCalled();
+    expect(writeFlowRunRecordMock).not.toHaveBeenCalled();
+  });
+
+  /*
+   * Item 4c: The definition hash in the record does not match the current
+   * definition — the flow changed since the last run. The record is built with
+   * `hashFlowDefinition(altDefinition())` and the mock returns `definition()`,
+   * so the comparison uses TWO GENUINELY DIFFERENT DEFINITIONS via the real
+   * hash function.
+   *
+   * MUTATION-TEST EVIDENCE: `altDefinition()` has a third step absent from
+   * `definition()`. `hashFlowDefinition` is kept real (not mocked). If the
+   * implementation drops the comparison, `runFlow` is called — but this test
+   * asserts it is NOT called, so removing the guard makes the test FAIL.
+   */
+  test("refuses when the definition changed since the recorded run (fingerprint mismatch)", async () => {
+    armHappyPath(); // loadFlowDefinitionMock returns definition()
+    // Record was written against altDefinition() — a different hash entirely.
+    const staleHash = flowRecordModule.hashFlowDefinition(altDefinition());
+    readFlowRunRecordMock.mockReturnValue(
+      resumeRecord({ definitionHash: staleHash }),
+    );
+    const { context } = buildContext();
+
+    // Sanity: the two hashes genuinely differ (proves the test is not vacuous).
+    const currentHash = flowRecordModule.hashFlowDefinition(definition());
+    expect(staleHash).not.toBe(currentHash);
+
+    let thrown: unknown;
+    try {
+      await runFlowCommand(context, ["run", "dlq-reconcile", "--resume"]);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCliError);
+    expect((thrown as M3LCliError).code).toBe("ERR_CLI_FLOW_RESUME_REFUSED");
+    // Must be distinguishable from the other two refusal reasons.
+    const message = (thrown as M3LCliError).message;
+    expect(message.toLowerCase()).toMatch(
+      /fingerprint mismatch|definition has changed/,
+    );
+    expect(runFlowMock).not.toHaveBeenCalled();
+    expect(writeFlowRunRecordMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("runFlowCommand — --resume: accepted resume", () => {
+  /*
+   * Item 5: On an accepted resume, runFlow receives BOTH `resumeFromStepId`
+   * and `stepExecutionCount` from the saved record, and `dryRun` is still
+   * forwarded correctly.
+   */
+  test("passes resumeFromStepId and stepExecutionCount from the record to runFlow", async () => {
+    armResumePath(
+      resumeRecord({ resumeStepId: "republish", stepExecutionCount: 7 }),
+    );
+    const { context } = buildContext();
+
+    const code = await runFlowCommand(context, [
+      "run",
+      "dlq-reconcile",
+      "--resume",
+    ]);
+
+    expect(code).toBe(0); // runResult() exits 0
+    expect(runFlowMock).toHaveBeenCalledTimes(1);
+    const [, , options] = runFlowMock.mock.calls[0] as [
+      M3LCliFlowStepContext,
+      M3LCliFlowDefinition,
+      M3LCliFlowRunOptions | undefined,
+    ];
+    expect(options?.resumeFromStepId).toBe("republish");
+    expect(options?.stepExecutionCount).toBe(7);
+  });
+
+  /*
+   * Item 5 + dryRun: `dryRun` is still forwarded correctly on a resume.
+   */
+  test("--resume with --dry-run forwards dryRun: true to runFlow", async () => {
+    armResumePath();
+    const { context } = buildContext();
+
+    await runFlowCommand(context, [
+      "run",
+      "dlq-reconcile",
+      "--resume",
+      "--dry-run",
+    ]);
+
+    const [, , options] = runFlowMock.mock.calls[0] as [
+      M3LCliFlowStepContext,
+      M3LCliFlowDefinition,
+      M3LCliFlowRunOptions | undefined,
+    ];
+    expect(options?.resumeFromStepId).toBe("republish");
+    expect(options?.stepExecutionCount).toBe(3);
+    expect(options?.dryRun).toBe(true);
+  });
+
+  /*
+   * Item 6: `--resume` combines with `--json`.
+   */
+  test("--resume with --json emits the --json envelope and does not error", async () => {
+    armResumePath();
+    const { context, infoLines } = buildContext(true);
+
+    const code = await runFlowCommand(context, [
+      "run",
+      "dlq-reconcile",
+      "--resume",
+      "--json",
+    ]);
+
+    expect(code).toBe(0);
+    // The envelope line must appear — same contract as a plain --json run.
+    expect(infoLines).toEqual(['{"kind":"m3l.flow.result"}']);
+    expect(runFlowMock).toHaveBeenCalledTimes(1);
+  });
+
+  /*
+   * Item 8: A corrupt record (`readFlowRunRecord` throws
+   * `ERR_CLI_FLOW_RECORD_INVALID`) propagates unchanged — it must NOT be
+   * converted into a resume refusal and must NOT be swallowed into a fresh run.
+   */
+  test("a corrupt record (ERR_CLI_FLOW_RECORD_INVALID) propagates unchanged, not converted to resume refusal", async () => {
+    armHappyPath();
+    const cause = new Error("unexpected end of JSON input");
+    readFlowRunRecordMock.mockImplementation(() => {
+      throw new M3LCliError(
+        "ERR_CLI_FLOW_RECORD_INVALID",
+        "the flow run record is not valid JSON",
+        { cause },
+      );
+    });
+    const { context } = buildContext();
+
+    let thrown: unknown;
+    try {
+      await runFlowCommand(context, ["run", "dlq-reconcile", "--resume"]);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCliError);
+    // Must remain RECORD_INVALID, not be re-coded as RESUME_REFUSED.
+    expect((thrown as M3LCliError).code).toBe("ERR_CLI_FLOW_RECORD_INVALID");
+    expect((thrown as M3LCliError).cause).toBe(cause);
+    expect(runFlowMock).not.toHaveBeenCalled();
+    expect(writeFlowRunRecordMock).not.toHaveBeenCalled();
   });
 });
 

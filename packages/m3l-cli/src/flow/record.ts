@@ -585,3 +585,86 @@ export function readFlowRunRecord(
   }
   return projectFlowRunRecord(parsed);
 }
+
+/**
+ * The resume values extracted from a saved run record and forwarded to the
+ * flow engine — only populated when `--resume` was given.
+ *
+ * @example
+ * ```ts
+ * import { validateResumeRecord } from "@m3l-automation/m3l-common/core";
+ * const { resumeFromStepId, stepExecutionCount } = validateResumeRecord(record, definition);
+ * ```
+ */
+export interface M3LCliResumeOptions {
+  /** The step id to resume from, taken from the saved record. */
+  readonly resumeFromStepId: string;
+  /** The step execution count to carry forward, taken from the saved record. */
+  readonly stepExecutionCount: number;
+}
+
+/**
+ * Enforces all three resume preconditions against a saved run record and
+ * returns the values the engine needs to continue from where the last run
+ * stopped.
+ *
+ * Lives here rather than at the call site because `flow/record` already owns
+ * "what makes a record valid for resumption" — it defines `M3LCliFlowRunRecord`,
+ * exports `readFlowRunRecord`, and is the only module that knows what every
+ * field means. Placing this check in the command layer would scatter
+ * record-semantic knowledge across two modules and contradict the header
+ * comment that every decision lives one layer down.
+ *
+ * The three preconditions, in order:
+ * 1. `record` is `undefined` → the flow has never run (no record on disk).
+ * 2. `record.resumeStepId === null` → the last run left nothing to resume.
+ * 3. `record.definitionHash !== hashFlowDefinition(definition)` → the
+ *    definition changed since the recorded run.
+ *
+ * A corrupt record (`ERR_CLI_FLOW_RECORD_INVALID`) is a distinct failure
+ * that `readFlowRunRecord` already throws — do not catch it before calling
+ * this function, as re-coding it here would hide the real cause.
+ *
+ * @param record - The result of {@link readFlowRunRecord}: `undefined` when no
+ *   record file exists, or the parsed and validated record.
+ * @param definition - The current flow definition, used for hash comparison.
+ * @returns The step id and execution count to pass to the flow engine.
+ * @throws {@link M3LCliError} coded `ERR_CLI_FLOW_RESUME_REFUSED` when any
+ *   precondition fails: the flow has never run, the last run completed with
+ *   nothing left to resume, or the definition has changed since the recorded
+ *   run.
+ *
+ * @example
+ * ```ts
+ * import { readFlowRunRecord, validateResumeRecord } from "@m3l-automation/m3l-common/core";
+ * const record = readFlowRunRecord(recordPath);
+ * const { resumeFromStepId, stepExecutionCount } = validateResumeRecord(record, definition);
+ * ```
+ */
+export function validateResumeRecord(
+  record: M3LCliFlowRunRecord | undefined,
+  definition: M3LCliFlowDefinition,
+): M3LCliResumeOptions {
+  if (record === undefined) {
+    throw new M3LCliError(
+      "ERR_CLI_FLOW_RESUME_REFUSED",
+      `cannot resume '${definition.name}' — it has never run (no record found)`,
+    );
+  }
+  if (record.resumeStepId === null) {
+    throw new M3LCliError(
+      "ERR_CLI_FLOW_RESUME_REFUSED",
+      `cannot resume '${definition.name}' — the last run completed with nothing left to resume (no resumable step)`,
+    );
+  }
+  if (record.definitionHash !== hashFlowDefinition(definition)) {
+    throw new M3LCliError(
+      "ERR_CLI_FLOW_RESUME_REFUSED",
+      `cannot resume '${definition.name}' — the flow definition has changed since the recorded run (fingerprint mismatch)`,
+    );
+  }
+  return {
+    resumeFromStepId: record.resumeStepId,
+    stepExecutionCount: record.stepExecutionCount,
+  };
+}
