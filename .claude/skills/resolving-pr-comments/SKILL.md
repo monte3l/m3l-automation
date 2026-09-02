@@ -49,6 +49,10 @@ zero time on mechanical review-driven edits.
   instead of asking — it does not block merge, so stopping the whole run over an
   optional item is worse than leaving it for a human. Note it as not addressed in the
   Step 3 preview and the Step 10 follow-up comment.
+- For a finding you believe is wrong, this skill does not dispute it on your behalf —
+  see `docs/contributing/branch-protection.md`'s override procedure (investigate, reply
+  to the bot's comment thread with evidence, then a human with admin rights merges past
+  the FAIL and records the rationale).
 - The skill runs in-process as a single agent — no hub-and-spoke needed. This is
   precisely what makes the GitHub MCP tools below usable here: MCP is hub-only
   (no spoke holds an `mcp__*` grant) and unavailable in headless CI, but this
