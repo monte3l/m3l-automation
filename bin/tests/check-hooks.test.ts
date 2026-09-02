@@ -154,6 +154,67 @@ describe("validateHooksConfig", () => {
     expect(result.warnings).toEqual([]);
     expect(result.referenced).toEqual(new Set());
   });
+
+  test("a statusLine.command wiring an existing hook script produces no error or dead-hook warning and is added to referenced", () => {
+    const settings = {
+      hooks: {},
+      statusLine: {
+        command:
+          'node "$CLAUDE_PROJECT_DIR/.claude/hooks/render-statusline.mjs"',
+      },
+    };
+    const result = validateHooksConfig(settings, {
+      hookFileExists: () => true,
+      onDiskHookNames: ["render-statusline.mjs"],
+    });
+    expect(result.errors).toEqual([]);
+    expect(result.warnings).toEqual([]);
+    expect(result.referenced).toEqual(new Set(["render-statusline.mjs"]));
+  });
+
+  test("a statusLine.command wiring a hook script that does not exist on disk is exactly one error naming statusLine", () => {
+    const settings = {
+      hooks: {},
+      statusLine: {
+        command:
+          'node "$CLAUDE_PROJECT_DIR/.claude/hooks/missing-statusline.mjs"',
+      },
+    };
+    const result = validateHooksConfig(settings, {
+      hookFileExists: () => false,
+      onDiskHookNames: [],
+    });
+    expect(result.errors).toEqual([
+      '.claude/settings.json\'s "statusLine" wires "missing-statusline.mjs" but .claude/hooks/missing-statusline.mjs does not exist.',
+    ]);
+  });
+
+  test("settings.statusLine absent behaves identically to before: no statusLine errors/warnings, existing dead-hook warnings still fire", () => {
+    const settings = { hooks: {} };
+    const result = validateHooksConfig(settings, {
+      hookFileExists: () => true,
+      onDiskHookNames: ["orphan-hook.mjs"],
+    });
+    expect(result.errors).toEqual([]);
+    expect(result.warnings).toEqual([
+      expect.stringContaining("orphan-hook.mjs exists but is not wired"),
+    ]);
+    expect(result.referenced).toEqual(new Set());
+  });
+
+  test("a statusLine.command that is not a .claude/hooks/*.mjs-shaped string is silently ignored: no crash, no referenced entry, no statusLine error", () => {
+    const settings = {
+      hooks: {},
+      statusLine: { command: "some-other-statusline-binary --flag" },
+    };
+    const result = validateHooksConfig(settings, {
+      hookFileExists: () => true,
+      onDiskHookNames: [],
+    });
+    expect(result.errors).toEqual([]);
+    expect(result.warnings).toEqual([]);
+    expect(result.referenced).toEqual(new Set());
+  });
 });
 
 describe("KNOWN_MATCHERS", () => {
