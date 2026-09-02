@@ -79,7 +79,7 @@ export function extractHookScriptName(command) {
  * collaborators needed to check disk state, so it is unit-testable without
  * touching the filesystem.
  *
- * @param {{ hooks?: Record<string, Array<{ matcher?: string, hooks?: Array<{ command?: string, timeout?: number }> }>> }} settings
+ * @param {{ hooks?: Record<string, Array<{ matcher?: string, hooks?: Array<{ command?: string, timeout?: number }> }>>, statusLine?: { command?: string } }} settings
  * @param {{ hookFileExists: (name: string) => boolean, onDiskHookNames: string[] }} deps
  * @returns {{ errors: string[], warnings: string[], referenced: Set<string> }}
  */
@@ -130,6 +130,23 @@ export function validateHooksConfig(
               `it inherits the platform default instead of a repo-visible bound.`,
           );
         }
+      }
+    }
+  }
+
+  // `statusLine` is a separate top-level settings key, not a lifecycle
+  // event under `hooks` — without this, a valid statusLine script would
+  // false-positive as a "dead hook?" below.
+  const statusLineCommand = settings.statusLine?.command;
+  if (typeof statusLineCommand === "string") {
+    const name = extractHookScriptName(statusLineCommand);
+    if (name !== null) {
+      referenced.add(name);
+      if (!hookFileExists(name)) {
+        errors.push(
+          `.claude/settings.json's "statusLine" wires "${name}" but ` +
+            `.claude/hooks/${name} does not exist.`,
+        );
       }
     }
   }
