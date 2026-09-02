@@ -200,6 +200,12 @@ const CLASSIFICATION_TABLE: Record<
     retryable: true,
     fault: false,
   },
+  ERR_CONSOLE_RUN_NOT_CANCELLABLE: {
+    status: 409,
+    origin: "caller",
+    retryable: false,
+    fault: false,
+  },
   ERR_CONSOLE_BODY_TOO_LARGE: {
     status: 413,
     origin: "caller",

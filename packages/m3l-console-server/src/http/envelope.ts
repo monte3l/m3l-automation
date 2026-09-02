@@ -227,6 +227,16 @@ const CLASSIFICATION_BY_CODE: Record<M3LConsoleErrorCode, ErrorClassification> =
       retryable: true,
       fault: false,
     },
+    // `retryable: false` even though the run's state changed under the
+    // caller: retrying a cancel against a run that already ended will get
+    // the same 409 forever. The right next action is to read the run, not to
+    // repeat the request.
+    ERR_CONSOLE_RUN_NOT_CANCELLABLE: {
+      status: STATUS_CONFLICT,
+      origin: "caller",
+      retryable: false,
+      fault: false,
+    },
     ERR_CONSOLE_BODY_TOO_LARGE: {
       status: STATUS_PAYLOAD_TOO_LARGE,
       origin: "caller",

@@ -16,7 +16,7 @@ are not yet built.
 
 X4 shipped run orchestration: launch a script, list and read the run registry,
 and watch one run's progress and output over SSE; X7d added the run-report
-read surface. The route table is:
+read surface and cancellation. The route table is:
 
 | Method | Path                      | Auth     | Shipped in |
 | ------ | ------------------------- | -------- | ---------- |
@@ -27,6 +27,7 @@ read surface. The route table is:
 | `GET`  | `/api/v1/runs/:id`        | required | X4         |
 | `GET`  | `/api/v1/runs/:id/stream` | required | X4         |
 | `GET`  | `/api/v1/runs/:id/report` | required | X7d        |
+| `POST` | `/api/v1/runs/:id/cancel` | required | X7d        |
 
 X6 shipped the workbench-sessions module: create/list/read/close/reopen a
 session, append steps, raise and answer decisions, and read a session's
@@ -54,13 +55,14 @@ operations without running it.
 | `GET`  | `/api/v1/scripts`       | required | X10        |
 | `GET`  | `/api/v1/scripts/:name` | required | X10        |
 
-Cancellation and telemetry summaries remain deliberately absent — ADR-0066
-describes them as the contract's eventual shape, not as anything the server
-answers today.
+Telemetry summaries remain deliberately absent — ADR-0066 describes them as
+the contract's eventual shape, not as anything the server answers today.
+**Cancellation, which ADR-0066 listed alongside them, shipped in X7d** (see
+`POST /api/v1/runs/:id/cancel` below).
 
 ## Enabling run orchestration
 
-The five `/api/v1/runs*` routes are **not registered** unless the run
+The six `/api/v1/runs*` routes are **not registered** unless the run
 subsystem is configured. `M3L_CONSOLE_RUNS_SCRIPTS_DIR` is the single gate:
 when it is absent, empty, or whitespace-only, the server boots with run
 orchestration disabled and logs that posture once, rather than failing to
@@ -380,6 +382,52 @@ Seven values, enforced by a `CHECK` constraint in the schema:
 The five terminal statuses _are_ `Core.M3LRunOutcome` — the same vocabulary
 the library and the CLI use — so there is no translation table between the
 registry and a script's own result, and therefore nothing to drift.
+
+## `POST /api/v1/runs/:id/cancel`
+
+Cancels a run, whether it is `running` or still `queued`. Takes **no request
+body** — the request itself is the gesture.
+
+```bash
+curl -sS -X POST localhost:8787/api/v1/runs/$RUN_ID/cancel
+```
+
+```json
+{ "cancelled": true }
+```
+
+The two cases are not symmetric under the hood, and the difference is worth
+knowing:
+
+| Run state | What happens                                                                                                                                                     |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `running` | Its abort signal fires. The executor sends `SIGTERM`, escalating to `SIGKILL` after `kill.timeout.ms`. The run's own completion path writes the terminal record. |
+| `queued`  | The run is evicted straight to `interrupted`. It never executed, so `startedAtMs` stays `null` — never a fabricated one.                                         |
+
+Either way the run lands on the existing terminal `interrupted` status, the
+same one a signal death or a crash-recovery reconcile produces. There is no
+`cancelled` status and no schema change.
+
+Two failure modes, deliberately distinct:
+
+| Code                              | Status | When                                  |
+| --------------------------------- | ------ | ------------------------------------- |
+| `ERR_CONSOLE_RUN_NOT_FOUND`       | 404    | No such run id.                       |
+| `ERR_CONSOLE_RUN_NOT_CANCELLABLE` | 409    | The run exists but has already ended. |
+
+Collapsing those into one status would make a run that finished a second
+before the request indistinguishable from a typo'd id. The 409 is
+**not retryable**: repeating the request gets the same answer forever, and
+the useful next action is to read the run.
+
+Cancelling a run that is already draining is not an error — the abort is
+re-issued, the response is still `200`, and the only cost is a second
+`run.cancel` audit entry, which is the honest record of an operator asking
+twice.
+
+The audit trail carries **two** entries per cancellation: `run.cancel` (the
+operator's act, recorded before anything changes) and `run.finished` (the
+run's terminal outcome). They are separate facts, and an auditor needs both.
 
 ## `GET /api/v1/runs/:id/report`
 
@@ -897,8 +945,6 @@ Stated plainly rather than left to be discovered:
   sensible; the value is forwarded to the registry as given.
 - **`parameters` bounds neither key count nor value length** beyond the 64 KiB
   body cap that transitively limits both.
-- **No cancellation route.** A running run can only be stopped by draining the
-  server.
 - **A route registered through `M3LConsoleRuntimeOptions.routes` is not
   audited.** The ADR-0070 human-action audit gate is applied to the console's
   own route table, and a caller's routes are appended after it — so a write

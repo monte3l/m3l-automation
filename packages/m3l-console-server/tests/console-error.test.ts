@@ -39,6 +39,7 @@ describe("M3LConsoleErrorCode", () => {
       | "ERR_CONSOLE_RUN_SCRIPT_NOT_FOUND"
       | "ERR_CONSOLE_RUN_CONFIRMATION_REQUIRED"
       | "ERR_CONSOLE_RUN_CAPACITY_EXCEEDED"
+      | "ERR_CONSOLE_RUN_NOT_CANCELLABLE"
       | "ERR_CONSOLE_BODY_TOO_LARGE"
       | "ERR_CONSOLE_UNSUPPORTED_MEDIA_TYPE"
       | "ERR_CONSOLE_SESSION_NOT_FOUND"
@@ -179,6 +180,10 @@ describe("M3LConsoleError", () => {
     [
       "ERR_CONSOLE_RUN_CAPACITY_EXCEEDED",
       "the run queue is at capacity and cannot accept another request",
+    ],
+    [
+      "ERR_CONSOLE_RUN_NOT_CANCELLABLE",
+      "the run has already ended and cannot be cancelled",
     ],
   ])(
     "constructs %s and is caught by isConsoleError and instanceof Core.M3LError (X3-A1)",

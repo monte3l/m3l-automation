@@ -1,7 +1,8 @@
 /**
  * `http/routes/runs` — the X4 run-governor's REST surface: `POST /api/v1/runs`
  * to launch a run, `GET /api/v1/runs` to list, `GET /api/v1/runs/:id` to read
- * one.
+ * one, and (X7d) `GET /api/v1/runs/:id/report` plus
+ * `POST /api/v1/runs/:id/cancel`.
  *
  * `http/` may never import `runs/` or `store/` (zone rules, checked by
  * `bin/check-eslint-zones.mjs`) — including type-only imports. So this
@@ -113,6 +114,7 @@ interface M3LRunLaunchRequest {
  * @example
  * ```ts
  * const launcher: M3LRunLauncherPort = {
+ *   cancel: () => true,
  *   launch: () => ({
  *     id: "run-1",
  *     scriptName: "sqs-etl",
@@ -124,6 +126,15 @@ interface M3LRunLaunchRequest {
  * ```
  */
 export interface M3LRunLauncherPort {
+  /**
+   * Cancels a run, active or queued (X7d) — mirrors
+   * `runs/orchestrator-types.ts`'s `M3LRunOrchestrator.cancel`.
+   *
+   * `false` means "there is nothing this call can cancel", never merely "not
+   * found": see {@link buildCancelHandler} for how this route tells the two
+   * apart.
+   */
+  cancel(id: string): boolean;
   /** Launches a validated run request; throws propagated unchanged from the orchestrator. */
   launch(request: M3LRunLaunchRequest): {
     readonly id: string;
@@ -187,7 +198,7 @@ export interface M3LRunReportPort {
  * @example
  * ```ts
  * const options: RunRouteOptions = {
- *   orchestrator: { launch: () => ({ id: "run-1", scriptName: "sqs-etl", status: "running", dryRun: false, executionMode: "spawn" }) },
+ *   orchestrator: { cancel: () => true, launch: () => ({ id: "run-1", scriptName: "sqs-etl", status: "running", dryRun: false, executionMode: "spawn" }) },
  *   registry: { list: () => [], get: () => undefined },
  * };
  * ```
@@ -377,6 +388,55 @@ function buildGetHandler(registry: M3LRunReaderPort): M3LConsoleHandler {
 }
 
 /**
+ * Builds the `POST /api/v1/runs/:id/cancel` handler.
+ *
+ * The registry is consulted FIRST, and the ordering is the whole design:
+ *
+ * - no such run: `ERR_CONSOLE_RUN_NOT_FOUND` (404)
+ * - a run with nothing left to cancel: `ERR_CONSOLE_RUN_NOT_CANCELLABLE` (409)
+ * - anything else: 200 `{ cancelled: true }`
+ *
+ * Two codes rather than one, because they are two different facts an
+ * operator acts on differently: a 404 means the id is wrong, a 409 means the
+ * run finished before the request landed. Collapsing them would make a
+ * successfully-completed run indistinguishable from a typo.
+ *
+ * Cancelling an ALREADY-CANCELLED-but-still-draining run is not an error
+ * here: the orchestrator's active map still holds it, so the abort is
+ * re-issued and this returns 200. `AbortController.abort()` is idempotent
+ * and the run's own continuation still owns its single terminal write, so a
+ * second request costs one extra `run.cancelled` audit entry and nothing
+ * else — which is the honest record of an operator asking twice.
+ */
+function buildCancelHandler(
+  orchestrator: M3LRunLauncherPort,
+  registry: M3LRunReaderPort,
+): M3LConsoleHandler {
+  return (ctx) => {
+    const id = ctx.params["id"];
+    if (id === undefined) {
+      throw new M3LConsoleError(
+        "ERR_CONSOLE_BAD_REQUEST",
+        "missing ':id' route parameter",
+      );
+    }
+    if (registry.get(id) === undefined) {
+      throw new M3LConsoleError(
+        "ERR_CONSOLE_RUN_NOT_FOUND",
+        `no run found with id '${id}'`,
+      );
+    }
+    if (!orchestrator.cancel(id)) {
+      throw new M3LConsoleError(
+        "ERR_CONSOLE_RUN_NOT_CANCELLABLE",
+        `run '${id}' has already ended and cannot be cancelled`,
+      );
+    }
+    return jsonResponse(STATUS_OK, { cancelled: true });
+  };
+}
+
+/**
  * Builds the `GET /api/v1/runs/:id/report` handler: the run's persisted
  * `run-report.json`, or a 404.
  *
@@ -427,11 +487,12 @@ function buildReportHandler(
 /**
  * Builds the X4 run-governor's REST route table: `POST /api/v1/runs`,
  * `GET /api/v1/runs`, `GET /api/v1/runs/:id`, and (X7d)
- * `GET /api/v1/runs/:id/report`, all `auth: "required"` — a console operator
- * only, never an unauthenticated caller.
+ * `GET /api/v1/runs/:id/report` plus `POST /api/v1/runs/:id/cancel`, all
+ * `auth: "required"` — a console operator only, never an unauthenticated
+ * caller.
  *
  * @param options - See {@link RunRouteOptions}.
- * @returns The four-route table.
+ * @returns The five-route table.
  *
  * @example
  * ```ts
@@ -439,6 +500,7 @@ function buildReportHandler(
  *
  * const routes = createRunRoutes({
  *   orchestrator: {
+ *     cancel: () => true,
  *     launch: () => ({
  *       id: "run-1",
  *       scriptName: "sqs-etl",
@@ -476,6 +538,12 @@ export function createRunRoutes(options: RunRouteOptions): readonly M3LRoute[] {
       path: "/api/v1/runs/:id/report",
       auth: "required",
       handler: buildReportHandler(options.registry, options.reportReader),
+    },
+    {
+      method: "POST",
+      path: "/api/v1/runs/:id/cancel",
+      auth: "required",
+      handler: buildCancelHandler(options.orchestrator, options.registry),
     },
   ];
 }

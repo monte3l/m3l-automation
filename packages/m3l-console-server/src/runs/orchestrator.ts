@@ -17,21 +17,26 @@ import { Core } from "@m3l-automation/m3l-common";
 import type { RunExecutionMode } from "../store/runs-repository.js";
 
 import { admitRun } from "./admission.js";
-import type { M3LRunAuditSink } from "./audit.js";
-import type { M3LRunEventSink } from "./events.js";
-import type { M3LRunExecutor } from "./executor.js";
-import type { M3LRunGovernor } from "./governor.js";
 import type {
   M3LRunHandle,
   M3LRunLaunchRequest,
   M3LRunOrchestrator,
-  M3LRunOrchestratorConfig,
   M3LRunOrchestratorOptions,
 } from "./orchestrator-types.js";
+import {
+  abandonQueuedRun,
+  cancelRun,
+  clearQueueTimeout,
+} from "./orchestrator-cancel.js";
+import type {
+  M3LActiveRun,
+  M3LFinishExtra,
+  M3LOrchestratorContext,
+  M3LPendingQueuedRun,
+  M3LRunStartInput,
+} from "./orchestrator-context.js";
 import { mapSpawnOutcome } from "./outcome.js";
 import type { M3LRunRequestBody } from "./parameters.js";
-import type { M3LRunPolicy } from "./policy.js";
-import type { M3LRunRegistry } from "./registry.js";
 import { executionModeForScript } from "./resolver.js";
 import type { M3LResolvedScript } from "./resolver.js";
 
@@ -56,91 +61,6 @@ interface M3LRunOrchestratorInternals {
   readonly nowMs?: () => number;
   /** Replaces `setTimeout` for a deterministic queue-timeout timer. */
   readonly timerImpl?: typeof setTimeout;
-}
-
-/** One currently-active (started, not yet settled) run. */
-interface M3LActiveRun {
-  readonly controller: AbortController;
-  readonly scriptName: string;
-  readonly operator: string;
-  readonly promise: Promise<void>;
-}
-
-/** A queued run's originally-resolved script and request, kept so a later pump or timeout never has to re-derive them. */
-interface M3LPendingQueuedRun {
-  readonly resolved: M3LResolvedScript;
-  readonly body: M3LRunRequestBody;
-  readonly operator: string;
-  /**
-   * The launching request's correlation id, carried through the queue.
-   *
-   * This is why correlation is threaded EXPLICITLY rather than through an
-   * `AsyncLocalStorage`. {@link pumpQueue} starts a queued run from inside a
-   * DIFFERENT run's completion continuation ({@link finishActiveRun}), so an
-   * ambient store would attribute this run's work to whichever request
-   * happened to finish first. `onQueueTimeout` and `reconcileOnBoot` have no
-   * ambient context at all. Only a value stored with the queued run survives
-   * the queue.
-   */
-  readonly correlationId: string;
-}
-
-/**
- * Everything {@link startRun} needs to begin one run.
- *
- * A bag rather than a sixth positional parameter: {@link executeAndSettle}
- * already took six, and the two share every field but the abort controller.
- */
-interface M3LRunStartInput {
-  readonly id: string;
-  readonly resolved: M3LResolvedScript;
-  readonly body: M3LRunRequestBody;
-  readonly operator: string;
-  readonly correlationId: string;
-}
-
-/**
- * Every collaborator and piece of mutable state the orchestrator's helper
- * functions share, bundled so each helper takes one argument instead of
- * eight. Not exported — purely an internal wiring detail.
- */
-interface M3LOrchestratorContext {
-  readonly config: M3LRunOrchestratorConfig;
-  readonly registry: M3LRunRegistry;
-  readonly governor: M3LRunGovernor;
-  readonly policy: M3LRunPolicy;
-  readonly audit: M3LRunAuditSink;
-  readonly events: M3LRunEventSink;
-  readonly spawnExecutor: M3LRunExecutor;
-  readonly inProcessExecutor: M3LRunExecutor;
-  readonly logger: Core.M3LLogger;
-  /** See {@link M3LRunOrchestratorOptions.runsOutputRoot}. */
-  readonly runsOutputRoot: string;
-  readonly newId: () => string;
-  readonly nowMs: () => number;
-  readonly timerImpl: typeof setTimeout;
-  readonly active: Map<string, M3LActiveRun>;
-  readonly queueTimers: Map<string, ReturnType<typeof setTimeout>>;
-  readonly pendingQueued: Map<string, M3LPendingQueuedRun>;
-  /**
-   * The drain flag, as a closure-backed pair rather than a mutable context
-   * field: `M3LOrchestratorContext` is deeply `readonly`, and
-   * `no-param-reassign` correctly forbids mutating it through a parameter, so
-   * the flag itself lives in {@link createRunOrchestrator}'s closure and
-   * these two functions are its only access. `markDraining` is never
-   * reversible — once called, `isDraining` never reports `false` again, a
-   * drained orchestrator being terminal, matching the shutdown-sequence
-   * lifecycle (there is no "un-drain" to support).
-   */
-  readonly isDraining: () => boolean;
-  /** See {@link M3LOrchestratorContext.isDraining}'s TSDoc. */
-  readonly markDraining: () => void;
-}
-
-/** The optional fields a terminal `finish` write carries, on top of `outcome`/`endedAtMs`. */
-interface M3LFinishExtra {
-  readonly exitCode?: number;
-  readonly failureMessage?: string;
 }
 
 /**
@@ -193,29 +113,10 @@ function finishActiveRun(
   pumpQueue(ctx);
 }
 
-/** Clears a queued run's armed queue-timeout timer, if one exists. A no-op for a run that was never queued (started immediately) or already cleared. */
-function clearQueueTimeout(ctx: M3LOrchestratorContext, id: string): void {
-  const handle = ctx.queueTimers.get(id);
-  if (handle === undefined) return;
-  ctx.queueTimers.delete(id);
-  clearTimeout(handle);
-}
-
 /**
  * Fires when a queued run's `queueTimeoutMs` elapses. A run already started
- * or cancelled by then is left alone — this checks the registry's own
- * status rather than trusting the timer fired "in time". Deliberately does
- * NOT pump the queue afterward: a timed-out run never held a governor slot
- * (it was `enqueue`d, never `accept`ed), so no slot was freed for anyone to
- * fill.
- *
- * Writes via `registry.abandonQueued`'s guarded `queued` to `interrupted`
- * transition, never `claimForStart`-then-`finish`: a run timed out while
- * queued never executed, so `started_at_ms` must never be fabricated
- * (`store/runs-repository.ts`'s TSDoc has the full rationale). A lost race —
- * `abandonQueued` returning `false` because another caller already started
- * or ended this run — is logged and left alone: that run's own completion
- * path already owns its finish record.
+ * or cancelled by then is left alone — {@link abandonQueuedRun} checks the
+ * registry's own status rather than trusting the timer fired "in time".
  */
 function onQueueTimeout(
   ctx: M3LOrchestratorContext,
@@ -225,31 +126,7 @@ function onQueueTimeout(
 ): void {
   ctx.queueTimers.delete(id);
   ctx.pendingQueued.delete(id);
-  const row = ctx.registry.get(id);
-  if (row === undefined || row.status !== "queued") return;
-  const endedAtMs = ctx.nowMs();
-  if (!ctx.registry.abandonQueued(id, endedAtMs)) {
-    ctx.logger.warning(
-      `lost the abandon-queued race for run '${id}' of script '${scriptName}'; it was started or ended before this queue-timeout could apply`,
-      { runId: id, scriptName },
-    );
-    return;
-  }
-  ctx.events.publish({
-    event: "run.ended",
-    runId: id,
-    outcome: "interrupted",
-    exitCode: undefined,
-  });
-  ctx.audit.record({
-    action: "run.finished",
-    runId: id,
-    scriptName,
-    operator,
-    atMs: endedAtMs,
-    detail: { outcome: "interrupted" },
-  });
-  ctx.governor.dequeue();
+  abandonQueuedRun(ctx, id, scriptName, operator, "queue-timeout");
 }
 
 /**
@@ -531,22 +408,6 @@ function launchRun(
     dryRun: body.dryRun,
     executionMode,
   };
-}
-
-/** Cancels an active run — see {@link M3LRunOrchestrator.cancel}'s own TSDoc for the "queued/finished always returns false" contract. */
-function cancelRun(ctx: M3LOrchestratorContext, id: string): boolean {
-  const entry = ctx.active.get(id);
-  if (entry === undefined) return false;
-  entry.controller.abort();
-  ctx.audit.record({
-    action: "run.cancelled",
-    runId: id,
-    scriptName: entry.scriptName,
-    operator: entry.operator,
-    atMs: ctx.nowMs(),
-    detail: {},
-  });
-  return true;
 }
 
 /** The script/operator recorded on the boot-reconciliation audit entry, which is a bulk operation over every orphaned row rather than one run. */
