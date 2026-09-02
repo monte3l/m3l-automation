@@ -969,6 +969,42 @@ describe("validateFlowDefinition — dangerous nested keys", () => {
     expect(error.message).toContain(POLLUTION_MESSAGE);
     expect(error.suggestions).toEqual([]);
   });
+
+  test("rejects a pollution vector nested inside a parameter value's own mapping", () => {
+    // `fields` is an opaque parameter value from the validator's point of
+    // view — its shape belongs to `json-etl`, not to this format — so only
+    // `screenDangerousKeysDeep`'s walk down into it can catch a vector
+    // buried a level below `parameters` itself.
+    const nested = withOwnKey({ keep: 2 }, "__proto__", { payload: 1 });
+    expect(Object.hasOwn(nested, "__proto__")).toBe(true);
+
+    const error = rejectDemo(
+      rawFlowWithStep({ parameters: { fields: nested } }),
+    );
+
+    expect(error.code).toBe("ERR_CLI_FLOW_INVALID");
+    expect(error.message).toContain(POLLUTION_MESSAGE);
+    expect(error.message).toContain("__proto__");
+    // The label is path-extended with the descended key, not just "parameters".
+    expect(error.message).toContain("'s 'parameters'.fields");
+  });
+
+  test("rejects a pollution vector nested inside an array element of a parameter value", () => {
+    // Pins that the recursive walk descends into arrays, not only records —
+    // a mapping sitting at `parameters.fields[1]` is just as reachable as one
+    // sitting directly under `fields`.
+    const nested = withOwnKey({ keep: 2 }, "__proto__", { payload: 1 });
+    expect(Object.hasOwn(nested, "__proto__")).toBe(true);
+
+    const error = rejectDemo(
+      rawFlowWithStep({ parameters: { fields: [{ keep: 1 }, nested] } }),
+    );
+
+    expect(error.code).toBe("ERR_CLI_FLOW_INVALID");
+    expect(error.message).toContain(POLLUTION_MESSAGE);
+    expect(error.message).toContain("__proto__");
+    expect(error.message).toContain("'s 'parameters'.fields[1]");
+  });
 });
 
 /**

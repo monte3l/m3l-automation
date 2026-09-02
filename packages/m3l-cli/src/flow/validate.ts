@@ -24,17 +24,23 @@
  * @packageDocumentation
  */
 
-import { Core } from "@m3l-automation/m3l-common";
-
-import { M3LCliError } from "../cli/errors.js";
 import { suggestNames } from "../cli/suggest.js";
+import { readBranch } from "./branch.js";
 import {
   DEFAULT_MAX_STEP_EXECUTIONS,
   FLOW_NAME_RE,
   FLOW_STEP_ID_RE,
 } from "./types.js";
+import {
+  asRecord,
+  isRecord,
+  isUnknownArray,
+  readString,
+  rejectFlow,
+  screenDangerousKeys,
+  screenUnknownKeys,
+} from "./validate-guards.js";
 import type {
-  M3LCliFlowBranch,
   M3LCliFlowDefinition,
   M3LCliFlowExecution,
   M3LCliFlowStep,
@@ -124,130 +130,8 @@ const STEP_KEYS: ReadonlySet<string> = new Set([
   "dryRun",
 ]);
 
-/** The only key a `{ goto }` branch mapping may carry. */
-const GOTO_KEYS: ReadonlySet<string> = new Set(["goto"]);
-
 /** How the validator labels the document as a whole in its messages. */
 const FLOW_LABEL = "the flow definition";
-
-/**
- * Throws the one error class every rejection in this module raises. Declared
- * `never` so a call reads as terminal at each call site, keeping the rules
- * themselves free of `else` branches.
- *
- * @param message - Human-readable description of the rule that was broken.
- * @param suggestions - "Did you mean…" candidates, when a near-miss ranking
- *   applies; deliberately left empty for a prototype-pollution rejection, so
- *   a pollution vector is never echoed back as a friendly hint.
- */
-function rejectFlow(
-  message: string,
-  suggestions: readonly string[] = [],
-): never {
-  throw new M3LCliError("ERR_CLI_FLOW_INVALID", message, { suggestions });
-}
-
-/**
- * Checks whether `value` is a non-array object — a YAML mapping.
- *
- * @param value - The candidate value.
- * @returns Whether `value` can be read as a keyed record.
- */
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-/**
- * Checks whether `value` is an array, without widening its items to `any`.
- *
- * @param value - The candidate value.
- * @returns Whether `value` is an array.
- */
-function isUnknownArray(value: unknown): value is readonly unknown[] {
-  return Array.isArray(value);
-}
-
-/**
- * Narrows `value` to a record, or rejects.
- *
- * @param value - The candidate value.
- * @param label - How to name `value` in the rejection message.
- * @returns The value as a record.
- */
-function asRecord(value: unknown, label: string): Record<string, unknown> {
-  if (!isRecord(value)) {
-    rejectFlow(`${label} must be a mapping`);
-  }
-  return value;
-}
-
-/**
- * Rejects when `record` declares a prototype-pollution vector key.
- *
- * `Core.M3LYAMLConfigProvider` screens only the document's TOP-LEVEL keys, so
- * every nested level — a step mapping, a `parameters` mapping, a branch
- * mapping — is this validator's own responsibility. The screen runs before
- * any unknown-key reporting: `__proto__` is also an undeclared name, and a
- * validator that reported unknown keys first would echo a pollution vector
- * back inside a "did you mean" list.
- *
- * @param record - The record whose own keys to screen.
- * @param label - How to name `record` in the rejection message.
- */
-function screenDangerousKeys(
-  record: Record<string, unknown>,
-  label: string,
-): void {
-  const dangerous = Object.keys(record).filter((key) =>
-    Core.isDangerousKey(key),
-  );
-  if (dangerous.length > 0) {
-    rejectFlow(
-      `${label} declares prototype-pollution key(s): ${dangerous.join(", ")}`,
-    );
-  }
-}
-
-/**
- * Rejects when `record` declares a key outside `known`, naming every
- * offending key so one pass over the file fixes them all.
- *
- * @param record - The record whose own keys to screen.
- * @param known - The keys this level of the format accepts.
- * @param label - How to name `record` in the rejection message.
- */
-function screenUnknownKeys(
-  record: Record<string, unknown>,
-  known: ReadonlySet<string>,
-  label: string,
-): void {
-  const unknown = Object.keys(record).filter((key) => !known.has(key));
-  if (unknown.length > 0) {
-    rejectFlow(
-      `${label} declares unknown key(s): ${unknown.join(", ")} — accepted: ${[...known].join(", ")}`,
-    );
-  }
-}
-
-/**
- * Reads a required string value, or rejects.
- *
- * @param record - The record to read from.
- * @param key - The key to read.
- * @param label - How to name `record` in the rejection message.
- * @returns The string value.
- */
-function readString(
-  record: Record<string, unknown>,
-  key: string,
-  label: string,
-): string {
-  const value = record[key];
-  if (typeof value !== "string") {
-    rejectFlow(`${label} requires a string '${key}'`);
-  }
-  return value;
-}
 
 /**
  * Reads an optional string value, or rejects when present but not a string.
@@ -385,69 +269,6 @@ function readExecution(
   return value;
 }
 
-/**
- * Validates one branch arm's value: `"continue"`, `"stop"`, or a `{ goto }`
- * mapping naming a declared step id. A `goto` may point forward, backward, or
- * at the step itself — a cycle is bounded by
- * {@link M3LCliFlowDefinition.maxStepExecutions}, not by this rule.
- *
- * @param value - The raw arm value.
- * @param arm - The arm's key name, for the rejection message.
- * @param label - How to name the step in the rejection message.
- * @param stepIds - Every declared step id, for `goto` resolution.
- * @returns The validated branch.
- */
-function validateBranch(
-  value: unknown,
-  arm: string,
-  label: string,
-  stepIds: ReadonlySet<string>,
-): M3LCliFlowBranch {
-  if (typeof value === "string") {
-    if (value === "continue" || value === "stop") {
-      return value;
-    }
-    rejectFlow(
-      `${label} declares an invalid '${arm}' value '${value}' — must be 'continue', 'stop' or a { goto } mapping`,
-    );
-  }
-
-  const armLabel = `${label}'s '${arm}'`;
-  const record = asRecord(value, armLabel);
-  screenDangerousKeys(record, armLabel);
-  screenUnknownKeys(record, GOTO_KEYS, armLabel);
-  const target = readString(record, "goto", armLabel);
-  if (!stepIds.has(target)) {
-    rejectFlow(
-      `${armLabel} names an undeclared step id '${target}' — no step in this flow declares it`,
-    );
-  }
-  return { goto: target };
-}
-
-/**
- * Reads a branch arm, falling back to `fallback` when the key is absent.
- *
- * @param record - The step-level record.
- * @param arm - The arm's key name.
- * @param fallback - The branch to use when the arm is undeclared.
- * @param label - How to name the step in the rejection message.
- * @param stepIds - Every declared step id, for `goto` resolution.
- * @returns The validated branch, or `fallback`.
- */
-function readBranch(
-  record: Record<string, unknown>,
-  arm: string,
-  fallback: M3LCliFlowBranch,
-  label: string,
-  stepIds: ReadonlySet<string>,
-): M3LCliFlowBranch {
-  const value = record[arm];
-  return value === undefined
-    ? fallback
-    : validateBranch(value, arm, label, stepIds);
-}
-
 /** A step's resolved script name plus the parameters that script declares. */
 interface M3LCliFlowResolvedScript {
   /** The validated script name. */
@@ -480,6 +301,64 @@ function readScript(
     );
   }
   return { script, declared };
+}
+
+/**
+ * Recursively rejects when `value` — or any mapping/array reachable inside
+ * it — declares a prototype-pollution vector key.
+ *
+ * `screenDangerousKeys` (from `flow/validate-guards.js`) only screens a
+ * record's own top-level keys. A `parameters` value is opaque to this
+ * validator — its shape belongs to the target script — so a mapping nested
+ * inside it (e.g. `parameters.fields.__proto__`, or one buried inside an
+ * array of mappings) never reaches that screen at all unless something walks
+ * all the way down. This is that walk: every mapping and array along the way
+ * is screened at its own level, and the path travelled so far is folded into
+ * `label` so the rejection names exactly where the vector sits, not just
+ * that one exists somewhere inside the value.
+ *
+ * `visited` guards against a self-referential structure — YAML's anchor +
+ * alias syntax can make a mapping contain itself — by tracking every
+ * mapping/array already walked and skipping a repeat encounter. That is safe
+ * as well as sufficient: a mapping is fully screened (itself and every key
+ * beneath it) the first time it is reached, so revisiting it through a
+ * second alias could only re-report an offense already caught, never miss
+ * one.
+ *
+ * @param value - The value to screen; anything other than a mapping or array
+ *   is inert and the call returns immediately.
+ * @param label - How to name `value`'s position in the rejection message —
+ *   the caller's label, extended with each key/index descended through.
+ * @param visited - Mappings/arrays already screened on this call tree; an
+ *   external caller never passes this — it exists only to thread the cycle
+ *   guard through the recursion.
+ */
+function screenDangerousKeysDeep(
+  value: unknown,
+  label: string,
+  visited: WeakSet<object> = new WeakSet(),
+): void {
+  if (isUnknownArray(value)) {
+    if (visited.has(value)) {
+      return;
+    }
+    visited.add(value);
+    value.forEach((item, index) => {
+      screenDangerousKeysDeep(item, `${label}[${index}]`, visited);
+    });
+    return;
+  }
+  if (!isRecord(value)) {
+    return;
+  }
+  if (visited.has(value)) {
+    return;
+  }
+  visited.add(value);
+  screenDangerousKeys(value, label);
+  for (const [key, nested] of Object.entries(value)) {
+    screenDangerousKeysDeep(nested, `${label}.${key}`, visited);
+  }
 }
 
 /**
@@ -549,7 +428,7 @@ function readParameters(
 ): Readonly<Record<string, unknown>> {
   const parametersLabel = `${label}'s 'parameters'`;
   const parameters = asRecord(record["parameters"], parametersLabel);
-  screenDangerousKeys(parameters, parametersLabel);
+  screenDangerousKeysDeep(parameters, parametersLabel);
   screenSecretParameters(parameters, resolved, parametersLabel);
 
   const declaredNames = new Set(
