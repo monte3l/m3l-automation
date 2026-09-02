@@ -24,7 +24,10 @@ paths:
   "did-you-mean" test built with an empty schema returned early and left the whole
   Damerau-Levenshtein helper at ~10%, asserting nothing). If a behavioral stage's
   only test is "doesn't throw", it is a coverage gap — read
-  `coverage/coverage-final.json` to catch a named-but-unexercised path.
+  `coverage/coverage-final.json` to catch a named-but-unexercised path. Same
+  trap in negative form: when a test's positive and negative claims can BOTH be
+  met by the work never happening ("serves 200 AND records no audit entry" — a
+  404 also records nothing), assert the positive one explicitly too.
 - **A test that claims to guard something must be mutation-tested before you
   believe it guards anything.** Break the thing the test names — delete the
   guard clause, invert the flag, drop the `.then()` wrapper — and confirm the
@@ -41,6 +44,24 @@ paths:
   mutation whose pattern no longer matches — because Prettier reflowed the
   line — silently edits nothing and reports a false survivor. Assert the
   replacement actually changed the file before trusting a green result.
+- **A mutation-tested guard can go vacuous LATER, and nothing re-checks it.**
+  Mutation-testing proves teeth only at the moment you run it. X7c's
+  `auditReads` counter proved a `startConsole` hand-off — until the next PR
+  added a second reader of the same property whose own catch swallowed the
+  stub's throw, leaving the counter non-zero with the hand-off deleted. When a
+  change adds a consumer of a signal some test observes INDIRECTLY (a property
+  read, a call count, a log line), re-mutate the tests watching it — and prefer
+  a guard asserting an outcome only the intended path can produce.
+- **Never make a test double wait by counting event-loop turns.** "Retry
+  `setImmediate` up to 200 times" is a latency guess dressed as a bound:
+  microseconds on an idle loop, so it passes locally and fails only under CI
+  load (X7c burned a CI round on it). Anchor the emit to a structural guarantee
+  in the code under test instead — there, that `startConsoleServer` attaches
+  both handlers BEFORE calling `listen()`.
+- **After pulling a merge that touches `packages/m3l-common`, run `pnpm build`
+  before trusting `test:coverage`.** Consumers resolve the library through its
+  BUILT output, so a merge adding an export leaves `dist` stale and fails tests
+  in a package you never edited. A failure in an untouched package is the tell.
 - **Enumerate the gates from `package.json`, never from the `pre-push` list or
   the cadence table.**
   `node -e "console.log(Object.keys(require('./package.json').scripts).filter(k=>k.startsWith('check:')).join(' '))"`.
