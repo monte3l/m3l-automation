@@ -20,9 +20,17 @@ Anthropic's engineering posts, research papers, and news all live under
 allowlist covers whitepapers and blog posts as well as docs — no separate domain
 list is needed per source type.
 
-`docs.claude.com` 301-redirects to `platform.claude.com` (confirmed live
-2026-08-30) — the allowlist keeps both so a redirect is followed rather than
-treated as a dead link, but new citations should prefer `platform.claude.com`.
+`docs.claude.com/en/docs/claude-code/<page>` 301-redirects to
+`code.claude.com/docs/en/<page>` (flat path, no `/docs/claude-code/` segment;
+confirmed live 2026-09-02 across two independent research passes) —
+`platform.claude.com/docs/en/docs/claude-code/<page>` now 404s instead of
+resolving. The allowlist keeps `platform.claude.com` because the Agent SDK
+and Admin-API docs still live there (e.g.
+`platform.claude.com/docs/en/api/admin/usage_report/*`) and a redirect should
+be followed rather than treated as a dead link — but for anything under the
+Claude Code CLI docs specifically, cite `code.claude.com/docs/en/<page>`
+directly rather than the old `platform.claude.com/docs/en/docs/claude-code/`
+path.
 
 ## GitHub caveat
 
@@ -44,12 +52,19 @@ told to check these directly:
 - **Claude Code CHANGELOG** —
   `https://raw.githubusercontent.com/anthropics/claude-code/main/CHANGELOG.md`.
   The authoritative, version-ordered record of Claude Code feature and behavior
-  changes. Confirmed live 2026-08-30 (latest entry: 2.1.251). Because it's
+  changes. Confirmed live 2026-09-02 (latest entry: 2.1.258). Because it's
   version-ordered, it can be read as a **delta** from a known prior version
   rather than in full — useful for a periodic refresh rather than a one-time
-  topic research pass.
+  topic research pass. A long single fetch can drift version numbers between
+  passes over the same file (confirmed 2026-09-02) — verbatim-quoted entries
+  are trustworthy, but treat a version number from a paraphrased entry as
+  approximate and re-verify before citing it precisely.
 - **Release notes** — `https://platform.claude.com/docs/en/release-notes/claude-code`
-  (redirects from `docs.claude.com/en/release-notes/claude-code`).
+  no longer hosts separate content: it now 307-redirects straight to
+  `github.com/anthropics/claude-code/blob/main/CHANGELOG.md` (confirmed
+  2026-09-02). Treat it as the same source as the CHANGELOG bullet above, not
+  a second one — Anthropic has collapsed Claude Code release notes into the
+  GitHub CHANGELOG.
 - **Blog / news / engineering / research index pages** — enumerate these
   directly rather than relying on search to surface them:
   - `https://www.anthropic.com/news`
