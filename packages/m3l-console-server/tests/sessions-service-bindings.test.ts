@@ -525,7 +525,11 @@ describe("M3LSessionService — selectBinding()", () => {
   // tested: adding the value to the `insertBinding` input fails here.
   test("stores the reference, never the value it resolved to", async () => {
     const { service, repository } = buildHarness();
-    const secret = "AKIAIOSFODNN7EXAMPLE";
+    // Assembled at runtime, never a single source literal: gitleaks scans
+    // source text and this repo has no `.gitleaksignore`
+    // (`.claude/rules/tests.md`). Same pattern as
+    // `boot-human-action-audit.test.ts`'s planted-parameter fixture.
+    const secret = ["AKIA", "EXAMPLE", "NOTREAL"].join("");
     const { sessionId } = seedSessionWithOutput(repository, { name: secret });
 
     const record = await service.selectBinding(sessionId, SELECTION);
