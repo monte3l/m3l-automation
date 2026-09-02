@@ -36,6 +36,22 @@ export const HISTORICAL_ALIASES = Object.freeze({
 });
 
 /**
+ * Matches any Claude Code harness-injected trailer key other than the
+ * sanctioned `Co-Authored-By:` — most notably `Claude-Session:`, a per-session
+ * link to the originating claude.ai/code session that some sessions append
+ * right after the co-author trailer. It is documented nowhere in this repo,
+ * validated by nothing upstream, and read by no gate here
+ * (bin/gen-commit-stats.mjs keys strictly on `Co-Authored-By`). Banned
+ * broadly — any `Claude-<Word>:` key, not just `Claude-Session:` — so a future
+ * harness-injected key is caught without a code change; `Co-Authored-By:`
+ * never matches this pattern. Consumed by bin/strip-claude-trailers.mjs
+ * (write-time removal), bin/lint-commit.mjs (write-time rejection backstop),
+ * and bin/check-commit-trailers.mjs (push-time backstop for a `--no-verify`
+ * commit).
+ */
+export const FORBIDDEN_TRAILER_PATTERN = /^Claude-[A-Za-z-]+:/i;
+
+/**
  * Parse a `Co-Authored-By` trailer value of the form `Name <email>`.
  *
  * @param {string} value

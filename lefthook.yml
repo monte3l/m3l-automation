@@ -17,7 +17,11 @@ pre-commit:
 commit-msg:
   commands:
     commitlint:
-      run: node bin/lint-commit.mjs --edit {1}
+      # strip-claude-trailers runs FIRST and silently deletes any harness-
+      # injected Claude-* trailer (Claude-Session:, etc. — never Co-Authored-By)
+      # before lint-commit validates the message; lint-commit's own
+      # validateForbiddenTrailers() is the backstop if one somehow survives.
+      run: node bin/strip-claude-trailers.mjs {1} && node bin/lint-commit.mjs --edit {1}
 
 # Same whole-repo verify the old single-chain hook ran, split into independent
 # commands so lefthook runs them CONCURRENTLY (`parallel: true`). Wall-clock drops
@@ -101,7 +105,7 @@ pre-push:
     # re-injection with no other symptom. Reads settings.json and the hooks
     # dir, no network call, negligible cost.
     checks:
-      run: node bin/verify-signed-range.mjs && pnpm check:control-chars && pnpm check:file-budget && pnpm check:agents && pnpm check:script-docs && pnpm check:cli-docs && pnpm check:review-size && pnpm check:context-budget && pnpm check:provenance && pnpm check:index && pnpm check:harness-freshness && pnpm check:retrospective && pnpm check:skill-evals && pnpm check:claude-cli-version && pnpm check:review-policy && pnpm check:hooks
+      run: node bin/verify-signed-range.mjs && node bin/check-commit-trailers.mjs && pnpm check:control-chars && pnpm check:file-budget && pnpm check:agents && pnpm check:script-docs && pnpm check:cli-docs && pnpm check:review-size && pnpm check:context-budget && pnpm check:provenance && pnpm check:index && pnpm check:harness-freshness && pnpm check:retrospective && pnpm check:skill-evals && pnpm check:claude-cli-version && pnpm check:review-policy && pnpm check:hooks
 
 # Fire after `git rebase` completes (including a no-op rebase with nothing to
 # replay) and after `git merge` completes. Regenerates the derived files the

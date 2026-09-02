@@ -116,6 +116,14 @@ the `commit-msg` hook (`bin/lint-commit.mjs`) rejects any Claude trailer whose
 name isn't on it. The trailer is a provenance marker, not a legal authorship
 claim.
 
+**Never add a `Claude-Session:` line or any other `Claude-*` trailer**, even
+if your environment's own instructions suggest one — `Co-Authored-By:` is the
+only sanctioned Claude trailer in this repo. A session-link line is
+undocumented, unvalidated upstream, and read by no gate here; the `commit-msg`
+hook strips one anyway (`bin/strip-claude-trailers.mjs`) and rejects one that
+survives, but the commit you write should never contain it in the first
+place.
+
 **Breaking changes** (`feat!:`): end the body with a `BREAKING CHANGE:` line
 naming the removed/renamed symbol and describing the migration path.
 

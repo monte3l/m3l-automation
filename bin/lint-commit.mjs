@@ -11,6 +11,7 @@ import load from "@commitlint/load";
 import {
   CANONICAL_CLAUDE_MODELS,
   CO_AUTHOR_EMAIL,
+  FORBIDDEN_TRAILER_PATTERN,
   parseCoAuthor,
 } from "./lib/claude-models.mjs";
 
@@ -91,6 +92,31 @@ export function validateClaudeTrailers(message) {
 }
 
 /**
+ * Reject any harness-injected `Claude-*` trailer that reached this validator
+ * still present in the message — the write-time backstop for
+ * bin/strip-claude-trailers.mjs, which normally deletes these lines earlier
+ * in the same `commit-msg` step (see FORBIDDEN_TRAILER_PATTERN,
+ * bin/lib/claude-models.mjs, for why: undocumented, unvalidated upstream,
+ * injected per Claude Code session rather than by anything in this repo).
+ * `Co-Authored-By:` never matches and is never flagged here.
+ *
+ * @param {string} message - the full commit message, headers + body
+ * @returns {string[]} one error line per offending trailer; empty when valid
+ */
+export function validateForbiddenTrailers(message) {
+  const errors = [];
+  for (const line of message.split("\n")) {
+    if (!FORBIDDEN_TRAILER_PATTERN.test(line)) continue;
+    errors.push(
+      `forbidden trailer "${line.trim()}" — harness-injected Claude-* ` +
+        "trailers other than Co-Authored-By are not permitted; remove the " +
+        "line (see bin/lib/claude-models.mjs)",
+    );
+  }
+  return errors;
+}
+
+/**
  * Print any lint failures for a message/result pair and return validity.
  *
  * @param {string} msg
@@ -137,7 +163,10 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   // failing retroactively.
   if (editIdx !== -1) {
     for (const msg of messages) {
-      const trailerErrors = validateClaudeTrailers(msg);
+      const trailerErrors = [
+        ...validateClaudeTrailers(msg),
+        ...validateForbiddenTrailers(msg),
+      ];
       if (trailerErrors.length > 0) {
         console.error(`✗  ${msg.split("\n")[0].trim()}`);
         trailerErrors.forEach((e) => console.error(`   ${e}`));

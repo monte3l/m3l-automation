@@ -3,6 +3,7 @@ import {
   buildOpts,
   lintMessages,
   validateClaudeTrailers,
+  validateForbiddenTrailers,
 } from "../../bin/lint-commit.mjs";
 
 describe("buildOpts", () => {
@@ -137,5 +138,67 @@ describe("validateClaudeTrailers", () => {
         msg("co-authored-by: Claude Bogus <noreply@anthropic.com>"),
       ),
     ).toHaveLength(1);
+  });
+});
+
+describe("validateForbiddenTrailers", () => {
+  const msg = (trailer: string): string =>
+    `feat(core): add a helper\n\nBody text.\n\n${trailer}`;
+
+  test("accepts a message with only the sanctioned Co-Authored-By trailer", () => {
+    expect(
+      validateForbiddenTrailers(
+        msg("Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"),
+      ),
+    ).toEqual([]);
+  });
+
+  test("rejects a Claude-Session trailer and reports the offending line", () => {
+    const errors = validateForbiddenTrailers(
+      msg("Claude-Session: https://claude.ai/code/session_01ABC"),
+    );
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain(
+      "Claude-Session: https://claude.ai/code/session_01ABC",
+    );
+  });
+
+  test("rejects a hypothetical future Claude-* key (pattern-wide, not hardcoded to Session)", () => {
+    expect(
+      validateForbiddenTrailers(msg("Claude-Run: https://example.com")),
+    ).toHaveLength(1);
+  });
+
+  test("matches the trailer key case-insensitively", () => {
+    expect(
+      validateForbiddenTrailers(
+        msg("claude-session: https://claude.ai/code/session_01ABC"),
+      ),
+    ).toHaveLength(1);
+  });
+
+  test("flags only the Claude-Session line when a valid Co-Authored-By is also present", () => {
+    const errors = validateForbiddenTrailers(
+      msg(
+        "Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>\n" +
+          "Claude-Session: https://claude.ai/code/session_01ABC",
+      ),
+    );
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("Claude-Session:");
+  });
+
+  test("reports each offending trailer in a multi-trailer message", () => {
+    const errors = validateForbiddenTrailers(
+      msg(
+        "Claude-Session: https://claude.ai/code/session_01ABC\n" +
+          "Claude-Run: https://example.com",
+      ),
+    );
+    expect(errors).toHaveLength(2);
+  });
+
+  test("accepts a message with no trailer at all", () => {
+    expect(validateForbiddenTrailers("fix(x): plain message")).toEqual([]);
   });
 });

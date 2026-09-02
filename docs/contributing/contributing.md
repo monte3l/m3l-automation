@@ -213,6 +213,18 @@ whose name isn't on that list. The trailer is optional (it records provenance,
 not legal authorship) — but when present it must be canonical, so the per-model
 commit counts in the README stay queryable from history.
 
+**`Co-Authored-By:` is the only sanctioned Claude trailer.** Some Claude Code
+sessions append a further `Claude-Session: https://claude.ai/code/session_…`
+line right after it, linking back to the originating session. That line is
+injected by the harness itself, not by anything in this repo — it is
+documented nowhere, validated by nothing upstream, and invisible to the
+per-model commit counts (`bin/gen-commit-stats.mjs` keys strictly on
+`Co-Authored-By`). Never write it deliberately: `git commit` strips any
+`Claude-*` trailer other than `Co-Authored-By:` at `commit-msg`
+(`bin/strip-claude-trailers.mjs`), `lint-commit.mjs` rejects one that somehow
+survives, and `check:commit-trailers` is the `pre-push` backstop for a
+`--no-verify` commit.
+
 ### Branches and versioning
 
 - Branch from `main`: `feat/<slug>` or `fix/<slug>`.

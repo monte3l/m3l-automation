@@ -411,6 +411,11 @@ export const COMMAND_CATALOG = [
       "Refuses an unsigned/unverified outgoing commit range (@{upstream}..HEAD, falling back to origin/main) — the same check the pre-push hook runs. Run locally to preflight a push before it's rejected.",
   },
   {
+    name: "check:commit-trailers",
+    description:
+      "Refuses an outgoing commit whose message still carries a harness-injected Claude-* trailer other than Co-Authored-By (e.g. Claude-Session:) — the pre-push backstop for a commit-msg bypassed with --no-verify.",
+  },
+  {
     name: "check:dup",
     description:
       "Copy-paste duplication density gate (jscpd, ADR-0034) — the one Sonar-style metric ESLint's per-function complexity rules don't cover. CI-only; run locally after a large refactor to spot-check duplication.",

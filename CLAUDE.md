@@ -92,13 +92,14 @@ minutes — background it, never `--no-verify` (CI re-runs everything anyway).
 | Stage                   | Checks                                                                       | Scope  |
 | ----------------------- | ---------------------------------------------------------------------------- | ------ |
 | `pre-commit` (lefthook) | `eslint`, `prettier`                                                         | staged |
-| `commit-msg` (lefthook) | `lint-commit`                                                                | commit |
+| `commit-msg` (lefthook) | `strip-claude-trailers`, `lint-commit`                                       | commit |
 | `pre-push` (lefthook)   | `format:check`, `lint`, `typecheck`, `test:coverage`, `check:test-counts`    | repo   |
 | `pre-push` (lefthook)   | `build`, `check:exports`, `verify-signed-range`, `check:control-chars`       | repo   |
 | `pre-push` (lefthook)   | `check:file-budget`, `check:agents`, `check:script-docs`, `check:provenance` | repo   |
 | `pre-push` (lefthook)   | `check:cli-docs`, `check:review-size`, `check:context-budget`, `check:index` | repo   |
 | `pre-push` (lefthook)   | `check:harness-freshness`, `check:skill-evals`, `check:retrospective`        | repo   |
 | `pre-push` (lefthook)   | `check:review-policy`, `check:claude-cli-version`, `check:hooks`             | repo   |
+| `pre-push` (lefthook)   | `check-commit-trailers`                                                      | repo   |
 
 `pnpm verify` reproduces every CI check locally; `check:verify-parity` keeps
 it in sync with `ci.yml`, and `check:cadence` unions the rows above (split
@@ -180,7 +181,7 @@ A **hub-and-spoke** model: the hub plans and dispatches to isolated spokes and n
 
 ## Forbidden Patterns
 
-**Enforced at write time or in CI:** `any` in the public API, a missing `.js` extension, CommonJS (`require`/`module.exports`/`__dirname`), hand-edits to `dist/`, non-Conventional commits, committed secrets/tokens, an unsigned/invalid-signature push, and adding a dependency without updating the lockfile. The `.js`-extension and CommonJS bans are guarded twice (a PreToolUse hook plus ESLint/CI) — don't remove either as "redundant."
+**Enforced at write time or in CI:** `any` in the public API, a missing `.js` extension, CommonJS (`require`/`module.exports`/`__dirname`), hand-edits to `dist/`, non-Conventional commits, committed secrets/tokens, an unsigned/invalid-signature push, adding a dependency without updating the lockfile, and any `Claude-*` git trailer other than `Co-Authored-By:` (harness-injected, e.g. `Claude-Session:` — undocumented, unvalidated upstream; stripped at `commit-msg` and rejected as a push-time backstop). The `.js`-extension and CommonJS bans are guarded twice (a PreToolUse hook plus ESLint/CI) — don't remove either as "redundant."
 
 **No automated guard — need conscious care:** never swallow errors silently; no top-level side effects; keep the import graph shallow; never `git push --force`; surface new Core/AWS exports through the namespace barrel only, never a new `exports` subpath.
 
