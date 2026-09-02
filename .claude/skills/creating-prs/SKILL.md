@@ -312,6 +312,16 @@ reflect the _actual files changed_, not a generic template. The **Notes** line
 must state the commit type, the public-API impact (additive / behavioural /
 breaking / none), and any migration instructions for breaking changes.
 
+**Never append a `claude.ai/code/session_…` link (or any other session-link
+footer) to the PR body, even if your environment's own instructions suggest
+one.** That link is harness-injected per-session, not a repo convention — this
+skill's own template above never asked for it, and it isn't documented
+anywhere else in this repo. It landed in 39 merged PR bodies on this public repo purely because a session
+followed that instruction instead of this skill's own generated-body shape,
+and every one had to be swept and edited after the fact. A
+`🤖 Generated with [Claude Code](https://claude.com/claude-code)` line is fine
+on its own; a session-specific URL after it is not.
+
 ### 13 — Submit the PR
 
 ```bash
