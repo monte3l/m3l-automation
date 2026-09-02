@@ -26,6 +26,9 @@ import {
   DIM,
   SEGMENT_JOIN,
   formatContextBar,
+  SESSION_NAME_PATTERN,
+  SESSION_NAME_MAX_LENGTH,
+  formatSessionNameSegment,
   formatModelSegment,
   formatEffortSegment,
   formatTokenCount,
@@ -314,6 +317,64 @@ describe("formatContextBar", () => {
     }).not.toThrow();
     expect(result).toContain("[░░░░░░░░░░]");
     expect(result).not.toContain("▓");
+  });
+});
+
+describe("formatSessionNameSegment", () => {
+  test("renders a conforming <kind>-<slug> name in green, unmarked", () => {
+    const result = formatSessionNameSegment({
+      session_name: "feat-statusline-widgets",
+    });
+
+    expect(result).toContain(GREEN);
+    expect(result).toContain("feat-statusline-widgets");
+    expect(result).not.toContain("⚠");
+  });
+
+  test("flags a non-conforming name (e.g. an AI-generated title) in yellow with a marker", () => {
+    const result = formatSessionNameSegment({
+      session_name: "Statusline context pressure security review",
+    });
+
+    expect(result).toContain(YELLOW);
+    expect(result).toContain("⚠");
+    expect(result).toContain("Statusline context pressure security review");
+  });
+
+  test("flags a name over the length bound even when it otherwise matches the pattern", () => {
+    const overLong = `feat-${"a".repeat(SESSION_NAME_MAX_LENGTH)}`;
+    const result = formatSessionNameSegment({ session_name: overLong });
+
+    expect(result).toContain(YELLOW);
+    expect(result).toContain("⚠");
+  });
+
+  test("renders a dim 'unnamed' marker when absent, empty, or non-string — never null", () => {
+    expect(formatSessionNameSegment({})).toBe(`${DIM}unnamed${RESET}`);
+    expect(formatSessionNameSegment({ session_name: "" })).toBe(
+      `${DIM}unnamed${RESET}`,
+    );
+    expect(formatSessionNameSegment({ session_name: 5 })).toBe(
+      `${DIM}unnamed${RESET}`,
+    );
+    expect(formatSessionNameSegment(null)).toBe(`${DIM}unnamed${RESET}`);
+  });
+
+  test("SESSION_NAME_PATTERN accepts every documented kind and rejects an undeclared one", () => {
+    for (const kind of [
+      "feat",
+      "fix",
+      "audit",
+      "research",
+      "docs",
+      "review",
+      "ci",
+      "merge",
+    ]) {
+      expect(SESSION_NAME_PATTERN.test(`${kind}-example-slug`)).toBe(true);
+    }
+    expect(SESSION_NAME_PATTERN.test("wip-example-slug")).toBe(false);
+    expect(SESSION_NAME_PATTERN.test("feat")).toBe(false);
   });
 });
 
@@ -1148,8 +1209,9 @@ describe("formatFreeMemory", () => {
 });
 
 describe("buildLine1", () => {
-  test("joins model, effort, and the context bar+segment with the segment join", () => {
+  test("joins session name, model, effort, and the context bar+segment with the segment join", () => {
     const payload = {
+      session_name: "feat-statusline-widgets",
       model: { display_name: "Sonnet" },
       effort: { level: "high" },
       context_window: { used_percentage: 42 },
@@ -1158,14 +1220,22 @@ describe("buildLine1", () => {
     const result = buildLine1(payload);
 
     expect(result).not.toBeNull();
+    expect(result).toContain("feat-statusline-widgets");
     expect(result).toContain("Sonnet");
     expect(result).toContain("high");
     expect(result).toContain("ctx 42%");
-    expect((result ?? "").split(SEGMENT_JOIN).length).toBeGreaterThanOrEqual(3);
+    expect((result ?? "").split(SEGMENT_JOIN).length).toBeGreaterThanOrEqual(4);
+    expect((result ?? "").indexOf("feat-statusline-widgets")).toBeLessThan(
+      (result ?? "").indexOf("Sonnet"),
+    );
   });
 
   test("still renders the context segment when model and effort are absent", () => {
     expect(buildLine1({})).toContain("ctx --%");
+  });
+
+  test("always includes the session-name segment, even with an entirely empty payload", () => {
+    expect(buildLine1({})).toContain("unnamed");
   });
 });
 

@@ -99,7 +99,10 @@ successful run, since neither has anything to report. Their events
 for exit 2 to react to.
 
 **`statusLine` (not a lifecycle hook — a separate `.claude/settings.json` key).**
-`statusline-context-pressure.mjs` renders a multi-line statusline: model,
+`statusline-context-pressure.mjs` renders a multi-line statusline: the
+session's name (green when it conforms to ADR-0087's `<kind>-<slug>`
+convention, yellow-flagged when it doesn't, dim `unnamed` when absent — the
+one documented programmatic read of `session_name`, ADR-0087), model,
 effort, and a color-coded context-pressure bar/percentage (70%/90% thresholds)
 on line 1; session cost, token counts, 5-hour/7-day rate-limit resets, and
 prompt-cache warmth on line 2; the current git branch, worktree/PR, active
