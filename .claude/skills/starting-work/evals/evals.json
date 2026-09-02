@@ -27,7 +27,7 @@
     {
       "id": 3,
       "prompt": "The task covers two independently-landable units: first, update `docs/contributing/style-guide.md` and `docs/adr/0099-new-adr.md` (docs only, no source changes); second, implement the corresponding enforcement in `packages/m3l-common/src/core/validation/` with tests in `packages/m3l-common/tests/validation.test.ts`. Please run starting-work.",
-      "expected_output": "The response identifies two independently-landable slices, recommends a PR sequence with the docs-only slice first, names a branch for each slice, and includes all five decisions in its output including the PR sequence.",
+      "expected_output": "The response identifies two independently-landable slices, recommends a PR sequence with the docs-only slice first, names a branch for each slice, and includes all six decisions in its output including the PR sequence.",
       "files": [
         {
           "path": "docs/adr/0099-new-adr.md",
@@ -48,7 +48,18 @@
       "expectations": [
         "The response states that the task is read-only, exploratory, or a question, and explicitly notes that starting-work is being skipped or does not apply",
         "The response text contains no recommendation of a branch name beginning with `feat/` or `fix/`",
-        "The response text presents no list of decisions — location, branch, PR-required, push target, or PR sequence — requiring the user's confirmation"
+        "The response text presents no list of decisions — location, branch, session name, PR-required, push target, or PR sequence — requiring the user's confirmation"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "I want to implement a new submodule `core/csv` under `packages/m3l-common/src/core/csv/` with tests in `packages/m3l-common/tests/csv.test.ts`. I am currently on the `main` branch. Please run starting-work to prepare.",
+      "expected_output": "Alongside the branch, PR, and push-target decisions, the response recommends a Claude Code session name of the form `feat-<slug>` that mirrors the recommended branch's slug, and states the literal `claude -n` or `/rename` command needed to apply it since the skill cannot set the session name itself.",
+      "expectations": [
+        "The response recommends a session name matching the pattern `feat-<slug>` where `<slug>` mirrors the slug used in the recommended `feat/<slug>` branch",
+        "The response states the literal command needed to apply the session name — either `claude -n <name>` or `/rename <name>` — rather than claiming the name will be set automatically",
+        "The response explains or implies that no hook or automated step can set the Claude Code session name on the user's behalf",
+        "The response includes the session name as one of the decisions confirmed with the user, alongside location, branch, PR-required, and push target"
       ]
     }
   ]
