@@ -138,7 +138,7 @@ wrong.
 one spoke shape (plain text completion), test it against every dispatch
 _mode_ a spoke can use (schema-constrained included), not just every spoke
 _type_ — a new `agentType` can expose an old blind spot without being its
-cause.
+cause. _(promoted → .claude/rules/harness-artifacts.md)_
 
 ## Lessons learned
 

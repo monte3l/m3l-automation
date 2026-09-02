@@ -20,7 +20,18 @@ paths:
   (`docs/logs/2026-07-19-subagent-stall-integration.md`). An advisory hook that
   fires on every event of a type must be proven **quiet** on that type's normal
   output; one that cries wolf trains the reader to ignore it, which is worse
-  than not shipping it.
+  than not shipping it. The same hook broke a second, structurally different
+  way once a new spoke _dispatch mode_ existed: a schema-dispatched agent
+  (structured output, not free text) leaves `last_assistant_message` absent
+  entirely rather than present-but-imperfect, and `looksTruncated(undefined)`
+  returns `true` by design — so every schema-dispatched agent false-positived
+  100% of the time, invisibly, until a live acceptance run's own side-effect
+  log was read closely (`docs/logs/2026-09-02-audit-refuter-hardening.md`). A
+  payload-shape-assuming hook needs re-validating whenever a new spoke
+  invocation mode is introduced, not just when a new spoke type is added — a
+  new mode can change which fields exist in the payload at all, which "test
+  against known-good input" above doesn't catch retroactively for a mode that
+  didn't exist yet when the hook was last validated.
 
 - **A live end-to-end run on a small real input is the acceptance test for a
   workflow script — static gates and review passes cannot see runtime
