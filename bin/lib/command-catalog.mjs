@@ -496,6 +496,11 @@ export const COMMAND_CATALOG = [
       "ADR-0088: launches Claude Code already named `<kind>-<slug>`, applying ADR-0087's session-naming convention at process start instead of a user-run `/rename`. On a `feat/<slug>`/`fix/<slug>` branch, derives the name with no other input; otherwise requires `-- --kind <kind> <slug>` (main-resident kinds have no branch to derive from). `-- -- <args>` forwards a literal `--`-prefixed tail to the underlying `claude` invocation. A session already open can't be renamed by this launcher — that residual case still needs `/rename` by hand.",
   },
   {
+    name: "session:install-shell-hook",
+    description:
+      "ADR-0088: opt-in, idempotent installer that appends a `claude`-shadowing shell function to your detected shell rc file (or `-- --rc-path <path>`), delegating to `pnpm session:launch` unless an explicit naming/resume flag is already present or `CLAUDE_SESSION_LAUNCH_DISABLE` is set. Defaults to a dry run; `-- --write` actually mutates the file. Never wired into `prepare` — mutates a file outside the repo, so it stays a deliberate, separate command.",
+  },
+  {
     name: "prepare",
     description:
       "Lifecycle script (auto-runs on `pnpm install`): installs the lefthook git hooks and registers the m3l-generated merge driver. Never run directly; re-run manually only to repair a broken hook install.",

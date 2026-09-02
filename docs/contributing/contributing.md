@@ -293,6 +293,40 @@ See [ADR-0087](../adr/0087-claude-code-session-naming-convention.md) for the
 vocabulary rationale and [ADR-0088](../adr/0088-automatic-session-naming-via-launcher.md)
 for the launcher mechanism.
 
+**Optional shell integration.** A follow-up audit (2026-09-03) confirmed
+Anthropic provides no hook, `settings.json` key, or shell-integration pattern
+for auto-naming — the launcher above is the only mechanism, and it still
+requires remembering to run `pnpm session:launch` instead of a bare `claude`.
+If you'd rather never think about it, shadow `claude` with a shell function
+that delegates to the launcher only when one is available and no explicit
+naming/resume flag is already present, falling through to the real binary
+otherwise:
+
+```bash
+claude() {
+  if [ -z "${CLAUDE_SESSION_LAUNCH_DISABLE:-}" ] \
+     && ! printf '%s\n' "$@" | grep -qE '^(-n|--name|--resume|--continue|-p)$' \
+     && [ -f package.json ] \
+     && grep -q '"session:launch"' package.json 2>/dev/null; then
+    pnpm session:launch -- "$@"
+  else
+    command claude "$@"
+  fi
+}
+```
+
+Add it to your shell rc (same idea as the `fnm` recipe above), or install it
+non-interactively:
+
+```bash
+pnpm session:install-shell-hook               # preview only (default)
+pnpm session:install-shell-hook -- --write    # actually append it
+```
+
+The installer is idempotent (a marker comment guards re-runs) and never runs
+automatically — it's opt-in, and `CLAUDE_SESSION_LAUNCH_DISABLE=1` bypasses it
+per-invocation without uninstalling.
+
 ### PR size (ADR-0072)
 
 Prefer several small, independently reviewable PRs over a few large ones — a

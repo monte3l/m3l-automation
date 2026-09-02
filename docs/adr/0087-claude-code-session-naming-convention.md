@@ -17,6 +17,17 @@ indistinguishable in the `/resume` picker and in `ListAgents`. Name and
 auto-title also drift apart inside a single session (name
 `new-workflows-auditing` next to title `harden-workflow-surface`).
 
+[**Amended (2026-09-03):** a fresh `/refreshing-anthropic-guidance` pass
+(scoped to session naming/renaming, run alongside ADR-0088) found that an
+auto-generated title is already a valid `--resume`/`/resume` handle, and the
+session picker already filters to the current git branch (`Ctrl+B`) — so the
+"157 auto-title-only, 32 with neither" split overstates the addressability
+gap this ADR closes. Both of those buckets were already resumable by title
+before this ADR; what they lacked, and still lack without a name, is
+kind/branch **signal** — the actual gap `ListAgents`/`SendMessage` (no
+branch-filter equivalent) and the `/resume` picker's scan-by-type case both
+need. The decision is unchanged; only the "why" is sharpened.]
+
 This is more than cosmetic. A `/researching-anthropic-guidance` round across
 six official Anthropic sources (`docs/research/session-naming.md`) established
 that since Claude Code 2.1.232 a **session name is an addressable

@@ -199,7 +199,9 @@ reporter.succeed(
 );
 reporter.info(
   from === null
-    ? `   Next: \`cd ${join("..", `m3l-automation-${slug}`)}\`, make changes, ` +
+    ? `   Next: \`cd ${join("..", `m3l-automation-${slug}`)}\`, then \`pnpm ` +
+        `session:launch\` to open a Claude Code session already named ` +
+        `\`${branch?.replace("/", "-")}\` (ADR-0088) before you make changes, ` +
         "commit, and `git push -u origin HEAD`.\n" +
         `   Teardown when done: \`pnpm worktree:remove ${slug}\`.`
     : `   Next: \`cd ${join("..", `m3l-automation-${slug}`)}\` to investigate. ` +
