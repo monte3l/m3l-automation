@@ -77,6 +77,27 @@ single-purpose worktree to `main` before removing it.
 
 ### 3 — Delete the merged branch
 
+**Before removing anything, confirm no backgrounded command (a `git push`,
+`pnpm verify`, or similar) is still running against the worktree or branch
+you're about to delete.** `pnpm worktree:remove` deletes the working
+directory outright; a still-running background push's pre-push hook
+(`lint`/`typecheck`/`test`) executing inside that same directory fails with
+confusing `ENOENT`/`MODULE_NOT_FOUND` errors the instant the directory
+disappears out from under it — the commit itself survives (it's already in
+the local git object database once committed, and `worktree:remove` only
+deletes the worktree, not a branch `git branch -d` refuses as unmerged), but
+the push doesn't, and recovery means rebuilding a branch and cherry-picking
+(`2026-09-02-statusline-widgets.md`). Treat "the user says the PR merged" as
+confirmation the PR merged, not as confirmation every command this session
+started against that branch has finished — check for one before Step 3 runs.
+This compounds with a separate, common race: once a PR has GitHub auto-merge
+armed, a `git push` updating it after opening is racing the merge, not safely
+queued behind it — a second push can complete "successfully" against a
+already-merged-and-deleted remote branch, or (as above) get caught by
+`finishing-work` running concurrently. If a follow-up commit must land in the
+_same_ PR, verify the push landed and the PR still shows it as HEAD _before_
+proceeding to Step 3, or accept it may need a follow-up PR instead.
+
 Two cases, mutually exclusive:
 
 - **Linked worktree** (this session is running inside
