@@ -287,13 +287,22 @@ vi.spyOn<T, S>>`) against the first overload regardless of which one the
   runtime call `vi.spyOn(obj, "methodName")` is correct. Fix: drop the explicit
   return-type annotation on the helper that returns the spy and let TypeScript
   infer it from the `return` statement.
-- **`bin/tests/**` is not type-checked by any gate.** `pnpm typecheck` runs
-  `tsc` per package via turbo, and no `tsconfig` includes `bin/tests`, so a real
-  type error there passes CI silently — only the IDE and type-aware ESLint see
-  it (and `eslint.config.js` turns the `no-unsafe-*` rules off for this tree
-  because it imports untyped `.mjs`). Read the editor diagnostics before
-  declaring a `bin/tests` change green; a passing `pnpm verify` does not mean
-  the file type-checks.
+- **`bin/tests/**` IS type-checked, but only by the top-level `pnpm typecheck`
+  script, not by any per-package turbo task.** `pnpm typecheck` runs
+  `turbo run typecheck && tsc -p bin/tsconfig.json`; that second, non-turbo
+  invocation includes `tests/**/*.ts` (relative to `bin/`), so a real type
+  error there fails `pnpm typecheck` and `pnpm verify` outright — it is not a
+  silent gap (confirmed 2026-09-02: a test passing `null` where a JSDoc-typed
+  `string` param was expected failed exactly this way). What the per-package
+  `turbo run typecheck` alone (or an IDE limited to a single package's
+  `tsconfig`) will NOT see: `bin/tsconfig.json` is a separate project with
+  `allowJs: true`/`checkJs: false`, so it type-checks a `.mjs`'s exported JSDoc
+  _signatures_ against `bin/tests/**/*.ts` call sites, but never checks the
+  `.mjs` file's own internals — and `eslint.config.js` turns the
+  `no-unsafe-*` rules off for `bin/tests/**/*.test.ts` because it imports those
+  untyped `.mjs` modules. Run the full `pnpm typecheck` (not a scoped
+  `turbo run typecheck` or a single package's `tsc`) before declaring a
+  `bin/tests` or `.claude/hooks/*.mjs` change green.
 - **Test a `bin/` checker against synthetic state, not just the live repo.** A
   generator/checker whose correctness depends on current repo state (a count, a
   table's column order, an identifier pattern) can only be shown to pass
