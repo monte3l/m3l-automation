@@ -332,3 +332,94 @@ describe("view.run.report (X7d)", () => {
     expect(port.records).toHaveLength(0);
   });
 });
+
+describe("view.session.artifact (X7d)", () => {
+  /** A `GET …/steps/:stepId/artifact` context. */
+  function artifactContext(
+    sessionId: string,
+    stepId: string,
+  ): M3LRequestContext {
+    const base = createRequestContext({
+      method: "GET",
+      url: `http://127.0.0.1/api/v1/sessions/${sessionId}/steps/${stepId}/artifact`,
+      headers: { "x-correlation-id": "corr-artifact" },
+      signal: new AbortController().signal,
+    });
+    return withOperator(withParams(base, { id: sessionId, stepId }), {
+      name: "ada",
+      email: undefined,
+    });
+  }
+
+  /** The audited artifact route, returning `body` as its buffered response. */
+  function artifactRoute(body: unknown): M3LRoute {
+    return {
+      method: "GET",
+      path: "/api/v1/sessions/:id/steps/:stepId/artifact",
+      auth: "required",
+      handler: (): M3LConsoleResult => ({
+        status: 200,
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      }),
+    };
+  }
+
+  // The target is the STEP, not the session: `M3LHumanActionTarget`'s
+  // `artifact` arm carries an opaque id and the console has none to give —
+  // a step's output has no identity of its own. The session id is scope, so
+  // it goes in `detail`, the same choice `session.decision.answer` makes.
+  test("records one entry targeting the step, with the session id in detail", async () => {
+    const port = createFakePort();
+    const decorated = decorate(artifactRoute({ queues: ["a"] }), port);
+
+    await decorated.handler(artifactContext("session-3", "step-8"));
+
+    expect(port.records).toHaveLength(1);
+    expect(port.records[0]?.action).toBe("view.session.artifact");
+    expect(port.records[0]?.target).toEqual({ kind: "step", id: "step-8" });
+    expect(port.records[0]?.detail).toMatchObject({ sessionId: "session-3" });
+    expect(port.records[0]?.outcome).toBe("served");
+  });
+
+  // INVARIANT: ADR-0070's display-vs-persist rule. A step artifact IS the
+  // caller data the rule exists to keep out of the trail — this is the one
+  // route whose response body is, by construction, an operator's own
+  // captured output. Mutation-tested: putting the body anywhere on the
+  // projection fails here.
+  test("records nothing of the artifact's contents", async () => {
+    const port = createFakePort();
+    const secret = "AKIAIOSFODNN7EXAMPLE";
+    const decorated = decorate(
+      artifactRoute({ credentials: { accessKeyId: secret } }),
+      port,
+    );
+
+    await decorated.handler(artifactContext("session-4", "step-9"));
+
+    expect(JSON.stringify(port.records[0])).not.toContain(secret);
+  });
+
+  // INVARIANT: `phase: "after"`. `readStepArtifact` does its own not-found
+  // checks — unknown session, unknown step, a step owned by another session,
+  // a step with no output yet — so recording first would assert the operator
+  // saw an artifact that was never served. Mutation-tested: flipping the
+  // spec to "before" leaves a record behind here.
+  test("records nothing when the handler refuses", async () => {
+    const port = createFakePort();
+    const decorated = decorate(
+      notFoundRoute("/api/v1/sessions/:id/steps/:stepId/artifact"),
+      port,
+    );
+
+    let thrown: unknown;
+    try {
+      await decorated.handler(artifactContext("session-5", "step-10"));
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect(port.records).toHaveLength(0);
+  });
+});
