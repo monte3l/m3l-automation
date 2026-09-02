@@ -11,6 +11,11 @@
  * @packageDocumentation
  */
 
+import type {
+  M3LCliRunOutcome,
+  M3LCliRunReportUnavailableReason,
+} from "../run/envelope.js";
+
 /**
  * How a step's script is executed. `auto` defers the choice to the engine;
  * the validator preserves whichever literal the author wrote, so a run record
@@ -109,6 +114,137 @@ export interface M3LCliFlowDefinition {
   readonly maxStepExecutions: number;
   /** The declared steps, in file order; never empty. */
   readonly steps: readonly M3LCliFlowStep[];
+}
+
+/**
+ * How a flow run ended. Four literals, and deliberately not more: `completed`
+ * (the step list ran out), `stopped` (a branch said `"stop"` with nothing to
+ * report), `failed` (the deciding step exited non-zero), and
+ * `loop-guard-exceeded` (the run hit
+ * {@link M3LCliFlowDefinition.maxStepExecutions}).
+ *
+ * `stopped` and `completed` both carry exit code 0 — the distinction is *why*
+ * the loop ended, which a run record needs and an exit code cannot express.
+ *
+ * @example
+ * ```ts
+ * const status: M3LCliFlowRunStatus = "loop-guard-exceeded";
+ * ```
+ */
+export type M3LCliFlowRunStatus =
+  "completed" | "stopped" | "failed" | "loop-guard-exceeded";
+
+/**
+ * One executed step, as recorded in a run's history: which step ran, on which
+ * per-step attempt, how it ended, and which branch its outcome selected.
+ *
+ * Declared here rather than in `flow/run` or `flow/record` because BOTH of
+ * those modules need it — declaring it in either would make the other import
+ * it and create a cycle between the loop and its persistence layer.
+ *
+ * This is the PERSISTED half of a deliberate two-type split; its richer
+ * in-memory counterpart is {@link M3LCliFlowStepOutcome}. Both exist because
+ * this shape IS the on-disk JSON: a `Date` written through `JSON.stringify`
+ * reads back as a `string`, so widening this record to carry the observed
+ * `Date` window would make its own round-trip a type lie — the value you
+ * write would not match the type you read. Keeping the persisted record
+ * JSON-safe by construction, and carrying the `Date`s only in the in-memory
+ * outcome, is what keeps that round-trip honest.
+ *
+ * `branch` holds the RESOLVED {@link M3LCliFlowBranch} value, not the name of
+ * the arm it came from: what a resume needs to know is where the flow was
+ * headed, and `"stop"` versus `{ goto }` is exactly that. Which arm produced
+ * it is recoverable from the definition plus the exit code.
+ *
+ * @example
+ * ```ts
+ * const execution: M3LCliFlowStepExecution = {
+ *   stepId: "dump",
+ *   script: "sqs-etl",
+ *   attempt: 1,
+ *   exitCode: 0,
+ *   outcome: "success",
+ *   reportPath: "/repo/data/output/run-1/run-report.json",
+ *   branch: "continue",
+ * };
+ * ```
+ */
+export interface M3LCliFlowStepExecution {
+  /** The executed step's id. */
+  readonly stepId: string;
+  /** The script that step ran. */
+  readonly script: string;
+  /** Which attempt of THIS step id this was, 1-based and cumulative across revisits. */
+  readonly attempt: number;
+  /** The exit code the step resolved, verbatim — never clamped or remapped. */
+  readonly exitCode: number;
+  /** The outcome its located run report declared, or `null` when no report was found. */
+  readonly outcome: M3LCliRunOutcome | null;
+  /** The located `run-report.json`'s path, or `null` when none was found. */
+  readonly reportPath: string | null;
+  /** The branch this step's outcome selected. */
+  readonly branch: M3LCliFlowBranch;
+}
+
+/**
+ * One executed step as the LOOP observed it: every field
+ * {@link M3LCliFlowStepExecution} persists, plus the three the run loop used
+ * to see and discard — the step's own observed window (`startedAt`,
+ * `finishedAt`) and why its run report could not be read
+ * (`reportUnavailable`).
+ *
+ * **Why this exists as a second type.** `M3LCliFlowStepExecution` is the
+ * persisted shape: it IS the bytes of `flows/<name>.json`, and a `Date`
+ * written to JSON reads back as an ISO string, so widening the persisted
+ * record to hold `Date`s would make its round-trip a type lie. Yet the
+ * `--json` envelope genuinely needs those `Date`s: `flow/envelope.ts`
+ * composes one nested run envelope PER STEP, and without each step's own
+ * window every nested envelope would have to report the whole RUN's
+ * `durationMs`. So the split is not duplication — it is the difference
+ * between what survives serialization and what the composer needs before
+ * serialization happens.
+ *
+ * `startedAt`/`finishedAt` are therefore deliberately NOT pre-stringified
+ * here; `buildRunEnvelope` owns the ISO conversion, and pre-converting would
+ * duplicate that decision in two places.
+ *
+ * @example
+ * ```ts
+ * const outcome: M3LCliFlowStepOutcome = {
+ *   stepId: "dump",
+ *   script: "sqs-etl",
+ *   attempt: 1,
+ *   exitCode: 0,
+ *   outcome: "success",
+ *   reportPath: "/repo/data/output/run-1/run-report.json",
+ *   branch: "continue",
+ *   startedAt: new Date("2026-09-01T09:00:00.000Z"),
+ *   finishedAt: new Date("2026-09-01T09:00:04.000Z"),
+ *   reportUnavailable: null,
+ * };
+ * ```
+ */
+export interface M3LCliFlowStepOutcome {
+  /** The executed step's id. */
+  readonly stepId: string;
+  /** The script that step ran. */
+  readonly script: string;
+  /** Which attempt of THIS step id this was, 1-based and cumulative across revisits. */
+  readonly attempt: number;
+  /** The exit code the step resolved, verbatim — never clamped or remapped. */
+  readonly exitCode: number;
+  /** The outcome its located run report declared, or `null` when no report was found. */
+  readonly outcome: M3LCliRunOutcome | null;
+  /** The located `run-report.json`'s path, or `null` when none was found. */
+  readonly reportPath: string | null;
+  /** The branch this step's outcome selected. */
+  readonly branch: M3LCliFlowBranch;
+  /** When THIS execution was observed to start — a `Date`, not an ISO string. */
+  readonly startedAt: Date;
+  /** When THIS execution was observed to finish — a `Date`, not an ISO string. */
+  readonly finishedAt: Date;
+  /** Why no run report was located, or `null` when one was. */
+  readonly reportUnavailable: M3LCliRunReportUnavailableReason | null;
 }
 
 /**
