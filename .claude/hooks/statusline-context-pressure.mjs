@@ -52,8 +52,7 @@ export function resolveUsedPercentage(payload) {
   if (typeof payload !== "object" || payload === null) return null;
   const contextWindow = /** @type {{ context_window?: unknown }} */ (payload)
     .context_window;
-  if (typeof contextWindow !== "object" || contextWindow === null)
-    return null;
+  if (typeof contextWindow !== "object" || contextWindow === null) return null;
   const pct = /** @type {{ used_percentage?: unknown }} */ (contextWindow)
     .used_percentage;
   return typeof pct === "number" && Number.isFinite(pct)
@@ -106,7 +105,9 @@ export function describeContextLocation(payload) {
     p.workspace
   );
   const worktreeName =
-    workspace && typeof workspace === "object" ? workspace.git_worktree : undefined;
+    workspace && typeof workspace === "object"
+      ? workspace.git_worktree
+      : undefined;
   if (typeof worktreeName === "string" && worktreeName.length > 0) {
     parts.push(`worktree "${worktreeName}"`);
   }
