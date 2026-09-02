@@ -726,3 +726,181 @@ describe("createRunOrchestrator — queue timeout", () => {
     expect(clearTimeoutSpy).toHaveBeenCalledWith(armed.handle);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Cancelling a QUEUED run (X7d). Reuses the queue-timeout path's eviction
+// sequence — `runs/orchestrator-cancel.ts`'s `abandonQueuedRun` is now the one
+// implementation both paths call, so these assertions and the timeout ones
+// above are checking the same code from two entry points.
+// ---------------------------------------------------------------------------
+
+describe("createRunOrchestrator — cancelling a queued run (X7d)", () => {
+  /** Stands up an orchestrator with `sqs-etl` forced onto the queue. */
+  function queuedHarness(): {
+    readonly orchestrator: ReturnType<typeof createRunOrchestrator>;
+    readonly registry: ReturnType<typeof createFakeRegistry>;
+    readonly governor: ReturnType<typeof createFakeGovernor>;
+    readonly audit: ReturnType<typeof createFakeAudit>;
+    readonly events: ReturnType<typeof createFakeEvents>;
+    readonly scheduled: ReturnType<typeof createFakeTimer>["scheduled"];
+    readonly log: string[];
+  } {
+    mockSpawnModeScripts();
+    const log: string[] = [];
+    const registry = createFakeRegistry(log);
+    const governor = createFakeGovernor(log, { "sqs-etl": ["queue"] });
+    const audit = createFakeAudit(log);
+    const events = createFakeEvents(log);
+    const { timerImpl, scheduled } = createFakeTimer();
+    const orchestrator = createRunOrchestrator(
+      {
+        config: buildConfig({ queueTimeoutMs: 30_000 }),
+        registry,
+        governor,
+        policy: createFakeAllowPolicy(log),
+        audit,
+        events,
+        spawnExecutor: createUnusedExecutor(log, "spawn"),
+        inProcessExecutor: createUnusedExecutor(log, "inProcess"),
+        logger: new Core.M3LLogger([new RecordingHandler()]),
+        runsOutputRoot: RUNS_OUTPUT_ROOT,
+      },
+      { newId: () => "run-1", nowMs: () => 1_000, timerImpl },
+    );
+    orchestrator.launch(buildRequest("sqs-etl"));
+    return { orchestrator, registry, governor, audit, events, scheduled, log };
+  }
+
+  test("evicts the run to interrupted, dequeues, and reports true", () => {
+    const { orchestrator, registry, governor, events } = queuedHarness();
+    expect(registry.rows.get("run-1")?.status).toBe("queued");
+
+    expect(orchestrator.cancel("run-1")).toBe(true);
+
+    expect(registry.rows.get("run-1")?.status).toBe("interrupted");
+    expect(registry.rows.get("run-1")?.outcome).toBe("interrupted");
+    expect(governor.queuedCount).toBe(0);
+    expect(
+      events.published.some(
+        (event) =>
+          event.event === "run.ended" && event.outcome === "interrupted",
+      ),
+    ).toBe(true);
+  });
+
+  // INVARIANT: the ONE rule the queue-timeout path exists to protect, now
+  // reached from a second entry point. A run cancelled while queued never
+  // executed, so `started_at_ms` must never be fabricated — which means
+  // `abandonQueued`, never `claimForStart`-then-`finish`. Mutation-tested:
+  // routing the queued branch through `claimForStart` fails here.
+  test("never fabricates a startedAtMs — abandonQueued, never claimForStart", () => {
+    const { orchestrator, registry, log } = queuedHarness();
+
+    orchestrator.cancel("run-1");
+
+    expect(registry.rows.get("run-1")?.startedAtMs).toBeUndefined();
+    expect(log).toContain("registry.abandonQueued:run-1");
+    expect(
+      log.some((entry) => entry.startsWith("registry.claimForStart")),
+    ).toBe(false);
+  });
+
+  // INVARIANT: `run.cancelled` (the operator's act) and `run.finished` (the
+  // run's terminal outcome) are two entries, not one. An auditor has to be
+  // able to tell "someone asked" from "it ended" — for a cancellation those
+  // are different facts, and the timeout path writes only the second.
+  test("audits run.cancelled AND run.finished, in that order", () => {
+    const { orchestrator, audit } = queuedHarness();
+
+    orchestrator.cancel("run-1");
+
+    const actions = audit.records
+      .filter((record) => record.runId === "run-1")
+      .map((record) => record.action);
+    expect(actions).toContain("run.cancelled");
+    expect(actions).toContain("run.finished");
+    expect(actions.indexOf("run.cancelled")).toBeLessThan(
+      actions.indexOf("run.finished"),
+    );
+  });
+
+  // INVARIANT: the armed queue-timeout timer is really CLEARED, not merely
+  // left to fire harmlessly. `ctx.queueTimers` is keyed by run id and never
+  // swept, so a cancelled queued run that skipped `clearQueueTimeout` would
+  // leak both the map entry and a live `setTimeout` handle for the rest of
+  // the process's life.
+  //
+  // Asserted against the global `clearTimeout` the orchestrator actually
+  // calls, NOT against a later timer fire: an earlier version of this test
+  // did the latter, and mutation testing showed it was vacuous —
+  // `abandonQueuedRun`'s own `status !== "queued"` guard already makes a
+  // late fire a no-op, so removing the disarm entirely left it green.
+  // Mutation-tested in its current form: dropping `clearQueueTimeout` from
+  // the queued branch fails here.
+  test("clears the armed queue-timeout timer rather than leaking its handle", () => {
+    const clearSpy = vi.spyOn(globalThis, "clearTimeout");
+    try {
+      const { orchestrator, scheduled } = queuedHarness();
+      const armed = scheduled[0];
+      if (armed === undefined) {
+        throw new Error("no queue-timeout timer was armed");
+      }
+      clearSpy.mockClear();
+
+      orchestrator.cancel("run-1");
+
+      expect(clearSpy).toHaveBeenCalledWith(armed.handle);
+    } finally {
+      clearSpy.mockRestore();
+    }
+  });
+
+  // A late fire is separately harmless — `abandonQueuedRun` re-reads the
+  // registry rather than trusting the timer — and that belt-and-braces
+  // property is worth its own case, distinct from the disarm above.
+  test("a queue-timeout that somehow fires after a cancel evicts nothing twice", () => {
+    const { orchestrator, scheduled, log } = queuedHarness();
+
+    orchestrator.cancel("run-1");
+    const abandonsAfterCancel = log.filter(
+      (entry) => entry === "registry.abandonQueued:run-1",
+    ).length;
+
+    const armed = scheduled[0];
+    if (armed === undefined)
+      throw new Error("no queue-timeout timer was armed");
+    armed.callback();
+
+    expect(
+      log.filter((entry) => entry === "registry.abandonQueued:run-1"),
+    ).toHaveLength(abandonsAfterCancel);
+  });
+
+  test("a second cancel of the same queued run reports false", () => {
+    const { orchestrator } = queuedHarness();
+
+    expect(orchestrator.cancel("run-1")).toBe(true);
+    expect(orchestrator.cancel("run-1")).toBe(false);
+  });
+
+  test("cancelling an unknown id still reports false and audits nothing", () => {
+    const { orchestrator, audit } = queuedHarness();
+
+    expect(orchestrator.cancel("no-such-run")).toBe(false);
+    expect(audit.records.some((record) => record.runId === "no-such-run")).toBe(
+      false,
+    );
+  });
+
+  // The queue is not pumped by a cancellation: a queued run never held a
+  // governor SLOT (it was enqueued, never accepted), so evicting it frees
+  // nothing for anyone else to take. `dequeue()` releases the queue
+  // reservation, which is a different accounting line — asserted above.
+  test("does not start another queued run", () => {
+    const { orchestrator, log } = queuedHarness();
+
+    orchestrator.cancel("run-1");
+
+    expect(log.some((entry) => entry.startsWith("spawn.execute"))).toBe(false);
+  });
+});

@@ -67,6 +67,7 @@ interface FakeRunRow {
 
 /** The local launcher port `createRunRoutes` depends on — mirrors `M3LRunOrchestrator.launch`. */
 interface FakeLauncher {
+  cancel(id: string): boolean;
   launch(request: {
     readonly body: {
       readonly scriptName: string;
@@ -105,8 +106,15 @@ interface FakeRegistry {
  */
 function buildLauncher(
   handle: FakeRunHandle,
-): Omit<FakeLauncher, "launch"> & { launch: Mock<FakeLauncher["launch"]> } {
-  return { launch: vi.fn<FakeLauncher["launch"]>().mockReturnValue(handle) };
+  cancelResult = true,
+): Omit<FakeLauncher, "launch" | "cancel"> & {
+  launch: Mock<FakeLauncher["launch"]>;
+  cancel: Mock<FakeLauncher["cancel"]>;
+} {
+  return {
+    launch: vi.fn<FakeLauncher["launch"]>().mockReturnValue(handle),
+    cancel: vi.fn<FakeLauncher["cancel"]>().mockReturnValue(cancelResult),
+  };
 }
 
 /** Builds a bare fixture registry, retyped the same way as {@link buildLauncher}. */
@@ -218,7 +226,7 @@ function buildReportReader(report?: unknown): {
 }
 
 describe("createRunRoutes — route table shape", () => {
-  test("registers the four run routes, all auth: 'required'", () => {
+  test("registers the five run routes, all auth: 'required'", () => {
     const routes = createRunRoutes({
       orchestrator: buildLauncher(HANDLE_RUNNING),
       registry: { list: vi.fn().mockReturnValue([]), get: vi.fn() },
@@ -232,6 +240,7 @@ describe("createRunRoutes — route table shape", () => {
       "GET /api/v1/runs/:id",
       "GET /api/v1/runs/:id/report",
       "POST /api/v1/runs",
+      "POST /api/v1/runs/:id/cancel",
     ]);
     for (const route of routes) {
       expect(route.auth).toBe("required");
@@ -397,6 +406,7 @@ describe("createRunRoutes — POST /api/v1/runs", () => {
     // rather than off `vi.fn()`'s widened, unsafe-to-assign-from signature.
     let receivedParameters: Readonly<Record<string, string>> | undefined;
     const orchestrator: FakeLauncher = {
+      cancel: () => true,
       launch: (request) => {
         receivedParameters = request.body.parameters;
         return HANDLE_RUNNING;
@@ -459,6 +469,7 @@ describe("createRunRoutes — POST /api/v1/runs", () => {
       "confirmation required for a non-dry-run execution",
     );
     const orchestrator: FakeLauncher = {
+      cancel: () => true,
       launch: vi.fn().mockImplementation(() => {
         throw original;
       }),
@@ -490,6 +501,7 @@ describe("createRunRoutes — POST /api/v1/runs", () => {
       "the run queue is full",
     );
     const orchestrator: FakeLauncher = {
+      cancel: () => true,
       launch: vi.fn().mockImplementation(() => {
         throw original;
       }),
@@ -913,5 +925,144 @@ describe("GET /api/v1/runs/:id/report", () => {
     );
 
     expect(thrown).toBe(failure);
+  });
+});
+
+describe("POST /api/v1/runs/:id/cancel", () => {
+  /** One terminal run row — this route only reads its EXISTENCE. */
+  const ROW_RUNNING: FakeRunRow = {
+    id: "run-1",
+    script: "sqs-etl",
+    status: "running",
+    dryRun: false,
+    executionMode: "spawn",
+    parameters: {},
+    operator: "ada",
+    correlationId: "corr-1",
+    queuedAtMs: 1_000,
+  };
+
+  /** Drives the cancel route against a registry row and a cancel verdict. */
+  function cancelRoutes(
+    row: FakeRunRow | undefined,
+    cancelResult: boolean,
+  ): {
+    readonly routes: readonly M3LRoute[];
+    readonly orchestrator: ReturnType<typeof buildLauncher>;
+    readonly registry: ReturnType<typeof buildRegistry>;
+  } {
+    const orchestrator = buildLauncher(HANDLE_RUNNING, cancelResult);
+    const registry = buildRegistry(row === undefined ? {} : { get: row });
+    return {
+      orchestrator,
+      registry,
+      routes: createRunRoutes({
+        orchestrator,
+        registry,
+        reportReader: buildReportReader(),
+      }),
+    };
+  }
+
+  /** The cancel route, found once per test. */
+  function cancelRoute(routes: readonly M3LRoute[]): M3LRoute {
+    return findRoute(routes, "POST", "/api/v1/runs/:id/cancel");
+  }
+
+  /** A cancel request context for `id`. */
+  function cancelContext(id: string): M3LRequestContext {
+    return buildContext({
+      method: "POST",
+      path: `/api/v1/runs/${id}/cancel`,
+      params: { id },
+      operatorName: "ada",
+    });
+  }
+
+  test("returns 200 { cancelled: true } and passes the id to the orchestrator", async () => {
+    const { routes, orchestrator } = cancelRoutes(ROW_RUNNING, true);
+
+    const response = await runRoute(
+      cancelRoute(routes),
+      cancelContext("run-1"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(parseBody(response)).toEqual({ cancelled: true });
+    expect(orchestrator.cancel).toHaveBeenCalledWith("run-1");
+  });
+
+  // INVARIANT: an unknown id is answered from the REGISTRY, before the
+  // orchestrator is asked. Without it, "unknown run" and "already finished"
+  // would both come back as the orchestrator's bare `false` and collapse
+  // into one status. Mutation-tested: deleting the registry check makes this
+  // return 409 instead of 404.
+  test("404s an unknown run id without asking the orchestrator to cancel", async () => {
+    const { routes, orchestrator } = cancelRoutes(undefined, true);
+
+    const thrown = await captureThrown(() =>
+      runRoute(cancelRoute(routes), cancelContext("nope")),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).code).toBe("ERR_CONSOLE_RUN_NOT_FOUND");
+    expect(orchestrator.cancel).not.toHaveBeenCalled();
+  });
+
+  // INVARIANT: a KNOWN run the orchestrator will not cancel is a 409, not a
+  // 404 and not a silent 200 — "this run finished before you asked" is a
+  // fact an operator acts on. Mutation-tested: returning
+  // `{ cancelled: false }` at 200 instead makes this fail.
+  test("409s a known run with nothing to cancel", async () => {
+    const { routes, orchestrator } = cancelRoutes(ROW_RUNNING, false);
+
+    const thrown = await captureThrown(() =>
+      runRoute(cancelRoute(routes), cancelContext("run-1")),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).code).toBe(
+      "ERR_CONSOLE_RUN_NOT_CANCELLABLE",
+    );
+    expect(orchestrator.cancel).toHaveBeenCalledWith("run-1");
+  });
+
+  test("returns 400 naming the missing ':id' route parameter, without touching either collaborator", async () => {
+    const { routes, orchestrator, registry } = cancelRoutes(ROW_RUNNING, true);
+
+    const thrown = await captureThrown(() =>
+      runRoute(
+        cancelRoute(routes),
+        buildContext({
+          method: "POST",
+          path: "/api/v1/runs//cancel",
+          operatorName: "ada",
+        }),
+      ),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).code).toBe("ERR_CONSOLE_BAD_REQUEST");
+    expect(registry.get).not.toHaveBeenCalled();
+    expect(orchestrator.cancel).not.toHaveBeenCalled();
+  });
+
+  test("takes no body: a cancel with no request body still succeeds", async () => {
+    // The route is a POST with nothing to validate — the gesture IS the
+    // request. A body parser creeping in here would break every caller that
+    // sends none.
+    const { routes } = cancelRoutes(ROW_RUNNING, true);
+
+    const response = await runRoute(
+      cancelRoute(routes),
+      buildContext({
+        method: "POST",
+        path: "/api/v1/runs/run-1/cancel",
+        params: { id: "run-1" },
+        operatorName: "ada",
+      }),
+    );
+
+    expect(response.status).toBe(200);
   });
 });

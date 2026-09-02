@@ -48,6 +48,7 @@ const FIXTURE_LAUNCH_HANDLE = {
 
 /** A minimal `M3LRunLauncherPort` fixture — never invoked by these tests. */
 const fakeOrchestrator: M3LRunLauncherPort = {
+  cancel: () => true,
   launch: () => FIXTURE_LAUNCH_HANDLE,
 };
 
@@ -90,13 +91,14 @@ function buildDrain() {
   return createDrainController({ timeoutMs: 15_000 });
 }
 
-/** The five run-governor routes `createBuiltInRoutes` must add when `options.runs` is supplied. */
+/** The six run-governor routes `createBuiltInRoutes` must add when `options.runs` is supplied. */
 const RUN_ROUTE_SIGNATURES: readonly { method: string; path: string }[] = [
   { method: "POST", path: "/api/v1/runs" },
   { method: "GET", path: "/api/v1/runs" },
   { method: "GET", path: "/api/v1/runs/:id" },
   { method: "GET", path: "/api/v1/runs/:id/stream" },
   { method: "GET", path: "/api/v1/runs/:id/report" },
+  { method: "POST", path: "/api/v1/runs/:id/cancel" },
 ];
 
 /**

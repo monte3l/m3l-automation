@@ -1138,7 +1138,17 @@ describe("createRunOrchestrator — cancel", () => {
     expect(log).not.toContain("audit:run.cancelled");
   });
 
-  test("cancelling a queued (non-active) run returns false — queued cancellation is not supported in this slice", () => {
+  // CONTRACT CHANGE (X7d). This case used to assert `false` — "queued
+  // cancellation is not supported in this slice". It is supported now, and
+  // this test is inverted rather than deleted so the reversal is visible in
+  // the diff of the file that pinned the old behaviour.
+  //
+  // The eviction's own guarantees (no fabricated `startedAtMs`, the
+  // `run.cancelled`/`run.finished` pair, the timer disarm) are asserted in
+  // `runs-orchestrator-queue.test.ts` alongside the queue-timeout path they
+  // now share an implementation with. This one pins only the return value
+  // and that an audit entry IS written.
+  test("cancelling a queued (non-active) run returns true and audits run.cancelled (X7d)", () => {
     mockScriptExists(false);
     const log: string[] = [];
     const registry = createFakeRegistry(log);
@@ -1176,8 +1186,8 @@ describe("createRunOrchestrator — cancel", () => {
     orchestrator.launch(buildRequest());
     const cancelled = orchestrator.cancel("run-1");
 
-    expect(cancelled).toBe(false);
-    expect(log).not.toContain("audit:run.cancelled");
+    expect(cancelled).toBe(true);
+    expect(log).toContain("audit:run.cancelled");
   });
 });
 
