@@ -39,6 +39,7 @@ export type M3LCliErrorCode =
   | "ERR_CLI_COMMAND_MODULE_IMPORT_FAILED"
   | "ERR_CLI_IN_PROCESS_UNSUPPORTED"
   | "ERR_CLI_FLOW_INVALID"
+  | "ERR_CLI_FLOW_READ_FAILED"
   | "ERR_CLI_UNKNOWN_FLOW"
   | "ERR_CLI_UNKNOWN_FLOW_STEP"
   | "ERR_CLI_FLOW_RECORD_WRITE_FAILED"
@@ -139,6 +140,10 @@ const EXIT_CODE_BY_ERROR_CODE: Record<M3LCliErrorCode, M3LCliExitCode> = {
   // Both flow codes are usage-class: a malformed definition and a misspelled
   // flow name are equally the invocation's fault, not the machine's.
   ERR_CLI_FLOW_INVALID: 2,
+  // The machine-side counterpart to ERR_CLI_FLOW_INVALID: the flows
+  // directory or file could not be read at all (e.g. EACCES), which is a
+  // fault in the machine, not the invocation.
+  ERR_CLI_FLOW_READ_FAILED: GENERAL_EXIT_CODE,
   ERR_CLI_UNKNOWN_FLOW: 2,
   // A misspelled `--resume-from` step id is the invocation's fault, exactly
   // like an unknown flow or script name — so it joins them at exit code 2.
