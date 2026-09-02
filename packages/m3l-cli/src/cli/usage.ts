@@ -50,6 +50,7 @@ export function printUsage(output: M3LCliOutput): void {
   output.info(
     "  completion <shell>         Print a bash/zsh/fish completion script",
   );
+  output.info("  flow list|run <name>       List or execute a declared flow");
   output.info("  help                       Show this help message");
   output.info("  <script> [--param value ...] [-- args...]");
   output.info(

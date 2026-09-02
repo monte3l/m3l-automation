@@ -14,6 +14,7 @@ import { runPresets } from "../src/commands/presets.js";
 import { runHistory } from "../src/commands/history.js";
 import { runWizard } from "../src/commands/wizard.js";
 import { runNew } from "../src/commands/new.js";
+import { runFlowCommand } from "../src/commands/flow.js";
 import { resolveWorkspaceRoot } from "../src/discovery/discover.js";
 import type { M3LCliCommandContext } from "../src/commands/context.js";
 
@@ -60,6 +61,7 @@ vi.mock("../src/commands/presets.js", () => ({ runPresets: vi.fn() }));
 vi.mock("../src/commands/history.js", () => ({ runHistory: vi.fn() }));
 vi.mock("../src/commands/wizard.js", () => ({ runWizard: vi.fn() }));
 vi.mock("../src/commands/new.js", () => ({ runNew: vi.fn() }));
+vi.mock("../src/commands/flow.js", () => ({ runFlowCommand: vi.fn() }));
 vi.mock("../src/discovery/discover.js", () => ({
   resolveWorkspaceRoot: vi.fn(),
 }));
@@ -73,6 +75,7 @@ const runPresetsMock = vi.mocked(runPresets);
 const runHistoryMock = vi.mocked(runHistory);
 const runWizardMock = vi.mocked(runWizard);
 const runNewMock = vi.mocked(runNew);
+const runFlowCommandMock = vi.mocked(runFlowCommand);
 const resolveWorkspaceRootMock = vi.mocked(resolveWorkspaceRoot);
 
 afterEach(() => {
@@ -85,6 +88,7 @@ afterEach(() => {
   runHistoryMock.mockReset();
   runWizardMock.mockReset();
   runNewMock.mockReset();
+  runFlowCommandMock.mockReset();
   resolveWorkspaceRootMock.mockReset();
 });
 
@@ -694,6 +698,7 @@ describe("runCli — dynamic dispatch (8d)", () => {
     ["the doctor command", ["doctor"]],
     ["the wizard command", ["wizard"]],
     ["the new command", ["new", "data-sync"]],
+    ["the flow command", ["flow", "run", "dlq-reconcile"]],
   ])("dynamic.js is never touched by %s", async (_label, argv) => {
     resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
     runInspectMock.mockResolvedValue(0);
@@ -701,6 +706,7 @@ describe("runCli — dynamic dispatch (8d)", () => {
     runDoctorMock.mockResolvedValue(0);
     runWizardMock.mockResolvedValue(0);
     runNewMock.mockResolvedValue(0);
+    runFlowCommandMock.mockResolvedValue(0);
     const { options } = buildOptions();
 
     await runCli(argv, options);
@@ -1090,6 +1096,110 @@ describe("runCli — new dispatch (U9, issue #533)", () => {
     ];
     expect(context.jsonOutput).toBe(true);
     expect(rawArgs).toContain("--json");
+  });
+});
+
+/**
+ * U10 slice 3 (`m3l flow`) — `flow` joins {@link STATIC_COMMAND_NAMES} as the
+ * eleventh reserved static command. It follows the `new`/`completion` shape:
+ * `main.ts` bypasses `parseStaticCommandArgs`'s json/help-only parser and
+ * threads the raw post-command slice through, so `flow`'s own subcommand
+ * (`list`/`run`), its `--dry-run` flag, and an unsupported `--resume` are all
+ * decided by `commands/flow.ts` rather than misparsed here.
+ */
+describe("runCli — flow dispatch (U10 slice 3)", () => {
+  test("dispatches to runFlowCommand with the raw args after 'flow'", async () => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    runFlowCommandMock.mockResolvedValue(0);
+    const { options } = buildOptions();
+
+    const code = await runCli(
+      ["flow", "run", "dlq-reconcile", "--dry-run"],
+      options,
+    );
+
+    expect(code).toBe(0);
+    expect(runFlowCommandMock).toHaveBeenCalledTimes(1);
+    const [context, rawArgs] = runFlowCommandMock.mock.calls[0] as [
+      M3LCliCommandContext,
+      readonly string[],
+    ];
+    expect(context.workspaceRoot).toBe("/workspace-root");
+    expect(rawArgs).toEqual(["run", "dlq-reconcile", "--dry-run"]);
+  });
+
+  test("dispatches bare 'flow' with an empty raw slice, so the handler owns the usage error", async () => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    runFlowCommandMock.mockResolvedValue(2);
+    const { options } = buildOptions();
+
+    const code = await runCli(["flow"], options);
+
+    expect(code).toBe(2);
+    const [, rawArgs] = runFlowCommandMock.mock.calls[0] as [
+      M3LCliCommandContext,
+      readonly string[],
+    ];
+    expect(rawArgs).toEqual([]);
+  });
+
+  test("'flow --help' prints generic usage and never loads the handler", async () => {
+    const { options, stdoutLines } = buildOptions();
+
+    const code = await runCli(["flow", "--help"], options);
+
+    expect(code).toBe(0);
+    expect(stdoutLines.join("\n")).toContain("Usage: m3l <command>");
+    expect(runFlowCommandMock).not.toHaveBeenCalled();
+  });
+
+  test("sets context.jsonOutput true for --json while --json survives verbatim in rawArgs", async () => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    runFlowCommandMock.mockResolvedValue(0);
+    const { options } = buildOptions();
+
+    await runCli(["flow", "run", "dlq-reconcile", "--json"], options);
+
+    const [context, rawArgs] = runFlowCommandMock.mock.calls[0] as [
+      M3LCliCommandContext,
+      readonly string[],
+    ];
+    expect(context.jsonOutput).toBe(true);
+    expect(rawArgs).toContain("--json");
+  });
+
+  test.each<[number]>([[0], [2], [3], [137]])(
+    "propagates runFlowCommand's resolved exit code (%i) verbatim",
+    async (exitCode) => {
+      resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+      runFlowCommandMock.mockResolvedValue(exitCode);
+      const { options } = buildOptions();
+
+      const code = await runCli(["flow", "run", "dlq-reconcile"], options);
+
+      expect(code).toBe(exitCode);
+    },
+  );
+
+  test("the static 'flow' command wins over dynamic dispatch, so no script can be reached as 'flow'", async () => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    runFlowCommandMock.mockResolvedValue(0);
+    const { options } = buildOptions();
+
+    await runCli(["flow", "list"], options);
+
+    expect(runFlowCommandMock).toHaveBeenCalledTimes(1);
+    expect(runDynamicMock).not.toHaveBeenCalled();
+  });
+
+  test("flow.js is loaded lazily and never touched by unrelated dispatch paths", async () => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    runListMock.mockResolvedValue(0);
+    const { options } = buildOptions();
+
+    await runCli(["list"], options);
+
+    expect(runFlowCommandMock).not.toHaveBeenCalled();
   });
 });
 
