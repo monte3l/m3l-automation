@@ -20,13 +20,17 @@
  * `M3LSessionArtifactStore` return `Promise<...>`, so a synchronous surface
  * could not `await` either call.
  *
+ * The READ-ONLY methods (`listBindingsForSession`, and X7d's
+ * `readStepArtifact`) live in `sessions/service-reads.ts` and are spread in
+ * here — see that module's header for why, and for why it declares its own
+ * narrow dependency type instead of importing this file's.
+ *
  * @packageDocumentation
  */
 
 import { M3LConsoleError } from "../errors/console-error.js";
 import type {
   M3LConsoleSessionsRepository,
-  M3LSessionBindingRecord,
   M3LSessionDecisionRecord,
   M3LSessionListQuery,
   M3LSessionRecord,
@@ -38,6 +42,8 @@ import type {
   M3LSessionArtifactStore,
 } from "./artifacts.js";
 import { decodeArtifactRef, encodeArtifactRef } from "./artifacts.js";
+import { buildSessionReadMethods } from "./service-reads.js";
+import type { SessionReadMethods } from "./service-reads.js";
 import type {
   M3LSessionAddStepBinding,
   M3LSessionAddStepInput,
@@ -107,7 +113,7 @@ export interface CreateSessionServiceOptions {
  * service.createSession("alice", "corr-1");
  * ```
  */
-export interface M3LSessionService {
+export interface M3LSessionService extends SessionReadMethods {
   /**
    * Creates a new open session.
    *
@@ -225,14 +231,6 @@ export interface M3LSessionService {
   listDecisionsForSession(
     sessionId: string,
   ): readonly M3LSessionDecisionRecord[];
-  /**
-   * Lists every binding persisted for `sessionId` via a prior
-   * {@link M3LSessionService.addStep} call.
-   *
-   * @throws {@link M3LConsoleError} with code `"ERR_CONSOLE_SESSION_NOT_FOUND"`
-   *   when `sessionId` names no session.
-   */
-  listBindingsForSession(sessionId: string): readonly M3LSessionBindingRecord[];
 }
 
 /** Throws `ERR_CONSOLE_SESSION_NOT_FOUND`, or returns the found session record. */
@@ -599,27 +597,6 @@ function buildDecisionServiceMethods(
 }
 
 /**
- * The binding-audit-trail slice of {@link M3LSessionService} — a
- * single-method delegate, split into its own tiny builder purely to keep
- * {@link buildSessionLifecycleMethods} and {@link buildDecisionServiceMethods}
- * under the 60-line function cap.
- */
-function buildBindingServiceMethods(
-  options: CreateSessionServiceOptions,
-): Pick<M3LSessionService, "listBindingsForSession"> {
-  const { sessionsRepository } = options;
-
-  return {
-    listBindingsForSession(
-      sessionId: string,
-    ): readonly M3LSessionBindingRecord[] {
-      requireSession(sessionsRepository, sessionId);
-      return sessionsRepository.listBindingsForSession(sessionId);
-    },
-  };
-}
-
-/**
  * Creates a {@link M3LSessionService} over `options`.
  *
  * @param options - See {@link CreateSessionServiceOptions}.
@@ -640,6 +617,6 @@ export function createSessionService(
   return {
     ...buildSessionLifecycleMethods(options),
     ...buildDecisionServiceMethods(options),
-    ...buildBindingServiceMethods(options),
+    ...buildSessionReadMethods(options),
   };
 }

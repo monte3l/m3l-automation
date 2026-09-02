@@ -16,14 +16,14 @@
  */
 
 import { EventEmitter } from "node:events";
-import { mkdtemp, rm, readdir } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, readdir, writeFile } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
-import type { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@m3l-automation/m3l-common";
 
 import type { M3LHumanActionAuditPort } from "../src/audit/port.js";
 import type { M3LHumanActionRecord } from "../src/audit/record.js";
@@ -38,6 +38,7 @@ import type {
   M3LConsoleAuditRepository,
   M3LHumanActionIndexInput,
 } from "../src/store/audit-repository.js";
+import { openConsoleStore } from "../src/store/store.js";
 
 /** A recording `M3LLoggerHandler` fake — the sanctioned test-double pattern. */
 class RecordingHandler implements Core.M3LLoggerHandler {
@@ -481,5 +482,175 @@ describe("a write route registered through options.routes is served, but NOT aud
     // nothing. The 200 is what proves the route really served.
     expect(status()).toBe(200);
     expect(port.records).toStrictEqual([]);
+  });
+});
+
+// =============================================================================
+// The X7d read routes, end to end against a REAL trail and a REAL store.
+//
+// Everything above either injects `options.auditPort` (a fake trail) or
+// `options.audit` (a fake repository). Both halves faked, they can never
+// disagree — so a projection that silently dropped a field, or a spec whose
+// target did not survive the JSONL round-trip, would pass every one of them.
+//
+// The two tests below drive one real `GET /api/v1/runs/:id/report` through
+// the composed `requestListener` with:
+//
+//   * the real append-only JSONL trail, resolved from
+//     `M3L_CONSOLE_AUDIT_ROOT` and read back off disk with Core's own reader;
+//   * the real SQLite `console_human_actions` index, read back with the real
+//     repository.
+//
+// A `view.*` kind is the right one to prove this with: its spec's phase is
+// `"after"`, so nothing is recorded unless the route genuinely served — which
+// means these also prove the report route, the output-root wiring and the
+// reader all work, not just the audit projection.
+// =============================================================================
+
+/** Reads every record back off the real JSONL trail at `directory`. */
+async function readTrail(
+  directory: string,
+): Promise<readonly M3LHumanActionRecord[]> {
+  const stream = new Core.M3LAppendOnlyStream({ directory });
+  const records: M3LHumanActionRecord[] = [];
+  for await (const entry of stream.read()) {
+    records.push(structuredClone(entry) as unknown as M3LHumanActionRecord);
+  }
+  return records;
+}
+
+/** A `GET` `IncomingMessage` double aimed at `url`. */
+function createGetRequest(url: string): IncomingMessage {
+  const req = new EventEmitter() as unknown as IncomingMessage & {
+    destroy: () => void;
+  };
+  Object.assign(req, {
+    method: "GET",
+    url,
+    headers: { host: "127.0.0.1" },
+    destroy: () => undefined,
+  });
+  return req;
+}
+
+/** A registry whose `get` reports one terminal run and nothing else. */
+function createOneRunRegistry(runId: string): M3LRunRegistry {
+  const unexpectedCall = (): never => {
+    throw new Error("unexpected call on the one-run registry");
+  };
+  return {
+    insertQueued: unexpectedCall,
+    claimForStart: unexpectedCall,
+    finish: unexpectedCall,
+    get: (id: string) =>
+      id === runId
+        ? ({
+            id: runId,
+            script: "sqs-etl",
+            status: "success",
+            dryRun: false,
+            executionMode: "spawn",
+            parameters: {},
+            operator: "ada",
+            correlationId: "corr-1",
+            queuedAtMs: 1_000,
+            startedAtMs: 1_100,
+            endedAtMs: 1_200,
+            outcome: "success",
+            exitCode: 0,
+            failureMessage: null,
+          } as unknown as ReturnType<M3LRunRegistry["get"]>)
+        : undefined,
+    list: unexpectedCall,
+    countRunningForScript: (): number => 0,
+    abandonQueued: unexpectedCall,
+    reconcileOrphaned: (): number => 0,
+  };
+}
+
+describe("view.run.report is audited end to end, against a real trail", () => {
+  const RUN_ID = "run-e2e";
+
+  /**
+   * Boots a runtime whose report route can actually serve, writes the report
+   * a real child would have written, and issues the request.
+   */
+  async function serveReport(audit?: M3LConsoleAuditRepository): Promise<{
+    readonly status: number | undefined;
+    readonly auditRoot: string;
+  }> {
+    const outputRoot = path.join(workDir, "runs");
+    const reportDir = path.join(outputRoot, RUN_ID, "2026-09-02T10-14-02.000Z");
+    await mkdir(reportDir, { recursive: true });
+    await writeFile(
+      path.join(reportDir, "run-report.json"),
+      JSON.stringify({ outcome: "success", steps: 2 }),
+      "utf8",
+    );
+
+    const env = buildEnv({ M3L_CONSOLE_RUNS_OUTPUT_ROOT: outputRoot });
+    const runtime = createConsoleRuntime({
+      env,
+      handlers: [new RecordingHandler()],
+      runsConfig: MINIMAL_RUNS_CONFIG,
+      runs: createOneRunRegistry(RUN_ID),
+      ...(audit !== undefined && { audit }),
+    });
+
+    const { res, status, finished } = createRecordingServerResponse();
+    runtime.requestListener(
+      createGetRequest(`/api/v1/runs/${RUN_ID}/report`),
+      res,
+    );
+    await withTimeout(finished, "requestListener never called res.end()");
+
+    return {
+      status: status(),
+      auditRoot: resolveHumanActionAuditRoot(env),
+    };
+  }
+
+  test("the served request leaves one view.run.report entry in the real JSONL trail", async () => {
+    const { status, auditRoot } = await serveReport();
+
+    // The route really served — which is what makes the `"after"` entry
+    // meaningful rather than a record of a refusal.
+    expect(status).toBe(200);
+
+    const records = await readTrail(auditRoot);
+    expect(records).toHaveLength(1);
+    expect(records[0]?.action).toBe("view.run.report");
+    expect(records[0]?.outcome).toBe("served");
+    expect(records[0]?.operator).toBe("ada");
+    // The trail carries the record's own `target` object; the SQLite index
+    // flattens it to `targetKind`/`targetId`. Asserting the two SHAPES
+    // separately, here and in the index test below, is what makes this pair
+    // able to disagree — a single shared helper reading one of them would
+    // not be a cross-check at all.
+    expect(records[0]?.target).toEqual({ kind: "run", id: RUN_ID });
+  });
+
+  // INVARIANT: display-vs-persist, asserted against the BYTES on disk rather
+  // than an in-memory record. The report body served here carries a
+  // distinctive value; none of it may appear anywhere in the trail.
+  test("the trail on disk holds no part of the report it recorded a view of", async () => {
+    const { auditRoot } = await serveReport();
+
+    const records = await readTrail(auditRoot);
+    expect(JSON.stringify(records)).not.toContain("steps");
+  });
+
+  test("the same request lands one matching row in the real SQLite index", async () => {
+    const store = openConsoleStore({ location: ":memory:" });
+    try {
+      await serveReport(store.audit);
+
+      const rows = store.audit.list({ limit: 10 });
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.action).toBe("view.run.report");
+      expect(rows[0]?.targetId).toBe(RUN_ID);
+    } finally {
+      store.close();
+    }
   });
 });

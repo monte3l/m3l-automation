@@ -30,7 +30,7 @@ read surface. The route table is:
 
 X6 shipped the workbench-sessions module: create/list/read/close/reopen a
 session, append steps, raise and answer decisions, and read a session's
-persisted binding audit trail:
+persisted binding audit trail; X7d added the step-artifact read surface:
 
 | Method | Path                                          | Auth     | Shipped in |
 | ------ | --------------------------------------------- | -------- | ---------- |
@@ -43,6 +43,7 @@ persisted binding audit trail:
 | `POST` | `/api/v1/sessions/:id/close`                  | required | X6         |
 | `POST` | `/api/v1/sessions/:id/reopen`                 | required | X6         |
 | `GET`  | `/api/v1/sessions/:id/bindings`               | required | X6         |
+| `GET`  | `/api/v1/sessions/:id/steps/:stepId/artifact` | required | X7d        |
 
 X10 shipped script discovery: enumerate the launchable scripts under the
 configured scripts directory, and read one script's declared parameters and
@@ -774,6 +775,38 @@ curl -sS localhost:8787/api/v1/sessions/$SESSION_ID/bindings
 is `:id`-scoped like `GET /api/v1/sessions/:id`, not a query-filtered scan
 like `GET /api/v1/sessions`, so an unknown id is distinguishable from a real
 session with zero bindings.
+
+## `GET /api/v1/sessions/:id/steps/:stepId/artifact`
+
+Returns one step's recorded output, resolved back to its value.
+
+```bash
+curl -sS localhost:8787/api/v1/sessions/$SESSION_ID/steps/$STEP_ID/artifact
+```
+
+The body is the value itself, with no envelope around it. **An inline
+artifact and a file-backed one are indistinguishable here**, deliberately:
+the placement decision is the artifact store's, driven by size (see Session
+limits below), and a client able to tell them apart would start depending on
+it. A file-backed artifact has its SHA-256 digest re-verified on every read
+before its bytes are trusted or parsed.
+
+Four conditions 404, and the first three are told apart from each other only
+by their message:
+
+| Code                                 | When                                                            |
+| ------------------------------------ | --------------------------------------------------------------- |
+| `ERR_CONSOLE_SESSION_NOT_FOUND`      | No such session.                                                |
+| `ERR_CONSOLE_SESSION_STEP_NOT_FOUND` | No such step, **or** a step belonging to a different session.   |
+| `ERR_CONSOLE_SESSION_STEP_NOT_FOUND` | The step exists but has no recorded output yet (still running). |
+
+A step owned by another session and a step that does not exist raise the
+**identical** error, message included. That is the point: a caller probing
+step ids must not be able to learn that one exists somewhere else.
+
+`ERR_CONSOLE_SESSION_ARTIFACT_CORRUPT` (500) surfaces a persisted reference
+that no longer decodes, or a file whose digest no longer matches — a real
+fault, never folded into the 404s above.
 
 ## Session limits
 

@@ -61,13 +61,13 @@ const REFS_TRUNCATED_KEY = "parameterRefsTruncated";
  * different question from "what did they change". `runs/audit.ts` already
  * uses a prefix that way.
  *
- * `view.run.report` was wired by X7d, which added
- * `GET /api/v1/runs/:id/report` and the output-directory pin that makes a
- * run's report addressable at all (`config/paths.ts`'s
- * `resolveRunsOutputRoot`). `view.session.artifact` is still declared but
- * UNWIRED — `sessions/artifacts.ts` has no route in front of it yet.
- * Declaring both up front is what let each endpoint land without another
- * `CHECK` recreate — see `store/migrations/human-actions.ts`.
+ * X7d wired both remaining `view.*` kinds: `view.run.report` behind
+ * `GET /api/v1/runs/:id/report` (plus the output-directory pin that makes a
+ * run's report addressable at all — `config/paths.ts`'s
+ * `resolveRunsOutputRoot`), and `view.session.artifact` behind
+ * `GET /api/v1/sessions/:id/steps/:stepId/artifact`. Declaring both up front
+ * in X7b is what let each endpoint land without another `CHECK` recreate —
+ * see `store/migrations/human-actions.ts`.
  */
 export type M3LHumanActionKind =
   | "run.launch"

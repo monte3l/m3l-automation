@@ -135,6 +135,7 @@ interface FakeReader {
     readonly limit: number;
   }): readonly FakeSessionRow[];
   listBindingsForSession(sessionId: string): readonly FakeBindingRow[];
+  readStepArtifact(sessionId: string, stepId: string): Promise<unknown>;
 }
 
 /** The local writer port `createSessionRoutes` depends on. */
@@ -181,6 +182,10 @@ function buildReader(
   listBindingsForSession: Mock<FakeReader["listBindingsForSession"]>;
 } {
   return {
+    // X7d's read lives on the SAME port but is served by its own route
+    // module; these suites never drive it — `routes-session-artifacts.test.ts`
+    // does.
+    readStepArtifact: () => Promise.resolve(undefined),
     getSession: vi
       .fn<FakeReader["getSession"]>()
       .mockReturnValue(overrides.get),

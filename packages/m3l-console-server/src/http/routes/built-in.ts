@@ -35,6 +35,7 @@ import type {
 } from "./run-stream.js";
 import { createScriptRoutes } from "./scripts.js";
 import type { M3LScriptCatalogPort } from "./scripts.js";
+import { createSessionArtifactRoutes } from "./session-artifacts.js";
 import { createSessionRoutes } from "./sessions.js";
 import type {
   SessionRouteOptions,
@@ -312,14 +313,23 @@ export function adaptSessionService(
 }
 
 /**
- * Builds the X6 workbench-sessions route group from `options.sessions`, or
- * an empty table when the session workbench is disabled.
+ * Builds the X6 workbench-sessions route group from `options.sessions`, plus
+ * (X7d) the step-artifact read route — or an empty table when the session
+ * workbench is disabled.
+ *
+ * The artifact route takes `sessions.reader` verbatim: its own
+ * `SessionArtifactReaderPort` is a one-method subset of
+ * {@link SessionRouteReaderPort}, so the same object satisfies both and there
+ * is no fourth collaborator for `main.ts` to wire.
  */
 function buildSessionRoutes(
   sessions: SessionRouteOptions | undefined,
 ): readonly M3LRoute[] {
   if (sessions === undefined) return [];
-  return createSessionRoutes(sessions);
+  return [
+    ...createSessionRoutes(sessions),
+    ...createSessionArtifactRoutes({ reader: sessions.reader }),
+  ];
 }
 
 /**
