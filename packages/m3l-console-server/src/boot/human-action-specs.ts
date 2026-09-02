@@ -212,6 +212,24 @@ export const HUMAN_ACTION_SPECS: ReadonlyMap<string, HumanActionSpec> = new Map<
     },
   ],
   [
+    // X7d's cancellation. `phase: "before"` like every other write: a
+    // cancel that cannot be audited is refused outright, which is ADR-0070's
+    // whole point — cancelling someone's run is exactly the act a trail
+    // exists to hold someone to.
+    //
+    // Posture is `"confirmed"` unconditionally, not read off the body: this
+    // route takes no body at all. The gesture IS the request.
+    "POST /api/v1/runs/:id/cancel",
+    {
+      action: "run.cancel",
+      phase: "before",
+      project: (ctx) => ({
+        target: { kind: "run", id: param(ctx, "id") },
+        posture: "confirmed",
+      }),
+    },
+  ],
+  [
     "POST /api/v1/sessions",
     {
       action: "session.create",

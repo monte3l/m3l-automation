@@ -115,6 +115,40 @@ describe("per-route projection", () => {
     },
   );
 
+  // X7d's cancellation. Targets the RUN — unlike `run.launch`, which
+  // targets the script because no run id exists yet at `phase: "before"`.
+  // Here one does, and it is the only thing an operator's cancel identifies.
+  test("POST /api/v1/runs/:id/cancel → run.cancel, targeting the run", async () => {
+    const record = await recordFor({
+      method: "POST",
+      path: "/api/v1/runs/:id/cancel",
+      url: "http://127.0.0.1/api/v1/runs/run-7/cancel",
+      params: { id: "run-7" },
+    });
+
+    expect(record.action).toBe("run.cancel");
+    expect(record.target).toEqual({ kind: "run", id: "run-7" });
+    expect(record.posture).toBe("confirmed");
+  });
+
+  // INVARIANT: posture is `"confirmed"` unconditionally on this route,
+  // because it takes NO body — the request itself is the gesture. Reading
+  // `dryRun`/`confirmed` off a body that will never carry them would report
+  // `"escalated"` for every cancel an operator ever made, which is the
+  // opposite of the truth. Mutation-tested: swapping the projection to
+  // `postureOf(ctx)` makes this fail.
+  test("POST /api/v1/runs/:id/cancel posture stays confirmed with no body at all", async () => {
+    const record = await recordFor({
+      method: "POST",
+      path: "/api/v1/runs/:id/cancel",
+      url: "http://127.0.0.1/api/v1/runs/run-8/cancel",
+      params: { id: "run-8" },
+    });
+
+    expect(record.posture).toBe("confirmed");
+    expect(record.parameterNames).toEqual([]);
+  });
+
   // `session.create` has no session id pre-flight, so the correlation id is
   // the honest AND joinable value: `routes/sessions.ts` passes that same id
   // into `createSession`, where it lands in `console_sessions.correlation_id`.

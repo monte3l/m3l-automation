@@ -176,15 +176,33 @@ export interface M3LRunOrchestrator {
    */
   launch(request: M3LRunLaunchRequest): M3LRunHandle;
   /**
-   * Cancels an ACTIVE (already-started) run by aborting its signal. Acts
-   * only on the active map: a queued run (not yet started) or an
-   * already-finished run is not cancellable in this slice, and both report
-   * `false` exactly like an unknown id — `false` here never means merely
-   * "not found", it means "there is nothing this call can cancel".
+   * Cancels a run, ACTIVE or QUEUED (X7d — this contract changed; a queued
+   * run previously reported `false`).
+   *
+   * The two branches are not symmetric, and the difference is load-bearing:
+   *
+   * - An **active** run is only ABORTED here. Its own `executeAndSettle`
+   *   continuation still owns the terminal write, and racing it would
+   *   produce two finish records for one run. The run reaches `interrupted`
+   *   the same way a signal death does.
+   * - A **queued** run IS terminally written here, through
+   *   `registry.abandonQueued`'s guarded `queued` to `interrupted`
+   *   transition — never `claimForStart`-then-`finish`, because a run that
+   *   never executed must never be given a fabricated `started_at_ms`.
+   *   There is no continuation waiting to do it instead.
+   *
+   * Either way the run lands on the existing terminal `interrupted` status.
+   * No new status, and no migration.
+   *
+   * `false` still never means merely "not found": it means "there is
+   * nothing this call can cancel" — an unknown id, an already-terminal run,
+   * or a lost race against whichever path settled it first. A caller that
+   * needs to tell an unknown id apart asks the registry, which is what
+   * `http/routes/runs.ts`'s cancel handler does to choose between 404 and
+   * 409.
    *
    * @param id - The run's id.
-   * @returns `true` when an active run was found and aborted, `false`
-   *   otherwise (unknown id, still queued, or already terminal).
+   * @returns `true` when a run was cancelled, `false` otherwise.
    */
   cancel(id: string): boolean;
   /**

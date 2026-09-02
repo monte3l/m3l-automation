@@ -59,7 +59,13 @@ import { Core } from "@m3l-automation/m3l-common";
  * resolver finds no script directory for the requested name,
  * `ERR_CONSOLE_RUN_CONFIRMATION_REQUIRED` when a non-dry-run request arrives
  * without `confirmed: true`, and `ERR_CONSOLE_RUN_CAPACITY_EXCEEDED` when the
- * run governor's queue is full.
+ * run governor's queue is full. `ERR_CONSOLE_RUN_NOT_CANCELLABLE` (X7d) is
+ * raised when a cancel request names a run that exists but has nothing left
+ * to cancel — already terminal, or a lost race against whichever path
+ * settled it first. Distinct from `ERR_CONSOLE_RUN_NOT_FOUND` on purpose:
+ * "this run finished before you asked" is a 409 an operator can act on,
+ * while "no such run" is a 404, and collapsing the two would make a
+ * successfully-completed run indistinguishable from a typo'd id.
  *
  * Two further codes are `http/body.ts`'s request-body reading failures
  * (X4 slice 7-pre): `ERR_CONSOLE_BODY_TOO_LARGE` when a body exceeds the
@@ -174,6 +180,7 @@ export type M3LConsoleErrorCode =
   | "ERR_CONSOLE_RUN_SCRIPT_NOT_FOUND"
   | "ERR_CONSOLE_RUN_CONFIRMATION_REQUIRED"
   | "ERR_CONSOLE_RUN_CAPACITY_EXCEEDED"
+  | "ERR_CONSOLE_RUN_NOT_CANCELLABLE"
   | "ERR_CONSOLE_BODY_TOO_LARGE"
   | "ERR_CONSOLE_UNSUPPORTED_MEDIA_TYPE"
   | "ERR_CONSOLE_SESSION_NOT_FOUND"
