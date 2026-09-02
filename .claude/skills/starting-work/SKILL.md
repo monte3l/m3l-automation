@@ -68,6 +68,13 @@ git status --porcelain               # is the tree already dirty?
   as `main` for isolation purposes (it's the same tree state the guard protects).
 - If `--git-common-dir` and `--git-dir` resolve differently, you're already in a
   linked worktree — note it; the location decision is likely settled.
+- **Resume check.** If the tree is dirty (a non-empty `git status --porcelain`)
+  AND `tmp/compact-handoff.json` exists with a `branch` field matching the
+  current branch, this looks like a resume of interrupted work rather than a
+  fresh task — read the handoff's `branch`, `lastCommit`, `uncommittedFiles`,
+  `journals`, and `capturedAt` so Steps 3–4 can offer a resume path instead of
+  defaulting to greenfield. A handoff naming a _different_ branch is not a
+  resume signal for the current task — ignore it.
 
 ### 2 — Infer the change scope
 
@@ -90,6 +97,11 @@ single bug fix or a small, cohesive feature is one unit — most tasks are.
 
 Derive a concrete default for all decisions from steps 1–2:
 
+- **Resume** — when Step 1 found a resume signal, the right default is to
+  **stay** on the current branch/location and pick the interrupted work back
+  up, not create a new branch or worktree. Surface this as the first option
+  in Step 4 rather than silently overriding the other decisions — the user
+  may still prefer to abandon the dirty state and start fresh.
 - **Location** — default to the **shared checkout**. Recommend a linked worktree
   (`pnpm worktree:new <slug>`) only when the user signalled concurrent/parallel
   work (e.g. running two pipelines at once); worktrees exist for that, and forcing
@@ -121,6 +133,14 @@ Derive a concrete default for all decisions from steps 1–2:
   recommendation the user may act on, not a decision to confirm.
 
 ### 4 — Confirm with the user (blocking)
+
+When Step 1 found a resume signal, ask a **resume-or-fresh** question first,
+in the same `AskUserQuestion` call as the rest: "Resume the in-flight work on
+`<branch>` (recommended)" vs "Start fresh — treat this as a new task". If the
+user picks resume, skip the Location/Branch/PR-required/push-target questions
+entirely (staying put is implied) and go straight to Step 5's "Staying put"
+path. If they pick fresh, proceed with the normal confirmation below as if no
+resume signal had been found.
 
 Ask every decision that applies in **one** `AskUserQuestion` call — always
 location, branch, PR-required, and push target; PR sequence only when Step 2

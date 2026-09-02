@@ -214,6 +214,27 @@ entries, so a wiring regression on either hook (e.g. a typo in
 follow-up in the same sweep's remediation plan
 (`docs/research/harness-refresh.md`, first populated by this sweep).
 
+## Update (2026-09-02) — `SessionStart` re-injection widened to `resume`/`startup`
+
+A follow-up `/auditing` sweep (session continuity and work close-out) found
+that Part C's re-injection route fired **only** on `SessionStart` matching
+source `compact`: a handoff written by `PreCompact` whose session was then
+killed (crash, OOM, Ctrl-C) before the next compaction sat in `tmp/` forever
+and was never surfaced. Anthropic's own guidance gives `SessionEnd` no
+guaranteed abnormal-termination signal, so the fix is on the read side, not a
+new write-side hook.
+
+`.claude/settings.json`'s `SessionStart` entry for
+`reinject-compact-handoff.mjs` now reads `matcher: "compact|resume|startup"`
+(`bin/check-hooks.mjs`'s `KNOWN_MATCHERS` set already allowed all three;
+pipe-alternation is the same syntax `PreToolUse`/`PostToolUse` matchers use),
+and `shouldReinject()` accepts all three source values. Because a
+`resume`/`startup` read has no one-compaction freshness guarantee, the
+re-injected `additionalContext` now flags a handoff whose `capturedAt` is
+more than 24h old as likely stale. `starting-work` Step 1 also now checks for
+a same-branch handoff when the tree is dirty and offers a resume path in its
+Step 4 confirmation, rather than only defaulting to a fresh branch/worktree.
+
 ## Links
 
 - Supersedes / superseded by: none.

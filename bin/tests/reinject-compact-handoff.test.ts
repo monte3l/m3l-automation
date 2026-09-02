@@ -14,7 +14,11 @@ import {
   readHandoff,
   formatHandoff,
   shouldReinject,
+  isStale,
 } from "../../.claude/hooks/reinject-compact-handoff.mjs";
+
+const HOUR_MS = 60 * 60 * 1000;
+const DAY_MS = 24 * HOUR_MS;
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -47,6 +51,55 @@ describe("readHandoff", () => {
 
     expect(() => readHandoff("/repo/tmp/compact-handoff.json")).not.toThrow();
     expect(readHandoff("/repo/tmp/compact-handoff.json")).toBeNull();
+  });
+});
+
+describe("isStale", () => {
+  test("returns false for a fresh handoff captured at 'now'", () => {
+    const nowMs = Date.now();
+    const capturedAt = new Date(nowMs).toISOString();
+
+    expect(isStale({ capturedAt }, nowMs)).toBe(false);
+  });
+
+  test("returns true for a handoff captured exactly 25h before now", () => {
+    const nowMs = Date.now();
+    const capturedAt = new Date(nowMs - 25 * HOUR_MS).toISOString();
+
+    expect(isStale({ capturedAt }, nowMs)).toBe(true);
+  });
+
+  test("returns false for a handoff captured exactly 23h before now", () => {
+    const nowMs = Date.now();
+    const capturedAt = new Date(nowMs - 23 * HOUR_MS).toISOString();
+
+    expect(isStale({ capturedAt }, nowMs)).toBe(false);
+  });
+
+  test("returns false, not true, at exactly the 24h threshold", () => {
+    const nowMs = Date.now();
+    const capturedAt = new Date(nowMs - DAY_MS).toISOString();
+
+    expect(isStale({ capturedAt }, nowMs)).toBe(false);
+  });
+
+  test("returns false when capturedAt is missing", () => {
+    expect(isStale({}, Date.now())).toBe(false);
+  });
+
+  test("returns false, not throws, when capturedAt is not a string", () => {
+    const nowMs = Date.now();
+
+    expect(() => isStale({ capturedAt: nowMs }, nowMs)).not.toThrow();
+    expect(isStale({ capturedAt: nowMs }, nowMs)).toBe(false);
+  });
+
+  test("returns false, not throws, when capturedAt is an unparseable string", () => {
+    const nowMs = Date.now();
+    const handoff = { capturedAt: "not-a-date" };
+
+    expect(() => isStale(handoff, nowMs)).not.toThrow();
+    expect(isStale(handoff, nowMs)).toBe(false);
   });
 });
 
@@ -166,6 +219,60 @@ describe("formatHandoff", () => {
     expect(withEmptyJournals).not.toContain("Scratchpad journal(s)");
   });
 
+  test("appends a stale warning containing '24h' and 'stale' when capturedAt is more than 24h before nowMs", () => {
+    const nowMs = Date.now();
+    const capturedAt = new Date(nowMs - 25 * HOUR_MS).toISOString();
+
+    const result = formatHandoff(
+      { branch: "feat/x", worktree: "/repo", capturedAt },
+      nowMs,
+    );
+    const lower = result.toLowerCase();
+
+    expect(lower).toContain("24h");
+    expect(lower).toContain("stale");
+  });
+
+  test("places the stale warning before the final re-verify line", () => {
+    const nowMs = Date.now();
+    const capturedAt = new Date(nowMs - 25 * HOUR_MS).toISOString();
+
+    const result = formatHandoff(
+      { branch: "feat/x", worktree: "/repo", capturedAt },
+      nowMs,
+    );
+    const lines = result.split("\n");
+    const staleIndex = lines.findIndex((line) =>
+      line.toLowerCase().includes("stale"),
+    );
+    const lastLine = lines[lines.length - 1] ?? "";
+
+    expect(staleIndex).toBeGreaterThanOrEqual(0);
+    expect(staleIndex).toBeLessThan(lines.length - 1);
+    expect(lastLine.toLowerCase()).toContain("re-verify");
+  });
+
+  test("does not append a stale warning when capturedAt is only 1h before nowMs", () => {
+    const nowMs = Date.now();
+    const capturedAt = new Date(nowMs - HOUR_MS).toISOString();
+
+    const result = formatHandoff(
+      { branch: "feat/x", worktree: "/repo", capturedAt },
+      nowMs,
+    );
+
+    expect(result.toLowerCase()).not.toContain("stale");
+  });
+
+  test("does not append a stale warning when capturedAt is absent", () => {
+    const result = formatHandoff(
+      { branch: "feat/x", worktree: "/repo" },
+      Date.now(),
+    );
+
+    expect(result.toLowerCase()).not.toContain("stale");
+  });
+
   test("always ends with the re-verify-against-current-git-status reminder line", () => {
     const minimal = formatHandoff({ branch: "", worktree: "" });
     const full = formatHandoff({
@@ -181,6 +288,8 @@ describe("formatHandoff", () => {
       const lastLine = lines[lines.length - 1] ?? "";
       expect(lastLine.toLowerCase()).toContain("re-verify");
       expect(lastLine.toLowerCase()).toContain("git status");
+      // Neither fixture sets capturedAt, so neither should trip the stale warning.
+      expect(result.toLowerCase()).not.toContain("stale");
     }
   });
 });
@@ -190,10 +299,15 @@ describe("shouldReinject", () => {
     expect(shouldReinject({ source: "compact" })).toBe(true);
   });
 
-  test.each([["startup"], ["resume"], ["clear"], ["fork"]])(
-    "returns false when source is the other documented SessionStart matcher %s",
-    (source) => {
-      expect(shouldReinject({ source })).toBe(false);
+  test.each([
+    ["startup", true],
+    ["resume", true],
+    ["clear", false],
+    ["fork", false],
+  ])(
+    "source %s -> shouldReinject returns %s per REINJECT_SOURCES membership",
+    (source, expected) => {
+      expect(shouldReinject({ source })).toBe(expected);
     },
   );
 
