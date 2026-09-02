@@ -19,7 +19,7 @@ describe("MIN_CASES", () => {
 });
 
 describe("EXEMPT_SKILLS", () => {
-  test("is an empty Set — the #775 backfill is complete and all 21 skills are compliant", () => {
+  test("is an empty Set — the #775 backfill is complete and all skills are compliant", () => {
     expect(EXEMPT_SKILLS).toBeInstanceOf(Set);
     // Pin the backfill completion: this must be 0. If it grows, a new entry
     // was added that has not yet been removed after its skill became compliant.
