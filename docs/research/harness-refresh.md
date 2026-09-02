@@ -174,6 +174,26 @@ current_usage}`, `exceeds_200k_tokens` (fixed 200K threshold regardless of
   `worktree.*` — <https://code.claude.com/docs/en/statusline> (retrieved
   2026-09-01, cross-confirmed by a second independent fetch)
   - VERDICT: confirmed by two independent fetches. See Outstanding drift #10.
+  - CORRECTION (2026-09-02): this excerpt is a non-exhaustive highlight
+    list, not the full schema. A PR review bot read its "including"
+    wording as exhaustive and flagged `workspace.git_worktree` (used in
+    `.claude/hooks/statusline-context-pressure.mjs`) as a nonexistent
+    field. It is real: "Git worktree name when the current directory is
+    inside a linked worktree created with `git worktree add`. Populated
+    for any git worktree, unlike `worktree.*`, which is present only in a
+    worktree session." This repo's `pnpm worktree:new` (ADR-0013/0014)
+    creates plain `git worktree add` worktrees, so `workspace.git_worktree`
+    is the correct field here — `worktree.branch` (what the bot proposed
+    instead) only populates for Claude Code's own worktree-session
+    feature, unused in this repo, and would read `undefined`. Also present
+    but previously unlisted: `workspace.current_dir`, `workspace.cwd`,
+    `workspace.project_dir`, `workspace.added_dirs`, `workspace.repo`,
+    `model.*`, `cost.*`, `session_id`, `session_name`, `prompt_id`,
+    `transcript_path`, `version`, `output_style.*`, `fast_mode`,
+    `effort.level`, `thinking.enabled`, `rate_limits.*`, `vim.mode`,
+    `agent.name`, `pr.review_state`. Lesson: this tracker's CLAIM lines
+    are triage pointers into the source, not an exhaustive substitute for
+    re-reading it.
 - GONE: `https://platform.claude.com/docs/en/docs/claude-code/settings` and
   `.../costs` — 404. Claude Code docs live under `code.claude.com/docs/en/<page>`
   (flat path, no `/docs/claude-code/` segment) — confirmed by two facets
