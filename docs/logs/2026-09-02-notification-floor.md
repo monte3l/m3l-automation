@@ -140,9 +140,14 @@ suspect).
   typecheck, test, build) can still violate a real build dependency the repo
   encodes only in its own script — reach for the named script, not a
   hand-assembled equivalent. In this case the hand-composed chain was
-  `creating-prs`'s own Step 4 instruction, so the fix landed directly in the
-  skill rather than staying a one-off observation
-  _(promoted → .claude/skills/creating-prs/SKILL.md)_.
+  `creating-prs`'s own Step 4 instruction, repeated verbatim in
+  `.github/pull_request_template.md` and
+  `resolving-merge-conflicts/SKILL.md`, and had already bitten a prior task
+  (`docs/logs/2026-08-28-x9-console-web-skeleton.md`) before this session —
+  all three live copies fixed together, not just the one this session hit
+  _(promoted → .claude/skills/creating-prs/SKILL.md,
+  .github/pull_request_template.md,
+  .claude/skills/resolving-merge-conflicts/SKILL.md)_.
 - **Re-fetch the primary source before trusting a subagent's claim about a
   documented value, especially right before writing it.** This is a stronger
   bar than "trust but verify the summary" — when the claim would change a

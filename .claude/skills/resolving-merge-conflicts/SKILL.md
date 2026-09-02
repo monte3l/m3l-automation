@@ -214,8 +214,13 @@ the live post-resolution commit, runs `pnpm gen:counts` to reconcile the
 like any other gate (fail fast, hand back). Then run the full pipeline:
 
 ```bash
-pnpm lint && pnpm typecheck && pnpm test:coverage && pnpm build
+pnpm lint && pnpm typecheck && pnpm turbo run build --filter=@m3l-automation/m3l-cli && pnpm test:coverage && pnpm build
 ```
+
+Build the CLI before `test:coverage`, not after — scaffold-checker tests
+(e.g. `bin/tests/script-scaffold.test.ts`) read
+`packages/m3l-cli/dist/scaffold/manifest.js` directly, so `test:coverage`
+fails if that file doesn't exist yet.
 
 Stop on the first failure and show the exact output — a merge can introduce a
 type error or a broken test even when every hunk merged cleanly.
