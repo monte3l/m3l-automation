@@ -65,16 +65,30 @@ The workflow owns the mechanical slice end-to-end:
 - **Find:** one read-only Explore agent per facet returns a structured
   payload with two parts — `reportMarkdown` (the full report in the fixed
   format below, capped at ~8000 characters) and a compact digest (facet,
-  counts, one entry per GAP/INCONSISTENCY). Explore holds no `Write`/`Edit`
-  tool and the repo's read-only Bash guard blocks every shell write route, so
-  the report travels only in the return value — never a scratchpad file.
+  counts, up to 20 entries for GAP/INCONSISTENCY). Explore holds no
+  `Write`/`Edit` tool and the repo's read-only Bash guard blocks every shell
+  write route, so the report travels only in the return value — never a
+  scratchpad file. A finder that returns nothing (stopped, unrecoverable API
+  error) names its facet in the result's `missingFacets` array rather than
+  silently shrinking `facets[]` — treat every entry there as never audited,
+  not as "no findings".
 - **Verify:** each GAP/INCONSISTENCY finding gets an independent adversarial
-  refute agent (the security-reviewer refute-mode pattern) that returns
-  `confirmed` only when a genuine refutation attempt fails.
-- **Return:** `{ confirmed, refuted, unverified, facets }`, where each
-  `facets[]` entry carries `{ facet, counts, reportMarkdown }` — findings past
-  the workflow's verify budget arrive in `unverified` for you to check
-  manually in Step 3.
+  pass from the dedicated `audit-refuter` spoke (the security-reviewer
+  refute-mode pattern) that returns `confirmed` only when a genuine
+  refutation attempt fails. The verify budget (15 findings) is allocated
+  round-robin across facets, not first-come, so a facet with many findings
+  can't consume the whole budget and leave later facets unverified.
+- **Return:** `{ confirmed, refuted, unverified, facets, missingFacets, topic }`.
+  Each `facets[]` entry carries `{ facet, counts, reportMarkdown }`. Every
+  `confirmed`/`refuted` entry additionally carries the refuter's `evidence`
+  and an optional `note` (partial-right or platform-scoped caveats) — read
+  `evidence` before spot-checking a `refuted` verdict in Step 3. `unverified`
+  entries carry neither field: they were never seen by a refuter, whether
+  because they fell past the round-robin budget, the refuter died mid-run, or
+  the whole run's remaining token budget dropped below the workflow's
+  `MIN_VERIFY_TOKEN_BUDGET` floor (which defers _every_ pending finding to
+  `unverified` at once — a wholly-unverified result can mean this, not
+  "nothing was found").
 
 The fixed report format every finder uses verbatim, as the value of
 `reportMarkdown`:
@@ -107,7 +121,10 @@ exact wording and the file/line it cites matter for the plan. Then:
    verify budget, refuters that died mid-run, or the whole set on the manual
    fallback path) — check the relevant file(s) yourself before treating it
    as a real gap. Agents sometimes flag things that exist under different
-   names or paths.
+   names or paths. If `missingFacets` is non-empty, those facets were never
+   audited at all — re-dispatch them (a fresh workflow call with just those
+   facets, or a manual fallback) rather than silently proceeding with fewer
+   facets than Step 1 planned.
 2. Spot-check any `refuted` verdict that discards a finding the user
    explicitly asked about — a refuter can be wrong too.
 3. Discard anything that turns out to be already implemented.
