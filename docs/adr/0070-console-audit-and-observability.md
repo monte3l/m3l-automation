@@ -303,6 +303,130 @@ audit work. They are split to tracker row X7d; `run.cancel` remains the
 recorded deliberate absence ADR-0066 argued for, and
 `session.binding.select` overlaps X11's declared drill-down scope.
 
+## Update (2026-09-02, second) — all twelve kinds are wired; cancellation is un-deferred and the run report gains an address
+
+X7d wired the four kinds the Update above split out, taking the twelve
+declared in X7b from eight wired to twelve. Two of the four cost more than a
+route, and one reverses a decision recorded under ADR-0066. The original text
+stays as written, per this repo's dated-Update convention.
+
+### A run report had no address, so the console now owns the output directory
+
+`view.run.report` was never blocked on an endpoint. It was blocked on the
+console being unable to **locate** what it would serve.
+`Core.M3LRunReporter` writes to
+`<outputDir>/<runDirectoryName(startedAt)>/run-report.json`, where
+`startedAt` is the **child's own clock** — a value the console never observes
+and cannot reconstruct, since its own `started_at_ms` is written by the
+orchestrator around the spawn rather than by the child. Every
+console-launched run also shared one `data/output` tree, so even the right
+timestamp directory could not be attributed back to a run id.
+
+The run id is the only handle both sides agree on. So the console now pins
+`M3L_OUTPUT_DIR` per run, to `<runs output root>/<run id>`, and reads the
+report back from the single timestamp directory beneath it. Three
+consequences a later reader must not have to rediscover:
+
+- **Console-launched runs no longer write into the shared `data/output`.**
+  Per-run isolation is not a side benefit here — it is the mechanism that
+  makes the report addressable at all.
+- **`m3l.console.runs.output.root` is a SIBLING** of the session-artifact and
+  audit roots, never a child of either. A spawned script owns everything
+  beneath its own per-run directory, so no other subsystem's data may sit in
+  a tree a script can write to. Same rule, same reason, as the artifact/audit
+  split this ADR already made.
+- **An ADR-0054 in-process run has no report to serve.** A hosted command
+  runs inside the console's own process, `Core.M3LPaths` snapshots the output
+  directory at construction, and there is no per-call seam to hand it a
+  per-run one; mutating `process.env` for one run would leak into every
+  other. Those runs 404, and that asymmetry is documented on the route rather
+  than hidden behind a distinct error code.
+
+Nothing prunes the per-run directories. Same posture as session artifacts,
+same eventual owner — X8's retention regime.
+
+### The "No cancellation route" absence is REVERSED
+
+`docs/reference/console.md` listed **"No cancellation route"** under Known
+limits, on ADR-0066's reading that cancellation described the contract's
+eventual shape rather than anything the server answers. That bullet is
+removed. `POST /api/v1/runs/:id/cancel` ships.
+
+The reversal was cheap, and the reason is worth recording because the tracker
+row said otherwise. X7d's row claimed `run.cancel` "needs child-process kill
+plus queue eviction". Child-process kill **already existed** —
+`M3LRunOrchestrator.cancel` aborted an active run, the executor already
+escalated `SIGTERM` to `SIGKILL`, and a `run.cancelled` audit entry was
+already written. Queue eviction was near-free too: `onQueueTimeout` was
+already the exact sequence, and is now factored into one `abandonQueuedRun`
+both paths call. Re-deriving the claim before planning around it is what kept
+this a small change; the row's own text would have justified a much larger
+one.
+
+Two properties of the shipped route belong here rather than only in the
+reference page:
+
+- **The two branches are asymmetric on purpose.** An ACTIVE run is only
+  aborted — its own completion continuation still owns the terminal write,
+  and racing it would produce two finish records for one run. A QUEUED run
+  **is** the terminal write, through `abandonQueued`'s guarded
+  `queued → interrupted` transition, never `claimForStart`-then-`finish`: a
+  run that never executed must never be given a fabricated `started_at_ms`.
+- **No new run status and no migration.** Both branches land on the existing
+  terminal `interrupted`, the same status a signal death or a crash-recovery
+  reconcile produces.
+
+`ERR_CONSOLE_RUN_NOT_CANCELLABLE` (409) is new, and deliberately distinct
+from `ERR_CONSOLE_RUN_NOT_FOUND` (404): collapsing them would make a run that
+finished a second before the request indistinguishable from a typo'd id.
+
+### `session.binding.select` shipped its SERVER seam; X11 keeps the UI
+
+The Update above deferred this kind on the grounds that it "overlaps X11's
+declared drill-down scope". Re-derived against the tree, that overlap was
+partial: X11 is a **UI** row, and no server route created a binding —
+bindings existed only as a side effect of `POST …/sessions/:id/steps`. X11
+would have had to build the endpoint before it could build anything.
+
+So `POST /api/v1/sessions/:id/bindings` lands here and X11 is **not**
+re-scoped: the JSON tree viewer, the pre-filled next operation, the decision
+prompts and the canonical SQS Playwright acceptance all remain X11's. X11
+starts from an endpoint that exists instead of building one first.
+
+### What the trail carries for the four new kinds
+
+All four obey the display-vs-persist split the Decision states, and the two
+non-obvious calls are recorded so a later reader does not read them as
+oversights:
+
+| Kind                     | Phase    | Target      | Carries                                                                             |
+| ------------------------ | -------- | ----------- | ----------------------------------------------------------------------------------- |
+| `run.cancel`             | `before` | the run     | posture pinned `confirmed` — the route takes no body, so the request IS the gesture |
+| `view.run.report`        | `after`  | the run     | the run id only; never the report                                                   |
+| `view.session.artifact`  | `after`  | the step    | the session id in `detail`; never the artifact                                      |
+| `session.binding.select` | `before` | the session | `parameterNames` only                                                               |
+
+The two `view.*` kinds are `phase: "after"` for the reason `view.run.stream`
+already was: each handler does its own not-found checks, so recording first
+would assert an operator saw something they did not. Both still refuse — the
+response body has not been written when a rejected append throws.
+
+`view.session.artifact` carries **no `parameterRefs`**, and
+`session.binding.select` carries **no reference**. In both cases the target
+already is the reference, and the only string that could have gone in those
+fields would have been one invented at the call site under a grammar nothing
+else uses. An audit field that reads like a real artifact reference and is
+not is worse than an absent one.
+
+### What X7d did not claim
+
+`parameterName` is still not persisted on a binding row —
+`console_session_bindings` has no column for it, and none was added. It
+reaches the audit trail; it does not reach the table. The per-run output
+directories have no retention story, and the report route does nothing for
+in-process runs. All three are stated in `docs/reference/console.md`'s Known
+limits.
+
 ## Links
 
 - Programme: [ADR-0064](./0064-m3l-console-programme.md). Store/index:
