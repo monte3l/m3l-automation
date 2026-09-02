@@ -29,6 +29,8 @@ import type { M3LHumanActionAuditPort } from "../src/audit/port.js";
 import type { M3LHumanActionRecord } from "../src/audit/record.js";
 import type { M3LConsoleRunsConfig } from "../src/config/runs.js";
 import { resolveHumanActionAuditRoot } from "../src/boot/human-action-audit.js";
+import { jsonResponse } from "../src/http/respond.js";
+import type { M3LRoute } from "../src/http/router.js";
 import { M3LConsoleError } from "../src/errors/console-error.js";
 import { createConsoleRuntime } from "../src/main.js";
 import type { M3LRunRegistry } from "../src/runs/registry.js";
@@ -294,15 +296,17 @@ function createRecordingAuditRepository(): {
   };
 }
 
-/** A body-bearing `IncomingMessage` double — an `EventEmitter` plus the `data`/`end` events `http/body.ts` listens on. */
-function createRunLaunchRequest(): IncomingMessage {
+/** The body every run-launch request double in this file posts. */
+const RUN_LAUNCH_BODY = JSON.stringify({ scriptName: "no-such-script" });
+
+/** A body-bearing `POST` `IncomingMessage` double aimed at `url` — an `EventEmitter` plus the `data`/`end` events `http/body.ts` listens on. */
+function createPostRequest(url: string, body: string): IncomingMessage {
   const req = new EventEmitter() as unknown as IncomingMessage & {
     destroy: () => void;
   };
-  const body = JSON.stringify({ scriptName: "no-such-script" });
   Object.assign(req, {
     method: "POST",
-    url: "/api/v1/runs",
+    url,
     headers: {
       host: "127.0.0.1",
       "content-type": "application/json",
@@ -379,7 +383,10 @@ describe("options.audit reaches the composed audit port", () => {
     });
 
     const { res, finished } = createRecordingServerResponse();
-    runtime.requestListener(createRunLaunchRequest(), res);
+    runtime.requestListener(
+      createPostRequest("/api/v1/runs", RUN_LAUNCH_BODY),
+      res,
+    );
     await withTimeout(finished, "requestListener never called res.end()");
 
     // The `"before"` entry, plus the compensating one the 404 produces —
@@ -407,10 +414,72 @@ describe("options.audit reaches the composed audit port", () => {
     });
 
     const { res, finished } = createRecordingServerResponse();
-    runtime.requestListener(createRunLaunchRequest(), res);
+    runtime.requestListener(
+      createPostRequest("/api/v1/runs", RUN_LAUNCH_BODY),
+      res,
+    );
     await withTimeout(finished, "requestListener never called res.end()");
 
     expect(port.records.length).toBeGreaterThan(0);
     expect(inserted).toStrictEqual([]);
+  });
+});
+
+// =============================================================================
+// The `options.routes` audit boundary (claim 2 of issue #834, X7c).
+//
+// The behaviour is UNCHANGED and correct; this locks it, because two OPPOSITE
+// regressions are possible and neither would fail any existing test:
+//
+//   * routing `options.routes` through `applyHumanActionAudit` would make the
+//     exhaustiveness guard throw at boot for every caller-supplied write
+//     route, breaking a documented seam; and
+//   * auditing them under some invented spec would record entries against a
+//     path template this console does not own.
+//
+// The route below is a WRITE (`POST`), which is what makes the test load
+// bearing — a `GET` passes the guard trivially, so it would prove nothing.
+// =============================================================================
+
+/** A synthetic caller-supplied write route — the same fixture `tests/main.test.ts` registers. */
+const echoRoute: M3LRoute = {
+  method: "POST",
+  path: "/api/v1/echo",
+  auth: "exempt",
+  handler: () => jsonResponse(200, { ok: true }),
+};
+
+describe("a write route registered through options.routes is served, but NOT audited", () => {
+  test("boot does not throw the exhaustiveness guard for a caller-supplied POST", () => {
+    // `applyHumanActionAudit` throws ERR_CONSOLE_INTERNAL for a non-GET route
+    // with no spec. It never sees this one — that is the boundary.
+    expect(() =>
+      createConsoleRuntime({
+        env: buildEnv(),
+        handlers: [new RecordingHandler()],
+        routes: [echoRoute],
+        auditPort: createFakePort(),
+      }),
+    ).not.toThrow();
+  });
+
+  test("it serves normally, and records no audit entry", async () => {
+    const port = createFakePort();
+    const runtime = createConsoleRuntime({
+      env: buildEnv(),
+      handlers: [new RecordingHandler()],
+      routes: [echoRoute],
+      auditPort: port,
+    });
+
+    const { res, status, finished } = createRecordingServerResponse();
+    runtime.requestListener(createPostRequest("/api/v1/echo", "{}"), res);
+    await withTimeout(finished, "requestListener never called res.end()");
+
+    // BOTH halves, in this order. Asserting only the empty trail would pass
+    // vacuously if the route were never reached at all — a 404 also records
+    // nothing. The 200 is what proves the route really served.
+    expect(status()).toBe(200);
+    expect(port.records).toStrictEqual([]);
   });
 });
