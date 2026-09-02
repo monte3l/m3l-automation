@@ -125,13 +125,39 @@ In **Settings → Branches → Branch protection rules**, add a rule for `main`:
     to review at all), or the latest verdict was `PASS` and only files that
     same ignore set matches changed since the reviewed commit, tracked via
     the `claude-review-sha` marker. Any reviewable change re-triggers a full
-    review. None of this weakens the fail-closed gate.
+    review. None of this weakens the fail-closed gate. A third, unrelated
+    skip case — the round limit below — is deliberately **not** included
+    here, since it writes `FAIL`, not `PASS`.
+
+    **Loop economics: delta re-review and the round bound.** When a
+    reviewable file changes after a prior `PASS` (the guard step's second
+    skip case above, just widened by one more file), the re-review reads
+    only a **delta patch** — `gh api .../compare/<reviewed-sha>...<head-sha>`
+    scoped to what changed since that `PASS` — instead of the whole PR diff,
+    plus the prior round's Must-fix list (empty on a clean `PASS`) so the
+    reviewer can confirm nothing regressed without re-reading already-passed
+    content. `bin/lib/pr-review-gate.mjs`'s `buildDeltaPatch()` reconstructs
+    this from GitHub's compare API into the same patch shape the ignore
+    filter and size gate already understand, so both apply unmodified; any
+    failure building the delta falls back to the full diff. This does **not**
+    apply to a re-review after a `FAIL` (the whole PR still needs re-checking
+    against the Re-review convergence rules, not just the delta) — only to a
+    PR that had already reached `PASS` and then changed again. Separately,
+    the guard step counts how many `claude[bot]` review comments a PR has
+    already accumulated; at `MAX_REVIEW_ROUNDS` (currently 3 — see the job
+    env comment in `claude-pr-review.yml`) a would-be next round is replaced
+    with a `FAIL` verdict and a PR comment pointing at the override procedure
+    below, instead of running another automated review. Model and effort
+    (`--effort medium`, unchanged from a first-pass review) are deliberately
+    **not** stepped down further for either the delta or round-bound path —
+    see the workflow's `claude_args` comment and
+    `docs/research/pr-review-action-tuning.md` for why.
 
     A separate, non-blocking step logs run metrics (turns used against the
     cap, wall/API duration, cost, prompt-cache read/write tokens, reviewable
-    diff size, and **which** tools hit permission denials) to the run's step
-    summary and annotations — purely for tuning, with no effect on the
-    verdict.
+    diff size, review mode — full or delta — and **which** tools hit
+    permission denials) to the run's step summary and annotations — purely
+    for tuning, with no effect on the verdict.
 
   - **CodeQL code scanning** — added as a required check under ADR-0015 so a
     high-severity SAST finding blocks the merge. CodeQL runs via GitHub
@@ -224,6 +250,38 @@ independently configured layer means one mechanism being disabled or
 misconfigured again doesn't leave `main` unprotected. Manage both when
 changing policy: a rule added to only one layer is not authoritative on its
 own.
+
+## Overriding a disputed finding
+
+Formalizes the ad hoc path used on PR #723. Both protection layers have
+`bypass_actors: []` — no one, including the maintainer, can skip the `review`
+check by configuration, so a finding the reviewer got wrong (or a Must-fix
+you disagree should block, per REVIEW.md's severity tiers — only Must-fix
+blocks) cannot be waved through by re-running the bot or editing branch
+protection:
+
+1. **Investigate the disputed finding** against the actual diff/source —
+   confirm whether it's a false positive (a wrong claim) or a real finding
+   whose severity you disagree with.
+2. **Reply to the bot's PR comment thread with the evidence** — the specific
+   `file:line`, and why the finding doesn't hold or isn't actually
+   blocking. This is the record for whoever merges past the `FAIL`, and for
+   anyone reading the PR history later.
+3. **A human with admin/bypass rights merges the PR** despite the failing
+   `review` check — the only way past it, since `bypass_actors` is empty for
+   every automated actor — and **records the override rationale**, either in
+   the merge commit message or as a follow-up PR comment, so the decision is
+   traceable without re-reading the whole thread.
+
+This is a deliberately manual, low-frequency escape hatch, not a config
+toggle: a config-level bypass would weaken the fail-closed gate for every PR,
+not just the disputed one. It's also where the round-bound escalation above
+points once a PR stops converging after `MAX_REVIEW_ROUNDS` automated review
+rounds — after that many rounds without a `PASS`, the gate stops spending
+more turns/tokens and hands the PR to a human, who can either keep fixing or
+invoke this override. The `resolving-pr-comments` skill does not dispute
+findings on the user's behalf; it points here instead (see its Boundary
+rules).
 
 ## Why the verdict file, not just a comment
 

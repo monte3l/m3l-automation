@@ -11,7 +11,10 @@
 // Usage:
 //   node bin/pr-review-gate.mjs parse-verdict          # stdin (comment body) -> stdout: PASS|FAIL|NONE
 //   node bin/pr-review-gate.mjs parse-sha              # stdin (comment body) -> stdout: <sha> or empty
+//   node bin/pr-review-gate.mjs parse-must-fix          # stdin (comment body) -> stdout: raw Must-fix section, or empty
+//   node bin/pr-review-gate.mjs count-review-comments   # stdin (JSON array of comment bodies) -> stdout: count
 //   node bin/pr-review-gate.mjs workflow-gate-status    # stdin (newline-separated reviewable files) -> stdout: 2 lines
+//   node bin/pr-review-gate.mjs build-delta-patch       # stdin (compare-API JSON) -> stdout: synthetic unified diff, exit 1 if untrustworthy
 //   node bin/pr-review-gate.mjs resolve-verdict <file> <head-sha>  # -> stdout: PASS|FAIL|NONE, reason on stderr
 //
 // Exits 1 only on a usage error (missing argument) or an I/O failure reading
@@ -22,7 +25,10 @@ import { readFileSync } from "node:fs";
 import process from "node:process";
 
 import {
+  buildDeltaPatch,
+  countReviewComments,
   describeWorkflowGateChange,
+  parseMustFixSection,
   parseReviewedSha,
   parseVerdict,
   resolveVerdict,
@@ -55,6 +61,55 @@ async function main(argv) {
   if (mode === "parse-sha") {
     const sha = parseReviewedSha(await readStdin());
     process.stdout.write(`${sha ?? ""}\n`);
+    return 0;
+  }
+
+  if (mode === "parse-must-fix") {
+    const section = parseMustFixSection(await readStdin());
+    process.stdout.write(section ?? "");
+    return 0;
+  }
+
+  if (mode === "count-review-comments") {
+    let bodies;
+    try {
+      bodies = JSON.parse(await readStdin());
+    } catch (error) {
+      process.stderr.write(
+        `pr-review-gate: invalid JSON on stdin: ${String(error)}\n`,
+      );
+      return 1;
+    }
+    if (!Array.isArray(bodies)) {
+      process.stderr.write(
+        "pr-review-gate: count-review-comments expects a JSON array of strings on stdin\n",
+      );
+      return 1;
+    }
+    process.stdout.write(`${countReviewComments(bodies)}\n`);
+    return 0;
+  }
+
+  if (mode === "build-delta-patch") {
+    let parsed;
+    try {
+      parsed = JSON.parse(await readStdin());
+    } catch (error) {
+      process.stderr.write(
+        `pr-review-gate: invalid JSON on stdin: ${String(error)}\n`,
+      );
+      return 1;
+    }
+    const patch = buildDeltaPatch(parsed);
+    if (patch === null) {
+      process.stderr.write(
+        "pr-review-gate: compare-API response is not trustworthy as a complete delta " +
+          "(hit the file-count cap, or a file has a real change with no patch GitHub could " +
+          "explain) — caller should fall back to the full diff\n",
+      );
+      return 1;
+    }
+    process.stdout.write(patch);
     return 0;
   }
 
@@ -101,7 +156,8 @@ async function main(argv) {
 
   process.stderr.write(
     `pr-review-gate: unknown mode ${mode ?? "(none)"} — expected ` +
-      "parse-verdict, parse-sha, workflow-gate-status, or resolve-verdict\n",
+      "parse-verdict, parse-sha, parse-must-fix, count-review-comments, " +
+      "workflow-gate-status, build-delta-patch, or resolve-verdict\n",
   );
   return 1;
 }

@@ -1,11 +1,27 @@
-// Pure decision logic for `.github/workflows/claude-pr-review.yml`'s guard
-// and Enforce steps — extracted so the gate's own control flow is unit
-// tested instead of shipped on inference. Three historical fixes to this
-// workflow (#503, #504, #566) shipped without a test harness; two of them
-// broke production before being caught, and two PRs (#785, #806) that
+// Pure decision logic for `.github/workflows/claude-pr-review.yml`'s guard,
+// precompute, and Enforce steps — extracted so the gate's own control flow
+// is unit tested instead of shipped on inference. Three historical fixes to
+// this workflow (#503, #504, #566) shipped without a test harness; two of
+// them broke production before being caught, and two PRs (#785, #806) that
 // edited this very file merged with a *failing* required check because the
 // gate structurally cannot review changes to itself. See
 // bin/tests/pr-review-gate.test.ts and docs/research/pr-review-action-tuning.md.
+//
+// Also covers the loop-economics additions from PR 4 of that same effort:
+// parsing the prior round's Must-fix list (`parseMustFixSection`),
+// reconstructing a delta patch from GitHub's compare API
+// (`buildDeltaPatch`), and counting genuine review rounds among a PR's
+// claude[bot] comments (`countReviewComments`) — all feeding the
+// guard/precompute steps' scoped re-review and round-bound path.
+// `countReviewComments` exists as a pure function (not a bare `jq` filter
+// on `.user.login == "claude[bot]"`, which was the first cut) because
+// `claude-assistant.yml` responds to any `@claude` mention from any
+// commenter with NO actor allowlist, posting as the same `claude[bot]`
+// identity on the same PR thread — a login-only filter would let an
+// unrelated reply inflate (or, if the round-bound math ever inverted, help
+// evade) the round count. Filtering on "parses a `### Verdict` line" scopes
+// the count to what the guard step's own PASS/FAIL logic already treats as
+// a review, closing that gap without a GitHub-side actor-allowlist change.
 //
 // Mirrors bin/lib/pr-diff-filter.mjs's shape: a pure lib module, consumed by
 // a thin CLI wrapper (bin/pr-review-gate.mjs) the workflow shells out to.
@@ -28,6 +44,17 @@ const REVIEW_SHA_RE = /<!--\s*claude-review-sha:\s*([0-9a-f]+)\s*-->/gi;
  * optionally followed by whitespace and a commit SHA. */
 const VERDICT_FILE_RE = /^(PASS|FAIL)(?:\s+([0-9a-f]{7,40}))?$/i;
 
+/** Matches the `### Must-fix` section's body, up to the next `###` heading or
+ * the trailing `claude-review-sha` HTML comment (whichever comes first) —
+ * mirrors REVIEW.md's Output format section, which the workflow prompt
+ * restates verbatim. */
+const MUST_FIX_SECTION_RE =
+  /###\s*Must-fix\s*\n+([\s\S]*?)(?=\n###\s|\n<!--|$)/i;
+
+/** Matches the placeholder REVIEW.md's Output format section specifies for
+ * an empty tier — case-insensitive, tolerant of surrounding whitespace. */
+const EMPTY_SECTION_RE = /^_none\._$/i;
+
 /**
  * The verdict (`PASS`/`FAIL`) stated under a review comment's `### Verdict`
  * heading, or `null` if no parseable verdict line exists.
@@ -41,6 +68,23 @@ export function parseVerdict(body) {
 }
 
 /**
+ * How many of the given `claude[bot]` comment bodies parse as an actual
+ * review verdict (contain a `### Verdict` bullet) — used to bound the
+ * review-round count so an unrelated `claude[bot]` comment on the same PR
+ * thread (e.g. a `claude-assistant.yml` reply to an `@claude` mention from
+ * any commenter, which carries no actor allowlist) can never inflate it.
+ * Every body is checked independently with {@link parseVerdict}, so this is
+ * equivalent to `bodies.filter((b) => parseVerdict(b) !== null).length`
+ * spelled out as its own named operation for the guard step's CLI call.
+ *
+ * @param {string[]} bodies
+ * @returns {number}
+ */
+export function countReviewComments(bodies) {
+  return bodies.filter((body) => parseVerdict(body) !== null).length;
+}
+
+/**
  * The `claude-review-sha` marker's value — the LAST occurrence in `body`, or
  * `null` if none is present.
  *
@@ -50,6 +94,25 @@ export function parseVerdict(body) {
 export function parseReviewedSha(body) {
   const matches = [...body.matchAll(REVIEW_SHA_RE)];
   return matches.length === 0 ? null : matches[matches.length - 1][1];
+}
+
+/**
+ * The raw `### Must-fix` section body from a review comment, or `null` when
+ * the section is missing or reads the empty-tier placeholder (`_None._`).
+ * Used to feed a delta re-review the prior round's outstanding Must-fix
+ * items, so the reviewer can confirm each is resolved without re-reading the
+ * whole PR — see the "Delta patch on re-review" step in
+ * `claude-pr-review.yml`'s guard step.
+ *
+ * @param {string} body Full PR-comment body.
+ * @returns {string | null}
+ */
+export function parseMustFixSection(body) {
+  const match = MUST_FIX_SECTION_RE.exec(body);
+  if (match === null) return null;
+  const content = match[1].trim();
+  if (content === "" || EMPTY_SECTION_RE.test(content)) return null;
+  return content;
 }
 
 /**
@@ -167,4 +230,88 @@ export function resolveVerdict(fileContent, headSha) {
         ? `${verdict} (unstamped — workflow-authored, trusted for this commit).`
         : `${verdict} (stamped for ${sha}, matches head).`,
   };
+}
+
+/**
+ * @typedef {object} CompareApiFile
+ * @property {string} filename
+ * @property {string} [previous_filename] Present only when `status` is
+ *   `"renamed"`.
+ * @property {"added" | "removed" | "modified" | "renamed" | "copied" | "changed" | "unchanged"} [status]
+ * @property {number} [changes] `additions + deletions`; `0` means nothing
+ *   textual changed (e.g. a pure rename or a mode-only change).
+ * @property {string} [patch] Unified-diff hunks for this file, absent for a
+ *   binary file or one over GitHub's per-file patch size cap.
+ */
+
+/**
+ * @typedef {object} CompareApiResponse
+ * @property {CompareApiFile[]} [files]
+ */
+
+/** GitHub's documented cap on the compare API's `files[]` array — beyond
+ * this many changed files, the response silently omits the rest with no
+ * truncation flag to detect it by. A delta whose file count reaches this
+ * cap can never be trusted as the complete change set. */
+const COMPARE_API_FILE_CAP = 300;
+
+/**
+ * Reconstruct a synthetic unified-diff patch from a GitHub compare-API
+ * response (`GET /repos/{owner}/{repo}/compare/{base}...{head}`), in the
+ * same `diff --git a/x b/x` / `--- a/x` / `+++ b/x` shape
+ * `bin/lib/pr-diff-filter.mjs`'s patch-splitting regex expects — so the
+ * delta-review path (a scoped compare against the prior PASS's commit,
+ * instead of the full PR diff) can reuse that filter and the reviewable-size
+ * measurement unmodified. Added/removed files get a `/dev/null` side
+ * (matching real diff output); a renamed file's header names both the old
+ * and new path.
+ *
+ * Returns `null` — instead of a patch string — whenever the response cannot
+ * be trusted to represent the complete delta:
+ * - the file list hits {@link COMPARE_API_FILE_CAP}, or
+ * - any file has a confirmed-or-unknown content change (`changes` is a
+ *   positive number, or `changes` is missing/non-numeric) but no `patch`
+ *   field — GitHub withheld real diff content (binary, or over its
+ *   per-file patch size cap) that this function cannot safely paper over
+ *   with a placeholder: the reviewer would never see it, and the
+ *   reviewable-byte size gate would never catch it either, since the
+ *   placeholder is tiny. A placeholder is only ever emitted when `changes`
+ *   positively confirms nothing textual changed (`=== 0`).
+ *
+ * The caller (the precompute step in `claude-pr-review.yml`) falls back to
+ * the full, untruncated `gh pr diff` on a `null` return — a delta review is
+ * an optimization the gate can always decline, never a requirement it can
+ * silently under-deliver.
+ *
+ * @param {CompareApiResponse} compareResponse Parsed JSON response body.
+ * @returns {string | null}
+ */
+export function buildDeltaPatch(compareResponse) {
+  const files = compareResponse.files ?? [];
+  if (files.length >= COMPARE_API_FILE_CAP) return null;
+
+  const blocks = [];
+  for (const file of files) {
+    const oldName =
+      file.status === "renamed" && typeof file.previous_filename === "string"
+        ? file.previous_filename
+        : file.filename;
+    const fromPath = file.status === "added" ? "/dev/null" : `a/${oldName}`;
+    const toPath =
+      file.status === "removed" ? "/dev/null" : `b/${file.filename}`;
+    const header = `diff --git a/${oldName} b/${file.filename}\n--- ${fromPath}\n+++ ${toPath}`;
+
+    if (typeof file.patch === "string" && file.patch.length > 0) {
+      blocks.push(`${header}\n${file.patch}`);
+      continue;
+    }
+    if (file.changes === 0) {
+      blocks.push(
+        `${header}\n(diff omitted — GitHub's compare API reported no content change for this file)`,
+      );
+      continue;
+    }
+    return null;
+  }
+  return blocks.join("\n");
 }

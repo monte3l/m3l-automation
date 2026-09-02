@@ -463,6 +463,106 @@ The durable conclusion is not about byte counts: a module of this size did not
 converge under repeated review, and the constraint has to shape authoring rather
 than be discovered at merge time.
 
+## Addendum (2026-09-02) — the `--allowedTools` probe table targets the wrong artifact
+
+> Written for PR 4 of the claude-pr-review.yml + resolving-pr-comments mechanics
+> revision, re-probing the P1-P12 assumptions (measured on Claude Code 2.1.237)
+> against "the currently-pinned CLI version" per the plan. That framing turned
+> out to be the thing worth correcting.
+
+### `.claude-code-version` does not govern this workflow
+
+`.claude-code-version` (currently `2.1.251`) is the single authority for
+`skill-evals.yml` and `maintain-scan.yml`'s `npm install -g` steps
+(`check:claude-cli-version` enforces this) — it has **no relationship** to
+`claude-pr-review.yml`. That workflow runs
+`anthropics/claude-code-action@a874e9ecd7bb36efdad65429c6b35815f5a08f10`, a
+pinned **action commit**, not a CLI version. Fetching that commit's
+`package.json` (`gh api repos/anthropics/claude-code-action/contents/package.json?ref=a874e9ec...`)
+shows it depends on `@anthropic-ai/claude-agent-sdk@^0.3.251` — a different
+npm package, on a different version scheme (0.x, not 2.x), resolved by caret
+range rather than pinned exactly. There is no direct mapping from that SDK
+version to a `claude` CLI version number, and the addendum-c note this
+addendum updates ("the action pinned in the workflow installs 2.1.233") was
+itself already describing a _different_ artifact than `.claude-code-version`
+ever tracked — it was simply never named as such. **Re-probing "the
+currently-pinned CLI version" for this specific workflow is not something a
+local `npx @anthropic-ai/claude-code@<version>` invocation can do precisely**,
+because the actual runtime is the Agent SDK inside the action, not the CLI
+package the probes below install.
+
+### Local probes against 2.1.251 found a new blocking behavior — that production evidence contradicts
+
+Probed anyway, since 2.1.251 (this repo's closest exact, reproducible pin) is
+a reasonable proxy and the redirect-target mechanics (Edit/Write grants,
+`$VAR` non-expansion) are SDK-wide, not action-specific. Four `Edit()`-granted
+write-redirect probes were run via `npx @anthropic-ai/claude-code@2.1.251 -p
+... --safe-mode --allowedTools ...`, in an isolated scratch repo:
+
+| Probe                                                              | Result                                                                                                                                                                                    |
+| ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `echo -n x > ./out1.txt`, `Edit(./out1.txt)`                       | **Denied** — "flagged `out1.txt` as a sensitive file"                                                                                                                                     |
+| `echo -n x > ./out3.txt`, `Edit(./out3.txt)` (with `--safe-mode`)  | **Denied** — same message, `--safe-mode` made no difference                                                                                                                               |
+| `echo -n 'PASS ...' > ./.claude-review-verdict`, matching `Edit()` | **Denied** (and, without review context, the model self-refused on semantic grounds before even attempting the call — a distinct, prompt-design confound, not a permission-system signal) |
+| `echo -n hello > ./scratch-data.json`, `Edit(./scratch-data.json)` | **Denied** — same "sensitive file" message, on a maximally generic filename                                                                                                               |
+
+Every write-redirect probe was denied — including one with a deliberately
+bland filename, which rules out a narrow "looks-like-a-secret" classifier and
+points at something closer to a blanket new confirmation gate on write
+redirects in non-interactive (`-p`, no TTY) execution. **This directly
+contradicts live production evidence**: PR #871 (this same 4-PR effort's
+third PR, skill-files-only — not eligible for the auto-pass path below, since
+it never touched `claude-pr-review.yml` itself) landed with the `review`
+check reporting `PASS` after a ~2m26s run, consistent with a genuine live
+review rather than an instant auto-pass, meaning `claude-code-action`
+successfully wrote `.claude-review-verdict` via the exact same
+`Edit(./.claude-review-verdict)` grant shape, recently, under whatever SDK
+version is currently live. (PR #855 and #860 also landed with `review: PASS`,
+but both touched the workflow file itself, so per this file's own auto-pass
+mechanism their `PASS` may have come from that path rather than a live
+verdict write — weaker corroborating evidence, not cited as primary.)
+
+The most likely explanation is a genuine behavioral divergence between the
+plain `claude` CLI's non-interactive permission handling (what these probes
+exercise) and the Agent SDK's execution path inside `claude-code-action`
+(what production actually runs) — not a regression in the action itself.
+This could not be resolved further without instrumenting the action's actual
+run, which is out of scope here.
+
+### The compound-command probe was inconclusive, and likely irrelevant
+
+`cat sample.txt && grep line sample.txt` with only `Bash(cat:*)` granted ran
+with zero denials — but this doesn't isolate the changelog's
+"compound-command matching" fix, because `grep` (like `head`/`tail`) was
+already established as an auto-approved read-only builtin in the original P9
+probe, with or without an explicit grant. A test that would actually isolate
+compound-command matching needs two commands that both individually require
+grants, with only one granted — not attempted here given the scoping finding
+above made it moot: `claude-pr-review.yml`'s prompt never asks the model to
+run a compound (`&&`/`;`-joined) command in the first place (every permitted
+action — `echo -n ... > ./.claude-review-verdict`, `gh pr comment ...`,
+`gh pr diff ...` — is a single atomic command), so this fix class has no
+surface to regress against here regardless of the answer.
+
+### Recommendation: stop re-probing locally, read the metrics step instead
+
+Given the artifact mismatch above, a local CLI probe cannot speak precisely
+to `claude-code-action`'s actual permission behavior — and the workflow
+already has a strictly better, always-current signal for the exact question
+these probes exist to answer. The metrics step (`Log Claude review metrics`)
+already reports **which** tools were denied on every real run, from the
+result entry's `permission_denials` array, to the job's step summary. Recent
+runs (PRs #855/#860/#871) show zero denials. **Future re-probing of this
+question should read recent `claude-pr-review.yml` run summaries
+(`gh run view <id> --log` / the step-summary table) rather than re-running
+local CLI probes against a version number that was never the right target.**
+This addendum's own probe table above is kept for the negative result (a
+locally-reproducible new confirmation gate on write-redirects worth watching
+for elsewhere), not as evidence about this workflow specifically.
+
+No new sources — this addendum is a methodology correction and a set of
+local operational observations, not new official guidance.
+
 ## Sources
 
 - S1: Claude Code GitHub Actions docs — <https://code.claude.com/docs/en/github-actions> (docs)

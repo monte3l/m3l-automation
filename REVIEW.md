@@ -94,6 +94,15 @@ one-line fix doesn't reach round seven on style alone:
   — report them as a single count in the summary line, not as bullets.
 - If all prior Must-fix items are resolved and no new Must-fix items exist,
   the verdict is PASS even if unaddressed nits remain.
+- On a delta re-review (a prior PASS, then a further reviewable change) the
+  patch covers only what changed since that PASS, not the whole PR — the
+  prior round's outstanding Must-fix items (empty on a clean PASS) are
+  provided separately so the reviewer confirms each is still resolved
+  without re-deriving already-passed content. A re-review after a FAIL still
+  reads the whole PR; delta review only applies once a PR has already
+  reached PASS. After `MAX_REVIEW_ROUNDS` rounds without converging, the
+  loop stops running further reviews and hands off to a human instead — see
+  `docs/contributing/branch-protection.md`'s override procedure.
 
 ## Where this is enforced
 
