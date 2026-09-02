@@ -31,6 +31,11 @@ data/console/
 # Git worktrees created by `claude --worktree` / isolated spokes (nested checkouts)
 .claude/worktrees/
 
+# Claude Code's native scheduled-tasks lock file (per-session, machine-local).
+# Was previously ignored only via a local, uncommitted `.git/info/exclude`
+# entry, so it showed up as untracked in a fresh clone or worktree.
+.claude/scheduled_tasks.lock
+
 # Local scratch/working directory: untracked operator source material read
 # while authoring presets, plus hook-written ephemeral state (e.g.
 # write-compact-handoff.mjs's tmp/compact-handoff.json, ADR-0078). Never

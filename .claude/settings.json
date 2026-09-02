@@ -64,6 +64,7 @@
     ]
   },
   "availableModels": ["fable", "opus", "sonnet", "haiku"],
+  "preferredNotifChannel": "terminal_bell",
   "statusLine": {
     "type": "command",
     "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/statusline-context-pressure.mjs\""
