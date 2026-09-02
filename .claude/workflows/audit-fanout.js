@@ -6,12 +6,19 @@
 // inline in the digest under a hard size cap — Explore holds no write tool
 // and guard-readonly-bash.mjs blocks every shell write route, so nothing here
 // touches the filesystem), then adversarially verify each GAP/INCONSISTENCY
-// finding with an independent refute agent following the security-reviewer
-// refute-mode pattern. The hub keeps the judgment half: aggregation,
-// clarifying questions, and plan mode (see .claude/skills/auditing/SKILL.md).
-// The tier pins below are enforced against the MODEL-MATRIX workflow-script
-// rows by `pnpm check:workflows`, which also enforces the max-agents header
-// above (5 finders + 15 refuters = 20 <= 25).
+// finding with an independent `audit-refuter`-typed agent following the
+// security-reviewer refute-mode pattern. Both phases dispatch a typed
+// `agentType`, so guard-readonly-bash.mjs's read-only Bash block covers every
+// agent() call in this file — an earlier version left the Verify refuter
+// untyped, so it ran unguarded for mutating Bash despite the claim above; see
+// docs/adr/0025-dynamic-workflows-assessment.md for the history. The hub
+// keeps the judgment half: aggregation, clarifying questions, and plan mode
+// (see .claude/skills/auditing/SKILL.md). The tier pins are enforced against
+// the MODEL-MATRIX `agent` row for `audit-refuter` and the `workflow-script`
+// file-level row for this script by `pnpm check:workflows`, which also
+// enforces the max-agents header above (5 finders + 15 refuters = 20 <= 25;
+// see the ADR for why 25 stays the ceiling despite the Workflow tool's own
+// size-guideline default).
 //
 // Runtime contract (Workflow tool): agent/parallel/pipeline/phase/log/args/
 // budget are ambient globals, and the body runs inside an async function
@@ -47,10 +54,19 @@ const VERIFY_MAX = 15;
 // honestly unverified one.
 const MIN_VERIFY_TOKEN_BUDGET = 50_000;
 
-// Worst case 5 facets x REPORT_MAX_CHARS ~= 40 KB of hub context — bounded
-// and predictable, replacing the file-write indirection that never worked
-// under Explore's read-only tool grant (see the header comment above).
+// Per-facet digest bound: REPORT_MAX_CHARS for reportMarkdown plus up to
+// DIGEST_ITEMS_MAX items, each capped at ITEM_CLAIM_MAX_CHARS +
+// ITEM_PATH_MAX_CHARS. Worst case per facet is REPORT_MAX_CHARS +
+// DIGEST_ITEMS_MAX * (ITEM_CLAIM_MAX_CHARS + ITEM_PATH_MAX_CHARS) ~= 8000 +
+// 20 * 700 = 22 KB; worst case across 5 facets ~= 110 KB of hub context —
+// bounded and predictable, replacing the file-write indirection that never
+// worked under Explore's read-only tool grant (see the header comment
+// above). The prior comment ("worst case ~40 KB") counted reportMarkdown
+// only and ignored the then-unbounded items array.
 const REPORT_MAX_CHARS = 8000;
+const DIGEST_ITEMS_MAX = 20;
+const ITEM_CLAIM_MAX_CHARS = 400;
+const ITEM_PATH_MAX_CHARS = 300;
 
 const DIGEST_SCHEMA = {
   type: "object",
@@ -71,19 +87,23 @@ const DIGEST_SCHEMA = {
     },
     items: {
       type: "array",
+      maxItems: DIGEST_ITEMS_MAX,
       items: {
         type: "object",
         additionalProperties: false,
         required: ["type", "claim", "citedPath"],
         properties: {
           type: { type: "string", enum: ["GAP", "INCONSISTENCY"] },
-          claim: { type: "string" },
-          citedPath: { type: "string" },
+          claim: { type: "string", maxLength: ITEM_CLAIM_MAX_CHARS },
+          citedPath: { type: "string", maxLength: ITEM_PATH_MAX_CHARS },
         },
       },
     },
   },
 };
+
+const VERDICT_EVIDENCE_MAX_CHARS = 2000;
+const VERDICT_NOTE_MAX_CHARS = 500;
 
 const VERDICT_SCHEMA = {
   type: "object",
@@ -91,8 +111,8 @@ const VERDICT_SCHEMA = {
   required: ["verdict", "evidence"],
   properties: {
     verdict: { type: "string", enum: ["confirmed", "refuted"] },
-    evidence: { type: "string" },
-    note: { type: "string" },
+    evidence: { type: "string", maxLength: VERDICT_EVIDENCE_MAX_CHARS },
+    note: { type: "string", maxLength: VERDICT_NOTE_MAX_CHARS },
   },
 };
 
@@ -186,21 +206,61 @@ function refutePrompt(finding) {
   ].join("\n");
 }
 
+/**
+ * Spread up to `max` findings across `groups` round-robin (one per group per
+ * pass) rather than draining earlier groups first — a flat `slice(0, max)`
+ * over facet-ordered findings starves later facets of verification entirely
+ * whenever earlier facets alone exceed the budget, which measured production
+ * runs show happening on every 5-facet audit. Each group keeps its own
+ * internal order; only the interleaving changes.
+ *
+ * @param {{facet: string}[][]} groups
+ * @param {number} max
+ * @returns {{ selected: object[], remainder: object[] }}
+ */
+function allocateRoundRobin(groups, max) {
+  const queues = groups.map((group) => [...group]);
+  const selected = [];
+  let tookAny = true;
+  while (selected.length < max && tookAny) {
+    tookAny = false;
+    for (const queue of queues) {
+      if (selected.length >= max) break;
+      if (queue.length === 0) continue;
+      selected.push(queue.shift());
+      tookAny = true;
+    }
+  }
+  return { selected, remainder: queues.flat() };
+}
+
 phase("Find");
 log(`audit-fanout: ${facets.length} facet(s) on "${topic}"`);
-const digests = (
-  await parallel(
-    facets.map(
-      (facet) => () =>
-        agent(findPrompt(facet), {
-          label: `find:${facet.slug}`,
-          phase: "Find",
-          agentType: "Explore",
-          schema: DIGEST_SCHEMA,
-        }),
-    ),
-  )
-)
+const rawDigests = await parallel(
+  facets.map(
+    (facet) => () =>
+      agent(findPrompt(facet), {
+        label: `find:${facet.slug}`,
+        phase: "Find",
+        agentType: "Explore",
+        schema: DIGEST_SCHEMA,
+      }),
+  ),
+);
+
+// A finder that returns null (stopped, unrecoverable API error) must not
+// vanish silently — the hub needs to know a facet was never audited, not
+// just infer it from a shorter facets[] array.
+const missingFacets = facets
+  .filter((facet, index) => !rawDigests[index])
+  .map((facet) => facet.name);
+if (missingFacets.length > 0) {
+  log(
+    `audit-fanout: ${missingFacets.length} facet(s) produced no finder digest — never audited: ${missingFacets.join(", ")}`,
+  );
+}
+
+const digests = rawDigests
   // parallel() preserves index alignment (nulls for dead thunks), so stamp
   // each digest's facet linkage from the input array rather than trusting the
   // agent's self-reported facet echo.
@@ -214,15 +274,19 @@ const digests = (
   )
   .filter(Boolean);
 
-const findings = digests.flatMap((digest) =>
+const findingsByFacet = digests.map((digest) =>
   digest.items.map((item) => ({
     ...item,
     facet: digest.facet,
   })),
 );
 
-let toVerify = findings.slice(0, VERIFY_MAX);
-const unverified = findings.slice(VERIFY_MAX);
+const { selected: allocated, remainder } = allocateRoundRobin(
+  findingsByFacet,
+  VERIFY_MAX,
+);
+let toVerify = allocated;
+const unverified = remainder;
 // budget.remaining() is Infinity when no target is set, so this naturally
 // never fires without a target — no need to gate on budget.total separately
 // (that gate was previously present but redundant with a hardcoded 50_000
@@ -239,28 +303,18 @@ if (unverified.length > 0) {
 }
 
 phase("Verify");
-// KNOWN GAP (2026-09-01 harness-refresh sweep, not a deliberate design
-// choice — flagging rather than guessing at a fix): this dispatch carries no
-// `agentType`, so the refuter is an untyped, roster-less agent — it inherits
-// no `disallowedTools: Agent` and sits outside `check:agents`' depth-1
-// no-nesting invariant (that gate only inspects `.claude/agents/*.md`
-// frontmatter). `Explore` is the closest-fitting typed spoke for this
-// read-only, investigative role, but this file has no prior art combining an
-// explicit `agentType` with an explicit `model`/`effort` override the way
-// this call already does — assigning one without confirming the two compose
-// safely at runtime risks silently changing verification behavior. Left
-// untyped and documented rather than guessed at; resolve by either verifying
-// the override composes correctly and pinning `agentType: "Explore"`, or by
-// dropping the explicit model/effort override and inheriting Explore's own
-// pin.
+// Dispatches as the dedicated `audit-refuter` spoke (.claude/agents/audit-refuter.md),
+// which pins claude-sonnet-5/medium in its own frontmatter — no inline
+// model/effort override needed, and no untyped agent left outside
+// check:agents' no-nesting invariant or guard-readonly-bash.mjs's read-only
+// Bash block. See the header comment for the history this closes.
 const verdicts =
   toVerify.length > 0
     ? await pipeline(toVerify, (finding) =>
         agent(refutePrompt(finding), {
           label: "verify",
           phase: "Verify",
-          model: "claude-sonnet-5",
-          effort: "medium",
+          agentType: "audit-refuter",
           schema: VERDICT_SCHEMA,
         }),
       )
@@ -299,6 +353,7 @@ return {
     reportMarkdown,
     counts,
   })),
+  missingFacets,
   confirmed,
   refuted,
   unverified,
