@@ -123,7 +123,17 @@ function canonicalizeForHash(value: unknown): unknown {
     return value.map(canonicalizeForHash);
   }
   if (typeof value === "object" && value !== null) {
-    const canonical: Record<string, unknown> = {};
+    // A plain `{}` literal inherits `Object.prototype`'s `__proto__`
+    // ACCESSOR, so assigning `canonical["__proto__"] = ...` would invoke
+    // that setter instead of creating an own property — the key is
+    // silently swallowed and `JSON.stringify` omits it, making two
+    // definitions that differ only in a nested `__proto__` field hash
+    // IDENTICALLY. A null-prototype object has no such accessor, so the
+    // assignment always creates a genuine own property.
+    const canonical: Record<string, unknown> = Object.create(null) as Record<
+      string,
+      unknown
+    >;
     for (const key of Object.keys(value).sort((left, right) =>
       left < right ? -1 : left > right ? 1 : 0,
     )) {
