@@ -324,6 +324,70 @@ describe("hashFlowDefinition — canonicality", () => {
   });
 });
 
+/**
+ * Copies `base` and defines `key` as a genuine own enumerable property.
+ * Needed for `__proto__`, which a plain object literal would treat as a
+ * prototype assignment rather than an own key — the very shape a step's
+ * `parameters` value can carry once it round-trips through `JSON.parse`.
+ */
+function withOwnKey(
+  base: Record<string, unknown>,
+  key: string,
+  value: unknown,
+): Record<string, unknown> {
+  const record: Record<string, unknown> = { ...base };
+  Object.defineProperty(record, key, {
+    value,
+    enumerable: true,
+    configurable: true,
+    writable: true,
+  });
+  return record;
+}
+
+describe("hashFlowDefinition — prototype-pollution canonicalization", () => {
+  test("two definitions differing only under a nested __proto__ key hash differently", () => {
+    // A plain `{}` accumulator's inherited `__proto__` SETTER would silently
+    // swallow `canonical["__proto__"] = …` instead of creating an own
+    // property, so `JSON.stringify` would omit it and these two definitions
+    // — which differ only in a value nested under a genuine own `__proto__`
+    // key — would collapse to the identical digest. `Object.create(null)` is
+    // what keeps the assignment a real own property instead.
+    const withoutPollution = buildStep("dump", {
+      parameters: { command: "dump", output: "o.jsonl" },
+    });
+    const polluted = buildStep("dump", {
+      parameters: withOwnKey(
+        { command: "dump", output: "o.jsonl" },
+        "__proto__",
+        { payload: 1 },
+      ),
+    });
+    expect(Object.hasOwn(polluted.parameters, "__proto__")).toBe(true);
+
+    const first = hashFlowDefinition(
+      buildDefinition({ steps: [withoutPollution] }),
+    );
+    const second = hashFlowDefinition(buildDefinition({ steps: [polluted] }));
+
+    expect(first).not.toBe(second);
+  });
+
+  test("a definition with no dangerous key still hashes stably across two calls", () => {
+    // Guards against the null-prototype accumulator perturbing ordinary
+    // hashing: a ho-hum definition must still be perfectly reproducible.
+    const definition = buildDefinition({
+      steps: [
+        buildStep("dump", {
+          parameters: { command: "dump", output: "o.jsonl" },
+        }),
+      ],
+    });
+
+    expect(hashFlowDefinition(definition)).toBe(hashFlowDefinition(definition));
+  });
+});
+
 describe("hashFlowDefinition — semantic sensitivity", () => {
   const baseline = hashFlowDefinition(buildDefinition());
 

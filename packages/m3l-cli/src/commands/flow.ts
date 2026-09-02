@@ -17,6 +17,12 @@
  * ignored: a user who typed it would otherwise get a full re-run from step one
  * while believing they had resumed.
  *
+ * **Every extra argument is REJECTED, never dropped.** `--dry-run=false` and
+ * `--json=false` do not disable the flag they name — a value-bearing form of
+ * either boolean flag is a usage error — and a surplus positional
+ * (`flow run a b`, `flow list extra`) is a usage error too. Silently ignoring
+ * either would make a misunderstood invocation look like it worked.
+ *
  * @packageDocumentation
  */
 
@@ -93,9 +99,15 @@ function flagName(token: string): string {
  * `new`/`completion`), so it must be TOLERATED here, never treated as
  * unknown.
  *
+ * `--dry-run` and `--json` are boolean SWITCHES, not value-bearing options:
+ * only the bare token enables one. `--dry-run=false` is REFUSED rather than
+ * matched loosely and coerced to `true` — a caller who wrote `=false`
+ * expecting a real run must see a usage error, not a silent dry run.
+ *
  * @param rawArgs - The raw post-command argument slice.
- * @returns The parsed positionals and flags, or the offending flag name when
- *   an unrecognized flag was given.
+ * @returns The parsed positionals and flags, or the offending flag token when
+ *   an unrecognized flag — or a value-bearing form of a boolean flag — was
+ *   given.
  */
 function parseFlowArgs(
   rawArgs: readonly string[],
@@ -109,14 +121,21 @@ function parseFlowArgs(
       positionals.push(token);
       continue;
     }
-    const name = flagName(token);
-    if (name === DRY_RUN_FLAG) {
+    if (token === DRY_RUN_FLAG) {
       dryRun = true;
-    } else if (name === JSON_FLAG) {
-      json = true;
-    } else {
-      return { unknownFlag: name };
+      continue;
     }
+    if (token === JSON_FLAG) {
+      json = true;
+      continue;
+    }
+    const name = flagName(token);
+    // A value-bearing form of a boolean flag (`--dry-run=false`) is reported
+    // with the FULL token, not the stripped name, so the offending `=value`
+    // is visible in the error rather than swallowed like a recognized flag.
+    return {
+      unknownFlag: name === DRY_RUN_FLAG || name === JSON_FLAG ? token : name,
+    };
   }
   return { positionals, dryRun, json };
 }
@@ -134,23 +153,39 @@ function isUnknownFlag(
 }
 
 /**
- * Reports an unrecognized flag as a usage error, naming `--resume`
- * specifically so a user who reached for it learns it is not yet a thing
- * rather than merely that it is unknown.
+ * Reports an unrecognized flag — or a value-bearing form of a boolean flag —
+ * as a usage error, naming `--resume` and a misused `--dry-run`/`--json`
+ * specifically so a user who reached for either learns exactly what is wrong
+ * rather than merely that something is unknown.
  *
  * @param context - The command context, for the writer facade.
- * @param flag - The offending flag name.
+ * @param flag - The offending flag token, as returned by
+ *   {@link parseFlowArgs} — stripped of any `=<value>` suffix, except when the
+ *   value-bearing form itself is the defect, in which case it is passed
+ *   whole.
  * @returns The usage exit code.
  */
 function reportUnknownFlag(
   context: M3LCliCommandContext,
   flag: string,
 ): number {
-  context.output.error(
-    flag === RESUME_FLAG
-      ? `m3l flow does not accept ${RESUME_FLAG} yet — resuming a flow run is not part of this release`
-      : `unknown flag '${flag}' — m3l flow run accepts ${DRY_RUN_FLAG} and ${JSON_FLAG}`,
-  );
+  const baseName = flagName(flag);
+  if (baseName === RESUME_FLAG) {
+    context.output.error(
+      `m3l flow does not accept ${RESUME_FLAG} yet — resuming a flow run is not part of this release`,
+    );
+  } else if (
+    flag !== baseName &&
+    (baseName === DRY_RUN_FLAG || baseName === JSON_FLAG)
+  ) {
+    context.output.error(
+      `${baseName} does not take a value — write ${baseName} alone, not '${flag}'`,
+    );
+  } else {
+    context.output.error(
+      `unknown flag '${flag}' — m3l flow run accepts ${DRY_RUN_FLAG} and ${JSON_FLAG}`,
+    );
+  }
   return USAGE_EXIT_CODE;
 }
 
@@ -384,7 +419,7 @@ export async function runFlowCommand(
   }
   const json = parsed.json || context.jsonOutput;
 
-  const [subcommand, name] = parsed.positionals;
+  const [subcommand, ...rest] = parsed.positionals;
   if (subcommand === undefined || !SUBCOMMANDS.includes(subcommand)) {
     context.output.error(
       subcommand === undefined
@@ -394,11 +429,24 @@ export async function runFlowCommand(
     return USAGE_EXIT_CODE;
   }
   if (subcommand === "list") {
+    if (rest.length > 0) {
+      context.output.error(
+        `m3l flow list does not accept a positional argument — got '${rest.join(" ")}', usage: m3l flow list`,
+      );
+      return USAGE_EXIT_CODE;
+    }
     return runFlowList(context, json);
   }
+  const [name, ...surplus] = rest;
   if (name === undefined) {
     context.output.error(
       `m3l flow run requires a <name> positional — usage: m3l flow run <name> [${DRY_RUN_FLAG}] [${JSON_FLAG}]`,
+    );
+    return USAGE_EXIT_CODE;
+  }
+  if (surplus.length > 0) {
+    context.output.error(
+      `m3l flow run accepts only one <name> positional — got surplus '${surplus.join(" ")}', usage: m3l flow run <name> [${DRY_RUN_FLAG}] [${JSON_FLAG}]`,
     );
     return USAGE_EXIT_CODE;
   }
