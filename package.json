@@ -110,6 +110,7 @@
     "branch:cleanup": "node bin/branch-cleanup.mjs",
     "spoke:recover": "node bin/spoke-recovery.mjs",
     "telemetry:sessions": "node bin/session-telemetry.mjs",
+    "session:launch": "node bin/claude-launch.mjs",
     "prepare": "lefthook install && node bin/install-merge-drivers.mjs"
   },
   "devDependencies": {
