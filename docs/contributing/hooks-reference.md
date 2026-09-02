@@ -83,9 +83,11 @@ only surfaces context back to Claude. The remaining ten advisory hooks
 (`guard-worktree-ready`, `reinject-compact-handoff`, `warn-host-resources`,
 `warn-node-version`, `rotate-session-incidents`, `write-compact-handoff`,
 `inject-decision-gate`, `guard-writer-dispatch-journal`,
-`detect-spoke-truncation`, `remind-sync-docs`) exit 0 and inject their
-message via stdout/JSON instead —
-their events (`SessionStart`, `PreCompact`, `UserPromptSubmit`,
+`detect-spoke-truncation`, `remind-sync-docs`) exit 0, optionally injecting
+a message via stdout/JSON when there is something worth reporting —
+`rotate-session-incidents` is silent even on a successful rotation, since it
+never has anything to report. Their events (`SessionStart`,
+`PreCompact`, `UserPromptSubmit`,
 `PreToolUse: Agent`, `SubagentStop`, `Stop`) have no "already happened"
 tool call for exit 2 to react to.
 
