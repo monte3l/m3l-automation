@@ -147,12 +147,34 @@ status`/`git diff`, re-run `tsc`/`eslint`/`vitest`/coverage) before deciding
   genuinely unfinished; six separate sessions confirmed the
   report-cut-off-but-work-done case is at least as common as the
   work-cut-off case.
-- **Review spokes return a bounded digest**, not an open-ended report — long
-  findings spill to a scratchpad file; the return is a capped Must-fix/
-  Should-fix/Nits summary plus the file path. Applies to `code-reviewer`,
+- **Review spokes return a bounded digest**, not an open-ended report — the
+  full report travels back **inline in the structured return value**, capped
+  at roughly 8,000 characters (~2,000 tokens, Anthropic's documented
+  sub-agent output band). No review or audit spoke writes a scratchpad file:
+  none holds a `Write`/`Edit` tool, and `guard-readonly-bash.mjs` blocks
+  every shell write route regardless — an earlier version of this bullet
+  described a scratchpad-spill mechanism that never actually worked for a
+  read-only spoke and is not used anywhere in this repo (fixed 2026-09-02,
+  `docs/contributing/subagent-context-management.md`'s "Prevent: bounded
+  output" section has the full history). Applies to `code-reviewer`,
   `security-reviewer`, `silent-failure-hunter`, `type-design-analyzer`,
-  `spec-conformance-reviewer`, `docs-consistency-reviewer`, and any
-  `auditing`/fan-out Explore dispatch.
+  `spec-conformance-reviewer`, `docs-consistency-reviewer`, `Explore`, and
+  any `auditing`/`researching-anthropic-guidance` fan-out dispatch.
+- **Plan mode propagates its read-only restriction to every subagent it
+  dispatches — not just the ones already read-only by design.** A
+  `test-author`/`code-implementer` writer spoke dispatched while plan mode
+  is active loses write access for that dispatch too, the same as a review
+  spoke. First surfaced 2026-07-22: an `audit-fanout` run under active plan
+  mode had its Explore finders return digests successfully while silently
+  never writing the report files their (then-current) instructions
+  described — not an agent failure, but plan mode's blanket restriction
+  applying to a step that assumed it wouldn't. If a skill or workflow's
+  design depends on a subagent writing a file (a report, a scratch note,
+  a journal), that dependency silently breaks under plan mode with no
+  error — verify with `git status`/`ls` after the dispatch rather than
+  trusting the return value's success claim, and prefer a dispatch
+  contract (like the inline-digest pattern above) that doesn't depend on
+  subagent file writes at all when correctness under plan mode matters.
 - **A `SubagentStop` hook (`detect-spoke-truncation.mjs`) now flags a
   suspicious-looking return automatically** — treat its stderr reminder as a
   prompt to apply the "never trust a final report" step below, not as a
