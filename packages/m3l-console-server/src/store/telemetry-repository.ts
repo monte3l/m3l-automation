@@ -141,15 +141,25 @@ function runTelemetryOperation<T>(operation: () => T, message: string): T {
 // Record helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * The five dimension columns for `console_telemetry_rollup`, collected as a
+ * named object to prevent transposition bugs at call sites (five adjacent
+ * `string` positionals are type-checker-silent under swap). Mirrors
+ * `audit-repository.ts`'s own object-parameter convention.
+ */
+interface TelemetryDimensions {
+  readonly route: string;
+  readonly script: string;
+  readonly operation: string;
+  readonly outcome: string;
+  readonly posture: string;
+}
+
 /** Upserts a measure-bearing measurement. */
 function upsertWithValue(
   executor: M3LStoreQueryExecutor,
   measurement: M3LTelemetryMeasurement,
-  route: string,
-  script: string,
-  operation: string,
-  outcome: string,
-  posture: string,
+  dims: TelemetryDimensions,
   value: number,
 ): void {
   const { bucketStartMs } = requireValidMeasurementBase(measurement);
@@ -157,11 +167,11 @@ function upsertWithValue(
     measurement.granularity,
     bucketStartMs,
     measurement.metric,
-    route,
-    script,
-    operation,
-    outcome,
-    posture,
+    dims.route,
+    dims.script,
+    dims.operation,
+    dims.outcome,
+    dims.posture,
     value,
     value,
     value,
@@ -172,22 +182,18 @@ function upsertWithValue(
 function upsertCounter(
   executor: M3LStoreQueryExecutor,
   measurement: M3LTelemetryMeasurement,
-  route: string,
-  script: string,
-  operation: string,
-  outcome: string,
-  posture: string,
+  dims: TelemetryDimensions,
 ): void {
   const { bucketStartMs } = requireValidMeasurementBase(measurement);
   executor.run(SQL_UPSERT_COUNTER, [
     measurement.granularity,
     bucketStartMs,
     measurement.metric,
-    route,
-    script,
-    operation,
-    outcome,
-    posture,
+    dims.route,
+    dims.script,
+    dims.operation,
+    dims.outcome,
+    dims.posture,
   ]);
 }
 
@@ -199,7 +205,12 @@ function recordHttpRequest(
   const route = requireNonEmptyDimension(measurement.route, "route");
   const outcome = requireNonEmptyDimension(measurement.outcome, "outcome");
   const value = requireValidMeasure(measurement.valueMs, "valueMs");
-  upsertWithValue(executor, measurement, route, "", "", outcome, "", value);
+  upsertWithValue(
+    executor,
+    measurement,
+    { route, script: "", operation: "", outcome, posture: "" },
+    value,
+  );
 }
 
 /** Records one `run.finished` measurement. */
@@ -213,13 +224,43 @@ function recordRunFinished(
   upsertWithValue(
     executor,
     measurement,
-    "",
-    script,
-    measurement.operation ?? "",
-    outcome,
-    "",
+    {
+      route: "",
+      script,
+      operation: measurement.operation ?? "",
+      outcome,
+      posture: "",
+    },
     value,
   );
+}
+
+/** Records one `store.health` measurement. */
+function recordStoreHealth(
+  executor: M3LStoreQueryExecutor,
+  measurement: Extract<M3LTelemetryMeasurement, { metric: "store.health" }>,
+): void {
+  const value = requireValidMeasure(measurement.valueBytes, "valueBytes");
+  upsertWithValue(
+    executor,
+    measurement,
+    { route: "", script: "", operation: "", outcome: "", posture: "" },
+    value,
+  );
+}
+
+/** Records one `sse.stream` measurement. */
+function recordSseStream(
+  executor: M3LStoreQueryExecutor,
+  measurement: Extract<M3LTelemetryMeasurement, { metric: "sse.stream" }>,
+): void {
+  upsertCounter(executor, measurement, {
+    route: "",
+    script: "",
+    operation: "",
+    outcome: measurement.outcome ?? "",
+    posture: "",
+  });
 }
 
 /** Records one `policy.decision` measurement. */
@@ -228,15 +269,13 @@ function recordPolicyDecision(
   measurement: Extract<M3LTelemetryMeasurement, { metric: "policy.decision" }>,
 ): void {
   const posture = requireNonEmptyDimension(measurement.posture, "posture");
-  upsertCounter(
-    executor,
-    measurement,
-    "",
-    "",
-    "",
-    measurement.outcome ?? "",
+  upsertCounter(executor, measurement, {
+    route: "",
+    script: "",
+    operation: "",
+    outcome: measurement.outcome ?? "",
     posture,
-  );
+  });
 }
 
 /** Routes a measurement to the correct upsert statement based on `metric`. */
@@ -251,21 +290,11 @@ function recordMeasurement(
     case "run.finished":
       recordRunFinished(executor, measurement);
       return;
-    case "store.health": {
-      const value = requireValidMeasure(measurement.valueBytes, "valueBytes");
-      upsertWithValue(executor, measurement, "", "", "", "", "", value);
+    case "store.health":
+      recordStoreHealth(executor, measurement);
       return;
-    }
     case "sse.stream":
-      upsertCounter(
-        executor,
-        measurement,
-        "",
-        "",
-        "",
-        measurement.outcome ?? "",
-        "",
-      );
+      recordSseStream(executor, measurement);
       return;
     case "policy.decision":
       recordPolicyDecision(executor, measurement);

@@ -75,6 +75,14 @@
  * (finding 1). The `''` sentinel signals "not applicable to this metric" for
  * each dimension column; translating `''` to `undefined` on the read path
  * would silently corrupt rollup counts (finding 2).
+ *
+ * **Corrected in-place (safe window):** the mandatory-measure `CHECK` was
+ * originally `metric NOT IN ('http.request','run.finished')` — it omitted
+ * `'store.health'`, which is also value-bearing (bytes). The omission was
+ * found and patched before v9 shipped to any deployment, so no migration is
+ * required. A future correction that needs to change this constraint after v9
+ * is deployed MUST ship as a v10 table recreate, the same way v7/v8 fixed
+ * `console_human_actions` — see `human-actions.ts:10-15` for that precedent.
  */
 export const CREATE_CONSOLE_TELEMETRY_ROLLUP_TABLE = `
   CREATE TABLE console_telemetry_rollup (
@@ -115,7 +123,8 @@ export const CREATE_CONSOLE_TELEMETRY_ROLLUP_TABLE = `
       OR (min_value >= 0 AND min_value <= max_value AND max_value <= sum_value)
     ),
     CHECK (
-      metric NOT IN ('http.request','run.finished') OR sum_value IS NOT NULL
+      metric NOT IN ('http.request','run.finished','store.health')
+      OR sum_value IS NOT NULL
     )
   ) STRICT, WITHOUT ROWID
 `;

@@ -4,7 +4,7 @@
  *
  * A separate file from `tests/store-migrations-audit.test.ts` on purpose:
  * that file is 13,757 B and the full CHECK-constraint matrix for
- * `console_telemetry_rollup` (19 illegal shapes) would push it over the
+ * `console_telemetry_rollup` (20 illegal shapes) would push it over the
  * 60,000 B `check:file-budget` test ceiling. This file exercises the ACTUAL
  * `CONSOLE_MIGRATIONS` registry (never a stand-in fixture), mirroring the
  * "real registry" structure of the sibling file for v6: the thing under test
@@ -19,7 +19,7 @@
  * registry, participates correctly in that already-proven machinery: it
  * applies, the table exists, it has NO secondary index (finding 4 from the
  * ADR probe — a secondary index made the whole-window aggregate 2× slower),
- * its own CHECK constraints hold for 8 legal shapes and reject 19 illegal
+ * its own CHECK constraints hold for 8 legal shapes and reject 20 illegal
  * shapes, a no-op re-apply still works, and a tampered v9 history row is
  * still caught as drift.
  *
@@ -422,20 +422,24 @@ describe("CONSOLE_MIGRATIONS v9 — legal shapes accepted by the real database",
 });
 
 // ---------------------------------------------------------------------------
-// 19 illegal shapes — every CHECK constraint has at least one violation.
+// 20 illegal shapes — every CHECK constraint has at least one violation.
 // Each row is a single-field departure from an otherwise valid baseline, so
 // exactly ONE documented CHECK constraint is violated — never a proxy count.
 // ---------------------------------------------------------------------------
 
-describe("CONSOLE_MIGRATIONS v9 — 19 illegal shapes rejected by the real database", () => {
+describe("CONSOLE_MIGRATIONS v9 — 20 illegal shapes rejected by the real database", () => {
   // Every test here confirms the DATABASE itself rejects the row by matching
   // a distinctive fragment of the SQLite error message against the specific
   // CHECK constraint intended to fire. This is deliberately stricter than
   // `store-migrations-audit.test.ts`, which uses bare `.toThrow()` — that
   // table has far fewer overlapping constraints and the weaker form was
-  // adequate there. `console_telemetry_rollup` has 11 CHECKs, several of
-  // which can reject the same row; a bare `.toThrow()` would pass if the
-  // wrong constraint fired while the intended one was missing entirely.
+  // adequate there. `console_telemetry_rollup` has 14 CHECKs (verified by
+  // counting the CHECK expressions in migrations/telemetry.ts directly —
+  // an authored claim of 11 propagated here and made the matrix look
+  // complete while one CHECK was actually untested; re-derive counts from
+  // source, never from prior prose). Several CHECKs can reject the same
+  // row; a bare `.toThrow()` would pass if the wrong constraint fired while
+  // the intended one was missing entirely.
   // The fragments below were probed against a real node:sqlite `:memory:`
   // database on this host and match the verbatim SQLite error text.
 
@@ -596,6 +600,21 @@ describe("CONSOLE_MIGRATIONS v9 — 19 illegal shapes rejected by the real datab
         "NULL measures on 'run.finished' — violates metric NOT IN (...) OR sum_value IS NOT NULL",
         () =>
           validRunFinishedRow({
+            sum_value: null,
+            min_value: null,
+            max_value: null,
+          }),
+        /sum_value IS NOT NULL/,
+      ],
+      // --- mandatory measures for 'store.health' ---
+      // This row was accepted by the shipped DDL before the parallel spoke
+      // widened the mandatory-measure CHECK to include 'store.health'.
+      // It must fail once that fix lands; if it still passes, the DDL fix
+      // did not land yet or did not cover this metric.
+      [
+        "NULL measures on 'store.health' — violates metric NOT IN (...) OR sum_value IS NOT NULL",
+        () =>
+          validStoreHealthRow({
             sum_value: null,
             min_value: null,
             max_value: null,
