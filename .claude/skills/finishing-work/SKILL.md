@@ -5,7 +5,8 @@ description: >-
   pull, delete the merged branch, prune stale remote refs, prompt for a tracker
   flip + sync:hub, prompt for a work log. Use for /finishing-work, "clean up
   after this PR", "the PR merged, wrap this up", or when a merged
-  branch/worktree/refs linger. GitHub stance: gh CLI, matching creating-prs.
+  branch/worktree/refs linger. GitHub stance: gh CLI (ADR-0030), matching
+  creating-prs.
 ---
 
 # finishing-work

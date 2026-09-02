@@ -5,7 +5,7 @@ description: >-
   fix every Must-fix, best-effort Should-fix, fold in Nits already in-region,
   run gates, reconcile docs, commit, push, reply. Use for "fix what the bot
   flagged", "claude-pr-review posted FAIL", "address PR feedback". Skip manual
-  reviews/generic CI failures. GitHub stance: hub-only, GitHub MCP.
+  reviews/generic CI failures. GitHub stance: hub-only, GitHub MCP (ADR-0030).
 ---
 
 # resolving-pr-comments

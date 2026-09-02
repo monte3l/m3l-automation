@@ -5,7 +5,7 @@ description: >-
   alerts, group by tool and severity, map to file:line, gate on error-severity
   CodeQL blocking merge, present remediation — no code edited. Use for
   /triaging-scan-alerts, "check the CodeQL alerts". Skip for bot findings or CI
-  failures.
+  failures. GitHub stance: gh CLI (ADR-0030).
 ---
 
 Diagnose the GitHub **code-scanning alerts** on a PR or branch via `gh`, group

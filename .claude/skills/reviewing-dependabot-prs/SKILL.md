@@ -5,7 +5,7 @@ description: >-
   and check status, executes the confirmed batch: auto-merge safe bumps, hold
   risky ones, close bad ones. Use for /reviewing-dependabot-prs, "review the
   dependabot PRs", "merge the safe dependabot updates". Only acts on explicit
-  invocation after batch confirmation. GitHub stance: gh CLI.
+  invocation after batch confirmation. GitHub stance: gh CLI (ADR-0030).
 ---
 
 # reviewing-dependabot-prs
