@@ -38,6 +38,13 @@ data/console/
 # and the `lint:md` exclude list.
 tmp/
 
+# A subagent's own dispatch journal, when a dispatch prompt omits an
+# explicit tmp/-scoped path and the spoke picks .scratch/ instead — nearly
+# landed in a commit via `git add -A` once (2026-09-02,
+# docs/logs/2026-09-02-session-incidents-counter.md). Backstop, not the
+# fix: always hand writer spokes an explicit tmp/ journal path.
+.scratch/
+
 # Lefthook's own local-override mechanism (ADR-0080's
 # bin/setup-host-resources.mjs writes one on a memory-constrained host to
 # force pre-push serial): https://lefthook.dev/examples/lefthook-local

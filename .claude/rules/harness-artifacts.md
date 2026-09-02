@@ -43,3 +43,22 @@ paths:
 - **Normalize paths to forward slashes before they cross an agent boundary.**
   A backslashed path survives or dies depending on which shell the agent picks,
   which makes the failure non-deterministic and very hard to attribute.
+
+- **A `SessionStart`/`PreCompact`/`PostCompact` hook's matcher must be checked
+  against what the hook actually does, not just against the known-token list.**
+  `check:hooks` validates that a wired matcher (`startup`/`resume`/`clear`/
+  `compact`/`fork`) is a real token; it says nothing about whether that token
+  choice is safe for the hook's own purpose. A hook that rotates/deletes state
+  wired with no matcher (or too broad a matcher set) fired on `compact` and
+  `resume` as well as `startup`, deleting a still-in-progress session's own
+  just-recorded data the moment a mid-task auto-compaction occurred — caught
+  by an external review bot, not by any local gate
+  (`docs/logs/2026-09-02-session-incidents-counter.md`). `resume` in
+  particular is not interchangeable with `startup` even though both are
+  "the process is (re)starting": a resumed session may be recovering from a
+  crash whose state hasn't been consumed yet, so it needs the same protection
+  a mid-session `compact` does. Enumerate which of the five matcher values the
+  hook's purpose is actually safe for as an explicit design step before
+  wiring, and prefer a belt-and-suspenders in-hook check (reading the payload's
+  `source` field, mirroring `reinject-compact-handoff.mjs`'s `shouldReinject()`)
+  alongside the settings.json matcher, not instead of it.
