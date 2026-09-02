@@ -612,6 +612,17 @@ export function collectSkillDescriptions(skillsDir) {
     if (!existsSync(skillMdPath)) continue;
     const content = readFileSync(skillMdPath, "utf8");
     const fmBody = extractFrontmatterBody(content);
+    // A skill with `disable-model-invocation: true` never appears in the
+    // model's skill listing at all (Anthropic's docs) — reachable only by
+    // its literal `/slug`, e.g. harness-guide. Counting its description
+    // against the listing budget would charge for a description the model
+    // never sees, so it's excluded entirely rather than just zeroed.
+    if (
+      fmBody !== null &&
+      extractFrontmatterField(fmBody, "disable-model-invocation") === "true"
+    ) {
+      continue;
+    }
     const description =
       fmBody === null ? "" : extractFrontmatterField(fmBody, "description");
     descriptions.push({ name: entry.name, chars: description.length });

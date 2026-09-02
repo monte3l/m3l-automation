@@ -1,5 +1,9 @@
 # Skills catalog and usage audit (originally 2026-07-17, patched since)
 
+Looking for **which skill to use**, not how often each one fires? See
+[`skill-routing.md`](./skill-routing.md) — an intent-to-skill lookup table,
+organized by what you're trying to do rather than by usage frequency.
+
 This is the durable reference for "how often should this skill fire?" A usage
 audit on 2026-07-17 found several skills with zero or very low usage evidence
 in `docs/logs/` and git history, and traced each one to a specific cause
@@ -57,10 +61,11 @@ respond to right now, not that the skill has gone stale.
 
 ### Low usage by design — the trigger is structurally rare
 
-| Skill                       | Trigger condition                                                | Evidence                                                                                                                                                                        |
-| --------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `resolving-merge-conflicts` | An active rebase/merge has real (non-derived-artifact) conflicts | ADR-0024's registered merge driver auto-resolves most derived-artifact conflicts (`catalog.json`, `symbol-map.json`, `pnpm-lock.yaml`) before this skill would ever need to run |
-| `tsconfig-strict-esm`       | Editing `tsconfig*.json`                                         | `tsconfig.base.json` has been edited exactly once in the repo's entire history                                                                                                  |
+| Skill                       | Trigger condition                                                | Evidence                                                                                                                                                                                                                                                                                                                                              |
+| --------------------------- | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `resolving-merge-conflicts` | An active rebase/merge has real (non-derived-artifact) conflicts | ADR-0024's registered merge driver auto-resolves most derived-artifact conflicts (`catalog.json`, `symbol-map.json`, `pnpm-lock.yaml`) before this skill would ever need to run                                                                                                                                                                       |
+| `tsconfig-strict-esm`       | Editing `tsconfig*.json`                                         | `tsconfig.base.json` has been edited exactly once in the repo's entire history                                                                                                                                                                                                                                                                        |
+| `harness-guide`             | The maintainer types `/harness-guide` to ask which skill applies | Added 2026-09-03. `disable-model-invocation: true` — unlike every other row in this table, its trigger isn't just rare, it's **never automatic**: it fires only when explicitly typed, so its usage count is a direct measure of how often the maintainer reaches for it rather than of anything the harness does on its own. See `skill-routing.md`. |
 
 ### Path-scoped reference skills — likely under-narrated, not under-used
 
@@ -140,8 +145,24 @@ mechanism without re-reading that amendment's re-open condition first.
 
 ## How to re-check usage
 
-The commands this audit used, so a future check is a repeat of these instead
-of a fresh investigation:
+**Primary source: real invocation counts, not a name grep.** `resolving-pr-
+comments` above is the standing proof that a skill-name grep alone
+undercounts — it fires every time, but is narrated by what it did rather than
+its own name, so the grep this section used to recommend returned a false
+zero for it. `pnpm telemetry:sessions` reads Claude Code's own session
+transcripts for this project (via the `session-report` plugin, ADR-0084) and
+reports a `by_skill` breakdown of what actually invoked, independent of how
+any commit or log describes it:
+
+```bash
+pnpm telemetry:sessions              # last 30 days (default), this project
+pnpm telemetry:sessions --since 90d  # wider window
+pnpm telemetry:sessions --json | jq '.payload.by_skill'
+```
+
+It only sees sessions still on disk (Claude Code prunes old transcripts), so
+it answers "recent real usage," not full history — cross-check against the
+commands below for a skill's documentation trail further back:
 
 ```bash
 # Skill-name mentions across logs, archived plans, and git history
@@ -166,6 +187,7 @@ run interactively, not a skill's steady-state mechanism, which is exactly the
 "plain Bash/CLI for ad-hoc work" case in
 `docs/research/writing-custom-tools-and-mcp.md`.
 
-A skill-name grep alone undercounts real usage (see `resolving-pr-comments`
-above) — cross-check against what the skill actually _produces_ (a specific
-commit-message pattern, a specific file change) rather than its own name.
+For a skill not yet re-audited against `by_skill` (every row in this file
+predates `pnpm telemetry:sessions`), still cross-check against what the
+skill actually _produces_ (a specific commit-message pattern, a specific
+file change) rather than trusting a name grep alone.

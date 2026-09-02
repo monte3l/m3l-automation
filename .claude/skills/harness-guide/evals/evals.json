@@ -1,0 +1,56 @@
+{
+  "skill_name": "harness-guide",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "/harness-guide Why did CI fail?",
+      "expect_skill_fired": false,
+      "expected_output": "The response reads the seeded routing doc and names /triaging-ci as the answer, citing that it's the table's match for a CI failure — not a guess from memory.",
+      "files": [
+        {
+          "path": "docs/contributing/skill-routing.md",
+          "content": "# Skill routing guide\n\n## Routing table\n\n### CI, security, and dependency triage\n\n| I want to...                                       | Skill                    | Also triggers on                              |\n| --------------------------------------------------- | --------------------------- | ------------------------------------------------- |\n| Understand why a CI run went red                     | `/triaging-ci`              | \"why did CI fail\", \"CI is failing\", a run ID/URL   |\n| Check open CodeQL/Scorecard alerts on a PR or branch | `/triaging-scan-alerts`     | \"check the CodeQL alerts\"                          |\n| Review and merge/hold/reject open Dependabot PRs     | `/reviewing-dependabot-prs` | \"review the dependabot PRs\"                        |\n"
+        }
+      ],
+      "expectations": [
+        "Names `/triaging-ci` as the skill to use",
+        "The answer is grounded in the seeded table content (mentions the table or the routing doc) rather than presented as recalled from memory",
+        "Does not fabricate a skill name absent from the seeded table"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "/harness-guide I want to add a brand-new AWS wrapper module and there's no spec page for it yet",
+      "expect_skill_fired": false,
+      "expected_output": "The response names /scaffolding-submodules as the entry point and states the successor chain: scaffolding-submodules -> implementing-submodules -> creating-prs -> finishing-work.",
+      "files": [
+        {
+          "path": "docs/contributing/skill-routing.md",
+          "content": "# Skill routing guide\n\n## Routing table\n\n### Building library code (packages/m3l-common)\n\n| I want to...                                                          | Skill                     | Then                       |\n| -------------------------------------------------------------------------- | ---------------------------- | ------------------------------ |\n| Add a brand-new Core/AWS module with no spec page yet                      | `/scaffolding-submodules`    | hands off to `implementing-submodules` |\n| Flesh out a module that already has a `docs/reference/{core,aws}/*.md` page | `/implementing-submodules`   | -> `/creating-prs`              |\n\n## Successor chains\n\n```text\nscaffolding-submodules -> implementing-submodules -> creating-prs -> finishing-work\nscaffolding-scripts    -> implementing-scripts    -> creating-prs -> finishing-work\n```\n"
+        }
+      ],
+      "expectations": [
+        "Names `/scaffolding-submodules` as the skill to invoke first",
+        "States the full successor chain ending in `finishing-work`, not just the first step",
+        "Does not recommend `/implementing-submodules` as the starting point (that's for a module that already has a spec page, which this prompt says it doesn't)"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "/harness-guide how do I deploy this to a Kubernetes cluster",
+      "expect_skill_fired": false,
+      "expected_output": "The response states plainly that no skill in the routing table matches this intent, rather than guessing at the nearest-sounding name, and points at /auditing or asking the maintainer directly, per the routing doc's own fallback guidance.",
+      "files": [
+        {
+          "path": "docs/contributing/skill-routing.md",
+          "content": "# Skill routing guide\n\n## Routing table\n\n### Building library code (packages/m3l-common)\n\n| I want to...                                            | Skill                  |\n| ------------------------------------------------------------ | -------------------------- |\n| Add a brand-new Core/AWS module with no spec page yet         | `/scaffolding-submodules`  |\n\n## When nothing in the table matches\n\nSay so rather than guessing at the nearest-sounding skill name. Either ask\ndirectly, or run `/auditing` — it's the general-purpose \"investigate and\nplan\" entry point and doesn't require knowing which narrower skill applies\nfirst.\n"
+        }
+      ],
+      "expectations": [
+        "Explicitly states that no skill in the table matches a Kubernetes-deployment intent, rather than inventing or guessing a plausible-sounding skill name",
+        "Suggests `/auditing` or asking the maintainer directly, matching the seeded fallback guidance",
+        "Does not fabricate a skill (e.g. a nonexistent 'deploying-k8s' or similar) that isn't in the seeded table"
+      ]
+    }
+  ]
+}
