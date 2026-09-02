@@ -57,10 +57,57 @@ jobs:
       # single-commit diffs), so the limit itself never moved — that fix
       # made the gate finally measure what the calibration assumed.
       MAX_REVIEWABLE_BYTES: 300000
+      # How many claude[bot] review comments a PR may accumulate before the
+      # guard step stops triggering another review and escalates to a human
+      # instead (see the guard step's round-limit check). 3 means rounds 1-3
+      # run normally; a 4th would-be round is where the loop escalates. The
+      # 2026-07-13 audit found PR #839 needed 4 rounds to converge and
+      # #822/#787 each burned 4 full reviews on churn — a non-converging loop
+      # should stop spending turns/tokens on repetition and hand off to
+      # `docs/contributing/branch-protection.md`'s override procedure, not
+      # run forever. Tunable; revisit if 3 proves too tight or too loose once
+      # this has real data behind it.
+      MAX_REVIEW_ROUNDS: 3
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
+
+      # Every one of this job's trust-sensitive artifacts is a plain
+      # checkout-relative file — including `.claude-review-verdict` (an
+      # unstamped copy is trusted unconditionally by resolveVerdict()) and
+      # `.claude-prior-mustfix.md` (its mere EXISTENCE is the prompt's delta
+      # re-review signal, see the "What to review" section below). Neither
+      # is gitignored. A PR author can commit a file with either exact name
+      # into their own branch, and it survives the checkout above completely
+      # untouched by any later step — every later write uses `>` (truncate
+      # on open), never checks the file didn't already exist, and the guard
+      # step's own writes only happen conditionally. A committed
+      # `.claude-review-verdict` containing `PASS` bypasses the SHA pin
+      # specifically because an unstamped verdict carries no per-commit
+      # provenance to check; a committed `.claude-prior-mustfix.md` gets fed
+      # to the reviewer as trusted "prior round Must-fix items" on a PR's
+      # very first, full-diff review, alongside an instruction that "the
+      # rest of the PR already passed and does not need re-reading" — a
+      # prompt-injection / review-bypass vector. Removing every artifact
+      # this job ever writes, immediately after checkout and before any
+      # other step runs, closes this for good: every one of these files can
+      # now only ever be workflow-authored for the run in progress.
+      - name: Clear any committed workflow artifacts
+        run: |
+          rm -f \
+            .claude-review-verdict \
+            .claude-review-comment.md \
+            .claude-prior-mustfix.md \
+            .claude-pr-diff.patch \
+            .claude-pr-changed-files.txt \
+            .claude-guard-comments.json \
+            .claude-guard-comments.err \
+            .claude-enforce-comments.json \
+            .claude-enforce-comments.err \
+            .claude-oversize-comment.md \
+            .claude-autopass-comment.md \
+            .claude-round-limit-comment.md
 
       # Skip a full re-review when the prior verdict was PASS and nothing
       # reviewable has changed since. The job still runs (so the required
@@ -191,6 +238,66 @@ jobs:
             exit 0
           fi
 
+          # Round bound: how many of this PR's claude[bot] comments actually
+          # parse as a review verdict. Computed here (rather than folded into
+          # the jq expression above) so the existing, already-tested `body`
+          # extraction is untouched — this reads the same already-fetched
+          # comments_json a second time. Scoped to comments that parse a
+          # `### Verdict` line (bin/lib/pr-review-gate.mjs's
+          # countReviewComments(), via the count-review-comments CLI mode) —
+          # a bare `.user.login == "claude[bot]"` filter would also count
+          # claude-assistant.yml's replies to an `@claude` mention, which
+          # that workflow accepts from ANY commenter with no actor allowlist
+          # and posts under the same claude[bot] identity on the same PR
+          # thread. At least one claude[bot] comment exists by this point
+          # (the `-z "$body"` check above already returned), so every branch
+          # below this line is a re-review of some kind — round 1 (no prior
+          # comment) can never hit the limit.
+          count_fetch_err="$GITHUB_WORKSPACE/.claude-guard-count.err"
+          if ! claude_bodies="$(jq -c \
+            'add | [.[] | select(.user.login == "claude[bot]") | .body // ""]' \
+            "$comments_json" 2>"$count_fetch_err")"; then
+            echo "jq failed collecting claude[bot] comment bodies for the round count: $(cat "$count_fetch_err" 2>/dev/null) — defaulting round count to 0."
+            claude_bodies="[]"
+          fi
+          claude_comment_count="$(printf '%s' "$claude_bodies" \
+            | node "$GITHUB_WORKSPACE/bin/pr-review-gate.mjs" count-review-comments \
+            || echo 0)"
+
+          # A non-converging loop stops spending turns/tokens on repetition
+          # once it has already run MAX_REVIEW_ROUNDS times and hands off to
+          # a human instead of running a 4th+ review — see MAX_REVIEW_ROUNDS'
+          # job-env comment and docs/contributing/branch-protection.md's
+          # override procedure. should_review stays false, but this is NOT
+          # the same as the two pre-existing should_review=false cases above
+          # (docs-only PR, prior-PASS-with-only-ignored-changes) — those are
+          # genuinely safe to carry forward as PASS; this one is not (the
+          # last real verdict could be FAIL), so it's tracked with its own
+          # output and a dedicated step writes FAIL, not the
+          # "Carry prior PASS verdict" step below.
+          escalate_round_limit() {
+            echo "should_review=false" >> "$GITHUB_OUTPUT"
+            echo "round_limit_reached=true" >> "$GITHUB_OUTPUT"
+            echo "review_round_count=$claude_comment_count" >> "$GITHUB_OUTPUT"
+            echo "Round limit reached ($claude_comment_count/$MAX_REVIEW_ROUNDS review round(s) already posted) — escalating instead of a review triggered by: $1."
+          }
+
+          # Applies the round bound uniformly to every branch below that
+          # would otherwise trigger a re-review — including the fail-safe
+          # branches (compare API failure, missing SHA marker, filter
+          # failure) that used to run unconditionally, which would have let
+          # a persistently-failing compare call loop past the round bound
+          # forever. $1 is a short reason fragment; both messages are built
+          # from it, so the final log line reads identically to before this
+          # helper existed.
+          review_or_escalate() {
+            if [ "$claude_comment_count" -ge "$MAX_REVIEW_ROUNDS" ]; then
+              escalate_round_limit "$1"
+            else
+              review "$1 — running review."
+            fi
+          }
+
           # Parsing logic lives in bin/lib/pr-review-gate.mjs, unit-tested in
           # bin/tests/pr-review-gate.test.ts — replaces a bare word-search
           # (`grep -qiw 'PASS'` over the 2 lines after the heading) that read
@@ -200,7 +307,7 @@ jobs:
             | node "$GITHUB_WORKSPACE/bin/pr-review-gate.mjs" parse-verdict \
             || echo "__ERROR__")"
           if [ "$prior_verdict" != "PASS" ]; then
-            review "Prior verdict was not PASS (${prior_verdict}) — running review."
+            review_or_escalate "Prior verdict was not PASS (${prior_verdict})"
             exit 0
           fi
 
@@ -208,18 +315,18 @@ jobs:
             | node "$GITHUB_WORKSPACE/bin/pr-review-gate.mjs" parse-sha \
             || echo "")"
           if [ -z "$reviewed_sha" ]; then
-            review "Prior comment has no reviewed-sha marker — running review."
+            review_or_escalate "Prior comment has no reviewed-sha marker"
             exit 0
           fi
 
           files="$(gh api "repos/$REPO/compare/$reviewed_sha...$HEAD_SHA" \
             --jq '.files[].filename' 2>/dev/null || echo "__ERROR__")"
           if [ "$files" = "__ERROR__" ]; then
-            review "Compare API failed — running review."
+            review_or_escalate "Compare API failed"
             exit 0
           fi
           if [ -z "$files" ]; then
-            review "No compare data — running review."
+            review_or_escalate "No compare data"
             exit 0
           fi
 
@@ -227,11 +334,31 @@ jobs:
             | node "$GITHUB_WORKSPACE/bin/pr-diff-filter.mjs" reviewable \
             || echo "__ERROR__")"
           if [ "$changed_reviewable" = "__ERROR__" ]; then
-            review "pr-diff-filter failed — running review."
+            review_or_escalate "pr-diff-filter failed"
             exit 0
           fi
           first_reviewable="$(printf '%s' "$changed_reviewable" | head -n1)"
           if [ -n "$first_reviewable" ]; then
+            if [ "$claude_comment_count" -ge "$MAX_REVIEW_ROUNDS" ]; then
+              escalate_round_limit "a reviewable change since PASS ($first_reviewable)"
+              exit 0
+            fi
+            # Delta review: this branch is the only place a prior PASS's
+            # commit SHA is both known and still meaningful as a diff base
+            # (a FAIL re-review above has no such baseline — the whole PR
+            # still needs re-checking against the prompt's Re-review
+            # convergence rules). reviewed_sha becomes the precompute step's
+            # compare-API base; the prior round's Must-fix list (parsed from
+            # $body, empty on a clean PASS) is written to a file the prompt
+            # tells the reviewer to check — see "Pre-compute PR diff for
+            # review" below and REVIEW.md's Re-review convergence section.
+            # (This file's mere existence is a trust signal read by the
+            # prompt — safe only because the "Clear any committed workflow
+            # artifacts" step already removed any same-named file the PR
+            # branch itself might have carried into the checkout.)
+            echo "reviewed_sha=$reviewed_sha" >> "$GITHUB_OUTPUT"
+            node "$GITHUB_WORKSPACE/bin/pr-review-gate.mjs" parse-must-fix \
+              <<< "$body" > "$GITHUB_WORKSPACE/.claude-prior-mustfix.md" || true
             review "Reviewable file changed since PASS ($first_reviewable) — running review."
             exit 0
           fi
@@ -252,29 +379,91 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number }}
+          REVIEWED_SHA: ${{ steps.guard.outputs.reviewed_sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
-          # NO --patch. `gh pr diff --patch` returns the per-commit patch
-          # SERIES, not a unified diff: on PR #523 it emitted 104
-          # `diff --git` headers for 44 unique files, with
-          # `M3LProcedure.ts` appearing 8 times and 309,876 reviewable
-          # chars of pure duplication (696,940 with --patch vs 501,454
-          # without). Two consequences, both bad: the reviewer paged
-          # through the same file once per commit that touched it — a large
-          # hidden turn sink, and it saw superseded intermediate states of
-          # code that a later commit had already fixed — and the size gate
-          # over-measured every multi-commit PR in proportion to its commit
-          # count, rejecting at an effective threshold ~28-39% stricter
-          # than MAX_REVIEWABLE_BYTES intends (that limit was calibrated on
-          # squashed single-commit diffs, which are never inflated).
-          # The default output is the same unified-diff format, so the
-          # filter below and the review prompt are unaffected.
-          gh pr diff "$PR" -R "$REPO" \
-            > "$GITHUB_WORKSPACE/.claude-pr-diff.patch" \
-            || rm -f "$GITHUB_WORKSPACE/.claude-pr-diff.patch"
-          gh pr diff "$PR" -R "$REPO" --name-only \
-            > "$GITHUB_WORKSPACE/.claude-pr-changed-files.txt" \
-            || rm -f "$GITHUB_WORKSPACE/.claude-pr-changed-files.txt"
+
+          # Delta path: REVIEWED_SHA is only set by the guard step's
+          # "reviewable file changed since PASS" branch — a scoped compare
+          # against the commit that earned the prior PASS, instead of the
+          # full PR diff. bin/pr-review-gate.mjs build-delta-patch
+          # reconstructs a synthetic unified diff from the compare API's
+          # per-file `patch` fields, in the exact `diff --git a/x b/x` /
+          # `--- a/x` / `+++ b/x` shape bin/lib/pr-diff-filter.mjs's
+          # patch-splitting already expects — so the SAME filtering and
+          # size-measurement logic below applies unmodified to either path.
+          # Entirely non-fatal: any failure here (API error, empty response,
+          # malformed JSON) falls through to the full-diff path below rather
+          # than aborting — a delta review is an optimization, never a
+          # requirement.
+          is_delta=false
+          if [ -n "$REVIEWED_SHA" ]; then
+            compare_err="$GITHUB_WORKSPACE/.claude-compare.err"
+            compare_json="$(gh api "repos/$REPO/compare/$REVIEWED_SHA...$HEAD_SHA" 2>"$compare_err" || echo "")"
+            # Every condition below must hold for a delta to be trustworthy:
+            # a non-empty API response, build-delta-patch succeeding (it
+            # itself returns non-zero — see bin/lib/pr-review-gate.mjs's
+            # buildDeltaPatch() — when the file list hits GitHub's 300-file
+            # compare-API cap, or any file has a real content change with no
+            # `patch` field GitHub could have withheld for size/binary
+            # reasons it cannot safely guess between), AND both output files
+            # existing and non-empty. That last check matters on its own:
+            # the guard step already proved a reviewable file changed since
+            # REVIEWED_SHA, so an empty result here — both commands
+            # succeeding, zero files reported — means the two independent
+            # compare-API calls (guard's and this one) disagree, not that
+            # there is genuinely nothing to review. Treat that as a build
+            # failure, not a smaller-than-expected success.
+            if [ -n "$compare_json" ] \
+              && printf '%s' "$compare_json" \
+                | node "$GITHUB_WORKSPACE/bin/pr-review-gate.mjs" build-delta-patch \
+                  > "$GITHUB_WORKSPACE/.claude-pr-diff.patch" 2>/dev/null \
+              && printf '%s' "$compare_json" \
+                | jq -r '.files[].filename' \
+                  > "$GITHUB_WORKSPACE/.claude-pr-changed-files.txt" 2>/dev/null \
+              && [ -s "$GITHUB_WORKSPACE/.claude-pr-diff.patch" ] \
+              && [ -s "$GITHUB_WORKSPACE/.claude-pr-changed-files.txt" ]; then
+              is_delta=true
+              echo "Delta review: comparing ${REVIEWED_SHA}...${HEAD_SHA} (since the prior PASS) instead of the full diff."
+            else
+              echo "Delta patch build failed or was untrustworthy — falling back to the full diff. Compare API stderr (if any): $(cat "$compare_err" 2>/dev/null)" >&2
+              rm -f "$GITHUB_WORKSPACE/.claude-pr-diff.patch" "$GITHUB_WORKSPACE/.claude-pr-changed-files.txt"
+            fi
+          fi
+          echo "is_delta=$is_delta" >> "$GITHUB_OUTPUT"
+
+          if [ "$is_delta" != true ]; then
+            # The guard step may have already written .claude-prior-mustfix.md
+            # expecting a delta to follow. The prompt's "What to review"
+            # section treats that file's mere existence as the signal that
+            # this is a delta re-review whose rest "already passed and does
+            # not need re-reading" — if the delta build just failed above,
+            # that signal would be actively wrong for the full diff about to
+            # be fetched below, so it must not survive into a non-delta run.
+            rm -f "$GITHUB_WORKSPACE/.claude-prior-mustfix.md"
+            # NO --patch. `gh pr diff --patch` returns the per-commit patch
+            # SERIES, not a unified diff: on PR #523 it emitted 104
+            # `diff --git` headers for 44 unique files, with
+            # `M3LProcedure.ts` appearing 8 times and 309,876 reviewable
+            # chars of pure duplication (696,940 with --patch vs 501,454
+            # without). Two consequences, both bad: the reviewer paged
+            # through the same file once per commit that touched it — a large
+            # hidden turn sink, and it saw superseded intermediate states of
+            # code that a later commit had already fixed — and the size gate
+            # over-measured every multi-commit PR in proportion to its commit
+            # count, rejecting at an effective threshold ~28-39% stricter
+            # than MAX_REVIEWABLE_BYTES intends (that limit was calibrated on
+            # squashed single-commit diffs, which are never inflated).
+            # The default output is the same unified-diff format, so the
+            # filter below and the review prompt are unaffected.
+            gh pr diff "$PR" -R "$REPO" \
+              > "$GITHUB_WORKSPACE/.claude-pr-diff.patch" \
+              || rm -f "$GITHUB_WORKSPACE/.claude-pr-diff.patch"
+            gh pr diff "$PR" -R "$REPO" --name-only \
+              > "$GITHUB_WORKSPACE/.claude-pr-changed-files.txt" \
+              || rm -f "$GITHUB_WORKSPACE/.claude-pr-changed-files.txt"
+          fi
 
           # Strip from the patch every file the reviewer is not meant to read,
           # then filter the changed-file list the same way. Both use the single
@@ -396,6 +585,17 @@ jobs:
           # cache from an earlier run on the same PR within the 1h TTL.
           # --max-turns comes from MAX_TURNS at the job level (single source of
           # truth, shared with the metrics step).
+          #
+          # Model and effort stay fixed across every round, including a delta
+          # re-review — no further step-down to e.g. --effort low. Anthropic's
+          # effort-as-precision-dial framing (Code Review docs) is about
+          # first-pass coverage tuning, not specifically re-review cost, and
+          # no official source endorses switching effort per round (see
+          # docs/research/pr-review-action-tuning.md). The delta patch itself
+          # is what buys the savings on a re-review (fewer tokens read from a
+          # smaller diff, PR 4 of the loop-economics revision) — not a
+          # lower-precision reviewer confirming a fix, which risks confirming
+          # it wrongly on exactly the round that most needs to be right.
           #
           # --allowedTools stays scoped (no curl/wget/arbitrary exec against
           # untrusted diff content). A redirect target (`> path`) is checked
@@ -522,6 +722,12 @@ jobs:
               report them as a single count in the summary line, not as bullets.
             - If all prior Must-fix items are resolved and no new Must-fix items exist, the
               verdict is PASS even if unaddressed nits remain.
+            - On a delta re-review (see "What to review" below — the patch you're given
+              covers only what changed since a prior PASS, not the whole PR), read
+              `./.claude-prior-mustfix.md` if it exists for the prior round's outstanding
+              Must-fix items (empty when the prior verdict was a clean PASS) and confirm
+              each is still resolved in the delta before writing a new verdict — you do
+              not need to re-derive already-passed content outside the delta.
 
             ## Output format
 
@@ -621,16 +827,21 @@ jobs:
 
             ## What to review
 
-            The full unified diff for this PR is at
-            `$GITHUB_WORKSPACE/.claude-pr-diff.patch` and the changed-file list at
-            `$GITHUB_WORKSPACE/.claude-pr-changed-files.txt`. **Read the patch file
-            first** and review only those hunks. Open a full source file with `Read`
-            ONLY when a hunk lacks the surrounding context you need — do NOT run
-            `gh pr diff` or `git diff` to rediscover the diff; it is already provided.
-            If the patch is very large, read it in chunks with `Read` offset/limit.
-            Fallback: only if the patch file is missing (the pre-compute step failed),
-            fetch it yourself with
+            The diff for this review is at `$GITHUB_WORKSPACE/.claude-pr-diff.patch`
+            and the changed-file list at `$GITHUB_WORKSPACE/.claude-pr-changed-files.txt`.
+            **Read the patch file first** and review only those hunks. Open a full
+            source file with `Read` ONLY when a hunk lacks the surrounding context you
+            need — do NOT run `gh pr diff` or `git diff` to rediscover the diff; it is
+            already provided. If the patch is very large, read it in chunks with `Read`
+            offset/limit. Fallback: only if the patch file is missing (the pre-compute
+            step failed), fetch it yourself with
             `gh pr diff ${{ github.event.pull_request.number }} -R ${{ github.repository }}`.
+
+            **If `./.claude-prior-mustfix.md` exists in the workspace, this is a delta
+            re-review**: the patch above covers only files changed since a prior PASS,
+            not the whole PR — everything else in the PR already passed and does not
+            need re-reading. See the Re-review convergence section above for how to use
+            that file.
 
             Both files are already filtered to what this gate reviews: docs (`*.md`,
             `docs/**`), `.github/dependabot.yml` and `pnpm-lock.yaml` have had their
@@ -650,8 +861,14 @@ jobs:
         if: always() && steps.guard.outputs.should_review == 'true'
         env:
           EXECUTION_FILE: ${{ steps.claude-review.outputs.execution_file }}
+          IS_DELTA: ${{ steps.precompute.outputs.is_delta }}
         run: |
           set +e
+
+          review_mode="full diff"
+          if [ "$IS_DELTA" = "true" ]; then
+            review_mode="delta (since prior PASS)"
+          fi
 
           changed_files="n/a"
           patch_lines="n/a"
@@ -733,6 +950,7 @@ jobs:
             echo "| Tokens (in / out) | ${input_tokens} / ${output_tokens} |"
             echo "| Cache (read / write) | ${cache_read} / ${cache_write} |"
             echo "| Result | subtype=${subtype}, is_error=${is_error} |"
+            echo "| Review mode | ${review_mode} |"
             echo "| Reviewable diff | ${changed_files} files, ${patch_lines} patch lines, ${patch_chars} chars (limit ${MAX_REVIEWABLE_BYTES}) |"
             echo "| Permission denials | ${denied} |"
             if [ -n "$denied_detail" ]; then
@@ -820,9 +1038,55 @@ jobs:
 
       # When the review was skipped (prior PASS still valid), carry that PASS
       # forward so the enforce step below keeps the required check green.
+      # Excludes the round-limit case below: that should_review=false does
+      # NOT mean the last real verdict was PASS (it could well be FAIL), so
+      # it must never be silently carried forward as PASS.
       - name: Carry prior PASS verdict (review skipped)
-        if: steps.guard.outputs.should_review != 'true'
+        if: steps.guard.outputs.should_review != 'true' && steps.guard.outputs.round_limit_reached != 'true'
         run: printf 'PASS' > "$GITHUB_WORKSPACE/.claude-review-verdict"
+
+      # A PR that hasn't converged after MAX_REVIEW_ROUNDS automated review
+      # rounds gets handed to a human instead of a 4th+ review — see
+      # MAX_REVIEW_ROUNDS' job-env comment and the guard step's round-limit
+      # check. Verdict is FAIL (not carried forward as PASS — see above):
+      # the gate stays failing until a human either resolves the remaining
+      # findings or invokes the override procedure below.
+      - name: Escalate to human (review round limit reached)
+        if: steps.guard.outputs.round_limit_reached == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          ROUND_COUNT: ${{ steps.guard.outputs.review_round_count }}
+        run: |
+          set -euo pipefail
+          {
+            echo "## Claude PR Review — round limit reached"
+            echo ""
+            echo "This PR has already gone through ${ROUND_COUNT} claude[bot] review"
+            echo "rounds (limit ${MAX_REVIEW_ROUNDS}) without converging to PASS. Running"
+            echo "another automated review is unlikely to help and costs real"
+            echo "turns/tokens for little marginal signal, so the loop is escalated to"
+            echo "a human instead of running another round."
+            echo ""
+            echo "If a flagged finding is wrong, see the override procedure in"
+            echo "\`docs/contributing/branch-protection.md\`: investigate, reply to the"
+            echo "relevant comment thread with evidence, then a human with admin rights"
+            echo "merges past the FAIL and records the rationale. This gate does not"
+            echo "dispute findings on its own — a human decision is required either way."
+            echo ""
+            echo "This check stays failing until a human fixes the remaining findings or"
+            echo "applies the override."
+          } > "$GITHUB_WORKSPACE/.claude-round-limit-comment.md"
+          gh pr comment "$PR" -R "$REPO" \
+            --body-file "$GITHUB_WORKSPACE/.claude-round-limit-comment.md" || true
+          printf 'FAIL' > "$GITHUB_WORKSPACE/.claude-review-verdict"
+          echo "::warning title=Claude PR Review::Round limit reached (${ROUND_COUNT}/${MAX_REVIEW_ROUNDS}) — escalated to human, see the override procedure in docs/contributing/branch-protection.md"
+          {
+            echo "### Claude PR Review — round limit reached"
+            echo ""
+            echo "Escalated after ${ROUND_COUNT} review rounds (limit ${MAX_REVIEW_ROUNDS}). See the PR comment for the override procedure."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       # Blocking gate (rules 01/04: writer ≠ reviewer). The job fails unless the
       # reviewer explicitly wrote PASS — fail-closed if the review did not run.
