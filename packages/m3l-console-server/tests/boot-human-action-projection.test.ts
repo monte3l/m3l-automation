@@ -149,6 +149,55 @@ describe("per-route projection", () => {
     expect(record.parameterNames).toEqual([]);
   });
 
+  // X7d's standalone binding selection — the twelfth and last kind wired.
+  // Targets the SESSION: the binding does not exist yet at `phase: "before"`,
+  // and the session is what the operator's act is scoped to.
+  test("POST /api/v1/sessions/:id/bindings → session.binding.select, targeting the session", async () => {
+    const record = await recordFor({
+      method: "POST",
+      path: "/api/v1/sessions/:id/bindings",
+      url: "http://127.0.0.1/api/v1/sessions/session-4/bindings",
+      params: { id: "session-4" },
+      body: {
+        reference: "step-1.output.Queues[0]",
+        expectedType: "string",
+        multiSelect: false,
+        parameterName: "queueUrl",
+      },
+    });
+
+    expect(record.action).toBe("session.binding.select");
+    expect(record.target).toEqual({ kind: "session", id: "session-4" });
+    expect(record.parameterNames).toEqual(["queueUrl"]);
+    expect(record.posture).toBe("confirmed");
+  });
+
+  // INVARIANT: the parameter NAME only. This is the one route whose whole
+  // purpose is to name a value an operator picked out of a script's real
+  // output, so the REFERENCE (which encodes a path into that output) and the
+  // value itself both stay out — ADR-0070's display-vs-persist split. The
+  // name is the operator's own word for it and carries no caller data.
+  // Mutation-tested: adding `parameterRefs: [reference]` to the projection
+  // fails here.
+  test("POST /api/v1/sessions/:id/bindings records the name, not the reference", async () => {
+    const record = await recordFor({
+      method: "POST",
+      path: "/api/v1/sessions/:id/bindings",
+      url: "http://127.0.0.1/api/v1/sessions/session-5/bindings",
+      params: { id: "session-5" },
+      body: {
+        reference: "step-1.output.Credentials.SecretAccessKey",
+        expectedType: "string",
+        multiSelect: false,
+        parameterName: "secret",
+      },
+    });
+
+    expect(record.parameterNames).toEqual(["secret"]);
+    expect(record.parameterRefs).toEqual([]);
+    expect(JSON.stringify(record)).not.toContain("SecretAccessKey");
+  });
+
   // `session.create` has no session id pre-flight, so the correlation id is
   // the honest AND joinable value: `routes/sessions.ts` passes that same id
   // into `createSession`, where it lands in `console_sessions.correlation_id`.

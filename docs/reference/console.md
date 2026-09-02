@@ -31,7 +31,8 @@ read surface and cancellation. The route table is:
 
 X6 shipped the workbench-sessions module: create/list/read/close/reopen a
 session, append steps, raise and answer decisions, and read a session's
-persisted binding audit trail; X7d added the step-artifact read surface:
+persisted binding audit trail; X7d added the step-artifact read surface and
+standalone binding selection:
 
 | Method | Path                                          | Auth     | Shipped in |
 | ------ | --------------------------------------------- | -------- | ---------- |
@@ -45,6 +46,7 @@ persisted binding audit trail; X7d added the step-artifact read surface:
 | `POST` | `/api/v1/sessions/:id/reopen`                 | required | X6         |
 | `GET`  | `/api/v1/sessions/:id/bindings`               | required | X6         |
 | `GET`  | `/api/v1/sessions/:id/steps/:stepId/artifact` | required | X7d        |
+| `POST` | `/api/v1/sessions/:id/bindings`               | required | X7d        |
 
 X10 shipped script discovery: enumerate the launchable scripts under the
 configured scripts directory, and read one script's declared parameters and
@@ -856,6 +858,49 @@ step ids must not be able to learn that one exists somewhere else.
 that no longer decodes, or a file whose digest no longer matches — a real
 fault, never folded into the 404s above.
 
+## `POST /api/v1/sessions/:id/bindings`
+
+Records an operator's selection of a value out of a prior step's recorded
+output, as a named binding — **without launching anything**.
+
+```bash
+curl -sS -X POST localhost:8787/api/v1/sessions/$SESSION_ID/bindings \
+  -H 'content-type: application/json' \
+  -d '{"reference":"step-1.output.Queues[0]","expectedType":"string","multiSelect":false,"parameterName":"queueUrl"}'
+```
+
+`201` with the persisted binding row — the same shape `GET …/bindings`
+returns.
+
+The body is the **same shape** as one entry of `POST …/steps`' `bindings`
+array, validated by the same function, so a body one route accepts the other
+accepts. `parameterName` is validated but **not persisted**:
+`console_session_bindings` has no column for it, and this route does not add
+one. It reaches the audit trail, not the table.
+
+The reference is **resolved before anything is stored** — against the
+referenced step's real output, through the same resolver the inline path
+uses. A selection that cannot be resolved is refused rather than recorded: a
+binding trail whose entries never pointed at anything would be worse than no
+trail.
+
+| Code                                    | Status | When                                                                                                                               |
+| --------------------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `ERR_CONSOLE_SESSION_NOT_FOUND`         | 404    | No such session.                                                                                                                   |
+| `ERR_CONSOLE_SESSION_CLOSED`            | 409    | The session is closed — it takes no new bindings, exactly as it takes no new steps.                                                |
+| `ERR_CONSOLE_SESSION_STEP_NOT_FOUND`    | 404    | The reference names an ordinal with no step in this session.                                                                       |
+| `ERR_CONSOLE_SESSION_REFERENCE_INVALID` | 400    | Malformed reference, a step with no recorded output yet, or a value that does not match the declared `expectedType`/`multiSelect`. |
+
+**The response carries no resolved value**, and neither does the stored row.
+Reading the value is `GET …/steps/:stepId/artifact`'s job. Keeping them apart
+is ADR-0070's display-vs-persist split: the binding trail records what an
+operator pointed at, never what was there.
+
+> **Scope note.** This is the server seam only. The JSON tree viewer, the
+> pre-filled next operation and the decision prompts remain X11's, with its
+> Playwright acceptance — X11 simply no longer has to build the endpoint
+> first.
+
 ## Session limits
 
 Four settings, all under `m3l.console.sessions.*`:
@@ -891,6 +936,10 @@ settings above.
   session-record level, and there is no `GET` route to list a session's
   decisions; the service's `listDecisionsForSession` exists but is not yet
   exposed over REST.
+- **A binding's `parameterName` is not persisted.** Both the inline
+  `POST …/steps` path and the standalone `POST …/bindings` route validate it
+  and record it in the audit trail, but `console_session_bindings` has no
+  column for it, so it is absent from every row `GET …/bindings` returns.
 - Binding audit records have no step linkage — see the Bindings section
   above.
 
