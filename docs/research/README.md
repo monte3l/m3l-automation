@@ -60,3 +60,4 @@ mechanism.
 | 2026-07-19 | Preventing and recovering from subagent stalls and mid-turn truncation | [subagent-stall-recovery.md](subagent-stall-recovery.md)             |
 | 2026-08-20 | AI agents operating a CLI application (tooling, MCP, safety, Bedrock)  | [agent-cli-integration.md](agent-cli-integration.md)                 |
 | 2026-08-27 | Context window management, compaction, and token efficiency            | [context-window-and-compaction.md](context-window-and-compaction.md) |
+| 2026-09-02 | Claude Code session naming and identity                                | [session-naming.md](session-naming.md)                               |
