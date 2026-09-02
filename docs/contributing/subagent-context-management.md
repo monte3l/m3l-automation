@@ -27,8 +27,8 @@ files, 20 of them immutable historical records).
 have landed: the policy is recorded, `bin/check-context-budget.mjs` replaced
 `bin/check-claude-md-budget.mjs` as the live gate (CI + pre-push),
 `CLAUDE.md`'s always-loaded surface fits under budget with zero `@`-imports,
-and the `PreCompact`/`SessionStart(compact)` handoff hooks described below
-are live.
+and the `PreCompact`/`SessionStart(compact|resume|startup)` handoff hooks
+described below are live.
 
 ### What survives compaction
 
@@ -42,7 +42,9 @@ re-read (over 5,000 tokens, a file returns as a path reference only); invoked
 skill _bodies_ re-inject capped at 5,000 tokens/skill and 25,000 total, oldest
 dropped first; the skill _listing_ is not re-injected; `paths:`-scoped rules
 and nested `CLAUDE.md` reload only when a matching file is next read; and
-`SessionStart` hooks matching source `compact` re-run. Early, conversation-only
+`SessionStart` hooks matching source `compact` re-run (as of the 2026-09-02
+ADR-0078 update below, the compact-handoff hook also re-runs on `resume` and
+`startup`, outside a compaction pass proper). Early, conversation-only
 instructions that never made it into `CLAUDE.md` can be lost — promote a rule
 you need to survive compaction into `CLAUDE.md`, not just the conversation.
 
@@ -78,9 +80,11 @@ writes branch, worktree, the last commit's SHA and signature status, and
 (this repo's gitignored scratch directory — not the ephemeral OS-level
 session scratchpad, which a hook has no documented way to address);
 `.claude/hooks/reinject-compact-handoff.mjs` (`SessionStart`, matcher
-`compact`) reads it back as `additionalContext` and deletes it (one-shot) —
-so post-compaction state reconstruction doesn't depend on the summary having
-retained it. Deliberately excludes a live PR-number lookup (`gh` is a network
+`compact|resume|startup` as of the 2026-09-02 ADR-0078 update) reads it back
+as `additionalContext` and deletes it (one-shot) — so state reconstruction
+doesn't depend on the summary having retained it, whether the next session
+started from a compaction, a `--resume`, or a fresh `startup` on a dirty
+branch. Deliberately excludes a live PR-number lookup (`gh` is a network
 call; every other hook in this repo stays fast and dependency-free) and a
 genuine "open spoke journal" list (no reliable way to discover it from a
 hook) — the artifact lists only journal-shaped files under `tmp/` itself, an
