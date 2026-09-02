@@ -146,6 +146,13 @@ export interface SessionRouteReaderPort {
   listSessions(query: M3LSessionListQuery): readonly unknown[];
   /** Lists every binding persisted for `sessionId` via a prior `addStep` call. */
   listBindingsForSession(sessionId: string): readonly unknown[];
+  /**
+   * Resolves one step's recorded output artifact (X7d). Declared on the
+   * READER port because it is a read; the route that serves it lives in
+   * `http/routes/session-artifacts.ts` and declares its own narrower port,
+   * which this satisfies structurally.
+   */
+  readStepArtifact(sessionId: string, stepId: string): Promise<unknown>;
 }
 
 /**

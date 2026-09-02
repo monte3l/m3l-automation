@@ -109,6 +109,7 @@ const RUN_ROUTE_SIGNATURES: readonly { method: string; path: string }[] = [
 const fakeSessionService: SessionRouteReaderPort & SessionRouteWriterPort = {
   getSession: () => undefined,
   listSessions: () => [],
+  readStepArtifact: () => Promise.resolve(undefined),
   createSession: () => ({
     id: "session-1",
     operator: "alice",
@@ -125,7 +126,7 @@ const fakeSessionService: SessionRouteReaderPort & SessionRouteWriterPort = {
   listBindingsForSession: () => [],
 };
 
-/** The nine session-module routes `createBuiltInRoutes` must add when `options.sessions` is supplied. */
+/** The ten session-module routes `createBuiltInRoutes` must add when `options.sessions` is supplied. */
 const SESSION_ROUTE_SIGNATURES: readonly { method: string; path: string }[] = [
   { method: "POST", path: "/api/v1/sessions" },
   { method: "GET", path: "/api/v1/sessions" },
@@ -136,6 +137,7 @@ const SESSION_ROUTE_SIGNATURES: readonly { method: string; path: string }[] = [
   { method: "POST", path: "/api/v1/sessions/:id/close" },
   { method: "POST", path: "/api/v1/sessions/:id/reopen" },
   { method: "GET", path: "/api/v1/sessions/:id/bindings" },
+  { method: "GET", path: "/api/v1/sessions/:id/steps/:stepId/artifact" },
 ];
 
 describe("toRunsRouteOptions", () => {

@@ -281,6 +281,39 @@ export const HUMAN_ACTION_SPECS: ReadonlyMap<string, HumanActionSpec> = new Map<
     },
   ],
   [
+    // X7d's step-artifact view. `phase: "after"` for the same reason as the
+    // two views below it: `readStepArtifact` does its own not-found checks
+    // (unknown session, unknown step, a step owned by another session, a
+    // step with no output yet), so recording first would assert the operator
+    // saw an artifact that was never served.
+    //
+    // Targets the STEP, not the session: `M3LHumanActionTarget`'s `artifact`
+    // arm carries an opaque id and the console has none to give — a step's
+    // output has no identity of its own, only the step's. The session id
+    // goes in `detail`, which is where a non-target scope belongs (the same
+    // choice `session.decision.answer` makes for its decision id).
+    //
+    // NO `parameterRefs`, deliberately. ADR-0070's display-vs-persist rule
+    // says the entry carries the reference and never the payload — and here
+    // the `(sessionId, stepId)` pair above IS the reference: it is the whole
+    // of what the request addressed. The step's own encoded `resultRef` is
+    // read inside the service and never reaches this projection, so the only
+    // string that could go in `parameterRefs` would be one invented here,
+    // duplicating `target.id` under a grammar nothing else uses. An audit
+    // field that restates another field in a made-up format is worse than an
+    // absent one: it reads like a real artifact reference and is not.
+    "GET /api/v1/sessions/:id/steps/:stepId/artifact",
+    {
+      action: "view.session.artifact",
+      phase: "after",
+      project: (ctx) => ({
+        target: { kind: "step", id: param(ctx, "stepId") },
+        posture: "confirmed",
+        detail: { sessionId: param(ctx, "id") },
+      }),
+    },
+  ],
+  [
     // X7d's run-report view. `phase: "after"` for the SAME reason
     // `view.run.stream` below carries it: the handler does its own 404
     // checks internally (unknown run id, and a known run with nothing
