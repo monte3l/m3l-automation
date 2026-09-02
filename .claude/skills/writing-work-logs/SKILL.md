@@ -79,8 +79,21 @@ syncing-docs, creating-prs`), including sub-skills dispatched internally.
   writer-spoke truncations, review-spoke stalls (>15 min without converging),
   and `SendMessage` resumes (e.g.
   `Spoke incidents: 2 truncations / 0 stalls / 2 resumes`, or
-  `Spoke incidents: none`). This is the measurable signal the
-  truncation-prevention efficacy watch
+  `Spoke incidents: none`). If `tmp/session-incidents.jsonl` exists, read it
+  and count entries by `kind` before writing this line — it's a durable,
+  mechanically-recorded log written by `.claude/hooks/detect-spoke-truncation.mjs`
+  on each detected truncation (rotated at the start of every session), so it
+  survives a mid-task compaction the model's own recollection does not
+  (two work logs recorded truncation counts as explicitly unrecoverable for
+  exactly that reason: `docs/logs/2026-08-29-aws-bedrock-runtime-tools.md`,
+  `docs/logs/2026-08-30-v7-agent-decision-log.md`). The file currently only
+  ever contains `kind: "truncation"` entries — no hook mechanically detects a
+  stall or a `SendMessage` resume yet — so use the file's truncation count as
+  authoritative and still draw the stall/resume counts from your own
+  recollection of the session; don't read the file's silence on those two
+  kinds as "zero happened." When the file is absent entirely, fall back to
+  recollection for all three counts, as before. This is the measurable
+  signal the truncation-prevention efficacy watch
   (`docs/contributing/subagent-context-management.md`) aggregates — record it
   even (especially) when it is `none`.
 - **Compaction events**: a `Compaction events:` line with counts for the
