@@ -148,7 +148,7 @@ per-phase detail in
 | **U7**  | Hybrid execution in the CLI; discovery over dependencies     | Done     |
 | **U8**  | Operation introspection in `inspect`/`--help`/wizard         | Done     |
 | **U9**  | `m3l new` + Lambda scaffold variant                          | Done     |
-| **U10** | `m3l flow` — orchestration engine + the named flow           | To Do    |
+| **U10** | `m3l flow` — orchestration engine + the named flow           | Done     |
 | **U11** | Retry/resume/cancellation surfacing at the CLI layer         | To Do    |
 | **U12** | `m3l completion` (bash/zsh/fish)                             | Done     |
 | **U13** | Phase B — private GitHub Packages publishing                 | To Do    |

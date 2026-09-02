@@ -86,6 +86,7 @@ deliberately do not.
 | 2026-08-14 | `m3l-cli` build-out (phases 8b-8g)          | [m3l-cli-build-out](./2026-08-14-m3l-cli-build-out.md)                                 |
 | 2026-08-26 | U5 — declarative operations, fleet retrofit | [u5-declarative-ops-fleet-retrofit](./2026-08-26-u5-declarative-ops-fleet-retrofit.md) |
 | 2026-09-01 | U12 — `m3l completion` (bash/zsh/fish)      | [cli-shell-completion](./2026-09-01-cli-shell-completion.md)                           |
+| 2026-09-02 | U10 — orchestration engine + `m3l flow`     | [u10-orchestration-engine](./2026-09-02-u10-orchestration-engine.md)                   |
 
 > The first two rows pre-date this section; they were written but never
 > indexed here. Adding them is an index fix, not an edit to shipped history —

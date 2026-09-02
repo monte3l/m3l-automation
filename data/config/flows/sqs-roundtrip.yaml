@@ -1,0 +1,65 @@
+# The U10 acceptance flow: the four-step chain ADR-0056 named as the proof that
+# the orchestration engine drives real consumer scripts, not fixtures.
+#
+#   dump-queue    sqs-etl        queue  -> JSONL (one M3LSQSReceivedMessage/line)
+#   project-body  json-etl       that JSONL -> JSONL carrying only `body`
+#   load-table    dynamodb-crud  that JSONL -> the table
+#   replay-queue  sqs-etl        that JSONL -> the queue
+#
+# `replay-queue` reads step 2's output, NOT step 3's. `sqs-etl send` uses its own
+# line reader, which treats a record's `body` key as the message body
+# (scripts/sqs-etl/src/steps/send-batch.ts) — so the projection step 2 performs
+# is what makes step 4 possible at all. Step 3 writes to DynamoDB and produces
+# nothing step 4 could consume.
+#
+# Every value below is an example. `aws.profile` and `queueUrl`/`tableName` name
+# resources that must exist before a real run; validate the definition without
+# them via `m3l flow list`, and rehearse it with `m3l flow run sqs-roundtrip
+# --dry-run`, which stops each step after its config and credential checks.
+#
+# No step declares `dryRun`. That field is a FLOOR, not a default: the effective
+# flag is `flowDryRun || step.dryRun`, so a step pinned `dryRun: true` could
+# never perform its mutation even in a real run. Safety here comes from passing
+# `--dry-run` to the run, which forces every step dry.
+name: sqs-roundtrip
+description: >-
+  Drain a queue to JSONL, project each message down to its body, load the result
+  into DynamoDB, then replay the same projection back onto the queue.
+maxStepExecutions: 8
+steps:
+  - id: dump-queue
+    script: sqs-etl
+    parameters:
+      aws.profile: m3l-acceptance
+      command: dump
+      queueUrl: https://sqs.eu-west-1.amazonaws.com/000000000000/m3l-acceptance
+      output: data/output/flows/sqs-roundtrip/dumped.jsonl
+      batchSize: 100
+
+  - id: project-body
+    script: json-etl
+    parameters:
+      input: data/output/flows/sqs-roundtrip/dumped.jsonl
+      # `name=path` projects and renames in one spec. `sqs-etl send` looks for a
+      # `body` key, so the column has to be named `body` whatever its source
+      # path was.
+      fields:
+        - body=body
+      format: jsonl
+      output: data/output/flows/sqs-roundtrip/projected.jsonl
+
+  - id: load-table
+    script: dynamodb-crud
+    parameters:
+      aws.profile: m3l-acceptance
+      operation: batch-write
+      tableName: m3l-acceptance
+      input: data/output/flows/sqs-roundtrip/projected.jsonl
+
+  - id: replay-queue
+    script: sqs-etl
+    parameters:
+      aws.profile: m3l-acceptance
+      command: send
+      queueUrl: https://sqs.eu-west-1.amazonaws.com/000000000000/m3l-acceptance
+      input: data/output/flows/sqs-roundtrip/projected.jsonl
