@@ -17,6 +17,13 @@
 # them via `m3l flow list`, and rehearse it with `m3l flow run sqs-roundtrip
 # --dry-run`, which stops each step after its config and credential checks.
 #
+# One constraint the chain imposes on `tableName`: `dynamodb-crud batch-write`
+# writes each JSONL record as the item verbatim, and step 2 has projected every
+# record down to a single `body` key — so the table's partition key attribute
+# must BE `body`. Any other key schema fails at runtime, after step 1 has
+# already drained the queue. This is the one coupling a reader cannot infer
+# from the step list.
+#
 # No step declares `dryRun`. That field is a FLOOR, not a default: the effective
 # flag is `flowDryRun || step.dryRun`, so a step pinned `dryRun: true` could
 # never perform its mutation even in a real run. Safety here comes from passing

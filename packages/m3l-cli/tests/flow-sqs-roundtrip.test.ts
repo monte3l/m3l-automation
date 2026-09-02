@@ -19,7 +19,7 @@
  */
 import { fileURLToPath } from "node:url";
 
-import { describe, expect, test } from "vitest";
+import { beforeAll, describe, expect, test } from "vitest";
 
 import { discoverScripts } from "../src/discovery/discover.js";
 import { loadScriptParameters } from "../src/discovery/load-config.js";
@@ -50,9 +50,16 @@ async function buildRealValidationContext(): Promise<M3LCliFlowValidationContext
 }
 
 describe("the shipped sqs-roundtrip flow definition", () => {
-  test("loads and validates against the real, currently-discovered script parameters", async () => {
-    const context = await buildRealValidationContext();
+  // Real script discovery + per-script config load is identical across both
+  // tests below and does no caching writes, so it is safe (and considerably
+  // cheaper) to do it once here rather than in each test.
+  let context: M3LCliFlowValidationContext;
 
+  beforeAll(async () => {
+    context = await buildRealValidationContext();
+  });
+
+  test("loads and validates against the real, currently-discovered script parameters", () => {
     const definition = loadFlowDefinition(REPO_ROOT, "sqs-roundtrip", context);
 
     expect(definition.name).toBe("sqs-roundtrip");
@@ -70,9 +77,7 @@ describe("the shipped sqs-roundtrip flow definition", () => {
     ]);
   });
 
-  test("replay-queue reads project-body's output — the projection is what makes step 4 possible", async () => {
-    const context = await buildRealValidationContext();
-
+  test("replay-queue reads project-body's output — the projection is what makes step 4 possible", () => {
     const definition = loadFlowDefinition(REPO_ROOT, "sqs-roundtrip", context);
 
     const projectBody = definition.steps.find(
@@ -86,9 +91,12 @@ describe("the shipped sqs-roundtrip flow definition", () => {
 
     // Compare the two live values against each other, never a literal path
     // restated twice — that is the assertion a silent edit to either step
-    // must not survive.
-    expect(replayQueue?.parameters["input"]).toBe(
-      projectBody?.parameters["output"],
-    );
+    // must not survive. Assert the shared value itself is present and
+    // non-empty first: without that, two missing keys would each resolve to
+    // `undefined` and the `toBe` below would pass vacuously.
+    const sharedValue = replayQueue?.parameters["input"];
+    expect(sharedValue).toBeDefined();
+    expect(sharedValue).not.toBe("");
+    expect(sharedValue).toBe(projectBody?.parameters["output"]);
   });
 });

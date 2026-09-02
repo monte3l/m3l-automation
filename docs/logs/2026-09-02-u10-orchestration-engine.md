@@ -175,6 +175,17 @@ renaming a parameter in the shipped acceptance flow fails its validation test.
   by a deliberate `test.fails` that will report an XPASS the day the step
   layer learns which parameters are secret. In-repo callers only:
   `packages/m3l-cli` exports nothing.
+- **The validator does not enforce a script's _required_ parameters**
+  ([#883](https://github.com/monte3l/m3l-automation/issues/883)).
+  `readParameters` checks one direction only — every key a step declares must be
+  one the script accepts — so omitting `aws.profile`, `tableName` or `command`
+  validates cleanly and fails when that step runs, after earlier steps have
+  already executed. Asymmetric with the module's own philosophy, which fails
+  closed at load time on unknown keys, secrets and pollution keys. Found by
+  mutation-testing the acceptance flow's own test: deleting two required
+  parameters was caught by the test's assertion, not by `loadFlowDefinition`.
+  Both the review bot and I had asserted validation would reject it; the
+  mutation showed otherwise.
 - **[#862](https://github.com/monte3l/m3l-automation/issues/862)** — the
   no-real-filesystem-in-tests rule is marked `[enforced]`, but its
   `no-restricted-syntax` selector only matches `fs.method()` member calls, so
