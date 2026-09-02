@@ -349,9 +349,14 @@ export function buildGradedPrompt(evalCase) {
 }
 
 /**
- * Pure parse of a `claude -p --output-format json --json-schema ...` stdout
- * envelope into a verdict or an error — no process spawning, so this is the
- * part unit tests exercise directly against captured/synthetic envelopes.
+ * Pure parse of a single result envelope's JSON text into a verdict or an
+ * error — no process spawning, so this is the part unit tests exercise
+ * directly against captured/synthetic envelopes. Takes one envelope object's
+ * JSON text: either the sole line `--output-format json` used to print, or
+ * — since {@link buildClaudeArgs} switched formats — the terminal
+ * `type: "result"` line {@link extractResultEnvelope} pulls out of a
+ * `stream-json` event sequence. Both carry the identical envelope shape, so
+ * this function needed no change when the format did.
  *
  * @param {string} stdout
  * @returns {{ pass: boolean, unmet_expectations: string[], reasoning: string, costUsd: number } | { error: string }}
@@ -399,6 +404,100 @@ export function parseVerdictEnvelope(stdout) {
 }
 
 /**
+ * Parse `claude -p --output-format stream-json --verbose` stdout — one JSON
+ * event object per line (NDJSON) — into an array of event objects. Blank
+ * lines (the trailing newline) are skipped; any other non-JSON line throws,
+ * matching {@link parseVerdictEnvelope}'s "don't swallow a malformed
+ * envelope" stance rather than silently dropping a corrupt line.
+ *
+ * @param {string} stdout
+ * @returns {Record<string, unknown>[]}
+ */
+export function parseStreamEvents(stdout) {
+  return stdout
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line !== "")
+    .map((line) => JSON.parse(line));
+}
+
+/**
+ * Skill names invoked via the `Skill` tool anywhere in a stream-json event
+ * sequence, in call order (repeats if a case invokes the same skill more
+ * than once). This is what makes the fired-skill assertion below OBSERVED
+ * rather than self-reported: a spike confirmed a `Skill` call surfaces as an
+ * `assistant` event carrying a `tool_use` content block shaped
+ * `{ name: "Skill", input: { skill: "<name>" } }`. Reading `structured_output`
+ * alone — the pre-existing verdict path — cannot see this; it is exactly the
+ * gap CI run 33390425486 exposed at the loading level and this closes at the
+ * selection level (a skill that loads but is never chosen still passed).
+ *
+ * @param {Record<string, unknown>[]} events
+ * @returns {string[]}
+ */
+export function extractInvokedSkills(events) {
+  const invoked = [];
+  for (const event of events) {
+    if (event.type !== "assistant") continue;
+    const content = /** @type {{ content?: unknown }} */ (event.message)
+      ?.content;
+    if (!Array.isArray(content)) continue;
+    for (const block of content) {
+      const skill = /** @type {Record<string, unknown>} */ (block?.input)
+        ?.skill;
+      if (
+        block?.type === "tool_use" &&
+        block?.name === "Skill" &&
+        typeof skill === "string"
+      ) {
+        invoked.push(skill);
+      }
+    }
+  }
+  return invoked;
+}
+
+/**
+ * The final `type: "result"` event's JSON text from a stream-json event
+ * sequence, in the last-wins order the CLI emits it — the same shape
+ * `--output-format json` used to return as its single object, so it feeds
+ * {@link parseVerdictEnvelope} unchanged. `null` when no result event is
+ * present, e.g. the process was killed mid-stream before completing.
+ *
+ * @param {Record<string, unknown>[]} events
+ * @returns {string | null}
+ */
+export function extractResultEnvelope(events) {
+  for (let i = events.length - 1; i >= 0; i--) {
+    if (events[i].type === "result") return JSON.stringify(events[i]);
+  }
+  return null;
+}
+
+/**
+ * Whether a case's fired-skill requirement was met.
+ *
+ * Every case defaults to requiring the skill under test to actually fire —
+ * `expect_skill_fired: false` opts a case OUT for the rare case that tests
+ * the skill's own contract to skip itself (`.claude/skills/starting-work/
+ * evals/evals.json`#4: a read-only research prompt, where the SKILL.md's own
+ * description says "Skip for research/questions"). That case exists to grade
+ * whether the model correctly does NOT gate a read-only question — asserting
+ * `starting-work` must fire there would penalize the exact behavior it's
+ * testing for.
+ *
+ * @param {string} skillName the skill under test (the evals.json directory)
+ * @param {string[]} invokedSkills from {@link extractInvokedSkills}
+ * @param {{ expect_skill_fired?: boolean }} evalCase
+ * @returns {{ required: boolean, fired: boolean, met: boolean }}
+ */
+export function evaluateSkillFired(skillName, invokedSkills, evalCase) {
+  const required = evalCase.expect_skill_fired !== false;
+  const fired = invokedSkills.includes(skillName);
+  return { required, fired, met: !required || fired };
+}
+
+/**
  * The exact argv handed to `claude -p` for one eval case.
  *
  * Extracted and exported deliberately: the previous argv carried
@@ -411,6 +510,16 @@ export function parseVerdictEnvelope(stdout) {
  * because that flag never restricted anything; the argv shipped for a full
  * CI run believing it did. The assertions that matter are the ones checking
  * this function EMITS `--tools` with {@link EVAL_AVAILABLE_TOOLS}.
+ *
+ * `--output-format stream-json` (plus the `--verbose` the CLI requires
+ * alongside it) replaces the earlier `json` format: a probe (spiked while
+ * building the skill-fired assertion below) confirmed a `Skill` tool
+ * invocation surfaces as an `assistant` event's `tool_use` block —
+ * `{ name: "Skill", input: { skill: "<name>" } }` — nowhere in the
+ * single-envelope `json` format, which reports only the final result. The
+ * terminal `type: "result"` event carries the exact same envelope shape
+ * `json` used to return as its one object, so {@link parseVerdictEnvelope}
+ * needed no change — only {@link extractResultEnvelope} to find that line.
  *
  * @param {string} prompt the graded prompt from {@link buildGradedPrompt}
  * @param {{ model: string, effort: string, maxBudgetUsd?: number }} options
@@ -441,7 +550,11 @@ export function buildClaudeArgs(
     EVAL_ALLOWED_TOOLS.join(","),
     "--strict-mcp-config",
     "--output-format",
-    "json",
+    "stream-json",
+    // Required alongside stream-json: `claude -p --output-format
+    // stream-json` without it fails fast with "requires --verbose" rather
+    // than streaming anything.
+    "--verbose",
     "--json-schema",
     JSON.stringify(VERDICT_SCHEMA),
     "--model",
@@ -497,17 +610,26 @@ function excerptStream(err, field) {
 /**
  * Build a disposable synthetic project root for one case, seed it with the
  * case's `files` ({ path, content } entries), run the graded prompt through
- * `claude -p`, and return the parsed verdict. The one impure step
+ * `claude -p`, and return the parsed verdict — augmented with the fired-skill
+ * assertion from {@link evaluateSkillFired}. The one impure step
  * (`execFileSync`) is kept to this function alone so
- * {@link buildGradedPrompt}/{@link buildClaudeArgs}/
- * {@link parseVerdictEnvelope} stay independently testable.
+ * {@link buildGradedPrompt}/{@link buildClaudeArgs}/{@link parseStreamEvents}/
+ * {@link extractInvokedSkills}/{@link extractResultEnvelope}/
+ * {@link parseVerdictEnvelope}/{@link evaluateSkillFired} stay independently
+ * testable.
  *
  * @param {string} skillsDir
- * @param {{ prompt: string, expected_output: string, expectations?: unknown[], assertions?: unknown[], files?: { path: string, content: string }[] }} evalCase
+ * @param {string} skillName the skill under test — the evals.json directory name
+ * @param {{ prompt: string, expected_output: string, expectations?: unknown[], assertions?: unknown[], files?: { path: string, content: string }[], expect_skill_fired?: boolean }} evalCase
  * @param {{ model: string, effort: string, maxBudgetUsd?: number }} options
  * @returns {{ pass: boolean, unmet_expectations: string[], reasoning: string, costUsd: number } | { error: string }}
  */
-function runCase(skillsDir, evalCase, { model, effort, maxBudgetUsd }) {
+function runCase(
+  skillsDir,
+  skillName,
+  evalCase,
+  { model, effort, maxBudgetUsd },
+) {
   const { entries } = selectChecklist(evalCase);
   const unrenderable = entries
     .map((entry, index) => ({ index, criterion: renderChecklistEntry(entry) }))
@@ -566,7 +688,42 @@ function runCase(skillsDir, evalCase, { model, effort, maxBudgetUsd }) {
       return { error: describeSpawnFailure(err) };
     }
 
-    return parseVerdictEnvelope(stdout);
+    let events;
+    try {
+      events = parseStreamEvents(stdout);
+    } catch (err) {
+      return {
+        error: `claude -p did not return valid stream-json: ${err.message}`,
+      };
+    }
+
+    const resultEnvelope = extractResultEnvelope(events);
+    if (resultEnvelope === null) {
+      return {
+        error:
+          "claude -p stream-json output contained no terminal result event.",
+      };
+    }
+
+    const verdict = parseVerdictEnvelope(resultEnvelope);
+    if ("error" in verdict) return verdict;
+
+    const invokedSkills = extractInvokedSkills(events);
+    const { met } = evaluateSkillFired(skillName, invokedSkills, evalCase);
+    if (!met) {
+      return {
+        pass: false,
+        unmet_expectations: [
+          ...verdict.unmet_expectations,
+          `Skill "${skillName}" was never invoked via the Skill tool during ` +
+            `this case (skills invoked: ${invokedSkills.length > 0 ? invokedSkills.join(", ") : "none"}).`,
+        ],
+        reasoning: verdict.reasoning,
+        costUsd: verdict.costUsd,
+      };
+    }
+
+    return verdict;
   } finally {
     rmSync(workspaceDir, { recursive: true, force: true });
   }
@@ -616,7 +773,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
 
     for (const evalCase of suite.evals) {
       totalCases++;
-      const result = runCase(skillsDir, evalCase, {
+      const result = runCase(skillsDir, skillName, evalCase, {
         model,
         effort,
         maxBudgetUsd,

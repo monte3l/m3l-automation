@@ -45,6 +45,7 @@
       "id": 4,
       "prompt": "Can you read through the error hierarchy in `packages/m3l-common/src/core/errors/` and explain how the M3LError subclasses are structured? I am not making any changes — this is exploratory research.",
       "expected_output": "The response explicitly skips the starting-work gate because the task is read-only research, and proceeds to answer the technical question without presenting any branch, PR, or confirmation prompt.",
+      "expect_skill_fired": false,
       "expectations": [
         "The response states that the task is read-only, exploratory, or a question, and explicitly notes that starting-work is being skipped or does not apply",
         "The response text contains no recommendation of a branch name beginning with `feat/` or `fix/`",
