@@ -768,6 +768,11 @@ key as the message body, so step 2's `fields: [body=body]` projection is what
 makes step 4 possible at all. Step 3 writes to DynamoDB and produces nothing
 step 4 could consume.
 
+That same projection constrains step 3's table: `dynamodb-crud batch-write`
+writes each JSONL record as the item verbatim, so with only a `body` key left,
+the table's partition key attribute must be `body`. Any other key schema fails
+at runtime — after step 1 has already drained the queue.
+
 Rehearse it without touching AWS:
 
 ```bash
