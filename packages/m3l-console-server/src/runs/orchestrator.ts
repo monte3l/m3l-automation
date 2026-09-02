@@ -10,6 +10,7 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { join } from "node:path";
 
 import { Core } from "@m3l-automation/m3l-common";
 
@@ -113,6 +114,8 @@ interface M3LOrchestratorContext {
   readonly spawnExecutor: M3LRunExecutor;
   readonly inProcessExecutor: M3LRunExecutor;
   readonly logger: Core.M3LLogger;
+  /** See {@link M3LRunOrchestratorOptions.runsOutputRoot}. */
+  readonly runsOutputRoot: string;
   readonly newId: () => string;
   readonly nowMs: () => number;
   readonly timerImpl: typeof setTimeout;
@@ -295,6 +298,12 @@ function executeAndSettle(
       dryRun: body.dryRun,
       signal: controller.signal,
       correlationId,
+      // Per-run isolation, not a shared output tree: the run id is the ONE
+      // value both the console and the child agree on, so naming the
+      // directory after it is what lets `GET /api/v1/runs/:id/report` find
+      // the report the child wrote under its own `startedAt` timestamp — a
+      // timestamp the console never observes.
+      outputDir: join(ctx.runsOutputRoot, id),
       onLine: (line: string): void => {
         ctx.events.publish({ event: "run.line", runId: id, line });
       },
@@ -621,6 +630,7 @@ export function createRunOrchestrator(
     spawnExecutor: options.spawnExecutor,
     inProcessExecutor: options.inProcessExecutor,
     logger: options.logger,
+    runsOutputRoot: options.runsOutputRoot,
     newId: internals.newId ?? randomUUID,
     nowMs: internals.nowMs ?? Date.now,
     timerImpl: internals.timerImpl ?? setTimeout,

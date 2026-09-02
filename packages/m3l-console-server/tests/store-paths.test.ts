@@ -16,6 +16,7 @@ import { afterEach, describe, expect, expectTypeOf, test } from "vitest";
 import { M3LConsoleError } from "../src/errors/console-error.js";
 import {
   resolveAuditStreamRoot,
+  resolveRunsOutputRoot,
   resolveSessionArtifactRoot,
   resolveStoreDatabasePath,
 } from "../src/config/paths.js";
@@ -445,6 +446,118 @@ describe("resolveAuditStreamRoot — resolveDataDir failure", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// resolveRunsOutputRoot (X7d) — the third directory root, same shape as the
+// two above over a different default. It is what makes a run's report
+// addressable: the orchestrator pins each child's `M3L_OUTPUT_DIR` to
+// `<thisRoot>/<runId>`.
+// ---------------------------------------------------------------------------
+
+describe("resolveRunsOutputRoot — default (X7d)", () => {
+  test("resolves <dataDir>/console/runs when configuredPath is absent", () => {
+    const result = resolveRunsOutputRoot({ resolveDataDir: () => "/data" });
+
+    expect(result).toBe(path.join("/data", "console", "runs"));
+  });
+
+  test("resolveRunsOutputRoot is callable with no options at all", () => {
+    expectTypeOf(resolveRunsOutputRoot).toBeCallableWith();
+  });
+
+  // INVARIANT: all three roots default under `<dataDir>/console` and must be
+  // SIBLINGS, never nested. A spawned script owns everything beneath its own
+  // per-run directory — it writes archives there and may clean them up — so
+  // neither the artifact store nor the audit trail may sit inside it, and it
+  // may not sit inside theirs. Mutation-tested: changing the default segments
+  // to `["console", "audit", "runs"]` fails here.
+  test("is a sibling of both the artifact root and the audit root, never nested", () => {
+    const runsRoot = resolveRunsOutputRoot({ resolveDataDir: () => "/data" });
+    const artifactRoot = resolveSessionArtifactRoot({
+      resolveDataDir: () => "/data",
+    });
+    const auditRoot = resolveAuditStreamRoot({ resolveDataDir: () => "/data" });
+
+    for (const other of [artifactRoot, auditRoot]) {
+      expect(runsRoot).not.toBe(other);
+      expect(path.relative(other, runsRoot).startsWith("..")).toBe(true);
+      expect(path.relative(runsRoot, other).startsWith("..")).toBe(true);
+    }
+  });
+});
+
+describe("resolveRunsOutputRoot — configuredPath resolution", () => {
+  test("resolves a relative configuredPath against the injected data dir", () => {
+    const result = resolveRunsOutputRoot({
+      configuredPath: "custom/runs",
+      resolveDataDir: () => "/data",
+    });
+
+    expect(result).toBe(path.resolve("/data", "custom/runs"));
+  });
+
+  test("passes an absolute configuredPath through path.resolve unchanged", () => {
+    const absolute = path.resolve(path.sep, "abs", "runs");
+
+    const result = resolveRunsOutputRoot({
+      configuredPath: absolute,
+      resolveDataDir: () => "/data",
+    });
+
+    expect(result).toBe(absolute);
+  });
+});
+
+describe("resolveRunsOutputRoot — rejects an unsafe configuredPath", () => {
+  test.each<[string, string]>([
+    ["a blank string", ""],
+    ["a whitespace-only string", "   "],
+    ["a file: prefix", "file:///tmp/runs"],
+  ])("rejects %s as ERR_CONSOLE_CONFIG_INVALID", (_label, rejectedValue) => {
+    let thrown: unknown;
+    try {
+      resolveRunsOutputRoot({
+        configuredPath: rejectedValue,
+        resolveDataDir: () => "/data",
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    const error = thrown as M3LConsoleError;
+    expect(error.code).toBe("ERR_CONSOLE_CONFIG_INVALID");
+    if (rejectedValue.trim().length > 0) {
+      expect(error.message).not.toContain(rejectedValue);
+    }
+    expect(error.message).toContain("m3l.console.runs.output.root");
+    expect(error.context).toMatchObject({
+      key: "m3l.console.runs.output.root",
+    });
+  });
+});
+
+describe("resolveRunsOutputRoot — resolveDataDir failure", () => {
+  test("wraps a thrown resolveDataDir failure as M3LConsoleError, chaining the original as cause", () => {
+    const original = new Error("boom");
+
+    let thrown: unknown;
+    try {
+      resolveRunsOutputRoot({
+        resolveDataDir: () => {
+          throw original;
+        },
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    const error = thrown as M3LConsoleError;
+    expect(error.code).toBe("ERR_CONSOLE_CONFIG_INVALID");
+    expect(error.cause).toBe(original);
+  });
+});
+
 describe("the failing configuration key is attributed to the resolver that failed", () => {
   // `runResolveDataDir` hard-codes `DB_PATH_KEY` in both its message and its
   // `context.key`, so a data-dir failure raised while resolving the AUDIT or
@@ -485,5 +598,11 @@ describe("the failing configuration key is attributed to the resolver that faile
     expect(
       keyFor(() => resolveAuditStreamRoot({ resolveDataDir: failing })),
     ).toBe("m3l.console.audit.root");
+  });
+
+  test("resolveRunsOutputRoot attributes m3l.console.runs.output.root", () => {
+    expect(
+      keyFor(() => resolveRunsOutputRoot({ resolveDataDir: failing })),
+    ).toBe("m3l.console.runs.output.root");
   });
 });

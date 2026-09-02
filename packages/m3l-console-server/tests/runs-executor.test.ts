@@ -64,6 +64,7 @@ function baseExecuteOptions(
     readonly dryRun: boolean;
     readonly signal: AbortSignal;
     readonly correlationId: string;
+    readonly outputDir: string;
     readonly onLine: M3LLineSink;
   }> = {},
 ): {
@@ -72,6 +73,7 @@ function baseExecuteOptions(
   dryRun: boolean;
   signal: AbortSignal;
   correlationId: string;
+  outputDir: string;
   onLine: M3LLineSink;
 } {
   return {
@@ -80,6 +82,7 @@ function baseExecuteOptions(
     dryRun: false,
     signal: new AbortController().signal,
     correlationId: "corr-base",
+    outputDir: "/runs-output/run-base",
     onLine: vi.fn(),
     ...overrides,
   };
@@ -237,6 +240,78 @@ describe("createSpawnExecutor — env (correlation)", () => {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- expect.objectContaining returns any; safe in test assertions
         env: expect.objectContaining({
           M3L_CORRELATION_ID: "corr-both",
+          M3L_RUN_PARAMETERS: JSON.stringify({ region: "eu-west-1" }),
+        }),
+      }),
+    );
+  });
+});
+
+describe("createSpawnExecutor — env (output dir)", () => {
+  // MIRRORED LITERAL GUARD. `m3l-common`'s `core/utils/M3LPaths.ts` READS
+  // `M3L_OUTPUT_DIR` (as `M3LPathEnvironmentVariables.OUTPUT_DIR`) to
+  // override its computed output directory — that is what puts this run's
+  // `run-report.json` somewhere `GET /api/v1/runs/:id/report` can find it by
+  // run id. This asserts the exact spelling, so a rename on either side
+  // fails here instead of silently making every run report a 404. Its twin
+  // lives in `m3l-common`'s `tests/utils.test.ts`, which pins
+  // `M3LPathEnvironmentVariables.OUTPUT_DIR` to the same string.
+  test("passes the run's output dir as M3L_OUTPUT_DIR", async () => {
+    const fakeChild = createFakeChild();
+    const spawnImpl = vi.fn(() => fakeChild);
+    const executor = createSpawnExecutor(
+      { killTimeoutMs: 5000 },
+      { spawnImpl },
+    );
+
+    const resultPromise = executor.execute({
+      ...baseExecuteOptions(),
+      outputDir: "/var/lib/m3l/console/runs/run-42",
+    });
+    fakeChild.emit("close", 0, null);
+    await resultPromise;
+
+    expect(spawnImpl).toHaveBeenCalledWith(
+      "node",
+      expect.any(Array),
+      expect.objectContaining({
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- expect.objectContaining returns any; safe in test assertions
+        env: expect.objectContaining({
+          M3L_OUTPUT_DIR: "/var/lib/m3l/console/runs/run-42",
+        }),
+      }),
+    );
+  });
+
+  // INVARIANT: per-run isolation must not cost the run its correlation or
+  // its parameters. Mutation-tested: replacing the env spread's
+  // `M3L_OUTPUT_DIR` entry with a whole-object assignment drops the other
+  // two and fails here.
+  test("sets M3L_OUTPUT_DIR alongside the other per-run env, not instead of it", async () => {
+    const fakeChild = createFakeChild();
+    const spawnImpl = vi.fn(() => fakeChild);
+    const executor = createSpawnExecutor(
+      { killTimeoutMs: 5000 },
+      { spawnImpl },
+    );
+
+    const resultPromise = executor.execute({
+      ...baseExecuteOptions(),
+      parameters: { region: "eu-west-1" },
+      correlationId: "corr-out",
+      outputDir: "/runs/out-42",
+    });
+    fakeChild.emit("close", 0, null);
+    await resultPromise;
+
+    expect(spawnImpl).toHaveBeenCalledWith(
+      "node",
+      expect.any(Array),
+      expect.objectContaining({
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- expect.objectContaining returns any; safe in test assertions
+        env: expect.objectContaining({
+          M3L_OUTPUT_DIR: "/runs/out-42",
+          M3L_CORRELATION_ID: "corr-out",
           M3L_RUN_PARAMETERS: JSON.stringify({ region: "eu-west-1" }),
         }),
       }),
@@ -930,6 +1005,7 @@ describe("createInProcessExecutor — logger and signal wiring", () => {
       dryRun: false,
       signal: controller.signal,
       correlationId: "corr-inline",
+      outputDir: "/runs-output/run-inline",
       onLine: vi.fn(),
     });
 

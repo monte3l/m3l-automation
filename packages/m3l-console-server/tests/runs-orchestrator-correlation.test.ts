@@ -46,6 +46,14 @@ import type {
   M3LRunRecord,
 } from "../src/store/runs-repository.js";
 
+/**
+ * The runs output root every orchestrator fixture is built with — the
+ * directory `<root>/<runId>` is derived from and handed to the executor as
+ * `outputDir`. Never touched on disk here: these suites drive fake
+ * executors, so the value only has to be a stable, recognisable path.
+ */
+const RUNS_OUTPUT_ROOT = "/runs-output";
+
 vi.mock("node:fs", async () => {
   const actual = await vi.importActual<typeof fs>("node:fs");
   return { ...actual };
@@ -430,6 +438,7 @@ function harnessFor(
       spawnExecutor,
       inProcessExecutor: createUnusedExecutor(log, "inProcess"),
       logger: new Core.M3LLogger([new RecordingHandler()]),
+      runsOutputRoot: RUNS_OUTPUT_ROOT,
     },
     {
       newId: createIdSequence("run"),
@@ -578,5 +587,92 @@ describe("createRunOrchestrator — correlation across the queue", () => {
     await flush();
 
     expect(correlationForScript(spawnExecutor, "script-c")).toBe("corr-C");
+  });
+});
+
+/** The output dir the executor was invoked with for `scriptName`. */
+function outputDirForScript(
+  spawnExecutor: ReturnType<typeof createControllableExecutor>,
+  scriptName: string,
+): string | undefined {
+  return spawnExecutor.calls.find(
+    (call) => call.options.scriptDir === path.join(SCRIPTS_ROOT, scriptName),
+  )?.options.outputDir;
+}
+
+describe("createRunOrchestrator — per-run output isolation (X7d)", () => {
+  // The expected values are written as LITERALS rather than recomputed with
+  // `path.join(RUNS_OUTPUT_ROOT, id)`: deriving the expectation the same way
+  // the code does would make this pass for any joining scheme, including one
+  // that dropped the run id entirely.
+  test("each run's executor is handed its OWN directory under the runs output root", async () => {
+    const { orchestrator, spawnExecutor } = harnessFor({
+      "script-a": ["accept"],
+      "script-b": ["accept"],
+    });
+
+    orchestrator.launch(requestWithCorrelation("script-a", "corr-a"));
+    orchestrator.launch(requestWithCorrelation("script-b", "corr-b"));
+    await flush();
+
+    expect(outputDirForScript(spawnExecutor, "script-a")).toBe(
+      "/runs-output/run-1",
+    );
+    expect(outputDirForScript(spawnExecutor, "script-b")).toBe(
+      "/runs-output/run-2",
+    );
+  });
+
+  // INVARIANT: the directory is named after the RUN, so two runs of the SAME
+  // script never share one. Without this, `GET /api/v1/runs/:id/report` would
+  // find two timestamp directories under one id and refuse — the exact fault
+  // `runs/report.ts` raises rather than guessing between them.
+  // Mutation-tested: naming the directory after `resolved.name` instead of
+  // `id` makes both of these the same string and fails here.
+  test("two runs of the same script get different directories", async () => {
+    const { orchestrator, spawnExecutor } = harnessFor({
+      "solo-script": ["accept", "accept"],
+    });
+
+    orchestrator.launch(requestWithCorrelation("solo-script", "corr-1"));
+    orchestrator.launch(requestWithCorrelation("solo-script", "corr-2"));
+    await flush();
+
+    const dirs = spawnExecutor.calls.map(
+      (call: PendingExecutorCall) => call.options.outputDir,
+    );
+    expect(dirs).toEqual(["/runs-output/run-1", "/runs-output/run-2"]);
+    expect(new Set(dirs).size).toBe(dirs.length);
+  });
+
+  // INVARIANT: a QUEUED run's directory is its own, derived when it finally
+  // starts — the same "carried on the run, not read from ambient state"
+  // property this file's correlation cases establish.
+  test("a queued run gets its own directory, not the one whose completion started it", async () => {
+    const { orchestrator, spawnExecutor } = harnessFor({
+      "script-a": ["accept"],
+      "script-b": ["queue", "accept"],
+    });
+
+    orchestrator.launch(requestWithCorrelation("script-a", "corr-a"));
+    orchestrator.launch(requestWithCorrelation("script-b", "corr-b"));
+    await flush();
+
+    const callA = spawnExecutor.calls.find(
+      (call) => call.options.scriptDir === path.join(SCRIPTS_ROOT, "script-a"),
+    );
+    if (callA === undefined) throw new Error("script-a did not start");
+    // Settling A pumps the queue from within A's own continuation — the
+    // moment an ambient-state implementation would hand B A's directory.
+    callA.resolve({ exitCode: 0, killRequested: false, dryRun: false });
+    await flush();
+    await flush();
+
+    expect(outputDirForScript(spawnExecutor, "script-b")).toBe(
+      "/runs-output/run-2",
+    );
+    expect(outputDirForScript(spawnExecutor, "script-b")).not.toBe(
+      outputDirForScript(spawnExecutor, "script-a"),
+    );
   });
 });
