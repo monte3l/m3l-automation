@@ -27,6 +27,7 @@ import type { M3LCliOutput, M3LCliOutputStream } from "./cli/output.js";
 import { createOutput } from "./cli/output.js";
 import type { M3LCliCommandContext } from "./commands/context.js";
 import { resolveWorkspaceRoot } from "./discovery/discover.js";
+import { createCancellationScope } from "./run/cancellation.js";
 
 /** Optional overrides `runCli` accepts in place of the real process globals. */
 export interface M3LCliRunOptions {
@@ -689,9 +690,20 @@ export async function runCli(
   });
   const cwd = options.cwd ?? process.cwd();
 
+  // Install one survival scope at the top of every CLI dispatch so the parent
+  // process stays alive across all teardown — history recording, envelope
+  // emission, and flow run records — regardless of which command path runs.
+  // Purpose is survival only, not delivery: registering any SIGINT/SIGTERM
+  // listener suppresses Node's default kill; the signal itself is not passed
+  // to dispatch. Disposed in finally so the listeners are always removed after
+  // the dispatch resolves, preventing listener accumulation on repeated calls
+  // (e.g. tests that call runCli multiple times). SF-2, U11 ADR-0049.
+  const scope = createCancellationScope();
   try {
     return await dispatch(argv, output, cwd, env);
   } catch (error) {
     return reportError(output, error);
+  } finally {
+    scope.dispose();
   }
 }

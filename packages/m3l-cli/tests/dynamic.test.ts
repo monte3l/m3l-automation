@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { runDynamic } from "../src/commands/dynamic.js";
 import { toParameterError } from "../src/commands/dynamic-argv.js";
@@ -12,6 +12,7 @@ import { executeScript } from "../src/run/execute.js";
 import { runInProcess } from "../src/run/in-process.js";
 import { runInspect } from "../src/commands/inspect.js";
 import { recordHistoryEntry } from "../src/history/store.js";
+import { createCancellationScope } from "../src/run/cancellation.js";
 
 /**
  * Contract: `src/commands/dynamic.ts` — `runDynamic` resolves `scriptName`
@@ -49,6 +50,10 @@ vi.mock("../src/commands/inspect.js", () => ({
 vi.mock("../src/history/store.js", () => ({
   recordHistoryEntry: vi.fn(),
 }));
+// U11: cancellation scope — required RED failure until src/run/cancellation.ts exists
+vi.mock("../src/run/cancellation.js", () => ({
+  createCancellationScope: vi.fn(),
+}));
 
 const discoverScriptsMock = vi.mocked(discoverScripts);
 const loadParametersCachedMock = vi.mocked(loadParametersCached);
@@ -56,6 +61,17 @@ const executeScriptMock = vi.mocked(executeScript);
 const runInProcessMock = vi.mocked(runInProcess);
 const runInspectMock = vi.mocked(runInspect);
 const recordHistoryEntryMock = vi.mocked(recordHistoryEntry);
+const createCancellationScopeMock = vi.mocked(createCancellationScope);
+
+// Provide a safe default before every test so the in-process branch never
+// sees `undefined` when calling `scope.signal`. C10 tests that need to
+// inspect the scope override this per-test with their own spy.
+beforeEach(() => {
+  createCancellationScopeMock.mockReturnValue({
+    signal: new AbortController().signal,
+    dispose: vi.fn(),
+  });
+});
 
 afterEach(() => {
   discoverScriptsMock.mockReset();
@@ -64,6 +80,7 @@ afterEach(() => {
   runInProcessMock.mockReset();
   runInspectMock.mockReset();
   recordHistoryEntryMock.mockReset();
+  createCancellationScopeMock.mockReset();
 });
 
 function createOutputCollector(): {
@@ -1356,5 +1373,109 @@ describe("runDynamic — the in-process path needs no env injection (ADR-0085)",
     await expect(
       runDynamic(buildContext(), "json-etl", ["--in-process"], []),
     ).resolves.toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// U11 additions — C10: in-process branch installs a cancellation scope
+//
+// RED failure expected: `src/run/cancellation.ts` does not exist yet, so the
+// vi.mock above and the import of `createCancellationScope` already fail.
+// Additionally, `dynamic.ts` does not yet call `createCancellationScope` —
+// so the "called exactly once" and "dispose still called when throws"
+// assertions will fail even after the module exists.
+//
+// MUTATION TEST: removing `dispose()` from the finally block in dynamic.ts's
+// in-process dispatch would cause `disposeSpy` to NOT be called when
+// `runInProcess` throws, failing the assertion below. This is the discriminating
+// guard that proves the `finally { dispose() }` is actually wired.
+// ---------------------------------------------------------------------------
+
+describe("runDynamic — in-process branch installs a cancellation scope (U11 C10)", () => {
+  test("creates exactly one cancellation scope for an in-process dispatch", async () => {
+    discoverScriptsMock.mockReturnValue(knownCandidates);
+    loadParametersCachedMock.mockResolvedValue(descriptors);
+    runInProcessMock.mockResolvedValue(0);
+    createCancellationScopeMock.mockReturnValue({
+      signal: new AbortController().signal,
+      dispose: vi.fn(),
+    });
+
+    await runDynamic(buildContext(), "json-etl", ["--in-process"], []);
+
+    expect(createCancellationScopeMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("passes the scope's signal to runInProcess as options.signal", async () => {
+    discoverScriptsMock.mockReturnValue(knownCandidates);
+    loadParametersCachedMock.mockResolvedValue(descriptors);
+    runInProcessMock.mockResolvedValue(0);
+    const controller = new AbortController();
+    createCancellationScopeMock.mockReturnValue({
+      signal: controller.signal,
+      dispose: vi.fn(),
+    });
+
+    await runDynamic(buildContext(), "json-etl", ["--in-process"], []);
+
+    // The second argument to runInProcess is M3LCliInProcessOptions;
+    // options.signal must be the exact AbortSignal the scope returned.
+    const [, options] = runInProcessMock.mock.calls[0] ?? [undefined, {}];
+    expect((options as { readonly signal?: unknown }).signal).toBe(
+      controller.signal,
+    );
+  });
+
+  test("disposes the scope in a finally — dispose() is called even when runInProcess resolves normally", async () => {
+    discoverScriptsMock.mockReturnValue(knownCandidates);
+    loadParametersCachedMock.mockResolvedValue(descriptors);
+    runInProcessMock.mockResolvedValue(0);
+    const disposeSpy = vi.fn();
+    createCancellationScopeMock.mockReturnValue({
+      signal: new AbortController().signal,
+      dispose: disposeSpy,
+    });
+
+    await runDynamic(buildContext(), "json-etl", ["--in-process"], []);
+
+    expect(disposeSpy).toHaveBeenCalledTimes(1);
+  });
+
+  test("disposes the scope in a finally — dispose() is called even when runInProcess throws (MUTATION TEST for finally guard)", async () => {
+    // MUTATION TEST: removing `dispose()` from the implementation's `finally`
+    // block would leave `disposeSpy` uncalled, failing the assertion below.
+    // This is the proof that the `finally { scope.dispose() }` is actually
+    // present in the in-process dispatch path, not just assumed.
+    discoverScriptsMock.mockReturnValue(knownCandidates);
+    loadParametersCachedMock.mockResolvedValue(descriptors);
+    const inProcessError = new M3LCliError(
+      "ERR_CLI_COMMAND_MODULE_INVALID",
+      "no adopted command module",
+    );
+    runInProcessMock.mockRejectedValue(inProcessError);
+    const disposeSpy = vi.fn();
+    createCancellationScopeMock.mockReturnValue({
+      signal: new AbortController().signal,
+      dispose: disposeSpy,
+    });
+
+    await expect(
+      runDynamic(buildContext(), "json-etl", ["--in-process"], []),
+    ).rejects.toBe(inProcessError);
+
+    // MUTATION TEST: if `finally { dispose() }` is missing, this assertion fails.
+    expect(disposeSpy).toHaveBeenCalledTimes(1);
+  });
+
+  test("does NOT create a cancellation scope for the non-in-process spawn path", async () => {
+    // Regression guard: scope creation must be gated on the in-process flag.
+    // The spawn path (executeScript) has its own scope in execute.ts.
+    discoverScriptsMock.mockReturnValue(knownCandidates);
+    loadParametersCachedMock.mockResolvedValue(descriptors);
+    executeScriptMock.mockResolvedValue(0);
+
+    await runDynamic(buildContext(), "json-etl", [], []);
+
+    expect(createCancellationScopeMock).not.toHaveBeenCalled();
   });
 });

@@ -307,6 +307,9 @@ function buildOptions(
     parameterValues: {},
     dryRun: false,
     ...overrides,
+    // signal must be explicitly present (required-holding-undefined convention,
+    // exactOptionalPropertyTypes: true) — the spread alone leaves it optional.
+    signal: overrides.signal,
   };
 }
 
@@ -633,4 +636,214 @@ describe("runInProcess — outcome-to-exit-code parity", () => {
       expect(code).toBe(Core.mapCommandOutcomeToExitCode(outcome));
     },
   );
+});
+
+// ---------------------------------------------------------------------------
+// U11 additions — B6: signal forwarding
+//
+// RED failure expected: M3LCliInProcessOptions does not yet carry a `signal`
+// field — the type assertion and the `buildOptions({ signal })` call will
+// produce "Object literal may only specify known properties" until the
+// implementer adds `readonly signal: AbortSignal | undefined` to the
+// interface. The runtime forwarding tests will also fail because the
+// implementation currently hardcodes `signal: undefined` in the built
+// context rather than reading it from `options`.
+// ---------------------------------------------------------------------------
+
+describe("runInProcess — signal forwarding (U11 B6)", () => {
+  test("M3LCliInProcessOptions.signal accepts undefined (required-holding-undefined convention)", () => {
+    // This type test fails in RED because the `signal` field is absent from
+    // M3LCliInProcessOptions. Once GREEN, it proves the field is declared
+    // with the required-holding-undefined convention (not `signal?`).
+    const options: M3LCliInProcessOptions = {
+      output: createOutput(),
+      parameterValues: {},
+      dryRun: false,
+      signal: undefined,
+    };
+    expect(options.signal).toBeUndefined();
+  });
+
+  test("M3LCliInProcessOptions.signal accepts a live AbortSignal (non-undefined)", () => {
+    const controller = new AbortController();
+    const options: M3LCliInProcessOptions = {
+      output: createOutput(),
+      parameterValues: {},
+      dryRun: false,
+      signal: controller.signal,
+    };
+    expect(options.signal).toBe(controller.signal);
+  });
+
+  test("runInProcess forwards options.signal verbatim as context.signal — same AbortSignal instance", async () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(true);
+    const controller = new AbortController();
+    const contextCalls: unknown[] = [];
+    const fakeExport = createFakeModuleExport((_parameters, context) => {
+      contextCalls.push(context);
+      return Promise.resolve({ status: "success" });
+    });
+    const importModule = vi.fn(() => Promise.resolve(fakeExport));
+
+    await runInProcess(
+      scriptDirectory,
+      {
+        output: createOutput(),
+        parameterValues: {},
+        dryRun: false,
+        signal: controller.signal,
+      },
+      { importModule },
+    );
+
+    expect((contextCalls[0] as { readonly signal: unknown }).signal).toBe(
+      controller.signal,
+    );
+  });
+
+  test("runInProcess forwards an already-aborted signal — aborted state is preserved in context", async () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(true);
+    const controller = new AbortController();
+    controller.abort(); // aborted before execute is called
+    const contextCalls: unknown[] = [];
+    const fakeExport = createFakeModuleExport((_parameters, context) => {
+      contextCalls.push(context);
+      return Promise.resolve({ status: "interrupted" });
+    });
+    const importModule = vi.fn(() => Promise.resolve(fakeExport));
+
+    await runInProcess(
+      scriptDirectory,
+      {
+        output: createOutput(),
+        parameterValues: {},
+        dryRun: false,
+        signal: controller.signal,
+      },
+      { importModule },
+    );
+
+    expect(
+      (contextCalls[0] as { readonly signal: AbortSignal }).signal.aborted,
+    ).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// U11 additions — B7: abort-shaped throw → INTERRUPTED exit code
+//
+// RED failure expected: runInProcess currently wraps ALL execute throws into
+// ERR_CLI_IN_PROCESS_FAILED. After U11, an abort-shaped throw (whose
+// `error.code === "ERR_OPERATION_ABORTED"`) must resolve to
+// M3L_EXIT_CODES.INTERRUPTED (5) instead of throwing ERR_CLI_IN_PROCESS_FAILED.
+// Classification is code-based (ADR-0049), not instanceof.
+// ---------------------------------------------------------------------------
+
+describe("runInProcess — abort-shaped execute throw resolves INTERRUPTED (U11 B7)", () => {
+  test("resolves M3L_EXIT_CODES.INTERRUPTED (5) when execute rejects with an Error whose code is ERR_OPERATION_ABORTED", async () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(true);
+    const abortError = Object.assign(new Error("The operation was aborted"), {
+      code: "ERR_OPERATION_ABORTED",
+    });
+    const fakeExport = createFakeModuleExport(() => Promise.reject(abortError));
+    const importModule = vi.fn(() => Promise.resolve(fakeExport));
+
+    const code = await runInProcess(scriptDirectory, buildOptions(), {
+      importModule,
+    });
+
+    expect(code).toBe(Core.M3L_EXIT_CODES.INTERRUPTED);
+    expect(code).toBe(5);
+  });
+
+  test("resolves INTERRUPTED for an abort-shaped error that is NOT an instance of any library class (code-based, not instanceof)", async () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(true);
+    // A plain Error with the right code from a different module boundary —
+    // classification must be `error.code === "ERR_OPERATION_ABORTED"`,
+    // NOT `error instanceof SomeLibraryClass`.
+    class ForeignError extends Error {
+      readonly code = "ERR_OPERATION_ABORTED";
+    }
+    const foreignAbort = new ForeignError("abort from a foreign module");
+    const fakeExport = createFakeModuleExport(() =>
+      Promise.reject(foreignAbort),
+    );
+    const importModule = vi.fn(() => Promise.resolve(fakeExport));
+
+    const code = await runInProcess(scriptDirectory, buildOptions(), {
+      importModule,
+    });
+
+    expect(code).toBe(Core.M3L_EXIT_CODES.INTERRUPTED);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// U11 additions — B8: non-abort throw still becomes ERR_CLI_IN_PROCESS_FAILED
+//
+// Regression guard: item B7 must NOT widen the abort classification to
+// include non-abort errors. An execute throw with a different code (or no
+// code) must still wrap into ERR_CLI_IN_PROCESS_FAILED.
+// ---------------------------------------------------------------------------
+
+describe("runInProcess — non-abort execute throw still ERR_CLI_IN_PROCESS_FAILED (U11 B8)", () => {
+  test.each([
+    ["an error with no code", new Error("something exploded")],
+    [
+      "an error with a different code",
+      Object.assign(new Error("other error"), { code: "ERR_UNRELATED" }),
+    ],
+    [
+      "an error with code ERR_OPERATION_ABORTED but no message (edge)",
+      // An error with the abort code AND `aborted: false` on its signal
+      // is still treated as abort-shaped by code alone — but an error
+      // with a completely different code must not be caught.
+      Object.assign(new Error(""), { code: "ERR_NETWORK_CHANGED" }),
+    ],
+  ])(
+    "wraps '%s' into ERR_CLI_IN_PROCESS_FAILED, not INTERRUPTED",
+    async (_label, executeError) => {
+      vi.spyOn(fs, "existsSync").mockReturnValue(true);
+      const fakeExport = createFakeModuleExport(() =>
+        Promise.reject(executeError),
+      );
+      const importModule = vi.fn(() => Promise.resolve(fakeExport));
+
+      let thrown: unknown;
+      try {
+        await runInProcess(scriptDirectory, buildOptions(), { importModule });
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toBeInstanceOf(M3LCliError);
+      expect((thrown as M3LCliError).code).toBe("ERR_CLI_IN_PROCESS_FAILED");
+    },
+  );
+});
+
+// ---------------------------------------------------------------------------
+// U11 additions — B9: interrupted outcome → exit 5 (existing behaviour pin)
+//
+// { status: "interrupted" } is already covered by the test.each in
+// "runInProcess — outcome-to-exit-code parity" above. This dedicated test
+// names the exit code explicitly so the contract is readable without
+// cross-referencing the parity table.
+// ---------------------------------------------------------------------------
+
+describe("runInProcess — interrupted outcome maps to INTERRUPTED exit code (U11 B9)", () => {
+  test("a command module that resolves { status: 'interrupted' } produces exit code 5", async () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(true);
+    const fakeExport = createFakeModuleExport(() =>
+      Promise.resolve({ status: "interrupted" }),
+    );
+    const importModule = vi.fn(() => Promise.resolve(fakeExport));
+
+    const code = await runInProcess(scriptDirectory, buildOptions(), {
+      importModule,
+    });
+
+    expect(code).toBe(Core.M3L_EXIT_CODES.INTERRUPTED);
+    expect(code).toBe(5);
+  });
 });

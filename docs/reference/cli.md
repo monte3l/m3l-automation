@@ -78,6 +78,19 @@ This page is the CLI's contract. It grows one section per shipped phase
   process instead of spawning `dist/main.js` as a child — see
   [§Phase 8d](#phase-8d--per-script-dynamic-subcommands). `run <script>` and
   `wizard` do not offer this opt-in; they always spawn.
+- **Ctrl-C unwinds cooperatively; it never kills the CLI mid-report
+  (ADR-0049, U11).** For the duration of a run the CLI owns `SIGINT` and
+  `SIGTERM`. The **first** signal is absorbed: on `--in-process` it aborts
+  the `AbortSignal` handed to the command as `context.signal`, so a script
+  threading it into a poller or AWS waiter stops at the next checkpoint and
+  runs its cleanup; on the spawn path the child receives the signal directly
+  from the shared process group and unwinds on its own, while the parent
+  survives — which is the point, since a killed parent would lose the child's
+  resolved exit code, the `--json` envelope and the history entry. The
+  **second** signal escalates and terminates, so a script that ignores its
+  signal can still be killed and an operator is never trapped. An interrupted
+  run exits `5` (`INTERRUPTED`, the ADR-0035 registry code), not `1` and not
+  `128 + SIGINT`.
 
 ## Commands
 
@@ -223,16 +236,17 @@ the first bare `--` appended verbatim.
   execution path; on `--in-process` it is detected from the tokens after the
   first bare `--` (the same place a spawn-path caller already puts it,
   `m3l <script> [params] -- --dry-run`), since there is no child process argv
-  for the script to read on its own. Cancellation forwarding
-  (`context.signal`) is wired as a port only — it is always `undefined` in
-  this slice, since no in-process host yet owns process signals; real
-  Ctrl-C → `AbortSignal` wiring is issue tracker item U11's job, which
-  depends on this seam existing first. A script that has not adopted the
+  for the script to read on its own. Cancellation is **live**
+  (U11): the CLI owns `SIGINT`/`SIGTERM` for the duration of an in-process
+  run and forwards a real `AbortSignal` as `context.signal`, so a script
+  that threads it into a poller or AWS waiter unwinds cooperatively instead
+  of being killed mid-write (see §_Design invariants_). A script that has not adopted the
   ADR-0054 seam (no `dist/command.js`, or an invalid export) exits `1`
   (`ERR_CLI_COMMAND_MODULE_INVALID`); a script whose `dist/command.js` exists
   but fails to import exits `1` (`ERR_CLI_COMMAND_MODULE_IMPORT_FAILED`,
   cause-chained); `execute` itself throwing or resolving a malformed outcome
-  exits `1` (`ERR_CLI_IN_PROCESS_FAILED`, cause-chained where applicable).
+  exits `1` (`ERR_CLI_IN_PROCESS_FAILED`, cause-chained where applicable) —
+  except an abort, which exits `5`, not `1` (see §_Design invariants_).
   `m3l doctor` reports each discovered script's command-module availability
   as its own `command-module:<name>` row (`ok`/`warn` only, never `fail` —
   absence is expected for a script that has not adopted the optional seam;

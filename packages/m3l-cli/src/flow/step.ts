@@ -353,6 +353,7 @@ function dispatchStep(
       output: context.output,
       parameterValues: step.parameters,
       dryRun: resolved.dryRun,
+      signal: undefined,
     },
     {
       ...(options.importModule !== undefined
