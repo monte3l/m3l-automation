@@ -22,9 +22,6 @@ const COLUMN_WIDTHS = [60, 80, 120, 160];
 const FULL_NOW_MS = Date.UTC(2026, 8, 2, 12, 0, 0);
 const FULL_NOW_SEC = FULL_NOW_MS / 1000;
 
-const HIGH_NOW_MS = Date.UTC(2026, 8, 2, 12, 0, 0);
-const HIGH_NOW_SEC = HIGH_NOW_MS / 1000;
-
 const fullPayload = {
   session_name: "feat-statusline-redesign",
   model: { display_name: "Sonnet 5" },
@@ -72,7 +69,10 @@ delete noRateLimitsPayload.rate_limits;
 const noPrPayload = { ...fullPayload };
 delete noPrPayload.pr;
 
-const noGitPayload = { ...fullPayload };
+const noGitPayload = {
+  ...fullPayload,
+  workspace: { ...fullPayload.workspace },
+};
 delete noGitPayload.workspace.git_worktree;
 const noGitEnv = { ...fullEnv, branch: null };
 
@@ -101,20 +101,20 @@ const FIXTURES = [
         remaining_percentage: 7,
       },
       rate_limits: {
-        five_hour: { used_percentage: 96, resets_at: HIGH_NOW_SEC + 15 * 60 },
+        five_hour: { used_percentage: 96, resets_at: FULL_NOW_SEC + 15 * 60 },
         seven_day: {
           used_percentage: 98,
-          resets_at: HIGH_NOW_SEC + 2 * 24 * 3600,
+          resets_at: FULL_NOW_SEC + 2 * 24 * 3600,
         },
         spend_limit: {
           used_percentage: 127,
-          resets_at: HIGH_NOW_SEC + 10 * 24 * 3600,
+          resets_at: FULL_NOW_SEC + 10 * 24 * 3600,
         },
       },
       model: { display_name: "Opus 5" },
     },
     env: {
-      now: HIGH_NOW_MS,
+      now: FULL_NOW_MS,
       freemem: 800_000_000,
       totalmem: 16_000_000_000,
       branch: "feat/urgent-fix",

@@ -127,6 +127,12 @@ describe("resolveUsedPercentage", () => {
     expect(resolveUsedPercentage({})).toBeNull();
   });
 
+  test("returns null when used_percentage is explicitly null (not just absent)", () => {
+    expect(
+      resolveUsedPercentage({ context_window: { used_percentage: null } }),
+    ).toBeNull();
+  });
+
   test.each([
     ["null", null],
     ["a string", "not an object"],
@@ -987,6 +993,21 @@ describe("formatCacheSegment", () => {
     expect(formatCacheSegment({ prompt_cache: "warm" })).toBeNull();
     expect(formatCacheSegment({ prompt_cache: { warm: "yes" } })).toBeNull();
   });
+
+  test("renders the 'cache warm' fallback when warm but hit_ratio is NaN (not just absent)", () => {
+    expect(
+      formatCacheSegment({ prompt_cache: { warm: true, hit_ratio: NaN } })
+        ?.text,
+    ).toBe(`${GREEN}cache warm${RESET}`);
+  });
+
+  test("renders the 'cache cold' fallback when cold but recache_tokens_if_cold is Infinity (not just absent)", () => {
+    expect(
+      formatCacheSegment({
+        prompt_cache: { warm: false, recache_tokens_if_cold: Infinity },
+      })?.text,
+    ).toBe(`${YELLOW}cache cold${RESET}`);
+  });
 });
 
 describe("parseHeadRef", () => {
@@ -1019,6 +1040,15 @@ describe("parseGitdirPointer", () => {
 
   test("returns null for non-string input", () => {
     expect(parseGitdirPointer(null)).toBeNull();
+  });
+
+  // The regex `\s*` after "gitdir:" is greedy and `\s` also matches the
+  // trailing newline, so with an all-whitespace tail the capture group
+  // backtracks down to a single space character; `.trim()` then collapses
+  // that to "". This is a MATCH with an empty capture, not a non-match --
+  // the function returns "" here, not null.
+  test("returns an empty string (not null) for a whitespace-only gitdir value", () => {
+    expect(parseGitdirPointer("gitdir: \n")).toBe("");
   });
 });
 
@@ -1058,6 +1088,49 @@ describe("resolveBranch", () => {
 
     expect(resolveBranch(readFile, "")).toBeNull();
     expect(resolveBranch(readFile, null)).toBeNull();
+  });
+
+  test("returns null for a detached HEAD (raw SHA, not a ref line)", () => {
+    const startDir = "/workspace/project";
+    const readFile = (path: string): string | null =>
+      path === join(startDir, ".git", "HEAD")
+        ? "3f2504e04f8964efd25f5f1efd9b0f7e6f2f9c1a\n"
+        : null;
+
+    expect(resolveBranch(readFile, startDir)).toBeNull();
+  });
+
+  test("stops at the nearest .git it finds and does not walk further up past it, even when that .git yields no usable branch", () => {
+    const nearest = "/workspace/project";
+    const further = "/workspace";
+    const readFile = (path: string): string | null => {
+      // Nearest .git/HEAD exists but is a detached-HEAD raw SHA -- no ref.
+      if (path === join(nearest, ".git", "HEAD")) {
+        return "3f2504e04f8964efd25f5f1efd9b0f7e6f2f9c1a\n";
+      }
+      // A further-up .git DOES have a valid ref, but must never be reached:
+      // resolveBranch stops at the first .git it finds, broken or not.
+      if (path === join(further, ".git", "HEAD")) {
+        return "ref: refs/heads/should-not-be-found\n";
+      }
+      return null;
+    };
+
+    expect(resolveBranch(readFile, join(nearest, "sub"))).toBeNull();
+  });
+
+  test("treats a whitespace-only linked-worktree pointer as no branch found, without falling through to a malformed path read", () => {
+    const startDir = "/workspace/project";
+    const readFile = (path: string): string | null => {
+      if (path === join(startDir, ".git", "HEAD")) return null;
+      if (path === join(startDir, ".git")) return "gitdir: \n";
+      // If the empty-pointer guard were missing, resolveBranch would fall
+      // through to reading join(startDir, "HEAD") next -- must never happen.
+      if (path === join(startDir, "HEAD")) return "ref: refs/heads/decoy\n";
+      return null;
+    };
+
+    expect(resolveBranch(readFile, startDir)).toBeNull();
   });
 });
 
@@ -1181,6 +1254,56 @@ describe("resolveInflightSpokes", () => {
       },
     ]);
   });
+
+  test("returns an empty array for an empty-string file (distinct from the missing-file null path)", () => {
+    const readFile = (path: string): string | null =>
+      path === lifecyclePath ? "" : null;
+
+    expect(resolveInflightSpokes(readFile, cwd)).toEqual([]);
+  });
+
+  test("excludes a record whose agentId is not a string", () => {
+    const lines = [
+      JSON.stringify({
+        event: "start",
+        agentId: 123,
+        agentType: "code-implementer",
+        ts: "2026-09-02T00:00:00.000Z",
+      }),
+    ].join("\n");
+    const readFile = (path: string): string | null =>
+      path === lifecyclePath ? lines : null;
+
+    expect(resolveInflightSpokes(readFile, cwd)).toEqual([]);
+  });
+
+  test("re-includes a spoke that starts, stops, then starts again", () => {
+    const lines = [
+      JSON.stringify({
+        event: "start",
+        agentId: "spoke-1",
+        agentType: "code-implementer",
+        ts: "2026-09-02T00:00:00.000Z",
+      }),
+      JSON.stringify({ event: "stop", agentId: "spoke-1" }),
+      JSON.stringify({
+        event: "start",
+        agentId: "spoke-1",
+        agentType: "code-implementer",
+        ts: "2026-09-02T00:10:00.000Z",
+      }),
+    ].join("\n");
+    const readFile = (path: string): string | null =>
+      path === lifecyclePath ? lines : null;
+
+    expect(resolveInflightSpokes(readFile, cwd)).toEqual([
+      {
+        agentId: "spoke-1",
+        agentType: "code-implementer",
+        startTs: "2026-09-02T00:10:00.000Z",
+      },
+    ]);
+  });
 });
 
 describe("formatElapsed", () => {
@@ -1245,6 +1368,167 @@ describe("formatInflightSpokesSegment", () => {
     ];
 
     expect(formatInflightSpokesSegment(spokes, { now })).toBeNull();
+  });
+
+  test("renders yellow with no warning icon in the warn zone (between the warn and high thresholds)", () => {
+    const spokes = [
+      {
+        agentId: "spoke-1",
+        agentType: "code-implementer",
+        startTs: new Date(
+          now - (SPOKE_WARN_THRESHOLD_SEC + 60) * 1000,
+        ).toISOString(),
+      },
+    ];
+
+    const result = formatInflightSpokesSegment(spokes, { now });
+
+    expect(result).toContain(YELLOW);
+    expect(result).not.toContain("⚠");
+  });
+
+  test("renders the singular noun 'spoke' for exactly one live spoke", () => {
+    const spokes = [
+      {
+        agentId: "spoke-1",
+        agentType: "code-implementer",
+        startTs: new Date(now - 5 * 60 * 1000).toISOString(),
+      },
+    ];
+
+    const result = formatInflightSpokesSegment(spokes, { now });
+
+    expect(result).toContain("1 spoke ·");
+    expect(result).not.toContain("spokes");
+  });
+
+  test("renders the plural noun 'spokes' for two or more live spokes", () => {
+    const spokes = [
+      {
+        agentId: "spoke-1",
+        agentType: "code-implementer",
+        startTs: new Date(now - 5 * 60 * 1000).toISOString(),
+      },
+      {
+        agentId: "spoke-2",
+        agentType: "code-reviewer",
+        startTs: new Date(now - 3 * 60 * 1000).toISOString(),
+      },
+    ];
+
+    const result = formatInflightSpokesSegment(spokes, { now });
+
+    expect(result).toContain("2 spokes ·");
+  });
+
+  test("returns null when the only spoke has an unparseable startTs (Date.parse -> NaN)", () => {
+    const spokes = [
+      {
+        agentId: "spoke-1",
+        agentType: "code-implementer",
+        startTs: "not-a-date",
+      },
+    ];
+
+    expect(formatInflightSpokesSegment(spokes, { now })).toBeNull();
+  });
+
+  test("excludes a spoke with an unparseable startTs, counting only the parseable one alongside it", () => {
+    const spokes = [
+      {
+        agentId: "spoke-1",
+        agentType: "code-implementer",
+        startTs: "not-a-date",
+      },
+      {
+        agentId: "spoke-2",
+        agentType: "code-reviewer",
+        startTs: new Date(now - 5 * 60 * 1000).toISOString(),
+      },
+    ];
+
+    const result = formatInflightSpokesSegment(spokes, { now });
+
+    expect(result).toContain("1 spoke ·");
+    expect(result).toContain("oldest 5m");
+  });
+
+  test("one live and one evicted spoke: the result reflects only the live spoke's count and elapsed time", () => {
+    const spokes = [
+      {
+        agentId: "live",
+        agentType: "code-implementer",
+        startTs: new Date(now - 5 * 60 * 1000).toISOString(),
+      },
+      {
+        agentId: "evicted",
+        agentType: "code-reviewer",
+        startTs: new Date(
+          now - (MAX_INFLIGHT_AGE_SEC + 1) * 1000,
+        ).toISOString(),
+      },
+    ];
+
+    const result = formatInflightSpokesSegment(spokes, { now });
+
+    expect(result).toContain("1 spoke ·");
+    expect(result).toContain("oldest 5m");
+  });
+
+  test("a spoke exactly at the MAX_INFLIGHT_AGE_SEC cutoff is still counted live (inclusive boundary)", () => {
+    const spokes = [
+      {
+        agentId: "boundary",
+        agentType: "code-implementer",
+        startTs: new Date(now - MAX_INFLIGHT_AGE_SEC * 1000).toISOString(),
+      },
+    ];
+
+    const result = formatInflightSpokesSegment(spokes, { now });
+
+    expect(result).not.toBeNull();
+    expect(result).toContain("1 spoke ·");
+  });
+
+  test("returns null when every spoke is older than MAX_INFLIGHT_AGE_SEC", () => {
+    const spokes = [
+      {
+        agentId: "a",
+        agentType: "code-implementer",
+        startTs: new Date(
+          now - (MAX_INFLIGHT_AGE_SEC + 100) * 1000,
+        ).toISOString(),
+      },
+      {
+        agentId: "b",
+        agentType: "code-reviewer",
+        startTs: new Date(
+          now - (MAX_INFLIGHT_AGE_SEC + 200) * 1000,
+        ).toISOString(),
+      },
+    ];
+
+    expect(formatInflightSpokesSegment(spokes, { now })).toBeNull();
+  });
+
+  test("reports the OLDEST live spoke's elapsed time when multiple live spokes have different start times", () => {
+    const spokes = [
+      {
+        agentId: "newer",
+        agentType: "code-implementer",
+        startTs: new Date(now - 2 * 60 * 1000).toISOString(),
+      },
+      {
+        agentId: "older",
+        agentType: "code-reviewer",
+        startTs: new Date(now - 10 * 60 * 1000).toISOString(),
+      },
+    ];
+
+    const result = formatInflightSpokesSegment(spokes, { now });
+
+    expect(result).toContain("2 spokes ·");
+    expect(result).toContain("oldest 10m");
   });
 });
 

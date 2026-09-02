@@ -13,7 +13,16 @@
  * least important segments first rather than wrapping mid-line.
  */
 
-/** SGR (`\x1b[...m`) and OSC-8 (`\x1b]8;;URL\x07...\x1b]8;;\x07`) sequences. */
+/**
+ * SGR (`\x1b[...m`) and OSC-8 (`\x1b]8;;URL\x07...\x1b]8;;\x07`) sequences.
+ *
+ * Carries the `/g` flag, so `.lastIndex` is stateful across calls to
+ * `.test()`/`.exec()` on this exact object — every internal use in this file
+ * either goes through `.replace()` (which resets `lastIndex` itself) or
+ * explicitly resets `lastIndex` before use (see `tokenize` below). A caller
+ * that runs `.test()`/`.exec()` on this constant directly, more than once,
+ * must reset `.lastIndex = 0` between calls or clone the pattern first.
+ */
 // eslint-disable-next-line no-control-regex -- intentionally matches the ESC (\x1b) and BEL (\x07) control characters that delimit ANSI/OSC-8 sequences
 export const ESCAPE_SEQUENCE_RE = /\x1b\[[0-9;]*m|\x1b\]8;;[^\x07]*\x07/g;
 
@@ -196,6 +205,14 @@ function currentWidth(segments, kept, separator) {
  * width fits, then truncating a sole surviving over-budget segment as a last
  * resort. Segments are always joined and returned in their original array
  * order, never priority order. Pure: never mutates the input `segments`.
+ *
+ * The sole-survivor truncation floors at `Math.max(segment.minWidth, budget)`
+ * — a segment is never cut below its own `minWidth`, even when `budget` is
+ * smaller. This is a deliberate floor, not a bug: at a pathologically narrow
+ * `COLUMNS` (below a segment's `minWidth`, e.g. under ~14 once the fixed
+ * 10-column gutter is subtracted) the returned row can still exceed `budget`
+ * by a few columns. An unreadably-truncated segment is worse than a row a
+ * few columns over budget at a terminal width no real usage reaches.
  *
  * @param {ReadonlyArray<RowSegment>} segments
  * @param {number} budget

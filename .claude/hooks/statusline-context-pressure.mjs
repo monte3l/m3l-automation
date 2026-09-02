@@ -3,9 +3,12 @@
  * statusLine: renders a fixed five-row layout — session, model, context,
  * quota, work — built entirely from fields already present on the same
  * payload that arrives on stdin (docs/research/harness-refresh.md
- * Outstanding drift #10; broadened for ccstatusline parity per issue #879),
- * plus one local state file for the in-flight-spoke count
- * (`tmp/spoke-lifecycle.jsonl`, written by `track-inflight-spokes.mjs`).
+ * Outstanding drift #10; broadened for ccstatusline parity per issue #879).
+ * The five-row guarantee is `renderStatusLine`'s own contract on the success
+ * path only: the CLI entry's `catch` (bottom of this file) falls back to a
+ * single minimal `ctx --%` line on a JSON-parse failure, by design — the
+ * fallback must never itself risk throwing, so it does not attempt to build
+ * five gutter+placeholder rows.
  *
  * Each row is width-fit against the real terminal width via
  * `statusline-layout.mjs`'s `fitRow`/`terminalColumns`/`displayWidth`:
@@ -1095,13 +1098,11 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       typeof payload?.workspace?.current_dir === "string"
         ? payload.workspace.current_dir
         : process.cwd();
-    const projectRoot = process.env.CLAUDE_PROJECT_DIR ?? process.cwd();
     const env = {
       now: Date.now(),
       freemem: os.freemem(),
       totalmem: os.totalmem(),
       branch: resolveBranch(safeReadFile, startDir),
-      spokes: resolveInflightSpokes(safeReadFile, projectRoot),
       COLUMNS: process.env.COLUMNS,
     };
     output = renderStatusLine(payload, env);

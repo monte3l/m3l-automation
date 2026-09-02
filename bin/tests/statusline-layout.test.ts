@@ -17,11 +17,17 @@ const GREEN = "\x1b[32m";
 const RESET = "\x1b[0m";
 
 describe("ESCAPE_SEQUENCE_RE", () => {
+  // ESCAPE_SEQUENCE_RE carries the /g flag, so .test() is stateful across
+  // calls via .lastIndex -- reset it immediately before each direct .test()
+  // call so each assertion below is independent of call order, per the
+  // module's own JSDoc caveat on this constant.
   test("matches an SGR color sequence", () => {
+    ESCAPE_SEQUENCE_RE.lastIndex = 0;
     expect(ESCAPE_SEQUENCE_RE.test(`${GREEN}hi${RESET}`)).toBe(true);
   });
 
   test("matches an OSC-8 hyperlink sequence", () => {
+    ESCAPE_SEQUENCE_RE.lastIndex = 0;
     expect(
       ESCAPE_SEQUENCE_RE.test(
         "\x1b]8;;https://example.test\x07label\x1b]8;;\x07",
@@ -30,6 +36,7 @@ describe("ESCAPE_SEQUENCE_RE", () => {
   });
 
   test("does not match plain text", () => {
+    ESCAPE_SEQUENCE_RE.lastIndex = 0;
     expect(ESCAPE_SEQUENCE_RE.test("plain text, no escapes")).toBe(false);
   });
 });
@@ -235,6 +242,25 @@ describe("fitRow", () => {
 
     expect(result).toBe(truncateToWidth("AAAAAAAAAA", Math.max(5, 3)));
     expect(result).not.toBe("");
+  });
+
+  // Deliberate design floor (per the module's own JSDoc on fitRow): the sole
+  // survivor is never cut below its own minWidth, even when budget is
+  // smaller -- so the returned row's displayWidth can exceed the requested
+  // budget by design. Plain ASCII text keeps truncateToWidth's accumulation
+  // exact (no wide codepoints), so the result's width lands on exactly
+  // Math.max(minWidth, budget), not merely "close to" it.
+  test("floors the sole survivor's truncated width at its own minWidth, exceeding a smaller budget", () => {
+    const minWidth = 10;
+    const segments = [
+      { id: "a", priority: 100, text: "A".repeat(20), minWidth },
+    ];
+    const budget = 3;
+
+    const result = fitRow(segments, budget, " ");
+
+    expect(displayWidth(result)).toBe(Math.max(minWidth, budget));
+    expect(displayWidth(result)).toBeGreaterThan(budget);
   });
 
   // Hand-traced: kept.size starts at 0, so the drop-loop condition
