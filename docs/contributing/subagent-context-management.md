@@ -291,19 +291,38 @@ condensed, distilled summary of its work (often 1,000-2,000 tokens)" rather
 than raw content, so "the detailed search context remains isolated within
 sub-agents, while the lead agent focuses on synthesizing"
 (`anthropic.com/engineering/effective-context-engineering-for-ai-agents`,
-`multi-agent-research-system`). This repo's `researching-anthropic-guidance`
-skill already implements this: each Explore agent writes full findings to a
-scratchpad file and returns only a compact digest to the hub. Two extensions
-close the remaining gaps:
+`multi-agent-research-system`).
 
-- **Review spokes** now carry a bounded return contract — the existing
-  Must-fix/Should-fix/Nits shape stays, but long detail spills to a scratchpad
-  file with only the capped digest returned inline, so a large findings report
-  can't itself exhaust the reviewer's own turn budget mid-report (the
-  `2026-07-09-script-pipeline.md` reviewer-truncation case).
-- **`auditing`** now mirrors `researching-anthropic-guidance`'s scratchpad +
-  digest shape for its Explore fan-out, instead of returning full findings
-  inline.
+**The scratchpad-handoff form of this pattern never worked for a read-only
+spoke and is not used anywhere in this repo.** Anthropic's own phrasing —
+"subagents call tools to store their work" — presumes a write tool; every
+read-only spoke here (`Explore` and the six review spokes) holds
+`tools: Read, Grep, Glob, Bash` with no `Write`/`Edit`, and
+`guard-readonly-bash.mjs` blocks every shell write route regardless. Two
+surfaces carried this exact instruction — a spoke told to write a scratchpad
+file it structurally cannot write — until a 2026-09-01 harness-refresh sweep
+found it live in `researching-anthropic-guidance` and in all seven read-only
+`.claude/agents/*.md` files; the sweep's own dispatches had to route around
+the stale instruction to get any results back. Both are now fixed the way
+`.claude/workflows/audit-fanout.js` (the one surface that got this right from
+the start, ADR-0025) already does it: a read-only agent returns its **full**
+report **inline in its response**, capped at roughly 8,000 characters (~2,000
+tokens — the top of Anthropic's documented band), rather than writing
+anything to disk.
+
+- **Review spokes** (`code-reviewer`, `security-reviewer`,
+  `silent-failure-hunter`, `type-design-analyzer`,
+  `spec-conformance-reviewer`, `docs-consistency-reviewer`) carry a bounded
+  return contract — the Must-fix/Should-fix/Nits shape stays, capped at
+  roughly 8,000 characters inline: the blocking list in full, everything
+  else compressed to a count plus a one-line summary once a report would
+  otherwise run long.
+- **`researching-anthropic-guidance`** now mirrors `audit-fanout.js`'s
+  inline-capped-digest shape for its Explore fan-out — no scratchpad run
+  directory, no per-agent file.
+- **`auditing`**'s Explore fan-out (via `audit-fanout.js`) already returned
+  full findings inline under a hard schema-enforced cap; it was never the
+  scratchpad-based one and needed no change here.
 
 ## Prevent: bound input discovery, not just output
 

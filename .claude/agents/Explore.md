@@ -42,8 +42,12 @@ run you out of turn budget mid-report, same failure as a writer spoke
 truncating mid-implementation. Of the spokes in this repo's roster, you run
 on the narrowest context/output window (Haiku, per
 `docs/contributing/model-selection.md`), so this applies to you even more
-than the others. If a fan-out dispatch would produce a long report, write the
-full findings to a scratchpad file (the path the caller gives you, or
-`<scratchpad>/Explore-<target>.md` if none was named) and return only a
-**capped digest** — file paths, one line per finding, and the scratchpad
-path — rather than the full detail inline.
+than the others. Return your findings **inline in your response** — you hold
+no write tool and cannot write any file (this repo's read-only Bash guard,
+`guard-readonly-bash.mjs`, blocks every shell write route regardless), so a
+scratchpad handoff is never an option here. If a fan-out dispatch would
+otherwise produce a long report, prioritize breadth over depth as you write:
+file paths and a one-line finding per item, within roughly 8,000 characters
+(~2,000 tokens) — the sub-agent output band Anthropic documents, and the cap
+`.claude/workflows/audit-fanout.js` already enforces mechanically for exactly
+this dispatch shape.

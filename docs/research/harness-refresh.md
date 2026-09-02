@@ -67,17 +67,14 @@ count-tokens`) exists as the accurate alternative.
     No hook payload (not even `PreCompact`'s) carries token/context-size
     data — a hook-based "context pressure" monitor has no supported
     implementation route; only a `statusLine` script does.
-11. **Seven read-only spokes** (`Explore.md`, `code-reviewer.md`,
-    `security-reviewer.md`, `silent-failure-hunter.md`,
-    `type-design-analyzer.md`, `spec-conformance-reviewer.md`,
-    `docs-consistency-reviewer.md`) are instructed to write overflow findings
-    to a scratchpad file but hold no `Write`/`Edit` tool. Confirmed against
-    Anthropic's own multi-agent-research-system post: the documented
-    "subagent stores to external system, returns a pointer" pattern
-    presumes a write tool; no fallback is documented for a tool-less agent.
-    The workflow-side fix already exists in `.claude/workflows/audit-fanout.js`
-    (a numeric-capped inline digest via `DIGEST_SCHEMA` `maxLength`) and
-    should be mirrored into the seven agent prompts.
+
+**Resolved since the last sweep:** item 11 (seven read-only spokes
+instructed to write overflow findings to a scratchpad file they hold no
+`Write`/`Edit` tool for) — fixed by mirroring `audit-fanout.js`'s inline,
+character-capped digest pattern into all seven agent prompts plus
+`researching-anthropic-guidance/SKILL.md` (which carried the same defect via
+its own Explore fan-out), and correcting `docs/contributing/subagent-context-management.md`'s
+false claims about which surfaces already used which pattern.
 
 ## Facets
 

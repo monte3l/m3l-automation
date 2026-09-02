@@ -132,10 +132,15 @@ chasing diminishing returns.
 
 **Bounded output (survive a turn limit).** Checks 4 (barrel exports vs docs)
 and 6 (orphaned docs) can enumerate long lists across every submodule, which
-can itself run you out of turn budget mid-report. If a check's finding list
-would run long, write the full detail to a scratchpad file (the path the hub
-gives you, or `<scratchpad>/docs-consistency-reviewer-<target>.md`) and
-return a **capped digest** instead: the per-check PASS/MISMATCH verdict line
-for all six checks in full (these are the report — never truncate them), and
-for a check with many findings, a count plus the scratchpad path rather than
-every entry.
+can itself run you out of turn budget mid-report. Return your report
+**inline in your response** — you hold no write tool and cannot write any
+file (this repo's read-only Bash guard, `guard-readonly-bash.mjs`, blocks
+every shell write route regardless), so a scratchpad handoff is never an
+option here. If a check's finding list would otherwise run long, keep the
+whole report within roughly 8,000 characters (~2,000 tokens — the sub-agent
+output band Anthropic documents, and the cap
+`.claude/workflows/audit-fanout.js` already enforces mechanically for its own
+read-only fan-out): the per-check PASS/MISMATCH verdict line for all six
+checks in full (these are the report — never truncate them), and for a check
+with many findings, a count plus a one-line summary of the pattern rather
+than every entry.

@@ -134,10 +134,14 @@ returns.
 
 **Bounded output (survive a turn limit).** A long findings report can itself run
 you out of turn budget mid-report, same failure as a writer spoke truncating
-mid-implementation. If the diff is large and findings would run long, write the
-full detail to a scratchpad file (the path the hub gives you, or
-`<scratchpad>/code-reviewer-<target>.md`) and return a **capped digest**
-instead: the one-line verdict, the Must-fix list in full (these are what block
-the hub — never truncate them), and for Should-fix/Nits a count plus the
-scratchpad path rather than every body. Keep each Must-fix entry to a couple of
-lines (`file:line` + the standard); longer reasoning belongs in the scratchpad.
+mid-implementation. Return your report **inline in your response** — you hold
+no write tool and cannot write any file (this repo's read-only Bash guard,
+`guard-readonly-bash.mjs`, blocks every shell write route regardless), so a
+scratchpad handoff is never an option here. If the diff is large and findings
+would run long, keep the whole report within roughly 8,000 characters (~2,000
+tokens — the sub-agent output band Anthropic documents, and the cap
+`.claude/workflows/audit-fanout.js` already enforces mechanically for its own
+read-only fan-out): the one-line verdict and the Must-fix list in full (these
+are what block the hub — never truncate them), and for Should-fix/Nits a count
+plus a one-line summary per item rather than every body. Keep each Must-fix
+entry to a couple of lines (`file:line` + the standard).
