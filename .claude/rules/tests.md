@@ -251,6 +251,17 @@ throw "a string";
 - **eslint runs in-loop** (`post-edit-verify`: prettier → eslint → typecheck →
   vitest). Resolve eslint findings as you write — don't defer them to a later
   `pnpm lint` pass; that defeats the in-loop signal.
+- **Thread `now` as an injectable parameter on any function with a
+  time-dependent guard, rather than defaulting to `Date.now()` inside it** —
+  especially when a sibling function already has fixed-timestamp fixtures. A
+  reducer function (`resolveInflightSpokes`) had existing tests hardcoded to
+  `2026-09-02T...` timestamps; adding a `Date.now()`-based staleness ceiling
+  _inside that function_ would have made those tests date-fragile on any
+  later real-world run. Placing the ceiling in the caller instead
+  (`formatInflightSpokesSegment`), which already threaded an injectable
+  `env.now` through for deterministic tests, kept the fix correct without
+  touching an already-passing suite
+  (`docs/logs/2026-09-02-spoke-inflight-status.md`).
 - **Read coverage from `coverage/coverage-final.json`, not the
   `pnpm test:coverage` text table.** The v8 text reporter omits files that are
   100% on all four metrics, so an "absent" file in the table is not an uncovered
