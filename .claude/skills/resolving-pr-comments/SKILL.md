@@ -1,13 +1,15 @@
 ---
 name: resolving-pr-comments
 description: >
-  This skill resolves automated PR review bot failures end-to-end. When a review bot
-  (especially claude-pr-review) has posted a FAIL verdict with Must-fix findings —
-  TypeScript errors, missing .js extensions, TSDoc gaps, coverage holes — and the user
-  wants them fixed, committed, and replied to: invoke this skill. It owns the full loop:
-  fetch bot comment → parse Must-fix findings (showing Should-fix / Nits for context but
-  not touching them) → fix each Must-fix violation → run quality gates → reconcile docs
-  (/syncing-docs) → commit → push → reply to bot.
+  This skill resolves automated PR review bot findings end-to-end, across all three
+  severity tiers. When a review bot (especially claude-pr-review) has posted a comment
+  with findings — TypeScript errors, missing .js extensions, TSDoc gaps, coverage holes
+  — and the user wants them fixed, committed, and replied to: invoke this skill. It owns
+  the full loop: fetch bot comment → parse findings across all tiers → fix every
+  Must-fix (mandatory), fix each Should-fix that resolves as a targeted line fix
+  (best-effort — skipped, not blocked on, if it needs a structural change), fold in
+  Nits only where an edit already touches that file/region → run quality gates →
+  reconcile docs (/syncing-docs) → commit → push → reply to bot.
 
   Invoke for: "fix what the bot flagged", "address the bot review", "make the
   auto-review pass", "claude-pr-review posted FAIL", "clear blocking findings from the
@@ -39,9 +41,14 @@ zero time on mechanical review-driven edits.
 - Never push with `--force`.
 - If any quality gate fails after your fixes, **stop and report the failure** — do not
   commit or push.
-- If a finding requires a structural change you cannot make as a targeted line fix
-  (e.g., redesigning an entire type hierarchy, splitting a test suite), describe what is
-  needed and ask the user to handle it before continuing.
+- If a **Must-fix** finding requires a structural change you cannot make as a targeted
+  line fix (e.g., redesigning an entire type hierarchy, splitting a test suite),
+  describe what is needed and ask the user to handle it before continuing — Must-fix
+  blocks merge, so it cannot be silently skipped.
+- If a **Should-fix** finding requires the same kind of structural change, skip it
+  instead of asking — it does not block merge, so stopping the whole run over an
+  optional item is worse than leaving it for a human. Note it as not addressed in the
+  Step 3 preview and the Step 10 follow-up comment.
 - The skill runs in-process as a single agent — no hub-and-spoke needed. This is
   precisely what makes the GitHub MCP tools below usable here: MCP is hub-only
   (no spoke holds an `mcp__*` grant) and unavailable in headless CI, but this
@@ -74,9 +81,11 @@ Store the PR number for use in the subsequent calls.
 
 ### 2 — Fetch the bot comment
 
-Fetch the most recent bot review comment on the PR's issue thread. The
-`claude-pr-review.yml` workflow authenticates via `CLAUDE_CODE_OAUTH_TOKEN` (OAuth app),
-so the action always posts as `claude[bot]`:
+Fetch every comment on the PR's issue thread — not just `claude[bot]`'s. The
+`claude-pr-review.yml` workflow authenticates via `CLAUDE_CODE_OAUTH_TOKEN`
+(OAuth app), so a normal review always posts as `claude[bot]`, but the
+oversize-rejection path below uses `github.token` instead and posts as
+`github-actions[bot]`:
 
 ```
 mcp__github__pull_request_read({
@@ -86,19 +95,43 @@ mcp__github__pull_request_read({
 
 `get_comments` is paginated (`page`/`perPage`) the same way `gh api --paginate` was —
 keep paging (increment `page`) until a page returns fewer than `perPage` results, so a
-thread with more than 100 comments isn't silently truncated. Across all pages, filter to
-comments where the author is `claude[bot]` and take the most recent one (highest
-`created_at` / last in creation order).
+thread with more than 100 comments isn't silently truncated.
 
-- If no `claude[bot]` comment is found, tell the user "No bot review comment found" and stop.
-- Check whether the bot's **Verdict** section says PASS by anchoring the grep to the
-  heading so a passing sub-check mentioned elsewhere in the comment body cannot trigger
-  a false early-exit:
+Across all pages, find the single most recent comment (highest `created_at`)
+that is either:
+
+- a `claude[bot]` comment, or
+- a comment from any author whose body starts with `## Claude PR Review — not
+run` (the oversize-rejection path — `claude-pr-review.yml` posts this with
+  `github.token` when the reviewable diff exceeds `MAX_REVIEWABLE_BYTES`,
+  specifically so its `github-actions[bot]` identity can never be mistaken
+  for a real review).
+
+- If neither kind of comment is found, tell the user "No bot review comment found"
+  and stop.
+- If the most recent qualifying comment is the oversize-rejection kind, tell the
+  user: "This PR's reviewable diff was too large for a single-pass review — no
+  review ran. Split the PR into smaller pieces (see
+  `docs/contributing/branch-protection.md`) rather than fixing findings, since
+  none were produced." Then **stop** — do not attempt to parse Must-fix
+  findings from a review that never ran.
+- Otherwise the most recent qualifying comment is a `claude[bot]` review.
+  Check whether its **Verdict** section says PASS by anchoring the match to
+  the bullet form directly under the heading, not a bare word-search over the
+  following lines — a FAIL comment whose reason text happens to contain the
+  word "pass" (e.g. "does not pass the export check") must not be misread as
+  PASS, the same false-positive class `bin/lib/pr-review-gate.mjs` guards
+  against for the workflow's own gate:
   ```bash
-  echo "$body" | grep -A2 '^### Verdict' | grep -qiw 'PASS'
+  echo "$body" | grep -A2 '^### Verdict' | grep -qE '^\s*-\s*PASS\b'
   ```
-  If the Verdict is PASS, tell the user "The bot review already shows PASS — nothing
-  to fix." and stop.
+  If the Verdict is PASS, do **not** stop here — proceed to Step 3 to parse and show
+  any Should-fix/Nits for context (a PASS still routes through the preview; only the
+  fix/gate/commit steps are skipped). Stopping here unconditionally was the previous
+  behavior and silently dropped Should-fix/Nit visibility on every PASS review — this
+  skill's own description promises "showing Should-fix / Nits for context", and a PASS
+  verdict is the majority case (most reviewed PRs never raise a Must-fix), so the old
+  early-exit broke that promise for most invocations, not an edge case.
 - Otherwise, proceed with the full comment body.
 
 ### 3 — Parse findings
@@ -130,31 +163,35 @@ Print a three-section preview to the user before starting any edits. Omit a sect
 it has no findings:
 
 ```
-## Must-fix (will be fixed)
+## Must-fix (will be fixed — mandatory)
 1. `src/core/foo.ts:12` — bare throw (Error handling)
 …
 
-## Should-fix (not touched — non-blocking)
+## Should-fix (will be examined — fixed if it resolves as a targeted line fix, left otherwise)
 1. `src/core/foo.ts:45` — missing @example (TypeScript)
 …
 
-## Nits (not touched — advisory)
+## Nits (left as-is unless an edit above already touches the same file/region)
 1. …
 ```
 
-After printing the preview, check for the "FAIL with no Must-fix items" anomaly:
+After printing the preview, branch on the verdict from Step 2:
 
-- If the verdict is FAIL **and** the Must-fix list is empty, tell the user:
-  "The bot verdict is FAIL but no Must-fix items were found. See Should-fix / Nits
-  above. Investigate whether the bot miscategorised a finding or if a non-blocking
-  item was intended to block." Then **stop**.
-- If the verdict is PASS (confirmed by the check in Step 2), you never reach this point.
+- **PASS**: nothing blocks merge by definition, so there is nothing to fix regardless
+  of what the preview shows. Tell the user "The bot review already shows PASS —
+  nothing blocking." (add "See Should-fix / Nits above for optional follow-up." only
+  if the preview printed a non-empty Should-fix or Nits section) and **stop** — do not
+  proceed to Step 4.
+- **FAIL with an empty Must-fix list** (the anomaly case): tell the user "The bot
+  verdict is FAIL but no Must-fix items were found. See Should-fix / Nits above.
+  Investigate whether the bot miscategorised a finding or if a non-blocking item was
+  intended to block." Then **stop**.
+- **FAIL with a non-empty Must-fix list**: continue to Step 4.
 
 ### 4 — Implement fixes
 
-Work through **Must-fix findings only**, in this category order. Error handling and
-Security are adjacent because both gate on `pnpm lint` — running them together avoids a
-duplicate gate pass:
+Work through categories in this order. Error handling and Security are adjacent because
+both gate on `pnpm lint` — running them together avoids a duplicate gate pass:
 
 1. TypeScript
 2. ESM imports
@@ -163,9 +200,25 @@ duplicate gate pass:
 5. Testing
 6. Exports map
 
-For each Must-fix finding whose rule matches the current category, locate the affected
-file and apply the **minimum correct fix**. Skip any category that has no Must-fix
-findings. Should-fix and Nits are not touched.
+Within each category, apply fixes in this priority order — **Must-fix is mandatory,
+Should-fix is best-effort, Nits are opportunistic only**:
+
+1. **Must-fix (mandatory).** For every Must-fix finding in this category, locate the
+   affected file and apply the **minimum correct fix** from the table below. Nothing
+   here is optional — if a fix needs more than a targeted line change, follow the
+   Boundary rules above (ask the user, don't skip).
+2. **Should-fix (best-effort).** For every Should-fix finding in this category, use the
+   same table. If it resolves as a targeted line fix, apply it in the same pass as the
+   category's Must-fix fixes. If it needs a structural change, or its correct fix is
+   ambiguous, **skip it** — prefer skipping over guessing, since an incorrect optional
+   fix is worse than leaving it for a human. This tier never blocks the run.
+3. **Nits (opportunistic only).** Do not fix a Nit in isolation — never open a file
+   solely to address one. Only apply a Nit whose `file:line` falls inside a region a
+   Must-fix or Should-fix fix in this same category already touched (the edit is
+   already in flight, so folding it in costs nothing extra). Leave every other Nit
+   untouched.
+
+Skip any category that has no Must-fix, resolvable Should-fix, or foldable-Nit finding.
 
 | Finding type                               | Correct fix                                                      |
 | ------------------------------------------ | ---------------------------------------------------------------- |
@@ -178,8 +231,9 @@ findings. Should-fix and Nits are not touched.
 | Hardcoded secret / credential              | Remove; if needed for tests, use environment variables           |
 | Coverage below the per-file threshold      | Add the missing tests (happy-path and failure-path)              |
 
-If you are unsure what the correct fix is for a finding, describe the issue and ask the
-user rather than guessing.
+If you are unsure what the correct fix is for a Must-fix finding, describe the issue
+and ask the user rather than guessing — Must-fix cannot be silently skipped. For a
+Should-fix finding, skip it instead (see priority order above).
 
 ### 5 — Verify after each category
 
@@ -192,31 +246,61 @@ After all fixes in a category are applied, run the gate for that category before
 | Testing                   | `pnpm test:coverage` |
 | Exports map               | `pnpm check:api`     |
 
+`pnpm check:api` only catches a change to the `exports` map's subpath set —
+it never sees a symbol added to or removed from an existing namespace barrel
+(`./core`, `./aws`). A bot-flagged "Exports map" Must-fix about a
+barrel-surfaced symbol needs a manual read of the barrel file alongside this
+gate; the gate alone is not sufficient proof the finding is resolved.
+
 If a gate fails, stop and show the user the exact error output. Do not continue to the
 next category until they resolve it or instruct you to skip.
 
 ### 6 — Final full-gate check
 
-Once all categories are done, run the full suite (matches the Definition of Done in
-CLAUDE.md — all four gates):
+Once all categories are done, re-run the fast per-category gates from Step 5
+that cover what you touched, then run `pnpm verify` once — the actual
+CI-parity / Definition-of-Done check (per CLAUDE.md). It covers the full
+`pre-push` cadence (`format:check`, `check:review-size`, `check:exports`,
+`verify-signed-range`, and the rest) that the per-category gates alone don't
+reach, so a gap surfaces here instead of for the first time at push:
 
 ```bash
-pnpm lint && pnpm typecheck && pnpm test:coverage && pnpm build
+pnpm verify
 ```
 
 If this fails, do not commit or push. Show the failure and stop.
 
-### 7 — Reconcile docs
+### 7 — Bounded re-review
+
+Before reconciling docs, dispatch a targeted re-review of what you actually
+changed — not a fresh full fan-out. Per `.claude/rules/subagent-dispatch.md`'s
+re-review guidance, scope this to the reviewer(s) whose category the fixes
+touched, and to only the files edited in Step 4:
+
+| Category(ies) fixed              | Re-review with                           |
+| -------------------------------- | ---------------------------------------- |
+| TypeScript, ESM imports, Testing | `code-reviewer`                          |
+| Error handling, Security         | `code-reviewer` + `security-reviewer`    |
+| Exports map                      | `code-reviewer` + `type-design-analyzer` |
+
+Give each dispatched reviewer only the files changed in Step 4 (not the whole
+PR diff) and a scratchpad path for its bounded-output digest. If a reviewer
+reports a new Must-fix, loop back to Step 4 for that finding, then repeat
+Steps 5–6 before proceeding. If nothing is flagged, continue to Step 8.
+
+### 8 — Reconcile docs
 
 With the gates green, reconcile doc metadata **before** committing. Invoke the
 `/syncing-docs` skill — it re-stamps provenance sidecars to the current HEAD,
-regenerates `docs/reference/catalog.json`, and reconciles the "N of 22" counts.
-It only mutates working-tree files; it never commits.
+regenerates `docs/reference/catalog.json`, and reconciles every "N of M"
+count site (Core and AWS counts are tracked and reconciled separately —
+computed fresh from the filesystem each run, never hardcoded). It only
+mutates working-tree files; it never commits.
 
 `/syncing-docs` runs `pnpm lint:md`, which can fail — surface a `lint:md`
 failure like any other gate (stop and report) rather than committing past it.
 
-If it produced working-tree changes, stage them so the Step 8 commit captures
+If it produced working-tree changes, stage them so the Step 9 commit captures
 them (the reconciled sidecars + `catalog.json` are easy to miss with a narrow
 `git add`):
 
@@ -226,9 +310,12 @@ git add -A
 
 If it produced no changes, continue.
 
-### 8 — Commit and push
+### 9 — Commit and push
 
-Commit using the `writing-commits` skill conventions. Choose the Conventional Commit type
+Commit using the `writing-commits` skill conventions, including its signing
+setup — CLAUDE.md requires every pushed commit to carry a valid signature,
+and `pre-push`'s `verify-signed-range` gate rejects an unsigned range the
+same as it would for any other change. Choose the Conventional Commit type
 based on the findings resolved:
 
 | Must-fix findings resolved                                    | Commit type |
@@ -238,18 +325,30 @@ based on the findings resolved:
 | Test coverage gaps only                                       | `test:`     |
 | Mix of defect + documentation fixes                           | `fix:`      |
 
-- **Subject:** `{type}: resolve claude-pr-review must-fix findings` (≤70 chars)
-- **Body:** one bullet per **Must-fix** finding resolved (do not list Should-fix or Nits):
+- **Subject:** `{type}: resolve claude-pr-review findings` (≤70 chars)
+- **Body:** one bullet per finding actually resolved this pass, grouped by tier —
+  Must-fix first, then any Should-fix fixed, then any Nits folded in. Omit a tier's
+  sub-heading entirely when nothing in it was resolved. Do not list a Should-fix or Nit
+  that was left unaddressed — those belong only in the Step 3 preview and the Step 10
+  follow-up comment, never the commit body:
   ```
+  Must-fix:
   - replace `any` with `unknown` in src/core/config/index.ts
   - add `.js` extension to relative import in src/aws/index.ts
+
+  Should-fix:
   - add TSDoc + @example to `loadConfig`
+
+  Nits (folded in):
+  - prefer `const` over `let` on the same line
   ```
 
-Then sync and push. The `claude-pr-review` bot can push to the branch (e.g. an
-auto-fix commit), so the local branch may be behind its own remote — rebase onto
-it first to avoid a rejected non-fast-forward push (lesson from
-`docs/logs/2026-06-30-core-utils.md`). Never use `--force`:
+Then sync and push. The `claude-pr-review.yml` workflow only holds
+`contents: read` and its prompt explicitly forbids modifying files, so the
+bot itself never pushes to the branch — but the branch can still have moved
+since this skill started (a teammate's push, a Dependabot auto-fix commit,
+another session working the same branch). Rebase onto the remote first to
+avoid a rejected non-fast-forward push. Never use `--force`:
 
 ```bash
 git pull --rebase origin "$(git rev-parse --abbrev-ref HEAD)"
@@ -266,15 +365,17 @@ Capture the resulting commit SHA:
 git rev-parse --short HEAD
 ```
 
-### 9 — Post a follow-up comment
+### 10 — Post a follow-up comment
 
 Post a new top-level comment on the PR thread summarising what was fixed. GitHub's
 issue-comments API has no `in_reply_to` concept (unlike pull-request review comments),
 so this creates a sibling comment rather than a nested reply:
 
-The body should itemize every Must-fix finding that was resolved, and list any
-Should-fix / Nits that remain open so the re-reviewer knows what to expect. Omit
-the "Not addressed" section if Should-fix and Nits are both empty.
+The body should itemize every finding actually resolved this pass (Must-fix, plus any
+Should-fix fixed and any Nits folded in), and separately list any Should-fix / Nits
+that remain open so the re-reviewer knows what to expect. Omit a resolved-tier section
+when nothing in it was resolved; omit "Not addressed" when Should-fix and Nits are both
+fully resolved.
 
 ```
 mcp__github__add_issue_comment({
@@ -284,6 +385,14 @@ mcp__github__add_issue_comment({
 **Must-fix items resolved:**
 - \`path/to/file.ts:line\` — <one-line description of what was changed>
 - …
+
+**Should-fix items resolved:**
+- \`path/to/file.ts:line\` — <one-line description>
+(omit this section entirely if none were resolved)
+
+**Nits folded in:**
+- \`path/to/file.ts:line\` — <one-line description>
+(omit this section entirely if none were folded in)
 
 **Not addressed (non-blocking):**
 - Should-fix: \`path/to/file.ts:line\` — <violation>
