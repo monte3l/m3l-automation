@@ -20,6 +20,15 @@ We use a lightweight [MADR](https://adr.github.io/madr/)-style format. Start fro
   just points to the newer rationale (e.g. ADR-0012 → ADR-0023).
 - Decisions with semver impact (e.g. changes to the `exports` map) should be
   backed by an ADR.
+- **A drafted-but-unpushed ADR number is provisional, not reserved.** A
+  faster-merging sibling PR can claim the same number first. Re-check
+  `ls docs/adr/*.md | tail -1` and `git fetch origin main` right before the
+  final push, not just at drafting time; if collided, `git mv` to the next
+  free number, fix the file's own `# NNNN.` header and every cross-reference
+  (`grep -rl` the old `ADR-NNNN`/filename across the change), then rebase —
+  expect a manual conflict in this README's index table when both PRs
+  inserted a row at the same position
+  (`docs/logs/2026-09-02-session-naming-convention.md`).
 
 ## When to write an ADR
 

@@ -98,6 +98,16 @@ occurrences. The checklist:
 - **Hand writer spokes (`test-author`, `code-implementer`) an explicit journal
   path** in the dispatch prompt. `.claude/hooks/guard-writer-dispatch-journal.mjs`
   warns (non-blocking) when one is missing.
+- **When the hub can already write the production file directly but not the
+  paired guarded test file, pre-verify the exact test content in an isolated
+  scratchpad `vitest` config before dispatching `test-author`, rather than
+  handing over untested prose.** Write the test file to the scratchpad
+  (outside `bin/tests/**`), point a throwaway `vitest.config.ts` at that one
+  path, and run it against the real (already-edited) source file first. Only
+  once it passes, hand the verified content to `test-author` verbatim for
+  placement into the guarded path. Across roughly six such dispatches in one
+  session this caught zero bad handoffs and needed zero re-dispatch rounds
+  (`docs/logs/2026-09-02-session-naming-convention.md`).
 - **Never trust a "final" report at face value.** A mid-thought fragment
   (`"Now the config module —"`) is the signature of a truncated turn, not a
   benign quirk — verify on-disk state yourself (the spoke's journal, `git

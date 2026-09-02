@@ -1,6 +1,6 @@
 # Retrospective sweep tracker
 
-<!-- retrospective: last-swept=2026-09-02 logs-considered=122 -->
+<!-- retrospective: last-swept=2026-09-02 logs-considered=126 -->
 
 Living ledger of `/promoting-work-log-lessons` sweeps — one row per work log,
 recording whether it has been swept and what came out of it. Updated **in
@@ -193,6 +193,10 @@ was earned by a sweep reading that log in full.
 | [2026-09-02-u10-orchestration-engine.md](../logs/2026-09-02-u10-orchestration-engine.md)                                       | 2026-09-02 | `promoted`          | `.claude/rules/tests.md`<br>`.claude/rules/library-src.md`<br>`.claude/skills/creating-prs/SKILL.md`                                                                                                                         |
 | [2026-09-02-x7c-audit-index-writer.md](../logs/2026-09-02-x7c-audit-index-writer.md)                                           | 2026-09-02 | `promoted`          | `.claude/rules/tests.md`<br>`.claude/skills/creating-prs/SKILL.md`                                                                                                                                                           |
 | [2026-09-02-x7d-remaining-action-kinds.md](../logs/2026-09-02-x7d-remaining-action-kinds.md)                                   | 2026-09-02 | `promoted`          | `.claude/rules/tests.md`<br>`.claude/rules/library-src.md`                                                                                                                                                                   |
+| [2026-09-02-audit-refuter-hardening.md](../logs/2026-09-02-audit-refuter-hardening.md)                                         | 2026-09-02 | `promoted`          | `.claude/rules/harness-artifacts.md`                                                                                                                                                                                         |
+| [2026-09-02-claude-session-trailer-removal.md](../logs/2026-09-02-claude-session-trailer-removal.md)                           | 2026-09-02 | `no-durable-lesson` | 3 single-log candidates, no recurrence/memory corroboration (filter 1); "SECURITY WARNING is a hard stop" already in `subagent-dispatch.md` (filter 3)                                                                       |
+| [2026-09-02-session-naming-convention.md](../logs/2026-09-02-session-naming-convention.md)                                     | 2026-09-02 | `promoted`          | `docs/adr/README.md`<br>`.claude/skills/creating-prs/SKILL.md`<br>`.claude/rules/subagent-dispatch.md`                                                                                                                       |
+| [2026-09-02-spoke-inflight-status.md](../logs/2026-09-02-spoke-inflight-status.md)                                             | 2026-09-02 | `promoted`          | `.claude/rules/tests.md`                                                                                                                                                                                                     |
 
 <!-- prettier-ignore -->
-**Totals** — 122 logs: 97 `promoted`, 22 `no-durable-lesson`, 0 `not-yet-swept`, 3 `deferred`.
+**Totals** — 126 logs: 100 `promoted`, 23 `no-durable-lesson`, 0 `not-yet-swept`, 3 `deferred`.
