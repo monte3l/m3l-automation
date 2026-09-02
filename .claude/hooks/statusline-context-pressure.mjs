@@ -1,21 +1,31 @@
 #!/usr/bin/env node
 /**
- * statusLine: renders live context-window pressure, a small widget set
- * (model/effort, session usage, rate-limit countdowns, cache state, branch,
- * worktree/PR, agent, in-flight spoke count, origin repo, free memory) and,
- * once past a high threshold, a ready-to-run `/compact` suggestion — all
- * built from data already in the same payload (docs/research/harness-refresh.md
- * Outstanding drift #10; broadened for ccstatusline parity per issue #879)
- * plus one local state file for the in-flight-spoke count
- * (`tmp/spoke-lifecycle.jsonl`, written by `track-inflight-spokes.mjs`).
+ * statusLine: renders a fixed five-row layout — session, model, context,
+ * quota, work — built entirely from fields already present on the same
+ * payload that arrives on stdin (docs/research/harness-refresh.md
+ * Outstanding drift #10; broadened for ccstatusline parity per issue #879).
+ * The five-row guarantee is `renderStatusLine`'s own contract on the success
+ * path only: the CLI entry's `catch` (bottom of this file) falls back to a
+ * single minimal `ctx --%` line on a JSON-parse failure, by design — the
+ * fallback must never itself risk throwing, so it does not attempt to build
+ * five gutter+placeholder rows.
  *
- * The in-flight-spoke segment is this project's answer to a gap an
- * `/auditing` pass on status reporting found: nothing surfaced intermediate
- * progress to the user during a review-spoke fan-out that had stalled
- * 30-60+ min on four recorded occasions. It is deliberately passive — an
- * elapsed-time readout, not a watchdog or alarm — matching the
- * Anthropic-guidance research behind it: prefer a push/passive surface over
- * a polling mechanism.
+ * Each row is width-fit against the real terminal width via
+ * `statusline-layout.mjs`'s `fitRow`/`terminalColumns`/`displayWidth`:
+ * Anthropic's own statusLine docs (code.claude.com/docs/en/statusline) state
+ * that `COLUMNS`/`LINES` must be read from the environment — `tput cols`
+ * does not work inside a statusLine subprocess — and that reading is what
+ * lets a narrow terminal drop its lowest-priority segments instead of
+ * wrapping mid-line past 80 columns the way the previous line-based layout
+ * did.
+ *
+ * The in-flight-spoke tracking (`resolveInflightSpokes`,
+ * `formatInflightSpokesSegment`, and friends) is kept intact but currently
+ * uncalled by the five row builders below — this PR is
+ * a layout/renderer rewrite only; PR 2 migrates spoke visibility to
+ * `subagentStatusLine` and retires `track-inflight-spokes.mjs` in the same
+ * change that removes this dead code. Leaving it wired-but-unused here is
+ * the deliberate, approved sequencing, not an oversight.
  *
  * `statusLine` is confirmed as the *only* documented surface exposing live
  * `context_window.used_percentage` — no hook event receives token/context
@@ -59,6 +69,7 @@ import os from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import { displayWidth, fitRow, terminalColumns } from "./statusline-layout.mjs";
 import { SPOKE_LIFECYCLE_REL_PATH } from "./track-inflight-spokes.mjs";
 
 export const WARN_THRESHOLD_PERCENT = 70;
@@ -67,16 +78,14 @@ export const HIGH_THRESHOLD_PERCENT = 90;
 export const GREEN = "\x1b[32m";
 export const YELLOW = "\x1b[33m";
 export const RED = "\x1b[31m";
-export const RESET = "\x1b[0m";
-export const BLUE = "\x1b[34m";
 export const CYAN = "\x1b[36m";
-export const BRIGHT_WHITE = "\x1b[97m";
-export const BRIGHT_RED = "\x1b[91m";
-export const BRIGHT_BLUE = "\x1b[94m";
-export const BRIGHT_CYAN = "\x1b[96m";
-export const BRIGHT_GREEN = "\x1b[92m";
 export const DIM = "\x1b[2m";
-export const SEGMENT_JOIN = "  ";
+export const RESET = "\x1b[0m";
+export const SEGMENT_SEPARATOR = `${DIM} · ${RESET}`;
+export const PLACEHOLDER = `${DIM}—${RESET}`;
+export const GUTTER_WIDTH = 10;
+export const CONTEXT_BAR_WIDTH = 20;
+export const QUOTA_BAR_WIDTH = 10;
 
 /**
  * @param {unknown} payload the parsed statusLine stdin JSON
@@ -109,84 +118,6 @@ export function zoneForPercentage(pct) {
 }
 
 /**
- * @param {unknown} payload
- * @returns {string} a colorized `ctx NN%` segment, `ctx --%` when unknown.
- */
-export function formatContextSegment(payload) {
-  const pct = resolveUsedPercentage(payload);
-  const zone = zoneForPercentage(pct);
-  if (zone === "unknown") return `${GREEN}ctx --%${RESET}`;
-  const color = zone === "high" ? RED : zone === "warn" ? YELLOW : GREEN;
-  const icon = zone === "high" ? " ⚠⚠" : zone === "warn" ? " ⚠" : "";
-  return `${color}ctx ${pct}%${icon}${RESET}`;
-}
-
-/**
- * Best-effort "where am I" clause built only from fields already on the
- * payload — never derived by shelling out (see file header).
- *
- * @param {unknown} payload
- * @returns {string | null}
- */
-export function describeContextLocation(payload) {
-  if (typeof payload !== "object" || payload === null) return null;
-  const p = /** @type {Record<string, unknown>} */ (payload);
-  const parts = [];
-
-  const pr = /** @type {{ number?: unknown } | undefined} */ (p.pr);
-  if (pr && typeof pr === "object" && typeof pr.number === "number") {
-    parts.push(`PR #${pr.number}`);
-  }
-
-  const workspace = /** @type {{ git_worktree?: unknown } | undefined} */ (
-    p.workspace
-  );
-  const worktreeName =
-    workspace && typeof workspace === "object"
-      ? workspace.git_worktree
-      : undefined;
-  if (typeof worktreeName === "string" && worktreeName.length > 0) {
-    parts.push(`worktree "${worktreeName}"`);
-  }
-
-  return parts.length > 0 ? parts.join(" on ") : null;
-}
-
-/**
- * Mirrors CLAUDE.md's `## Compact Instructions` preserve-list dynamically
- * instead of leaving it as static prose the user has to remember. Only
- * offered once the high threshold is crossed — below that, a suggestion
- * would be premature.
- *
- * @param {unknown} payload
- * @returns {string | null}
- */
-export function buildCompactSuggestion(payload) {
-  const pct = resolveUsedPercentage(payload);
-  if (zoneForPercentage(pct) !== "high") return null;
-  const location = describeContextLocation(payload);
-  const prefix = location ? `${location}, ` : "";
-  return `/compact preserve ${prefix}the failing gate's exact error text, and the current plan/ADR step`;
-}
-
-/**
- * A small `[▓▓▓░░░░░░░]`-style bar mirroring `formatContextSegment`'s zone
- * coloring, for a denser at-a-glance read.
- *
- * @param {unknown} payload
- * @returns {string | null} colorized 10-cell bar, or null when the payload
- *   has no context-window data yet.
- */
-export function formatContextBar(payload) {
-  const pct = resolveUsedPercentage(payload);
-  if (pct === null) return null;
-  const zone = zoneForPercentage(pct);
-  const color = zone === "high" ? RED : zone === "warn" ? YELLOW : GREEN;
-  const filled = Math.round(pct / 10);
-  return `${color}[${"▓".repeat(filled)}${"░".repeat(10 - filled)}]${RESET}`;
-}
-
-/**
  * The repo's Claude Code session-naming convention (ADR-0087,
  * `docs/contributing/contributing.md` § Session naming): `<kind>-<slug>`,
  * `kind` from a closed set reusing the branch-prefix/Conventional-Commit
@@ -195,63 +126,6 @@ export function formatContextBar(payload) {
 export const SESSION_NAME_PATTERN =
   /^(feat|fix|audit|research|docs|review|ci|merge)-[a-z0-9]+(?:-[a-z0-9]+)*$/;
 export const SESSION_NAME_MAX_LENGTH = 40;
-
-/**
- * Always renders, unlike most segments here — absence of a conforming name
- * is exactly the signal this segment exists to surface (ADR-0087). No hook
- * can set a session name, so `payload.session_name` carries whatever the
- * session happens to have: the AI-generated first-prompt title when nothing
- * was set explicitly. A present/absent check alone would therefore pass most
- * sessions while conforming to nothing — this validates the *value* against
- * the convention's pattern instead, the same way `formatBranch` flags `main`
- * rather than merely checking a branch name is present.
- *
- * @param {unknown} payload
- * @returns {string} the colorized session name when it conforms to the
- *   convention, or a dim/flagged marker (`unnamed`, or the non-conforming
- *   name itself) otherwise — never null.
- */
-export function formatSessionNameSegment(payload) {
-  const name =
-    typeof payload === "object" && payload !== null
-      ? /** @type {{ session_name?: unknown }} */ (payload).session_name
-      : undefined;
-  if (typeof name !== "string" || name.length === 0) {
-    return `${DIM}unnamed${RESET}`;
-  }
-  const conforms =
-    name.length <= SESSION_NAME_MAX_LENGTH && SESSION_NAME_PATTERN.test(name);
-  return conforms ? `${GREEN}${name}${RESET}` : `${YELLOW}⚠ ${name}${RESET}`;
-}
-
-/**
- * @param {unknown} payload
- * @returns {string | null} colorized model display name, or null when
- *   absent.
- */
-export function formatModelSegment(payload) {
-  if (typeof payload !== "object" || payload === null) return null;
-  const model = /** @type {{ model?: unknown }} */ (payload).model;
-  if (typeof model !== "object" || model === null) return null;
-  const name = /** @type {{ display_name?: unknown }} */ (model).display_name;
-  return typeof name === "string" && name.length > 0
-    ? `${BLUE}${name}${RESET}`
-    : null;
-}
-
-/**
- * @param {unknown} payload
- * @returns {string | null} colorized effort level, or null when absent.
- */
-export function formatEffortSegment(payload) {
-  if (typeof payload !== "object" || payload === null) return null;
-  const effort = /** @type {{ effort?: unknown }} */ (payload).effort;
-  if (typeof effort !== "object" || effort === null) return null;
-  const level = /** @type {{ level?: unknown }} */ (effort).level;
-  return typeof level === "string" && level.length > 0
-    ? `${CYAN}${level}${RESET}`
-    : null;
-}
 
 /**
  * Compact token-count formatter (`45000` -> `"45k"`, `15500` -> `"15.5k"`).
@@ -269,45 +143,6 @@ export function formatTokenCount(n) {
 }
 
 /**
- * @param {unknown} payload
- * @returns {string | null} colorized `$cost` and/or `in↑ out↓` token totals,
- *   or null when neither is available.
- */
-export function formatSessionUsage(payload) {
-  if (typeof payload !== "object" || payload === null) return null;
-  const p = /** @type {Record<string, unknown>} */ (payload);
-  const parts = [];
-
-  const cost = /** @type {{ total_cost_usd?: unknown } | undefined} */ (p.cost);
-  const totalCost =
-    cost && typeof cost === "object" ? cost.total_cost_usd : undefined;
-  if (typeof totalCost === "number" && Number.isFinite(totalCost)) {
-    parts.push(`$${totalCost.toFixed(2)}`);
-  }
-
-  const contextWindow =
-    /**
-     * @type {{ total_input_tokens?: unknown; total_output_tokens?: unknown } | undefined}
-     */ (p.context_window);
-  if (contextWindow && typeof contextWindow === "object") {
-    const tin = contextWindow.total_input_tokens;
-    const tout = contextWindow.total_output_tokens;
-    if (
-      typeof tin === "number" &&
-      Number.isFinite(tin) &&
-      typeof tout === "number" &&
-      Number.isFinite(tout)
-    ) {
-      parts.push(`${formatTokenCount(tin)}↑ ${formatTokenCount(tout)}↓`);
-    }
-  }
-
-  return parts.length > 0
-    ? `${BRIGHT_WHITE}${parts.join(" · ")}${RESET}`
-    : null;
-}
-
-/**
  * @param {number} deltaSec seconds remaining, may be negative/zero.
  * @returns {string} `"now"`, `"NNm"`, or `"NhMMm"`.
  */
@@ -316,79 +151,6 @@ export function formatDuration(deltaSec) {
   const h = Math.floor(deltaSec / 3600);
   const m = Math.floor((deltaSec % 3600) / 60);
   return h > 0 ? `${h}h${String(m).padStart(2, "0")}m` : `${m}m`;
-}
-
-/**
- * @param {unknown} payload
- * @param {{ now?: unknown } | undefined} env `now` overrides `Date.now()`
- *   for deterministic tests.
- * @returns {string | null} colorized five-hour rate-limit countdown, or
- *   null when absent.
- */
-export function formatResetCountdown(payload, env) {
-  if (typeof payload !== "object" || payload === null) return null;
-  const rateLimits = /** @type {{ rate_limits?: unknown }} */ (payload)
-    .rate_limits;
-  if (typeof rateLimits !== "object" || rateLimits === null) return null;
-  const fiveHour = /** @type {{ five_hour?: unknown }} */ (rateLimits)
-    .five_hour;
-  if (typeof fiveHour !== "object" || fiveHour === null) return null;
-  const resetsAt = /** @type {{ resets_at?: unknown }} */ (fiveHour).resets_at;
-  if (typeof resetsAt !== "number" || !Number.isFinite(resetsAt)) return null;
-  const nowMs = typeof env?.now === "number" ? env.now : Date.now();
-  const deltaSec = Math.floor(resetsAt - nowMs / 1000);
-  return `${BRIGHT_RED}reset ${formatDuration(deltaSec)}${RESET}`;
-}
-
-/**
- * @param {unknown} payload
- * @returns {string | null} colorized seven-day (weekly) rate-limit reset
- *   date/time in UTC, or null when absent.
- */
-export function formatWeeklyReset(payload) {
-  if (typeof payload !== "object" || payload === null) return null;
-  const rateLimits = /** @type {{ rate_limits?: unknown }} */ (payload)
-    .rate_limits;
-  if (typeof rateLimits !== "object" || rateLimits === null) return null;
-  const sevenDay = /** @type {{ seven_day?: unknown }} */ (rateLimits)
-    .seven_day;
-  if (typeof sevenDay !== "object" || sevenDay === null) return null;
-  const resetsAt = /** @type {{ resets_at?: unknown }} */ (sevenDay).resets_at;
-  if (typeof resetsAt !== "number" || !Number.isFinite(resetsAt)) return null;
-  const date = new Date(resetsAt * 1000);
-  const mm = String(date.getUTCMonth() + 1).padStart(2, "0");
-  const dd = String(date.getUTCDate()).padStart(2, "0");
-  const HH = String(date.getUTCHours()).padStart(2, "0");
-  const MM = String(date.getUTCMinutes()).padStart(2, "0");
-  return `${BRIGHT_BLUE}week ${mm}-${dd} ${HH}:${MM}Z${RESET}`;
-}
-
-/**
- * @param {unknown} payload
- * @returns {string | null} colorized prompt-cache state, or null when
- *   absent/malformed.
- */
-export function formatCacheWidget(payload) {
-  if (typeof payload !== "object" || payload === null) return null;
-  const pc = /** @type {{ prompt_cache?: unknown }} */ (payload).prompt_cache;
-  if (typeof pc !== "object" || pc === null) return null;
-  const cache =
-    /**
-     * @type {{ warm?: unknown; hit_ratio?: unknown; recache_tokens_if_cold?: unknown }}
-     */ (pc);
-  if (typeof cache.warm !== "boolean") return null;
-
-  if (cache.warm === true) {
-    const hitRatio = cache.hit_ratio;
-    return typeof hitRatio === "number" && Number.isFinite(hitRatio)
-      ? `${GREEN}cache ${Math.round(hitRatio * 100)}%${RESET}`
-      : `${GREEN}cache warm${RESET}`;
-  }
-
-  const recacheTokens = cache.recache_tokens_if_cold;
-  return typeof recacheTokens === "number" && Number.isFinite(recacheTokens)
-    ? `${YELLOW}cache cold · ${formatTokenCount(recacheTokens)}${RESET}`
-    : `${YELLOW}cache cold${RESET}`;
 }
 
 /**
@@ -455,76 +217,17 @@ export function resolveBranch(readFile, startDir) {
 }
 
 /**
- * @param {string | null} branchName
- * @returns {string | null} colorized branch segment; `main` is flagged as a
- *   warning since direct commits there are unusual in this repo's workflow.
- */
-export function formatBranch(branchName) {
-  if (typeof branchName !== "string" || branchName.length === 0) return null;
-  return branchName === "main"
-    ? `${RED}⚠ main${RESET}`
-    : `${GREEN}${branchName}${RESET}`;
-}
-
-/**
  * @param {unknown} payload
- * @returns {string | null} worktree name and/or a colorized, OSC-8-linked
- *   PR reference, or null when neither is present.
- */
-export function formatWorktreeAndPr(payload) {
-  if (typeof payload !== "object" || payload === null) return null;
-  const p = /** @type {Record<string, unknown>} */ (payload);
-  const parts = [];
-
-  const workspace = /** @type {{ git_worktree?: unknown } | undefined} */ (
-    p.workspace
-  );
-  const worktreeName =
-    workspace && typeof workspace === "object"
-      ? workspace.git_worktree
-      : undefined;
-  if (typeof worktreeName === "string" && worktreeName.length > 0) {
-    parts.push(`worktree "${worktreeName}"`);
-  }
-
-  const pr =
-    /**
-     * @type {{ number?: unknown; review_state?: unknown; url?: unknown } | undefined}
-     */ (p.pr);
-  if (pr && typeof pr === "object" && typeof pr.number === "number") {
-    const color =
-      pr.review_state === "approved"
-        ? GREEN
-        : pr.review_state === "changes_requested"
-          ? RED
-          : pr.review_state === "draft"
-            ? DIM
-            : pr.review_state === "pending"
-              ? YELLOW
-              : RESET;
-    const label = `PR #${pr.number}`;
-    const linked =
-      typeof pr.url === "string" && pr.url.length > 0
-        ? `\x1b]8;;${pr.url}\x07${label}\x1b]8;;\x07`
-        : label;
-    parts.push(`${color}${linked}${RESET}`);
-  }
-
-  return parts.length > 0 ? parts.join(" · ") : null;
-}
-
-/**
- * @param {unknown} payload
- * @returns {string | null} dim `↳ agent-name` segment, or null when absent.
+ * @returns {{ id: string, priority: number, text: string, minWidth: number } | null}
+ *   dim `↳ agent-name` segment, or null when absent.
  */
 export function formatAgentSegment(payload) {
   if (typeof payload !== "object" || payload === null) return null;
   const agent = /** @type {{ agent?: unknown }} */ (payload).agent;
   if (typeof agent !== "object" || agent === null) return null;
   const name = /** @type {{ name?: unknown }} */ (agent).name;
-  return typeof name === "string" && name.length > 0
-    ? `${DIM}↳ ${name}${RESET}`
-    : null;
+  if (typeof name !== "string" || name.length === 0) return null;
+  return seg("agent", 55, `${DIM}↳ ${name}${RESET}`, 6);
 }
 
 /** Elapsed-time threshold, in seconds, past which the in-flight-spoke
@@ -651,106 +354,697 @@ export function formatInflightSpokesSegment(spokes, env) {
 }
 
 /**
- * @param {unknown} payload
- * @returns {string | null} colorized `owner/name` origin repo segment, or
- *   null when absent.
+ * Builds a `{ id, priority, text, minWidth }` row segment, or `null` when
+ * `text` is absent — the shared shape every `format*Segment` function below
+ * returns so `fitRow` can budget/drop them uniformly.
+ *
+ * @param {string} id
+ * @param {number} priority
+ * @param {string | null | undefined} text
+ * @param {number} minWidth
+ * @returns {{ id: string, priority: number, text: string, minWidth: number } | null}
  */
-export function formatOriginRepo(payload) {
+function seg(id, priority, text, minWidth) {
+  return text === null || text === undefined
+    ? null
+    : { id, priority, text, minWidth };
+}
+
+/**
+ * @param {string} label
+ * @returns {string} the dim, fixed-width row label.
+ */
+function gutter(label) {
+  return `${DIM}${label.padEnd(GUTTER_WIDTH)}${RESET}`;
+}
+
+/**
+ * @param {string} label
+ * @param {ReadonlyArray<{ id: string, priority: number, text: string, minWidth: number } | null>} segments
+ * @param {number} columns
+ * @returns {string} one rendered row: a fixed gutter label plus the
+ *   width-fit, separator-joined segments — `PLACEHOLDER` when every segment
+ *   is absent, so every row always renders exactly one non-empty line.
+ */
+function buildRow(label, segments, columns) {
+  const g = gutter(label);
+  const nonEmpty = segments.filter((s) => s !== null);
+  if (nonEmpty.length === 0) return `${g}${PLACEHOLDER}`;
+  const budget = columns - displayWidth(g);
+  return `${g}${fitRow(nonEmpty, budget, SEGMENT_SEPARATOR)}`;
+}
+
+/**
+ * Always renders, unlike most segments here — absence of a conforming name
+ * is exactly the signal this segment exists to surface (ADR-0087). No hook
+ * can set a session name, so `payload.session_name` carries whatever the
+ * session happens to have: the AI-generated first-prompt title when nothing
+ * was set explicitly. A present/absent check alone would therefore pass most
+ * sessions while conforming to nothing — this validates the *value* against
+ * the convention's pattern instead, the same way `formatBranchSegment` flags
+ * `main` rather than merely checking a branch name is present.
+ *
+ * @param {unknown} payload
+ * @returns {{ id: string, priority: number, text: string, minWidth: number }}
+ *   the colorized session name when it conforms to the convention, or a
+ *   dim/flagged marker (`unnamed`, or the non-conforming name itself)
+ *   otherwise — never null.
+ */
+export function formatSessionNameSegment(payload) {
+  const name =
+    typeof payload === "object" && payload !== null
+      ? /** @type {{ session_name?: unknown }} */ (payload).session_name
+      : undefined;
+  if (typeof name !== "string" || name.length === 0) {
+    return /** @type {{ id: string, priority: number, text: string, minWidth: number }} */ (
+      seg("session_name", 100, `${DIM}unnamed${RESET}`, 12)
+    );
+  }
+  const conforms =
+    name.length <= SESSION_NAME_MAX_LENGTH && SESSION_NAME_PATTERN.test(name);
+  const text = conforms
+    ? `${GREEN}${name}${RESET}`
+    : `${YELLOW}⚠ ${name}${RESET}`;
+  return /** @type {{ id: string, priority: number, text: string, minWidth: number }} */ (
+    seg("session_name", 100, text, 12)
+  );
+}
+
+/**
+ * @param {string | null} branchName the resolved branch, or null.
+ * @returns {{ id: string, priority: number, text: string, minWidth: number } | null}
+ *   the branch segment; `main` is flagged as a warning since direct commits
+ *   there are unusual in this repo's workflow.
+ */
+export function formatBranchSegment(branchName) {
+  if (typeof branchName !== "string" || branchName.length === 0) return null;
+  const text =
+    branchName === "main" ? `${RED}⚠ main${RESET}` : `🌿 ${branchName}`;
+  return seg("branch", 95, text, 6);
+}
+
+/**
+ * @param {unknown} payload
+ * @returns {{ id: string, priority: number, text: string, minWidth: number } | null}
+ *   the `wt "name"` segment, or null when `workspace.git_worktree` is
+ *   absent/empty.
+ */
+export function formatWorktreeSegment(payload) {
+  if (typeof payload !== "object" || payload === null) return null;
+  const workspace = /** @type {{ workspace?: unknown }} */ (payload).workspace;
+  const worktreeName =
+    workspace && typeof workspace === "object"
+      ? /** @type {{ git_worktree?: unknown }} */ (workspace).git_worktree
+      : undefined;
+  if (typeof worktreeName !== "string" || worktreeName.length === 0)
+    return null;
+  return seg("worktree", 85, `wt "${worktreeName}"`, 8);
+}
+
+/**
+ * @param {unknown} payload
+ * @returns {{ id: string, priority: number, text: string, minWidth: number } | null}
+ *   the colorized, OSC-8-linked `PR #N` segment, or null when
+ *   `pr.number` is absent.
+ */
+export function formatPrSegment(payload) {
+  if (typeof payload !== "object" || payload === null) return null;
+  const pr =
+    /**
+     * @type {{ number?: unknown; review_state?: unknown; url?: unknown } | undefined}
+     */ (/** @type {{ pr?: unknown }} */ (payload).pr);
+  if (typeof pr !== "object" || pr === null || typeof pr.number !== "number") {
+    return null;
+  }
+  const color =
+    pr.review_state === "approved"
+      ? GREEN
+      : pr.review_state === "changes_requested"
+        ? RED
+        : pr.review_state === "draft"
+          ? DIM
+          : pr.review_state === "pending"
+            ? YELLOW
+            : null;
+  const label = `PR #${pr.number}`;
+  const linked =
+    typeof pr.url === "string" && pr.url.length > 0
+      ? `\x1b]8;;${pr.url}\x07${label}\x1b]8;;\x07`
+      : label;
+  const text = color === null ? linked : `${color}${linked}${RESET}`;
+  return seg("pr", 90, text, 8);
+}
+
+/**
+ * @param {unknown} payload
+ * @returns {{ id: string, priority: number, text: string, minWidth: number } | null}
+ *   the plain `owner/name` origin repo segment, or null when absent.
+ */
+export function formatOriginRepoSegment(payload) {
   if (typeof payload !== "object" || payload === null) return null;
   const workspace = /** @type {{ workspace?: unknown }} */ (payload).workspace;
   if (typeof workspace !== "object" || workspace === null) return null;
   const repo = /** @type {{ repo?: unknown }} */ (workspace).repo;
   if (typeof repo !== "object" || repo === null) return null;
   const r = /** @type {{ owner?: unknown; name?: unknown }} */ (repo);
-  return typeof r.owner === "string" &&
-    r.owner.length > 0 &&
-    typeof r.name === "string" &&
-    r.name.length > 0
-    ? `${BRIGHT_CYAN}${r.owner}/${r.name}${RESET}`
-    : null;
-}
-
-/**
- * @param {{ freemem?: unknown; totalmem?: unknown } | undefined} env
- * @returns {string | null} colorized `mem NN%free` segment, or null when
- *   the env doesn't carry memory figures.
- */
-export function formatFreeMemory(env) {
-  const freemem = env?.freemem;
-  const totalmem = env?.totalmem;
   if (
-    typeof freemem !== "number" ||
-    typeof totalmem !== "number" ||
-    totalmem <= 0
+    typeof r.owner !== "string" ||
+    r.owner.length === 0 ||
+    typeof r.name !== "string" ||
+    r.name.length === 0
   ) {
     return null;
   }
-  return `${BRIGHT_GREEN}mem ${Math.round((freemem / totalmem) * 100)}%free${RESET}`;
-}
-
-/**
- * @param {ReadonlyArray<string | null>} list
- * @returns {string | null}
- */
-function joinSegments(list) {
-  const nonEmpty = list.filter(
-    (segment) => typeof segment === "string" && segment.length > 0,
-  );
-  return nonEmpty.length > 0 ? nonEmpty.join(SEGMENT_JOIN) : null;
+  return seg("origin_repo", 40, `${r.owner}/${r.name}`, 10);
 }
 
 /**
  * @param {unknown} payload
- * @returns {string | null} line 1: session name, model, effort, context bar
- *   + segment.
+ * @returns {{ id: string, priority: number, text: string, minWidth: number } | null}
+ *   the cyan model display-name segment, or null when absent.
  */
-export function buildLine1(payload) {
-  return joinSegments([
-    formatSessionNameSegment(payload),
-    formatModelSegment(payload),
-    formatEffortSegment(payload),
-    joinSegments([formatContextBar(payload), formatContextSegment(payload)]),
-  ]);
+export function formatModelSegment(payload) {
+  if (typeof payload !== "object" || payload === null) return null;
+  const model = /** @type {{ model?: unknown }} */ (payload).model;
+  if (typeof model !== "object" || model === null) return null;
+  const name = /** @type {{ display_name?: unknown }} */ (model).display_name;
+  if (typeof name !== "string" || name.length === 0) return null;
+  return seg("model", 100, `${CYAN}${name}${RESET}`, 6);
+}
+
+/**
+ * @param {unknown} payload
+ * @returns {{ id: string, priority: number, text: string, minWidth: number } | null}
+ *   the plain effort-level segment, or null when absent.
+ */
+export function formatEffortSegment(payload) {
+  if (typeof payload !== "object" || payload === null) return null;
+  const effort = /** @type {{ effort?: unknown }} */ (payload).effort;
+  if (typeof effort !== "object" || effort === null) return null;
+  const level = /** @type {{ level?: unknown }} */ (effort).level;
+  if (typeof level !== "string" || level.length === 0) return null;
+  return seg("effort", 90, level, 4);
+}
+
+/**
+ * @param {unknown} payload
+ * @returns {{ id: string, priority: number, text: string, minWidth: number } | null}
+ *   a `thinking` segment when `thinking.enabled === true`, else null.
+ */
+export function formatThinkingSegment(payload) {
+  if (typeof payload !== "object" || payload === null) return null;
+  const thinking = /** @type {{ thinking?: unknown }} */ (payload).thinking;
+  const enabled =
+    thinking && typeof thinking === "object"
+      ? /** @type {{ enabled?: unknown }} */ (thinking).enabled
+      : undefined;
+  return enabled === true ? seg("thinking", 70, "thinking", 8) : null;
+}
+
+/**
+ * @param {unknown} payload
+ * @returns {{ id: string, priority: number, text: string, minWidth: number } | null}
+ *   a `fast mode` segment when `fast_mode === true`, else null.
+ */
+export function formatFastModeSegment(payload) {
+  if (typeof payload !== "object" || payload === null) return null;
+  const fastMode = /** @type {{ fast_mode?: unknown }} */ (payload).fast_mode;
+  return fastMode === true ? seg("fast_mode", 65, "fast mode", 10) : null;
+}
+
+/**
+ * @param {unknown} payload
+ * @returns {{ id: string, priority: number, text: string, minWidth: number } | null}
+ *   the plain output-style-name segment, or null when absent or the literal
+ *   `"default"` (showing the default adds no information).
+ */
+export function formatOutputStyleSegment(payload) {
+  if (typeof payload !== "object" || payload === null) return null;
+  const outputStyle = /** @type {{ output_style?: unknown }} */ (payload)
+    .output_style;
+  const name =
+    outputStyle && typeof outputStyle === "object"
+      ? /** @type {{ name?: unknown }} */ (outputStyle).name
+      : undefined;
+  if (typeof name !== "string" || name.length === 0 || name === "default") {
+    return null;
+  }
+  return seg("output_style", 55, name, 6);
+}
+
+/**
+ * @param {unknown} payload
+ * @returns {{ id: string, priority: number, text: string, minWidth: number } | null}
+ *   the lowercased vim-mode segment, or null when absent.
+ */
+export function formatVimModeSegment(payload) {
+  if (typeof payload !== "object" || payload === null) return null;
+  const vim = /** @type {{ vim?: unknown }} */ (payload).vim;
+  const mode =
+    vim && typeof vim === "object"
+      ? /** @type {{ mode?: unknown }} */ (vim).mode
+      : undefined;
+  if (typeof mode !== "string" || mode.length === 0) return null;
+  return seg("vim", 50, mode.toLowerCase(), 6);
+}
+
+/**
+ * @param {unknown} payload
+ * @returns {{ id: string, priority: number, text: string, minWidth: number } | null}
+ *   a zone-colored block-glyph context-usage bar, or null when the payload
+ *   has no context-window data yet.
+ */
+export function formatContextBarSegment(payload) {
+  const pct = resolveUsedPercentage(payload);
+  const zone = zoneForPercentage(pct);
+  if (zone === "unknown" || pct === null) return null;
+  const color = zone === "high" ? RED : zone === "warn" ? YELLOW : GREEN;
+  const filled = Math.min(
+    CONTEXT_BAR_WIDTH,
+    Math.max(0, Math.round((pct / 100) * CONTEXT_BAR_WIDTH)),
+  );
+  const text = `${color}${"█".repeat(filled)}${"░".repeat(CONTEXT_BAR_WIDTH - filled)}${RESET}`;
+  return seg("context_bar", 100, text, CONTEXT_BAR_WIDTH);
+}
+
+/**
+ * @param {unknown} payload
+ * @returns {{ id: string, priority: number, text: string, minWidth: number } | null}
+ *   the zone-colored `NN%` context-usage segment, or null when unknown.
+ */
+export function formatContextPercentSegment(payload) {
+  const pct = resolveUsedPercentage(payload);
+  const zone = zoneForPercentage(pct);
+  if (zone === "unknown" || pct === null) return null;
+  const color = zone === "high" ? RED : zone === "warn" ? YELLOW : GREEN;
+  return seg("context_pct", 95, `${color}${pct}%${RESET}`, 4);
+}
+
+/**
+ * @param {unknown} payload
+ * @returns {{ id: string, priority: number, text: string, minWidth: number } | null}
+ *   the plain `used/total` token-count segment, or null when either figure
+ *   is absent.
+ */
+export function formatContextDenominatorSegment(payload) {
+  if (typeof payload !== "object" || payload === null) return null;
+  const contextWindow = /** @type {{ context_window?: unknown }} */ (payload)
+    .context_window;
+  if (typeof contextWindow !== "object" || contextWindow === null) return null;
+  const cw =
+    /** @type {{ total_input_tokens?: unknown; context_window_size?: unknown }} */ (
+      contextWindow
+    );
+  const numerator = cw.total_input_tokens;
+  const denominator = cw.context_window_size;
+  if (
+    typeof numerator !== "number" ||
+    !Number.isFinite(numerator) ||
+    numerator <= 0 ||
+    typeof denominator !== "number" ||
+    !Number.isFinite(denominator) ||
+    denominator <= 0
+  ) {
+    return null;
+  }
+  const text = `${formatTokenCount(numerator)}/${formatTokenCount(denominator)}`;
+  return seg("context_denom", 80, text, 10);
+}
+
+/**
+ * @param {unknown} payload
+ * @returns {{ id: string, priority: number, text: string, minWidth: number } | null}
+ *   the plain `N headroom` token-count segment, or null when the payload
+ *   lacks remaining-percentage or window-size data.
+ */
+export function formatContextHeadroomSegment(payload) {
+  if (typeof payload !== "object" || payload === null) return null;
+  const contextWindow = /** @type {{ context_window?: unknown }} */ (payload)
+    .context_window;
+  if (typeof contextWindow !== "object" || contextWindow === null) return null;
+  const cw =
+    /** @type {{ remaining_percentage?: unknown; context_window_size?: unknown }} */ (
+      contextWindow
+    );
+  const remainingPct = cw.remaining_percentage;
+  const windowSize = cw.context_window_size;
+  if (
+    typeof remainingPct !== "number" ||
+    !Number.isFinite(remainingPct) ||
+    remainingPct < 0 ||
+    typeof windowSize !== "number" ||
+    !Number.isFinite(windowSize) ||
+    windowSize <= 0
+  ) {
+    return null;
+  }
+  const headroomTokens = Math.round((remainingPct / 100) * windowSize);
+  return seg(
+    "context_headroom",
+    70,
+    `${formatTokenCount(headroomTokens)} headroom`,
+    12,
+  );
+}
+
+/**
+ * Shared renderer for the three `rate_limits.*` quota segments below: a
+ * zone-colored bar plus percentage and, when a reset time is available, a
+ * dim countdown.
+ *
+ * @param {string} id
+ * @param {number} priority
+ * @param {string} label
+ * @param {unknown} window the parsed `rate_limits.<key>` object, or
+ *   undefined/null.
+ * @param {{ now?: unknown } | undefined} env
+ * @returns {{ id: string, priority: number, text: string, minWidth: number } | null}
+ */
+function formatQuotaWindowSegment(id, priority, label, window, env) {
+  if (typeof window !== "object" || window === null) return null;
+  const w = /** @type {{ used_percentage?: unknown; resets_at?: unknown }} */ (
+    window
+  );
+  const pct = w.used_percentage;
+  if (typeof pct !== "number" || !Number.isFinite(pct)) return null;
+
+  const barPct = Math.min(100, Math.max(0, pct));
+  const zone = zoneForPercentage(barPct);
+  const color = zone === "high" ? RED : zone === "warn" ? YELLOW : GREEN;
+  const filled = Math.min(
+    QUOTA_BAR_WIDTH,
+    Math.max(0, Math.round((barPct / 100) * QUOTA_BAR_WIDTH)),
+  );
+  const bar = `${"█".repeat(filled)}${"░".repeat(QUOTA_BAR_WIDTH - filled)}`;
+
+  const resetsAt = w.resets_at;
+  const resetText =
+    typeof resetsAt === "number" && Number.isFinite(resetsAt)
+      ? ` ${formatDuration(
+          Math.floor(
+            resetsAt -
+              (typeof env?.now === "number" ? env.now : Date.now()) / 1000,
+          ),
+        )}`
+      : "";
+
+  const text = `${color}${label} ${bar} ${Math.round(pct)}%${RESET}${DIM}${resetText}${RESET}`;
+  return seg(id, priority, text, 20);
 }
 
 /**
  * @param {unknown} payload
  * @param {{ now?: unknown } | undefined} env
- * @returns {string | null} line 2: session usage, rate-limit countdowns,
- *   cache state.
+ * @returns {{ id: string, priority: number, text: string, minWidth: number } | null}
+ *   the five-hour quota segment, or null when absent.
  */
-export function buildLine2(payload, env) {
-  return joinSegments([
-    formatSessionUsage(payload),
-    formatResetCountdown(payload, env),
-    formatWeeklyReset(payload),
-    formatCacheWidget(payload),
-  ]);
+export function formatFiveHourSegment(payload, env) {
+  const rateLimits =
+    typeof payload === "object" && payload !== null
+      ? /** @type {{ rate_limits?: unknown }} */ (payload).rate_limits
+      : undefined;
+  const window =
+    typeof rateLimits === "object" && rateLimits !== null
+      ? /** @type {{ five_hour?: unknown }} */ (rateLimits).five_hour
+      : undefined;
+  return formatQuotaWindowSegment("quota_5h", 100, "5h", window, env);
 }
 
 /**
  * @param {unknown} payload
- * @param {{ branch?: unknown; freemem?: unknown; totalmem?: unknown; now?: unknown; spokes?: InflightSpoke[] } | undefined} env
- * @returns {string | null} line 3: branch, worktree/PR, agent, in-flight
- *   spokes, origin repo, free memory.
+ * @param {{ now?: unknown } | undefined} env
+ * @returns {{ id: string, priority: number, text: string, minWidth: number } | null}
+ *   the seven-day quota segment, or null when absent.
  */
-export function buildLine3(payload, env) {
-  return joinSegments([
-    formatBranch(env?.branch ?? null),
-    formatWorktreeAndPr(payload),
-    formatAgentSegment(payload),
-    formatInflightSpokesSegment(env?.spokes ?? [], env),
-    formatOriginRepo(payload),
-    formatFreeMemory(env),
-  ]);
+export function formatSevenDaySegment(payload, env) {
+  const rateLimits =
+    typeof payload === "object" && payload !== null
+      ? /** @type {{ rate_limits?: unknown }} */ (payload).rate_limits
+      : undefined;
+  const window =
+    typeof rateLimits === "object" && rateLimits !== null
+      ? /** @type {{ seven_day?: unknown }} */ (rateLimits).seven_day
+      : undefined;
+  return formatQuotaWindowSegment("quota_7d", 85, "7d", window, env);
 }
 
 /**
  * @param {unknown} payload
- * @returns {string | null} line 4: the `/compact` suggestion, unchanged.
+ * @param {{ now?: unknown } | undefined} env
+ * @returns {{ id: string, priority: number, text: string, minWidth: number } | null}
+ *   the spend-limit quota segment, or null when absent.
  */
-export function buildLine4(payload) {
-  return buildCompactSuggestion(payload);
+export function formatSpendLimitSegment(payload, env) {
+  const rateLimits =
+    typeof payload === "object" && payload !== null
+      ? /** @type {{ rate_limits?: unknown }} */ (payload).rate_limits
+      : undefined;
+  const window =
+    typeof rateLimits === "object" && rateLimits !== null
+      ? /** @type {{ spend_limit?: unknown }} */ (rateLimits).spend_limit
+      : undefined;
+  return formatQuotaWindowSegment("quota_spend", 60, "spend", window, env);
+}
+
+/**
+ * @param {unknown} payload
+ * @returns {{ id: string, priority: number, text: string, minWidth: number } | null}
+ *   the plain `$N.NN` total-cost segment, or null when absent.
+ */
+export function formatCostSegment(payload) {
+  if (typeof payload !== "object" || payload === null) return null;
+  const cost = /** @type {{ cost?: unknown }} */ (payload).cost;
+  if (typeof cost !== "object" || cost === null) return null;
+  const totalCost = /** @type {{ total_cost_usd?: unknown }} */ (cost)
+    .total_cost_usd;
+  if (typeof totalCost !== "number" || !Number.isFinite(totalCost)) return null;
+  return seg("cost", 100, `$${totalCost.toFixed(2)}`, 6);
+}
+
+/**
+ * @param {unknown} payload
+ * @returns {{ id: string, priority: number, text: string, minWidth: number } | null}
+ *   the plain `Nm (Nm api)` duration segment, or null when absent.
+ */
+export function formatDurationSegment(payload) {
+  if (typeof payload !== "object" || payload === null) return null;
+  const cost = /** @type {{ cost?: unknown }} */ (payload).cost;
+  if (typeof cost !== "object" || cost === null) return null;
+  const c =
+    /** @type {{ total_duration_ms?: unknown; total_api_duration_ms?: unknown }} */ (
+      cost
+    );
+  const totalDurationMs = c.total_duration_ms;
+  if (
+    typeof totalDurationMs !== "number" ||
+    !Number.isFinite(totalDurationMs)
+  ) {
+    return null;
+  }
+  const mins = Math.floor(totalDurationMs / 60_000);
+  const totalApiDurationMs = c.total_api_duration_ms;
+  const text =
+    typeof totalApiDurationMs === "number" &&
+    Number.isFinite(totalApiDurationMs)
+      ? `${mins}m (${Math.floor(totalApiDurationMs / 60_000)}m api)`
+      : `${mins}m`;
+  return seg("duration", 85, text, 10);
+}
+
+/**
+ * @param {unknown} payload
+ * @returns {{ id: string, priority: number, text: string, minWidth: number } | null}
+ *   the colorized `+N/-N` lines-changed segment, or null when absent or both
+ *   figures are zero (quiet by default when nothing has changed yet).
+ */
+export function formatLinesChangedSegment(payload) {
+  if (typeof payload !== "object" || payload === null) return null;
+  const cost = /** @type {{ cost?: unknown }} */ (payload).cost;
+  if (typeof cost !== "object" || cost === null) return null;
+  const c =
+    /** @type {{ total_lines_added?: unknown; total_lines_removed?: unknown }} */ (
+      cost
+    );
+  const added = c.total_lines_added;
+  const removed = c.total_lines_removed;
+  if (
+    typeof added !== "number" ||
+    !Number.isFinite(added) ||
+    typeof removed !== "number" ||
+    !Number.isFinite(removed)
+  ) {
+    return null;
+  }
+  if (added === 0 && removed === 0) return null;
+  const text = `${GREEN}+${added}${RESET}${DIM}/${RESET}${RED}-${removed}${RESET}`;
+  return seg("lines", 65, text, 8);
+}
+
+/**
+ * @param {unknown} payload
+ * @returns {{ id: string, priority: number, text: string, minWidth: number } | null}
+ *   colorized prompt-cache state, or null when absent/malformed.
+ */
+export function formatCacheSegment(payload) {
+  if (typeof payload !== "object" || payload === null) return null;
+  const pc = /** @type {{ prompt_cache?: unknown }} */ (payload).prompt_cache;
+  if (typeof pc !== "object" || pc === null) return null;
+  const cache =
+    /**
+     * @type {{ warm?: unknown; hit_ratio?: unknown; recache_tokens_if_cold?: unknown }}
+     */ (pc);
+  if (typeof cache.warm !== "boolean") return null;
+
+  if (cache.warm === true) {
+    const hitRatio = cache.hit_ratio;
+    const text =
+      typeof hitRatio === "number" && Number.isFinite(hitRatio)
+        ? `${GREEN}cache ${Math.round(hitRatio * 100)}%${RESET}`
+        : `${GREEN}cache warm${RESET}`;
+    return seg("cache", 55, text, 10);
+  }
+
+  const recacheTokens = cache.recache_tokens_if_cold;
+  const text =
+    typeof recacheTokens === "number" && Number.isFinite(recacheTokens)
+      ? `${YELLOW}cache cold · ${formatTokenCount(recacheTokens)}${RESET}`
+      : `${YELLOW}cache cold${RESET}`;
+  return seg("cache", 55, text, 10);
+}
+
+/**
+ * @param {number} bytes
+ * @returns {string} bytes formatted as gigabytes with one decimal place.
+ */
+function gigabytes(bytes) {
+  return (bytes / 1_000_000_000).toFixed(1);
+}
+
+/**
+ * @param {{ freemem?: unknown; totalmem?: unknown } | undefined} env
+ * @returns {{ id: string, priority: number, text: string, minWidth: number } | null}
+ *   the zone-colored `N.N/N.NG free` memory segment, or null when the env
+ *   doesn't carry memory figures.
+ */
+export function formatMemorySegment(env) {
+  const freemem = env?.freemem;
+  const totalmem = env?.totalmem;
+  if (
+    typeof freemem !== "number" ||
+    !Number.isFinite(freemem) ||
+    typeof totalmem !== "number" ||
+    !Number.isFinite(totalmem) ||
+    totalmem <= 0
+  ) {
+    return null;
+  }
+  const freePct = (freemem / totalmem) * 100;
+  const zone = zoneForPercentage(100 - freePct);
+  const color = zone === "high" ? RED : zone === "warn" ? YELLOW : GREEN;
+  const text = `${color}${gigabytes(freemem)}/${gigabytes(totalmem)}G free${RESET}`;
+  return seg("memory", 50, text, 10);
+}
+
+/**
+ * @param {unknown} payload
+ * @param {{ branch?: unknown } | undefined} env
+ * @param {number} columns
+ * @returns {string} the session row: session name, branch, worktree, PR,
+ *   agent, origin repo.
+ */
+export function buildSessionRow(payload, env, columns) {
+  return buildRow(
+    "session",
+    [
+      formatSessionNameSegment(payload),
+      formatBranchSegment(env?.branch ?? null),
+      formatWorktreeSegment(payload),
+      formatPrSegment(payload),
+      formatAgentSegment(payload),
+      formatOriginRepoSegment(payload),
+    ],
+    columns,
+  );
+}
+
+/**
+ * @param {unknown} payload
+ * @param {number} columns
+ * @returns {string} the model row: model, effort, thinking, fast mode,
+ *   output style, vim mode.
+ */
+export function buildModelRow(payload, columns) {
+  return buildRow(
+    "model",
+    [
+      formatModelSegment(payload),
+      formatEffortSegment(payload),
+      formatThinkingSegment(payload),
+      formatFastModeSegment(payload),
+      formatOutputStyleSegment(payload),
+      formatVimModeSegment(payload),
+    ],
+    columns,
+  );
+}
+
+/**
+ * @param {unknown} payload
+ * @param {number} columns
+ * @returns {string} the context row: usage bar, percent, denominator,
+ *   headroom.
+ */
+export function buildContextRow(payload, columns) {
+  return buildRow(
+    "context",
+    [
+      formatContextBarSegment(payload),
+      formatContextPercentSegment(payload),
+      formatContextDenominatorSegment(payload),
+      formatContextHeadroomSegment(payload),
+    ],
+    columns,
+  );
+}
+
+/**
+ * @param {unknown} payload
+ * @param {{ now?: unknown } | undefined} env
+ * @param {number} columns
+ * @returns {string} the quota row: five-hour, seven-day, spend-limit
+ *   `rate_limits.*` windows.
+ */
+export function buildQuotaRow(payload, env, columns) {
+  return buildRow(
+    "quota",
+    [
+      formatFiveHourSegment(payload, env),
+      formatSevenDaySegment(payload, env),
+      formatSpendLimitSegment(payload, env),
+    ],
+    columns,
+  );
+}
+
+/**
+ * @param {unknown} payload
+ * @param {{ freemem?: unknown; totalmem?: unknown } | undefined} env
+ * @param {number} columns
+ * @returns {string} the work row: cost, duration, lines changed, cache
+ *   state, free memory.
+ */
+export function buildWorkRow(payload, env, columns) {
+  return buildRow(
+    "work",
+    [
+      formatCostSegment(payload),
+      formatDurationSegment(payload),
+      formatLinesChangedSegment(payload),
+      formatCacheSegment(payload),
+      formatMemorySegment(env),
+    ],
+    columns,
+  );
 }
 
 /**
@@ -761,21 +1055,23 @@ export function buildLine4(payload) {
  *   totalmem?: unknown;
  *   branch?: unknown;
  *   spokes?: InflightSpoke[];
+ *   COLUMNS?: unknown;
  * }} [env] local-only, non-payload context: current time (ms), free/total
- *   memory (bytes), the resolved git branch name, and the currently
- *   in-flight spokes. Defaults to `{}` so existing single-argument call
- *   sites keep working.
- * @returns {string} the full, possibly multi-line, status-line output.
+ *   memory (bytes), the resolved git branch name, the currently in-flight
+ *   spokes (retained but unused, see file header), and the terminal
+ *   `COLUMNS` width. Defaults to `{}` so existing single-argument call sites
+ *   keep working.
+ * @returns {string} the full, always-five-line status-line output.
  */
 export function renderStatusLine(payload, env = {}) {
+  const columns = terminalColumns(env);
   return [
-    buildLine1(payload),
-    buildLine2(payload, env),
-    buildLine3(payload, env),
-    buildLine4(payload),
-  ]
-    .filter((line) => typeof line === "string" && line.length > 0)
-    .join("\n");
+    buildSessionRow(payload, env, columns),
+    buildModelRow(payload, columns),
+    buildContextRow(payload, columns),
+    buildQuotaRow(payload, env, columns),
+    buildWorkRow(payload, env, columns),
+  ].join("\n");
 }
 
 /**
@@ -802,13 +1098,12 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       typeof payload?.workspace?.current_dir === "string"
         ? payload.workspace.current_dir
         : process.cwd();
-    const projectRoot = process.env.CLAUDE_PROJECT_DIR ?? process.cwd();
     const env = {
       now: Date.now(),
       freemem: os.freemem(),
       totalmem: os.totalmem(),
       branch: resolveBranch(safeReadFile, startDir),
-      spokes: resolveInflightSpokes(safeReadFile, projectRoot),
+      COLUMNS: process.env.COLUMNS,
     };
     output = renderStatusLine(payload, env);
   } catch {

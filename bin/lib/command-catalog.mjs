@@ -261,6 +261,11 @@ export const COMMAND_CATALOG = [
       "Verifies every .claude/settings.json hook command resolves to a real .claude/hooks/*.mjs file, every event name is a real Claude Code lifecycle event, and no hook file is left unwired. Run after editing hooks or settings.json.",
   },
   {
+    name: "statusline:preview",
+    description:
+      "Renders .claude/hooks/statusline-context-pressure.mjs's five-row output against fixture payloads (early-session, mid-session, ≥90% context, no rate limits, no PR, no git) at COLUMNS 60/80/120/160, plus a live malformed-JSON probe of the real script. Dev-only display tool, not a gate — run it after changing the statusLine renderer or the layout module.",
+  },
+  {
     name: "check:integration-stance",
     description:
       "Verifies every GitHub-talking .claude/skills/*/SKILL.md carries an ADR-0030 stance reference, contains no retired policy claim, and names the mechanism (gh CLI vs GitHub MCP) it actually uses. Run after editing a GitHub-facing skill.",
