@@ -49,7 +49,8 @@ opusplan` or `claude --model opusplan`) — Opus during plan mode, Sonnet once
    therefore pins an exact ID (`claude-sonnet-5`, `claude-opus-5`,
    `claude-haiku-4-5`), as do the CI workflows (`claude-pr-review.yml` via
    `--model claude-opus-5`, `claude-assistant.yml` via
-   `--model claude-sonnet-5`), and the `audit-fanout.js` verify step. The cost is
+   `--model claude-sonnet-5`), and the `audit-refuter` agent that
+   `audit-fanout.js`'s Verify phase dispatches. The cost is
    deliberate and accepted: a new generation no longer reaches the spokes for
    free, so an upgrade becomes an explicit commit that moves frontmatter and the
    MODEL-MATRIX block together — which `check:agents` already forces.
@@ -238,7 +239,13 @@ caught `audit-fanout.js` dispatching a read-only `Explore` agent with a
 prompt instructing it to write a scratchpad report file — Explore holds no
 `Write`/`Edit` tool and `guard-readonly-bash.mjs` blocks every shell write
 route, so the instruction was silently unsatisfiable; the workflow now
-returns each report inline instead. One
+returns each report inline instead. R8a itself only fires when an
+`agentType:` literal is _present_ — the Verify phase's refuter shipped with
+none at all for several weeks, dispatching as an untyped agent that sat
+outside both R8 and `guard-readonly-bash.mjs` (which exits 0 when
+`agent_type` is absent), until it was given its own typed spoke
+(`.claude/agents/audit-refuter.md`, pinned via the `agent`-surface row
+above rather than a `workflow-script` step-row override). One
 convention is not machine-checkable: any workflow whose agents write
 `packages/*/src/**` or `**/tests/**` must dispatch those agents with
 `isolation: "worktree"` (ADR-0013) — `guard-branch-isolation.mjs` blocks such
@@ -296,9 +303,9 @@ float (step 4): they pin exact IDs, and `claude-haiku-4-5` resolves to the
 | agent           | `spec-conformance-reviewer` | `claude-opus-5`    | `xhigh`  |
 | agent           | `docs-consistency-reviewer` | `claude-haiku-4-5` | `medium` |
 | agent           | `Explore`                   | `claude-haiku-4-5` | `low`    |
+| agent           | `audit-refuter`             | `claude-sonnet-5`  | `medium` |
 | workflow        | `claude-pr-review.yml`      | `claude-opus-5`    | `n/a`    |
 | workflow        | `claude-assistant.yml`      | `claude-sonnet-5`  | `n/a`    |
 | workflow-script | `audit-fanout.js`           | `inherit`          | `n/a`    |
-| workflow-script | `audit-fanout.js:verify`    | `claude-sonnet-5`  | `medium` |
 
 <!-- END MODEL-MATRIX -->

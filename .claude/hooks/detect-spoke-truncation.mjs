@@ -35,6 +35,25 @@
  * same tool-name caveat `guard-writer-dispatch-journal.mjs` documents for its
  * own PreToolUse payload.
  *
+ * Schema-dispatched agents (any `agent()` call passing `schema:` — every
+ * `audit-fanout.js` Find/Verify dispatch) end their turn on a `StructuredOutput`
+ * tool call, not a plain assistant text message, and the harness omits
+ * `last_assistant_message` from the payload entirely in that case (not an
+ * empty string — the key itself is absent) — confirmed by a live capture of
+ * the raw SubagentStop payload for an `Explore` and an `audit-refuter` spoke,
+ * both fields `undefined`, `docs/logs/2026-09-02-audit-refuter-hardening.md`.
+ * `looksTruncated(undefined)` returns `true` by design (an empty message IS
+ * the truncation signature for a text-completing spoke), so every schema
+ * dispatch was flagged as a truncation 100% of the time, regardless of
+ * outcome — polluting `tmp/session-incidents.jsonl`, which `writing-work-logs`
+ * treats as authoritative. `hadStructuredOutputCompletion` below closes this
+ * specific gap using the payload's `agent_transcript_path` (also always
+ * present): read the spoke's own transcript and check whether its last line
+ * is the tool-runner's `"Structured output provided successfully"`
+ * confirmation — a real, mid-transcript truncation before that point never
+ * produces this trailing line, so it stays a precise signal, not a broader
+ * relaxation of `looksTruncated` itself.
+ *
  * On a detected truncation, this hook also appends a durable record to
  * `tmp/session-incidents.jsonl` (rotated at the start of every session by
  * `rotate-session-incidents.mjs`) — continuous note-taking rather than a
@@ -50,7 +69,7 @@
  * land if a future hook gains the ability to detect them.
  */
 import process from "node:process";
-import { appendFileSync, mkdirSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { WRITER_SPOKES } from "../../bin/lib/agent-roster.mjs";
@@ -129,6 +148,52 @@ export function looksTruncated(message) {
 }
 
 /**
+ * A schema-dispatched agent's turn ends on a `StructuredOutput` tool call
+ * rather than a plain assistant message, so its transcript's final line is a
+ * `role: "user"` tool-result entry confirming the structured payload was
+ * received — a marker only a genuinely completed dispatch can produce; a
+ * spoke cut off mid-turn (hit `maxTurns`, or died before calling the tool)
+ * never reaches it. Reads defensively: a missing/unreadable transcript, or
+ * one whose last line isn't that exact confirmation, is treated as "no
+ * evidence of clean completion" rather than an error, so this stays a narrow
+ * additional signal alongside `looksTruncated` — never a broader relaxation
+ * of it.
+ *
+ * @param {string | undefined} transcriptPath
+ * @returns {boolean} true when the spoke's own transcript's last entry is the
+ *   tool-runner's structured-output confirmation.
+ */
+export function hadStructuredOutputCompletion(transcriptPath) {
+  if (typeof transcriptPath !== "string" || transcriptPath.length === 0) {
+    return false;
+  }
+  let raw;
+  try {
+    raw = readFileSync(transcriptPath, "utf8");
+  } catch {
+    return false;
+  }
+  const lines = raw.split("\n").filter((line) => line.trim().length > 0);
+  const lastLine = lines.at(-1);
+  if (lastLine === undefined) return false;
+
+  let entry;
+  try {
+    entry = JSON.parse(lastLine);
+  } catch {
+    return false;
+  }
+
+  const content = entry?.message?.content;
+  if (!Array.isArray(content)) return false;
+  return content.some(
+    (block) =>
+      block?.type === "tool_result" &&
+      block?.content === "Structured output provided successfully",
+  );
+}
+
+/**
  * @param {string | undefined} agentType
  * @returns {string} the advisory body tailored to whether the finished spoke
  *   was a writer (journal-bearing) or a review/research spoke (no journal).
@@ -169,8 +234,10 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const agentType = input.agent_type;
   const agentId = input.agent_id;
   const lastMessage = input.last_assistant_message;
+  const transcriptPath = input.agent_transcript_path;
 
   if (!looksTruncated(lastMessage)) process.exit(0);
+  if (hadStructuredOutputCompletion(transcriptPath)) process.exit(0);
 
   appendIncident({
     timestamp: new Date().toISOString(),

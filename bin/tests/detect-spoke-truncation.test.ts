@@ -5,6 +5,7 @@ import { afterEach, describe, expect, test } from "vitest";
 
 import {
   looksTruncated,
+  hadStructuredOutputCompletion,
   INCIDENTS_REL_PATH,
   appendIncident,
 } from "../../.claude/hooks/detect-spoke-truncation.mjs";
@@ -78,6 +79,92 @@ describe("looksTruncated", () => {
     ].join("\n");
 
     expect(looksTruncated(digest)).toBe(false);
+  });
+});
+
+describe("hadStructuredOutputCompletion", () => {
+  test("returns false when transcriptPath is undefined", () => {
+    expect(hadStructuredOutputCompletion(undefined)).toBe(false);
+  });
+
+  test("returns false when transcriptPath is an empty string", () => {
+    expect(hadStructuredOutputCompletion("")).toBe(false);
+  });
+
+  test("returns false when transcriptPath points to a nonexistent file", () => {
+    const dir = makeTempDir();
+
+    expect(
+      hadStructuredOutputCompletion(join(dir, "does-not-exist.jsonl")),
+    ).toBe(false);
+  });
+
+  test("returns false when transcriptPath points to an empty file", () => {
+    const dir = makeTempDir();
+    const transcriptPath = join(dir, "transcript.jsonl");
+    writeFileSync(transcriptPath, "");
+
+    expect(hadStructuredOutputCompletion(transcriptPath)).toBe(false);
+  });
+
+  test("returns false when the file's last line is not valid JSON", () => {
+    const dir = makeTempDir();
+    const transcriptPath = join(dir, "transcript.jsonl");
+    writeFileSync(transcriptPath, "not valid json\n");
+
+    expect(hadStructuredOutputCompletion(transcriptPath)).toBe(false);
+  });
+
+  test("returns false when the last event is a mid-turn tool_use block", () => {
+    const dir = makeTempDir();
+    const transcriptPath = join(dir, "transcript.jsonl");
+    const line = JSON.stringify({
+      message: {
+        role: "assistant",
+        content: [{ type: "tool_use", name: "Bash" }],
+      },
+    });
+    writeFileSync(transcriptPath, `${line}\n`);
+
+    expect(hadStructuredOutputCompletion(transcriptPath)).toBe(false);
+  });
+
+  test("returns true when the last event is the structured-output confirmation", () => {
+    const dir = makeTempDir();
+    const transcriptPath = join(dir, "transcript.jsonl");
+    const line = JSON.stringify({
+      message: {
+        role: "user",
+        content: [
+          {
+            type: "tool_result",
+            content: "Structured output provided successfully",
+          },
+        ],
+      },
+    });
+    writeFileSync(transcriptPath, `${line}\n`);
+
+    expect(hadStructuredOutputCompletion(transcriptPath)).toBe(true);
+  });
+
+  test("returns true when the confirmation line is followed by blank trailing lines", () => {
+    const dir = makeTempDir();
+    const transcriptPath = join(dir, "transcript.jsonl");
+    const line = JSON.stringify({
+      message: {
+        role: "user",
+        content: [
+          {
+            type: "tool_result",
+            content: "Structured output provided successfully",
+          },
+        ],
+      },
+    });
+    writeFileSync(transcriptPath, `${line}\n\n   \n`);
+
+    expect(hadStructuredOutputCompletion(transcriptPath)).toBe(true);
   });
 });
 
