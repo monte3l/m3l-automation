@@ -3,6 +3,10 @@
  * write route, and for the sensitive views X7b wires, by decorating each
  * route's own terminal handler (ADR-0070).
  *
+ * The table of WHICH routes are audited lives next door in
+ * `boot/human-action-specs.ts`; this module owns only the mechanism that
+ * reads it.
+ *
  * **Why `boot/`, and not `http/`.** `eslint.config.js`'s ADR-0009 zone table
  * — asserted at exact `except` length by `bin/check-eslint-zones.mjs` —
  * forbids `http/`, `runs/`, `sessions/` and `store/` from importing
@@ -31,16 +35,10 @@
  * @packageDocumentation
  */
 
-import {
-  humanActionPostureFor,
-  humanActionRecordFrom,
-} from "../audit/record.js";
+import { humanActionRecordFrom } from "../audit/record.js";
 import type {
-  M3LHumanActionKind,
   M3LHumanActionOperator,
   M3LHumanActionOutcome,
-  M3LHumanActionRecordInput,
-  M3LHumanActionTarget,
 } from "../audit/record.js";
 import type { M3LHumanActionAuditPort } from "../audit/port.js";
 import { createHumanActionAuditStream } from "../audit/stream.js";
@@ -50,41 +48,8 @@ import { chainSecondaryFailure } from "../errors/chain-secondary-failure.js";
 import type { M3LRequestContext } from "../http/context.js";
 import type { M3LConsoleHandler } from "../http/middleware.js";
 import type { M3LRoute } from "../http/router.js";
-
-/**
- * What a route's spec projects out of a live request: everything
- * {@link humanActionRecordFrom} needs except the fields every route shares
- * (`atMs`, `operator`, `correlationId`, `action`, `outcome`).
- */
-interface HumanActionProjection {
-  readonly target: M3LHumanActionTarget;
-  readonly parameters?: Readonly<Record<string, unknown>> | undefined;
-  readonly parameterRefs?: readonly string[] | undefined;
-  readonly posture: M3LHumanActionRecordInput["posture"];
-  readonly detail?: Readonly<Record<string, string | number | boolean>>;
-}
-
-/** One route's audit contract. */
-interface HumanActionSpec {
-  /** The kind recorded for this route. */
-  readonly action: M3LHumanActionKind;
-  /**
-   * Whether the entry is written BEFORE the handler runs or after it
-   * resolves.
-   *
-   * `"before"` for every write. A store mutation cannot be undone by a later
-   * failed append, so recording first is the only ordering that satisfies
-   * ADR-0070's "an unauditable action is refused" — and the shipped port
-   * TSDoc already rules that both of its error codes mean "the action was
-   * never attempted".
-   *
-   * `"after"` only where recording first would make the trail LIE — see
-   * `view.run.stream`, whose handler does its own 404 check internally.
-   */
-  readonly phase: "before" | "after";
-  /** Projects the record's route-specific fields out of the live request. */
-  readonly project: (ctx: M3LRequestContext) => HumanActionProjection;
-}
+import { HUMAN_ACTION_SPECS } from "./human-action-specs.js";
+import type { HumanActionSpec } from "./human-action-specs.js";
 
 /**
  * `M3LHumanActionOutcome` is the console's ADMISSION verdict, not the
@@ -106,257 +71,6 @@ function compensatingOutcome(cause: unknown): M3LHumanActionOutcome {
   if (cause.code === "ERR_CONSOLE_RUN_CAPACITY_EXCEEDED") return "rejected";
   return "failed";
 }
-
-/**
- * Reads the request body's `parameters` map, but only when both the body and
- * that field are plain objects.
- *
- * Defensive on purpose: a malformed body must yield the handler's own
- * `ERR_CONSOLE_BAD_REQUEST`, not an `ERR_CONSOLE_AUDIT_RECORD_INVALID` that
- * misdescribes whose fault it is. Only the KEYS of whatever this returns
- * ever reach the record.
- */
-function parametersOf(
-  ctx: M3LRequestContext,
-): Readonly<Record<string, unknown>> | undefined {
-  const body: unknown = ctx.body;
-  if (body === null || typeof body !== "object" || Array.isArray(body)) {
-    return undefined;
-  }
-  const parameters: unknown = (body as Record<string, unknown>)["parameters"];
-  if (
-    parameters === null ||
-    typeof parameters !== "object" ||
-    Array.isArray(parameters)
-  ) {
-    return undefined;
-  }
-  return parameters as Readonly<Record<string, unknown>>;
-}
-
-/** Reads a plain-object body field, or `undefined` when the body is malformed. */
-function bodyField(ctx: M3LRequestContext, key: string): unknown {
-  const body: unknown = ctx.body;
-  if (body === null || typeof body !== "object" || Array.isArray(body)) {
-    return undefined;
-  }
-  return (body as Record<string, unknown>)[key];
-}
-
-/** The posture a run/step request stands behind, read defensively off the body. */
-function postureOf(ctx: M3LRequestContext): HumanActionProjection["posture"] {
-  return humanActionPostureFor({
-    dryRun: bodyField(ctx, "dryRun") === true,
-    confirmed: bodyField(ctx, "confirmed") === true,
-  });
-}
-
-/** A route param, or `""` when absent — never `undefined` into a record. */
-function param(ctx: M3LRequestContext, key: string): string {
-  return ctx.params[key] ?? "";
-}
-
-/**
- * Collects the `reference` string off each entry of a body array field —
- * `POST …/steps`' bindings, whose references are the only parameter values
- * ADR-0070 records, and by reference only.
- *
- * A step reference (`step-<n>.output…`) does not trip the port's inline-ref
- * refusal: `isInlineArtifactRefText` only fires for text that `JSON.parse`s
- * to `{ kind: "inline" }`.
- */
-function bindingRefs(ctx: M3LRequestContext): readonly string[] {
-  const bindings: unknown = bodyField(ctx, "bindings");
-  if (!Array.isArray(bindings)) return [];
-  const refs: string[] = [];
-  for (const entry of bindings) {
-    if (entry === null || typeof entry !== "object") continue;
-    const reference: unknown = (entry as Record<string, unknown>)["reference"];
-    if (typeof reference === "string") refs.push(reference);
-  }
-  return refs;
-}
-
-/**
- * The binding parameter NAMES a step request declares, shaped as a map so
- * `humanActionRecordFrom` reads its keys through the one code path that is
- * documented to read only `Object.keys`.
- */
-function bindingParameterNames(
-  ctx: M3LRequestContext,
-): Readonly<Record<string, unknown>> {
-  const bindings: unknown = bodyField(ctx, "bindings");
-  if (!Array.isArray(bindings)) return {};
-  const names: Record<string, unknown> = {};
-  for (const entry of bindings) {
-    if (entry === null || typeof entry !== "object") continue;
-    const name: unknown = (entry as Record<string, unknown>)["parameterName"];
-    if (typeof name === "string") names[name] = true;
-  }
-  return names;
-}
-
-/**
- * `{ lastEventId }` when the client is RESUMING an SSE stream, else empty.
- *
- * A resume is a genuinely different exposure event from a first open — it
- * replays history the operator may not have seen — so it is recorded as its
- * own entry, distinguishable by this field. Header name and parse rule
- * mirror `http/routes/run-stream.ts`'s own `parseLastEventId`: a
- * non-integer or negative value is treated as absent rather than recorded
- * as caller-controlled text.
- */
-function resumeDetail(
-  ctx: M3LRequestContext,
-): Readonly<Record<string, string | number | boolean>> {
-  const raw = ctx.headers["last-event-id"];
-  if (raw === undefined) return {};
-  const parsed = Number(raw);
-  return Number.isInteger(parsed) && parsed >= 0 ? { lastEventId: parsed } : {};
-}
-
-/**
- * Every audited route, keyed `"<METHOD> <path-template>"`.
- *
- * `run.launch` targets the SCRIPT, not the run — `M3LHumanActionTarget`'s
- * `script` arm is the only one carrying a name, and a launch is the one
- * action an operator recognises by name. That is also why `phase: "before"`
- * works here with no run id in scope yet.
- *
- * `session.create` has no session id pre-flight, so its target id is the
- * correlation id — the honest AND joinable value, since `routes/sessions.ts`
- * passes that same id into `createSession`, where it lands in
- * `console_sessions.correlation_id`.
- *
- * A raised decision carries its id in `detail`, not in `target`: there is no
- * `decision` target kind, and inventing one would force a second `CHECK`
- * recreate on `target_kind` for no query anyone runs.
- */
-const HUMAN_ACTION_SPECS: ReadonlyMap<string, HumanActionSpec> = new Map<
-  string,
-  HumanActionSpec
->([
-  [
-    "POST /api/v1/runs",
-    {
-      action: "run.launch",
-      phase: "before",
-      project: (ctx) => {
-        const scriptName = bodyField(ctx, "scriptName");
-        const name = typeof scriptName === "string" ? scriptName : "";
-        return {
-          target: { kind: "script", id: name, scriptName: name },
-          parameters: parametersOf(ctx),
-          posture: postureOf(ctx),
-        };
-      },
-    },
-  ],
-  [
-    "POST /api/v1/sessions",
-    {
-      action: "session.create",
-      phase: "before",
-      project: (ctx) => ({
-        target: { kind: "session", id: ctx.correlationId },
-        posture: "confirmed",
-      }),
-    },
-  ],
-  [
-    "POST /api/v1/sessions/:id/steps",
-    {
-      action: "session.step.add",
-      phase: "before",
-      project: (ctx) => ({
-        target: { kind: "session", id: param(ctx, "id") },
-        parameters: bindingParameterNames(ctx),
-        parameterRefs: bindingRefs(ctx),
-        posture: postureOf(ctx),
-      }),
-    },
-  ],
-  [
-    "POST /api/v1/sessions/:id/steps/:stepId/decision",
-    {
-      action: "session.decision.raise",
-      phase: "before",
-      project: (ctx) => ({
-        target: { kind: "step", id: param(ctx, "stepId") },
-        posture: "confirmed",
-      }),
-    },
-  ],
-  [
-    "POST /api/v1/sessions/:id/decisions/:decisionId",
-    {
-      action: "session.decision.answer",
-      phase: "before",
-      project: (ctx) => ({
-        target: { kind: "session", id: param(ctx, "id") },
-        posture: "confirmed",
-        detail: { decisionId: param(ctx, "decisionId") },
-      }),
-    },
-  ],
-  [
-    "POST /api/v1/sessions/:id/close",
-    {
-      action: "session.close",
-      phase: "before",
-      project: (ctx) => ({
-        target: { kind: "session", id: param(ctx, "id") },
-        posture: "confirmed",
-      }),
-    },
-  ],
-  [
-    "POST /api/v1/sessions/:id/reopen",
-    {
-      action: "session.reopen",
-      phase: "before",
-      project: (ctx) => ({
-        target: { kind: "session", id: param(ctx, "id") },
-        posture: "confirmed",
-      }),
-    },
-  ],
-  [
-    // The ONLY wireable sensitive view: enumerating the whole 17-route table
-    // shows there is no run-report endpoint and no session-artifact-content
-    // endpoint (`GET /sessions/:id/bindings` returns binding ROWS, and
-    // `sessions/artifacts.ts` has no route in front of it). `/health`,
-    // `/ready` and every list/collection endpoint are out of scope by
-    // decision — `view.*` covers sensitive-class renderings only.
-    //
-    // ONE entry per subscription, not per event. Per-event would write
-    // thousands of lines per watcher into a trail with no pruning path
-    // shipped, and ADR-0070 describes the rendering as an audited view
-    // action per rendering ACT — i.e. per subscription. Reconnects stay
-    // visible regardless, since a resume is a new request with a new
-    // correlation id.
-    //
-    // `phase: "after"` is REQUIRED here, not a preference.
-    // `buildStreamHandler` does its 404 check INSIDE the handler, so
-    // recording first would write `"served"` for a run that was never
-    // served — the trail would lie. Recording after the handler resolves is
-    // honest and still refuses: `open(sink)` has not run yet, so no SSE byte
-    // has reached the operator when a rejected append throws. Note that
-    // `buildActiveStreamResponse`'s `hub.get(id) ?? hub.open(id)` is a side
-    // effect that renders nothing, so it does not violate
-    // display-vs-persist.
-    "GET /api/v1/runs/:id/stream",
-    {
-      action: "view.run.stream",
-      phase: "after",
-      project: (ctx) => ({
-        target: { kind: "run", id: param(ctx, "id") },
-        posture: "confirmed",
-        detail: resumeDetail(ctx),
-      }),
-    },
-  ],
-]);
 
 /** The operator a record is attributed to; unauthenticated cannot reach an audited route. */
 function operatorOf(ctx: M3LRequestContext): M3LHumanActionOperator {
@@ -490,13 +204,34 @@ export function applyHumanActionAudit(
         throw new M3LConsoleError(
           "ERR_CONSOLE_INTERNAL",
           `route '${route.method} ${route.path}' performs a write but has no human-action audit spec; ` +
-            `add one in boot/human-action-audit.ts rather than shipping an unaudited write route`,
+            `add one in boot/human-action-specs.ts rather than shipping an unaudited write route`,
         );
       }
       return route;
     }
     return decorate(route, spec, port, nowMs);
   });
+}
+
+/**
+ * Rethrows an already-classified {@link M3LConsoleError} unchanged, and wraps
+ * anything else as `ERR_CONSOLE_CONFIG_INVALID`.
+ *
+ * One helper rather than two identical `catch` blocks: {@link
+ * resolveHumanActionAuditRoot} and {@link buildHumanActionAuditPort} classify
+ * the SAME failure — "this console's audit trail is not usable" — and both
+ * must satisfy `createConsoleRuntime`'s `@throws`, which promises an
+ * `M3LConsoleError` rather than the bare `Core.M3LError` either underlying
+ * call can raise. Two copies could drift into two different messages for one
+ * failure.
+ */
+function rejectUnusableAuditRoot(cause: unknown): never {
+  if (cause instanceof M3LConsoleError) throw cause;
+  throw new M3LConsoleError(
+    "ERR_CONSOLE_CONFIG_INVALID",
+    "the human-action audit root could not be resolved",
+    { cause },
+  );
 }
 
 /**
@@ -533,12 +268,7 @@ export function resolveHumanActionAuditRoot(env: NodeJS.ProcessEnv): string {
   try {
     return resolveAuditStreamRoot({ configuredPath: env[AUDIT_ROOT_ENV] });
   } catch (cause) {
-    if (cause instanceof M3LConsoleError) throw cause;
-    throw new M3LConsoleError(
-      "ERR_CONSOLE_CONFIG_INVALID",
-      "the human-action audit root could not be resolved",
-      { cause },
-    );
+    rejectUnusableAuditRoot(cause);
   }
 }
 
@@ -580,11 +310,6 @@ export function buildHumanActionAuditPort(
   try {
     return createHumanActionAuditStream({ directory });
   } catch (cause) {
-    if (cause instanceof M3LConsoleError) throw cause;
-    throw new M3LConsoleError(
-      "ERR_CONSOLE_CONFIG_INVALID",
-      "the human-action audit root could not be resolved",
-      { cause },
-    );
+    rejectUnusableAuditRoot(cause);
   }
 }
