@@ -175,7 +175,7 @@ published version) resolves it.
 **The breakage was latent, not visible on `main`.** `ci.yml`'s `Lint Markdown`
 step is path-gated on `md == 'true'`, and #784's own diff touched only `ts` and
 `deps` paths — so the step was **skipped** on both that PR and the subsequent
-`main` push, and `main`'s CI stayed green (run on `5a014d6d`: job
+`main` push, and `main`'s CI stayed green (run on `2759a9b0`: job
 `Format & Markdown` = success, step `Lint Markdown` = skipped). The cost landed
 instead on the next PRs to touch a Markdown file: #785 went `FAILURE` on
 `Format & Markdown` for adding `REVIEW.md`, and it blocked this repo's

@@ -49,7 +49,7 @@ spokes) found one more real inaccuracy in the hub's own doc edits — a claimed
 automated `claude-pr-review` bot's PASS-verdict Should-fix (module header TSDoc
 read as bounding "any misbehaving endpoint" rather than only the
 consecutive-repeat case) was also addressed pre-merge. Squash-merged as
-`b373cb4`.
+`2ac9a1c`.
 
 **PR #665 (fleet + tracker close-out)** — the one remaining unbounded loop,
 `scripts/eventbridge-schedules/src/steps/list-rules.ts`'s `drainRules`,

@@ -1,6 +1,6 @@
 # Status reporting for long-running tasks (2026-09-02)
 
-**Status: shipped** (PR #890, commit 203cafd7; PR #893, commit a7cca9a7; and
+**Status: shipped** (PR #890, commit a17f04f2; PR #893, commit 744096f3; and
 the PR carrying this file)
 
 ## Context

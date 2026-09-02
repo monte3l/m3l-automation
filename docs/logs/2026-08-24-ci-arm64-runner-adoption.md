@@ -42,7 +42,7 @@ written; this work log is the decision's sole record, per the archived plan's
 own framing.
 
 **Commit-hash correction**: the archived plan cites commit `9119c7f` for
-PR4, but the real merge commit is `0c4b4ba` (PR #499,
+PR4, but the real merge commit is `938aca5` (PR #499,
 "ci: trial ubuntu-24.04-arm on the build and test lanes"). `9119c7f` does not
 exist anywhere in `git log --all`. The archived plan is immutable and was
 left as-is; this is the corrected reference.
@@ -86,7 +86,7 @@ completed and returned clean digests on the first pass.
 The origin-decision audit facet found that
 `docs/plans/archive/2026-08-19-ci-performance-optimization.md` cites commit
 `9119c7f` for PR4, but the actual merge commit is
-`0c4b4ba46c68ca04ce6cd6a3dfea12bb44e49e8f` (PR #499). `9119c7f` does not
+`938aca535de04389d2b5319e1ac3b32efb6c5ba9` (PR #499). `9119c7f` does not
 appear anywhere in `git log --all`. Per this repo's "plans are immutable"
 convention, the archived plan was left unedited; the correct hash is
 recorded in this log instead.

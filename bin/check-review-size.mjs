@@ -24,7 +24,7 @@
  * PR could measure under the soft target locally and still trip
  * `MAX_REVIEWABLE_BYTES` in CI. Measures a **unified** diff
  * (`git diff <base>..<head>`), never a per-commit series — `gh pr diff
- * --patch` inflated PR #523 by 39% before that was fixed (PR #569, `0174a5a`).
+ * --patch` inflated PR #523 by 39% before that was fixed (PR #569, `d8e8348`).
  *
  * Usage:
  *   node bin/check-review-size.mjs                      # resolves base/head itself

@@ -12,7 +12,7 @@ Plan of record: [`docs/plans/2026-08-18-codified-procedure-engine.md`](../plans/
 
 ## Summary
 
-Landed as **PR #580** (merged `6a63c15`): 27 files, +5,394/-42 lines. Shipped
+Landed as **PR #580** (merged `912c67d`): 27 files, +5,394/-42 lines. Shipped
 18 of the eventual 44 `core/procedure` exports — `evaluateProcedureCondition`,
 3 exported constants, 14 condition/value/reference types — plus the full
 1,526-line contract page, 16 `ERR_PROCEDURE_*` error codes (all 16 landed in

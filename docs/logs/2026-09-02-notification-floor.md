@@ -9,7 +9,7 @@ coordination discovery that reshaped the PR split, a real instance of a
 previously-documented lesson firing in practice, and a subagent hallucination
 caught by re-verifying against the primary source.
 
-Plan of record: [`how-the-project-reports-drifting-penguin.md`](https://claude.ai/code/session_01HkXA4EQADZq1GS4eumWYKx)
+Plan of record: [`how-the-project-reports-drifting-penguin.md`](https://claude.ai/code)
 (session-local plan file, not checked into the repo — PR 2 of this plan is
 still pending and will carry its own log)
 

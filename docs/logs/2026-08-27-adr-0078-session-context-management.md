@@ -30,16 +30,16 @@ together):
 
 | Commit     | GitHub ref | ADR label(s)                                                                        | What shipped                                                                                                                                                                                |
 | ---------- | ---------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `54f117c0` | #699       | (Part B doctrine + research)                                                        | ADR-0078 itself; `subagent-context-management.md` gains "Part 1 — the hub session"; research snapshot `context-window-and-compaction.md` (43 sources)                                       |
-| `325df63b` | #700       | "PR 2 of 6", "PR 3 of 6" (#701), "PR 4 of 6" (#704), plus a follow-up hardening fix | `bin/check-context-budget.mjs` (Part A gate); `CLAUDE.md` `@`-import removal + `## Compact Instructions` section; `write-compact-handoff.mjs`/`reinject-compact-handoff.mjs` (Part C hooks) |
-| `be0fd828` | #707       | "PR 6/6"                                                                            | `check:agents` enforcement of `maxTurns`/bounded-output sections; four context-handling bug fixes surfaced by the original audit                                                            |
+| `a8f7dadc` | #699       | (Part B doctrine + research)                                                        | ADR-0078 itself; `subagent-context-management.md` gains "Part 1 — the hub session"; research snapshot `context-window-and-compaction.md` (43 sources)                                       |
+| `f9027e98` | #700       | "PR 2 of 6", "PR 3 of 6" (#701), "PR 4 of 6" (#704), plus a follow-up hardening fix | `bin/check-context-budget.mjs` (Part A gate); `CLAUDE.md` `@`-import removal + `## Compact Instructions` section; `write-compact-handoff.mjs`/`reinject-compact-handoff.mjs` (Part C hooks) |
+| `27c2339a` | #707       | "PR 6/6"                                                                            | `check:agents` enforcement of `maxTurns`/bounded-output sections; four context-handling bug fixes surfaced by the original audit                                                            |
 
 Part D (config-knob pins — `autoCompactWindow`, `MAX_MCP_OUTPUT_TOKENS`,
 prompt-cache TTLs) was PR 5 of 6 and was **dropped**, not shipped — recorded
 in the ADR's own `Update (2026-08-27)` note as a deliberate maintainer call
 rather than a divergence of this delivery.
 
-`git show --format=%B -s 325df63b` preserves four squashed sub-commit
+`git show --format=%B -s f9027e98` preserves four squashed sub-commit
 messages in full, which is where most of this log's verifiable detail below
 comes from — a rare case where a retroactive reconstruction has near-live
 fidelity, because the squash-merge commit body itself is the primary source.
@@ -62,7 +62,7 @@ work happened.
 ## What went as planned
 
 - **The gate was staged deliberately, not accidentally left half-wired.**
-  `325df63b`'s first sub-commit added `bin/check-context-budget.mjs`
+  `f9027e98`'s first sub-commit added `bin/check-context-budget.mjs`
   explicitly _not_ wired into CI/pre-push, because at that point it would
   have failed its own hard budget check (`CLAUDE.md` resolved to ~2.9x the
   cap) and made the PR unmergeable. The next sub-commit cut `CLAUDE.md`'s

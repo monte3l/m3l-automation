@@ -16,7 +16,7 @@ Plan of record: the session's `/loop`-free implementation plan for issue #555
 Two PRs:
 
 - **[#823](https://github.com/monte3l/m3l-automation/pull/823)** (code, merged
-  `3ae3484f`) — slice 4a, the append-only stream read path. Public surface added
+  `5fa5f9e1`) — slice 4a, the append-only stream read path. Public surface added
   through the existing `core/storage` barrel, **no new `exports` subpath**:
   `M3LAppendOnlyStream.read()`, `M3LAppendOnlyStreamReadError`,
   `M3LAppendOnlyReadOptions`, `M3LAppendOnlyTruncatedSegment`, and

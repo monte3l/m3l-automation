@@ -1,7 +1,7 @@
 # claude-pr-review.yml + resolving-pr-comments — mechanics revision
 
-**Status: shipped** — PR 1 #855 (`d8ae677e`), PR 2 #860 (`d9d97002`), PR 3
-#871 (`530e5655`), PR 4 #877. Follows the review-gate tuning recorded in
+**Status: shipped** — PR 1 #855 (`20cd5e33`), PR 2 #860 (`3e08e6c5`), PR 3
+#871 (`e20f777b`), PR 4 #877. Follows the review-gate tuning recorded in
 `2026-07-13-pr-review-hardening.md` and `2026-08-20-pr-review-turn-budget.md`.
 
 ## Context

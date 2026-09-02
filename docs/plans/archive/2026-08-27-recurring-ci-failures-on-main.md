@@ -8,7 +8,7 @@
 `main` had been red or partially red for most of five days
 (2026-08-22–2026-08-27). Across the 279 push-triggered workflow runs in that
 window, CI failed 24 of 68 runs (~35%) and Pages failed 6 of 69; Pages had not
-deployed since `3964edd1` and was still failing on `main` HEAD at audit time.
+deployed since `9c1eb668` and was still failing on `main` HEAD at audit time.
 Backtracking every failing run to its step and log reduced the 30 failures to
 **four** root causes, three of which shared one structural property: each was
 detectable only on the post-merge push run, so the PR that introduced it could
@@ -20,7 +20,7 @@ red pushes over 2.5 hours went unremarked by any automation.
 Six reviewable slices (ADR-0072), each its own PR:
 
 1. **Unblock Pages** (#692) — `bin/lib/script-scaffold.mjs`'s top-level
-   `await import` of the CLI manifest (introduced by `b30eb5c3`, ADR-0053 U9)
+   `await import` of the CLI manifest (introduced by `0ef24b33`, ADR-0053 U9)
    was made lazy, matching the deferral pattern already used at
    `bin/scaffold-script.mjs`; `pages.yml` gained the missing CLI build step.
 2. **Stop the gitleaks recurrence** (#694) — all four `.gitleaksignore`

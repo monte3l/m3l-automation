@@ -302,14 +302,14 @@ merged before this change:
 
 | Merged PR                                         | Total    | Reviewable | Reviewable share |
 | ------------------------------------------------- | -------- | ---------- | ---------------- |
-| `24f7dea` semantic priority vocabulary            | 575,724  | 76,817     | 13%              |
-| `6c1bd73` pipeline phase trace                    | 257,523  | 142,557    | 55%              |
-| `ac1efcd` polling no-progress witness             | 244,035  | 103,691    | 42%              |
-| `cb92b81` hub board identity                      | 113,760  | 92,046     | 81%              |
-| `6557f91` ADR-0050 stance                         | 98,382   | 28,046     | 29%              |
-| `bdc5a50` / `55522bb` / `4db211a` docs programmes | 88k-138k | 4.2k-4.7k  | 3-5%             |
+| `305ed34` semantic priority vocabulary            | 575,724  | 76,817     | 13%              |
+| `b5eeb8c` pipeline phase trace                    | 257,523  | 142,557    | 55%              |
+| `afb5963` polling no-progress witness             | 244,035  | 103,691    | 42%              |
+| `7ee507e` hub board identity                      | 113,760  | 92,046     | 81%              |
+| `2683351` ADR-0050 stance                         | 98,382   | 28,046     | 29%              |
+| `c6a16b9` / `467066d` / `77426f4` docs programmes | 88k-138k | 4.2k-4.7k  | 3-5%             |
 
-The 581,270-char patch that reviewed successfully in 32 turns was `24f7dea`
+The 581,270-char patch that reviewed successfully in 32 turns was `305ed34`
 — 77KB of it was reviewable. This repo's markdown makes it worse than the
 percentages suggest: lines run up to **6,315 chars**, so a 5-line edit to
 `docs/implementation-status.md` contributed 61KB of patch and a 192-line edit

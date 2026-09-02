@@ -43,8 +43,8 @@ state. Their migrations net-deleted 100–190 lines of dispatcher boilerplate. A
 `dynamodb-crud` migration would net-zero or add lines, and the ADR knew this when it
 wrote the slug-level exclusion.
 
-**Precedent chain:** issue #439 (cloudwatch-logs-insights, same date), `41e54aa` (D4
-DocumentDB, 2026-08-13), `0ef72f6` (ADR-0016 Bash-write revisit trigger, 2026-08-17),
+**Precedent chain:** issue #439 (cloudwatch-logs-insights, same date), `9fb2e76` (D4
+DocumentDB, 2026-08-13), `16cedbf` (ADR-0016 Bash-write revisit trigger, 2026-08-17),
 all using `Rejected` as the in-vocabulary "won't do" term. PR #459 already added a
 reconciliation note to the parent row ("Step-pipeline engine", row 127) flagging the
 `dynamodb-crud` slug-level exclusion as requiring separate scope review — this PR

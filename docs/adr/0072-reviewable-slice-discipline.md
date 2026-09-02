@@ -10,7 +10,7 @@ PR #523 (`core/procedure`, tracker item B2, issue #474) was abandoned after
 five review rounds: 15,544 changed lines across 44 files, **501,454 reviewable
 chars** against the `MAX_REVIEWABLE_BYTES` gate's 300,000-char limit
 (`.github/workflows/claude-pr-review.yml`) — 3.5x the largest reviewable patch
-in the measured window (142,557 chars, `6c1bd73`). Cost: three
+in the measured window (142,557 chars, `b5eeb8c`). Cost: three
 `error_max_turns` runs producing no verdict (~$8.15) plus two completed rounds
 ($2.18 + $2.42), ~$12.75 of gate spend; ~16 spoke invocations across one
 six-spoke review, two RED, three GREEN, three reviewers and two audits; two
@@ -127,7 +127,7 @@ work, and a submodule-specific seam-planning practice as its hardest case.
   `MAX_REVIEWABLE_BYTES` out of the workflow file at runtime rather than
   duplicating the constant. It mirrors `is_ignored` exactly and measures a
   **unified** diff, never a per-commit series (`gh pr diff --patch` inflated
-  #523 by 39% — fixed in PR #569, `0174a5a` — by counting the same file once
+  #523 by 39% — fixed in PR #569, `d8e8348` — by counting the same file once
   per commit that touched it instead of once). Under the soft target it
   passes quietly; over it, it warns and names the top contributing files and
   a suggested split axis; over the ceiling, it fails.

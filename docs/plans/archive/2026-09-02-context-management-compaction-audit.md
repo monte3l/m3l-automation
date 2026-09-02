@@ -1,6 +1,6 @@
 # Context engineering, token optimization & compaction remediation (2026-09-01 – 2026-09-02)
 
-**Status: shipped** (PR #850, commit 8037f83d — through PR #876)
+**Status: shipped** (PR #850, commit e2a3d2ba — through PR #876)
 
 ## Context
 

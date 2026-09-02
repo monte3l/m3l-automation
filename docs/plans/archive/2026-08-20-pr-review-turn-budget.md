@@ -23,7 +23,7 @@ margin for weeks:
 - **37-88% of the patch was non-reviewable content.** `is_ignored()` marked
   `*.md`/`docs/**` non-reviewable but only ever decided _whether_ to review;
   the pre-compute step filtered one path (`pnpm-lock.yaml`) and handed over
-  every doc hunk. `24f7dea`'s 575,724-char patch was 76,817 reviewable.
+  every doc hunk. `305ed34`'s 575,724-char patch was 76,817 reviewable.
 - **PR #523 was also a real outlier**: 696,940 reviewable chars against a
   142,557 historical maximum.
 

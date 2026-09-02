@@ -14,7 +14,7 @@ independently from `main`, never stacked).
 Two PRs, both offline:
 
 - **[#828](https://github.com/monte3l/m3l-automation/pull/828)** (merged
-  `68e420e6`) — the cross-run daily invocation counter. Closed the
+  `2a708700`) — the cross-run daily invocation counter. Closed the
   `budget.invocations-per-day.unobservable` gap and nothing else. 523 → **583**
   tests.
 - **[#830](https://github.com/monte3l/m3l-automation/pull/830)** — the Bedrock
@@ -34,7 +34,7 @@ no AWS credentials at any point**, per the confirmed `starting-work` decision.
 
 ## The issue's claims, verified rather than trusted
 
-Reproduced on `main` at `0ab922ec` before writing anything:
+Reproduced on `main` at `4788ae9b` before writing anything:
 
 ```text
 $ node dist/main.js --command health-check --aws.profile dummy --modelId …
