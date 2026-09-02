@@ -273,6 +273,18 @@ local safety net and CI re-runs everything regardless. (Warming turbo with
 `pnpm build` first only speeds `build`/`typecheck`, not the `test:coverage`/`lint`
 dominators, so it won't save the push.)
 
+**`git push`'s generic `error: failed to push some refs` gives no clue whether
+a local pre-push hook failed or the remote rejected it — read the lane summary
+lefthook prints immediately above that line before assuming either.** A `--no-verify`
+retry "to isolate the variable" bypasses exactly the hook that may be the real,
+correct blocker: a push that twice failed this way turned out to be
+`format:check` legitimately failing on a `.mjs` file lefthook's pre-commit
+`format` glob (`**/*.{ts,json,md,yml,yaml}`) never auto-formats, and the
+`--no-verify` retry pushed the unformatted file straight to CI
+(`docs/logs/2026-09-02-session-naming-convention.md`). Retry the plain,
+verified push first; if a lane's own `✗` is genuinely there, fix that gate,
+never bypass it to "see what happens."
+
 **A session-level process restart drops harness-tracked background jobs and
 can wipe the scratchpad their logs were written into**, leaving a
 `task-notification` that reports `status: stopped` with no completion record
