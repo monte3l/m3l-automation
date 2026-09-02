@@ -85,6 +85,14 @@ These land as part of the checked-in repo, not the per-host setup script:
   `"command": "$(which ccstatusline)"` (or the resolved absolute path) in
   `statusLine`. This is a per-operator fix, not something `setup-host-resources.mjs`
   can apply — it lives outside the repo entirely.
+- **Project `statusLine`'s `refreshInterval: 30`** — the repo-tracked
+  `statusline-context-pressure.mjs` (#879) re-runs on a 30-second timer, in
+  addition to its normal event-driven triggers, so rate-limit reset countdowns
+  and the free-memory reading stay live while a session is idle. Each run is a
+  plain local `node` invocation (no subprocess, no network) — nowhere near the
+  `npx`-resolved cost above — but it is a small, repo-mandated addition to the
+  per-session idle floor; unlike the `ccstatusline` pin, there is nothing to
+  configure per-operator here.
 
 ## Recommended hardware floor
 

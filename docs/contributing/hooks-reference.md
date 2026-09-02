@@ -92,26 +92,43 @@ never has anything to report. Their events (`SessionStart`,
 tool call for exit 2 to react to.
 
 **`statusLine` (not a lifecycle hook — a separate `.claude/settings.json` key).**
-`statusline-context-pressure.mjs` renders live `context_window.used_percentage`
-pressure (color-coded at 70%/90%) and, once past 90%, a ready-to-run
-`/compact` suggestion built from `pr.number`/`workspace.git_worktree` already
-in the same payload — mirroring CLAUDE.md's `## Compact Instructions`
-preserve-list dynamically instead of leaving it as prose to remember.
-`statusLine` was confirmed as the only documented surface exposing live
-context-window data to a local script; no hook event carries it
-(`docs/research/harness-refresh.md` Outstanding drift #10), so this composes
-with rather than replaces the `PreCompact`/`SessionStart(compact)` handoff
-pair above — the statusline tells the user _when_, those hooks handle _what
-survives_ once `/compact` actually runs. Pure JSON-in/string-out, no
-`git`/network calls, so it doesn't reintroduce the `npx`-resolved
-third-party-statusline resource cost `docs/adr/0080-host-resource-budgeting.md`
-and `docs/contributing/host-resources.md` warn about — this is a plain local
-`node` invocation, identical in cost to every hook row above. `pnpm check:hooks`
-resolves `statusLine.command` too — so a broken reference errors and a valid
-one no longer false-positives as a "dead hook?" warning — though it checks
-only that the referenced script exists, not the `type`/other fields of the
-`statusLine` config itself; behavioral coverage of the script's own output is
-`bin/tests/statusline-context-pressure.test.ts`'s job.
+`statusline-context-pressure.mjs` renders a multi-line statusline: model,
+effort, and a color-coded context-pressure bar/percentage (70%/90% thresholds)
+on line 1; session cost, token counts, 5-hour/7-day rate-limit resets, and
+prompt-cache warmth on line 2; the current git branch, worktree/PR, active
+spoke, origin repo, and free memory on line 3; and, once past the 90%
+threshold, a ready-to-run `/compact` suggestion built from `pr.number`/
+`workspace.git_worktree` on its own fourth line — mirroring CLAUDE.md's
+`## Compact Instructions` preserve-list dynamically instead of leaving it as
+prose to remember. This is a project-scoped supersede of the user's own
+`ccstatusline` config (`~/.claude/settings.json`, `npx -y ccstatusline@latest`)
+— only one `statusLine` command can be active per scope, and project settings
+shadow user settings, so working in this repo would otherwise lose that
+dashboard's widgets; #879 broadened the script to cover the ones reproducible
+from data already available here (deferring the two that need a `/usage` API
+call — see the follow-up issue tracked from #879). `statusLine` was confirmed
+as the only documented surface exposing live context-window data to a local
+script; no hook event carries it (`docs/research/harness-refresh.md`
+Outstanding drift #10), so this composes with rather than replaces the
+`PreCompact`/`SessionStart(compact)` handoff pair above — the statusline tells
+the user _when_, those hooks handle _what survives_ once `/compact` actually
+runs. The invariant is **no subprocess, no network** — not "no `git` calls":
+the branch segment reads `.git/HEAD` directly (walking up from
+`workspace.current_dir`, resolving a linked worktree's `gitdir:` pointer file
+where needed) instead of shelling out to `git` the way `ccstatusline` does, and
+free memory comes from `os.freemem()`/`os.totalmem()`. Both are synchronous
+local syscalls, not a subprocess spawn or a registry hit, so neither
+reintroduces the `npx`-resolved third-party-statusline resource cost
+`docs/adr/0080-host-resource-budgeting.md` and `docs/contributing/host-resources.md`
+warn about — this is a plain local `node` invocation, identical in cost to
+every hook row above, run on a `refreshInterval: 30` timer (in addition to its
+existing event-driven triggers) so the reset countdowns and free-memory reading
+stay live while the session is idle. `pnpm check:hooks` resolves
+`statusLine.command` too — so a broken reference errors and a valid one no
+longer false-positives as a "dead hook?" warning — though it checks only that
+the referenced script exists, not the `type`/`refreshInterval`/other fields of
+the `statusLine` config itself; behavioral coverage of the script's own output
+is `bin/tests/statusline-context-pressure.test.ts`'s job.
 
 **Known gap (accepted risk, issue #210 retired 2026-08-17):** the write-time
 _content_ `Write|Edit` guards (`guard-secret-writes`, `guard-js-extension`,
