@@ -131,3 +131,4 @@ surface).
 | 0084 | [Which improvement signals the retrospective loop consumes](./0084-retrospective-signal-sources.md)                                                       | Accepted                                              |
 | 0085 | [CLI secret delivery via the spawn environment, not argv](./0085-cli-secret-delivery-via-spawn-env.md)                                                    | Accepted                                              |
 | 0086 | [Per-attempt retry metadata leaves `core/polling` by a sibling detailed method](./0086-retry-attempt-metadata-seam.md)                                    | Accepted                                              |
+| 0087 | [Claude Code session naming convention](./0087-claude-code-session-naming-convention.md)                                                                  | Accepted                                              |

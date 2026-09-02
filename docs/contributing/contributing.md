@@ -225,6 +225,45 @@ commit counts in the README stay queryable from history.
   B's own commits. Used three times without conflict in the ADR-0030 tooling
   program (`docs/logs/2026-07-17-adr-0030-workflow-tooling-mcp.md`).
 
+### Session naming (ADR-0087)
+
+Name every Claude Code session `<kind>-<slug>` before its first substantive
+prompt, via `claude -n <name>` at launch or `/rename <name>` mid-session:
+
+```text
+<kind>-<slug>
+
+kind ∈ feat | fix | audit | research | docs | review | ci | merge
+slug matches ^[a-z0-9]+(?:-[a-z0-9]+)*$   (the same SLUG_PATTERN
+                                            bin/worktree-new.mjs enforces)
+whole name ≤ 40 characters, never begins with "/"
+```
+
+`feat`/`fix` mirror the branch prefix above, so a branch-bearing session's
+name is derivable from its branch (`feat/statusline-widgets` →
+`feat-statusline-widgets`). The remaining kinds cover `main`-resident harness
+work that has no branch to mirror:
+
+| Session                           | Name                          |
+| --------------------------------- | ----------------------------- |
+| branch `feat/statusline-widgets`  | `feat-statusline-widgets`     |
+| branch `fix/main-ci-failures`     | `fix-main-ci-failures`        |
+| `/auditing` run on `main`         | `audit-session-naming`        |
+| `/researching-anthropic-guidance` | `research-anthropic-guidance` |
+| `/finishing-work` after a merge   | `merge-cleanup-pr-895`        |
+
+`starting-work` proposes the name alongside the branch and hands you the exact
+command to run — no hook can set a session name for you (hooks receive
+`session_id` read-only and cannot invoke slash commands), so this is a
+recommendation to act on, not an automatic step. If a name is already taken by
+another live session on the machine, Claude Code appends a `-word-word` suffix
+(v2.1.232+) rather than rejecting it; the disambiguated name still satisfies
+the pattern above. The statusline flags a session whose `session_name` doesn't
+match the pattern (including an unnamed session, whose `session_name` field
+otherwise carries the AI-generated first-prompt title). See
+[ADR-0087](../adr/0087-claude-code-session-naming-convention.md) for the full
+rationale and the constraints that rule out automatic enforcement.
+
 ### PR size (ADR-0072)
 
 Prefer several small, independently reviewable PRs over a few large ones — a
