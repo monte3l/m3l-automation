@@ -24,7 +24,9 @@
 // evals when this gate was introduced — landing the gate as a hard
 // requirement immediately would have failed the pre-push `checks` lane for
 // every future push until the backfill finished. That backfill (issue #775)
-// is COMPLETE: the list is empty and all 21 skills are compliant. The list
+// is COMPLETE: the list is empty and all skills (22 as of this writing, a
+// count that will drift — see `docs/contributing/skills-catalog.md`) are
+// compliant. The list
 // itself stays for the next new skill, under the same rule that kept it
 // honest — a skill must be removed from EXEMPT_SKILLS in the SAME PR that
 // makes it compliant, and this script rejects a redundant exemption (an

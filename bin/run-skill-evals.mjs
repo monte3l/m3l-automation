@@ -14,8 +14,8 @@
 // run commands or code ... and ignores user, project and local settings
 // files". A three-variant probe measured what that cost: from a directory
 // containing `.claude/skills/`, a `--restricted` session listed ZERO of the
-// 21 repo skills (only built-ins), while the same session without the flag
-// listed all 21. The graded transcripts had been saying so verbatim —
+// repo's skills (only built-ins), while the same session without the flag
+// listed all of them. The graded transcripts had been saying so verbatim —
 // "Unknown skill: triaging-ci". Every verdict measured general model
 // competence rather than whether our SKILL.md files work.
 //

@@ -1,4 +1,4 @@
-# Skills catalog and usage audit (2026-07-17)
+# Skills catalog and usage audit (originally 2026-07-17, patched since)
 
 This is the durable reference for "how often should this skill fire?" A usage
 audit on 2026-07-17 found several skills with zero or very low usage evidence
@@ -6,6 +6,11 @@ in `docs/logs/` and git history, and traced each one to a specific cause
 before proposing any fix. The tables below record that classification so a
 future reader doesn't have to re-run the audit to tell "working as intended"
 apart from "actually neglected."
+
+Individual rows and cells carry their own `as of <date>` evidence where it
+was re-checked after the original audit (e.g. the 2026-08-31 scan-alert
+recount below) — the file has been patched in place rather than re-dated as a
+whole, so no single date at the top describes every row's evidence.
 
 **Read this before "fixing" a low-usage skill.** Several skills in this repo
 are intentionally low-frequency — an incident-response skill firing rarely
@@ -17,16 +22,17 @@ trigger conditions on the basis of a low mention count alone.
 
 ### Core pipeline — high usage, this is the primary work loop
 
-| Skill                     | Purpose                               | Evidence (as of 2026-07-17)                                     |
-| ------------------------- | ------------------------------------- | --------------------------------------------------------------- |
-| `starting-work`           | Pre-work branch/worktree/PR/push gate | ~28 mentions across `docs/logs` and `docs/plans/archive`        |
-| `implementing-submodules` | TDD loop for Core/AWS library modules | ~44 mentions; referenced in all 20 submodule work logs          |
-| `scaffolding-submodules`  | Greenfield library module scaffold    | ~10 mentions                                                    |
-| `implementing-scripts`    | TDD loop for consumer scripts         | ~19 mentions                                                    |
-| `scaffolding-scripts`     | Greenfield consumer-script scaffold   | ~18 mentions                                                    |
-| `syncing-docs`            | Doc/provenance/exports reconciliation | ~67 mentions — the single most-referenced skill                 |
-| `auditing`                | Fan-out audit + plan, no code writes  | ~29 mentions                                                    |
-| `creating-prs`            | Quality gates → push → PR             | ~14 mentions in logs/plans, plus 4 direct git-commit references |
+| Skill                     | Purpose                                             | Evidence (as of 2026-07-17)                                                                                                                                                                                                                                                                                      |
+| ------------------------- | --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `starting-work`           | Pre-work branch/worktree/PR/push gate               | ~28 mentions across `docs/logs` and `docs/plans/archive`                                                                                                                                                                                                                                                         |
+| `implementing-submodules` | TDD loop for Core/AWS library modules               | ~44 mentions; referenced in all 20 submodule work logs                                                                                                                                                                                                                                                           |
+| `scaffolding-submodules`  | Greenfield library module scaffold                  | ~10 mentions                                                                                                                                                                                                                                                                                                     |
+| `implementing-scripts`    | TDD loop for consumer scripts                       | ~19 mentions                                                                                                                                                                                                                                                                                                     |
+| `scaffolding-scripts`     | Greenfield consumer-script scaffold                 | ~18 mentions                                                                                                                                                                                                                                                                                                     |
+| `syncing-docs`            | Doc/provenance/exports reconciliation               | ~67 mentions — the single most-referenced skill                                                                                                                                                                                                                                                                  |
+| `auditing`                | Fan-out audit + plan, no code writes                | ~29 mentions                                                                                                                                                                                                                                                                                                     |
+| `creating-prs`            | Quality gates → push → PR                           | ~14 mentions in logs/plans, plus 4 direct git-commit references                                                                                                                                                                                                                                                  |
+| `finishing-work`          | Post-merge close-out (branch/worktree/refs cleanup) | Added 2026-09-02 (PR #857), post-dates this file's 2026-07-17 audit — no usage evidence to report yet. Fills the gap `creating-prs` stops short of ("confirm mergeability" was previously the last owned step). Re-audit alongside `refreshing-anthropic-guidance` once it has a few months of real invocations. |
 
 ### Confirmed used, but undercounted by a name-grep audit
 
