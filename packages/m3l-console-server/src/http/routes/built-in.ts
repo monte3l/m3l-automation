@@ -23,7 +23,11 @@ import type { M3LDrainController } from "../../lifecycle/drain.js";
 import { createHealthRoutes } from "./health.js";
 import type { HealthRouteOptions } from "./health.js";
 import { createRunRoutes } from "./runs.js";
-import type { M3LRunLauncherPort, M3LRunReaderPort } from "./runs.js";
+import type {
+  M3LRunLauncherPort,
+  M3LRunReaderPort,
+  M3LRunReportPort,
+} from "./runs.js";
 import { createRunStreamRoutes } from "./run-stream.js";
 import type {
   M3LRunStreamRegistryPort,
@@ -78,6 +82,12 @@ export interface RunsRouteOptions {
    * enabled or disabled together.
    */
   readonly catalog: M3LScriptCatalogPort;
+  /**
+   * The run-report port (X7d); `main.ts` passes the real subsystem's
+   * `reportReader`. Registers on the same presence gate as everything above:
+   * a console with no run orchestration has no runs to report on.
+   */
+  readonly reportReader: M3LRunReportPort;
 }
 
 /**
@@ -150,6 +160,7 @@ export function toRunsRouteOptions(
         readonly orchestrator: M3LRunLauncherPort;
         readonly eventHub: RunStreamRouteOptions["hub"];
         readonly catalog: M3LScriptCatalogPort;
+        readonly reportReader: M3LRunReportPort;
       }
     | undefined,
 ): RunsRouteOptions | undefined {
@@ -159,6 +170,7 @@ export function toRunsRouteOptions(
     registry,
     hub: subsystem.eventHub,
     catalog: subsystem.catalog,
+    reportReader: subsystem.reportReader,
   };
 }
 
@@ -175,6 +187,7 @@ function buildRunRoutes(
     ...createRunRoutes({
       orchestrator: runs.orchestrator,
       registry: runs.registry,
+      reportReader: runs.reportReader,
     }),
     ...createRunStreamRoutes({ hub: runs.hub, registry: runs.registry }),
     ...createScriptRoutes({ catalog: runs.catalog }),

@@ -13,6 +13,11 @@
  * absent because a child process has nothing more than an exit code and a
  * kill signal to report.
  *
+ * X7d adds one more piece of per-run environment on the SPAWN path only:
+ * `M3L_OUTPUT_DIR`, pinned to this run's own directory so the report it
+ * writes is addressable by run id. See {@link M3LRunExecutorOptions.outputDir}
+ * for why the in-process path cannot honour it.
+ *
  * @packageDocumentation
  */
 
@@ -73,6 +78,26 @@ interface M3LRunExecutorOptions {
    * drop correlation for the runs it starts.
    */
   readonly correlationId: string;
+  /**
+   * The directory this run's own output tree lives under, handed to a
+   * spawned child as `M3L_OUTPUT_DIR` (X7d, ADR-0070). The orchestrator
+   * derives it per run as `<runsOutputRoot>/<runId>`, which is what makes a
+   * run's `run-report.json` addressable by run id — see
+   * `config/paths.ts`'s `resolveRunsOutputRoot`.
+   *
+   * Consumed by {@link createSpawnExecutor} ONLY.
+   * {@link createInProcessExecutor} accepts and ignores it: a hosted command
+   * runs inside the console's own process, `Core.M3LPaths` snapshots the
+   * output dir at construction time from the ambient environment, and there
+   * is no per-call seam to hand it through — mutating `process.env` for one
+   * in-process run would leak into every other. The consequence is stated in
+   * `docs/reference/console.md`: an in-process run's report is not served.
+   *
+   * Required, not optional, for the same reason `correlationId` is: every
+   * caller has one, and an optional field would let a new call site silently
+   * drop per-run isolation for the runs it starts.
+   */
+  readonly outputDir: string;
   /** Called once per non-empty line of the run's observable output. */
   readonly onLine: M3LLineSink;
 }
@@ -321,8 +346,15 @@ export function createSpawnExecutor(
 
   return {
     execute(executeOptions: M3LRunExecutorOptions): Promise<M3LSpawnExitInfo> {
-      const { scriptDir, parameters, dryRun, signal, correlationId, onLine } =
-        executeOptions;
+      const {
+        scriptDir,
+        parameters,
+        dryRun,
+        signal,
+        correlationId,
+        outputDir,
+        onLine,
+      } = executeOptions;
       const args = dryRun ? ["dist/main.js", "--dry-run"] : ["dist/main.js"];
       const env: NodeJS.ProcessEnv = {
         ...process.env,
@@ -335,6 +367,16 @@ export function createSpawnExecutor(
         // string — and each side has a test exercising the literal, so a
         // rename fails loudly rather than silently breaking correlation.
         M3L_CORRELATION_ID: correlationId,
+        // MIRRORED LITERAL. `m3l-common`'s `core/utils/M3LPaths.ts` READS
+        // this exact variable (`M3LPathEnvironmentVariables.OUTPUT_DIR`) as
+        // the override for its computed output directory, snapshotted at
+        // construction — which is what puts this run's `run-report.json` and
+        // stage-9 archive under a directory the console can address by run
+        // id. Same two-copies-on-purpose reasoning as `M3L_CORRELATION_ID`
+        // above, and each side has a test pinning the literal: this file's
+        // twin in `tests/runs-executor.test.ts`, and `m3l-common`'s in
+        // `tests/utils.test.ts`.
+        M3L_OUTPUT_DIR: outputDir,
       };
       const child = spawnImpl("node", args, {
         cwd: scriptDir,

@@ -31,6 +31,14 @@ import type { M3LRunRegistry } from "../src/runs/registry.js";
 import { createEventStreamHub } from "../src/stream/event-stream.js";
 import type { M3LStreamEndReason } from "../src/stream/event-stream.js";
 
+/**
+ * The runs output root every orchestrator fixture is built with — the
+ * directory `<root>/<runId>` is derived from and handed to the executor as
+ * `outputDir`. Never touched on disk here: these suites drive fake
+ * executors, so the value only has to be a stable, recognisable path.
+ */
+const RUNS_OUTPUT_ROOT = "/runs-output";
+
 const RUN_STARTED: M3LRunEvent = {
   event: "run.started",
   runId: "run-1",
@@ -152,6 +160,7 @@ describe("createRunSubsystem — drain() ends open run streams (Correction 3)", 
     const subsystem = createRunSubsystem({
       config: buildConfig(),
       logger: new Core.M3LLogger([]),
+      runsOutputRoot: RUNS_OUTPUT_ROOT,
       registry: buildEmptyRegistry(),
     });
 
@@ -180,6 +189,7 @@ describe("createRunSubsystem — drain() ends open run streams (Correction 3)", 
     const subsystem = createRunSubsystem({
       config: buildConfig(),
       logger: new Core.M3LLogger([]),
+      runsOutputRoot: RUNS_OUTPUT_ROOT,
       registry: buildEmptyRegistry(),
     });
 
@@ -202,6 +212,7 @@ describe("createRunSubsystem — endStreams() (the new synchronous drain seam)",
     const subsystem = createRunSubsystem({
       config: buildConfig(),
       logger: new Core.M3LLogger([]),
+      runsOutputRoot: RUNS_OUTPUT_ROOT,
       registry: buildEmptyRegistry(),
     });
 
@@ -225,6 +236,7 @@ describe("createRunSubsystem — endStreams() (the new synchronous drain seam)",
     const subsystem = createRunSubsystem({
       config: buildConfig(),
       logger: new Core.M3LLogger([]),
+      runsOutputRoot: RUNS_OUTPUT_ROOT,
       registry: buildEmptyRegistry(),
     });
 

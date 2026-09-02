@@ -160,6 +160,28 @@ export interface M3LRunReaderPort {
 }
 
 /**
+ * The local run-report port this module depends on — mirrors
+ * `runs/report.ts`'s `M3LRunReportReader.read`, so the real reader satisfies
+ * it structurally without an `http -> runs` import.
+ *
+ * The reader, not this module, owns the filesystem: locating a run's single
+ * timestamp directory, the containment assertion, the symlink refusal and
+ * the read cap all live there (`runs/report.ts`). This module's only job is
+ * turning "no report" into the right 404.
+ *
+ * @example
+ * ```ts
+ * const reportReader: M3LRunReportPort = {
+ *   read: () => Promise.resolve(undefined),
+ * };
+ * ```
+ */
+export interface M3LRunReportPort {
+  /** Reads one run's persisted report, or `undefined` when there is none. */
+  read(runId: string): Promise<unknown>;
+}
+
+/**
  * Constructor options for {@link createRunRoutes}.
  *
  * @example
@@ -175,6 +197,8 @@ export interface RunRouteOptions {
   readonly orchestrator: M3LRunLauncherPort;
   /** The run-reading port; `main.ts` passes the real `M3LRunRegistry`. */
   readonly registry: M3LRunReaderPort;
+  /** The run-report port; `main.ts` passes the run subsystem's `reportReader`. */
+  readonly reportReader: M3LRunReportPort;
 }
 
 /** Throws `ERR_CONSOLE_BAD_REQUEST` naming `field` and the reason it failed. */
@@ -353,12 +377,61 @@ function buildGetHandler(registry: M3LRunReaderPort): M3LConsoleHandler {
 }
 
 /**
+ * Builds the `GET /api/v1/runs/:id/report` handler: the run's persisted
+ * `run-report.json`, or a 404.
+ *
+ * TWO distinct 404s, both `ERR_CONSOLE_RUN_NOT_FOUND` and both deliberate:
+ * an unknown run id, and a known run with no report on disk. The registry is
+ * consulted FIRST so "this run does not exist" is never reported as "this
+ * run has no report yet" — the messages differ even though the code and
+ * status do not, because an operator polling a still-running run needs to
+ * tell those apart while an unauthenticated prober learns nothing either
+ * way. No new error code is minted: `http/envelope.ts` already maps this one
+ * to 404, and a second 404 code would buy nothing a message does not.
+ *
+ * A run that ran IN-PROCESS never has a report here — a hosted command
+ * cannot be handed a per-run `M3L_OUTPUT_DIR` (see
+ * `runs/executor.ts`'s `outputDir`), so it lands on the second 404. That is
+ * stated in `docs/reference/console.md` rather than hidden behind a
+ * different code.
+ */
+function buildReportHandler(
+  registry: M3LRunReaderPort,
+  reportReader: M3LRunReportPort,
+): M3LConsoleHandler {
+  return async (ctx) => {
+    const id = ctx.params["id"];
+    if (id === undefined) {
+      throw new M3LConsoleError(
+        "ERR_CONSOLE_BAD_REQUEST",
+        "missing ':id' route parameter",
+      );
+    }
+    if (registry.get(id) === undefined) {
+      throw new M3LConsoleError(
+        "ERR_CONSOLE_RUN_NOT_FOUND",
+        `no run found with id '${id}'`,
+      );
+    }
+    const report = await reportReader.read(id);
+    if (report === undefined) {
+      throw new M3LConsoleError(
+        "ERR_CONSOLE_RUN_NOT_FOUND",
+        `run '${id}' has no persisted report`,
+      );
+    }
+    return jsonResponse(STATUS_OK, report);
+  };
+}
+
+/**
  * Builds the X4 run-governor's REST route table: `POST /api/v1/runs`,
- * `GET /api/v1/runs`, and `GET /api/v1/runs/:id`, all `auth: "required"` —
- * a console operator only, never an unauthenticated caller.
+ * `GET /api/v1/runs`, `GET /api/v1/runs/:id`, and (X7d)
+ * `GET /api/v1/runs/:id/report`, all `auth: "required"` — a console operator
+ * only, never an unauthenticated caller.
  *
  * @param options - See {@link RunRouteOptions}.
- * @returns The three-route table.
+ * @returns The four-route table.
  *
  * @example
  * ```ts
@@ -397,6 +470,12 @@ export function createRunRoutes(options: RunRouteOptions): readonly M3LRoute[] {
       path: "/api/v1/runs/:id",
       auth: "required",
       handler: buildGetHandler(options.registry),
+    },
+    {
+      method: "GET",
+      path: "/api/v1/runs/:id/report",
+      auth: "required",
+      handler: buildReportHandler(options.registry, options.reportReader),
     },
   ];
 }

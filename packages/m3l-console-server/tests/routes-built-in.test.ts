@@ -26,6 +26,7 @@ import { M3LConsoleError } from "../src/errors/console-error.js";
 import type {
   M3LRunLauncherPort,
   M3LRunReaderPort,
+  M3LRunReportPort,
 } from "../src/http/routes/runs.js";
 import type { M3LRunStreamRegistryPort } from "../src/http/routes/run-stream.js";
 import type { M3LScriptCatalogPort } from "../src/http/routes/scripts.js";
@@ -74,17 +75,28 @@ const fakeCatalog: M3LScriptCatalogPort = {
   describe: () => Promise.resolve({}),
 };
 
+/**
+ * A minimal `M3LRunReportPort` fixture (X7d) — `RunsRouteOptions` gains this
+ * field on the same `options.runs` presence gate as everything above. Only
+ * its identity and structural shape matter here; `tests/routes-runs.test.ts`
+ * exercises the report handler's own behaviour.
+ */
+const fakeReportReader: M3LRunReportPort = {
+  read: () => Promise.resolve(undefined),
+};
+
 /** Builds a bare drain controller for `createBuiltInRoutes`'s required `drain` field. */
 function buildDrain() {
   return createDrainController({ timeoutMs: 15_000 });
 }
 
-/** The four run-governor routes `createBuiltInRoutes` must add when `options.runs` is supplied. */
+/** The five run-governor routes `createBuiltInRoutes` must add when `options.runs` is supplied. */
 const RUN_ROUTE_SIGNATURES: readonly { method: string; path: string }[] = [
   { method: "POST", path: "/api/v1/runs" },
   { method: "GET", path: "/api/v1/runs" },
   { method: "GET", path: "/api/v1/runs/:id" },
   { method: "GET", path: "/api/v1/runs/:id/stream" },
+  { method: "GET", path: "/api/v1/runs/:id/report" },
 ];
 
 /**
@@ -133,6 +145,7 @@ describe("toRunsRouteOptions", () => {
       orchestrator: fakeOrchestrator,
       eventHub: hub,
       catalog: fakeCatalog,
+      reportReader: fakeReportReader,
     };
 
     const result = toRunsRouteOptions(fakeRegistry, subsystem);
@@ -145,6 +158,12 @@ describe("toRunsRouteOptions", () => {
     // to `RunsRouteOptions.catalog` verbatim, same identity — the field
     // `buildRunRoutes` reads to wire `createScriptRoutes({ catalog })`.
     expect(result?.catalog).toBe(fakeCatalog);
+    // X7d: same forwarding contract for the run-report reader — the field
+    // `buildRunRoutes` reads to wire `GET /api/v1/runs/:id/report`. Asserted
+    // by IDENTITY, not shape: a second reader built here from the same root
+    // would satisfy a shape check while proving nothing about which object
+    // the route actually calls.
+    expect(result?.reportReader).toBe(fakeReportReader);
   });
 
   test("registry present, subsystem undefined returns undefined", () => {
@@ -157,6 +176,7 @@ describe("toRunsRouteOptions", () => {
       orchestrator: fakeOrchestrator,
       eventHub: hub,
       catalog: fakeCatalog,
+      reportReader: fakeReportReader,
     };
 
     expect(toRunsRouteOptions(undefined, subsystem)).toBeUndefined();
@@ -288,6 +308,7 @@ describe("createBuiltInRoutes — with options.runs", () => {
         registry: fakeRegistry,
         hub,
         catalog: fakeCatalog,
+        reportReader: fakeReportReader,
       },
     });
 
@@ -319,6 +340,7 @@ describe("createBuiltInRoutes — with options.runs", () => {
         registry: fakeRegistry,
         hub,
         catalog: fakeCatalog,
+        reportReader: fakeReportReader,
       },
     });
 
@@ -393,6 +415,7 @@ describe("createBuiltInRoutes — with options.sessions", () => {
         registry: fakeRegistry,
         hub,
         catalog: fakeCatalog,
+        reportReader: fakeReportReader,
       },
       sessions: { reader: fakeSessionService, writer: fakeSessionService },
     });
@@ -470,6 +493,7 @@ describe("createBuiltInRoutes — built-in routes always win over a colliding ca
         registry: fakeRegistry,
         hub,
         catalog: fakeCatalog,
+        reportReader: fakeReportReader,
       },
     });
 

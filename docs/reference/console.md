@@ -15,7 +15,8 @@ are not yet built.
 ## What exists today
 
 X4 shipped run orchestration: launch a script, list and read the run registry,
-and watch one run's progress and output over SSE. The route table is:
+and watch one run's progress and output over SSE; X7d added the run-report
+read surface. The route table is:
 
 | Method | Path                      | Auth     | Shipped in |
 | ------ | ------------------------- | -------- | ---------- |
@@ -25,6 +26,7 @@ and watch one run's progress and output over SSE. The route table is:
 | `GET`  | `/api/v1/runs`            | required | X4         |
 | `GET`  | `/api/v1/runs/:id`        | required | X4         |
 | `GET`  | `/api/v1/runs/:id/stream` | required | X4         |
+| `GET`  | `/api/v1/runs/:id/report` | required | X7d        |
 
 X6 shipped the workbench-sessions module: create/list/read/close/reopen a
 session, append steps, raise and answer decisions, and read a session's
@@ -57,7 +59,7 @@ answers today.
 
 ## Enabling run orchestration
 
-The four `/api/v1/runs*` routes are **not registered** unless the run
+The five `/api/v1/runs*` routes are **not registered** unless the run
 subsystem is configured. `M3L_CONSOLE_RUNS_SCRIPTS_DIR` is the single gate:
 when it is absent, empty, or whitespace-only, the server boots with run
 orchestration disabled and logs that posture once, rather than failing to
@@ -377,6 +379,57 @@ Seven values, enforced by a `CHECK` constraint in the schema:
 The five terminal statuses _are_ `Core.M3LRunOutcome` — the same vocabulary
 the library and the CLI use — so there is no translation table between the
 registry and a script's own result, and therefore nothing to drift.
+
+## `GET /api/v1/runs/:id/report`
+
+Returns the `run-report.json` a console-launched run wrote, parsed, exactly as
+the script produced it.
+
+```bash
+curl -sS localhost:8787/api/v1/runs/$RUN_ID/report
+```
+
+The body is the report document itself — the console neither reshapes nor
+summarises it. Its schema is `Core.M3LRunReport`'s, owned by
+`m3l-common`'s `core/diagnostics/run-report`, not by this server.
+
+### Per-run output isolation
+
+**This changes where a console-launched run writes.** Each run is spawned with
+`M3L_OUTPUT_DIR` pinned to `<runs output root>/<run id>` instead of inheriting
+the shared `data/output`. That is what makes the report addressable at all:
+`M3LRunReporter` names its directory after the **child's own** `startedAt`
+timestamp, a value the console never observes, so the run id is the only
+handle both sides share.
+
+Two consequences worth stating plainly:
+
+- Output from console-launched runs no longer lands in the shared
+  `data/output` tree. Anything reading that directory for console runs must
+  read the per-run directories instead.
+- Nothing prunes these directories. Like session artifacts, they live until
+  the data directory is cleared by hand — X8's retention regime, not this.
+
+### When there is no report
+
+`ERR_CONSOLE_RUN_NOT_FOUND` (404) covers two distinct cases, told apart by the
+message rather than by a second error code:
+
+| Message                           | Meaning                                          |
+| --------------------------------- | ------------------------------------------------ |
+| `no run found with id '…'`        | The registry has no such run.                    |
+| `run '…' has no persisted report` | The run exists but nothing has been written yet. |
+
+The second is the ordinary state of a run that is still `queued` or
+`running`, one that died before its reporter persisted, and **every run that
+executed in-process**: a hosted command module (ADR-0054) runs inside the
+console's own process, where `Core.M3LPaths` snapshots the output directory at
+construction and there is no per-call seam to hand it a per-run one. Only
+`spawn`-mode runs have a report to serve.
+
+A run whose output directory somehow holds more than one timestamped
+subdirectory is a **500**, not a guess: whose report is whose is not a
+question this server answers by picking the newest.
 
 ## `GET /api/v1/runs/:id/stream`
 
@@ -765,20 +818,29 @@ settings above.
 Run-orchestration settings, all under `m3l.console.runs.*`. Every dotted key
 maps mechanically to an env var (`.` and `-` become `_`, upper-cased).
 
-| Setting                             | Env var                             | Default    |
-| ----------------------------------- | ----------------------------------- | ---------- |
-| `m3l.console.runs.scripts.dir`      | `M3L_CONSOLE_RUNS_SCRIPTS_DIR`      | — required |
-| `m3l.console.runs.max.per.script`   | `M3L_CONSOLE_RUNS_MAX_PER_SCRIPT`   | `1`        |
-| `m3l.console.runs.max.concurrency`  | `M3L_CONSOLE_RUNS_MAX_CONCURRENCY`  | `4`        |
-| `m3l.console.runs.queue.capacity`   | `M3L_CONSOLE_RUNS_QUEUE_CAPACITY`   | `16`       |
-| `m3l.console.runs.queue.timeout.ms` | `M3L_CONSOLE_RUNS_QUEUE_TIMEOUT_MS` | `30000`    |
-| `m3l.console.runs.stream.retention` | `M3L_CONSOLE_RUNS_STREAM_RETENTION` | `256`      |
-| `m3l.console.runs.kill.timeout.ms`  | `M3L_CONSOLE_RUNS_KILL_TIMEOUT_MS`  | `5000`     |
+| Setting                             | Env var                             | Default                  |
+| ----------------------------------- | ----------------------------------- | ------------------------ |
+| `m3l.console.runs.scripts.dir`      | `M3L_CONSOLE_RUNS_SCRIPTS_DIR`      | — required               |
+| `m3l.console.runs.max.per.script`   | `M3L_CONSOLE_RUNS_MAX_PER_SCRIPT`   | `1`                      |
+| `m3l.console.runs.max.concurrency`  | `M3L_CONSOLE_RUNS_MAX_CONCURRENCY`  | `4`                      |
+| `m3l.console.runs.queue.capacity`   | `M3L_CONSOLE_RUNS_QUEUE_CAPACITY`   | `16`                     |
+| `m3l.console.runs.queue.timeout.ms` | `M3L_CONSOLE_RUNS_QUEUE_TIMEOUT_MS` | `30000`                  |
+| `m3l.console.runs.stream.retention` | `M3L_CONSOLE_RUNS_STREAM_RETENTION` | `256`                    |
+| `m3l.console.runs.kill.timeout.ms`  | `M3L_CONSOLE_RUNS_KILL_TIMEOUT_MS`  | `5000`                   |
+| `m3l.console.runs.output.root`      | `M3L_CONSOLE_RUNS_OUTPUT_ROOT`      | `<dataDir>/console/runs` |
 
 `scripts.dir` is resolved to an absolute path (a relative value resolves
 against the process's working directory). Every other value is validated at
 boot and a bad one is `ERR_CONSOLE_CONFIG_INVALID` naming the offending key —
 the process never binds a socket on a bad config.
+
+`runs.output.root` follows the session artifact root's rules rather than the
+numeric settings': a relative value resolves against the data directory, an
+absolute one is used as given, and a blank or `file:`-prefixed value is
+rejected. It defaults to a **sibling** of the artifact and audit roots, never
+a child of either — a spawned script owns everything beneath its own per-run
+directory, and no other subsystem's data may sit inside a tree a script can
+write to.
 
 Transport, persistence, and lifecycle settings are in the package README.
 
@@ -791,6 +853,13 @@ Stated plainly rather than left to be discovered:
   run's tail. The cost is `O(total runs × stream retention)` memory until
   restart. This is a deliberate trade for a single-operator, loopback-bound
   console, not an oversight — it would not survive a multi-tenant deployment.
+- **Per-run output directories are never pruned.** Every console-launched
+  run leaves `<runs output root>/<run id>/` behind for the lifetime of the
+  data directory. Same posture as session artifacts, and the same eventual
+  owner (X8's retention regime).
+- **An in-process run has no report to serve.** `GET /api/v1/runs/:id/report`
+  404s for every ADR-0054 command-module run — see that route's own section
+  for why the output directory cannot be pinned per run on that path.
 - **`?limit=` has no upper bound.** A caller may request more rows than is
   sensible; the value is forwarded to the registry as given.
 - **`parameters` bounds neither key count nor value length** beyond the 64 KiB
