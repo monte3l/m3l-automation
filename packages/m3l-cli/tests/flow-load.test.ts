@@ -3,19 +3,44 @@
  * definition at `<workspaceRoot>/data/config/flows/<name>.yaml`, plus
  * `listFlows` (U10 slice 3, stage A).
  *
- * These use a real temp directory rather than a `node:fs` mock: an
- * unconditional `node:fs` mock bleeds into every transitively re-imported
- * module, and `Core.M3LYAMLConfigProvider` reads through the bare `"fs"`
- * specifier (a distinct mock target from `"node:fs"`) — mocking both to serve
- * one loader is more fragile than writing three real files. The fs calls use
- * bare named imports, the pattern `packages/m3l-cli/tests/completion.test.ts`
- * already establishes for this.
+ * These use a real temp directory rather than a `node:fs` mock for every
+ * happy-path/authoring-fault scenario: `Core.M3LYAMLConfigProvider` reads
+ * through the bare `"fs"` specifier (a distinct mock target from `"node:fs"`,
+ * mirroring `packages/m3l-cli/tests/presets-store.test.ts`), and writing real
+ * files is simpler than mocking two module specifiers to serve one loader.
+ * The fs calls use bare named imports, the pattern
+ * `packages/m3l-cli/tests/completion.test.ts` already establishes for this.
+ *
+ * The two machine-side read-failure tests below are the exception: they mock
+ * `"node:fs"`'s `readdirSync` (for `listFlows`) and bare `"fs"`'s
+ * `readFileSync` (for `readFlowRecord`, via `M3LYAMLConfigProvider`)
+ * individually with `vi.spyOn`, on top of a REAL temp directory/file so every
+ * other fs call in the same scenario stays real — spreading `vi.importActual`
+ * into the mock factory (rather than a blanket `vi.mock`) is what keeps the
+ * mock from bleeding into the rest of this file's real-fs tests.
  */
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import * as fsModule from "fs";
+import * as nodeFs from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
+
+// Make 'fs'/'node:fs' configurable so vi.spyOn can intercept individual
+// functions (ESM namespace objects are non-writable) — mirrors
+// packages/m3l-cli/tests/presets-store.test.ts's pattern. Spreading `actual`
+// keeps every unspyed function (including this file's real mkdtempSync et
+// al. and the rest of this file's real reads) behaving exactly like the real
+// module.
+vi.mock("fs", async () => {
+  const actual = await vi.importActual<typeof fsModule>("fs");
+  return { ...actual };
+});
+vi.mock("node:fs", async () => {
+  const actual = await vi.importActual<typeof nodeFs>("node:fs");
+  return { ...actual };
+});
 
 import { Core } from "@m3l-automation/m3l-common";
 
@@ -32,6 +57,7 @@ import { listFlows, loadFlowDefinition } from "../src/flow/load.js";
 const createdRoots: string[] = [];
 
 afterEach(() => {
+  vi.restoreAllMocks();
   while (createdRoots.length > 0) {
     const root = createdRoots.pop();
     if (root !== undefined) {
@@ -177,6 +203,25 @@ describe("listFlows", () => {
     ]);
 
     expect(listFlows(root)).toEqual(["broken", "fine"]);
+  });
+
+  test("throws M3LCliError ERR_CLI_FLOW_READ_FAILED when the directory cannot be listed, chaining the original as cause", () => {
+    // A real, existing (empty) flows directory, so `existsSync` genuinely
+    // passes for real — only `readdirSync` itself is made to fail, the way a
+    // permission failure (EACCES) would in practice.
+    const root = makeWorkspaceWithFlows([]);
+    const original = new Error(
+      "EACCES: permission denied",
+    ) as NodeJS.ErrnoException;
+    original.code = "EACCES";
+    vi.spyOn(nodeFs, "readdirSync").mockImplementation(() => {
+      throw original;
+    });
+
+    const error = captureCliError(() => listFlows(root));
+
+    expect(error.code).toBe("ERR_CLI_FLOW_READ_FAILED");
+    expect(error.cause).toBe(original);
   });
 });
 
@@ -381,6 +426,33 @@ describe("loadFlowDefinition — malformed file", () => {
     );
 
     expect(error.code).toBe("ERR_CLI_FLOW_INVALID");
+  });
+
+  test("surfaces a raw read failure (e.g. EACCES) as ERR_CLI_FLOW_READ_FAILED, chaining the original as cause — distinct from a malformed file's ERR_CLI_FLOW_INVALID above", () => {
+    // The file genuinely exists and is genuinely listed (so existence/listing
+    // both pass for real); only the byte-level read that
+    // `Core.M3LYAMLConfigProvider` performs is made to fail with something
+    // that is NOT `ENOENT` (which the provider tolerates as "missing") and is
+    // not a parse/prototype-pollution fault either — a raw filesystem fault,
+    // which `readFlowRecord` must classify as ERR_CLI_FLOW_READ_FAILED rather
+    // than ERR_CLI_FLOW_INVALID. This is the other arm of the same
+    // classification the "malformed file" tests above exercise, made
+    // reachable in the same real-file setup.
+    const root = makeWorkspaceWithFlows([["demo.yaml", validFlowYaml("demo")]]);
+    const original = new Error(
+      "EACCES: permission denied",
+    ) as NodeJS.ErrnoException;
+    original.code = "EACCES";
+    vi.spyOn(fsModule, "readFileSync").mockImplementation(() => {
+      throw original;
+    });
+
+    const error = captureCliError(() =>
+      loadFlowDefinition(root, "demo", context),
+    );
+
+    expect(error.code).toBe("ERR_CLI_FLOW_READ_FAILED");
+    expect(error.cause).toBe(original);
   });
 });
 
