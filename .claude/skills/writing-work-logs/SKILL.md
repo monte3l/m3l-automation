@@ -83,6 +83,25 @@ syncing-docs, creating-prs`), including sub-skills dispatched internally.
   truncation-prevention efficacy watch
   (`docs/contributing/subagent-context-management.md`) aggregates — record it
   even (especially) when it is `none`.
+- **Compaction events**: a `Compaction events:` line with counts for the
+  run — hub-session compactions (manual `/compact` or automatic) and, for
+  each, whether the `PreCompact`/`SessionStart(compact)` handoff artifact
+  (ADR-0078) successfully re-injected on the other side (e.g.
+  `Compaction events: 1 compaction / 1 recovered via handoff`, or
+  `Compaction events: none`). This is the hub-session counterpart to `Spoke
+incidents:` — the same handoff mechanism exists at the hub level
+  (`.claude/hooks/write-compact-handoff.mjs`/`reinject-compact-handoff.mjs`)
+  but had no efficacy signal at all until this line existed (no work log
+  ever recorded whether a compaction actually lost state or not). Record it
+  even (especially) when it is `none` — a task with zero compactions is
+  itself useful signal about how often hub context pressure actually bites.
+  If a compaction did occur and something was still lost despite the
+  handoff (a figure, a decision, a plan step), name what — that's the input
+  the tracker's own "State-class-not-recorded" gap needed and never had
+  (`docs/research/harness-refresh.md`; the two logged compaction losses
+  before this line existed, `2026-08-29-aws-bedrock-runtime-tools.md` and
+  `2026-08-30-v7-agent-decision-log.md`, recorded only _that_ something was
+  lost, never _which state class_).
 
 The summary should be dense enough that a reader can understand the scope in
 30 seconds without reading the rest of the log.
