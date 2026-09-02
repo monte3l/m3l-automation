@@ -85,6 +85,7 @@ function buildContext(
     ]),
     env: CLI_ENV,
     envFile: { kind: "auto" },
+    jsonOutput: false,
     ...overrides,
   };
 }
@@ -200,6 +201,49 @@ describe("executeFlowStep — execution-mode resolution", () => {
     // per-run envelope line on stdout, corrupting the single flow envelope
     // stage C emits.
     expect(executeContext.jsonOutput).toBe(false);
+  });
+
+  test("a flow run with --json redirects the spawned child's stdout while the spawn's own jsonOutput stays false", async () => {
+    // The two concerns are independent: `context.jsonOutput` (the FLOW's
+    // `--json` flag) controls `redirectStdoutToStderr` on the spawn options,
+    // while `executeContext.jsonOutput` (whether THIS `executeScript` call
+    // emits its own envelope) is always pinned false regardless.
+    executeScriptMock.mockResolvedValue(0);
+    locateRunReportMock.mockReturnValue(UNAVAILABLE);
+
+    await executeFlowStep(
+      buildContext({ jsonOutput: true }),
+      buildStep(),
+      false,
+      {
+        now: scriptedNow(T0, T1),
+      },
+    );
+
+    const call = executeScriptMock.mock.calls[0];
+    expect(call).toBeDefined();
+    if (call === undefined) return;
+    const [executeContext, , , , options] = call;
+    expect(executeContext.jsonOutput).toBe(false);
+    expect(options).toMatchObject({ redirectStdoutToStderr: true });
+  });
+
+  test("a flow run without --json does not redirect the spawned child's stdout", async () => {
+    executeScriptMock.mockResolvedValue(0);
+    locateRunReportMock.mockReturnValue(UNAVAILABLE);
+
+    await executeFlowStep(
+      buildContext({ jsonOutput: false }),
+      buildStep(),
+      false,
+      {
+        now: scriptedNow(T0, T1),
+      },
+    );
+
+    expect(executeScriptMock.mock.calls[0]?.[4]).toMatchObject({
+      redirectStdoutToStderr: false,
+    });
   });
 
   test("rejects with ERR_CLI_UNKNOWN_SCRIPT when the step's script has no resolved directory", async () => {
@@ -806,7 +850,7 @@ describe("executeFlowStep — types", () => {
     }>();
   });
 
-  test("the step context names exactly five fields: the three this module reads, plus ADR-0085's env and envFile", () => {
+  test("the step context names exactly six fields: the three this module reads, ADR-0085's env and envFile, plus jsonOutput", () => {
     // An EXACT-shape pin, deliberately: this context is the seam
     // `commands/flow.ts` populates, and a field appearing here silently is how
     // a spawned step ends up configured differently from the hand-typed
@@ -816,8 +860,8 @@ describe("executeFlowStep — types", () => {
     // mechanism runs the step), `outputDirPath` (scanned for the step's
     // `run-report.json`), and `scriptDirectories` (the dispatch target).
     //
-    // The other two exist ONLY for ADR-0085, and only the spawn path reads
-    // them: `env` is the base environment the child inherits — the channel a
+    // Two more exist ONLY for ADR-0085, and only the spawn path reads them:
+    // `env` is the base environment the child inherits — the channel a
     // secret must travel through, since it may never appear in argv — and
     // `envFile` is the resolved `--env-file`/`--no-env-file` decision. Both are
     // required rather than optional-with-a-default: a forgotten field would
@@ -828,12 +872,19 @@ describe("executeFlowStep — types", () => {
     // "the child environment" block above asserts each one reaching
     // `executeScript`, so this pin can never drift into documenting a dead
     // field.
+    //
+    // `jsonOutput` is the sixth: whether the FLOW itself was invoked with
+    // `--json`, forwarded to `dispatchStep`'s `redirectStdoutToStderr` so a
+    // spawned step's own stdout cannot interleave with (or forge) the single
+    // flow-level envelope. Also required rather than defaulted, for the same
+    // reason `env`/`envFile` are.
     expectTypeOf<M3LCliFlowStepContext>().toEqualTypeOf<{
       readonly output: M3LCliOutput;
       readonly outputDirPath: string;
       readonly scriptDirectories: ReadonlyMap<string, string>;
       readonly env: Readonly<Record<string, string | undefined>>;
       readonly envFile: M3LCliEnvFileSetting;
+      readonly jsonOutput: boolean;
     }>();
   });
 

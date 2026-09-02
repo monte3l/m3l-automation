@@ -37,9 +37,9 @@ import type { M3LCliFlowStep } from "./types.js";
 /**
  * The subset of a command context one flow step execution reads: the writer
  * facade to hand the mechanism, the managed output directory to scan for the
- * step's run report, the resolved script directories to dispatch into, and the
+ * step's run report, the resolved script directories to dispatch into, the
  * base environment plus env-file decision the spawn path hands the child
- * (ADR-0085).
+ * (ADR-0085), and whether the FLOW ITSELF was invoked with `--json`.
  *
  * Structural rather than an import of `commands/context.js`, for the same
  * layering reason `run/execute.ts`'s own `M3LCliExecuteContext` is: `flow/`
@@ -50,6 +50,9 @@ import type { M3LCliFlowStep } from "./types.js";
  * hand-typed `m3l <script>` invocation would, and defaulting a forgotten field
  * here would silently spawn steps with an empty environment (or load a `.env`
  * the operator passed `--no-env-file` to suppress) with nothing to catch it.
+ * `jsonOutput` is required for the same reason: a forgotten `false` here would
+ * silently let a spawned step's own stdout interleave with (or forge) the
+ * flow's `--json` envelope on the parent's stdout.
  *
  * @example
  * ```ts
@@ -59,6 +62,7 @@ import type { M3LCliFlowStep } from "./types.js";
  *   scriptDirectories: new Map([["sqs-etl", "/repo/scripts/sqs-etl"]]),
  *   env: process.env,
  *   envFile: { kind: "auto" },
+ *   jsonOutput: false,
  * };
  * ```
  */
@@ -80,6 +84,14 @@ export interface M3LCliFlowStepContext {
    * `m3l <script>` invocation would.
    */
   readonly envFile: M3LCliEnvFileSetting;
+  /**
+   * Whether `m3l flow run` itself was invoked with `--json` — NOT whether this
+   * step's own spawn should emit an envelope (it never does; see
+   * {@link dispatchStep}). When `true`, a spawned step's child stdout is
+   * redirected to the parent's stderr so it cannot interleave with (or forge)
+   * the single flow-level envelope `commands/flow.ts` writes to stdout.
+   */
+  readonly jsonOutput: boolean;
 }
 
 /**
@@ -290,8 +302,16 @@ interface ResolvedStepDispatch {
  * Each seam is spread in only when supplied, so `exactOptionalPropertyTypes`
  * stays satisfied and no downstream key exists that the caller never set.
  *
- * @param context - The writer facade, output directory, and the base
- *   environment plus env-file decision the spawn path forwards.
+ * `redirectStdoutToStderr` is set from `context.jsonOutput` — the FLOW's own
+ * `--json` flag — rather than left to default off `executeScript`'s
+ * `jsonOutput: false`: those are independent concerns (see
+ * {@link M3LCliExecuteOptions.redirectStdoutToStderr}), and a step spawned
+ * under a `--json` flow run must keep its child's stdout off the parent's even
+ * though this call's own envelope emission stays suppressed.
+ *
+ * @param context - The writer facade, output directory, the base environment
+ *   plus env-file decision the spawn path forwards, and the flow's own
+ *   `--json` flag.
  * @param step - The step to dispatch.
  * @param resolved - The resolved directory, mechanism and dry-run flag.
  * @param options - The injectable mechanism seams.
@@ -323,6 +343,7 @@ function dispatchStep(
         ...(options.stderrStream !== undefined
           ? { stderrStream: options.stderrStream }
           : {}),
+        redirectStdoutToStderr: context.jsonOutput,
       },
     );
   }
@@ -356,7 +377,11 @@ function dispatchStep(
  * which would corrupt the single flow-level envelope the `m3l flow` command
  * emits. For the same reason `now` is NOT forwarded to it: with
  * `jsonOutput: false` it never uses its own timing, and forwarding would make
- * a scripted test clock order-dependent across two modules.
+ * a scripted test clock order-dependent across two modules. That suppression
+ * is orthogonal to `context.jsonOutput` (the FLOW's own `--json` flag): when
+ * set, {@link dispatchStep} still redirects the spawned child's stdout to the
+ * parent's stderr, so a step's own output cannot interleave with (or forge)
+ * the flow-level envelope even though the step never emits one of its own.
  *
  * Dry-run is a FLOOR, never a ceiling: the effective flag is
  * `flowDryRun || step.dryRun`, so a step declaring `dryRun: false` is still
@@ -373,8 +398,8 @@ function dispatchStep(
  * skipped in that case since there is no completed execution to observe.
  *
  * @param context - The writer facade, output directory, resolved script
- *   directories, and the environment plus env-file decision the spawn path
- *   hands the child.
+ *   directories, the environment plus env-file decision the spawn path hands
+ *   the child, and the flow's own `--json` flag.
  * @param step - The validated step to execute.
  * @param flowDryRun - The flow-level dry-run flag — the floor.
  * @param options - Optional `now`, `spawnImpl`, `stderrStream` and

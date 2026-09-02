@@ -84,6 +84,7 @@ function buildContext(): M3LCliFlowStepContext {
     ]),
     env: { PATH: "/usr/bin" },
     envFile: { kind: "auto" },
+    jsonOutput: false,
   };
 }
 

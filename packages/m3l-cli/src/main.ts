@@ -64,6 +64,7 @@ const STATIC_COMMAND_NAMES: readonly string[] = [
   "new",
   "wizard",
   "completion",
+  "flow",
   "help",
 ];
 
@@ -300,6 +301,28 @@ async function runCompletionCommand(
 }
 
 /**
+ * Lazily loads and runs `flow` (U10), handing it the raw post-command
+ * argument slice so it can resolve its own `list`/`run <name>` positionals —
+ * the same `parseStaticCommandArgs` bypass {@link runNewCommand} and
+ * {@link runCompletionCommand} use, so neither a `--json` token nor a
+ * `--dry-run` token can be mistaken for the flow name.
+ */
+async function runFlowStaticCommand(
+  output: M3LCliOutput,
+  cwd: string,
+  rawArgs: readonly string[],
+  jsonOutput: boolean,
+  env: Readonly<Record<string, string | undefined>>,
+  envFile: M3LCliEnvFileSetting,
+): Promise<number> {
+  const { runFlowCommand } = await import("./commands/flow.js");
+  return runFlowCommand(
+    buildCommandContext(cwd, output, jsonOutput, env, envFile),
+    rawArgs,
+  );
+}
+
+/**
  * Lazily loads and delegates to `commands/dynamic.js`'s `runDynamic` — the
  * fallback for any first positional that isn't a
  * {@link STATIC_COMMAND_NAMES} entry (8d). Its `--help`/`-h`, unknown-script,
@@ -422,6 +445,15 @@ const STATIC_COMMAND_HANDLERS: Readonly<Record<string, StaticCommandHandler>> =
         env,
         envFile,
       ),
+    flow: ({ beforeArgs, output, cwd, jsonOutput, env, envFile }) =>
+      runFlowStaticCommand(
+        output,
+        cwd,
+        beforeArgs.slice(1),
+        jsonOutput,
+        env,
+        envFile,
+      ),
   };
 
 /**
@@ -432,7 +464,7 @@ const STATIC_COMMAND_HANDLERS: Readonly<Record<string, StaticCommandHandler>> =
  *
  * `command` can only be
  * `"list"`/`"inspect"`/`"run"`/`"doctor"`/`"presets"`/`"history"`/`"new"`/
- * `"wizard"`/`"completion"` at runtime (see {@link dispatchStaticCommand}'s doc) — anything else is a
+ * `"wizard"`/`"completion"`/`"flow"` at runtime (see {@link dispatchStaticCommand}'s doc) — anything else is a
  * caller contract violation, not a normal path, and `command`'s static type
  * is the general `string | undefined` (not a literal union `parseArgs`'s
  * `positionals` can't express), so this can't be a compile-checked `never`

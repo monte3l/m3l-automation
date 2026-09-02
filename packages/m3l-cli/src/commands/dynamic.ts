@@ -68,6 +68,7 @@ const STATIC_COMMAND_NAMES: readonly string[] = [
   "new",
   "wizard",
   "completion",
+  "flow",
   "help",
 ];
 
