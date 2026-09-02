@@ -156,6 +156,23 @@ function bindingParameterNames(
 }
 
 /**
+ * The single binding parameter NAME a standalone selection declares, shaped
+ * as a map so `humanActionRecordFrom` reads its key through the one code
+ * path documented to read only `Object.keys` — the same treatment
+ * {@link bindingParameterNames} gives the inline path's array.
+ *
+ * Defensive for the same reason: a malformed body must yield the handler's
+ * own `ERR_CONSOLE_BAD_REQUEST`, not an `ERR_CONSOLE_AUDIT_RECORD_INVALID`
+ * that misdescribes whose fault it is.
+ */
+function bindingSelectionName(
+  ctx: M3LRequestContext,
+): Readonly<Record<string, unknown>> {
+  const name: unknown = bodyField(ctx, "parameterName");
+  return typeof name === "string" ? { [name]: true } : {};
+}
+
+/**
  * `{ lastEventId }` when the client is RESUMING an SSE stream, else empty.
  *
  * A resume is a genuinely different exposure event from a first open — it
@@ -250,6 +267,34 @@ export const HUMAN_ACTION_SPECS: ReadonlyMap<string, HumanActionSpec> = new Map<
         parameters: bindingParameterNames(ctx),
         parameterRefs: bindingRefs(ctx),
         posture: postureOf(ctx),
+      }),
+    },
+  ],
+  [
+    // X7d's standalone binding selection — the twelfth and last declared
+    // kind to be wired. `phase: "before"` like every write.
+    //
+    // `parameterNames` ONLY, never the reference and never the resolved
+    // value. This is the one route whose entire purpose is to name a value
+    // an operator picked out of a script's real output, so the value itself
+    // is exactly what ADR-0070's display-vs-persist split keeps out of the
+    // trail. The NAME is the operator's own word for it and carries no
+    // caller data.
+    //
+    // The reference is left out too, unlike `session.step.add`'s
+    // `parameterRefs`. There it distinguishes which of several bindings a
+    // multi-binding step used; here there is exactly one, and the persisted
+    // `console_session_bindings` row already holds it — recording it a
+    // second time in the trail buys nothing and widens what the trail
+    // carries.
+    "POST /api/v1/sessions/:id/bindings",
+    {
+      action: "session.binding.select",
+      phase: "before",
+      project: (ctx) => ({
+        target: { kind: "session", id: param(ctx, "id") },
+        parameters: bindingSelectionName(ctx),
+        posture: "confirmed",
       }),
     },
   ],

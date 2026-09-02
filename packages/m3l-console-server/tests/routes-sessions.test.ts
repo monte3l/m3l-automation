@@ -140,6 +140,7 @@ interface FakeReader {
 
 /** The local writer port `createSessionRoutes` depends on. */
 interface FakeWriter {
+  selectBinding(sessionId: string, binding: unknown): Promise<unknown>;
   createSession(operator: string, correlationId: string): FakeSessionRow;
   closeSession(id: string): boolean;
   reopenSession(id: string): boolean;
@@ -225,6 +226,10 @@ function buildWriter(
   answerDecision: Mock<FakeWriter["answerDecision"]>;
 } {
   return {
+    // X7d's write lives on the SAME port but is served by its own route
+    // module; these suites never drive it — `routes-session-bindings.test.ts`
+    // does.
+    selectBinding: () => Promise.resolve({ id: "binding-1" }),
     createSession: vi
       .fn<FakeWriter["createSession"]>()
       .mockReturnValue(overrides.created ?? SESSION_ROW),
@@ -354,17 +359,8 @@ const VALID_BINDING: FakeAddStepBinding = {
   parameterName: "queueName",
 };
 
-const BINDING_ROW: FakeBindingRow = {
-  id: "binding-1",
-  sessionId: "session-1",
-  reference: "step-1.output.Queues[0]",
-  expectedType: "string",
-  multiSelect: false,
-  createdAtMs: 1_000,
-};
-
 describe("createSessionRoutes — route table shape", () => {
-  test("registers all 9 session routes, all auth: 'required'", () => {
+  test("registers all 8 session routes, all auth: 'required'", () => {
     const routes = createSessionRoutes({
       reader: buildReader(),
       writer: buildWriter(),
@@ -382,7 +378,6 @@ describe("createSessionRoutes — route table shape", () => {
         "POST /api/v1/sessions/:id/decisions/:decisionId",
         "POST /api/v1/sessions/:id/close",
         "POST /api/v1/sessions/:id/reopen",
-        "GET /api/v1/sessions/:id/bindings",
       ].sort(),
     );
     for (const route of routes) {
@@ -1136,91 +1131,5 @@ describe("createSessionRoutes — POST /api/v1/sessions/:id/reopen", () => {
     );
 
     expect(thrown).toBe(original);
-  });
-});
-
-describe("createSessionRoutes — GET /api/v1/sessions/:id/bindings", () => {
-  test("returns 200 with the bare binding row array from reader.listBindingsForSession", async () => {
-    const reader = buildReader({ bindings: [BINDING_ROW] });
-    const routes = createSessionRoutes({ reader, writer: buildWriter() });
-
-    const response = await runRoute(
-      findRoute(routes, "GET", "/api/v1/sessions/:id/bindings"),
-      buildContext({
-        path: "/api/v1/sessions/session-1/bindings",
-        params: { id: "session-1" },
-        operatorName: "ada",
-      }),
-    );
-
-    expect(response.status).toBe(200);
-    expect(parseBody(response)).toEqual([BINDING_ROW]);
-    expect(reader.listBindingsForSession).toHaveBeenCalledWith("session-1");
-  });
-
-  test("returns 200 with an empty array for a session with no bindings", async () => {
-    const reader = buildReader({ bindings: [] });
-    const routes = createSessionRoutes({ reader, writer: buildWriter() });
-
-    const response = await runRoute(
-      findRoute(routes, "GET", "/api/v1/sessions/:id/bindings"),
-      buildContext({
-        path: "/api/v1/sessions/session-1/bindings",
-        params: { id: "session-1" },
-        operatorName: "ada",
-      }),
-    );
-
-    expect(response.status).toBe(200);
-    expect(parseBody(response)).toEqual([]);
-  });
-
-  // [Review-round Must-fix, Defect 1 — route-layer characterization, GREEN
-  // already, not RED] The planned fix lives entirely in
-  // `sessions/service.ts` (`listBindingsForSession` gains a
-  // `requireSession` guard), never in this route's own handler — unlike
-  // `GET /api/v1/sessions/:id`, whose `buildGetHandler` checks
-  // `reader.getSession(id) === undefined` itself, `buildListBindingsHandler`
-  // has no such check and never will (mirrors how `buildCloseHandler`/
-  // `buildAddStepHandler` rely on the SERVICE throwing rather than
-  // re-checking existence at the route layer — see this file's own
-  // "propagates a thrown ERR_CONSOLE_SESSION_NOT_FOUND from
-  // writer.closeSession unchanged" test for the identical propagate-not-
-  // reimplement pattern). Because `buildListBindingsHandler` already just
-  // calls `reader.listBindingsForSession(id)` with no try/catch, this test
-  // — which mocks `reader.listBindingsForSession` itself to throw the same
-  // `M3LConsoleError` a real, fixed `requireSession`-guarded service would
-  // for an unknown session id — is GREEN today, not RED: it locks in that
-  // the route layer already propagates rather than swallows, so the
-  // service-layer fix (proven RED in `tests/sessions-service.test.ts`'s
-  // sibling `listBindingsForSession()` "on an unknown id" test) is
-  // sufficient on its own to make `GET .../bindings` 404 correctly end to
-  // end once it lands — no route-layer change is needed or expected.
-  test("propagates a thrown ERR_CONSOLE_SESSION_NOT_FOUND from reader.listBindingsForSession unchanged for an unknown id", async () => {
-    const original = new M3LConsoleError(
-      "ERR_CONSOLE_SESSION_NOT_FOUND",
-      "no such session",
-    );
-    const reader = buildReader();
-    reader.listBindingsForSession.mockImplementation(() => {
-      throw original;
-    });
-    const routes = createSessionRoutes({ reader, writer: buildWriter() });
-
-    const thrown = await captureThrown(() =>
-      runRoute(
-        findRoute(routes, "GET", "/api/v1/sessions/:id/bindings"),
-        buildContext({
-          path: "/api/v1/sessions/nope/bindings",
-          params: { id: "nope" },
-          operatorName: "ada",
-        }),
-      ),
-    );
-
-    expect(thrown).toBe(original);
-    expect((thrown as M3LConsoleError).code).toBe(
-      "ERR_CONSOLE_SESSION_NOT_FOUND",
-    );
   });
 });

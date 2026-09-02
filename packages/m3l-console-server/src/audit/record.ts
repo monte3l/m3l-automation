@@ -67,7 +67,9 @@ const REFS_TRUNCATED_KEY = "parameterRefsTruncated";
  * `resolveRunsOutputRoot`), and `view.session.artifact` behind
  * `GET /api/v1/sessions/:id/steps/:stepId/artifact`. Declaring both up front
  * in X7b is what let each endpoint land without another `CHECK` recreate —
- * see `store/migrations/human-actions.ts`.
+ * see `store/migrations/human-actions.ts`. `run.cancel` and
+ * `session.binding.select` landed in the same wave, behind
+ * `POST /api/v1/runs/:id/cancel` and `POST /api/v1/sessions/:id/bindings`.
  */
 export type M3LHumanActionKind =
   | "run.launch"
