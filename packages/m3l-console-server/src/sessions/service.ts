@@ -21,9 +21,10 @@
  * could not `await` either call.
  *
  * The READ-ONLY methods (`listBindingsForSession`, and X7d's
- * `readStepArtifact`) live in `sessions/service-reads.ts` and are spread in
- * here — see that module's header for why, and for why it declares its own
- * narrow dependency type instead of importing this file's.
+ * `readStepArtifact`) live in `sessions/service-reads.ts`, and X7d's
+ * standalone `selectBinding` in `sessions/service-bindings.ts`; both are
+ * spread in here. See those modules' headers for why, and for why each
+ * declares its own narrow dependency type instead of importing this file's.
  *
  * @packageDocumentation
  */
@@ -42,6 +43,8 @@ import type {
   M3LSessionArtifactStore,
 } from "./artifacts.js";
 import { decodeArtifactRef, encodeArtifactRef } from "./artifacts.js";
+import { buildSessionBindingMethods } from "./service-bindings.js";
+import type { SessionBindingMethods } from "./service-bindings.js";
 import { buildSessionReadMethods } from "./service-reads.js";
 import type { SessionReadMethods } from "./service-reads.js";
 import type {
@@ -113,7 +116,8 @@ export interface CreateSessionServiceOptions {
  * service.createSession("alice", "corr-1");
  * ```
  */
-export interface M3LSessionService extends SessionReadMethods {
+export interface M3LSessionService
+  extends SessionReadMethods, SessionBindingMethods {
   /**
    * Creates a new open session.
    *
@@ -618,5 +622,6 @@ export function createSessionService(
     ...buildSessionLifecycleMethods(options),
     ...buildDecisionServiceMethods(options),
     ...buildSessionReadMethods(options),
+    ...buildSessionBindingMethods(options),
   };
 }

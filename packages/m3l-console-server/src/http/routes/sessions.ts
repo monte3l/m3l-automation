@@ -26,6 +26,12 @@
  * which can additionally assert it type-level-matches `M3LSessionStatus`
  * now that both sides are closed literal unions.
  *
+ * The two `…/bindings` routes are NOT here: they live in
+ * `http/routes/session-bindings.ts`, which also owns the binding-entry
+ * VALIDATOR this module imports back for `POST …/steps`' inline bindings —
+ * one implementation, two callers, so the inline and standalone forms can
+ * never drift into accepting different bodies.
+ *
  * `answerDecision(id, answer)` takes only the decision id — verified against
  * the real `sessions/service.ts`, which does not take a session id for this
  * call, so `POST /api/v1/sessions/:id/decisions/:decisionId`'s `:id` route
@@ -42,6 +48,14 @@ import type { M3LRequestContext } from "../context.js";
 import type { M3LConsoleHandler } from "../middleware.js";
 import { jsonResponse } from "../respond.js";
 import type { M3LRoute } from "../router.js";
+
+import { readBindingEntry } from "./session-bindings.js";
+import type { M3LSessionStepBindingInput } from "./session-bindings.js";
+import {
+  readRequiredBoolean,
+  readRequiredNonEmptyString,
+  rejectBody,
+} from "./session-body.js";
 
 /** The status every creating/appending route in this module returns on success. */
 const STATUS_CREATED = 201;
@@ -74,28 +88,6 @@ type M3LSessionStatusValue = (typeof SESSION_STATUS_VALUES)[number];
 /** `true` when `value` is a member of {@link SESSION_STATUS_VALUES}. */
 function isSessionStatus(value: string): value is M3LSessionStatusValue {
   return SESSION_STATUS_SET.has(value);
-}
-
-/** The closed vocabulary a step binding's `expectedType` field must be one of. */
-const EXPECTED_TYPE_VALUES = ["string", "number", "boolean", "object"] as const;
-
-/** The set backing {@link isExpectedType}'s O(1) membership check. */
-const EXPECTED_TYPE_SET: ReadonlySet<string> = new Set(EXPECTED_TYPE_VALUES);
-
-/** One member of {@link EXPECTED_TYPE_VALUES}. */
-type M3LSessionBindingExpectedType = (typeof EXPECTED_TYPE_VALUES)[number];
-
-/** `true` when `value` is a member of {@link EXPECTED_TYPE_VALUES}. */
-function isExpectedType(value: string): value is M3LSessionBindingExpectedType {
-  return EXPECTED_TYPE_SET.has(value);
-}
-
-/** One validated step-binding entry — mirrors `sessions/service.ts`'s binding input shape. */
-interface M3LSessionStepBindingInput {
-  readonly reference: string;
-  readonly expectedType: M3LSessionBindingExpectedType;
-  readonly multiSelect: boolean;
-  readonly parameterName: string;
 }
 
 /** One validated `POST .../steps` body, before merging `operator`/`correlationId`. */
@@ -144,14 +136,9 @@ export interface SessionRouteReaderPort {
   getSession(id: string): unknown;
   /** Lists session rows matching `query`. */
   listSessions(query: M3LSessionListQuery): readonly unknown[];
-  /** Lists every binding persisted for `sessionId` via a prior `addStep` call. */
+  /** Lists every binding persisted for `sessionId` (served by `./session-bindings.js`). */
   listBindingsForSession(sessionId: string): readonly unknown[];
-  /**
-   * Resolves one step's recorded output artifact (X7d). Declared on the
-   * READER port because it is a read; the route that serves it lives in
-   * `http/routes/session-artifacts.ts` and declares its own narrower port,
-   * which this satisfies structurally.
-   */
+  /** Resolves one step's recorded output artifact (served by `./session-artifacts.js`). */
   readStepArtifact(sessionId: string, stepId: string): Promise<unknown>;
 }
 
@@ -229,6 +216,11 @@ export interface SessionRouteWriterPort {
   ): unknown;
   /** Answers the decision with `id`; `true` when a transition applied. */
   answerDecision(id: string, answer: unknown): boolean;
+  /** Records an operator's standalone binding selection (served by `./session-bindings.js`). */
+  selectBinding(
+    sessionId: string,
+    binding: M3LSessionStepBindingInput,
+  ): Promise<unknown>;
 }
 
 /**
@@ -262,15 +254,6 @@ export interface SessionRouteOptions {
   readonly writer: SessionRouteWriterPort;
 }
 
-/** Throws `ERR_CONSOLE_BAD_REQUEST` naming `field` and the reason it failed. */
-function rejectBody(field: string, reason: string): never {
-  throw new M3LConsoleError(
-    "ERR_CONSOLE_BAD_REQUEST",
-    `invalid session request: '${field}' ${reason}`,
-    { context: { field } },
-  );
-}
-
 /** Reads `ctx.operator.name`, throwing `ERR_CONSOLE_UNAUTHENTICATED` when no operator resolved. */
 function requireOperatorName(ctx: M3LRequestContext): string {
   if (ctx.operator === undefined) {
@@ -294,96 +277,6 @@ function requireParam(ctx: M3LRequestContext, name: string): string {
   return value;
 }
 
-/**
- * Validates and returns a required, non-empty string field.
- *
- * @param body - The object to read `field` from.
- * @param field - The actual object key to look up.
- * @param label - The field name reported in a rejection message; defaults
- *   to `field` (differs from it for a nested binding entry, e.g.
- *   `bindings[0].reference`).
- */
-function readRequiredNonEmptyString(
-  body: Record<string, unknown>,
-  field: string,
-  label: string = field,
-): string {
-  if (!Object.hasOwn(body, field)) {
-    rejectBody(label, "is required");
-  }
-  const value = body[field];
-  if (!Core.isString(value)) {
-    rejectBody(label, "must be a string");
-  }
-  if (value.length === 0) {
-    rejectBody(label, "must not be empty");
-  }
-  return value;
-}
-
-/**
- * Validates and returns a required boolean field.
- *
- * @param body - The object to read `field` from.
- * @param field - The actual object key to look up.
- * @param label - The field name reported in a rejection message; defaults
- *   to `field` (differs from it for a nested binding entry).
- */
-function readRequiredBoolean(
-  body: Record<string, unknown>,
-  field: string,
-  label: string = field,
-): boolean {
-  if (!Object.hasOwn(body, field)) {
-    rejectBody(label, "is required");
-  }
-  const value = body[field];
-  if (!Core.isBoolean(value)) {
-    rejectBody(label, "must be a boolean");
-  }
-  return value;
-}
-
-/** Validates and returns one step-binding entry at `index`. */
-function readBindingEntry(
-  raw: unknown,
-  index: number,
-): M3LSessionStepBindingInput {
-  const label = `bindings[${index}]`;
-  if (!Core.isPlainObject(raw)) {
-    rejectBody(label, "must be a plain object");
-  }
-  const reference = readRequiredNonEmptyString(
-    raw,
-    "reference",
-    `${label}.reference`,
-  );
-  const rawExpectedType = readRequiredNonEmptyString(
-    raw,
-    "expectedType",
-    `${label}.expectedType`,
-  );
-  if (!isExpectedType(rawExpectedType)) {
-    rejectBody(`${label}.expectedType`, "must be a recognised binding type");
-  }
-  const multiSelect = readRequiredBoolean(
-    raw,
-    "multiSelect",
-    `${label}.multiSelect`,
-  );
-  const parameterName = readRequiredNonEmptyString(
-    raw,
-    "parameterName",
-    `${label}.parameterName`,
-  );
-  return {
-    reference,
-    expectedType: rawExpectedType,
-    multiSelect,
-    parameterName,
-  };
-}
-
 /** Validates and returns the required `bindings` array field. */
 function readBindings(
   body: Record<string, unknown>,
@@ -396,7 +289,7 @@ function readBindings(
     rejectBody("bindings", "must be an array");
   }
   return bindings.map((entry: unknown, index: number) =>
-    readBindingEntry(entry, index),
+    readBindingEntry(entry, `bindings[${index}]`),
   );
 }
 
@@ -594,16 +487,6 @@ function buildReopenHandler(writer: SessionRouteWriterPort): M3LConsoleHandler {
   };
 }
 
-/** Builds the `GET /api/v1/sessions/:id/bindings` handler: the bare binding row array; 404s via the service's `requireSession` guard for an unknown session id. */
-function buildListBindingsHandler(
-  reader: SessionRouteReaderPort,
-): M3LConsoleHandler {
-  return (ctx) => {
-    const id = requireParam(ctx, "id");
-    return jsonResponse(STATUS_OK, reader.listBindingsForSession(id));
-  };
-}
-
 /**
  * Builds the X6 workbench-sessions module's REST route table: creating,
  * listing, reading, and closing sessions, appending steps, and raising and
@@ -611,7 +494,8 @@ function buildListBindingsHandler(
  * never an unauthenticated caller.
  *
  * @param options - See {@link SessionRouteOptions}.
- * @returns The nine-route table.
+ * @returns The eight-route table. The binding routes live in
+ *   `http/routes/session-bindings.ts` — see that module's header.
  *
  * @example
  * ```ts
@@ -687,12 +571,6 @@ export function createSessionRoutes(
       path: "/api/v1/sessions/:id/reopen",
       auth: "required",
       handler: buildReopenHandler(options.writer),
-    },
-    {
-      method: "GET",
-      path: "/api/v1/sessions/:id/bindings",
-      auth: "required",
-      handler: buildListBindingsHandler(options.reader),
     },
   ];
 }
