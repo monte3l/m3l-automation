@@ -5,18 +5,28 @@ import { describe, expect, test } from "vitest";
 import {
   ANALYZER_SUBPATH,
   DEFAULT_SINCE,
+  NON_CONFORMING_NAME_PREVIEW_LENGTH,
   PLUGIN_CACHE_SUBPATH,
   REQUIRED_KEYS,
+  SESSION_NAME_SCAN_BYTE_CAP,
+  SESSION_NAME_MAX_LENGTH,
   buildAnalyzerArgs,
   SINCE_PATTERN,
+  classifySessionName,
+  computeNamingCompliance,
+  extractSessionName,
+  listRecentTranscripts,
   missingKeys,
   parsePayload,
   parseSince,
   parseTop,
   pickRevision,
+  readTranscriptPrefix,
   resolveAnalyzerPath,
   runTelemetry,
+  sanitizeNonConformingName,
   shapeFailureMessage,
+  sinceToMs,
 } from "../../bin/session-telemetry.mjs";
 import { createReporter } from "../../bin/lib/report.mjs";
 
@@ -188,6 +198,11 @@ describe("runTelemetry", () => {
     return (payload["errors"] as string[])[0] ?? "";
   }
 
+  /** First reported warning, or "" — the payload is index-signature typed. */
+  function firstWarning(payload: Record<string, unknown>): string {
+    return (payload["warnings"] as string[])[0] ?? "";
+  }
+
   /**
    * Captures the payload runTelemetry hands to `finish()`. Calling
    * `reporter.finish()` a second time from the test would return the BASE
@@ -208,6 +223,15 @@ describe("runTelemetry", () => {
       dir: "/home/u/.claude/projects/-home-u-workspaces-proj",
       since: DEFAULT_SINCE,
       runAnalyzer: () => fixtureText,
+      computeNaming: () => ({
+        sessions_scanned: 1,
+        named: 1,
+        conforming: 1,
+        non_conforming: 0,
+        unnamed: 0,
+        unreadable: 0,
+        non_conforming_names: [],
+      }),
       reporter,
       ...overrides,
     });
@@ -280,6 +304,34 @@ describe("runTelemetry", () => {
     expect(payload["analyzerPath"]).toBe(
       "/plugins/session-report/rev/analyze-sessions.mjs",
     );
+  });
+
+  test("threads a successful naming report through to the outcome", () => {
+    const namingReport = {
+      sessions_scanned: 5,
+      named: 3,
+      conforming: 1,
+      non_conforming: 2,
+      unnamed: 2,
+      unreadable: 0,
+      non_conforming_names: ["some ai title", "another one"],
+    };
+    const { outcome, payload } = run({ computeNaming: () => namingReport });
+    expect(outcome.ok).toBe(true);
+    expect(outcome.naming).toEqual(namingReport);
+    expect(payload["naming"]).toEqual(namingReport);
+  });
+
+  test("MUTATION: a failed naming scan does NOT fail the run — the payload survives as a warning", () => {
+    const { outcome, payload } = run({
+      computeNaming: () => {
+        throw new Error("transcript format drift detected");
+      },
+    });
+    expect(outcome.ok).toBe(true);
+    expect(outcome.payload).not.toBeNull();
+    expect(outcome.naming).toBeNull();
+    expect(firstWarning(payload)).toContain("transcript format drift detected");
   });
 });
 
@@ -422,4 +474,458 @@ describe("parseTop", () => {
       expect(() => parseTop(v)).toThrow(/not a positive integer/);
     },
   );
+});
+
+describe("extractSessionName", () => {
+  test("returns the agent-name value when present", () => {
+    expect(
+      extractSessionName('{"type":"agent-name","agentName":"feat-widget"}\n'),
+    ).toBe("feat-widget");
+  });
+
+  test("returns the ai-title value when agent-name is absent", () => {
+    expect(
+      extractSessionName('{"type":"ai-title","aiTitle":"Some auto title"}\n'),
+    ).toBe("Some auto title");
+  });
+
+  test("agent-name takes precedence over ai-title when both appear", () => {
+    const prefix =
+      '{"type":"ai-title","aiTitle":"Some auto title"}\n' +
+      '{"type":"agent-name","agentName":"feat-widget"}\n';
+    expect(extractSessionName(prefix)).toBe("feat-widget");
+  });
+
+  test("returns null when neither record type appears", () => {
+    expect(extractSessionName('{"type":"user","message":{}}\n')).toBeNull();
+  });
+
+  test("skips malformed/non-JSON lines without throwing", () => {
+    const prefix =
+      "not json at all\n" +
+      '{"type":"agent-name","agentName":"feat-widget"}\n' +
+      "{truncated\n";
+    expect(extractSessionName(prefix)).toBe("feat-widget");
+  });
+
+  test("uses the LAST agent-name record when renamed more than once", () => {
+    const prefix =
+      '{"type":"agent-name","agentName":"feat-first"}\n' +
+      '{"type":"agent-name","agentName":"feat-second"}\n';
+    expect(extractSessionName(prefix)).toBe("feat-second");
+  });
+
+  test("empty prefix returns null", () => {
+    expect(extractSessionName("")).toBeNull();
+  });
+});
+
+describe("classifySessionName", () => {
+  test("null is unnamed", () => {
+    expect(classifySessionName(null)).toBe("unnamed");
+  });
+
+  test.each([
+    "feat",
+    "fix",
+    "audit",
+    "research",
+    "docs",
+    "review",
+    "ci",
+    "merge",
+  ])("%s-example-slug conforms", (kind) => {
+    expect(classifySessionName(`${kind}-example-slug`)).toBe("conforming");
+  });
+
+  test("an AI-generated title does not conform", () => {
+    expect(
+      classifySessionName("Statusline context pressure security review"),
+    ).toBe("non_conforming");
+  });
+
+  test("a conforming-shaped name over SESSION_NAME_MAX_LENGTH is non_conforming", () => {
+    const overLong = `feat-${"a".repeat(SESSION_NAME_MAX_LENGTH)}`;
+    expect(classifySessionName(overLong)).toBe("non_conforming");
+  });
+
+  test("an undeclared kind is non_conforming", () => {
+    expect(classifySessionName("wip-example-slug")).toBe("non_conforming");
+  });
+});
+
+describe("sinceToMs", () => {
+  test("converts days", () => {
+    expect(sinceToMs("7d")).toBe(7 * 86_400_000);
+  });
+
+  test("converts hours", () => {
+    expect(sinceToMs("48h")).toBe(48 * 3_600_000);
+  });
+
+  test("a single-unit day window", () => {
+    expect(sinceToMs("1d")).toBe(86_400_000);
+  });
+});
+
+describe("readTranscriptPrefix", () => {
+  test("reads and decodes the file's content", () => {
+    const buf = Buffer.from(
+      '{"type":"agent-name","agentName":"feat-x"}\n',
+      "utf8",
+    );
+    const fs = {
+      open: () => 3,
+      read: (
+        _fd: number,
+        buffer: Buffer,
+        offset: number,
+        length: number,
+        position: number,
+      ) => {
+        const bytesToCopy = Math.min(length, buf.length - position);
+        if (bytesToCopy <= 0) return 0;
+        buf.copy(buffer, offset, position, position + bytesToCopy);
+        return bytesToCopy;
+      },
+      close: () => {},
+    };
+    expect(readTranscriptPrefix("/p", fs)).toContain('"agentName":"feat-x"');
+  });
+
+  test("returns null when the file cannot be opened", () => {
+    const fs = {
+      open: () => {
+        throw new Error("EACCES");
+      },
+      read: () => 0,
+      close: () => {},
+    };
+    expect(readTranscriptPrefix("/p", fs)).toBeNull();
+  });
+
+  test("never requests more than SESSION_NAME_SCAN_BYTE_CAP bytes", () => {
+    let requestedLength = 0;
+    const fs = {
+      open: () => 3,
+      read: (_fd: number, _buffer: Buffer, _offset: number, length: number) => {
+        requestedLength = length;
+        return 0;
+      },
+      close: () => {},
+    };
+    readTranscriptPrefix("/p", fs);
+    expect(requestedLength).toBe(SESSION_NAME_SCAN_BYTE_CAP);
+  });
+});
+
+function entry(name: string, isFile = true) {
+  return { name, isFile: () => isFile };
+}
+
+describe("listRecentTranscripts", () => {
+  test("keeps only .jsonl files within the window", () => {
+    const fs = {
+      readdir: () => [entry("a.jsonl"), entry("b.txt"), entry("c.jsonl")],
+      stat: (p: string) => ({ mtimeMs: p.endsWith("a.jsonl") ? 5000 : 1000 }),
+    };
+    expect(listRecentTranscripts("/dir", 2000, 6000, fs)).toEqual([
+      "/dir/a.jsonl",
+    ]);
+  });
+
+  test("excludes non-file directory entries", () => {
+    const fs = {
+      readdir: () => [entry("d.jsonl", false), entry("e.jsonl", true)],
+      stat: () => ({ mtimeMs: 5000 }),
+    };
+    expect(listRecentTranscripts("/dir", 10000, 6000, fs)).toEqual([
+      "/dir/e.jsonl",
+    ]);
+  });
+
+  test("MUTATION: an unlistable directory throws, naming the path", () => {
+    const fs = {
+      readdir: () => {
+        throw new Error("ENOENT");
+      },
+      stat: () => ({ mtimeMs: 0 }),
+    };
+    expect(() => listRecentTranscripts("/missing", 1000, 2000, fs)).toThrow(
+      /\/missing/,
+    );
+  });
+
+  test("a file that vanishes between readdir and stat is skipped, not fatal", () => {
+    const fs = {
+      readdir: () => [entry("a.jsonl"), entry("b.jsonl")],
+      stat: (p: string) => {
+        if (p.endsWith("b.jsonl")) throw new Error("ENOENT");
+        return { mtimeMs: 5000 };
+      },
+    };
+    expect(listRecentTranscripts("/dir", 10000, 6000, fs)).toEqual([
+      "/dir/a.jsonl",
+    ]);
+  });
+});
+
+function fakeNamingFs(files: Record<string, string>) {
+  const names = Object.keys(files);
+  const contents = names.map((n) => files[n] ?? "");
+  return {
+    readdir: () => names.map((name) => ({ name, isFile: () => true })),
+    stat: () => ({ mtimeMs: 5000 }),
+    open: (path: string) => names.findIndex((n) => path.endsWith(n)),
+    read: (
+      fd: number,
+      buffer: Buffer,
+      offset: number,
+      length: number,
+      position: number,
+    ) => {
+      const buf = Buffer.from(contents[fd] ?? "", "utf8");
+      const bytesToCopy = Math.min(length, Math.max(0, buf.length - position));
+      if (bytesToCopy <= 0) return 0;
+      buf.copy(buffer, offset, position, position + bytesToCopy);
+      return bytesToCopy;
+    },
+    close: () => {},
+  };
+}
+
+describe("computeNamingCompliance", () => {
+  const now = () => 10_000;
+
+  test("classifies conforming, non-conforming, and unnamed sessions", () => {
+    const fs = fakeNamingFs({
+      "a.jsonl": '{"type":"agent-name","agentName":"feat-widget"}\n',
+      "b.jsonl": '{"type":"ai-title","aiTitle":"Some auto title"}\n',
+      "c.jsonl": '{"type":"user","message":{"content":"hi"}}\n',
+    });
+    const report = computeNamingCompliance({ dir: "/p", since: "7d", now, fs });
+    expect(report.sessions_scanned).toBe(3);
+    expect(report.named).toBe(2);
+    expect(report.conforming).toBe(1);
+    expect(report.non_conforming).toBe(1);
+    expect(report.unnamed).toBe(1);
+    expect(report.non_conforming_names).toEqual(["Some auto title"]);
+  });
+
+  test("MUTATION: an empty window throws rather than reporting zeros", () => {
+    const fs = fakeNamingFs({});
+    expect(() =>
+      computeNamingCompliance({ dir: "/p", since: "7d", now, fs }),
+    ).toThrow(/No transcript files found/);
+  });
+
+  test("MUTATION: transcripts present but zero name records throws, naming ADR-0084", () => {
+    const fs = fakeNamingFs({ "a.jsonl": '{"type":"user","message":{}}\n' });
+    expect(() =>
+      computeNamingCompliance({ dir: "/p", since: "7d", now, fs }),
+    ).toThrow(/ADR-0084/);
+  });
+
+  test("a file that cannot be opened is skipped, not fatal, when others carry records", () => {
+    const fs = {
+      readdir: () => [entry("a.jsonl"), entry("b.jsonl")],
+      stat: () => ({ mtimeMs: 5000 }),
+      open: (path: string) => {
+        if (path.endsWith("b.jsonl")) throw new Error("EACCES");
+        return 0;
+      },
+      read: (
+        _fd: number,
+        buffer: Buffer,
+        offset: number,
+        length: number,
+        position: number,
+      ) => {
+        const buf = Buffer.from(
+          '{"type":"agent-name","agentName":"feat-x"}\n',
+          "utf8",
+        );
+        const bytesToCopy = Math.min(length, buf.length - position);
+        if (bytesToCopy <= 0) return 0;
+        buf.copy(buffer, offset, position, position + bytesToCopy);
+        return bytesToCopy;
+      },
+      close: () => {},
+    };
+    const report = computeNamingCompliance({ dir: "/p", since: "7d", now, fs });
+    expect(report.sessions_scanned).toBe(2);
+    expect(report.conforming).toBe(1);
+    expect(report.unnamed).toBe(0);
+  });
+});
+
+describe("sanitizeNonConformingName", () => {
+  test("passes a short, clean name through unchanged", () => {
+    expect(sanitizeNonConformingName("short title")).toBe("short title");
+  });
+
+  test("truncates a name over SESSION_NAME_MAX_LENGTH with an ellipsis marker", () => {
+    const long = "a".repeat(SESSION_NAME_MAX_LENGTH + 20);
+    const result = sanitizeNonConformingName(long);
+    expect(result.length).toBe(SESSION_NAME_MAX_LENGTH + 1);
+    expect(result.endsWith("…")).toBe(true);
+    expect(result.startsWith("a".repeat(SESSION_NAME_MAX_LENGTH))).toBe(true);
+  });
+
+  test("strips C0 control characters and DEL", () => {
+    expect(sanitizeNonConformingName("hello\x00\x1bworld\x7f")).toBe(
+      "helloworld",
+    );
+  });
+
+  test("a name at exactly SESSION_NAME_MAX_LENGTH is not truncated", () => {
+    const exact = "a".repeat(SESSION_NAME_MAX_LENGTH);
+    expect(sanitizeNonConformingName(exact)).toBe(exact);
+  });
+});
+
+describe("readTranscriptPrefix — read failure after a successful open", () => {
+  test("returns null (not a throw) when read() itself throws", () => {
+    const fs = {
+      open: () => 3,
+      read: () => {
+        throw new Error("EIO: i/o error");
+      },
+      close: () => {},
+    };
+    expect(readTranscriptPrefix("/p", fs)).toBeNull();
+  });
+
+  test("still closes the fd when read() throws", () => {
+    let closed = false;
+    const fs = {
+      open: () => 3,
+      read: () => {
+        throw new Error("EIO");
+      },
+      close: () => {
+        closed = true;
+      },
+    };
+    readTranscriptPrefix("/p", fs);
+    expect(closed).toBe(true);
+  });
+});
+
+describe("listRecentTranscripts — path containment", () => {
+  test("drops an entry whose resolved path escapes the project directory", () => {
+    const fs = {
+      readdir: () => [
+        { name: "../../../../etc/passwd.jsonl", isFile: () => true },
+        { name: "good.jsonl", isFile: () => true },
+      ],
+      stat: () => ({ mtimeMs: 5000 }),
+    };
+    expect(listRecentTranscripts("/safe/dir", 10000, 6000, fs)).toEqual([
+      "/safe/dir/good.jsonl",
+    ]);
+  });
+});
+
+describe("computeNamingCompliance — unreadable tracking", () => {
+  const now = () => 10_000;
+
+  test("counts unreadable files and keeps named+unnamed+unreadable === sessions_scanned", () => {
+    const fs = {
+      readdir: () => [entry("a.jsonl"), entry("b.jsonl")],
+      stat: () => ({ mtimeMs: 5000 }),
+      open: (path: string) => {
+        if (path.endsWith("b.jsonl")) throw new Error("EACCES");
+        return 0;
+      },
+      read: (
+        _fd: number,
+        buffer: Buffer,
+        offset: number,
+        length: number,
+        position: number,
+      ) => {
+        const buf = Buffer.from(
+          '{"type":"agent-name","agentName":"feat-x"}\n',
+          "utf8",
+        );
+        const bytesToCopy = Math.min(length, buf.length - position);
+        if (bytesToCopy <= 0) return 0;
+        buf.copy(buffer, offset, position, position + bytesToCopy);
+        return bytesToCopy;
+      },
+      close: () => {},
+    };
+    const report = computeNamingCompliance({ dir: "/p", since: "7d", now, fs });
+    expect(report.unreadable).toBe(1);
+    expect(report.named + report.unnamed + report.unreadable).toBe(
+      report.sessions_scanned,
+    );
+  });
+
+  test("MUTATION: when every file is unreadable, throws a permissions message, not the ADR-0084 drift message", () => {
+    const fs = {
+      readdir: () => [entry("a.jsonl")],
+      stat: () => ({ mtimeMs: 5000 }),
+      open: () => {
+        throw new Error("EACCES");
+      },
+      read: () => 0,
+      close: () => {},
+    };
+    expect(() =>
+      computeNamingCompliance({ dir: "/p", since: "7d", now, fs }),
+    ).toThrow(/permissions or access problem/);
+  });
+});
+
+describe("sinceToMs — validation", () => {
+  test("MUTATION: rejects a value not shaped <n>d or <n>h", () => {
+    expect(() => sinceToMs("7")).toThrow(/not a bounded window/);
+  });
+
+  test("MUTATION: rejects an empty string rather than returning 0 silently", () => {
+    expect(() => sinceToMs("")).toThrow(/not a bounded window/);
+  });
+});
+
+describe("readTranscriptPrefix — partial reads", () => {
+  test("assembles the full prefix across multiple short reads", () => {
+    const full = Buffer.from(
+      '{"type":"agent-name","agentName":"feat-partial-read"}\n',
+      "utf8",
+    );
+    const fs = {
+      open: () => 3,
+      read: (
+        _fd: number,
+        buffer: Buffer,
+        offset: number,
+        length: number,
+        position: number,
+      ) => {
+        if (position >= full.length) return 0;
+        const n = Math.min(5, length, full.length - position); // short read
+        full.copy(buffer, offset, position, position + n);
+        return n;
+      },
+      close: () => {},
+    };
+    expect(readTranscriptPrefix("/p", fs)).toBe(full.toString("utf8"));
+  });
+});
+
+describe("sanitizeNonConformingName — ANSI and constant", () => {
+  test("strips a full ANSI/CSI escape sequence, not just the ESC byte", () => {
+    expect(sanitizeNonConformingName("\x1b[31mred\x1b[0m text")).toBe(
+      "red text",
+    );
+  });
+
+  test("truncates using NON_CONFORMING_NAME_PREVIEW_LENGTH, decoupled from SESSION_NAME_MAX_LENGTH", () => {
+    expect(NON_CONFORMING_NAME_PREVIEW_LENGTH).toBe(SESSION_NAME_MAX_LENGTH);
+    const long = "a".repeat(NON_CONFORMING_NAME_PREVIEW_LENGTH + 10);
+    const result = sanitizeNonConformingName(long);
+    expect(result.length).toBe(NON_CONFORMING_NAME_PREVIEW_LENGTH + 1);
+  });
 });
