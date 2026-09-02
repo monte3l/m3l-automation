@@ -239,6 +239,20 @@ if (unverified.length > 0) {
 }
 
 phase("Verify");
+// KNOWN GAP (2026-09-01 harness-refresh sweep, not a deliberate design
+// choice — flagging rather than guessing at a fix): this dispatch carries no
+// `agentType`, so the refuter is an untyped, roster-less agent — it inherits
+// no `disallowedTools: Agent` and sits outside `check:agents`' depth-1
+// no-nesting invariant (that gate only inspects `.claude/agents/*.md`
+// frontmatter). `Explore` is the closest-fitting typed spoke for this
+// read-only, investigative role, but this file has no prior art combining an
+// explicit `agentType` with an explicit `model`/`effort` override the way
+// this call already does — assigning one without confirming the two compose
+// safely at runtime risks silently changing verification behavior. Left
+// untyped and documented rather than guessed at; resolve by either verifying
+// the override composes correctly and pinning `agentType: "Explore"`, or by
+// dropping the explicit model/effort override and inheriting Explore's own
+// pin.
 const verdicts =
   toVerify.length > 0
     ? await pipeline(toVerify, (finding) =>

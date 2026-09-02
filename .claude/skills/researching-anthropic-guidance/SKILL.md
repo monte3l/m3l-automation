@@ -48,11 +48,8 @@ orthogonal and independently searchable (e.g. for "subagent design":
 architecture/composition patterns, tool-grant philosophy, model selection
 guidance, prompt-writing conventions, context/token management).
 
-Derive a short kebab-case topic slug (e.g. `subagent-design`) and a run
-directory under the session scratchpad:
-`<session-scratchpad-dir>/research-<topic-slug>/`. Every agent in Step 2
-writes into this directory — it is what keeps the synthesis in Step 3
-grounded in the full findings instead of a lossy summary.
+Derive a short kebab-case topic slug (e.g. `subagent-design`) — Step 5 uses
+it for the optional snapshot's filename.
 
 ### 2 — Fan out Explore agents (parallel)
 
@@ -68,8 +65,6 @@ Spawn all agents **in a single message** so they run concurrently. Each agent
 receives:
 
 - A focused brief scoped to exactly one facet of the research topic.
-- The run directory from Step 1 and the exact filename to write:
-  `<run-dir>/<facet-slug>.md`.
 - The **official-sources allowlist and GitHub caveat**, pasted verbatim from
   `references/official-sources.md`, plus today's date per that file's
   current-date-anchor requirement.
@@ -85,8 +80,13 @@ receives:
   facet turns up no official source, that is itself a reportable finding
   (a coverage gap), not a reason to lower the bar.
 
-- The **verbatim findings format** to write to its scratchpad file — instruct
-  the agent to use this exactly, one entry per distinct source:
+- An explicit statement that the agent **holds no write tool and cannot write
+  any file** — this repo's read-only Bash guard (`guard-readonly-bash.mjs`)
+  blocks every shell write route regardless, so a scratchpad handoff is never
+  an option. Its full findings travel back only in its response.
+
+- The **verbatim findings format** to return inline, one entry per distinct
+  source:
 
   ```
   ## Sources: <facet name>
@@ -95,22 +95,25 @@ receives:
     - CONFLICT-WITH: <other source title/url> — <how they disagree>   (only if applicable)
   ```
 
-- The **return-value instruction**: after writing the full file, the agent's
-  final message back to the hub must be a **compact digest only** — facet
-  name, number of sources found, one line per headline claim, and any
-  CONFLICT-WITH flags — plus the scratchpad file path. It must not repeat the
-  full file contents in its response. This is what keeps the hub's context
-  budget for synthesis rather than for re-reading verbose per-agent output.
+- The **return-value instruction**: the agent's response must contain the
+  full findings above, capped at roughly 8,000 characters (~2,000 tokens —
+  the sub-agent output band Anthropic documents, and the same cap
+  `.claude/workflows/audit-fanout.js` already enforces mechanically for its
+  own read-only Explore fan-out), followed by a compact digest — facet name,
+  number of sources found, one line per headline claim, and any
+  CONFLICT-WITH flags. If the full findings would exceed the cap, prioritize
+  breadth (every source, tightly paraphrased) over exhaustive per-source
+  quoting.
 
 Use `subagent_type: "Explore"` with breadth `"very thorough"` for every
 agent — check `.claude/agents/*.md` if unsure which spokes carry
 `WebSearch`/`WebFetch` before assuming Explore is the only one. Do not write
-any files yourself in this step; the agents write their own scratchpad files.
+any files yourself in this step — nothing in this fan-out touches disk.
 
 ### 3 — Aggregate and synthesize
 
-Once all agents report back, **read every scratchpad file in the run
-directory in full** — the digests are for triage, not synthesis; a claim's
+Once all agents report back, **read every agent's full findings in its own
+response, in full** — the digests are for triage, not synthesis; a claim's
 exact wording and its source's retrieval date matter for spotting
 contradictions and staleness.
 
@@ -155,10 +158,11 @@ passes don't need it.
 ### 5 — Offer an optional snapshot
 
 Ask whether the user wants the briefing persisted as a durable record at
-`docs/research/<topic-slug>.md`, assembled from the Step-2 scratchpad files
-(not re-fetched). Only write it on explicit confirmation — the default is
-inline-only, since most research feeds directly into the task that asked for
-it and doesn't need a standing file.
+`docs/research/<topic-slug>.md`, assembled from the Step-2 agents' full
+inline findings and the Step-3 synthesis (not re-fetched). Only write it on
+explicit confirmation — the default is inline-only, since most research
+feeds directly into the task that asked for it and doesn't need a standing
+file.
 
 If confirmed, write the snapshot with this provenance header (matching this
 skill's own `references/*.md` convention and `docs/research/README.md`'s
