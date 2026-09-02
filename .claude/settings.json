@@ -90,7 +90,7 @@
         ]
       },
       {
-        "matcher": "compact",
+        "matcher": "compact|resume|startup",
         "hooks": [
           {
             "type": "command",
