@@ -65,6 +65,22 @@ copies on `main`. Before classifying any hunks, try
 and typically resolves with zero conflicted paths. Fall through to the steps
 below only if that rebase itself stops on conflicts.
 
+### 0b — Absurd ahead/behind count? The base was rewritten, not diverged
+
+`git rebase origin/main` is destructive when `main`'s history has been
+rewritten upstream (a trailer strip, a filter-branch): your base SHA no longer
+exists there, the merge-base collapses to some ancient commit, and
+`git rev-list --left-right --count origin/main...HEAD` reports something
+absurd — 353 ahead / 360 behind for a two-commit branch. Rebasing then replays
+hundreds of commits that are duplicates of the rewritten upstream history.
+
+Detect it with `git merge-base --is-ancestor <your-base-sha> origin/main`; if
+that fails, use `git rebase --onto origin/main <old-base-sha>` to replay only
+your own commits. A local `main` in the same checkout is stale the same way and
+`git pull` will refuse it as divergent — before `git reset --hard origin/main`,
+confirm it holds no unique work by checking every local-only commit subject has
+an upstream twin, not just the newest few.
+
 ### 1 — Detect the in-progress operation
 
 Determine whether a rebase or a merge is underway and capture the conflicted
