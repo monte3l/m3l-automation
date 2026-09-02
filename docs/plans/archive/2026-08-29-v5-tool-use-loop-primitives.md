@@ -40,7 +40,7 @@ export must appear on the reference page in the same change.
 
 ## Constraints that shape the design
 
-These were verified against the tree at `1ce48c23`, not assumed. They are
+These were verified against the tree at `4b5a700a`, not assumed. They are
 recorded here so the implementation does not rediscover them.
 
 1. **The ESLint AWS island blocks the obvious reuse.** `aws/**` may import
@@ -60,7 +60,7 @@ recorded here so the implementation does not rediscover them.
 3. **File-budget headroom is tight and `stream.ts` is effectively frozen.**
    The ceiling is 25,000 bytes per `src` file with **no bedrock file
    baselined** (`bin/check-file-budget.mjs:50`; `bin/file-budget-baseline.json`
-   has no bedrock entry). At `1ce48c23`: `stream.ts` 23,862 · `client.ts`
+   has no bedrock entry). At `4b5a700a`: `stream.ts` 23,862 · `client.ts`
    14,274 · `error.ts` 12,993 · `shared.ts` 10,965 · `types.ts` 7,278 ·
    `index.ts` 1,232. `stream.ts` has ~1.1 KB of headroom — the mechanical
    reason streaming tool-use is out of scope, independent of the scope call.

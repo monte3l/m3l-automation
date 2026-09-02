@@ -60,7 +60,7 @@
 > `Bash`. More decisively, nothing in the repo polls for the trigger's
 > condition — it can only ever arrive as a logged incident, the same ground on
 > which the ADR-0030 gh-CLI-vs-MCP revisit trigger was retired (commit
-> `33cb838`, issue #344). The 2026-07-12 Update's framing also overstated the
+> `0cbe179`, issue #344). The 2026-07-12 Update's framing also overstated the
 > gap: it says the guards "do not see files mutated via the `Bash` tool," but
 > `.claude/hooks/guard-readonly-bash.mjs` — added that same day — already runs
 > on a `PreToolUse: Bash` matcher and pattern-matches redirection (`>`, `>>`,

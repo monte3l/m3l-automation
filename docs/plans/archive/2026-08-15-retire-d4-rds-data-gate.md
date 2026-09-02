@@ -48,7 +48,7 @@ Per the user's choices during planning:
    unrecognized-cell warning, rather than patching `bin/lib/project-hub.mjs`
    in the same change. This becomes its own derived issue on the next sync.
 4. **Amend ADR-0031 with a closing Update**, following the ADR-0030 retire
-   precedent (commit `33cb838`): record that both PRs landed, the gate is
+   precedent (commit `0cbe179`): record that both PRs landed, the gate is
    retired, and #204/#426 are closed — rather than leaving the ADR's prior
    Update phrasing the flip as future work.
 

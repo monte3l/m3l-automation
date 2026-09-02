@@ -48,7 +48,7 @@ jobs:
       # message instead of burning a full budget and dying on max turns.
       #
       # 300000 is ~2.1x the largest reviewable patch in the measured
-      # window (142,557 chars, `6c1bd73`) and clears every PR merged in it.
+      # window (142,557 chars, `b5eeb8c`) and clears every PR merged in it.
       #
       # Measured on a deduplicated unified diff. Until the `--patch`
       # removal below, the gate measured the per-commit patch series, so
@@ -473,7 +473,7 @@ jobs:
           # Why the filtering exists at all: until 2026-08-20 the patch was
           # handed over unfiltered, so the reviewer was given megabytes of docs
           # it was explicitly told to ignore. Across the 14 PRs merged before
-          # that change, reviewable content was 0-84% of the patch (`24f7dea`:
+          # that change, reviewable content was 0-84% of the patch (`305ed34`:
           # 575,724 chars total, 74,676 reviewable — 87% waste). This repo's
           # markdown makes it worse than it sounds, since lines run up to 6,315
           # chars, so a 5-line edit to `docs/implementation-status.md`

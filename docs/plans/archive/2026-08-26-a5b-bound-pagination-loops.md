@@ -74,7 +74,7 @@ signal).
   (stale test counts, `M3LNoProgressError`'s own TSDoc no longer accurately
   covering both throwers) and one should-fix deferred (narrowing the cursor
   value type would require widening the public `DynamoDBKey` type — out of
-  scope for a patch fix). Squash-merged as `b373cb4`.
+  scope for a patch fix). Squash-merged as `2ac9a1c`.
 - The fleet fix: 3 new tests on `scripts/eventbridge-schedules`'s
   `list-rules` step; 2-spoke review, clean. Tracker rows flipped —
   `docs/plans/IMPLEMENTATION.md`'s **A5b** `To Do → Done`,

@@ -23,7 +23,7 @@ codes` consolidation deferred to "when U2's gate lands" never happens.
 
 ## Approach / Decisions
 
-Every claim in the issue was re-derived against `aea99ec` before any code was
+Every claim in the issue was re-derived against `373c5a8` before any code was
 written, which produced three corrections to its framing. The `package.json`
 `check:*` entries are **not** alphabetical (they are thematically grouped in
 rough `ci.yml` order), so the new entries went after `check:script-deps`. The

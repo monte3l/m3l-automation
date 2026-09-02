@@ -1,12 +1,12 @@
 # Fix the published `.d.ts` type leak (#798) and `run()` rowid truncation (#807)
 
-**Status: shipped** — PR #814 (`309f5625`) and PR #815 (`a0462f0c`), both
+**Status: shipped** — PR #814 (`7600b779`) and PR #815 (`ed798863`), both
 merged 2026-08-31. Closes #798 and #807.
 
 ## Context
 
 Two unrelated defects, both filed as `bug`, both verified against `main` at
-`b21aaacb` before any code was written.
+`f5ba1275` before any code was written.
 
 **#798 — packaging correctness.** `packages/m3l-common` publicly exports two
 type aliases over `better-sqlite3` (`src/core/storage/types.ts` —

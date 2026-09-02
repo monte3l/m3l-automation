@@ -44,7 +44,7 @@ resuming).
 ## What went as planned
 
 - **Docs-first gate opening matched precedent** — ADR-0043 Update + tracker
-  flips followed the 874096c/41e54aa pattern exactly; `check:tracker-status`
+  flips followed the dab629b/9fb2e76 pattern exactly; `check:tracker-status`
   and `check:tracker-coverage` green on first try.
 - **Contract-producer pass earned its slot** — compiling s3-objects-shaped
   probe fixtures at contract time settled the one open design risk

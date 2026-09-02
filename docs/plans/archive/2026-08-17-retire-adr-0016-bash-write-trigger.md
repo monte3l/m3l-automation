@@ -27,7 +27,7 @@ and precedent for definitive closure — established:
    `2026-07-27-scripts-codepipeline-ops.md:82-88`) all used the `Edit` tool,
    not `Bash`. More decisively: nothing in the repo polls for this condition —
    it can only ever arrive as a logged incident, which is exactly the ground
-   `33cb838` used to retire ADR-0030's gh-CLI-vs-MCP revisit trigger and close
+   `0cbe179` used to retire ADR-0030's gh-CLI-vs-MCP revisit trigger and close
    issue #344.
 2. **The gap's own framing overstates itself.**
    `docs/contributing/hooks-reference.md:41-45` and ADR-0016:22-23 both claim

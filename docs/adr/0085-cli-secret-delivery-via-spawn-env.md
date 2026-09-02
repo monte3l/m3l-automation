@@ -116,7 +116,7 @@ identical derivation, and two copies of a one-line regex across two packages is
 a silent-drift hazard. It becomes
 `Core.deriveEnvVarName(key: string): string` in
 `packages/m3l-common/src/core/config/`, with the provider importing it so there
-is exactly one implementation. This follows the precedent of commit `a41cb6be`,
+is exactly one implementation. This follows the precedent of commit `4e22837c`,
 which promoted the script-introspection seam out of `m3l-cli` into
 `core/config`. It surfaces through the **Core namespace barrel**, never a new
 `exports` subpath.

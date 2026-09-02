@@ -104,7 +104,7 @@ item is named out-of-scope in the same ADR is miscategorized from the start.
   The `impl:<slug>` key derived from the Item cell is what links a tracker row to its GitHub
   issue. Editing the Item cell text changes the key and orphans the existing issue. Always
   leave the Item cell byte-identical when reclassifying a row; put the rationale in the
-  Change/notes cells only. Confirmed by commit `0ef72f6` ("ID cell untouched, so its
+  Change/notes cells only. Confirmed by commit `16cedbf` ("ID cell untouched, so its
   sync:hub item key still matches issue #210's body marker").
 
 - **ADR scope-boundary edits are rarely needed for reclassifications.**

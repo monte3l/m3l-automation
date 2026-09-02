@@ -66,7 +66,7 @@ the fleet). Reusing it here would reintroduce a claim already corrected.
 withdrawn, not deleted.** ADR-0031 is Accepted and immutable per
 `docs/adr/README.md`; its Aurora tier already shipped. The withdrawal is
 recorded as a fourth `## Update` section (following the ADR-0031's own three
-prior Updates and the ADR-0030 retire precedent, commit `33cb838`), leaving
+prior Updates and the ADR-0030 retire precedent, commit `0cbe179`), leaving
 lines 116-139 in place as history while stating plainly that they no longer
 stand as pre-approval.
 

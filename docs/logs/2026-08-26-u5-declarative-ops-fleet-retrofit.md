@@ -258,10 +258,10 @@ VERIFIED/NOT-CHECKED verdicts when low on budget.
 
 ### 11. `origin/main` moved three times mid-session, and a reviewer misread the staleness as a revert
 
-`main` advanced from `f2ae40e` → `41e3a8a` → `d782143` → `667a2e1` → `f17d80f`
+`main` advanced from `2194bf3` → `c4c3668` → `37593ff` → `8a885bd` → `04c15ea`
 while this work was in flight. Two consequences: a pre-existing `sync:docs`
 failure I had diagnosed and confirmed on pristine `main` was fixed upstream by
-`41e3a8a` and vanished on rebase; and the PR3 silent-failure auditor, reading
+`c4c3668` and vanished on rebase; and the PR3 silent-failure auditor, reading
 `git diff origin/main` from a branch one commit behind, reported a "full clean
 revert of U8's `m3l-cli` feature" — an artifact, since GitHub diffs from the
 merge base.
