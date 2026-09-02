@@ -87,7 +87,7 @@ Two of the seven are now self-maintaining rather than hand-copied:
 The exact-array assertion above it was **deliberately left hand-written**. It
 is the one place pinning content _and order_; deriving both sides would make
 the pair vacuous — a reconciliation whose two sides come from one source can
-never fail. Keeping one side hand-pinned is what gives it teeth.
+never fail. Keeping one side hand-pinned is what gives it teeth. _(promoted → .claude/rules/tests.md)_
 
 ### The docs could not be split from the code
 

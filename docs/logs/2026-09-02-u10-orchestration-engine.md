@@ -200,11 +200,11 @@ renaming a parameter in the shipped acceptance flow fails its validation test.
    ran probes instead of reading.
 2. **Front-load review when merge is automatic.** Auto-merge means a verdict
    arrives with no window to act on it. Run the local reviewers against the
-   diff before the PR exists.
+   diff before the PR exists. _(promoted → .claude/skills/creating-prs/SKILL.md)_
 3. **A cross-package mutation test needs a build between mutate and run**, or
-   it fabricates evidence that a working guard is hollow.
+   it fabricates evidence that a working guard is hollow. _(promoted → .claude/rules/tests.md)_
 4. **Measure a file before growing it.** A 164-byte margin turns a required
    security fix into a rebase, and the paying extraction may need to be two
-   modules to stay a DAG.
+   modules to stay a DAG. _(promoted → .claude/rules/library-src.md)_
 5. **Run the thing before arguing about it.** One command settled a
    plausible, wrong conclusion about dry-run needing credentials.

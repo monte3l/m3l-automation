@@ -224,6 +224,19 @@ After collecting spoke results: if any spoke reports a **Must-fix** finding,
 fix it and loop back through Steps 4, 5, and 7 before pushing. Do not push with
 outstanding Must-fix findings.
 
+When the PR will carry GitHub auto-merge, this step is the only review whose
+findings you can still act on cheaply. Auto-merge fires the moment the required
+checks pass, so `claude-pr-review.yml`'s verdict typically arrives on an
+already-merged PR and every finding becomes a follow-up PR — U10 had three land
+that way, twice while a spoke was still fixing that same PR
+(`docs/logs/2026-09-02-u10-orchestration-engine.md`). Drafting buys no window
+either: the review job is gated on
+`github.event.pull_request.draft == false`, so a draft gets no review at all
+(`docs/contributing/branch-protection.md`). Nor do the mechanical gates
+substitute — that wave shipped eight real defects past typecheck, lint, `knip`,
+`check:dup`, `check:file-budget` and ~1,450 tests; every one was caught by a
+reviewer reasoning about behaviour.
+
 ### 8 — Pre-existing code-scanning check
 
 CodeQL runs via GitHub "default setup" and its `Analyze (...)` check-runs are
