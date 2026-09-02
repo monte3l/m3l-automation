@@ -24,6 +24,7 @@ import process from "node:process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parseJsonFlag, createReporter } from "./lib/report.mjs";
 
 export const MARKER_BEGIN = "# >>> m3l-automation session:launch hook >>>";
@@ -43,9 +44,12 @@ export function buildShellFunctionBlock() {
     "# pnpm session:launch script is available and no explicit naming/resume",
     "# flag is already present. Bypass per-invocation with",
     "# CLAUDE_SESSION_LAUNCH_DISABLE=1; uninstall by deleting this block.",
+    "# Only checks the current directory for package.json — invoking `claude`",
+    "# from a subdirectory of a session:launch-enabled repo falls through to",
+    "# the real binary; `cd` to the repo root first.",
     "claude() {",
     '  if [ -z "${CLAUDE_SESSION_LAUNCH_DISABLE:-}" ] \\',
-    "     && ! printf '%s\\n' \"$@\" | grep -qE '^(-n|--name|--resume|--continue|-p)$' \\",
+    "     && ! printf '%s\\n' \"$@\" | grep -qE '^(-n|--name(=.+)?|--resume(=.+)?|--continue|-p)$' \\",
     "     && [ -f package.json ] \\",
     "     && grep -q '\"session:launch\"' package.json 2>/dev/null; then",
     '    pnpm session:launch -- "$@"',
@@ -93,35 +97,51 @@ export function computeInstallPlan(currentContent) {
   return { alreadyInstalled: false, newContent };
 }
 
-const { json, argv } = parseJsonFlag();
-const reporter = createReporter(json);
+// Guarded so importing this module for its pure functions (as the test file
+// does) never executes the CLI body — without this, every test run would
+// read (and, depending on argv, could write) the real user's shell rc file.
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  const { json, argv } = parseJsonFlag();
+  const reporter = createReporter(json);
 
-const write = argv.includes("--write");
-const rcPathIndex = argv.indexOf("--rc-path");
-const rcPathOverride =
-  rcPathIndex !== -1 && argv[rcPathIndex + 1] !== undefined
-    ? argv[rcPathIndex + 1]
+  const write = argv.includes("--write");
+  const rcPathIndex = argv.indexOf("--rc-path");
+  let rcPathOverride = null;
+  if (rcPathIndex !== -1) {
+    const value = argv[rcPathIndex + 1];
+    if (value === undefined || value.startsWith("--") || value.length === 0) {
+      reporter.error(
+        "install-session-shell-hook: `--rc-path` requires a non-empty path argument.\n" +
+          "   Usage: pnpm session:install-shell-hook -- --rc-path <path> [--write]",
+      );
+      reporter.finish();
+      process.exit(1);
+    }
+    rcPathOverride = value;
+  }
+
+  const rcPath = rcPathOverride ?? detectRcPath(process.env, homedir());
+  const currentContent = existsSync(rcPath)
+    ? readFileSync(rcPath, "utf8")
     : null;
+  const { alreadyInstalled, newContent } = computeInstallPlan(currentContent);
 
-const rcPath = rcPathOverride ?? detectRcPath(process.env, homedir());
-const currentContent = existsSync(rcPath) ? readFileSync(rcPath, "utf8") : null;
-const { alreadyInstalled, newContent } = computeInstallPlan(currentContent);
-
-if (alreadyInstalled) {
-  reporter.succeed(
-    `${rcPath} already has the session:launch hook installed — nothing to do.`,
-  );
-  reporter.finish({ rcPath, alreadyInstalled: true, wrote: false });
-} else if (write) {
-  writeFileSync(rcPath, newContent, "utf8");
-  reporter.succeed(`Installed the session:launch hook into ${rcPath}.`);
-  reporter.info(
-    "   Restart your shell (or `source` the file) for it to take effect.",
-  );
-  reporter.finish({ rcPath, alreadyInstalled: false, wrote: true });
-} else {
-  reporter.info(`Dry run — would append this block to ${rcPath}:\n`);
-  reporter.info(buildShellFunctionBlock());
-  reporter.info(`\nRe-run with --write to actually install it.`);
-  reporter.finish({ rcPath, alreadyInstalled: false, wrote: false });
+  if (alreadyInstalled) {
+    reporter.succeed(
+      `${rcPath} already has the session:launch hook installed — nothing to do.`,
+    );
+    reporter.finish({ rcPath, alreadyInstalled: true, wrote: false });
+  } else if (write) {
+    writeFileSync(rcPath, newContent, "utf8");
+    reporter.succeed(`Installed the session:launch hook into ${rcPath}.`);
+    reporter.info(
+      "   Restart your shell (or `source` the file) for it to take effect.",
+    );
+    reporter.finish({ rcPath, alreadyInstalled: false, wrote: true });
+  } else {
+    reporter.info(`Dry run — would append this block to ${rcPath}:\n`);
+    reporter.info(buildShellFunctionBlock());
+    reporter.info(`\nRe-run with --write to actually install it.`);
+    reporter.finish({ rcPath, alreadyInstalled: false, wrote: false });
+  }
 }
