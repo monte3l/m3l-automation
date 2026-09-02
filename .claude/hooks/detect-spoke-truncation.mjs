@@ -34,10 +34,60 @@
  * since the exact payload isn't pinned down by a local schema — matching the
  * same tool-name caveat `guard-writer-dispatch-journal.mjs` documents for its
  * own PreToolUse payload.
+ *
+ * On a detected truncation, this hook also appends a durable record to
+ * `tmp/session-incidents.jsonl` (rotated at the start of every session by
+ * `rotate-session-incidents.mjs`) — continuous note-taking rather than a
+ * point-in-time snapshot, so a spoke-incident count survives a mid-task
+ * compaction the way two work logs found it did NOT
+ * (`docs/logs/2026-08-29-aws-bedrock-runtime-tools.md`,
+ * `docs/logs/2026-08-30-v7-agent-decision-log.md`). `writing-work-logs`
+ * reads this file to populate its mandatory "Spoke incidents:" line. Only
+ * `kind: "truncation"` is ever written here — this hook has no mechanical
+ * way to detect a review-spoke stall (a duration threshold, not a message
+ * shape) or a `SendMessage` resume (a different tool entirely); the
+ * `IncidentRecord` shape stays a 3-way union so those kinds have a place to
+ * land if a future hook gains the ability to detect them.
  */
 import process from "node:process";
+import { appendFileSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { WRITER_SPOKES } from "../../bin/lib/agent-roster.mjs";
+
+const root = process.env.CLAUDE_PROJECT_DIR ?? process.cwd();
+export const INCIDENTS_REL_PATH = "tmp/session-incidents.jsonl";
+
+/**
+ * @typedef {{
+ *   timestamp: string,
+ *   agentType: string,
+ *   agentId?: string,
+ *   kind: "truncation" | "stall" | "resume",
+ * }} IncidentRecord
+ */
+
+/**
+ * Append one incident record as a single JSON line. Advisory-only — a write
+ * failure (`tmp/` unwritable) is swallowed silently, matching
+ * `write-compact-handoff.mjs`'s fail-open stance; losing one incident record
+ * is a hint the next work log can't draw on as cheaply, not a fatal failure
+ * of the turn in progress.
+ *
+ * @param {IncidentRecord} record
+ * @param {string} [cwd]
+ */
+export function appendIncident(record, cwd = root) {
+  try {
+    mkdirSync(join(cwd, "tmp"), { recursive: true });
+    appendFileSync(
+      join(cwd, INCIDENTS_REL_PATH),
+      `${JSON.stringify(record)}\n`,
+    );
+  } catch {
+    // Advisory-only — never block or fail a SubagentStop over this.
+  }
+}
 
 async function readStdin() {
   const chunks = [];
@@ -121,6 +171,13 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const lastMessage = input.last_assistant_message;
 
   if (!looksTruncated(lastMessage)) process.exit(0);
+
+  appendIncident({
+    timestamp: new Date().toISOString(),
+    agentType: typeof agentType === "string" ? agentType : "unknown",
+    ...(typeof agentId === "string" ? { agentId } : {}),
+    kind: "truncation",
+  });
 
   process.stderr.write(
     `⚡ possible spoke truncation: "${String(agentType ?? "unknown")}"` +
