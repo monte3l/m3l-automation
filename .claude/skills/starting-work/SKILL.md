@@ -2,9 +2,10 @@
 name: starting-work
 description: >-
   The pre-work decision gate for m3l-automation. Before any change-work begins,
-  it inspects git state, infers and recommends five decisions — where to work
+  it inspects git state, infers and recommends six decisions — where to work
   (shared checkout vs an opt-in linked worktree), the branch (feat/<slug> or
-  fix/<slug> off main), whether the change must land via PR, the push target,
+  fix/<slug> off main), the Claude Code session name (<kind>-<slug>, ADR-0087),
+  whether the change must land via PR, the push target,
   and — when the inferred scope spans several independently-landable units —
   the PR sequence (ADR-0072) — then confirms every one with the user before a
   single file is written or a branch is created. Invoke this whenever a task
@@ -45,10 +46,10 @@ lands on `main`.
 single round. Do not write files, create a branch, or create a worktree until
 the user has confirmed.** The user is always free to override a
 recommendation; your job is to make the right default obvious, not to force it.
-Location, branch, PR-required, and push target are always decided. The fifth
-decision — PR sequence — is decided only when Step 2 finds the scope spans
-several independently-landable units; otherwise it is silently skipped rather
-than asked about.
+Location, branch, session name, PR-required, and push target are always
+decided. The sixth decision — PR sequence — is decided only when Step 2 finds
+the scope spans several independently-landable units; otherwise it is
+silently skipped rather than asked about.
 
 ## Steps
 
@@ -115,6 +116,15 @@ Derive a concrete default for all decisions from steps 1–2:
   `docs/contributing/branch-protection.md`). For docs/config-only changes, note
   that a PR is optional but still recommended.
 - **Push target** — `origin <the recommended branch>`. Never `origin main`.
+- **Session name** — recommend `<kind>-<slug>` for the _Claude Code session_
+  itself (ADR-0087, `docs/contributing/contributing.md` § Session naming),
+  reusing the same slug just decided for the branch so the two cannot
+  disagree: `kind` is `feat`/`fix` when a branch was recommended (mirroring
+  its prefix), or `audit`/`research`/`docs`/`review`/`ci`/`merge` for
+  `main`-resident work with no branch to mirror. No hook can set this for
+  the user, so the recommendation must give the literal command to run —
+  `claude -n <kind>-<slug>` when a new session/worktree is about to open,
+  `/rename <kind>-<slug>` when continuing the current one.
 - **PR sequence** — only surfaced when Step 2 found several landable units.
   Recommend the order (docs-first when the scope mixes docs and code — that
   slice is free to review and unblocks the rest; otherwise by path cluster or
@@ -139,16 +149,20 @@ in the same `AskUserQuestion` call as the rest: "Resume the in-flight work on
 `<branch>` (recommended)" vs "Start fresh — treat this as a new task". If the
 user picks resume, skip the Location/Branch/PR-required/push-target questions
 entirely (staying put is implied) and go straight to Step 5's "Staying put"
-path. If they pick fresh, proceed with the normal confirmation below as if no
-resume signal had been found.
+path — but still ask the session-name question, since it names the current
+Claude Code session rather than the git state Step 5 is settling. If they
+pick fresh, proceed with the normal confirmation below as if no resume signal
+had been found.
 
 Ask every decision that applies in **one** `AskUserQuestion` call — always
-location, branch, PR-required, and push target; PR sequence only when Step 2
-found several landable units — one question per decision, with your inferred
-recommendation listed **first** and labelled "(Recommended)". For the branch,
-offer the inferred `feat/<slug>` plus an "Other" path for a custom slug. Make
-it explicit in your framing that **nothing is written and no branch/worktree
-is created until they confirm** — this is the whole point of the gate.
+location, branch, session name, PR-required, and push target; PR sequence only
+when Step 2 found several landable units — one question per decision, with
+your inferred recommendation listed **first** and labelled "(Recommended)".
+For the branch, offer the inferred `feat/<slug>` plus an "Other" path for a
+custom slug; for the session name, offer the inferred `<kind>-<slug>` plus an
+"Other" path for a custom name. Make it explicit in your framing that
+**nothing is written and no branch/worktree is created until they confirm**
+— this is the whole point of the gate.
 
 If the user has _already_ told you the branch/worktree to use (e.g. "do it on
 `fix/foo`"), don't re-ask that dimension — treat it as confirmed and only
@@ -167,14 +181,19 @@ Once confirmed:
   may have fallen behind, resync it with `origin/main` before working (or defer
   to the resync step in `creating-prs`) so the branch does not drift from the
   base over multiple sessions.
+- **Session name:** state the confirmed `/rename <kind>-<slug>` (or
+  `claude -n <kind>-<slug>` when a new worktree/session is about to open) for
+  the user to run — this skill cannot invoke it on their behalf (ADR-0087: no
+  hook or skill step can set a Claude Code session name).
 
 ### 6 — Hand back
 
-Report a one-line summary of the confirmed decisions — location, branch, PR
-(yes/no), push target, and the PR sequence when one was confirmed — so the
-calling skill or the user proceeds with the context recorded. The enforcement
-backdrop (why this matters) lives in `guard-branch-isolation.mjs` and
-ADR-0013/0014; the PR-sequence rationale lives in ADR-0072.
+Report a one-line summary of the confirmed decisions — location, branch,
+session name, PR (yes/no), push target, and the PR sequence when one was
+confirmed — so the calling skill or the user proceeds with the context
+recorded. The enforcement backdrop (why this matters) lives in
+`guard-branch-isolation.mjs` and ADR-0013/0014; the PR-sequence rationale
+lives in ADR-0072; the session-naming rationale lives in ADR-0087.
 
 ## Notes for callers
 
