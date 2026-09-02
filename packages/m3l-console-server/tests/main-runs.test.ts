@@ -59,6 +59,7 @@ import type {
   M3LSessionStepRecord,
 } from "../src/store/sessions-repository.js";
 import type { M3LConsoleAuditRepository } from "../src/store/audit-repository.js";
+import type { M3LConsoleTelemetryRepository } from "../src/store/telemetry-repository.js";
 import type { M3LConsoleStoreUnit } from "../src/store/store.js";
 import type { M3LRunRegistry } from "../src/runs/registry.js";
 
@@ -176,6 +177,7 @@ interface FakeConsoleStoreHandle {
   readonly runs: M3LConsoleRunsRepository;
   readonly sessions: M3LConsoleSessionsRepository;
   readonly audit: M3LConsoleAuditRepository;
+  readonly telemetry: M3LConsoleTelemetryRepository;
   transaction<T>(work: (unit: M3LConsoleStoreUnit) => T): T;
 }
 
@@ -227,6 +229,20 @@ const stubAuditRepository: M3LConsoleAuditRepository = {
   count: (): number => 0,
 };
 
+/** Throws when a `telemetry`-repository method is called unexpectedly on a fake store. */
+const unexpectedTelemetryCall = (): never => {
+  throw new Error("unexpected telemetry-repository call on the fake store");
+};
+
+/** A loud-throwing `telemetry` stub, shared by every fake store in this file (added for X8 slice 1's `M3LConsoleStoreUnit.telemetry` field — none of this file's tests exercise it). */
+const stubTelemetryRepository: M3LConsoleTelemetryRepository = {
+  record: unexpectedTelemetryCall,
+  recordAll: unexpectedTelemetryCall,
+  list: unexpectedTelemetryCall,
+  count: unexpectedTelemetryCall,
+  prune: unexpectedTelemetryCall,
+};
+
 /**
  * Builds a {@link FakeConsoleStoreHandle} whose `runs` field is
  * `runsRepository` and whose `sessions` field is `sessionsRepository` — the
@@ -262,6 +278,7 @@ function createFakeStore(
     runs: runsRepository,
     sessions: sessionsRepository,
     audit: stubAuditRepository,
+    telemetry: stubTelemetryRepository,
     transaction: <T>(): T => {
       throw new Error("unexpected transaction() call on the fake store");
     },

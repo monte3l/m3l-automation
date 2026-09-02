@@ -20,6 +20,7 @@ import {
   V7_WIDEN_HUMAN_ACTION_KINDS_STATEMENTS,
   V8_ADD_VIEW_ACTION_KINDS_STATEMENTS,
 } from "./human-actions.js";
+import { CREATE_CONSOLE_TELEMETRY_ROLLUP_TABLE } from "./telemetry.js";
 
 /**
  * One schema migration. Declared entirely as data — `version`, `name`, and
@@ -388,6 +389,12 @@ const CREATE_CONSOLE_SESSION_STEPS_RUN_ID_INDEX = `
  *   audit trail (see {@link CREATE_CONSOLE_HUMAN_ACTIONS_TABLE} for what it
  *   deliberately does not carry), rebuilt by `store/audit-repository.ts` via
  *   truncate-and-reinsert rather than upserted in place.
+ * - **v9** (X8 telemetry store foundation, slice 1) creates
+ *   `console_telemetry_rollup`: a rollup-bucket table (one row per
+ *   granularity × bucket × metric × dimensions) with `WITHOUT ROWID` and
+ *   `''`-sentinel dimensions. See `store/migrations/telemetry.ts`'s own
+ *   `@packageDocumentation` for the six measured findings that explain the
+ *   schema design, including why there is no secondary index.
  *
  * Forward-only, deliberately with no `down`: ADR-0069's `node:sqlite` store
  * only *indexes* authoritative JSONL, so recovering from a bad migration is
@@ -461,5 +468,10 @@ export const CONSOLE_MIGRATIONS: readonly M3LMigration[] = [
     version: 8,
     name: "add_view_action_kinds",
     statements: V8_ADD_VIEW_ACTION_KINDS_STATEMENTS,
+  },
+  {
+    version: 9,
+    name: "create_console_telemetry_rollup",
+    statements: [CREATE_CONSOLE_TELEMETRY_ROLLUP_TABLE],
   },
 ];

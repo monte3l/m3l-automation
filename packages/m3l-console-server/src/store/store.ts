@@ -10,9 +10,9 @@
  * lifecycle plus `all`/`get`/`run`/`script`) AND the typed
  * {@link M3LConsoleStore} surface (`meta`, `transaction()`) built on top of
  * it — {@link M3LConsoleStoreUnit} is the field-per-repository surface
- * (X4's `runs`, X6's `sessions`, X7c's `audit`) that grew without
- * `store/migrations/runner.ts`, `store/executor.ts`, `store/sqlite-driver.ts`,
- * or `main.ts` ever needing to change.
+ * (X4's `runs`, X6's `sessions`, X7c's `audit`, X8's `telemetry`) that grew
+ * without `store/migrations/runner.ts`, `store/executor.ts`,
+ * `store/sqlite-driver.ts`, or `main.ts` ever needing to change.
  *
  * Measured facts this module's shape rests on (see
  * `store/sqlite-driver.ts`'s headline TSDoc for the full table, re-asserted
@@ -53,6 +53,8 @@ import { createConsoleSessionsRepository } from "./sessions-repository.js";
 import type { M3LConsoleSessionsRepository } from "./sessions-repository.js";
 import { createConsoleAuditRepository } from "./audit-repository.js";
 import type { M3LConsoleAuditRepository } from "./audit-repository.js";
+import { createConsoleTelemetryRepository } from "./telemetry-repository.js";
+import type { M3LConsoleTelemetryRepository } from "./telemetry-repository.js";
 import type { M3LStoreQueryExecutor } from "./types.js";
 
 /** The permission mode applied to the console store's parent directory. */
@@ -146,9 +148,10 @@ export interface M3LConsoleStoreHandle
  * The repositories bound to one unit of work: either the top-level store
  * (queries run outside any explicit transaction) or one call to
  * {@link M3LConsoleStore.transaction}. One field per repository — X4 added
- * `runs`, X6 added `sessions`, X7c added `audit` — each wired the same
- * way {@link meta} is here, with `store/migrations/runner.ts`,
- * `store/executor.ts`, `store/sqlite-driver.ts`, and `main.ts` untouched.
+ * `runs`, X6 added `sessions`, X7c added `audit`, X8 added `telemetry` —
+ * each wired the same way {@link meta} is here, with
+ * `store/migrations/runner.ts`, `store/executor.ts`, `store/sqlite-driver.ts`,
+ * and `main.ts` untouched.
  *
  * Exported as of X4 slice 6: a caller writing `store.transaction()` could
  * always get `unit`'s shape inferred from
@@ -181,6 +184,13 @@ export interface M3LConsoleStoreUnit {
    * round-trip the trail (see `boot/audit-index.ts`).
    */
   readonly audit: M3LConsoleAuditRepository;
+  /**
+   * The console store's telemetry rollup repository (X8 slice 1) —
+   * `console_telemetry_rollup`, a rollup-bucket table upserted per
+   * measurement. ADR-0070 scopes this to "SQLite-grade aggregation, not an
+   * APM platform"; see `store/telemetry-repository.ts` for the full picture.
+   */
+  readonly telemetry: M3LConsoleTelemetryRepository;
 }
 
 /**
@@ -221,6 +231,7 @@ function buildConsoleStoreUnit(
     runs: createConsoleRunsRepository(executor),
     sessions: createConsoleSessionsRepository(executor),
     audit: createConsoleAuditRepository(executor),
+    telemetry: createConsoleTelemetryRepository(executor),
   };
 }
 

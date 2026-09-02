@@ -282,3 +282,100 @@ describe("openSqliteDatabase — busy timeout", () => {
     expect(elapsedMs).toBeGreaterThanOrEqual(timeoutMs * 0.6);
   });
 });
+
+// ---------------------------------------------------------------------------
+// X8 slice 1 — v9 migration e2e proof (file-backed)
+// ---------------------------------------------------------------------------
+
+describe("openConsoleStore — v9 migration (console_telemetry_rollup) e2e proof", () => {
+  // This block proves the full lifecycle of the v9 migration against a real
+  // file-backed database: the migration applies on first open, the table is
+  // queryable, a bucket survives a close-and-reopen, and a second open does
+  // NOT throw ERR_CONSOLE_STORE_SCHEMA_DRIFT. The unit tests in
+  // tests/store-migrations-telemetry.test.ts cover the CHECK-constraint
+  // matrix via :memory:; this file proves the file-backed open path.
+  //
+  // NOTE: This test will fail in RED with the wrong `user_version` (8 instead
+  // of 9) until `registry.ts` registers v9 and `store.ts` wires
+  // `store.telemetry`. That is the expected RED signal.
+
+  test("first open reaches user_version 9 and console_schema_migrations holds version 9", () => {
+    const location = join(dir, "v9-migration.sqlite");
+    const store = openConsoleStore({ location });
+    try {
+      const userVersionRow = store.get("PRAGMA user_version");
+      expect(userVersionRow).toEqual({ user_version: 9 });
+
+      const migrationRow = store.get(
+        "SELECT version FROM console_schema_migrations WHERE version = 9",
+      );
+      expect(migrationRow).toMatchObject({ version: 9 });
+
+      expect(
+        store.get(
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'console_telemetry_rollup'",
+        ),
+      ).toMatchObject({ name: "console_telemetry_rollup" });
+    } finally {
+      store.close();
+    }
+  });
+
+  test("a telemetry bucket written before close survives re-open and appears in the table", () => {
+    // E2E proof: write → close → re-open → read back.
+    // Uses raw SQL (not the repository) because store.telemetry is not yet
+    // wired; the write proves the schema is live and the table is persistent.
+    const location = join(dir, "v9-survive-reopen.sqlite");
+
+    const first = openConsoleStore({ location });
+    try {
+      first.run(
+        `INSERT INTO console_telemetry_rollup (
+          granularity, bucket_start_ms, metric,
+          route, script, operation, outcome, posture,
+          sample_count, sum_value, min_value, max_value
+        ) VALUES (
+          'minute', 60000, 'http.request',
+          '/api/v1/test', '', '', '2xx', '',
+          1, 150, 50, 150
+        )`,
+      );
+    } finally {
+      first.close();
+    }
+
+    // Re-open: must not throw ERR_CONSOLE_STORE_SCHEMA_DRIFT
+    const second = openConsoleStore({ location });
+    try {
+      const row = second.get(
+        "SELECT sample_count FROM console_telemetry_rollup WHERE metric = 'http.request'",
+      );
+      expect(row).toMatchObject({ sample_count: 1 });
+    } finally {
+      second.close();
+    }
+  });
+
+  test("re-opening an existing v9 database does not throw ERR_CONSOLE_STORE_SCHEMA_DRIFT", () => {
+    // Proves the migration runner's no-op re-apply path works end-to-end
+    // against a real file. A digest mismatch (e.g., a whitespace change to
+    // the migration SQL between open calls) would surface here.
+    const location = join(dir, "v9-no-drift.sqlite");
+
+    const first = openConsoleStore({ location });
+    first.close();
+
+    let thrown: unknown;
+    const second = openConsoleStore({ location });
+    try {
+      // Any query proves the store is open and operational
+      void second.get("PRAGMA user_version");
+    } catch (error) {
+      thrown = error;
+    } finally {
+      second.close();
+    }
+
+    expect(thrown).toBeUndefined();
+  });
+});
