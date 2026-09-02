@@ -40,6 +40,12 @@ import {
   formatBranch,
   formatWorktreeAndPr,
   formatAgentSegment,
+  SPOKE_WARN_THRESHOLD_SEC,
+  SPOKE_HIGH_THRESHOLD_SEC,
+  MAX_INFLIGHT_AGE_SEC,
+  resolveInflightSpokes,
+  formatElapsed,
+  formatInflightSpokesSegment,
   formatOriginRepo,
   formatFreeMemory,
   buildLine1,
@@ -763,6 +769,348 @@ describe("formatAgentSegment", () => {
   });
 });
 
+describe("SPOKE_WARN_THRESHOLD_SEC", () => {
+  test("is 900 (15 minutes)", () => {
+    expect(SPOKE_WARN_THRESHOLD_SEC).toBe(900);
+  });
+});
+
+describe("SPOKE_HIGH_THRESHOLD_SEC", () => {
+  test("is 1800 (30 minutes)", () => {
+    expect(SPOKE_HIGH_THRESHOLD_SEC).toBe(1800);
+  });
+});
+
+describe("resolveInflightSpokes", () => {
+  const cwd = "/workspace/project";
+  const lifecyclePath = join(cwd, "tmp", "spoke-lifecycle.jsonl");
+
+  test("returns an empty array when the file is missing", () => {
+    const readFile = (): string | null => null;
+
+    expect(resolveInflightSpokes(readFile, cwd)).toEqual([]);
+  });
+
+  test("returns an empty array for an empty file", () => {
+    const readFile = (path: string): string | null =>
+      path === lifecyclePath ? "" : null;
+
+    expect(resolveInflightSpokes(readFile, cwd)).toEqual([]);
+  });
+
+  test("includes a start record with no matching stop", () => {
+    const lines = [
+      JSON.stringify({
+        event: "start",
+        agentId: "spoke-1",
+        agentType: "code-implementer",
+        ts: "2026-09-02T00:00:00.000Z",
+      }),
+    ].join("\n");
+    const readFile = (path: string): string | null =>
+      path === lifecyclePath ? lines : null;
+
+    expect(resolveInflightSpokes(readFile, cwd)).toEqual([
+      {
+        agentId: "spoke-1",
+        agentType: "code-implementer",
+        startTs: "2026-09-02T00:00:00.000Z",
+      },
+    ]);
+  });
+
+  test("excludes a start record that has a matching stop", () => {
+    const lines = [
+      JSON.stringify({
+        event: "start",
+        agentId: "spoke-1",
+        agentType: "code-implementer",
+        ts: "2026-09-02T00:00:00.000Z",
+      }),
+      JSON.stringify({ event: "stop", agentId: "spoke-1" }),
+    ].join("\n");
+    const readFile = (path: string): string | null =>
+      path === lifecyclePath ? lines : null;
+
+    expect(resolveInflightSpokes(readFile, cwd)).toEqual([]);
+  });
+
+  test("skips a record with a non-string agentId, neither included nor crashing", () => {
+    const lines = [
+      JSON.stringify({
+        event: "start",
+        agentId: 123,
+        agentType: "code-implementer",
+        ts: "2026-09-02T00:00:00.000Z",
+      }),
+    ].join("\n");
+    const readFile = (path: string): string | null =>
+      path === lifecyclePath ? lines : null;
+
+    expect(() => resolveInflightSpokes(readFile, cwd)).not.toThrow();
+    expect(resolveInflightSpokes(readFile, cwd)).toEqual([]);
+  });
+
+  test("skips a malformed JSON line without throwing, and still parses subsequent valid lines", () => {
+    const lines = [
+      "{not valid json",
+      JSON.stringify({
+        event: "start",
+        agentId: "spoke-1",
+        agentType: "code-implementer",
+        ts: "2026-09-02T00:00:00.000Z",
+      }),
+    ].join("\n");
+    const readFile = (path: string): string | null =>
+      path === lifecyclePath ? lines : null;
+
+    expect(() => resolveInflightSpokes(readFile, cwd)).not.toThrow();
+    expect(resolveInflightSpokes(readFile, cwd)).toEqual([
+      {
+        agentId: "spoke-1",
+        agentType: "code-implementer",
+        startTs: "2026-09-02T00:00:00.000Z",
+      },
+    ]);
+  });
+
+  test("start-stop-start for the same agentId ends in-flight with the latest start's data", () => {
+    const lines = [
+      JSON.stringify({
+        event: "start",
+        agentId: "spoke-1",
+        agentType: "code-implementer",
+        ts: "2026-09-02T00:00:00.000Z",
+      }),
+      JSON.stringify({ event: "stop", agentId: "spoke-1" }),
+      JSON.stringify({
+        event: "start",
+        agentId: "spoke-1",
+        agentType: "test-author",
+        ts: "2026-09-02T01:00:00.000Z",
+      }),
+    ].join("\n");
+    const readFile = (path: string): string | null =>
+      path === lifecyclePath ? lines : null;
+
+    expect(resolveInflightSpokes(readFile, cwd)).toEqual([
+      {
+        agentId: "spoke-1",
+        agentType: "test-author",
+        startTs: "2026-09-02T01:00:00.000Z",
+      },
+    ]);
+  });
+});
+
+describe("formatElapsed", () => {
+  test.each([
+    [0, "0m"],
+    [59, "0m"],
+    [60, "1m"],
+    [3599, "59m"],
+    [3600, "1h00m"],
+    [3900, "1h05m"],
+  ])("formats %i seconds as %s", (elapsedSec, expected) => {
+    expect(formatElapsed(elapsedSec)).toBe(expected);
+  });
+});
+
+describe("formatInflightSpokesSegment", () => {
+  const now = 1_700_000_000_000;
+
+  test("returns null for an empty array", () => {
+    expect(formatInflightSpokesSegment([], { now })).toBeNull();
+  });
+
+  test("renders green with no warning icon under both thresholds", () => {
+    const spokes = [
+      {
+        agentId: "spoke-1",
+        agentType: "code-implementer",
+        startTs: new Date(now - 5 * 60 * 1000).toISOString(),
+      },
+    ];
+
+    const result = formatInflightSpokesSegment(spokes, { now });
+
+    expect(result).toContain(GREEN);
+    expect(result).not.toContain("⚠");
+  });
+
+  test("renders yellow at or over the warn threshold but under the high threshold", () => {
+    const spokes = [
+      {
+        agentId: "spoke-1",
+        agentType: "code-implementer",
+        startTs: new Date(now - SPOKE_WARN_THRESHOLD_SEC * 1000).toISOString(),
+      },
+    ];
+
+    const result = formatInflightSpokesSegment(spokes, { now });
+
+    expect(result).toContain(YELLOW);
+    expect(result).not.toContain("⚠");
+  });
+
+  test("renders red with the warning icon at or over the high threshold", () => {
+    const spokes = [
+      {
+        agentId: "spoke-1",
+        agentType: "code-implementer",
+        startTs: new Date(now - SPOKE_HIGH_THRESHOLD_SEC * 1000).toISOString(),
+      },
+    ];
+
+    const result = formatInflightSpokesSegment(spokes, { now });
+
+    expect(result).toContain(RED);
+    expect(result).toContain(" ⚠");
+  });
+
+  test("uses the oldest startTs across multiple spokes and pluralizes 'spokes'", () => {
+    const spokes = [
+      {
+        agentId: "spoke-1",
+        agentType: "code-implementer",
+        startTs: new Date(now - 5 * 60 * 1000).toISOString(),
+      },
+      {
+        agentId: "spoke-2",
+        agentType: "test-author",
+        startTs: new Date(now - 40 * 60 * 1000).toISOString(),
+      },
+    ];
+
+    const result = formatInflightSpokesSegment(spokes, { now });
+
+    expect(result).toContain("2 spokes");
+    expect(result).toContain("oldest 40m");
+  });
+
+  test("uses the singular 'spoke' for a single-element array", () => {
+    const spokes = [
+      {
+        agentId: "spoke-1",
+        agentType: "code-implementer",
+        startTs: new Date(now - 5 * 60 * 1000).toISOString(),
+      },
+    ];
+
+    const result = formatInflightSpokesSegment(spokes, { now });
+
+    expect(result).toContain("1 spoke ");
+    expect(result).not.toContain("1 spokes");
+  });
+
+  test("honors env.now for a deterministic elapsed time", () => {
+    const spokes = [
+      {
+        agentId: "spoke-1",
+        agentType: "code-implementer",
+        startTs: "2026-09-02T00:00:00.000Z",
+      },
+    ];
+    const fixedNow = new Date("2026-09-02T00:10:00.000Z").getTime();
+
+    const result = formatInflightSpokesSegment(spokes, { now: fixedNow });
+
+    expect(result).toContain("oldest 10m");
+  });
+
+  test("returns null when the only spoke has an unparseable startTs", () => {
+    const spokes = [
+      {
+        agentId: "spoke-1",
+        agentType: "code-implementer",
+        startTs: "not-a-date",
+      },
+    ];
+
+    expect(formatInflightSpokesSegment(spokes, { now })).toBeNull();
+  });
+
+  describe("eviction of stale start records", () => {
+    test("MAX_INFLIGHT_AGE_SEC is 7200 (2 hours)", () => {
+      expect(MAX_INFLIGHT_AGE_SEC).toBe(7200);
+    });
+
+    test("returns null when the only spoke is older than MAX_INFLIGHT_AGE_SEC", () => {
+      const spokes = [
+        {
+          agentId: "spoke-1",
+          agentType: "code-implementer",
+          startTs: new Date(
+            now - (MAX_INFLIGHT_AGE_SEC + 1) * 1000,
+          ).toISOString(),
+        },
+      ];
+
+      expect(formatInflightSpokesSegment(spokes, { now })).toBeNull();
+    });
+
+    test("returns null when every spoke is older than MAX_INFLIGHT_AGE_SEC", () => {
+      const spokes = [
+        {
+          agentId: "spoke-1",
+          agentType: "code-implementer",
+          startTs: new Date(
+            now - (MAX_INFLIGHT_AGE_SEC + 60) * 1000,
+          ).toISOString(),
+        },
+        {
+          agentId: "spoke-2",
+          agentType: "test-author",
+          startTs: new Date(
+            now - (MAX_INFLIGHT_AGE_SEC + 3600) * 1000,
+          ).toISOString(),
+        },
+      ];
+
+      expect(formatInflightSpokesSegment(spokes, { now })).toBeNull();
+    });
+
+    test("excludes a stale spoke and renders using only the live spoke's data", () => {
+      const spokes = [
+        {
+          agentId: "spoke-stale",
+          agentType: "code-implementer",
+          startTs: new Date(
+            now - (MAX_INFLIGHT_AGE_SEC + 3600) * 1000,
+          ).toISOString(),
+        },
+        {
+          agentId: "spoke-live",
+          agentType: "test-author",
+          startTs: new Date(now - 5 * 60 * 1000).toISOString(),
+        },
+      ];
+
+      const result = formatInflightSpokesSegment(spokes, { now });
+
+      expect(result).toContain("1 spoke ");
+      expect(result).not.toContain("2 spoke");
+      expect(result).toContain("oldest 5m");
+    });
+
+    test("includes a spoke exactly MAX_INFLIGHT_AGE_SEC old (t === cutoffMs, the exclusion test is strict `<`)", () => {
+      const spokes = [
+        {
+          agentId: "spoke-1",
+          agentType: "code-implementer",
+          startTs: new Date(now - MAX_INFLIGHT_AGE_SEC * 1000).toISOString(),
+        },
+      ];
+
+      const result = formatInflightSpokesSegment(spokes, { now });
+
+      expect(result).not.toBeNull();
+      expect(result).toContain("1 spoke ");
+      expect(result).toContain("oldest 2h00m");
+    });
+  });
+});
+
 describe("formatOriginRepo", () => {
   test("renders owner/name in bright cyan", () => {
     const result = formatOriginRepo({
@@ -872,6 +1220,29 @@ describe("buildLine3", () => {
 
   test("returns null when every constituent widget is absent", () => {
     expect(buildLine3({}, {})).toBeNull();
+  });
+
+  test("renders an in-flight spoke segment positioned between the agent and origin repo segments", () => {
+    const now = 1_700_000_000_000;
+    const payload = {
+      agent: { name: "code-implementer" },
+      workspace: { repo: { owner: "monte3l", name: "m3l-automation" } },
+    };
+    const env = {
+      now,
+      spokes: [
+        {
+          agentId: "spoke-1",
+          agentType: "code-implementer",
+          startTs: new Date(now - 5 * 60 * 1000).toISOString(),
+        },
+      ],
+    };
+
+    const result = buildLine3(payload, env);
+
+    expect(result).toContain("spoke");
+    expect(result).toContain(GREEN);
   });
 });
 

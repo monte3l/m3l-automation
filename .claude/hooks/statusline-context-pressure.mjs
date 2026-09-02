@@ -2,10 +2,20 @@
 /**
  * statusLine: renders live context-window pressure, a small widget set
  * (model/effort, session usage, rate-limit countdowns, cache state, branch,
- * worktree/PR, agent, origin repo, free memory) and, once past a high
- * threshold, a ready-to-run `/compact` suggestion — all built from data
- * already in the same payload (docs/research/harness-refresh.md Outstanding
- * drift #10; broadened for ccstatusline parity per issue #879).
+ * worktree/PR, agent, in-flight spoke count, origin repo, free memory) and,
+ * once past a high threshold, a ready-to-run `/compact` suggestion — all
+ * built from data already in the same payload (docs/research/harness-refresh.md
+ * Outstanding drift #10; broadened for ccstatusline parity per issue #879)
+ * plus one local state file for the in-flight-spoke count
+ * (`tmp/spoke-lifecycle.jsonl`, written by `track-inflight-spokes.mjs`).
+ *
+ * The in-flight-spoke segment is this project's answer to a gap an
+ * `/auditing` pass on status reporting found: nothing surfaced intermediate
+ * progress to the user during a review-spoke fan-out that had stalled
+ * 30-60+ min on four recorded occasions. It is deliberately passive — an
+ * elapsed-time readout, not a watchdog or alarm — matching the
+ * Anthropic-guidance research behind it: prefer a push/passive surface over
+ * a polling mechanism.
  *
  * `statusLine` is confirmed as the *only* documented surface exposing live
  * `context_window.used_percentage` — no hook event receives token/context
@@ -24,7 +34,10 @@
  * in the whole harness; a synchronous local read has none of that cost, so a
  * raw file read is fine where a `git` shell-out wasn't. `os.freemem()` /
  * `os.totalmem()` are the same class of exception: both are local syscalls,
- * not network or subprocess calls. Every other field this script needs
+ * not network or subprocess calls. Reading `tmp/spoke-lifecycle.jsonl` is the
+ * same class again — bounded, synchronous, local, and rotated at every
+ * `SessionStart(startup|clear)` so it never grows unbounded across sessions.
+ * Every other field this script needs
  * (`context_window.*`, `pr.number`, `workspace.git_worktree`, `model`,
  * `effort`, `cost`, `rate_limits`, `prompt_cache`, `agent`) already arrives
  * on stdin. This also sidesteps the pinned-`statusLine` resource lesson in
@@ -46,6 +59,7 @@ import os from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import { SPOKE_LIFECYCLE_REL_PATH } from "./track-inflight-spokes.mjs";
 
 export const WARN_THRESHOLD_PERCENT = 70;
 export const HIGH_THRESHOLD_PERCENT = 90;
@@ -475,6 +489,129 @@ export function formatAgentSegment(payload) {
     : null;
 }
 
+/** Elapsed-time threshold, in seconds, past which the in-flight-spoke
+ * segment turns yellow — the point a fan-out is worth a glance. */
+export const SPOKE_WARN_THRESHOLD_SEC = 15 * 60;
+/** Elapsed-time threshold, in seconds, past which it turns red — the
+ * documented athena/s3/subagent-stall-integration 30-60+ min pattern. */
+export const SPOKE_HIGH_THRESHOLD_SEC = 30 * 60;
+/** A `start` record older than this, with no matching `stop`, is treated as
+ * a lost event (the spoke's `SubagentStop` hook never fired — the harness
+ * killed the process, the dispatch was cancelled, or the advisory hook's own
+ * write failed) rather than a still-running spoke, so it doesn't pin the
+ * segment red forever. Two hours is well past the longest recorded stall in
+ * this repo's own incident history (~60 min) with headroom to spare. */
+export const MAX_INFLIGHT_AGE_SEC = 2 * 60 * 60;
+
+/**
+ * @typedef {{ agentId: string, agentType: string, startTs: string }} InflightSpoke
+ */
+
+/**
+ * Reduces `tmp/spoke-lifecycle.jsonl` to the spokes that have a `start`
+ * record with no matching `stop` yet. A record without a string `agentId`
+ * can't be correlated to its counterpart, so it's excluded from both the
+ * start and stop maps rather than guessed at — degrading gracefully (one
+ * untracked spoke) instead of risking a false "still running" entry that
+ * never clears.
+ *
+ * @param {(path: string) => string | null} readFile injected file reader,
+ *   mirroring `resolveBranch`'s pattern — directly unit-testable without
+ *   touching a real filesystem.
+ * @param {string} cwd project root to resolve `tmp/spoke-lifecycle.jsonl`
+ *   against.
+ * @returns {InflightSpoke[]} spokes currently in flight, oldest-first order
+ *   not guaranteed.
+ */
+export function resolveInflightSpokes(readFile, cwd) {
+  const content = readFile(join(cwd, SPOKE_LIFECYCLE_REL_PATH));
+  if (typeof content !== "string") return [];
+
+  /** @type {Map<string, InflightSpoke>} */
+  const started = new Map();
+  for (const line of content.split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed.length === 0) continue;
+    let record;
+    try {
+      record = JSON.parse(trimmed);
+    } catch {
+      continue;
+    }
+    if (typeof record !== "object" || record === null) continue;
+    const { event, agentId, agentType, ts } = record;
+    if (typeof agentId !== "string" || agentId.length === 0) continue;
+    if (event === "start") {
+      if (typeof agentType === "string" && typeof ts === "string") {
+        started.set(agentId, { agentId, agentType, startTs: ts });
+      }
+    } else if (event === "stop") {
+      started.delete(agentId);
+    }
+  }
+  return [...started.values()];
+}
+
+/**
+ * @param {number} elapsedSec seconds elapsed, always non-negative when
+ *   called from `formatInflightSpokesSegment`.
+ * @returns {string} `"0m"`, `"NNm"`, or `"NhMMm"`.
+ */
+export function formatElapsed(elapsedSec) {
+  const clamped = Math.max(0, Math.floor(elapsedSec));
+  const h = Math.floor(clamped / 3600);
+  const m = Math.floor((clamped % 3600) / 60);
+  return h > 0 ? `${h}h${String(m).padStart(2, "0")}m` : `${m}m`;
+}
+
+/**
+ * A spoke older than `MAX_INFLIGHT_AGE_SEC` with no matching `stop` is
+ * treated as a lost event and excluded here, not in `resolveInflightSpokes`
+ * — `resolveInflightSpokes` stays a pure, timeless reducer over what the
+ * file says (and is tested against fixed timestamps accordingly); "is this
+ * plausibly still running" is a judgment that needs `now`, which only this
+ * function's `env` already carries. Otherwise a single lost `SubagentStop`
+ * event (the harness killed the process, the dispatch was cancelled, or
+ * `track-inflight-spokes.mjs`'s own advisory write failed) would pin the
+ * segment red for the rest of the session instead of self-healing.
+ *
+ * @param {InflightSpoke[]} spokes
+ * @param {{ now?: unknown } | undefined} env `now` overrides `Date.now()`
+ *   for deterministic tests, mirroring `formatResetCountdown`'s convention.
+ * @returns {string | null} colorized `N spoke(s) · oldest NNm` segment, or
+ *   null when nothing is genuinely in flight — the "prove it quiet" case:
+ *   this segment vanishes entirely on an idle session (or one with only
+ *   stale/lost records) rather than rendering an empty, zeroed, or stuck
+ *   widget.
+ */
+export function formatInflightSpokesSegment(spokes, env) {
+  if (!Array.isArray(spokes) || spokes.length === 0) return null;
+
+  const nowMs = typeof env?.now === "number" ? env.now : Date.now();
+  const cutoffMs = nowMs - MAX_INFLIGHT_AGE_SEC * 1000;
+
+  let oldestMs = Number.POSITIVE_INFINITY;
+  let liveCount = 0;
+  for (const spoke of spokes) {
+    const t = Date.parse(spoke.startTs);
+    if (Number.isNaN(t) || t < cutoffMs) continue;
+    liveCount += 1;
+    if (t < oldestMs) oldestMs = t;
+  }
+  if (liveCount === 0 || !Number.isFinite(oldestMs)) return null;
+
+  const elapsedSec = Math.max(0, (nowMs - oldestMs) / 1000);
+  const color =
+    elapsedSec >= SPOKE_HIGH_THRESHOLD_SEC
+      ? RED
+      : elapsedSec >= SPOKE_WARN_THRESHOLD_SEC
+        ? YELLOW
+        : GREEN;
+  const icon = elapsedSec >= SPOKE_HIGH_THRESHOLD_SEC ? " ⚠" : "";
+  const noun = liveCount === 1 ? "spoke" : "spokes";
+  return `${color}${liveCount} ${noun} · oldest ${formatElapsed(elapsedSec)}${icon}${RESET}`;
+}
+
 /**
  * @param {unknown} payload
  * @returns {string | null} colorized `owner/name` origin repo segment, or
@@ -553,15 +690,16 @@ export function buildLine2(payload, env) {
 
 /**
  * @param {unknown} payload
- * @param {{ branch?: unknown; freemem?: unknown; totalmem?: unknown } | undefined} env
- * @returns {string | null} line 3: branch, worktree/PR, agent, origin repo,
- *   free memory.
+ * @param {{ branch?: unknown; freemem?: unknown; totalmem?: unknown; now?: unknown; spokes?: InflightSpoke[] } | undefined} env
+ * @returns {string | null} line 3: branch, worktree/PR, agent, in-flight
+ *   spokes, origin repo, free memory.
  */
 export function buildLine3(payload, env) {
   return joinSegments([
     formatBranch(env?.branch ?? null),
     formatWorktreeAndPr(payload),
     formatAgentSegment(payload),
+    formatInflightSpokesSegment(env?.spokes ?? [], env),
     formatOriginRepo(payload),
     formatFreeMemory(env),
   ]);
@@ -582,9 +720,11 @@ export function buildLine4(payload) {
  *   freemem?: unknown;
  *   totalmem?: unknown;
  *   branch?: unknown;
+ *   spokes?: InflightSpoke[];
  * }} [env] local-only, non-payload context: current time (ms), free/total
- *   memory (bytes), and the resolved git branch name. Defaults to `{}` so
- *   existing single-argument call sites keep working.
+ *   memory (bytes), the resolved git branch name, and the currently
+ *   in-flight spokes. Defaults to `{}` so existing single-argument call
+ *   sites keep working.
  * @returns {string} the full, possibly multi-line, status-line output.
  */
 export function renderStatusLine(payload, env = {}) {
@@ -622,11 +762,13 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       typeof payload?.workspace?.current_dir === "string"
         ? payload.workspace.current_dir
         : process.cwd();
+    const projectRoot = process.env.CLAUDE_PROJECT_DIR ?? process.cwd();
     const env = {
       now: Date.now(),
       freemem: os.freemem(),
       totalmem: os.totalmem(),
       branch: resolveBranch(safeReadFile, startDir),
+      spokes: resolveInflightSpokes(safeReadFile, projectRoot),
     };
     output = renderStatusLine(payload, env);
   } catch {
