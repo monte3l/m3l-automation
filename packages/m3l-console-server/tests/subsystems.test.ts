@@ -28,8 +28,19 @@
  */
 import * as childProcess from "node:child_process";
 import * as fs from "node:fs";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
-import { afterEach, describe, expect, expectTypeOf, test, vi } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  expectTypeOf,
+  test,
+  vi,
+} from "vitest";
 
 import { Core } from "@m3l-automation/m3l-common";
 
@@ -763,6 +774,98 @@ describe("buildConsoleSubsystems — session artifact root resolution", () => {
     expect(() =>
       subsystems.sessions?.service.createSession("alice", "corr-1"),
     ).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Runs output root resolution + the report seam (X7d)
+// ---------------------------------------------------------------------------
+
+describe("buildConsoleSubsystems — the runs output root reaches BOTH sides of the report seam", () => {
+  /** One real temporary runs-output root per test in this block. */
+  let outputRoot: string;
+
+  beforeEach(async () => {
+    outputRoot = await mkdtemp(join(tmpdir(), "m3l-subsystems-runs-"));
+  });
+
+  afterEach(async () => {
+    await rm(outputRoot, { recursive: true, force: true });
+  });
+
+  // THE RECONCILIATION. Both halves of X7d's addressing seam are observed
+  // INDEPENDENTLY here: the write path is read off the real `spawn` call's
+  // env (what the child would actually be told), and the read path comes
+  // from the reader resolving the run id on its own. A test that computed
+  // both from `resolveRunsOutputRoot` would pass for any wiring, including
+  // one where the orchestrator and the reader were handed different roots —
+  // which is exactly the silent, permanent 404 this single-resolution
+  // wiring exists to prevent.
+  test("a launched run's M3L_OUTPUT_DIR is where the reader then finds its report", async () => {
+    mockScriptResolvable();
+    const { childHandle } = createHangingSpawnedProcess();
+    mockSpawnReturns(childHandle);
+
+    const subsystems = buildConsoleSubsystems(
+      {
+        env: buildEnv({ M3L_CONSOLE_RUNS_OUTPUT_ROOT: outputRoot }),
+        runsConfig: MINIMAL_RUNS_CONFIG,
+        runs: createFakeRunRegistry(),
+      },
+      new Core.M3LLogger([]),
+    );
+    const runs = subsystems.runs;
+    if (runs === undefined) throw new Error("the run subsystem did not build");
+
+    const handle = runs.orchestrator.launch({
+      body: {
+        scriptName: "sqs-etl",
+        confirmed: true,
+        dryRun: false,
+        parameters: {},
+      },
+      operator: "ada",
+      correlationId: "corr-report",
+    });
+
+    // What the CHILD was told, straight off the spawn call.
+    const spawnCall = vi.mocked(childProcess.spawn).mock.calls[0];
+    if (spawnCall === undefined) throw new Error("spawn was never called");
+    const spawnEnv = (spawnCall[2] as { env: NodeJS.ProcessEnv }).env;
+    const childOutputDir = spawnEnv["M3L_OUTPUT_DIR"];
+    expect(childOutputDir).toBe(join(outputRoot, handle.id));
+
+    // Write where a real child's `M3LRunReporter` would, under the directory
+    // the child was actually given — not one this test recomputed.
+    const reportDir = join(childOutputDir ?? "", "2026-09-02T10-14-02.000Z");
+    await mkdir(reportDir, { recursive: true });
+    await writeFile(
+      join(reportDir, "run-report.json"),
+      JSON.stringify({ outcome: "success" }),
+      "utf8",
+    );
+
+    expect(await runs.reportReader.read(handle.id)).toEqual({
+      outcome: "success",
+    });
+
+    await runs.drain();
+  });
+
+  test("an absent M3L_CONSOLE_RUNS_OUTPUT_ROOT falls back to the data-dir-relative default without throwing", () => {
+    const subsystems = buildConsoleSubsystems(
+      {
+        env: buildEnv(),
+        runsConfig: MINIMAL_RUNS_CONFIG,
+        runs: createFakeRunRegistry(),
+      },
+      new Core.M3LLogger([]),
+    );
+
+    expect(subsystems.runs).not.toBeUndefined();
+    // The default root need not exist: a run that never spawned has no
+    // report, which is the reader's ordinary `undefined`, not a failure.
+    expect(subsystems.runs?.reportReader).toBeDefined();
   });
 });
 

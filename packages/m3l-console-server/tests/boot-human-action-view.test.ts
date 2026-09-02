@@ -117,10 +117,10 @@ function streamRoute(emitCount: number): M3LRoute {
 }
 
 /** A route whose handler 404s internally, exactly as `buildStreamHandler` does. */
-function notFoundRoute(): M3LRoute {
+function notFoundRoute(path = "/api/v1/runs/:id/stream"): M3LRoute {
   return {
     method: "GET",
-    path: "/api/v1/runs/:id/stream",
+    path,
     auth: "required",
     handler: (): M3LConsoleResult => {
       throw new M3LConsoleError(
@@ -250,5 +250,85 @@ describe("display-vs-persist: the refusal lands before any byte does", () => {
     expect(thrown).toBe(failure);
     // The whole point: the transport never got a chance to write.
     expect(openSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("view.run.report (X7d)", () => {
+  /** A `GET …/:id/report` context for run `id`. */
+  function reportContext(id: string): M3LRequestContext {
+    const base = createRequestContext({
+      method: "GET",
+      url: `http://127.0.0.1/api/v1/runs/${id}/report`,
+      headers: { "x-correlation-id": "corr-report" },
+      signal: new AbortController().signal,
+    });
+    return withOperator(withParams(base, { id }), {
+      name: "ada",
+      email: undefined,
+    });
+  }
+
+  /** The audited report route, returning `body` as its buffered response. */
+  function reportRoute(body: unknown): M3LRoute {
+    return {
+      method: "GET",
+      path: "/api/v1/runs/:id/report",
+      auth: "required",
+      handler: (): M3LConsoleResult => ({
+        status: 200,
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      }),
+    };
+  }
+
+  test("records one view.run.report entry targeting the run", async () => {
+    const port = createFakePort();
+    const decorated = decorate(reportRoute({ outcome: "success" }), port);
+
+    await decorated.handler(reportContext("run-9"));
+
+    expect(port.records).toHaveLength(1);
+    expect(port.records[0]?.action).toBe("view.run.report");
+    expect(port.records[0]?.target).toEqual({ kind: "run", id: "run-9" });
+    expect(port.records[0]?.outcome).toBe("served");
+  });
+
+  // INVARIANT: ADR-0070's display-vs-persist split. A run report can carry a
+  // script's own diagnostic output; copying it into the trail would turn an
+  // access log into a second unbounded, unredacted copy of the data. The
+  // entry carries the REFERENCE (the run id) and nothing else.
+  // Mutation-tested: adding the body to the projection's `detail` fails here.
+  test("records the reference, never the report's contents", async () => {
+    const port = createFakePort();
+    const secret = "AKIAIOSFODNN7EXAMPLE";
+    const decorated = decorate(
+      reportRoute({ outcome: "failure", failureMessage: secret }),
+      port,
+    );
+
+    await decorated.handler(reportContext("run-10"));
+
+    expect(JSON.stringify(port.records[0])).not.toContain(secret);
+  });
+
+  // INVARIANT: `phase: "after"`, for the same reason `view.run.stream`
+  // carries it — the handler does its OWN 404 checks (unknown run id, and a
+  // known run with nothing written yet), so recording first would assert the
+  // operator saw a report that was never served. Mutation-tested: flipping
+  // the spec to "before" makes this fail with a record present.
+  test("records nothing when the handler 404s", async () => {
+    const port = createFakePort();
+    const decorated = decorate(notFoundRoute("/api/v1/runs/:id/report"), port);
+
+    let thrown: unknown;
+    try {
+      await decorated.handler(reportContext("run-11"));
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect(port.records).toHaveLength(0);
   });
 });

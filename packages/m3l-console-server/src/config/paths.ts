@@ -42,6 +42,18 @@ const AUDIT_ROOT_KEY = "m3l.console.audit.root";
  */
 const DEFAULT_AUDIT_ROOT_RELATIVE_SEGMENTS = ["console", "audit"] as const;
 
+/** Dotted config key named in every runs-output-root rejection message. */
+const RUNS_OUTPUT_ROOT_KEY = "m3l.console.runs.output.root";
+
+/**
+ * The path segments appended to the data dir for the default runs output root
+ * (X7d, ADR-0070). A SIBLING of the artifact and audit roots, for the same
+ * reason each of those is a sibling of the others: a spawned script owns
+ * everything beneath its own per-run directory, and neither an artifact store
+ * nor an audit trail may live inside a tree another subsystem writes into.
+ */
+const DEFAULT_RUNS_OUTPUT_ROOT_RELATIVE_SEGMENTS = ["console", "runs"] as const;
+
 /**
  * The literal SQLite in-memory sentinel, rejected as a `configuredPath`.
  * In-memory storage is available only programmatically, via
@@ -377,6 +389,83 @@ export function resolveAuditStreamRoot(
   rejectUnsafeDirectoryRootPath(configuredPath, AUDIT_ROOT_KEY);
   return path.resolve(
     runResolveDataDir(resolveDataDir, AUDIT_ROOT_KEY),
+    configuredPath,
+  );
+}
+
+/**
+ * Constructor options for {@link resolveRunsOutputRoot}.
+ *
+ * @example
+ * ```ts
+ * const options: ResolveRunsOutputRootOptions = {
+ *   configuredPath: "custom/runs",
+ * };
+ * ```
+ */
+export interface ResolveRunsOutputRootOptions {
+  /** The operator-supplied path, if any (typically from `M3L_CONSOLE_RUNS_OUTPUT_ROOT`). */
+  readonly configuredPath?: string | undefined;
+  /** Resolves the base data directory; defaults to `Core.M3LPaths().getDataDir()`. */
+  readonly resolveDataDir?: () => string;
+}
+
+/**
+ * Resolves the console server's runs output root (X7d, ADR-0070) — the
+ * directory each console-launched run gets its own `<runId>/` subdirectory
+ * under, handed to the spawned child as `M3L_OUTPUT_DIR`.
+ *
+ * The same shape as {@link resolveSessionArtifactRoot} and
+ * {@link resolveAuditStreamRoot} over a different default, down to sharing
+ * their unsafe-path guard: performs no filesystem I/O whatsoever. Creating
+ * the per-run directory is the spawned script's own job — `M3LRunReporter`
+ * and stage-9 archival both `mkdir` beneath the output dir they are given.
+ *
+ * **This root is what makes a run report addressable at all.** Without a
+ * per-run directory every console-launched run writes into one shared
+ * `data/output`, where `<runDirectoryName(startedAt)>/run-report.json` cannot
+ * be attributed back to a run id — the console records neither the child's
+ * own `startedAt` nor its output dir. Pinning the dir per run is the seam
+ * `GET /api/v1/runs/:id/report` reads through.
+ *
+ * When `options.configuredPath` is absent, the result defaults to
+ * `<dataDir>/console/runs`. A relative `configuredPath` resolves against the
+ * data directory; an absolute one passes through {@link path.resolve}
+ * unchanged.
+ *
+ * A `configuredPath` that is blank/whitespace-only or `file:`-prefixed is
+ * rejected — see {@link rejectUnsafeDirectoryRootPath}.
+ *
+ * @param options - See {@link ResolveRunsOutputRootOptions}.
+ * @returns The resolved, absolute runs output root directory.
+ * @throws {@link M3LConsoleError} `ERR_CONSOLE_CONFIG_INVALID` — for a
+ * rejected `configuredPath`, or when `resolveDataDir` throws.
+ *
+ * @example
+ * ```ts
+ * import { resolveRunsOutputRoot } from "./config/paths.js";
+ *
+ * const root = resolveRunsOutputRoot({
+ *   configuredPath: process.env["M3L_CONSOLE_RUNS_OUTPUT_ROOT"],
+ * });
+ * ```
+ */
+export function resolveRunsOutputRoot(
+  options: ResolveRunsOutputRootOptions = {},
+): string {
+  const resolveDataDir = options.resolveDataDir ?? defaultResolveDataDir;
+  const configuredPath = options.configuredPath;
+
+  if (configuredPath === undefined) {
+    return path.join(
+      runResolveDataDir(resolveDataDir, RUNS_OUTPUT_ROOT_KEY),
+      ...DEFAULT_RUNS_OUTPUT_ROOT_RELATIVE_SEGMENTS,
+    );
+  }
+
+  rejectUnsafeDirectoryRootPath(configuredPath, RUNS_OUTPUT_ROOT_KEY);
+  return path.resolve(
+    runResolveDataDir(resolveDataDir, RUNS_OUTPUT_ROOT_KEY),
     configuredPath,
   );
 }

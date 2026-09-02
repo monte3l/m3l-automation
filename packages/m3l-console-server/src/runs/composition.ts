@@ -41,6 +41,8 @@ import type {
   M3LRunOrchestratorConfig,
 } from "./orchestrator.js";
 import { createConfirmationPolicy } from "./policy.js";
+import { createRunReportReader } from "./report.js";
+import type { M3LRunReportReader } from "./report.js";
 import type { M3LRunRegistry } from "./registry.js";
 import { createStreamRunEventSink } from "./stream-events.js";
 
@@ -95,6 +97,19 @@ export interface M3LRunSubsystemOptions {
    * allowance). Optional; defaults to no additional sinks.
    */
   readonly extraEventSinks?: readonly M3LRunEventSink[];
+  /**
+   * The directory every run's own output tree is created under (X7d,
+   * ADR-0070) — forwarded verbatim to the orchestrator, which hands each run
+   * `<runsOutputRoot>/<runId>`, and used to build the {@link reportReader}
+   * that serves `GET /api/v1/runs/:id/report`. Resolved by `subsystems.ts`
+   * from `M3L_CONSOLE_RUNS_OUTPUT_ROOT`, exactly as the sibling session
+   * artifact root is.
+   *
+   * Both consumers take it from THIS one field rather than resolving it
+   * twice: a writer and a reader that disagree about where reports live is a
+   * silent, permanent 404 for every run.
+   */
+  readonly runsOutputRoot: string;
 }
 
 /**
@@ -125,6 +140,12 @@ export interface M3LRunSubsystem {
   readonly orchestrator: M3LRunOrchestrator;
   /** The script catalog serving `GET /api/v1/scripts*`, built from `config.scriptsDir`. */
   readonly catalog: M3LScriptCatalog;
+  /**
+   * The run-report reader serving `GET /api/v1/runs/:id/report`, built from
+   * the same `runsOutputRoot` the orchestrator pins each child's
+   * `M3L_OUTPUT_DIR` to.
+   */
+  readonly reportReader: M3LRunReportReader;
   /**
    * The run-event stream hub this subsystem owns: created with
    * `bufferSize: config.streamRetention` and wired as one member of the
@@ -235,6 +256,7 @@ export function createRunSubsystem(
   });
   const inProcessExecutor = createInProcessExecutor();
   const catalog = createScriptCatalog({ scriptsRoot: config.scriptsDir });
+  const reportReader = createRunReportReader({ root: options.runsOutputRoot });
 
   const orchestrator = createRunOrchestrator({
     config,
@@ -246,12 +268,14 @@ export function createRunSubsystem(
     spawnExecutor,
     inProcessExecutor,
     logger,
+    runsOutputRoot: options.runsOutputRoot,
   });
 
   return {
     orchestrator,
     eventHub,
     catalog,
+    reportReader,
     async drain(): Promise<void> {
       // Order is deliberate, not arbitrary, WHEN THIS METHOD RUNS ON ITS OWN
       // (e.g. a direct `drain()` call with no shutdown sequence in front of

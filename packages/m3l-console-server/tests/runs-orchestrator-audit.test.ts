@@ -44,6 +44,14 @@ import type {
   M3LRunRecord,
 } from "../src/store/runs-repository.js";
 
+/**
+ * The runs output root every orchestrator fixture is built with — the
+ * directory `<root>/<runId>` is derived from and handed to the executor as
+ * `outputDir`. Never touched on disk here: these suites drive fake
+ * executors, so the value only has to be a stable, recognisable path.
+ */
+const RUNS_OUTPUT_ROOT = "/runs-output";
+
 vi.mock("node:fs", async () => {
   const actual = await vi.importActual<typeof fs>("node:fs");
   return { ...actual };
@@ -400,6 +408,7 @@ describe("createRunOrchestrator — launch: policy denial is audited BEFORE it t
       spawnExecutor,
       inProcessExecutor,
       logger,
+      runsOutputRoot: RUNS_OUTPUT_ROOT,
     });
 
     let thrown: unknown;
@@ -454,6 +463,7 @@ describe("createRunOrchestrator — launch: governor rejection is audited BEFORE
       spawnExecutor,
       inProcessExecutor,
       logger,
+      runsOutputRoot: RUNS_OUTPUT_ROOT,
     });
 
     let thrown: unknown;
@@ -505,6 +515,7 @@ describe("createRunOrchestrator — reconcileOnBoot", () => {
         spawnExecutor,
         inProcessExecutor,
         logger,
+        runsOutputRoot: RUNS_OUTPUT_ROOT,
       },
       { nowMs: () => 5_000 },
     );
@@ -565,6 +576,7 @@ describe("createRunOrchestrator — reconcileOnBoot", () => {
         spawnExecutor,
         inProcessExecutor,
         logger,
+        runsOutputRoot: RUNS_OUTPUT_ROOT,
       },
       { nowMs: () => 5_000 },
     );

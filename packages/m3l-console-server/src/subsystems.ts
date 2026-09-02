@@ -36,7 +36,10 @@ import type { M3LConsoleRunsConfig } from "./config/runs.js";
 import { tryLoadRunsConfig } from "./config/runs.js";
 import type { M3LConsoleSessionsConfig } from "./config/sessions.js";
 import { loadSessionsConfig } from "./config/sessions.js";
-import { resolveSessionArtifactRoot } from "./config/paths.js";
+import {
+  resolveRunsOutputRoot,
+  resolveSessionArtifactRoot,
+} from "./config/paths.js";
 import { createRunSubsystem } from "./runs/composition.js";
 import type { M3LRunSubsystem } from "./runs/composition.js";
 import type { M3LRunEventSink } from "./runs/events.js";
@@ -51,6 +54,9 @@ const RUNS_SCRIPTS_DIR_ENV = "M3L_CONSOLE_RUNS_SCRIPTS_DIR";
 
 /** The env var naming the X6 session artifact storage root; see `config/paths.ts`'s `resolveSessionArtifactRoot`. */
 const SESSIONS_ARTIFACT_ROOT_ENV = "M3L_CONSOLE_SESSIONS_ARTIFACT_ROOT";
+
+/** The env var naming the X7d runs output root; see `config/paths.ts`'s `resolveRunsOutputRoot`. */
+const RUNS_OUTPUT_ROOT_ENV = "M3L_CONSOLE_RUNS_OUTPUT_ROOT";
 
 /**
  * Constructor options for {@link buildConsoleSubsystems}, mirroring the
@@ -107,6 +113,16 @@ export interface M3LConsoleSubsystems {
  *
  * Relocated verbatim from `main.ts` (X6 slice 4, Part B round 3) plus the new
  * `extraEventSinks` parameter.
+ *
+ * X7d additionally resolves the runs output root from
+ * `M3L_CONSOLE_RUNS_OUTPUT_ROOT` off the same env map, mirroring
+ * {@link buildSessionSubsystem}'s own artifact-root resolution. It is
+ * resolved ONCE here and passed down, so the orchestrator (which pins each
+ * child's `M3L_OUTPUT_DIR` beneath it) and the report reader (which looks
+ * for the report there) can never disagree about where a run's output lives
+ * — two independent resolutions would agree today and diverge silently the
+ * moment either side's default changed, and the failure mode is a permanent
+ * 404 on every run report.
  */
 function buildRunSubsystem(
   options: M3LConsoleSubsystemsOptions,
@@ -114,8 +130,9 @@ function buildRunSubsystem(
   extraEventSinks: readonly M3LRunEventSink[],
 ): M3LRunSubsystem | undefined {
   if (options.runs === undefined) return undefined;
+  const env = options.env ?? process.env;
   const config: M3LConsoleRunsConfig | undefined =
-    options.runsConfig ?? tryLoadRunsConfig(options.env ?? process.env);
+    options.runsConfig ?? tryLoadRunsConfig(env);
   if (config === undefined) {
     logger.warning("run orchestration disabled: scripts directory unset", {
       variable: RUNS_SCRIPTS_DIR_ENV,
@@ -127,6 +144,9 @@ function buildRunSubsystem(
     logger,
     registry: options.runs,
     extraEventSinks,
+    runsOutputRoot: resolveRunsOutputRoot({
+      configuredPath: env[RUNS_OUTPUT_ROOT_ENV],
+    }),
   });
 }
 

@@ -43,6 +43,14 @@ import type {
   M3LRunRecord,
 } from "../src/store/runs-repository.js";
 
+/**
+ * The runs output root every orchestrator fixture is built with — the
+ * directory `<root>/<runId>` is derived from and handed to the executor as
+ * `outputDir`. Never touched on disk here: these suites drive fake
+ * executors, so the value only has to be a stable, recognisable path.
+ */
+const RUNS_OUTPUT_ROOT = "/runs-output";
+
 vi.mock("node:fs", async () => {
   const actual = await vi.importActual<typeof fs>("node:fs");
   return { ...actual };
@@ -434,6 +442,7 @@ describe("createRunOrchestrator — queue pumping: skip-on-busy", () => {
         spawnExecutor,
         inProcessExecutor,
         logger,
+        runsOutputRoot: RUNS_OUTPUT_ROOT,
       },
       { newId: createIdSequence("run"), nowMs: createClock() },
     );
@@ -501,6 +510,7 @@ describe("createRunOrchestrator — queue pumping: skip-on-busy", () => {
         spawnExecutor,
         inProcessExecutor,
         logger,
+        runsOutputRoot: RUNS_OUTPUT_ROOT,
       },
       { newId: createIdSequence("run"), nowMs: createClock() },
     );
@@ -553,6 +563,7 @@ describe("createRunOrchestrator — queue timeout", () => {
         spawnExecutor,
         inProcessExecutor,
         logger,
+        runsOutputRoot: RUNS_OUTPUT_ROOT,
       },
       { newId: () => "run-1", nowMs: () => 1_000, timerImpl },
     );
@@ -615,6 +626,7 @@ describe("createRunOrchestrator — queue timeout", () => {
         spawnExecutor,
         inProcessExecutor,
         logger,
+        runsOutputRoot: RUNS_OUTPUT_ROOT,
       },
       { newId: () => "run-1", nowMs: () => 1_000, timerImpl },
     );
@@ -650,6 +662,7 @@ describe("createRunOrchestrator — queue timeout", () => {
         spawnExecutor,
         inProcessExecutor,
         logger,
+        runsOutputRoot: RUNS_OUTPUT_ROOT,
       },
       { newId: () => "run-1", nowMs: () => 1_000, timerImpl },
     );
@@ -686,6 +699,7 @@ describe("createRunOrchestrator — queue timeout", () => {
         spawnExecutor,
         inProcessExecutor,
         logger,
+        runsOutputRoot: RUNS_OUTPUT_ROOT,
       },
       { newId: createIdSequence("run"), nowMs: createClock(), timerImpl },
     );

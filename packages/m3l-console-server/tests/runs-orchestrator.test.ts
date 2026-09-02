@@ -57,6 +57,14 @@ import type {
   M3LRunRecord,
 } from "../src/store/runs-repository.js";
 
+/**
+ * The runs output root every orchestrator fixture is built with — the
+ * directory `<root>/<runId>` is derived from and handed to the executor as
+ * `outputDir`. Never touched on disk here: these suites drive fake
+ * executors, so the value only has to be a stable, recognisable path.
+ */
+const RUNS_OUTPUT_ROOT = "/runs-output";
+
 vi.mock("node:fs", async () => {
   const actual = await vi.importActual<typeof fs>("node:fs");
   return { ...actual };
@@ -456,6 +464,7 @@ describe("createRunOrchestrator — launch: resolveScript failures propagate unc
       spawnExecutor,
       inProcessExecutor,
       logger,
+      runsOutputRoot: RUNS_OUTPUT_ROOT,
     });
 
     let thrown: unknown;
@@ -499,6 +508,7 @@ describe("createRunOrchestrator — launch: resolveScript failures propagate unc
       spawnExecutor,
       inProcessExecutor,
       logger,
+      runsOutputRoot: RUNS_OUTPUT_ROOT,
     });
 
     let thrown: unknown;
@@ -566,6 +576,7 @@ describe("createRunOrchestrator — launch: unrecognised governor decision", () 
       spawnExecutor,
       inProcessExecutor,
       logger,
+      runsOutputRoot: RUNS_OUTPUT_ROOT,
     });
 
     let thrown: unknown;
@@ -611,6 +622,7 @@ describe("createRunOrchestrator — launch: queue path", () => {
         spawnExecutor,
         inProcessExecutor,
         logger,
+        runsOutputRoot: RUNS_OUTPUT_ROOT,
       },
       { newId: () => "run-1", nowMs: () => 1_000 },
     );
@@ -661,6 +673,7 @@ describe("createRunOrchestrator — launch: accept path starts the run immediate
         spawnExecutor,
         inProcessExecutor,
         logger,
+        runsOutputRoot: RUNS_OUTPUT_ROOT,
       },
       { newId: () => "run-1", nowMs: () => 1_000 },
     );
@@ -713,6 +726,7 @@ describe("createRunOrchestrator — launch: accept path starts the run immediate
         spawnExecutor,
         inProcessExecutor,
         logger,
+        runsOutputRoot: RUNS_OUTPUT_ROOT,
       },
       { newId: () => "run-1", nowMs: () => 1_000 },
     );
@@ -759,6 +773,7 @@ describe("createRunOrchestrator — launch: insertQueued failure undoes the gove
         spawnExecutor,
         inProcessExecutor,
         logger,
+        runsOutputRoot: RUNS_OUTPUT_ROOT,
       },
       { newId: () => "run-1", nowMs: () => 1_000 },
     );
@@ -814,6 +829,7 @@ describe("createRunOrchestrator — launch: insertQueued failure undoes the gove
         spawnExecutor,
         inProcessExecutor,
         logger,
+        runsOutputRoot: RUNS_OUTPUT_ROOT,
       },
       { newId: () => "run-1", nowMs: () => 1_000 },
     );
@@ -868,6 +884,7 @@ describe("createRunOrchestrator — starting a run: claimForStart losing the rac
         spawnExecutor,
         inProcessExecutor,
         logger,
+        runsOutputRoot: RUNS_OUTPUT_ROOT,
       },
       { newId: () => "run-1", nowMs: () => 1_000 },
     );
@@ -921,6 +938,7 @@ describe("createRunOrchestrator — executor fulfilment is mapped through mapSpa
           spawnExecutor,
           inProcessExecutor,
           logger,
+          runsOutputRoot: RUNS_OUTPUT_ROOT,
         },
         { newId: () => "run-1", nowMs: () => 1_000 },
       );
@@ -973,6 +991,7 @@ describe("createRunOrchestrator — executor rejection is recorded as failure, n
         spawnExecutor,
         inProcessExecutor,
         logger,
+        runsOutputRoot: RUNS_OUTPUT_ROOT,
       },
       { newId: () => "run-1", nowMs: () => 1_000 },
     );
@@ -1016,6 +1035,7 @@ describe("createRunOrchestrator — run.line fan-out", () => {
         spawnExecutor,
         inProcessExecutor,
         logger,
+        runsOutputRoot: RUNS_OUTPUT_ROOT,
       },
       { newId: () => "run-1", nowMs: () => 1_000 },
     );
@@ -1061,6 +1081,7 @@ describe("createRunOrchestrator — cancel", () => {
         spawnExecutor,
         inProcessExecutor,
         logger,
+        runsOutputRoot: RUNS_OUTPUT_ROOT,
       },
       { newId: () => "run-1", nowMs: () => 1_000 },
     );
@@ -1108,6 +1129,7 @@ describe("createRunOrchestrator — cancel", () => {
       spawnExecutor,
       inProcessExecutor,
       logger,
+      runsOutputRoot: RUNS_OUTPUT_ROOT,
     });
 
     const cancelled = orchestrator.cancel("no-such-run");
@@ -1146,6 +1168,7 @@ describe("createRunOrchestrator — cancel", () => {
         spawnExecutor,
         inProcessExecutor,
         logger,
+        runsOutputRoot: RUNS_OUTPUT_ROOT,
       },
       { newId: () => "run-1", nowMs: () => 1_000 },
     );
@@ -1181,6 +1204,7 @@ describe("createRunOrchestrator — activeCount", () => {
         spawnExecutor,
         inProcessExecutor,
         logger,
+        runsOutputRoot: RUNS_OUTPUT_ROOT,
       },
       { newId: () => "run-1", nowMs: () => 1_000 },
     );
@@ -1223,6 +1247,7 @@ describe("createRunOrchestrator — drain", () => {
         spawnExecutor,
         inProcessExecutor,
         logger,
+        runsOutputRoot: RUNS_OUTPUT_ROOT,
       },
       { newId: () => "run-1", nowMs: () => 1_000 },
     );
@@ -1276,6 +1301,7 @@ describe("createRunOrchestrator — drain", () => {
       spawnExecutor,
       inProcessExecutor,
       logger,
+      runsOutputRoot: RUNS_OUTPUT_ROOT,
     });
 
     await expect(orchestrator.drain()).resolves.toBeUndefined();
@@ -1311,6 +1337,7 @@ describe("createRunOrchestrator — drain", () => {
         spawnExecutor,
         inProcessExecutor,
         logger,
+        runsOutputRoot: RUNS_OUTPUT_ROOT,
       },
       { newId: createIdSequence("run") },
     );
@@ -1375,6 +1402,7 @@ describe("createRunOrchestrator — drain", () => {
         spawnExecutor,
         inProcessExecutor,
         logger,
+        runsOutputRoot: RUNS_OUTPUT_ROOT,
       },
       { newId: createIdSequence("run") },
     );
@@ -1449,6 +1477,7 @@ describe("createRunOrchestrator — drain", () => {
         spawnExecutor,
         inProcessExecutor,
         logger,
+        runsOutputRoot: RUNS_OUTPUT_ROOT,
       },
       { newId: createIdSequence("run") },
     );
@@ -1515,6 +1544,7 @@ describe("createRunOrchestrator — drain", () => {
         spawnExecutor,
         inProcessExecutor,
         logger,
+        runsOutputRoot: RUNS_OUTPUT_ROOT,
       },
       { newId: createIdSequence("run") },
     );

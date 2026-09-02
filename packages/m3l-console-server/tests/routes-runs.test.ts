@@ -203,11 +203,26 @@ const HANDLE_RUNNING: FakeRunHandle = {
   executionMode: "spawn",
 };
 
+/**
+ * A run-report port that reports "no report for this run". The default for
+ * every suite below that is not about the report route: those exercise the
+ * launch/list/get handlers, which never touch it.
+ *
+ * `report` overrides what {@link M3LRunReportPort.read} resolves to; the
+ * dedicated report describes below pass a real value.
+ */
+function buildReportReader(report?: unknown): {
+  read: Mock<(runId: string) => Promise<unknown>>;
+} {
+  return { read: vi.fn(() => Promise.resolve(report)) };
+}
+
 describe("createRunRoutes — route table shape", () => {
-  test("registers POST /api/v1/runs, GET /api/v1/runs, and GET /api/v1/runs/:id, all auth: 'required'", () => {
+  test("registers the four run routes, all auth: 'required'", () => {
     const routes = createRunRoutes({
       orchestrator: buildLauncher(HANDLE_RUNNING),
       registry: { list: vi.fn().mockReturnValue([]), get: vi.fn() },
+      reportReader: buildReportReader(),
     });
 
     expect(
@@ -215,6 +230,7 @@ describe("createRunRoutes — route table shape", () => {
     ).toEqual([
       "GET /api/v1/runs",
       "GET /api/v1/runs/:id",
+      "GET /api/v1/runs/:id/report",
       "POST /api/v1/runs",
     ]);
     for (const route of routes) {
@@ -229,6 +245,7 @@ describe("createRunRoutes — POST /api/v1/runs", () => {
     const routes = createRunRoutes({
       orchestrator,
       registry: { list: vi.fn(), get: vi.fn() },
+      reportReader: buildReportReader(),
     });
 
     const response = await runRoute(
@@ -261,6 +278,7 @@ describe("createRunRoutes — POST /api/v1/runs", () => {
     const routes = createRunRoutes({
       orchestrator,
       registry: { list: vi.fn(), get: vi.fn() },
+      reportReader: buildReportReader(),
     });
 
     const response = await runRoute(
@@ -294,6 +312,7 @@ describe("createRunRoutes — POST /api/v1/runs", () => {
       const routes = createRunRoutes({
         orchestrator,
         registry: { list: vi.fn(), get: vi.fn() },
+        reportReader: buildReportReader(),
       });
 
       const thrown = await captureThrown(() =>
@@ -325,6 +344,7 @@ describe("createRunRoutes — POST /api/v1/runs", () => {
       const routes = createRunRoutes({
         orchestrator,
         registry: { list: vi.fn(), get: vi.fn() },
+        reportReader: buildReportReader(),
       });
 
       const thrown = await captureThrown(() =>
@@ -350,6 +370,7 @@ describe("createRunRoutes — POST /api/v1/runs", () => {
     const routes = createRunRoutes({
       orchestrator,
       registry: { list: vi.fn(), get: vi.fn() },
+      reportReader: buildReportReader(),
     });
 
     const thrown = await captureThrown(() =>
@@ -384,6 +405,7 @@ describe("createRunRoutes — POST /api/v1/runs", () => {
     const routes = createRunRoutes({
       orchestrator,
       registry: { list: vi.fn(), get: vi.fn() },
+      reportReader: buildReportReader(),
     });
 
     await runRoute(
@@ -410,6 +432,7 @@ describe("createRunRoutes — POST /api/v1/runs", () => {
     const routes = createRunRoutes({
       orchestrator,
       registry: { list: vi.fn(), get: vi.fn() },
+      reportReader: buildReportReader(),
     });
 
     const thrown = await captureThrown(() =>
@@ -443,6 +466,7 @@ describe("createRunRoutes — POST /api/v1/runs", () => {
     const routes = createRunRoutes({
       orchestrator,
       registry: { list: vi.fn(), get: vi.fn() },
+      reportReader: buildReportReader(),
     });
 
     const thrown = await captureThrown(() =>
@@ -473,6 +497,7 @@ describe("createRunRoutes — POST /api/v1/runs", () => {
     const routes = createRunRoutes({
       orchestrator,
       registry: { list: vi.fn(), get: vi.fn() },
+      reportReader: buildReportReader(),
     });
 
     const thrown = await captureThrown(() =>
@@ -509,6 +534,7 @@ describe("createRunRoutes — GET /api/v1/runs", () => {
     const routes = createRunRoutes({
       orchestrator: buildLauncher(HANDLE_RUNNING),
       registry,
+      reportReader: buildReportReader(),
     });
 
     const response = await runRoute(
@@ -528,6 +554,7 @@ describe("createRunRoutes — GET /api/v1/runs", () => {
     const routes = createRunRoutes({
       orchestrator: buildLauncher(HANDLE_RUNNING),
       registry,
+      reportReader: buildReportReader(),
     });
 
     await runRoute(
@@ -553,6 +580,7 @@ describe("createRunRoutes — GET /api/v1/runs", () => {
       const routes = createRunRoutes({
         orchestrator: buildLauncher(HANDLE_RUNNING),
         registry,
+        reportReader: buildReportReader(),
       });
 
       const thrown = await captureThrown(() =>
@@ -580,6 +608,7 @@ describe("createRunRoutes — GET /api/v1/runs — ?status= vocabulary validatio
       const routes = createRunRoutes({
         orchestrator: buildLauncher(HANDLE_RUNNING),
         registry,
+        reportReader: buildReportReader(),
       });
 
       await runRoute(
@@ -601,6 +630,7 @@ describe("createRunRoutes — GET /api/v1/runs — ?status= vocabulary validatio
     const routes = createRunRoutes({
       orchestrator: buildLauncher(HANDLE_RUNNING),
       registry,
+      reportReader: buildReportReader(),
     });
 
     const thrown = await captureThrown(() =>
@@ -623,6 +653,7 @@ describe("createRunRoutes — GET /api/v1/runs — ?status= vocabulary validatio
     const routes = createRunRoutes({
       orchestrator: buildLauncher(HANDLE_RUNNING),
       registry,
+      reportReader: buildReportReader(),
     });
     const overlongGarbage = "x".repeat(500);
 
@@ -669,6 +700,7 @@ describe("createRunRoutes — GET /api/v1/runs/:id", () => {
     const routes = createRunRoutes({
       orchestrator: buildLauncher(HANDLE_RUNNING),
       registry,
+      reportReader: buildReportReader(),
     });
 
     const response = await runRoute(
@@ -690,6 +722,7 @@ describe("createRunRoutes — GET /api/v1/runs/:id", () => {
     const routes = createRunRoutes({
       orchestrator: buildLauncher(HANDLE_RUNNING),
       registry,
+      reportReader: buildReportReader(),
     });
 
     const thrown = await captureThrown(() =>
@@ -712,6 +745,7 @@ describe("createRunRoutes — GET /api/v1/runs/:id", () => {
     const routes = createRunRoutes({
       orchestrator: buildLauncher(HANDLE_RUNNING),
       registry,
+      reportReader: buildReportReader(),
     });
 
     const thrown = await captureThrown(() =>
@@ -724,5 +758,160 @@ describe("createRunRoutes — GET /api/v1/runs/:id", () => {
     expect(thrown).toBeInstanceOf(M3LConsoleError);
     expect((thrown as M3LConsoleError).code).toBe("ERR_CONSOLE_BAD_REQUEST");
     expect(registry.get).not.toHaveBeenCalled();
+  });
+});
+
+describe("GET /api/v1/runs/:id/report", () => {
+  /** One terminal run row — the report route only reads its EXISTENCE. */
+  const ROW_SUCCESS: FakeRunRow = {
+    id: "run-1",
+    script: "sqs-etl",
+    status: "success",
+    dryRun: false,
+    executionMode: "spawn",
+    parameters: {},
+    operator: "ada",
+    correlationId: "corr-1",
+    queuedAtMs: 1_000,
+  };
+
+  /** Drives the report route for `runId` against a registry/reader pair. */
+  function reportRoutes(
+    row: FakeRunRow | undefined,
+    report: unknown,
+  ): {
+    readonly routes: readonly M3LRoute[];
+    readonly reader: ReturnType<typeof buildReportReader>;
+  } {
+    const reader = buildReportReader(report);
+    return {
+      reader,
+      routes: createRunRoutes({
+        orchestrator: buildLauncher(HANDLE_RUNNING),
+        registry: buildRegistry(row === undefined ? {} : { get: row }),
+        reportReader: reader,
+      }),
+    };
+  }
+
+  test("returns 200 with the reader's report verbatim", async () => {
+    const { routes } = reportRoutes(ROW_SUCCESS, {
+      outcome: "success",
+      steps: [{ name: "dump" }],
+    });
+
+    const response = await runRoute(
+      findRoute(routes, "GET", "/api/v1/runs/:id/report"),
+      buildContext({
+        path: "/api/v1/runs/run-1/report",
+        params: { id: "run-1" },
+        operatorName: "ada",
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(parseBody(response)).toEqual({
+      outcome: "success",
+      steps: [{ name: "dump" }],
+    });
+  });
+
+  // INVARIANT: an unknown run id is answered from the REGISTRY, before the
+  // reader is consulted at all — otherwise a caller could probe the runs
+  // output root for arbitrary ids. Mutation-tested: deleting the registry
+  // check makes `reader.read` run for a run that does not exist.
+  test("404s an unknown run id without ever calling the reader", async () => {
+    const { routes, reader } = reportRoutes(undefined, { outcome: "success" });
+
+    const thrown = await captureThrown(() =>
+      runRoute(
+        findRoute(routes, "GET", "/api/v1/runs/:id/report"),
+        buildContext({
+          path: "/api/v1/runs/nope/report",
+          params: { id: "nope" },
+          operatorName: "ada",
+        }),
+      ),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).code).toBe("ERR_CONSOLE_RUN_NOT_FOUND");
+    expect((thrown as M3LConsoleError).message).toContain("no run found");
+    expect(reader.read).not.toHaveBeenCalled();
+  });
+
+  // INVARIANT: a KNOWN run with nothing on disk gets a DIFFERENT message
+  // under the same code — an operator polling a still-running run has to be
+  // able to tell "not a run" from "not yet". Mutation-tested: collapsing the
+  // two messages into one makes this fail.
+  test("404s a known run with no persisted report, with its own message", async () => {
+    const { routes, reader } = reportRoutes(ROW_SUCCESS, undefined);
+
+    const thrown = await captureThrown(() =>
+      runRoute(
+        findRoute(routes, "GET", "/api/v1/runs/:id/report"),
+        buildContext({
+          path: "/api/v1/runs/run-1/report",
+          params: { id: "run-1" },
+          operatorName: "ada",
+        }),
+      ),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).code).toBe("ERR_CONSOLE_RUN_NOT_FOUND");
+    expect((thrown as M3LConsoleError).message).toContain(
+      "has no persisted report",
+    );
+    expect(reader.read).toHaveBeenCalledWith("run-1");
+  });
+
+  test("returns 400 naming the missing ':id' route parameter, without calling the registry or the reader", async () => {
+    const reader = buildReportReader({ outcome: "success" });
+    const registry = buildRegistry({ get: ROW_SUCCESS });
+    const routes = createRunRoutes({
+      orchestrator: buildLauncher(HANDLE_RUNNING),
+      registry,
+      reportReader: reader,
+    });
+
+    const thrown = await captureThrown(() =>
+      runRoute(
+        findRoute(routes, "GET", "/api/v1/runs/:id/report"),
+        buildContext({ path: "/api/v1/runs//report", operatorName: "ada" }),
+      ),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).code).toBe("ERR_CONSOLE_BAD_REQUEST");
+    expect(registry.get).not.toHaveBeenCalled();
+    expect(reader.read).not.toHaveBeenCalled();
+  });
+
+  test("propagates a reader failure unchanged rather than reporting it as a 404", async () => {
+    // A fault reading the report is NOT "this run has no report". Collapsing
+    // the two would hide a broken output root behind a plausible 404 forever.
+    const failure = new M3LConsoleError(
+      "ERR_CONSOLE_INTERNAL",
+      "run 'run-1' has 2 output directories; exactly one is expected",
+    );
+    const routes = createRunRoutes({
+      orchestrator: buildLauncher(HANDLE_RUNNING),
+      registry: buildRegistry({ get: ROW_SUCCESS }),
+      reportReader: { read: vi.fn(() => Promise.reject(failure)) },
+    });
+
+    const thrown = await captureThrown(() =>
+      runRoute(
+        findRoute(routes, "GET", "/api/v1/runs/:id/report"),
+        buildContext({
+          path: "/api/v1/runs/run-1/report",
+          params: { id: "run-1" },
+          operatorName: "ada",
+        }),
+      ),
+    );
+
+    expect(thrown).toBe(failure);
   });
 });

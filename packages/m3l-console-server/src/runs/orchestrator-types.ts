@@ -91,6 +91,20 @@ export interface M3LRunOrchestratorOptions {
   readonly inProcessExecutor: M3LRunExecutor;
   /** The logger warnings/errors/reconciliation counts are recorded through. */
   readonly logger: Core.M3LLogger;
+  /**
+   * The directory every run's own output tree is created under (X7d,
+   * ADR-0070). The orchestrator hands each run `<runsOutputRoot>/<runId>` as
+   * its executor's `outputDir`, which the spawn executor turns into the
+   * child's `M3L_OUTPUT_DIR`.
+   *
+   * An OPTION rather than a `config` field: {@link M3LRunOrchestratorConfig}
+   * mirrors `config/runs.js`'s `M3LConsoleRunsConfig` field for field, and
+   * this root is resolved the way the sibling session-artifact and audit
+   * roots are — straight off an env var at composition time, never through
+   * the settings-descriptor table. Adding it to `config` would make the two
+   * shapes disagree and break the compile-time proof that they conform.
+   */
+  readonly runsOutputRoot: string;
 }
 
 /**

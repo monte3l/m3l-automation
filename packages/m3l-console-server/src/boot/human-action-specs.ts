@@ -281,12 +281,32 @@ export const HUMAN_ACTION_SPECS: ReadonlyMap<string, HumanActionSpec> = new Map<
     },
   ],
   [
-    // The ONLY wireable sensitive view: enumerating the whole 17-route table
-    // shows there is no run-report endpoint and no session-artifact-content
-    // endpoint (`GET /sessions/:id/bindings` returns binding ROWS, and
-    // `sessions/artifacts.ts` has no route in front of it). `/health`,
-    // `/ready` and every list/collection endpoint are out of scope by
-    // decision — `view.*` covers sensitive-class renderings only.
+    // X7d's run-report view. `phase: "after"` for the SAME reason
+    // `view.run.stream` below carries it: the handler does its own 404
+    // checks internally (unknown run id, and a known run with nothing
+    // written yet), so recording first would assert the operator saw a
+    // report that was never served. Recording after the handler resolves is
+    // honest and still refuses — the response body has not been written when
+    // a rejected append throws.
+    //
+    // Records the run id and nothing else. ADR-0070's display-vs-persist
+    // split means the entry carries the REFERENCE to what was rendered,
+    // never the rendering: a run report can contain a script's own
+    // diagnostic output, and copying it into the audit trail would turn an
+    // access log into a second, unbounded, unredacted copy of the data.
+    "GET /api/v1/runs/:id/report",
+    {
+      action: "view.run.report",
+      phase: "after",
+      project: (ctx) => ({
+        target: { kind: "run", id: param(ctx, "id") },
+        posture: "confirmed",
+      }),
+    },
+  ],
+  [
+    // `/health`, `/ready` and every list/collection endpoint are out of
+    // scope by decision — `view.*` covers sensitive-class renderings only.
     //
     // ONE entry per subscription, not per event. Per-event would write
     // thousands of lines per watcher into a trail with no pruning path

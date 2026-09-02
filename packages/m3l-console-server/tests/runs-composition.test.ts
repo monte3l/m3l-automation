@@ -38,6 +38,7 @@ import type {
   M3LRunOrchestratorConfig,
 } from "../src/runs/orchestrator.js";
 import type { M3LRunRegistry } from "../src/runs/registry.js";
+import type { M3LRunReportReader } from "../src/runs/report.js";
 import type { M3LEventStreamHub } from "../src/stream/event-stream.js";
 import type {
   M3LRunFinish,
@@ -247,6 +248,13 @@ function createFakeRegistry(): M3LRunRegistry {
   };
 }
 
+/**
+ * The runs output root every subsystem fixture is built with. Never created
+ * on disk: these suites drive fake executors, so it only has to be a stable,
+ * recognisable path.
+ */
+const RUNS_OUTPUT_ROOT = "/runs-output";
+
 /** Builds {@link M3LRunSubsystemOptions} for `createRunSubsystem`, overridable per test. */
 function buildOptions(
   configOverrides: Partial<M3LRunOrchestratorConfig> = {},
@@ -255,6 +263,7 @@ function buildOptions(
     config: buildConfig(configOverrides),
     logger: new Core.M3LLogger([]),
     registry: createFakeRegistry(),
+    runsOutputRoot: RUNS_OUTPUT_ROOT,
   };
 }
 
@@ -370,12 +379,14 @@ describe("M3LRunSubsystemOptions / M3LRunSubsystem", () => {
       readonly logger: Core.M3LLogger;
       readonly registry: M3LRunRegistry;
       readonly extraEventSinks?: readonly M3LRunEventSink[];
+      readonly runsOutputRoot: string;
     }>();
 
     expectTypeOf<M3LRunSubsystem>().toEqualTypeOf<{
       readonly orchestrator: M3LRunOrchestrator;
       readonly catalog: M3LScriptCatalog;
       readonly eventHub: M3LEventStreamHub<M3LRunEvent>;
+      readonly reportReader: M3LRunReportReader;
       drain(): Promise<void>;
       endStreams(): void;
     }>();
