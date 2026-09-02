@@ -32,9 +32,9 @@
 //   pnpm telemetry:sessions
 import process from "node:process";
 import { execFileSync } from "node:child_process";
-import { readdirSync, statSync } from "node:fs";
+import { closeSync, openSync, readdirSync, readSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolveClaudeProjectDir } from "./lib/claude-home.mjs";
 import { createReporter, parseJsonFlag } from "./lib/report.mjs";
@@ -76,6 +76,347 @@ export const REQUIRED_KEYS = Object.freeze([
   "top_prompts",
   "by_day",
 ]);
+
+// --- Session-naming compliance (ADR-0087) --------------------------------
+//
+// The rest of this file never reads a transcript directly — it only ever
+// shells out to the analyzer above. This section is the one exception ADR-
+// 0084 grants: `analyze-sessions.mjs`'s payload carries no session name or
+// title (its keys are project/subagent/skill/day/prompt aggregates), so
+// measuring compliance with the naming convention needs a direct, bounded
+// read of the transcripts themselves.
+//
+// Every constraint from this file's header applies here too:
+//   1. UNSUPPORTED FORMAT — a zero-records result across a non-empty file
+//      set throws rather than reporting zeros (see computeNamingCompliance).
+//   2. SCOPE — only ever reads a fixed-size PREFIX of each file (never the
+//      whole thing, however large), and only files inside the caller's own
+//      --since window under the already-scoped project directory.
+//   3. RESOLUTION — an unlistable project directory or an empty file set is
+//      a clear thrown error, never a silently empty report.
+
+/**
+ * How many bytes of a transcript's start this scan reads. Never the whole
+ * file — transcripts in this project's store range from tens of KB to
+ * several MB. Claude Code writes the `agent-name`/`ai-title` record early
+ * (observed within the first ~200 lines / few KB across this project's own
+ * store), so 64 KiB is generous headroom while keeping the scan cheap
+ * regardless of how large the rest of the file grows — the exact ADR-0080
+ * concern reason 2 in this file's header names. A session renamed only
+ * after this window is, as a documented approximation, attributed to
+ * whatever name (or absence of one) appears within it.
+ */
+export const SESSION_NAME_SCAN_BYTE_CAP = 64 * 1024;
+
+/**
+ * The repo's Claude Code session-naming convention (ADR-0087,
+ * `docs/contributing/contributing.md` § Session naming) — mirrored from
+ * `.claude/hooks/statusline-context-pressure.mjs`'s `SESSION_NAME_PATTERN`.
+ * No shared module exists between `.claude/hooks/` and `bin/` today, so
+ * keep the two definitions in sync by hand; ADR-0087 is the single source
+ * of truth for the grammar both copies encode.
+ */
+export const SESSION_NAME_PATTERN =
+  /^(feat|fix|audit|research|docs|review|ci|merge)-[a-z0-9]+(?:-[a-z0-9]+)*$/;
+export const SESSION_NAME_MAX_LENGTH = 40;
+
+/**
+ * Read up to {@link SESSION_NAME_SCAN_BYTE_CAP} bytes from the START of one
+ * transcript file — a fixed synchronous read (matching this file's existing
+ * `execFileSync`/`readdirSync`/`statSync` style) rather than a streaming
+ * read, since this is an on-demand tool (ADR-0084), not a hot path, and a
+ * bounded `readSync` call is simpler than introducing async control flow
+ * for one scan.
+ *
+ * @param {string} path
+ * @param {{
+ *   open: (path: string, flags: string) => number,
+ *   read: (fd: number, buffer: Buffer, offset: number, length: number, position: number) => number,
+ *   close: (fd: number) => void,
+ * }} fs injected filesystem seam
+ * @returns {string | null} the decoded prefix, or null when the file could
+ *   not be opened at all (permission error, vanished mid-scan) — distinct
+ *   from a prefix that was read but carries no name record
+ */
+export function readTranscriptPrefix(path, fs) {
+  /** @type {number} */
+  let fd;
+  try {
+    fd = fs.open(path, "r");
+  } catch {
+    return null;
+  }
+  try {
+    const buffer = Buffer.alloc(SESSION_NAME_SCAN_BYTE_CAP);
+    const bytesRead = fs.read(fd, buffer, 0, buffer.length, 0);
+    return buffer.toString("utf8", 0, bytesRead);
+  } catch {
+    // A read failure on a file that vanished between open and stat/readdir
+    // (a concurrent Claude Code session still writing) is exactly the
+    // non-fatal-per-file case listRecentTranscripts already handles for its
+    // own stat call — skip this one file, don't abort the whole scan.
+    return null;
+  } finally {
+    fs.close(fd);
+  }
+}
+
+/**
+ * Extract the session's name from an already-read transcript prefix. An
+ * explicit `/rename`/`-n` name (`type: "agent-name"`) takes precedence over
+ * the AI-generated first-prompt title (`type: "ai-title"`), mirroring the
+ * statusLine payload's own `session_name` precedence (ADR-0087) — a session
+ * renamed after being auto-titled shows its rename, not its title. A line
+ * that isn't valid JSON (including a final line truncated by the byte cap)
+ * is skipped, not fatal: the transcript format is officially unsupported,
+ * and one malformed line is not evidence the whole file is unreadable.
+ *
+ * @param {string} prefix
+ * @returns {string | null} the resolved name, or null when neither record
+ *   type appears in the scanned prefix
+ */
+export function extractSessionName(prefix) {
+  /** @type {string | null} */
+  let lastAgentName = null;
+  /** @type {string | null} */
+  let lastAiTitle = null;
+
+  for (const line of prefix.split("\n")) {
+    if (line.length === 0) continue;
+    /** @type {unknown} */
+    let record;
+    try {
+      record = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (typeof record !== "object" || record === null) continue;
+    const type = /** @type {{ type?: unknown }} */ (record).type;
+    if (type === "agent-name") {
+      const name = /** @type {{ agentName?: unknown }} */ (record).agentName;
+      if (typeof name === "string" && name.length > 0) lastAgentName = name;
+    } else if (type === "ai-title") {
+      const title = /** @type {{ aiTitle?: unknown }} */ (record).aiTitle;
+      if (typeof title === "string" && title.length > 0) lastAiTitle = title;
+    }
+  }
+
+  return lastAgentName ?? lastAiTitle;
+}
+
+/**
+ * @param {string | null} name
+ * @returns {"unnamed" | "conforming" | "non_conforming"}
+ */
+export function classifySessionName(name) {
+  if (name === null) return "unnamed";
+  return name.length <= SESSION_NAME_MAX_LENGTH &&
+    SESSION_NAME_PATTERN.test(name)
+    ? "conforming"
+    : "non_conforming";
+}
+
+/**
+ * Parse the bounded `<n>d`/`<n>h` window `parseSince` already validates,
+ * shared here so the naming-compliance window matches the aggregate
+ * telemetry window exactly.
+ *
+ * @param {string} since already validated by {@link parseSince}
+ * @returns {number} milliseconds
+ */
+export function sinceToMs(since) {
+  const amount = Number(since.slice(0, -1));
+  return since.endsWith("d") ? amount * 86_400_000 : amount * 3_600_000;
+}
+
+/**
+ * List every `*.jsonl` transcript directly under `dir` whose mtime falls
+ * inside the `[nowMs - sinceMs, nowMs]` window. A file that vanishes between
+ * `readdir` and `stat` (a concurrent Claude Code session still writing) is
+ * skipped, not fatal — the same non-fatal-per-file discipline as
+ * {@link readTranscriptPrefix}.
+ *
+ * @param {string} dir
+ * @param {number} sinceMs
+ * @param {number} nowMs
+ * @param {{
+ *   readdir: (dir: string) => { name: string, isFile: () => boolean }[],
+ *   stat: (path: string) => { mtimeMs: number },
+ * }} fs injected filesystem seam
+ * @returns {string[]} absolute paths, order not guaranteed
+ * @throws {Error} when `dir` cannot be listed at all
+ */
+export function listRecentTranscripts(dir, sinceMs, nowMs, fs) {
+  /** @type {{ name: string, isFile: () => boolean }[]} */
+  let entries;
+  try {
+    entries = fs.readdir(dir);
+  } catch (cause) {
+    throw new Error(
+      `Cannot read the Claude Code project directory at ${dir} ` +
+        `(${cause instanceof Error ? cause.message : String(cause)}). The ` +
+        `session-naming compliance scan needs this directory to exist and ` +
+        `be listable.`,
+      { cause },
+    );
+  }
+
+  const cutoff = nowMs - sinceMs;
+  const resolvedDir = resolve(dir);
+  /** @type {string[]} */
+  const files = [];
+  for (const entry of entries) {
+    if (!entry.name.endsWith(".jsonl") || !entry.isFile()) continue;
+    const path = join(dir, entry.name);
+    // A real readdir() entry name can never contain a path separator, but an
+    // injected test/plugin seam could hand back something like
+    // "../../etc/shadow.jsonl" — keep this scan confined to `dir` regardless
+    // of what the fs seam returns, rather than relying only on real
+    // filesystem semantics.
+    if (!resolve(path).startsWith(resolvedDir + sep)) continue;
+    try {
+      if (fs.stat(path).mtimeMs >= cutoff) files.push(path);
+    } catch {
+      // Vanished between readdir and stat — skip, don't fail the sweep.
+    }
+  }
+  return files;
+}
+
+/**
+ * @typedef {{
+ *   sessions_scanned: number,
+ *   named: number,
+ *   conforming: number,
+ *   non_conforming: number,
+ *   unnamed: number,
+ *   non_conforming_names: string[],
+ * }} NamingComplianceReport
+ */
+
+/**
+ * Non-conforming names travel into the report verbatim by default, but they
+ * are exactly the strings that FAILED validation — for an unrenamed session
+ * that's the AI-generated title, which is derived from the session's first
+ * user prompt. A prompt that happened to include a secret or other
+ * sensitive text would otherwise appear, uncapped, in this report — and
+ * this report's documented consumer (`promoting-work-log-lessons`) can
+ * fold it into a work log that gets committed. Bounding the length and
+ * stripping control characters reduces, without eliminating, that surface;
+ * this is a local, on-demand admin tool reporting on the operator's own
+ * sessions, not a service boundary, so a residual risk of a short secret
+ * fragment surviving truncation is accepted rather than engineering full
+ * secret-pattern redaction for this narrow, advisory read-out.
+ *
+ * @param {string} name
+ * @returns {string}
+ */
+export function sanitizeNonConformingName(name) {
+  // eslint-disable-next-line no-control-regex -- deliberately stripping C0/DEL
+  const stripped = name.replace(/[\x00-\x1f\x7f]/g, "");
+  return stripped.length > SESSION_NAME_MAX_LENGTH
+    ? `${stripped.slice(0, SESSION_NAME_MAX_LENGTH)}…`
+    : stripped;
+}
+
+/**
+ * Compute session-naming compliance (ADR-0087) for one project directory's
+ * recent transcripts. Throws — rather than returning a zero-filled report —
+ * on the two cases this file's header exists to prevent: no transcripts in
+ * the window at all, and transcripts present but carrying zero recognizable
+ * name records (the unsupported-format-drift signal).
+ *
+ * Known limitations, both inherent to a presence-only drift check (the same
+ * shape as this file's `REQUIRED_KEYS` assertion for the analyzer payload):
+ * a Claude Code upgrade that renames ONE of the two record `type` strings
+ * (or the `agentName`/`aiTitle` field under a still-recognized type) would
+ * not trip the zero-records throw below, since the other type would still
+ * be found — those sessions would silently read as "unnamed" rather than
+ * as a detected format drift. And `sessions_scanned` counts every file this
+ * scan attempted, including ones `readTranscriptPrefix` could not open —
+ * such a file contributes to neither `named` nor `unnamed`, so the three
+ * counts are not guaranteed to sum to `sessions_scanned`.
+ *
+ * @param {{
+ *   dir: string,
+ *   since: string,
+ *   now: () => number,
+ *   fs: {
+ *     readdir: (dir: string) => { name: string, isFile: () => boolean }[],
+ *     stat: (path: string) => { mtimeMs: number },
+ *     open: (path: string, flags: string) => number,
+ *     read: (fd: number, buffer: Buffer, offset: number, length: number, position: number) => number,
+ *     close: (fd: number) => void,
+ *   },
+ * }} options
+ * @returns {NamingComplianceReport}
+ * @throws {Error} when no transcripts exist in the window, or when every
+ *   transcript found carries zero `agent-name`/`ai-title` records
+ */
+export function computeNamingCompliance({ dir, since, now, fs }) {
+  const files = listRecentTranscripts(dir, sinceToMs(since), now(), fs);
+
+  if (files.length === 0) {
+    throw new Error(
+      `No transcript files found under ${dir} within the last ${since}. ` +
+        `Session-naming compliance cannot be measured over an empty window.`,
+    );
+  }
+
+  let named = 0;
+  let conforming = 0;
+  let nonConforming = 0;
+  let unnamed = 0;
+  /** @type {string[]} */
+  const nonConformingNames = [];
+
+  for (const path of files) {
+    const prefix = readTranscriptPrefix(path, fs);
+    if (prefix === null) continue; // unreadable file — skip, not fatal
+    const name = extractSessionName(prefix);
+
+    const classification = classifySessionName(name);
+    if (classification === "unnamed") {
+      unnamed += 1;
+    } else {
+      named += 1;
+      if (classification === "conforming") conforming += 1;
+      else {
+        nonConforming += 1;
+        nonConformingNames.push(
+          sanitizeNonConformingName(/** @type {string} */ (name)),
+        );
+      }
+    }
+  }
+
+  if (named === 0) {
+    throw new Error(
+      `Scanned ${files.length} transcript file(s) under ${dir} within the ` +
+        `last ${since} and found ZERO agent-name/ai-title records in their ` +
+        `first ${SESSION_NAME_SCAN_BYTE_CAP} bytes. Either every session in ` +
+        `this window is genuinely both unnamed AND untitled (very unlikely — ` +
+        `Claude Code auto-titles nearly every session), or the transcript's ` +
+        `record shape has changed and this scan's field names are stale. ` +
+        `The JSONL format is officially unsupported and can change between ` +
+        `Claude Code versions (ADR-0084) — refusing to report zeros that ` +
+        `would read like a healthy answer. Re-verify readTranscriptPrefix/ ` +
+        `extractSessionName against a fresh transcript sample before ` +
+        `trusting this number.`,
+    );
+  }
+
+  return {
+    sessions_scanned: files.length,
+    named,
+    conforming,
+    non_conforming: nonConforming,
+    unnamed,
+    non_conforming_names: nonConformingNames,
+  };
+}
+
+// --- End session-naming compliance ----------------------------------------
 
 /**
  * Pick the analyzer revision to run: the most recently modified cached
@@ -272,6 +613,16 @@ export function shapeFailureMessage(missing) {
   );
 }
 
+/** Real filesystem seam for {@link computeNamingCompliance}'s default. */
+const REAL_NAMING_FS = {
+  readdir: (dir) => readdirSync(dir, { withFileTypes: true }),
+  stat: (path) => statSync(path),
+  open: (path, flags) => openSync(path, flags),
+  read: (fd, buffer, offset, length, position) =>
+    readSync(fd, buffer, offset, length, position),
+  close: (fd) => closeSync(fd),
+};
+
 /**
  * Run the adapter against injected seams.
  *
@@ -282,8 +633,19 @@ export function shapeFailureMessage(missing) {
  *   top?: number,
  *   runAnalyzer: (analyzerPath: string, args: string[]) => string,
  *   reporter: ReturnType<typeof createReporter>,
+ *   computeNaming?: (options: {
+ *     dir: string,
+ *     since: string,
+ *     now: () => number,
+ *     fs: typeof REAL_NAMING_FS,
+ *   }) => NamingComplianceReport,
+ *   now?: () => number,
  * }} deps
- * @returns {{ ok: boolean, payload: Record<string, unknown> | null }}
+ * @returns {{
+ *   ok: boolean,
+ *   payload: Record<string, unknown> | null,
+ *   naming: NamingComplianceReport | null,
+ * }}
  */
 export function runTelemetry({
   analyzerPath,
@@ -292,15 +654,28 @@ export function runTelemetry({
   top,
   runAnalyzer,
   reporter,
+  computeNaming = computeNamingCompliance,
+  now = Date.now,
 }) {
+  /** @type {NamingComplianceReport | null} */
+  let naming = null;
+  try {
+    naming = computeNaming({ dir, since, now, fs: REAL_NAMING_FS });
+  } catch (cause) {
+    reporter.error(
+      `Session-naming compliance scan failed: ` +
+        `${cause instanceof Error ? cause.message : String(cause)}`,
+    );
+  }
+
   if (analyzerPath === null) {
     reporter.error(
       `No session-report analyzer found under ~/${PLUGIN_CACHE_SUBPATH}. ` +
         `Install or re-enable the session-report plugin, or pass ` +
         `--analyzer <path> explicitly. Not falling back to a wider scan.`,
     );
-    reporter.finish({ payload: null, analyzerPath: null, dir, since });
-    return { ok: false, payload: null };
+    reporter.finish({ payload: null, analyzerPath: null, dir, since, naming });
+    return { ok: false, payload: null, naming };
   }
 
   /** @type {Record<string, unknown>} */
@@ -311,22 +686,32 @@ export function runTelemetry({
     );
   } catch (cause) {
     reporter.error(cause instanceof Error ? cause.message : String(cause));
-    reporter.finish({ payload: null, analyzerPath, dir, since });
-    return { ok: false, payload: null };
+    reporter.finish({ payload: null, analyzerPath, dir, since, naming });
+    return { ok: false, payload: null, naming };
   }
 
   const missing = missingKeys(payload);
   if (missing.length > 0) {
     reporter.error(shapeFailureMessage(missing));
-    reporter.finish({ payload: null, analyzerPath, dir, since });
-    return { ok: false, payload: null };
+    reporter.finish({ payload: null, analyzerPath, dir, since, naming });
+    return { ok: false, payload: null, naming };
   }
 
   reporter.succeed(
-    `Session telemetry for ${dir} since ${since} (analyzer: ${analyzerPath}).`,
+    naming !== null
+      ? `Session telemetry for ${dir} since ${since} (analyzer: ` +
+          `${analyzerPath}). ${naming.conforming}/${naming.named} named ` +
+          `session(s) conform to ADR-0087.`
+      : `Session telemetry for ${dir} since ${since} (analyzer: ${analyzerPath}).`,
   );
-  reporter.finish({ payload, analyzerPath, dir, since });
-  return { ok: true, payload };
+  const finished = reporter.finish({
+    payload,
+    analyzerPath,
+    dir,
+    since,
+    naming,
+  });
+  return { ok: finished.ok, payload, naming };
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
@@ -393,6 +778,10 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   // never a pre-push gate, and a silent zero-filled report is the exact
   // failure this adapter exists to prevent.
   if (!outcome.ok) process.exit(1);
-  if (!json)
+  if (!json) {
     process.stdout.write(JSON.stringify(outcome.payload, null, 2) + "\n");
+    if (outcome.naming !== null) {
+      process.stdout.write(JSON.stringify(outcome.naming, null, 2) + "\n");
+    }
+  }
 }
