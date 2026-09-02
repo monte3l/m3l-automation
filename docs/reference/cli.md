@@ -715,6 +715,72 @@ Flags: `--json` (one object on stdout, `{ "shell": "<shell>", "script":
 Exit: `0` success; `2` a missing or unrecognized `<shell>`; `1` if discovery
 itself is impossible (e.g. workspace root not found).
 
+## Flows
+
+A flow is a named, declarative chain of script runs. Definitions live in
+`data/config/flows/<name>.yaml`, one flow per file, and `name` must match the
+filename stem.
+
+A definition declares only these keys — anything else is rejected, at both the
+document and the step level, so a typo fails loudly instead of being ignored:
+
+| Level    | Keys                                                                                       |
+| -------- | ------------------------------------------------------------------------------------------ |
+| document | `name`, `description`, `maxStepExecutions`                                                 |
+| step     | `id`, `script`, `parameters`, `execution`, `onSuccess`, `onFailure`, `onPartial`, `dryRun` |
+
+`parameters` keys must be parameters the target script actually declares, and a
+parameter the script marks `secret: true` is **rejected outright** — a secret
+belongs in the environment the spawned script already inherits, never in a
+committed file (ADR-0085). A value that is a list becomes a repeated
+`--name=<item>` flag, matching how the scripts declare array parameters.
+
+Branching is `onSuccess` / `onFailure` / `onPartial`, each `continue`, `stop`, or
+`{ goto: <stepId> }`. `onFailure` defaults to `stop`; an unset `onPartial`
+resolves to whatever `onFailure` is, because a partial outcome nobody accounted
+for is a failure. `maxStepExecutions` (default 50) bounds the total, so a
+`goto` cycle terminates instead of running forever.
+
+`dryRun` on a step is a **floor, not a default**: the effective flag is
+`flowDryRun || step.dryRun`, so a step pinned `dryRun: true` can never perform
+its side effect, even in a real run. Use `--dry-run` on the run to force every
+step dry; pin the step only when it must never act.
+
+Inter-step data is passed through the filesystem — one step writes a path, the
+next reads it. The definition format has no expression for "step 2's output",
+so the paths are written out literally on both sides.
+
+### `sqs-roundtrip` — the acceptance flow
+
+The flow ADR-0056 named as the engine's proof, because it drives four real
+consumer script runs across three different scripts:
+
+| #   | Step           | Script          | Reads              | Writes                  |
+| --- | -------------- | --------------- | ------------------ | ----------------------- |
+| 1   | `dump-queue`   | `sqs-etl`       | the queue          | JSONL, one message/line |
+| 2   | `project-body` | `json-etl`      | step 1's JSONL     | JSONL of `body` only    |
+| 3   | `load-table`   | `dynamodb-crud` | step 2's JSONL     | the table               |
+| 4   | `replay-queue` | `sqs-etl`       | **step 2's** JSONL | the queue               |
+
+Step 4 reads step 2's output rather than step 3's, and that is the point of the
+chain: `sqs-etl send` uses its own line reader, which treats a record's `body`
+key as the message body, so step 2's `fields: [body=body]` projection is what
+makes step 4 possible at all. Step 3 writes to DynamoDB and produces nothing
+step 4 could consume.
+
+Rehearse it without touching AWS:
+
+```bash
+m3l flow run sqs-roundtrip --dry-run
+```
+
+Every step stops after its configuration checks and reports outcome `dry-run`,
+so the whole chain is exercised — argv construction, branch evaluation, the run
+record — with no live call. The committed definition's parameter names are
+guarded by a test that validates the real file against the scripts' declared
+parameters, so renaming a script parameter fails the suite rather than rotting
+the file silently.
+
 ## Completion
 
 `m3l completion <shell>` writes the script to stdout; installing it is a
