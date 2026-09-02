@@ -1,6 +1,6 @@
 # 0087. Claude Code session naming convention
 
-- **Status:** Accepted
+- **Status:** Accepted; amended by ADR-0088
 - **Date:** 2026-09-02
 - **Deciders:** repo maintainer
 
@@ -115,6 +115,13 @@ a `name-word-word` variant (v2.1.232+) — the convention tolerates a suffix it
 did not choose, since the disambiguated name still matches the slug pattern
 after the appended words.
 
+[**Amended (2026-09-03):** the "two levers only" framing below undersold what
+was possible — see [ADR-0088](0088-automatic-session-naming-via-launcher.md),
+which adds a launcher wrapper (`pnpm session:launch`) that computes and
+applies the name at process start, so `starting-work`'s recommendation is a
+command to run rather than a name to type by hand. The vocabulary and the two
+hard constraints above are unchanged; only the application mechanism moved.]
+
 Since no hook can read or set a session name, application is through two
 levers only:
 
@@ -142,7 +149,10 @@ way to gate what no hook can observe or set.
 - **Negative / trade-offs:** the convention cannot be enforced — a session
   that is never named or renamed stays unnamed regardless of what the
   statusline shows; `starting-work`'s recommendation still requires the user
-  to actually run the `/rename`/`-n` command by hand; the ~96 plugin-launched
+  to actually run the launch command (see ADR-0088 amendment above — a
+  wrapper now applies the name automatically, but the user still has to
+  start the session through it rather than a bare `claude`); the ~96
+  plugin-launched
   `<file> security review` sessions from `/security-review` are out of this
   ADR's reach entirely (a different launch path this repo does not control)
   and will continue to crowd the picker regardless of this convention.
@@ -151,7 +161,7 @@ way to gate what no hook can observe or set.
 
 ## Links
 
-- Supersedes / superseded by: none
+- Supersedes / superseded by: amended by [ADR-0088](./0088-automatic-session-naming-via-launcher.md)
 - Related: [ADR-0072](./0072-reviewable-slice-discipline.md) (PR sequencing
   used to land this decision), [ADR-0080](./0080-host-resource-budgeting.md)
   (concurrent-session budgeting this convention supports),

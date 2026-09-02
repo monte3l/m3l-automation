@@ -55,11 +55,11 @@
     {
       "id": 5,
       "prompt": "I need to scaffold a new AWS submodule `aws/eventbridge-rules` under `packages/m3l-common/src/aws/eventbridge-rules/` with tests in `packages/m3l-common/tests/eventbridge-rules.test.ts`. I already have another Claude Code session running a separate submodule build in this same repo right now, so I want this one isolated in its own worktree. I am currently on the `main` branch. Please run starting-work to prepare.",
-      "expected_output": "The response recommends a linked worktree (via `pnpm worktree:new`) rather than the shared checkout, because concurrent work was signalled, and alongside the branch/PR/push-target decisions it recommends a Claude Code session name of the form `feat-<slug>` mirroring the branch's slug, stating the literal `claude -n` or `/rename` command needed to apply it since the skill cannot set the session name itself.",
+      "expected_output": "The response recommends a linked worktree (via `pnpm worktree:new`) rather than the shared checkout, because concurrent work was signalled, and alongside the branch/PR/push-target decisions it recommends a Claude Code session name of the form `feat-<slug>` mirroring the branch's slug, stating the literal command needed to apply it since the skill cannot set the session name itself.",
       "expectations": [
         "The response recommends a linked worktree (e.g. via `pnpm worktree:new`) rather than the shared checkout, citing the concurrent/parallel work already signalled",
         "The response recommends a session name matching the pattern `feat-<slug>` where `<slug>` mirrors the slug used in the recommended `feat/<slug>` branch",
-        "The response states the literal command needed to apply the session name — either `claude -n <name>` or `/rename <name>` — rather than claiming the name will be set automatically",
+        "The response states a literal, concrete command to run to apply the session name (e.g. `claude -n <name>`, `/rename <name>`, or an equivalent), rather than claiming the name will be set automatically with no action needed",
         "The response includes the session name as one of the decisions confirmed with the user, alongside location, branch, PR-required, and push target"
       ]
     }
