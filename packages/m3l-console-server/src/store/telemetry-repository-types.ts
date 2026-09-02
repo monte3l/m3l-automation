@@ -57,9 +57,12 @@ interface M3LTelemetryMeasurementCommon {
 
 /**
  * The write shape for one telemetry measurement — a discriminated union on
- * `metric`, so an illegal dimension pairing is unrepresentable at the call
- * site. The database's own `CHECK` constraints enforce the same pairing as
- * a backstop.
+ * `metric`. Each arm carries `?: undefined` for every dimension it must not
+ * supply, so an illegal pairing is rejected structurally: under
+ * `exactOptionalPropertyTypes`, `readonly route?: undefined` rejects a
+ * caller-supplied `route` string whether the value arrives as a fresh literal
+ * or through a variable. The database's own `CHECK` constraints enforce the
+ * same pairing as a backstop.
  *
  * - `"http.request"` — requires `route` (non-empty) and `valueMs`; `outcome` is any non-empty string.
  * - `"run.finished"` — requires `script` (non-empty) and `valueMs`; `operation` is optional; `outcome` is any non-empty string.
@@ -86,10 +89,18 @@ export type M3LTelemetryMeasurement =
       readonly metric: "http.request";
       /** The HTTP route — must be non-empty. */
       readonly route: string;
-      /** The HTTP outcome string (e.g. `'2xx'`, `'4xx'`, `'5xx'`). */
+      /** The HTTP outcome string (e.g. `'2xx'`, `'4xx'`, `'5xx'`). Must be non-empty. */
       readonly outcome: string;
       /** Latency in milliseconds. Must be a non-negative safe integer. */
       readonly valueMs: number;
+      /** Not applicable to `http.request` — must be omitted or `undefined`. */
+      readonly script?: undefined;
+      /** Not applicable to `http.request` — must be omitted or `undefined`. */
+      readonly operation?: undefined;
+      /** Not applicable to `http.request` — must be omitted or `undefined`. */
+      readonly posture?: undefined;
+      /** Not applicable to `http.request` — must be omitted or `undefined`. */
+      readonly valueBytes?: undefined;
     })
   | (M3LTelemetryMeasurementCommon & {
       readonly metric: "run.finished";
@@ -97,15 +108,33 @@ export type M3LTelemetryMeasurement =
       readonly script: string;
       /** The operation name within the script — optional. */
       readonly operation?: string | undefined;
-      /** The run outcome string (e.g. `'succeeded'`, `'failed'`). */
+      /** The run outcome string (e.g. `'succeeded'`, `'failed'`). Must be non-empty. */
       readonly outcome: string;
       /** Run duration in milliseconds. Must be a non-negative safe integer. */
       readonly valueMs: number;
+      /** Not applicable to `run.finished` — must be omitted or `undefined`. */
+      readonly route?: undefined;
+      /** Not applicable to `run.finished` — must be omitted or `undefined`. */
+      readonly posture?: undefined;
+      /** Not applicable to `run.finished` — must be omitted or `undefined`. */
+      readonly valueBytes?: undefined;
     })
   | (M3LTelemetryMeasurementCommon & {
       readonly metric: "sse.stream";
       /** The stream outcome — optional. */
       readonly outcome?: string | undefined;
+      /** Not applicable to `sse.stream` — must be omitted or `undefined`. */
+      readonly route?: undefined;
+      /** Not applicable to `sse.stream` — must be omitted or `undefined`. */
+      readonly script?: undefined;
+      /** Not applicable to `sse.stream` — must be omitted or `undefined`. */
+      readonly operation?: undefined;
+      /** Not applicable to `sse.stream` — must be omitted or `undefined`. */
+      readonly posture?: undefined;
+      /** Not applicable to `sse.stream` — must be omitted or `undefined`. */
+      readonly valueMs?: undefined;
+      /** Not applicable to `sse.stream` — must be omitted or `undefined`. */
+      readonly valueBytes?: undefined;
     })
   | (M3LTelemetryMeasurementCommon & {
       readonly metric: "policy.decision";
@@ -113,11 +142,33 @@ export type M3LTelemetryMeasurement =
       readonly posture: string;
       /** The decision outcome — optional. */
       readonly outcome?: string | undefined;
+      /** Not applicable to `policy.decision` — must be omitted or `undefined`. */
+      readonly route?: undefined;
+      /** Not applicable to `policy.decision` — must be omitted or `undefined`. */
+      readonly script?: undefined;
+      /** Not applicable to `policy.decision` — must be omitted or `undefined`. */
+      readonly operation?: undefined;
+      /** Not applicable to `policy.decision` — must be omitted or `undefined`. */
+      readonly valueMs?: undefined;
+      /** Not applicable to `policy.decision` — must be omitted or `undefined`. */
+      readonly valueBytes?: undefined;
     })
   | (M3LTelemetryMeasurementCommon & {
       readonly metric: "store.health";
       /** Database size snapshot in bytes. Must be a non-negative safe integer. */
       readonly valueBytes: number;
+      /** Not applicable to `store.health` — must be omitted or `undefined`. */
+      readonly route?: undefined;
+      /** Not applicable to `store.health` — must be omitted or `undefined`. */
+      readonly script?: undefined;
+      /** Not applicable to `store.health` — must be omitted or `undefined`. */
+      readonly operation?: undefined;
+      /** Not applicable to `store.health` — must be omitted or `undefined`. */
+      readonly outcome?: undefined;
+      /** Not applicable to `store.health` — must be omitted or `undefined`. */
+      readonly posture?: undefined;
+      /** Not applicable to `store.health` — must be omitted or `undefined`. */
+      readonly valueMs?: undefined;
     });
 
 /**
@@ -236,12 +287,15 @@ export interface M3LConsoleTelemetryRepository {
   record(measurement: M3LTelemetryMeasurement): void;
   /**
    * Upserts every measurement in `measurements`, in order. Opens no
-   * transaction of its own.
+   * transaction of its own — see `telemetry-repository.ts`'s own
+   * `@packageDocumentation` for why.
    *
-   * @returns The number of measurements processed.
+   * @returns The number of measurements successfully processed.
    * @throws {@link M3LConsoleError} with code `"ERR_CONSOLE_BAD_REQUEST"` on
    *   the first measurement that fails validation; every measurement processed
-   *   before it stays persisted.
+   *   before it stays persisted. The thrown error's `context.recordedCount`
+   *   holds the number of measurements that were successfully upserted before
+   *   the failure — use this to diagnose how far the batch got.
    */
   recordAll(measurements: readonly M3LTelemetryMeasurement[]): number;
   /**

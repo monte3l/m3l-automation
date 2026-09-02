@@ -36,15 +36,21 @@ import type {
   M3LTelemetryBucket,
   M3LTelemetryGranularity,
   M3LTelemetryMeasurement,
-  M3LTelemetryMetric,
   M3LTelemetryPruneRequest,
   M3LTelemetryQuery,
 } from "./telemetry-repository-types.js";
-import type {
-  M3LStoreOutputValue,
-  M3LStoreQueryExecutor,
-  M3LStoreRow,
-} from "./types.js";
+import {
+  GRANULARITY_MS,
+  requireNonEmptyDimension,
+  requireValidGranularity,
+  requireValidMeasure,
+  requireValidMeasurementBase,
+  requireValidQuery,
+  requireValidRangeBound,
+  toRequiredNumber,
+  toTelemetryBucket,
+} from "./telemetry-validation.js";
+import type { M3LStoreQueryExecutor } from "./types.js";
 
 export type {
   M3LConsoleTelemetryRepository,
@@ -114,220 +120,6 @@ const SQL_LIST_ORDER = ` ORDER BY bucket_start_ms DESC, metric, route, script, o
 const SQL_COUNT = `SELECT COUNT(*) AS count FROM console_telemetry_rollup`;
 
 // ---------------------------------------------------------------------------
-// Column narrowing helpers
-// ---------------------------------------------------------------------------
-
-/** Raw column value including the TS-only `undefined` from `noUncheckedIndexedAccess`. */
-type TelemetryColumnValue = M3LStoreOutputValue | undefined;
-
-/** Throws when a `NOT NULL` column reads back as SQL `NULL` or TS `undefined`. */
-function requireColumn(
-  value: TelemetryColumnValue,
-): string | number | bigint | Uint8Array {
-  if (value === null || value === undefined) {
-    throw new M3LConsoleError(
-      "ERR_CONSOLE_STORE_QUERY_FAILED",
-      "console_telemetry_rollup row is missing a value for a NOT NULL column",
-    );
-  }
-  return value;
-}
-
-/** Narrows to a required number, tolerating a `bigint` read. */
-function toRequiredNumber(value: TelemetryColumnValue): number {
-  return Number(requireColumn(value));
-}
-
-/** Narrows to a required string. */
-function toRequiredString(value: TelemetryColumnValue): string {
-  return String(requireColumn(value));
-}
-
-/** Narrows to an optional number: SQL `NULL` → `undefined`. */
-function toOptionalNumber(value: TelemetryColumnValue): number | undefined {
-  return value === null || value === undefined ? undefined : Number(value);
-}
-
-/** The closed {@link M3LTelemetryMetric} vocabulary as a key table for `Object.hasOwn`. */
-const TELEMETRY_METRICS: Readonly<Record<M3LTelemetryMetric, true>> = {
-  "http.request": true,
-  "run.finished": true,
-  "sse.stream": true,
-  "policy.decision": true,
-  "store.health": true,
-};
-
-/** The closed {@link M3LTelemetryGranularity} vocabulary as a key table. */
-const TELEMETRY_GRANULARITIES: Readonly<Record<M3LTelemetryGranularity, true>> =
-  {
-    minute: true,
-    hour: true,
-    day: true,
-  };
-
-/** Narrows a raw `metric` column to {@link M3LTelemetryMetric}, throwing a typed error on unrecognized values. */
-function toTelemetryMetric(value: TelemetryColumnValue): M3LTelemetryMetric {
-  const raw = toRequiredString(value);
-  if (Object.hasOwn(TELEMETRY_METRICS, raw)) {
-    return raw as M3LTelemetryMetric;
-  }
-  throw new M3LConsoleError(
-    "ERR_CONSOLE_STORE_QUERY_FAILED",
-    "console_telemetry_rollup row has an unrecognized metric value",
-  );
-}
-
-/** Narrows a raw `granularity` column to {@link M3LTelemetryGranularity}. */
-function toTelemetryGranularity(
-  value: TelemetryColumnValue,
-): M3LTelemetryGranularity {
-  const raw = toRequiredString(value);
-  if (Object.hasOwn(TELEMETRY_GRANULARITIES, raw)) {
-    return raw as M3LTelemetryGranularity;
-  }
-  throw new M3LConsoleError(
-    "ERR_CONSOLE_STORE_QUERY_FAILED",
-    "console_telemetry_rollup row has an unrecognized granularity value",
-  );
-}
-
-/** Projects one raw `console_telemetry_rollup` row into a {@link M3LTelemetryBucket}. */
-function toTelemetryBucket(row: M3LStoreRow): M3LTelemetryBucket {
-  return {
-    granularity: toTelemetryGranularity(row["granularity"]),
-    bucketStartMs: toRequiredNumber(row["bucket_start_ms"]),
-    metric: toTelemetryMetric(row["metric"]),
-    route: toRequiredString(row["route"]),
-    script: toRequiredString(row["script"]),
-    operation: toRequiredString(row["operation"]),
-    outcome: toRequiredString(row["outcome"]),
-    posture: toRequiredString(row["posture"]),
-    sampleCount: toRequiredNumber(row["sample_count"]),
-    sumValue: toOptionalNumber(row["sum_value"]),
-    minValue: toOptionalNumber(row["min_value"]),
-    maxValue: toOptionalNumber(row["max_value"]),
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Validation guards
-// ---------------------------------------------------------------------------
-
-/**
- * Throws `ERR_CONSOLE_BAD_REQUEST` unless `bucketStartMs` is a non-negative
- * safe integer. A `STRICT INTEGER` column rejects floats at the SQLite level
- * with a store-level error — the wrong classification for a caller fault, so
- * this is checked before binding.
- */
-function requireValidBucketStartMs(bucketStartMs: number): number {
-  if (!Number.isSafeInteger(bucketStartMs) || bucketStartMs < 0) {
-    throw new M3LConsoleError(
-      "ERR_CONSOLE_BAD_REQUEST",
-      "bucketStartMs must be a non-negative safe integer",
-    );
-  }
-  return bucketStartMs;
-}
-
-/** The millisecond width of each granularity bucket. */
-const GRANULARITY_MS: Readonly<Record<M3LTelemetryGranularity, number>> = {
-  minute: 60_000,
-  hour: 3_600_000,
-  day: 86_400_000,
-};
-
-/**
- * Throws `ERR_CONSOLE_BAD_REQUEST` unless `bucketStartMs` is aligned to
- * the given granularity. The alignment `CHECK` in the DDL would surface the
- * violation as a store error — the wrong classification.
- */
-function requireAligned(
-  bucketStartMs: number,
-  granularity: M3LTelemetryGranularity,
-): void {
-  const width = GRANULARITY_MS[granularity];
-  if (bucketStartMs % width !== 0) {
-    throw new M3LConsoleError(
-      "ERR_CONSOLE_BAD_REQUEST",
-      `bucketStartMs ${bucketStartMs.toString()} is not aligned to ${granularity} granularity (${width.toString()} ms)`,
-    );
-  }
-}
-
-/**
- * Throws `ERR_CONSOLE_BAD_REQUEST` unless `value` is a non-negative safe
- * integer — used for `valueMs` and `valueBytes`.
- */
-function requireValidMeasure(value: number, label: string): number {
-  if (!Number.isSafeInteger(value) || value < 0) {
-    throw new M3LConsoleError(
-      "ERR_CONSOLE_BAD_REQUEST",
-      `${label} must be a non-negative safe integer`,
-    );
-  }
-  return value;
-}
-
-/**
- * Throws `ERR_CONSOLE_BAD_REQUEST` unless `value` is a non-empty,
- * non-whitespace-only string — used for required dimensions.
- */
-function requireNonEmptyDimension(value: string, label: string): string {
-  if (value.trim().length === 0) {
-    throw new M3LConsoleError(
-      "ERR_CONSOLE_BAD_REQUEST",
-      `${label} must not be empty or whitespace-only`,
-    );
-  }
-  return value;
-}
-
-/**
- * Throws `ERR_CONSOLE_BAD_REQUEST` unless `limit` is a non-negative integer.
- * SQLite treats a negative `LIMIT` as unbounded, so an unvalidated value
- * would silently contradict this query's "no unbounded default" guarantee.
- */
-function requireValidLimit(limit: number): number {
-  if (!Number.isInteger(limit) || limit < 0) {
-    throw new M3LConsoleError(
-      "ERR_CONSOLE_BAD_REQUEST",
-      "list query limit must be a non-negative integer",
-    );
-  }
-  return limit;
-}
-
-/** Throws `ERR_CONSOLE_BAD_REQUEST` unless `value` is a safe integer — for `fromMs`/`toMs`. */
-function requireValidRangeBound(value: number, label: string): number {
-  if (!Number.isSafeInteger(value)) {
-    throw new M3LConsoleError(
-      "ERR_CONSOLE_BAD_REQUEST",
-      `${label} must be a safe integer`,
-    );
-  }
-  return value;
-}
-
-/** Validates every constrained field of `query`. */
-function requireValidQuery(query: M3LTelemetryQuery): M3LTelemetryQuery {
-  requireValidLimit(query.limit);
-  if (query.fromMs !== undefined)
-    requireValidRangeBound(query.fromMs, "fromMs");
-  if (query.toMs !== undefined) requireValidRangeBound(query.toMs, "toMs");
-  if (
-    query.fromMs !== undefined &&
-    query.toMs !== undefined &&
-    query.fromMs > query.toMs
-  ) {
-    throw new M3LConsoleError(
-      "ERR_CONSOLE_BAD_REQUEST",
-      "fromMs must not be greater than toMs",
-    );
-  }
-  return query;
-}
-
-// ---------------------------------------------------------------------------
 // Operation wrapper
 // ---------------------------------------------------------------------------
 
@@ -348,15 +140,6 @@ function runTelemetryOperation<T>(operation: () => T, message: string): T {
 // ---------------------------------------------------------------------------
 // Record helpers
 // ---------------------------------------------------------------------------
-
-/** Validates the common fields of any measurement variant. */
-function requireValidMeasurementBase(measurement: M3LTelemetryMeasurement): {
-  bucketStartMs: number;
-} {
-  const bucketStartMs = requireValidBucketStartMs(measurement.bucketStartMs);
-  requireAligned(bucketStartMs, measurement.granularity);
-  return { bucketStartMs };
-}
 
 /** Upserts a measure-bearing measurement. */
 function upsertWithValue(
@@ -414,17 +197,9 @@ function recordHttpRequest(
   measurement: Extract<M3LTelemetryMeasurement, { metric: "http.request" }>,
 ): void {
   const route = requireNonEmptyDimension(measurement.route, "route");
+  const outcome = requireNonEmptyDimension(measurement.outcome, "outcome");
   const value = requireValidMeasure(measurement.valueMs, "valueMs");
-  upsertWithValue(
-    executor,
-    measurement,
-    route,
-    "",
-    "",
-    measurement.outcome,
-    "",
-    value,
-  );
+  upsertWithValue(executor, measurement, route, "", "", outcome, "", value);
 }
 
 /** Records one `run.finished` measurement. */
@@ -433,6 +208,7 @@ function recordRunFinished(
   measurement: Extract<M3LTelemetryMeasurement, { metric: "run.finished" }>,
 ): void {
   const script = requireNonEmptyDimension(measurement.script, "script");
+  const outcome = requireNonEmptyDimension(measurement.outcome, "outcome");
   const value = requireValidMeasure(measurement.valueMs, "valueMs");
   upsertWithValue(
     executor,
@@ -440,7 +216,7 @@ function recordRunFinished(
     "",
     script,
     measurement.operation ?? "",
-    measurement.outcome,
+    outcome,
     "",
     value,
   );
@@ -532,6 +308,54 @@ function buildTelemetryListFilter(query: M3LTelemetryQuery): {
 }
 
 // ---------------------------------------------------------------------------
+// recordAll helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Re-throws a mid-`recordAll` failure with how many measurements were
+ * successfully recorded before it attached to `context` — `recordAll` opens
+ * no transaction of its own (see this module's own `@packageDocumentation`),
+ * so a failure partway through leaves the already-upserted rows persisted, and
+ * without this a caller debugging that gets only "it failed" with no way to
+ * learn how far the batch got. Preserves an already-typed `M3LConsoleError`'s
+ * own `code`/`message`/`cause` (e.g. a guard's `ERR_CONSOLE_BAD_REQUEST`)
+ * rather than reclassifying it; anything else is classified first via
+ * {@link classifyStoreFailure}/{@link storeError}.
+ */
+function attachRecordedCount(cause: unknown, recordedCount: number): never {
+  const classified =
+    cause instanceof M3LConsoleError
+      ? cause
+      : storeError(
+          classifyStoreFailure(cause),
+          "query",
+          "console telemetry repository recordAll failed",
+          cause,
+        );
+  throw new M3LConsoleError(classified.code, classified.message, {
+    cause: classified.cause,
+    context: { ...classified.context, recordedCount },
+  });
+}
+
+/** Upserts every measurement in `measurements`, in order; see this module's `@packageDocumentation` for why no transaction is opened here. */
+function recordAllMeasurements(
+  executor: M3LStoreQueryExecutor,
+  measurements: readonly M3LTelemetryMeasurement[],
+): number {
+  let recordedCount = 0;
+  for (const measurement of measurements) {
+    try {
+      recordMeasurement(executor, measurement);
+    } catch (cause) {
+      attachRecordedCount(cause, recordedCount);
+    }
+    recordedCount += 1;
+  }
+  return recordedCount;
+}
+
+// ---------------------------------------------------------------------------
 // Pure helper — exported
 // ---------------------------------------------------------------------------
 
@@ -563,6 +387,7 @@ export function telemetryBucketStartMs(
   atMs: number,
   granularity: M3LTelemetryGranularity,
 ): number {
+  requireValidGranularity(granularity);
   const width = GRANULARITY_MS[granularity];
   return Math.floor(atMs / width) * width;
 }
@@ -607,14 +432,10 @@ export function createConsoleTelemetryRepository(
       );
     },
     recordAll(measurements: readonly M3LTelemetryMeasurement[]): number {
-      return runTelemetryOperation(() => {
-        let count = 0;
-        for (const measurement of measurements) {
-          recordMeasurement(executor, measurement);
-          count += 1;
-        }
-        return count;
-      }, "console telemetry repository recordAll failed");
+      return runTelemetryOperation(
+        () => recordAllMeasurements(executor, measurements),
+        "console telemetry repository recordAll failed",
+      );
     },
     list(query: M3LTelemetryQuery): readonly M3LTelemetryBucket[] {
       return runTelemetryOperation(() => {
@@ -637,6 +458,8 @@ export function createConsoleTelemetryRepository(
     },
     prune(request: M3LTelemetryPruneRequest): number {
       return runTelemetryOperation(() => {
+        requireValidGranularity(request.granularity);
+        requireValidRangeBound(request.beforeMs, "beforeMs");
         const result = executor.run(SQL_PRUNE, [
           request.granularity,
           request.beforeMs,
