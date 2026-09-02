@@ -190,13 +190,13 @@ in-memory record.
 - **Mutation-test the assertion, not the feature.** Three vacuous tests in one
   wave, all of which read as thorough. The reliable move is to break the thing
   the test claims to protect and watch it fail — and to distrust any test
-  whose two sides can be traced to one source.
+  whose two sides can be traced to one source. _(promoted → .claude/rules/tests.md)_
 - **Measure a file before growing it, and extract in the same change.** Five
   extractions, none discovered at `pre-push`. The one that came closest
   (`orchestrator.ts` at 24,947) had 53 bytes left.
 - **An extraction moves coverage, not just code.** Twice a behaviour-preserving
   split failed the per-file gate because the denominator moved. Neither was a
-  regression; both needed a real fix rather than a threshold edit.
+  regression; both needed a real fix rather than a threshold edit. _(promoted → .claude/rules/library-src.md)_
 - **A types-only file cannot fail a coverage gate.** When a split leaves one
   module holding a single unexercised guard, the guard is in the wrong module.
 - **State a scope boundary in the code, the docs and the PR.**
