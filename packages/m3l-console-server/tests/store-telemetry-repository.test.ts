@@ -1098,3 +1098,478 @@ describe("createConsoleTelemetryRepository — failure classification", () => {
     expect(thrown).toBe(originalError);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Optional-dimension coverage — ?? "" fallback branches
+//
+// The fixtures always supply optional fields (outcome on sse.stream /
+// policy.decision, operation on run.finished). The ?? "" fallback branch in
+// each recordX helper is only exercised when the field is absent.
+// These tests cover those arms without requiring a cast.
+// ---------------------------------------------------------------------------
+
+describe("createConsoleTelemetryRepository — optional dimension ?? '' fallback (coverage)", () => {
+  test("records a run.finished measurement without an operation — operation stored as ''", () => {
+    const database = createMigratedDatabase();
+    const repository = createRepository(database);
+
+    repository.record(runFinishedMeasurement({ operation: undefined }));
+
+    expect(repository.count()).toBe(1);
+    const [bucket] = repository.list({ granularity: "minute", limit: 10 });
+    expect(bucket?.operation).toBe("");
+  });
+
+  test("records an sse.stream measurement without an outcome — outcome stored as ''", () => {
+    const database = createMigratedDatabase();
+    const repository = createRepository(database);
+
+    // sse.stream outcome is optional — omit it to exercise the ?? "" arm
+    repository.record({
+      metric: "sse.stream",
+      granularity: "minute",
+      bucketStartMs: 60_000,
+    });
+
+    expect(repository.count()).toBe(1);
+    const [bucket] = repository.list({ granularity: "minute", limit: 10 });
+    expect(bucket?.outcome).toBe("");
+  });
+
+  test("records a policy.decision measurement without an outcome — outcome stored as ''", () => {
+    const database = createMigratedDatabase();
+    const repository = createRepository(database);
+
+    repository.record({
+      metric: "policy.decision",
+      granularity: "minute",
+      bucketStartMs: 60_000,
+      posture: "auto",
+    });
+
+    expect(repository.count()).toBe(1);
+    const [bucket] = repository.list({ granularity: "minute", limit: 10 });
+    expect(bucket?.outcome).toBe("");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// recordMeasurement default (exhaustiveness) case — unknown metric via cast
+// ---------------------------------------------------------------------------
+
+describe("createConsoleTelemetryRepository — unknown metric via cast reaches default case", () => {
+  test("a fully-cast unknown metric string throws ERR_CONSOLE_BAD_REQUEST from the exhaustiveness check", () => {
+    const database = createMigratedDatabase();
+    const repository = createRepository(database);
+
+    const thrown = captureFailure(() =>
+      repository.record({
+        metric: "unknown.metric",
+        granularity: "minute",
+        bucketStartMs: 60_000,
+      } as unknown as M3LTelemetryMeasurement),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).code).toBe("ERR_CONSOLE_BAD_REQUEST");
+    expect(repository.count()).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// attachRecordedCount — non-M3LConsoleError path (storeError branch)
+//
+// When the executor throws a plain Error during recordAll, attachRecordedCount
+// classifies it via classifyStoreFailure/storeError (not the M3LConsoleError
+// pass-through branch). The thrown error is still an M3LConsoleError with
+// context.recordedCount, but the code is ERR_CONSOLE_STORE_QUERY_FAILED.
+// ---------------------------------------------------------------------------
+
+describe("createConsoleTelemetryRepository — recordAll() with non-M3LConsoleError executor failure", () => {
+  test("an executor run() failure during recordAll classifies as ERR_CONSOLE_STORE_QUERY_FAILED and carries context.recordedCount", () => {
+    const originalError = new Error("simulated disk error");
+    let callCount = 0;
+    const executor = createStubExecutorForCoverage({
+      run: () => {
+        callCount += 1;
+        if (callCount >= 2) throw originalError;
+        return { changes: 0, lastInsertRowid: BigInt(1) };
+      },
+    });
+    const repository = createConsoleTelemetryRepository(executor);
+
+    const thrown = captureFailure(() =>
+      repository.recordAll([
+        httpRequestMeasurement({ route: "/api/v1/a" }),
+        httpRequestMeasurement({ route: "/api/v1/b" }),
+      ]),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).code).toBe(
+      "ERR_CONSOLE_STORE_QUERY_FAILED",
+    );
+    // One successful run() call before the failure: recordedCount = 1
+    expect((thrown as M3LConsoleError).context["recordedCount"]).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// count() — undefined row (executor.get returns undefined)
+// ---------------------------------------------------------------------------
+
+describe("createConsoleTelemetryRepository — count() with undefined row from executor", () => {
+  test("count() returns 0 when the executor returns undefined from get()", () => {
+    const executor = createStubExecutorForCoverage({
+      get: () => undefined,
+    });
+    const repository = createConsoleTelemetryRepository(executor);
+
+    expect(repository.count()).toBe(0);
+  });
+});
+
+/** Minimal stub executor for coverage-gap tests. Unimplemented methods throw loudly. */
+function createStubExecutorForCoverage(
+  overrides: Partial<M3LStoreQueryExecutor>,
+): M3LStoreQueryExecutor {
+  const unimplemented = (method: string) => (): never => {
+    throw new Error(`stub executor: ${method} not implemented in this test`);
+  };
+  return {
+    all: overrides.all ?? unimplemented("all"),
+    get: overrides.get ?? unimplemented("get"),
+    run: overrides.run ?? unimplemented("run"),
+    script: overrides.script ?? unimplemented("script"),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Cast-boundary guard: invalid granularity → ERR_CONSOLE_BAD_REQUEST
+// (not ERR_CONSOLE_STORE_QUERY_FAILED)
+//
+// Before fix 21342c45: a cast-bypassed granularity made GRANULARITY_MS lookup
+// return `undefined`, so `width.toString()` threw a raw TypeError that
+// `classifyStoreFailure` misclassified as ERR_CONSOLE_STORE_QUERY_FAILED.
+// Each test below asserts the correct code — that is the regression lock.
+// ---------------------------------------------------------------------------
+
+describe("createConsoleTelemetryRepository — invalid granularity via cast → ERR_CONSOLE_BAD_REQUEST", () => {
+  const BAD_GRAN = "second" as unknown as M3LTelemetryGranularity;
+
+  test("record() with a cast-bypassed granularity throws ERR_CONSOLE_BAD_REQUEST, not ERR_CONSOLE_STORE_QUERY_FAILED", () => {
+    const database = createMigratedDatabase();
+    const repository = createRepository(database);
+
+    const thrown = captureFailure(() =>
+      repository.record(
+        httpRequestMeasurement({ granularity: BAD_GRAN, bucketStartMs: 0 }),
+      ),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).code).toBe("ERR_CONSOLE_BAD_REQUEST");
+    expect(repository.count()).toBe(0);
+  });
+
+  test("recordAll() with a cast-bypassed granularity in the first measurement throws ERR_CONSOLE_BAD_REQUEST", () => {
+    const database = createMigratedDatabase();
+    const repository = createRepository(database);
+
+    const thrown = captureFailure(() =>
+      repository.recordAll([
+        httpRequestMeasurement({ granularity: BAD_GRAN, bucketStartMs: 0 }),
+        httpRequestMeasurement(),
+      ]),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).code).toBe("ERR_CONSOLE_BAD_REQUEST");
+    expect(repository.count()).toBe(0);
+  });
+
+  test("list() with a cast-bypassed granularity throws ERR_CONSOLE_BAD_REQUEST, not ERR_CONSOLE_STORE_QUERY_FAILED", () => {
+    const database = createMigratedDatabase();
+    const repository = createRepository(database);
+
+    const thrown = captureFailure(() =>
+      repository.list({
+        granularity: BAD_GRAN,
+        limit: 10,
+      }),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).code).toBe("ERR_CONSOLE_BAD_REQUEST");
+  });
+
+  test("prune() with a cast-bypassed granularity throws ERR_CONSOLE_BAD_REQUEST", () => {
+    const database = createMigratedDatabase();
+    const repository = createRepository(database);
+
+    const thrown = captureFailure(() =>
+      repository.prune({ granularity: BAD_GRAN, beforeMs: 0 }),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).code).toBe("ERR_CONSOLE_BAD_REQUEST");
+  });
+
+  test("telemetryBucketStartMs() with a cast-bypassed granularity throws ERR_CONSOLE_BAD_REQUEST", () => {
+    const thrown = captureFailure(() =>
+      telemetryBucketStartMs(75_000, BAD_GRAN),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).code).toBe("ERR_CONSOLE_BAD_REQUEST");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// prune() — beforeMs validation (non-finite and non-safe-integer)
+//
+// Before fix 21342c45: these values were bound straight into SQL, which
+// deleted zero rows and returned 0 — indistinguishable from "nothing was
+// old enough". The positive test below keeps the two cases distinguishable.
+// ---------------------------------------------------------------------------
+
+describe("createConsoleTelemetryRepository — prune() beforeMs validation", () => {
+  const invalidBeforeMsValues: readonly [string, number][] = [
+    ["NaN", Number.NaN],
+    ["Infinity", Number.POSITIVE_INFINITY],
+    ["-Infinity", Number.NEGATIVE_INFINITY],
+    ["a non-safe integer", Number.MAX_SAFE_INTEGER + 1],
+    ["a non-integer", 1.5],
+  ];
+
+  test.each(invalidBeforeMsValues)(
+    "rejects %s beforeMs with ERR_CONSOLE_BAD_REQUEST (not a silent zero-row-delete)",
+    (_label, beforeMs) => {
+      const database = createMigratedDatabase();
+      const repository = createRepository(database);
+
+      repository.record(httpRequestMeasurement({ bucketStartMs: 60_000 }));
+
+      const thrown = captureFailure(() =>
+        repository.prune({ granularity: "minute", beforeMs }),
+      );
+
+      expect(thrown).toBeInstanceOf(M3LConsoleError);
+      expect((thrown as M3LConsoleError).code).toBe("ERR_CONSOLE_BAD_REQUEST");
+      // The row must still be present — prune threw before executing SQL.
+      expect(repository.count()).toBe(1);
+    },
+  );
+
+  test("a valid prune that matches nothing returns 0 — distinguishable from a validation error because it does not throw", () => {
+    const database = createMigratedDatabase();
+    const repository = createRepository(database);
+
+    repository.record(httpRequestMeasurement({ bucketStartMs: 60_000 }));
+
+    // beforeMs = 0 is earlier than the row at 60_000 → no rows match
+    const deleted = repository.prune({ granularity: "minute", beforeMs: 0 });
+
+    expect(deleted).toBe(0);
+    expect(repository.count()).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// list() — invalid metric via cast → ERR_CONSOLE_BAD_REQUEST
+//
+// Before fix 21342c45: a typo'd metric passed `WHERE metric = 'garbage'`
+// and returned [] — a silent wrong-shaped empty result.
+// ---------------------------------------------------------------------------
+
+describe("createConsoleTelemetryRepository — list() invalid metric via cast → ERR_CONSOLE_BAD_REQUEST", () => {
+  test("rejects an unrecognized metric with ERR_CONSOLE_BAD_REQUEST (not a silent [])", () => {
+    const database = createMigratedDatabase();
+    const repository = createRepository(database);
+
+    // Insert a real row so we can confirm it does not flow through
+    repository.record(httpRequestMeasurement());
+
+    const thrown = captureFailure(() =>
+      repository.list({
+        granularity: "minute",
+        metric: "http.garbage" as M3LTelemetryMetric,
+        limit: 10,
+      }),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).code).toBe("ERR_CONSOLE_BAD_REQUEST");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// record() — outcome validation on http.request and run.finished
+//
+// Before fix 21342c45: outcome was never routed through requireNonEmptyDimension
+// on these arms. An empty outcome inserted cleanly and collided with the ''
+// sentinel (metrics where outcome does not apply). The fix routes outcome
+// through requireNonEmptyDimension for these two arms only, matching the
+// behavior of route/script/posture guards that already existed.
+// ---------------------------------------------------------------------------
+
+describe("createConsoleTelemetryRepository — record() outcome validation via cast", () => {
+  test("rejects an empty-string outcome on 'http.request' with ERR_CONSOLE_BAD_REQUEST", () => {
+    const database = createMigratedDatabase();
+    const repository = createRepository(database);
+
+    const thrown = captureFailure(() =>
+      repository.record({
+        ...httpRequestMeasurement(),
+        outcome: "",
+      } as unknown as M3LTelemetryMeasurement),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).code).toBe("ERR_CONSOLE_BAD_REQUEST");
+    expect(repository.count()).toBe(0);
+  });
+
+  test("rejects a whitespace-only outcome on 'http.request' with ERR_CONSOLE_BAD_REQUEST", () => {
+    const database = createMigratedDatabase();
+    const repository = createRepository(database);
+
+    const thrown = captureFailure(() =>
+      repository.record({
+        ...httpRequestMeasurement(),
+        outcome: "   ",
+      } as unknown as M3LTelemetryMeasurement),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).code).toBe("ERR_CONSOLE_BAD_REQUEST");
+    expect(repository.count()).toBe(0);
+  });
+
+  test("rejects an empty-string outcome on 'run.finished' with ERR_CONSOLE_BAD_REQUEST", () => {
+    const database = createMigratedDatabase();
+    const repository = createRepository(database);
+
+    const thrown = captureFailure(() =>
+      repository.record({
+        ...runFinishedMeasurement(),
+        outcome: "",
+      } as unknown as M3LTelemetryMeasurement),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).code).toBe("ERR_CONSOLE_BAD_REQUEST");
+    expect(repository.count()).toBe(0);
+  });
+
+  test("rejects a whitespace-only outcome on 'run.finished' with ERR_CONSOLE_BAD_REQUEST", () => {
+    const database = createMigratedDatabase();
+    const repository = createRepository(database);
+
+    const thrown = captureFailure(() =>
+      repository.record({
+        ...runFinishedMeasurement(),
+        outcome: "\t",
+      } as unknown as M3LTelemetryMeasurement),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).code).toBe("ERR_CONSOLE_BAD_REQUEST");
+    expect(repository.count()).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// recordAll() — partial-failure with context.recordedCount
+//
+// recordAll() opens no transaction. A failure at measurement k leaves
+// measurements 0..k-1 persisted. The thrown error carries
+// context.recordedCount so callers know exactly how far the batch got.
+// This mirrors audit-repository.ts's attachInsertedCount pattern.
+//
+// Before fix 21342c45: the thrown error had no context.recordedCount —
+// a failure at any position looked identical to "measurement 1 failed".
+// ---------------------------------------------------------------------------
+
+describe("createConsoleTelemetryRepository — recordAll() partial-failure context.recordedCount", () => {
+  test("a failure at measurement 3 of 5 carries context.recordedCount = 2 and persists exactly 2 rows", () => {
+    const database = createMigratedDatabase();
+    const repository = createRepository(database);
+
+    // Measurements 1 and 2 are valid (different routes so they land as distinct rows).
+    // Measurement 3 has an empty outcome — rejected by requireNonEmptyDimension after
+    // 2 successful upserts, so recordedCount must be 2.
+    // Measurements 4 and 5 are never reached.
+    const thrown = captureFailure(() =>
+      repository.recordAll([
+        httpRequestMeasurement({ route: "/api/v1/a" }),
+        httpRequestMeasurement({ route: "/api/v1/b" }),
+        {
+          ...httpRequestMeasurement({ route: "/api/v1/c" }),
+          outcome: "",
+        } as unknown as M3LTelemetryMeasurement,
+        httpRequestMeasurement({ route: "/api/v1/d" }),
+        httpRequestMeasurement({ route: "/api/v1/e" }),
+      ]),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).code).toBe("ERR_CONSOLE_BAD_REQUEST");
+    // The fix: context.recordedCount tells the caller how many succeeded
+    expect((thrown as M3LConsoleError).context["recordedCount"]).toBe(2);
+
+    // Confirm the database: exactly 2 rows, the valid ones
+    expect(repository.count()).toBe(2);
+    const rows = repository.list({ granularity: "minute", limit: 10 });
+    const routes = rows.map((r) => r.route).sort();
+    expect(routes).toEqual(["/api/v1/a", "/api/v1/b"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Type-level: union negative fields — variable with foreign dimension
+//
+// Before fix 21342c45: excess-property checking only applied to fresh literals,
+// so a variable carrying a foreign dimension (e.g. script: string on the
+// http.request arm) compiled silently. The foreign value was discarded
+// because the recordX helpers hardcode '' for dimensions they don't use.
+// The fix adds `?: undefined` to every foreign dimension in every arm, so
+// a variable also fails assignment.
+//
+// This test encodes the post-fix invariant at compile time.
+// ---------------------------------------------------------------------------
+
+describe("M3LTelemetryMeasurement — variable-shape foreign-dimension rejection (post-fix type contract)", () => {
+  test("a type with script: string is not assignable to the http.request arm (variable path, not just literal)", () => {
+    // http.request arm now has `readonly script?: undefined`.
+    // A type carrying `script: string` cannot satisfy `script?: undefined`
+    // even when flowing through a variable — the point of the fix.
+    type HttpArm = Extract<M3LTelemetryMeasurement, { metric: "http.request" }>;
+    // Construct a type that matches what a variable carrying a foreign field looks like
+    type WithForeignScript = {
+      metric: "http.request";
+      granularity: M3LTelemetryGranularity;
+      bucketStartMs: number;
+      route: string;
+      outcome: string;
+      valueMs: number;
+      script: string; // foreign — rejected by script?: undefined post-fix
+    };
+    // Pre-fix this extended (excess-property check skips variables); post-fix it does not.
+    expectTypeOf<WithForeignScript>().not.toExtend<HttpArm>();
+  });
+
+  test("a type with route: string is not assignable to the run.finished arm (variable path)", () => {
+    type RunArm = Extract<M3LTelemetryMeasurement, { metric: "run.finished" }>;
+    type WithForeignRoute = {
+      metric: "run.finished";
+      granularity: M3LTelemetryGranularity;
+      bucketStartMs: number;
+      script: string;
+      outcome: string;
+      valueMs: number;
+      route: string; // foreign — rejected by route?: undefined post-fix
+    };
+    expectTypeOf<WithForeignRoute>().not.toExtend<RunArm>();
+  });
+});
