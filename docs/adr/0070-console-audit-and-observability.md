@@ -214,6 +214,95 @@ already paid that exact cost once: a required `dryRun` on
   own `argv` belongs to the script, not its launcher. An environment
   variable is the channel that does not collide with a consumer's flags.
 
+## Update (2026-09-02) — the audit index is a lossy projection; an index-write failure is degraded, not fatal
+
+X7c shipped the writer and the rebuild path the Consequences above called
+for. Three things the Decision left open are now settled, and one Negative
+consequence is discharged. The original text stays as written, per this
+repo's dated-Update convention.
+
+### The index is a projection, not a mirror
+
+`M3LHumanActionRecord` carries eleven fields; `console_human_actions` has a
+column for eight of them. `parameterNames`, `parameterRefs` and `detail`
+have no column and are never indexed — so the index answers _who did what,
+when, with what outcome_, and the JSONL trail is the only place a request's
+parameter names, its ADR-0068 references and the console's own detail map
+live.
+
+That asymmetry is what makes "the JSONL trail is the source of truth"
+operational rather than decorative: a rebuild can only run trail → index,
+and a reader that needs the dropped three has to read the trail. A later
+reader of this ADR must not assume the index is a copy of the trail.
+
+### An index-write failure is a LOUD degradation, never a refusal
+
+The Decision's "an unauditable action is refused" still holds for the trail:
+`boot/audit-index.ts`'s dual-write port awaits the JSONL append FIRST and
+lets it reject, so no index row can exist for an action whose trail entry
+failed.
+
+The index half is deliberately not symmetric. When the trail write succeeds
+and the index insert fails, the operator's action SUCCEEDS and the failure
+is logged at `error` with the correlation id and the action. The index is
+derived and rebuildable; failing a real operator action because a derived
+store hiccuped is worse than the missing row, and the rebuild below is the
+recovery. A degradation, never a silent swallow — the `error` line carries
+what is needed to correlate the miss back to the trail entry that did land.
+
+### The rebuild path, and why its trigger is bounded
+
+`boot/audit-rebuild.ts` reads the whole trail, projects each entry, then
+truncates and reinserts inside ONE transaction. Two properties are load
+bearing:
+
+- **The whole trail is read before anything is written**, so a corrupt line
+  leaves zero rows rather than an index holding a prefix of the trail that
+  looks complete. A torn LAST line — a process that died mid-append — is
+  tolerated and logged; the same fragment mid-stream still throws.
+- **The trigger is "index empty AND trail not"**, at boot, strictly before
+  the listener binds. An unconditional rebuild would be `O(trail)` on every
+  start, forever, against an append-only file.
+
+It never throws: a console that cannot rebuild a derived store must still
+boot and serve, for the same reason an index-write failure does not fail an
+action.
+
+**This is also what keeps the v7/v8 migration property alive.** Those
+migrations DROP and recreate `console_human_actions` (SQLite cannot alter a
+`CHECK`), justified as loss-free partly because nothing wrote the table.
+X7c ended that — but the empty table a recreate leaves behind is exactly the
+rebuild trigger, so a future kind-widening migration may still drop rather
+than needing a copy-through. Conditional on the trigger staying wired, which
+`store/migrations/human-actions.ts`'s own TSDoc now instructs the next author
+to verify.
+
+### Discharged
+
+The Negative consequence "dual-store audit (JSONL truth + SQLite index)
+needs its rebuild path tested" is closed. `tests/boot-audit-rebuild.test.ts`
+drives the rebuild against a real `M3LAppendOnlyStream` trail and a real
+migrated store — idempotence, the corrupt-trail refusal, the torn-tail
+tolerance and the trigger's bound — plus an end-to-end pass that performs an
+audited write, finds it in BOTH stores, then opens an empty index and watches
+a boot restore it from the trail.
+
+### What X7c did not claim
+
+A write route registered through `M3LConsoleRuntimeOptions.routes` is still
+not audited: the audit spec table is keyed by the console's own path
+templates and can hold no entry for a caller-invented route, and enforcing
+its exhaustiveness guard against those would make that documented seam
+unusable. That is now stated on the option itself and in
+`docs/reference/console.md`'s Known limits rather than only in code.
+
+The four declared-but-unwired kinds — `run.cancel`,
+`session.binding.select`, `view.run.report`, `view.session.artifact` — need
+routes before they can be wired, which is four new API endpoints rather than
+audit work. They are split to tracker row X7d; `run.cancel` remains the
+recorded deliberate absence ADR-0066 argued for, and
+`session.binding.select` overlaps X11's declared drill-down scope.
+
 ## Links
 
 - Programme: [ADR-0064](./0064-m3l-console-programme.md). Store/index:

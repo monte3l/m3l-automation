@@ -213,6 +213,13 @@ number>` already relies on (found A4b: `LOG_LEVEL_FLOORS`).
   that specific field (found in `M3LInputFileReader`'s record-field readers,
   2026-07-28 security review: `optionalRecordField` returned `Object.prototype`
   itself for a non-own `"__proto__"` field before the fix).
+- **A cast across a serialization boundary hides the PROTOTYPE, not just the
+  shape.** `M3LAppendOnlyStream.read()` rebuilds every node with a null
+  prototype (its `toJSON`-gadget defence), so `Array.isArray` answers `true`
+  while the array has no `.slice` — handing that to a narrowing layer throws a
+  raw `TypeError` from inside it instead of a classified error. Re-hydrate with
+  `structuredClone` first, never `JSON.parse(JSON.stringify(...))`, which turns
+  `-0` into `0` behind the narrowing layer.
 - **Allowlist, never denylist, for a redaction or sanitization boundary.**
   Enumerate the fields you keep; drop everything else. A pattern that tries to
   _recognize_ what is unsafe (a regex over URLs, key-name heuristics) is a
