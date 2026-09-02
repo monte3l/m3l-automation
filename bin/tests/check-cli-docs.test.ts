@@ -383,7 +383,7 @@ Usage text.
 });
 
 describe("shippedCommandNames", () => {
-  test("extracts all ten commands from the real main.ts", () => {
+  test("extracts all eleven commands from the real main.ts", () => {
     const names = shippedCommandNames(
       readFileSync(join(repoRoot, CLI_MAIN_PATH), "utf8"),
     );
@@ -397,6 +397,7 @@ describe("shippedCommandNames", () => {
       "new",
       "wizard",
       "completion",
+      "flow",
       "help",
     ]);
   });
@@ -409,7 +410,15 @@ describe("shippedCommandNames", () => {
 
   test("extracts a ninth name added to a synthetic literal", () => {
     // This is the case that proves the cross-check is not hard-coded: a new
-    // command in main.ts becomes a documentation requirement immediately.
+    // command added to the STATIC_COMMAND_NAMES literal is immediately
+    // extracted, even if it has never appeared in the real main.ts.
+    //
+    // "not-a-real-command" is a deliberately synthetic placeholder — it is
+    // guaranteed to never appear in docs/reference/cli.md, so the second half
+    // of this test (cliDocStructureErrors bites) stays true regardless of
+    // which real commands ship. Do NOT replace this with a real command name;
+    // any real command will eventually be documented and the assertion will
+    // silently go stale (as "flow" did when U10 shipped).
     const synthetic = `const STATIC_COMMAND_NAMES: readonly string[] = [
   "list",
   "inspect",
@@ -419,17 +428,20 @@ describe("shippedCommandNames", () => {
   "history",
   "wizard",
   "help",
-  "flow",
+  "not-a-real-command",
 ];`;
     const names = shippedCommandNames(synthetic);
     expect(names).toHaveLength(9);
-    expect(names).toContain("flow");
-    // …and the shipped page, which documents no `m3l flow`, must now fail.
+    expect(names).toContain("not-a-real-command");
+    // …and the shipped page, which will never document `m3l not-a-real-command`,
+    // must fail the cross-check — this proves cliDocStructureErrors bites.
     const errors = cliDocStructureErrors(
       readFileSync(join(repoRoot, CLI_DOC_PATH), "utf8"),
       names,
     );
-    expect(errors.join("\n")).toContain("does not document `m3l flow`");
+    expect(errors.join("\n")).toContain(
+      "does not document `m3l not-a-real-command`",
+    );
   });
 });
 

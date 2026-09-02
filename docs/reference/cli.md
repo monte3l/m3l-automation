@@ -473,6 +473,78 @@ code (see [§Exit codes](#exit-codes)). An agent consuming `--json` output
 must treat "empty stdout, non-zero exit" as a CLI-side failure distinct from
 "one envelope, exit code inside it".
 
+### U10 — orchestration engine
+
+#### `m3l flow list|run <name> [--dry-run] [--json]`
+
+Runs a **named flow** — an ordered, branching sequence of `scripts/*`
+invocations declared in `data/config/flows/<name>.yaml` (ADR-0056). The
+subcommand is **required**: a bare `m3l flow` exits `2` with the usage line, as
+does an unrecognized subcommand.
+
+`m3l flow list` prints the declared flow names (`.yaml` only — a `.yml`
+sibling is deliberately not listed, since it would suggest a name that then
+fails to load). Under `--json` it emits a JSON array. An empty flows directory
+says so rather than printing nothing.
+
+`m3l flow run <name>` loads and validates the definition, then executes its
+steps in order. The engine drives whole scripts over the existing exit-code and
+`run-report.json` contract — it never reaches inside a running script, and it
+**never writes or rewrites a script's run report**.
+
+| Aspect         | Behaviour                                                                                                                                                                            |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Branching      | each step declares `onSuccess`, `onFailure` and optionally `onPartial`, each `continue` \| `stop` \| `{ goto: <stepId> }`. `goto` may target a later step, an earlier one, or itself |
+| Classification | exit `0` → `onSuccess`; exit `6` (`PARTIAL`) **or** a `partial` report outcome → `onPartial`; anything else, including `128 + signal`, → `onFailure`                                 |
+| Exit code      | the **deciding** (last executed) step's own exit code, propagated unchanged — never clamped or remapped                                                                              |
+| Loop guard     | `maxStepExecutions` (default `50`) counts executions cumulatively across revisits; tripping it is a definition-authoring fault and exits `2`                                         |
+| `--dry-run`    | a **floor**, never lowered: it forces dry-run on every step, and a step declaring `dryRun: true` still runs dry without it                                                           |
+| Execution      | `execution: auto` (default) \| `in-process` \| `spawn`. `auto` resolves to **spawn**, because only the spawn path produces the `run-report.json` the engine reads                    |
+| Unknown flow   | exits `2` (`ERR_CLI_UNKNOWN_FLOW`) with Damerau–Levenshtein suggestions over the declared names                                                                                      |
+
+**Definition faults are caught at load time, not mid-run.** `name` must match
+the filename stem (otherwise a renamed file silently shadows another flow);
+step ids must be unique; every `goto` must resolve; every `script` must resolve
+through discovery; every `parameters` key must be one the target script
+actually declares (operations are ordinary declared parameters under ADR-0055,
+so there is no separate `operation:` key); and **unknown keys are rejected at
+both flow and step level**, which is what makes later additions to the format
+forward-safe. Step-level and `parameters` keys are screened for
+prototype-pollution vectors, because the YAML provider screens only top-level
+keys.
+
+**A run record is persisted** to `data/cache/m3l-cli/flows/<name>.json`: the run
+id, a canonical hash of the definition, the observed window, the status
+(`completed` \| `stopped` \| `failed` \| `loop-guard-exceeded`), the flow exit
+code, the cumulative step-execution count, the halting and resume step ids, and
+one entry per step execution. Unlike run history, this is **not** best-effort —
+it is a resume ledger, so a failed write is reported and changes the exit code
+rather than being swallowed. Rendering happens before persistence, so the
+result is still on stdout either way.
+
+**U10 ships no `--resume` flag.** The engine's entry point already accepts a
+resume-from step id and the record already carries everything a resume needs,
+but the flag itself is U11's, and `--resume` is **rejected** at exit `2` rather
+than silently ignored — a silently-dropped `--resume` would re-run a flow from
+its first step.
+
+Under `--json` a single line is emitted on stdout: a `m3l.flow.result` envelope
+carrying the flow-level fields above plus one nested entry per step execution.
+Each nested entry **composes the same per-run envelope** `m3l run --json` emits,
+with that step's own observed window, and the flow's `exitCodeName` is copied
+from the deciding step's nested envelope rather than re-derived.
+
+Two consequences of that a consumer depends on:
+
+- A spawned step's own stdout is **redirected to stderr** for the duration of a
+  `--json` run, exactly as `m3l run --json` does, so the envelope is the only
+  thing written to stdout. Without it a step that prints JSON could hand an
+  agent a forged verdict.
+- A `loop-guard-exceeded` run always reports `exitCodeName: null`, never the
+  deciding step's name. The guard is the engine's own verdict and it trips
+  _after_ the steps that did run, so copying the last step's name would report
+  `SUCCESS` alongside `exitCode: 2`.
+
 ### V3 — secrets delivery
 
 #### Secret delivery

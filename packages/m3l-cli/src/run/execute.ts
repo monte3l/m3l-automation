@@ -81,6 +81,54 @@ export interface M3LCliExecuteOptions {
    * secrets.
    */
   readonly secretEnv?: Readonly<Record<string, string>>;
+  /**
+   * Overrides {@link spawnScript}'s own `redirectStdoutToStderr`; defaults to
+   * `context.jsonOutput` when omitted, preserving `m3l run --json`'s existing
+   * behaviour.
+   *
+   * Deliberately independent of `context.jsonOutput`: that flag decides
+   * whether THIS call emits its own `m3l.run.result` envelope line, while this
+   * option decides whether the spawned child's stdout is kept off the
+   * parent's. A caller that must suppress this call's own envelope —
+   * `flow/step` always does, so a spawned step cannot emit a second,
+   * corrupting envelope line — but is itself composing a `--json` envelope of
+   * its own (a running flow) still needs the child's stdout redirected, and
+   * sets this explicitly rather than relying on `context.jsonOutput`.
+   */
+  readonly redirectStdoutToStderr?: boolean;
+}
+
+/**
+ * Composes the options {@link executeScript} forwards to {@link spawnScript}.
+ *
+ * Extracted so {@link executeScript} stays a flat sequence (spawn, then —
+ * only in `--json` mode — locate and emit the envelope) rather than also
+ * carrying the option-assembly branching inline.
+ *
+ * @param context - The writer facade, `--json` flag, and the environment plus
+ *   env-file decision to forward.
+ * @param options - The caller's optional overrides.
+ * @returns The options object to hand to {@link spawnScript}.
+ */
+function buildSpawnOptions(
+  context: M3LCliExecuteContext,
+  options: M3LCliExecuteOptions,
+): M3LCliSpawnOptions {
+  return {
+    ...(options.spawnImpl !== undefined
+      ? { spawnImpl: options.spawnImpl }
+      : {}),
+    ...(options.stderrStream !== undefined
+      ? { stderrStream: options.stderrStream }
+      : {}),
+    ...(options.secretEnv !== undefined
+      ? { secretEnv: options.secretEnv }
+      : {}),
+    env: context.env,
+    envFile: context.envFile,
+    redirectStdoutToStderr:
+      options.redirectStdoutToStderr ?? context.jsonOutput,
+  };
 }
 
 /**
@@ -92,6 +140,10 @@ export interface M3LCliExecuteOptions {
  * In `--json` mode, the child's stdout is redirected to the parent's stderr
  * (`spawnScript`'s `redirectStdoutToStderr`), so a script's own stdout output
  * never interleaves with the single JSON envelope line this function writes.
+ * `options.redirectStdoutToStderr` can override that default independently of
+ * `context.jsonOutput`, for a caller that suppresses this call's own envelope
+ * but is composing a `--json` envelope of its own (see
+ * {@link M3LCliExecuteOptions.redirectStdoutToStderr}).
  *
  * Envelope emission is best-effort: a failure locating or rendering the
  * report (including `context.output.info` itself throwing) never changes
@@ -108,8 +160,8 @@ export interface M3LCliExecuteOptions {
  *   `dist/main.js`).
  * @param argv - Arguments forwarded verbatim to the spawned script.
  * @param options - The optional `secretEnv` overlay plus
- *   `spawnImpl`/`stderrStream` overrides and a `now` seam for deterministic
- *   timing.
+ *   `spawnImpl`/`stderrStream`/`redirectStdoutToStderr` overrides and a `now`
+ *   seam for deterministic timing.
  * @returns The spawned child's resolved exit code, unaffected by the
  *   envelope pipeline.
  *
@@ -139,20 +191,11 @@ export async function executeScript(
   const now = options.now ?? ((): Date => new Date());
   const startedAt = now();
 
-  const exitCode = await spawnScript(scriptDirectory, argv, {
-    ...(options.spawnImpl !== undefined
-      ? { spawnImpl: options.spawnImpl }
-      : {}),
-    ...(options.stderrStream !== undefined
-      ? { stderrStream: options.stderrStream }
-      : {}),
-    ...(options.secretEnv !== undefined
-      ? { secretEnv: options.secretEnv }
-      : {}),
-    env: context.env,
-    envFile: context.envFile,
-    redirectStdoutToStderr: context.jsonOutput,
-  });
+  const exitCode = await spawnScript(
+    scriptDirectory,
+    argv,
+    buildSpawnOptions(context, options),
+  );
 
   if (!context.jsonOutput) {
     return exitCode;

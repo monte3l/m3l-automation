@@ -608,6 +608,38 @@ describe("executeScript — secret/env forwarding (ADR-0085)", () => {
   });
 });
 
+describe("executeScript — redirectStdoutToStderr fallback (ADR-0085 flow composition)", () => {
+  // `flow/step.ts` relies on this default rather than passing
+  // `redirectStdoutToStderr` on every non-flow call: omitting the option must
+  // still reproduce `m3l run --json`'s pre-existing behaviour exactly.
+  test.each([
+    [true, true],
+    [false, false],
+  ] as const)(
+    "omitting redirectStdoutToStderr falls back to context.jsonOutput (%s -> %s)",
+    async (jsonOutput, expected) => {
+      spawnScriptMock.mockResolvedValue(0);
+      locateRunReportMock.mockReturnValue(FOUND_LOOKUP);
+      buildRunEnvelopeMock.mockReturnValue(SAMPLE_ENVELOPE);
+      formatRunEnvelopeMock.mockReturnValue(SAMPLE_FORMATTED);
+
+      await executeScript(
+        buildContext({ jsonOutput }),
+        SCRIPT_NAME,
+        SCRIPT_DIRECTORY,
+        ARGV,
+        { now: scriptedNow(STARTED_AT, FINISHED_AT) },
+      );
+
+      expect(spawnScriptMock).toHaveBeenCalledWith(
+        SCRIPT_DIRECTORY,
+        ARGV,
+        expect.objectContaining({ redirectStdoutToStderr: expected }),
+      );
+    },
+  );
+});
+
 describe("executeScript — type contract", () => {
   test("returns a Promise<number> regardless of JSON mode", () => {
     expectTypeOf<typeof executeScript>().returns.toEqualTypeOf<
@@ -621,6 +653,7 @@ describe("executeScript — type contract", () => {
       readonly stderrStream?: M3LCliExecuteOptions["stderrStream"];
       readonly now?: () => Date;
       readonly secretEnv?: Readonly<Record<string, string>>;
+      readonly redirectStdoutToStderr?: boolean;
     }>();
   });
 });
