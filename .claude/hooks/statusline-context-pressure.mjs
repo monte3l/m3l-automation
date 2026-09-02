@@ -495,9 +495,16 @@ export const SPOKE_WARN_THRESHOLD_SEC = 15 * 60;
 /** Elapsed-time threshold, in seconds, past which it turns red — the
  * documented athena/s3/subagent-stall-integration 30-60+ min pattern. */
 export const SPOKE_HIGH_THRESHOLD_SEC = 30 * 60;
+/** A `start` record older than this, with no matching `stop`, is treated as
+ * a lost event (the spoke's `SubagentStop` hook never fired — the harness
+ * killed the process, the dispatch was cancelled, or the advisory hook's own
+ * write failed) rather than a still-running spoke, so it doesn't pin the
+ * segment red forever. Two hours is well past the longest recorded stall in
+ * this repo's own incident history (~60 min) with headroom to spare. */
+export const MAX_INFLIGHT_AGE_SEC = 2 * 60 * 60;
 
 /**
- * @typedef {{ agentId?: string, agentType: string, startTs: string }} InflightSpoke
+ * @typedef {{ agentId: string, agentType: string, startTs: string }} InflightSpoke
  */
 
 /**
@@ -558,25 +565,41 @@ export function formatElapsed(elapsedSec) {
 }
 
 /**
+ * A spoke older than `MAX_INFLIGHT_AGE_SEC` with no matching `stop` is
+ * treated as a lost event and excluded here, not in `resolveInflightSpokes`
+ * — `resolveInflightSpokes` stays a pure, timeless reducer over what the
+ * file says (and is tested against fixed timestamps accordingly); "is this
+ * plausibly still running" is a judgment that needs `now`, which only this
+ * function's `env` already carries. Otherwise a single lost `SubagentStop`
+ * event (the harness killed the process, the dispatch was cancelled, or
+ * `track-inflight-spokes.mjs`'s own advisory write failed) would pin the
+ * segment red for the rest of the session instead of self-healing.
+ *
  * @param {InflightSpoke[]} spokes
  * @param {{ now?: unknown } | undefined} env `now` overrides `Date.now()`
  *   for deterministic tests, mirroring `formatResetCountdown`'s convention.
  * @returns {string | null} colorized `N spoke(s) · oldest NNm` segment, or
- *   null when nothing is in flight — the "prove it quiet" case: this segment
- *   vanishes entirely on an idle session rather than rendering an empty or
- *   zeroed widget.
+ *   null when nothing is genuinely in flight — the "prove it quiet" case:
+ *   this segment vanishes entirely on an idle session (or one with only
+ *   stale/lost records) rather than rendering an empty, zeroed, or stuck
+ *   widget.
  */
 export function formatInflightSpokesSegment(spokes, env) {
   if (!Array.isArray(spokes) || spokes.length === 0) return null;
 
+  const nowMs = typeof env?.now === "number" ? env.now : Date.now();
+  const cutoffMs = nowMs - MAX_INFLIGHT_AGE_SEC * 1000;
+
   let oldestMs = Number.POSITIVE_INFINITY;
+  let liveCount = 0;
   for (const spoke of spokes) {
     const t = Date.parse(spoke.startTs);
-    if (!Number.isNaN(t) && t < oldestMs) oldestMs = t;
+    if (Number.isNaN(t) || t < cutoffMs) continue;
+    liveCount += 1;
+    if (t < oldestMs) oldestMs = t;
   }
-  if (!Number.isFinite(oldestMs)) return null;
+  if (liveCount === 0 || !Number.isFinite(oldestMs)) return null;
 
-  const nowMs = typeof env?.now === "number" ? env.now : Date.now();
   const elapsedSec = Math.max(0, (nowMs - oldestMs) / 1000);
   const color =
     elapsedSec >= SPOKE_HIGH_THRESHOLD_SEC
@@ -585,9 +608,8 @@ export function formatInflightSpokesSegment(spokes, env) {
         ? YELLOW
         : GREEN;
   const icon = elapsedSec >= SPOKE_HIGH_THRESHOLD_SEC ? " ⚠" : "";
-  const count = spokes.length;
-  const noun = count === 1 ? "spoke" : "spokes";
-  return `${color}${count} ${noun} · oldest ${formatElapsed(elapsedSec)}${icon}${RESET}`;
+  const noun = liveCount === 1 ? "spoke" : "spokes";
+  return `${color}${liveCount} ${noun} · oldest ${formatElapsed(elapsedSec)}${icon}${RESET}`;
 }
 
 /**

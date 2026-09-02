@@ -42,6 +42,7 @@ import {
   formatAgentSegment,
   SPOKE_WARN_THRESHOLD_SEC,
   SPOKE_HIGH_THRESHOLD_SEC,
+  MAX_INFLIGHT_AGE_SEC,
   resolveInflightSpokes,
   formatElapsed,
   formatInflightSpokesSegment,
@@ -1027,6 +1028,86 @@ describe("formatInflightSpokesSegment", () => {
     ];
 
     expect(formatInflightSpokesSegment(spokes, { now })).toBeNull();
+  });
+
+  describe("eviction of stale start records", () => {
+    test("MAX_INFLIGHT_AGE_SEC is 7200 (2 hours)", () => {
+      expect(MAX_INFLIGHT_AGE_SEC).toBe(7200);
+    });
+
+    test("returns null when the only spoke is older than MAX_INFLIGHT_AGE_SEC", () => {
+      const spokes = [
+        {
+          agentId: "spoke-1",
+          agentType: "code-implementer",
+          startTs: new Date(
+            now - (MAX_INFLIGHT_AGE_SEC + 1) * 1000,
+          ).toISOString(),
+        },
+      ];
+
+      expect(formatInflightSpokesSegment(spokes, { now })).toBeNull();
+    });
+
+    test("returns null when every spoke is older than MAX_INFLIGHT_AGE_SEC", () => {
+      const spokes = [
+        {
+          agentId: "spoke-1",
+          agentType: "code-implementer",
+          startTs: new Date(
+            now - (MAX_INFLIGHT_AGE_SEC + 60) * 1000,
+          ).toISOString(),
+        },
+        {
+          agentId: "spoke-2",
+          agentType: "test-author",
+          startTs: new Date(
+            now - (MAX_INFLIGHT_AGE_SEC + 3600) * 1000,
+          ).toISOString(),
+        },
+      ];
+
+      expect(formatInflightSpokesSegment(spokes, { now })).toBeNull();
+    });
+
+    test("excludes a stale spoke and renders using only the live spoke's data", () => {
+      const spokes = [
+        {
+          agentId: "spoke-stale",
+          agentType: "code-implementer",
+          startTs: new Date(
+            now - (MAX_INFLIGHT_AGE_SEC + 3600) * 1000,
+          ).toISOString(),
+        },
+        {
+          agentId: "spoke-live",
+          agentType: "test-author",
+          startTs: new Date(now - 5 * 60 * 1000).toISOString(),
+        },
+      ];
+
+      const result = formatInflightSpokesSegment(spokes, { now });
+
+      expect(result).toContain("1 spoke ");
+      expect(result).not.toContain("2 spoke");
+      expect(result).toContain("oldest 5m");
+    });
+
+    test("includes a spoke exactly MAX_INFLIGHT_AGE_SEC old (t === cutoffMs, the exclusion test is strict `<`)", () => {
+      const spokes = [
+        {
+          agentId: "spoke-1",
+          agentType: "code-implementer",
+          startTs: new Date(now - MAX_INFLIGHT_AGE_SEC * 1000).toISOString(),
+        },
+      ];
+
+      const result = formatInflightSpokesSegment(spokes, { now });
+
+      expect(result).not.toBeNull();
+      expect(result).toContain("1 spoke ");
+      expect(result).toContain("oldest 2h00m");
+    });
   });
 });
 
