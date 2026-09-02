@@ -132,8 +132,17 @@ landed the gate in a follow-up PR to this repo), skip this step; the
 Run the full verification pipeline. Fail fast: stop on the first failure and
 tell the user which gate failed. Do **not** push a branch that fails any gate.
 
+**Build the CLI before running tests, not after** — several scaffold-checker
+tests (e.g. `bin/tests/script-scaffold.test.ts`) read
+`packages/m3l-cli/dist/scaffold/manifest.js` directly, so `test:coverage`
+fails on a fresh worktree/clone if `pnpm build` hasn't produced that file
+yet. `pnpm verify` (`bin/lib/verify-steps.mjs`'s `build-cli-for-gates` step)
+already orders this correctly; mirror it here rather than composing `lint`,
+`typecheck`, `test:coverage`, and `build` in a plausible-looking but
+dependency-violating sequence:
+
 ```bash
-pnpm lint && pnpm typecheck && pnpm test:coverage && pnpm build
+pnpm lint && pnpm typecheck && pnpm turbo run build --filter=@m3l-automation/m3l-cli && pnpm test:coverage && pnpm build
 ```
 
 ### 5 — Reconcile docs
