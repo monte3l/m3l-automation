@@ -1,6 +1,6 @@
 # Retrospective sweep tracker
 
-<!-- retrospective: last-swept=2026-09-02 logs-considered=126 -->
+<!-- retrospective: last-swept=2026-09-03 logs-considered=135 -->
 
 Living ledger of `/promoting-work-log-lessons` sweeps — one row per work log,
 recording whether it has been swept and what came out of it. Updated **in
@@ -25,7 +25,16 @@ The gate stays quiet on the count arm until the next 5-log cadence produces a
 gap — that is the mechanism working, not evidence it can be removed. It
 produced exactly that gap on 2026-09-02: nine logs accumulated in a single
 day's work, the gate warned at the cadence, and the sweep below cleared them
-back to zero.
+back to zero. It produced the same gap again on 2026-09-03 — nine more logs,
+eight of them from concurrent sessions — and the sweep on that date cleared it.
+
+**A row's outcome is not a per-lesson receipt.** Read the source log's bullets,
+not this table, when deciding whether a lesson is already promoted:
+`2026-08-20-f23-reviewable-slice-discipline.md` carries five lessons of which
+two were stamped, yet its row reads a flat `promoted`. The 2026-09-03 sweep
+recovered an unpromoted lesson from that log (`*/` closing a block comment)
+only because Step 2's filter works at bullet level. A `promoted` row means
+"this log has been swept", never "every lesson in it landed somewhere".
 
 ## Why a ledger and not just the in-log marker
 
@@ -197,6 +206,15 @@ was earned by a sweep reading that log in full.
 | [2026-09-02-claude-session-trailer-removal.md](../logs/2026-09-02-claude-session-trailer-removal.md)                           | 2026-09-02 | `no-durable-lesson` | 3 single-log candidates, no recurrence/memory corroboration (filter 1); "SECURITY WARNING is a hard stop" already in `subagent-dispatch.md` (filter 3)                                                                       |
 | [2026-09-02-session-naming-convention.md](../logs/2026-09-02-session-naming-convention.md)                                     | 2026-09-02 | `promoted`          | `docs/adr/README.md`<br>`.claude/skills/creating-prs/SKILL.md`<br>`.claude/rules/subagent-dispatch.md`                                                                                                                       |
 | [2026-09-02-spoke-inflight-status.md](../logs/2026-09-02-spoke-inflight-status.md)                                             | 2026-09-02 | `promoted`          | `.claude/rules/tests.md`                                                                                                                                                                                                     |
+| [2026-09-03-skill-invocation-and-listing-budget.md](../logs/2026-09-03-skill-invocation-and-listing-budget.md)                 | 2026-09-03 | `no-durable-lesson` | worktree-vanish is evidence for the cluster promoted from `statusline-redesign`, not its own bullet; ADR-ID arm already at `docs/adr/README.md:23` (filter 3); 4 remaining lessons single-log (filter 1)                     |
+| [2026-09-03-statusline-palette-hardening.md](../logs/2026-09-03-statusline-palette-hardening.md)                               | 2026-09-03 | `deferred`          | `stash@{N}` from a filtered `git stash list` — uncaptured but single-log with no memory arm (filter 1); re-check next sweep                                                                                                  |
+| [2026-09-03-statusline-redesign.md](../logs/2026-09-03-statusline-redesign.md)                                                 | 2026-09-03 | `promoted`          | `.claude/skills/starting-work/SKILL.md`                                                                                                                                                                                      |
+| [2026-09-03-subagent-statusline.md](../logs/2026-09-03-subagent-statusline.md)                                                 | 2026-09-03 | `no-durable-lesson` | ADR-number collision already at `docs/adr/README.md:23` and the log itself declines re-promotion (filter 3)                                                                                                                  |
+| [2026-09-03-worktree-new-lib-extract.md](../logs/2026-09-03-worktree-new-lib-extract.md)                                       | 2026-09-03 | `promoted`          | `.claude/skills/starting-work/SKILL.md`                                                                                                                                                                                      |
+| [2026-09-03-x12-container-stance-and-loopback-refactor.md](../logs/2026-09-03-x12-container-stance-and-loopback-refactor.md)   | 2026-09-03 | `deferred`          | location-default divergence deliberately declined in-log as a repo-policy change the user has not asked for; surfaced to the maintainer instead                                                                              |
+| [2026-09-03-x8-telemetry-guard-followups.md](../logs/2026-09-03-x8-telemetry-guard-followups.md)                               | 2026-09-03 | `no-durable-lesson` | all 10 lessons already stamped or captured in `.claude/rules/tests.md` (filters 2, 3)                                                                                                                                        |
+| [2026-09-03-x8-telemetry-store.md](../logs/2026-09-03-x8-telemetry-store.md)                                                   | 2026-09-03 | `no-durable-lesson` | all 10 lessons already stamped or captured in `tests.md` / `CLAUDE.md` § Task Workflow (filters 2, 3)                                                                                                                        |
+| [2026-09-03-x8-open-items.md](../logs/2026-09-03-x8-open-items.md)                                                             | 2026-09-03 | `promoted`          | `.claude/rules/domain-knowledge.md`<br>`.claude/skills/creating-prs/SKILL.md`                                                                                                                                                |
 
 <!-- prettier-ignore -->
-**Totals** — 126 logs: 100 `promoted`, 23 `no-durable-lesson`, 0 `not-yet-swept`, 3 `deferred`.
+**Totals** — 135 logs: 103 `promoted`, 27 `no-durable-lesson`, 0 `not-yet-swept`, 5 `deferred`.

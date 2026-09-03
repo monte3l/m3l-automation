@@ -184,6 +184,7 @@ than a formality to clear.
   on shared refs can invalidate local state silently between turns — `git
 worktree list` is cheap insurance the moment prior state is assumed rather
   than freshly confirmed. See divergence #1.
+  _(promoted → `.claude/skills/starting-work/SKILL.md`)_
 - **An algorithm-level contract eliminates _coordination_ drift between
   parallel spokes, not _correctness_ drift within either one.** Both spokes
   converging byte-for-byte on structure is not the same as both being bug-free

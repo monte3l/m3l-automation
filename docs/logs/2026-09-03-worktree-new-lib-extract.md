@@ -193,4 +193,4 @@ is gone.
   branch.** Removing a worktree returns the session to the shared checkout;
   the next file write needs its own fresh location call (worktree vs. shared
   checkout), not an assumption that the prior task's location choice still
-  applies.
+  applies. _(promoted → `.claude/skills/starting-work/SKILL.md`)_
