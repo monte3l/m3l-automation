@@ -16,3 +16,15 @@ tmp
 docs
 *.log
 .DS_Store
+
+# Both Dockerfiles COPY the whole build context; a local secret file must
+# never ride along even though it's gitignored (`.gitignore`'s documented
+# home for NPM_TOKEN/GITHUB_TOKEN-shaped values) — Vite's default envDir
+# would otherwise inline any VITE_-prefixed .env value straight into the
+# nginx image's static bundle.
+**/.env
+**/.env.*
+!**/.env.example
+**/*.pem
+**/*.key
+**/.npmrc

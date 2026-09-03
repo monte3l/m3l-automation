@@ -27,7 +27,8 @@ services:
       - ./data:/data
       # Host SSO credential chain, read-only — the "node" user's home
       # directory in the runtime image (packages/m3l-console-server/Dockerfile).
-      - ${HOME}/.aws:/home/node/.aws:ro
+      # `:?` guards against an unset HOME silently bind-mounting `/.aws`.
+      - ${HOME:?HOME must be set to locate your AWS SSO credential chain}/.aws:/home/node/.aws:ro
     # nginx (the `web` service) is the only container with a reason to be
     # reachable from the host, but because it shares this service's network
     # namespace, the port publish has to live here — `network_mode: service:`

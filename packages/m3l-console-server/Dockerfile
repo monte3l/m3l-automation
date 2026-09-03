@@ -9,8 +9,14 @@
 #
 # Build from the repo root: `docker build -f packages/m3l-console-server/Dockerfile .`
 # (also what compose.yaml's `server` service does, via `context: .`).
+#
+# `node:24-slim` is pinned by digest, not just tag: a tag alone is a moving
+# target, and `.github/dependabot.yml`'s new `docker` ecosystem entries only
+# have something to bump if the Dockerfile pins a digest for them to update.
+# A stale/incorrect digest fails the pull loudly (Docker verifies it
+# cryptographically) rather than silently resolving to the wrong image.
 
-FROM node:24-slim AS builder
+FROM node:24-slim@sha256:ba849c60be29959425b8734d57b8b4b7d56f98edd9504c9af091d5281095a71e AS builder
 WORKDIR /repo
 
 # ADR-0001: no Corepack in this repo. pnpm is installed directly, pinned to
@@ -23,7 +29,7 @@ RUN pnpm install --frozen-lockfile
 RUN pnpm exec turbo run build --filter=@m3l-automation/m3l-console-server...
 RUN pnpm --filter @m3l-automation/m3l-console-server --prod deploy /deploy
 
-FROM node:24-slim AS runtime
+FROM node:24-slim@sha256:ba849c60be29959425b8734d57b8b4b7d56f98edd9504c9af091d5281095a71e AS runtime
 WORKDIR /app
 
 # `Core.M3LPaths().getDataDir()` (config/paths.ts's `resolveStoreDatabasePath`
