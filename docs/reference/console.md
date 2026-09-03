@@ -924,14 +924,19 @@ curl -sS localhost:8787/api/v1/sessions/$SESSION_ID/steps
     "parameters": { "mode": "batch" },
     "runId": "run-1",
     "status": "success",
-    "hasResult": true,
     "queuedAtMs": 1735689600000,
     "startedAtMs": 1735689600100,
     "endedAtMs": 1735689600200,
-    "outcome": "success"
+    "outcome": "success",
+    "failureMessage": null,
+    "hasResult": true
   }
 ]
 ```
+
+Every field is always present — a field with no value (a queued step's
+`runId`/`startedAtMs`/`endedAtMs`/`outcome`, or `failureMessage` on a
+non-failure outcome) serializes as `null`, never omitted.
 
 **Each step is returned WITHOUT its `resultRef` field**, replaced by a
 `hasResult` boolean. `resultRef` is the step's encoded artifact reference —
@@ -963,14 +968,20 @@ curl -sS localhost:8787/api/v1/sessions/$SESSION_ID/decisions
     "sessionId": "session-1",
     "stepId": "step-1",
     "prompt": "Proceed with the DynamoDB query?",
+    "options": ["continue", "stop"],
     "status": "pending",
     "createdAtMs": 1735689600000
   }
 ]
 ```
 
-An `"answered"` row additionally carries `answer` and `answeredAtMs` — the
-same discriminated shape `POST …/decisions/:decisionId` implicitly produces.
+`options` is whatever the raising `POST …/steps/:stepId/decision` call
+supplied (or `null` when it supplied none) — echoed back unchanged. An
+`"answered"` row additionally carries `answer` and `answeredAtMs` — the same
+discriminated shape `POST …/steps/:stepId/decision` returns on the `201` that
+raises it (`POST …/decisions/:decisionId` itself only returns
+`{ "applied": boolean }`, not the record).
+
 `ERR_CONSOLE_SESSION_NOT_FOUND` (404) for an unknown session id, same
 :id-scoped distinguishability as the steps route above.
 
