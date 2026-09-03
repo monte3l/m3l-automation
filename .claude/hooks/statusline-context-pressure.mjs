@@ -117,7 +117,7 @@ export function zoneForPercentage(pct) {
  * vocabulary.
  */
 export const SESSION_NAME_PATTERN =
-  /^(feat|fix|audit|research|docs|review|ci|merge)-[a-z0-9]+(?:-[a-z0-9]+)*$/;
+  /^(feat|fix|docs|chore|refactor|ci|audit|research|review|merge)-[a-z0-9]+(?:-[a-z0-9]+)*$/;
 export const SESSION_NAME_MAX_LENGTH = 40;
 
 /**

@@ -50,7 +50,8 @@ auto-install) are independent and not yet justified by need. Concretely:
   runs `git worktree add ../m3l-automation-<slug> -b feat/<slug>` (branched fresh
   from `origin/main`, matching ADR-0013's `worktree.baseRef = "fresh"`) and then
   provisions it via the existing `worktree-setup.mjs`. `--fix` selects a
-  `fix/<slug>` branch.
+  `fix/<slug>` branch. (2026-09-03 amendment below widens the mintable prefix
+  set beyond `feat`/`fix` via `--kind <kind>`, with `--fix` kept as an alias.)
 - **`pnpm worktree:remove <slug>` (`bin/worktree-remove.mjs`)** — the symmetric
   teardown: `git worktree remove` + `git worktree prune` + delete the branch when
   it is safely merged (`git branch -d`; unmerged branches are kept with a note).
@@ -107,10 +108,10 @@ command:
 
 - **Detached HEAD, not a new branch.** `--from <ref>` runs
   `git worktree add --detach <worktreePath> <ref>` instead of branching
-  `feat/<slug>`/`fix/<slug>` from main. The use case is investigation/audit of
+  `<kind>/<slug>` from main. The use case is investigation/audit of
   a branch you don't want to develop on; a detached checkout also sidesteps
   git's refusal to check out a branch that's already checked out elsewhere.
-  Because no new branch is created, `--from` and `--fix` are mutually
+  Because no new branch is created, `--from` and `--kind`/`--fix` are mutually
   exclusive — there's no branch prefix to choose between.
 - **Validated the same way as `<slug>`.** `<ref>` must resolve via
   `git rev-parse --verify --quiet` before any worktree is created; a missing
@@ -171,6 +172,47 @@ costs a directory, not commits.
 boolean on `action: "prune"`, validated the same way `dryRun` is (rejected
 for any other action).
 
+## Amendment (2026-09-03)
+
+An `/auditing` pass found the mintable branch-prefix set (`feat`/`fix` only,
+via the `--fix` boolean) covered well under half of actual commit history —
+`docs` (299 commits, all-time #1) and `chore` (229) each outrank `feat` (287)
+in parts of the census, with `refactor` (31) and `ci` (25) also unmintable —
+and two live branches (`docs/console-container-stance`,
+`refactor/console-loopback-predicates`) already existed, created by hand with
+raw `git worktree add` because `worktree:new` couldn't mint them. The real
+constraint was never the `--fix` boolean itself but that `worktree:new`
+advertises `pnpm session:launch` on the branch it just created
+(`bin/worktree-new.mjs`'s "Next:" hint), and `buildSessionName`
+(`bin/lib/session-name.mjs`) throws for any kind outside `SESSION_KINDS` — so
+`BRANCH_KINDS` must stay a subset of `SESSION_KINDS` (ADR-0087), not just grow
+independently.
+
+- **`BRANCH_KINDS` widened** (`bin/lib/session-name.mjs`) to `feat`, `fix`,
+  `docs`, `chore`, `refactor`, `ci` — the intersection of the Conventional
+  Commit type-enum this repo enforces (`commitlint.config.js`) with a set
+  ADR-0087's `SESSION_KINDS` can carry. `SESSION_KINDS` gained `chore` and
+  `refactor` in the same change (see ADR-0087's own 2026-09-03 amendment).
+  `perf`, `style`, `revert`, `build` are valid commit types but stay
+  unmintable as branch prefixes — none has a corresponding session kind, and
+  each has near-zero historical branch usage.
+- **`--kind <kind>` replaces the `--fix` boolean** as the primary CLI surface
+  (`bin/worktree-new.mjs`, `bin/lib/worktree-new.mjs`): `--kind docs`,
+  `--kind chore`, etc. `--fix` is kept as a documented alias for
+  `--kind fix` — non-breaking for the MCP `worktree` tool's existing boolean
+  `fix` param and any existing muscle memory. Passing both is only accepted
+  when they agree.
+- **Unrecognized flags are now rejected**, not silently ignored. Previously
+  `pnpm worktree:new my-slug --typo` minted `feat/my-slug` with no warning;
+  it now errors.
+- **`worktreeManage`'s MCP tool** (`bin/lib/mcp-tools.mjs`) gained a matching
+  optional `kind` enum parameter (validated against `BRANCH_KINDS`), with
+  `fix` kept as a deprecated boolean alias, and the same `from`/`kind`/`fix`
+  mutual-exclusion rules as the CLI.
+- **No change to `worktree:remove`/`worktree:prune`.** Both already recover
+  the branch from `git worktree list --porcelain` without needing to know its
+  prefix.
+
 ## Links
 
 - Supersedes / superseded by: none. **Extends ADR-0013** (git worktrees for task
@@ -180,4 +222,7 @@ for any other action).
   `bin/worktree-new.mjs`, `bin/worktree-remove.mjs`, `bin/worktree-setup.mjs`,
   `bin/worktree-prune.mjs`, `bin/lib/worktree-prune.mjs`;
   `docs/logs/2026-08-21-f23-field-test-b2.md` and issue #578 (the `--from
-<ref>` amendment above).
+<ref>` amendment above); **ADR-0087** (the `SESSION_KINDS` superset the
+  2026-09-03 amendment's `BRANCH_KINDS` widening must stay a subset of);
+  `docs/logs/2026-09-03-worktree-new-lib-extract.md` (the `/auditing` run and
+  plan behind the 2026-09-03 amendment).

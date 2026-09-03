@@ -233,6 +233,8 @@ describe("formatSessionNameSegment", () => {
       "audit",
       "research",
       "docs",
+      "chore",
+      "refactor",
       "review",
       "ci",
       "merge",

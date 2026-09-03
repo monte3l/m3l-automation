@@ -227,7 +227,9 @@ survives, and `check:commit-trailers` is the `pre-push` backstop for a
 
 ### Branches and versioning
 
-- Branch from `main`: `feat/<slug>` or `fix/<slug>`.
+- Branch from `main`: `feat/<slug>` (or `fix/<slug>` for a bug fix; `docs/<slug>`,
+  `chore/<slug>`, `refactor/<slug>`, `ci/<slug>` are also mintable via
+  `pnpm worktree:new <slug> --kind <kind>`, ADR-0014).
 - The package is internal and not published to npm; `version` in
   `package.json` is hand-managed (see ADR-0020).
 - Never `git push --force` to a shared branch.
@@ -246,28 +248,31 @@ substantive prompt, applied automatically by launching through
 ```text
 <kind>-<slug>
 
-kind ∈ feat | fix | audit | research | docs | review | ci | merge
+kind ∈ feat | fix | docs | chore | refactor | ci | audit | research | review | merge
 slug matches ^[a-z0-9]+(?:-[a-z0-9]+)*$   (the same SLUG_PATTERN
                                             bin/worktree-new.mjs enforces)
 whole name ≤ 40 characters, never begins with "/"
 ```
 
 ```bash
-pnpm session:launch                          # on feat/<slug> or fix/<slug>:
+pnpm session:launch                          # on a branch-derivable
+                                              # <kind>/<slug> (BRANCH_KINDS):
                                               # derives kind+slug from the
                                               # current branch, no other input
-pnpm session:launch --kind audit some-slug   # main-resident kinds (no branch
-                                              # to derive from): explicit kind
-                                              # + slug, still validated
+pnpm session:launch --kind audit some-slug   # main-resident-only kinds (no
+                                              # branch to derive from):
+                                              # explicit kind + slug,
+                                              # still validated
 pnpm session:launch -- --resume              # passthrough after `--` reaches
                                               # the underlying `claude` call
 ```
 
-`feat`/`fix` mirror the branch prefix above, so a branch-bearing session's
-name is derivable from its branch alone (`feat/statusline-widgets` →
+`feat`/`fix`/`docs`/`chore`/`refactor`/`ci` mirror the matching `<kind>/<slug>`
+branch prefix (`BRANCH_KINDS`, `bin/lib/session-name.mjs`), so a branch-bearing
+session's name is derivable from its branch alone (`feat/statusline-widgets` →
 `feat-statusline-widgets` — `pnpm session:launch` needs no arguments). The
-remaining kinds cover `main`-resident harness work that has no branch to
-mirror, and need `--kind`:
+remaining kinds (`audit`, `research`, `review`, `merge`) cover `main`-resident
+harness work that has no branch to mirror, and need `--kind`:
 
 | Session                           | Name                          |
 | --------------------------------- | ----------------------------- |
@@ -299,8 +304,9 @@ for auto-naming — the launcher above is the only mechanism, and it still
 requires remembering to run `pnpm session:launch` instead of a bare `claude`.
 If you'd rather never think about it, shadow `claude` with a shell function
 that delegates to the launcher only when one is available, no explicit
-naming/resume flag is already present, and the current branch is
-`feat/<slug>` or `fix/<slug>` — the only shape `session:launch` can derive a
+naming/resume flag is already present, and the current branch is a
+branch-derivable `<kind>/<slug>` (`BRANCH_KINDS`: `feat`, `fix`, `docs`,
+`chore`, `refactor`, `ci`) — the only shapes `session:launch` can derive a
 name from without a `--kind` — falling through to the real binary otherwise
 (exactly `bin/install-session-shell-hook.mjs`'s `buildShellFunctionBlock()`,
 reproduced here so this recipe never has to be hand-copied out of sync with
@@ -312,7 +318,7 @@ claude() {
      && ! printf '%s\n' "$@" | grep -qE '^(-n|--name(=.+)?|--resume(=.+)?|--continue|-p)$' \
      && [ -f package.json ] \
      && grep -q '"session:launch"' package.json 2>/dev/null \
-     && git rev-parse --abbrev-ref HEAD 2>/dev/null | grep -qE '^(feat|fix)/[a-z0-9]+(-[a-z0-9]+)*$'; then
+     && git rev-parse --abbrev-ref HEAD 2>/dev/null | grep -qE '^(feat|fix|docs|chore|refactor|ci)/[a-z0-9]+(-[a-z0-9]+)*$'; then
     pnpm session:launch -- "$@"
   else
     command claude "$@"
@@ -351,8 +357,8 @@ slices land as separate PRs before the previous one merges.
 ### Worktrees for parallel work
 
 Use a git worktree to work on more than one branch at once without stashing or
-re-cloning. The standard flow keeps the `feat/<slug>` branch convention and puts
-the worktree in a sibling directory (not nested in this checkout):
+re-cloning. The standard flow keeps the `<kind>/<slug>` branch convention and
+puts the worktree in a sibling directory (not nested in this checkout):
 
 ```bash
 git worktree add ../m3l-automation-<slug> -b feat/<slug>
@@ -361,12 +367,13 @@ pnpm worktree:setup        # install deps + copy gitignored files (.env, …)
 ```
 
 Run `worktree:setup` from inside the new worktree — it refuses to run from the
-main checkout. `pnpm worktree:new <slug>` (or `--fix` for a `fix/<slug>`
-branch) does both steps in one command; it branches from `origin/main`,
-falling back to the local `main` if `origin/main` is absent, and validates
-`<slug>` as kebab-case (lowercase letters, digits, single hyphens). Tear down
-the symmetric way with `pnpm worktree:remove <slug>` (add `--force` to discard
-uncommitted/untracked changes first).
+main checkout. `pnpm worktree:new <slug>` (or `--kind <kind>` for `docs`,
+`chore`, `refactor`, `ci`; `--fix` is a `--kind fix` alias) does both steps in
+one command; it branches from `origin/main`, falling back to the local `main`
+if `origin/main` is absent, and validates `<slug>` as kebab-case (lowercase
+letters, digits, single hyphens). Tear down the symmetric way with
+`pnpm worktree:remove <slug>` (add `--force` to discard uncommitted/untracked
+changes first).
 
 To investigate or audit an existing branch — an abandoned or in-review branch
 you don't intend to develop on — without a raw manual `git worktree add

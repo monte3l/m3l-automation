@@ -85,6 +85,76 @@ describe("parseWorktreeNewArgs", () => {
       "mutually exclusive",
     );
   });
+
+  test.each(["feat", "fix", "docs", "chore", "refactor", "ci"])(
+    "--kind %s selects that kind",
+    (kind) => {
+      expect(parseWorktreeNewArgs(["my-slug", "--kind", kind])).toEqual({
+        ok: true,
+        slug: "my-slug",
+        kind,
+        from: null,
+      });
+    },
+  );
+
+  test("--kind with an invalid value reports an invalid-kind error naming it", () => {
+    const result = parseWorktreeNewArgs(["my-slug", "--kind", "perf"]);
+    expect(result.ok).toBe(false);
+    expect((result as { ok: false; error: string }).error).toContain(
+      'invalid kind "perf"',
+    );
+  });
+
+  test("--kind fix combined with --fix agree and succeed with a fix kind", () => {
+    expect(parseWorktreeNewArgs(["my-slug", "--kind", "fix", "--fix"])).toEqual(
+      {
+        ok: true,
+        slug: "my-slug",
+        kind: "fix",
+        from: null,
+      },
+    );
+  });
+
+  test("--kind docs combined with --fix disagree and report a conflicts error", () => {
+    const result = parseWorktreeNewArgs(["my-slug", "--kind", "docs", "--fix"]);
+    expect(result.ok).toBe(false);
+    expect((result as { ok: false; error: string }).error).toContain(
+      "conflicts",
+    );
+  });
+
+  test("--kind combined with --from reports a mutually-exclusive error", () => {
+    const result = parseWorktreeNewArgs([
+      "my-slug",
+      "--kind",
+      "docs",
+      "--from",
+      "main",
+    ]);
+    expect(result.ok).toBe(false);
+    expect((result as { ok: false; error: string }).error).toContain(
+      "mutually exclusive",
+    );
+  });
+
+  test("--kind with no value reports a requires-a-value error", () => {
+    const result = parseWorktreeNewArgs(["my-slug", "--kind"]);
+    expect(result.ok).toBe(false);
+    expect((result as { ok: false; error: string }).error).toContain(
+      "requires a value",
+    );
+  });
+
+  test("an unrecognized flag reports an unrecognized-flag error naming it", () => {
+    const result = parseWorktreeNewArgs(["my-slug", "--typo"]);
+    expect(result.ok).toBe(false);
+    expect((result as { ok: false; error: string }).error).toContain(
+      "unrecognized flag",
+    );
+    expect((result as { ok: false; error: string }).error).toContain("--typo");
+  });
 });
 
 describe("worktreeDirName", () => {

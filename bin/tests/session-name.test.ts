@@ -19,18 +19,32 @@ describe("exported constants", () => {
       new Set([
         "feat",
         "fix",
+        "docs",
+        "chore",
+        "refactor",
+        "ci",
         "audit",
         "research",
-        "docs",
         "review",
-        "ci",
         "merge",
       ]),
     );
   });
 
+  test("BRANCH_KINDS is a subset of SESSION_KINDS", () => {
+    // Every branch-derivable kind must also be a session kind — a kind
+    // added only to BRANCH_KINDS would let deriveFromBranch() produce a
+    // { kind } that buildSessionName() then rejects. Independent sources:
+    // this checks BRANCH_KINDS's content against SESSION_KINDS's content.
+    expect(BRANCH_KINDS.every((kind) => SESSION_KINDS.includes(kind))).toBe(
+      true,
+    );
+  });
+
   test("BRANCH_KINDS contains exactly the branch-derivable kinds", () => {
-    expect(new Set(BRANCH_KINDS)).toEqual(new Set(["feat", "fix"]));
+    expect(new Set(BRANCH_KINDS)).toEqual(
+      new Set(["feat", "fix", "docs", "chore", "refactor", "ci"]),
+    );
   });
 
   test("MAX_SESSION_NAME_LENGTH is 40", () => {
@@ -73,6 +87,20 @@ describe("deriveFromBranch", () => {
     });
   });
 
+  test("docs/<slug> derives a docs kind and the slug", () => {
+    expect(deriveFromBranch("docs/console-container-stance")).toEqual({
+      kind: "docs",
+      slug: "console-container-stance",
+    });
+  });
+
+  test("chore/<slug> derives a chore kind and the slug", () => {
+    expect(deriveFromBranch("chore/deps-bump")).toEqual({
+      kind: "chore",
+      slug: "deps-bump",
+    });
+  });
+
   test("a branch with no slash (main) → null", () => {
     expect(deriveFromBranch("main")).toBeNull();
   });
@@ -103,16 +131,22 @@ describe("buildSessionName", () => {
     );
   });
 
+  test("a valid docs kind and slug compose to kind-slug", () => {
+    expect(buildSessionName("docs", "some-slug")).toBe("docs-some-slug");
+  });
+
   test("an invalid kind throws a TypeError naming the invalid kind", () => {
-    expect(() => buildSessionName("chore", "widget")).toThrowError(TypeError);
+    // "perf" is a valid Conventional Commit type (commitlint.config.js) but
+    // was never added to SESSION_KINDS, so it stays genuinely invalid here.
+    expect(() => buildSessionName("perf", "widget")).toThrowError(TypeError);
     let thrown: unknown;
     try {
-      buildSessionName("chore", "widget");
+      buildSessionName("perf", "widget");
     } catch (error) {
       thrown = error;
     }
     expect(thrown).toBeInstanceOf(TypeError);
-    expect((thrown as TypeError).message).toContain('"chore"');
+    expect((thrown as TypeError).message).toContain('"perf"');
   });
 
   test.each([

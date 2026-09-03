@@ -101,16 +101,25 @@ a PR number that doesn't exist yet.
 ```text
 <kind>-<slug>
 
-kind ∈ feat | fix | audit | research | docs | review | ci | merge
+kind ∈ feat | fix | docs | chore | refactor | ci | audit | research | review | merge
 slug matches ^[a-z0-9]+(?:-[a-z0-9]+)*$
 whole name ≤ 40 characters, never begins with "/"
 ```
 
-`feat`/`fix` mirror the Conventional Commit type and the `feat/<slug>` /
-`fix/<slug>` branch prefix, so a branch-bearing session's name is derivable
-from its branch. The remaining kinds cover `main`-resident harness work that
-has no branch to mirror (an audit, a research pass, a doc pass, a PR review, a
-CI triage, a post-merge close-out).
+[**Amended (2026-09-03):** `chore` and `refactor` added, and `docs`/`ci` moved
+from main-resident-only to also branch-derivable — see the `BRANCH_KINDS`
+widening in [ADR-0014](0014-symmetric-worktree-tooling.md)'s 2026-09-03
+amendment. The rule below is now: `kind` is branch-derivable when it is also
+in `BRANCH_KINDS` (`feat`, `fix`, `docs`, `chore`, `refactor`, `ci`) and the
+current branch is `<kind>/<slug>`; `audit`, `research`, `review`, `merge` stay
+main-resident-only, since none has ever been a branch prefix in this repo.]
+
+`feat`/`fix`/`docs`/`chore`/`refactor`/`ci` mirror the Conventional Commit
+type and the matching `<kind>/<slug>` branch prefix (`BRANCH_KINDS`,
+`bin/lib/session-name.mjs`), so a branch-bearing session's name is derivable
+from its branch. The remaining kinds (`audit`, `research`, `review`, `merge`)
+cover `main`-resident harness work that has no branch to mirror (an audit, a
+research pass, a PR review, a post-merge close-out).
 
 | Session                           | Name                          |
 | --------------------------------- | ----------------------------- |

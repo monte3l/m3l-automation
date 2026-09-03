@@ -50,10 +50,11 @@ work`'s free-text recommendation left open.
 2. **A launcher wrapper** (`bin/claude-launch.mjs`, run as
    `pnpm session:launch`) that derives `<kind>-<slug>` and execs
    `claude -n <name>` itself, replacing the wrapper process. Zero-touch for
-   the dominant case — a `feat/<slug>`/`fix/<slug>` branch, already decided
+   the dominant case — a branch-derivable `<kind>/<slug>` branch (`BRANCH_KINDS`:
+   `feat`, `fix`, `docs`, `chore`, `refactor`, `ci`), already decided
    by `starting-work` before the session opens — since the branch alone
-   determines the full name. `main`-resident kinds (`audit`, `research`,
-   `docs`, `review`, `ci`, `merge`) have no branch to derive from, so the
+   determines the full name. `main`-resident-only kinds (`audit`, `research`,
+   `review`, `merge`) have no branch to derive from, so the
    wrapper requires an explicit `--kind <kind>` flag plus a slug in that one
    case — still never a free-text `<kind>-<slug>` string typed and hoped to
    match the pattern, since the wrapper composes and validates both parts.
@@ -74,12 +75,14 @@ We chose **option 2**. `bin/claude-launch.mjs` (invoked as
 [-- <passthrough args>]`:
 
 ```bash
-pnpm session:launch                          # on feat/<slug> or fix/<slug>:
+pnpm session:launch                          # on a branch-derivable
+                                              # <kind>/<slug> (BRANCH_KINDS):
                                               # derives kind+slug from the
                                               # branch, no other input
-pnpm session:launch --kind audit some-slug   # main-resident kinds: explicit
-                                              # kind + slug, still validated
-                                              # and composed by the script
+pnpm session:launch --kind audit some-slug   # main-resident-only kinds:
+                                              # explicit kind + slug, still
+                                              # validated and composed by
+                                              # the script
 pnpm session:launch -- --resume              # passthrough after `--` reaches
                                               # the underlying `claude` call
 ```

@@ -458,7 +458,7 @@ export const COMMAND_CATALOG = [
   {
     name: "worktree:new",
     description:
-      "Creates and provisions a linked sibling worktree in one step (git worktree add + worktree:setup) — the entry point for concurrent work in an isolated checkout. `-- <slug>` (branch feat/<slug>), `-- <slug> --fix`, or `-- <slug> --from <ref>` (detached HEAD at an existing ref, e.g. to investigate an abandoned branch).",
+      "Creates and provisions a linked sibling worktree in one step (git worktree add + worktree:setup) — the entry point for concurrent work in an isolated checkout. `-- <slug>` (branch feat/<slug>), `-- <slug> --kind <kind>` for kind in feat|fix|docs|chore|refactor|ci, `-- <slug> --fix` (alias for `--kind fix`), or `-- <slug> --from <ref>` (detached HEAD at an existing ref, e.g. to investigate an abandoned branch).",
   },
   {
     name: "worktree:setup",
@@ -493,7 +493,7 @@ export const COMMAND_CATALOG = [
   {
     name: "session:launch",
     description:
-      "ADR-0088: launches Claude Code already named `<kind>-<slug>`, applying ADR-0087's session-naming convention at process start instead of a user-run `/rename`. On a `feat/<slug>`/`fix/<slug>` branch, derives the name with no other input; otherwise requires `-- --kind <kind> <slug>` (main-resident kinds have no branch to derive from). `-- -- <args>` forwards a literal `--`-prefixed tail to the underlying `claude` invocation. A session already open can't be renamed by this launcher — that residual case still needs `/rename` by hand.",
+      "ADR-0088: launches Claude Code already named `<kind>-<slug>`, applying ADR-0087's session-naming convention at process start instead of a user-run `/rename`. On a branch-derivable `<kind>/<slug>` (feat|fix|docs|chore|refactor|ci), derives the name with no other input; otherwise requires `-- --kind <kind> <slug>` (main-resident-only kinds — audit, research, review, merge — have no branch to derive from). `-- -- <args>` forwards a literal `--`-prefixed tail to the underlying `claude` invocation. A session already open can't be renamed by this launcher — that residual case still needs `/rename` by hand.",
   },
   {
     name: "session:install-shell-hook",

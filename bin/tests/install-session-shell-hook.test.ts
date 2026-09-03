@@ -31,11 +31,11 @@ describe("buildShellFunctionBlock", () => {
     expect(buildShellFunctionBlock()).toBe(buildShellFunctionBlock());
   });
 
-  test("restricts delegation to feat/<slug> or fix/<slug> branches", () => {
+  test("restricts delegation to a BRANCH_KINDS-prefixed branch", () => {
     const result = buildShellFunctionBlock();
 
     expect(result).toContain("git rev-parse --abbrev-ref HEAD");
-    expect(result).toContain("(feat|fix)");
+    expect(result).toContain("feat|fix|docs|chore|refactor|ci");
   });
 });
 
