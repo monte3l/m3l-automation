@@ -12,7 +12,7 @@ import { encodePathSegment } from "../internal/path-segment.js";
 const M3L_SESSION_STATUSES = ["open", "closed"] as const;
 
 /** One of the closed set of session statuses in {@link M3L_SESSION_STATUSES}. */
-export type M3LSessionStatus = (typeof M3L_SESSION_STATUSES)[number];
+type M3LSessionStatus = (typeof M3L_SESSION_STATUSES)[number];
 
 /**
  * One session record, as returned by `GET /api/v1/sessions`,
@@ -204,7 +204,7 @@ const M3L_SESSION_STEP_STATUSES = [
 ] as const;
 
 /** One of the closed set of step statuses in {@link M3L_SESSION_STEP_STATUSES}. */
-export type M3LSessionStepStatus = (typeof M3L_SESSION_STEP_STATUSES)[number];
+type M3LSessionStepStatus = (typeof M3L_SESSION_STEP_STATUSES)[number];
 
 /**
  * The closed vocabulary of terminal step outcomes the console server can
@@ -220,7 +220,7 @@ const M3L_SESSION_STEP_OUTCOMES = [
 ] as const;
 
 /** One of the closed set of step outcomes in {@link M3L_SESSION_STEP_OUTCOMES}. */
-export type M3LSessionStepOutcome = (typeof M3L_SESSION_STEP_OUTCOMES)[number];
+type M3LSessionStepOutcome = (typeof M3L_SESSION_STEP_OUTCOMES)[number];
 
 /**
  * One step summary within a session, as returned by
