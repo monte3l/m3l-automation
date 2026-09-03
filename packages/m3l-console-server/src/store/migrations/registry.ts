@@ -339,6 +339,16 @@ const CREATE_CONSOLE_SESSION_STEPS_RUN_ID_INDEX = `
 `;
 
 /**
+ * The exact DDL for `CONSOLE_MIGRATIONS`' v10: adds `parameter_name` to
+ * `console_session_bindings` (X11 slice 1, issue #559). Nullable, not
+ * `NOT NULL` — every row created before this migration (v4 through v9) has
+ * no value for it, and `ALTER TABLE ... ADD COLUMN` cannot backfill one.
+ */
+const ADD_SESSION_BINDING_PARAMETER_NAME = `
+  ALTER TABLE console_session_bindings ADD COLUMN parameter_name TEXT
+`;
+
+/**
  * The console store's ordered migration set, applied in full by
  * `store/migrations/runner.ts`'s `applyMigrations` at every store open.
  *
@@ -473,5 +483,10 @@ export const CONSOLE_MIGRATIONS: readonly M3LMigration[] = [
     version: 9,
     name: "create_console_telemetry_rollup",
     statements: [CREATE_CONSOLE_TELEMETRY_ROLLUP_TABLE],
+  },
+  {
+    version: 10,
+    name: "add_session_binding_parameter_name",
+    statements: [ADD_SESSION_BINDING_PARAMETER_NAME],
   },
 ];

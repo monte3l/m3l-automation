@@ -739,9 +739,8 @@ resolution succeeds**, in submission order — so a later binding's failure
 never rolls back an earlier one's already-persisted record. Read the audit
 trail with `GET /api/v1/sessions/:id/bindings`.
 
-**Known limitation:** a persisted binding record carries only `reference`/
-`expectedType`/`multiSelect`/`createdAtMs` — no linkage to the step it fed
-into, and no `parameterName`. A step whose launch subsequently fails (e.g.
+**Known limitation:** a persisted binding record has no linkage to the step
+it fed into. A step whose launch subsequently fails (e.g.
 `ERR_CONSOLE_RUN_CONFIRMATION_REQUIRED`) leaves its bindings' records
 persisted; a client retry with the same bindings persists new records rather
 than reusing the originals. No data is lost or corrupted — this is
@@ -816,6 +815,7 @@ curl -sS localhost:8787/api/v1/sessions/$SESSION_ID/bindings
     "reference": "step-1.output.Queues[0]",
     "expectedType": "string",
     "multiSelect": false,
+    "parameterName": "queueUrl",
     "createdAtMs": 1735689600000
   }
 ]
@@ -874,9 +874,9 @@ returns.
 
 The body is the **same shape** as one entry of `POST …/steps`' `bindings`
 array, validated by the same function, so a body one route accepts the other
-accepts. `parameterName` is validated but **not persisted**:
-`console_session_bindings` has no column for it, and this route does not add
-one. It reaches the audit trail, not the table.
+accepts. `parameterName` is persisted alongside the rest of the binding —
+it comes back on the row this route returns, and on every row
+`GET …/bindings` lists.
 
 The reference is **resolved before anything is stored** — against the
 referenced step's real output, through the same resolver the inline path
@@ -936,10 +936,6 @@ settings above.
   session-record level, and there is no `GET` route to list a session's
   decisions; the service's `listDecisionsForSession` exists but is not yet
   exposed over REST.
-- **A binding's `parameterName` is not persisted.** Both the inline
-  `POST …/steps` path and the standalone `POST …/bindings` route validate it
-  and record it in the audit trail, but `console_session_bindings` has no
-  column for it, so it is absent from every row `GET …/bindings` returns.
 - Binding audit records have no step linkage — see the Bindings section
   above.
 

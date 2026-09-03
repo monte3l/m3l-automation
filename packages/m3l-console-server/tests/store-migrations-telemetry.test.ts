@@ -278,10 +278,10 @@ describe("CONSOLE_MIGRATIONS — the real registry (v9: console_telemetry_rollup
     expect(v9?.name.length).toBeGreaterThan(0);
   });
 
-  test("applying every migration reaches user_version 9 and creates console_telemetry_rollup", () => {
+  test("applying every migration reaches user_version 10 and creates console_telemetry_rollup", () => {
     const database = createRealMigratedDatabase();
 
-    expect(readUserVersion(database)).toBe(9);
+    expect(readUserVersion(database)).toBe(10);
     expect(tableExists(database, "console_telemetry_rollup")).toBe(true);
   });
 
@@ -307,7 +307,7 @@ describe("CONSOLE_MIGRATIONS — the real registry (v9: console_telemetry_rollup
     const secondApplied = applyMigrations(database, CONSOLE_MIGRATIONS);
 
     expect(secondApplied).toBe(0);
-    expect(readUserVersion(database)).toBe(9);
+    expect(readUserVersion(database)).toBe(10);
     expect(tableExists(database, "console_telemetry_rollup")).toBe(true);
   });
 

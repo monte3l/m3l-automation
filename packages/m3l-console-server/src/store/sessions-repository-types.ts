@@ -235,6 +235,13 @@ export interface M3LSessionBindingRecord {
   readonly multiSelect: boolean;
   /** Epoch-millisecond timestamp this binding was created at. */
   readonly createdAtMs: number;
+  /**
+   * The launch-parameter name this binding's resolved value binds to. Every
+   * code path that creates a binding always supplies this, so `undefined`
+   * means exactly one thing: a binding row created before migration v10
+   * added the column (a pre-v10 legacy row).
+   */
+  readonly parameterName: string | undefined;
 }
 
 /**
@@ -249,6 +256,7 @@ export interface M3LSessionBindingRecord {
  *   expectedType: "string",
  *   multiSelect: false,
  *   createdAtMs: Date.now(),
+ *   parameterName: "queueUrl",
  * };
  * ```
  */
@@ -265,6 +273,8 @@ export interface M3LSessionBindingInsert {
   readonly multiSelect: boolean;
   /** Epoch-millisecond timestamp this binding was created at. */
   readonly createdAtMs: number;
+  /** The launch-parameter name this binding's resolved value binds to. */
+  readonly parameterName: string;
 }
 
 /**

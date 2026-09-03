@@ -622,6 +622,27 @@ describe("M3LSessionService — selectBinding()", () => {
     expect(repository.listBindingsForSession(sessionId)).toEqual([]);
   });
 
+  // X11 slice 1 (issue #559): parameterName is validated at the HTTP boundary
+  // today but silently dropped before `insertBinding` — this asserts it
+  // actually persists, not just echoes back on the returned object. The
+  // returned record and a SEPARATE `listBindingsForSession` read are checked
+  // independently so this cannot pass on structural echo alone.
+  test("persists parameterName and returns it in the stored record", async () => {
+    const { service, repository } = buildHarness();
+    const { sessionId } = seedSessionWithOutput(repository, {
+      name: "queue-a",
+    });
+    const binding = { ...SELECTION, parameterName: "queueUrl" };
+
+    const record = await service.selectBinding(sessionId, binding);
+
+    expect(record.parameterName).toBe("queueUrl");
+    const stored = repository
+      .listBindingsForSession(sessionId)
+      .find((candidate) => candidate.id === record.id);
+    expect(stored?.parameterName).toBe("queueUrl");
+  });
+
   test("appends to the trail an addStep-created binding already started", async () => {
     // The two paths write the same table. A selection made after a launch
     // must sit alongside that launch's bindings, not replace or shadow them.

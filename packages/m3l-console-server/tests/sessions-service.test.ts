@@ -967,6 +967,7 @@ describe("M3LSessionService — addStep() persists each resolved binding via ins
       reference: binding.reference,
       expectedType: binding.expectedType,
       multiSelect: binding.multiSelect,
+      parameterName: binding.parameterName,
       createdAtMs: clock.ms,
     });
   });
