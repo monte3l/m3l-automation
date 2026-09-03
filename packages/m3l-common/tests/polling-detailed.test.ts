@@ -1,10 +1,11 @@
 /**
  * Tests for `core/polling`'s `pollDetailed`/`runDetailed` sibling methods
- * (RED phase — ADR-0086, U11 slice 5). The methods and their four result
- * types (`M3LPollAttemptEntry`, `M3LRetryAttemptEntry`,
- * `M3LPollDetailedResult<T>`, `M3LRetryDetailedResult<T>`) do not exist yet;
- * this file is deliberately separate from `tests/polling.test.ts` (zero
- * headroom against its file-budget baseline) and
+ * (ADR-0086, U11 slice 5): `M3LPoller.pollDetailed` / `M3LRetryRunner.runDetailed`
+ * and their four result types (`M3LPollAttemptEntry`, `M3LRetryAttemptEntry`,
+ * `M3LPollDetailedResult<T>`, `M3LRetryDetailedResult<T>`), exported from
+ * `core/polling/detailed-results.ts` and surfaced through the `core/polling`
+ * barrel. This file is deliberately separate from `tests/polling.test.ts`
+ * (zero headroom against its file-budget baseline) and
  * `tests/polling-no-progress.test.ts` (26 bytes of headroom).
  *
  * Contract source: the hub's brief, itself derived from ADR-0086 and the
@@ -313,7 +314,7 @@ describe("core/polling detailed results (ADR-0086)", () => {
       test("already-aborted signal: rejects with ERR_OPERATION_ABORTED (origin caller, retryable false) without invoking the check", async () => {
         const controller = new AbortController();
         controller.abort();
-        const check = vi.fn<() => { type: "success"; value: string }>(() => ({
+        const check = vi.fn<M3LPollCheckFn<string>>(() => ({
           type: "success",
           value: "should-not-reach",
         }));
@@ -324,9 +325,7 @@ describe("core/polling detailed results (ADR-0086)", () => {
 
         let thrown: unknown;
         try {
-          await settleWithTimers(
-            poller.pollDetailed(check as unknown as M3LPollCheckFn<string>),
-          );
+          await settleWithTimers(poller.pollDetailed(check));
         } catch (e) {
           thrown = e;
         }
@@ -488,6 +487,70 @@ describe("core/polling detailed results (ADR-0086)", () => {
       });
     });
 
+    test("server-driven delayMs advice overrides the backoff for ONE attempt only, and does not perturb the progression for the next", async () => {
+      // `DelayProgression.next` returns a classifier-supplied `delayMs`
+      // override directly and deliberately skips assigning `#prevDelay` —
+      // this is the one case where `entry.delayMs` is not a function of the
+      // configured backoff, and every other test in this file only ever
+      // drives delays FROM the backoff, so none of them would notice if the
+      // override were dropped, ignored, or let its value leak into the
+      // progression. A hand-written fake strategy (rather than a real
+      // `M3LBackoff` variant) makes both failure modes unambiguous: it
+      // records every call it receives and returns a value that depends on
+      // whether `prevMs` was perturbed.
+      const backoffCalls: { attempt: number; prevMs: number | undefined }[] =
+        [];
+      const backoff = {
+        nextDelay(attempt: number, prevMs: number | undefined): number {
+          backoffCalls.push({ attempt, prevMs });
+          return prevMs === undefined ? 321 : 999;
+        },
+      };
+      let callIndex = 0;
+      const classifier: M3LRetryClassifier = vi.fn(
+        (): M3LRetryDecision | M3LRetryAdvice => {
+          callIndex++;
+          // Attempt 1 fails with a server-driven override (e.g. honouring a
+          // Retry-After header); attempt 2 fails with a plain verdict, so
+          // the backoff strategy is consulted for the first time only then.
+          if (callIndex === 1) return { decision: "retriable", delayMs: 555 };
+          return "retriable";
+        },
+      );
+      const runner = new M3LRetryRunner({
+        classifier,
+        backoff,
+        maxAttempts: 10,
+      });
+      let attempts = 0;
+      const op = (): Promise<string> => {
+        attempts++;
+        if (attempts < 3) return Promise.reject(new Error(`fail-${attempts}`));
+        return Promise.resolve("third-try");
+      };
+
+      const result = await settleWithTimers(runner.runDetailed(op));
+
+      expect(result.attempts).toBe(3);
+      expect(result.entries).toHaveLength(2);
+      // The overridden attempt's delayMs is the ADVICE value — the backoff
+      // strategy is never even consulted for it (see backoffCalls below).
+      expect(result.entries[0]).toEqual({
+        attempt: 1,
+        classification: "retriable",
+        delayMs: 555,
+      });
+      // The next, non-overridden attempt follows the backoff progression AS
+      // IF the override had never happened: it still receives
+      // prevMs=undefined, not the override value.
+      expect(result.entries[1]).toEqual({
+        attempt: 2,
+        classification: "retriable",
+        delayMs: 321,
+      });
+      expect(backoffCalls).toEqual([{ attempt: 1, prevMs: undefined }]);
+    });
+
     test("fatal classification: rejects with the ORIGINAL error, unchanged and identity-equal — never softened into a returned envelope", async () => {
       const classifier: M3LRetryClassifier = () => "fatal";
       const runner = new M3LRetryRunner({
@@ -613,10 +676,6 @@ describe("core/polling detailed results (ADR-0086)", () => {
             err instanceof M3LError && err.code === "ERR_OPERATION_ABORTED",
         );
         expect(callsWithAbortCode).toHaveLength(0);
-      });
-
-      afterEach(() => {
-        vi.restoreAllMocks();
       });
     });
   });
