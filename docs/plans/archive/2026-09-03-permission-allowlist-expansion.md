@@ -60,8 +60,11 @@ censused and only ~6% matched a rule already in place.
 
 ## Outcome
 
-`.claude/settings.json`'s `permissions.allow` grew from 43 to 119 entries: 87
-insertions covering read-only `git`/`gh`/shell utilities, `gh api`
+`.claude/settings.json`'s `permissions.allow` grew from 40 to 119 entries
+(the pre-session `/fewer-permission-prompts` additions carried into this
+same commit, hence the count from `origin/main` rather than the session's
+own working-tree starting point): 87 insertions covering read-only
+`git`/`gh`/shell utilities, `gh api`
 method/placeholder repairs, `pnpm --filter`/`-C` script variants, eight
 `WebFetch` domains, and bare `WebSearch`. No MCP additions — the entire
 corpus held only 129 MCP calls and everything non-trivial was already
