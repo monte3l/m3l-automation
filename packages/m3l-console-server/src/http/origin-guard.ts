@@ -12,7 +12,10 @@
  */
 
 import { M3LConsoleError } from "../errors/console-error.js";
-import { isLoopbackHost, unwrapBracketedHost } from "../net/loopback.js";
+import {
+  isAcceptedRequestHostname,
+  unwrapBracketedHost,
+} from "../net/loopback.js";
 import type { M3LConsoleHandler, M3LConsoleMiddleware } from "./middleware.js";
 import type { M3LRequestContext } from "./context.js";
 import type { M3LConsoleResult } from "./stream-response.js";
@@ -77,7 +80,7 @@ function extractHostname(authority: string): string {
 
 /**
  * Throws `ERR_CONSOLE_BAD_REQUEST` unless `headers.host` is present and its
- * hostname (port stripped) satisfies {@link isLoopbackHost}. Never echoes
+ * hostname (port stripped) satisfies {@link isAcceptedRequestHostname}. Never echoes
  * the raw header value in the thrown message.
  */
 function assertLoopbackHost(
@@ -91,7 +94,7 @@ function assertLoopbackHost(
     );
   }
   const hostname = extractHostname(host);
-  if (!isLoopbackHost(hostname)) {
+  if (!isAcceptedRequestHostname(hostname)) {
     throw new M3LConsoleError(
       "ERR_CONSOLE_BAD_REQUEST",
       "request Host header does not resolve to a loopback address",
@@ -132,7 +135,7 @@ function assertLoopbackOriginIfPresent(
     );
   }
 
-  if (!isLoopbackHost(parsed.hostname)) {
+  if (!isAcceptedRequestHostname(parsed.hostname)) {
     throw new M3LConsoleError(
       "ERR_CONSOLE_BAD_REQUEST",
       "request Origin header does not resolve to a loopback address",
@@ -143,18 +146,12 @@ function assertLoopbackOriginIfPresent(
 /**
  * Builds the `preRouting` middleware that guards against DNS rebinding: it
  * requires a `Host` header whose hostname (an optional `:port` suffix is
- * stripped, never compared — see below) satisfies {@link isLoopbackHost},
- * and, when an `Origin` header is present, requires it too to parse as a
- * loopback URL.
- *
- * The port is deliberately never compared, for two reasons. First, under a
- * DNS-rebinding attack the browser sends the attacker-controlled *hostname*
- * while the connection itself still reaches the real loopback listener — the
- * hostname is the entire signal an attacker can forge; the port carries none
- * of it. Second, ADR-0071 runs the console behind Docker Compose, where a
- * published-to-container port remap (e.g. `9000:8787`) is a normal
- * deployment shape; comparing the port here would reject every legitimate
- * request through such a remap.
+ * stripped, never compared) satisfies {@link isAcceptedRequestHostname}, and,
+ * when an `Origin` header is present, requires it too to parse as a loopback
+ * URL. See {@link isAcceptedRequestHostname}'s TSDoc for why the port is
+ * deliberately never compared (a DNS-rebinding attack forges only the
+ * hostname, and ADR-0071's Docker Compose deployment relies on a legitimate
+ * published-port remap).
  *
  * @returns A {@link M3LConsoleMiddleware} that throws
  *   {@link M3LConsoleError} with code `"ERR_CONSOLE_BAD_REQUEST"` on a

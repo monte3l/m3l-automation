@@ -13,7 +13,7 @@
  * `M3LShutdownRuntime` with an optional `runs` field, and
  * `runShutdownSequence` starts the run drain alongside the HTTP drain.
  */
-import { describe, expect, expectTypeOf, test } from "vitest";
+import { afterEach, describe, expect, expectTypeOf, test, vi } from "vitest";
 
 import { Core } from "@m3l-automation/m3l-common";
 
@@ -76,21 +76,30 @@ function createControllableDrainController(order?: string[]): {
   };
 }
 
-/** A controllable fake `M3LListeningServer` whose `close()` does not settle until `resolve()` is invoked. */
+/**
+ * A controllable fake `M3LListeningServer` whose `close()` does not settle
+ * until either `resolve()` or `reject()` is invoked — `reject()` lets a test
+ * exercise the post-close-call failure path (`server.close()` itself
+ * rejecting), distinct from the always-resolving happy path the sibling
+ * tests exercise.
+ */
 function createControllableServer(): {
   readonly server: M3LListeningServer;
   readonly calls: number;
   resolve: () => void;
+  reject: (error: Error) => void;
 } {
   const state = { calls: 0 };
   let resolveFn: (() => void) | undefined;
+  let rejectFn: ((error: Error) => void) | undefined;
   const server: M3LListeningServer = {
     host: "127.0.0.1",
     port: 48651,
     close: () => {
       state.calls += 1;
-      return new Promise<void>((resolve) => {
+      return new Promise<void>((resolve, reject) => {
         resolveFn = resolve;
+        rejectFn = reject;
       });
     },
   };
@@ -101,6 +110,9 @@ function createControllableServer(): {
     },
     resolve: () => {
       resolveFn?.();
+    },
+    reject: (error: Error) => {
+      rejectFn?.(error);
     },
   };
 }
@@ -176,6 +188,7 @@ describe("createShutdown — runs.drain() is invoked when runtime.runs is suppli
       drain: httpDrain.controller,
       logger: new Core.M3LLogger([]),
       runs: runsDrain.drainable,
+      readinessGraceMs: 0,
     };
 
     const shutdown = createShutdown(
@@ -205,6 +218,7 @@ describe("createShutdown — the run drain starts CONCURRENTLY with the HTTP dra
       drain: httpDrain.controller,
       logger: new Core.M3LLogger([]),
       runs: runsDrain.drainable,
+      readinessGraceMs: 0,
     };
 
     const shutdown = createShutdown(
@@ -248,6 +262,7 @@ describe("createShutdown — the disposable closes only after all three (HTTP dr
       drain: httpDrain.controller,
       logger: new Core.M3LLogger([]),
       runs: runsDrain.drainable,
+      readinessGraceMs: 0,
     };
 
     const shutdown = createShutdown(
@@ -284,6 +299,7 @@ describe("createShutdown — runtime.runs absent (the common case today) still w
     const runtime: M3LShutdownRuntime = {
       drain: httpDrain.controller,
       logger: new Core.M3LLogger([]),
+      readinessGraceMs: 0,
     };
 
     const shutdown = createShutdown(
@@ -329,6 +345,7 @@ describe("createShutdown — endStreams() runs before drain.drain() (the orderin
       drain: httpDrain.controller,
       logger: new Core.M3LLogger([]),
       runs: runsDrain.drainable,
+      readinessGraceMs: 0,
     };
 
     const shutdown = createShutdown(
@@ -371,5 +388,128 @@ describe("createShutdown — type conformance", () => {
 
   test("M3LRunSubsystem structurally satisfies M3LShutdownDrainable without either module importing the other", () => {
     expectTypeOf<M3LRunSubsystem>().toExtend<M3LShutdownDrainable>();
+  });
+});
+
+// ADR-0071 gap: `/ready` answers 503 once draining, but historically
+// `server.close()` was called in the same tick as `drain.drain()`, so an
+// orchestrator healthcheck almost never observed the 503 before the
+// listener went away (a client instead sees a connection reset). The fix
+// adds a configurable delay — `readinessGraceMs` — between drain-start and
+// the listener actually closing, giving a healthcheck a window to observe
+// the 503. A grace of 0 (today's default) must remain byte-identical to the
+// pre-fix synchronous-close behavior asserted above.
+describe("createShutdown — readinessGraceMs delays server.close() without delaying drain.drain()", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  test("readinessGraceMs of 0 calls server.close() synchronously, same as today", async () => {
+    const httpDrain = createControllableDrainController();
+    const server = createControllableServer();
+    const { disposable } = createRecordingDisposable();
+    const runtime: M3LShutdownRuntime = {
+      drain: httpDrain.controller,
+      logger: new Core.M3LLogger([]),
+      readinessGraceMs: 0,
+    };
+
+    const shutdown = createShutdown(
+      runtime,
+      server.server,
+      disposable,
+      () => undefined,
+      () => undefined,
+    );
+    const settled = shutdown();
+
+    // Nothing has been awaited yet — both calls must already have happened
+    // synchronously, exactly matching the pre-existing "starts CONCURRENTLY"
+    // test above.
+    expect(httpDrain.calls).toBe(1);
+    expect(server.calls).toBe(1);
+
+    httpDrain.resolve();
+    server.resolve();
+    await settled;
+  });
+
+  test("a positive readinessGraceMs delays server.close() until the grace period elapses, without delaying drain.drain()", async () => {
+    vi.useFakeTimers();
+
+    const httpDrain = createControllableDrainController();
+    const server = createControllableServer();
+    const { disposable } = createRecordingDisposable();
+    const runtime: M3LShutdownRuntime = {
+      drain: httpDrain.controller,
+      logger: new Core.M3LLogger([]),
+      readinessGraceMs: 50,
+    };
+
+    const shutdown = createShutdown(
+      runtime,
+      server.server,
+      disposable,
+      () => undefined,
+      () => undefined,
+    );
+    const settled = shutdown();
+
+    // drain.drain() must fire immediately — the grace period delays only
+    // the listener close, never the drain start.
+    expect(httpDrain.calls).toBe(1);
+    expect(server.calls).toBe(0);
+
+    await vi.advanceTimersByTimeAsync(49);
+    expect(server.calls).toBe(0);
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(server.calls).toBe(1);
+
+    httpDrain.resolve();
+    server.resolve();
+    await settled;
+  });
+
+  test("a rejection from the delayed server.close() propagates through shutdown()'s returned promise", async () => {
+    vi.useFakeTimers();
+
+    const httpDrain = createControllableDrainController();
+    const server = createControllableServer();
+    const { disposable } = createRecordingDisposable();
+    const runtime: M3LShutdownRuntime = {
+      drain: httpDrain.controller,
+      logger: new Core.M3LLogger([]),
+      readinessGraceMs: 50,
+    };
+    const failures: unknown[] = [];
+
+    const shutdown = createShutdown(
+      runtime,
+      server.server,
+      disposable,
+      () => undefined,
+      (cause: unknown) => {
+        failures.push(cause);
+      },
+    );
+    const settled = shutdown();
+    // Suppress the default unhandled-rejection reporting for this
+    // intentionally-rejecting promise; the assertion below still observes
+    // the same rejection via `expect(...).rejects`.
+    settled.catch(() => undefined);
+
+    await vi.advanceTimersByTimeAsync(50);
+    expect(server.calls).toBe(1);
+
+    const closeError = new Error("close failed");
+    httpDrain.resolve();
+    server.reject(closeError);
+
+    await expect(settled).rejects.toThrow(closeError);
+    // `createShutdown`'s `onFailed` re-throws `cause` unchanged (see
+    // `lifecycle/shutdown.ts`), so the same Error instance should have
+    // reached both channels.
+    expect(failures).toEqual([closeError]);
   });
 });
