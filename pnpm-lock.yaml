@@ -282,8 +282,8 @@ importers:
         specifier: ^1.12.1
         version: 1.12.1
       read-excel-file:
-        specifier: ^9.3.9
-        version: 9.3.9
+        specifier: ^9.3.10
+        version: 9.3.10
       unpdf:
         specifier: ^1.6.2
         version: 1.6.2
@@ -3294,8 +3294,8 @@ packages:
     resolution: {integrity: sha512-PWaYA1L/q9u2u7xYQi+Y3L3Yfnie7XyLeaJICV1MGD6LprsBxcAqGjYyr0eY3p+QdsA+x/Irkt4Qif8D63+Sbw==}
     engines: {node: '>=0.10.0'}
 
-  read-excel-file@9.3.9:
-    resolution: {integrity: sha512-b4bB8rnZg0g+UI4xR8Ntr84UGKfMOEpT66tX2XMsMloWMCB/jVBsH7EquLG/1c+TuC8+1BuIiFJJghTCLLjZdA==}
+  read-excel-file@9.3.10:
+    resolution: {integrity: sha512-zFcBdzunLCGBmLRT4Q3mLPJnhKPAXXfGAZ83feODlEqX2aRUbgF1h/n2oY0UF7I8tVwnJNRas6fTRD5veDUs+g==}
     engines: {node: '>=18'}
 
   readable-stream@2.3.8:
@@ -6869,7 +6869,7 @@ snapshots:
 
   react@19.2.8: {}
 
-  read-excel-file@9.3.9:
+  read-excel-file@9.3.10:
     dependencies:
       fflate: 0.8.3
       saxen: 11.1.1
