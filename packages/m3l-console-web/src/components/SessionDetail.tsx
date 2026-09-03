@@ -307,9 +307,7 @@ function BindingForm({
           type="text"
           data-testid="binding-parameter-name-input"
           value={parameterName}
-          onChange={(event) => {
-            onParameterNameChange(event.target.value);
-          }}
+          onChange={(event) => onParameterNameChange(event.target.value)}
         />
       </label>
       <label>
@@ -318,12 +316,14 @@ function BindingForm({
           type="checkbox"
           data-testid="binding-multi-select-checkbox"
           checked={multiSelect}
-          onChange={(event) => {
-            onMultiSelectChange(event.target.checked);
-          }}
+          onChange={(event) => onMultiSelectChange(event.target.checked)}
         />
       </label>
-      <button type="submit" data-testid="binding-submit">
+      <button
+        type="submit"
+        data-testid="binding-submit"
+        disabled={bindingState.kind === "loading"}
+      >
         Create binding
       </button>
       {bindingState.kind === "success" && (

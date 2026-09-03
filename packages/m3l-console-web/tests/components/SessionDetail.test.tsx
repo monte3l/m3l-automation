@@ -1178,3 +1178,42 @@ describe("SessionDetail binding-submit stale-response race", () => {
     expect(screen.queryByTestId("binding-error")).not.toBeInTheDocument();
   });
 });
+
+// --- Binding-submit double-click guard --------------------------------------
+//
+// `currentNodeRef`'s stale-response guard above only protects against a
+// resolve/reject racing a NODE change; it does not change between two clicks
+// on the same node, so without a `disabled` state tied to `bindingState.kind
+// === "loading"` a double-click fires two concurrent `createSessionBinding`
+// requests that BOTH pass the guard and can both succeed server-side.
+
+describe("SessionDetail binding-submit double-click guard", () => {
+  test("disables the submit button while createSessionBinding is in flight", async () => {
+    const regionResolvers =
+      Promise.withResolvers<M3LConsoleFetchResult<M3LSessionBindingRecord>>();
+    const createBindingSpy = vi.fn(() => regionResolvers.promise);
+
+    await renderWithArtifactViewerOpen(
+      okFetchSessionStepArtifact(STEP_ARTIFACT_VALUE),
+      createBindingSpy,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Select Region" }));
+    await screen.findByTestId("binding-form");
+
+    const submitButton = screen.getByTestId("binding-submit");
+    expect(submitButton).not.toBeDisabled();
+
+    fireEvent.click(submitButton);
+
+    await vi.waitFor(() => {
+      expect(createBindingSpy).toHaveBeenCalledTimes(1);
+    });
+    expect(submitButton).toBeDisabled();
+
+    regionResolvers.resolve({ ok: true, data: BINDING_RECORD });
+    await screen.findByTestId("binding-success");
+
+    expect(createBindingSpy).toHaveBeenCalledTimes(1);
+  });
+});
