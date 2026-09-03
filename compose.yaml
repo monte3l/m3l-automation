@@ -24,6 +24,11 @@ services:
       # stop_grace_period below, alongside the drain timeout.
       M3L_CONSOLE_READINESS_GRACE_MS: "3000"
     volumes:
+      # The server runs as the image's "node" user (uid 1000,
+      # packages/m3l-console-server/Dockerfile). If the host `./data`
+      # directory doesn't already exist or is owned by a different uid, the
+      # SQLite store fails on its first write rather than at boot — create it
+      # ahead of time (`mkdir -p data`) or `chown 1000:1000 data` if needed.
       - ./data:/data
       # Host SSO credential chain, read-only — the "node" user's home
       # directory in the runtime image (packages/m3l-console-server/Dockerfile).

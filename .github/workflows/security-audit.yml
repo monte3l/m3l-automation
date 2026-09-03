@@ -86,6 +86,12 @@ jobs:
           format: sarif
           output: trivy-${{ matrix.image }}.sarif
           severity: HIGH,CRITICAL
+          # Without this, trivy-action's entrypoint unsets TRIVY_SEVERITY
+          # entirely for the `sarif` format, so `severity` above binds
+          # NEITHER the SARIF output NOR the exit-code decision — every
+          # fixable finding of any severity would fail the job, not just
+          # HIGH/CRITICAL. This makes both honor the stated threshold.
+          limit-severities-for-sarif: "true"
           ignore-unfixed: "true"
           exit-code: "1"
 

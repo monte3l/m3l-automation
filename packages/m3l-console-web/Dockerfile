@@ -21,7 +21,16 @@ WORKDIR /repo
 RUN npm install --global pnpm@11.9.0
 
 COPY . .
-RUN pnpm install --frozen-lockfile
+# `--ignore-scripts`: the root `prepare` script (`lefthook install && node
+# bin/install-merge-drivers.mjs`) needs a real git work tree and the `git`
+# binary — `.git` is dockerignored and `node:24-slim` ships no `git` at all,
+# so `prepare` fails the build outright otherwise. A follow-up `pnpm rebuild`
+# is NOT needed and NOT safe here: bare `pnpm rebuild` targets the workspace
+# root too and re-runs the same failing `prepare` hook. It's also moot —
+# better-sqlite3 (ADR-0069's embedded store) ships a prebuilt binary
+# (`gypfile: false`), so pnpm never triggers a native build for it regardless
+# of `--ignore-scripts`.
+RUN pnpm install --frozen-lockfile --ignore-scripts
 RUN pnpm exec turbo run build --filter=@m3l-automation/m3l-console-web...
 
 # `nginx-unprivileged` (not plain `nginx`): the only published port in

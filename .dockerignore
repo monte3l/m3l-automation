@@ -27,4 +27,9 @@ docs
 !**/.env.example
 **/*.pem
 **/*.key
+# The root .npmrc is committed and holds only `engine-strict=true` — a repo
+# hygiene gate, not a secret. `**/.npmrc` still excludes any per-package
+# .npmrc that could carry an auth-token override; `!/.npmrc` (anchored, root
+# only) re-includes just this one.
 **/.npmrc
+!/.npmrc
