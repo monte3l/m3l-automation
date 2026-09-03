@@ -13,6 +13,7 @@ import type {
   M3LSessionStepSummary,
 } from "../../src/api/sessions.js";
 import {
+  answerSessionDecision,
   createSession,
   createSessionBinding,
   fetchSession,
@@ -745,6 +746,92 @@ describe("createSessionBinding", () => {
 
     await expect(
       createSessionBinding("missing-id", fullBindingInput),
+    ).resolves.toEqual(errorResult);
+  });
+});
+
+describe("answerSessionDecision", () => {
+  test("calls fetchConsoleJson with both ids encoded into the path, POST, and { answer } as the body", async () => {
+    mockedFetchConsoleJson.mockResolvedValue({
+      ok: true,
+      data: { applied: true },
+    });
+
+    await answerSessionDecision("has/slash", "also/slash", "continue");
+
+    expect(mockedFetchConsoleJson).toHaveBeenCalledWith(
+      `/api/v1/sessions/${encodeURIComponent("has/slash")}/decisions/${encodeURIComponent("also/slash")}`,
+      { method: "POST", body: { answer: "continue" } },
+    );
+  });
+
+  test("resolves to the ok result with applied: true, unwrapped", async () => {
+    const okResult: M3LConsoleFetchResult<{ readonly applied: boolean }> = {
+      ok: true,
+      data: { applied: true },
+    };
+    mockedFetchConsoleJson.mockResolvedValue(okResult);
+
+    await expect(
+      answerSessionDecision("session-1", "decision-1", "continue"),
+    ).resolves.toEqual(okResult);
+  });
+
+  // applied: false is a valid response shape (the answer was recorded but
+  // not applied to the underlying step), not an error — it must pass
+  // through unchanged rather than being downgraded.
+  test("resolves to the ok result with applied: false, unwrapped (a valid shape, not an error)", async () => {
+    const okResult: M3LConsoleFetchResult<{ readonly applied: boolean }> = {
+      ok: true,
+      data: { applied: false },
+    };
+    mockedFetchConsoleJson.mockResolvedValue(okResult);
+
+    await expect(
+      answerSessionDecision("session-1", "decision-1", "stop"),
+    ).resolves.toEqual(okResult);
+  });
+
+  test("downgrades a body missing applied to a malformed-body error", async () => {
+    mockedFetchConsoleJson.mockResolvedValue({ ok: true, data: {} });
+
+    await expect(
+      answerSessionDecision("session-1", "decision-1", "continue"),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { kind: "malformed-body", message: expect.any(String) as string },
+    });
+  });
+
+  test("downgrades a body with applied as a non-boolean to a malformed-body error", async () => {
+    mockedFetchConsoleJson.mockResolvedValue({
+      ok: true,
+      data: { applied: "true" },
+    });
+
+    await expect(
+      answerSessionDecision("session-1", "decision-1", "continue"),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { kind: "malformed-body", message: expect.any(String) as string },
+    });
+  });
+
+  test("resolves to the error result the mock returns, unwrapped", async () => {
+    const error: M3LConsoleFetchError = {
+      kind: "http",
+      message: "not found",
+      status: 404,
+      code: "ERR_CONSOLE_SESSION_DECISION_NOT_FOUND",
+    };
+    const errorResult: M3LConsoleFetchResult<{ readonly applied: boolean }> = {
+      ok: false,
+      error,
+    };
+    mockedFetchConsoleJson.mockResolvedValue(errorResult);
+
+    await expect(
+      answerSessionDecision("session-1", "missing-decision", "continue"),
     ).resolves.toEqual(errorResult);
   });
 });

@@ -2,6 +2,8 @@ import type { FormEvent, ReactElement } from "react";
 import { useState } from "react";
 
 import type { M3LScriptDetail, M3LScriptParameter } from "../api/scripts.js";
+import type { M3LParameterBinding } from "../internal/parameter-bindings.js";
+import { resolveBindingValues } from "../internal/parameter-bindings.js";
 
 /**
  * Payload {@link ParameterForm} hands to its `onLaunch` callback. Not the
@@ -29,6 +31,14 @@ export interface ParameterFormProps {
   readonly onLaunch: (submission: M3LParameterFormSubmission) => void;
   /** `true` while a previously-submitted launch is in flight; disables submit. */
   readonly submitting: boolean;
+  /**
+   * Resolved session parameter bindings whose value should prefill the
+   * matching parameter's initial control value, overriding its own
+   * `defaultValue`. A `secret: true` parameter is never prefilled from a
+   * binding — see {@link buildInitialValues}'s TSDoc. A binding matching no
+   * declared parameter is a harmless no-op.
+   */
+  readonly bindings?: readonly M3LParameterBinding[];
 }
 
 /** Sentinel meaning "no operation selected" in the operation `<select>`. */
@@ -49,9 +59,15 @@ function isNumericType(type: string): boolean {
  * parameter is always left blank — the server already sends the mask
  * (`"********"`) as that field's `defaultValue`, and prefilling it would
  * round-trip the mask back as if it were a real secret value.
+ *
+ * `bindingValues` (from {@link resolveBindingValues}) overrides a matching
+ * non-secret parameter's `defaultValue` with the bound value — but never a
+ * secret parameter's, since a secret parameter has no control to prefill at
+ * all (checked first, before any binding lookup).
  */
 function buildInitialValues(
   parameters: readonly M3LScriptParameter[],
+  bindingValues: Readonly<Record<string, string>>,
 ): Record<string, string> {
   // Object.create(null) rather than `{}` — a parameter literally named
   // `__proto__` hits Object.prototype's own `__proto__` accessor setter
@@ -66,6 +82,11 @@ function buildInitialValues(
     if (parameter.secret) {
       // No control is ever rendered for a secret parameter (see
       // ParameterControl's TSDoc), so it has no value to prefill.
+      continue;
+    }
+    const boundValue = bindingValues[parameter.name];
+    if (boundValue !== undefined) {
+      values[parameter.name] = boundValue;
       continue;
     }
     if (isBoolType(parameter.type)) {
@@ -413,8 +434,9 @@ function preventFormSubmit(event: FormEvent<HTMLFormElement>): void {
  */
 export function ParameterForm(props: ParameterFormProps): ReactElement {
   const { detail, onLaunch, submitting } = props;
+  const bindingValues = resolveBindingValues(props.bindings ?? []);
   const [values, setValues] = useState<Record<string, string>>(() =>
-    buildInitialValues(detail.parameters),
+    buildInitialValues(detail.parameters, bindingValues),
   );
   const [selectedOperationName, setSelectedOperationName] = useState(
     NO_OPERATION_SELECTED,
