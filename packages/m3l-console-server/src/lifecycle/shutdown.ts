@@ -39,6 +39,15 @@ export interface M3LShutdownRuntime {
    * {@link runShutdownSequence} treats that as an already-settled drain.
    */
   readonly runs?: M3LShutdownDrainable;
+  /**
+   * The ADR-0071 deferred readiness grace period, in milliseconds: delays
+   * `server.close()` behind this many milliseconds so a `/ready` 503 becomes
+   * observable to a healthcheck during a drain, instead of the listener
+   * closing in the same tick the drain starts and resetting the connection
+   * before the 503 is ever seen. `0` preserves today's behavior of closing
+   * the listener immediately, synchronously alongside `drain.drain()`.
+   */
+  readonly readinessGraceMs: number;
 }
 
 /**
@@ -85,6 +94,13 @@ export interface M3LShutdownDrainable {
 /** The exit code forced on a second shutdown signal. */
 const FORCED_SECOND_SIGNAL_EXIT_CODE = 1;
 
+/** Resolves after `ms` milliseconds, via `setTimeout`. */
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
 /**
  * Runs the shutdown sequence: ends any open run streams FIRST, then starts
  * the drain, then closes the listener.
@@ -124,6 +140,15 @@ const FORCED_SECOND_SIGNAL_EXIT_CODE = 1;
  * cosmetic close failure would cost the operator the drain outcome they
  * actually need.
  *
+ * `runtime.readinessGraceMs` delays `server.close()` (only — never
+ * `drain.drain()`, which still starts in this same synchronous tick) behind
+ * that many milliseconds, per {@link M3LShutdownRuntime.readinessGraceMs}'s
+ * TSDoc. A grace of `0` calls `server.close()` directly rather than through
+ * `delay(0)`, because even a zero-delay `setTimeout` still schedules a
+ * macrotask hop — that would break the pre-existing guarantee that
+ * `server.close()` is called synchronously, in the same tick as
+ * `drain.drain()`, when no grace period is configured.
+ *
  * @example
  * ```ts
  * const outcome = await runShutdownSequence(runtime, server, store);
@@ -137,7 +162,10 @@ async function runShutdownSequence(
   runtime.runs?.endStreams();
   const runsPromise = runtime.runs?.drain() ?? Promise.resolve();
   const drainPromise = runtime.drain.drain();
-  const closePromise = server.close();
+  const closePromise =
+    runtime.readinessGraceMs > 0
+      ? delay(runtime.readinessGraceMs).then(() => server.close())
+      : server.close();
   const [outcome] = await Promise.all([
     drainPromise,
     closePromise,

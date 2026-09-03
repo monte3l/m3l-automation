@@ -88,3 +88,112 @@ export function isLoopbackHost(host: string): boolean {
   if (isIPv6Loopback(normalized)) return true;
   return isIPv4Loopback(normalized);
 }
+
+/**
+ * Answers "may we request this bind address?" — the intended-exposure
+ * question checked at boot, before the process ever binds a socket. Used by
+ * `config/env.ts`'s `resolveHost` to reject a non-loopback
+ * `M3L_CONSOLE_HOST` before the server is ever started.
+ *
+ * Delegates entirely to {@link isLoopbackHost} — see its TSDoc for the
+ * underlying classification rules (which literal forms count as loopback).
+ *
+ * @param host - The candidate bind host, as configured.
+ * @returns `true` when `host` is a permitted loopback bind target.
+ *
+ * @example
+ * ```ts
+ * isPermittedBindHost("127.0.0.1"); // true
+ * isPermittedBindHost("0.0.0.0"); // false
+ * ```
+ */
+export function isPermittedBindHost(host: string): boolean {
+  return isLoopbackHost(host);
+}
+
+/**
+ * Answers "did we actually bind somewhere safe?" — the realized-exposure
+ * question checked against `server.address()` once `listening` fires,
+ * because `listen()` alone does not guarantee a loopback bind: the host
+ * string a caller requests is only a *request*, and Node resolves it
+ * independently. Used by `lifecycle/http-server.ts`'s
+ * `resolveLoopbackAddress`.
+ *
+ * Observed on Node v26.7.0, on one machine, against a real listener:
+ *
+ * | `listen` host      | `address().address` | verdict |
+ * | ------------------- | -------------------- | ------- |
+ * | `127.0.0.1`          | `127.0.0.1`           | accept  |
+ * | `localhost`          | `::1`                 | accept  |
+ * | `::1`                | `::1`                 | accept  |
+ * | `0.0.0.0`            | `0.0.0.0`             | REJECT  |
+ * | `::`                 | `::`                  | REJECT  |
+ * | *(host omitted)*     | `::`                  | REJECT  |
+ *
+ * The `localhost` row reflects that one machine, not a universal Node fact:
+ * which loopback address `localhost` resolves to is decided by the host's
+ * `/etc/hosts` and `getaddrinfo` ordering, so a CI runner, a container, or an
+ * IPv6-disabled host can resolve it to `127.0.0.1` instead of `::1`. The
+ * `0.0.0.0`, `::`, and *(host omitted)* rows are genuine Node behaviours that
+ * hold on every host: omitting the host binds `::` (every interface on the
+ * host), which is the likeliest way to accidentally expose the console to
+ * the network — the failure mode this predicate exists to catch.
+ *
+ * The invariant this predicate actually enforces is unconditional, unlike
+ * the `localhost` row above: it accepts any loopback form — `127.0.0.1` or
+ * `::1` — and rejects everything else, so it behaves correctly whichever
+ * address a given host resolves `localhost` to. Rejecting the IPv6 loopback
+ * form would break hosts that resolve `localhost` to `::1`, which is why
+ * both forms are accepted. This is why the bound address must be re-derived
+ * from `server.address()` after bind rather than trusted from the request:
+ * the request and the verified result can legitimately differ (the
+ * `localhost` row), so only the post-bind address is a fact.
+ *
+ * Delegates entirely to {@link isLoopbackHost} — see its TSDoc for the
+ * underlying classification rules (which literal forms count as loopback).
+ *
+ * @param host - The `address` field of a real `AddressInfo`, post-bind.
+ * @returns `true` when `host` is a verified loopback bind result.
+ *
+ * @example
+ * ```ts
+ * isVerifiedBoundAddress("::1"); // true
+ * isVerifiedBoundAddress("0.0.0.0"); // false
+ * ```
+ */
+export function isVerifiedBoundAddress(host: string): boolean {
+  return isLoopbackHost(host);
+}
+
+/**
+ * Answers "does this inbound request's `Host`/`Origin` name us
+ * acceptably?" — an anti-DNS-rebinding property of the *client's claim*, not
+ * our own exposure. Used by `http/origin-guard.ts`'s `assertLoopbackHost`
+ * (against the `Host` header) and `assertLoopbackOriginIfPresent` (against a
+ * present `Origin` header) on every inbound request.
+ *
+ * The port carried alongside either header is deliberately never compared
+ * here, for two reasons. First, under a DNS-rebinding attack the browser
+ * sends the attacker-controlled *hostname* while the connection itself still
+ * reaches the real loopback listener — the hostname is the entire signal an
+ * attacker can forge; the port carries none of it. Second, ADR-0071 runs the
+ * console behind Docker Compose, where a published-to-container port remap
+ * (e.g. `9000:8787`) is a normal deployment shape; comparing the port here
+ * would reject every legitimate request through such a remap.
+ *
+ * Delegates entirely to {@link isLoopbackHost} — see its TSDoc for the
+ * underlying classification rules (which literal forms count as loopback).
+ *
+ * @param host - The hostname parsed out of a request's `Host` or `Origin`
+ *   header, with any port suffix already stripped.
+ * @returns `true` when `host` names an acceptable loopback client claim.
+ *
+ * @example
+ * ```ts
+ * isAcceptedRequestHostname("localhost"); // true
+ * isAcceptedRequestHostname("evil.example"); // false
+ * ```
+ */
+export function isAcceptedRequestHostname(host: string): boolean {
+  return isLoopbackHost(host);
+}

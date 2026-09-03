@@ -4,41 +4,13 @@
  * on.
  *
  * `listen()` alone does not guarantee a loopback bind: the host string
- * `main.ts` passes in is a *request*, and Node resolves it independently
- * (which loopback address `localhost` resolves to is host-dependent, not
- * a Node fact — see the table below). This module never trusts the
- * request; it re-derives the bound host from `server.address()` after
- * `listening` fires and rejects anything that is not a verified loopback
- * `AddressInfo`, closing the socket first so a rejected start never
- * leaves a live listener behind.
- *
- * Observed on Node v26.7.0, on one machine, against a real listener:
- *
- * | `listen` host      | `address().address` | verdict |
- * | ------------------- | -------------------- | ------- |
- * | `127.0.0.1`          | `127.0.0.1`           | accept  |
- * | `localhost`          | `::1`                 | accept  |
- * | `::1`                | `::1`                 | accept  |
- * | `0.0.0.0`            | `0.0.0.0`             | REJECT  |
- * | `::`                 | `::`                  | REJECT  |
- * | *(host omitted)*     | `::`                  | REJECT  |
- *
- * The `localhost` row reflects that one machine, not a universal Node
- * fact: which loopback address `localhost` resolves to is decided by the
- * host's `/etc/hosts` and `getaddrinfo` ordering, so a CI runner, a
- * container, or an IPv6-disabled host can resolve it to `127.0.0.1`
- * instead of `::1`. The `0.0.0.0`, `::`, and *(host omitted)* rows are
- * genuine Node behaviours that hold on every host: omitting the host
- * binds `::` (every interface on the host), which is the likeliest way
- * to accidentally expose the console to the network — the failure mode
- * this assertion exists to catch.
- *
- * The invariant this module actually enforces is unconditional, unlike
- * the `localhost` row above: it accepts any loopback form — `127.0.0.1`
- * or `::1` — and rejects everything else, so it behaves correctly
- * whichever address a given host resolves `localhost` to. Rejecting the
- * IPv6 loopback form would break hosts that resolve `localhost` to
- * `::1`, which is why both forms are accepted here.
+ * `main.ts` passes in is a *request*, and Node resolves it independently.
+ * This module never trusts the request; it re-derives the bound host from
+ * `server.address()` after `listening` fires and rejects anything that is
+ * not a verified loopback `AddressInfo` — see {@link isVerifiedBoundAddress}
+ * for the full measured Node v26.7.0 `listen()`-host-to-`address()`-result
+ * table and why re-deriving after bind is necessary — closing the socket
+ * first so a rejected start never leaves a live listener behind.
  *
  * @packageDocumentation
  */
@@ -47,7 +19,7 @@ import type { RequestListener, Server } from "node:http";
 import type { AddressInfo } from "node:net";
 
 import { M3LConsoleError } from "../errors/console-error.js";
-import { isLoopbackHost } from "../net/loopback.js";
+import { isVerifiedBoundAddress } from "../net/loopback.js";
 
 /**
  * A console server that is actually listening: the address it reports is
@@ -90,7 +62,7 @@ export interface M3LListeningServer {
  * ```
  */
 export interface StartConsoleServerOptions {
-  /** The host to request binding on. Re-verified against `address()` after bind — see the module doc table. */
+  /** The host to request binding on. Re-verified against `address()` after bind — see {@link isVerifiedBoundAddress}'s TSDoc for the measured mapping. */
   readonly host: string;
   /** The port to request binding on. `0` requests an ephemeral port. */
   readonly port: number;
@@ -110,10 +82,10 @@ interface ResolvedListenAddress {
 
 /**
  * Narrows `server.address()` to a verified loopback {@link ResolvedListenAddress},
- * or throws `ERR_CONSOLE_LISTEN_FAILED` for every shape the module doc's
- * table marks REJECT: `null` (no address could be determined), a string (a
- * UNIX socket path — this module only supports TCP), or a non-loopback
- * `AddressInfo`.
+ * or throws `ERR_CONSOLE_LISTEN_FAILED` for every shape
+ * {@link isVerifiedBoundAddress}'s measured table marks REJECT: `null` (no
+ * address could be determined), a string (a UNIX socket path — this module
+ * only supports TCP), or a non-loopback `AddressInfo`.
  */
 function resolveLoopbackAddress(
   address: AddressInfo | string | null,
@@ -130,7 +102,7 @@ function resolveLoopbackAddress(
       `console server bound a UNIX socket path ("${address}") — the console server only supports TCP loopback binds (ADR-0071)`,
     );
   }
-  if (!isLoopbackHost(address.address)) {
+  if (!isVerifiedBoundAddress(address.address)) {
     throw new M3LConsoleError(
       "ERR_CONSOLE_LISTEN_FAILED",
       `console server bound to non-loopback address "${address.address}" — refusing to expose the console beyond localhost (ADR-0071)`,
@@ -221,8 +193,9 @@ function createCloseOnce(
 
 /**
  * Starts the console server's `node:http` listener and resolves once the
- * bind has been verified as loopback-only, per ADR-0071 (see the module doc
- * table for the exact `listen()`-host-to-`address()`-result mapping).
+ * bind has been verified as loopback-only, per ADR-0071 (see
+ * {@link isVerifiedBoundAddress} for the exact `listen()`-host-to-`address()`-
+ * result mapping).
  *
  * @param options - See {@link StartConsoleServerOptions}.
  * @returns A promise resolving to the verified {@link M3LListeningServer}.

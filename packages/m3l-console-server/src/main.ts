@@ -193,6 +193,12 @@ export interface M3LConsoleRuntime {
    */
   readonly signal: AbortSignal;
   /**
+   * The ADR-0071 deferred readiness grace period, threaded verbatim from
+   * {@link M3LConsoleConfig.readinessGraceMs} into `lifecycle/shutdown.ts`'s
+   * `M3LShutdownRuntime`, which this interface structurally satisfies.
+   */
+  readonly readinessGraceMs: number;
+  /**
    * The opened console store (ADR-0069), when `options.store` supplied one
    * — narrowed to its {@link M3LConsoleStoreLifecycle} view: this composition
    * root has no business issuing queries itself, so the full
@@ -308,6 +314,7 @@ export function createConsoleRuntime(
     requestListener,
     drain,
     signal: drain.signal,
+    readinessGraceMs: config.readinessGraceMs,
     ...(options.store !== undefined && { store: options.store }),
     ...(runs !== undefined && { runs }),
     ...(sessions !== undefined && { sessions }),

@@ -1,10 +1,11 @@
 /**
  * Tests for src/config/env.ts — `loadConsoleConfig` (m3l-console-server X2a
  * contract). Every case injects `env` explicitly; `process.env` is never
- * mutated. Direct `isLoopbackHost`/`unwrapBracketedHost` predicate tests live
- * in `tests/loopback.test.ts` (src/net/loopback.ts); the loopback host
+ * mutated. Direct `isPermittedBindHost`/`unwrapBracketedHost` predicate tests
+ * live in `tests/loopback.test.ts` (src/net/loopback.ts); the loopback host
  * cases below stay here because they exercise `loadConsoleConfig`'s
- * validation of `M3L_CONSOLE_HOST`, not the predicate directly.
+ * validation of `M3L_CONSOLE_HOST` via `isPermittedBindHost`, not the
+ * predicate directly.
  */
 import * as path from "node:path";
 
@@ -76,6 +77,7 @@ describe("M3LConsoleConfig", () => {
       readonly databasePath: string;
       readonly databaseBusyTimeoutMs: number;
       readonly maxBodyBytes: number;
+      readonly readinessGraceMs: number;
     }>();
   });
 });
@@ -106,6 +108,7 @@ describe("loadConsoleConfig — defaults", () => {
       databasePath: DEFAULT_DB_PATH,
       databaseBusyTimeoutMs: 5000,
       maxBodyBytes: 65536,
+      readinessGraceMs: 0,
     });
   });
 });
@@ -123,6 +126,7 @@ describe("loadConsoleConfig — every setting overridden", () => {
         M3L_CONSOLE_DB_PATH: "custom/console.sqlite",
         M3L_CONSOLE_DB_BUSY_TIMEOUT_MS: "1234",
         M3L_CONSOLE_MAX_BODY_BYTES: "131072",
+        M3L_CONSOLE_READINESS_GRACE_MS: "3000",
       }),
       resolveDataDir: () => TEST_DATA_DIR,
     });
@@ -137,6 +141,7 @@ describe("loadConsoleConfig — every setting overridden", () => {
       databasePath: path.resolve(TEST_DATA_DIR, "custom/console.sqlite"),
       databaseBusyTimeoutMs: 1234,
       maxBodyBytes: 131072,
+      readinessGraceMs: 3000,
     });
   });
 });
@@ -198,7 +203,7 @@ describe("loadConsoleConfig — host validation (ADR-0071 loopback-only)", () =>
   // net/http binder resolves the bracketed form as a literal, unbindable
   // hostname, not the address `::1`. `resolveHost` therefore normalizes a
   // bracketed IPv6 host to its unbracketed form before returning it, even
-  // though `isLoopbackHost` (see below) still accepts both spellings.
+  // though `isPermittedBindHost` (see below) still accepts both spellings.
   test("normalizes the bracketed loopback host [::1] to its unbracketed form", () => {
     const config = loadConsoleConfig({
       env: buildEnv({ M3L_CONSOLE_HOST: "[::1]" }),
@@ -290,6 +295,51 @@ describe("loadConsoleConfig — drain timeout validation", () => {
     expectConsoleConfigError(() =>
       loadConsoleConfig({
         env: buildEnv({ M3L_CONSOLE_DRAIN_TIMEOUT_MS: "2147483648" }),
+      }),
+    );
+  });
+});
+
+describe("loadConsoleConfig — readiness grace validation", () => {
+  // Unlike drainTimeoutMs (which requires > 0), 0 is a valid — and the
+  // default — readinessGraceMs value, meaning "no grace period" (today's
+  // exact behavior). Only negative values are rejected here.
+  test.each<[string]>([["-1"], ["-5"]])(
+    "throws ERR_CONSOLE_CONFIG_INVALID for a negative readiness grace %s",
+    (readinessGraceMs) => {
+      expectConsoleConfigError(() =>
+        loadConsoleConfig({
+          env: buildEnv({ M3L_CONSOLE_READINESS_GRACE_MS: readinessGraceMs }),
+        }),
+      );
+    },
+  );
+
+  test("accepts the boundary readiness grace 0 (no grace period, today's default behavior)", () => {
+    const config = loadConsoleConfig({
+      env: buildEnv(),
+      resolveDataDir: () => TEST_DATA_DIR,
+    });
+    expect(config.readinessGraceMs).toBe(0);
+  });
+
+  // MAX_TIMER_DELAY_MS (2_147_483_647) is Node's maximum representable
+  // 32-bit signed timer delay. A value above it is silently coerced to 1ms
+  // with a TimeoutOverflowWarning, so an operator asking for a long grace
+  // period would instead get almost none — the exact inverse of the intent.
+  // The boundary must be exact: the max itself is still a real, honoured
+  // delay.
+  test("accepts the boundary readiness grace 2147483647 (Node's max 32-bit signed timer delay)", () => {
+    const config = loadConsoleConfig({
+      env: buildEnv({ M3L_CONSOLE_READINESS_GRACE_MS: "2147483647" }),
+    });
+    expect(config.readinessGraceMs).toBe(2147483647);
+  });
+
+  test("throws ERR_CONSOLE_CONFIG_INVALID for a readiness grace one above the 32-bit signed timer bound", () => {
+    expectConsoleConfigError(() =>
+      loadConsoleConfig({
+        env: buildEnv({ M3L_CONSOLE_READINESS_GRACE_MS: "2147483648" }),
       }),
     );
   });

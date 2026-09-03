@@ -9,7 +9,7 @@
 import { Core } from "@m3l-automation/m3l-common";
 
 import { M3LConsoleError } from "../errors/console-error.js";
-import { isLoopbackHost, unwrapBracketedHost } from "../net/loopback.js";
+import { isPermittedBindHost, unwrapBracketedHost } from "../net/loopback.js";
 import { resolveStoreDatabasePath } from "./paths.js";
 import {
   CONFIG_INVALID_CODE,
@@ -37,6 +37,8 @@ const DB_PATH_KEY = "m3l.console.db.path";
 const DB_BUSY_TIMEOUT_KEY = "m3l.console.db.busy.timeout.ms";
 /** Dotted config key for the request-body byte cap (X4 slice 7-pre). */
 const MAX_BODY_BYTES_KEY = "m3l.console.max.body.bytes";
+/** Dotted config key for the ADR-0071 deferred readiness grace period. */
+const READINESS_GRACE_KEY = "m3l.console.readiness.grace.ms";
 
 /** Default bind host: loopback-only per ADR-0071. */
 const DEFAULT_HOST = "127.0.0.1";
@@ -50,6 +52,8 @@ const DEFAULT_LOG_LEVEL: Core.M3LLogLevelFloor = "info";
 const DEFAULT_DB_BUSY_TIMEOUT_MS = 5000;
 /** Default request-body byte cap: 64 KiB (X4 slice 7-pre). */
 const DEFAULT_MAX_BODY_BYTES = 65536;
+/** Default readiness grace period, in milliseconds: `0` means no grace period (today's behavior). */
+const DEFAULT_READINESS_GRACE_MS = 0;
 
 /** The lowest valid TCP port. */
 const MIN_PORT = 1;
@@ -140,6 +144,11 @@ const SETTINGS: readonly SettingDescriptor[] = [
     type: Core.M3LConfigParameterType.INT,
     defaultValue: DEFAULT_MAX_BODY_BYTES,
   },
+  {
+    key: READINESS_GRACE_KEY,
+    type: Core.M3LConfigParameterType.INT,
+    defaultValue: DEFAULT_READINESS_GRACE_MS,
+  },
 ];
 
 /**
@@ -172,7 +181,7 @@ function resolveOperatorName(accessor: Core.M3LConfigAccessor): string {
  * diagnostic for a rejected bind address.
  *
  * The returned host is normalized: a bracketed IPv6 URL-authority literal
- * (`[::1]`) is unwrapped to the bare address (`::1`) — {@link isLoopbackHost}
+ * (`[::1]`) is unwrapped to the bare address (`::1`) — {@link isPermittedBindHost}
  * accepts both forms, but only the unbracketed form is bindable (Node's
  * `net`/`http` binder resolves `[::1]` as a literal, unbindable hostname).
  */
@@ -180,7 +189,7 @@ function resolveHost(accessor: Core.M3LConfigAccessor): string {
   const host =
     wrapConfigRead(HOST_KEY, () => accessor.optionalString(HOST_KEY)) ??
     DEFAULT_HOST;
-  if (!isLoopbackHost(host)) {
+  if (!isPermittedBindHost(host)) {
     throw new M3LConsoleError(
       CONFIG_INVALID_CODE,
       `host '${truncateHostForEcho(host)}' is not a loopback address; ADR-0071 requires the console server to bind loopback-only`,
@@ -277,6 +286,31 @@ function resolveMaxBodyBytes(accessor: Core.M3LConfigAccessor): number {
 }
 
 /**
+ * Reads the resolved readiness grace period and rejects a negative value or
+ * one above {@link MAX_TIMER_DELAY_MS}. Unlike {@link resolveDrainTimeoutMs},
+ * `0` is accepted (and is the default): it means "no grace period", which is
+ * today's exact pre-ADR-0071-deferral behavior, so only a negative value is
+ * rejected here.
+ */
+function resolveReadinessGraceMs(accessor: Core.M3LConfigAccessor): number {
+  const readinessGraceMs = wrapConfigRead(READINESS_GRACE_KEY, () =>
+    accessor.numberWithDefault(READINESS_GRACE_KEY, DEFAULT_READINESS_GRACE_MS),
+  );
+  if (
+    !Number.isInteger(readinessGraceMs) ||
+    readinessGraceMs < 0 ||
+    readinessGraceMs > MAX_TIMER_DELAY_MS
+  ) {
+    throw new M3LConsoleError(
+      CONFIG_INVALID_CODE,
+      `readiness grace period must be a non-negative integer number of milliseconds, at most ${String(MAX_TIMER_DELAY_MS)} (Node's maximum 32-bit signed timer delay — above it, the timer silently coerces to 1ms)`,
+      { context: { key: READINESS_GRACE_KEY } },
+    );
+  }
+  return readinessGraceMs;
+}
+
+/**
  * The console server's resolved boot-time configuration.
  *
  * @example
@@ -309,6 +343,13 @@ export interface M3LConsoleConfig {
    * (64 KiB).
    */
   readonly maxBodyBytes: number;
+  /**
+   * The ADR-0071 deferred readiness grace period, in milliseconds: the delay
+   * between drain-start and the listener actually closing, giving a `/ready`
+   * 503 a window to become observable to a healthcheck before connections
+   * are reset. Defaults to `0` (no grace period, the pre-deferral behavior).
+   */
+  readonly readinessGraceMs: number;
 }
 
 /**
@@ -340,7 +381,7 @@ export interface LoadConsoleConfigOptions {
  * A missing, empty, or whitespace-only `M3L_CONSOLE_OPERATOR_NAME` throws:
  * ADR-0071 requires a declared operator profile before the process ever
  * binds a socket. `M3L_CONSOLE_HOST` must resolve to a loopback address (see
- * {@link isLoopbackHost}); `M3L_CONSOLE_PORT` must be an integer in
+ * {@link isPermittedBindHost}); `M3L_CONSOLE_PORT` must be an integer in
  * `1..65535`; `M3L_CONSOLE_DRAIN_TIMEOUT_MS` must be a positive integer no
  * greater than {@link MAX_TIMER_DELAY_MS};
  * `M3L_CONSOLE_LOG_LEVEL` must be one of the six documented
@@ -351,7 +392,9 @@ export interface LoadConsoleConfigOptions {
  * `M3L_CONSOLE_DB_BUSY_TIMEOUT_MS` must be a positive integer no greater than
  * {@link MAX_TIMER_DELAY_MS}, defaulting to `5000`.
  * `M3L_CONSOLE_MAX_BODY_BYTES` must be a positive integer, defaulting to
- * `65536` (64 KiB). Every failure surfaces as an
+ * `65536` (64 KiB). `M3L_CONSOLE_READINESS_GRACE_MS` must be a non-negative
+ * integer no greater than {@link MAX_TIMER_DELAY_MS}, defaulting to `0` (no
+ * grace period). Every failure surfaces as an
  * {@link M3LConsoleError} with code `"ERR_CONSOLE_CONFIG_INVALID"`, naming
  * the offending key and never echoing the raw value (which may be a secret)
  * — with one deliberate, reasoned exception: a rejected `M3L_CONSOLE_HOST`
@@ -409,6 +452,7 @@ export function loadConsoleConfig(
   });
   const databaseBusyTimeoutMs = resolveDatabaseBusyTimeoutMs(accessor);
   const maxBodyBytes = resolveMaxBodyBytes(accessor);
+  const readinessGraceMs = resolveReadinessGraceMs(accessor);
 
   return {
     host,
@@ -420,5 +464,6 @@ export function loadConsoleConfig(
     databasePath,
     databaseBusyTimeoutMs,
     maxBodyBytes,
+    readinessGraceMs,
   };
 }
