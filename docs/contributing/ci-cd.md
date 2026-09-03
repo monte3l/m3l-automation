@@ -49,3 +49,19 @@ squash-merge rewrites the commit SHA a branch-authored fingerprint would key
 on, so every entry ever added went dead the moment its PR landed. A test that
 deliberately plants a secret-shaped literal must assemble it at runtime
 instead (`.claude/rules/tests.md`), which needs no ignore entry at all.
+
+## Containers
+
+[ADR-0071](../adr/0071-console-containerization-deployment.md) packages the
+operations console as two container images
+(`m3l-console-server`, `m3l-console-web`), built and run **locally only** via
+`docker compose` — this repo does not publish an image to any registry. `ci.yml`
+does not build or scan an image on every PR: `bin/lib/changed-paths.mjs`'s
+fail-open `forceAll` behavior already runs the full quality-gate pipeline on
+any Dockerfile/compose change, and per-PR image scanning would add a full
+image build to that cost for no gain over a periodic scan
+([ADR-0015](../adr/0015-code-scanning-tooling-evaluation.md)'s 2026-09-03
+Update). Instead, `security-audit.yml` builds both images and scans them with
+Trivy on its existing weekly schedule, alongside `pnpm audit`. Adopting
+per-PR scanning, or scanning at all, is reassessed if an image is ever
+published to a registry or deployed remotely (the X14 gate).
