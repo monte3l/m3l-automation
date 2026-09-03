@@ -74,6 +74,10 @@ import type {
 import type { M3LConsoleAuditRepository } from "./store/audit-repository.js";
 import type { M3LConsoleSessionsRepository } from "./store/sessions-repository.js";
 import type { M3LConsoleSessionsConfig } from "./config/sessions.js";
+import type { M3LConsoleTelemetryRepository } from "./store/telemetry-repository.js";
+import { createNoOpTelemetryRecorder } from "./telemetry/no-op.js";
+import type { M3LTelemetryRecorder } from "./telemetry/port.js";
+import { createStoreTelemetryRecorder } from "./telemetry-recorder.js";
 
 /**
  * Constructor options for {@link createConsoleRuntime}.
@@ -149,6 +153,11 @@ export interface M3LConsoleRuntimeOptions {
    * port owns what that port writes.
    */
   readonly auditPort?: M3LHumanActionAuditPort;
+  /**
+   * The X8 telemetry rollup port (mirrors {@link audit}). When absent,
+   * {@link M3LConsoleRuntime.telemetry} falls back to the no-op recorder.
+   */
+  readonly telemetry?: M3LConsoleTelemetryRepository;
 }
 
 /**
@@ -221,6 +230,12 @@ export interface M3LConsoleRuntime {
    * own preconditions were met" semantics.
    */
   readonly sessions?: M3LSessionSubsystem;
+  /**
+   * The X8 telemetry recorder — ALWAYS present, so callers never need an
+   * `undefined` check. Store-backed when
+   * {@link M3LConsoleRuntimeOptions.telemetry} was supplied, else no-op.
+   */
+  readonly telemetry: M3LTelemetryRecorder;
 }
 
 /**
@@ -253,13 +268,30 @@ function resolveConfig(options: M3LConsoleRuntimeOptions): M3LConsoleConfig {
   );
 }
 
+type M3LTelemetryBackend = "store" | "no-op";
+
+/** Resolves the backend label and recorder from `options.telemetry` together, so they can't disagree. */
+function resolveTelemetry(
+  options: M3LConsoleRuntimeOptions,
+  logger: Core.M3LLogger,
+): readonly [M3LTelemetryBackend, M3LTelemetryRecorder] {
+  const repository = options.telemetry;
+  return repository === undefined
+    ? ["no-op", createNoOpTelemetryRecorder()]
+    : [
+        "store",
+        createStoreTelemetryRecorder({ telemetry: repository, logger }),
+      ];
+}
+
 export function createConsoleRuntime(
   options: M3LConsoleRuntimeOptions = {},
 ): M3LConsoleRuntime {
   const config = resolveConfig(options);
   const logger = createRuntimeLogger(config, options.handlers);
 
-  logPosture(logger, config);
+  const [telemetryBackend, telemetry] = resolveTelemetry(options, logger);
+  logPosture(logger, config, telemetryBackend);
   const { runs, sessions } = buildConsoleSubsystems(options, logger);
 
   const operator: M3LOperatorProfile = {
@@ -315,6 +347,7 @@ export function createConsoleRuntime(
     drain,
     signal: drain.signal,
     readinessGraceMs: config.readinessGraceMs,
+    telemetry,
     ...(options.store !== undefined && { store: options.store }),
     ...(runs !== undefined && { runs }),
     ...(sessions !== undefined && { sessions }),
@@ -438,6 +471,7 @@ async function buildRuntimeAndBindListener(
       runs: store.runs,
       sessions: store.sessions,
       audit: store.audit,
+      telemetry: store.telemetry,
     });
     // A database write (reconciling SIGKILL-orphaned rows), so it belongs
     // here — not in createConsoleRuntime, a pure composition step — and

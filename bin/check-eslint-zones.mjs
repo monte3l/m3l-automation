@@ -313,11 +313,15 @@ const CONSOLE_SERVER_LAYERS = [
   ["auth", ["auth", "errors"]],
   ["lifecycle", ["lifecycle", "errors", "net"]],
   ["store", ["store", "errors"]],
-  ["stream", ["stream", "errors"]],
-  ["runs", ["runs", "errors", "store", "stream"]],
+  ["stream", ["stream", "errors", "telemetry"]],
+  ["runs", ["runs", "errors", "store", "stream", "telemetry"]],
   ["sessions", ["sessions", "errors", "store"]],
   ["audit", ["audit", "errors"]],
-  ["http", ["http", "errors", "auth", "lifecycle", "net", "stream"]],
+  ["telemetry", ["telemetry", "errors"]],
+  [
+    "http",
+    ["http", "errors", "auth", "lifecycle", "net", "stream", "telemetry"],
+  ],
 ];
 
 for (const [layer, allowed] of CONSOLE_SERVER_LAYERS) {

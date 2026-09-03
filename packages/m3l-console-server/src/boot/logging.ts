@@ -120,21 +120,31 @@ export function createRuntimeLogger(
 
 /**
  * Emits the one posture line every boot logs: the resolved host, port,
- * operator name, drain timeout, and log level. The operator email is
- * deliberately never included — it is caller PII, and the library does not
- * log caller data by default.
+ * operator name, drain timeout, log level, and telemetry recorder backend.
+ * The operator email is deliberately never included — it is caller PII, and
+ * the library does not log caller data by default.
+ *
+ * The telemetry backend rides on this same line rather than a second event:
+ * unlike `runs`/`sessions`, whose absence surfaces as missing routes, a
+ * no-op recorder is behaviourally invisible — nothing else distinguishes
+ * "recording" from "silently discarding forever" — so this is the only
+ * boot-time signal that a caller who supplied `store` but forgot
+ * `telemetry: store.telemetry` has lost telemetry permanently.
  *
  * @param logger - The runtime logger.
  * @param config - The resolved boot configuration.
+ * @param telemetryBackend - Which recorder implementation was resolved:
+ *   `"store"` when a telemetry repository was wired, `"no-op"` otherwise.
  *
  * @example
  * ```ts
- * logPosture(logger, config);
+ * logPosture(logger, config, "no-op");
  * ```
  */
 export function logPosture(
   logger: Core.M3LLogger,
   config: M3LConsoleConfig,
+  telemetryBackend: "store" | "no-op",
 ): void {
   logger.info("console server configuration resolved", {
     host: config.host,
@@ -142,6 +152,7 @@ export function logPosture(
     operatorName: config.operatorName,
     drainTimeoutMs: config.drainTimeoutMs,
     logLevel: config.logLevel,
+    telemetryBackend,
   });
 }
 
