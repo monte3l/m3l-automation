@@ -60,7 +60,7 @@ censused and only ~6% matched a rule already in place.
   remaining WebFetch volume, because that same file's own rule restricts
   fetches to the `anthropics` org, which a bare domain rule cannot express.
 
-## PR review — two rounds of security findings
+## PR review — three rounds of security findings
 
 `claude-pr-review.yml` FAILed the initial PR with 2 Must-fix findings, both
 confirmed real: `Bash(sed -n *)`/`Bash(sort *)`/`Bash(uniq *)` each also
@@ -102,26 +102,60 @@ for reasons unrelated to this transcript census, several of which (`git
 fetch`) this repo's own skills depend on directly, so a silent removal here
 would be scope creep. Filed as a follow-up rather than folded in.
 
+A third bot review, on the fix commit, found the fundamental gap underlying
+both prior rounds: the three credential-file `deny` entries added in round
+2 (`~/.config/gh/hosts.yml`, `~/.npmrc`, `~/.claude/.credentials.json`) only
+gate Claude Code's built-in `Read` tool — confirmed by reading
+`guard-readonly-bash.mjs`'s own header, they do nothing to stop the kept
+generic Bash utilities (`grep`/`head`/`tail`/`ls`/`wc`/`cut`/`tr`) from
+reading the exact same files via an unconstrained absolute-path argument,
+since the settings.json permission DSL has no way to express "path argument
+must be repo-relative" — every rule is a plain prefix-glob against raw
+command text. Worse, this repo's only Bash `PreToolUse` hook
+(`guard-readonly-bash.mjs`) explicitly scopes itself to subagent contexts
+only (`agent_type` present in the payload) and no-ops for the hub's own Bash
+calls, so for the hub session — the one actually running this settings.json
+— `permissions.allow` is the _only_ gate, with no backstop at all. `git
+cat-file *` (Should-fix, narrower blast radius: only committed blob objects,
+not arbitrary filesystem paths) shared the same class and was dropped
+alongside it. Given no scoped fix is expressible in the DSL and no hook
+exists to add path-scoping for the hub, removal was again the only correct
+resolution — this round cost the single largest chunk of the original
+census-driven value (`grep`/`head`/`tail`/`ls`/`wc`/`cut` together were
+over 20,000 combined census uses).
+
 ## Outcome
 
-`.claude/settings.json`'s `permissions.allow` grew from 40 to 86 entries and
+`.claude/settings.json`'s `permissions.allow` grew from 40 to 78 entries and
 `permissions.deny` from 13 to 16 (both counts against `origin/main`, since
 the pre-session `/fewer-permission-prompts` additions carried into the same
-commit as this PR). Net of the security-review rounds above, the surviving
+commit as this PR). Net of three security-review rounds, the surviving
 additions cover read-only `git status`/`rev-parse`/`branch --show-current`/
 `worktree list`/`remote get-url`/`for-each-ref`/`ls-tree`/`ls-files`/
-`cat-file`/`reflog show`, read-only shell utilities (`grep`/`head`/`tail`/
-`ls`/`wc`/`cut`/`tr`/`test -f`/`pwd`), `gh` read commands, the literal
+`reflog show`, `test -f`/`pwd`, `gh` read commands, the literal
 (non-placeholder) `gh api` path repairs, `pnpm --filter`/`exec prettier
---check`/`knip`, eight `WebFetch` domains, and bare `WebSearch`. Several of
-the original design's highest-census-volume entries — `git diff`/`log`/
-`show` (2,818 combined census uses), `jq`, `rg`, `cd`, `sed -n`, `sort`,
-`uniq`, `gh api --method GET *`, `pnpm -C *`, `pnpm exec rumdl check` —
-did not survive review; each had a real write or arbitrary-execution path
-with no settings.json-expressible scoped fix, so removal was the correct
-minimal resolution rather than shipping known-exploitable rules. No MCP
-additions — the entire corpus held only 129 MCP calls and everything
-non-trivial was already allowlisted.
+--check`/`knip`, eight `WebFetch` domains, and bare `WebSearch`. The large
+majority of the original design's highest-census-volume entries —
+`git diff`/`log`/`show`, `grep`/`head`/`tail`/`ls`/`wc`/`cut`/`tr`, `jq`,
+`rg`, `cd`, `sed -n`, `sort`, `uniq`, `gh api --method GET *`, `pnpm -C *`,
+`pnpm exec rumdl check`, `git cat-file` — did not survive review; each had a
+real write, arbitrary-execution, or unscoped-read path with no
+settings.json-expressible fix, so removal was the correct minimal
+resolution each time rather than shipping a known hole. No MCP additions —
+the entire corpus held only 129 MCP calls and everything non-trivial was
+already allowlisted.
+
+**Durable lesson, beyond this one PR:** a plain prefix-glob permission DSL
+with no flag-awareness and no path-scoping cannot safely allowlist any shell
+command capable of reading or writing an argument-supplied path with a
+wildcard suffix — the wildcard always admits an absolute path, an unexpected
+flag, or both, and there is no way to express "relative path only" or
+"no `-i`/`-o`/`--output`/`--pre` flag" in the rule itself. Combined with the
+hub's own Bash calls having zero hook backstop (unlike subagents, which
+`guard-readonly-bash.mjs` does cover), this rules out most "obviously
+read-only" coreutils as safe allowlist candidates for the hub specifically —
+a materially different bar than the same census applied to a
+`guard-readonly-bash.mjs`-covered subagent context would clear.
 
 Filed separately rather than folded into this change:
 `guard-readonly-bash.mjs` produced 273 of the 300 recorded denials by
@@ -131,8 +165,12 @@ forcing single-pass streaming pipelines with no staged intermediates. The fix
 (permit writes whose target resolves under the session scratchpad) is hook
 logic plus test updates, a different concern from a permissions-only PR.
 Also filed as a follow-up: the pre-existing-baseline security gaps the
-PR-review rounds surfaced but which this PR's diff didn't touch (previous
-section) — `git fetch *`'s `--upload-pack` RCE vector is the most severe and
-warrants the closest look, since removing it outright would break
-`git fetch origin main` calls this repo's own `creating-prs`/
-`resolving-pr-comments` skills issue directly.
+PR-review rounds surfaced but which this PR's diff didn't touch (two
+sections up) — `git fetch *`'s `--upload-pack` RCE vector is the most severe
+and warrants the closest look, since removing it outright would break `git
+fetch origin main` calls this repo's own `creating-prs`/
+`resolving-pr-comments` skills issue directly. A third follow-up this round
+adds: whether a hub-scoped sibling to `guard-readonly-bash.mjs` (path-scoping
+argument-taking read commands to the repo tree) is worth building, since
+that structural gap is what forced this PR's biggest value loss and would
+recur for any future attempt to allowlist generic read utilities.
