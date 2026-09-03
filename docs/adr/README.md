@@ -143,3 +143,4 @@ surface).
 | 0087 | [Claude Code session naming convention](./0087-claude-code-session-naming-convention.md)                                                                  | Accepted; amended by ADR-0088                         |
 | 0088 | [Automatic session naming via a launcher wrapper](./0088-automatic-session-naming-via-launcher.md)                                                        | Accepted; amends ADR-0087                             |
 | 0089 | [Skill invocation stance, the listing-budget ceiling, and where routing guidance lives](./0089-skill-invocation-stance-and-listing-budget.md)             | Accepted                                              |
+| 0090 | [Native `subagentStatusLine` supersedes the JSONL spoke-lifecycle tracker](./0090-subagent-statusline-supersedes-lifecycle-tracker.md)                    | Accepted                                              |
