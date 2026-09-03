@@ -72,6 +72,8 @@ export const GREEN = "\x1b[32m";
 export const YELLOW = "\x1b[33m";
 export const RED = "\x1b[31m";
 export const CYAN = "\x1b[36m";
+export const BLUE = "\x1b[34m";
+export const MAGENTA = "\x1b[35m";
 export const DIM = "\x1b[2m";
 export const RESET = "\x1b[0m";
 export const SEGMENT_SEPARATOR = `${DIM} · ${RESET}`;
@@ -309,7 +311,9 @@ export function formatSessionNameSegment(payload) {
 export function formatBranchSegment(branchName) {
   if (typeof branchName !== "string" || branchName.length === 0) return null;
   const text =
-    branchName === "main" ? `${RED}⚠ main${RESET}` : `🌿 ${branchName}`;
+    branchName === "main"
+      ? `${RED}⚠ main${RESET}`
+      : `${BLUE}🌿 ${branchName}${RESET}`;
   return seg("branch", 95, text, 6);
 }
 
@@ -328,7 +332,7 @@ export function formatWorktreeSegment(payload) {
       : undefined;
   if (typeof worktreeName !== "string" || worktreeName.length === 0)
     return null;
-  return seg("worktree", 85, `wt "${worktreeName}"`, 8);
+  return seg("worktree", 85, `${BLUE}wt "${worktreeName}"${RESET}`, 8);
 }
 
 /**
@@ -385,7 +389,7 @@ export function formatOriginRepoSegment(payload) {
   ) {
     return null;
   }
-  return seg("origin_repo", 40, `${r.owner}/${r.name}`, 10);
+  return seg("origin_repo", 40, `${BLUE}${r.owner}/${r.name}${RESET}`, 10);
 }
 
 /**
@@ -413,7 +417,7 @@ export function formatEffortSegment(payload) {
   if (typeof effort !== "object" || effort === null) return null;
   const level = /** @type {{ level?: unknown }} */ (effort).level;
   if (typeof level !== "string" || level.length === 0) return null;
-  return seg("effort", 90, level, 4);
+  return seg("effort", 90, `${MAGENTA}${level}${RESET}`, 4);
 }
 
 /**
@@ -428,7 +432,9 @@ export function formatThinkingSegment(payload) {
     thinking && typeof thinking === "object"
       ? /** @type {{ enabled?: unknown }} */ (thinking).enabled
       : undefined;
-  return enabled === true ? seg("thinking", 70, "thinking", 8) : null;
+  return enabled === true
+    ? seg("thinking", 70, `${MAGENTA}thinking${RESET}`, 8)
+    : null;
 }
 
 /**
@@ -439,7 +445,9 @@ export function formatThinkingSegment(payload) {
 export function formatFastModeSegment(payload) {
   if (typeof payload !== "object" || payload === null) return null;
   const fastMode = /** @type {{ fast_mode?: unknown }} */ (payload).fast_mode;
-  return fastMode === true ? seg("fast_mode", 65, "fast mode", 10) : null;
+  return fastMode === true
+    ? seg("fast_mode", 65, `${MAGENTA}fast mode${RESET}`, 10)
+    : null;
 }
 
 /**
@@ -459,7 +467,7 @@ export function formatOutputStyleSegment(payload) {
   if (typeof name !== "string" || name.length === 0 || name === "default") {
     return null;
   }
-  return seg("output_style", 55, name, 6);
+  return seg("output_style", 55, `${MAGENTA}${name}${RESET}`, 6);
 }
 
 /**
@@ -475,7 +483,7 @@ export function formatVimModeSegment(payload) {
       ? /** @type {{ mode?: unknown }} */ (vim).mode
       : undefined;
   if (typeof mode !== "string" || mode.length === 0) return null;
-  return seg("vim", 50, mode.toLowerCase(), 6);
+  return seg("vim", 50, `${MAGENTA}${mode.toLowerCase()}${RESET}`, 6);
 }
 
 /**

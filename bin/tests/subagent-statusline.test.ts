@@ -7,6 +7,7 @@ import {
   GREEN,
   YELLOW,
   RED,
+  MAGENTA,
   DIM,
   RESET,
   formatTokenCount,
@@ -162,7 +163,7 @@ describe("formatEffort", () => {
 describe("formatSubagentRow", () => {
   const now = 1_700_000_000_000;
 
-  test("composes name, effort, token fraction, and a colored elapsed segment, separated by the dim separator", () => {
+  test("composes name, a magenta effort segment, token fraction, and a colored elapsed segment, separated by the dim separator", () => {
     const task = {
       id: "task-1",
       name: "code-implementer",
@@ -177,7 +178,7 @@ describe("formatSubagentRow", () => {
     const separator = `${DIM} · ${RESET}`;
     const expectedContent = [
       "code-implementer",
-      "high",
+      `${MAGENTA}high${RESET}`,
       "50k/200k (25%)",
       `${GREEN}5m${RESET}`,
     ].join(separator);

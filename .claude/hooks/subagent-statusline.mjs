@@ -38,6 +38,7 @@ import {
   GREEN,
   YELLOW,
   RED,
+  MAGENTA,
   DIM,
   RESET,
   formatTokenCount,
@@ -140,7 +141,7 @@ export function formatSubagentRow(task, env) {
   const segments = [name];
 
   const effortText = formatEffort(effort);
-  if (effortText !== null) segments.push(effortText);
+  if (effortText !== null) segments.push(`${MAGENTA}${effortText}${RESET}`);
 
   const tokenText = formatTokenFraction(tokenCount, contextWindowSize);
   if (tokenText !== null) segments.push(tokenText);

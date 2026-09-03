@@ -13,6 +13,8 @@ import {
   YELLOW,
   RED,
   CYAN,
+  BLUE,
+  MAGENTA,
   DIM,
   RESET,
   SEGMENT_SEPARATOR,
@@ -258,16 +260,15 @@ describe("formatBranchSegment", () => {
     });
   });
 
-  test("renders any other branch name with a leaf emoji and no ANSI wrap", () => {
+  test("renders any other branch name with a leaf emoji, wrapped in blue", () => {
     const result = formatBranchSegment("feat/x");
 
     expect(result).toEqual({
       id: "branch",
       priority: 95,
       minWidth: 6,
-      text: "🌿 feat/x",
+      text: `${BLUE}🌿 feat/x${RESET}`,
     });
-    expect(result?.text).not.toContain("\x1b");
   });
 });
 
@@ -284,7 +285,7 @@ describe("formatWorktreeSegment", () => {
     ).toBeNull();
   });
 
-  test("renders the worktree name, uncolored", () => {
+  test("renders the worktree name in blue", () => {
     const result = formatWorktreeSegment({
       workspace: { git_worktree: "foo" },
     });
@@ -293,9 +294,8 @@ describe("formatWorktreeSegment", () => {
       id: "worktree",
       priority: 85,
       minWidth: 8,
-      text: 'wt "foo"',
+      text: `${BLUE}wt "foo"${RESET}`,
     });
-    expect(result?.text).not.toContain("\x1b");
   });
 });
 
@@ -401,7 +401,7 @@ describe("formatAgentSegment", () => {
 });
 
 describe("formatOriginRepoSegment", () => {
-  test("renders 'owner/name', uncolored", () => {
+  test("renders 'owner/name' in blue", () => {
     const result = formatOriginRepoSegment({
       workspace: { repo: { owner: "monte3l", name: "m3l-automation" } },
     });
@@ -410,9 +410,8 @@ describe("formatOriginRepoSegment", () => {
       id: "origin_repo",
       priority: 40,
       minWidth: 10,
-      text: "monte3l/m3l-automation",
+      text: `${BLUE}monte3l/m3l-automation${RESET}`,
     });
-    expect(result?.text).not.toContain("\x1b");
   });
 
   test("returns null when owner or name is missing or empty", () => {
@@ -449,16 +448,15 @@ describe("formatModelSegment", () => {
 });
 
 describe("formatEffortSegment", () => {
-  test("renders the effort level plainly, uncolored", () => {
+  test("renders the effort level in magenta", () => {
     const result = formatEffortSegment({ effort: { level: "high" } });
 
     expect(result).toEqual({
       id: "effort",
       priority: 90,
       minWidth: 4,
-      text: "high",
+      text: `${MAGENTA}high${RESET}`,
     });
-    expect(result?.text).not.toContain("\x1b");
   });
 
   test("returns null when level is absent, empty, or non-string", () => {
@@ -468,12 +466,12 @@ describe("formatEffortSegment", () => {
 });
 
 describe("formatThinkingSegment", () => {
-  test("renders 'thinking' only when thinking.enabled is strictly true", () => {
+  test("renders 'thinking' in magenta only when thinking.enabled is strictly true", () => {
     expect(formatThinkingSegment({ thinking: { enabled: true } })).toEqual({
       id: "thinking",
       priority: 70,
       minWidth: 8,
-      text: "thinking",
+      text: `${MAGENTA}thinking${RESET}`,
     });
   });
 
@@ -486,12 +484,12 @@ describe("formatThinkingSegment", () => {
 });
 
 describe("formatFastModeSegment", () => {
-  test("renders 'fast mode' only when fast_mode is strictly true", () => {
+  test("renders 'fast mode' in magenta only when fast_mode is strictly true", () => {
     expect(formatFastModeSegment({ fast_mode: true })).toEqual({
       id: "fast_mode",
       priority: 65,
       minWidth: 10,
-      text: "fast mode",
+      text: `${MAGENTA}fast mode${RESET}`,
     });
   });
 
@@ -511,7 +509,7 @@ describe("formatOutputStyleSegment", () => {
     ).toBeNull();
   });
 
-  test("renders any other non-empty style name plainly", () => {
+  test("renders any other non-empty style name in magenta", () => {
     const result = formatOutputStyleSegment({
       output_style: { name: "explanatory" },
     });
@@ -520,9 +518,8 @@ describe("formatOutputStyleSegment", () => {
       id: "output_style",
       priority: 55,
       minWidth: 6,
-      text: "explanatory",
+      text: `${MAGENTA}explanatory${RESET}`,
     });
-    expect(result?.text).not.toContain("\x1b");
   });
 });
 
@@ -532,20 +529,20 @@ describe("formatVimModeSegment", () => {
     expect(formatVimModeSegment({ vim: { mode: "" } })).toBeNull();
   });
 
-  test("renders the mode lowercased", () => {
+  test("renders the mode lowercased, wrapped in magenta", () => {
     const result = formatVimModeSegment({ vim: { mode: "NORMAL" } });
 
     expect(result).toEqual({
       id: "vim",
       priority: 50,
       minWidth: 6,
-      text: "normal",
+      text: `${MAGENTA}normal${RESET}`,
     });
   });
 
-  test("leaves an already-lowercase mode unchanged", () => {
+  test("leaves an already-lowercase mode unchanged, wrapped in magenta", () => {
     expect(formatVimModeSegment({ vim: { mode: "insert" } })?.text).toBe(
-      "insert",
+      `${MAGENTA}insert${RESET}`,
     );
   });
 });
