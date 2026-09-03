@@ -48,6 +48,7 @@ import { createSessionSubsystem } from "./sessions/composition.js";
 import type { M3LSessionSubsystem } from "./sessions/composition.js";
 import type { M3LSessionRunEventSink } from "./sessions/ports.js";
 import type { M3LConsoleSessionsRepository } from "./store/sessions-repository.js";
+import type { M3LTelemetryRecorder } from "./telemetry/port.js";
 
 /** The env var naming the X4 scripts directory, named in the run-disabled posture line. */
 const RUNS_SCRIPTS_DIR_ENV = "M3L_CONSOLE_RUNS_SCRIPTS_DIR";
@@ -106,10 +107,12 @@ export interface M3LConsoleSubsystems {
  * skipping config resolution (and the warning) entirely when no registry was
  * ever supplied is what keeps every existing caller that never mentions
  * `runs` silent; the warning only fires once a caller has actually opted in
- * by supplying one. `extraEventSinks` is threaded straight into
- * `createRunSubsystem`'s own option of the same name — see this module's
- * `@packageDocumentation` for why {@link buildConsoleSubsystems} always
- * passes exactly one entry here (the forwarding sink).
+ * by supplying one. `extraEventSinks` and `telemetry` are each threaded
+ * straight into `createRunSubsystem`'s own option of the same name —
+ * `extraEventSinks`'s "see this module's `@packageDocumentation`" note is
+ * about why {@link buildConsoleSubsystems} always passes exactly one entry
+ * there (the forwarding sink); `telemetry` carries no such invariant and is
+ * forwarded verbatim, optional at every hop.
  *
  * Relocated verbatim from `main.ts` (X6 slice 4, Part B round 3) plus the new
  * `extraEventSinks` parameter.
@@ -128,6 +131,7 @@ function buildRunSubsystem(
   options: M3LConsoleSubsystemsOptions,
   logger: Core.M3LLogger,
   extraEventSinks: readonly M3LRunEventSink[],
+  telemetry: M3LTelemetryRecorder | undefined,
 ): M3LRunSubsystem | undefined {
   if (options.runs === undefined) return undefined;
   const env = options.env ?? process.env;
@@ -144,6 +148,7 @@ function buildRunSubsystem(
     logger,
     registry: options.runs,
     extraEventSinks,
+    telemetry,
     runsOutputRoot: resolveRunsOutputRoot({
       configuredPath: env[RUNS_OUTPUT_ROOT_ENV],
     }),
@@ -206,6 +211,8 @@ function buildSessionSubsystem(
  * @param options - See {@link M3LConsoleSubsystemsOptions}.
  * @param logger - The logger every posture-warning line and session
  *   event-handling failure logs through.
+ * @param telemetry - Forwarded verbatim to the run subsystem; omitted
+ *   entirely, the orchestrator records to its own no-op default.
  * @returns The resolved {@link M3LConsoleSubsystems}.
  *
  * @example
@@ -223,6 +230,7 @@ function buildSessionSubsystem(
 export function buildConsoleSubsystems(
   options: M3LConsoleSubsystemsOptions,
   logger: Core.M3LLogger,
+  telemetry?: M3LTelemetryRecorder,
 ): M3LConsoleSubsystems {
   // A mutable BOX (never itself reassigned — only its `.current` property
   // is mutated), not a `let` variable: the closure below must read the
@@ -237,7 +245,7 @@ export function buildConsoleSubsystems(
     },
   };
 
-  const runs = buildRunSubsystem(options, logger, [forwardingSink]);
+  const runs = buildRunSubsystem(options, logger, [forwardingSink], telemetry);
   const sessions = buildSessionSubsystem(options, logger, runs?.orchestrator);
   forwardingTarget.current = sessions?.eventSink;
 

@@ -36,6 +36,7 @@ import type { M3LRunRequestBody } from "./parameters.js";
 import type { M3LRunPolicy } from "./policy.js";
 import type { M3LRunRegistry } from "./registry.js";
 import type { M3LResolvedScript } from "./resolver.js";
+import type { M3LTelemetryRecorder } from "../telemetry/port.js";
 
 /** One currently-active (started, not yet settled) run. */
 export interface M3LActiveRun {
@@ -96,6 +97,14 @@ export interface M3LOrchestratorContext {
   readonly logger: Core.M3LLogger;
   /** See {@link M3LRunOrchestratorOptions.runsOutputRoot}. */
   readonly runsOutputRoot: string;
+  /**
+   * The telemetry recorder `recordFinish` reports one `runFinished` sample
+   * per ACTIVE-run terminal write. Always present here — the optionality
+   * lives at the `M3LRunOrchestratorOptions.telemetry` boundary, resolved to
+   * the no-op recorder by {@link createRunOrchestrator} the same way
+   * `nowMs`/`timerImpl` are resolved from `internals`.
+   */
+  readonly telemetry: M3LTelemetryRecorder;
   readonly newId: () => string;
   readonly nowMs: () => number;
   readonly timerImpl: typeof setTimeout;

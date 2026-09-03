@@ -40,6 +40,7 @@ import type {
 import type { M3LRunRegistry } from "../src/runs/registry.js";
 import type { M3LRunReportReader } from "../src/runs/report.js";
 import type { M3LEventStreamHub } from "../src/stream/event-stream.js";
+import type { M3LTelemetryRecorder } from "../src/telemetry/port.js";
 import type {
   M3LRunFinish,
   M3LRunInsert,
@@ -380,6 +381,7 @@ describe("M3LRunSubsystemOptions / M3LRunSubsystem", () => {
       readonly registry: M3LRunRegistry;
       readonly extraEventSinks?: readonly M3LRunEventSink[];
       readonly runsOutputRoot: string;
+      readonly telemetry?: M3LTelemetryRecorder | undefined;
     }>();
 
     expectTypeOf<M3LRunSubsystem>().toEqualTypeOf<{

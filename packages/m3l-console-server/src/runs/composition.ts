@@ -24,6 +24,7 @@ import type { Core } from "@m3l-automation/m3l-common";
 
 import { createEventStreamHub } from "../stream/event-stream.js";
 import type { M3LEventStreamHub } from "../stream/event-stream.js";
+import type { M3LTelemetryRecorder } from "../telemetry/port.js";
 
 import { createLoggerAuditSink } from "./audit.js";
 import { createScriptCatalog } from "./descriptors.js";
@@ -110,6 +111,12 @@ export interface M3LRunSubsystemOptions {
    * silent, permanent 404 for every run.
    */
   readonly runsOutputRoot: string;
+  /**
+   * Forwarded verbatim to {@link createRunOrchestrator}, which resolves its
+   * own no-op default when absent — this factory does not resolve a default
+   * itself, so the fallback lives in exactly one place.
+   */
+  readonly telemetry?: M3LTelemetryRecorder | undefined;
 }
 
 /**
@@ -269,6 +276,7 @@ export function createRunSubsystem(
     inProcessExecutor,
     logger,
     runsOutputRoot: options.runsOutputRoot,
+    telemetry: options.telemetry,
   });
 
   return {

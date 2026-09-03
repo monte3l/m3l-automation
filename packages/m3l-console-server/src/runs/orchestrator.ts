@@ -39,6 +39,8 @@ import { mapSpawnOutcome } from "./outcome.js";
 import type { M3LRunRequestBody } from "./parameters.js";
 import { executionModeForScript } from "./resolver.js";
 import type { M3LResolvedScript } from "./resolver.js";
+import { toValidDurationMs } from "../telemetry/duration.js";
+import { createNoOpTelemetryRecorder } from "../telemetry/no-op.js";
 
 export type {
   M3LRunHandle,
@@ -65,8 +67,22 @@ interface M3LRunOrchestratorInternals {
 
 /**
  * Writes an ACTIVE run's terminal outcome via `registry.finish`, publishes
- * `run.ended`, and audits `run.finished`. The queue-timeout path finishes via
- * `registry.abandonQueued` instead and does not call this.
+ * `run.ended`, audits `run.finished`, and — LAST, once every other write has
+ * landed — reports one `telemetry.runFinished` sample. The queue-timeout and
+ * cancel-while-queued paths finish via `registry.abandonQueued` instead
+ * (`orchestrator-cancel.ts`) and deliberately record NO sample: neither run
+ * ever executed, so there is no duration to report (X8 slice 3a, "Path 1
+ * only").
+ *
+ * `durationMs` reuses `endedAtMs` — read once, above — against `startedAtMs`
+ * (a parameter, not a registry re-read; see {@link executeAndSettle} for
+ * why), so the audit entry and the telemetry sample can never disagree about
+ * when the run ended. The result is clamped through
+ * `telemetry/duration.ts`'s {@link toValidDurationMs} so a backward clock
+ * step reports `0` rather than a negative or non-finite value the rollup
+ * repository would reject. The call is NOT wrapped in a try/catch: the port
+ * never throws by contract (`telemetry/port.ts`), and swallowing here would
+ * hide a genuine recorder bug rather than a clock artifact.
  */
 function recordFinish(
   ctx: M3LOrchestratorContext,
@@ -75,6 +91,7 @@ function recordFinish(
   operator: string,
   outcome: Core.M3LRunOutcome,
   extra: M3LFinishExtra,
+  startedAtMs: number,
 ): void {
   const endedAtMs = ctx.nowMs();
   ctx.registry.finish(id, { outcome, endedAtMs, ...extra });
@@ -92,6 +109,11 @@ function recordFinish(
     atMs: endedAtMs,
     detail: { outcome },
   });
+  ctx.telemetry.runFinished({
+    script: scriptName,
+    outcome,
+    durationMs: toValidDurationMs(endedAtMs - startedAtMs),
+  });
 }
 
 /**
@@ -106,8 +128,9 @@ function finishActiveRun(
   operator: string,
   outcome: Core.M3LRunOutcome,
   extra: M3LFinishExtra,
+  startedAtMs: number,
 ): void {
-  recordFinish(ctx, id, scriptName, operator, outcome, extra);
+  recordFinish(ctx, id, scriptName, operator, outcome, extra, startedAtMs);
   ctx.active.delete(id);
   ctx.governor.release(scriptName);
   pumpQueue(ctx);
@@ -157,11 +180,22 @@ function armQueueTimeout(
  * with the cause's own message and recorded as a `'failure'` finish rather
  * than left as an unhandled rejection. Extracted out of {@link startRun} to
  * keep that function under the line-count limit.
+ *
+ * `startedAtMs` is a PARAMETER, not read back off `ctx.active` at finish
+ * time. This function is deliberately NOT `async` — it returns
+ * `executor.execute(...).then(...)` — so both continuations below can only
+ * ever run in a microtask, strictly after {@link startRun}'s synchronous
+ * `ctx.active.set(id, ...)` a few lines above this call. The active-map
+ * entry is therefore *always* present when either continuation fires, which
+ * would make any `ctx.active.get(id) === undefined` guard here provably
+ * dead code — untestable weight the per-file coverage gate would flag.
+ * Threading the value instead keeps every function in this chain total.
  */
 function executeAndSettle(
   ctx: M3LOrchestratorContext,
   input: M3LRunStartInput,
   controller: AbortController,
+  startedAtMs: number,
 ): Promise<void> {
   const { id, resolved, body, operator, correlationId } = input;
   const executor = resolved.hasCommandModule
@@ -194,6 +228,7 @@ function executeAndSettle(
           operator,
           mapSpawnOutcome(info),
           { exitCode: info.exitCode },
+          startedAtMs,
         );
       },
       (cause: unknown) => {
@@ -203,9 +238,15 @@ function executeAndSettle(
           scriptName: resolved.name,
           cause: message,
         });
-        finishActiveRun(ctx, id, resolved.name, operator, "failure", {
-          failureMessage: message,
-        });
+        finishActiveRun(
+          ctx,
+          id,
+          resolved.name,
+          operator,
+          "failure",
+          { failureMessage: message },
+          startedAtMs,
+        );
       },
     );
 }
@@ -242,7 +283,7 @@ function startRun(ctx: M3LOrchestratorContext, input: M3LRunStartInput): void {
   });
 
   const controller = new AbortController();
-  const promise = executeAndSettle(ctx, input, controller);
+  const promise = executeAndSettle(ctx, input, controller, startedAtMs);
   ctx.active.set(id, {
     controller,
     scriptName: resolved.name,
@@ -492,6 +533,7 @@ export function createRunOrchestrator(
     inProcessExecutor: options.inProcessExecutor,
     logger: options.logger,
     runsOutputRoot: options.runsOutputRoot,
+    telemetry: options.telemetry ?? createNoOpTelemetryRecorder(),
     newId: internals.newId ?? randomUUID,
     nowMs: internals.nowMs ?? Date.now,
     timerImpl: internals.timerImpl ?? setTimeout,
