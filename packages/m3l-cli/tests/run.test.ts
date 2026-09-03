@@ -52,9 +52,24 @@ vi.mock("../src/discovery/cache.js", () => ({
     throw new Error("runRun must never call isCacheEntryFresh");
   }),
 }));
-vi.mock("../src/history/store.js", () => ({
-  recordHistoryEntry: vi.fn(),
-}));
+// Keep every export run.ts actually imports from store.js: an omitted export
+// throws inside run.ts's best-effort try/catch, which is silently swallowed
+// and degrades to "no history recorded" rather than failing loudly.
+// historyOutcomeFields is a pure total mapper (no I/O) so we spread through
+// the real implementation and mock only recordHistoryEntry.
+vi.mock("../src/history/store.js", async (importOriginal) => {
+  const actual = await importOriginal<HistoryStoreModule>();
+  return { ...actual, recordHistoryEntry: vi.fn() };
+});
+
+import type * as historyStoreModule from "../src/history/store.js";
+
+/**
+ * The real `history/store` module's type, named once so the `vi.mock`
+ * factory above needs no inline `typeof import(...)` annotation (banned by
+ * `@typescript-eslint/consistent-type-imports`).
+ */
+type HistoryStoreModule = typeof historyStoreModule;
 
 const discoverScriptsMock = vi.mocked(discoverScripts);
 const executeScriptMock = vi.mocked(executeScript);
@@ -146,6 +161,7 @@ describe("runRun — known script", () => {
       "exporter",
       exporterCandidate.directory,
       ["--limit", "5"],
+      { resolveReportSummary: true },
     );
     expect(loadScriptParametersMock).not.toHaveBeenCalled();
     expect(readDiscoveryCacheMock).not.toHaveBeenCalled();
@@ -167,6 +183,7 @@ describe("runRun — known script", () => {
       "importer",
       importerCandidate.directory,
       [],
+      { resolveReportSummary: true },
     );
   });
 
@@ -273,6 +290,158 @@ describe("runRun — best-effort history recording (8f)", () => {
     const code = await runRun(buildContext(), "exporter", []);
 
     expect(code).toBe(5);
+  });
+});
+
+/**
+ * U11 slice 7b review-fix — `recordRunHistory`'s catch gains a best-effort
+ * `context.output.error` diagnostic (matching `run/execute.ts`'s
+ * `fetchRunSummary` precedent), never emitted on the happy path, and never
+ * allowed to escape (or alter the resolved exit code) even when the
+ * diagnostic write itself throws.
+ */
+describe("runRun — history-recording failure diagnostic (U11 slice 7b review-fix)", () => {
+  test("emits exactly one output.error diagnostic naming the failure when recordHistoryEntry throws, without altering the resolved exit code", async () => {
+    discoverScriptsMock.mockReturnValue(knownCandidates);
+    executeScriptMock.mockResolvedValue({ exitCode: 4 });
+    recordHistoryEntryMock.mockImplementation(() => {
+      throw new Error("disk full");
+    });
+    const errorSpy = vi.fn();
+    const context = buildContext({
+      output: {
+        colorEnabled: false,
+        info: () => {},
+        error: errorSpy,
+        heading: () => {},
+      },
+    });
+
+    const code = await runRun(context, "exporter", []);
+
+    expect(code).toBe(4);
+    expect(errorSpy).toHaveBeenCalledTimes(1);
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining("failed to record run history"),
+    );
+  });
+
+  test("emits the bare diagnostic with no trailing detail when recordHistoryEntry throws a non-Error value, without altering the resolved exit code", async () => {
+    discoverScriptsMock.mockReturnValue(knownCandidates);
+    executeScriptMock.mockResolvedValue({ exitCode: 4 });
+    recordHistoryEntryMock.mockImplementation(() => {
+      // eslint-disable-next-line @typescript-eslint/only-throw-error -- intentional non-Error to exercise the branch where `cause instanceof Error` is false
+      throw "disk gone";
+    });
+    const errorSpy = vi.fn();
+    const context = buildContext({
+      output: {
+        colorEnabled: false,
+        info: () => {},
+        error: errorSpy,
+        heading: () => {},
+      },
+    });
+
+    const code = await runRun(context, "exporter", []);
+
+    expect(code).toBe(4);
+    expect(errorSpy).toHaveBeenCalledTimes(1);
+    expect(errorSpy).toHaveBeenCalledWith("failed to record run history");
+  });
+
+  test("does not call output.error when recordHistoryEntry succeeds (mutation-check: an unconditional call would fail this)", async () => {
+    discoverScriptsMock.mockReturnValue(knownCandidates);
+    executeScriptMock.mockResolvedValue({ exitCode: 0 });
+    recordHistoryEntryMock.mockReturnValue(true);
+    const errorSpy = vi.fn();
+    const context = buildContext({
+      output: {
+        colorEnabled: false,
+        info: () => {},
+        error: errorSpy,
+        heading: () => {},
+      },
+    });
+
+    await runRun(context, "exporter", []);
+
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
+  test("still resolves the correct exit code and does not reject when output.error itself throws while reporting a recordHistoryEntry failure", async () => {
+    discoverScriptsMock.mockReturnValue(knownCandidates);
+    executeScriptMock.mockResolvedValue({ exitCode: 6 });
+    recordHistoryEntryMock.mockImplementation(() => {
+      throw new Error("disk full");
+    });
+    const context = buildContext({
+      output: {
+        colorEnabled: false,
+        info: () => {},
+        error: () => {
+          throw new Error("stderr closed");
+        },
+        heading: () => {},
+      },
+    });
+
+    await expect(runRun(context, "exporter", [])).resolves.toBe(6);
+  });
+});
+
+/**
+ * U11 slice 7b — `runRun` opts into `executeScript`'s `resolveReportSummary`
+ * (see the two `toHaveBeenCalledWith` sites above) and copies the returned
+ * summary's `outcome`/`retryAttempts` onto the recorded history entry. The
+ * exhaustive null/zero mapping matrix is pinned against the shared
+ * `historyOutcomeFields` helper in `history-store.test.ts`, not duplicated
+ * here.
+ */
+describe("runRun — history entry outcome/retryAttempts mapping (U11 slice 7b)", () => {
+  test("copies outcome and retryAttempts from a populated summary onto the entry", async () => {
+    discoverScriptsMock.mockReturnValue(knownCandidates);
+    executeScriptMock.mockResolvedValue({
+      exitCode: 0,
+      summary: {
+        outcome: "success",
+        timelineCount: 12,
+        timelineSourceCount: 3,
+        recoveryTotal: null,
+        retryAttempts: 2,
+      },
+    });
+    recordHistoryEntryMock.mockReturnValue(true);
+
+    const code = await runRun(buildContext(), "exporter", []);
+
+    expect(code).toBe(0);
+    const entry = recordHistoryEntryMock.mock.calls[0]?.[1];
+    expect(entry).toStrictEqual({
+      timestamp: expect.any(String) as unknown,
+      script: "exporter",
+      parameterNames: [],
+      exitCode: 0,
+      outcome: "success",
+      retryAttempts: 2,
+    });
+  });
+
+  test("no summary at all: entry is exactly the old 4-field shape, exit code unaffected", async () => {
+    discoverScriptsMock.mockReturnValue(knownCandidates);
+    executeScriptMock.mockResolvedValue({ exitCode: 9 });
+    recordHistoryEntryMock.mockReturnValue(true);
+
+    const code = await runRun(buildContext(), "exporter", []);
+
+    expect(code).toBe(9);
+    const entry = recordHistoryEntryMock.mock.calls[0]?.[1];
+    expect(entry).toStrictEqual({
+      timestamp: expect.any(String) as unknown,
+      script: "exporter",
+      parameterNames: [],
+      exitCode: 9,
+    });
   });
 });
 

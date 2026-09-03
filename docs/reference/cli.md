@@ -295,15 +295,38 @@ Unknown script exits `2` with suggestions; empty listing is ok (exit 0).
 
 #### `m3l history`
 
-Renders the run history — TIME / SCRIPT / PARAMETERS / EXIT — recorded
-best-effort after every `run`/dynamic spawn. Entries carry the script
-name, the parsed canonical **parameter names** (dynamic form; `run`
-records none since it never parses), the child exit code, and a
-timestamp — **never values** (the entry type cannot carry them). Bounded
-ring buffer (cap 100) persisted beside the discovery cache
+Renders the run history — TIME / SCRIPT / PARAMETERS / EXIT / OUTCOME /
+ATTEMPTS — recorded best-effort after every `run`/dynamic spawn. Entries
+carry the script name, the parsed canonical **parameter names** (dynamic
+form; `run` records none since it never parses), the child exit code, and
+a timestamp — **never values** (the entry type cannot carry them).
+Bounded ring buffer (cap 100) persisted beside the discovery cache
 (`<cacheDir>/m3l-cli/history.json`); recording and reading are
 best-effort and never affect an exit code; a corrupt file is surfaced by
 `doctor` ("will be rebuilt") and rebuilt on the next write.
+
+OUTCOME and ATTEMPTS come from the run's `run-report.json`, located after
+the spawn resolves by the same lookup that backs the `--json` run-result
+envelope (U11). A zero renders as `0`, never as `-` — no attempts is a
+measurement, not a missing value. Neither column is a new failure
+surface: a lookup that throws leaves both blank and cannot change the
+resolved exit code.
+
+A `-` is deliberately **not** unambiguous, and an operator reading one
+should know it has three causes. Two are expected by construction: a
+`wizard` run spawns directly and never performs the lookup, and an
+`--in-process` run has no child and so writes no report at all — neither
+can ever show a value. The third is not expected: a report was located
+but carried an outcome the CLI does not recognize, or a non-finite
+attempt count, and the projection dropped it. Version skew between a
+script's report format and the CLI produces exactly that, so a `-` on a
+plain spawned run — where the other two causes do not apply — is worth
+investigating rather than reading as "nothing happened".
+
+Both fields are optional on the entry type, and the **write** path
+projects every entry through the same allowlist the read path applies, so
+the persisted file only ever holds recognized outcome literals and finite
+attempt counts regardless of what a caller hands in.
 
 #### Preset writing (8g consumer)
 

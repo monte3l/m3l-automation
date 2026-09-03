@@ -12,6 +12,7 @@ import { parseArgs } from "node:util";
 import { M3LCliError } from "../cli/errors.js";
 import type { M3LCliEnvFileSetting } from "../cli/flags.js";
 import { partitionInProcessFlag, partitionJsonFlag } from "../cli/flags.js";
+import type { M3LCliOutput } from "../cli/output.js";
 import { suggestNames } from "../cli/suggest.js";
 import type { M3LCliCommandContext } from "./context.js";
 import { discoverScripts } from "../discovery/discover.js";
@@ -21,8 +22,9 @@ import type { M3LCliParameterDescriptor } from "../discovery/load-config.js";
 import { createCancellationScope } from "../run/cancellation.js";
 import { executeScript } from "../run/execute.js";
 import { runInProcess } from "../run/in-process.js";
+import type { M3LCliRunReportSummary } from "../run/envelope.js";
 import { runInspect } from "./inspect.js";
-import { recordHistoryEntry } from "../history/store.js";
+import { historyOutcomeFields, recordHistoryEntry } from "../history/store.js";
 import {
   buildParameterValues,
   buildParseArgsOptions,
@@ -120,14 +122,43 @@ function assertInProcessSupported(
 }
 
 /**
+ * {@link dispatchDynamicRun}'s resolved value: the exit code plus, only on
+ * the spawn path, the run report summary (when one was located).
+ *
+ * `summary` is absent (never `undefined`) for the in-process branch — there
+ * is no child process and therefore no `run-report.json` for
+ * {@link executeScript}'s report lookup to find — and for the spawn branch
+ * when no report was located. An absent `summary` is an absent property (not
+ * `summary: undefined`), which is what keeps it from serializing as `null`;
+ * reading it by destructuring (as every real caller here does) is correct —
+ * `exactOptionalPropertyTypes` restricts assignment, not reads.
+ *
+ * @example
+ * ```ts
+ * const result: M3LCliDispatchDynamicRunResult = { exitCode: 0 };
+ * ```
+ */
+interface M3LCliDispatchDynamicRunResult {
+  /** The resolved exit code — in-process return value, or the spawned child's. */
+  readonly exitCode: number;
+  /**
+   * The run report summary, present only on the spawn path when a report was
+   * located. Always absent on the in-process branch.
+   */
+  readonly summary?: M3LCliRunReportSummary;
+}
+
+/**
  * Dispatches a resolved, parsed dynamic run to its execution path: in-process
- * via {@link runInProcess} when `inProcess` is `true` (no envelope emission —
- * that integration is a deliberate follow-up, not part of this dispatch —
- * and rejected loudly via {@link assertInProcessSupported} rather than
- * silently dropping unsupported input), otherwise the spawn path via
- * {@link translateArgv} + {@link executeScript} (which also emits the
- * `--json` envelope when `context.jsonOutput` is `true`). Extracted so
- * {@link runDynamic} itself stays under the per-function line budget.
+ * via {@link runInProcess} when `inProcess` is `true` (no envelope emission,
+ * and no run-report summary — that integration is a deliberate follow-up, not
+ * part of this dispatch — and rejected loudly via
+ * {@link assertInProcessSupported} rather than silently dropping unsupported
+ * input), otherwise the spawn path via {@link translateArgv} +
+ * {@link executeScript} (which also emits the `--json` envelope when
+ * `context.jsonOutput` is `true`, and opts into `resolveReportSummary` so its
+ * summary is returned regardless). Extracted so {@link runDynamic} itself
+ * stays under the per-function line budget.
  *
  * @throws {@link M3LCliError} coded `ERR_CLI_IN_PROCESS_UNSUPPORTED` — see
  *   {@link assertInProcessSupported} — when `inProcess` is `true` and either
@@ -142,7 +173,7 @@ async function dispatchDynamicRun(
   values: M3LCliParsedValues,
   passthroughArgs: readonly string[],
   inProcess: boolean,
-): Promise<number> {
+): Promise<M3LCliDispatchDynamicRunResult> {
   if (inProcess) {
     assertInProcessSupported(
       passthroughArgs,
@@ -161,12 +192,13 @@ async function dispatchDynamicRun(
     // thrown error still cleans up the SIGINT/SIGTERM listeners.
     const scope = createCancellationScope();
     try {
-      return await runInProcess(scriptDirectory, {
+      const exitCode = await runInProcess(scriptDirectory, {
         output: context.output,
         parameterValues: buildParameterValues(descriptors, values),
         dryRun: passthroughArgs.includes("--dry-run"),
         signal: scope.signal,
       });
+      return { exitCode };
     } finally {
       scope.dispose();
     }
@@ -177,9 +209,11 @@ async function dispatchDynamicRun(
     scriptName,
     scriptDirectory,
     [...argv, ...passthroughArgs],
-    { secretEnv },
+    { secretEnv, resolveReportSummary: true },
   );
-  return result.exitCode;
+  return result.summary === undefined
+    ? { exitCode: result.exitCode }
+    : { exitCode: result.exitCode, summary: result.summary };
 }
 
 /**
@@ -233,12 +267,25 @@ function presentParameterNames(
  * throws (any failure, including {@link recordHistoryEntry} itself throwing
  * rather than returning `false`, is swallowed) since history recording must
  * never affect the resolved exit code {@link runDynamic} already has in hand.
+ * `summary`'s `outcome`/`retryAttempts` (when present) are spread onto the
+ * entry via {@link historyOutcomeFields} rather than re-derived here (U11
+ * slice 7b) — always absent for an in-process dispatch, since
+ * {@link dispatchDynamicRun} never resolves a summary on that branch. A
+ * construction/write failure is still surfaced via `output.error` (matching
+ * `run/execute.ts`'s `fetchRunSummary` precedent) so a vanished history row
+ * is at least diagnosable — the diagnostic write itself is wrapped in its own
+ * best-effort `try`/`catch` (U11 slice 7b review-fix) so a throwing
+ * `output.error` can't escape either. Never called on the happy path or for a
+ * `recordHistoryEntry` `false` return (that path stays silent, out of scope
+ * this round).
  */
 function recordDynamicHistory(
+  output: M3LCliOutput,
   historyFilePath: string,
   scriptName: string,
   parameterNames: readonly string[],
   exitCode: number,
+  summary: M3LCliRunReportSummary | undefined,
 ): void {
   try {
     recordHistoryEntry(historyFilePath, {
@@ -246,9 +293,16 @@ function recordDynamicHistory(
       script: scriptName,
       parameterNames,
       exitCode,
+      ...historyOutcomeFields(summary),
     });
-  } catch {
-    /* best-effort: history recording must never affect the resolved exit code */
+  } catch (cause) {
+    try {
+      output.error(
+        `failed to record run history${cause instanceof Error ? `: ${cause.message}` : ""}`,
+      );
+    } catch {
+      /* the diagnostic write itself is best-effort too — it must never alter the resolved exit code */
+    }
   }
 }
 
@@ -287,7 +341,10 @@ function recordDynamicHistory(
  * entry (8f) naming the parsed canonical parameter names (unlike `run`,
  * which never parses and always records `[]`) — never recorded for the
  * `--help`/`-h` delegation (no spawn) or when an unknown script/parameter
- * throws before spawning.
+ * throws before spawning. On the spawn path, the entry also carries the run
+ * report's `outcome`/`retryAttempts` when one was located (U11 slice 7b); the
+ * in-process branch never resolves a summary, so its entry never carries
+ * those fields.
  *
  * @param context - The command context to run against; must carry
  *   `historyFilePath`.
@@ -369,7 +426,7 @@ export async function runDynamic(
     throw toParameterError(error, scriptName, descriptors);
   }
 
-  const exitCode = await dispatchDynamicRun(
+  const { exitCode, summary } = await dispatchDynamicRun(
     context,
     scriptName,
     candidate.directory,
@@ -379,10 +436,12 @@ export async function runDynamic(
     inProcess,
   );
   recordDynamicHistory(
+    context.output,
     context.historyFilePath,
     scriptName,
     presentParameterNames(descriptors, values),
     exitCode,
+    summary,
   );
   return exitCode;
 }
