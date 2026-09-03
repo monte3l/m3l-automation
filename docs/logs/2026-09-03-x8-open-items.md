@@ -192,7 +192,20 @@ authoritative; each pass found what the previous one's search shape missed.
   `until ! pgrep -f eslint` loop for the same resource.
 - **A background task reported exit code 0 for a push I had killed** at
   `REAL_EXIT=143`. A backgrounded command ending in a pipe reports the last
-  stage's status.
+  stage's status. It happened twice more: item D's first push declined on every
+  attempt and never ran, yet the task reported exit 0 because the loop's final
+  command was the `git ls-remote` used to verify it. An exit code describes
+  whatever ran last, not the outcome you care about — so write that outcome
+  into the log as a literal string (`RESULT: PUSH DID NOT HAPPEN`) and read
+  _that_.
+- **A resource guard built on `pgrep -f` counted the reaper as the load.**
+  Item D's push loop gated on `pgrep -f "eslint|vitest|tsc -b"`, which matches
+  `earlyoom`'s own command line — its `--prefer ^(node|claude|vitest|tsc|esbuild)$`
+  regex contains those words. The count therefore had a permanent floor of 1
+  and the gate could never open. A `pgrep -f` pattern naming a process also
+  matches anything _configured_ to watch that process; exclude the watcher
+  explicitly. The guard still declined correctly by luck — available memory
+  was 1,215 MiB of 15,436 at the time.
 - **I reported `pnpm verify` as failing** in `scripts/agent-operator`. It was my
   own 10-minute Bash timeout (SIGTERM, 143). The `ThrowingLoggerHandler` stack
   traces I read as failure output were deliberate fixture output, and there was
@@ -263,6 +276,9 @@ Two findings about the sweep mechanism itself:
 - **Hook coverage is per-tool, not per-path.** A `PreToolUse` matcher naming
   `Write|Edit` is silent on a `sed` heredoc reaching the same bytes, so auto
   mode's Bash preference can walk straight through a guard.
+- **Write the outcome you care about into the log as a literal string.** A
+  background task's exit code belongs to whatever ran last — including the
+  command you added to verify the thing that failed.
 - **Verify a spoke's history claims with `git show`.** A confident narrative
   about what a past PR did or did not do is a citation, not a fact.
 - **A reproduction beats a grep census for an absence.** A grep is bounded by
