@@ -17,9 +17,37 @@ import { writeResponse } from "./respond.js";
 import type { M3LConsoleResponse } from "./respond.js";
 import type { M3LRouteAuth } from "./router.js";
 import type { M3LStreamWriteOutcome } from "./stream-writer.js";
+import type { M3LTelemetryRecorder } from "../telemetry/port.js";
 
 /** The status the last-resort fallback response writes when {@link writeResponse} itself throws. */
 const STATUS_INTERNAL_SERVER_ERROR = 500;
+
+/** The lowest valid HTTP status; anything below this maps to `"other"`. */
+const STATUS_CLASS_MIN = 100;
+/** One past the highest valid HTTP status; anything at or above this maps to `"other"`. */
+const STATUS_CLASS_MAX_EXCLUSIVE = 600;
+/** Divides a status by its hundreds digit to find its outcome bucket. */
+const STATUS_CLASS_DIVISOR = 100;
+/** `outcome` bucket for each hundreds digit 1-5, indexed by `digit - 1`. */
+const STATUS_CLASS_BUCKETS = ["1xx", "2xx", "3xx", "4xx", "5xx"] as const;
+
+/**
+ * Maps an HTTP status to its telemetry outcome bucket. Total and never
+ * throws — `M3LTelemetryRecorder`'s own contract is never-throws (see
+ * `telemetry/port.ts`), so the mapping feeding it must be equally total:
+ * `"other"` for anything below 100, at/above 600, or non-integer.
+ */
+function statusClassOf(status: number): string {
+  if (
+    !Number.isInteger(status) ||
+    status < STATUS_CLASS_MIN ||
+    status >= STATUS_CLASS_MAX_EXCLUSIVE
+  ) {
+    return "other";
+  }
+  const digit = Math.floor(status / STATUS_CLASS_DIVISOR);
+  return STATUS_CLASS_BUCKETS[digit - 1] ?? "other";
+}
 
 /**
  * Last-resort recovery when {@link writeResponse} itself throws (e.g. an
@@ -91,6 +119,15 @@ export interface FinishRequestInputs {
   readonly write: boolean;
   /** The stream's frame/drop counts and stop reason, present only for a stream result. */
   readonly streamOutcome?: M3LStreamWriteOutcome;
+  /** Where the request's single `httpRequest` telemetry sample is recorded (X8 slice 2b). */
+  readonly telemetry: M3LTelemetryRecorder;
+  /**
+   * The route attribution for the telemetry sample — the matched route
+   * PATTERN, or a bounded placeholder for an unmatched/unrouted request. See
+   * `handler.ts`'s `ROUTE_NOT_FOUND`/`ROUTE_METHOD_NOT_ALLOWED`/
+   * `ROUTE_UNROUTED`.
+   */
+  readonly route: string;
 }
 
 /**
@@ -121,6 +158,17 @@ export interface FinishRequestInputs {
  * `runRequest`: that only fires on an early client disconnect, not on
  * ordinary completion, so most requests would otherwise never release the
  * pin.
+ *
+ * The trailing `telemetry.httpRequest` call (X8 slice 2b) reads the SAME
+ * `durationMs` the access-log line below it does, hoisted to one call to
+ * `inputs.now()` so the two can never disagree. It runs LAST, after the
+ * write and the abort, and deliberately unguarded: `M3LTelemetryRecorder`'s
+ * contract is never-throws, and `telemetry` is caller-supplied, so wrapping
+ * it here would only duplicate a guarantee the port itself already makes. A
+ * rogue implementation that throws anyway can only surface as a spurious
+ * "unhandled console request listener failure" line in `handler.ts` — by
+ * then the response is already written and the signal already released, so
+ * nothing downstream is left exposed.
  */
 export function finishRequest(inputs: FinishRequestInputs): void {
   if (inputs.write) {
@@ -134,15 +182,23 @@ export function finishRequest(inputs: FinishRequestInputs): void {
 
   inputs.connectionController.abort();
 
+  const durationMs = inputs.now() - inputs.startedAt;
+
   logOutcome(inputs.logger, {
     method: inputs.context.method,
     path: inputs.context.path,
     status: inputs.response.status,
-    durationMs: inputs.now() - inputs.startedAt,
+    durationMs,
     correlationId: inputs.context.correlationId,
     accessMode: inputs.accessMode,
     ...(inputs.streamOutcome !== undefined && {
       streamOutcome: inputs.streamOutcome,
     }),
+  });
+
+  inputs.telemetry.httpRequest({
+    route: inputs.route,
+    outcome: statusClassOf(inputs.response.status),
+    latencyMs: durationMs,
   });
 }

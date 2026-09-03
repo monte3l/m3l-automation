@@ -335,6 +335,7 @@ export function createConsoleRuntime(
     logger,
     signal: drain.signal,
     maxBodyBytes: config.maxBodyBytes,
+    telemetry,
   });
 
   return {

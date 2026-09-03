@@ -34,9 +34,26 @@ import { resolveDispatchedResult } from "./stream-dispatch.js";
 import type { M3LConsoleResult } from "./stream-response.js";
 import { validateStreamOptions } from "./stream-options.js";
 import type { M3LStreamWriteOutcome } from "./stream-writer.js";
+import { createNoOpTelemetryRecorder } from "../telemetry/no-op.js";
+import type { M3LTelemetryRecorder } from "../telemetry/port.js";
 
 /** Logged in place of a request's path when it failed to parse — never the raw, unparsed target. */
 const PATH_PLACEHOLDER_UNPARSED = "(unparsed)";
+/**
+ * Route attribution for a lookup that resolved to no matching route. Every
+ * one of these three constants is parenthesised so it can never collide
+ * with a real route pattern (every real pattern starts with `/`), and each
+ * becomes part of a permanent primary key in `console_telemetry_rollup` —
+ * `src/store/migrations/telemetry.ts:196` has
+ * `CHECK ((route <> '') = (metric = 'http.request'))`, so an empty route is
+ * rejected by the database and the recorder would otherwise swallow it as a
+ * warning; a non-empty bounded placeholder keeps every request attributable.
+ */
+const ROUTE_NOT_FOUND = "(not-found)";
+/** See {@link ROUTE_NOT_FOUND}. */
+const ROUTE_METHOD_NOT_ALLOWED = "(method-not-allowed)";
+/** See {@link ROUTE_NOT_FOUND}. Also used when routing never ran at all (an unparsed target, or a `preRouting` short-circuit). */
+const ROUTE_UNROUTED = "(unrouted)";
 /** `maxBodyBytes` default when the caller supplies none (mirrors `config/env.ts`'s own default; `http/` cannot import `config/`). */
 const DEFAULT_MAX_BODY_BYTES = 65_536;
 /** HTTP methods whose request may carry a JSON body worth reading (X4 slice 7-pre). */
@@ -126,6 +143,15 @@ export interface CreateConsoleRequestListenerOptions {
    * (`M3L_CONSOLE_MAX_BODY_BYTES`). Defaults to `65_536` (64 KiB).
    */
   readonly maxBodyBytes?: number;
+  /**
+   * Where each request's `httpRequest` telemetry sample (route, outcome,
+   * latency) is recorded (X8 slice 2b). Optional because `http` may not
+   * import `store/`, so a caller without a store-backed recorder yet still
+   * needs a listener; defaults to
+   * {@link "../telemetry/no-op.js".createNoOpTelemetryRecorder}'s inert
+   * recorder.
+   */
+  readonly telemetry?: M3LTelemetryRecorder;
 }
 
 /**
@@ -175,10 +201,16 @@ function responseForUnmatchedLookup(
   };
 }
 
-/** The result of dispatching a request: the route's result (buffered or a stream), and the auth mode of any matched route. */
-interface DispatchResult {
-  readonly response: M3LConsoleResult;
+/**
+ * What the router lookup reported, as soon as it resolved (X8 slice 2b).
+ * Kept as its own type — rather than inlined into `dispatch`'s return —
+ * because it is threaded through a sink callback, not returned: `runRequest`
+ * needs this attribution even when `dispatch` goes on to throw, which a
+ * value riding the return path could never survive.
+ */
+interface RoutedInfo {
   readonly accessMode: M3LRouteAuth | undefined;
+  readonly route: string;
 }
 
 /**
@@ -204,6 +236,12 @@ async function attachBodyIfApplicable(
  * Resolves the router lookup for `ctx` and dispatches to its handler through
  * the middleware chain. The terminal handler reads the body (see
  * {@link attachBodyIfApplicable}) before the route handler — after auth.
+ *
+ * `onRouted` fires IMMEDIATELY once `router.lookup` resolves, in all three
+ * outcome branches, BEFORE any middleware or route handler runs — including
+ * before a matched route's handler, which may go on to throw. That timing is
+ * what lets `runRequest` still attribute a 5xx from a thrown handler to the
+ * matched route pattern rather than losing the attribution to the throw.
  */
 async function dispatch(
   req: IncomingMessage,
@@ -211,26 +249,24 @@ async function dispatch(
   router: M3LRouter,
   middlewares: readonly M3LConsoleMiddleware[],
   maxBodyBytes: number,
-): Promise<DispatchResult> {
+  onRouted: (info: RoutedInfo) => void,
+): Promise<M3LConsoleResult> {
   const lookup: M3LRouteLookup = router.lookup(ctx.method, ctx.path);
 
   if (lookup.outcome === "not-found") {
-    return {
-      response: responseForUnmatchedLookup("not-found", undefined, ctx),
-      accessMode: undefined,
-    };
+    onRouted({ accessMode: undefined, route: ROUTE_NOT_FOUND });
+    return responseForUnmatchedLookup("not-found", undefined, ctx);
   }
   if (lookup.outcome === "method-not-allowed") {
-    return {
-      response: responseForUnmatchedLookup(
-        "method-not-allowed",
-        lookup.allowed,
-        ctx,
-      ),
-      accessMode: undefined,
-    };
+    onRouted({ accessMode: undefined, route: ROUTE_METHOD_NOT_ALLOWED });
+    return responseForUnmatchedLookup(
+      "method-not-allowed",
+      lookup.allowed,
+      ctx,
+    );
   }
 
+  onRouted({ accessMode: lookup.route.auth, route: lookup.route.path });
   const matchedCtx = withAccessMode(
     withParams(ctx, lookup.params),
     lookup.route.auth,
@@ -240,8 +276,7 @@ async function dispatch(
     return lookup.route.handler(bodyCtx);
   };
   const dispatched = composeMiddleware(middlewares)(terminal);
-  const response = await dispatched(matchedCtx);
-  return { response, accessMode: lookup.route.auth };
+  return dispatched(matchedCtx);
 }
 
 /**
@@ -250,13 +285,12 @@ async function dispatch(
  * unlike `middlewares`, which only wraps a matched route's handler.
  *
  * `composeMiddleware` yields an {@link M3LConsoleHandler} returning a plain
- * {@link M3LConsoleResult}, with no room to carry {@link DispatchResult}'s
- * `accessMode` back out without widening every middleware layer to carry
- * routing detail — a leak of routing internals into a seam that should stay
- * result-shaped. So the terminal handler passed to the `preRouting` chain
- * reports `accessMode` to `onDispatched` as a side effect instead;
- * `onDispatched` is only invoked once {@link dispatch} actually runs, never
- * when a `preRouting` member short-circuits before reaching it.
+ * {@link M3LConsoleResult}, with no room to carry {@link RoutedInfo} back out
+ * without widening every middleware layer to carry routing detail — a leak
+ * of routing internals into a seam that should stay result-shaped. So
+ * {@link dispatch} reports `RoutedInfo` to `onRouted` as a side effect
+ * instead, once the lookup resolves, before the handler runs — never when a
+ * `preRouting` member short-circuits before `dispatch` is even reached.
  */
 function dispatchThroughPreRouting(
   req: IncomingMessage,
@@ -265,19 +299,10 @@ function dispatchThroughPreRouting(
   middlewares: readonly M3LConsoleMiddleware[],
   preRouting: readonly M3LConsoleMiddleware[],
   maxBodyBytes: number,
-  onDispatched: (accessMode: M3LRouteAuth | undefined) => void,
+  onRouted: (info: RoutedInfo) => void,
 ): Promise<M3LConsoleResult> {
-  const terminal: M3LConsoleHandler = async (routedCtx) => {
-    const result = await dispatch(
-      req,
-      routedCtx,
-      router,
-      middlewares,
-      maxBodyBytes,
-    );
-    onDispatched(result.accessMode);
-    return result.response;
-  };
+  const terminal: M3LConsoleHandler = (routedCtx) =>
+    dispatch(req, routedCtx, router, middlewares, maxBodyBytes, onRouted);
   return Promise.resolve(composeMiddleware(preRouting)(terminal)(ctx));
 }
 
@@ -365,7 +390,6 @@ function responseForThrownError(
 
 /** What dispatching and resolving one already-built request context produces. */
 interface DispatchOutcome {
-  readonly accessMode: M3LRouteAuth | undefined;
   readonly response: M3LConsoleResponse;
   readonly wroteAlready: boolean;
   readonly streamOutcome?: M3LStreamWriteOutcome;
@@ -380,14 +404,17 @@ interface DispatchOutcome {
  * a throw from dispatch must still let `runRequest`'s `catch` log the real
  * method/path, not the pre-parse placeholder. Left to throw on any failure;
  * `runRequest`'s `catch` is what turns a rejection into an error response.
+ * `onRouted` is forwarded unchanged to {@link dispatchThroughPreRouting} —
+ * see its own TSDoc for why routing attribution rides a sink, not the return
+ * value.
  */
 async function dispatchAndResolve(
   req: IncomingMessage,
   ctx: M3LRequestContext,
   res: ServerResponse,
   options: CreateConsoleRequestListenerOptions,
+  onRouted: (info: RoutedInfo) => void,
 ): Promise<DispatchOutcome> {
-  let accessMode: M3LRouteAuth | undefined;
   const maxBodyBytes = options.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES;
   const result = await dispatchThroughPreRouting(
     req,
@@ -396,9 +423,7 @@ async function dispatchAndResolve(
     options.middlewares,
     options.preRouting,
     maxBodyBytes,
-    (mode) => {
-      accessMode = mode;
-    },
+    onRouted,
   );
   // Awaited HERE, inside the same `try` `runRequest` wraps this call in: for
   // a stream result this only settles once the stream itself ends, not at
@@ -411,7 +436,6 @@ async function dispatchAndResolve(
     options,
   );
   return {
-    accessMode,
     response: resolved.response,
     wroteAlready: resolved.wroteAlready,
     ...(resolved.streamOutcome !== undefined && {
@@ -425,6 +449,15 @@ async function dispatchAndResolve(
  * Exactly one outcome line is logged per request; a failure additionally
  * emits one diagnostic line (see {@link logDiagnosticIfFault}), gated so a
  * routine caller-origin outcome (4xx) never doubles up.
+ *
+ * `routed` — the routing attribution `finishRequest` needs for both the
+ * access-log line and the telemetry sample — MUST live here, in `runRequest`
+ * itself, rather than in {@link dispatchAndResolve}: a throw from dispatch
+ * escapes `dispatchAndResolve` entirely (its `await` never resolves), so a
+ * local declared there is lost no matter when it was written. A slot owned
+ * by `runRequest` and written through a sink callback survives that throw,
+ * which is exactly what fixes a matched route's thrown handler losing its
+ * `accessMode`/route attribution on the resulting 5xx.
  */
 async function runRequest(
   req: IncomingMessage,
@@ -432,6 +465,7 @@ async function runRequest(
   options: CreateConsoleRequestListenerOptions,
   newCorrelationId: () => string,
   now: () => number,
+  telemetry: M3LTelemetryRecorder,
 ): Promise<void> {
   const began = beginRequest(req, res, options, newCorrelationId, now);
 
@@ -440,7 +474,7 @@ async function runRequest(
   // parse must not log its (possibly query-string-bearing) raw target.
   let path = PATH_PLACEHOLDER_UNPARSED;
   let correlationId = began.fallbackCorrelationId;
-  let accessMode: M3LRouteAuth | undefined;
+  let routed: RoutedInfo = { accessMode: undefined, route: ROUTE_UNROUTED };
   let response: M3LConsoleResponse;
   let wroteAlready = false;
   let streamOutcome: M3LStreamWriteOutcome | undefined;
@@ -457,8 +491,9 @@ async function runRequest(
     method = ctx.method;
     path = ctx.path;
 
-    const outcome = await dispatchAndResolve(req, ctx, res, options);
-    accessMode = outcome.accessMode;
+    const outcome = await dispatchAndResolve(req, ctx, res, options, (info) => {
+      routed = info;
+    });
     response = outcome.response;
     wroteAlready = outcome.wroteAlready;
     streamOutcome = outcome.streamOutcome;
@@ -479,9 +514,11 @@ async function runRequest(
     connectionController: began.connectionController,
     startedAt: began.startedAt,
     now,
-    accessMode,
+    accessMode: routed.accessMode,
     logger: options.logger,
     write: !wroteAlready,
+    telemetry,
+    route: routed.route,
     ...(streamOutcome !== undefined && { streamOutcome }),
   });
 }
@@ -533,9 +570,10 @@ export function createConsoleRequestListener(
   }
   const newCorrelationId = options.newCorrelationId ?? randomUUID;
   const now = options.now ?? Date.now;
+  const telemetry = options.telemetry ?? createNoOpTelemetryRecorder();
 
   return function requestListener(req, res) {
-    void runRequest(req, res, options, newCorrelationId, now).catch(
+    void runRequest(req, res, options, newCorrelationId, now, telemetry).catch(
       (cause: unknown) => {
         // `runRequest` already catches every failure it can reach; this only
         // guards the pathological case where something outside that boundary
