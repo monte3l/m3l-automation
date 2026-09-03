@@ -77,3 +77,30 @@ updates:
     labels:
       - dependencies
     open-pull-requests-limit: 5
+
+  # ADR-0071 (X12/issue #560): base images in both console Dockerfiles
+  # (`node:24-slim`, `nginxinc/nginx-unprivileged:1-alpine`), one entry per
+  # directory containing a Dockerfile per Dependabot's docker ecosystem
+  # convention. Neither image is published anywhere; this only tracks the
+  # local build inputs.
+  - package-ecosystem: docker
+    directory: /packages/m3l-console-server
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Europe/Rome
+    labels:
+      - dependencies
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: docker
+    directory: /packages/m3l-console-web
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Europe/Rome
+    labels:
+      - dependencies
+    open-pull-requests-limit: 5

@@ -1,0 +1,67 @@
+# Local-only compose definition for the operations console (ADR-0071,
+# X12/issue #560). Not published to any registry — see
+# docs/contributing/ci-cd.md's Containers section and
+# docs/adr/0015-code-scanning-tooling-evaluation.md's 2026-09-03 Update for
+# why that keeps per-PR image scanning off the table.
+#
+# `web` joins `server`'s network namespace (`network_mode: "service:server"`)
+# rather than each container getting its own: the server keeps binding
+# 127.0.0.1 literally (ADR-0071's loopback invariant, unchanged), nginx
+# reaches it at a genuine loopback address with no Host rewrite, and 8787 is
+# never published at all — strictly less exposed than binding wide and
+# publishing to host loopback. See ADR-0071's Update for the full rationale.
+services:
+  server:
+    build:
+      context: .
+      dockerfile: packages/m3l-console-server/Dockerfile
+    environment:
+      M3L_CONSOLE_OPERATOR_NAME: ${M3L_CONSOLE_OPERATOR_NAME:?set your operator name}
+      M3L_CONSOLE_OPERATOR_EMAIL: ${M3L_CONSOLE_OPERATOR_EMAIL:-}
+      # Gives compose's healthcheck a window to observe /ready's 503 during a
+      # drain instead of a bare connection reset (ADR-0071's deferred
+      # readiness grace period, landed in X12's second PR). Must stay under
+      # stop_grace_period below, alongside the drain timeout.
+      M3L_CONSOLE_READINESS_GRACE_MS: "3000"
+    volumes:
+      # The server runs as the image's "node" user (uid 1000,
+      # packages/m3l-console-server/Dockerfile). If the host `./data`
+      # directory doesn't already exist or is owned by a different uid, the
+      # SQLite store fails on its first write rather than at boot — create it
+      # ahead of time (`mkdir -p data`) or `chown 1000:1000 data` if needed.
+      - ./data:/data
+      # Host SSO credential chain, read-only — the "node" user's home
+      # directory in the runtime image (packages/m3l-console-server/Dockerfile).
+      # `:?` guards against an unset HOME silently bind-mounting `/.aws`.
+      - ${HOME:?HOME must be set to locate your AWS SSO credential chain}/.aws:/home/node/.aws:ro
+    # nginx (the `web` service) is the only container with a reason to be
+    # reachable from the host, but because it shares this service's network
+    # namespace, the port publish has to live here — `network_mode: service:`
+    # and `ports:` cannot both be set on the same compose service. Reads
+    # inverted; this comment is why.
+    ports:
+      - "127.0.0.1:8080:8080"
+    # Must exceed the drain timeout (15s default) plus the readiness grace
+    # period above, with headroom for the listener to actually close.
+    stop_grace_period: 30s
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:8787/health').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+  web:
+    build:
+      context: .
+      dockerfile: packages/m3l-console-web/Dockerfile
+    network_mode: "service:server"
+    depends_on:
+      server:
+        condition: service_healthy

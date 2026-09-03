@@ -11,9 +11,11 @@ import react from "@vitejs/plugin-react";
  * hardcoded absolute origin baked into the client. `/api` covers every
  * `/api/v1/*` route the discovery and run-registry views fetch (X10c) —
  * without it, those requests would 404 against the Vite dev server instead
- * of reaching the console server. Production serves the built static bundle
- * from behind the console server instead (X12), where this proxy plays no
- * part.
+ * of reaching the console server. In production (X12) the built static
+ * bundle is served by its own nginx image, which proxies the same three
+ * prefixes to the console server over a shared container network namespace
+ * (docker/default.conf, compose.yaml) — this dev-only proxy plays no part
+ * there.
  */
 export default defineConfig({
   plugins: [react()],

@@ -50,6 +50,58 @@ jobs:
       - name: Check dependency licenses
         run: pnpm check:licenses
 
+  # ADR-0071/ADR-0015 (2026-09-03 Updates, X12/issue #560): the repo now
+  # builds two container images but publishes neither, so Trivy runs here on
+  # the same weekly schedule rather than as a per-PR required check — every
+  # container-touching PR would otherwise pay a full image build on top of
+  # ci.yml's existing quality-gate pipeline. Not part of `ci.yml`.
+  container-scan:
+    name: Build + scan container images with Trivy
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: m3l-console-server
+            dockerfile: packages/m3l-console-server/Dockerfile
+          - image: m3l-console-web
+            dockerfile: packages/m3l-console-web/Dockerfile
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Build ${{ matrix.image }} image
+        run: docker build -f ${{ matrix.dockerfile }} -t ${{ matrix.image }}:scan .
+
+      # HIGH/CRITICAL with a known fix, same threshold as the `audit` job's
+      # `pnpm audit --audit-level=high` above — an unfixable finding would
+      # just be noise this job can't act on.
+      - name: Scan ${{ matrix.image }} with Trivy
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ matrix.image }}:scan
+          format: sarif
+          output: trivy-${{ matrix.image }}.sarif
+          severity: HIGH,CRITICAL
+          # Without this, trivy-action's entrypoint unsets TRIVY_SEVERITY
+          # entirely for the `sarif` format, so `severity` above binds
+          # NEITHER the SARIF output NOR the exit-code decision — every
+          # fixable finding of any severity would fail the job, not just
+          # HIGH/CRITICAL. This makes both honor the stated threshold.
+          limit-severities-for-sarif: "true"
+          ignore-unfixed: "true"
+          exit-code: "1"
+
+      - name: Upload Trivy SARIF to the Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v3
+        with:
+          sarif_file: trivy-${{ matrix.image }}.sarif
+          category: trivy-${{ matrix.image }}
+
   # The repo's Actions cache budget (10 GB) was measured at 10.44 GB / 112
   # active caches, with the pnpm store cache — the one that keeps ci.yml's
   # install step at ~5s — as the LRU eviction candidate behind 63 CodeQL
