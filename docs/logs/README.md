@@ -118,3 +118,4 @@ deliberately do not.
 | 2026-08-21 | F23 field test against PR #523 / issue #474               | [f23-field-test-b2](./2026-08-21-f23-field-test-b2.md)                                     |
 | 2026-08-27 | Parallel-session OOM/livelock audit + fix (ADR-0080)      | [parallel-session-oom](./2026-08-27-parallel-session-oom.md)                               |
 | 2026-08-27 | ADR-0078 session context management rollout (retroactive) | [adr-0078-session-context-management](./2026-08-27-adr-0078-session-context-management.md) |
+| 2026-09-03 | Dependabot commit-subject gate fix (PR #975)              | [dependabot-commit-subject-gate](./2026-09-03-dependabot-commit-subject-gate.md)           |
