@@ -216,7 +216,7 @@ per-phase detail in
 | **X9**  | `m3l-console-web` skeleton (Vite/React/Playwright, zones)        | Done     |
 | **X10** | Run-launcher UI MVP (button-press launch + live tail)            | Done     |
 | **X11** | Drill-down UI — SQS scenario e2e acceptance                      | To Do    |
-| **X12** | Containerization + compose (fires the ADR-0015 update)           | To Do    |
+| **X12** | Containerization + compose (fires the ADR-0015 update)           | Done     |
 | **X13** | Session → flow export (shared X6/U10 convention)                 | To Do    |
 | **X14** | Remote/multi-user deployment (gated on a future OIDC ADR)        | Deferred |
 | **X15** | Microservice split (gated on ADR-0065's trigger)                 | Deferred |
