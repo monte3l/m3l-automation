@@ -123,6 +123,7 @@ Utilities
 - [`cloudwatch-metrics`](reference/aws/cloudwatch-metrics.md) — `M3LCloudWatchMetricsOperations`
 - [`secrets-manager`](reference/aws/secrets-manager.md) — `M3LSecretsManagerOperations`
 - [`rds-data`](reference/aws/rds-data.md) — `M3LRDSDataOperations`
+- [`bedrock-runtime`](reference/aws/bedrock-runtime.md) — `M3LBedrockRuntimeOperations`
 
 ### Contributing
 
