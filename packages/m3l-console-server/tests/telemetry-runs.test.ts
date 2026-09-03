@@ -728,6 +728,48 @@ describe("createRunOrchestrator — telemetry.runFinished on cancelling an ACTIV
   });
 });
 
+describe("createRunOrchestrator — telemetry.runFinished on boot reconciliation", () => {
+  test("records NO sample even when reconcileOnBoot() transitions orphaned rows", () => {
+    // No mockSpawnModeScripts needed — reconcileOnBoot never calls resolveScript
+    // and does not touch the filesystem.
+    const fixtures = buildFixtures();
+    // Pre-seed one orphaned 'running' row directly into the registry.  This is
+    // what makes the test non-vacuous: if the registry were empty, reconcileOnBoot
+    // would return 0 and "no samples recorded" would be true for the trivial
+    // reason that nothing happened, not because the path explicitly skips
+    // telemetry.  We assert count > 0 below to enforce the precondition.
+    fixtures.registry.rows.set("orphan-1", {
+      id: "orphan-1",
+      script: "sqs-etl",
+      status: "running",
+      dryRun: false,
+      executionMode: "spawn",
+      parameters: {},
+      operator: "ada",
+      correlationId: "corr-0",
+      queuedAtMs: 100,
+      startedAtMs: 200,
+      endedAtMs: undefined,
+      outcome: undefined,
+      exitCode: undefined,
+      failureMessage: undefined,
+    });
+    const { telemetry, runFinishedCalls } = createCapturingTelemetryRecorder();
+    const orchestrator = createRunOrchestrator(
+      buildOrchestratorOptions(fixtures, telemetry),
+      { newId: () => "run-1", nowMs: () => 5_000 },
+    );
+
+    const count = orchestrator.reconcileOnBoot();
+
+    // Non-vacuous gate: reconcileOnBoot must have actually transitioned at
+    // least one orphaned row; otherwise the following assertion would pass for
+    // the wrong reason (nothing happened, so of course nothing was recorded).
+    expect(count).toBeGreaterThan(0);
+    expect(runFinishedCalls).toHaveLength(0);
+  });
+});
+
 describe("createRunOrchestrator — telemetry is optional", () => {
   test("omitting telemetry entirely does not throw, and the run still completes normally (no-op default)", async () => {
     mockSpawnModeScripts();

@@ -26,7 +26,48 @@ describe("toValidDurationMs — clamp table", () => {
     [Number.NaN, 0],
     [Number.POSITIVE_INFINITY, 0],
     [Number.NEGATIVE_INFINITY, 0],
+    // Ceiling clamp: values above Number.MAX_SAFE_INTEGER are clamped so the
+    // telemetry store's non-negative-safe-integer constraint is always satisfied.
+    // The security finding (X8 slice 3a): Number.isFinite(1e300) is true, so
+    // without a ceiling clamp toValidDurationMs returned 1e300, which the store
+    // rejected — the never-throws recorder silently swallowed the dropped row.
+    [1e300, Number.MAX_SAFE_INTEGER],
+    [Number.MAX_SAFE_INTEGER + 2, Number.MAX_SAFE_INTEGER],
+    // Boundary: MAX_SAFE_INTEGER itself passes through unchanged.
+    [Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER],
+    // Just inside: MAX_SAFE_INTEGER - 1 also passes through unchanged.
+    [Number.MAX_SAFE_INTEGER - 1, Number.MAX_SAFE_INTEGER - 1],
   ])("toValidDurationMs(%s) === %i", (input, expected) => {
     expect(toValidDurationMs(input)).toBe(expected);
+  });
+});
+
+describe("toValidDurationMs — safe-integer property", () => {
+  /**
+   * Pins the ACTUAL contract the ceiling clamp exists to enforce: every output
+   * must be a non-negative safe integer. The fixed-value rows above verify
+   * specific arithmetic; this test catches a future regression where the clamp
+   * is removed or the ceiling is shifted to a value the store still rejects —
+   * cases the fixed-value table alone would miss.
+   */
+  test("output is always a non-negative safe integer across the full hostile input set", () => {
+    const inputs: number[] = [
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      Number.NEGATIVE_INFINITY,
+      -1,
+      -0.4,
+      0,
+      0.5,
+      1e300,
+      Number.MAX_SAFE_INTEGER + 2,
+    ];
+    for (const input of inputs) {
+      const result = toValidDurationMs(input);
+      expect(
+        Number.isSafeInteger(result) && result >= 0,
+        `expected non-negative safe integer for input ${String(input)}, got ${String(result)}`,
+      ).toBe(true);
+    }
   });
 });

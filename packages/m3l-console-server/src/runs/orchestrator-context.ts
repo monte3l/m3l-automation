@@ -99,7 +99,7 @@ export interface M3LOrchestratorContext {
   readonly runsOutputRoot: string;
   /**
    * The telemetry recorder `recordFinish` reports one `runFinished` sample
-   * to per ACTIVE-run terminal write. Always present here — the optionality
+   * per ACTIVE-run terminal write. Always present here — the optionality
    * lives at the `M3LRunOrchestratorOptions.telemetry` boundary, resolved to
    * the no-op recorder by {@link createRunOrchestrator} the same way
    * `nowMs`/`timerImpl` are resolved from `internals`.
