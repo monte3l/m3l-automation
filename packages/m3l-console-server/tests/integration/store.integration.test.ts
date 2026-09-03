@@ -299,12 +299,12 @@ describe("openConsoleStore — v9 migration (console_telemetry_rollup) e2e proof
   // of 9) until `registry.ts` registers v9 and `store.ts` wires
   // `store.telemetry`. That is the expected RED signal.
 
-  test("first open reaches user_version 9 and console_schema_migrations holds version 9", () => {
+  test("first open reaches user_version 11 and console_schema_migrations holds version 9", () => {
     const location = join(dir, "v9-migration.sqlite");
     const store = openConsoleStore({ location });
     try {
       const userVersionRow = store.get("PRAGMA user_version");
-      expect(userVersionRow).toEqual({ user_version: 10 });
+      expect(userVersionRow).toEqual({ user_version: 11 });
 
       const migrationRow = store.get(
         "SELECT version FROM console_schema_migrations WHERE version = 9",

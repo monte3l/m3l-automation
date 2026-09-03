@@ -20,7 +20,10 @@ import {
   V7_WIDEN_HUMAN_ACTION_KINDS_STATEMENTS,
   V8_ADD_VIEW_ACTION_KINDS_STATEMENTS,
 } from "./human-actions.js";
-import { CREATE_CONSOLE_TELEMETRY_ROLLUP_TABLE } from "./telemetry.js";
+import {
+  CREATE_CONSOLE_TELEMETRY_ROLLUP_TABLE,
+  V11_WIDEN_TELEMETRY_MEASURE_SYMMETRY_STATEMENTS,
+} from "./telemetry.js";
 
 /**
  * One schema migration. Declared entirely as data — `version`, `name`, and
@@ -488,5 +491,10 @@ export const CONSOLE_MIGRATIONS: readonly M3LMigration[] = [
     version: 10,
     name: "add_session_binding_parameter_name",
     statements: [ADD_SESSION_BINDING_PARAMETER_NAME],
+  },
+  {
+    version: 11,
+    name: "widen_telemetry_measure_symmetry",
+    statements: V11_WIDEN_TELEMETRY_MEASURE_SYMMETRY_STATEMENTS,
   },
 ];

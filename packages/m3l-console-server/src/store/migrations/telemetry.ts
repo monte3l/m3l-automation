@@ -79,10 +79,19 @@
  * **Corrected in-place (safe window):** the mandatory-measure `CHECK` was
  * originally `metric NOT IN ('http.request','run.finished')` — it omitted
  * `'store.health'`, which is also value-bearing (bytes). The omission was
- * found and patched before v9 shipped to any deployment, so no migration is
- * required. A future correction that needs to change this constraint after v9
- * is deployed MUST ship as a v10 table recreate, the same way v7/v8 fixed
- * `console_human_actions` — see `human-actions.ts:10-15` for that precedent.
+ * found and patched before v9 shipped to any deployment, so no migration was
+ * required for that fix.
+ *
+ * **A second gap shipped as v11, after v9 was deployed.** The corrected
+ * `CHECK` above is still one-directional: it forces the three measure-bearing
+ * metrics to carry a measure, but never forbids a pure counter
+ * (`sse.stream`, `policy.decision`) from carrying one too. `v11` (see
+ * {@link CREATE_CONSOLE_TELEMETRY_ROLLUP_TABLE_V11} in this module) replaces
+ * it with the biconditional form already used elsewhere in this DDL (e.g.
+ * `(route <> '') = (metric = 'http.request')`), via the same DROP-and-recreate
+ * pattern v7/v8 used for `console_human_actions` — see
+ * `human-actions.ts:10-15` for that precedent, and this module's v11 const
+ * for why the bare `DROP` is safe here.
  */
 export const CREATE_CONSOLE_TELEMETRY_ROLLUP_TABLE = `
   CREATE TABLE console_telemetry_rollup (
@@ -128,3 +137,86 @@ export const CREATE_CONSOLE_TELEMETRY_ROLLUP_TABLE = `
     )
   ) STRICT, WITHOUT ROWID
 `;
+
+/**
+ * The exact DDL for `console_telemetry_rollup`, `CONSOLE_MIGRATIONS`' v11
+ * (widen_telemetry_measure_symmetry). Recreates the table from
+ * {@link CREATE_CONSOLE_TELEMETRY_ROLLUP_TABLE} with exactly one change: the
+ * mandatory-measure `CHECK` becomes biconditional —
+ * `CHECK ((sum_value IS NOT NULL) = (metric IN ('http.request','run.finished','store.health')))`
+ * in place of v9's `CHECK (metric NOT IN (...) OR sum_value IS NOT NULL)`.
+ * Every other column, `CHECK`, the `PRIMARY KEY`, and the
+ * `STRICT, WITHOUT ROWID` tail are byte-for-byte the same as v9's; net
+ * `CHECK` count stays at 14. SQLite cannot `ALTER` a `CHECK`, so this ships
+ * as `DROP TABLE` followed by this recreated DDL, in
+ * {@link V11_WIDEN_TELEMETRY_MEASURE_SYMMETRY_STATEMENTS}.
+ *
+ * **The bare `DROP` is defensible only while this table is empty.** Unlike
+ * `console_human_actions` (whose v7/v8 recreates are restored on the next
+ * boot by `rebuildHumanActionIndexOnBoot` from the JSONL audit trail — see
+ * `human-actions.ts:97-122`), `console_telemetry_rollup` IS the record of
+ * truth for rollup counts: there is no upstream source this table's rows can
+ * be rebuilt from. As of v11, no `src` symbol calls
+ * `telemetry.record*` yet, so the table holds 0 rows in every deployment
+ * (verified against the single persisted `console.sqlite` on this host,
+ * still at `user_version` 9 with 0 rollup rows before this migration
+ * applies) — dropping it discards nothing. **Once any recorder writes to
+ * this table, a further `CHECK` widening MUST NOT reuse this bare-DROP
+ * shape**; it must become a copy-through instead (create the new table
+ * under a temporary name, copy existing rows across with an insert-select,
+ * drop the old table, then rename the new one into place).
+ */
+const CREATE_CONSOLE_TELEMETRY_ROLLUP_TABLE_V11 = `
+  CREATE TABLE console_telemetry_rollup (
+    granularity TEXT NOT NULL CHECK (granularity IN ('minute','hour','day')),
+    bucket_start_ms INTEGER NOT NULL CHECK (bucket_start_ms >= 0),
+    metric TEXT NOT NULL CHECK (metric IN (
+      'http.request','run.finished','sse.stream','policy.decision','store.health'
+    )),
+    route TEXT NOT NULL,
+    script TEXT NOT NULL,
+    operation TEXT NOT NULL,
+    outcome TEXT NOT NULL,
+    posture TEXT NOT NULL,
+    sample_count INTEGER NOT NULL CHECK (sample_count > 0),
+    sum_value INTEGER,
+    min_value INTEGER,
+    max_value INTEGER,
+    PRIMARY KEY (
+      granularity, bucket_start_ms, metric,
+      route, script, operation, outcome, posture
+    ),
+    CHECK (
+      bucket_start_ms % CASE granularity
+        WHEN 'minute' THEN 60000
+        WHEN 'hour' THEN 3600000
+        ELSE 86400000
+      END = 0
+    ),
+    CHECK ((route <> '') = (metric = 'http.request')),
+    CHECK ((script <> '') = (metric = 'run.finished')),
+    CHECK (operation = '' OR metric = 'run.finished'),
+    CHECK ((posture <> '') = (metric = 'policy.decision')),
+    CHECK (outcome = '' OR metric <> 'store.health'),
+    CHECK ((sum_value IS NULL) = (min_value IS NULL)),
+    CHECK ((sum_value IS NULL) = (max_value IS NULL)),
+    CHECK (
+      sum_value IS NULL
+      OR (min_value >= 0 AND min_value <= max_value AND max_value <= sum_value)
+    ),
+    CHECK ((sum_value IS NOT NULL) = (metric IN ('http.request','run.finished','store.health')))
+  ) STRICT, WITHOUT ROWID
+`;
+
+/**
+ * The full statement list for `CONSOLE_MIGRATIONS`' v11
+ * (widen_telemetry_measure_symmetry): `DROP TABLE` followed by the
+ * recreated DDL in {@link CREATE_CONSOLE_TELEMETRY_ROLLUP_TABLE_V11}. No
+ * secondary index to recreate — v9 ships none (finding 4 in this module's
+ * `@packageDocumentation`), and v11 does not change that.
+ */
+export const V11_WIDEN_TELEMETRY_MEASURE_SYMMETRY_STATEMENTS: readonly string[] =
+  [
+    `DROP TABLE console_telemetry_rollup`,
+    CREATE_CONSOLE_TELEMETRY_ROLLUP_TABLE_V11,
+  ];
