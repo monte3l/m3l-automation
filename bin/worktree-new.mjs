@@ -14,67 +14,27 @@
 // detached-HEAD worktree instead — for investigating/auditing a branch you
 // don't intend to develop on — and is mutually exclusive with `--fix` since
 // no new branch is created (ADR-0014 amendment).
+//
+// Argument parsing lives in `bin/lib/worktree-new.mjs` (pure, unit-tested);
+// this file stays the thin shell wiring it to git and the reporter.
 import process from "node:process";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 import { parseJsonFlag, createReporter } from "./lib/report.mjs";
+import { parseWorktreeNewArgs, worktreeDirName } from "./lib/worktree-new.mjs";
 
 const { json, argv } = parseJsonFlag();
 const reporter = createReporter(json);
 
-// `--from <ref>` is a value-taking flag, so it (and its value) must be pulled
-// out before the remaining args are split into flags/positionals — otherwise
-// <ref> would be mistaken for a second positional slug candidate.
-const args = [...argv];
-let from = null;
-const fromIndex = args.indexOf("--from");
-if (fromIndex !== -1) {
-  const value = args[fromIndex + 1];
-  if (value === undefined || value.startsWith("--")) {
-    reporter.error(
-      "worktree:new: `--from` requires a ref argument.\n" +
-        "   Usage: pnpm worktree:new <slug> --from <ref>",
-    );
-    reporter.finish();
-    process.exit(1);
-  }
-  from = value;
-  args.splice(fromIndex, 2);
-}
-
-const flags = new Set(args.filter((a) => a.startsWith("--")));
-const positionals = args.filter((a) => !a.startsWith("--"));
-const slug = positionals[0];
-
-if (!slug) {
-  reporter.error(
-    "worktree:new: missing <slug>.\n" +
-      "   Usage: pnpm worktree:new <slug> [--fix] [--from <ref>]",
-  );
+const parsed = parseWorktreeNewArgs(argv);
+if (!parsed.ok) {
+  reporter.error(parsed.error);
   reporter.finish();
   process.exit(1);
 }
-if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) {
-  reporter.error(
-    `worktree:new: invalid slug "${slug}". Use kebab-case ` +
-      "(lowercase letters, digits, single hyphens), e.g. `core-json`.",
-  );
-  reporter.finish();
-  process.exit(1);
-}
-if (from !== null && flags.has("--fix")) {
-  reporter.error(
-    "worktree:new: `--from <ref>` and `--fix` are mutually exclusive — " +
-      "`--from` checks out an existing ref detached, with no new branch to " +
-      "prefix.",
-  );
-  reporter.finish();
-  process.exit(1);
-}
-
-const prefix = flags.has("--fix") ? "fix" : "feat";
-const branch = from === null ? `${prefix}/${slug}` : null;
+const { slug, kind, from } = parsed;
+const branch = from === null ? `${kind}/${slug}` : null;
 
 function git(gitArgs, opts = {}) {
   // With stdio: "inherit" execFileSync returns null (output not captured), so
@@ -111,7 +71,7 @@ const gitCommonDir = git([
   "--git-common-dir",
 ]);
 const mainCheckout = dirname(gitCommonDir);
-const worktreePath = resolve(mainCheckout, "..", `m3l-automation-${slug}`);
+const worktreePath = resolve(mainCheckout, "..", worktreeDirName(slug));
 
 let startPoint = null;
 if (from === null) {
@@ -199,12 +159,12 @@ reporter.succeed(
 );
 reporter.info(
   from === null
-    ? `   Next: \`cd ${join("..", `m3l-automation-${slug}`)}\`, then \`pnpm ` +
+    ? `   Next: \`cd ${join("..", worktreeDirName(slug))}\`, then \`pnpm ` +
         `session:launch\` to open a Claude Code session already named ` +
         `\`${branch?.replace("/", "-")}\` (ADR-0088) before you make changes, ` +
         "commit, and `git push -u origin HEAD`.\n" +
         `   Teardown when done: \`pnpm worktree:remove ${slug}\`.`
-    : `   Next: \`cd ${join("..", `m3l-automation-${slug}`)}\` to investigate. ` +
+    : `   Next: \`cd ${join("..", worktreeDirName(slug))}\` to investigate. ` +
         "To develop from here, `git switch -c <name>` first.\n" +
         `   Teardown when done: \`pnpm worktree:remove ${slug}\`.`,
 );
