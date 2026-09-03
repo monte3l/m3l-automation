@@ -112,7 +112,9 @@ function SubmitFeedback({
   }
   if (state.kind === "not-applied") {
     return (
-      <p data-testid="decision-not-applied">Answer recorded, not applied.</p>
+      <p data-testid="decision-not-applied">
+        This decision was already answered — your answer was not recorded.
+      </p>
     );
   }
   if (state.kind === "error") {

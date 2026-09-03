@@ -617,7 +617,11 @@ export async function createSessionBinding(
 
 /** The result of successfully answering a decision — see {@link answerSessionDecision}. */
 export interface M3LDecisionAnswerResult {
-  /** Whether the answer was applied to the session's step. */
+  /**
+   * Whether this call's answer was recorded — `false` when the decision was
+   * already answered (by an earlier call), meaning this submission had no
+   * effect.
+   */
   readonly applied: boolean;
 }
 

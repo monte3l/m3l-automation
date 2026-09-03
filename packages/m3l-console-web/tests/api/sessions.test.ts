@@ -777,9 +777,10 @@ describe("answerSessionDecision", () => {
     ).resolves.toEqual(okResult);
   });
 
-  // applied: false is a valid response shape (the answer was recorded but
-  // not applied to the underlying step), not an error — it must pass
-  // through unchanged rather than being downgraded.
+  // applied: false is a valid response shape (the decision was already
+  // answered by an earlier call, so this submission's answer was not
+  // recorded), not an error — it must pass through unchanged rather than
+  // being downgraded.
   test("resolves to the ok result with applied: false, unwrapped (a valid shape, not an error)", async () => {
     const okResult: M3LConsoleFetchResult<{ readonly applied: boolean }> = {
       ok: true,
