@@ -574,17 +574,24 @@ describe("createConsoleRequestListener — telemetry.httpRequest's latencyMs sha
   test("latencyMs equals the access log line's durationMs for the same request", async () => {
     const { logger, events, logged } = createResolvingLogger();
     const { telemetry, httpRequestCalls } = createCapturingTelemetryRecorder();
-    let current = 0;
-    const now = (): number => current;
+    // This clock MUST advance on every call. `finish-request.ts` is designed
+    // to read `inputs.now()` exactly ONCE and share that single value between
+    // the access-log line's `durationMs` and the telemetry sample's
+    // `latencyMs`. A clock frozen at one value after a single assignment
+    // (the pattern the OTHER tests in this file use) cannot tell that design
+    // apart from a regression that reads the clock independently for each:
+    // two independent reads of a frozen clock coincidentally return the same
+    // number, so the test would pass either way. Incrementing on every
+    // invocation forces two independent reads to diverge, so only THIS test
+    // can actually catch that regression — do not "simplify" it back to a
+    // fixed value.
+    let calls = 0;
+    const now = (): number => {
+      calls += 1;
+      return calls;
+    };
     const router = createRouter([
-      route({
-        method: "GET",
-        path: "/api/v1/runs",
-        handler: () => {
-          current = 77;
-          return { status: 200, headers: {}, body: "ok" };
-        },
-      }),
+      route({ method: "GET", path: "/api/v1/runs" }),
     ]);
     const listener = createConsoleRequestListener({
       router,
@@ -603,7 +610,7 @@ describe("createConsoleRequestListener — telemetry.httpRequest's latencyMs sha
 
     const outcome = findOutcomeEvent(events, 200);
     const durationMs = outcome?.data?.["durationMs"];
-    expect(durationMs).toBe(77);
+    expect(typeof durationMs).toBe("number");
     expect(httpRequestCalls[0]?.latencyMs).toBe(durationMs);
   });
 });

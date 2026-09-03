@@ -305,10 +305,17 @@ const unexpectedTelemetryCall = (): never => {
   throw new Error("unexpected telemetry-repository call on the fake store");
 };
 
-/** A loud-throwing `telemetry` stub, shared by every fake store in this file (added for X8 slice 1\'s `M3LConsoleStoreUnit.telemetry` field — none of this file\'s tests exercise it). */
+/** A mostly-loud `telemetry` stub, shared by every fake store in this file (added for X8 slice 1's `M3LConsoleStoreUnit.telemetry` field; X8 slice 2b's request instrumentation legitimately reaches the write methods on every request, so `record`/`recordAll` answer quietly here — the read/prune methods stay loud since nothing in the request path calls them). */
 const stubTelemetryRepository: M3LConsoleTelemetryRepository = {
-  record: unexpectedTelemetryCall,
-  recordAll: unexpectedTelemetryCall,
+  // Answers instead of throwing: X8 slice 2b's `finish-request.ts` calls
+  // `telemetry.httpRequest(...)` on every request, which fans out through
+  // `record`/`recordAll` on the store-backed recorder. A loud stub here would
+  // make every request-handling test in this file exercise the recorder's
+  // degradation path and log a "telemetry fan-out dropped" warning. `void`
+  // and the measurement count are clean no-ops; the read/prune methods stay
+  // loud.
+  record: (): void => undefined,
+  recordAll: (measurements): number => measurements.length,
   list: unexpectedTelemetryCall,
   count: unexpectedTelemetryCall,
   prune: unexpectedTelemetryCall,
