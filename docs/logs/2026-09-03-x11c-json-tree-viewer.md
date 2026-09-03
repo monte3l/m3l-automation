@@ -167,6 +167,31 @@ remaining steps by hand (as this log itself was — written directly via
 `Write`, modeled on a prior log's structure, rather than through the
 `writing-work-logs` skill).
 
+### 4. A stray worktree from slice 1 was still checked out, undetected until this close-out
+
+`git worktree list`, run as part of this close-out, showed
+`m3l-automation-x11a-binding-parameter-name` (branch
+`feat/x11a-binding-parameter-name`) still present as a linked worktree, even
+though that slice's code is already merged into `main` (confirmed via a
+direct grep for the `parameterName` field this same session had already run
+as a prerequisite check for slice 3). No corresponding
+`m3l-automation-x11b-*` worktree exists, so slice 2's close-out was done
+correctly; only slice 1's was skipped or interrupted.
+
+**Why it happened:** Not established from inside this session — slice 1
+predates it. Left untouched rather than removed unilaterally, since deleting
+another task's worktree without confirming it holds no unpushed/uncommitted
+work is exactly the kind of action CLAUDE.md's "investigate before deleting"
+rule exists for.
+
+**Fix for future:** `finishing-work`'s own Step 3 only tears down the branch
+named in the just-merged PR — it has no step that sweeps for _other_ stale
+worktrees left over from earlier, unrelated close-outs. Worth considering
+whether `finishing-work` (or a periodic `worktree:prune` habit) should
+surface this class of drift proactively rather than relying on it being
+noticed incidentally, as it was here, while running `git worktree list` for
+an unrelated reason.
+
 ## Lessons learned
 
 - **Freeze the exact contract (signatures, testids, error shapes) before
@@ -191,3 +216,9 @@ remaining steps by hand (as this log itself was — written directly via
   session hitting the same `Unknown skill` symptom immediately after a
   worktree self-removal should recognize this pattern rather than assume the
   skill was deleted or renamed.
+- **`git worktree list` is worth a routine glance during any `finishing-work`
+  close-out, not just when actively hunting for drift.** It's how the stray
+  `x11a` worktree (Divergence 4) was found here — incidentally, not by design.
+  `finishing-work` only tears down the one worktree tied to the PR just
+  merged; it has no step that surfaces siblings left behind by an earlier,
+  unrelated close-out.
