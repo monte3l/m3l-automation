@@ -230,10 +230,15 @@ function projectSummary(
 
   // Unlike recoveryTotal, retryAttempts carries no outcome gate — it applies
   // to every terminal outcome (success, failure, partial, dry-run,
-  // interrupted alike), not only "partial".
+  // interrupted alike), not only "partial". `Number.isFinite` mirrors the
+  // producing side (`readInputRetryAttempts` in `core/diagnostics/run-report.ts`),
+  // which rejects `NaN`/`Infinity` for the same reason: both would otherwise
+  // reach here indistinguishably from a real value.
   const retryAttemptsRaw = readProperty(report, "retryAttempts");
   const retryAttempts =
-    typeof retryAttemptsRaw === "number" ? retryAttemptsRaw : null;
+    typeof retryAttemptsRaw === "number" && Number.isFinite(retryAttemptsRaw)
+      ? retryAttemptsRaw
+      : null;
 
   return {
     outcome,

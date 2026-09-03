@@ -4,9 +4,9 @@
  * `run-script` from the breadcrumb trail it already receives (semver
  * minor, additive).
  *
- * RED phase: `retryAttempts` does not exist yet on `M3LRunReportInput` /
- * `M3LRunReportBase`, and `run-script` performs no derivation. This file
- * exercises two independent surfaces:
+ * `retryAttempts` lives on `M3LRunReportInput`/`M3LRunReportBase`, and
+ * `run-script` derives it from `options.trail`. This file exercises two
+ * independent surfaces:
  *
  *  1. `M3LRunReporter.build()`'s pass-through of `retryAttempts`, tested
  *     directly against `build()` with no `run-script` involved — mirrors
@@ -19,12 +19,11 @@
  *     `.mock.results[0].value` is the genuine built report — mirrors
  *     `tests/run-script-secrets.test.ts`'s "differential" sections.
  *
- * Confirmed against the landed implementation (`run-script.ts`'s
- * `breadcrumbAttempt`/`maxAttempt`, ~line 176-194): the derivation scans
- * EVERY breadcrumb in the trail for a numeric `attempt` field, regardless
- * of event name — it is not limited to `poll:attempt`/`retry:attempt`
- * alone. `retry:scheduled` and `poll:wait` breadcrumbs (whose summarizers
- * also keep a plain `attempt`, per `breadcrumbs.ts`'s SUMMARIZERS table)
+ * `run-script.ts`'s `breadcrumbAttempt`/`maxAttempt` scan EVERY breadcrumb
+ * in the trail for a numeric `attempt` field, regardless of event name —
+ * derivation is not limited to `poll:attempt`/`retry:attempt` alone.
+ * `retry:scheduled` and `poll:wait` breadcrumbs (whose summarizers also
+ * keep a plain `attempt`, per `breadcrumbs.ts`'s SUMMARIZERS table)
  * contribute to the maximum too. See the "any attempt-bearing event name
  * contributes" test below.
  *
@@ -438,14 +437,17 @@ describe("run-script — retryAttempts derivation from options.trail", () => {
     expect(report?.retryAttempts).toBe(2);
   });
 
-  // `typeof NaN === "number"`, so a naive numeric guard accepts it. The
-  // asymmetry is the whole point: `max === undefined` accepts ANY number
-  // unconditionally on the first entry (including NaN), and every later
-  // `attempt > NaN` comparison is `false` — so once NaN becomes the
-  // running max, no real value can ever replace it. NaN NOT first is fine
-  // (a later NaN never beats a real running max). Both orderings are
-  // covered explicitly below since only one of them poisons.
-  test("NaN as the FIRST attempt poisons the maximum — the real value (10) must still win after the fix", async () => {
+  // `breadcrumbAttempt` rejects NaN/Infinity alongside non-numbers via
+  // `Number.isFinite`, not just `typeof attempt === "number"` (`typeof
+  // NaN === "number"` is true, so a bare typeof guard alone would have let
+  // it through). This matters specifically when NaN would be the FIRST
+  // attempt-bearing entry: `maxAttempt`'s `max === undefined` branch would
+  // otherwise accept it unconditionally, and every later `attempt > NaN`
+  // comparison is `false` — permanently blocking any real value from ever
+  // replacing it. This test pins that a NaN-first entry is filtered out
+  // entirely, so the real value (10) is the maximum. NaN not-first is
+  // covered separately below as a contrast case for the same asymmetry.
+  test("NaN as the first attempt does not poison the maximum", async () => {
     const buildSpy = vi.spyOn(M3LRunReporter.prototype, "build");
     const script = makeScript();
     const entries = [
@@ -458,10 +460,12 @@ describe("run-script — retryAttempts derivation from options.trail", () => {
     expect(builtReport(buildSpy)?.retryAttempts).toBe(10);
   });
 
-  // Contrast case: NaN NOT first does not poison even on today's code —
-  // proving the defect is specifically about ORDER, not about NaN's mere
-  // presence anywhere in the trail.
-  test("NaN NOT first does not poison the maximum (contrast case for the asymmetry above)", async () => {
+  // Contrast case: a NaN entry that is NOT first is filtered out the same
+  // way regardless of position, so this passes whether or not the
+  // filtering happens to matter for ordering — unlike the first-position
+  // case above, where filtering is the only thing standing between a real
+  // value and permanent poisoning.
+  test("NaN not first does not poison the maximum (contrast case for the asymmetry above)", async () => {
     const buildSpy = vi.spyOn(M3LRunReporter.prototype, "build");
     const script = makeScript();
     const entries = [
@@ -475,10 +479,12 @@ describe("run-script — retryAttempts derivation from options.trail", () => {
     expect(builtReport(buildSpy)?.retryAttempts).toBe(10);
   });
 
-  // Infinity is equally meaningless as an attempt count, and — unlike
-  // NaN — poisons regardless of position: once accepted as `max`, nothing
-  // is ever `> Infinity`, so no later real value can win either.
-  test("Infinity as an attempt poisons the maximum the same way NaN does", async () => {
+  // Infinity is equally meaningless as an attempt count and is rejected by
+  // the same `Number.isFinite` guard, regardless of position — unlike NaN,
+  // an unfiltered Infinity would poison the maximum no matter where it
+  // appeared (nothing is ever `> Infinity`), so there is no order-dependent
+  // contrast case to cover here.
+  test("Infinity as an attempt does not poison the maximum either", async () => {
     const buildSpy = vi.spyOn(M3LRunReporter.prototype, "build");
     const script = makeScript();
     const entries = [
@@ -491,12 +497,12 @@ describe("run-script — retryAttempts derivation from options.trail", () => {
     expect(builtReport(buildSpy)?.retryAttempts).toBe(10);
   });
 
-  // The dangerous consequence of the NaN-first defect: `JSON.stringify(NaN)`
+  // Why this guard matters beyond the in-memory value: `JSON.stringify(NaN)`
   // produces `null`, indistinguishable from "no attempt data present" —
-  // exactly where this corruption would hide in a persisted report.
-  // Asserting on the stringified report (not only the in-memory object)
-  // pins the actual failure mode, not just an intermediate value.
-  test("the fixed retryAttempts value serializes as a real number, never as null (the NaN-first corruption's hiding place)", async () => {
+  // exactly where an unfiltered NaN would corrupt a persisted report
+  // silently. Asserting on the stringified report (not only the in-memory
+  // object) pins the actual failure mode, not just an intermediate value.
+  test("retryAttempts serializes as a real number, never as null", async () => {
     const buildSpy = vi.spyOn(M3LRunReporter.prototype, "build");
     const script = makeScript();
     const entries = [
@@ -579,13 +585,16 @@ describe("run-script — retryAttempts derivation never breaks report building",
     expect(buildSpy).not.toHaveBeenCalled();
   });
 
-  // `breadcrumbAttempt` does `entry.payload["attempt"]` unguarded, and
-  // `maxAttempt`'s loop has no per-entry try/catch — so a trail whose
-  // entries() returns a VALID ARRAY containing one hostile element throws
-  // a TypeError that escapes `buildSuccessInput`, meaning `build()` is
-  // never called and the ENTIRE report (timeline, environment, all of it)
-  // is lost, not just `retryAttempts`. This is a regression: before
-  // `retryAttempts` existed, a trail like this still produced a report.
+  // `maxAttempt` wraps each entry's read in its own try/catch, so a
+  // hostile element (a non-object, a `null`/missing `payload`, or a
+  // throwing `attempt` getter) is skipped rather than throwing a TypeError
+  // out of `buildSuccessInput`/`buildFailureInput` and losing the entire
+  // report. This guard is load-bearing: without it, a trail whose
+  // entries() returns a VALID ARRAY containing just one such element would
+  // throw before `build()` is ever called, losing the ENTIRE report
+  // (timeline, environment, all of it), not just `retryAttempts` — a
+  // regression, since a trail like this produced a report before
+  // `retryAttempts` existed. The tests below pin the guard down.
   //
   // Each case below pairs a valid entry (attempt: 7) with one hostile
   // sibling — the strongest form of the assertion, since it pins "skip the
