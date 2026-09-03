@@ -269,4 +269,102 @@ describe("telemetry-http-e2e — real store, real runtime", () => {
       ),
     ).toBe(false);
   });
+
+  test("a known path with the wrong method persists a '(method-not-allowed)' route row", async () => {
+    store = openConsoleStore({ location: ":memory:" });
+    const { handler, events } = buildCapturingHandler();
+    const probeRoute: M3LRoute = {
+      method: "GET",
+      path: "/api/v1/probe/:id",
+      auth: "required",
+      handler: () => ({ status: 200, headers: {}, body: "ok" }),
+    };
+    const runtime = createConsoleRuntime({
+      env: buildEnv(),
+      handlers: [handler],
+      routes: [probeRoute],
+      telemetry: store.telemetry,
+    });
+
+    const req = createFakeIncomingMessage({
+      method: "DELETE",
+      url: "/api/v1/probe/7",
+    });
+    const { res, written, finished } = createRecordingServerResponse();
+    runtime.requestListener(req, res);
+    await withTimeout(
+      finished,
+      "requestListener never called res.end() for DELETE /api/v1/probe/7",
+    );
+    expect(written.status).toBe(405);
+
+    expect(store.telemetry.count()).toBe(3);
+
+    const buckets = store.telemetry.list({
+      granularity: "minute",
+      metric: "http.request",
+      limit: 10,
+    });
+    expect(buckets).toHaveLength(1);
+    const bucket = buckets[0];
+    expect(bucket?.route).toBe("(method-not-allowed)");
+    expect(bucket?.outcome).toBe("4xx");
+    expect(bucket?.sampleCount).toBe(1);
+
+    // Same gap this file's other cases close: a repository rejection
+    // (e.g. the `route <> ''` CHECK) is swallowed as a logged warning, not
+    // thrown — so persistence must be proven against the REAL store, and
+    // its absence proven here, not just against the in-memory fake.
+    expect(
+      events.some((event) =>
+        event.message.includes("telemetry fan-out dropped"),
+      ),
+    ).toBe(false);
+  });
+
+  test("a request whose target fails to parse (routing never runs) persists an '(unrouted)' route row", async () => {
+    store = openConsoleStore({ location: ":memory:" });
+    const { handler, events } = buildCapturingHandler();
+    const runtime = createConsoleRuntime({
+      env: buildEnv(),
+      handlers: [handler],
+      routes: [],
+      telemetry: store.telemetry,
+    });
+
+    // Mirrors `tests/telemetry-http.test.ts`'s own canary: a request target
+    // `createRequestContext` cannot parse at all fails before routing ever
+    // runs, so `runRequest` never leaves its initial `(unrouted)` default —
+    // the simplest way this file can drive that branch through the REAL
+    // runtime (a `preRouting` short-circuit is not caller-injectable here;
+    // `createConsoleRuntime` wires its own fixed origin guard).
+    const canaryTarget = "http://[?token=CANARY123";
+    const req = createFakeIncomingMessage({ method: "GET", url: canaryTarget });
+    const { res, written, finished } = createRecordingServerResponse();
+    runtime.requestListener(req, res);
+    await withTimeout(
+      finished,
+      "requestListener never called res.end() for the malformed target",
+    );
+    expect(written.status).toBe(400);
+
+    expect(store.telemetry.count()).toBe(3);
+
+    const buckets = store.telemetry.list({
+      granularity: "minute",
+      metric: "http.request",
+      limit: 10,
+    });
+    expect(buckets).toHaveLength(1);
+    const bucket = buckets[0];
+    expect(bucket?.route).toBe("(unrouted)");
+    expect(bucket?.outcome).toBe("4xx");
+    expect(bucket?.sampleCount).toBe(1);
+
+    expect(
+      events.some((event) =>
+        event.message.includes("telemetry fan-out dropped"),
+      ),
+    ).toBe(false);
+  });
 });

@@ -101,6 +101,32 @@ function writeResponseGuarded(
   }
 }
 
+/**
+ * The floor a normalised elapsed-time sample is clamped to — `port.ts`
+ * documents `latencyMs` as a non-negative safe integer, and the repository
+ * rejects anything else with `ERR_CONSOLE_BAD_REQUEST`.
+ */
+const LATENCY_MS_FLOOR = 0;
+
+/**
+ * Turns a raw elapsed-milliseconds reading into a value `telemetry.httpRequest`
+ * can never reject. `Date.now()` (or an injected clock) can step BACKWARDS —
+ * NTP correction, VM resume, a suspended laptop — producing a negative or
+ * non-integer `rawElapsedMs`. The port's contract is never-throws (see
+ * `telemetry/port.ts`), so an invalid value isn't rejected loudly at the call
+ * site; it is rejected internally by the repository and swallowed by the
+ * store-backed recorder as a logged warning, silently dropping the sample
+ * with no other symptom. Normalising here — total, no throw — keeps that
+ * sample alive: non-finite collapses to the floor, a fractional value rounds
+ * to the nearest integer, and anything still negative clamps to the floor.
+ */
+function toValidLatencyMs(rawElapsedMs: number): number {
+  if (!Number.isFinite(rawElapsedMs)) {
+    return LATENCY_MS_FLOOR;
+  }
+  return Math.max(LATENCY_MS_FLOOR, Math.round(rawElapsedMs));
+}
+
 /** Inputs for {@link finishRequest}. */
 export interface FinishRequestInputs {
   readonly res: ServerResponse;
@@ -182,7 +208,10 @@ export function finishRequest(inputs: FinishRequestInputs): void {
 
   inputs.connectionController.abort();
 
-  const durationMs = inputs.now() - inputs.startedAt;
+  // Single clock read, shared by logOutcome and telemetry.httpRequest below
+  // so the two can never disagree; normalised once so a backward clock step
+  // can't silently drop the telemetry sample (see toValidLatencyMs).
+  const durationMs = toValidLatencyMs(inputs.now() - inputs.startedAt);
 
   logOutcome(inputs.logger, {
     method: inputs.context.method,

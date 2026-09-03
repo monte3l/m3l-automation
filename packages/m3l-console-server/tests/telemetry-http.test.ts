@@ -443,6 +443,37 @@ describe("createConsoleRequestListener — telemetry.httpRequest when routing ne
     expect(recordedRoute).not.toContain("CANARY123");
     expect(recordedRoute).not.toContain(canaryTarget);
   });
+
+  test("a target that parses but whose path decoding throws (malformed percent-escape) records route (unrouted) and outcome 4xx, for the 400 that ERR_CONSOLE_BAD_REQUEST maps to", async () => {
+    const { logger, logged } = createResolvingLogger();
+    const { telemetry, httpRequestCalls } = createCapturingTelemetryRecorder();
+    const listener = createConsoleRequestListener({
+      router: createRouter([]),
+      middlewares: [],
+      preRouting: [],
+      logger,
+      signal: new AbortController().signal,
+      telemetry,
+    });
+    // `new URL(...)` accepts this malformed percent-escape in the pathname
+    // (so `createRequestContext` builds a context successfully), but
+    // `router.ts`'s `decodeSegments` throws `ERR_CONSOLE_BAD_REQUEST` from
+    // inside `lookup` — before `onRouted` is ever invoked — so `runRequest`
+    // never leaves its initial `routed` default. `envelope.ts`'s
+    // `CLASSIFICATION_BY_CODE` maps `ERR_CONSOLE_BAD_REQUEST` to the fixed,
+    // known status 400, so the response status and recorded outcome are
+    // asserted against that known value directly, not re-derived.
+    const req = createFakeIncomingMessage({ url: "/api/%zz" });
+    const { res, written } = createRecordingServerResponse();
+
+    listener(req, res);
+    await logged;
+
+    expect(written.status).toBe(400);
+    expect(httpRequestCalls).toHaveLength(1);
+    expect(httpRequestCalls[0]?.route).toBe("(unrouted)");
+    expect(httpRequestCalls[0]?.outcome).toBe("4xx");
+  });
 });
 
 describe("createConsoleRequestListener — telemetry.httpRequest when a matched route's handler throws (central case)", () => {
@@ -643,10 +674,13 @@ describe("createConsoleRequestListener — telemetry is optional", () => {
 describe("createConsoleRequestListener — telemetry.httpRequest's outcome is a total function of the response status", () => {
   test.each<[number, string]>([
     [100, "1xx"],
+    [199, "1xx"],
     [301, "3xx"],
     [599, "5xx"],
+    [600, "other"],
     [50, "other"],
     [700, "other"],
+    [Number.NaN, "other"],
   ])("status %i maps to outcome %s", async (status, expectedOutcome) => {
     const { logger, logged } = createResolvingLogger();
     const { telemetry, httpRequestCalls } = createCapturingTelemetryRecorder();
@@ -706,6 +740,18 @@ describe("createConsoleRequestListener — telemetry.httpRequest is called LAST 
     expect(events.some((event) => event.message.includes(" -> 200"))).toBe(
       true,
     );
+    // The whole point of leaving `telemetry.httpRequest` unguarded
+    // (`finish-request.ts`'s own TSDoc) is that a rogue recorder's throw is
+    // NOT silently absorbed: it surfaces as `handler.ts`'s outer
+    // `createConsoleRequestListener` `.catch` diagnostic. A future change
+    // that quietly emptied that `.catch` body would leave the assertions
+    // above passing while this one alone catches it.
+    expect(
+      events.some(
+        (event) =>
+          event.message === "unhandled console request listener failure",
+      ),
+    ).toBe(true);
   });
 });
 
@@ -744,5 +790,55 @@ describe("createConsoleRequestListener — telemetry.httpRequest's latencyMs is 
     expect(latencyMs).toBeDefined();
     expect(Number.isSafeInteger(latencyMs)).toBe(true);
     expect(latencyMs).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe("createConsoleRequestListener — telemetry.httpRequest's latencyMs survives a backward clock step (security probe, 2026-09-03)", () => {
+  // `finish-request.ts` computes `durationMs = inputs.now() - inputs.startedAt`.
+  // `Date.now()` can step BACKWARDS (an NTP correction, a VM resume/snapshot
+  // restore) — nothing here is a caller programming error. Without a clamp,
+  // `durationMs` would go negative, `store/telemetry-repository.ts`'s own
+  // `valueMs` CHECK would reject it with `ERR_CONSOLE_BAD_REQUEST` ("valueMs
+  // must be a non-negative safe integer"), and `telemetry-recorder.ts`'s
+  // `fanOut` would swallow that as a logged warning — the sample lost
+  // entirely while the client still gets its response. `finishRequest`'s
+  // `toValidLatencyMs` clamps a negative reading to `0` BEFORE it ever
+  // reaches `telemetry.httpRequest`, so the sample survives.
+  test("a clock that goes backwards between request start and completion still records latencyMs 0, not negative and not missing", async () => {
+    const { logger, logged } = createResolvingLogger();
+    const { telemetry, httpRequestCalls } = createCapturingTelemetryRecorder();
+    // Strictly decreasing on every call, regardless of how many intervening
+    // reads (`beginRequest`'s `startedAt`, `createRequestContext`'s
+    // `receivedAt`) sit between the first read and `finishRequest`'s own —
+    // so whichever read seeds `startedAt` is guaranteed larger than
+    // whichever read `finishRequest` later subtracts it from.
+    const BACKWARD_STEP_MS = 50;
+    const INITIAL_CLOCK_MS = 1_000;
+    let readCount = 0;
+    const now = (): number => {
+      const value = INITIAL_CLOCK_MS - readCount * BACKWARD_STEP_MS;
+      readCount += 1;
+      return value;
+    };
+    const router = createRouter([
+      route({ method: "GET", path: "/api/v1/runs" }),
+    ]);
+    const listener = createConsoleRequestListener({
+      router,
+      middlewares: [],
+      preRouting: [],
+      logger,
+      signal: new AbortController().signal,
+      now,
+      telemetry,
+    });
+    const req = createFakeIncomingMessage({ url: "/api/v1/runs" });
+    const { res } = createRecordingServerResponse();
+
+    listener(req, res);
+    await logged;
+
+    expect(httpRequestCalls).toHaveLength(1);
+    expect(httpRequestCalls[0]?.latencyMs).toBe(0);
   });
 });
