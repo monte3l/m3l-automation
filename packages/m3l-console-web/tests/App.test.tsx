@@ -3,6 +3,11 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import type { M3LScriptDetail, M3LScriptSummary } from "../src/api/scripts.js";
 import type { M3LRunHandle, M3LRunRecord } from "../src/api/runs.js";
+import type {
+  M3LSessionDecisionRecord,
+  M3LSessionRecord,
+  M3LSessionStepSummary,
+} from "../src/api/sessions.js";
 import { App } from "../src/App.js";
 
 /**
@@ -57,12 +62,34 @@ function mockConsoleFetch(routes: {
   readonly runDetail?: M3LRunRecord;
   /** Handle returned by a `POST /api/v1/runs` launch call, if provided. */
   readonly launchHandle?: M3LRunHandle;
+  readonly sessions?: readonly M3LSessionRecord[];
+  /** Matched by its own id against `GET /api/v1/sessions/:id`. */
+  readonly sessionDetail?: M3LSessionRecord;
+  /** Record returned by a `POST /api/v1/sessions` create call, if provided. */
+  readonly createdSession?: M3LSessionRecord;
+  /** Matched by `sessionId` against `GET /api/v1/sessions/:id/steps`. */
+  readonly sessionSteps?: {
+    readonly sessionId: string;
+    readonly steps: readonly M3LSessionStepSummary[];
+  };
+  /** Matched by `sessionId` against `GET /api/v1/sessions/:id/decisions`. */
+  readonly sessionDecisions?: {
+    readonly sessionId: string;
+    readonly decisions: readonly M3LSessionDecisionRecord[];
+  };
 }): void {
   vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
     const url = requestUrl(input);
     const method = init?.method ?? "GET";
     if (routes.launchHandle && url === "/api/v1/runs" && method === "POST") {
       return Promise.resolve(jsonResponse(routes.launchHandle, 201));
+    }
+    if (
+      routes.createdSession &&
+      url === "/api/v1/sessions" &&
+      method === "POST"
+    ) {
+      return Promise.resolve(jsonResponse(routes.createdSession, 201));
     }
     if (
       routes.scriptDetail &&
@@ -78,6 +105,27 @@ function mockConsoleFetch(routes: {
     }
     if (routes.runs && url === "/api/v1/runs") {
       return Promise.resolve(jsonResponse(routes.runs));
+    }
+    if (
+      routes.sessionSteps &&
+      url === `/api/v1/sessions/${routes.sessionSteps.sessionId}/steps`
+    ) {
+      return Promise.resolve(jsonResponse(routes.sessionSteps.steps));
+    }
+    if (
+      routes.sessionDecisions &&
+      url === `/api/v1/sessions/${routes.sessionDecisions.sessionId}/decisions`
+    ) {
+      return Promise.resolve(jsonResponse(routes.sessionDecisions.decisions));
+    }
+    if (
+      routes.sessionDetail &&
+      url === `/api/v1/sessions/${routes.sessionDetail.id}`
+    ) {
+      return Promise.resolve(jsonResponse(routes.sessionDetail));
+    }
+    if (routes.sessions && url === "/api/v1/sessions") {
+      return Promise.resolve(jsonResponse(routes.sessions));
     }
     return Promise.resolve(UNREACHABLE_RESPONSE);
   });
@@ -148,6 +196,24 @@ const DEMO_RUN: M3LRunRecord = {
   outcome: null,
   exitCode: null,
   failureMessage: null,
+};
+
+const OPEN_SESSION: M3LSessionRecord = {
+  id: "session-123",
+  operator: "boot-operator",
+  correlationId: "corr-1",
+  status: "open",
+  createdAtMs: 1_700_000_000_000,
+  updatedAtMs: 1_700_000_000_000,
+};
+
+const CREATED_SESSION: M3LSessionRecord = {
+  id: "session-999",
+  operator: "boot-operator",
+  correlationId: "corr-3",
+  status: "open",
+  createdAtMs: 1_700_000_006_000,
+  updatedAtMs: 1_700_000_006_000,
 };
 
 beforeEach(() => {
@@ -414,5 +480,97 @@ describe("App route switching", () => {
         "region"
       ],
     ).not.toBe("leaked-value");
+  });
+
+  test("renders the session list at the #/sessions route", async () => {
+    window.location.hash = "#/sessions";
+    mockConsoleFetch({ sessions: [OPEN_SESSION] });
+
+    render(<App />);
+
+    expect(await screen.findByTestId("session-list")).toBeInTheDocument();
+  });
+
+  test("renders the session detail view at the #/sessions/:id route", async () => {
+    window.location.hash = "#/sessions/session-123";
+    mockConsoleFetch({
+      sessionDetail: OPEN_SESSION,
+      sessionSteps: { sessionId: "session-123", steps: [] },
+      sessionDecisions: { sessionId: "session-123", decisions: [] },
+    });
+
+    render(<App />);
+
+    expect(await screen.findByTestId("session-detail")).toBeInTheDocument();
+  });
+
+  test("selecting a session from the rendered SessionList navigates to and renders that session's detail", async () => {
+    window.location.hash = "#/sessions";
+    mockConsoleFetch({
+      sessions: [OPEN_SESSION],
+      sessionDetail: OPEN_SESSION,
+      sessionSteps: { sessionId: "session-123", steps: [] },
+      sessionDecisions: { sessionId: "session-123", decisions: [] },
+    });
+
+    render(<App />);
+
+    const row = await screen.findByRole("button", { name: /session-123/ });
+    row.click();
+
+    expect(window.location.hash).toBe("#/sessions/session-123");
+    const detail = await screen.findByTestId("session-detail");
+    expect(detail.textContent).toContain("session-123");
+  });
+
+  // Same wiring-bug class as the script-launch test above (onLaunched ->
+  // navigate is never free) — without a createSession -> onSessionCreated ->
+  // navigate hookup, clicking "New session" would leave the operator
+  // stranded on the session list with no way to reach the session it just
+  // created.
+  test("the New session button in SessionList creates a session and navigates to #/sessions/:id for the newly created id", async () => {
+    window.location.hash = "#/sessions";
+    mockConsoleFetch({
+      sessions: [],
+      createdSession: CREATED_SESSION,
+      sessionDetail: CREATED_SESSION,
+      sessionSteps: { sessionId: "session-999", steps: [] },
+      sessionDecisions: { sessionId: "session-999", decisions: [] },
+    });
+
+    render(<App />);
+
+    const newSessionButton = await screen.findByRole("button", {
+      name: /new session/i,
+    });
+    fireEvent.click(newSessionButton);
+
+    await vi.waitFor(() => {
+      expect(window.location.hash).toBe("#/sessions/session-999");
+    });
+    const detail = await screen.findByTestId("session-detail");
+    expect(detail.textContent).toContain("session-999");
+  });
+
+  test("navigating to a session's detail and back via the AppShell nav link returns to the session list", async () => {
+    window.location.hash = "#/sessions";
+    mockConsoleFetch({
+      sessions: [OPEN_SESSION],
+      sessionDetail: OPEN_SESSION,
+      sessionSteps: { sessionId: "session-123", steps: [] },
+      sessionDecisions: { sessionId: "session-123", decisions: [] },
+    });
+
+    render(<App />);
+
+    const row = await screen.findByRole("button", { name: /session-123/ });
+    row.click();
+    await screen.findByTestId("session-detail");
+
+    screen.getByTestId("nav-sessions").click();
+
+    expect(window.location.hash).toBe("#/sessions");
+    expect(await screen.findByTestId("session-list")).toBeInTheDocument();
+    expect(screen.queryByTestId("session-detail")).not.toBeInTheDocument();
   });
 });

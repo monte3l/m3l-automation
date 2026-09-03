@@ -20,9 +20,13 @@ function isRunsRoute(route: M3LRoute): boolean {
   return route.kind === "runs" || route.kind === "run";
 }
 
+function isSessionsRoute(route: M3LRoute): boolean {
+  return route.kind === "sessions" || route.kind === "session";
+}
+
 /**
- * The console's page shell: a top nav (Scripts / Runs) plus the routed page
- * content. The active nav link carries `aria-current="page"`, derived from
+ * The console's page shell: a top nav (Scripts / Runs / Sessions) plus the
+ * routed page content. The active nav link carries `aria-current="page"`, derived from
  * `route` rather than tracked separately, so it can never drift out of sync
  * with the route the app is actually displaying.
  *
@@ -38,6 +42,7 @@ function isRunsRoute(route: M3LRoute): boolean {
 export function AppShell(props: AppShellProps): ReactElement {
   const scriptsActive = isScriptsRoute(props.route);
   const runsActive = isRunsRoute(props.route);
+  const sessionsActive = isSessionsRoute(props.route);
 
   return (
     <div data-testid="app-shell">
@@ -61,6 +66,16 @@ export function AppShell(props: AppShellProps): ReactElement {
           {...(runsActive ? { "aria-current": "page" as const } : {})}
         >
           Runs
+        </button>
+        <button
+          type="button"
+          data-testid="nav-sessions"
+          onClick={() => {
+            props.navigate({ kind: "sessions" });
+          }}
+          {...(sessionsActive ? { "aria-current": "page" as const } : {})}
+        >
+          Sessions
         </button>
       </nav>
       <div>{props.children}</div>

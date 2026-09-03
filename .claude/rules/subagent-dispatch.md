@@ -146,8 +146,8 @@ status`/`git diff`, re-run `tsc`/`eslint`/`vitest`/coverage) before deciding
   self-remediating it.
 - **Resume the SAME spoke via `SendMessage`**, never a fresh `Agent`/`Task`
   dispatch — a fresh agent has no memory of the prior exploration and restarts
-  the whole budget from zero. Hand it a scoped punch-list of exactly what's
-  left, not a full re-explanation.
+  the whole budget from zero. Hand it a punch-list, not a recap. `fork`
+  never resumes; it forks the hub.
 - **Verification can conclude "no resume needed" — prefer hub verification
   over a resume when only the report is missing.** A truncated return whose
   artifacts are already on disk (files written, gates green when you run them
