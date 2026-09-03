@@ -236,6 +236,17 @@ throw "a string";
 
 ### Test-tooling gotchas
 
+- **`not.toHaveProperty` cannot prove own-key absence, so a
+  prototype-pollution test using it can never fail.** With no own key, chai
+  falls back to `"key" in Object(obj)` and walks the whole prototype chain — so
+  once the test has polluted `Object.prototype.f`, _every_ object reports it and
+  the assertion no longer depends on the implementation. Assert
+  `Object.hasOwn(result, "f")` or `toStrictEqual` instead. Restore the prototype
+  in an **unconditional** `afterEach` via `Reflect.deleteProperty`, defining it
+  `configurable: true` — a leak corrupts every later test in the worker. The
+  tell: a pollution test that fails whatever the implementation does, or passes
+  before the guard exists (U11 slice 7b, 2026-09-03: two such tests failed
+  against correct code; a third passed only via `toStrictEqual({})`).
 - **Runtime-green ≠ typecheck-green.** Vitest transforms without type-checking;
   a test file that passes (or fails RED for the right reason) can still fail
   `tsc -b`. Run `pnpm typecheck` as its own gate on every test file you touch —

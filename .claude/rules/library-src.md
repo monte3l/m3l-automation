@@ -213,6 +213,23 @@ number>` already relies on (found A4b: `LOG_LEVEL_FLOORS`).
   that specific field (found in `M3LInputFileReader`'s record-field readers,
   2026-07-28 security review: `optionalRecordField` returned `Object.prototype`
   itself for a non-own `"__proto__"` field before the fix).
+- **Validate a local copy, never the property expression — `Object.hasOwn`
+  guards _presence_, not _stability_.** Each mention of `x.f` is a **separate
+  read**, and an accessor may answer differently every time, so the value
+  returned is not the value validated:
+  ```ts
+  // BAD — three reads; the value returned is not the value validated
+  const bad = typeof e.n === "number" && Number.isFinite(e.n) ? e.n : null;
+  // GOOD — one read
+  const raw: unknown = e.n;
+  const good = typeof raw === "number" && Number.isFinite(raw) ? raw : null;
+  ```
+  More than one mention of a property in a validate-then-return expression
+  **is** the defect, whether or not a getter exists today; `try/catch` does not
+  close it, since the reads are the bug. Shipped twice on one field in U11
+  (2026-09-03), each time letting a getter persist a secret past redaction —
+  found only by _executing_ hostile inputs
+  (`docs/logs/2026-09-03-u11-retry-resume-cancellation.md`).
 - **A cast across a serialization boundary hides the PROTOTYPE, not just the
   shape.** `M3LAppendOnlyStream.read()` rebuilds every node with a null
   prototype (its `toJSON`-gadget defence), so `Array.isArray` answers `true`
