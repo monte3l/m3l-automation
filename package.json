@@ -37,6 +37,8 @@
     "m3l": "node packages/m3l-cli/bin/m3l.mjs",
     "console:server": "node packages/m3l-console-server/bin/m3l-console-server.mjs",
     "console:web": "pnpm --filter @m3l-automation/m3l-console-web dev",
+    "console:up": "node bin/console-up.mjs",
+    "console:down": "node bin/console-down.mjs",
     "check:command-catalog": "node bin/check-command-catalog.mjs",
     "check:workflow-build-order": "node bin/check-workflow-build-order.mjs",
     "check:api": "node bin/check-exports-snapshot.mjs",

@@ -78,11 +78,13 @@ updates:
       - dependencies
     open-pull-requests-limit: 5
 
-  # ADR-0071 (X12/issue #560): base images in both console Dockerfiles
+  # ADR-0071 (X12/issue #560): base images in both console Containerfiles
   # (`node:24-slim`, `nginxinc/nginx-unprivileged:1-alpine`), one entry per
-  # directory containing a Dockerfile per Dependabot's docker ecosystem
-  # convention. Neither image is published anywhere; this only tracks the
-  # local build inputs.
+  # directory containing a Containerfile — Dependabot's `docker` ecosystem
+  # (the ecosystem's name, not the banned tool; ADR-0091) resolves
+  # `Containerfile` identically to `Dockerfile` (dependabot-core#11141).
+  # Neither image is published anywhere; this only tracks the local build
+  # inputs.
   #
   # Both `node` ignore entries pin to the same floor as the npm ecosystem's
   # `@types/node` hold above (not a literal MAJOR_HOLDS entry — that map is

@@ -246,6 +246,16 @@ export const COMMAND_CATALOG = [
       "Runs the m3l operations-console frontend's Vite dev server (packages/m3l-console-web, ADR-0064/0067). Proxies /health and /ready to console:server's default loopback bind so the shell's health check works against the real backend.",
   },
   {
+    name: "console:up",
+    description:
+      "Builds both console container images and plays console-pod.yaml under rootless Podman (bin/console-up.mjs, ADR-0091): validates M3L_CONSOLE_OPERATOR_NAME/HOME, resolves the manifest's host-specific hostPath tokens, generates a ConfigMap carrying the operator env vars, and runs `podman kube play --network pasta --userns keep-id`. Requires Podman.",
+  },
+  {
+    name: "console:down",
+    description:
+      "Tears down the pod started by console:up via `podman kube down console-pod.yaml` (bin/console-down.mjs, ADR-0091).",
+  },
+  {
     name: "check:agents",
     description:
       "Verifies every skill/CLAUDE.md agent reference resolves to a real subagent or built-in, and that no spoke is granted the Agent tool (the no-nesting invariant). Run after editing .claude/agents/** or a skill's dispatch prompt.",
