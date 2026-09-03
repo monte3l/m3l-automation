@@ -528,7 +528,11 @@
       "M3LRetrySuccessPayload",
       "M3LRetryFatalPayload",
       "M3LRetryExhaustedPayload",
-      "M3LRetryNoProgressPayload"
+      "M3LRetryNoProgressPayload",
+      "M3LPollAttemptEntry",
+      "M3LRetryAttemptEntry",
+      "M3LPollDetailedResult",
+      "M3LRetryDetailedResult"
     ]
   },
   {

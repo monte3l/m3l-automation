@@ -22,6 +22,10 @@ import { M3LEventEmitterBase } from "../events/index.js";
 import { M3LOperationAbortedError } from "../errors/index.js";
 
 import type { M3LPollerEventMap } from "./events.js";
+import type {
+  M3LPollAttemptEntry,
+  M3LPollDetailedResult,
+} from "./detailed-results.js";
 
 /**
  * The outcome of a single poll check.
@@ -110,6 +114,21 @@ function isAborted(signal: AbortSignal | undefined): boolean {
 }
 
 /**
+ * The result of {@link M3LPoller.#continueAttempt}: whether a backoff delay
+ * was actually slept for this `continue` decision, paired with the delay
+ * value. Modelled as a discriminated union (rather than a plain
+ * `{ delay, slept }` shape) so `delay` narrows to `number` under
+ * `slept: true` — the caller cannot forget the ceiling-exhausting attempt
+ * that skips the sleep, since `outcome.delay` is only usable unconditionally
+ * when `outcome.slept` has been checked.
+ *
+ * Module-private: never re-exported through `core/polling/index.ts`.
+ */
+type ContinueOutcome =
+  | { readonly slept: true; readonly delay: number }
+  | { readonly slept: false; readonly delay: number | undefined };
+
+/**
  * Polls external state until a terminal decision or attempt exhaustion.
  *
  * Attempt and backoff state live inside each {@link M3LPoller.poll} call frame,
@@ -178,7 +197,53 @@ export class M3LPoller extends M3LEventEmitterBase<M3LPollerEventMap> {
    *   threw or returned a non-primitive value while sampling.
    */
   async poll<T>(check: M3LPollCheckFn<T>): Promise<T> {
+    const { value } = await this.#pollLoop(check);
+    return value;
+  }
+
+  /**
+   * Poll `check` exactly like {@link poll}, but resolve the envelope
+   * described by {@link M3LPollDetailedResult} instead of the bare value —
+   * the succeeding attempt number plus one entry per attempt that was
+   * followed by a backoff wait (ADR-0086). Shares its loop with {@link poll}
+   * so the ADR-0049 abort ordering (signal checked before `check()` is ever
+   * invoked) lives in exactly one place for both methods.
+   *
+   * @typeParam T - The success value type.
+   * @param check - The per-attempt check function (sync or async).
+   * @returns The resolved value plus its per-attempt wait history.
+   * @throws Exactly what {@link poll} throws, for the same reasons.
+   */
+  async pollDetailed<T>(
+    check: M3LPollCheckFn<T>,
+  ): Promise<M3LPollDetailedResult<T>> {
+    return this.#pollLoop(check);
+  }
+
+  /**
+   * The shared loop behind {@link poll} and {@link pollDetailed}: identical
+   * control flow, differing only in that every entry an attempt earns is
+   * collected here so both callers can be served from one implementation.
+   * `poll` discards `attempts`/`entries`; `pollDetailed` returns them.
+   *
+   * @typeParam T - The success value type.
+   * @param check - The per-attempt check function (sync or async).
+   * @returns The resolved value, the succeeding 1-based attempt, and the
+   *   per-attempt wait entries collected along the way.
+   * @throws {@link M3LOperationAbortedError} (code `ERR_OPERATION_ABORTED`) when
+   *   the signal aborts — either before the first check or during a backoff delay.
+   * @throws An internal `M3LError` (code `ERR_POLL_FAILURE`) on a `failure`
+   *   decision, (code `ERR_POLL_EXHAUSTED`) when `maxAttempts` is reached
+   *   while still `continue`, (code `ERR_NO_PROGRESS`) when a configured
+   *   `progress` witness stays unchanged for `maxStalledAttempts` consecutive
+   *   attempts, or (code `ERR_POLLING_INVALID_OPTION`) when that witness
+   *   threw or returned a non-primitive value while sampling.
+   */
+  async #pollLoop<T>(
+    check: M3LPollCheckFn<T>,
+  ): Promise<M3LPollDetailedResult<T>> {
     let prevDelay: number | undefined;
+    const entries: M3LPollAttemptEntry[] = [];
     const tracker =
       this.#progress !== undefined
         ? new ProgressTracker(this.#progress)
@@ -200,7 +265,7 @@ export class M3LPoller extends M3LEventEmitterBase<M3LPollerEventMap> {
       switch (decision.type) {
         case "success":
           this.emit("poll:success", { attempt: attempt + 1 });
-          return decision.value;
+          return { value: decision.value, attempts: attempt + 1, entries };
         case "failure":
           // `attempt` is carried as `context.attempt` (mirroring the sibling
           // `M3LPollExhaustedError`'s `context.attempts`) so a terminal
@@ -209,9 +274,18 @@ export class M3LPoller extends M3LEventEmitterBase<M3LPollerEventMap> {
             "poll check returned a terminal failure decision",
             { attempt: attempt + 1 },
           );
-        case "continue":
-          prevDelay = await this.#continueAttempt(attempt, prevDelay, tracker);
+        case "continue": {
+          const outcome = await this.#continueAttempt(
+            attempt,
+            prevDelay,
+            tracker,
+          );
+          prevDelay = outcome.delay;
+          if (outcome.slept) {
+            entries.push({ attempt: attempt + 1, delayMs: outcome.delay });
+          }
           break;
+        }
         default: {
           const exhaustive: never = decision;
           throw new M3LPollFailureError(
@@ -231,17 +305,20 @@ export class M3LPoller extends M3LEventEmitterBase<M3LPollerEventMap> {
   /**
    * Handle a non-final `continue` decision: consult the no-progress guard (if
    * configured) and, absent a trip, compute, emit, and sleep the backoff
-   * delay for the next attempt. Extracted from {@link poll}'s loop body to
-   * keep both under the complexity/depth/length lint ceilings.
+   * delay for the next attempt. Extracted from the shared poll loop's body
+   * to keep both under the complexity/depth/length lint ceilings.
    *
    * @param attempt - The 0-based index of the attempt that just returned
    *   `continue`.
    * @param prevDelay - The previous backoff delay, seeding the progression.
    * @param tracker - This call's stall tracker, or `undefined` when no
    *   `progress` option was configured.
-   * @returns The delay just slept (the next `prevDelay` seed), or the
-   *   unchanged `prevDelay` when `attempt` is the ceiling-exhausting attempt
-   *   (no delay is slept for it).
+   * @returns A {@link ContinueOutcome}: `slept: true` with the delay just
+   *   slept (the next `prevDelay` seed) when a wait happened, or
+   *   `slept: false` with the unchanged `prevDelay` when `attempt` is the
+   *   ceiling-exhausting attempt (no delay is slept for it). `slept` is what
+   *   lets the caller distinguish the two cases, since an unchanged
+   *   `prevDelay` alone cannot.
    * @throws {@link M3LOperationAbortedError} when the signal aborted on this
    *   attempt (abort always wins over a no-progress trip).
    * @throws An internal `M3LError` (code `ERR_NO_PROGRESS`) when the guard trips.
@@ -250,9 +327,9 @@ export class M3LPoller extends M3LEventEmitterBase<M3LPollerEventMap> {
     attempt: number,
     prevDelay: number | undefined,
     tracker: ProgressTracker | undefined,
-  ): Promise<number | undefined> {
+  ): Promise<ContinueOutcome> {
     if (attempt >= this.#maxAttempts - 1) {
-      return prevDelay;
+      return { delay: prevDelay, slept: false };
     }
     if (tracker !== undefined) {
       this.#checkProgress(tracker, attempt);
@@ -261,7 +338,7 @@ export class M3LPoller extends M3LEventEmitterBase<M3LPollerEventMap> {
     this.emit("poll:wait", { attempt: attempt + 1, delayMs: nextDelay });
     // Pass signal so an abort during the backoff abandons it immediately.
     await delay(nextDelay, this.#signal);
-    return nextDelay;
+    return { delay: nextDelay, slept: true };
   }
 
   /**
