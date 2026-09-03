@@ -8,7 +8,9 @@ export type M3LRoute =
   | { readonly kind: "scripts" }
   | { readonly kind: "script"; readonly name: string }
   | { readonly kind: "runs" }
-  | { readonly kind: "run"; readonly id: string };
+  | { readonly kind: "run"; readonly id: string }
+  | { readonly kind: "sessions" }
+  | { readonly kind: "session"; readonly id: string };
 
 const SCRIPTS_ROUTE: M3LRoute = { kind: "scripts" };
 
@@ -48,13 +50,44 @@ function parseRunRoute(rawId: string): M3LRoute {
   return { kind: "run", id };
 }
 
+function parseSessionRoute(rawId: string): M3LRoute {
+  const id = decodeSegmentOrNull(rawId);
+  if (id === null || id.length === 0 || id.includes("/")) {
+    return SCRIPTS_ROUTE;
+  }
+  return { kind: "session", id };
+}
+
+/**
+ * Resolves a `:id`-style resource (`runs`/`sessions`) once `resource` has
+ * already been matched — shared by both branches in {@link parseHashRoute}
+ * purely to keep that function's cyclomatic/cognitive complexity down, since
+ * `runs` and `sessions` follow the identical list-vs-item shape.
+ */
+function parseIdResourceRoute(
+  listRoute: M3LRoute,
+  segments: readonly string[],
+  subject: string | undefined,
+  parseItemRoute: (rawId: string) => M3LRoute,
+): M3LRoute {
+  if (subject === undefined) {
+    return listRoute;
+  }
+  if (segments.length > MAX_ROUTE_SEGMENTS) {
+    // An extra segment (e.g. "#/runs/abc/def") is not a valid :id path.
+    return SCRIPTS_ROUTE;
+  }
+  return parseItemRoute(subject);
+}
+
 /**
  * Parses a `location.hash` value into a {@link M3LRoute}, pure and exported
  * separately from {@link useHashRoute} so it is testable without a DOM.
  *
- * Grammar: `#/scripts`, `#/scripts/:name`, `#/runs`, `#/runs/:id`. Anything
- * else — an empty hash, `#`, `#/`, an unrecognised path, or a segment that
- * fails validation — falls back to the scripts route rather than throwing.
+ * Grammar: `#/scripts`, `#/scripts/:name`, `#/runs`, `#/runs/:id`,
+ * `#/sessions`, `#/sessions/:id`. Anything else — an empty hash, `#`, `#/`,
+ * an unrecognised path, or a segment that fails validation — falls back to
+ * the scripts route rather than throwing.
  *
  * @example
  * ```ts
@@ -88,14 +121,20 @@ export function parseHashRoute(hash: string): M3LRoute {
     return parseScriptRoute(subject);
   }
   if (resource === "runs") {
-    if (subject === undefined) {
-      return { kind: "runs" };
-    }
-    if (segments.length > MAX_ROUTE_SEGMENTS) {
-      // An extra segment (e.g. "#/runs/abc/def") is not a valid :id path.
-      return SCRIPTS_ROUTE;
-    }
-    return parseRunRoute(subject);
+    return parseIdResourceRoute(
+      { kind: "runs" },
+      segments,
+      subject,
+      parseRunRoute,
+    );
+  }
+  if (resource === "sessions") {
+    return parseIdResourceRoute(
+      { kind: "sessions" },
+      segments,
+      subject,
+      parseSessionRoute,
+    );
   }
 
   return SCRIPTS_ROUTE;
@@ -121,6 +160,10 @@ export function routeToHash(route: M3LRoute): string {
       return "#/runs";
     case "run":
       return `#/runs/${encodeURIComponent(route.id)}`;
+    case "sessions":
+      return "#/sessions";
+    case "session":
+      return `#/sessions/${encodeURIComponent(route.id)}`;
   }
 }
 

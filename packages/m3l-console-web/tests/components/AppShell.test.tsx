@@ -16,7 +16,7 @@ describe("AppShell", () => {
     expect(shell.textContent).toContain("child content");
   });
 
-  test("renders nav links for Scripts and Runs", () => {
+  test("renders nav links for Scripts, Runs, and Sessions", () => {
     render(
       <AppShell route={{ kind: "scripts" }} navigate={vi.fn()}>
         <p>child</p>
@@ -25,6 +25,7 @@ describe("AppShell", () => {
 
     expect(screen.getByTestId("nav-scripts")).toBeInTheDocument();
     expect(screen.getByTestId("nav-runs")).toBeInTheDocument();
+    expect(screen.getByTestId("nav-sessions")).toBeInTheDocument();
   });
 
   test("navigates to the scripts route when the Scripts nav link is activated", () => {
@@ -53,11 +54,26 @@ describe("AppShell", () => {
     expect(navigate).toHaveBeenCalledWith({ kind: "runs" });
   });
 
+  test("navigates to the sessions route when the Sessions nav link is activated", () => {
+    const navigate = vi.fn();
+    render(
+      <AppShell route={{ kind: "scripts" }} navigate={navigate}>
+        <p>child</p>
+      </AppShell>,
+    );
+
+    screen.getByTestId("nav-sessions").click();
+
+    expect(navigate).toHaveBeenCalledWith({ kind: "sessions" });
+  });
+
   test.each<[M3LRoute, string]>([
     [{ kind: "scripts" }, "nav-scripts"],
     [{ kind: "script", name: "demo" }, "nav-scripts"],
     [{ kind: "runs" }, "nav-runs"],
     [{ kind: "run", id: "run-123" }, "nav-runs"],
+    [{ kind: "sessions" }, "nav-sessions"],
+    [{ kind: "session", id: "session-123" }, "nav-sessions"],
   ])(
     "marks the nav link for route %o as active (aria-current=page on %s)",
     (route, expectedTestId) => {

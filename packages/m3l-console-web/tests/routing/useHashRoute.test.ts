@@ -26,6 +26,11 @@ describe("parseHashRoute", () => {
       "#/runs/0193f0c2-1234-7abc-9def-000000000000",
       { kind: "run", id: "0193f0c2-1234-7abc-9def-000000000000" },
     ],
+    ["#/sessions", { kind: "sessions" }],
+    [
+      "#/sessions/0193f0c2-1234-7abc-9def-000000000000",
+      { kind: "session", id: "0193f0c2-1234-7abc-9def-000000000000" },
+    ],
   ])("parses %s into %o", (hash, expected) => {
     expect(parseHashRoute(hash)).toEqual(expected);
   });
@@ -80,6 +85,36 @@ describe("parseHashRoute", () => {
       id: "ABC-123_xyz",
     });
   });
+
+  // #/sessions/:id follows exactly the same id-validation rules as
+  // #/runs/:id — mirrored one-for-one below rather than sharing a
+  // parameterized table with the runs cases above, since this extends the
+  // existing runs-shaped assertions in place rather than introducing a new
+  // describe block.
+  test("falls back to scripts when the session :id segment has a malformed escape that throws in decodeURIComponent", () => {
+    expect(parseHashRoute("#/sessions/%ZZ")).toEqual({ kind: "scripts" });
+  });
+
+  test("falls back to scripts when the session :id segment is empty", () => {
+    expect(parseHashRoute("#/sessions/")).toEqual({ kind: "scripts" });
+  });
+
+  test("falls back to scripts when the session :id segment contains a slash", () => {
+    expect(parseHashRoute("#/sessions/abc/def")).toEqual({ kind: "scripts" });
+  });
+
+  test("falls back to scripts when the session route has more than 2 segments", () => {
+    expect(parseHashRoute("#/sessions/abc/def/ghi")).toEqual({
+      kind: "scripts",
+    });
+  });
+
+  test("accepts a session :id segment containing characters the :name pattern would reject", () => {
+    expect(parseHashRoute("#/sessions/ABC-123_xyz")).toEqual({
+      kind: "session",
+      id: "ABC-123_xyz",
+    });
+  });
 });
 
 describe("routeToHash", () => {
@@ -88,6 +123,8 @@ describe("routeToHash", () => {
     { kind: "script", name: "json-etl" },
     { kind: "runs" },
     { kind: "run", id: "0193f0c2-1234-7abc-9def-000000000000" },
+    { kind: "sessions" },
+    { kind: "session", id: "0193f0c2-1234-7abc-9def-000000000000" },
   ])("round-trips through parseHashRoute for %o", (route) => {
     expect(parseHashRoute(routeToHash(route))).toEqual(route);
   });

@@ -7,6 +7,8 @@ import { RunDetail } from "./components/RunDetail.js";
 import { RunList } from "./components/RunList.js";
 import { ScriptDetail } from "./components/ScriptDetail.js";
 import { ScriptList } from "./components/ScriptList.js";
+import { SessionDetail } from "./components/SessionDetail.js";
+import { SessionList } from "./components/SessionList.js";
 import type { M3LRoute } from "./routing/useHashRoute.js";
 import { useHashRoute } from "./routing/useHashRoute.js";
 
@@ -55,6 +57,19 @@ function renderRoute(
       );
     case "run":
       return <RunDetail id={route.id} />;
+    case "sessions":
+      return (
+        <SessionList
+          onSelectSession={(id) => {
+            navigate({ kind: "session", id });
+          }}
+          onSessionCreated={(id) => {
+            navigate({ kind: "session", id });
+          }}
+        />
+      );
+    case "session":
+      return <SessionDetail id={route.id} />;
   }
 }
 
