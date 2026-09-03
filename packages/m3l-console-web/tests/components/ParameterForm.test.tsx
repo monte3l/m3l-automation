@@ -7,6 +7,7 @@ import type {
 } from "../../src/api/scripts.js";
 import type { M3LParameterFormSubmission } from "../../src/components/ParameterForm.js";
 import { ParameterForm } from "../../src/components/ParameterForm.js";
+import type { M3LParameterBinding } from "../../src/internal/parameter-bindings.js";
 
 /**
  * Shape emitted by {@link ParameterForm}'s `onLaunch` callback. Not
@@ -53,12 +54,14 @@ function renderForm(
   detail: M3LScriptDetail,
   onLaunch: (submission: ParameterFormSubmission) => void = vi.fn(),
   submitting = false,
+  bindings?: readonly M3LParameterBinding[],
 ): { readonly onLaunch: (submission: ParameterFormSubmission) => void } {
   render(
     <ParameterForm
       detail={detail}
       onLaunch={onLaunch}
       submitting={submitting}
+      {...(bindings !== undefined && { bindings })}
     />,
   );
   return { onLaunch };
@@ -438,5 +441,94 @@ describe("M3LParameterFormSubmission — parameters readonly shape (type-level)"
     expectTypeOf<M3LParameterFormSubmission["parameters"]>().toEqualTypeOf<
       Readonly<Record<string, string>>
     >();
+  });
+});
+
+describe("ParameterForm — bindings prefill", () => {
+  test("a binding matching a non-secret parameter overrides that parameter's own defaultValue", () => {
+    const region = buildParameter({
+      name: "region",
+      defaultValue: "us-east-1",
+    });
+    const bindings: readonly M3LParameterBinding[] = [
+      { parameterName: "region", value: "eu-west-1", multiSelect: false },
+    ];
+    renderForm(buildDetail([region]), vi.fn(), false, bindings);
+
+    const input = screen.getByLabelText<HTMLInputElement>("region");
+    expect(input.value).toBe("eu-west-1");
+  });
+
+  test("a binding matching a secret parameter is ignored — no control renders, and its value never leaks into the submission", () => {
+    const secretParam = buildParameter({
+      name: "apiKey",
+      secret: true,
+      required: false,
+    });
+    const region = buildParameter({ name: "region", required: false });
+    const bindings: readonly M3LParameterBinding[] = [
+      { parameterName: "apiKey", value: "leaked-secret", multiSelect: false },
+    ];
+    const onLaunch = vi.fn();
+    renderForm(buildDetail([secretParam, region]), onLaunch, false, bindings);
+
+    expect(screen.queryByLabelText("apiKey")).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("region"), {
+      target: { value: "us-east-1" },
+    });
+    clickLaunch();
+
+    const submission = onLaunch.mock.calls[0]?.[0] as
+      ParameterFormSubmission | undefined;
+    expect(submission?.parameters).not.toHaveProperty("apiKey");
+    expect(submission?.parameters).toMatchObject({ region: "us-east-1" });
+  });
+
+  test("a binding matching no declared parameter is a harmless no-op — form renders as if the prop were absent", () => {
+    const region = buildParameter({
+      name: "region",
+      defaultValue: "us-east-1",
+    });
+    const bindings: readonly M3LParameterBinding[] = [
+      { parameterName: "nonExistent", value: "whatever", multiSelect: false },
+    ];
+    renderForm(buildDetail([region]), vi.fn(), false, bindings);
+
+    const input = screen.getByLabelText<HTMLInputElement>("region");
+    expect(input.value).toBe("us-east-1");
+    expect(screen.queryByLabelText("nonExistent")).not.toBeInTheDocument();
+  });
+
+  test("a multiSelect: true binding on a visible non-secret STRING parameter submits the comma-joined value", () => {
+    const queueUrls = buildParameter({ name: "queueUrls", required: false });
+    const bindings: readonly M3LParameterBinding[] = [
+      {
+        parameterName: "queueUrls",
+        value: ["url-a", "url-b"],
+        multiSelect: true,
+      },
+    ];
+    const onLaunch = vi.fn();
+    renderForm(buildDetail([queueUrls]), onLaunch, false, bindings);
+
+    clickLaunch();
+
+    const submission = onLaunch.mock.calls[0]?.[0] as
+      ParameterFormSubmission | undefined;
+    expect(submission?.parameters).toMatchObject({
+      queueUrls: "url-a,url-b",
+    });
+  });
+
+  test("a binding prefilling a BOOL parameter with value: true starts the checkbox checked", () => {
+    const boolParam = buildParameter({ name: "enableFeature", type: "BOOL" });
+    const bindings: readonly M3LParameterBinding[] = [
+      { parameterName: "enableFeature", value: true, multiSelect: false },
+    ];
+    renderForm(buildDetail([boolParam]), vi.fn(), false, bindings);
+
+    const checkbox = screen.getByLabelText("enableFeature");
+    expect(checkbox).toBeChecked();
   });
 });

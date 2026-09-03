@@ -614,3 +614,61 @@ export async function createSessionBinding(
   }
   return result;
 }
+
+/** The result of successfully answering a decision — see {@link answerSessionDecision}. */
+export interface M3LDecisionAnswerResult {
+  /**
+   * Whether this call's answer was recorded — `false` when the decision was
+   * already answered (by an earlier call), meaning this submission had no
+   * effect.
+   */
+  readonly applied: boolean;
+}
+
+function isAnsweredDecisionResponse(
+  value: unknown,
+): value is M3LDecisionAnswerResult {
+  return isRecord(value) && typeof value["applied"] === "boolean";
+}
+
+/**
+ * Answers one pending decision within a session via
+ * `POST /api/v1/sessions/:id/decisions/:decisionId`, URL-encoding both
+ * `sessionId` and `decisionId` into the path and sending `{ answer }` as the
+ * request body.
+ *
+ * @example
+ * ```ts
+ * import { answerSessionDecision } from "@m3l-automation/m3l-console-web/api/sessions.js";
+ *
+ * const result = await answerSessionDecision(
+ *   "0193f0c2-1234-7abc-9def-000000000000",
+ *   "0193f0c2-5678-7abc-9def-000000000000",
+ *   "continue",
+ * );
+ * if (result.ok) {
+ *   console.log(result.data.applied);
+ * }
+ * ```
+ */
+export async function answerSessionDecision(
+  sessionId: string,
+  decisionId: string,
+  answer: unknown,
+): Promise<M3LConsoleFetchResult<M3LDecisionAnswerResult>> {
+  const result = await fetchConsoleJson<M3LDecisionAnswerResult>(
+    `/api/v1/sessions/${encodePathSegment(sessionId)}/decisions/${encodePathSegment(decisionId)}`,
+    { method: "POST", body: { answer } },
+  );
+  if (result.ok && !isAnsweredDecisionResponse(result.data)) {
+    return {
+      ok: false,
+      error: {
+        kind: "malformed-body",
+        message:
+          "unexpected POST /api/v1/sessions/:id/decisions/:decisionId response shape",
+      },
+    };
+  }
+  return result;
+}
