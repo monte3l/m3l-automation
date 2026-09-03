@@ -3,9 +3,15 @@
  * `telemetry-repository.ts` correctly normalize outer whitespace before
  * binding SQL parameters:
  *
- * - `recordRunFinished`   `:231` — `operation: measurement.operation ?? ""`
- * - `recordSseStream`     `:262` — `outcome: measurement.outcome ?? ""`
- * - `recordPolicyDecision` `:277` — `outcome: measurement.outcome ?? ""`
+ * - `recordRunFinished`    — normalizes `operation` via
+ *   `normalizeOptionalDimension(measurement.operation)`
+ *   (formerly a bare `measurement.operation ?? ""` with no trim)
+ * - `recordSseStream`     — normalizes `outcome` via
+ *   `normalizeOptionalDimension(measurement.outcome)`
+ *   (formerly a bare `measurement.outcome ?? ""` with no trim)
+ * - `recordPolicyDecision` — normalizes `outcome` via
+ *   `normalizeOptionalDimension(measurement.outcome)`
+ *   (formerly a bare `measurement.outcome ?? ""` with no trim)
  *
  * Without normalization, `"export"` and `" export "` land as two distinct
  * PRIMARY KEY rows in `console_telemetry_rollup`, silently splitting one
