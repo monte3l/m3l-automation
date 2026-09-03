@@ -32,7 +32,9 @@ read surface and cancellation. The route table is:
 X6 shipped the workbench-sessions module: create/list/read/close/reopen a
 session, append steps, raise and answer decisions, and read a session's
 persisted binding audit trail; X7d added the step-artifact read surface and
-standalone binding selection:
+standalone binding selection. X11 added the step-list and decision-list read
+surfaces its drill-down UI needs to enumerate a session's plan and pending
+decisions, ahead of the UI itself:
 
 | Method | Path                                          | Auth     | Shipped in |
 | ------ | --------------------------------------------- | -------- | ---------- |
@@ -47,6 +49,8 @@ standalone binding selection:
 | `GET`  | `/api/v1/sessions/:id/bindings`               | required | X6         |
 | `GET`  | `/api/v1/sessions/:id/steps/:stepId/artifact` | required | X7d        |
 | `POST` | `/api/v1/sessions/:id/bindings`               | required | X7d        |
+| `GET`  | `/api/v1/sessions/:id/steps`                  | required | X11        |
+| `GET`  | `/api/v1/sessions/:id/decisions`              | required | X11        |
 
 X10 shipped script discovery: enumerate the launchable scripts under the
 configured scripts directory, and read one script's declared parameters and
@@ -901,6 +905,86 @@ operator pointed at, never what was there.
 > Playwright acceptance — X11 simply no longer has to build the endpoint
 > first.
 
+## `GET /api/v1/sessions/:id/steps`
+
+Lists every step recorded for `sessionId`, ordinal-ascending — the read
+surface the drill-down UI needs to enumerate a session's plan.
+
+```bash
+curl -sS localhost:8787/api/v1/sessions/$SESSION_ID/steps
+```
+
+```json
+[
+  {
+    "id": "step-1",
+    "sessionId": "session-1",
+    "ordinal": 1,
+    "operation": "sqs-etl",
+    "parameters": { "mode": "batch" },
+    "runId": "run-1",
+    "status": "success",
+    "queuedAtMs": 1735689600000,
+    "startedAtMs": 1735689600100,
+    "endedAtMs": 1735689600200,
+    "outcome": "success",
+    "failureMessage": null,
+    "hasResult": true
+  }
+]
+```
+
+Every field is always present — a field with no value (a queued step's
+`runId`/`startedAtMs`/`endedAtMs`/`outcome`, or `failureMessage` on a
+non-failure outcome) serializes as `null`, never omitted.
+
+**Each step is returned WITHOUT its `resultRef` field**, replaced by a
+`hasResult` boolean. `resultRef` is the step's encoded artifact reference —
+for an inline artifact it embeds the resolved VALUE directly (see
+`GET …/steps/:stepId/artifact` above), so serving it verbatim in a list
+response would leak step output through the wrong door. This mirrors
+`POST …/bindings`'s own "the response carries no resolved value" rule:
+`GET …/steps/:stepId/artifact` is the one sanctioned path to a step's actual
+output; this route only tells a caller a result exists.
+
+`ERR_CONSOLE_SESSION_NOT_FOUND` (404) for an unknown session id — this route
+is `:id`-scoped like `GET /api/v1/sessions/:id/bindings`, not a
+query-filtered scan, so an unknown id is distinguishable from a real session
+with zero steps.
+
+## `GET /api/v1/sessions/:id/decisions`
+
+Lists every decision raised for `sessionId`, created-ascending — pending and
+answered alike.
+
+```bash
+curl -sS localhost:8787/api/v1/sessions/$SESSION_ID/decisions
+```
+
+```json
+[
+  {
+    "id": "decision-1",
+    "sessionId": "session-1",
+    "stepId": "step-1",
+    "prompt": "Proceed with the DynamoDB query?",
+    "options": ["continue", "stop"],
+    "status": "pending",
+    "createdAtMs": 1735689600000
+  }
+]
+```
+
+`options` is whatever the raising `POST …/steps/:stepId/decision` call
+supplied (or `null` when it supplied none) — echoed back unchanged. An
+`"answered"` row additionally carries `answer` and `answeredAtMs` — the same
+discriminated shape `POST …/steps/:stepId/decision` returns on the `201` that
+raises it (`POST …/decisions/:decisionId` itself only returns
+`{ "applied": boolean }`, not the record).
+
+`ERR_CONSOLE_SESSION_NOT_FOUND` (404) for an unknown session id, same
+:id-scoped distinguishability as the steps route above.
+
 ## Session limits
 
 Four settings, all under `m3l.console.sessions.*`:
@@ -933,9 +1017,9 @@ settings above.
   version once a script's real output flows through.
 - **Session status is `open`/`closed` only** — a session blocked on a
   pending decision is not distinguishable from a normal open session at the
-  session-record level, and there is no `GET` route to list a session's
-  decisions; the service's `listDecisionsForSession` exists but is not yet
-  exposed over REST.
+  session-record level. `GET /api/v1/sessions/:id/decisions` lists a
+  session's decisions, but a caller must still filter for `"status":
+"pending"` themselves; the session record itself carries no aggregate flag.
 - Binding audit records have no step linkage — see the Bindings section
   above.
 

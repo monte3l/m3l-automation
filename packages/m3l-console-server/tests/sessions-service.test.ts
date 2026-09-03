@@ -1570,6 +1570,25 @@ describe("M3LSessionService — listDecisionsForSession()", () => {
 
     expect(service.listDecisionsForSession(sessionId)).toEqual([]);
   });
+
+  // [RED] `listDecisionsForSession` has no session-existence guard, unlike
+  // its siblings `listStepsForSession`/`listBindingsForSession` — an unknown
+  // session id today silently returns `[]` instead of throwing, which is
+  // inconsistent with `GET /api/v1/sessions/:id/decisions`'s sibling
+  // `/steps` route. Mirrors the equivalent `answerDecision()` "on an unknown
+  // decision id" test immediately above.
+  test("on an unknown session id: throws ERR_CONSOLE_SESSION_NOT_FOUND", () => {
+    const { service } = buildHarness();
+
+    const thrown = captureFailure(() =>
+      service.listDecisionsForSession("does-not-exist"),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).code).toBe(
+      "ERR_CONSOLE_SESSION_NOT_FOUND",
+    );
+  });
 });
 
 // ---------------------------------------------------------------------------

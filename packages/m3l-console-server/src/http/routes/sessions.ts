@@ -138,8 +138,12 @@ export interface SessionRouteReaderPort {
   listSessions(query: M3LSessionListQuery): readonly unknown[];
   /** Lists every binding persisted for `sessionId` (served by `./session-bindings.js`). */
   listBindingsForSession(sessionId: string): readonly unknown[];
+  /** Lists every step recorded for `sessionId` (served by `./session-steps.js`). */
+  listStepsForSession(sessionId: string): readonly unknown[];
   /** Resolves one step's recorded output artifact (served by `./session-artifacts.js`). */
   readStepArtifact(sessionId: string, stepId: string): Promise<unknown>;
+  /** Lists every decision raised for `sessionId` (served by the same handler this module already owns for POST .../decisions/:decisionId). */
+  listDecisionsForSession(sessionId: string): readonly unknown[];
 }
 
 /**
@@ -469,6 +473,16 @@ function buildAnswerDecisionHandler(
   };
 }
 
+/** Builds the `GET /api/v1/sessions/:id/decisions` handler: the bare decision row array. */
+function buildListDecisionsHandler(
+  reader: SessionRouteReaderPort,
+): M3LConsoleHandler {
+  return (ctx) => {
+    const id = requireParam(ctx, "id");
+    return jsonResponse(STATUS_OK, reader.listDecisionsForSession(id));
+  };
+}
+
 /** Builds the `POST /api/v1/sessions/:id/close` handler. */
 function buildCloseHandler(writer: SessionRouteWriterPort): M3LConsoleHandler {
   return (ctx) => {
@@ -494,7 +508,7 @@ function buildReopenHandler(writer: SessionRouteWriterPort): M3LConsoleHandler {
  * never an unauthenticated caller.
  *
  * @param options - See {@link SessionRouteOptions}.
- * @returns The eight-route table. The binding routes live in
+ * @returns The nine-route table. The binding routes live in
  *   `http/routes/session-bindings.ts` — see that module's header.
  *
  * @example
@@ -559,6 +573,12 @@ export function createSessionRoutes(
       path: "/api/v1/sessions/:id/decisions/:decisionId",
       auth: "required",
       handler: buildAnswerDecisionHandler(options.writer),
+    },
+    {
+      method: "GET",
+      path: "/api/v1/sessions/:id/decisions",
+      auth: "required",
+      handler: buildListDecisionsHandler(options.reader),
     },
     {
       method: "POST",
