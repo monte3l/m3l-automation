@@ -1,0 +1,18 @@
+# Build-context hygiene for packages/m3l-console-{server,web}/Dockerfile
+# (ADR-0071, X12/issue #560) — both COPY the whole repo (`context: .`) so
+# the workspace's `workspace:*` dependency graph resolves during
+# `pnpm install`. This excludes what the builder stage regenerates itself,
+# or what has no business inside a build context at all.
+
+**/node_modules
+**/dist
+**/.turbo
+**/coverage
+.git
+.github
+.claude
+data
+tmp
+docs
+*.log
+.DS_Store
