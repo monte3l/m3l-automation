@@ -59,8 +59,20 @@ censused and only ~6% matched a rule already in place.
   excluded `raw.githubusercontent.com`/`github.com` despite being the largest
   remaining WebFetch volume, because that same file's own rule restricts
   fetches to the `anthropics` org, which a bare domain rule cannot express.
+- `WebSearch` is deliberately left unscoped, asymmetric with the
+  domain-pinned `WebFetch` entries beside it — stated explicitly here per a
+  bot-review ask (round 4, below) to document the intent rather than leave
+  it unaddressed a third time. Unlike every removed finding in this doc,
+  unscoped `WebSearch` is not a privilege-escalation defect: Claude Code has
+  no `WebSearch(domain:…)` rule syntax to restrict it further (confirmed —
+  only `WebFetch` supports domain scoping), and a search query has no
+  filesystem or execution impact the way every removed entry above did. The
+  intent is general-purpose search availability, not "Anthropic docs only"
+  (that narrower need is what the domain-pinned `WebFetch` entries and
+  `researching-anthropic-guidance`'s own `allowed_domains` parameter already
+  cover at the call site); kept as-is.
 
-## PR review — three rounds of security findings
+## PR review — four rounds of security findings
 
 `claude-pr-review.yml` FAILed the initial PR with 2 Must-fix findings, both
 confirmed real: `Bash(sed -n *)`/`Bash(sort *)`/`Bash(uniq *)` each also
@@ -124,22 +136,51 @@ resolution — this round cost the single largest chunk of the original
 census-driven value (`grep`/`head`/`tail`/`ls`/`wc`/`cut` together were
 over 20,000 combined census uses).
 
+A fourth bot review, on the round-3 fix commit, found a different bug class
+in four entries the first three rounds hadn't examined closely: `Bash(pnpm
+--filter * typecheck*)` (and the `build*`/`test*`/`lint*` siblings) placed
+the wildcard **between** `--filter` and the script name rather than only at
+the end. Confirmed directly: any command starting `pnpm --filter ` that
+contains the literal substring ` typecheck` _anywhere_ later matches, with
+nothing required in between — including `pnpm --filter . exec bash -c
+'<payload>' typecheck`, a real `pnpm --filter <selector> exec <cmd>`
+invocation that runs an arbitrary shell command, needing no chaining
+operator at all since the whole thing is one command Claude Code's
+prefix-glob matches as a unit. All four were removed rather than
+re-anchored to an enumerated package list — this monorepo's workspace
+package set changes over time, and hand-verifying every real package name
+stayed correct was worse than dropping four already-marginal entries. The
+Should-fix in the same review (`Bash(node bin/check-*.mjs*)` — a wildcard
+inside the path segment admits `../` path-traversal, e.g. `node
+bin/check-x/../../evil.mjs` escaping `bin/` entirely) was dropped for the
+same reason: `pnpm check:*` already covers the primary invocation form, so
+the direct-`node` spelling was optional value, not core to the PR. Two
+harmless nits were folded in — `git worktree list*`/`git reflog show*`
+missing the space before `*` that every sibling entry uses (split into a
+bare-form-plus-spaced-form pair rather than left glob-ambiguous) — and a
+`deny`-list widening was applied as suggested (`~/.claude/.credentials.json`
+→ `~/.claude/.credentials*`, covering rotated/backup credential-file
+variants). The WebSearch/WebFetch asymmetry, raised again in this round,
+was resolved by documenting intent explicitly (Approach/Decisions, above)
+rather than by another removal — see that section for why it's not the same
+defect class as everything else in this list.
+
 ## Outcome
 
-`.claude/settings.json`'s `permissions.allow` grew from 40 to 78 entries and
+`.claude/settings.json`'s `permissions.allow` grew from 40 to 75 entries and
 `permissions.deny` from 13 to 16 (both counts against `origin/main`, since
 the pre-session `/fewer-permission-prompts` additions carried into the same
-commit as this PR). Net of three security-review rounds, the surviving
+commit as this PR). Net of four security-review rounds, the surviving
 additions cover read-only `git status`/`rev-parse`/`branch --show-current`/
 `worktree list`/`remote get-url`/`for-each-ref`/`ls-tree`/`ls-files`/
 `reflog show`, `test -f`/`pwd`, `gh` read commands, the literal
-(non-placeholder) `gh api` path repairs, `pnpm --filter`/`exec prettier
---check`/`knip`, eight `WebFetch` domains, and bare `WebSearch`. The large
-majority of the original design's highest-census-volume entries —
-`git diff`/`log`/`show`, `grep`/`head`/`tail`/`ls`/`wc`/`cut`/`tr`, `jq`,
-`rg`, `cd`, `sed -n`, `sort`, `uniq`, `gh api --method GET *`, `pnpm -C *`,
-`pnpm exec rumdl check`, `git cat-file` — did not survive review; each had a
-real write, arbitrary-execution, or unscoped-read path with no
+(non-placeholder) `gh api` path repairs, `pnpm exec prettier --check`/`knip`,
+eight `WebFetch` domains, and bare `WebSearch`. The large majority of the
+original design's highest-census-volume entries — `git diff`/`log`/`show`,
+`grep`/`head`/`tail`/`ls`/`wc`/`cut`/`tr`, `jq`, `rg`, `cd`, `sed -n`, `sort`,
+`uniq`, `gh api --method GET *`, `pnpm -C *`/`--filter *`, `pnpm exec rumdl
+check`, `git cat-file`, `node bin/check-*.mjs*` — did not survive review;
+each had a real write, arbitrary-execution, or unscoped-read path with no
 settings.json-expressible fix, so removal was the correct minimal
 resolution each time rather than shipping a known hole. No MCP additions —
 the entire corpus held only 129 MCP calls and everything non-trivial was
@@ -155,7 +196,16 @@ hub's own Bash calls having zero hook backstop (unlike subagents, which
 `guard-readonly-bash.mjs` does cover), this rules out most "obviously
 read-only" coreutils as safe allowlist candidates for the hub specifically —
 a materially different bar than the same census applied to a
-`guard-readonly-bash.mjs`-covered subagent context would clear.
+`guard-readonly-bash.mjs`-covered subagent context would clear. Round 4 added
+a second, distinct lesson: a wildcard's **position**, not just its presence,
+determines the blast radius. `Bash(pnpm test *)`'s trailing wildcard only
+admits extra content _after_ a fully-formed, safe command; `Bash(pnpm
+--filter * typecheck*)`'s wildcard sat _before_ the anchor text, so it
+admitted arbitrary injected content _between_ a safe-looking prefix and a
+safe-looking suffix — a shape none of the first three rounds' findings had,
+and one worth checking for explicitly (every wildcard's position relative to
+the fixed anchors, not just whether one exists) on any future rule with more
+than one literal segment.
 
 Filed separately rather than folded into this change:
 `guard-readonly-bash.mjs` produced 273 of the 300 recorded denials by
