@@ -47,15 +47,30 @@ vi.mock("../src/run/in-process.js", () => ({
 vi.mock("../src/commands/inspect.js", () => ({
   runInspect: vi.fn(),
 }));
-vi.mock("../src/history/store.js", () => ({
-  recordHistoryEntry: vi.fn(),
-}));
+// Keep every export dynamic.ts actually imports from store.js: an omitted
+// export throws inside dynamic.ts's best-effort try/catch, which is silently
+// swallowed and degrades to "no history recorded" rather than failing
+// loudly. historyOutcomeFields is a pure total mapper (no I/O) so we spread
+// through the real implementation and mock only recordHistoryEntry.
+vi.mock("../src/history/store.js", async (importOriginal) => {
+  const actual = await importOriginal<HistoryStoreModule>();
+  return { ...actual, recordHistoryEntry: vi.fn() };
+});
 // U11: cancellation scope — dynamic.ts creates a scope for the in-process
 // branch only, to deliver context.signal. The spawn path delegates parent
 // survival to main.ts's runCli (see execute.ts:194-197).
 vi.mock("../src/run/cancellation.js", () => ({
   createCancellationScope: vi.fn(),
 }));
+
+import type * as historyStoreModule from "../src/history/store.js";
+
+/**
+ * The real `history/store` module's type, named once so the `vi.mock`
+ * factory above needs no inline `typeof import(...)` annotation (banned by
+ * `@typescript-eslint/consistent-type-imports`).
+ */
+type HistoryStoreModule = typeof historyStoreModule;
 
 const discoverScriptsMock = vi.mocked(discoverScripts);
 const loadParametersCachedMock = vi.mocked(loadParametersCached);
@@ -367,7 +382,7 @@ describe("runDynamic — parseArgs config building + argv translation", () => {
         "--batchSize=10",
         "--extra-passthrough",
       ],
-      { secretEnv: {} },
+      { secretEnv: {}, resolveReportSummary: true },
     );
   });
 
@@ -384,7 +399,7 @@ describe("runDynamic — parseArgs config building + argv translation", () => {
       "json-etl",
       jsonEtlCandidate.directory,
       ["--region=eu-west-1"],
-      { secretEnv: {} },
+      { secretEnv: {}, resolveReportSummary: true },
     );
   });
 
@@ -419,7 +434,7 @@ describe("runDynamic — parseArgs config building + argv translation", () => {
       "json-etl",
       jsonEtlCandidate.directory,
       ["--limit", "5"],
-      { secretEnv: {} },
+      { secretEnv: {}, resolveReportSummary: true },
     );
   });
 });
@@ -521,8 +536,16 @@ describe("runDynamic — best-effort history recording (8f)", () => {
     loadParametersCachedMock.mockResolvedValue(descriptors);
     executeScriptMock.mockResolvedValue({ exitCode: 4 });
     recordHistoryEntryMock.mockReturnValue(true);
+    const errorSpy = vi.fn();
 
-    const context = buildContext();
+    const context = buildContext({
+      output: {
+        colorEnabled: false,
+        info: () => {},
+        error: errorSpy,
+        heading: () => {},
+      },
+    });
     const code = await runDynamic(
       context,
       "json-etl",
@@ -545,6 +568,10 @@ describe("runDynamic — best-effort history recording (8f)", () => {
     expect(
       typeof (entry as { timestamp?: unknown } | undefined)?.timestamp,
     ).toBe("string");
+    // mutation-check: recordHistoryEntry succeeded above, so an
+    // unconditional output.error call in the implementation would be
+    // caught here.
+    expect(errorSpy).not.toHaveBeenCalled();
   });
 
   test("does not record history when --help delegates to runInspect (no spawn)", async () => {
@@ -575,17 +602,113 @@ describe("runDynamic — best-effort history recording (8f)", () => {
     expect(recordHistoryEntryMock).not.toHaveBeenCalled();
   });
 
-  test("a history-recording failure never affects the resolved exit code", async () => {
+  test("a history-recording failure never affects the resolved exit code, and emits one output.error diagnostic naming the failure", async () => {
     discoverScriptsMock.mockReturnValue(knownCandidates);
     loadParametersCachedMock.mockResolvedValue(descriptors);
-    executeScriptMock.mockResolvedValue({ exitCode: 0 });
+    executeScriptMock.mockResolvedValue({ exitCode: 6 });
     recordHistoryEntryMock.mockImplementation(() => {
       throw new Error("disk full");
     });
+    const errorSpy = vi.fn();
+    const context = buildContext({
+      output: {
+        colorEnabled: false,
+        info: () => {},
+        error: errorSpy,
+        heading: () => {},
+      },
+    });
 
-    const code = await runDynamic(buildContext(), "json-etl", [], []);
+    const code = await runDynamic(context, "json-etl", [], []);
 
-    expect(code).toBe(0);
+    expect(code).toBe(6);
+    expect(errorSpy).toHaveBeenCalledTimes(1);
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining("failed to record run history"),
+    );
+  });
+
+  test("emits the bare diagnostic with no trailing detail when recordHistoryEntry throws a non-Error value, without altering the resolved exit code", async () => {
+    discoverScriptsMock.mockReturnValue(knownCandidates);
+    loadParametersCachedMock.mockResolvedValue(descriptors);
+    executeScriptMock.mockResolvedValue({ exitCode: 6 });
+    recordHistoryEntryMock.mockImplementation(() => {
+      // eslint-disable-next-line @typescript-eslint/only-throw-error -- intentional non-Error to exercise the branch where `cause instanceof Error` is false
+      throw "disk gone";
+    });
+    const errorSpy = vi.fn();
+    const context = buildContext({
+      output: {
+        colorEnabled: false,
+        info: () => {},
+        error: errorSpy,
+        heading: () => {},
+      },
+    });
+
+    const code = await runDynamic(context, "json-etl", [], []);
+
+    expect(code).toBe(6);
+    expect(errorSpy).toHaveBeenCalledTimes(1);
+    expect(errorSpy).toHaveBeenCalledWith("failed to record run history");
+  });
+});
+
+/**
+ * U11 slice 7b — the spawn path copies `executeScript`'s summary
+ * (outcome/retryAttempts) onto the recorded history entry. The exhaustive
+ * null/zero mapping matrix is pinned against the shared `historyOutcomeFields`
+ * helper in `history-store.test.ts`, not duplicated here.
+ */
+describe("runDynamic — history entry outcome/retryAttempts mapping (U11 slice 7b)", () => {
+  test("spawn path: copies outcome and retryAttempts from a populated summary onto the entry", async () => {
+    discoverScriptsMock.mockReturnValue(knownCandidates);
+    loadParametersCachedMock.mockResolvedValue(descriptors);
+    executeScriptMock.mockResolvedValue({
+      exitCode: 0,
+      summary: {
+        outcome: "partial",
+        timelineCount: 5,
+        timelineSourceCount: 2,
+        recoveryTotal: 3,
+        retryAttempts: 3,
+      },
+    });
+    recordHistoryEntryMock.mockReturnValue(true);
+
+    await runDynamic(buildContext(), "json-etl", ["--r", "us-east-1"], []);
+
+    const entry = recordHistoryEntryMock.mock.calls[0]?.[1];
+    expect(entry).toStrictEqual({
+      timestamp: expect.any(String) as unknown,
+      script: "json-etl",
+      parameterNames: ["region"],
+      exitCode: 0,
+      outcome: "partial",
+      retryAttempts: 3,
+    });
+  });
+
+  test("in-process branch: entry has no outcome/retryAttempts even with a resolved exit code", async () => {
+    discoverScriptsMock.mockReturnValue(knownCandidates);
+    loadParametersCachedMock.mockResolvedValue(descriptors);
+    runInProcessMock.mockResolvedValue(0);
+    recordHistoryEntryMock.mockReturnValue(true);
+
+    await runDynamic(
+      buildContext(),
+      "json-etl",
+      ["--r", "us-east-1", "--in-process"],
+      [],
+    );
+
+    const entry = recordHistoryEntryMock.mock.calls[0]?.[1];
+    expect(entry).toStrictEqual({
+      timestamp: expect.any(String) as unknown,
+      script: "json-etl",
+      parameterNames: ["region"],
+      exitCode: 0,
+    });
   });
 });
 
@@ -690,7 +813,7 @@ describe("runDynamic — reserved --json flag shadowing (V2 slice 1)", () => {
       "json-etl",
       jsonEtlCandidate.directory,
       ["--json"],
-      { secretEnv: {} },
+      { secretEnv: {}, resolveReportSummary: true },
     );
   });
 });
@@ -842,7 +965,7 @@ describe("runDynamic — in-process execution (U7)", () => {
       "json-etl",
       jsonEtlCandidate.directory,
       ["--region=us-east-1"],
-      { secretEnv: {} },
+      { secretEnv: {}, resolveReportSummary: true },
     );
     expect(runInProcessMock).not.toHaveBeenCalled();
   });
@@ -1218,7 +1341,7 @@ describe("runDynamic — restoreDroppedOptionTokens skips a non-option/nameless 
       "json-etl",
       jsonEtlCandidate.directory,
       ["--region=us-east-1"],
-      { secretEnv: {} },
+      { secretEnv: {}, resolveReportSummary: true },
     );
   });
 });
@@ -1279,7 +1402,10 @@ describe("runDynamic — secret delivery (ADR-0085)", () => {
       "json-etl",
       jsonEtlCandidate.directory,
       ["--region=us-east-1"],
-      { secretEnv: { API_TOKEN: "SUPER-SECRET-9000" } },
+      {
+        secretEnv: { API_TOKEN: "SUPER-SECRET-9000" },
+        resolveReportSummary: true,
+      },
     );
 
     const forwardedArgv = executeScriptMock.mock.calls[0]?.[3] ?? [];

@@ -1,6 +1,10 @@
 /**
  * `commands/history` — renders the recorded run history (`commands/run.ts`/
  * `commands/dynamic.ts` append to it after a spawn resolves), oldest first.
+ * The human-readable rendering has six columns: TIME, SCRIPT, PARAMETERS,
+ * EXIT, OUTCOME, and ATTEMPTS — the latter two render `"-"` for an entry
+ * recorded before this addendum shipped, or for a run whose report couldn't
+ * be located.
  *
  * @packageDocumentation
  */
@@ -11,7 +15,14 @@ import { readHistory } from "../history/store.js";
 import type { M3LCliHistoryEntry } from "../history/store.js";
 
 /** The human-readable rendering's column headers. */
-const HEADER = ["TIME", "SCRIPT", "PARAMETERS", "EXIT"] as const;
+const HEADER = [
+  "TIME",
+  "SCRIPT",
+  "PARAMETERS",
+  "EXIT",
+  "OUTCOME",
+  "ATTEMPTS",
+] as const;
 
 /** Renders a single history entry's cells for {@link formatAlignedTable}. */
 function toTableRow(entry: M3LCliHistoryEntry): readonly string[] {
@@ -20,6 +31,10 @@ function toTableRow(entry: M3LCliHistoryEntry): readonly string[] {
     entry.script,
     entry.parameterNames.length > 0 ? entry.parameterNames.join(",") : "-",
     String(entry.exitCode),
+    entry.outcome ?? "-",
+    // `??` (not `||`): retryAttempts: 0 is a real measurement ("no retries"),
+    // not a missing value, and a falsy-based `||` check would render it "-".
+    String(entry.retryAttempts ?? "-"),
   ];
 }
 

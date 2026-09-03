@@ -8,11 +8,13 @@
  */
 
 import { M3LCliError } from "../cli/errors.js";
+import type { M3LCliOutput } from "../cli/output.js";
 import { suggestNames } from "../cli/suggest.js";
 import type { M3LCliCommandContext } from "./context.js";
 import { discoverScripts } from "../discovery/discover.js";
 import { executeScript } from "../run/execute.js";
-import { recordHistoryEntry } from "../history/store.js";
+import type { M3LCliRunReportSummary } from "../run/envelope.js";
+import { historyOutcomeFields, recordHistoryEntry } from "../history/store.js";
 
 /**
  * `M3LCliCommandContext` plus the run-history file's absolute path (8f) —
@@ -29,11 +31,22 @@ interface M3LCliRunCommandContext extends M3LCliCommandContext {
  * throws (any failure, including {@link recordHistoryEntry} itself throwing
  * rather than returning `false`, is swallowed) since history recording must
  * never affect the resolved exit code {@link runRun} already has in hand.
+ * `summary`'s `outcome`/`retryAttempts` (when present) are spread onto the
+ * entry via {@link historyOutcomeFields} rather than re-derived here (U11
+ * slice 7b). A construction/write failure is still surfaced via
+ * `output.error` (matching `run/execute.ts`'s `fetchRunSummary` precedent) so
+ * a vanished history row is at least diagnosable — the diagnostic write
+ * itself is wrapped in its own best-effort `try`/`catch` (U11 slice 7b
+ * review-fix) so a throwing `output.error` can't escape either. Never called
+ * on the happy path or for a `recordHistoryEntry` `false` return (that path
+ * stays silent, out of scope this round).
  */
 function recordRunHistory(
+  output: M3LCliOutput,
   historyFilePath: string,
   scriptName: string,
   exitCode: number,
+  summary: M3LCliRunReportSummary | undefined,
 ): void {
   try {
     recordHistoryEntry(historyFilePath, {
@@ -41,18 +54,28 @@ function recordRunHistory(
       script: scriptName,
       parameterNames: [],
       exitCode,
+      ...historyOutcomeFields(summary),
     });
-  } catch {
-    /* best-effort: history recording must never affect the resolved exit code */
+  } catch (cause) {
+    try {
+      output.error(
+        `failed to record run history${cause instanceof Error ? `: ${cause.message}` : ""}`,
+      );
+    } catch {
+      /* the diagnostic write itself is best-effort too — it must never alter the resolved exit code */
+    }
   }
 }
 
 /**
  * Resolves `scriptName` to a discovered `scripts/*` candidate and spawns its
- * compiled `dist/main.js`, forwarding `passthroughArgs` verbatim. Once the
- * spawn resolves, best-effort records a run-history entry (8f) with an empty
- * `parameterNames` — `run` never parses flags, unlike the dynamic per-script
- * dispatch.
+ * compiled `dist/main.js`, forwarding `passthroughArgs` verbatim, opting into
+ * {@link executeScript}'s `resolveReportSummary` so the run's report summary
+ * (when one was located) is available for history recording regardless of
+ * `context.jsonOutput`. Once the spawn resolves, best-effort records a
+ * run-history entry (8f) with an empty `parameterNames` — `run` never parses
+ * flags, unlike the dynamic per-script dispatch — plus the summary's
+ * `outcome`/`retryAttempts`, when present (U11 slice 7b).
  *
  * @param context - The command context to run against; must carry
  *   `historyFilePath`.
@@ -93,12 +116,19 @@ export async function runRun(
     );
   }
 
-  const { exitCode } = await executeScript(
+  const { exitCode, summary } = await executeScript(
     context,
     scriptName,
     candidate.directory,
     passthroughArgs,
+    { resolveReportSummary: true },
   );
-  recordRunHistory(context.historyFilePath, scriptName, exitCode);
+  recordRunHistory(
+    context.output,
+    context.historyFilePath,
+    scriptName,
+    exitCode,
+    summary,
+  );
   return exitCode;
 }

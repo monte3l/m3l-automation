@@ -126,9 +126,10 @@ export interface M3LCliExecuteOptions {
  * `summary` is absent (never `undefined`) when the caller did not opt in via
  * `options.resolveReportSummary`, when `context.jsonOutput` is `false` and
  * `resolveReportSummary` was not set, when no matching report was found in the
- * output directory, or when the report lookup itself threw. Callers must use
- * `Object.hasOwn` or an `in` check before reading `summary`, consistent with
- * `exactOptionalPropertyTypes`.
+ * output directory, or when the report lookup itself threw. An absent
+ * `summary` is an absent property (not `summary: undefined`), which is what
+ * keeps it from serializing as `null`; reading it by destructuring is
+ * correct — `exactOptionalPropertyTypes` restricts assignment, not reads.
  *
  * @example
  * ```ts
