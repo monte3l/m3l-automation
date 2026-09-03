@@ -116,6 +116,55 @@ export function validateForbiddenTrailers(message) {
   return errors;
 }
 
+// Dependabot's author email for every PR it opens, of the shape
+// "<numeric-id>+dependabot[bot]@users.noreply.github.com". The legacy
+// "support@dependabot.com" address predates GitHub App authorship and no
+// longer appears on new commits, but stays matched for old ranges.
+const DEPENDABOT_AUTHOR_PATTERN =
+  /^(?:\d+\+dependabot\[bot\]@users\.noreply\.github\.com|support@dependabot\.com)$/i;
+
+/**
+ * Whether a commit author email belongs to Dependabot.
+ *
+ * Deliberately narrow — matched against Dependabot's own address, not a
+ * broad `*[bot]@users.noreply.github.com` pattern. Widening it would also
+ * exempt `github-actions[bot]` and any other bot without a considered
+ * decision to do so.
+ *
+ * @param {string} email
+ * @returns {boolean}
+ */
+export function isDependabotAuthor(email) {
+  return DEPENDABOT_AUTHOR_PATTERN.test(email.trim());
+}
+
+/**
+ * Parse `git log --format=%s%x00%ae`'s NUL-delimited output into commit
+ * subjects, dropping Dependabot-authored ones.
+ *
+ * Dependabot's own bump commits (`chore(deps): Bump foo from 1 to 2`) started
+ * capitalizing the verb after the type/scope prefix — every commit this repo
+ * has merged used lowercase `bump` — so `@commitlint/config-conventional`'s
+ * subject-case rule now rejects every bump PR at the `verify` gate, on
+ * subject *shape* rather than any real defect. Exempting by author identity
+ * (rather than pattern-matching the shape) keeps the rule at full strength
+ * for humans: a hand-authored bump (e.g. rebuilding a PR Dependabot can't
+ * recreate, #790's `aws-sdk` precedent) still must write lowercase `bump`.
+ * A subject can't contain a newline or NUL, so one NUL-delimited record per
+ * line splits unambiguously even though subjects may contain `:`/`|`.
+ *
+ * @param {string} log - raw `%s%x00%ae` output, one record per line
+ * @returns {string[]} subjects of non-Dependabot commits, in log order
+ */
+export function subjectsFromLog(log) {
+  return log
+    .split("\n")
+    .filter(Boolean)
+    .map((record) => record.split("\0"))
+    .filter(([, email]) => !isDependabotAuthor(email ?? ""))
+    .map(([subject]) => subject);
+}
+
 /**
  * Print any lint failures for a message/result pair and return validity.
  *
@@ -143,11 +192,11 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   } else if (fromIdx !== -1 && toIdx !== -1) {
     const from = args[fromIdx + 1];
     const to = args[toIdx + 1];
-    messages = execSync(`git log --format=%s --no-merges ${from}..${to}`, {
-      encoding: "utf8",
-    })
-      .split("\n")
-      .filter(Boolean);
+    const log = execSync(
+      `git log --format=%s%x00%ae --no-merges ${from}..${to}`,
+      { encoding: "utf8" },
+    );
+    messages = subjectsFromLog(log);
   } else {
     console.error(
       "Usage: lint-commit.mjs --edit <file> | --from <sha> --to <sha>",
