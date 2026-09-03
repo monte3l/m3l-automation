@@ -99,29 +99,56 @@ nothing to report. Their events (`SessionStart`, `PreCompact`,
 "already happened" tool call for exit 2 to react to.
 
 **`statusLine` (not a lifecycle hook — a separate `.claude/settings.json` key).**
-`statusline-context-pressure.mjs` renders a multi-line statusline: the
-session's name (green when it conforms to ADR-0087's `<kind>-<slug>`
-convention, yellow-flagged when it doesn't, dim `unnamed` when absent — the
-one documented programmatic read of `session_name`, ADR-0087), model,
-effort, and a color-coded context-pressure bar/percentage (70%/90% thresholds)
-on line 1; session cost, token counts, 5-hour/7-day rate-limit resets, and
-prompt-cache warmth on line 2; the current git branch, worktree/PR, active
-spoke, origin repo, and free memory on line 3; and, once past the 90%
-threshold, a ready-to-run `/compact` suggestion built from `pr.number`/
-`workspace.git_worktree` on its own fourth line — mirroring CLAUDE.md's
-`## Compact Instructions` preserve-list dynamically instead of leaving it as
-prose to remember. (This paragraph describes the pre-#916 layout; the current
-five-row rewrite is not yet reflected here — see PR 3 of
-`docs/adr/0090-subagent-statusline-supersedes-lifecycle-tracker.md`'s plan of
-record.) Per-spoke elapsed-time visibility moved off this line entirely to
-the native `subagentStatusLine` setting — see below. This is a project-scoped supersede of the user's own
-`ccstatusline` config (`~/.claude/settings.json`, `npx -y ccstatusline@latest`)
-— only one `statusLine` command can be active per scope, and project settings
-shadow user settings, so working in this repo would otherwise lose that
-dashboard's widgets; #879 broadened the script to cover the ones reproducible
-from data already available here (deferring the two that need a `/usage` API
-call — see the follow-up issue tracked from #879). `statusLine` was confirmed
-as the only documented surface exposing live context-window data to a local
+`statusline-context-pressure.mjs` renders a fixed five-row layout — `session`,
+`model`, `context`, `quota`, `work` — always exactly five lines, each starting
+with a 10-character dim gutter label and joining its segments with a dim
+`·` separator; absent data renders as a dim `—` placeholder rather than
+collapsing the row, so the layout never shifts between refreshes. Each row is
+width-fit against the real terminal width — `COLUMNS`/`LINES` read from the
+environment via `statusline-layout.mjs`'s `terminalColumns`/`fitRow`, per
+Anthropic's own statusLine docs (`tput cols` does not work inside a statusLine
+subprocess) — so a narrow terminal drops a row's lowest-priority segments
+instead of wrapping mid-line. Row contents:
+
+- `session` — session name (green when it conforms to ADR-0087's
+  `<kind>-<slug>` convention, yellow-flagged when it doesn't, dim `unnamed`
+  when absent — the one documented programmatic read of `session_name`), the
+  branch (blue `🌿 <name>`, red `⚠ main` flagging direct-`main` work), the
+  worktree name, the PR number (colored by review state, OSC-8-linked to the
+  PR URL), the active spoke (dim `↳ <agent>`), and the origin repo.
+- `model` — the model display name (cyan) plus effort level, `thinking`, fast
+  mode, output style, and vim mode (all magenta when present).
+- `context` — a 20-cell zone-colored usage bar, the percentage, the
+  `used/total` token denominator, and the remaining headroom in tokens.
+- `quota` — the 5-hour and 7-day `rate_limits.*` windows, each a 10-cell
+  zone-colored bar plus percentage and a dim reset countdown, and a
+  spend-limit window when present.
+- `work` — total cost, duration (wall time plus API time), lines changed
+  (green `+N` / red `-N`), prompt-cache warmth (green `cache NN%`/`cache
+warm` / yellow `cache cold`), and free memory (zone-colored).
+
+Colour legend (16-color-SGR-safe by design — no 256-color/truecolor codes,
+since this script never probes `COLORTERM`/terminal capability and a richer
+encoding risks degrading on a plain TTY or a CI log):
+
+| Colour               | Meaning                                                                     | Where                                                                                   |
+| -------------------- | --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| Green → yellow → red | **Alarm ramp** — proximity to a limit, thresholds at 70%/90%                | context bar/percent, both quota windows, free memory                                    |
+| Green / yellow / red | **Semantic-state ramp** — a categorical state, not a percentage             | `pr.review_state`, cache warm/cold, `+N`/`-N` lines, session-name conformance, `⚠ main` |
+| Cyan                 | Model identity                                                              | the model display name                                                                  |
+| Blue                 | Session location identity                                                   | branch (non-`main`), worktree, origin repo                                              |
+| Magenta              | Turn configuration                                                          | effort, thinking, fast mode, output style, vim mode; the subagent row's effort          |
+| Dim                  | Gutter labels, separators, units, the `—` placeholder, the `↳ agent` marker | every row                                                                               |
+| Default foreground   | Everything else                                                             | context denominator/headroom, cost, duration                                            |
+
+This is a project-scoped supersede of the user's own `ccstatusline` config
+(`~/.claude/settings.json`, `npx -y ccstatusline@latest`) — only one
+`statusLine` command can be active per scope, and project settings shadow
+user settings, so working in this repo would otherwise lose that dashboard's
+widgets; #879 broadened the script to cover the ones reproducible from data
+already available here (deferring the two that need a `/usage` API call —
+see the follow-up issue tracked from #879). `statusLine` was confirmed as
+the only documented surface exposing live context-window data to a local
 script; no hook event carries it (`docs/research/harness-refresh.md`
 Outstanding drift #10), so this composes with rather than replaces the
 `PreCompact`/`SessionStart(compact)` handoff pair above — the statusline tells
@@ -139,30 +166,37 @@ every hook row above, run on a `refreshInterval: 30` timer (in addition to its
 existing event-driven triggers) so the reset countdowns and free-memory reading
 stay live while the session is idle. `pnpm check:hooks` resolves
 `statusLine.command` too — so a broken reference errors and a valid one no
-longer false-positives as a "dead hook?" warning — though it checks only that
-the referenced script exists, not the `type`/`refreshInterval`/other fields of
-the `statusLine` config itself; behavioral coverage of the script's own output
-is `bin/tests/statusline-context-pressure.test.ts`'s job.
+longer false-positives as a "dead hook?" warning — and, as of PR 3 of
+`docs/adr/0090-subagent-statusline-supersedes-lifecycle-tracker.md`'s plan of
+record, also asserts `statusLine.type === "command"` and that `refreshInterval`
+(when present) is a number `>= 1`, plus scans the referenced script's source
+for a subprocess/network pattern (`node:child_process`, a bare `spawn(...)`/
+`exec*(...)` call, `fetch(...)`, `node:http(s)`) violating the invariant above
+— `bin/check-hooks.mjs`'s `validateStatuslineShape`/
+`scanStatuslineScriptForForbiddenPatterns`. Behavioral coverage of the
+script's own row output is still `bin/tests/statusline-context-pressure.test.ts`'s
+job.
 
 **`subagentStatusLine` (not a lifecycle hook — a separate `.claude/settings.json`
 key, sibling to `statusLine` above).** `.claude/hooks/subagent-statusline.mjs`
 renders a custom row body for each subagent shown in the agent panel: name,
-`effort` (when present), a `tokenCount`/`contextWindowSize` fraction (when
-both are present), and an elapsed-time readout color-escalating past 15/30
-minutes elapsed — the same thresholds the retired `tmp/spoke-lifecycle.jsonl`
-tracker used, now sourced from Claude Code's own per-task `tasks[]` array
-instead of a hand-rolled JSONL file (`docs/adr/0090-subagent-statusline-supersedes-lifecycle-tracker.md`).
-It supersedes `track-inflight-spokes.mjs` and the `SubagentStart`/
-`SubagentStop` wirings that fed it — closing the same gap the retired tracker
-closed (nothing surfaced intermediate progress during a review-spoke fan-out
-that had stalled 30-60+ min on four recorded occasions:
+`effort` (magenta, when present), a `tokenCount`/`contextWindowSize` fraction
+(when both are present), and an elapsed-time readout color-escalating past
+15/30 minutes elapsed — the same thresholds the retired
+`tmp/spoke-lifecycle.jsonl` tracker used, now sourced from Claude Code's own
+per-task `tasks[]` array instead of a hand-rolled JSONL file
+(`docs/adr/0090-subagent-statusline-supersedes-lifecycle-tracker.md`). It
+supersedes `track-inflight-spokes.mjs` and the `SubagentStart`/`SubagentStop`
+wirings that fed it — closing the same gap the retired tracker closed
+(nothing surfaced intermediate progress during a review-spoke fan-out that
+had stalled 30-60+ min on four recorded occasions:
 `docs/logs/2026-07-18-aws-athena.md`, `2026-07-18-aws-s3.md`,
 `2026-07-19-subagent-stall-integration.md`, `2026-08-21-core-procedure.md`)
 with strictly more per-task detail and no on-disk state to maintain. Same
-**no subprocess, no network** invariant as `statusLine`; `pnpm check:hooks`
+**no subprocess, no network** invariant as `statusLine`, enforced by the same
+`bin/check-hooks.mjs` shape/source checks described above; `pnpm check:hooks`
 resolves `subagentStatusLine.command` the same way it resolves
-`statusLine.command`. A full glyph/color/threshold legend for both statusline
-scripts is deferred to PR 3 of the plan referenced above.
+`statusLine.command`.
 
 **Known gap (accepted risk, issue #210 retired 2026-08-17):** the write-time
 _content_ `Write|Edit` guards (`guard-secret-writes`, `guard-js-extension`,

@@ -8,6 +8,9 @@ import {
   collectSettingsIfGlobs,
   parseHooksReferenceTable,
   diffHooksReferenceIfGlobs,
+  STATUSLINE_SETTINGS_KEYS,
+  validateStatuslineShape,
+  scanStatuslineScriptForForbiddenPatterns,
 } from "../../bin/check-hooks.mjs";
 
 describe("extractHookScriptName", () => {
@@ -669,5 +672,199 @@ describe("diffHooksReferenceIfGlobs", () => {
         actual: ["README.md"],
       },
     ]);
+  });
+});
+
+describe("validateStatuslineShape", () => {
+  test("returns no errors when both statusLine and subagentStatusLine are absent", () => {
+    expect(validateStatuslineShape({})).toEqual([]);
+  });
+
+  test.each(STATUSLINE_SETTINGS_KEYS)(
+    "returns no errors for %s with a valid type and refreshInterval",
+    (key) => {
+      const settings = { [key]: { type: "command", refreshInterval: 5 } };
+      expect(validateStatuslineShape(settings)).toEqual([]);
+    },
+  );
+
+  test.each(STATUSLINE_SETTINGS_KEYS)(
+    "returns no errors for %s when refreshInterval is undefined but type is valid",
+    (key) => {
+      const settings = { [key]: { type: "command" } };
+      expect(validateStatuslineShape(settings)).toEqual([]);
+    },
+  );
+
+  test.each(STATUSLINE_SETTINGS_KEYS)(
+    "flags %s when type is not the literal 'command'",
+    (key) => {
+      const settings = { [key]: { type: "other" } };
+      expect(validateStatuslineShape(settings)).toEqual([
+        `.claude/settings.json's "${key}.type" is "other" — must be the literal "command" (any other value silently disables it).`,
+      ]);
+    },
+  );
+
+  test.each(STATUSLINE_SETTINGS_KEYS)(
+    "flags %s when type is missing entirely",
+    (key) => {
+      const settings = { [key]: { refreshInterval: 5 } };
+      expect(validateStatuslineShape(settings)).toEqual([
+        `.claude/settings.json's "${key}.type" is undefined — must be the literal "command" (any other value silently disables it).`,
+      ]);
+    },
+  );
+
+  test.each(STATUSLINE_SETTINGS_KEYS)(
+    "flags %s when refreshInterval is present but not a number",
+    (key) => {
+      const settings = { [key]: { type: "command", refreshInterval: "5" } };
+      expect(validateStatuslineShape(settings)).toEqual([
+        `.claude/settings.json's "${key}.refreshInterval" is "5" — must be a number >= 1.`,
+      ]);
+    },
+  );
+
+  test.each(STATUSLINE_SETTINGS_KEYS)(
+    "flags %s when refreshInterval is present but non-finite",
+    (key) => {
+      const settings = {
+        [key]: { type: "command", refreshInterval: Number.POSITIVE_INFINITY },
+      };
+      expect(validateStatuslineShape(settings)).toEqual([
+        `.claude/settings.json's "${key}.refreshInterval" is null — must be a number >= 1.`,
+      ]);
+    },
+  );
+
+  test.each(STATUSLINE_SETTINGS_KEYS)(
+    "flags %s when refreshInterval is present but less than 1",
+    (key) => {
+      const settings = { [key]: { type: "command", refreshInterval: 0 } };
+      expect(validateStatuslineShape(settings)).toEqual([
+        `.claude/settings.json's "${key}.refreshInterval" is 0 — must be a number >= 1.`,
+      ]);
+    },
+  );
+
+  test("reports errors for both keys independently when both are present and invalid", () => {
+    const settings = {
+      statusLine: { type: "bad" },
+      subagentStatusLine: { type: "command", refreshInterval: -1 },
+    };
+    expect(validateStatuslineShape(settings)).toEqual([
+      `.claude/settings.json's "statusLine.type" is "bad" — must be the literal "command" (any other value silently disables it).`,
+      `.claude/settings.json's "subagentStatusLine.refreshInterval" is -1 — must be a number >= 1.`,
+    ]);
+  });
+
+  test("skips a key whose value is not a non-null object (no crash, no error)", () => {
+    expect(validateStatuslineShape({ statusLine: "not-an-object" })).toEqual(
+      [],
+    );
+    expect(validateStatuslineShape({ statusLine: null })).toEqual([]);
+    expect(validateStatuslineShape({ statusLine: 5 })).toEqual([]);
+  });
+});
+
+describe("scanStatuslineScriptForForbiddenPatterns", () => {
+  test("returns no errors for clean source", () => {
+    const source = [
+      'import process from "node:process";',
+      "export function foo() { return 1; }",
+    ].join("\n");
+    expect(
+      scanStatuslineScriptForForbiddenPatterns("clean.mjs", source),
+    ).toEqual([]);
+  });
+
+  test("flags a node:child_process import", () => {
+    const source = 'import { spawn } from "node:child_process";';
+    expect(scanStatuslineScriptForForbiddenPatterns("bad.mjs", source)).toEqual(
+      [
+        `.claude/hooks/bad.mjs imports node:child_process — violates ADR-0080's "no subprocess, no network" invariant for a statusline script.`,
+      ],
+    );
+  });
+
+  test("flags a bare spawn(...) call", () => {
+    const source = "spawn('ls');";
+    expect(scanStatuslineScriptForForbiddenPatterns("bad.mjs", source)).toEqual(
+      [
+        `.claude/hooks/bad.mjs calls spawn(...) — violates ADR-0080's "no subprocess, no network" invariant for a statusline script.`,
+      ],
+    );
+  });
+
+  test.each(["exec", "execSync", "execFile", "execFileSync"])(
+    "flags a bare %s(...) call",
+    (fnName) => {
+      const source = `${fnName}('ls');`;
+      expect(
+        scanStatuslineScriptForForbiddenPatterns("bad.mjs", source),
+      ).toEqual([
+        `.claude/hooks/bad.mjs calls exec*(...) — violates ADR-0080's "no subprocess, no network" invariant for a statusline script.`,
+      ]);
+    },
+  );
+
+  test("flags a fetch(...) call", () => {
+    const source = 'fetch("https://example.test");';
+    expect(scanStatuslineScriptForForbiddenPatterns("bad.mjs", source)).toEqual(
+      [
+        `.claude/hooks/bad.mjs calls fetch(...) — violates ADR-0080's "no subprocess, no network" invariant for a statusline script.`,
+      ],
+    );
+  });
+
+  test("flags a node:http(s) import", () => {
+    const source = 'import http from "node:http";';
+    expect(scanStatuslineScriptForForbiddenPatterns("bad.mjs", source)).toEqual(
+      [
+        `.claude/hooks/bad.mjs imports node:http(s) — violates ADR-0080's "no subprocess, no network" invariant for a statusline script.`,
+      ],
+    );
+  });
+
+  test("does NOT flag a RegExp.prototype.exec(...) method call (dot-prefixed .exec(...))", () => {
+    const source =
+      "const m = /^ref:\\s*refs\\/heads\\/(.+)$/.exec(headContent.trim());";
+    expect(
+      scanStatuslineScriptForForbiddenPatterns("clean.mjs", source),
+    ).toEqual([]);
+  });
+
+  test("does NOT flag a dot-prefixed .match(...) call (sanity check the discriminator targets a leading boundary, not just the word)", () => {
+    const source = "content.match(/gitdir:\\s*(.+)/m);";
+    expect(
+      scanStatuslineScriptForForbiddenPatterns("clean.mjs", source),
+    ).toEqual([]);
+  });
+
+  test("does NOT flag a dot-prefixed spawn(...)/exec(...) call (e.g. childProcess.spawn) -- by design, only a bare unqualified call triggers this pattern", () => {
+    const source = "childProcess.spawn('ls'); childProcess.exec('ls');";
+    expect(
+      scanStatuslineScriptForForbiddenPatterns("clean.mjs", source),
+    ).toEqual([]);
+  });
+
+  test("flags multiple distinct violations in one source, one error per pattern", () => {
+    const source = [
+      'import { spawn } from "node:child_process";',
+      'fetch("https://example.test");',
+    ].join("\n");
+    const errors = scanStatuslineScriptForForbiddenPatterns("bad.mjs", source);
+    expect(errors).toHaveLength(2);
+    expect(errors[0]).toContain("imports node:child_process");
+    expect(errors[1]).toContain("calls fetch(...)");
+  });
+
+  test("does not flag prose mentioning 'spawn' or 'exec' with no following call parenthesis", () => {
+    const source =
+      "// This script must never spawn a subprocess or exec anything.";
+    expect(
+      scanStatuslineScriptForForbiddenPatterns("clean.mjs", source),
+    ).toEqual([]);
   });
 });

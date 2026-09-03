@@ -182,6 +182,103 @@ export function validateHooksConfig(
 }
 
 /**
+ * The two settings keys that wire a "statusline" command script —
+ * `statusLine` (the main line) and `subagentStatusLine` (the per-subagent row
+ * body). Both share the same `{ type, command, refreshInterval? }` shape
+ * (code.claude.com/docs/en/statusline), and both scripts are bound by
+ * ADR-0080's "no subprocess, no network" invariant.
+ */
+export const STATUSLINE_SETTINGS_KEYS = /** @type {const} */ ([
+  "statusLine",
+  "subagentStatusLine",
+]);
+
+/**
+ * Validates the `type`/`refreshInterval` shape of the `statusLine` and
+ * `subagentStatusLine` settings keys. A `type` other than `"command"`
+ * silently disables the feature (Claude Code renders nothing rather than
+ * erroring); a non-numeric or sub-1 `refreshInterval` is a documented-shape
+ * violation with no other gate catching it.
+ *
+ * @param {Record<string, unknown>} settings
+ * @returns {string[]} error messages, empty when both keys are absent or valid.
+ */
+export function validateStatuslineShape(settings) {
+  const errors = [];
+  for (const key of STATUSLINE_SETTINGS_KEYS) {
+    const value = settings[key];
+    if (typeof value !== "object" || value === null) continue;
+    const config =
+      /** @type {{ type?: unknown, refreshInterval?: unknown }} */ (value);
+    if (config.type !== "command") {
+      errors.push(
+        `.claude/settings.json's "${key}.type" is ${JSON.stringify(config.type)} ` +
+          `— must be the literal "command" (any other value silently disables it).`,
+      );
+    }
+    if (
+      config.refreshInterval !== undefined &&
+      (typeof config.refreshInterval !== "number" ||
+        !Number.isFinite(config.refreshInterval) ||
+        config.refreshInterval < 1)
+    ) {
+      errors.push(
+        `.claude/settings.json's "${key}.refreshInterval" is ` +
+          `${JSON.stringify(config.refreshInterval)} — must be a number >= 1.`,
+      );
+    }
+  }
+  return errors;
+}
+
+/**
+ * Source patterns that violate ADR-0080's "no subprocess, no network"
+ * invariant for a statusline script — a subprocess spawn or a network call
+ * inside a script that runs on every render (`statusLine`) or refresh
+ * (`subagentStatusLine`) risks reintroducing the resource-pressure incident
+ * ADR-0080 records. `node:https` is checked alongside `node:http` since both
+ * serve the same "no network" invariant this scan exists to enforce.
+ *
+ * `spawn`/`exec*` require a preceding non-`.` boundary so a legitimate
+ * `RegExp.prototype.exec(...)` / `.exec(...)` method call (both statusline
+ * scripts use one to parse `.git/HEAD`) never false-positives — a bare
+ * `exec(...)`/`spawn(...)` call, unlike a `.exec(...)` method call, can only
+ * exist if the name was imported, which is exactly the risk this pattern
+ * exists to catch.
+ */
+export const FORBIDDEN_STATUSLINE_PATTERNS = [
+  { pattern: /\bnode:child_process\b/, label: "imports node:child_process" },
+  { pattern: /(?<!\.)\bspawn\s*\(/, label: "calls spawn(...)" },
+  {
+    pattern: /(?<!\.)\bexec(?:Sync|File|FileSync)?\s*\(/,
+    label: "calls exec*(...)",
+  },
+  { pattern: /\bfetch\s*\(/, label: "calls fetch(...)" },
+  { pattern: /\bnode:https?\b/, label: "imports node:http(s)" },
+];
+
+/**
+ * Scans one statusline script's source for a forbidden subprocess/network
+ * pattern (ADR-0080).
+ *
+ * @param {string} scriptName e.g. "statusline-context-pressure.mjs"
+ * @param {string} source the script's file content
+ * @returns {string[]} error messages, empty when clean.
+ */
+export function scanStatuslineScriptForForbiddenPatterns(scriptName, source) {
+  const errors = [];
+  for (const { pattern, label } of FORBIDDEN_STATUSLINE_PATTERNS) {
+    if (pattern.test(source)) {
+      errors.push(
+        `.claude/hooks/${scriptName} ${label} — violates ADR-0080's ` +
+          `"no subprocess, no network" invariant for a statusline script.`,
+      );
+    }
+  }
+  return errors;
+}
+
+/**
  * Extract the bare glob from a Claude Code `if:` permission-rule string
  * like `Write(dist/glob-here)` or `Edit(*.md)`.
  *
@@ -329,6 +426,24 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
         `if-scope [${m.documented.join(", ")}] but .claude/settings.json wires ` +
         `[${m.actual.join(", ")}] — update the Matcher cell to match.`,
     );
+  }
+
+  // Hardening (ADR-0080): the statusLine/subagentStatusLine settings shape,
+  // then a source scan of each wired script for a subprocess/network call.
+  errors.push(...validateStatuslineShape(settings));
+  for (const key of STATUSLINE_SETTINGS_KEYS) {
+    const value = /** @type {Record<string, unknown> | undefined} */ (
+      settings[key]
+    );
+    const command =
+      typeof value === "object" && value !== null ? value.command : undefined;
+    if (typeof command !== "string") continue;
+    const name = extractHookScriptName(command);
+    if (name === null) continue;
+    const scriptPath = join(hooksDir, name);
+    if (!existsSync(scriptPath)) continue; // already reported above
+    const source = readFileSync(scriptPath, "utf8");
+    errors.push(...scanStatuslineScriptForForbiddenPatterns(name, source));
   }
 
   for (const warning of warnings) {
