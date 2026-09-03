@@ -135,8 +135,16 @@ already orders this correctly; mirror it here rather than composing `lint`,
 dependency-violating sequence:
 
 ```bash
-pnpm lint && pnpm typecheck && pnpm turbo run build --filter=@m3l-automation/m3l-cli && pnpm test:coverage && pnpm build
+pnpm lint && pnpm typecheck && pnpm turbo run build --filter=@m3l-automation/m3l-cli && pnpm test:coverage && pnpm build && pnpm knip
 ```
+
+**`pnpm knip` is not part of `pre-push`** (cost reasons — see
+`.claude/rules/tests.md`), but it IS a required CI gate
+(`Governance gates` / `check:unused`), so a push that never runs it locally
+can pass every `pre-push` lane and still fail CI on an unused export the
+same change just introduced — logged twice now
+(`docs/logs/2026-09-03-x11b-console-session-views.md`). Run it here, not
+only when CI catches it.
 
 ### 5 — Reconcile docs
 
