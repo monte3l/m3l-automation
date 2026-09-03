@@ -574,7 +574,8 @@ export default tseslint.config(
       //   lifecycle -> errors, net
       //   store     -> errors                        (persistence; ADR-0069)
       //   stream    -> errors                        (live event fan-out; X4)
-      //   http      -> errors, auth, lifecycle, net, stream   (transport; NOT config)
+      //   telemetry -> errors                        (self-measurement; X8)
+      //   http      -> errors, auth, lifecycle, net, stream, telemetry   (transport; NOT config)
       //   main.ts   -> everything                    (composition root)
       //
       // `net` is the second pure leaf alongside `errors`: loopback address
@@ -616,6 +617,24 @@ export default tseslint.config(
       // leaf, and `stream` still reaches nothing but `errors`, so this widening
       // cannot become a back channel from orchestration into transport.
       // `http` still may not import `runs` or `store`.
+      //
+      // `telemetry` (X8, ADR-0070) is the fourth pure leaf, and it exists
+      // because of the `store` exclusion above. The server measures ITSELF
+      // into the ADR-0069 store, but the zones holding the measurable events
+      // — `http` (request latency), `runs` (script-run duration), `stream`
+      // (SSE stream counts) — include the two that may not reach `store` at
+      // all. Handing them the repository would mean widening `http` and
+      // `stream` to `store`, the exact edge the paragraph above refuses. So
+      // they reach a leaf holding only the recorder PORT instead, and the
+      // composition root passes them an implementation. Note the direction,
+      // as with `stream`: three zones reach INTO the leaf and `telemetry`
+      // still reaches nothing but `errors`, so it cannot become a back
+      // channel to persistence. `telemetry` deliberately may NOT import
+      // `store` — the store-backed recorder is `src/telemetry-recorder.ts`,
+      // zone-free at the `src/` root like `subsystems.ts`, because it needs
+      // both `telemetry` and `store`: a combination no single zone may hold,
+      // and one that would give transport a transitive path to SQL if this
+      // leaf held it.
       "import-x/no-restricted-paths": [
         "error",
         {
@@ -665,14 +684,14 @@ export default tseslint.config(
             {
               target: "./packages/m3l-console-server/src/stream",
               from: "./packages/m3l-console-server/src",
-              except: ["stream", "errors"],
+              except: ["stream", "errors", "telemetry"],
               message:
                 "console-server: stream/ is a layering leaf — it may import @m3l-automation/m3l-common, node: builtins and errors/ only (ADR-0065, ADR-0066). It is generic over its payload type and must never import node:http, store/ or runs/: runs/ publishes into it and http/ serves it, so any edge out of stream/ would drag transport and orchestration into each other.",
             },
             {
               target: "./packages/m3l-console-server/src/runs",
               from: "./packages/m3l-console-server/src",
-              except: ["runs", "errors", "store", "stream"],
+              except: ["runs", "errors", "store", "stream", "telemetry"],
               message:
                 "console-server: runs/ may import only errors/, store/, and stream/ (ADR-0065). Configuration arrives as arguments from main.ts; runs/ must never read the environment directly.",
             },
@@ -691,9 +710,24 @@ export default tseslint.config(
                 "console-server: audit/ may import only errors/ (ADR-0070, ADR-0065). It is the human-action audit trail: it receives its resolved directory and the operator profile as arguments from main.ts, and declares the shapes it records structurally rather than importing runs/ or sessions/ — an audit trail that imported the subsystems it audits would invert the dependency it exists to observe. The v6 index (X7 slice 4) is what adds `store` here, in the PR that argues for it.",
             },
             {
+              target: "./packages/m3l-console-server/src/telemetry",
+              from: "./packages/m3l-console-server/src",
+              except: ["telemetry", "errors"],
+              message:
+                "console-server: telemetry/ may import only errors/ (ADR-0070, ADR-0065). It is the self-measurement port http/, runs/ and stream/ record through, and it must NOT import store/: the store-backed recorder is src/telemetry-recorder.ts, zone-free at the src/ root, because a leaf that reached persistence would hand transport a transitive SQL path — the edge http/'s own exclusion exists to forbid.",
+            },
+            {
               target: "./packages/m3l-console-server/src/http",
               from: "./packages/m3l-console-server/src",
-              except: ["http", "errors", "auth", "lifecycle", "net", "stream"],
+              except: [
+                "http",
+                "errors",
+                "auth",
+                "lifecycle",
+                "net",
+                "stream",
+                "telemetry",
+              ],
               message:
                 "console-server: http/ is transport — it may import errors/, auth/, lifecycle/, net/ and stream/, but NOT config/, store/ or runs/ (ADR-0065). Resolved configuration is passed in from main.ts; a handler must never re-read the environment. stream/ is reachable so an SSE route can subscribe to a live event stream by id (ADR-0066) without transport ever importing orchestration.",
             },

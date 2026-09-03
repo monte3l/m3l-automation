@@ -74,6 +74,10 @@ import type {
 import type { M3LConsoleAuditRepository } from "./store/audit-repository.js";
 import type { M3LConsoleSessionsRepository } from "./store/sessions-repository.js";
 import type { M3LConsoleSessionsConfig } from "./config/sessions.js";
+import type { M3LConsoleTelemetryRepository } from "./store/telemetry-repository.js";
+import { createNoOpTelemetryRecorder } from "./telemetry/no-op.js";
+import type { M3LTelemetryRecorder } from "./telemetry/port.js";
+import { createStoreTelemetryRecorder } from "./telemetry-recorder.js";
 
 /**
  * Constructor options for {@link createConsoleRuntime}.
@@ -149,6 +153,11 @@ export interface M3LConsoleRuntimeOptions {
    * port owns what that port writes.
    */
   readonly auditPort?: M3LHumanActionAuditPort;
+  /**
+   * The X8 telemetry rollup port (mirrors {@link audit}). When absent,
+   * {@link M3LConsoleRuntime.telemetry} falls back to the no-op recorder.
+   */
+  readonly telemetry?: M3LConsoleTelemetryRepository;
 }
 
 /**
@@ -221,6 +230,12 @@ export interface M3LConsoleRuntime {
    * own preconditions were met" semantics.
    */
   readonly sessions?: M3LSessionSubsystem;
+  /**
+   * The X8 telemetry recorder — ALWAYS present, so callers never need an
+   * `undefined` check. Store-backed when
+   * {@link M3LConsoleRuntimeOptions.telemetry} was supplied, else no-op.
+   */
+  readonly telemetry: M3LTelemetryRecorder;
 }
 
 /**
@@ -253,6 +268,16 @@ function resolveConfig(options: M3LConsoleRuntimeOptions): M3LConsoleConfig {
   );
 }
 
+/** Resolves the telemetry recorder: store-backed when `options.telemetry` was supplied, else the no-op. */
+function resolveTelemetry(
+  options: M3LConsoleRuntimeOptions,
+  logger: Core.M3LLogger,
+): M3LTelemetryRecorder {
+  return options.telemetry !== undefined
+    ? createStoreTelemetryRecorder({ telemetry: options.telemetry, logger })
+    : createNoOpTelemetryRecorder();
+}
+
 export function createConsoleRuntime(
   options: M3LConsoleRuntimeOptions = {},
 ): M3LConsoleRuntime {
@@ -267,6 +292,7 @@ export function createConsoleRuntime(
     email: config.operatorEmail,
   };
   const operatorProvider = createSingleOperatorProvider(operator);
+  const telemetry = resolveTelemetry(options, logger);
   const drain = createDrainController({ timeoutMs: config.drainTimeoutMs });
   const routes = options.routes ?? [];
   const router = createRouter(routes);
@@ -315,6 +341,7 @@ export function createConsoleRuntime(
     drain,
     signal: drain.signal,
     readinessGraceMs: config.readinessGraceMs,
+    telemetry,
     ...(options.store !== undefined && { store: options.store }),
     ...(runs !== undefined && { runs }),
     ...(sessions !== undefined && { sessions }),
@@ -438,6 +465,7 @@ async function buildRuntimeAndBindListener(
       runs: store.runs,
       sessions: store.sessions,
       audit: store.audit,
+      telemetry: store.telemetry,
     });
     // A database write (reconciling SIGKILL-orphaned rows), so it belongs
     // here — not in createConsoleRuntime, a pure composition step — and
