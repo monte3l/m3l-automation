@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 // Thin wrapper around @commitlint/lint + @commitlint/load that replaces
 // @commitlint/cli without pulling in the git-raw-commits transitive dep.
-// See docs/adr/0008-commitlint-cli-replacement.md.
+// See docs/adr/0008-commitlint-cli-replacement.md. Also validates Claude
+// co-author/forbidden trailers (--edit mode) and exempts dependabot[bot]
+// commits from subject-case linting by author identity (range mode).
 import process from "node:process";
 import { readFileSync } from "node:fs";
 import { execSync } from "node:child_process";
