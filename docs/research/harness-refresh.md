@@ -208,6 +208,29 @@ current_usage}`, `exceeds_200k_tokens` (fixed 200K threshold regardless of
 - COVERAGE GAP: GitHub MCP toolset/read-only scoping — no Anthropic-owned
   source documents this (it would be a GitHub-side feature). Not substituted
   with a third-party source per this skill's coverage discipline.
+- CLAIM (2026-09-03, scoped session-naming/renaming check, ADR-0087/0088):
+  no hook field, `settings.json` key, or environment variable lets anything
+  other than the user's own `--name`/`-n` flag or `/rename` command set a
+  session's name — <https://code.claude.com/docs/en/cli-reference> and
+  <https://code.claude.com/docs/en/sessions> (retrieved 2026-09-03)
+  - VERDICT: confirmed, zero drift from ADR-0087's original constraint.
+    Anthropic documents no shell-integration or auto-naming pattern either.
+    See ADR-0088's "Reaffirmed (2026-09-03)" section.
+- NEW: accepting a plan in plan mode auto-generates a session title from the
+  plan content when the session isn't already named; a "default display
+  name" (`<workspace-dir>-<2-char-suffix>`, v2.1.196+) is also assigned to
+  every unnamed interactive session for listings, though it isn't a resume
+  handle — <https://code.claude.com/docs/en/sessions#name-your-sessions>
+  (retrieved 2026-09-03)
+  - REPO-IMPACT: none directly (neither is controllable to produce an
+    ADR-0087-conformant `<kind>-<slug>` name), but softens ADR-0087's
+    original addressability framing — see its 2026-09-03 amendment note.
+- NEW: the session picker already filters to the current git branch
+  (`Ctrl+B`) — <https://code.claude.com/docs/en/sessions#use-the-session-picker>
+  (retrieved 2026-09-03)
+  - REPO-IMPACT: none (this repo's naming convention targets `ListAgents`/
+    `SendMessage`, which have no equivalent filter, not the interactive
+    picker).
 
 ### Agent & subagent design
 

@@ -113,6 +113,27 @@ hook can act on a running session), and it is out of this ADR's scope: the
 target is starting new work, which `starting-work` already gates, not
 retrofitting a name onto a conversation already underway.
 
+### Reaffirmed (2026-09-03)
+
+A follow-up audit, per the user's explicit request, re-ran
+`/refreshing-anthropic-guidance` scoped to session naming/renaming to check
+whether this mechanism is still correct or should instead be wired into a
+Claude Code hook. Direct fetches of `code.claude.com/docs/en/cli-reference`
+and `.../sessions`, plus a CHANGELOG delta (only `2.1.258`/`2.1.259` released
+since the pinned `2.1.257`, neither touching naming), found **zero drift**:
+`--name`/`-n` at launch and `/rename` mid-session remain the only documented
+naming mechanisms, and Anthropic documents no hook field, `settings.json`
+key, environment variable, or shell-integration pattern for automating it.
+The launcher wrapper is confirmed as the correct, and only possible,
+application of the one lever Anthropic provides — not a workaround.
+
+That audit also added an opt-in shell-integration recipe and installer
+(`pnpm session:install-shell-hook`, `docs/contributing/contributing.md` §
+Session naming) that shadows the bare `claude` command with the launcher
+inside a shell function, narrowing (not closing) the adoption gap below —
+a contributor who opts in no longer needs to remember to type
+`pnpm session:launch` instead of `claude`.
+
 ## Consequences
 
 - **Positive:** the dominant case (`feat`/`fix` branch work) is named with
@@ -122,9 +143,10 @@ retrofitting a name onto a conversation already underway.
   since the name shape is unchanged.
 - **Negative / trade-offs:** a session already open before this launcher
   exists (or one the user starts by typing `claude` directly instead of
-  `pnpm session:launch`) still requires manual `/rename`; `main`-resident
-  kinds still require the user to state a kind, since no signal exists to
-  infer one from git state alone.
+  `pnpm session:launch`, or without opting into the shell-integration hook
+  above) still requires manual `/rename`; `main`-resident kinds still require
+  the user to state a kind, since no signal exists to infer one from git
+  state alone.
 - **Semver impact:** none — internal harness/tooling convention, no public
   API surface.
 

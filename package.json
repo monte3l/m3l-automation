@@ -111,6 +111,7 @@
     "spoke:recover": "node bin/spoke-recovery.mjs",
     "telemetry:sessions": "node bin/session-telemetry.mjs",
     "session:launch": "node bin/claude-launch.mjs",
+    "session:install-shell-hook": "node bin/install-session-shell-hook.mjs",
     "prepare": "lefthook install && node bin/install-merge-drivers.mjs"
   },
   "devDependencies": {
