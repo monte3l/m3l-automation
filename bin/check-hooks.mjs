@@ -79,7 +79,7 @@ export function extractHookScriptName(command) {
  * collaborators needed to check disk state, so it is unit-testable without
  * touching the filesystem.
  *
- * @param {{ hooks?: Record<string, Array<{ matcher?: string, hooks?: Array<{ command?: string, timeout?: number }> }>>, statusLine?: { command?: string } }} settings
+ * @param {{ hooks?: Record<string, Array<{ matcher?: string, hooks?: Array<{ command?: string, timeout?: number }> }>>, statusLine?: { command?: string }, subagentStatusLine?: { command?: string } }} settings
  * @param {{ hookFileExists: (name: string) => boolean, onDiskHookNames: string[] }} deps
  * @returns {{ errors: string[], warnings: string[], referenced: Set<string> }}
  */
@@ -145,6 +145,24 @@ export function validateHooksConfig(
       if (!hookFileExists(name)) {
         errors.push(
           `.claude/settings.json's "statusLine" wires "${name}" but ` +
+            `.claude/hooks/${name} does not exist.`,
+        );
+      }
+    }
+  }
+
+  // `subagentStatusLine` is the sibling top-level settings key rendering a
+  // per-subagent row body (code.claude.com/docs/en/statusline#subagent-status-lines)
+  // — same false-positive risk as `statusLine` above: without this, a valid
+  // subagentStatusLine script would wrongly warn as a "dead hook?" below.
+  const subagentStatusLineCommand = settings.subagentStatusLine?.command;
+  if (typeof subagentStatusLineCommand === "string") {
+    const name = extractHookScriptName(subagentStatusLineCommand);
+    if (name !== null) {
+      referenced.add(name);
+      if (!hookFileExists(name)) {
+        errors.push(
+          `.claude/settings.json's "subagentStatusLine" wires "${name}" but ` +
             `.claude/hooks/${name} does not exist.`,
         );
       }

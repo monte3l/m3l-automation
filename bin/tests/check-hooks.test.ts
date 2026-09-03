@@ -215,6 +215,97 @@ describe("validateHooksConfig", () => {
     expect(result.warnings).toEqual([]);
     expect(result.referenced).toEqual(new Set());
   });
+
+  test("a subagentStatusLine.command wiring an existing hook script produces no error or dead-hook warning and is added to referenced", () => {
+    const settings = {
+      hooks: {},
+      subagentStatusLine: {
+        command:
+          'node "$CLAUDE_PROJECT_DIR/.claude/hooks/render-subagent-statusline.mjs"',
+      },
+    };
+    const result = validateHooksConfig(settings, {
+      hookFileExists: () => true,
+      onDiskHookNames: ["render-subagent-statusline.mjs"],
+    });
+    expect(result.errors).toEqual([]);
+    expect(result.warnings).toEqual([]);
+    expect(result.referenced).toEqual(
+      new Set(["render-subagent-statusline.mjs"]),
+    );
+  });
+
+  test("a subagentStatusLine.command wiring a hook script that does not exist on disk is exactly one error naming subagentStatusLine", () => {
+    const settings = {
+      hooks: {},
+      subagentStatusLine: {
+        command:
+          'node "$CLAUDE_PROJECT_DIR/.claude/hooks/missing-subagent-statusline.mjs"',
+      },
+    };
+    const result = validateHooksConfig(settings, {
+      hookFileExists: () => false,
+      onDiskHookNames: [],
+    });
+    expect(result.errors).toEqual([
+      '.claude/settings.json\'s "subagentStatusLine" wires "missing-subagent-statusline.mjs" but .claude/hooks/missing-subagent-statusline.mjs does not exist.',
+    ]);
+  });
+
+  test("settings.subagentStatusLine absent behaves identically to before: no subagentStatusLine errors/warnings, existing dead-hook warnings still fire", () => {
+    const settings = { hooks: {} };
+    const result = validateHooksConfig(settings, {
+      hookFileExists: () => true,
+      onDiskHookNames: ["orphan-hook.mjs"],
+    });
+    expect(result.errors).toEqual([]);
+    expect(result.warnings).toEqual([
+      expect.stringContaining("orphan-hook.mjs exists but is not wired"),
+    ]);
+    expect(result.referenced).toEqual(new Set());
+  });
+
+  test("a subagentStatusLine.command that is not a .claude/hooks/*.mjs-shaped string is silently ignored: no crash, no referenced entry, no subagentStatusLine error", () => {
+    const settings = {
+      hooks: {},
+      subagentStatusLine: {
+        command: "some-other-subagent-statusline-binary --flag",
+      },
+    };
+    const result = validateHooksConfig(settings, {
+      hookFileExists: () => true,
+      onDiskHookNames: [],
+    });
+    expect(result.errors).toEqual([]);
+    expect(result.warnings).toEqual([]);
+    expect(result.referenced).toEqual(new Set());
+  });
+
+  test("statusLine and subagentStatusLine wired simultaneously both resolve independently with no cross-interference", () => {
+    const settings = {
+      hooks: {},
+      statusLine: {
+        command:
+          'node "$CLAUDE_PROJECT_DIR/.claude/hooks/statusline-context-pressure.mjs"',
+      },
+      subagentStatusLine: {
+        command:
+          'node "$CLAUDE_PROJECT_DIR/.claude/hooks/subagent-statusline.mjs"',
+      },
+    };
+    const result = validateHooksConfig(settings, {
+      hookFileExists: () => true,
+      onDiskHookNames: [
+        "statusline-context-pressure.mjs",
+        "subagent-statusline.mjs",
+      ],
+    });
+    expect(result.errors).toEqual([]);
+    expect(result.warnings).toEqual([]);
+    expect(result.referenced).toEqual(
+      new Set(["statusline-context-pressure.mjs", "subagent-statusline.mjs"]),
+    );
+  });
 });
 
 describe("KNOWN_MATCHERS", () => {

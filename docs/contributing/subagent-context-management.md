@@ -266,10 +266,10 @@ Review spokes (`code-reviewer`, `security-reviewer`, `silent-failure-hunter`,
 are read-only and produce no on-disk work product to resume, so they don't
 carry this journal pattern.
 Their mitigation is different — see the next section. They now get one
-passive substitute the journal pattern couldn't give them: the statusline's
-in-flight-spoke segment (`track-inflight-spokes.mjs`, `SubagentStart`/
-`SubagentStop`) shows an elapsed-time readout for every spoke currently
-running, review spokes included, closing the gap an `/auditing` pass on
+passive substitute the journal pattern couldn't give them: the native
+`subagentStatusLine` setting (`.claude/hooks/subagent-statusline.mjs`) shows
+an elapsed-time readout for every spoke currently running, review spokes
+included, closing the gap an `/auditing` pass on
 status reporting found — a stalled review fan-out previously gave the user
 no visible signal at all until it either returned or a human noticed the
 clock. This is deliberately not a substitute for recovery (it carries no

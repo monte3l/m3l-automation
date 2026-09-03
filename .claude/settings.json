@@ -71,6 +71,10 @@
     "refreshInterval": 30,
     "padding": 1
   },
+  "subagentStatusLine": {
+    "type": "command",
+    "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/subagent-statusline.mjs\""
+  },
   "hooks": {
     "SessionStart": [
       {
@@ -216,28 +220,12 @@
         ]
       }
     ],
-    "SubagentStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/track-inflight-spokes.mjs\"",
-            "timeout": 30
-          }
-        ]
-      }
-    ],
     "SubagentStop": [
       {
         "hooks": [
           {
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/detect-spoke-truncation.mjs\"",
-            "timeout": 30
-          },
-          {
-            "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/track-inflight-spokes.mjs\"",
             "timeout": 30
           }
         ]

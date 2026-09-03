@@ -3,11 +3,15 @@
 The single authoritative inventory of every hook wired into `.claude/settings.json`
 (implemented under `.claude/hooks/*.mjs`). CLAUDE.md's "Claude Code hooks" note
 is deliberately a one-paragraph pointer to this file — every lifecycle hook
-lives here (27 hook files, 28 table rows since one file, `track-inflight-spokes.mjs`,
-fires on two events) so it stays in one place instead of drifting across
-sections. A 28th file, `statusline-context-pressure.mjs`, is a `statusLine`
-script rather than a lifecycle hook and is documented separately below, not
-as a table row — `.claude/hooks/` therefore holds 28 files in total.
+lives here (26 hook files, 26 table rows — every file fires on exactly one
+event) so it stays in one place instead of drifting across sections. Three
+more files round out `.claude/hooks/` to 29 total but are not table rows:
+`statusline-context-pressure.mjs` and `subagent-statusline.mjs` are
+`statusLine`/`subagentStatusLine` scripts (documented separately below, not
+as lifecycle hooks), and `statusline-layout.mjs` is a pure sibling library
+module the former imports — never itself wired into `.claude/settings.json`,
+so `pnpm check:hooks` warns on it as an accepted "dead hook?" false positive
+rather than an error.
 `pnpm check:hooks` validates that every command below resolves to a real file,
 every event name is a real Claude Code lifecycle event, every hook carries
 an explicit timeout, and this table's Matcher column stays in parity with
@@ -74,9 +78,7 @@ below), unlike the three above.
 | PostToolUse      | `Write\|Edit` if `packages/m3l-common/src/**`                                                                                                            | `guard-provenance-staleness.mjs`    | Warns when a `packages/m3l-common/src/**` edit makes a provenance sidecar's recorded commit stale.                                                                                                                                                          | advisory |
 | PostToolUse      | `Write\|Edit` if `docs/reference/**/*.provenance.json`, `packages/m3l-common/src/**/index.ts`, `docs/implementation-status.md`, `docs/reference/**/*.md` | `guard-index-staleness.mjs`         | Warns when an edit to a reference-index input causes `catalog.json` / `symbol-map.json` / README to drift.                                                                                                                                                  | advisory |
 | PostToolUse      | `Write\|Edit` if `packages/m3l-common/src/**`                                                                                                            | `guard-red-phase-comments.mjs`      | Warns when implementation lands but the paired test file still carries a stale RED-phase header comment.                                                                                                                                                    | advisory |
-| SubagentStart    | —                                                                                                                                                        | `track-inflight-spokes.mjs`         | Appends a `start` record to `tmp/spoke-lifecycle.jsonl` when a spoke dispatches, so the statusline can show how many spokes are currently in flight and for how long.                                                                                       | advisory |
 | SubagentStop     | —                                                                                                                                                        | `detect-spoke-truncation.mjs`       | Flags a finished spoke whose last message looks cut off mid-turn (empty, a trailing ellipsis, or an unclosed intent phrase), reminds the hub to verify before trusting it, and appends a `kind: "truncation"` record to `tmp/session-incidents.jsonl`.      | advisory |
-| SubagentStop     | —                                                                                                                                                        | `track-inflight-spokes.mjs`         | Appends a `stop` record to `tmp/spoke-lifecycle.jsonl` when a spoke finishes, clearing it from the statusline's in-flight-spoke count.                                                                                                                      | advisory |
 | Stop             | —                                                                                                                                                        | `remind-sync-docs.mjs`              | Session-end reminders: run `/syncing-docs` if `docs/implementation-status.md` changed, run `check:test-counts` if tests changed, delete stray scratch/repro test files.                                                                                     | advisory |
 
 **Blocking** hooks exit 2 and reject the tool call outright. **Advisory**
@@ -85,18 +87,16 @@ hooks split by event: the seven `PostToolUse` ones (`post-edit-md-verify`,
 `guard-provenance-staleness`, `guard-index-staleness`,
 `guard-red-phase-comments`) also exit 2 to print a reminder to stderr — the
 edit already landed by the time `PostToolUse` fires, so this never stops it,
-only surfaces context back to Claude. The remaining eleven advisory hooks
+only surfaces context back to Claude. The remaining ten advisory hooks
 (`guard-worktree-ready`, `reinject-compact-handoff`, `warn-host-resources`,
 `warn-node-version`, `rotate-session-incidents`, `write-compact-handoff`,
 `inject-decision-gate`, `guard-writer-dispatch-journal`,
-`detect-spoke-truncation`, `track-inflight-spokes` (wired twice, once per
-event), `remind-sync-docs`) exit 0, optionally injecting
+`detect-spoke-truncation`, `remind-sync-docs`) exit 0, optionally injecting
 a message via stdout/JSON when there is something worth reporting —
-`rotate-session-incidents` and `track-inflight-spokes` are silent even on a
-successful run, since neither has anything to report. Their events
-(`SessionStart`, `PreCompact`, `UserPromptSubmit`, `PreToolUse: Agent`,
-`SubagentStart`, `SubagentStop`, `Stop`) have no "already happened" tool call
-for exit 2 to react to.
+`rotate-session-incidents` is silent even on a successful run, since it has
+nothing to report. Their events (`SessionStart`, `PreCompact`,
+`UserPromptSubmit`, `PreToolUse: Agent`, `SubagentStop`, `Stop`) have no
+"already happened" tool call for exit 2 to react to.
 
 **`statusLine` (not a lifecycle hook — a separate `.claude/settings.json` key).**
 `statusline-context-pressure.mjs` renders a multi-line statusline: the
@@ -106,19 +106,15 @@ one documented programmatic read of `session_name`, ADR-0087), model,
 effort, and a color-coded context-pressure bar/percentage (70%/90% thresholds)
 on line 1; session cost, token counts, 5-hour/7-day rate-limit resets, and
 prompt-cache warmth on line 2; the current git branch, worktree/PR, active
-spoke, in-flight spoke count (color-escalating past 15/30 minutes elapsed —
-see below), origin repo, and free memory on line 3; and, once past the 90%
+spoke, origin repo, and free memory on line 3; and, once past the 90%
 threshold, a ready-to-run `/compact` suggestion built from `pr.number`/
 `workspace.git_worktree` on its own fourth line — mirroring CLAUDE.md's
 `## Compact Instructions` preserve-list dynamically instead of leaving it as
-prose to remember. The in-flight-spoke segment reads `tmp/spoke-lifecycle.jsonl`
-(written by `track-inflight-spokes.mjs` above) and is deliberately passive —
-an elapsed-time readout, not a watchdog or alarm — closing the gap an
-`/auditing` pass on status reporting found: nothing surfaced intermediate
-progress to the user during a review-spoke fan-out that had stalled 30-60+
-min on four recorded occasions
-(`docs/logs/2026-07-18-aws-athena.md`, `2026-07-18-aws-s3.md`,
-`2026-07-19-subagent-stall-integration.md`, `2026-08-21-core-procedure.md`). This is a project-scoped supersede of the user's own
+prose to remember. (This paragraph describes the pre-#916 layout; the current
+five-row rewrite is not yet reflected here — see PR 3 of
+`docs/adr/0090-subagent-statusline-supersedes-lifecycle-tracker.md`'s plan of
+record.) Per-spoke elapsed-time visibility moved off this line entirely to
+the native `subagentStatusLine` setting — see below. This is a project-scoped supersede of the user's own
 `ccstatusline` config (`~/.claude/settings.json`, `npx -y ccstatusline@latest`)
 — only one `statusLine` command can be active per scope, and project settings
 shadow user settings, so working in this repo would otherwise lose that
@@ -147,6 +143,26 @@ longer false-positives as a "dead hook?" warning — though it checks only that
 the referenced script exists, not the `type`/`refreshInterval`/other fields of
 the `statusLine` config itself; behavioral coverage of the script's own output
 is `bin/tests/statusline-context-pressure.test.ts`'s job.
+
+**`subagentStatusLine` (not a lifecycle hook — a separate `.claude/settings.json`
+key, sibling to `statusLine` above).** `.claude/hooks/subagent-statusline.mjs`
+renders a custom row body for each subagent shown in the agent panel: name,
+`effort` (when present), a `tokenCount`/`contextWindowSize` fraction (when
+both are present), and an elapsed-time readout color-escalating past 15/30
+minutes elapsed — the same thresholds the retired `tmp/spoke-lifecycle.jsonl`
+tracker used, now sourced from Claude Code's own per-task `tasks[]` array
+instead of a hand-rolled JSONL file (`docs/adr/0090-subagent-statusline-supersedes-lifecycle-tracker.md`).
+It supersedes `track-inflight-spokes.mjs` and the `SubagentStart`/
+`SubagentStop` wirings that fed it — closing the same gap the retired tracker
+closed (nothing surfaced intermediate progress during a review-spoke fan-out
+that had stalled 30-60+ min on four recorded occasions:
+`docs/logs/2026-07-18-aws-athena.md`, `2026-07-18-aws-s3.md`,
+`2026-07-19-subagent-stall-integration.md`, `2026-08-21-core-procedure.md`)
+with strictly more per-task detail and no on-disk state to maintain. Same
+**no subprocess, no network** invariant as `statusLine`; `pnpm check:hooks`
+resolves `subagentStatusLine.command` the same way it resolves
+`statusLine.command`. A full glyph/color/threshold legend for both statusline
+scripts is deferred to PR 3 of the plan referenced above.
 
 **Known gap (accepted risk, issue #210 retired 2026-08-17):** the write-time
 _content_ `Write|Edit` guards (`guard-secret-writes`, `guard-js-extension`,
