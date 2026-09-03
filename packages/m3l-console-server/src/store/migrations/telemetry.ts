@@ -166,7 +166,7 @@ export const CREATE_CONSOLE_TELEMETRY_ROLLUP_TABLE = `
  * under a temporary name, copy existing rows across with an insert-select,
  * drop the old table, then rename the new one into place).
  */
-export const CREATE_CONSOLE_TELEMETRY_ROLLUP_TABLE_V11 = `
+const CREATE_CONSOLE_TELEMETRY_ROLLUP_TABLE_V11 = `
   CREATE TABLE console_telemetry_rollup (
     granularity TEXT NOT NULL CHECK (granularity IN ('minute','hour','day')),
     bucket_start_ms INTEGER NOT NULL CHECK (bucket_start_ms >= 0),
