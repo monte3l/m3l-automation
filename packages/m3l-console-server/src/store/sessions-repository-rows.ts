@@ -188,6 +188,7 @@ function toBindingRecord(row: M3LStoreRow): M3LSessionBindingRecord {
     multiSelect:
       toRequiredNumber(SESSION_BINDINGS_TABLE, row["multi_select"]) === 1,
     createdAtMs: toRequiredNumber(SESSION_BINDINGS_TABLE, row["created_at_ms"]),
+    parameterName: toOptionalString(row["parameter_name"]),
   };
 }
 
@@ -449,8 +450,9 @@ export function insertBindingRow(
 ): void {
   executor.run(
     `INSERT INTO console_session_bindings (
-      id, session_id, reference, expected_type, multi_select, created_at_ms
-    ) VALUES (?, ?, ?, ?, ?, ?)`,
+      id, session_id, reference, expected_type, multi_select, created_at_ms,
+      parameter_name
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
     [
       input.id,
       input.sessionId,
@@ -458,6 +460,7 @@ export function insertBindingRow(
       input.expectedType,
       input.multiSelect ? 1 : 0,
       input.createdAtMs,
+      input.parameterName,
     ],
   );
 }

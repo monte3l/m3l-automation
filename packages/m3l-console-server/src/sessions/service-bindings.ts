@@ -93,9 +93,10 @@ export interface SessionBindingMethods {
    * display-vs-persist split). A caller that wants the value reads it
    * through the step-artifact route.
    *
-   * `binding.parameterName` is validated but NOT persisted: the table has no
-   * column for it, and none is added here — see this module's own note in
-   * `docs/reference/console.md`.
+   * `binding.parameterName` is persisted alongside the reference (X11 slice
+   * 1, issue #559): it is the launch-parameter name the resolved value binds
+   * to, so a session reload/resume can pre-fill it without the operator
+   * re-selecting.
    *
    * @param sessionId - The session to record the binding on.
    * @param binding - The selection: reference, expected shape, and name.
@@ -209,6 +210,7 @@ export function buildSessionBindingMethods(
         expectedType: binding.expectedType,
         multiSelect: binding.multiSelect,
         createdAtMs: nowMs(),
+        parameterName: binding.parameterName,
       });
       return requireBinding(sessionsRepository, sessionId, id);
     },

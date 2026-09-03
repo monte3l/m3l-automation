@@ -323,6 +323,7 @@ async function resolveAndPersistBindings(
       reference: binding.reference,
       expectedType: binding.expectedType,
       multiSelect: binding.multiSelect,
+      parameterName: binding.parameterName,
       createdAtMs: nowMs(),
     });
   }

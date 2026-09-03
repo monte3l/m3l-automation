@@ -260,6 +260,7 @@ function bindingInsertInput(
     reference: "step-1.result",
     expectedType: "string",
     multiSelect: false,
+    parameterName: "some-parameter",
     createdAtMs: 1_000,
   };
   return { ...base, ...overrides };

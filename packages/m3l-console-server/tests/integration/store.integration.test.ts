@@ -304,7 +304,7 @@ describe("openConsoleStore — v9 migration (console_telemetry_rollup) e2e proof
     const store = openConsoleStore({ location });
     try {
       const userVersionRow = store.get("PRAGMA user_version");
-      expect(userVersionRow).toEqual({ user_version: 9 });
+      expect(userVersionRow).toEqual({ user_version: 10 });
 
       const migrationRow = store.get(
         "SELECT version FROM console_schema_migrations WHERE version = 9",

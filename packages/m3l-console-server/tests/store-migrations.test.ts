@@ -721,9 +721,9 @@ function insertRun(database: DatabaseSync, row: RunRowFixture): void {
 }
 
 describe("CONSOLE_MIGRATIONS — the real registry (v3: console_runs)", () => {
-  test("has exactly nine migrations, versions strictly increasing and gap-free (1..9)", () => {
+  test("has exactly ten migrations, versions strictly increasing and gap-free (1..10)", () => {
     expect(CONSOLE_MIGRATIONS.map((migration) => migration.version)).toEqual([
-      1, 2, 3, 4, 5, 6, 7, 8, 9,
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
     ]);
   });
 
@@ -1616,5 +1616,83 @@ describe("CONSOLE_MIGRATIONS — the real registry (v5: console_session_steps.ru
     expect(tableExists(database, "console_session_steps")).toBe(true);
     expect(tableExists(database, "console_session_bindings")).toBe(true);
     expect(tableExists(database, "console_session_decisions")).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// CONSOLE_MIGRATIONS — the real registry (v9 -> v10: session binding
+// parameter_name, X11 slice 1, issue #559)
+//
+// Unlike every block above, this one deliberately builds the database at v9
+// ONLY and inserts a `console_session_bindings` row BEFORE applying v10 — the
+// point is to prove the `ALTER TABLE ... ADD COLUMN parameter_name` survives
+// a pre-existing row (which has no value for the new column), not merely that
+// the column exists on a freshly created store. `createRealMigratedDatabase`
+// is deliberately NOT used here: it applies the whole registry in one shot
+// and so never exercises "existing rows survive the ALTER".
+// ---------------------------------------------------------------------------
+
+describe("applyMigrations — v9 to v10 (add_session_binding_parameter_name)", () => {
+  test("adds a nullable parameter_name column, an existing v9-era binding row survives unchanged, and a new row can set it", () => {
+    const database = new DatabaseSync(":memory:");
+    const v9Migrations = CONSOLE_MIGRATIONS.filter(
+      (migration) => migration.version <= 9,
+    );
+    applyMigrations(database, v9Migrations);
+
+    // Seed the FK parent (console_sessions), then a v9-era binding row using
+    // v9's actual column list — parameter_name does not exist yet.
+    insertSessionRow(database, validOpenSessionRow("sess-v9"));
+    database
+      .prepare(
+        `INSERT INTO console_session_bindings (
+          id, session_id, reference, expected_type, multi_select, created_at_ms
+        ) VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+      .run("binding-v9", "sess-v9", "step-1.result", "string", 0, 1000);
+
+    const applied = applyMigrations(database, CONSOLE_MIGRATIONS);
+
+    expect(applied).toBe(1);
+    expect(readUserVersion(database)).toBe(10);
+
+    const survived = database
+      .prepare(
+        `SELECT id, session_id, reference, expected_type, multi_select,
+          created_at_ms, parameter_name
+        FROM console_session_bindings WHERE id = ?`,
+      )
+      .get("binding-v9");
+    expect(survived?.["id"]).toBe("binding-v9");
+    expect(survived?.["session_id"]).toBe("sess-v9");
+    expect(survived?.["reference"]).toBe("step-1.result");
+    expect(survived?.["expected_type"]).toBe("string");
+    expect(survived?.["multi_select"]).toBe(0);
+    expect(survived?.["created_at_ms"]).toBe(1000);
+    expect(survived?.["parameter_name"]).toBeNull();
+
+    database
+      .prepare(
+        `INSERT INTO console_session_bindings (
+          id, session_id, reference, expected_type, multi_select,
+          created_at_ms, parameter_name
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        "binding-v10",
+        "sess-v9",
+        "step-2.result",
+        "string",
+        0,
+        2000,
+        "queueUrl",
+      );
+
+    const inserted = database
+      .prepare(
+        "SELECT parameter_name FROM console_session_bindings WHERE id = ?",
+      )
+      .get("binding-v10");
+    expect(inserted?.["parameter_name"]).toBe("queueUrl");
   });
 });
