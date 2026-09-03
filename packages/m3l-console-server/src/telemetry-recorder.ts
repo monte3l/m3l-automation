@@ -61,25 +61,62 @@ const GRANULARITIES: readonly M3LTelemetryGranularity[] = [
 ];
 
 /**
+ * Placeholder substituted for the dropped failure's message when reading it
+ * throws. A fixed literal, never derived from `cause` — the point of
+ * {@link safeGetErrorMessage} is that `cause` cannot be trusted enough to
+ * read anything else off it once its `.message` accessor has already
+ * proven hostile.
+ */
+const UNREADABLE_ERROR_MESSAGE = "[unreadable error message]";
+
+/**
+ * `Core.getErrorMessage`, guarded against a `cause` whose own `.message`
+ * getter throws (an `Error` subclass, or a post-construction
+ * `Object.defineProperty` override) — mirroring
+ * `core/logging/M3LLogger.ts`'s `safeGetErrorMessage`. `reportDroppedFanOut`
+ * runs from inside {@link fanOut}'s own `catch`; a classifier used on that
+ * path must never itself throw (see `store/failures.ts`'s
+ * `readStringProperty`/`readNumberProperty` for the same rule applied to
+ * property reads), or the drop report itself escapes to the caller,
+ * defeating the recorder's never-throws contract. Falls back to a fixed
+ * placeholder rather than propagating.
+ */
+function safeGetErrorMessage(cause: unknown): string {
+  try {
+    return Core.getErrorMessage(cause);
+  } catch {
+    return UNREADABLE_ERROR_MESSAGE;
+  }
+}
+
+/**
  * Reports a dropped fan-out through `logger.warning`, naming the metric and
  * the underlying failure's code/message, plus `context.recordedCount` when
  * the caught value is an {@link M3LConsoleError} carrying one
- * (`store/telemetry-repository.ts`'s `recordAll` attaches it). Never logs
- * caller-supplied sample data beyond the dimension names already destined
- * for the rollup table.
+ * (`store/telemetry-repository.ts`'s `recordAll` attaches it) AND that
+ * value is actually a `number` — `context` is typed `unknown`, and
+ * `M3LConsoleRuntimeOptions.telemetry` is injectable, so a supplied
+ * `recordAll` can throw an `M3LConsoleError` whose `recordedCount` is
+ * anything at all, and this payload has no redaction coverage to fall back
+ * on. The raw value is read into a local exactly once and that LOCAL is
+ * narrowed and logged, so a hostile getter cannot return something
+ * different on a second read. Never logs caller-supplied sample data
+ * beyond the dimension names already destined for the rollup table.
  */
 function reportDroppedFanOut(
   logger: Core.M3LLogger,
   metric: string,
   cause: unknown,
 ): void {
-  const recordedCount =
+  const recordedCountValue =
     cause instanceof M3LConsoleError
       ? cause.context["recordedCount"]
       : undefined;
+  const recordedCount =
+    typeof recordedCountValue === "number" ? recordedCountValue : undefined;
   const data: Record<string, unknown> = {
     metric,
-    message: Core.getErrorMessage(cause),
+    message: safeGetErrorMessage(cause),
     ...(cause instanceof M3LConsoleError && { code: cause.code }),
     ...(recordedCount !== undefined && { recordedCount }),
   };
@@ -88,21 +125,30 @@ function reportDroppedFanOut(
 
 /**
  * Fans one sample out to all three granularity tiers through a single
- * `telemetry.recordAll` call, deriving every tier's `bucketStartMs` from the
- * one `atMs` reading the caller already took. Catches everything and
- * reports through {@link reportDroppedFanOut} rather than rethrowing.
+ * `telemetry.recordAll` call. Takes the clock FUNCTION rather than an
+ * already-read `atMs`: reading the clock happens exactly once, inside this
+ * function's own `try`, so a throwing `now` is caught by the same guard as
+ * a throwing `recordAll` instead of propagating out of the caller's scope
+ * before the `try` is even entered — JS evaluates call arguments in the
+ * caller's own scope, which is what made the previous
+ * `fanOut(..., now(), ...)` call shape unsafe and let a throwing clock
+ * escape the recorder's never-throws contract. That single reading then
+ * derives every tier's `bucketStartMs`, so the three tiers can never
+ * straddle a boundary. Catches everything and reports through
+ * {@link reportDroppedFanOut} rather than rethrowing.
  */
 function fanOut(
   telemetry: M3LConsoleTelemetryRepository,
   logger: Core.M3LLogger,
   metric: string,
-  atMs: number,
+  now: () => number,
   build: (
     bucketStartMs: number,
     granularity: M3LTelemetryGranularity,
   ) => M3LTelemetryMeasurement,
 ): void {
   try {
+    const atMs = now();
     const measurements = GRANULARITIES.map((granularity) =>
       build(telemetryBucketStartMs(atMs, granularity), granularity),
     );
@@ -220,23 +266,23 @@ export function createStoreTelemetryRecorder(
 
   return {
     httpRequest: (sample) =>
-      fanOut(telemetry, logger, "http.request", now(), (bucketStartMs, g) =>
+      fanOut(telemetry, logger, "http.request", now, (bucketStartMs, g) =>
         buildHttpRequestMeasurement(sample, bucketStartMs, g),
       ),
     runFinished: (sample) =>
-      fanOut(telemetry, logger, "run.finished", now(), (bucketStartMs, g) =>
+      fanOut(telemetry, logger, "run.finished", now, (bucketStartMs, g) =>
         buildRunFinishedMeasurement(sample, bucketStartMs, g),
       ),
     sseStream: (sample) =>
-      fanOut(telemetry, logger, "sse.stream", now(), (bucketStartMs, g) =>
+      fanOut(telemetry, logger, "sse.stream", now, (bucketStartMs, g) =>
         buildSseStreamMeasurement(sample, bucketStartMs, g),
       ),
     policyDecision: (sample) =>
-      fanOut(telemetry, logger, "policy.decision", now(), (bucketStartMs, g) =>
+      fanOut(telemetry, logger, "policy.decision", now, (bucketStartMs, g) =>
         buildPolicyDecisionMeasurement(sample, bucketStartMs, g),
       ),
     storeHealth: (sample) =>
-      fanOut(telemetry, logger, "store.health", now(), (bucketStartMs, g) =>
+      fanOut(telemetry, logger, "store.health", now, (bucketStartMs, g) =>
         buildStoreHealthMeasurement(sample, bucketStartMs, g),
       ),
   };

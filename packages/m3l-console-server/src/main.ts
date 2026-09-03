@@ -268,14 +268,20 @@ function resolveConfig(options: M3LConsoleRuntimeOptions): M3LConsoleConfig {
   );
 }
 
-/** Resolves the telemetry recorder: store-backed when `options.telemetry` was supplied, else the no-op. */
+type M3LTelemetryBackend = "store" | "no-op";
+
+/** Resolves the backend label and recorder from `options.telemetry` together, so they can't disagree. */
 function resolveTelemetry(
   options: M3LConsoleRuntimeOptions,
   logger: Core.M3LLogger,
-): M3LTelemetryRecorder {
-  return options.telemetry !== undefined
-    ? createStoreTelemetryRecorder({ telemetry: options.telemetry, logger })
-    : createNoOpTelemetryRecorder();
+): readonly [M3LTelemetryBackend, M3LTelemetryRecorder] {
+  const repository = options.telemetry;
+  return repository === undefined
+    ? ["no-op", createNoOpTelemetryRecorder()]
+    : [
+        "store",
+        createStoreTelemetryRecorder({ telemetry: repository, logger }),
+      ];
 }
 
 export function createConsoleRuntime(
@@ -284,7 +290,8 @@ export function createConsoleRuntime(
   const config = resolveConfig(options);
   const logger = createRuntimeLogger(config, options.handlers);
 
-  logPosture(logger, config);
+  const [telemetryBackend, telemetry] = resolveTelemetry(options, logger);
+  logPosture(logger, config, telemetryBackend);
   const { runs, sessions } = buildConsoleSubsystems(options, logger);
 
   const operator: M3LOperatorProfile = {
@@ -292,7 +299,6 @@ export function createConsoleRuntime(
     email: config.operatorEmail,
   };
   const operatorProvider = createSingleOperatorProvider(operator);
-  const telemetry = resolveTelemetry(options, logger);
   const drain = createDrainController({ timeoutMs: config.drainTimeoutMs });
   const routes = options.routes ?? [];
   const router = createRouter(routes);

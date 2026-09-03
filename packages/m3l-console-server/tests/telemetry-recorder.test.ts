@@ -448,3 +448,86 @@ describe("createStoreTelemetryRecorder — clock defaulting", () => {
     );
   });
 });
+
+/**
+ * [KNOWN BUG — defect 1] every recorder method calls
+ * `fanOut(telemetry, logger, "<metric>", now(), ...)`: JS evaluates
+ * arguments in the caller's own scope, so `now()` runs BEFORE `fanOut`'s own
+ * `try` is entered. A `now` that throws therefore propagates straight out
+ * of the recorder method, into the caller — breaking the "never throws"
+ * contract stated in this module's own header and in `telemetry/port.ts`
+ * (the deliberate inverse of `audit/port.ts`; see `runs/audit.ts:14-19`).
+ * The recorder must catch a throwing clock read too, and still report the
+ * drop through `logger.warning` naming the metric.
+ */
+describe("createStoreTelemetryRecorder — [KNOWN BUG] a throwing clock read must not escape", () => {
+  test.each(METHOD_CASES)(
+    "$methodName: a throwing `now` does not escape the method and is still reported via logger.warning naming the metric",
+    ({ invoke, metric }) => {
+      const { repository } = createFakeTelemetryRepository();
+      const { logger, events } = buildLogger();
+      const recorder = createStoreTelemetryRecorder({
+        telemetry: repository,
+        logger,
+        now: () => {
+          throw new Error("clock read failed");
+        },
+      });
+
+      expect(() => invoke(recorder)).not.toThrow();
+
+      const warnings = events.filter(
+        (event) => event.category === Core.M3LLogEventCategory.WARNING,
+      );
+      expect(warnings).toHaveLength(1);
+      const [warning] = warnings;
+      if (warning === undefined) {
+        throw new Error("expected exactly one warning event");
+      }
+      expect(JSON.stringify(warning)).toContain(metric);
+    },
+  );
+});
+
+/**
+ * [KNOWN BUG — defect 2] `reportDroppedFanOut` reads `Core.getErrorMessage(cause)`
+ * directly, unguarded. `packages/m3l-common/src/core/logging/M3LLogger.ts`
+ * wraps that exact call in a `safeGetErrorMessage` helper precisely because
+ * a caught value's own `.message` getter can throw (an `Error` subclass, or
+ * a post-construction `Object.defineProperty` override) — and when it does,
+ * `reportDroppedFanOut` throws from inside `fanOut`'s own `catch` block,
+ * escaping to the caller. This constructs exactly that hostile value: a
+ * real `Error` whose `message` accessor is overridden, post-construction,
+ * to throw.
+ */
+describe("createStoreTelemetryRecorder — [KNOWN BUG] a hostile `message` getter on the dropped cause must not escape", () => {
+  test("a recordAll failure whose thrown value has a throwing `message` getter does not escape and still warns naming the metric", () => {
+    const thrown = new Error("placeholder — never actually read");
+    Object.defineProperty(thrown, "message", {
+      get(): string {
+        throw new Error("reading .message itself throws");
+      },
+    });
+    const { repository } = createFakeTelemetryRepository(() => {
+      throw thrown;
+    });
+    const { logger, events } = buildLogger();
+    const recorder = createStoreTelemetryRecorder({
+      telemetry: repository,
+      logger,
+      now: () => FIXED_NOW,
+    });
+
+    expect(() => recorder.httpRequest(HTTP_REQUEST_SAMPLE)).not.toThrow();
+
+    const warnings = events.filter(
+      (event) => event.category === Core.M3LLogEventCategory.WARNING,
+    );
+    expect(warnings).toHaveLength(1);
+    const [warning] = warnings;
+    if (warning === undefined) {
+      throw new Error("expected exactly one warning event");
+    }
+    expect(JSON.stringify(warning)).toContain("http.request");
+  });
+});

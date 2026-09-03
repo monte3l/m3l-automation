@@ -24,6 +24,17 @@
  * point of the port: `http/` and friends never learn the rollup table's
  * column names.
  *
+ * `route`, `script`, `outcome` and `posture` below are plain `string`s
+ * bounded by nothing at the type level, but every one of them becomes part
+ * of a permanent primary key in `console_telemetry_rollup`. Each field's own
+ * TSDoc states the value a caller MUST pass; these are **unenforced
+ * preconditions today** — the port never throws (see above), so it cannot
+ * reject a caller that passes the wrong thing. Bounding these values (a
+ * length cap, an enum, a branded type) is slice 2's job, tracked at
+ * `src/store/migrations/telemetry.ts:41-43`; this module only documents the
+ * requirement so a slice-2 reviewer has a single place to check every call
+ * site against.
+ *
  * @packageDocumentation
  */
 
@@ -43,9 +54,23 @@
  * ```
  */
 export interface M3LTelemetryHttpRequestSample {
-  /** The matched route, e.g. `/api/v1/runs`. Non-empty. */
+  /**
+   * The matched route, e.g. `/api/v1/runs`. Non-empty. MUST be the matched
+   * route PATTERN — what {@link "../http/router.js".M3LRouter.lookup}
+   * returns as `route.path` on a `"matched"` lookup — never the raw request
+   * target, a path parameter's captured value, or a query string. This
+   * value becomes part of a durable primary key in
+   * `console_telemetry_rollup`; ADR-0070's display-vs-persist rule limits
+   * persistent records to names, references and allow-listed scalars, and a
+   * raw request target (e.g. `/api/v1/runs?token=...`) is caller-supplied
+   * free text, not one of those.
+   */
   readonly route: string;
-  /** The response outcome bucket, e.g. `"2xx"`. Non-empty. */
+  /**
+   * The response outcome bucket, e.g. `"2xx"`. Non-empty. MUST be a
+   * bounded, enumerable identifier, never caller-supplied free text — see
+   * {@link M3LTelemetryHttpRequestSample.route} for why.
+   */
   readonly outcome: string;
   /** Request latency in milliseconds. Non-negative safe integer. */
   readonly latencyMs: number;
@@ -56,11 +81,19 @@ export interface M3LTelemetryHttpRequestSample {
  * it once a run finishes.
  */
 export interface M3LTelemetryRunFinishedSample {
-  /** The script that ran. */
+  /**
+   * The script that ran. MUST be a bounded, enumerable identifier, never
+   * caller-supplied free text — see
+   * {@link M3LTelemetryHttpRequestSample.route} for why.
+   */
   readonly script: string;
   /** The operation within the script, when the script has more than one. */
   readonly operation?: string | undefined;
-  /** The run's terminal outcome, e.g. `"succeeded"` or `"failed"`. */
+  /**
+   * The run's terminal outcome, e.g. `"succeeded"` or `"failed"`. MUST be a
+   * bounded, enumerable identifier, never caller-supplied free text — see
+   * {@link M3LTelemetryHttpRequestSample.route} for why.
+   */
   readonly outcome: string;
   /** Run duration in milliseconds. */
   readonly durationMs: number;
@@ -71,7 +104,11 @@ export interface M3LTelemetryRunFinishedSample {
  * pure counter — carries no measurement.
  */
 export interface M3LTelemetrySseStreamSample {
-  /** The stream's terminal outcome, when one is known, e.g. `"closed"`. */
+  /**
+   * The stream's terminal outcome, when one is known, e.g. `"closed"`. MUST
+   * be a bounded, enumerable identifier, never caller-supplied free text —
+   * see {@link M3LTelemetryHttpRequestSample.route} for why.
+   */
   readonly outcome?: string | undefined;
 }
 
@@ -80,9 +117,17 @@ export interface M3LTelemetrySseStreamSample {
  * pure counter — carries no measurement.
  */
 export interface M3LTelemetryPolicyDecisionSample {
-  /** The policy posture in effect, e.g. `"enforce"` or `"monitor"`. */
+  /**
+   * The policy posture in effect, e.g. `"enforce"` or `"monitor"`. MUST be
+   * a bounded, enumerable identifier, never caller-supplied free text — see
+   * {@link M3LTelemetryHttpRequestSample.route} for why.
+   */
   readonly posture: string;
-  /** The decision's outcome, when one is known, e.g. `"denied"`. */
+  /**
+   * The decision's outcome, when one is known, e.g. `"denied"`. MUST be a
+   * bounded, enumerable identifier, never caller-supplied free text — see
+   * {@link M3LTelemetryHttpRequestSample.route} for why.
+   */
   readonly outcome?: string | undefined;
 }
 
