@@ -229,7 +229,22 @@ function isM3LRunHandleStatus(value: unknown): value is M3LRunHandle["status"] {
   );
 }
 
-function isM3LRunHandle(value: unknown): value is M3LRunHandle {
+/**
+ * Type guard for {@link M3LRunHandle}. Exported (rather than kept module-
+ * private like this file's other guards) so `api/sessions.ts`'s
+ * `addSessionStep` can validate the `handle` field of its response body
+ * without duplicating this guard's field checks.
+ *
+ * @example
+ * ```ts
+ * import { isM3LRunHandle } from "@m3l-automation/m3l-console-web/api/runs.js";
+ *
+ * if (isM3LRunHandle(candidate)) {
+ *   console.log(candidate.scriptName);
+ * }
+ * ```
+ */
+export function isM3LRunHandle(value: unknown): value is M3LRunHandle {
   return (
     isRecord(value) &&
     typeof value["id"] === "string" &&

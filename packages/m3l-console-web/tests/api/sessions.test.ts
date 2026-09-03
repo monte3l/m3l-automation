@@ -5,14 +5,19 @@ import type {
   M3LConsoleFetchResult,
 } from "../../src/api/client.js";
 import { fetchConsoleJson } from "../../src/api/client.js";
+import type { M3LRunHandle } from "../../src/api/runs.js";
 import type {
+  M3LSessionAddStepRequest,
+  M3LSessionAddStepResult,
   M3LSessionBindingInput,
   M3LSessionBindingRecord,
   M3LSessionDecisionRecord,
   M3LSessionRecord,
+  M3LSessionStepRecord,
   M3LSessionStepSummary,
 } from "../../src/api/sessions.js";
 import {
+  addSessionStep,
   answerSessionDecision,
   createSession,
   createSessionBinding,
@@ -833,6 +838,143 @@ describe("answerSessionDecision", () => {
 
     await expect(
       answerSessionDecision("session-1", "missing-decision", "continue"),
+    ).resolves.toEqual(errorResult);
+  });
+});
+
+// --- addSessionStep (X11e) --------------------------------------------------
+//
+// POST /api/v1/sessions/:id/steps accepts ONLY operation/bindings/confirmed/
+// dryRun (docs/reference/console.md § "POST /api/v1/sessions/:id/steps",
+// verified against the server's own parseAddStepBody) — there is no
+// free-form `parameters` field, unlike POST /api/v1/runs.
+
+const fullAddStepRequest: M3LSessionAddStepRequest = {
+  operation: "sqs-etl",
+  bindings: [fullBindingInput],
+  confirmed: true,
+  dryRun: false,
+};
+
+const fullRunHandle: M3LRunHandle = {
+  id: "run-1",
+  scriptName: "sqs-etl",
+  status: "queued",
+  dryRun: false,
+  executionMode: "sync",
+};
+
+// The `step` field of a POST /api/v1/sessions/:id/steps response is
+// M3LSessionStepRecord-shaped — NOT M3LSessionStepSummary-shaped. It carries
+// `resultRef` (never present on the list-route summary) and has no
+// `hasResult` field at all. Verified against
+// `sessions/service.ts`'s `M3LSessionAddStepResult.step: M3LSessionStepRecord`
+// and `store/sessions-repository-types.ts`'s `M3LSessionStepRecord`.
+const launchedStepRecord: M3LSessionStepRecord = {
+  id: "step-2",
+  sessionId: "session-1",
+  ordinal: 2,
+  operation: "sqs-etl",
+  parameters: { mode: "batch" },
+  runId: "run-1",
+  status: "queued",
+  resultRef: null,
+  queuedAtMs: 1_735_689_600_000,
+  startedAtMs: null,
+  endedAtMs: null,
+  outcome: null,
+  failureMessage: null,
+};
+
+const fullAddStepResult: M3LSessionAddStepResult = {
+  step: launchedStepRecord,
+  handle: fullRunHandle,
+};
+
+describe("addSessionStep", () => {
+  test("calls fetchConsoleJson with the sessionId encoded into the path, POST, and the input as the body unchanged", async () => {
+    mockedFetchConsoleJson.mockResolvedValue({
+      ok: true,
+      data: fullAddStepResult,
+    });
+
+    await addSessionStep("has/slash", fullAddStepRequest);
+
+    expect(mockedFetchConsoleJson).toHaveBeenCalledWith(
+      `/api/v1/sessions/${encodeURIComponent("has/slash")}/steps`,
+      { method: "POST", body: fullAddStepRequest },
+    );
+  });
+
+  test("resolves to the ok result with a well-formed {step, handle} body, unwrapped", async () => {
+    const okResult: M3LConsoleFetchResult<M3LSessionAddStepResult> = {
+      ok: true,
+      data: fullAddStepResult,
+    };
+    mockedFetchConsoleJson.mockResolvedValue(okResult);
+
+    await expect(
+      addSessionStep("session-1", fullAddStepRequest),
+    ).resolves.toEqual(okResult);
+  });
+
+  test("downgrades a body missing step to a malformed-body error", async () => {
+    mockedFetchConsoleJson.mockResolvedValue({
+      ok: true,
+      data: { handle: fullRunHandle },
+    });
+
+    await expect(
+      addSessionStep("session-1", fullAddStepRequest),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { kind: "malformed-body", message: expect.any(String) as string },
+    });
+  });
+
+  test("downgrades a body missing handle to a malformed-body error", async () => {
+    mockedFetchConsoleJson.mockResolvedValue({
+      ok: true,
+      data: { step: launchedStepRecord },
+    });
+
+    await expect(
+      addSessionStep("session-1", fullAddStepRequest),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { kind: "malformed-body", message: expect.any(String) as string },
+    });
+  });
+
+  test("downgrades a body whose handle fails its own shape check (missing scriptName) to a malformed-body error", async () => {
+    const { scriptName: _scriptName, ...handleWithoutScriptName } =
+      fullRunHandle;
+    mockedFetchConsoleJson.mockResolvedValue({
+      ok: true,
+      data: { step: launchedStepRecord, handle: handleWithoutScriptName },
+    });
+
+    await expect(
+      addSessionStep("session-1", fullAddStepRequest),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { kind: "malformed-body", message: expect.any(String) as string },
+    });
+  });
+
+  test("resolves to the error result the mock returns, unwrapped", async () => {
+    const error: M3LConsoleFetchError = {
+      kind: "network",
+      message: "connection refused",
+    };
+    const errorResult: M3LConsoleFetchResult<M3LSessionAddStepResult> = {
+      ok: false,
+      error,
+    };
+    mockedFetchConsoleJson.mockResolvedValue(errorResult);
+
+    await expect(
+      addSessionStep("session-1", fullAddStepRequest),
     ).resolves.toEqual(errorResult);
   });
 });

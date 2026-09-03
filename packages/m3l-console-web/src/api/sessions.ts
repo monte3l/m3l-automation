@@ -1,5 +1,7 @@
 import type { M3LConsoleFetchResult } from "./client.js";
 import { fetchConsoleJson } from "./client.js";
+import type { M3LRunHandle } from "./runs.js";
+import { isM3LRunHandle } from "./runs.js";
 import { encodePathSegment } from "../internal/path-segment.js";
 
 /**
@@ -245,12 +247,10 @@ export interface M3LSessionStepSummary {
   /**
    * Never present on this list-route shape — step output must never leak
    * through the list route. Mirrors the server's own
-   * `sessions/service-reads.ts` `M3LSessionStepSummary`
-   * (`Omit<M3LSessionStepRecord, "resultRef"> & { hasResult: boolean; resultRef?: never }`)
-   * and this file's own `closedAtMs?: never` / `answer?: never` markers: a
-   * type-level ban that documents the invariant and catches accidental
-   * object-literal construction, without the runtime guard needing to check
-   * for its absence.
+   * `sessions/service-reads.ts` `M3LSessionStepSummary` and this file's own
+   * `closedAtMs?: never` / `answer?: never` markers: a type-level ban that
+   * catches accidental object-literal construction without the runtime
+   * guard needing to check for its absence.
    */
   readonly resultRef?: never;
 }
@@ -667,6 +667,128 @@ export async function answerSessionDecision(
         kind: "malformed-body",
         message:
           "unexpected POST /api/v1/sessions/:id/decisions/:decisionId response shape",
+      },
+    };
+  }
+  return result;
+}
+
+/**
+ * Body for {@link addSessionStep}. `confirmed`/`dryRun` are a discriminated
+ * union, not two independent booleans — mirrors `M3LRunLaunchRequest`
+ * (`api/runs.js`) — so `dryRun: false, confirmed: false` (always 409ed by
+ * the server) is unrepresentable at compile time.
+ */
+export type M3LSessionAddStepRequest = {
+  readonly operation: string;
+  readonly bindings: readonly M3LSessionBindingInput[];
+} & (
+  | { readonly dryRun: true; readonly confirmed?: false }
+  | { readonly dryRun: false; readonly confirmed: true }
+);
+
+/**
+ * One step within a session, as returned by the `step` field of
+ * `POST /api/v1/sessions/:id/steps` — distinct from {@link
+ * M3LSessionStepSummary} (the list-route shape): this carries a nullable
+ * `resultRef` (the server's raw result reference); the summary instead
+ * carries a derived `hasResult` and bans `resultRef`. Verified against the
+ * server's `sessions/service.ts` and `store/sessions-repository-types.ts`.
+ */
+export interface M3LSessionStepRecord {
+  readonly id: string;
+  readonly sessionId: string;
+  readonly ordinal: number;
+  readonly operation: string;
+  readonly parameters: unknown;
+  readonly runId: string | null;
+  readonly status: M3LSessionStepStatus;
+  readonly resultRef: string | null;
+  readonly queuedAtMs: number;
+  readonly startedAtMs: number | null;
+  readonly endedAtMs: number | null;
+  readonly outcome: M3LSessionStepOutcome | null;
+  readonly failureMessage: string | null;
+}
+
+/** Non-nullable identity fields every step record carries — split out from {@link isM3LSessionStepRecord}. */
+function hasRequiredStepRecordFields(
+  candidate: Record<string, unknown>,
+): boolean {
+  return (
+    typeof candidate["id"] === "string" &&
+    typeof candidate["sessionId"] === "string" &&
+    typeof candidate["ordinal"] === "number" &&
+    typeof candidate["operation"] === "string" &&
+    isM3LSessionStepStatus(candidate["status"]) &&
+    typeof candidate["queuedAtMs"] === "number"
+  );
+}
+
+function isM3LSessionStepRecord(value: unknown): value is M3LSessionStepRecord {
+  return (
+    isRecord(value) &&
+    hasRequiredStepRecordFields(value) &&
+    hasNullableStepFields(value) &&
+    isNullableString(value["resultRef"])
+  );
+}
+
+/** The result of successfully queuing a step — see {@link addSessionStep}. */
+export interface M3LSessionAddStepResult {
+  readonly step: M3LSessionStepRecord;
+  readonly handle: M3LRunHandle;
+}
+
+function isM3LSessionAddStepResult(
+  value: unknown,
+): value is M3LSessionAddStepResult {
+  return (
+    isRecord(value) &&
+    isM3LSessionStepRecord(value["step"]) &&
+    isM3LRunHandle(value["handle"])
+  );
+}
+
+/**
+ * Adds a new step to a session via `POST /api/v1/sessions/:id/steps`,
+ * URL-encoding `sessionId` into the path and sending `input` as the request
+ * body unchanged. Unlike `POST /api/v1/runs`, this route accepts no
+ * free-form `parameters` field — a session step's inputs are declared
+ * entirely through `bindings`.
+ *
+ * @example
+ * ```ts
+ * import { addSessionStep } from "@m3l-automation/m3l-console-web/api/sessions.js";
+ *
+ * const result = await addSessionStep(
+ *   "0193f0c2-1234-7abc-9def-000000000000",
+ *   {
+ *     operation: "sqs-etl",
+ *     bindings: [],
+ *     confirmed: true,
+ *     dryRun: false,
+ *   },
+ * );
+ * if (result.ok) {
+ *   console.log(result.data.step.id, result.data.handle.id);
+ * }
+ * ```
+ */
+export async function addSessionStep(
+  sessionId: string,
+  input: M3LSessionAddStepRequest,
+): Promise<M3LConsoleFetchResult<M3LSessionAddStepResult>> {
+  const result = await fetchConsoleJson<M3LSessionAddStepResult>(
+    `/api/v1/sessions/${encodePathSegment(sessionId)}/steps`,
+    { method: "POST", body: input },
+  );
+  if (result.ok && !isM3LSessionAddStepResult(result.data)) {
+    return {
+      ok: false,
+      error: {
+        kind: "malformed-body",
+        message: "unexpected POST /api/v1/sessions/:id/steps response shape",
       },
     };
   }

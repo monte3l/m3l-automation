@@ -1,12 +1,16 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
 
 import type { M3LConsoleFetchResult } from "../../src/api/client.js";
+import type { M3LScriptDetail } from "../../src/api/scripts.js";
 import type {
+  M3LSessionAddStepRequest,
+  M3LSessionAddStepResult,
   M3LSessionBindingInput,
   M3LSessionBindingRecord,
   M3LSessionDecisionRecord,
   M3LSessionRecord,
+  M3LSessionStepRecord,
   M3LSessionStepSummary,
 } from "../../src/api/sessions.js";
 import { SessionDetail } from "../../src/components/SessionDetail.js";
@@ -109,6 +113,30 @@ const TERMINAL_STEP: M3LSessionStepSummary = {
   hasResult: true,
 };
 
+// The `step` field of a POST /api/v1/sessions/:id/steps response is
+// M3LSessionStepRecord-shaped — NOT M3LSessionStepSummary-shaped. It carries
+// `resultRef` (never present on the list-route summary) and has no
+// `hasResult` field at all. Verified against
+// `sessions/service.ts`'s `M3LSessionAddStepResult.step: M3LSessionStepRecord`
+// and `store/sessions-repository-types.ts`'s `M3LSessionStepRecord`. Distinct
+// from TERMINAL_STEP above, which stays M3LSessionStepSummary-shaped for the
+// GET /api/v1/sessions/:id/steps fixtures.
+const LAUNCHED_STEP_RECORD: M3LSessionStepRecord = {
+  id: "step-2",
+  sessionId: "session-123",
+  ordinal: 2,
+  operation: "sqs-etl",
+  parameters: { mode: "batch" },
+  runId: "run-1",
+  status: "success",
+  resultRef: null,
+  queuedAtMs: 1_700_000_000_000,
+  startedAtMs: 1_700_000_000_100,
+  endedAtMs: 1_700_000_000_200,
+  outcome: "success",
+  failureMessage: null,
+};
+
 const PENDING_DECISION: M3LSessionDecisionRecord = {
   id: "decision-1",
   sessionId: "session-123",
@@ -202,7 +230,14 @@ describe("SessionDetail", () => {
     expect(detail.textContent).toContain("no steps yet");
   });
 
-  test("renders each decision's prompt and status once loaded", async () => {
+  // X11e: SessionDetail now renders one DecisionPrompt per decision instead
+  // of the earlier plain-text `<li>{prompt} — {status}</li>` list — this
+  // test is updated (not merely extended) to match that observable-behavior
+  // change, per the hub's explicit instruction to wire DecisionPrompt in.
+  // DecisionPrompt itself never renders a bare "pending"/"answered" status
+  // word (see its own component), so this intentionally supersedes the
+  // pre-X11e assertions rather than preserving them unmodified.
+  test("renders one DecisionPrompt per decision from fetchSessionDecisions, each showing its own prompt/answered content", async () => {
     render(
       <SessionDetail
         id="session-123"
@@ -216,10 +251,13 @@ describe("SessionDetail", () => {
     );
 
     const detail = await screen.findByTestId("session-detail");
+    const decisionPrompts = within(detail).getAllByTestId("decision-prompt");
+    expect(decisionPrompts).toHaveLength(2);
     expect(detail.textContent).toContain("Continue?");
-    expect(detail.textContent).toContain("pending");
     expect(detail.textContent).toContain("Proceed?");
-    expect(detail.textContent).toContain("answered");
+    expect(
+      within(detail).getByTestId("decision-answered").textContent,
+    ).toContain("yes");
   });
 
   test('renders "no decisions yet" when the decisions list is empty', async () => {
@@ -567,6 +605,14 @@ function errorCreateSessionBinding(
 ) => Promise<M3LConsoleFetchResult<M3LSessionBindingRecord>> {
   return () =>
     Promise.resolve({ ok: false, error: { kind: "network", message } });
+}
+
+function okAnswerSessionDecision(): (
+  sessionId: string,
+  decisionId: string,
+  answer: unknown,
+) => Promise<M3LConsoleFetchResult<{ readonly applied: boolean }>> {
+  return () => Promise.resolve({ ok: true, data: { applied: true } });
 }
 
 const STEP_ARTIFACT_VALUE = {
@@ -1215,5 +1261,285 @@ describe("SessionDetail binding-submit double-click guard", () => {
     await screen.findByTestId("binding-success");
 
     expect(createBindingSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+// --- X11e: SessionStepLauncher + DecisionPrompt wiring ----------------------
+//
+// New behavior for this slice: SessionDetail renders a SessionStepLauncher
+// (fed the accumulated bindings from the artifact-viewer's binding form) and
+// answers session decisions through DecisionPrompt, both driven by three new
+// injectable props (fetchScript, addSessionStep, answerSessionDecision)
+// defaulting to the real API imports. Neither the props nor
+// SessionStepLauncher exist yet — every case below is RED until the sibling
+// implementation slice lands.
+
+const SQS_ETL_SCRIPT_DETAIL: M3LScriptDetail = {
+  name: "sqs-etl",
+  description: "Drains an SQS queue into the warehouse",
+  hasCommandModule: true,
+  executionMode: "sync",
+  operations: [],
+  parameters: [],
+};
+
+const DOWNSTREAM_SCRIPT_DETAIL: M3LScriptDetail = {
+  name: "downstream-op",
+  description: "Consumes a value bound from an earlier step's output",
+  hasCommandModule: true,
+  executionMode: "sync",
+  operations: [],
+  parameters: [
+    {
+      name: "myParam",
+      aliases: [],
+      type: "STRING",
+      required: false,
+      defaultValue: "unbound-default",
+      description: "",
+      secret: false,
+      operations: [],
+    },
+  ],
+};
+
+function okFetchScript(
+  detail: M3LScriptDetail,
+): (name: string) => Promise<M3LConsoleFetchResult<M3LScriptDetail>> {
+  return () => Promise.resolve({ ok: true, data: detail });
+}
+
+function okAddSessionStep(
+  result: M3LSessionAddStepResult,
+): (
+  sessionId: string,
+  input: M3LSessionAddStepRequest,
+) => Promise<M3LConsoleFetchResult<M3LSessionAddStepResult>> {
+  return () => Promise.resolve({ ok: true, data: result });
+}
+
+describe("SessionDetail — SessionStepLauncher wiring", () => {
+  test("renders a SessionStepLauncher fed sessionId={id}", async () => {
+    render(
+      <SessionDetail
+        id="session-123"
+        fetchSession={okFetchSession(OPEN_SESSION)}
+        fetchSessionSteps={okFetchSessionSteps([])}
+        fetchSessionDecisions={okFetchSessionDecisions([])}
+        fetchScript={okFetchScript(SQS_ETL_SCRIPT_DETAIL)}
+      />,
+    );
+
+    const detail = await screen.findByTestId("session-detail");
+    expect(
+      within(detail).getByTestId("session-step-launcher"),
+    ).toBeInTheDocument();
+  });
+
+  test("threads an injected fetchScript into SessionStepLauncher instead of the real one", async () => {
+    const fetchScriptSpy = vi.fn(okFetchScript(SQS_ETL_SCRIPT_DETAIL));
+    render(
+      <SessionDetail
+        id="session-123"
+        fetchSession={okFetchSession(OPEN_SESSION)}
+        fetchSessionSteps={okFetchSessionSteps([])}
+        fetchSessionDecisions={okFetchSessionDecisions([])}
+        fetchScript={fetchScriptSpy}
+      />,
+    );
+    await screen.findByTestId("session-detail");
+
+    fireEvent.change(screen.getByTestId("session-step-operation-input"), {
+      target: { value: "sqs-etl" },
+    });
+    fireEvent.click(screen.getByTestId("session-step-load-operation"));
+
+    await vi.waitFor(() => {
+      expect(fetchScriptSpy).toHaveBeenCalledWith("sqs-etl");
+    });
+  });
+
+  test("threads an injected addSessionStep into SessionStepLauncher instead of the real one", async () => {
+    const addSessionStepSpy = vi.fn(
+      okAddSessionStep({
+        step: LAUNCHED_STEP_RECORD,
+        handle: {
+          id: "run-x",
+          scriptName: SQS_ETL_SCRIPT_DETAIL.name,
+          status: "queued",
+          dryRun: true,
+          executionMode: "sync",
+        },
+      }),
+    );
+    render(
+      <SessionDetail
+        id="session-123"
+        fetchSession={okFetchSession(OPEN_SESSION)}
+        fetchSessionSteps={okFetchSessionSteps([])}
+        fetchSessionDecisions={okFetchSessionDecisions([])}
+        fetchScript={okFetchScript(SQS_ETL_SCRIPT_DETAIL)}
+        addSessionStep={addSessionStepSpy}
+      />,
+    );
+    await screen.findByTestId("session-detail");
+
+    fireEvent.change(screen.getByTestId("session-step-operation-input"), {
+      target: { value: "sqs-etl" },
+    });
+    fireEvent.click(screen.getByTestId("session-step-load-operation"));
+    await screen.findByTestId("parameter-form");
+    fireEvent.click(screen.getByRole("button", { name: /launch/i }));
+
+    await vi.waitFor(() => {
+      expect(addSessionStepSpy).toHaveBeenCalled();
+    });
+  });
+
+  test("threads an injected answerSessionDecision into DecisionPrompt instead of the real one", async () => {
+    const answerSpy = vi.fn(okAnswerSessionDecision());
+    render(
+      <SessionDetail
+        id="session-123"
+        fetchSession={okFetchSession(OPEN_SESSION)}
+        fetchSessionSteps={okFetchSessionSteps([])}
+        fetchSessionDecisions={okFetchSessionDecisions([PENDING_DECISION])}
+        answerSessionDecision={answerSpy}
+      />,
+    );
+    await screen.findByTestId("session-detail");
+
+    fireEvent.click(screen.getByTestId("decision-option-continue"));
+
+    await vi.waitFor(() => {
+      expect(answerSpy).toHaveBeenCalledWith(
+        PENDING_DECISION.sessionId,
+        PENDING_DECISION.id,
+        "continue",
+      );
+    });
+  });
+
+  test("a binding created via the artifact viewer's binding form accumulates into SessionStepLauncher's bindings, prefilling a matching downstream parameter without a second network round trip", async () => {
+    const boundBindingRecord: M3LSessionBindingRecord = {
+      ...BINDING_RECORD,
+      multiSelect: false,
+      parameterName: "myParam",
+    };
+    const createBindingSpy = vi.fn(okCreateSessionBinding(boundBindingRecord));
+    const fetchScriptSpy = vi.fn(okFetchScript(DOWNSTREAM_SCRIPT_DETAIL));
+
+    render(
+      <SessionDetail
+        id="session-123"
+        fetchSession={okFetchSession(OPEN_SESSION)}
+        fetchSessionSteps={okFetchSessionSteps([TERMINAL_STEP])}
+        fetchSessionDecisions={okFetchSessionDecisions([])}
+        fetchSessionStepArtifact={okFetchSessionStepArtifact(
+          STEP_ARTIFACT_VALUE,
+        )}
+        createSessionBinding={createBindingSpy}
+        fetchScript={fetchScriptSpy}
+      />,
+    );
+    await screen.findByTestId("session-detail");
+    fireEvent.click(screen.getByTestId(`view-output-${TERMINAL_STEP.id}`));
+    await screen.findByTestId("step-artifact-viewer");
+    fireEvent.click(screen.getByRole("button", { name: "Select Region" }));
+    await screen.findByTestId("binding-form");
+    fireEvent.change(screen.getByTestId("binding-parameter-name-input"), {
+      target: { value: "myParam" },
+    });
+    fireEvent.click(screen.getByTestId("binding-submit"));
+    await screen.findByTestId("binding-success");
+
+    fireEvent.change(screen.getByTestId("session-step-operation-input"), {
+      target: { value: "downstream-op" },
+    });
+    fireEvent.click(screen.getByTestId("session-step-load-operation"));
+    await screen.findByTestId("parameter-form");
+
+    const input = await screen.findByLabelText<HTMLInputElement>("myParam");
+    // STEP_ARTIFACT_VALUE.Region is "us-east-1" — the value selected when
+    // the binding was created, available client-side without re-fetching.
+    expect(input.value).toBe("us-east-1");
+    expect(fetchScriptSpy).toHaveBeenCalledTimes(1);
+  });
+
+  test("re-fetches session/steps/decisions after SessionStepLauncher's onStepLaunched fires", async () => {
+    const fetchStepsSpy = vi.fn(okFetchSessionSteps([]));
+    const fetchDecisionsSpy = vi.fn(okFetchSessionDecisions([]));
+    const addSessionStepSpy = vi.fn(
+      okAddSessionStep({
+        step: { ...LAUNCHED_STEP_RECORD, id: "step-launched" },
+        handle: {
+          id: "run-x",
+          scriptName: SQS_ETL_SCRIPT_DETAIL.name,
+          status: "queued",
+          dryRun: true,
+          executionMode: "sync",
+        },
+      }),
+    );
+
+    render(
+      <SessionDetail
+        id="session-123"
+        fetchSession={okFetchSession(OPEN_SESSION)}
+        fetchSessionSteps={fetchStepsSpy}
+        fetchSessionDecisions={fetchDecisionsSpy}
+        fetchScript={okFetchScript(SQS_ETL_SCRIPT_DETAIL)}
+        addSessionStep={addSessionStepSpy}
+      />,
+    );
+    await screen.findByTestId("session-detail");
+    const initialStepsCalls = fetchStepsSpy.mock.calls.length;
+    const initialDecisionsCalls = fetchDecisionsSpy.mock.calls.length;
+
+    fireEvent.change(screen.getByTestId("session-step-operation-input"), {
+      target: { value: "sqs-etl" },
+    });
+    fireEvent.click(screen.getByTestId("session-step-load-operation"));
+    await screen.findByTestId("parameter-form");
+    fireEvent.click(screen.getByRole("button", { name: /launch/i }));
+
+    await vi.waitFor(() => {
+      expect(fetchStepsSpy.mock.calls.length).toBeGreaterThan(
+        initialStepsCalls,
+      );
+    });
+    expect(fetchDecisionsSpy.mock.calls.length).toBeGreaterThan(
+      initialDecisionsCalls,
+    );
+  });
+
+  test("re-fetches session/steps/decisions after a DecisionPrompt's onAnswered fires", async () => {
+    const fetchStepsSpy = vi.fn(okFetchSessionSteps([]));
+    const fetchDecisionsSpy = vi.fn(
+      okFetchSessionDecisions([PENDING_DECISION]),
+    );
+    const answerSpy = vi.fn(okAnswerSessionDecision());
+
+    render(
+      <SessionDetail
+        id="session-123"
+        fetchSession={okFetchSession(OPEN_SESSION)}
+        fetchSessionSteps={fetchStepsSpy}
+        fetchSessionDecisions={fetchDecisionsSpy}
+        answerSessionDecision={answerSpy}
+      />,
+    );
+    await screen.findByTestId("session-detail");
+    const initialStepsCalls = fetchStepsSpy.mock.calls.length;
+    const initialDecisionsCalls = fetchDecisionsSpy.mock.calls.length;
+
+    fireEvent.click(screen.getByTestId("decision-option-continue"));
+
+    await vi.waitFor(() => {
+      expect(fetchDecisionsSpy.mock.calls.length).toBeGreaterThan(
+        initialDecisionsCalls,
+      );
+    });
+    expect(fetchStepsSpy.mock.calls.length).toBeGreaterThan(initialStepsCalls);
   });
 });

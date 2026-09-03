@@ -2,8 +2,8 @@ import type { ReactElement } from "react";
 import { useEffect, useRef, useState } from "react";
 
 import type { M3LConsoleFetchResult } from "../api/client.js";
+import { fetchScript as fetchScriptDefault } from "../api/scripts.js";
 import type {
-  M3LSessionBindingExpectedType,
   M3LSessionBindingInput,
   M3LSessionBindingRecord,
   M3LSessionDecisionRecord,
@@ -11,6 +11,8 @@ import type {
   M3LSessionStepSummary,
 } from "../api/sessions.js";
 import {
+  addSessionStep as addSessionStepDefault,
+  answerSessionDecision as answerSessionDecisionDefault,
   createSessionBinding as createSessionBindingDefault,
   fetchSession as fetchSessionDefault,
   fetchSessionDecisions as fetchSessionDecisionsDefault,
@@ -18,9 +20,12 @@ import {
   fetchSessionSteps as fetchSessionStepsDefault,
 } from "../api/sessions.js";
 import type { M3LTreePathSegment } from "../internal/step-reference.js";
-import { buildStepReference } from "../internal/step-reference.js";
+import { useBindingForm } from "../internal/session-binding-form.js";
 import { formatTimestampMs } from "../internal/timestamps.js";
+import { BindingForm } from "./SessionBindingForm.js";
+import { DecisionPrompt } from "./DecisionPrompt.js";
 import { JsonTreeViewer } from "./JsonTreeViewer.js";
+import { SessionStepLauncher } from "./SessionStepLauncher.js";
 
 /** Props accepted by {@link SessionDetail}. */
 export interface SessionDetailProps {
@@ -71,6 +76,24 @@ export interface SessionDetailProps {
         input: M3LSessionBindingInput,
       ) => Promise<M3LConsoleFetchResult<M3LSessionBindingRecord>>)
     | undefined;
+  /**
+   * Fetcher used by the embedded {@link SessionStepLauncher} to load a typed
+   * operation's script detail. Defaults to the real `fetchScript`;
+   * injectable so tests can supply a fake without mocking a module.
+   */
+  readonly fetchScript?: typeof fetchScriptDefault;
+  /**
+   * Launcher used by the embedded {@link SessionStepLauncher} to queue a new
+   * session step. Defaults to the real `addSessionStep`; injectable so
+   * tests can supply a fake without mocking a module.
+   */
+  readonly addSessionStep?: typeof addSessionStepDefault;
+  /**
+   * Fetcher used by each rendered {@link DecisionPrompt} to submit an
+   * answer. Defaults to the real `answerSessionDecision`; injectable so
+   * tests can supply a fake without mocking a module.
+   */
+  readonly answerSessionDecision?: typeof answerSessionDecisionDefault;
 }
 
 type SessionDetailState =
@@ -87,43 +110,36 @@ function deriveErrorMessage(caught: unknown): string {
   return caught instanceof Error ? caught.message : String(caught);
 }
 
+/**
+ * Merges `key`/`value` into `previous`, built on `Object.create(null)`
+ * rather than object-spread — same hazard `ParameterForm.tsx`'s
+ * `buildInitialValues` guards against: a caller-supplied `key` literally
+ * `"__proto__"` hits `Object.prototype`'s own accessor setter under a
+ * plain-object spread-then-bracket-assign and silently changes the
+ * object's prototype instead of becoming an own property.
+ */
+function withKnownValue(
+  previous: Readonly<Record<string, unknown>>,
+  key: string,
+  value: unknown,
+): Record<string, unknown> {
+  const next: Record<string, unknown> = Object.create(null) as Record<
+    string,
+    unknown
+  >;
+  for (const [existingKey, existingValue] of Object.entries(previous)) {
+    next[existingKey] = existingValue;
+  }
+  next[key] = value;
+  return next;
+}
+
 /** Fetch state for the currently-viewed step's result artifact. */
 type ArtifactState =
   | { readonly kind: "idle" }
   | { readonly kind: "loading" }
   | { readonly kind: "loaded"; readonly value: unknown }
   | { readonly kind: "error"; readonly message: string };
-
-/** The tree node currently selected for binding creation, if any. */
-interface SelectedNode {
-  readonly path: readonly M3LTreePathSegment[];
-  readonly value: unknown;
-}
-
-/** Submission state for the binding-creation form. */
-type BindingSubmitState =
-  | { readonly kind: "idle" }
-  | { readonly kind: "loading" }
-  | { readonly kind: "success"; readonly parameterName: string }
-  | { readonly kind: "error"; readonly message: string };
-
-/**
- * Derives the ADR-0068 `expectedType` tag from a selected value's JS type —
- * every non-string/number/boolean value (arrays, plain objects, `null`)
- * collapses to `"object"`.
- */
-function deriveExpectedType(value: unknown): M3LSessionBindingExpectedType {
-  if (typeof value === "string") {
-    return "string";
-  }
-  if (typeof value === "number") {
-    return "number";
-  }
-  if (typeof value === "boolean") {
-    return "boolean";
-  }
-  return "object";
-}
 
 /**
  * Combines the three parallel fetch results into a single settled state.
@@ -166,21 +182,32 @@ interface SessionDetailFetchers {
   ) => Promise<M3LConsoleFetchResult<readonly M3LSessionDecisionRecord[]>>;
 }
 
+/** Return shape of {@link useSessionDetailFetchState}. */
+interface SessionDetailFetchStateResult {
+  readonly state: SessionDetailState;
+  /** Re-runs the same fetch sequence on demand, not just on `id` change. */
+  readonly reload: () => void;
+}
+
 /**
  * Owns the combined session/steps/decisions fetch lifecycle — initial load
- * on mount and re-load whenever `id` changes — extracted to keep
- * {@link SessionDetail} itself short. A single `cancelled` flag guards
- * against updating state after unmount or after a newer `id` has superseded
- * this effect run.
+ * on mount, re-load whenever `id` changes, and an on-demand {@link
+ * SessionDetailFetchStateResult.reload} a caller can trigger after a
+ * mutation (a step launch, a decision answer) — extracted to keep
+ * {@link SessionDetail} itself short. A monotonic request token (rather than
+ * a single `cancelled` flag) guards against a stale in-flight fetch —
+ * superseded by unmount, an `id` change, or a later `reload()` call —
+ * clobbering a newer one's state.
  */
 function useSessionDetailFetchState(
   id: string,
   fetchers: SessionDetailFetchers,
-): SessionDetailState {
+): SessionDetailFetchStateResult {
   const [state, setState] = useState<SessionDetailState>({ kind: "loading" });
+  const requestTokenRef = useRef(0);
 
-  useEffect(() => {
-    let cancelled = false;
+  function runFetch(): void {
+    const token = (requestTokenRef.current += 1);
     setState({ kind: "loading" });
 
     Promise.all([
@@ -189,25 +216,30 @@ function useSessionDetailFetchState(
       fetchers.fetchSessionDecisions(id),
     ])
       .then(([sessionResult, stepsResult, decisionsResult]) => {
-        if (cancelled) {
+        if (requestTokenRef.current !== token) {
           return;
         }
         setState(toSettledState(sessionResult, stepsResult, decisionsResult));
       })
       .catch((caught: unknown) => {
-        if (cancelled) {
+        if (requestTokenRef.current !== token) {
           return;
         }
         setState({ kind: "error", message: deriveErrorMessage(caught) });
       });
+  }
 
+  useEffect(() => {
+    runFetch();
     return () => {
-      cancelled = true;
+      // Invalidates any fetch still in flight for this `id` — either the
+      // component unmounted, or a new `id` is about to start its own fetch.
+      requestTokenRef.current += 1;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only `id` should retrigger the fetch; the fetcher props are treated as stable
   }, [id]);
 
-  return state;
+  return { state, reload: runFetch };
 }
 
 /** Renders the `Steps` section, extracted to keep {@link SessionDetailLoaded} short. */
@@ -273,76 +305,15 @@ function StepArtifactPanel({
   );
 }
 
-/**
- * Renders the binding-creation form opened after selecting a tree node —
- * submitting it invokes `onSubmit`, which the caller has already bound to
- * the selected step/node so this component stays a pure controlled form.
- */
-function BindingForm({
-  parameterName,
-  onParameterNameChange,
-  multiSelect,
-  onMultiSelectChange,
-  bindingState,
-  onSubmit,
-}: {
-  readonly parameterName: string;
-  readonly onParameterNameChange: (value: string) => void;
-  readonly multiSelect: boolean;
-  readonly onMultiSelectChange: (value: boolean) => void;
-  readonly bindingState: BindingSubmitState;
-  readonly onSubmit: () => void;
-}): ReactElement {
-  return (
-    <form
-      data-testid="binding-form"
-      onSubmit={(event) => {
-        event.preventDefault();
-        onSubmit();
-      }}
-    >
-      <label>
-        Parameter name
-        <input
-          type="text"
-          data-testid="binding-parameter-name-input"
-          value={parameterName}
-          onChange={(event) => onParameterNameChange(event.target.value)}
-        />
-      </label>
-      <label>
-        Multi-select
-        <input
-          type="checkbox"
-          data-testid="binding-multi-select-checkbox"
-          checked={multiSelect}
-          onChange={(event) => onMultiSelectChange(event.target.checked)}
-        />
-      </label>
-      <button
-        type="submit"
-        data-testid="binding-submit"
-        disabled={bindingState.kind === "loading"}
-      >
-        Create binding
-      </button>
-      {bindingState.kind === "success" && (
-        <p data-testid="binding-success">
-          Binding created for {bindingState.parameterName}
-        </p>
-      )}
-      {bindingState.kind === "error" && (
-        <p data-testid="binding-error">Error: {bindingState.message}</p>
-      )}
-    </form>
-  );
-}
-
 /** Renders the `Decisions` section, extracted to keep {@link SessionDetailLoaded} short. */
 function SessionDecisions({
   decisions,
+  answerSessionDecision,
+  onAnswered,
 }: {
   readonly decisions: readonly M3LSessionDecisionRecord[];
+  readonly answerSessionDecision: typeof answerSessionDecisionDefault;
+  readonly onAnswered: () => void;
 }): ReactElement {
   return (
     <section>
@@ -350,13 +321,14 @@ function SessionDecisions({
       {decisions.length === 0 ? (
         <p>no decisions yet</p>
       ) : (
-        <ul>
-          {decisions.map((decision) => (
-            <li key={decision.id}>
-              {decision.prompt} — {decision.status}
-            </li>
-          ))}
-        </ul>
+        decisions.map((decision) => (
+          <DecisionPrompt
+            key={decision.id}
+            decision={decision}
+            answerSessionDecision={answerSessionDecision}
+            onAnswered={onAnswered}
+          />
+        ))
       )}
     </section>
   );
@@ -371,11 +343,15 @@ function SessionDetailLoaded({
   steps,
   decisions,
   onViewOutput,
+  answerSessionDecision,
+  onDecisionAnswered,
 }: {
   readonly session: M3LSessionRecord;
   readonly steps: readonly M3LSessionStepSummary[];
   readonly decisions: readonly M3LSessionDecisionRecord[];
   readonly onViewOutput: (step: M3LSessionStepSummary) => void;
+  readonly answerSessionDecision: typeof answerSessionDecisionDefault;
+  readonly onDecisionAnswered: () => void;
 }): ReactElement {
   return (
     <>
@@ -388,7 +364,11 @@ function SessionDetailLoaded({
         <p>Closed: {formatTimestampMs(session.closedAtMs)}</p>
       )}
       <SessionSteps steps={steps} onViewOutput={onViewOutput} />
-      <SessionDecisions decisions={decisions} />
+      <SessionDecisions
+        decisions={decisions}
+        answerSessionDecision={answerSessionDecision}
+        onAnswered={onDecisionAnswered}
+      />
     </>
   );
 }
@@ -457,237 +437,6 @@ function useStepArtifact(
 }
 
 /**
- * Resets the three ancillary binding-form fields (parameter name,
- * multi-select, submission state) shared by {@link useBindingForm}'s
- * `resetSelection` and `selectNode` — extracted so neither duplicates these
- * three calls inline and `useBindingForm` itself stays short.
- */
-function resetBindingFormFields(
-  setParameterName: (value: string) => void,
-  setMultiSelect: (value: boolean) => void,
-  setBindingState: (state: BindingSubmitState) => void,
-): void {
-  setParameterName("");
-  setMultiSelect(false);
-  setBindingState({ kind: "idle" });
-}
-
-/**
- * Builds the step reference for {@link useBindingForm}'s `submit`, guarding
- * the `buildStepReference` call — which throws `M3LStepReferenceError` for a
- * malformed path (e.g. a `__proto__` key) — so a throw surfaces as a
- * `bindingState` error instead of escaping the event handler and leaving the
- * form stuck on `"loading"`. Returns `undefined` on failure (state has
- * already been set, guarded by the same request-identity check as {@link
- * submitBindingRequest}); extracted to keep `useBindingForm` itself short.
- */
-function resolveBindingReference(
-  step: M3LSessionStepSummary,
-  node: SelectedNode,
-  currentNodeRef: { current: SelectedNode | null },
-  setBindingState: (state: BindingSubmitState) => void,
-): string | undefined {
-  try {
-    return buildStepReference(step.ordinal, node.path);
-  } catch (caught) {
-    if (currentNodeRef.current === node) {
-      setBindingState({ kind: "error", message: deriveErrorMessage(caught) });
-    }
-    return undefined;
-  }
-}
-
-/**
- * Performs the `createBinding` network call on behalf of {@link
- * useBindingForm}'s `submit`, dropping the settled result silently when
- * `currentNodeRef` no longer points at `node` by the time it resolves — the
- * request-identity guard against a stale response clobbering whatever node
- * is now selected. Extracted to keep `useBindingForm` itself short.
- */
-function submitBindingRequest(args: {
-  readonly sessionId: string;
-  readonly node: SelectedNode;
-  readonly reference: string;
-  readonly expectedType: M3LSessionBindingExpectedType;
-  readonly multiSelect: boolean;
-  readonly parameterName: string;
-  readonly createBinding: (
-    sessionId: string,
-    input: M3LSessionBindingInput,
-  ) => Promise<M3LConsoleFetchResult<M3LSessionBindingRecord>>;
-  readonly currentNodeRef: { current: SelectedNode | null };
-  readonly setBindingState: (state: BindingSubmitState) => void;
-}): void {
-  const {
-    sessionId,
-    node,
-    reference,
-    expectedType,
-    multiSelect,
-    parameterName,
-    createBinding,
-    currentNodeRef,
-    setBindingState,
-  } = args;
-
-  createBinding(sessionId, {
-    reference,
-    expectedType,
-    multiSelect,
-    parameterName,
-  })
-    .then((result) => {
-      if (currentNodeRef.current !== node) {
-        return;
-      }
-      setBindingState(
-        result.ok
-          ? { kind: "success", parameterName }
-          : { kind: "error", message: result.error.message },
-      );
-    })
-    .catch((caught: unknown) => {
-      if (currentNodeRef.current !== node) {
-        return;
-      }
-      setBindingState({ kind: "error", message: deriveErrorMessage(caught) });
-    });
-}
-
-/**
- * Runs {@link useBindingForm}'s whole submit sequence — resolving the
- * reference, then dispatching the network call — extracted (along with
- * {@link resolveBindingReference} and {@link submitBindingRequest}) so the
- * hook itself stays short.
- */
-function performBindingSubmit(args: {
-  readonly sessionId: string;
-  readonly step: M3LSessionStepSummary;
-  readonly node: SelectedNode;
-  readonly multiSelect: boolean;
-  readonly parameterName: string;
-  readonly createBinding: (
-    sessionId: string,
-    input: M3LSessionBindingInput,
-  ) => Promise<M3LConsoleFetchResult<M3LSessionBindingRecord>>;
-  readonly currentNodeRef: { current: SelectedNode | null };
-  readonly setBindingState: (state: BindingSubmitState) => void;
-}): void {
-  const {
-    sessionId,
-    step,
-    node,
-    multiSelect,
-    parameterName,
-    createBinding,
-    currentNodeRef,
-    setBindingState,
-  } = args;
-
-  setBindingState({ kind: "loading" });
-  const reference = resolveBindingReference(
-    step,
-    node,
-    currentNodeRef,
-    setBindingState,
-  );
-  if (reference === undefined) {
-    return;
-  }
-
-  submitBindingRequest({
-    sessionId,
-    node,
-    reference,
-    expectedType: deriveExpectedType(node.value),
-    multiSelect,
-    parameterName,
-    createBinding,
-    currentNodeRef,
-    setBindingState,
-  });
-}
-
-/**
- * Owns the "select a tree node, fill in and submit a binding" form state —
- * extracted to keep {@link SessionDetail} itself short. Selecting a new node
- * resets the form fields, so an operator never submits against a stale
- * selection.
- *
- * Three hazards beyond the happy path: (1) `buildStepReference` throws
- * `M3LStepReferenceError` for a malformed path (e.g. a `__proto__` key) —
- * that call is wrapped so a throw surfaces as a `bindingState` error instead
- * of escaping the event handler and leaving the form stuck on `"loading"`;
- * (2) submitting for node A, then selecting/deselecting a different node B
- * before A's request resolves, must not let A's later result clobber B's —
- * `currentNodeRef` tracks the node object identity currently selected
- * (updated by {@link selectNode}/{@link resetSelection}), and the async
- * callbacks drop their result when it no longer matches; (3) switching `id`
- * (session) must reset the whole form, mirroring {@link
- * useSessionDetailFetchState}'s own reset.
- */
-function useBindingForm(
-  id: string,
-  createBinding: (
-    sessionId: string,
-    input: M3LSessionBindingInput,
-  ) => Promise<M3LConsoleFetchResult<M3LSessionBindingRecord>>,
-) {
-  const [selectedNode, setSelectedNode] = useState<SelectedNode | null>(null);
-  const [parameterName, setParameterName] = useState("");
-  const [multiSelect, setMultiSelect] = useState(false);
-  const [bindingState, setBindingState] = useState<BindingSubmitState>({
-    kind: "idle",
-  });
-  const currentNodeRef = useRef<SelectedNode | null>(null);
-
-  function resetSelection(): void {
-    currentNodeRef.current = null;
-    setSelectedNode(null);
-    resetBindingFormFields(setParameterName, setMultiSelect, setBindingState);
-  }
-
-  useEffect(() => {
-    resetSelection();
-  }, [id]);
-
-  function selectNode(
-    path: readonly M3LTreePathSegment[],
-    value: unknown,
-  ): void {
-    const node: SelectedNode = { path, value };
-    currentNodeRef.current = node;
-    setSelectedNode(node);
-    resetBindingFormFields(setParameterName, setMultiSelect, setBindingState);
-  }
-
-  function submit(step: M3LSessionStepSummary, node: SelectedNode): void {
-    performBindingSubmit({
-      sessionId: id,
-      step,
-      node,
-      multiSelect,
-      parameterName,
-      createBinding,
-      currentNodeRef,
-      setBindingState,
-    });
-  }
-
-  return {
-    selectedNode,
-    parameterName,
-    multiSelect,
-    bindingState,
-    setParameterName,
-    setMultiSelect,
-    resetSelection,
-    selectNode,
-    submit,
-  };
-}
-
-/**
  * Renders the "Output" section shown once a step's output has been
  * requested: the artifact panel, and — once a tree node is selected — the
  * binding-creation form. Extracted to keep {@link SessionDetail} itself
@@ -728,9 +477,90 @@ function StepOutputSection({
 }
 
 /**
+ * Owns the session's accumulated bindings and the concrete value each bound
+ * parameter currently resolves to, fed into the embedded
+ * {@link SessionStepLauncher} — extracted to keep {@link SessionDetail}
+ * itself short. Both reset whenever `id` changes, mirroring {@link
+ * useSessionDetailFetchState}'s own reset.
+ */
+function useSessionBindingAccumulator(id: string): {
+  readonly sessionBindings: readonly M3LSessionBindingRecord[];
+  readonly knownValues: Readonly<Record<string, unknown>>;
+  readonly onCreated: (record: M3LSessionBindingRecord, value: unknown) => void;
+} {
+  const [sessionBindings, setSessionBindings] = useState<
+    readonly M3LSessionBindingRecord[]
+  >([]);
+  const [knownValues, setKnownValues] = useState<Record<string, unknown>>(
+    () => Object.create(null) as Record<string, unknown>,
+  );
+
+  useEffect(() => {
+    setSessionBindings([]);
+    setKnownValues(Object.create(null) as Record<string, unknown>);
+  }, [id]);
+
+  function onCreated(record: M3LSessionBindingRecord, value: unknown): void {
+    setSessionBindings((previous) => [...previous, record]);
+    if (record.parameterName !== undefined) {
+      const parameterName = record.parameterName;
+      setKnownValues((previous) =>
+        withKnownValue(previous, parameterName, value),
+      );
+    }
+  }
+
+  return { sessionBindings, knownValues, onCreated };
+}
+
+/** Every dependency {@link SessionDetail} resolves from its (all-optional) props, defaulted to the real API imports. */
+interface SessionDetailDependencies {
+  readonly fetchers: SessionDetailFetchers;
+  readonly fetchSessionStepArtifact: (
+    sessionId: string,
+    stepId: string,
+  ) => Promise<M3LConsoleFetchResult<unknown>>;
+  readonly createSessionBinding: (
+    sessionId: string,
+    input: M3LSessionBindingInput,
+  ) => Promise<M3LConsoleFetchResult<M3LSessionBindingRecord>>;
+  readonly answerSessionDecision: typeof answerSessionDecisionDefault;
+  readonly fetchScript: typeof fetchScriptDefault;
+  readonly addSessionStep: typeof addSessionStepDefault;
+}
+
+/**
+ * Resolves every injectable dependency {@link SessionDetail} accepts to its
+ * real-API default, extracted purely to keep that component's own
+ * cyclomatic complexity down (each `??` fallback is its own branch).
+ */
+function resolveSessionDetailDependencies(
+  props: SessionDetailProps,
+): SessionDetailDependencies {
+  return {
+    fetchers: {
+      fetchSession: props.fetchSession ?? fetchSessionDefault,
+      fetchSessionSteps: props.fetchSessionSteps ?? fetchSessionStepsDefault,
+      fetchSessionDecisions:
+        props.fetchSessionDecisions ?? fetchSessionDecisionsDefault,
+    },
+    fetchSessionStepArtifact:
+      props.fetchSessionStepArtifact ?? fetchSessionStepArtifactDefault,
+    createSessionBinding:
+      props.createSessionBinding ?? createSessionBindingDefault,
+    answerSessionDecision:
+      props.answerSessionDecision ?? answerSessionDecisionDefault,
+    fetchScript: props.fetchScript ?? fetchScriptDefault,
+    addSessionStep: props.addSessionStep ?? addSessionStepDefault,
+  };
+}
+
+/**
  * Loads and renders a single session's detail: id, status, operator,
- * timing, its steps, and its decisions. Reloads all three whenever `id`
- * changes.
+ * timing, its steps, its decisions, a step launcher, and (once a step's
+ * output has been requested) that step's result artifact and
+ * binding-creation form. Reloads session/steps/decisions whenever `id`
+ * changes, or whenever a step is launched or a decision is answered.
  *
  * @example
  * ```tsx
@@ -741,21 +571,12 @@ function StepOutputSection({
  */
 export function SessionDetail(props: SessionDetailProps): ReactElement {
   const { id } = props;
-  const fetchers: SessionDetailFetchers = {
-    fetchSession: props.fetchSession ?? fetchSessionDefault,
-    fetchSessionSteps: props.fetchSessionSteps ?? fetchSessionStepsDefault,
-    fetchSessionDecisions:
-      props.fetchSessionDecisions ?? fetchSessionDecisionsDefault,
-  };
-  const state = useSessionDetailFetchState(id, fetchers);
-  const artifact = useStepArtifact(
-    id,
-    props.fetchSessionStepArtifact ?? fetchSessionStepArtifactDefault,
-  );
-  const binding = useBindingForm(
-    id,
-    props.createSessionBinding ?? createSessionBindingDefault,
-  );
+  const deps = resolveSessionDetailDependencies(props);
+  const { state, reload } = useSessionDetailFetchState(id, deps.fetchers);
+  const artifact = useStepArtifact(id, deps.fetchSessionStepArtifact);
+  const { sessionBindings, knownValues, onCreated } =
+    useSessionBindingAccumulator(id);
+  const binding = useBindingForm(id, deps.createSessionBinding, onCreated);
 
   function handleViewOutput(step: M3LSessionStepSummary): void {
     binding.resetSelection();
@@ -772,6 +593,8 @@ export function SessionDetail(props: SessionDetailProps): ReactElement {
           steps={state.steps}
           decisions={state.decisions}
           onViewOutput={handleViewOutput}
+          answerSessionDecision={deps.answerSessionDecision}
+          onDecisionAnswered={reload}
         />
       )}
       {artifact.selectedStep && (
@@ -781,6 +604,14 @@ export function SessionDetail(props: SessionDetailProps): ReactElement {
           binding={binding}
         />
       )}
+      <SessionStepLauncher
+        sessionId={id}
+        bindings={sessionBindings}
+        knownValues={knownValues}
+        onStepLaunched={reload}
+        fetchScript={deps.fetchScript}
+        addSessionStep={deps.addSessionStep}
+      />
     </div>
   );
 }
