@@ -298,16 +298,21 @@ Anthropic provides no hook, `settings.json` key, or shell-integration pattern
 for auto-naming — the launcher above is the only mechanism, and it still
 requires remembering to run `pnpm session:launch` instead of a bare `claude`.
 If you'd rather never think about it, shadow `claude` with a shell function
-that delegates to the launcher only when one is available and no explicit
-naming/resume flag is already present, falling through to the real binary
-otherwise:
+that delegates to the launcher only when one is available, no explicit
+naming/resume flag is already present, and the current branch is
+`feat/<slug>` or `fix/<slug>` — the only shape `session:launch` can derive a
+name from without a `--kind` — falling through to the real binary otherwise
+(exactly `bin/install-session-shell-hook.mjs`'s `buildShellFunctionBlock()`,
+reproduced here so this recipe never has to be hand-copied out of sync with
+it again):
 
 ```bash
 claude() {
   if [ -z "${CLAUDE_SESSION_LAUNCH_DISABLE:-}" ] \
-     && ! printf '%s\n' "$@" | grep -qE '^(-n|--name|--resume|--continue|-p)$' \
+     && ! printf '%s\n' "$@" | grep -qE '^(-n|--name(=.+)?|--resume(=.+)?|--continue|-p)$' \
      && [ -f package.json ] \
-     && grep -q '"session:launch"' package.json 2>/dev/null; then
+     && grep -q '"session:launch"' package.json 2>/dev/null \
+     && git rev-parse --abbrev-ref HEAD 2>/dev/null | grep -qE '^(feat|fix)/[a-z0-9]+(-[a-z0-9]+)*$'; then
     pnpm session:launch -- "$@"
   else
     command claude "$@"

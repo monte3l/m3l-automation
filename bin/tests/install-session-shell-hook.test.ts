@@ -30,6 +30,13 @@ describe("buildShellFunctionBlock", () => {
   test("is deterministic across calls", () => {
     expect(buildShellFunctionBlock()).toBe(buildShellFunctionBlock());
   });
+
+  test("restricts delegation to feat/<slug> or fix/<slug> branches", () => {
+    const result = buildShellFunctionBlock();
+
+    expect(result).toContain("git rev-parse --abbrev-ref HEAD");
+    expect(result).toContain("(feat|fix)");
+  });
 });
 
 describe("detectRcPath", () => {

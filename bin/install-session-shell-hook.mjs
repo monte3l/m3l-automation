@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 // ADR-0088's optional, opt-in shell-integration recipe: appends a `claude`
 // shell function to the caller's shell rc file that delegates to
-// `pnpm session:launch` when one is available and no explicit naming/resume
-// flag is already present, falling through to the real `claude` binary
+// `pnpm session:launch` when one is available, no explicit naming/resume
+// flag is already present, and the current branch is `feat/<slug>` or
+// `fix/<slug>` (the only shape `session:launch` can derive a name from,
+// without a `--kind`) — falling through to the real `claude` binary
 // otherwise. Never wired into `prepare` — this mutates a file OUTSIDE the
 // repo (the user's home directory), so it stays a deliberate, separate
 // command the user runs once.
@@ -26,6 +28,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseJsonFlag, createReporter } from "./lib/report.mjs";
+import { BRANCH_KINDS } from "./lib/session-name.mjs";
 
 export const MARKER_BEGIN = "# >>> m3l-automation session:launch hook >>>";
 export const MARKER_END = "# <<< m3l-automation session:launch hook <<<";
@@ -38,6 +41,11 @@ export const MARKER_END = "# <<< m3l-automation session:launch hook <<<";
  * @returns {string}
  */
 export function buildShellFunctionBlock() {
+  // Derived from BRANCH_KINDS, not a hardcoded "(feat|fix)" literal — this
+  // exact bug class (the shell check silently drifting out of sync with
+  // bin/lib/session-name.mjs's own branch-derivable kinds) has already
+  // recurred twice on this file.
+  const kindAlternation = BRANCH_KINDS.join("|");
   return [
     MARKER_BEGIN,
     "# ADR-0088: shadows `claude` so it launches already named, when a",
@@ -46,12 +54,17 @@ export function buildShellFunctionBlock() {
     "# CLAUDE_SESSION_LAUNCH_DISABLE=1; uninstall by deleting this block.",
     "# Only checks the current directory for package.json — invoking `claude`",
     "# from a subdirectory of a session:launch-enabled repo falls through to",
-    "# the real binary; `cd` to the repo root first.",
+    "# the real binary; `cd` to the repo root first. Also requires a",
+    "# feat/<slug> or fix/<slug> branch — session:launch has no way to derive",
+    "# a name on any other branch and exits without launching, so this must",
+    "# match its own derivable-branch check (bin/lib/session-name.mjs) or a",
+    "# bare `claude` on e.g. `main` would hard-fail instead of falling through.",
     "claude() {",
     '  if [ -z "${CLAUDE_SESSION_LAUNCH_DISABLE:-}" ] \\',
     "     && ! printf '%s\\n' \"$@\" | grep -qE '^(-n|--name(=.+)?|--resume(=.+)?|--continue|-p)$' \\",
     "     && [ -f package.json ] \\",
-    "     && grep -q '\"session:launch\"' package.json 2>/dev/null; then",
+    "     && grep -q '\"session:launch\"' package.json 2>/dev/null \\",
+    `     && git rev-parse --abbrev-ref HEAD 2>/dev/null | grep -qE '^(${kindAlternation})/[a-z0-9]+(-[a-z0-9]+)*$'; then`,
     '    pnpm session:launch -- "$@"',
     "  else",
     '    command claude "$@"',
