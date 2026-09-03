@@ -169,10 +169,10 @@ describe("CONSOLE_MIGRATIONS — the real registry (v6: console_human_actions)",
     expect(v6?.name.length).toBeGreaterThan(0);
   });
 
-  test("applying every migration reaches user_version 10 and creates console_human_actions with its three indexes", () => {
+  test("applying every migration reaches user_version 11 and creates console_human_actions with its three indexes", () => {
     const database = createRealMigratedDatabase();
 
-    expect(readUserVersion(database)).toBe(10);
+    expect(readUserVersion(database)).toBe(11);
     expect(tableExists(database, "console_human_actions")).toBe(true);
     expect(indexExists(database, "console_human_actions_correlation_id")).toBe(
       true,
@@ -189,7 +189,7 @@ describe("CONSOLE_MIGRATIONS — the real registry (v6: console_human_actions)",
     const secondApplied = applyMigrations(database, CONSOLE_MIGRATIONS);
 
     expect(secondApplied).toBe(0);
-    expect(readUserVersion(database)).toBe(10);
+    expect(readUserVersion(database)).toBe(11);
     expect(tableExists(database, "console_human_actions")).toBe(true);
   });
 

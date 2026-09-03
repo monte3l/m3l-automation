@@ -1,10 +1,11 @@
 /**
  * Tests for `CONSOLE_MIGRATIONS`' v9 migration — `console_telemetry_rollup`
- * (X8 slice 1 telemetry store) — `src/store/migrations/registry.ts`.
+ * (X8 slice 1 telemetry store) — and v11's follow-up symmetric-measure
+ * `CHECK` recreate — `src/store/migrations/registry.ts`.
  *
  * A separate file from `tests/store-migrations-audit.test.ts` on purpose:
  * that file is 13,757 B and the full CHECK-constraint matrix for
- * `console_telemetry_rollup` (20 illegal shapes) would push it over the
+ * `console_telemetry_rollup` (21 illegal shapes) would push it over the
  * 60,000 B `check:file-budget` test ceiling. This file exercises the ACTUAL
  * `CONSOLE_MIGRATIONS` registry (never a stand-in fixture), mirroring the
  * "real registry" structure of the sibling file for v6: the thing under test
@@ -19,9 +20,14 @@
  * registry, participates correctly in that already-proven machinery: it
  * applies, the table exists, it has NO secondary index (finding 4 from the
  * ADR probe — a secondary index made the whole-window aggregate 2× slower),
- * its own CHECK constraints hold for 8 legal shapes and reject 20 illegal
- * shapes, a no-op re-apply still works, and a tampered v9 history row is
- * still caught as drift.
+ * its own CHECK constraints hold for 8 legal shapes and reject 21 illegal
+ * shapes, a no-op re-apply still works, and a tampered v9 OR v11 history row
+ * is still caught as drift. v11 (the next migration after v10's
+ * `add_session_binding_parameter_name`) recreates the table with a
+ * biconditional `CHECK ((sum_value IS NOT NULL) = (metric IN (...)))` in
+ * place of v9's one-directional `CHECK (metric NOT IN (...) OR sum_value IS
+ * NOT NULL)`, closing the gap where a counter metric (`sse.stream`,
+ * `policy.decision`) could carry a measure it should never have.
  *
  * **Why `WITHOUT ROWID` + `NOT NULL` on every dimension.** The contract
  * measured that nullable dimensions with a `UNIQUE INDEX` fail silently:
@@ -278,10 +284,10 @@ describe("CONSOLE_MIGRATIONS — the real registry (v9: console_telemetry_rollup
     expect(v9?.name.length).toBeGreaterThan(0);
   });
 
-  test("applying every migration reaches user_version 10 and creates console_telemetry_rollup", () => {
+  test("applying every migration reaches user_version 11 and creates console_telemetry_rollup", () => {
     const database = createRealMigratedDatabase();
 
-    expect(readUserVersion(database)).toBe(10);
+    expect(readUserVersion(database)).toBe(11);
     expect(tableExists(database, "console_telemetry_rollup")).toBe(true);
   });
 
@@ -307,7 +313,7 @@ describe("CONSOLE_MIGRATIONS — the real registry (v9: console_telemetry_rollup
     const secondApplied = applyMigrations(database, CONSOLE_MIGRATIONS);
 
     expect(secondApplied).toBe(0);
-    expect(readUserVersion(database)).toBe(10);
+    expect(readUserVersion(database)).toBe(11);
     expect(tableExists(database, "console_telemetry_rollup")).toBe(true);
   });
 
@@ -319,6 +325,63 @@ describe("CONSOLE_MIGRATIONS — the real registry (v9: console_telemetry_rollup
 
     database.exec(
       "UPDATE console_schema_migrations SET sql_digest = 'tampered-digest' WHERE version = 9",
+    );
+
+    const thrown = captureFailure(() =>
+      applyMigrations(database, CONSOLE_MIGRATIONS),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).code).toBe(
+      "ERR_CONSOLE_STORE_SCHEMA_DRIFT",
+    );
+  });
+});
+
+describe("CONSOLE_MIGRATIONS — the real registry (v11: symmetric telemetry measure CHECK)", () => {
+  // v10 is `add_session_binding_parameter_name` (registry.ts:487-491, PR #937);
+  // v11 is the NEXT migration, a `console_telemetry_rollup` table recreate
+  // (SQLite cannot `ALTER` a `CHECK`) that replaces v9's one-directional
+  // mandatory-measure CHECK with the biconditional form already used
+  // elsewhere in this table's DDL (e.g. `(route <> '') = (metric =
+  // 'http.request')`).
+
+  test("v11 has a stable, non-empty name distinct from every earlier migration's", () => {
+    const names = CONSOLE_MIGRATIONS.map((migration) => migration.name);
+
+    expect(new Set(names).size).toBe(names.length);
+    const v11 = CONSOLE_MIGRATIONS.find(
+      (migration) => migration.version === 11,
+    );
+    expect(v11).toBeDefined();
+    expect(v11?.name.length).toBeGreaterThan(0);
+  });
+
+  test("v11 is positioned after v10 in the registry", () => {
+    const v10Index = CONSOLE_MIGRATIONS.findIndex(
+      (migration) => migration.version === 10,
+    );
+    const v11Index = CONSOLE_MIGRATIONS.findIndex(
+      (migration) => migration.version === 11,
+    );
+
+    expect(v10Index).toBeGreaterThanOrEqual(0);
+    expect(v11Index).toBeGreaterThan(v10Index);
+  });
+
+  test("applying every migration reaches user_version 11", () => {
+    const database = createRealMigratedDatabase();
+
+    expect(readUserVersion(database)).toBe(11);
+  });
+
+  test("schema drift — a tampered v11 sql_digest is caught on the next apply", () => {
+    // VERIFY THIS GUARD BITES: the tampered row must be the v11-specific
+    // entry, not just any row — mirrors the v9 test above.
+    const database = createRealMigratedDatabase();
+
+    database.exec(
+      "UPDATE console_schema_migrations SET sql_digest = 'tampered-digest' WHERE version = 11",
     );
 
     const thrown = captureFailure(() =>
@@ -422,12 +485,14 @@ describe("CONSOLE_MIGRATIONS v9 — legal shapes accepted by the real database",
 });
 
 // ---------------------------------------------------------------------------
-// 20 illegal shapes — every CHECK constraint has at least one violation.
+// 21 illegal shapes — every CHECK constraint has at least one violation.
 // Each row is a single-field departure from an otherwise valid baseline, so
 // exactly ONE documented CHECK constraint is violated — never a proxy count.
+// The 21st shape (a counter metric carrying a measure) is rejected only
+// once v11's symmetric CHECK lands — see the "v11" describe block above.
 // ---------------------------------------------------------------------------
 
-describe("CONSOLE_MIGRATIONS v9 — 20 illegal shapes rejected by the real database", () => {
+describe("CONSOLE_MIGRATIONS v9/v11 — 21 illegal shapes rejected by the real database", () => {
   // Every test here confirms the DATABASE itself rejects the row by matching
   // a distinctive fragment of the SQLite error message against the specific
   // CHECK constraint intended to fire. This is deliberately stricter than
@@ -629,6 +694,24 @@ describe("CONSOLE_MIGRATIONS v9 — 20 illegal shapes rejected by the real datab
         "NULL route — dimension columns are NOT NULL (WITHOUT ROWID + STRICT)",
         () => validHttpRequestRow({ route: null }),
         /NOT NULL constraint failed/,
+      ],
+
+      // --- v11: symmetric mandatory-measure CHECK ---
+      // Under v9's one-directional CHECK, a counter metric was free to carry
+      // a measure it should never have — nothing forbade it. v11 replaces
+      // that CHECK with the biconditional form, which now rejects this row.
+      // sum_value/min_value/max_value are set CONSISTENTLY (all non-null,
+      // correctly ordered) so this row trips ONLY the new symmetric CHECK —
+      // never the null-pairing or ordering CHECKs exercised above.
+      [
+        "sse.stream carrying a measure — counter metrics must have NULL sum_value under the v11 symmetric CHECK",
+        () =>
+          validSseStreamRow({
+            sum_value: 10,
+            min_value: 5,
+            max_value: 10,
+          }),
+        /\(sum_value IS NOT NULL\) = \(metric IN \('http\.request','run\.finished','store\.health'\)\)/,
       ],
     ];
 
