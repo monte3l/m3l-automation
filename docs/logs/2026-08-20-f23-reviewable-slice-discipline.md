@@ -208,3 +208,4 @@ learned)_
   reads as the comment's closing delimiter to the parser. Grep a drafted
   header comment for `*/` before the first `eslint`/`prettier` pass whenever
   the comment discusses glob patterns.
+  _(promoted → `.claude/rules/domain-knowledge.md`)_

@@ -59,6 +59,18 @@ git status --porcelain               # is the tree already dirty?
   as `main` for isolation purposes (it's the same tree state the guard protects).
 - If `--git-common-dir` and `--git-dir` resolve differently, you're already in a
   linked worktree — note it; the location decision is likely settled.
+- **Re-run this inspection after any conversational gap, not just at the
+  start.** A worktree is not a stable fact: a concurrent session rewriting
+  history, or its own `finishing-work` close-out, can delete the directory or
+  the branch out from under an in-flight task — and a `cd` into a path that no
+  longer exists silently lands you back in the shared checkout, where a peer
+  session's branch switching has discarded uncommitted edits. Four logs record
+  this (`2026-09-03-statusline-redesign.md`,
+  `2026-09-03-skill-invocation-and-listing-budget.md`,
+  `2026-09-03-worktree-new-lib-extract.md`,
+  `2026-09-03-x12-container-stance-and-loopback-refactor.md`). Confirm the
+  location still holds before writing, including for a work log or a rule
+  promotion — a close-out resets the location decision, not just the branch.
 - **Resume check.** If the tree is dirty (a non-empty `git status --porcelain`)
   AND `tmp/compact-handoff.json` exists with a `branch` field matching the
   current branch, this looks like a resume of interrupted work rather than a

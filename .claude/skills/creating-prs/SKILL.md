@@ -293,6 +293,15 @@ correct blocker: a push that twice failed this way turned out to be
 verified push first; if a lane's own `✗` is genuinely there, fix that gate,
 never bypass it to "see what happens."
 
+**A push can also fail _before_ `pre-push` runs, in which case nothing was
+gated at all.** Git resolves the remote and discovers refs first, so a DNS or
+auth failure (`Could not resolve hostname github.com`, exit 128) means the hook
+never executed and the commit is still completely ungated. "It got as far as
+ssh" is not evidence the gates passed — the missing lefthook lane summary is
+the tell. Re-push once the transport recovers and confirm the hook actually
+ran; it prints its step list and takes minutes
+(`docs/logs/2026-09-03-x8-open-items.md`).
+
 **A session-level process restart drops harness-tracked background jobs and
 can wipe the scratchpad their logs were written into**, leaving a
 `task-notification` that reports `status: stopped` with no completion record
