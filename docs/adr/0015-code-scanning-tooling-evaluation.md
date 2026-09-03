@@ -45,6 +45,23 @@
 > `Dependency Review` and `pnpm audit` remain the substantive gate for that PR
 > class. See `docs/contributing/branch-protection.md` for the current
 > required-context list.
+>
+> **Update (2026-09-03).** [ADR-0071](./0071-console-containerization-deployment.md)
+> deferred a reassessment of the Trivy rejection below to X12 (issue #560),
+> the console's containerization PR. The premise of that rejection has
+> changed: the repo now **builds** two container images
+> (`m3l-console-server`, `m3l-console-web`) via `docker compose`, so "this
+> project ships no images" is no longer accurate. The rejection's
+> conclusion still stands, on a narrower premise — the repo builds images
+> but **publishes** none to any registry, and both run locally only, behind
+> ADR-0071's loopback-only posture. Trivy is adopted, but in the
+> **scheduled** `security-audit.yml` workflow (weekly, alongside the
+> existing `pnpm audit`), not as a per-PR required check — the per-PR cost
+> objection that motivated option 3 originally still applies, and every
+> container-touching PR would otherwise pay a full image build. The new
+> reassessment trigger: adopt per-PR scanning, or add registry publishing
+> controls, if an image is ever pushed to a registry or deployed remotely
+> (the X14 gate).
 
 ## Context and problem statement
 
@@ -118,7 +135,10 @@ We **reject** the marketplace platforms as redundant here:
 - **Codacy / CodeClimate** — overlaps ESLint.
 - **Codecov / Coveralls** — the per-file v8 coverage gate already enforces the
   threshold; external trend tracking is low value for this repo.
-- **Trivy** — container scanning; this project ships no images.
+- **Trivy** — container scanning. [**Stale (2026-09-03):** the premise
+  changed — the repo now builds two container images (ADR-0071, X12); see
+  the 2026-09-03 Update above. Trivy is adopted in the scheduled workflow
+  only, not as a per-PR required check.]
 
 ## Consequences
 
