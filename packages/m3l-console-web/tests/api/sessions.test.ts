@@ -6,15 +6,19 @@ import type {
 } from "../../src/api/client.js";
 import { fetchConsoleJson } from "../../src/api/client.js";
 import type {
+  M3LSessionBindingInput,
+  M3LSessionBindingRecord,
   M3LSessionDecisionRecord,
   M3LSessionRecord,
   M3LSessionStepSummary,
 } from "../../src/api/sessions.js";
 import {
   createSession,
+  createSessionBinding,
   fetchSession,
   fetchSessionDecisions,
   fetchSessions,
+  fetchSessionStepArtifact,
   fetchSessionSteps,
 } from "../../src/api/sessions.js";
 
@@ -527,5 +531,220 @@ describe("fetchSessionDecisions", () => {
       ok: false,
       error: { kind: "malformed-body", message: expect.any(String) as string },
     });
+  });
+});
+
+describe("fetchSessionStepArtifact", () => {
+  test("calls fetchConsoleJson with the sessionId and stepId encoded into the path", async () => {
+    mockedFetchConsoleJson.mockResolvedValue({ ok: true, data: 42 });
+
+    await fetchSessionStepArtifact("has/slash", "also/slash");
+
+    expect(mockedFetchConsoleJson).toHaveBeenCalledWith(
+      `/api/v1/sessions/${encodeURIComponent("has/slash")}/steps/${encodeURIComponent("also/slash")}/artifact`,
+    );
+  });
+
+  test("resolves to the ok result with a primitive value, unchanged and unwrapped", async () => {
+    const okResult: M3LConsoleFetchResult<unknown> = { ok: true, data: 42 };
+    mockedFetchConsoleJson.mockResolvedValue(okResult);
+
+    await expect(
+      fetchSessionStepArtifact("session-1", "step-1"),
+    ).resolves.toEqual(okResult);
+  });
+
+  test("resolves to the ok result with an array value, unchanged and unwrapped", async () => {
+    const okResult: M3LConsoleFetchResult<unknown> = {
+      ok: true,
+      data: [1, 2, 3],
+    };
+    mockedFetchConsoleJson.mockResolvedValue(okResult);
+
+    await expect(
+      fetchSessionStepArtifact("session-1", "step-1"),
+    ).resolves.toEqual(okResult);
+  });
+
+  test("resolves to the ok result with a null value, unchanged and unwrapped", async () => {
+    const okResult: M3LConsoleFetchResult<unknown> = { ok: true, data: null };
+    mockedFetchConsoleJson.mockResolvedValue(okResult);
+
+    await expect(
+      fetchSessionStepArtifact("session-1", "step-1"),
+    ).resolves.toEqual(okResult);
+  });
+
+  test("resolves to the ok result with a deeply nested object value, unchanged and unwrapped", async () => {
+    const okResult: M3LConsoleFetchResult<unknown> = {
+      ok: true,
+      data: { level1: { level2: { level3: ["deep", "value"] } } },
+    };
+    mockedFetchConsoleJson.mockResolvedValue(okResult);
+
+    await expect(
+      fetchSessionStepArtifact("session-1", "step-1"),
+    ).resolves.toEqual(okResult);
+  });
+
+  // This function performs NO shape validation — unlike every other fetcher
+  // in this file, which downgrades an unrecognised shape to a
+  // malformed-body error. An arbitrary shape that would fail every other
+  // guard here (no `id`, `status`, `operator`, etc.) must still round-trip
+  // unchanged, because the artifact's shape depends entirely on the
+  // operation that produced it and this function cannot (and must not
+  // pretend to) know it.
+  test("resolves an arbitrary shape unchanged with no shape validation applied", async () => {
+    const okResult: M3LConsoleFetchResult<unknown> = {
+      ok: true,
+      data: { arbitrary: "shape" },
+    };
+    mockedFetchConsoleJson.mockResolvedValue(okResult);
+
+    await expect(
+      fetchSessionStepArtifact("session-1", "step-1"),
+    ).resolves.toEqual({ ok: true, data: { arbitrary: "shape" } });
+  });
+
+  test("resolves to the error result the mock returns, unwrapped", async () => {
+    const error: M3LConsoleFetchError = {
+      kind: "http",
+      message: "not found",
+      status: 404,
+      code: "ERR_CONSOLE_SESSION_STEP_NOT_FOUND",
+    };
+    const errorResult: M3LConsoleFetchResult<unknown> = { ok: false, error };
+    mockedFetchConsoleJson.mockResolvedValue(errorResult);
+
+    await expect(
+      fetchSessionStepArtifact("session-1", "missing-step"),
+    ).resolves.toEqual(errorResult);
+  });
+});
+
+const fullBindingInput: M3LSessionBindingInput = {
+  reference: "input.orderId",
+  expectedType: "string",
+  multiSelect: false,
+  parameterName: "orderId",
+};
+
+const fullBindingRecord: M3LSessionBindingRecord = {
+  id: "binding-1",
+  sessionId: "session-1",
+  reference: "input.orderId",
+  expectedType: "string",
+  multiSelect: false,
+  createdAtMs: 1_735_689_600_000,
+  parameterName: "orderId",
+};
+
+describe("createSessionBinding", () => {
+  test("calls fetchConsoleJson with the sessionId encoded into the path, POST, and the input as the body unchanged", async () => {
+    mockedFetchConsoleJson.mockResolvedValue({
+      ok: true,
+      data: fullBindingRecord,
+    });
+
+    await createSessionBinding("has/slash", fullBindingInput);
+
+    expect(mockedFetchConsoleJson).toHaveBeenCalledWith(
+      `/api/v1/sessions/${encodeURIComponent("has/slash")}/bindings`,
+      { method: "POST", body: fullBindingInput },
+    );
+  });
+
+  test("resolves to the ok result with a well-formed binding record (parameterName present), unwrapped", async () => {
+    const okResult: M3LConsoleFetchResult<M3LSessionBindingRecord> = {
+      ok: true,
+      data: fullBindingRecord,
+    };
+    mockedFetchConsoleJson.mockResolvedValue(okResult);
+
+    await expect(
+      createSessionBinding("session-1", fullBindingInput),
+    ).resolves.toEqual(okResult);
+  });
+
+  // A pre-migration-v10 legacy row omits `parameterName` entirely — the key
+  // is MISSING from the body, not present-and-null, per
+  // JSON.stringify's undefined-valued-key-drop behaviour. This must still
+  // validate successfully.
+  test("validates a legacy record with parameterName entirely absent, resolving data.parameterName as undefined", async () => {
+    const { parameterName: _parameterName, ...legacyBindingRecord } =
+      fullBindingRecord;
+    mockedFetchConsoleJson.mockResolvedValue({
+      ok: true,
+      data: legacyBindingRecord,
+    });
+
+    const result = await createSessionBinding("session-1", fullBindingInput);
+
+    expect(result).toEqual({ ok: true, data: legacyBindingRecord });
+    if (result.ok) {
+      expect(result.data.parameterName).toBeUndefined();
+    }
+  });
+
+  test("downgrades a record missing expectedType to a malformed-body error", async () => {
+    const { expectedType: _expectedType, ...withoutExpectedType } =
+      fullBindingRecord;
+    mockedFetchConsoleJson.mockResolvedValue({
+      ok: true,
+      data: withoutExpectedType,
+    });
+
+    await expect(
+      createSessionBinding("session-1", fullBindingInput),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { kind: "malformed-body", message: expect.any(String) as string },
+    });
+  });
+
+  test("downgrades a record with an expectedType outside the closed vocabulary to a malformed-body error", async () => {
+    mockedFetchConsoleJson.mockResolvedValue({
+      ok: true,
+      data: { ...fullBindingRecord, expectedType: "not-a-real-type" },
+    });
+
+    await expect(
+      createSessionBinding("session-1", fullBindingInput),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { kind: "malformed-body", message: expect.any(String) as string },
+    });
+  });
+
+  test("downgrades a record with multiSelect as a string instead of a boolean to a malformed-body error", async () => {
+    mockedFetchConsoleJson.mockResolvedValue({
+      ok: true,
+      data: { ...fullBindingRecord, multiSelect: "false" },
+    });
+
+    await expect(
+      createSessionBinding("session-1", fullBindingInput),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { kind: "malformed-body", message: expect.any(String) as string },
+    });
+  });
+
+  test("resolves to the error result the mock returns, unwrapped", async () => {
+    const error: M3LConsoleFetchError = {
+      kind: "http",
+      message: "not found",
+      status: 404,
+      code: "ERR_CONSOLE_SESSION_NOT_FOUND",
+    };
+    const errorResult: M3LConsoleFetchResult<M3LSessionBindingRecord> = {
+      ok: false,
+      error,
+    };
+    mockedFetchConsoleJson.mockResolvedValue(errorResult);
+
+    await expect(
+      createSessionBinding("missing-id", fullBindingInput),
+    ).resolves.toEqual(errorResult);
   });
 });

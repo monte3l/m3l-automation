@@ -463,3 +463,154 @@ export async function fetchSessionDecisions(
   }
   return result;
 }
+
+/**
+ * Fetches the artifact produced by one session step, URL-encoding both
+ * `sessionId` and `stepId` into the path. Applies no shape validation at
+ * all — unlike every other fetcher in this module, which downgrades an
+ * unrecognised shape to a `malformed-body` error — because this mirrors the
+ * server's own `readStepArtifact(): Promise<unknown>` contract: the
+ * artifact's shape depends entirely on the operation that produced the step,
+ * so this function cannot (and must not pretend to) know it.
+ *
+ * @example
+ * ```ts
+ * import { fetchSessionStepArtifact } from "@m3l-automation/m3l-console-web/api/sessions.js";
+ *
+ * const result = await fetchSessionStepArtifact(
+ *   "0193f0c2-1234-7abc-9def-000000000000",
+ *   "0193f0c2-5678-7abc-9def-000000000000",
+ * );
+ * if (result.ok) {
+ *   console.log(result.data);
+ * }
+ * ```
+ */
+export async function fetchSessionStepArtifact(
+  sessionId: string,
+  stepId: string,
+): Promise<M3LConsoleFetchResult<unknown>> {
+  return fetchConsoleJson<unknown>(
+    `/api/v1/sessions/${encodePathSegment(sessionId)}/steps/${encodePathSegment(stepId)}/artifact`,
+  );
+}
+
+/**
+ * The closed vocabulary of expected types a session binding can declare for
+ * its bound value. See {@link M3L_SESSION_STATUSES} for why this is a
+ * runtime array rather than just a type.
+ */
+const M3L_SESSION_BINDING_EXPECTED_TYPES = [
+  "string",
+  "number",
+  "boolean",
+  "object",
+] as const;
+
+/**
+ * One of the closed set of expected types in
+ * {@link M3L_SESSION_BINDING_EXPECTED_TYPES}.
+ */
+export type M3LSessionBindingExpectedType =
+  (typeof M3L_SESSION_BINDING_EXPECTED_TYPES)[number];
+
+function isM3LSessionBindingExpectedType(
+  value: unknown,
+): value is M3LSessionBindingExpectedType {
+  return (
+    typeof value === "string" &&
+    (M3L_SESSION_BINDING_EXPECTED_TYPES as readonly string[]).includes(value)
+  );
+}
+
+/**
+ * One binding within a session, as returned by
+ * `POST /api/v1/sessions/:id/bindings`.
+ */
+export interface M3LSessionBindingRecord {
+  readonly id: string;
+  readonly sessionId: string;
+  readonly reference: string;
+  readonly expectedType: M3LSessionBindingExpectedType;
+  readonly multiSelect: boolean;
+  readonly createdAtMs: number;
+  /** Absent (key missing, not null) on a pre-migration-v10 legacy row. */
+  readonly parameterName?: string;
+}
+
+/** The request body for {@link createSessionBinding}. */
+export interface M3LSessionBindingInput {
+  readonly reference: string;
+  readonly expectedType: M3LSessionBindingExpectedType;
+  readonly multiSelect: boolean;
+  readonly parameterName: string;
+}
+
+/**
+ * Checks the fields every binding record carries, plus the optional
+ * `parameterName` — split out from {@link isM3LSessionBindingRecord} purely
+ * to keep that guard's cyclomatic complexity down. `parameterName` may be
+ * entirely absent (a pre-migration-v10 legacy row) but if the key is
+ * present it must be a string.
+ */
+function hasRequiredBindingFields(candidate: Record<string, unknown>): boolean {
+  return (
+    typeof candidate["id"] === "string" &&
+    typeof candidate["sessionId"] === "string" &&
+    typeof candidate["reference"] === "string" &&
+    isM3LSessionBindingExpectedType(candidate["expectedType"]) &&
+    typeof candidate["multiSelect"] === "boolean" &&
+    typeof candidate["createdAtMs"] === "number" &&
+    (!("parameterName" in candidate) ||
+      typeof candidate["parameterName"] === "string")
+  );
+}
+
+function isM3LSessionBindingRecord(
+  value: unknown,
+): value is M3LSessionBindingRecord {
+  return isRecord(value) && hasRequiredBindingFields(value);
+}
+
+/**
+ * Creates a new binding within one session via
+ * `POST /api/v1/sessions/:id/bindings`, URL-encoding `sessionId` into the
+ * path and sending `input` as the request body unchanged.
+ *
+ * @example
+ * ```ts
+ * import { createSessionBinding } from "@m3l-automation/m3l-console-web/api/sessions.js";
+ *
+ * const result = await createSessionBinding(
+ *   "0193f0c2-1234-7abc-9def-000000000000",
+ *   {
+ *     reference: "input.orderId",
+ *     expectedType: "string",
+ *     multiSelect: false,
+ *     parameterName: "orderId",
+ *   },
+ * );
+ * if (result.ok) {
+ *   console.log(result.data.id);
+ * }
+ * ```
+ */
+export async function createSessionBinding(
+  sessionId: string,
+  input: M3LSessionBindingInput,
+): Promise<M3LConsoleFetchResult<M3LSessionBindingRecord>> {
+  const result = await fetchConsoleJson<M3LSessionBindingRecord>(
+    `/api/v1/sessions/${encodePathSegment(sessionId)}/bindings`,
+    { method: "POST", body: input },
+  );
+  if (result.ok && !isM3LSessionBindingRecord(result.data)) {
+    return {
+      ok: false,
+      error: {
+        kind: "malformed-body",
+        message: "unexpected POST /api/v1/sessions/:id/bindings response shape",
+      },
+    };
+  }
+  return result;
+}
