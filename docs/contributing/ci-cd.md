@@ -60,28 +60,46 @@ this repo does not publish an image to any registry.
 project-wide and adopts **Podman**, **Containerfiles**
 (`packages/m3l-console-server/Containerfile` and
 `packages/m3l-console-web/Containerfile`), and a Kubernetes-style pod
-manifest (`console-pod.yaml`, run via `podman kube play`) as the replacement
-— a follow-up PR carries out the rename and the pod-manifest rewrite; no repo
-file is named `Dockerfile`/`docker-compose.yml`, and no script or workflow
-invokes `docker`, once it lands. `ci.yml` does not build or scan an image on
-every PR: `bin/lib/changed-paths.mjs`'s fail-open `forceAll` behavior already
-runs the full quality-gate pipeline on any Containerfile/pod-manifest change
-(neither matches an existing predicate), and per-PR image scanning would add
-a full image build to that cost for no gain over a periodic scan
+manifest (`console-pod.yaml`, run via `pnpm console:up` /
+`pnpm console:down`, which wrap `podman build` + `podman kube play`/`podman
+kube down`) as the replacement: no repo file is named
+`Dockerfile`/`docker-compose.yml`, and no script or workflow invokes
+`docker`. `ci.yml` does not build or scan an image on every PR:
+`bin/lib/changed-paths.mjs`'s fail-open `forceAll` behavior already runs the
+full quality-gate pipeline on any Containerfile/pod-manifest change (neither
+matches an existing predicate), and per-PR image scanning would add a full
+image build to that cost for no gain over a periodic scan
 ([ADR-0015](../adr/0015-code-scanning-tooling-evaluation.md)'s 2026-09-03
-Updates). Once the follow-up PRs land, `security-audit.yml`'s
-`container-scan` job will build both images with `podman build`, export each
-with `podman save` (Trivy has no daemon-less path to a Podman image), and
-scan the resulting tar with Trivy on its existing weekly schedule, alongside
-`pnpm audit`. Adopting per-PR scanning, or scanning at all, is reassessed if
-an image is ever published to a registry or deployed remotely (the X14
-gate).
+Updates). `security-audit.yml`'s `container-scan` job builds both images
+with `podman build`, exports each with `podman save` (Trivy has no
+daemon-less path to a Podman image), and scans the resulting tar with Trivy
+on its existing weekly schedule, alongside `pnpm audit`. Adopting per-PR
+scanning, or scanning at all, is reassessed if an image is ever published to
+a registry or deployed remotely (the X14 gate).
 
-A gate (`check:no-docker`), added in the same follow-up sequence, will
-enforce the ban: no tracked file may be named `Dockerfile`, `*.dockerfile`,
-`.dockerignore`, or `docker-compose.y*ml`, and no workflow, `package.json`
-script, or `bin/**` script may invoke `docker`/`docker compose`/
-`docker-compose`. `docs/adr/**`, `docs/logs/**`,
-and `docs/plans/archive/**` are allowlisted as historical record, along with
+Two host-environment prerequisites are **not** fixable in-repo, since they
+depend on how a given machine's Podman was installed and configured
+(confirmed by ADR-0091's spike, on a linuxbrew-installed Podman with none of
+a distro package's usual defaults):
+
+- **A fresh rootless Podman install may ship no `policy.json`/
+  `registries.conf`.** `podman build`/`podman pull` fails outright
+  (`no policy.json file found` / short-name resolution errors) until
+  `~/.config/containers/policy.json` (e.g.
+  `{"default":[{"type":"insecureAcceptAnything"}]}`) and
+  `~/.config/containers/registries.conf` (with
+  `unqualified-search-registries = ["docker.io"]`) exist. `pnpm console:up`
+  cannot provision this itself — it's host config, not repo config.
+- **Rootless networking may need `nft`, which may not be installable
+  without sudo.** `pnpm console:up` always passes `--network pasta` to
+  `podman kube play` for this reason, rather than depending on the default
+  netavark backend's `nft` dependency being present.
+
+A gate (`check:no-docker`), landing in a follow-up PR, will enforce the ban
+at the source level: no tracked file may be named `Dockerfile`,
+`*.dockerfile`, `.dockerignore`, or `docker-compose.y*ml`, and no workflow,
+`package.json` script, or `bin/**` script may invoke `docker`/
+`docker compose`/`docker-compose`. `docs/adr/**`, `docs/logs/**`, and
+`docs/plans/archive/**` are allowlisted as historical record, along with
 `docker.io/` image references — Podman requires fully-qualified image names,
 and `docker.io` there names a registry hostname, not the banned tool.

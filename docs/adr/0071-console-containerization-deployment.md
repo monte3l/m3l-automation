@@ -144,6 +144,16 @@ reconciliation, and the X14 remote/multi-user gate.
 
 ## Update (2026-09-03) — X12's networking and image choices
 
+> **Superseded (2026-09-03).** This Update's `Dockerfile`/`compose.yaml`/
+> `docker/default.conf` paths and `docker` ecosystem reference describe X12's
+> original, Docker-based state. [ADR-0091](./0091-podman-replaces-docker.md)
+> (see the later "Docker banned; Podman is the engine" Update, below) renamed
+> them to `Containerfile`/`console-pod.yaml`/`container/default.conf` and a
+> `Containerfile`-resolving `docker` ecosystem block; the decisions
+> themselves (network-namespace sharing, the nginx image choice, the
+> readiness grace period) are unaffected. Left as written below — historical
+> record of what X12 actually shipped, not a living spec.
+
 X12 (issue #560) landed as three PRs (ADR-0072): a docs-first stance PR
 (this Update, plus the paired ADR-0015 Update), a `src/` refactor PR, and
 the Dockerfiles/compose PR. This Update records the decisions made for the

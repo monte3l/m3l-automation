@@ -1,0 +1,132 @@
+# Kubernetes-style Pod manifest for the operations console (ADR-0071,
+# X12/issue #560; engine changed from Docker Compose to Podman + `podman kube
+# play` by ADR-0091). Not published to any registry — see
+# docs/contributing/ci-cd.md's Containers section and
+# docs/adr/0015-code-scanning-tooling-evaluation.md's 2026-09-03 Updates for
+# why that keeps per-PR image scanning off the table.
+#
+# Run via `pnpm console:up` / `pnpm console:down` (bin/console-up.mjs /
+# bin/console-down.mjs) — never `podman kube play` directly on this file
+# as-is. Two reasons:
+#
+#   1. The two `__DATA_DIR__` / `__AWS_DIR__` tokens below are host-specific
+#      absolute paths substituted at play time. Kubernetes YAML has no
+#      `${VAR:?message}`-style host interpolation the way compose.yaml had,
+#      so bin/console-up.mjs does the substitution into a temp file instead.
+#   2. `M3L_CONSOLE_OPERATOR_NAME`/`_EMAIL` reach the server container via a
+#      generated `console-env` ConfigMap (`podman kube play --configmap`),
+#      built from the invoking shell's environment by bin/console-up.mjs —
+#      the same substitution problem, solved via Podman's documented
+#      ConfigMap mechanism rather than ad hoc YAML templating.
+#
+# `web` and `server` are two containers in one Pod rather than each getting
+# its own network namespace: a Pod's containers share one network namespace
+# natively, so the server keeps binding 127.0.0.1 literally (ADR-0071's
+# loopback invariant, unchanged), nginx reaches it at a genuine loopback
+# address with no Host rewrite, and 8787 is never published at all —
+# strictly less exposed than binding wide and publishing to host loopback.
+# See ADR-0071's Updates for the full rationale (originally expressed as
+# compose's `network_mode: "service:server"`, emulating this same shape).
+apiVersion: v1
+kind: Pod
+metadata:
+  name: m3l-console
+spec:
+  # Compose set no `restart:` policy (default: never auto-restart) — mirror
+  # that rather than Kubernetes' own default of `Always`, since there's no
+  # supervisor here to make an auto-restart loop meaningful.
+  restartPolicy: Never
+  # Must exceed the drain timeout (15s default) plus the readiness grace
+  # period below, with headroom for the listener to actually close.
+  terminationGracePeriodSeconds: 30
+  containers:
+    - name: server
+      # `localhost/` is deliberate: it tells Podman this is a local-storage
+      # image, never something to resolve against a registry. Built by
+      # bin/console-up.mjs as `localhost/m3l-console-server:local` before
+      # this manifest is played.
+      image: localhost/m3l-console-server:local
+      imagePullPolicy: Never
+      envFrom:
+        - configMapRef:
+            name: console-env
+      env:
+        # Gives the liveness probe a window to observe /ready's 503 during a
+        # drain instead of a bare connection reset (ADR-0071's readiness
+        # grace period). Must stay under terminationGracePeriodSeconds above.
+        - name: M3L_CONSOLE_READINESS_GRACE_MS
+          value: "3000"
+      volumeMounts:
+        # The server runs as the image's "node" user (uid 1000,
+        # packages/m3l-console-server/Containerfile). `pnpm console:up`
+        # passes `--userns keep-id` to `podman kube play`, so this stays
+        # writable by the invoking host user rather than landing under
+        # rootless Podman's default subordinate-uid mapping (confirmed by
+        # ADR-0091's spike: without `keep-id`, the server fails to boot with
+        # "failed to ensure the console store's parent directory exists").
+        - name: data
+          mountPath: /data
+        # Host SSO credential chain, read-only — the "node" user's home
+        # directory in the runtime image.
+        - name: aws-credentials
+          mountPath: /home/node/.aws
+          readOnly: true
+      livenessProbe:
+        # `httpGet` is translated by `podman kube play` into a `curl`
+        # command run INSIDE the container (confirmed by ADR-0091's spike) —
+        # unlike real Kubernetes, which probes from outside — and
+        # node:24-slim ships no curl. `exec` with the same fetch() call the
+        # Containerfile's old `HEALTHCHECK` used avoids that trap entirely.
+        exec:
+          command:
+            - node
+            - -e
+            - "fetch('http://127.0.0.1:8787/health').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+        initialDelaySeconds: 10
+        periodSeconds: 10
+        timeoutSeconds: 3
+        failureThreshold: 3
+
+    - name: web
+      image: localhost/m3l-console-web:local
+      imagePullPolicy: Never
+      # nginx (this container) is the only one with a reason to be reachable
+      # from the host. `hostIP` keeps the publish loopback-only, matching
+      # compose's old `127.0.0.1:8080:8080` — a Pod declares its port mapping
+      # once, so there's no equivalent of compose's inverted `ports:`
+      # placement (it had to live on the `server` service there only because
+      # `network_mode: service:` and `ports:` couldn't both be set on the
+      # same compose service).
+      ports:
+        - containerPort: 8080
+          hostPort: 8080
+          hostIP: 127.0.0.1
+      livenessProbe:
+        # `exec` + `wget` here too, for consistency with the server
+        # container's probe and to not lean on an unstated `curl` dependency
+        # in the proxy image (nginx-alpine does carry `curl`, but `httpGet`
+        # would still be executed via an in-container command, not an
+        # external probe, so there's no upside to it over `exec`).
+        exec:
+          command:
+            [
+              "wget",
+              "--quiet",
+              "--tries=1",
+              "--spider",
+              "http://127.0.0.1:8080/",
+            ]
+        initialDelaySeconds: 5
+        periodSeconds: 10
+        timeoutSeconds: 3
+        failureThreshold: 3
+
+  volumes:
+    - name: data
+      hostPath:
+        path: __DATA_DIR__
+        type: DirectoryOrCreate
+    - name: aws-credentials
+      hostPath:
+        path: __AWS_DIR__
+        type: Directory

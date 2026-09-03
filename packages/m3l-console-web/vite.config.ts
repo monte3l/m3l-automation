@@ -14,8 +14,8 @@ import react from "@vitejs/plugin-react";
  * of reaching the console server. In production (X12) the built static
  * bundle is served by its own nginx image, which proxies the same three
  * prefixes to the console server over a shared container network namespace
- * (docker/default.conf, compose.yaml) — this dev-only proxy plays no part
- * there.
+ * (container/default.conf, console-pod.yaml, ADR-0091) — this dev-only proxy
+ * plays no part there.
  */
 export default defineConfig({
   plugins: [react()],

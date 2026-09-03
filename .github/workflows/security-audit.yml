@@ -55,6 +55,13 @@ jobs:
   # the same weekly schedule rather than as a per-PR required check — every
   # container-touching PR would otherwise pay a full image build on top of
   # ci.yml's existing quality-gate pipeline. Not part of `ci.yml`.
+  #
+  # ADR-0091: Podman replaced Docker as the build engine. `ubuntu-latest`
+  # ships Podman preinstalled (5.8.4 at the time of writing), so no install
+  # step is needed. Trivy has no daemon-less path to a Podman image the way
+  # `trivy-action`'s `image-ref:` talks to a Docker-API-shaped daemon
+  # (ADR-0015's 2026-09-03 Update), so each image is exported to a tarball
+  # with `podman save` and scanned via `input:` instead.
   container-scan:
     name: Build + scan container images with Trivy
     runs-on: ubuntu-latest
@@ -67,14 +74,17 @@ jobs:
       matrix:
         include:
           - image: m3l-console-server
-            dockerfile: packages/m3l-console-server/Dockerfile
+            containerfile: packages/m3l-console-server/Containerfile
           - image: m3l-console-web
-            dockerfile: packages/m3l-console-web/Dockerfile
+            containerfile: packages/m3l-console-web/Containerfile
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Build ${{ matrix.image }} image
-        run: docker build -f ${{ matrix.dockerfile }} -t ${{ matrix.image }}:scan .
+        run: podman build -f ${{ matrix.containerfile }} -t ${{ matrix.image }}:scan .
+
+      - name: Export ${{ matrix.image }} image to a tarball
+        run: podman save -o ${{ matrix.image }}.tar ${{ matrix.image }}:scan
 
       # HIGH/CRITICAL with a known fix, same threshold as the `audit` job's
       # `pnpm audit --audit-level=high` above — an unfixable finding would
@@ -82,7 +92,7 @@ jobs:
       - name: Scan ${{ matrix.image }} with Trivy
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          image-ref: ${{ matrix.image }}:scan
+          input: ${{ matrix.image }}.tar
           format: sarif
           output: trivy-${{ matrix.image }}.sarif
           severity: HIGH,CRITICAL
