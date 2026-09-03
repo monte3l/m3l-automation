@@ -41,6 +41,7 @@ import type {
 } from "./telemetry-repository-types.js";
 import {
   GRANULARITY_MS,
+  normalizeOptionalDimension,
   requireNonEmptyDimension,
   requireValidAtMs,
   requireValidGranularity,
@@ -228,7 +229,7 @@ function recordRunFinished(
     {
       route: "",
       script,
-      operation: measurement.operation ?? "",
+      operation: normalizeOptionalDimension(measurement.operation),
       outcome,
       posture: "",
     },
@@ -259,7 +260,7 @@ function recordSseStream(
     route: "",
     script: "",
     operation: "",
-    outcome: measurement.outcome ?? "",
+    outcome: normalizeOptionalDimension(measurement.outcome),
     posture: "",
   });
 }
@@ -274,7 +275,7 @@ function recordPolicyDecision(
     route: "",
     script: "",
     operation: "",
-    outcome: measurement.outcome ?? "",
+    outcome: normalizeOptionalDimension(measurement.outcome),
     posture,
   });
 }

@@ -292,6 +292,41 @@ export function requireNonEmptyDimension(value: string, label: string): string {
 }
 
 /**
+ * Normalizes an optional rollup dimension — **normalize, never throw**.
+ *
+ * - `undefined` → `""` (the DDL's "not applicable" sentinel; the column is
+ *   `NOT NULL`, so `undefined` must become a concrete empty string).
+ * - Otherwise `value.trim()`, so `""` → `""` and `"   "` → `""`.
+ * - Internal whitespace is preserved — only outer (leading/trailing) whitespace
+ *   is stripped, identical to {@link requireNonEmptyDimension}'s trimming rule.
+ *
+ * **Why this is a separate helper from `requireNonEmptyDimension`:** on the
+ * optional arms (`operation`, `outcome` for `sse.stream` / `policy.decision`)
+ * both `undefined` and `""` are legal and both mean "not applicable", so
+ * rejecting an empty value here would make an explicit `""` throw while an
+ * omitted field succeeds — an incoherent surface for the same resulting row.
+ *
+ * **Why it must trim at all:** `operation` and `outcome` are PRIMARY KEY
+ * members of `console_telemetry_rollup`. Without trimming, `"export"` and
+ * `" export "` land as two distinct PK rows, silently splitting one rollup
+ * bucket in two with no error — the same invariant that motivated trimming for
+ * required dimensions.
+ *
+ * @example
+ * ```ts
+ * import { normalizeOptionalDimension } from "@m3l-automation/m3l-console-server/store/telemetry-validation";
+ *
+ * normalizeOptionalDimension(undefined);    // ""
+ * normalizeOptionalDimension("");           // ""
+ * normalizeOptionalDimension("  export "); // "export"
+ * normalizeOptionalDimension("a  b");      // "a  b"  — internal space preserved
+ * ```
+ */
+export function normalizeOptionalDimension(value: string | undefined): string {
+  return value === undefined ? "" : value.trim();
+}
+
+/**
  * Throws `ERR_CONSOLE_BAD_REQUEST` unless `limit` is a non-negative integer.
  * SQLite treats a negative `LIMIT` as unbounded, so an unvalidated value
  * would silently contradict this query's "no unbounded default" guarantee.

@@ -17,6 +17,7 @@ import {
   TELEMETRY_METRICS,
   requireAligned,
   requireColumn,
+  normalizeOptionalDimension,
   requireNonEmptyDimension,
   requireValidAtMs,
   requireValidBucketStartMs,
@@ -538,6 +539,67 @@ describe("requireNonEmptyDimension", () => {
   test("includes the label in the error message", () => {
     const thrown = captureSync(() => requireNonEmptyDimension("", "outcome"));
     expect((thrown as M3LConsoleError).message).toContain("outcome");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// normalizeOptionalDimension
+// ---------------------------------------------------------------------------
+
+describe("normalizeOptionalDimension", () => {
+  // Collapse cases: undefined, empty string, and whitespace-only all map to
+  // the DDL sentinel "". An explicit "" is legal — undefined already produces
+  // the same row, so making "" throw while undefined succeeds would be
+  // incoherent on the optional arm.
+  test.each([
+    ["undefined", undefined, ""],
+    ["empty string", "", ""],
+    ["whitespace-only spaces", "   ", ""],
+  ] as const)(
+    "%s collapses to empty string sentinel",
+    (_label, value, expected) => {
+      expect(normalizeOptionalDimension(value)).toBe(expected);
+    },
+  );
+
+  test.each([
+    ["leading space", " export", "export"],
+    ["trailing space", "export ", "export"],
+    ["both leading and trailing", "  export  ", "export"],
+    ["tab-and-newline mix", "\texport\n", "export"],
+  ] as const)("strips outer whitespace — %s", (_label, value, expected) => {
+    expect(normalizeOptionalDimension(value)).toBe(expected);
+  });
+
+  test.each([
+    // A run of ≥2 spaces is invariant under .trim() but not under
+    // .replace(/\s+/g, " ") — the ≥2-space fixture detects that collapse
+    // mutation. This exact mistake was already made once on this branch and
+    // caught only by mutation testing; the fixture prevents a recurrence.
+    ["two-space internal run", "a  b", "a  b"],
+    // An internal tab would be collapsed to a space by \s+ replace —
+    // this fixture proves that mutation is also caught.
+    ["internal tab", "a\tb", "a\tb"],
+  ] as const)(
+    "preserves internal whitespace (%s)",
+    (_label, value, expected) => {
+      expect(normalizeOptionalDimension(value)).toBe(expected);
+    },
+  );
+
+  test("never throws for any input — including undefined, empty, and control characters", () => {
+    const values: ReadonlyArray<string | undefined> = [
+      undefined,
+      "",
+      "   ",
+      "valid",
+      "\t\n",
+      "a  b",
+      "\x00",
+    ];
+    for (const v of values) {
+      expect(() => normalizeOptionalDimension(v)).not.toThrow();
+    }
   });
 });
 
