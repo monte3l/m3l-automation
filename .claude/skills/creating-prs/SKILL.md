@@ -189,6 +189,14 @@ Check which files changed since main:
 git diff main...HEAD --name-only
 ```
 
+**Inside a linked worktree, `main` here means local `main` — verify it isn't
+stale first** (`git rev-parse main origin/main`). A linked worktree branches
+from `origin/main` directly at creation time (ADR-0013/0014) and never
+fast-forwards the shared local `main` ref afterward; if other PRs landed on
+`origin/main` during this session, the diff picks up every file from those
+unrelated commits too. Diff against `origin/main` (after `git fetch origin
+main`) instead when the two ref values differ.
+
 If the diff is empty, skip this step.
 
 If the diff contains **any `src/**` changes** (files under `packages/*/src/` or
