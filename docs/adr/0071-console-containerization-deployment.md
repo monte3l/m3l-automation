@@ -207,6 +207,57 @@ to `.github/dependabot.yml` in the third PR, tracking the `node` and
 Unchanged by this Update: the two-image packaging, the volume-passed
 credential path, the non-root lifecycle, and the X14 remote/multi-user gate.
 
+## Update (2026-09-03) — Docker banned; Podman is the engine
+
+[ADR-0091](./0091-podman-replaces-docker.md) bans Docker and Dockerfiles from
+the project and replaces them with Podman, Containerfiles, and a
+`podman kube play` pod manifest, on standards-purity, vendor-independence,
+and rootless/daemonless-security grounds. Full rationale, the options
+considered, and the findings from actually building and running both images
+for the first time live there. This Update records only what changes here.
+
+**"docker/podman compose" (Decision, above) becomes "Podman + a pod
+manifest."** The compose-form wording was already engine-agnostic; it is now
+also form-specific — `console-pod.yaml` (a Kubernetes `Pod` manifest)
+replaces `compose.yaml`, run via `podman kube play`, not `podman-compose`
+(rejected in ADR-0091 for handling `network_mode`-equivalent networking worse
+than any of its other features — exactly the shape this ADR's prior Update
+chose).
+
+**The readiness-grace-period rationale changes; the setting does not.** The
+prior Update recorded `M3L_CONSOLE_READINESS_GRACE_MS`'s purpose as making
+the `/ready` 503 "observable by the `server` service's healthcheck during
+`docker compose stop`." `podman kube play` has no `depends_on`-style health
+gating and no `readinessProbe` (liveness/startup only) — so no compose-style
+healthcheck consumes the 503 the same way. The setting, the drain-ordering
+code, and its unit tests are all unchanged and still correct: a
+`SIGTERM`-driven drain against the running pod was verified to produce
+`/ready` returning `503 {"status":"draining"}` for the entire grace window
+before the listener closes. What changes is _why_ it's valuable — it is now
+an operational/observability property for any client polling `/ready`
+directly (an operator's own health tooling, a future orchestrator), not
+something a specific compose healthcheck field consumes.
+
+**The "server binds wide" alternative this ADR rejected stays rejected; the
+namespace-sharing mechanism moves.** `network_mode: "service:server"` was
+compose-specific syntax for a shared network namespace — a Podman pod
+provides the same property natively, with no analogous per-service field to
+invert (the `ports:`-placement wart the prior Update's `compose.yaml` needed
+is resolved: a pod declares its port mapping once, at the pod level).
+
+**Non-root, volume-passed credentials, and the two-image shape are
+unaffected.** `nginx-unprivileged` still runs as uid 101; the server still
+runs as the non-root `node` user; `~/.aws` is still mounted read-only,
+now as a pod-level `hostPath` volume rather than a compose bind mount, with
+one addition ADR-0091 found necessary: `podman kube play --userns keep-id`,
+without which rootless Podman's default uid mapping leaves the `./data`
+mount unwritable by the container's uid 1000 process — a different failure
+mode than the `chown`-shaped hazard this ADR's prior Update assumed for
+Docker.
+
+Unchanged by this Update: the two-image packaging, the volume-passed
+credential path, the non-root lifecycle, and the X14 remote/multi-user gate.
+
 ## Links
 
 - Programme: [ADR-0064](./0064-m3l-console-programme.md). Server
@@ -217,3 +268,5 @@ credential path, the non-root lifecycle, and the X14 remote/multi-user gate.
   (dated Update points here; local-CI decline reaffirmed),
   [ADR-0015](./0015-code-scanning-tooling-evaluation.md) (Update landed
   2026-09-03 alongside this one — Trivy adopted in the scheduled workflow).
+- Engine change: [ADR-0091](./0091-podman-replaces-docker.md) (Docker banned,
+  Podman adopted, 2026-09-03).

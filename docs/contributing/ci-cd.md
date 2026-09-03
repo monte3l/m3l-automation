@@ -54,18 +54,34 @@ instead (`.claude/rules/tests.md`), which needs no ignore entry at all.
 
 [ADR-0071](../adr/0071-console-containerization-deployment.md) packages the
 operations console as two container images
-(`m3l-console-server`, `m3l-console-web`, built from
-`packages/m3l-console-server/Dockerfile` and
-`packages/m3l-console-web/Dockerfile`), built and run **locally only** via
-`docker compose` (`compose.yaml`) — this repo does not publish an image to
-any registry. `ci.yml` does not build or scan an image on every PR:
-`bin/lib/changed-paths.mjs`'s fail-open `forceAll` behavior already runs the
-full quality-gate pipeline on any Dockerfile/compose change (neither matches
-an existing predicate), and per-PR image scanning would add a full image
-build to that cost for no gain over a periodic scan
+(`m3l-console-server`, `m3l-console-web`), built and run **locally only** —
+this repo does not publish an image to any registry.
+[ADR-0091](../adr/0091-podman-replaces-docker.md) bans Docker and Dockerfiles
+project-wide and adopts **Podman**, **Containerfiles**
+(`packages/m3l-console-server/Containerfile` and
+`packages/m3l-console-web/Containerfile`), and a Kubernetes-style pod
+manifest (`console-pod.yaml`, run via `podman kube play`) as the replacement
+— a follow-up PR carries out the rename and the pod-manifest rewrite; no repo
+file is named `Dockerfile`/`docker-compose.yml`, and no script or workflow
+invokes `docker`, once it lands. `ci.yml` does not build or scan an image on
+every PR: `bin/lib/changed-paths.mjs`'s fail-open `forceAll` behavior already
+runs the full quality-gate pipeline on any Containerfile/pod-manifest change
+(neither matches an existing predicate), and per-PR image scanning would add
+a full image build to that cost for no gain over a periodic scan
 ([ADR-0015](../adr/0015-code-scanning-tooling-evaluation.md)'s 2026-09-03
-Update). Instead, `security-audit.yml`'s `container-scan` job builds both
-images and scans them with Trivy on its existing weekly schedule, alongside
+Updates). Once the follow-up PRs land, `security-audit.yml`'s
+`container-scan` job will build both images with `podman build`, export each
+with `podman save` (Trivy has no daemon-less path to a Podman image), and
+scan the resulting tar with Trivy on its existing weekly schedule, alongside
 `pnpm audit`. Adopting per-PR scanning, or scanning at all, is reassessed if
 an image is ever published to a registry or deployed remotely (the X14
 gate).
+
+A gate (`check:no-docker`), added in the same follow-up sequence, will
+enforce the ban: no tracked file may be named `Dockerfile`, `*.dockerfile`,
+`.dockerignore`, or `docker-compose.y*ml`, and no workflow, `package.json`
+script, or `bin/**` script may invoke `docker`/`docker compose`/
+`docker-compose`. `docs/adr/**`, `docs/logs/**`,
+and `docs/plans/archive/**` are allowlisted as historical record, along with
+`docker.io/` image references — Podman requires fully-qualified image names,
+and `docker.io` there names a registry hostname, not the banned tool.

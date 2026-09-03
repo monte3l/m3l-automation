@@ -126,6 +126,10 @@ also remove its suppression.
   [ADR-0009](./0009-dependency-direction-guard.md) (minimal runtime/dev
   dependencies, platform-native preference — the driver behind declining Act/Podman).
 - Related: `eslint.config.js`, `.jscpd.json`, `.github/workflows/ci.yml`.
+- Related: [ADR-0071](./0071-console-containerization-deployment.md) (app
+  containers, a distinct artifact class from this ADR's local-CI scope),
+  [ADR-0091](./0091-podman-replaces-docker.md) (Podman as the app-container
+  engine, 2026-09-03 — see this file's second amendment, above).
 
 ## Amendment (2026-08-15): the accepted cognitive-complexity debt is discharged
 
@@ -165,3 +169,20 @@ local-CI affordance — **stands unchanged** (nothing in the toolchain or
 CI gains a container-engine prerequisite; contributors still never need
 one to develop, test, or push). App containers are a new artifact class
 governed by ADR-0071, built and run only by operators of the console.
+
+## Amendment (2026-09-03): Podman is now the app-container engine — a distinct question from this ADR's decision
+
+[ADR-0091](./0091-podman-replaces-docker.md) bans Docker and adopts Podman as
+the engine for the console's application containers (ADR-0071). This does
+**not** revisit or reverse this ADR's decision: the container engine
+introduced by ADR-0091 is an operator-facing app-container runtime, not a
+local-CI affordance, and the 2026-08-20 amendment above already drew that
+line — this ADR's "nothing in the toolchain currently touches a container
+engine" (Decision, above) remains true of the **development toolchain**
+specifically. A contributor still never needs Podman, or any container
+engine, to develop, test, or push; only an operator running the console
+needs one, exactly as before X12 shipped, with Podman now in the role Docker
+held. Act + Podman as a local-CI affordance remains declined, for the
+reason originally stated: `pnpm <script>` calls a contributor already runs
+directly, and the pre-push lefthook stage already gates what `act` would
+otherwise re-run.

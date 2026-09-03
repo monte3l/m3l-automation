@@ -62,6 +62,16 @@
 > reassessment trigger: adopt per-PR scanning, or add registry publishing
 > controls, if an image is ever pushed to a registry or deployed remotely
 > (the X14 gate).
+>
+> **Update (2026-09-03).** [ADR-0091](./0091-podman-replaces-docker.md) bans
+> Docker and adopts Podman for the console's two images, effective once its
+> follow-up PRs land. Trivy cannot scan a Podman image daemon-lessly the way
+> it scans a Docker one, so the `container-scan` job will run `podman build`
+> then `podman save` to a tar and invoke `trivy image --input`, rather than
+> pointing `trivy-action` at a `docker build` result directly. Still
+> scheduled-only, same severity threshold, same conclusion as the 2026-09-03
+> Update above: the repo builds images but publishes none, so per-PR scanning
+> remains unwarranted on cost.
 
 ## Context and problem statement
 

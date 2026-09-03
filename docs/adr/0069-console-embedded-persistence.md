@@ -88,6 +88,14 @@ We chose **option 4**.
 - **Semver impact:** none from this ADR (docs only). X3 is
   console-server-internal; no `m3l-common` or exports-map change.
 
+## Update (2026-09-03) — "volume-mounted" becomes `hostPath`
+
+[ADR-0091](./0091-podman-replaces-docker.md) replaces Docker with Podman and
+`compose.yaml` with a `podman kube play` pod manifest. The `data/` tree
+described above as "volume-mounted in containers" is now mounted as a pod
+`hostPath` volume — a mechanism change only; the file, its location, and the
+single-writer semantics this ADR decided are all unchanged.
+
 ## Links
 
 - Programme: [ADR-0064](./0064-m3l-console-programme.md). Consumers:
@@ -95,6 +103,7 @@ We chose **option 4**.
   [ADR-0068](./0068-workbench-sessions.md) (sessions),
   [ADR-0070](./0070-console-audit-and-observability.md) (audit index +
   telemetry).
+- Engine change: [ADR-0091](./0091-podman-replaces-docker.md).
 - Boundaries respected: [ADR-0017](./0017-dependency-loading-standard.md)
   (a builtin adds no dependency tier),
   [ADR-0031](./0031-relational-and-document-data-engine-access.md) (the
