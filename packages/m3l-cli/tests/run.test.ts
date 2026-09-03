@@ -135,7 +135,7 @@ const knownCandidates = [exporterCandidate, importerCandidate];
 describe("runRun — known script", () => {
   test("delegates to executeScript with the context, script name, candidate directory, and passthrough args, propagating its exit code", async () => {
     discoverScriptsMock.mockReturnValue(knownCandidates);
-    executeScriptMock.mockResolvedValue(7);
+    executeScriptMock.mockResolvedValue({ exitCode: 7 });
 
     const context = buildContext();
     const code = await runRun(context, "exporter", ["--limit", "5"]);
@@ -156,7 +156,7 @@ describe("runRun — known script", () => {
 
   test("propagates executeScript's resolved exit code of 0 unchanged", async () => {
     discoverScriptsMock.mockReturnValue(knownCandidates);
-    executeScriptMock.mockResolvedValue(0);
+    executeScriptMock.mockResolvedValue({ exitCode: 0 });
 
     const context = buildContext();
     const code = await runRun(context, "importer", []);
@@ -222,7 +222,7 @@ describe("runRun — unknown script", () => {
 describe("runRun — best-effort history recording (8f)", () => {
   test("records a history entry with empty parameterNames and the spawned exit code after a successful run", async () => {
     discoverScriptsMock.mockReturnValue(knownCandidates);
-    executeScriptMock.mockResolvedValue(3);
+    executeScriptMock.mockResolvedValue({ exitCode: 3 });
     recordHistoryEntryMock.mockReturnValue(true);
 
     const context = buildContext();
@@ -255,7 +255,7 @@ describe("runRun — best-effort history recording (8f)", () => {
 
   test("a history-recording failure never affects the resolved exit code", async () => {
     discoverScriptsMock.mockReturnValue(knownCandidates);
-    executeScriptMock.mockResolvedValue(0);
+    executeScriptMock.mockResolvedValue({ exitCode: 0 });
     recordHistoryEntryMock.mockImplementation(() => {
       throw new Error("disk full");
     });
@@ -267,7 +267,7 @@ describe("runRun — best-effort history recording (8f)", () => {
 
   test("a history-recording that returns false never affects the resolved exit code", async () => {
     discoverScriptsMock.mockReturnValue(knownCandidates);
-    executeScriptMock.mockResolvedValue(5);
+    executeScriptMock.mockResolvedValue({ exitCode: 5 });
     recordHistoryEntryMock.mockReturnValue(false);
 
     const code = await runRun(buildContext(), "exporter", []);
@@ -285,7 +285,7 @@ describe("runRun — best-effort history recording (8f)", () => {
 describe("runRun — never renders output directly (V2 slice 2)", () => {
   test("never calls context.output.info itself; envelope emission belongs to executeScript", async () => {
     discoverScriptsMock.mockReturnValue(knownCandidates);
-    executeScriptMock.mockResolvedValue(0);
+    executeScriptMock.mockResolvedValue({ exitCode: 0 });
     const infoSpy = vi.fn();
     const context = buildContext({
       output: {

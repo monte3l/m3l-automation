@@ -50,12 +50,14 @@ const RECOGNIZED_OUTCOMES: ReadonlySet<M3LCliRunOutcome> = new Set([
  *
  * @example
  * ```ts
- * // Internal-only: illustrative shape, not part of the public API.
+ * // Shared within the m3l-cli package; re-used by history/store to validate
+ * // the outcome field on a persisted history entry without duplicating the
+ * // recognized-outcome literals.
  * toRunOutcome("partial"); // "partial"
  * toRunOutcome("bogus"); // null
  * ```
  */
-function toRunOutcome(value: unknown): M3LCliRunOutcome | null {
+export function toRunOutcome(value: unknown): M3LCliRunOutcome | null {
   return typeof value === "string" &&
     RECOGNIZED_OUTCOMES.has(value as M3LCliRunOutcome)
     ? (value as M3LCliRunOutcome)

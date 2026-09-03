@@ -172,13 +172,14 @@ async function dispatchDynamicRun(
     }
   }
   const { argv, secretEnv } = translateArgv(descriptors, values);
-  return executeScript(
+  const result = await executeScript(
     context,
     scriptName,
     scriptDirectory,
     [...argv, ...passthroughArgs],
     { secretEnv },
   );
+  return result.exitCode;
 }
 
 /**

@@ -93,7 +93,7 @@ export async function runRun(
     );
   }
 
-  const exitCode = await executeScript(
+  const { exitCode } = await executeScript(
     context,
     scriptName,
     candidate.directory,

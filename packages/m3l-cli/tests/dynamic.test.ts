@@ -260,7 +260,7 @@ describe("runDynamic — --help/-h delegation", () => {
   test("does not delegate when --help only appears in passthroughArgs, not args", async () => {
     discoverScriptsMock.mockReturnValue(knownCandidates);
     loadParametersCachedMock.mockResolvedValue([]);
-    executeScriptMock.mockResolvedValue(0);
+    executeScriptMock.mockResolvedValue({ exitCode: 0 });
 
     const context = buildContext();
     await runDynamic(context, "json-etl", [], ["--help"]);
@@ -329,7 +329,7 @@ describe("runDynamic — parseArgs config building + argv translation", () => {
   test("builds string/boolean/multiple options per declared type, maps aliases to canonical names, and orders translated argv by descriptor declaration order with passthrough appended", async () => {
     discoverScriptsMock.mockReturnValue(knownCandidates);
     loadParametersCachedMock.mockResolvedValue(descriptors);
-    executeScriptMock.mockResolvedValue(0);
+    executeScriptMock.mockResolvedValue({ exitCode: 0 });
 
     const context = buildContext();
     const code = await runDynamic(
@@ -374,7 +374,7 @@ describe("runDynamic — parseArgs config building + argv translation", () => {
   test("resolves a second alias for the same canonical name", async () => {
     discoverScriptsMock.mockReturnValue(knownCandidates);
     loadParametersCachedMock.mockResolvedValue(descriptors);
-    executeScriptMock.mockResolvedValue(0);
+    executeScriptMock.mockResolvedValue({ exitCode: 0 });
 
     const context = buildContext();
     await runDynamic(context, "json-etl", ["--aws-region", "eu-west-1"], []);
@@ -391,7 +391,7 @@ describe("runDynamic — parseArgs config building + argv translation", () => {
   test("omits a boolean parameter from translated argv when it was not supplied", async () => {
     discoverScriptsMock.mockReturnValue(knownCandidates);
     loadParametersCachedMock.mockResolvedValue(descriptors);
-    executeScriptMock.mockResolvedValue(0);
+    executeScriptMock.mockResolvedValue({ exitCode: 0 });
 
     const context = buildContext();
     await runDynamic(context, "json-etl", ["--r", "us-east-1"], []);
@@ -409,7 +409,7 @@ describe("runDynamic — parseArgs config building + argv translation", () => {
   test("appends passthroughArgs verbatim after every translated flag when no flags are supplied", async () => {
     discoverScriptsMock.mockReturnValue(knownCandidates);
     loadParametersCachedMock.mockResolvedValue(descriptors);
-    executeScriptMock.mockResolvedValue(0);
+    executeScriptMock.mockResolvedValue({ exitCode: 0 });
 
     const context = buildContext();
     await runDynamic(context, "json-etl", [], ["--limit", "5"]);
@@ -500,7 +500,7 @@ describe("runDynamic — spawn code propagation", () => {
   test("resolves to executeScript's returned exit code verbatim", async () => {
     discoverScriptsMock.mockReturnValue(knownCandidates);
     loadParametersCachedMock.mockResolvedValue(descriptors);
-    executeScriptMock.mockResolvedValue(7);
+    executeScriptMock.mockResolvedValue({ exitCode: 7 });
 
     const context = buildContext();
     const code = await runDynamic(context, "json-etl", [], []);
@@ -519,7 +519,7 @@ describe("runDynamic — best-effort history recording (8f)", () => {
   test("records a history entry naming the parsed canonical parameter names and the spawned exit code", async () => {
     discoverScriptsMock.mockReturnValue(knownCandidates);
     loadParametersCachedMock.mockResolvedValue(descriptors);
-    executeScriptMock.mockResolvedValue(4);
+    executeScriptMock.mockResolvedValue({ exitCode: 4 });
     recordHistoryEntryMock.mockReturnValue(true);
 
     const context = buildContext();
@@ -578,7 +578,7 @@ describe("runDynamic — best-effort history recording (8f)", () => {
   test("a history-recording failure never affects the resolved exit code", async () => {
     discoverScriptsMock.mockReturnValue(knownCandidates);
     loadParametersCachedMock.mockResolvedValue(descriptors);
-    executeScriptMock.mockResolvedValue(0);
+    executeScriptMock.mockResolvedValue({ exitCode: 0 });
     recordHistoryEntryMock.mockImplementation(() => {
       throw new Error("disk full");
     });
@@ -602,7 +602,7 @@ describe("runDynamic — reserved --json flag shadowing (V2 slice 1)", () => {
   test("'--json' for a script that does NOT declare a json parameter does not throw and is stripped from the translated argv", async () => {
     discoverScriptsMock.mockReturnValue(knownCandidates);
     loadParametersCachedMock.mockResolvedValue(descriptors);
-    executeScriptMock.mockResolvedValue(0);
+    executeScriptMock.mockResolvedValue({ exitCode: 0 });
 
     const context = buildContext();
 
@@ -636,7 +636,7 @@ describe("runDynamic — reserved --json flag shadowing (V2 slice 1)", () => {
       }),
     ];
     loadParametersCachedMock.mockResolvedValue(descriptorsWithJsonParameter);
-    executeScriptMock.mockResolvedValue(0);
+    executeScriptMock.mockResolvedValue({ exitCode: 0 });
 
     const context = buildContext();
 
@@ -680,7 +680,7 @@ describe("runDynamic — reserved --json flag shadowing (V2 slice 1)", () => {
   test("'--json' appearing only in passthroughArgs (after the bare '--') is unaffected by flag-stripping (regression guard)", async () => {
     discoverScriptsMock.mockReturnValue(knownCandidates);
     loadParametersCachedMock.mockResolvedValue(descriptors);
-    executeScriptMock.mockResolvedValue(0);
+    executeScriptMock.mockResolvedValue({ exitCode: 0 });
 
     const context = buildContext();
     await runDynamic(context, "json-etl", [], ["--json"]);
@@ -705,7 +705,7 @@ describe("runDynamic — never renders output directly (V2 slice 2)", () => {
   test("never calls context.output.info itself; envelope emission belongs to executeScript", async () => {
     discoverScriptsMock.mockReturnValue(knownCandidates);
     loadParametersCachedMock.mockResolvedValue(descriptors);
-    executeScriptMock.mockResolvedValue(0);
+    executeScriptMock.mockResolvedValue({ exitCode: 0 });
     const infoSpy = vi.fn();
     const context = buildContext({
       output: {
@@ -825,7 +825,7 @@ describe("runDynamic — in-process execution (U7)", () => {
   test("'--in-process' ABSENT: executeScript is called exactly as before and runInProcess is never called (regression guard)", async () => {
     discoverScriptsMock.mockReturnValue(knownCandidates);
     loadParametersCachedMock.mockResolvedValue(descriptors);
-    executeScriptMock.mockResolvedValue(0);
+    executeScriptMock.mockResolvedValue({ exitCode: 0 });
 
     const context = buildContext();
     const code = await runDynamic(
@@ -1202,7 +1202,7 @@ describe("runDynamic — restoreDroppedOptionTokens skips a non-option/nameless 
   test("a trailing bare '--' in args (an option-terminator token, no name) does not disrupt normal parsing or execution", async () => {
     discoverScriptsMock.mockReturnValue(knownCandidates);
     loadParametersCachedMock.mockResolvedValue(descriptors);
-    executeScriptMock.mockResolvedValue(0);
+    executeScriptMock.mockResolvedValue({ exitCode: 0 });
 
     const context = buildContext();
     const code = await runDynamic(
@@ -1263,7 +1263,7 @@ describe("runDynamic — secret delivery (ADR-0085)", () => {
     // through a full dispatch.
     discoverScriptsMock.mockReturnValue(knownCandidates);
     loadParametersCachedMock.mockResolvedValue(secretBearingDescriptors);
-    executeScriptMock.mockResolvedValue(0);
+    executeScriptMock.mockResolvedValue({ exitCode: 0 });
     const context = buildContext();
 
     const code = await runDynamic(
@@ -1289,7 +1289,7 @@ describe("runDynamic — secret delivery (ADR-0085)", () => {
   test("passthrough args still append after the translated argv, unaffected by the split", async () => {
     discoverScriptsMock.mockReturnValue(knownCandidates);
     loadParametersCachedMock.mockResolvedValue(secretBearingDescriptors);
-    executeScriptMock.mockResolvedValue(0);
+    executeScriptMock.mockResolvedValue({ exitCode: 0 });
 
     await runDynamic(
       buildContext(),
@@ -1307,7 +1307,7 @@ describe("runDynamic — secret delivery (ADR-0085)", () => {
   test("history still records the secret's canonical parameter NAME (never its value)", async () => {
     discoverScriptsMock.mockReturnValue(knownCandidates);
     loadParametersCachedMock.mockResolvedValue(secretBearingDescriptors);
-    executeScriptMock.mockResolvedValue(0);
+    executeScriptMock.mockResolvedValue({ exitCode: 0 });
     recordHistoryEntryMock.mockReturnValue(true);
 
     await runDynamic(
@@ -1476,7 +1476,7 @@ describe("runDynamic — in-process branch installs a cancellation scope (U11 C1
     // scope for the spawn branch (execute.ts:194-197).
     discoverScriptsMock.mockReturnValue(knownCandidates);
     loadParametersCachedMock.mockResolvedValue(descriptors);
-    executeScriptMock.mockResolvedValue(0);
+    executeScriptMock.mockResolvedValue({ exitCode: 0 });
 
     await runDynamic(buildContext(), "json-etl", [], []);
 

@@ -150,7 +150,7 @@ describe("executeFlowStep — execution-mode resolution", () => {
   test.each([["auto"], ["spawn"]] as const)(
     "execution '%s' takes the spawn path and reports execution 'spawn'",
     async (execution: "auto" | "spawn") => {
-      executeScriptMock.mockResolvedValue(0);
+      executeScriptMock.mockResolvedValue({ exitCode: 0 });
       locateRunReportMock.mockReturnValue(UNAVAILABLE);
 
       const result = await executeFlowStep(
@@ -183,7 +183,7 @@ describe("executeFlowStep — execution-mode resolution", () => {
   });
 
   test("the spawn path is handed the script's resolved directory and a jsonOutput:false context", async () => {
-    executeScriptMock.mockResolvedValue(0);
+    executeScriptMock.mockResolvedValue({ exitCode: 0 });
     locateRunReportMock.mockReturnValue(UNAVAILABLE);
     const context = buildContext();
 
@@ -209,7 +209,7 @@ describe("executeFlowStep — execution-mode resolution", () => {
     // `--json` flag) controls `redirectStdoutToStderr` on the spawn options,
     // while `executeContext.jsonOutput` (whether THIS `executeScript` call
     // emits its own envelope) is always pinned false regardless.
-    executeScriptMock.mockResolvedValue(0);
+    executeScriptMock.mockResolvedValue({ exitCode: 0 });
     locateRunReportMock.mockReturnValue(UNAVAILABLE);
 
     await executeFlowStep(
@@ -230,7 +230,7 @@ describe("executeFlowStep — execution-mode resolution", () => {
   });
 
   test("a flow run without --json does not redirect the spawned child's stdout", async () => {
-    executeScriptMock.mockResolvedValue(0);
+    executeScriptMock.mockResolvedValue({ exitCode: 0 });
     locateRunReportMock.mockReturnValue(UNAVAILABLE);
 
     await executeFlowStep(
@@ -280,7 +280,7 @@ describe("executeFlowStep — child argv translation", () => {
   async function runWithParameters(
     parameters: Readonly<Record<string, unknown>>,
   ): Promise<readonly string[]> {
-    executeScriptMock.mockResolvedValue(0);
+    executeScriptMock.mockResolvedValue({ exitCode: 0 });
     locateRunReportMock.mockReturnValue(UNAVAILABLE);
     await executeFlowStep(buildContext(), buildStep({ parameters }), false, {
       now: scriptedNow(T0, T1),
@@ -383,7 +383,7 @@ describe("executeFlowStep — the child environment (ADR-0085)", () => {
     // the secret-carrying variables, which is the whole reason a secret never
     // needs to appear in the definition file. Identity, not equality: a copy
     // would be a re-derivation this module has no business making.
-    executeScriptMock.mockResolvedValue(0);
+    executeScriptMock.mockResolvedValue({ exitCode: 0 });
     locateRunReportMock.mockReturnValue(UNAVAILABLE);
     const envFile: M3LCliEnvFileSetting = {
       kind: "path",
@@ -406,7 +406,7 @@ describe("executeFlowStep — the child environment (ADR-0085)", () => {
   ] as readonly [M3LCliEnvFileSetting][])(
     "forwards the %o env-file decision unchanged, so a step never resolves a different file than the operator chose",
     async (envFile: M3LCliEnvFileSetting) => {
-      executeScriptMock.mockResolvedValue(0);
+      executeScriptMock.mockResolvedValue({ exitCode: 0 });
       locateRunReportMock.mockReturnValue(UNAVAILABLE);
 
       await executeFlowStep(buildContext({ envFile }), buildStep(), false, {
@@ -471,7 +471,7 @@ describe("executeFlowStep — the child environment (ADR-0085)", () => {
   test.fails(
     "[KNOWN GAP] a secret parameter's value never reaches the argv a flow step builds",
     async () => {
-      executeScriptMock.mockResolvedValue(0);
+      executeScriptMock.mockResolvedValue({ exitCode: 0 });
       locateRunReportMock.mockReturnValue(UNAVAILABLE);
 
       await executeFlowStep(
@@ -501,7 +501,7 @@ describe("executeFlowStep — the dry-run floor", () => {
     flowDryRun: boolean,
     stepDryRun?: boolean,
   ): Promise<M3LCliFlowStepResult> {
-    executeScriptMock.mockResolvedValue(0);
+    executeScriptMock.mockResolvedValue({ exitCode: 0 });
     locateRunReportMock.mockReturnValue(UNAVAILABLE);
     return executeFlowStep(
       buildContext(),
@@ -557,7 +557,7 @@ describe("executeFlowStep — the dry-run floor", () => {
 
 describe("executeFlowStep — reading the outcome through its own window", () => {
   test("locateRunReport is called with the step's own observed start/finish window", async () => {
-    executeScriptMock.mockResolvedValue(0);
+    executeScriptMock.mockResolvedValue({ exitCode: 0 });
     locateRunReportMock.mockReturnValue(UNAVAILABLE);
 
     const result = await executeFlowStep(buildContext(), buildStep(), false, {
@@ -587,7 +587,7 @@ describe("executeFlowStep — reading the outcome through its own window", () =>
   test("two steps invoking the SAME script are disambiguated purely by their windows", async () => {
     const firstReport = "/workspace/data/output/a/run-report.json";
     const secondReport = "/workspace/data/output/b/run-report.json";
-    executeScriptMock.mockResolvedValue(0);
+    executeScriptMock.mockResolvedValue({ exitCode: 0 });
     locateRunReportMock
       .mockReturnValueOnce(foundLookup(firstReport))
       .mockReturnValueOnce(foundLookup(secondReport));
@@ -623,7 +623,7 @@ describe("executeFlowStep — reading the outcome through its own window", () =>
   });
 
   test("a found report supplies the step's outcome and reportPath", async () => {
-    executeScriptMock.mockResolvedValue(0);
+    executeScriptMock.mockResolvedValue({ exitCode: 0 });
     locateRunReportMock.mockReturnValue(
       foundLookup("/workspace/data/output/x/run-report.json"),
     );
@@ -643,7 +643,7 @@ describe("executeFlowStep — reading the outcome through its own window", () =>
   });
 
   test("a found report whose own outcome is null does not crash and yields outcome null", async () => {
-    executeScriptMock.mockResolvedValue(0);
+    executeScriptMock.mockResolvedValue({ exitCode: 0 });
     locateRunReportMock.mockReturnValue({
       status: "found",
       reportPath: "/workspace/data/output/x/run-report.json",
@@ -673,7 +673,7 @@ describe("executeFlowStep — reading the outcome through its own window", () =>
   ] as const)(
     "tolerates the '%s' unavailable reason without crashing",
     async (reason) => {
-      executeScriptMock.mockResolvedValue(4);
+      executeScriptMock.mockResolvedValue({ exitCode: 4 });
       locateRunReportMock.mockReturnValue({ status: "unavailable", reason });
 
       const result = await executeFlowStep(buildContext(), buildStep(), false, {
@@ -697,7 +697,7 @@ describe("executeFlowStep — reading the outcome through its own window", () =>
     const appendSpy = vi
       .spyOn(fs, "appendFileSync")
       .mockImplementation(() => undefined);
-    executeScriptMock.mockResolvedValue(0);
+    executeScriptMock.mockResolvedValue({ exitCode: 0 });
     locateRunReportMock.mockReturnValue(
       foundLookup("/workspace/data/output/x/run-report.json"),
     );
@@ -785,7 +785,7 @@ describe("executeFlowStep — failure propagation and seams", () => {
   });
 
   test("spawnImpl and stderrStream are forwarded to executeScript", async () => {
-    executeScriptMock.mockResolvedValue(0);
+    executeScriptMock.mockResolvedValue({ exitCode: 0 });
     locateRunReportMock.mockReturnValue(UNAVAILABLE);
     const spawnImpl = vi.fn();
     const stderrStream = { write: vi.fn() };
@@ -825,7 +825,7 @@ describe("executeFlowStep — failure propagation and seams", () => {
     // module owns, and `executeScript`'s own `now` is NOT forwarded (called
     // with jsonOutput:false it never uses its timing). A third read would
     // throw from scriptedNow.
-    executeScriptMock.mockResolvedValue(0);
+    executeScriptMock.mockResolvedValue({ exitCode: 0 });
     locateRunReportMock.mockReturnValue(UNAVAILABLE);
 
     await expect(
