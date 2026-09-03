@@ -120,13 +120,14 @@ function normalizePlainObject(
  * `isSensitiveKey`/`redactSensitiveLogValue` only ever inspects object
  * *keys*, and a bare array element has none, so a secret riding in a `Set`
  * would reach the persisted report completely unredacted. Emitting the
- * element count keeps the diagnostic signal (how many entries existed)
- * without carrying any of the — possibly sensitive — contents forward. Under
- * an earlier baseline (both before this module's normalize-before-redact
- * reordering, and before `redactSensitiveLogValue` itself gained `Map`/`Set`
- * support), `redactSensitiveLogValue(new Set(...))` returned `{}` (dropping
- * every member outright) — this is no worse than that baseline, and is
- * strictly more informative than it while remaining just as leak-free.
+ * element count keeps the diagnostic signal (how many entries existed) without
+ * carrying any of the — possibly sensitive — contents forward. Under an earlier
+ * baseline (both before `core/diagnostics/run-report.ts`'s
+ * normalize-before-redact reordering, and before `redactSensitiveLogValue`
+ * itself gained `Map`/`Set` support), `redactSensitiveLogValue(new Set(...))`
+ * returned `{}` (dropping every member outright) — this is no worse than that
+ * baseline, and is strictly more informative than it while remaining just as
+ * leak-free.
  *
  * `set.size` is read through an accessor a hostile `Set` subclass (or a
  * `Proxy` wrapping one) can override to return arbitrary content — including
@@ -203,27 +204,27 @@ function scalarToRedactable(value: unknown): unknown {
  * Recursively converts `value` into a plain, JSON-safe, key-preserving
  * structure ahead of redaction — the cycle/depth-breaking, `Map`/`Set`
  * -normalizing, `toJSON`-respecting replacement for the
- * `JSON.parse(safeJsonStringify(value))` pre-pass this module used
- * previously. That pre-pass broke cycles and depth safely, but
- * `safeJsonStringify` flattens `Map` to `[[key, value], …]` pairs and `Set`
- * to `[value, …]` arrays — turning a sensitive `Map` key like `apiKey` into
- * an array *element*, which `isSensitiveKey` (keyed lookups only) can never
- * see, so the secret rode straight through redaction. This function performs
- * the same cycle/depth-breaking directly (its own `WeakSet`/depth counter,
- * not `safeJsonStringify`'s), while converting `Map` → `Record` (keeping
- * string keys as actual object keys) and `Set` → a non-reversible cardinality
- * marker (see {@link describeSetCardinality}) rather than an array of its
- * members — a `Set`'s elements carry no key names at all, so unlike a `Map`
- * entry there is no key-preserving form to convert them to; emitting them as
- * array elements would still defeat key-based redaction the same way the
- * `Map`-as-pairs shape does. It also invokes an object's own or inherited
- * `toJSON()` (guarded against a
- * throwing implementation) ahead of enumerating its properties — the
- * opposite of what the previous pre-pass did: `safeJsonStringify` never
- * calls `toJSON` at all, so a class using `toJSON` as its redaction boundary
+ * `JSON.parse(safeJsonStringify(value))` pre-pass
+ * `core/diagnostics/run-report.ts` used previously. That pre-pass broke cycles
+ * and depth safely, but `safeJsonStringify` flattens `Map` to
+ * `[[key, value], …]` pairs and `Set` to `[value, …]` arrays — turning a
+ * sensitive `Map` key like `apiKey` into an array *element*, which
+ * `isSensitiveKey` (keyed lookups only) can never see, so the secret rode
+ * straight through redaction. This function performs the same
+ * cycle/depth-breaking directly (its own `WeakSet`/depth counter, not
+ * `safeJsonStringify`'s), while converting `Map` → `Record` (keeping string
+ * keys as actual object keys) and `Set` → a non-reversible cardinality marker
+ * (see {@link describeSetCardinality}) rather than an array of its members — a
+ * `Set`'s elements carry no key names at all, so unlike a `Map` entry there is
+ * no key-preserving form to convert them to; emitting them as array elements
+ * would still defeat key-based redaction the same way the `Map`-as-pairs shape
+ * does. It also invokes an object's own or inherited `toJSON()` (guarded
+ * against a throwing implementation) ahead of enumerating its properties — the
+ * opposite of what the previous pre-pass did: `safeJsonStringify` never calls
+ * `toJSON` at all, so a class using `toJSON` as its redaction boundary
  * (returning fewer fields than the instance actually has) was previously
- * *bypassed* and fully enumerated instead, exposing exactly the fields
- * `toJSON` was declared to omit.
+ * *bypassed* and fully enumerated instead, exposing exactly the fields `toJSON`
+ * was declared to omit.
  */
 function normalizeForRedaction(
   value: unknown,
@@ -235,19 +236,19 @@ function normalizeForRedaction(
   if (typeof value !== "object") return scalarToRedactable(value);
 
   // `value` is narrowed to a non-null `object` here — every other `typeof`
-  // result already returned above via `scalarToRedactable`. `visited` is a
-  // true SEEN-set for the whole traversal — deliberately never removed once
-  // added, even after this node's subtree finishes normalizing. Deleting on
-  // unwind (this module's own pre-fix baseline) turns `visited` into a
-  // PATH-set instead: a perfectly acyclic but *shared* subgraph (the same
-  // object reachable via more than one route, e.g. fan-out N × depth M) is
-  // then re-expanded from scratch at every reference, which is exponential in
-  // the fan-out and OOMs the process well before any genuine cycle would ever
-  // be hit — strictly worse than the "[Circular]" marker below, since an OOM
-  // is not catchable by `sanitizeValue`'s `try`, defeating the whole
-  // never-throw contract. Collapsing a shared (non-cyclic) reference to the
-  // same marker a genuine cycle gets is an accepted, documented tradeoff:
-  // both are "already normalized, don't re-expand".
+  // result already returned above via `scalarToRedactable`. `visited` is a true
+  // SEEN-set for the whole traversal — deliberately never removed once added,
+  // even after this node's subtree finishes normalizing. Deleting on unwind
+  // (`core/diagnostics/run-report.ts`'s own pre-fix baseline) turns `visited`
+  // into a PATH-set instead: a perfectly acyclic but *shared* subgraph (the same
+  // object reachable via more than one route, e.g. fan-out N × depth M) is then
+  // re-expanded from scratch at every reference, which is exponential in the
+  // fan-out and OOMs the process well before any genuine cycle would ever be hit
+  // — strictly worse than the "[Circular]" marker below, since an OOM is not
+  // catchable by `sanitizeValue`'s `try`, defeating the whole never-throw
+  // contract. Collapsing a shared (non-cyclic) reference to the same marker a
+  // genuine cycle gets is an accepted, documented tradeoff: both are "already
+  // normalized, don't re-expand".
   if (visited.has(value)) return "[Circular]";
   visited.add(value);
   return normalizeObjectShape(value, depth, visited);
