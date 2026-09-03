@@ -95,11 +95,12 @@ a distro package's usual defaults):
   `podman kube play` for this reason, rather than depending on the default
   netavark backend's `nft` dependency being present.
 
-A gate (`check:no-docker`), landing in a follow-up PR, will enforce the ban
-at the source level: no tracked file may be named `Dockerfile`,
+A gate (`check:no-docker`, `bin/check-no-docker.mjs`) enforces the ban at the
+source level, on `pre-push` (`lefthook.yml`) and on every CI event
+(`ci.yml`'s `gates` job): no tracked file may be named `Dockerfile`,
 `*.dockerfile`, `.dockerignore`, or `docker-compose.y*ml`, and no workflow,
-`package.json` script, or `bin/**` script may invoke `docker`/
-`docker compose`/`docker-compose`. `docs/adr/**`, `docs/logs/**`, and
+`package.json` script, `bin/**` script, or `lefthook.yml` lane may invoke
+`docker`/`docker compose`/`docker-compose`. `docs/adr/**`, `docs/logs/**`, and
 `docs/plans/archive/**` are allowlisted as historical record, along with
 `docker.io/` image references — Podman requires fully-qualified image names,
 and `docker.io` there names a registry hostname, not the banned tool.

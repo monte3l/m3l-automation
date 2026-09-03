@@ -673,6 +673,13 @@ jobs:
       - name: Check for literal control characters
         run: pnpm check:control-chars
 
+      # ADR-0091 bans Docker/Dockerfiles project-wide in favor of Podman +
+      # Containerfile + a `podman kube play` pod manifest. Needs no network or
+      # auth, so — like the control-character check above — this runs on
+      # pull_request too, where a violation is cheapest to catch.
+      - name: Check for banned Docker artifacts and invocations
+        run: pnpm check:no-docker
+
   # Live-GitHub-state drift ALARMS, not merge-blocking gates — deliberately a
   # SEPARATE job from `gates`, not a `needs:` of `verify` (ADR-0079). Each
   # compares a commit against MUTABLE remote state (Issues/Milestones/labels/
