@@ -529,25 +529,12 @@ function readInputError(input: M3LRunReportInput): unknown {
 }
 
 /**
- * Reads `input.retryAttempts` exactly ONCE into a local, then narrows it to a
- * finite `number` — the compile-time `number | undefined` type is only a
- * static claim; a caller (or an input round-tripped through `JSON.parse`)
- * can put anything on the wire, and this field is never routed through
- * `sanitizeValue` the way `environment`/`timeline`/`archive` are. Reading
- * the raw value twice (once to test, once to copy) would let a getter
- * return a different value on each read — e.g. a legitimate number on the
- * first read and a secret string on the second — bypassing redaction
- * entirely for whatever the second read happened to return. Reading once
- * and narrowing closes both gaps: a getter cannot switch the answer, and a
- * non-finite-number value (a string, an object, `NaN`, `Infinity`) can never
- * reach the persisted report. Mirrors {@link readInputError}'s guard against
- * a throwing getter (so a malicious/broken accessor cannot make
- * {@link M3LRunReporter.build} throw either) plus the boundary-validation
- * discipline `safeReadEntryField`/`buildArchiveEntry` already apply
- * elsewhere in this file. `NaN`/`Infinity` are rejected alongside
- * non-numbers for the same reason {@link maxAttempt} (in `run-script.ts`)
- * rejects them: both serialize to `null` via `JSON.stringify`, silently
- * indistinguishable from "absent".
+ * Reads `input.retryAttempts` once and narrows it to a finite `number` — a
+ * second read could let a hostile getter switch its answer (e.g. a real
+ * number, then a secret string), and this field bypasses `sanitizeValue`
+ * entirely. `NaN`/`Infinity` are excluded too: both serialize to `null`,
+ * indistinguishable from "absent". Mirrors {@link readInputError}'s guard
+ * against a throwing getter.
  */
 function readInputRetryAttempts(input: M3LRunReportInput): number | undefined {
   let raw: unknown;

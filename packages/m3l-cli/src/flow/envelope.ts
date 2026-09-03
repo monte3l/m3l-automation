@@ -161,7 +161,7 @@ const DEFAULT_REPORT_UNAVAILABLE_REASON = "no-matching-report";
  * locate a report is `"found"` even if a stale reason rode along, because
  * demoting it would throw away a path the operator can actually open.
  *
- * The four timeline/recovery scalars are always `null`. The outcome carries
+ * The four report-derived scalars are always `null`. The outcome carries
  * the report's verdict and path but not its counts, and inventing a count is
  * strictly worse than admitting the envelope no longer has it — the same
  * discipline `run/envelope.ts` applies to a malformed report.
