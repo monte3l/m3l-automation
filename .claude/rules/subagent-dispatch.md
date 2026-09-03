@@ -147,7 +147,17 @@ status`/`git diff`, re-run `tsc`/`eslint`/`vitest`/coverage) before deciding
 - **Resume the SAME spoke via `SendMessage`**, never a fresh `Agent`/`Task`
   dispatch — a fresh agent has no memory of the prior exploration and restarts
   the whole budget from zero. Hand it a scoped punch-list of exactly what's
-  left, not a full re-explanation.
+  left, not a full re-explanation. **`Agent(subagent_type: "fork")` is not a
+  way to resume someone else's spoke** — a fork always forks the CALLING hub
+  session's own context, never the target background agent; despite reading
+  like "continue," it silently launches a second, unrelated agent that can
+  race the original's still-in-flight state. Confirmed live: dispatching
+  `fork` to "continue" a 40-turn-limited spoke launched a hub-context fork
+  instead, caught and `TaskStop`-killed within seconds before it touched any
+  file, purely because it happened to be idle-fast — a slower catch could have
+  let it write to the same test files the real spoke was still mid-edit on.
+  When the intent is "let that specific agent keep going," the call is always
+  `SendMessage({ to: "<its id or name>", ... })`.
 - **Verification can conclude "no resume needed" — prefer hub verification
   over a resume when only the report is missing.** A truncated return whose
   artifacts are already on disk (files written, gates green when you run them
