@@ -12,6 +12,7 @@
 import { EventEmitter } from "node:events";
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
+import { tmpdir } from "node:os";
 import * as path from "node:path";
 
 import { afterEach, describe, expect, test, vi } from "vitest";
@@ -24,15 +25,61 @@ import { M3LConsoleError } from "../src/errors/console-error.js";
 import { jsonResponse } from "../src/http/respond.js";
 import type { M3LRoute } from "../src/http/router.js";
 import * as envModule from "../src/config/env.js";
+import { openConsoleStore } from "../src/store/store.js";
+import type {
+  M3LConsoleStore,
+  M3LConsoleStoreHandle,
+} from "../src/store/store.js";
 
-/** A minimal valid env: only the required operator name set. */
+/**
+ * A minimal valid env: the required operator name, plus an audit root that
+ * deliberately does NOT exist (mirroring `tests/main-store.test.ts`) — X7c's
+ * boot rebuild reads the trail before the bind, and an absent directory reads
+ * as an empty trail, so nothing touches the real data dir.
+ *
+ * The database path is left at its resolved default on purpose: the "resolved
+ * config" block below asserts that default's shape, and the store is kept off
+ * disk by {@link openInMemoryStore} instead of by an env override that would
+ * make that assertion vacuous.
+ */
 function buildEnv(
   overrides: Record<string, string | undefined> = {},
 ): NodeJS.ProcessEnv {
   return {
     M3L_CONSOLE_OPERATOR_NAME: "ada",
+    M3L_CONSOLE_AUDIT_ROOT: path.join(tmpdir(), "m3l-console-audit-absent"),
     ...overrides,
   };
+}
+
+/** Every store {@link openInMemoryStore} opened, closed by the `afterEach` below. */
+const openedStores: (M3LConsoleStoreHandle & M3LConsoleStore)[] = [];
+
+afterEach(() => {
+  for (const store of openedStores) {
+    // Mirrors `tests/boot-audit-rebuild.test.ts`. `close()` is already
+    // idempotent, so the check only records that `startConsole` closed the
+    // store on its way down. Deliberately not try/caught: a close failing
+    // for any OTHER reason must surface, not vanish into an empty catch.
+    if (store.isOpen) store.close();
+  }
+  openedStores.length = 0;
+});
+
+/**
+ * The `StartConsoleOptions.openStore` seam bound to a REAL in-memory store
+ * with every migration applied — `tests/boot-audit-rebuild.test.ts`'s pattern.
+ *
+ * Without it `startConsole` opens the configured database for real, creating
+ * and migrating `data/console/console.sqlite` in the checkout. That path is
+ * gitignored at directory level, so no gate ever sees it — and a file left by
+ * a branch with more migrations then trips
+ * `ERR_CONSOLE_STORE_SCHEMA_DRIFT` on a branch with fewer.
+ */
+function openInMemoryStore(): M3LConsoleStoreHandle & M3LConsoleStore {
+  const store = openConsoleStore({ location: ":memory:" });
+  openedStores.push(store);
+  return store;
 }
 
 /** A recording `M3LLoggerHandler` fake — the sanctioned test-double pattern. */
@@ -179,6 +226,7 @@ function startWithFakeServer(overrides: Partial<StartConsoleOptions> = {}): {
   const promise = startConsole({
     env: buildEnv(),
     createServer: () => fake.instance,
+    openStore: openInMemoryStore,
     ...overrides,
   });
   fake.emitListening();
@@ -1208,6 +1256,7 @@ describe("startConsole — 'closed' rejects (rather than hanging) when the shutd
       const promise = startConsole({
         env: buildEnv(),
         createServer: () => fake.instance,
+        openStore: openInMemoryStore,
       });
       fake.emitListening();
       const running = await promise;
@@ -1251,6 +1300,7 @@ describe("startConsole — 'closed' rejects (rather than hanging) when the shutd
       const promise = startConsole({
         env: buildEnv(),
         createServer: () => fake.instance,
+        openStore: openInMemoryStore,
       });
       fake.emitListening();
       const running = await promise;
@@ -1282,6 +1332,7 @@ describe("startConsole — 'closed' rejects (rather than hanging) when the shutd
       const promise = startConsole({
         env: buildEnv(),
         createServer: () => fake.instance,
+        openStore: openInMemoryStore,
       });
       fake.emitListening();
       const running = await promise;

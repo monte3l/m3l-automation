@@ -14,14 +14,22 @@
  * a plain (non-`await`ed) call; failures are captured with `captureFailure`
  * below, which is itself a straightforward synchronous try/catch.
  *
- * No filesystem I/O anywhere in this file: every case uses `:memory:` (no
- * parent-directory step to reach) or an injected `createDatabase` fake. The
- * real-file cases (WAL sidecars, a second writer, a non-SQLite file) belong
- * to the integration pass, which another slice owns.
+ * Almost every case here uses `:memory:` (no parent-directory step to reach)
+ * or an injected `createDatabase` fake. The one exception is the final
+ * describe block, which opens a REAL file under a tmpdir because
+ * `ensureParentDirectory` and `restrictFilePermissions` are both no-ops for
+ * `":memory:"` and so are unreachable any other way — those two steps used
+ * to be covered only accidentally, by `tests/main.test.ts` opening the
+ * checkout's real `data/console/console.sqlite`. The remaining real-file
+ * cases (WAL sidecars and their derived modes, a second writer, a
+ * non-SQLite file) stay with the integration pass, which owns them.
  */
+import { mkdtempSync, rmSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
-import { describe, expect, expectTypeOf, test } from "vitest";
+import { afterEach, describe, expect, expectTypeOf, test } from "vitest";
 
 import { M3LConsoleError } from "../src/errors/console-error.js";
 import type { M3LConsoleMetaRepository } from "../src/store/meta-repository.js";
@@ -621,4 +629,61 @@ describe("openConsoleStore — busyTimeoutMs", () => {
       4_000,
     );
   });
+});
+
+// =============================================================================
+// The only filesystem-backed block in this file — see the header comment.
+// =============================================================================
+
+describe("openConsoleStore — a real file location", () => {
+  const workDirs: string[] = [];
+
+  function makeWorkDir(): string {
+    const dir = mkdtempSync(join(tmpdir(), "m3l-store-open-"));
+    workDirs.push(dir);
+    return dir;
+  }
+
+  afterEach(() => {
+    for (const dir of workDirs) {
+      rmSync(dir, { recursive: true, force: true });
+    }
+    workDirs.length = 0;
+  });
+
+  test("a location whose parent directory does not exist still opens", () => {
+    const location = join(makeWorkDir(), "nested", "console.sqlite");
+
+    const store = openConsoleStore({ location });
+    try {
+      expect(store.isOpen).toBe(true);
+      expect(store.location).toBe(location);
+      // Discriminating, not incidental: `node:sqlite` does not create a
+      // missing parent directory itself (errcode 14, `CANTOPEN`), so this
+      // open can only succeed because `ensureParentDirectory` ran first.
+      expect(statSync(location).isFile()).toBe(true);
+    } finally {
+      store.close();
+    }
+  });
+
+  // `restrictFilePermissions` returns early on win32, where a POSIX mode is
+  // not meaningful — mirroring the integration suite's own guard.
+  test.skipIf(process.platform === "win32")(
+    "the created database file is restricted to 0600",
+    () => {
+      const location = join(makeWorkDir(), "console.sqlite");
+
+      const store = openConsoleStore({ location });
+      try {
+        // `chmodSync` is not masked by `umask`, so 0600 is exact here
+        // without touching `process.umask` — the umask-sensitive sidecar
+        // modes, and the chmod-before-WAL ordering they depend on, belong
+        // to `tests/integration/store.integration.test.ts`.
+        expect(statSync(location).mode & 0o777).toBe(0o600);
+      } finally {
+        store.close();
+      }
+    },
+  );
 });

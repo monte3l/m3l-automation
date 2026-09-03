@@ -16,9 +16,12 @@
  * `tests/main-runs.test.ts`) drives the live `requestListener` end to end.
  */
 import { EventEmitter } from "node:events";
+import { mkdtemp, rm } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { tmpdir } from "node:os";
+import * as path from "node:path";
 
-import { describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
 import { createConsoleRuntime } from "../src/main.js";
 import type { M3LConsoleRuntimeOptions } from "../src/main.js";
@@ -45,12 +48,35 @@ import type {
 } from "../src/store/runs-repository.js";
 import type { M3LRunRegistry } from "../src/runs/registry.js";
 
-/** A minimal valid env: only the required operator name set. */
+/** A tmpdir root for everything this file writes, replaced per test. */
+let workDir: string;
+
+beforeEach(async () => {
+  workDir = await mkdtemp(path.join(tmpdir(), "m3l-console-sessions-"));
+});
+
+afterEach(async () => {
+  await rm(workDir, { recursive: true, force: true });
+});
+
+/**
+ * A minimal valid env: the required operator name, plus the two data roots
+ * this file's audited session writes actually reach, pointed inside
+ * {@link workDir} (mirroring `tests/main-audit.test.ts`).
+ *
+ * The audit root is NOT optional here: `POST /api/v1/sessions` performs an
+ * audited write, and the routes below are driven through the live
+ * `requestListener` — so without an override this file appends a real
+ * segment to the checkout's own `data/console/audit/`. That path is
+ * gitignored at directory level, so no gate ever sees it.
+ */
 function buildEnv(
   overrides: Record<string, string | undefined> = {},
 ): NodeJS.ProcessEnv {
   return {
     M3L_CONSOLE_OPERATOR_NAME: "ada",
+    M3L_CONSOLE_AUDIT_ROOT: path.join(workDir, "audit"),
+    M3L_CONSOLE_SESSIONS_ARTIFACT_ROOT: path.join(workDir, "sessions"),
     ...overrides,
   };
 }
