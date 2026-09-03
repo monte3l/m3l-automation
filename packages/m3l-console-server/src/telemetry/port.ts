@@ -26,14 +26,19 @@
  *
  * `route`, `script`, `outcome` and `posture` below are plain `string`s
  * bounded by nothing at the type level, but every one of them becomes part
- * of a permanent primary key in `console_telemetry_rollup`. Each field's own
- * TSDoc states the value a caller MUST pass; these are **unenforced
- * preconditions today** — the port never throws (see above), so it cannot
- * reject a caller that passes the wrong thing. Bounding these values (a
- * length cap, an enum, a branded type) is slice 2's job, tracked at
- * `src/store/migrations/telemetry.ts:41-43`; this module only documents the
- * requirement so a slice-2 reviewer has a single place to check every call
- * site against.
+ * of a permanent primary key in `console_telemetry_rollup`. For
+ * `http.request`, `route` and `outcome` are now bounded at the call site:
+ * `src/http/handler.ts` supplies either a matched route PATTERN from
+ * `M3LRouter.lookup` or one of three named constants (`"(not-found)"`,
+ * `"(method-not-allowed)"`, `"(unrouted)"`), and `src/http/finish-request.ts`
+ * maps the response status to one of six status classes (`"1xx"`..`"5xx"`,
+ * `"other"`). The other three metrics' string dimensions
+ * (`M3LTelemetryRunFinishedSample.script`/`operation`/`outcome`,
+ * `M3LTelemetrySseStreamSample.outcome`,
+ * `M3LTelemetryPolicyDecisionSample.posture`/`outcome`) remain **unenforced
+ * preconditions today**, pending slices 3a-3c. In every case the port itself
+ * never throws (see above), so it cannot reject a caller that passes the
+ * wrong thing — bounding a value is the call site's duty, not the port's.
  *
  * @packageDocumentation
  */
