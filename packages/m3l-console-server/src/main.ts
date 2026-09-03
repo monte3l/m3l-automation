@@ -292,7 +292,7 @@ export function createConsoleRuntime(
 
   const [telemetryBackend, telemetry] = resolveTelemetry(options, logger);
   logPosture(logger, config, telemetryBackend);
-  const { runs, sessions } = buildConsoleSubsystems(options, logger);
+  const { runs, sessions } = buildConsoleSubsystems(options, logger, telemetry);
 
   const operator: M3LOperatorProfile = {
     name: config.operatorName,

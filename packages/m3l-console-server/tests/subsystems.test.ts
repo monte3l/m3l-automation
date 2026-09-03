@@ -74,6 +74,7 @@ import type {
   M3LRunListQuery,
   M3LRunRecord,
 } from "../src/store/runs-repository.js";
+import type { M3LTelemetryRecorder } from "../src/telemetry/port.js";
 
 vi.mock("node:fs", async () => {
   const actual = await vi.importActual<typeof fs>("node:fs");
@@ -1063,6 +1064,7 @@ describe("M3LConsoleSubsystemsOptions / M3LConsoleSubsystems", () => {
       (
         options: M3LConsoleSubsystemsOptions,
         logger: Core.M3LLogger,
+        telemetry?: M3LTelemetryRecorder,
       ) => M3LConsoleSubsystems
     >();
   });

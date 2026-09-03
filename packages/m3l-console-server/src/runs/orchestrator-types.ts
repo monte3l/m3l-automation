@@ -20,6 +20,7 @@ import type { M3LRunGovernor } from "./governor.js";
 import type { M3LRunRequestBody } from "./parameters.js";
 import type { M3LRunPolicy } from "./policy.js";
 import type { M3LRunRegistry } from "./registry.js";
+import type { M3LTelemetryRecorder } from "../telemetry/port.js";
 
 /**
  * The X4 run-governor's boot-time configuration, as the orchestrator needs
@@ -105,6 +106,13 @@ export interface M3LRunOrchestratorOptions {
    * shapes disagree and break the compile-time proof that they conform.
    */
   readonly runsOutputRoot: string;
+  /**
+   * The telemetry recorder an ACTIVE run's terminal write reports its
+   * `runFinished` sample to. When absent, the orchestrator records to the
+   * no-op recorder, so a caller that does not care about telemetry needs no
+   * argument — mirrors slice 2b's own optional listener option.
+   */
+  readonly telemetry?: M3LTelemetryRecorder | undefined;
 }
 
 /**
