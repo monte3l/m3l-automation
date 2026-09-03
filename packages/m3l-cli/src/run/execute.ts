@@ -1,8 +1,8 @@
 /**
  * `run/execute` — the single shared execution tail both `m3l run <script>`
  * and the dynamic `m3l <script>` dispatch through (ADR-0063, #539, "V2 slice
- * 2"): spawn the script, and — only when `--json` was requested — locate its
- * run report and emit exactly one JSON envelope on stdout.
+ * 2"): spawn the script, and — when the caller requests it — locate its run
+ * report so the summary can be returned and/or an envelope emitted.
  *
  * Deliberately structural rather than importing `M3LCliCommandContext` from
  * `commands/context.js`: `run/` must not depend on `commands/` (the reverse
@@ -19,6 +19,7 @@ import { spawnScript } from "./spawn.js";
 import type { M3LCliSpawnOptions } from "./spawn.js";
 import { locateRunReport } from "./report-lookup.js";
 import { buildRunEnvelope, formatRunEnvelope } from "./envelope.js";
+import type { M3LCliRunReportSummary } from "./envelope.js";
 
 /**
  * The subset of a command context {@link executeScript} reads: the writer
@@ -96,14 +97,64 @@ export interface M3LCliExecuteOptions {
    * sets this explicitly rather than relying on `context.jsonOutput`.
    */
   readonly redirectStdoutToStderr?: boolean;
+  /**
+   * When `true`, {@link executeScript} locates the run report after the spawn
+   * resolves and returns its summary on {@link M3LCliExecuteResult.summary},
+   * regardless of whether `context.jsonOutput` is set.
+   *
+   * Deliberately independent of `context.jsonOutput`: that flag decides
+   * whether this call *emits* a `m3l.run.result` envelope line; this option
+   * decides whether the report is *read* so the caller can receive the summary
+   * back. A caller that needs the outcome for post-run bookkeeping without
+   * emitting a JSON envelope — for example, recording an outcome into the run
+   * history while printing a plain human table — sets this option without
+   * setting `context.jsonOutput`. When both flags are set the report is
+   * located exactly once: the envelope is emitted and the summary is returned
+   * from the same single lookup.
+   *
+   * Omitting this option (the default) means the report is only located when
+   * `context.jsonOutput` is `true`. When neither flag is set the report lookup
+   * is skipped entirely and `summary` is absent from the result.
+   */
+  readonly resolveReportSummary?: boolean;
+}
+
+/**
+ * The value {@link executeScript} resolves with: the spawned child's exit
+ * code and, when the report was located, the run summary.
+ *
+ * `summary` is absent (never `undefined`) when the caller did not opt in via
+ * `options.resolveReportSummary`, when `context.jsonOutput` is `false` and
+ * `resolveReportSummary` was not set, when no matching report was found in the
+ * output directory, or when the report lookup itself threw. Callers must use
+ * `Object.hasOwn` or an `in` check before reading `summary`, consistent with
+ * `exactOptionalPropertyTypes`.
+ *
+ * @example
+ * ```ts
+ * import type { M3LCliExecuteResult } from "@m3l-automation/m3l-cli/run/execute";
+ *
+ * const result: M3LCliExecuteResult = { exitCode: 0 };
+ * ```
+ */
+export interface M3LCliExecuteResult {
+  /** The spawned child's resolved exit code, unaffected by the envelope pipeline. */
+  readonly exitCode: number;
+  /**
+   * The run report summary, present only when the report was located
+   * successfully. Absent when neither `context.jsonOutput` nor
+   * `options.resolveReportSummary` requested the lookup, when no matching
+   * report was found in the output directory, or when the lookup itself threw.
+   */
+  readonly summary?: M3LCliRunReportSummary;
 }
 
 /**
  * Composes the options {@link executeScript} forwards to {@link spawnScript}.
  *
  * Extracted so {@link executeScript} stays a flat sequence (spawn, then —
- * only in `--json` mode — locate and emit the envelope) rather than also
- * carrying the option-assembly branching inline.
+ * only when a summary is wanted — locate the report and optionally emit the
+ * envelope) rather than also carrying the option-assembly branching inline.
  *
  * @param context - The writer facade, `--json` flag, and the environment plus
  *   env-file decision to forward.
@@ -132,10 +183,59 @@ function buildSpawnOptions(
 }
 
 /**
+ * Locates the run report for `scriptName`, emits the `m3l.run.result` envelope
+ * line when `context.jsonOutput` is set, and returns the summary. Owns the
+ * entire report-resolution block — including its failure tolerance — so
+ * {@link executeScript} stays a flat sequence. Never throws: returns
+ * `undefined` on any failure, after surfacing a best-effort diagnostic via
+ * `context.output.error`.
+ */
+function fetchRunSummary(
+  context: M3LCliExecuteContext,
+  scriptName: string,
+  startedAt: Date,
+  finishedAt: Date,
+  exitCode: number,
+): M3LCliRunReportSummary | undefined {
+  try {
+    const lookup = locateRunReport({
+      outputDirPath: context.outputDirPath,
+      scriptName,
+      startedAt,
+      finishedAt,
+    });
+    if (context.jsonOutput) {
+      const envelope = buildRunEnvelope({
+        scriptName,
+        startedAt,
+        finishedAt,
+        exitCode,
+        lookup,
+      });
+      context.output.info(formatRunEnvelope(envelope));
+    }
+    return lookup.status === "found" ? lookup.summary : undefined;
+  } catch (cause) {
+    try {
+      const attempted = context.jsonOutput
+        ? "emit the --json run-result envelope"
+        : "resolve the run report summary";
+      context.output.error(
+        `failed to ${attempted}${cause instanceof Error ? `: ${cause.message}` : ""}`,
+      );
+    } catch {
+      /* the diagnostic write itself is best-effort too — it must never alter the resolved exit code */
+    }
+    return undefined;
+  }
+}
+
+/**
  * Spawns `scriptName` at `scriptDirectory`, forwarding `argv` verbatim, and
- * — only when `context.jsonOutput` is `true` — locates the run's report and
- * writes exactly one {@link formatRunEnvelope}-formatted line via
- * `context.output.info`.
+ * — when the report is wanted — locates the run's report, optionally writes
+ * exactly one {@link formatRunEnvelope}-formatted line via
+ * `context.output.info` (only when `context.jsonOutput` is `true`), and
+ * returns the summary on the result object.
  *
  * In `--json` mode, the child's stdout is redirected to the parent's stderr
  * (`spawnScript`'s `redirectStdoutToStderr`), so a script's own stdout output
@@ -160,14 +260,15 @@ function buildSpawnOptions(
  *   `dist/main.js`).
  * @param argv - Arguments forwarded verbatim to the spawned script.
  * @param options - The optional `secretEnv` overlay plus
- *   `spawnImpl`/`stderrStream`/`redirectStdoutToStderr` overrides and a `now`
- *   seam for deterministic timing.
- * @returns The spawned child's resolved exit code, unaffected by the
- *   envelope pipeline.
+ *   `spawnImpl`/`stderrStream`/`redirectStdoutToStderr`/`resolveReportSummary`
+ *   overrides and a `now` seam for deterministic timing.
+ * @returns A result object carrying the spawned child's exit code (unaffected
+ *   by the envelope pipeline) and, when the report was located, the run
+ *   summary.
  *
  * @example
  * ```ts
- * const exitCode = await executeScript(
+ * const { exitCode } = await executeScript(
  *   {
  *     output,
  *     jsonOutput: true,
@@ -187,7 +288,7 @@ export async function executeScript(
   scriptDirectory: string,
   argv: readonly string[],
   options: M3LCliExecuteOptions = {},
-): Promise<number> {
+): Promise<M3LCliExecuteResult> {
   const now = options.now ?? ((): Date => new Date());
   const startedAt = now();
 
@@ -201,35 +302,18 @@ export async function executeScript(
     buildSpawnOptions(context, options),
   );
 
-  if (!context.jsonOutput) {
-    return exitCode;
+  const wantsSummary =
+    context.jsonOutput || options.resolveReportSummary === true;
+  if (!wantsSummary) {
+    return { exitCode };
   }
 
-  const finishedAt = now();
-  try {
-    const lookup = locateRunReport({
-      outputDirPath: context.outputDirPath,
-      scriptName,
-      startedAt,
-      finishedAt,
-    });
-    const envelope = buildRunEnvelope({
-      scriptName,
-      startedAt,
-      finishedAt,
-      exitCode,
-      lookup,
-    });
-    context.output.info(formatRunEnvelope(envelope));
-  } catch (cause) {
-    try {
-      context.output.error(
-        `failed to emit the --json run-result envelope${cause instanceof Error ? `: ${cause.message}` : ""}`,
-      );
-    } catch {
-      /* the diagnostic write itself is best-effort too — it must never alter the resolved exit code */
-    }
-  }
-
-  return exitCode;
+  const summary = fetchRunSummary(
+    context,
+    scriptName,
+    startedAt,
+    now(),
+    exitCode,
+  );
+  return summary === undefined ? { exitCode } : { exitCode, summary };
 }

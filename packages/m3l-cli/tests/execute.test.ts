@@ -20,6 +20,7 @@ import { executeScript } from "../src/run/execute.js";
 import type {
   M3LCliExecuteContext,
   M3LCliExecuteOptions,
+  M3LCliExecuteResult,
 } from "../src/run/execute.js";
 import { spawnScript } from "../src/run/spawn.js";
 import { locateRunReport } from "../src/run/report-lookup.js";
@@ -27,6 +28,7 @@ import { buildRunEnvelope, formatRunEnvelope } from "../src/run/envelope.js";
 import type {
   M3LCliRunEnvelope,
   M3LCliRunReportLookup,
+  M3LCliRunReportSummary,
   M3LCliRunReportUnavailableReason,
 } from "../src/run/envelope.js";
 import type { M3LCliOutput } from "../src/cli/output.js";
@@ -132,14 +134,14 @@ describe("executeScript — non-JSON mode", () => {
     spawnScriptMock.mockResolvedValue(0);
     const context = buildContext({ jsonOutput: false });
 
-    const exitCode = await executeScript(
+    const result = await executeScript(
       context,
       SCRIPT_NAME,
       SCRIPT_DIRECTORY,
       ARGV,
     );
 
-    expect(exitCode).toBe(0);
+    expect(result.exitCode).toBe(0);
     expect(spawnScriptMock).toHaveBeenCalledWith(
       SCRIPT_DIRECTORY,
       ARGV,
@@ -150,14 +152,14 @@ describe("executeScript — non-JSON mode", () => {
   test("propagates spawnScript's resolved exit code verbatim", async () => {
     spawnScriptMock.mockResolvedValue(9);
 
-    const exitCode = await executeScript(
+    const result = await executeScript(
       buildContext({ jsonOutput: false }),
       SCRIPT_NAME,
       SCRIPT_DIRECTORY,
       ARGV,
     );
 
-    expect(exitCode).toBe(9);
+    expect(result.exitCode).toBe(9);
   });
 
   test("never calls locateRunReport or the envelope pipeline", async () => {
@@ -366,7 +368,7 @@ describe("executeScript — JSON mode", () => {
     buildRunEnvelopeMock.mockReturnValue(SAMPLE_ENVELOPE);
     formatRunEnvelopeMock.mockReturnValue(SAMPLE_FORMATTED);
 
-    const exitCode = await executeScript(
+    const result = await executeScript(
       buildContext({ jsonOutput: true }),
       SCRIPT_NAME,
       SCRIPT_DIRECTORY,
@@ -374,7 +376,7 @@ describe("executeScript — JSON mode", () => {
       { now: scriptedNow(STARTED_AT, FINISHED_AT) },
     );
 
-    expect(exitCode).toBe(42);
+    expect(result.exitCode).toBe(42);
   });
 });
 
@@ -392,7 +394,7 @@ describe("executeScript — read-tolerance across every M3LCliRunReportUnavailab
         output: createOutput({ info: infoSpy }),
       });
 
-      const exitCode = await executeScript(
+      const result = await executeScript(
         context,
         SCRIPT_NAME,
         SCRIPT_DIRECTORY,
@@ -400,7 +402,7 @@ describe("executeScript — read-tolerance across every M3LCliRunReportUnavailab
         { now: scriptedNow(STARTED_AT, FINISHED_AT) },
       );
 
-      expect(exitCode).toBe(5);
+      expect(result.exitCode).toBe(5);
       expect(buildRunEnvelopeMock).toHaveBeenCalledExactlyOnceWith(
         expect.objectContaining({ lookup: { status: "unavailable", reason } }),
       );
@@ -415,16 +417,30 @@ describe("executeScript — defense in depth against downstream envelope failure
     locateRunReportMock.mockImplementation(() => {
       throw new Error("defect in locateRunReport");
     });
+    const errorSpy = vi.fn();
+    const context = buildContext({
+      jsonOutput: true,
+      output: createOutput({ error: errorSpy }),
+    });
 
-    const exitCode = await executeScript(
-      buildContext({ jsonOutput: true }),
+    const result = await executeScript(
+      context,
       SCRIPT_NAME,
       SCRIPT_DIRECTORY,
       ARGV,
       { now: scriptedNow(STARTED_AT, FINISHED_AT) },
     );
 
-    expect(exitCode).toBe(2);
+    expect(result.exitCode).toBe(2);
+    // The error is surfaced with the correct diagnostic for the --json path.
+    // Without this branch the summary-only path would also report an envelope
+    // failure it never attempted, pointing operators at the wrong subsystem.
+    expect(errorSpy).toHaveBeenCalledExactlyOnceWith(
+      expect.stringContaining("failed to emit the --json run-result envelope"),
+    );
+    expect(errorSpy).toHaveBeenCalledExactlyOnceWith(
+      expect.stringContaining("defect in locateRunReport"),
+    );
   });
 
   test("still resolves with spawnScript's exit code when context.output.info throws", async () => {
@@ -440,7 +456,7 @@ describe("executeScript — defense in depth against downstream envelope failure
       output: createOutput({ info: infoSpy }),
     });
 
-    const exitCode = await executeScript(
+    const result = await executeScript(
       context,
       SCRIPT_NAME,
       SCRIPT_DIRECTORY,
@@ -448,7 +464,7 @@ describe("executeScript — defense in depth against downstream envelope failure
       { now: scriptedNow(STARTED_AT, FINISHED_AT) },
     );
 
-    expect(exitCode).toBe(6);
+    expect(result.exitCode).toBe(6);
   });
 });
 
@@ -639,9 +655,9 @@ describe("executeScript — redirectStdoutToStderr fallback (ADR-0085 flow compo
 });
 
 describe("executeScript — type contract", () => {
-  test("returns a Promise<number> regardless of JSON mode", () => {
+  test("returns Promise<M3LCliExecuteResult> regardless of JSON mode", () => {
     expectTypeOf<typeof executeScript>().returns.toEqualTypeOf<
-      Promise<number>
+      Promise<M3LCliExecuteResult>
     >();
   });
 
@@ -652,6 +668,7 @@ describe("executeScript — type contract", () => {
       readonly now?: () => Date;
       readonly secretEnv?: Readonly<Record<string, string>>;
       readonly redirectStdoutToStderr?: boolean;
+      readonly resolveReportSummary?: boolean;
     }>();
   });
 });
@@ -696,9 +713,9 @@ describe("executeScript — exit-code fidelity and envelope pipeline (U11 D11/D1
 
     resolveSpawn(5);
 
-    const code = await resultPromise;
-    expect(code).toBe(5);
-    expect(code).not.toBe(130); // not 128+SIGINT
+    const result = await resultPromise;
+    expect(result.exitCode).toBe(5);
+    expect(result.exitCode).not.toBe(130); // not 128+SIGINT
   });
 
   test("D12 — --json envelope pipeline executes and reports exit code from the child", async () => {
@@ -729,14 +746,14 @@ describe("executeScript — exit-code fidelity and envelope pipeline (U11 D11/D1
 
     resolveSpawn(5);
 
-    const code = await resultPromise;
+    const result = await resultPromise;
 
     expect(locateRunReportMock).toHaveBeenCalledTimes(1);
     expect(buildRunEnvelopeMock).toHaveBeenCalledTimes(1);
     expect(formatRunEnvelopeMock).toHaveBeenCalledTimes(1);
     expect(infoSpy).toHaveBeenCalledTimes(1);
     expect(infoSpy).toHaveBeenCalledWith(SAMPLE_FORMATTED);
-    expect(code).toBe(5);
+    expect(result.exitCode).toBe(5);
   });
 
   test("D12 — exit code passed to buildRunEnvelope is the child's code (5), not 130", async () => {
@@ -763,5 +780,257 @@ describe("executeScript — exit-code fidelity and envelope pipeline (U11 D11/D1
 
     const envelopeArg = buildRunEnvelopeMock.mock.calls[0]?.[0];
     expect(envelopeArg).toMatchObject({ exitCode: 5 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// U11 slice 7a — resolveReportSummary opt-in and M3LCliExecuteResult return type
+//
+// executeScript gains a result object (M3LCliExecuteResult) in place of the
+// bare exit-code number, and a new opt-in flag (resolveReportSummary) that
+// lets callers such as `m3l history` record outcome+retryAttempts without
+// requesting --json output. The two concerns — resolving the summary and
+// emitting an envelope — are deliberately independent; the matrix below
+// verifies each cell can fail separately.
+// ---------------------------------------------------------------------------
+
+describe("executeScript — M3LCliExecuteResult type contract", () => {
+  test("executeScript returns Promise<M3LCliExecuteResult>, not a bare number", () => {
+    // Catches: returning Promise<number> (the pre-change shape).
+    expectTypeOf<typeof executeScript>().returns.toEqualTypeOf<
+      Promise<M3LCliExecuteResult>
+    >();
+  });
+
+  test("M3LCliExecuteResult carries a required exitCode and an optional summary that can be absent", () => {
+    // Catches: making summary required, or carrying the wrong summary type.
+    expectTypeOf<M3LCliExecuteResult>().toEqualTypeOf<{
+      readonly exitCode: number;
+      readonly summary?: M3LCliRunReportSummary;
+    }>();
+  });
+
+  test("M3LCliExecuteOptions includes resolveReportSummary as an optional boolean", () => {
+    // Catches: omitting the option entirely or typing it as non-boolean.
+    expectTypeOf<M3LCliExecuteOptions>().toMatchTypeOf<{
+      readonly resolveReportSummary?: boolean;
+    }>();
+  });
+});
+
+describe("executeScript — resolveReportSummary behavioral matrix", () => {
+  // Cell (false, absent): existing tests at ~line 163 already assert no lookup
+  // runs. This test pins the return-object shape for that cell specifically.
+  test("jsonOutput: false, resolveReportSummary absent — result carries exitCode but no summary property (exactOptionalPropertyTypes: absent, not undefined)", async () => {
+    // Catches: always populating summary (even as undefined) on the result object.
+    spawnScriptMock.mockResolvedValue(7);
+
+    const result = await executeScript(
+      buildContext({ jsonOutput: false }),
+      SCRIPT_NAME,
+      SCRIPT_DIRECTORY,
+      ARGV,
+    );
+
+    expect(result.exitCode).toBe(7);
+    // Must be absent, not set to undefined — toEqual({summary: undefined}) would
+    // pass either way and is vacuous under exactOptionalPropertyTypes.
+    expect(Object.hasOwn(result, "summary")).toBe(false);
+    expect(locateRunReportMock).not.toHaveBeenCalled();
+  });
+
+  // Cell (false, true): lookup runs, summary populated, envelope NOT emitted.
+  test("jsonOutput: false, resolveReportSummary: true — calls locateRunReport exactly once with correct arguments", async () => {
+    // Catches: skipping the lookup when jsonOutput is false even with the flag set.
+    spawnScriptMock.mockResolvedValue(0);
+    locateRunReportMock.mockReturnValue(FOUND_LOOKUP);
+
+    await executeScript(
+      buildContext({ jsonOutput: false, outputDirPath: "/data/output" }),
+      SCRIPT_NAME,
+      SCRIPT_DIRECTORY,
+      ARGV,
+      { resolveReportSummary: true, now: scriptedNow(STARTED_AT, FINISHED_AT) },
+    );
+
+    expect(locateRunReportMock).toHaveBeenCalledExactlyOnceWith({
+      outputDirPath: "/data/output",
+      scriptName: SCRIPT_NAME,
+      startedAt: STARTED_AT,
+      finishedAt: FINISHED_AT,
+    });
+  });
+
+  test("jsonOutput: false, resolveReportSummary: true — does not write an envelope line to output.info — without the separate emit guard, a plain run would print an envelope line and corrupt non-JSON output", async () => {
+    // Catches: naively removing the early return without adding a separate emit
+    // guard — every non-JSON run would start printing a JSON envelope line.
+    spawnScriptMock.mockResolvedValue(0);
+    locateRunReportMock.mockReturnValue(FOUND_LOOKUP);
+    const infoSpy = vi.fn();
+    const context = buildContext({
+      jsonOutput: false,
+      output: createOutput({ info: infoSpy }),
+    });
+
+    await executeScript(context, SCRIPT_NAME, SCRIPT_DIRECTORY, ARGV, {
+      resolveReportSummary: true,
+      now: scriptedNow(STARTED_AT, FINISHED_AT),
+    });
+
+    expect(infoSpy).not.toHaveBeenCalled();
+    expect(buildRunEnvelopeMock).not.toHaveBeenCalled();
+    expect(formatRunEnvelopeMock).not.toHaveBeenCalled();
+  });
+
+  test("jsonOutput: false, resolveReportSummary: true — result carries the found summary and the child's exit code", async () => {
+    // Catches: not propagating lookup.summary to the result, or using the
+    // wrong exit code. Asserts the summary content explicitly (not the whole
+    // lookup) so an impl that returns the entire lookup object would fail because
+    // it carries 'status' and 'reportPath' fields absent from M3LCliRunReportSummary.
+    spawnScriptMock.mockResolvedValue(3);
+    locateRunReportMock.mockReturnValue(FOUND_LOOKUP);
+
+    const result = await executeScript(
+      buildContext({ jsonOutput: false }),
+      SCRIPT_NAME,
+      SCRIPT_DIRECTORY,
+      ARGV,
+      { resolveReportSummary: true, now: scriptedNow(STARTED_AT, FINISHED_AT) },
+    );
+
+    expect(result.exitCode).toBe(3);
+    expect(Object.hasOwn(result, "summary")).toBe(true);
+    expect(result.summary).toEqual({
+      outcome: "success",
+      timelineCount: 4,
+      timelineSourceCount: 1,
+      recoveryTotal: null,
+      retryAttempts: 0,
+    });
+  });
+
+  // Cell (true, absent): JSON mode — lookup runs, envelope emitted, summary on result.
+  test("jsonOutput: true, resolveReportSummary absent — result carries exitCode and the found summary alongside the emitted envelope", async () => {
+    // Catches: returning a bare exitCode object with no summary even in JSON mode.
+    spawnScriptMock.mockResolvedValue(0);
+    locateRunReportMock.mockReturnValue(FOUND_LOOKUP);
+    buildRunEnvelopeMock.mockReturnValue(SAMPLE_ENVELOPE);
+    formatRunEnvelopeMock.mockReturnValue(SAMPLE_FORMATTED);
+    const infoSpy = vi.fn();
+    const context = buildContext({
+      jsonOutput: true,
+      output: createOutput({ info: infoSpy }),
+    });
+
+    const result = await executeScript(
+      context,
+      SCRIPT_NAME,
+      SCRIPT_DIRECTORY,
+      ARGV,
+      { now: scriptedNow(STARTED_AT, FINISHED_AT) },
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(Object.hasOwn(result, "summary")).toBe(true);
+    expect(result.summary).toEqual(FOUND_LOOKUP.summary);
+    // Envelope is still emitted — resolveReportSummary does not suppress it.
+    expect(infoSpy).toHaveBeenCalledExactlyOnceWith(SAMPLE_FORMATTED);
+  });
+
+  // Cell (true, true): both flags — lookup runs exactly once.
+  test("jsonOutput: true, resolveReportSummary: true — lookup runs exactly once despite both flags being set — a dual-path implementation would call locateRunReport twice", async () => {
+    // Catches: an implementation that adds a second call site rather than
+    // restructuring the guard, calling locateRunReport for each flag independently.
+    spawnScriptMock.mockResolvedValue(0);
+    locateRunReportMock.mockReturnValue(FOUND_LOOKUP);
+    buildRunEnvelopeMock.mockReturnValue(SAMPLE_ENVELOPE);
+    formatRunEnvelopeMock.mockReturnValue(SAMPLE_FORMATTED);
+    const infoSpy = vi.fn();
+    const context = buildContext({
+      jsonOutput: true,
+      output: createOutput({ info: infoSpy }),
+    });
+
+    const result = await executeScript(
+      context,
+      SCRIPT_NAME,
+      SCRIPT_DIRECTORY,
+      ARGV,
+      {
+        resolveReportSummary: true,
+        now: scriptedNow(STARTED_AT, FINISHED_AT),
+      },
+    );
+
+    expect(locateRunReportMock).toHaveBeenCalledTimes(1);
+    expect(infoSpy).toHaveBeenCalledTimes(1);
+    expect(Object.hasOwn(result, "summary")).toBe(true);
+    expect(result.summary).toEqual(FOUND_LOOKUP.summary);
+  });
+});
+
+describe("executeScript — resolveReportSummary failure tolerance", () => {
+  test("locateRunReport throws while resolveReportSummary: true and jsonOutput: false — exit code is preserved and summary is absent from result", async () => {
+    // Mirrors the throwing test at ~line 413 for the --json path; verifies the
+    // same swallow-and-surface contract holds on the new opt-in path.
+    // Catches: propagating the throw (rejecting the returned Promise) or
+    // including a partial/undefined summary on the result.
+    spawnScriptMock.mockResolvedValue(2);
+    locateRunReportMock.mockImplementation(() => {
+      throw new Error("defect in locateRunReport on resolveReportSummary path");
+    });
+    const errorSpy = vi.fn();
+    const context = buildContext({
+      jsonOutput: false,
+      output: createOutput({ error: errorSpy }),
+    });
+
+    const result = await executeScript(
+      context,
+      SCRIPT_NAME,
+      SCRIPT_DIRECTORY,
+      ARGV,
+      { resolveReportSummary: true, now: scriptedNow(STARTED_AT, FINISHED_AT) },
+    );
+
+    expect(result.exitCode).toBe(2);
+    expect(Object.hasOwn(result, "summary")).toBe(false);
+    // The failure is surfaced with the correct diagnostic for the summary-only path.
+    // The negative assertion below is the load-bearing guard: without an explicit
+    // branch on jsonOutput, the catch block would report "failed to emit the --json
+    // run-result envelope" on a plain run that never attempted an envelope, pointing
+    // the operator at the wrong subsystem.
+    expect(errorSpy).toHaveBeenCalledExactlyOnceWith(
+      expect.stringContaining("failed to resolve the run report summary"),
+    );
+    expect(errorSpy).toHaveBeenCalledExactlyOnceWith(
+      expect.stringContaining(
+        "defect in locateRunReport on resolveReportSummary path",
+      ),
+    );
+    expect(errorSpy).toHaveBeenCalledExactlyOnceWith(
+      expect.not.stringContaining("envelope"),
+    );
+  });
+
+  test("locateRunReport returns unavailable while resolveReportSummary: true and jsonOutput: false — summary is absent from result and exit code is preserved", async () => {
+    // Catches: treating an unavailable lookup as a resolved summary, or including
+    // the lookup's unavailable shape as the result summary.
+    spawnScriptMock.mockResolvedValue(4);
+    locateRunReportMock.mockReturnValue({
+      status: "unavailable",
+      reason: "no-matching-report",
+    } satisfies M3LCliRunReportLookup);
+
+    const result = await executeScript(
+      buildContext({ jsonOutput: false }),
+      SCRIPT_NAME,
+      SCRIPT_DIRECTORY,
+      ARGV,
+      { resolveReportSummary: true, now: scriptedNow(STARTED_AT, FINISHED_AT) },
+    );
+
+    expect(result.exitCode).toBe(4);
+    expect(Object.hasOwn(result, "summary")).toBe(false);
   });
 });

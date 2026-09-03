@@ -19,6 +19,7 @@ import {
   recordHistoryEntry,
 } from "../src/history/store.js";
 import type { M3LCliHistoryEntry } from "../src/history/store.js";
+import type { M3LCliRunOutcome } from "../src/run/envelope.js";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -214,14 +215,285 @@ describe("recordHistoryEntry", () => {
   });
 });
 
+describe("readHistory — outcome and retryAttempts optional fields", () => {
+  // Guards the load-bearing optionality guarantee: entries written before this
+  // change was shipped carry only the four core fields.  If the new fields were
+  // required by isValidHistoryEntry, every pre-existing history file would read
+  // back as empty — silently discarding a real operator's run history.
+  test("an entry carrying only the four core fields passes validation and is returned", () => {
+    vi.spyOn(fs, "readFileSync").mockReturnValue(JSON.stringify([sampleEntry]));
+
+    const result = readHistory("/cache/history.json");
+
+    expect(result).toHaveLength(1);
+    const entry = result[0] as M3LCliHistoryEntry; // safe: length asserted above
+    expect(entry.timestamp).toBe(sampleEntry.timestamp);
+    expect(entry.script).toBe(sampleEntry.script);
+    expect(entry.exitCode).toBe(sampleEntry.exitCode);
+    // The two new optional fields must be absent, not set to undefined —
+    // exactOptionalPropertyTypes makes undefined distinct from absent.
+    expect(Object.hasOwn(entry, "outcome")).toBe(false);
+    expect(Object.hasOwn(entry, "retryAttempts")).toBe(false);
+  });
+
+  // Validates that projectHistoryEntry includes outcome in its allowlist.  Without
+  // this projection step the field would be present in isValidHistoryEntry's output
+  // but silently stripped before reaching the caller.
+  test.each([
+    "success",
+    "failure",
+    "dry-run",
+    "interrupted",
+    "partial",
+  ] as const)(
+    "valid outcome value %s is preserved through the readHistory projection",
+    (outcome) => {
+      const payload = [{ ...sampleEntry, outcome }];
+      vi.spyOn(fs, "readFileSync").mockReturnValue(JSON.stringify(payload));
+
+      const result = readHistory("/cache/history.json");
+
+      expect(result).toHaveLength(1);
+      const entry = result[0] as M3LCliHistoryEntry;
+      expect(Object.hasOwn(entry, "outcome")).toBe(true);
+      expect(entry).toHaveProperty("outcome", outcome);
+    },
+  );
+
+  // Guards the "drop the field, keep the entry" contract for a hand-edited or
+  // machine-generated file that contains an unrecognised outcome literal.  A
+  // validator that rejects the whole entry for one bad optional field would
+  // contradict the doc's "history must never block a command" guarantee.
+  test("an unrecognised outcome string is dropped; the four core fields survive intact", () => {
+    const payload = [{ ...sampleEntry, outcome: "bogus" }];
+    vi.spyOn(fs, "readFileSync").mockReturnValue(JSON.stringify(payload));
+
+    const result = readHistory("/cache/history.json");
+
+    expect(result).toHaveLength(1);
+    const entry = result[0] as M3LCliHistoryEntry;
+    // Entry retained — not dropped
+    expect(entry.timestamp).toBe(sampleEntry.timestamp);
+    expect(entry.script).toBe(sampleEntry.script);
+    expect(entry.exitCode).toBe(sampleEntry.exitCode);
+    // Malformed field silently dropped — not carried through
+    expect(Object.hasOwn(entry, "outcome")).toBe(false);
+  });
+
+  test("a non-string outcome value (number) is dropped; the four core fields survive intact", () => {
+    const payload = [{ ...sampleEntry, outcome: 42 }];
+    vi.spyOn(fs, "readFileSync").mockReturnValue(JSON.stringify(payload));
+
+    const result = readHistory("/cache/history.json");
+
+    expect(result).toHaveLength(1);
+    const entry = result[0] as M3LCliHistoryEntry;
+    expect(entry.timestamp).toBe(sampleEntry.timestamp);
+    expect(Object.hasOwn(entry, "outcome")).toBe(false);
+  });
+
+  // Guards the projectHistoryEntry allowlist for retryAttempts — if the field is
+  // omitted from the projection return object it would be stripped even for valid values.
+  test("a valid retryAttempts count is preserved through the readHistory projection", () => {
+    const payload = [{ ...sampleEntry, retryAttempts: 3 }];
+    vi.spyOn(fs, "readFileSync").mockReturnValue(JSON.stringify(payload));
+
+    const result = readHistory("/cache/history.json");
+
+    expect(result).toHaveLength(1);
+    const entry = result[0] as M3LCliHistoryEntry;
+    expect(Object.hasOwn(entry, "retryAttempts")).toBe(true);
+    expect(entry).toHaveProperty("retryAttempts", 3);
+  });
+
+  test("a string retryAttempts value is dropped; the four core fields survive intact", () => {
+    const payload = [{ ...sampleEntry, retryAttempts: "3" }];
+    vi.spyOn(fs, "readFileSync").mockReturnValue(JSON.stringify(payload));
+
+    const result = readHistory("/cache/history.json");
+
+    expect(result).toHaveLength(1);
+    const entry = result[0] as M3LCliHistoryEntry;
+    expect(entry.timestamp).toBe(sampleEntry.timestamp);
+    expect(Object.hasOwn(entry, "retryAttempts")).toBe(false);
+  });
+
+  // JSON.stringify(NaN) produces "null", so a caller passing retryAttempts: NaN to
+  // recordHistoryEntry would persist it as null.  Without a finite-number check in
+  // the projection, null would read back as neither a valid count nor an absent
+  // field — a silent data corruption that only surfaces in downstream display code.
+  test("null retryAttempts (from NaN serialisation) is dropped; the four core fields survive intact", () => {
+    // JSON.stringify({retryAttempts: NaN}) → {"retryAttempts":null}
+    const payload = JSON.stringify([{ ...sampleEntry, retryAttempts: NaN }]);
+    vi.spyOn(fs, "readFileSync").mockReturnValue(payload);
+
+    const result = readHistory("/cache/history.json");
+
+    expect(result).toHaveLength(1);
+    const entry = result[0] as M3LCliHistoryEntry;
+    expect(entry.timestamp).toBe(sampleEntry.timestamp);
+    expect(Object.hasOwn(entry, "retryAttempts")).toBe(false);
+  });
+
+  // JSON.stringify(Infinity) also produces "null" — the same persistence risk as
+  // NaN.  Covered separately so both are explicitly documented as rejected literals.
+  test("null retryAttempts (from Infinity serialisation) is dropped; the four core fields survive intact", () => {
+    // JSON.stringify({retryAttempts: Infinity}) → {"retryAttempts":null}
+    const payload = JSON.stringify([
+      { ...sampleEntry, retryAttempts: Infinity },
+    ]);
+    vi.spyOn(fs, "readFileSync").mockReturnValue(payload);
+
+    const result = readHistory("/cache/history.json");
+
+    expect(result).toHaveLength(1);
+    const entry = result[0] as M3LCliHistoryEntry;
+    expect(entry.timestamp).toBe(sampleEntry.timestamp);
+    expect(Object.hasOwn(entry, "retryAttempts")).toBe(false);
+  });
+
+  // Object.hasOwn (not `in`, not toHaveProperty) is used throughout so the
+  // assertion cannot be satisfied by an inherited prototype value.  exactOptional-
+  // PropertyTypes makes absent distinct from {field: undefined}; toEqual with an
+  // undefined value would pass either way and make the test vacuous.
+  test("absent optional fields are omitted from the projected entry, not set to undefined", () => {
+    vi.spyOn(fs, "readFileSync").mockReturnValue(JSON.stringify([sampleEntry]));
+
+    const result = readHistory("/cache/history.json");
+
+    expect(result).toHaveLength(1);
+    const entry = result[0] as M3LCliHistoryEntry;
+    expect(Object.hasOwn(entry, "outcome")).toBe(false);
+    expect(Object.hasOwn(entry, "retryAttempts")).toBe(false);
+  });
+
+  // Guards the allowlist against becoming a hole: adding outcome and retryAttempts
+  // to projectHistoryEntry must not accidentally pass every field through.  An
+  // undeclared field injected alongside the new declared ones must still be stripped.
+  test("an undeclared extra field is still stripped even when the new optional fields are present", () => {
+    const payload = [
+      {
+        ...sampleEntry,
+        outcome: "success",
+        retryAttempts: 1,
+        injected: "must-not-survive",
+      },
+    ];
+    vi.spyOn(fs, "readFileSync").mockReturnValue(JSON.stringify(payload));
+
+    const result = readHistory("/cache/history.json");
+
+    expect(result).toHaveLength(1);
+    const entry = result[0] as M3LCliHistoryEntry;
+    // New declared fields present
+    expect(Object.hasOwn(entry, "outcome")).toBe(true);
+    expect(Object.hasOwn(entry, "retryAttempts")).toBe(true);
+    // Undeclared field absent — allowlist not widened
+    expect(Object.hasOwn(entry, "injected")).toBe(false);
+  });
+});
+
+describe("recordHistoryEntry — outcome and retryAttempts round-trip", () => {
+  // Proves both fields survive the full write→read path.  The projectHistoryEntry
+  // function is called on both sides of this cycle; a field missing from the
+  // projection would be absent from the written JSON and therefore absent on read-
+  // back, causing the assertion to fail.
+  test("both new optional fields survive a recordHistoryEntry → readHistory round-trip", () => {
+    const entryWithFields: M3LCliHistoryEntry = {
+      ...sampleEntry,
+      outcome: "partial",
+      retryAttempts: 2,
+    };
+
+    let capturedJson = "";
+    const readSpy = vi.spyOn(fs, "readFileSync").mockReturnValue("[]");
+    vi.spyOn(fs, "mkdirSync").mockReturnValue(undefined);
+    vi.spyOn(fs, "writeFileSync").mockImplementation((_path, data) => {
+      capturedJson = data as string;
+    });
+
+    const recorded = recordHistoryEntry("/cache/history.json", entryWithFields);
+    expect(recorded).toBe(true);
+    expect(capturedJson).not.toBe("");
+
+    // Feed the written JSON back into readHistory to complete the round-trip.
+    readSpy.mockReturnValue(capturedJson);
+    const result = readHistory("/cache/history.json");
+
+    expect(result).toHaveLength(1);
+    const entry = result[0] as M3LCliHistoryEntry;
+    expect(Object.hasOwn(entry, "outcome")).toBe(true);
+    expect(entry).toHaveProperty("outcome", "partial");
+    expect(Object.hasOwn(entry, "retryAttempts")).toBe(true);
+    expect(entry).toHaveProperty("retryAttempts", 2);
+    // Core fields intact
+    expect(entry.timestamp).toBe(sampleEntry.timestamp);
+    expect(entry.script).toBe(sampleEntry.script);
+  });
+
+  // Confirms the projection does not inject outcome or retryAttempts when the
+  // caller omits them — exactOptionalPropertyTypes distinguishes absent from
+  // undefined and Object.hasOwn catches a projection that sets the field to
+  // undefined instead of omitting it.
+  test("an entry recorded without the new optional fields reads back without them", () => {
+    let capturedJson = "";
+    const readSpy = vi.spyOn(fs, "readFileSync").mockReturnValue("[]");
+    vi.spyOn(fs, "mkdirSync").mockReturnValue(undefined);
+    vi.spyOn(fs, "writeFileSync").mockImplementation((_path, data) => {
+      capturedJson = data as string;
+    });
+
+    recordHistoryEntry("/cache/history.json", sampleEntry);
+    expect(capturedJson).not.toBe("");
+
+    readSpy.mockReturnValue(capturedJson);
+    const result = readHistory("/cache/history.json");
+
+    expect(result).toHaveLength(1);
+    const entry = result[0] as M3LCliHistoryEntry;
+    expect(Object.hasOwn(entry, "outcome")).toBe(false);
+    expect(Object.hasOwn(entry, "retryAttempts")).toBe(false);
+  });
+});
+
 describe("M3LCliHistoryEntry contract", () => {
-  test("declares the documented readonly shape (no value-carrying field)", () => {
+  test("declares the documented readonly shape with outcome and retryAttempts as optional", () => {
+    // The exact-shape check. Including the two optional fields causes this test to
+    // fail when they are absent from the interface — the guard that keeps the type
+    // contract honest. It also fails when a field is added without being documented
+    // here, preventing silent interface drift.
     expectTypeOf<M3LCliHistoryEntry>().toEqualTypeOf<{
       readonly timestamp: string;
       readonly script: string;
       readonly parameterNames: readonly string[];
       readonly exitCode: number;
+      readonly outcome?: M3LCliRunOutcome;
+      readonly retryAttempts?: number;
     }>();
+  });
+
+  test("all five M3LCliRunOutcome literals are keys of the outcome field type", () => {
+    // Validates that the outcome field's type precisely matches the union declared
+    // in run/envelope.ts — an added or removed literal in either location breaks
+    // this without requiring a runtime fixture.
+    expectTypeOf<NonNullable<M3LCliHistoryEntry["outcome"]>>().toEqualTypeOf<
+      "success" | "failure" | "dry-run" | "interrupted" | "partial"
+    >();
+  });
+
+  test("keyof M3LCliHistoryEntry includes outcome and retryAttempts", () => {
+    // Confirms both new fields are present as named properties of the interface.
+    // A toMatchTypeOf check on optional fields is vacuous (a type with no field is
+    // a subtype of one with an optional field), so asserting the keyset directly is
+    // the only reliable type-level proof that the fields exist.
+    expectTypeOf<keyof M3LCliHistoryEntry>().toEqualTypeOf<
+      | "timestamp"
+      | "script"
+      | "parameterNames"
+      | "exitCode"
+      | "outcome"
+      | "retryAttempts"
+    >();
   });
 
   test("HISTORY_CAP is exactly 100", () => {

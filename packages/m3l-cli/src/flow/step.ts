@@ -345,7 +345,7 @@ function dispatchStep(
           : {}),
         redirectStdoutToStderr: context.jsonOutput,
       },
-    );
+    ).then(({ exitCode }) => exitCode);
   }
   return runInProcess(
     resolved.scriptDirectory,

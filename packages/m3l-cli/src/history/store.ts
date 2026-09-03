@@ -3,13 +3,22 @@
  * `commands/run.ts`/`commands/dynamic.ts` append to after a spawn resolves,
  * and `commands/history.ts` reads back for display. Entries never carry a
  * parameter's resolved *value* — only its declared name — so this store
- * cannot leak a secret even accidentally.
+ * cannot leak a secret through the read path. The read path
+ * ({@link readHistory} → {@link projectHistoryEntry}) re-validates and
+ * projects every persisted entry to the exact declared fields, so no extra
+ * field reaches `history --json` output. The write path
+ * ({@link recordHistoryEntry}) relies on the caller constructing a
+ * well-formed {@link M3LCliHistoryEntry} with no extra fields; TypeScript's
+ * excess-property check enforces this at every current call site.
  *
  * @packageDocumentation
  */
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
+
+import type { M3LCliRunOutcome } from "../run/envelope.js";
+import { toRunOutcome } from "../run/envelope.js";
 
 /** Indentation width for the pretty-printed history file. */
 const HISTORY_JSON_INDENT = 2;
@@ -29,8 +38,10 @@ export const HISTORY_CAP = 100;
 
 /**
  * A single recorded run. Deliberately carries only parameter *names*, never
- * their resolved values — a secret-flagged parameter's value can never leak
- * through this type, regardless of what the caller passes in.
+ * their resolved values. The read path ({@link projectHistoryEntry}) projects
+ * every persisted entry to exactly these declared fields, so no extra field
+ * can appear in `history --json` output; the write path relies on the caller
+ * constructing a well-formed entry.
  *
  * @example
  * ```ts
@@ -51,6 +62,21 @@ export interface M3LCliHistoryEntry {
   readonly parameterNames: readonly string[];
   /** The spawned child's resolved exit code. */
   readonly exitCode: number;
+  /**
+   * The run's terminal outcome, when a run report was located and contained a
+   * recognized outcome literal. Absent when no report was found (the `wizard`
+   * spawn path and the in-process path never produce one) or when the report
+   * carried an unrecognized value — meaningfully different from any of the five
+   * known outcomes.
+   */
+  readonly outcome?: M3LCliRunOutcome;
+  /**
+   * The number of retry attempts recorded by the run report. Absent when no
+   * report was located, or when the report carried no numeric finite value for
+   * this field — absent is meaningfully different from zero, which would imply
+   * the run completed on its first try.
+   */
+  readonly retryAttempts?: number;
 }
 
 /**
@@ -64,14 +90,27 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 }
 
 /**
+ * The shape `isValidHistoryEntry` can actually vouch for: the four core
+ * fields are checked; the two optional ones are whatever was in the file.
+ * `projectHistoryEntry` is the boundary that narrows them to their final types.
+ */
+type ParsedHistoryEntry = Omit<
+  M3LCliHistoryEntry,
+  "outcome" | "retryAttempts"
+> & {
+  readonly outcome?: unknown;
+  readonly retryAttempts?: unknown;
+};
+
+/**
  * Checks whether `value` has the minimal shape {@link M3LCliHistoryEntry}
  * requires, so a malformed or hand-edited entry in the history file is
  * dropped rather than trusted through to a raw crash in `commands/history.ts`.
  *
  * @param value - The candidate entry value to check.
- * @returns Whether `value` is a well-formed {@link M3LCliHistoryEntry}.
+ * @returns Whether `value` is a well-formed {@link ParsedHistoryEntry}.
  */
-function isValidHistoryEntry(value: unknown): value is M3LCliHistoryEntry {
+function isValidHistoryEntry(value: unknown): value is ParsedHistoryEntry {
   if (!isPlainObject(value)) {
     return false;
   }
@@ -86,20 +125,33 @@ function isValidHistoryEntry(value: unknown): value is M3LCliHistoryEntry {
 }
 
 /**
- * Projects a validated {@link M3LCliHistoryEntry} down to exactly its
- * declared fields, so a hand-added extra field on a parsed history entry
- * cannot pass through into `history --json` output.
+ * Projects a {@link ParsedHistoryEntry} down to exactly the declared
+ * {@link M3LCliHistoryEntry} fields, so a hand-added extra field cannot pass
+ * through into `history --json` output. The predicate only checked the four
+ * required fields, so `outcome` and `retryAttempts` arrive as `unknown` here
+ * and are re-validated before being included.
  *
  * @param entry - An entry already confirmed well-formed by
  *   {@link isValidHistoryEntry}.
  * @returns A new object carrying only the declared fields.
  */
-function projectHistoryEntry(entry: M3LCliHistoryEntry): M3LCliHistoryEntry {
+function projectHistoryEntry(entry: ParsedHistoryEntry): M3LCliHistoryEntry {
+  const outcome = toRunOutcome(entry.outcome);
+  // Read each accessor exactly once: a getter on a proxy or Proxy-like object
+  // could return a different value on a second read, letting a value that
+  // passed the type/finite check diverge from the value stored in the output.
+  const retryRaw: unknown = entry.retryAttempts;
+  const retryAttempts =
+    typeof retryRaw === "number" && Number.isFinite(retryRaw) ? retryRaw : null;
+  const parameterNames: readonly string[] = entry.parameterNames;
+
   return {
     timestamp: entry.timestamp,
     script: entry.script,
-    parameterNames: [...entry.parameterNames],
+    parameterNames: [...parameterNames],
     exitCode: entry.exitCode,
+    ...(outcome !== null && { outcome }),
+    ...(retryAttempts !== null && { retryAttempts }),
   };
 }
 
