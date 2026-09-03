@@ -2,10 +2,12 @@
 // ADR-0088: launches Claude Code already named `<kind>-<slug>`, so naming is
 // applied by the harness at process start instead of a user-run `/rename`.
 //
-//   node bin/claude-launch.mjs                          # on feat/<slug> or
-//                                                        # fix/<slug>: derives
-//                                                        # kind+slug from the
-//                                                        # branch, no other input
+//   node bin/claude-launch.mjs                          # on a branch-derivable
+//                                                        # <kind>/<slug>
+//                                                        # (BRANCH_KINDS):
+//                                                        # derives kind+slug
+//                                                        # from the branch,
+//                                                        # no other input
 //   node bin/claude-launch.mjs --kind audit some-slug    # main-resident kinds
 //                                                        # (no branch to derive
 //                                                        # from): explicit
@@ -21,7 +23,11 @@
 // residual case still needs `/rename <kind>-<slug>` by hand (ADR-0088).
 import process from "node:process";
 import { execFileSync } from "node:child_process";
-import { buildSessionName, deriveFromBranch } from "./lib/session-name.mjs";
+import {
+  BRANCH_KINDS,
+  buildSessionName,
+  deriveFromBranch,
+} from "./lib/session-name.mjs";
 
 const rawArgs = process.argv.slice(2);
 const dashIndex = rawArgs.indexOf("--");
@@ -72,8 +78,9 @@ try {
     const derived = deriveFromBranch(branch);
     if (derived === null) {
       console.error(
-        `✗  claude-launch: branch "${branch}" isn't \`feat/<slug>\` or ` +
-          "`fix/<slug>`, so a name can't be derived from it.\n" +
+        `✗  claude-launch: branch "${branch}" isn't \`<kind>/<slug>\` for ` +
+          `kind in ${BRANCH_KINDS.join(" | ")}, so a name can't be derived ` +
+          "from it.\n" +
           "   Pass the kind and slug explicitly:\n" +
           "   Usage: pnpm session:launch --kind <kind> <slug>",
       );

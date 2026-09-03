@@ -3,30 +3,38 @@
  * (kept pattern-parallel with `bin/lib/worktree-prune.mjs`: pure functions,
  * no `process.exit`, no reporter, no git I/O).
  *
- * Imports `SLUG_PATTERN` from `./session-name.mjs` rather than re-declaring
- * the same kebab-case regex here — the two files sit on either side of the
+ * Imports `SLUG_PATTERN`/`BRANCH_KINDS` from `./session-name.mjs` rather than
+ * re-declaring them here — the two files sit on either side of the
  * worktree-creation / session-naming boundary but must agree on what a valid
- * slug looks like, so there is exactly one definition to drift.
+ * slug looks like and which prefixes are mintable, so there is exactly one
+ * definition of each to drift.
  */
-import { SLUG_PATTERN } from "./session-name.mjs";
+import { BRANCH_KINDS, SLUG_PATTERN } from "./session-name.mjs";
 
-/** @typedef {{ ok: true, slug: string, kind: "feat" | "fix" | null, from: string | null }} ParsedWorktreeNewArgsOk */
+/** @typedef {(typeof BRANCH_KINDS)[number]} BranchKind */
+/** @typedef {{ ok: true, slug: string, kind: BranchKind | null, from: string | null }} ParsedWorktreeNewArgsOk */
 /** @typedef {{ ok: false, error: string }} ParsedWorktreeNewArgsErr */
+
+const USAGE =
+  "   Usage: pnpm worktree:new <slug> [--kind <kind>] [--fix] [--from <ref>]";
 
 /**
  * Parses `worktree:new`'s argv into a validated `{ slug, kind, from }` or an
- * error message identical to the ones `bin/worktree-new.mjs` printed inline
- * before this extraction. `kind` is `null` when `--from` is used — a detached
- * worktree has no branch, so no prefix applies.
+ * error message. `kind` is `null` when `--from` is used — a detached
+ * worktree has no branch, so no prefix applies. `--kind <kind>` selects any
+ * of `BRANCH_KINDS`; `--fix` is a documented alias for `--kind fix`, kept
+ * for the MCP `worktree` tool's boolean `fix` param and existing muscle
+ * memory. Any other `--*` flag is rejected rather than silently ignored.
  *
  * @param {string[]} argv already stripped of `--json` (see `report.mjs`'s
  *   `parseJsonFlag`)
  * @returns {ParsedWorktreeNewArgsOk | ParsedWorktreeNewArgsErr}
  */
 export function parseWorktreeNewArgs(argv) {
-  // `--from <ref>` is a value-taking flag, so it (and its value) must be
-  // pulled out before the remaining args are split into flags/positionals —
-  // otherwise <ref> would be mistaken for a second positional slug candidate.
+  // `--from <ref>` and `--kind <kind>` are value-taking flags, so each (and
+  // its value) must be pulled out before the remaining args are split into
+  // flags/positionals — otherwise the value would be mistaken for a second
+  // positional slug candidate.
   const args = [...argv];
   let from = null;
   const fromIndex = args.indexOf("--from");
@@ -35,25 +43,43 @@ export function parseWorktreeNewArgs(argv) {
     if (value === undefined || value.startsWith("--")) {
       return {
         ok: false,
-        error:
-          "worktree:new: `--from` requires a ref argument.\n" +
-          "   Usage: pnpm worktree:new <slug> --from <ref>",
+        error: `worktree:new: \`--from\` requires a ref argument.\n${USAGE}`,
       };
     }
     from = value;
     args.splice(fromIndex, 2);
   }
 
+  let kindValue = null;
+  const kindIndex = args.indexOf("--kind");
+  if (kindIndex !== -1) {
+    const value = args[kindIndex + 1];
+    if (value === undefined || value.startsWith("--")) {
+      return {
+        ok: false,
+        error: `worktree:new: \`--kind\` requires a value.\n${USAGE}`,
+      };
+    }
+    kindValue = value;
+    args.splice(kindIndex, 2);
+  }
+
   const flags = new Set(args.filter((a) => a.startsWith("--")));
   const positionals = args.filter((a) => !a.startsWith("--"));
   const slug = positionals[0];
 
+  const unrecognized = [...flags].find((f) => f !== "--fix");
+  if (unrecognized !== undefined) {
+    return {
+      ok: false,
+      error: `worktree:new: unrecognized flag \`${unrecognized}\`.\n${USAGE}`,
+    };
+  }
+
   if (!slug) {
     return {
       ok: false,
-      error:
-        "worktree:new: missing <slug>.\n" +
-        "   Usage: pnpm worktree:new <slug> [--fix] [--from <ref>]",
+      error: `worktree:new: missing <slug>.\n${USAGE}`,
     };
   }
   if (!SLUG_PATTERN.test(slug)) {
@@ -64,17 +90,38 @@ export function parseWorktreeNewArgs(argv) {
         "(lowercase letters, digits, single hyphens), e.g. `core-json`.",
     };
   }
-  if (from !== null && flags.has("--fix")) {
+
+  const hasFix = flags.has("--fix");
+  if (from !== null && (kindValue !== null || hasFix)) {
     return {
       ok: false,
       error:
-        "worktree:new: `--from <ref>` and `--fix` are mutually exclusive — " +
-        "`--from` checks out an existing ref detached, with no new branch " +
-        "to prefix.",
+        "worktree:new: `--from <ref>` and `--kind`/`--fix` are mutually " +
+        "exclusive — `--from` checks out an existing ref detached, with no " +
+        "new branch to prefix.",
+    };
+  }
+  if (kindValue !== null && hasFix && kindValue !== "fix") {
+    return {
+      ok: false,
+      error:
+        `worktree:new: \`--kind ${kindValue}\` conflicts with \`--fix\` ` +
+        "(an alias for `--kind fix`). Pass only one.",
+    };
+  }
+  if (kindValue !== null && !BRANCH_KINDS.includes(kindValue)) {
+    return {
+      ok: false,
+      error:
+        `worktree:new: invalid kind "${kindValue}". Use one of ` +
+        `${BRANCH_KINDS.join(" | ")}.`,
     };
   }
 
-  const kind = from === null ? (flags.has("--fix") ? "fix" : "feat") : null;
+  const kind =
+    from === null
+      ? /** @type {BranchKind} */ (kindValue ?? (hasFix ? "fix" : "feat"))
+      : null;
   return { ok: true, slug, kind, from };
 }
 

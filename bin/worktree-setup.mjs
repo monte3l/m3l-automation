@@ -3,7 +3,7 @@
 // manual `git worktree add` flow (which, unlike `claude --worktree`, does NOT
 // consult `.worktreeinclude`). Run it from inside the new worktree:
 //
-//   git worktree add ../m3l-automation-<slug> -b feat/<slug>
+//   git worktree add ../m3l-automation-<slug> -b <kind>/<slug>
 //   cd ../m3l-automation-<slug>
 //   pnpm worktree:setup
 //

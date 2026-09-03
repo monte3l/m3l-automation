@@ -14,6 +14,7 @@ import { join } from "node:path";
 import { z } from "zod";
 import { lintMessages, validateClaudeTrailers } from "../lint-commit.mjs";
 import { root } from "./reference-index.mjs";
+import { BRANCH_KINDS } from "./session-name.mjs";
 
 // Split so the raw source text never has the word "export" immediately
 // followed by a period (the repo's CommonJS guard hook flags that literal
@@ -327,7 +328,7 @@ const WORKTREE_SCRIPTS = {
  * script's own `--json` reporter; `setup`/`remove` have no `--json` mode, so
  * their result is exit-code + captured-output based.
  *
- * @param {{ action?: unknown, slug?: unknown, fix?: unknown, from?: unknown, dryRun?: unknown, noFetch?: unknown }} args
+ * @param {{ action?: unknown, slug?: unknown, kind?: unknown, fix?: unknown, from?: unknown, dryRun?: unknown, noFetch?: unknown }} args
  * @returns {{ content: { type: "text", text: string }[], isError: boolean }}
  * @example
  * ```js
@@ -393,10 +394,28 @@ export function worktreeManage(args) {
         '{ action: "create", slug: "audit-x", from: "origin/feat/old-branch" }.',
     );
   }
-  if (from !== undefined && args?.fix === true) {
+  const kind = args?.kind;
+  if (kind !== undefined && action !== "create") {
     return errorResult(
-      `worktree_manage: 'from' and 'fix: true' are mutually exclusive — ` +
-        "`from` checks out an existing ref detached, with no new branch to prefix.",
+      `worktree_manage: 'kind' is only valid with action "create" — omit it for "${action}".`,
+    );
+  }
+  if (kind !== undefined && !BRANCH_KINDS.includes(kind)) {
+    return errorResult(
+      `worktree_manage: 'kind' "${String(kind)}" is invalid — it must be one ` +
+        `of ${BRANCH_KINDS.join(" | ")}.`,
+    );
+  }
+  if (kind !== undefined && args?.fix === true && kind !== "fix") {
+    return errorResult(
+      `worktree_manage: 'kind' "${kind}" conflicts with 'fix: true' (an ` +
+        'alias for kind "fix"). Pass only one.',
+    );
+  }
+  if (from !== undefined && (kind !== undefined || args?.fix === true)) {
+    return errorResult(
+      `worktree_manage: 'from' and 'kind'/'fix: true' are mutually exclusive ` +
+        "— `from` checks out an existing ref detached, with no new branch to prefix.",
     );
   }
 
@@ -405,7 +424,11 @@ export function worktreeManage(args) {
     case "create": {
       const cliArgs = [
         /** @type {string} */ (slug),
-        ...(args?.fix === true ? ["--fix"] : []),
+        ...(typeof kind === "string"
+          ? ["--kind", kind]
+          : args?.fix === true
+            ? ["--fix"]
+            : []),
         ...(typeof from === "string" ? ["--from", from] : []),
       ];
       const { exitCode, payload, error } = spawnJson(scriptRelPath, cliArgs);
@@ -739,8 +762,9 @@ export const TOOLS = [
         "other action is rejected. `from` is only meaningful for `create`: it " +
         "checks out an existing ref (e.g. a remote branch you want to " +
         "investigate/audit, not develop on) as a detached-HEAD worktree instead " +
-        "of branching feat/<slug>|fix/<slug> from main, and is mutually exclusive " +
-        "with `fix` since no new branch is created.",
+        `of branching <kind>/<slug> (kind in ${BRANCH_KINDS.join(" | ")}) from ` +
+        "main, and is mutually exclusive with `kind`/`fix` since no new branch " +
+        "is created.",
       inputSchema: {
         action: z
           .enum(["create", "setup", "remove", "prune"])
@@ -751,11 +775,21 @@ export const TOOLS = [
           .describe(
             "Kebab-case worktree slug — required for create/remove, unused otherwise.",
           ),
+        kind: z
+          .enum(/** @type {[string, ...string[]]} */ (BRANCH_KINDS))
+          .optional()
+          .describe(
+            `For action "create" only: branch as <kind>/<slug>. One of ` +
+              `${BRANCH_KINDS.join(" | ")}; defaults to "feat". Mutually ` +
+              "exclusive with `from`; conflicts with `fix: true` unless kind " +
+              'is "fix".',
+          ),
         fix: z
           .boolean()
           .optional()
           .describe(
-            'For action "create" only: branch as fix/<slug> instead of feat/<slug>.',
+            'For action "create" only: deprecated alias for kind: "fix" — ' +
+              "branch as fix/<slug> instead of feat/<slug>.",
           ),
         from: z
           .string()
@@ -763,7 +797,7 @@ export const TOOLS = [
           .describe(
             'For action "create" only: check out an existing ref (e.g. ' +
               '"origin/feat/old-branch") as a detached-HEAD worktree instead of ' +
-              "branching from main. Mutually exclusive with `fix`.",
+              "branching from main. Mutually exclusive with `kind`/`fix`.",
           ),
         dryRun: z
           .boolean()

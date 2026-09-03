@@ -384,6 +384,96 @@ describe("worktreeManage (mocked execFileSync)", () => {
     expect(message).toContain("create");
     expect(h.execFileSync).not.toHaveBeenCalled();
   });
+
+  test("create with 'kind' forwards --kind <kind> and --json", () => {
+    h.execFileSync.mockReset();
+    h.execFileSync.mockReturnValueOnce(JSON.stringify({ ok: true }));
+    const result = worktreeManage({
+      action: "create",
+      slug: "my-feature",
+      kind: "docs",
+    });
+    expect(result.isError).toBe(false);
+    const [, args] = h.execFileSync.mock.calls[0] as [string, string[]];
+    expect(args).toContain("my-feature");
+    expect(args).toContain("--kind");
+    expect(args).toContain("docs");
+    expect(args).toContain("--json");
+  });
+
+  test("create with an invalid 'kind' ('perf') → isError naming the invalid kind and the valid ones, no spawn", () => {
+    h.execFileSync.mockReset();
+    const result = worktreeManage({
+      action: "create",
+      slug: "my-feature",
+      kind: "perf",
+    });
+    expect(result.isError).toBe(true);
+    const message = payloadOf(result)["error"] as string;
+    expect(message).toContain("perf");
+    expect(message).toContain("feat");
+    expect(message).toContain("fix");
+    expect(message).toContain("docs");
+    expect(message).toContain("chore");
+    expect(message).toContain("refactor");
+    expect(message).toContain("ci");
+    expect(h.execFileSync).not.toHaveBeenCalled();
+  });
+
+  test("create with 'kind' and fix:true disagreeing → isError conflict message, no spawn", () => {
+    h.execFileSync.mockReset();
+    const result = worktreeManage({
+      action: "create",
+      slug: "my-feature",
+      kind: "docs",
+      fix: true,
+    });
+    expect(result.isError).toBe(true);
+    const message = payloadOf(result)["error"] as string;
+    expect(message).toContain("conflicts");
+    expect(h.execFileSync).not.toHaveBeenCalled();
+  });
+
+  test("create with 'kind: \"fix\"' and fix:true agreeing → succeeds, spawns", () => {
+    h.execFileSync.mockReset();
+    h.execFileSync.mockReturnValueOnce(JSON.stringify({ ok: true }));
+    const result = worktreeManage({
+      action: "create",
+      slug: "my-feature",
+      kind: "fix",
+      fix: true,
+    });
+    expect(result.isError).toBe(false);
+    expect(h.execFileSync).toHaveBeenCalledTimes(1);
+  });
+
+  test("create with 'kind' and 'from' together → isError mutual-exclusivity message, no spawn", () => {
+    h.execFileSync.mockReset();
+    const result = worktreeManage({
+      action: "create",
+      slug: "my-feature",
+      kind: "docs",
+      from: "origin/main",
+    });
+    expect(result.isError).toBe(true);
+    const message = payloadOf(result)["error"] as string;
+    expect(message).toContain("mutually exclusive");
+    expect(h.execFileSync).not.toHaveBeenCalled();
+  });
+
+  test("'kind' with a non-create action (remove) → isError naming kind and the action, no spawn", () => {
+    h.execFileSync.mockReset();
+    const result = worktreeManage({
+      action: "remove",
+      slug: "my-feature",
+      kind: "docs",
+    });
+    expect(result.isError).toBe(true);
+    const message = payloadOf(result)["error"] as string;
+    expect(message).toContain("kind");
+    expect(message).toContain("remove");
+    expect(h.execFileSync).not.toHaveBeenCalled();
+  });
 });
 
 describe("repoVerify (mocked execFileSync per scope)", () => {

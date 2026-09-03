@@ -3,17 +3,23 @@
 // symmetric partner of `worktree-remove.mjs`. Wraps the two-command manual flow
 // (git worktree add + pnpm worktree:setup) so create/teardown stay symmetric.
 //
-//   node bin/worktree-new.mjs <slug>                # branch feat/<slug>
-//   node bin/worktree-new.mjs <slug> --fix          # branch fix/<slug>
-//   node bin/worktree-new.mjs <slug> --from <ref>   # detached HEAD at <ref>
+//   node bin/worktree-new.mjs <slug>                    # branch feat/<slug>
+//   node bin/worktree-new.mjs <slug> --kind docs        # branch docs/<slug>
+//   node bin/worktree-new.mjs <slug> --fix              # branch fix/<slug>,
+//                                                        # an alias for
+//                                                        # --kind fix
+//   node bin/worktree-new.mjs <slug> --from <ref>       # detached HEAD at
+//                                                        # <ref>
 //
-// The worktree is created at ../m3l-automation-<slug>, branched fresh from
+// `--kind <kind>` selects the branch prefix from BRANCH_KINDS
+// (bin/lib/session-name.mjs) — feat, fix, docs, chore, refactor, ci; the
+// worktree is created at ../m3l-automation-<slug>, branched fresh from
 // origin/main (falling back to local main) per ADR-0013's worktree.baseRef,
 // then provisioned via worktree-setup.mjs (installs deps, copies literal
 // .worktreeinclude files). `--from <ref>` checks out an existing ref as a
 // detached-HEAD worktree instead — for investigating/auditing a branch you
-// don't intend to develop on — and is mutually exclusive with `--fix` since
-// no new branch is created (ADR-0014 amendment).
+// don't intend to develop on — and is mutually exclusive with `--kind`/`--fix`
+// since no new branch is created (ADR-0014 amendment).
 //
 // Argument parsing lives in `bin/lib/worktree-new.mjs` (pure, unit-tested);
 // this file stays the thin shell wiring it to git and the reporter.
