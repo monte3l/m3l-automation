@@ -83,6 +83,14 @@ updates:
   # directory containing a Dockerfile per Dependabot's docker ecosystem
   # convention. Neither image is published anywhere; this only tracks the
   # local build inputs.
+  #
+  # Both `node` ignore entries pin to the same floor as the npm ecosystem's
+  # `@types/node` hold above (not a literal MAJOR_HOLDS entry — that map is
+  # npm-package-only and has no docker-image concept): `.node-version` pins
+  # the dev/CI runtime to 24, and shipping a `node:26-slim` image while
+  # typechecking against `@types/node` 24 would let an unchallenged
+  # Node-26-only API into a runtime image whose declared floor is 24. Raise
+  # all three together whenever `.node-version` moves.
   - package-ecosystem: docker
     directory: /packages/m3l-console-server
     schedule:
@@ -90,6 +98,9 @@ updates:
       day: monday
       time: "09:00"
       timezone: Europe/Rome
+    ignore:
+      - dependency-name: "node"
+        versions: [">=25"]
     labels:
       - dependencies
     open-pull-requests-limit: 5
@@ -101,6 +112,9 @@ updates:
       day: monday
       time: "09:00"
       timezone: Europe/Rome
+    ignore:
+      - dependency-name: "node"
+        versions: [">=25"]
     labels:
       - dependencies
     open-pull-requests-limit: 5

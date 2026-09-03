@@ -1,7 +1,9 @@
 import { describe, expect, test } from "vitest";
 import {
   buildOpts,
+  isDependabotAuthor,
   lintMessages,
+  subjectsFromLog,
   validateClaudeTrailers,
   validateForbiddenTrailers,
 } from "../../bin/lint-commit.mjs";
@@ -61,6 +63,94 @@ describe("lintMessages (real repo commitlint config)", () => {
       "fix(x): ok",
     ]);
     expect(results.map((r) => r.valid)).toEqual([true, false, true]);
+  });
+
+  test("still rejects a human-shaped capitalized subject (case rule is unweakened, only range-mode author filtering changed)", async () => {
+    const results = await lintMessages(["chore(deps): Bump foo from 1 to 2"]);
+    expect(results.map((r) => r.valid)).toEqual([false]);
+  });
+});
+
+describe("isDependabotAuthor", () => {
+  test("returns true for the real dependabot[bot] address format", () => {
+    expect(
+      isDependabotAuthor("49699333+dependabot[bot]@users.noreply.github.com"),
+    ).toBe(true);
+  });
+
+  test("returns true for the legacy support@dependabot.com address", () => {
+    expect(isDependabotAuthor("support@dependabot.com")).toBe(true);
+  });
+
+  test("matches case-insensitively", () => {
+    expect(isDependabotAuthor("SUPPORT@DEPENDABOT.COM")).toBe(true);
+  });
+
+  test("trims surrounding whitespace before matching", () => {
+    expect(
+      isDependabotAuthor(
+        "  49699333+dependabot[bot]@users.noreply.github.com  ",
+      ),
+    ).toBe(true);
+  });
+
+  test("returns false for a human address", () => {
+    expect(isDependabotAuthor("jane@example.com")).toBe(false);
+  });
+
+  // Deliberate non-broadening guarantee: the pattern must match only
+  // Dependabot's own identity, not every GitHub [bot] account.
+  test("returns false for github-actions[bot] (must not broaden beyond Dependabot)", () => {
+    expect(
+      isDependabotAuthor(
+        "41898282+github-actions[bot]@users.noreply.github.com",
+      ),
+    ).toBe(false);
+  });
+
+  test("returns false for a numeric-id dependabot-shaped email on the wrong domain", () => {
+    expect(isDependabotAuthor("1+dependabot[bot]@evil.example.com")).toBe(
+      false,
+    );
+  });
+});
+
+describe("subjectsFromLog", () => {
+  test("drops a Dependabot-authored record and keeps a human-authored one", () => {
+    const log =
+      "chore(deps-dev): Bump zod from 4.4.3 to 4.5.4\0" +
+      "49699333+dependabot[bot]@users.noreply.github.com\n" +
+      "fix(x): correct the thing\0jane@example.com\n";
+    expect(subjectsFromLog(log)).toEqual(["fix(x): correct the thing"]);
+  });
+
+  test("returns an empty array for an empty string input", () => {
+    expect(subjectsFromLog("")).toEqual([]);
+  });
+
+  test("returns an empty array when every record is Dependabot-authored", () => {
+    const log =
+      "chore(deps): Bump a from 1 to 2\0support@dependabot.com\n" +
+      "chore(deps): Bump b from 1 to 2\0" +
+      "49699333+dependabot[bot]@users.noreply.github.com\n";
+    expect(subjectsFromLog(log)).toEqual([]);
+  });
+
+  test("preserves a subject containing : and | characters unaltered", () => {
+    const log = "chore(deps): bump foo: a|b\0jane@example.com\n";
+    expect(subjectsFromLog(log)).toEqual(["chore(deps): bump foo: a|b"]);
+  });
+
+  test("preserves record order for multiple human-authored subjects", () => {
+    const log =
+      "feat(core): first\0jane@example.com\n" +
+      "fix(x): second\0john@example.com\n" +
+      "chore: third\0jane@example.com\n";
+    expect(subjectsFromLog(log)).toEqual([
+      "feat(core): first",
+      "fix(x): second",
+      "chore: third",
+    ]);
   });
 });
 
