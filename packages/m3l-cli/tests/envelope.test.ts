@@ -37,6 +37,7 @@ const ENVELOPE_KEYS = [
   "timelineCount",
   "timelineSourceCount",
   "recoveryTotal",
+  "retryAttempts",
 ] as const;
 
 /** The exhaustive set of unavailability reasons the contract declares. */
@@ -77,6 +78,7 @@ const foundSummary: M3LCliRunReportSummary = {
   timelineCount: 42,
   timelineSourceCount: 3,
   recoveryTotal: null,
+  retryAttempts: 2,
 };
 
 const foundLookup: M3LCliRunReportLookup = {
@@ -90,6 +92,7 @@ const partialSummary: M3LCliRunReportSummary = {
   timelineCount: 100,
   timelineSourceCount: 2,
   recoveryTotal: 7,
+  retryAttempts: 3,
 };
 
 const partialLookup: M3LCliRunReportLookup = {
@@ -174,6 +177,7 @@ describe("buildRunEnvelope — lookup.status === 'found'", () => {
     expect(envelope.timelineCount).toBe(foundSummary.timelineCount);
     expect(envelope.timelineSourceCount).toBe(foundSummary.timelineSourceCount);
     expect(envelope.recoveryTotal).toBe(foundSummary.recoveryTotal);
+    expect(envelope.retryAttempts).toBe(foundSummary.retryAttempts);
     expect(envelope.reportUnavailable).toBeNull();
   });
 
@@ -182,6 +186,7 @@ describe("buildRunEnvelope — lookup.status === 'found'", () => {
 
     expect(envelope.outcome).toBe("partial");
     expect(envelope.recoveryTotal).toBe(7);
+    expect(envelope.retryAttempts).toBe(3);
     expect(envelope.reportUnavailable).toBeNull();
   });
 
@@ -194,6 +199,7 @@ describe("buildRunEnvelope — lookup.status === 'found'", () => {
         timelineCount: null,
         timelineSourceCount: null,
         recoveryTotal: null,
+        retryAttempts: null,
       },
     };
 
@@ -204,6 +210,7 @@ describe("buildRunEnvelope — lookup.status === 'found'", () => {
     expect(envelope.timelineCount).toBeNull();
     expect(envelope.timelineSourceCount).toBeNull();
     expect(envelope.recoveryTotal).toBeNull();
+    expect(envelope.retryAttempts).toBeNull();
     expect(envelope.reportUnavailable).toBeNull();
   });
 
@@ -258,6 +265,7 @@ describe("buildRunEnvelope — lookup.status === 'found'", () => {
     expect(envelope.timelineCount).toBeNull();
     expect(envelope.timelineSourceCount).toBeNull();
     expect(envelope.recoveryTotal).toBeNull();
+    expect(envelope.retryAttempts).toBeNull();
   });
 
   test("does not throw when summary.outcome is a throwing getter — the guard is per-field, sibling scalars still come through", () => {
@@ -325,6 +333,7 @@ describe("buildRunEnvelope — lookup.status === 'unavailable'", () => {
       expect(envelope.timelineCount).toBeNull();
       expect(envelope.timelineSourceCount).toBeNull();
       expect(envelope.recoveryTotal).toBeNull();
+      expect(envelope.retryAttempts).toBeNull();
     },
   );
 
@@ -338,6 +347,7 @@ describe("buildRunEnvelope — lookup.status === 'unavailable'", () => {
         timelineCount: 999,
         timelineSourceCount: 999,
         recoveryTotal: 999,
+        retryAttempts: 999,
       },
     } as unknown as M3LCliRunReportLookup;
 
@@ -351,6 +361,7 @@ describe("buildRunEnvelope — lookup.status === 'unavailable'", () => {
     expect(envelope.timelineCount).toBeNull();
     expect(envelope.timelineSourceCount).toBeNull();
     expect(envelope.recoveryTotal).toBeNull();
+    expect(envelope.retryAttempts).toBeNull();
   });
 
   test("does not throw for an unavailable lookup missing the reason field", () => {
@@ -381,6 +392,98 @@ describe("buildRunEnvelope — lookup.status === 'unavailable'", () => {
     );
 
     expect(envelope.reportUnavailable).toBeNull();
+  });
+});
+
+describe("buildRunEnvelope — retryAttempts", () => {
+  test("carries retryAttempts through from a 'found' summary", () => {
+    const lookup: M3LCliRunReportLookup = {
+      status: "found",
+      reportPath: "/x/run-report.json",
+      summary: { ...foundSummary, retryAttempts: 5 },
+    };
+
+    const envelope = buildRunEnvelope(baseInput({ lookup }));
+
+    expect(envelope.retryAttempts).toBe(5);
+  });
+
+  test("defaults to null when the summary lacks retryAttempts entirely", () => {
+    const hostileFoundLookup = {
+      status: "found",
+      reportPath: "/x/run-report.json",
+      summary: {
+        outcome: "success",
+        timelineCount: 1,
+        timelineSourceCount: 1,
+        recoveryTotal: null,
+      },
+    } as unknown as M3LCliRunReportLookup;
+
+    const envelope = buildRunEnvelope(
+      baseInput({ lookup: hostileFoundLookup }),
+    );
+
+    expect(envelope.retryAttempts).toBeNull();
+  });
+
+  test("preserves an explicit 0 — a falsy value that must not collapse to null", () => {
+    const lookup: M3LCliRunReportLookup = {
+      status: "found",
+      reportPath: "/x/run-report.json",
+      summary: { ...foundSummary, retryAttempts: 0 },
+    };
+
+    const envelope = buildRunEnvelope(baseInput({ lookup }));
+
+    expect(envelope.retryAttempts).toBe(0);
+  });
+
+  test.each([
+    ["a string", "3"],
+    ["null", null],
+    ["an object", { count: 3 }],
+    ["an array", [3]],
+  ])(
+    "rejects a non-numeric retryAttempts (%s) to null, never coerced",
+    (_label, value) => {
+      const hostileLookup = {
+        status: "found",
+        reportPath: "/x/run-report.json",
+        summary: { ...foundSummary, retryAttempts: value },
+      } as unknown as M3LCliRunReportLookup;
+
+      const envelope = buildRunEnvelope(baseInput({ lookup: hostileLookup }));
+
+      expect(envelope.retryAttempts).toBeNull();
+    },
+  );
+
+  test("does not throw when summary.retryAttempts is a throwing getter — that field alone degrades to null", () => {
+    const hostileSummary: Record<string, unknown> = {
+      outcome: "success",
+      timelineCount: 5,
+      timelineSourceCount: 2,
+      recoveryTotal: null,
+    };
+    Object.defineProperty(hostileSummary, "retryAttempts", {
+      get() {
+        throw new Error("hostile getter");
+      },
+      enumerable: true,
+    });
+    const lookup = {
+      status: "found",
+      reportPath: "/x/run-report.json",
+      summary: hostileSummary,
+    } as unknown as M3LCliRunReportLookup;
+
+    const envelope = buildRunEnvelope(baseInput({ lookup }));
+
+    expect(envelope.retryAttempts).toBeNull();
+    expect(envelope.outcome).toBe("success");
+    expect(envelope.timelineCount).toBe(5);
+    expect(envelope.timelineSourceCount).toBe(2);
   });
 });
 
@@ -438,6 +541,7 @@ describe("formatRunEnvelope", () => {
     expect(text).toContain('"timelineCount":null');
     expect(text).toContain('"timelineSourceCount":null');
     expect(text).toContain('"recoveryTotal":null');
+    expect(text).toContain('"retryAttempts":null');
   });
 
   test("every documented key is present in the serialized text for a 'found' envelope", () => {
@@ -510,6 +614,12 @@ describe("type contract — M3LCliRunReportSummary allowlist", () => {
 
   test("recoveryTotal is number or null, never a bare string", () => {
     expectTypeOf<M3LCliRunReportSummary["recoveryTotal"]>().toEqualTypeOf<
+      number | null
+    >();
+  });
+
+  test("retryAttempts is number or null, never number | undefined, matching recoveryTotal's shape", () => {
+    expectTypeOf<M3LCliRunReportSummary["retryAttempts"]>().toEqualTypeOf<
       number | null
     >();
   });

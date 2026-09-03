@@ -173,11 +173,11 @@ scheduler actually reads. Report writing is best-effort on both outcomes: a
 failure there is recorded as a stderr diagnostic and never shadows the original
 error.
 
-| Option   | Default | Effect                                                                  |
-| -------- | ------- | ----------------------------------------------------------------------- |
-| `dryRun` | `false` | Stop after stage 5; report `outcome: "dry-run"`                         |
-| `report` | `true`  | `false` skips report persistence entirely; the exit code is still set   |
-| `trail`  | —       | An `M3LBreadcrumbTrail`; its `entries()` become the report's `timeline` |
+| Option   | Default | Effect                                                                                                                           |
+| -------- | ------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `dryRun` | `false` | Stop after stage 5; report `outcome: "dry-run"`                                                                                  |
+| `report` | `true`  | `false` skips report persistence entirely; the exit code is still set                                                            |
+| `trail`  | —       | An `M3LBreadcrumbTrail`; its `entries()` become the report's `timeline`, and its attempt breadcrumbs also derive `retryAttempts` |
 
 ```typescript
 import { Core } from "@m3l-automation/m3l-common";

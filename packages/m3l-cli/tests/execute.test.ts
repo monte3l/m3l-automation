@@ -91,6 +91,7 @@ const FOUND_LOOKUP: M3LCliRunReportLookup = {
     timelineCount: 4,
     timelineSourceCount: 1,
     recoveryTotal: null,
+    retryAttempts: 0,
   },
 };
 

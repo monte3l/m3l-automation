@@ -390,6 +390,7 @@ interface M3LRunReportBase {
   readonly environment: M3LDiagnosticsSnapshot;
   readonly timeline: readonly M3LBreadcrumb[]; // stages + attached breadcrumbs
   readonly archive?: unknown; // the stage-9 archive report, when produced
+  readonly retryAttempts?: number; // highest attempt the trail observed, when derivable
 }
 
 interface M3LRunReportFailure {
@@ -467,6 +468,38 @@ the same as the number retained. `recoveryTotal > recovery.length` means the
 report was truncated, and the report says so rather than quietly presenting 100
 failures as though they were all of them — an unrecorded truncation is exactly
 the silent gap ADR-0046's mandatory-fallback discipline forbids.
+
+### Retry attempts
+
+`retryAttempts` is the highest `attempt` number observed in the run's breadcrumb
+trail — any breadcrumb carrying a numeric `attempt`, regardless of event name.
+It is present on the **base**, so it applies to every outcome: a run that failed
+after three attempts reports `3` just as a run that succeeded on its third does.
+
+**It is a per-cycle maximum, not a cumulative total.** `M3LPoller` and
+`M3LRetryRunner` restart their attempt counter on every `poll()` / `run()` call,
+so a script that runs two separate cycles — three attempts, then five — reports
+`5`, not `8`. Read it as "the deepest single retry cycle this run needed", which
+answers _did anything come close to exhausting its budget?_ It does not answer
+"how much total work did this run do".
+
+It is **derived, not declared.** `runScript` computes it from the
+`M3LBreadcrumbTrail` it already receives via `M3LRunScriptOptions.trail`, whose
+summarizers already retain `attempt` for `poll:attempt`, `retry:attempt`,
+`retry:scheduled` and `poll:wait`. That means no script has to call anything to
+populate it — but a script that never attaches its poller or retry runner to a
+trail gets the field **omitted** rather than a `0` that would misreport a run as
+having made no attempts. `0` itself is a legitimate value and is preserved when
+supplied explicitly, so readers must test presence rather than truthiness.
+
+Deliberately a **single scalar** rather than a per-attempt array
+([ADR-0086](../../adr/0086-retry-attempt-metadata-seam.md)): a per-attempt
+payload is exactly the unbounded, potentially sensitive content this artifact's
+allowlisted projection exists to refuse ([ADR-0063](../../adr/0063-cli-structured-run-results.md)).
+Per-attempt detail is available in-process to any caller of
+`M3LPoller.pollDetailed` / `M3LRetryRunner.runDetailed` — see
+[`core/polling`](./polling.md#attempt-detailed-results) — which is where it is
+actually actionable.
 
 Read `recoveryTotal`, never `recovery.length`, when reporting how much a run
 absorbed. It is clamped to at least `recovery.length`, so a caller cannot invert
