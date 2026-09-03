@@ -113,8 +113,12 @@ pre-push:
     # `chars: 0` — plus a name-matches-directory check and catalog-coverage
     # check with no prior equivalent (finishing-work shipped with no catalog
     # row and nothing caught it, docs/logs/2026-09-02-finishing-work-skill.md).
+    # check:no-docker (ADR-0091) joined the same way: it reads only the git
+    # index and the working tree, no network or auth, negligible cost. It
+    # enforces the Docker-ban stance at the point a violation is cheapest to
+    # catch — before it reaches CI — rather than leaving it a prose-only rule.
     checks:
-      run: node bin/verify-signed-range.mjs && node bin/check-commit-trailers.mjs && pnpm check:control-chars && pnpm check:file-budget && pnpm check:agents && pnpm check:script-docs && pnpm check:cli-docs && pnpm check:review-size && pnpm check:context-budget && pnpm check:provenance && pnpm check:index && pnpm check:harness-freshness && pnpm check:retrospective && pnpm check:skill-evals && pnpm check:claude-cli-version && pnpm check:review-policy && pnpm check:hooks && pnpm check:skill-frontmatter
+      run: node bin/verify-signed-range.mjs && node bin/check-commit-trailers.mjs && pnpm check:control-chars && pnpm check:no-docker && pnpm check:file-budget && pnpm check:agents && pnpm check:script-docs && pnpm check:cli-docs && pnpm check:review-size && pnpm check:context-budget && pnpm check:provenance && pnpm check:index && pnpm check:harness-freshness && pnpm check:retrospective && pnpm check:skill-evals && pnpm check:claude-cli-version && pnpm check:review-policy && pnpm check:hooks && pnpm check:skill-frontmatter
 
 # Fire after `git rebase` completes (including a no-op rebase with nothing to
 # replay) and after `git merge` completes. Regenerates the derived files the

@@ -453,6 +453,11 @@ export const VERIFY_STEPS = [
     cmd: () => "pnpm check:control-chars",
   },
   {
+    ciStepName: "Check for banned Docker artifacts and invocations",
+    id: "check-no-docker",
+    cmd: () => "pnpm check:no-docker",
+  },
+  {
     ciStepName: "Check hub board views (push-only)",
     id: "check-hub-views",
     cmd: () => "pnpm check:hub-views",

@@ -76,6 +76,7 @@
     "check:github-features": "node bin/check-github-features.mjs",
     "check:label-drift": "node bin/check-label-drift.mjs",
     "check:control-chars": "node bin/check-control-chars.mjs",
+    "check:no-docker": "node bin/check-no-docker.mjs",
     "check:hub-views": "node bin/check-hub-views.mjs",
     "check:zones": "node bin/check-eslint-zones.mjs",
     "check:deps": "node bin/check-deps.mjs",
