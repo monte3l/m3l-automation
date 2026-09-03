@@ -41,7 +41,9 @@ import type {
 } from "./telemetry-repository-types.js";
 import {
   GRANULARITY_MS,
+  normalizeOptionalDimension,
   requireNonEmptyDimension,
+  requireValidAtMs,
   requireValidGranularity,
   requireValidMeasure,
   requireValidMeasurementBase,
@@ -227,7 +229,7 @@ function recordRunFinished(
     {
       route: "",
       script,
-      operation: measurement.operation ?? "",
+      operation: normalizeOptionalDimension(measurement.operation),
       outcome,
       posture: "",
     },
@@ -258,7 +260,7 @@ function recordSseStream(
     route: "",
     script: "",
     operation: "",
-    outcome: measurement.outcome ?? "",
+    outcome: normalizeOptionalDimension(measurement.outcome),
     posture: "",
   });
 }
@@ -273,7 +275,7 @@ function recordPolicyDecision(
     route: "",
     script: "",
     operation: "",
-    outcome: measurement.outcome ?? "",
+    outcome: normalizeOptionalDimension(measurement.outcome),
     posture,
   });
 }
@@ -400,7 +402,10 @@ function recordAllMeasurements(
  * alignment `CHECK` in `console_telemetry_rollup` rejects misaligned values
  * and `record` would throw `ERR_CONSOLE_BAD_REQUEST`.
  *
- * @param atMs - An epoch-millisecond timestamp.
+ * @param atMs - An epoch-millisecond timestamp. Must be finite, non-negative,
+ *   and at most `Number.MAX_SAFE_INTEGER`; fractional values are accepted
+ *   (only the resulting bucket must be an integer, not the input). An
+ *   out-of-range value throws `ERR_CONSOLE_BAD_REQUEST`.
  * @param granularity - The target granularity.
  * @returns The UTC-aligned bucket start, in epoch milliseconds.
  *
@@ -417,6 +422,7 @@ export function telemetryBucketStartMs(
   granularity: M3LTelemetryGranularity,
 ): number {
   requireValidGranularity(granularity);
+  requireValidAtMs(atMs);
   const width = GRANULARITY_MS[granularity];
   return Math.floor(atMs / width) * width;
 }

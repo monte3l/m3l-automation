@@ -64,6 +64,15 @@ interface M3LTelemetryMeasurementCommon {
  * or through a variable. The database's own `CHECK` constraints enforce the
  * same pairing as a backstop.
  *
+ * **Dimension normalization:** every dimension that forms part of the rollup
+ * row's primary key is trimmed of outer (leading/trailing) whitespace before
+ * the SQL parameters are bound, so values that differ only in outer whitespace
+ * always merge into the same bucket. Required dimensions (`route`, `script`,
+ * `outcome`, `posture`) are trimmed and must be non-empty. Optional dimensions
+ * (`operation`, and `outcome` on `sse.stream` / `policy.decision`) are trimmed
+ * and map to the `''` not-applicable sentinel when omitted or whitespace-only.
+ * Internal whitespace is significant and is preserved in both cases.
+ *
  * - `"http.request"` — requires `route` (non-empty) and `valueMs`; `outcome` is any non-empty string.
  * - `"run.finished"` — requires `script` (non-empty) and `valueMs`; `operation` is optional; `outcome` is any non-empty string.
  * - `"sse.stream"` — pure counter; no measure. `outcome` is optional.
