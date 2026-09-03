@@ -79,6 +79,18 @@ mcp__github__pull_request_read({
 keep paging (increment `page`) until a page returns fewer than `perPage` results, so a
 thread with more than 100 comments isn't silently truncated.
 
+**`get_comments`' own `body` field can itself come back truncated mid-sentence**
+for a long `claude[bot]` review — observed cutting off partway through a
+Must-fix section with no error or pagination signal (`docs/logs/2026-09-03-permission-allowlist-expansion.md`).
+If the identified comment's body looks incomplete (ends mid-sentence, a
+`###` section header with no content under it, missing the `<!--
+claude-review-sha: ... -->` footer every real review ends with), re-fetch it
+directly rather than trusting the MCP result:
+
+```bash
+gh api repos/{owner}/{repo}/issues/comments/{comment_id} --jq '.body'
+```
+
 Across all pages, find the single most recent comment (highest `created_at`)
 that is either:
 
