@@ -140,10 +140,11 @@ the two.
 
 - **A `dependabot.yml` comment claiming to "mirror" another file's logic is
   a specific, checkable claim — verify it against that file's actual
-  content, not just its rationale.** The first draft of the `ignore: node
-  > =25`comment said it mirrored`bin/check-deps.mjs`'s `MAJOR_HOLDS`; that
-map is npm-package-only and has no docker-image concept, so the claim was
-literally false even though the underlying reasoning (pin to the same
-Node floor) was correct. `docs-consistency-reviewer` caught it, but
-  > checking cross-references against the referenced file's actual content
-  > before writing the comment would have caught it for free.
+  content, not just its rationale.** The first draft of the docker
+  `ignore` rule's comment said it mirrored `bin/check-deps.mjs`'s
+  `MAJOR_HOLDS`; that map is npm-package-only and has no docker-image
+  concept, so the claim was literally false even though the underlying
+  reasoning (pin to the same Node floor) was correct.
+  `docs-consistency-reviewer` caught it, but checking cross-references
+  against the referenced file's actual content before writing the comment
+  would have caught it for free.
