@@ -23,6 +23,10 @@ import { M3LOperationAbortedError } from "../errors/index.js";
 
 import { M3LBackoff } from "./M3LBackoff.js";
 import type { M3LRetryEventMap } from "./events.js";
+import type {
+  M3LRetryAttemptEntry,
+  M3LRetryDetailedResult,
+} from "./detailed-results.js";
 
 /**
  * The verdict a {@link M3LRetryClassifier} reaches for a thrown error.
@@ -349,12 +353,42 @@ export class M3LRetryRunner extends M3LEventEmitterBase<M3LRetryEventMap> {
    *   returned a non-primitive value while sampling.
    */
   async run<T>(op: () => Promise<T>): Promise<T> {
+    const { value } = await this.#runLoop(op);
+    return value;
+  }
+
+  /**
+   * Run `op` exactly like {@link run}, but resolve the envelope described by
+   * {@link M3LRetryDetailedResult} instead of the bare value — the
+   * succeeding attempt number plus one entry per attempt that was followed
+   * by a backoff wait, each carrying the raw classifier verdict (ADR-0086).
+   * Shares its loop with {@link run} so the ADR-0049 abort ordering (signal
+   * checked before the classifier ever runs) lives in exactly one place.
+   *
+   * @typeParam T - The operation's resolved value type.
+   * @param op - The operation to execute; may reject on failure.
+   * @returns The resolved value plus its per-attempt classification/wait history.
+   * @throws Exactly what {@link run} throws, for the same reasons.
+   */
+  async runDetailed<T>(
+    op: () => Promise<T>,
+  ): Promise<M3LRetryDetailedResult<T>> {
+    return this.#runLoop(op);
+  }
+
+  /**
+   * The shared loop behind {@link run} and {@link runDetailed} — see `run`'s
+   * TSDoc for the full contract. `run` discards `attempts`/`entries`;
+   * `runDetailed` returns them.
+   */
+  async #runLoop<T>(op: () => Promise<T>): Promise<M3LRetryDetailedResult<T>> {
     const progression = new DelayProgression(this.#backoff);
     const tracker =
       this.#progress !== undefined
         ? new ProgressTracker(this.#progress)
         : undefined;
     const lastAttempt = this.#maxAttempts - 1;
+    const entries: M3LRetryAttemptEntry[] = [];
 
     for (let attempt = 0; ; attempt++) {
       // Check signal before invoking op() — an already-aborted signal
@@ -370,7 +404,7 @@ export class M3LRetryRunner extends M3LEventEmitterBase<M3LRetryEventMap> {
       try {
         const result = await op();
         this.emit("retry:success", { attempt: attempt + 1 });
-        return result;
+        return { value: result, attempts: attempt + 1, entries };
       } catch (error) {
         // Signal checked FIRST — before the classifier — so no classifier
         // can reclassify the abort as retriable and cause the runner to retry
@@ -400,13 +434,18 @@ export class M3LRetryRunner extends M3LEventEmitterBase<M3LRetryEventMap> {
           throw error;
         }
 
-        await this.#scheduleRetry(
+        const delayMs = await this.#scheduleRetry(
           attempt,
           resolved,
           progression,
           tracker,
           error,
         );
+        entries.push({
+          attempt: attempt + 1,
+          classification: resolved.classification,
+          delayMs,
+        });
       }
     }
   }
@@ -414,7 +453,7 @@ export class M3LRetryRunner extends M3LEventEmitterBase<M3LRetryEventMap> {
   /**
    * Consult the no-progress guard (if configured) and, absent a trip,
    * resolve, emit, and sleep the delay before the next attempt. Extracted
-   * from {@link run}'s `catch` block to keep both under the
+   * from the shared retry loop's `catch` block to keep both under the
    * complexity/depth/length lint ceilings.
    *
    * @param attempt - The 0-based index of the attempt that just failed.
@@ -424,6 +463,8 @@ export class M3LRetryRunner extends M3LEventEmitterBase<M3LRetryEventMap> {
    *   `progress` option was configured.
    * @param error - The operation's in-flight error for this attempt, threaded
    *   through as `cause` if the guard trips.
+   * @returns The delay, in milliseconds, that was slept — fed back to
+   *   `#runLoop` so `runDetailed` can record it on this attempt's entry.
    * @throws {@link M3LOperationAbortedError} when the signal aborted on this
    *   attempt (abort always wins over a no-progress trip).
    * @throws An internal `M3LError` (code `ERR_NO_PROGRESS`) when the guard
@@ -436,7 +477,7 @@ export class M3LRetryRunner extends M3LEventEmitterBase<M3LRetryEventMap> {
     progression: DelayProgression,
     tracker: ProgressTracker | undefined,
     error: unknown,
-  ): Promise<void> {
+  ): Promise<number> {
     if (tracker !== undefined) {
       this.#checkProgress(tracker, attempt, error);
     }
@@ -448,6 +489,7 @@ export class M3LRetryRunner extends M3LEventEmitterBase<M3LRetryEventMap> {
     });
     // Pass signal so an abort during the backoff abandons it immediately.
     await delay(delayMs, this.#signal);
+    return delayMs;
   }
 
   /**

@@ -23,6 +23,13 @@ export type {
   M3LRetryDecision,
 } from "./M3LRetryRunner.js";
 
+export type {
+  M3LPollAttemptEntry,
+  M3LPollDetailedResult,
+  M3LRetryAttemptEntry,
+  M3LRetryDetailedResult,
+} from "./detailed-results.js";
+
 export { M3LBackoff } from "./M3LBackoff.js";
 export { M3LPollingPolicies } from "./M3LPollingPolicies.js";
 

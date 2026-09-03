@@ -1814,6 +1814,26 @@
     "namespace": "core",
     "file": "packages/m3l-common/src/core/polling/events.ts"
   },
+  "M3LPollAttemptEntry": {
+    "submodule": "polling",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/polling/detailed-results.ts"
+  },
+  "M3LRetryAttemptEntry": {
+    "submodule": "polling",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/polling/detailed-results.ts"
+  },
+  "M3LPollDetailedResult": {
+    "submodule": "polling",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/polling/detailed-results.ts"
+  },
+  "M3LRetryDetailedResult": {
+    "submodule": "polling",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/polling/detailed-results.ts"
+  },
   "evaluateProcedureCondition": {
     "submodule": "procedure",
     "namespace": "core",

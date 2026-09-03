@@ -17,6 +17,7 @@ Exported from `@m3l-automation/m3l-common/core` (and the `Core` namespace):
 - Built-in classifiers: `awsThrottlingClassifier`, `awsNetworkClassifier`, `httpRetryAfterClassifier`
 - Poller event map + payloads: `M3LPollerEventMap`, `M3LPollAttemptPayload`, `M3LPollWaitPayload`, `M3LPollSuccessPayload`, `M3LPollExhaustedPayload`, `M3LPollNoProgressPayload`
 - Retry event map + payloads: `M3LRetryEventMap`, `M3LRetryAttemptPayload`, `M3LRetryScheduledPayload`, `M3LRetrySuccessPayload`, `M3LRetryFatalPayload`, `M3LRetryExhaustedPayload`, `M3LRetryNoProgressPayload`
+- Detailed-result types: `M3LPollDetailedResult`, `M3LRetryDetailedResult`, `M3LPollAttemptEntry`, `M3LRetryAttemptEntry`
 
 The constructor option interfaces (`M3LPollerOptions`, `M3LRetryRunnerOptions`) and
 the backoff-strategy contract are **deliberately not re-exported** — callers build
@@ -247,6 +248,55 @@ compared), no `maxStalledAttempts` (it trips on the first repeat), and its
 `progress` option, `M3LPoller`/`M3LRetryRunner` behaviour is unchanged by
 either mechanism — this note only prevents reading the two as one shared
 implementation.
+
+### Attempt-detailed results
+
+`poll()` and `run()` resolve to the value only. When a caller needs to know how
+many attempts a call took — to record it in a run report, for instance — use the
+sibling detailed methods:
+
+```ts
+const detailed = await poller.pollDetailed(check);
+detailed.value; // the same value poll() would have resolved
+detailed.attempts; // the 1-based attempt number that succeeded
+detailed.entries; // one entry per attempt that was followed by a wait
+```
+
+```ts
+const detailed = await runner.runDetailed(op);
+detailed.entries[0]?.classification; // why the first attempt was retried
+```
+
+`poll()`/`run()` are unchanged and remain the ergonomic default; the detailed
+methods are a superset and are the intended entry point for the reporting path
+([ADR-0086](../../adr/0086-retry-attempt-metadata-seam.md)).
+
+**`entries` covers only attempts that were followed by a wait — the succeeding
+attempt gets no entry.** This is symmetric across both types, so a success on
+attempt N gives `attempts === N` and `entries.length === N - 1`, and a first-try
+success gives `entries.length === 0`. `delayMs` is therefore always present: the
+only attempt that does not sleep is the ceiling-exhausting one, and that path
+throws rather than resolving. `M3LRetryAttemptEntry` additionally carries the
+classifier's resolved `classification` for that failed attempt — the field that
+makes a retry story readable — which is also why the succeeding attempt cannot
+have an entry: it was never classified. It is typed
+`"retriable" | "unknown"`, the same closed union
+[`M3LRetryScheduledPayload`](#m3lretryrunner-events-m3lretryeventmap) carries and
+for the same reason: a `"fatal"` verdict throws before an entry is ever
+recorded, so it is unrepresentable here.
+
+**Failures are not softened into a result.** The detailed methods throw exactly
+what `poll()`/`run()` throw — `M3LPollFailureError`, `M3LPollExhaustedError`, or
+the original error for a fatal/exhausted retry — so no envelope (and no
+`entries`) is returned on a failing call. `M3LPollExhaustedError` carries
+`context.attempts` and `M3LPollFailureError` carries `context.attempt` if you
+need the count on a poll failure.
+
+An aborted signal still rejects with `ERR_OPERATION_ABORTED`
+(`origin: "caller"`, `retryable: false`) and is never reclassified as retriable,
+identically to the plain methods — both share one loop, so the abort ordering
+described under [Cooperative cancellation](#cooperative-cancellation) is enforced
+in exactly one place ([ADR-0049](../../adr/0049-cooperative-cancellation-contract.md)).
 
 ## Events
 
