@@ -19,7 +19,7 @@ import {
   requireColumn,
   normalizeOptionalDimension,
   requireNonEmptyDimension,
-  requireValidAtMs,
+  requireValidTelemetryAtMs,
   requireValidBucketStartMs,
   requireValidGranularity,
   requireValidLimit,
@@ -367,10 +367,10 @@ describe("requireValidBucketStartMs", () => {
 });
 
 // ---------------------------------------------------------------------------
-// requireValidAtMs
+// requireValidTelemetryAtMs
 // ---------------------------------------------------------------------------
 
-describe("requireValidAtMs", () => {
+describe("requireValidTelemetryAtMs", () => {
   const invalidValues: readonly [string, number][] = [
     ["NaN", Number.NaN],
     ["Infinity", Number.POSITIVE_INFINITY],
@@ -382,33 +382,33 @@ describe("requireValidAtMs", () => {
   test.each(invalidValues)(
     "throws ERR_CONSOLE_BAD_REQUEST for %s",
     (_label, value) => {
-      const thrown = captureSync(() => requireValidAtMs(value));
+      const thrown = captureSync(() => requireValidTelemetryAtMs(value));
       expect(thrown).toBeInstanceOf(M3LConsoleError);
       expect((thrown as M3LConsoleError).code).toBe("ERR_CONSOLE_BAD_REQUEST");
     },
   );
 
   test("returns 0 (non-negative boundary)", () => {
-    expect(requireValidAtMs(0)).toBe(0);
+    expect(requireValidTelemetryAtMs(0)).toBe(0);
   });
 
   test("returns a positive safe integer", () => {
-    expect(requireValidAtMs(75_000)).toBe(75_000);
+    expect(requireValidTelemetryAtMs(75_000)).toBe(75_000);
   });
 
   test("returns MAX_SAFE_INTEGER (upper boundary)", () => {
-    expect(requireValidAtMs(Number.MAX_SAFE_INTEGER)).toBe(
+    expect(requireValidTelemetryAtMs(Number.MAX_SAFE_INTEGER)).toBe(
       Number.MAX_SAFE_INTEGER,
     );
   });
 
   test("returns a fractional millisecond timestamp unchanged", () => {
     // A fractional atMs is legal input — only the bucket must be an integer.
-    expect(requireValidAtMs(75_000.5)).toBe(75_000.5);
+    expect(requireValidTelemetryAtMs(75_000.5)).toBe(75_000.5);
   });
 
   test("error message mentions 'atMs'", () => {
-    const thrown = captureSync(() => requireValidAtMs(-1));
+    const thrown = captureSync(() => requireValidTelemetryAtMs(-1));
     expect((thrown as M3LConsoleError).message).toContain("atMs");
   });
 });
@@ -791,11 +791,11 @@ describe("requireValidMeasurementBase", () => {
 // telemetryBucketStartMs — atMs guard wiring
 //
 // `store-telemetry-repository.test.ts` has only 807 chars of headroom under
-// the 60,000-char check:file-budget ceiling, so the requireValidAtMs wiring
+// the 60,000-char check:file-budget ceiling, so the requireValidTelemetryAtMs wiring
 // tests for telemetryBucketStartMs live here, beside the guard itself.
 // ---------------------------------------------------------------------------
 
-describe("telemetryBucketStartMs — requireValidAtMs guard wiring", () => {
+describe("telemetryBucketStartMs — requireValidTelemetryAtMs guard wiring", () => {
   // Mirror the cast pattern from store-telemetry-repository.test.ts:1258.
   const BAD_GRAN = "second" as unknown as M3LTelemetryGranularity;
 

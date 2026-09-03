@@ -43,12 +43,12 @@ import {
   GRANULARITY_MS,
   normalizeOptionalDimension,
   requireNonEmptyDimension,
-  requireValidAtMs,
   requireValidGranularity,
   requireValidMeasure,
   requireValidMeasurementBase,
   requireValidQuery,
   requireValidRangeBound,
+  requireValidTelemetryAtMs,
   toRequiredNumber,
   toTelemetryBucket,
 } from "./telemetry-validation.js";
@@ -422,7 +422,7 @@ export function telemetryBucketStartMs(
   granularity: M3LTelemetryGranularity,
 ): number {
   requireValidGranularity(granularity);
-  requireValidAtMs(atMs);
+  requireValidTelemetryAtMs(atMs);
   const width = GRANULARITY_MS[granularity];
   return Math.floor(atMs / width) * width;
 }

@@ -222,7 +222,7 @@ export function requireValidBucketStartMs(bucketStartMs: number): number {
  * monotone-decreasing, so a valid `atMs ≤ MAX_SAFE_INTEGER` can never produce
  * a bucket outside the safe-integer range. No separate output check is needed.
  */
-export function requireValidAtMs(atMs: number): number {
+export function requireValidTelemetryAtMs(atMs: number): number {
   if (!Number.isFinite(atMs) || atMs < 0 || atMs > Number.MAX_SAFE_INTEGER) {
     throw new M3LConsoleError(
       "ERR_CONSOLE_BAD_REQUEST",
@@ -279,6 +279,15 @@ export function requireValidMeasure(value: number, label: string): number {
  * Internal whitespace is significant and is preserved — `"/api/v1/ runs"` is
  * a distinct route from `"/api/v1/runs"` and must remain so. A test pins this
  * invariant to prevent accidental tightening.
+ *
+ * **No backfill:** trimming applies only to newly bound parameters. Any
+ * `console_telemetry_rollup` row already persisted with an untrimmed dimension
+ * keeps its original PRIMARY KEY and will never merge with the trimmed form —
+ * a bucket split before this change stays split. There is deliberately no
+ * backfill or data migration. This is safe today because nothing in production
+ * calls `telemetry.record*` — the only live reference is the store-unit binding
+ * in `store/store.ts`, and the rollup table is empty. This boundary must be
+ * revisited if instrumentation ships before this fix does.
  */
 export function requireNonEmptyDimension(value: string, label: string): string {
   const trimmed = value.trim();
