@@ -25,6 +25,10 @@ import type {
   M3LSessionArtifactRef,
   M3LSessionArtifactStore,
 } from "../src/sessions/artifacts.js";
+// RED: `M3LSessionStepSummary` does not exist yet in `service-reads.ts` —
+// this import is the deliberate compile failure that keeps this file RED
+// until the GREEN pass adds it.
+import type { M3LSessionStepSummary } from "../src/sessions/service-reads.js";
 import { createSessionService } from "../src/sessions/service.js";
 import type {
   CreateSessionServiceOptions,
@@ -477,6 +481,16 @@ async function captureAsyncFailure(
   }
 }
 
+/** Runs `run`, capturing whatever it throws synchronously as a single `unknown` value — mirrors `sessions-service.test.ts`'s own `captureFailure`. */
+function captureFailure(run: () => unknown): unknown {
+  try {
+    run();
+    return undefined;
+  } catch (error) {
+    return error;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // readStepArtifact (X7d) — the read behind
 // `GET /api/v1/sessions/:id/steps/:stepId/artifact`. Lives in
@@ -650,5 +664,116 @@ describe("M3LSessionService — readStepArtifact()", () => {
     expect((thrown as M3LConsoleError).code).toBe(
       "ERR_CONSOLE_SESSION_ARTIFACT_CORRUPT",
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// listStepsForSession (X11) — the read behind
+// `GET /api/v1/sessions/:id/steps`. `M3LSessionStepSummary` is
+// `Omit<M3LSessionStepRecord, "resultRef"> & { readonly hasResult: boolean }`
+// — a DELIBERATE redaction: `resultRef` is the step's ENCODED artifact
+// reference, which for an inline artifact literally embeds the resolved
+// VALUE (see `sessions/artifacts.ts`'s `encodeArtifactRef`), so it must never
+// appear in a step LIST response. The sanctioned way to read a step's value
+// is the already-existing `GET .../steps/:stepId/artifact` route — exactly
+// the same "no resolved VALUE" boundary `listBindingsForSession` draws for
+// bindings.
+// ---------------------------------------------------------------------------
+
+describe("M3LSessionService — listStepsForSession()", () => {
+  test("throws ERR_CONSOLE_SESSION_NOT_FOUND for an unknown session id", () => {
+    const { service } = buildHarness();
+
+    const thrown = captureFailure(() =>
+      service.listStepsForSession("does-not-exist"),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).code).toBe(
+      "ERR_CONSOLE_SESSION_NOT_FOUND",
+    );
+  });
+
+  test("redacts resultRef into a hasResult boolean, passing every other field through unchanged", () => {
+    const { service, repository } = buildHarness();
+    const sessionId = seedOpenSession(repository);
+    const pendingStepId = seedRunningStep(repository, {
+      sessionId,
+      ordinal: 1,
+    });
+    const finishedStepId = seedFinishedStep(repository, {
+      sessionId,
+      ordinal: 2,
+      resultRef: encodeArtifactRef({ kind: "inline", value: 42 }),
+    });
+
+    const summaries: readonly M3LSessionStepSummary[] =
+      service.listStepsForSession(sessionId);
+
+    expect(summaries).toHaveLength(2);
+    const [pending, finished] = summaries;
+    if (pending === undefined || finished === undefined) {
+      throw new Error("expected two step summaries");
+    }
+
+    // (a) `resultRef` is OMITTED entirely, not merely undefined.
+    expect(pending).not.toHaveProperty("resultRef");
+    expect(finished).not.toHaveProperty("resultRef");
+
+    // (b) `hasResult` reflects whether a result was actually recorded.
+    expect(pending.hasResult).toBe(false);
+    expect(finished.hasResult).toBe(true);
+
+    // (c) every other field is passed through unchanged from the repository row.
+    const pendingRow = repository.getStep(pendingStepId);
+    const finishedRow = repository.getStep(finishedStepId);
+    if (pendingRow === undefined || finishedRow === undefined) {
+      throw new Error("expected both seeded steps to exist");
+    }
+    expect(pending).toMatchObject({
+      id: pendingRow.id,
+      sessionId: pendingRow.sessionId,
+      ordinal: pendingRow.ordinal,
+      operation: pendingRow.operation,
+      parameters: pendingRow.parameters,
+      runId: pendingRow.runId,
+      status: pendingRow.status,
+      queuedAtMs: pendingRow.queuedAtMs,
+      startedAtMs: pendingRow.startedAtMs,
+      endedAtMs: pendingRow.endedAtMs,
+      outcome: pendingRow.outcome,
+      failureMessage: pendingRow.failureMessage,
+    });
+    expect(finished).toMatchObject({
+      id: finishedRow.id,
+      sessionId: finishedRow.sessionId,
+      ordinal: finishedRow.ordinal,
+      operation: finishedRow.operation,
+      parameters: finishedRow.parameters,
+      runId: finishedRow.runId,
+      status: finishedRow.status,
+      queuedAtMs: finishedRow.queuedAtMs,
+      startedAtMs: finishedRow.startedAtMs,
+      endedAtMs: finishedRow.endedAtMs,
+      outcome: finishedRow.outcome,
+      failureMessage: finishedRow.failureMessage,
+    });
+  });
+
+  test("delegates straight to the repository, returning an empty array for a session with no steps", () => {
+    const { service, repository } = buildHarness();
+    const sessionId = seedOpenSession(repository);
+    let callCount = 0;
+    repository.listStepsForSession = (id: string) => {
+      callCount += 1;
+      return [...repository.steps.values()].filter(
+        (row) => row.sessionId === id,
+      );
+    };
+
+    const summaries = service.listStepsForSession(sessionId);
+
+    expect(summaries).toEqual([]);
+    expect(callCount).toBe(1);
   });
 });

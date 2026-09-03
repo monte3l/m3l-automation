@@ -231,7 +231,12 @@ export interface M3LSessionService
    *   decision was already answered.
    */
   answerDecision(id: string, answer: unknown): boolean;
-  /** Lists every decision raised for `sessionId`. */
+  /**
+   * Lists every decision raised for `sessionId`.
+   *
+   * @throws {@link M3LConsoleError} with code `"ERR_CONSOLE_SESSION_NOT_FOUND"`
+   *   when `sessionId` names no session.
+   */
   listDecisionsForSession(
     sessionId: string,
   ): readonly M3LSessionDecisionRecord[];
@@ -250,6 +255,25 @@ function requireSession(
     );
   }
   return session;
+}
+
+/**
+ * Throws `ERR_CONSOLE_SESSION_STEP_NOT_FOUND` unless `stepId` names a step
+ * owned by `sessionId` — extracted from `raiseDecision` to keep
+ * {@link buildDecisionServiceMethods} under the per-function line ceiling.
+ */
+function requireStepInSession(
+  sessionsRepository: M3LConsoleSessionsRepository,
+  sessionId: string,
+  stepId: string,
+): void {
+  const step = sessionsRepository.getStep(stepId);
+  if (step === undefined || step.sessionId !== sessionId) {
+    throw new M3LConsoleError(
+      "ERR_CONSOLE_SESSION_STEP_NOT_FOUND",
+      `no step found with id "${stepId}"`,
+    );
+  }
 }
 
 /**
@@ -555,13 +579,7 @@ function buildDecisionServiceMethods(
       decisionOptions?: unknown,
     ): M3LSessionDecisionRecord {
       requireSession(sessionsRepository, sessionId);
-      const step = sessionsRepository.getStep(stepId);
-      if (step === undefined || step.sessionId !== sessionId) {
-        throw new M3LConsoleError(
-          "ERR_CONSOLE_SESSION_STEP_NOT_FOUND",
-          `no step found with id "${stepId}"`,
-        );
-      }
+      requireStepInSession(sessionsRepository, sessionId, stepId);
       const id = newId();
       sessionsRepository.insertDecision({
         id,
@@ -596,6 +614,7 @@ function buildDecisionServiceMethods(
     listDecisionsForSession(
       sessionId: string,
     ): readonly M3LSessionDecisionRecord[] {
+      requireSession(sessionsRepository, sessionId);
       return sessionsRepository.listDecisionsForSession(sessionId);
     },
   };

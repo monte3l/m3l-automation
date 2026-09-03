@@ -77,6 +77,15 @@ interface FakeStepRow {
   readonly operation: string;
 }
 
+/** One fixture step-summary row, resembling `M3LSessionStepSummary` (no `resultRef`, a `hasResult` boolean instead). */
+interface FakeStepSummaryRow {
+  readonly id: string;
+  readonly sessionId: string;
+  readonly ordinal: number;
+  readonly operation: string;
+  readonly hasResult: boolean;
+}
+
 /** One fixture run handle, mirroring `M3LSessionRunHandle`'s field set. */
 interface FakeRunHandle {
   readonly id: string;
@@ -136,6 +145,8 @@ interface FakeReader {
   }): readonly FakeSessionRow[];
   listBindingsForSession(sessionId: string): readonly FakeBindingRow[];
   readStepArtifact(sessionId: string, stepId: string): Promise<unknown>;
+  listDecisionsForSession(sessionId: string): readonly FakeDecisionRow[];
+  listStepsForSession(sessionId: string): readonly FakeStepSummaryRow[];
 }
 
 /** The local writer port `createSessionRoutes` depends on. */
@@ -173,14 +184,21 @@ function buildReader(
     readonly get?: FakeSessionRow;
     readonly list?: readonly FakeSessionRow[];
     readonly bindings?: readonly FakeBindingRow[];
+    readonly decisions?: readonly FakeDecisionRow[];
   } = {},
 ): Omit<
   FakeReader,
-  "getSession" | "listSessions" | "listBindingsForSession"
+  | "getSession"
+  | "listSessions"
+  | "listBindingsForSession"
+  | "listDecisionsForSession"
+  | "listStepsForSession"
 > & {
   getSession: Mock<FakeReader["getSession"]>;
   listSessions: Mock<FakeReader["listSessions"]>;
   listBindingsForSession: Mock<FakeReader["listBindingsForSession"]>;
+  listDecisionsForSession: Mock<FakeReader["listDecisionsForSession"]>;
+  listStepsForSession: Mock<FakeReader["listStepsForSession"]>;
 } {
   return {
     // X7d's read lives on the SAME port but is served by its own route
@@ -196,6 +214,15 @@ function buildReader(
     listBindingsForSession: vi
       .fn<FakeReader["listBindingsForSession"]>()
       .mockReturnValue(overrides.bindings ?? []),
+    listDecisionsForSession: vi
+      .fn<FakeReader["listDecisionsForSession"]>()
+      .mockReturnValue(overrides.decisions ?? []),
+    // X11's read lives on the SAME port but is served by its own route
+    // module; these suites never drive it — `routes-session-steps.test.ts`
+    // does.
+    listStepsForSession: vi
+      .fn<FakeReader["listStepsForSession"]>()
+      .mockReturnValue([]),
   };
 }
 
@@ -360,7 +387,7 @@ const VALID_BINDING: FakeAddStepBinding = {
 };
 
 describe("createSessionRoutes — route table shape", () => {
-  test("registers all 8 session routes, all auth: 'required'", () => {
+  test("registers all 9 session routes, all auth: 'required'", () => {
     const routes = createSessionRoutes({
       reader: buildReader(),
       writer: buildWriter(),
@@ -376,6 +403,7 @@ describe("createSessionRoutes — route table shape", () => {
         "POST /api/v1/sessions/:id/steps",
         "POST /api/v1/sessions/:id/steps/:stepId/decision",
         "POST /api/v1/sessions/:id/decisions/:decisionId",
+        "GET /api/v1/sessions/:id/decisions",
         "POST /api/v1/sessions/:id/close",
         "POST /api/v1/sessions/:id/reopen",
       ].sort(),
@@ -998,6 +1026,90 @@ describe("createSessionRoutes — POST /api/v1/sessions/:id/decisions/:decisionI
           params: { id: "session-1", decisionId: "nope" },
           operatorName: "ada",
           body: { answer: "x" },
+        }),
+      ),
+    );
+
+    expect(thrown).toBe(original);
+  });
+});
+
+describe("createSessionRoutes — GET /api/v1/sessions/:id/decisions", () => {
+  test("returns 200 with the reader's decisions array verbatim", async () => {
+    const reader = buildReader({ decisions: [DECISION] });
+    const routes = createSessionRoutes({ reader, writer: buildWriter() });
+
+    const response = await runRoute(
+      findRoute(routes, "GET", "/api/v1/sessions/:id/decisions"),
+      buildContext({
+        path: "/api/v1/sessions/session-1/decisions",
+        params: { id: "session-1" },
+        operatorName: "ada",
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(JSON.parse(response.body)).toEqual([DECISION]);
+    expect(reader.listDecisionsForSession).toHaveBeenCalledWith("session-1");
+  });
+
+  test("returns 200 with an empty array for a session with no decisions", async () => {
+    const reader = buildReader({ decisions: [] });
+    const routes = createSessionRoutes({ reader, writer: buildWriter() });
+
+    const response = await runRoute(
+      findRoute(routes, "GET", "/api/v1/sessions/:id/decisions"),
+      buildContext({
+        path: "/api/v1/sessions/session-1/decisions",
+        params: { id: "session-1" },
+        operatorName: "ada",
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(JSON.parse(response.body)).toEqual([]);
+  });
+
+  test("returns 400 naming the missing ':id' route parameter, without calling the reader", async () => {
+    const reader = buildReader();
+    const routes = createSessionRoutes({ reader, writer: buildWriter() });
+
+    const thrown = await captureThrown(() =>
+      runRoute(
+        findRoute(routes, "GET", "/api/v1/sessions/:id/decisions"),
+        buildContext({
+          path: "/api/v1/sessions/decisions",
+          operatorName: "ada",
+        }),
+      ),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).code).toBe("ERR_CONSOLE_BAD_REQUEST");
+    expect((thrown as M3LConsoleError).message).toContain("':id'");
+    expect(reader.listDecisionsForSession).not.toHaveBeenCalled();
+  });
+
+  // INVARIANT: the route owns NO not-found logic. Mirrors the equivalent
+  // "propagates unchanged" cases elsewhere in this file.
+  test("propagates a thrown ERR_CONSOLE_SESSION_NOT_FOUND from reader.listDecisionsForSession unchanged", async () => {
+    const original = new M3LConsoleError(
+      "ERR_CONSOLE_SESSION_NOT_FOUND",
+      "no such session",
+    );
+    const reader = buildReader();
+    reader.listDecisionsForSession.mockImplementation(() => {
+      throw original;
+    });
+    const routes = createSessionRoutes({ reader, writer: buildWriter() });
+
+    const thrown = await captureThrown(() =>
+      runRoute(
+        findRoute(routes, "GET", "/api/v1/sessions/:id/decisions"),
+        buildContext({
+          path: "/api/v1/sessions/nope/decisions",
+          params: { id: "nope" },
+          operatorName: "ada",
         }),
       ),
     );
