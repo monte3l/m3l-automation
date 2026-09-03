@@ -20,13 +20,25 @@
  * `ensureParentDirectory` and `restrictFilePermissions` are both no-ops for
  * `":memory:"` and so are unreachable any other way — those two steps used
  * to be covered only accidentally, by `tests/main.test.ts` opening the
- * checkout's real `data/console/console.sqlite`. The remaining real-file
- * cases (WAL sidecars and their derived modes, a second writer, a
- * non-SQLite file) stay with the integration pass, which owns them.
+ * checkout's real `data/console/console.sqlite`.
+ *
+ * That block belongs HERE, not in `tests/integration/store.integration.test.ts`,
+ * even though that file owns real-file cases generally: `vitest.config.ts`
+ * excludes the whole `tests/integration` tree from the project that carries
+ * the `perFile` coverage thresholds, so the same tests placed there would
+ * leave `store.ts` failing its own per-file gate. `.claude/rules/tests.md`
+ * permits reading the real filesystem unmocked when the on-disk effect IS
+ * the behavior under test, which is exactly the case for both steps.
+ *
+ * The remaining real-file cases (WAL sidecars and their derived modes, a
+ * second writer, a non-SQLite file) stay with the integration pass. The
+ * split is by tier, not by concern: this file pins the two modes SQLite
+ * derives nothing from, integration pins the umask-sensitive sidecar modes
+ * and the chmod-before-WAL ordering that protects them.
  */
 import { mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 import { afterEach, describe, expect, expectTypeOf, test } from "vitest";
@@ -662,6 +674,12 @@ describe("openConsoleStore — a real file location", () => {
       // missing parent directory itself (errcode 14, `CANTOPEN`), so this
       // open can only succeed because `ensureParentDirectory` ran first.
       expect(statSync(location).isFile()).toBe(true);
+      // The directory's documented 0700 (`src/store/store.ts`'s
+      // `CONSOLE_STORE_DIRECTORY_MODE`) holds under any umask up to 0o077,
+      // since `umask` can only clear bits 0700 does not set.
+      if (process.platform !== "win32") {
+        expect(statSync(dirname(location)).mode & 0o777).toBe(0o700);
+      }
     } finally {
       store.close();
     }

@@ -57,10 +57,11 @@ const openedStores: (M3LConsoleStoreHandle & M3LConsoleStore)[] = [];
 
 afterEach(() => {
   for (const store of openedStores) {
-    // Mirrors `tests/boot-audit-rebuild.test.ts`. `close()` is already
-    // idempotent, so the check only records that `startConsole` closed the
-    // store on its way down. Deliberately not try/caught: a close failing
-    // for any OTHER reason must surface, not vanish into an empty catch.
+    // A pure safety net for a store a failed test left open: `startConsole`
+    // closes it on the way down, and `close()` is idempotent anyway
+    // (`store.ts`'s `if (closed) return`). Nothing is asserted here.
+    // Deliberately not try/caught: a close failing for any OTHER reason
+    // must surface, not vanish into an empty catch.
     if (store.isOpen) store.close();
   }
   openedStores.length = 0;
