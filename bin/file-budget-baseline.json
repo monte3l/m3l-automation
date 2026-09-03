@@ -7,7 +7,7 @@
   "packages/m3l-common/src/core/checkpoint/M3LCheckpointStore.ts": 49710,
   "packages/m3l-common/src/core/diagnostics/breadcrumbs.ts": 32561,
   "packages/m3l-common/src/core/diagnostics/format-error.ts": 25629,
-  "packages/m3l-common/src/core/diagnostics/run-report.ts": 52605,
+  "packages/m3l-common/src/core/diagnostics/run-report.ts": 52600,
   "packages/m3l-common/src/core/logging/redact.ts": 28767,
   "packages/m3l-common/src/core/network/M3LHttpClient.ts": 40251,
   "packages/m3l-common/src/core/pipeline/types.ts": 28210,

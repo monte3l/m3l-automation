@@ -176,7 +176,7 @@ function isAbortError(error: unknown): boolean {
  * `NaN`/`Infinity` are rejected alongside non-numbers: `NaN` in particular
  * would otherwise permanently poison a running maximum (any later
  * comparison `x \> NaN` is `false`), and both serialize indistinguishably
- * from "absent" via `JSON.stringify` (`NaN`/`Infinity` -> `null`), which
+ * from "absent" via `JSON.stringify` (`NaN`/`Infinity` becomes `null`), which
  * would silently corrupt the persisted report rather than surfacing a
  * diagnostic. This is a live path, not just a hostile-input concern: a
  * caller doing `trail.record(..., { attempt: Number.parseInt(header, 10) })`
