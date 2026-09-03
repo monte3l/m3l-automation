@@ -157,6 +157,7 @@ function toReportUnavailableReason(
  *   timelineCount: 12,
  *   timelineSourceCount: 3,
  *   recoveryTotal: null,
+ *   retryAttempts: null,
  * };
  * ```
  */
@@ -169,6 +170,8 @@ export interface M3LCliRunReportSummary {
   readonly timelineSourceCount: number | null;
   /** The absorbed-failure count for a `"partial"` outcome, or `null` otherwise. */
   readonly recoveryTotal: number | null;
+  /** The retry-attempt count derived from the run's breadcrumb trail, or `null` when absent/non-numeric. No outcome gate — applies to every terminal outcome. */
+  readonly retryAttempts: number | null;
 }
 
 /**
@@ -239,6 +242,8 @@ export interface M3LCliRunEnvelope {
   readonly timelineSourceCount: number | null;
   /** The located report's absorbed-failure count, or `null`. */
   readonly recoveryTotal: number | null;
+  /** The located report's retry-attempt count, or `null`. */
+  readonly retryAttempts: number | null;
 }
 
 /**
@@ -319,6 +324,7 @@ interface ReportDerivedFields {
   readonly timelineCount: number | null;
   readonly timelineSourceCount: number | null;
   readonly recoveryTotal: number | null;
+  readonly retryAttempts: number | null;
   readonly reportUnavailable: M3LCliRunReportUnavailableReason | null;
 }
 
@@ -340,6 +346,7 @@ function resolveReportDerivedFields(
       timelineCount: null,
       timelineSourceCount: null,
       recoveryTotal: null,
+      retryAttempts: null,
       reportUnavailable: toReportUnavailableReason(reason),
     };
   }
@@ -353,6 +360,7 @@ function resolveReportDerivedFields(
     timelineCount: readNumber(summary, "timelineCount") ?? null,
     timelineSourceCount: readNumber(summary, "timelineSourceCount") ?? null,
     recoveryTotal: readNumber(summary, "recoveryTotal") ?? null,
+    retryAttempts: readNumber(summary, "retryAttempts") ?? null,
     reportUnavailable: null,
   };
 }
@@ -398,6 +406,7 @@ export function buildRunEnvelope(
     timelineCount: derived.timelineCount,
     timelineSourceCount: derived.timelineSourceCount,
     recoveryTotal: derived.recoveryTotal,
+    retryAttempts: derived.retryAttempts,
   };
 }
 

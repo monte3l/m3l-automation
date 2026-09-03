@@ -629,7 +629,7 @@ describe("locateRunReport — exhaustion", () => {
 });
 
 describe("locateRunReport — allowlist projection (summary)", () => {
-  test("projects exactly {outcome, timelineCount, timelineSourceCount, recoveryTotal} and never leaks any other report field", () => {
+  test("projects exactly {outcome, timelineCount, timelineSourceCount, recoveryTotal, retryAttempts} and never leaks any other report field", () => {
     const dirName = dirNameFor(STARTED_AT);
     const planted = {
       correlationId: "PLANTED-CORRELATION-9f8e",
@@ -683,6 +683,7 @@ describe("locateRunReport — allowlist projection (summary)", () => {
         },
       ],
       recoveryTotal: 1,
+      retryAttempts: 3,
       outcome: "success",
     };
 
@@ -698,17 +699,21 @@ describe("locateRunReport — allowlist projection (summary)", () => {
     expect(Object.keys(result.summary).sort()).toEqual([
       "outcome",
       "recoveryTotal",
+      "retryAttempts",
       "timelineCount",
       "timelineSourceCount",
     ]);
     // outcome "success" (not "partial") drops recoveryTotal to null, even
     // though the sensitive fixture carries one — proving both the allowlist
-    // AND the outcome-gating rule in the same assertion.
+    // AND the outcome-gating rule in the same assertion. retryAttempts has no
+    // such gate and survives under the very same non-partial outcome,
+    // proving the two fields are NOT handled by a copy-pasted branch.
     expect(result.summary).toEqual({
       outcome: "success",
       timelineCount: 2,
       timelineSourceCount: 2,
       recoveryTotal: null,
+      retryAttempts: 3,
     });
 
     const serialized = JSON.stringify(result);
@@ -900,6 +905,90 @@ describe("locateRunReport — allowlist projection (summary)", () => {
       expect(result.summary.timelineSourceCount).toBeNull();
     }
   });
+});
+
+describe("locateRunReport — retryAttempts projection (no outcome gate)", () => {
+  test.each(["success", "failure", "dry-run", "interrupted", "partial"])(
+    "retryAttempts survives under outcome '%s' — unlike recoveryTotal, there is no outcome gate",
+    (outcome) => {
+      const dirName = dirNameFor(STARTED_AT);
+      mockReaddirSync([fakeDirent(dirName)]);
+      mockReadFileSync(
+        new Map([
+          [
+            reportPathFor(dirName),
+            JSON.stringify(minimalReport({ outcome, retryAttempts: 4 })),
+          ],
+        ]),
+      );
+
+      const result = locateRunReport(baseOptions());
+      expect(result.status).toBe("found");
+      if (result.status === "found") {
+        expect(result.summary.retryAttempts).toBe(4);
+      }
+    },
+  );
+
+  test("retryAttempts is null when absent from the report", () => {
+    const dirName = dirNameFor(STARTED_AT);
+    mockReaddirSync([fakeDirent(dirName)]);
+    mockReadFileSync(
+      new Map([[reportPathFor(dirName), JSON.stringify(minimalReport())]]),
+    );
+
+    const result = locateRunReport(baseOptions());
+    expect(result.status).toBe("found");
+    if (result.status === "found") {
+      expect(result.summary.retryAttempts).toBeNull();
+    }
+  });
+
+  test("retryAttempts survives as 0 — a falsy value that must not collapse to null", () => {
+    const dirName = dirNameFor(STARTED_AT);
+    mockReaddirSync([fakeDirent(dirName)]);
+    mockReadFileSync(
+      new Map([
+        [
+          reportPathFor(dirName),
+          JSON.stringify(minimalReport({ retryAttempts: 0 })),
+        ],
+      ]),
+    );
+
+    const result = locateRunReport(baseOptions());
+    expect(result.status).toBe("found");
+    if (result.status === "found") {
+      expect(result.summary.retryAttempts).toBe(0);
+    }
+  });
+
+  test.each([
+    ["a string", "3"],
+    ["null", null],
+    ["an object", { count: 3 }],
+    ["an array", [3]],
+  ])(
+    "retryAttempts is null, never coerced, when the report value is %s",
+    (_label, value) => {
+      const dirName = dirNameFor(STARTED_AT);
+      mockReaddirSync([fakeDirent(dirName)]);
+      mockReadFileSync(
+        new Map([
+          [
+            reportPathFor(dirName),
+            JSON.stringify(minimalReport({ retryAttempts: value })),
+          ],
+        ]),
+      );
+
+      const result = locateRunReport(baseOptions());
+      expect(result.status).toBe("found");
+      if (result.status === "found") {
+        expect(result.summary.retryAttempts).toBeNull();
+      }
+    },
+  );
 });
 
 describe("locateRunReport — found result shape", () => {

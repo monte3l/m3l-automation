@@ -228,7 +228,20 @@ function projectSummary(
       ? recoveryTotalRaw
       : null;
 
-  return { outcome, timelineCount, timelineSourceCount, recoveryTotal };
+  // Unlike recoveryTotal, retryAttempts carries no outcome gate — it applies
+  // to every terminal outcome (success, failure, partial, dry-run,
+  // interrupted alike), not only "partial".
+  const retryAttemptsRaw = readProperty(report, "retryAttempts");
+  const retryAttempts =
+    typeof retryAttemptsRaw === "number" ? retryAttemptsRaw : null;
+
+  return {
+    outcome,
+    timelineCount,
+    timelineSourceCount,
+    recoveryTotal,
+    retryAttempts,
+  };
 }
 
 /** The outcome of {@link readCandidateReport}, discriminated by `kind`. */

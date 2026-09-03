@@ -90,7 +90,7 @@ const STEP_FINISHED = new Date("2026-09-01T10:00:04.000Z");
 
 /**
  * The `"found"` lookup the envelope must RECONSTRUCT for a step execution that
- * located a report. The three timeline/recovery scalars are always `null`:
+ * located a report. The four timeline/recovery scalars are always `null`:
  * `M3LCliFlowStepOutcome` carries the report's `outcome` and path but not its
  * counts, and the envelope must degrade them rather than fabricate them.
  */
@@ -106,6 +106,7 @@ function reconstructedFoundLookup(
       timelineCount: null,
       timelineSourceCount: null,
       recoveryTotal: null,
+      retryAttempts: null,
     },
   };
 }
@@ -319,6 +320,7 @@ describe("buildFlowEnvelope — composition over re-derivation", () => {
       timelineCount: 7,
       timelineSourceCount: 3,
       recoveryTotal: 2,
+      retryAttempts: 1,
     };
     buildRunEnvelopeMock.mockReturnValue(stub);
 

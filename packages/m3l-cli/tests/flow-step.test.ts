@@ -120,6 +120,7 @@ function foundLookup(
       timelineCount: 3,
       timelineSourceCount: 1,
       recoveryTotal: null,
+      retryAttempts: 0,
     },
   };
 }
@@ -651,6 +652,7 @@ describe("executeFlowStep — reading the outcome through its own window", () =>
         timelineCount: null,
         timelineSourceCount: null,
         recoveryTotal: null,
+        retryAttempts: null,
       },
     });
 
@@ -722,6 +724,7 @@ describe("executeFlowStep — reading the outcome through its own window", () =>
         timelineCount: 2,
         timelineSourceCount: 1,
         recoveryTotal: 7,
+        retryAttempts: 2,
       },
     });
 

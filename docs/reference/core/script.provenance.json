@@ -78,12 +78,12 @@
         {
           "file": "packages/m3l-common/src/core/script/run-script.ts",
           "symbol": "runScript",
-          "blob": "1ed1c70c48829fd4975660954c7d1077734613d9"
+          "blob": "b5ad6291b0a0003d47ea21c2ac420e02394c7a13"
         },
         {
           "file": "packages/m3l-common/src/core/script/run-script.ts",
           "symbol": "M3LRunScriptOptions",
-          "blob": "1ed1c70c48829fd4975660954c7d1077734613d9"
+          "blob": "b5ad6291b0a0003d47ea21c2ac420e02394c7a13"
         },
         {
           "file": "packages/m3l-common/src/core/script/M3LScriptOptions.ts",
@@ -101,7 +101,7 @@
           "blob": "5c5befef0040a1ea1ae71d8b193e6042f42e0dda"
         }
       ],
-      "retrieved": "2026-09-01"
+      "retrieved": "2026-09-03"
     },
     {
       "heading": "Execution flow",
@@ -136,15 +136,15 @@
         {
           "file": "packages/m3l-common/src/core/script/run-script.ts",
           "symbol": "runScript",
-          "blob": "1ed1c70c48829fd4975660954c7d1077734613d9"
+          "blob": "b5ad6291b0a0003d47ea21c2ac420e02394c7a13"
         },
         {
           "file": "packages/m3l-common/src/core/script/run-script.ts",
           "symbol": "M3LRunScriptOptions",
-          "blob": "1ed1c70c48829fd4975660954c7d1077734613d9"
+          "blob": "b5ad6291b0a0003d47ea21c2ac420e02394c7a13"
         }
       ],
-      "retrieved": "2026-09-01"
+      "retrieved": "2026-09-03"
     },
     {
       "heading": "Dry runs",

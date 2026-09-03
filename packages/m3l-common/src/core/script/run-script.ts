@@ -13,6 +13,7 @@ import {
 } from "../diagnostics/index.js";
 import { hasProperty } from "../utils/guards.js";
 import type {
+  M3LBreadcrumb,
   M3LBreadcrumbTrail,
   M3LConfigSchemaPort,
   M3LRunReportInput,
@@ -161,11 +162,102 @@ function isAbortError(error: unknown): boolean {
   return hasProperty(error, "code") && error.code === "ERR_OPERATION_ABORTED";
 }
 
-/** The `timeline` entry, when a `trail` was supplied — omitted otherwise. */
-function timelineEntry(
+/**
+ * Extracts a numeric, finite `attempt` field from one breadcrumb's payload,
+ * or `undefined` when it is absent, not an OWN property, not a number, or
+ * not finite — never coerced (a string `"three"` is ignored, not parsed).
+ *
+ * `Object.hasOwn` (not the `in` operator, and not `hasProperty`, which is
+ * `in`-based) so a value inherited via the payload's prototype chain (e.g.
+ * `Object.create({ attempt: 999 })`) never counts — an own-property miss
+ * must read as "no attempt here", not silently pick up a value with no
+ * provenance anywhere else in the report.
+ *
+ * `NaN`/`Infinity` are rejected alongside non-numbers: `NaN` in particular
+ * would otherwise permanently poison a running maximum (any later
+ * comparison `x \> NaN` is `false`), and both serialize indistinguishably
+ * from "absent" via `JSON.stringify` (`NaN`/`Infinity` -> `null`), which
+ * would silently corrupt the persisted report rather than surfacing a
+ * diagnostic. This is a live path, not just a hostile-input concern: a
+ * caller doing `trail.record(..., { attempt: Number.parseInt(header, 10) })`
+ * over an unparseable header yields exactly this `NaN`. `-0` is finite and
+ * stays allowed — it serializes as `0`.
+ *
+ * Reading `entry.payload`/`entry.payload["attempt"]` can itself throw — a
+ * non-object `entry`, a `null`/non-object `payload`, or a hostile `attempt`
+ * getter — so this function propagates that failure to its caller
+ * ({@link maxAttempt}), which wraps each entry individually so one hostile
+ * breadcrumb costs only that entry, never the whole derivation.
+ */
+function breadcrumbAttempt(entry: M3LBreadcrumb): number | undefined {
+  if (!Object.hasOwn(entry.payload, "attempt")) return undefined;
+  const attempt = entry.payload["attempt"];
+  return typeof attempt === "number" && Number.isFinite(attempt)
+    ? attempt
+    : undefined;
+}
+
+/**
+ * The maximum `attempt` observed across `entries`, or `undefined` when none
+ * carry a numeric, finite, own `attempt`. The MAXIMUM, deliberately not the
+ * last: breadcrumbs may be recorded out of chronological order (retries can
+ * race or a trail can merge sources), so only a running maximum is immune
+ * to ordering.
+ *
+ * Each entry's read is wrapped in its own `try`/`catch` — mirroring
+ * `buildRecoverySection`'s per-entry guard in `run-report.ts` — so a single
+ * malformed element (`null`, a non-object, a `payload` that is
+ * `null`/missing, or a throwing `attempt` getter) degrades to "skip it"
+ * rather than throwing out of {@link buildSuccessInput}/
+ * {@link buildFailureInput} and losing the entire report.
+ */
+function maxAttempt(entries: readonly M3LBreadcrumb[]): number | undefined {
+  let max: number | undefined;
+  for (const entry of entries) {
+    try {
+      const attempt = breadcrumbAttempt(entry);
+      if (attempt !== undefined && (max === undefined || attempt > max)) {
+        max = attempt;
+      }
+    } catch {
+      // Skip a hostile entry (non-object, missing/null payload, throwing
+      // getter) rather than aborting the whole report build.
+    }
+  }
+  return max;
+}
+
+/**
+ * The `timeline` + `retryAttempts` entries, when a `trail` was supplied —
+ * omitted entirely otherwise. Both are derived from a SINGLE
+ * `trail.entries()` snapshot: calling `entries()` once per field (as an
+ * earlier version of this function did) risked two independent snapshots
+ * disagreeing with each other (a live trail can grow between calls), or a
+ * trail that only throws on its second invocation losing the whole report
+ * for a failure `retryAttempts` alone triggered. One call feeds both
+ * fields, so they can never disagree.
+ *
+ * A throwing `entries()` call itself is NOT caught here — it propagates to
+ * `buildInput`'s own try/catch (see `persistBestEffort`), the same posture
+ * the original single-field `timelineEntry` established. A non-array
+ * return, in contrast, degrades `retryAttempts` to absent while `timeline`
+ * keeps its own pre-existing tolerance for a malformed value (`build()`
+ * coalesces a non-array `timeline` via `input.timeline ?? []`).
+ */
+function trailDerivedEntries(
   trail: Pick<M3LBreadcrumbTrail, "entries"> | undefined,
-): Pick<M3LRunReportInput, "timeline"> | Record<string, never> {
-  return trail === undefined ? {} : { timeline: trail.entries() };
+):
+  | Pick<M3LRunReportInput, "timeline" | "retryAttempts">
+  | Record<string, never> {
+  if (trail === undefined) return {};
+  const entries = trail.entries();
+  const retryAttempts = Array.isArray(entries)
+    ? maxAttempt(entries)
+    : undefined;
+  return {
+    timeline: entries,
+    ...(retryAttempts !== undefined && { retryAttempts }),
+  };
 }
 
 /**
@@ -227,6 +319,20 @@ function secretNamesOf(
 }
 
 /**
+ * Resolves the non-throwing-path outcome: one or more absorbed recovery
+ * entries wins as `"partial"` (beats `"dry-run"`); otherwise `"dry-run"` or
+ * `"success"` per `dryRun`. Extracted from {@link buildSuccessInput} to hold
+ * that function under the enforced complexity threshold.
+ */
+function resolveSuccessOutcome(
+  isPartial: boolean,
+  dryRun: boolean,
+): "success" | "dry-run" | "partial" {
+  if (isPartial) return "partial";
+  return dryRun ? "dry-run" : "success";
+}
+
+/**
  * Builds the persisted report input for the non-throwing path: `"success"`,
  * `"dry-run"`, or `"partial"`.
  *
@@ -255,8 +361,8 @@ function buildSuccessInput(
     script: script.metadata,
     correlationId: script.correlationId ?? UNRESOLVED_CORRELATION_ID,
     startedAt,
-    outcome: isPartial ? "partial" : dryRun ? "dry-run" : "success",
-    ...timelineEntry(options?.trail),
+    outcome: resolveSuccessOutcome(isPartial, dryRun),
+    ...trailDerivedEntries(options?.trail),
     ...(archive !== undefined && { archive }),
     ...environmentEntry(script),
     ...(isPartial && {
@@ -286,7 +392,7 @@ function buildFailureInput(
     outcome: isAbortError(error) ? "interrupted" : "failure",
     stage: script.getLastFailureStage() ?? "unknown",
     error,
-    ...timelineEntry(options?.trail),
+    ...trailDerivedEntries(options?.trail),
     ...environmentEntry(script),
   };
 }

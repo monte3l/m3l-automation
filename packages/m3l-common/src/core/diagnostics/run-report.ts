@@ -195,6 +195,13 @@ export interface M3LRunReportInput {
   readonly timeline?: readonly M3LBreadcrumb[];
   /** Arbitrary archive metadata, redacted before being embedded. */
   readonly archive?: unknown;
+  /**
+   * The maximum retry/poll attempt observed over the run, when known.
+   * `0` is a valid, meaningful value (distinct from "unknown") and is
+   * copied through onto the built report like any other present value —
+   * see {@link M3LRunReporter.build}'s handling of this field.
+   */
+  readonly retryAttempts?: number;
 }
 
 /**
@@ -217,6 +224,14 @@ export interface M3LRunReportBase {
   readonly timeline: readonly M3LBreadcrumb[];
   /** Redacted archive metadata, present only when supplied. */
   readonly archive?: unknown;
+  /**
+   * The maximum retry/poll attempt observed over the run, present only when
+   * {@link M3LRunReportInput.retryAttempts} was supplied. Lives on the base
+   * (rather than one arm of the outcome union) because it applies equally to
+   * every outcome — a failed or partial run still reports how many attempts
+   * it took.
+   */
+  readonly retryAttempts?: number;
 }
 
 /**
@@ -511,6 +526,37 @@ function readInputError(input: M3LRunReportInput): unknown {
   } catch {
     return undefined;
   }
+}
+
+/**
+ * Reads `input.retryAttempts` exactly ONCE into a local, then narrows it to a
+ * finite `number` — the compile-time `number | undefined` type is only a
+ * static claim; a caller (or an input round-tripped through `JSON.parse`)
+ * can put anything on the wire, and this field is never routed through
+ * `sanitizeValue` the way `environment`/`timeline`/`archive` are. Reading
+ * the raw value twice (once to test, once to copy) would let a getter
+ * return a different value on each read — e.g. a legitimate number on the
+ * first read and a secret string on the second — bypassing redaction
+ * entirely for whatever the second read happened to return. Reading once
+ * and narrowing closes both gaps: a getter cannot switch the answer, and a
+ * non-finite-number value (a string, an object, `NaN`, `Infinity`) can never
+ * reach the persisted report. Mirrors {@link readInputError}'s guard against
+ * a throwing getter (so a malicious/broken accessor cannot make
+ * {@link M3LRunReporter.build} throw either) plus the boundary-validation
+ * discipline `safeReadEntryField`/`buildArchiveEntry` already apply
+ * elsewhere in this file. `NaN`/`Infinity` are rejected alongside
+ * non-numbers for the same reason {@link maxAttempt} (in `run-script.ts`)
+ * rejects them: both serialize to `null` via `JSON.stringify`, silently
+ * indistinguishable from "absent".
+ */
+function readInputRetryAttempts(input: M3LRunReportInput): number | undefined {
+  let raw: unknown;
+  try {
+    raw = input.retryAttempts;
+  } catch {
+    raw = undefined;
+  }
+  return typeof raw === "number" && Number.isFinite(raw) ? raw : undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -1092,6 +1138,7 @@ export class M3LRunReporter {
       input.timeline ?? [],
       this.#secrets,
     ) as readonly M3LBreadcrumb[];
+    const retryAttempts = readInputRetryAttempts(input);
 
     const base = {
       script: input.script,
@@ -1102,6 +1149,9 @@ export class M3LRunReporter {
       environment,
       timeline,
       ...buildArchiveEntry(input.archive, this.#secrets),
+      // `!== undefined`, never truthiness: 0 is a valid, meaningful count and
+      // must survive onto the built report rather than being dropped as falsy.
+      ...(retryAttempts !== undefined && { retryAttempts }),
     };
 
     if (input.outcome === "failure") {
