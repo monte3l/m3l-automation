@@ -142,13 +142,16 @@ Unchanged by this Update: the two-image packaging, the volume-passed
 credential path, the non-root lifecycle, the ADR-0034/0015 stance
 reconciliation, and the X14 remote/multi-user gate.
 
-## Update (2026-09-03) — X12's networking and image choices
+## Update (2026-09-03) — X12's networking and image choices, recorded ahead of code
 
-X12 (issue #560) chose a compose topology deliberately shaped to leave the
-loopback invariant above **untouched** rather than amended, plus the web
-image's base.
+X12 (issue #560) is sequenced as three PRs (ADR-0072): a docs-first stance
+PR (this Update, plus the paired ADR-0015 Update), a `src/` refactor PR, and
+the Dockerfiles/compose PR. This Update records the decisions made for the
+latter two **before** they are written, so the reasoning is fixed before any
+code changes — the compose topology below and the web image's base are
+therefore planned, not yet shipped, as of this Update.
 
-**Networking: `web` joins `server`'s network namespace
+**Networking: `web` will join `server`'s network namespace
 (`network_mode: "service:server"`), not a bridge network with a widened
 bind.** `packages/m3l-console-server` encodes this ADR's loopback posture in
 one predicate (`net/loopback.ts`'s `isLoopbackHost`) used at three
@@ -159,44 +162,46 @@ names us acceptably (`http/origin-guard.ts`). Binding the server wide
 (`0.0.0.0`) and republishing to host loopback would have required relaxing
 that shared predicate for the first two call sites while leaving the third
 untouched — a real distinction with no existing name in the code. Instead,
-`server` keeps binding `127.0.0.1` exactly as this ADR requires; `web`'s
-nginx reaches it over `127.0.0.1:8787` inside the shared namespace, so the
+`server` will keep binding `127.0.0.1` exactly as this ADR requires; `web`'s
+nginx will reach it over `127.0.0.1:8787` inside the shared namespace, so the
 origin guard's `Host` check passes with no header rewrite and no code change
-anywhere in `packages/m3l-console-server`. Only `web`'s port (8080) is
-published to the host; 8787 is never published at all. This is stricter
-than the "server binds wide, host publishes to loopback" shape it replaces,
-not looser.
+anywhere in `packages/m3l-console-server`. Only `web`'s port (8080) will be
+published to the host; 8787 will never be published at all. This is
+stricter than the "server binds wide, host publishes to loopback" shape it
+replaces, not looser.
 
-A companion refactor split `isLoopbackHost`'s three call sites into three
-named predicates (`isPermittedBindHost`, `isVerifiedBoundAddress`,
+A companion refactor will split `isLoopbackHost`'s three call sites into
+three named predicates (`isPermittedBindHost`, `isVerifiedBoundAddress`,
 `isAcceptedRequestHostname`) that still delegate to the same classifier —
-behaviour-preserving, landed ahead of the container work so the distinction
-this Update describes has a name in the code, not just in this prose.
+behaviour-preserving, planned ahead of the container work so the distinction
+this Update describes gets a name in the code, not just in this prose.
 
 **Web image: `nginxinc/nginx-unprivileged:1-alpine`**, not a hand-rolled
-`node:http` static server. Because only `web`'s port is published, `web` is
-not merely serving static assets — it is the reverse proxy for every
-`/api`, `/health`, and `/ready` request, including the SSE run-stream
-(`http/routes/run-stream.ts`), the console's live-tail feature. An
-SSE-correct proxy (unbuffered, immediate per-event flush, abort propagation
-on client disconnect) is materially riskier to own than a small, well-known
-nginx config. This is judged consistent with CLAUDE.md's minimal-runtime-
-dependency stance rather than an exception to it: that stance protects the
-**published package's** dependency graph, and a container base image is
-build/deployment infrastructure, not a runtime dependency of
-`@m3l-automation/m3l-common` — the same category as the already-accepted
-`vite` and `playwright`. `nginx-unprivileged` runs as uid 101 by default,
-satisfying this ADR's non-root requirement with no custom `USER`.
+`node:http` static server. Because only `web`'s port will be published,
+`web` is not merely serving static assets — it will be the reverse proxy
+for every `/api`, `/health`, and `/ready` request, including the SSE
+run-stream (`http/routes/run-stream.ts`), the console's live-tail feature.
+An SSE-correct proxy (unbuffered, immediate per-event flush, abort
+propagation on client disconnect) is materially riskier to own than a
+small, well-known nginx config. This is judged consistent with CLAUDE.md's
+minimal-runtime-dependency stance rather than an exception to it: that
+stance protects the **published package's** dependency graph, and a
+container base image is build/deployment infrastructure, not a runtime
+dependency of `@m3l-automation/m3l-common` — the same category as the
+already-accepted `vite` and `playwright`. `nginx-unprivileged` runs as
+uid 101 by default, satisfying this ADR's non-root requirement with no
+custom `USER`.
 
-**The X12 readiness grace period landed as planned**: a configurable delay
-between `drain()` and `server.close()` in `lifecycle/shutdown.ts`, gated by
-`M3L_CONSOLE_READINESS_GRACE_MS`, making the `/ready` 503 this ADR's prior
-Update described actually observable by a compose healthcheck.
+**The X12 readiness grace period is planned as the second PR's other
+change**: a configurable delay between `drain()` and `server.close()` in
+`lifecycle/shutdown.ts`, gated by `M3L_CONSOLE_READINESS_GRACE_MS`, so the
+`/ready` 503 this ADR's prior Update described becomes actually observable
+by a compose healthcheck.
 
 **Base-image update chores**, flagged as a new Dependabot-adjacent surface
-in this ADR's Consequences, are handled by a `docker` ecosystem block added
-to `.github/dependabot.yml`, tracking both the `node` and
-`nginx-unprivileged` base images.
+in this ADR's Consequences, will be handled by a `docker` ecosystem block
+added to `.github/dependabot.yml` in the third PR, tracking both the `node`
+and `nginx-unprivileged` base images.
 
 Unchanged by this Update: the two-image packaging, the volume-passed
 credential path, the non-root lifecycle, and the X14 remote/multi-user gate.
