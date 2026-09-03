@@ -224,27 +224,31 @@ unless `gh pr view --json state` still reads `OPEN`.
 
 ## The lessons sweep (item D)
 
-Run as a corpus sweep, not a single-log promotion. Backlog at start: 135 logs
+Run as a corpus sweep, not a single-log promotion. Backlog at start: 134 logs
 against `logs-considered=126` — **8 unswept**, past the 5-log cadence trigger.
+Writing this log makes it 135 and 9, which is why the log and the sweep share
+one PR: the log must exist before the sweep can consider and stamp it.
 
-Eleven themes extracted, **three** survived all three filters, **five** dropped
-as already-captured, two deferred for no recurrence, none telemetry-derived.
+Eleven themes extracted, **four** promoted, **five** dropped as
+already-captured, two deferred for no recurrence, none telemetry-derived.
 Telemetry (`pnpm telemetry:sessions`, 30d, exit 0) showed no outlier worth
 routing: 97.5% cached input across 205 sessions, and per-call subagent averages
 in a proportionate band (`Explore` 0.72 M, `test-author` 2.93 M,
 `code-implementer` 3.50 M, `Plan` 3.56 M).
 
 **No baseline raise was needed.** Both rule promotions fit
-`.claude/rules/domain-knowledge.md`, which is unratcheted with room under the
-10,000-byte ceiling; the third went to a skill. The always-loaded block stays
+`.claude/rules/domain-knowledge.md`, which is unratcheted and went from 1,150
+to 2,707 bytes against a 10,000-byte ceiling; the other two went to skills
+(`creating-prs`, `starting-work`). The always-loaded block stays
 at 148 lines / ~2999 tokens against a 200/3000 cap — one token of headroom, so
 `CLAUDE.md` could not have absorbed any of it.
 
 Two findings about the sweep mechanism itself:
 
 - **A per-log tracker status hides per-lesson state.**
-  `2026-08-20-f23-reviewable-slice-discipline.md` has 5 lessons, 2 stamped
-  `promoted`, 3 unstamped, and its tracker row reads a flat `promoted`. Anyone
+  `2026-08-20-f23-reviewable-slice-discipline.md` had 5 lessons, 2 stamped
+  `promoted` and 3 unstamped, while its tracker row read a flat `promoted`
+  (this sweep stamped a third). Anyone
   triaging from rows would skip a log still carrying unpromoted lessons. This
   pass caught the `*/` theme only because Step 2's filter works at bullet
   level.
