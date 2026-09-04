@@ -208,14 +208,22 @@ export function pruneTelemetry(
     }
   }
 
-  const minute = partialCounts.minute ?? 0;
-  const hour = partialCounts.hour ?? 0;
-  const day = partialCounts.day ?? 0;
+  // Provably total, not merely assumed — same argument as the
+  // `GRANULARITIES` cast above: the loop just walked every member of
+  // `GRANULARITIES` (the complete, compile-time-enforced vocabulary of
+  // `M3LTelemetryGranularity`) and assigned `partialCounts[granularity]`
+  // before continuing to the next iteration, and the only way to reach this
+  // line without having done so for every tier is the `throw` above, which
+  // exits the function entirely. So by the time control falls out of the
+  // loop, `partialCounts` is guaranteed to hold every key — the `Partial<>`
+  // was only ever a mid-walk-failure device, not a description of what this
+  // line sees.
+  const counts = partialCounts as Record<M3LTelemetryGranularity, number>;
 
   return {
-    minute,
-    hour,
-    day,
-    total: minute + hour + day,
+    minute: counts.minute,
+    hour: counts.hour,
+    day: counts.day,
+    total: counts.minute + counts.hour + counts.day,
   };
 }
