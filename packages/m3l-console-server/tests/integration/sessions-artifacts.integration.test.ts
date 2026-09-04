@@ -40,7 +40,7 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { M3LConsoleError } from "../../src/errors/console-error.js";
 import type { M3LConsoleSessionsConfig } from "../../src/config/sessions.js";
 import { createSessionArtifactStore } from "../../src/sessions/artifacts.js";
-import type { M3LSessionArtifactRef } from "../../src/sessions/artifacts.js";
+import type { M3LSessionArtifactRef } from "../../src/sessions/artifact-codec.js";
 
 /** A small, deterministic cap fixture — chosen so every threshold is easy to straddle in a single-digit/triple-digit byte payload. */
 const CONFIG: M3LConsoleSessionsConfig = {

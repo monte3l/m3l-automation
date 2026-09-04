@@ -1,5 +1,7 @@
 /**
- * Unit tests for src/sessions/artifacts.ts — the session artifact store
+ * Unit tests for src/sessions/artifacts.ts — the session artifact store —
+ * and src/sessions/artifact-codec.ts — its wire codec, extracted from
+ * artifacts.ts in a later, purely behavior-preserving slice
  * (m3l-console-server X6 workbench-sessions module, slice 3, ADR-0068/
  * ADR-0069).
  *
@@ -64,12 +66,12 @@ import { join } from "node:path";
 
 import { M3LConsoleError } from "../src/errors/console-error.js";
 import type { M3LConsoleSessionsConfig } from "../src/config/sessions.js";
+import { createSessionArtifactStore } from "../src/sessions/artifacts.js";
 import {
-  createSessionArtifactStore,
   decodeArtifactRef,
   encodeArtifactRef,
-} from "../src/sessions/artifacts.js";
-import type { M3LSessionArtifactRef } from "../src/sessions/artifacts.js";
+} from "../src/sessions/artifact-codec.js";
+import type { M3LSessionArtifactRef } from "../src/sessions/artifact-codec.js";
 
 /** A small, deterministic cap fixture — chosen so every threshold is easy to straddle in a single-digit/triple-digit byte payload. */
 const CONFIG: M3LConsoleSessionsConfig = {

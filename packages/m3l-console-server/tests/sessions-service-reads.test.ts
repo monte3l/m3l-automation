@@ -20,11 +20,9 @@
 import { describe, expect, test } from "vitest";
 
 import { M3LConsoleError } from "../src/errors/console-error.js";
-import { encodeArtifactRef } from "../src/sessions/artifacts.js";
-import type {
-  M3LSessionArtifactRef,
-  M3LSessionArtifactStore,
-} from "../src/sessions/artifacts.js";
+import { encodeArtifactRef } from "../src/sessions/artifact-codec.js";
+import type { M3LSessionArtifactRef } from "../src/sessions/artifact-codec.js";
+import type { M3LSessionArtifactStore } from "../src/sessions/artifacts.js";
 // RED: `M3LSessionStepSummary` does not exist yet in `service-reads.ts` —
 // this import is the deliberate compile failure that keeps this file RED
 // until the GREEN pass adds it.
