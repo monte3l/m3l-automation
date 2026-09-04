@@ -8,8 +8,9 @@
  * directly, or touches the network by itself — its only external contact is
  * the injected {@link AgentCliSurface}, whose `list`/`doctor` methods are
  * exercised here so the CLI seam stays a real, tested code path rather than
- * only a test double. `inspect`/`dryRun` both require a script name this
- * operation never has, so they are never called.
+ * only a test double. `inspect`/`dryRun`/`run` all require a script name this
+ * operation never has — and `run` a preset name besides — so they are never
+ * called.
  *
  * @packageDocumentation
  */
@@ -100,8 +101,8 @@ function renderFlags(
 /**
  * Exercises the CLI seam: calls `surface.list()` and `surface.doctor()`
  * exactly once each and logs a short snapshot of each result. Never calls
- * `inspect()`/`dryRun()` — both need a script name this operation has none
- * of.
+ * `inspect()`/`dryRun()`/`run()` — all three need a script name this
+ * operation has none of, and `run()` a preset name as well.
  */
 async function renderCliSnapshot(
   logger: Core.M3LLogger,

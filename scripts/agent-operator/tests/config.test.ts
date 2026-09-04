@@ -114,9 +114,12 @@ describe("agent-operator config declaration", () => {
 
   // Deliberate absences (see config.ts's comment): budgets are policy-file
   // fields, `dryRun` is the ADR-0054 context flag read once in main.ts, and
-  // this workload never calls confirmDestructive so it needs neither
-  // `yes` nor `yesSensitive`. Widening any of these on argv would let an
-  // operator escape the declared, diffable policy file.
+  // neither `yes` nor `yesSensitive` applies because the confirm-gate is not
+  // what guards this workload's mutating path — the V6 policy layer is.
+  // (Pre-V9 the reason was "it never mutates AWS state"; the `run` seam ends
+  // that, but the parameters stay absent for the policy-layer reason.)
+  // Widening any of these on argv would let an operator escape the declared,
+  // diffable policy file.
   it.each(["dryRun", "yes", "yesSensitive"])(
     "never declares a '%s' parameter",
     (name) => {
@@ -319,5 +322,97 @@ describe("agent-operator config validation (through a real M3LConfigSchema)", ()
 
     expect(config.get("scripts")).toEqual(["json-etl", "sqs-etl"]);
     expect(config.get("command")).toBe("explain-policy");
+  });
+});
+
+/**
+ * V9 slice 2a, Option D: `presetAllowlist` carries `"<name>=<path>"` entries
+ * and declares **no** `validate` — its grammar lives in
+ * `steps/resolve-runtime.ts` (`parsePresetAllowlist`), the single source of
+ * truth, exactly as `modelRates` already does.
+ *
+ * The declared shape is asserted structurally (type, default, requiredness).
+ * The ABSENCE of a validator cannot be: `M3LConfigParameter` keeps `validate`
+ * private and exposes no getter, so the only way to observe whether one is
+ * attached is to resolve a value through the real
+ * `M3LConfigParameter.resolveAsync` — which is also the only thing that
+ * proves WIRING rather than that some closure exists (the reason the
+ * `eachAllowedScriptName` block above resolves instead of calling closures).
+ * Each absence case is therefore paired with the same raw value on
+ * `dryRunAllowlist`, which DOES declare a validator: the pair is what makes
+ * the absence discriminating rather than vacuous.
+ */
+describe("presetAllowlist declaration (V9 Option D)", () => {
+  /**
+   * A well-formed `"<name>=<path>"` entry. It is simultaneously an invalid
+   * script name (`=`, `/` and `.` all fail `AGENT_OPERATOR_SCRIPT_NAME_RE`),
+   * which is what lets the same string discriminate "no validator here" from
+   * "a name validator here" across the two parameters.
+   */
+  const WELL_FORMED_ENTRY = "report=data/config/presets/report.yaml";
+
+  it("declares presetAllowlist as a STRING_ARRAY defaulting to an empty list", () => {
+    const parameter = configParameters.find(
+      (candidate) => candidate.getName() === "presetAllowlist",
+    );
+
+    expect(parameter).toBeDefined();
+    expect(parameter).toBeInstanceOf(Core.M3LConfigParameter);
+    expect(parameter?.getType()).toBe(Core.M3LConfigParameterType.STRING_ARRAY);
+    expect(parameter?.getDefaultValue()).toEqual([]);
+    // Not required: an operator who never grants a preset simply declares
+    // nothing, and the empty default makes every `run` call fail closed.
+    expect(parameter?.isRequired()).toBe(false);
+  });
+
+  it("attaches no per-parameter validator to presetAllowlist", async () => {
+    const config = await loadAndValidate({
+      ...REQUIRED_RAW,
+      presetAllowlist: WELL_FORMED_ENTRY,
+    });
+
+    expect(config.get("presetAllowlist")).toEqual([WELL_FORMED_ENTRY]);
+  });
+
+  // The paired losing arm: the identical raw value on the sibling parameter
+  // that DOES declare `eachAllowedScriptName` really is rejected. Without
+  // this, the test above would pass just as happily against a build where
+  // every validator had been detached from every parameter.
+  it("rejects that same entry on dryRunAllowlist, proving the absence above is observable", async () => {
+    const thrown = await captureLoadFailure({
+      dryRunAllowlist: WELL_FORMED_ENTRY,
+    });
+
+    expect(thrown).toBeInstanceOf(Core.M3LConfigValidationError);
+    expect((thrown as Core.M3LConfigValidationError).context["parameter"]).toBe(
+      "dryRunAllowlist",
+    );
+  });
+
+  // The heart of Option D: config-load deliberately does NOT know the
+  // grammar, so even a syntactically broken entry loads clean here and is
+  // rejected later by `parsePresetAllowlist`. A validator re-implementing the
+  // grammar in `config.ts` would fail this test — which is the point, since a
+  // second copy of the grammar is exactly what would drift.
+  it.each([
+    ["no '=' separator", "no-equals-sign"],
+    ["an escaping path", "report=data/config/presets/../../../etc/passwd"],
+    ["an uppercase preset name", "Report=data/config/presets/report.yaml"],
+  ])(
+    "defers the entry grammar to resolve-runtime: an entry with %s still loads",
+    async (_label, entry) => {
+      const config = await loadAndValidate({
+        ...REQUIRED_RAW,
+        presetAllowlist: entry,
+      });
+
+      expect(config.get("presetAllowlist")).toEqual([entry]);
+    },
+  );
+
+  it("defaults presetAllowlist to an empty list when nothing is supplied", async () => {
+    const config = await loadAndValidate({ ...REQUIRED_RAW });
+
+    expect(config.get("presetAllowlist")).toEqual([]);
   });
 });

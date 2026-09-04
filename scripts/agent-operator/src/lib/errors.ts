@@ -1,7 +1,7 @@
 /**
  * `lib/errors` — the single script-local error type for `agent-operator`.
  *
- * Every failure this script raises pins one of nine documented codes onto a
+ * Every failure this script raises pins one of ten documented codes onto a
  * single `M3LAgentOperatorCliError` class rather than a dedicated subclass
  * per code: the codes differ only in the string that identifies them, not in
  * shape or behaviour, so a subclass hierarchy would add nothing but ceremony
@@ -55,8 +55,16 @@ export type M3LAgentOperatorErrorCode =
   // (`data/agent-state/`), with a different fix — delete the corrupt counter
   // and accept that today's prior spend is forgotten. Named for the concern
   // ("budget state"), not for the file, so a second piece of cross-run
-  // budget state needs no tenth code.
-  | "ERR_AGENT_OPERATOR_BUDGET_STATE";
+  // budget state needs no code of its own.
+  | "ERR_AGENT_OPERATOR_BUDGET_STATE"
+  // Deliberately not folded onto `ERR_AGENT_OPERATOR_CONFIG`, because the
+  // remediation is a different edit: this code means the operator's
+  // `presetAllowlist` declaration is wrong, or the requested preset name is
+  // absent from it — the script's config *schema* is satisfied either way. An
+  // operator reading `ERR_AGENT_OPERATOR_CONFIG` goes looking for a missing or
+  // mistyped parameter; here the parameter is present and well-typed, and the
+  // fix is the allowlist entry itself (or the name that was requested).
+  | "ERR_AGENT_OPERATOR_PRESET";
 
 /**
  * Fault origin per code — the table that gives this family real exit codes.
@@ -102,6 +110,7 @@ const ORIGIN_BY_CODE: Readonly<
   ERR_AGENT_OPERATOR_DECISION_LOG: "external",
   ERR_AGENT_OPERATOR_ESCALATED: "caller",
   ERR_AGENT_OPERATOR_BUDGET_STATE: "external",
+  ERR_AGENT_OPERATOR_PRESET: "caller",
 });
 
 /**

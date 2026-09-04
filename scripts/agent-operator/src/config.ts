@@ -146,6 +146,14 @@ export const AGENT_OPERATOR_COMMANDS: readonly [
  * non-finite/negative rates, is parsed and validated in
  * `steps/resolve-runtime.ts` — see that module's own tests — and duplicating
  * that grammar here would risk drifting from its single source of truth.
+ * `presetAllowlist` carries no `validate` for the same reason: its
+ * `"<name>=<path>"` grammar — the allowed preset name, the non-blank
+ * workspace-relative path, and the containment rule keeping that path inside
+ * the workspace presets directory — is parsed and validated in
+ * `steps/resolve-runtime.ts` (`parsePresetAllowlist`), which is the single
+ * source of truth. A validator here would be a second copy of that grammar,
+ * free to drift from the one that actually gates a spawn, and the copy an
+ * operator's failure message came from would stop being predictable.
  *
  * Deliberately absent, each for a reason:
  * - No `budget*` parameter. Budgets are policy-file fields (see
@@ -154,9 +162,14 @@ export const AGENT_OPERATOR_COMMANDS: readonly [
  *   ADR-0060's premise that the policy file is the auditable ceiling.
  * - No `dryRun` parameter. It is ADR-0054's context flag, read once in
  *   `main.ts` — not a declared config value.
- * - No `yes`/`yesSensitive`. This workload never calls `confirmDestructive`
- *   (it never mutates AWS state — every CLI call it makes is read-only or
- *   `--dry-run`), so neither confirm-gate flag applies.
+ * - No `yes`/`yesSensitive`. Neither confirm-gate flag applies, because this
+ *   workload never calls `confirmDestructive` — not because it has no
+ *   mutating path. It does have one: the `run` operation spawns `m3l run`
+ *   against an allowlisted preset, which executes a real script. That path is
+ *   gated by the V6 agent-policy layer instead (the action's `mutating`
+ *   classification evaluated against the reviewable policy file, plus this
+ *   module's `presetAllowlist`), so the gate lives in a diffable artifact
+ *   rather than in an argv flag a caller could simply pass.
  *
  * Declare an AWS profile parameter with `Core.AWS_PROFILE_PARAM_NAME` when the
  * script touches AWS — that name is what enables the `script.aws`
@@ -247,6 +260,11 @@ export const configParameters: readonly Core.M3LConfigParameter[] = [
     type: Core.M3LConfigParameterType.STRING_ARRAY,
     defaultValue: [],
     validate: eachAllowedScriptName("dryRunAllowlist"),
+  }),
+  new Core.M3LConfigParameter({
+    name: "presetAllowlist",
+    type: Core.M3LConfigParameterType.STRING_ARRAY,
+    defaultValue: [],
   }),
   new Core.M3LConfigParameter({
     name: "output",

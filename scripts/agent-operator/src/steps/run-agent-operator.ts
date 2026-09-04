@@ -142,6 +142,15 @@ async function runExplainPolicy(deps: RunAgentOperatorDeps): Promise<void> {
     dryRunAllowlist: runtime.includeDryRunProbes
       ? new Set(runtime.dryRunAllowlist)
       : new Set<string>(),
+    // Forwarded verbatim: `resolve-runtime` has already validated every
+    // entry's name and workspace-relative path, and this map is the ONLY
+    // input the surface's `run` consults. Dropping it (or passing an empty
+    // map) leaves the operator's declared grant inert: every mutating call
+    // rejects with `cli-surface.ts`'s fixed `PRESET_NAME_REJECTION_MESSAGE`,
+    // which is identical across all of its rejection arms (each arm's real
+    // reason rides as an operator-only `cause`), so the wiring defect is
+    // indistinguishable from an undeclared preset — hence the required option.
+    presetAllowlist: runtime.presetAllowlist,
     signal: deps.signal,
     ...(workspaceRoot === undefined ? {} : { workspaceRoot }),
   });

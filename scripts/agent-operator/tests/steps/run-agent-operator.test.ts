@@ -113,9 +113,10 @@ function createLogger(): {
 }
 
 /**
- * A fake `AgentCliSurface` recording which methods were invoked. `inspect`
- * and `dryRun` throw if ever called — `explain-policy` never needs a script
- * name, so a call into either proves a wiring bug.
+ * A fake `AgentCliSurface` recording which methods were invoked. `inspect`,
+ * `dryRun` and `run` throw if ever called — `explain-policy` never needs a
+ * script name, so a call into any of them proves a wiring bug, and `run` is
+ * the mutating method this offline, read-only command must never reach.
  */
 function createFakeSurface(): {
   readonly surface: AgentCliSurface;
@@ -143,11 +144,23 @@ function createFakeSurface(): {
       calls.push("dryRun");
       throw new Error("unexpected surface.dryRun() call");
     },
+    run(): Promise<never> {
+      calls.push("run");
+      throw new Error("unexpected surface.run() call");
+    },
   };
   return { surface, calls };
 }
 
 const DEFAULT_ENTRYPOINT = "/fake/repo/packages/m3l-cli/bin/m3l.mjs";
+
+/**
+ * One declared `presetAllowlist` grant, in the `"<name>=<path>"` config form
+ * `resolveAgentOperatorRuntime` parses. The path is workspace-relative and
+ * inside `data/config/presets/`, as that parser requires.
+ */
+const PRESET_NAME = "nightly-report";
+const PRESET_RELATIVE_PATH = "data/config/presets/nightly-report.yaml";
 
 let inputDir: string;
 let dataDir: string;
@@ -227,6 +240,11 @@ describe("runAgentOperator — explain-policy wiring", () => {
       dryRunTimeoutMs: 67_890,
       maxOutputBytes: 2_000_000,
       dryRunAllowlist: ["json-etl"],
+      // A NON-EMPTY, recognisable preset grant. The pin below asserts this
+      // exact entry arrives at the surface, so a wiring that hands over
+      // `new Map()` (or drops the option) cannot satisfy it — which is the
+      // bug class this fixture exists for.
+      presetAllowlist: [`${PRESET_NAME}=${PRESET_RELATIVE_PATH}`],
     });
 
     await runAgentOperator({
@@ -244,6 +262,9 @@ describe("runAgentOperator — explain-policy wiring", () => {
     expect(calls.filter((call) => call === "doctor")).toHaveLength(1);
     expect(calls).not.toContain("inspect");
     expect(calls).not.toContain("dryRun");
+    // `explain-policy` is read-only: the mutating method is never reached,
+    // even with a preset grant declared in config.
+    expect(calls).not.toContain("run");
 
     // The rendered text carries the loaded fixture's OWN content (from
     // fullPolicyDeclaration(), not a default/empty policy) — proving
@@ -270,6 +291,12 @@ describe("runAgentOperator — explain-policy wiring", () => {
         // (Corrected from a previous pin of `new Set(["json-etl"])`, which
         // codified the ungated behaviour.)
         dryRunAllowlist: new Set(),
+        // The parsed `presetAllowlist` must reach the surface, or the config
+        // parameter is inert and every `run` call rejects on an empty
+        // lookup. Pinned as the exact one-entry map the resolved runtime
+        // carries — `expect.any(Map)` or an empty map would be satisfied by
+        // a site that passed `new Map()`, which is precisely the defect.
+        presetAllowlist: new Map([[PRESET_NAME, PRESET_RELATIVE_PATH]]),
         signal: controller.signal,
       }),
     );

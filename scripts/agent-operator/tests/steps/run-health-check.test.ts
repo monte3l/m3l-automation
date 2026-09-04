@@ -28,6 +28,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AWS, Core } from "@m3l-automation/m3l-common";
 
+import type * as CliSurfaceModule from "../../src/lib/cli-surface.js";
 import type { AgentCliSurface } from "../../src/lib/cli-surface.js";
 import { M3LAgentOperatorCliError } from "../../src/lib/errors.js";
 import { runHealthCheck } from "../../src/steps/run-health-check.js";
@@ -60,8 +61,23 @@ vi.mock("../../src/lib/cli-process.js", () => ({
   runCliProcess: vi.fn(),
 }));
 
+// NOT a third fake: a PASS-THROUGH spy. `createAgentCliSurface` keeps its
+// real implementation (every test below still drives the real surface down
+// to the faked `runCliProcess`); the spy exists only so the options bag this
+// workload constructs the surface from is observable. `runHealthCheck` builds
+// the surface internally rather than taking it as a `deps` field, so there is
+// no injected seam to inspect instead.
+vi.mock("../../src/lib/cli-surface.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof CliSurfaceModule>();
+  return {
+    ...actual,
+    createAgentCliSurface: vi.fn(actual.createAgentCliSurface),
+  };
+});
+
 import { createInvoker } from "../../src/steps/create-invoker.js";
 import { runCliProcess } from "../../src/lib/cli-process.js";
+import { createAgentCliSurface } from "../../src/lib/cli-surface.js";
 
 const DEFAULT_ENTRYPOINT = "/fake/repo/packages/m3l-cli/bin/m3l.mjs";
 
@@ -87,6 +103,10 @@ afterEach(async () => {
   vi.restoreAllMocks();
   vi.mocked(createInvoker).mockReset();
   vi.mocked(runCliProcess).mockReset();
+  // `mockClear`, never `mockReset`: this one is a pass-through spy, and
+  // resetting it would strip the real `createAgentCliSurface` it delegates
+  // to, leaving every later test in this file with an `undefined` surface.
+  vi.mocked(createAgentCliSurface).mockClear();
   await rm(inputDir, { recursive: true, force: true });
   await rm(dataDir, { recursive: true, force: true });
   await rm(outputDir, { recursive: true, force: true });
@@ -263,11 +283,19 @@ async function readEntries(
 /**
  * An `AgentCliSurface` whose every method rejects — for the two tests that
  * exercise `describeAction`/`inputSchema` directly and must never execute.
+ * `run` is refused on the same terms as its four siblings: no test here may
+ * reach the mutating method.
  */
 function unusedSurface(): AgentCliSurface {
   const refuse = (): Promise<never> =>
     Promise.reject(new Error("unexpected CLI call"));
-  return { list: refuse, doctor: refuse, inspect: refuse, dryRun: refuse };
+  return {
+    list: refuse,
+    doctor: refuse,
+    inspect: refuse,
+    dryRun: refuse,
+    run: refuse,
+  };
 }
 
 /** The decision-log directory every run below writes into. */
@@ -391,6 +419,38 @@ describe("runHealthCheck — the happy path", () => {
       (entry) => asRecord(entry["identity"])["name"],
     );
     expect(new Set(names)).toEqual(new Set(["one-identity"]));
+  });
+});
+
+/**
+ * V9 slice 2b — the second of the two `createAgentCliSurface` construction
+ * sites. `resolve-runtime` parses `presetAllowlist` into
+ * `settings.presetAllowlist`, but a site that never forwards it leaves the
+ * config parameter inert: the surface's `run` would reject every call on an
+ * empty lookup while the operator's declared grant sat in config, apparently
+ * honoured. Only a pin on the forwarded value catches that.
+ */
+describe("runHealthCheck — the CLI surface is built from the resolved runtime", () => {
+  const PRESET_NAME = "nightly-report";
+  const PRESET_RELATIVE_PATH = "data/config/presets/nightly-report.yaml";
+
+  it("hands createAgentCliSurface the parsed presetAllowlist, entry included", async () => {
+    const config = await fleetConfig({
+      presetAllowlist: [`${PRESET_NAME}=${PRESET_RELATIVE_PATH}`],
+    });
+    scriptModel([textReply("Healthy.")]);
+
+    await expect(run({ config })).resolves.toBeUndefined();
+
+    expect(createAgentCliSurface).toHaveBeenCalledTimes(1);
+    expect(createAgentCliSurface).toHaveBeenCalledWith(
+      expect.objectContaining({
+        // The exact one-entry map the resolved runtime carries. Deliberately
+        // not `expect.any(Map)` and not an empty map: either would be
+        // satisfied by a site passing `new Map()`, which is the defect.
+        presetAllowlist: new Map([[PRESET_NAME, PRESET_RELATIVE_PATH]]),
+      }),
+    );
   });
 });
 

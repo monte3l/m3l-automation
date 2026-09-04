@@ -48,8 +48,21 @@ interface AgentCliSurfaceDeps {
   readonly dryRunTimeoutMs: number;
   readonly maxOutputBytes: number;
   readonly dryRunAllowlist: ReadonlySet<string>;
+  /**
+   * V9 slice 2a: the operator-declared `preset name -> workspace-relative
+   * path` map `run` resolves its `--preset=` token from. Declared here (and
+   * populated below) even though every test in this file drives `list()`,
+   * because `CreateAgentCliSurfaceOptions` requires it — mirroring
+   * `cli-surface.test.ts`'s own deps shape.
+   */
+  readonly presetAllowlist: ReadonlyMap<string, string>;
   readonly runProcess?: typeof runCliProcess;
 }
+
+// The allowlist stores the path exactly as an operator declares it in config
+// — workspace-relative, so the entry is reviewable in a config diff.
+const PRESET_ALLOWED_NAME = "nightly";
+const PRESET_RELATIVE_PATH = "presets/agent-operator/nightly.json";
 
 function createDeps(runProcess: typeof runCliProcess): AgentCliSurfaceDeps {
   return {
@@ -60,6 +73,7 @@ function createDeps(runProcess: typeof runCliProcess): AgentCliSurfaceDeps {
     dryRunTimeoutMs: 120_000,
     maxOutputBytes: 1_048_576,
     dryRunAllowlist: new Set(["widget-export"]),
+    presetAllowlist: new Map([[PRESET_ALLOWED_NAME, PRESET_RELATIVE_PATH]]),
     runProcess,
   };
 }

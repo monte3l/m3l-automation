@@ -156,6 +156,7 @@ declarations (ADR-0055) and enforced by `Core.deriveOperationValidators`.
 | `scripts`             | `STRING_ARRAY` | `[]`                  | each an allowed script name | —            | Narrows the checked set; empty means every discovered script                                                                    |
 | `includeDryRunProbes` | `BOOL`         | `false`               | requires `dryRunAllowlist`  | —            | Enables the `dry-run` tool                                                                                                      |
 | `dryRunAllowlist`     | `STRING_ARRAY` | `[]`                  | each an allowed script name | —            | The only names `dry-run` may probe                                                                                              |
+| `presetAllowlist`     | `STRING_ARRAY` | `[]`                  | parsed in `resolve-runtime` | —            | The only presets `run` may use, `<name>=<workspace-relative-path>` per entry; empty means no mutating run is possible           |
 | `output`              | `STRING`       | —                     | `nonEmpty`                  | —            | Artifact filename under `M3L_OUTPUT_DIR`                                                                                        |
 | `decisionLogDir`      | `STRING`       | —                     | `nonEmpty`                  | —            | Overrides the decision log's directory                                                                                          |
 | `cliEntrypoint`       | `STRING`       | derived (see below)   | `nonEmpty`                  | —            | Absolute path to `packages/m3l-cli/bin/m3l.mjs`                                                                                 |
@@ -300,12 +301,13 @@ The executable entrypoint is `packages/m3l-cli/bin/m3l.mjs`, spawned as
 import-inert (it exports `runCli` and runs nothing), so it is not a valid
 spawn target.
 
-| Method    | argv after entrypoint                          | Acceptable exit |
-| --------- | ---------------------------------------------- | --------------- |
-| `list`    | `["list", "--json"]`                           | `{0}`           |
-| `doctor`  | `["doctor", "--json"]`                         | `{0, 1}`        |
-| `inspect` | `["inspect", <name>, "--json"]`                | `{0}`           |
-| `dryRun`  | `["run", <name>, "--json", "--", "--dry-run"]` | any             |
+| Method    | argv after entrypoint                                             | Acceptable exit |
+| --------- | ----------------------------------------------------------------- | --------------- |
+| `list`    | `["list", "--json"]`                                              | `{0}`           |
+| `doctor`  | `["doctor", "--json"]`                                            | `{0, 1}`        |
+| `inspect` | `["inspect", <name>, "--json"]`                                   | `{0}`           |
+| `dryRun`  | `["run", <name>, "--json", "--", "--dry-run"]`                    | any             |
+| `run`     | `["run", <name>, "--json", "--", "--preset=<abs>", "--dry-run"?]` | any             |
 
 `doctor` accepting exit `1` is the most important asymmetry here: **a failing
 health check is the answer, not an error.** `dryRun` accepts any exit code
@@ -314,7 +316,20 @@ because the `m3l.run.result` envelope carries `exitCode` and `outcome` itself.
 The `dryRun` ordering is load-bearing and verified against
 `packages/m3l-cli/src/main.ts`: `splitAtFirstDoubleDash` runs first, so `--json`
 must precede the bare `--` for `partitionJsonFlag` to strip it, and `--dry-run`
-must follow it to be forwarded to the child script.
+must follow it to be forwarded to the child script. `run` inherits that
+ordering unchanged and adds `--preset=<path>` after the `--`, before any
+`--dry-run`.
+
+`run`'s preset path is **absolute**, and that is not cosmetic: `m3l run` spawns
+the child with `cwd: <scriptDirectory>` (`packages/m3l-cli/src/run/spawn.ts`),
+not the workspace root, and `M3LScriptPresetLoader` resolves a relative path
+against the child's own cwd. A workspace-relative token would silently resolve
+under `scripts/<name>/` and fail to load. `presetAllowlist` therefore stores the
+reviewable workspace-relative path, and the surface joins it onto
+`workspaceRoot` when it builds argv — which is why `run` rejects when the
+surface carries no `workspaceRoot`. The attached `--name=value` form is
+required too: the child's `parseArgv` splits on the first `=`, and the attached
+form keeps a value that begins with `-` from being read as a flag.
 
 `doctor --json`, `list --json`, and `inspect --json` each emit a **bare JSON
 array with no `schemaVersion`**. Only the run envelope carries
@@ -334,15 +349,24 @@ Everything the model can read passes through `lib/model-safety`.
 **Argument-injection defence, in order:**
 
 1. `shell: false` plus an argv array — no command line exists to inject into.
-2. The anchored, ReDoS-safe name regex — a name cannot begin with `-` and admits
-   no shell metacharacter.
-3. Membership in the `m3l list` set, and for probes in `dryRunAllowlist`.
+2. The anchored, ReDoS-safe name regex — a script name cannot begin with `-` and
+   admits no shell metacharacter. A **preset** name
+   (`AGENT_OPERATOR_PRESET_NAME_RE`, `src/lib/preset-names.ts`) is a looser
+   character-class check copied from the CLI's own `PRESET_NAME_PATTERN`: it
+   admits `--json`, `-h`, `--` and `123`, so it is a shape check only and
+   carries none of the structural guarantee the script-name regex does.
+3. Membership in the `m3l list` set; for probes, in `dryRunAllowlist`; for
+   `run`, in `presetAllowlist`. For a preset this membership check — not the
+   regex — is the load-bearing layer, and it is also what maps a name to a
+   path, so the model never supplies a path at all.
 4. The V6 policy gate.
 5. Fixed argv positions built from a closed `switch`.
 
-Net effect: **the model supplies exactly one value across the whole tool
-surface — a script name.** Every future tool should have to argue against that
-sentence.
+Net effect: **the model supplies exactly two values across the whole tool
+surface — a script name, and (for `run` alone) a preset name.** Never a path,
+never a parameter value: a preset's values live in a reviewed file that the
+operator declared in `presetAllowlist`. Every future tool should have to argue
+against that sentence, and against growing that count to three.
 
 `--dry-run` is a per-script convention (all 17 scripts opt in via
 `process.argv.includes("--dry-run")` in their `main.ts`), **not** a CLI
@@ -388,8 +412,8 @@ Everything a model can influence enters through it:
   ledger clean.
 - `kind` is **never** derived from input.
 - `fleet_list`/`fleet_doctor` accept any object and never read it. The ignoring
-  _is_ the guarantee that preserves "the model supplies exactly one value
-  across the whole tool surface."
+  _is_ what keeps the health-check tool set down to a single model-supplied
+  value, a script name — the surface-wide count is two once `run` is counted.
 
 `script_dry_run` is fail-closed in **two independent layers**: its spec is not
 built at all unless `includeDryRunProbes` is true _and_ the allowlist is
@@ -442,17 +466,18 @@ and removes the temptation for a future maintainer to parse its reply.
 
 ## Error codes
 
-| Code                                | Meaning                                                                                       |
-| ----------------------------------- | --------------------------------------------------------------------------------------------- |
-| `ERR_AGENT_OPERATOR_CONFIG`         | A required parameter is missing or a cross-check failed                                       |
-| `ERR_AGENT_OPERATOR_CLI_ENTRYPOINT` | The CLI entrypoint could not be derived and was not supplied                                  |
-| `ERR_AGENT_OPERATOR_CLI_SPAWN`      | Spawn failed, timed out, was signalled, or breached the output byte cap                       |
-| `ERR_AGENT_OPERATOR_CLI_OUTPUT`     | An unacceptable exit code, or a CLI payload that failed to parse                              |
-| `ERR_AGENT_OPERATOR_SCRIPT_NAME`    | A script name failed the allowlist, or is absent from `dryRunAllowlist`                       |
-| `ERR_AGENT_OPERATOR_POLICY`         | The policy file is missing, unreadable, malformed, or structurally invalid                    |
-| `ERR_AGENT_OPERATOR_DECISION_LOG`   | A decision-log entry could not be written, or breached an entry/shape cap                     |
-| `ERR_AGENT_OPERATOR_ESCALATED`      | The run concluded without an auto-approved verdict — the policy declined it                   |
-| `ERR_AGENT_OPERATOR_BUDGET_STATE`   | The cross-run daily invocation counter could not be read, is corrupt, or could not be written |
+| Code                                | Meaning                                                                                                               |
+| ----------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `ERR_AGENT_OPERATOR_CONFIG`         | A required parameter is missing or a cross-check failed                                                               |
+| `ERR_AGENT_OPERATOR_CLI_ENTRYPOINT` | The CLI entrypoint could not be derived and was not supplied                                                          |
+| `ERR_AGENT_OPERATOR_CLI_SPAWN`      | Spawn failed, timed out, was signalled, or breached the output byte cap                                               |
+| `ERR_AGENT_OPERATOR_CLI_OUTPUT`     | An unacceptable exit code, or a CLI payload that failed to parse                                                      |
+| `ERR_AGENT_OPERATOR_SCRIPT_NAME`    | A script name failed the allowlist, or is absent from `dryRunAllowlist`                                               |
+| `ERR_AGENT_OPERATOR_POLICY`         | The policy file is missing, unreadable, malformed, or structurally invalid                                            |
+| `ERR_AGENT_OPERATOR_DECISION_LOG`   | A decision-log entry could not be written, or breached an entry/shape cap                                             |
+| `ERR_AGENT_OPERATOR_ESCALATED`      | The run concluded without an auto-approved verdict — the policy declined it                                           |
+| `ERR_AGENT_OPERATOR_BUDGET_STATE`   | The cross-run daily invocation counter could not be read, is corrupt, or could not be written                         |
+| `ERR_AGENT_OPERATOR_PRESET`         | A preset name failed the allowlist, is absent from `presetAllowlist`, or no `workspaceRoot` was supplied to anchor it |
 
 A caller-driven abort raises `Core.M3LOperationAbortedError`
 (`ERR_OPERATION_ABORTED`), not a code from this family — see § The CLI seam.
