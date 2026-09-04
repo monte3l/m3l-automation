@@ -29,8 +29,8 @@
  * it never reads a measure field off the measurement at all. So even if
  * `buildSseStreamMeasurement` (`src/telemetry-recorder.ts`) regressed and
  * started attaching a measure to an `sse.stream` sample, these rows would
- * still land with NULL measures, `count()` would be unchanged, and no drop
- * warning would appear — this file's assertions would stay green either way.
+ * still land with NULL measures, the row counts would be unchanged, and no
+ * drop warning would appear — this file's assertions would stay green either way.
  * The test that actually discriminates that specific regression lives at the
  * measurement-building layer, in `tests/telemetry-recorder.test.ts`: it
  * inspects the measurement object handed to the repository directly, before
@@ -47,13 +47,14 @@
  *
  * A stream request records BOTH an `http.request` sample (every request
  * does, via `finishRequest`'s unconditional `telemetry.httpRequest` call)
- * AND an `sse.stream` sample (stream results only) — so `store.telemetry.count()`
- * is 6 for one stream request: 3 fan-out rows (minute/hour/day) per metric,
- * confirmed against `tests/telemetry-http-e2e.test.ts`'s identical
- * one-metric/one-sample/three-granularity assertion for `http.request` and
- * `tests/telemetry-runs-e2e.test.ts`'s identical assertion for
- * `run.finished`. The `sse.stream` fan-out is asserted directly below by
- * querying all three granularities.
+ * AND an `sse.stream` sample (stream results only), each fanning out to
+ * minute/hour/day. Both are asserted METRIC-SCOPED below, via
+ * {@link countMetricRows} — never through `store.telemetry.count()`, whose
+ * cross-metric total couples this file to every other telemetry producer in
+ * the console (see that helper's doc, and the full rationale at
+ * `tests/telemetry-runs-e2e.test.ts`'s own copy). The `sse.stream` fan-out
+ * is additionally asserted row-by-row below by querying all three
+ * granularities.
  *
  * Isolation: `:memory:` only, closed in `afterEach` — mirrors
  * `tests/telemetry-http-e2e.test.ts`'s own header comment on this
@@ -89,6 +90,7 @@ import type {
   M3LConsoleStore,
   M3LConsoleStoreHandle,
 } from "../src/store/store.js";
+import type { M3LTelemetryMetric } from "../src/store/telemetry-repository.js";
 import type { M3LRoute } from "../src/http/router.js";
 import type {
   M3LConsoleResult,
@@ -96,6 +98,37 @@ import type {
 } from "../src/http/stream-response.js";
 
 const SSE_ROUTE_PATH = "/api/v1/sse";
+
+/** The three granularity tiers every telemetry sample fans out to. */
+const GRANULARITY_TIERS = ["minute", "hour", "day"] as const;
+
+/**
+ * Counts the persisted `console_telemetry_rollup` rows for ONE metric,
+ * summed across all three granularity tiers.
+ *
+ * Metric-SCOPED on purpose: `M3LConsoleTelemetryRepository.count()` totals
+ * rows for EVERY metric, so every new telemetry producer shifts the total
+ * that every existing test asserts — do NOT change these back to `count()`.
+ * The full rationale (and the concrete breakage that prompted it) lives at
+ * `tests/telemetry-runs-e2e.test.ts`'s own `countMetricRows`. The `limit` is
+ * a generous cap far above the one-row-per-tier expected here, so a runaway
+ * fan-out surfaces as a count ABOVE the expectation rather than truncated
+ * down to it.
+ *
+ * @param telemetry - The real store's telemetry repository.
+ * @param metric - The single metric to count rows for.
+ * @returns The number of rollup rows carrying `metric`, across all tiers.
+ */
+function countMetricRows(
+  telemetry: M3LConsoleStore["telemetry"],
+  metric: M3LTelemetryMetric,
+): number {
+  return GRANULARITY_TIERS.reduce(
+    (total, granularity) =>
+      total + telemetry.list({ granularity, metric, limit: 100 }).length,
+    0,
+  );
+}
 
 /**
  * A minimal valid env: only the required operator name plus an audit root
@@ -344,9 +377,10 @@ describe("telemetry-sse-e2e — real store, real runtime", () => {
 
     // A stream request records both an http.request sample (every request
     // does) and an sse.stream sample (stream results only), each fanning
-    // out to minute/hour/day — 3 + 3 = 6 total rows. See this file's header
-    // comment for why the total is 6, not 3.
-    expect(store.telemetry.count()).toBe(6);
+    // out to minute/hour/day — 3 rows per metric. Asserted per metric, not
+    // as a 6-row cross-metric total: see `countMetricRows`' own doc.
+    expect(countMetricRows(store.telemetry, "sse.stream")).toBe(3);
+    expect(countMetricRows(store.telemetry, "http.request")).toBe(3);
 
     for (const granularity of ["minute", "hour", "day"] as const) {
       const buckets = store.telemetry.list({
@@ -413,7 +447,8 @@ describe("telemetry-sse-e2e — real store, real runtime", () => {
     );
 
     expect(written.status).toBe(200);
-    expect(store.telemetry.count()).toBe(6);
+    expect(countMetricRows(store.telemetry, "sse.stream")).toBe(3);
+    expect(countMetricRows(store.telemetry, "http.request")).toBe(3);
 
     for (const granularity of ["minute", "hour", "day"] as const) {
       const buckets = store.telemetry.list({

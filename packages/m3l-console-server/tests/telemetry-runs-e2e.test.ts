@@ -17,7 +17,8 @@
  * that gap: it builds the runtime through `createConsoleRuntime` exactly as
  * a real caller would (`telemetry: store.telemetry`, `runs: store.runs`),
  * launches a real run through `runtime.runs.orchestrator.launch`, and reads
- * the rollup table back through `store.telemetry.list()`/`count()`.
+ * the rollup table back through `store.telemetry.list()`, scoped to the
+ * `run.finished` metric (see {@link countMetricRows} for why never `count()`).
  *
  * Isolation: `:memory:` only, never a real file — every store here is opened
  * via `openConsoleStore({ location: ":memory:" })` and closed in `afterEach`
@@ -65,6 +66,7 @@ import type {
   M3LConsoleStore,
   M3LConsoleStoreHandle,
 } from "../src/store/store.js";
+import type { M3LTelemetryMetric } from "../src/store/telemetry-repository.js";
 
 vi.mock("node:fs", async () => {
   const actual = await vi.importActual<typeof fs>("node:fs");
@@ -198,6 +200,47 @@ function mockSpawnReturns(childHandle: FakeSpawnedProcess): void {
   );
 }
 
+/** The three granularity tiers every telemetry sample fans out to. */
+const GRANULARITY_TIERS = ["minute", "hour", "day"] as const;
+
+/**
+ * Counts the persisted `console_telemetry_rollup` rows for ONE metric,
+ * summed across all three granularity tiers.
+ *
+ * THIS IS THE REPRESENTATIVE SITE for a rule every telemetry e2e file in
+ * this package follows — please read it before "simplifying" any of them
+ * back to `store.telemetry.count()`.
+ *
+ * `M3LConsoleTelemetryRepository.count()` totals rows for EVERY metric in
+ * the table, which makes a global-total assertion a cross-file coupling
+ * rather than a statement about the test's own subject. One launch (or one
+ * request) drives several independent telemetry producers, so every new
+ * producer shifts the total for every existing test: X8 slice 3c's
+ * `policy.decision` emits turned this file's `count()` of 3 into 9, and the
+ * failure named a file whose author never touched `policy.decision` at all.
+ * Scoping the count to the metric under test keeps it stable as producers
+ * are added while still failing if THIS metric's own three-tier fan-out
+ * regresses — which is the only thing the assertion was ever about.
+ *
+ * The `limit` is a generous cap far above the one-row-per-tier this file
+ * expects, so a runaway fan-out surfaces as a count ABOVE the expectation
+ * rather than being silently truncated to it.
+ *
+ * @param telemetry - The real store's telemetry repository.
+ * @param metric - The single metric to count rows for.
+ * @returns The number of rollup rows carrying `metric`, across all tiers.
+ */
+function countMetricRows(
+  telemetry: M3LConsoleStore["telemetry"],
+  metric: M3LTelemetryMetric,
+): number {
+  return GRANULARITY_TIERS.reduce(
+    (total, granularity) =>
+      total + telemetry.list({ granularity, metric, limit: 100 }).length,
+    0,
+  );
+}
+
 /** Yields to the microtask queue AND one macrotask tick, so a fake close event and its downstream telemetry write both settle. */
 function flush(): Promise<void> {
   return new Promise((resolve) => {
@@ -262,8 +305,9 @@ describe("telemetry-runs-e2e — real store, real composed runtime", () => {
 
     // Fans out to minute/hour/day, exactly one row per tier — mirrors
     // `tests/telemetry-http-e2e.test.ts`'s identical assertion for the same
-    // reason (one metric, one sample, three granularities).
-    expect(store.telemetry.count()).toBe(3);
+    // reason (one metric, one sample, three granularities). Metric-SCOPED,
+    // never `store.telemetry.count()` — see `countMetricRows`' own doc.
+    expect(countMetricRows(store.telemetry, "run.finished")).toBe(3);
 
     const buckets = store.telemetry.list({
       granularity: "minute",
@@ -314,7 +358,7 @@ describe("telemetry-runs-e2e — real store, real composed runtime", () => {
 
     await flush();
 
-    expect(store.telemetry.count()).toBe(3);
+    expect(countMetricRows(store.telemetry, "run.finished")).toBe(3);
 
     const buckets = store.telemetry.list({
       granularity: "minute",

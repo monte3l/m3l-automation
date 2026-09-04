@@ -321,6 +321,17 @@ function pumpQueue(ctx: M3LOrchestratorContext): void {
     if (pending === undefined) continue;
     ctx.governor.accept(row.script);
     ctx.governor.dequeue();
+    // A promotion is a complete admission-gate decision — `decide`, then
+    // `accept`/`dequeue` — so it is counted with the SAME vocabulary as a
+    // launch-time accept: it is the same gate reaching the same verdict, and
+    // without this the `"admission"` posture systematically under-counts by
+    // the queue depth. The two `continue` arms above deliberately count
+    // NOTHING: the skip arm re-evaluates a row that already recorded a
+    // `queue` sample when it was launched, so emitting there would count one
+    // queued run once per pump cycle — an unbounded inflation driven by pump
+    // frequency rather than by decisions — and the `pending === undefined`
+    // arm reached no verdict worth reporting either.
+    ctx.telemetry.policyDecision({ posture: "admission", outcome: "accept" });
     ctx.pendingQueued.delete(row.id);
     clearQueueTimeout(ctx, row.id);
     startRun(ctx, {
@@ -412,6 +423,7 @@ function launchRun(
       policy: ctx.policy,
       governor: ctx.governor,
       audit: ctx.audit,
+      telemetry: ctx.telemetry,
       scriptsDir: ctx.config.scriptsDir,
     },
     body,

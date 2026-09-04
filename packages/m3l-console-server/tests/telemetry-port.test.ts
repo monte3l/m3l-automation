@@ -56,15 +56,25 @@ const SSE_STREAM_SAMPLE_FULL: M3LTelemetrySseStreamSample = {
 /** A legal `sseStream` sample with the optional `outcome` omitted entirely. */
 const SSE_STREAM_SAMPLE_MINIMAL: M3LTelemetrySseStreamSample = {};
 
-/** A legal `policyDecision` sample with the optional `outcome` populated. */
+/**
+ * A legal `policyDecision` sample with the optional `outcome` populated.
+ *
+ * `posture`/`outcome` are still plain `string` on the port, so any value
+ * would typecheck — these use the SHIPPED vocabulary
+ * (`M3LTelemetryPolicyDecisionSample.posture`: `"confirmation"` |
+ * `"admission"`; `outcome`: `"allow"` | `"deny"` | `"accept"` | `"queue"` |
+ * `"reject"`, all emitted by `src/runs/admission.ts`) rather than an
+ * invented posture, so a fixture read here can be copied into a new call
+ * site without carrying a value the port's own doc forbids.
+ */
 const POLICY_DECISION_SAMPLE_FULL: M3LTelemetryPolicyDecisionSample = {
-  posture: "enforce",
-  outcome: "denied",
+  posture: "confirmation",
+  outcome: "deny",
 };
 
 /** A legal `policyDecision` sample with the optional `outcome` omitted entirely. */
 const POLICY_DECISION_SAMPLE_MINIMAL: M3LTelemetryPolicyDecisionSample = {
-  posture: "enforce",
+  posture: "confirmation",
 };
 
 /** A legal `storeHealth` sample. */
