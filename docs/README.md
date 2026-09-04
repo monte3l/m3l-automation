@@ -92,9 +92,11 @@ Resilience
 
 Codified procedures
 
+- [`orchestration`](reference/core/orchestration.md) — `M3LStepReference` parser/formatter/resolver for cross-step output addressing, plus typed `M3LStepBinding` value expectations
 - [`pipeline`](reference/core/pipeline.md) — declarative multi-operation dispatcher skeleton for `steps/run-*.ts` modules
 - [`procedure`](reference/core/procedure.md) — codified-procedure engine: control flow and conclusions as data, not hand-written branching
 - [`cli-contract`](reference/core/cli-contract.md) — typed command-module seam a script exports for `m3l` (and future agent runtimes) to invoke in-process
+- [`agent`](reference/core/agent.md) — authorization gate for an autonomous operator: evaluates an `M3LAgentAction` against a declared `M3LAgentPolicy` and returns `auto-approved` / `escalate` / `denied`
 
 Utilities
 
