@@ -325,7 +325,7 @@ export function formatBranchSegment(branchName) {
 /**
  * @param {unknown} payload
  * @returns {{ id: string, priority: number, text: string, minWidth: number } | null}
- *   the `wt "name"` segment, or null when `workspace.git_worktree` is
+ *   the `🌳 name` segment, or null when `workspace.git_worktree` is
  *   absent/empty.
  */
 export function formatWorktreeSegment(payload) {
@@ -337,7 +337,7 @@ export function formatWorktreeSegment(payload) {
       : undefined;
   if (typeof worktreeName !== "string" || worktreeName.length === 0)
     return null;
-  return seg("worktree", 85, `${BLUE}wt "${worktreeName}"${RESET}`, 8);
+  return seg("worktree", 85, `${BLUE}🌳 ${worktreeName}${RESET}`, 6);
 }
 
 /** Matches a `## Landing plan` heading at any level-2 heading line (ADR-0072).
