@@ -26,13 +26,17 @@ import { parseJsonFlag, createReporter, repoRoot } from "./lib/report.mjs";
 const hooksReferenceRel = "docs/contributing/hooks-reference.md";
 
 // The full set of Claude Code hook lifecycle events, per the official hooks
-// reference: https://code.claude.com/docs/en/hooks
+// reference: https://code.claude.com/docs/en/hooks (re-verified 2026-09-04,
+// widened from 17 to the documented ~32 — the prior, narrower set made
+// wiring any of the missing events a false-positive gate failure; see
+// docs/research/harness-refresh.md outstanding drift #5).
 export const KNOWN_EVENTS = new Set([
   "PreToolUse",
   "PostToolUse",
   "PostToolUseFailure",
   "PostToolBatch",
   "UserPromptSubmit",
+  "UserPromptExpansion",
   "SessionStart",
   "SessionEnd",
   "Stop",
@@ -45,6 +49,21 @@ export const KNOWN_EVENTS = new Set([
   "Setup",
   "PermissionRequest",
   "PermissionDenied",
+  "MessageDisplay",
+  "TaskCreated",
+  "TaskCompleted",
+  "TeammateIdle",
+  "InstructionsLoaded",
+  "ConfigChange",
+  "CwdChanged",
+  "DirectoryAdded",
+  "FileChanged",
+  "WorktreeCreate",
+  "WorktreeRemove",
+  "PreModelSwitch",
+  "PostModelSwitch",
+  "Elicitation",
+  "ElicitationResult",
 ]);
 
 // Events whose `matcher` field is a documented, closed set of values rather
@@ -54,11 +73,36 @@ export const KNOWN_EVENTS = new Set([
 // otherwise silently no-op the entry with no gate catching it — the exact
 // failure mode that can disable post-compaction re-injection
 // (`.claude/hooks/reinject-compact-handoff.mjs`, `SessionStart` + `matcher:
-// "compact"`). Source: https://code.claude.com/docs/en/hooks (2026-09-01).
+// "compact"`). Source: https://code.claude.com/docs/en/hooks (re-verified
+// 2026-09-04 — widened to cover SessionEnd and DirectoryAdded, the same
+// silent-no-op risk this set already guards against for
+// SessionStart/PreCompact/PostCompact).
+//
+// Deliberately NOT added here, despite being closed-enum candidates:
+//   - WorktreeCreate/WorktreeRemove — the docs state plainly "no matcher
+//     support... always fires on every occurrence" (confirmed by two
+//     independent direct fetches this session); there is no enum to
+//     validate against.
+//   - Notification — three independent fetches of this page (one this
+//     session, two in a prior sweep) returned mutually inconsistent
+//     matcher-value lists for it; a raw-cell fetch returned the description
+//     "notification type" rather than an enum. This page is already flagged
+//     (docs/research/harness-refresh.md) as prone to fetch-summarizer
+//     instability — a prior sweep saw the same effect on SessionStart's
+//     input field name. Encoding an unverified enum into a blocking gate
+//     risks false-positive rejection of a legitimate matcher — safer to
+//     leave it unchecked (falls through to the free-form path, same as
+//     PreToolUse/PostToolUse) until a raw-HTML fetch confirms the exact
+//     values.
 export const KNOWN_MATCHERS = new Map([
   ["SessionStart", new Set(["startup", "resume", "clear", "compact", "fork"])],
+  [
+    "SessionEnd",
+    new Set(["clear", "resume", "logout", "prompt_input_exit", "other"]),
+  ],
   ["PreCompact", new Set(["manual", "auto"])],
   ["PostCompact", new Set(["manual", "auto"])],
+  ["DirectoryAdded", new Set(["slash_command", "register_repo_root"])],
 ]);
 
 /**

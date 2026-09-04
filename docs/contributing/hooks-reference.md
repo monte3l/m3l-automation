@@ -16,16 +16,24 @@ rather than an error.
 every event name is a real Claude Code lifecycle event, every hook carries
 an explicit timeout, and this table's Matcher column stays in parity with
 each hook's actual `if:`-scoping in `.claude/settings.json` (ADR-0080-driven
-drift found and closed 2026-08-31). For `SessionStart`, `PreCompact`, and
-`PostCompact` — the three events with a documented, closed `matcher` value
-set rather than a free-form tool-name pattern — it additionally rejects any
-wired `matcher` token outside that set (`startup`/`resume`/`clear`/`compact`/
-`fork` for `SessionStart`; `manual`/`auto` for `PreCompact`/`PostCompact`),
-so a typo like `matcher: "compct"` fails the gate instead of silently never
-firing (2026-09-01, closing a gap the harness-refresh sweep found in
-ADR-0078's `SessionStart`+`compact` re-injection route). This is a separate
-check from the `if:`-scoping parity above — the Matcher column here still
-reflects the event `matcher`, not the guard-scoping `if:` clause.
+drift found and closed 2026-08-31). For `SessionStart`, `SessionEnd`,
+`PreCompact`, `PostCompact`, and `DirectoryAdded` — the events with a
+documented, closed `matcher` value set rather than a free-form tool-name
+pattern — it additionally rejects any wired `matcher` token outside that set
+(`startup`/`resume`/`clear`/`compact`/`fork` for `SessionStart`;
+`clear`/`resume`/`logout`/`prompt_input_exit`/`other` for `SessionEnd`;
+`manual`/`auto` for `PreCompact`/`PostCompact`; `slash_command`/
+`register_repo_root` for `DirectoryAdded`), so a typo like `matcher: "compct"`
+fails the gate instead of silently never firing (2026-09-01, closing a gap
+the harness-refresh sweep found in ADR-0078's `SessionStart`+`compact`
+re-injection route; widened 2026-09-04). This is a separate check from the
+`if:`-scoping parity above — the Matcher column here still reflects the
+event `matcher`, not the guard-scoping `if:` clause. `WorktreeCreate` and
+`WorktreeRemove` are documented as having no matcher at all ("always fires on
+every occurrence"), so they're deliberately absent from this closed-set list;
+`Notification`'s matcher values could not be pinned with confidence across
+repeated fetches of the upstream page (see below), so it's left unchecked
+too rather than risk encoding a wrong enum into a blocking gate.
 
 CLAUDE.md is advisory only (Claude reads it as context); everything in this
 table is deterministic enforcement that runs whether or not Claude "remembers"
@@ -97,6 +105,36 @@ a message via stdout/JSON when there is something worth reporting —
 nothing to report. Their events (`SessionStart`, `PreCompact`,
 `UserPromptSubmit`, `PreToolUse: Agent`, `SubagentStop`, `Stop`) have no
 "already happened" tool call for exit 2 to react to.
+
+## The full documented event set (wired vs. available)
+
+This table above lists only the events this repo currently wires — it was
+never a diff surface against Claude Code's full documented event catalog,
+which `bin/check-hooks.mjs`'s `KNOWN_EVENTS` is the de-facto (and previously
+stale) source for. The complete set, per <https://code.claude.com/docs/en/hooks>
+(re-verified 2026-09-04), is:
+
+**Wired in this repo** (7 of 33): `SessionStart`, `PreCompact`,
+`UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `SubagentStop`, `Stop`.
+
+**Documented but unused here, with no repo-recorded reason for the gap**:
+`SessionEnd`, `Notification`, `PostCompact`, `SubagentStart` (retired in favor
+of `subagentStatusLine`, ADR-0090), `PostToolUseFailure`, `PostToolBatch`,
+`StopFailure`, `Setup`, `PermissionRequest`, `PermissionDenied`,
+`UserPromptExpansion`, `MessageDisplay`, `TaskCreated`, `TaskCompleted`,
+`TeammateIdle`, `InstructionsLoaded`, `ConfigChange`, `CwdChanged`,
+`DirectoryAdded`, `FileChanged`, `WorktreeCreate`, `WorktreeRemove`,
+`PreModelSwitch`, `PostModelSwitch`, `Elicitation`, `ElicitationResult`.
+
+None of these gaps are load-bearing today — the closing-phase automation this
+repo lacks (no gate catches leftover worktrees, branches, refs, or an
+uncommitted work log after a merge) is a `finishing-work`/tracker-durability
+gap, not a hooks gap: no combination of the events above carries "did the
+close-out skill run" or "is a landing plan fully shipped" state, since no
+hook field carries application-level progress, only tool/session mechanics.
+`WorktreeCreate` in particular cannot intercept the native `EnterWorktree`
+tool — the docs list its triggers as `--worktree`, `isolation: "worktree"`,
+and a background session only, explicitly excluding `EnterWorktree`.
 
 **`statusLine` (not a lifecycle hook — a separate `.claude/settings.json` key).**
 `statusline-context-pressure.mjs` renders a fixed five-row layout — `session`,
