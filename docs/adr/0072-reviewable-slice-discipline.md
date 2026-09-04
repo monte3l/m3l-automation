@@ -300,6 +300,53 @@ no equivalent record; this amendment does not invent a second mechanism for
 it — `finishing-work`'s Step 8 says so explicitly and stays terminal for
 that case, same as before.
 
+## Amendment (2026-09-04) — slice-progress statusline segment
+
+The custom statusline's session row carried a `PR #N` segment sourced from
+Claude Code's own `pr` statusLine field. That field's documentation states it
+"mirrors the PR badge in the footer" — the segment duplicated information the
+harness already surfaces, and it disappeared the moment a PR merged. Nothing
+else in the harness showed **slice position** ambiently: `creating-prs`
+computes a `PR N of M` line from a submodule's `## Landing plan` table at
+authoring time (Part B), but that number is never displayed again once the PR
+is open.
+
+`formatPrSegment` is removed from `.claude/hooks/statusline-context-pressure.mjs`
+and replaced with a slice-progress segment (`V6 2/4`, dimmed once all rows
+have landed). It is sourced from a new gitignored `tmp/slice-progress.json`
+(the `tmp/` convention `write-compact-handoff.mjs` already established),
+written and cleared by a new `bin/slice-progress.mjs` CLI (`pnpm slice:set`,
+`pnpm slice:clear`) that `starting-work` and `finishing-work` invoke as they
+advance through a slice sequence. Two modes:
+
+- **Derived** (`{ page }`): the statusline re-parses that reference page's
+  `## Landing plan` table on every render, so `N`/`M` can never drift from the
+  committed table — the same re-derive-an-authored-claim discipline the Task
+  Workflow requires of a one-time check, applied instead to a live, ambient
+  display. A page whose landing plan is prose or a numbered list rather than a
+  table (`aws/bedrock-runtime.md` at authoring time) parses to no table and
+  the segment simply does not render — not an error.
+- **Literal** (`{ wave, current, total, label }`): an explicit escape hatch
+  for a non-submodule multi-PR wave (`V9`/`X8`-style) with no committed
+  landing-plan table to derive from.
+
+Literal mode does **not** revisit the 2026-09-04 `finishing-work` amendment's
+scope limit above — it invents no second _durable_ record for non-submodule
+multi-PR work. The entry lives only in gitignored `tmp/`, is never committed,
+and carries no authority over `finishing-work`'s own behavior: Step 8 still
+treats only a submodule's `## Landing plan` as machine-checked truth and stays
+terminal for everything else. Literal mode is a display convenience, cleared
+by `pnpm slice:clear` or simply overwritten by the next `slice:set`, not a
+tracking mechanism.
+
+The entry is branch-stamped by `bin/slice-progress.mjs` itself from live git
+state — never accepted as a caller-supplied flag, so a model invoking the CLI
+cannot mis-set it — and the statusline renders it only when that stamp
+matches the currently resolved branch. This mirrors `starting-work`'s
+handling of a `tmp/compact-handoff.json` naming a different branch: a
+mismatched entry is not a signal for the current task, just stale state from
+a previous one.
+
 ## Links
 
 - Supersedes / superseded by: none.

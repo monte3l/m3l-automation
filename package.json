@@ -68,6 +68,8 @@
     "check:skill-frontmatter": "node bin/check-skill-frontmatter.mjs",
     "check:hooks": "node bin/check-hooks.mjs",
     "statusline:preview": "node bin/statusline-preview.mjs",
+    "slice:set": "node bin/slice-progress.mjs set",
+    "slice:clear": "node bin/slice-progress.mjs clear",
     "check:host-resources": "node bin/check-host-resources.mjs",
     "check:node-version": "node bin/check-node-version.mjs",
     "check:claude-cli-version": "node bin/check-claude-cli-version.mjs",

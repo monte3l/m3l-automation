@@ -41,15 +41,20 @@
  * in the whole harness; a synchronous local read has none of that cost, so a
  * raw file read is fine where a `git` shell-out wasn't. `os.freemem()` /
  * `os.totalmem()` are the same class of exception: both are local syscalls,
- * not network or subprocess calls. Every other field this script needs
- * (`context_window.*`, `pr.number`, `workspace.git_worktree`, `model`,
- * `effort`, `cost`, `rate_limits`, `prompt_cache`, `agent`) already arrives
- * on stdin. This also sidesteps the pinned-`statusLine` resource lesson in
+ * not network or subprocess calls. `tmp/slice-progress.json` (and, in derived
+ * mode, the reference page it points at — see `resolveSliceProgress`) is the
+ * same exception again: a bounded local `readFileSync`, not a subprocess or a
+ * `gh`/GitHub API call — outside what `check-hooks.mjs`'s
+ * `FORBIDDEN_STATUSLINE_PATTERNS` scan (ADR-0080) bans for a wired statusline
+ * script. Every other field this script needs (`context_window.*`,
+ * `workspace.git_worktree`, `model`, `effort`, `cost`, `rate_limits`,
+ * `prompt_cache`, `agent`) already arrives on stdin. This also sidesteps the
+ * pinned-`statusLine` resource lesson in
  * `docs/adr/0080-host-resource-budgeting.md` — that incident was an
- * `npx`-resolved third-party script re-hitting the npm registry every
- * render; this is a plain local `node` invocation plus two syscalls and a
- * bounded local file read, identical in cost class to every other hook
- * already wired in `.claude/settings.json`.
+ * `npx`-resolved third-party script re-hitting the npm registry every render;
+ * this is a plain local `node` invocation plus two syscalls and a bounded
+ * local file read, identical in cost class to every other hook already wired
+ * in `.claude/settings.json`.
  *
  * Threshold values (70 / 90) match Anthropic's own documented multi-line
  * status-line example (green under 70, yellow 70-89, red 90+) rather than
@@ -335,38 +340,183 @@ export function formatWorktreeSegment(payload) {
   return seg("worktree", 85, `${BLUE}wt "${worktreeName}"${RESET}`, 8);
 }
 
+/** Matches a `## Landing plan` heading at any level-2 heading line (ADR-0072).
+ * Duplicated from `bin/check-scaffold-seam.mjs`'s `LANDING_PLAN_HEADING`
+ * rather than imported — `bin/` already imports from `.claude/hooks/`
+ * (`bin/statusline-preview.mjs`), and reversing that direction would couple
+ * this hot-path script to repo tooling for one regex. */
+const LANDING_PLAN_HEADING_RE = /^##\s+Landing plan\s*$/m;
+
+/** Status-cell values (case-insensitive, trimmed) that mark a landing-plan
+ * row as landed rather than in-flight. */
+const TERMINAL_LANDING_PLAN_STATUSES = new Set(["landed", "shipped", "✅"]);
+
 /**
- * @param {unknown} payload
- * @returns {{ id: string, priority: number, text: string, minWidth: number } | null}
- *   the colorized, OSC-8-linked `PR #N` segment, or null when
- *   `pr.number` is absent.
+ * @param {string} line a markdown table row, e.g. `| a | b |`.
+ * @returns {string[]} trimmed cell values.
  */
-export function formatPrSegment(payload) {
-  if (typeof payload !== "object" || payload === null) return null;
-  const pr =
-    /**
-     * @type {{ number?: unknown; review_state?: unknown; url?: unknown } | undefined}
-     */ (/** @type {{ pr?: unknown }} */ (payload).pr);
-  if (typeof pr !== "object" || pr === null || typeof pr.number !== "number") {
+function splitTableRow(line) {
+  return line
+    .trim()
+    .replace(/^\|/, "")
+    .replace(/\|$/, "")
+    .split("|")
+    .map((cell) => cell.trim());
+}
+
+/**
+ * @param {string} cell a `Slice` column value, e.g. `V6 slice 1 — verdicts`.
+ * @returns {string | null} the leading slice-family token (`V6`), or null.
+ */
+function deriveSliceLabel(cell) {
+  const match = /^([A-Za-z][A-Za-z0-9]*)/.exec(cell ?? "");
+  return match ? match[1] : null;
+}
+
+/**
+ * Parses the first markdown table following a `## Landing plan` heading
+ * (ADR-0072) into a slice-progress count. Returns null — not an error — for
+ * a page whose landing plan is prose or a numbered list rather than a table
+ * (`docs/reference/core/procedure.md`, `docs/reference/aws/bedrock-runtime.md`
+ * at authoring time): the segment simply doesn't render for those pages.
+ *
+ * @param {string} pageText
+ * @returns {{ current: number, total: number, label: string | null } | null}
+ */
+export function parseLandingPlanProgress(pageText) {
+  const headingMatch = LANDING_PLAN_HEADING_RE.exec(pageText);
+  if (headingMatch === null) return null;
+
+  const afterHeading = pageText.slice(
+    headingMatch.index + headingMatch[0].length,
+  );
+  const nextHeadingMatch = /^##\s+/m.exec(afterHeading);
+  const section =
+    nextHeadingMatch === null
+      ? afterHeading
+      : afterHeading.slice(0, nextHeadingMatch.index);
+
+  const lines = section.split("\n");
+  const isTableRow = (/** @type {string} */ line) =>
+    line.trim().startsWith("|");
+  const headerIndex = lines.findIndex(isTableRow);
+  if (headerIndex === -1) return null;
+
+  const separatorLine = lines[headerIndex + 1];
+  if (
+    separatorLine === undefined ||
+    !isTableRow(separatorLine) ||
+    !/^[\s|:-]+$/.test(separatorLine.trim())
+  ) {
     return null;
   }
-  const color =
-    pr.review_state === "approved"
-      ? GREEN
-      : pr.review_state === "changes_requested"
-        ? RED
-        : pr.review_state === "draft"
-          ? DIM
-          : pr.review_state === "pending"
-            ? YELLOW
-            : null;
-  const label = `PR #${pr.number}`;
-  const linked =
-    typeof pr.url === "string" && pr.url.length > 0
-      ? `\x1b]8;;${pr.url}\x07${label}\x1b]8;;\x07`
-      : label;
-  const text = color === null ? linked : `${color}${linked}${RESET}`;
-  return seg("pr", 90, text, 8);
+
+  const headerCells = splitTableRow(lines[headerIndex]);
+  const statusIndex = headerCells.findIndex(
+    (cell) => cell.toLowerCase() === "status",
+  );
+  if (statusIndex === -1) return null;
+  const sliceIndex = headerCells.findIndex(
+    (cell) => cell.toLowerCase() === "slice",
+  );
+
+  const dataRows = [];
+  for (let i = headerIndex + 2; i < lines.length && isTableRow(lines[i]); i++) {
+    dataRows.push(splitTableRow(lines[i]));
+  }
+  if (dataRows.length === 0) return null;
+
+  const total = dataRows.length;
+  const firstOpenIndex = dataRows.findIndex(
+    (row) =>
+      !TERMINAL_LANDING_PLAN_STATUSES.has(
+        (row[statusIndex] ?? "").toLowerCase(),
+      ),
+  );
+  const current = firstOpenIndex === -1 ? total : firstOpenIndex + 1;
+  const label =
+    sliceIndex === -1
+      ? null
+      : deriveSliceLabel(dataRows[current - 1][sliceIndex]);
+
+  return { current, total, label };
+}
+
+/**
+ * Resolves the slice-progress state for the current render, or null when
+ * none applies. Reads `tmp/slice-progress.json` (written by
+ * `bin/slice-progress.mjs`) and, in derived mode, the reference page it
+ * points at — both via the given `readFile` so this stays a pure function
+ * of its inputs for testing, matching `resolveBranch`'s shape.
+ *
+ * The branch gate mirrors `starting-work`'s handling of a compact-handoff
+ * naming a different branch: a slice-progress entry stamped for another
+ * branch is not a signal for the current one.
+ *
+ * @param {(path: string) => string | null} readFile
+ * @param {string} startDir the workspace root to resolve `tmp/`/page paths
+ *   against (`payload.workspace.current_dir`, per-worktree).
+ * @param {string | null} branch the already-resolved current branch.
+ * @returns {{ current: number, total: number, label: string | null } | null}
+ */
+export function resolveSliceProgress(readFile, startDir, branch) {
+  if (typeof branch !== "string" || branch.length === 0) return null;
+  const raw = readFile(join(startDir, "tmp/slice-progress.json"));
+  if (raw === null) return null;
+
+  let entry;
+  try {
+    entry = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (typeof entry !== "object" || entry === null || entry.branch !== branch) {
+    return null;
+  }
+
+  if (typeof entry.page === "string" && entry.page.length > 0) {
+    const pageText = readFile(join(startDir, entry.page));
+    return pageText === null ? null : parseLandingPlanProgress(pageText);
+  }
+
+  if (
+    typeof entry.current === "number" &&
+    typeof entry.total === "number" &&
+    entry.current >= 1 &&
+    entry.total >= entry.current
+  ) {
+    return {
+      current: entry.current,
+      total: entry.total,
+      label:
+        typeof entry.label === "string" && entry.label.length > 0
+          ? entry.label
+          : typeof entry.wave === "string" && entry.wave.length > 0
+            ? entry.wave
+            : null,
+    };
+  }
+
+  return null;
+}
+
+/**
+ * @param {{ current: number, total: number, label: string | null } | null} slice
+ *   the pre-resolved value from {@link resolveSliceProgress} — this formatter
+ *   does no I/O, matching `formatBranchSegment(env?.branch ?? null)`'s shape.
+ * @returns {{ id: string, priority: number, text: string, minWidth: number } | null}
+ *   the `<label> N/M` segment (dim once all rows have landed), or null when
+ *   `slice` is absent.
+ */
+export function formatSliceSegment(slice) {
+  if (slice === null || typeof slice !== "object") return null;
+  const { current, total, label } = slice;
+  const prefix =
+    typeof label === "string" && label.length > 0 ? `${label} ` : "";
+  const text = `${prefix}${current}/${total}`;
+  const styled =
+    current >= total ? `${DIM}${text}${RESET}` : `${CYAN}${text}${RESET}`;
+  return seg("slice", 90, styled, 6);
 }
 
 /**
@@ -825,10 +975,10 @@ export function formatMemorySegment(env) {
 
 /**
  * @param {unknown} payload
- * @param {{ branch?: unknown } | undefined} env
+ * @param {{ branch?: unknown, slice?: unknown } | undefined} env
  * @param {number} columns
- * @returns {string} the session row: session name, branch, worktree, PR,
- *   agent, origin repo.
+ * @returns {string} the session row: session name, branch, worktree, slice
+ *   progress, agent, origin repo.
  */
 export function buildSessionRow(payload, env, columns) {
   return buildRow(
@@ -837,7 +987,7 @@ export function buildSessionRow(payload, env, columns) {
       formatSessionNameSegment(payload),
       formatBranchSegment(env?.branch ?? null),
       formatWorktreeSegment(payload),
-      formatPrSegment(payload),
+      formatSliceSegment(env?.slice ?? null),
       formatAgentSegment(payload),
       formatOriginRepoSegment(payload),
     ],
@@ -932,9 +1082,11 @@ export function buildWorkRow(payload, env, columns) {
  *   freemem?: unknown;
  *   totalmem?: unknown;
  *   branch?: unknown;
+ *   slice?: unknown;
  *   COLUMNS?: unknown;
  * }} [env] local-only, non-payload context: current time (ms), free/total
- *   memory (bytes), the resolved git branch name, and the terminal
+ *   memory (bytes), the resolved git branch name, the pre-resolved slice-
+ *   progress value (see {@link resolveSliceProgress}), and the terminal
  *   `COLUMNS` width. Defaults to `{}` so existing single-argument call sites
  *   keep working.
  * @returns {string} the full, always-five-line status-line output.
@@ -974,11 +1126,13 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       typeof payload?.workspace?.current_dir === "string"
         ? payload.workspace.current_dir
         : process.cwd();
+    const branch = resolveBranch(safeReadFile, startDir);
     const env = {
       now: Date.now(),
       freemem: os.freemem(),
       totalmem: os.totalmem(),
-      branch: resolveBranch(safeReadFile, startDir),
+      branch,
+      slice: resolveSliceProgress(safeReadFile, startDir, branch),
       COLUMNS: process.env.COLUMNS,
     };
     output = renderStatusLine(payload, env);
