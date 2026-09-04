@@ -27,6 +27,7 @@ import { describe, expect, test, vi } from "vitest";
 import type { M3LHumanActionAuditPort } from "../src/audit/port.js";
 import type { M3LHumanActionRecord } from "../src/audit/record.js";
 import { applyHumanActionAudit } from "../src/boot/human-action-audit.js";
+import { HUMAN_ACTION_SPECS } from "../src/boot/human-action-specs.js";
 import { M3LConsoleError } from "../src/errors/console-error.js";
 import {
   createRequestContext,
@@ -334,6 +335,43 @@ describe("view.run.report (X7d)", () => {
 
     expect(thrown).toBeInstanceOf(M3LConsoleError);
     expect(port.records).toHaveLength(0);
+  });
+});
+
+describe("audited-GET scope guard (X8 slice 4b)", () => {
+  // PINNING, not exhaustiveness: the map is the implementation, this literal
+  // set is the DECISION. `src/boot/human-action-specs.ts` records it in the
+  // comment above the `GET /api/v1/runs/:id/stream` entry: "/health, /ready
+  // and every list/collection endpoint are out of scope by decision —
+  // view.* covers sensitive-class renderings only." Nothing else enforces
+  // that: `applyHumanActionAudit` only throws for an unaudited non-GET
+  // (write) route; a GET with no spec is returned undecorated, silently and
+  // on purpose, so the vocabulary can only drift ONE way — someone adds a
+  // `view.*` spec for a collection endpoint — and nothing previously
+  // noticed. Order-independent by construction: the map is insertion-ordered
+  // and a reordering of its entries is not a defect.
+  test("HUMAN_ACTION_SPECS' GET keys are exactly the three sensitive-class renderings ADR-0070 names", () => {
+    const actualGetKeys = new Set(
+      [...HUMAN_ACTION_SPECS.keys()].filter((key) => key.startsWith("GET ")),
+    );
+    const expectedGetKeys = new Set([
+      "GET /api/v1/runs/:id/report",
+      "GET /api/v1/runs/:id/stream",
+      "GET /api/v1/sessions/:id/steps/:stepId/artifact",
+    ]);
+
+    expect(
+      actualGetKeys,
+      "HUMAN_ACTION_SPECS grew (or shrank) a GET entry outside the three " +
+        "sensitive-class renderings ADR-0070 names. src/boot/human-action-specs.ts " +
+        "records the exclusion as a decision, not an oversight, in the comment " +
+        'above the `GET /api/v1/runs/:id/stream` entry: "/health, /ready and ' +
+        "every list/collection endpoint are out of scope by decision — view.* " +
+        'covers sensitive-class renderings only." Auditing a further GET means ' +
+        "widening M3LHumanActionKind, which costs a console_human_actions table " +
+        "recreate (SQLite cannot ALTER a CHECK) — confirm that tradeoff is " +
+        "actually intended, don't drift past it.",
+    ).toEqual(expectedGetKeys);
   });
 });
 

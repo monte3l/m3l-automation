@@ -1167,6 +1167,17 @@ Stated plainly rather than left to be discovered:
   caller-invented route; enforcing its exhaustiveness guard against those
   would make the `routes` seam unusable instead. Every write route the console
   itself serves IS audited, and adding an unaudited one fails at boot.
+- **Read routes are audited by exception, not by default.** The boot-time
+  failure above covers write routes only; a `GET` carrying no audit spec is
+  served undecorated and records nothing. Exactly three reads write a human
+  action — `GET /api/v1/runs/:id/report`, `GET /api/v1/runs/:id/stream` and
+  `GET /api/v1/sessions/:id/steps/:stepId/artifact` — because ADR-0070 audits
+  the rendering of a sensitive-class artifact, not every read. Collection and
+  detail endpoints, `GET /api/v1/telemetry` among them, are excluded by
+  decision (ADR-0070's 2026-09-04 Update), and a test pins that set of three
+  so it cannot grow silently. An operator's read of a list is therefore
+  visible in request telemetry and the access log, but carries no
+  by-reference audit entry.
 - **`GET /api/v1/scripts` stats the scripts directory on every request.** It
   is deliberately uncached — a freshly scaffolded script must appear without a
   restart — so the cost is `O(scripts)` `stat` calls per call, synchronously,

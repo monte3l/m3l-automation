@@ -427,6 +427,79 @@ directories have no retention story, and the report route does nothing for
 in-process runs. All three are stated in `docs/reference/console.md`'s Known
 limits.
 
+## Update (2026-09-04) — the telemetry read path is deliberately unaudited, and the collection-endpoint exclusion is now enforced
+
+X8 slice 4a shipped `GET /api/v1/telemetry` with no `view.*` audit. The X8
+slicing document read that absence as a gap, to be closed by a 13th
+`M3LHumanActionKind` plus a `CHECK`-widening migration. It is not a gap: the
+exclusion follows from this ADR's own display-vs-persist rule, and it is now
+enforced by a test instead of carried in a comment. **The vocabulary stays at
+twelve kinds.**
+
+### Why a telemetry read is not an audited view
+
+The Decision's exposure rule makes the audit trigger the **rendering of a
+sensitive-class artifact** — live operation output, run-report contents — and
+in the same sentence names telemetry on the other side, among the persistent
+records that "never absorb displayed values". Telemetry is a sink in that
+rule, never one of the artifacts whose rendering is audited.
+
+The rollup buckets carry server-generated counters over server-controlled
+dimensions: no caller data, no script output, nothing redaction-bearing. Each
+of the three audited GETs renders something an operator could not otherwise
+see; a rollup query renders counts the console itself produced.
+
+`boot/human-action-specs.ts` already stated the boundary, in the comment above
+its `view.run.stream` entry — "`/health`, `/ready` and every list/collection
+endpoint are out of scope by decision — `view.*` covers sensitive-class
+renderings only". This Update promotes that from a comment to a decision of
+record, because the slicing document reached the opposite conclusion without
+contradicting it.
+
+### The boundary is asymmetric by construction, and the asymmetry was silent
+
+`applyHumanActionAudit` throws `ERR_CONSOLE_INTERNAL` when a route whose method
+is not `GET` carries no spec, so **write** coverage is exhaustive by
+construction — a new write route cannot ship unaudited. A `GET` with no spec is
+returned undecorated, deliberately and without complaint.
+
+The vocabulary could therefore drift in exactly one direction — a `view.*` spec
+appearing on a collection endpoint — with nothing to detect it. Slice 4a's
+route was correct under the decision and verified in neither direction. A test
+now pins the set of GET-method spec keys to exactly the three sensitive-class
+renderings; a fourth fails it and puts its author in front of this Update.
+
+### What a 13th kind would have cost, recorded so the question is not re-asked
+
+Two costs, either of which is reason enough on its own:
+
+- **A fourth recreate of `console_human_actions`.** Its `action` column's
+  `CHECK` enumerates the twelve kinds and SQLite cannot `ALTER` a `CHECK`, so a
+  13th needs a full table recreate — after v6, v7 and v8. The bare `DROP` stays
+  non-lossy only while `rebuildHumanActionIndexOnBoot` fires on the
+  empty-index-beside-a-populated-trail state, which is a condition to re-verify
+  rather than inherit.
+- **A target the schema has no member for.** `target_kind`'s `CHECK` admits
+  only `script`, `run`, `session`, `step` and `artifact`, and `target_id` is
+  `NOT NULL`. A rollup query addresses none of those, so the kind could not be
+  wired without widening a second `CHECK` and inventing an id — the same defect
+  this ADR already rejects for `view.session.artifact`'s `parameterRefs`, where
+  "an audit field that reads like a real artifact reference and is not is worse
+  than an absent one".
+
+### What this Update does not claim
+
+It does not say collection endpoints are unobservable. The HTTP request
+telemetry X8 slices 2b–3d added counts every request including these, and the
+access-log path is unchanged; what is absent is a **human-action** record, the
+by-reference trail of operator gestures this ADR governs.
+
+It does not close a related gap it surfaced: a spec keyed to a route path that
+no longer exists is never consulted and never reported, because
+`applyHumanActionAudit` looks specs up per route rather than reconciling the
+two sets. A typo'd key silently audits nothing. Out of scope here; not yet
+owned by a tracker row.
+
 ## Links
 
 - Programme: [ADR-0064](./0064-m3l-console-programme.md). Store/index:
