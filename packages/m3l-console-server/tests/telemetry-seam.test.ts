@@ -190,14 +190,14 @@ describe("createConsoleRuntime — telemetry seam: a repository failure never es
       });
     }).not.toThrow();
 
-    const warnings = events.filter(
-      (event) => event.category === Core.M3LLogEventCategory.WARNING,
+    const drops = events.filter(
+      (event) => event.category === Core.M3LLogEventCategory.ERROR,
     );
-    expect(warnings).toHaveLength(1);
-    const [warning] = warnings;
-    if (warning === undefined) {
-      throw new Error("expected exactly one warning event");
+    expect(drops).toHaveLength(1);
+    const [drop] = drops;
+    if (drop === undefined) {
+      throw new Error("expected exactly one error event");
     }
-    expect(JSON.stringify(warning)).toContain("http.request");
+    expect(JSON.stringify(drop)).toContain("http.request");
   });
 });

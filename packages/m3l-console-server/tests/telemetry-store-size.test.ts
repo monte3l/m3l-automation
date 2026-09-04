@@ -34,15 +34,20 @@
  *    failure records NOTHING and warns exactly once, mirroring contract 4's
  *    main-file branch.
  * 4. A stat failure on the MAIN file records nothing, does not throw, and
- *    reports ONE warning naming the location and the underlying cause.
+ *    reports ONE error naming the location and the underlying cause.
  *    This runs during boot, strictly before the listener binds, so a throw
  *    would turn an unmeasurable store into a failed start. And because the
  *    metric is value-bearing, an ABSENT measurement beats a wrong one — the
  *    sampler must NOT fall back to emitting `0`. But an absent metric with
  *    no diagnostic anywhere is a silent failure: the operator would see a
  *    missing measurement and have no way to learn why, which CLAUDE.md's
- *    "never swallow errors silently" rule forbids. Hence the warning — it is
- *    the only trace an unreadable database file leaves.
+ *    "never swallow errors silently" rule forbids. Hence the error — it is
+ *    the only trace an unreadable database file leaves. ERROR, not WARNING,
+ *    is the level: every benign path (`":memory:"`, an absent sidecar)
+ *    returns without reporting anything at all, so every reachable report
+ *    names a genuine fault, and `M3L_CONSOLE_LOG_LEVEL` can suppress a
+ *    WARNING entirely — a permission denial must not get the same
+ *    visibility a benign absence would have gotten had it reported at all.
  * 5. A RECORDED `sizeBytes` is always a non-negative safe integer — but
  *    normalisation covers only a reading that is IMPRECISE, never one that is
  *    DEGENERATE. A fractional reading is rounded and an
@@ -51,15 +56,16 @@
  *    carries none: flooring it to `0` and emitting it would fabricate the
  *    reading contract 4 refuses to fabricate, and would be indistinguishable
  *    from the legitimately-empty database this same module records as a
- *    genuine `0`. So a degenerate reading records NOTHING and warns once.
- *    Where normalisation DOES apply it matters because the rollup
+ *    genuine `0`. So a degenerate reading records NOTHING and reports one
+ *    error. Where normalisation DOES apply it matters because the rollup
  *    repository's `requireValidMeasure` rejects anything out of range
  *    (`store/telemetry-validation.ts:256`), and
  *    `createStoreTelemetryRecorder` swallows that rejection as a logged
- *    warning (`telemetry-recorder.ts`) — so an out-of-range value does not
- *    surface as an error, it silently drops the row. This is precisely the
- *    defect slice 3a shipped in `toValidDurationMs`, which clamped its floor
- *    but not its ceiling (`telemetry/duration.ts:19-31` documents the fix).
+ *    error (`telemetry-recorder.ts`) — so an out-of-range value does not
+ *    surface as a thrown failure, it silently drops the row. This is
+ *    precisely the defect slice 3a shipped in `toValidDurationMs`, which
+ *    clamped its floor but not its ceiling
+ *    (`telemetry/duration.ts:19-31` documents the fix).
  *
  * PINNED SHAPE. The sampler is `sampleStoreSizeOnBoot(options)`, SYNCHRONOUS
  * and `void`-returning, taking `{ store, telemetry, logger }`:
@@ -185,8 +191,17 @@ function createCapturingLogger(): {
   return { logger: new Core.M3LLogger([handler]), events };
 }
 
+/** Every `ERROR`-category event captured so far. */
+function errorsIn(
+  events: readonly Core.M3LLogEvent[],
+): readonly Core.M3LLogEvent[] {
+  return events.filter(
+    (event) => event.category === Core.M3LLogEventCategory.ERROR,
+  );
+}
+
 /** Every `WARNING`-category event captured so far. */
-function warningsIn(
+function warningEventsIn(
   events: readonly Core.M3LLogEvent[],
 ): readonly Core.M3LLogEvent[] {
   return events.filter(
@@ -195,8 +210,14 @@ function warningsIn(
 }
 
 /**
- * Asserts that `events` carries EXACTLY one warning, and that its serialized
+ * Asserts that `events` carries EXACTLY one error, and that its serialized
  * form mentions every fragment in `expectedFragments`.
+ *
+ * Also asserts the WARNING channel is silent: a declined measurement is a
+ * genuine fault, never merely louder, so a report that logged at BOTH
+ * levels would still be wrong even though the single-error check below
+ * would pass on its own — a bare constant swap could not satisfy both
+ * halves at once.
  *
  * Asserted against the SERIALIZED event so either placement satisfies it —
  * the message text or the `data` payload, which is where
@@ -204,17 +225,18 @@ function warningsIn(
  * "Exactly one" matters as much as the content: a declined sample must leave
  * one diagnostic, not zero (a silent failure) and not one per stat'd file.
  */
-function expectSingleWarningMentioning(
+function expectSingleErrorMentioning(
   events: readonly Core.M3LLogEvent[],
   expectedFragments: readonly string[],
 ): void {
-  const warnings = warningsIn(events);
-  expect(warnings).toHaveLength(1);
-  const [warning] = warnings;
-  if (warning === undefined) {
-    throw new Error("expected exactly one warning event");
+  expect(warningEventsIn(events)).toEqual([]);
+  const errors = errorsIn(events);
+  expect(errors).toHaveLength(1);
+  const [error] = errors;
+  if (error === undefined) {
+    throw new Error("expected exactly one error event");
   }
-  const serialized = JSON.stringify(warning);
+  const serialized = JSON.stringify(error);
   for (const fragment of expectedFragments) {
     expect(serialized).toContain(fragment);
   }
@@ -254,8 +276,8 @@ function stubStatSyncSize(size: number): MockInstance<typeof nodeFs.statSync> {
  * What a stubbed `statSync` does for one path: report `size`, fail with
  * `errnoCode`, or throw `thrownValue` verbatim. An errno failure carries the
  * code in its `message` as well as in `.code`, exactly as Node's own errno
- * errors do (`EIO: i/o error, stat '<path>'`) — so a warning that reports only
- * `Core.getErrorMessage(cause)` (which is what the main-file branch does)
+ * errors do (`EIO: i/o error, stat '<path>'`) — so an error report that
+ * carries only `Core.getErrorMessage(cause)` (which is what the main-file branch does)
  * still surfaces the code.
  *
  * `thrownValue` exists for the shapes `errnoCode` cannot express, because
@@ -378,8 +400,8 @@ describe("sampleStoreSizeOnBoot — contract 1 & 3: the summed footprint, with p
       // more than once.
       expect(storeHealthSamples).toEqual([{ sizeBytes: expectedBytes }]);
       // The success path is silent: a measured store is not a diagnostic
-      // event, so the ONLY warning this module ever emits is contract 4's.
-      expect(warningsIn(events)).toEqual([]);
+      // event, so the ONLY error this module ever emits is contract 4's.
+      expect(errorsIn(events)).toEqual([]);
     },
   );
 
@@ -400,7 +422,7 @@ describe("sampleStoreSizeOnBoot — contract 1 & 3: the summed footprint, with p
     // MEASUREMENT of an existing empty file, and must be recorded. It is only
     // a fabrication when the file could not be measured at all.
     expect(storeHealthSamples).toEqual([{ sizeBytes: 0 }]);
-    expect(warningsIn(events)).toEqual([]);
+    expect(errorsIn(events)).toEqual([]);
   });
 });
 
@@ -430,7 +452,7 @@ describe("sampleStoreSizeOnBoot — contract 3: sidecar tolerance stops at ENOEN
 
   /**
    * Rows: `-wal`'s behaviour, `-shm`'s behaviour, then the suffix whose path
-   * the single warning must name and the errno it must carry.
+   * the single error must name and the errno it must carry.
    *
    * ROWS 1 AND 2 DIFFER ONLY IN THE ERRNO (`EIO` versus `ESTALE`), and their
    * labels say so rather than claiming a `-shm` contrast: the sampler stats
@@ -483,7 +505,7 @@ describe("sampleStoreSizeOnBoot — contract 3: sidecar tolerance stops at ENOEN
   ] as const;
 
   test.each(SIDECAR_FAILURE_CASES)(
-    "records nothing and reports one warning when %s",
+    "records nothing and reports one error when %s",
     (_label, walBehaviour, shmBehaviour, failingSuffix, expectedCode) => {
       const outcomes = new Map<string, M3LStatOutcome>([
         [STUB_LOCATION, { size: STUBBED_MAIN_BYTES }],
@@ -513,7 +535,7 @@ describe("sampleStoreSizeOnBoot — contract 3: sidecar tolerance stops at ENOEN
       expect(storeHealthSamples).toEqual([]);
       // The declined sample's only trace: which file could not be measured,
       // and why.
-      expectSingleWarningMentioning(events, [
+      expectSingleErrorMentioning(events, [
         `${STUB_LOCATION}${failingSuffix}`,
         expectedCode,
       ]);
@@ -527,7 +549,7 @@ describe("sampleStoreSizeOnBoot — contract 3: sidecar tolerance stops at ENOEN
    * the sampler recognised absence from an inherited `code`, every
    * non-`ENOENT` sidecar failure in this block would quietly become the
    * understated reading contract 3 exists to prevent — a sample, and zero
-   * warnings. Node's own errno errors always carry an OWN `code`, so
+   * error reports. Node's own errno errors always carry an OWN `code`, so
    * requiring ownership costs the real paths nothing.
    *
    * The accessor sits on a LOCAL subclass's prototype, so this fixture
@@ -541,7 +563,7 @@ describe("sampleStoreSizeOnBoot — contract 3: sidecar tolerance stops at ENOEN
     }
   }
 
-  test("records nothing and reports one warning when a sidecar failure carries ENOENT only as an INHERITED code — tolerated absence must be an own property", () => {
+  test("records nothing and reports one error when a sidecar failure carries ENOENT only as an INHERITED code — tolerated absence must be an own property", () => {
     const fixture = new InheritedCodeError("simulated failure");
     // Guards the fixture itself, with `Object.hasOwn` rather than
     // `not.toHaveProperty`: the latter falls back to the `in` operator, which
@@ -578,10 +600,10 @@ describe("sampleStoreSizeOnBoot — contract 3: sidecar tolerance stops at ENOEN
     // NOT be tolerated as absence, which would emit the main file's size
     // alone and warn about nothing.
     expect(storeHealthSamples).toEqual([]);
-    expectSingleWarningMentioning(events, [`${STUB_LOCATION}-wal`]);
+    expectSingleErrorMentioning(events, [`${STUB_LOCATION}-wal`]);
   });
 
-  test("records nothing and reports one warning when a sidecar failure carries an OWN code that is NOT a string — a numeric code attests nothing about absence", () => {
+  test("records nothing and reports one error when a sidecar failure carries an OWN code that is NOT a string — a numeric code attests nothing about absence", () => {
     // The `code` a non-Node library sets need not be a string: an own
     // `code: 42` clears the ownership half of the sampler's errno check and
     // is then rejected on TYPE, so the cause carries no recognised errno and
@@ -590,8 +612,8 @@ describe("sampleStoreSizeOnBoot — contract 3: sidecar tolerance stops at ENOEN
     // `code === "ENOENT"` against a `Number`-backed enum that renders that
     // way) would let a library's own numbering decide that an unmeasurable
     // `-wal` is merely absent — recording the main file's size alone, with
-    // no warning at all, which is the understated reading contract 3 exists
-    // to withhold. Only a STRING code drawn from the tolerated set may be
+    // no error report at all, which is the understated reading contract 3
+    // exists to withhold. Only a STRING code drawn from the tolerated set may be
     // read as "the file is not there"; every other shape is a fault.
     const numericCodeFailure = new Error(
       "simulated failure carrying a numeric code",
@@ -628,13 +650,13 @@ describe("sampleStoreSizeOnBoot — contract 3: sidecar tolerance stops at ENOEN
     // `42` as tolerated absence would emit `[{ sizeBytes: 4096 }]` here and
     // warn about nothing.
     expect(storeHealthSamples).toEqual([]);
-    expectSingleWarningMentioning(events, [
+    expectSingleErrorMentioning(events, [
       `${STUB_LOCATION}-wal`,
       "simulated failure carrying a numeric code",
     ]);
   });
 
-  test('records nothing and reports one warning when a sidecar throw is NOT an Error at all — a bare object carrying code: "ENOENT" is not an attestation of absence', () => {
+  test('records nothing and reports one error when a sidecar throw is NOT an Error at all — a bare object carrying code: "ENOENT" is not an attestation of absence', () => {
     // The pointed case. This value SAYS `ENOENT`, and it is still a fault:
     // nothing that is not an `Error` attests that a file is missing. Node
     // reports a missing sidecar by throwing a real errno `Error`, so a bare
@@ -644,7 +666,7 @@ describe("sampleStoreSizeOnBoot — contract 3: sidecar tolerance stops at ENOEN
     // `throw` from user code inside a wrapped `statSync`. Reading that as
     // absence would make the tolerance forgeable by any value that merely
     // LOOKS like an errno error, and the result would be silent: the main
-    // file's size recorded as the whole footprint, no warning, and a
+    // file's size recorded as the whole footprint, no error report, and a
     // `-wal` of unknown size omitted from a metric whose purpose is
     // spotting growth. So the `Error` check is load-bearing on its own, not
     // a type-narrowing convenience ahead of the code check.
@@ -679,7 +701,7 @@ describe("sampleStoreSizeOnBoot — contract 3: sidecar tolerance stops at ENOEN
     // that is not an `Error` or a string, so the rendered reason is the bare
     // object's default stringification: the forged `code` is neither
     // honoured nor even echoed into the diagnostic.
-    expectSingleWarningMentioning(events, [
+    expectSingleErrorMentioning(events, [
       `${STUB_LOCATION}-wal`,
       "[object Object]",
     ]);
@@ -706,7 +728,7 @@ describe("sampleStoreSizeOnBoot — contract 3: sidecar tolerance stops at ENOEN
     });
 
     expect(storeHealthSamples).toEqual([{ sizeBytes: STUBBED_MAIN_BYTES }]);
-    expect(warningsIn(events)).toEqual([]);
+    expect(errorsIn(events)).toEqual([]);
   });
 });
 
@@ -733,8 +755,8 @@ describe('sampleStoreSizeOnBoot — contract 2: ":memory:" records nothing', () 
     // call, so an in-memory store costs no syscall at boot.
     expect(statSync).not.toHaveBeenCalled();
     // Nothing to report: an in-memory store recording no size is the
-    // DESIGNED outcome, not a failure, so it must not warn either.
-    expect(warningsIn(events)).toEqual([]);
+    // DESIGNED outcome, not a failure, so it must not report an error either.
+    expect(errorsIn(events)).toEqual([]);
   });
 });
 
@@ -761,7 +783,7 @@ describe("sampleStoreSizeOnBoot — contract 4: an unmeasurable main file record
   ] as const;
 
   test.each(FAILURE_CASES)(
-    "records nothing, does not throw, and reports one warning when %s",
+    "records nothing, does not throw, and reports one error when %s",
     async (_label, kind, expectedCode) => {
       const directory = await createWorkDir();
       let location: string;
@@ -790,11 +812,11 @@ describe("sampleStoreSizeOnBoot — contract 4: an unmeasurable main file record
       // fabricated "the store is empty" reading forever.
       expect(storeHealthSamples).toEqual([]);
 
-      // ...but NOT silently absent. Exactly one warning, and it must carry
+      // ...but NOT silently absent. Exactly one error, and it must carry
       // enough to diagnose the gap: which store could not be measured, and
       // why. Read from the capturing handler's array, never from stdout: the
       // handler swallows the line, so nothing is printed to grep.
-      expectSingleWarningMentioning(events, [location, expectedCode]);
+      expectSingleErrorMentioning(events, [location, expectedCode]);
     },
   );
 });
@@ -822,7 +844,7 @@ describe("sampleStoreSizeOnBoot — contract 5: an imprecise reading is normalis
    * is the exact gap slice 3a left in `toValidDurationMs`: the rollup
    * repository's `requireValidMeasure` demands a non-negative safe integer,
    * and `createStoreTelemetryRecorder` swallows its rejection as a logged
-   * warning — so an unclamped value is not an error, it is a silently
+   * error — so an unclamped value is not a thrown failure, it is a silently
    * dropped row. Clamping to `MAX_SAFE_INTEGER` rather than to `0` is
    * `telemetry/duration.ts`'s `DURATION_MS_CEILING` precedent: it preserves
    * "very large" instead of making a huge store look empty.
@@ -858,7 +880,7 @@ describe("sampleStoreSizeOnBoot — contract 5: an imprecise reading is normalis
       expect(storeHealthSamples).toEqual([{ sizeBytes: expectedBytes }]);
       expect(Number.isSafeInteger(expectedBytes)).toBe(true);
       // An imprecise reading is not a diagnostic event: nothing was lost.
-      expect(warningsIn(events)).toEqual([]);
+      expect(errorsIn(events)).toEqual([]);
     },
   );
 
@@ -870,14 +892,14 @@ describe("sampleStoreSizeOnBoot — contract 5: an imprecise reading is normalis
    * that fabricated `0` would be indistinguishable from the
    * legitimately-empty database the "empty main file" case above records as a
    * genuine measurement. So the outcome is contract 4's — no sample, one
-   * warning: `toValidSizeBytes` answers `undefined` for every row here and
+   * error: `toValidSizeBytes` answers `undefined` for every row here and
    * the caller declines rather than normalising.
    *
    * `NaN` and `±Infinity` are the rows that reach the FINITENESS guard.
    * Without it `Math.round(NaN)` and `Math.min(NaN, MAX_SAFE_INTEGER)` are
    * both `NaN`, so `NaN` would flow into `telemetry.storeHealth`,
    * `requireValidMeasure` would reject it, and the store-backed recorder
-   * would swallow the whole row behind its own `logger.warning` — a silent
+   * would swallow the whole row behind its own `logger.error` — a silent
    * drop. `-4096` reaches the companion `MIN_VALID_SIZE_BYTES` comparison
    * instead, which is a REJECT threshold and not a clamp target: a negative
    * byte count is not an imprecise measurement of anything, so it is
@@ -891,7 +913,7 @@ describe("sampleStoreSizeOnBoot — contract 5: an imprecise reading is normalis
   ] as const;
 
   test.each(DEGENERATE_SIZES)(
-    "records nothing and reports one warning when stat reports %s",
+    "records nothing and reports one error when stat reports %s",
     (_label, rawSize) => {
       stubMainFileSize(rawSize);
       const { recorder, storeHealthSamples } = createCapturingRecorder();
@@ -912,13 +934,13 @@ describe("sampleStoreSizeOnBoot — contract 5: an imprecise reading is normalis
       // How the raw reading itself is rendered is deliberately unpinned; the
       // store it belongs to is not, since that is the operator's only handle
       // on which measurement went missing.
-      expectSingleWarningMentioning(events, [STUB_LOCATION]);
+      expectSingleErrorMentioning(events, [STUB_LOCATION]);
     },
   );
 
-  test("records nothing and reports one warning when a SIDECAR contributes the degenerate value — and does not blame the main file, which stat'd fine", () => {
+  test("records nothing and reports one error when a SIDECAR contributes the degenerate value — and does not blame the main file, which stat'd fine", () => {
     // Every degenerate row above stubs the MAIN path only, so the bad value
-    // always originates in the very file the warning names, and the two are
+    // always originates in the very file the error names, and the two are
     // indistinguishable. Here the main database stats cleanly at a plausible
     // 4 KiB and the `-wal` reading is what poisons the sum, which is the case
     // that separates "this file could not be measured" from "this SUM carries
@@ -942,11 +964,11 @@ describe("sampleStoreSizeOnBoot — contract 5: an imprecise reading is normalis
 
     // A non-finite sum carries no measurement wherever the poison came from,
     // so the outcome is the same as every other degenerate row: nothing
-    // recorded, one warning naming the store.
+    // recorded, one error naming the store.
     expect(storeHealthSamples).toEqual([]);
-    expectSingleWarningMentioning(events, [STUB_LOCATION]);
+    expectSingleErrorMentioning(events, [STUB_LOCATION]);
 
-    // ...but the warning must not attribute the gap to the MAIN database
+    // ...but the error must not attribute the gap to the MAIN database
     // file. `statSync` answered for it with a perfectly good size, so
     // reporting it as the unmeasured path states something false about the
     // one file that WAS measured, and points an operator at the wrong thing.
@@ -954,11 +976,11 @@ describe("sampleStoreSizeOnBoot — contract 5: an imprecise reading is normalis
     // should name instead (the sum itself, or the sidecar whose reading was
     // degenerate) is the implementation's choice — blaming a file that
     // stat'd successfully is not.
-    const [warning] = warningsIn(events);
-    if (warning === undefined) {
-      throw new Error("expected exactly one warning event");
+    const [error] = errorsIn(events);
+    if (error === undefined) {
+      throw new Error("expected exactly one error event");
     }
-    expect(warning.data?.["unmeasuredPath"]).not.toBe(STUB_LOCATION);
+    expect(error.data?.["unmeasuredPath"]).not.toBe(STUB_LOCATION);
   });
 
   test("a real file's sample is an integer, not a float — every measured byte count is directly recordable", async () => {
@@ -981,7 +1003,7 @@ describe("sampleStoreSizeOnBoot — contract 5: an imprecise reading is normalis
     }
     expect(Number.isSafeInteger(sample.sizeBytes)).toBe(true);
     expect(sample.sizeBytes).toBe(MAIN_BYTES + WAL_BYTES);
-    expect(warningsIn(events)).toEqual([]);
+    expect(errorsIn(events)).toEqual([]);
   });
 });
 
@@ -1019,6 +1041,6 @@ describe("sampleStoreSizeOnBoot — the store argument is structural, never an i
     });
 
     expect(storeHealthSamples).toEqual([{ sizeBytes: MAIN_BYTES }]);
-    expect(warningsIn(events)).toEqual([]);
+    expect(errorsIn(events)).toEqual([]);
   });
 });

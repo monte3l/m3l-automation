@@ -33,7 +33,7 @@
  *   bind, or handed the wrong store.
  * - The DATABASE's verdict. `createStoreTelemetryRecorder` maps the sample
  *   onto an `M3LTelemetryMeasurement` and swallows a repository rejection as
- *   a logged `warning` rather than throwing (`src/telemetry-recorder.ts`), so
+ *   a logged `error` rather than throwing (`src/telemetry-recorder.ts`), so
  *   a row `console_telemetry_rollup` REFUSES is invisible at the port
  *   boundary. The v9/v11 DDL has real teeth for this metric: `sum_value` is
  *   mandatory (`metric NOT IN (...) OR sum_value IS NOT NULL`), `outcome`
@@ -234,7 +234,7 @@ function createFakeServer(addressValue: AddressInfo): FakeServer {
  * `script` violates `(script <> '') = (metric = 'run.finished')` and a
  * non-empty `outcome` violates `outcome = '' OR metric <> 'store.health'` —
  * either would make the INSERT fail, which
- * `createStoreTelemetryRecorder` swallows as a logged warning, so the row
+ * `createStoreTelemetryRecorder` swallows as a logged error, so the row
  * would simply be absent. Asserting the sentinels documents WHY absence
  * would have been the symptom.
  */
@@ -342,7 +342,7 @@ describe("telemetry-store-health-e2e — real file-backed store, real compositio
     }
 
     // A repository rejection is otherwise invisible — the store-backed
-    // recorder swallows it as a logged warning rather than throwing — so its
+    // recorder swallows it as a logged error rather than throwing — so its
     // absence is asserted explicitly, mirroring every sibling e2e file.
     expect(
       events.some((event) =>

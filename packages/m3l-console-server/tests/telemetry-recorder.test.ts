@@ -410,7 +410,7 @@ describe("createStoreTelemetryRecorder — field mapping", () => {
 
 describe("createStoreTelemetryRecorder — drop-and-log on a repository failure", () => {
   test.each(METHOD_CASES)(
-    "$methodName: a recordAll failure is caught, logged via logger.warning exactly once naming the metric, and never rethrown",
+    "$methodName: a recordAll failure is caught, logged via logger.error exactly once naming the metric, never at logger.warning, and never rethrown",
     ({ invoke, metric }) => {
       const { repository } = createFakeTelemetryRepository(() => {
         throw new Error("recordAll boom");
@@ -424,19 +424,27 @@ describe("createStoreTelemetryRecorder — drop-and-log on a repository failure"
 
       expect(() => invoke(recorder)).not.toThrow();
 
-      const warnings = events.filter(
+      const drops = events.filter(
+        (event) => event.category === Core.M3LLogEventCategory.ERROR,
+      );
+      expect(drops).toHaveLength(1);
+      const [drop] = drops;
+      if (drop === undefined) {
+        throw new Error("expected exactly one error event");
+      }
+      expect(JSON.stringify(drop)).toContain(metric);
+
+      // A drop logged at BOTH levels would still satisfy the assertions
+      // above; pin the absence of the old WARNING level too, or a recorder
+      // that logs at both severities would still pass.
+      const warningEvents = events.filter(
         (event) => event.category === Core.M3LLogEventCategory.WARNING,
       );
-      expect(warnings).toHaveLength(1);
-      const [warning] = warnings;
-      if (warning === undefined) {
-        throw new Error("expected exactly one warning event");
-      }
-      expect(JSON.stringify(warning)).toContain(metric);
+      expect(warningEvents).toHaveLength(0);
     },
   );
 
-  test("a thrown M3LConsoleError carrying context.recordedCount surfaces that count in the warn payload", () => {
+  test("a thrown M3LConsoleError carrying context.recordedCount surfaces that count in the error payload", () => {
     const recordedCount = 2;
     const thrown = new M3LConsoleError(
       "ERR_CONSOLE_STORE_QUERY_FAILED",
@@ -455,14 +463,14 @@ describe("createStoreTelemetryRecorder — drop-and-log on a repository failure"
 
     expect(() => recorder.httpRequest(HTTP_REQUEST_SAMPLE)).not.toThrow();
 
-    const warnings = events.filter(
-      (event) => event.category === Core.M3LLogEventCategory.WARNING,
+    const drops = events.filter(
+      (event) => event.category === Core.M3LLogEventCategory.ERROR,
     );
-    const [warning] = warnings;
-    if (warning === undefined) {
-      throw new Error("expected exactly one warning event");
+    const [drop] = drops;
+    if (drop === undefined) {
+      throw new Error("expected exactly one error event");
     }
-    expect(JSON.stringify(warning)).toContain(String(recordedCount));
+    expect(JSON.stringify(drop)).toContain(String(recordedCount));
   });
 });
 
@@ -499,11 +507,11 @@ describe("createStoreTelemetryRecorder — clock defaulting", () => {
  * contract stated in this module's own header and in `telemetry/port.ts`
  * (the deliberate inverse of `audit/port.ts`; see `runs/audit.ts:14-19`).
  * The recorder must catch a throwing clock read too, and still report the
- * drop through `logger.warning` naming the metric.
+ * drop through `logger.error` naming the metric.
  */
 describe("createStoreTelemetryRecorder — [KNOWN BUG] a throwing clock read must not escape", () => {
   test.each(METHOD_CASES)(
-    "$methodName: a throwing `now` does not escape the method and is still reported via logger.warning naming the metric",
+    "$methodName: a throwing `now` does not escape the method and is still reported via logger.error naming the metric",
     ({ invoke, metric }) => {
       const { repository } = createFakeTelemetryRepository();
       const { logger, events } = buildLogger();
@@ -517,15 +525,15 @@ describe("createStoreTelemetryRecorder — [KNOWN BUG] a throwing clock read mus
 
       expect(() => invoke(recorder)).not.toThrow();
 
-      const warnings = events.filter(
-        (event) => event.category === Core.M3LLogEventCategory.WARNING,
+      const drops = events.filter(
+        (event) => event.category === Core.M3LLogEventCategory.ERROR,
       );
-      expect(warnings).toHaveLength(1);
-      const [warning] = warnings;
-      if (warning === undefined) {
-        throw new Error("expected exactly one warning event");
+      expect(drops).toHaveLength(1);
+      const [drop] = drops;
+      if (drop === undefined) {
+        throw new Error("expected exactly one error event");
       }
-      expect(JSON.stringify(warning)).toContain(metric);
+      expect(JSON.stringify(drop)).toContain(metric);
     },
   );
 });
@@ -542,7 +550,7 @@ describe("createStoreTelemetryRecorder — [KNOWN BUG] a throwing clock read mus
  * to throw.
  */
 describe("createStoreTelemetryRecorder — [KNOWN BUG] a hostile `message` getter on the dropped cause must not escape", () => {
-  test("a recordAll failure whose thrown value has a throwing `message` getter does not escape and still warns naming the metric", () => {
+  test("a recordAll failure whose thrown value has a throwing `message` getter does not escape and still reports the drop naming the metric", () => {
     const thrown = new Error("placeholder — never actually read");
     Object.defineProperty(thrown, "message", {
       get(): string {
@@ -561,14 +569,579 @@ describe("createStoreTelemetryRecorder — [KNOWN BUG] a hostile `message` gette
 
     expect(() => recorder.httpRequest(HTTP_REQUEST_SAMPLE)).not.toThrow();
 
-    const warnings = events.filter(
-      (event) => event.category === Core.M3LLogEventCategory.WARNING,
+    const drops = events.filter(
+      (event) => event.category === Core.M3LLogEventCategory.ERROR,
     );
-    expect(warnings).toHaveLength(1);
-    const [warning] = warnings;
-    if (warning === undefined) {
-      throw new Error("expected exactly one warning event");
+    expect(drops).toHaveLength(1);
+    const [drop] = drops;
+    if (drop === undefined) {
+      throw new Error("expected exactly one error event");
     }
-    expect(JSON.stringify(warning)).toContain("http.request");
+    expect(JSON.stringify(drop)).toContain("http.request");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Per-field read-count and tier-divergence fixtures (KNOWN BUG — defect 3)
+// ---------------------------------------------------------------------------
+
+/**
+ * Builds a getter-backed value that counts how many times it has been read.
+ * Used by the read-count fixtures below to prove each recorder method reads
+ * every sample field exactly once per call, regardless of how many
+ * granularity tiers `fanOut` fans the sample out to.
+ */
+function createReadCounter<T>(value: T): {
+  readonly get: () => T;
+  readonly count: () => number;
+} {
+  let count = 0;
+  return {
+    get: (): T => {
+      count += 1;
+      return value;
+    },
+    count: (): number => count,
+  };
+}
+
+/**
+ * A sequence of distinct, individually valid dimension strings. Every entry
+ * independently passes `store/telemetry-validation.ts`'s guards (non-empty,
+ * distinct) even though these tests drive the hand-written FAKE repository
+ * (`createFakeTelemetryRepository`), which performs no validation itself —
+ * keeping every value independently valid means a failure below is provably
+ * a tier divergence, never a fixture a real repository would reject anyway.
+ * Six entries, not three: a conditional-spread field (`run.finished`'s
+ * `operation`, `sse.stream`'s and `policy.decision`'s `outcome`) is read
+ * TWICE per tier today (an existence check, then the spread value), so a
+ * three-tier fan-out can consume up to six reads of one field.
+ */
+const STRING_SEQUENCE = ["a1", "a2", "a3", "a4", "a5", "a6"] as const;
+
+/** The numeric counterpart of {@link STRING_SEQUENCE} — distinct non-negative safe integers. */
+const NUMBER_SEQUENCE = [10, 20, 30, 40, 50, 60] as const;
+
+/**
+ * Builds a getter-backed value that yields the next entry of `values` on
+ * each read, throwing once the fixture is under-provisioned rather than
+ * silently recycling a value — a recycled value could mask a real
+ * divergence as a coincidental match.
+ */
+function createSequenceCounter<T>(values: readonly T[]): () => T {
+  let index = 0;
+  return (): T => {
+    const value = values[index];
+    index += 1;
+    if (value === undefined) {
+      throw new Error(
+        "createSequenceCounter exhausted — extend the fixture sequence",
+      );
+    }
+    return value;
+  };
+}
+
+/** Asserts no `logger.error` drop was recorded — i.e. the fan-out was accepted, not rejected. */
+function expectNoDrop(events: readonly Core.M3LLogEvent[]): void {
+  const drops = events.filter(
+    (event) => event.category === Core.M3LLogEventCategory.ERROR,
+  );
+  expect(drops).toHaveLength(0);
+}
+
+describe("createStoreTelemetryRecorder — [KNOWN BUG — defect 3] every sample field must be read exactly once per call", () => {
+  /**
+   * `fanOut` (in `src/telemetry-recorder.ts`) takes a `snapshot` callback
+   * invoked exactly ONCE inside its own `try`, and reuses that single
+   * snapshot across all three `build*Measurement` calls, so no
+   * `sample.<field>` getter is read more than once per recorder call.
+   * Before this fix, every `build*Measurement` closed over the caller's raw
+   * `sample` and re-read each field once per tier: 3 reads for a plain
+   * field, 6 for a conditional-spread optional field (`sample.field !==
+   * undefined && { field: sample.field }` read the getter twice per tier).
+   * This is why `route`/`script`/`outcome`/`posture` — the rollup's PRIMARY
+   * KEY dimensions — must be read exactly ONCE: a caller-supplied accessor
+   * that changes value between reads could otherwise have made one
+   * recorder call persist three rows with different primary keys (see the
+   * tier-divergence `describe` block below).
+   */
+  test("httpRequest: route, outcome and latencyMs are each read exactly once (before this fix: 3 reads each)", () => {
+    const route = createReadCounter("a1");
+    const outcome = createReadCounter("2xx");
+    const latencyMs = createReadCounter(10);
+    const sample: M3LTelemetryHttpRequestSample = {
+      get route(): string {
+        return route.get();
+      },
+      get outcome(): string {
+        return outcome.get();
+      },
+      get latencyMs(): number {
+        return latencyMs.get();
+      },
+    };
+    const { repository } = createFakeTelemetryRepository();
+    const { logger } = buildLogger();
+    const recorder = createStoreTelemetryRecorder({
+      telemetry: repository,
+      logger,
+      now: () => FIXED_NOW,
+    });
+
+    recorder.httpRequest(sample);
+
+    expect(route.count()).toBe(1); // before this fix: 3 (once per granularity tier)
+    expect(outcome.count()).toBe(1); // before this fix: 3
+    expect(latencyMs.count()).toBe(1); // before this fix: 3
+  });
+
+  test("runFinished: script, operation, outcome and durationMs are each read exactly once (before this fix: 3 reads, 6 for the conditional-spread `operation`)", () => {
+    const script = createReadCounter("example-export");
+    const operation = createReadCounter("export");
+    const outcome = createReadCounter("succeeded");
+    const durationMs = createReadCounter(1234);
+    const sample: M3LTelemetryRunFinishedSample = {
+      get script(): string {
+        return script.get();
+      },
+      get operation(): string {
+        return operation.get();
+      },
+      get outcome(): string {
+        return outcome.get();
+      },
+      get durationMs(): number {
+        return durationMs.get();
+      },
+    };
+    const { repository } = createFakeTelemetryRepository();
+    const { logger } = buildLogger();
+    const recorder = createStoreTelemetryRecorder({
+      telemetry: repository,
+      logger,
+      now: () => FIXED_NOW,
+    });
+
+    recorder.runFinished(sample);
+
+    expect(script.count()).toBe(1); // before this fix: 3
+    expect(operation.count()).toBe(1); // before this fix: 6 (conditional-spread: existence check + value, per tier)
+    expect(outcome.count()).toBe(1); // before this fix: 3
+    expect(durationMs.count()).toBe(1); // before this fix: 3
+  });
+
+  test("sseStream: outcome is read exactly once (before this fix: 6 — conditional-spread, existence check + value, per tier)", () => {
+    const outcome = createReadCounter("closed");
+    const sample: M3LTelemetrySseStreamSample = {
+      get outcome(): string {
+        return outcome.get();
+      },
+    };
+    const { repository } = createFakeTelemetryRepository();
+    const { logger } = buildLogger();
+    const recorder = createStoreTelemetryRecorder({
+      telemetry: repository,
+      logger,
+      now: () => FIXED_NOW,
+    });
+
+    recorder.sseStream(sample);
+
+    expect(outcome.count()).toBe(1); // before this fix: 6
+  });
+
+  test("policyDecision: posture and outcome are each read exactly once (before this fix: 3 for posture, 6 for the conditional-spread outcome)", () => {
+    const posture = createReadCounter("enforce");
+    const outcome = createReadCounter("denied");
+    const sample: M3LTelemetryPolicyDecisionSample = {
+      get posture(): string {
+        return posture.get();
+      },
+      get outcome(): string {
+        return outcome.get();
+      },
+    };
+    const { repository } = createFakeTelemetryRepository();
+    const { logger } = buildLogger();
+    const recorder = createStoreTelemetryRecorder({
+      telemetry: repository,
+      logger,
+      now: () => FIXED_NOW,
+    });
+
+    recorder.policyDecision(sample);
+
+    expect(posture.count()).toBe(1); // before this fix: 3
+    expect(outcome.count()).toBe(1); // before this fix: 6
+  });
+
+  test("storeHealth: sizeBytes is read exactly once (before this fix: 3)", () => {
+    const sizeBytes = createReadCounter(4_096);
+    const sample: M3LTelemetryStoreHealthSample = {
+      get sizeBytes(): number {
+        return sizeBytes.get();
+      },
+    };
+    const { repository } = createFakeTelemetryRepository();
+    const { logger } = buildLogger();
+    const recorder = createStoreTelemetryRecorder({
+      telemetry: repository,
+      logger,
+      now: () => FIXED_NOW,
+    });
+
+    recorder.storeHealth(sample);
+
+    expect(sizeBytes.count()).toBe(1); // before this fix: 3
+  });
+});
+
+describe("createStoreTelemetryRecorder — [KNOWN BUG — defect 3] the three granularity tiers must not diverge on a changing sample field", () => {
+  /**
+   * Before this fix, `fanOut` built a fresh measurement per tier from the
+   * SAME `sample` closure without snapshotting each field once up front —
+   * see this file's sibling `describe` block above. A caller-supplied
+   * sample whose field is an accessor returning a changing sequence (a
+   * monotonic counter, anything mutable read between calls) could
+   * therefore have let the minute/hour/day tiers persist three DIFFERENT
+   * primary-key rows from what should be one logical measurement. `fanOut`
+   * now snapshots the sample exactly once and reuses it across all three
+   * tiers, so this asserts that divergence can no longer happen. Every
+   * sequence value below is individually a legal column value (non-empty
+   * distinct string / distinct non-negative safe integer) so a failure
+   * here would be a genuine regression, never a validation drop —
+   * `expectNoDrop` confirms no `logger.error` fired, i.e. the fan-out was
+   * accepted rather than rejected.
+   */
+  test("httpRequest: route, outcome and latencyMs are identical across all three tiers and equal the first sequence value", () => {
+    const route = createSequenceCounter(STRING_SEQUENCE);
+    const outcome = createSequenceCounter(STRING_SEQUENCE);
+    const latencyMs = createSequenceCounter(NUMBER_SEQUENCE);
+    const sample: M3LTelemetryHttpRequestSample = {
+      get route(): string {
+        return route();
+      },
+      get outcome(): string {
+        return outcome();
+      },
+      get latencyMs(): number {
+        return latencyMs();
+      },
+    };
+    const { repository, calls } = createFakeTelemetryRepository();
+    const { logger, events } = buildLogger();
+    const recorder = createStoreTelemetryRecorder({
+      telemetry: repository,
+      logger,
+      now: () => FIXED_NOW,
+    });
+
+    recorder.httpRequest(sample);
+
+    expectNoDrop(events);
+    const measurements = calls[0];
+    if (measurements === undefined || measurements.length !== 3) {
+      throw new Error(
+        "expected exactly one recordAll call with 3 measurements",
+      );
+    }
+    const [minute, hour, day] = measurements;
+    if (minute === undefined || hour === undefined || day === undefined) {
+      throw new Error("expected minute, hour, and day measurements");
+    }
+    expect([minute.metric, hour.metric, day.metric]).toEqual([
+      "http.request",
+      "http.request",
+      "http.request",
+    ]);
+    if (
+      minute.metric !== "http.request" ||
+      hour.metric !== "http.request" ||
+      day.metric !== "http.request"
+    ) {
+      return;
+    }
+    expect([minute.route, hour.route, day.route]).toEqual([
+      STRING_SEQUENCE[0],
+      STRING_SEQUENCE[0],
+      STRING_SEQUENCE[0],
+    ]);
+    expect([minute.outcome, hour.outcome, day.outcome]).toEqual([
+      STRING_SEQUENCE[0],
+      STRING_SEQUENCE[0],
+      STRING_SEQUENCE[0],
+    ]);
+    expect([minute.valueMs, hour.valueMs, day.valueMs]).toEqual([
+      NUMBER_SEQUENCE[0],
+      NUMBER_SEQUENCE[0],
+      NUMBER_SEQUENCE[0],
+    ]);
+  });
+
+  test("runFinished: script, operation, outcome and durationMs are identical across all three tiers and equal the first sequence value", () => {
+    const script = createSequenceCounter(STRING_SEQUENCE);
+    const operation = createSequenceCounter(STRING_SEQUENCE);
+    const outcome = createSequenceCounter(STRING_SEQUENCE);
+    const durationMs = createSequenceCounter(NUMBER_SEQUENCE);
+    const sample: M3LTelemetryRunFinishedSample = {
+      get script(): string {
+        return script();
+      },
+      get operation(): string {
+        return operation();
+      },
+      get outcome(): string {
+        return outcome();
+      },
+      get durationMs(): number {
+        return durationMs();
+      },
+    };
+    const { repository, calls } = createFakeTelemetryRepository();
+    const { logger, events } = buildLogger();
+    const recorder = createStoreTelemetryRecorder({
+      telemetry: repository,
+      logger,
+      now: () => FIXED_NOW,
+    });
+
+    recorder.runFinished(sample);
+
+    expectNoDrop(events);
+    const measurements = calls[0];
+    if (measurements === undefined || measurements.length !== 3) {
+      throw new Error(
+        "expected exactly one recordAll call with 3 measurements",
+      );
+    }
+    const [minute, hour, day] = measurements;
+    if (minute === undefined || hour === undefined || day === undefined) {
+      throw new Error("expected minute, hour, and day measurements");
+    }
+    expect([minute.metric, hour.metric, day.metric]).toEqual([
+      "run.finished",
+      "run.finished",
+      "run.finished",
+    ]);
+    if (
+      minute.metric !== "run.finished" ||
+      hour.metric !== "run.finished" ||
+      day.metric !== "run.finished"
+    ) {
+      return;
+    }
+    expect([minute.script, hour.script, day.script]).toEqual([
+      STRING_SEQUENCE[0],
+      STRING_SEQUENCE[0],
+      STRING_SEQUENCE[0],
+    ]);
+    expect([minute.operation, hour.operation, day.operation]).toEqual([
+      STRING_SEQUENCE[0],
+      STRING_SEQUENCE[0],
+      STRING_SEQUENCE[0],
+    ]);
+    expect([minute.outcome, hour.outcome, day.outcome]).toEqual([
+      STRING_SEQUENCE[0],
+      STRING_SEQUENCE[0],
+      STRING_SEQUENCE[0],
+    ]);
+    expect([minute.valueMs, hour.valueMs, day.valueMs]).toEqual([
+      NUMBER_SEQUENCE[0],
+      NUMBER_SEQUENCE[0],
+      NUMBER_SEQUENCE[0],
+    ]);
+  });
+
+  test("sseStream: outcome is identical across all three tiers and equals the first sequence value", () => {
+    const outcome = createSequenceCounter(STRING_SEQUENCE);
+    const sample: M3LTelemetrySseStreamSample = {
+      get outcome(): string {
+        return outcome();
+      },
+    };
+    const { repository, calls } = createFakeTelemetryRepository();
+    const { logger, events } = buildLogger();
+    const recorder = createStoreTelemetryRecorder({
+      telemetry: repository,
+      logger,
+      now: () => FIXED_NOW,
+    });
+
+    recorder.sseStream(sample);
+
+    expectNoDrop(events);
+    const measurements = calls[0];
+    if (measurements === undefined || measurements.length !== 3) {
+      throw new Error(
+        "expected exactly one recordAll call with 3 measurements",
+      );
+    }
+    const [minute, hour, day] = measurements;
+    if (minute === undefined || hour === undefined || day === undefined) {
+      throw new Error("expected minute, hour, and day measurements");
+    }
+    expect([minute.metric, hour.metric, day.metric]).toEqual([
+      "sse.stream",
+      "sse.stream",
+      "sse.stream",
+    ]);
+    if (
+      minute.metric !== "sse.stream" ||
+      hour.metric !== "sse.stream" ||
+      day.metric !== "sse.stream"
+    ) {
+      return;
+    }
+    expect([minute.outcome, hour.outcome, day.outcome]).toEqual([
+      STRING_SEQUENCE[0],
+      STRING_SEQUENCE[0],
+      STRING_SEQUENCE[0],
+    ]);
+  });
+
+  test("policyDecision: posture and outcome are identical across all three tiers and equal the first sequence value", () => {
+    const posture = createSequenceCounter(STRING_SEQUENCE);
+    const outcome = createSequenceCounter(STRING_SEQUENCE);
+    const sample: M3LTelemetryPolicyDecisionSample = {
+      get posture(): string {
+        return posture();
+      },
+      get outcome(): string {
+        return outcome();
+      },
+    };
+    const { repository, calls } = createFakeTelemetryRepository();
+    const { logger, events } = buildLogger();
+    const recorder = createStoreTelemetryRecorder({
+      telemetry: repository,
+      logger,
+      now: () => FIXED_NOW,
+    });
+
+    recorder.policyDecision(sample);
+
+    expectNoDrop(events);
+    const measurements = calls[0];
+    if (measurements === undefined || measurements.length !== 3) {
+      throw new Error(
+        "expected exactly one recordAll call with 3 measurements",
+      );
+    }
+    const [minute, hour, day] = measurements;
+    if (minute === undefined || hour === undefined || day === undefined) {
+      throw new Error("expected minute, hour, and day measurements");
+    }
+    expect([minute.metric, hour.metric, day.metric]).toEqual([
+      "policy.decision",
+      "policy.decision",
+      "policy.decision",
+    ]);
+    if (
+      minute.metric !== "policy.decision" ||
+      hour.metric !== "policy.decision" ||
+      day.metric !== "policy.decision"
+    ) {
+      return;
+    }
+    expect([minute.posture, hour.posture, day.posture]).toEqual([
+      STRING_SEQUENCE[0],
+      STRING_SEQUENCE[0],
+      STRING_SEQUENCE[0],
+    ]);
+    expect([minute.outcome, hour.outcome, day.outcome]).toEqual([
+      STRING_SEQUENCE[0],
+      STRING_SEQUENCE[0],
+      STRING_SEQUENCE[0],
+    ]);
+  });
+
+  test("storeHealth: sizeBytes is identical across all three tiers and equals the first sequence value", () => {
+    const sizeBytes = createSequenceCounter(NUMBER_SEQUENCE);
+    const sample: M3LTelemetryStoreHealthSample = {
+      get sizeBytes(): number {
+        return sizeBytes();
+      },
+    };
+    const { repository, calls } = createFakeTelemetryRepository();
+    const { logger, events } = buildLogger();
+    const recorder = createStoreTelemetryRecorder({
+      telemetry: repository,
+      logger,
+      now: () => FIXED_NOW,
+    });
+
+    recorder.storeHealth(sample);
+
+    expectNoDrop(events);
+    const measurements = calls[0];
+    if (measurements === undefined || measurements.length !== 3) {
+      throw new Error(
+        "expected exactly one recordAll call with 3 measurements",
+      );
+    }
+    const [minute, hour, day] = measurements;
+    if (minute === undefined || hour === undefined || day === undefined) {
+      throw new Error("expected minute, hour, and day measurements");
+    }
+    expect([minute.metric, hour.metric, day.metric]).toEqual([
+      "store.health",
+      "store.health",
+      "store.health",
+    ]);
+    if (
+      minute.metric !== "store.health" ||
+      hour.metric !== "store.health" ||
+      day.metric !== "store.health"
+    ) {
+      return;
+    }
+    expect([minute.valueBytes, hour.valueBytes, day.valueBytes]).toEqual([
+      NUMBER_SEQUENCE[0],
+      NUMBER_SEQUENCE[0],
+      NUMBER_SEQUENCE[0],
+    ]);
+  });
+});
+
+describe("createStoreTelemetryRecorder — [REGRESSION PIN] a throwing sample field getter must not escape (passes today)", () => {
+  /**
+   * PASSES today: the field read happens inside the `snapshot()` call that
+   * `fanOut` (in `src/telemetry-recorder.ts`) invokes from within its own
+   * `try`, so a throwing getter is caught by the same `catch` that guards a
+   * throwing `now`/`recordAll` (see the "[KNOWN BUG] a throwing clock read"
+   * `describe` block above). The defect-3 fix landed in this same commit:
+   * each field's read now happens in a single up-front snapshot step,
+   * taken once before the three per-tier `build` calls, and that snapshot
+   * step lives inside this same `try`. This is a regression pin, not a
+   * fresh proof of anything: do NOT convert it to `test.fails`.
+   */
+  test("httpRequest: a sample whose route getter throws does not escape the recorder and is reported once naming the metric", () => {
+    const sample: M3LTelemetryHttpRequestSample = {
+      get route(): string {
+        throw new Error("route getter boom");
+      },
+      outcome: "2xx",
+      latencyMs: 10,
+    };
+    const { repository } = createFakeTelemetryRepository();
+    const { logger, events } = buildLogger();
+    const recorder = createStoreTelemetryRecorder({
+      telemetry: repository,
+      logger,
+      now: () => FIXED_NOW,
+    });
+
+    expect(() => recorder.httpRequest(sample)).not.toThrow();
+
+    const drops = events.filter(
+      (event) => event.category === Core.M3LLogEventCategory.ERROR,
+    );
+    expect(drops).toHaveLength(1);
+    const [drop] = drops;
+    if (drop === undefined) {
+      throw new Error("expected exactly one error event");
+    }
+    expect(JSON.stringify(drop)).toContain("http.request");
   });
 });
