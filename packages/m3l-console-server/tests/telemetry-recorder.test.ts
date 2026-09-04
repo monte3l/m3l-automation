@@ -652,19 +652,21 @@ function expectNoDrop(events: readonly Core.M3LLogEvent[]): void {
 
 describe("createStoreTelemetryRecorder — [KNOWN BUG — defect 3] every sample field must be read exactly once per call", () => {
   /**
-   * `fanOut` (`src/telemetry-recorder.ts:150-158`) maps `build` over all
-   * three `GRANULARITIES` from a single `sample` closed over by the
-   * caller's method, so every builder body (`:161-235`) re-reads each
-   * `sample.<field>` once per tier: 3 reads for a plain field, 6 for a
-   * conditional-spread optional field (`sample.field !== undefined &&
-   * { field: sample.field }` reads the getter twice per tier). This is why
-   * `route`/`script`/`outcome`/`posture` — the rollup's PRIMARY KEY
-   * dimensions — must be read exactly ONCE: a caller-supplied accessor that
-   * changes value between reads can otherwise make one recorder call
-   * persist three rows with different primary keys (see the tier-divergence
-   * `describe` block below).
+   * `fanOut` (in `src/telemetry-recorder.ts`) takes a `snapshot` callback
+   * invoked exactly ONCE inside its own `try`, and reuses that single
+   * snapshot across all three `build*Measurement` calls, so no
+   * `sample.<field>` getter is read more than once per recorder call.
+   * Before this fix, every `build*Measurement` closed over the caller's raw
+   * `sample` and re-read each field once per tier: 3 reads for a plain
+   * field, 6 for a conditional-spread optional field (`sample.field !==
+   * undefined && { field: sample.field }` read the getter twice per tier).
+   * This is why `route`/`script`/`outcome`/`posture` — the rollup's PRIMARY
+   * KEY dimensions — must be read exactly ONCE: a caller-supplied accessor
+   * that changes value between reads could otherwise have made one
+   * recorder call persist three rows with different primary keys (see the
+   * tier-divergence `describe` block below).
    */
-  test("httpRequest: route, outcome and latencyMs are each read exactly once (observed today: 3 reads each)", () => {
+  test("httpRequest: route, outcome and latencyMs are each read exactly once (before this fix: 3 reads each)", () => {
     const route = createReadCounter("a1");
     const outcome = createReadCounter("2xx");
     const latencyMs = createReadCounter(10);
@@ -689,12 +691,12 @@ describe("createStoreTelemetryRecorder — [KNOWN BUG — defect 3] every sample
 
     recorder.httpRequest(sample);
 
-    expect(route.count()).toBe(1); // observed today: 3 (once per granularity tier)
-    expect(outcome.count()).toBe(1); // observed today: 3
-    expect(latencyMs.count()).toBe(1); // observed today: 3
+    expect(route.count()).toBe(1); // before this fix: 3 (once per granularity tier)
+    expect(outcome.count()).toBe(1); // before this fix: 3
+    expect(latencyMs.count()).toBe(1); // before this fix: 3
   });
 
-  test("runFinished: script, operation, outcome and durationMs are each read exactly once (observed today: 3 reads, 6 for the conditional-spread `operation`)", () => {
+  test("runFinished: script, operation, outcome and durationMs are each read exactly once (before this fix: 3 reads, 6 for the conditional-spread `operation`)", () => {
     const script = createReadCounter("example-export");
     const operation = createReadCounter("export");
     const outcome = createReadCounter("succeeded");
@@ -723,13 +725,13 @@ describe("createStoreTelemetryRecorder — [KNOWN BUG — defect 3] every sample
 
     recorder.runFinished(sample);
 
-    expect(script.count()).toBe(1); // observed today: 3
-    expect(operation.count()).toBe(1); // observed today: 6 (conditional-spread: existence check + value, per tier)
-    expect(outcome.count()).toBe(1); // observed today: 3
-    expect(durationMs.count()).toBe(1); // observed today: 3
+    expect(script.count()).toBe(1); // before this fix: 3
+    expect(operation.count()).toBe(1); // before this fix: 6 (conditional-spread: existence check + value, per tier)
+    expect(outcome.count()).toBe(1); // before this fix: 3
+    expect(durationMs.count()).toBe(1); // before this fix: 3
   });
 
-  test("sseStream: outcome is read exactly once (observed today: 6 — conditional-spread, existence check + value, per tier)", () => {
+  test("sseStream: outcome is read exactly once (before this fix: 6 — conditional-spread, existence check + value, per tier)", () => {
     const outcome = createReadCounter("closed");
     const sample: M3LTelemetrySseStreamSample = {
       get outcome(): string {
@@ -746,10 +748,10 @@ describe("createStoreTelemetryRecorder — [KNOWN BUG — defect 3] every sample
 
     recorder.sseStream(sample);
 
-    expect(outcome.count()).toBe(1); // observed today: 6
+    expect(outcome.count()).toBe(1); // before this fix: 6
   });
 
-  test("policyDecision: posture and outcome are each read exactly once (observed today: 3 for posture, 6 for the conditional-spread outcome)", () => {
+  test("policyDecision: posture and outcome are each read exactly once (before this fix: 3 for posture, 6 for the conditional-spread outcome)", () => {
     const posture = createReadCounter("enforce");
     const outcome = createReadCounter("denied");
     const sample: M3LTelemetryPolicyDecisionSample = {
@@ -770,11 +772,11 @@ describe("createStoreTelemetryRecorder — [KNOWN BUG — defect 3] every sample
 
     recorder.policyDecision(sample);
 
-    expect(posture.count()).toBe(1); // observed today: 3
-    expect(outcome.count()).toBe(1); // observed today: 6
+    expect(posture.count()).toBe(1); // before this fix: 3
+    expect(outcome.count()).toBe(1); // before this fix: 6
   });
 
-  test("storeHealth: sizeBytes is read exactly once (observed today: 3)", () => {
+  test("storeHealth: sizeBytes is read exactly once (before this fix: 3)", () => {
     const sizeBytes = createReadCounter(4_096);
     const sample: M3LTelemetryStoreHealthSample = {
       get sizeBytes(): number {
@@ -791,24 +793,26 @@ describe("createStoreTelemetryRecorder — [KNOWN BUG — defect 3] every sample
 
     recorder.storeHealth(sample);
 
-    expect(sizeBytes.count()).toBe(1); // observed today: 3
+    expect(sizeBytes.count()).toBe(1); // before this fix: 3
   });
 });
 
 describe("createStoreTelemetryRecorder — [KNOWN BUG — defect 3] the three granularity tiers must not diverge on a changing sample field", () => {
   /**
-   * `fanOut` builds a fresh measurement per tier from the SAME `sample`
-   * closure but does not snapshot each field once up front — see this
-   * file's sibling `describe` block above. A caller-supplied sample whose
-   * field is an accessor returning a changing sequence (a monotonic
-   * counter, anything mutable read between calls) therefore lets the
-   * minute/hour/day tiers persist three DIFFERENT primary-key rows from
-   * what should be one logical measurement. Every sequence value below is
-   * individually a legal column value (non-empty distinct string / distinct
-   * non-negative safe integer) so a failure here is a genuine divergence
-   * across tiers, never a validation drop — `expectNoDrop` confirms no
-   * `logger.error` fired, i.e. the fan-out was accepted rather than
-   * rejected.
+   * Before this fix, `fanOut` built a fresh measurement per tier from the
+   * SAME `sample` closure without snapshotting each field once up front —
+   * see this file's sibling `describe` block above. A caller-supplied
+   * sample whose field is an accessor returning a changing sequence (a
+   * monotonic counter, anything mutable read between calls) could
+   * therefore have let the minute/hour/day tiers persist three DIFFERENT
+   * primary-key rows from what should be one logical measurement. `fanOut`
+   * now snapshots the sample exactly once and reuses it across all three
+   * tiers, so this asserts that divergence can no longer happen. Every
+   * sequence value below is individually a legal column value (non-empty
+   * distinct string / distinct non-negative safe integer) so a failure
+   * here would be a genuine regression, never a validation drop —
+   * `expectNoDrop` confirms no `logger.error` fired, i.e. the fan-out was
+   * accepted rather than rejected.
    */
   test("httpRequest: route, outcome and latencyMs are identical across all three tiers and equal the first sequence value", () => {
     const route = createSequenceCounter(STRING_SEQUENCE);
@@ -1102,16 +1106,15 @@ describe("createStoreTelemetryRecorder — [KNOWN BUG — defect 3] the three gr
 
 describe("createStoreTelemetryRecorder — [REGRESSION PIN] a throwing sample field getter must not escape (passes today)", () => {
   /**
-   * PASSES today: the field read happens inside the `build` closure that
-   * `fanOut` (`src/telemetry-recorder.ts:150-158`) invokes from within its
-   * own `try`, so a throwing getter is caught by the same `catch` that
-   * guards a throwing `now`/`recordAll` (see the "[KNOWN BUG] a throwing
-   * clock read" `describe` block above). The pending fix for defect 3 moves
-   * each field's read to a single up-front snapshot step, taken once before
-   * the three per-tier `build` calls — that snapshot step MUST stay inside
-   * this same `try`, or this pin starts failing the moment the fix lands.
-   * This is a regression pin, not a proof the defect is fixed: do NOT
-   * convert it to `test.fails`.
+   * PASSES today: the field read happens inside the `snapshot()` call that
+   * `fanOut` (in `src/telemetry-recorder.ts`) invokes from within its own
+   * `try`, so a throwing getter is caught by the same `catch` that guards a
+   * throwing `now`/`recordAll` (see the "[KNOWN BUG] a throwing clock read"
+   * `describe` block above). The defect-3 fix landed in this same commit:
+   * each field's read now happens in a single up-front snapshot step,
+   * taken once before the three per-tier `build` calls, and that snapshot
+   * step lives inside this same `try`. This is a regression pin, not a
+   * fresh proof of anything: do NOT convert it to `test.fails`.
    */
   test("httpRequest: a sample whose route getter throws does not escape the recorder and is reported once naming the metric", () => {
     const sample: M3LTelemetryHttpRequestSample = {

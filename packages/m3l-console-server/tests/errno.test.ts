@@ -1,7 +1,8 @@
 /**
  * Tests for `errnoCodeOf` (src/errors/errno.ts) — the hoisted, hardened
- * `code`-extraction helper (X8 telemetry follow-up,
- * `src/telemetry/store-size.ts:239-243`).
+ * `code`-extraction helper (X8 telemetry follow-up). `errnoCodeOf` now
+ * lives in `src/errors/errno.ts`; it was formerly duplicated in
+ * `src/telemetry/store-size.ts` and `src/runs/report.ts`.
  *
  * The guard this module exists for — an `Error` with NO own `code` while
  * `Error.prototype.code` is polluted — can never be produced by a real
