@@ -328,6 +328,47 @@ describe("createStoreTelemetryRecorder — field mapping", () => {
     expect(minute.outcome).toBe(SSE_STREAM_SAMPLE.outcome);
   });
 
+  /**
+   * This is the layer that actually decides whether a measure leaks onto an
+   * `sse.stream` row: `buildSseStreamMeasurement` is a total filter that
+   * builds a fresh measurement from `sample.outcome` alone, before anything
+   * reaches the repository. `tests/telemetry-sse-e2e.test.ts`'s NULL-measure
+   * assertions look similar but are vacuous for this regression — the real
+   * repository's `SQL_UPSERT_COUNTER` binds NULL literals unconditionally
+   * for a counter metric and never reads a measure field off the
+   * measurement, so a regression here would still persist as NULL and would
+   * never be caught there. This test inspects the measurement object itself,
+   * captured via `recordAll`, before any SQL literal can mask a regression.
+   *
+   * `Object.keys`/`Object.hasOwn`, never `toHaveProperty` — `not.toHaveProperty`
+   * falls back to the `in` operator and walks the prototype chain, which
+   * would make this assertion unfailable.
+   */
+  test("sseStream measurements' own keys carry no measure field on any granularity tier", () => {
+    const { repository, calls } = createFakeTelemetryRepository();
+    const { logger } = buildLogger();
+    const recorder = createStoreTelemetryRecorder({
+      telemetry: repository,
+      logger,
+      now: () => FIXED_NOW,
+    });
+
+    recorder.sseStream(SSE_STREAM_SAMPLE);
+
+    const measurements = calls[0];
+    if (measurements === undefined) {
+      throw new Error("expected exactly one recordAll call");
+    }
+    expect(measurements).toHaveLength(3);
+    for (const measurement of measurements) {
+      expect(Object.keys(measurement).sort()).toEqual(
+        ["bucketStartMs", "granularity", "metric", "outcome"].sort(),
+      );
+      expect(Object.hasOwn(measurement, "valueMs")).toBe(false);
+      expect(Object.hasOwn(measurement, "valueBytes")).toBe(false);
+    }
+  });
+
   test("policyDecision carries no measure at all", () => {
     const { repository, calls } = createFakeTelemetryRepository();
     const { logger } = buildLogger();

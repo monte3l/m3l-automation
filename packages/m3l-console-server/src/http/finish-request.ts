@@ -160,16 +160,33 @@ export interface FinishRequestInputs {
  * ordinary completion, so most requests would otherwise never release the
  * pin.
  *
- * The trailing `telemetry.httpRequest` call (X8 slice 2b) reads the SAME
- * `durationMs` the access-log line below it does, hoisted to one call to
- * `inputs.now()` so the two can never disagree. It runs LAST, after the
- * write and the abort, and deliberately unguarded: `M3LTelemetryRecorder`'s
- * contract is never-throws, and `telemetry` is caller-supplied, so wrapping
- * it here would only duplicate a guarantee the port itself already makes. A
- * rogue implementation that throws anyway can only surface as a spurious
- * "unhandled console request listener failure" line in `handler.ts` — by
- * then the response is already written and the signal already released, so
- * nothing downstream is left exposed.
+ * The `telemetry.httpRequest` call (X8 slice 2b) is the first of
+ * `finishRequest`'s two telemetry calls. It reads the SAME `durationMs` the
+ * access-log call (`logOutcome`) does, hoisted to one call to `inputs.now()`
+ * so the two can never disagree. It runs after the write and the abort, and
+ * deliberately unguarded: `M3LTelemetryRecorder`'s contract is never-throws,
+ * and `telemetry` is caller-supplied, so wrapping it here would only duplicate
+ * a guarantee the port itself already makes. A rogue implementation that throws
+ * anyway can only surface as a spurious "unhandled console request listener
+ * failure" line in `handler.ts` — by then the response is already written and
+ * the signal already released, so nothing downstream is left exposed.
+ *
+ * For a stream result, immediately after `httpRequest`, a second
+ * `telemetry.sseStream` sample is emitted (X8 slice 3b). `sse.stream` is a
+ * pure counter with two enforcement layers: (a) `buildSseStreamMeasurement` in
+ * `telemetry-recorder.ts` builds a fresh measurement from `sample.outcome`
+ * alone, so any stray field at this call site never reaches the repository;
+ * (b) `SQL_UPSERT_COUNTER` in `telemetry-repository.ts` binds
+ * `NULL, NULL, NULL` as SQL literals for the measure columns, so even a direct
+ * `store.telemetry.record({ ..., valueMs: 42 })` call is accepted and persists
+ * a NULL-measure row — the repository is the enforcing layer for `sse.stream`,
+ * not SQLite. v11's CHECK constraint
+ * `((sum_value IS NOT NULL) = (metric IN ('http.request','run.finished','store.health')))`
+ * can therefore only fire for a raw SQL writer; no TypeScript producer reaches
+ * it. Frame and drop counts remain visible per-stream in the access log
+ * (`access-log.ts`). A non-stream request records zero `sseStream` samples; a
+ * stream request records both an `http.request` and an `sse.stream` sample —
+ * intentional, not double-counting.
  */
 export function finishRequest(inputs: FinishRequestInputs): void {
   if (inputs.write) {
@@ -205,4 +222,12 @@ export function finishRequest(inputs: FinishRequestInputs): void {
     outcome: statusClassOf(inputs.response.status),
     latencyMs: durationMs,
   });
+
+  // Emit a pure-counter sse.stream sample for stream results only.
+  // Explicit !== undefined (not ?.) so a non-stream request records zero
+  // samples — optional chaining would also be correct here but the guard
+  // makes the intent unmistakable and the test pins this form.
+  if (inputs.streamOutcome !== undefined) {
+    inputs.telemetry.sseStream({ outcome: inputs.streamOutcome.reason });
+  }
 }
