@@ -42,7 +42,7 @@ updates:
     # manifest-independent, so ordering stops mattering and the constraint reads
     # as the intent ("the Node 24 line only") rather than as a delta.
     #
-    # Both entries are mirrored in bin/check-deps.mjs's MAJOR_HOLDS, which
+    # All entries here are mirrored in bin/check-deps.mjs's MAJOR_HOLDS, which
     # carries the full rationale. Neither is enforcement on its own: an ignore
     # rule suppresses a *proposal*, not a *state*. @types/node is genuinely
     # enforced by check:node-version's findTypesNodeDrift.
@@ -56,6 +56,16 @@ updates:
       # bin/lib/browser-safe-subpath.mjs depends on.
       - dependency-name: "typescript"
         versions: [">=7"]
+      # Vitest 5's `vitest list --json` collection pass no longer expands
+      # `test.each`/`describe.each` cases into one entry per interpolated
+      # case, which breaks bin/check-test-counts.mjs's undercounting-free
+      # collection method (verified: 76 -> 56 collected entries for
+      # M3LConfigAccessor.test.ts). @vitest/coverage-v8 is peer-locked to
+      # vitest and must move with it.
+      - dependency-name: "vitest"
+        versions: [">=5"]
+      - dependency-name: "@vitest/coverage-v8"
+        versions: [">=5"]
     labels:
       - dependencies
     open-pull-requests-limit: 5

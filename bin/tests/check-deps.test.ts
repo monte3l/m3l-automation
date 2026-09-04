@@ -167,6 +167,23 @@ describe("MAJOR_HOLDS", () => {
     expect(MAJOR_HOLDS["typescript"]?.major).toBe(7);
     expect(MAJOR_HOLDS["typescript"]?.reason).toMatch(/typescript-eslint/);
   });
+
+  test("vitest is deferred at major 5 with a documented reason", () => {
+    // This deferral exists because vitest 5's collection-only `vitest list --json`
+    // no longer expands test.each/describe.each cases, breaking check-test-counts.mjs.
+    // When that's repointed at a method that still expands cases (or vitest restores
+    // the behavior), remove the hold AND this test.
+    expect(MAJOR_HOLDS["vitest"]?.major).toBe(5);
+    expect(MAJOR_HOLDS["vitest"]?.reason).toMatch(/check-test-counts/);
+  });
+
+  test("@vitest/coverage-v8 is deferred at major 5, peer-locked to vitest", () => {
+    // This deferral exists because @vitest/coverage-v8 5.0.0 requires vitest 5.0.0
+    // as a peer, so it must move in lockstep with the vitest hold above.
+    // When the vitest hold is removed, remove this hold AND this test too.
+    expect(MAJOR_HOLDS["@vitest/coverage-v8"]?.major).toBe(5);
+    expect(MAJOR_HOLDS["@vitest/coverage-v8"]?.reason).toMatch(/peer/i);
+  });
 });
 
 describe("findRangedDependencies", () => {

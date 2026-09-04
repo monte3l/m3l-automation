@@ -142,6 +142,35 @@ export const MAJOR_HOLDS = {
       "un-path-gated gates lane; this hold only keeps check:deps quiet about " +
       "the deliberate gap. Raise both together whenever .node-version moves.",
   },
+  vitest: {
+    major: 5,
+    reason:
+      "Vitest 5 deferred: `vitest list --json` — the collection-only pass " +
+      "bin/check-test-counts.mjs relies on to count tests without a full run " +
+      "(F15/#489) — no longer expands `test.each`/`describe.each` cases into " +
+      "one entry per interpolated case the way 4.1.11 does. Verified directly: " +
+      "on 4.1.11, packages/m3l-common/tests/M3LConfigAccessor.test.ts collects " +
+      "76 entries with case values interpolated (e.g. `throws when set to 42 " +
+      "(wrong type)`); on 5.0.0 the same file collects 56, with the template " +
+      "left literal (`throws when set to %j (wrong type)`) — one entry per " +
+      "`.each` call site, not per case. A real upgrade attempt (typecheck, " +
+      "build, lint, and the full `test:coverage` suite all passed cleanly, one " +
+      "now-unnecessary `as unknown as string` cast in " +
+      "packages/m3l-cli/tests/dynamic.test.ts aside) surfaced this only via " +
+      "`pnpm verify`'s check:test-counts step, which failed with 33 file-count " +
+      "mismatches against docs/implementation-status.md. Revisit once " +
+      "bin/check-test-counts.mjs is repointed at a collection method that " +
+      "still expands parameterized cases (or Vitest restores the behavior) — " +
+      "mirrored as a version-anchored ignore in .github/dependabot.yml, keep " +
+      "the two in sync. Raise alongside @vitest/coverage-v8, its matched peer.",
+  },
+  "@vitest/coverage-v8": {
+    major: 5,
+    reason:
+      "Peer-locked to vitest (see that entry for the concrete blocker) — " +
+      "@vitest/coverage-v8 5.0.0 requires vitest 5.0.0 as a peer, so the two " +
+      "must move together. Held at the same major for the same reason.",
+  },
 };
 
 /**
