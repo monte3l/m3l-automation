@@ -66,6 +66,41 @@
         "Instructs the user to create a feature or fix branch (e.g. `feat/<slug>` or `fix/<slug>`) before retrying",
         "Does NOT emit any `WOULD-RUN: git push` or `WOULD-RUN: gh pr create` line"
       ]
+    },
+    {
+      "id": 5,
+      "prompt": "Get this merged — I opened the PR for the retry submodule (src/core/retry/index.ts) a few minutes ago and it's mergeable. The review hasn't posted a verdict yet.",
+      "expected_output": "The skill treats Step 15's merge-path decision as reaching this src/**-touching PR while a review round is still expected, and defaults to waiting for the verdict then merging with a plain squash — never arming auto-merge for a PR carrying library source changes with no verdict yet.",
+      "files": [
+        {
+          "path": "src/core/retry/index.ts",
+          "content": "export interface RetryOptions {\n  maxAttempts?: number;\n  baseDelayMs?: number;\n}\n\nexport async function retry<T>(fn: () => Promise<T>, options?: RetryOptions): Promise<T> {\n  throw new Error('not implemented');\n}\n"
+        }
+      ],
+      "expectations": [
+        "Emits `WOULD-RUN: gh pr merge <number> --squash` as the default action, without an `--auto` flag, because the PR touches `src/**` and expects a review round",
+        "Does NOT emit `WOULD-RUN: gh pr merge <number> --auto --squash` for this PR",
+        "Does NOT emit any flag or command containing `--admin`",
+        "States or reproduces the rationale that arming auto-merge before the review verdict risks the verdict landing on an already-merged PR (e.g. citing the U10/U11 incidents or equivalent reasoning)",
+        "Names `/finishing-work` (or 'finishing-work') as the next step to run once the PR shows as merged"
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "Ship this for review and get it merged whenever it's ready — I only touched docs/contributing/skills-catalog.md, adding a row for a new skill. No src/ files changed.",
+      "expected_output": "The skill recognizes this as a docs-only PR expecting no review round (the docs-consistency-reviewer path from Step 7) and offers arming GitHub auto-merge as the opt-in outcome of Step 15, still via squash, still never --admin.",
+      "files": [
+        {
+          "path": "docs/contributing/skills-catalog.md",
+          "content": "| Skill | Purpose |\n| --- | --- |\n| `example-skill` | Example row |\n"
+        }
+      ],
+      "expectations": [
+        "Emits `WOULD-RUN: gh pr merge <number> --auto --squash` as an acceptable opt-in action for this docs-only PR",
+        "States the tradeoff of arming auto-merge (the verdict may land post-merge if a reviewable file is added later) rather than arming it silently with no caveat",
+        "Does NOT emit any flag or command containing `--admin`",
+        "Uses `--squash` in the emitted `gh pr merge` command, not `--merge` or `--rebase`"
+      ]
     }
   ]
 }

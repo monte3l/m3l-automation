@@ -83,7 +83,7 @@ below.
 
 | I want to...                                                        | Skill             | Also triggers on                                        |
 | ------------------------------------------------------------------- | ----------------- | ------------------------------------------------------- |
-| Verify gates, push, open the PR                                     | `/creating-prs`   | "open a PR", "ship this for review"                     |
+| Verify gates, push, open the PR, decide its merge path              | `/creating-prs`   | "open a PR", "ship this for review", "get this merged"  |
 | Clean up after a PR merged (branch, worktree, refs, tracker prompt) | `/finishing-work` | "clean up after this PR", "the PR merged, wrap this up" |
 | Reconcile doc metadata (provenance, counts, reference index)        | `/syncing-docs`   | "sync docs", "reconcile docs", "stamp provenance"       |
 
