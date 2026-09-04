@@ -50,6 +50,49 @@ on, so every entry ever added went dead the moment its PR landed. A test that
 deliberately plants a secret-shaped literal must assemble it at runtime
 instead (`.claude/rules/tests.md`), which needs no ignore entry at all.
 
+## Docs-only diffs
+
+"Docs-only" has three independent definitions in this repo, by design, not
+by drift — they serve genuinely different concerns and are not meant to be
+merged into one shared predicate:
+
+- **`bin/lib/changed-paths.mjs`'s `docs` category** — CI lane gating (which
+  job needs to run). Matches `docs/**`, `CLAUDE.md`, `README.md`, and any
+  `**/README.md`, regardless of extension (so a non-`.md` file under `docs/`,
+  e.g. a provenance sidecar or `catalog.json`, still counts).
+- **`bin/lib/pr-diff-filter.mjs`'s ignore set** — whether `claude-pr-review.yml`
+  spends a review turn on the diff at all (Gate 0). Matches `*.md`, `docs/**`,
+  `.github/dependabot.yml`, and the lockfile.
+- **`creating-prs`'s "absence of `src/**`" heuristic** — which local review
+  spoke (`docs-consistency-reviewer` vs. a `src/**`-aware fan-out) a session
+  dispatches after a diff, evaluated by the session itself, not a script.
+
+A 2026-09-04 investigation considered wiring `changes.outputs.docs` (computed
+by the `changes` job but consumed by no lane) into a fourth "skip or lighten
+`gates`/`secrets`/`format:check` for a docs-only diff" fast path. It does not
+hold up against those three jobs' own documented reasoning:
+
+- `gates` bundles ~24 governance `check:*` steps deliberately left
+  unconditional — four straight review rounds each found a different check
+  whose real file-reads spanned a narrower category than a path-scoped `if:`
+  would have assumed, so an audited ~20s of unconditional runtime beats
+  re-auditing the list every time a check's input footprint changes
+  (`ci.yml`'s `gates` job comment).
+- `secrets` (gitleaks) is explicitly never path-gated — "a secret can be
+  introduced by any file, and skipping secret scanning based on category is
+  not worth the ~7s" (`ci.yml`'s `secrets` job comment).
+- `format:check` (prettier) is explicitly never path-gated either — it scans
+  every tracked text extension, so scoping it to one category would rarely
+  skip it anyway; only `lint:md` underneath it is narrow enough to gate, and
+  it already does (on `md`, a superset of `docs` for markdown files).
+
+So `changes.outputs.docs` staying unconsumed is the correct, already-reasoned
+state, not an oversight — the CI-cost question a docs-only PR (e.g. a work
+log) actually raises is answered by Gate 0 above (`pr-diff-filter.mjs`'s
+ignore set), which already zeroes out the billed-token cost; the remaining
+~20-40s of `gates`/`secrets`/`format` runner time is the price already paid
+to keep those three lanes correct against every category, not just docs.
+
 ## Containers
 
 [ADR-0071](../adr/0071-console-containerization-deployment.md) packages the

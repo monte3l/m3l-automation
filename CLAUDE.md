@@ -46,19 +46,18 @@
 ================================================================
 -->
 
-A utilities library giving automation scripts enterprise-grade abstractions for config, logging, error handling, data import/export, async polling/retry, and cross-cutting concerns. Package `@m3l-automation/m3l-common`, **TypeScript 6.x** (`strict: true`) compiled with `tsc` to **ESM-only**, managed with `pnpm`. Non-negotiable: minimal runtime dependencies, no breaking changes outside a major release, strict semver, no `any` in the public API, Node 24+ only.
+Utilities library for automation scripts (config, logging, errors, import/export, polling/retry — see `package.json` descriptions). Package `@m3l-automation/m3l-common`, **TypeScript 6.x** (`strict: true`) compiled with `tsc` to **ESM-only**, managed with `pnpm`. Non-negotiable: minimal runtime dependencies, no breaking changes outside a major release, strict semver, no `any` in the public API, Node 24+ only.
 
 **Owner:** the repo maintainer (single-maintainer project). Review this file whenever a submodule/script pipeline ships, or every ~6 months, whichever comes first.
 
 ## Tech Stack
 
-- TypeScript 6.x, `strict: true`, `tsc` (no bundler), ESM only; Node 24
-  consumer floor plus the exact dev/CI runtime (`.node-version`, gated by
-  `check:node-version`)
+- TypeScript 6.x, `strict: true`, `tsc` (no bundler), ESM only; Node 24 floor,
+  `.node-version` is the exact dev/CI runtime (`check:node-version` gates drift)
 - `pnpm` (lockfile authoritative, self-pinned via `packageManager`, no
   Corepack — ADR-0001); `turbo` orchestrates/caches `build` + `typecheck`
-- `vitest`; `eslint` (flat config) + `prettier`; `lefthook` hooks; `knip`,
-  `publint` + `@arethetypeswrong/cli` for dep/exports hygiene
+- `vitest`, `eslint`+`prettier`, `lefthook`, `knip`/`publint`/`attw` for
+  dep/exports hygiene
 - Versioning is manual — internal, unpublished package (ADR-0020)
 
 `pnpm commands` lists every script; `package.json` has the dependency set and
@@ -66,19 +65,19 @@ the `exports` map.
 
 ## Repository Layout
 
-This is a **pnpm monorepo** (`packages/m3l-common/` the library,
-`packages/m3l-cli/`, `scripts/<name>/src/` consuming automations) —
-`pnpm-workspace.yaml` also triggers `M3LExecutionEnvironment`'s MONOREPO
-mode, anchoring `data/` at the workspace root.
+**pnpm monorepo** — `packages/m3l-common/` the library, `packages/m3l-cli/`,
+`scripts/<name>/src/` consumers; `pnpm-workspace.yaml` triggers
+`M3LExecutionEnvironment`'s MONOREPO mode, anchoring `data/` at the
+workspace root.
 
 `exports` exposes `.`, `./core`, `./aws`, `./core/errors` — Core namespace barrel (26 documented submodules) and AWS namespace barrel (20 documented submodules) surface through the namespace entries; `./core/errors` is ADR-0004's gated exception. New submodules join the barrel, never a new subpath (semver event). `internal/` is NOT exported, may change freely. Full tree: `docs/contributing/contributing.md` § Repository Layout.
 
 ## Environment Setup
 
 `pnpm install` (deps + lefthook hooks); CI uses `--frozen-lockfile`. A pure
-library — nothing to run locally. `.node-version` (24) is the **single
-authority** for the dev/CI runtime and `check:node-version` fails on drift.
-Setup, the `fnm` recipe, and why `engines.node` stays `">=24"`:
+library — nothing to run locally. `.node-version` (24) is the single
+authority for the dev/CI runtime; `check:node-version` fails on drift. Setup,
+the `fnm` recipe, why `engines.node` stays `">=24"`:
 `docs/contributing/contributing.md` § Environment Setup.
 
 ## Commands
@@ -87,7 +86,7 @@ Run any task with `pnpm <script>` (`pnpm commands` lists them all). The
 table below is the pre-push cadence, verified against `lefthook.yml` by
 `check:cadence`; CI additionally runs every `check:*`, `knip`, `lint:md`,
 `audit`, and gitleaks (`docs/contributing/ci-cd.md`). `pre-push` takes
-minutes — background it, never `--no-verify` (CI re-runs everything anyway).
+minutes — background it, never `--no-verify`.
 
 | Stage                   | Checks                                                                       | Scope  |
 | ----------------------- | ---------------------------------------------------------------------------- | ------ |
@@ -115,7 +114,7 @@ reads, passing test output) over any of the above.
 
 ## CI/CD
 
-Ten GitHub Actions workflows in `.github/workflows/` (plus Dependabot). Full
+GitHub Actions workflows live in `.github/workflows/` (plus Dependabot). Full
 table — triggers, purpose, required checks: `docs/contributing/ci-cd.md`.
 
 ## Coding, errors & tests (path-scoped)
@@ -163,13 +162,13 @@ Comment the _why_, not the _what_. TSDoc rules (every exported symbol, `@example
 
 ## Agent Operating Model
 
-A **hub-and-spoke** model: the hub plans and dispatches to isolated spokes and never writes or reviews `src/`/test code itself — enforced by `guard-hub-src-writes.mjs` and `disallowedTools: Agent` on every spoke (`pnpm check:agents`). Spoke roster, TDD loop, model tiering and recurring-failure lessons: `docs/contributing/agent-operating-model.md` and `model-selection.md`.
+**Hub-and-spoke**: the hub plans and dispatches to isolated spokes, never writing or reviewing `src/`/test code itself — enforced by `guard-hub-src-writes.mjs` and `disallowedTools: Agent` on every spoke (`pnpm check:agents`). Spoke roster, TDD loop, model tiering, recurring-failure lessons: `docs/contributing/agent-operating-model.md`, `model-selection.md`.
 
-**Hooks** (`.claude/settings.json`) add deterministic enforcement on top of this advisory file (`check:hooks` validates wiring); **skills** (`.claude/skills/*/SKILL.md`) encode multi-step procedures the hub invokes by name. Full inventories: `docs/contributing/hooks-reference.md`, `skills-catalog.md`, and `subagent-context-management.md` for subagent mid-turn truncation.
+**Hooks** (`.claude/settings.json`) add deterministic enforcement on top of this advisory file (`check:hooks` validates wiring); **skills** encode multi-step procedures the hub invokes by name. Inventories: `hooks-reference.md`, `skills-catalog.md`, `subagent-context-management.md` (mid-turn truncation).
 
 ## Task Workflow
 
-1. **Explore** the public API and `exports` map before editing; run `researching-anthropic-guidance` first when the task hinges on external Anthropic guidance rather than repo state. **Re-derive any authored claim** you're about to act on (an ADR's census, a tracker's scope) — these rot between authoring and use (`docs/logs/2026-08-19-hub-sync-key-namespace.md`).
+1. **Explore** the public API and `exports` map before editing; run `researching-anthropic-guidance` first when the task hinges on external Anthropic guidance. **Re-derive any authored claim** you're about to act on (an ADR's census, a tracker's scope) — these rot between authoring and use.
 2. **Plan** in plan mode for any change to an exported signature or the `exports` map (it has semver impact).
 3. **Implement** the smallest change that satisfies the task.
 4. **Verify**: `pnpm verify` passes before reporting done.
@@ -180,14 +179,14 @@ A **hub-and-spoke** model: the hub plans and dispatches to isolated spokes and n
 
 ## Forbidden Patterns
 
-**Enforced at write time or in CI:** `any` in the public API, a missing `.js` extension, CommonJS (`require`/`module.exports`/`__dirname`), hand-edits to `dist/`, non-Conventional commits, committed secrets/tokens, an unsigned/invalid-signature push, adding a dependency without updating the lockfile, and any `Claude-*` git trailer other than `Co-Authored-By:` (harness-injected, e.g. `Claude-Session:` — undocumented, unvalidated upstream; stripped at `commit-msg` and rejected as a push-time backstop). The `.js`-extension and CommonJS bans are guarded twice (a PreToolUse hook plus ESLint/CI) — don't remove either as "redundant."
+**Enforced at write time or in CI:** `any` in the public API, a missing `.js` extension, CommonJS (`require`/`module.exports`/`__dirname`), hand-edits to `dist/`, non-Conventional commits, committed secrets/tokens, an unsigned/invalid-signature push, adding a dependency without updating the lockfile, and any `Claude-*` git trailer other than `Co-Authored-By:` (harness-injected, e.g. `Claude-Session:`; stripped at `commit-msg`, rejected at push). The `.js`-extension and CommonJS bans are guarded twice (a PreToolUse hook plus ESLint/CI) — don't remove either as "redundant."
 
 **No automated guard — need conscious care:** never swallow errors silently; no top-level side effects; keep the import graph shallow; never `git push --force`; surface new Core/AWS exports through the namespace barrel only, never a new `exports` subpath.
 
 ## Known Gotchas
 
-- A new public subpath needs BOTH `src/<path>/index.ts` and an `exports` entry, or consumers cannot import it — but per the layout above, new submodules go through the namespace barrel, not a new subpath.
+- A new public subpath needs both `src/<path>/index.ts` and an `exports` entry — but per the layout above, new submodules go through the namespace barrel, not a new subpath.
 - A fresh dependency bump can trip pnpm's `minimumReleaseAge` and block every command. Add the exact `name@version` to `minimumReleaseAgeExclude` (own `build:` commit); never weaken the policy.
-- What a `check:*` gate enforces is defined by its `bin/*.mjs` source, not nearby prose (e.g. `check:api` moves only on an `exports`-map subpath change, never a barrel-surfaced symbol). Read the script before designing a plan around a gate.
+- What a `check:*` gate enforces is defined by its `bin/*.mjs` source, not nearby prose. Read the script before designing a plan around a gate.
 - 2+ concurrent Claude Code sessions can livelock a memory-constrained host (uncapped `pre-push` fan-out). Run `pnpm check:host-resources` first — see ADR-0080.
-- `check:file-budget` (25,000 chars per `src` file) runs no earlier than `pre-push`, so a file already near the ceiling turns any growth into a late failure — a four-line comment pushed `M3LAppendOnlyStream.ts` to 25,312, and threading one parameter through 14 signatures took `m3l-cli/src/main.ts` from 22,603 to 24,253. Measure the file before planning an edit that grows it and fold the paying extraction into the same change; discovered at push time it is a rebase, not a two-minute move.
+- `check:file-budget` (25,000 chars per `src` file) runs no earlier than `pre-push`, so a file already near the ceiling turns any growth into a late failure discovered only at push time — a rebase, not a two-minute fix. Measure the file before planning an edit that grows it, and fold the paying extraction into the same change.
