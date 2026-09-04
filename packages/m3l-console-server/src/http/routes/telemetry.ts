@@ -94,12 +94,16 @@ export const METRIC_VALUES = [
 const METRIC_SET: ReadonlySet<string> = new Set(METRIC_VALUES);
 
 /** `true` when `value` is a member of {@link GRANULARITY_VALUES}. */
-function isAcceptedGranularity(value: string): boolean {
+function isAcceptedGranularity(
+  value: string,
+): value is (typeof GRANULARITY_VALUES)[number] {
   return GRANULARITY_SET.has(value);
 }
 
 /** `true` when `value` is a member of {@link METRIC_VALUES}. */
-function isAcceptedMetric(value: string): boolean {
+function isAcceptedMetric(
+  value: string,
+): value is (typeof METRIC_VALUES)[number] {
   return METRIC_SET.has(value);
 }
 
@@ -113,8 +117,8 @@ function truncateEchoed(raw: string): string {
  * `M3LTelemetryQuery`.
  */
 interface TelemetryListQuery {
-  readonly granularity: string;
-  readonly metric?: string;
+  readonly granularity: (typeof GRANULARITY_VALUES)[number];
+  readonly metric?: (typeof METRIC_VALUES)[number];
   readonly fromMs?: number;
   readonly toMs?: number;
   readonly limit: number;
@@ -147,7 +151,9 @@ export interface M3LTelemetryReaderPort {
  *   caller-supplied query input reaching a response body — so it is
  *   truncated to {@link MAX_ECHOED_VALUE_LENGTH} characters first.
  */
-function parseGranularity(raw: string | null): string {
+function parseGranularity(
+  raw: string | null,
+): (typeof GRANULARITY_VALUES)[number] {
   if (raw === null) {
     throw new M3LConsoleError(
       "ERR_CONSOLE_BAD_REQUEST",
@@ -171,7 +177,9 @@ function parseGranularity(raw: string | null): string {
  *   `raw` is present but not a recognised metric, truncated per
  *   {@link parseGranularity}'s same rationale.
  */
-function parseMetric(raw: string | null): string | undefined {
+function parseMetric(
+  raw: string | null,
+): (typeof METRIC_VALUES)[number] | undefined {
   if (raw === null) return undefined;
   if (!isAcceptedMetric(raw)) {
     throw new M3LConsoleError(

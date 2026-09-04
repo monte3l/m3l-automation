@@ -34,6 +34,7 @@ import type {
   SessionRouteReaderPort,
   SessionRouteWriterPort,
 } from "../src/http/routes/sessions.js";
+import type { M3LTelemetryReaderPort } from "../src/http/routes/telemetry.js";
 import type { M3LRoute } from "../src/http/router.js";
 import { createEventStreamHub } from "../src/stream/event-stream.js";
 
@@ -443,6 +444,73 @@ describe("createBuiltInRoutes — with options.sessions", () => {
     expect(firstRunIndex).toBeGreaterThan(healthIndex);
     expect(firstSessionIndex).toBeGreaterThan(firstRunIndex);
     expect(callerIndex).toBeGreaterThan(firstSessionIndex);
+  });
+});
+
+// X8 slice 4a: `BuiltInRouteOptions.telemetry` is present only when a
+// telemetry repository was wired (see `main.ts`'s `resolveTelemetry`).
+// Absent entirely means `/api/v1/telemetry` is not registered — mirrors
+// `runs`'s and `sessions`'s own "no registered but always 404 middle
+// state" guarantee, which is why the absence case below is its own test
+// rather than folded into the presence one.
+describe("createBuiltInRoutes — without options.telemetry", () => {
+  test("registers no /api/v1/telemetry route — there is no 'registered but always 404' middle state", () => {
+    const routes = createBuiltInRoutes({
+      drain: buildDrain(),
+      startedAt: Date.now(),
+      routes: [],
+    });
+
+    expect(routes.some((route) => route.path === "/api/v1/telemetry")).toBe(
+      false,
+    );
+  });
+});
+
+describe("createBuiltInRoutes — with options.telemetry", () => {
+  const fakeTelemetryReader: M3LTelemetryReaderPort = {
+    list: () => [],
+  };
+
+  test("additionally includes exactly one GET /api/v1/telemetry route with auth: 'required'", () => {
+    const routes = createBuiltInRoutes({
+      drain: buildDrain(),
+      startedAt: Date.now(),
+      routes: [],
+      telemetry: fakeTelemetryReader,
+    });
+
+    const matches = routes.filter(
+      (route) => route.path === "/api/v1/telemetry",
+    );
+
+    expect(matches).toHaveLength(1);
+    expect(matches[0]?.method).toBe("GET");
+    expect(matches[0]?.auth).toBe("required");
+  });
+
+  test("the telemetry route precedes every caller-supplied route from options.routes", () => {
+    const callerRoute: M3LRoute = {
+      method: "GET",
+      path: "/api/v1/custom",
+      auth: "required",
+      handler: () => ({ status: 200, headers: {}, body: "custom" }),
+    };
+
+    const routes = createBuiltInRoutes({
+      drain: buildDrain(),
+      startedAt: Date.now(),
+      routes: [callerRoute],
+      telemetry: fakeTelemetryReader,
+    });
+
+    const telemetryIndex = routes.findIndex(
+      (route) => route.path === "/api/v1/telemetry",
+    );
+    const callerIndex = routes.indexOf(callerRoute);
+
+    expect(telemetryIndex).toBeGreaterThanOrEqual(0);
+    expect(callerIndex).toBeGreaterThan(telemetryIndex);
   });
 });
 

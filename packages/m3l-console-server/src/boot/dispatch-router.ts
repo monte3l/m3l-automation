@@ -18,6 +18,7 @@ import type {
   RunsRouteOptions,
   SessionRouteOptions,
 } from "../http/routes/built-in.js";
+import type { M3LTelemetryReaderPort } from "../http/routes/telemetry.js";
 import type { M3LDrainController } from "../lifecycle/drain.js";
 import type { M3LConsoleStoreLifecycle } from "../store/store.js";
 import { applyHumanActionAudit } from "./human-action-audit.js";
@@ -44,6 +45,8 @@ import { applyHumanActionAudit } from "./human-action-audit.js";
  * @param auditPort - The ADR-0070 human-action trail every audited route
  *   records through. Applied to the console's OWN routes; `routes` is
  *   appended verbatim (see the note in the body).
+ * @param telemetry - The X8 telemetry query route's reader, when a telemetry
+ *   repository is wired (see `main.ts`'s `resolveTelemetry`).
  * @returns The compiled dispatch router.
  * @throws {@link "../errors/console-error.js".M3LConsoleError}
  *   `ERR_CONSOLE_INTERNAL` when a non-`GET` route has no audit spec; see
@@ -52,7 +55,7 @@ import { applyHumanActionAudit } from "./human-action-audit.js";
  * @example
  * ```ts
  * const router = buildDispatchRouter(
- *   drain, [], undefined, undefined, undefined, auditPort,
+ *   drain, [], undefined, undefined, undefined, auditPort, undefined,
  * );
  * ```
  */
@@ -63,6 +66,7 @@ export function buildDispatchRouter(
   runs: RunsRouteOptions | undefined,
   sessions: SessionRouteOptions | undefined,
   auditPort: M3LHumanActionAuditPort,
+  telemetry: M3LTelemetryReaderPort | undefined,
 ): M3LRouter {
   // The audit gate is applied to the CONSOLE'S OWN routes only, then the
   // caller's table is appended verbatim — the same order
@@ -78,6 +82,7 @@ export function buildDispatchRouter(
     ...(store !== undefined && { store }),
     ...(runs !== undefined && { runs }),
     ...(sessions !== undefined && { sessions }),
+    ...(telemetry !== undefined && { telemetry }),
     routes: [],
   });
   return createRouter([

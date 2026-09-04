@@ -16,6 +16,7 @@ import type { Server } from "node:http";
 
 import { Core } from "@m3l-automation/m3l-common";
 
+import type { M3LHumanActionAuditPort } from "./audit/port.js";
 import { indexHumanActionAuditPort } from "./boot/audit-index.js";
 import { rebuildHumanActionIndexOnBoot } from "./boot/audit-rebuild.js";
 import { buildDispatchRouter } from "./boot/dispatch-router.js";
@@ -123,6 +124,21 @@ function resolveTelemetry(
       ];
 }
 
+/** Resolves the audit port: `options.auditPort` verbatim if supplied, else the ADR-0070 indexed default. */
+function resolveAuditPort(
+  options: M3LConsoleRuntimeOptions,
+  logger: Core.M3LLogger,
+): M3LHumanActionAuditPort {
+  return (
+    options.auditPort ??
+    indexHumanActionAuditPort(
+      buildHumanActionAuditPort(options.env ?? process.env),
+      options.audit,
+      logger,
+    )
+  );
+}
+
 export function createConsoleRuntime(
   options: M3LConsoleRuntimeOptions = {},
 ): M3LConsoleRuntime {
@@ -159,12 +175,8 @@ export function createConsoleRuntime(
           ? { service: adaptSessionService(sessions.service) }
           : undefined,
       ),
-      options.auditPort ??
-        indexHumanActionAuditPort(
-          buildHumanActionAuditPort(options.env ?? process.env),
-          options.audit,
-          logger,
-        ),
+      resolveAuditPort(options, logger),
+      options.telemetry,
     ),
     middlewares: [
       createDrainMiddleware(drain),

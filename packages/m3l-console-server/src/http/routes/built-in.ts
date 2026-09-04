@@ -45,6 +45,8 @@ import type {
   SessionRouteWriterPort,
 } from "./sessions.js";
 export type { SessionRouteOptions } from "./sessions.js";
+import { createTelemetryRoutes } from "./telemetry.js";
+import type { M3LTelemetryReaderPort } from "./telemetry.js";
 import type { M3LRoute } from "../router.js";
 import { M3LConsoleError } from "../../errors/console-error.js";
 
@@ -127,6 +129,14 @@ export interface BuiltInRouteOptions {
    * always 404 middle state" guarantee.
    */
   readonly sessions?: SessionRouteOptions;
+  /**
+   * The X8 telemetry query route's reader, present only when a telemetry
+   * repository was wired (see `main.ts`'s `resolveTelemetry`). Absent
+   * entirely means `/api/v1/telemetry` is not registered — mirrors
+   * {@link runs}'s and {@link sessions}'s own "no registered but always 404
+   * middle state" guarantee.
+   */
+  readonly telemetry?: M3LTelemetryReaderPort;
   /**
    * Caller-supplied routes, appended AFTER every built-in route group — see
    * this module's headline TSDoc for why that ordering is never reversed.
@@ -377,6 +387,9 @@ export function createBuiltInRoutes(
     ...healthRoutes,
     ...buildRunRoutes(options.runs),
     ...buildSessionRoutes(options.sessions),
+    ...(options.telemetry !== undefined
+      ? createTelemetryRoutes(options.telemetry)
+      : []),
     ...options.routes,
   ];
 }
