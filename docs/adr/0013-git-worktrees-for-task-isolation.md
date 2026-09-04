@@ -81,6 +81,24 @@ unconditionally, as the `worktree.baseRef = "fresh"` bullet above states: it
 falls back to the local `main` branch when `origin/main` is absent, and only
 errors when neither ref exists.
 
+## Amendment (2026-09-04)
+
+The native `EnterWorktree`/`ExitWorktree` tools now handle **in-session
+switching** for these sibling-directory worktrees: `EnterWorktree path:
+../m3l-automation-<slug>` switches an already-running session's cwd, write
+access, and `CLAUDE.md`/settings context into an existing `pnpm
+worktree:new`-created worktree, and `ExitWorktree action: keep|remove`
+switches back — no process restart, no `pnpm session:launch`. This is not a
+reversal of this ADR's sibling-directory placement decision: Anthropic's own
+documentation names creating a worktree "with git directly" (rather than the
+tool's own `.claude/worktrees/`-nested creation path) as the correct choice
+specifically when checking out an existing branch or **placing the worktree
+outside the repository** — this ADR's exact case. Entering a path outside
+`.claude/worktrees/` prompts for approval every time (no persistent opt-out
+short of `bypassPermissions` mode); this is expected per-entry UX, not a
+defect. See `starting-work/SKILL.md` Steps 3/5 for the resulting default
+flow and ADR-0088's 2026-09-04 amendment for the session-naming interaction.
+
 ## Links
 
 - Supersedes / superseded by: none.

@@ -105,10 +105,18 @@ Derive a concrete default for all decisions from steps 1–2:
   up, not create a new branch or worktree. Surface this as the first option
   in Step 4 rather than silently overriding the other decisions — the user
   may still prefer to abandon the dirty state and start fresh.
-- **Location** — default to the **shared checkout**. Recommend a linked worktree
-  (`pnpm worktree:new <slug>`) only when the user signalled concurrent/parallel
-  work (e.g. running two pipelines at once); worktrees exist for that, and forcing
-  one otherwise just adds churn (ADR-0013).
+- **Location** — default to a **linked worktree**, entered in-session via
+  `pnpm worktree:new <slug>` + `EnterWorktree path:
+../m3l-automation-<slug>` (Option B; ADR-0013/0014 amended for this) — no
+  restart, no second session. Recommend the **shared checkout** only for
+  `main`-resident work with no branch at all (a doc prose fix, a review) where
+  isolation buys nothing. The old "only when the user signalled concurrent
+  work" gate is retired as the default-location test: the cost that justified
+  deferring to the shared checkout — a second process, a `cd` — no longer
+  applies once switching happens in-session via `EnterWorktree`. A genuine
+  concurrent/parallel-work signal is now a reason to `ExitWorktree(keep)` and
+  hand the worktree to a **second** session, not a reason to skip the
+  worktree in this one.
 - **Branch** — recommend `feat/<slug>` (or `fix/<slug>` for a bug fix), with the
   slug derived from the task (kebab-case, short). If the repo is already on a
   suitable non-`main` branch, recommend **staying** on it. Never recommend `main`
@@ -127,10 +135,15 @@ Derive a concrete default for all decisions from steps 1–2:
   for the user, so the recommendation must give the literal command to
   run — `pnpm session:launch` (no arguments) when a new session/worktree is
   about to open on a `feat/<slug>`/`fix/<slug>` branch, since the branch
-  alone determines the name; `pnpm session:launch --kind <kind> <slug>` for
-  `main`-resident work with no branch to derive from. A session already
-  running (continuing the current one) has no launch-time hook left to use —
-  that residual case still needs `/rename <kind>-<slug>` by hand.
+  alone determines the name — but only when actually opening a **second**,
+  independent session (the user explicitly wants concurrent sessions, or
+  `ExitWorktree(keep)` handed a worktree off); `pnpm session:launch --kind
+<kind> <slug>` for `main`-resident work with no branch to derive from. The
+  default single-session `EnterWorktree` path (Step 5) never opens a new
+  process, so there is no launch-time hook to use for it — name the session
+  with `/rename <kind>-<slug>` immediately after entering the worktree. This
+  is now the **primary** naming route for a linked-worktree task, not a
+  residual fallback.
 - **PR sequence** — only surfaced when Step 2 found several landable units.
   Recommend the order (docs-first when the scope mixes docs and code — that
   slice is free to review and unblocks the rest; otherwise by path cluster or
@@ -178,8 +191,18 @@ surface the decisions still open.
 
 Once confirmed:
 
-- **New worktree:** `pnpm worktree:new <slug>` — creates the sibling worktree
-  branched from `origin/main` and provisions it. Continue work inside it.
+- **New worktree:** run `pnpm worktree:new <slug>` — creates the sibling
+  worktree branched from `origin/main` and provisions it (installs deps,
+  copies `.worktreeinclude` files) — then `EnterWorktree path:
+../m3l-automation-<slug>` in the **same turn** to switch the current
+  session into it. `EnterWorktree` asks for approval every time the target
+  path sits outside `.claude/worktrees/` (which every sibling-dir worktree
+  does) — this is expected, one-time-per-entry UX, not a defect; only
+  `bypassPermissions` mode skips it. Follow immediately with `/rename
+<kind>-<slug>` to name the session — no restart occurs, so
+  `pnpm session:launch`'s command-line naming trick is not needed for this
+  path (it still applies when genuinely opening a second session; see the
+  session-name bullet in Step 3).
 - **New branch in place:** `git switch -c feat/<slug>` (or `fix/<slug>`).
 - **Staying put:** verify `HEAD` is neither `main` nor detached-on-`main` before
   handing back; if it is, loop back to step 4 rather than proceeding into a write

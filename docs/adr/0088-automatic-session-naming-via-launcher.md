@@ -116,14 +116,40 @@ hook can act on a running session), and it is out of this ADR's scope: the
 target is starting new work, which `starting-work` already gates, not
 retrofitting a name onto a conversation already underway.
 
+### Amendment (2026-09-04) — the residual gap is now the primary route for worktree entry
+
+The "Residual manual gap" above framed a session renamed by hand as an
+unavoidable one-off corner case, out of scope because `starting-work`'s
+target was "starting new work" via a fresh launch. The bootstrap-collapse
+change (`starting-work/SKILL.md` Steps 3/5, ADR-0013's 2026-09-04 amendment)
+makes the in-session `EnterWorktree` path the **default** location for
+branch-bearing work, not a corner case — and `EnterWorktree` never restarts
+the process, so there is no launch-time flag to compute a name into. For that
+now-default path, `/rename <kind>-<slug>` immediately after entry is the
+primary naming route, not the residual one; `pnpm session:launch` remains
+primary only for the genuinely-separate-session case (opening a second
+session, or a session started by typing bare `claude`). This does not change
+ADR-0087's vocabulary or validation, only which of its two documented
+application levers (`--name`/`-n` at launch vs. `/rename` mid-session) is now
+the common path.
+
+Separately, accepting a plan in plan mode auto-titles the session from the
+plan's content — a third native naming signal, but one that produces a
+free-form descriptive title, not the validated `<kind>-<slug>` shape this ADR
+enforces. It does not replace or satisfy the convention; a session auto-titled
+this way still needs `/rename <kind>-<slug>` for compliance the statusline
+checks.
+
 ### Reaffirmed (2026-09-03)
 
 A follow-up audit, per the user's explicit request, re-ran
 `/refreshing-anthropic-guidance` scoped to session naming/renaming to check
 whether this mechanism is still correct or should instead be wired into a
 Claude Code hook. Direct fetches of `code.claude.com/docs/en/cli-reference`
-and `.../sessions`, plus a CHANGELOG delta (only `2.1.258`/`2.1.259` released
-since the pinned `2.1.257`, neither touching naming), found **zero drift**:
+and `.../sessions`, plus a CHANGELOG delta (`2.1.258` through `2.1.260`
+released since the pinned `2.1.257` as of this ADR's original writing, none
+touching naming — reconfirmed current as of 2026-09-04, see
+`docs/research/harness-refresh.md`), found **zero drift**:
 `--name`/`-n` at launch and `/rename` mid-session remain the only documented
 naming mechanisms, and Anthropic documents no hook field, `settings.json`
 key, environment variable, or shell-integration pattern for automating it.

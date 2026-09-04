@@ -213,6 +213,18 @@ independently.
   the branch from `git worktree list --porcelain` without needing to know its
   prefix.
 
+## Amendment (2026-09-04)
+
+`worktree:new`/`worktree:remove` remain the create/teardown primitives
+unchanged — the addition is a third, in-session leg: the native
+`EnterWorktree path: <worktreePath>` tool now switches an already-running
+session into a worktree `worktree:new` just created (or any existing one),
+and `ExitWorktree action: keep|remove` switches back or tears down. This
+collapses the forced-restart bootstrap flow (`starting-work` → `worktree:new`
+→ kill session → `cd` → relaunch) into one continuous session; see ADR-0013's
+matching 2026-09-04 amendment for why the sibling-directory placement itself
+is unaffected, and `starting-work/SKILL.md` Step 5 for the concrete sequence.
+
 ## Links
 
 - Supersedes / superseded by: none. **Extends ADR-0013** (git worktrees for task
