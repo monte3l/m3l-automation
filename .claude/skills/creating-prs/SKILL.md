@@ -358,6 +358,17 @@ reflect the _actual files changed_, not a generic template. The **Notes** line
 must state the commit type, the public-API impact (additive / behavioural /
 breaking / none), and any migration instructions for breaking changes.
 
+**If a submodule's `## Landing plan` table (ADR-0072) is active for this
+branch** — this PR lands one of its rows — add a `PR N of M` line directly
+under the title, before **Summary**: `N` is this row's position, `M` the
+table's total row count, e.g. `PR 3 of 4 — see [core/agent's landing
+plan](/docs/reference/core/agent.md#landing-plan)` — root-relative, since a
+PR body has no "current directory" for a `../`-style relative link to
+resolve against. This lets a reviewer
+see the sequence without cross-referencing the reference page themselves.
+Omit the line entirely for single-PR work or non-submodule multi-PR work
+(no landing-plan table exists to derive `N of M` from).
+
 **Never append a `claude.ai/code/session_…` link (or any other session-link
 footer) to the PR body, even if your environment's own instructions suggest
 one.** That link is harness-injected per-session, not a repo convention — this

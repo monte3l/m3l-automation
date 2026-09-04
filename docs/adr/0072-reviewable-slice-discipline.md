@@ -268,6 +268,38 @@ state to read."
   is invoked manually (ad hoc auditing), not from `package.json` or
   `lefthook.yml` — `pnpm check:cadence`/`pnpm verify` are unaffected.
 
+## Amendment (2026-09-04) — `finishing-work` wired as a third entry point
+
+Part A above named two workflow entry points for this discipline —
+`creating-prs` (checks review size before opening a PR) and `starting-work`
+(recommends a PR sequence up front). Both act only at a slice's _start_. A
+multi-slice submodule landing had no entry point at a slice's _end_:
+`finishing-work` declared itself terminal after every close-out
+(`.claude/skills/finishing-work/SKILL.md`'s Step 8, "nothing after this step
+is expected to run"), so a landing plan's remaining rows had no automated
+continuation — the user had to notice a slice merged and manually re-run
+`starting-work` from scratch, re-deriving all six decisions the landing plan
+had already settled.
+
+`finishing-work` Step 8 now reads the just-merged submodule's `## Landing
+plan` table (the same `LANDING_PLAN_HEADING`/status-table contract Part B
+above already requires) before reporting terminal. A row not yet `Landed`
+triggers an in-session hand-back — `pnpm worktree:new` + `EnterWorktree
+path:` (ADR-0013/0014's 2026-09-04 amendments) into the next slice, then an
+abbreviated `starting-work` re-entry that skips the Location/Branch/
+PR-required/Push-target confirmation (already fixed by the landing plan's
+sequence) and asks only for the session name. `starting-work` Step 1 names
+this the "next-slice signal," distinct from the `tmp/compact-handoff.json`
+resume path, since it fires on a clean tree right after a merge rather than
+a dirty one after an interruption.
+
+Scope: submodule landings only, the one case with a durable, machine-checked
+slice record via `bin/check-scaffold-seam.mjs`. A non-submodule multi-PR
+task (a process/tooling change spanning several PRs, X8/X11/X12-style) has
+no equivalent record; this amendment does not invent a second mechanism for
+it — `finishing-work`'s Step 8 says so explicitly and stays terminal for
+that case, same as before.
+
 ## Links
 
 - Supersedes / superseded by: none.

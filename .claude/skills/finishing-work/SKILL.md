@@ -161,12 +161,49 @@ last commit (a stray spoke journal from a dispatch on this branch that
 never got cleaned up). Ask before deleting — a journal from a _different_,
 still-in-progress branch may share the naming pattern.
 
-### 8 — Report
+### 8 — Check for a remaining slice (ADR-0072)
+
+Only applies when `headRefName` (Step 1) landed part of a submodule — the one
+case with a durable, machine-checkable slice record today
+(`bin/check-scaffold-seam.mjs`'s `LANDING_PLAN_HEADING`). A non-submodule
+multi-PR task (X8/X11/X12-style) has no equivalent record and is out of this
+step's scope — see `## Notes` below.
+
+If the just-merged work touched `packages/m3l-common/src/{core,aws}/<mod>/`,
+read that submodule's `docs/reference/<ns>/<mod>.md` for a `## Landing plan`
+heading and parse its slice table. If the heading is absent, or every row's
+Status is `Landed`, nothing remains — proceed to Step 9 as today, this is
+still the terminal case.
+
+**If a row's Status is not `Landed`,** a slice remains. Don't stop here:
+
+1. Derive the next slice's slug from that row (ask the user to confirm if
+   the row name doesn't map cleanly to a slug), then run `pnpm worktree:new
+<next-slug>` and `EnterWorktree path: ../m3l-automation-<next-slug>` —
+   the same in-session mechanism `starting-work` Step 5 uses (ADR-0013/0014's
+   2026-09-04 amendments): no restart, no second session.
+2. Re-enter `starting-work` in its **abbreviated** form: skip the
+   Location/Branch/PR-required/Push-target confirmation entirely — a
+   landing plan's own sequence already fixes them (same branch-naming
+   pattern as the slice that just merged, PR required, `origin <branch>`
+   push target) — but still confirm the session name via `/rename
+<kind>-<next-slug>`, since that names this specific session rather than
+   settling git state. `starting-work` Step 1's "next-slice signal" is
+   exactly this handoff.
+3. Report which slice is starting, quoting its `## Landing plan` row,
+   instead of Step 9's terminal report.
+
+This makes `finishing-work` a third workflow entry point wired into
+ADR-0072's slice discipline, alongside `starting-work` and `creating-prs` —
+see that ADR's 2026-09-04 amendment.
+
+### 9 — Report
 
 One-line summary: branch deleted (or kept, with why), refs pruned count,
 tracker flip done/skipped, `sync:hub` run/skipped, work log present/written/
-skipped, journals swept/left. This is the close-out record — nothing after
-this step is expected to run.
+skipped, journals swept/left, and (submodule work only) whether Step 8 found
+a remaining slice. This is the close-out record for a task with no remaining
+slice — nothing after this step is expected to run.
 
 ## Notes
 
@@ -180,3 +217,11 @@ this step is expected to run.
   `delete_branch_on_merge` setting is off — that's the GitHub-side
   precondition for the remote branch disappearing on its own; this skill's
   Step 3/4 handle only the _local_ residue regardless of that setting.
+- Step 8's remaining-slice check is submodule-scoped by design — it reads
+  the one durable slice record `check-scaffold-seam.mjs` already enforces.
+  A non-submodule multi-PR task (a process/tooling change spanning several
+  PRs, X8/X11/X12-style) has no equivalent record; tell the user Step 8
+  found nothing to continue automatically rather than silently treating the
+  task as finished, and file a tracker row if a durable record for that
+  case is worth building later — this pass deliberately did not invent a
+  second mechanism.
