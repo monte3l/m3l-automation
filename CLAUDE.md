@@ -140,9 +140,8 @@ Canonical **Style Guide**: `docs/contributing/style-guide.md` (`[enforced]` vs `
 ## Git Workflow
 
 - **Conventional Commits (required)** plus an AI co-authorship trailer when Claude assisted; enforced by the `commit-msg` hook. Trailer mechanics and canonical model names: `docs/contributing/contributing.md`.
-- **Run the `starting-work` skill before any change-work** — the gate that settles location / branch / PR / push (ADR-0016). Branch off `main` as `feat/<slug>` or `fix/<slug>`; `guard-branch-isolation.mjs` blocks `packages/*/src/**`, `scripts/*/src/**`, `**/tests/**` writes while `HEAD` is `main`.
+- **Run the `starting-work` skill before any change-work** — settles location / branch / PR / push (ADR-0016); defaults to a worktree entered in-session via `pnpm worktree:new <slug>` + `EnterWorktree`, no restart (ADR-0013/0014). Branch off `main` as `feat/<slug>`/`fix/<slug>`; `guard-branch-isolation.mjs` blocks `packages/*/src/**`, `scripts/*/src/**`, `**/tests/**` writes on `main`.
 - Never `git push --force` a shared branch. **Prefer several small, independently reviewable PRs** (ADR-0072) — run `pnpm check:review-size` first.
-- **Worktrees** (ADR-0013/0014): `pnpm worktree:new <slug>` / `pnpm worktree:remove <slug>`.
 
 ## Architecture & Decisions
 
