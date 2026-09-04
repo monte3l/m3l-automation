@@ -377,11 +377,15 @@ function deriveSliceLabel(cell) {
  * Parses the first markdown table following a `## Landing plan` heading
  * (ADR-0072) into a slice-progress count. Returns null — not an error — for
  * a page whose landing plan is prose or a numbered list rather than a table
- * (`docs/reference/core/procedure.md`, `docs/reference/aws/bedrock-runtime.md`
- * at authoring time): the segment simply doesn't render for those pages.
+ * (`docs/reference/aws/bedrock-runtime.md` at authoring time): the segment
+ * simply doesn't render for those pages.
+ *
+ * `allLanded` is computed independently of `current === total` — the last
+ * row in an in-flight table (not yet `Landed`) also makes `current === total`
+ * numerically, but must not be treated as fully landed for styling purposes.
  *
  * @param {string} pageText
- * @returns {{ current: number, total: number, label: string | null } | null}
+ * @returns {{ current: number, total: number, label: string | null, allLanded: boolean } | null}
  */
 export function parseLandingPlanProgress(pageText) {
   const headingMatch = LANDING_PLAN_HEADING_RE.exec(pageText);
@@ -433,13 +437,14 @@ export function parseLandingPlanProgress(pageText) {
         (row[statusIndex] ?? "").toLowerCase(),
       ),
   );
-  const current = firstOpenIndex === -1 ? total : firstOpenIndex + 1;
+  const allLanded = firstOpenIndex === -1;
+  const current = allLanded ? total : firstOpenIndex + 1;
   const label =
     sliceIndex === -1
       ? null
       : deriveSliceLabel(dataRows[current - 1][sliceIndex]);
 
-  return { current, total, label };
+  return { current, total, label, allLanded };
 }
 
 /**
@@ -457,7 +462,7 @@ export function parseLandingPlanProgress(pageText) {
  * @param {string} startDir the workspace root to resolve `tmp/`/page paths
  *   against (`payload.workspace.current_dir`, per-worktree).
  * @param {string | null} branch the already-resolved current branch.
- * @returns {{ current: number, total: number, label: string | null } | null}
+ * @returns {{ current: number, total: number, label: string | null, allLanded: boolean } | null}
  */
 export function resolveSliceProgress(readFile, startDir, branch) {
   if (typeof branch !== "string" || branch.length === 0) return null;
@@ -494,6 +499,9 @@ export function resolveSliceProgress(readFile, startDir, branch) {
           : typeof entry.wave === "string" && entry.wave.length > 0
             ? entry.wave
             : null,
+      // Literal mode carries no per-row status data (unlike derived mode's
+      // table), so `current >= total` is the best available signal here.
+      allLanded: entry.current >= entry.total,
     };
   }
 
@@ -501,21 +509,21 @@ export function resolveSliceProgress(readFile, startDir, branch) {
 }
 
 /**
- * @param {{ current: number, total: number, label: string | null } | null} slice
+ * @param {{ current: number, total: number, label: string | null, allLanded: boolean } | null} slice
  *   the pre-resolved value from {@link resolveSliceProgress} — this formatter
  *   does no I/O, matching `formatBranchSegment(env?.branch ?? null)`'s shape.
  * @returns {{ id: string, priority: number, text: string, minWidth: number } | null}
- *   the `<label> N/M` segment (dim once all rows have landed), or null when
- *   `slice` is absent.
+ *   the `<label> N/M` segment (dim once `allLanded`, cyan otherwise — not
+ *   merely once `current` numerically reaches `total`, since a table's last
+ *   row can still be in flight there), or null when `slice` is absent.
  */
 export function formatSliceSegment(slice) {
   if (slice === null || typeof slice !== "object") return null;
-  const { current, total, label } = slice;
+  const { current, total, label, allLanded } = slice;
   const prefix =
     typeof label === "string" && label.length > 0 ? `${label} ` : "";
   const text = `${prefix}${current}/${total}`;
-  const styled =
-    current >= total ? `${DIM}${text}${RESET}` : `${CYAN}${text}${RESET}`;
+  const styled = allLanded ? `${DIM}${text}${RESET}` : `${CYAN}${text}${RESET}`;
   return seg("slice", 90, styled, 6);
 }
 

@@ -309,7 +309,12 @@ describe("formatSliceSegment", () => {
   });
 
   test("renders '<label> N/M' in cyan when current is less than total", () => {
-    const result = formatSliceSegment({ current: 2, total: 4, label: "V6" });
+    const result = formatSliceSegment({
+      current: 2,
+      total: 4,
+      label: "V6",
+      allLanded: false,
+    });
 
     expect(result).toEqual({
       id: "slice",
@@ -319,8 +324,13 @@ describe("formatSliceSegment", () => {
     });
   });
 
-  test("renders dim, not cyan, once current reaches total (all landed)", () => {
-    const result = formatSliceSegment({ current: 4, total: 4, label: "V6" });
+  test("renders dim, not cyan, once allLanded is true", () => {
+    const result = formatSliceSegment({
+      current: 4,
+      total: 4,
+      label: "V6",
+      allLanded: true,
+    });
 
     expect(result).toEqual({
       id: "slice",
@@ -330,8 +340,33 @@ describe("formatSliceSegment", () => {
     });
   });
 
+  // Bug-fix proof: a table's last row can still be in flight (not yet
+  // Landed), which makes current === total numerically without everything
+  // actually being landed — styling must key off allLanded, not the numeric
+  // comparison, or this renders dim when it should render cyan.
+  test("renders cyan, not dim, when current equals total but allLanded is false (last row still in flight)", () => {
+    const result = formatSliceSegment({
+      current: 4,
+      total: 4,
+      label: "V6",
+      allLanded: false,
+    });
+
+    expect(result).toEqual({
+      id: "slice",
+      priority: 90,
+      minWidth: 6,
+      text: `${CYAN}V6 4/4${RESET}`,
+    });
+  });
+
   test("renders just 'N/M' with no label prefix, still cyan, when label is null", () => {
-    const result = formatSliceSegment({ current: 2, total: 4, label: null });
+    const result = formatSliceSegment({
+      current: 2,
+      total: 4,
+      label: null,
+      allLanded: false,
+    });
 
     expect(result).toEqual({
       id: "slice",
@@ -1160,10 +1195,13 @@ describe("parseLandingPlanProgress", () => {
       "| V6 slice 2 — budgets | second slice | In progress |",
     ].join("\n");
 
+    // Row 2 is "In progress", so current === total numerically but
+    // allLanded must be false (the bug: this used to look "landed").
     expect(parseLandingPlanProgress(pageText)).toEqual({
       current: 2,
       total: 2,
       label: "V6",
+      allLanded: false,
     });
   });
 
@@ -1182,6 +1220,7 @@ describe("parseLandingPlanProgress", () => {
         current: 1,
         total: 1,
         label: "V6",
+        allLanded: true,
       });
     },
   );
@@ -1206,7 +1245,12 @@ describe("parseLandingPlanProgress", () => {
     const result = parseLandingPlanProgress(pageText);
 
     expect(result?.current).toBe(result?.total);
-    expect(result).toEqual({ current: 4, total: 4, label: "V7" });
+    expect(result).toEqual({
+      current: 4,
+      total: 4,
+      label: "V7",
+      allLanded: true,
+    });
   });
 
   test("returns label: null when the table has no Slice column, but current/total are still computed", () => {
@@ -1219,10 +1263,13 @@ describe("parseLandingPlanProgress", () => {
       "| second task | In progress |",
     ].join("\n");
 
+    // Row 2 is "In progress" -> allLanded must be false even though
+    // current === total numerically.
     expect(parseLandingPlanProgress(pageText)).toEqual({
       current: 2,
       total: 2,
       label: null,
+      allLanded: false,
     });
   });
 });
@@ -1284,10 +1331,13 @@ describe("resolveSliceProgress", () => {
         ? JSON.stringify({ wave: "V9", current: 2, total: 4, branch: "feat/x" })
         : null;
 
+    // Literal mode carries no per-row status data, so allLanded is derived
+    // from current >= total here: 2 >= 4 is false.
     expect(resolveSliceProgress(readFile, startDir, "feat/x")).toEqual({
       current: 2,
       total: 4,
       label: "V9",
+      allLanded: false,
     });
   });
 
@@ -1311,10 +1361,12 @@ describe("resolveSliceProgress", () => {
       return null;
     };
 
+    // Row 2 is "In progress" -> allLanded must be false.
     expect(resolveSliceProgress(readFile, startDir, "feat/x")).toEqual({
       current: 2,
       total: 2,
       label: "V6",
+      allLanded: false,
     });
   });
 
@@ -1405,7 +1457,7 @@ describe("buildSessionRow", () => {
     };
     const env = {
       branch: "feat/foo",
-      slice: { current: 2, total: 4, label: "V6" },
+      slice: { current: 2, total: 4, label: "V6", allLanded: false },
     };
 
     const result = buildSessionRow(payload, env, 200);
@@ -1598,7 +1650,7 @@ describe("renderStatusLine", () => {
     freemem: 2_000_000_000,
     totalmem: 8_000_000_000,
     branch: "feat/statusline-redesign",
-    slice: { current: 2, total: 4, label: "V6" },
+    slice: { current: 2, total: 4, label: "V6", allLanded: false },
   };
 
   test("always returns exactly 5 newline-joined lines for a fully-populated payload", () => {

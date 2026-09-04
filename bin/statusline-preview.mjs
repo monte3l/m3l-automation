@@ -66,15 +66,22 @@ delete noRateLimitsPayload.rate_limits;
 
 const sliceDerivedEnv = {
   ...fullEnv,
-  slice: { current: 2, total: 4, label: "V6" },
+  slice: { current: 2, total: 4, label: "V6", allLanded: false },
 };
 const sliceLiteralEnv = {
   ...fullEnv,
-  slice: { current: 2, total: 4, label: "V9" },
+  slice: { current: 2, total: 4, label: "V9", allLanded: false },
 };
 const sliceAllLandedEnv = {
   ...fullEnv,
-  slice: { current: 4, total: 4, label: "V6" },
+  slice: { current: 4, total: 4, label: "V6", allLanded: true },
+};
+// `current === total` numerically (the table's last row) while that row is
+// still in flight, not `Landed` — must stay cyan, not dim, distinguishing it
+// from sliceAllLandedEnv above (same current/total, different `allLanded`).
+const sliceLastRowInFlightEnv = {
+  ...fullEnv,
+  slice: { current: 4, total: 4, label: "V6", allLanded: false },
 };
 const noSliceEnv = { ...fullEnv, slice: null };
 
@@ -133,6 +140,11 @@ const FIXTURES = [
   { name: "slice-derived", payload: fullPayload, env: sliceDerivedEnv },
   { name: "slice-literal", payload: fullPayload, env: sliceLiteralEnv },
   { name: "slice-all-landed", payload: fullPayload, env: sliceAllLandedEnv },
+  {
+    name: "slice-last-row-in-flight",
+    payload: fullPayload,
+    env: sliceLastRowInFlightEnv,
+  },
   { name: "no-slice", payload: fullPayload, env: noSliceEnv },
   { name: "no-git", payload: noGitPayload, env: noGitEnv },
 ];

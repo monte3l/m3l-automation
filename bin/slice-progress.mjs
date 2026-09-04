@@ -34,6 +34,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseJsonFlag, createReporter, repoRoot } from "./lib/report.mjs";
 import { LANDING_PLAN_HEADING } from "./check-scaffold-seam.mjs";
+import { parseLandingPlanProgress } from "../.claude/hooks/statusline-context-pressure.mjs";
 
 const root = repoRoot(import.meta.url);
 export const SLICE_PROGRESS_REL_PATH = "tmp/slice-progress.json";
@@ -41,11 +42,17 @@ export const SLICE_PROGRESS_REL_PATH = "tmp/slice-progress.json";
 /**
  * @param {string[]} argv
  * @param {string} flag
- * @returns {string | undefined}
+ * @returns {string | undefined} the token following `flag`, or undefined
+ *   when `flag` is absent or its next token looks like another flag
+ *   (starts with `--`) rather than a value — this turns a missing value
+ *   (`--wave --current 2 --total 4`) into a clear usage error downstream
+ *   instead of silently recording the next flag's name as the value.
  */
 function at(argv, flag) {
   const i = argv.indexOf(flag);
-  return i >= 0 ? argv[i + 1] : undefined;
+  if (i < 0) return undefined;
+  const value = argv[i + 1];
+  return value !== undefined && !value.startsWith("--") ? value : undefined;
 }
 
 /**
@@ -99,6 +106,12 @@ export function parseSetArgs(argv, readPage) {
       return {
         ok: false,
         error: `--page ${page} has no "## Landing plan" heading (ADR-0072) to derive slice progress from.`,
+      };
+    }
+    if (parseLandingPlanProgress(text) === null) {
+      return {
+        ok: false,
+        error: `--page ${page}'s "## Landing plan" section has a heading but no parseable Slice/Status table — the statusline segment would never render for it. See docs/adr/0072-reviewable-slice-discipline.md's amendment for the required "| Slice | Scope | Status |" table shape, or use --wave for a page without one.`,
       };
     }
     return { ok: true, entry: { page } };

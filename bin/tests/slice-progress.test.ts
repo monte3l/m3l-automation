@@ -95,8 +95,9 @@ describe("parseSetArgs", () => {
     });
   });
 
-  test("succeeds with { page } when --page's text has the Landing plan heading", () => {
-    const readPage = () => "# Some module\n\n## Landing plan\n\n- step one\n";
+  test("succeeds with { page } when --page's text has a parseable Landing plan table", () => {
+    const readPage = () =>
+      "# Some module\n\n## Landing plan\n\n| Slice | Scope | Status |\n| ----- | ----- | ------ |\n| 1 | first | Landed |\n";
     const result = parseSetArgs(
       ["--page", "docs/reference/core/x.md"],
       readPage,
@@ -106,6 +107,32 @@ describe("parseSetArgs", () => {
       ok: true,
       entry: { page: "docs/reference/core/x.md" },
     });
+  });
+
+  // Must-fix: a heading with no parseable Slice/Status table underneath it
+  // (the real docs/reference/aws/bedrock-runtime.md shape — a numbered prose
+  // list, not a table) must be rejected here too, not just checked for the
+  // heading's presence — the statusline segment would never render for it.
+  test("errors when --page's text has the heading but no parseable Slice/Status table (numbered prose list)", () => {
+    const readPage = () =>
+      [
+        "## Landing plan",
+        "",
+        "Two independently-landable PRs (ADR-0072):",
+        "",
+        "1. **Slice 1 — core wrapper.** `invoke()` single-shot Converse call, the model",
+        "   registry/fallback state machine, token usage capture, the three error",
+        "   classes, and the `AWSClientProvider.bedrockRuntime` getter (no",
+        "   `AWSServiceProvider` convenience getter — see the constructor note above).",
+        "   **Shipped** — PR #725, merged into `main`.",
+      ].join("\n");
+    const result = parseSetArgs(
+      ["--page", "docs/reference/core/x.md"],
+      readPage,
+    );
+
+    expect(result.ok).toBe(false);
+    expect((result as { error: string }).error).toMatch(/parseable|table/i);
   });
 
   test("errors when --wave's --current/--total are not integers", () => {
@@ -166,6 +193,22 @@ describe("parseSetArgs", () => {
     expect(result).toEqual({
       ok: true,
       entry: { wave: "V9", current: 2, total: 4, label: "V9 slice progress" },
+    });
+  });
+
+  // Should-fix: at() must not treat a flag-shaped next token as --wave's
+  // value. With no valid wave AND no --page, this falls through to the
+  // final usage-error branch rather than recording wave: "--current".
+  test("does not record wave as another flag's name when --wave has no value before the next flag", () => {
+    const readPage = () => null;
+    const result = parseSetArgs(
+      ["--wave", "--current", "2", "--total", "4"],
+      readPage,
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      error: expect.stringContaining("Usage:"),
     });
   });
 });
