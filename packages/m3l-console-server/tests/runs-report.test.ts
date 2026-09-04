@@ -226,4 +226,41 @@ describe("createRunReportReader — refusals", () => {
     expect(thrown).toBeInstanceOf(M3LConsoleError);
     expect((thrown as M3LConsoleError).code).toBe("ERR_CONSOLE_INTERNAL");
   });
+
+  // CONTRACT PIN (passes today; this is coverage, not RED). `listRunDirectory`
+  // (report.ts:172-175) documents that only a MISSING directory reads as "no
+  // report" — a permission error, an ENOTDIR, or any other `readdir` failure
+  // must reach the operator as a fault. Before this test, that non-ENOENT
+  // throw arm (report.ts:186) had no test exercising it. A regular FILE
+  // sitting where the run's own output directory should be makes `readdir`
+  // fail with ENOTDIR, which must not be swallowed the same way ENOENT is.
+  test("refuses when the run's directory entry is a file, not a directory (ENOTDIR)", async () => {
+    await writeFile(join(root, "run-10"), "not a directory", "utf8");
+
+    const thrown = await readAndCatch("run-10");
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).code).toBe("ERR_CONSOLE_INTERNAL");
+  });
+
+  // CONTRACT PIN (passes today; this is coverage, not RED). `readCappedFile`
+  // (report.ts:198-207) documents that `O_NOFOLLOW` makes a symlink at the
+  // report path's final component fail with `ELOOP` rather than being
+  // followed out of the tree, and its catch clause re-throws any non-ENOENT
+  // errno as a fault rather than "no report". Unlike the symlink-to-a-file
+  // case above (which points OUTSIDE the tree and already exercises this
+  // same rethrow), this pins a symlink whose target is ITSELF: `O_NOFOLLOW`
+  // rejects any symlink at the final path component before ever resolving
+  // where it points, so the self-referential case fails identically.
+  test("refuses a self-referential symlinked report file (ELOOP)", async () => {
+    const dir = join(root, "run-11", "2026-09-02T10-14-02.000Z");
+    await mkdir(dir, { recursive: true });
+    const reportPath = join(dir, RUN_REPORT_FILE_NAME);
+    await symlink(reportPath, reportPath);
+
+    const thrown = await readAndCatch("run-11");
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).code).toBe("ERR_CONSOLE_INTERNAL");
+  });
 });

@@ -98,6 +98,7 @@ import * as fs from "node:fs";
 
 import { Core } from "@m3l-automation/m3l-common";
 
+import { errnoCodeOf } from "../errors/errno.js";
 import type { M3LTelemetryRecorder } from "./port.js";
 
 /**
@@ -215,38 +216,6 @@ interface M3LStoreSizeSampleOptions {
    * somewhere to report.
    */
   readonly logger: Core.M3LLogger;
-}
-
-/**
- * The `errno` code a Node filesystem failure carries as its OWN property, or
- * `undefined` for any value that is not one.
- *
- * OWNERSHIP IS PART OF THE CHECK, not a nicety. Tolerated absence is decided
- * from this code, so honouring an INHERITED `code` would make "the file is
- * not there" forgeable at a distance: one `Error.prototype.code = "ENOENT"`
- * anywhere in the process, or a `get code()` on the prototype of any thrown
- * subclass, and EVERY non-`ENOENT` sidecar failure would quietly become the
- * understated sum this module exists to withhold — recorded as a sample, with
- * no warning at all. Node's own errno errors always set `code` as an own
- * property, so requiring ownership costs no real path anything.
- *
- * Reads `.code` ONCE into a local and narrows the local, never the property
- * expression: a getter may answer differently on each read, so a
- * `typeof x.code === "string" ? x.code : …` chain is two reads of a value
- * that only one of them validated. `Object.hasOwn` tests for the property
- * without reading it, so the ownership guard adds no second read.
- *
- * A near-copy of `runs/report.ts`'s helper, because the `telemetry/` ESLint
- * zone may not import `runs/` — near, not identical: that copy does not yet
- * require ownership. Hoisting ONE hardened version into `errors/` is a
- * recorded follow-up rather than part of this slice.
- */
-function errnoCodeOf(cause: unknown): string | undefined {
-  if (!(cause instanceof Error) || !Object.hasOwn(cause, "code")) {
-    return undefined;
-  }
-  const code: unknown = (cause as NodeJS.ErrnoException).code;
-  return typeof code === "string" ? code : undefined;
 }
 
 /**
