@@ -320,6 +320,18 @@ export function hasPresetPathControlOrFormatCharacter(
  * conjunction as a catch-all, which is what keeps a rule added here from
  * being enforced at only one of the two sites.
  *
+ * The first conjunct's padding half is redundant here: any leading or
+ * trailing whitespace `PRESET_PATH_WHITESPACE_RE` matches is whitespace
+ * `String.prototype.trim` also strips, so the third conjunct alone already
+ * rejects every padded path this predicate sees, BOM and NBSP padding
+ * included. What the first conjunct uniquely contributes to this
+ * conjunction is rejecting the empty path, which carries no whitespace and
+ * no `\p{C}` character and so would otherwise satisfy the other two on its
+ * own. Its padding half is not dead weight, though —
+ * `steps/resolve-runtime.ts`'s config parser still calls
+ * {@link isUnpaddedNonBlankPresetPath} directly to report padding on its own
+ * operator-facing message, independent of this conjunction.
+ *
  * @param presetPath - A declared, workspace-relative preset path.
  * @returns Whether the path's shape is acceptable at every site that uses one.
  *

@@ -11,7 +11,10 @@ import {
   type AgentOperatorPresetName,
   type AgentOperatorPresetPath,
   assertAllowedPresetName,
+  hasPresetPathControlOrFormatCharacter,
   isAllowedPresetName,
+  isUnpaddedNonBlankPresetPath,
+  isWellFormedPresetPathShape,
 } from "../../src/lib/preset-names.js";
 
 /**
@@ -124,6 +127,154 @@ describe("AGENT_OPERATOR_PRESET_NAME_RE / AGENT_OPERATOR_PRESET_NAME_MAX_LENGTH"
     // re-testing a few inputs through both) is what makes an upstream edit to
     // the pattern fail this test.
     expect(`/${AGENT_OPERATOR_PRESET_NAME_RE.source}/`).toBe(literalSource);
+  });
+});
+
+/**
+ * A clean, well-formed preset path fixture shared by the three describe
+ * blocks below — the same value {@link isUnpaddedNonBlankPresetPath},
+ * {@link hasPresetPathControlOrFormatCharacter} and
+ * {@link isWellFormedPresetPathShape}'s own TSDoc examples use.
+ */
+const CLEAN_PRESET_PATH = "data/config/presets/report.yaml";
+
+/**
+ * Contract: PR review found these three exports of
+ * `src/lib/preset-names.ts` had no DIRECT unit test — they were exercised
+ * only transitively through `parsePresetAllowlist` (config parsing) and
+ * `cli-surface.ts`'s use-site re-check. Each is tested here in isolation,
+ * matching its own TSDoc example fixtures and scope claims.
+ */
+describe("isUnpaddedNonBlankPresetPath", () => {
+  it("accepts a clean, unpadded, non-blank path", () => {
+    expect(isUnpaddedNonBlankPresetPath(CLEAN_PRESET_PATH)).toBe(true);
+  });
+
+  it("rejects the empty string", () => {
+    expect(isUnpaddedNonBlankPresetPath("")).toBe(false);
+  });
+
+  it("rejects an all-whitespace string", () => {
+    expect(isUnpaddedNonBlankPresetPath("   ")).toBe(false);
+  });
+
+  it("rejects a leading space", () => {
+    expect(isUnpaddedNonBlankPresetPath(` ${CLEAN_PRESET_PATH}`)).toBe(false);
+  });
+
+  it("rejects a trailing space", () => {
+    expect(isUnpaddedNonBlankPresetPath(`${CLEAN_PRESET_PATH} `)).toBe(false);
+  });
+
+  it("rejects a trailing tab", () => {
+    expect(
+      isUnpaddedNonBlankPresetPath(
+        `${CLEAN_PRESET_PATH}${String.fromCodePoint(0x09)}`,
+      ),
+    ).toBe(false);
+  });
+
+  it("rejects a leading BOM (U+FEFF)", () => {
+    expect(
+      isUnpaddedNonBlankPresetPath(
+        `${String.fromCodePoint(0xfeff)}${CLEAN_PRESET_PATH}`,
+      ),
+    ).toBe(false);
+  });
+
+  it("rejects a leading NBSP (U+00A0)", () => {
+    expect(
+      isUnpaddedNonBlankPresetPath(
+        `${String.fromCodePoint(0xa0)}${CLEAN_PRESET_PATH}`,
+      ),
+    ).toBe(false);
+  });
+
+  it("accepts an INNER space — this predicate checks padding and blankness only, never inner whitespace", () => {
+    // The honest reading of the name: "unpadded" and "non-blank" say nothing
+    // about the MIDDLE of the string. `"night ly.yaml"` survives
+    // `String.prototype.trim()` completely untouched, so `trimmed ===
+    // presetPath` still holds and this returns `true`. That is not a gap in
+    // this predicate — rejecting an inner space is
+    // `isWellFormedPresetPathShape`'s job (its standalone third conjunct),
+    // not this one's. Do not mistake this row for a whitespace check: it is
+    // a padding-and-blankness check only.
+    expect(
+      isUnpaddedNonBlankPresetPath("data/config/presets/night ly.yaml"),
+    ).toBe(true);
+  });
+});
+
+describe("hasPresetPathControlOrFormatCharacter", () => {
+  it("returns false for a clean path", () => {
+    expect(hasPresetPathControlOrFormatCharacter(CLEAN_PRESET_PATH)).toBe(
+      false,
+    );
+  });
+
+  it.each([
+    ["an embedded NUL (U+0000)", 0x00],
+    ["an embedded LF (U+000A)", 0x0a],
+    ["an embedded CR (U+000D)", 0x0d],
+    ["an embedded ESC (U+001B)", 0x1b],
+    // `\p{C}` is the Unicode "Other" supercategory, which includes control
+    // (Cc) AND format (Cf) characters — that is why these next two, neither
+    // of which is whitespace, still trip this predicate.
+    ["a leading BOM (U+FEFF, category Cf)", 0xfeff],
+    ["an embedded zero-width joiner (U+200D, category Cf)", 0x200d],
+  ] as const)("returns true for a path with %s", (_label, codePoint) => {
+    const pathWithControlCharacter = `data/config/presets/report${String.fromCodePoint(codePoint)}.yaml`;
+    expect(
+      hasPresetPathControlOrFormatCharacter(pathWithControlCharacter),
+    ).toBe(true);
+  });
+});
+
+describe("isWellFormedPresetPathShape", () => {
+  it("accepts a clean path", () => {
+    expect(isWellFormedPresetPathShape(CLEAN_PRESET_PATH)).toBe(true);
+  });
+
+  it("rejects a padded path (conjunct 1: isUnpaddedNonBlankPresetPath)", () => {
+    // This fixture also independently trips the third conjunct (the
+    // standalone whitespace check, since a trailing space IS whitespace) —
+    // see the boundary test below for the one input where conjunct 1 is
+    // uniquely load-bearing rather than merely redundant with conjunct 3.
+    expect(isWellFormedPresetPathShape(`${CLEAN_PRESET_PATH} `)).toBe(false);
+  });
+
+  it("rejects a NUL-bearing path (conjunct 2: hasPresetPathControlOrFormatCharacter)", () => {
+    const pathWithNul = `data/config/presets/report${String.fromCodePoint(0x00)}.yaml`;
+    expect(isWellFormedPresetPathShape(pathWithNul)).toBe(false);
+  });
+
+  it("rejects an inner-space path (conjunct 3: the standalone whitespace check)", () => {
+    expect(
+      isWellFormedPresetPathShape("data/config/presets/night ly.yaml"),
+    ).toBe(false);
+  });
+
+  /*
+   * The subsumption boundary, verified by execution rather than assumed:
+   * `!/\s/u.test(...)` (conjunct 3) already rejects every PADDING case above
+   * on its own, including BOM- and NBSP-padded ones — `String.prototype.trim`
+   * and `\s` agree on all of those. The empty string is the ONE input the
+   * first conjunct, `isUnpaddedNonBlankPresetPath`, uniquely rejects: it
+   * contains no whitespace character at all (so the whitespace conjunct
+   * alone would ADMIT it) and no control/format character either. This is
+   * what makes conjunct 1 provably load-bearing rather than decorative —
+   * without it, `isWellFormedPresetPathShape("")` would be `true`.
+   */
+  it("[boundary] the empty string is rejected only by the first conjunct — the standalone whitespace rule alone would admit it", () => {
+    // Mirrors the module's private whitespace regex locally rather than
+    // reaching into its internals, purely to demonstrate the boundary.
+    const whitespaceRuleMirror = /\s/u;
+
+    expect(isWellFormedPresetPathShape("")).toBe(false);
+    expect(hasPresetPathControlOrFormatCharacter("")).toBe(false);
+    // No match on "" means its negation (the third conjunct alone) would be
+    // `true` — i.e. the whitespace rule alone would ADMIT the empty string.
+    expect(whitespaceRuleMirror.test("")).toBe(false);
   });
 });
 
