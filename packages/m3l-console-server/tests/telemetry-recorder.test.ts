@@ -410,7 +410,7 @@ describe("createStoreTelemetryRecorder — field mapping", () => {
 
 describe("createStoreTelemetryRecorder — drop-and-log on a repository failure", () => {
   test.each(METHOD_CASES)(
-    "$methodName: a recordAll failure is caught, logged via logger.warning exactly once naming the metric, and never rethrown",
+    "$methodName: a recordAll failure is caught, logged via logger.error exactly once naming the metric, never at logger.warning, and never rethrown",
     ({ invoke, metric }) => {
       const { repository } = createFakeTelemetryRepository(() => {
         throw new Error("recordAll boom");
@@ -424,19 +424,27 @@ describe("createStoreTelemetryRecorder — drop-and-log on a repository failure"
 
       expect(() => invoke(recorder)).not.toThrow();
 
-      const warnings = events.filter(
+      const drops = events.filter(
+        (event) => event.category === Core.M3LLogEventCategory.ERROR,
+      );
+      expect(drops).toHaveLength(1);
+      const [drop] = drops;
+      if (drop === undefined) {
+        throw new Error("expected exactly one error event");
+      }
+      expect(JSON.stringify(drop)).toContain(metric);
+
+      // A drop logged at BOTH levels would still satisfy the assertions
+      // above; pin the absence of the old WARNING level too, or a recorder
+      // that logs at both severities would still pass.
+      const warningEvents = events.filter(
         (event) => event.category === Core.M3LLogEventCategory.WARNING,
       );
-      expect(warnings).toHaveLength(1);
-      const [warning] = warnings;
-      if (warning === undefined) {
-        throw new Error("expected exactly one warning event");
-      }
-      expect(JSON.stringify(warning)).toContain(metric);
+      expect(warningEvents).toHaveLength(0);
     },
   );
 
-  test("a thrown M3LConsoleError carrying context.recordedCount surfaces that count in the warn payload", () => {
+  test("a thrown M3LConsoleError carrying context.recordedCount surfaces that count in the error payload", () => {
     const recordedCount = 2;
     const thrown = new M3LConsoleError(
       "ERR_CONSOLE_STORE_QUERY_FAILED",
@@ -455,14 +463,14 @@ describe("createStoreTelemetryRecorder — drop-and-log on a repository failure"
 
     expect(() => recorder.httpRequest(HTTP_REQUEST_SAMPLE)).not.toThrow();
 
-    const warnings = events.filter(
-      (event) => event.category === Core.M3LLogEventCategory.WARNING,
+    const drops = events.filter(
+      (event) => event.category === Core.M3LLogEventCategory.ERROR,
     );
-    const [warning] = warnings;
-    if (warning === undefined) {
-      throw new Error("expected exactly one warning event");
+    const [drop] = drops;
+    if (drop === undefined) {
+      throw new Error("expected exactly one error event");
     }
-    expect(JSON.stringify(warning)).toContain(String(recordedCount));
+    expect(JSON.stringify(drop)).toContain(String(recordedCount));
   });
 });
 
@@ -499,11 +507,11 @@ describe("createStoreTelemetryRecorder — clock defaulting", () => {
  * contract stated in this module's own header and in `telemetry/port.ts`
  * (the deliberate inverse of `audit/port.ts`; see `runs/audit.ts:14-19`).
  * The recorder must catch a throwing clock read too, and still report the
- * drop through `logger.warning` naming the metric.
+ * drop through `logger.error` naming the metric.
  */
 describe("createStoreTelemetryRecorder — [KNOWN BUG] a throwing clock read must not escape", () => {
   test.each(METHOD_CASES)(
-    "$methodName: a throwing `now` does not escape the method and is still reported via logger.warning naming the metric",
+    "$methodName: a throwing `now` does not escape the method and is still reported via logger.error naming the metric",
     ({ invoke, metric }) => {
       const { repository } = createFakeTelemetryRepository();
       const { logger, events } = buildLogger();
@@ -517,15 +525,15 @@ describe("createStoreTelemetryRecorder — [KNOWN BUG] a throwing clock read mus
 
       expect(() => invoke(recorder)).not.toThrow();
 
-      const warnings = events.filter(
-        (event) => event.category === Core.M3LLogEventCategory.WARNING,
+      const drops = events.filter(
+        (event) => event.category === Core.M3LLogEventCategory.ERROR,
       );
-      expect(warnings).toHaveLength(1);
-      const [warning] = warnings;
-      if (warning === undefined) {
-        throw new Error("expected exactly one warning event");
+      expect(drops).toHaveLength(1);
+      const [drop] = drops;
+      if (drop === undefined) {
+        throw new Error("expected exactly one error event");
       }
-      expect(JSON.stringify(warning)).toContain(metric);
+      expect(JSON.stringify(drop)).toContain(metric);
     },
   );
 });
@@ -542,7 +550,7 @@ describe("createStoreTelemetryRecorder — [KNOWN BUG] a throwing clock read mus
  * to throw.
  */
 describe("createStoreTelemetryRecorder — [KNOWN BUG] a hostile `message` getter on the dropped cause must not escape", () => {
-  test("a recordAll failure whose thrown value has a throwing `message` getter does not escape and still warns naming the metric", () => {
+  test("a recordAll failure whose thrown value has a throwing `message` getter does not escape and still reports the drop naming the metric", () => {
     const thrown = new Error("placeholder — never actually read");
     Object.defineProperty(thrown, "message", {
       get(): string {
@@ -561,15 +569,15 @@ describe("createStoreTelemetryRecorder — [KNOWN BUG] a hostile `message` gette
 
     expect(() => recorder.httpRequest(HTTP_REQUEST_SAMPLE)).not.toThrow();
 
-    const warnings = events.filter(
-      (event) => event.category === Core.M3LLogEventCategory.WARNING,
+    const drops = events.filter(
+      (event) => event.category === Core.M3LLogEventCategory.ERROR,
     );
-    expect(warnings).toHaveLength(1);
-    const [warning] = warnings;
-    if (warning === undefined) {
-      throw new Error("expected exactly one warning event");
+    expect(drops).toHaveLength(1);
+    const [drop] = drops;
+    if (drop === undefined) {
+      throw new Error("expected exactly one error event");
     }
-    expect(JSON.stringify(warning)).toContain("http.request");
+    expect(JSON.stringify(drop)).toContain("http.request");
   });
 });
 
@@ -634,12 +642,12 @@ function createSequenceCounter<T>(values: readonly T[]): () => T {
   };
 }
 
-/** Asserts no `logger.warning` drop was recorded — i.e. the fan-out was accepted, not rejected. */
+/** Asserts no `logger.error` drop was recorded — i.e. the fan-out was accepted, not rejected. */
 function expectNoDrop(events: readonly Core.M3LLogEvent[]): void {
-  const warnings = events.filter(
-    (event) => event.category === Core.M3LLogEventCategory.WARNING,
+  const drops = events.filter(
+    (event) => event.category === Core.M3LLogEventCategory.ERROR,
   );
-  expect(warnings).toHaveLength(0);
+  expect(drops).toHaveLength(0);
 }
 
 describe("createStoreTelemetryRecorder — [KNOWN BUG — defect 3] every sample field must be read exactly once per call", () => {
@@ -799,7 +807,7 @@ describe("createStoreTelemetryRecorder — [KNOWN BUG — defect 3] the three gr
    * individually a legal column value (non-empty distinct string / distinct
    * non-negative safe integer) so a failure here is a genuine divergence
    * across tiers, never a validation drop — `expectNoDrop` confirms no
-   * `logger.warning` fired, i.e. the fan-out was accepted rather than
+   * `logger.error` fired, i.e. the fan-out was accepted rather than
    * rejected.
    */
   test("httpRequest: route, outcome and latencyMs are identical across all three tiers and equal the first sequence value", () => {
@@ -1123,14 +1131,14 @@ describe("createStoreTelemetryRecorder — [REGRESSION PIN] a throwing sample fi
 
     expect(() => recorder.httpRequest(sample)).not.toThrow();
 
-    const warnings = events.filter(
-      (event) => event.category === Core.M3LLogEventCategory.WARNING,
+    const drops = events.filter(
+      (event) => event.category === Core.M3LLogEventCategory.ERROR,
     );
-    expect(warnings).toHaveLength(1);
-    const [warning] = warnings;
-    if (warning === undefined) {
-      throw new Error("expected exactly one warning event");
+    expect(drops).toHaveLength(1);
+    const [drop] = drops;
+    if (drop === undefined) {
+      throw new Error("expected exactly one error event");
     }
-    expect(JSON.stringify(warning)).toContain("http.request");
+    expect(JSON.stringify(drop)).toContain("http.request");
   });
 });

@@ -90,7 +90,7 @@ function safeGetErrorMessage(cause: unknown): string {
 }
 
 /**
- * Reports a dropped fan-out through `logger.warning`, naming the metric and
+ * Reports a dropped fan-out through `logger.error`, naming the metric and
  * the underlying failure's code/message, plus `context.recordedCount` when
  * the caught value is an {@link M3LConsoleError} carrying one
  * (`store/telemetry-repository.ts`'s `recordAll` attaches it) AND that
@@ -102,6 +102,20 @@ function safeGetErrorMessage(cause: unknown): string {
  * narrowed and logged, so a hostile getter cannot return something
  * different on a second read. Never logs caller-supplied sample data
  * beyond the dimension names already destined for the rollup table.
+ *
+ * The level is `error`, not `warning`: `M3L_CONSOLE_LOG_LEVEL` is
+ * operator-configurable across six floors (`config/env.ts`'s
+ * `LOG_LEVELS`, default `info`), so at an `error` or `fatal` floor a
+ * `warning`-level drop report would be suppressed and a completely broken
+ * telemetry table would be indistinguishable from a healthy one. This
+ * matches the house precedent set by
+ * {@link "./runs/events.js".createCompositeRunEventSink}'s run-event-sink
+ * report and
+ * {@link "./boot/audit-index.js".createIndexedHumanActionAuditPort}'s
+ * index-write report — both a never-throws port swallowing a member
+ * failure, both at `error`. `telemetry/store-size.ts` deliberately stays
+ * on `warning`: it reports a DECLINED MEASUREMENT (a file it could not
+ * read), not a FAILED WRITE, so the two are not siblings to harmonize.
  */
 function reportDroppedFanOut(
   logger: Core.M3LLogger,
@@ -120,7 +134,7 @@ function reportDroppedFanOut(
     ...(cause instanceof M3LConsoleError && { code: cause.code }),
     ...(recordedCount !== undefined && { recordedCount }),
   };
-  logger.warning(`telemetry fan-out dropped for metric '${metric}'`, data);
+  logger.error(`telemetry fan-out dropped for metric '${metric}'`, data);
 }
 
 /**
@@ -343,7 +357,7 @@ function buildStoreHealthMeasurement(
  * `day`, in that order) from that single sample/clock reading, and fans
  * them out through one `telemetry.recordAll` call — never three
  * separate `record` calls. A failure of any kind is caught, reported
- * through `logger.warning` (see {@link reportDroppedFanOut}), and never
+ * through `logger.error` (see {@link reportDroppedFanOut}), and never
  * rethrown: this recorder honors the same "never fails the caller" contract
  * as the port it implements (`telemetry/port.ts`).
  *

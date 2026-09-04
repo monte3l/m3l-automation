@@ -311,7 +311,7 @@ const stubTelemetryRepository: M3LConsoleTelemetryRepository = {
   // `telemetry.httpRequest(...)` on every request, which fans out through
   // `record`/`recordAll` on the store-backed recorder. A loud stub here would
   // make every request-handling test in this file exercise the recorder's
-  // degradation path and log a "telemetry fan-out dropped" warning. `void`
+  // degradation path and log a "telemetry fan-out dropped" error. `void`
   // and the measurement count are clean no-ops; the read/prune methods stay
   // loud.
   record: (): void => undefined,
