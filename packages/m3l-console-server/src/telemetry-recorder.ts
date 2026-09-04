@@ -126,36 +126,122 @@ function reportDroppedFanOut(
 /**
  * Fans one sample out to all three granularity tiers through a single
  * `telemetry.recordAll` call. Takes the clock FUNCTION rather than an
- * already-read `atMs`: reading the clock happens exactly once, inside this
- * function's own `try`, so a throwing `now` is caught by the same guard as
- * a throwing `recordAll` instead of propagating out of the caller's scope
- * before the `try` is even entered — JS evaluates call arguments in the
- * caller's own scope, which is what made the previous
- * `fanOut(..., now(), ...)` call shape unsafe and let a throwing clock
- * escape the recorder's never-throws contract. That single reading then
- * derives every tier's `bucketStartMs`, so the three tiers can never
- * straddle a boundary. Catches everything and reports through
- * {@link reportDroppedFanOut} rather than rethrowing.
+ * already-read `atMs`, and the sample as a `snapshot` FUNCTION rather than
+ * an already-read value, for the same reason: reading each happens exactly
+ * once, inside this function's own `try`, so a throwing `now` — or a
+ * throwing sample field getter — is caught by the same guard as a throwing
+ * `recordAll` instead of propagating out of the caller's scope before the
+ * `try` is even entered. JS evaluates call arguments in the caller's own
+ * scope, which is what made the previous `fanOut(..., now(), ...)` call
+ * shape unsafe and let a throwing clock escape the recorder's never-throws
+ * contract; the same is true of a sample read at the call site.
+ * Snapshotting the sample exactly once here, rather than in each recorder
+ * method, also means the three tiers built from it below can never carry
+ * divergent dimension values: `build` runs three times against the SAME
+ * `sample` object, so `route`/`script`/`outcome`/`posture` (rollup PRIMARY
+ * KEY columns) cannot differ across tiers even when a caller-supplied
+ * accessor would otherwise return something different on each read. The
+ * single clock reading then derives every tier's `bucketStartMs`, so the
+ * three tiers can never straddle a boundary either. Catches everything and
+ * reports through {@link reportDroppedFanOut} rather than rethrowing.
  */
-function fanOut(
+function fanOut<TSample>(
   telemetry: M3LConsoleTelemetryRepository,
   logger: Core.M3LLogger,
   metric: string,
   now: () => number,
+  snapshot: () => TSample,
   build: (
+    sample: TSample,
     bucketStartMs: number,
     granularity: M3LTelemetryGranularity,
   ) => M3LTelemetryMeasurement,
 ): void {
   try {
     const atMs = now();
+    const sample = snapshot();
     const measurements = GRANULARITIES.map((granularity) =>
-      build(telemetryBucketStartMs(atMs, granularity), granularity),
+      build(sample, telemetryBucketStartMs(atMs, granularity), granularity),
     );
     telemetry.recordAll(measurements);
   } catch (cause) {
     reportDroppedFanOut(logger, metric, cause);
   }
+}
+
+/**
+ * Copies every field of an `httpRequest` sample exactly once. See
+ * {@link fanOut} for why the copy must happen inside its own `try`, once
+ * per recorder call, rather than at the recorder method's call site.
+ */
+function snapshotHttpRequest(
+  sample: M3LTelemetryHttpRequestSample,
+): M3LTelemetryHttpRequestSample {
+  return {
+    route: sample.route,
+    outcome: sample.outcome,
+    latencyMs: sample.latencyMs,
+  };
+}
+
+/**
+ * Copies every field of a `runFinished` sample exactly once, including the
+ * optional `operation`. `M3LTelemetryRunFinishedSample.operation` is typed
+ * `readonly operation?: string | undefined`, so under
+ * `exactOptionalPropertyTypes` this may assign `sample.operation` directly
+ * — including when it is `undefined` — without a conditional spread. See
+ * {@link fanOut} for why the copy must happen inside its own `try`, once
+ * per recorder call.
+ */
+function snapshotRunFinished(
+  sample: M3LTelemetryRunFinishedSample,
+): M3LTelemetryRunFinishedSample {
+  return {
+    script: sample.script,
+    operation: sample.operation,
+    outcome: sample.outcome,
+    durationMs: sample.durationMs,
+  };
+}
+
+/**
+ * Copies every field of an `sseStream` sample exactly once. See
+ * {@link fanOut} for why the copy must happen inside its own `try`, once
+ * per recorder call.
+ */
+function snapshotSseStream(
+  sample: M3LTelemetrySseStreamSample,
+): M3LTelemetrySseStreamSample {
+  return {
+    outcome: sample.outcome,
+  };
+}
+
+/**
+ * Copies every field of a `policyDecision` sample exactly once. See
+ * {@link fanOut} for why the copy must happen inside its own `try`, once
+ * per recorder call.
+ */
+function snapshotPolicyDecision(
+  sample: M3LTelemetryPolicyDecisionSample,
+): M3LTelemetryPolicyDecisionSample {
+  return {
+    posture: sample.posture,
+    outcome: sample.outcome,
+  };
+}
+
+/**
+ * Copies every field of a `storeHealth` sample exactly once. See
+ * {@link fanOut} for why the copy must happen inside its own `try`, once
+ * per recorder call.
+ */
+function snapshotStoreHealth(
+  sample: M3LTelemetryStoreHealthSample,
+): M3LTelemetryStoreHealthSample {
+  return {
+    sizeBytes: sample.sizeBytes,
+  };
 }
 
 /** Maps an `httpRequest` sample onto one `"http.request"` measurement. */
@@ -180,12 +266,19 @@ function buildRunFinishedMeasurement(
   bucketStartMs: number,
   granularity: M3LTelemetryGranularity,
 ): M3LTelemetryMeasurement {
+  // Read-once local: the measurement union's `operation?: string |
+  // undefined` still needs the conditional spread below, but reading
+  // `sample.operation` into a local exactly once means this builder's
+  // safety no longer depends on its caller having already snapshotted the
+  // sample — a future call site that passes a raw sample back in cannot
+  // silently reintroduce the double-read defect this file was fixed for.
+  const operation: string | undefined = sample.operation;
   return {
     metric: "run.finished",
     granularity,
     bucketStartMs,
     script: sample.script,
-    ...(sample.operation !== undefined && { operation: sample.operation }),
+    ...(operation !== undefined && { operation }),
     outcome: sample.outcome,
     valueMs: sample.durationMs,
   };
@@ -197,11 +290,15 @@ function buildSseStreamMeasurement(
   bucketStartMs: number,
   granularity: M3LTelemetryGranularity,
 ): M3LTelemetryMeasurement {
+  // Read-once local — see `buildRunFinishedMeasurement`'s `operation` local
+  // for why: the conditional spread stays, but the caller no longer needs
+  // to have snapshotted for this builder to read the field once.
+  const outcome: string | undefined = sample.outcome;
   return {
     metric: "sse.stream",
     granularity,
     bucketStartMs,
-    ...(sample.outcome !== undefined && { outcome: sample.outcome }),
+    ...(outcome !== undefined && { outcome }),
   };
 }
 
@@ -211,12 +308,16 @@ function buildPolicyDecisionMeasurement(
   bucketStartMs: number,
   granularity: M3LTelemetryGranularity,
 ): M3LTelemetryMeasurement {
+  // Read-once local — see `buildRunFinishedMeasurement`'s `operation` local
+  // for why: the conditional spread stays, but the caller no longer needs
+  // to have snapshotted for this builder to read the field once.
+  const outcome: string | undefined = sample.outcome;
   return {
     metric: "policy.decision",
     granularity,
     bucketStartMs,
     posture: sample.posture,
-    ...(sample.outcome !== undefined && { outcome: sample.outcome }),
+    ...(outcome !== undefined && { outcome }),
   };
 }
 
@@ -236,10 +337,11 @@ function buildStoreHealthMeasurement(
 
 /**
  * Builds a {@link M3LTelemetryRecorder} backed by a
- * {@link M3LConsoleTelemetryRepository}: every method reads the clock
- * exactly once, builds one {@link M3LTelemetryMeasurement} per granularity
- * tier (`minute`, `hour`, `day`, in that order) from that single reading,
- * and fans them out through one `telemetry.recordAll` call — never three
+ * {@link M3LConsoleTelemetryRepository}: every method reads the clock and
+ * the sample exactly once each (see {@link fanOut}), builds one
+ * {@link M3LTelemetryMeasurement} per granularity tier (`minute`, `hour`,
+ * `day`, in that order) from that single sample/clock reading, and fans
+ * them out through one `telemetry.recordAll` call — never three
  * separate `record` calls. A failure of any kind is caught, reported
  * through `logger.warning` (see {@link reportDroppedFanOut}), and never
  * rethrown: this recorder honors the same "never fails the caller" contract
@@ -266,24 +368,49 @@ export function createStoreTelemetryRecorder(
 
   return {
     httpRequest: (sample) =>
-      fanOut(telemetry, logger, "http.request", now, (bucketStartMs, g) =>
-        buildHttpRequestMeasurement(sample, bucketStartMs, g),
+      fanOut(
+        telemetry,
+        logger,
+        "http.request",
+        now,
+        () => snapshotHttpRequest(sample),
+        buildHttpRequestMeasurement,
       ),
     runFinished: (sample) =>
-      fanOut(telemetry, logger, "run.finished", now, (bucketStartMs, g) =>
-        buildRunFinishedMeasurement(sample, bucketStartMs, g),
+      fanOut(
+        telemetry,
+        logger,
+        "run.finished",
+        now,
+        () => snapshotRunFinished(sample),
+        buildRunFinishedMeasurement,
       ),
     sseStream: (sample) =>
-      fanOut(telemetry, logger, "sse.stream", now, (bucketStartMs, g) =>
-        buildSseStreamMeasurement(sample, bucketStartMs, g),
+      fanOut(
+        telemetry,
+        logger,
+        "sse.stream",
+        now,
+        () => snapshotSseStream(sample),
+        buildSseStreamMeasurement,
       ),
     policyDecision: (sample) =>
-      fanOut(telemetry, logger, "policy.decision", now, (bucketStartMs, g) =>
-        buildPolicyDecisionMeasurement(sample, bucketStartMs, g),
+      fanOut(
+        telemetry,
+        logger,
+        "policy.decision",
+        now,
+        () => snapshotPolicyDecision(sample),
+        buildPolicyDecisionMeasurement,
       ),
     storeHealth: (sample) =>
-      fanOut(telemetry, logger, "store.health", now, (bucketStartMs, g) =>
-        buildStoreHealthMeasurement(sample, bucketStartMs, g),
+      fanOut(
+        telemetry,
+        logger,
+        "store.health",
+        now,
+        () => snapshotStoreHealth(sample),
+        buildStoreHealthMeasurement,
       ),
   };
 }
