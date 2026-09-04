@@ -468,8 +468,11 @@ Two consequences worth stating plainly:
 - Output from console-launched runs no longer lands in the shared
   `data/output` tree. Anything reading that directory for console runs must
   read the per-run directories instead.
-- Nothing prunes these directories. Like session artifacts, they live until
-  the data directory is cleared by hand — X8's retention regime, not this.
+- These directories now have a **declared** retention policy
+  (`m3l.console.runs.output.retention.ms`) and a sweep that deletes eligible
+  ones on demand — but nothing invokes that sweep yet, so in a running server
+  they still live until the data directory is cleared by hand. Session
+  artifacts have neither, and remain entirely hand-cleared.
 
 ### When there is no report
 
@@ -1012,10 +1015,21 @@ settings above.
 
 **Known limits, sessions:**
 
-- **No age-based sweep or operator cleanup command.** A session's artifacts
-  live until the process's data directory is cleared by hand — the
-  age-based sweep and a cleanup command are X8's (ADR-0070's retention
-  regime), not shipped here.
+- **No age-based sweep or operator cleanup command**, and — unlike run
+  outputs — not even a declared retention policy. A session's artifacts live
+  until the process's data directory is cleared by hand.
+
+  The reason they were held back rather than swept alongside run outputs is
+  the read path. A missing run-output directory is indistinguishable from a
+  run that never wrote a report, so it degrades to the same `404` that case
+  already returns. A missing artifact file has no such reading: every read
+  failure raises `ERR_CONSOLE_SESSION_ARTIFACT_CORRUPT`, which is a `500`
+  server fault meaning the filesystem drifted from what the server itself
+  wrote. Sweeping artifacts today would make the most routine outcome of the
+  feature — reading one that policy deliberately deleted — report as
+  corruption. Telling a retained-out artifact apart from a corrupt one comes
+  first, and is a later X8 slice.
+
 - **A step's addressable output is outcome-only** (`{ outcome, exitCode }`)
   — the canonical "select a field out of a real command's output dump"
   drill-down is not exercisable through the currently-shipped `run.ended`
@@ -1163,6 +1177,26 @@ cleanup command and forbids silent deletion, so these settings only describe
 what _would_ be eligible. Nothing in the server schedules a sweep, and no
 timer exists — see the Known limits entry below.
 
+Run-output retention is one setting, the age at which a **terminal** run's
+per-run output directory becomes eligible for deletion.
+
+| Setting                                | Env var                                | Default                |
+| -------------------------------------- | -------------------------------------- | ---------------------- |
+| `m3l.console.runs.output.retention.ms` | `M3L_CONSOLE_RUNS_OUTPUT_RETENTION_MS` | `2592000000` (30 days) |
+
+Thirty days is a release cycle rather than an incident window: a run's output
+directory is what an operator re-reads when investigating a failure or diffing
+a rerun. The same validation applies — a positive integer, no "disabled"
+sentinel, a very large value to keep outputs indefinitely.
+
+The age is the run's own `ended_at_ms`, not the directory's filesystem
+timestamp. A run that is still queued or running is never eligible whatever
+its directory's mtime says, and a directory whose run record is missing — or
+whose record is terminal but carries no end timestamp — is reported as an
+**orphan** and left alone. Nothing in the console deletes a `console_runs`
+row, so an orphan means something unexplained happened, and a sweep that
+silently ate unexplained state would be the wrong default here.
+
 Transport, persistence, and lifecycle settings are in the package README.
 
 ## Known limits
@@ -1174,10 +1208,18 @@ Stated plainly rather than left to be discovered:
   run's tail. The cost is `O(total runs × stream retention)` memory until
   restart. This is a deliberate trade for a single-operator, loopback-bound
   console, not an oversight — it would not survive a multi-tenant deployment.
-- **Per-run output directories are never pruned.** Every console-launched
-  run leaves `<runs output root>/<run id>/` behind for the lifetime of the
-  data directory. Same posture as session artifacts, and the same eventual
-  owner (X8's retention regime).
+- **A declared run-output retention policy prunes nothing on its own.**
+  `m3l.console.runs.output.retention.ms` says when a terminal run's
+  `<runs output root>/<run id>/` becomes eligible for deletion, and a sweep
+  exists that deletes eligible directories — but no code path calls it. There
+  is no timer and no boot-time sweep; ADR-0070 requires an operator-run
+  cleanup command and forbids silent deletion, and that command is a later X8
+  slice. Until it ships, every console-launched run still leaves its output
+  directory behind for the lifetime of the data directory, whatever the
+  setting says.
+- **Session artifacts have no policy and no sweep** — not even a declared
+  one. See the sessions Known-limits entry above for why they were held back
+  rather than swept alongside run outputs.
 - **A declared telemetry retention policy prunes nothing on its own.** The
   `m3l.console.telemetry.retention.*` settings above declare when a rollup
   bucket becomes eligible for deletion; they do not delete it. No timer, no
