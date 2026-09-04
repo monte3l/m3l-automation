@@ -284,8 +284,15 @@ After writing, print:
    sweep, recommend running `/promoting-work-log-lessons` now — this is the
    documented trigger for the cross-log sweep (see `docs/logs/README.md`).
 
-Do NOT commit the file. Committing is the user's next step via `/writing-commits`
-with a `docs:` message. Remind them of this so the handoff is clear.
+**Commit it immediately** (its own small `docs:` commit via
+`/writing-commits`) rather than leaving it as an uncommitted file for "the
+user's next step." A log written mid-session and then left uncommitted while
+the session switches branches or worktrees becomes invisible to any later
+PR — and a later PR's own docs referencing it by name (a plan archive, a
+README row) will cite a file that doesn't actually exist yet, catchable only
+by a downstream reviewer (`docs/logs/2026-09-04-check-no-docker.md`,
+divergence #2). This matches `finishing-work`'s Step 6, which used to
+contradict this step by telling the same handoff the opposite way.
 
 ---
 
