@@ -50,6 +50,20 @@ export const MAX_LIST_LIMIT = 1000;
 const MAX_ECHOED_VALUE_LENGTH = 32;
 
 /**
+ * Matches a raw query-param value that is _entirely_ ASCII digits — no
+ * surrounding whitespace, no sign, no decimal point, no exponent, no hex
+ * prefix, and not empty. Bare `Number(raw)` is far looser than the documented
+ * "positive integer" / "non-negative safe integer" contracts: it accepts
+ * `"0x10"` (16), `" 5 "` (5), `"+5"` (5), `"1e3"` (1000), `"1000.0"` (1000),
+ * and — worst of all — `""` (0), which would silently accept an
+ * explicitly-empty `?fromMs=`/`?toMs=` as "from the epoch" instead of
+ * rejecting it. Requiring this shape before coercion closes all of those at
+ * once; the existing range checks ({@link Number.isSafeInteger}, `>= 0`,
+ * `> 0`, {@link MAX_LIST_LIMIT}) still run afterward, unchanged.
+ */
+const DIGIT_SHAPE_PATTERN = /^\d+$/;
+
+/**
  * The accepted `?granularity=` vocabulary — duplicated verbatim, in the same
  * order, from `store/telemetry-repository-types.ts`'s
  * `M3LTelemetryGranularity` union (`http/` may not import `store/`; see this
@@ -195,11 +209,18 @@ function parseMetric(
  * returning `undefined` when it was absent.
  *
  * @throws {@link M3LConsoleError} with code `"ERR_CONSOLE_BAD_REQUEST"` when
- *   `raw` is present but not a non-negative safe integer, truncated per
+ *   `raw` is present but not digit-shaped per {@link DIGIT_SHAPE_PATTERN}, or
+ *   is digit-shaped but not a non-negative safe integer, truncated per
  *   {@link parseGranularity}'s same rationale.
  */
 function parseMsField(field: string, raw: string | null): number | undefined {
   if (raw === null) return undefined;
+  if (!DIGIT_SHAPE_PATTERN.test(raw)) {
+    throw new M3LConsoleError(
+      "ERR_CONSOLE_BAD_REQUEST",
+      `invalid '${field}' query parameter: '${truncateEchoed(raw)}'`,
+    );
+  }
   const parsed = Number(raw);
   if (!Number.isSafeInteger(parsed) || parsed < 0) {
     throw new M3LConsoleError(
@@ -215,12 +236,19 @@ function parseMsField(field: string, raw: string | null): number | undefined {
  * {@link DEFAULT_LIST_LIMIT} when omitted, capped at {@link MAX_LIST_LIMIT}.
  *
  * @throws {@link M3LConsoleError} with code `"ERR_CONSOLE_BAD_REQUEST"` when
- *   `raw` is present but not a positive integer, or exceeds
+ *   `raw` is present but not digit-shaped per {@link DIGIT_SHAPE_PATTERN}, or
+ *   is digit-shaped but not a positive integer, or exceeds
  *   {@link MAX_LIST_LIMIT}, truncated per {@link parseGranularity}'s same
  *   rationale.
  */
 function parseListLimit(raw: string | null): number {
   if (raw === null) return DEFAULT_LIST_LIMIT;
+  if (!DIGIT_SHAPE_PATTERN.test(raw)) {
+    throw new M3LConsoleError(
+      "ERR_CONSOLE_BAD_REQUEST",
+      `invalid 'limit' query parameter: '${truncateEchoed(raw)}'`,
+    );
+  }
   const parsed = Number(raw);
   if (!Number.isInteger(parsed) || parsed <= 0 || parsed > MAX_LIST_LIMIT) {
     throw new M3LConsoleError(
@@ -231,7 +259,19 @@ function parseListLimit(raw: string | null): number {
   return parsed;
 }
 
-/** Builds the {@link TelemetryListQuery} from `ctx`'s query params, each read exactly once. */
+/**
+ * Builds the {@link TelemetryListQuery} from `ctx`'s query params, each read
+ * exactly once.
+ *
+ * This validation deliberately duplicates
+ * `store/telemetry-repository-types.ts`'s identical `limit`/`fromMs`/`toMs`
+ * checks, making the repository's copy unreachable through the HTTP path.
+ * That is intentional, not dead duplication to delete: CLAUDE.md requires
+ * validating external input at the public boundary, so a malformed query
+ * becomes a `400` here rather than surfacing as a downstream throw; the
+ * repository's own copy stays load-bearing for any non-HTTP caller that
+ * skips this route entirely.
+ */
 function buildListQuery(ctx: M3LRequestContext): TelemetryListQuery {
   const granularity = parseGranularity(ctx.query.get("granularity"));
   const metric = parseMetric(ctx.query.get("metric"));
@@ -259,29 +299,51 @@ function buildListHandler(reader: M3LTelemetryReaderPort): M3LConsoleHandler {
 }
 
 /**
+ * Constructor options for {@link createTelemetryRoutes}.
+ *
+ * A single-field options object even though `runs.ts`/`sessions.ts` carry
+ * several fields at this level (and need `toRunsRouteOptions`/
+ * `toSessionsRouteOptions` adapters to assemble them) — telemetry has
+ * exactly one collaborator, so this stays as thin as `scripts.ts`'s
+ * `ScriptRouteOptions { catalog }`. The shape matches every sibling route
+ * module's constructor regardless.
+ *
+ * @example
+ * ```ts
+ * const options: TelemetryRouteOptions = {
+ *   reader: { list: () => [] },
+ * };
+ * ```
+ */
+export interface TelemetryRouteOptions {
+  /** The rollup-bucket reader port; `http/routes/built-in.ts` wraps the real repository. */
+  readonly reader: M3LTelemetryReaderPort;
+}
+
+/**
  * Builds the X8 slice 4a telemetry route table: `GET /api/v1/telemetry`,
  * `auth: "required"` — a console operator only, never an unauthenticated
  * caller.
  *
- * @param reader - See {@link M3LTelemetryReaderPort}.
+ * @param options - See {@link TelemetryRouteOptions}.
  * @returns The single-route table.
  *
  * @example
  * ```ts
  * import { createTelemetryRoutes } from "@m3l-automation/m3l-console-server/http/routes/telemetry.js";
  *
- * const routes = createTelemetryRoutes({ list: () => [] });
+ * const routes = createTelemetryRoutes({ reader: { list: () => [] } });
  * ```
  */
 export function createTelemetryRoutes(
-  reader: M3LTelemetryReaderPort,
+  options: TelemetryRouteOptions,
 ): readonly M3LRoute[] {
   return [
     {
       method: "GET",
       path: "/api/v1/telemetry",
       auth: "required",
-      handler: buildListHandler(reader),
+      handler: buildListHandler(options.reader),
     },
   ];
 }

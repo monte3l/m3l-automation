@@ -60,6 +60,10 @@ import type {
   M3LTelemetryGranularity,
   M3LTelemetryMetric,
 } from "../src/store/telemetry-repository-types.js";
+import {
+  TELEMETRY_GRANULARITIES,
+  TELEMETRY_METRICS,
+} from "../src/store/telemetry-validation.js";
 
 /** One fixture rollup bucket, matching `M3LTelemetryBucket`'s field set. */
 interface FakeBucket {
@@ -210,7 +214,7 @@ async function captureThrown(action: () => Promise<unknown>): Promise<unknown> {
 
 describe("createTelemetryRoutes — route table shape", () => {
   test("registers exactly one route: GET /api/v1/telemetry, auth: 'required'", () => {
-    const routes = createTelemetryRoutes(buildReader());
+    const routes = createTelemetryRoutes({ reader: buildReader() });
 
     expect(routes).toHaveLength(1);
     const [route] = routes;
@@ -223,7 +227,7 @@ describe("createTelemetryRoutes — route table shape", () => {
 describe("createTelemetryRoutes — GET /api/v1/telemetry — happy path", () => {
   test("returns 200 with the reader's rows verbatim as a bare JSON array", async () => {
     const reader = buildReader([BUCKET_ONE]);
-    const routes = createTelemetryRoutes(reader);
+    const routes = createTelemetryRoutes({ reader });
 
     const response = await runRoute(
       findRoute(routes, "GET", "/api/v1/telemetry"),
@@ -236,7 +240,7 @@ describe("createTelemetryRoutes — GET /api/v1/telemetry — happy path", () =>
 
   test("with only ?granularity= given, the query passed to the reader has granularity + default limit and no other keys", async () => {
     const reader = buildReader();
-    const routes = createTelemetryRoutes(reader);
+    const routes = createTelemetryRoutes({ reader });
 
     await runRoute(
       findRoute(routes, "GET", "/api/v1/telemetry"),
@@ -256,7 +260,7 @@ describe("createTelemetryRoutes — GET /api/v1/telemetry — happy path", () =>
 describe("createTelemetryRoutes — GET /api/v1/telemetry — every optional param threads through", () => {
   test("passes metric/fromMs/toMs/limit through, with fromMs/toMs as numbers", async () => {
     const reader = buildReader();
-    const routes = createTelemetryRoutes(reader);
+    const routes = createTelemetryRoutes({ reader });
 
     await runRoute(
       findRoute(routes, "GET", "/api/v1/telemetry"),
@@ -283,7 +287,7 @@ describe("createTelemetryRoutes — GET /api/v1/telemetry — granularity vocabu
     "accepts ?granularity=%s",
     async (granularity) => {
       const reader = buildReader();
-      const routes = createTelemetryRoutes(reader);
+      const routes = createTelemetryRoutes({ reader });
 
       await runRoute(
         findRoute(routes, "GET", "/api/v1/telemetry"),
@@ -300,7 +304,7 @@ describe("createTelemetryRoutes — GET /api/v1/telemetry — granularity vocabu
 describe("createTelemetryRoutes — GET /api/v1/telemetry — metric vocabulary is enumerated", () => {
   test.each(METRIC_VALUES)("accepts ?metric=%s", async (metric) => {
     const reader = buildReader();
-    const routes = createTelemetryRoutes(reader);
+    const routes = createTelemetryRoutes({ reader });
 
     await runRoute(
       findRoute(routes, "GET", "/api/v1/telemetry"),
@@ -319,7 +323,7 @@ describe("createTelemetryRoutes — GET /api/v1/telemetry — rejections", () =>
   /** Drives a rejection case and asserts the code, plus that the reader was never called. */
   async function expectRejected(path: string): Promise<M3LConsoleError> {
     const reader = buildReader();
-    const routes = createTelemetryRoutes(reader);
+    const routes = createTelemetryRoutes({ reader });
 
     const thrown = await captureThrown(() =>
       runRoute(
@@ -378,7 +382,7 @@ describe("createTelemetryRoutes — GET /api/v1/telemetry — rejections", () =>
     await expectRejected(`/api/v1/telemetry?granularity=minute&limit=${limit}`);
   });
 
-  test(`rejects ?limit=${"MAX_LIST_LIMIT + 1"} (one past the cap)`, async () => {
+  test(`rejects ?limit=${MAX_LIST_LIMIT + 1} (one past the cap)`, async () => {
     await expectRejected(
       `/api/v1/telemetry?granularity=minute&limit=${MAX_LIST_LIMIT + 1}`,
     );
@@ -386,7 +390,7 @@ describe("createTelemetryRoutes — GET /api/v1/telemetry — rejections", () =>
 
   test("accepts ?limit=MAX_LIST_LIMIT exactly (the cap itself is not rejected)", async () => {
     const reader = buildReader();
-    const routes = createTelemetryRoutes(reader);
+    const routes = createTelemetryRoutes({ reader });
 
     await runRoute(
       findRoute(routes, "GET", "/api/v1/telemetry"),
@@ -399,12 +403,72 @@ describe("createTelemetryRoutes — GET /api/v1/telemetry — rejections", () =>
       expect.objectContaining({ limit: MAX_LIST_LIMIT }),
     );
   });
+
+  /**
+   * Raw values `Number(...)` coerces successfully but the documented
+   * contract (`docs/reference/console.md`: "Positive integer, at most
+   * `1000`" / "Non-negative safe integer") never intended to accept —
+   * whitespace, a leading `+`, hex/exponent notation, a trailing `.0`, and
+   * the two non-finite literals `Number` itself parses. Each raw value is
+   * run through `encodeURIComponent` at the call site: `URLSearchParams`
+   * (which backs `ctx.query`) decodes an un-encoded `+` as a space and
+   * trims un-encoded surrounding whitespace, so encoding is what makes the
+   * raw value actually reach `ctx.query.get(...)` unchanged.
+   *
+   * `"1e400"`, `"Infinity"`, and `"NaN"` are already rejected today (they
+   * coerce to a non-finite `Number`, which already fails the existing
+   * `Number.isSafeInteger`/`Number.isInteger` checks) — kept here anyway as
+   * a standing pin now that a single digit-shape rule is expected to cover
+   * all nine cases in one pass, not as a fold-in of a distinct pre-existing
+   * gap.
+   */
+  const DIGIT_SHAPE_REJECTIONS: readonly (readonly [
+    label: string,
+    raw: string,
+  ])[] = [
+    ["an empty string", ""],
+    ["surrounded by whitespace", " 5 "],
+    ["a leading plus sign", "+5"],
+    ["hex notation", "0x10"],
+    ["exponent notation", "1e3"],
+    ["a trailing decimal zero", "1000.0"],
+    ["an overflowing exponent", "1e400"],
+    ["the literal Infinity", "Infinity"],
+    ["the literal NaN", "NaN"],
+  ];
+
+  test.each(DIGIT_SHAPE_REJECTIONS)(
+    "rejects a ?fromMs= that is %s, and never calls the reader",
+    async (_label, raw) => {
+      await expectRejected(
+        `/api/v1/telemetry?granularity=minute&fromMs=${encodeURIComponent(raw)}`,
+      );
+    },
+  );
+
+  test.each(DIGIT_SHAPE_REJECTIONS)(
+    "rejects a ?toMs= that is %s, and never calls the reader",
+    async (_label, raw) => {
+      await expectRejected(
+        `/api/v1/telemetry?granularity=minute&toMs=${encodeURIComponent(raw)}`,
+      );
+    },
+  );
+
+  test.each(DIGIT_SHAPE_REJECTIONS)(
+    "rejects a ?limit= that is %s, and never calls the reader",
+    async (_label, raw) => {
+      await expectRejected(
+        `/api/v1/telemetry?granularity=minute&limit=${encodeURIComponent(raw)}`,
+      );
+    },
+  );
 });
 
 describe("createTelemetryRoutes — GET /api/v1/telemetry — echoed caller input is truncated", () => {
   test("an over-long unknown ?granularity= value is truncated in the error message, and the full string never appears", async () => {
     const reader = buildReader();
-    const routes = createTelemetryRoutes(reader);
+    const routes = createTelemetryRoutes({ reader });
     const overlong = "x".repeat(500);
 
     const thrown = await captureThrown(() =>
@@ -423,7 +487,7 @@ describe("createTelemetryRoutes — GET /api/v1/telemetry — echoed caller inpu
 
   test("an over-long unknown ?metric= value is truncated in the error message, and the full string never appears", async () => {
     const reader = buildReader();
-    const routes = createTelemetryRoutes(reader);
+    const routes = createTelemetryRoutes({ reader });
     const overlong = "y".repeat(500);
 
     const thrown = await captureThrown(() =>
@@ -442,7 +506,7 @@ describe("createTelemetryRoutes — GET /api/v1/telemetry — echoed caller inpu
 
   test("an over-long non-numeric ?limit= value is truncated in the error message, and the full string never appears", async () => {
     const reader = buildReader();
-    const routes = createTelemetryRoutes(reader);
+    const routes = createTelemetryRoutes({ reader });
     const overlong = "z".repeat(500);
 
     const thrown = await captureThrown(() =>
@@ -463,7 +527,7 @@ describe("createTelemetryRoutes — GET /api/v1/telemetry — echoed caller inpu
 describe("createTelemetryRoutes — GET /api/v1/telemetry — each query param is read exactly once", () => {
   test("granularity/metric/fromMs/toMs/limit are each read exactly once for a successful request", async () => {
     const reader = buildReader();
-    const routes = createTelemetryRoutes(reader);
+    const routes = createTelemetryRoutes({ reader });
     const { ctx, counts } = buildCountingContext({
       granularity: "hour",
       metric: "run.finished",
@@ -481,24 +545,31 @@ describe("createTelemetryRoutes — GET /api/v1/telemetry — each query param i
 });
 
 describe("createTelemetryRoutes — vocabulary drift pins", () => {
-  test("GRANULARITY_VALUES has exactly the three granularity values", () => {
+  // Zone rules restrict src -> tests, never tests -> src, so this test may
+  // legally import the store's own RUNTIME vocabulary tables alongside the
+  // route module's runtime-value duplicate — comparing against
+  // `Object.keys(TELEMETRY_GRANULARITIES)` (an independent source, not a
+  // second hand-typed literal copy living in this file) is what makes this
+  // pin fail under a plain `vitest run` the day the two sides drift; the
+  // `expectTypeOf` pair below pins a DIFFERENT property (the tuple's element
+  // TYPE), which only fires under `pnpm typecheck` and never a bare
+  // `vitest run`. This test holds the CONTENTS property.
+  test("GRANULARITY_VALUES matches store/telemetry-validation's TELEMETRY_GRANULARITIES exactly (drift guard)", () => {
     expect(new Set(GRANULARITY_VALUES)).toEqual(
-      new Set(["minute", "hour", "day"]),
+      new Set(Object.keys(TELEMETRY_GRANULARITIES)),
     );
-    expect(GRANULARITY_VALUES).toHaveLength(3);
+    expect(GRANULARITY_VALUES).toHaveLength(
+      Object.keys(TELEMETRY_GRANULARITIES).length,
+    );
   });
 
-  test("METRIC_VALUES has exactly the five metric values", () => {
+  // See the comment above this describe block's first test — same rationale,
+  // same "contents, not element type" property, for the metric vocabulary.
+  test("METRIC_VALUES matches store/telemetry-validation's TELEMETRY_METRICS exactly (drift guard)", () => {
     expect(new Set(METRIC_VALUES)).toEqual(
-      new Set([
-        "http.request",
-        "run.finished",
-        "sse.stream",
-        "policy.decision",
-        "store.health",
-      ]),
+      new Set(Object.keys(TELEMETRY_METRICS)),
     );
-    expect(METRIC_VALUES).toHaveLength(5);
+    expect(METRIC_VALUES).toHaveLength(Object.keys(TELEMETRY_METRICS).length);
   });
 
   // Zone rules restrict src -> tests, never tests -> src, so this test may
