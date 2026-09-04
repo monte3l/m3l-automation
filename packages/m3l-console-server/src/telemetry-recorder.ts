@@ -110,12 +110,14 @@ function safeGetErrorMessage(cause: unknown): string {
  * telemetry table would be indistinguishable from a healthy one. This
  * matches the house precedent set by
  * {@link "./runs/events.js".createCompositeRunEventSink}'s run-event-sink
- * report and
+ * report,
  * {@link "./boot/audit-index.js".createIndexedHumanActionAuditPort}'s
- * index-write report — both a never-throws port swallowing a member
- * failure, both at `error`. `telemetry/store-size.ts` deliberately stays
- * on `warning`: it reports a DECLINED MEASUREMENT (a file it could not
- * read), not a FAILED WRITE, so the two are not siblings to harmonize.
+ * index-write report, and `telemetry/store-size.ts`'s
+ * `reportDeclinedMeasurement` — all never-throws ports swallowing a member
+ * failure, all at `error`, for the identical reason: each marks a point
+ * where a metric stops being recorded, and the same operator-configurable
+ * `M3L_CONSOLE_LOG_LEVEL` floor that would suppress a `warning` here would
+ * suppress one there too.
  */
 function reportDroppedFanOut(
   logger: Core.M3LLogger,

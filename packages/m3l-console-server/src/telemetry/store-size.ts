@@ -57,7 +57,23 @@
  * the pre-bind boot path described above, where a throw would turn a degraded
  * mount into a failed start. The departure is confined to the propagation
  * mechanism — an unmeasurable sidecar is still treated as a fault and still
- * surfaced, as a warning plus a withheld sample rather than as an exception.
+ * surfaced, as an `error` report plus a withheld sample rather than as an
+ * exception.
+ *
+ * WHY `error`, NOT `warning`. `M3L_CONSOLE_LOG_LEVEL` is operator-configurable
+ * across six floors (`config/env.ts`'s `LOG_LEVELS`, default `info`), so at an
+ * `error` or `fatal` floor a `warning`-level report would be suppressed and
+ * `store.health` would silently stop being recorded with nothing in the log.
+ * `error` is correct here rather than merely louder because of WHERE this
+ * reporter is reached: every BENIGN path returns without calling it at all —
+ * `sampleStoreSizeOnBoot` returns before any `statSync` call when `location`
+ * is {@link IN_MEMORY_LOCATION}, and an ABSENT WAL sidecar falls through the
+ * `errnoCode` guard (see {@link ABSENT_FILE_ERRNO_CODES}) without ever
+ * reaching {@link reportDeclinedMeasurement}. So the only three paths that DO
+ * reach it are the main file's `statSync` throwing, a sidecar's `statSync`
+ * throwing something other than `ENOENT`, or {@link toValidSizeBytes}
+ * returning `undefined` for a degenerate summed reading — each one a genuine
+ * problem, never a benign absence.
  *
  * WHY NOTHING IS EMITTED RATHER THAN `0`. `store.health` is a VALUE-BEARING
  * metric — `console_telemetry_rollup` persists it with a non-NULL
@@ -74,16 +90,16 @@
  * the legitimately empty database, whose genuine `0` IS recorded.
  *
  * NOTHING THROWS FOR ANY INPUT `fs.statSync` CAN ACTUALLY PRODUCE. Every
- * failure above resolves to "record nothing, warn once", never to an
+ * failure above resolves to "record nothing, report once", never to an
  * exception: the sampler runs before the listener binds, so a degraded mount
  * must not turn an unmeasurable store into a failed start. And an absent
  * metric with no diagnostic anywhere would be a silent failure, so each
- * declined measurement leaves EXACTLY ONE warning naming the store, what
- * could not be measured, and why.
+ * declined measurement leaves EXACTLY ONE `error` report naming the store,
+ * what could not be measured, and why.
  *
  * That scope is deliberate, and it is held STRUCTURALLY rather than
  * defensively: `Stats.size` is always a `number` and Node always throws a
- * real `Error`, so nothing reachable arrives at the warning-rendering path
+ * real `Error`, so nothing reachable arrives at the error-rendering path
  * with a hostile shape. A hand-fabricated cause could still break it —
  * `Core.getErrorMessage` over an `Object.create(null)` or a throwing
  * `message` getter, `String()` over a throwing `toString` — and those inputs
@@ -155,7 +171,7 @@ const MIN_VALID_SIZE_BYTES = 0;
  * rejects any `valueBytes` that is not a non-negative safe integer, and
  * {@link M3LTelemetryRecorder}'s contract is never-throws — meaning the
  * rejection is swallowed by `telemetry-recorder.ts`'s fan-out as a logged
- * warning and the row is silently dropped. Clamping to `MAX_SAFE_INTEGER`
+ * `error` and the row is silently dropped. Clamping to `MAX_SAFE_INTEGER`
  * rather than to `0` preserves the information that the store was very large
  * rather than making it appear empty.
  */
@@ -211,9 +227,9 @@ interface M3LStoreSizeSampleOptions {
    */
   readonly telemetry: M3LTelemetryRecorder;
   /**
-   * Where a DECLINED measurement's one warning goes. Not optional: an absent
-   * metric with no diagnostic is a silent failure, so the sampler always has
-   * somewhere to report.
+   * Where a DECLINED measurement's one `error` report goes. Not optional: an
+   * absent metric with no diagnostic is a silent failure, so the sampler
+   * always has somewhere to report.
    */
   readonly logger: Core.M3LLogger;
 }
@@ -258,12 +274,12 @@ function toValidSizeBytes(rawSizeBytes: number): number | undefined {
 }
 
 /**
- * Everything one declined measurement's single warning needs. Named rather
- * than inline for the same reason {@link M3LStoreSizeSampleOptions} is — this
- * package's sibling convention (`HealthRouteOptions`,
+ * Everything one declined measurement's single `error` report needs. Named
+ * rather than inline for the same reason {@link M3LStoreSizeSampleOptions}
+ * is — this package's sibling convention (`HealthRouteOptions`,
  * `CreateRunReportReaderOptions`, …) is a named interface, so the parameter
  * reads the same way at every call site and each field carries its own
- * rationale. Not exported: the warning's shape is this module's private
+ * rationale. Not exported: the report's shape is this module's private
  * diagnostic detail, not part of any contract.
  *
  * @example
@@ -278,13 +294,15 @@ function toValidSizeBytes(rawSizeBytes: number): number | undefined {
  */
 interface ReportDeclinedMeasurementOptions {
   /**
-   * Where the one warning goes. Never optional — a declined measurement with
-   * no diagnostic anywhere would be the silent failure this module refuses.
+   * Where the one `error` report goes. Never optional — a declined
+   * measurement with no diagnostic anywhere would be the silent failure this
+   * module refuses.
    */
   readonly logger: Core.M3LLogger;
   /**
-   * The store's `location`, carried in the message AND in `data` so a warning
-   * is attributable to a store even when the unmeasured path is a sidecar.
+   * The store's `location`, carried in the message AND in `data` so an
+   * `error` report is attributable to a store even when the unmeasured path
+   * is a sidecar.
    */
   readonly location: string;
   /**
@@ -303,8 +321,8 @@ interface ReportDeclinedMeasurementOptions {
 }
 
 /**
- * Emits the ONE warning a declined measurement leaves behind, naming the
- * store, what could not be measured, and why.
+ * Emits the ONE `error` report a declined measurement leaves behind, naming
+ * the store, what could not be measured, and why.
  *
  * Shared by all three declining paths (unreadable main file, unreadable
  * sidecar, degenerate sum) so each leaves an identically shaped diagnostic.
@@ -324,7 +342,7 @@ interface ReportDeclinedMeasurementOptions {
 function reportDeclinedMeasurement(
   options: ReportDeclinedMeasurementOptions,
 ): void {
-  options.logger.warning(
+  options.logger.error(
     `console store size could not be measured at ${options.location}`,
     {
       location: options.location,
@@ -343,11 +361,11 @@ function reportDeclinedMeasurement(
  * Five outcomes, in the order they are decided:
  *
  * 1. `store.location` is `":memory:"` — nothing is recorded, nothing is
- *    stat'd and nothing is warned about. Recognised BEFORE any filesystem
- *    call, so an in-memory store costs no syscall at boot, and it is the
- *    designed outcome rather than a failure.
+ *    stat'd and nothing is reported. Recognised BEFORE any filesystem call,
+ *    so an in-memory store costs no syscall at boot, and it is the designed
+ *    outcome rather than a failure.
  * 2. The MAIN database file cannot be stat'd — nothing is recorded, and
- *    exactly one `logger.warning` names the location and the underlying
+ *    exactly one `logger.error` names the location and the underlying
  *    failure (an errno error's own message carries its `ENOENT`/`ENOTDIR`
  *    code).
  * 3. A WAL sidecar is ABSENT (`ENOENT`, and only `ENOENT`) — tolerated
@@ -356,15 +374,16 @@ function reportDeclinedMeasurement(
  * 4. A WAL sidecar failure that is NOT recognised absence — any other errno,
  *    and equally a throw carrying no own `code` at all, since nothing then
  *    attests that the file is missing — declines the whole measurement, with
- *    one warning naming that sidecar's full path. An understated sum is
- *    byte-identical to a checkpointed store, and a `-wal` routinely dwarfs
- *    the main file.
+ *    one `error` report naming that sidecar's full path. An understated sum
+ *    is byte-identical to a checkpointed store, and a `-wal` routinely
+ *    dwarfs the main file.
  * 5. Every file that exists was measured — one sample carrying the summed
  *    size, normalised by {@link toValidSizeBytes}. A DEGENERATE sum (a
- *    non-finite or negative reading) is declined here too, with one warning:
- *    it carries no measurement to record. That warning names the SUMMED
- *    paths, not any single file — every file that exists was answered for, so
- *    blaming one of them would be false (see {@link SUMMED_PATHS_SUFFIX}).
+ *    non-finite or negative reading) is declined here too, with one `error`
+ *    report: it carries no measurement to record. That report names the
+ *    SUMMED paths, not any single file — every file that exists was answered
+ *    for, so blaming one of them would be false (see
+ *    {@link SUMMED_PATHS_SUFFIX}).
  *
  * The emit itself is deliberately NOT wrapped in `try`/`catch`:
  * {@link M3LTelemetryRecorder} never throws by contract (`telemetry/port.ts`),
@@ -372,7 +391,7 @@ function reportDeclinedMeasurement(
  * guard belongs around `statSync`, and only there.
  *
  * @param options - The store to measure, the recorder to report through, and
- * the logger a declined measurement's single warning goes to.
+ * the logger a declined measurement's single `error` report goes to.
  * @example
  * ```ts
  * import { sampleStoreSizeOnBoot } from "@m3l-automation/m3l-console-server/telemetry/store-size.js";
@@ -434,7 +453,7 @@ export function sampleStoreSizeOnBoot(
       location,
       // NOT `location`: `statSync` answered for the main file, and for every
       // sidecar that exists. What carries no measurement is the sum, so the
-      // sum is what the warning names.
+      // sum is what the error report names.
       unmeasuredPath: `${location}${SUMMED_PATHS_SUFFIX}`,
       reason: `stat reported a degenerate summed size of ${String(totalBytes)} bytes`,
     });
