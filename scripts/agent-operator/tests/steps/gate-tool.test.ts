@@ -794,6 +794,198 @@ describe("gateToolSpec — dry-run-first bookkeeping", () => {
   });
 });
 
+describe("gateToolSpec — dry-run shape recording requires a clean exit (fail closed)", () => {
+  // Pins the fix for a defect where `runApprovedExecution` recorded the
+  // dry-run shape whenever `spec.execute` merely RESOLVED, regardless of the
+  // reported outcome — so a dry run that resolved with `exitCode: 1` (or any
+  // non-zero code, or no exit code at all) still satisfied the policy's
+  // `dryRunFirst` precondition. The shape must be recorded only when
+  // `outcome.exitCode` is an OWN property equal to `0`; every other resolved
+  // outcome must withhold the credit WITHOUT turning the call into a
+  // failure — the handler still resolves, still returns content, and still
+  // writes the post-execution audit record.
+
+  /**
+   * Runs a granted, read-only, dry-run action through the gate — read-only
+   * so it is auto-approved without ADR-0048 target grading, isolating the
+   * recording condition from policy grading — with `outcome` as exactly
+   * what `execute` reports, and returns everything a row needs to assert
+   * against.
+   */
+  async function runDryRunAction(
+    outcome: Core.M3LAgentDecisionOutcome,
+  ): Promise<{
+    readonly ledger: AgentRunLedger;
+    readonly expectedShapeKey: string;
+    readonly calls: string[];
+    readonly writer: RecordingDecisionLogWriter;
+    readonly content: readonly AWS.M3LBedrockToolResultContent[];
+  }> {
+    const calls: string[] = [];
+    const ledger = new AgentRunLedger();
+    trackLedgerCalls(ledger, calls);
+    const writer = new RecordingDecisionLogWriter(() => calls.push("record"));
+    const action = grantedReadOnlyAction({ dryRun: true });
+    const spec = trackedSpec({
+      calls,
+      action,
+      execute: () =>
+        Promise.resolve({
+          content: [{ type: "text", text: "ok" }],
+          outcome,
+        }),
+    });
+    const deps = makeDeps({ policy: minimalPolicy(), ledger, writer });
+    const registration = gateToolSpec(spec, deps);
+
+    const content = await registration.handler(
+      undefined,
+      toolContext(spec.name),
+    );
+
+    return {
+      ledger,
+      expectedShapeKey: Core.agentActionShapeKey(action),
+      calls,
+      writer,
+      content,
+    };
+  }
+
+  it("row 1: exitCode 0 records the shape — regression lock on the good path (must pass before and after the fix)", async () => {
+    const { ledger, expectedShapeKey } = await runDryRunAction({
+      dryRun: true,
+      exitCode: 0,
+    });
+
+    expect(ledger.snapshot(NOW).dryRunCompletedShapes).toContain(
+      expectedShapeKey,
+    );
+  });
+
+  it("row 2: exitCode 1 does NOT record the shape — a failed dry run must never satisfy dryRunFirst", async () => {
+    const { ledger, expectedShapeKey } = await runDryRunAction({
+      dryRun: true,
+      exitCode: 1,
+    });
+
+    expect(ledger.snapshot(NOW).dryRunCompletedShapes).not.toContain(
+      expectedShapeKey,
+    );
+  });
+
+  it("row 3: exitCode 42 does NOT record the shape", async () => {
+    const { ledger, expectedShapeKey } = await runDryRunAction({
+      dryRun: true,
+      exitCode: 42,
+    });
+
+    expect(ledger.snapshot(NOW).dryRunCompletedShapes).not.toContain(
+      expectedShapeKey,
+    );
+  });
+
+  it("row 4: an outcome that OMITS exitCode entirely does NOT record the shape — fail closed on an absent optional field", async () => {
+    // `exitCode` is declared optional on `M3LAgentDecisionOutcome`. Built so
+    // the key is genuinely absent — never assigned `undefined` — to match
+    // the library-wide "presence, not value" contract for optional fields.
+    const outcome: Core.M3LAgentDecisionOutcome = { dryRun: true };
+    expect(Object.hasOwn(outcome, "exitCode")).toBe(false);
+
+    const { ledger, expectedShapeKey, calls } = await runDryRunAction(outcome);
+
+    // Vacuous-pass protection: without this, a future change that stopped
+    // reaching `spec.execute` at all would still pass this row on the
+    // absence of a shape alone.
+    expect(calls).toContain("execute");
+    expect(ledger.snapshot(NOW).dryRunCompletedShapes).not.toContain(
+      expectedShapeKey,
+    );
+  });
+
+  it("row 5: exitCode 1 still resolves, still returns the spec's content, and still writes the post-execution audit record — withholding the shape credit never breaks the call", async () => {
+    const { ledger, expectedShapeKey, calls, writer, content } =
+      await runDryRunAction({
+        dryRun: true,
+        exitCode: 1,
+      });
+
+    expect(calls).toEqual(["record", "recordInvocation", "execute", "record"]);
+    expect(writer.entries).toHaveLength(2);
+    expect(writer.entries[1]?.outcome).toEqual({ dryRun: true, exitCode: 1 });
+    expect(content).toEqual([{ type: "text", text: "ok" }]);
+    // Distinguishing withheld from granted: the assertions above only show
+    // the call resolved cleanly, not that the shape credit was withheld.
+    expect(ledger.snapshot(NOW).dryRunCompletedShapes).not.toContain(
+      expectedShapeKey,
+    );
+  });
+
+  it("row 6: an inherited Object.prototype.exitCode must not count as own — pins Object.hasOwn, not `in`/property-access", async () => {
+    const priorDescriptor = Object.getOwnPropertyDescriptor(
+      Object.prototype,
+      "exitCode",
+    );
+    // Poison every plain object's prototype chain with a clean-exit-shaped
+    // `exitCode` — anything that reads `outcome.exitCode` or uses `in`
+    // instead of `Object.hasOwn` would see `0` here even though `outcome`
+    // itself never declared the key.
+    Object.defineProperty(Object.prototype, "exitCode", {
+      value: 0,
+      configurable: true,
+      enumerable: false,
+      writable: true,
+    });
+    try {
+      const outcome: Core.M3LAgentDecisionOutcome = { dryRun: true };
+      // Sanity check that the poison is actually live and `outcome` itself
+      // still has no own `exitCode` — otherwise this test would prove
+      // nothing about `Object.hasOwn` vs. plain property access.
+      expect((outcome as { exitCode?: number }).exitCode).toBe(0);
+      expect(Object.hasOwn(outcome, "exitCode")).toBe(false);
+
+      const { ledger, expectedShapeKey, calls } =
+        await runDryRunAction(outcome);
+
+      // Vacuous-pass protection: proves the poisoned prototype didn't also
+      // short-circuit the call before reaching `spec.execute`.
+      expect(calls).toContain("execute");
+      expect(ledger.snapshot(NOW).dryRunCompletedShapes).not.toContain(
+        expectedShapeKey,
+      );
+    } finally {
+      if (priorDescriptor === undefined) {
+        delete (Object.prototype as { exitCode?: number }).exitCode;
+      } else {
+        Object.defineProperty(Object.prototype, "exitCode", priorDescriptor);
+      }
+    }
+  });
+
+  it("row 7: an action without dryRun true is never recorded, even with exitCode 0 — regression lock", async () => {
+    const calls: string[] = [];
+    const ledger = new AgentRunLedger();
+    const shapeKeySpy = vi.spyOn(ledger, "recordDryRunShape");
+    const writer = new RecordingDecisionLogWriter(() => calls.push("record"));
+    const action = grantedReadOnlyAction();
+    const spec = trackedSpec({
+      calls,
+      action,
+      execute: () =>
+        Promise.resolve({
+          content: [{ type: "text", text: "ok" }],
+          outcome: { dryRun: false, exitCode: 0 },
+        }),
+    });
+    const deps = makeDeps({ policy: minimalPolicy(), ledger, writer });
+    const registration = gateToolSpec(spec, deps);
+
+    await registration.handler(undefined, toolContext(spec.name));
+
+    expect(shapeKeySpy).not.toHaveBeenCalled();
+  });
+});
+
 describe("AGENT_TOOL_REFUSAL_MESSAGES — a closed, exhaustively-reachable vocabulary", () => {
   it("declares exactly the four documented keys", () => {
     // A drift guard: a fifth channel silently added here would ship a

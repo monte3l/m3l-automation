@@ -376,9 +376,121 @@ async function recordSuccessOutcome(
 }
 
 /**
- * Runs the approved path: counts the invocation, executes, records the
- * dry-run shape (only after a successful execute, keyed by the decision's
- * own shape key), and writes the post-execution audit record.
+ * Reports whether `outcome` REPORTS a clean exit — not whether the
+ * underlying process actually exited cleanly. `outcome.exitCode` is
+ * self-reported by whatever produced it: `lib/cli-surface.ts`'s run paths
+ * declare `isAcceptableExitCode: () => true`, so the real spawn exit code is
+ * discarded there and only the envelope's own `exitCode` ever reaches this
+ * predicate. Verifying the reported code against the process's actual
+ * disposition is the producer's job, not this predicate's — this predicate
+ * only checks that `exitCode` is an OWN property (never inherited —
+ * `Object.hasOwn`, not `in`/property access, because a polluted prototype
+ * chain must not manufacture a pass) equal to `0`. `exitCode` is declared
+ * optional, so an outcome that omits it entirely is a legal shape — and, per
+ * the fail-closed rule below, an unproven one.
+ */
+function isCleanExit(outcome: Core.M3LAgentDecisionOutcome): boolean {
+  return Object.hasOwn(outcome, "exitCode") && outcome.exitCode === 0;
+}
+
+/**
+ * Logs, at `error` level, that the dry-run-first credit for `decision`'s
+ * action shape was WITHHELD. Never calls `deps.reportRecovery`: nothing was
+ * refused and the call still succeeds, so demoting the run's outcome would
+ * misreport a dry run that correctly reported what it reported. Without
+ * this line the only signal a withheld credit leaves behind is a
+ * decision-log `rule=dry-run-first` escalation on some LATER mutating
+ * attempt against the same shape, which never names which dry run or exit
+ * code caused it — this is the missing correlation. `shapeKey` is
+ * deliberately never included: it is opaque to an operator, matching
+ * {@link AgentRunLedger.recordDryRunShape}'s own ceiling error, which
+ * likewise declines to echo it.
+ */
+function logDryRunCreditWithheld(
+  deps: GateToolDeps,
+  decision: Core.M3LAgentDecision,
+  reason: string,
+  detail: Record<string, unknown>,
+): void {
+  deps.logger.error(
+    `gate-tool: withheld the dry-run-first credit for this action shape (${reason}); ` +
+      "a later mutating attempt against the same shape will still require " +
+      "a fresh, clean dry run",
+    {
+      script: decision.action.script,
+      operation: decision.action.operation,
+      ...detail,
+    },
+  );
+}
+
+/**
+ * Decides and applies the dry-run-shape credit for `outcome`, only ever
+ * called for a `dryRun: true` action.
+ *
+ * @remarks
+ * Two distinct reasons withhold the credit, both fail-closed and both
+ * logged (never rethrown, never reported through `reportRecovery`):
+ *
+ * 1. `outcome` itself fails {@link isCleanExit} — a non-zero or absent
+ *    reported exit code must never be mistaken for one that ran clean.
+ * 2. `outcome` proves a clean exit, but
+ *    `deps.ledger.recordDryRunShape` still throws because the library's
+ *    per-run shape ceiling (`Core.M3L_AGENT_MAX_DRY_RUN_SHAPES`) is already
+ *    reached. This throw is pre-existing and was previously unhandled at
+ *    this call site — left unwrapped it would skip the post-execution audit
+ *    record entirely for an action that already ran, and escape into the
+ *    Bedrock dispatch layer, which transmits a thrown handler message to
+ *    the model verbatim. A ceiling exhaustion is exactly a withheld credit,
+ *    so it is handled identically to case 1: logged, then the call
+ *    continues.
+ *
+ * Neither case turns the call into a failure: the caller still resolves,
+ * still returns `result.content`, and still writes the post-execution audit
+ * record with whatever outcome `execute` actually reported.
+ */
+function applyDryRunCredit(
+  deps: GateToolDeps,
+  decision: Core.M3LAgentDecision,
+  outcome: Core.M3LAgentDecisionOutcome,
+): void {
+  if (!isCleanExit(outcome)) {
+    logDryRunCreditWithheld(
+      deps,
+      decision,
+      "the reported outcome did not prove a clean exit",
+      Object.hasOwn(outcome, "exitCode")
+        ? { exitCode: outcome.exitCode }
+        : { exitCode: "not reported" },
+    );
+    return;
+  }
+
+  try {
+    deps.ledger.recordDryRunShape(decision.action.shapeKey);
+  } catch (cause) {
+    logDryRunCreditWithheld(
+      deps,
+      decision,
+      "the ledger's per-run dry-run-shape ceiling was already reached",
+      { detail: describeCaughtChain(cause) },
+    );
+  }
+}
+
+/**
+ * Runs the approved path: counts the invocation, executes, applies the
+ * dry-run-shape credit (see {@link applyDryRunCredit} — only ever attempted
+ * for a `dryRun: true` action), and writes the post-execution audit record.
+ *
+ * @remarks
+ * Dry-run-shape credit gates a real mutation later (the policy's
+ * `dryRunFirst` precondition) rather than being an observation about what
+ * happened — so it is a precondition, and a precondition fails closed.
+ * Withholding the credit never turns the call into a failure — it still
+ * resolves, still returns `result.content`, and still writes the
+ * post-execution audit record with whatever outcome `execute` actually
+ * reported.
  */
 async function runApprovedExecution(
   spec: AgentToolSpec,
@@ -403,7 +515,7 @@ async function runApprovedExecution(
   }
 
   if (decision.action.dryRun) {
-    deps.ledger.recordDryRunShape(decision.action.shapeKey);
+    applyDryRunCredit(deps, decision, result.outcome);
   }
 
   await recordSuccessOutcome(spec, deps, decision, now, result.outcome);
