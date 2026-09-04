@@ -1,6 +1,6 @@
 # Document the merge step for a human-authored PR (issue #994, H1)
 
-**Status: shipped** — PR #NNN.
+**Status: shipped** — PR #1031.
 
 ## Context
 
