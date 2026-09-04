@@ -40,7 +40,10 @@ import type { M3LConsoleMetaRepository } from "../src/store/meta-repository.js";
 import type { M3LConsoleRunsRepository } from "../src/store/runs-repository.js";
 import type { M3LConsoleSessionsRepository } from "../src/store/sessions-repository.js";
 import type { M3LConsoleAuditRepository } from "../src/store/audit-repository.js";
-import type { M3LConsoleTelemetryRepository } from "../src/store/telemetry-repository.js";
+import type {
+  M3LConsoleTelemetryRepository,
+  M3LTelemetryQuery,
+} from "../src/store/telemetry-repository.js";
 import type { M3LConsoleStoreUnit } from "../src/store/store.js";
 
 /**
@@ -890,6 +893,71 @@ describe("startConsole — the boot line names the store's location and schemaVe
     const shutdownPromise = running.shutdown();
     fake.resolveClose();
     await shutdownPromise;
+  });
+});
+
+// X8 slice 4a wiring: every hand-off from `main.ts` through
+// `buildDispatchRouter` to `createBuiltInRoutes` is OPTIONAL, so a dropped
+// argument at any of the three call sites degrades silently to "route
+// absent" instead of failing to compile. `tests/routes-built-in.test.ts`
+// constructs `createBuiltInRoutes` directly and therefore cannot see a break
+// in `main.ts` or `boot/dispatch-router.ts` — only a real `GET
+// /api/v1/telemetry` request driven through a runtime built the way
+// `startConsole` builds one (opened store included) can prove the wiring is
+// actually reachable end to end.
+describe("startConsole — GET /api/v1/telemetry reaches the wired store repository (X8 slice 4a wiring)", () => {
+  test("the wired repository's list is reached and its rows come back in the response body", async () => {
+    const fixtureRow = {
+      granularity: "hour" as const,
+      bucketStartMs: 0,
+      metric: "http.request" as const,
+      route: "/api/v1/runs",
+      script: "",
+      operation: "",
+      outcome: "",
+      posture: "",
+      sampleCount: 1,
+      sumValue: 12,
+      minValue: 12,
+      maxValue: 12,
+    };
+    const list = vi.fn((_query: M3LTelemetryQuery) => [fixtureRow]);
+    const { store } = createFakeStore();
+    const wiredStore: FakeConsoleStoreHandle = {
+      ...store,
+      telemetry: { ...stubTelemetryRepository, list },
+    };
+    const openStore = vi.fn(() => wiredStore);
+
+    const { promise, fake } = startWithFakeServer({ openStore });
+    const running = await promise;
+
+    const response = await dispatch(
+      running.runtime,
+      "/api/v1/telemetry?granularity=hour",
+    );
+
+    expect(list).toHaveBeenCalledTimes(1);
+    expect(list.mock.calls[0]?.[0]).toMatchObject({ granularity: "hour" });
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual([fixtureRow]);
+
+    const shutdownPromise = running.shutdown();
+    fake.resolveClose();
+    await shutdownPromise;
+  });
+});
+
+describe("createConsoleRuntime — GET /api/v1/telemetry 404s when no telemetry repository is wired (X8 slice 4a wiring)", () => {
+  test("the same request 404s when options.telemetry is absent", async () => {
+    const runtime = createConsoleRuntime({ env: buildEnv() });
+
+    const response = await dispatch(
+      runtime,
+      "/api/v1/telemetry?granularity=hour",
+    );
+
+    expect(response.status).toBe(404);
   });
 });
 

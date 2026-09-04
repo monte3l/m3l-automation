@@ -61,10 +61,16 @@ operations without running it.
 | `GET`  | `/api/v1/scripts`       | required | X10        |
 | `GET`  | `/api/v1/scripts/:name` | required | X10        |
 
-Telemetry summaries remain deliberately absent — ADR-0066 describes them as
-the contract's eventual shape, not as anything the server answers today.
-**Cancellation, which ADR-0066 listed alongside them, shipped in X7d** (see
-`POST /api/v1/runs/:id/cancel` below).
+X8 shipped the telemetry read path: query the rollup buckets the server
+records about its own request latency, run durations, stream lifecycle,
+policy decisions, and store size.
+
+| Method | Path                | Auth     | Shipped in |
+| ------ | ------------------- | -------- | ---------- |
+| `GET`  | `/api/v1/telemetry` | required | X8         |
+
+**Cancellation, which ADR-0066 listed alongside telemetry summaries, shipped
+in X7d** (see `POST /api/v1/runs/:id/cancel` below).
 
 ## Enabling run orchestration
 
@@ -1022,6 +1028,85 @@ settings above.
 "pending"` themselves; the session record itself carries no aggregate flag.
 - Binding audit records have no step linkage — see the Bindings section
   above.
+
+## `GET /api/v1/telemetry`
+
+Lists telemetry rollup buckets, **most-recent-first** — with a `limit`, a
+monitoring page wants the latest N buckets, not the oldest N. Ties inside one
+`bucket_start_ms` break by `metric`, `route`, `script`, `operation`,
+`outcome`, `posture`, so the ordering is fully deterministic.
+
+| Query         | Default  | Rules                                                                         |
+| ------------- | -------- | ----------------------------------------------------------------------------- |
+| `granularity` | **none** | Required. One of `minute`, `hour`, `day`; anything else is a 400.             |
+| `metric`      | unset    | One of the five metrics below; anything else is a 400.                        |
+| `fromMs`      | unset    | Inclusive lower bound on `bucketStartMs`. Non-negative safe integer.          |
+| `toMs`        | unset    | Inclusive upper bound. Non-negative safe integer, and not less than `fromMs`. |
+| `limit`       | `50`     | Positive integer, at most `1000`.                                             |
+
+`granularity` is the one required parameter: the three tiers are stored in the
+same table, so a query without it would mix minute, hour, and day buckets into
+one response and no caller has a use for that.
+
+Unlike `GET /api/v1/runs` and `GET /api/v1/sessions`, whose `limit` is any
+positive integer, this route caps `limit` at `1000`. Those tables are bounded
+by real operator activity; this one is three granularity tiers times five
+metrics times the dimension cross-product, and nothing prunes it yet — so an
+uncapped limit would be an unbounded response body. The cap is expected to
+outlive that gap and is part of the contract, not a placeholder.
+
+The five metrics, and which fields each populates:
+
+| `metric`          | Measures                     | `sumValue`/`minValue`/`maxValue` |
+| ----------------- | ---------------------------- | -------------------------------- |
+| `http.request`    | inbound request latency (ms) | populated                        |
+| `run.finished`    | script run duration (ms)     | populated                        |
+| `store.health`    | store size (bytes)           | populated                        |
+| `sse.stream`      | stream lifecycle events      | `null` — a pure counter          |
+| `policy.decision` | launch-gate decisions        | `null` — a pure counter          |
+
+Each bucket carries:
+
+| Field           | Type             | Notes                                                   |
+| --------------- | ---------------- | ------------------------------------------------------- |
+| `granularity`   | string           | `minute`, `hour`, or `day`.                             |
+| `bucketStartMs` | number           | UTC-aligned bucket start, epoch milliseconds.           |
+| `metric`        | string           | One of the five above.                                  |
+| `route`         | string           | `""` when not applicable — the sentinel surfaces as-is. |
+| `script`        | string           | `""` when not applicable.                               |
+| `operation`     | string           | `""` when not applicable.                               |
+| `outcome`       | string           | `""` when not applicable.                               |
+| `posture`       | string           | `""` when not applicable.                               |
+| `sampleCount`   | number           | Measurements merged into this bucket. Always ≥ 1.       |
+| `sumValue`      | number \| `null` | `null` for a pure counter.                              |
+| `minValue`      | number \| `null` | `null` for a pure counter.                              |
+| `maxValue`      | number \| `null` | `null` for a pure counter.                              |
+
+The empty string is a real dimension value, not a missing one: the rollup
+table's primary key spans all five dimension columns, so a bucket that does
+not apply to a given dimension stores `''` rather than `NULL`. Callers
+grouping by `route` must treat `""` as "not applicable" rather than filtering
+it out.
+
+A counter's three measure fields arrive as an explicit `null`, not as absent
+keys. That is worth stating because it is the opposite of what plain
+`JSON.stringify` would produce: the repository maps SQL `NULL` to
+`undefined`, and `JSON.stringify` drops an `undefined` property entirely, but
+every console response is serialised through `Core.safeJsonStringify`, which
+normalises `undefined` to `null` instead. So a client may read
+`bucket.sumValue === null` and must not rely on `"sumValue" in bucket` being
+false.
+
+There is no aggregate layer — no averages, error rates, or percentiles. The
+buckets are already pre-aggregated, so an average is `sumValue / sampleCount`
+for the caller; percentiles are not derivable from the stored columns and
+would need a different table.
+
+The route is registered only when a telemetry repository is wired. With
+telemetry disabled, `/api/v1/telemetry` is absent from the routing table
+entirely and falls through to the router's own `ERR_CONSOLE_NOT_FOUND` —
+there is no "registered but always empty" middle state, matching how
+`/api/v1/runs*` and `/api/v1/sessions*` gate.
 
 ## Configuration
 
