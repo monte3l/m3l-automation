@@ -78,6 +78,19 @@ git status --porcelain               # is the tree already dirty?
   `journals`, and `capturedAt` so Steps 3–4 can offer a resume path instead of
   defaulting to greenfield. A handoff naming a _different_ branch is not a
   resume signal for the current task — ignore it.
+- **Next-slice signal (distinct from the resume check above).** If this
+  invocation follows directly from `finishing-work` Step 8 reporting a
+  remaining row in a submodule's `## Landing plan` table (ADR-0072), or a
+  fresh session opens pointed at that same landing plan, treat it as its own
+  signal, not the `tmp/compact-handoff.json` resume path — a landing-plan
+  handoff happens right after a clean merge, on a clean tree, so the dirty-
+  tree precondition above never fires for it. The six decisions are already
+  implicitly settled by the landing plan's own sequence (same branch-naming
+  pattern and PR-required/push-target shape as the slice that just merged);
+  only the next slice's slug is new. Skip straight to the abbreviated Step 5
+  path `finishing-work` Step 8 describes rather than the full Step 4
+  confirmation — except the session name, which still needs confirming
+  since it names this session, not the git state.
 
 ### 2 — Infer the change scope
 
