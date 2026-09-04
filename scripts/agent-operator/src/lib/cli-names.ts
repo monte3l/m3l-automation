@@ -1,7 +1,8 @@
 /**
  * `lib/cli-names` — the script-name allowlist that anchors the argument
  * injection defence for the CLI seam. A model-supplied script name is the
- * only free-form value that ever reaches `runCliProcess`'s argv array; this
+ * first of the two free-form values that ever reach `runCliProcess`'s argv
+ * array (the second is the preset name handled by `lib/preset-names`); this
  * module is what keeps that one value honest.
  *
  * @packageDocumentation
@@ -100,6 +101,10 @@ export function isAllowedScriptName(value: unknown): value is string {
   if (typeof value !== "string") {
     return false;
   }
+  // The explicit length guard stays ahead of the pattern, and keeps its own
+  // `length === 0` arm rather than leaning on the pattern's mandatory leading
+  // `[a-z]`: if the copied regex is ever relaxed upstream — an optional first
+  // character, an outer `*` — the empty string must still be rejected here.
   if (
     value.length === 0 ||
     value.length > AGENT_OPERATOR_SCRIPT_NAME_MAX_LENGTH
@@ -118,7 +123,9 @@ export function isAllowedScriptName(value: unknown): value is string {
  * `ERR_AGENT_OPERATOR_SCRIPT_NAME` with a fixed message that never echoes
  * `value` — `value` may be model-supplied, and a rejected value is exactly
  * the kind of content (shell metacharacters, path traversal, control bytes)
- * that must never be threaded into a log or error message.
+ * that must never be threaded into a log or error message. No `cause` is
+ * attached either: nothing underneath failed, the value simply did not
+ * qualify.
  *
  * @param value - An unknown, potentially model-supplied value.
  * @returns The narrowed, allowed, branded script name.

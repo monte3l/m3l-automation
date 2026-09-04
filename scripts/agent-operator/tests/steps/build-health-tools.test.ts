@@ -31,7 +31,16 @@ import {
 function unusedSurface(): AgentCliSurface {
   const refuse = (): Promise<never> =>
     Promise.reject(new Error("unexpected CLI call"));
-  return { list: refuse, doctor: refuse, inspect: refuse, dryRun: refuse };
+  // `run` (V9 slice 2a) refuses like the other four rather than resolving a
+  // stub envelope: it is the one mutating operation on the surface, so a
+  // stray call from a pure-boundary test must fail loudly, not be absorbed.
+  return {
+    list: refuse,
+    doctor: refuse,
+    inspect: refuse,
+    dryRun: refuse,
+    run: refuse,
+  };
 }
 
 /** Builds the specs with a real collector and a caller-supplied surface. */

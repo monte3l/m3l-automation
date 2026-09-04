@@ -11,7 +11,7 @@ import {
  * Contract: PR 1 spec `src/lib/errors.ts`. One class,
  * `M3LAgentOperatorCliError extends Core.M3LError`, taking `(message, code,
  * options?)` and calling `super(message, { code, ...options })`. Every
- * script-local failure pins its own `code` from the nine-member
+ * script-local failure pins its own `code` from the ten-member
  * `M3LAgentOperatorErrorCode` union rather than a dedicated subclass per code.
  */
 
@@ -25,6 +25,7 @@ const ALL_CODES: readonly M3LAgentOperatorErrorCode[] = [
   "ERR_AGENT_OPERATOR_DECISION_LOG",
   "ERR_AGENT_OPERATOR_ESCALATED",
   "ERR_AGENT_OPERATOR_BUDGET_STATE",
+  "ERR_AGENT_OPERATOR_PRESET",
 ] as const;
 
 describe("M3LAgentOperatorCliError", () => {
@@ -102,9 +103,10 @@ describe("M3LAgentOperatorCliError", () => {
     expect(cliError.code).toBe("ERR_AGENT_OPERATOR_CLI_ENTRYPOINT");
   });
 
-  it("types the error code union to exactly the nine documented codes", () => {
-    // `toEqualTypeOf` is bidirectional and exact on purpose: a tenth member
-    // added to the union — or one of these nine removed — fails this pin.
+  it("types the error code union to exactly the ten documented codes", () => {
+    // `toEqualTypeOf` is bidirectional and exact on purpose: an eleventh
+    // member added to the union — or one of these ten removed — fails this
+    // pin.
     expectTypeOf<M3LAgentOperatorErrorCode>().toEqualTypeOf<
       | "ERR_AGENT_OPERATOR_CONFIG"
       | "ERR_AGENT_OPERATOR_CLI_ENTRYPOINT"
@@ -115,6 +117,7 @@ describe("M3LAgentOperatorCliError", () => {
       | "ERR_AGENT_OPERATOR_DECISION_LOG"
       | "ERR_AGENT_OPERATOR_ESCALATED"
       | "ERR_AGENT_OPERATOR_BUDGET_STATE"
+      | "ERR_AGENT_OPERATOR_PRESET"
     >();
   });
 
@@ -152,6 +155,10 @@ const EXIT_CODE_BY_CODE: ReadonlyArray<
   ["ERR_AGENT_OPERATOR_CLI_ENTRYPOINT", 2],
   ["ERR_AGENT_OPERATOR_SCRIPT_NAME", 2],
   ["ERR_AGENT_OPERATOR_POLICY", 2],
+  // An operator declared a bad `presetAllowlist` entry, or the model asked for
+  // a preset name that is not on it. Either way re-running unchanged cannot
+  // help: the fix is an edit to config or to the request.
+  ["ERR_AGENT_OPERATOR_PRESET", 2],
   // The policy worked exactly as written and declined — a caller fault, not
   // an external one.
   ["ERR_AGENT_OPERATOR_ESCALATED", 2],
@@ -170,11 +177,30 @@ describe("M3LAgentOperatorCliError — fault origin drives the exit code", () =>
     expect(Core.mapErrorToExitCode(error)).toBe(exit);
   });
 
-  it("covers every declared code, so a tenth cannot be added without a mapping", () => {
+  it("defaults ERR_AGENT_OPERATOR_PRESET to a caller fault, so it exits 2", () => {
+    // The tenth code, and its rejection paths span two owners: a name-*shape*
+    // rejection (bad characters, wrong length) in `preset-names.ts`, and the
+    // permission-side arms (an undeclared name, an operator's malformed
+    // `presetAllowlist` declaration) in `cli-surface.ts`. Every one of them is
+    // decided before any `m3l` child is spawned, so nothing external has
+    // failed and re-running unchanged cannot help. The message below is a
+    // deliberate placeholder — this test asserts origin and exit code only,
+    // and quoting either owner's real rejection text here would rot silently
+    // the next time one of them rewords it.
+    const error = new M3LAgentOperatorCliError(
+      "message text",
+      "ERR_AGENT_OPERATOR_PRESET",
+    );
+
+    expect(error.origin).toBe("caller");
+    expect(Core.mapErrorToExitCode(error)).toBe(2);
+  });
+
+  it("covers every declared code, so an eleventh cannot be added without a mapping", () => {
     // The table above is a hand-written list; this pins it against the union
     // the class actually accepts. `ALL_CODES` is itself type-checked as
     // `readonly M3LAgentOperatorErrorCode[]`, and the bidirectional
-    // `expectTypeOf` above pins that union to exactly nine members.
+    // `expectTypeOf` above pins that union to exactly ten members.
     expect(EXIT_CODE_BY_CODE.map(([code]) => code).sort()).toEqual(
       [...ALL_CODES].sort(),
     );
@@ -202,7 +228,7 @@ describe("M3LAgentOperatorCliError — fault origin drives the exit code", () =>
   });
 
   it("no longer collapses every failure onto UNCLASSIFIED", () => {
-    // The regression this table exists to prevent, stated as a set: the nine
+    // The regression this table exists to prevent, stated as a set: the ten
     // codes must produce more than one distinct exit code.
     const codes = new Set(
       EXIT_CODE_BY_CODE.map(([code]) =>

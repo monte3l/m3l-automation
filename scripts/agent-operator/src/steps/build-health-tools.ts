@@ -40,8 +40,14 @@
  *   module's own declaration, or a model could assert its own autonomy tier.
  * - `fleet_list` and `fleet_doctor` accept `undefined` or any plain object
  *   and never read it. The ignoring *is* the guarantee: it preserves "the
- *   model supplies exactly one value across the whole tool surface — a
- *   script name."
+ *   model supplies exactly one value across these four health-check tools —
+ *   a script name." Note the scope: it is a claim about *this* tool set, not
+ *   about `AgentCliSurface` as a whole. The surface exposes a fifth
+ *   operation, `run`, whose second model-supplied value is a preset *name*,
+ *   kept honest by its own nominal brand (`lib/preset-names.ts`) plus
+ *   membership in the operator-declared `presetAllowlist` — see
+ *   `lib/cli-surface.ts`'s header. No tool built here exposes `run`, so
+ *   within this module the one-value claim holds exactly as stated.
  *
  * `script_dry_run` is fail-closed in **two independent layers**: its spec is
  * not built at all unless `includeDryRunProbes` is true *and* the allowlist
@@ -221,8 +227,10 @@ function fleetListSpec(deps: BuildHealthToolsDeps): AgentToolSpec {
       "List every script the m3l CLI discovers, with its description and parameter count. Takes no arguments.",
     inputSchema: NO_INPUT_SCHEMA,
     // `input` is deliberately unread. Accepting anything and reading nothing
-    // is what keeps "the model supplies exactly one value across the whole
-    // tool surface" true.
+    // is what keeps "the model supplies exactly one value across these four
+    // health-check tools" true. Scoped to this tool set: the wider CLI
+    // surface's `run` operation adds a second value, a preset name, which no
+    // tool built here can reach (see the module remarks).
     describeAction: (): Core.M3LAgentAction => fleetAction("list"),
     execute: async (): Promise<AgentToolExecution> => {
       const rows = await deps.surface.list();

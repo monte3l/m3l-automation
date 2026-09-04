@@ -145,6 +145,15 @@ function createFakeSurface(): {
       calls.push("dryRun");
       return Promise.resolve(buildRunEnvelope());
     },
+    // `run` (V9 slice 2a) records the call like its siblings so the negative
+    // assertion below can see it, then rejects: it is the surface's one
+    // mutating operation and `explainPolicy` is a read-only summariser, so a
+    // call here is a defect that must surface, never a resolved envelope a
+    // stray caller could quietly consume.
+    run() {
+      calls.push("run");
+      return Promise.reject(new Error("unexpected mutating run() call"));
+    },
   };
   return { surface, calls };
 }
@@ -207,7 +216,7 @@ describe("explainPolicy", () => {
     expect(summary.hasBudgets).toBe(false);
   });
 
-  it("calls surface.list() and surface.doctor() exactly once each, and never inspect()/dryRun()", async () => {
+  it("calls surface.list() and surface.doctor() exactly once each, and never inspect()/dryRun()/run()", async () => {
     const { logger } = createLogger();
     const { surface, calls } = createFakeSurface();
 
@@ -217,6 +226,7 @@ describe("explainPolicy", () => {
     expect(calls.filter((call) => call === "doctor")).toHaveLength(1);
     expect(calls).not.toContain("inspect");
     expect(calls).not.toContain("dryRun");
+    expect(calls).not.toContain("run");
   });
 
   it("constructs no Bedrock client — the deps bag carries only policy, logger, and the CLI surface", async () => {
