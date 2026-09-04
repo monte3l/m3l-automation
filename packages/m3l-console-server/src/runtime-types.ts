@@ -1,10 +1,17 @@
 /**
- * `runtime-types` — the composition root's public shape:
- * {@link M3LConsoleRuntimeOptions} (what a caller may inject) and
- * {@link M3LConsoleRuntime} (what it gets back).
+ * `runtime-types` — the RUNTIME half of the composition root's public shape:
+ * {@link M3LConsoleRuntimeOptions} (what a caller may inject into
+ * {@link "./main.js".createConsoleRuntime}) and {@link M3LConsoleRuntime}
+ * (what it gets back). Those two interfaces, and nothing else.
+ *
+ * The PROCESS-LIFECYCLE half stayed behind in `main.ts`, beside the function
+ * it belongs to: `StartConsoleOptions` and `M3LRunningConsole`, what
+ * {@link "./main.js".startConsole} takes and returns. Those are just as much
+ * "the composition root's public shape" as these two, so this module holds a
+ * subset of that surface rather than all of it.
  *
  * Kept as its own module rather than inline in `main.ts` because these two
- * interfaces ARE the console server's programmatic contract — every
+ * interfaces ARE the console server's runtime injection contract — every
  * subsystem and test reads them — and that contract is worth reading on its
  * own, without the several hundred lines of socket binding, signal
  * registration and drain wiring that surround it in the composition root.
@@ -41,7 +48,7 @@ import type { M3LConsoleTelemetryRepository } from "./store/telemetry-repository
 import type { M3LTelemetryRecorder } from "./telemetry/port.js";
 
 /**
- * Constructor options for {@link createConsoleRuntime}.
+ * Constructor options for {@link "./main.js".createConsoleRuntime}.
  *
  * @example
  * ```ts
@@ -60,7 +67,7 @@ export interface M3LConsoleRuntimeOptions {
   readonly handlers?: readonly Core.M3LLoggerHandler[];
   /**
    * Additional routes registered alongside the built-in health routes (see
-   * {@link createConsoleRuntime}). Defaults to an empty table. Exposed so
+   * {@link "./main.js".createConsoleRuntime}). Defaults to an empty table. Exposed so
    * tests can drive the request listener without a live server.
    *
    * **A route supplied here is NOT audited.** `boot/dispatch-router.ts`
@@ -76,17 +83,17 @@ export interface M3LConsoleRuntimeOptions {
    * `applyHumanActionAudit` for the full boundary.
    */
   readonly routes?: readonly M3LRoute[];
-  /** Pre-resolved config; when supplied, `loadConsoleConfig` is skipped (see {@link startConsole}). */
+  /** Pre-resolved config; when supplied, `loadConsoleConfig` is skipped (see {@link "./main.js".startConsole}). */
   readonly config?: M3LConsoleConfig;
   /** The opened console store (ADR-0069), when the caller already has one. */
   readonly store?: M3LConsoleStoreHandle;
   /** Pre-resolved X4 run-governor config; skips `loadRunsConfig` (mirrors {@link config}). */
   readonly runsConfig?: M3LConsoleRunsConfig;
-  /** The run-persistence port the X4 run subsystem builds from; see {@link createConsoleRuntime}. */
+  /** The run-persistence port the X4 run subsystem builds from; see {@link "./main.js".createConsoleRuntime}. */
   readonly runs?: M3LRunRegistry;
   /** Pre-resolved X6 workbench-sessions config; skips `loadSessionsConfig` (mirrors {@link runsConfig}). */
   readonly sessionsConfig?: M3LConsoleSessionsConfig;
-  /** The workbench-sessions persistence port the X6 session subsystem builds from; see {@link createConsoleRuntime}. */
+  /** The workbench-sessions persistence port the X6 session subsystem builds from; see {@link "./main.js".createConsoleRuntime}. */
   readonly sessions?: M3LConsoleSessionsRepository;
   /**
    * The ADR-0070 SQLite audit INDEX every trail entry is additionally

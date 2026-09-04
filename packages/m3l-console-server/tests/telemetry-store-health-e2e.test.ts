@@ -7,12 +7,6 @@
  * `tests/telemetry-runs-e2e.test.ts`, `tests/telemetry-sse-e2e.test.ts`,
  * `tests/telemetry-policy-e2e.test.ts`); this is 3d's.
  *
- * RED: `src/telemetry/store-size.ts` does not exist and `main.ts` does not
- * call it yet, so the rollup table holds no `store.health` row at boot and
- * every assertion below fails on the missing rows (plus the unresolved
- * import in `tests/telemetry-store-size.test.ts`, the unit half). That is
- * the only acceptable RED reason here.
- *
  * WHY THIS FILE USES A REAL DATABASE FILE, unlike every other telemetry e2e
  * in this package. The four sibling files all open
  * `openConsoleStore({ location: ":memory:" })`, and this package has a
