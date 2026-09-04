@@ -15,7 +15,8 @@
  * builds a real `createConsoleRuntime` wired to that store's own
  * `telemetry` repository, drives one request through
  * `runtime.requestListener`, and reads the rollup table back through
- * `store.telemetry.list()`/`count()`.
+ * `store.telemetry.list()`, scoped to the `http.request` metric (see
+ * {@link countMetricRows} for why never `count()`).
  *
  * Isolation: `:memory:` only, never a real file — this package has a
  * standing history of tests accidentally opening the real store (see
@@ -52,7 +53,39 @@ import type {
   M3LConsoleStore,
   M3LConsoleStoreHandle,
 } from "../src/store/store.js";
+import type { M3LTelemetryMetric } from "../src/store/telemetry-repository.js";
 import type { M3LRoute } from "../src/http/router.js";
+
+/** The three granularity tiers every telemetry sample fans out to. */
+const GRANULARITY_TIERS = ["minute", "hour", "day"] as const;
+
+/**
+ * Counts the persisted `console_telemetry_rollup` rows for ONE metric,
+ * summed across all three granularity tiers.
+ *
+ * Metric-SCOPED on purpose: `M3LConsoleTelemetryRepository.count()` totals
+ * rows for EVERY metric, so every new telemetry producer shifts the total
+ * that every existing test asserts — do NOT change these back to `count()`.
+ * The full rationale (and the concrete breakage that prompted it) lives at
+ * `tests/telemetry-runs-e2e.test.ts`'s own `countMetricRows`. The `limit` is
+ * a generous cap far above the one-row-per-tier expected here, so a runaway
+ * fan-out surfaces as a count ABOVE the expectation rather than truncated
+ * down to it.
+ *
+ * @param telemetry - The real store's telemetry repository.
+ * @param metric - The single metric to count rows for.
+ * @returns The number of rollup rows carrying `metric`, across all tiers.
+ */
+function countMetricRows(
+  telemetry: M3LConsoleStore["telemetry"],
+  metric: M3LTelemetryMetric,
+): number {
+  return GRANULARITY_TIERS.reduce(
+    (total, granularity) =>
+      total + telemetry.list({ granularity, metric, limit: 100 }).length,
+    0,
+  );
+}
 
 /**
  * A minimal valid env: only the required operator name plus an audit root
@@ -213,7 +246,7 @@ describe("telemetry-http-e2e — real store, real runtime", () => {
     const written = await dispatch(runtime, "/api/v1/probe/7");
     expect(written.status).toBe(200);
 
-    expect(store.telemetry.count()).toBe(3);
+    expect(countMetricRows(store.telemetry, "http.request")).toBe(3);
 
     const buckets = store.telemetry.list({
       granularity: "minute",
@@ -250,7 +283,7 @@ describe("telemetry-http-e2e — real store, real runtime", () => {
     const written = await dispatch(runtime, "/nope");
     expect(written.status).toBe(404);
 
-    expect(store.telemetry.count()).toBe(3);
+    expect(countMetricRows(store.telemetry, "http.request")).toBe(3);
 
     const buckets = store.telemetry.list({
       granularity: "minute",
@@ -298,7 +331,7 @@ describe("telemetry-http-e2e — real store, real runtime", () => {
     );
     expect(written.status).toBe(405);
 
-    expect(store.telemetry.count()).toBe(3);
+    expect(countMetricRows(store.telemetry, "http.request")).toBe(3);
 
     const buckets = store.telemetry.list({
       granularity: "minute",
@@ -348,7 +381,7 @@ describe("telemetry-http-e2e — real store, real runtime", () => {
     );
     expect(written.status).toBe(400);
 
-    expect(store.telemetry.count()).toBe(3);
+    expect(countMetricRows(store.telemetry, "http.request")).toBe(3);
 
     const buckets = store.telemetry.list({
       granularity: "minute",

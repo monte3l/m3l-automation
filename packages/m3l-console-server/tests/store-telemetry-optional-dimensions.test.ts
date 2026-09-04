@@ -378,6 +378,12 @@ describe("optional-dimension normalization: sse.stream — outcome", () => {
 //   index 6 = outcome
 // ---------------------------------------------------------------------------
 
+// `posture` is a required passthrough here, not the dimension under test —
+// but it is pinned to `"confirmation"` (one of the two values
+// `src/runs/admission.ts` actually emits, per
+// `M3LTelemetryPolicyDecisionSample.posture`'s doc) rather than an invented
+// third posture, so nothing here can be copied into production as a legal
+// value it is not.
 describe("optional-dimension normalization: policy.decision — outcome", () => {
   test("outer whitespace stripped: outcome '  deny  ' → params contain 'deny' at index 6", () => {
     const { executor, calls } = makeRecordingExecutor();
@@ -387,7 +393,7 @@ describe("optional-dimension normalization: policy.decision — outcome", () => 
       metric: "policy.decision",
       granularity: "minute",
       bucketStartMs: 60_000,
-      posture: "enforce",
+      posture: "confirmation",
       outcome: "  deny  ",
     };
 
@@ -407,7 +413,7 @@ describe("optional-dimension normalization: policy.decision — outcome", () => 
       "",
       "",
       "deny",
-      "enforce",
+      "confirmation",
     ]);
   });
 
@@ -419,7 +425,7 @@ describe("optional-dimension normalization: policy.decision — outcome", () => 
       metric: "policy.decision",
       granularity: "minute",
       bucketStartMs: 60_000,
-      posture: "enforce",
+      posture: "confirmation",
     };
 
     repo.record(measurement);
@@ -437,7 +443,7 @@ describe("optional-dimension normalization: policy.decision — outcome", () => 
       "",
       "",
       "",
-      "enforce",
+      "confirmation",
     ]);
   });
 
@@ -449,7 +455,7 @@ describe("optional-dimension normalization: policy.decision — outcome", () => 
       metric: "policy.decision",
       granularity: "minute",
       bucketStartMs: 60_000,
-      posture: "enforce",
+      posture: "confirmation",
       outcome: "",
     };
 
@@ -468,7 +474,7 @@ describe("optional-dimension normalization: policy.decision — outcome", () => 
       "",
       "",
       "",
-      "enforce",
+      "confirmation",
     ]);
   });
 
@@ -480,7 +486,7 @@ describe("optional-dimension normalization: policy.decision — outcome", () => 
       metric: "policy.decision",
       granularity: "minute",
       bucketStartMs: 60_000,
-      posture: "enforce",
+      posture: "confirmation",
       outcome: "a  b",
     };
 
@@ -499,7 +505,7 @@ describe("optional-dimension normalization: policy.decision — outcome", () => 
       "",
       "",
       "a  b",
-      "enforce",
+      "confirmation",
     ]);
   });
 
@@ -513,7 +519,7 @@ describe("optional-dimension normalization: policy.decision — outcome", () => 
       metric: "policy.decision",
       granularity: "minute",
       bucketStartMs: 60_000,
-      posture: "enforce",
+      posture: "confirmation",
     } as const;
 
     repo.record({ ...base, outcome: "deny" });

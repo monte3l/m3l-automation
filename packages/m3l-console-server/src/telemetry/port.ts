@@ -35,10 +35,16 @@
  * `"other"`). The other three metrics' string dimensions
  * (`M3LTelemetryRunFinishedSample.script`/`operation`/`outcome`,
  * `M3LTelemetrySseStreamSample.outcome`,
- * `M3LTelemetryPolicyDecisionSample.posture`/`outcome`) remain **unenforced
- * preconditions today**, pending slices 3a-3c. In every case the port itself
- * never throws (see above), so it cannot reject a caller that passes the
- * wrong thing — bounding a value is the call site's duty, not the port's.
+ * `M3LTelemetryPolicyDecisionSample.posture`/`outcome`) are now honoured by
+ * every shipped call site — X8 slices 3a-3c bounded the run-finished,
+ * SSE-stream and policy-decision dimensions in turn — but the constraint
+ * stays **doc-borne rather than type-borne**: each field is still `string`,
+ * so nothing mechanically stops a NEW call site from inventing a value.
+ * Narrowing these fields to union types is the recorded follow-up that would
+ * make it mechanical; it touches every producer, so it is deliberately not
+ * done here. In every case the port itself never throws (see above), so it
+ * cannot reject a caller that passes the wrong thing — bounding a value is
+ * the call site's duty, not the port's.
  *
  * @packageDocumentation
  */
@@ -118,19 +124,25 @@ export interface M3LTelemetrySseStreamSample {
 }
 
 /**
- * A policy-enforcement decision, as the auth/policy layer observes it. A
- * pure counter — carries no measurement.
+ * A launch-gate decision, as `src/runs/admission.ts` observes it. A pure
+ * counter — carries no measurement.
  */
 export interface M3LTelemetryPolicyDecisionSample {
   /**
-   * The policy posture in effect, e.g. `"enforce"` or `"monitor"`. MUST be
-   * a bounded, enumerable identifier, never caller-supplied free text — see
+   * Which gate reached the decision. The shipped vocabulary is exactly
+   * `"confirmation"` (the launch-confirmation policy) and `"admission"` (the
+   * admission-control governor), both produced by `src/runs/admission.ts`
+   * (and, for a queued run's later promotion, `src/runs/orchestrator.ts`'s
+   * `pumpQueue`). MUST be a bounded, enumerable identifier, never
+   * caller-supplied free text, and never a value outside that pair — see
    * {@link M3LTelemetryHttpRequestSample.route} for why.
    */
   readonly posture: string;
   /**
-   * The decision's outcome, when one is known, e.g. `"denied"`. MUST be a
-   * bounded, enumerable identifier, never caller-supplied free text — see
+   * The decision's outcome, when one is known: `"allow"` or `"deny"` under
+   * the `"confirmation"` posture, `"accept"`, `"queue"` or `"reject"` under
+   * `"admission"`. MUST be a bounded, enumerable identifier, never
+   * caller-supplied free text — see
    * {@link M3LTelemetryHttpRequestSample.route} for why.
    */
   readonly outcome?: string | undefined;
