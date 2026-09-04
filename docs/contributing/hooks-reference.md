@@ -114,7 +114,7 @@ which `bin/check-hooks.mjs`'s `KNOWN_EVENTS` is the de-facto (and previously
 stale) source for. The complete set, per <https://code.claude.com/docs/en/hooks>
 (re-verified 2026-09-04), is:
 
-**Wired in this repo** (11 of ~32): `SessionStart`, `PreCompact`,
+**Wired in this repo** (7 of 33): `SessionStart`, `PreCompact`,
 `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `SubagentStop`, `Stop`.
 
 **Documented but unused here, with no repo-recorded reason for the gap**:
