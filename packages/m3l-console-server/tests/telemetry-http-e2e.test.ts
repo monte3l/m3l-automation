@@ -9,7 +9,7 @@
  * DATABASE itself rejects (e.g. an empty `route`, which
  * `console_telemetry_rollup`'s own `CHECK` constraint forbids), because
  * `telemetry-recorder.ts`'s `createStoreTelemetryRecorder` swallows a
- * repository failure as a logged `warning` rather than throwing — the
+ * repository failure as a logged `error` rather than throwing — the
  * mocked tests would stay green while nothing actually persisted. This file
  * closes that gap: it opens a real `openConsoleStore({ location: ":memory:" })`,
  * builds a real `createConsoleRuntime` wired to that store's own
@@ -262,7 +262,7 @@ describe("telemetry-http-e2e — real store, real runtime", () => {
 
     // A rejected/dropped write is otherwise invisible except for the count
     // (`createStoreTelemetryRecorder` swallows a repository failure as a
-    // logged warning rather than throwing) — assert its absence explicitly.
+    // logged error rather than throwing) — assert its absence explicitly.
     expect(
       events.some((event) =>
         event.message.includes("telemetry fan-out dropped"),
@@ -345,7 +345,7 @@ describe("telemetry-http-e2e — real store, real runtime", () => {
     expect(bucket?.sampleCount).toBe(1);
 
     // Same gap this file's other cases close: a repository rejection
-    // (e.g. the `route <> ''` CHECK) is swallowed as a logged warning, not
+    // (e.g. the `route <> ''` CHECK) is swallowed as a logged error, not
     // thrown — so persistence must be proven against the REAL store, and
     // its absence proven here, not just against the in-memory fake.
     expect(

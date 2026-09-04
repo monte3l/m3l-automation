@@ -29,6 +29,7 @@ import type { FileHandle } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
 
 import { M3LConsoleError } from "../errors/console-error.js";
+import { errnoCodeOf } from "../errors/errno.js";
 
 /**
  * The file name `M3LRunReporter` writes, mirrored here because `runs/` may
@@ -149,19 +150,6 @@ function assertContained(candidate: string, root: string): void {
       "the resolved run-report path escapes the configured runs output root",
     );
   }
-}
-
-/**
- * The `errno` code carried by a Node filesystem rejection, or `undefined`
- * for any value that is not one. Narrow on purpose: only `ENOENT` is ever
- * treated as "there is nothing here yet", and every other failure — a
- * permission denial, an `ENOTDIR`, an `ELOOP` from the symlink guard — must
- * reach the operator as a fault rather than be reported as "no report".
- */
-function errnoCodeOf(cause: unknown): string | undefined {
-  if (!(cause instanceof Error)) return undefined;
-  const code: unknown = (cause as NodeJS.ErrnoException).code;
-  return typeof code === "string" ? code : undefined;
 }
 
 /**

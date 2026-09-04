@@ -23,7 +23,7 @@ const DURATION_MS_FLOOR = 0;
  * prevent values that exceed `Number.MAX_SAFE_INTEGER`. The rollup repository's
  * `requireValidMeasure` rejects any value that is not a non-negative safe
  * integer, and `M3LTelemetryRecorder`'s contract is never-throws, meaning the
- * rejection is swallowed as a logged warning and the row is silently dropped.
+ * rejection is swallowed as a logged error and the row is silently dropped.
  * Clamping to `MAX_SAFE_INTEGER` rather than to `0` preserves the information
  * that the duration was very large ("a very long run") rather than making it
  * appear instantaneous.
@@ -43,7 +43,7 @@ const DURATION_MS_CEILING = Number.MAX_SAFE_INTEGER;
  *   is never-throws (see `telemetry/port.ts`), so an invalid value isn't
  *   rejected loudly at the call site; it is rejected internally by the rollup
  *   repository and swallowed by the store-backed recorder's fan-out as a
- *   logged warning, silently dropping the sample while the observed operation
+ *   logged error, silently dropping the sample while the observed operation
  *   still reports success. Normalising here — total, no throw — keeps that
  *   sample alive.
  *
