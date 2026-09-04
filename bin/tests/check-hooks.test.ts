@@ -427,6 +427,130 @@ describe("matcher validation", () => {
     expect(result.errors).toEqual([expect.stringContaining("sometimes")]);
   });
 
+  test.each([
+    ["clear"],
+    ["resume"],
+    ["logout"],
+    ["prompt_input_exit"],
+    ["other"],
+  ])("a SessionEnd entry with matcher %s produces no error", (matcher) => {
+    const settings = {
+      hooks: {
+        SessionEnd: [
+          {
+            matcher,
+            hooks: [
+              hook(
+                'node "$CLAUDE_PROJECT_DIR/.claude/hooks/some-sessionend-hook.mjs"',
+                30,
+              ),
+            ],
+          },
+        ],
+      },
+    };
+    const result = validateHooksConfig(settings, {
+      hookFileExists: () => true,
+      onDiskHookNames: [],
+    });
+    expect(result.errors).toEqual([]);
+  });
+
+  test("a SessionEnd entry with an unknown matcher is an error", () => {
+    const settings = {
+      hooks: {
+        SessionEnd: [
+          {
+            matcher: "shutdown",
+            hooks: [
+              hook(
+                'node "$CLAUDE_PROJECT_DIR/.claude/hooks/some-sessionend-hook.mjs"',
+                30,
+              ),
+            ],
+          },
+        ],
+      },
+    };
+    const result = validateHooksConfig(settings, {
+      hookFileExists: () => true,
+      onDiskHookNames: [],
+    });
+    expect(result.errors).toEqual([expect.stringContaining("shutdown")]);
+  });
+
+  test.each([["slash_command"], ["register_repo_root"]])(
+    "a DirectoryAdded entry with matcher %s produces no error",
+    (matcher) => {
+      const settings = {
+        hooks: {
+          DirectoryAdded: [
+            {
+              matcher,
+              hooks: [
+                hook(
+                  'node "$CLAUDE_PROJECT_DIR/.claude/hooks/some-diradded-hook.mjs"',
+                  30,
+                ),
+              ],
+            },
+          ],
+        },
+      };
+      const result = validateHooksConfig(settings, {
+        hookFileExists: () => true,
+        onDiskHookNames: [],
+      });
+      expect(result.errors).toEqual([]);
+    },
+  );
+
+  test("a DirectoryAdded entry with an unknown matcher is an error", () => {
+    const settings = {
+      hooks: {
+        DirectoryAdded: [
+          {
+            matcher: "manual_add",
+            hooks: [
+              hook(
+                'node "$CLAUDE_PROJECT_DIR/.claude/hooks/some-diradded-hook.mjs"',
+                30,
+              ),
+            ],
+          },
+        ],
+      },
+    };
+    const result = validateHooksConfig(settings, {
+      hookFileExists: () => true,
+      onDiskHookNames: [],
+    });
+    expect(result.errors).toEqual([expect.stringContaining("manual_add")]);
+  });
+
+  test("WorktreeCreate has no closed matcher set — any matcher value is unchecked", () => {
+    const settings = {
+      hooks: {
+        WorktreeCreate: [
+          {
+            matcher: "anything-at-all",
+            hooks: [
+              hook(
+                'node "$CLAUDE_PROJECT_DIR/.claude/hooks/some-worktreecreate-hook.mjs"',
+                30,
+              ),
+            ],
+          },
+        ],
+      },
+    };
+    const result = validateHooksConfig(settings, {
+      hookFileExists: () => true,
+      onDiskHookNames: [],
+    });
+    expect(result.errors).toEqual([]);
+  });
+
   test("an event with no known matcher set (e.g. PreToolUse) is never checked against KNOWN_MATCHERS", () => {
     const settings = {
       hooks: {

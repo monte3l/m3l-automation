@@ -1,6 +1,6 @@
 # Harness refresh tracker
 
-<!-- harness-refresh: last-verified=2026-09-01 claude-code-version=2.1.257 -->
+<!-- harness-refresh: last-verified=2026-09-04 claude-code-version=2.1.260 -->
 
 Living record of `/refreshing-anthropic-guidance` sweeps — the per-facet,
 per-source state a run diffs against, so each sweep reports what **changed**
@@ -43,19 +43,30 @@ remediation detail.
 3000` under-counts against it. A free, no-quota
    `POST /v1/messages/count_tokens` endpoint (CLI: `ant messages
 count-tokens`) exists as the accurate alternative.
-5. **`bin/check-hooks.mjs`'s `KNOWN_EVENTS` (17) is a strict subset of the
-   documented 32 hook events** — missing 16, including `WorktreeCreate`,
-   `FileChanged`, `ConfigChange`, `TaskCreated`/`TaskCompleted`,
-   `PreModelSwitch`/`PostModelSwitch`. Wiring any of these today would be a
-   false-positive gate failure. No currently-wired event is invalid.
+5. ~~**`bin/check-hooks.mjs`'s `KNOWN_EVENTS` (17) is a strict subset of the
+   documented 32 hook events**~~ — **Resolved 2026-09-04** (`fix/check-hooks-event-coverage`).
+   `KNOWN_EVENTS` widened to the full documented set; `KNOWN_MATCHERS` widened
+   to add `SessionEnd` and `DirectoryAdded`'s closed enums. `WorktreeCreate`/
+   `WorktreeRemove` deliberately left out of `KNOWN_MATCHERS` (docs confirm
+   "no matcher support"); `Notification`'s enum was deliberately left
+   unencoded — three independent fetches of the same page (this sweep and a
+   prior one) returned mutually inconsistent value lists, and a raw-cell
+   fetch returned the description "notification type" rather than an enum —
+   the same fetch-summarizer-instability pattern the Hooks & lifecycle facet
+   below already recorded for `SessionStart`'s input field name, now
+   confirmed to generalize beyond that one case.
 6. **`PostCompact` is a real, documented event, unwired in this repo** — the
    direct, matcher-free counterpart to the fragile `SessionStart` +
-   `matcher:"compact"` re-injection route that no gate validates (neither
-   validates the `matcher` field itself — see item 7).
-7. **`bin/check-hooks.mjs`'s `validateHooksConfig` never reads the
-   entry-level `matcher` field** — a typo in `.claude/settings.json`'s
-   `matcher: "compact"` would silently disable post-compaction re-injection
-   and every gate would still pass.
+   `matcher:"compact"` re-injection route. Still open; PR1 of the 2026-09-04
+   lifecycle-remediation plan only widened the validator, it did not wire any
+   new hook.
+7. ~~**`bin/check-hooks.mjs`'s `validateHooksConfig` never reads the
+   entry-level `matcher` field**~~ — **Found already resolved, 2026-09-04.**
+   The matcher-validation logic (reading `entry.matcher` against
+   `KNOWN_MATCHERS`) was already present in the file when re-read this
+   session, dated by its own comment to 2026-09-01 — this item was stale by
+   the time of this sweep, not fixed by it. Recorded here so the tracker
+   stops carrying it as open.
 8. **`check:hooks` runs in CI only** (`.github/workflows/ci.yml`), absent
    from the `pre-push` chain in `lefthook.yml` — broken compaction-hook
    wiring is not caught locally before push.
@@ -231,6 +242,85 @@ current_usage}`, `exceeds_200k_tokens` (fixed 200K threshold regardless of
   - REPO-IMPACT: none (this repo's naming convention targets `ListAgents`/
     `SendMessage`, which have no equivalent filter, not the interactive
     picker).
+- NEW: `--worktree`/`-w` is Anthropic's stated default worktree workflow —
+  "Most sessions need only the first two sections: start Claude in a
+  worktree, then clean up when you exit." Creates `.claude/worktrees/<name>/`
+  on branch `worktree-<name>`. Creating "with git directly" is the documented
+  answer only when you need to check out a specific existing branch, or
+  place the worktree outside the repository — <https://code.claude.com/docs/en/worktrees>
+  (retrieved 2026-09-04)
+  - REPO-IMPACT: `docs/adr/0013-*.md`/`0014-*.md` (`pnpm worktree:new`'s
+    sibling-directory placement is exactly the second documented case for
+    git-directly, so this is not a deviation); `CLAUDE.md` § Git Workflow.
+- NEW: `EnterWorktree` is the documented mid-session tool ("You can also ask
+  Claude to 'work in a worktree' during a session") — free/un-prompted
+  switching _inside_ `.claude/worktrees/`; entering a path _outside_ it "asks
+  for your approval first… only `bypassPermissions` mode skips it", every
+  entry, no persistent opt-out. `${CLAUDE_PROJECT_DIR}` "stays put" in a
+  worktree; only `cwd` follows Claude — <https://code.claude.com/docs/en/worktrees>
+  (retrieved 2026-09-04)
+  - REPO-IMPACT: every `.claude/hooks/*.mjs` resolving guarded paths from
+    `CLAUDE_PROJECT_DIR` (`guard-branch-isolation.mjs`,
+    `guard-hub-src-writes.mjs`) would need a `cwd`-based rewrite before being
+    trusted inside a worktree that isn't the session's original checkout.
+- NEW: `WorktreeCreate` fires only for `--worktree`, `isolation: "worktree"`,
+  or a background session — "The EnterWorktree tool is NOT listed among the
+  triggers" (confirmed by two independent direct fetches this session) —
+  <https://code.claude.com/docs/en/hooks> (retrieved 2026-09-04)
+  - REPO-IMPACT: rules out a `WorktreeCreate` hook as a way to reconcile
+    native worktree placement/branch-naming with `EnterWorktree`-based
+    mid-session switching — the hook can only ever intercept the `-w`
+    process-launch path, not the in-session tool call.
+- NEW: `worktree.baseRef` is now upstream-documented with exactly this
+  repo's semantics — `"fresh"` (default) branches from the remote default
+  branch, `"head"` from local `HEAD`; "You can't set `worktree.baseRef` to a
+  branch name" — <https://code.claude.com/docs/en/worktrees> (retrieved
+  2026-09-04)
+  - VERDICT: confirmed, matches ADR-0013's `worktree.baseRef = "fresh"`
+    bullet and its 2026-07-16 amendment about the `origin/main`-absent
+    fallback exactly.
+- NEW: CLAUDE.md size — "target under 200 lines per CLAUDE.md file… Loads a
+  CLAUDE.md file of up to 4 MiB in full and skips a larger file." Keep-vs-move
+  guidance: "facts Claude should hold in every session… If an entry is a
+  multi-step procedure or only matters for one part of the codebase, move it
+  to a skill or a path-scoped rule instead." `/doctor` (v2.1.206+) proposes
+  cuts for derivable content — <https://code.claude.com/docs/en/memory>
+  (retrieved 2026-09-04)
+  - REPO-IMPACT: `CLAUDE.md` is 194 lines raw, ~2,999 estimator-tokens against
+    `bin/check-context-budget.mjs`'s 3,000-token cap (one token of headroom,
+    verified live this session) — already at the edge of both this doc's own
+    line target and the repo's own budget gate. See the 2026-09-04
+    lifecycle-remediation plan's PR5.
+- NEW: GitHub Actions cost-control list — "Write specific `@claude` requests…;
+  Keep your `CLAUDE.md` concise, since Claude reads it on every run; Set
+  `--max-turns`…; Set workflow-level timeouts…; Use GitHub's concurrency
+  controls to limit parallel runs." Built-in skip: "Claude skips draft and
+  closed pull requests, pull requests it judges not to need a review, such as
+  automated or trivial ones" — <https://code.claude.com/docs/en/github-actions>
+  (retrieved 2026-09-04)
+  - REPO-IMPACT: `.github/workflows/claude-pr-review.yml` already implements
+    an equivalent docs-only short-circuit ("Gate 0") independently of this
+    guidance. `REVIEW.md` skip-rules (<https://code.claude.com/docs/en/code-review>)
+    are scoped to the managed Code Review product, not this repo's
+    self-hosted `claude-code-action` — inapplicable as-is.
+- COVERAGE GAP: no documented guidance on partitioning one plan into several
+  sequential PRs (ADR-0072 is unsupported-by-docs, not contradicted); no
+  documented plan-mode/worktree sequencing (enter before or after plan
+  accept); no official docs-only CI skip recipe for a self-hosted review
+  Action.
+- NEW: CHANGELOG delta above 2.1.257 (ADR-0088's "only 2.1.258/2.1.259
+  released" claim is now stale — 2.1.260 exists) —
+  <https://raw.githubusercontent.com/anthropics/claude-code/main/CHANGELOG.md>
+  (retrieved 2026-09-04): 2.1.260 fixed `-p --resume`/`--continue` failing on
+  every retry once a session's worktree lost its git metadata, and
+  `/rewind`/`--rewind-files` reporting false success; 2.1.259 fixed
+  concurrent sessions reverting each other's `~/.claude.json` changes and
+  worktree isolation refusing hook-created worktrees on some `git rev-parse`
+  error messages; also (per a prior fetch) "frontmatter `model:` on custom
+  commands and skills being ignored in interactive sessions" (2.1.259) —
+  worth a one-time spot-check that spoke `model:` tiering actually took
+  effect pre-2.1.259.
+  - REPO-IMPACT: `docs/adr/0088-*.md`'s version claim.
 
 ### Agent & subagent design
 
