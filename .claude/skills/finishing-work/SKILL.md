@@ -172,8 +172,9 @@ step's scope — see `## Notes` below.
 If the just-merged work touched `packages/m3l-common/src/{core,aws}/<mod>/`,
 read that submodule's `docs/reference/<ns>/<mod>.md` for a `## Landing plan`
 heading and parse its slice table. If the heading is absent, or every row's
-Status is `Landed`, nothing remains — proceed to Step 9 as today, this is
-still the terminal case.
+Status is `Landed`, nothing remains — run `pnpm slice:clear` (blanks the
+statusline's slice-progress segment; a no-op if it was never set) and proceed
+to Step 9 as today, this is still the terminal case.
 
 **If a row's Status is not `Landed`,** a slice remains. Don't stop here:
 

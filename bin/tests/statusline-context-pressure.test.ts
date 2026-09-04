@@ -27,7 +27,9 @@ import {
   formatSessionNameSegment,
   formatBranchSegment,
   formatWorktreeSegment,
-  formatPrSegment,
+  formatSliceSegment,
+  parseLandingPlanProgress,
+  resolveSliceProgress,
   formatAgentSegment,
   formatOriginRepoSegment,
   formatModelSegment,
@@ -301,61 +303,77 @@ describe("formatWorktreeSegment", () => {
   });
 });
 
-describe("formatPrSegment", () => {
-  test("returns null when pr is absent or pr.number is not a number", () => {
-    expect(formatPrSegment({})).toBeNull();
-    expect(formatPrSegment({ pr: { number: "12" } })).toBeNull();
-    expect(formatPrSegment(null)).toBeNull();
+describe("formatSliceSegment", () => {
+  test("returns null for null input", () => {
+    expect(formatSliceSegment(null)).toBeNull();
   });
 
-  test.each([
-    ["approved", GREEN],
-    ["changes_requested", RED],
-    ["draft", DIM],
-    ["pending", YELLOW],
-  ])("colors the PR label by review_state %s", (reviewState, color) => {
-    const result = formatPrSegment({
-      pr: { number: 12, review_state: reviewState },
+  test("renders '<label> N/M' in cyan when current is less than total", () => {
+    const result = formatSliceSegment({
+      current: 2,
+      total: 4,
+      label: "V6",
+      allLanded: false,
     });
 
     expect(result).toEqual({
-      id: "pr",
+      id: "slice",
       priority: 90,
-      minWidth: 8,
-      text: `${color}PR #12${RESET}`,
+      minWidth: 6,
+      text: `${CYAN}V6 2/4${RESET}`,
     });
   });
 
-  test("renders a plain, uncolored label for an unknown or absent review_state", () => {
-    const result = formatPrSegment({ pr: { number: 12 } });
+  test("renders dim, not cyan, once allLanded is true", () => {
+    const result = formatSliceSegment({
+      current: 4,
+      total: 4,
+      label: "V6",
+      allLanded: true,
+    });
 
     expect(result).toEqual({
-      id: "pr",
+      id: "slice",
       priority: 90,
-      minWidth: 8,
-      text: "PR #12",
+      minWidth: 6,
+      text: `${DIM}V6 4/4${RESET}`,
     });
-    expect(result?.text).not.toContain("\x1b");
   });
 
-  test("wraps the label in an OSC-8 hyperlink when pr.url is a non-empty string", () => {
-    const result = formatPrSegment({
-      pr: {
-        number: 12,
-        review_state: "approved",
-        url: "https://example.test/pr/12",
-      },
+  // Bug-fix proof: a table's last row can still be in flight (not yet
+  // Landed), which makes current === total numerically without everything
+  // actually being landed — styling must key off allLanded, not the numeric
+  // comparison, or this renders dim when it should render cyan.
+  test("renders cyan, not dim, when current equals total but allLanded is false (last row still in flight)", () => {
+    const result = formatSliceSegment({
+      current: 4,
+      total: 4,
+      label: "V6",
+      allLanded: false,
     });
 
-    expect(result?.text).toBe(
-      `${GREEN}\x1b]8;;https://example.test/pr/12\x07PR #12\x1b]8;;\x07${RESET}`,
-    );
+    expect(result).toEqual({
+      id: "slice",
+      priority: 90,
+      minWidth: 6,
+      text: `${CYAN}V6 4/4${RESET}`,
+    });
   });
 
-  test("does not include an OSC-8 hyperlink when pr.url is absent or empty", () => {
-    const result = formatPrSegment({ pr: { number: 12, url: "" } });
+  test("renders just 'N/M' with no label prefix, still cyan, when label is null", () => {
+    const result = formatSliceSegment({
+      current: 2,
+      total: 4,
+      label: null,
+      allLanded: false,
+    });
 
-    expect(result?.text).not.toContain("\x1b]8;;");
+    expect(result).toEqual({
+      id: "slice",
+      priority: 90,
+      minWidth: 6,
+      text: `${CYAN}2/4${RESET}`,
+    });
   });
 });
 
@@ -1127,6 +1145,255 @@ describe("resolveBranch", () => {
   });
 });
 
+describe("parseLandingPlanProgress", () => {
+  test("returns null when there is no '## Landing plan' heading at all", () => {
+    const pageText =
+      "# Some module\n\n## Overview\n\nsome prose, no landing plan.\n";
+
+    expect(parseLandingPlanProgress(pageText)).toBeNull();
+  });
+
+  // Real fixture: docs/reference/aws/bedrock-runtime.md's Landing plan section
+  // is a numbered prose list, not a markdown table -- this proves the parser
+  // returns null (not a crash, not a guess) for that real shape rather than a
+  // hand-simplified synthetic one.
+  test("returns null for a real page whose Landing plan is a numbered prose list, not a table (docs/reference/aws/bedrock-runtime.md)", () => {
+    const pageText = [
+      "## Landing plan",
+      "",
+      "Two independently-landable PRs (ADR-0072):",
+      "",
+      "1. **Slice 1 — core wrapper.** `invoke()` single-shot Converse call, the model",
+      "   registry/fallback state machine, token usage capture, the three error",
+      "   classes, and the `AWSClientProvider.bedrockRuntime` getter (no",
+      "   `AWSServiceProvider` convenience getter — see the constructor note above).",
+      "   **Shipped** — PR #725, merged into `main`.",
+    ].join("\n");
+
+    expect(parseLandingPlanProgress(pageText)).toBeNull();
+  });
+
+  test("returns null when the table under the heading has no 'Status' column", () => {
+    const pageText = [
+      "## Landing plan",
+      "",
+      "| Slice | Scope |",
+      "| ----- | ----- |",
+      "| V6 slice 1 | first slice |",
+    ].join("\n");
+
+    expect(parseLandingPlanProgress(pageText)).toBeNull();
+  });
+
+  test("computes current/total from a Slice/Scope/Status table, deriving the current row's label", () => {
+    const pageText = [
+      "## Landing plan",
+      "",
+      "| Slice | Scope | Status |",
+      "| ----- | ----- | ------ |",
+      "| V6 slice 1 — verdicts | first slice | Landed |",
+      "| V6 slice 2 — budgets | second slice | In progress |",
+    ].join("\n");
+
+    // Row 2 is "In progress", so current === total numerically but
+    // allLanded must be false (the bug: this used to look "landed").
+    expect(parseLandingPlanProgress(pageText)).toEqual({
+      current: 2,
+      total: 2,
+      label: "V6",
+      allLanded: false,
+    });
+  });
+
+  test.each(["Landed", "Shipped", "✅", "landed", "SHIPPED"])(
+    "treats status %s as terminal (case-insensitive)",
+    (status) => {
+      const pageText = [
+        "## Landing plan",
+        "",
+        "| Slice | Scope | Status |",
+        "| ----- | ----- | ------ |",
+        `| V6 slice 1 | first slice | ${status} |`,
+      ].join("\n");
+
+      expect(parseLandingPlanProgress(pageText)).toEqual({
+        current: 1,
+        total: 1,
+        label: "V6",
+        allLanded: true,
+      });
+    },
+  );
+
+  // Real fixture: docs/reference/core/agent.md's own Landing plan table,
+  // where every row is Landed -- current === total (fully landed), proven
+  // against the actual committed table rather than a simplified stand-in.
+  test("real fixture (docs/reference/core/agent.md): all rows Landed -> current === total", () => {
+    const pageText = [
+      "## Landing plan",
+      "",
+      "ADR-0072 slice record.",
+      "",
+      "| Slice                           | Scope                                                                                                                            | Status |",
+      "| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ------ |",
+      "| V6 slice 1 — verdicts           | The action/policy/verdict vocabulary, the declaration validator, and the evaluator's allowlist + autonomy-tier arms. 20 exports. | Landed |",
+      "| V6 slice 2 — budgets + dry-run  | Per-run/per-day budgets and ceilings, the run ledger, named exhaustion outcomes, and the dry-run-first discipline. 4 exports.    | Landed |",
+      "| V7 slice 1 — decision-log entry | The decision-log entry schema, the pure projector from a decision, and the JSONL serializer. No I/O. 7 exports.                  | Landed |",
+      "| V7 slice 2 — the writer         | The append-only segmented writer, its rotation ceilings, the loud write error, and the log-unavailable escalation. 5 exports.    | Landed |",
+    ].join("\n");
+
+    const result = parseLandingPlanProgress(pageText);
+
+    expect(result?.current).toBe(result?.total);
+    expect(result).toEqual({
+      current: 4,
+      total: 4,
+      label: "V7",
+      allLanded: true,
+    });
+  });
+
+  test("returns label: null when the table has no Slice column, but current/total are still computed", () => {
+    const pageText = [
+      "## Landing plan",
+      "",
+      "| Task | Status |",
+      "| ---- | ------ |",
+      "| first task | Landed |",
+      "| second task | In progress |",
+    ].join("\n");
+
+    // Row 2 is "In progress" -> allLanded must be false even though
+    // current === total numerically.
+    expect(parseLandingPlanProgress(pageText)).toEqual({
+      current: 2,
+      total: 2,
+      label: null,
+      allLanded: false,
+    });
+  });
+});
+
+describe("resolveSliceProgress", () => {
+  const startDir = "/workspace/project";
+
+  test("returns null when readFile returns null for the state file", () => {
+    const readFile = () => null;
+
+    expect(resolveSliceProgress(readFile, startDir, "feat/x")).toBeNull();
+  });
+
+  test("returns null, not throws, when the state file contains invalid JSON", () => {
+    const readFile = (path: string): string | null =>
+      path === join(startDir, "tmp/slice-progress.json") ? "{ not json" : null;
+
+    expect(() =>
+      resolveSliceProgress(readFile, startDir, "feat/x"),
+    ).not.toThrow();
+    expect(resolveSliceProgress(readFile, startDir, "feat/x")).toBeNull();
+  });
+
+  test("returns null when the entry's branch does not match the passed-in branch (staleness gate)", () => {
+    const readFile = (path: string): string | null =>
+      path === join(startDir, "tmp/slice-progress.json")
+        ? JSON.stringify({
+            wave: "V9",
+            current: 2,
+            total: 4,
+            branch: "feat/other",
+          })
+        : null;
+
+    expect(resolveSliceProgress(readFile, startDir, "feat/x")).toBeNull();
+  });
+
+  test("returns null when the branch argument itself is null or empty", () => {
+    const calls: string[] = [];
+    const readFile = (path: string): string | null => {
+      calls.push(path);
+      return JSON.stringify({
+        wave: "V9",
+        current: 2,
+        total: 4,
+        branch: "feat/x",
+      });
+    };
+
+    expect(resolveSliceProgress(readFile, startDir, null)).toBeNull();
+    expect(resolveSliceProgress(readFile, startDir, "")).toBeNull();
+    // Both short-circuit before ever reading the state file.
+    expect(calls).toEqual([]);
+  });
+
+  test("resolves a matching literal-mode entry to { current, total, label } (label from wave when no explicit label field)", () => {
+    const readFile = (path: string): string | null =>
+      path === join(startDir, "tmp/slice-progress.json")
+        ? JSON.stringify({ wave: "V9", current: 2, total: 4, branch: "feat/x" })
+        : null;
+
+    // Literal mode carries no per-row status data, so allLanded is derived
+    // from current >= total here: 2 >= 4 is false.
+    expect(resolveSliceProgress(readFile, startDir, "feat/x")).toEqual({
+      current: 2,
+      total: 4,
+      label: "V9",
+      allLanded: false,
+    });
+  });
+
+  test("resolves a matching derived-mode entry by re-parsing the referenced page's Landing plan table", () => {
+    const pageText = [
+      "## Landing plan",
+      "",
+      "| Slice | Scope | Status |",
+      "| ----- | ----- | ------ |",
+      "| V6 slice 1 | first slice | Landed |",
+      "| V6 slice 2 | second slice | In progress |",
+    ].join("\n");
+    const readFile = (path: string): string | null => {
+      if (path === join(startDir, "tmp/slice-progress.json")) {
+        return JSON.stringify({
+          page: "docs/reference/core/x.md",
+          branch: "feat/x",
+        });
+      }
+      if (path === join(startDir, "docs/reference/core/x.md")) return pageText;
+      return null;
+    };
+
+    // Row 2 is "In progress" -> allLanded must be false.
+    expect(resolveSliceProgress(readFile, startDir, "feat/x")).toEqual({
+      current: 2,
+      total: 2,
+      label: "V6",
+      allLanded: false,
+    });
+  });
+
+  test("returns null for a matching derived-mode entry whose referenced page is unreadable", () => {
+    const readFile = (path: string): string | null =>
+      path === join(startDir, "tmp/slice-progress.json")
+        ? JSON.stringify({ page: "docs/reference/core/x.md", branch: "feat/x" })
+        : null;
+
+    expect(resolveSliceProgress(readFile, startDir, "feat/x")).toBeNull();
+  });
+
+  test("resolves the state-file path against the given startDir, not cwd or a hardcoded path", () => {
+    const calls: string[] = [];
+    const readFile = (path: string): string | null => {
+      calls.push(path);
+      return null;
+    };
+
+    resolveSliceProgress(readFile, "/some/other/worktree", "feat/x");
+
+    expect(calls).toContain(
+      join("/some/other/worktree", "tmp/slice-progress.json"),
+    );
+  });
+});
+
 describe("formatMemorySegment", () => {
   test("returns null when freemem/totalmem are missing or totalmem is zero", () => {
     expect(formatMemorySegment({})).toBeNull();
@@ -1179,24 +1446,26 @@ describe("buildSessionRow", () => {
     expect(result).not.toContain(PLACEHOLDER);
   });
 
-  test("renders session name, branch, worktree, PR, agent, and origin repo segments", () => {
+  test("renders session name, branch, worktree, slice progress, agent, and origin repo segments", () => {
     const payload = {
       session_name: "feat-statusline-widgets",
       workspace: {
         git_worktree: "foo",
         repo: { owner: "monte3l", name: "m3l-automation" },
       },
-      pr: { number: 12 },
       agent: { name: "code-reviewer" },
     };
-    const env = { branch: "feat/foo" };
+    const env = {
+      branch: "feat/foo",
+      slice: { current: 2, total: 4, label: "V6", allLanded: false },
+    };
 
     const result = buildSessionRow(payload, env, 200);
 
     expect(result).toContain("feat-statusline-widgets");
     expect(result).toContain("feat/foo");
     expect(result).toContain('wt "foo"');
-    expect(result).toContain("PR #12");
+    expect(result).toContain("V6 2/4");
     expect(result).toContain("↳ code-reviewer");
     expect(result).toContain("monte3l/m3l-automation");
   });
@@ -1375,13 +1644,13 @@ describe("renderStatusLine", () => {
       git_worktree: "statusline-context-pressure",
       repo: { owner: "monte3l", name: "m3l-automation" },
     },
-    pr: { number: 12, review_state: "approved" },
   };
   const richEnv = {
     now,
     freemem: 2_000_000_000,
     totalmem: 8_000_000_000,
     branch: "feat/statusline-redesign",
+    slice: { current: 2, total: 4, label: "V6", allLanded: false },
   };
 
   test("always returns exactly 5 newline-joined lines for a fully-populated payload", () => {

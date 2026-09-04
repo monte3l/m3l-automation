@@ -273,7 +273,17 @@ export const COMMAND_CATALOG = [
   {
     name: "statusline:preview",
     description:
-      "Renders .claude/hooks/statusline-context-pressure.mjs's five-row output against fixture payloads (early-session, mid-session, ≥90% context, no rate limits, no PR, no git) at COLUMNS 60/80/120/160, plus a live malformed-JSON probe of the real script. Dev-only display tool, not a gate — run it after changing the statusLine renderer or the layout module.",
+      "Renders .claude/hooks/statusline-context-pressure.mjs's five-row output against fixture payloads (early-session, mid-session, ≥90% context, no rate limits, derived/literal/all-landed/absent slice progress, no git) at COLUMNS 60/80/120/160, plus live malformed-JSON and corrupt-tmp-state probes of the real script. Dev-only display tool, not a gate — run it after changing the statusLine renderer or the layout module.",
+  },
+  {
+    name: "slice:set",
+    description:
+      "Writes tmp/slice-progress.json, the state the statusline's slice-progress segment reads: --page <reference-page> derives N/M from that page's ## Landing plan table (ADR-0072), or --wave <ID> --current <N> --total <M> [--label ...] records a literal count for a non-submodule multi-PR wave. Stamps the current branch itself. Run from starting-work/finishing-work when advancing through a slice sequence.",
+  },
+  {
+    name: "slice:clear",
+    description:
+      "Removes tmp/slice-progress.json, blanking the statusline's slice-progress segment. Run from finishing-work once a slice sequence's last row lands.",
   },
   {
     name: "check:integration-stance",

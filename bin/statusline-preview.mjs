@@ -14,6 +14,9 @@
  * Registered as `pnpm statusline:preview`.
  */
 import { spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { renderStatusLine } from "../.claude/hooks/statusline-context-pressure.mjs";
 
@@ -45,11 +48,6 @@ const fullPayload = {
     seven_day: { used_percentage: 61, resets_at: FULL_NOW_SEC + 3 * 24 * 3600 },
   },
   prompt_cache: { warm: true, hit_ratio: 0.86 },
-  pr: {
-    number: 907,
-    review_state: "pending",
-    url: "https://github.com/monte3l/m3l-automation/pull/907",
-  },
   workspace: {
     git_worktree: "statusline-redesign",
     repo: { owner: "monte3l", name: "m3l-automation" },
@@ -66,8 +64,26 @@ const fullEnv = {
 const noRateLimitsPayload = { ...fullPayload };
 delete noRateLimitsPayload.rate_limits;
 
-const noPrPayload = { ...fullPayload };
-delete noPrPayload.pr;
+const sliceDerivedEnv = {
+  ...fullEnv,
+  slice: { current: 2, total: 4, label: "V6", allLanded: false },
+};
+const sliceLiteralEnv = {
+  ...fullEnv,
+  slice: { current: 2, total: 4, label: "V9", allLanded: false },
+};
+const sliceAllLandedEnv = {
+  ...fullEnv,
+  slice: { current: 4, total: 4, label: "V6", allLanded: true },
+};
+// `current === total` numerically (the table's last row) while that row is
+// still in flight, not `Landed` — must stay cyan, not dim, distinguishing it
+// from sliceAllLandedEnv above (same current/total, different `allLanded`).
+const sliceLastRowInFlightEnv = {
+  ...fullEnv,
+  slice: { current: 4, total: 4, label: "V6", allLanded: false },
+};
+const noSliceEnv = { ...fullEnv, slice: null };
 
 const noGitPayload = {
   ...fullPayload,
@@ -121,7 +137,15 @@ const FIXTURES = [
     },
   },
   { name: "no-rate-limits", payload: noRateLimitsPayload, env: fullEnv },
-  { name: "no-pr", payload: noPrPayload, env: fullEnv },
+  { name: "slice-derived", payload: fullPayload, env: sliceDerivedEnv },
+  { name: "slice-literal", payload: fullPayload, env: sliceLiteralEnv },
+  { name: "slice-all-landed", payload: fullPayload, env: sliceAllLandedEnv },
+  {
+    name: "slice-last-row-in-flight",
+    payload: fullPayload,
+    env: sliceLastRowInFlightEnv,
+  },
+  { name: "no-slice", payload: fullPayload, env: noSliceEnv },
   { name: "no-git", payload: noGitPayload, env: noGitEnv },
 ];
 
@@ -147,3 +171,20 @@ console.log("=== malformed JSON (live script) ===");
 console.log(`exit code: ${probe.status}`);
 console.log(`stdout: ${probe.stdout}`);
 console.log(`stderr: ${probe.stderr}`);
+
+// Corrupt tmp/slice-progress.json (harness-artifacts.md: prove a hook quiet
+// on the failure case, not just correct on the case it was built from) —
+// the five-row output must still render, with the slice segment simply
+// absent, exactly like a missing file.
+const scratchDir = mkdtempSync(join(tmpdir(), "slice-progress-probe-"));
+mkdirSync(join(scratchDir, "tmp"), { recursive: true });
+writeFileSync(join(scratchDir, "tmp/slice-progress.json"), "not valid json");
+const corruptProbe = spawnSync(process.execPath, [scriptPath], {
+  input: JSON.stringify({ workspace: { current_dir: scratchDir } }),
+  encoding: "utf8",
+});
+rmSync(scratchDir, { recursive: true, force: true });
+console.log("=== corrupt tmp/slice-progress.json (live script) ===");
+console.log(`exit code: ${corruptProbe.status}`);
+console.log(`stdout: ${corruptProbe.stdout}`);
+console.log(`stderr: ${corruptProbe.stderr}`);

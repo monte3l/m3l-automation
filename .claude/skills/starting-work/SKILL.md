@@ -217,6 +217,12 @@ Once confirmed:
   path (it still applies when genuinely opening a second session; see the
   session-name bullet in Step 3).
 - **New branch in place:** `git switch -c feat/<slug>` (or `fix/<slug>`).
+- **Next-slice signal:** once the new branch exists (worktree or in-place),
+  run `pnpm slice:set -- --page <the submodule's reference page>` so the
+  statusline's slice-progress segment (docs/adr/0072-reviewable-slice-discipline.md's
+  2026-09-04 amendment) picks up the sequence immediately — the CLI stamps
+  the branch itself and re-derives `N`/`M` from the page's `## Landing plan`
+  table on every render, so it never needs updating again mid-slice.
 - **Staying put:** verify `HEAD` is neither `main` nor detached-on-`main` before
   handing back; if it is, loop back to step 4 rather than proceeding into a write
   that the guard will reject. When **resuming an existing feature branch** that
