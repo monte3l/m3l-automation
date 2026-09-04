@@ -201,3 +201,38 @@ No change to `m3l-console-server`'s public API.
 
 Nothing else in this ADR changes. The convention, the grammar, the caps, and
 X6's shipped surface all stand as decided; only the types' home moved.
+
+## Update (2026-09-04) — X11 shipped; the `parameterName`-not-persisted limit is retracted
+
+X11 (the drill-down UI this ADR's canonical scenario describes) is done,
+across six PRs — X11a #937, X11a2 #946, X11b #958, X11c #973, X11d #980,
+X11e #987; `docs/plans/IMPLEMENTATION.md`'s X11 row has the full breakdown.
+The scenario this ADR opened with — select a value out of a step's output,
+bind it, let it pre-fill the next step's launch, answer a decision — is
+real, proved end-to-end under Playwright by X11e's acceptance spec.
+
+**The one limit this ADR left open is now closed.** `docs/reference/console.md`
+previously documented, in three places, that a persisted binding record had
+no `parameterName` — the server accepted it as a required input field and
+then silently dropped it, so a reloaded or resumed session could read its
+bindings back but never learn which launch parameter each one fed. X11a
+(#937) fixed this: migration v10 adds `console_session_bindings.parameter_name`
+(nullable, for v4-era rows), and both binding-creation paths persist it. The
+three "not persisted" notes in `docs/reference/console.md` were retracted in
+the same PR. A binding is now genuinely a first-class, resumable session
+record, per this ADR's own "Sessions are resumable" requirement — the gap
+was real, not cosmetic: without it, the pre-fill loop degraded to nothing
+after every reload.
+
+**One design decision X11e made, not anticipated here.** `POST
+/api/v1/sessions/:id/steps` takes only `operation`/`bindings[]`/`confirmed`/
+`dryRun` — no free-form parameter values. Every session-step launch
+parameter must trace back through a binding to a prior step's recorded
+output; there is no way to type in a literal value for a session step. This
+wasn't an explicit constraint in this ADR's Decision section, but it falls
+directly out of "the system records" (Decision drivers, "Exploration
+first") — a session step's provenance chain would have a hole in it the
+moment a parameter's value could come from nowhere traceable. X11e's UI
+(`SessionStepLauncher.tsx`) reuses `ParameterForm` for display/pre-fill only
+and builds the actual launch request from binding records, never from the
+form's own submitted values.

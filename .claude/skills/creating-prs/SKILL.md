@@ -318,6 +318,15 @@ host. If a restart is a realistic risk for this session, detach the command
 from the harness process instead — `nohup <cmd> > <log-in-a-durable-path>
 2>&1 & disown` — and poll it by PID and log path rather than relying solely
 on the task-notification (`docs/logs/2026-09-02-reinject-compact-resume.md`).
+**Even a detached log can still go unreadable across a restart** — the
+session's own scratchpad path includes a session id that can rotate mid-task,
+so a log written under the pre-restart path may not exist under the
+post-restart one, and an intermediate check like `git ls-remote` can read
+stale/racy state right after a restart. When in doubt, don't keep debugging
+the detached job: verify the actual remote/build state directly (`git
+ls-remote`, `gh api .../branches/:name`) and, if still ambiguous, just re-run
+the operation synchronously in the foreground with a raised timeout
+(`docs/logs/2026-09-04-x11e-sqs-drilldown-acceptance.md`).
 
 If the push is rejected as non-fast-forward (the branch was rebased in Step 2
 after a previous push), re-push with lease protection — this is safe on **your
