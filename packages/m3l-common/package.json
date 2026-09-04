@@ -94,7 +94,7 @@
     "cheerio": "^1.2.0",
     "mailparser": "^3.9.17",
     "mammoth": "^1.12.1",
-    "read-excel-file": "^9.3.9",
+    "read-excel-file": "^9.3.10",
     "unpdf": "^1.6.2"
   },
   "peerDependencies": {
@@ -102,7 +102,7 @@
     "cheerio": "^1.2.0",
     "mailparser": "^3.9.17",
     "mammoth": "^1.12.1",
-    "read-excel-file": "^9.3.9",
+    "read-excel-file": "^9.3.10",
     "unpdf": "^1.6.2"
   },
   "peerDependenciesMeta": {
