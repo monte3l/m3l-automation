@@ -62,6 +62,7 @@ import type {
   OpenConsoleStoreOptions,
 } from "./store/store.js";
 import { createNoOpTelemetryRecorder } from "./telemetry/no-op.js";
+import { sampleStoreSizeOnBoot } from "./telemetry/store-size.js";
 import type { M3LTelemetryRecorder } from "./telemetry/port.js";
 import type {
   M3LConsoleRuntime,
@@ -316,6 +317,20 @@ async function buildRuntimeAndBindListener(
     // here — not in createConsoleRuntime, a pure composition step — and
     // strictly before the bind below.
     runtime.runs?.orchestrator.reconcileOnBoot();
+    // The same slot, for the same reason, for X8 slice 3d's boot-time
+    // `store.health` sample: fanning one measurement out to the three rollup
+    // tiers is a database write, so it belongs here rather than in
+    // `createConsoleRuntime`, and strictly before the bind — a sample taken
+    // after the listener accepted traffic would no longer be a BOOT
+    // measurement. Handed the concrete `store` this function already owns
+    // rather than `runtime.store`, which is optional (a storeless console
+    // has no footprint to measure and reaches this slot with nothing to
+    // sample); `runtime.telemetry` is always present by contract.
+    sampleStoreSizeOnBoot({
+      store,
+      telemetry: runtime.telemetry,
+      logger: runtime.logger,
+    });
     // The same slot, for the same reason, for the ADR-0070 audit index: a
     // database write that must land before the listener accepts a request
     // that would query it. Skipped when the caller injected its own
