@@ -152,8 +152,9 @@ instead of wrapping mid-line. Row contents:
   `<kind>-<slug>` convention, yellow-flagged when it doesn't, dim `unnamed`
   when absent — the one documented programmatic read of `session_name`), the
   branch (blue `🌿 <name>`, red `⚠ main` flagging direct-`main` work), the
-  worktree name, the PR number (colored by review state, OSC-8-linked to the
-  PR URL), the active spoke (dim `↳ <agent>`), and the origin repo.
+  worktree (blue `🌳 <name>`), the PR number (colored by review state,
+  OSC-8-linked to the PR URL), the active spoke (dim `↳ <agent>`), and the
+  origin repo.
 - `model` — the model display name (cyan) plus effort level, `thinking`, fast
   mode, output style, and vim mode (all magenta when present).
 - `context` — a 20-cell zone-colored usage bar, the percentage, the

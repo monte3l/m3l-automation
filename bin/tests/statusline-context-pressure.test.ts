@@ -297,8 +297,8 @@ describe("formatWorktreeSegment", () => {
     expect(result).toEqual({
       id: "worktree",
       priority: 85,
-      minWidth: 8,
-      text: `${BLUE}wt "foo"${RESET}`,
+      minWidth: 6,
+      text: `${BLUE}🌳 foo${RESET}`,
     });
   });
 });
@@ -1464,7 +1464,7 @@ describe("buildSessionRow", () => {
 
     expect(result).toContain("feat-statusline-widgets");
     expect(result).toContain("feat/foo");
-    expect(result).toContain('wt "foo"');
+    expect(result).toContain("🌳 foo");
     expect(result).toContain("V6 2/4");
     expect(result).toContain("↳ code-reviewer");
     expect(result).toContain("monte3l/m3l-automation");
