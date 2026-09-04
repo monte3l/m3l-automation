@@ -140,6 +140,16 @@ written now via `/writing-work-logs` before moving on — real-time context
 (spoke incidents, test counts, divergences) degrades fast once the session
 that did the work is gone. If a log already exists, skip silently.
 
+**If a log is written here, commit it immediately** (its own small `docs:`
+commit via `/writing-commits`) before moving on to any other task, rather
+than leaving it as an uncommitted file for "the user's next step." A log
+written mid-session and then left uncommitted while the session switches
+branches or worktrees becomes invisible to any later PR — and a later PR's
+own docs referencing it by name (a plan archive, a README row) will cite a
+file that doesn't actually exist yet, catchable only by a downstream
+reviewer (`docs/logs/2026-09-04-check-no-docker.md`, divergence #2: PR2's
+work log sat orphaned in the shared checkout through all of PR3's setup).
+
 ### 7 — Orphaned journal sweep
 
 ```bash
