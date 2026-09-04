@@ -969,8 +969,12 @@ describe("resolveAgentOperatorRuntime — presetAllowlist parsing", () => {
       // `[^)]*` for the parameter list keeps a rename of `workspaceRoot`'s
       // TYPE annotation from breaking the guard silently. `"[^"]+"` admits
       // only double-quoted segments, which is what Prettier enforces here.
+      // The separator is `,?\s*`, not `\s*,?\s*` — each repetition must open
+      // on a `"` literal, so the input has exactly one parse; an ambiguous
+      // leading `\s*` let the match backtrack exponentially over runs of
+      // whitespace (CodeQL `js/redos`).
       const match =
-        /function presetsDirectory\([^)]*\): string \{\s*return join\(\s*workspaceRoot,\s*((?:"[^"]+"\s*,?\s*)+)\)\s*;/.exec(
+        /function presetsDirectory\([^)]*\): string \{\s*return join\(\s*workspaceRoot,\s*((?:"[^"]+",?\s*)+)\)\s*;/.exec(
           storeText,
         );
       const segments =
