@@ -95,7 +95,7 @@
     "mailparser": "^3.9.17",
     "mammoth": "^1.12.1",
     "read-excel-file": "^9.3.10",
-    "unpdf": "^1.6.2"
+    "unpdf": "^1.8.1"
   },
   "peerDependencies": {
     "adm-zip": "^0.6.0",
@@ -103,7 +103,7 @@
     "mailparser": "^3.9.17",
     "mammoth": "^1.12.1",
     "read-excel-file": "^9.3.10",
-    "unpdf": "^1.6.2"
+    "unpdf": "^1.8.1"
   },
   "peerDependenciesMeta": {
     "adm-zip": {
