@@ -1137,6 +1137,32 @@ a child of either — a spawned script owns everything beneath its own per-run
 directory, and no other subsystem's data may sit inside a tree a script can
 write to.
 
+Telemetry retention settings, all under `m3l.console.telemetry.retention.*`,
+one per rollup granularity. Each value is the age at which a bucket in that
+tier becomes **eligible** for deletion.
+
+| Setting                                     | Env var                                     | Default                  |
+| ------------------------------------------- | ------------------------------------------- | ------------------------ |
+| `m3l.console.telemetry.retention.minute.ms` | `M3L_CONSOLE_TELEMETRY_RETENTION_MINUTE_MS` | `172800000` (2 days)     |
+| `m3l.console.telemetry.retention.hour.ms`   | `M3L_CONSOLE_TELEMETRY_RETENTION_HOUR_MS`   | `2678400000` (31 days)   |
+| `m3l.console.telemetry.retention.day.ms`    | `M3L_CONSOLE_TELEMETRY_RETENTION_DAY_MS`    | `31622400000` (366 days) |
+
+The three defaults are round multiples of a day chosen for what each tier is
+read for, not tuned numbers: a couple of days of minute-grain detail is what an
+incident review needs, a month of hour-grain is what a trend needs, and a year
+of day-grain is what a capacity review needs.
+
+Each must be a positive integer; `0` and negatives are rejected as
+`ERR_CONSOLE_CONFIG_INVALID` like every other numeric setting. There is
+deliberately no "disabled" sentinel — `0` would read as _delete everything_,
+which is the opposite of what an operator disabling retention means. A very
+large value is how a tier is kept indefinitely.
+
+**Declaring a policy deletes nothing.** ADR-0070 requires an operator-run
+cleanup command and forbids silent deletion, so these settings only describe
+what _would_ be eligible. Nothing in the server schedules a sweep, and no
+timer exists — see the Known limits entry below.
+
 Transport, persistence, and lifecycle settings are in the package README.
 
 ## Known limits
@@ -1152,6 +1178,14 @@ Stated plainly rather than left to be discovered:
   run leaves `<runs output root>/<run id>/` behind for the lifetime of the
   data directory. Same posture as session artifacts, and the same eventual
   owner (X8's retention regime).
+- **A declared telemetry retention policy prunes nothing on its own.** The
+  `m3l.console.telemetry.retention.*` settings above declare when a rollup
+  bucket becomes eligible for deletion; they do not delete it. No timer, no
+  boot-time sweep and no background task exists — ADR-0070 requires an
+  operator-run cleanup command and forbids silent deletion, and that command
+  is a later X8 slice. Until it ships, `console_telemetry_rollup` grows
+  monotonically no matter what these settings say, and an operator who sets
+  them should not read them as a guarantee that anything shrinks.
 - **An in-process run has no report to serve.** `GET /api/v1/runs/:id/report`
   404s for every ADR-0054 command-module run — see that route's own section
   for why the output directory cannot be pinned per run on that path.
