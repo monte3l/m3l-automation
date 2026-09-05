@@ -124,7 +124,12 @@ byte-verified content to the guarded path, confirmed identical afterward.
   both gaining an ADR-0093 stance line; eval rewrites for
   `eslint-flat-config` (case 3) and `vitest-coverage-types-mocks` (case 4)
   grading on deferring to context7 MCP docs instead of the nonexistent
-  `context7-mcp` plugin-skill escape hatch. End-to-end verified: a throwaway
-  `code-implementer` dispatch resolved a library id and queried its docs via
-  the granted tools, confirming the grant actually takes effect rather than
-  only appearing correct in configuration.
+  `context7-mcp` plugin-skill escape hatch. **End-to-end verification not
+  completed**: four throwaway dispatches (three `code-implementer`, one
+  baseline `code-reviewer` with an unmodified, pre-existing tool grant)
+  each reported a tool list missing not just the new `mcp__context7__*`
+  tools but also `Grep`/`Glob` — tools the baseline agent's frontmatter has
+  always granted. This looks like this session's specific dispatch
+  environment, not a defect in this PR's configuration; see the work log's
+  "What didn't go as planned" section for detail. The grant is
+  configured and gated, not yet live-verified.
