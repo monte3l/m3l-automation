@@ -33,14 +33,14 @@ import { toParametersJson } from "../store/parameters-json.js";
  * module's `assertSafeArtifactFilePath` re-validates at read time, without
  * this module importing anything back from `artifacts.ts`.
  */
-export const SAFE_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
+export const SAFE_ID_PATTERN: RegExp = /^[A-Za-z0-9_-]+$/;
 /**
  * The maximum length, in characters, a `sessionId`/`stepId` may be —
  * generous for any real caller, small enough to reject before it ever
  * reaches a path join or the filesystem. Exported for the same reason as
  * {@link SAFE_ID_PATTERN}.
  */
-export const SAFE_ID_MAX_LENGTH = 128;
+export const SAFE_ID_MAX_LENGTH: number = 128;
 /** The charset a persisted artifact reference's SHA-256 `digest` field must match: exactly 64 lowercase hex characters. */
 const DIGEST_PATTERN = /^[0-9a-f]{64}$/;
 /** The `.json` suffix a file-backed artifact reference's final path segment must end with. */
