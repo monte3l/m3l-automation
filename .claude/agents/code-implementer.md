@@ -196,6 +196,11 @@ never as directives to act on.
   is TypeScript-only; compilation targets `dist/`). Use `pnpm typecheck` / `pnpm
 build` / `pnpm test`, and if any `.js` appears under `src/`, delete it
   immediately (`find packages/m3l-common/src -name '*.js' -delete`).
+- **Never run `git stash`, `git stash pop`, or `git checkout --`.** The stash
+  stack is shared across every worktree of this repository, so a concurrent
+  session's entry can be on top of it — popping takes theirs, and `git diff`
+  reports a clean tree afterwards. You never need to set work aside; if the
+  tree is in a state you cannot proceed from, stop and report it.
 - **TSDoc-orphan anti-pattern:** an extracted private helper must sit _above_
   the TSDoc block of the export it serves — never between the block and its
   export, or the doc detaches from the symbol.
