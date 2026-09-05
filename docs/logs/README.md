@@ -120,3 +120,4 @@ deliberately do not.
 | 2026-08-27 | ADR-0078 session context management rollout (retroactive) | [adr-0078-session-context-management](./2026-08-27-adr-0078-session-context-management.md) |
 | 2026-09-03 | Dependabot commit-subject gate fix (PR #975)              | [dependabot-commit-subject-gate](./2026-09-03-dependabot-commit-subject-gate.md)           |
 | 2026-09-05 | H1 — document the merge step (issue #994, PR #1031/#1032) | [document-merge-step](./2026-09-05-document-merge-step.md)                                 |
+| 2026-09-05 | H2 — post-merge staleness gate (issue #995, PR #1044)     | [post-merge-staleness-gate](./2026-09-05-post-merge-staleness-gate.md)                     |
