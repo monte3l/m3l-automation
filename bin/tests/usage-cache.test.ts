@@ -6,7 +6,25 @@ import {
   isCacheFresh,
   normalizeUsageResponse,
   fetchUsage,
+  resolveUsageCachePath,
 } from "../usage-cache.mjs";
+
+describe("resolveUsageCachePath", () => {
+  test("returns join(homeDir, '.claude', 'm3l-usage-weekly.json') for a representative homeDir", () => {
+    expect(resolveUsageCachePath("/home/someuser")).toBe(
+      join("/home/someuser", ".claude", "m3l-usage-weekly.json"),
+    );
+  });
+
+  test("is a pure function of its argument: two different home dirs produce two different, correctly-shaped paths", () => {
+    const first = resolveUsageCachePath("/home/alice");
+    const second = resolveUsageCachePath("/home/bob");
+
+    expect(first).not.toBe(second);
+    expect(first).toBe(join("/home/alice", ".claude", "m3l-usage-weekly.json"));
+    expect(second).toBe(join("/home/bob", ".claude", "m3l-usage-weekly.json"));
+  });
+});
 
 describe("resolveCredential", () => {
   const homeDir = "/home/tester";
@@ -555,6 +573,83 @@ describe("normalizeUsageResponse", () => {
       });
 
       expect(result).toEqual([]);
+    });
+  });
+
+  // Top-level seven_day_opus/seven_day_sonnet fields, confirmed live
+  // 2026-09-05 as the integration point for a real Sonnet/Opus split (see
+  // SEVEN_DAY_MODEL_FIELDS's doc comment) — each shaped like the existing
+  // five_hour/seven_day fields, pushed as a synthesized candidate before the
+  // limits[]/models/seven_day.models candidates.
+  describe("seven_day_opus / seven_day_sonnet top-level fields", () => {
+    test("returns [] when both seven_day_opus and seven_day_sonnet are null and there are no other candidates", () => {
+      const result = normalizeUsageResponse({
+        seven_day_opus: null,
+        seven_day_sonnet: null,
+        limits: [],
+      });
+
+      expect(result).toEqual([]);
+    });
+
+    test("synthesizes a single opus entry from a non-null seven_day_opus object", () => {
+      const [entry] = normalizeUsageResponse({
+        seven_day_opus: { utilization: 42, resets_at: null },
+      });
+
+      expect(entry?.id).toBe("opus");
+      expect(entry?.display_name).toBe("Opus");
+      expect(entry?.used_percentage).toBe(42);
+    });
+
+    test("synthesizes a single sonnet entry from a non-null seven_day_sonnet object", () => {
+      const [entry] = normalizeUsageResponse({
+        seven_day_sonnet: { utilization: 42, resets_at: null },
+      });
+
+      expect(entry?.id).toBe("sonnet");
+      expect(entry?.display_name).toBe("Sonnet");
+      expect(entry?.used_percentage).toBe(42);
+    });
+
+    test("composes with a limits[] weekly_scoped entry: opus, sonnet, and a scoped model entry all appear, sorted descending, with weekly_all/session still excluded", () => {
+      const result = normalizeUsageResponse({
+        seven_day_opus: { utilization: 42, resets_at: null },
+        seven_day_sonnet: { utilization: 10, resets_at: null },
+        limits: [
+          { kind: "session", group: "session", percent: 44, scope: null },
+          { kind: "weekly_all", group: "weekly", percent: 15, scope: null },
+          {
+            kind: "weekly_scoped",
+            group: "weekly",
+            percent: 0,
+            scope: { model: { id: null, display_name: "Fable" } },
+            resets_at: null,
+          },
+        ],
+      });
+
+      expect(result.map((m) => m.id)).toEqual(["opus", "sonnet", "fable"]);
+      expect(result).toEqual([
+        {
+          id: "opus",
+          display_name: "Opus",
+          used_percentage: 42,
+          resets_at: null,
+        },
+        {
+          id: "sonnet",
+          display_name: "Sonnet",
+          used_percentage: 10,
+          resets_at: null,
+        },
+        {
+          id: "fable",
+          display_name: "Fable",
+          used_percentage: 0,
+          resets_at: null,
+        },
+      ]);
     });
   });
 });

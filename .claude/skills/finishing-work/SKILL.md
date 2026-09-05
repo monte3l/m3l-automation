@@ -179,9 +179,10 @@ work log sat orphaned in the shared checkout through all of PR3's setup).
 ### 7 — Orphaned journal sweep
 
 `pnpm check:staleness` (Step 4) already lists any `tmp/` file older than 7
-days that isn't on its live-state allowlist (`tmp/usage-weekly.json`,
-`tmp/slice-progress.json`, `tmp/compact-handoff.json`,
-`tmp/session-incidents.jsonl`) — this replaces an earlier `find
+days that isn't on its live-state allowlist (`tmp/slice-progress.json`,
+`tmp/compact-handoff.json`, `tmp/session-incidents.jsonl` — the weekly-usage
+cache moved account-scoped, outside any repo's `tmp/`, per ADR-0092's
+amendment) — this replaces an earlier `find
 tmp -iname '*journal*.md'` glob here, which missed non-`*journal*`-named
 orphans (a spoke's dispatch journal has no fixed naming convention;
 `.claude/rules/subagent-dispatch.md` only requires a `tmp/`-scoped path).

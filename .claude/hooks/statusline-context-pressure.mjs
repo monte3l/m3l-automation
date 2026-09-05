@@ -54,10 +54,11 @@
  * `npx`-resolved third-party script re-hitting the npm registry every render;
  * this is a plain local `node` invocation plus two syscalls and a bounded
  * local file read, identical in cost class to every other hook already wired
- * in `.claude/settings.json`. `tmp/usage-weekly.json` (see
- * `resolveWeeklyUsage`) joins `tmp/slice-progress.json` in that same
- * exception for the same reason: a bounded local `readFileSync`, nothing
- * more. The *network* call the weekly-usage data ultimately depends on lives
+ * in `.claude/settings.json`. The account-scoped weekly-usage cache file
+ * (see `resolveUsageCachePath`/`resolveWeeklyUsage`) joins
+ * `tmp/slice-progress.json` in that same exception for the same reason: a
+ * bounded local `readFileSync`, nothing more. The *network* call the
+ * weekly-usage data ultimately depends on lives
  * entirely out-of-band, in `bin/usage-cache.mjs`, refreshed by a `Stop` hook
  * (`.claude/hooks/refresh-usage-cache.mjs`) — never here — so this file's own
  * "no subprocess, no network" invariant is preserved rather than weakened.
@@ -538,13 +539,14 @@ const MAX_MODEL_TEXT_LENGTH = 40;
 
 /**
  * Strips C0/C1 control characters (including ESC, CR/LF) and clamps length.
- * `tmp/usage-weekly.json` is written out-of-band by `bin/usage-cache.mjs`
- * (which already sanitizes at the source), but this file must not assume
- * the cache is a trusted channel on its own -- a future writer bug, a stale
- * cache from an older script version, or direct tampering could still land
- * an unsanitized value here, and an embedded newline or ANSI escape would
- * break this file's own always-exactly-five-line guarantee (security-review
- * finding). Defense in depth: sanitize again on read, not only on write.
+ * The account-scoped weekly-usage cache is written out-of-band by
+ * `bin/usage-cache.mjs` (which already sanitizes at the source), but this
+ * file must not assume the cache is a trusted channel on its own -- a
+ * future writer bug, a stale cache from an older script version, or direct
+ * tampering could still land an unsanitized value here, and an embedded
+ * newline or ANSI escape would break this file's own always-exactly-five-
+ * line guarantee (security-review finding). Defense in depth: sanitize
+ * again on read, not only on write.
  *
  * @param {string} text
  * @returns {string}
@@ -567,9 +569,25 @@ function sanitizeDisplayText(text) {
     .slice(0, MAX_MODEL_TEXT_LENGTH);
 }
 
+const USAGE_CACHE_FILENAME = "m3l-usage-weekly.json";
+
+/**
+ * Deliberately duplicated from `bin/usage-cache.mjs`'s identical function
+ * (same convention as `sanitizeDisplayText` above) rather than imported —
+ * this file does not depend on `bin/`. Weekly usage is account-global, not
+ * repo data, so the cache lives under the account's `~/.claude/`, never a
+ * repo's `tmp/` — see docs/adr/0092-out-of-band-usage-cache.md's amendment.
+ *
+ * @param {string} homeDir
+ * @returns {string} the absolute, account-scoped cache path.
+ */
+export function resolveUsageCachePath(homeDir) {
+  return join(homeDir, ".claude", USAGE_CACHE_FILENAME);
+}
+
 /**
  * Resolves the per-model weekly-usage state for the current render, or null
- * when no usable cache exists. Reads `tmp/usage-weekly.json` (written
+ * when no usable cache exists. Reads the account-scoped cache file (written
  * out-of-band by `bin/usage-cache.mjs`, refreshed by the `Stop`-hook
  * `refresh-usage-cache.mjs` — docs/adr/0092-out-of-band-usage-cache.md) via
  * the given `readFile`, matching `resolveSliceProgress`'s pure-function
@@ -582,13 +600,19 @@ function sanitizeDisplayText(text) {
  * suffix; under 2h -> kept, no suffix.
  *
  * @param {(path: string) => string | null} readFile
- * @param {string} startDir the workspace root to resolve `tmp/` against
- *   (`payload.workspace.current_dir`, per-worktree).
+ * @param {string} cachePath the account-scoped cache's absolute path (see
+ *   `resolveUsageCachePath`, deliberately duplicated from
+ *   `bin/usage-cache.mjs` rather than imported — matching this file's
+ *   existing no-bin-dependency convention, same as `sanitizeDisplayText`
+ *   above). Unlike `tmp/slice-progress.json`, this cache carries no
+ *   worktree affinity — weekly usage is account-global, not repo data — so
+ *   it is resolved once from the account home, not from
+ *   `payload.workspace.current_dir`.
  * @param {number} now ms epoch.
  * @returns {{ models: Array<{ id: string, display_name: string, used_percentage: number }>, ageSec: number, stale: boolean } | null}
  */
-export function resolveWeeklyUsage(readFile, startDir, now) {
-  const raw = readFile(join(startDir, "tmp/usage-weekly.json"));
+export function resolveWeeklyUsage(readFile, cachePath, now) {
+  const raw = readFile(cachePath);
   if (raw === null) return null;
 
   let entry;
@@ -1304,7 +1328,11 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       totalmem: os.totalmem(),
       branch,
       slice: resolveSliceProgress(safeReadFile, startDir, branch),
-      weeklyUsage: resolveWeeklyUsage(safeReadFile, startDir, now),
+      weeklyUsage: resolveWeeklyUsage(
+        safeReadFile,
+        resolveUsageCachePath(os.homedir()),
+        now,
+      ),
       COLUMNS: process.env.COLUMNS,
     };
     output = renderStatusLine(payload, env);

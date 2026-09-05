@@ -1,15 +1,22 @@
 #!/usr/bin/env node
 // Fetches Anthropic's undocumented `/api/oauth/usage` endpoint out-of-band
-// and writes a normalized per-model weekly-usage snapshot to
-// `tmp/usage-weekly.json` — the harness's first network call (ADR-0092).
+// and writes a normalized per-model weekly-usage snapshot to an
+// account-scoped cache file — the harness's first network call (ADR-0092).
 // `.claude/hooks/statusline-context-pressure.mjs` only ever reads that file
 // via a bounded `readFileSync`; ADR-0080's "no subprocess, no network"
 // invariant for a *wired statusline script* is unaffected because this file
 // is not one — `bin/check-hooks.mjs`'s `FORBIDDEN_STATUSLINE_PATTERNS` scan
 // is scoped to `STATUSLINE_SETTINGS_KEYS` scripts only.
 //
+// The cache lives under the account's `~/.claude/`, not any repo's `tmp/`:
+// weekly usage is account-global, not project data, and a repo-relative path
+// meant every worktree fetched and aged its own copy behind its own TTL,
+// with no anchor the Stop hook and the statusline reader could ever agree
+// on once a session entered a worktree in-session (ADR-0013/0014) — see
+// docs/adr/0092-out-of-band-usage-cache.md's amendment.
+//
 // Usage:
-//   node bin/usage-cache.mjs           # fetch + write tmp/usage-weekly.json
+//   node bin/usage-cache.mjs           # fetch + write the account cache
 //   node bin/usage-cache.mjs --json    # diagnostic mode: credential source,
 //                                      # HTTP status, model count — never the
 //                                      # credential value itself
@@ -40,14 +47,24 @@
 import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
-import { createReporter, parseJsonFlag, repoRoot } from "./lib/report.mjs";
+import { createReporter, parseJsonFlag } from "./lib/report.mjs";
 
-const root = repoRoot(import.meta.url);
-export const USAGE_CACHE_REL_PATH = "tmp/usage-weekly.json";
+export const USAGE_CACHE_FILENAME = "m3l-usage-weekly.json";
 export const USAGE_CACHE_TTL_MS = 15 * 60 * 1000;
+
+/**
+ * @param {string} homeDir
+ * @returns {string} the absolute, account-scoped cache path — deliberately
+ *   outside any repo checkout or worktree so a session in any worktree, and
+ *   the Stop hook that refreshes it, always agree on where it lives.
+ */
+export function resolveUsageCachePath(homeDir) {
+  return join(homeDir, ".claude", USAGE_CACHE_FILENAME);
+}
+
 const USAGE_ENDPOINT = "https://api.anthropic.com/api/oauth/usage";
 const REQUEST_TIMEOUT_MS = 5000;
 const USER_AGENT =
@@ -220,6 +237,23 @@ function slugify(text) {
 }
 
 /**
+ * Top-level fields observed on the response carrying a single model's own
+ * limit object (`{ utilization, resets_at, ... }`, the same shape as
+ * `five_hour`/`seven_day`) — the field this endpoint would use for a real
+ * Sonnet/Opus split. Confirmed live 2026-09-05
+ * (docs/adr/0092-out-of-band-usage-cache.md's amendment): both are `null` on
+ * the plan tested, so no candidate is produced from them today, but the
+ * integration point costs nothing to keep ready for the moment either
+ * becomes non-null — a Sonnet/Opus split is otherwise unavailable from this
+ * endpoint (the `limits[]` `weekly_scoped` entry below has been observed
+ * carrying only a premium-model cap, not a Sonnet/Opus breakdown).
+ */
+const SEVEN_DAY_MODEL_FIELDS = [
+  { field: "seven_day_opus", id: "opus", display_name: "Opus" },
+  { field: "seven_day_sonnet", id: "sonnet", display_name: "Sonnet" },
+];
+
+/**
  * @param {unknown} json the parsed `/api/oauth/usage` response body.
  * @returns {unknown[]} the best-effort array of per-model entry candidates,
  *   or `[]` when no recognizable array is found.
@@ -229,36 +263,53 @@ function slugify(text) {
  * lives in a top-level `limits[]` array alongside session/aggregate entries,
  * distinguished by `group === "weekly"` and a non-null `scope.model` object
  * (an aggregate weekly entry, e.g. `kind: "weekly_all"`, has `scope: null`
- * and must NOT be treated as a per-model entry). The `models`/`seven_day.models`
- * shapes below are kept as a fallback only, in case a future response
- * revision introduces one — normalizeModelEntry's field-spelling flexibility
- * was written pre-verification and is deliberately kept defensive rather
- * than narrowed to exactly today's shape.
+ * and must NOT be treated as a per-model entry — it duplicates the
+ * `rate_limits.seven_day` figure the quota row's `7d` bar already renders
+ * from the statusLine payload directly, so surfacing it again here would be
+ * redundant, not merely excluded for lack of a model). The
+ * `models`/`seven_day.models` shapes below are kept as a fallback only, in
+ * case a future response revision introduces one — normalizeModelEntry's
+ * field-spelling flexibility was written pre-verification and is
+ * deliberately kept defensive rather than narrowed to exactly today's shape.
  */
 function extractModelCandidates(json) {
   const j = /** @type {Record<string, unknown>} */ (json);
+  const candidates = [];
+
+  for (const { field, id, display_name } of SEVEN_DAY_MODEL_FIELDS) {
+    const entry = j[field];
+    if (typeof entry === "object" && entry !== null) {
+      candidates.push({ .../** @type {object} */ (entry), id, display_name });
+    }
+  }
+
   if (Array.isArray(j.limits)) {
-    return j.limits.filter((entry) => {
-      if (typeof entry !== "object" || entry === null) return false;
-      const e = /** @type {Record<string, unknown>} */ (entry);
-      const scope = /** @type {{ model?: unknown } | null} */ (
-        typeof e.scope === "object" ? e.scope : null
-      );
-      return (
-        e.group === "weekly" &&
-        scope !== null &&
-        typeof scope.model === "object" &&
-        scope.model !== null
-      );
-    });
+    candidates.push(
+      ...j.limits.filter((entry) => {
+        if (typeof entry !== "object" || entry === null) return false;
+        const e = /** @type {Record<string, unknown>} */ (entry);
+        const scope = /** @type {{ model?: unknown } | null} */ (
+          typeof e.scope === "object" ? e.scope : null
+        );
+        return (
+          e.group === "weekly" &&
+          scope !== null &&
+          typeof scope.model === "object" &&
+          scope.model !== null
+        );
+      }),
+    );
+  } else if (Array.isArray(j.models)) {
+    candidates.push(...j.models);
+  } else {
+    const sevenDay = j.seven_day;
+    if (typeof sevenDay === "object" && sevenDay !== null) {
+      const nested = /** @type {{ models?: unknown }} */ (sevenDay).models;
+      if (Array.isArray(nested)) candidates.push(...nested);
+    }
   }
-  if (Array.isArray(j.models)) return j.models;
-  const sevenDay = j.seven_day;
-  if (typeof sevenDay === "object" && sevenDay !== null) {
-    const nested = /** @type {{ models?: unknown }} */ (sevenDay).models;
-    if (Array.isArray(nested)) return nested;
-  }
-  return [];
+
+  return candidates;
 }
 
 /**
@@ -397,12 +448,10 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
 
   const models = normalizeUsageResponse(body);
   const entry = { fetched_at: Math.floor(Date.now() / 1000), models };
+  const cachePath = resolveUsageCachePath(homedir());
   try {
-    mkdirSync(join(root, "tmp"), { recursive: true });
-    writeCacheAtomically(
-      join(root, USAGE_CACHE_REL_PATH),
-      `${JSON.stringify(entry, null, 2)}\n`,
-    );
+    mkdirSync(dirname(cachePath), { recursive: true });
+    writeCacheAtomically(cachePath, `${JSON.stringify(entry, null, 2)}\n`);
   } catch (cause) {
     // This CLI normally runs detached with stdio:"ignore" (spawned by
     // refresh-usage-cache.mjs) — a write failure here would otherwise vanish
@@ -411,7 +460,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     // spawning side) can observe it, unlike every other exit path above
     // which reports success-with-no-data by design.
     reporter.warn(
-      `Failed to write ${USAGE_CACHE_REL_PATH}: ${cause instanceof Error ? cause.message : String(cause)}`,
+      `Failed to write ${cachePath}: ${cause instanceof Error ? cause.message : String(cause)}`,
     );
     reporter.finish({
       credentialSource: credential.source,
@@ -420,7 +469,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     });
     process.exit(1);
   }
-  reporter.change("created", USAGE_CACHE_REL_PATH);
+  reporter.change("created", cachePath);
   reporter.succeed(
     `Wrote ${models.length} model usage entr${models.length === 1 ? "y" : "ies"}.`,
   );

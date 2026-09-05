@@ -191,11 +191,10 @@ describe("orphanedTmpFiles", () => {
 });
 
 describe("LIVE_TMP_FILES", () => {
-  test("is a Set containing exactly the 4 documented live tmp/ files", () => {
+  test("is a Set containing exactly the 3 documented live tmp/ files", () => {
     expect(LIVE_TMP_FILES).toBeInstanceOf(Set);
     expect(LIVE_TMP_FILES).toEqual(
       new Set([
-        "tmp/usage-weekly.json",
         "tmp/slice-progress.json",
         "tmp/compact-handoff.json",
         "tmp/session-incidents.jsonl",

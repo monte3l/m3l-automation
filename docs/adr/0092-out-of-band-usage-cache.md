@@ -177,3 +177,77 @@ style`/`vim` are usually absent) leaves far more room than `quota`'s
   design)
 - Originating issue: [#889](https://github.com/monte3l/m3l-automation/issues/889),
   deferred from [#879](https://github.com/monte3l/m3l-automation/issues/879)
+
+## Amendment (2026-09-05) — corrected Context claim, cache moved account-scoped
+
+Two defects surfaced after this ADR shipped, both from re-verifying the
+original claims against the live account rather than trusting them:
+
+**The Context section's central claim was wrong.** It states "the only place
+that breakdown exists is Anthropic's undocumented `/api/oauth/usage`
+endpoint" — implying the endpoint carries a Sonnet/Opus split. A fresh
+authenticated `GET /api/oauth/usage` on 2026-09-05 returns:
+
+```json
+{
+  "seven_day_opus": null,
+  "seven_day_sonnet": null,
+  "limits": [
+    { "kind": "session", "group": "session", "percent": 44, "scope": null },
+    { "kind": "weekly_all", "group": "weekly", "percent": 15, "scope": null },
+    {
+      "kind": "weekly_scoped",
+      "group": "weekly",
+      "percent": 0,
+      "scope": { "model": { "id": null, "display_name": "Fable" } },
+      "resets_at": null,
+      "is_active": false
+    }
+  ]
+}
+```
+
+`seven_day_opus`/`seven_day_sonnet` — the fields that would carry a
+Sonnet/Opus split, matching `five_hour`/`seven_day`'s own shape — are both
+`null` on this plan. The only `weekly`-grouped, model-scoped `limits[]` entry
+is a Fable premium-model cap, not a per-model usage breakdown. **A
+Sonnet/Opus split is not available from this endpoint on this account today.**
+Issue #889's original framing (Sonnet/Opus + Fable weekly usage) is therefore
+unsatisfiable as written; what ships is a Fable-only widget plus a dormant
+integration point for the two `seven_day_*` fields, which would need to
+become non-null upstream — a change outside this repo's control — before a
+real split can render. This does not fail closed: `extractModelCandidates`
+reads `seven_day_opus`/`seven_day_sonnet` when present (`bin/usage-cache.mjs`)
+so the split renders automatically the moment either field stops being
+`null`, with zero further code change here.
+
+The `weekly_all` aggregate entry (`scope: null`) is correctly excluded from
+the cache, and deliberately not added back: it duplicates the figure the
+quota row's `7d` bar already renders directly from the statusLine payload's
+`rate_limits.seven_day` field. `is_active: false` on the Fable entry is
+observed but not used to gate rendering — its semantics are undocumented, and
+`percent` (including a genuine 0%) is treated as the render signal on its own.
+
+**The cache anchor was repo-relative and disagreed with itself.** The reader
+resolved `tmp/usage-weekly.json` against `payload.workspace.current_dir`
+(per-worktree, no upward walk), while the `Stop` hook that refreshes it
+resolved the same relative path against `CLAUDE_PROJECT_DIR` — which stays
+pinned to a session's original checkout across an in-session `EnterWorktree`
+(ADR-0013/0014). The two could name different files, and every worktree that
+never happened to match `CLAUDE_PROJECT_DIR` had no cache at all: the widget
+appeared to "blink" in and out depending on which directory a session
+happened to be rooted in, with no code change or network failure involved.
+
+Weekly usage is account-global, not project data, so it has no business being
+repo-relative in the first place. The cache moved to a single absolute,
+account-scoped path — `resolveUsageCachePath(homeDir)` → `~/.claude/m3l-usage-weekly.json`
+— duplicated (not imported) into both `bin/usage-cache.mjs` (the writer) and
+`statusline-context-pressure.mjs` (the reader), matching this file's existing
+`sanitizeDisplayText` no-bin-dependency convention. `resolveWeeklyUsage`'s
+signature changed from `(readFile, startDir, now)` to `(readFile, cachePath,
+now)` accordingly — it takes the resolved path directly rather than joining
+one from a workspace root. Every worktree and every session on the account
+now shares one cache and one 15-minute refresh TTL, rather than each fetching
+and aging its own copy. `bin/lib/staleness-scan.mjs`'s `LIVE_TMP_FILES`
+allowlist drops its `tmp/usage-weekly.json` entry accordingly — nothing
+writes that path anymore.

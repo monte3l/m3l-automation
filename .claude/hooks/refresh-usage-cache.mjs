@@ -18,16 +18,20 @@
  */
 import { spawn } from "node:child_process";
 import { statSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
 import {
   isCacheFresh,
-  USAGE_CACHE_REL_PATH,
+  resolveUsageCachePath,
   USAGE_CACHE_TTL_MS,
 } from "../../bin/usage-cache.mjs";
 
+// The cache is account-scoped (resolveUsageCachePath), not repo-relative, so
+// this stat/spawn needs no CLAUDE_PROJECT_DIR to locate it — only to locate
+// bin/usage-cache.mjs itself below.
 const projectDir = process.env.CLAUDE_PROJECT_DIR ?? process.cwd();
-const cachePath = join(projectDir, USAGE_CACHE_REL_PATH);
+const cachePath = resolveUsageCachePath(homedir());
 
 let mtimeMs = null;
 try {
