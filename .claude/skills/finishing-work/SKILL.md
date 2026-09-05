@@ -91,7 +91,14 @@ Two cases, mutually exclusive:
   `../m3l-automation-<slug>`, per ADR-0013/0014): `pnpm worktree:remove <slug>`
   — it already removes the worktree, prunes admin entries, and deletes the
   branch if `git branch -d` accepts it (kept-and-noted otherwise). Nothing
-  further needed here.
+  further needed here. **`ExitWorktree({action: "remove"})` first, if this
+  session entered the worktree via `EnterWorktree` earlier — but expect it
+  to refuse with "this session is not the owner" if a mid-session compaction
+  happened since entry** (ownership tracking doesn't survive one). That's
+  not an error to debug: call `ExitWorktree({action: "keep"})` instead (falls
+  back to the current directory), then run `git checkout main && git pull`
+  and `pnpm worktree:remove <slug>` from there as below
+  (`docs/logs/2026-09-05-statusline-weekly-usage.md`).
 - **Shared checkout**: `pnpm branch:cleanup <headRefName>` — the
   shared-checkout equivalent, added alongside this skill. It refuses to
   delete `main` or the currently-checked-out branch, and safely keeps (never
