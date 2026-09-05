@@ -296,6 +296,11 @@ export const COMMAND_CATALOG = [
       "Verifies every GitHub-talking .claude/skills/*/SKILL.md carries an ADR-0030 stance reference, contains no retired policy claim, and names the mechanism (gh CLI vs GitHub MCP) it actually uses. Run after editing a GitHub-facing skill.",
   },
   {
+    name: "check:reference-freshness",
+    description:
+      "Verifies every Context7-sourced .claude/skills/*/references/*.md carries a <!-- reference-freshness: ... --> stamp, that its tracked packages haven't drifted past the stamp's declared refresh policy (major/minor; patch drift never fails), and that no retired ctx7 CLI reference has crept back in (ADR-0093). Offline by design. Run after refreshing a skill reference snapshot.",
+  },
+  {
     name: "check:github-features",
     description:
       "Verifies the live repository's GitHub platform-feature flags (wiki/discussions/issues/projects) and metadata (description/homepage/topics) match ADR-0050's declared stance, and that .github/ISSUE_TEMPLATE/config.yml still links to the Discussions Ideas/Q&A categories. Also warns (non-blocking) when delete_branch_on_merge is disabled — the precondition bin/worktree-prune.mjs's [gone]-upstream heuristic depends on. Needs gh auth; run push-only in CI (ci.yml), same as check:hub-drift.",

@@ -399,6 +399,11 @@ export const VERIFY_STEPS = [
     cmd: () => "pnpm check:integration-stance",
   },
   {
+    ciStepName: "Check reference-snapshot freshness (reference-freshness)",
+    id: "check-reference-freshness",
+    cmd: () => "pnpm check:reference-freshness",
+  },
+  {
     ciStepName: "Check dependency-direction zones (zones)",
     id: "check-zones",
     cmd: () => "pnpm check:zones",
