@@ -18,10 +18,11 @@
  * object whose `stat`/`readFile`/`close` methods are individually
  * controllable `vi.fn()`s. This drives every one of `artifacts.ts`'s own
  * branches (success, `EEXIST`, a non-regular-file `stat`, a size mismatch,
- * a digest mismatch, `ELOOP`, a generic fs error, a post-open failure, a
- * failing `close()`) without ever touching a real path, which is what
- * recovers this module's unit-tier coverage per `vitest.config.ts`'s
- * `perFile` gate.
+ * a digest mismatch, `ELOOP`, an `ENOENT` (X8 slice 5b-ii's
+ * `ERR_CONSOLE_SESSION_ARTIFACT_GONE` branch), a generic fs error, a
+ * post-open failure, a failing `close()`) without ever touching a real
+ * path, which is what recovers this module's unit-tier coverage per
+ * `vitest.config.ts`'s `perFile` gate.
  *
  * Real-filesystem cases (permission bits actually honored by the OS, a
  * genuine `EEXIST` collision, a real symlink/FIFO at rest, digest
@@ -66,6 +67,7 @@ import { join } from "node:path";
 
 import { M3LConsoleError } from "../src/errors/console-error.js";
 import type { M3LConsoleSessionsConfig } from "../src/config/sessions.js";
+import { httpStatusForCode, isFaultError } from "../src/http/envelope.js";
 import { createSessionArtifactStore } from "../src/sessions/artifacts.js";
 import {
   decodeArtifactRef,
@@ -652,8 +654,14 @@ describe("readArtifact — a digest-verified but non-JSON file surfaces as CORRU
   });
 });
 
-describe("readArtifact — an open() failure (ELOOP from O_NOFOLLOW, or any other errno) surfaces as CORRUPT, chaining the cause", () => {
-  test("ELOOP (symlink at the final path component) is wrapped, and close() is never called since no handle was ever acquired", async () => {
+describe("readArtifact — an open() failure surfaces as CORRUPT for every errno EXCEPT ENOENT, chaining the cause", () => {
+  // THE MUTATION-KILL PIN for the whole X8 slice 5b-ii ENOENT branch: ELOOP
+  // is exactly what O_NOFOLLOW is there to produce when a symlink has been
+  // planted at the artifact's final path component. Widening the ENOENT
+  // guard to accept any errno (or removing it) must NOT make this into
+  // ERR_CONSOLE_SESSION_ARTIFACT_GONE — that would silently defeat the
+  // O_NOFOLLOW security control.
+  test("ELOOP (symlink at the final path component) still raises CORRUPT, and close() is never called since no handle was ever acquired", async () => {
     const eloop = Object.assign(new Error("too many symbolic links"), {
       code: "ELOOP",
     });
@@ -675,8 +683,32 @@ describe("readArtifact — an open() failure (ELOOP from O_NOFOLLOW, or any othe
     expect(error.cause).toBe(eloop);
   });
 
-  test("a generic open() failure (e.g. ENOENT) is wrapped the same way", async () => {
-    const enoent = Object.assign(new Error("no such file"), {
+  test("a generic open() failure (e.g. EACCES) is wrapped the same way as CORRUPT", async () => {
+    const eacces = Object.assign(new Error("permission denied"), {
+      code: "EACCES",
+    });
+    vi.mocked(open).mockRejectedValue(eacces);
+
+    const store = createSessionArtifactStore({ root: ROOT, config: CONFIG });
+    const ref: M3LSessionArtifactRef = {
+      kind: "file",
+      path: "session-1/step-1.json",
+      sizeBytes: 100,
+      digest: "a".repeat(64),
+    };
+
+    const thrown = await captureFailure(() => store.readArtifact(ref));
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    const error = thrown as M3LConsoleError;
+    expect(error.code).toBe("ERR_CONSOLE_SESSION_ARTIFACT_CORRUPT");
+    expect(error.cause).toBe(eacces);
+  });
+});
+
+describe("readArtifact — an ENOENT opening a file-backed artifact's referenced path raises GONE, not CORRUPT (X8 slice 5b-ii)", () => {
+  test("a file-backed ref whose file has been deleted (ENOENT) raises ERR_CONSOLE_SESSION_ARTIFACT_GONE, chaining the cause", async () => {
+    const enoent = Object.assign(new Error("no such file or directory"), {
       code: "ENOENT",
     });
     vi.mocked(open).mockRejectedValue(enoent);
@@ -692,9 +724,19 @@ describe("readArtifact — an open() failure (ELOOP from O_NOFOLLOW, or any othe
     const thrown = await captureFailure(() => store.readArtifact(ref));
 
     expect(thrown).toBeInstanceOf(M3LConsoleError);
-    expect((thrown as M3LConsoleError).code).toBe(
-      "ERR_CONSOLE_SESSION_ARTIFACT_CORRUPT",
+    const error = thrown as M3LConsoleError;
+    expect(error.code).toBe("ERR_CONSOLE_SESSION_ARTIFACT_GONE");
+    expect(error.cause).toBe(enoent);
+  });
+
+  test("the envelope maps ERR_CONSOLE_SESSION_ARTIFACT_GONE to HTTP 410 with fault: false", () => {
+    const error = new M3LConsoleError(
+      "ERR_CONSOLE_SESSION_ARTIFACT_GONE",
+      "artifact file no longer exists",
     );
+
+    expect(httpStatusForCode("ERR_CONSOLE_SESSION_ARTIFACT_GONE")).toBe(410);
+    expect(isFaultError(error)).toBe(false);
   });
 });
 

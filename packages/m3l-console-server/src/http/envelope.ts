@@ -32,6 +32,7 @@ const STATUS_INTERNAL = 500;
 const STATUS_UNAVAILABLE = 503;
 const STATUS_PAYLOAD_TOO_LARGE = 413;
 const STATUS_UNSUPPORTED_MEDIA_TYPE = 415;
+const STATUS_GONE = 410;
 
 /** The status/origin/retryable/fault decision for one {@link M3LConsoleErrorCode}. */
 interface ErrorClassification {
@@ -308,13 +309,25 @@ const CLASSIFICATION_BY_CODE: Record<M3LConsoleErrorCode, ErrorClassification> =
     },
     // A persisted artifact reference that can't be decoded, or a file-backed
     // artifact whose content no longer matches its recorded digest, means the
-    // store or filesystem drifted from what this module itself wrote — an
-    // internal fault, not a caller mistake.
+    // store or filesystem drifted from what this module itself wrote in a way
+    // the server did NOT intend — a genuine internal fault, not a caller
+    // mistake.
     ERR_CONSOLE_SESSION_ARTIFACT_CORRUPT: {
       status: STATUS_INTERNAL,
       origin: "library",
       retryable: false,
       fault: true,
+    },
+    // X8 slice 5b-ii. Contrast with the CORRUPT entry immediately above: a
+    // read of an artifact the retention sweep has already deleted is a
+    // normal administrative outcome the server caused ON PURPOSE, never a
+    // drift the server did not intend. `fault: false` is the point of the
+    // whole slice — a scheduled sweep must never page anyone.
+    ERR_CONSOLE_SESSION_ARTIFACT_GONE: {
+      status: STATUS_GONE,
+      origin: "library",
+      retryable: false,
+      fault: false,
     },
     // X10b console-server script discovery. A config module that resolved
     // (per `runs/catalog.ts`'s `resolveConfigModulePath` check) but then

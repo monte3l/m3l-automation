@@ -28,6 +28,7 @@ import type { FileHandle } from "node:fs/promises";
 import { join } from "node:path";
 
 import { M3LConsoleError } from "../errors/console-error.js";
+import { errnoCodeOf } from "../errors/errno.js";
 import { toParametersJson } from "../store/parameters-json.js";
 import {
   SAFE_ID_MAX_LENGTH,
@@ -153,15 +154,29 @@ export interface M3LSessionArtifactStore {
    *   the store's configured `artifactMaxBytes` cap — checked before any
    *   filesystem access.
    * @throws {@link M3LConsoleError} with code
+   *   `"ERR_CONSOLE_SESSION_ARTIFACT_GONE"` (X8 slice 5b-ii) when opening the
+   *   file-backed artifact's referenced path fails with `ENOENT` — and
+   *   ONLY `ENOENT` — meaning the file simply no longer exists, most
+   *   plausibly because `session-artifact-retention.ts`'s retention sweep
+   *   has already deleted it. A step's `resultRef` is stored evidence the
+   *   artifact once existed, so this is reported as "gone", never "never
+   *   was" (`ERR_CONSOLE_NOT_FOUND`), and never folded into `_CORRUPT`
+   *   below, which would misreport this expected, self-inflicted outcome as
+   *   a server fault.
+   * @throws {@link M3LConsoleError} with code
    *   `"ERR_CONSOLE_SESSION_ARTIFACT_CORRUPT"` when `ref.path` does not
-   *   decompose into the expected `<sessionId>/<stepId>.json` shape; when the
-   *   file cannot be opened or read (including a symlink at the final path
-   *   component, rejected via `O_NOFOLLOW`); when the resolved location is
-   *   not a regular file; when the file's actual size (checked via the same
-   *   open file descriptor used for the subsequent read, before any content
-   *   is read into memory) disagrees with `ref.sizeBytes`; when its digest no
-   *   longer matches `ref.digest` (checked before the content is trusted or
-   *   parsed); or when digest-verified content still fails to `JSON.parse`.
+   *   decompose into the expected `<sessionId>/<stepId>.json` shape; when
+   *   opening or reading the file fails with any errno OTHER than `ENOENT`
+   *   — `ELOOP` (a symlink at the final path component, rejected via
+   *   `O_NOFOLLOW`), `EACCES`, `ENOTDIR`, or anything else, all of which
+   *   mean the filesystem drifted from what this module wrote in a way the
+   *   `ENOENT`-only carve-out above must not swallow; when the resolved
+   *   location is not a regular file; when the file's actual size (checked
+   *   via the same open file descriptor used for the subsequent read,
+   *   before any content is read into memory) disagrees with
+   *   `ref.sizeBytes`; when its digest no longer matches `ref.digest`
+   *   (checked before the content is trusted or parsed); or when
+   *   digest-verified content still fails to `JSON.parse`.
    */
   readArtifact(ref: M3LSessionArtifactRef): Promise<unknown>;
 }
@@ -303,6 +318,20 @@ async function putArtifact(
  * raw bytes — never a second, independently re-resolved path lookup.
  * `close()` runs best-effort in `finally` so a failing close can never
  * shadow the real outcome above it.
+ *
+ * The catch block distinguishes exactly one errno from every other failure
+ * mode above: `open()` rejecting with `ENOENT` — the file simply is not
+ * there, most plausibly because `session-artifact-retention.ts`'s sweep has
+ * already deleted it — is reported as `ERR_CONSOLE_SESSION_ARTIFACT_GONE`
+ * (X8 slice 5b-ii) rather than `_CORRUPT` (see this module's
+ * `@packageDocumentation` for why: a routine, expected outcome, not a
+ * fault). Every OTHER errno still raises `_CORRUPT`, `ELOOP` above all —
+ * `open`'s `O_NOFOLLOW` flag exists specifically to turn a symlink planted
+ * at the final path component into an `ELOOP`, and folding that into the
+ * "gone" branch would silently defeat that check. {@link errnoCodeOf}
+ * (`../errors/errno.js`) is reused rather than a second ad hoc errno
+ * reader — it already enforces reading `cause.code` as an OWN property,
+ * never an inherited/forgeable one.
  */
 async function readArtifactFileBuffer(
   absolutePath: string,
@@ -330,6 +359,13 @@ async function readArtifactFileBuffer(
     return await handle.readFile();
   } catch (cause) {
     if (cause instanceof M3LConsoleError) throw cause;
+    if (errnoCodeOf(cause) === "ENOENT") {
+      throw new M3LConsoleError(
+        "ERR_CONSOLE_SESSION_ARTIFACT_GONE",
+        `artifact file at "${ref.path}" no longer exists`,
+        { cause },
+      );
+    }
     throw new M3LConsoleError(
       "ERR_CONSOLE_SESSION_ARTIFACT_CORRUPT",
       `failed to read the artifact file at "${ref.path}"`,
