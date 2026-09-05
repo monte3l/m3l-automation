@@ -37,7 +37,8 @@
 // optional, several plausible key spellings are accepted per field, and
 // anything unrecognized is dropped rather than thrown on — an undocumented
 // endpoint can still change shape without notice even once observed once.
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
@@ -51,6 +52,25 @@ const USAGE_ENDPOINT = "https://api.anthropic.com/api/oauth/usage";
 const REQUEST_TIMEOUT_MS = 5000;
 const USER_AGENT =
   "m3l-automation-usage-cache/1 (+https://github.com/monte3l/m3l-automation)";
+
+/**
+ * Writes `contents` to `finalPath` atomically: a same-directory temp file
+ * plus `renameSync`, never a direct `writeFileSync` on the live path.
+ * `renameSync` replaces whatever inode currently sits at `finalPath` —
+ * including a symlink — without ever opening or following it, closing off
+ * a pre-planted-symlink write redirect. It also means a concurrent
+ * statusline render never observes a partially-written (torn) file: it sees
+ * either the previous complete cache or the new complete one, never
+ * something in between (security-review finding).
+ *
+ * @param {string} finalPath
+ * @param {string} contents
+ */
+function writeCacheAtomically(finalPath, contents) {
+  const tmpPath = `${finalPath}.tmp-${process.pid}-${randomUUID()}`;
+  writeFileSync(tmpPath, contents);
+  renameSync(tmpPath, finalPath);
+}
 
 /**
  * @param {string} path
@@ -121,6 +141,39 @@ function firstString(...candidates) {
     if (typeof c === "string" && c.length > 0) return c;
   }
   return null;
+}
+
+const MAX_MODEL_TEXT_LENGTH = 40;
+
+/**
+ * Strips C0/C1 control characters (including ESC, CR/LF) and clamps length.
+ * The `/api/oauth/usage` response is undocumented and unversioned — this
+ * file's own header notes it "can change shape without notice" — so a
+ * model's `id`/`display_name` must never be trusted to reach a rendered
+ * statusline segment verbatim: an embedded newline or ANSI escape sequence
+ * would break `renderStatusLine`'s always-exactly-five-line guarantee and
+ * could inject terminal control sequences (security-reviewer finding,
+ * demonstrated live against `formatWeeklyModelSegments`).
+ *
+ * @param {string} text
+ * @returns {string}
+ */
+function sanitizeDisplayText(text) {
+  const CONTROL_CHARS_PATTERN = new RegExp(
+    "[" +
+      String.fromCharCode(0) +
+      "-" +
+      String.fromCharCode(0x1f) +
+      String.fromCharCode(0x7f) +
+      "-" +
+      String.fromCharCode(0x9f) +
+      "]",
+    "g",
+  );
+  return text
+    .replace(CONTROL_CHARS_PATTERN, "")
+    .trim()
+    .slice(0, MAX_MODEL_TEXT_LENGTH);
 }
 
 /**
@@ -227,14 +280,27 @@ function normalizeModelEntry(entry) {
       ? /** @type {{ id?: unknown; display_name?: unknown }} */ (scope)
       : null;
 
-  const displayName = firstString(
+  // The response is untrusted (undocumented, unversioned endpoint): a
+  // control character or ANSI escape in `id`/`display_name` must never reach
+  // a rendered statusline segment (security-reviewer finding, demonstrated
+  // live against formatWeeklyModelSegments) — sanitize before any other use,
+  // including feeding `slugify`.
+  const rawDisplayName = firstString(
     scopeModel?.display_name,
     e.display_name,
     e.name,
     e.label,
   );
+  const displayName =
+    rawDisplayName !== null ? sanitizeDisplayText(rawDisplayName) : null;
   const rawId = firstString(scopeModel?.id, e.id, e.model, e.model_id, e.slug);
-  const id = rawId ?? (displayName !== null ? slugify(displayName) : null);
+  const sanitizedId = rawId !== null ? sanitizeDisplayText(rawId) : null;
+  const id =
+    sanitizedId !== null && sanitizedId.length > 0
+      ? sanitizedId
+      : displayName !== null && displayName.length > 0
+        ? slugify(displayName)
+        : null;
   if (id === null || id.length === 0) return null;
 
   const pct = firstFiniteNumber(
@@ -247,7 +313,8 @@ function normalizeModelEntry(entry) {
 
   return {
     id,
-    display_name: displayName ?? id,
+    display_name:
+      displayName !== null && displayName.length > 0 ? displayName : id,
     used_percentage: Math.min(100, Math.max(0, Math.round(pct))),
     resets_at: normalizeResetsAt(e.resets_at ?? e.reset_at ?? e.resetsAt),
   };
@@ -332,7 +399,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const entry = { fetched_at: Math.floor(Date.now() / 1000), models };
   try {
     mkdirSync(join(root, "tmp"), { recursive: true });
-    writeFileSync(
+    writeCacheAtomically(
       join(root, USAGE_CACHE_REL_PATH),
       `${JSON.stringify(entry, null, 2)}\n`,
     );

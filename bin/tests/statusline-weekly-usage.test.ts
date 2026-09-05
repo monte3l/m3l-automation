@@ -117,6 +117,89 @@ describe("resolveWeeklyUsage", () => {
     ]);
   });
 
+  // Defense-in-depth sanitization (security review): this hook's own
+  // sanitizeDisplayText is deliberately duplicated from bin/usage-cache.mjs
+  // rather than trusting the on-disk cache to already be clean.
+  describe("sanitizes hostile id/display_name from the cache file", () => {
+    test("strips an ESC byte and an embedded newline from display_name, leaving only their harmless literal remainder", () => {
+      const now = 1_700_100_000_000;
+      const fetchedAt = now / 1000;
+      const readFile = (path: string): string | null =>
+        path === usagePath
+          ? JSON.stringify({
+              fetched_at: fetchedAt,
+              models: [
+                {
+                  id: "opus",
+                  display_name: "Opus\x1b[2J\nINJECTED",
+                  used_percentage: 40,
+                },
+              ],
+            })
+          : null;
+
+      const result = resolveWeeklyUsage(readFile, startDir, now);
+
+      expect(result?.models[0]?.display_name).toBe("Opus[2JINJECTED");
+      // eslint-disable-next-line no-control-regex -- asserting the ABSENCE of the ESC/CR/LF control characters the sanitizer strips
+      expect(result?.models[0]?.display_name).not.toMatch(/[\x1b\n\r]/);
+    });
+
+    test("drops just the model entry whose id or display_name sanitizes to an empty string, keeping a clean sibling", () => {
+      const now = 1_700_100_000_000;
+      const fetchedAt = now / 1000;
+      const readFile = (path: string): string | null =>
+        path === usagePath
+          ? JSON.stringify({
+              fetched_at: fetchedAt,
+              models: [
+                {
+                  id: "\x1b\x07", // sanitizes to "" -> dropped
+                  display_name: "Hostile Id",
+                  used_percentage: 10,
+                },
+                {
+                  id: "haiku",
+                  display_name: "\x1b\x07\x1f", // sanitizes to "" -> dropped
+                  used_percentage: 20,
+                },
+                {
+                  id: "opus",
+                  display_name: "Opus",
+                  used_percentage: 40,
+                },
+              ],
+            })
+          : null;
+
+      const result = resolveWeeklyUsage(readFile, startDir, now);
+
+      expect(result?.models).toEqual([
+        { id: "opus", display_name: "Opus", used_percentage: 40 },
+      ]);
+    });
+
+    test("clamps a display_name longer than 40 characters to exactly 40", () => {
+      const now = 1_700_100_000_000;
+      const fetchedAt = now / 1000;
+      const longName = "A".repeat(50);
+      const readFile = (path: string): string | null =>
+        path === usagePath
+          ? JSON.stringify({
+              fetched_at: fetchedAt,
+              models: [
+                { id: "opus", display_name: longName, used_percentage: 40 },
+              ],
+            })
+          : null;
+
+      const result = resolveWeeklyUsage(readFile, startDir, now);
+
+      expect(result?.models[0]?.display_name).toHaveLength(40);
+      expect(result?.models[0]?.display_name).toBe("A".repeat(40));
+    });
+  });
+
   test("returns stale: false when age is under 2 hours", () => {
     const now = 1_700_100_000_000;
     const fetchedAt = now / 1000 - 3600; // 1h ago

@@ -453,6 +453,110 @@ describe("normalizeUsageResponse", () => {
 
     expect(result.map((m) => m.id)).toEqual(["b", "c", "a"]);
   });
+
+  // Security-reviewer finding: `scope.model.id`/`display_name` from the
+  // undocumented `/api/oauth/usage` response must never reach a rendered
+  // statusline segment verbatim (see `sanitizeDisplayText`'s own doc comment).
+  describe("sanitizes hostile scope.model.id/display_name before use", () => {
+    test("strips an ESC byte and an embedded newline from display_name, leaving only their harmless literal remainder", () => {
+      const [entry] = normalizeUsageResponse({
+        limits: [
+          {
+            group: "weekly",
+            percent: 12,
+            scope: {
+              model: {
+                id: "claude-opus-4",
+                display_name: "Opus\x1b[2J\nINJECTED",
+              },
+              surface: null,
+            },
+          },
+        ],
+      });
+
+      // The ESC byte that would trigger the terminal's "clear screen" control
+      // sequence, and the embedded newline, are both removed; the printable
+      // "[2J" characters that followed the ESC are not control characters
+      // themselves and remain as inert text.
+      expect(entry?.display_name).toBe("Opus[2JINJECTED");
+      // eslint-disable-next-line no-control-regex -- asserting the ABSENCE of the ESC/CR/LF control characters the sanitizer strips
+      expect(entry?.display_name).not.toMatch(/[\x1b\n\r]/);
+    });
+
+    test("clamps a display_name longer than 40 characters to exactly 40", () => {
+      const longName = "A".repeat(50);
+      const [entry] = normalizeUsageResponse({
+        limits: [
+          {
+            group: "weekly",
+            percent: 5,
+            scope: {
+              model: { id: "opus", display_name: longName },
+              surface: null,
+            },
+          },
+        ],
+      });
+
+      expect(entry?.display_name).toHaveLength(40);
+      expect(entry?.display_name).toBe("A".repeat(40));
+    });
+
+    test("strips control characters from a hostile id while leaving a clean display_name untouched", () => {
+      const [entry] = normalizeUsageResponse({
+        limits: [
+          {
+            group: "weekly",
+            percent: 8,
+            scope: {
+              model: { id: "\x1bmodel\x07-1", display_name: "Opus" },
+              surface: null,
+            },
+          },
+        ],
+      });
+
+      expect(entry?.id).toBe("model-1");
+      expect(entry?.display_name).toBe("Opus");
+    });
+
+    test("falls back the display_name to the id when display_name sanitizes to an empty string but id is valid", () => {
+      const [entry] = normalizeUsageResponse({
+        limits: [
+          {
+            group: "weekly",
+            percent: 9,
+            scope: {
+              model: { id: "opus-4", display_name: "\x1b\x07\x1f" },
+              surface: null,
+            },
+          },
+        ],
+      });
+
+      expect(entry).not.toBeUndefined();
+      expect(entry?.id).toBe("opus-4");
+      expect(entry?.display_name).toBe("opus-4");
+    });
+
+    test("drops the entry entirely when both id and display_name sanitize to an empty string", () => {
+      const result = normalizeUsageResponse({
+        limits: [
+          {
+            group: "weekly",
+            percent: 9,
+            scope: {
+              model: { id: "\x1b\x07", display_name: "\x1b\x07\x1f" },
+              surface: null,
+            },
+          },
+        ],
+      });
+
+      expect(result).toEqual([]);
+    });
+  });
 });
 
 describe("fetchUsage", () => {

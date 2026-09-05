@@ -534,6 +534,39 @@ export function formatSliceSegment(slice) {
   return seg("slice", 90, styled, 6);
 }
 
+const MAX_MODEL_TEXT_LENGTH = 40;
+
+/**
+ * Strips C0/C1 control characters (including ESC, CR/LF) and clamps length.
+ * `tmp/usage-weekly.json` is written out-of-band by `bin/usage-cache.mjs`
+ * (which already sanitizes at the source), but this file must not assume
+ * the cache is a trusted channel on its own -- a future writer bug, a stale
+ * cache from an older script version, or direct tampering could still land
+ * an unsanitized value here, and an embedded newline or ANSI escape would
+ * break this file's own always-exactly-five-line guarantee (security-review
+ * finding). Defense in depth: sanitize again on read, not only on write.
+ *
+ * @param {string} text
+ * @returns {string}
+ */
+function sanitizeDisplayText(text) {
+  const CONTROL_CHARS_PATTERN = new RegExp(
+    "[" +
+      String.fromCharCode(0) +
+      "-" +
+      String.fromCharCode(0x1f) +
+      String.fromCharCode(0x7f) +
+      "-" +
+      String.fromCharCode(0x9f) +
+      "]",
+    "g",
+  );
+  return text
+    .replace(CONTROL_CHARS_PATTERN, "")
+    .trim()
+    .slice(0, MAX_MODEL_TEXT_LENGTH);
+}
+
 /**
  * Resolves the per-model weekly-usage state for the current render, or null
  * when no usable cache exists. Reads `tmp/usage-weekly.json` (written
@@ -575,21 +608,37 @@ export function resolveWeeklyUsage(readFile, startDir, now) {
 
   const rawModels = /** @type {{ models?: unknown }} */ (entry).models;
   const models = Array.isArray(rawModels)
-    ? rawModels.filter(
-        (m) =>
-          typeof m === "object" &&
-          m !== null &&
-          typeof (/** @type {{ id?: unknown }} */ (m).id) === "string" &&
-          typeof (
-            /** @type {{ display_name?: unknown }} */ (m).display_name
-          ) === "string" &&
-          typeof (
-            /** @type {{ used_percentage?: unknown }} */ (m).used_percentage
-          ) === "number" &&
-          Number.isFinite(
-            /** @type {{ used_percentage?: unknown }} */ (m).used_percentage,
-          ),
-      )
+    ? rawModels
+        .map((m) => {
+          if (typeof m !== "object" || m === null) return null;
+          const mm =
+            /** @type {{ id?: unknown, display_name?: unknown, used_percentage?: unknown }} */ (
+              m
+            );
+          if (
+            typeof mm.id !== "string" ||
+            typeof mm.display_name !== "string"
+          ) {
+            return null;
+          }
+          if (
+            typeof mm.used_percentage !== "number" ||
+            !Number.isFinite(mm.used_percentage)
+          ) {
+            return null;
+          }
+          // Defense in depth (security review): sanitize again on read, not
+          // only trusting bin/usage-cache.mjs's own write-side sanitization.
+          const id = sanitizeDisplayText(mm.id);
+          const displayName = sanitizeDisplayText(mm.display_name);
+          if (id.length === 0 || displayName.length === 0) return null;
+          return {
+            id,
+            display_name: displayName,
+            used_percentage: mm.used_percentage,
+          };
+        })
+        .filter((m) => m !== null)
     : [];
   if (models.length === 0) return null;
 
