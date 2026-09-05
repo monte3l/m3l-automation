@@ -145,3 +145,4 @@ surface).
 | 0089 | [Skill invocation stance, the listing-budget ceiling, and where routing guidance lives](./0089-skill-invocation-stance-and-listing-budget.md)             | Accepted                                              |
 | 0090 | [Native `subagentStatusLine` supersedes the JSONL spoke-lifecycle tracker](./0090-subagent-statusline-supersedes-lifecycle-tracker.md)                    | Accepted                                              |
 | 0091 | [Podman and Containerfiles replace Docker for the console's app containers](./0091-podman-replaces-docker.md)                                             | Accepted                                              |
+| 0092 | [Out-of-band usage cache for the statusline's first network dependency](./0092-out-of-band-usage-cache.md)                                                | Accepted                                              |

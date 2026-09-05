@@ -85,6 +85,31 @@ const sliceLastRowInFlightEnv = {
 };
 const noSliceEnv = { ...fullEnv, slice: null };
 
+const weeklyUsageFreshEnv = {
+  ...fullEnv,
+  weeklyUsage: {
+    models: [
+      { id: "opus", display_name: "Opus", used_percentage: 78 },
+      { id: "sonnet", display_name: "Sonnet", used_percentage: 41 },
+    ],
+    ageSec: 300,
+    stale: false,
+  },
+};
+const weeklyUsageStaleEnv = {
+  ...fullEnv,
+  weeklyUsage: {
+    models: [
+      { id: "opus", display_name: "Opus", used_percentage: 92 },
+      { id: "sonnet", display_name: "Sonnet", used_percentage: 30 },
+      { id: "fable", display_name: "Fable", used_percentage: 12 },
+    ],
+    ageSec: 3 * 3600 + 15 * 60,
+    stale: true,
+  },
+};
+const noWeeklyUsageEnv = { ...fullEnv, weeklyUsage: null };
+
 const noGitPayload = {
   ...fullPayload,
   workspace: { ...fullPayload.workspace },
@@ -147,6 +172,13 @@ const FIXTURES = [
   },
   { name: "no-slice", payload: fullPayload, env: noSliceEnv },
   { name: "no-git", payload: noGitPayload, env: noGitEnv },
+  { name: "weekly-usage", payload: fullPayload, env: weeklyUsageFreshEnv },
+  {
+    name: "weekly-usage-stale",
+    payload: fullPayload,
+    env: weeklyUsageStaleEnv,
+  },
+  { name: "no-weekly-usage", payload: fullPayload, env: noWeeklyUsageEnv },
 ];
 
 for (const fixture of FIXTURES) {
@@ -188,3 +220,19 @@ console.log("=== corrupt tmp/slice-progress.json (live script) ===");
 console.log(`exit code: ${corruptProbe.status}`);
 console.log(`stdout: ${corruptProbe.stdout}`);
 console.log(`stderr: ${corruptProbe.stderr}`);
+
+// Same probe for tmp/usage-weekly.json (docs/adr/0092-out-of-band-usage-cache.md):
+// a corrupt cache must not break the five-row guarantee, just drop the
+// weekly-usage segments silently.
+const usageScratchDir = mkdtempSync(join(tmpdir(), "usage-weekly-probe-"));
+mkdirSync(join(usageScratchDir, "tmp"), { recursive: true });
+writeFileSync(join(usageScratchDir, "tmp/usage-weekly.json"), "not valid json");
+const usageCorruptProbe = spawnSync(process.execPath, [scriptPath], {
+  input: JSON.stringify({ workspace: { current_dir: usageScratchDir } }),
+  encoding: "utf8",
+});
+rmSync(usageScratchDir, { recursive: true, force: true });
+console.log("=== corrupt tmp/usage-weekly.json (live script) ===");
+console.log(`exit code: ${usageCorruptProbe.status}`);
+console.log(`stdout: ${usageCorruptProbe.stdout}`);
+console.log(`stderr: ${usageCorruptProbe.stderr}`);
