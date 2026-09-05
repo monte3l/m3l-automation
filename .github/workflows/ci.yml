@@ -637,6 +637,14 @@ jobs:
       - name: Check external-integration stance (integration-stance)
         run: pnpm check:integration-stance
 
+      # Reference-snapshot freshness (ADR-0093): every Context7-sourced skill
+      # reference snapshot carries a <!-- reference-freshness: ... --> stamp,
+      # its tracked packages haven't drifted past the declared refresh policy,
+      # and no retired `ctx7 <verb>` CLI instruction has crept back in. Offline
+      # by design (no network call), so it runs fine here.
+      - name: Check reference-snapshot freshness (reference-freshness)
+        run: pnpm check:reference-freshness
+
       # ADR-0009/ADR-0035 dependency direction: the import-x/no-restricted-paths
       # layering zones (internal sealing, aws island, core/script root) plus the
       # repo-wide import-x/no-cycle rule are still present and shaped in

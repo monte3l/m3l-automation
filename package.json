@@ -76,6 +76,7 @@
     "check:claude-cli-version": "node bin/check-claude-cli-version.mjs",
     "setup:host-resources": "node bin/setup-host-resources.mjs",
     "check:integration-stance": "node bin/check-integration-stance.mjs",
+    "check:reference-freshness": "node bin/check-reference-freshness.mjs",
     "check:github-features": "node bin/check-github-features.mjs",
     "check:label-drift": "node bin/check-label-drift.mjs",
     "check:control-chars": "node bin/check-control-chars.mjs",
