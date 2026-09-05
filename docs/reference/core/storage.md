@@ -42,6 +42,8 @@ Exported from `@m3l-automation/m3l-common/core` (`storage` subpath):
 | `M3LAppendOnlyReadOptions`           | type   | Options for `read()` — an optional `onTruncatedTail` callback; unknown keys are rejected.                                                                                     |
 | `M3LAppendOnlyTruncatedSegment`      | type   | The payload reported to `onTruncatedTail`: byte length and segment position.                                                                                                  |
 | `M3LAppendOnlyStreamReadError`       | class  | Thrown when a read fails: a malformed/oversized line, a missing sequence, an intolerable torn tail, a planted link/FIFO, or a segment I/O failure — including a failed close. |
+| `M3LAppendOnlyStream.listSegments`   | method | Inventories the segment files on disk — name, date, sequence, byte length, mtime — without reading or deleting any of them (X8 slice 5a-ii).                                  |
+| `M3LAppendOnlySegment`               | type   | One segment as `listSegments()` reports it: `name`, `datePrefix`, `sequence`, `byteLength`, `modifiedAtMs`. Carries no path.                                                  |
 
 ### Schema
 
@@ -181,6 +183,26 @@ A missing directory yields nothing rather than throwing -- a rebuild against a s
 
 It is explicitly **not** proof that a stream is complete, and it does not attempt to detect **line-boundary truncation inside a segment** (a segment cut off partway through, at a line boundary, so every remaining line still parses cleanly) -- that would require a per-segment entry count or a chained digest, which is a writer format change and is out of scope here. Two further gaps are worth stating plainly: this check cannot detect deletion of a date's own **last** segment (the remaining segments are still perfectly contiguous starting at 1), and it can false-positive if a caller ever prunes an old segment out-of-band mid-date. An attacker with write access to the stream directory can also renumber the remaining segments to close a gap before `read()` ever sees it. Gap detection raises the bar against accidental and casual tampering; it is not a completeness proof.
 
+### Listing an append-only stream's segments
+
+```ts
+import { M3LAppendOnlyStream } from "@m3l-automation/m3l-common/core";
+
+const stream = new M3LAppendOnlyStream({ directory: "/var/lib/m3l/audit" });
+const segments = await stream.listSegments();
+
+const bytes = segments.reduce((total, s) => total + s.byteLength, 0);
+console.log(
+  `${segments.length} segments, ${bytes} bytes under ${stream.directory}`,
+);
+```
+
+`listSegments()` returns an inventory of what is on disk right now, oldest `(datePrefix, sequence)` first — one `M3LAppendOnlySegment` per segment file, carrying its `name`, `datePrefix`, `sequence`, `byteLength`, and `modifiedAtMs`. It is a `stat` per file and nothing more: it never opens a segment, never parses a line, and never deletes or truncates anything. It exists so an operator can see an append-only trail's footprint, since this primitive by design never reclaims space itself.
+
+It carries **no path**, matching `M3LAppendOnlyTruncatedSegment` — the caller already holds `stream.directory`, and a directory path can carry tenant identifiers. A missing directory yields an empty array rather than throwing, the same posture `read()` takes: a stream nothing has ever been appended to is a normal, empty case. Only names this stream's own writer would have produced are listed, through the exact same parser `read()` uses — a foreign file, or one whose zero-padding this writer could not itself render (`2026-01-01-00005.jsonl`), is skipped rather than adopted. A per-file `stat` that fails `ENOENT` is skipped too, since rotation may legitimately have raced the listing; every **other** `stat` failure propagates, because a segment silently omitted from an inventory of an audit trail is the one outcome this method must not produce. A `readdir` failure that is not `ENOENT` throws `M3LAppendOnlyStreamReadError` with the underlying error chained as `cause`.
+
+**It deliberately does not check continuity.** `read()` rejects a gap in `(datePrefix, sequence)` within a date; `listSegments()` reports whatever is there, gap and all. The divergence is the point: an inventory that refuses to run against a damaged trail is unavailable exactly when an operator needs it most, and gap detection belongs on the path that hands entries back and must not vouch for a trail it cannot prove. Use `read()` when you need the guarantee; use `listSegments()` when you need to see the damage.
+
 ## Notes & behavior
 
 - **Synchronous.** `better-sqlite3` is synchronous; index operations do not return promises.
@@ -204,6 +226,7 @@ It is explicitly **not** proof that a stream is complete, and it does not attemp
 - **A torn tail is tolerable only on the last segment.** A trailing fragment with no terminating newline reflects a process that died mid-append. On the stream's LAST segment (in `(date, sequence)` order), supplying `onTruncatedTail` tolerates it -- the callback fires once and the fragment is dropped; with no callback, the default is to throw, so there is no silent path. The identical fragment in any earlier, mid-stream segment is data loss rather than a torn tail -- the writer only ever rotates after a complete line -- and it always throws, callback or not.
 - **A corrupt line throws rather than being skipped.** `read()` proves every line through the exact same `projectAppendOnlyEntry` the writer serializes through, so read and write share one definition of what the stream can hold. A line the writer could never have produced (a bare array or scalar, `-0`, a dangerous key, a too-deep structure, invalid UTF-8) means the file was tampered with or hand-edited; an audit trail that quietly reads back bytes it could not have written is not an audit trail, so this is never skipped and carries no callback escape.
 - **A segment that cannot be closed is reported, not swallowed.** After a segment has been read to completion, its handle is closed inside the read itself and a failure there throws `M3LAppendOnlyStreamReadError` with the underlying error chained as `cause` -- the segment was read faithfully, so there is no other outcome for the failure to displace, and reporting a clean read over a descriptor the OS never released would be a lie. On the two non-success paths the close is best-effort instead: with a read failure already in flight the close failure is **chained deeper onto that error's `cause` chain** rather than replacing it, and on a consumer's early `break` -- a normal, successful way to stop reading -- it stays silent. Code walking `cause` on a read error should therefore expect more than one link.
+- **Nothing here ever reclaims space, and `listSegments()` is the reason that is now visible.** The stream seals and rotates; it has no prune, no truncate, and no retention window, so a long-lived trail grows without bound. `listSegments()` is a read-only inventory (`stat` per file, no segment opened) so a caller can measure that footprint and decide. It is not a step toward pruning: because `read()` rejects a gap in a date's sequence numbers, deleting one segment out of the middle of a date makes every later read of that stream throw rather than freeing anything. Archiving whole dates is what the sequence check tolerates.
 - **A read mirrors the writer's own link refusal, plus a FIFO refusal of its own.** `read()` applies the same `O_NOFOLLOW`/symlink and `fstat`-based `nlink === 1`/hardlink checks the writer applies at append time -- a hardlinked segment is refused, not treated as harmless, because it lets a lower-privilege actor nominate unreadable content for a higher-privilege reader to republish. The same `fstat` also refuses any non-regular file (a planted FIFO in particular) rather than letting `open()` block forever; see "Limitations" above for what gap detection between segments does and does not prove.
 
 ## See also

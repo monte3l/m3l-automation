@@ -25,6 +25,8 @@ import type { Stats } from "node:fs";
 import { mkdir, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 
+import type { M3LAppendOnlySegment } from "../../core/storage/append-only-read-types.js";
+
 /**
  * One segment file name's parsed parts: its UTC date prefix and sequence.
  *
@@ -255,5 +257,80 @@ export async function nextSegment(
   return (
     (await adoptExistingSegment(directory, datePrefix, sequence)) ??
     newSegment(directory, datePrefix, sequence)
+  );
+}
+
+/**
+ * Lists every segment file actually on disk under `directory`, oldest
+ * `(datePrefix, sequence)` first — `readdir` order is filesystem-dependent,
+ * so this sort is load-bearing, not cosmetic.
+ *
+ * Only names {@link parseSegmentName} accepts (this writer's own naming
+ * convention) are candidates; a foreign file, a foreign extension, or a name
+ * that would not round-trip through this writer's own rendering is skipped,
+ * exactly as cold-start discovery skips it. A missing directory yields an
+ * empty array; any other `readdir` failure propagates raw to the caller,
+ * which owns the one typed-error boundary for this listing (see
+ * {@link M3LAppendOnlyStream.listSegments}).
+ *
+ * Each result is built from exactly one `stat`: `byteLength` from
+ * `stats.size`, `modifiedAtMs` from `stats.mtimeMs` — **not**
+ * `birthtimeMs`, unlike {@link adoptExistingSegment}'s age fallback. That
+ * function answers "how old is this segment for the age ceiling"; this one
+ * answers "what is this file right now", so the birthtime/mtime fallback
+ * reasoning does not apply here — do not "harmonise" the two. A `stat` that
+ * fails `ENOENT` skips that one entry (rotation legitimately raced the
+ * listing); every other `stat` failure propagates, same rule as everywhere
+ * else in this module.
+ *
+ * Deliberately does **not** apply the read side's continuity check
+ * (`append-only-reader.ts`'s `assertNoSequenceGap`): an inventory that
+ * refuses to run against a damaged trail — a segment deleted or lost between
+ * two others — is useless exactly when it is needed, and would make a
+ * cleanup or audit report fail instead of showing the operator the damage.
+ * Gap detection stays on the read path, which hands entries back and must
+ * not vouch for a trail it cannot prove; this function only reports what is
+ * actually there.
+ */
+export async function listSegmentFiles(
+  directory: string,
+): Promise<readonly M3LAppendOnlySegment[]> {
+  let names: string[];
+  try {
+    names = await readdir(directory);
+  } catch (cause) {
+    if (isFileNotFound(cause)) {
+      return [];
+    }
+    throw cause;
+  }
+
+  const segments: M3LAppendOnlySegment[] = [];
+  for (const name of names) {
+    const parsed = parseSegmentName(name);
+    if (parsed === undefined) {
+      continue;
+    }
+    let stats: Stats;
+    try {
+      stats = await stat(path.join(directory, name));
+    } catch (cause) {
+      if (isFileNotFound(cause)) {
+        continue;
+      }
+      throw cause;
+    }
+    segments.push({
+      name,
+      datePrefix: parsed.datePrefix,
+      sequence: parsed.sequence,
+      byteLength: stats.size,
+      modifiedAtMs: stats.mtimeMs,
+    });
+  }
+
+  return segments.sort(
+    (a, b) =>
+      a.datePrefix.localeCompare(b.datePrefix) || a.sequence - b.sequence,
   );
 }

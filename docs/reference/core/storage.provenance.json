@@ -63,37 +63,37 @@
         {
           "file": "packages/m3l-common/src/core/storage/M3LAppendOnlyStream.ts",
           "symbol": "M3LAppendOnlyStream",
-          "blob": "db9f4fc2360e218d9dfb8620292a1ea9a3b5203b"
+          "blob": "ef4f389eee3c29fa58bf65a03517a416fb962193"
         },
         {
           "file": "packages/m3l-common/src/core/storage/M3LAppendOnlyStream.ts",
           "symbol": "M3LAppendOnlyStreamOptions",
-          "blob": "db9f4fc2360e218d9dfb8620292a1ea9a3b5203b"
+          "blob": "ef4f389eee3c29fa58bf65a03517a416fb962193"
         },
         {
           "file": "packages/m3l-common/src/core/storage/M3LAppendOnlyStream.ts",
           "symbol": "M3LAppendOnlyEntry",
-          "blob": "db9f4fc2360e218d9dfb8620292a1ea9a3b5203b"
+          "blob": "ef4f389eee3c29fa58bf65a03517a416fb962193"
         },
         {
           "file": "packages/m3l-common/src/core/storage/M3LAppendOnlyStream.ts",
           "symbol": "M3LAppendOnlyValue",
-          "blob": "db9f4fc2360e218d9dfb8620292a1ea9a3b5203b"
+          "blob": "ef4f389eee3c29fa58bf65a03517a416fb962193"
         },
         {
           "file": "packages/m3l-common/src/core/storage/append-only-read-types.ts",
           "symbol": "M3L_APPEND_ONLY_MAX_SEGMENT_BYTES",
-          "blob": "b14d83faeea944ce634fa1c620531373d486a994"
+          "blob": "a6b0932a206be498ddbe81f7f41eb22825282b8a"
         },
         {
           "file": "packages/m3l-common/src/core/storage/append-only-read-types.ts",
           "symbol": "M3L_APPEND_ONLY_MAX_SEGMENT_AGE_MS",
-          "blob": "b14d83faeea944ce634fa1c620531373d486a994"
+          "blob": "a6b0932a206be498ddbe81f7f41eb22825282b8a"
         },
         {
           "file": "packages/m3l-common/src/core/storage/append-only-read-types.ts",
           "symbol": "M3L_APPEND_ONLY_MAX_LINE_BYTES",
-          "blob": "b14d83faeea944ce634fa1c620531373d486a994"
+          "blob": "a6b0932a206be498ddbe81f7f41eb22825282b8a"
         },
         {
           "file": "packages/m3l-common/src/core/storage/M3LAppendOnlyStreamError.ts",
@@ -103,12 +103,17 @@
         {
           "file": "packages/m3l-common/src/core/storage/append-only-read-types.ts",
           "symbol": "M3LAppendOnlyReadOptions",
-          "blob": "b14d83faeea944ce634fa1c620531373d486a994"
+          "blob": "a6b0932a206be498ddbe81f7f41eb22825282b8a"
         },
         {
           "file": "packages/m3l-common/src/core/storage/append-only-read-types.ts",
           "symbol": "M3LAppendOnlyTruncatedSegment",
-          "blob": "b14d83faeea944ce634fa1c620531373d486a994"
+          "blob": "a6b0932a206be498ddbe81f7f41eb22825282b8a"
+        },
+        {
+          "file": "packages/m3l-common/src/core/storage/append-only-read-types.ts",
+          "symbol": "M3LAppendOnlySegment",
+          "blob": "a6b0932a206be498ddbe81f7f41eb22825282b8a"
         },
         {
           "file": "packages/m3l-common/src/core/storage/M3LAppendOnlyStreamReadError.ts",
@@ -116,7 +121,7 @@
           "blob": "536cc3cd22bee53c5136ec404729ea7beabfaa2d"
         }
       ],
-      "retrieved": "2026-08-31"
+      "retrieved": "2026-09-05"
     },
     {
       "heading": "Notes & behavior",
@@ -144,7 +149,7 @@
         {
           "file": "packages/m3l-common/src/core/storage/M3LAppendOnlyStream.ts",
           "symbol": "M3LAppendOnlyStream",
-          "blob": "db9f4fc2360e218d9dfb8620292a1ea9a3b5203b"
+          "blob": "ef4f389eee3c29fa58bf65a03517a416fb962193"
         },
         {
           "file": "packages/m3l-common/src/core/storage/M3LAppendOnlyStreamError.ts",
@@ -152,7 +157,7 @@
           "blob": "b4a87eb313e7c39d03b7536369ebab49357c92a0"
         }
       ],
-      "retrieved": "2026-08-31"
+      "retrieved": "2026-09-05"
     }
   ]
 }

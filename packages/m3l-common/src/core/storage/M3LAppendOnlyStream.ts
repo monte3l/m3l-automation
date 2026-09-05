@@ -59,6 +59,7 @@ import type { M3LError } from "../errors/index.js";
 import { isFunction } from "../utils/guards.js";
 import { projectAppendOnlyEntry } from "../../internal/storage/append-only-projection.js";
 import { readAppendOnlySegments } from "../../internal/storage/append-only-reader.js";
+import { listSegmentFiles } from "../../internal/storage/append-only-segments.js";
 import type { AppendOnlyWriterErrors } from "../../internal/storage/append-only-writer.js";
 import { AppendOnlyWriter } from "../../internal/storage/append-only-writer.js";
 import {
@@ -66,7 +67,10 @@ import {
   validateReadOptions,
   validateStreamOptions,
 } from "../../internal/storage/append-only-options.js";
-import type { M3LAppendOnlyReadOptions } from "./append-only-read-types.js";
+import type {
+  M3LAppendOnlyReadOptions,
+  M3LAppendOnlySegment,
+} from "./append-only-read-types.js";
 import { M3LAppendOnlyStreamError } from "./M3LAppendOnlyStreamError.js";
 import { M3LAppendOnlyStreamReadError } from "./M3LAppendOnlyStreamReadError.js";
 
@@ -450,5 +454,43 @@ export class M3LAppendOnlyStream {
       buildError: (message, errorOptions) =>
         new M3LAppendOnlyStreamReadError(message, errorOptions),
     }) as AsyncIterable<M3LAppendOnlyEntry>;
+  }
+
+  /**
+   * Inventories every segment file actually on disk, oldest
+   * `(datePrefix, sequence)` first. Never opens, deletes, or truncates a
+   * segment — a real `readdir` plus one `stat` per file. A missing directory
+   * yields an empty array.
+   *
+   * Unlike {@link M3LAppendOnlyStream.read}, this does **not** check that a
+   * date's sequences are contiguous: an inventory that refuses to run against
+   * a damaged trail is useless exactly when the damage is why someone reaches
+   * for it. Gap detection stays on `read()`, which hands entries back and
+   * must vouch for the trail it hands them from.
+   *
+   * @throws {@link M3LAppendOnlyStreamReadError} when listing the directory
+   *   fails for a reason other than it not existing.
+   *
+   * @example
+   * ```ts
+   * import { M3LAppendOnlyStream } from "@m3l-automation/m3l-common/core";
+   *
+   * const stream = new M3LAppendOnlyStream({ directory: "data/output/audit" });
+   * for (const segment of await stream.listSegments()) {
+   *   console.log(segment.name, segment.byteLength);
+   * }
+   * ```
+   */
+  async listSegments(): Promise<readonly M3LAppendOnlySegment[]> {
+    let segments: readonly M3LAppendOnlySegment[];
+    try {
+      segments = await listSegmentFiles(this.streamDirectory);
+    } catch (cause) {
+      throw new M3LAppendOnlyStreamReadError(
+        "append-only stream: failed to list segments",
+        { cause },
+      );
+    }
+    return Array.from(segments);
   }
 }

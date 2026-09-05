@@ -98,6 +98,35 @@ export interface M3LAppendOnlyTruncatedSegment {
 }
 
 /**
+ * One segment file resolved by {@link M3LAppendOnlyStream.listSegments}.
+ *
+ * Carries no path, for the same reason {@link M3LAppendOnlyTruncatedSegment}
+ * does: the stream's directory is caller input, and the caller already has
+ * {@link M3LAppendOnlyStream.directory} to rebuild the full path from `name`.
+ *
+ * @example
+ * ```ts
+ * import type { M3LAppendOnlySegment } from "@m3l-automation/m3l-common/core";
+ *
+ * function report(segment: M3LAppendOnlySegment): void {
+ *   console.log(`${segment.name}: ${String(segment.byteLength)} bytes`);
+ * }
+ * ```
+ */
+export interface M3LAppendOnlySegment {
+  /** The file name, `<YYYY-MM-DD>-<NNNN>.jsonl`. */
+  readonly name: string;
+  /** The UTC date prefix the segment is stamped with. */
+  readonly datePrefix: string;
+  /** Its sequence number within that date. */
+  readonly sequence: number;
+  /** The file's current size in bytes. */
+  readonly byteLength: number;
+  /** The file's mtime, epoch milliseconds. */
+  readonly modifiedAtMs: number;
+}
+
+/**
  * Options for {@link M3LAppendOnlyStream.read}.
  *
  * With no `onTruncatedTail`, an unterminated trailing fragment on the
