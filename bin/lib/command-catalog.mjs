@@ -286,6 +286,11 @@ export const COMMAND_CATALOG = [
       "Removes tmp/slice-progress.json, blanking the statusline's slice-progress segment. Run from finishing-work once a slice sequence's last row lands.",
   },
   {
+    name: "usage:refresh",
+    description:
+      "Fetches Anthropic's undocumented /api/oauth/usage endpoint (credential from CLAUDE_CODE_OAUTH_TOKEN or ~/.claude/.credentials.json) and writes tmp/usage-weekly.json, the state the statusline's per-model weekly-usage segments read (ADR-0092). Fail-soft: no credential, a non-200 response, or an unparseable body all leave any existing cache untouched. Normally run out-of-band by the refresh-usage-cache.mjs Stop hook, not by hand.",
+  },
+  {
     name: "check:integration-stance",
     description:
       "Verifies every GitHub-talking .claude/skills/*/SKILL.md carries an ADR-0030 stance reference, contains no retired policy claim, and names the mechanism (gh CLI vs GitHub MCP) it actually uses. Run after editing a GitHub-facing skill.",
