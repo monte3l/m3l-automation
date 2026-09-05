@@ -107,6 +107,15 @@ describe("parseIndexLinks", () => {
     const text = "| 2026-07-03 | placeholder, no link |";
     expect(parseIndexLinks(text)).toEqual([]);
   });
+
+  test("extracts both links from a single row citing two logs, sharing that row's date and line", () => {
+    const text =
+      "| 2026-07-15 | close-out — merge outcomes | [a](./2026-07-15-a.md), [b](./2026-07-15-b.md) |";
+    expect(parseIndexLinks(text)).toEqual([
+      { file: "2026-07-15-a.md", date: "2026-07-15", line: 1 },
+      { file: "2026-07-15-b.md", date: "2026-07-15", line: 1 },
+    ] satisfies IndexLink[]);
+  });
 });
 
 // ---------------------------------------------------------------------------

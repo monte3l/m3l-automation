@@ -22,8 +22,12 @@ export const README_PATH = "docs/logs/README.md";
 /** A README row's leading date cell, e.g. `| 2026-08-27 |`. */
 const ROW_DATE_RE = /^\|\s*(\d{4}-\d{2}-\d{2})\s*\|/;
 
-/** The `[text](./file.md)` link a conforming row carries. */
-const ROW_LINK_RE = /\]\(\.\/([A-Za-z0-9._-]+\.md)\)/;
+/**
+ * The `[text](./file.md)` link a conforming row carries — global so a row
+ * linking more than one log (e.g. a close-out row citing several logs) is
+ * fully captured, not just the first.
+ */
+const ROW_LINK_RE = /\]\(\.\/([A-Za-z0-9._-]+\.md)\)/g;
 
 /** A log filename's `YYYY-MM-DD-` date prefix. */
 const FILENAME_DATE_RE = /^(\d{4}-\d{2}-\d{2})-/;
@@ -37,11 +41,13 @@ const FILENAME_DATE_RE = /^(\d{4}-\d{2}-\d{2})-/;
  *
  * A line with a date cell but no `./*.md` link (a malformed row) is silently
  * skipped rather than reported — no such row exists today, and inventing a
- * finding for a shape that has never occurred would be speculative.
+ * finding for a shape that has never occurred would be speculative. A row
+ * linking more than one log (e.g. a close-out row citing several) yields one
+ * entry per link, all sharing that row's date and line.
  *
  * @param {string} readmeText docs/logs/README.md's text
  * @returns {{ file: string, date: string, line: number }[]} one entry per
- *   conforming row, in document order; `line` is 1-indexed for annotations
+ *   link found, in document order; `line` is 1-indexed for annotations
  */
 export function parseIndexLinks(readmeText) {
   /** @type {{ file: string, date: string, line: number }[]} */
@@ -50,9 +56,9 @@ export function parseIndexLinks(readmeText) {
   readmeText.split("\n").forEach((text, index) => {
     const dateMatch = ROW_DATE_RE.exec(text);
     if (!dateMatch) return;
-    const linkMatch = ROW_LINK_RE.exec(text);
-    if (!linkMatch) return;
-    links.push({ file: linkMatch[1], date: dateMatch[1], line: index + 1 });
+    for (const linkMatch of text.matchAll(ROW_LINK_RE)) {
+      links.push({ file: linkMatch[1], date: dateMatch[1], line: index + 1 });
+    }
   });
 
   return links;
