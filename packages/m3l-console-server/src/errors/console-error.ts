@@ -119,6 +119,24 @@ import { Core } from "@m3l-automation/m3l-common";
  * module itself wrote, so it is a genuine internal fault, not a caller
  * mistake.
  *
+ * `ERR_CONSOLE_SESSION_ARTIFACT_GONE` is a later, narrower addition to that
+ * same module (X8 slice 5b-ii): raised by `readArtifact` when opening a
+ * file-backed artifact's referenced path fails with `ENOENT` specifically.
+ * A completed step's artifact becomes eligible for deletion by
+ * `session-artifact-retention.ts`'s retention sweep — a normal
+ * administrative act, not a fault — and the step's own `resultRef` is
+ * stored evidence the artifact once existed, so a missing file is reported
+ * as "gone", never "never was" (`ERR_CONSOLE_NOT_FOUND`) and never folded
+ * into `_CORRUPT`, which would misreport an expected, self-inflicted
+ * outcome as a server malfunction. The `ENOENT` check is deliberately
+ * narrow: every other errno at that same `open()` call — `ELOOP` above
+ * all, which the read path's `O_NOFOLLOW` flag exists specifically to
+ * produce when a symlink has been planted at the final path component,
+ * and also `EACCES`, `ENOTDIR`, and anything else — still raises
+ * `_CORRUPT`, because those mean the filesystem drifted from what this
+ * module itself wrote in some OTHER way, and widening the `ENOENT` check
+ * to swallow them would silently defeat that security control.
+ *
  * The penultimate code is X10b's own addition (`runs/catalog.ts`,
  * `runs/descriptors.ts`): `ERR_CONSOLE_SCRIPT_INTROSPECTION_FAILED` is
  * raised by `describe` when a script's config module resolved (so it
@@ -191,6 +209,7 @@ export type M3LConsoleErrorCode =
   | "ERR_CONSOLE_SESSION_REFERENCE_INVALID"
   | "ERR_CONSOLE_SESSION_ARTIFACT_TOO_LARGE"
   | "ERR_CONSOLE_SESSION_ARTIFACT_CORRUPT"
+  | "ERR_CONSOLE_SESSION_ARTIFACT_GONE"
   | "ERR_CONSOLE_SCRIPT_INTROSPECTION_FAILED"
   | "ERR_CONSOLE_AUDIT_WRITE_FAILED"
   | "ERR_CONSOLE_AUDIT_RECORD_INVALID";

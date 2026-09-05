@@ -55,7 +55,7 @@ export const RUN_REPORT_FILE_NAME = "run-report.json";
  * letters, digits, underscore, hyphen — never a separator or a `.`. The
  * orchestrator's ids are `crypto.randomUUID()` values, well inside this, but
  * the id arriving here came off a URL and is treated as untrusted regardless.
- * Mirrors `sessions/artifacts.ts`'s own `SAFE_ID_PATTERN` for the same reason.
+ * Mirrors `sessions/artifact-codec.ts`'s own `SAFE_ID_PATTERN` for the same reason.
  */
 const SAFE_RUN_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
 

@@ -22,6 +22,9 @@ import type {
 /** The documented default run-output retention window, in milliseconds (30 days). */
 const DEFAULT_RUN_OUTPUT_RETENTION_MS = 2_592_000_000;
 
+/** The documented default session-artifact retention window, in milliseconds (90 days). */
+const DEFAULT_SESSION_ARTIFACT_RETENTION_MS = 7_776_000_000;
+
 /** Builds a minimal valid env, then applies `overrides` on top. */
 function buildEnv(
   overrides: Record<string, string | undefined> = {},
@@ -60,6 +63,7 @@ describe("loadRetentionConfig — defaults", () => {
 
     expect(config).toEqual({
       runOutputMs: DEFAULT_RUN_OUTPUT_RETENTION_MS,
+      artifactMs: DEFAULT_SESSION_ARTIFACT_RETENTION_MS,
     });
   });
 
@@ -67,6 +71,7 @@ describe("loadRetentionConfig — defaults", () => {
     const config = loadRetentionConfig();
 
     expect(config.runOutputMs).toBe(DEFAULT_RUN_OUTPUT_RETENTION_MS);
+    expect(config.artifactMs).toBe(DEFAULT_SESSION_ARTIFACT_RETENTION_MS);
   });
 });
 
@@ -76,7 +81,23 @@ describe("loadRetentionConfig — overridden", () => {
       env: buildEnv({ M3L_CONSOLE_RUNS_OUTPUT_RETENTION_MS: "3600000" }),
     });
 
-    expect(config).toEqual({ runOutputMs: 3_600_000 });
+    expect(config).toEqual({
+      runOutputMs: 3_600_000,
+      artifactMs: DEFAULT_SESSION_ARTIFACT_RETENTION_MS,
+    });
+  });
+
+  test("resolves the overridden session-artifact env var into the config", () => {
+    const config = loadRetentionConfig({
+      env: buildEnv({
+        M3L_CONSOLE_SESSIONS_ARTIFACT_RETENTION_MS: "1800000",
+      }),
+    });
+
+    expect(config).toEqual({
+      runOutputMs: DEFAULT_RUN_OUTPUT_RETENTION_MS,
+      artifactMs: 1_800_000,
+    });
   });
 });
 
@@ -92,11 +113,31 @@ describe("loadRetentionConfig — validation", () => {
     },
   );
 
+  test.each<[string]>([["0"], ["-1"], ["1.5"]])(
+    "throws ERR_CONSOLE_CONFIG_INVALID for session-artifact retention %s",
+    (value) => {
+      expectRetentionConfigError(() =>
+        loadRetentionConfig({
+          env: buildEnv({
+            M3L_CONSOLE_SESSIONS_ARTIFACT_RETENTION_MS: value,
+          }),
+        }),
+      );
+    },
+  );
+
   test("accepts the boundary run-output retention of 1", () => {
     const config = loadRetentionConfig({
       env: buildEnv({ M3L_CONSOLE_RUNS_OUTPUT_RETENTION_MS: "1" }),
     });
     expect(config.runOutputMs).toBe(1);
+  });
+
+  test("accepts the boundary session-artifact retention of 1", () => {
+    const config = loadRetentionConfig({
+      env: buildEnv({ M3L_CONSOLE_SESSIONS_ARTIFACT_RETENTION_MS: "1" }),
+    });
+    expect(config.artifactMs).toBe(1);
   });
 
   test("accepts a very large value, the documented way to effectively disable the sweep", () => {
@@ -106,6 +147,15 @@ describe("loadRetentionConfig — validation", () => {
       }),
     });
     expect(config.runOutputMs).toBe(9_007_199_254_740_991);
+  });
+
+  test("accepts a very large session-artifact value, the documented way to effectively disable the sweep", () => {
+    const config = loadRetentionConfig({
+      env: buildEnv({
+        M3L_CONSOLE_SESSIONS_ARTIFACT_RETENTION_MS: "9007199254740991",
+      }),
+    });
+    expect(config.artifactMs).toBe(9_007_199_254_740_991);
   });
 });
 
@@ -146,6 +196,28 @@ describe("dotted config key drift pin", () => {
   test("the derived env var name matches the documented M3L_CONSOLE_RUNS_OUTPUT_RETENTION_MS literal", () => {
     expect(Core.deriveEnvVarName(RUN_OUTPUT_RETENTION_DOTTED_KEY)).toBe(
       "M3L_CONSOLE_RUNS_OUTPUT_RETENTION_MS",
+    );
+  });
+});
+
+/** The documented dotted config key for the session-artifact retention window, asserted literally. */
+const SESSION_ARTIFACT_RETENTION_DOTTED_KEY =
+  "m3l.console.sessions.artifact.retention.ms";
+
+describe("dotted config key drift pin — session-artifact retention", () => {
+  test("the literal dotted key's derived env var actually drives the resolved config", () => {
+    const config = loadRetentionConfig({
+      env: buildEnv({
+        [Core.deriveEnvVarName(SESSION_ARTIFACT_RETENTION_DOTTED_KEY)]: "99",
+      }),
+    });
+
+    expect(config.artifactMs).toBe(99);
+  });
+
+  test("the derived env var name matches the documented M3L_CONSOLE_SESSIONS_ARTIFACT_RETENTION_MS literal", () => {
+    expect(Core.deriveEnvVarName(SESSION_ARTIFACT_RETENTION_DOTTED_KEY)).toBe(
+      "M3L_CONSOLE_SESSIONS_ARTIFACT_RETENTION_MS",
     );
   });
 });

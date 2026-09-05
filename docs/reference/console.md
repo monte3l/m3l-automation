@@ -179,11 +179,22 @@ The X6 session codes:
 | `ERR_CONSOLE_SESSION_TRANSITION_INVALID` | 409    | A guarded status transition matched no row (e.g. answering an already-answered decision). |
 | `ERR_CONSOLE_SESSION_CLOSED`             | 409    | A step was appended to a session that is not `open`.                                      |
 | `ERR_CONSOLE_SESSION_ARTIFACT_TOO_LARGE` | 413    | A step's recorded output exceeds the artifact or session-total cap.                       |
+| `ERR_CONSOLE_SESSION_ARTIFACT_GONE`      | 410    | The step's artifact file no longer exists — deleted by the retention sweep.               |
 | `ERR_CONSOLE_SESSION_LIMIT_EXCEEDED`     | 429    | The open-session cap (`m3l.console.sessions.open.max`) is reached.                        |
 
 `ERR_CONSOLE_SESSION_ARTIFACT_CORRUPT` (500, `origin: "library"`) is a
 server-fault code — a persisted artifact's on-disk bytes no longer match its
 recorded digest, or its reference envelope cannot be parsed.
+
+`ERR_CONSOLE_SESSION_ARTIFACT_GONE` (410) is the deliberate counterpart to
+it, and the two are told apart by exactly one condition: opening the
+artifact file failed with `ENOENT`. The step's stored reference is evidence
+the artifact once existed, so an absent file is _gone_, never _never was_ —
+which is why this is a 410 rather than a 404, and why it is not classified
+as a server fault. Every other errno keeps reporting `_CORRUPT`. `ELOOP` in
+particular does: the file is opened `O_NOFOLLOW` so that a symlink planted
+at the artifact path fails loudly, and reading that as a routine retention
+deletion would defeat the check.
 
 `ERR_CONSOLE_SCRIPT_INTROSPECTION_FAILED` (500, `origin: "library"`) is the
 other server-fault code a caller can provoke: a script's config module exists
@@ -472,7 +483,8 @@ Two consequences worth stating plainly:
   (`m3l.console.runs.output.retention.ms`) and a sweep that deletes eligible
   ones on demand — but nothing invokes that sweep yet, so in a running server
   they still live until the data directory is cleared by hand. Session
-  artifacts have neither, and remain entirely hand-cleared.
+  artifacts now have the same posture: a declared policy and a sweep, with
+  nothing calling it.
 
 ### When there is no report
 
@@ -870,6 +882,11 @@ step ids must not be able to learn that one exists somewhere else.
 `ERR_CONSOLE_SESSION_ARTIFACT_CORRUPT` (500) surfaces a persisted reference
 that no longer decodes, or a file whose digest no longer matches — a real
 fault, never folded into the 404s above.
+`ERR_CONSOLE_SESSION_ARTIFACT_GONE` (410) is the separate, non-fault case:
+the reference decodes and the step is real, but the file has been removed by
+the retention sweep. It is also kept out of the 404s above, and for the same
+reason in reverse — the step exists and once had an artifact, so reporting
+"no such step" would be the wrong answer to a different question.
 
 ## `POST /api/v1/sessions/:id/bindings`
 
@@ -1015,20 +1032,20 @@ settings above.
 
 **Known limits, sessions:**
 
-- **No age-based sweep or operator cleanup command**, and — unlike run
-  outputs — not even a declared retention policy. A session's artifacts live
-  until the process's data directory is cleared by hand.
-
-  The reason they were held back rather than swept alongside run outputs is
-  the read path. A missing run-output directory is indistinguishable from a
-  run that never wrote a report, so it degrades to the same `404` that case
-  already returns. A missing artifact file has no such reading: every read
-  failure raises `ERR_CONSOLE_SESSION_ARTIFACT_CORRUPT`, which is a `500`
-  server fault meaning the filesystem drifted from what the server itself
-  wrote. Sweeping artifacts today would make the most routine outcome of the
-  feature — reading one that policy deliberately deleted — report as
-  corruption. Telling a retained-out artifact apart from a corrupt one comes
-  first, and is a later X8 slice.
+- **A declared artifact retention policy prunes nothing on its own.**
+  `m3l.console.sessions.artifact.retention.ms` says when a completed step's
+  artifact becomes eligible for deletion, and a sweep exists that deletes
+  eligible ones — but no code path calls it. There is no timer and no
+  boot-time sweep; ADR-0070 requires an operator-run cleanup command and
+  forbids silent deletion, and that command is a later X8 slice. Until it
+  ships, a session's artifacts live until the data directory is cleared by
+  hand, whatever the setting says.
+- **An unfinished step's artifact is never eligible.** Eligibility is keyed
+  to the step's own `ended_at_ms`, not the file's timestamp, so a step still
+  running is skipped no matter how old its artifact file looks. An artifact
+  file whose step record is missing is reported as an **orphan** and left
+  alone, and an emptied session directory is left in place rather than
+  removed — deleting it would race a concurrent step writing into it.
 
 - **A step's addressable output is outcome-only** (`{ outcome, exitCode }`)
   — the canonical "select a field out of a real command's output dump"
@@ -1189,6 +1206,18 @@ directory is what an operator re-reads when investigating a failure or diffing
 a rerun. The same validation applies — a positive integer, no "disabled"
 sentinel, a very large value to keep outputs indefinitely.
 
+Session-artifact retention is the same setting one artifact class over, keyed
+to the owning step's completion.
+
+| Setting                                      | Env var                                      | Default                |
+| -------------------------------------------- | -------------------------------------------- | ---------------------- |
+| `m3l.console.sessions.artifact.retention.ms` | `M3L_CONSOLE_SESSIONS_ARTIFACT_RETENTION_MS` | `7776000000` (90 days) |
+
+Ninety days, longer than a run output's thirty, because a session artifact is
+the recorded output of a human-driven workbench step — re-read when
+reconstructing what an operator did and why, rather than while diagnosing a
+single run.
+
 The age is the run's own `ended_at_ms`, not the directory's filesystem
 timestamp. A run that is still queued or running is never eligible whatever
 its directory's mtime says, and a directory whose run record is missing — or
@@ -1217,9 +1246,9 @@ Stated plainly rather than left to be discovered:
   slice. Until it ships, every console-launched run still leaves its output
   directory behind for the lifetime of the data directory, whatever the
   setting says.
-- **Session artifacts have no policy and no sweep** — not even a declared
-  one. See the sessions Known-limits entry above for why they were held back
-  rather than swept alongside run outputs.
+- **A declared artifact retention policy prunes nothing on its own** either.
+  Same posture as run outputs, and the same reason — see the sessions
+  Known-limits entry above.
 - **A declared telemetry retention policy prunes nothing on its own.** The
   `m3l.console.telemetry.retention.*` settings above declare when a rollup
   bucket becomes eligible for deletion; they do not delete it. No timer, no

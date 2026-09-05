@@ -28,16 +28,17 @@ import type {
 } from "../store/sessions-repository.js";
 
 import type { M3LSessionArtifactStore } from "./artifacts.js";
-import { decodeArtifactRef } from "./artifacts.js";
+import { decodeArtifactRef } from "./artifact-codec.js";
 
 /**
  * One step, redacted for a LIST response: every `M3LSessionStepRecord` field
  * except `resultRef`, plus `hasResult`.
  *
  * **Why `resultRef` is dropped.** It is the step's ENCODED artifact
- * reference — for an inline artifact (`sessions/artifacts.ts`'s
- * `encodeArtifactRef`/{@link M3LSessionArtifactRef}) it literally embeds the
- * resolved VALUE, so it must never appear in a step LIST response. The
+ * reference — for an inline artifact (`sessions/artifact-codec.ts`'s
+ * `encodeArtifactRef`/{@link "./artifact-codec.js".M3LSessionArtifactRef})
+ * it literally embeds the resolved VALUE, so it must never appear in a step
+ * LIST response. The
  * sanctioned read path for a step's value is the existing
  * `GET .../steps/:stepId/artifact` route, served by
  * {@link SessionReadMethods.readStepArtifact} on this same interface — this

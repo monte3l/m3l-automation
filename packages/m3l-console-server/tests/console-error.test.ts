@@ -13,7 +13,7 @@ import {
 import type { M3LConsoleErrorCode } from "../src/errors/console-error.js";
 
 describe("M3LConsoleErrorCode", () => {
-  test("is the exact thirty-seven-member union the contract declares (X2/X3-A1/X4/X6/X7/X10b)", () => {
+  test("is the exact thirty-nine-member union the contract declares (X2/X3-A1/X4/X6/X7/X8/X10b)", () => {
     expectTypeOf<M3LConsoleErrorCode>().toEqualTypeOf<
       | "ERR_CONSOLE_CONFIG_INVALID"
       | "ERR_CONSOLE_BAD_REQUEST"
@@ -50,6 +50,7 @@ describe("M3LConsoleErrorCode", () => {
       | "ERR_CONSOLE_SESSION_REFERENCE_INVALID"
       | "ERR_CONSOLE_SESSION_ARTIFACT_TOO_LARGE"
       | "ERR_CONSOLE_SESSION_ARTIFACT_CORRUPT"
+      | "ERR_CONSOLE_SESSION_ARTIFACT_GONE"
       | "ERR_CONSOLE_SCRIPT_INTROSPECTION_FAILED"
       | "ERR_CONSOLE_AUDIT_WRITE_FAILED"
       | "ERR_CONSOLE_AUDIT_RECORD_INVALID"

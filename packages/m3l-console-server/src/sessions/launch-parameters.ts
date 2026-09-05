@@ -15,7 +15,7 @@ import { M3LConsoleError } from "../errors/console-error.js";
 import type { M3LConsoleSessionsRepository } from "../store/sessions-repository.js";
 
 import type { M3LSessionArtifactStore } from "./artifacts.js";
-import { decodeArtifactRef } from "./artifacts.js";
+import { decodeArtifactRef } from "./artifact-codec.js";
 import type { M3LBindingExpectedType } from "./binding.js";
 import { validateBindingValue } from "./binding.js";
 import { parseStepReference, resolveStepReference } from "./reference.js";

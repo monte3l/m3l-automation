@@ -20,11 +20,9 @@
 import { describe, expect, test } from "vitest";
 
 import { M3LConsoleError } from "../src/errors/console-error.js";
-import { encodeArtifactRef } from "../src/sessions/artifacts.js";
-import type {
-  M3LSessionArtifactRef,
-  M3LSessionArtifactStore,
-} from "../src/sessions/artifacts.js";
+import { encodeArtifactRef } from "../src/sessions/artifact-codec.js";
+import type { M3LSessionArtifactRef } from "../src/sessions/artifact-codec.js";
+import type { M3LSessionArtifactStore } from "../src/sessions/artifacts.js";
 // RED: `M3LSessionStepSummary` does not exist yet in `service-reads.ts` —
 // this import is the deliberate compile failure that keeps this file RED
 // until the GREEN pass adds it.
@@ -673,7 +671,7 @@ describe("M3LSessionService — readStepArtifact()", () => {
 // `Omit<M3LSessionStepRecord, "resultRef"> & { readonly hasResult: boolean }`
 // — a DELIBERATE redaction: `resultRef` is the step's ENCODED artifact
 // reference, which for an inline artifact literally embeds the resolved
-// VALUE (see `sessions/artifacts.ts`'s `encodeArtifactRef`), so it must never
+// VALUE (see `sessions/artifact-codec.ts`'s `encodeArtifactRef`), so it must never
 // appear in a step LIST response. The sanctioned way to read a step's value
 // is the already-existing `GET .../steps/:stepId/artifact` route — exactly
 // the same "no resolved VALUE" boundary `listBindingsForSession` draws for
