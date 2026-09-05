@@ -31,12 +31,18 @@
  * @packageDocumentation
  */
 
-import { readdir, rm } from "node:fs/promises";
+import { rm } from "node:fs/promises";
 import { join } from "node:path";
 
-import { CONFIG_INVALID_CODE } from "./config/settings.js";
 import { M3LConsoleError } from "./errors/console-error.js";
 import { errnoCodeOf } from "./errors/errno.js";
+import type { AccumulatedFailure, MutableOutcome } from "./retention-walk.js";
+import {
+  readdirRoot,
+  sortByName,
+  validateNowMs,
+  validateRetentionMs,
+} from "./retention-walk.js";
 import { isTerminalRunStatus } from "./store/run-status.js";
 import type { M3LConsoleRunsRepository } from "./store/runs-repository.js";
 
@@ -61,16 +67,12 @@ interface RunOutputPruneFailure {
 }
 
 /**
- * One accumulated deletion failure, paired internally with the original
- * caught value so the thrown {@link M3LConsoleError}'s `cause` can chain the
- * FIRST failure's original error unchanged (by identity) while
- * `context.failures` publishes only the narrow {@link RunOutputPruneFailure}
- * shape for every failure.
+ * One accumulated deletion failure for {@link pruneRunOutputs}: pairs the
+ * original caught value (for chaining as `cause`) with the narrow
+ * {@link RunOutputPruneFailure} shape published in `context.failures`.
+ * Uses {@link "./retention-walk.js".AccumulatedFailure} as its shared base.
  */
-interface AccumulatedFailure {
-  readonly published: RunOutputPruneFailure;
-  readonly cause: unknown;
-}
+type RunAccumulatedFailure = AccumulatedFailure<RunOutputPruneFailure>;
 
 /**
  * The result of one {@link pruneRunOutputs} run: every swept directory
@@ -136,14 +138,6 @@ export interface PruneRunOutputsOptions {
   readonly nowMs?: () => number;
 }
 
-/** The mutable counters {@link pruneRunOutputs} accumulates across one walk. */
-interface MutableOutcome {
-  deleted: number;
-  retainedLive: number;
-  retainedYoung: number;
-  orphaned: number;
-}
-
 /**
  * One directory's classification result: either the bucket it landed in
  * (matching one of {@link M3LRunOutputPruneOutcome}'s four fields), or a
@@ -157,52 +151,7 @@ type ClassifyResult =
       readonly bucket:
         "deleted" | "retainedLive" | "retainedYoung" | "orphaned";
     }
-  | { readonly bucket: "failed"; readonly failure: AccumulatedFailure };
-
-/**
- * Validates `options.retentionMs` before {@link pruneRunOutputs} touches the
- * filesystem, against the exact predicate `config/retention.ts` enforces at
- * boot for the same window (`m3l.console.runs.output.retention.ms`) —
- * deliberately duplicated here rather than imported, because
- * `pruneRunOutputs` is a public function a caller can invoke with a
- * hand-built `retentionMs` that never passed through `loadRetentionConfig`
- * (X8 slice 5c's operator CLI subcommand is exactly such a caller, and
- * `Number("30d")` is `NaN`). The retention window is the ONLY thing bounding
- * a recursive `rm` of a run's output directory: with a `NaN` on the
- * right-hand side, `endedAtMs >= nowMs - retentionMs` is always `false`, so
- * every terminal run falls through to deletion; a negative value puts the
- * cutoff in the future, so every terminal run is "old enough" immediately.
- * Either failure mode is unbounded deletion, not merely a wrong number, so
- * this re-validates a value the loader may already have checked rather than
- * trusting every caller to have gone through it.
- */
-function validateRetentionMs(retentionMs: number): void {
-  if (!Number.isInteger(retentionMs) || retentionMs < 1) {
-    throw new M3LConsoleError(
-      CONFIG_INVALID_CODE,
-      "'retentionMs' must be an integer of at least 1",
-      { context: { retentionMs } },
-    );
-  }
-}
-
-/**
- * Validates the value returned by the resolved `nowMs()` clock, read once at
- * the top of {@link pruneRunOutputs} before any directory is classified. A
- * `NaN` clock reading has the same effect as an invalid `retentionMs`: the
- * eligibility comparison `endedAtMs >= nowMs - retentionMs` becomes `false`
- * for every terminal run, so a broken clock silently turns a bounded sweep
- * into an unconditional one.
- */
-function validateNowMs(now: number): void {
-  if (!Number.isFinite(now)) {
-    throw new M3LConsoleError(
-      CONFIG_INVALID_CODE,
-      "the resolved 'nowMs()' clock reading must be a finite number",
-      { context: { now } },
-    );
-  }
-}
+  | { readonly bucket: "failed"; readonly failure: RunAccumulatedFailure };
 
 /**
  * Classifies one run-output directory against its run record (if any) and,
@@ -339,17 +288,12 @@ export async function pruneRunOutputs(
     orphaned: 0,
   };
 
-  let entries;
-  try {
-    entries = await readdir(runsOutputRoot, { withFileTypes: true });
-  } catch (cause) {
-    if (errnoCodeOf(cause) === "ENOENT") {
-      return { ...outcome, rootExisted: false };
-    }
-    throw cause;
+  const rootResult = await readdirRoot(runsOutputRoot);
+  if (!rootResult.present) {
+    return { ...outcome, rootExisted: false };
   }
 
-  const failures: AccumulatedFailure[] = [];
+  const failures: RunAccumulatedFailure[] = [];
 
   // Sort by name before walking: `readdir` makes no ordering guarantee, and
   // without a deterministic order an operator-run sweep would not be
@@ -358,9 +302,7 @@ export async function pruneRunOutputs(
   // at all — with an unordered walk, whether a later directory gets swept
   // after an earlier failure would depend on incidental filesystem
   // enumeration order rather than on this function's behavior.
-  const sortedEntries = [...entries].sort((a, b) =>
-    a.name < b.name ? -1 : a.name > b.name ? 1 : 0,
-  );
+  const sortedEntries = sortByName(rootResult.entries);
 
   for (const entry of sortedEntries) {
     if (!entry.isDirectory()) {
