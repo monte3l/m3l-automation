@@ -70,6 +70,7 @@
     "statusline:preview": "node bin/statusline-preview.mjs",
     "slice:set": "node bin/slice-progress.mjs set",
     "slice:clear": "node bin/slice-progress.mjs clear",
+    "usage:refresh": "node bin/usage-cache.mjs",
     "check:host-resources": "node bin/check-host-resources.mjs",
     "check:node-version": "node bin/check-node-version.mjs",
     "check:claude-cli-version": "node bin/check-claude-cli-version.mjs",

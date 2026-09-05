@@ -1479,7 +1479,7 @@ describe("buildSessionRow", () => {
 
 describe("buildModelRow", () => {
   test("starts with the padded, dimmed 'model' gutter label followed by the placeholder for an empty payload", () => {
-    expect(buildModelRow({}, 80)).toBe(
+    expect(buildModelRow({}, {}, 80)).toBe(
       `${DIM}model     ${RESET}${PLACEHOLDER}`,
     );
   });
@@ -1494,7 +1494,7 @@ describe("buildModelRow", () => {
       vim: { mode: "NORMAL" },
     };
 
-    const result = buildModelRow(payload, 200);
+    const result = buildModelRow(payload, {}, 200);
 
     expect(result).toContain("Sonnet 5");
     expect(result).toContain("high");
@@ -1507,7 +1507,7 @@ describe("buildModelRow", () => {
   test("always returns a non-empty string, even at a very narrow width", () => {
     const payload = { model: { display_name: "Sonnet 5" } };
 
-    expect(buildModelRow(payload, 5).length).toBeGreaterThan(0);
+    expect(buildModelRow(payload, {}, 5).length).toBeGreaterThan(0);
   });
 });
 

@@ -54,7 +54,14 @@
  * `npx`-resolved third-party script re-hitting the npm registry every render;
  * this is a plain local `node` invocation plus two syscalls and a bounded
  * local file read, identical in cost class to every other hook already wired
- * in `.claude/settings.json`.
+ * in `.claude/settings.json`. `tmp/usage-weekly.json` (see
+ * `resolveWeeklyUsage`) joins `tmp/slice-progress.json` in that same
+ * exception for the same reason: a bounded local `readFileSync`, nothing
+ * more. The *network* call the weekly-usage data ultimately depends on lives
+ * entirely out-of-band, in `bin/usage-cache.mjs`, refreshed by a `Stop` hook
+ * (`.claude/hooks/refresh-usage-cache.mjs`) — never here — so this file's own
+ * "no subprocess, no network" invariant is preserved rather than weakened.
+ * See docs/adr/0092-out-of-band-usage-cache.md.
  *
  * Threshold values (70 / 90) match Anthropic's own documented multi-line
  * status-line example (green under 70, yellow 70-89, red 90+) rather than
@@ -525,6 +532,109 @@ export function formatSliceSegment(slice) {
   const text = `${prefix}${current}/${total}`;
   const styled = allLanded ? `${DIM}${text}${RESET}` : `${CYAN}${text}${RESET}`;
   return seg("slice", 90, styled, 6);
+}
+
+/**
+ * Resolves the per-model weekly-usage state for the current render, or null
+ * when no usable cache exists. Reads `tmp/usage-weekly.json` (written
+ * out-of-band by `bin/usage-cache.mjs`, refreshed by the `Stop`-hook
+ * `refresh-usage-cache.mjs` — docs/adr/0092-out-of-band-usage-cache.md) via
+ * the given `readFile`, matching `resolveSliceProgress`'s pure-function
+ * shape so this stays directly unit-testable.
+ *
+ * Staleness gate (distinct from `resolveSliceProgress`'s branch gate — this
+ * data has no branch affinity): older than 24h -> null, since a day-old
+ * weekly figure misleads more than an absent one; older than 2h -> kept, but
+ * flagged `stale` so {@link formatWeeklyModelSegments} appends a dim age
+ * suffix; under 2h -> kept, no suffix.
+ *
+ * @param {(path: string) => string | null} readFile
+ * @param {string} startDir the workspace root to resolve `tmp/` against
+ *   (`payload.workspace.current_dir`, per-worktree).
+ * @param {number} now ms epoch.
+ * @returns {{ models: Array<{ id: string, display_name: string, used_percentage: number }>, ageSec: number, stale: boolean } | null}
+ */
+export function resolveWeeklyUsage(readFile, startDir, now) {
+  const raw = readFile(join(startDir, "tmp/usage-weekly.json"));
+  if (raw === null) return null;
+
+  let entry;
+  try {
+    entry = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (typeof entry !== "object" || entry === null) return null;
+
+  const fetchedAt = /** @type {{ fetched_at?: unknown }} */ (entry).fetched_at;
+  if (typeof fetchedAt !== "number" || !Number.isFinite(fetchedAt)) {
+    return null;
+  }
+  const ageSec = Math.max(0, Math.round(now / 1000 - fetchedAt));
+  if (ageSec > 24 * 3600) return null;
+
+  const rawModels = /** @type {{ models?: unknown }} */ (entry).models;
+  const models = Array.isArray(rawModels)
+    ? rawModels.filter(
+        (m) =>
+          typeof m === "object" &&
+          m !== null &&
+          typeof (/** @type {{ id?: unknown }} */ (m).id) === "string" &&
+          typeof (
+            /** @type {{ display_name?: unknown }} */ (m).display_name
+          ) === "string" &&
+          typeof (
+            /** @type {{ used_percentage?: unknown }} */ (m).used_percentage
+          ) === "number" &&
+          Number.isFinite(
+            /** @type {{ used_percentage?: unknown }} */ (m).used_percentage,
+          ),
+      )
+    : [];
+  if (models.length === 0) return null;
+
+  return { models, ageSec, stale: ageSec > 2 * 3600 };
+}
+
+/**
+ * @param {{ models: Array<{ id: string, display_name: string, used_percentage: number }>, ageSec: number, stale: boolean } | null} usage
+ *   the pre-resolved value from {@link resolveWeeklyUsage} — this formatter
+ *   does no I/O.
+ * @returns {Array<{ id: string, priority: number, text: string, minWidth: number }>}
+ *   one zone-colored `<name> NN%` segment per model (sorted by usage
+ *   descending, priorities 45 downward so the largest consumer survives
+ *   longest on a narrow terminal), plus a trailing dim `(<age> old)` segment
+ *   when `stale`. Empty array when `usage` is null or carries no models.
+ */
+export function formatWeeklyModelSegments(usage) {
+  if (usage === null || typeof usage !== "object") return [];
+  const { models, ageSec, stale } = usage;
+  if (!Array.isArray(models) || models.length === 0) return [];
+
+  const sorted = [...models].sort(
+    (a, b) => b.used_percentage - a.used_percentage,
+  );
+  const modelSegs = sorted
+    .map((m, i) => {
+      const zone = zoneForPercentage(m.used_percentage);
+      const color = zone === "high" ? RED : zone === "warn" ? YELLOW : GREEN;
+      return seg(
+        `weekly_${m.id}`,
+        45 - i,
+        `${color}${m.display_name} ${m.used_percentage}%${RESET}`,
+        6,
+      );
+    })
+    .filter((s) => s !== null);
+
+  if (!stale) return modelSegs;
+  const ageSeg = seg(
+    "weekly_age",
+    45 - modelSegs.length,
+    `${DIM}(${formatDuration(ageSec)} old)${RESET}`,
+    8,
+  );
+  return ageSeg === null ? modelSegs : [...modelSegs, ageSeg];
 }
 
 /**
@@ -1005,11 +1115,12 @@ export function buildSessionRow(payload, env, columns) {
 
 /**
  * @param {unknown} payload
+ * @param {{ weeklyUsage?: unknown } | undefined} env
  * @param {number} columns
  * @returns {string} the model row: model, effort, thinking, fast mode,
- *   output style, vim mode.
+ *   output style, vim mode, per-model weekly usage.
  */
-export function buildModelRow(payload, columns) {
+export function buildModelRow(payload, env, columns) {
   return buildRow(
     "model",
     [
@@ -1019,6 +1130,9 @@ export function buildModelRow(payload, columns) {
       formatFastModeSegment(payload),
       formatOutputStyleSegment(payload),
       formatVimModeSegment(payload),
+      ...formatWeeklyModelSegments(
+        /** @type {any} */ (env?.weeklyUsage ?? null),
+      ),
     ],
     columns,
   );
@@ -1094,7 +1208,8 @@ export function buildWorkRow(payload, env, columns) {
  *   COLUMNS?: unknown;
  * }} [env] local-only, non-payload context: current time (ms), free/total
  *   memory (bytes), the resolved git branch name, the pre-resolved slice-
- *   progress value (see {@link resolveSliceProgress}), and the terminal
+ *   progress value (see {@link resolveSliceProgress}), the pre-resolved
+ *   weekly-usage value (see {@link resolveWeeklyUsage}), and the terminal
  *   `COLUMNS` width. Defaults to `{}` so existing single-argument call sites
  *   keep working.
  * @returns {string} the full, always-five-line status-line output.
@@ -1103,7 +1218,7 @@ export function renderStatusLine(payload, env = {}) {
   const columns = terminalColumns(env);
   return [
     buildSessionRow(payload, env, columns),
-    buildModelRow(payload, columns),
+    buildModelRow(payload, env, columns),
     buildContextRow(payload, columns),
     buildQuotaRow(payload, env, columns),
     buildWorkRow(payload, env, columns),
@@ -1135,12 +1250,14 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
         ? payload.workspace.current_dir
         : process.cwd();
     const branch = resolveBranch(safeReadFile, startDir);
+    const now = Date.now();
     const env = {
-      now: Date.now(),
+      now,
       freemem: os.freemem(),
       totalmem: os.totalmem(),
       branch,
       slice: resolveSliceProgress(safeReadFile, startDir, branch),
+      weeklyUsage: resolveWeeklyUsage(safeReadFile, startDir, now),
       COLUMNS: process.env.COLUMNS,
     };
     output = renderStatusLine(payload, env);
