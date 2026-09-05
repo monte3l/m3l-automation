@@ -39,10 +39,10 @@
     {
       "id": 3,
       "prompt": "I'm starting a brand-new Vue 3 project from scratch and want to set up ESLint flat config for it. Which plugins do I need and how do I configure them? I'm not using TypeScript.",
-      "expected_output": "The response recognises that this question is about a different project (not m3l-automation) and routes to the context7-mcp skill for generic ESLint documentation, rather than describing or editing this repo's eslint.config.js.",
+      "expected_output": "The response recognises that this question is about a different project (not m3l-automation) and defers to current upstream ESLint/Vue documentation (via the context7 MCP tools, ADR-0093) for generic ESLint flat-config guidance, rather than describing or editing this repo's eslint.config.js.",
       "expectations": [
         "The response identifies that the question is about a project other than m3l-automation and states that the `eslint-flat-config` skill is not the right skill for this question",
-        "The response defers to an up-to-date external documentation lookup rather than treating its own recollection as authoritative — satisfied EITHER by naming `context7-mcp` as the appropriate skill, OR by stating it will consult current upstream documentation for the answer. Note `context7-mcp` is a plugin skill that does not exist inside this sandbox, so an attempt to invoke it fails with \"Unknown skill\"; grade the RESPONSE TEXT only, and treat a failed invocation followed by an explicit defer-to-current-docs statement as satisfying this criterion in full.",
+        "The response defers to an up-to-date external documentation lookup rather than treating its own recollection as authoritative — satisfied EITHER by naming `mcp__context7__resolve-library-id`/`mcp__context7__query-docs` (or \"the context7 MCP\") as the mechanism it will use, OR by stating it will consult current upstream documentation for the answer",
         "The response does NOT describe edits to any `eslint.config.js` file as though it were the m3l-automation config",
         "The response does NOT present its plugin recommendations as authoritative current documentation, and does not substitute its own recollection for directing the user to up-to-date Vue 3 ESLint docs"
       ]
