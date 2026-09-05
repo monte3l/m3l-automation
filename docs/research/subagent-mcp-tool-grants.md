@@ -31,7 +31,7 @@
 `m3l-automation`'s ADR-0030 established "MCP is hub-only" as a structural
 invariant: every `.claude/agents/*.md` declares a closed `tools:` list with no
 `mcp__*` entry. Wiring the `context7` documentation-lookup MCP server into
-`code-implementer`'s workflow (ADR-0092) requires either keeping that
+`code-implementer`'s workflow (ADR-0093) requires either keeping that
 invariant — the hub fetches docs and relays them into the dispatch prompt — or
 granting the spoke direct access. This snapshot resolves that design question
 against official Anthropic guidance rather than repo convention alone.

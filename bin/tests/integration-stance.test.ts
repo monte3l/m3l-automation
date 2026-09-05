@@ -189,7 +189,7 @@ describe("deriveIntegrationStanceIssues", () => {
 });
 
 // ---------------------------------------------------------------------------
-// deriveIntegrationStanceIssues — context7 descriptor (ADR-0092)
+// deriveIntegrationStanceIssues — context7 descriptor (ADR-0093)
 // ---------------------------------------------------------------------------
 
 describe("deriveIntegrationStanceIssues — context7 descriptor", () => {
@@ -207,12 +207,12 @@ describe("deriveIntegrationStanceIssues — context7 descriptor", () => {
     });
   });
 
-  test("a context7-using skill with an ADR-0092 stance note has no issues", () => {
+  test("a context7-using skill with an ADR-0093 stance note has no issues", () => {
     const skills = [
       {
         name: "implementing-submodules",
         content:
-          "---\nname: implementing-submodules\ndescription: >-\n  Docs stance: context7 MCP (ADR-0092).\n---\n\n`mcp__context7__query-docs({ libraryId, query })`",
+          "---\nname: implementing-submodules\ndescription: >-\n  Docs stance: context7 MCP (ADR-0093).\n---\n\n`mcp__context7__query-docs({ libraryId, query })`",
       },
     ];
     expect(deriveIntegrationStanceIssues(skills)).toEqual({
@@ -222,7 +222,7 @@ describe("deriveIntegrationStanceIssues — context7 descriptor", () => {
     });
   });
 
-  test("a context7-using skill with no ADR-0092 reference is flagged missingStanceNote", () => {
+  test("a context7-using skill with no ADR-0093 reference is flagged missingStanceNote", () => {
     const skills = [
       {
         name: "reviewing-dependabot-prs",
@@ -242,7 +242,7 @@ describe("deriveIntegrationStanceIssues — context7 descriptor", () => {
       {
         name: "implementing-submodules",
         content:
-          "---\nname: implementing-submodules\ndescription: >-\n  Docs stance: uses the gh CLI, not context7 (ADR-0092).\n---\n\n`mcp__context7__resolve-library-id({ name })`",
+          "---\nname: implementing-submodules\ndescription: >-\n  Docs stance: uses the gh CLI, not context7 (ADR-0093).\n---\n\n`mcp__context7__resolve-library-id({ name })`",
       },
     ];
     expect(deriveIntegrationStanceIssues(skills)).toEqual({
@@ -262,7 +262,7 @@ describe("deriveIntegrationStanceIssues — context7 descriptor", () => {
     ];
     const result = deriveIntegrationStanceIssues(skills);
     // GitHub side is clean (ADR-0030 present, gh CLI declared and used);
-    // context7 side has no ADR-0092 reference at all.
+    // context7 side has no ADR-0093 reference at all.
     expect(result.missingStanceNote).toEqual(["creating-prs (context7)"]);
     expect(result.mechanismMismatches).toEqual([]);
   });

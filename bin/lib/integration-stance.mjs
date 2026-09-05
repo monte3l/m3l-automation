@@ -1,5 +1,5 @@
 // Pure derivation for `bin/check-integration-stance.mjs` (the ADR-0030 and
-// ADR-0092 drift gates). Nothing here reads a filesystem — the CLI wrapper
+// ADR-0093 drift gates). Nothing here reads a filesystem — the CLI wrapper
 // collects `.claude/skills/*/SKILL.md` file contents and hands them to
 // `deriveIntegrationStanceIssues`, mirroring `bin/lib/command-catalog.mjs`'s
 // gen/check-shared-derivation shape so this stays exercisable in tests
@@ -14,7 +14,7 @@
 //   3. A stance note that names the wrong mechanism — e.g. claiming "uses the
 //      gh CLI" for a skill whose body only calls `mcp__github__*` tools, or
 //      vice versa.
-// ADR-0092 (documentation lookup via context7) generalized this from a single
+// ADR-0093 (documentation lookup via context7) generalized this from a single
 // GitHub-shaped check to a table of `INTEGRATION_DESCRIPTORS` — one entry per
 // governed external-integration surface — so a second integration (docs
 // lookup) reuses the same missing-stance-note / retired-claim / mismatch
@@ -76,7 +76,7 @@ const INTEGRATION_DESCRIPTORS = [
   },
   {
     id: "context7",
-    adrPattern: /ADR-0092/,
+    adrPattern: /ADR-0093/,
     mechanisms: [
       {
         id: "context7-mcp",

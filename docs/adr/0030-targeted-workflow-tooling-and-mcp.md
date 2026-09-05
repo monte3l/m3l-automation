@@ -270,15 +270,15 @@ tools) apply to the runtime surface as well.
 
 ## Amendment (2026-09-05)
 
-[ADR-0092](./0092-documentation-lookup-mcp-context7.md) fires this ADR's
+[ADR-0093](./0093-documentation-lookup-mcp-context7.md) fires this ADR's
 2026-08-14 amendment re-open condition #1: `code-implementer` — and only
 `code-implementer` — is to be granted a scoped `mcp__context7__*` tool for
 one logged need (verifying AWS SDK behavioral semantics `dist-types` cannot
-express), delivered in a later PR of ADR-0092's own delivery sequence. **Once
+express), delivered in a later PR of ADR-0093's own delivery sequence. **Once
 that PR lands, "MCP is hub-only" in the 2026-07-27 amendment's structural-
 blockers text stops being universally true**; read it from then on as
-"hub-only, except the one scoped grant ADR-0092 records" — until it lands,
-the invariant still holds exactly as stated. ADR-0092 re-examines the five
+"hub-only, except the one scoped grant ADR-0093 records" — until it lands,
+the invariant still holds exactly as stated. ADR-0093 re-examines the five
 GitHub-facing skills' mechanism under this condition and reaffirms gh-CLI for
 all five unchanged — the grant is to a spoke with no GitHub-facing role, so
 neither the coverage matrix nor the toolset decision above is affected. The
@@ -296,7 +296,7 @@ rely on any MCP server inside `claude-pr-review.yml`.
   enterprise policy" claim formerly stated in
   `.claude/skills/triaging-ci/SKILL.md` and
   `.claude/skills/triaging-scan-alerts/SKILL.md`.
-- Amended by [ADR-0092](./0092-documentation-lookup-mcp-context7.md) — the
+- Amended by [ADR-0093](./0093-documentation-lookup-mcp-context7.md) — the
   hub-only invariant's one scoped exception.
 - Delivery record:
   [`docs/logs/2026-07-17-adr-0030-workflow-tooling-mcp.md`](../logs/2026-07-17-adr-0030-workflow-tooling-mcp.md)

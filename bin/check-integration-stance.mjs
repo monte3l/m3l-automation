@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 // Verifies every `.claude/skills/*/SKILL.md` that uses a governed external-
 // integration mechanism — GitHub (gh CLI or GitHub MCP, ADR-0030) or
-// documentation lookup (context7 MCP, ADR-0092) — carries a pointer to the
+// documentation lookup (context7 MCP, ADR-0093) — carries a pointer to the
 // governing ADR, contains no retired policy claim, and names the mechanism
 // it actually uses. The GitHub half is the original drift gate ADR-0030's
 // 2026-07-27 amendment introduced after auditing found the repo's prior
 // "GitHub MCP blocked by enterprise policy" claim had survived, unchecked,
-// for months in two skills; ADR-0092 generalized the underlying derivation
+// for months in two skills; ADR-0093 generalized the underlying derivation
 // (bin/lib/integration-stance.mjs's INTEGRATION_DESCRIPTORS table) to cover
 // a second governed integration rather than duplicating the check.
 //
@@ -37,7 +37,7 @@ const { missingStanceNote, retiredClaims, mechanismMismatches } =
 
 for (const entry of missingStanceNote) {
   reporter.error(
-    `"${entry}" uses that integration's mechanism but its SKILL.md frontmatter carries no reference to the governing ADR (GitHub → ADR-0030; context7 → ADR-0092). See docs/contributing/skills-catalog.md's "GitHub integration" / "External documentation" sections for the required stance-note format.`,
+    `"${entry}" uses that integration's mechanism but its SKILL.md frontmatter carries no reference to the governing ADR (GitHub → ADR-0030; context7 → ADR-0093). See docs/contributing/skills-catalog.md's "GitHub integration" / "External documentation" sections for the required stance-note format.`,
   );
 }
 for (const name of retiredClaims) {

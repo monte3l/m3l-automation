@@ -147,7 +147,7 @@ mechanism without re-reading that amendment's re-open condition first.
 
 `context7` is a documentation-lookup MCP server, declared in `.mcp.json`
 since before ADR-0030 and made secretless by its Phase 2 but never named or
-governed by it directly. [ADR-0092](../adr/0092-documentation-lookup-mcp-context7.md)
+governed by it directly. [ADR-0093](../adr/0093-documentation-lookup-mcp-context7.md)
 is the decision of record: allowlist, mechanism, and a freshness gate
 (`check:reference-freshness`) over the three reference snapshots it sourced.
 
@@ -160,7 +160,7 @@ is the decision of record: allowlist, mechanism, and a freshness gate
 | `reviewing-dependabot-prs`    | `mcp__context7__*` (hub-invoked, escalation path only)    | An option within Step 3d's escalation path for API-shape/migration questions, alongside — never in place of — the release-notes fallback  |
 
 Two structural constraints apply: **hub-invoked except the one scoped
-`code-implementer` grant** ADR-0092 records (see
+`code-implementer` grant** ADR-0093 records (see
 `docs/contributing/agent-operating-model.md`'s MCP-hub-only bullet for the
 exception), and **unavailable in headless CI** (`claude-pr-review.yml` pins a
 scoped `--allowedTools` with no `--mcp-config`) — no skill may _depend_ on it

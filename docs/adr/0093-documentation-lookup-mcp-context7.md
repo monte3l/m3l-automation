@@ -1,4 +1,4 @@
-# 0092. Documentation-lookup MCP (Context7): adoption stance and usage policy
+# 0093. Documentation-lookup MCP (Context7): adoption stance and usage policy
 
 - **Status:** Accepted
 - **Date:** 2026-09-05
@@ -135,7 +135,7 @@ reappearance of the retired `ctx7 skills generate` string.
 **Stance.** `bin/lib/integration-stance.mjs` generalizes from a single
 GitHub-shaped descriptor to a table of integration descriptors, adding a
 docs-lookup descriptor alongside the existing GitHub one: any `SKILL.md` body
-calling `mcp__context7__*` must carry an ADR-0092 reference in its
+calling `mcp__context7__*` must carry an ADR-0093 reference in its
 frontmatter. `docs/contributing/skills-catalog.md` gains an `## External
 documentation` section (mirroring `## GitHub integration`) recording which
 skills use `context7` and why.
