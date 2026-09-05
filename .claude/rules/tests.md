@@ -10,351 +10,160 @@ paths:
 > Writing new tests](../../docs/contributing/style-guide.md#part-2--writing-new-tests).
 > This file is the terse checklist that auto-loads when you edit a test.
 
-- **Vitest**, files named `*.test.ts`, importing from `src/` with the `.js`
-  extension (`../src/index.js`).
-- **Every exported function gets a happy-path test plus one failure path.**
-- **Test observable behavior, not implementation details** or private paths.
-- **Deterministic and isolated:** no network, no filesystem; mock collaborators.
-  Prefer stubs unless interaction verification is required. Clean up side effects.
-- **Name tests by behavior**, not by the unit under test.
-- **Assert the named behavior, not a proxy.** A test titled "suggests the
-  near-miss key" must assert the suggestion actually appears in the output — not
-  `message.length > 0`, and not merely that the call "doesn't throw". A proxy
-  assertion leaves the named path unexercised behind green coverage (a
-  "did-you-mean" test built with an empty schema returned early and left the whole
-  Damerau-Levenshtein helper at ~10%, asserting nothing). If a behavioral stage's
-  only test is "doesn't throw", it is a coverage gap — read
-  `coverage/coverage-final.json` to catch a named-but-unexercised path. Same
-  trap in negative form: when a test's positive and negative claims can BOTH be
-  met by the work never happening ("serves 200 AND records no audit entry" — a
-  404 also records nothing), assert the positive one explicitly too.
+- **Runner/layout, what to test, mocking basics, type-level tests, fixtures,
+  and parameterization** are covered in full by style-guide.md's Part 2
+  subsections above — this file only adds what that guide doesn't already
+  say.
+- **Assert the named behavior, not a proxy** — not `length > 0`, and not
+  merely that the call "doesn't throw". A positive and a negative claim
+  BOTH met by nothing happening need the positive one asserted explicitly
+  too.
 - **A test that claims to guard something must be mutation-tested before you
-  believe it guards anything.** Break the thing the test names — delete the
-  guard clause, invert the flag, drop the `.then()` wrapper — and confirm the
-  test fails. V7's promise-chain comment asserted that a rejected write could
-  not poison later writes; replacing `this.tail = appended.then(...)` with
-  `this.tail = appended` left the entire suite green. Say in the log what you
+  believe it guards anything** — delete the guard clause, invert the flag,
+  drop a wrapper, and confirm the test fails. Say in the log what you
   mutated and what you saw.
 - **A surviving mutant is a question, not automatically a defect — and a
-  mutation that never applied is not a survivor at all.** Two different readings
-  of "the suite stayed green". V6 flipped `allOperations !== true` to
-  `!allOperations` and nothing failed; that mutant is _equivalent_ (the runtime
-  brand guarantees validated input, so both agree on every reachable input) and
-  the right answer was to say so, not to add a test. Separately, a scripted
-  mutation whose pattern no longer matches — because Prettier reflowed the
-  line — silently edits nothing and reports a false survivor. Assert the
-  replacement actually changed the file before trusting a green result.
-- **A check whose two sides come from ONE source can never fail.** X7d's
-  "resolves through the store, not by inspecting the ref" used a fake store that
-  ECHOES `ref.value`, so it passed whether the code delegated or short-circuited;
-  the fix was a stub returning a value the ref does not contain. Same shape: a
-  faked trail plus a faked repository cannot disagree, and `check:index` passes
-  vacuously on a missing sidecar. When a test reconciles two things, pin at least
+  mutation that never applied is not a survivor at all.** An _equivalent_
+  mutant (both branches agree on every reachable input under a
+  runtime-enforced invariant) needs a note, not a new test; verify a
+  scripted mutation actually changed the file (e.g. after a Prettier
+  reflow) before trusting a "survivor".
+- **A check whose two sides come from ONE source can never fail** — a fake
+  store that ECHOES the value under test passes either way. Pin at least
   one side by hand.
-- **A mutation-tested guard can go vacuous LATER, and nothing re-checks it.**
-  Mutation-testing proves teeth only at the moment you run it. X7c's
-  `auditReads` counter proved a `startConsole` hand-off — until the next PR
-  added a second reader of the same property whose own catch swallowed the
-  stub's throw, leaving the counter non-zero with the hand-off deleted. When a
-  change adds a consumer of a signal some test observes INDIRECTLY (a property
-  read, a call count, a log line), re-mutate the tests watching it — and prefer
-  a guard asserting an outcome only the intended path can produce.
-- **Never make a test double wait by counting event-loop turns.** "Retry
-  `setImmediate` up to 200 times" is a latency guess dressed as a bound:
-  microseconds on an idle loop, so it passes locally and fails only under CI
-  load (X7c burned a CI round on it). Anchor the emit to a structural guarantee
-  in the code under test instead — there, that `startConsoleServer` attaches
-  both handlers BEFORE calling `listen()`.
-- **Consumers resolve `m3l-common` through `dist`, so run `pnpm build` before
-  trusting any cross-package result.** Two triggers. After pulling a merge that
-  adds an export, a stale `dist` fails tests in a package you never edited — a
-  failure in an untouched package is the tell. And a mutation applied to library
-  `src/` never reaches a consumer's suite at all: U10 deleted `__proto__` from
-  Core's `DANGEROUS_KEYS`, saw 212 tests pass, and got 7 failures once rebuilt
-  with the mutation still in place. That second one is silent and points the
-  WRONG way — it manufactures evidence that a working guard is hollow.
-- **Enumerate the gates from `package.json`, never from the `pre-push` list or
-  the cadence table.**
-  `node -e "console.log(Object.keys(require('./package.json').scripts).filter(k=>k.startsWith('check:')).join(' '))"`.
-  `pnpm verify` and `pre-push` are different sets, and both are proper subsets
-  of CI: `knip`, `check:file-budget`, `check:provenance` and `check:index` have
-  each failed after a fully green local run. `bin/tests/**` runs only under
-  `vitest.bin.config.ts`, so a green `pnpm verify` is no evidence it passes —
-  run that config explicitly when a change touches anything `bin/` pins.
-- **A test that names a precedence, an ordering, or an "every X" guarantee must
-  make every arm reachable in its own setup.** Distinct from the proxy rule
-  above: the assertion can be exactly right and still prove nothing, because the
-  precondition that discriminates never exists. A test named "integrity check
-  wins over meaning check" built its store with no `definition`, so the mismatch
-  branch could never fire — it would have passed identically under the opposite
-  implementation (`2026-08-19-a4-checkpoint-fingerprint.md`). Three assertions
-  passed trivially because the fields under test are _omitted_ when invalid, so
-  "the planted secret is absent" held whether validation ran or not
-  (`2026-08-19-a3-partial-run-outcome.md`). An invariant named over a set has to
-  **enumerate** the set — `test.each` over every exit path, not one of them — or
-  it silently becomes a test of one member.
-- **Never mock the behavior the test exists to validate.** A stub that hands
-  back the outcome under question asserts the stub, not the code, and still
-  reads as coverage. `sqs-dead-letter-triage`'s apply path had ten tests and
-  could not have caught that the whole path was a guaranteed no-op, because
-  `receive` was mocked to hand the planned messages straight back
-  (`docs/logs/2026-08-24-w8-sqs-dead-letter-triage.md`); a retry suite passed
-  78/78 against a permissive test-only classifier while the real classifier was
-  a complete no-op (`docs/logs/2026-07-13-dynamo-crud.md`). Exercise the real
-  collaborator at least once — and when the subject _is_ a committed artifact,
-  read the real filesystem unmocked, or the test only validates a copy pasted
-  into itself (`docs/logs/2026-08-23-w7-cloudwatch-logs-analysis.md`).
-- **Assert barrel reachability through the package entry point.** Every test
-  here imports `src/` paths directly, so none of them can observe a broken
-  namespace re-export. A `core/index.ts` missing its
-  `export * from "./<module>/index.js";` line once passed the entire suite green
-  while nothing in that submodule was reachable as `Core.*`. `tests/index.test.ts`
-  carries a table-driven check naming one load-bearing symbol per submodule
-  barrel — add a row when you add a submodule.
-- **Audit test vehicles when a fix narrows what a field accepts.** A test that
-  can no longer fail reads as coverage but is worse than none: projecting
-  `M3LRunReport.archive` to a known shape silently disabled two regression
-  lock-ins that used `archive` to carry arbitrary values.
-- **Type-level tests with `expectTypeOf`** where the type IS the contract.
-  `toEqualTypeOf` is strict about `readonly` property modifiers — a type with
-  `readonly` members is _not_ equal to one with mutable members, and the failure
-  surfaces as a cryptic `never[]`/`never` constraint mismatch. When the
-  implementation's interface is (correctly) `readonly`, the expected literal in
-  the assertion must be `readonly` too, or use `toMatchTypeOf`. A type test that
-  fails against a correctly-`readonly` implementation is a test-side defect.
-- **A type-only `expectTypeOf` test still executes its expression at runtime.**
-  If the asserted expression invokes a fallible async method, resolve the mock to
-  a valid value first (e.g. `adapter.number.mockResolvedValue(5)`) — otherwise a
-  rejecting, un-awaited promise surfaces as an unhandled rejection ("1 error")
-  even though the type assertion itself passes. A resolved un-awaited promise is
-  fine; a rejecting one is not.
-- **Parameterize** when the same logic is exercised against multiple inputs.
-- **Never tolerate flaky tests** — diagnose and fix; do not mute or retry-mask.
-- **A gate failing outside your change's blast radius is presumed pre-existing
-  until disambiguated.** `git status` and `git diff origin/main -- <path>`
-  settle it in seconds — cheaper than debugging your own diff for someone
-  else's breakage. This is not licence to retry: if the re-run goes green with
-  no explanation, that is a flake, and per the rule above it gets diagnosed and
-  filed rather than pocketed
-  (`docs/logs/2026-07-11-prepush-parallelization.md`,
-  `docs/logs/2026-07-18-aws-lambda.md`,
-  `docs/logs/2026-08-19-hub-sync-key-namespace.md`).
-- **Mock Node built-ins via the async-factory form** that preserves real
-  exports, then `vi.spyOn` individual methods:
-  `vi.mock("fs", async () => { const actual = await vi.importActual<typeof import("fs")>("fs"); return { ...actual }; })`.
-- **Mock an SDK package the same way once it has a mixed class-and-data
-  export surface.** A plain `vi.mock("pkg", () => ({...}))` object literal
-  silently omits every export the factory doesn't list — harmless while the
-  module under test only imports _types_ from `pkg` (erased at compile time),
-  but the moment it imports a value (e.g. an SDK's data-only enum object, to
-  validate a caller-supplied string against `Object.values(SomeEnum)`), that
-  import resolves to `undefined` under the mock and throws at module-load
-  time before a single test can even register. Default new SDK-client mocks
-  to the `importOriginal`-preserving async factory from the start — pass real
-  constants/enums through unchanged, keep only the classes/functions that
-  need mock behavior replaced (`aws/codepipeline`, 2026-07-27: adding runtime
-  enum validation broke a mock written when only types were imported).
-- **A step module reached only via dynamic `import()` in production code can
-  mock with a plain `const stepMock = vi.fn()`; the moment any production code
-  adds a _static_ import of anything from that same module — even just a
-  shared constant, not the mocked function itself — its `vi.mock` factory
-  starts running eagerly at module-eval time and the backing mock must move to
-  `vi.hoisted(() => vi.fn())`.** A plain `const` initializes after `vi.mock`
-  calls are hoisted, so an eagerly-evaluated factory referencing it throws
-  `Cannot access '<name>' before initialization`. This is the same rule that
-  already applies to a statically-imported package (e.g. `@m3l-automation/m3l-common`)
-  — it just isn't obvious that promoting a shared constant out of a
-  dynamic-import-only step module retroactively applies it to that step's mock
-  too (`scripts/codepipeline-ops`, 2026-07-27: exporting `FAILED_STATUSES` out
-  of `watch-execution.ts` for the dispatcher to statically import broke
-  `run-codepipeline-ops.test.ts`'s previously-fine plain-`const`
-  `watchExecutionMock`). When you add a static import from a step module,
-  check whether that step's own test mock needs the same promotion in the same
-  change.
-- **Mock a port with generic methods by inference, not `extends`.** A structural
-  port whose methods are generic (`select<Value>(...)`) can't be mocked via
-  `interface Mock extends Port { select: ReturnType<typeof vi.fn> }` — a
-  non-generic `Mock` is an invalid override of a generic signature (TS2430). Let
-  the factory return the inferred object of `vi.fn()`s; it keeps the `.mock*` API
-  usable and stays structurally assignable to the port at the injection site.
-- **Keep the mock target in sync with the implementation's I/O primitive.** If
-  the impl moves from `readFile` to `open()`/`FileHandle`, re-mock the new
-  primitive (the old mock intercepts nothing) and cover the **post-acquire**
-  failure path — a `read()`/`stat()` reject after a successful `open()` — not
-  just acquisition.
-- **TTY-dependent code:** set `process.stdout/stderr/stdin.isTTY` with
-  `Object.defineProperty` in a `beforeAll` block — CI is non-TTY, so the
-  property may be absent entirely, not just `false`.
-- **Local test doubles:** subclassing an abstract export to exercise it (e.g. a
-  `TestEmitter` over the emitter base) is the sanctioned pattern; keep the
-  double in the test file.
-- **Test-first, not test-after.** The failing test defines the contract: write
-  tests from the doc contract, watch them fail for the right reason (the symbol
-  doesn't exist yet), then let the implementation make them pass — don't backfill
-  a test that just mirrors an implementation you already wrote.
-- **Update `docs/implementation-status.md` Notes count in the same commit as any
-  new test.** `check:test-counts` asserts the "N tests" value in every ✅ row
-  matches the live Vitest count; a mismatch discovered at `pnpm verify` time
-  forces a standalone `chore:` commit. Include the Notes update in the same
-  feat/refactor commit that adds the test.
-- **Per-file test size is ratcheted, not capped (ADR-0072).**
-  `pnpm check:file-budget` enforces test files ≤ 60,000 chars against a
-  committed baseline; a baselined file may not grow, and any other file must
-  stay under the ceiling from the start. When a module's seam plan
-  (`implementing-submodules` Step 5) partitions its public surface into
-  several independently testable slices, name each slice's test file
-  `<mod>-<facet>.test.ts` (e.g. `procedure-conditions.test.ts`), and that
-  file must import **only the symbols its own slice ships** — never the
-  whole module's public barrel. `perFile` v8 coverage
-  (`vitest.config.ts`) binds a `src/` file to every test file that imports
-  from it; a slice's test importing outside its own slice defeats the split
-  by re-binding coverage across the whole module. `check:test-counts` keys
-  its recorded count on the file's path relative to the tests root (not a
-  shared basename), so sibling files like this are counted independently,
-  not summed into one row.
-- **Justify intentional `eslint-disable` on the error channel.** A module that
-  tests its error channel throws/rejects non-`Error` values to prove
-  normalization, which trips `only-throw-error` / `prefer-promise-reject-errors`.
-  Disable narrowly with a `--` rationale so it isn't "fixed" into a real `Error`:
+- **A mutation-tested guard can go vacuous LATER** — it proves teeth only at
+  the moment you run it. When a change adds a consumer of a signal a test
+  observes INDIRECTLY (a property read, a call count), re-mutate the tests
+  watching it.
+- **Never make a test double wait by counting event-loop turns** — a
+  `setImmediate` retry-N-times loop is a latency guess passing locally and
+  failing under CI load. Anchor the emit to a structural guarantee instead.
+- **Consumers resolve `m3l-common` through `dist`, so run `pnpm build`
+  before trusting any cross-package result** — a stale `dist` fails tests in
+  an untouched package after a merge adds an export, and a `src/` mutation
+  never reaches a consumer's suite until rebuilt.
+- **Enumerate the gates from `package.json`, never a static list** —
+  `pnpm verify`, `pre-push`, and CI are three different, nested sets; grep
+  `scripts` for `check:*`, don't trust the cadence table.
+- **A test naming a precedence, ordering, or "every X" guarantee must make
+  every arm reachable in its own setup** — exactly right yet prove nothing
+  if the discriminating precondition never fires. Enumerate the set
+  (`test.each`), not one member of it
+  (`docs/logs/2026-08-19-a4-checkpoint-fingerprint.md`).
+- **Never mock the behavior the test exists to validate** — a stub echoing
+  back the outcome under question asserts the stub, not the code, while
+  still reading as coverage. Exercise the real collaborator at least once
+  (`docs/logs/2026-08-24-w8-sqs-dead-letter-triage.md`).
+- **Assert barrel reachability through the package entry point** — importing
+  `src/` paths directly can't observe a broken namespace re-export.
+  `tests/index.test.ts`'s table-driven check names one load-bearing symbol
+  per barrel; add a row per submodule.
+- **Audit test vehicles when a fix narrows what a field accepts** — a test
+  that can no longer fail reads as coverage, but is worse.
+- **A type-only `expectTypeOf` test still executes its expression at
+  runtime** — if it invokes a fallible async method, resolve the mock to a
+  valid value first, or a rejecting un-awaited promise surfaces despite the
+  type assertion passing.
+- **A gate failing outside your change's blast radius is presumed
+  pre-existing until disambiguated** — `git diff origin/main -- <path>`
+  settles it in seconds. Not licence to retry blind: an unexplained green
+  re-run is itself a flake to diagnose and file
+  (`docs/logs/2026-07-11-prepush-parallelization.md`).
+- **Mock an SDK package the same way once it mixes class and data
+  exports** — a plain `vi.mock("pkg", () => ({...}))` object literal
+  silently omits unlisted exports, harmless for a type-only import but
+  fatal once a value import (a data-only enum) resolves to `undefined` at
+  module-load time. Default to the `importOriginal`-preserving async
+  factory (style-guide.md § Mocking & isolation).
+- **A dynamic-`import()`-only step module can mock with a plain `const
+stepMock = vi.fn()`; once production code adds a _static_ import from that
+  module, move the mock to `vi.hoisted(() => vi.fn())`** — a plain `const`
+  initializes after `vi.mock` calls are hoisted.
+- **Mock a port with generic methods by inference, not `extends`** — a
+  generic method (`select<Value>(...)`) can't be mocked via `interface Mock
+extends Port { ... }` (TS2430). Let the factory return the inferred
+  `vi.fn()` object instead.
+- **Test-first, not test-after** — write tests from the doc contract, watch
+  them fail for the right reason, then implement — don't backfill a test
+  that just mirrors code you already wrote.
+- **Update `docs/implementation-status.md`'s Notes count in the same commit
+  as any new test** — `check:test-counts` asserts it against the live
+  Vitest count.
+- **Per-file test size is ratcheted, not capped** (`pnpm check:file-budget`,
+  ADR-0072). Name a seam-plan slice's test file `<mod>-<facet>.test.ts` and
+  import **only** the symbols that slice ships — the whole barrel defeats
+  `perFile` v8 coverage binding.
+- **Justify intentional `eslint-disable` on the error channel** — a test
+  proving normalization throws non-`Error` values on purpose, tripping
+  `only-throw-error`. Disable narrowly with a `--` rationale:
 
 ```ts
 // eslint-disable-next-line @typescript-eslint/only-throw-error -- intentional non-Error to verify the unknown channel
 throw "a string";
 ```
 
-- **Assemble a deliberately planted secret-shaped fixture at runtime, never as
-  a single source literal — even in a comment or example.** gitleaks scans
-  source text, not runtime values, and this repo has no `.gitleaksignore` (a
-  fingerprint there is `<commit>:<file>:<rule>:<line>`, which squash-merge
-  rewrites on every PR — every entry ever added went dead the moment its PR
-  landed). Split the literal so the string is built by concatenating two
-  substrings at runtime — the fixture and every assertion against it stay
-  byte-identical, only how the string is constructed changes. Apply this
-  whenever a test plants a credential-shaped value on purpose (to prove a
-  redactor strips it, a checker rejects it, or similar) — see
-  `diagnostics-run-report.test.ts:144-148` for the established pattern.
+- **Assemble a planted secret-shaped fixture at runtime, never as a single
+  source literal** — gitleaks scans source text, not runtime values, and
+  this repo has no `.gitleaksignore`. Concatenate two substrings instead
+  (`diagnostics-run-report.test.ts:144-148`).
 
 ### Test-tooling gotchas
 
-- **`not.toHaveProperty` cannot prove own-key absence, so a
-  prototype-pollution test using it can never fail.** With no own key, chai
-  falls back to `"key" in Object(obj)` and walks the whole prototype chain — so
-  once the test has polluted `Object.prototype.f`, _every_ object reports it and
-  the assertion no longer depends on the implementation. Assert
-  `Object.hasOwn(result, "f")` or `toStrictEqual` instead. Restore the prototype
-  in an **unconditional** `afterEach` via `Reflect.deleteProperty`, defining it
-  `configurable: true` — a leak corrupts every later test in the worker. The
-  tell: a pollution test that fails whatever the implementation does, or passes
-  before the guard exists (U11 slice 7b, 2026-09-03: two such tests failed
-  against correct code; a third passed only via `toStrictEqual({})`).
-- **Runtime-green ≠ typecheck-green.** Vitest transforms without type-checking;
-  a test file that passes (or fails RED for the right reason) can still fail
-  `tsc -b`. Run `pnpm typecheck` as its own gate on every test file you touch —
-  in RED, the only expected diagnostics are the not-yet-existing module's
-  missing symbols; anything else is a test-file defect to fix now.
-- **`pnpm build` is a distinct gate from `pnpm typecheck`, not a slower version
-  of it.** `isolatedDeclarations` is set only in each package's
-  `tsconfig.build.json` (deliberately kept out of `tsconfig.base.json` — see its
-  own comment there), so the two commands check structurally different things: an
-  additive `as const satisfies` formulation passed `typecheck` and failed `build`
-  with TS9010 (`2026-08-19-a3-partial-run-outcome.md`). Any change touching an
-  **exported type** needs both before you call it green.
-- **A test that deliberately avoids importing from `src` can strand an export and
-  fail `pnpm knip`.** Asserting against a hand-authored table (rather than the
-  `src` export) is the right call — it catches a `src` typo instead of echoing it
-  back — but if that test file was the export's only consumer, knip's
-  static-reachability check now reports an unused export and fails CI's
-  governance lane. Keep **both**: import the export and assert projection
-  identity (`toEqual` it, `not.toBe` it), _and_ keep the hand-authored table for
-  content. `knip` is **not** in `pre-push`, so all local gates go green — run
-  `pnpm knip` yourself after adding, removing, or orphaning any export under
-  `scripts/**` or `packages/**`. Cost two PRs a red CI lane in the U5 retrofit
-  after six test files were briefed to hand-author their tables.
-- **eslint runs in-loop** (`post-edit-verify`: prettier → eslint → typecheck →
-  vitest). Resolve eslint findings as you write — don't defer them to a later
-  `pnpm lint` pass; that defeats the in-loop signal.
-- **Thread `now` as an injectable parameter on any function with a
-  time-dependent guard, rather than defaulting to `Date.now()` inside it** —
-  especially when a sibling function already has fixed-timestamp fixtures. A
-  reducer function (`resolveInflightSpokes`) had existing tests hardcoded to
-  `2026-09-02T...` timestamps; adding a `Date.now()`-based staleness ceiling
-  _inside that function_ would have made those tests date-fragile on any
-  later real-world run. Placing the ceiling in the caller instead
-  (`formatInflightSpokesSegment`), which already threaded an injectable
-  `env.now` through for deterministic tests, kept the fix correct without
-  touching an already-passing suite
+- **`not.toHaveProperty` cannot prove own-key absence** — chai falls back to
+  `"key" in Object(obj)` and walks the prototype chain. Assert
+  `Object.hasOwn(result, "f")` instead, and restore a polluted prototype in
+  an **unconditional** `afterEach` (`Reflect.deleteProperty`,
+  `configurable: true`).
+- **Runtime-green ≠ typecheck-green** — Vitest transforms without
+  type-checking, so run `pnpm typecheck` as its own gate on every test file
+  you touch.
+- **`pnpm build` is a distinct gate from `pnpm typecheck`, not a slower
+  version of it** — `isolatedDeclarations` (package `tsconfig.build.json`
+  only) makes an additive `as const satisfies` pass `typecheck` and fail
+  `build` with TS9010. Any exported-type change needs both
+  (`docs/logs/2026-08-19-a3-partial-run-outcome.md`).
+- **A test that deliberately avoids importing from `src` can strand an
+  export and fail `pnpm knip`** — keep both the hand-authored table and an
+  import for projection identity. `knip` is **not** in `pre-push` — run it
+  yourself after touching any export under `scripts/**` or `packages/**`.
+- **eslint runs in-loop** (prettier → eslint → typecheck → vitest) —
+  resolve findings as you write, don't defer to a later `pnpm lint` pass.
+- **Thread `now` as an injectable parameter on a time-dependent guard**
+  rather than defaulting to `Date.now()` inside it — a sibling function's
+  fixed-timestamp fixtures are the tell
   (`docs/logs/2026-09-02-spoke-inflight-status.md`).
 - **Read coverage from `coverage/coverage-final.json`, not the
-  `pnpm test:coverage` text table.** The v8 text reporter omits files that are
-  100% on all four metrics, so an "absent" file in the table is not an uncovered
-  file — the JSON is the source of truth. **After a full-workspace run that
-  JSON holds only the _last project to finish_**, not the merged result, so
-  reading it for a `m3l-common` file yields nothing or stale numbers from an
-  earlier run. Scope the run
-  (`vitest run --coverage --coverage.reporter=json <paths>`) and read that
-  output, and report measured figures rather than "should be covered now".
-- **A suite that fails while a spoke fan-out is running may be contention, not
-  a regression — re-run it alone before believing it.** `pnpm test:coverage`
-  exited non-zero once with five review spokes in flight, then passed twice in
-  isolation; three concurrent suites can fan out to ~42 workers on this box
-  (`docs/logs/2026-08-19-a5-no-progress-detection.md`). Don't schedule
-  `test:coverage` against a live fan-out in the first place. Note the converse
-  too: `check:test-counts`'s own flake turned out to be redundant work rather
-  than contention, and it also failed sequentially — so don't stop at
-  "contention" as the diagnosis either
-  (`docs/logs/2026-08-19-check-test-counts-contention.md`).
-- Use `pnpm exec vitest` / `pnpm test:coverage`; bare `npx vitest` fails to
-  resolve `@vitest/coverage-v8` under pnpm.
-- **Brace void-union handler bodies.** When a handler type is
-  `void | Promise<void>` (e.g. `M3LEventHandler` on the emitter base), an arrow
-  whose body returns a value — `on("evt", () => arr.push(v))` — fails typecheck
-  (TS2322, `number` not assignable). The void-returning-callback leniency applies
-  only to a return type of _exactly_ `void`, not a union containing it. Wrap the
+  `pnpm test:coverage` text table** (style-guide.md § Coverage). After a
+  full-workspace run that JSON holds only the _last project to finish_ — scope
+  the run instead.
+- **A fix round adding branches isn't done until the _gated_ run passes** —
+  per-file thresholds run only under `test:coverage`, never a scoped `vitest`
+  call. Trace the gap from `coverage-final.json`'s uncovered-line list and
+  cover any new ternary's non-`Error` arm in the same edit
+  (`docs/logs/2026-09-03-x11c-json-tree-viewer.md`,
+  `2026-09-04-x11e-sqs-drilldown-acceptance.md`).
+- **A suite failing while a spoke fan-out is running may be contention, not
+  a regression — re-run it alone first**
+  (`docs/logs/2026-08-19-a5-no-progress-detection.md`).
+- Use `pnpm exec vitest`; bare `npx vitest` fails to resolve
+  `@vitest/coverage-v8` under pnpm.
+- **Brace void-union handler bodies** — a handler typed `void |
+Promise<void>` whose arrow body returns a value fails typecheck (TS2322);
+  the leniency applies only to a return type of _exactly_ `void`. Wrap the
   body: `() => { arr.push(v); }`.
-- **Never explicitly parameterize `vi.spyOn<T, S>`'s return type.** `vi.spyOn`
-  is overloaded (get-accessor / set-accessor / plain method); TypeScript
-  resolves an _explicit_ type-argument instantiation (`ReturnType<typeof
-vi.spyOn<T, S>>`) against the first overload regardless of which one the
-  actual call matches, so spying on a method (not an accessor) fails with
-  `Type '"methodName"' does not satisfy the constraint 'never'` even though the
-  runtime call `vi.spyOn(obj, "methodName")` is correct. Fix: drop the explicit
-  return-type annotation on the helper that returns the spy and let TypeScript
-  infer it from the `return` statement.
-- **`bin/tests/**` IS type-checked, but only by the top-level `pnpm typecheck`
-  script, not by any per-package turbo task.** `pnpm typecheck` runs
-  `turbo run typecheck && tsc -p bin/tsconfig.json`; that second, non-turbo
-  invocation includes `tests/**/*.ts` (relative to `bin/`), so a real type
-  error there fails `pnpm typecheck` and `pnpm verify` outright — it is not a
-  silent gap (confirmed 2026-09-02: a test passing `null` where a JSDoc-typed
-  `string` param was expected failed exactly this way). What the per-package
-  `turbo run typecheck` alone (or an IDE limited to a single package's
-  `tsconfig`) will NOT see: `bin/tsconfig.json` is a separate project with
-  `allowJs: true`/`checkJs: false`, so it type-checks a `.mjs`'s exported JSDoc
-  _signatures_ against `bin/tests/**/*.ts` call sites, but never checks the
-  `.mjs` file's own internals — and `eslint.config.js` turns the
-  `no-unsafe-*` rules off for `bin/tests/**/*.test.ts` because it imports those
-  untyped `.mjs` modules. Run the full `pnpm typecheck` (not a scoped
-  `turbo run typecheck` or a single package's `tsc`) before declaring a
-  `bin/tests` or `.claude/hooks/*.mjs` change green.
-- **Test a `bin/` checker against synthetic state, not just the live repo.** A
-  generator/checker whose correctness depends on current repo state (a count, a
-  table's column order, an identifier pattern) can only be shown to pass
-  _today_ by running it here — a bug that manifests on the _next_ change stays
-  invisible. Drive its test with a synthetic bump: a differing total, a renamed
-  column, a digit-bearing name. Three count/index gates shipped as latent
-  no-ops for exactly this reason (`docs/logs/2026-07-02-core-polling.md`,
-  `docs/logs/2026-07-13-aws-sqs.md`, `docs/logs/2026-07-13-aws-dynamodb.md`).
-- **Type a `bin/` helper's JSDoc `@param` to the fields it actually reads**, not
-  to a whole upstream return type. Declaring
-  `@param {ReturnType<typeof actionableItems>}` when the function only touches
-  two of its properties forces every test fixture to invent the rest; the real
-  caller still satisfies a narrowed structural type unchanged.
-
-```typescript
-import { expect, test } from "vitest";
-import { paginate } from "../src/index.js";
-
-test("paginate respects the limit", () => {
-  expect(paginate([1, 2, 3, 4, 5], 2).items).toHaveLength(2);
-});
-```
+- **Never explicitly parameterize `vi.spyOn<T, S>`'s return type** — an
+  explicit type argument resolves against the first overload regardless of
+  which one the call matches, failing a method spy with a `never`-constraint
+  error though the runtime call is correct. Let TypeScript infer it from the
+  `return` statement instead.
+- **`bin/tests/**` IS type-checked, but only by the top-level `pnpm
+typecheck`, not any per-package turbo task** — it checks `.mjs` exported
+  JSDoc _signatures_ against call sites, never a `.mjs` file's own
+  internals. Run the full `pnpm typecheck` before declaring such a change
+  green.
+- **Test a `bin/` checker against synthetic state, not just the live repo** —
+  correctness against current state only proves it works _today_. Drive it
+  with a synthetic bump instead (`docs/logs/2026-07-02-core-polling.md`).
+- **Type a `bin/` helper's JSDoc `@param` to the fields it actually reads**,
+  not a whole upstream return type — the full type forces every fixture to
+  invent fields the function never touches.

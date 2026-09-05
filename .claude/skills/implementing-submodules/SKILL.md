@@ -6,7 +6,7 @@ description: >-
   strict TDD + hub-and-spoke. Use for "implement"/"build"/"flesh out" a
   submodule that already has a docs/reference/{core,aws}/<name>.md page, even
   named casually ("the retry stuff"). No spec page yet → scaffolding-submodules
-  first.
+  first. Docs stance: context7 MCP (ADR-0093).
 ---
 
 # implementing-submodules
@@ -120,7 +120,12 @@ ADR-0013 (its durable home), not a per-plan caveat.
    a non-negotiable constraint and the pnpm lockfile authoritative. So **stop,
    list each dependency with a one-line rationale, and wait for explicit user
    approval** before anyone runs `pnpm add`. Never hand-edit `pnpm-lock.yaml`.
-   Dep-free modules skip this gate.
+   Dep-free modules skip this gate. Before the approval pause, check the
+   candidate's current docs via `mcp__context7__query-docs` (hub-invoked;
+   ADR-0093) for its Node 24 / ESM-only / strict-TS compatibility claims
+   rather than relying on recollection — training-data knowledge of a
+   package's support matrix goes stale the same way any other API knowledge
+   does.
 
 4. **Phase 1 — Contract.** Dispatch `spec-conformance-reviewer` in _contract
    mode_: have it read the spec page (and the relevant contracts in
@@ -162,6 +167,20 @@ ADR-0013 (its durable home), not a per-plan caveat.
    value, an unclassifiable-state fallback) in the doc itself before
    dispatching `test-author`/`code-implementer`, so both spokes work from one
    settled contract instead of guessing independently and diverging.
+
+   **`code-implementer` holds a scoped `mcp__context7__*` grant (ADR-0093) as
+   a complement to dist-types, not a replacement.** Installed dist-types are
+   the pinned truth and win on any conflict — this repo pins exact SDK
+   versions (e.g. `@aws-sdk/*` at `3.1123.0`) while context7 returns docs for
+   whatever version it has indexed, so a disagreement is expected and is not
+   evidence the types are wrong. Reach for context7 for the behavioral
+   semantics a `.d.ts` file is silent on: retry/backoff behavior, terminal-
+   state classification, pagination contracts — exactly the class of
+   ambiguity the `aws/ecs` incident above turned on. Since the grant,
+   `code-implementer` can resolve this itself during GREEN rather than
+   waiting for the hub to pre-resolve it into the dispatch prompt; it is
+   never a required step, since the same agent is also dispatched where MCP
+   is unavailable.
 
 5. **Seam plan (ADR-0072) — before RED/GREEN, not after review.** Non-convergent
    review on `core/procedure` (B2/#523, five rounds, abandoned — see

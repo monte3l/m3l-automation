@@ -14,6 +14,16 @@ import { join } from "node:path";
 export const WRITER_SPOKES = new Set(["code-implementer", "test-author"]);
 
 /**
+ * Spokes permitted to hold any `mcp__*` tool grant (ADR-0093's selective,
+ * not-blanket, spoke-access invariant) — every other agent must stay
+ * MCP-free. Consumed by `bin/check-agents.mjs`'s MCP-grant check alongside
+ * {@link parseMcpServers}/{@link deriveMcpGrantIssues}, so "which spokes may
+ * reach an MCP server" has one answer instead of a convention nothing
+ * enforces.
+ */
+export const MCP_SPOKES = new Set(["code-implementer"]);
+
+/**
  * Reviewer spokes whose findings report is a per-section Must-fix/Should-fix/
  * Nits list, the shape `REVIEW.md`'s numeric finding cap fits. Consumed by
  * `bin/check-review-policy.mjs` so the enforced set can't silently diverge
@@ -95,4 +105,71 @@ export function readOnlyAgentNames(agentsDir) {
     if (!WRITER_SPOKES.has(fm.name)) names.add(fm.name);
   }
   return names;
+}
+
+/**
+ * Parse an agent's `mcpServers:` frontmatter value (e.g. `[context7]` or
+ * `[context7, github]`) into a Set of server names. Undefined or empty input
+ * yields an empty Set — the "grants no MCP server" case.
+ *
+ * @param {string | undefined} value
+ * @returns {Set<string>}
+ */
+export function parseMcpServers(value) {
+  if (value === undefined || value.trim().length === 0) return new Set();
+  const inner = value.match(/\[(.*)\]/)?.[1] ?? value;
+  return new Set(
+    inner
+      .split(",")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0),
+  );
+}
+
+/**
+ * @typedef {{
+ *   name: string,
+ *   tools: string[] | null,
+ *   mcpServers: string | undefined,
+ *   file: string,
+ * }} McpGrantCandidate
+ * @typedef {{ ungrantedSpoke: string[], unscopedServer: string[] }} McpGrantIssues
+ */
+
+/**
+ * Derive violations of ADR-0093's selective-spoke-access invariant: only
+ * {@link MCP_SPOKES} members may hold any `mcp__*` tool in `tools:`, and a
+ * member may only hold a tool scoped to a server it also declares via its own
+ * `mcpServers:` frontmatter — so a grant can't silently widen to a second
+ * server without both frontmatter fields agreeing.
+ *
+ * @param {McpGrantCandidate[]} agents
+ * @returns {McpGrantIssues}
+ */
+export function deriveMcpGrantIssues(agents) {
+  /** @type {McpGrantIssues} */
+  const issues = { ungrantedSpoke: [], unscopedServer: [] };
+  for (const { name, tools, mcpServers, file } of agents) {
+    if (tools === null) continue; // no-`tools:` case is check-agents.mjs's own error
+    const mcpTools = tools.filter((t) => t.startsWith("mcp__"));
+    if (mcpTools.length === 0) continue;
+
+    if (!MCP_SPOKES.has(name)) {
+      issues.ungrantedSpoke.push(
+        `${file}: "${name}" grants ${mcpTools.join(", ")} but is not in MCP_SPOKES`,
+      );
+      continue;
+    }
+
+    const declaredServers = parseMcpServers(mcpServers);
+    for (const tool of mcpTools) {
+      const server = tool.split("__")[1];
+      if (server === undefined || !declaredServers.has(server)) {
+        issues.unscopedServer.push(
+          `${file}: "${name}" grants "${tool}" but does not declare server "${server}" in mcpServers:`,
+        );
+      }
+    }
+  }
+  return issues;
 }

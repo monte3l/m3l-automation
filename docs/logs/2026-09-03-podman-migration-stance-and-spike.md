@@ -243,11 +243,13 @@ keep-id` is not an optional nicety; without it, a correctly-`chown`ed host
   settled it in under a minute (it has a 2026-08-20 amendment scoping
   "container-free" to the toolchain) — cheaper than either agent's original
   research pass, and the disagreement would have propagated a real error
-  into the ADR content if left unchecked.
+  into the ADR content if left unchecked. _(promoted →
+  .claude/rules/subagent-dispatch.md, as one instance of "the executor
+  wins" over an unexecuted claim)_
 
-No lesson from this log was promoted into a durable rule this round — this
-is the first Podman-specific task in the repo, so it isn't yet clear which of
-the above generalizes beyond "the first container-engine migration always
-finds implementation-level surprises documentation can't." Worth revisiting
-if a second such migration or a Podman-adjacent task in this repo hits a
-similar class of issue.
+The remaining lessons from this log are Podman-specific operational facts,
+not durable rules — this is the first Podman-specific task in the repo, so
+it isn't yet clear which of them generalizes beyond "the first
+container-engine migration always finds implementation-level surprises
+documentation can't." Worth revisiting if a second such migration or a
+Podman-adjacent task in this repo hits a similar class of issue.

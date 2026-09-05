@@ -54,7 +54,15 @@
  * `npx`-resolved third-party script re-hitting the npm registry every render;
  * this is a plain local `node` invocation plus two syscalls and a bounded
  * local file read, identical in cost class to every other hook already wired
- * in `.claude/settings.json`.
+ * in `.claude/settings.json`. The account-scoped weekly-usage cache file
+ * (see `resolveUsageCachePath`/`resolveWeeklyUsage`) joins
+ * `tmp/slice-progress.json` in that same exception for the same reason: a
+ * bounded local `readFileSync`, nothing more. The *network* call the
+ * weekly-usage data ultimately depends on lives
+ * entirely out-of-band, in `bin/usage-cache.mjs`, refreshed by a `Stop` hook
+ * (`.claude/hooks/refresh-usage-cache.mjs`) — never here — so this file's own
+ * "no subprocess, no network" invariant is preserved rather than weakened.
+ * See docs/adr/0092-out-of-band-usage-cache.md.
  *
  * Threshold values (70 / 90) match Anthropic's own documented multi-line
  * status-line example (green under 70, yellow 70-89, red 90+) rather than
@@ -178,10 +186,47 @@ export function parseGitdirPointer(content) {
 /**
  * Walks upward from `startDir` looking for `.git` (a directory, the normal
  * case, or a file pointing at the real gitdir, the linked-worktree /
- * submodule case) and resolves the current branch from its `HEAD` file.
- * Pure with respect to actual disk I/O — all reads go through the injected
- * `readFile`, so this is directly unit-testable without touching a real
- * filesystem.
+ * submodule case) and returns the directory that holds it — the resolved
+ * workspace root. Pure with respect to actual disk I/O — all reads go
+ * through the injected `readFile` — so this is directly unit-testable
+ * without touching a real filesystem.
+ *
+ * Shared by `resolveBranch` (below) and `resolveSliceProgress`: both need
+ * "the root `tmp/`-relative state is anchored at," and
+ * `payload.workspace.current_dir` is not always that root — it diverges the
+ * moment a session `cd`s into a subdirectory, or enters a worktree
+ * in-session (`EnterWorktree`, ADR-0013/0014). Resolving the same way
+ * `resolveBranch` always has (rather than trusting `startDir` verbatim)
+ * means a slice-progress entry and its branch stamp are always checked
+ * against the same root.
+ *
+ * @param {(path: string) => string | null} readFile injected file reader;
+ *   returns the file content or null when unreadable/absent.
+ * @param {unknown} startDir directory to start the upward walk from; a
+ *   non-string or empty value returns null rather than throwing.
+ * @returns {string | null} the resolved workspace root, or null when no
+ *   `.git` is found within the walk bound.
+ */
+export function resolveWorkspaceRoot(readFile, startDir) {
+  if (typeof startDir !== "string" || startDir.length === 0) return null;
+
+  let dir = startDir;
+  for (let i = 0; i < 40; i++) {
+    if (typeof readFile(join(dir, ".git", "HEAD")) === "string") return dir;
+    if (typeof readFile(join(dir, ".git")) === "string") return dir;
+
+    const parent = dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+  return null;
+}
+
+/**
+ * Resolves the current branch from the workspace root {@link resolveWorkspaceRoot}
+ * finds by walking upward from `startDir` — handling both a `.git` directory
+ * (the normal case) and a `.git` file pointing at the real gitdir (the
+ * linked-worktree / submodule case).
  *
  * @param {(path: string) => string | null} readFile injected file reader;
  *   returns the file content or null when unreadable/absent.
@@ -191,28 +236,23 @@ export function parseGitdirPointer(content) {
  *   resolved.
  */
 export function resolveBranch(readFile, startDir) {
-  if (typeof startDir !== "string" || startDir.length === 0) return null;
+  const dir = resolveWorkspaceRoot(readFile, startDir);
+  if (dir === null) return null;
 
-  let dir = startDir;
-  for (let i = 0; i < 40; i++) {
-    const headContent = readFile(join(dir, ".git", "HEAD"));
-    if (typeof headContent === "string") {
-      return parseHeadRef(headContent);
-    }
-
-    const gitEntry = readFile(join(dir, ".git"));
-    if (typeof gitEntry === "string") {
-      const pointer = parseGitdirPointer(gitEntry);
-      if (pointer === null || pointer.length === 0) return null;
-      const resolvedGitDir = isAbsolute(pointer) ? pointer : join(dir, pointer);
-      const linkedHead = readFile(join(resolvedGitDir, "HEAD"));
-      return typeof linkedHead === "string" ? parseHeadRef(linkedHead) : null;
-    }
-
-    const parent = dirname(dir);
-    if (parent === dir) return null;
-    dir = parent;
+  const headContent = readFile(join(dir, ".git", "HEAD"));
+  if (typeof headContent === "string") {
+    return parseHeadRef(headContent);
   }
+
+  const gitEntry = readFile(join(dir, ".git"));
+  if (typeof gitEntry === "string") {
+    const pointer = parseGitdirPointer(gitEntry);
+    if (pointer === null || pointer.length === 0) return null;
+    const resolvedGitDir = isAbsolute(pointer) ? pointer : join(dir, pointer);
+    const linkedHead = readFile(join(resolvedGitDir, "HEAD"));
+    return typeof linkedHead === "string" ? parseHeadRef(linkedHead) : null;
+  }
+
   return null;
 }
 
@@ -325,7 +365,7 @@ export function formatBranchSegment(branchName) {
 /**
  * @param {unknown} payload
  * @returns {{ id: string, priority: number, text: string, minWidth: number } | null}
- *   the `wt "name"` segment, or null when `workspace.git_worktree` is
+ *   the `🌳 name` segment, or null when `workspace.git_worktree` is
  *   absent/empty.
  */
 export function formatWorktreeSegment(payload) {
@@ -337,7 +377,7 @@ export function formatWorktreeSegment(payload) {
       : undefined;
   if (typeof worktreeName !== "string" || worktreeName.length === 0)
     return null;
-  return seg("worktree", 85, `${BLUE}wt "${worktreeName}"${RESET}`, 8);
+  return seg("worktree", 85, `${BLUE}🌳 ${worktreeName}${RESET}`, 6);
 }
 
 /** Matches a `## Landing plan` heading at any level-2 heading line (ADR-0072).
@@ -451,22 +491,33 @@ export function parseLandingPlanProgress(pageText) {
  * Resolves the slice-progress state for the current render, or null when
  * none applies. Reads `tmp/slice-progress.json` (written by
  * `bin/slice-progress.mjs`) and, in derived mode, the reference page it
- * points at — both via the given `readFile` so this stays a pure function
- * of its inputs for testing, matching `resolveBranch`'s shape.
+ * points at — both resolved against {@link resolveWorkspaceRoot}'s walked
+ * root, not `startDir` verbatim (falling back to `startDir` when no `.git`
+ * is found within the walk bound, e.g. under test with a stub `readFile`
+ * that simulates no filesystem at all). `startDir` alone
+ * (`payload.workspace.current_dir`) is not always the workspace root — it
+ * diverges from `tmp/slice-progress.json`'s actual location the moment a
+ * session `cd`s into a subdirectory or enters a worktree in-session
+ * (`EnterWorktree`, ADR-0013/0014), which is why the segment could
+ * previously fail to render even immediately after `slice:set`. Every read
+ * goes through the given `readFile` so this stays a pure function of its
+ * inputs for testing, matching `resolveBranch`'s shape.
  *
  * The branch gate mirrors `starting-work`'s handling of a compact-handoff
  * naming a different branch: a slice-progress entry stamped for another
  * branch is not a signal for the current one.
  *
  * @param {(path: string) => string | null} readFile
- * @param {string} startDir the workspace root to resolve `tmp/`/page paths
- *   against (`payload.workspace.current_dir`, per-worktree).
+ * @param {string} startDir the directory to resolve the workspace root
+ *   from (`payload.workspace.current_dir`, per-worktree) — see
+ *   {@link resolveWorkspaceRoot}.
  * @param {string | null} branch the already-resolved current branch.
  * @returns {{ current: number, total: number, label: string | null, allLanded: boolean } | null}
  */
 export function resolveSliceProgress(readFile, startDir, branch) {
   if (typeof branch !== "string" || branch.length === 0) return null;
-  const raw = readFile(join(startDir, "tmp/slice-progress.json"));
+  const root = resolveWorkspaceRoot(readFile, startDir) ?? startDir;
+  const raw = readFile(join(root, "tmp/slice-progress.json"));
   if (raw === null) return null;
 
   let entry;
@@ -480,7 +531,7 @@ export function resolveSliceProgress(readFile, startDir, branch) {
   }
 
   if (typeof entry.page === "string" && entry.page.length > 0) {
-    const pageText = readFile(join(startDir, entry.page));
+    const pageText = readFile(join(root, entry.page));
     return pageText === null ? null : parseLandingPlanProgress(pageText);
   }
 
@@ -525,6 +576,181 @@ export function formatSliceSegment(slice) {
   const text = `${prefix}${current}/${total}`;
   const styled = allLanded ? `${DIM}${text}${RESET}` : `${CYAN}${text}${RESET}`;
   return seg("slice", 90, styled, 6);
+}
+
+const MAX_MODEL_TEXT_LENGTH = 40;
+
+/**
+ * Strips C0/C1 control characters (including ESC, CR/LF) and clamps length.
+ * The account-scoped weekly-usage cache is written out-of-band by
+ * `bin/usage-cache.mjs` (which already sanitizes at the source), but this
+ * file must not assume the cache is a trusted channel on its own -- a
+ * future writer bug, a stale cache from an older script version, or direct
+ * tampering could still land an unsanitized value here, and an embedded
+ * newline or ANSI escape would break this file's own always-exactly-five-
+ * line guarantee (security-review finding). Defense in depth: sanitize
+ * again on read, not only on write.
+ *
+ * @param {string} text
+ * @returns {string}
+ */
+function sanitizeDisplayText(text) {
+  const CONTROL_CHARS_PATTERN = new RegExp(
+    "[" +
+      String.fromCharCode(0) +
+      "-" +
+      String.fromCharCode(0x1f) +
+      String.fromCharCode(0x7f) +
+      "-" +
+      String.fromCharCode(0x9f) +
+      "]",
+    "g",
+  );
+  return text
+    .replace(CONTROL_CHARS_PATTERN, "")
+    .trim()
+    .slice(0, MAX_MODEL_TEXT_LENGTH);
+}
+
+const USAGE_CACHE_FILENAME = "m3l-usage-weekly.json";
+
+/**
+ * Deliberately duplicated from `bin/usage-cache.mjs`'s identical function
+ * (same convention as `sanitizeDisplayText` above) rather than imported —
+ * this file does not depend on `bin/`. Weekly usage is account-global, not
+ * repo data, so the cache lives under the account's `~/.claude/`, never a
+ * repo's `tmp/` — see docs/adr/0092-out-of-band-usage-cache.md's amendment.
+ *
+ * @param {string} homeDir
+ * @returns {string} the absolute, account-scoped cache path.
+ */
+export function resolveUsageCachePath(homeDir) {
+  return join(homeDir, ".claude", USAGE_CACHE_FILENAME);
+}
+
+/**
+ * Resolves the per-model weekly-usage state for the current render, or null
+ * when no usable cache exists. Reads the account-scoped cache file (written
+ * out-of-band by `bin/usage-cache.mjs`, refreshed by the `Stop`-hook
+ * `refresh-usage-cache.mjs` — docs/adr/0092-out-of-band-usage-cache.md) via
+ * the given `readFile`, matching `resolveSliceProgress`'s pure-function
+ * shape so this stays directly unit-testable.
+ *
+ * Staleness gate (distinct from `resolveSliceProgress`'s branch gate — this
+ * data has no branch affinity): older than 24h -> null, since a day-old
+ * weekly figure misleads more than an absent one; older than 2h -> kept, but
+ * flagged `stale` so {@link formatWeeklyModelSegments} appends a dim age
+ * suffix; under 2h -> kept, no suffix.
+ *
+ * @param {(path: string) => string | null} readFile
+ * @param {string} cachePath the account-scoped cache's absolute path (see
+ *   `resolveUsageCachePath`, deliberately duplicated from
+ *   `bin/usage-cache.mjs` rather than imported — matching this file's
+ *   existing no-bin-dependency convention, same as `sanitizeDisplayText`
+ *   above). Unlike `tmp/slice-progress.json`, this cache carries no
+ *   worktree affinity — weekly usage is account-global, not repo data — so
+ *   it is resolved once from the account home, not from
+ *   `payload.workspace.current_dir`.
+ * @param {number} now ms epoch.
+ * @returns {{ models: Array<{ id: string, display_name: string, used_percentage: number }>, ageSec: number, stale: boolean } | null}
+ */
+export function resolveWeeklyUsage(readFile, cachePath, now) {
+  const raw = readFile(cachePath);
+  if (raw === null) return null;
+
+  let entry;
+  try {
+    entry = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (typeof entry !== "object" || entry === null) return null;
+
+  const fetchedAt = /** @type {{ fetched_at?: unknown }} */ (entry).fetched_at;
+  if (typeof fetchedAt !== "number" || !Number.isFinite(fetchedAt)) {
+    return null;
+  }
+  const ageSec = Math.max(0, Math.round(now / 1000 - fetchedAt));
+  if (ageSec > 24 * 3600) return null;
+
+  const rawModels = /** @type {{ models?: unknown }} */ (entry).models;
+  const models = Array.isArray(rawModels)
+    ? rawModels
+        .map((m) => {
+          if (typeof m !== "object" || m === null) return null;
+          const mm =
+            /** @type {{ id?: unknown, display_name?: unknown, used_percentage?: unknown }} */ (
+              m
+            );
+          if (
+            typeof mm.id !== "string" ||
+            typeof mm.display_name !== "string"
+          ) {
+            return null;
+          }
+          if (
+            typeof mm.used_percentage !== "number" ||
+            !Number.isFinite(mm.used_percentage)
+          ) {
+            return null;
+          }
+          // Defense in depth (security review): sanitize again on read, not
+          // only trusting bin/usage-cache.mjs's own write-side sanitization.
+          const id = sanitizeDisplayText(mm.id);
+          const displayName = sanitizeDisplayText(mm.display_name);
+          if (id.length === 0 || displayName.length === 0) return null;
+          return {
+            id,
+            display_name: displayName,
+            used_percentage: mm.used_percentage,
+          };
+        })
+        .filter((m) => m !== null)
+    : [];
+  if (models.length === 0) return null;
+
+  return { models, ageSec, stale: ageSec > 2 * 3600 };
+}
+
+/**
+ * @param {{ models: Array<{ id: string, display_name: string, used_percentage: number }>, ageSec: number, stale: boolean } | null} usage
+ *   the pre-resolved value from {@link resolveWeeklyUsage} — this formatter
+ *   does no I/O.
+ * @returns {Array<{ id: string, priority: number, text: string, minWidth: number }>}
+ *   one zone-colored `<name> NN%` segment per model (sorted by usage
+ *   descending, priorities 45 downward so the largest consumer survives
+ *   longest on a narrow terminal), plus a trailing dim `(<age> old)` segment
+ *   when `stale`. Empty array when `usage` is null or carries no models.
+ */
+export function formatWeeklyModelSegments(usage) {
+  if (usage === null || typeof usage !== "object") return [];
+  const { models, ageSec, stale } = usage;
+  if (!Array.isArray(models) || models.length === 0) return [];
+
+  const sorted = [...models].sort(
+    (a, b) => b.used_percentage - a.used_percentage,
+  );
+  const modelSegs = sorted
+    .map((m, i) => {
+      const zone = zoneForPercentage(m.used_percentage);
+      const color = zone === "high" ? RED : zone === "warn" ? YELLOW : GREEN;
+      return seg(
+        `weekly_${m.id}`,
+        45 - i,
+        `${color}${m.display_name} ${m.used_percentage}%${RESET}`,
+        6,
+      );
+    })
+    .filter((s) => s !== null);
+
+  if (!stale) return modelSegs;
+  const ageSeg = seg(
+    "weekly_age",
+    45 - modelSegs.length,
+    `${DIM}(${formatDuration(ageSec)} old)${RESET}`,
+    8,
+  );
+  return ageSeg === null ? modelSegs : [...modelSegs, ageSeg];
 }
 
 /**
@@ -1005,11 +1231,12 @@ export function buildSessionRow(payload, env, columns) {
 
 /**
  * @param {unknown} payload
+ * @param {{ weeklyUsage?: unknown } | undefined} env
  * @param {number} columns
  * @returns {string} the model row: model, effort, thinking, fast mode,
- *   output style, vim mode.
+ *   output style, vim mode, per-model weekly usage.
  */
-export function buildModelRow(payload, columns) {
+export function buildModelRow(payload, env, columns) {
   return buildRow(
     "model",
     [
@@ -1019,6 +1246,7 @@ export function buildModelRow(payload, columns) {
       formatFastModeSegment(payload),
       formatOutputStyleSegment(payload),
       formatVimModeSegment(payload),
+      ...formatWeeklyModelSegments(env?.weeklyUsage ?? null),
     ],
     columns,
   );
@@ -1094,7 +1322,8 @@ export function buildWorkRow(payload, env, columns) {
  *   COLUMNS?: unknown;
  * }} [env] local-only, non-payload context: current time (ms), free/total
  *   memory (bytes), the resolved git branch name, the pre-resolved slice-
- *   progress value (see {@link resolveSliceProgress}), and the terminal
+ *   progress value (see {@link resolveSliceProgress}), the pre-resolved
+ *   weekly-usage value (see {@link resolveWeeklyUsage}), and the terminal
  *   `COLUMNS` width. Defaults to `{}` so existing single-argument call sites
  *   keep working.
  * @returns {string} the full, always-five-line status-line output.
@@ -1103,7 +1332,7 @@ export function renderStatusLine(payload, env = {}) {
   const columns = terminalColumns(env);
   return [
     buildSessionRow(payload, env, columns),
-    buildModelRow(payload, columns),
+    buildModelRow(payload, env, columns),
     buildContextRow(payload, columns),
     buildQuotaRow(payload, env, columns),
     buildWorkRow(payload, env, columns),
@@ -1135,12 +1364,18 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
         ? payload.workspace.current_dir
         : process.cwd();
     const branch = resolveBranch(safeReadFile, startDir);
+    const now = Date.now();
     const env = {
-      now: Date.now(),
+      now,
       freemem: os.freemem(),
       totalmem: os.totalmem(),
       branch,
       slice: resolveSliceProgress(safeReadFile, startDir, branch),
+      weeklyUsage: resolveWeeklyUsage(
+        safeReadFile,
+        resolveUsageCachePath(os.homedir()),
+        now,
+      ),
       COLUMNS: process.env.COLUMNS,
     };
     output = renderStatusLine(payload, env);

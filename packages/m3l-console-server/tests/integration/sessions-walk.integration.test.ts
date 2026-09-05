@@ -49,10 +49,8 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
 import type { M3LConsoleSessionsConfig } from "../../src/config/sessions.js";
-import {
-  createSessionArtifactStore,
-  encodeArtifactRef,
-} from "../../src/sessions/artifacts.js";
+import { createSessionArtifactStore } from "../../src/sessions/artifacts.js";
+import { encodeArtifactRef } from "../../src/sessions/artifact-codec.js";
 import type { M3LSessionRunLauncherPort } from "../../src/sessions/ports.js";
 import { createSessionService } from "../../src/sessions/service.js";
 import type { M3LSessionService } from "../../src/sessions/service.js";

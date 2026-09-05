@@ -1,10 +1,11 @@
 ---
 name: creating-prs
 description: >-
-  Verify quality gates, push the branch, and open a PR with a Conventional
-  Commit title and body from commit history. Use for /creating-prs, "open a PR",
-  "create a pull request", "ship this for review", or after finishing a fix.
-  Requires gh CLI auth. GitHub stance: gh CLI (ADR-0030).
+  Verify quality gates, push the branch, open a PR with a Conventional Commit
+  title and body from commit history, then decide and execute its merge path.
+  Use for /creating-prs, "open a PR", "create a pull request", "ship this for
+  review", "get this merged", or after finishing a fix. Requires gh CLI auth.
+  GitHub stance: gh CLI (ADR-0030).
 ---
 
 # creating-prs
@@ -135,7 +136,7 @@ already orders this correctly; mirror it here rather than composing `lint`,
 dependency-violating sequence:
 
 ```bash
-pnpm lint && pnpm typecheck && pnpm turbo run build --filter=@m3l-automation/m3l-cli && pnpm test:coverage && pnpm build && pnpm knip
+pnpm lint && pnpm typecheck && pnpm turbo run build --filter=@m3l-automation/m3l-cli && pnpm test:coverage && pnpm build && pnpm knip && pnpm check:command-catalog
 ```
 
 **`pnpm knip` is not part of `pre-push`** (cost reasons — see
@@ -145,6 +146,15 @@ can pass every `pre-push` lane and still fail CI on an unused export the
 same change just introduced — logged twice now
 (`docs/logs/2026-09-03-x11b-console-session-views.md`). Run it here, not
 only when CI catches it.
+
+**`pnpm check:command-catalog` is the same story for a new `package.json`
+script.** It is also part of the `Governance gates` CI lane but not
+`pre-push`, so adding a script mid-PR and relying only on this sequence's
+other gates lets a missing `bin/lib/command-catalog.mjs` entry reach CI
+undetected — it happened exactly this way
+(`docs/logs/2026-09-05-statusline-weekly-usage.md`). Cheap and instant
+(reads `package.json` only, no build dependency); run it whenever this PR
+adds or renames a script.
 
 ### 5 — Reconcile docs
 
@@ -337,6 +347,13 @@ own feature branch** but never on a shared branch (per CLAUDE.md, "never
 git push --force-with-lease
 ```
 
+A `[remote rejected] … cannot lock ref … unable to resolve reference` on a
+feature-branch push is not a transient error to retry — it is the tell that
+the push lost a race against the branch's own post-merge deletion. Check
+`gh pr view <n> --json state,mergedAt` first; if `MERGED`, cherry-pick the
+orphaned commit onto a fresh branch off the new `main`
+(`docs/logs/2026-09-05-document-merge-step.md`).
+
 ### 10 — Gather commits since main
 
 ```bash
@@ -402,6 +419,75 @@ gh pr view --json mergeable,mergeStateStatus
 A clean Step 2 rebase should make this `MERGEABLE`. If `mergeable` is
 `CONFLICTING`, tell the user the branch conflicts with the base and hand back so
 they can rebase — do not attempt to resolve it here.
+
+### 15 — Decide the merge path
+
+This is the step the skill used to stop short of: `finishing-work` Step 1 only
+knows what to do once a PR is already `MERGED`, and nothing before this owned
+turning an open, mergeable PR into one. Three outcomes, one **default**:
+
+- **Default — merge after the verdict lands.** Wait for `claude-pr-review.yml`'s
+  `review` check to report, then:
+
+  ```bash
+  gh pr merge <number> --squash
+  ```
+
+  This is the default, not `--auto`, because auto-merge fires the instant the
+  required checks pass — so the review verdict typically lands on an
+  already-merged PR, and every finding it raises becomes a follow-up PR
+  instead of a pre-merge fix. Three PRs in the U10 wave auto-merged this way,
+  twice while a spoke was still fixing that same PR
+  (`docs/logs/2026-09-02-u10-orchestration-engine.md`); a reviewed commit on
+  #951 was orphaned outright when a second push raced an armed auto-merge
+  (`docs/logs/2026-09-03-u11-retry-resume-cancellation.md`), which is the log
+  that named the rule this step encodes: leave auto-merge unarmed on any PR
+  expecting a review round.
+
+- **Opt-in — arm auto-merge.** For a PR expecting no review round (docs-only,
+  a trivial config change, the `docs-consistency-reviewer` path from Step 7):
+
+  ```bash
+  gh pr merge <number> --auto --squash
+  ```
+
+  State the tradeoff at the point of choosing, not after: the verdict may
+  still arrive post-merge if a reviewable file sneaks in later. This mirrors
+  `reviewing-dependabot-prs`' own MERGE action
+  (`.claude/skills/reviewing-dependabot-prs/SKILL.md`), which always uses
+  `--auto --squash` for the class of PR it's scoped to.
+
+- **Hand back.** Step 14 reported `CONFLICTING`, or a spoke's Must-fix from
+  Step 7 is still outstanding. Neither is safe to merge past.
+
+Whichever outcome applies, the method is always `--squash` — this repo lands
+every PR by squash merge (verified against #650/#649/#647,
+`docs/adr/0014-symmetric-worktree-tooling.md`).
+
+Three things this step must never do:
+
+1. **Never `--admin`.** Both protection layers set `enforce_admins: true` —
+   there is no bypass for a red required check, for anyone, including the
+   maintainer. A failing gate means fix it
+   (`docs/contributing/branch-protection.md` § Overriding a disputed finding
+   covers the one legitimate override path, and it is a manual, evidence-first
+   procedure, not a flag).
+2. **Never press GitHub's "Update branch" button.** `main`'s branch protection
+   does not require branches to be up to date before merging, so the button is
+   never load-bearing — and it rewrites commits via GitHub's web-flow key,
+   which `verify-signed-range` cannot verify against the local keyring on a
+   later `git rebase origin/main`. If the branch needs to catch up, rebase
+   locally and re-sign (Step 2's own recovery pattern), then
+   `git push --force-with-lease`.
+3. **Never let a further push race an armed auto-merge.** Once `--auto` is set,
+   a `git push` updating the PR is competing with the merge, not queued behind
+   it — see `finishing-work/SKILL.md`'s Step 3 note for the same race from the
+   other side. If a follow-up commit must land in this PR, confirm the push
+   landed and is still HEAD before assuming it will be included.
+
+Once the PR shows `state: "MERGED"`, hand off to `/finishing-work` — this step
+is `creating-prs`' terminal one, matching the boundary `finishing-work`'s own
+opening paragraph now names.
 
 ---
 

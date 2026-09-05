@@ -61,3 +61,4 @@ mechanism.
 | 2026-08-20 | AI agents operating a CLI application (tooling, MCP, safety, Bedrock)  | [agent-cli-integration.md](agent-cli-integration.md)                 |
 | 2026-08-27 | Context window management, compaction, and token efficiency            | [context-window-and-compaction.md](context-window-and-compaction.md) |
 | 2026-09-02 | Claude Code session naming and identity                                | [session-naming.md](session-naming.md)                               |
+| 2026-09-05 | Subagent MCP tool grants: least privilege vs. hub-only                 | [subagent-mcp-tool-grants.md](subagent-mcp-tool-grants.md)           |

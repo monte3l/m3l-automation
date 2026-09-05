@@ -88,17 +88,18 @@ table below is the pre-push cadence, verified against `lefthook.yml` by
 `audit`, and gitleaks (`docs/contributing/ci-cd.md`). `pre-push` takes
 minutes — background it, never `--no-verify`.
 
-| Stage                   | Checks                                                                       | Scope  |
-| ----------------------- | ---------------------------------------------------------------------------- | ------ |
-| `pre-commit` (lefthook) | `eslint`, `prettier`                                                         | staged |
-| `commit-msg` (lefthook) | `strip-claude-trailers`, `lint-commit`                                       | commit |
-| `pre-push` (lefthook)   | `format:check`, `lint`, `typecheck`, `test:coverage`, `check:test-counts`    | repo   |
-| `pre-push` (lefthook)   | `build`, `check:exports`, `verify-signed-range`, `check:control-chars`       | repo   |
-| `pre-push` (lefthook)   | `check:file-budget`, `check:agents`, `check:script-docs`, `check:provenance` | repo   |
-| `pre-push` (lefthook)   | `check:cli-docs`, `check:review-size`, `check:context-budget`, `check:index` | repo   |
-| `pre-push` (lefthook)   | `check:harness-freshness`, `check:skill-evals`, `check:retrospective`        | repo   |
-| `pre-push` (lefthook)   | `check:review-policy`, `check:claude-cli-version`, `check:hooks`             | repo   |
-| `pre-push` (lefthook)   | `check-commit-trailers`, `check:skill-frontmatter`, `check:no-docker`        | repo   |
+| Stage                   | Checks                                                                                    | Scope  |
+| ----------------------- | ----------------------------------------------------------------------------------------- | ------ |
+| `pre-commit` (lefthook) | `eslint`, `prettier`                                                                      | staged |
+| `commit-msg` (lefthook) | `strip-claude-trailers`, `lint-commit`                                                    | commit |
+| `pre-push` (lefthook)   | `format:check`, `lint`, `typecheck`, `test:coverage`, `check:test-counts`                 | repo   |
+| `pre-push` (lefthook)   | `build`, `check:exports`, `verify-signed-range`, `check:control-chars`                    | repo   |
+| `pre-push` (lefthook)   | `check:file-budget`, `check:agents`, `check:script-docs`, `check:provenance`              | repo   |
+| `pre-push` (lefthook)   | `check:cli-docs`, `check:review-size`, `check:context-budget`, `check:index`              | repo   |
+| `pre-push` (lefthook)   | `check:harness-freshness`, `check:skill-evals`, `check:retrospective`, `check:logs-index` | repo   |
+| `pre-push` (lefthook)   | `check:review-policy`, `check:claude-cli-version`, `check:hooks`                          | repo   |
+| `pre-push` (lefthook)   | `check:staleness`                                                                         | repo   |
+| `pre-push` (lefthook)   | `check-commit-trailers`, `check:skill-frontmatter`, `check:no-docker`                     | repo   |
 
 `pnpm verify` reproduces every CI check locally; `check:verify-parity` keeps
 it in sync with `ci.yml`, and `check:cadence` unions the rows above (split
@@ -127,7 +128,7 @@ Canonical **Style Guide**: `docs/contributing/style-guide.md` (`[enforced]` vs `
 - `scripts/**` → `scripts.md` — `workspace:*` (ADR-0029), naming (ADR-0028)
 - `packages/**/*.ts`, `scripts/**/*.ts`, `**/*.test.ts` → `domain-knowledge.md`
 - `.claude/skills/**`, `.claude/agents/**` → `subagent-dispatch.md` — truncation recovery
-- `.claude/hooks/**`, `.claude/workflows/**` → `harness-artifacts.md` — run it before wiring it
+- `.claude/hooks/**`, `.claude/workflows/**`, `bin/**` → `harness-artifacts.md` — run it before wiring it
 
 ## Interaction Style
 
@@ -181,7 +182,7 @@ Comment the _why_, not the _what_. TSDoc rules (every exported symbol, `@example
 
 **Enforced at write time or in CI:** `any` in the public API, a missing `.js` extension, CommonJS (`require`/`module.exports`/`__dirname`), hand-edits to `dist/`, non-Conventional commits, committed secrets/tokens, an unsigned/invalid-signature push, adding a dependency without updating the lockfile, and any `Claude-*` git trailer other than `Co-Authored-By:` (harness-injected, e.g. `Claude-Session:`; stripped at `commit-msg`, rejected at push). The `.js`-extension and CommonJS bans are guarded twice (a PreToolUse hook plus ESLint/CI) — don't remove either as "redundant."
 
-**No automated guard — need conscious care:** never swallow errors silently; no top-level side effects; keep the import graph shallow; never `git push --force`; surface new Core/AWS exports through the namespace barrel only, never a new `exports` subpath.
+**No automated guard — need conscious care:** never swallow errors silently; no top-level side effects; keep the import graph shallow; never `git push --force`; surface new Core/AWS exports through the namespace barrel only, never a new `exports` subpath; never run a destructive command for a _disposable_ purpose without checking what else it takes with it — `git status --porcelain` before any `git reset --hard` (non-empty output is a hard stop; there is no partial-hard-reset), and `rm -rf` the specific subdirectory a test created, never the shared tracked directory containing it.
 
 ## Known Gotchas
 

@@ -466,6 +466,24 @@ jobs:
       - name: Check retrospective loop
         run: pnpm check:retrospective
 
+      # Warns (non-blocking) on post-merge local residue: a stale worktree,
+      # local branch, remote-tracking ref, or tmp/ file (issue #995 / ROADMAP
+      # H2). CI's ephemeral single checkout has no linked worktrees and no
+      # local branch history, so this is naturally a clean no-op here — the
+      # real value is the post-merge/post-rewrite lefthook copy that runs
+      # against a maintainer's actual multi-worktree checkout.
+      - name: Check post-merge staleness
+        run: pnpm check:staleness
+
+      # Warns (non-blocking) when docs/logs/README.md's index tables have
+      # drifted from docs/logs/ — a file with no row, a dangling link, a
+      # duplicate, or a date-column mismatch. check:retrospective counts logs
+      # for sweep-cadence purposes but never checks which ones are indexed;
+      # this closes that gap (docs/logs/2026-07-22-promotion-audit.md,
+      # docs/logs/2026-09-03-x8-open-items.md).
+      - name: Check logs index coverage
+        run: pnpm check:logs-index
+
       - name: Check skill evals
         run: pnpm check:skill-evals
 
@@ -630,11 +648,20 @@ jobs:
       - name: Check Claude Code CLI pin
         run: pnpm check:claude-cli-version
 
-      # GitHub-integration stance (ADR-0030 amendment, 2026-07-27): every
-      # GitHub-talking skill cites the governing ADR, carries no retired policy
-      # claim, and names the mechanism (gh CLI vs GitHub MCP) it actually uses.
-      - name: Check GitHub-integration stance (integration-stance)
+      # External-integration stance: every GitHub-talking skill (ADR-0030
+      # amendment, 2026-07-27) and every context7-talking skill (ADR-0093)
+      # cites its governing ADR, carries no retired policy claim, and names
+      # the mechanism it actually uses (gh CLI vs GitHub MCP; context7 MCP).
+      - name: Check external-integration stance (integration-stance)
         run: pnpm check:integration-stance
+
+      # Reference-snapshot freshness (ADR-0093): every Context7-sourced skill
+      # reference snapshot carries a <!-- reference-freshness: ... --> stamp,
+      # its tracked packages haven't drifted past the declared refresh policy,
+      # and no retired `ctx7 <verb>` CLI instruction has crept back in. Offline
+      # by design (no network call), so it runs fine here.
+      - name: Check reference-snapshot freshness (reference-freshness)
+        run: pnpm check:reference-freshness
 
       # ADR-0009/ADR-0035 dependency direction: the import-x/no-restricted-paths
       # layering zones (internal sealing, aws island, core/script root) plus the

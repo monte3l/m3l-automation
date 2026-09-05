@@ -216,13 +216,37 @@ Once confirmed:
   `pnpm session:launch`'s command-line naming trick is not needed for this
   path (it still applies when genuinely opening a second session; see the
   session-name bullet in Step 3).
+- **A second, concurrent worktree mid-session does not need `EnterWorktree`.**
+  It will refuse while this session already owns one; the working pattern is
+  absolute paths into the second worktree on every `Read`/`Write`/`Edit` and
+  an explicit `cd <path> &&` prefix on every `Bash` call — the shell's cwd
+  does not persist across tool calls. Prefer this to an
+  `ExitWorktree`/`EnterWorktree` cycle unless the session's tracked-worktree
+  ownership itself has to move (e.g. for `finishing-work`'s
+  `ExitWorktree(remove)`). Because a successful `Write` says nothing about
+  _which_ checkout received the file, spot-check any newly created,
+  not-yet-tracked file with `git status` scoped to the worktree
+  (`docs/logs/2026-09-05-statusline-anchor-fixes.md`,
+  `2026-09-03-permission-allowlist-expansion.md`).
 - **New branch in place:** `git switch -c feat/<slug>` (or `fix/<slug>`).
 - **Next-slice signal:** once the new branch exists (worktree or in-place),
-  run `pnpm slice:set -- --page <the submodule's reference page>` so the
-  statusline's slice-progress segment (docs/adr/0072-reviewable-slice-discipline.md's
-  2026-09-04 amendment) picks up the sequence immediately — the CLI stamps
-  the branch itself and re-derives `N`/`M` from the page's `## Landing plan`
-  table on every render, so it never needs updating again mid-slice.
+  record it so the statusline's slice-progress segment
+  (docs/adr/0072-reviewable-slice-discipline.md's 2026-09-04 amendment) picks
+  up the sequence immediately — the CLI stamps the branch itself either way.
+  - **Submodule work with a reference page:** run `pnpm slice:set -- --page
+<the submodule's reference page>` — derived mode re-derives `N`/`M` from
+    the page's `## Landing plan` table on every render, so it never needs
+    updating again mid-slice. Prefer this form whenever a page exists; it
+    cannot drift from the committed table the way a literal count can.
+  - **Non-submodule multi-PR wave, no reference page** (the PR-sequence
+    case from Step 3 above — an X8/X11/V9-style wave): run `pnpm slice:set
+-- --wave <ID> --current <N> --total <M>` using the same wave label and
+    position Step 3 already recommended, so the segment shows `<ID> N/M`
+    immediately. This is literal mode's whole purpose — an explicit,
+    ephemeral escape hatch for exactly the case that has no committed
+    landing-plan table to derive from (ADR-0072). Re-run with the next `N`
+    as each PR in the sequence lands; `finishing-work` Step 8 advances or
+    clears it once the wave is done.
 - **Staying put:** verify `HEAD` is neither `main` nor detached-on-`main` before
   handing back; if it is, loop back to step 4 rather than proceeding into a write
   that the guard will reject. When **resuming an existing feature branch** that

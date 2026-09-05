@@ -284,6 +284,16 @@ const CLASSIFICATION_TABLE: Record<
     retryable: false,
     fault: true,
   },
+  // X8 slice 5b-ii. A read of an artifact the retention sweep has already
+  // deleted is a normal administrative outcome the server caused ON PURPOSE,
+  // never a drift the server did not intend. `fault: false` is the point of
+  // the whole slice — a scheduled sweep must never page anyone.
+  ERR_CONSOLE_SESSION_ARTIFACT_GONE: {
+    status: 410,
+    origin: "library",
+    retryable: false,
+    fault: false,
+  },
   // X10b console-server script discovery. A config module that resolved
   // (per `runs/catalog.ts`'s `resolveConfigModulePath` check) but then
   // fails to load its descriptors is a real server-side defect an operator

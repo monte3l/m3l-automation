@@ -55,11 +55,23 @@
     {
       "id": 4,
       "prompt": "How do I configure Vitest with @testing-library/jest-dom so I can use DOM matchers like `toBeInTheDocument()` and `toHaveTextContent()` in my tests?",
-      "expected_output": "The response recognises this as a generic Vitest question unrelated to the m3l-automation repo, declines to apply the vitest-coverage-types-mocks skill, and routes to the context7-mcp skill instead.",
+      "expected_output": "The response recognises this as a generic Vitest question unrelated to the m3l-automation repo, declines to apply the vitest-coverage-types-mocks skill, and defers to current upstream Vitest/jest-dom documentation (via the context7 MCP tools, ADR-0093) instead.",
       "expectations": [
-        "The response defers to an up-to-date external documentation lookup rather than treating its own recollection as authoritative — satisfied EITHER by naming `context7-mcp` as the appropriate skill, OR by stating it will consult current upstream documentation for the answer. Note `context7-mcp` is a plugin skill that does not exist inside this sandbox, so an attempt to invoke it fails with \"Unknown skill\"; grade the RESPONSE TEXT only, and treat a failed invocation followed by an explicit defer-to-current-docs statement as satisfying this criterion in full.",
+        "The response defers to an up-to-date external documentation lookup rather than treating its own recollection as authoritative — satisfied EITHER by naming `mcp__context7__resolve-library-id`/`mcp__context7__query-docs` (or \"the context7 MCP\") as the mechanism it will use, OR by stating it will consult current upstream documentation for the answer",
         "Response text explains that this question concerns generic Vitest configuration or external DOM testing libraries unrelated to the m3l-automation repo's specific setup",
         "Response does not propose any changes to `vitest.config.ts` in the m3l-automation repo to support jest-dom matchers"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "A fix-round dispatch added a new defensive branch to packages/m3l-common/src/core/retry/index.ts and I ran `pnpm exec vitest run packages/m3l-common/tests/retry.test.ts` — it printed 'File coverage: 100%' for that file and all tests passed. Is this fix round done, or is there anything else to check before I consider it complete?",
+      "expected_output": "The response states the fix round is not yet done: a scoped single-file vitest run's coverage output is not proof the file clears its own per-file threshold, because that gate only runs under the full `pnpm test:coverage` (or `pnpm verify`) invocation. It instructs running the gated coverage command and tracing any gap from coverage/coverage-final.json's uncovered-line list, and flags the new branch's non-Error arm as a likely untested case.",
+      "expectations": [
+        "Response explicitly states that a scoped single-file `vitest run` reporting high or 100% coverage is NOT proof the file clears its own per-file coverage threshold",
+        "Response explains that per-file coverage thresholds are enforced only under `pnpm test:coverage` (or the full `pnpm verify`), never under a bare `pnpm test`/`vitest run` invocation",
+        "Response emits `WOULD-RUN: pnpm test:coverage` (or `WOULD-RUN: pnpm verify`) as the next required step before declaring the fix round complete",
+        "Response instructs tracing any coverage gap from `coverage/coverage-final.json`'s uncovered-line list rather than guessing which lines are uncovered",
+        "Response flags that a new defensive/ternary branch commonly has an untested non-`Error` (or otherwise unexercised) arm that should be covered in the same edit"
       ]
     }
   ]

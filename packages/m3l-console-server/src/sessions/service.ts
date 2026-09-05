@@ -38,11 +38,9 @@ import type {
   M3LSessionStepRecord,
 } from "../store/sessions-repository.js";
 
-import type {
-  M3LSessionArtifactRef,
-  M3LSessionArtifactStore,
-} from "./artifacts.js";
-import { decodeArtifactRef, encodeArtifactRef } from "./artifacts.js";
+import type { M3LSessionArtifactStore } from "./artifacts.js";
+import { decodeArtifactRef, encodeArtifactRef } from "./artifact-codec.js";
+import type { M3LSessionArtifactRef } from "./artifact-codec.js";
 import { buildSessionBindingMethods } from "./service-bindings.js";
 import type { SessionBindingMethods } from "./service-bindings.js";
 import { buildSessionReadMethods } from "./service-reads.js";

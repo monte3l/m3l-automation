@@ -75,7 +75,7 @@ const OPERATOR_WITH_EMAIL: M3LOperatorProfile = {
 
 /**
  * A file-backed ADR-0068 artifact reference, in the exact envelope shape
- * `sessions/artifacts.ts`'s `encodeArtifactRef` emits. A literal is used
+ * `sessions/artifact-codec.ts`'s `encodeArtifactRef` emits. A literal is used
  * rather than importing that encoder so this file drives `audit/record.ts`
  * alone (v8 `perFile` coverage binding — see `tests/store-paths.test.ts`).
  */

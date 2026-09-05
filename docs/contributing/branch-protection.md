@@ -190,7 +190,18 @@ In **Settings → Branches → Branch protection rules**, add a rule for `main`:
     The `reviewing-dependabot-prs` skill (`.claude/skills/reviewing-dependabot-prs/`)
     is what actually reviews and acts on them instead, run manually rather than
     as a required workflow gate (for the same secrets-access reason).
-- **Require branches to be up to date before merging.**
+- **Require branches to be up to date before merging** — deliberately **not**
+  enabled (`strict_required_status_checks_policy: false` on both the classic
+  rule and the `main-dual-layer-protection` ruleset, confirmed live via
+  `gh api repos/monte3l/m3l-automation/branches/main/protection`). Being
+  behind `main` never blocks a merge here. This matters operationally, not
+  just as a settings note: with `strict` off, GitHub's PR "Update branch"
+  button is never required to clear a merge, and it should never be used
+  regardless — it rewrites the branch's commits via GitHub's own web-flow
+  signing key, which `verify-signed-range` cannot verify against the local
+  keyring on a later rebase. Catch a branch up with `git rebase origin/main`
+  and re-sign locally instead (`.claude/skills/creating-prs/SKILL.md` Step 2's
+  recovery pattern), then `git push --force-with-lease`.
 - **Require signed commits.** This is the _authoritative_ layer of the
   signed-commit policy (ADR-0016): unlike the in-repo `guard-git-push-signed`
   PreToolUse hook and the `verify-signed-range` lefthook `pre-push` backstop —

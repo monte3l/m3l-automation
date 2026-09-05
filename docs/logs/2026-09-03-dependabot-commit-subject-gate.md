@@ -123,7 +123,7 @@ the two.
   silently discard unrelated uncommitted edits sitting on top of it. Run
   `git status --porcelain` immediately before any `reset --hard` and treat
   non-empty output as a hard stop, independent of how narrow the reset's
-  intended scope feels.
+  intended scope feels. _(promoted → CLAUDE.md § Forbidden Patterns)_
 
 - **When a Dependabot PR fails a required check, check whether the failure
   is dependency-specific before triaging PR-by-PR.** All 8 open PRs here

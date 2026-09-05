@@ -179,11 +179,22 @@ The X6 session codes:
 | `ERR_CONSOLE_SESSION_TRANSITION_INVALID` | 409    | A guarded status transition matched no row (e.g. answering an already-answered decision). |
 | `ERR_CONSOLE_SESSION_CLOSED`             | 409    | A step was appended to a session that is not `open`.                                      |
 | `ERR_CONSOLE_SESSION_ARTIFACT_TOO_LARGE` | 413    | A step's recorded output exceeds the artifact or session-total cap.                       |
+| `ERR_CONSOLE_SESSION_ARTIFACT_GONE`      | 410    | The step's artifact file no longer exists — deleted by the retention sweep.               |
 | `ERR_CONSOLE_SESSION_LIMIT_EXCEEDED`     | 429    | The open-session cap (`m3l.console.sessions.open.max`) is reached.                        |
 
 `ERR_CONSOLE_SESSION_ARTIFACT_CORRUPT` (500, `origin: "library"`) is a
 server-fault code — a persisted artifact's on-disk bytes no longer match its
 recorded digest, or its reference envelope cannot be parsed.
+
+`ERR_CONSOLE_SESSION_ARTIFACT_GONE` (410) is the deliberate counterpart to
+it, and the two are told apart by exactly one condition: opening the
+artifact file failed with `ENOENT`. The step's stored reference is evidence
+the artifact once existed, so an absent file is _gone_, never _never was_ —
+which is why this is a 410 rather than a 404, and why it is not classified
+as a server fault. Every other errno keeps reporting `_CORRUPT`. `ELOOP` in
+particular does: the file is opened `O_NOFOLLOW` so that a symlink planted
+at the artifact path fails loudly, and reading that as a routine retention
+deletion would defeat the check.
 
 `ERR_CONSOLE_SCRIPT_INTROSPECTION_FAILED` (500, `origin: "library"`) is the
 other server-fault code a caller can provoke: a script's config module exists
@@ -468,8 +479,11 @@ Two consequences worth stating plainly:
 - Output from console-launched runs no longer lands in the shared
   `data/output` tree. Anything reading that directory for console runs must
   read the per-run directories instead.
-- Nothing prunes these directories. Like session artifacts, they live until
-  the data directory is cleared by hand — X8's retention regime, not this.
+- These directories now have a **declared** retention policy
+  (`m3l.console.runs.output.retention.ms`) and a sweep that deletes eligible
+  ones on demand — invoked by `m3l-console-server cleanup`. There is no timer
+  and no boot-time sweep; deletion happens only when an operator runs the
+  command. Session artifacts have the same posture.
 
 ### When there is no report
 
@@ -867,6 +881,11 @@ step ids must not be able to learn that one exists somewhere else.
 `ERR_CONSOLE_SESSION_ARTIFACT_CORRUPT` (500) surfaces a persisted reference
 that no longer decodes, or a file whose digest no longer matches — a real
 fault, never folded into the 404s above.
+`ERR_CONSOLE_SESSION_ARTIFACT_GONE` (410) is the separate, non-fault case:
+the reference decodes and the step is real, but the file has been removed by
+the retention sweep. It is also kept out of the 404s above, and for the same
+reason in reverse — the step exists and once had an artifact, so reporting
+"no such step" would be the wrong answer to a different question.
 
 ## `POST /api/v1/sessions/:id/bindings`
 
@@ -1012,10 +1031,20 @@ settings above.
 
 **Known limits, sessions:**
 
-- **No age-based sweep or operator cleanup command.** A session's artifacts
-  live until the process's data directory is cleared by hand — the
-  age-based sweep and a cleanup command are X8's (ADR-0070's retention
-  regime), not shipped here.
+- **Artifact deletion happens only when an operator runs `m3l-console-server cleanup`.**
+  `m3l.console.sessions.artifact.retention.ms` says when a completed step's
+  artifact becomes eligible; the command deletes the eligible ones. There is
+  no timer and no boot-time sweep — ADR-0070 requires an operator-run command
+  and forbids silent deletion, and this command is its implementation. See the
+  Operator cleanup command section for invocation details. A cleanup run
+  records no human action in the audit trail.
+- **An unfinished step's artifact is never eligible.** Eligibility is keyed
+  to the step's own `ended_at_ms`, not the file's timestamp, so a step still
+  running is skipped no matter how old its artifact file looks. An artifact
+  file whose step record is missing is reported as an **orphan** and left
+  alone, and an emptied session directory is left in place rather than
+  removed — deleting it would race a concurrent step writing into it.
+
 - **A step's addressable output is outcome-only** (`{ outcome, exitCode }`)
   — the canonical "select a field out of a real command's output dump"
   drill-down is not exercisable through the currently-shipped `run.ended`
@@ -1158,12 +1187,115 @@ deliberately no "disabled" sentinel — `0` would read as _delete everything_,
 which is the opposite of what an operator disabling retention means. A very
 large value is how a tier is kept indefinitely.
 
-**Declaring a policy deletes nothing.** ADR-0070 requires an operator-run
-cleanup command and forbids silent deletion, so these settings only describe
-what _would_ be eligible. Nothing in the server schedules a sweep, and no
-timer exists — see the Known limits entry below.
+**Deletion happens only when an operator runs `m3l-console-server cleanup`.**
+ADR-0070 requires an operator-run command and forbids silent deletion; these
+settings describe what is eligible, and the command acts on that eligibility.
+Nothing in the server schedules a sweep and no timer exists — see the
+Operator cleanup command section and the Known limits entries below.
+
+Run-output retention is one setting, the age at which a **terminal** run's
+per-run output directory becomes eligible for deletion.
+
+| Setting                                | Env var                                | Default                |
+| -------------------------------------- | -------------------------------------- | ---------------------- |
+| `m3l.console.runs.output.retention.ms` | `M3L_CONSOLE_RUNS_OUTPUT_RETENTION_MS` | `2592000000` (30 days) |
+
+Thirty days is a release cycle rather than an incident window: a run's output
+directory is what an operator re-reads when investigating a failure or diffing
+a rerun. The same validation applies — a positive integer, no "disabled"
+sentinel, a very large value to keep outputs indefinitely.
+
+Session-artifact retention is the same setting one artifact class over, keyed
+to the owning step's completion.
+
+| Setting                                      | Env var                                      | Default                |
+| -------------------------------------------- | -------------------------------------------- | ---------------------- |
+| `m3l.console.sessions.artifact.retention.ms` | `M3L_CONSOLE_SESSIONS_ARTIFACT_RETENTION_MS` | `7776000000` (90 days) |
+
+Ninety days, longer than a run output's thirty, because a session artifact is
+the recorded output of a human-driven workbench step — re-read when
+reconstructing what an operator did and why, rather than while diagnosing a
+single run.
+
+The age is the run's own `ended_at_ms`, not the directory's filesystem
+timestamp. A run that is still queued or running is never eligible whatever
+its directory's mtime says, and a directory whose run record is missing — or
+whose record is terminal but carries no end timestamp — is reported as an
+**orphan** and left alone. Nothing in the console deletes a `console_runs`
+row, so an orphan means something unexplained happened, and a sweep that
+silently ate unexplained state would be the wrong default here.
 
 Transport, persistence, and lifecycle settings are in the package README.
+
+## Operator cleanup command
+
+`m3l-console-server cleanup` is the operator-triggered retention sweep
+required by ADR-0070. It covers all four artifact classes in a single run:
+telemetry rollup buckets (`pruneTelemetry`), run-output directories
+(`pruneRunOutputs`), session-step artifacts (`pruneSessionArtifacts`), and the
+human-action audit trail (`reportAuditTrailUsage`). The first three delete;
+the fourth only reports — see below. There is no per-concern selection and no
+`--dry-run` in this release.
+
+**Roots and windows come from configuration only.** The command reads
+`M3L_CONSOLE_DB_PATH`, `M3L_CONSOLE_RUNS_OUTPUT_ROOT`,
+`M3L_CONSOLE_SESSIONS_ARTIFACT_ROOT`, and `M3L_CONSOLE_AUDIT_ROOT` for path
+roots, and the three retention tables above for eligibility windows. No flag
+overrides either at runtime.
+
+**Exit codes:** `0` on a clean sweep; `1` if any driver fails or an unknown
+subcommand is given. An unknown subcommand (e.g. a typo) exits `1`
+immediately without starting the server.
+
+**One driver failing does not skip the other two.** The three concerns are
+independent: a telemetry failure is no reason to skip sweeping run outputs.
+All three always run; on failure, a single `M3LConsoleError` with code
+`ERR_CONSOLE_INTERNAL` is thrown after all three have completed, carrying the
+first driver's failure as `cause` and including each successful driver's
+outcome plus a `context.failures` entry per failed driver. On success, the
+combined `M3LConsoleCleanupOutcome` is printed as JSON to stdout.
+
+**The audit-trail section reports; it never deletes.** The fourth section of
+the sweep inventories `<audit root>/` and returns the segment count, the total
+bytes those segments occupy, and a `skipped` count. It removes nothing, and
+there is no setting that would make it remove anything.
+
+**A non-zero `auditTrail.skipped` means the audit directory is not what this
+console wrote, and is worth investigating.** It counts entries carrying a
+valid segment name that could not be inventoried: one that vanished during the
+listing, or a symlink, directory, FIFO, or hardlink planted at a
+segment-shaped name. The underlying primitive uses `lstat`, requires a regular
+file, and requires `nlink === 1`, so neither a symlink nor a hardlink can
+report its target's size into the byte total — the sweep reports the anomaly
+instead of both inflating the total and disclosing the size of a file outside
+the audit root. A foreign file that was never segment-shaped (a stray
+`notes.txt`) is ignored and is **not** counted here.
+
+The two causes are not equally alarming, and the count alone does not
+distinguish them. A planted non-regular file or an extra hard link **is**
+tampering. An entry vanishing mid-sweep is not: archiving whole dates out of
+band is the supported way to reclaim space here, and it can legitimately race
+a cleanup run. Treat a non-zero count as a prompt to look at the directory,
+not as a verdict. ADR-0070 declares the audit class as
+_segment + retain_ while telemetry and session artifacts get age-based
+pruning, and that declaration became load-bearing once the append-only read
+path started rejecting a gap in a date's segment sequence: deleting one
+segment out of the middle of a date does not reclaim space so much as make
+every later read of that stream throw, permanently. The boot-time index
+rebuild never throws by design, so a console whose trail has been pruned that
+way starts and serves normally while having quietly lost the ability to
+rebuild its own record of truth. Archiving whole dates out of band is the
+supported way to reclaim space; the sequence check tolerates that, and only
+that. See the ADR-0070 Update of 2026-09-05.
+
+**A listing failure does not abort the sweep.** The audit section is wrapped
+exactly like the three pruning drivers: if listing the trail fails, the
+failure is captured, the other three still run, and it appears as an
+`auditTrail` entry in `context.failures` on the single `ERR_CONSOLE_INTERNAL`
+raised at the end.
+
+**Not audited.** A cleanup run records no human action in the audit trail in
+this release — it does not appear in `POST /api/v1/audit` or any audit query.
 
 ## Known limits
 
@@ -1174,18 +1306,33 @@ Stated plainly rather than left to be discovered:
   run's tail. The cost is `O(total runs × stream retention)` memory until
   restart. This is a deliberate trade for a single-operator, loopback-bound
   console, not an oversight — it would not survive a multi-tenant deployment.
-- **Per-run output directories are never pruned.** Every console-launched
-  run leaves `<runs output root>/<run id>/` behind for the lifetime of the
-  data directory. Same posture as session artifacts, and the same eventual
-  owner (X8's retention regime).
-- **A declared telemetry retention policy prunes nothing on its own.** The
-  `m3l.console.telemetry.retention.*` settings above declare when a rollup
-  bucket becomes eligible for deletion; they do not delete it. No timer, no
-  boot-time sweep and no background task exists — ADR-0070 requires an
-  operator-run cleanup command and forbids silent deletion, and that command
-  is a later X8 slice. Until it ships, `console_telemetry_rollup` grows
-  monotonically no matter what these settings say, and an operator who sets
-  them should not read them as a guarantee that anything shrinks.
+- **Run-output directory deletion happens only when an operator runs `m3l-console-server cleanup`.**
+  `m3l.console.runs.output.retention.ms` says when a terminal run's
+  `<runs output root>/<run id>/` becomes eligible; the command deletes the
+  eligible directories. There is no timer and no boot-time sweep — ADR-0070
+  requires an operator-run command and forbids silent deletion, and this
+  command is its implementation. Until the command is run, every
+  console-launched run leaves its output directory behind, whatever the
+  setting says.
+- **Session artifact deletion follows the same posture** — `m3l-console-server cleanup`
+  is the only caller, there is no timer, and no boot-time sweep runs.
+  See the sessions Known-limits entry above.
+- **Telemetry rollup deletion happens only when an operator runs `m3l-console-server cleanup`.**
+  The `m3l.console.telemetry.retention.*` settings declare when a rollup
+  bucket becomes eligible; the command deletes the eligible ones. No timer, no
+  boot-time sweep, and no background task exists — ADR-0070 requires an
+  operator-run command and forbids silent deletion, and this command is its
+  implementation. `console_telemetry_rollup` accumulates until the command is
+  run; the settings are eligibility thresholds, not deletion guarantees.
+- **The human-action audit trail is retained forever, by design.** No
+  setting, command, or timer deletes an audit segment. ADR-0070 declares the
+  audit class as _segment + retain_, and the append-only reader's
+  sequence-gap check turns intra-date pruning into permanent unreadability
+  rather than reclaimed space — so the absence of a sweep here is the
+  feature, not a missing one. The consequence is that the trail grows without
+  bound for the console's whole lifetime, and the `auditTrail` section of
+  `m3l-console-server cleanup` is the **only** signal an operator gets about
+  that footprint. Reclaiming space means archiving whole dates out of band.
 - **An in-process run has no report to serve.** `GET /api/v1/runs/:id/report`
   404s for every ADR-0054 command-module run — see that route's own section
   for why the output directory cannot be pinned per run on that path.

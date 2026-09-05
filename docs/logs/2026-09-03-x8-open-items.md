@@ -7,7 +7,7 @@ from one linked worktree and records what shipped, what matched the plan, what
 diverged, and the durable lessons.
 
 Predecessor: [`docs/logs/2026-09-03-x8-telemetry-guard-followups.md`](./2026-09-03-x8-telemetry-guard-followups.md)
-Plan: [`docs/plans/2026-09-03-x8-telemetry-slice-replan.md`](../plans/2026-09-03-x8-telemetry-slice-replan.md)
+Plan: [`docs/plans/2026-09-03-x8-telemetry-slice-replan.md`](../plans/archive/2026-09-03-x8-telemetry-slice-replan.md)
 
 ## Summary
 

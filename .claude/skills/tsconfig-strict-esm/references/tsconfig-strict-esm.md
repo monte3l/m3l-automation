@@ -1,9 +1,12 @@
 # TypeScript tsconfig — compiler-option reference snapshot
 
+<!-- reference-freshness: library=/microsoft/typescript/v6.0.2 tracks=typescript@6.0.3 snapshot=2026-09-05 refresh=major -->
+
 > **Provenance** — Source: Context7 `/microsoft/typescript/v6.0.2` (repo uses
-> `typescript@6.0.3`). Snapshot: 2026-07-02. Patch delta only; option semantics
-> below are stable across it. Refresh: re-run `/skill-creator` (or
-> `ctx7 skills generate`) on a major bump.
+> `typescript@6.0.3`). Snapshot: 2026-09-05. Patch delta only; option semantics
+> below are stable across it. Refresh: re-run `mcp__context7__query-docs`
+> against `/microsoft/typescript` (ADR-0093; hub-only) on a major bump, or when
+> `pnpm check:reference-freshness` flags this file.
 
 Current semantics for the options this repo relies on, distilled for editing its
 tsconfig set.

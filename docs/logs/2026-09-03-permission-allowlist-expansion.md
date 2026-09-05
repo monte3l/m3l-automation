@@ -211,6 +211,7 @@ filesystem-touching tool call (`Write`, `Edit`, bare `Read`, not just `Bash
 file-creation step for a file not yet git-tracked, spot-check with `git
 status` scoped to the worktree specifically — success from the `Write` tool
 alone doesn't confirm which checkout received the file.
+_(promoted → .claude/skills/starting-work/SKILL.md)_
 
 ## Lessons learned
 

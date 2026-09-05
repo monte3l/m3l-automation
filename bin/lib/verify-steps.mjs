@@ -218,6 +218,16 @@ export const VERIFY_STEPS = [
     cmd: () => "pnpm check:retrospective",
   },
   {
+    ciStepName: "Check post-merge staleness",
+    id: "check-staleness",
+    cmd: () => "pnpm check:staleness",
+  },
+  {
+    ciStepName: "Check logs index coverage",
+    id: "check-logs-index",
+    cmd: () => "pnpm check:logs-index",
+  },
+  {
     ciStepName: "Check skill evals",
     id: "check-skill-evals",
     cmd: () => "pnpm check:skill-evals",
@@ -394,9 +404,14 @@ export const VERIFY_STEPS = [
     cmd: () => "pnpm check:claude-cli-version",
   },
   {
-    ciStepName: "Check GitHub-integration stance (integration-stance)",
+    ciStepName: "Check external-integration stance (integration-stance)",
     id: "check-integration-stance",
     cmd: () => "pnpm check:integration-stance",
+  },
+  {
+    ciStepName: "Check reference-snapshot freshness (reference-freshness)",
+    id: "check-reference-freshness",
+    cmd: () => "pnpm check:reference-freshness",
   },
   {
     ciStepName: "Check dependency-direction zones (zones)",

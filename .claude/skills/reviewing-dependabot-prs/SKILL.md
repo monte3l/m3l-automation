@@ -6,6 +6,7 @@ description: >-
   risky ones, close bad ones. Use for /reviewing-dependabot-prs, "review the
   dependabot PRs", "merge the safe dependabot updates". Only acts on explicit
   invocation after batch confirmation. GitHub stance: gh CLI (ADR-0030).
+  Docs stance: context7 MCP (ADR-0093).
 ---
 
 # reviewing-dependabot-prs
@@ -157,7 +158,10 @@ excerpt, and commit list under collapsible `<details><summary>Release
 notes</summary>` / `<summary>Changelog</summary>` sections. Read those. Only
 fall back to `WebFetch` against the npm registry page (npm ecosystem) or `gh
 api repos/<action-owner>/<action-repo>/releases` (github-actions ecosystem)
-when the PR body doesn't already carry this information.
+when the PR body doesn't already carry this information — for an API-shape or
+migration question specifically (not release notes), `mcp__context7__*`
+(hub-invoked; ADR-0093) is also an option within this same escalation path,
+never a fast-path substitute for reading the PR body first.
 
 Judge breaking-change risk against this repo's actual constraints — strict
 TypeScript, ESM-only output, the Node.js 24+ floor, and the zero-runtime-deps

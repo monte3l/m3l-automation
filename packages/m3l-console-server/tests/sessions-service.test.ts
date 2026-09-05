@@ -43,11 +43,9 @@
 import { describe, expect, test, vi } from "vitest";
 
 import { M3LConsoleError } from "../src/errors/console-error.js";
-import { encodeArtifactRef } from "../src/sessions/artifacts.js";
-import type {
-  M3LSessionArtifactRef,
-  M3LSessionArtifactStore,
-} from "../src/sessions/artifacts.js";
+import { encodeArtifactRef } from "../src/sessions/artifact-codec.js";
+import type { M3LSessionArtifactRef } from "../src/sessions/artifact-codec.js";
+import type { M3LSessionArtifactStore } from "../src/sessions/artifacts.js";
 import { createSessionService } from "../src/sessions/service.js";
 import type {
   CreateSessionServiceOptions,

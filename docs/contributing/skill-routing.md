@@ -83,7 +83,7 @@ below.
 
 | I want to...                                                        | Skill             | Also triggers on                                        |
 | ------------------------------------------------------------------- | ----------------- | ------------------------------------------------------- |
-| Verify gates, push, open the PR                                     | `/creating-prs`   | "open a PR", "ship this for review"                     |
+| Verify gates, push, open the PR, decide its merge path              | `/creating-prs`   | "open a PR", "ship this for review", "get this merged"  |
 | Clean up after a PR merged (branch, worktree, refs, tracker prompt) | `/finishing-work` | "clean up after this PR", "the PR merged, wrap this up" |
 | Reconcile doc metadata (provenance, counts, reference index)        | `/syncing-docs`   | "sync docs", "reconcile docs", "stamp provenance"       |
 
@@ -116,10 +116,10 @@ rarely need to invoke it standalone except mid-task or before a PR exists.
 
 ### The knowledge loop
 
-| I want to...                                                   | Skill                         | Also triggers on                          |
-| -------------------------------------------------------------- | ----------------------------- | ----------------------------------------- |
-| Record what happened after a significant task                  | `/writing-work-logs`          | "document this task", "log what happened" |
-| Find lessons recurring across logs and promote them into rules | `/promoting-work-log-lessons` | "promote work-log lessons"                |
+| I want to...                                                           | Skill                         | Also triggers on                          |
+| ---------------------------------------------------------------------- | ----------------------------- | ----------------------------------------- |
+| Record what happened after a unit of work ([scope](../logs/README.md)) | `/writing-work-logs`          | "document this task", "log what happened" |
+| Find lessons recurring across logs and promote them into rules         | `/promoting-work-log-lessons` | "promote work-log lessons"                |
 
 ## Successor chains
 

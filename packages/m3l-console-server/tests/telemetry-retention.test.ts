@@ -203,6 +203,32 @@ describe("pruneTelemetry — schedules nothing (ADR-0070 'never silent deletion'
   });
 });
 
+describe("pruneTelemetry — validates retentionMs per tier before any prune call", () => {
+  test.each<[string, number]>([
+    ["negative", -1],
+    ["zero", 0],
+    ["non-integer float", 1.5],
+  ])(
+    "throws ERR_CONSOLE_INTERNAL and never calls repository.prune when retentionMs is %s",
+    (_label, badMs) => {
+      const { repository, calls } = createFakePruneRepository();
+
+      expect(() =>
+        pruneTelemetry({
+          repository,
+          retentionMs: { minute: badMs, hour: badMs, day: badMs },
+          nowMs: () => 10_000,
+        }),
+      ).toThrow(M3LConsoleError);
+
+      // The critical assertion: prune must NEVER have been called.
+      // Asserting only that an error was thrown passes against unguarded code
+      // if the repository itself rejects the range.
+      expect(calls).toHaveLength(0);
+    },
+  );
+});
+
 describe("pruneTelemetry — guards the cutoff arithmetic", () => {
   test("throws an M3LConsoleError before calling repository.prune when the derived cutoff is non-finite", () => {
     const { repository, calls } = createFakePruneRepository();

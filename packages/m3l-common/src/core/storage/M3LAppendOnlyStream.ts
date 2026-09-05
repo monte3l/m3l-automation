@@ -59,6 +59,7 @@ import type { M3LError } from "../errors/index.js";
 import { isFunction } from "../utils/guards.js";
 import { projectAppendOnlyEntry } from "../../internal/storage/append-only-projection.js";
 import { readAppendOnlySegments } from "../../internal/storage/append-only-reader.js";
+import { listSegmentFiles } from "../../internal/storage/append-only-segments.js";
 import type { AppendOnlyWriterErrors } from "../../internal/storage/append-only-writer.js";
 import { AppendOnlyWriter } from "../../internal/storage/append-only-writer.js";
 import {
@@ -66,7 +67,10 @@ import {
   validateReadOptions,
   validateStreamOptions,
 } from "../../internal/storage/append-only-options.js";
-import type { M3LAppendOnlyReadOptions } from "./append-only-read-types.js";
+import type {
+  M3LAppendOnlyReadOptions,
+  M3LAppendOnlySegmentListing,
+} from "./append-only-read-types.js";
 import { M3LAppendOnlyStreamError } from "./M3LAppendOnlyStreamError.js";
 import { M3LAppendOnlyStreamReadError } from "./M3LAppendOnlyStreamReadError.js";
 
@@ -450,5 +454,51 @@ export class M3LAppendOnlyStream {
       buildError: (message, errorOptions) =>
         new M3LAppendOnlyStreamReadError(message, errorOptions),
     }) as AsyncIterable<M3LAppendOnlyEntry>;
+  }
+
+  /**
+   * Inventories every segment file actually on disk, oldest
+   * `(datePrefix, sequence)` first, plus a `skipped` count of segment-named
+   * entries that could not be inventoried as one — see
+   * {@link M3LAppendOnlySegmentListing}. Never opens, deletes, or truncates a
+   * segment; each candidate is inspected with `lstat`, and only a regular
+   * file with exactly one link is accepted, so neither a symlink nor a
+   * hardlink planted at a segment name is ever followed (see
+   * `internal/storage/append-only-segments.ts` for the full security
+   * rationale and its remaining limits). A missing directory yields an empty
+   * listing.
+   *
+   * Unlike {@link M3LAppendOnlyStream.read}, this does **not** check that a
+   * date's sequences are contiguous: an inventory that refuses to run against
+   * a damaged trail is useless exactly when the damage is why someone reaches
+   * for it. Gap detection stays on `read()`, which hands entries back and
+   * must vouch for the trail it hands them from.
+   *
+   * @throws {@link M3LAppendOnlyStreamReadError} when listing the directory,
+   *   or inspecting one of its entries, fails for a reason other than the
+   *   entry not existing.
+   *
+   * @example
+   * ```ts
+   * import { M3LAppendOnlyStream } from "@m3l-automation/m3l-common/core";
+   *
+   * const stream = new M3LAppendOnlyStream({ directory: "data/output/audit" });
+   * const listing = await stream.listSegments();
+   * for (const segment of listing.segments) {
+   *   console.log(segment.name, segment.byteLength);
+   * }
+   * ```
+   */
+  async listSegments(): Promise<M3LAppendOnlySegmentListing> {
+    let listing: M3LAppendOnlySegmentListing;
+    try {
+      listing = await listSegmentFiles(this.streamDirectory);
+    } catch (cause) {
+      throw new M3LAppendOnlyStreamReadError(
+        "append-only stream: failed to list segments",
+        { cause },
+      );
+    }
+    return { segments: Array.from(listing.segments), skipped: listing.skipped };
   }
 }

@@ -41,7 +41,9 @@ import {
 } from "./lib/claude-models.mjs";
 import {
   MAX_TURNS_CEILING,
+  MCP_SPOKES,
   WRITER_SPOKES,
+  deriveMcpGrantIssues,
   frontmatter,
   walk,
 } from "./lib/agent-roster.mjs";
@@ -83,6 +85,7 @@ for (const file of walk(agentsDir, (n) => n.endsWith(".md"))) {
   defined.set(fm.name, {
     tools,
     disallowedTools,
+    mcpServers: fm.mcpServers,
     model: fm.model,
     effort: fm.effort,
     description: fm.description,
@@ -290,6 +293,31 @@ for (const [name, { file }] of defined) {
         `only spoke needs this so a long findings report can't itself run ` +
         `it out of turn budget mid-report.`,
     );
+    errors++;
+  }
+}
+
+// --- 4f. MCP tool grants: selective, not blanket (ADR-0093) -----------------
+// Only MCP_SPOKES members may hold any `mcp__*` tool, and a member may only
+// hold a tool scoped to a server it also declares via `mcpServers:` — see
+// bin/lib/agent-roster.mjs's deriveMcpGrantIssues for the derivation.
+{
+  const mcpAgents = [...defined].map(([name, v]) => ({
+    name,
+    tools: v.tools,
+    mcpServers: v.mcpServers,
+    file: v.file.slice(root.length + 1),
+  }));
+  const { ungrantedSpoke, unscopedServer } = deriveMcpGrantIssues(mcpAgents);
+  for (const message of ungrantedSpoke) {
+    reporter.error(
+      `${message} — only ${[...MCP_SPOKES].join(", ")} may hold MCP tool ` +
+        `grants (ADR-0093 selective-spoke-access invariant).`,
+    );
+    errors++;
+  }
+  for (const message of unscopedServer) {
+    reporter.error(`${message}.`);
     errors++;
   }
 }

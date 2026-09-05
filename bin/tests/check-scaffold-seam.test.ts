@@ -386,7 +386,15 @@ describe("landingPlanVerdict", () => {
   });
 
   test('returns "ok" for a reference page containing the "## Landing plan" heading', () => {
-    const refText = "# newmod\n\n## Landing plan\n\n- step one\n";
+    const refText = [
+      "# newmod",
+      "",
+      "## Landing plan",
+      "",
+      "| Slice | Scope | Status |",
+      "| ----- | ----- | ------ |",
+      "| Slice 1 | first thing | In progress |",
+    ].join("\n");
     expect(landingPlanVerdict(refText)).toBe("ok");
   });
 
@@ -407,13 +415,70 @@ describe("landingPlanVerdict", () => {
       "",
       "## Landing plan",
       "",
-      "- step one",
+      "| Slice | Scope | Status |",
+      "| ----- | ----- | ------ |",
+      "| Slice 1 | first thing | In progress |",
     ].join("\n");
     expect(landingPlanVerdict(doc)).toBe("ok");
   });
 
   test('returns "missing-heading" for an empty string (page exists but is blank)', () => {
     expect(landingPlanVerdict("")).toBe("missing-heading");
+  });
+
+  test('returns "unparseable-table" for a heading followed by a numbered list, not a pipe table (docs/reference/aws/bedrock-runtime.md shape)', () => {
+    const refText = [
+      "# bedrock-runtime",
+      "",
+      "## Landing plan",
+      "",
+      "Two independently-landable PRs (ADR-0072):",
+      "",
+      "1. **Slice 1 — core wrapper.** `invoke()` single-shot Converse call, the",
+      "   model registry/fallback state machine, token usage capture, the three",
+      "   error classes. **Shipped** — PR #725, merged into `main`.",
+      "2. **Slice 2 — streaming.** `invokeStream()` over `ConverseStreamCommand`.",
+      "   **Shipped** — PR #728, merged into `main`.",
+    ].join("\n");
+    expect(landingPlanVerdict(refText)).toBe("unparseable-table");
+  });
+
+  test('returns "unparseable-table" for a pipe table with a header and separator row but no "Status" header cell', () => {
+    const refText = [
+      "# newmod",
+      "",
+      "## Landing plan",
+      "",
+      "| Slice | Scope | Notes |",
+      "| ----- | ----- | ----- |",
+      "| Slice 1 | first thing | some note |",
+    ].join("\n");
+    expect(landingPlanVerdict(refText)).toBe("unparseable-table");
+  });
+
+  test('returns "unparseable-table" for a pipe table with a header and separator row but zero data rows', () => {
+    const refText = [
+      "# newmod",
+      "",
+      "## Landing plan",
+      "",
+      "| Slice | Scope | Status |",
+      "| ----- | ----- | ------ |",
+    ].join("\n");
+    expect(landingPlanVerdict(refText)).toBe("unparseable-table");
+  });
+
+  test('returns "ok" for a fully well-formed table with a header, separator, and at least one data row (positive control)', () => {
+    const refText = [
+      "# newmod",
+      "",
+      "## Landing plan",
+      "",
+      "| Slice | Scope | Status |",
+      "| ----- | ----- | ------ |",
+      "| Slice 1 | first thing | In progress |",
+    ].join("\n");
+    expect(landingPlanVerdict(refText)).toBe("ok");
   });
 });
 

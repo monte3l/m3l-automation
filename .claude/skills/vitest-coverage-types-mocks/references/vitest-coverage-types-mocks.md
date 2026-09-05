@@ -1,10 +1,13 @@
 # Vitest 4 — config, coverage & mocking reference snapshot
 
+<!-- reference-freshness: library=/vitest-dev/vitest tracks=vitest@4.1.11,@vitest/coverage-v8@4.1.11 snapshot=2026-09-05 refresh=minor -->
+
 > **Provenance** — Source: Context7 `/vitest-dev/vitest` (docs at v4.1.6; repo uses
-> `vitest@4.1.9` + `@vitest/coverage-v8@4.1.9`). Snapshot: 2026-07-02. The mocking
+> `vitest@4.1.11` + `@vitest/coverage-v8@4.1.11`). Snapshot: 2026-09-05. The mocking
 > API moves faster than the other toolchain configs — treat this snapshot as
-> shorter-lived and refresh it (re-run `/skill-creator` / `ctx7 skills generate`)
-> on any minor bump that touches mocking or coverage, not only majors.
+> shorter-lived and refresh it (re-run `mcp__context7__query-docs` against
+> `/vitest-dev/vitest`, ADR-0093, hub-only) on any minor bump that touches
+> mocking or coverage, not only majors.
 
 Distilled current facts for editing this repo's `vitest.config.ts` and tests.
 
@@ -64,5 +67,5 @@ Distilled current facts for editing this repo's `vitest.config.ts` and tests.
 ## Version notes
 
 - Config/coverage/mocking shapes above hold for Vitest 4.1.x; no breaking changes
-  between 4.1.6 and the repo's 4.1.9. The v4-era `perFile`-not-inherited-per-glob
+  between 4.1.6 and the repo's 4.1.11. The v4-era `perFile`-not-inherited-per-glob
   behavior is the main gotcha vs. older major versions.

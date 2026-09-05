@@ -286,9 +286,19 @@ export const COMMAND_CATALOG = [
       "Removes tmp/slice-progress.json, blanking the statusline's slice-progress segment. Run from finishing-work once a slice sequence's last row lands.",
   },
   {
+    name: "usage:refresh",
+    description:
+      "Fetches Anthropic's undocumented /api/oauth/usage endpoint (credential from CLAUDE_CODE_OAUTH_TOKEN or ~/.claude/.credentials.json) and writes the account-scoped weekly-usage cache (~/.claude/m3l-usage-weekly.json), the state the statusline's per-model weekly-usage segments read (ADR-0092). Fail-soft: no credential, a non-200 response, or an unparseable body all leave any existing cache untouched. Normally run out-of-band by the refresh-usage-cache.mjs Stop hook, not by hand.",
+  },
+  {
     name: "check:integration-stance",
     description:
       "Verifies every GitHub-talking .claude/skills/*/SKILL.md carries an ADR-0030 stance reference, contains no retired policy claim, and names the mechanism (gh CLI vs GitHub MCP) it actually uses. Run after editing a GitHub-facing skill.",
+  },
+  {
+    name: "check:reference-freshness",
+    description:
+      "Verifies every Context7-sourced .claude/skills/*/references/*.md carries a <!-- reference-freshness: ... --> stamp, that its tracked packages haven't drifted past the stamp's declared refresh policy (major/minor; patch drift never fails), and that no retired ctx7 CLI reference has crept back in (ADR-0093). Offline by design. Run after refreshing a skill reference snapshot.",
   },
   {
     name: "check:github-features",
@@ -359,6 +369,16 @@ export const COMMAND_CATALOG = [
     name: "check:retrospective",
     description:
       "ADR-0084: warns (non-blocking) on two kinds of retrospective-loop drift. Section A audits the auto-memory store at ~/.claude/projects/<slug>/memory/ — MEMORY.md/file reconciliation both ways, literal control bytes (the blind spot check:control-chars structurally cannot reach, since it scans git-TRACKED files and the store lives outside the repo), unresolvable [[wikilinks]], frontmatter name/description/metadata.type, and MEMORY.md against the 200-line/25 KB load cap. Section B reads docs/research/retrospective.md's header and warns once the unswept work-log backlog crosses the 5-log cadence or the sweep goes stale. Offline, always exits 0, and a clean no-op when the store is absent (the CI condition). --dir points it at a fixture store.",
+  },
+  {
+    name: "check:staleness",
+    description:
+      "Issue #995 (ROADMAP H2): warns (non-blocking) on post-merge local residue that finishing-work's manual, never hook-triggered invocation leaves unswept — a stale worktree or local branch (merged into main or upstream [gone]), a stale remote-tracking ref a `git fetch --prune` would clear, and an orphaned tmp/ file (a spoke dispatch journal, or residue from a retired hook) untouched past --journal-age days (default 7) and not on the LIVE_TMP_FILES allowlist. Reuses bin/lib/worktree-prune.mjs's merged/[gone] signals rather than re-deriving them; also covers the class worktree:prune structurally cannot see, a stale branch never attached to any worktree. Detection only, always exits 0 — the fix is pnpm worktree:prune / pnpm branch:cleanup <branch> / git fetch --prune. Runs from post-merge/post-rewrite (the actual merge moment) and the pre-push checks lane. --no-fetch skips the network-dependent remote-prune check.",
+  },
+  {
+    name: "check:logs-index",
+    description:
+      "Warns (non-blocking) when docs/logs/README.md's index tables have drifted from docs/logs/: a log file with no row (undiscoverable through the index), a row linking a file that no longer exists, a file linked from more than one row, or a row's date column disagreeing with its filename's date. check:retrospective counts logs for sweep-cadence purposes but never checks which ones are indexed — this closes that gap. Offline, always exits 0. Run after /writing-work-logs or when backfilling missing index rows.",
   },
   {
     name: "check:skill-evals",
