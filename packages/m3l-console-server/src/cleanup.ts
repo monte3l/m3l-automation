@@ -20,6 +20,7 @@ import { M3LConsoleError } from "./errors/console-error.js";
 import { errnoCodeOf } from "./errors/errno.js";
 import { loadRetentionConfig } from "./config/retention.js";
 import { loadTelemetryConfig } from "./config/telemetry.js";
+import type { M3LConsoleTelemetryConfig } from "./config/telemetry.js";
 import {
   resolveStoreDatabasePath,
   resolveRunsOutputRoot,
@@ -98,8 +99,17 @@ export interface M3LConsoleCleanupOutcome {
 /** The identity of one of the three retention drivers. */
 type DriverName = "telemetry" | "runOutputs" | "sessionArtifacts";
 
-/** One driver's result: either a successful outcome or the caught failure. */
-type DriverOk<T> = { readonly ok: true; readonly outcome: T };
+/**
+ * One driver's result: either a successful outcome or the caught failure.
+ * Every result — success or failure — records its own `driver` identity, so
+ * downstream logic can iterate over a set of results uniformly instead of
+ * branching per driver.
+ */
+type DriverOk<T> = {
+  readonly ok: true;
+  readonly outcome: T;
+  readonly driver: DriverName;
+};
 type DriverFail = {
   readonly ok: false;
   readonly cause: unknown;
@@ -107,6 +117,30 @@ type DriverFail = {
   readonly driver: DriverName;
 };
 type DriverResult<T> = DriverOk<T> | DriverFail;
+
+/** Every driver's result for one sweep, keyed by driver name. */
+interface CleanupResults {
+  readonly telemetry: DriverResult<M3LTelemetryPruneOutcome>;
+  readonly runOutputs: DriverResult<M3LRunOutputPruneOutcome>;
+  readonly sessionArtifacts: DriverResult<M3LSessionArtifactPruneOutcome>;
+}
+
+/**
+ * Every result in RUN order. The order is load-bearing: `firstCause` is the
+ * first driver that ran and did not succeed, and `context.failures` is
+ * published in the same order.
+ *
+ * This one record type plus one run-order accessor is what keeps a fourth
+ * driver from tripping either of two lint ceilings: a per-driver `if`-chain
+ * in {@link buildDriverFailureContext} would push its cyclomatic complexity
+ * past the project's `complexity: 10` limit, and inlining the same
+ * branching into `runCleanup` would push it past `max-lines-per-function`'s
+ * 60-line ceiling. Do not "simplify" this back into parallel `if`/`else if`
+ * chains — that is exactly the shape this exists to avoid.
+ */
+function inRunOrder(results: CleanupResults): readonly DriverResult<unknown>[] {
+  return [results.telemetry, results.runOutputs, results.sessionArtifacts];
+}
 
 /**
  * Narrow per-driver failure published in a thrown error's `context.failures`,
@@ -136,7 +170,7 @@ interface CleanupDriverFailure {
  */
 function runSync<T>(driver: DriverName, fn: () => T): DriverResult<T> {
   try {
-    return { ok: true, outcome: fn() };
+    return { ok: true, outcome: fn(), driver };
   } catch (cause) {
     return { ok: false, cause, driver };
   }
@@ -152,7 +186,7 @@ async function runAsync<T>(
   fn: () => Promise<T>,
 ): Promise<DriverResult<T>> {
   try {
-    return { ok: true, outcome: await fn() };
+    return { ok: true, outcome: await fn(), driver };
   } catch (cause) {
     return { ok: false, cause, driver };
   }
@@ -177,31 +211,29 @@ function toCleanupFailure(result: DriverFail): CleanupDriverFailure {
  * `AccumulatedFailure<T>` in `retention-walk.ts`). No absolute path appears
  * in `context`; a chained `cause` may carry one in its own `.message`.
  */
-function buildDriverFailureContext(
-  tResult: DriverResult<M3LTelemetryPruneOutcome>,
-  rResult: DriverResult<M3LRunOutputPruneOutcome>,
-  sResult: DriverResult<M3LSessionArtifactPruneOutcome>,
-): { readonly firstCause: unknown; readonly context: Record<string, unknown> } {
-  // firstCause — whichever driver ran first and did not succeed.
-  // if-else chain so each branch narrows the DriverResult to DriverFail
-  // before accessing .cause, satisfying no-unsafe-assignment.
-  let firstCause: unknown;
-  if (!tResult.ok) firstCause = tResult.cause;
-  else if (!rResult.ok) firstCause = rResult.cause;
-  else if (!sResult.ok) firstCause = sResult.cause;
+function buildDriverFailureContext(results: CleanupResults): {
+  readonly firstCause: unknown;
+  readonly context: Record<string, unknown>;
+} {
+  const ordered = inRunOrder(results);
+  const isFail = (result: DriverResult<unknown>): result is DriverFail =>
+    !result.ok;
+  const failures = ordered.filter(isFail);
 
-  // Successful drivers' outcomes — present so the caller knows what completed.
+  // firstCause — whichever driver ran first and did not succeed.
+  const firstCause: unknown = failures[0]?.cause;
+
+  // Successful drivers' outcomes — present so the caller knows what
+  // completed. Keying off `result.driver` is safe: DriverName's three
+  // values ("telemetry", "runOutputs", "sessionArtifacts") are exactly the
+  // keys `M3LConsoleCleanupOutcome` and this context object already use.
   const context: Record<string, unknown> = {};
-  if (tResult.ok) context["telemetry"] = tResult.outcome;
-  if (rResult.ok) context["runOutputs"] = rResult.outcome;
-  if (sResult.ok) context["sessionArtifacts"] = sResult.outcome;
+  for (const result of ordered) {
+    if (result.ok) context[result.driver] = result.outcome;
+  }
 
   // One entry per failed driver — a second simultaneous failure is never lost.
-  const failures: CleanupDriverFailure[] = [];
-  if (!tResult.ok) failures.push(toCleanupFailure(tResult));
-  if (!rResult.ok) failures.push(toCleanupFailure(rResult));
-  if (!sResult.ok) failures.push(toCleanupFailure(sResult));
-  context["failures"] = failures;
+  context["failures"] = failures.map(toCleanupFailure);
 
   return { firstCause, context };
 }
@@ -248,8 +280,13 @@ function closeStore(
   }
 }
 
+/** `true` when any driver failed — the close-discipline discriminator. */
+function anyDriverFailed(results: CleanupResults): boolean {
+  return inRunOrder(results).some((result) => !result.ok);
+}
+
 /**
- * Given the three driver results, either returns the combined outcome (all
+ * Given every driver's result, either returns the combined outcome (all
  * succeeded) or throws one {@link M3LConsoleError} carrying the first
  * failure as `cause`, every successful driver's outcome in `context`, and
  * one {@link CleanupDriverFailure} entry per failed driver in
@@ -264,16 +301,14 @@ function closeStore(
  * `retention-walk.ts`**: a second simultaneous failure is never lost.
  */
 function resolveCleanupOutcome(
-  tResult: DriverResult<M3LTelemetryPruneOutcome>,
-  rResult: DriverResult<M3LRunOutputPruneOutcome>,
-  sResult: DriverResult<M3LSessionArtifactPruneOutcome>,
+  results: CleanupResults,
 ): M3LConsoleCleanupOutcome {
-  if (!tResult.ok || !rResult.ok || !sResult.ok) {
-    const { firstCause, context } = buildDriverFailureContext(
-      tResult,
-      rResult,
-      sResult,
-    );
+  const { telemetry, runOutputs, sessionArtifacts } = results;
+  // Inline guard, not a helper call: TypeScript needs each check literally
+  // present here to narrow `telemetry`/`runOutputs`/`sessionArtifacts` to
+  // `DriverOk` before `.outcome` is read below.
+  if (!telemetry.ok || !runOutputs.ok || !sessionArtifacts.ok) {
+    const { firstCause, context } = buildDriverFailureContext(results);
     throw new M3LConsoleError(
       "ERR_CONSOLE_INTERNAL",
       "one or more retention drivers failed during cleanup",
@@ -281,9 +316,61 @@ function resolveCleanupOutcome(
     );
   }
   return {
-    telemetry: tResult.outcome,
-    runOutputs: rResult.outcome,
-    sessionArtifacts: sResult.outcome,
+    telemetry: telemetry.outcome,
+    runOutputs: runOutputs.outcome,
+    sessionArtifacts: sessionArtifacts.outcome,
+  };
+}
+
+/** The paths and retention windows {@link runCleanup} resolves before opening the store. */
+interface ResolvedCleanupConfig {
+  /** The console store's SQLite database file path. */
+  readonly dbPath: string;
+  /** The run-output directory retention driver sweeps under this root. */
+  readonly runsOutputRoot: string;
+  /** The session-artifact retention driver sweeps under this root. */
+  readonly artifactRoot: string;
+  /** Per-granularity-tier telemetry rollup retention windows, in milliseconds. */
+  readonly telemetryRetentionMs: M3LConsoleTelemetryConfig["retentionMs"];
+  /** The run-output directory retention window, in milliseconds. */
+  readonly runOutputRetentionMs: number;
+  /** The session-artifact file retention window, in milliseconds. */
+  readonly artifactRetentionMs: number;
+}
+
+/**
+ * Resolves every path and retention window {@link runCleanup} needs before it
+ * opens the store, from `env`.
+ *
+ * Any failure here propagates directly to the caller: no partial sweep has
+ * started yet, so there is nothing to accumulate. This surfaces as
+ * {@link M3LConsoleError} with code `"ERR_CONSOLE_CONFIG_INVALID"` — do not
+ * wrap this call in a try/catch in {@link runCleanup}, that would turn a
+ * configuration failure into a swallowed or misattributed one.
+ *
+ * The order these five values are resolved in is preserved exactly as it was
+ * inline in `runCleanup`: retention config, telemetry config, database path,
+ * run-outputs root, then artifact root.
+ */
+function resolveCleanupConfig(env: NodeJS.ProcessEnv): ResolvedCleanupConfig {
+  const retentionConfig = loadRetentionConfig({ env });
+  const telemetryConfig = loadTelemetryConfig({ env });
+  const dbPath = resolveStoreDatabasePath({
+    configuredPath: env["M3L_CONSOLE_DB_PATH"],
+  });
+  const runsOutputRoot = resolveRunsOutputRoot({
+    configuredPath: env["M3L_CONSOLE_RUNS_OUTPUT_ROOT"],
+  });
+  const artifactRoot = resolveSessionArtifactRoot({
+    configuredPath: env["M3L_CONSOLE_SESSIONS_ARTIFACT_ROOT"],
+  });
+  return {
+    dbPath,
+    runsOutputRoot,
+    artifactRoot,
+    telemetryRetentionMs: telemetryConfig.retentionMs,
+    runOutputRetentionMs: retentionConfig.runOutputMs,
+    artifactRetentionMs: retentionConfig.artifactMs,
   };
 }
 
@@ -350,21 +437,11 @@ export async function runCleanup(
 
   // Config resolution — any failure here propagates directly; no partial
   // sweep has started yet, so there is nothing to accumulate.
-  const retentionConfig = loadRetentionConfig({ env });
-  const telemetryConfig = loadTelemetryConfig({ env });
-  const dbPath = resolveStoreDatabasePath({
-    configuredPath: env["M3L_CONSOLE_DB_PATH"],
-  });
-  const runsOutputRoot = resolveRunsOutputRoot({
-    configuredPath: env["M3L_CONSOLE_RUNS_OUTPUT_ROOT"],
-  });
-  const artifactRoot = resolveSessionArtifactRoot({
-    configuredPath: env["M3L_CONSOLE_SESSIONS_ARTIFACT_ROOT"],
-  });
+  const config = resolveCleanupConfig(env);
 
   // One store open serves all three drivers — `buildConsoleStoreUnit` exposes
   // `runs`, `sessions`, and `telemetry` off the same handle.
-  const store = openStore(dbPath);
+  const store = openStore(config.dbPath);
 
   // Run all three drivers in sequence, capturing failures independently.
   // Sequence: telemetry (first) → runOutputs → sessionArtifacts.
@@ -376,38 +453,37 @@ export async function runCleanup(
   // only after all three drivers complete successfully, enabling `closeStore`
   // to raise on a failing close rather than swallow it.
   let closeBestEffort = true;
-  let tResult: DriverResult<M3LTelemetryPruneOutcome>;
-  let rResult: DriverResult<M3LRunOutputPruneOutcome>;
-  let sResult: DriverResult<M3LSessionArtifactPruneOutcome>;
+  let results: CleanupResults;
 
   try {
-    tResult = runSync("telemetry", () =>
+    const telemetry = runSync("telemetry", () =>
       pruneTelemetry({
         repository: store.telemetry,
-        retentionMs: telemetryConfig.retentionMs,
+        retentionMs: config.telemetryRetentionMs,
         nowMs,
       }),
     );
-    rResult = await runAsync("runOutputs", () =>
+    const runOutputs = await runAsync("runOutputs", () =>
       pruneRunOutputs({
-        runsOutputRoot,
+        runsOutputRoot: config.runsOutputRoot,
         repository: store.runs,
-        retentionMs: retentionConfig.runOutputMs,
+        retentionMs: config.runOutputRetentionMs,
         nowMs,
       }),
     );
-    sResult = await runAsync("sessionArtifacts", () =>
+    const sessionArtifacts = await runAsync("sessionArtifacts", () =>
       pruneSessionArtifacts({
-        artifactRoot,
+        artifactRoot: config.artifactRoot,
         repository: store.sessions,
-        retentionMs: retentionConfig.artifactMs,
+        retentionMs: config.artifactRetentionMs,
         nowMs,
       }),
     );
-    closeBestEffort = !tResult.ok || !rResult.ok || !sResult.ok;
+    results = { telemetry, runOutputs, sessionArtifacts };
+    closeBestEffort = anyDriverFailed(results);
   } finally {
     closeStore(store, closeBestEffort);
   }
 
-  return resolveCleanupOutcome(tResult, rResult, sResult);
+  return resolveCleanupOutcome(results);
 }
