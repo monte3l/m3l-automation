@@ -9,7 +9,7 @@
  * may carry a parameter VALUE:
  *
  * 1. An ADR-0068 reference that is an `inline` envelope is not a reference at
- *    all: `sessions/artifacts.ts`'s `inline` arm carries `value: unknown`, so
+ *    all: `sessions/artifact-codec.ts`'s `inline` arm carries `value: unknown`, so
  *    an encoded inline ref smuggles the parameter VALUE itself into
  *    `parameterRefs`. It must be refused. `audit/` may not import
  *    `sessions/` (eslint zone), so the check is STRUCTURAL — parse the entry
@@ -58,7 +58,7 @@ const OPERATOR: M3LOperatorProfile = { name: "ada", email: undefined };
 
 /**
  * A file-backed ADR-0068 reference, in the exact envelope shape
- * `sessions/artifacts.ts`'s `encodeArtifactRef` emits for the `file` arm: a
+ * `sessions/artifact-codec.ts`'s `encodeArtifactRef` emits for the `file` arm: a
  * POINTER (path, size, digest) and no payload. This is what `parameterRefs`
  * exists to carry, and it must keep flowing.
  */
@@ -164,7 +164,7 @@ function readSegmentBytes(directory: string): string {
 }
 
 describe("parameterRefs — an inline ADR-0068 ref is a VALUE, not a reference", () => {
-  // `sessions/artifacts.ts`'s `M3LSessionArtifactRef` is a union: the `file`
+  // `sessions/artifact-codec.ts`'s `M3LSessionArtifactRef` is a union: the `file`
   // arm is a pointer, the `inline` arm carries `value: unknown` — the payload
   // itself. `record.ts` documents `parameterRefs` as "references to parameter
   // content held ELSEWHERE", which an inline envelope is not, so an encoded

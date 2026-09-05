@@ -671,7 +671,7 @@ describe("M3LSessionService — readStepArtifact()", () => {
 // `Omit<M3LSessionStepRecord, "resultRef"> & { readonly hasResult: boolean }`
 // — a DELIBERATE redaction: `resultRef` is the step's ENCODED artifact
 // reference, which for an inline artifact literally embeds the resolved
-// VALUE (see `sessions/artifacts.ts`'s `encodeArtifactRef`), so it must never
+// VALUE (see `sessions/artifact-codec.ts`'s `encodeArtifactRef`), so it must never
 // appear in a step LIST response. The sanctioned way to read a step's value
 // is the already-existing `GET .../steps/:stepId/artifact` route — exactly
 // the same "no resolved VALUE" boundary `listBindingsForSession` draws for
