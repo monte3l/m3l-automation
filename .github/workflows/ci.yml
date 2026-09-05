@@ -475,6 +475,15 @@ jobs:
       - name: Check post-merge staleness
         run: pnpm check:staleness
 
+      # Warns (non-blocking) when docs/logs/README.md's index tables have
+      # drifted from docs/logs/ — a file with no row, a dangling link, a
+      # duplicate, or a date-column mismatch. check:retrospective counts logs
+      # for sweep-cadence purposes but never checks which ones are indexed;
+      # this closes that gap (docs/logs/2026-07-22-promotion-audit.md,
+      # docs/logs/2026-09-03-x8-open-items.md).
+      - name: Check logs index coverage
+        run: pnpm check:logs-index
+
       - name: Check skill evals
         run: pnpm check:skill-evals
 

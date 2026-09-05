@@ -95,6 +95,7 @@
     "check:harness-freshness": "node bin/check-harness-freshness.mjs",
     "check:retrospective": "node bin/check-retrospective.mjs",
     "check:staleness": "node bin/check-staleness.mjs",
+    "check:logs-index": "node bin/check-logs-index.mjs",
     "check:skill-evals": "node bin/check-skill-evals.mjs",
     "check:review-policy": "node bin/check-review-policy.mjs",
     "maintain:scan": "node bin/run-maintain-scan.mjs",

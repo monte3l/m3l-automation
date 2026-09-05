@@ -21,6 +21,18 @@ formatting/lint sweeps, tracker-status flips, a bare `sync:hub` run, or the
 `docs:` commit that lands a log itself. The tiebreak: would a future session
 hitting the same problem want to read it?
 
+## Maintaining this index
+
+Every log gets exactly one row, added in the same commit that writes it
+(`/writing-work-logs` Step 3) — no generator owns these tables, since a log's
+section can't be derived mechanically (no frontmatter, no category field on
+the file itself). A row is `| YYYY-MM-DD | <descriptor> |
+[<link-text>](./<filename>.md) |`, link text is the filename with the date
+prefix and `.md` stripped, and rows within a table are date-ascending.
+`pnpm check:logs-index` (advisory) verifies coverage — every log linked
+exactly once, no dangling links, no date-column mismatches — but it is a
+backstop for the step above, not a substitute for it.
+
 ## Library — Core & AWS submodules (v1.0 → v1.1)
 
 | Date       | Module             | Log                                             |

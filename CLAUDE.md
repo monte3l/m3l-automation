@@ -88,18 +88,18 @@ table below is the pre-push cadence, verified against `lefthook.yml` by
 `audit`, and gitleaks (`docs/contributing/ci-cd.md`). `pre-push` takes
 minutes — background it, never `--no-verify`.
 
-| Stage                   | Checks                                                                       | Scope  |
-| ----------------------- | ---------------------------------------------------------------------------- | ------ |
-| `pre-commit` (lefthook) | `eslint`, `prettier`                                                         | staged |
-| `commit-msg` (lefthook) | `strip-claude-trailers`, `lint-commit`                                       | commit |
-| `pre-push` (lefthook)   | `format:check`, `lint`, `typecheck`, `test:coverage`, `check:test-counts`    | repo   |
-| `pre-push` (lefthook)   | `build`, `check:exports`, `verify-signed-range`, `check:control-chars`       | repo   |
-| `pre-push` (lefthook)   | `check:file-budget`, `check:agents`, `check:script-docs`, `check:provenance` | repo   |
-| `pre-push` (lefthook)   | `check:cli-docs`, `check:review-size`, `check:context-budget`, `check:index` | repo   |
-| `pre-push` (lefthook)   | `check:harness-freshness`, `check:skill-evals`, `check:retrospective`        | repo   |
-| `pre-push` (lefthook)   | `check:review-policy`, `check:claude-cli-version`, `check:hooks`             | repo   |
-| `pre-push` (lefthook)   | `check:staleness`                                                            | repo   |
-| `pre-push` (lefthook)   | `check-commit-trailers`, `check:skill-frontmatter`, `check:no-docker`        | repo   |
+| Stage                   | Checks                                                                                    | Scope  |
+| ----------------------- | ----------------------------------------------------------------------------------------- | ------ |
+| `pre-commit` (lefthook) | `eslint`, `prettier`                                                                      | staged |
+| `commit-msg` (lefthook) | `strip-claude-trailers`, `lint-commit`                                                    | commit |
+| `pre-push` (lefthook)   | `format:check`, `lint`, `typecheck`, `test:coverage`, `check:test-counts`                 | repo   |
+| `pre-push` (lefthook)   | `build`, `check:exports`, `verify-signed-range`, `check:control-chars`                    | repo   |
+| `pre-push` (lefthook)   | `check:file-budget`, `check:agents`, `check:script-docs`, `check:provenance`              | repo   |
+| `pre-push` (lefthook)   | `check:cli-docs`, `check:review-size`, `check:context-budget`, `check:index`              | repo   |
+| `pre-push` (lefthook)   | `check:harness-freshness`, `check:skill-evals`, `check:retrospective`, `check:logs-index` | repo   |
+| `pre-push` (lefthook)   | `check:review-policy`, `check:claude-cli-version`, `check:hooks`                          | repo   |
+| `pre-push` (lefthook)   | `check:staleness`                                                                         | repo   |
+| `pre-push` (lefthook)   | `check-commit-trailers`, `check:skill-frontmatter`, `check:no-docker`                     | repo   |
 
 `pnpm verify` reproduces every CI check locally; `check:verify-parity` keeps
 it in sync with `ci.yml`, and `check:cadence` unions the rows above (split

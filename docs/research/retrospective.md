@@ -16,17 +16,26 @@ letting a scaffolded-but-empty tracker read as fresh. The gate also compares
 the backlog reaches 5 logs, the cadence `/writing-work-logs` documents and
 that, before this tracker, nothing polled.
 
-**The backlog is currently zero.** The first real sweep (2026-09-01) cleared
-the 14-log forward window; a follow-up pass the same day cleared the
+**The backlog is not currently zero.** The first real sweep (2026-09-01)
+cleared the 14-log forward window; a follow-up pass the same day cleared the
 remaining 13 older logs (2026-06-29 → 2026-08-16). A same-day sweep then
 picked up the one log (`2026-09-01-v3-secrets-delivery.md`) that landed after
-the backlog-clearing pass, so `logs-considered` tracks the live count exactly.
-The gate stays quiet on the count arm until the next 5-log cadence produces a
-gap — that is the mechanism working, not evidence it can be removed. It
+the backlog-clearing pass, so `logs-considered` tracked the live count
+exactly at that point. The gate then went quiet on the count arm until the
+next 5-log cadence produced a gap — that is the mechanism working. It
 produced exactly that gap on 2026-09-02: nine logs accumulated in a single
-day's work, the gate warned at the cadence, and the sweep below cleared them
-back to zero. It produced the same gap again on 2026-09-03 — nine more logs,
-eight of them from concurrent sessions — and the sweep on that date cleared it.
+day's work, the gate warned at the cadence, and the sweep that date cleared
+them back to zero. It produced the same gap again on 2026-09-03 — nine more
+logs, eight of them from concurrent sessions — and the sweep on that date
+cleared it too, landing the header at `last-swept=2026-09-03
+logs-considered=135`.
+
+Work since then has not been swept: `docs/logs/` holds 149 logs as of
+2026-09-05, a 14-log backlog against the recorded `logs-considered=135` —
+past the 5-log cadence, and `check:retrospective` should be (and is) warning
+on it. Run `/promoting-work-log-lessons` to clear it and update the header;
+don't bump `logs-considered` by hand without running the sweep the number is
+supposed to record.
 
 **A row's outcome is not a per-lesson receipt.** Read the source log's bullets,
 not this table, when deciding whether a lesson is already promoted:

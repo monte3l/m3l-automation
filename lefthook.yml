@@ -123,8 +123,14 @@ pre-push:
     # signals rather than re-deriving them. It also runs from post-merge/
     # post-rewrite below (the actual "just merged" moment); this pre-push copy
     # catches drift for a maintainer who never pulls in the shared checkout.
+    # check:logs-index joined the same way: it reads docs/logs/README.md and
+    # lists docs/logs/, no network call, negligible cost. It closes the gap
+    # check:retrospective leaves — that gate counts logs for sweep-cadence
+    # purposes but never checks which ones are actually indexed, and the
+    # index drifted silently twice with nothing to catch it
+    # (docs/logs/2026-07-22-promotion-audit.md, docs/logs/2026-09-03-x8-open-items.md).
     checks:
-      run: node bin/verify-signed-range.mjs && node bin/check-commit-trailers.mjs && pnpm check:control-chars && pnpm check:no-docker && pnpm check:file-budget && pnpm check:agents && pnpm check:script-docs && pnpm check:cli-docs && pnpm check:review-size && pnpm check:context-budget && pnpm check:provenance && pnpm check:index && pnpm check:harness-freshness && pnpm check:retrospective && pnpm check:staleness && pnpm check:skill-evals && pnpm check:claude-cli-version && pnpm check:review-policy && pnpm check:hooks && pnpm check:skill-frontmatter
+      run: node bin/verify-signed-range.mjs && node bin/check-commit-trailers.mjs && pnpm check:control-chars && pnpm check:no-docker && pnpm check:file-budget && pnpm check:agents && pnpm check:script-docs && pnpm check:cli-docs && pnpm check:review-size && pnpm check:context-budget && pnpm check:provenance && pnpm check:index && pnpm check:harness-freshness && pnpm check:retrospective && pnpm check:staleness && pnpm check:logs-index && pnpm check:skill-evals && pnpm check:claude-cli-version && pnpm check:review-policy && pnpm check:hooks && pnpm check:skill-frontmatter
 
 # Fire after `git rebase` completes (including a no-op rebase with nothing to
 # replay) and after `git merge` completes. Regenerates the derived files the
