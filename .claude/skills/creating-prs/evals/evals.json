@@ -101,6 +101,18 @@
         "Does NOT emit any flag or command containing `--admin`",
         "Uses `--squash` in the emitted `gh pr merge` command, not `--merge` or `--rebase`"
       ]
+    },
+    {
+      "id": 7,
+      "prompt": "I just tried to push my feature branch and got this error: \"! [remote rejected] feat/notification-floor -> feat/notification-floor (cannot lock ref 'refs/heads/feat/notification-floor': unable to resolve reference)\". What do I do?",
+      "expected_output": "The skill recognizes this exact error as the tell that the push lost a race against the branch's own post-merge deletion, checks the PR's merge state via `gh pr view`, and — finding it MERGED — recovers by cherry-picking the orphaned commit onto a fresh branch off the new main rather than retrying the same push.",
+      "expectations": [
+        "States that a `cannot lock ref ... unable to resolve reference` rejection is the tell of a race against the branch's own deletion, not a transient error to blindly retry",
+        "Emits `WOULD-RUN: gh pr view <n> --json state,mergedAt` (or equivalent) to check the PR's actual merge state before taking any recovery action",
+        "Does NOT recommend simply re-running `git push` (with or without `--force`/`--force-with-lease`) as the fix for this specific error",
+        "Given the PR is MERGED, recommends cherry-picking the orphaned commit onto a fresh branch created off the updated `main`",
+        "Cites or paraphrases the document-merge-step incident (or equivalent reasoning) rather than treating this as a generic network/auth failure"
+      ]
     }
   ]
 }

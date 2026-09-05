@@ -102,4 +102,4 @@ default of `runGit = defaultRunGit`, same shape as
   real coverage gap (worktree classification silently unwired) in seconds —
   faster and more convincing than any unit test would have been, because the
   expected finding count was already known from the issue's own audit
-  numbers.
+  numbers. _(promoted → .claude/rules/harness-artifacts.md)_

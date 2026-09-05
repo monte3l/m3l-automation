@@ -98,6 +98,12 @@ already-merged-and-deleted remote branch, or (as above) get caught by
 _same_ PR, verify the push landed and the PR still shows it as HEAD _before_
 proceeding to Step 3, or accept it may need a follow-up PR instead.
 
+Squash-merged branch commits are never ancestors of `main`, so "the PR
+merged" does not mean every commit on the branch landed. Run `git log
+<branch> ^origin/main --oneline` before any branch-deleting cleanup — a
+non-empty result is a commit about to be abandoned, not noise
+(`docs/logs/2026-09-05-document-merge-step.md`).
+
 Two cases, mutually exclusive:
 
 - **Linked worktree** (this session is running inside

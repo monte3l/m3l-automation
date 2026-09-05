@@ -213,6 +213,7 @@ cleaned up specifically, never the parent wiped wholesale.
 clean up a test artifact living inside it — target the specific subdirectory
 the test created (`rm -rf data/console`), or check `git status --porcelain
 data/` first to confirm nothing tracked would be caught by the deletion.
+_(promoted → CLAUDE.md § Forbidden Patterns)_
 
 ## Lessons learned
 

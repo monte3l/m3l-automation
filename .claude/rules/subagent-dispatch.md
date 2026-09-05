@@ -17,7 +17,13 @@ paths:
   module/script spanning many files gets split into bounded sub-dispatches up
   front, not handed to one spoke as an indivisible turn. A single-file test
   suite over ~40 tests, or a fix round over ~5 findings, splits into
-  checkpointed batches the same way.
+  checkpointed batches the same way. `code-implementer` is the spoke this
+  bites hardest — measured over 30 days it took 0.24 prompt-cache breaks per
+  call at 3.15M tokens/call against `test-author`'s 0.06 and 1.50M, and every
+  read-only reviewer's zero. Hand it an explicit file list **and** a byte
+  budget per file, measured before dispatch; a spoke told the ceiling shrinks
+  the file instead of ratcheting the baseline
+  (`docs/logs/2026-09-03-u11-retry-resume-cancellation.md`).
 - **Size a FIX round by file, not by finding count.** Regroup findings by
   file — one spoke per file (or tight file group), every finding for that
   file in one prompt — so each spoke loads one file's context. This also
@@ -44,7 +50,14 @@ paths:
   wins.** A review spoke reasoning over source answers "does the `try`
   enclose the call"; only one running a probe answers "when is the property
   actually read." Point a refute pass at the **seam, not the diff**, and
-  never let a clean read-through overturn a failing probe.
+  never let a clean read-through overturn a failing probe. A single spoke's
+  claim needs no contradicting spoke to warrant this: a claim about a
+  parser, a serializer, or a CLI's actual behaviour is a claim to **run**,
+  not to weigh — including when you are only quoting it into an explanatory
+  comment, where a paraphrase can flip the causality and outlive the review
+  thread
+  (`docs/logs/2026-09-03-x12-containerization-images-and-scanning.md`,
+  `2026-09-05-x8-close-out.md`).
 - **Hand writer spokes (`test-author`, `code-implementer`) an explicit
   journal path** in the dispatch prompt.
   `.claude/hooks/guard-writer-dispatch-journal.mjs` warns (non-blocking) when

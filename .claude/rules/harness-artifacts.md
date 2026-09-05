@@ -2,14 +2,19 @@
 paths:
   - ".claude/hooks/**"
   - ".claude/workflows/**"
+  - "bin/**"
 ---
 
-# Executable harness artifacts (hooks & workflow scripts)
+# Executable harness artifacts (hooks, workflow scripts & check gates)
 
-> The `.claude/` files that **run**, as opposed to the ones that are read as
-> prompts. A hook or workflow script has no test suite, no type checker and no
-> coverage gate — `pnpm verify` never executes one. Review reads it; nothing
-> runs it. That gap is what these rules cover.
+> The files that **run**, as opposed to the ones that are read as prompts. A
+> `.claude/hooks/**` or `.claude/workflows/**` script has no test suite, no
+> type checker and no coverage gate — `pnpm verify` never executes one; review
+> reads it, nothing runs it. A `bin/**` `check:*` gate is the opposite gap: it
+> does have a test suite (`bin/tests/**`, type-checked by `pnpm typecheck`),
+> but a synthetic-fixture suite can only assert what its author imagined —
+> never what the live repo actually contains. Both gaps are what these rules
+> cover.
 
 - **Run a new hook or workflow script against known-good input before wiring
   it, not only against the failure cases it was built from.** A truncation
@@ -39,6 +44,18 @@ paths:
   whichever shell the agent picked, and a report file that was never written
   all passed every gate and two review rounds, and all three fell out of the
   first real run (`docs/logs/2026-07-16-audit-fanout-workflow.md`).
+
+- **Run a new `check:*` gate live against this repo before writing its test
+  suite, not after.** A synthetic fixture can only test what its author
+  imagined; a live run surfaces the self-referential case for free — a
+  `docker`-ban gate's first regex flagged the gate's own filename and its own
+  explanatory prose (`docs/logs/2026-09-04-check-no-docker.md`), and a
+  staleness gate run against three real `[gone]`-upstream worktrees exposed an
+  unwired classification path in seconds
+  (`docs/logs/2026-09-05-post-merge-staleness-gate.md`). This is the
+  complement of `tests.md`'s "test a `bin/` checker against synthetic state"
+  bullet, not a contradiction: live-run to smoke it, synthetic fixtures for
+  the suite that has to keep passing tomorrow.
 
 - **Validate arguments loudly at the top of a workflow script.** A script that
   dies mid-orchestration produces no stack context worth reading; an explicit

@@ -104,7 +104,7 @@ cross-cutting library behavior (a serializer, a redaction helper, a shared
 utility) that this session has _already established firsthand_ earlier in
 the same task, verify against the source before acting — a second
 independent spoke's contradicting result is a strong signal to check, not
-just a tie to break by count.
+just a tie to break by count. _(promoted → .claude/rules/subagent-dispatch.md)_
 
 ### 2. `pnpm knip` — not part of `pre-push` — failed in CI after a fully green local push
 

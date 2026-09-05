@@ -216,6 +216,18 @@ Once confirmed:
   `pnpm session:launch`'s command-line naming trick is not needed for this
   path (it still applies when genuinely opening a second session; see the
   session-name bullet in Step 3).
+- **A second, concurrent worktree mid-session does not need `EnterWorktree`.**
+  It will refuse while this session already owns one; the working pattern is
+  absolute paths into the second worktree on every `Read`/`Write`/`Edit` and
+  an explicit `cd <path> &&` prefix on every `Bash` call — the shell's cwd
+  does not persist across tool calls. Prefer this to an
+  `ExitWorktree`/`EnterWorktree` cycle unless the session's tracked-worktree
+  ownership itself has to move (e.g. for `finishing-work`'s
+  `ExitWorktree(remove)`). Because a successful `Write` says nothing about
+  _which_ checkout received the file, spot-check any newly created,
+  not-yet-tracked file with `git status` scoped to the worktree
+  (`docs/logs/2026-09-05-statusline-anchor-fixes.md`,
+  `2026-09-03-permission-allowlist-expansion.md`).
 - **New branch in place:** `git switch -c feat/<slug>` (or `fix/<slug>`).
 - **Next-slice signal:** once the new branch exists (worktree or in-place),
   record it so the statusline's slice-progress segment

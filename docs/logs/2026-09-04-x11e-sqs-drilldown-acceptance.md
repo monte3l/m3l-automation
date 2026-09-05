@@ -183,7 +183,7 @@ explicitly asking for its test.
 (not just changes existing logic), run the per-file coverage check before
 declaring the round done — `pnpm verify`'s full coverage gate is the only
 place this actually surfaced, one full multi-minute run later than
-necessary.
+necessary. _(promoted → .claude/rules/tests.md)_
 
 ## Lessons learned
 
