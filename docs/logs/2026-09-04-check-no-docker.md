@@ -108,6 +108,7 @@ live against the actual repo — not just synthetic test fixtures — as the
 very first verification step, before writing tests or opening a PR. A
 synthetic fixture can only test what its author thought to imagine; a live
 run against real content surfaces the self-referential case for free.
+_(promoted → .claude/rules/harness-artifacts.md)_
 
 ### 2. PR2's work log existed but was never committed, and this PR's docs referenced it as if it were
 

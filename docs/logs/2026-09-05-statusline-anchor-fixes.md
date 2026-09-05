@@ -137,7 +137,7 @@ session needs a second concurrent worktree mid-session, prefer this
 absolute-path approach over forcing an `ExitWorktree`/`EnterWorktree` cycle,
 unless the user specifically wants the session's tracked-worktree state
 (e.g. for `finishing-work`'s ownership-based `ExitWorktree(remove)`) to
-follow the switch.
+follow the switch. _(promoted → .claude/skills/starting-work/SKILL.md)_
 
 ### 3. `pnpm worktree:remove` kept both merged branches, requiring a manual force-delete
 

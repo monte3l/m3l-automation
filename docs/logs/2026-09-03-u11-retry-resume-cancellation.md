@@ -277,6 +277,7 @@ failure-path test reaches.
 the non-`Error` throw test in the same edit (`throw "disk gone"`, asserting
 the _bare_ message with no appended detail). Note that per-file thresholds
 run **only** under `test:coverage` — `pnpm test` will not surface this.
+_(promoted → .claude/rules/tests.md)_
 
 ### 9. I misdiagnosed a `check:review-size` figure as stale-base inflation
 
@@ -361,7 +362,7 @@ after.
   a late failure. An explicit byte budget in the spoke brief made a spoke
   shrink the file instead of ratcheting the baseline; the ceiling pressure
   also produced the better design (test the matrix once in the owning
-  suite).
+  suite). _(promoted → .claude/rules/subagent-dispatch.md)_
 - **Read the incident log before close-out removes it** —
   `tmp/session-incidents.jsonl` is session-rotated and worktree-local, so
   `finishing-work` deletes the only mechanical record of spoke truncations

@@ -203,8 +203,8 @@ an unrelated reason.
   well at this scale.)_
 - **A fix pass touching an already-large, coverage-sensitive file must be
   re-verified against the FULL suite's coverage gate, not just its own
-  changed test file's scoped run.** _(See Divergence 1 — worth a line in
-  `.claude/rules/tests.md` if this recurs; one instance is not yet a pattern.)_
+  changed test file's scoped run.** _(See Divergence 1 — it recurred;
+  promoted → .claude/rules/tests.md)_
 - **A review spoke's repeated 5xx failure is worth one more retry after
   unrelated work has landed, not just abandonment after three tries in a
   row** — the fourth attempt here surfaced a real, fixable finding.

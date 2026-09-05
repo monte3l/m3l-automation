@@ -347,6 +347,13 @@ own feature branch** but never on a shared branch (per CLAUDE.md, "never
 git push --force-with-lease
 ```
 
+A `[remote rejected] … cannot lock ref … unable to resolve reference` on a
+feature-branch push is not a transient error to retry — it is the tell that
+the push lost a race against the branch's own post-merge deletion. Check
+`gh pr view <n> --json state,mergedAt` first; if `MERGED`, cherry-pick the
+orphaned commit onto a fresh branch off the new `main`
+(`docs/logs/2026-09-05-document-merge-step.md`).
+
 ### 10 — Gather commits since main
 
 ```bash

@@ -116,7 +116,7 @@ the race window was just non-zero and this session's timing landed inside it.
   retrying, check `gh pr view <n> --json state,mergedAt` — if it already shows
   `MERGED`, the branch is gone for good and the fix is to cherry-pick the
   orphaned commit onto a fresh branch off the new `main`, not to re-push the
-  same ref.
+  same ref. _(promoted → .claude/skills/creating-prs/SKILL.md)_
 - **A commit whose only sibling already squash-merged is not safely
   abandonable, even though the merge "succeeded."** Before any cleanup that
   deletes a branch (`finishing-work` Step 3, or an ad hoc `git branch -D`),
@@ -124,6 +124,7 @@ the race window was just non-zero and this session's timing landed inside it.
   since a squash merge means the branch's own commits are never ancestors of
   `main`, so a naive "already merged, safe to delete" read can silently drop
   a commit that never actually made it in.
+  _(promoted → .claude/skills/finishing-work/SKILL.md)_
 - **This is now empirically the second documented failure mode on the same
   race** (`finishing-work` Step 3's phantom-success case is the first) — a
   push updating a branch that already has (or is about to get) a merge

@@ -139,7 +139,7 @@ writing it into a comment as settled fact.
 **Fix for future:** A code comment explaining _why_ a review finding's fix
 is needed is a claim like any other — verify the mechanism, not just the
 conclusion, before committing it to a comment that will outlive the review
-thread.
+thread. _(promoted → .claude/rules/subagent-dispatch.md)_
 
 ## Lessons learned
 

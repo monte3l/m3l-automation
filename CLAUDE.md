@@ -128,7 +128,7 @@ Canonical **Style Guide**: `docs/contributing/style-guide.md` (`[enforced]` vs `
 - `scripts/**` → `scripts.md` — `workspace:*` (ADR-0029), naming (ADR-0028)
 - `packages/**/*.ts`, `scripts/**/*.ts`, `**/*.test.ts` → `domain-knowledge.md`
 - `.claude/skills/**`, `.claude/agents/**` → `subagent-dispatch.md` — truncation recovery
-- `.claude/hooks/**`, `.claude/workflows/**` → `harness-artifacts.md` — run it before wiring it
+- `.claude/hooks/**`, `.claude/workflows/**`, `bin/**` → `harness-artifacts.md` — run it before wiring it
 
 ## Interaction Style
 
@@ -182,7 +182,7 @@ Comment the _why_, not the _what_. TSDoc rules (every exported symbol, `@example
 
 **Enforced at write time or in CI:** `any` in the public API, a missing `.js` extension, CommonJS (`require`/`module.exports`/`__dirname`), hand-edits to `dist/`, non-Conventional commits, committed secrets/tokens, an unsigned/invalid-signature push, adding a dependency without updating the lockfile, and any `Claude-*` git trailer other than `Co-Authored-By:` (harness-injected, e.g. `Claude-Session:`; stripped at `commit-msg`, rejected at push). The `.js`-extension and CommonJS bans are guarded twice (a PreToolUse hook plus ESLint/CI) — don't remove either as "redundant."
 
-**No automated guard — need conscious care:** never swallow errors silently; no top-level side effects; keep the import graph shallow; never `git push --force`; surface new Core/AWS exports through the namespace barrel only, never a new `exports` subpath.
+**No automated guard — need conscious care:** never swallow errors silently; no top-level side effects; keep the import graph shallow; never `git push --force`; surface new Core/AWS exports through the namespace barrel only, never a new `exports` subpath; never run a destructive command for a _disposable_ purpose without checking what else it takes with it — `git status --porcelain` before any `git reset --hard` (non-empty output is a hard stop; there is no partial-hard-reset), and `rm -rf` the specific subdirectory a test created, never the shared tracked directory containing it.
 
 ## Known Gotchas
 
