@@ -134,14 +134,19 @@ governing decision is `docs/adr/0030-targeted-workflow-tooling-and-mcp.md`'s
 | `triaging-ci`              | gh CLI                        | Needs Actions run/log tools; not in the configured default toolset                                                                                                                  |
 
 Two structural constraints apply to all five, independent of per-skill
-coverage (see `docs/contributing/agent-operating-model.md`): **MCP is
-hub-only** (no spoke holds an `mcp__*` tool grant), and **MCP is unavailable
-in headless CI** (`claude-pr-review.yml` pins a scoped `--allowedTools`
+coverage (see `docs/contributing/agent-operating-model.md`): **no spoke holds
+a GitHub `mcp__*` tool grant** (since ADR-0093, one spoke —
+`code-implementer` — holds a scoped `context7` grant, but that grant is
+unrelated to GitHub and doesn't extend to it), and **MCP is unavailable in
+headless CI** (`claude-pr-review.yml` pins a scoped `--allowedTools`
 allowlist with no `--mcp-config`). A skill that must run inside either context
 stays gh-CLI-based regardless of toolset coverage. The 2026-07-27 amendment's
 revisit trigger was retired by
-ADR-0030's 2026-08-14 amendment (issue #344) — don't migrate a skill's
-mechanism without re-reading that amendment's re-open condition first.
+ADR-0030's 2026-08-14 amendment (issue #344); ADR-0093's "The ADR-0030
+re-open condition this decision fires" section answered that condition for
+the GitHub-facing skills — read it for why the outcome (none of the five
+migrate) is unchanged. Don't migrate a skill's mechanism without re-reading
+that amendment's re-open condition first.
 
 ## External documentation
 
