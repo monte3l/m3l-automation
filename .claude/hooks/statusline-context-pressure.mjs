@@ -1130,9 +1130,7 @@ export function buildModelRow(payload, env, columns) {
       formatFastModeSegment(payload),
       formatOutputStyleSegment(payload),
       formatVimModeSegment(payload),
-      ...formatWeeklyModelSegments(
-        /** @type {any} */ (env?.weeklyUsage ?? null),
-      ),
+      ...formatWeeklyModelSegments(env?.weeklyUsage ?? null),
     ],
     columns,
   );

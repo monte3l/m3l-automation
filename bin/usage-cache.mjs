@@ -330,11 +330,29 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
 
   const models = normalizeUsageResponse(body);
   const entry = { fetched_at: Math.floor(Date.now() / 1000), models };
-  mkdirSync(join(root, "tmp"), { recursive: true });
-  writeFileSync(
-    join(root, USAGE_CACHE_REL_PATH),
-    `${JSON.stringify(entry, null, 2)}\n`,
-  );
+  try {
+    mkdirSync(join(root, "tmp"), { recursive: true });
+    writeFileSync(
+      join(root, USAGE_CACHE_REL_PATH),
+      `${JSON.stringify(entry, null, 2)}\n`,
+    );
+  } catch (cause) {
+    // This CLI normally runs detached with stdio:"ignore" (spawned by
+    // refresh-usage-cache.mjs) — a write failure here would otherwise vanish
+    // silently on every 15-minute TTL cycle. Report it and exit non-zero so
+    // --json diagnostic mode (and a future process-exit-code check on the
+    // spawning side) can observe it, unlike every other exit path above
+    // which reports success-with-no-data by design.
+    reporter.warn(
+      `Failed to write ${USAGE_CACHE_REL_PATH}: ${cause instanceof Error ? cause.message : String(cause)}`,
+    );
+    reporter.finish({
+      credentialSource: credential.source,
+      httpStatus: status,
+      modelCount: 0,
+    });
+    process.exit(1);
+  }
   reporter.change("created", USAGE_CACHE_REL_PATH);
   reporter.succeed(
     `Wrote ${models.length} model usage entr${models.length === 1 ? "y" : "ies"}.`,
