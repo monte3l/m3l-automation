@@ -14,6 +14,10 @@ This skill turns the current conversation into a durable `docs/logs/` entry — 
 Markdown file that records what shipped, what went smoothly, what diverged (and
 why), and concrete lessons for future tasks in this project.
 
+Scope (which tasks get a log at all) lives in
+[`docs/logs/README.md`](../../../docs/logs/README.md) — don't re-decide it
+here.
+
 The log is most valuable when written _during_ the same session as the task,
 because that is when real-time context is available: spoke verdicts, exact test
 counts, coverage numbers, lint/typecheck outcomes, and the specific sequence of

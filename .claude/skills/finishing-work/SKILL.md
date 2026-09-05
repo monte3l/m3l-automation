@@ -151,6 +151,12 @@ is skipped, but running the sync is the actual fix, not the alarm.
 
 ### 6 — Work log check
 
+Scope lives in [`docs/logs/README.md`](../../../docs/logs/README.md): a
+substance test, not a commit-type filter. Skip this step silently for a
+mechanical merge with no narrative — a dependency bump, a formatting/lint
+sweep, a tracker-status flip, a bare `sync:hub` run, or the `docs:` commit
+that lands a log itself. Otherwise, continue:
+
 ```bash
 ls docs/logs/ | grep <today's date>
 ```
@@ -223,10 +229,11 @@ see that ADR's 2026-09-04 amendment.
 ### 9 — Report
 
 One-line summary: branch deleted (or kept, with why), refs pruned count,
-tracker flip done/skipped, `sync:hub` run/skipped, work log present/written/
-skipped, journals swept/left, and (submodule work only) whether Step 8 found
-a remaining slice. This is the close-out record for a task with no remaining
-slice — nothing after this step is expected to run.
+tracker flip done/skipped, `sync:hub` run/skipped, work log
+present/written/skipped/n/a (out of scope), journals swept/left, and
+(submodule work only) whether Step 8 found a remaining slice. This is the
+close-out record for a task with no remaining slice — nothing after this
+step is expected to run.
 
 ## Notes
 

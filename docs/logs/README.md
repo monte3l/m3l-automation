@@ -9,9 +9,17 @@ by `/writing-work-logs`; recurring lessons graduate into the rules/agents via
 `/promoting-work-log-lessons`. Run that sweep after **every 5 new logs** —
 `/writing-work-logs` Step 5 checks this (it counts logs newer than the latest
 `promoted →` stamp and prompts the sweep at 5+), or sooner whenever a lesson in
-a fresh log feels familiar from an earlier one. Logs are **pipeline-scoped** —
-submodule and script implementation units get one; chore/docs/CI PRs
-deliberately do not.
+a fresh log feels familiar from an earlier one.
+
+**Scope is substance, not commit type.** A unit of work gets a log when it
+produced something worth re-reading later — what shipped, what diverged from
+plan, the lessons. That covers submodule/script implementation units _and_
+harness/governance/infra work with a real narrative (see `## Workflow /
+infra` below — dependabot-gate fixes, hook hardening, rule-file trims). It
+excludes mechanical changes with no narrative: dependency bumps,
+formatting/lint sweeps, tracker-status flips, a bare `sync:hub` run, or the
+`docs:` commit that lands a log itself. The tiebreak: would a future session
+hitting the same problem want to read it?
 
 ## Library — Core & AWS submodules (v1.0 → v1.1)
 

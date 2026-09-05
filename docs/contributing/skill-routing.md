@@ -116,10 +116,10 @@ rarely need to invoke it standalone except mid-task or before a PR exists.
 
 ### The knowledge loop
 
-| I want to...                                                   | Skill                         | Also triggers on                          |
-| -------------------------------------------------------------- | ----------------------------- | ----------------------------------------- |
-| Record what happened after a significant task                  | `/writing-work-logs`          | "document this task", "log what happened" |
-| Find lessons recurring across logs and promote them into rules | `/promoting-work-log-lessons` | "promote work-log lessons"                |
+| I want to...                                                           | Skill                         | Also triggers on                          |
+| ---------------------------------------------------------------------- | ----------------------------- | ----------------------------------------- |
+| Record what happened after a unit of work ([scope](../logs/README.md)) | `/writing-work-logs`          | "document this task", "log what happened" |
+| Find lessons recurring across logs and promote them into rules         | `/promoting-work-log-lessons` | "promote work-log lessons"                |
 
 ## Successor chains
 
