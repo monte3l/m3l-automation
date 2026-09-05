@@ -218,6 +218,11 @@ export const VERIFY_STEPS = [
     cmd: () => "pnpm check:retrospective",
   },
   {
+    ciStepName: "Check post-merge staleness",
+    id: "check-staleness",
+    cmd: () => "pnpm check:staleness",
+  },
+  {
     ciStepName: "Check skill evals",
     id: "check-skill-evals",
     cmd: () => "pnpm check:skill-evals",

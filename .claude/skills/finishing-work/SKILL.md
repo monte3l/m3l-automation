@@ -19,8 +19,11 @@ flipping a tracker row, running `sync:hub`, or checking that a work log
 exists. Left undone, that residue accumulates silently — a live audit of this
 repo's own checkout after four clean merges found 4 stale remote-tracking
 refs, 1 stale local branch, 1 stale worktree, and 1 orphaned spoke journal,
-none of it caught by any gate (`docs/research/harness-refresh.md`,
-`docs/adr/`). This skill is that missing owner.
+none of it caught by any gate at the time. This skill is that missing owner.
+`pnpm check:staleness` (issue #995 / ROADMAP H2) now _detects_ this residue
+class post-merge/post-rewrite and pre-push, but it only reports — cleaning up
+what it finds, and the tracker/work-log/sync:hub steps below, are still this
+skill's job.
 
 `bin/worktree-remove.mjs` and `bin/worktree-prune.mjs` both exist already but
 are worktree-scoped — neither helps when work happened in the shared
@@ -112,15 +115,23 @@ expected and not itself a problem (`worktree-prune.mjs`'s `[gone]`-upstream
 check is the one that actually detects a squash merge; `branch -d`/`-D`
 force-deletion is a separate, deliberate user decision).
 
-### 4 — Prune stale remote-tracking refs
+### 4 — Prune stale remote-tracking refs and check for other residue
 
 ```bash
 git fetch --prune
+pnpm check:staleness
 ```
 
-Cheap and safe regardless of which path Step 3 took — clears the
-`[deleted]` markers for this and any other already-merged branch's remote
-ref. Report how many refs were pruned, if any.
+`git fetch --prune` is cheap and safe regardless of which path Step 3 took —
+clears the `[deleted]` markers for this and any other already-merged
+branch's remote ref. `pnpm check:staleness` (issue #995 / ROADMAP H2) then
+reports any residue left behind: a stale worktree or local branch
+`worktree:prune`/`branch:cleanup` haven't been run against yet, a
+remote-tracking ref still pending prune, or an orphaned `tmp/` file (see
+Step 7). It's advisory — act on what it reports, don't treat a clean run as
+proof nothing needs cleanup if Step 3 already handled the branch/worktree
+for this PR. Also runs automatically post-merge/post-rewrite and pre-push,
+so this step mainly surfaces older residue this session didn't cause.
 
 ### 5 — Tracker row and `sync:hub`
 
@@ -161,14 +172,16 @@ work log sat orphaned in the shared checkout through all of PR3's setup).
 
 ### 7 — Orphaned journal sweep
 
-```bash
-find tmp -maxdepth 1 -iname '*journal*.md' -newer /dev/null 2>/dev/null
-```
-
-List any `tmp/*journal*.md` files whose age predates the merged branch's
-last commit (a stray spoke journal from a dispatch on this branch that
-never got cleaned up). Ask before deleting — a journal from a _different_,
-still-in-progress branch may share the naming pattern.
+`pnpm check:staleness` (Step 4) already lists any `tmp/` file older than 7
+days that isn't on its live-state allowlist (`tmp/usage-weekly.json`,
+`tmp/slice-progress.json`, `tmp/compact-handoff.json`,
+`tmp/session-incidents.jsonl`) — this replaces an earlier `find
+tmp -iname '*journal*.md'` glob here, which missed non-`*journal*`-named
+orphans (a spoke's dispatch journal has no fixed naming convention;
+`.claude/rules/subagent-dispatch.md` only requires a `tmp/`-scoped path).
+Review its `tmp/` findings and ask before deleting — a file from a
+_different_, still-in-progress branch may look identical to a genuine
+orphan.
 
 ### 8 — Check for a remaining slice (ADR-0072)
 

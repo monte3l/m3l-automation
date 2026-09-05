@@ -466,6 +466,15 @@ jobs:
       - name: Check retrospective loop
         run: pnpm check:retrospective
 
+      # Warns (non-blocking) on post-merge local residue: a stale worktree,
+      # local branch, remote-tracking ref, or tmp/ file (issue #995 / ROADMAP
+      # H2). CI's ephemeral single checkout has no linked worktrees and no
+      # local branch history, so this is naturally a clean no-op here — the
+      # real value is the post-merge/post-rewrite lefthook copy that runs
+      # against a maintainer's actual multi-worktree checkout.
+      - name: Check post-merge staleness
+        run: pnpm check:staleness
+
       - name: Check skill evals
         run: pnpm check:skill-evals
 

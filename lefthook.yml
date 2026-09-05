@@ -117,20 +117,32 @@ pre-push:
     # index and the working tree, no network or auth, negligible cost. It
     # enforces the Docker-ban stance at the point a violation is cheapest to
     # catch — before it reaches CI — rather than leaving it a prose-only rule.
+    # check:staleness (issue #995 / ROADMAP H2) joined the same way: it warns
+    # (non-blocking) on post-merge residue — a stale worktree, local branch,
+    # remote-tracking ref, or tmp/ file — reusing bin/lib/worktree-prune.mjs's
+    # signals rather than re-deriving them. It also runs from post-merge/
+    # post-rewrite below (the actual "just merged" moment); this pre-push copy
+    # catches drift for a maintainer who never pulls in the shared checkout.
     checks:
-      run: node bin/verify-signed-range.mjs && node bin/check-commit-trailers.mjs && pnpm check:control-chars && pnpm check:no-docker && pnpm check:file-budget && pnpm check:agents && pnpm check:script-docs && pnpm check:cli-docs && pnpm check:review-size && pnpm check:context-budget && pnpm check:provenance && pnpm check:index && pnpm check:harness-freshness && pnpm check:retrospective && pnpm check:skill-evals && pnpm check:claude-cli-version && pnpm check:review-policy && pnpm check:hooks && pnpm check:skill-frontmatter
+      run: node bin/verify-signed-range.mjs && node bin/check-commit-trailers.mjs && pnpm check:control-chars && pnpm check:no-docker && pnpm check:file-budget && pnpm check:agents && pnpm check:script-docs && pnpm check:cli-docs && pnpm check:review-size && pnpm check:context-budget && pnpm check:provenance && pnpm check:index && pnpm check:harness-freshness && pnpm check:retrospective && pnpm check:staleness && pnpm check:skill-evals && pnpm check:claude-cli-version && pnpm check:review-policy && pnpm check:hooks && pnpm check:skill-frontmatter
 
 # Fire after `git rebase` completes (including a no-op rebase with nothing to
 # replay) and after `git merge` completes. Regenerates the derived files the
 # m3l-generated merge driver (.gitattributes, ADR-0024) deliberately left
 # un-regenerated, then reports dirty files for a `docs: reconcile doc
 # metadata` commit — never auto-commits, never blocks (always exits 0).
+#
+# check:staleness (issue #995 / ROADMAP H2) is chained after regen: this is
+# the literal "just merged/rebased" moment a maintainer can actually act on
+# post-merge residue, and `finishing-work` is invoked manually rather than
+# hook-triggered, so nothing else catches it here. Advisory only, always
+# exits 0 — never blocks the rebase/merge that just completed.
 post-rewrite:
   commands:
     regen:
-      run: node bin/post-integrate-regen.mjs
+      run: node bin/post-integrate-regen.mjs && pnpm check:staleness
 
 post-merge:
   commands:
     regen:
-      run: node bin/post-integrate-regen.mjs
+      run: node bin/post-integrate-regen.mjs && pnpm check:staleness
