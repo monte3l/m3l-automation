@@ -136,7 +136,7 @@ already orders this correctly; mirror it here rather than composing `lint`,
 dependency-violating sequence:
 
 ```bash
-pnpm lint && pnpm typecheck && pnpm turbo run build --filter=@m3l-automation/m3l-cli && pnpm test:coverage && pnpm build && pnpm knip
+pnpm lint && pnpm typecheck && pnpm turbo run build --filter=@m3l-automation/m3l-cli && pnpm test:coverage && pnpm build && pnpm knip && pnpm check:command-catalog
 ```
 
 **`pnpm knip` is not part of `pre-push`** (cost reasons — see
@@ -146,6 +146,15 @@ can pass every `pre-push` lane and still fail CI on an unused export the
 same change just introduced — logged twice now
 (`docs/logs/2026-09-03-x11b-console-session-views.md`). Run it here, not
 only when CI catches it.
+
+**`pnpm check:command-catalog` is the same story for a new `package.json`
+script.** It is also part of the `Governance gates` CI lane but not
+`pre-push`, so adding a script mid-PR and relying only on this sequence's
+other gates lets a missing `bin/lib/command-catalog.mjs` entry reach CI
+undetected — it happened exactly this way
+(`docs/logs/2026-09-05-statusline-weekly-usage.md`). Cheap and instant
+(reads `package.json` only, no build dependency); run it whenever this PR
+adds or renames a script.
 
 ### 5 — Reconcile docs
 
