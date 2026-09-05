@@ -55,9 +55,9 @@
     {
       "id": 4,
       "prompt": "How do I configure Vitest with @testing-library/jest-dom so I can use DOM matchers like `toBeInTheDocument()` and `toHaveTextContent()` in my tests?",
-      "expected_output": "The response recognises this as a generic Vitest question unrelated to the m3l-automation repo, declines to apply the vitest-coverage-types-mocks skill, and routes to the context7-mcp skill instead.",
+      "expected_output": "The response recognises this as a generic Vitest question unrelated to the m3l-automation repo, declines to apply the vitest-coverage-types-mocks skill, and defers to current upstream Vitest/jest-dom documentation (via the context7 MCP tools, ADR-0093) instead.",
       "expectations": [
-        "The response defers to an up-to-date external documentation lookup rather than treating its own recollection as authoritative — satisfied EITHER by naming `context7-mcp` as the appropriate skill, OR by stating it will consult current upstream documentation for the answer. Note `context7-mcp` is a plugin skill that does not exist inside this sandbox, so an attempt to invoke it fails with \"Unknown skill\"; grade the RESPONSE TEXT only, and treat a failed invocation followed by an explicit defer-to-current-docs statement as satisfying this criterion in full.",
+        "The response defers to an up-to-date external documentation lookup rather than treating its own recollection as authoritative — satisfied EITHER by naming `mcp__context7__resolve-library-id`/`mcp__context7__query-docs` (or \"the context7 MCP\") as the mechanism it will use, OR by stating it will consult current upstream documentation for the answer",
         "Response text explains that this question concerns generic Vitest configuration or external DOM testing libraries unrelated to the m3l-automation repo's specific setup",
         "Response does not propose any changes to `vitest.config.ts` in the m3l-automation repo to support jest-dom matchers"
       ]
