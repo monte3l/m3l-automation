@@ -173,7 +173,7 @@ This marker records that the lesson has left the log and now lives where it
 changes behavior; `/promoting-work-log-lessons` reads it to avoid re-proposing an
 already-promoted lesson. Leave the marker off any lesson you did not promote.
 
-## Step 3 — Write the file
+## Step 3 — Write the file, and index it
 
 Use this exact template. No YAML frontmatter.
 
@@ -207,6 +207,25 @@ For non-submodule tasks, adjust the title:
 `# Work log — <task slug> (YYYY-MM-DD)`
 
 Omit the "Plan of record" line entirely if no plan file was used for this task.
+
+**Add the row to `docs/logs/README.md` in the same commit.** This is not
+optional or deferrable — a log with no row is written but undiscoverable
+through the index, and that has drifted silently before with nothing to catch
+it (`docs/logs/2026-07-22-promotion-audit.md`, `docs/logs/2026-09-03-x8-open-items.md`).
+`pnpm check:logs-index` (advisory) flags a missing row, but it is a backstop,
+not the mechanism — this step is.
+
+1. Pick the section table this log belongs to. Match it against the other
+   rows' descriptors (a submodule log joins the Library or Consumer-fleet
+   table; a wave-lettered change, e.g. `X`/`U`/`V`/`W`/`A`, joins that wave's
+   table; anything else joins Workflow / infra). If no existing section fits,
+   say so and ask before inventing a new one.
+2. Add a row in the section's existing column format: link text is the
+   filename with the `YYYY-MM-DD-` prefix and `.md` stripped; the middle
+   column is a short descriptor (mirror the richness of neighboring rows —
+   wave code, PR number, one-line change description).
+3. Insert it in date-ascending order within that table (the README's
+   maintenance note documents this).
 
 ## Step 4 — Promote durable lessons
 
@@ -277,8 +296,10 @@ After writing, print:
 
 1. The full path of the created file
 2. A one-line summary of what the log captures
-3. Any rule/prompt promotions proposed in Step 4 (or "none")
-4. **Sweep-cadence check:** count the logs newer than the most recent
+3. Confirmation that Step 3's `docs/logs/README.md` row was added, and which
+   section table it landed in
+4. Any rule/prompt promotions proposed in Step 4 (or "none")
+5. **Sweep-cadence check:** count the logs newer than the most recent
    `_(promoted → …)_` stamp (`grep -l "promoted →" docs/logs/*.md`, then
    compare dates). If **5 or more** new logs have accumulated since the last
    sweep, recommend running `/promoting-work-log-lessons` now — this is the

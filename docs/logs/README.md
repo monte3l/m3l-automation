@@ -13,6 +13,18 @@ a fresh log feels familiar from an earlier one. Logs are **pipeline-scoped** —
 submodule and script implementation units get one; chore/docs/CI PRs
 deliberately do not.
 
+## Maintaining this index
+
+Every log gets exactly one row, added in the same commit that writes it
+(`/writing-work-logs` Step 3) — no generator owns these tables, since a log's
+section can't be derived mechanically (no frontmatter, no category field on
+the file itself). A row is `| YYYY-MM-DD | <descriptor> |
+[<link-text>](./<filename>.md) |`, link text is the filename with the date
+prefix and `.md` stripped, and rows within a table are date-ascending.
+`pnpm check:logs-index` (advisory) verifies coverage — every log linked
+exactly once, no dangling links, no date-column mismatches — but it is a
+backstop for the step above, not a substitute for it.
+
 ## Library — Core & AWS submodules (v1.0 → v1.1)
 
 | Date       | Module             | Log                                             |

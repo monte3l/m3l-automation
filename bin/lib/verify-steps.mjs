@@ -223,6 +223,11 @@ export const VERIFY_STEPS = [
     cmd: () => "pnpm check:staleness",
   },
   {
+    ciStepName: "Check logs index coverage",
+    id: "check-logs-index",
+    cmd: () => "pnpm check:logs-index",
+  },
+  {
     ciStepName: "Check skill evals",
     id: "check-skill-evals",
     cmd: () => "pnpm check:skill-evals",
