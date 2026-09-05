@@ -3,6 +3,7 @@ import { join } from "node:path";
 
 import {
   resolveWeeklyUsage,
+  resolveUsageCachePath,
   formatWeeklyModelSegments,
   buildModelRow,
   GREEN,
@@ -13,6 +14,23 @@ import {
   formatDuration,
 } from "../../.claude/hooks/statusline-context-pressure.mjs";
 
+describe("resolveUsageCachePath", () => {
+  test("returns join(homeDir, '.claude', 'm3l-usage-weekly.json') for a representative homeDir", () => {
+    expect(resolveUsageCachePath("/home/someuser")).toBe(
+      join("/home/someuser", ".claude", "m3l-usage-weekly.json"),
+    );
+  });
+
+  test("is a pure function of its argument: two different home dirs produce two different, correctly-shaped paths", () => {
+    const first = resolveUsageCachePath("/home/alice");
+    const second = resolveUsageCachePath("/home/bob");
+
+    expect(first).not.toBe(second);
+    expect(first).toBe(join("/home/alice", ".claude", "m3l-usage-weekly.json"));
+    expect(second).toBe(join("/home/bob", ".claude", "m3l-usage-weekly.json"));
+  });
+});
+
 describe("resolveWeeklyUsage", () => {
   const startDir = "/workspace/project";
   const usagePath = join(startDir, "tmp/usage-weekly.json");
@@ -20,7 +38,7 @@ describe("resolveWeeklyUsage", () => {
   test("returns null when readFile returns null for the cache file", () => {
     const readFile = () => null;
 
-    expect(resolveWeeklyUsage(readFile, startDir, Date.now())).toBeNull();
+    expect(resolveWeeklyUsage(readFile, usagePath, Date.now())).toBeNull();
   });
 
   test("returns null, not throws, when the cache file contains invalid JSON", () => {
@@ -28,9 +46,9 @@ describe("resolveWeeklyUsage", () => {
       path === usagePath ? "{ not json" : null;
 
     expect(() =>
-      resolveWeeklyUsage(readFile, startDir, Date.now()),
+      resolveWeeklyUsage(readFile, usagePath, Date.now()),
     ).not.toThrow();
-    expect(resolveWeeklyUsage(readFile, startDir, Date.now())).toBeNull();
+    expect(resolveWeeklyUsage(readFile, usagePath, Date.now())).toBeNull();
   });
 
   test("returns null when fetched_at is missing", () => {
@@ -42,7 +60,7 @@ describe("resolveWeeklyUsage", () => {
           })
         : null;
 
-    expect(resolveWeeklyUsage(readFile, startDir, now)).toBeNull();
+    expect(resolveWeeklyUsage(readFile, usagePath, now)).toBeNull();
   });
 
   test("returns null when fetched_at is not a finite number", () => {
@@ -55,7 +73,7 @@ describe("resolveWeeklyUsage", () => {
           })
         : null;
 
-    expect(resolveWeeklyUsage(readFile, startDir, now)).toBeNull();
+    expect(resolveWeeklyUsage(readFile, usagePath, now)).toBeNull();
   });
 
   test("returns null when the cache is older than 24 hours", () => {
@@ -69,7 +87,7 @@ describe("resolveWeeklyUsage", () => {
           })
         : null;
 
-    expect(resolveWeeklyUsage(readFile, startDir, now)).toBeNull();
+    expect(resolveWeeklyUsage(readFile, usagePath, now)).toBeNull();
   });
 
   test("returns null when models is absent, not an array, or every entry fails validation", () => {
@@ -90,9 +108,9 @@ describe("resolveWeeklyUsage", () => {
           })
         : null;
 
-    expect(resolveWeeklyUsage(absent, startDir, now)).toBeNull();
-    expect(resolveWeeklyUsage(notArray, startDir, now)).toBeNull();
-    expect(resolveWeeklyUsage(allInvalid, startDir, now)).toBeNull();
+    expect(resolveWeeklyUsage(absent, usagePath, now)).toBeNull();
+    expect(resolveWeeklyUsage(notArray, usagePath, now)).toBeNull();
+    expect(resolveWeeklyUsage(allInvalid, usagePath, now)).toBeNull();
   });
 
   test("drops a malformed model entry while a sibling valid entry survives", () => {
@@ -109,7 +127,7 @@ describe("resolveWeeklyUsage", () => {
           })
         : null;
 
-    const result = resolveWeeklyUsage(readFile, startDir, now);
+    const result = resolveWeeklyUsage(readFile, usagePath, now);
 
     expect(result).not.toBeNull();
     expect(result?.models).toEqual([
@@ -138,7 +156,7 @@ describe("resolveWeeklyUsage", () => {
             })
           : null;
 
-      const result = resolveWeeklyUsage(readFile, startDir, now);
+      const result = resolveWeeklyUsage(readFile, usagePath, now);
 
       expect(result?.models[0]?.display_name).toBe("Opus[2JINJECTED");
       // eslint-disable-next-line no-control-regex -- asserting the ABSENCE of the ESC/CR/LF control characters the sanitizer strips
@@ -172,7 +190,7 @@ describe("resolveWeeklyUsage", () => {
             })
           : null;
 
-      const result = resolveWeeklyUsage(readFile, startDir, now);
+      const result = resolveWeeklyUsage(readFile, usagePath, now);
 
       expect(result?.models).toEqual([
         { id: "opus", display_name: "Opus", used_percentage: 40 },
@@ -193,7 +211,7 @@ describe("resolveWeeklyUsage", () => {
             })
           : null;
 
-      const result = resolveWeeklyUsage(readFile, startDir, now);
+      const result = resolveWeeklyUsage(readFile, usagePath, now);
 
       expect(result?.models[0]?.display_name).toHaveLength(40);
       expect(result?.models[0]?.display_name).toBe("A".repeat(40));
@@ -211,7 +229,7 @@ describe("resolveWeeklyUsage", () => {
           })
         : null;
 
-    const result = resolveWeeklyUsage(readFile, startDir, now);
+    const result = resolveWeeklyUsage(readFile, usagePath, now);
 
     expect(result?.stale).toBe(false);
   });
@@ -227,7 +245,7 @@ describe("resolveWeeklyUsage", () => {
           })
         : null;
 
-    const result = resolveWeeklyUsage(readFile, startDir, now);
+    const result = resolveWeeklyUsage(readFile, usagePath, now);
 
     expect(result?.stale).toBe(true);
   });
@@ -245,7 +263,7 @@ describe("resolveWeeklyUsage", () => {
         : null;
 
     expect(
-      resolveWeeklyUsage(readFileFuture, startDir, nowFuture)?.ageSec,
+      resolveWeeklyUsage(readFileFuture, usagePath, nowFuture)?.ageSec,
     ).toBe(0);
 
     // Fractional diff rounds to the nearest second.
@@ -259,7 +277,27 @@ describe("resolveWeeklyUsage", () => {
           })
         : null;
 
-    expect(resolveWeeklyUsage(readFile, startDir, now)?.ageSec).toBe(1);
+    expect(resolveWeeklyUsage(readFile, usagePath, now)?.ageSec).toBe(1);
+  });
+
+  test("resolves correctly for a cachePath with no relation to any startDir-shaped prefix (account-scoped cache, not repo-relative)", () => {
+    const accountScopedPath = "/home/someuser/.claude/m3l-usage-weekly.json";
+    const now = 1_700_100_000_000;
+    const fetchedAt = now / 1000;
+    const readFile = (path: string): string | null =>
+      path === accountScopedPath
+        ? JSON.stringify({
+            fetched_at: fetchedAt,
+            models: [{ id: "opus", display_name: "Opus", used_percentage: 40 }],
+          })
+        : null;
+
+    const result = resolveWeeklyUsage(readFile, accountScopedPath, now);
+
+    expect(result).not.toBeNull();
+    expect(result?.models).toEqual([
+      { id: "opus", display_name: "Opus", used_percentage: 40 },
+    ]);
   });
 });
 

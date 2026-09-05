@@ -93,7 +93,9 @@ export function pendingRemotePrunes(runGit = defaultRunGit) {
  * orphan, regardless of age.
  */
 export const LIVE_TMP_FILES = new Set([
-  "tmp/usage-weekly.json", // bin/usage-cache.mjs USAGE_CACHE_REL_PATH
+  // bin/usage-cache.mjs's weekly-usage cache moved out of tmp/ entirely — it
+  // is account-scoped (resolveUsageCachePath, under ~/.claude/), not repo
+  // data, so it no longer needs an entry here (docs/adr/0092's amendment).
   "tmp/slice-progress.json", // bin/slice-progress.mjs SLICE_PROGRESS_REL_PATH
   "tmp/compact-handoff.json", // .claude/hooks/write-compact-handoff.mjs HANDOFF_REL_PATH
   "tmp/session-incidents.jsonl", // .claude/hooks/detect-spoke-truncation.mjs INCIDENTS_REL_PATH

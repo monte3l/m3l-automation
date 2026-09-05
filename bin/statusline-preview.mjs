@@ -221,18 +221,24 @@ console.log(`exit code: ${corruptProbe.status}`);
 console.log(`stdout: ${corruptProbe.stdout}`);
 console.log(`stderr: ${corruptProbe.stderr}`);
 
-// Same probe for tmp/usage-weekly.json (docs/adr/0092-out-of-band-usage-cache.md):
-// a corrupt cache must not break the five-row guarantee, just drop the
-// weekly-usage segments silently.
+// Same probe for the account-scoped weekly-usage cache
+// (docs/adr/0092-out-of-band-usage-cache.md): a corrupt cache must not break
+// the five-row guarantee, just drop the weekly-usage segments silently. The
+// cache is resolved from HOME, not workspace.current_dir, so isolate it by
+// overriding the child's HOME rather than passing a scratch current_dir.
 const usageScratchDir = mkdtempSync(join(tmpdir(), "usage-weekly-probe-"));
-mkdirSync(join(usageScratchDir, "tmp"), { recursive: true });
-writeFileSync(join(usageScratchDir, "tmp/usage-weekly.json"), "not valid json");
+mkdirSync(join(usageScratchDir, ".claude"), { recursive: true });
+writeFileSync(
+  join(usageScratchDir, ".claude", "m3l-usage-weekly.json"),
+  "not valid json",
+);
 const usageCorruptProbe = spawnSync(process.execPath, [scriptPath], {
   input: JSON.stringify({ workspace: { current_dir: usageScratchDir } }),
   encoding: "utf8",
+  env: { ...process.env, HOME: usageScratchDir },
 });
 rmSync(usageScratchDir, { recursive: true, force: true });
-console.log("=== corrupt tmp/usage-weekly.json (live script) ===");
+console.log("=== corrupt weekly-usage cache (live script) ===");
 console.log(`exit code: ${usageCorruptProbe.status}`);
 console.log(`stdout: ${usageCorruptProbe.stdout}`);
 console.log(`stderr: ${usageCorruptProbe.stderr}`);

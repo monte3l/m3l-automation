@@ -288,7 +288,7 @@ export const COMMAND_CATALOG = [
   {
     name: "usage:refresh",
     description:
-      "Fetches Anthropic's undocumented /api/oauth/usage endpoint (credential from CLAUDE_CODE_OAUTH_TOKEN or ~/.claude/.credentials.json) and writes tmp/usage-weekly.json, the state the statusline's per-model weekly-usage segments read (ADR-0092). Fail-soft: no credential, a non-200 response, or an unparseable body all leave any existing cache untouched. Normally run out-of-band by the refresh-usage-cache.mjs Stop hook, not by hand.",
+      "Fetches Anthropic's undocumented /api/oauth/usage endpoint (credential from CLAUDE_CODE_OAUTH_TOKEN or ~/.claude/.credentials.json) and writes the account-scoped weekly-usage cache (~/.claude/m3l-usage-weekly.json), the state the statusline's per-model weekly-usage segments read (ADR-0092). Fail-soft: no credential, a non-200 response, or an unparseable body all leave any existing cache untouched. Normally run out-of-band by the refresh-usage-cache.mjs Stop hook, not by hand.",
   },
   {
     name: "check:integration-stance",
