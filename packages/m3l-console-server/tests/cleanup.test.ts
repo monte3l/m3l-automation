@@ -13,11 +13,13 @@
  * if the failing driver were the last one, there would be nothing left to
  * lose and the test would pass against the broken code.
  */
-import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+
+import { Core } from "@m3l-automation/m3l-common";
 
 import { M3LConsoleError } from "../src/errors/console-error.js";
 import {
@@ -744,5 +746,172 @@ describe("runCleanup — no pending timers on failure", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Case 7 — the fourth driver, auditTrail (X8 audit-trail retention sweep,
+// ADR-0070). RED: `M3LConsoleCleanupOutcome` does not yet carry an
+// `auditTrail` field and `runCleanup` does not yet resolve
+// `M3L_CONSOLE_AUDIT_ROOT` / call the fourth driver — every case below is
+// expected to fail until that wiring lands.
+//
+// Each case manages its own `auditRoot` temp directory locally (mkdtemp/rm),
+// mirroring the "default openStore" describe block's local `dbDir` pattern
+// above, rather than touching the shared `runsRoot`/`artifactRoot` outer
+// beforeEach/afterEach — the 15 pre-existing tests above are left untouched.
+// ---------------------------------------------------------------------------
+
+describe("runCleanup — fourth driver (auditTrail)", () => {
+  let auditRoot: string;
+
+  beforeEach(async () => {
+    auditRoot = await mkdtemp(join(tmpdir(), "m3l-cleanup-audit-"));
+  });
+
+  afterEach(async () => {
+    await rm(auditRoot, { recursive: true, force: true });
+  });
+
+  test("a successful sweep's outcome carries auditTrail derived from real segment files", async () => {
+    const { openStore } = makeMemoryStore();
+
+    const stream = new Core.M3LAppendOnlyStream({
+      directory: auditRoot,
+      maxSegmentBytes: 60,
+    });
+    for (let index = 0; index < 6; index += 1) {
+      await stream.append({ index, note: "audit-fixture" });
+    }
+    const realSegments = await stream.listSegments();
+    const expectedBytes = realSegments.reduce(
+      (sum, segment) => sum + segment.byteLength,
+      0,
+    );
+
+    const outcome = await runCleanup({
+      env: buildEnv({ M3L_CONSOLE_AUDIT_ROOT: auditRoot }),
+      openStore,
+      nowMs: () => FAR_FUTURE_MS,
+    });
+
+    expect(outcome.auditTrail).toEqual({
+      segments: realSegments.length,
+      totalBytes: expectedBytes,
+    });
+  });
+
+  test("an audit-listing failure does not abort the sweep, and only auditTrail appears in context.failures", async () => {
+    const { store, openStore } = makeMemoryStore();
+
+    // The other three drivers get real data so their outcomes are
+    // non-trivially testable, mirroring the telemetry-fails test above.
+    await insertTerminalRun(store, "run-audit-fail", OLD_MS);
+    await insertFinishedStep(
+      store,
+      "session-audit-fail",
+      "step-audit-fail",
+      OLD_MS,
+    );
+    insertTelemetry(store, 60_000);
+
+    // Make ONLY the audit section fail: a plain FILE named "blocker" makes
+    // readdir(auditRoot) fail ENOTDIR, since auditRoot names a path
+    // component underneath a non-directory.
+    const blockerPath = join(auditRoot, "blocker");
+    await writeFile(blockerPath, "not a directory");
+    const brokenAuditRoot = join(blockerPath, "sub");
+
+    let thrown: M3LConsoleError | undefined;
+    try {
+      await runCleanup({
+        env: buildEnv({ M3L_CONSOLE_AUDIT_ROOT: brokenAuditRoot }),
+        openStore,
+        nowMs: () => FAR_FUTURE_MS,
+      });
+    } catch (e) {
+      if (e instanceof M3LConsoleError) thrown = e;
+    }
+
+    expect(thrown).toBeDefined();
+    expect(thrown?.code).toBe("ERR_CONSOLE_INTERNAL");
+
+    const ctx = thrown?.context;
+    expect(ctx).toBeDefined();
+    expect(ctx).toHaveProperty("telemetry");
+    expect(ctx).toHaveProperty("runOutputs");
+    expect(ctx).toHaveProperty("sessionArtifacts");
+    expect(ctx).not.toHaveProperty("auditTrail");
+
+    const failures = ctx?.["failures"];
+    expect(Array.isArray(failures)).toBe(true);
+    expect((failures as unknown[]).length).toBe(1);
+    expect((failures as Array<{ driver: string }>)[0]?.driver).toBe(
+      "auditTrail",
+    );
+
+    // The run output dir and artifact file were still deleted even though
+    // the audit driver failed — the other three drivers are unaffected.
+    await expect(stat(join(runsRoot, "run-audit-fail"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(
+      stat(join(artifactRoot, "session-audit-fail", "step-audit-fail.json")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  // NOTE — regression lock, not yet proof: today `runCleanup` has no fourth
+  // driver at all, so this passes vacuously (nothing touches `auditRoot`
+  // regardless of what the assertions below check). It becomes a real proof
+  // only once `auditTrail` is wired in; re-confirm it still passes THEN, and
+  // mutation-test it by having the wiring delete segments to see it fail.
+  test("the sweep does not delete audit segments", async () => {
+    const { openStore } = makeMemoryStore();
+
+    const stream = new Core.M3LAppendOnlyStream({
+      directory: auditRoot,
+      maxSegmentBytes: 200,
+    });
+    for (let index = 0; index < 3; index += 1) {
+      await stream.append({ index, note: "must-survive-the-sweep" });
+    }
+
+    const beforeNames = (await readdir(auditRoot)).sort();
+    const beforeSizes: number[] = [];
+    for (const name of beforeNames) {
+      const stats = await stat(join(auditRoot, name));
+      beforeSizes.push(stats.size);
+    }
+
+    await runCleanup({
+      env: buildEnv({ M3L_CONSOLE_AUDIT_ROOT: auditRoot }),
+      openStore,
+      nowMs: () => FAR_FUTURE_MS,
+    });
+
+    const afterNames = (await readdir(auditRoot)).sort();
+    const afterSizes: number[] = [];
+    for (const name of afterNames) {
+      const stats = await stat(join(auditRoot, name));
+      afterSizes.push(stats.size);
+    }
+
+    // The other three drivers delete; this one must not — a future change
+    // that "harmonises" them across all four drivers has to fail here.
+    expect(afterNames).toEqual(beforeNames);
+    expect(afterSizes).toEqual(beforeSizes);
+  });
+
+  test("an audit root that has never been created does not fail the sweep", async () => {
+    const { openStore } = makeMemoryStore();
+    const neverCreatedAuditRoot = join(auditRoot, "never-created");
+
+    const outcome = await runCleanup({
+      env: buildEnv({ M3L_CONSOLE_AUDIT_ROOT: neverCreatedAuditRoot }),
+      openStore,
+      nowMs: () => FAR_FUTURE_MS,
+    });
+
+    expect(outcome.auditTrail).toEqual({ segments: 0, totalBytes: 0 });
   });
 });

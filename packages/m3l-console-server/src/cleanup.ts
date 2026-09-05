@@ -2,12 +2,15 @@
  * `cleanup` — {@link runCleanup}, the X8 operator-triggered retention sweep
  * (ADR-0070 slice 5c).
  *
- * Calls all three retention drivers exactly once per invocation —
- * {@link pruneTelemetry}, {@link pruneRunOutputs},
- * {@link pruneSessionArtifacts} — providing their only call sites in this
- * package. The drivers are independent concerns; a failure in one does not
- * prevent the other two from running. See {@link runCleanup} for the
- * accumulate-continue-report contract.
+ * Four sections run exactly once per invocation — {@link pruneTelemetry},
+ * {@link pruneRunOutputs}, {@link pruneSessionArtifacts}, and
+ * {@link reportAuditTrailUsage} — providing their only call sites in this
+ * package. The first three are independent RETENTION drivers (they delete
+ * expired data); the fourth is an OBSERVATION driver — it reports the
+ * audit trail's segment count and byte size and deletes nothing at all (see
+ * `audit-trail-usage.ts`'s own header for why). A failure in any one section
+ * does not prevent the other three from running. See {@link runCleanup} for
+ * the accumulate-continue-report contract.
  *
  * This module schedules nothing. ADR-0070 requires "an operator-run cleanup
  * command — never silent deletion": the only caller is the `cleanup`
@@ -25,6 +28,7 @@ import {
   resolveStoreDatabasePath,
   resolveRunsOutputRoot,
   resolveSessionArtifactRoot,
+  resolveAuditStreamRoot,
 } from "./config/paths.js";
 import { openConsoleStore } from "./store/store.js";
 import type { M3LConsoleStore, M3LConsoleStoreHandle } from "./store/store.js";
@@ -34,6 +38,8 @@ import { pruneRunOutputs } from "./run-output-retention.js";
 import type { M3LRunOutputPruneOutcome } from "./run-output-retention.js";
 import { pruneSessionArtifacts } from "./session-artifact-retention.js";
 import type { M3LSessionArtifactPruneOutcome } from "./session-artifact-retention.js";
+import { reportAuditTrailUsage } from "./audit-trail-usage.js";
+import type { M3LAuditTrailUsageOutcome } from "./audit-trail-usage.js";
 
 /**
  * Options accepted by {@link runCleanup}.
@@ -53,8 +59,8 @@ export interface RunCleanupOptions {
    * The environment-variable map to resolve paths and retention windows from;
    * defaults to `process.env`. Reads `M3L_CONSOLE_DB_PATH`,
    * `M3L_CONSOLE_RUNS_OUTPUT_ROOT`, `M3L_CONSOLE_SESSIONS_ARTIFACT_ROOT`,
-   * and every variable that {@link loadRetentionConfig} and
-   * {@link loadTelemetryConfig} consume.
+   * `M3L_CONSOLE_AUDIT_ROOT`, and every variable that
+   * {@link loadRetentionConfig} and {@link loadTelemetryConfig} consume.
    */
   readonly env?: NodeJS.ProcessEnv;
   /**
@@ -83,6 +89,7 @@ export interface RunCleanupOptions {
  *     `telemetry: ${String(outcome.telemetry.total)} rows pruned`,
  *     `run outputs: ${String(outcome.runOutputs.deleted)} dirs deleted`,
  *     `session artifacts: ${String(outcome.sessionArtifacts.deleted)} files deleted`,
+ *     `audit trail: ${String(outcome.auditTrail.segments)} segments observed`,
  *   ].join(", ");
  * }
  * ```
@@ -94,10 +101,13 @@ export interface M3LConsoleCleanupOutcome {
   readonly runOutputs: M3LRunOutputPruneOutcome;
   /** The session-artifact file retention sweep result. */
   readonly sessionArtifacts: M3LSessionArtifactPruneOutcome;
+  /** The audit-trail usage OBSERVATION result — reports only, deletes nothing. */
+  readonly auditTrail: M3LAuditTrailUsageOutcome;
 }
 
-/** The identity of one of the three retention drivers. */
-type DriverName = "telemetry" | "runOutputs" | "sessionArtifacts";
+/** The identity of one of the four cleanup-sweep sections (three retention drivers, one observation driver). */
+type DriverName =
+  "telemetry" | "runOutputs" | "sessionArtifacts" | "auditTrail";
 
 /**
  * One driver's result: either a successful outcome or the caught failure.
@@ -123,6 +133,7 @@ interface CleanupResults {
   readonly telemetry: DriverResult<M3LTelemetryPruneOutcome>;
   readonly runOutputs: DriverResult<M3LRunOutputPruneOutcome>;
   readonly sessionArtifacts: DriverResult<M3LSessionArtifactPruneOutcome>;
+  readonly auditTrail: DriverResult<M3LAuditTrailUsageOutcome>;
 }
 
 /**
@@ -139,7 +150,12 @@ interface CleanupResults {
  * chains — that is exactly the shape this exists to avoid.
  */
 function inRunOrder(results: CleanupResults): readonly DriverResult<unknown>[] {
-  return [results.telemetry, results.runOutputs, results.sessionArtifacts];
+  return [
+    results.telemetry,
+    results.runOutputs,
+    results.sessionArtifacts,
+    results.auditTrail,
+  ];
 }
 
 /**
@@ -303,11 +319,16 @@ function anyDriverFailed(results: CleanupResults): boolean {
 function resolveCleanupOutcome(
   results: CleanupResults,
 ): M3LConsoleCleanupOutcome {
-  const { telemetry, runOutputs, sessionArtifacts } = results;
+  const { telemetry, runOutputs, sessionArtifacts, auditTrail } = results;
   // Inline guard, not a helper call: TypeScript needs each check literally
-  // present here to narrow `telemetry`/`runOutputs`/`sessionArtifacts` to
-  // `DriverOk` before `.outcome` is read below.
-  if (!telemetry.ok || !runOutputs.ok || !sessionArtifacts.ok) {
+  // present here to narrow `telemetry`/`runOutputs`/`sessionArtifacts`/
+  // `auditTrail` to `DriverOk` before `.outcome` is read below.
+  if (
+    !telemetry.ok ||
+    !runOutputs.ok ||
+    !sessionArtifacts.ok ||
+    !auditTrail.ok
+  ) {
     const { firstCause, context } = buildDriverFailureContext(results);
     throw new M3LConsoleError(
       "ERR_CONSOLE_INTERNAL",
@@ -319,6 +340,7 @@ function resolveCleanupOutcome(
     telemetry: telemetry.outcome,
     runOutputs: runOutputs.outcome,
     sessionArtifacts: sessionArtifacts.outcome,
+    auditTrail: auditTrail.outcome,
   };
 }
 
@@ -330,6 +352,8 @@ interface ResolvedCleanupConfig {
   readonly runsOutputRoot: string;
   /** The session-artifact retention driver sweeps under this root. */
   readonly artifactRoot: string;
+  /** The audit-trail usage OBSERVATION driver inventories segments under this root. */
+  readonly auditRoot: string;
   /** Per-granularity-tier telemetry rollup retention windows, in milliseconds. */
   readonly telemetryRetentionMs: M3LConsoleTelemetryConfig["retentionMs"];
   /** The run-output directory retention window, in milliseconds. */
@@ -348,9 +372,11 @@ interface ResolvedCleanupConfig {
  * wrap this call in a try/catch in {@link runCleanup}, that would turn a
  * configuration failure into a swallowed or misattributed one.
  *
- * The order these five values are resolved in is preserved exactly as it was
- * inline in `runCleanup`: retention config, telemetry config, database path,
- * run-outputs root, then artifact root.
+ * The order these six values are resolved in is preserved exactly as it was
+ * inline in `runCleanup` for the first five: retention config, telemetry
+ * config, database path, run-outputs root, artifact root — then the audit
+ * root last, so the existing config-failure ordering for the first five is
+ * unchanged.
  */
 function resolveCleanupConfig(env: NodeJS.ProcessEnv): ResolvedCleanupConfig {
   const retentionConfig = loadRetentionConfig({ env });
@@ -364,10 +390,14 @@ function resolveCleanupConfig(env: NodeJS.ProcessEnv): ResolvedCleanupConfig {
   const artifactRoot = resolveSessionArtifactRoot({
     configuredPath: env["M3L_CONSOLE_SESSIONS_ARTIFACT_ROOT"],
   });
+  const auditRoot = resolveAuditStreamRoot({
+    configuredPath: env["M3L_CONSOLE_AUDIT_ROOT"],
+  });
   return {
     dbPath,
     runsOutputRoot,
     artifactRoot,
+    auditRoot,
     telemetryRetentionMs: telemetryConfig.retentionMs,
     runOutputRetentionMs: retentionConfig.runOutputMs,
     artifactRetentionMs: retentionConfig.artifactMs,
@@ -375,40 +405,50 @@ function resolveCleanupConfig(env: NodeJS.ProcessEnv): ResolvedCleanupConfig {
 }
 
 /**
- * Opens the console store once, sweeps all three retention drivers —
- * {@link pruneTelemetry}, {@link pruneRunOutputs},
- * {@link pruneSessionArtifacts} — in sequence, and returns a combined
+ * Opens the console store once, sweeps four sections — the three retention
+ * drivers {@link pruneTelemetry}, {@link pruneRunOutputs},
+ * {@link pruneSessionArtifacts}, plus the fourth, observation-only
+ * {@link reportAuditTrailUsage} — in sequence, and returns a combined
  * {@link M3LConsoleCleanupOutcome}.
  *
- * **A failing driver does not prevent the other two from running.** The
- * three concerns are independent: a telemetry failure is no reason to skip
- * sweeping run outputs. All three always run; their failures are accumulated
- * and, if any occurred, a single {@link M3LConsoleError} with code
- * `"ERR_CONSOLE_INTERNAL"` is thrown AFTER all three have completed, chaining
- * the first driver's thrown value as `cause` and carrying every successful
- * driver's outcome in `context`. Aborting on the first failure would discard
- * work the earlier drivers already completed — the exact defect the review
- * round caught in `pruneSessionArtifacts` (#1037's per-session `readdir`),
- * and it must not be reintroduced one layer up.
+ * **The fourth section reports only and deletes nothing.** Unlike the three
+ * retention drivers before it, `reportAuditTrailUsage` never deletes,
+ * truncates, or creates anything — it only inventories the audit trail's
+ * segment count and byte size (see `audit-trail-usage.ts`'s own header for
+ * why).
  *
- * **`context` never contains an absolute root path.** Only per-driver
- * outcome objects (row/file/dir counts and boolean flags) are stored in
- * `context` — the same discipline the sibling retention modules follow. A
+ * **A failing section does not prevent the other three from running.** The
+ * four concerns are independent: a telemetry failure is no reason to skip
+ * sweeping run outputs, and an audit-listing failure is no reason to skip
+ * the other three either. All four always run; their failures are
+ * accumulated and, if any occurred, a single {@link M3LConsoleError} with
+ * code `"ERR_CONSOLE_INTERNAL"` is thrown AFTER all four have completed,
+ * chaining the first section's thrown value as `cause` and carrying every
+ * successful section's outcome in `context`. Aborting on the first failure
+ * would discard work the earlier sections already completed — the exact
+ * defect the review round caught in `pruneSessionArtifacts` (#1037's
+ * per-session `readdir`), and it must not be reintroduced one layer up.
+ *
+ * **`context` never contains an absolute root path.** Only per-section
+ * outcome objects (row/file/dir/segment counts and boolean flags) are stored
+ * in `context` — the same discipline the sibling retention modules follow. A
  * chained `cause` may carry a path in its own `.message`; that is accepted
  * and documented in those modules.
  *
  * Roots are resolved through `config/paths.ts` from environment variables
  * (`M3L_CONSOLE_DB_PATH`, `M3L_CONSOLE_RUNS_OUTPUT_ROOT`,
- * `M3L_CONSOLE_SESSIONS_ARTIFACT_ROOT`), defaulting to the workspace-rooted
- * defaults when not set. Roots are never accepted as direct CLI flags.
+ * `M3L_CONSOLE_SESSIONS_ARTIFACT_ROOT`, `M3L_CONSOLE_AUDIT_ROOT`), defaulting
+ * to the workspace-rooted defaults when not set. Roots are never accepted as
+ * direct CLI flags.
  *
  * @param options - See {@link RunCleanupOptions}.
  * @returns The combined {@link M3LConsoleCleanupOutcome}.
  * @throws {@link M3LConsoleError} with code `"ERR_CONSOLE_INTERNAL"` when
- *   one or more drivers fail; `context.failures` lists each failed driver's
- *   name and error code, and `context` also carries each successful driver's
- *   outcome. When all three drivers succeed but `store.close()` subsequently
- *   throws, this code is also raised with the close failure as `cause`.
+ *   one or more sections fail; `context.failures` lists each failed
+ *   section's name and error code, and `context` also carries each
+ *   successful section's outcome. When all four sections succeed but
+ *   `store.close()` subsequently throws, this code is also raised with the
+ *   close failure as `cause`.
  * @throws {@link M3LConsoleError} with code `"ERR_CONSOLE_CONFIG_INVALID"`
  *   when configuration resolution itself fails (invalid retention window,
  *   bad path, unresolvable data directory).
@@ -421,7 +461,8 @@ function resolveCleanupConfig(env: NodeJS.ProcessEnv): ResolvedCleanupConfig {
  * console.log(
  *   `Pruned ${String(outcome.telemetry.total)} telemetry rows, ` +
  *   `deleted ${String(outcome.runOutputs.deleted)} run-output dirs, ` +
- *   `deleted ${String(outcome.sessionArtifacts.deleted)} session artifacts.`,
+ *   `deleted ${String(outcome.sessionArtifacts.deleted)} session artifacts, ` +
+ *   `observed ${String(outcome.auditTrail.segments)} audit segments.`,
  * );
  * ```
  */
@@ -439,18 +480,19 @@ export async function runCleanup(
   // sweep has started yet, so there is nothing to accumulate.
   const config = resolveCleanupConfig(env);
 
-  // One store open serves all three drivers — `buildConsoleStoreUnit` exposes
-  // `runs`, `sessions`, and `telemetry` off the same handle.
+  // One store open serves the three retention drivers — `buildConsoleStoreUnit`
+  // exposes `runs`, `sessions`, and `telemetry` off the same handle. The
+  // fourth section (auditTrail) does not touch the store at all.
   const store = openStore(config.dbPath);
 
-  // Run all three drivers in sequence, capturing failures independently.
-  // Sequence: telemetry (first) → runOutputs → sessionArtifacts.
-  // The sequence is load-bearing for tests: the failing-driver test makes
-  // TELEMETRY fail to prove the other two still run — if the test failed
-  // the last driver, nothing would be accumulated to lose.
+  // Run all four sections in sequence, capturing failures independently.
+  // Sequence: telemetry (first) → runOutputs → sessionArtifacts → auditTrail
+  // (last). The sequence is load-bearing for tests: the failing-driver test
+  // makes TELEMETRY fail to prove the other three still run — if the test
+  // failed the last section, nothing would be accumulated to lose.
   //
   // `closeBestEffort` starts `true` (conservative) and is set to `false`
-  // only after all three drivers complete successfully, enabling `closeStore`
+  // only after all four sections complete successfully, enabling `closeStore`
   // to raise on a failing close rather than swallow it.
   let closeBestEffort = true;
   let results: CleanupResults;
@@ -479,7 +521,10 @@ export async function runCleanup(
         nowMs,
       }),
     );
-    results = { telemetry, runOutputs, sessionArtifacts };
+    const auditTrail = await runAsync("auditTrail", () =>
+      reportAuditTrailUsage({ auditRoot: config.auditRoot }),
+    );
+    results = { telemetry, runOutputs, sessionArtifacts, auditTrail };
     closeBestEffort = anyDriverFailed(results);
   } finally {
     closeStore(store, closeBestEffort);
