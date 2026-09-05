@@ -219,28 +219,29 @@ backstop for the step above, not a substitute for it.
 
 ## Workflow / infra
 
-| Date       | Change                                                    | Log                                                                                        |
-| ---------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| 2026-07-11 | Parallelize the pre-push verify (fix push timeouts)       | [prepush-parallelization](./2026-07-11-prepush-parallelization.md)                         |
-| 2026-07-16 | `audit-fanout` dynamic workflow (ADR-0025 pilot)          | [audit-fanout-workflow](./2026-07-16-audit-fanout-workflow.md)                             |
-| 2026-07-17 | ADR-0030 workflow tooling + MCP program (6 phases)        | [adr-0030-workflow-tooling-mcp](./2026-07-17-adr-0030-workflow-tooling-mcp.md)             |
-| 2026-07-19 | Subagent stall/truncation guidance integration            | [subagent-stall-integration](./2026-07-19-subagent-stall-integration.md)                   |
-| 2026-07-22 | Promotion audit — unpromoted/unlearned lesson sweep       | [promotion-audit](./2026-07-22-promotion-audit.md)                                         |
-| 2026-08-15 | ADR-0034 cognitive-complexity refactor                    | [adr-0034-complexity-refactor](./2026-08-15-adr-0034-complexity-refactor.md)               |
-| 2026-08-19 | check:test-counts contention (F15)                        | [check-test-counts-contention](./2026-08-19-check-test-counts-contention.md)               |
-| 2026-08-19 | sync:hub key namespace (F13)                              | [hub-sync-key-namespace](./2026-08-19-hub-sync-key-namespace.md)                           |
-| 2026-08-20 | ADR-0072 reviewable-slice discipline (F23)                | [f23-reviewable-slice-discipline](./2026-08-20-f23-reviewable-slice-discipline.md)         |
-| 2026-08-21 | F23 field test against PR #523 / issue #474               | [f23-field-test-b2](./2026-08-21-f23-field-test-b2.md)                                     |
-| 2026-08-24 | ci-arm64-runner-adoption                                  | [ci-arm64-runner-adoption](./2026-08-24-ci-arm64-runner-adoption.md)                       |
-| 2026-08-27 | Parallel-session OOM/livelock audit + fix (ADR-0080)      | [parallel-session-oom](./2026-08-27-parallel-session-oom.md)                               |
-| 2026-08-27 | ADR-0078 session context management rollout (retroactive) | [adr-0078-session-context-management](./2026-08-27-adr-0078-session-context-management.md) |
-| 2026-09-03 | Dependabot commit-subject gate fix (PR #975)              | [dependabot-commit-subject-gate](./2026-09-03-dependabot-commit-subject-gate.md)           |
-| 2026-09-03 | podman-containerfiles migration                           | [podman-containerfiles-migration](./2026-09-03-podman-containerfiles-migration.md)         |
-| 2026-09-03 | podman-migration-stance                                   | [podman-migration-stance-and-spike](./2026-09-03-podman-migration-stance-and-spike.md)     |
-| 2026-09-03 | `worktree-new-lib-extract`                                | [worktree-new-lib-extract](./2026-09-03-worktree-new-lib-extract.md)                       |
-| 2026-09-04 | check:no-docker enforcement gate                          | [check-no-docker](./2026-09-04-check-no-docker.md)                                         |
-| 2026-09-05 | H1 — document the merge step (issue #994, PR #1031/#1032) | [document-merge-step](./2026-09-05-document-merge-step.md)                                 |
-| 2026-09-05 | H2 — post-merge staleness gate (issue #995, PR #1044)     | [post-merge-staleness-gate](./2026-09-05-post-merge-staleness-gate.md)                     |
-| 2026-09-05 | context7-mcp-load-bearing                                 | [context7-mcp-load-bearing](./2026-09-05-context7-mcp-load-bearing.md)                     |
-| 2026-09-05 | trim-oversized-rule-files                                 | [trim-oversized-rule-files](./2026-09-05-trim-oversized-rule-files.md)                     |
-| 2026-09-05 | `work-log-scope`                                          | [work-log-scope](./2026-09-05-work-log-scope.md)                                           |
+| Date       | Change                                                            | Log                                                                                        |
+| ---------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| 2026-07-11 | Parallelize the pre-push verify (fix push timeouts)               | [prepush-parallelization](./2026-07-11-prepush-parallelization.md)                         |
+| 2026-07-16 | `audit-fanout` dynamic workflow (ADR-0025 pilot)                  | [audit-fanout-workflow](./2026-07-16-audit-fanout-workflow.md)                             |
+| 2026-07-17 | ADR-0030 workflow tooling + MCP program (6 phases)                | [adr-0030-workflow-tooling-mcp](./2026-07-17-adr-0030-workflow-tooling-mcp.md)             |
+| 2026-07-19 | Subagent stall/truncation guidance integration                    | [subagent-stall-integration](./2026-07-19-subagent-stall-integration.md)                   |
+| 2026-07-22 | Promotion audit — unpromoted/unlearned lesson sweep               | [promotion-audit](./2026-07-22-promotion-audit.md)                                         |
+| 2026-08-15 | ADR-0034 cognitive-complexity refactor                            | [adr-0034-complexity-refactor](./2026-08-15-adr-0034-complexity-refactor.md)               |
+| 2026-08-19 | check:test-counts contention (F15)                                | [check-test-counts-contention](./2026-08-19-check-test-counts-contention.md)               |
+| 2026-08-19 | sync:hub key namespace (F13)                                      | [hub-sync-key-namespace](./2026-08-19-hub-sync-key-namespace.md)                           |
+| 2026-08-20 | ADR-0072 reviewable-slice discipline (F23)                        | [f23-reviewable-slice-discipline](./2026-08-20-f23-reviewable-slice-discipline.md)         |
+| 2026-08-21 | F23 field test against PR #523 / issue #474                       | [f23-field-test-b2](./2026-08-21-f23-field-test-b2.md)                                     |
+| 2026-08-24 | ci-arm64-runner-adoption                                          | [ci-arm64-runner-adoption](./2026-08-24-ci-arm64-runner-adoption.md)                       |
+| 2026-08-27 | Parallel-session OOM/livelock audit + fix (ADR-0080)              | [parallel-session-oom](./2026-08-27-parallel-session-oom.md)                               |
+| 2026-08-27 | ADR-0078 session context management rollout (retroactive)         | [adr-0078-session-context-management](./2026-08-27-adr-0078-session-context-management.md) |
+| 2026-09-03 | Dependabot commit-subject gate fix (PR #975)                      | [dependabot-commit-subject-gate](./2026-09-03-dependabot-commit-subject-gate.md)           |
+| 2026-09-03 | podman-containerfiles migration                                   | [podman-containerfiles-migration](./2026-09-03-podman-containerfiles-migration.md)         |
+| 2026-09-03 | podman-migration-stance                                           | [podman-migration-stance-and-spike](./2026-09-03-podman-migration-stance-and-spike.md)     |
+| 2026-09-03 | `worktree-new-lib-extract`                                        | [worktree-new-lib-extract](./2026-09-03-worktree-new-lib-extract.md)                       |
+| 2026-09-04 | check:no-docker enforcement gate                                  | [check-no-docker](./2026-09-04-check-no-docker.md)                                         |
+| 2026-09-05 | H1 — document the merge step (issue #994, PR #1031/#1032)         | [document-merge-step](./2026-09-05-document-merge-step.md)                                 |
+| 2026-09-05 | H2 — post-merge staleness gate (issue #995, PR #1044)             | [post-merge-staleness-gate](./2026-09-05-post-merge-staleness-gate.md)                     |
+| 2026-09-05 | context7-mcp-load-bearing                                         | [context7-mcp-load-bearing](./2026-09-05-context7-mcp-load-bearing.md)                     |
+| 2026-09-05 | trim-oversized-rule-files                                         | [trim-oversized-rule-files](./2026-09-05-trim-oversized-rule-files.md)                     |
+| 2026-09-05 | `work-log-scope`                                                  | [work-log-scope](./2026-09-05-work-log-scope.md)                                           |
+| 2026-09-05 | Close the logs-index-drift loop (gate + backfill, PR #1046/#1049) | [logs-index-drift](./2026-09-05-logs-index-drift.md)                                       |
