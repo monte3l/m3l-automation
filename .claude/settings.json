@@ -80,7 +80,9 @@
       "mcp__github__list_pull_requests",
       "mcp__github__search_pull_requests",
       "mcp__github__get_me",
-      "mcp__github__add_issue_comment"
+      "mcp__github__add_issue_comment",
+      "mcp__context7__resolve-library-id",
+      "mcp__context7__query-docs"
     ],
     "deny": [
       "Read(**/.env)",

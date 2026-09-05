@@ -1,10 +1,14 @@
 #!/usr/bin/env node
-// Verifies every `.claude/skills/*/SKILL.md` that talks to GitHub (via the gh
-// CLI or GitHub MCP) carries a pointer to the governing ADR-0030 amendment,
-// contains no retired policy claim, and names the mechanism it actually uses
-// — the drift gate ADR-0030's 2026-07-27 amendment introduced after auditing
-// found the repo's prior "GitHub MCP blocked by enterprise policy" claim had
-// survived, unchecked, for months in two skills.
+// Verifies every `.claude/skills/*/SKILL.md` that uses a governed external-
+// integration mechanism — GitHub (gh CLI or GitHub MCP, ADR-0030) or
+// documentation lookup (context7 MCP, ADR-0092) — carries a pointer to the
+// governing ADR, contains no retired policy claim, and names the mechanism
+// it actually uses. The GitHub half is the original drift gate ADR-0030's
+// 2026-07-27 amendment introduced after auditing found the repo's prior
+// "GitHub MCP blocked by enterprise policy" claim had survived, unchecked,
+// for months in two skills; ADR-0092 generalized the underlying derivation
+// (bin/lib/integration-stance.mjs's INTEGRATION_DESCRIPTORS table) to cover
+// a second governed integration rather than duplicating the check.
 //
 // Usage:
 //   node bin/check-integration-stance.mjs   # exits 0 on success, 1 on any drift
@@ -33,7 +37,7 @@ const { missingStanceNote, retiredClaims, mechanismMismatches } =
 
 for (const name of missingStanceNote) {
   reporter.error(
-    `"${name}" talks to GitHub (gh CLI or GitHub MCP) but its SKILL.md frontmatter carries no ADR-0030 stance reference. Add a "GitHub-integration stance: ADR-0030 (amended 2026-07-27) — ..." line.`,
+    `"${name}" uses a governed external-integration mechanism (GitHub — gh CLI or GitHub MCP, ADR-0030; or documentation lookup — context7 MCP, ADR-0092) but its SKILL.md frontmatter carries no reference to the governing ADR. See docs/contributing/skills-catalog.md's "GitHub integration" / "External documentation" sections for the required stance-note format.`,
   );
 }
 for (const name of retiredClaims) {
@@ -55,6 +59,6 @@ if (
 }
 
 reporter.succeed(
-  `GitHub-integration stance is consistent across ${skills.length} skill(s).`,
+  `External-integration stance is consistent across ${skills.length} skill(s).`,
 );
 reporter.finish({ missingStanceNote, retiredClaims, mechanismMismatches });

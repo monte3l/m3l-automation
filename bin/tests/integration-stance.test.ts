@@ -149,3 +149,80 @@ describe("deriveIntegrationStanceIssues", () => {
     expect(result.mechanismMismatches).toEqual([]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// deriveIntegrationStanceIssues — context7 descriptor (ADR-0092)
+// ---------------------------------------------------------------------------
+
+describe("deriveIntegrationStanceIssues — context7 descriptor", () => {
+  test("a skill with no context7 surface at all is skipped entirely", () => {
+    const skills = [
+      {
+        name: "eslint-flat-config",
+        content: "---\nname: eslint-flat-config\n---\n\nNo context7 here.",
+      },
+    ];
+    expect(deriveIntegrationStanceIssues(skills)).toEqual({
+      missingStanceNote: [],
+      retiredClaims: [],
+      mechanismMismatches: [],
+    });
+  });
+
+  test("a context7-using skill with an ADR-0092 stance note has no issues", () => {
+    const skills = [
+      {
+        name: "implementing-submodules",
+        content:
+          "---\nname: implementing-submodules\ndescription: >-\n  Docs stance: context7 MCP (ADR-0092).\n---\n\n`mcp__context7__query-docs({ libraryId, query })`",
+      },
+    ];
+    expect(deriveIntegrationStanceIssues(skills)).toEqual({
+      missingStanceNote: [],
+      retiredClaims: [],
+      mechanismMismatches: [],
+    });
+  });
+
+  test("a context7-using skill with no ADR-0092 reference is flagged missingStanceNote", () => {
+    const skills = [
+      {
+        name: "reviewing-dependabot-prs",
+        content:
+          "---\nname: reviewing-dependabot-prs\ndescription: Reviews dependabot PRs.\n---\n\n`mcp__context7__query-docs({ libraryId, query })`",
+      },
+    ];
+    expect(deriveIntegrationStanceIssues(skills)).toEqual({
+      missingStanceNote: ["reviewing-dependabot-prs"],
+      retiredClaims: [],
+      mechanismMismatches: [],
+    });
+  });
+
+  test("a single-mechanism descriptor never reports a mechanism mismatch", () => {
+    const skills = [
+      {
+        name: "implementing-submodules",
+        content:
+          "---\nname: implementing-submodules\ndescription: >-\n  Docs stance: uses the gh CLI, not context7 (ADR-0092).\n---\n\n`mcp__context7__resolve-library-id({ name })`",
+      },
+    ];
+    const result = deriveIntegrationStanceIssues(skills);
+    expect(result.mechanismMismatches).toEqual([]);
+  });
+
+  test("GitHub and context7 descriptors are checked independently on the same skill", () => {
+    const skills = [
+      {
+        name: "creating-prs",
+        content:
+          "---\nname: creating-prs\ndescription: >-\n  GitHub-integration stance: ADR-0030 — uses the gh CLI.\n---\n\n```bash\ngh pr create --title foo\n```\n\n`mcp__context7__query-docs({ libraryId, query })`",
+      },
+    ];
+    const result = deriveIntegrationStanceIssues(skills);
+    // GitHub side is clean (ADR-0030 present, gh CLI declared and used);
+    // context7 side has no ADR-0092 reference at all.
+    expect(result.missingStanceNote).toEqual(["creating-prs"]);
+    expect(result.mechanismMismatches).toEqual([]);
+  });
+});

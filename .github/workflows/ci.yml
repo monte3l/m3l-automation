@@ -630,10 +630,11 @@ jobs:
       - name: Check Claude Code CLI pin
         run: pnpm check:claude-cli-version
 
-      # GitHub-integration stance (ADR-0030 amendment, 2026-07-27): every
-      # GitHub-talking skill cites the governing ADR, carries no retired policy
-      # claim, and names the mechanism (gh CLI vs GitHub MCP) it actually uses.
-      - name: Check GitHub-integration stance (integration-stance)
+      # External-integration stance: every GitHub-talking skill (ADR-0030
+      # amendment, 2026-07-27) and every context7-talking skill (ADR-0092)
+      # cites its governing ADR, carries no retired policy claim, and names
+      # the mechanism it actually uses (gh CLI vs GitHub MCP; context7 MCP).
+      - name: Check external-integration stance (integration-stance)
         run: pnpm check:integration-stance
 
       # ADR-0009/ADR-0035 dependency direction: the import-x/no-restricted-paths
