@@ -500,6 +500,163 @@ no longer exists is never consulted and never reported, because
 two sets. A typo'd key silently audits nothing. Out of scope here; not yet
 owned by a tracker row.
 
+## Update (2026-09-05) — the audit class's "retain" is load-bearing, not incidental; its footprint becomes observable instead
+
+The retention paragraph above declares policies **per artifact class**: "audit
+streams: segment + retain, ADR-0061-style; telemetry: age-based
+rollup/pruning; session artifacts: ADR-0068 caps". X8's slice 5c shipped the
+operator cleanup command for the two classes that prune. The remaining open
+question was carried in the slice plan as "where audit-segment pruning lives
+— the library's `core/storage` as an additive minor, versus a
+console-server-local sweep".
+
+**That framing was wrong on its own terms.** The phrase appears nowhere in
+this ADR; it was a planner's own wording. This ADR does not ask for audit
+pruning anywhere — it names audit as the one class that is _retained_, and
+[ADR-0061](./0061-agent-decision-log.md) says the same thing in the same
+register: segments are "size/age-segmented with segments retained, never
+truncated in place". Both halves of the recorded question presupposed a
+deletion this ADR never asked for.
+
+### Why "retain" is now a safety property, not a preference
+
+When the retain rule was written it read as a storage-cost stance. The X7
+slice 4a read path turned it into something stronger, and that is what this
+Update records.
+
+`internal/storage/append-only-reader.ts`'s `assertNoSequenceGap` rejects any
+gap in `(datePrefix, sequence)` within one date: the writer always starts a
+date at sequence 1 and increments by exactly one, so a missing number means
+entries are unaccounted for. Deleting one segment out of the middle of a date
+therefore does not free space — it makes **every later read of that whole
+stream throw**, permanently, because nothing renumbers what survives.
+Whole-_date_ deletion survives the check; intra-date deletion does not, and
+the two are one `rm` glob apart.
+
+The failure is also invisible where it would be caught. The only production
+reader of the human-action trail is
+`boot/audit-rebuild.ts`'s `rebuildHumanActionIndexOnBoot`, whose contract is
+that it **never throws** — a console that cannot rebuild a derived index must
+still boot and serve. It logs at `error` and returns 0. So a pruned trail
+produces a console that starts normally, serves normally, and has quietly
+become unable to reconstruct its own record of truth. A retention feature
+whose failure mode is a silent, unrecoverable loss of the audit trail is not
+a retention feature.
+
+### The library-versus-console-server half of the question dissolves too
+
+The segment naming `<YYYY-MM-DD>-<NNNN>.jsonl` is defined in
+`internal/storage/append-only-segments.ts`, and `internal/` is explicitly not
+exported and free to change. A console-server-local sweep would have had to
+hard-code a convention the library reserves the right to change without a
+semver event. There was never a safe console-local option; there was one
+option, and it was the one this ADR already forbids.
+
+### What ships instead
+
+Observability, not deletion — which is the half of "declared policies per
+artifact class" the audit class was actually missing:
+
+- `M3LAppendOnlyStream.listSegments()`, an additive minor on the library,
+  reporting each segment's name, date prefix, sequence, byte length and
+  modification time, plus a count of segment-named entries it refused to
+  vouch for. It reads; it never unlinks or truncates.
+- A fourth, **report-only** section in `m3l-console-server cleanup`, sitting
+  beside the three sweeping drivers and deliberately unlike them: it reports
+  the trail's segment count and total bytes and deletes nothing. An operator
+  who wants the space back archives whole dates out of band, with the
+  consequences above understood.
+
+### The inventory refuses a planted link, and counts what it refused
+
+The pre-push review round caught a real defect in the first cut of this slice,
+and the fix is part of the decision rather than an implementation detail.
+
+The listing originally used `stat`, which follows symlinks. A symlink planted
+at a segment-shaped name inside the audit directory was therefore reported as
+a genuine segment, carrying its **target's** byte length and modification
+time. Verified by probe against the built output: a directory holding one
+real 5-byte segment plus a symlink to a 35-byte file outside the tree, a
+directory, and a FIFO — all four at segment names — reported four segments and
+a total of 4,136 bytes where the truth was one segment and 5. That is two
+faults at once: the byte total an operator uses to judge the trail's footprint
+becomes attacker-influenced, and the size and mtime of an arbitrary file the
+console can reach leak through an audit surface. The write path and `read()`
+both already refuse this with `O_NOFOLLOW`; the inventory was the only one of
+the three that did not, even though the segment layer's own header names that
+threat model ("anyone who can create a file in the directory can plant the
+next segment name").
+
+The listing now uses `lstat` and requires a regular file.
+
+The first cut of that fix carried a wrong claim, and correcting it is worth
+recording because the claim was load-bearing. Both the code comment and the
+reference page said a **hardlink** at a segment name stays indistinguishable,
+on the reasoning that refusing one requires the `nlink` check the writer makes
+on an opened descriptor. That is false: `lstat` already returns `nlink`, and a
+segment this writer created has exactly one link. The re-review executed it —
+a hardlink at a segment name reported `nlink=2` and folded 987,654 bytes of a
+file outside the stream directory into the byte total, the very disclosure the
+symlink refusal had just closed. The listing now refuses `nlink !== 1` as
+well.
+
+Two limits survive and are stated rather than glossed. The check cannot say
+which of two links is the one this writer created, so a legitimate segment
+that something later hardlinked elsewhere is also skipped — an under-report,
+chosen deliberately, since `read()` refuses such a segment outright and
+`skipped` means "not what this writer left behind". And unlike the writer's,
+this check tests a path rather than the descriptor it then uses, so it is not
+TOCTOU-free. The `0o700` directory mode remains what keeps the planting
+precondition out of reach in the first place.
+
+Where write and read **raise** on a planted link, the inventory **counts** it.
+`listSegments()` returns `{ segments, skipped }`, and the console's cleanup
+outcome carries the count through. Throwing would have contradicted the
+previous section: the one artifact that must stay readable against a damaged
+directory is the inventory of that directory. But silently dropping the entry
+would have been worse than either, because it would shrink the reported
+footprint and present a tampered trail as a healthy one — an under-report that
+reads as authoritative. A foreign name that was never segment-shaped is
+ignored without being counted; only entries this stream should have been able
+to account for, and could not, raise `skipped`.
+
+### Why the listing does not assert continuity
+
+`read()` refuses a damaged trail; `listSegments()` reports it. That
+divergence is deliberate and is the point of the feature. An inventory that
+throws on a gap is unavailable exactly when an operator most needs it — after
+something has already gone wrong — and it would make the cleanup command's
+report section fail rather than show the damage. Detection stays where it
+belongs, on the path that reads entries back and must not hand back a trail
+it cannot vouch for.
+
+### What this Update does not claim
+
+It does not claim the audit trail is now bounded. It is not: it grows without
+limit by design, and the new report is the only signal an operator gets about
+that. Making it bounded would need a writer-format change (a per-segment
+entry count or a chained digest) so that whole-date archival is provable
+rather than merely tolerated — out of scope here, and not owned by a tracker
+row.
+
+It does not revisit the display-vs-persist rule, the correlation seam, or the
+audited-route set. Nothing about what the trail _records_ changes here; only
+what can be observed about the file it records into.
+
+### Correcting the recorded version, since this slice is the one that bumps it
+
+The X7b Update above records "`m3l-common` 4.6.1 → 4.7.0 (additive minor)"
+for the three optional correlation fields, and the X7b tracker row repeats it.
+The code landed; **the version bump did not.** `packages/m3l-common/package.json`
+has not been touched by a non-dependency commit since the patch that set
+4.6.1, so the library has been sitting at 4.6.1 carrying an additive minor's
+worth of surface. This slice performs the 4.6.1 → 4.7.0 bump, which therefore
+carries X7b's fields as well as `listSegments()`. Both are additive through
+the existing Core barrel with no new `exports` subpath, so one minor covers
+both and no renumbering is needed. Recorded here rather than quietly fixed
+because the earlier Update reads as though the bump had already happened, and
+the next reader deriving the current version from this ADR would be wrong.
+
 ## Links
 
 - Programme: [ADR-0064](./0064-m3l-console-programme.md). Store/index:

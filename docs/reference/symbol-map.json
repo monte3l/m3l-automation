@@ -2365,6 +2365,16 @@
     "namespace": "core",
     "file": "packages/m3l-common/src/core/storage/append-only-read-types.ts"
   },
+  "M3LAppendOnlySegment": {
+    "submodule": "storage",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/storage/append-only-read-types.ts"
+  },
+  "M3LAppendOnlySegmentListing": {
+    "submodule": "storage",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/storage/append-only-read-types.ts"
+  },
   "M3LAppendOnlyStreamReadError": {
     "submodule": "storage",
     "namespace": "core",

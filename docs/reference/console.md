@@ -1230,15 +1230,18 @@ Transport, persistence, and lifecycle settings are in the package README.
 ## Operator cleanup command
 
 `m3l-console-server cleanup` is the operator-triggered retention sweep
-required by ADR-0070. It sweeps all three retention concerns in a single run:
+required by ADR-0070. It covers all four artifact classes in a single run:
 telemetry rollup buckets (`pruneTelemetry`), run-output directories
-(`pruneRunOutputs`), and session-step artifacts (`pruneSessionArtifacts`).
-There is no per-concern selection and no `--dry-run` in this release.
+(`pruneRunOutputs`), session-step artifacts (`pruneSessionArtifacts`), and the
+human-action audit trail (`reportAuditTrailUsage`). The first three delete;
+the fourth only reports — see below. There is no per-concern selection and no
+`--dry-run` in this release.
 
 **Roots and windows come from configuration only.** The command reads
-`M3L_CONSOLE_DB_PATH`, `M3L_CONSOLE_RUNS_OUTPUT_ROOT`, and
-`M3L_CONSOLE_SESSIONS_ARTIFACT_ROOT` for path roots, and the three retention
-tables above for eligibility windows. No flag overrides either at runtime.
+`M3L_CONSOLE_DB_PATH`, `M3L_CONSOLE_RUNS_OUTPUT_ROOT`,
+`M3L_CONSOLE_SESSIONS_ARTIFACT_ROOT`, and `M3L_CONSOLE_AUDIT_ROOT` for path
+roots, and the three retention tables above for eligibility windows. No flag
+overrides either at runtime.
 
 **Exit codes:** `0` on a clean sweep; `1` if any driver fails or an unknown
 subcommand is given. An unknown subcommand (e.g. a typo) exits `1`
@@ -1251,6 +1254,45 @@ All three always run; on failure, a single `M3LConsoleError` with code
 first driver's failure as `cause` and including each successful driver's
 outcome plus a `context.failures` entry per failed driver. On success, the
 combined `M3LConsoleCleanupOutcome` is printed as JSON to stdout.
+
+**The audit-trail section reports; it never deletes.** The fourth section of
+the sweep inventories `<audit root>/` and returns the segment count, the total
+bytes those segments occupy, and a `skipped` count. It removes nothing, and
+there is no setting that would make it remove anything.
+
+**A non-zero `auditTrail.skipped` means the audit directory is not what this
+console wrote, and is worth investigating.** It counts entries carrying a
+valid segment name that could not be inventoried: one that vanished during the
+listing, or a symlink, directory, FIFO, or hardlink planted at a
+segment-shaped name. The underlying primitive uses `lstat`, requires a regular
+file, and requires `nlink === 1`, so neither a symlink nor a hardlink can
+report its target's size into the byte total — the sweep reports the anomaly
+instead of both inflating the total and disclosing the size of a file outside
+the audit root. A foreign file that was never segment-shaped (a stray
+`notes.txt`) is ignored and is **not** counted here.
+
+The two causes are not equally alarming, and the count alone does not
+distinguish them. A planted non-regular file or an extra hard link **is**
+tampering. An entry vanishing mid-sweep is not: archiving whole dates out of
+band is the supported way to reclaim space here, and it can legitimately race
+a cleanup run. Treat a non-zero count as a prompt to look at the directory,
+not as a verdict. ADR-0070 declares the audit class as
+_segment + retain_ while telemetry and session artifacts get age-based
+pruning, and that declaration became load-bearing once the append-only read
+path started rejecting a gap in a date's segment sequence: deleting one
+segment out of the middle of a date does not reclaim space so much as make
+every later read of that stream throw, permanently. The boot-time index
+rebuild never throws by design, so a console whose trail has been pruned that
+way starts and serves normally while having quietly lost the ability to
+rebuild its own record of truth. Archiving whole dates out of band is the
+supported way to reclaim space; the sequence check tolerates that, and only
+that. See the ADR-0070 Update of 2026-09-05.
+
+**A listing failure does not abort the sweep.** The audit section is wrapped
+exactly like the three pruning drivers: if listing the trail fails, the
+failure is captured, the other three still run, and it appears as an
+`auditTrail` entry in `context.failures` on the single `ERR_CONSOLE_INTERNAL`
+raised at the end.
 
 **Not audited.** A cleanup run records no human action in the audit trail in
 this release — it does not appear in `POST /api/v1/audit` or any audit query.
@@ -1282,6 +1324,15 @@ Stated plainly rather than left to be discovered:
   operator-run command and forbids silent deletion, and this command is its
   implementation. `console_telemetry_rollup` accumulates until the command is
   run; the settings are eligibility thresholds, not deletion guarantees.
+- **The human-action audit trail is retained forever, by design.** No
+  setting, command, or timer deletes an audit segment. ADR-0070 declares the
+  audit class as _segment + retain_, and the append-only reader's
+  sequence-gap check turns intra-date pruning into permanent unreadability
+  rather than reclaimed space — so the absence of a sweep here is the
+  feature, not a missing one. The consequence is that the trail grows without
+  bound for the console's whole lifetime, and the `auditTrail` section of
+  `m3l-console-server cleanup` is the **only** signal an operator gets about
+  that footprint. Reclaiming space means archiving whole dates out of band.
 - **An in-process run has no report to serve.** `GET /api/v1/runs/:id/report`
   404s for every ADR-0054 command-module run — see that route's own section
   for why the output directory cannot be pinned per run on that path.
