@@ -1,7 +1,7 @@
 /**
  * Tests for `core/storage`'s append-only stream SEGMENT-LISTING method:
- * `M3LAppendOnlyStream.listSegments()` and the `M3LAppendOnlySegment`
- * descriptor it resolves.
+ * `M3LAppendOnlyStream.listSegments()`, the `M3LAppendOnlySegment` descriptor
+ * it resolves, and the `M3LAppendOnlySegmentListing` object that wraps them.
  *
  * This is a new public method, split into its own file (rather than added to
  * the already near-budget `storage-append-only-stream.test.ts` /
@@ -17,14 +17,30 @@
  * An inventory that only works on a healthy trail is useless exactly when a
  * damaged trail is the reason someone reaches for it.
  *
- * Every guarantee here is a filesystem invariant — real `stat` results, a
- * real dangling symlink, a real symlink loop, a real non-directory path
- * component — so this suite uses a REAL temporary directory throughout and
- * never mocks `node:fs`/`node:fs/promises`.
+ * A second, security-motivated guarantee lives here too: the inventory must
+ * never FOLLOW a symlink planted at a segment name — `read()` and the writer
+ * both already refuse via `O_NOFOLLOW`, and a listing that dereferenced a
+ * planted link could disclose the size (and, if ever read, the contents) of
+ * a file outside the stream's own directory. `listSegments()` therefore
+ * `lstat`s each candidate and reports only regular files; anything else
+ * (a symlink, a directory, a FIFO) is skipped and counted, never followed.
+ *
+ * `M3LAppendOnlySegmentListing.skipped` counts ONLY entries whose name
+ * `parseSegmentName` accepts but which could not be inventoried as a real
+ * segment. A foreign name (a stray `notes.txt`, a `README`, a differently
+ * shaped `.jsonl`) was never a segment in the first place and is never
+ * counted — otherwise any directory holding an unrelated file would read as
+ * damaged.
+ *
+ * Every guarantee here is a filesystem invariant — real `stat`/`lstat`
+ * results, a real dangling symlink, a real symlink loop, a real directory, a
+ * real FIFO, a real non-directory path component — so this suite uses a REAL
+ * temporary directory throughout and never mocks `node:fs`/`node:fs/promises`.
  *
  * @packageDocumentation
  */
 
+import { execFileSync } from "node:child_process";
 import {
   mkdir,
   mkdtemp,
@@ -54,6 +70,7 @@ import {
 import type {
   M3LAppendOnlyEntry,
   M3LAppendOnlySegment,
+  M3LAppendOnlySegmentListing,
 } from "../src/core/storage/index.js";
 
 // ---------------------------------------------------------------------------
@@ -147,25 +164,32 @@ describe("type contracts", () => {
     }>();
   });
 
-  test("listSegments takes no parameters and resolves a read-only array of segments", () => {
+  test("a segment listing is a read-only two-field record: the segments array and a skipped count", () => {
+    expectTypeOf<M3LAppendOnlySegmentListing>().toEqualTypeOf<{
+      readonly segments: readonly M3LAppendOnlySegment[];
+      readonly skipped: number;
+    }>();
+  });
+
+  test("listSegments takes no parameters and resolves a segment listing", () => {
     expectTypeOf<
       M3LAppendOnlyStream["listSegments"]
     >().parameters.toEqualTypeOf<[]>();
     expectTypeOf<M3LAppendOnlyStream["listSegments"]>().returns.toEqualTypeOf<
-      Promise<readonly M3LAppendOnlySegment[]>
+      Promise<M3LAppendOnlySegmentListing>
     >();
   });
 
-  test("calling listSegments resolves the documented array type", async () => {
+  test("calling listSegments resolves the documented listing type", async () => {
     const dir = path.join(workDir, "type-only");
     const stream = new M3LAppendOnlyStream({ directory: dir });
 
-    expectTypeOf(stream.listSegments()).resolves.toEqualTypeOf<
-      readonly M3LAppendOnlySegment[]
-    >();
+    expectTypeOf(
+      stream.listSegments(),
+    ).resolves.toEqualTypeOf<M3LAppendOnlySegmentListing>();
 
     // Consume the promise so, once the symbol exists, a missing directory's
-    // resolved (not rejected) empty array never surfaces as an unhandled
+    // resolved (not rejected) empty listing never surfaces as an unhandled
     // rejection from this type-only assertion.
     await stream.listSegments().catch(() => undefined);
   });
@@ -176,19 +200,25 @@ describe("type contracts", () => {
 // ---------------------------------------------------------------------------
 
 describe("missing or empty sources", () => {
-  test("a directory that has never been created yields an empty array", async () => {
+  test("a directory that has never been created yields an empty listing", async () => {
     const dir = path.join(workDir, "never-created");
     const stream = new M3LAppendOnlyStream({ directory: dir });
 
-    await expect(stream.listSegments()).resolves.toEqual([]);
+    await expect(stream.listSegments()).resolves.toEqual({
+      segments: [],
+      skipped: 0,
+    });
   });
 
-  test("an existing but empty directory yields an empty array", async () => {
+  test("an existing but empty directory yields an empty listing", async () => {
     const dir = path.join(workDir, "audit");
     await mkdir(dir, { recursive: true });
     const stream = new M3LAppendOnlyStream({ directory: dir });
 
-    await expect(stream.listSegments()).resolves.toEqual([]);
+    await expect(stream.listSegments()).resolves.toEqual({
+      segments: [],
+      skipped: 0,
+    });
   });
 });
 
@@ -214,12 +244,13 @@ describe("after real appends", () => {
     expect(onDisk.length).toBeGreaterThan(1);
 
     const listed = await stream.listSegments();
-    expect(listed).toHaveLength(onDisk.length);
-    expect(listed.map((segment) => segment.name).sort()).toEqual(
+    expect(listed.skipped).toBe(0);
+    expect(listed.segments).toHaveLength(onDisk.length);
+    expect(listed.segments.map((segment) => segment.name).sort()).toEqual(
       [...onDisk].sort(),
     );
 
-    for (const segment of listed) {
+    for (const segment of listed.segments) {
       expect(segment.name).toMatch(/^\d{4}-\d{2}-\d{2}-\d{4,}\.jsonl$/);
       const { datePrefix, sequence } = splitSegmentName(segment.name);
       expect(segment.datePrefix).toBe(datePrefix);
@@ -241,8 +272,8 @@ describe("exact byteLength", () => {
     const stream = new M3LAppendOnlyStream({ directory: dir });
 
     const listed = await stream.listSegments();
-    expect(listed).toHaveLength(1);
-    const only = definedOrThrow(listed[0], "the only segment");
+    expect(listed.segments).toHaveLength(1);
+    const only = definedOrThrow(listed.segments[0], "the only segment");
     expect(only.byteLength).toBe(Buffer.byteLength(content));
   });
 });
@@ -265,7 +296,7 @@ describe("ordering", () => {
     const stream = new M3LAppendOnlyStream({ directory: dir });
     const listed = await stream.listSegments();
 
-    expect(listed.map((segment) => segment.name)).toEqual([
+    expect(listed.segments.map((segment) => segment.name)).toEqual([
       "2026-01-01-0001.jsonl",
       "2026-01-01-0002.jsonl",
       "2026-01-01-0010.jsonl",
@@ -279,7 +310,7 @@ describe("ordering", () => {
 // ---------------------------------------------------------------------------
 
 describe("foreign names are skipped", () => {
-  test("skips a plain foreign file, a foreign extension, and a lossily zero-padded sequence", async () => {
+  test("skips a plain foreign file, a foreign extension, and a lossily zero-padded sequence — none of it counts as `skipped`", async () => {
     const dir = path.join(workDir, "audit");
     const validLine = '{"valid":true}\n';
     await writeSegmentFile(dir, "2026-01-01-0001.jsonl", validLine);
@@ -293,9 +324,12 @@ describe("foreign names are skipped", () => {
     const stream = new M3LAppendOnlyStream({ directory: dir });
     const listed = await stream.listSegments();
 
-    expect(listed.map((segment) => segment.name)).toEqual([
+    expect(listed.segments.map((segment) => segment.name)).toEqual([
       "2026-01-01-0001.jsonl",
     ]);
+    // None of the foreign names were ever segment-shaped: they were never
+    // segments in the first place, so they must not inflate `skipped`.
+    expect(listed.skipped).toBe(0);
   });
 
   test("accepts a genuinely wide sequence number that round-trips exactly", async () => {
@@ -305,10 +339,11 @@ describe("foreign names are skipped", () => {
     const stream = new M3LAppendOnlyStream({ directory: dir });
     const listed = await stream.listSegments();
 
-    expect(listed).toHaveLength(1);
-    const only = definedOrThrow(listed[0], "the only segment");
+    expect(listed.segments).toHaveLength(1);
+    const only = definedOrThrow(listed.segments[0], "the only segment");
     expect(only.name).toBe("2026-01-01-12345.jsonl");
     expect(only.sequence).toBe(12_345);
+    expect(listed.skipped).toBe(0);
   });
 });
 
@@ -325,11 +360,14 @@ describe("a damaged trail is still inventoried", () => {
 
     const stream = new M3LAppendOnlyStream({ directory: dir });
 
-    // (a) the inventory does not refuse to run against the gap.
+    // (a) the inventory does not refuse to run against the gap, and a
+    // segment simply missing from `readdir` (never a stat failure) is not
+    // counted as `skipped`.
     const listed = await stream.listSegments();
-    expect(listed.map((segment) => segment.name)).toEqual([
+    expect(listed.segments.map((segment) => segment.name)).toEqual([
       "2026-01-01-0002.jsonl",
     ]);
+    expect(listed.skipped).toBe(0);
 
     // (b) the SAME on-disk gap makes read() reject — proving the pair is the
     // point: listSegments() is not merely lenient because nothing detected
@@ -340,15 +378,16 @@ describe("a damaged trail is still inventoried", () => {
 });
 
 // ---------------------------------------------------------------------------
-// A per-segment stat failure
+// A per-segment stat failure — a rotation race
 // ---------------------------------------------------------------------------
 
 describe("a rotation race — a dangling symlink's stat ENOENTs", () => {
-  test("skips the dangling entry rather than throwing", async () => {
+  test("skips the dangling entry rather than throwing, and counts it in `skipped`", async () => {
     const dir = path.join(workDir, "audit");
     await writeSegmentFile(dir, "2026-01-01-0001.jsonl", '{"event":"a"}\n');
-    // A REAL dangling symlink: readdir sees the name, stat follows the link
-    // and fails ENOENT — reproducing a rotation that raced the listing.
+    // A REAL dangling symlink: readdir sees the name, but a symlink is never
+    // a regular file regardless of whether its target resolves —
+    // reproducing a rotation that raced the listing.
     await symlink(
       path.join(dir, "does-not-exist"),
       path.join(dir, "2026-01-01-0002.jsonl"),
@@ -357,17 +396,143 @@ describe("a rotation race — a dangling symlink's stat ENOENTs", () => {
     const stream = new M3LAppendOnlyStream({ directory: dir });
     const listed = await stream.listSegments();
 
-    expect(listed.map((segment) => segment.name)).toEqual([
+    expect(listed.segments.map((segment) => segment.name)).toEqual([
       "2026-01-01-0001.jsonl",
     ]);
+    expect(listed.skipped).toBe(1);
   });
 });
 
-describe("a non-ENOENT stat failure propagates", () => {
-  test("a real symlink loop's ELOOP-class stat failure rejects listSegments", async () => {
+// ---------------------------------------------------------------------------
+// Security: a non-regular file at a segment name is never followed
+// ---------------------------------------------------------------------------
+
+describe("[security] a non-regular file planted at a segment name", () => {
+  test("[security] a symlink planted at a segment name is skipped and counted — its target's size never leaks into the listing", async () => {
+    const dir = path.join(workDir, "audit");
+    const realContent = '{"event":"real"}\n';
+    await writeSegmentFile(dir, "2026-01-01-0001.jsonl", realContent);
+
+    // A distinctive size that shares nothing with any real segment's byte
+    // length, planted OUTSIDE the stream's own directory.
+    const outsideContent = "s".repeat(37);
+    const outsidePath = path.join(workDir, "secret.txt");
+    await writeFile(outsidePath, outsideContent, "utf8");
+    await symlink(outsidePath, path.join(dir, "2026-01-02-0001.jsonl"));
+
+    const stream = new M3LAppendOnlyStream({ directory: dir });
+    const listed = await stream.listSegments();
+
+    expect(listed.segments.map((segment) => segment.name)).toEqual([
+      "2026-01-01-0001.jsonl",
+    ]);
+    expect(
+      listed.segments.some(
+        (segment) => segment.byteLength === outsideContent.length,
+      ),
+    ).toBe(false);
+    expect(listed.skipped).toBe(1);
+  });
+
+  test("a directory planted at a segment name is skipped and counted, never reported as a segment", async () => {
+    const dir = path.join(workDir, "audit");
+    await writeSegmentFile(dir, "2026-01-01-0001.jsonl", '{"event":"real"}\n');
+    await mkdir(path.join(dir, "2026-01-02-0001.jsonl"));
+
+    const stream = new M3LAppendOnlyStream({ directory: dir });
+    const listed = await stream.listSegments();
+
+    expect(listed.segments.map((segment) => segment.name)).toEqual([
+      "2026-01-01-0001.jsonl",
+    ]);
+    expect(listed.skipped).toBe(1);
+  });
+
+  test("a FIFO planted at a segment name is skipped and counted, and does not hang the listing", async () => {
+    const dir = path.join(workDir, "audit");
+    await writeSegmentFile(dir, "2026-01-01-0001.jsonl", '{"event":"real"}\n');
+    const fifoPath = path.join(dir, "2026-01-02-0001.jsonl");
+    // node:fs has no FIFO API — a real FIFO can only be created via mkfifo(1).
+    execFileSync("mkfifo", [fifoPath]);
+
+    const stream = new M3LAppendOnlyStream({ directory: dir });
+    const listed = await stream.listSegments();
+
+    expect(listed.segments.map((segment) => segment.name)).toEqual([
+      "2026-01-01-0001.jsonl",
+    ]);
+    expect(listed.skipped).toBe(1);
+  }, 2000);
+
+  test("a mixed directory: real segments count, a symlink and a directory are skipped, a foreign file counts as neither", async () => {
+    const dir = path.join(workDir, "audit");
+    const contentA = '{"event":"a"}\n';
+    const contentB = '{"event":"b","pad":"pp"}\n';
+    await writeSegmentFile(dir, "2026-01-01-0001.jsonl", contentA);
+    await writeSegmentFile(dir, "2026-01-01-0002.jsonl", contentB);
+    await symlink(
+      path.join(workDir, "does-not-matter"),
+      path.join(dir, "2026-01-01-0003.jsonl"),
+    );
+    await mkdir(path.join(dir, "2026-01-01-0004.jsonl"));
+    await writeSegmentFile(dir, "notes.txt", "not a segment");
+
+    const stream = new M3LAppendOnlyStream({ directory: dir });
+    const listed = await stream.listSegments();
+
+    expect(listed.segments.map((segment) => segment.name).sort()).toEqual([
+      "2026-01-01-0001.jsonl",
+      "2026-01-01-0002.jsonl",
+    ]);
+    // The symlink and the directory are both segment-shaped names that
+    // could not be inventoried; `notes.txt` was never segment-shaped and
+    // must not inflate the count.
+    expect(listed.skipped).toBe(2);
+
+    const totalBytes = listed.segments.reduce(
+      (sum, segment) => sum + segment.byteLength,
+      0,
+    );
+    expect(totalBytes).toBe(
+      Buffer.byteLength(contentA) + Buffer.byteLength(contentB),
+    );
+  });
+});
+
+describe("a clean directory", () => {
+  test("reports `skipped: 0` alongside its real segments", async () => {
+    const dir = path.join(workDir, "audit");
+    await writeSegmentFile(dir, "2026-01-01-0001.jsonl", '{"event":"a"}\n');
+    await writeSegmentFile(dir, "2026-01-01-0002.jsonl", '{"event":"b"}\n');
+
+    const stream = new M3LAppendOnlyStream({ directory: dir });
+    const listed = await stream.listSegments();
+
+    expect(listed.segments).toHaveLength(2);
+    expect(listed.skipped).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A symlink loop is a non-regular file, not a distinct stat failure
+// ---------------------------------------------------------------------------
+
+describe("a symlink loop is a non-regular file, not a stat failure", () => {
+  // NOTE ON A DOCUMENTED-GUARANTEE CHANGE: under the OLD `stat`-based
+  // implementation, a symlink loop's `stat()` call failed with an ELOOP-class
+  // error that propagated as a rejection (see the prior version of this
+  // suite). Under the NEW `lstat`-based implementation, `lstat` never
+  // resolves the link at all, so it never touches the loop and succeeds
+  // trivially on each loop member — which then fails the regular-file check
+  // and is SKIPPED, exactly like the dangling-symlink and planted-symlink
+  // cases above. Verified directly against Node's real `lstat`/`stat`
+  // behavior on a two-symlink loop before writing this assertion, per the
+  // hub's explicit request to determine (not guess) which way this goes.
+  test("lstat never follows the loop, so both loop entries are skipped rather than rejecting the call", async () => {
     const dir = path.join(workDir, "audit");
     await mkdir(dir, { recursive: true });
-    // A REAL symlink loop: stat() on either name fails to resolve.
+    // A REAL symlink loop: each entry's OWN lstat succeeds (it never
+    // resolves the link), but stat() on either name would fail to resolve.
     await symlink(
       "2026-01-01-0003.jsonl",
       path.join(dir, "2026-01-01-0002.jsonl"),
@@ -378,11 +543,10 @@ describe("a non-ENOENT stat failure propagates", () => {
     );
 
     const stream = new M3LAppendOnlyStream({ directory: dir });
+    const listed = await stream.listSegments();
 
-    // The exact errno the platform surfaces for a symlink loop is not
-    // pinned — only that the per-segment stat guard does NOT widen to
-    // swallow it, i.e. the call must not resolve.
-    await expect(stream.listSegments()).rejects.toBeDefined();
+    expect(listed.segments).toEqual([]);
+    expect(listed.skipped).toBe(2);
   });
 });
 
@@ -438,18 +602,18 @@ describe("read-only inventory", () => {
 // ---------------------------------------------------------------------------
 
 describe("fresh array per call", () => {
-  test("mutating a previously returned array does not affect a later call", async () => {
+  test("mutating a previously returned segments array does not affect a later call", async () => {
     const dir = path.join(workDir, "audit");
     await writeSegmentFile(dir, "2026-01-01-0001.jsonl", '{"event":"a"}\n');
     const stream = new M3LAppendOnlyStream({ directory: dir });
 
     const first = await stream.listSegments();
-    expect(Array.isArray(first)).toBe(true);
+    expect(Array.isArray(first.segments)).toBe(true);
 
     // Mutate the caller's own copy through an `unknown` seam — the return
     // type is `readonly`, so this only compiles as a deliberate cast to
     // prove the underlying array is not shared with the stream's next call.
-    const mutableCopy = first as M3LAppendOnlySegment[];
+    const mutableCopy = first.segments as M3LAppendOnlySegment[];
     mutableCopy.push({
       name: "2099-01-01-9999.jsonl",
       datePrefix: "2099-01-01",
@@ -459,8 +623,8 @@ describe("fresh array per call", () => {
     });
 
     const second = await stream.listSegments();
-    expect(second).toHaveLength(1);
-    expect(second.map((segment) => segment.name)).toEqual([
+    expect(second.segments).toHaveLength(1);
+    expect(second.segments.map((segment) => segment.name)).toEqual([
       "2026-01-01-0001.jsonl",
     ]);
   });

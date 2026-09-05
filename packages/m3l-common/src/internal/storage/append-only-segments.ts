@@ -22,10 +22,13 @@
  */
 
 import type { Stats } from "node:fs";
-import { mkdir, readdir, stat } from "node:fs/promises";
+import { lstat, mkdir, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 
-import type { M3LAppendOnlySegment } from "../../core/storage/append-only-read-types.js";
+import type {
+  M3LAppendOnlySegment,
+  M3LAppendOnlySegmentListing,
+} from "../../core/storage/append-only-read-types.js";
 
 /**
  * One segment file name's parsed parts: its UTC date prefix and sequence.
@@ -267,21 +270,50 @@ export async function nextSegment(
  *
  * Only names {@link parseSegmentName} accepts (this writer's own naming
  * convention) are candidates; a foreign file, a foreign extension, or a name
- * that would not round-trip through this writer's own rendering is skipped,
- * exactly as cold-start discovery skips it. A missing directory yields an
- * empty array; any other `readdir` failure propagates raw to the caller,
+ * that would not round-trip through this writer's own rendering is silently
+ * ignored — never a segment in the first place, so it never counts toward
+ * {@link M3LAppendOnlySegmentListing.skipped}. A missing directory yields an
+ * empty listing; any other `readdir` failure propagates raw to the caller,
  * which owns the one typed-error boundary for this listing (see
  * {@link M3LAppendOnlyStream.listSegments}).
  *
- * Each result is built from exactly one `stat`: `byteLength` from
- * `stats.size`, `modifiedAtMs` from `stats.mtimeMs` — **not**
- * `birthtimeMs`, unlike {@link adoptExistingSegment}'s age fallback. That
- * function answers "how old is this segment for the age ceiling"; this one
- * answers "what is this file right now", so the birthtime/mtime fallback
- * reasoning does not apply here — do not "harmonise" the two. A `stat` that
- * fails `ENOENT` skips that one entry (rotation legitimately raced the
- * listing); every other `stat` failure propagates, same rule as everywhere
- * else in this module.
+ * Each candidate is inspected with **`lstat`, never `stat`** — the security
+ * fix this function exists for. `stat` follows a symlink, so a symlink
+ * planted at a segment name used to make this listing report the size and
+ * mtime of whatever the link resolved to, including a file outside
+ * `directory` entirely, and to fold that foreign size into any caller's
+ * total. `lstat` never resolves the link, so the entry is inspected as
+ * itself. Only a `stats.isFile()` result is accepted as a segment; anything
+ * else at a segment-shaped name — a symlink, a directory, a FIFO, a socket, a
+ * device — is counted in `skipped` and never inventoried. This mirrors the
+ * `O_NOFOLLOW` refusal the writer (`append-only-writer.ts`) and the reader
+ * (`append-only-reader.ts`) already apply; this was the one listing of the
+ * three that did not.
+ *
+ * One limit stays even after this fix: `lstat` tells apart a symlink from a
+ * regular file, but a **hardlink** at a segment name — a second directory
+ * entry for the same inode as a file elsewhere — is indistinguishable from
+ * an ordinary regular file by any `stat`/`lstat` call. The writer catches a
+ * hardlinked segment by checking `nlink` on the file descriptor it has
+ * already opened; an inventory that opens nothing has no descriptor to check
+ * `nlink` on, and so cannot reproduce that guard. This function does not
+ * claim to detect a hardlink, only a symlink and other non-regular-file
+ * types.
+ *
+ * `byteLength` is `stats.size` and `modifiedAtMs` is `stats.mtimeMs` —
+ * **not** `birthtimeMs`, unlike {@link adoptExistingSegment}'s age fallback.
+ * That function answers "how old is this segment for the age ceiling"; this
+ * one answers "what is this file right now", so the birthtime/mtime fallback
+ * reasoning does not apply here — do not "harmonise" the two.
+ *
+ * {@link M3LAppendOnlySegmentListing.skipped} counts exactly two things: a
+ * per-entry `lstat` failing `ENOENT` (the entry vanished between `readdir`
+ * and its own `lstat` — rotation legitimately raced the listing), and a
+ * non-regular file at a segment-shaped name. Every other per-entry `lstat`
+ * failure (`EACCES`, `EIO`, …) still propagates raw, same rule as everywhere
+ * else in this module: `skipped` means "not something this writer left
+ * behind", not "something went wrong reading the directory", and blurring
+ * the two would let a broken filesystem read as tampering.
  *
  * Deliberately does **not** apply the read side's continuity check
  * (`append-only-reader.ts`'s `assertNoSequenceGap`): an inventory that
@@ -294,18 +326,19 @@ export async function nextSegment(
  */
 export async function listSegmentFiles(
   directory: string,
-): Promise<readonly M3LAppendOnlySegment[]> {
+): Promise<M3LAppendOnlySegmentListing> {
   let names: string[];
   try {
     names = await readdir(directory);
   } catch (cause) {
     if (isFileNotFound(cause)) {
-      return [];
+      return { segments: [], skipped: 0 };
     }
     throw cause;
   }
 
   const segments: M3LAppendOnlySegment[] = [];
+  let skipped = 0;
   for (const name of names) {
     const parsed = parseSegmentName(name);
     if (parsed === undefined) {
@@ -313,12 +346,17 @@ export async function listSegmentFiles(
     }
     let stats: Stats;
     try {
-      stats = await stat(path.join(directory, name));
+      stats = await lstat(path.join(directory, name));
     } catch (cause) {
       if (isFileNotFound(cause)) {
+        skipped += 1;
         continue;
       }
       throw cause;
+    }
+    if (!stats.isFile()) {
+      skipped += 1;
+      continue;
     }
     segments.push({
       name,
@@ -329,8 +367,9 @@ export async function listSegmentFiles(
     });
   }
 
-  return segments.sort(
+  segments.sort(
     (a, b) =>
       a.datePrefix.localeCompare(b.datePrefix) || a.sequence - b.sequence,
   );
+  return { segments, skipped };
 }

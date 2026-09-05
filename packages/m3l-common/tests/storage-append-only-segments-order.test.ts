@@ -11,9 +11,9 @@
  * The only deterministic way to prove the sort is to control what `readdir`
  * hands back, so THIS FILE — and only this file — mocks `readdir` (and
  * `readdir` alone) from `node:fs/promises`, returning names in deliberately
- * reversed/scrambled order while every other export, including `stat`,
+ * reversed/scrambled order while every other export, including `lstat`,
  * passes through to the real module. The segment files are still real files
- * on real disk, so `stat`-derived fields (`byteLength`, `modifiedAtMs`)
+ * on real disk, so `lstat`-derived fields (`byteLength`, `modifiedAtMs`)
  * remain genuine.
  *
  * DO NOT merge this into `storage-append-only-segments-listing.test.ts`:
@@ -84,7 +84,8 @@ describe("listSegments sorts a scrambled readdir result", () => {
     const stream = new M3LAppendOnlyStream({ directory: dir });
     const listed = await stream.listSegments();
 
-    expect(listed.map((segment) => segment.name)).toEqual(ascending);
+    expect(listed.skipped).toBe(0);
+    expect(listed.segments.map((segment) => segment.name)).toEqual(ascending);
   });
 
   test("interleaved dates prove the comparator orders by date first, then sequence within a date", async () => {
@@ -113,6 +114,7 @@ describe("listSegments sorts a scrambled readdir result", () => {
     const stream = new M3LAppendOnlyStream({ directory: dir });
     const listed = await stream.listSegments();
 
-    expect(listed.map((segment) => segment.name)).toEqual(ascending);
+    expect(listed.skipped).toBe(0);
+    expect(listed.segments.map((segment) => segment.name)).toEqual(ascending);
   });
 });

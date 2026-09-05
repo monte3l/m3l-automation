@@ -89,7 +89,8 @@ export interface RunCleanupOptions {
  *     `telemetry: ${String(outcome.telemetry.total)} rows pruned`,
  *     `run outputs: ${String(outcome.runOutputs.deleted)} dirs deleted`,
  *     `session artifacts: ${String(outcome.sessionArtifacts.deleted)} files deleted`,
- *     `audit trail: ${String(outcome.auditTrail.segments)} segments observed`,
+ *     `audit trail: ${String(outcome.auditTrail.segments)} segments observed, ` +
+ *       `${String(outcome.auditTrail.skipped)} skipped`,
  *   ].join(", ");
  * }
  * ```
@@ -462,7 +463,8 @@ function resolveCleanupConfig(env: NodeJS.ProcessEnv): ResolvedCleanupConfig {
  *   `Pruned ${String(outcome.telemetry.total)} telemetry rows, ` +
  *   `deleted ${String(outcome.runOutputs.deleted)} run-output dirs, ` +
  *   `deleted ${String(outcome.sessionArtifacts.deleted)} session artifacts, ` +
- *   `observed ${String(outcome.auditTrail.segments)} audit segments.`,
+ *   `observed ${String(outcome.auditTrail.segments)} audit segments ` +
+ *   `(${String(outcome.auditTrail.skipped)} skipped).`,
  * );
  * ```
  */

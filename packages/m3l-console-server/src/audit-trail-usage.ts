@@ -23,6 +23,15 @@
  * siblings by adding deletion; that would reintroduce exactly the damage this
  * module exists to avoid.
  *
+ * **A non-zero `skipped` count means the audit directory is not what this
+ * console wrote.** `Core.M3LAppendOnlyStream.listSegments()` uses `lstat`
+ * plus a regular-file check, so it refuses to follow a symlink (or inventory
+ * a directory/FIFO/etc.) planted at a segment-shaped name — such an entry is
+ * excluded from `segments`/`totalBytes` and counted in `skipped` instead.
+ * This closes a disclosure: a symlink at a segment name used to report its
+ * *target's* size, leaking the byte count of a file outside the audit root
+ * into the total; it can no longer inflate `totalBytes` that way.
+ *
  * @packageDocumentation
  */
 
@@ -32,12 +41,13 @@ import { M3LConsoleError } from "./errors/console-error.js";
 
 /**
  * The result of one {@link reportAuditTrailUsage} run: how many audit-stream
- * segment files exist on disk and their combined byte size.
+ * segment files exist on disk, their combined byte size, and how many
+ * segment-shaped entries could not be inventoried.
  *
  * @example
  * ```ts
  * function describe(outcome: M3LAuditTrailUsageOutcome): string {
- *   return `${String(outcome.segments)} segments, ${String(outcome.totalBytes)} bytes`;
+ *   return `${String(outcome.segments)} segments, ${String(outcome.totalBytes)} bytes, ${String(outcome.skipped)} skipped`;
  * }
  * ```
  */
@@ -46,6 +56,12 @@ export interface M3LAuditTrailUsageOutcome {
   readonly segments: number;
   /** The combined byte size of every segment file. */
   readonly totalBytes: number;
+  /**
+   * Directory entries carrying a valid segment name that could not be
+   * inventoried — one vanished mid-listing, or a non-regular file planted at
+   * a segment name. Non-zero means the trail is not what this console wrote.
+   */
+  readonly skipped: number;
 }
 
 /**
@@ -94,7 +110,7 @@ export interface ReportAuditTrailUsageOptions {
  * const outcome = await reportAuditTrailUsage({
  *   auditRoot: "/var/lib/m3l/console/audit",
  * });
- * console.log(`${String(outcome.segments)} segments, ${String(outcome.totalBytes)} bytes`);
+ * console.log(`${String(outcome.segments)} segments, ${String(outcome.totalBytes)} bytes, ${String(outcome.skipped)} skipped`);
  * ```
  */
 export async function reportAuditTrailUsage(
@@ -104,9 +120,12 @@ export async function reportAuditTrailUsage(
     directory: options.auditRoot,
   });
 
-  let segments: readonly { readonly byteLength: number }[];
+  let segments: readonly Core.M3LAppendOnlySegment[];
+  let skipped: number;
   try {
-    segments = await stream.listSegments();
+    const listing = await stream.listSegments();
+    segments = listing.segments;
+    skipped = listing.skipped;
   } catch (cause) {
     throw new M3LConsoleError(
       "ERR_CONSOLE_INTERNAL",
@@ -118,5 +137,6 @@ export async function reportAuditTrailUsage(
   return {
     segments: segments.length,
     totalBytes: segments.reduce((sum, segment) => sum + segment.byteLength, 0),
+    skipped,
   };
 }

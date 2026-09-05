@@ -69,7 +69,7 @@ import {
 } from "../../internal/storage/append-only-options.js";
 import type {
   M3LAppendOnlyReadOptions,
-  M3LAppendOnlySegment,
+  M3LAppendOnlySegmentListing,
 } from "./append-only-read-types.js";
 import { M3LAppendOnlyStreamError } from "./M3LAppendOnlyStreamError.js";
 import { M3LAppendOnlyStreamReadError } from "./M3LAppendOnlyStreamReadError.js";
@@ -458,9 +458,14 @@ export class M3LAppendOnlyStream {
 
   /**
    * Inventories every segment file actually on disk, oldest
-   * `(datePrefix, sequence)` first. Never opens, deletes, or truncates a
-   * segment — a real `readdir` plus one `stat` per file. A missing directory
-   * yields an empty array.
+   * `(datePrefix, sequence)` first, plus a `skipped` count of segment-named
+   * entries that could not be inventoried as one — see
+   * {@link M3LAppendOnlySegmentListing}. Never opens, deletes, or truncates a
+   * segment; each candidate is inspected with `lstat` and only a regular
+   * file is accepted, so a symlink planted at a segment name is never
+   * followed (see `internal/storage/append-only-segments.ts` for the full
+   * security rationale and its one remaining limit, a hardlink). A missing
+   * directory yields an empty listing.
    *
    * Unlike {@link M3LAppendOnlyStream.read}, this does **not** check that a
    * date's sequences are contiguous: an inventory that refuses to run against
@@ -476,21 +481,22 @@ export class M3LAppendOnlyStream {
    * import { M3LAppendOnlyStream } from "@m3l-automation/m3l-common/core";
    *
    * const stream = new M3LAppendOnlyStream({ directory: "data/output/audit" });
-   * for (const segment of await stream.listSegments()) {
+   * const listing = await stream.listSegments();
+   * for (const segment of listing.segments) {
    *   console.log(segment.name, segment.byteLength);
    * }
    * ```
    */
-  async listSegments(): Promise<readonly M3LAppendOnlySegment[]> {
-    let segments: readonly M3LAppendOnlySegment[];
+  async listSegments(): Promise<M3LAppendOnlySegmentListing> {
+    let listing: M3LAppendOnlySegmentListing;
     try {
-      segments = await listSegmentFiles(this.streamDirectory);
+      listing = await listSegmentFiles(this.streamDirectory);
     } catch (cause) {
       throw new M3LAppendOnlyStreamReadError(
         "append-only stream: failed to list segments",
         { cause },
       );
     }
-    return Array.from(segments);
+    return { segments: Array.from(listing.segments), skipped: listing.skipped };
   }
 }

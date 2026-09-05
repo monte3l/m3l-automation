@@ -127,6 +127,33 @@ export interface M3LAppendOnlySegment {
 }
 
 /**
+ * The full result of {@link M3LAppendOnlyStream.listSegments}: every segment
+ * actually inventoried, plus a count of directory entries that looked like a
+ * segment name but could not be inventoried as one.
+ *
+ * @example
+ * ```ts
+ * import type { M3LAppendOnlySegmentListing } from "@m3l-automation/m3l-common/core";
+ *
+ * function report(listing: M3LAppendOnlySegmentListing): void {
+ *   if (listing.skipped > 0) {
+ *     console.warn(`${String(listing.skipped)} segment-named entries were not regular files`);
+ *   }
+ *   console.log(`${String(listing.segments.length)} segments inventoried`);
+ * }
+ * ```
+ */
+export interface M3LAppendOnlySegmentListing {
+  /** Every segment inventoried, oldest `(datePrefix, sequence)` first. */
+  readonly segments: readonly M3LAppendOnlySegment[];
+  /**
+   * How many directory entries carried a valid segment name but could not be
+   * inventoried. Non-zero means the directory is not what this writer left.
+   */
+  readonly skipped: number;
+}
+
+/**
  * Options for {@link M3LAppendOnlyStream.read}.
  *
  * With no `onTruncatedTail`, an unterminated trailing fragment on the

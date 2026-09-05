@@ -31,7 +31,15 @@
  * pins all three: `005` excluded (fails `{4,}`), `00005` excluded (fails
  * the round-trip check), `12345` included.
  */
-import { mkdir, mkdtemp, readdir, rm, stat, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readdir,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -74,10 +82,11 @@ afterEach(async () => {
 // ---------------------------------------------------------------------------
 
 describe("M3LAuditTrailUsageOutcome", () => {
-  test("has exactly two readonly number fields", () => {
+  test("has exactly three readonly number fields, including skipped", () => {
     expectTypeOf<M3LAuditTrailUsageOutcome>().toEqualTypeOf<{
       readonly segments: number;
       readonly totalBytes: number;
+      readonly skipped: number;
     }>();
   });
 });
@@ -100,7 +109,7 @@ describe("reportAuditTrailUsage — root does not exist", () => {
 
     const outcome = await reportAuditTrailUsage({ auditRoot });
 
-    expect(outcome).toEqual({ segments: 0, totalBytes: 0 });
+    expect(outcome).toEqual({ segments: 0, totalBytes: 0, skipped: 0 });
   });
 });
 
@@ -111,7 +120,7 @@ describe("reportAuditTrailUsage — root exists but is empty", () => {
 
     const outcome = await reportAuditTrailUsage({ auditRoot });
 
-    expect(outcome).toEqual({ segments: 0, totalBytes: 0 });
+    expect(outcome).toEqual({ segments: 0, totalBytes: 0, skipped: 0 });
   });
 });
 
@@ -151,6 +160,8 @@ describe("reportAuditTrailUsage — real appended segments", () => {
 
     expect(outcome.segments).toBe(segmentFiles.length);
     expect(outcome.totalBytes).toBe(expectedBytes);
+    // Nothing was tampered with — no entry is skipped.
+    expect(outcome.skipped).toBe(0);
   });
 });
 
@@ -241,6 +252,94 @@ describe("reportAuditTrailUsage — foreign files beside a real segment", () => 
 
     expect(outcome.segments).toBe(2);
     expect(outcome.totalBytes).toBe(expectedBytes);
+    // `notes.txt`, `2026-01-01-005.jsonl`, and `2026-01-01-00005.jsonl` are
+    // FOREIGN — none of them is a valid segment name (or, for the lossy-padded
+    // one, it fails the round-trip check) — so none of them is counted in
+    // `skipped` either. `skipped` counts only a valid segment NAME that could
+    // not be inventoried (a symlink, a directory, a vanished file planted at
+    // that name) — see the dedicated disclosure/directory tests below, which
+    // is a distinct case from "foreign" and must not be conflated with it.
+    expect(outcome.skipped).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Disclosure guard — a symlink at a segment name must not leak an outside
+// file's size into totalBytes, and must be counted as skipped rather than
+// silently inventoried or silently dropped.
+// ---------------------------------------------------------------------------
+
+describe("reportAuditTrailUsage — SECURITY: a symlink planted at a segment name does not leak an outside file's size", () => {
+  test("the outside file's distinctive size is excluded from totalBytes; segments counts only the real segment; skipped is 1", async () => {
+    const auditRoot = join(root, "symlink-disclosure");
+    const stream = new Core.M3LAppendOnlyStream({ directory: auditRoot });
+    await stream.append({ event: "one real entry" });
+
+    // Ground truth for the real segment, captured independently of the
+    // symlink and independently of `listSegments()`.
+    const afterRealAppend = await readdir(auditRoot);
+    expect(afterRealAppend.length).toBe(1);
+    const [realSegmentName] = afterRealAppend;
+    if (realSegmentName === undefined) {
+      throw new Error("expected exactly one real segment file on disk");
+    }
+    const realSegmentStats = await stat(join(auditRoot, realSegmentName));
+
+    // A file OUTSIDE the audit root entirely, with a large, distinctive size
+    // that would be unmistakable in totalBytes if it ever leaked in.
+    const outsideDir = await mkdtemp(join(tmpdir(), "m3l-audit-outside-"));
+    const OUTSIDE_FILE_SIZE = 123_456;
+    const outsideFilePath = join(outsideDir, "outside-secret.bin");
+    await writeFile(outsideFilePath, "s".repeat(OUTSIDE_FILE_SIZE));
+
+    // Plant a symlink at a valid, segment-shaped name pointing at that
+    // outside file — simulating a compromised/tampered audit trail.
+    const symlinkSegmentName = "2026-02-02-0002.jsonl";
+    await symlink(outsideFilePath, join(auditRoot, symlinkSegmentName));
+
+    try {
+      const outcome = await reportAuditTrailUsage({ auditRoot });
+
+      expect(outcome.segments).toBe(1);
+      expect(outcome.totalBytes).toBe(realSegmentStats.size);
+      // The outside file's size must never appear in totalBytes — this is
+      // the exact disclosure this fix closes.
+      expect(outcome.totalBytes).not.toBe(
+        realSegmentStats.size + OUTSIDE_FILE_SIZE,
+      );
+      expect(outcome.skipped).toBe(1);
+    } finally {
+      await rm(outsideDir, { recursive: true, force: true });
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A directory planted at a segment name is likewise excluded and counted
+// ---------------------------------------------------------------------------
+
+describe("reportAuditTrailUsage — a directory planted at a segment name is excluded and counted as skipped", () => {
+  test("the directory is excluded from segments/totalBytes and counted in skipped", async () => {
+    const auditRoot = join(root, "directory-at-segment-name");
+    const stream = new Core.M3LAppendOnlyStream({ directory: auditRoot });
+    await stream.append({ event: "one real entry" });
+
+    const afterRealAppend = await readdir(auditRoot);
+    expect(afterRealAppend.length).toBe(1);
+    const [realSegmentName] = afterRealAppend;
+    if (realSegmentName === undefined) {
+      throw new Error("expected exactly one real segment file on disk");
+    }
+    const realSegmentStats = await stat(join(auditRoot, realSegmentName));
+
+    const directorySegmentName = "2026-03-03-0003.jsonl";
+    await mkdir(join(auditRoot, directorySegmentName));
+
+    const outcome = await reportAuditTrailUsage({ auditRoot });
+
+    expect(outcome.segments).toBe(1);
+    expect(outcome.totalBytes).toBe(realSegmentStats.size);
+    expect(outcome.skipped).toBe(1);
   });
 });
 

@@ -1256,9 +1256,19 @@ outcome plus a `context.failures` entry per failed driver. On success, the
 combined `M3LConsoleCleanupOutcome` is printed as JSON to stdout.
 
 **The audit-trail section reports; it never deletes.** The fourth section of
-the sweep inventories `<audit root>/` and returns the segment count and the
-total bytes those segments occupy. It removes nothing, and there is no setting
-that would make it remove anything. ADR-0070 declares the audit class as
+the sweep inventories `<audit root>/` and returns the segment count, the total
+bytes those segments occupy, and a `skipped` count. It removes nothing, and
+there is no setting that would make it remove anything.
+
+**A non-zero `auditTrail.skipped` means the audit directory is not what this
+console wrote, and is worth investigating.** It counts entries carrying a
+valid segment name that could not be inventoried: one that vanished during the
+listing, or a symlink, directory, or FIFO planted at a segment-shaped name.
+The underlying primitive uses `lstat` and requires a regular file, so a
+planted link cannot report its target's size into the byte total — the sweep
+reports the anomaly instead of both inflating the total and disclosing the
+size of a file outside the audit root. A foreign file that was never
+segment-shaped (a stray `notes.txt`) is ignored and is **not** counted here. ADR-0070 declares the audit class as
 _segment + retain_ while telemetry and session artifacts get age-based
 pruning, and that declaration became load-bearing once the append-only read
 path started rejecting a gap in a date's segment sequence: deleting one

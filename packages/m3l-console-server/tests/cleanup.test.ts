@@ -13,7 +13,15 @@
  * if the failing driver were the last one, there would be nothing left to
  * lose and the test would pass against the broken code.
  */
-import { mkdir, mkdtemp, readdir, rm, stat, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readdir,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -46,6 +54,12 @@ const FAR_FUTURE_MS = Number.MAX_SAFE_INTEGER;
 
 /** Minimal valid absolute fake DB path (bypassed by the openStore seam). */
 const FAKE_DB_PATH = "/tmp/cleanup-test.sqlite";
+
+/** Matches a genuine `M3LAppendOnlyStream` segment file name — mirrors the
+ *  pattern used by `audit-trail-usage.test.ts`'s "real appends" test, so a
+ *  stray non-segment file can never be silently folded into a ground-truth
+ *  expectation derived directly from the filesystem. */
+const SEGMENT_FILE_PATTERN = /^\d{4}-\d{2}-\d{2}-\d{4,}\.jsonl$/;
 
 /** Temporary roots created/removed per test. */
 let runsRoot: string;
@@ -783,11 +797,24 @@ describe("runCleanup — fourth driver (auditTrail)", () => {
     for (let index = 0; index < 6; index += 1) {
       await stream.append({ index, note: "audit-fixture" });
     }
-    const realSegments = await stream.listSegments();
-    const expectedBytes = realSegments.reduce(
-      (sum, segment) => sum + segment.byteLength,
-      0,
+
+    // Ground truth read directly off disk — never through `listSegments()`,
+    // since `runCleanup`'s own auditTrail driver calls that same method; a
+    // comparison against it would pass even if `listSegments()` were the one
+    // that was wrong.
+    const entries = await readdir(auditRoot);
+    const segmentFiles = entries.filter((name) =>
+      SEGMENT_FILE_PATTERN.test(name),
     );
+    // Sanity: rotation actually happened, or this test proves nothing about
+    // multi-segment counting.
+    expect(segmentFiles.length).toBeGreaterThan(1);
+
+    let expectedBytes = 0;
+    for (const name of segmentFiles) {
+      const stats = await stat(join(auditRoot, name));
+      expectedBytes += stats.size;
+    }
 
     const outcome = await runCleanup({
       env: buildEnv({ M3L_CONSOLE_AUDIT_ROOT: auditRoot }),
@@ -796,8 +823,10 @@ describe("runCleanup — fourth driver (auditTrail)", () => {
     });
 
     expect(outcome.auditTrail).toEqual({
-      segments: realSegments.length,
+      segments: segmentFiles.length,
       totalBytes: expectedBytes,
+      // Nothing was tampered with — no entry is skipped.
+      skipped: 0,
     });
   });
 
@@ -912,6 +941,44 @@ describe("runCleanup — fourth driver (auditTrail)", () => {
       nowMs: () => FAR_FUTURE_MS,
     });
 
-    expect(outcome.auditTrail).toEqual({ segments: 0, totalBytes: 0 });
+    expect(outcome.auditTrail).toEqual({
+      segments: 0,
+      totalBytes: 0,
+      skipped: 0,
+    });
+  });
+
+  test("a tampered audit root (a symlink planted at a segment name) does not fail the sweep, and surfaces as auditTrail.skipped", async () => {
+    const { openStore } = makeMemoryStore();
+
+    const stream = new Core.M3LAppendOnlyStream({
+      directory: auditRoot,
+      maxSegmentBytes: 200,
+    });
+    await stream.append({ index: 0, note: "real segment" });
+
+    // Plant a symlink at a valid, segment-shaped name pointing at a file
+    // OUTSIDE the audit root — simulating a tampered/compromised audit
+    // trail. The sweep must still succeed; it reports the damage via
+    // `auditTrail.skipped`, it does not refuse to run.
+    const outsideDir = await mkdtemp(join(tmpdir(), "m3l-cleanup-outside-"));
+    const outsideFilePath = join(outsideDir, "outside-secret.bin");
+    await writeFile(outsideFilePath, "s".repeat(4_096));
+    const symlinkSegmentName = "2026-04-04-0004.jsonl";
+    await symlink(outsideFilePath, join(auditRoot, symlinkSegmentName));
+
+    try {
+      const outcome = await runCleanup({
+        env: buildEnv({ M3L_CONSOLE_AUDIT_ROOT: auditRoot }),
+        openStore,
+        nowMs: () => FAR_FUTURE_MS,
+      });
+
+      // The sweep succeeds — it does not throw — despite the tampered entry.
+      expect(outcome.auditTrail.segments).toBe(1);
+      expect(outcome.auditTrail.skipped).toBe(1);
+    } finally {
+      await rm(outsideDir, { recursive: true, force: true });
+    }
   });
 });

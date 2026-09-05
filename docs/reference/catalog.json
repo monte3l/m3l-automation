@@ -688,6 +688,7 @@
       "M3LAppendOnlyReadOptions",
       "M3LAppendOnlyTruncatedSegment",
       "M3LAppendOnlySegment",
+      "M3LAppendOnlySegmentListing",
       "M3LAppendOnlyStreamReadError"
     ]
   },

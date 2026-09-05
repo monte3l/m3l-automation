@@ -559,12 +559,51 @@ artifact class" the audit class was actually missing:
 
 - `M3LAppendOnlyStream.listSegments()`, an additive minor on the library,
   reporting each segment's name, date prefix, sequence, byte length and
-  modification time. It reads; it never unlinks or truncates.
+  modification time, plus a count of segment-named entries it refused to
+  vouch for. It reads; it never unlinks or truncates.
 - A fourth, **report-only** section in `m3l-console-server cleanup`, sitting
   beside the three sweeping drivers and deliberately unlike them: it reports
   the trail's segment count and total bytes and deletes nothing. An operator
   who wants the space back archives whole dates out of band, with the
   consequences above understood.
+
+### The inventory refuses a planted link, and counts what it refused
+
+The pre-push review round caught a real defect in the first cut of this slice,
+and the fix is part of the decision rather than an implementation detail.
+
+The listing originally used `stat`, which follows symlinks. A symlink planted
+at a segment-shaped name inside the audit directory was therefore reported as
+a genuine segment, carrying its **target's** byte length and modification
+time. Verified by probe against the built output: a directory holding one
+real 5-byte segment plus a symlink to a 35-byte file outside the tree, a
+directory, and a FIFO — all four at segment names — reported four segments and
+a total of 4,136 bytes where the truth was one segment and 5. That is two
+faults at once: the byte total an operator uses to judge the trail's footprint
+becomes attacker-influenced, and the size and mtime of an arbitrary file the
+console can reach leak through an audit surface. The write path and `read()`
+both already refuse this with `O_NOFOLLOW`; the inventory was the only one of
+the three that did not, even though the segment layer's own header names that
+threat model ("anyone who can create a file in the directory can plant the
+next segment name").
+
+The listing now uses `lstat` and requires a regular file. Two limits are
+stated rather than glossed: a **hardlink** at a segment name stays
+indistinguishable — refusing one requires the `nlink` check on an opened
+descriptor, and an inventory that opens nothing cannot reproduce it — and the
+`0o700` directory mode remains what keeps the planting precondition out of
+reach in the first place.
+
+Where write and read **raise** on a planted link, the inventory **counts** it.
+`listSegments()` returns `{ segments, skipped }`, and the console's cleanup
+outcome carries the count through. Throwing would have contradicted the
+previous section: the one artifact that must stay readable against a damaged
+directory is the inventory of that directory. But silently dropping the entry
+would have been worse than either, because it would shrink the reported
+footprint and present a tampered trail as a healthy one — an under-report that
+reads as authoritative. A foreign name that was never segment-shaped is
+ignored without being counted; only entries this stream should have been able
+to account for, and could not, raise `skipped`.
 
 ### Why the listing does not assert continuity
 
