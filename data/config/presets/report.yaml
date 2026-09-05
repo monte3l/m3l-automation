@@ -1,6 +1,10 @@
 # json-etl "report" preset — an ordered CSV report over a records dump.
 # Keys are json-etl config parameter names (an unknown key is rejected by the
-# preset loader). Run with: --preset report  (override any value on the CLI).
+# preset loader). `--preset` takes a PATH, not a name: there is no search
+# root or per-script fallback, so `--preset report` would be read as the
+# literal path `report` and fail with ERR_PRESET_LOAD. Run with:
+#   m3l run json-etl -- --preset=data/config/presets/report.yaml
+# (override any value on the CLI).
 input: records.ndjson
 fields:
   - id=id
