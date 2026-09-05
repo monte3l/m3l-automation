@@ -1,9 +1,13 @@
 # ESLint flat config — API reference snapshot
 
+<!-- reference-freshness: library=/eslint/eslint/v10.5.0 tracks=eslint@10.9.1,typescript-eslint@8.69.0 snapshot=2026-09-05 refresh=major -->
+
 > **Provenance** — Source: Context7 `/eslint/eslint/v10.5.0` (repo uses
-> `eslint@10.6.0` + `typescript-eslint@8.62.0`). Snapshot: 2026-07-02.
-> Patch/minor delta only (10.5.0 → 10.6.0); flat-config API is stable across it.
-> Refresh: re-run `/skill-creator` (or `ctx7 skills generate`) on a major bump.
+> `eslint@10.9.1` + `typescript-eslint@8.69.0`). Snapshot: 2026-09-05.
+> Minor delta only (10.5.0 → 10.9.1); flat-config API is stable across it.
+> Refresh: re-run `mcp__context7__query-docs` against `/eslint/eslint` (ADR-0093;
+> hub-only) on a major bump, or when `pnpm check:reference-freshness` flags this
+> file.
 
 Current flat-config facts, distilled for editing this repo's `eslint.config.js`.
 The repo composes its config with `tseslint.config(...)` (typescript-eslint's typed
@@ -83,4 +87,4 @@ typescript-eslint helper; it provides the same array structure with type hints.
 
 - `.eslintrc` is fully unsupported in ESLint 9+/10 — flat config only.
 - typescript-eslint v8's `tseslint.config()` and `configs.*TypeChecked` shapes are
-  stable across the 8.x line; no changes expected against the repo's 8.62.0.
+  stable across the 8.x line; no changes expected against the repo's 8.69.0.
