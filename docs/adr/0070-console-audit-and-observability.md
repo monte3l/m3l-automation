@@ -587,12 +587,27 @@ the three that did not, even though the segment layer's own header names that
 threat model ("anyone who can create a file in the directory can plant the
 next segment name").
 
-The listing now uses `lstat` and requires a regular file. Two limits are
-stated rather than glossed: a **hardlink** at a segment name stays
-indistinguishable — refusing one requires the `nlink` check on an opened
-descriptor, and an inventory that opens nothing cannot reproduce it — and the
-`0o700` directory mode remains what keeps the planting precondition out of
-reach in the first place.
+The listing now uses `lstat` and requires a regular file.
+
+The first cut of that fix carried a wrong claim, and correcting it is worth
+recording because the claim was load-bearing. Both the code comment and the
+reference page said a **hardlink** at a segment name stays indistinguishable,
+on the reasoning that refusing one requires the `nlink` check the writer makes
+on an opened descriptor. That is false: `lstat` already returns `nlink`, and a
+segment this writer created has exactly one link. The re-review executed it —
+a hardlink at a segment name reported `nlink=2` and folded 987,654 bytes of a
+file outside the stream directory into the byte total, the very disclosure the
+symlink refusal had just closed. The listing now refuses `nlink !== 1` as
+well.
+
+Two limits survive and are stated rather than glossed. The check cannot say
+which of two links is the one this writer created, so a legitimate segment
+that something later hardlinked elsewhere is also skipped — an under-report,
+chosen deliberately, since `read()` refuses such a segment outright and
+`skipped` means "not what this writer left behind". And unlike the writer's,
+this check tests a path rather than the descriptor it then uses, so it is not
+TOCTOU-free. The `0o700` directory mode remains what keeps the planting
+precondition out of reach in the first place.
 
 Where write and read **raise** on a planted link, the inventory **counts** it.
 `listSegments()` returns `{ segments, skipped }`, and the console's cleanup

@@ -461,11 +461,12 @@ export class M3LAppendOnlyStream {
    * `(datePrefix, sequence)` first, plus a `skipped` count of segment-named
    * entries that could not be inventoried as one — see
    * {@link M3LAppendOnlySegmentListing}. Never opens, deletes, or truncates a
-   * segment; each candidate is inspected with `lstat` and only a regular
-   * file is accepted, so a symlink planted at a segment name is never
-   * followed (see `internal/storage/append-only-segments.ts` for the full
-   * security rationale and its one remaining limit, a hardlink). A missing
-   * directory yields an empty listing.
+   * segment; each candidate is inspected with `lstat`, and only a regular
+   * file with exactly one link is accepted, so neither a symlink nor a
+   * hardlink planted at a segment name is ever followed (see
+   * `internal/storage/append-only-segments.ts` for the full security
+   * rationale and its remaining limits). A missing directory yields an empty
+   * listing.
    *
    * Unlike {@link M3LAppendOnlyStream.read}, this does **not** check that a
    * date's sequences are contiguous: an inventory that refuses to run against
@@ -473,8 +474,9 @@ export class M3LAppendOnlyStream {
    * for it. Gap detection stays on `read()`, which hands entries back and
    * must vouch for the trail it hands them from.
    *
-   * @throws {@link M3LAppendOnlyStreamReadError} when listing the directory
-   *   fails for a reason other than it not existing.
+   * @throws {@link M3LAppendOnlyStreamReadError} when listing the directory,
+   *   or inspecting one of its entries, fails for a reason other than the
+   *   entry not existing.
    *
    * @example
    * ```ts

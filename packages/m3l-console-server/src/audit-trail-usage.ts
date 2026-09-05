@@ -23,14 +23,20 @@
  * siblings by adding deletion; that would reintroduce exactly the damage this
  * module exists to avoid.
  *
- * **A non-zero `skipped` count means the audit directory is not what this
- * console wrote.** `Core.M3LAppendOnlyStream.listSegments()` uses `lstat`
- * plus a regular-file check, so it refuses to follow a symlink (or inventory
- * a directory/FIFO/etc.) planted at a segment-shaped name — such an entry is
- * excluded from `segments`/`totalBytes` and counted in `skipped` instead.
- * This closes a disclosure: a symlink at a segment name used to report its
- * *target's* size, leaking the byte count of a file outside the audit root
- * into the total; it can no longer inflate `totalBytes` that way.
+ * **A non-zero `skipped` count is worth investigating, but is not proof of
+ * tampering by itself — it has two possible causes.** The first is a symlink
+ * (or directory/FIFO/etc.) planted at a segment-shaped name:
+ * `Core.M3LAppendOnlyStream.listSegments()` uses `lstat` plus a regular-file
+ * check, so it refuses to follow one, and that entry is excluded from
+ * `segments`/`totalBytes` and counted in `skipped` instead. This closes a
+ * disclosure: a symlink at a segment name used to report its *target's*
+ * size, leaking the byte count of a file outside the audit root into the
+ * total; it can no longer inflate `totalBytes` that way. This first cause
+ * IS tampering. The second is an entry vanishing mid-listing because an
+ * operator archived whole dates out of band — the supported way to reclaim
+ * space under ADR-0070's segment-and-retain class — which can legitimately
+ * race a sweep and is not tampering. A non-zero count is a prompt to look,
+ * not a verdict.
  *
  * @packageDocumentation
  */
@@ -58,8 +64,11 @@ export interface M3LAuditTrailUsageOutcome {
   readonly totalBytes: number;
   /**
    * Directory entries carrying a valid segment name that could not be
-   * inventoried — one vanished mid-listing, or a non-regular file planted at
-   * a segment name. Non-zero means the trail is not what this console wrote.
+   * inventoried — one vanished mid-listing (an operator archiving whole
+   * dates out of band, which can legitimately race a sweep and is not
+   * tampering), or a non-regular file (symlink, directory, FIFO, etc.)
+   * planted at a segment-shaped name, which IS tampering. A non-zero count
+   * is a prompt to look, not proof of tampering by itself.
    */
   readonly skipped: number;
 }

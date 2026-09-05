@@ -1263,12 +1263,20 @@ there is no setting that would make it remove anything.
 **A non-zero `auditTrail.skipped` means the audit directory is not what this
 console wrote, and is worth investigating.** It counts entries carrying a
 valid segment name that could not be inventoried: one that vanished during the
-listing, or a symlink, directory, or FIFO planted at a segment-shaped name.
-The underlying primitive uses `lstat` and requires a regular file, so a
-planted link cannot report its target's size into the byte total — the sweep
-reports the anomaly instead of both inflating the total and disclosing the
-size of a file outside the audit root. A foreign file that was never
-segment-shaped (a stray `notes.txt`) is ignored and is **not** counted here. ADR-0070 declares the audit class as
+listing, or a symlink, directory, FIFO, or hardlink planted at a
+segment-shaped name. The underlying primitive uses `lstat`, requires a regular
+file, and requires `nlink === 1`, so neither a symlink nor a hardlink can
+report its target's size into the byte total — the sweep reports the anomaly
+instead of both inflating the total and disclosing the size of a file outside
+the audit root. A foreign file that was never segment-shaped (a stray
+`notes.txt`) is ignored and is **not** counted here.
+
+The two causes are not equally alarming, and the count alone does not
+distinguish them. A planted non-regular file or an extra hard link **is**
+tampering. An entry vanishing mid-sweep is not: archiving whole dates out of
+band is the supported way to reclaim space here, and it can legitimately race
+a cleanup run. Treat a non-zero count as a prompt to look at the directory,
+not as a verdict. ADR-0070 declares the audit class as
 _segment + retain_ while telemetry and session artifacts get age-based
 pruning, and that declaration became load-bearing once the append-only read
 path started rejecting a gap in a date's segment sequence: deleting one

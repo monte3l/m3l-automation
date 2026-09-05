@@ -174,8 +174,15 @@ interface CleanupDriverFailure {
    */
   readonly code: string | undefined;
   /**
-   * The failure's raw Node errno code (e.g. `"EACCES"`), extracted from the
-   * caught value's own `code` property; `undefined` when not present.
+   * The caught value's own `code` property; `undefined` when not present.
+   * This is a raw Node errno (e.g. `"EACCES"`) only when the driver threw an
+   * unwrapped `fs` error. A driver that wraps its errors (e.g. `auditTrail`,
+   * which turns a Node error into `M3LAppendOnlyStreamReadError` and then
+   * `M3LConsoleError`) puts its own `M3LError` code here instead — duplicating
+   * {@link CleanupDriverFailure.code} — because `errnoCodeOf` reads only the
+   * caught value's own `code` and does not walk the `cause` chain. The
+   * underlying Node errno, when there is one, then survives only on the
+   * chained `cause`.
    */
   readonly errno: string | undefined;
 }

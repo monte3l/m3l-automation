@@ -290,15 +290,18 @@ export async function nextSegment(
  * (`append-only-reader.ts`) already apply; this was the one listing of the
  * three that did not.
  *
- * One limit stays even after this fix: `lstat` tells apart a symlink from a
- * regular file, but a **hardlink** at a segment name — a second directory
- * entry for the same inode as a file elsewhere — is indistinguishable from
- * an ordinary regular file by any `stat`/`lstat` call. The writer catches a
- * hardlinked segment by checking `nlink` on the file descriptor it has
- * already opened; an inventory that opens nothing has no descriptor to check
- * `nlink` on, and so cannot reproduce that guard. This function does not
- * claim to detect a hardlink, only a symlink and other non-regular-file
- * types.
+ * A **hardlink** at a segment name — a second directory entry for the same
+ * inode as a file elsewhere — is also refused: `stats.nlink !== 1` is
+ * checked alongside `isFile()`, using the same `lstat` result, since `nlink`
+ * survives without ever opening the file. Two limits remain even so: (1) the
+ * check cannot say *which* of two links is the one this writer created, so a
+ * legitimate segment that something later hardlinked elsewhere is also
+ * skipped — that under-report is the deliberate direction, matching `read()`
+ * (`append-only-reader.ts:436`), which refuses such a segment outright;
+ * `skipped` means "not what this writer left behind", not "an I/O error
+ * occurred". (2) unlike the writer's check, which tests the descriptor it
+ * then uses, this one tests a **path** and is therefore not TOCTOU-free — it
+ * raises the bar, it does not prove anything.
  *
  * `byteLength` is `stats.size` and `modifiedAtMs` is `stats.mtimeMs` —
  * **not** `birthtimeMs`, unlike {@link adoptExistingSegment}'s age fallback.
@@ -306,14 +309,15 @@ export async function nextSegment(
  * one answers "what is this file right now", so the birthtime/mtime fallback
  * reasoning does not apply here — do not "harmonise" the two.
  *
- * {@link M3LAppendOnlySegmentListing.skipped} counts exactly two things: a
+ * {@link M3LAppendOnlySegmentListing.skipped} counts exactly three things: a
  * per-entry `lstat` failing `ENOENT` (the entry vanished between `readdir`
- * and its own `lstat` — rotation legitimately raced the listing), and a
- * non-regular file at a segment-shaped name. Every other per-entry `lstat`
- * failure (`EACCES`, `EIO`, …) still propagates raw, same rule as everywhere
- * else in this module: `skipped` means "not something this writer left
- * behind", not "something went wrong reading the directory", and blurring
- * the two would let a broken filesystem read as tampering.
+ * and its own `lstat` — rotation legitimately raced the listing), a
+ * non-regular file at a segment-shaped name, and a regular file with more
+ * than one link. Every other per-entry `lstat` failure (`EACCES`, `EIO`, …)
+ * still propagates raw, same rule as everywhere else in this module:
+ * `skipped` means "not something this writer left behind", not "something
+ * went wrong reading the directory", and blurring the two would let a broken
+ * filesystem read as tampering.
  *
  * Deliberately does **not** apply the read side's continuity check
  * (`append-only-reader.ts`'s `assertNoSequenceGap`): an inventory that
@@ -354,7 +358,7 @@ export async function listSegmentFiles(
       }
       throw cause;
     }
-    if (!stats.isFile()) {
+    if (!stats.isFile() || stats.nlink !== 1) {
       skipped += 1;
       continue;
     }

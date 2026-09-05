@@ -42,6 +42,7 @@
 
 import { execFileSync } from "node:child_process";
 import {
+  link,
   mkdir,
   mkdtemp,
   readdir,
@@ -496,6 +497,125 @@ describe("[security] a non-regular file planted at a segment name", () => {
     expect(totalBytes).toBe(
       Buffer.byteLength(contentA) + Buffer.byteLength(contentB),
     );
+  });
+
+  // A hardlink is a second directory entry for an EXISTING inode elsewhere —
+  // `lstat` cannot tell it apart from an ordinary regular file (unlike a
+  // symlink, a directory, or a FIFO, all covered above): `isFile()` is true
+  // and `stats.size` is the linked file's real size. `nlink` is on the same
+  // `lstat` result already and is the one signal that survives without
+  // opening the file — this is the security gap this test exists to close.
+  test("[security] a hardlink planted at a segment name is skipped and counted — its target's size never leaks into the listing", async () => {
+    const dir = path.join(workDir, "audit");
+    const realContent = '{"event":"real"}\n';
+    await writeSegmentFile(dir, "2026-01-01-0001.jsonl", realContent);
+
+    // A distinctive size, shared with no real segment, planted OUTSIDE the
+    // stream's own directory — then hard-linked FROM a segment-shaped name
+    // inside the directory, exactly like the symlink case above but via a
+    // second directory entry for the same inode rather than a redirect.
+    // A distinctive size, chosen so it cannot coincidentally match the real
+    // segment's byte length.
+    const outsideContent = "h".repeat(654);
+    const outsidePath = path.join(workDir, "outside-hardlinked.txt");
+    await writeFile(outsidePath, outsideContent, "utf8");
+    const hardlinkPath = path.join(dir, "2026-01-02-0001.jsonl");
+    await link(outsidePath, hardlinkPath);
+
+    // Confirm the fixture actually reproduces the probe: a second directory
+    // entry for the same inode, `isFile()` true, and the outside content's
+    // exact size — never derived from calling `listSegments()`.
+    const hardlinkStats = await stat(hardlinkPath);
+    expect(hardlinkStats.isFile()).toBe(true);
+    expect(hardlinkStats.nlink).toBe(2);
+    expect(hardlinkStats.size).toBe(Buffer.byteLength(outsideContent));
+
+    const stream = new M3LAppendOnlyStream({ directory: dir });
+    const listed = await stream.listSegments();
+
+    expect(listed.segments.map((segment) => segment.name)).toEqual([
+      "2026-01-01-0001.jsonl",
+    ]);
+    expect(
+      listed.segments.some(
+        (segment) => segment.byteLength === Buffer.byteLength(outsideContent),
+      ),
+    ).toBe(false);
+    const totalBytes = listed.segments.reduce(
+      (sum, segment) => sum + segment.byteLength,
+      0,
+    );
+    expect(totalBytes).toBe(Buffer.byteLength(realContent));
+    expect(listed.skipped).toBe(1);
+  });
+
+  test("a mixed directory with every planted kind — symlink, directory, FIFO, and hardlink — reports only the one real segment, skipped: 4, and never counts the foreign file", async () => {
+    const dir = path.join(workDir, "audit");
+    const realContent = '{"event":"real"}\n';
+    await writeSegmentFile(dir, "2026-01-01-0001.jsonl", realContent);
+
+    await symlink(
+      path.join(workDir, "does-not-matter"),
+      path.join(dir, "2026-01-01-0002.jsonl"),
+    );
+    await mkdir(path.join(dir, "2026-01-01-0003.jsonl"));
+    execFileSync("mkfifo", [path.join(dir, "2026-01-01-0004.jsonl")]);
+    const outsidePath = path.join(workDir, "outside-for-mixed.txt");
+    await writeFile(outsidePath, "z".repeat(321), "utf8");
+    await link(outsidePath, path.join(dir, "2026-01-01-0005.jsonl"));
+    await writeSegmentFile(dir, "notes.txt", "not a segment");
+
+    const stream = new M3LAppendOnlyStream({ directory: dir });
+    const listed = await stream.listSegments();
+
+    expect(listed.segments.map((segment) => segment.name)).toEqual([
+      "2026-01-01-0001.jsonl",
+    ]);
+    expect(listed.skipped).toBe(4);
+  }, 2000);
+});
+
+// ---------------------------------------------------------------------------
+// Security: a hardlinked SEGMENT — created by this writer, then hardlinked
+// away from the stream directory afterward — is also skipped
+// ---------------------------------------------------------------------------
+
+describe("[security] a segment hardlinked away after this writer created it", () => {
+  test("[security] a real segment this writer wrote, later hardlinked to a path outside the stream directory, is excluded from the listing (deliberate false positive)", async () => {
+    const dir = path.join(workDir, "audit");
+    const stream = new M3LAppendOnlyStream({ directory: dir });
+    await stream.append({ event: "written-by-this-writer" });
+
+    const onDisk = (await readdir(dir)).filter((name) =>
+      name.endsWith(".jsonl"),
+    );
+    expect(onDisk).toHaveLength(1);
+    const segmentName = definedOrThrow(onDisk[0], "the one real segment");
+    const segmentPath = path.join(dir, segmentName);
+
+    // Hardlink the segment OUT to a path outside the stream directory. The
+    // directory still holds exactly one entry — this is not a planted file,
+    // it is this writer's own segment, whose inode now also has a second
+    // name elsewhere.
+    const outsidePath = path.join(workDir, "linked-elsewhere.jsonl");
+    await link(segmentPath, outsidePath);
+
+    const statAfterLink = await stat(segmentPath);
+    expect(statAfterLink.nlink).toBe(2);
+
+    const listed = await stream.listSegments();
+
+    // `nlink` cannot say WHICH of the two links is "ours" — only that more
+    // than one exists. `read()` already refuses such a segment outright
+    // (append-only-reader.ts:436), and `skipped` exists precisely to mean
+    // "this directory is not what this writer left behind" rather than "an
+    // I/O error occurred". Excluding a segment this writer itself created,
+    // the moment ANY second link to its inode appears, is a deliberate false
+    // positive: under-reporting a tampered-with segment is the safe
+    // direction, since the alternative is silently trusting an inode that
+    // may since have been altered through its other name.
+    expect(listed.segments).toEqual([]);
+    expect(listed.skipped).toBe(1);
   });
 });
 
