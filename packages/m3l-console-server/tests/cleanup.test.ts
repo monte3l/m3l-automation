@@ -485,6 +485,243 @@ describe("runCleanup — close() failure when a driver already failed", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Gap 1a — firstCause when ONLY pruneRunOutputs fails (line 190 coverage)
+// Every existing failure test makes telemetry (the first driver) fail, so the
+// `else if (!rResult.ok)` branch at line 190 of cleanup.ts is never reached.
+// This test makes only the second driver fail, forcing that branch to execute
+// and verifying the "first failure wins as cause" semantics when the first
+// driver succeeds.
+// ---------------------------------------------------------------------------
+
+describe("runCleanup — failing second driver only (runOutputs)", () => {
+  test("telemetry and sessionArtifacts still run; cause is the runOutputs error; only runOutputs appears in context.failures", async () => {
+    const { store, openStore } = makeMemoryStore();
+
+    // Place one directory in runsRoot so readdir finds an entry and
+    // pruneRunOutputs calls store.runs.get — where we inject the failure.
+    await mkdir(join(runsRoot, "run-only-fail"), { recursive: true });
+    const runsError = new Error("simulated runOutputs-only failure");
+    vi.spyOn(store.runs, "get").mockImplementation(() => {
+      throw runsError;
+    });
+
+    // telemetry: no data → succeeds with zero total
+    // sessionArtifacts: empty artifactRoot → succeeds with zero deleted
+
+    let thrown: M3LConsoleError | undefined;
+    try {
+      await runCleanup({
+        env: buildEnv(),
+        openStore,
+        nowMs: () => FAR_FUTURE_MS,
+      });
+    } catch (e) {
+      if (e instanceof M3LConsoleError) thrown = e;
+    }
+
+    expect(thrown).toBeDefined();
+    expect(thrown?.code).toBe("ERR_CONSOLE_INTERNAL");
+
+    // firstCause is rResult.cause — the raw error that escaped pruneRunOutputs.
+    // This exercises the `else if (!rResult.ok) firstCause = rResult.cause`
+    // branch at cleanup.ts:190.
+    expect(thrown?.cause).toBe(runsError);
+
+    // context.failures must carry exactly one entry, tagged "runOutputs".
+    const ctx = thrown?.context;
+    expect(ctx).toBeDefined();
+    const failures = ctx?.["failures"];
+    expect(Array.isArray(failures)).toBe(true);
+    expect((failures as unknown[]).length).toBe(1);
+    expect((failures as Array<{ driver: string }>)[0]?.driver).toBe(
+      "runOutputs",
+    );
+
+    // Successful drivers' outcomes are present in context.
+    expect(ctx).toHaveProperty("telemetry");
+    expect(ctx).toHaveProperty("sessionArtifacts");
+    expect(ctx).not.toHaveProperty("runOutputs");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Gap 1b — firstCause when ONLY pruneSessionArtifacts fails (line 191 coverage)
+// The `else if (!sResult.ok)` branch at line 191 of cleanup.ts can only run
+// when BOTH tResult.ok and rResult.ok are true — a scenario no existing test
+// exercises. This test makes only the third driver fail.
+// ---------------------------------------------------------------------------
+
+describe("runCleanup — failing third driver only (sessionArtifacts)", () => {
+  test("telemetry and runOutputs still run; cause is the sessionArtifacts error; only sessionArtifacts appears in context.failures", async () => {
+    const { store, openStore } = makeMemoryStore();
+
+    // Place a session directory with a .json artifact file in artifactRoot so
+    // sweepSessionDirectory calls store.sessions.getStep — where we inject
+    // the failure. The session and step id must match SAFE_ID_PATTERN.
+    const sessionDir = join(artifactRoot, "session-only-fail");
+    await mkdir(sessionDir, { recursive: true });
+    await writeFile(join(sessionDir, "step-only-fail.json"), "{}");
+
+    vi.spyOn(store.sessions, "getStep").mockImplementation(() => {
+      throw new Error("simulated sessions-only failure");
+    });
+
+    // telemetry: no data → succeeds with zero total
+    // runOutputs: empty runsRoot → succeeds
+
+    let thrown: M3LConsoleError | undefined;
+    try {
+      await runCleanup({
+        env: buildEnv(),
+        openStore,
+        nowMs: () => FAR_FUTURE_MS,
+      });
+    } catch (e) {
+      if (e instanceof M3LConsoleError) thrown = e;
+    }
+
+    expect(thrown).toBeDefined();
+    expect(thrown?.code).toBe("ERR_CONSOLE_INTERNAL");
+
+    // firstCause is sResult.cause — the M3LConsoleError that
+    // walkSessionDirectories wraps the raw getStep throw in. This exercises
+    // the `else if (!sResult.ok) firstCause = sResult.cause` branch at
+    // cleanup.ts:191.
+    expect(thrown?.cause).toBeInstanceOf(M3LConsoleError);
+    expect((thrown?.cause as M3LConsoleError).code).toBe(
+      "ERR_CONSOLE_INTERNAL",
+    );
+
+    // context.failures must carry exactly one entry, tagged "sessionArtifacts".
+    const ctx = thrown?.context;
+    expect(ctx).toBeDefined();
+    const failures = ctx?.["failures"];
+    expect(Array.isArray(failures)).toBe(true);
+    expect((failures as unknown[]).length).toBe(1);
+    expect((failures as Array<{ driver: string }>)[0]?.driver).toBe(
+      "sessionArtifacts",
+    );
+
+    // Successful drivers' outcomes are present in context.
+    expect(ctx).toHaveProperty("telemetry");
+    expect(ctx).toHaveProperty("runOutputs");
+    expect(ctx).not.toHaveProperty("sessionArtifacts");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Gap 1c — runOutputs AND sessionArtifacts both fail, telemetry succeeds
+// Complements case 6a (telemetry + runOutputs fail). Verifies that when the
+// second and third drivers both fail: runOutputs cause wins (it runs first of
+// the two), and NEITHER failure is lost from context.failures.
+// ---------------------------------------------------------------------------
+
+describe("runCleanup — second and third drivers both fail (runOutputs + sessionArtifacts)", () => {
+  test("cause is the runOutputs error; both runOutputs and sessionArtifacts appear in context.failures", async () => {
+    const { store, openStore } = makeMemoryStore();
+
+    // Make pruneRunOutputs fail: directory in runsRoot + throwing get().
+    await mkdir(join(runsRoot, "run-both-fail"), { recursive: true });
+    const runsError = new Error(
+      "simulated runOutputs failure (both-fail case)",
+    );
+    vi.spyOn(store.runs, "get").mockImplementation(() => {
+      throw runsError;
+    });
+
+    // Make pruneSessionArtifacts fail: session dir + file + throwing getStep().
+    const sessionDir = join(artifactRoot, "session-both-fail");
+    await mkdir(sessionDir, { recursive: true });
+    await writeFile(join(sessionDir, "step-both-fail.json"), "{}");
+    vi.spyOn(store.sessions, "getStep").mockImplementation(() => {
+      throw new Error("simulated sessionArtifacts failure (both-fail case)");
+    });
+
+    // telemetry: no data → succeeds.
+
+    let thrown: M3LConsoleError | undefined;
+    try {
+      await runCleanup({
+        env: buildEnv(),
+        openStore,
+        nowMs: () => FAR_FUTURE_MS,
+      });
+    } catch (e) {
+      if (e instanceof M3LConsoleError) thrown = e;
+    }
+
+    expect(thrown).toBeDefined();
+    expect(thrown?.code).toBe("ERR_CONSOLE_INTERNAL");
+
+    // runOutputs runs before sessionArtifacts, so its cause wins.
+    // The `else if (!rResult.ok)` branch at cleanup.ts:190 sets firstCause;
+    // the `else if (!sResult.ok)` branch is unreachable in this scenario.
+    expect(thrown?.cause).toBe(runsError);
+
+    // Both failures must appear in context.failures — neither is lost.
+    const ctx = thrown?.context;
+    expect(ctx).toBeDefined();
+    const failures = ctx?.["failures"];
+    expect(Array.isArray(failures)).toBe(true);
+    expect((failures as unknown[]).length).toBe(2);
+    const driverNames = (failures as Array<{ driver: string }>).map(
+      (f) => f.driver,
+    );
+    expect(driverNames).toContain("runOutputs");
+    expect(driverNames).toContain("sessionArtifacts");
+
+    // Telemetry succeeded — its outcome is in context.
+    expect(ctx).toHaveProperty("telemetry");
+    expect(ctx).not.toHaveProperty("runOutputs");
+    expect(ctx).not.toHaveProperty("sessionArtifacts");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Gap 2 — default openStore (the production path at cleanup.ts:349)
+// Every other test injects the openStore seam; the production code path
+// `options.openStore ?? ((location) => openConsoleStore({ location }))` is
+// never executed. This test calls runCleanup WITHOUT openStore, pointing
+// M3L_CONSOLE_DB_PATH at a file inside a mkdtemp directory so the real
+// SQLite store is opened without touching the workspace's data/console/.
+// ---------------------------------------------------------------------------
+
+describe("runCleanup — default openStore (real SQLite path)", () => {
+  let dbDir: string;
+
+  beforeEach(async () => {
+    dbDir = await mkdtemp(join(tmpdir(), "m3l-cleanup-db-"));
+  });
+
+  afterEach(async () => {
+    await rm(dbDir, { recursive: true, force: true });
+  });
+
+  test("opens the real console store when no openStore seam is injected", async () => {
+    const dbPath = join(dbDir, "console.sqlite");
+
+    // Do NOT pass openStore — the production default path must execute.
+    const outcome = await runCleanup({
+      env: {
+        M3L_CONSOLE_DB_PATH: dbPath,
+        M3L_CONSOLE_RUNS_OUTPUT_ROOT: runsRoot,
+        M3L_CONSOLE_SESSIONS_ARTIFACT_ROOT: artifactRoot,
+      },
+      nowMs: () => FAR_FUTURE_MS,
+    });
+
+    // Empty store → zero counts across all three drivers.
+    expect(outcome.telemetry.total).toBe(0);
+    expect(outcome.runOutputs.deleted).toBe(0);
+    expect(outcome.sessionArtifacts.deleted).toBe(0);
+
+    // Both filesystem roots were created by the outer beforeEach — they exist.
+    expect(outcome.runOutputs.rootExisted).toBe(true);
+    expect(outcome.sessionArtifacts.rootExisted).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Case 6: no pending timers (broader variant — after a failure too)
 // ---------------------------------------------------------------------------
 
