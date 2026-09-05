@@ -249,6 +249,11 @@ expect(new Set(names).size).toBe(names.length);
 - Test observable behavior, not implementation details or private paths.
 - Do not weaken assertions to make a test pass. If the contract looks wrong, say
   so rather than codifying a bug.
+- **Never run `git stash`, `git stash pop`, or `git checkout --`.** The stash
+  stack is shared across every worktree of this repository, so a concurrent
+  session's entry can be on top of it — popping takes theirs, and `git diff`
+  reports a clean tree afterwards. You never need to set work aside; if the
+  tree is in a state you cannot proceed from, stop and report it.
 - **When asked to test a specific behavior another spoke's report claimed** (an
   error code, a wrapping shape, a propagation path), verify it against the real
   source first — a prior report is a summary, not ground truth. If the source

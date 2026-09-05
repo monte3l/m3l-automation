@@ -146,6 +146,7 @@ backstop for the step above, not a substitute for it.
 | 2026-09-03 | x12-container-stance-and-loopback-refactor                     | [x12-container-stance-and-loopback-refactor](./2026-09-03-x12-container-stance-and-loopback-refactor.md) |
 | 2026-09-03 | X12 console containerization, PR3                              | [x12-containerization-images-and-scanning](./2026-09-03-x12-containerization-images-and-scanning.md)     |
 | 2026-09-04 | `x11e-sqs-drilldown-acceptance`                                | [x11e-sqs-drilldown-acceptance](./2026-09-04-x11e-sqs-drilldown-acceptance.md)                           |
+| 2026-09-05 | X8 — self-telemetry + retention, wave close-out (issue #556)   | [x8-close-out](./2026-09-05-x8-close-out.md)                                                             |
 
 > X1 (governance docs) and X2 (`m3l-console-server` skeleton) shipped without
 > logs; X3 is the first entry in this wave.

@@ -657,6 +657,118 @@ both and no renumbering is needed. Recorded here rather than quietly fixed
 because the earlier Update reads as though the bump had already happened, and
 the next reader deriving the current version from this ADR would be wrong.
 
+## Update (2026-09-05, second) — X8 closes: the shipped shape differs from the planned one in four places, and its last open decision resolves as "no `CHECK`"
+
+X8 — self-telemetry + retention — is complete, and the tracker rows in
+`docs/ROADMAP.md` and `docs/plans/IMPLEMENTATION.md` flip with this Update.
+This section is the decision-of-record for what closed, because the slicing
+document it was planned in
+([`2026-09-03-x8-telemetry-slice-replan.md`](../plans/archive/2026-09-03-x8-telemetry-slice-replan.md),
+now archived) projected eleven PRs and the wave landed a different shape.
+A reader deriving X8's scope from that plan would be wrong in four places.
+
+### What the wave actually shipped
+
+Sixteen substantive PRs plus four docs/log PRs, against the plan's eleven:
+
+- **The store** (pre-dating the re-slice) — PRs 917, 927, 931, 952. The
+  telemetry rollup table (v9), the `atMs` guard, dimension trimming, and the
+  symmetric measure `CHECK` (v11).
+- **The port and the producers** — 971 (2a, recorder port + seam), 979 (2b,
+  HTTP latency and outcome), 982 (3a, script-run duration), 990 (3b, SSE
+  stream terminations), 991 (3c, launch-gate decisions), 992 (3d, store-size
+  sampling at boot), 993 (follow-ups).
+- **The read path** — 1017 (4a), `GET /api/v1/telemetry` over the rollup
+  buckets.
+- **Retention** — 1024 (5a, telemetry), 1028 (5b, run outputs), 1037 (5b-ii,
+  session artifacts), 1042 (5c, the operator cleanup command), 1052 (5a-ii,
+  the audit trail's footprint, per the Update above).
+- **The audited-scope guard** — 1021, which retired slice 4b rather than
+  implementing it.
+
+### The four divergences, each with its reason
+
+1. **Slice 4b was retired, not shipped.** It was budgeted as a 13th
+   `M3LHumanActionKind` plus a `CHECK`-widening migration, on the reasoning
+   that 4a added a view endpoint and this ADR audits views. The premise did
+   not survive re-derivation: `boot/human-action-specs.ts` had already
+   decided that `view.*` covers sensitive-class renderings only, and every
+   unaudited `/api/v1` path is a GET list or detail. `GET /api/v1/telemetry`
+   is a collection endpoint, and this ADR puts telemetry on the _persist_
+   side of its own display-vs-persist rule — a sink, not a rendering. The
+   fourth Update above carries the full argument. `M3LHumanActionKind` still
+   declares twelve members. What shipped instead is a test pinning the set of
+   GET-method spec keys to exactly the three sensitive-class renderings, so
+   the vocabulary can no longer drift in the one direction nothing detected.
+2. **Slice 3c split into 3c and 3d.** Policy posture and store health were
+   planned as one PR and landed as two, because the store-size sample is a
+   boot-time producer with its own lifecycle rather than a second dimension
+   on the launch-gate path.
+3. **Slice 5b split into 5b and 5b-ii.** Run-output sweeping and
+   session-artifact sweeping were one row; the artifact half needed a `410`
+   for a retained-out read, which is an API-surface decision the run-output
+   half does not carry.
+4. **Slice 5a's audit half inverted.** Planned as audit-segment pruning, it
+   shipped as a read-only inventory — the Update immediately above this one
+   is that decision, and it is the largest single departure from the plan.
+
+None of the four is a defect in the slicing; each is a case of re-derivation
+at implementation time contradicting a claim authored days earlier. That is
+the discipline working, and it is why the plan archives rather than being
+edited to match.
+
+### The `outcome` vocabulary does not gain a `CHECK`
+
+The slicing document carried a second open decision beside the audit-pruning
+one: "whether the `outcome` vocabulary gains a `CHECK`", independent of the
+counter-measure `CHECK` shipped as v10. It was never assigned an owner. It
+resolves here as **no**, so that X8 does not close with a question dangling in
+an archived file.
+
+`telemetry_rollups.outcome` stays `TEXT NOT NULL` with no enum `CHECK`, for
+four reasons that are properties of the code rather than preferences:
+
+- **The vocabulary is not this package's to pin.** A `run.finished` sample's
+  outcome is `Core.M3LRunOutcome`, a five-member union owned by
+  `m3l-common` (`core/diagnostics/run-report.ts`). A `CHECK` in the console's
+  migration chain would freeze a vocabulary another package versions
+  independently, so a library minor adding a sixth outcome would begin
+  failing `INSERT`s at runtime with nothing failing at compile time.
+- **The repair would be a table recreate, every time.** SQLite cannot `ALTER`
+  a `CHECK` — `store/migrations/human-actions.ts` states this and pays it
+  once. Pinning an externally-owned vocabulary would make that cost recur on
+  someone else's release schedule.
+- **The value space is metric-dependent, so the constraint would be a cross
+  product.** HTTP status classes, run outcomes, SSE termination reasons and
+  `allow`/`deny` share one column, which is also part of the `PRIMARY KEY`.
+- **The call sites already bound it, totally.** `statusClassOf`
+  (`http/finish-request.ts`) is total by construction with `"other"` as its
+  floor, matching the recorder port's never-throws contract; the port's own
+  TSDoc records these dimensions as deliberately plain strings bounded at the
+  call site. The structural constraint that does matter — that a
+  `store.health` row carries no outcome — is already a `CHECK` in the v9 DDL.
+
+The `metric` column keeps its enum `CHECK`: that vocabulary is this package's
+own, closed, and small.
+
+### What X8 does not close
+
+Four gaps surfaced during the wave and are deliberately outside X8's scope.
+Each is filed as its own tracker row rather than left in prose here, since a
+follow-up named only in an ADR cannot be projected onto the board:
+
+- **X8a** — a human-action spec keyed to a route path that no longer exists is
+  never consulted and never reported (fourth Update above). The two earlier
+  Updates describing this as unowned are superseded by that row.
+- **X8b** — the audit trail is unbounded by design, and the new usage report
+  is the only signal an operator gets about it (Update above). Bounding it
+  needs a writer-format change.
+- **X8c** — the operator cleanup command's failure context reports an
+  `M3LConsoleError` code as `errno` for any driver that double-wraps.
+- **X8d** — `m3l-common`'s `isFileNotFound` discriminates `ENOENT` on the
+  prototype chain rather than with `Object.hasOwn`; consistency hygiene, not
+  reachable through real filesystem input.
+
 ## Links
 
 - Programme: [ADR-0064](./0064-m3l-console-programme.md). Store/index:
