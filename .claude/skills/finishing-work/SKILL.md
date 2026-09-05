@@ -53,6 +53,16 @@ gh pr view --json state,mergedAt,headRefName,baseRefName
 Record `headRefName` — every later step operates on this branch, not
 whatever the user typed.
 
+Also capture any **literal-mode** slice-progress entry now, before Step 3
+removes the worktree it lives in: read `tmp/slice-progress.json` in the
+current worktree/checkout. If it exists, is stamped for `headRefName`, and
+carries a `wave` field with no `page` field (literal mode — ADR-0072's
+escape hatch for a non-submodule multi-PR wave with no committed
+landing-plan table), record its `{wave, current, total, label}` for Step 8.
+It lives only in this gitignored `tmp/`, so once the worktree is gone it's
+unrecoverable — a derived-mode entry (`page` field) needs no such capture,
+since it's re-read from committed docs and unaffected by worktree removal.
+
 ### 2 — Return to `main` and pull
 
 ```bash
@@ -192,18 +202,18 @@ orphan.
 
 ### 8 — Check for a remaining slice (ADR-0072)
 
-Only applies when `headRefName` (Step 1) landed part of a submodule — the one
-case with a durable, machine-checkable slice record today
-(`bin/check-scaffold-seam.mjs`'s `LANDING_PLAN_HEADING`). A non-submodule
-multi-PR task (X8/X11/X12-style) has no equivalent record and is out of this
-step's scope — see `## Notes` below.
+Two cases, depending on whether `headRefName` (Step 1) landed part of a
+submodule (a durable, machine-checkable slice record) or a non-submodule
+multi-PR wave (an ephemeral one, captured in Step 1 — see `## Notes` below
+for why literal mode has no durable record to re-derive here).
 
-If the just-merged work touched `packages/m3l-common/src/{core,aws}/<mod>/`,
-read that submodule's `docs/reference/<ns>/<mod>.md` for a `## Landing plan`
-heading and parse its slice table. If the heading is absent, or every row's
-Status is `Landed`, nothing remains — run `pnpm slice:clear` (blanks the
-statusline's slice-progress segment; a no-op if it was never set) and proceed
-to Step 9 as today, this is still the terminal case.
+**Submodule case.** If the just-merged work touched
+`packages/m3l-common/src/{core,aws}/<mod>/`, read that submodule's
+`docs/reference/<ns>/<mod>.md` for a `## Landing plan` heading and parse its
+slice table. If the heading is absent, or every row's Status is `Landed`,
+nothing remains — run `pnpm slice:clear` (blanks the statusline's
+slice-progress segment; a no-op if it was never set) and proceed to Step 9,
+this is still the terminal case.
 
 **If a row's Status is not `Landed`,** a slice remains. Don't stop here:
 
@@ -223,6 +233,23 @@ to Step 9 as today, this is still the terminal case.
 3. Report which slice is starting, quoting its `## Landing plan` row,
    instead of Step 9's terminal report.
 
+**Non-submodule wave case.** If Step 1 captured a literal-mode
+slice-progress entry (`{wave, current, total, label}`), the just-merged PR
+was slice `current` of `total` in that wave.
+
+- **`current < total`:** a slice remains. Ask the user for the next slice's
+  slug (there is no landing-plan row to derive it from), then follow the
+  same three sub-steps as the submodule case — `worktree:new` +
+  `EnterWorktree`, abbreviated `starting-work` re-entry, session name — and
+  in the new worktree run `pnpm slice:set -- --wave <wave> --current
+<current + 1> --total <total> [--label <label>]` so the segment continues
+  immediately at the next position. Report which slice is starting instead
+  of Step 9's terminal report.
+- **`current >= total`** (the just-merged PR was the wave's last slice), or
+  Step 1 captured nothing: there is nothing to continue — proceed to Step 9
+  as the terminal case. There is no `slice:clear` to run here; the entry
+  lived only in the now-removed worktree's `tmp/` and is already gone.
+
 This makes `finishing-work` a third workflow entry point wired into
 ADR-0072's slice discipline, alongside `starting-work` and `creating-prs` —
 see that ADR's 2026-09-04 amendment.
@@ -231,10 +258,10 @@ see that ADR's 2026-09-04 amendment.
 
 One-line summary: branch deleted (or kept, with why), refs pruned count,
 tracker flip done/skipped, `sync:hub` run/skipped, work log
-present/written/skipped/n/a (out of scope), journals swept/left, and
-(submodule work only) whether Step 8 found a remaining slice. This is the
-close-out record for a task with no remaining slice — nothing after this
-step is expected to run.
+present/written/skipped/n/a (out of scope), journals swept/left, and whether
+Step 8 found a remaining slice (submodule or non-submodule wave). This is
+the close-out record for a task with no remaining slice — nothing after
+this step is expected to run.
 
 ## Notes
 
@@ -248,11 +275,17 @@ step is expected to run.
   `delete_branch_on_merge` setting is off — that's the GitHub-side
   precondition for the remote branch disappearing on its own; this skill's
   Step 3/4 handle only the _local_ residue regardless of that setting.
-- Step 8's remaining-slice check is submodule-scoped by design — it reads
-  the one durable slice record `check-scaffold-seam.mjs` already enforces.
-  A non-submodule multi-PR task (a process/tooling change spanning several
-  PRs, X8/X11/X12-style) has no equivalent record; tell the user Step 8
-  found nothing to continue automatically rather than silently treating the
-  task as finished, and file a tracker row if a durable record for that
-  case is worth building later — this pass deliberately did not invent a
-  second mechanism.
+- Step 8's two cases are asymmetric on purpose. The submodule case reads a
+  durable, machine-checkable record (`check-scaffold-seam.mjs`'s
+  `LANDING_PLAN_HEADING`/table) that survives independently of any one
+  session or worktree. The non-submodule wave case has no equivalent
+  durable record — literal-mode `tmp/slice-progress.json` is deliberately
+  ephemeral and gitignored (ADR-0072's 2026-09-04 amendment) — so Step 8
+  depends on Step 1 having captured it **before** Step 3 deletes the
+  worktree it lives in. A session that skips Step 1's capture (or resumes
+  `finishing-work` mid-flow after the worktree is already gone) has no way
+  to recover that state after the fact; it simply reports nothing to
+  continue, indistinguishable from a wave's last slice. This is a known,
+  accepted gap — mirroring the deliberate choice in ADR-0072's 2026-09-04
+  amendment not to invent a second durable record for this case — not a
+  defect to fix reflexively if it recurs.

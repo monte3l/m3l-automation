@@ -11,7 +11,12 @@
 //   (b) a row for <module> in docs/implementation-status.md, and
 //   (c) while that row's status is not yet ✅, a "## Landing plan" heading on
 //       docs/reference/<ns>/<module>.md (ADR-0072) — the seam-plan record
-//       `implementing-submodules` Step 5 fills in before RED/GREEN.
+//       `implementing-submodules` Step 5 fills in before RED/GREEN — whose
+//       section also parses as a `| Slice | Scope | Status |` table via the
+//       same parser the statusline's slice-progress segment and
+//       `bin/slice-progress.mjs`'s `set`-time validation both depend on, so
+//       a heading with no usable table (prose, a numbered list) fails here
+//       too rather than passing a gate the CLI would itself refuse.
 //
 // This fills the gap between the sibling gates: check-scaffold proves the
 // barrel <-> src wiring, and the doc-exports gate proves the barrel is
@@ -26,6 +31,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseJsonFlag, createReporter, repoRoot } from "./lib/report.mjs";
+import { parseLandingPlanProgress } from "../.claude/hooks/statusline-context-pressure.mjs";
 
 const root = repoRoot(import.meta.url);
 const pkg = join(root, "packages/m3l-common");
@@ -120,12 +126,23 @@ export const LANDING_PLAN_HEADING = /^##\s+Landing plan\s*$/m;
  * of the CLI block so the branching decision — as opposed to just its
  * message text — is directly unit-testable.
  *
+ * The `"unparseable-table"` arm reuses the exact parser the statusline's
+ * slice-progress segment (and `bin/slice-progress.mjs`'s own `set`-time
+ * validation) depend on, so this gate can never be weaker than the CLI that
+ * writes against it: a heading with no parseable `| Slice | Scope | Status |`
+ * table (e.g. a numbered-list or prose plan) previously passed this check
+ * while `pnpm slice:set --page` refused it outright — the gate agreed with
+ * neither the CLI nor the statusline about what counts as a usable plan.
+ *
  * @param {string | null} refText
- * @returns {"ok" | "missing-page" | "missing-heading"}
+ * @returns {"ok" | "missing-page" | "missing-heading" | "unparseable-table"}
  */
 export function landingPlanVerdict(refText) {
   if (refText === null) return "missing-page";
-  return LANDING_PLAN_HEADING.test(refText) ? "ok" : "missing-heading";
+  if (!LANDING_PLAN_HEADING.test(refText)) return "missing-heading";
+  return parseLandingPlanProgress(refText) === null
+    ? "unparseable-table"
+    : "ok";
 }
 
 // Everything below only runs when this file is executed directly (`node
@@ -196,6 +213,12 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
         } else if (verdict === "missing-heading") {
           reporter.error(
             `docs/reference/${ns}/${mod}.md is missing a "## Landing plan" heading — required while status is not yet ✅ (ADR-0072)`,
+            { file: `docs/reference/${ns}/${mod}.md` },
+          );
+          errors++;
+        } else if (verdict === "unparseable-table") {
+          reporter.error(
+            `docs/reference/${ns}/${mod}.md's "## Landing plan" section has a heading but no parseable Slice/Status table — the statusline's slice-progress segment would never render for it. See docs/adr/0072-reviewable-slice-discipline.md's amendment for the required "| Slice | Scope | Status |" table shape.`,
             { file: `docs/reference/${ns}/${mod}.md` },
           );
           errors++;

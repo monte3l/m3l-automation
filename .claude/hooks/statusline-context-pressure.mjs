@@ -186,10 +186,47 @@ export function parseGitdirPointer(content) {
 /**
  * Walks upward from `startDir` looking for `.git` (a directory, the normal
  * case, or a file pointing at the real gitdir, the linked-worktree /
- * submodule case) and resolves the current branch from its `HEAD` file.
- * Pure with respect to actual disk I/O — all reads go through the injected
- * `readFile`, so this is directly unit-testable without touching a real
- * filesystem.
+ * submodule case) and returns the directory that holds it — the resolved
+ * workspace root. Pure with respect to actual disk I/O — all reads go
+ * through the injected `readFile` — so this is directly unit-testable
+ * without touching a real filesystem.
+ *
+ * Shared by `resolveBranch` (below) and `resolveSliceProgress`: both need
+ * "the root `tmp/`-relative state is anchored at," and
+ * `payload.workspace.current_dir` is not always that root — it diverges the
+ * moment a session `cd`s into a subdirectory, or enters a worktree
+ * in-session (`EnterWorktree`, ADR-0013/0014). Resolving the same way
+ * `resolveBranch` always has (rather than trusting `startDir` verbatim)
+ * means a slice-progress entry and its branch stamp are always checked
+ * against the same root.
+ *
+ * @param {(path: string) => string | null} readFile injected file reader;
+ *   returns the file content or null when unreadable/absent.
+ * @param {unknown} startDir directory to start the upward walk from; a
+ *   non-string or empty value returns null rather than throwing.
+ * @returns {string | null} the resolved workspace root, or null when no
+ *   `.git` is found within the walk bound.
+ */
+export function resolveWorkspaceRoot(readFile, startDir) {
+  if (typeof startDir !== "string" || startDir.length === 0) return null;
+
+  let dir = startDir;
+  for (let i = 0; i < 40; i++) {
+    if (typeof readFile(join(dir, ".git", "HEAD")) === "string") return dir;
+    if (typeof readFile(join(dir, ".git")) === "string") return dir;
+
+    const parent = dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+  return null;
+}
+
+/**
+ * Resolves the current branch from the workspace root {@link resolveWorkspaceRoot}
+ * finds by walking upward from `startDir` — handling both a `.git` directory
+ * (the normal case) and a `.git` file pointing at the real gitdir (the
+ * linked-worktree / submodule case).
  *
  * @param {(path: string) => string | null} readFile injected file reader;
  *   returns the file content or null when unreadable/absent.
@@ -199,28 +236,23 @@ export function parseGitdirPointer(content) {
  *   resolved.
  */
 export function resolveBranch(readFile, startDir) {
-  if (typeof startDir !== "string" || startDir.length === 0) return null;
+  const dir = resolveWorkspaceRoot(readFile, startDir);
+  if (dir === null) return null;
 
-  let dir = startDir;
-  for (let i = 0; i < 40; i++) {
-    const headContent = readFile(join(dir, ".git", "HEAD"));
-    if (typeof headContent === "string") {
-      return parseHeadRef(headContent);
-    }
-
-    const gitEntry = readFile(join(dir, ".git"));
-    if (typeof gitEntry === "string") {
-      const pointer = parseGitdirPointer(gitEntry);
-      if (pointer === null || pointer.length === 0) return null;
-      const resolvedGitDir = isAbsolute(pointer) ? pointer : join(dir, pointer);
-      const linkedHead = readFile(join(resolvedGitDir, "HEAD"));
-      return typeof linkedHead === "string" ? parseHeadRef(linkedHead) : null;
-    }
-
-    const parent = dirname(dir);
-    if (parent === dir) return null;
-    dir = parent;
+  const headContent = readFile(join(dir, ".git", "HEAD"));
+  if (typeof headContent === "string") {
+    return parseHeadRef(headContent);
   }
+
+  const gitEntry = readFile(join(dir, ".git"));
+  if (typeof gitEntry === "string") {
+    const pointer = parseGitdirPointer(gitEntry);
+    if (pointer === null || pointer.length === 0) return null;
+    const resolvedGitDir = isAbsolute(pointer) ? pointer : join(dir, pointer);
+    const linkedHead = readFile(join(resolvedGitDir, "HEAD"));
+    return typeof linkedHead === "string" ? parseHeadRef(linkedHead) : null;
+  }
+
   return null;
 }
 
@@ -459,22 +491,33 @@ export function parseLandingPlanProgress(pageText) {
  * Resolves the slice-progress state for the current render, or null when
  * none applies. Reads `tmp/slice-progress.json` (written by
  * `bin/slice-progress.mjs`) and, in derived mode, the reference page it
- * points at — both via the given `readFile` so this stays a pure function
- * of its inputs for testing, matching `resolveBranch`'s shape.
+ * points at — both resolved against {@link resolveWorkspaceRoot}'s walked
+ * root, not `startDir` verbatim (falling back to `startDir` when no `.git`
+ * is found within the walk bound, e.g. under test with a stub `readFile`
+ * that simulates no filesystem at all). `startDir` alone
+ * (`payload.workspace.current_dir`) is not always the workspace root — it
+ * diverges from `tmp/slice-progress.json`'s actual location the moment a
+ * session `cd`s into a subdirectory or enters a worktree in-session
+ * (`EnterWorktree`, ADR-0013/0014), which is why the segment could
+ * previously fail to render even immediately after `slice:set`. Every read
+ * goes through the given `readFile` so this stays a pure function of its
+ * inputs for testing, matching `resolveBranch`'s shape.
  *
  * The branch gate mirrors `starting-work`'s handling of a compact-handoff
  * naming a different branch: a slice-progress entry stamped for another
  * branch is not a signal for the current one.
  *
  * @param {(path: string) => string | null} readFile
- * @param {string} startDir the workspace root to resolve `tmp/`/page paths
- *   against (`payload.workspace.current_dir`, per-worktree).
+ * @param {string} startDir the directory to resolve the workspace root
+ *   from (`payload.workspace.current_dir`, per-worktree) — see
+ *   {@link resolveWorkspaceRoot}.
  * @param {string | null} branch the already-resolved current branch.
  * @returns {{ current: number, total: number, label: string | null, allLanded: boolean } | null}
  */
 export function resolveSliceProgress(readFile, startDir, branch) {
   if (typeof branch !== "string" || branch.length === 0) return null;
-  const raw = readFile(join(startDir, "tmp/slice-progress.json"));
+  const root = resolveWorkspaceRoot(readFile, startDir) ?? startDir;
+  const raw = readFile(join(root, "tmp/slice-progress.json"));
   if (raw === null) return null;
 
   let entry;
@@ -488,7 +531,7 @@ export function resolveSliceProgress(readFile, startDir, branch) {
   }
 
   if (typeof entry.page === "string" && entry.page.length > 0) {
-    const pageText = readFile(join(startDir, entry.page));
+    const pageText = readFile(join(root, entry.page));
     return pageText === null ? null : parseLandingPlanProgress(pageText);
   }
 
