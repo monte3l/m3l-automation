@@ -143,6 +143,29 @@ revisit trigger was retired by
 ADR-0030's 2026-08-14 amendment (issue #344) — don't migrate a skill's
 mechanism without re-reading that amendment's re-open condition first.
 
+## External documentation
+
+`context7` is a documentation-lookup MCP server, declared in `.mcp.json`
+since before ADR-0030 and made secretless by its Phase 2 but never named or
+governed by it directly. [ADR-0093](../adr/0093-documentation-lookup-mcp-context7.md)
+is the decision of record: allowlist, mechanism, and a freshness gate
+(`check:reference-freshness`) over the three reference snapshots it sourced.
+
+| Surface                       | Mechanism                                                 | Why                                                                                                                                       |
+| ----------------------------- | --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `tsconfig-strict-esm`         | `mcp__context7__*` (hub-invoked, authoring the reference) | Its `references/tsconfig-strict-esm.md` snapshot was sourced from Context7; refreshed on a major TypeScript bump                          |
+| `eslint-flat-config`          | `mcp__context7__*` (hub-invoked, authoring the reference) | Its `references/eslint-flat-config.md` snapshot was sourced from Context7; refreshed on a major ESLint bump                               |
+| `vitest-coverage-types-mocks` | `mcp__context7__*` (hub-invoked, authoring the reference) | Its `references/vitest-coverage-types-mocks.md` snapshot was sourced from Context7; refreshed on any minor bump touching mocking/coverage |
+| `implementing-submodules`     | `mcp__context7__*` (`code-implementer` spoke grant)       | Step 4's dist-types verification needs behavioral semantics (retry/backoff, terminal-state classification) a `.d.ts` cannot express       |
+| `reviewing-dependabot-prs`    | `mcp__context7__*` (hub-invoked, escalation path only)    | An option within Step 3d's escalation path for API-shape/migration questions, alongside — never in place of — the release-notes fallback  |
+
+Two structural constraints apply: **hub-invoked except the one scoped
+`code-implementer` grant** ADR-0093 records (see
+`docs/contributing/agent-operating-model.md`'s MCP-hub-only bullet for the
+exception), and **unavailable in headless CI** (`claude-pr-review.yml` pins a
+scoped `--allowedTools` with no `--mcp-config`) — no skill may _depend_ on it
+to run.
+
 ## How to re-check usage
 
 **Primary source: real invocation counts, not a name grep.** `resolving-pr-

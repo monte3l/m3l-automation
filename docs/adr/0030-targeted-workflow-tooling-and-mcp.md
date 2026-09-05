@@ -268,16 +268,36 @@ and governance registration. Nothing in this ADR's decision items is
 superseded; the tool-design rules it adopted (fewer, workflow-shaped
 tools) apply to the runtime surface as well.
 
+## Amendment (2026-09-05)
+
+[ADR-0093](./0093-documentation-lookup-mcp-context7.md) fires this ADR's
+2026-08-14 amendment re-open condition #1: `code-implementer` — and only
+`code-implementer` — is to be granted a scoped `mcp__context7__*` tool for
+one logged need (verifying AWS SDK behavioral semantics `dist-types` cannot
+express), delivered in a later PR of ADR-0093's own delivery sequence. **Once
+that PR lands, "MCP is hub-only" in the 2026-07-27 amendment's structural-
+blockers text stops being universally true**; read it from then on as
+"hub-only, except the one scoped grant ADR-0093 records" — until it lands,
+the invariant still holds exactly as stated. ADR-0093 re-examines the five
+GitHub-facing skills' mechanism under this condition and reaffirms gh-CLI for
+all five unchanged — the grant is to a spoke with no GitHub-facing role, so
+neither the coverage matrix nor the toolset decision above is affected. The
+headless-CI structural blocker is untouched: `code-implementer` still cannot
+rely on any MCP server inside `claude-pr-review.yml`.
+
 ## Links
 
 - Supersedes / superseded by: the 2026-07-27 amendment supersedes decision
   item 4's original migration trigger; the 2026-08-14 amendment above
   supersedes the 2026-07-27 amendment's _revisit trigger_ specifically (its
   coverage matrix, toolset decision, and structural blockers stand
-  unchanged). Nothing supersedes this ADR as a whole. Retires the "GitHub MCP
-  blocked by enterprise policy" claim formerly stated in
+  unchanged, except as corrected by the 2026-09-05 amendment). Nothing
+  supersedes this ADR as a whole. Retires the "GitHub MCP blocked by
+  enterprise policy" claim formerly stated in
   `.claude/skills/triaging-ci/SKILL.md` and
   `.claude/skills/triaging-scan-alerts/SKILL.md`.
+- Amended by [ADR-0093](./0093-documentation-lookup-mcp-context7.md) — the
+  hub-only invariant's one scoped exception.
 - Delivery record:
   [`docs/logs/2026-07-17-adr-0030-workflow-tooling-mcp.md`](../logs/2026-07-17-adr-0030-workflow-tooling-mcp.md)
   (Phase 2 row records GitHub MCP auth as OAuth; corrected above — the shipped
