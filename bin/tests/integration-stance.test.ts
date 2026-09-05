@@ -79,7 +79,7 @@ describe("deriveIntegrationStanceIssues", () => {
       },
     ];
     expect(deriveIntegrationStanceIssues(skills)).toEqual({
-      missingStanceNote: ["creating-prs"],
+      missingStanceNote: ["creating-prs (github)"],
       retiredClaims: [],
       mechanismMismatches: [],
     });
@@ -144,8 +144,46 @@ describe("deriveIntegrationStanceIssues", () => {
       },
     ];
     const result = deriveIntegrationStanceIssues(skills);
-    expect(result.missingStanceNote).toEqual(["no-note"]);
+    expect(result.missingStanceNote).toEqual(["no-note (github)"]);
     expect(result.retiredClaims).toEqual(["retired-claim"]);
+    expect(result.mechanismMismatches).toEqual([]);
+  });
+
+  test("a custom descriptors array overrides the default table", () => {
+    const customDescriptors = [
+      {
+        id: "acme",
+        adrPattern: /ADR-9999/,
+        mechanisms: [
+          {
+            id: "acme-cli",
+            usagePattern: /\bacme deploy\b/,
+            declaresPattern: /acme cli/i,
+            usagePhrase: "acme CLI commands",
+            claimPhrase: "the acme CLI",
+          },
+        ],
+      },
+    ];
+    const skills = [
+      {
+        // Uses mcp__github__ (would trip the default GitHub descriptor) but
+        // the caller-supplied table only knows about "acme deploy" — proving
+        // the override replaces, rather than extends, the default table.
+        name: "github-user-of-acme",
+        content:
+          "---\nname: github-user-of-acme\ndescription: no stance note at all.\n---\n\n`mcp__github__list_pull_requests({ owner, repo })`",
+      },
+      {
+        name: "acme-user",
+        content:
+          "---\nname: acme-user\ndescription: no stance note at all.\n---\n\n```bash\nacme deploy --env prod\n```",
+      },
+    ];
+    const result = deriveIntegrationStanceIssues(skills, customDescriptors);
+    // github-user-of-acme's mcp__github__ usage is invisible to this table.
+    expect(result.missingStanceNote).toEqual(["acme-user (acme)"]);
+    expect(result.retiredClaims).toEqual([]);
     expect(result.mechanismMismatches).toEqual([]);
   });
 });
@@ -193,7 +231,7 @@ describe("deriveIntegrationStanceIssues — context7 descriptor", () => {
       },
     ];
     expect(deriveIntegrationStanceIssues(skills)).toEqual({
-      missingStanceNote: ["reviewing-dependabot-prs"],
+      missingStanceNote: ["reviewing-dependabot-prs (context7)"],
       retiredClaims: [],
       mechanismMismatches: [],
     });
@@ -207,8 +245,11 @@ describe("deriveIntegrationStanceIssues — context7 descriptor", () => {
           "---\nname: implementing-submodules\ndescription: >-\n  Docs stance: uses the gh CLI, not context7 (ADR-0092).\n---\n\n`mcp__context7__resolve-library-id({ name })`",
       },
     ];
-    const result = deriveIntegrationStanceIssues(skills);
-    expect(result.mechanismMismatches).toEqual([]);
+    expect(deriveIntegrationStanceIssues(skills)).toEqual({
+      missingStanceNote: [],
+      retiredClaims: [],
+      mechanismMismatches: [],
+    });
   });
 
   test("GitHub and context7 descriptors are checked independently on the same skill", () => {
@@ -222,7 +263,7 @@ describe("deriveIntegrationStanceIssues — context7 descriptor", () => {
     const result = deriveIntegrationStanceIssues(skills);
     // GitHub side is clean (ADR-0030 present, gh CLI declared and used);
     // context7 side has no ADR-0092 reference at all.
-    expect(result.missingStanceNote).toEqual(["creating-prs"]);
+    expect(result.missingStanceNote).toEqual(["creating-prs (context7)"]);
     expect(result.mechanismMismatches).toEqual([]);
   });
 });

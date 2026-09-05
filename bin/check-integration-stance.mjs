@@ -35,9 +35,9 @@ const skills = skillFiles.map((file) => ({
 const { missingStanceNote, retiredClaims, mechanismMismatches } =
   deriveIntegrationStanceIssues(skills);
 
-for (const name of missingStanceNote) {
+for (const entry of missingStanceNote) {
   reporter.error(
-    `"${name}" uses a governed external-integration mechanism (GitHub — gh CLI or GitHub MCP, ADR-0030; or documentation lookup — context7 MCP, ADR-0092) but its SKILL.md frontmatter carries no reference to the governing ADR. See docs/contributing/skills-catalog.md's "GitHub integration" / "External documentation" sections for the required stance-note format.`,
+    `"${entry}" uses that integration's mechanism but its SKILL.md frontmatter carries no reference to the governing ADR (GitHub → ADR-0030; context7 → ADR-0092). See docs/contributing/skills-catalog.md's "GitHub integration" / "External documentation" sections for the required stance-note format.`,
   );
 }
 for (const name of retiredClaims) {

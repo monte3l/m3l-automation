@@ -131,6 +131,13 @@ function stripFrontmatter(content) {
  */
 
 /**
+ * `missingStanceNote` entries are `"<skill name> (<descriptor id>)"`, not a
+ * bare skill name — a skill missing the stance for two descriptors at once
+ * (e.g. GitHub and context7) gets two distinct, actionable entries rather
+ * than a literal duplicate of the same string.
+ */
+
+/**
  * Derive every integration-stance drift issue across a set of skill files,
  * checked independently against every descriptor in {@link INTEGRATION_DESCRIPTORS}
  * (or a caller-supplied override, for testing one descriptor in isolation).
@@ -174,12 +181,18 @@ export function deriveIntegrationStanceIssues(
       if (usedMechanisms.length === 0) continue;
 
       if (!descriptor.adrPattern.test(frontmatterBlock)) {
-        issues.missingStanceNote.push(name);
+        // Keyed by descriptor id, not just the skill name: a skill using
+        // both GitHub and context7 surfaces with neither ADR referenced
+        // gets two distinct, actionable entries here rather than a
+        // literal duplicate of the same string.
+        issues.missingStanceNote.push(`${name} (${descriptor.id})`);
         continue;
       }
 
       // Nothing to mismatch against with a single-mechanism descriptor
-      // (e.g. context7, which has only its MCP server).
+      // (e.g. context7, which has only its MCP server) — declaresPattern
+      // on a lone mechanism is forward-looking config for a future second
+      // mechanism, never evaluated while mechanisms.length < 2.
       if (descriptor.mechanisms.length < 2) continue;
 
       // First-match-wins, in descriptor order — mirrors the pre-
