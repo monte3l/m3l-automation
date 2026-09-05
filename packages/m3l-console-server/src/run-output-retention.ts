@@ -288,7 +288,7 @@ export async function pruneRunOutputs(
     orphaned: 0,
   };
 
-  const rootResult = await readdirRoot(runsOutputRoot);
+  const rootResult = await readdirRoot(runsOutputRoot, "runs output");
   if (!rootResult.present) {
     return { ...outcome, rootExisted: false };
   }

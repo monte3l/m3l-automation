@@ -495,7 +495,7 @@ export async function pruneSessionArtifacts(
     orphaned: 0,
   };
 
-  const rootResult = await readdirRoot(artifactRoot);
+  const rootResult = await readdirRoot(artifactRoot, "session artifact");
   if (!rootResult.present) {
     return { ...zeroOutcome, rootExisted: false };
   }

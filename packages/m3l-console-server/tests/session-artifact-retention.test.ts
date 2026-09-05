@@ -498,11 +498,12 @@ describe("pruneSessionArtifacts — a present but empty root", () => {
 });
 
 describe("pruneSessionArtifacts — a non-ENOENT readdir failure on the root", () => {
-  test("propagates instead of being swallowed into a zero outcome", async () => {
+  test("raises M3LConsoleError ERR_CONSOLE_INTERNAL chaining the original cause with errno intact, and context carries no absolute path", async () => {
     // A regular file used as the "root" makes readdir fail with ENOTDIR —
     // deterministic and reversible without touching permission bits. Only
     // ENOENT is special-cased into a zero outcome; every other readdir
-    // errno — ENOTDIR here — must propagate unchanged.
+    // errno — ENOTDIR here — must be wrapped in an M3LConsoleError (never
+    // propagated as a raw Node error).
     const filePath = join(root, "not-a-directory");
     await writeFile(filePath, "content", "utf8");
 
@@ -520,8 +521,38 @@ describe("pruneSessionArtifacts — a non-ENOENT readdir failure on the root", (
       thrown = error;
     }
 
-    expect(thrown).toBeInstanceOf(Error);
-    expect((thrown as NodeJS.ErrnoException).code).toBe("ENOTDIR");
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    const consoleError = thrown as M3LConsoleError;
+    expect(consoleError.code).toBe("ERR_CONSOLE_INTERNAL");
+
+    // The original filesystem failure is chained with its errno intact.
+    expect(consoleError.cause).toBeInstanceOf(Error);
+    expect((consoleError.cause as NodeJS.ErrnoException).code).toBe("ENOTDIR");
+
+    // context carries the errno only — never the absolute root path.
+    expect(JSON.stringify(consoleError.context)).not.toContain(root);
+  });
+
+  test("ENOENT still returns rootExisted: false and does not throw — regression guard for the ENOENT branch", async () => {
+    // Widening the ENOENT guard or removing it would make this test fail.
+    const missingRoot = join(root, "enoent-regression");
+    const records = new Map<string, M3LSessionStepRecord>();
+
+    const outcome = await pruneSessionArtifacts({
+      artifactRoot: missingRoot,
+      repository: createFakeSessionsRepository(records),
+      retentionMs: 1_000,
+      nowMs: () => 100_000,
+    });
+
+    expect(outcome.rootExisted).toBe(false);
+    expect(outcome).toEqual({
+      deleted: 0,
+      retainedLive: 0,
+      retainedYoung: 0,
+      orphaned: 0,
+      rootExisted: false,
+    });
   });
 });
 

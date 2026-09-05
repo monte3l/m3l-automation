@@ -56,9 +56,9 @@ export interface MutableOutcome {
 /**
  * The discriminated return of {@link readdirRoot}: either the root was
  * present and its `Dirent` entries are available, or it was absent (an
- * `ENOENT` `readdir` failure). Any other errno re-throws the original cause
- * — that re-throw is preserved exactly as-is; commit 2 wraps it in an
- * {@link M3LConsoleError}.
+ * `ENOENT` `readdir` failure). Any other errno raises an
+ * {@link M3LConsoleError} with code `"ERR_CONSOLE_INTERNAL"`, chaining the
+ * original as `cause`.
  */
 export type RootReaddirOutcome =
   | { readonly present: true; readonly entries: readonly Dirent[] }
@@ -165,20 +165,30 @@ export function sortByName<T extends { readonly name: string }>(
  * Performs the root-directory `readdir` with the `ENOENT` guard shared by
  * both retention drivers: returns `{ present: true, entries }` when the root
  * exists, or `{ present: false }` when it is absent. Any other `readdir`
- * errno re-throws the original cause via `throw cause` — this is the current
- * behaviour, preserved exactly as-is for this commit; commit 2 wraps that
- * re-throw in an {@link M3LConsoleError}.
+ * errno raises an {@link M3LConsoleError} with code `"ERR_CONSOLE_INTERNAL"`,
+ * chaining the original as `cause` and carrying `{ errno }` in `context`
+ * (never the absolute path — the filesystem layout is not something an error
+ * surface should publish).
  *
  * The caller is responsible for mapping `{ present: false }` to its own
  * module-specific zero outcome (e.g. `{ ...zeroOutcome, rootExisted: false }`),
  * since those shapes differ between the two modules and must stay in the
  * caller.
  *
+ * @param rootPath - The root directory to enumerate.
+ * @param subject - A caller-supplied label that lets an operator tell the two
+ *   roots apart in error messages (e.g. `"runs output"` or
+ *   `"session artifact"`). Passed rather than hard-coded so this one helper
+ *   serves both retention modules without being duplicated.
+ *
+ * @throws {@link M3LConsoleError} with code `"ERR_CONSOLE_INTERNAL"` when
+ *   `readdir` fails for any reason other than `ENOENT`.
+ *
  * @example
  * ```ts
  * import { readdirRoot } from "@m3l-automation/m3l-console-server/retention-walk";
  *
- * const result = await readdirRoot("/var/lib/m3l/console/runs");
+ * const result = await readdirRoot("/var/lib/m3l/console/runs", "runs output");
  * if (!result.present) {
  *   return { ...zeroOutcome, rootExisted: false };
  * }
@@ -187,14 +197,20 @@ export function sortByName<T extends { readonly name: string }>(
  */
 export async function readdirRoot(
   rootPath: string,
+  subject: string,
 ): Promise<RootReaddirOutcome> {
   try {
     const entries = await readdir(rootPath, { withFileTypes: true });
     return { present: true, entries };
   } catch (cause) {
-    if (errnoCodeOf(cause) === "ENOENT") {
+    const errno = errnoCodeOf(cause);
+    if (errno === "ENOENT") {
       return { present: false };
     }
-    throw cause;
+    throw new M3LConsoleError(
+      "ERR_CONSOLE_INTERNAL",
+      `${subject} root readdir failed: ${String(errno)}`,
+      { cause, context: { errno } },
+    );
   }
 }
