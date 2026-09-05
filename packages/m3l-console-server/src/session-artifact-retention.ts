@@ -36,9 +36,15 @@
 import { lstat, readdir, unlink } from "node:fs/promises";
 import { join } from "node:path";
 
-import { CONFIG_INVALID_CODE } from "./config/settings.js";
 import { M3LConsoleError } from "./errors/console-error.js";
 import { errnoCodeOf } from "./errors/errno.js";
+import type { AccumulatedFailure, MutableOutcome } from "./retention-walk.js";
+import {
+  readdirRoot,
+  sortByName,
+  validateNowMs,
+  validateRetentionMs,
+} from "./retention-walk.js";
 import {
   SAFE_ID_MAX_LENGTH,
   SAFE_ID_PATTERN,
@@ -72,16 +78,13 @@ interface SessionArtifactPruneFailure {
 }
 
 /**
- * One accumulated deletion failure, paired internally with the original
- * caught value so the thrown {@link M3LConsoleError}'s `cause` can chain the
- * FIRST failure's original error unchanged (by identity) while
- * `context.failures` publishes only the narrow
- * {@link SessionArtifactPruneFailure} shape for every failure.
+ * One accumulated deletion failure for {@link pruneSessionArtifacts}: pairs
+ * the original caught value (for chaining as `cause`) with the narrow
+ * {@link SessionArtifactPruneFailure} shape published in `context.failures`.
+ * Uses {@link "./retention-walk.js".AccumulatedFailure} as its shared base.
  */
-interface AccumulatedFailure {
-  readonly published: SessionArtifactPruneFailure;
-  readonly cause: unknown;
-}
+type SessionAccumulatedFailure =
+  AccumulatedFailure<SessionArtifactPruneFailure>;
 
 /**
  * The result of one {@link pruneSessionArtifacts} run: every artifact file
@@ -144,14 +147,6 @@ export interface PruneSessionArtifactsOptions {
   readonly nowMs?: () => number;
 }
 
-/** The mutable counters {@link pruneSessionArtifacts} accumulates across one walk. */
-interface MutableOutcome {
-  deleted: number;
-  retainedLive: number;
-  retainedYoung: number;
-  orphaned: number;
-}
-
 /**
  * One artifact file's classification result: either the bucket it landed in
  * (matching one of {@link M3LSessionArtifactPruneOutcome}'s four fields), or
@@ -166,49 +161,7 @@ type ClassifyResult =
       readonly bucket:
         "deleted" | "retainedLive" | "retainedYoung" | "orphaned";
     }
-  | { readonly bucket: "failed"; readonly failure: AccumulatedFailure };
-
-/**
- * Validates `options.retentionMs` before {@link pruneSessionArtifacts} touches
- * the filesystem, against the exact predicate `config/retention.ts` enforces
- * at boot for the same window (`m3l.console.sessions.artifact.retention.ms`)
- * — deliberately duplicated here rather than imported, because
- * `pruneSessionArtifacts` is a public function a caller can invoke with a
- * hand-built `retentionMs` that never passed through `loadRetentionConfig`
- * (X8 slice 5c's operator CLI subcommand is exactly such a caller, and
- * `Number("30d")` is `NaN`). The retention window is the ONLY thing bounding
- * a file deletion: with a `NaN` on the right-hand side,
- * `endedAtMs >= nowMs - retentionMs` is always `false`, so every completed
- * step falls through to deletion; a negative value puts the cutoff in the
- * future, so every completed step is "old enough" immediately.
- */
-function validateRetentionMs(retentionMs: number): void {
-  if (!Number.isInteger(retentionMs) || retentionMs < 1) {
-    throw new M3LConsoleError(
-      CONFIG_INVALID_CODE,
-      "'retentionMs' must be an integer of at least 1",
-      { context: { retentionMs } },
-    );
-  }
-}
-
-/**
- * Validates the value returned by the resolved `nowMs()` clock, read once at
- * the top of {@link pruneSessionArtifacts} before any file is classified. A
- * `NaN` clock reading has the same effect as an invalid `retentionMs`: the
- * eligibility comparison `endedAtMs >= nowMs - retentionMs` becomes `false`
- * for every completed step, so a broken clock silently turns a bounded
- * sweep into an unconditional one.
- */
-function validateNowMs(now: number): void {
-  if (!Number.isFinite(now)) {
-    throw new M3LConsoleError(
-      CONFIG_INVALID_CODE,
-      "the resolved 'nowMs()' clock reading must be a finite number",
-      { context: { now } },
-    );
-  }
-}
+  | { readonly bucket: "failed"; readonly failure: SessionAccumulatedFailure };
 
 /**
  * The same disk-derived-id charset/length check `sessions/artifacts.ts`'s
@@ -286,15 +239,6 @@ async function classifyAndSweep(
   }
 }
 
-/** Sorts directory entries by name — see {@link pruneSessionArtifacts}'s own doc for why. */
-function sortByName<T extends { readonly name: string }>(
-  entries: readonly T[],
-): T[] {
-  return [...entries].sort((a, b) =>
-    a.name < b.name ? -1 : a.name > b.name ? 1 : 0,
-  );
-}
-
 /**
  * Walks every session directory under `artifactRoot`'s already-`readdir`'d
  * `rootEntries`, aggregating bucket counts and failures across all of them.
@@ -319,14 +263,14 @@ async function walkSessionDirectories(
   repository: M3LConsoleSessionsRepository,
   retentionMs: number,
   nowMs: number,
-): Promise<{ outcome: MutableOutcome; failures: AccumulatedFailure[] }> {
+): Promise<{ outcome: MutableOutcome; failures: SessionAccumulatedFailure[] }> {
   const outcome: MutableOutcome = {
     deleted: 0,
     retainedLive: 0,
     retainedYoung: 0,
     orphaned: 0,
   };
-  const failures: AccumulatedFailure[] = [];
+  const failures: SessionAccumulatedFailure[] = [];
 
   for (const sessionEntry of sortByName(rootEntries)) {
     if (!sessionEntry.isDirectory()) {
@@ -551,19 +495,14 @@ export async function pruneSessionArtifacts(
     orphaned: 0,
   };
 
-  let rootEntries;
-  try {
-    rootEntries = await readdir(artifactRoot, { withFileTypes: true });
-  } catch (cause) {
-    if (errnoCodeOf(cause) === "ENOENT") {
-      return { ...zeroOutcome, rootExisted: false };
-    }
-    throw cause;
+  const rootResult = await readdirRoot(artifactRoot, "session artifact");
+  if (!rootResult.present) {
+    return { ...zeroOutcome, rootExisted: false };
   }
 
   const { outcome, failures } = await walkSessionDirectories(
     artifactRoot,
-    rootEntries,
+    rootResult.entries,
     repository,
     retentionMs,
     now,
