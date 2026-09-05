@@ -11,16 +11,16 @@ description: >-
 
 # finishing-work
 
-`creating-prs` ends at Step 14, "Confirm mergeability" — it never checks
-whether the PR actually merged, let alone cleans up afterward. Nothing else
-in the repo owns the tail: returning to `main`, deleting the merged branch,
-pruning stale remote-tracking refs, flipping a tracker row, running
-`sync:hub`, or checking that a work log exists. Left undone, that residue
-accumulates silently — a live audit of this repo's own checkout after four
-clean merges found 4 stale remote-tracking refs, 1 stale local branch, 1
-stale worktree, and 1 orphaned spoke journal, none of it caught by any gate
-(`docs/research/harness-refresh.md`, `docs/adr/`). This skill is that
-missing owner.
+`creating-prs` ends at Step 15, "Decide the merge path" — it owns the merge
+itself, but nothing checks whether that merge actually happened, let alone
+cleans up afterward. Nothing else in the repo owns the tail: returning to
+`main`, deleting the merged branch, pruning stale remote-tracking refs,
+flipping a tracker row, running `sync:hub`, or checking that a work log
+exists. Left undone, that residue accumulates silently — a live audit of this
+repo's own checkout after four clean merges found 4 stale remote-tracking
+refs, 1 stale local branch, 1 stale worktree, and 1 orphaned spoke journal,
+none of it caught by any gate (`docs/research/harness-refresh.md`,
+`docs/adr/`). This skill is that missing owner.
 
 `bin/worktree-remove.mjs` and `bin/worktree-prune.mjs` both exist already but
 are worktree-scoped — neither helps when work happened in the shared
@@ -39,8 +39,10 @@ gh pr view --json state,mergedAt,headRefName,baseRefName
 ```
 
 - `state: "MERGED"` with a non-null `mergedAt` → proceed.
-- `state: "OPEN"` → stop and tell the user it hasn't merged yet; nothing else
-  in this skill is safe to run.
+- `state: "OPEN"` → stop, but not with a bare "it hasn't merged yet": the PR
+  isn't merged because the merge decision hasn't been made, and that decision
+  now has a home. Point back at `creating-prs` Step 15, "Decide the merge
+  path" — nothing else in this skill is safe to run before that step resolves.
 - `state: "CLOSED"` with a null `mergedAt` → stop; the PR was closed without
   merging. Ask whether the branch should still be cleaned up (abandoned work)
   or left alone.

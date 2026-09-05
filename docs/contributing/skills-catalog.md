@@ -125,13 +125,13 @@ Five skills talk to GitHub: `creating-prs`, `resolving-pr-comments`,
 governing decision is `docs/adr/0030-targeted-workflow-tooling-and-mcp.md`'s
 2026-07-27 amendment — read it before changing any of the mechanisms below.
 
-| Skill                      | Mechanism                     | Why                                                                                                                 |
-| -------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `resolving-pr-comments`    | GitHub MCP (`mcp__github__*`) | Hub-only, in-process, never a spoke or headless CI — full MCP coverage applies                                      |
-| `creating-prs`             | gh CLI                        | Needs the code-scanning-alerts endpoint; not in the configured default toolset                                      |
-| `reviewing-dependabot-prs` | gh CLI                        | Needs `gh pr merge --auto --squash`; `mcp__github__merge_pull_request` merges immediately, no auto-merge equivalent |
-| `triaging-scan-alerts`     | gh CLI                        | Needs the code-scanning-alerts endpoint; not in the configured default toolset                                      |
-| `triaging-ci`              | gh CLI                        | Needs Actions run/log tools; not in the configured default toolset                                                  |
+| Skill                      | Mechanism                     | Why                                                                                                                                                                                 |
+| -------------------------- | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `resolving-pr-comments`    | GitHub MCP (`mcp__github__*`) | Hub-only, in-process, never a spoke or headless CI — full MCP coverage applies                                                                                                      |
+| `creating-prs`             | gh CLI                        | Needs the code-scanning-alerts endpoint and `gh pr merge [--auto] --squash` (Step 15); `mcp__github__merge_pull_request` has no auto-merge equivalent, same reason as the row below |
+| `reviewing-dependabot-prs` | gh CLI                        | Needs `gh pr merge --auto --squash`; `mcp__github__merge_pull_request` merges immediately, no auto-merge equivalent                                                                 |
+| `triaging-scan-alerts`     | gh CLI                        | Needs the code-scanning-alerts endpoint; not in the configured default toolset                                                                                                      |
+| `triaging-ci`              | gh CLI                        | Needs Actions run/log tools; not in the configured default toolset                                                                                                                  |
 
 Two structural constraints apply to all five, independent of per-skill
 coverage (see `docs/contributing/agent-operating-model.md`): **MCP is
