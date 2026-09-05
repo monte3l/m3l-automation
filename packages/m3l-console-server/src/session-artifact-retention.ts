@@ -33,12 +33,16 @@
  * @packageDocumentation
  */
 
-import { readdir, unlink } from "node:fs/promises";
+import { lstat, readdir, unlink } from "node:fs/promises";
 import { join } from "node:path";
 
 import { CONFIG_INVALID_CODE } from "./config/settings.js";
 import { M3LConsoleError } from "./errors/console-error.js";
 import { errnoCodeOf } from "./errors/errno.js";
+import {
+  SAFE_ID_MAX_LENGTH,
+  SAFE_ID_PATTERN,
+} from "./sessions/artifact-codec.js";
 import type { M3LConsoleSessionsRepository } from "./store/sessions-repository-types.js";
 
 /**
@@ -207,6 +211,22 @@ function validateNowMs(now: number): void {
 }
 
 /**
+ * The same disk-derived-id charset/length check `sessions/artifacts.ts`'s
+ * write-time `assertSafeId` enforces (`SAFE_ID_PATTERN`/`SAFE_ID_MAX_LENGTH`,
+ * `sessions/artifact-codec.ts`), re-applied read-side to every session
+ * directory name and step-id filename stem this sweep derives from the
+ * filesystem before either reaches {@link M3LConsoleSessionsRepository.getStep}.
+ * There is no injection to defend — `getStep` is a bound-parameter prepared
+ * statement — but a name this sweep did not itself mint is untrusted input
+ * at a public boundary regardless, and validating it BEFORE the store lookup
+ * makes that a structural guarantee rather than something that merely
+ * happens to hold because every malformed id currently misses the store.
+ */
+function isSafeDiskId(value: string): boolean {
+  return SAFE_ID_PATTERN.test(value) && value.length <= SAFE_ID_MAX_LENGTH;
+}
+
+/**
  * Classifies one artifact file against its step record (if any) and, when
  * eligible, attempts its deletion.
  *
@@ -222,12 +242,26 @@ async function classifyAndSweep(
   retentionMs: number,
   nowMs: number,
 ): Promise<ClassifyResult> {
+  if (!isSafeDiskId(sessionId) || !isSafeDiskId(stepId)) {
+    // A malformed session directory name or step-id filename stem never
+    // reaches the store lookup at all — see `isSafeDiskId`'s own doc.
+    return { bucket: "orphaned" };
+  }
+
   const step = repository.getStep(stepId);
   if (step === undefined) {
     // No step record at all: unexplained state relative to what
     // `sessions/artifacts.ts` writes. A sweep that silently eats
     // unexplained state is the wrong default under "never silent
     // deletion" — report it, leave the bytes.
+    return { bucket: "orphaned" };
+  }
+  if (step.sessionId !== sessionId) {
+    // The record exists, but the store's own `sessionId` disagrees with the
+    // directory this file was found under — the file is misplaced relative
+    // to what the store says, which is exactly the unexplained state the
+    // orphan bucket exists for. Deleting it would apply a DIFFERENT
+    // session's `endedAtMs`/retention eligibility to this file.
     return { bucket: "orphaned" };
   }
   if (step.endedAtMs === undefined) {
@@ -267,6 +301,17 @@ function sortByName<T extends { readonly name: string }>(
  * Split out of {@link pruneSessionArtifacts} purely to keep that function's
  * cyclomatic complexity under the project's lint ceiling — this holds no
  * independent design rationale beyond that.
+ *
+ * **A per-session `lstat`/`readdir` failure is caught here, not left to
+ * escape as a raw Node error.** Reachable by an ordinary race — a session
+ * directory removed or `chmod`-ed between the root `readdir` and this
+ * function reading it — and without this catch it would discard the
+ * `outcome` counts and `failures` already accumulated from every earlier
+ * session directory processed in this same loop. The rethrown
+ * {@link M3LConsoleError} (code `"ERR_CONSOLE_INTERNAL"`) carries
+ * `context.outcome` (the counts achieved from every session directory walked
+ * so far) and `context.failures` (every per-file failure accumulated so
+ * far), and chains the original filesystem error as `cause` unchanged.
  */
 async function walkSessionDirectories(
   artifactRoot: string,
@@ -287,13 +332,28 @@ async function walkSessionDirectories(
     if (!sessionEntry.isDirectory()) {
       continue;
     }
-    const results = await sweepSessionDirectory(
-      sessionEntry.name,
-      join(artifactRoot, sessionEntry.name),
-      repository,
-      retentionMs,
-      nowMs,
-    );
+    let results: ClassifyResult[];
+    try {
+      results = await sweepSessionDirectory(
+        sessionEntry.name,
+        join(artifactRoot, sessionEntry.name),
+        repository,
+        retentionMs,
+        nowMs,
+      );
+    } catch (cause) {
+      throw new M3LConsoleError(
+        "ERR_CONSOLE_INTERNAL",
+        `session directory "${sessionEntry.name}" could not be read`,
+        {
+          cause,
+          context: {
+            outcome: { ...outcome, rootExisted: true },
+            failures: failures.map((failure) => failure.published),
+          },
+        },
+      );
+    }
     for (const result of results) {
       if (result.bucket === "failed") {
         failures.push(result.failure);
@@ -313,11 +373,28 @@ async function walkSessionDirectories(
  * doc for why the caller ({@link pruneSessionArtifacts}) owns the running
  * counters and failures list.
  *
- * A per-session `readdir` failure is not tolerated the way the root's is,
- * so it always propagates — a session directory that exists (it was listed
- * by the root walk) but cannot be read is unexplained state at least as
- * surprising as a per-file `unlink` failure, and unlike that failure it
- * would otherwise silently skip every step inside it.
+ * A per-session `readdir` failure is not tolerated the way the root's
+ * `ENOENT` is — a session directory that exists (it was listed by the root
+ * walk) but cannot be read is unexplained state at least as surprising as a
+ * per-file `unlink` failure, and unlike that failure it would otherwise
+ * silently skip every step inside it. It still propagates out of this
+ * function; {@link walkSessionDirectories} is the layer that catches it and
+ * reports it typed with the partial outcome achieved so far, rather than
+ * letting a raw Node error escape {@link pruneSessionArtifacts} and discard
+ * every earlier session directory's counts.
+ *
+ * **`lstat`s the session directory immediately before `readdir` and
+ * re-asserts `isDirectory()`.** Narrows, but does not close, the window
+ * between the root's own `readdir` (which reported this entry as a
+ * directory) and this function reading it: if the path has since become a
+ * symlink (or anything else that is not a directory), it is treated as
+ * skipped — the same as a directory that has simply been removed — never as
+ * an error, since a benign concurrent removal and a swapped-in symlink look
+ * identical at this point. Be honest about what this achieves: `lstat` and
+ * `readdir` are still two separate syscalls, so a swap landing between them
+ * is not caught. The actual guarantee this sweep relies on is that the
+ * artifact root is exclusively owned by the server process; a group- or
+ * parent-writable root is outside the threat model this check defends.
  */
 async function sweepSessionDirectory(
   sessionId: string,
@@ -326,6 +403,11 @@ async function sweepSessionDirectory(
   retentionMs: number,
   nowMs: number,
 ): Promise<ClassifyResult[]> {
+  const stats = await lstat(sessionDirPath);
+  if (!stats.isDirectory()) {
+    return [];
+  }
+
   const fileEntries = await readdir(sessionDirPath, { withFileTypes: true });
   const sortedFiles = sortByName(fileEntries);
 
@@ -367,13 +449,27 @@ async function sweepSessionDirectory(
  * `dirent.isFile()` is `true` are considered artifact files; `withFileTypes`
  * reports `isSymbolicLink()` separately and does not follow it, so a
  * symlink planted at either level is skipped rather than recursed through.
+ * {@link sweepSessionDirectory} additionally `lstat`s each session directory
+ * immediately before reading it and re-asserts `isDirectory()`, narrowing
+ * (but, being a second syscall, not closing) the window in which a
+ * directory the root walk just listed is swapped for a symlink — see that
+ * function's own doc for the honest scope of what this does and does not
+ * defend against.
  *
  * **Classification is total and orphans are never deleted.** Every artifact
  * file lands in exactly one of {@link M3LSessionArtifactPruneOutcome}'s four
- * buckets: no step record is `orphaned`; a step whose `endedAtMs` is
- * `undefined` (not yet finished) is `retainedLive`; a finished step whose
- * `endedAtMs` is still inside the window (`endedAtMs >= nowMs - retentionMs`,
- * a strict boundary) is `retainedYoung`; otherwise the file is deleted.
+ * buckets: a disk-derived session-directory name or step-id filename stem
+ * that fails the `SAFE_ID_PATTERN`/`SAFE_ID_MAX_LENGTH` check (see
+ * `isSafeDiskId`) is `orphaned` WITHOUT ever reaching
+ * `repository.getStep` — the store lookup only ever sees a name that
+ * already passed this check; no step record is `orphaned`; a record whose
+ * own `sessionId` disagrees with the directory the file was found under is
+ * also `orphaned` (the file is misplaced relative to what the store says,
+ * so it is never deleted using a different session's `endedAtMs`); a step
+ * whose `endedAtMs` is `undefined` (not yet finished) is `retainedLive`; a
+ * finished step whose `endedAtMs` is still inside the window
+ * (`endedAtMs >= nowMs - retentionMs`, a strict boundary) is
+ * `retainedYoung`; otherwise the file is deleted.
  *
  * **An emptied session directory is left in place.** Removing it would be a
  * second kind of deletion with its own race (a concurrent step could be
@@ -393,7 +489,20 @@ async function sweepSessionDirectory(
  * a failed deletion is never counted as `deleted`) and `context.failures`
  * (each entry's session id, step id, and errno code only, never the
  * absolute path — the filesystem layout is not something an error surface
- * should publish).
+ * should publish). This "never the absolute path" guarantee covers only
+ * `context`: the chained `cause` is kept unwrapped and, for a filesystem
+ * error, may itself carry the absolute path in its own `.message`/`.path`
+ * property. `cause` is an own enumerable key, so a log sink that serializes
+ * the whole thrown error — not just `context` — will see it.
+ *
+ * **A per-session `readdir` failure does not silently discard prior
+ * progress either.** A session directory that was listed by the root
+ * `readdir` but can no longer be read (removed or `chmod`-ed between the
+ * two reads) is caught and reported the same way: an
+ * {@link M3LConsoleError} with code `"ERR_CONSOLE_INTERNAL"`, chaining the
+ * original filesystem error as `cause`, and carrying `context.outcome` /
+ * `context.failures` for every session directory and file processed before
+ * the failing one — never a raw Node error that would discard them.
  *
  * **`retentionMs` and the resolved `nowMs()` are validated before any
  * filesystem access.** `retentionMs` must be a finite integer of at least 1
@@ -410,8 +519,9 @@ async function sweepSessionDirectory(
  *   when `retentionMs` is not a finite integer of at least 1, or when the
  *   resolved `nowMs()` is not a finite number.
  * @throws {@link M3LConsoleError} with code `"ERR_CONSOLE_INTERNAL"` when any
- *   artifact file's deletion fails, or when `readdir` fails for a reason
- *   other than a missing root.
+ *   artifact file's deletion fails, when the root `readdir` fails for a
+ *   reason other than a missing root, or when a per-session `readdir` fails
+ *   after the root walk already listed that directory.
  *
  * @example
  * ```ts

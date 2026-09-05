@@ -13,6 +13,7 @@
  * `Map` supplies `getStep`; every other member throws, so an accidental
  * call surfaces immediately as a test failure.
  */
+import { rmSync, symlinkSync } from "node:fs";
 import {
   chmod,
   mkdir,
@@ -706,6 +707,241 @@ describe("pruneSessionArtifacts — failure posture", () => {
       // Never the absolute path — only the session id, step id and errno
       // code may be carried in a fault-classified error's context.
       expect(JSON.stringify(consoleError.context)).not.toContain(root);
+    },
+  );
+});
+
+describe("pruneSessionArtifacts — a per-session readdir failure", () => {
+  test.skipIf(skipAsRoot)(
+    "propagates as ERR_CONSOLE_INTERNAL chaining the original cause, keeping the earlier session directory's counts in context.outcome",
+    async () => {
+      const retentionMs = 1_000;
+      const nowMs = 100_000;
+
+      // Named so the readable directory sorts strictly BEFORE the
+      // unreadable one: only with this ordering does the earlier
+      // directory's outcome have anything to lose. If the unreadable
+      // directory sorted first, there would be nothing accumulated yet,
+      // and this test would pass against the unfixed (lossy) code too.
+      const readableSessionId = "session-a-readable";
+      const unreadableSessionId = "session-b-unreadable";
+      expect(readableSessionId < unreadableSessionId).toBe(true);
+      const readableStepId = "step-readable";
+
+      const records = new Map<string, M3LSessionStepRecord>([
+        [
+          readableStepId,
+          buildStepRecord({
+            id: readableStepId,
+            sessionId: readableSessionId,
+            endedAtMs: nowMs - retentionMs - 1,
+          }),
+        ],
+      ]);
+
+      await makeArtifactFile(readableSessionId, readableStepId);
+      const unreadableDir = await makeSessionDir(unreadableSessionId);
+
+      // Blocks `readdir` on this directory itself; `lstat` (finding 2's
+      // check) needs only search permission on the PARENT, so it still
+      // succeeds and reports this path as a directory.
+      await chmod(unreadableDir, 0o000);
+      chmodTargets.push(unreadableDir);
+
+      let thrown: unknown;
+      try {
+        await pruneSessionArtifacts({
+          artifactRoot: root,
+          repository: createFakeSessionsRepository(records),
+          retentionMs,
+          nowMs: () => nowMs,
+        });
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toBeInstanceOf(M3LConsoleError);
+      const consoleError = thrown as M3LConsoleError;
+      expect(consoleError.code).toBe("ERR_CONSOLE_INTERNAL");
+      expect(consoleError.cause).toBeInstanceOf(Error);
+      expect((consoleError.cause as NodeJS.ErrnoException).code).toBe("EACCES");
+
+      const outcome = consoleError.context[
+        "outcome"
+      ] as M3LSessionArtifactPruneOutcome;
+      expect(outcome).toEqual({
+        deleted: 1,
+        retainedLive: 0,
+        retainedYoung: 0,
+        orphaned: 0,
+        rootExisted: true,
+      });
+    },
+  );
+});
+
+describe("pruneSessionArtifacts — a session directory swapped for a symlink mid-walk", () => {
+  test("is skipped by the pre-readdir lstat re-check, and its outside target survives untouched", async () => {
+    const retentionMs = 1_000;
+    const nowMs = 100_000;
+
+    // Sorted so the trigger session is walked BEFORE the target, so the
+    // swap (fired as a side effect of the trigger's own store lookup) lands
+    // strictly between the root's `readdir` — which sees the target as a
+    // real directory — and the target's own turn in the walk. This
+    // reproduces, deterministically, the exact race a security probe
+    // demonstrated: a directory listed as real by the root read, then
+    // replaced by a symlink before it is itself read.
+    const triggerSessionId = "session-a-trigger";
+    const targetSessionId = "session-b-target";
+    expect(triggerSessionId < targetSessionId).toBe(true);
+    const triggerStepId = "step-trigger";
+
+    const targetDir = await makeSessionDir(targetSessionId);
+    const outsideDir = await mkdtemp(
+      join(tmpdir(), "m3l-session-artifact-outside-"),
+    );
+    try {
+      const markerFile = join(outsideDir, "marker.json");
+      await writeFile(markerFile, "still here", "utf8");
+      await makeArtifactFile(triggerSessionId, triggerStepId);
+
+      const records = new Map<string, M3LSessionStepRecord>([
+        [
+          triggerStepId,
+          buildStepRecord({
+            id: triggerStepId,
+            sessionId: triggerSessionId,
+            endedAtMs: nowMs - retentionMs - 1,
+          }),
+        ],
+      ]);
+      const baseRepository = createFakeSessionsRepository(records);
+      let swapped = false;
+      const repository: M3LConsoleSessionsRepository = {
+        ...baseRepository,
+        getStep: (id: string) => {
+          if (id === triggerStepId && !swapped) {
+            swapped = true;
+            rmSync(targetDir, { recursive: true, force: true });
+            symlinkSync(outsideDir, targetDir, "dir");
+          }
+          return baseRepository.getStep(id);
+        },
+      };
+
+      const outcome = await pruneSessionArtifacts({
+        artifactRoot: root,
+        repository,
+        retentionMs,
+        nowMs: () => nowMs,
+      });
+
+      expect(swapped).toBe(true);
+      // The swapped-in symlink is skipped before ever being walked into —
+      // `orphaned` stays 0. Without the lstat re-check, `readdir` follows
+      // the symlink, "marker.json" is enumerated, misses the store, and
+      // this count would be 1 instead.
+      expect(outcome).toEqual({
+        deleted: 1,
+        retainedLive: 0,
+        retainedYoung: 0,
+        orphaned: 0,
+        rootExisted: true,
+      });
+      expect(await fileExists(markerFile)).toBe(true);
+      expect(await fileExists(outsideDir)).toBe(true);
+    } finally {
+      await rm(outsideDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("pruneSessionArtifacts — a step whose own sessionId disagrees with its directory", () => {
+  test("is orphaned, not deleted, even though the step is otherwise eligible", async () => {
+    const retentionMs = 1_000;
+    const nowMs = 100_000;
+    const stepId = "step-cross-session";
+    const actualSessionId = "session-actual-owner";
+    const misplacedSessionId = "session-wrong-directory";
+
+    const records = new Map<string, M3LSessionStepRecord>([
+      [
+        stepId,
+        buildStepRecord({
+          id: stepId,
+          sessionId: actualSessionId,
+          endedAtMs: nowMs - retentionMs - 1,
+        }),
+      ],
+    ]);
+
+    // The file lives under a DIFFERENT session directory than the one the
+    // step record itself names.
+    const filePath = await makeArtifactFile(misplacedSessionId, stepId);
+
+    const outcome = await pruneSessionArtifacts({
+      artifactRoot: root,
+      repository: createFakeSessionsRepository(records),
+      retentionMs,
+      nowMs: () => nowMs,
+    });
+
+    expect(outcome).toEqual({
+      deleted: 0,
+      retainedLive: 0,
+      retainedYoung: 0,
+      orphaned: 1,
+      rootExisted: true,
+    });
+    expect(await fileExists(filePath)).toBe(true);
+  });
+});
+
+describe("pruneSessionArtifacts — a malformed disk-derived id never reaches the store lookup", () => {
+  test.each<[string, string, string]>([
+    ["stepId", "session-safe-directory", ""],
+    ["stepId", "session-safe-directory", "."],
+    ["stepId", "session-safe-directory", "a b"],
+    ["stepId", "session-safe-directory", "é"],
+    ["stepId", "session-safe-directory", "'; DROP TABLE sessions; --"],
+    ["sessionId", "a b", "step-safe"],
+    ["sessionId", "é", "step-safe"],
+  ])(
+    "a malformed %s (session=%s, step=%s) is orphaned without ever calling repository.getStep",
+    async (_kind, sessionId, stepId) => {
+      const filePath = await makeArtifactFile(sessionId, stepId);
+
+      const calls: string[] = [];
+      const baseRepository = createFakeSessionsRepository(new Map());
+      const repository: M3LConsoleSessionsRepository = {
+        ...baseRepository,
+        getStep: (id: string) => {
+          calls.push(id);
+          return baseRepository.getStep(id);
+        },
+      };
+
+      const outcome = await pruneSessionArtifacts({
+        artifactRoot: root,
+        repository,
+        retentionMs: 1_000,
+        nowMs: () => 100_000,
+      });
+
+      expect(outcome).toEqual({
+        deleted: 0,
+        retainedLive: 0,
+        retainedYoung: 0,
+        orphaned: 1,
+        rootExisted: true,
+      });
+      expect(await fileExists(filePath)).toBe(true);
+      // The part that makes this non-vacuous: an unvalidated id would ALSO
+      // land in `orphaned` (it simply misses the store), so only asserting
+      // the store was never even consulted proves the guard runs before —
+      // not merely alongside — the lookup.
+      expect(calls).toHaveLength(0);
     },
   );
 });
