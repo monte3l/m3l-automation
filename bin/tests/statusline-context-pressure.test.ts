@@ -54,6 +54,7 @@ import {
   parseHeadRef,
   parseGitdirPointer,
   resolveBranch,
+  resolveWorkspaceRoot,
   formatMemorySegment,
   buildSessionRow,
   buildModelRow,
@@ -1145,6 +1146,62 @@ describe("resolveBranch", () => {
   });
 });
 
+describe("resolveWorkspaceRoot", () => {
+  test("returns the directory containing a plain .git directory", () => {
+    const startDir = "/workspace/project";
+    const readFile = (path: string): string | null =>
+      path === join(startDir, ".git", "HEAD")
+        ? "ref: refs/heads/feat/foo\n"
+        : null;
+
+    expect(resolveWorkspaceRoot(readFile, startDir)).toBe(startDir);
+  });
+
+  test("returns the directory holding the .git pointer file itself, not the resolved external gitdir (linked-worktree/submodule case)", () => {
+    const startDir = "/workspace/project";
+    const worktreeGitDir = "/some/worktrees/path";
+    const readFile = (path: string): string | null => {
+      if (path === join(startDir, ".git", "HEAD")) return null;
+      if (path === join(startDir, ".git")) return `gitdir: ${worktreeGitDir}\n`;
+      if (path === join(worktreeGitDir, "HEAD"))
+        return "ref: refs/heads/feat/bar\n";
+      return null;
+    };
+
+    // resolveWorkspaceRoot only cares where .git lives, not where the
+    // pointer ultimately resolves -- must NOT return worktreeGitDir.
+    expect(resolveWorkspaceRoot(readFile, startDir)).toBe(startDir);
+  });
+
+  test("walks upward through several .git-less intermediate directories to find .git further up, and stops there", () => {
+    const nearer = "/workspace/project/packages/m3l-common/src/core";
+    const further = "/workspace/project";
+    const readFile = (path: string): string | null =>
+      // The nearer directory (and everything between it and `further`) has
+      // no .git at all -- unlike resolveBranch's "stops at the nearest
+      // broken .git" test, resolveWorkspaceRoot has no "broken ref" concept,
+      // so this fixture omits .git entirely below `further`.
+      path === join(further, ".git", "HEAD")
+        ? "ref: refs/heads/feat/foo\n"
+        : null;
+
+    expect(resolveWorkspaceRoot(readFile, nearer)).toBe(further);
+  });
+
+  test("returns null for a non-string or empty startDir", () => {
+    const readFile = (): string | null => null;
+
+    expect(resolveWorkspaceRoot(readFile, "")).toBeNull();
+    expect(resolveWorkspaceRoot(readFile, null)).toBeNull();
+  });
+
+  test("returns null when nothing is found within the walk bound", () => {
+    const readFile = (): string | null => null;
+
+    expect(resolveWorkspaceRoot(readFile, "/workspace/project")).toBeNull();
+  });
+});
+
 describe("parseLandingPlanProgress", () => {
   test("returns null when there is no '## Landing plan' heading at all", () => {
     const pageText =
@@ -1391,6 +1448,105 @@ describe("resolveSliceProgress", () => {
     expect(calls).toContain(
       join("/some/other/worktree", "tmp/slice-progress.json"),
     );
+  });
+
+  // Regression test for the "blinks depending on which directory the
+  // session is rooted in" defect: tmp/slice-progress.json only exists at
+  // the .git-holding root, but startDir is a deeper subdirectory of that
+  // same tree (a session that cd'd in, or entered a worktree in-session).
+  test("resolves a literal-mode entry from a deeper subdirectory of the workspace root, not just the raw startDir", () => {
+    const root = "/workspace/project";
+    const deepStartDir = "/workspace/project/packages/m3l-common/src/core";
+    const readFile = (path: string): string | null => {
+      if (path === join(root, ".git", "HEAD")) {
+        return "ref: refs/heads/feat/x\n";
+      }
+      if (path === join(root, "tmp/slice-progress.json")) {
+        return JSON.stringify({
+          wave: "V9",
+          current: 2,
+          total: 4,
+          branch: "feat/x",
+        });
+      }
+      // Joining against the raw (unwalked) subdirectory must never resolve.
+      if (path === join(deepStartDir, "tmp/slice-progress.json")) {
+        throw new Error(
+          "resolveSliceProgress must not join tmp/ against raw startDir",
+        );
+      }
+      return null;
+    };
+
+    expect(resolveSliceProgress(readFile, deepStartDir, "feat/x")).toEqual({
+      current: 2,
+      total: 4,
+      label: "V9",
+      allLanded: false,
+    });
+  });
+
+  // Same regression, derived mode: the referenced page must also be joined
+  // against the walked root, not the raw subdirectory startDir.
+  test("resolves a derived-mode entry's referenced page from a deeper subdirectory of the workspace root", () => {
+    const root = "/workspace/project";
+    const deepStartDir = "/workspace/project/packages/m3l-common/src/core";
+    const pageText = [
+      "## Landing plan",
+      "",
+      "| Slice | Scope | Status |",
+      "| ----- | ----- | ------ |",
+      "| V6 slice 1 | first slice | Landed |",
+      "| V6 slice 2 | second slice | In progress |",
+    ].join("\n");
+    const readFile = (path: string): string | null => {
+      if (path === join(root, ".git", "HEAD")) {
+        return "ref: refs/heads/feat/x\n";
+      }
+      if (path === join(root, "tmp/slice-progress.json")) {
+        return JSON.stringify({
+          page: "docs/reference/core/x.md",
+          branch: "feat/x",
+        });
+      }
+      if (path === join(root, "docs/reference/core/x.md")) return pageText;
+      // Joining against the raw (unwalked) subdirectory must never resolve.
+      if (
+        path === join(deepStartDir, "tmp/slice-progress.json") ||
+        path === join(deepStartDir, "docs/reference/core/x.md")
+      ) {
+        throw new Error(
+          "resolveSliceProgress must not join tmp/ or entry.page against raw startDir",
+        );
+      }
+      return null;
+    };
+
+    expect(resolveSliceProgress(readFile, deepStartDir, "feat/x")).toEqual({
+      current: 2,
+      total: 2,
+      label: "V6",
+      allLanded: false,
+    });
+  });
+
+  // Graceful fallback: when the injected readFile simulates no filesystem
+  // structure at all (no .git found anywhere, matching how the other tests
+  // in this describe block already stub readFile), resolveSliceProgress
+  // falls back to treating raw startDir as the root -- exactly the
+  // pre-refactor behavior -- rather than returning null outright.
+  test("falls back to treating startDir as the root when resolveWorkspaceRoot finds no .git", () => {
+    const readFile = (path: string): string | null =>
+      path === join(startDir, "tmp/slice-progress.json")
+        ? JSON.stringify({ wave: "V9", current: 2, total: 4, branch: "feat/x" })
+        : null;
+
+    expect(resolveSliceProgress(readFile, startDir, "feat/x")).toEqual({
+      current: 2,
+      total: 4,
+      label: "V9",
+      allLanded: false,
+    });
   });
 });
 
