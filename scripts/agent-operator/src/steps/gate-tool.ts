@@ -139,11 +139,20 @@ export interface AgentToolSpec {
  * running — the wrapper's word, never the spec's.
  *
  * Named rather than inlined into {@link TwoPhaseAgentToolSpec}'s `execute`
- * signature for readability. Kept unexported until a two-phase spec outside
- * this module needs to name it (V9 slice 3), at which point exporting it will
- * have a real consumer.
+ * signature for readability. Exported so a two-phase spec built outside this
+ * module (V9 slice 3's `build-etl-tools.ts`) can name the parameter type of
+ * its own `execute` without duplicating this shape.
+ *
+ * @example
+ * ```ts
+ * import type { AgentToolPhase } from "./gate-tool.js";
+ *
+ * function describePhase(phase: AgentToolPhase): string {
+ *   return phase.dryRun ? "planned" : "applied";
+ * }
+ * ```
  */
-interface AgentToolPhase {
+export interface AgentToolPhase {
   /** `true` for phase 1 (the dry run), `false` for phase 2 (the mutation). */
   readonly dryRun: boolean;
 }
@@ -180,6 +189,7 @@ interface AgentToolPhase {
  *   name: "put_item",
  *   description: "Writes one item, dry run first.",
  *   inputSchema: {},
+ *   phases: "dry-run-then-mutate",
  *   describeAction: (): Core.M3LAgentAction => ({
  *     script: "agent-operator",
  *     operation: "put-item",
@@ -198,6 +208,33 @@ interface AgentToolPhase {
  * ```
  */
 export interface TwoPhaseAgentToolSpec extends Omit<AgentToolSpec, "execute"> {
+  /**
+   * A required discriminant with exactly one legal value, present so this
+   * interface cannot be satisfied by structural arity alone.
+   *
+   * @remarks
+   * Without this member, a plain {@link AgentToolSpec} — whose `execute`
+   * ignores a third argument entirely — is structurally assignable to
+   * `TwoPhaseAgentToolSpec`: TypeScript permits a function with fewer
+   * parameters wherever one with more is expected. Registered through
+   * {@link gateTwoPhaseToolSpec} anyway, that single-phase `execute` would
+   * run its real mutation on what is audited as phase 1 (the dry run),
+   * mint the `dryRunFirst` credit off that clean-looking exit, and mutate a
+   * second time on phase 2 — two real mutations, the first recorded as a
+   * dry run. `phases` closes that hole the same way a nominal brand would:
+   * it is a **compile-time-only** device, erased by `tsc`, read by no
+   * runtime code in this module — the guard is the compile error a missing
+   * or mismatched `phases` value now produces, nothing else.
+   *
+   * @example
+   * ```ts
+   * import type { TwoPhaseAgentToolSpec } from "./gate-tool.js";
+   *
+   * declare const spec: TwoPhaseAgentToolSpec;
+   * spec.phases satisfies "dry-run-then-mutate";
+   * ```
+   */
+  readonly phases: "dry-run-then-mutate";
   /** Runs the tool's real work for `phase`, once that phase is authorized. */
   execute(
     input: unknown,
@@ -780,6 +817,80 @@ type DescribedAction =
   | { readonly kind: "described"; readonly action: Core.M3LAgentAction };
 
 /**
+ * The result of {@link snapshotInputOrRefuse}: either the frozen reading to
+ * pass to `describeAction` and every `execute` call, or the refusal a
+ * throwing read produced.
+ */
+type SnapshottedInput =
+  GatedPassRefusal | { readonly kind: "snapshotted"; readonly input: unknown };
+
+/**
+ * Freezes ONE reading of the caller-supplied `input`, taken exactly once per
+ * handler call — the shared seam both {@link runGatedTool} and
+ * {@link runTwoPhaseGatedTool} pass through before `input` is read again by
+ * `describeAction` and by every `execute` call.
+ *
+ * @remarks
+ * Without this, a field backed by a getter (or a Proxy) can answer
+ * `describeAction` and each `execute` call differently. On the two-phase
+ * path that lets phase 1 authorize one target and phase 2 mutate a second,
+ * different one — entirely invisibly, because the dry-run shape key (see
+ * `deriveTwoPhaseActions`) hashes only `script`, `operation`, `kind`, and
+ * `parameterNames`, never a value, so all four decision-log records the call
+ * produces are indistinguishable regardless of which target each phase
+ * actually touched. The single-phase path (`gateToolSpec` → `runGatedTool`)
+ * has the identical shape with fewer reads — `describeAction` once,
+ * `execute` once — so it is snapshotted through this same helper rather than
+ * only guarding the two-phase call.
+ *
+ * A plain object's OWN enumerable properties are copied via a spread, which
+ * evaluates each getter exactly once and fixes its value, and the copy is
+ * frozen so nothing downstream can mutate it back into a moving target.
+ * Anything that is not a plain object — a string, a number, `null`,
+ * `undefined`, an array — passes through completely unchanged: a spec's own
+ * `describeAction` is responsible for rejecting a malformed shape, and it
+ * must see exactly what the caller sent, so turning a `null` into `{}` would
+ * corrupt that rejection rather than support it.
+ *
+ * A getter can also THROW when read (a hostile or merely buggy input), and
+ * that is deliberately not allowed to escape as a raw, unclassified error: it
+ * is treated exactly like a `describeAction` rejection, through the same
+ * `malformedInput` refusal vocabulary and the same `refuse` audit trail. An
+ * input that cannot even finish being read cannot be soundly authorized, so
+ * refusing is the only correct response — never a silent pass-through of
+ * whatever partial read succeeded.
+ */
+function snapshotInputOrRefuse(
+  deps: GateToolDeps,
+  now: number,
+  toolName: string,
+  input: unknown,
+): SnapshottedInput {
+  try {
+    if (typeof input !== "object" || input === null || Array.isArray(input)) {
+      return { kind: "snapshotted", input };
+    }
+    return {
+      kind: "snapshotted",
+      input: Object.freeze({ ...(input as Record<string, unknown>) }),
+    };
+  } catch (cause) {
+    return {
+      kind: "refused",
+      content: refuse(
+        deps,
+        now,
+        toolName,
+        AGENT_TOOL_REFUSAL_MESSAGES.malformedInput,
+        "gate-tool: reading the tool input to snapshot it threw; refusing " +
+          "before describeAction or execute could see it",
+        describeCaughtChain(cause),
+      ),
+    };
+  }
+}
+
+/**
  * Calls `describe` — the spec's `describeAction`, the module's one trust
  * boundary — and turns a throw into a `malformedInput` refusal, so a
  * malformed input is rejected before anything is evaluated, recorded, or
@@ -941,8 +1052,10 @@ async function runGatedPass(
 }
 
 /**
- * The single-phase gated call: sample `now` once, cross the trust boundary,
- * then run one gated pass over whatever action it described.
+ * The single-phase gated call: sample `now` once, snapshot `input` once (see
+ * {@link snapshotInputOrRefuse}) so `describeAction` and `execute` read the
+ * same reading, cross the trust boundary, then run one gated pass over
+ * whatever action it described.
  */
 async function runGatedTool(
   spec: AgentToolSpec,
@@ -952,13 +1065,17 @@ async function runGatedTool(
 ): Promise<GatedPassResult> {
   const now = deps.now();
 
+  const snapshotted = snapshotInputOrRefuse(deps, now, spec.name, input);
+  if (snapshotted.kind === "refused") return snapshotted;
+  const snapshot = snapshotted.input;
+
   const described = describeActionOrRefuse(deps, now, spec.name, () =>
-    spec.describeAction(input),
+    spec.describeAction(snapshot),
   );
   if (described.kind === "refused") return described;
 
   return runGatedPass(spec.name, deps, described.action, now, () =>
-    spec.execute(input, context),
+    spec.execute(snapshot, context),
   );
 }
 
@@ -1177,6 +1294,12 @@ function stopBeforeMutation(
  * phase 2's evaluation and both of its audit records. The between-phase
  * checks, by contrast, are still reporting on phase 1 and so reuse
  * `describedAt` rather than sampling a third instant.
+ *
+ * `input` is snapshotted exactly once, via {@link snapshotInputOrRefuse},
+ * before `describeAction` is called — the same frozen reading is then passed
+ * to BOTH phases' `execute` calls, so a value that could otherwise answer
+ * phase 1 and phase 2 differently cannot make the two phases diverge on what
+ * they each authorized and mutated.
  */
 async function runTwoPhaseGatedTool(
   spec: TwoPhaseAgentToolSpec,
@@ -1185,8 +1308,18 @@ async function runTwoPhaseGatedTool(
   context: AWS.M3LBedrockToolContext,
 ): Promise<readonly AWS.M3LBedrockToolResultContent[]> {
   const describedAt = deps.now();
+
+  const snapshotted = snapshotInputOrRefuse(
+    deps,
+    describedAt,
+    spec.name,
+    input,
+  );
+  if (snapshotted.kind === "refused") return snapshotted.content;
+  const snapshot = snapshotted.input;
+
   const described = describeActionOrRefuse(deps, describedAt, spec.name, () =>
-    spec.describeAction(input),
+    spec.describeAction(snapshot),
   );
   if (described.kind === "refused") return described.content;
 
@@ -1197,7 +1330,7 @@ async function runTwoPhaseGatedTool(
     deps,
     phases.dryRun,
     describedAt,
-    () => spec.execute(input, context, { dryRun: true }),
+    () => spec.execute(snapshot, context, { dryRun: true }),
   );
   // A refused phase 1 stops the run: nothing was authorized to mutate, and
   // running phase 2 anyway would ask the gate to approve the mutation the
@@ -1223,7 +1356,7 @@ async function runTwoPhaseGatedTool(
     deps,
     phases.mutation,
     mutationAt,
-    () => spec.execute(input, context, { dryRun: false }),
+    () => spec.execute(snapshot, context, { dryRun: false }),
     () => stopBeforeMutation(deps, mutationAt, spec.name, dryRun.outcome),
   );
   return mutation.content;

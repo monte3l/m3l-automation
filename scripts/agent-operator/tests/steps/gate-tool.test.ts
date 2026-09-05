@@ -48,7 +48,7 @@
  * Written RED, before `steps/gate-tool.ts` exists.
  */
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 
 import { Core } from "@m3l-automation/m3l-common";
 import type { AWS } from "@m3l-automation/m3l-common";
@@ -64,8 +64,10 @@ import {
   gateToolSpec,
   gateTwoPhaseToolSpec,
   type AgentToolExecution,
+  type AgentToolPhase,
   type AgentToolSpec,
   type GateToolDeps,
+  type TwoPhaseAgentToolSpec,
 } from "../../src/steps/gate-tool.js";
 import { AgentRunLedger } from "../../src/steps/run-ledger.js";
 import {
@@ -1167,6 +1169,96 @@ describe("AGENT_TOOL_REFUSAL_MESSAGES — a closed, exhaustively-reachable vocab
   });
 });
 
+describe("gateToolSpec — describeAction and execute must share ONE snapshot of input", () => {
+  // The single-phase twin of the two-phase snapshot test below. `gateToolSpec`
+  // calls `spec.describeAction(input)` to authorize, then `spec.execute(input,
+  // context)` to act — also two reads of the caller's object, always handing
+  // the SAME `input` reference through untouched. `build-health-tools.ts`'s
+  // `scriptInspectSpec`/`scriptDryRunSpec` each independently call
+  // `readScriptName(input)` in BOTH `describeAction` and `execute` (with a
+  // comment claiming the re-read avoids "a second source of truth" — that
+  // rationale is backwards: the re-read IS the second source). A
+  // caller-controlled getter that answers differently per read can therefore
+  // let the gate authorize one target while execution acts on another.
+
+  /** A per-call sequence of distinct values, one per read. */
+  const VALUE_SEQUENCE = ["alpha", "beta", "gamma"] as const;
+
+  /**
+   * An `input` whose `scriptName` is an OWN getter returning a different
+   * value on each successive read — mirrors the two-phase test's
+   * `makeDivergingInput` fixture.
+   */
+  function makeDivergingInput(): unknown {
+    let reads = 0;
+    return {
+      get scriptName(): string {
+        const index = reads;
+        reads += 1;
+        const clampedIndex = Math.min(index, VALUE_SEQUENCE.length - 1);
+        const value = VALUE_SEQUENCE[clampedIndex];
+        if (value === undefined) {
+          throw new Error("VALUE_SEQUENCE must never be empty");
+        }
+        return value;
+      },
+    };
+  }
+
+  /**
+   * Reads `scriptName` off `raw` via an OWN-property check only — mirrors
+   * `build-health-tools.ts`'s `readScriptName`.
+   */
+  function readScriptNameLikeHealthTools(raw: unknown): string {
+    if (
+      typeof raw !== "object" ||
+      raw === null ||
+      !Object.hasOwn(raw, "scriptName")
+    ) {
+      throw new Error("test spec expected an own 'scriptName' property");
+    }
+    return (raw as Record<string, unknown>)["scriptName"] as string;
+  }
+
+  it("a scriptName getter returning a different value per read is resolved to the SAME value by describeAction and execute — proven by a read count of at least 2 while every observed value collapses to one", async () => {
+    const input = makeDivergingInput();
+    const observed: string[] = [];
+    const spec: AgentToolSpec = {
+      name: "sample_tool",
+      description: "single-phase probe spec — diverging getter input",
+      inputSchema: {},
+      describeAction(raw: unknown): Core.M3LAgentAction {
+        observed.push(readScriptNameLikeHealthTools(raw));
+        return grantedReadOnlyAction();
+      },
+      execute(raw: unknown): Promise<AgentToolExecution> {
+        observed.push(readScriptNameLikeHealthTools(raw));
+        return Promise.resolve(okExecution());
+      },
+    };
+    const deps = makeDeps({
+      policy: minimalPolicy(),
+      ledger: new AgentRunLedger(),
+      writer: new RecordingDecisionLogWriter(),
+    });
+    const registration = gateToolSpec(spec, deps);
+
+    const content = await registration.handler(input, toolContext(spec.name));
+
+    // Vacuous-pass protection: a fixture whose getter is read only once (or
+    // never) would trivially collapse to one distinct value without proving
+    // anything — the count must show the getter was genuinely consulted by
+    // BOTH call sites.
+    expect(observed.length).toBeGreaterThanOrEqual(2);
+    // THE assertion this test exists to make: every call site must have
+    // observed the identical value — never a later getter read diverging
+    // from what describeAction actually judged and authorized.
+    expect(new Set(observed).size).toBe(1);
+    expect(observed[0]).toBe("alpha");
+    expect(content).toEqual([{ type: "text", text: "ok" }]);
+  });
+});
+
 /*
  * ---------------------------------------------------------------------------
  * V9 slice 2b — the two-phase gate.
@@ -1210,6 +1302,12 @@ interface TwoPhaseToolSpecShape {
   readonly name: string;
   readonly description: string;
   readonly inputSchema: Readonly<Record<string, unknown>>;
+  /**
+   * The required discriminant `TwoPhaseAgentToolSpec` gains in V9 slice 3a —
+   * present here so this structural fixture keeps matching the real
+   * interface once that member lands.
+   */
+  readonly phases: "dry-run-then-mutate";
   describeAction(input: unknown): Core.M3LAgentAction;
   execute(
     input: unknown,
@@ -1358,6 +1456,7 @@ async function runTwoPhaseTool(options: {
     name: TWO_PHASE_TOOL_NAME,
     description: "A sample two-phase gated tool, for tests only.",
     inputSchema: {},
+    phases: "dry-run-then-mutate",
     describeAction(input: unknown): Core.M3LAgentAction {
       describeActionInputs.push(input);
       if (options.describeAction !== undefined) {
@@ -2472,5 +2571,317 @@ describe("gateTwoPhaseToolSpec — the ledger's dry-run-shape ceiling is absorbe
     const withheldData = eventData(withheld);
     expect(Object.hasOwn(withheldData, "detail")).toBe(true);
     expect(String(withheldData["detail"])).toContain("per-run shape ceiling");
+  });
+});
+
+/*
+ * ---------------------------------------------------------------------------
+ * V9 slice 3a — the `phases` discriminant closes the single/two-phase hole.
+ *
+ * A plain `AgentToolSpec`'s 2-arg `execute` is structurally assignable to
+ * `TwoPhaseAgentToolSpec`'s 3-arg `execute` (a function accepting fewer
+ * parameters satisfies a wider one). Registered as two-phase, such a spec's
+ * `execute` runs identically for both phases and silently performs its real
+ * mutation TWICE — once misrecorded as a dry run. The fix: `execute`'s
+ * shape can no longer be the only distinguishing member, so
+ * `TwoPhaseAgentToolSpec` gains a REQUIRED discriminant,
+ * `readonly phases: "dry-run-then-mutate"`, which a plain `AgentToolSpec`
+ * object literal does not (and structurally cannot) carry.
+ * ---------------------------------------------------------------------------
+ */
+
+describe("TwoPhaseAgentToolSpec — the `phases` discriminant (V9 slice 3a)", () => {
+  it("[KNOWN GAP until slice 3a lands] a plain AgentToolSpec-shaped execute is no longer assignable to TwoPhaseAgentToolSpec's execute", () => {
+    // A structural stand-in for a plain single-phase spec: 2-arg `execute`,
+    // no `phases` member. Before the fix, TypeScript's bivariant-parameter
+    // assignability let this satisfy `TwoPhaseAgentToolSpec` outright — the
+    // exact hole this slice closes.
+    const singlePhaseShaped = {
+      name: "single_phase_tool",
+      description: "A single-phase spec, for the discriminant test only.",
+      inputSchema: {},
+      describeAction: (): Core.M3LAgentAction => ({
+        script: "agent-operator",
+        operation: "put-item",
+        kind: "mutating",
+        parameterNames: ["table"],
+      }),
+      execute: (
+        _input: unknown,
+        _context: AWS.M3LBedrockToolContext,
+      ): Promise<AgentToolExecution> =>
+        Promise.resolve({
+          content: [{ type: "text", text: "ok" }],
+          outcome: { dryRun: false, exitCode: 0 },
+        }),
+    };
+
+    // @ts-expect-error — `singlePhaseShaped` lacks the required `phases`
+    // discriminant, so it must NOT be assignable to `TwoPhaseAgentToolSpec`.
+    // If this stops erroring, the assignment has become legal again — i.e.
+    // the hole this slice exists to close has reopened.
+    const asTwoPhase: TwoPhaseAgentToolSpec = singlePhaseShaped;
+    // Referenced only so the (deliberately erroring) assignment above is not
+    // an unused-variable warning in its own right once the discriminant
+    // exists and the assignment starts failing for the intended reason.
+    expect(typeof asTwoPhase).toBe("object");
+  });
+
+  it("a correctly-declared TwoPhaseAgentToolSpec is still NOT assignable to AgentToolSpec (the already-good direction stays good)", () => {
+    const twoPhaseShaped: TwoPhaseAgentToolSpec = {
+      name: "two_phase_tool",
+      description: "A two-phase spec, for the discriminant test only.",
+      inputSchema: {},
+      phases: "dry-run-then-mutate",
+      describeAction: (): Core.M3LAgentAction => ({
+        script: "agent-operator",
+        operation: "put-item",
+        kind: "mutating",
+        parameterNames: ["table"],
+      }),
+      execute: (
+        _input: unknown,
+        _context: AWS.M3LBedrockToolContext,
+        phase: AgentToolPhase,
+      ): Promise<AgentToolExecution> =>
+        Promise.resolve({
+          content: [{ type: "text", text: phase.dryRun ? "dry" : "real" }],
+          outcome: { dryRun: phase.dryRun, exitCode: 0 },
+        }),
+    };
+
+    // A 3-arg `execute` is not callable with only 2 arguments the way
+    // `AgentToolSpec.execute` requires callers to be able to call it, so
+    // this direction was already rejected before slice 3a and must stay
+    // rejected after it.
+    expectTypeOf(twoPhaseShaped).not.toExtend<AgentToolSpec>();
+  });
+
+  it('`phases: "dry-run-then-mutate"` is inert at runtime — a correctly-declared two-phase spec behaves identically through gateTwoPhaseToolSpec', async () => {
+    // Drives the existing `runTwoPhaseTool` harness, whose fixture (patched
+    // above to carry `phases: "dry-run-then-mutate"`) is exactly the
+    // already-compliant shape this discriminant must not disturb.
+    const result = await runTwoPhaseTool({ policy: twoPhasePolicy(false) });
+
+    expect(result.thrown).toBeUndefined();
+    // Same expectation as "case B" above — the discriminant changes nothing
+    // about the wrapper's runtime behaviour, only the compile-time contract.
+    expect(result.calls).toEqual([
+      "record",
+      "recordInvocation",
+      "execute",
+      "record",
+      "record",
+      "recordInvocation",
+      "execute",
+      "record",
+    ]);
+    expect(result.executePhases).toEqual([{ dryRun: true }, { dryRun: false }]);
+    expect(result.content).toEqual([{ type: "text", text: MUTATION_TEXT }]);
+  });
+
+  it("`AgentToolPhase` is exported by name from gate-tool.js", () => {
+    // Type-only import above proves this at compile time; this runtime
+    // assertion exists only so the describe block is not all
+    // `expectTypeOf`/`@ts-expect-error` and a broken import path still fails
+    // the suite for an obvious reason. A `type`-only symbol has no runtime
+    // representation to probe directly, so this asserts the shape a value
+    // conforming to the (now-exported) type must have.
+    const phase: AgentToolPhase = { dryRun: true };
+    expect(phase.dryRun).toBe(true);
+  });
+});
+
+describe("gateTwoPhaseToolSpec — [KNOWN BUG src/steps/gate-tool.ts runTwoPhaseGatedTool] describeAction and both phases must share ONE snapshot of input", () => {
+  // Proven by an executed probe, not by reading: `runTwoPhaseGatedTool` calls
+  // `spec.describeAction(input)` and then `spec.execute(input, context, phase)`
+  // TWICE, always handing the caller's ORIGINAL `input` reference straight
+  // through. When a spec's own input-reading helper (mirroring
+  // `build-etl-tools.ts`'s `readPresetName`) independently reads a property
+  // off that shared reference each time it is called, a caller-controlled
+  // getter that answers differently per read makes phase 1 dry-run one
+  // target and phase 2 MUTATE A DIFFERENT ONE — and all four decision-log
+  // records are indistinguishable, because the shape key hashes
+  // `parameterNames`, never the input's actual values.
+  //
+  // This is the INPUT equivalent of `snapshotReportedOutcome` (which already
+  // stops the OUTCOME being re-read per decision, see gate-tool.ts around
+  // `applyDryRunCredit`) — `runTwoPhaseGatedTool` must snapshot `input` ONCE
+  // per handler call and pass that same snapshot to `describeAction` and to
+  // BOTH phases' `execute`.
+
+  /** A per-call sequence of distinct preset names, one per read. */
+  const PRESET_SEQUENCE = ["nightly", "weekly", "quarterly"] as const;
+
+  /**
+   * An `input` whose `presetName` is an OWN getter returning a different
+   * value on each successive read — the exact shape a value arriving from
+   * untyped JSON cannot itself produce, but a caller composing the tool
+   * input programmatically (or an adversarial MCP-style client) can.
+   */
+  function makeDivergingInput(): unknown {
+    let reads = 0;
+    return {
+      get presetName(): string {
+        const index = reads;
+        reads += 1;
+        const clampedIndex = Math.min(index, PRESET_SEQUENCE.length - 1);
+        const value = PRESET_SEQUENCE[clampedIndex];
+        if (value === undefined) {
+          throw new Error("PRESET_SEQUENCE must never be empty");
+        }
+        return value;
+      },
+    };
+  }
+
+  /**
+   * Reads `presetName` off `raw` via an OWN-property check only — mirrors
+   * `build-etl-tools.ts`'s `readPresetName`, which explicitly guards against
+   * an inherited/prototype-chain read.
+   */
+  function readPresetNameLikeEtl(raw: unknown): string {
+    if (
+      typeof raw !== "object" ||
+      raw === null ||
+      !Object.hasOwn(raw, "presetName")
+    ) {
+      throw new Error("test spec expected an own 'presetName' property");
+    }
+    return (raw as Record<string, unknown>)["presetName"] as string;
+  }
+
+  it("THE KEY TEST: a presetName getter returning a different value per read is resolved to the SAME value by describeAction and both execute phases", async () => {
+    const input = makeDivergingInput();
+    const observed: string[] = [];
+
+    const spec: TwoPhaseToolSpecShape = {
+      name: TWO_PHASE_TOOL_NAME,
+      description: "S2 probe spec — diverging getter input",
+      inputSchema: {},
+      phases: "dry-run-then-mutate",
+      describeAction(raw: unknown): Core.M3LAgentAction {
+        observed.push(readPresetNameLikeEtl(raw));
+        return gradedMutatingAction();
+      },
+      execute(
+        raw: unknown,
+        _context: AWS.M3LBedrockToolContext,
+        phase: TwoPhaseExecuteFlag,
+      ): Promise<AgentToolExecution> {
+        observed.push(readPresetNameLikeEtl(raw));
+        return Promise.resolve(twoPhaseExecution(phase));
+      },
+    };
+
+    const deps = makeDeps({
+      policy: twoPhasePolicy(false),
+      ledger: new AgentRunLedger(),
+      writer: new ScriptedDecisionLogWriter(),
+    });
+    const registration = gateTwoPhaseToolSpec(spec, deps);
+
+    const content = await registration.handler(input, toolContext(spec.name));
+
+    // One reading per call site: describeAction, phase-1 execute,
+    // phase-2 execute.
+    expect(observed).toHaveLength(3);
+    // THE assertion this test exists to make: every call site must have
+    // observed the identical value — never a later getter read diverging
+    // from what describeAction actually judged and authorized.
+    expect(new Set(observed).size).toBe(1);
+    expect(observed[0]).toBe("nightly");
+    expect(content).toEqual([{ type: "text", text: MUTATION_TEXT }]);
+  });
+
+  it("takes the snapshot via an OWN-property read — an inherited prototype-chain presetName must not slip into either phase's view", async () => {
+    // REGRESSION LOCK, not yet a proof: `runTwoPhaseGatedTool` currently
+    // hands the caller's own `input` reference straight through with no copy
+    // at all, so this assertion holds today for the same reason it must
+    // hold once a snapshot is introduced — `Object.hasOwn` on the ORIGINAL
+    // object is already `false` here. It stops being vacuous the moment a
+    // snapshot step is added: confirm then that a snapshot built by
+    // enumerating own properties (`Object.entries`/`Object.keys`), not a
+    // blind per-key read, is what keeps it green.
+    const proto: Record<string, unknown> = { presetName: "PROTO-LEAK" };
+    const input: unknown = Object.create(proto);
+
+    const describeActionSeenOwn: boolean[] = [];
+    const executeSeenOwn: boolean[] = [];
+
+    const spec: TwoPhaseToolSpecShape = {
+      name: TWO_PHASE_TOOL_NAME,
+      description: "S2 probe spec — inherited presetName",
+      inputSchema: {},
+      phases: "dry-run-then-mutate",
+      describeAction(raw: unknown): Core.M3LAgentAction {
+        describeActionSeenOwn.push(
+          typeof raw === "object" &&
+            raw !== null &&
+            Object.hasOwn(raw, "presetName"),
+        );
+        return gradedMutatingAction();
+      },
+      execute(
+        raw: unknown,
+        _context: AWS.M3LBedrockToolContext,
+        phase: TwoPhaseExecuteFlag,
+      ): Promise<AgentToolExecution> {
+        executeSeenOwn.push(
+          typeof raw === "object" &&
+            raw !== null &&
+            Object.hasOwn(raw, "presetName"),
+        );
+        return Promise.resolve(twoPhaseExecution(phase));
+      },
+    };
+
+    const deps = makeDeps({
+      policy: twoPhasePolicy(false),
+      ledger: new AgentRunLedger(),
+      writer: new ScriptedDecisionLogWriter(),
+    });
+    const registration = gateTwoPhaseToolSpec(spec, deps);
+
+    await registration.handler(input, toolContext(spec.name));
+
+    expect(describeActionSeenOwn).toEqual([false]);
+    expect(executeSeenOwn).toEqual([false, false]);
+  });
+
+  it("a well-behaved plain-object input still flows unchanged through both phases (existing behaviour preserved)", async () => {
+    const observed: string[] = [];
+    const input = { presetName: "nightly" };
+
+    const spec: TwoPhaseToolSpecShape = {
+      name: TWO_PHASE_TOOL_NAME,
+      description: "S2 probe spec — plain object input",
+      inputSchema: {},
+      phases: "dry-run-then-mutate",
+      describeAction(raw: unknown): Core.M3LAgentAction {
+        observed.push(readPresetNameLikeEtl(raw));
+        return gradedMutatingAction();
+      },
+      execute(
+        raw: unknown,
+        _context: AWS.M3LBedrockToolContext,
+        phase: TwoPhaseExecuteFlag,
+      ): Promise<AgentToolExecution> {
+        observed.push(readPresetNameLikeEtl(raw));
+        return Promise.resolve(twoPhaseExecution(phase));
+      },
+    };
+
+    const deps = makeDeps({
+      policy: twoPhasePolicy(false),
+      ledger: new AgentRunLedger(),
+      writer: new ScriptedDecisionLogWriter(),
+    });
+    const registration = gateTwoPhaseToolSpec(spec, deps);
+
+    const content = await registration.handler(input, toolContext(spec.name));
+
+    expect(observed).toEqual(["nightly", "nightly", "nightly"]);
+    expect(content).toEqual([{ type: "text", text: MUTATION_TEXT }]);
   });
 });
