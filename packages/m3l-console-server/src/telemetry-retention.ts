@@ -136,17 +136,22 @@ export interface PruneTelemetryOptions {
  * (see this module's own `@packageDocumentation` for the ADR-0070
  * rationale).
  *
- * **Guards the cutoff arithmetic.** `nowMs - retentionMs[tier]` can be
- * non-finite if either input is absurd (e.g. a `nowMs` of `NaN`); this
- * function throws an {@link M3LConsoleError} with code
- * `"ERR_CONSOLE_INTERNAL"` before calling `repository.prune` for any tier
- * in that case — a non-finite `beforeMs` reaching the repository would
- * instead surface as `requireValidRangeBound`'s less specific
- * `ERR_CONSOLE_BAD_REQUEST`. A **negative but finite** cutoff, by contrast,
- * is passed through unchanged: every `bucket_start_ms` is a non-negative
- * safe integer (`store/telemetry-repository-types.ts`), so a negative
- * `beforeMs` simply matches no row — a safe no-op, not something this
- * driver needs to special-case.
+ * **Guards the retention values and the cutoff arithmetic.**
+ * Each tier's `retentionMs` must be a positive integer (`>= 1`); a negative
+ * or zero value yields a finite FUTURE cutoff that would delete every row in
+ * that tier. This function validates all tiers in a pre-flight pass before
+ * reading the clock or calling `repository.prune` for any tier — if any
+ * tier's value is invalid, no pruning happens at all.
+ *
+ * Separately, `nowMs - retentionMs[tier]` can be non-finite if the clock is
+ * absurd (e.g. `nowMs` returns `NaN`); this function also throws an
+ * {@link M3LConsoleError} with code `"ERR_CONSOLE_INTERNAL"` before calling
+ * `repository.prune` in that case — a non-finite `beforeMs` reaching the
+ * repository would instead surface as `requireValidRangeBound`'s less
+ * specific `ERR_CONSOLE_BAD_REQUEST`. A **negative but finite** cutoff, by
+ * contrast, is passed through unchanged: every `bucket_start_ms` is a
+ * non-negative safe integer (`store/telemetry-repository-types.ts`), so a
+ * negative `beforeMs` simply matches no row — a safe no-op.
  *
  * **Preserves partial progress on a mid-walk failure.** If `repository.prune`
  * throws for some tier, every tier that already completed has already
@@ -162,7 +167,8 @@ export interface PruneTelemetryOptions {
  * @param options - See {@link PruneTelemetryOptions}.
  * @returns The {@link M3LTelemetryPruneOutcome}.
  * @throws {@link M3LConsoleError} with code `"ERR_CONSOLE_INTERNAL"` when
- *   any tier's derived cutoff is non-finite, or when `repository.prune`
+ *   any tier's `retentionMs` is not a positive integer, when any tier's
+ *   derived cutoff is non-finite (NaN clock), or when `repository.prune`
  *   itself throws for a tier.
  *
  * @example
@@ -180,6 +186,26 @@ export function pruneTelemetry(
   options: PruneTelemetryOptions,
 ): M3LTelemetryPruneOutcome {
   const { repository, retentionMs, nowMs = Date.now } = options;
+
+  // Pre-flight: validate every tier's retentionMs is a positive integer
+  // before reading the clock or touching the repository. A negative value
+  // would yield a finite FUTURE cutoff that deletes every row in that tier;
+  // zero would do the same. This matches the siblings' `validateRetentionMs`
+  // guard and ensures the invalid config is caught before any pruning happens.
+  // (Config cannot currently produce such values — `config/telemetry.ts`
+  // enforces integer >= 1 — but the guarantee belongs at this boundary, not
+  // only at the caller.)
+  for (const granularity of GRANULARITIES) {
+    const tierMs = retentionMs[granularity];
+    if (!Number.isInteger(tierMs) || tierMs < 1) {
+      throw new M3LConsoleError(
+        "ERR_CONSOLE_INTERNAL",
+        `telemetry retention window for granularity '${granularity}' must be a positive integer (got ${String(tierMs)})`,
+        { context: { granularity } },
+      );
+    }
+  }
+
   const now = nowMs();
 
   // Built up incrementally — a tier's key is only ever added once its own

@@ -355,6 +355,136 @@ describe("runCleanup — context does not leak absolute paths", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Case 6a: two simultaneous driver failures — both appear in context.failures
+// ---------------------------------------------------------------------------
+
+describe("runCleanup — two simultaneous driver failures", () => {
+  test("both failed drivers appear in context.failures with their own driver names", async () => {
+    const { store, openStore } = makeMemoryStore();
+
+    // Make telemetry.prune (FIRST driver) throw.
+    vi.spyOn(store.telemetry, "prune").mockImplementation(() => {
+      throw new Error("simulated telemetry failure");
+    });
+
+    // Make pruneRunOutputs fail: create a bare directory in runsRoot so readdir
+    // finds an entry, then make store.runs.get throw so classifyAndSweep fails.
+    await mkdir(join(runsRoot, "run-two-fail"), { recursive: true });
+    vi.spyOn(store.runs, "get").mockImplementation(() => {
+      throw new Error("simulated runs repository failure");
+    });
+
+    // sessionArtifacts has nothing to process — it will succeed.
+
+    let thrown: M3LConsoleError | undefined;
+    try {
+      await runCleanup({
+        env: buildEnv(),
+        openStore,
+        nowMs: () => FAR_FUTURE_MS,
+      });
+    } catch (e) {
+      if (e instanceof M3LConsoleError) thrown = e;
+    }
+
+    expect(thrown).toBeDefined();
+    expect(thrown?.code).toBe("ERR_CONSOLE_INTERNAL");
+
+    // context.failures must contain exactly two entries — one per failed driver.
+    const ctx = thrown?.context;
+    expect(ctx).toBeDefined();
+    const failures = ctx?.["failures"];
+    expect(Array.isArray(failures)).toBe(true);
+    expect((failures as unknown[]).length).toBe(2);
+
+    const failureDrivers = (failures as Array<{ driver: string }>).map(
+      (f) => f.driver,
+    );
+    // Both failed drivers must be named — the second failure (runOutputs) must
+    // not be lost as the old code dropped everything except the first failure.
+    expect(failureDrivers).toContain("telemetry");
+    expect(failureDrivers).toContain("runOutputs");
+
+    // The successful driver's outcome is still published.
+    expect(ctx).toHaveProperty("sessionArtifacts");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Case 6b: clean-sweep close() failure raises ERR_CONSOLE_INTERNAL
+// ---------------------------------------------------------------------------
+
+describe("runCleanup — close() failure after a clean sweep", () => {
+  test("raises ERR_CONSOLE_INTERNAL when all drivers succeed but close() throws", async () => {
+    const { store, openStore } = makeMemoryStore();
+
+    // All three drivers succeed (no data → zero counts, still success).
+    const closeError = new Error("simulated close failure");
+    vi.spyOn(store, "close").mockImplementation(() => {
+      throw closeError;
+    });
+
+    let thrown: M3LConsoleError | undefined;
+    try {
+      await runCleanup({
+        env: buildEnv(),
+        openStore,
+        nowMs: () => FAR_FUTURE_MS,
+      });
+    } catch (e) {
+      if (e instanceof M3LConsoleError) thrown = e;
+    }
+
+    expect(thrown).toBeDefined();
+    expect(thrown?.code).toBe("ERR_CONSOLE_INTERNAL");
+    // The close error must be chained as cause.
+    expect(thrown?.cause).toBe(closeError);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Case 6c: driver failure + close() throws — driver error wins, not close error
+// ---------------------------------------------------------------------------
+
+describe("runCleanup — close() failure when a driver already failed", () => {
+  test("reports the driver error, not the close() error", async () => {
+    const { store, openStore } = makeMemoryStore();
+
+    // Telemetry driver fails.
+    const driverError = new Error("simulated driver failure");
+    vi.spyOn(store.telemetry, "prune").mockImplementation(() => {
+      throw driverError;
+    });
+
+    // close() also fails — must be silently swallowed.
+    vi.spyOn(store, "close").mockImplementation(() => {
+      throw new Error("simulated close failure — must not win");
+    });
+
+    let thrown: M3LConsoleError | undefined;
+    try {
+      await runCleanup({
+        env: buildEnv(),
+        openStore,
+        nowMs: () => FAR_FUTURE_MS,
+      });
+    } catch (e) {
+      if (e instanceof M3LConsoleError) thrown = e;
+    }
+
+    expect(thrown).toBeDefined();
+    expect(thrown?.code).toBe("ERR_CONSOLE_INTERNAL");
+    // The close error must NOT be the thrown error's cause.
+    // The driver error is wrapped inside an M3LConsoleError from pruneTelemetry.
+    const cause = thrown?.cause;
+    expect(cause).toBeInstanceOf(M3LConsoleError);
+    expect((cause as M3LConsoleError).message).toContain(
+      "telemetry prune failed",
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Case 6: no pending timers (broader variant — after a failure too)
 // ---------------------------------------------------------------------------
 
