@@ -1,13 +1,7 @@
 # 0032. Centralized project-state and roadmap visibility hub
 
-- **Status:** Accepted (2026-07-18) — resolves the earlier undecided stance
-  in favour of a comprehensive GitHub-native hub (a GitHub Pages site as the
-  primary derived view over the entire documentation corpus, plus GitHub
-  Projects and Issues/Milestones as one-way-synced read-only secondary
-  surfaces); the priority-taxonomy portion (labels, milestones, tracker
-  cells) partially superseded by [ADR-0051](0051-semantic-priority-vocabulary.md);
-  the board-identity and board-field-set portions partially superseded by
-  [ADR-0052](0052-hub-board-identity-and-field-taxonomy.md)
+- **Status:** Partially-superseded
+- **Relations:** partially-superseded-by: 0051 (clauses: the priority-taxonomy portion — labels, milestones, tracker cells), partially-superseded-by: 0052 (clauses: the board-identity and board-field-set portions), amended-by: 0079
 - **Date:** 2026-07-17
 - **Deciders:** Enrico Lionello (maintainer); Claude (research)
 

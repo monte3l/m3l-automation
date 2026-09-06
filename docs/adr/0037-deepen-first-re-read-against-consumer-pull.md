@@ -1,6 +1,7 @@
 # 0037. Re-read deepen-first against real consumer pull; priority order for the capability-deepening wave
 
 - **Status:** Accepted
+- **Relations:** supersedes: 0021
 - **Date:** 2026-08-10
 - **Deciders:** Enrico Lionello (maintainer); Claude (audit synthesis)
 

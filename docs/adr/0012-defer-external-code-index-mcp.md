@@ -1,6 +1,7 @@
 # 0012. Defer external code-index MCP server; use native LSP + generated catalog
 
 - **Status:** Accepted
+- **Relations:** re-affirmed-by: 0023
 - **Date:** 2026-06-30
 - **Deciders:** Enrico Lionello
 

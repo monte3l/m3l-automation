@@ -1,6 +1,7 @@
 # 0059. `aws/bedrock-runtime` typed wrapper and tool-use loop primitives
 
 - **Status:** Accepted
+- **Relations:** fires-trigger-of: 0039
 - **Date:** 2026-08-20
 - **Deciders:** Enrico Lionello (maintainer); Claude (design synthesis)
 

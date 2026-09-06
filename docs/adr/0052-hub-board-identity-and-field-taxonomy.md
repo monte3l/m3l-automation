@@ -1,6 +1,7 @@
 # 0052. Hub board identity and field taxonomy
 
-- **Status:** Partially superseded by ADR-0073
+- **Status:** Partially-superseded
+- **Relations:** partially-supersedes: 0032 (clauses: the board-identity and board-field-set portions), partially-supersedes: 0050 (clauses: the board identity it records, §104-105 — this ADR also extends the adopted-platform-feature set ADR-0050 was silent on: project custom fields, saved views, org Issue Types), partially-superseded-by: 0073 (clauses: its `Type` four-value vocabulary retired for ten layer-based types, its `Priority` three-tier field gaining a fourth option, and its two-view `Backlog`/`Board` set becoming one authoritative view; the board identity, the six-value `Status` field, and the 2026-08-20 Updates' label coverage and `Governance` priority option remain in force)
 - **Date:** 2026-08-20
 - **Deciders:** Enrico Lionello (maintainer); Claude (audit + implementation)
 

@@ -1,6 +1,7 @@
 # 0079. Demote the live-GitHub-state drift gates to a non-blocking alarm
 
 - **Status:** Accepted
+- **Relations:** amends: 0032
 - **Date:** 2026-08-27
 - **Deciders:** repo maintainer
 

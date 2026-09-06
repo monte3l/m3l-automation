@@ -1,6 +1,7 @@
 # 0091. Podman and Containerfiles replace Docker for the console's app containers
 
 - **Status:** Accepted
+- **Relations:** amends: 0034, amends: 0015, partially-supersedes: 0071 (clauses: the Docker-specific parts — the `Dockerfile`/`compose.yaml` build; the two-image shape, credential path, non-root lifecycle, and X14 gate are unchanged)
 - **Date:** 2026-09-03
 - **Deciders:** Enrico Lionello (maintainer); Claude (design synthesis)
 

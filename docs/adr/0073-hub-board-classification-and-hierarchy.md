@@ -1,6 +1,7 @@
 # 0073. Hub board classification, hierarchy, and a single authoritative view
 
 - **Status:** Accepted
+- **Relations:** amended-by: 0074, amended-by: 0075, amended-by: 0081, amends: 0051, partially-supersedes: 0052 (clauses: its `Type` four-value vocabulary retired for ten layer-based types, its `Priority` three-tier field gaining a fourth option, and its two-view `Backlog`/`Board` set becoming one authoritative view; the board identity, the six-value `Status` field, and the 2026-08-20 Updates' label coverage and `Governance` priority option remain in force)
 - **Date:** 2026-08-21
 - **Deciders:** Enrico Lionello (maintainer); Claude (live-board audit + plan)
 

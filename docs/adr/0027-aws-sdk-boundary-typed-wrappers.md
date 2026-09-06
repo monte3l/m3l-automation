@@ -1,9 +1,7 @@
 # 0027. Scripts never import `@aws-sdk/*`; the library grows typed AWS operation wrappers per consumer need
 
-- **Status:** Accepted — amended 2026-07-15: the context passage recording
-  script-local, AWS-adjacent dependencies as "an accepted, ratified pattern"
-  is superseded by [ADR-0029](./0029-script-dependency-boundary.md); the
-  decision itself stands in full
+- **Status:** Partially-superseded
+- **Relations:** partially-superseded-by: 0029 (clauses: the context passage recording script-local, AWS-adjacent dependencies as "an accepted, ratified pattern" — the decision itself, that scripts never import `@aws-sdk/*`, stands in full)
 - **Date:** 2026-07-12
 - **Deciders:** Enrico Lionello
 

@@ -1,6 +1,7 @@
 # 0039. LLM/Bedrock inference integration is out of scope for `m3l-common`
 
 - **Status:** Accepted
+- **Relations:** trigger-fired-by: 0059
 - **Date:** 2026-08-10
 - **Deciders:** Enrico Lionello (maintainer); Claude (audit synthesis)
 

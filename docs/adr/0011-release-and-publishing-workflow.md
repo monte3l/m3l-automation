@@ -1,6 +1,7 @@
 # 0011. Release and publishing workflow
 
-- **Status:** Superseded by [ADR-0020](0020-drop-release-automation.md)
+- **Status:** Superseded
+- **Relations:** superseded-by: 0020
 - **Date:** 2026-06-29
 - **Deciders:** Enrico Lionello
 

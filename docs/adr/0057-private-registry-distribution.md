@@ -1,6 +1,7 @@
 # 0057. Distribute the CLI and its fleet via a private GitHub Packages registry
 
 - **Status:** Accepted
+- **Relations:** partially-supersedes: 0020 (clauses: the "internal, never-published" stance and the absence of any release workflow — hand-managed `version`, no changelog automation, Conventional Commits and signed-commit enforcement, and the exports-map contract gates all remain in force)
 - **Date:** 2026-08-20
 - **Deciders:** Enrico Lionello (maintainer); Claude (design synthesis)
 

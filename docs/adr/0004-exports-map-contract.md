@@ -1,4 +1,4 @@
-# 0004. Three-entry exports map as the public contract
+# 0004. Exports map as the public contract
 
 - **Status:** Accepted
 - **Date:** 2026-06-28
@@ -42,7 +42,10 @@ retyped without a major version bump.
    to a `types` (`.d.ts`) and a `default` (ESM `.js`) condition — no `require`
    condition (see ADR 0002). Adding, removing, or retyping any of these three
    entries is a semver event: removal or retypes are breaking (major); a new
-   fourth entry is additive (minor).
+   fourth entry is additive (minor). _(This reflects this ADR's original
+   2026-06-28 decision. The live map has since grown a fourth entry,
+   `./core/errors`, under the narrow exception the 2026-08-29 Update below
+   defines — see that Update for the current, complete entry count.)_
 
 2. **New submodules are surfaced through the namespace barrel, not new `exports`
    entries.** Adding `src/core/logging/` means re-exporting it from
@@ -61,7 +64,10 @@ retyped without a major version bump.
   every PR.
 - **Negative / trade-offs:** consumers cannot do fine-grained submodule imports
   (e.g., `…/core/errors`) — they must go through the namespace barrel. This is
-  intentional: it keeps the contract surface small.
+  intentional: it keeps the contract surface small. _(As of the 2026-08-29
+  Update below, `./core/errors` specifically is exempted under a narrow,
+  machine-enforced exception; every other submodule still routes through the
+  namespace barrel.)_
 - **Semver impact:** any change to the three-entry set is at minimum a minor
   (addition) or major (removal or retypes). Internal changes and new submodule
   re-exports via a barrel are not semver events.

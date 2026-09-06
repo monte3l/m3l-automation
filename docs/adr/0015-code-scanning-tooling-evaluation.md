@@ -1,6 +1,7 @@
 # 0015. Code-scanning tooling evaluation and supply-chain hardening
 
 - **Status:** Accepted
+- **Relations:** amended-by: 0091
 - **Date:** 2026-07-02
 - **Deciders:** Enrico Lionello
 

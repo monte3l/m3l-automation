@@ -1,6 +1,7 @@
 # 0044. Remove three deprecated `AWSClientProvider` wrapper getters
 
 - **Status:** Accepted
+- **Relations:** partially-supersedes: 0038 (clauses: keeping all four `.clients` convenience getters deprecated-in-place indefinitely — three removed, `dynamoDBDocument` kept and un-deprecated; the DLQ redrive decision and Zone A analysis remain in force)
 - **Date:** 2026-08-14
 - **Deciders:** Enrico Lionello (maintainer); Claude (implementation)
 

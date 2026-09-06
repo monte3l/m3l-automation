@@ -1,6 +1,7 @@
 # 0019. Remove the `scripts/` example-automation workspace
 
-- **Status:** Superseded by [ADR-0022](0022-reintroduce-scripts-workspace.md)
+- **Status:** Superseded
+- **Relations:** superseded-by: 0022
 - **Date:** 2026-07-06
 - **Deciders:** m3l-automation maintainers
 

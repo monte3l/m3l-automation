@@ -1,6 +1,7 @@
 # 0034. Sonar/Act-Podman re-assessment: OSS complexity/duplication gates, Act/Podman declined
 
 - **Status:** Accepted
+- **Relations:** amended-by: 0091
 - **Date:** 2026-07-19
 - **Deciders:** Enrico Lionello
 

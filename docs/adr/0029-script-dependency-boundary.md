@@ -1,6 +1,7 @@
 # 0029. Consumer scripts depend only on @m3l-automation/m3l-common
 
 - **Status:** Accepted
+- **Relations:** partially-supersedes: 0027 (clauses: the context passage recording script-local, AWS-adjacent dependencies as "an accepted, ratified pattern" — the decision itself, that scripts never import `@aws-sdk/*`, stands in full)
 - **Date:** 2026-07-15
 - **Deciders:** Enrico Lionello
 
