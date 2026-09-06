@@ -32,7 +32,14 @@
 //   pnpm telemetry:sessions
 import process from "node:process";
 import { execFileSync } from "node:child_process";
-import { closeSync, openSync, readdirSync, readSync, statSync } from "node:fs";
+import {
+  closeSync,
+  openSync,
+  readdirSync,
+  readFileSync,
+  readSync,
+  statSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -79,12 +86,13 @@ export const REQUIRED_KEYS = Object.freeze([
 
 // --- Session-naming compliance (ADR-0087) --------------------------------
 //
-// The rest of this file never reads a transcript directly — it only ever
-// shells out to the analyzer above. This section is the one exception ADR-
-// 0084 grants: `analyze-sessions.mjs`'s payload carries no session name or
-// title (its keys are project/subagent/skill/day/prompt aggregates), so
-// measuring compliance with the naming convention needs a direct, bounded
-// read of the transcripts themselves.
+// Two sections below (this one and the per-tool usage scan further down)
+// are the exceptions ADR-0084 grants to this file's own header: everywhere
+// else, this file never reads a transcript directly — it only ever shells
+// out to the analyzer above. `analyze-sessions.mjs`'s payload carries no
+// session name or title (its keys are project/subagent/skill/day/prompt
+// aggregates), so measuring compliance with the naming convention needs a
+// direct, bounded read of the transcripts themselves.
 //
 // Every constraint from this file's header applies here too:
 //   1. UNSUPPORTED FORMAT — a zero-records result across a non-empty file
@@ -485,6 +493,278 @@ export function computeNamingCompliance({ dir, since, now, fs }) {
 
 // --- End session-naming compliance ----------------------------------------
 
+// --- Per-tool usage scan (docs/decision-notes: harness tool-usage metrics) -
+//
+// Answers "which TOOL ran", which neither analyze-sessions.mjs nor the
+// naming scan above can: the analyzer only ever branches on tool_use blocks
+// named Skill/Agent/Task (to populate by_skill/by_subagent_type), and the
+// naming scan reads only a byte-capped PREFIX of top-level transcripts. This
+// section reads WHOLE files, and — the one deliberate departure from every
+// other scan in this file — RECURSIVELY, because a hub-and-spoke session's
+// tool calls mostly happen inside nested subagent transcripts
+// (<session>/subagents/**/*.jsonl), which every scan above only ever reads
+// at the top level. Measured on this project's own store, 2026-09-06: a
+// top-level-only scan of the 30-day window saw 412 tool_use-bearing lines;
+// a recursive scan saw 1,731 — about 76% of tool calls were invisible to a
+// top-level scan. A per-tool metric that only reads top-level transcripts
+// would badly undercount here.
+//
+// The same three ADR-0084 constraints as the naming scan above apply:
+//   1. UNSUPPORTED FORMAT — zero tool_use records across a non-empty
+//      readable file set throws, never reports zeros.
+//   2. SCOPE — only files inside the caller's --dir/--since window. Whole
+//      files are read rather than prefix-capped (a tool call can appear
+//      anywhere in a transcript, unlike the name record the naming scan
+//      looks for), but the window this repo scans measured 6.2 MB across
+//      30 files on 2026-09-06 — trivial for a synchronous read, so this
+//      follows readTranscriptPrefix's existing "on-demand tool, not a hot
+//      path" reasoning rather than introducing streaming/async reads.
+//   3. RESOLUTION — an unlistable project directory is a thrown error.
+
+/**
+ * Bucket one parsed transcript record's tool_use content block into the
+ * literal tool name this scan counts under. `Task` is normalized to `Agent`
+ * — the same subagent-dispatch tool under an older SDK alias — matching
+ * analyze-sessions.mjs's own `c.name === 'Agent' || c.name === 'Task'`
+ * check, so the two never split one tool's count across two keys.
+ * `Skill`/`Agent` are counted here as bare tool names ONLY: this scan
+ * answers "which TOOL ran", not "which skill/subagent" — that finer-grained
+ * split already exists in the analyzer's `by_skill`/`by_subagent_type` and
+ * is deliberately not re-derived here.
+ *
+ * @param {unknown} block one entry of an `assistant` record's `message.content`
+ * @returns {string | null} the tool name, or null when `block` is not a
+ *   `tool_use` content block with a non-empty string `name`
+ */
+export function classifyToolUse(block) {
+  if (typeof block !== "object" || block === null) return null;
+  const { type, name } = /** @type {{ type?: unknown, name?: unknown }} */ (
+    block
+  );
+  if (type !== "tool_use" || typeof name !== "string" || name.length === 0) {
+    return null;
+  }
+  return name === "Task" ? "Agent" : name;
+}
+
+/**
+ * Whether a transcript path (relative to the project directory,
+ * forward-slash normalized) is a nested subagent transcript rather than a
+ * top-level hub session — i.e. it has a `subagents` path segment. Matches
+ * this project's observed store layout: `<session>.jsonl` (hub) vs.
+ * `<session>/subagents/**\/*.jsonl` (spoke, including workflow agents
+ * nested further under `subagents/workflows/<run>/`).
+ *
+ * @param {string} relativePath forward-slash normalized, relative to the
+ *   project directory
+ * @returns {boolean}
+ */
+export function isSubagentTranscript(relativePath) {
+  return relativePath.split("/").includes("subagents");
+}
+
+/**
+ * List every `*.jsonl` transcript RECURSIVELY under `dir` — unlike
+ * {@link listRecentTranscripts}, which only looks at the top level — whose
+ * mtime falls inside the `[nowMs - sinceMs, nowMs]` window. Paths are
+ * returned relative to `dir`, forward-slash normalized, so
+ * {@link isSubagentTranscript} can classify them independent of the host
+ * OS's path separator.
+ *
+ * @param {string} dir
+ * @param {number} sinceMs
+ * @param {number} nowMs
+ * @param {{
+ *   readdirRecursive: (dir: string) => string[],
+ *   stat: (path: string) => { mtimeMs: number },
+ * }} fs injected filesystem seam
+ * @returns {string[]} paths relative to `dir`, forward-slash normalized
+ * @throws {Error} when `dir` cannot be listed at all
+ */
+export function listAllTranscripts(dir, sinceMs, nowMs, fs) {
+  /** @type {string[]} */
+  let entries;
+  try {
+    entries = fs.readdirRecursive(dir);
+  } catch (cause) {
+    throw new Error(
+      `Cannot recursively read the Claude Code project directory at ${dir} ` +
+        `(${cause instanceof Error ? cause.message : String(cause)}). The ` +
+        `tool-usage scan needs this directory to exist and be listable.`,
+      { cause },
+    );
+  }
+
+  const cutoff = nowMs - sinceMs;
+  const resolvedDir = resolve(dir);
+  /** @type {string[]} */
+  const files = [];
+  for (const entry of entries) {
+    const normalized = entry.split(sep).join("/");
+    if (!normalized.endsWith(".jsonl")) continue;
+    const path = join(dir, entry);
+    // Same anti-traversal discipline as listRecentTranscripts: a real
+    // recursive readdir() can never escape `dir`, but an injected
+    // test/plugin seam could hand back something that does.
+    if (!resolve(path).startsWith(resolvedDir + sep)) continue;
+    try {
+      if (fs.stat(path).mtimeMs >= cutoff) files.push(normalized);
+    } catch {
+      // Vanished between readdir and stat — skip, don't fail the sweep.
+    }
+  }
+  return files;
+}
+
+/**
+ * Read one transcript file in full and count each `tool_use` block it
+ * contains. Reads the WHOLE file (unlike {@link readTranscriptPrefix}'s
+ * bounded prefix) — a tool call can appear anywhere in a transcript, not
+ * just near its start.
+ *
+ * @param {string} path
+ * @param {{ readFile: (path: string) => string }} fs injected filesystem seam
+ * @returns {Map<string, number> | null} tool name -> count, or null when the
+ *   file could not be read (permission error, vanished mid-scan) — distinct
+ *   from a file that read cleanly but held zero `tool_use` records
+ */
+export function countToolUseInTranscript(path, fs) {
+  /** @type {string} */
+  let text;
+  try {
+    text = fs.readFile(path);
+  } catch {
+    return null;
+  }
+  /** @type {Map<string, number>} */
+  const counts = new Map();
+  for (const line of text.split("\n")) {
+    if (line.length === 0) continue;
+    /** @type {unknown} */
+    let record;
+    try {
+      record = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (typeof record !== "object" || record === null) continue;
+    const content = /** @type {{ message?: { content?: unknown } }} */ (record)
+      .message?.content;
+    if (!Array.isArray(content)) continue;
+    for (const block of content) {
+      const tool = classifyToolUse(block);
+      if (tool === null) continue;
+      counts.set(tool, (counts.get(tool) ?? 0) + 1);
+    }
+  }
+  return counts;
+}
+
+/**
+ * @typedef {{
+ *   sessions_scanned: number,
+ *   unreadable: number,
+ *   events_scanned: number,
+ *   by_tool: Record<string, number>,
+ *   by_tool_origin: Record<string, { hub: number, subagent: number }>,
+ * }} ToolUsageReport
+ */
+
+/**
+ * Compute per-tool usage counts across every transcript in the window,
+ * recursively (see this section's header for why). Throws — rather than
+ * returning a zero-filled report — on the same two cases
+ * {@link computeNamingCompliance} guards: every transcript in the window
+ * being unreadable (a permissions/access problem), and every readable
+ * transcript carrying zero `tool_use` records (the unsupported-format-drift
+ * signal).
+ *
+ * @param {{
+ *   dir: string,
+ *   since: string,
+ *   now: () => number,
+ *   fs: {
+ *     readdirRecursive: (dir: string) => string[],
+ *     stat: (path: string) => { mtimeMs: number },
+ *     readFile: (path: string) => string,
+ *   },
+ * }} options
+ * @returns {ToolUsageReport}
+ * @throws {Error} when no transcripts exist in the window, when every
+ *   transcript found is unreadable, or when every readable transcript
+ *   carries zero `tool_use` records
+ */
+export function computeToolUsage({ dir, since, now, fs }) {
+  const files = listAllTranscripts(dir, sinceToMs(since), now(), fs);
+
+  if (files.length === 0) {
+    throw new Error(
+      `No transcript files found under ${dir} (recursively) within the ` +
+        `last ${since}. Tool-usage cannot be measured over an empty window.`,
+    );
+  }
+
+  let unreadable = 0;
+  let eventsScanned = 0;
+  /** @type {Map<string, number>} */
+  const byTool = new Map();
+  /** @type {Map<string, { hub: number, subagent: number }>} */
+  const byToolOrigin = new Map();
+
+  for (const relative of files) {
+    const counts = countToolUseInTranscript(join(dir, relative), fs);
+    if (counts === null) {
+      unreadable += 1;
+      continue;
+    }
+    const origin = isSubagentTranscript(relative) ? "subagent" : "hub";
+    for (const [tool, count] of counts) {
+      eventsScanned += count;
+      byTool.set(tool, (byTool.get(tool) ?? 0) + count);
+      const originCounts = byToolOrigin.get(tool) ?? { hub: 0, subagent: 0 };
+      originCounts[origin] += count;
+      byToolOrigin.set(tool, originCounts);
+    }
+  }
+
+  if (unreadable === files.length) {
+    throw new Error(
+      `Scanned ${files.length} transcript file(s) under ${dir} (recursively) ` +
+        `within the last ${since} and could not open ANY of them. This looks ` +
+        `like a permissions or access problem with ${dir}, not a ` +
+        `transcript-format issue — check that this process can read that ` +
+        `directory before re-running.`,
+    );
+  }
+
+  if (eventsScanned === 0) {
+    throw new Error(
+      `Scanned ${files.length} transcript file(s) under ${dir} (recursively) ` +
+        `within the last ${since} and found ZERO tool_use records (${unreadable} ` +
+        `of them unreadable). Either this window genuinely has no tool calls ` +
+        `at all (very unlikely for a non-empty window), or the transcript's ` +
+        `record shape has changed and this scan's field names are stale. The ` +
+        `JSONL format is officially unsupported and can change between ` +
+        `Claude Code versions (ADR-0084) — refusing to report zeros that ` +
+        `would read like a healthy answer. Re-verify countToolUseInTranscript/ ` +
+        `classifyToolUse against a fresh transcript sample before trusting ` +
+        `this number.`,
+    );
+  }
+
+  return {
+    sessions_scanned: files.length,
+    unreadable,
+    events_scanned: eventsScanned,
+    by_tool: Object.fromEntries(byTool),
+    by_tool_origin: Object.fromEntries(
+      [...byToolOrigin].map(([tool, counts]) => [tool, { ...counts }]),
+    ),
+  };
+}
+
+// --- End per-tool usage scan -----------------------------------------------
+
 /**
  * Pick the analyzer revision to run: the most recently modified cached
  * revision. Deterministic given the same input, and reported by the caller so
@@ -690,6 +970,13 @@ const REAL_NAMING_FS = {
   close: (fd) => closeSync(fd),
 };
 
+/** Real filesystem seam for {@link computeToolUsage}'s default. */
+const REAL_TOOL_USAGE_FS = {
+  readdirRecursive: (dir) => readdirSync(dir, { recursive: true }),
+  stat: (path) => statSync(path),
+  readFile: (path) => readFileSync(path, "utf8"),
+};
+
 /**
  * Run the adapter against injected seams.
  *
@@ -706,12 +993,19 @@ const REAL_NAMING_FS = {
  *     now: () => number,
  *     fs: typeof REAL_NAMING_FS,
  *   }) => NamingComplianceReport,
+ *   computeTools?: (options: {
+ *     dir: string,
+ *     since: string,
+ *     now: () => number,
+ *     fs: typeof REAL_TOOL_USAGE_FS,
+ *   }) => ToolUsageReport,
  *   now?: () => number,
  * }} deps
  * @returns {{
  *   ok: boolean,
  *   payload: Record<string, unknown> | null,
  *   naming: NamingComplianceReport | null,
+ *   toolUsage: ToolUsageReport | null,
  * }}
  */
 export function runTelemetry({
@@ -722,6 +1016,7 @@ export function runTelemetry({
   runAnalyzer,
   reporter,
   computeNaming = computeNamingCompliance,
+  computeTools = computeToolUsage,
   now = Date.now,
 }) {
   // ADR-0087: "measured, not gated" — the naming-compliance scan is advisory
@@ -740,14 +1035,34 @@ export function runTelemetry({
     );
   }
 
+  // Same advisory discipline as the naming scan above: a tool-usage scan
+  // failure never takes down this tool's primary output.
+  /** @type {ToolUsageReport | null} */
+  let toolUsage = null;
+  try {
+    toolUsage = computeTools({ dir, since, now, fs: REAL_TOOL_USAGE_FS });
+  } catch (cause) {
+    reporter.warn(
+      `Tool-usage scan failed (advisory, does not fail the run): ` +
+        `${cause instanceof Error ? cause.message : String(cause)}`,
+    );
+  }
+
   if (analyzerPath === null) {
     reporter.error(
       `No session-report analyzer found under ~/${PLUGIN_CACHE_SUBPATH}. ` +
         `Install or re-enable the session-report plugin, or pass ` +
         `--analyzer <path> explicitly. Not falling back to a wider scan.`,
     );
-    reporter.finish({ payload: null, analyzerPath: null, dir, since, naming });
-    return { ok: false, payload: null, naming };
+    reporter.finish({
+      payload: null,
+      analyzerPath: null,
+      dir,
+      since,
+      naming,
+      toolUsage,
+    });
+    return { ok: false, payload: null, naming, toolUsage };
   }
 
   /** @type {Record<string, unknown>} */
@@ -758,15 +1073,29 @@ export function runTelemetry({
     );
   } catch (cause) {
     reporter.error(cause instanceof Error ? cause.message : String(cause));
-    reporter.finish({ payload: null, analyzerPath, dir, since, naming });
-    return { ok: false, payload: null, naming };
+    reporter.finish({
+      payload: null,
+      analyzerPath,
+      dir,
+      since,
+      naming,
+      toolUsage,
+    });
+    return { ok: false, payload: null, naming, toolUsage };
   }
 
   const missing = missingKeys(payload);
   if (missing.length > 0) {
     reporter.error(shapeFailureMessage(missing));
-    reporter.finish({ payload: null, analyzerPath, dir, since, naming });
-    return { ok: false, payload: null, naming };
+    reporter.finish({
+      payload: null,
+      analyzerPath,
+      dir,
+      since,
+      naming,
+      toolUsage,
+    });
+    return { ok: false, payload: null, naming, toolUsage };
   }
 
   reporter.succeed(
@@ -782,8 +1111,9 @@ export function runTelemetry({
     dir,
     since,
     naming,
+    toolUsage,
   });
-  return { ok: finished.ok, payload, naming };
+  return { ok: finished.ok, payload, naming, toolUsage };
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
@@ -854,6 +1184,9 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     process.stdout.write(JSON.stringify(outcome.payload, null, 2) + "\n");
     if (outcome.naming !== null) {
       process.stdout.write(JSON.stringify(outcome.naming, null, 2) + "\n");
+    }
+    if (outcome.toolUsage !== null) {
+      process.stdout.write(JSON.stringify(outcome.toolUsage, null, 2) + "\n");
     }
   }
 }

@@ -62,6 +62,7 @@ not citing its row count here, since that number is exactly the kind of
 authored claim that rots the moment another ADR lands). Revisit if this list
 grows past ~20 entries.
 
-| Note | Title                                                                                                        | Date       |
-| ---- | ------------------------------------------------------------------------------------------------------------ | ---------- |
-| 0001 | [An optional `Review by:` date for a deferral ADR with no fired trigger](./0001-deferral-review-by-dates.md) | 2026-09-06 |
+| Note | Title                                                                                                               | Date       |
+| ---- | ------------------------------------------------------------------------------------------------------------------- | ---------- |
+| 0001 | [An optional `Review by:` date for a deferral ADR with no fired trigger](./0001-deferral-review-by-dates.md)        | 2026-09-06 |
+| 0002 | [Extend the session-telemetry adapter with a per-tool usage scan, recursively](./0002-per-tool-usage-scan-scope.md) | 2026-09-06 |

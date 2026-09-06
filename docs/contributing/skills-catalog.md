@@ -194,6 +194,21 @@ pnpm telemetry:sessions --since 90d  # wider window
 pnpm telemetry:sessions --json | jq '.payload.by_skill'
 ```
 
+The same command's `.toolUsage.by_tool` (a top-level sibling of `.payload`,
+not nested under it) answers a different question — which **harness tool**
+(`Read`, `Bash`, an `mcp__m3l__*` call, …) ran, not which skill or subagent.
+It is a direct recursive scan over this project's transcripts, including
+nested subagent transcripts the analyzer itself never reads, so it is the
+one place in the repo that can answer a per-tool usage question at all — a
+name grep for a tool has no equivalent fallback the way a skill-name grep
+does, since a tool call is never narrated in a commit message the way a
+skill's output is:
+
+```bash
+pnpm telemetry:sessions --json | jq '.toolUsage.by_tool'
+pnpm telemetry:sessions --json | jq '.toolUsage.by_tool_origin'  # hub vs. subagent split
+```
+
 It only sees sessions still on disk (Claude Code prunes old transcripts), so
 it answers "recent real usage," not full history — cross-check against the
 commands below for a skill's documentation trail further back:
