@@ -3,6 +3,7 @@ import {
   checkAdrProvenance,
   deriveProvenanceEntry,
   extractPathCandidates,
+  filterToTracked,
 } from "../lib/adr-provenance.mjs";
 
 // ---------------------------------------------------------------------------
@@ -61,6 +62,36 @@ describe("extractPathCandidates", () => {
     expect(
       extractPathCandidates("Just some plain prose, no citations."),
     ).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// filterToTracked
+// ---------------------------------------------------------------------------
+
+describe("filterToTracked", () => {
+  test("keeps a candidate present in tracked", () => {
+    const tracked = new Set(["bin/a.mjs"]);
+    expect(filterToTracked(["bin/a.mjs"], tracked)).toEqual(["bin/a.mjs"]);
+  });
+
+  test("drops a candidate absent from tracked (gitignored/untracked)", () => {
+    const tracked = new Set<string>();
+    expect(filterToTracked(["tmp/scratch.json"], tracked)).toEqual([]);
+  });
+
+  test("keeps only the tracked subset from a mixed list, preserving original order", () => {
+    const tracked = new Set(["bin/a.mjs", "bin/c.mjs"]);
+    const result = filterToTracked(
+      ["bin/a.mjs", "tmp/b.json", "bin/c.mjs"],
+      tracked,
+    );
+    expect(result).toEqual(["bin/a.mjs", "bin/c.mjs"]);
+  });
+
+  test("an empty tracked set drops everything, rather than treating 'no info' as 'keep all'", () => {
+    const tracked = new Set<string>();
+    expect(filterToTracked(["bin/a.mjs", "bin/b.mjs"], tracked)).toEqual([]);
   });
 });
 

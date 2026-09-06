@@ -622,7 +622,7 @@
       },
       {
         "path": "bin/lib/doc-provenance.mjs",
-        "blob": "c00901e8cabe331d72c171492d3a55187c350f92"
+        "blob": "cdb47469d3ff1165f20129cfa0ff24d6da19432b"
       },
       {
         "path": "bin/merge-driver-generated.mjs",
@@ -857,7 +857,7 @@
       },
       {
         "path": "docs/adr/README.md",
-        "blob": "75fc44e6b3abff7b7b1c6adc6f68682f64eabe3b"
+        "blob": "18802c0030ec3fa60d5651843ea63be0fa62b569"
       },
       {
         "path": "docs/logs/2026-08-14-aws-rds-data.md",
@@ -922,7 +922,7 @@
       },
       {
         "path": "bin/lib/command-catalog.mjs",
-        "blob": "9384baf28f50a9c5def3db94e2286f1c46b987cf"
+        "blob": "5e873df3dd8c599d0dabd84b253ce6bac68260a9"
       },
       {
         "path": "bin/lib/hub-sync.mjs",
@@ -974,7 +974,7 @@
       },
       {
         "path": "docs/logs/README.md",
-        "blob": "80056bcb80f935eea81910c1631d4f72dd9d5d00"
+        "blob": "a677c2a6307e5d764dea9d0ebfb569a22d486ac4"
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
@@ -1686,10 +1686,6 @@
       {
         "path": "package.json",
         "blob": "c90be7566c7e98d8c904e12c39612754987a292e"
-      },
-      {
-        "path": "tmp/slice-progress.json",
-        "blob": "7e98f8c0bae181ebdbfe131449c1822a96943247"
       }
     ],
     "verifiedAt": "2026-09-06"
@@ -2210,10 +2206,6 @@
       {
         "path": "bin/usage-cache.mjs",
         "blob": "cda18ac5f07b86cf7b65a2bb5b8298fe640c5d22"
-      },
-      {
-        "path": "tmp/slice-progress.json",
-        "blob": "7e98f8c0bae181ebdbfe131449c1822a96943247"
       }
     ],
     "verifiedAt": "2026-09-06"
@@ -2263,7 +2255,7 @@
     "sourceFiles": [
       {
         "path": "bin/check-adr-index.mjs",
-        "blob": "bc0e4c3c305eb54c4a683198f0cc354f6d2dd52f"
+        "blob": "bff2e320541d33039c5678a57dc73bdb70a0ec5b"
       },
       {
         "path": "bin/check-reference-index.mjs",
@@ -2287,7 +2279,7 @@
       },
       {
         "path": "docs/adr/README.md",
-        "blob": "75fc44e6b3abff7b7b1c6adc6f68682f64eabe3b"
+        "blob": "18802c0030ec3fa60d5651843ea63be0fa62b569"
       },
       {
         "path": "docs/contributing/filing-work.md",
@@ -2304,15 +2296,15 @@
     "sourceFiles": [
       {
         "path": "bin/check-adr-worthiness.mjs",
-        "blob": "168e1117d8ea401a24f77c50ec35fd42cc4859da"
+        "blob": "180d509decbe4a771e1319ae4144aab88aec72b9"
       },
       {
         "path": "docs/adr/README.md",
-        "blob": "75fc44e6b3abff7b7b1c6adc6f68682f64eabe3b"
+        "blob": "18802c0030ec3fa60d5651843ea63be0fa62b569"
       },
       {
         "path": "docs/decision-notes/README.md",
-        "blob": "a2dfa26cdf8cf575377658adaba81f1ec228188e"
+        "blob": "338aca49ee50ca8a6d1532e5ca0432aa1d8c9867"
       },
       {
         "path": "docs/logs/2026-09-06-adr-corpus-audit.md",

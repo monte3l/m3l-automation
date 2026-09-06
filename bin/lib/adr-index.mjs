@@ -114,6 +114,22 @@ const CLAUSE_REQUIRED_VERBS = new Set([
 ]);
 
 /**
+ * Placeholder tokens that satisfy the `(clauses: …)` regex's non-empty check
+ * (`bin/lib/adr-index.mjs`'s `parseRelations()`) without naming anything a
+ * reader could act on — `(clauses: TBD)` parses to a truthy, non-whitespace
+ * string today and passes silently. Matched whole-value (after trimming),
+ * case-insensitively, so a real clause list that happens to mention one of
+ * these words mid-sentence is never caught by mistake.
+ *
+ * Deliberately narrow rather than an exhaustive synonym list (`none`,
+ * `unknown`, `various`, `tbc`, … all still pass) — this is now a blocking
+ * kind (`STRUCTURAL_FINDING_KINDS`), so a false positive against a real,
+ * unusually-worded clause list is the failure mode worth avoiding; widen it
+ * only against a concrete placeholder this list actually missed.
+ */
+const PLACEHOLDER_CLAUSE_RE = /^(?:tbd|todo|n\/a|\?+|\.{3}|…|-)$/i;
+
+/**
  * One `Relations:` entry: `<verb>: <NNNN>` optionally followed by
  * `(clauses: …)`. Global so every entry on a line is captured, not just the
  * first — a Relations line typically lists several.
@@ -269,6 +285,13 @@ export function buildGeneratedBlock(entries) {
  * ADR-0094's structural findings — the ones PR3 flips to blocking once the
  * corpus is normalized. Exported so `check-adr-index.mjs` can decide
  * severity per finding without duplicating this classification.
+ *
+ * `missing-clause-list` and `placeholder-clause-list` joined this set after
+ * the corpus was confirmed clean of both (0 findings across 95 ADRs) — see
+ * the audit that added them. ADR-0094:93-94 already states the clause
+ * requirement in absolute terms ("no longer permitted"); moving these two
+ * kinds here makes the gate enforce that rule structurally instead of
+ * merely warning about a violation of it.
  */
 export const STRUCTURAL_FINDING_KINDS = new Set([
   "unknown-status",
@@ -276,6 +299,8 @@ export const STRUCTURAL_FINDING_KINDS = new Set([
   "dangling-relation-target",
   "non-reciprocal-relation",
   "duplicate-number",
+  "missing-clause-list",
+  "placeholder-clause-list",
 ]);
 
 /**
@@ -341,14 +366,23 @@ export function checkAdrIndex(
         continue;
       }
 
-      if (CLAUSE_REQUIRED_VERBS.has(relation.verb) && !relation.clauses) {
-        findings.push({
-          kind: "missing-clause-list",
-          message:
-            `${entry.filename}'s "${relation.verb}: ${String(relation.number).padStart(4, "0")}" ` +
-            `entry has no "(clauses: …)" qualifier — ADR-0094 requires one ` +
-            `for partial supersession.`,
-        });
+      if (CLAUSE_REQUIRED_VERBS.has(relation.verb)) {
+        if (!relation.clauses) {
+          findings.push({
+            kind: "missing-clause-list",
+            message:
+              `${entry.filename}'s "${relation.verb}: ${String(relation.number).padStart(4, "0")}" ` +
+              `entry has no "(clauses: …)" qualifier — ADR-0094 requires one ` +
+              `for partial supersession.`,
+          });
+        } else if (PLACEHOLDER_CLAUSE_RE.test(relation.clauses.trim())) {
+          findings.push({
+            kind: "placeholder-clause-list",
+            message:
+              `${entry.filename}'s "${relation.verb}: ${String(relation.number).padStart(4, "0")}" ` +
+              `entry's "(clauses: ${relation.clauses})" is a placeholder, not a real clause list.`,
+          });
+        }
       }
 
       const target = byNumber.get(relation.number);

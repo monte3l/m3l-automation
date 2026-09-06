@@ -21,11 +21,12 @@
 import process from "node:process";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { hashBlobs } from "./lib/doc-provenance.mjs";
+import { hashBlobs, trackedFiles } from "./lib/doc-provenance.mjs";
 import {
   checkAdrProvenance,
   deriveProvenanceEntry,
   extractPathCandidates,
+  filterToTracked,
 } from "./lib/adr-provenance.mjs";
 import { createReporter, parseJsonFlag, repoRoot } from "./lib/report.mjs";
 
@@ -56,7 +57,7 @@ const candidatesByAdr = new Map();
 /** @type {Set<string>} */
 const allExistingCandidates = new Set();
 
-const isTrackableFile = (p) => {
+const isExistingFile = (p) => {
   const abs = join(root, p);
   return existsSync(abs) && statSync(abs).isFile();
 };
@@ -64,12 +65,36 @@ const isTrackableFile = (p) => {
 for (const filename of filenames) {
   const adr = filename.slice(0, 4);
   const content = readFileSync(join(adrDir, filename), "utf8");
-  const existing = extractPathCandidates(content).filter(isTrackableFile);
+  const existing = extractPathCandidates(content).filter(isExistingFile);
   candidatesByAdr.set(adr, existing);
   for (const p of existing) allExistingCandidates.add(p);
 }
 
-const blobs = hashBlobs(root, [...allExistingCandidates]);
+// A gitignored/untracked candidate must never read as drift — see
+// bin/lib/adr-provenance.mjs's filterToTracked() doc comment (tmp/*,
+// .claude/settings.local.json). This gate is advisory-only, so a git
+// failure degrades by warning loudly and falling back to the unfiltered
+// candidate set (matching pre-filter behavior) rather than crashing —
+// never a silent "nothing is tracked"/"everything is tracked" guess.
+let tracked;
+try {
+  tracked = trackedFiles(root, [...allExistingCandidates]);
+} catch (cause) {
+  reporter.warn(
+    `Could not resolve git-tracked status for provenance sources: ${/** @type {Error} */ (cause).message} — ` +
+      `this run's drift findings may include gitignored/untracked paths.`,
+  );
+  tracked = new Set(allExistingCandidates);
+}
+
+for (const [adr, paths] of candidatesByAdr) {
+  candidatesByAdr.set(adr, filterToTracked(paths, tracked));
+}
+
+const blobs = hashBlobs(
+  root,
+  [...allExistingCandidates].filter((p) => tracked.has(p)),
+);
 
 // A bare re-run (nothing actually changed on disk) must never itself read
 // as drift: force verifiedAt to match the committed entry so

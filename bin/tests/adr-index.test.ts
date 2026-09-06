@@ -3,6 +3,7 @@ import {
   BEGIN_MARKER,
   END_MARKER,
   RECIPROCAL_VERB,
+  STRUCTURAL_FINDING_KINDS,
   VALID_RELATION_VERBS,
   buildAdrIndexTable,
   buildGeneratedBlock,
@@ -462,6 +463,113 @@ describe("checkAdrIndex", () => {
     expect(findings.map((f) => f.kind)).toContain("missing-clause-list");
   });
 
+  test("flags a placeholder (clauses: TBD) as placeholder-clause-list, not missing-clause-list", () => {
+    const entries = [
+      {
+        number: 20,
+        filename: "0020-a.md",
+        title: "A",
+        statusText: "Partially-superseded",
+        statusKind: "Partially-superseded",
+        relations: [
+          {
+            verb: "partially-superseded-by",
+            number: 11,
+            clauses: "TBD",
+          },
+        ],
+        date: undefined,
+      },
+      {
+        number: 11,
+        filename: "0011-b.md",
+        title: "B",
+        statusText: "Accepted",
+        statusKind: "Accepted",
+        relations: [
+          { verb: "partially-supersedes", number: 20, clauses: "TBD" },
+        ],
+        date: undefined,
+      },
+    ];
+    const findings = checkAdrIndex(entries);
+    const kinds = findings.map((f) => f.kind);
+    expect(kinds).toContain("placeholder-clause-list");
+    expect(kinds).not.toContain("missing-clause-list");
+  });
+
+  test("matches a placeholder clause case-insensitively and tolerates surrounding whitespace", () => {
+    const entries = [
+      {
+        number: 20,
+        filename: "0020-a.md",
+        title: "A",
+        statusText: "Partially-superseded",
+        statusKind: "Partially-superseded",
+        relations: [
+          {
+            verb: "partially-superseded-by",
+            number: 11,
+            clauses: "  n/a  ",
+          },
+        ],
+        date: undefined,
+      },
+      {
+        number: 11,
+        filename: "0011-b.md",
+        title: "B",
+        statusText: "Accepted",
+        statusKind: "Accepted",
+        relations: [
+          { verb: "partially-supersedes", number: 20, clauses: "  n/a  " },
+        ],
+        date: undefined,
+      },
+    ];
+    const findings = checkAdrIndex(entries);
+    expect(findings.map((f) => f.kind)).toContain("placeholder-clause-list");
+  });
+
+  test("does not flag a real, non-placeholder clause list", () => {
+    const entries = [
+      {
+        number: 20,
+        filename: "0020-a.md",
+        title: "A",
+        statusText: "Partially-superseded",
+        statusKind: "Partially-superseded",
+        relations: [
+          {
+            verb: "partially-superseded-by",
+            number: 11,
+            clauses: "the publish pipeline",
+          },
+        ],
+        date: undefined,
+      },
+      {
+        number: 11,
+        filename: "0011-b.md",
+        title: "B",
+        statusText: "Accepted",
+        statusKind: "Accepted",
+        relations: [
+          {
+            verb: "partially-supersedes",
+            number: 20,
+            clauses: "the publish pipeline",
+          },
+        ],
+        date: undefined,
+      },
+    ];
+    const findings = checkAdrIndex(entries);
+    const kinds = findings.map((f) => f.kind);
+    expect(kinds).not.toContain("missing-clause-list");
+    expect(kinds).not.toContain("placeholder-clause-list");
+  });
+
   test("flags two entries sharing the same number as duplicate-number", () => {
     const entries = [
       {
@@ -617,5 +725,15 @@ describe("checkAdrIndex", () => {
     expect(reviewFinding?.message).toContain("0134-a.md");
     const statusFinding = findings.find((f) => f.kind === "unknown-status");
     expect(statusFinding?.message).toContain("0135-mystery.md");
+  });
+});
+
+describe("STRUCTURAL_FINDING_KINDS", () => {
+  test("includes missing-clause-list and placeholder-clause-list", () => {
+    // A drift guard: a future accidental removal of either kind from the set
+    // (e.g. during an unrelated refactor) fails this test rather than
+    // silently downgrading the finding from blocking back to advisory-only.
+    expect(STRUCTURAL_FINDING_KINDS.has("missing-clause-list")).toBe(true);
+    expect(STRUCTURAL_FINDING_KINDS.has("placeholder-clause-list")).toBe(true);
   });
 });

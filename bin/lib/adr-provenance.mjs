@@ -97,6 +97,32 @@ export function extractPathCandidates(content) {
 }
 
 /**
+ * Filter existing-on-disk candidate paths down to the ones git actually
+ * tracks. A gitignored or otherwise untracked file — machine-local ephemeral
+ * state such as `tmp/*` or a `.claude/settings.local.json` ignored only via a
+ * personal global gitignore — must never become a provenance source: its
+ * blob is only ever visible on the machine that has it, so tracking it makes
+ * `check:adr-provenance`'s output non-deterministic across clones and CI
+ * runners (confirmed live: `tmp/slice-progress.json` and
+ * `tmp/usage-weekly.json`, both gitignored, were already committed sources
+ * before this filter existed).
+ *
+ * Pure: takes the tracked set as input rather than touching git itself, so
+ * the generator and the checker share one derivation of "tracked" —
+ * `bin/lib/doc-provenance.mjs`'s `trackedFiles()`, called once per run,
+ * batched across every ADR's candidates — rather than each computing its own
+ * and risking disagreement.
+ *
+ * @param {string[]} candidates - existing-on-disk path candidates for one ADR
+ * @param {Set<string>} tracked - the full set of git-tracked paths among all
+ *   candidates across every ADR (computed once, batched, by the caller)
+ * @returns {string[]}
+ */
+export function filterToTracked(candidates, tracked) {
+  return candidates.filter((p) => tracked.has(p));
+}
+
+/**
  * @typedef {{ path: string, blob: string }} ProvenanceSource
  * @typedef {{ sourceFiles: ProvenanceSource[], verifiedAt: string }} AdrProvenanceEntry
  * @typedef {Record<string, AdrProvenanceEntry>} AdrProvenanceData
