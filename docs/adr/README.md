@@ -11,13 +11,50 @@ We use a lightweight [MADR](https://adr.github.io/madr/)-style format. Start fro
 
 - One decision per file, named `NNNN-short-title.md` (zero-padded sequence),
   e.g. `0001-esm-only-output.md`.
-- Status is one of: `Proposed`, `Accepted`, `Rejected`, `Deprecated`,
-  `Superseded by ADR-NNNN`, `Re-affirmed by ADR-NNNN`.
-- ADRs are immutable once `Accepted`. To change a decision, add a new ADR that
-  supersedes the old one and update the old one's status. To _revisit_ a still-
-  in-force decision on new grounds without changing it, add a new ADR and mark
-  the old one `Re-affirmed by ADR-NNNN` — it remains accepted; the annotation
-  just points to the newer rationale (e.g. ADR-0012 → ADR-0023).
+- **Status schema (ADR-0094).** The status block is two lines:
+
+  ```markdown
+  - **Status:** Accepted
+  - **Relations:** partially-superseded-by: 0057 (clauses: the publish pipeline; §Decision 2)
+  ```
+
+  `Status:` is exactly one of `Proposed`, `Accepted`, `Rejected`, `Deprecated`,
+  `Superseded`, `Partially-superseded` — it states only the ADR's own current
+  standing, never a cross-reference. `Relations:` is optional and holds
+  comma-separated `<verb>: <NNNN>` entries; verb is one of `supersedes`,
+  `superseded-by`, `partially-supersedes`, `partially-superseded-by`, `amends`,
+  `amended-by`, `re-affirmed-by`, `fires-trigger-of`, `trigger-fired-by`. Omit
+  the `Relations:` line entirely when an ADR has none.
+
+- **Partial supersession must name its clauses, on both sides.** A
+  `partially-supersedes` / `partially-superseded-by` entry carries a
+  `(clauses: …)` qualifier — on the superseding ADR, what it replaces; on the
+  superseded ADR, what survives. A bare `Partially-superseded` status with no
+  clause list forces the reader to cross-reference the other ADR to learn what
+  still applies, which is exactly the ambiguity this convention exists to
+  prevent.
+- **Every `Relations:` entry must be reciprocal.** If ADR A declares
+  `superseded-by: B`, ADR B must declare `supersedes: A` (and likewise for
+  every other verb pair). `pnpm check:adr-index` enforces this as a blocking
+  check.
+- **`## Update` sections are permitted on an `Accepted` ADR without changing
+  its `Status:`**, on one condition: the Update must execute a revisit
+  trigger or condition already stated in the ADR's own accepted Decision (a
+  named consumer call-site, a named multi-script flow, and similar — see any
+  ADR titled "…deferred"). Update section headings and dates are never
+  renumbered or redated once written; other documents cite them by exact date
+  (e.g. `docs/contributing/filing-work.md` cites "ADR-0032's 2026-08-19
+  Update").
+- **ADRs are immutable in every other respect once `Accepted`.** An Update
+  that would change the decision itself — not merely execute a trigger the
+  decision already declared — requires a new ADR with `superseded-by` or
+  `partially-superseded-by`, and the old ADR's status is updated accordingly.
+- **The `## Index` table below is generated, not hand-maintained.** Its
+  `ADR | Title | Status` columns are derived from each file's own status block
+  by `pnpm gen:adr-index`, inside the `<!-- BEGIN GENERATED ADR INDEX -->` …
+  `<!-- END GENERATED ADR INDEX -->` markers; `pnpm check:adr-index` verifies
+  the block matches a fresh re-derivation. Do not hand-edit inside the
+  markers — regenerate instead.
 - Decisions with semver impact (e.g. changes to the `exports` map) should be
   backed by an ADR.
 - **A drafted-but-unpushed ADR number is provisional, not reserved.** A
@@ -26,8 +63,9 @@ We use a lightweight [MADR](https://adr.github.io/madr/)-style format. Start fro
   final push, not just at drafting time; if collided, `git mv` to the next
   free number, fix the file's own `# NNNN.` header and every cross-reference
   (`grep -rl` the old `ADR-NNNN`/filename across the change), then rebase —
-  expect a manual conflict in this README's index table when both PRs
-  inserted a row at the same position
+  a generated index table means this no longer produces a manual merge
+  conflict in this README (ADR-0024's merge driver applies to the generated
+  block), only in the file listing itself
   (`docs/logs/2026-09-02-session-naming-convention.md`).
 
 ## When to write an ADR
@@ -44,13 +82,20 @@ Write a new ADR when:
 - There is genuine **disagreement or uncertainty** among deciders: record what was
   decided and why, so it is not relitigated.
 - A decision is **superseded**: the new ADR records the change; the old ADR's
-  status is updated to `Superseded by ADR-NNNN`.
+  `Status:` is updated to `Superseded` (or `Partially-superseded`, with a
+  clause list) and its `Relations:` gains `superseded-by: NNNN`, reciprocated
+  by `supersedes: NNNN` on the new ADR.
 
 You do **not** need an ADR for implementation details that stay behind the module
 boundary (internal helpers, test utilities, refactors that do not touch the public
 surface).
 
 ## Index
+
+<!-- BEGIN GENERATED ADR INDEX -->
+<!-- Do not hand-edit this block — run `pnpm gen:adr-index` (bin/gen-adr-index.mjs)
+     to regenerate it from each ADR's own status block. `pnpm check:adr-index`
+     verifies it matches a fresh re-derivation. -->
 
 | ADR  | Title                                                                                                                                                     | Status                                                |
 | ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
@@ -147,3 +192,6 @@ surface).
 | 0091 | [Podman and Containerfiles replace Docker for the console's app containers](./0091-podman-replaces-docker.md)                                             | Accepted                                              |
 | 0092 | [Out-of-band usage cache for the statusline's first network dependency](./0092-out-of-band-usage-cache.md)                                                | Accepted                                              |
 | 0093 | [Documentation-lookup MCP (Context7): adoption stance and usage policy](./0093-documentation-lookup-mcp-context7.md)                                      | Accepted; amends ADR-0030                             |
+| 0094 | [ADR governance: a structured status schema and a generated index](./0094-adr-governance-and-status-schema.md)                                            | Accepted                                              |
+
+<!-- END GENERATED ADR INDEX -->

@@ -125,6 +125,14 @@ exact wording and the file/line it cites matter for the plan. Then:
 4. Group surviving items by theme (e.g. "missing CI gate", "doc drift",
    "hook coverage").
 
+**A user-supplied report's own cited examples are a claim to verify, not
+ground truth to inherit** — a report can be directionally correct that a
+pattern exists while citing the wrong specific instances as evidence of it.
+Grep exhaustively for the pattern rather than trusting a named list; the
+ADR-corpus audit found the source report's three named partial-supersession
+examples were the corpus's best-implemented cases, while the two structurally
+broken ones went uncited (`docs/logs/2026-09-06-adr-corpus-audit.md`).
+
 **When the audit target is (or cites) a stored `docs/plans/*.md`, treat every
 factual claim in that plan as possibly rotted** — counts, line numbers, file
 lists, and "what already exists" premises drift between authoring and audit.

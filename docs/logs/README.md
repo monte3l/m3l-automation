@@ -247,3 +247,4 @@ backstop for the step above, not a substitute for it.
 | 2026-09-05 | trim-oversized-rule-files                                         | [trim-oversized-rule-files](./2026-09-05-trim-oversized-rule-files.md)                     |
 | 2026-09-05 | `work-log-scope`                                                  | [work-log-scope](./2026-09-05-work-log-scope.md)                                           |
 | 2026-09-05 | Close the logs-index-drift loop (gate + backfill, PR #1046/#1049) | [logs-index-drift](./2026-09-05-logs-index-drift.md)                                       |
+| 2026-09-06 | ADR corpus audit + governance reconciliation plan (ADR-0094)      | [adr-corpus-audit](./2026-09-06-adr-corpus-audit.md)                                       |
