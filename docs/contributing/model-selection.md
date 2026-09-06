@@ -190,9 +190,10 @@ run at all, not to choose versions inside them; version pinning belongs in the
 per-spoke `model:` frontmatter and the `--model` flags (step 4), where it is
 visible in the matrix and machine-checked. `enforceAvailableModels` is
 deliberately unset: the four families already cover the entire current
-generally-available model catalog (limited-availability families, e.g.
-Mythos 5/Project Glasswing, are intentionally excluded until GA), so it would
-add risk (an unreachable Default) without narrowing anything further.
+generally-available model catalog (limited-availability families — Mythos
+5/Project Glasswing and, as of 2026-09-06, Mythos 5.1 — are intentionally
+excluded until GA), so it would add risk (an unreachable Default) without
+narrowing anything further.
 
 The spoke and workflow rows above are machine-verified: `pnpm check:agents`
 (a CI step, also run in the `pre-push` git hook — see the cadence table in
@@ -274,7 +275,7 @@ The `docs-consistency-reviewer` and `Explore` rows' `effort:` values
 (`medium`/`low`) are **inert on the platform**: `claude-haiku-4-5` is absent
 from the effort-supported model list
 (`platform.claude.com/docs/en/build-with-claude/effort`, confirmed
-2026-09-01) — Haiku 4.5's effort is "Not supported" per the models overview
+2026-09-06) — Haiku 4.5's effort is "Not supported" per the models overview
 page. They cannot carry `n/a` like the workflow rows above, because
 `check:agents` requires every `agent`-surface row (and its matching
 frontmatter) to hold a legal `EFFORT_LEVELS` value, with no Haiku-specific

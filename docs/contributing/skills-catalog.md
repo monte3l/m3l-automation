@@ -99,6 +99,12 @@ actually apply.
 | -------------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `researching-anthropic-guidance` | ~7 mentions — not "very low," but its multi-agent fan-out has real token cost | The hub may be tempted to do a lightweight ad-hoc web search instead of invoking the full skill for a quick Anthropic-guidance question. Not a confirmed gap, just a pattern worth watching in future audits. |
 
+The "~7 mentions" figure above is derived by hand from `docs/logs` grep counts.
+Claude Code's own `/skill-doctor` (v2.1.252+; confirmed 2026-09-06) reports
+what each loaded skill actually costs in context and how often it gets
+invoked, and flags a skill that's listed but never invoked — the officially
+supported way to derive this table's evidence column empirically instead.
+
 ## Low usage ≠ broken
 
 Before proposing to widen a trigger or otherwise "fix" a low-usage skill,
