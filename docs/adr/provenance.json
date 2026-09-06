@@ -244,7 +244,7 @@
       },
       {
         "path": "docs/adr/template.md",
-        "blob": "fb1265f5884eb14e796f1d852d5f8fcc846b2ba5"
+        "blob": "569ea341f065901186fba06379caef798434c1a5"
       },
       {
         "path": "package.json",
@@ -622,7 +622,7 @@
       },
       {
         "path": "bin/lib/doc-provenance.mjs",
-        "blob": "e0e49965f04aaf35954a2d058136227f84408973"
+        "blob": "c00901e8cabe331d72c171492d3a55187c350f92"
       },
       {
         "path": "bin/merge-driver-generated.mjs",
@@ -695,7 +695,7 @@
       },
       {
         "path": "docs/contributing/model-selection.md",
-        "blob": "ac5655cc06654c7b1de6a411778d86ee0891999e"
+        "blob": "164378e4c05d7b82c4413c78fd5ba667583d8255"
       }
     ],
     "verifiedAt": "2026-09-06"
@@ -857,7 +857,7 @@
       },
       {
         "path": "docs/adr/README.md",
-        "blob": "2fd3dfd7239be27c45052f91035f9470794f2156"
+        "blob": "18802c0030ec3fa60d5651843ea63be0fa62b569"
       },
       {
         "path": "docs/logs/2026-08-14-aws-rds-data.md",
@@ -1831,7 +1831,7 @@
       },
       {
         "path": "docs/contributing/model-selection.md",
-        "blob": "ac5655cc06654c7b1de6a411778d86ee0891999e"
+        "blob": "164378e4c05d7b82c4413c78fd5ba667583d8255"
       },
       {
         "path": "docs/contributing/subagent-context-management.md",
@@ -1843,7 +1843,7 @@
       },
       {
         "path": "docs/research/harness-refresh.md",
-        "blob": "fd5a450be6a916eaad685fa77b9398858a00155c"
+        "blob": "b0bebce5ab3010955e4cc10d2cef34c3903f591a"
       }
     ],
     "verifiedAt": "2026-09-06"
@@ -1951,7 +1951,7 @@
       },
       {
         "path": "docs/research/harness-refresh.md",
-        "blob": "fd5a450be6a916eaad685fa77b9398858a00155c"
+        "blob": "b0bebce5ab3010955e4cc10d2cef34c3903f591a"
       }
     ],
     "verifiedAt": "2026-09-06"
@@ -1968,7 +1968,7 @@
       },
       {
         "path": "docs/contributing/hooks-reference.md",
-        "blob": "c89fe9df613ab9a2bbc1191e7f3ee1a29aadbe65"
+        "blob": "5f9705a688850c4440a3a635908878683a807fef"
       }
     ],
     "verifiedAt": "2026-09-06"
@@ -2101,7 +2101,7 @@
       },
       {
         "path": "docs/research/harness-refresh.md",
-        "blob": "fd5a450be6a916eaad685fa77b9398858a00155c"
+        "blob": "b0bebce5ab3010955e4cc10d2cef34c3903f591a"
       }
     ],
     "verifiedAt": "2026-09-06"
@@ -2130,7 +2130,7 @@
       },
       {
         "path": "docs/contributing/skills-catalog.md",
-        "blob": "b8f807ec16f25a8be1f00816429bce118cd82c95"
+        "blob": "0fe6d447733edd736fedc6b0d34cc2589d75e75c"
       },
       {
         "path": "docs/plans/archive/2026-09-03-skill-invocation-and-listing-budget.md",
@@ -2234,7 +2234,7 @@
       },
       {
         "path": "docs/contributing/skills-catalog.md",
-        "blob": "b8f807ec16f25a8be1f00816429bce118cd82c95"
+        "blob": "0fe6d447733edd736fedc6b0d34cc2589d75e75c"
       },
       {
         "path": "docs/logs/2026-07-17-adr-0030-workflow-tooling-mcp.md",
@@ -2255,7 +2255,7 @@
     "sourceFiles": [
       {
         "path": "bin/check-adr-index.mjs",
-        "blob": "bff2e320541d33039c5678a57dc73bdb70a0ec5b"
+        "blob": "bc0e4c3c305eb54c4a683198f0cc354f6d2dd52f"
       },
       {
         "path": "bin/check-reference-index.mjs",
@@ -2279,7 +2279,7 @@
       },
       {
         "path": "docs/adr/README.md",
-        "blob": "2fd3dfd7239be27c45052f91035f9470794f2156"
+        "blob": "18802c0030ec3fa60d5651843ea63be0fa62b569"
       },
       {
         "path": "docs/contributing/filing-work.md",
@@ -2300,7 +2300,7 @@
       },
       {
         "path": "docs/adr/README.md",
-        "blob": "2fd3dfd7239be27c45052f91035f9470794f2156"
+        "blob": "18802c0030ec3fa60d5651843ea63be0fa62b569"
       },
       {
         "path": "docs/decision-notes/README.md",
