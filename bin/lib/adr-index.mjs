@@ -120,6 +120,12 @@ const CLAUSE_REQUIRED_VERBS = new Set([
  * string today and passes silently. Matched whole-value (after trimming),
  * case-insensitively, so a real clause list that happens to mention one of
  * these words mid-sentence is never caught by mistake.
+ *
+ * Deliberately narrow rather than an exhaustive synonym list (`none`,
+ * `unknown`, `various`, `tbc`, … all still pass) — this is now a blocking
+ * kind (`STRUCTURAL_FINDING_KINDS`), so a false positive against a real,
+ * unusually-worded clause list is the failure mode worth avoiding; widen it
+ * only against a concrete placeholder this list actually missed.
  */
 const PLACEHOLDER_CLAUSE_RE = /^(?:tbd|todo|n\/a|\?+|\.{3}|…|-)$/i;
 

@@ -114,7 +114,11 @@ export function hashBlobs(root, files, runGit = defaultRunGit) {
  * swallowed `git hash-object` failure.
  *
  * @param {string} root - absolute repo root, used as the git cwd
- * @param {string[]} files - repo-relative paths (files or directories)
+ * @param {string[]} files - repo-relative paths (files only — a directory
+ *   pathspec makes `git ls-files` list the files *inside* it, never the
+ *   directory path itself, so a directory argument is always absent from
+ *   the returned Set; both current callers already filter to files via
+ *   `isExistingFile` before calling this)
  * @param {(args: string[], opts: { cwd: string }) => { status: number | null, stdout: string, stderr?: string }} [runGit]
  * @returns {Set<string>} the subset of `files` git currently tracks
  * @throws {Error} when the batched `git ls-files` call itself fails
