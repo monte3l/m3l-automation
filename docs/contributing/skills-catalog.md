@@ -64,7 +64,7 @@ respond to right now, not that the skill has gone stale.
 | Skill                       | Trigger condition                                                | Evidence                                                                                                                                                                                                                                                                                                                                              |
 | --------------------------- | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `resolving-merge-conflicts` | An active rebase/merge has real (non-derived-artifact) conflicts | ADR-0024's registered merge driver auto-resolves most derived-artifact conflicts (`catalog.json`, `symbol-map.json`, `pnpm-lock.yaml`) before this skill would ever need to run                                                                                                                                                                       |
-| `tsconfig-strict-esm`       | Editing `tsconfig*.json`                                         | `tsconfig.base.json` has been edited exactly once in the repo's entire history                                                                                                                                                                                                                                                                        |
+| `typescript-configuration`  | Editing `tsconfig*.json`                                         | `tsconfig.base.json` has been edited exactly once in the repo's entire history                                                                                                                                                                                                                                                                        |
 | `harness-guide`             | The maintainer types `/harness-guide` to ask which skill applies | Added 2026-09-03. `disable-model-invocation: true` — unlike every other row in this table, its trigger isn't just rare, it's **never automatic**: it fires only when explicitly typed, so its usage count is a direct measure of how often the maintainer reaches for it rather than of anything the harness does on its own. See `skill-routing.md`. |
 
 ### Path-scoped reference skills — likely under-narrated, not under-used
@@ -75,10 +75,10 @@ errors & tests" section). A session that touches `eslint.config.js` loads
 a work log for that, so log-mention counts undercount how often these
 actually apply.
 
-| Skill                         | File-edit opportunity                                                                                                                       | Skill-name mentions |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- |
-| `eslint-flat-config`          | 15 commits touching `eslint.config.js`                                                                                                      | ~3                  |
-| `vitest-coverage-types-mocks` | 4 commits touching `vitest.config.ts`, plus every mock-writing/coverage-failure session (broader trigger surface than just the config file) | ~3                  |
+| Skill                | File-edit opportunity                                                                                                                       | Skill-name mentions |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- |
+| `eslint-flat-config` | 15 commits touching `eslint.config.js`                                                                                                      | ~3                  |
+| `vitest-testing`     | 4 commits touching `vitest.config.ts`, plus every mock-writing/coverage-failure session (broader trigger surface than just the config file) | ~3                  |
 
 ### Habitual, likely absorbed into default behavior
 
@@ -112,10 +112,11 @@ check whether it's already accounted for above:
 - **`resolving-merge-conflicts`** stays rare as long as ADR-0024's merge
   driver keeps auto-resolving derived-artifact conflicts; a spike in manual
   invocations would actually be the anomaly worth investigating.
-- **`tsconfig-strict-esm`** stays rare as long as `tsconfig.base.json` stays
-  stable; this tracks the config's own volatility, not the skill's relevance.
+- **`typescript-configuration`** stays rare as long as `tsconfig.base.json`
+  stays stable; this tracks the config's own volatility, not the skill's
+  relevance.
 - **Path-scoped reference skills** (`eslint-flat-config`,
-  `vitest-coverage-types-mocks`) auto-load silently — a low mention count in
+  `vitest-testing`) auto-load silently — a low mention count in
   `docs/logs` reflects narration habits, not actual load frequency.
 
 ## GitHub integration
@@ -156,13 +157,13 @@ governed by it directly. [ADR-0093](../adr/0093-documentation-lookup-mcp-context
 is the decision of record: allowlist, mechanism, and a freshness gate
 (`check:reference-freshness`) over the three reference snapshots it sourced.
 
-| Surface                       | Mechanism                                                 | Why                                                                                                                                       |
-| ----------------------------- | --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `tsconfig-strict-esm`         | `mcp__context7__*` (hub-invoked, authoring the reference) | Its `references/tsconfig-strict-esm.md` snapshot was sourced from Context7; refreshed on a major TypeScript bump                          |
-| `eslint-flat-config`          | `mcp__context7__*` (hub-invoked, authoring the reference) | Its `references/eslint-flat-config.md` snapshot was sourced from Context7; refreshed on a major ESLint bump                               |
-| `vitest-coverage-types-mocks` | `mcp__context7__*` (hub-invoked, authoring the reference) | Its `references/vitest-coverage-types-mocks.md` snapshot was sourced from Context7; refreshed on any minor bump touching mocking/coverage |
-| `implementing-submodules`     | `mcp__context7__*` (`code-implementer` spoke grant)       | Step 4's dist-types verification needs behavioral semantics (retry/backoff, terminal-state classification) a `.d.ts` cannot express       |
-| `reviewing-dependabot-prs`    | `mcp__context7__*` (hub-invoked, escalation path only)    | An option within Step 3d's escalation path for API-shape/migration questions, alongside — never in place of — the release-notes fallback  |
+| Surface                    | Mechanism                                                 | Why                                                                                                                                      |
+| -------------------------- | --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `typescript-configuration` | `mcp__context7__*` (hub-invoked, authoring the reference) | Its `references/typescript-configuration.md` snapshot was sourced from Context7; refreshed on a major TypeScript bump                    |
+| `eslint-flat-config`       | `mcp__context7__*` (hub-invoked, authoring the reference) | Its `references/eslint-flat-config.md` snapshot was sourced from Context7; refreshed on a major ESLint bump                              |
+| `vitest-testing`           | `mcp__context7__*` (hub-invoked, authoring the reference) | Its `references/vitest-testing.md` snapshot was sourced from Context7; refreshed on any minor bump touching mocking/coverage             |
+| `implementing-submodules`  | `mcp__context7__*` (`code-implementer` spoke grant)       | Step 4's dist-types verification needs behavioral semantics (retry/backoff, terminal-state classification) a `.d.ts` cannot express      |
+| `reviewing-dependabot-prs` | `mcp__context7__*` (hub-invoked, escalation path only)    | An option within Step 3d's escalation path for API-shape/migration questions, alongside — never in place of — the release-notes fallback |
 
 Two structural constraints apply: **hub-invoked except the one scoped
 `code-implementer` grant** ADR-0093 records (see

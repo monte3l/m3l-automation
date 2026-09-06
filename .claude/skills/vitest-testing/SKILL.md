@@ -1,5 +1,5 @@
 ---
-name: vitest-coverage-types-mocks
+name: vitest-testing
 description: >-
   How this repo runs Vitest — coverage gate, v8 per-file thresholds,
   mocking/type-testing patterns. Use for "coverage is failing", "mock this
@@ -98,4 +98,4 @@ the mocked path matches the import specifier exactly.
 ## Full API reference
 
 For the current Vitest 4 config/coverage/mocking API surface, see
-[`references/vitest-coverage-types-mocks.md`](references/vitest-coverage-types-mocks.md).
+[`references/vitest-testing.md`](references/vitest-testing.md).
