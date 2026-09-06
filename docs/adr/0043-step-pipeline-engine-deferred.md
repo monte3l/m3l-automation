@@ -2,7 +2,6 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-13
-- **Review by:** 2027-02-13
 - **Deciders:** Enrico Lionello (maintainer); Claude (audit synthesis)
 
 ## Context and problem statement
