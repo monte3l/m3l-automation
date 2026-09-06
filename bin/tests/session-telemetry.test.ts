@@ -238,7 +238,7 @@ describe("runTelemetry", () => {
         non_conforming_names: [],
       }),
       computeTools: () => ({
-        sessions_scanned: 1,
+        files_scanned: 1,
         unreadable: 0,
         events_scanned: 1,
         by_tool: { Read: 1 },
@@ -282,6 +282,17 @@ describe("runTelemetry", () => {
     expect(outcome.payload).toBeNull();
     expect(firstError(payload)).toContain(PLUGIN_CACHE_SUBPATH);
     expect(firstError(payload)).toContain("Not falling back to a wider scan");
+    // toolUsage is computed independently of the analyzer run and still
+    // threads through even though the overall run fails.
+    expect(outcome.toolUsage).not.toBeNull();
+    expect(outcome.toolUsage).toEqual({
+      files_scanned: 1,
+      unreadable: 0,
+      events_scanned: 1,
+      by_tool: { Read: 1 },
+      by_tool_origin: { Read: { hub: 1, subagent: 0 } },
+    });
+    expect(payload["toolUsage"]).toEqual(outcome.toolUsage);
   });
 
   test("MUTATION: a top-level key removed from the analyzer output fails the run", () => {
@@ -294,6 +305,17 @@ describe("runTelemetry", () => {
     expect(outcome.payload).toBeNull();
     expect(firstError(payload)).toContain("by_subagent_type");
     expect(firstError(payload)).toContain("ADR-0084");
+    // toolUsage is computed independently of the analyzer run and still
+    // threads through even though the overall run fails.
+    expect(outcome.toolUsage).not.toBeNull();
+    expect(outcome.toolUsage).toEqual({
+      files_scanned: 1,
+      unreadable: 0,
+      events_scanned: 1,
+      by_tool: { Read: 1 },
+      by_tool_origin: { Read: { hub: 1, subagent: 0 } },
+    });
+    expect(payload["toolUsage"]).toEqual(outcome.toolUsage);
   });
 
   test("MUTATION: unparseable analyzer output fails the run", () => {
@@ -348,7 +370,7 @@ describe("runTelemetry", () => {
 
   test("threads a successful tool-usage report through to the outcome", () => {
     const toolUsageReport = {
-      sessions_scanned: 4,
+      files_scanned: 4,
       unreadable: 1,
       events_scanned: 10,
       by_tool: { Read: 6, Bash: 4 },
@@ -1184,7 +1206,7 @@ describe("computeToolUsage", () => {
         '{"message":{"content":[{"type":"tool_use","name":"Read"},{"type":"tool_use","name":"Read"}]}}\n',
     });
     const report = computeToolUsage({ dir: "/p", since: "7d", now, fs });
-    expect(report.sessions_scanned).toBe(2);
+    expect(report.files_scanned).toBe(2);
     expect(report.unreadable).toBe(0);
     expect(report.events_scanned).toBe(3);
 
@@ -1247,7 +1269,7 @@ describe("computeToolUsage", () => {
       },
     };
     const report = computeToolUsage({ dir: "/p", since: "7d", now, fs });
-    expect(report.sessions_scanned).toBe(2);
+    expect(report.files_scanned).toBe(2);
     expect(report.unreadable).toBe(1);
     expect(report.by_tool).toEqual({ Read: 1 });
   });

@@ -277,6 +277,23 @@ export function sinceToMs(since) {
 }
 
 /**
+ * Anti-traversal guard shared by every transcript-listing function in this
+ * file: confines a candidate path to `resolvedDir`'s own tree. A real
+ * `readdir()` entry name can never contain a path separator, but an injected
+ * test/plugin seam could hand back something like `"../../etc/shadow.jsonl"`
+ * — this keeps every scan confined to `dir` regardless of what the fs seam
+ * returns, rather than relying only on real filesystem semantics.
+ *
+ * @param {string} path an absolute or dir-relative candidate path
+ * @param {string} resolvedDir `resolve(dir)` of the scan's own root —
+ *   computed once by the caller, not re-resolved per candidate
+ * @returns {boolean}
+ */
+function isWithinDir(path, resolvedDir) {
+  return resolve(path).startsWith(resolvedDir + sep);
+}
+
+/**
  * List every `*.jsonl` transcript directly under `dir` whose mtime falls
  * inside the `[nowMs - sinceMs, nowMs]` window. A file that vanishes between
  * `readdir` and `stat` (a concurrent Claude Code session still writing) is
@@ -315,12 +332,7 @@ export function listRecentTranscripts(dir, sinceMs, nowMs, fs) {
   for (const entry of entries) {
     if (!entry.name.endsWith(".jsonl") || !entry.isFile()) continue;
     const path = join(dir, entry.name);
-    // A real readdir() entry name can never contain a path separator, but an
-    // injected test/plugin seam could hand back something like
-    // "../../etc/shadow.jsonl" — keep this scan confined to `dir` regardless
-    // of what the fs seam returns, rather than relying only on real
-    // filesystem semantics.
-    if (!resolve(path).startsWith(resolvedDir + sep)) continue;
+    if (!isWithinDir(path, resolvedDir)) continue;
     try {
       if (fs.stat(path).mtimeMs >= cutoff) files.push(path);
     } catch {
@@ -585,6 +597,15 @@ export function listAllTranscripts(dir, sinceMs, nowMs, fs) {
   /** @type {string[]} */
   let entries;
   try {
+    // Node's recursive readdirSync is atomic across the whole tree: a single
+    // permission-denied NESTED directory (one bad subagents/** subtree) throws
+    // here exactly the same as `dir` itself being unlistable, collapsing what
+    // listRecentTranscripts's per-entry try/catch would otherwise distinguish.
+    // Still fails loudly either way (never a silent zero) — just coarser
+    // diagnosis than the top-level scan's per-file skip. Manually walking one
+    // directory level at a time would recover that precision but isn't worth
+    // the added complexity for a permissions edge case on a local, on-demand
+    // tool (ADR-0084).
     entries = fs.readdirRecursive(dir);
   } catch (cause) {
     throw new Error(
@@ -603,10 +624,7 @@ export function listAllTranscripts(dir, sinceMs, nowMs, fs) {
     const normalized = entry.split(sep).join("/");
     if (!normalized.endsWith(".jsonl")) continue;
     const path = join(dir, entry);
-    // Same anti-traversal discipline as listRecentTranscripts: a real
-    // recursive readdir() can never escape `dir`, but an injected
-    // test/plugin seam could hand back something that does.
-    if (!resolve(path).startsWith(resolvedDir + sep)) continue;
+    if (!isWithinDir(path, resolvedDir)) continue;
     try {
       if (fs.stat(path).mtimeMs >= cutoff) files.push(normalized);
     } catch {
@@ -662,13 +680,20 @@ export function countToolUseInTranscript(path, fs) {
 
 /**
  * @typedef {{
- *   sessions_scanned: number,
+ *   files_scanned: number,
  *   unreadable: number,
  *   events_scanned: number,
  *   by_tool: Record<string, number>,
  *   by_tool_origin: Record<string, { hub: number, subagent: number }>,
  * }} ToolUsageReport
  */
+// Named `files_scanned`, not `sessions_scanned` like {@link NamingComplianceReport} —
+// deliberately distinct, not a typo. This scan is RECURSIVE, so one count here
+// can span a hub transcript plus every nested subagent transcript it spawned;
+// `NamingComplianceReport.sessions_scanned` is top-level-only, where one file
+// really does mean one session. Computing an "average tool calls per session"
+// from `events_scanned / files_scanned` would silently be "per transcript
+// file", inflated by however many subagent transcripts a session spawned.
 
 /**
  * Compute per-tool usage counts across every transcript in the window,
@@ -753,7 +778,7 @@ export function computeToolUsage({ dir, since, now, fs }) {
   }
 
   return {
-    sessions_scanned: files.length,
+    files_scanned: files.length,
     unreadable,
     events_scanned: eventsScanned,
     by_tool: Object.fromEntries(byTool),
