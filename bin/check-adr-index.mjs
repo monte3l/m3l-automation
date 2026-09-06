@@ -6,18 +6,20 @@
 // supersession carries a clause list.
 //
 // Severity split (ADR-0094's own Links section names this sequence):
-//   PR2 (this file, first landing): every finding is a WARNING, exit 0
-//     regardless — the corpus is not yet normalized to the new schema, so
-//     flagging its pre-existing free-prose statuses as blocking errors would
-//     fail every push for a defect this gate cannot itself fix. See
+//   PR2 (advisory rollout): every finding was a WARNING, exit 0 regardless —
+//     the corpus was not yet normalized to the new schema, so flagging its
+//     pre-existing free-prose statuses as blocking errors would have failed
+//     every push for a defect that gate could not itself fix. See
 //     docs/logs/2026-09-06-adr-corpus-audit.md for the confirmed baseline
 //     (9 index/file disagreements, 2 bare partial supersessions, 6
-//     one-directional relations) this version reports without blocking.
-//   PR3 (after the 93-file mechanical sweep): STRUCTURAL_FINDING_KINDS
-//     (unknown-status, unknown-relation-verb, dangling-relation-target,
-//     non-reciprocal-relation, duplicate-number) plus a stale generated
-//     block flip to ERROR / exit 1; missing-clause-list and any future
-//     purely-judgmental check stay WARNING even then.
+//     one-directional relations) that version reported without blocking.
+//   PR3 (this version, after the 93-file mechanical sweep): BLOCKING = true.
+//     STRUCTURAL_FINDING_KINDS (unknown-status, unknown-relation-verb,
+//     dangling-relation-target, non-reciprocal-relation, duplicate-number)
+//     plus a stale/missing generated block now ERROR / exit 1;
+//     missing-clause-list stays WARNING — it's a judgment call (a thin but
+//     present clause list is a style question, not a structural break) —
+//     and any future purely-judgmental check joins it there.
 //
 // Usage:
 //   node bin/check-adr-index.mjs
@@ -37,9 +39,9 @@ import {
 } from "./lib/adr-index.mjs";
 import { createReporter, parseJsonFlag, repoRoot } from "./lib/report.mjs";
 
-// Flip to `true` once PR3's 93-file normalization sweep lands, so the
-// structural findings below start blocking (see the header comment).
-const BLOCKING = false;
+// PR3's 93-file normalization sweep has landed (see the header comment) —
+// structural findings now block a push.
+const BLOCKING = true;
 
 const { json } = parseJsonFlag();
 const reporter = createReporter(json);

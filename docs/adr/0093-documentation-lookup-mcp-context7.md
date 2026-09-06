@@ -1,6 +1,7 @@
 # 0093. Documentation-lookup MCP (Context7): adoption stance and usage policy
 
 - **Status:** Accepted
+- **Relations:** amends: 0030
 - **Date:** 2026-09-05
 - **Deciders:** Enrico Lionello (maintainer); Claude (design synthesis)
 

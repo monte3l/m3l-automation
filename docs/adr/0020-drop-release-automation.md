@@ -1,6 +1,7 @@
 # 0020. Drop release automation
 
-- **Status:** Partially superseded by ADR-0057
+- **Status:** Partially-superseded
+- **Relations:** supersedes: 0011, partially-superseded-by: 0057 (clauses: the "internal, never-published" stance and the absence of any release workflow — hand-managed `version`, no changelog automation, Conventional Commits and signed-commit enforcement, and the exports-map contract gates all remain in force)
 - **Date:** 2026-07-06
 - **Deciders:** Enrico Lionello
 

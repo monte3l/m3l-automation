@@ -1,6 +1,7 @@
 # 0071. Console containerization and local-first deployment
 
-- **Status:** Accepted
+- **Status:** Partially-superseded
+- **Relations:** partially-superseded-by: 0091 (clauses: the Docker-specific parts — the `Dockerfile`/`compose.yaml` build; the two-image shape, credential path, non-root lifecycle, and X14 gate are unchanged)
 - **Date:** 2026-08-20
 - **Deciders:** Enrico Lionello (maintainer); Claude (design synthesis)
 

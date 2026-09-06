@@ -1,6 +1,7 @@
 # 0081. Defer ADR-0073's `Programme` board field behind an explicit revival gate
 
 - **Status:** Accepted
+- **Relations:** amends: 0073
 - **Date:** 2026-08-28
 - **Deciders:** Enrico Lionello (maintainer); Claude (live-board verification)
 

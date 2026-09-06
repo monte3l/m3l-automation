@@ -1,6 +1,7 @@
 # 0088. Automatic session naming via a launcher wrapper
 
-- **Status:** Accepted; amends ADR-0087
+- **Status:** Accepted
+- **Relations:** amends: 0087
 - **Date:** 2026-09-03
 - **Deciders:** repo maintainer
 

@@ -1,6 +1,7 @@
 # 0087. Claude Code session naming convention
 
-- **Status:** Accepted; amended by ADR-0088
+- **Status:** Accepted
+- **Relations:** amended-by: 0088
 - **Date:** 2026-09-02
 - **Deciders:** repo maintainer
 

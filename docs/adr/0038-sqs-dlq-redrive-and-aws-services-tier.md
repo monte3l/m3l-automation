@@ -1,6 +1,7 @@
 # 0038. Widen the SQS wrapper for DLQ redrive; add an `AWSServiceProvider` services tier
 
-- **Status:** Accepted; the services-tier decision partially superseded by [ADR-0044](0044-remove-deprecated-client-wrapper-getters.md)
+- **Status:** Partially-superseded
+- **Relations:** partially-superseded-by: 0044 (clauses: keeping all four `.clients` convenience getters deprecated-in-place indefinitely — three removed, `dynamoDBDocument` kept and un-deprecated; the DLQ redrive decision and Zone A analysis remain in force)
 - **Date:** 2026-08-10
 - **Deciders:** Enrico Lionello (maintainer); Claude (audit synthesis)
 

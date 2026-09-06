@@ -18,7 +18,9 @@ context — its always-loaded budget, what happens when it compacts, which
 `/compact`, `/clear`, or auto-compaction.
 
 Worse, the one gate that claims to govern always-loaded context measures the
-wrong thing. `bin/check-claude-md-budget.mjs` reads `CLAUDE.md` raw and never
+wrong thing. `bin/check-claude-md-budget.mjs` (since renamed
+`bin/check-context-budget.mjs` by this ADR's own Decision — see below) reads
+`CLAUDE.md` raw and never
 resolves its two `@`-imports (`@package.json`, `@docs/adr/README.md`), both of
 which Anthropic's memory docs confirm are inlined verbatim at launch — imports
 "help organization but don't reduce context"

@@ -508,7 +508,7 @@ export const COMMAND_CATALOG = [
   {
     name: "check:adr-index",
     description:
-      "ADR-0094's governance convention: verifies docs/adr/README.md's generated index matches each ADR's own Status/Relations block, every Relations verb is declared, every relation target exists and is reciprocated, and a partial supersession names its clauses. Advisory only (never exits 1) until the PR3 corpus-normalization sweep flips the BLOCKING flag in bin/check-adr-index.mjs. Run after gen:adr-index, or after editing any ADR's Status/Relations line.",
+      "ADR-0094's governance convention: verifies docs/adr/README.md's generated index matches each ADR's own Status/Relations block, every Relations verb is declared, every relation target exists and is reciprocated, and a partial supersession names its clauses. Blocking (exits 1) on structural findings — unknown status/verb, a dangling or non-reciprocal relation, a duplicate ADR number, or a stale/missing generated block; a missing clause list stays advisory. Run after gen:adr-index, or after editing any ADR's Status/Relations line.",
   },
   {
     name: "worktree:new",

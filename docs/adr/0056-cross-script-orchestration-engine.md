@@ -1,6 +1,7 @@
 # 0056. Cross-script orchestration engine in `m3l-cli` (`m3l flow`)
 
 - **Status:** Accepted
+- **Relations:** fires-trigger-of: 0047
 - **Date:** 2026-08-20
 - **Deciders:** Enrico Lionello (maintainer); Claude (design synthesis)
 

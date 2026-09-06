@@ -1,6 +1,7 @@
 # 0013. Git worktrees for task isolation and parallelization
 
 - **Status:** Accepted
+- **Relations:** amended-by: 0080
 - **Date:** 2026-06-30
 - **Deciders:** Enrico Lionello
 

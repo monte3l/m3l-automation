@@ -1,6 +1,7 @@
 # 0074. Retitle the `major` milestone to `Breaking`
 
 - **Status:** Accepted
+- **Relations:** amends: 0073
 - **Date:** 2026-08-22
 - **Deciders:** repo maintainer
 

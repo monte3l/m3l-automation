@@ -1,6 +1,7 @@
 # 0030. Targeted workflow tooling and MCP adoption
 
 - **Status:** Accepted
+- **Relations:** amended-by: 0093
 - **Date:** 2026-07-16
 - **Deciders:** Enrico Lionello
 

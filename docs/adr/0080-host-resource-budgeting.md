@@ -1,6 +1,7 @@
 # 0080. Host resource budgeting for concurrent Claude Code sessions
 
 - **Status:** Accepted
+- **Relations:** amends: 0013
 - **Date:** 2026-08-27
 - **Deciders:** Enrico Lionello
 

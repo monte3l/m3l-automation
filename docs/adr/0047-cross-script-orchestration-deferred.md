@@ -1,6 +1,7 @@
 # 0047. Cross-script orchestration belongs to `m3l-cli`, and is deferred
 
 - **Status:** Accepted
+- **Relations:** trigger-fired-by: 0056
 - **Date:** 2026-08-18
 - **Deciders:** Enrico Lionello (maintainer); Claude (audit synthesis)
 

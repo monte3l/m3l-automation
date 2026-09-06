@@ -1,6 +1,7 @@
 # 0022. Re-introduce the `scripts/` workspace for real consumers
 
 - **Status:** Accepted
+- **Relations:** supersedes: 0019
 - **Date:** 2026-07-07 (amended and accepted 2026-07-09)
 - **Deciders:** Enrico Lionello (maintainer)
 

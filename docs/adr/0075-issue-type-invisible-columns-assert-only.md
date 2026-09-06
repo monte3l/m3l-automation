@@ -1,6 +1,7 @@
 # 0075. The board's Type column is invisible to GraphQL; view columns become assert-only
 
 - **Status:** Accepted
+- **Relations:** amends: 0073
 - **Date:** 2026-08-23
 - **Deciders:** repo maintainer
 
