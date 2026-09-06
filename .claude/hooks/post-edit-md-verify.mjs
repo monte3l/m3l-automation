@@ -16,7 +16,6 @@
  *   BASE_SKIP_PATTERNS (prettier + rumdl):
  *       - CHANGELOG.md
  *       - .github/pull_request_template.md
- *       - docs/adr/template.md
  *       - node_modules/, dist/, .claude/
  *   rumdlSkipPatterns only: docs/plans/**
  *
@@ -60,7 +59,6 @@ if (!rel.endsWith(".md")) process.exit(0);
 const BASE_SKIP_PATTERNS = [
   /^CHANGELOG\.md$/,
   /^\.github\/pull_request_template\.md$/,
-  /^docs\/adr\/template\.md$/,
   /^node_modules\//,
   /(^|\/)dist\//,
   /^\.claude\//,

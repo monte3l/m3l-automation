@@ -1,6 +1,7 @@
 # NNNN. Short title of the decision
 
 - **Status:** Proposed
+- **Relations:** <verb: NNNN (clauses: …), … — omit this line entirely if none>
 - **Date:** YYYY-MM-DD
 - **Deciders:** <names / roles>
 
@@ -16,13 +17,13 @@ business, team)? State the problem in a sentence or two, then expand.
 
 ## Considered options
 
-1. <option 1>
-2. <option 2>
-3. <option 3>
+1. <first choice>
+2. <second choice>
+3. <third choice>
 
 ## Decision
 
-We chose **\<option\>** because \<justification tied to the drivers\>.
+We chose **\<the chosen option\>** because \<justification tied to the drivers\>.
 
 ## Consequences
 
@@ -32,5 +33,10 @@ We chose **\<option\>** because \<justification tied to the drivers\>.
 
 ## Links
 
-- Supersedes / superseded by: <ADR-NNNN, if any>
 - Related: <docs, issues, PRs>
+
+<!--
+  Cross-ADR relations (supersedes, amends, re-affirms, revisit triggers) live
+  in the status block's `Relations:` line above, not here — see ADR-0094.
+  This section is for non-relation links only (docs, issues, PRs).
+-->
