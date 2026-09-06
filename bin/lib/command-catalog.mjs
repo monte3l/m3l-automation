@@ -526,6 +526,11 @@ export const COMMAND_CATALOG = [
       "Advisory freshness signal for docs/adr/provenance.json: re-derives every ADR's cited-file blob SHAs from live disk and warns (never blocks) when a cited file changed since the ADR last confirmed it, was newly cited and never verified, or no longer exists. Broader but weaker coverage than check:adr-claims — covers any ADR citing a concrete path, not just the ones with a mechanically-probeable assertion. Run after gen:adr-provenance.",
   },
   {
+    name: "check:adr-worthiness",
+    description:
+      "ADR-0095: advisory nudge flagging a new ADR (added on this branch, diffed against origin/main) that matches a known low-blast-radius shape (a label/milestone retitle, widening one lint/type-check zone by a single module) and declares no semver impact, as a docs/decision-notes/ candidate instead. Never blocks — the maintainer's judgment is final.",
+  },
+  {
     name: "worktree:new",
     description:
       "Creates and provisions a linked sibling worktree in one step (git worktree add + worktree:setup) — the entry point for concurrent work in an isolated checkout. `-- <slug>` (branch feat/<slug>), `-- <slug> --kind <kind>` for kind in feat|fix|docs|chore|refactor|ci, `-- <slug> --fix` (alias for `--kind fix`), or `-- <slug> --from <ref>` (detached HEAD at an existing ref, e.g. to investigate an abandoned branch).",

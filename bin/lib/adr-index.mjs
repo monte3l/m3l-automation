@@ -131,6 +131,7 @@ const RELATION_ENTRY_RE =
  *   statusKind: string,
  *   relations: AdrRelation[],
  *   date: string | undefined,
+ *   reviewBy?: string | undefined,
  * }} AdrEntry
  * @typedef {{ kind: string, message: string }} AdrIndexFinding
  */
@@ -187,12 +188,21 @@ export function parseAdrEntry(filename, content) {
   const base = parseAdr(filename, content);
   if (!base) return null;
 
-  const relationsMatch = /^-\s*\*\*Relations:\*\*\s*(.+)$/m.exec(
-    headerBlock(content),
-  );
+  const header = headerBlock(content);
+  const relationsMatch = /^-\s*\*\*Relations:\*\*\s*(.+)$/m.exec(header);
   const relations = parseRelations(relationsMatch?.[1]?.trim() ?? "");
 
-  return { ...base, filename, relations };
+  // Optional (docs/decision-notes/0001-deferral-review-by-dates.md): a
+  // deferral with a named-but-unfired revisit trigger can carry a
+  // Review by: date so it isn't forgotten indefinitely — checkAdrIndex()
+  // warns once it's passed. Scoped to the header block for the same reason
+  // Relations: is (see headerBlock()'s own doc comment).
+  const reviewByMatch = /^-\s*\*\*Review by:\*\*\s*(\d{4}-\d{2}-\d{2})/m.exec(
+    header,
+  );
+  const reviewBy = reviewByMatch?.[1];
+
+  return { ...base, filename, relations, reviewBy };
 }
 
 /**
@@ -269,15 +279,21 @@ export const STRUCTURAL_FINDING_KINDS = new Set([
 ]);
 
 /**
- * Every finding kind this module can produce, structural and advisory
- * (ADR-0094's warn-only checks: a bare partial supersession, an unfired
- * deferral with no review date). PR2 ships all of these as warnings; PR3
- * flips {@link STRUCTURAL_FINDING_KINDS} to errors once the sweep lands.
+ * Every finding kind this module can produce: the structural ones in
+ * `STRUCTURAL_FINDING_KINDS` (blocking in bin/check-adr-index.mjs once the
+ * corpus is normalized) plus the advisory-only ones (ADR-0094's bare
+ * partial-supersession warning; docs/decision-notes/0001-deferral-review-by-dates.md's
+ * `Review by:` date check).
  *
  * @param {AdrEntry[]} entries all parsed ADRs, unsorted
+ * @param {string} [today] ISO date (YYYY-MM-DD), injectable for tests;
+ *   defaults to the real current date for live use
  * @returns {AdrIndexFinding[]}
  */
-export function checkAdrIndex(entries) {
+export function checkAdrIndex(
+  entries,
+  today = new Date().toISOString().slice(0, 10),
+) {
   /** @type {AdrIndexFinding[]} */
   const findings = [];
   const byNumber = new Map();
@@ -296,6 +312,15 @@ export function checkAdrIndex(entries) {
   }
 
   for (const entry of entries) {
+    if (entry.reviewBy !== undefined && entry.reviewBy < today) {
+      findings.push({
+        kind: "review-by-passed",
+        message:
+          `${entry.filename}'s Review by: ${entry.reviewBy} has passed — ` +
+          `revisit whether this deferral still stands.`,
+      });
+    }
+
     if (entry.statusKind === "Unknown") {
       findings.push({
         kind: "unknown-status",

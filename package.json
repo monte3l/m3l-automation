@@ -117,6 +117,7 @@
     "check:adr-index": "node bin/check-adr-index.mjs",
     "check:adr-claims": "node bin/check-adr-claims.mjs",
     "check:adr-provenance": "node bin/check-adr-provenance.mjs",
+    "check:adr-worthiness": "node bin/check-adr-worthiness.mjs",
     "worktree:new": "node bin/worktree-new.mjs",
     "worktree:setup": "node bin/worktree-setup.mjs",
     "worktree:remove": "node bin/worktree-remove.mjs",
