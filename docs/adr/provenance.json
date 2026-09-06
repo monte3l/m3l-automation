@@ -244,7 +244,7 @@
       },
       {
         "path": "docs/adr/template.md",
-        "blob": "569ea341f065901186fba06379caef798434c1a5"
+        "blob": "fb1265f5884eb14e796f1d852d5f8fcc846b2ba5"
       },
       {
         "path": "package.json",
@@ -622,7 +622,7 @@
       },
       {
         "path": "bin/lib/doc-provenance.mjs",
-        "blob": "c00901e8cabe331d72c171492d3a55187c350f92"
+        "blob": "e0e49965f04aaf35954a2d058136227f84408973"
       },
       {
         "path": "bin/merge-driver-generated.mjs",
@@ -857,7 +857,7 @@
       },
       {
         "path": "docs/adr/README.md",
-        "blob": "18802c0030ec3fa60d5651843ea63be0fa62b569"
+        "blob": "2fd3dfd7239be27c45052f91035f9470794f2156"
       },
       {
         "path": "docs/logs/2026-08-14-aws-rds-data.md",
@@ -2255,7 +2255,7 @@
     "sourceFiles": [
       {
         "path": "bin/check-adr-index.mjs",
-        "blob": "bc0e4c3c305eb54c4a683198f0cc354f6d2dd52f"
+        "blob": "bff2e320541d33039c5678a57dc73bdb70a0ec5b"
       },
       {
         "path": "bin/check-reference-index.mjs",
@@ -2279,7 +2279,7 @@
       },
       {
         "path": "docs/adr/README.md",
-        "blob": "18802c0030ec3fa60d5651843ea63be0fa62b569"
+        "blob": "2fd3dfd7239be27c45052f91035f9470794f2156"
       },
       {
         "path": "docs/contributing/filing-work.md",
@@ -2300,7 +2300,7 @@
       },
       {
         "path": "docs/adr/README.md",
-        "blob": "18802c0030ec3fa60d5651843ea63be0fa62b569"
+        "blob": "2fd3dfd7239be27c45052f91035f9470794f2156"
       },
       {
         "path": "docs/decision-notes/README.md",
