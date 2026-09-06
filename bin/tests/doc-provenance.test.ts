@@ -3,6 +3,7 @@ import {
   parseHeadings,
   isSymbolExported,
   hashBlobs,
+  trackedFiles,
   verifySidecarSections,
   applyBlobUpdates,
 } from "../lib/doc-provenance.mjs";
@@ -112,6 +113,59 @@ describe("hashBlobs", () => {
       throw new Error("should not be called");
     };
     expect(hashBlobs("/repo", [], runGit).size).toBe(0);
+  });
+});
+
+describe("trackedFiles", () => {
+  test("returns the parsed NUL-separated stdout as a Set", () => {
+    const runGit = (args: string[]) => {
+      expect(args[0]).toBe("ls-files");
+      return { status: 0, stdout: "a.ts\0b.ts\0" };
+    };
+    const tracked = trackedFiles("/repo", ["a.ts", "b.ts"], runGit);
+    expect(tracked.has("a.ts")).toBe(true);
+    expect(tracked.has("b.ts")).toBe(true);
+    expect(tracked.size).toBe(2);
+  });
+
+  test("deduplicates repeated files before spawning", () => {
+    const calls: string[][] = [];
+    const runGit = (args: string[]) => {
+      calls.push(args);
+      return { status: 0, stdout: "a.ts\0" };
+    };
+    trackedFiles("/repo", ["a.ts", "a.ts"], runGit);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toEqual(["ls-files", "-z", "--", "a.ts"]);
+  });
+
+  test("throws (rather than silently returning an empty set) on a failed batch", () => {
+    // A swallowed failure here would make every candidate look untracked,
+    // and a caller treating "not tracked" as "drop it" would silently empty
+    // whatever it was filtering.
+    const runGit = () => ({
+      status: 1,
+      stdout: "",
+      stderr: "fatal: bad revision",
+    });
+    expect(() => trackedFiles("/repo", ["a.ts"], runGit)).toThrow(
+      /git ls-files failed \(exit 1\): fatal: bad revision/,
+    );
+  });
+
+  test("returns an empty Set for an empty file list without spawning", () => {
+    const runGit = () => {
+      throw new Error("should not be called");
+    };
+    expect(trackedFiles("/repo", [], runGit).size).toBe(0);
+  });
+
+  test("an untracked path is simply absent from the returned Set", () => {
+    const runGit = () => ({ status: 0, stdout: "a.ts\0" });
+    const tracked = trackedFiles("/repo", ["a.ts", "b.ts"], runGit);
+    expect(tracked.has("a.ts")).toBe(true);
+    expect(tracked.has("b.ts")).toBe(false);
+    expect(tracked.size).toBe(1);
   });
 });
 

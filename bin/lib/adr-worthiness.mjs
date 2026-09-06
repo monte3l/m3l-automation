@@ -64,6 +64,20 @@ const SEMVER_NONE_RE = /\*\*Semver impact:\*\*\s*none\b/i;
  * milestone rename/retitle, and widening one lint/type-check zone to admit
  * a single named module. Deliberately narrow and literal rather than a
  * broad topic-keyword list — see the module header for why breadth failed.
+ *
+ * Known recall gap, confirmed by re-running this regex against the two ADRs
+ * it was actually derived from (ADR-0040, ADR-0041, both "widen the aws/**
+ * ESLint zone" decisions): NEITHER matches the widen-zone-module branch —
+ * their prose says "zone widening" / "widens" without "module" inside the
+ * 40-char lookahead, and ADR-0041's Semver impact is "minor" (not "none"),
+ * failing SEMVER_NONE_RE regardless. So 2 of ADR-0095's 5 cited audit
+ * examples (plus ADR-0087/0088, the harness-affordance-duplication shape
+ * this module has no branch for at all) go unmatched by the shapes meant to
+ * cover them. This is intentional under this module's own precision-over-
+ * recall design (a missed low-value ADR costs nothing; the gate is
+ * advisory), but it means "flags exactly ADR-0074" is not yet "flags every
+ * shape ADR-0095 named" — widen the regex only if a future low-value ADR of
+ * this exact shape needs catching, not preemptively.
  */
 const LOW_VALUE_SHAPE_RE =
   /\bretitle\b|\brenam(?:e|ing|ed)\b.{0,40}\b(?:label|milestone)\b|\bwiden(?:s|ing)?\b.{0,60}\bzone\b.{0,40}\b(?:a |one )?(?:single )?module\b/i;

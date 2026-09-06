@@ -172,9 +172,28 @@ describe("deriveWorthinessCandidates", () => {
 
   // Live-corpus sanity check: the redesign's whole point is precision — flag
   // only the real cases ADR-0095's own Context section cited as audit
-  // examples, with zero noise elsewhere in the 95-ADR corpus. ADR-0074 (a
-  // milestone/tier title rename) is the one genuine example.
-  test("flags exactly ADR-0074 across the live docs/adr/ corpus, nothing else", () => {
+  // examples, with zero noise elsewhere in the 95-ADR corpus. This is
+  // deliberately a corpus-state assertion, not a property of the heuristic
+  // alone — a named allowlist, not an inline literal, so it self-documents
+  // WHY each entry is there and doesn't read as an arbitrary snapshot when
+  // it next has to change. Two events legitimately grow this list without
+  // anything being wrong: the maintainer accepts a new ADR that genuinely
+  // matches a low-blast-radius shape (ADR-0095's own design: the gate is
+  // advisory, "the maintainer's judgment is final", never a veto), or the
+  // shape list itself grows to cover a pattern it doesn't yet enumerate
+  // (ADR-0095's Negative/trade-offs bullet names this as expected). Neither
+  // case requires editing ADR-0074 or any other accepted ADR — retroactively
+  // downgrading an already-Accepted low-value ADR was ADR-0095's own
+  // rejected option 3 (ADRs are immutable once accepted, ADR-0094); this
+  // list only ever grows to describe the corpus as it stands.
+  const KNOWN_ACCEPTED_MATCHES = [
+    // A milestone/tier title rename (ADR-0095's own cited audit example).
+    // Permanent — see the comment above for why this is never "fixed" by
+    // editing ADR-0074 itself.
+    "0074-milestone-major-tier-title.md",
+  ];
+
+  test("flags exactly the known accepted matches across the live docs/adr/ corpus, nothing else", () => {
     const adrDir = join(root, "docs", "adr");
     const files = readdirSync(adrDir).filter(
       (name) =>
@@ -185,8 +204,8 @@ describe("deriveWorthinessCandidates", () => {
       content: readFileSync(join(adrDir, filename), "utf8"),
     }));
 
-    expect(deriveWorthinessCandidates(candidates)).toEqual([
-      "0074-milestone-major-tier-title.md",
-    ]);
+    expect(deriveWorthinessCandidates(candidates)).toEqual(
+      KNOWN_ACCEPTED_MATCHES,
+    );
   });
 });

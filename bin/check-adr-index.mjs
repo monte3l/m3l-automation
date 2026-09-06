@@ -16,10 +16,11 @@
 //   PR3 (this version, after the 93-file mechanical sweep): BLOCKING = true.
 //     STRUCTURAL_FINDING_KINDS (unknown-status, unknown-relation-verb,
 //     dangling-relation-target, non-reciprocal-relation, duplicate-number)
-//     plus a stale/missing generated block now ERROR / exit 1;
-//     missing-clause-list stays WARNING — it's a judgment call (a thin but
-//     present clause list is a style question, not a structural break) —
-//     and any future purely-judgmental check joins it there.
+//     plus a stale/missing generated block now ERROR / exit 1. missing-clause-
+//     list and placeholder-clause-list joined this set once the corpus was
+//     confirmed clean of both — ADR-0094:93-94 states the clause requirement
+//     in absolute terms ("no longer permitted"), so this is enforcing what
+//     was already the stated rule, not a new one.
 //
 // Usage:
 //   node bin/check-adr-index.mjs
@@ -111,8 +112,9 @@ if (findings.length === 0) {
   );
 } else if (errors === 0) {
   reporter.succeed(
-    `${findings.length} finding(s) reported as advisory (BLOCKING=false; ` +
-      `see this script's header) across ${entries.length} ADR(s).`,
+    `${findings.length} finding(s) reported as advisory (all warnings; ` +
+      `BLOCKING=${String(BLOCKING)} but none is a structural kind — see this ` +
+      `script's header) across ${entries.length} ADR(s).`,
   );
 }
 

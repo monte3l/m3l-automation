@@ -100,6 +100,39 @@ export function hashBlobs(root, files, runGit = defaultRunGit) {
 }
 
 /**
+ * Batch a git-tracked check for a set of repo-relative paths in one spawn
+ * (`git ls-files`), mirroring {@link hashBlobs}'s one-spawn-per-run batching.
+ * Returns the subset of `files` git's index currently tracks — an untracked
+ * path (including one that is merely gitignored) is simply absent from the
+ * result, never represented as an explicit "not tracked" entry, matching
+ * `hashBlobs()`'s existing-only Map shape.
+ *
+ * A failed batch throws rather than returning an empty set: swallowing it
+ * would make every candidate look untracked, and a caller treating "not
+ * tracked" as "drop it" would then silently empty whatever it was filtering
+ * — the same class of hazard {@link hashBlobs}'s own doc comment names for a
+ * swallowed `git hash-object` failure.
+ *
+ * @param {string} root - absolute repo root, used as the git cwd
+ * @param {string[]} files - repo-relative paths (files or directories)
+ * @param {(args: string[], opts: { cwd: string }) => { status: number | null, stdout: string, stderr?: string }} [runGit]
+ * @returns {Set<string>} the subset of `files` git currently tracks
+ * @throws {Error} when the batched `git ls-files` call itself fails
+ */
+export function trackedFiles(root, files, runGit = defaultRunGit) {
+  const unique = [...new Set(files)];
+  if (unique.length === 0) return new Set();
+  const res = runGit(["ls-files", "-z", "--", ...unique], { cwd: root });
+  if (res.status !== 0) {
+    const detail = (res.stderr ?? "").trim();
+    throw new Error(
+      `git ls-files failed (exit ${String(res.status)})${detail ? `: ${detail}` : ""}`,
+    );
+  }
+  return new Set(res.stdout.split("\0").filter((l) => l.length > 0));
+}
+
+/**
  * Verify one sidecar section-list against its sibling markdown doc's
  * headings and each source's on-disk existence/export/blob state. Pure:
  * takes pre-computed inputs rather than touching fs or git itself.

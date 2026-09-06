@@ -19,10 +19,11 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { format, resolveConfig } from "prettier";
-import { hashBlobs } from "./lib/doc-provenance.mjs";
+import { hashBlobs, trackedFiles } from "./lib/doc-provenance.mjs";
 import {
   deriveProvenanceEntry,
   extractPathCandidates,
+  filterToTracked,
 } from "./lib/adr-provenance.mjs";
 import { createReporter, parseJsonFlag, repoRoot } from "./lib/report.mjs";
 
@@ -51,7 +52,7 @@ const candidatesByAdr = new Map();
 /** @type {Set<string>} */
 const allExistingCandidates = new Set();
 
-const isTrackableFile = (p) => {
+const isExistingFile = (p) => {
   const abs = join(root, p);
   return existsSync(abs) && statSync(abs).isFile();
 };
@@ -59,17 +60,41 @@ const isTrackableFile = (p) => {
 for (const filename of filenames) {
   const adr = filename.slice(0, 4);
   const content = readFileSync(join(adrDir, filename), "utf8");
-  const existing = extractPathCandidates(content).filter(isTrackableFile);
+  const existing = extractPathCandidates(content).filter(isExistingFile);
   candidatesByAdr.set(adr, existing);
   for (const p of existing) allExistingCandidates.add(p);
 }
 
-const blobs = hashBlobs(root, [...allExistingCandidates]);
+// A gitignored/untracked candidate (machine-local ephemeral state such as
+// tmp/* or an unignored-by-repo .claude/settings.local.json) must never
+// become a provenance source — see filterToTracked()'s doc comment. Degrade
+// loudly rather than silently on a git failure: writing a sidecar derived
+// from a wrong "everything is tracked" or "nothing is tracked" guess is
+// worse than not writing one at all.
+let tracked;
+try {
+  tracked = trackedFiles(root, [...allExistingCandidates]);
+} catch (cause) {
+  reporter.error(
+    `Could not resolve git-tracked status for provenance candidates: ${/** @type {Error} */ (cause).message} — refusing to write a possibly-wrong docs/adr/provenance.json.`,
+  );
+  reporter.finish({ adrsTracked: 0, adrsTotal: filenames.length });
+  process.exit(1);
+}
+
+const blobs = hashBlobs(
+  root,
+  [...allExistingCandidates].filter((p) => tracked.has(p)),
+);
 
 /** @type {import("./lib/adr-provenance.mjs").AdrProvenanceData} */
 const next = {};
 for (const [adr, paths] of candidatesByAdr) {
-  const resolved = paths.map((path) => ({ path, blob: blobs.get(path) }));
+  const trackedPaths = filterToTracked(paths, tracked);
+  const resolved = trackedPaths.map((path) => ({
+    path,
+    blob: blobs.get(path),
+  }));
   const entry = deriveProvenanceEntry(resolved, today, previous[adr]);
   if (entry) next[adr] = entry;
 }
