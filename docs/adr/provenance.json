@@ -1,0 +1,2303 @@
+{
+  "0001": {
+    "sourceFiles": [
+      {
+        "path": ".github/actions/setup/action.yml",
+        "blob": "8c92b2708f39850786491f50e9a236aa8305843f"
+      },
+      {
+        "path": ".github/workflows/ci.yml",
+        "blob": "92c6034d3f33e064c4ff5c71e170e3d81f647eaf"
+      },
+      {
+        "path": ".node-version",
+        "blob": "a45fd52cc5891570d6299fab38643103c3955474"
+      },
+      {
+        "path": "bin/check-node-version.mjs",
+        "blob": "79d723e9ecdc57f7899fb430db85f8efd70018d6"
+      },
+      {
+        "path": "CLAUDE.md",
+        "blob": "1647601e763aa0dfa1444048019b4f1e825ab3ee"
+      },
+      {
+        "path": "docs/contributing/contributing.md",
+        "blob": "806315ba1b4edf57b221eefd07db19a91fd934a4"
+      },
+      {
+        "path": "lefthook.yml",
+        "blob": "3816550bcd43751bf2cacb5fac1f50cd9f2c1376"
+      },
+      {
+        "path": "turbo.json",
+        "blob": "c4ae7a2819c9f28a37c0ecdf2da0c6a03cee31f4"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0002": {
+    "sourceFiles": [
+      {
+        "path": "package.json",
+        "blob": "c63764b1be50b89540ad600d6df49312d5ffdbdc"
+      },
+      {
+        "path": "packages/m3l-common/package.json",
+        "blob": "9b3749fb2efb6ea44dc9db2353e5823fef3f88b4"
+      },
+      {
+        "path": "tsconfig.base.json",
+        "blob": "35cb899531dae08c630295c4d0b25cc783d1c50f"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0003": {
+    "sourceFiles": [
+      {
+        "path": ".claude/hooks/warn-node-version.mjs",
+        "blob": "becf1d2d86075eb7f699d7c2cd6b642672f7dd0d"
+      },
+      {
+        "path": ".github/actions/setup/action.yml",
+        "blob": "8c92b2708f39850786491f50e9a236aa8305843f"
+      },
+      {
+        "path": ".github/dependabot.yml",
+        "blob": "366b0d48ccba454a2ce28479d67faa779844e4a5"
+      },
+      {
+        "path": ".github/workflows/ci.yml",
+        "blob": "92c6034d3f33e064c4ff5c71e170e3d81f647eaf"
+      },
+      {
+        "path": ".node-version",
+        "blob": "a45fd52cc5891570d6299fab38643103c3955474"
+      },
+      {
+        "path": "bin/check-deps.mjs",
+        "blob": "2cd2452f929aed6c976aa49d826ce1de02e6f718"
+      },
+      {
+        "path": "bin/check-node-version.mjs",
+        "blob": "79d723e9ecdc57f7899fb430db85f8efd70018d6"
+      },
+      {
+        "path": "bin/lib/verify-steps.mjs",
+        "blob": "32f09a2f1fc7d1ce1988a3f970cda34e24d21b2d"
+      },
+      {
+        "path": "docs/contributing/contributing.md",
+        "blob": "806315ba1b4edf57b221eefd07db19a91fd934a4"
+      },
+      {
+        "path": "lefthook.yml",
+        "blob": "3816550bcd43751bf2cacb5fac1f50cd9f2c1376"
+      },
+      {
+        "path": "package.json",
+        "blob": "c63764b1be50b89540ad600d6df49312d5ffdbdc"
+      },
+      {
+        "path": "packages/m3l-common/package.json",
+        "blob": "9b3749fb2efb6ea44dc9db2353e5823fef3f88b4"
+      },
+      {
+        "path": "packages/m3l-console-server/tests/stream-writer.test.ts",
+        "blob": "f7f20de5e8551589d0521f50b71e9e9fa544d312"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0004": {
+    "sourceFiles": [
+      {
+        "path": "bin/check-browser-safe-subpath.mjs",
+        "blob": "cdf1e3e005ef28468b2863516da5a9ae05c630a0"
+      },
+      {
+        "path": "bin/check-exports-semver.mjs",
+        "blob": "8566001a39219462180c4a15daec2d81290d0428"
+      },
+      {
+        "path": "bin/lib/browser-safe-subpath.mjs",
+        "blob": "67b3fd910b244d6745bc294c8435536235120801"
+      },
+      {
+        "path": "docs/plans/IMPLEMENTATION.md",
+        "blob": "c3f63e8137f6f1a671e658a48bc0475aecde406e"
+      },
+      {
+        "path": "package.json",
+        "blob": "c63764b1be50b89540ad600d6df49312d5ffdbdc"
+      },
+      {
+        "path": "packages/m3l-common/package.json",
+        "blob": "9b3749fb2efb6ea44dc9db2353e5823fef3f88b4"
+      },
+      {
+        "path": "packages/m3l-console-web/src/errors/console-web-error.ts",
+        "blob": "493f730ce895351e4b48144d23540b419282b6da"
+      },
+      {
+        "path": "tsconfig.base.json",
+        "blob": "35cb899531dae08c630295c4d0b25cc783d1c50f"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0005": {
+    "sourceFiles": [
+      {
+        "path": "docs/contributing/coding-standards.md",
+        "blob": "67ee50dac38967df0efbe4606eb8706c6b78c7b7"
+      },
+      {
+        "path": "docs/m3l-common-architecture.md",
+        "blob": "6b5b8d89123666c1d3b21fca2c41b206b85c4159"
+      },
+      {
+        "path": "docs/plans/IMPLEMENTATION.md",
+        "blob": "c3f63e8137f6f1a671e658a48bc0475aecde406e"
+      },
+      {
+        "path": "docs/reference/core/errors.md",
+        "blob": "4d3466d0726b9dfc574f3efbbd3eaee022f6ad19"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0006": {
+    "sourceFiles": [
+      {
+        "path": "package.json",
+        "blob": "c63764b1be50b89540ad600d6df49312d5ffdbdc"
+      },
+      {
+        "path": "packages/m3l-common/package.json",
+        "blob": "9b3749fb2efb6ea44dc9db2353e5823fef3f88b4"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0007": {
+    "sourceFiles": [
+      {
+        "path": ".github/dependabot.yml",
+        "blob": "366b0d48ccba454a2ce28479d67faa779844e4a5"
+      },
+      {
+        "path": ".github/workflows/ci.yml",
+        "blob": "92c6034d3f33e064c4ff5c71e170e3d81f647eaf"
+      },
+      {
+        "path": ".github/workflows/dependency-review.yml",
+        "blob": "a10b117b3ff5a84647dc7700c377e6870c873f4c"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0008": {
+    "sourceFiles": [
+      {
+        "path": ".github/workflows/ci.yml",
+        "blob": "92c6034d3f33e064c4ff5c71e170e3d81f647eaf"
+      },
+      {
+        "path": "bin/lint-commit.mjs",
+        "blob": "105e5f02a72410fea46302defd53d42bc9d9e6b3"
+      },
+      {
+        "path": "lefthook.yml",
+        "blob": "3816550bcd43751bf2cacb5fac1f50cd9f2c1376"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0009": {
+    "sourceFiles": [
+      {
+        "path": "docs/contributing/branch-protection.md",
+        "blob": "3d6d0200d6ceb11bc68eb9e154a730f8ac6d5b90"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0010": {
+    "sourceFiles": [
+      {
+        "path": ".claude/hooks/post-edit-md-verify.mjs",
+        "blob": "9b0585540941678a8f3b208bb66c177fceded4df"
+      },
+      {
+        "path": ".github/pull_request_template.md",
+        "blob": "f861c7e659c58341e811cc010d6f08771094f66c"
+      },
+      {
+        "path": ".github/workflows/ci.yml",
+        "blob": "92c6034d3f33e064c4ff5c71e170e3d81f647eaf"
+      },
+      {
+        "path": "CLAUDE.md",
+        "blob": "1647601e763aa0dfa1444048019b4f1e825ab3ee"
+      },
+      {
+        "path": "docs/adr/template.md",
+        "blob": "569ea341f065901186fba06379caef798434c1a5"
+      },
+      {
+        "path": "package.json",
+        "blob": "c63764b1be50b89540ad600d6df49312d5ffdbdc"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0011": {
+    "sourceFiles": [
+      {
+        "path": "package.json",
+        "blob": "c63764b1be50b89540ad600d6df49312d5ffdbdc"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0012": {
+    "sourceFiles": [
+      {
+        "path": ".claude/settings.json",
+        "blob": "e070b9a56244d4c7a3b4fb6bb66f3eb5711e1a48"
+      },
+      {
+        "path": "bin/check-reference-index.mjs",
+        "blob": "371696ae35061d8778977e4f1bb390f94d70300d"
+      },
+      {
+        "path": "bin/gen-reference-index.mjs",
+        "blob": "f57ce8f626376a942e987de0acd99d79a15ef182"
+      },
+      {
+        "path": "docs/reference/catalog.json",
+        "blob": "214c8bd38f8c6cdaa00040c8408d22bc0268f06f"
+      },
+      {
+        "path": "docs/reference/README.md",
+        "blob": "73b11a309da282625894ed54d0d4263a997621ef"
+      },
+      {
+        "path": "docs/reference/symbol-map.json",
+        "blob": "c56222f25b6a5584008eb2ec8fb39ac62dfcc297"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0013": {
+    "sourceFiles": [
+      {
+        "path": "bin/worktree-new.mjs",
+        "blob": "01d7f12062f0a38a96cd2922185556b2d0fe9633"
+      },
+      {
+        "path": "CLAUDE.md",
+        "blob": "1647601e763aa0dfa1444048019b4f1e825ab3ee"
+      },
+      {
+        "path": "docs/implementation-status.md",
+        "blob": "b53dd9787c60e3765107ed4593c33f17d2ea0e7b"
+      },
+      {
+        "path": "package.json",
+        "blob": "c63764b1be50b89540ad600d6df49312d5ffdbdc"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0014": {
+    "sourceFiles": [
+      {
+        "path": "bin/lib/mcp-tools.mjs",
+        "blob": "5d7043ee42ea57c56d7ffe561936f562d58d5df3"
+      },
+      {
+        "path": "bin/lib/session-name.mjs",
+        "blob": "4880487bd339483d3215e7de663bb8b66f58c88a"
+      },
+      {
+        "path": "bin/lib/worktree-new.mjs",
+        "blob": "23a8234ce35da413a0717f582465aca9d140c001"
+      },
+      {
+        "path": "bin/lib/worktree-prune.mjs",
+        "blob": "642831bd237cd407ae61f88125ae6a5dd1c78236"
+      },
+      {
+        "path": "bin/worktree-new.mjs",
+        "blob": "01d7f12062f0a38a96cd2922185556b2d0fe9633"
+      },
+      {
+        "path": "bin/worktree-prune.mjs",
+        "blob": "4e9bc77a9bc378801c5308ddacd472f634451482"
+      },
+      {
+        "path": "bin/worktree-remove.mjs",
+        "blob": "d8eafd8da977f4c6061a3d609146c60e182c7ead"
+      },
+      {
+        "path": "bin/worktree-setup.mjs",
+        "blob": "5fc0b4e5904f806d62a6b2bc2747e913102549a7"
+      },
+      {
+        "path": "docs/logs/2026-07-01-core-json.md",
+        "blob": "c17572f2a35d3192437eea358dcfd0e3e77f44d9"
+      },
+      {
+        "path": "docs/logs/2026-08-21-f23-field-test-b2.md",
+        "blob": "3ac9da3e0f5d0355218436f8876e5aefa4cc4159"
+      },
+      {
+        "path": "docs/logs/2026-09-03-worktree-new-lib-extract.md",
+        "blob": "f90524c82ee84d56dfc98267aa185353fb103daf"
+      },
+      {
+        "path": "package.json",
+        "blob": "c63764b1be50b89540ad600d6df49312d5ffdbdc"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0015": {
+    "sourceFiles": [
+      {
+        "path": ".claude/rules/tests.md",
+        "blob": "0a3260a0b4e604d141aa6fc8935333e8bc673a2c"
+      },
+      {
+        "path": ".github/dependabot.yml",
+        "blob": "366b0d48ccba454a2ce28479d67faa779844e4a5"
+      },
+      {
+        "path": ".github/workflows/scorecard.yml",
+        "blob": "29f80f7c2e62e8da8036e65e622b4224205a98cc"
+      },
+      {
+        "path": "bin/check-doc-exports.mjs",
+        "blob": "d69ffc65d108ec799a002fa96a5515563f8f1073"
+      },
+      {
+        "path": "CLAUDE.md",
+        "blob": "1647601e763aa0dfa1444048019b4f1e825ab3ee"
+      },
+      {
+        "path": "docs/contributing/branch-protection.md",
+        "blob": "3d6d0200d6ceb11bc68eb9e154a730f8ac6d5b90"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0016": {
+    "sourceFiles": [
+      {
+        "path": ".claude/hooks/guard-branch-isolation.mjs",
+        "blob": "9749ef832531a5c9c84da1adb4dd1e4bd26173c8"
+      },
+      {
+        "path": ".claude/hooks/guard-git-push-signed.mjs",
+        "blob": "5f04195bff5a199e2acfc1d042cd67f92626182b"
+      },
+      {
+        "path": ".claude/hooks/guard-readonly-bash.mjs",
+        "blob": "ecf13a357ccb4d2ab09e0d409091c8cbbe8a39a4"
+      },
+      {
+        "path": ".claude/hooks/inject-decision-gate.mjs",
+        "blob": "85669b3bb38558c0c30d23e5405bae8f65f350a6"
+      },
+      {
+        "path": ".claude/settings.json",
+        "blob": "e070b9a56244d4c7a3b4fb6bb66f3eb5711e1a48"
+      },
+      {
+        "path": ".claude/skills/starting-work/SKILL.md",
+        "blob": "5cc26a5b911df1e71e04cf58ef0b48cb85968ade"
+      },
+      {
+        "path": "bin/check-hooks.mjs",
+        "blob": "d3a975bd91a818c97f22be39eb815d7d3beb1934"
+      },
+      {
+        "path": "bin/lib/signed-range.mjs",
+        "blob": "4903ec897f456760ba31d3522bb5c61da1625d5b"
+      },
+      {
+        "path": "bin/lib/worktree-include.mjs",
+        "blob": "230d84becd48277164ca607c83393cc62246e35f"
+      },
+      {
+        "path": "bin/verify-signed-range.mjs",
+        "blob": "cf9f240e8a1fc3e4170671a22c7eb3840a8e42c9"
+      },
+      {
+        "path": "docs/contributing/branch-protection.md",
+        "blob": "3d6d0200d6ceb11bc68eb9e154a730f8ac6d5b90"
+      },
+      {
+        "path": "docs/logs/2026-07-24-w5-promote-destructive-gate.md",
+        "blob": "6198c75526c1d14fffd18d7835768d02d25712fe"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0017": {
+    "sourceFiles": [
+      {
+        "path": ".claude/rules/library-src.md",
+        "blob": "c016a58095af16324bc68be34416611527de5f00"
+      },
+      {
+        "path": "bin/check-deps.mjs",
+        "blob": "2cd2452f929aed6c976aa49d826ce1de02e6f718"
+      },
+      {
+        "path": "packages/m3l-common/src/aws/clients/provider.ts",
+        "blob": "8de88ccbba9e75d387c88342faec1e394c3a057b"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0018": {
+    "sourceFiles": [
+      {
+        "path": "docs/plans/archive/2026-07-05-pre-1.0.0-release-audit.md",
+        "blob": "f3018f016ee35937ba7856e5e4ade4d33602279b"
+      },
+      {
+        "path": "docs/reference/core/script.md",
+        "blob": "74de724e0954742a2bb12705c1ab9efe232e6387"
+      },
+      {
+        "path": "packages/m3l-common/src/core/script/M3LScriptOptions.ts",
+        "blob": "f433b91de75fd10da9c0c112b3514b2cef828c85"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0019": {
+    "sourceFiles": [
+      {
+        "path": ".claude/hooks/guard-branch-isolation.mjs",
+        "blob": "9749ef832531a5c9c84da1adb4dd1e4bd26173c8"
+      },
+      {
+        "path": "pnpm-workspace.yaml",
+        "blob": "2bbe619b928a30a3f03d8bae7221503f0a1f7ef2"
+      },
+      {
+        "path": "tsconfig.json",
+        "blob": "970fb5e829dc53830bfd2eb25e5a975c09d08504"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0020": {
+    "sourceFiles": [
+      {
+        "path": "bin/lint-commit.mjs",
+        "blob": "105e5f02a72410fea46302defd53d42bc9d9e6b3"
+      },
+      {
+        "path": "package.json",
+        "blob": "c63764b1be50b89540ad600d6df49312d5ffdbdc"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0021": {
+    "sourceFiles": [
+      {
+        "path": "docs/plans/archive/2026-07-05-pre-1.0.0-release-audit.md",
+        "blob": "f3018f016ee35937ba7856e5e4ade4d33602279b"
+      },
+      {
+        "path": "docs/plans/archive/2026-07-06-post-1.0-deepen-first-roadmap.md",
+        "blob": "1663db69127c65df68c8e3d78c867bc1c1aee0c7"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0022": {
+    "sourceFiles": [
+      {
+        "path": ".claude/rules/scripts.md",
+        "blob": "e581ea10cfd72c2dcc8746fb120078d2cfdc0b2a"
+      },
+      {
+        "path": "bin/lib/script-scaffold.mjs",
+        "blob": "611e7076c6970265b0026e1763e588767ebf7cfc"
+      },
+      {
+        "path": "docs/plans/archive/2026-07-06-consumer-fleet-implementation-plan.md",
+        "blob": "c44a701b4cdbcd1ae9b4fa70316a8605822cb135"
+      },
+      {
+        "path": "docs/plans/archive/2026-07-06-consumer-fleet-roadmap.md",
+        "blob": "cbed7c239cca9a8970c8d2a9258f93f7742ff934"
+      },
+      {
+        "path": "docs/reference/README.md",
+        "blob": "73b11a309da282625894ed54d0d4263a997621ef"
+      },
+      {
+        "path": "lefthook.yml",
+        "blob": "3816550bcd43751bf2cacb5fac1f50cd9f2c1376"
+      },
+      {
+        "path": "package.json",
+        "blob": "c63764b1be50b89540ad600d6df49312d5ffdbdc"
+      },
+      {
+        "path": "pnpm-workspace.yaml",
+        "blob": "2bbe619b928a30a3f03d8bae7221503f0a1f7ef2"
+      },
+      {
+        "path": "tsconfig.json",
+        "blob": "970fb5e829dc53830bfd2eb25e5a975c09d08504"
+      },
+      {
+        "path": "turbo.json",
+        "blob": "c4ae7a2819c9f28a37c0ecdf2da0c6a03cee31f4"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0023": {
+    "sourceFiles": [
+      {
+        "path": ".claude/settings.json",
+        "blob": "e070b9a56244d4c7a3b4fb6bb66f3eb5711e1a48"
+      },
+      {
+        "path": "docs/plans/IMPLEMENTATION.md",
+        "blob": "c3f63e8137f6f1a671e658a48bc0475aecde406e"
+      },
+      {
+        "path": "docs/reference/catalog.json",
+        "blob": "214c8bd38f8c6cdaa00040c8408d22bc0268f06f"
+      },
+      {
+        "path": "docs/reference/symbol-map.json",
+        "blob": "c56222f25b6a5584008eb2ec8fb39ac62dfcc297"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0024": {
+    "sourceFiles": [
+      {
+        "path": ".claude/skills/resolving-merge-conflicts/SKILL.md",
+        "blob": "5c5e2f746462543847e24761d0fa9f210601f82c"
+      },
+      {
+        "path": ".claude/skills/syncing-docs/SKILL.md",
+        "blob": "6f780dc3b5f8fc6fc1689efb85cb8e7f0b6423ec"
+      },
+      {
+        "path": ".gitattributes",
+        "blob": "d87a8e44b4a4ffbaaad5f721369fe0b992bce7c5"
+      },
+      {
+        "path": "bin/check-doc-provenance.mjs",
+        "blob": "9102ba3f7bc0c8aa4054d44b8e4e84859b9b24e5"
+      },
+      {
+        "path": "bin/gen-commit-stats-endpoint.mjs",
+        "blob": "8cf84173e96c85664b7cbf568f19df25de761e4c"
+      },
+      {
+        "path": "bin/gen-commit-stats.mjs",
+        "blob": "b33c21ad8baa920801cae0f70d7cd87f1a6d0c4e"
+      },
+      {
+        "path": "bin/lib/count-sites.mjs",
+        "blob": "d368daa4d57ffc32776eadc492d22c8be9e2a4d2"
+      },
+      {
+        "path": "bin/lib/doc-provenance.mjs",
+        "blob": "c00901e8cabe331d72c171492d3a55187c350f92"
+      },
+      {
+        "path": "bin/merge-driver-generated.mjs",
+        "blob": "4cb0794fe002f64a9cfd3d0ef0fdff8156d8453a"
+      },
+      {
+        "path": "bin/post-integrate-regen.mjs",
+        "blob": "626532260436c173fbabf627e1b2142ec8ece2f1"
+      },
+      {
+        "path": "CLAUDE.md",
+        "blob": "1647601e763aa0dfa1444048019b4f1e825ab3ee"
+      },
+      {
+        "path": "docs/implementation-status.md",
+        "blob": "b53dd9787c60e3765107ed4593c33f17d2ea0e7b"
+      },
+      {
+        "path": "docs/plans/IMPLEMENTATION.md",
+        "blob": "c3f63e8137f6f1a671e658a48bc0475aecde406e"
+      },
+      {
+        "path": "docs/reference/catalog.json",
+        "blob": "214c8bd38f8c6cdaa00040c8408d22bc0268f06f"
+      },
+      {
+        "path": "docs/reference/provenance.schema.json",
+        "blob": "02bdd0f4033ef92f8c8b25f8ce510ec8dbea4f68"
+      },
+      {
+        "path": "docs/reference/README.md",
+        "blob": "73b11a309da282625894ed54d0d4263a997621ef"
+      },
+      {
+        "path": "docs/reference/symbol-map.json",
+        "blob": "c56222f25b6a5584008eb2ec8fb39ac62dfcc297"
+      },
+      {
+        "path": "docs/ROADMAP.md",
+        "blob": "c0d14a334d34535696e81cb16283ce57268fc753"
+      },
+      {
+        "path": "pnpm-lock.yaml",
+        "blob": "1aa29ca6033124e18cddfd33b818db832916fe84"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0025": {
+    "sourceFiles": [
+      {
+        "path": ".claude/workflows/audit-fanout.js",
+        "blob": "c4134c4b3c07d04d16ded3b213d537cffdd5eb54"
+      },
+      {
+        "path": "bin/check-agents.mjs",
+        "blob": "b12152706dee5d504c9bac04652ee79ba661acd2"
+      },
+      {
+        "path": "bin/check-workflows.mjs",
+        "blob": "2c4d6efe75481290c4385183eea61299affb5b30"
+      },
+      {
+        "path": "bin/lib/claude-models.mjs",
+        "blob": "a4bc82005d0ffbda0dffab582f2a3340f663a1c2"
+      },
+      {
+        "path": "CLAUDE.md",
+        "blob": "1647601e763aa0dfa1444048019b4f1e825ab3ee"
+      },
+      {
+        "path": "docs/contributing/model-selection.md",
+        "blob": "ac5655cc06654c7b1de6a411778d86ee0891999e"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0026": {
+    "sourceFiles": [
+      {
+        "path": "docs/plans/IMPLEMENTATION.md",
+        "blob": "c3f63e8137f6f1a671e658a48bc0475aecde406e"
+      },
+      {
+        "path": "docs/reference/aws/clients.md",
+        "blob": "fbd409de225ab4d8af82ae3f94291088ce086634"
+      },
+      {
+        "path": "packages/m3l-common/src/aws/clients/provider.ts",
+        "blob": "8de88ccbba9e75d387c88342faec1e394c3a057b"
+      },
+      {
+        "path": "packages/m3l-common/src/core/polling/classifiers.ts",
+        "blob": "204f44bff1fb18430d0548ee010ad000fab0995a"
+      },
+      {
+        "path": "packages/m3l-common/src/core/polling/M3LPollingPolicies.ts",
+        "blob": "bbc9ff87d5fdff9032a356ae09ef5185b7ec6b9e"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0027": {
+    "sourceFiles": [
+      {
+        "path": "CLAUDE.md",
+        "blob": "1647601e763aa0dfa1444048019b4f1e825ab3ee"
+      },
+      {
+        "path": "docs/reference/aws/clients.md",
+        "blob": "fbd409de225ab4d8af82ae3f94291088ce086634"
+      },
+      {
+        "path": "docs/ROADMAP.md",
+        "blob": "c0d14a334d34535696e81cb16283ce57268fc753"
+      },
+      {
+        "path": "packages/m3l-common/src/aws/clients/provider.ts",
+        "blob": "8de88ccbba9e75d387c88342faec1e394c3a057b"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0028": {
+    "sourceFiles": [
+      {
+        "path": ".claude/rules/scripts.md",
+        "blob": "e581ea10cfd72c2dcc8746fb120078d2cfdc0b2a"
+      },
+      {
+        "path": "bin/lib/script-scaffold.mjs",
+        "blob": "611e7076c6970265b0026e1763e588767ebf7cfc"
+      },
+      {
+        "path": "docs/ROADMAP.md",
+        "blob": "c0d14a334d34535696e81cb16283ce57268fc753"
+      },
+      {
+        "path": "tsconfig.json",
+        "blob": "970fb5e829dc53830bfd2eb25e5a975c09d08504"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0029": {
+    "sourceFiles": [
+      {
+        "path": ".claude/rules/scripts.md",
+        "blob": "e581ea10cfd72c2dcc8746fb120078d2cfdc0b2a"
+      },
+      {
+        "path": "bin/check-deps.mjs",
+        "blob": "2cd2452f929aed6c976aa49d826ce1de02e6f718"
+      },
+      {
+        "path": "docs/ROADMAP.md",
+        "blob": "c0d14a334d34535696e81cb16283ce57268fc753"
+      },
+      {
+        "path": "package.json",
+        "blob": "c63764b1be50b89540ad600d6df49312d5ffdbdc"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0030": {
+    "sourceFiles": [
+      {
+        "path": ".claude/skills/resolving-pr-comments/SKILL.md",
+        "blob": "1a271fa7e8886b58a1498e367cfaff8802598063"
+      },
+      {
+        "path": ".claude/skills/triaging-ci/SKILL.md",
+        "blob": "ecee984edd8cc8c2be229ad82290c5627555223a"
+      },
+      {
+        "path": ".claude/skills/triaging-scan-alerts/SKILL.md",
+        "blob": "4fe3530728ce2c4d6ada2067a649a82cb21a16ff"
+      },
+      {
+        "path": ".github/workflows/claude-pr-review.yml",
+        "blob": "1f7bab5c537bd17d5a18eab96a3ff4ff5f99420e"
+      },
+      {
+        "path": ".mcp.json",
+        "blob": "bfdae6871697486c57b2b4fb09ee202485da98fc"
+      },
+      {
+        "path": "bin/lib/reference-index.mjs",
+        "blob": "2860c6b5fbfbd80590f8b6a8e318565864a12755"
+      },
+      {
+        "path": "bin/lib/report.mjs",
+        "blob": "b83dcf6981b62a66e5e5251aa5513f65d07de49d"
+      },
+      {
+        "path": "bin/mcp-server.mjs",
+        "blob": "3ed4f9f3d517ab7927c4d77987b3bcb3d1d570c7"
+      },
+      {
+        "path": "bin/spoke-recovery.mjs",
+        "blob": "1e335bda9aed34f06f59cbd5e26dda91571da5be"
+      },
+      {
+        "path": "bin/sync-docs.mjs",
+        "blob": "4c9b9257ea7162306f602a1f165e5a006e685e06"
+      },
+      {
+        "path": "docs/contributing/subagent-context-management.md",
+        "blob": "e80dcd15d0da36bc6bc612a1c1af94ca549f9345"
+      },
+      {
+        "path": "docs/logs/2026-07-17-adr-0030-workflow-tooling-mcp.md",
+        "blob": "9daea6ce39484bb69a3b4547f77c395caa263a94"
+      },
+      {
+        "path": "docs/plans/IMPLEMENTATION.md",
+        "blob": "c3f63e8137f6f1a671e658a48bc0475aecde406e"
+      },
+      {
+        "path": "docs/research/writing-custom-tools-and-mcp.md",
+        "blob": "b8783951f68fb653a4235dd99daefa6c39653a41"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0031": {
+    "sourceFiles": [
+      {
+        "path": "CLAUDE.md",
+        "blob": "1647601e763aa0dfa1444048019b4f1e825ab3ee"
+      },
+      {
+        "path": "docs/adr/README.md",
+        "blob": "a79c6b1cbb76b9b60b9dff5fa069c5144f8d9ced"
+      },
+      {
+        "path": "docs/logs/2026-08-14-aws-rds-data.md",
+        "blob": "142d579d8a03616f4f5522d71cce5067d521602f"
+      },
+      {
+        "path": "docs/logs/2026-08-14-rds-data-sql.md",
+        "blob": "5e524cd4a2ce9c3d8269484750bd1da813034c2f"
+      },
+      {
+        "path": "docs/plans/IMPLEMENTATION.md",
+        "blob": "c3f63e8137f6f1a671e658a48bc0475aecde406e"
+      },
+      {
+        "path": "docs/ROADMAP.md",
+        "blob": "c0d14a334d34535696e81cb16283ce57268fc753"
+      },
+      {
+        "path": "package.json",
+        "blob": "c63764b1be50b89540ad600d6df49312d5ffdbdc"
+      },
+      {
+        "path": "packages/m3l-common/src/aws/clients/provider.ts",
+        "blob": "8de88ccbba9e75d387c88342faec1e394c3a057b"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0032": {
+    "sourceFiles": [
+      {
+        "path": ".github/workflows/ci.yml",
+        "blob": "92c6034d3f33e064c4ff5c71e170e3d81f647eaf"
+      },
+      {
+        "path": ".github/workflows/pages.yml",
+        "blob": "7005905d4abf3a21d1af4a6f731609591b815fd3"
+      },
+      {
+        "path": "bin/check-hub-keys.mjs",
+        "blob": "68ec5c445c04579404f00c761435c1d111e3e726"
+      },
+      {
+        "path": "bin/check-tracker-status.mjs",
+        "blob": "67429b3fa44b4b4f25997ec570c87fbf1c00547f"
+      },
+      {
+        "path": "bin/gen-commit-stats-endpoint.mjs",
+        "blob": "8cf84173e96c85664b7cbf568f19df25de761e4c"
+      },
+      {
+        "path": "bin/gen-commit-stats.mjs",
+        "blob": "b33c21ad8baa920801cae0f70d7cd87f1a6d0c4e"
+      },
+      {
+        "path": "bin/gen-project-hub.mjs",
+        "blob": "48c942a074577155c0a747864c3c5566f149011a"
+      },
+      {
+        "path": "bin/lib/claude-models.mjs",
+        "blob": "a4bc82005d0ffbda0dffab582f2a3340f663a1c2"
+      },
+      {
+        "path": "bin/lib/command-catalog.mjs",
+        "blob": "7247c1073a551adf89c72b53d53b7db33dbc2baf"
+      },
+      {
+        "path": "bin/lib/hub-sync.mjs",
+        "blob": "307d4ff98d4369279665e008d13c66d9c44d131e"
+      },
+      {
+        "path": "bin/lib/project-hub.mjs",
+        "blob": "35bb2ae92e2a3ae8442c2275999398f64c0edf58"
+      },
+      {
+        "path": "bin/lib/verify-steps.mjs",
+        "blob": "32f09a2f1fc7d1ce1988a3f970cda34e24d21b2d"
+      },
+      {
+        "path": "bin/lint-commit.mjs",
+        "blob": "105e5f02a72410fea46302defd53d42bc9d9e6b3"
+      },
+      {
+        "path": "bin/post-integrate-regen.mjs",
+        "blob": "626532260436c173fbabf627e1b2142ec8ece2f1"
+      },
+      {
+        "path": "bin/sync-docs.mjs",
+        "blob": "4c9b9257ea7162306f602a1f165e5a006e685e06"
+      },
+      {
+        "path": "bin/sync-hub-issues.mjs",
+        "blob": "6f20084b11049858c047514a2e32e47e9d8c629d"
+      },
+      {
+        "path": "bin/sync-hub-projects.mjs",
+        "blob": "0ac6c65ae621593fbffd0d5c493c005970442d59"
+      },
+      {
+        "path": "bin/tests/gen-commit-stats-endpoint.test.ts",
+        "blob": "9fb2331676eacea95c41a4937e139701c8e5167b"
+      },
+      {
+        "path": "bin/tests/post-integrate-regen.test.ts",
+        "blob": "d6efe0de1673182019a940dea28c93af6bf252d2"
+      },
+      {
+        "path": "docs/contributing/filing-work.md",
+        "blob": "5c38fff29c453995730620e3c5f65b0dc49b1612"
+      },
+      {
+        "path": "docs/implementation-status.md",
+        "blob": "b53dd9787c60e3765107ed4593c33f17d2ea0e7b"
+      },
+      {
+        "path": "docs/logs/README.md",
+        "blob": "1ec914d2cfef809f6e115fd84db773b269bf1c68"
+      },
+      {
+        "path": "docs/plans/IMPLEMENTATION.md",
+        "blob": "c3f63e8137f6f1a671e658a48bc0475aecde406e"
+      },
+      {
+        "path": "docs/ROADMAP.md",
+        "blob": "c0d14a334d34535696e81cb16283ce57268fc753"
+      },
+      {
+        "path": "package.json",
+        "blob": "c63764b1be50b89540ad600d6df49312d5ffdbdc"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0033": {
+    "sourceFiles": [
+      {
+        "path": "docs/plans/IMPLEMENTATION.md",
+        "blob": "c3f63e8137f6f1a671e658a48bc0475aecde406e"
+      },
+      {
+        "path": "docs/ROADMAP.md",
+        "blob": "c0d14a334d34535696e81cb16283ce57268fc753"
+      },
+      {
+        "path": "packages/m3l-common/package.json",
+        "blob": "9b3749fb2efb6ea44dc9db2353e5823fef3f88b4"
+      },
+      {
+        "path": "packages/m3l-common/src/aws/clients/provider.ts",
+        "blob": "8de88ccbba9e75d387c88342faec1e394c3a057b"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0034": {
+    "sourceFiles": [
+      {
+        "path": ".claude/rules/refactoring.md",
+        "blob": "1f1e3916ea6b3699f43d9163f8313bbe45c095fa"
+      },
+      {
+        "path": ".github/workflows/ci.yml",
+        "blob": "92c6034d3f33e064c4ff5c71e170e3d81f647eaf"
+      },
+      {
+        "path": "docs/plans/IMPLEMENTATION.md",
+        "blob": "c3f63e8137f6f1a671e658a48bc0475aecde406e"
+      },
+      {
+        "path": "packages/m3l-common/src/aws/credentials/manager.ts",
+        "blob": "9c43e6dde443d3f0891258a51efd1cd5369da078"
+      },
+      {
+        "path": "packages/m3l-common/src/core/polling/M3LRetryRunner.ts",
+        "blob": "64c41b9133e7f218072e5cc3c2d3fa24210deb7e"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0035": {
+    "sourceFiles": [
+      {
+        "path": "docs/guides/troubleshooting.md",
+        "blob": "a4a6fdbb83bbd8616e51b4d11e35ed265c8805c0"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0036": {
+    "sourceFiles": [
+      {
+        "path": ".github/workflows/dependency-review.yml",
+        "blob": "a10b117b3ff5a84647dc7700c377e6870c873f4c"
+      },
+      {
+        "path": "bin/check-licenses.mjs",
+        "blob": "7e2d14209603e0372ac38dd9844fc3f4cb6880a9"
+      },
+      {
+        "path": "bin/lib/licenses.mjs",
+        "blob": "41ae80614bf4da4c74ef23d27b72d4adce7dd3a3"
+      },
+      {
+        "path": "package.json",
+        "blob": "c63764b1be50b89540ad600d6df49312d5ffdbdc"
+      },
+      {
+        "path": "packages/m3l-common/package.json",
+        "blob": "9b3749fb2efb6ea44dc9db2353e5823fef3f88b4"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0037": {
+    "sourceFiles": [
+      {
+        "path": ".github/dependabot.yml",
+        "blob": "366b0d48ccba454a2ce28479d67faa779844e4a5"
+      },
+      {
+        "path": "docs/plans/archive/2026-07-06-post-1.0-deepen-first-roadmap.md",
+        "blob": "1663db69127c65df68c8e3d78c867bc1c1aee0c7"
+      },
+      {
+        "path": "packages/m3l-common/package.json",
+        "blob": "9b3749fb2efb6ea44dc9db2353e5823fef3f88b4"
+      },
+      {
+        "path": "pnpm-workspace.yaml",
+        "blob": "2bbe619b928a30a3f03d8bae7221503f0a1f7ef2"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0038": {
+    "sourceFiles": [
+      {
+        "path": "docs/reference/aws/clients.md",
+        "blob": "fbd409de225ab4d8af82ae3f94291088ce086634"
+      },
+      {
+        "path": "packages/m3l-common/src/aws/clients/aws-provider.ts",
+        "blob": "9ebad8509b0cf0e344f9b6d94265391dd28a2720"
+      },
+      {
+        "path": "packages/m3l-common/src/aws/clients/provider.ts",
+        "blob": "8de88ccbba9e75d387c88342faec1e394c3a057b"
+      },
+      {
+        "path": "packages/m3l-common/src/aws/sqs/client.ts",
+        "blob": "2e3a657ec5f84b0b5b4486b2d4f0ee177d13d1b9"
+      },
+      {
+        "path": "scripts/sqs-etl/src/steps/redrive-queue.ts",
+        "blob": "e414d6551175e61a65039951ffb6788f1d156162"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0039": {
+    "sourceFiles": [
+      {
+        "path": "CLAUDE.md",
+        "blob": "1647601e763aa0dfa1444048019b4f1e825ab3ee"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0040": {
+    "sourceFiles": [
+      {
+        "path": "packages/m3l-common/src/aws/credentials/manager.ts",
+        "blob": "9c43e6dde443d3f0891258a51efd1cd5369da078"
+      },
+      {
+        "path": "packages/m3l-common/src/core/utils/M3LSingleFlight.ts",
+        "blob": "b05c2ea029de546b32dc7158d2a7e408fb541f1a"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0041": {
+    "sourceFiles": [
+      {
+        "path": "packages/m3l-common/src/aws/credentials/manager.ts",
+        "blob": "9c43e6dde443d3f0891258a51efd1cd5369da078"
+      },
+      {
+        "path": "packages/m3l-common/src/core/logging/M3LLogEvent.ts",
+        "blob": "230e5a2daad2548c2ca58104d022d438940b8f32"
+      },
+      {
+        "path": "packages/m3l-common/src/core/logging/M3LLogEventCategory.ts",
+        "blob": "15d6ccf3b64d17e41790931b1abc1db0b3b99939"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0042": {
+    "sourceFiles": [
+      {
+        "path": "bin/check-deps.mjs",
+        "blob": "2cd2452f929aed6c976aa49d826ce1de02e6f718"
+      },
+      {
+        "path": "bin/scaffold-script.mjs",
+        "blob": "6a53803317c5debe83ba81e9ea06f54b7a61a515"
+      },
+      {
+        "path": "docs/plans/archive/2026-08-13-post-comparison-hardening-wave.md",
+        "blob": "8b6ecc82130706f7bfc4068944438a164c03b576"
+      },
+      {
+        "path": "docs/plans/IMPLEMENTATION.md",
+        "blob": "c3f63e8137f6f1a671e658a48bc0475aecde406e"
+      },
+      {
+        "path": "docs/reference/cli.md",
+        "blob": "dc64dc69fa84c58d906351210b2dcb677fbd1f1a"
+      },
+      {
+        "path": "docs/reference/core/config.md",
+        "blob": "4d8150fc2ed6ef63bb098a4d48d7201bc2123938"
+      },
+      {
+        "path": "docs/reference/core/logging.md",
+        "blob": "7b6d24516ae651b169241ff258bfae6615e991dc"
+      },
+      {
+        "path": "scripts/json-etl/src/config.ts",
+        "blob": "7585109b37476c97a740680dfbee343f9b65d3e1"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0043": {
+    "sourceFiles": [
+      {
+        "path": "docs/plans/archive/2026-08-13-post-comparison-hardening-wave.md",
+        "blob": "8b6ecc82130706f7bfc4068944438a164c03b576"
+      },
+      {
+        "path": "docs/reference/core/json.md",
+        "blob": "e7d8f422527c20455d3ae8430f839bf780dd484e"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0044": {
+    "sourceFiles": [
+      {
+        "path": "bin/lib/hub-sync.mjs",
+        "blob": "307d4ff98d4369279665e008d13c66d9c44d131e"
+      },
+      {
+        "path": "docs/plans/IMPLEMENTATION.md",
+        "blob": "c3f63e8137f6f1a671e658a48bc0475aecde406e"
+      },
+      {
+        "path": "docs/reference/aws/clients.md",
+        "blob": "fbd409de225ab4d8af82ae3f94291088ce086634"
+      },
+      {
+        "path": "package.json",
+        "blob": "c63764b1be50b89540ad600d6df49312d5ffdbdc"
+      },
+      {
+        "path": "packages/m3l-common/src/aws/clients/provider.ts",
+        "blob": "8de88ccbba9e75d387c88342faec1e394c3a057b"
+      },
+      {
+        "path": "packages/m3l-common/src/aws/clients/service-provider.ts",
+        "blob": "525749955c204dae2c1d0a1cd4f363afff408894"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0045": {
+    "sourceFiles": [
+      {
+        "path": "docs/logs/2026-08-14-rds-data-sql.md",
+        "blob": "5e524cd4a2ce9c3d8269484750bd1da813034c2f"
+      },
+      {
+        "path": "docs/plans/IMPLEMENTATION.md",
+        "blob": "c3f63e8137f6f1a671e658a48bc0475aecde406e"
+      },
+      {
+        "path": "docs/reference/core/checkpoint.md",
+        "blob": "3e9b743d77a88d45ef9eb4e05ac2c38bf8a2fb1d"
+      },
+      {
+        "path": "docs/reference/core/exporters.md",
+        "blob": "f5b1b535d0f87eadaa7fcd7704bf5fdcf313ce9d"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0046": {
+    "sourceFiles": [
+      {
+        "path": "docs/contributing/style-guide.md",
+        "blob": "276cacf7093b95f58204128ce28734546b899c40"
+      },
+      {
+        "path": "docs/reference/core/pipeline.md",
+        "blob": "f42619b054f00c2f632f61e14491c6b1e73b80d4"
+      },
+      {
+        "path": "packages/m3l-common/src/internal/pipeline/validate.ts",
+        "blob": "534df41770a1ad14d9d8e035b24458a674efa7bd"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0047": {
+    "sourceFiles": [
+      {
+        "path": "package.json",
+        "blob": "c63764b1be50b89540ad600d6df49312d5ffdbdc"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0049": {
+    "sourceFiles": [
+      {
+        "path": "bin/check-eslint-zones.mjs",
+        "blob": "f7759943c9df3c99b12fac04ae2532717bd35989"
+      },
+      {
+        "path": "docs/reference/aws/cloudformation.md",
+        "blob": "a32ab445695d3324072619509ad401c3a2452cbb"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0050": {
+    "sourceFiles": [
+      {
+        "path": ".github/CODE_OF_CONDUCT.md",
+        "blob": "9d25e534d0a91bd468152338f3f689f465870be9"
+      },
+      {
+        "path": "bin/sync-hub-projects.mjs",
+        "blob": "0ac6c65ae621593fbffd0d5c493c005970442d59"
+      },
+      {
+        "path": "CLAUDE.md",
+        "blob": "1647601e763aa0dfa1444048019b4f1e825ab3ee"
+      },
+      {
+        "path": "docs/contributing/filing-work.md",
+        "blob": "5c38fff29c453995730620e3c5f65b0dc49b1612"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0051": {
+    "sourceFiles": [
+      {
+        "path": "bin/check-hub-keys.mjs",
+        "blob": "68ec5c445c04579404f00c761435c1d111e3e726"
+      },
+      {
+        "path": "bin/check-label-drift.mjs",
+        "blob": "4e2986bf9381688a7ca7d549b5da481f861df273"
+      },
+      {
+        "path": "bin/lib/hub-sync.mjs",
+        "blob": "307d4ff98d4369279665e008d13c66d9c44d131e"
+      },
+      {
+        "path": "bin/lib/label-defs.mjs",
+        "blob": "20ab406761df38c907c82c747635256e9ef89cd8"
+      },
+      {
+        "path": "bin/lib/project-hub.mjs",
+        "blob": "35bb2ae92e2a3ae8442c2275999398f64c0edf58"
+      },
+      {
+        "path": "bin/sync-hub-issues.mjs",
+        "blob": "6f20084b11049858c047514a2e32e47e9d8c629d"
+      },
+      {
+        "path": "docs/contributing/filing-work.md",
+        "blob": "5c38fff29c453995730620e3c5f65b0dc49b1612"
+      },
+      {
+        "path": "docs/logs/2026-08-19-hub-sync-key-namespace.md",
+        "blob": "c5837197318e69d628001bd6dfaac50f490aeb93"
+      },
+      {
+        "path": "docs/plans/IMPLEMENTATION.md",
+        "blob": "c3f63e8137f6f1a671e658a48bc0475aecde406e"
+      },
+      {
+        "path": "docs/ROADMAP.md",
+        "blob": "c0d14a334d34535696e81cb16283ce57268fc753"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0052": {
+    "sourceFiles": [
+      {
+        "path": "bin/check-hub-keys.mjs",
+        "blob": "68ec5c445c04579404f00c761435c1d111e3e726"
+      },
+      {
+        "path": "bin/lib/hub-sync.mjs",
+        "blob": "307d4ff98d4369279665e008d13c66d9c44d131e"
+      },
+      {
+        "path": "bin/lib/hub-views.mjs",
+        "blob": "9717ce4aa70d7f932db1cf29a8aaa50de564630f"
+      },
+      {
+        "path": "bin/lib/label-defs.mjs",
+        "blob": "20ab406761df38c907c82c747635256e9ef89cd8"
+      },
+      {
+        "path": "bin/lib/project-hub.mjs",
+        "blob": "35bb2ae92e2a3ae8442c2275999398f64c0edf58"
+      },
+      {
+        "path": "bin/sync-hub-projects.mjs",
+        "blob": "0ac6c65ae621593fbffd0d5c493c005970442d59"
+      },
+      {
+        "path": "docs/adr/0050-github-platform-feature-stance.md",
+        "blob": "4a6b19d877c21504bd13dc84e5904735ec5365fd"
+      },
+      {
+        "path": "docs/contributing/filing-work.md",
+        "blob": "5c38fff29c453995730620e3c5f65b0dc49b1612"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0053": {
+    "sourceFiles": [
+      {
+        "path": "bin/scaffold-script.mjs",
+        "blob": "6a53803317c5debe83ba81e9ea06f54b7a61a515"
+      },
+      {
+        "path": "docs/plans/2026-08-20-cli-evolution.md",
+        "blob": "1c8d4a1e90d526a3d84aa55ac5fd3e52194ff0f6"
+      },
+      {
+        "path": "docs/plans/IMPLEMENTATION.md",
+        "blob": "c3f63e8137f6f1a671e658a48bc0475aecde406e"
+      },
+      {
+        "path": "docs/reference/cli.md",
+        "blob": "dc64dc69fa84c58d906351210b2dcb677fbd1f1a"
+      },
+      {
+        "path": "docs/ROADMAP.md",
+        "blob": "c0d14a334d34535696e81cb16283ce57268fc753"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0054": {
+    "sourceFiles": [
+      {
+        "path": "bin/check-eslint-zones.mjs",
+        "blob": "f7759943c9df3c99b12fac04ae2532717bd35989"
+      },
+      {
+        "path": "packages/m3l-cli/src/run/spawn.ts",
+        "blob": "a554f625f8d023da5f84fa376e7d3853bb72b2e7"
+      },
+      {
+        "path": "templates/script/src/command.ts.tmpl",
+        "blob": "3112f2661f9839544fa2779eb903bc7e22891504"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0056": {
+    "sourceFiles": [
+      {
+        "path": "bin/lib/script-scaffold.mjs",
+        "blob": "611e7076c6970265b0026e1763e588767ebf7cfc"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0058": {
+    "sourceFiles": [
+      {
+        "path": "docs/plans/2026-08-20-agent-operator.md",
+        "blob": "e32b6451f6e35ade80048c1fc24e33b1f1b7c45f"
+      },
+      {
+        "path": "docs/plans/IMPLEMENTATION.md",
+        "blob": "c3f63e8137f6f1a671e658a48bc0475aecde406e"
+      },
+      {
+        "path": "docs/research/agent-cli-integration.md",
+        "blob": "b11e9abc25e2106e8ceaf2099c9d65d55b1c2cd4"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0059": {
+    "sourceFiles": [
+      {
+        "path": "docs/reference/aws/bedrock-runtime.md",
+        "blob": "7c23c92fee8ebae09b564af12a8acd8b33746e08"
+      },
+      {
+        "path": "docs/research/agent-cli-integration.md",
+        "blob": "b11e9abc25e2106e8ceaf2099c9d65d55b1c2cd4"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0060": {
+    "sourceFiles": [
+      {
+        "path": "docs/research/agent-cli-integration.md",
+        "blob": "b11e9abc25e2106e8ceaf2099c9d65d55b1c2cd4"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0061": {
+    "sourceFiles": [
+      {
+        "path": "docs/research/agent-cli-integration.md",
+        "blob": "b11e9abc25e2106e8ceaf2099c9d65d55b1c2cd4"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0062": {
+    "sourceFiles": [
+      {
+        "path": "bin/mcp-server.mjs",
+        "blob": "3ed4f9f3d517ab7927c4d77987b3bcb3d1d570c7"
+      },
+      {
+        "path": "docs/research/agent-cli-integration.md",
+        "blob": "b11e9abc25e2106e8ceaf2099c9d65d55b1c2cd4"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0063": {
+    "sourceFiles": [
+      {
+        "path": "docs/reference/cli.md",
+        "blob": "dc64dc69fa84c58d906351210b2dcb677fbd1f1a"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0064": {
+    "sourceFiles": [
+      {
+        "path": "docs/plans/2026-08-20-m3l-console.md",
+        "blob": "4b482324d6ef7985e47cef60d25c1a193d2be74f"
+      },
+      {
+        "path": "docs/plans/IMPLEMENTATION.md",
+        "blob": "c3f63e8137f6f1a671e658a48bc0475aecde406e"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0066": {
+    "sourceFiles": [
+      {
+        "path": "docs/reference/console.md",
+        "blob": "befbe839563b4a0ea65af1cab16de821db88c43f"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0067": {
+    "sourceFiles": [
+      {
+        "path": ".github/workflows/ci.yml",
+        "blob": "92c6034d3f33e064c4ff5c71e170e3d81f647eaf"
+      },
+      {
+        "path": "bin/lib/changed-paths.mjs",
+        "blob": "d3c74cc4bec0be5b839d6b3b106e0896d8c48013"
+      },
+      {
+        "path": "tsconfig.base.json",
+        "blob": "35cb899531dae08c630295c4d0b25cc783d1c50f"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0068": {
+    "sourceFiles": [
+      {
+        "path": "docs/plans/IMPLEMENTATION.md",
+        "blob": "c3f63e8137f6f1a671e658a48bc0475aecde406e"
+      },
+      {
+        "path": "docs/reference/console.md",
+        "blob": "befbe839563b4a0ea65af1cab16de821db88c43f"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0070": {
+    "sourceFiles": [
+      {
+        "path": "bin/check-exports-snapshot.mjs",
+        "blob": "87e3f1b834bd6dac0bb597c4ac8262ad05a1d45d"
+      },
+      {
+        "path": "docs/plans/IMPLEMENTATION.md",
+        "blob": "c3f63e8137f6f1a671e658a48bc0475aecde406e"
+      },
+      {
+        "path": "docs/reference/console.md",
+        "blob": "befbe839563b4a0ea65af1cab16de821db88c43f"
+      },
+      {
+        "path": "docs/ROADMAP.md",
+        "blob": "c0d14a334d34535696e81cb16283ce57268fc753"
+      },
+      {
+        "path": "packages/m3l-common/package.json",
+        "blob": "9b3749fb2efb6ea44dc9db2353e5823fef3f88b4"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0071": {
+    "sourceFiles": [
+      {
+        "path": ".github/dependabot.yml",
+        "blob": "366b0d48ccba454a2ce28479d67faa779844e4a5"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0072": {
+    "sourceFiles": [
+      {
+        "path": ".claude/hooks/statusline-context-pressure.mjs",
+        "blob": "861cdc3930bae1d60da7ad91f7b9c4e13b39a97b"
+      },
+      {
+        "path": ".claude/rules/library-src.md",
+        "blob": "c016a58095af16324bc68be34416611527de5f00"
+      },
+      {
+        "path": ".claude/skills/finishing-work/SKILL.md",
+        "blob": "6b10e55a2437c5154d6a47264bfb0bb0e77d374f"
+      },
+      {
+        "path": ".github/dependabot.yml",
+        "blob": "366b0d48ccba454a2ce28479d67faa779844e4a5"
+      },
+      {
+        "path": ".github/workflows/claude-pr-review.yml",
+        "blob": "1f7bab5c537bd17d5a18eab96a3ff4ff5f99420e"
+      },
+      {
+        "path": "bin/check-file-budget.mjs",
+        "blob": "dda73a63ede130846a698fd2fa1425f7caffc622"
+      },
+      {
+        "path": "bin/check-review-size.mjs",
+        "blob": "f27940579615b8fd55b0d2fdd6a32dd9e30ae57b"
+      },
+      {
+        "path": "bin/check-scaffold-seam.mjs",
+        "blob": "ee16b088ea78a416e1eb89cea314d75ffe2f40f0"
+      },
+      {
+        "path": "bin/gen-reference-index.mjs",
+        "blob": "f57ce8f626376a942e987de0acd99d79a15ef182"
+      },
+      {
+        "path": "bin/lib/count-sites.mjs",
+        "blob": "d368daa4d57ffc32776eadc492d22c8be9e2a4d2"
+      },
+      {
+        "path": "bin/slice-progress.mjs",
+        "blob": "67f34328af932d2bd46e89175315df1eb88015ba"
+      },
+      {
+        "path": "docs/contributing/subagent-context-management.md",
+        "blob": "e80dcd15d0da36bc6bc612a1c1af94ca549f9345"
+      },
+      {
+        "path": "docs/implementation-status.md",
+        "blob": "b53dd9787c60e3765107ed4593c33f17d2ea0e7b"
+      },
+      {
+        "path": "docs/logs/2026-08-21-f23-field-test-b2.md",
+        "blob": "3ac9da3e0f5d0355218436f8876e5aefa4cc4159"
+      },
+      {
+        "path": "docs/plans/archive/2026-08-20-pr-review-turn-budget.md",
+        "blob": "fc8cb30d4251594a6a24af0e6b5f5d3d58a172a4"
+      },
+      {
+        "path": "docs/plans/IMPLEMENTATION.md",
+        "blob": "c3f63e8137f6f1a671e658a48bc0475aecde406e"
+      },
+      {
+        "path": "docs/reference/catalog.json",
+        "blob": "214c8bd38f8c6cdaa00040c8408d22bc0268f06f"
+      },
+      {
+        "path": "docs/research/pr-review-action-tuning.md",
+        "blob": "725c1a0954f0bac08ba576f7800968785fa1c31c"
+      },
+      {
+        "path": "lefthook.yml",
+        "blob": "3816550bcd43751bf2cacb5fac1f50cd9f2c1376"
+      },
+      {
+        "path": "package.json",
+        "blob": "c63764b1be50b89540ad600d6df49312d5ffdbdc"
+      },
+      {
+        "path": "tmp/slice-progress.json",
+        "blob": "7c927525dabb084bfb15bf03a8c301c0fac8f4c9"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0073": {
+    "sourceFiles": [
+      {
+        "path": "bin/check-hub-keys.mjs",
+        "blob": "68ec5c445c04579404f00c761435c1d111e3e726"
+      },
+      {
+        "path": "bin/lib/hub-sync.mjs",
+        "blob": "307d4ff98d4369279665e008d13c66d9c44d131e"
+      },
+      {
+        "path": "bin/lib/hub-views.mjs",
+        "blob": "9717ce4aa70d7f932db1cf29a8aaa50de564630f"
+      },
+      {
+        "path": "bin/lib/milestone-defs.mjs",
+        "blob": "c09c47edce457278954421209247b847bfb2ba26"
+      },
+      {
+        "path": "bin/sync-hub-projects.mjs",
+        "blob": "0ac6c65ae621593fbffd0d5c493c005970442d59"
+      },
+      {
+        "path": "docs/contributing/filing-work.md",
+        "blob": "5c38fff29c453995730620e3c5f65b0dc49b1612"
+      },
+      {
+        "path": "docs/plans/2026-08-21-hub-board-restructure.md",
+        "blob": "fe0fe75c1061fe1ba7e09d304f363f33619f686a"
+      },
+      {
+        "path": "docs/plans/IMPLEMENTATION.md",
+        "blob": "c3f63e8137f6f1a671e658a48bc0475aecde406e"
+      },
+      {
+        "path": "docs/ROADMAP.md",
+        "blob": "c0d14a334d34535696e81cb16283ce57268fc753"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0074": {
+    "sourceFiles": [
+      {
+        "path": "bin/lib/hub-sync.mjs",
+        "blob": "307d4ff98d4369279665e008d13c66d9c44d131e"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0075": {
+    "sourceFiles": [
+      {
+        "path": "bin/sync-hub-projects.mjs",
+        "blob": "0ac6c65ae621593fbffd0d5c493c005970442d59"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0076": {
+    "sourceFiles": [
+      {
+        "path": "docs/ROADMAP.md",
+        "blob": "c0d14a334d34535696e81cb16283ce57268fc753"
+      },
+      {
+        "path": "scripts/cloudwatch-logs-analysis/src/steps/preset.ts",
+        "blob": "f2b4140b7f1fd6720820790ccfa9c3ab15e02218"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0077": {
+    "sourceFiles": [
+      {
+        "path": ".claude/rules/library-src.md",
+        "blob": "c016a58095af16324bc68be34416611527de5f00"
+      },
+      {
+        "path": "docs/plans/IMPLEMENTATION.md",
+        "blob": "c3f63e8137f6f1a671e658a48bc0475aecde406e"
+      },
+      {
+        "path": "docs/ROADMAP.md",
+        "blob": "c0d14a334d34535696e81cb16283ce57268fc753"
+      },
+      {
+        "path": "packages/m3l-common/src/aws/sqs/client.ts",
+        "blob": "2e3a657ec5f84b0b5b4486b2d4f0ee177d13d1b9"
+      },
+      {
+        "path": "packages/m3l-common/src/aws/sqs/types.ts",
+        "blob": "9e5382c477836a333df9425f58274fc486bad275"
+      },
+      {
+        "path": "scripts/cloudwatch-logs-analysis/src/steps/build-procedure.ts",
+        "blob": "1f8b2f101cc806781a03fed5fcde4f4d90374095"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0078": {
+    "sourceFiles": [
+      {
+        "path": ".claude/hooks/write-compact-handoff.mjs",
+        "blob": "73b7b776ae076b4922e31efaafef2b9b6f4691b5"
+      },
+      {
+        "path": ".claude/settings.json",
+        "blob": "e070b9a56244d4c7a3b4fb6bb66f3eb5711e1a48"
+      },
+      {
+        "path": "bin/check-agents.mjs",
+        "blob": "b12152706dee5d504c9bac04652ee79ba661acd2"
+      },
+      {
+        "path": "bin/check-context-budget.mjs",
+        "blob": "85b011f88d7a4e939564b1c415bfc79e33ceba53"
+      },
+      {
+        "path": "bin/check-file-budget.mjs",
+        "blob": "dda73a63ede130846a698fd2fa1425f7caffc622"
+      },
+      {
+        "path": "bin/check-hooks.mjs",
+        "blob": "d3a975bd91a818c97f22be39eb815d7d3beb1934"
+      },
+      {
+        "path": "bin/context-budget-baseline.json",
+        "blob": "5d10eb6101e58aa0ceecc3f5defe466b250fa925"
+      },
+      {
+        "path": "bin/spoke-recovery.mjs",
+        "blob": "1e335bda9aed34f06f59cbd5e26dda91571da5be"
+      },
+      {
+        "path": "CLAUDE.md",
+        "blob": "1647601e763aa0dfa1444048019b4f1e825ab3ee"
+      },
+      {
+        "path": "docs/contributing/model-selection.md",
+        "blob": "ac5655cc06654c7b1de6a411778d86ee0891999e"
+      },
+      {
+        "path": "docs/contributing/subagent-context-management.md",
+        "blob": "e80dcd15d0da36bc6bc612a1c1af94ca549f9345"
+      },
+      {
+        "path": "docs/research/context-window-and-compaction.md",
+        "blob": "7115017cc9941171ca0b8724025f76a228c0a8c4"
+      },
+      {
+        "path": "docs/research/harness-refresh.md",
+        "blob": "fd5a450be6a916eaad685fa77b9398858a00155c"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0079": {
+    "sourceFiles": [
+      {
+        "path": "bin/check-verify-parity.mjs",
+        "blob": "cfbda8fcef52356ec9fa3de5e9af2fac1674270a"
+      },
+      {
+        "path": "bin/lib/verify-steps.mjs",
+        "blob": "32f09a2f1fc7d1ce1988a3f970cda34e24d21b2d"
+      },
+      {
+        "path": "bin/sync-hub.mjs",
+        "blob": "409da92f8e31eb4b214f944e033dbe7b12ad8580"
+      },
+      {
+        "path": "docs/plans/IMPLEMENTATION.md",
+        "blob": "c3f63e8137f6f1a671e658a48bc0475aecde406e"
+      },
+      {
+        "path": "docs/ROADMAP.md",
+        "blob": "c0d14a334d34535696e81cb16283ce57268fc753"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0080": {
+    "sourceFiles": [
+      {
+        "path": ".claude/hooks/guard-worktree-ready.mjs",
+        "blob": "4400077cec4085ef5e02094aaaff5c38e77e9669"
+      },
+      {
+        "path": ".claude/settings.json",
+        "blob": "e070b9a56244d4c7a3b4fb6bb66f3eb5711e1a48"
+      },
+      {
+        "path": "bin/setup-host-resources.mjs",
+        "blob": "4815cb9edb23e5c2e32ce20ba419b4402f90925c"
+      },
+      {
+        "path": "bin/worktree-setup.mjs",
+        "blob": "5fc0b4e5904f806d62a6b2bc2747e913102549a7"
+      },
+      {
+        "path": "CLAUDE.md",
+        "blob": "1647601e763aa0dfa1444048019b4f1e825ab3ee"
+      },
+      {
+        "path": "docs/contributing/host-resources.md",
+        "blob": "f7b6075e65a062b0cfe50c0c9696b1d2fb75178f"
+      },
+      {
+        "path": "docs/logs/2026-08-19-check-test-counts-contention.md",
+        "blob": "6c3bfeaac1eb96a7c632512946dc6b2e177d78b9"
+      },
+      {
+        "path": "docs/logs/2026-08-27-parallel-session-oom.md",
+        "blob": "90d0c81b757dd7c3e7d919c3e6de354fbece82f2"
+      },
+      {
+        "path": "turbo.json",
+        "blob": "c4ae7a2819c9f28a37c0ecdf2da0c6a03cee31f4"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0081": {
+    "sourceFiles": [
+      {
+        "path": "docs/contributing/filing-work.md",
+        "blob": "5c38fff29c453995730620e3c5f65b0dc49b1612"
+      },
+      {
+        "path": "docs/plans/2026-08-21-hub-board-restructure.md",
+        "blob": "fe0fe75c1061fe1ba7e09d304f363f33619f686a"
+      },
+      {
+        "path": "docs/ROADMAP.md",
+        "blob": "c0d14a334d34535696e81cb16283ce57268fc753"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0082": {
+    "sourceFiles": [
+      {
+        "path": ".claude/skills/refreshing-anthropic-guidance/SKILL.md",
+        "blob": "4423f4ba1057d616d638422e521945db54c1d800"
+      },
+      {
+        "path": "bin/check-harness-freshness.mjs",
+        "blob": "e204cc9dc2da031622f7228264ce6667e6b5c917"
+      },
+      {
+        "path": "bin/lib/report.mjs",
+        "blob": "b83dcf6981b62a66e5e5251aa5513f65d07de49d"
+      },
+      {
+        "path": "CLAUDE.md",
+        "blob": "1647601e763aa0dfa1444048019b4f1e825ab3ee"
+      },
+      {
+        "path": "docs/research/harness-refresh.md",
+        "blob": "fd5a450be6a916eaad685fa77b9398858a00155c"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0083": {
+    "sourceFiles": [
+      {
+        "path": ".claude/settings.json",
+        "blob": "e070b9a56244d4c7a3b4fb6bb66f3eb5711e1a48"
+      },
+      {
+        "path": "docs/contributing/branch-protection.md",
+        "blob": "3d6d0200d6ceb11bc68eb9e154a730f8ac6d5b90"
+      },
+      {
+        "path": "docs/contributing/hooks-reference.md",
+        "blob": "c89fe9df613ab9a2bbc1191e7f3ee1a29aadbe65"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0084": {
+    "sourceFiles": [
+      {
+        "path": ".claude/settings.json",
+        "blob": "e070b9a56244d4c7a3b4fb6bb66f3eb5711e1a48"
+      },
+      {
+        "path": ".claude/skills/promoting-work-log-lessons/SKILL.md",
+        "blob": "7a88fa52cea18edfd0b828ff211a9702149ee201"
+      },
+      {
+        "path": "bin/check-control-chars.mjs",
+        "blob": "fb89735c491f22af10bee278cfffee6daf3d3ed7"
+      },
+      {
+        "path": "bin/check-retrospective.mjs",
+        "blob": "11406fe472cb7a8a12815319627fc0f872eddb0b"
+      },
+      {
+        "path": "bin/session-telemetry.mjs",
+        "blob": "268890c90b5e76f2314bb5bfc1fa9aa51a66e7c0"
+      },
+      {
+        "path": "CLAUDE.md",
+        "blob": "1647601e763aa0dfa1444048019b4f1e825ab3ee"
+      },
+      {
+        "path": "docs/research/retrospective.md",
+        "blob": "cf88da2a4c81823f5f57bd112b301f010c70ce8a"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0085": {
+    "sourceFiles": [
+      {
+        "path": "CLAUDE.md",
+        "blob": "1647601e763aa0dfa1444048019b4f1e825ab3ee"
+      },
+      {
+        "path": "docs/plans/2026-08-20-agent-operator.md",
+        "blob": "e32b6451f6e35ade80048c1fc24e33b1f1b7c45f"
+      },
+      {
+        "path": "docs/plans/IMPLEMENTATION.md",
+        "blob": "c3f63e8137f6f1a671e658a48bc0475aecde406e"
+      },
+      {
+        "path": "docs/reference/cli.md",
+        "blob": "dc64dc69fa84c58d906351210b2dcb677fbd1f1a"
+      },
+      {
+        "path": "packages/m3l-cli/src/cli/flags.ts",
+        "blob": "d3907ab616f02613d8403624acd1d2d6186b32a7"
+      },
+      {
+        "path": "packages/m3l-cli/src/commands/dynamic-argv.ts",
+        "blob": "30cc65e4e45ec3184f829ac1c6e0026a72a3941a"
+      },
+      {
+        "path": "packages/m3l-cli/src/run/spawn.ts",
+        "blob": "a554f625f8d023da5f84fa376e7d3853bb72b2e7"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0086": {
+    "sourceFiles": [
+      {
+        "path": "bin/file-budget-baseline.json",
+        "blob": "dd97b1bab3e9bb93d9a89387c10bffc9abfad42c"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0087": {
+    "sourceFiles": [
+      {
+        "path": "bin/lib/mcp-tools.mjs",
+        "blob": "5d7043ee42ea57c56d7ffe561936f562d58d5df3"
+      },
+      {
+        "path": "bin/lib/session-name.mjs",
+        "blob": "4880487bd339483d3215e7de663bb8b66f58c88a"
+      },
+      {
+        "path": "bin/session-telemetry.mjs",
+        "blob": "268890c90b5e76f2314bb5bfc1fa9aa51a66e7c0"
+      },
+      {
+        "path": "bin/worktree-new.mjs",
+        "blob": "01d7f12062f0a38a96cd2922185556b2d0fe9633"
+      },
+      {
+        "path": "docs/contributing/contributing.md",
+        "blob": "806315ba1b4edf57b221eefd07db19a91fd934a4"
+      },
+      {
+        "path": "docs/research/session-naming.md",
+        "blob": "1c8dd5683cc5463ae3ba98de0b9b0766e5633782"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0088": {
+    "sourceFiles": [
+      {
+        "path": "bin/claude-launch.mjs",
+        "blob": "809bc9b9116f8e31ba1250a38a5b08076340a4e6"
+      },
+      {
+        "path": "bin/lib/session-name.mjs",
+        "blob": "4880487bd339483d3215e7de663bb8b66f58c88a"
+      },
+      {
+        "path": "bin/session-telemetry.mjs",
+        "blob": "268890c90b5e76f2314bb5bfc1fa9aa51a66e7c0"
+      },
+      {
+        "path": "bin/worktree-new.mjs",
+        "blob": "01d7f12062f0a38a96cd2922185556b2d0fe9633"
+      },
+      {
+        "path": "docs/contributing/contributing.md",
+        "blob": "806315ba1b4edf57b221eefd07db19a91fd934a4"
+      },
+      {
+        "path": "docs/research/harness-refresh.md",
+        "blob": "fd5a450be6a916eaad685fa77b9398858a00155c"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0089": {
+    "sourceFiles": [
+      {
+        "path": "bin/check-context-budget.mjs",
+        "blob": "85b011f88d7a4e939564b1c415bfc79e33ceba53"
+      },
+      {
+        "path": "bin/run-skill-evals.mjs",
+        "blob": "3d69b9a4faf0c7be03b097ecec48c12e3ee85686"
+      },
+      {
+        "path": "CLAUDE.md",
+        "blob": "1647601e763aa0dfa1444048019b4f1e825ab3ee"
+      },
+      {
+        "path": "docs/contributing/agent-operating-model.md",
+        "blob": "f9a7df9a59a6c80a0b6e8f7e253a2112db1d1fbd"
+      },
+      {
+        "path": "docs/contributing/skill-routing.md",
+        "blob": "4557b35825fa8b92dc3a494347c532b9f89cba5a"
+      },
+      {
+        "path": "docs/contributing/skills-catalog.md",
+        "blob": "b8f807ec16f25a8be1f00816429bce118cd82c95"
+      },
+      {
+        "path": "docs/plans/archive/2026-09-03-skill-invocation-and-listing-budget.md",
+        "blob": "acfcda66e41569485f508ff3ff5b0cea825641ef"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0090": {
+    "sourceFiles": [
+      {
+        "path": ".claude/hooks/subagent-statusline.mjs",
+        "blob": "1a57a9987f1ad4da9723e6dc93afbe32dff63be1"
+      },
+      {
+        "path": ".claude/settings.json",
+        "blob": "e070b9a56244d4c7a3b4fb6bb66f3eb5711e1a48"
+      },
+      {
+        "path": "bin/check-hooks.mjs",
+        "blob": "d3a975bd91a818c97f22be39eb815d7d3beb1934"
+      },
+      {
+        "path": "docs/contributing/subagent-context-management.md",
+        "blob": "e80dcd15d0da36bc6bc612a1c1af94ca549f9345"
+      },
+      {
+        "path": "docs/logs/2026-07-18-aws-athena.md",
+        "blob": "de8c678cd44296ef6b2b8b0094942b93ffbc4a57"
+      },
+      {
+        "path": "docs/logs/2026-09-02-spoke-inflight-status.md",
+        "blob": "750bea087c17e2ed4ae5189c235c5210bbb29ee7"
+      },
+      {
+        "path": "docs/logs/2026-09-03-statusline-redesign.md",
+        "blob": "56f0501a368a638dbb0af0975aafd76b1f437b8c"
+      },
+      {
+        "path": "docs/plans/archive/2026-09-02-status-reporting-for-long-running-tasks.md",
+        "blob": "6ce2a708c1e7515608c976e89a2ef6733cd2cb68"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0091": {
+    "sourceFiles": [
+      {
+        "path": "docs/logs/2026-09-03-podman-migration-stance-and-spike.md",
+        "blob": "b0bc9aae5d1e8645534083a2556db96e74b2c1dc"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0092": {
+    "sourceFiles": [
+      {
+        "path": ".claude/hooks/refresh-usage-cache.mjs",
+        "blob": "04f6e2890c911f03f4adb4363c7913a44c7a1433"
+      },
+      {
+        "path": ".claude/settings.json",
+        "blob": "e070b9a56244d4c7a3b4fb6bb66f3eb5711e1a48"
+      },
+      {
+        "path": "bin/check-hooks.mjs",
+        "blob": "d3a975bd91a818c97f22be39eb815d7d3beb1934"
+      },
+      {
+        "path": "bin/lib/staleness-scan.mjs",
+        "blob": "cecc931b32e7b569a2d55322f0240a1970b05b39"
+      },
+      {
+        "path": "bin/usage-cache.mjs",
+        "blob": "cda18ac5f07b86cf7b65a2bb5b8298fe640c5d22"
+      },
+      {
+        "path": "tmp/slice-progress.json",
+        "blob": "7c927525dabb084bfb15bf03a8c301c0fac8f4c9"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0093": {
+    "sourceFiles": [
+      {
+        "path": ".claude/settings.json",
+        "blob": "e070b9a56244d4c7a3b4fb6bb66f3eb5711e1a48"
+      },
+      {
+        "path": ".mcp.json",
+        "blob": "bfdae6871697486c57b2b4fb09ee202485da98fc"
+      },
+      {
+        "path": "bin/lib/agent-roster.mjs",
+        "blob": "70fda4e68bd9d17d055fba2614b46909c6bdb688"
+      },
+      {
+        "path": "bin/lib/integration-stance.mjs",
+        "blob": "77475c17dd7201274403ef86bae7ded86c8d53f1"
+      },
+      {
+        "path": "docs/contributing/agent-operating-model.md",
+        "blob": "f9a7df9a59a6c80a0b6e8f7e253a2112db1d1fbd"
+      },
+      {
+        "path": "docs/contributing/skills-catalog.md",
+        "blob": "b8f807ec16f25a8be1f00816429bce118cd82c95"
+      },
+      {
+        "path": "docs/logs/2026-07-17-adr-0030-workflow-tooling-mcp.md",
+        "blob": "9daea6ce39484bb69a3b4547f77c395caa263a94"
+      },
+      {
+        "path": "docs/logs/2026-07-24-aws-ecs.md",
+        "blob": "7fcc5b37613a0c29d46e0173a3633133b68be609"
+      },
+      {
+        "path": "docs/research/subagent-mcp-tool-grants.md",
+        "blob": "40caafa3178dd40f2b22aa430eed9bfc0562df25"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  },
+  "0094": {
+    "sourceFiles": [
+      {
+        "path": "bin/check-adr-index.mjs",
+        "blob": "bc0e4c3c305eb54c4a683198f0cc354f6d2dd52f"
+      },
+      {
+        "path": "bin/check-reference-index.mjs",
+        "blob": "371696ae35061d8778977e4f1bb390f94d70300d"
+      },
+      {
+        "path": "bin/gen-adr-index.mjs",
+        "blob": "ed5eebda5787c6b7a1efdd3ff537d69c29f05b73"
+      },
+      {
+        "path": "bin/gen-reference-index.mjs",
+        "blob": "f57ce8f626376a942e987de0acd99d79a15ef182"
+      },
+      {
+        "path": "bin/lib/project-hub.mjs",
+        "blob": "35bb2ae92e2a3ae8442c2275999398f64c0edf58"
+      },
+      {
+        "path": "bin/lib/report.mjs",
+        "blob": "b83dcf6981b62a66e5e5251aa5513f65d07de49d"
+      },
+      {
+        "path": "docs/adr/README.md",
+        "blob": "a79c6b1cbb76b9b60b9dff5fa069c5144f8d9ced"
+      },
+      {
+        "path": "docs/contributing/filing-work.md",
+        "blob": "5c38fff29c453995730620e3c5f65b0dc49b1612"
+      },
+      {
+        "path": "docs/logs/2026-09-06-adr-corpus-audit.md",
+        "blob": "0915d8bc8a00fb43f0c943b5ccf8019d094a65cc"
+      }
+    ],
+    "verifiedAt": "2026-09-06"
+  }
+}

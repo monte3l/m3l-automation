@@ -48,6 +48,13 @@ const srcRoot = join(root, "packages/m3l-common/src");
 // blocks every edit to this very file.
 const CHECK_DOC_EXPORTS_SCRIPT = "bin/check-doc-export" + "s.mjs";
 
+// Single source of truth for the sequence length — runSequence()'s own
+// numbered comments must stay in sync with this by hand, but the two
+// human-facing messages below no longer can drift from EACH OTHER the way
+// a second hardcoded literal did (PR4 of the ADR governance sequence added
+// two steps and found both copies of the old "13").
+const TOTAL_STEPS = 15;
+
 const { json, argv } = parseJsonFlag();
 const reporter = createReporter(json);
 
@@ -431,7 +438,7 @@ function lintMarkdown() {
 }
 
 /**
- * Run the fixed 13-step sequence, stopping the moment a step's `ok` is false.
+ * Run the fixed 15-step sequence, stopping the moment a step's `ok` is false.
  */
 function runSequence() {
   // 1 — restamp FIRST (optionally scoped to --affected). Deliberately no
@@ -502,7 +509,21 @@ function runSequence() {
   )
     return;
 
-  // 13 — markdown lint
+  // 13 — re-stamp docs/adr/provenance.json (already prettier-formatted by
+  // its own generator via resolveConfig — no separate format step needed,
+  // unlike step 10's catalog.json/symbol-map.json + README block).
+  if (
+    !runJsonStep("ADR provenance re-stamped", "bin/gen-adr-provenance.mjs").ok
+  )
+    return;
+
+  // 14 — verify ADR provenance is current (advisory — bin/check-adr-provenance.mjs
+  // always exits 0, so this step can never itself fail the sequence; it still
+  // runs through runJsonStep so its findings surface in the composite report).
+  if (!runJsonStep("ADR provenance verify", "bin/check-adr-provenance.mjs").ok)
+    return;
+
+  // 15 — markdown lint
   lintMarkdown();
 }
 
@@ -542,7 +563,7 @@ if (sequenceCompleted && steps.length > 0) {
 } else if (!json) {
   console.error(
     `\n✗  /syncing-docs stopped at "${failedStep?.name ?? "unknown step"}" ` +
-      `(step ${steps.length} of 13).`,
+      `(step ${steps.length} of ${TOTAL_STEPS}).`,
   );
 }
 
@@ -559,7 +580,7 @@ if (!json) {
   }
   if (!sequenceCompleted) {
     console.log(
-      `- ⏭  ${13 - steps.length} step(s) not run (stopped after the first failure)`,
+      `- ⏭  ${TOTAL_STEPS - steps.length} step(s) not run (stopped after the first failure)`,
     );
   }
   if (restampStep?.payload?.restamped) {
