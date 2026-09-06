@@ -51,9 +51,44 @@ const VERDICT_FILE_RE = /^(PASS|FAIL)(?:\s+([0-9a-f]{7,40}))?$/i;
 const MUST_FIX_SECTION_RE =
   /###\s*Must-fix\s*\n+([\s\S]*?)(?=\n###\s|\n<!--|$)/i;
 
+/** Same shape as {@link MUST_FIX_SECTION_RE}, for the `### Should-fix`
+ * heading — see {@link parseShouldFixSection}. */
+const SHOULD_FIX_SECTION_RE =
+  /###\s*Should-fix\s*\n+([\s\S]*?)(?=\n###\s|\n<!--|$)/i;
+
 /** Matches the placeholder REVIEW.md's Output format section specifies for
  * an empty tier — case-insensitive, tolerant of surrounding whitespace. */
 const EMPTY_SECTION_RE = /^_none\._$/i;
+
+/** One review-comment bullet, per REVIEW.md's Output format template:
+ * `- **`path/to/file.ts:line`** — <violation> (<which rule>).` Used only to
+ * count findings, so it need not capture the bullet's parts — just match one
+ * line per finding, tolerant of the bullet marker being `-` or `*`. Anchored
+ * to column zero deliberately (no leading `\s*`) — REVIEW.md's template
+ * never nests a finding under another, so an indented `-`/`*` line is never
+ * a second finding; it's either a sub-point the model added under one
+ * finding's own text, or content inside a fenced code block a finding
+ * quotes. Column-zero anchoring correctly excludes the first case. It does
+ * NOT exclude a fenced block whose own content happens to start a line with
+ * `- ` at column zero (e.g. a quoted unified diff) — full fence-awareness
+ * would need real markdown parsing, which is disproportionate for a bullet
+ * counter whose only consumer is a merge-gate finding count; a miscount
+ * here fails toward over-counting, i.e. requiring an acknowledgment rather
+ * than silently waving one through, which is the safer direction for that
+ * gate to fail in. */
+const FINDING_BULLET_RE = /^[-*]\s+/gm;
+
+/** Matches an `Acknowledged-Should-Fix:` commit-footer trailer — the
+ * acknowledgment channel for a Should-fix finding a PR intentionally merges
+ * unresolved (mirrors `hasBreakingMarker()` in `bin/check-exports-semver.mjs`,
+ * which reads the same PR commit range for a `BREAKING CHANGE:` footer). The
+ * trailer's own text is not parsed further: its presence is the signal, and
+ * the free-text reason after the colon is for a human reviewer, not this
+ * function. Deliberately does not start with `Claude-` — the commit-msg hook
+ * (`bin/lint-commit.mjs`'s `FORBIDDEN_TRAILER_PATTERN`) strips or rejects any
+ * `Claude-*` trailer other than `Co-Authored-By`, so this name was chosen to
+ * never collide with that guard. */
+const SHOULD_FIX_ACK_RE = /(^|\n)\s*Acknowledged-Should-Fix:/i;
 
 /**
  * The verdict (`PASS`/`FAIL`) stated under a review comment's `### Verdict`
@@ -113,6 +148,60 @@ export function parseMustFixSection(body) {
   const content = match[1].trim();
   if (content === "" || EMPTY_SECTION_RE.test(content)) return null;
   return content;
+}
+
+/**
+ * The raw `### Should-fix` section body from a review comment, or `null`
+ * when the section is missing or reads the empty-tier placeholder
+ * (`_None._`). Mirrors {@link parseMustFixSection} exactly, for the tier
+ * REVIEW.md defines as non-blocking but which this repo now requires be
+ * either resolved or explicitly acknowledged before merge (see
+ * {@link hasShouldFixAcknowledgment}).
+ *
+ * @param {string} body Full PR-comment body.
+ * @returns {string | null}
+ */
+export function parseShouldFixSection(body) {
+  const match = SHOULD_FIX_SECTION_RE.exec(body);
+  if (match === null) return null;
+  const content = match[1].trim();
+  if (content === "" || EMPTY_SECTION_RE.test(content)) return null;
+  return content;
+}
+
+/**
+ * How many individual findings a non-empty `### Should-fix` section body
+ * lists — one per bullet line. Returns `0` for a `null`/empty section (no
+ * findings raised, nothing to acknowledge), matching
+ * {@link parseShouldFixSection}'s "no section" and "empty tier" cases.
+ *
+ * @param {string | null} section A section body from
+ *   {@link parseShouldFixSection}, or `null`.
+ * @returns {number}
+ */
+export function countShouldFixFindings(section) {
+  if (section === null || section.trim() === "") return 0;
+  const matches = section.match(FINDING_BULLET_RE);
+  return matches === null ? 0 : matches.length;
+}
+
+/**
+ * Whether a PR's commit range carries an `Acknowledged-Should-Fix:` footer —
+ * the one path that clears a non-empty Should-fix section without requiring
+ * every finding be fixed (REVIEW.md still treats Should-fix as non-blocking
+ * on correctness; this only requires the finding be *seen and decided*, not
+ * resolved). Takes the same shape of input as
+ * `hasBreakingMarker(commitLog)` in `bin/check-exports-semver.mjs` — the
+ * concatenated `git log --format=%B <base>..<head>` output for the PR — so a
+ * caller already computing that range for the exports-semver check can reuse
+ * it here unchanged.
+ *
+ * @param {string} commitLog Concatenated commit messages across the PR's
+ *   commit range.
+ * @returns {boolean}
+ */
+export function hasShouldFixAcknowledgment(commitLog) {
+  return SHOULD_FIX_ACK_RE.test(commitLog);
 }
 
 /**

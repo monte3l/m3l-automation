@@ -12,6 +12,9 @@
 //   node bin/pr-review-gate.mjs parse-verdict          # stdin (comment body) -> stdout: PASS|FAIL|NONE
 //   node bin/pr-review-gate.mjs parse-sha              # stdin (comment body) -> stdout: <sha> or empty
 //   node bin/pr-review-gate.mjs parse-must-fix          # stdin (comment body) -> stdout: raw Must-fix section, or empty
+//   node bin/pr-review-gate.mjs parse-should-fix        # stdin (comment body) -> stdout: raw Should-fix section, or empty
+//   node bin/pr-review-gate.mjs count-should-fix        # stdin (comment body) -> stdout: finding count (0 if none)
+//   node bin/pr-review-gate.mjs has-should-fix-ack      # stdin (commit log) -> stdout: true|false
 //   node bin/pr-review-gate.mjs count-review-comments   # stdin (JSON array of comment bodies) -> stdout: count
 //   node bin/pr-review-gate.mjs workflow-gate-status    # stdin (newline-separated reviewable files) -> stdout: 2 lines
 //   node bin/pr-review-gate.mjs build-delta-patch       # stdin (compare-API JSON) -> stdout: synthetic unified diff, exit 1 if untrustworthy
@@ -27,9 +30,12 @@ import process from "node:process";
 import {
   buildDeltaPatch,
   countReviewComments,
+  countShouldFixFindings,
   describeWorkflowGateChange,
+  hasShouldFixAcknowledgment,
   parseMustFixSection,
   parseReviewedSha,
+  parseShouldFixSection,
   parseVerdict,
   resolveVerdict,
 } from "./lib/pr-review-gate.mjs";
@@ -67,6 +73,24 @@ async function main(argv) {
   if (mode === "parse-must-fix") {
     const section = parseMustFixSection(await readStdin());
     process.stdout.write(section ?? "");
+    return 0;
+  }
+
+  if (mode === "parse-should-fix") {
+    const section = parseShouldFixSection(await readStdin());
+    process.stdout.write(section ?? "");
+    return 0;
+  }
+
+  if (mode === "count-should-fix") {
+    const section = parseShouldFixSection(await readStdin());
+    process.stdout.write(`${countShouldFixFindings(section)}\n`);
+    return 0;
+  }
+
+  if (mode === "has-should-fix-ack") {
+    const acknowledged = hasShouldFixAcknowledgment(await readStdin());
+    process.stdout.write(`${acknowledged}\n`);
     return 0;
   }
 
@@ -156,7 +180,8 @@ async function main(argv) {
 
   process.stderr.write(
     `pr-review-gate: unknown mode ${mode ?? "(none)"} — expected ` +
-      "parse-verdict, parse-sha, parse-must-fix, count-review-comments, " +
+      "parse-verdict, parse-sha, parse-must-fix, parse-should-fix, " +
+      "count-should-fix, has-should-fix-ack, count-review-comments, " +
       "workflow-gate-status, build-delta-patch, or resolve-verdict\n",
   );
   return 1;

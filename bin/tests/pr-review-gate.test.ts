@@ -3,9 +3,12 @@ import {
   REVIEW_GATE_WORKFLOW_PATH,
   buildDeltaPatch,
   countReviewComments,
+  countShouldFixFindings,
   describeWorkflowGateChange,
+  hasShouldFixAcknowledgment,
   parseMustFixSection,
   parseReviewedSha,
+  parseShouldFixSection,
   parseVerdict,
   parseVerdictFile,
   resolveVerdict,
@@ -288,6 +291,226 @@ describe("parseMustFixSection", () => {
     expect(parseMustFixSection(body)).toBe(
       "- `src/foo.ts:10` — missing null check (safety).",
     );
+  });
+});
+
+describe("parseShouldFixSection", () => {
+  test("extracts the bullet text of a real Should-fix section followed by other sections", () => {
+    const body = [
+      "### Should-fix",
+      "",
+      "- `src/bar.ts:5` — consider renaming (clarity).",
+      "",
+      "### Nits",
+      "",
+      "_None._",
+      "",
+      "### Verdict",
+      "",
+      "- PASS",
+    ].join("\n");
+    expect(parseShouldFixSection(body)).toBe(
+      "- `src/bar.ts:5` — consider renaming (clarity).",
+    );
+  });
+
+  test("returns null when Should-fix is the empty-tier placeholder", () => {
+    const body = [
+      "### Should-fix",
+      "",
+      "_None._",
+      "",
+      "### Verdict",
+      "",
+      "- PASS",
+    ].join("\n");
+    expect(parseShouldFixSection(body)).toBeNull();
+  });
+
+  test("returns null when no Should-fix heading exists", () => {
+    expect(
+      parseShouldFixSection("## Claude PR Review — some title\n\nLooks fine."),
+    ).toBeNull();
+  });
+
+  // The Should-fix heading here has no following `###` heading — only the
+  // trailing claude-review-sha marker — so the lookahead must stop at the
+  // `<!--` comment rather than swallowing it into the captured text.
+  test("extracts a Should-fix section that is the last section before the trailing sha comment", () => {
+    const body = [
+      "### Should-fix",
+      "",
+      "- `src/bar.ts:5` — consider renaming (clarity).",
+      "",
+      "<!-- claude-review-sha: abc1234 -->",
+    ].join("\n");
+    expect(parseShouldFixSection(body)).toBe(
+      "- `src/bar.ts:5` — consider renaming (clarity).",
+    );
+  });
+
+  test("captures every bullet, not just the first, when Should-fix has multiple items", () => {
+    const body = [
+      "### Should-fix",
+      "",
+      "- `src/bar.ts:5` — consider renaming (clarity).",
+      "- `src/baz.ts:12` — extract the duplicated guard (readability).",
+      "",
+      "### Nits",
+      "",
+      "_None._",
+    ].join("\n");
+    expect(parseShouldFixSection(body)).toBe(
+      [
+        "- `src/bar.ts:5` — consider renaming (clarity).",
+        "- `src/baz.ts:12` — extract the duplicated guard (readability).",
+      ].join("\n"),
+    );
+  });
+
+  test("matches a lowercase should-fix heading", () => {
+    const body = [
+      "### should-fix",
+      "",
+      "- `src/bar.ts:5` — consider renaming (clarity).",
+      "",
+      "### Verdict",
+      "",
+      "- PASS",
+    ].join("\n");
+    expect(parseShouldFixSection(body)).toBe(
+      "- `src/bar.ts:5` — consider renaming (clarity).",
+    );
+  });
+
+  test("does not confuse a Must-fix section with a Should-fix section when both are present", () => {
+    const body = [
+      "### Must-fix",
+      "",
+      "- `src/foo.ts:10` — missing null check (safety).",
+      "",
+      "### Should-fix",
+      "",
+      "- `src/bar.ts:5` — consider renaming (clarity).",
+      "",
+      "### Verdict",
+      "",
+      "- FAIL — a Must-fix remains.",
+    ].join("\n");
+    expect(parseShouldFixSection(body)).toBe(
+      "- `src/bar.ts:5` — consider renaming (clarity).",
+    );
+  });
+});
+
+describe("countShouldFixFindings", () => {
+  test("counts multiple bullets in a real section", () => {
+    const section = [
+      "- `src/bar.ts:5` — consider renaming (clarity).",
+      "- `src/baz.ts:12` — extract the duplicated guard (readability).",
+      "- `src/qux.ts:1` — add a doc comment (documentation).",
+    ].join("\n");
+    expect(countShouldFixFindings(section)).toBe(3);
+  });
+
+  test("counts a single bullet correctly", () => {
+    expect(
+      countShouldFixFindings("- `src/bar.ts:5` — consider renaming (clarity)."),
+    ).toBe(1);
+  });
+
+  test("returns 0 for null input", () => {
+    expect(countShouldFixFindings(null)).toBe(0);
+  });
+
+  test("returns 0 for an empty string", () => {
+    expect(countShouldFixFindings("")).toBe(0);
+  });
+
+  test("counts bullets whether the marker is - or *", () => {
+    const section = [
+      "- `src/bar.ts:5` — consider renaming (clarity).",
+      "* `src/baz.ts:12` — extract the duplicated guard (readability).",
+    ].join("\n");
+    expect(countShouldFixFindings(section)).toBe(2);
+  });
+
+  // The actual call pattern the CLI wrapper uses: parse the section out of
+  // a full comment body, then feed the result straight into the counter.
+  test("counts findings end-to-end from a full comment body via parseShouldFixSection", () => {
+    const body = [
+      "### Must-fix",
+      "",
+      "_None._",
+      "",
+      "### Should-fix",
+      "",
+      "- `src/bar.ts:5` — consider renaming (clarity).",
+      "- `src/baz.ts:12` — extract the duplicated guard (readability).",
+      "",
+      "### Verdict",
+      "",
+      "- PASS",
+    ].join("\n");
+    const section = parseShouldFixSection(body);
+    expect(countShouldFixFindings(section)).toBe(2);
+  });
+
+  // An indented bullet is a sub-point under the finding above it, not a
+  // second finding — mirrors why the regex is anchored to column zero in
+  // bin/lib/pr-review-gate.mjs.
+  test("does not count an indented sub-bullet as its own finding", () => {
+    const section = [
+      "- `src/foo.ts:10` — missing null check (safety).",
+      "  - context: only reachable via the retry path",
+      "- `src/bar.ts:5` — consider renaming (clarity).",
+    ].join("\n");
+    expect(countShouldFixFindings(section)).toBe(2);
+  });
+});
+
+describe("hasShouldFixAcknowledgment", () => {
+  test("detects an Acknowledged-Should-Fix footer on its own line", () => {
+    expect(
+      hasShouldFixAcknowledgment(
+        "fix: tidy up\n\nAcknowledged-Should-Fix: deferring the rename for now",
+      ),
+    ).toBe(true);
+  });
+
+  test("detects the footer in the middle of a multi-commit concatenated log", () => {
+    const commitLog = [
+      "feat: add the new helper",
+      "",
+      "fix: adjust a call site\n\nAcknowledged-Should-Fix: deferred to a follow-up",
+      "",
+      "docs: update the reference page",
+    ].join("\n\n");
+    expect(hasShouldFixAcknowledgment(commitLog)).toBe(true);
+  });
+
+  test("returns false when no such footer appears anywhere in the log", () => {
+    expect(
+      hasShouldFixAcknowledgment("feat: add a new helper\n\nfix: tidy up"),
+    ).toBe(false);
+  });
+
+  // The words "should" and "fix" appearing separately in prose must not
+  // false-positive — only the literal footer key counts.
+  test("does not false-positive on loose text merely containing the words should and fix", () => {
+    expect(
+      hasShouldFixAcknowledgment(
+        "fix: patch the parser\n\nwe should fix this footer parsing eventually",
+      ),
+    ).toBe(false);
+  });
+
+  test("is case-insensitive on the footer key itself", () => {
+    expect(
+      hasShouldFixAcknowledgment(
+        "fix: tidy up\n\nacknowledged-should-fix: deferring for now",
+      ),
+    ).toBe(true);
   });
 });
 
