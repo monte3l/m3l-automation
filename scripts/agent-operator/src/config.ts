@@ -80,16 +80,21 @@ function eachNonEmptyModelId(
 }
 
 /**
- * The `command` parameter's declared operation set (ADR-0055) — the two
- * verbs `agent-operator` dispatches over in PR 1 (offline-only: no Bedrock
- * client, no agent loop, no network). Feeds {@link configParameters}'
+ * The `command` parameter's declared operation set (ADR-0055) — the three
+ * verbs `agent-operator` dispatches over: PR 1's two offline-only operations
+ * (`health-check`, `explain-policy` — no Bedrock client, no agent loop, no
+ * network) plus V9 slice 3b's `run-preset`, which does call Bedrock and does
+ * mutate through an allowlisted preset. Feeds {@link configParameters}'
  * `command` declaration (which auto-composes the membership validator) and
  * {@link AGENT_OPERATOR_COMMANDS} below.
  *
- * Deliberately **only two** operations, and deliberately no generic
- * `ask`/`prompt` operation: a free-form operation would let model output
- * (rather than a reviewed, versioned declaration) choose which workload
- * runs, defeating the whole point of declaring the operation set as data.
+ * Deliberately no generic `ask`/`prompt` operation: a free-form operation
+ * would let model output (rather than a reviewed, versioned declaration)
+ * choose which workload runs, defeating the whole point of declaring the
+ * operation set as data. `run-preset` does not violate this — WHICH preset
+ * runs is model-chosen, but only from the names present in the
+ * operator-declared `presetAllowlist`, never from an open-ended workload
+ * choice.
  *
  * Declared with a bare `as const` — NOT
  * `as const satisfies Core.M3LOperationDeclarationList` — because a
@@ -112,6 +117,30 @@ export const AGENT_OPERATOR_COMMAND_DECLARATIONS = [
     description:
       "Load the agent policy file and render its grants, operations, budgets, and flags — deterministic, no Bedrock call.",
     requiredParameters: [],
+  },
+  {
+    name: "run-preset",
+    description:
+      "Run an allowlisted json-etl preset through the policy-gated two-phase run_preset tool: a dry run first, then the real run.",
+    // Deliberately NO `presetName` here: the preset name is MODEL-supplied
+    // through the `run_preset` tool's own input schema
+    // (`steps/build-etl-tools.ts`) and gated by membership in the
+    // operator-declared `presetAllowlist` below. Requiring a `presetName`
+    // parameter too would make it a second source of truth for one value —
+    // the exact defect class behind slice 3a's phase-divergence bug (dry run
+    // and real run disagreeing about which preset was meant).
+    requiredParameters: [
+      // Literal, not `Core.AWS_PROFILE_PARAM_NAME`: `isolatedDeclarations`
+      // can't infer an imported const inside this `as const` array literal
+      // (TS9013 under `tsconfig.build.json`). The equivalence with the
+      // library constant is guarded by `tests/config.test.ts`, which asserts
+      // this entry equals `[Core.AWS_PROFILE_PARAM_NAME, "scripts",
+      // "presetAllowlist"]` — if the constant's value ever changes, that
+      // test fails rather than the drift going unnoticed.
+      "aws.profile",
+      "scripts",
+      "presetAllowlist",
+    ],
   },
 ] as const;
 
@@ -174,6 +203,12 @@ export const AGENT_OPERATOR_COMMANDS: readonly [
  * Declare an AWS profile parameter with `Core.AWS_PROFILE_PARAM_NAME` when the
  * script touches AWS — that name is what enables the `script.aws`
  * dynamic-provisioning seam.
+ *
+ * `presetAllowlist` is also now `run-preset`'s (V9 slice 3b) declared
+ * `requiredParameters` entry alongside `Core.AWS_PROFILE_PARAM_NAME` and
+ * `scripts` — see {@link AGENT_OPERATOR_COMMAND_DECLARATIONS}'s `run-preset`
+ * entry for why the preset NAME itself is deliberately not a required
+ * parameter here.
  */
 export const configParameters: readonly Core.M3LConfigParameter[] = [
   new Core.M3LConfigParameter({
@@ -316,13 +351,15 @@ export const configParameters: readonly Core.M3LConfigParameter[] = [
  * `Core.M3LConfigSchema.validate` after every parameter in `configParameters`
  * has resolved.
  *
- * PR 1 declares no `requiredParameters` on either operation in
+ * PR 1 declared no `requiredParameters` on either of its two operations in
  * {@link AGENT_OPERATOR_COMMAND_DECLARATIONS} (`health-check` and
  * `explain-policy` both need only the globally-required `modelId`/
- * `aws.profile`), so {@link Core.deriveOperationValidators} currently derives
- * an empty array — it is still spread in unconditionally so a later
- * operation-specific `requiredParameters` entry is enforced without anyone
- * having to remember to wire it up.
+ * `aws.profile`), so {@link Core.deriveOperationValidators} derived an empty
+ * array back then — it was still spread in unconditionally so a later
+ * operation-specific `requiredParameters` entry would be enforced without
+ * anyone having to remember to wire it up. V9 slice 3b's `run-preset` is that
+ * later entry: its `requiredParameters` names `aws.profile`, `scripts`, and
+ * `presetAllowlist`, so the derived set is no longer vacuously empty.
  *
  * The `maxIterations` must-not-exceed `policy.budgets.loopIterations` cross-check
  * (ADR-0060: a policy-declared ceiling must not be widenable from argv) is

@@ -1,14 +1,14 @@
 /**
  * `agent-operator/steps/run-agent-operator` — dispatches `agent-operator`'s
- * two declared operations (`health-check`, `explain-policy`) over a closed
- * `switch`, per ADR-0055.
+ * three declared operations (`health-check`, `explain-policy`, `run-preset`)
+ * over a closed `switch`, per ADR-0055.
  *
- * Both operations live in their own step modules — `steps/run-health-check`
- * and `steps/explain-policy` — so this file stays what its name says: a
- * dispatcher. `health-check` moved out when the model loop landed; keeping it
- * inline would have pushed one function past the scripts zone's
- * `max-lines-per-function` budget and buried the workload's own ordering
- * constraints inside a `switch`.
+ * Every operation lives in its own step module — `steps/run-health-check`,
+ * `steps/explain-policy`, `steps/run-etl-preset` — so this file stays what
+ * its name says: a dispatcher. `health-check` moved out when the model loop
+ * landed; keeping it inline would have pushed one function past the scripts
+ * zone's `max-lines-per-function` budget and buried the workload's own
+ * ordering constraints inside a `switch`.
  *
  * @packageDocumentation
  */
@@ -24,6 +24,7 @@ import { M3LAgentOperatorCliError } from "../lib/errors.js";
 import { explainPolicy } from "./explain-policy.js";
 import { loadAgentPolicy } from "./load-policy.js";
 import { resolveAgentOperatorRuntime } from "./resolve-runtime.js";
+import { runEtlPreset } from "./run-etl-preset.js";
 import { runHealthCheck } from "./run-health-check.js";
 
 /** The literal union of {@link AGENT_OPERATOR_COMMAND_DECLARATIONS}' names. */
@@ -159,7 +160,7 @@ async function runExplainPolicy(deps: RunAgentOperatorDeps): Promise<void> {
 }
 
 /**
- * Dispatches `agent-operator`'s two declared operations over a closed
+ * Dispatches `agent-operator`'s three declared operations over a closed
  * `switch` with a `never` exhaustiveness arm (ADR-0055).
  *
  * @param deps - See {@link RunAgentOperatorDeps}.
@@ -167,8 +168,9 @@ async function runExplainPolicy(deps: RunAgentOperatorDeps): Promise<void> {
  *   for an unresolvable/unknown `command` value. Each operation's own failure
  *   modes are documented on its step module: `steps/run-health-check.ts` for
  *   `health-check` (policy, decision log, budget state, escalation, and the
- *   Bedrock errors it deliberately does NOT absorb), and
- *   `steps/load-policy.ts` / `steps/resolve-runtime.ts` for `explain-policy`.
+ *   Bedrock errors it deliberately does NOT absorb),
+ *   `steps/load-policy.ts` / `steps/resolve-runtime.ts` for `explain-policy`,
+ *   and `steps/run-etl-preset.ts` for `run-preset`.
  *
  * @example
  * ```ts
@@ -216,6 +218,12 @@ export async function runAgentOperator(
       return runHealthCheck(deps);
     case "explain-policy":
       return runExplainPolicy(deps);
+    case "run-preset":
+      // `deps` is forwarded whole for the same reason `health-check` is:
+      // `RunEtlPresetDeps` is a structural subset of this seam, so a field
+      // added there is a compile error here rather than a silently dropped
+      // dependency.
+      return runEtlPreset(deps);
     default: {
       const exhaustive: never = rawCommand;
       throw new M3LAgentOperatorCliError(

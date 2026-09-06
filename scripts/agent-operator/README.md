@@ -76,6 +76,24 @@ node dist/main.js --command health-check \
   --modelRates "anthropic.claude-sonnet-4-5-20250929-v1:0=0.003,0.015" \
   --includeDryRunProbes --dryRunAllowlist json-etl,s3-objects
 
+# Run an allowlisted json-etl preset. SPENDS MONEY *and MUTATES*: the model
+# chooses a preset name, the gate dry-runs it, and ONLY a clean dry run
+# authorizes the real run (V6 dryRunFirst). presetAllowlist is the gate, not
+# the --preset flag: entries are "<name>=<workspace-relative-path>", and a
+# name the model supplies that is not a key here is refused. Declare none and
+# every call refuses — the prompt says so plainly rather than looking broken.
+node dist/main.js --command run-preset \
+  --modelId anthropic.claude-sonnet-4-5-20250929-v1:0 \
+  --modelRates "anthropic.claude-sonnet-4-5-20250929-v1:0=0.003,0.015" \
+  --scripts json-etl \
+  --presetAllowlist "report=data/config/presets/report.yaml"
+
+# Rehearse it without spending or mutating anything
+node dist/main.js --command run-preset --dry-run \
+  --modelId anthropic.claude-sonnet-4-5-20250929-v1:0 \
+  --scripts json-etl \
+  --presetAllowlist "report=data/config/presets/report.yaml"
+
 # Outside the monorepo — M3LPaths.getProjectRoot() is unavailable in
 # standalone mode, so the CLI entrypoint must be named explicitly or the run
 # fails with ERR_AGENT_OPERATOR_CLI_ENTRYPOINT
@@ -89,6 +107,7 @@ node dist/main.js --command explain-policy \
 | ---------------- | ------------------------------------------------ |
 | `explain-policy` | Minimal, Common, Production, Edge case           |
 | `health-check`   | Dry-run rehearsal, the real run, and probe-armed |
+| `run-preset`     | The preset run and its rehearsal                 |
 
 ### Operational flags
 

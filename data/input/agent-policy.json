@@ -15,8 +15,20 @@
   "scripts": [
     {
       "script": "agent-operator",
-      "operations": ["list", "doctor", "explain-policy", "health-check"],
-      "readOnlyOperations": ["list", "doctor", "explain-policy", "health-check"]
+      "operations": [
+        "list",
+        "doctor",
+        "explain-policy",
+        "health-check",
+        "run-preset"
+      ],
+      "readOnlyOperations": [
+        "list",
+        "doctor",
+        "explain-policy",
+        "health-check",
+        "run-preset"
+      ]
     },
     {
       "script": "api-gateway-client",
@@ -70,7 +82,7 @@
     },
     {
       "script": "json-etl",
-      "operations": ["inspect", "dry-run"],
+      "operations": ["inspect", "dry-run", "run"],
       "readOnlyOperations": ["inspect", "dry-run"]
     },
     {
