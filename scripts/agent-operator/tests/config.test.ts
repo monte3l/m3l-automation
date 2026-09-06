@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import { Core } from "@m3l-automation/m3l-common";
 
-import { configParameters, configValidators } from "../src/config.js";
+import {
+  AGENT_OPERATOR_COMMAND_DECLARATIONS,
+  AGENT_OPERATOR_COMMANDS,
+  configParameters,
+  configValidators,
+} from "../src/config.js";
 
 /**
  * The declared schema, built exactly as `main.ts`/`command.ts` build it — the
@@ -84,7 +89,7 @@ describe("agent-operator config declaration", () => {
     }
   });
 
-  it("declares exactly the two PR-1 operations on the `command` parameter", () => {
+  it("declares the PR-1 and V9 operations, in order, on the `command` parameter", () => {
     const command = configParameters.find(
       (parameter) => parameter.getName() === "command",
     );
@@ -92,10 +97,18 @@ describe("agent-operator config declaration", () => {
     const operationNames = (command?.getOperations() ?? []).map(
       (operation) => operation.name,
     );
-    // PR 1 is offline-only: no generic ask/prompt operation exists, because
-    // that would let model output choose the workload (see config.ts's
-    // deliberate-absence comment).
-    expect(operationNames).toEqual(["health-check", "explain-policy"]);
+    // PR 1 declared two offline-only operations, and deliberately no generic
+    // ask/prompt operation, because that would let model output choose the
+    // workload (see config.ts's deliberate-absence comment). V9 slice 3b
+    // adds a third, `run-preset` — still a declared, reviewed operation, not
+    // a free-form one: which PRESET it runs is model-chosen, but only from
+    // the operator-declared `presetAllowlist` (see the dedicated
+    // `run-preset operation declaration` block below).
+    expect(operationNames).toEqual([
+      "health-check",
+      "explain-policy",
+      "run-preset",
+    ]);
   });
 
   it("declares at least one schema-level cross-parameter validator", () => {
@@ -414,5 +427,75 @@ describe("presetAllowlist declaration (V9 Option D)", () => {
     const config = await loadAndValidate({ ...REQUIRED_RAW });
 
     expect(config.get("presetAllowlist")).toEqual([]);
+  });
+});
+
+/**
+ * V9 slice 3b: a third declared operation, `run-preset`, alongside the PR-1
+ * `health-check`/`explain-policy` pair. Slice 3a already merged the two-phase
+ * `run_preset` Bedrock tool (`steps/build-etl-tools.ts`) and the registry slot
+ * for it, but nothing declared the operation, so the tool was unreachable —
+ * this is that declaration's contract.
+ */
+describe("run-preset operation declaration (V9 slice 3b)", () => {
+  const runPresetDeclaration = AGENT_OPERATOR_COMMAND_DECLARATIONS.find(
+    (declaration) => declaration.name === "run-preset",
+  );
+
+  it("is present in AGENT_OPERATOR_COMMANDS (Core.deriveOperationNames), alongside the unchanged first two", () => {
+    expect(
+      Core.deriveOperationNames(AGENT_OPERATOR_COMMAND_DECLARATIONS),
+    ).toEqual(["health-check", "explain-policy", "run-preset"]);
+    expect(AGENT_OPERATOR_COMMANDS).toEqual([
+      "health-check",
+      "explain-policy",
+      "run-preset",
+    ]);
+  });
+
+  it("declares requiredParameters exactly aws.profile, scripts, presetAllowlist", () => {
+    expect(runPresetDeclaration).toBeDefined();
+    // Deliberately NO `presetName` here: the preset name is MODEL-supplied
+    // through the `run_preset` tool's input schema
+    // (`steps/build-etl-tools.ts`) and gated by membership in the
+    // operator-declared `presetAllowlist`. Requiring it in config too would
+    // be a second source of truth for one value — the defect class that
+    // caused slice 3a's phase-divergence bug. The operation requires an
+    // allowlist, not one name.
+    expect(runPresetDeclaration?.requiredParameters).toEqual([
+      Core.AWS_PROFILE_PARAM_NAME,
+      "scripts",
+      "presetAllowlist",
+    ]);
+  });
+
+  it("every requiredParameters entry names a REAL declared parameter (would otherwise be silently inert)", () => {
+    const declaredNames = new Set(
+      configParameters.map((parameter) => parameter.getName()),
+    );
+    const required = runPresetDeclaration?.requiredParameters ?? [];
+    // Guard against a vacuous pass if the declaration is missing/empty.
+    expect(required.length).toBeGreaterThan(0);
+    for (const name of required) {
+      expect(declaredNames.has(name)).toBe(true);
+    }
+  });
+
+  it("leaves health-check and explain-policy's requiredParameters unchanged (empty)", () => {
+    for (const name of ["health-check", "explain-policy"] as const) {
+      const declaration = AGENT_OPERATOR_COMMAND_DECLARATIONS.find(
+        (candidate) => candidate.name === name,
+      );
+      expect(declaration?.requiredParameters).toEqual([]);
+    }
+  });
+
+  // Previously (PR 1) this derived an empty array — see config.ts's own
+  // comment on `configValidators` — precisely because no operation declared
+  // any `requiredParameters`. `run-preset` now contributes one, so the
+  // derived set is no longer vacuously empty.
+  it("makes Core.deriveOperationValidators(configParameters) derive a non-empty validator set", () => {
+    const derived = Core.deriveOperationValidators(configParameters);
+    expect(derived.length).toBeGreaterThan(0);
   });
 });

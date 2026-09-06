@@ -222,6 +222,197 @@ describe("the committed data/input/agent-policy.json (realAgentPolicy)", () => {
       expect(grant.readOnlyOperations?.length).toBeGreaterThan(0);
     }
   });
+
+  /**
+   * A healthy, well-under-ceiling run observation. Every budget field is
+   * populated so no ceiling reads as unobservable (trap B in the dispatch
+   * brief): an absent `run` — or one missing a single field the deployed
+   * policy declares a ceiling for — makes the evaluator report
+   * `budget.*.unobservable` instead of the rule under test, masking every
+   * case below behind the wrong rule id. `dryRunCompletedShapes` is the only
+   * field callers vary per case.
+   */
+  function healthyRunLedger(
+    dryRunCompletedShapes: readonly string[] = [],
+  ): Core.M3LAgentRunLedger {
+    const now = Date.now();
+    return {
+      invocationsThisRun: 1,
+      invocationsToday: 1,
+      todayCountedAt: now,
+      now,
+      tokensThisRun: 100,
+      costThisRun: 0.01,
+      loopIterations: 1,
+      decisionLogAvailable: true,
+      dryRunCompletedShapes,
+    };
+  }
+
+  it("case 1: agent-operator run-preset (read-only) is auto-approved via read-only-auto-approved", async () => {
+    const policy = await realAgentPolicy();
+
+    const decision = Core.evaluateAgentAction({
+      policy,
+      action: {
+        script: "agent-operator",
+        operation: "run-preset",
+        kind: "read-only",
+        parameterNames: [
+          "command",
+          "policyFile",
+          "decisionLogDir",
+          "agentName",
+          "modelId",
+        ],
+      },
+      run: healthyRunLedger(),
+    });
+
+    expect(decision.verdict).toBe("auto-approved");
+    expect(decision.rule).toBe("read-only-auto-approved");
+  });
+
+  it("case 2/3/4/5/6: json-etl run's mutating two-phase seam and the s3-objects denial", async () => {
+    const policy = await realAgentPolicy();
+
+    // Phase 1 (dry run, sandbox): auto-approved as a graded mutation.
+    const phase1Sandbox = Core.evaluateAgentAction({
+      policy,
+      action: {
+        script: "json-etl",
+        operation: "run",
+        kind: "mutating",
+        target: { profile: "sandbox" },
+        parameterNames: ["presetName"],
+        dryRun: true,
+      },
+      run: healthyRunLedger(),
+    });
+    expect(phase1Sandbox.verdict).toBe("auto-approved");
+    expect(phase1Sandbox.rule).toBe("graded-mutation-auto-approved");
+    const sandboxShapeKey = phase1Sandbox.action.shapeKey;
+
+    // Case 3: phase 2, same shape, but no dry run of it has completed in
+    // this run yet (an empty ledger). This is the entire point of the
+    // two-phase seam ADR-0060 slice 2 introduces: the real (non-dry-run)
+    // action is refused until a dry run of the SAME shape has completed in
+    // the SAME run — proving the seam actually gates, not just that a dry
+    // run happens to be auto-approved on its own.
+    const phase2NoRecordedShape = Core.evaluateAgentAction({
+      policy,
+      action: {
+        script: "json-etl",
+        operation: "run",
+        kind: "mutating",
+        target: { profile: "sandbox" },
+        parameterNames: ["presetName"],
+      },
+      run: healthyRunLedger(),
+    });
+    expect(phase2NoRecordedShape.verdict).toBe("escalate");
+    expect(phase2NoRecordedShape.rule).toBe("dry-run-first");
+
+    // Case 4: phase 2, same shape, WITH phase 1's shape key recorded as
+    // completed — now auto-approved.
+    const phase2WithRecordedShape = Core.evaluateAgentAction({
+      policy,
+      action: {
+        script: "json-etl",
+        operation: "run",
+        kind: "mutating",
+        target: { profile: "sandbox" },
+        parameterNames: ["presetName"],
+      },
+      run: healthyRunLedger([sandboxShapeKey]),
+    });
+    expect(phase2WithRecordedShape.verdict).toBe("auto-approved");
+    expect(phase2WithRecordedShape.rule).toBe("graded-mutation-auto-approved");
+
+    // Case 5: a prod target, with a dry run of the identical shape already
+    // recorded (dry-run-first is satisfied), must still escalate.
+    //
+    // Correction against the dispatch brief: the brief asserted "the prod
+    // phase-1 shape key differs from the sandbox one — reusing the sandbox
+    // key would make this pass for the wrong reason." That is not what the
+    // source does: `computeAgentActionShapeKey`
+    // (packages/m3l-common/src/internal/agent/shape.ts) hashes only
+    // `script`, `operation`, `kind`, and `parameterNames` — `target` and
+    // `dryRun` are "deliberately excluded" (see that file's own comment) —
+    // so the prod and sandbox phase-1 actions here hash to the SAME shape
+    // key. Verified directly below rather than trusting the brief's claim.
+    // That equality is exactly why this case is still meaningful: it proves
+    // `sensitive-target-escalated` (step 5, `decideMutation`) wins over
+    // `dry-run-first` (step 6) even when dry-run-first is fully satisfied —
+    // matching `decide.ts`'s own documented step ordering (grading sits
+    // above dry-run-first so a sensitive target can never be waved through
+    // by having been dry-run).
+    const phase1Prod = Core.evaluateAgentAction({
+      policy,
+      action: {
+        script: "json-etl",
+        operation: "run",
+        kind: "mutating",
+        target: { profile: "prod" },
+        parameterNames: ["presetName"],
+        dryRun: true,
+      },
+      run: healthyRunLedger(),
+    });
+    const prodShapeKey = phase1Prod.action.shapeKey;
+    expect(prodShapeKey).toBe(sandboxShapeKey);
+
+    const phase2Prod = Core.evaluateAgentAction({
+      policy,
+      action: {
+        script: "json-etl",
+        operation: "run",
+        kind: "mutating",
+        target: { profile: "prod" },
+        parameterNames: ["presetName"],
+      },
+      run: healthyRunLedger([prodShapeKey]),
+    });
+    expect(phase2Prod.verdict).toBe("escalate");
+    expect(phase2Prod.rule).toBe("sensitive-target-escalated");
+
+    // Case 6: an ungranted script (s3-objects has no "run" operation grant)
+    // is denied outright, regardless of the shape/dry-run state.
+    const ungrantedScript = Core.evaluateAgentAction({
+      policy,
+      action: {
+        script: "s3-objects",
+        operation: "run",
+        kind: "mutating",
+        target: { profile: "sandbox" },
+        parameterNames: ["presetName"],
+      },
+      run: healthyRunLedger(),
+    });
+    expect(ungrantedScript.verdict).toBe("denied");
+    expect(ungrantedScript.rule).toBe("operation-not-allowlisted");
+  });
+
+  it("case 7: the agent-operator grant lists run-preset in both operations and readOnlyOperations", async () => {
+    const policy = await realAgentPolicy();
+    const grant = policy.scripts.find((s) => s.script === "agent-operator");
+    expect(grant).toBeDefined();
+    expect(grant?.operations).toContain("run-preset");
+    expect(grant?.readOnlyOperations).toContain("run-preset");
+  });
+
+  it("case 8: the json-etl grant lists run in operations but deliberately NOT in readOnlyOperations", async () => {
+    const policy = await realAgentPolicy();
+    const grant = policy.scripts.find((s) => s.script === "json-etl");
+    expect(grant).toBeDefined();
+    expect(grant?.operations).toContain("run");
+    // Deliberate omission: readOnlyOperations is the cross-check
+    // decideReadOnly uses to escalate a mis-declared kind. If "run" were
+    // added here too, an agent could declare kind: "read-only" for a
+    // mutating operation and have the cross-check wave it through instead
+    // of escalating it — defeating the entire cross-check.
+    expect(grant?.readOnlyOperations).not.toContain("run");
+  });
 });
 
 describe("policyFixtures.castPolicy (validator-is-the-only-door guarantee)", () => {

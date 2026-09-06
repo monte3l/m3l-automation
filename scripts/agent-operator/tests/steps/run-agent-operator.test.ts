@@ -83,7 +83,16 @@ vi.mock("../../src/steps/run-health-check.js", () => ({
   runHealthCheck: vi.fn(() => Promise.resolve()),
 }));
 
+// V9 slice 3b: the run-preset ARM is mocked the same way, for the same
+// reason — this file tests only that the dispatcher reaches it with the
+// dispatcher's own deps; `run-etl-preset.test.ts` (a peer file) owns what
+// the arm itself does once reached.
+vi.mock("../../src/steps/run-etl-preset.js", () => ({
+  runEtlPreset: vi.fn(() => Promise.resolve()),
+}));
+
 import { createAgentCliSurface } from "../../src/lib/cli-surface.js";
+import { runEtlPreset } from "../../src/steps/run-etl-preset.js";
 import { runHealthCheck } from "../../src/steps/run-health-check.js";
 
 /** Records every event handed to it, for assertion without pinning exact prose. */
@@ -174,6 +183,7 @@ afterEach(async () => {
   vi.unstubAllEnvs();
   vi.mocked(createAgentCliSurface).mockReset();
   vi.mocked(runHealthCheck).mockClear();
+  vi.mocked(runEtlPreset).mockClear();
   await rm(inputDir, { recursive: true, force: true });
   await rm(dataDir, { recursive: true, force: true });
 });
@@ -603,6 +613,44 @@ describe("runAgentOperator — health-check delegates to the workload step", () 
     // The dispatcher builds no CLI surface of its own for this arm — the
     // workload step owns that, and a surface built here would be a second,
     // unused one.
+    expect(createAgentCliSurface).not.toHaveBeenCalled();
+  });
+});
+
+// V9 slice 3b: `run-preset` is a third declared operation
+// (`AGENT_OPERATOR_COMMAND_DECLARATIONS`), unreachable until the dispatch
+// `switch`'s `never` exhaustiveness arm gains its case. This proves only that
+// the dispatcher reaches the new arm with its own deps, unaltered — the same
+// proof shape as the `health-check` block above, and for the same reason:
+// `run-etl-preset.test.ts` (a peer file) owns the workload's own behaviour.
+describe("runAgentOperator — run-preset delegates to the workload step", () => {
+  it("calls runEtlPreset with the dispatcher's own deps, and never builds the explain-policy CLI surface itself", async () => {
+    const { logger } = createLogger();
+    const config = buildConfig({ command: "run-preset" });
+    const signal = new AbortController().signal;
+    const reportRecovery = vi.fn();
+    const paths = makePaths();
+
+    await runAgentOperator({
+      config,
+      logger,
+      paths,
+      signal,
+      reportRecovery,
+      aws: undefined,
+    });
+
+    expect(runEtlPreset).toHaveBeenCalledTimes(1);
+    expect(runEtlPreset).toHaveBeenCalledWith({
+      config,
+      logger,
+      paths,
+      signal,
+      reportRecovery,
+      aws: undefined,
+    });
+    // The dispatcher builds no CLI surface of its own for this arm either —
+    // the workload step owns that.
     expect(createAgentCliSurface).not.toHaveBeenCalled();
   });
 });

@@ -47,44 +47,32 @@
  * `doctor` exiting 1 must *resolve* `surface.doctor()`. That says nothing
  * about this script's own exit code, and the two must not be conflated.
  *
- * ## Three ordering constraints
+ * ## Ordering constraints
  *
- * 1. **`createMeteredInvoker` is constructed BEFORE the preflight.** It seeds
- *    `observeSpend({tokens: 0, loopIterations: 0, cost: 0})` at construction,
- *    because zero spend must be an *observed* fact. Built after the
- *    preflight, the preflight escalates on
- *    `budget.tokens-per-run.unobservable` and the run dies before a single
- *    tool exists. Constructing the client makes no network call, so this
- *    costs nothing on a run the preflight then refuses.
- * 2. **`modelRates` must cover `modelId` and every `fallbackModelIds`
- *    entry.** `sumObservedCost` returns `undefined` the moment a served model
- *    lacks a rate, which makes `snapshot()` omit `costThisRun`, which makes
- *    *every subsequent gated call* escalate on
- *    `budget.cost-per-run.unobservable` and get refused. The seeded `0`
- *    covers turn 0 only.
- * 3. **The same `rates` map object goes to both `createMeteredInvoker` and
- *    `runBedrockToolLoop`.** A conditional spread on one side only creates a
- *    divergence `reconcileMeteredCost` would then correctly, confusingly,
- *    throw on.
+ * The AUTHORIZATION setup this workload shares with every other gated
+ * `agent-operator` operation — accessor, policy load, runtime resolution,
+ * ledger + recorder, daily-counter seed, CLI surface, metered invoker
+ * construction, and the preflight itself — lives in
+ * `steps/prepare-gated-operation.ts`'s `prepareGatedOperation`, called below
+ * from {@link prepareHealthCheck}. That module's own doc states the three
+ * ordering constraints governing it (invoker-before-preflight, `modelRates`
+ * coverage, shared recorder instance).
  *
- * Plus: **one shared recorder instance** across the preflight and the gate
- * deps, or the audit trail splits across two identities.
+ * One constraint spans both modules: **the same `rates` map object goes to
+ * both `createMeteredInvoker` (in `prepare-gated-operation.ts`) and
+ * `runBedrockToolLoop` (in {@link runLoop} below).** Both read
+ * `runtime.modelRates` off the one `AgentOperatorRuntimeSettings` the shared
+ * setup resolved, so they can never diverge — a conditional spread on either
+ * side would create a divergence `reconcileMeteredCost` would then correctly,
+ * confusingly, throw on.
  */
-
-import { dirname } from "node:path";
 
 import { AWS, Core } from "@m3l-automation/m3l-common";
 
-import { AGENT_NAME_DEFAULT, POLICY_FILE_DEFAULT } from "../config.js";
-import { createAgentCliSurface } from "../lib/cli-surface.js";
-import type { AgentCliSurface } from "../lib/cli-surface.js";
-import { M3LAgentOperatorCliError } from "../lib/errors.js";
 import { buildAgentToolRegistry } from "./build-tool-registry.js";
 import { buildHealthTools } from "./build-health-tools.js";
-import { createInvoker } from "./create-invoker.js";
-import { openDailyInvocationCounter } from "./daily-counter.js";
 import type { AgentDailyInvocationCounter } from "./daily-counter.js";
-import { AgentDecisionRecorder, agentIdentity } from "./decision-recorder.js";
+import type { AgentDecisionRecorder } from "./decision-recorder.js";
 import { AgentHealthObservations } from "./health-observations.js";
 import {
   healthCheckSystemPrompt,
@@ -92,16 +80,11 @@ import {
 } from "./health-prompt.js";
 import { buildHealthReport, writeHealthReport } from "./health-report.js";
 import type { AgentHealthAnomaly } from "./health-report.js";
-import { loadAgentPolicy } from "./load-policy.js";
-import {
-  createMeteredInvoker,
-  reconcileMeteredCost,
-} from "./metering-invoker.js";
-import type { MeteredInvoker } from "./metering-invoker.js";
-import { runDecisionLogPreflight } from "./preflight-log.js";
-import { resolveAgentOperatorRuntime } from "./resolve-runtime.js";
+import { reconcileMeteredCost } from "./metering-invoker.js";
+import { prepareGatedOperation } from "./prepare-gated-operation.js";
+import type { GatedOperationSetup } from "./prepare-gated-operation.js";
 import type { AgentOperatorRuntimeSettings } from "./resolve-runtime.js";
-import { AgentRunLedger } from "./run-ledger.js";
+import type { AgentRunLedger } from "./run-ledger.js";
 
 /** Everything {@link runHealthCheck} needs, injected rather than reached for. */
 export interface RunHealthCheckDeps {
@@ -137,136 +120,6 @@ function healthCheckAction(): Core.M3LAgentAction {
       "modelId",
     ],
   };
-}
-
-/**
- * Resolves the host workspace root for the model-safety scrub, degrading to
- * `undefined` (scrub off) only on the documented standalone-mode signal, and
- * warning loudly when it does — with the scrub off, absolute host paths in
- * CLI output reach the model unmasked, and an operator reading the run log
- * must be able to see that.
- */
-function deriveWorkspaceRoot(
-  paths: Core.M3LPaths,
-  logger: Core.M3LLogger,
-): string | undefined {
-  try {
-    return paths.getProjectRoot();
-  } catch (cause) {
-    if (!(cause instanceof Core.M3LPathResolutionError)) throw cause;
-    logger.warning(
-      "workspace-root scrub disabled: the project root could not be resolved (standalone mode), so absolute host paths in CLI output are no longer masked before the model reads them",
-      { scrub: "workspace-root", enabled: false },
-    );
-    return undefined;
-  }
-}
-
-/** Builds the typed `m3l` CLI adapter the four tools drive. */
-function buildSurface(
-  deps: RunHealthCheckDeps,
-  runtime: AgentOperatorRuntimeSettings,
-  workspaceRoot: string | undefined,
-): AgentCliSurface {
-  return createAgentCliSurface({
-    entrypoint: runtime.cliEntrypoint,
-    cwd: dirname(runtime.cliEntrypoint),
-    nodeExecPath: process.execPath,
-    cliTimeoutMs: runtime.cliTimeoutMs,
-    dryRunTimeoutMs: runtime.dryRunTimeoutMs,
-    maxOutputBytes: runtime.maxOutputBytes,
-    // Layer two of `script_dry_run`'s two independent fail-closed layers (the
-    // first being that its spec is not built at all): an unset or false flag
-    // hands the surface an EMPTY set, so a `dryRunAllowlist` left in config —
-    // or added ahead of the flag — can never silently arm the probe.
-    dryRunAllowlist: runtime.includeDryRunProbes
-      ? new Set(runtime.dryRunAllowlist)
-      : new Set<string>(),
-    // Forwarded verbatim: `resolve-runtime` has already validated every
-    // entry's name and workspace-relative path, and this map is the ONLY
-    // input the surface's `run` consults. Dropping it (or passing an empty
-    // map) leaves the operator's declared grant inert: every mutating call
-    // rejects with `cli-surface.ts`'s fixed `PRESET_NAME_REJECTION_MESSAGE`,
-    // which is identical across all of its rejection arms (each arm's real
-    // reason rides as an operator-only `cause`), so the wiring defect is
-    // indistinguishable from an undeclared preset — hence the required option.
-    presetAllowlist: runtime.presetAllowlist,
-    signal: deps.signal,
-    ...(workspaceRoot === undefined ? {} : { workspaceRoot }),
-  });
-}
-
-/**
- * Opens the cross-run daily counter and seeds the ledger's per-day baseline.
- *
- * Must run **before** the preflight: `runDecisionLogPreflight` snapshots the
- * ledger twice, and budgets are evaluator step 3 while the decision-log rule
- * is step 3b — so against a policy declaring `invocationsPerDay` an unseeded
- * ledger escalates at *both* phases and the two-phase bootstrap can never
- * resolve.
- */
-async function seedDailyCounter(
-  deps: RunHealthCheckDeps,
-  ledger: AgentRunLedger,
-  now: number,
-): Promise<AgentDailyInvocationCounter> {
-  const counter = await openDailyInvocationCounter({ paths: deps.paths, now });
-  counter.seed(ledger);
-  deps.logger.info("cross-run daily invocation baseline loaded", {
-    step: "daily-counter-loaded",
-    priorToday: counter.priorToday,
-  });
-  return counter;
-}
-
-/** Loads the declared policy and logs the milestone. */
-async function loadPolicy(
-  deps: RunHealthCheckDeps,
-  accessor: Core.M3LConfigAccessor,
-): Promise<Core.M3LAgentPolicy> {
-  const policy = await loadAgentPolicy({
-    paths: deps.paths,
-    policyFile: accessor.optionalString("policyFile") ?? POLICY_FILE_DEFAULT,
-  });
-  deps.logger.info("agent policy loaded", { step: "policy-loaded" });
-  return policy;
-}
-
-/** Builds the decision recorder — ONE instance, shared by preflight and gate. */
-function buildRecorder(
-  accessor: Core.M3LConfigAccessor,
-): AgentDecisionRecorder {
-  const directory = accessor.optionalString("decisionLogDir");
-  const writer =
-    directory === undefined
-      ? new Core.M3LAgentDecisionLog()
-      : new Core.M3LAgentDecisionLog({ directory });
-  return new AgentDecisionRecorder({
-    identity: agentIdentity({
-      name: accessor.optionalString("agentName") ?? AGENT_NAME_DEFAULT,
-      modelId: accessor.optionalString("modelId"),
-    }),
-    writer,
-  });
-}
-
-/**
- * Fails the run when the preflight's concluding verdict is not an
- * auto-approval, so a run the policy declined can never reach the model.
- *
- * The gate is `Core.isAgentActionAutoApproved`, never a literal comparison:
- * the closed verdict set is `auto-approved | escalate | denied`, so
- * `verdict !== "denied"` would wave every escalation through. Only the
- * library-authored `verdict`/`rule` are surfaced — no config value reaches
- * the message or the context.
- */
-function assertConclusionAutoApproved(decision: Core.M3LAgentDecision): void {
-  if (Core.isAgentActionAutoApproved(decision)) return;
-  throw new M3LAgentOperatorCliError(
-    "the run concluded without an auto-approved verdict: the deployment policy declined to auto-approve this action, so it requires human escalation",
-    "ERR_AGENT_OPERATOR_ESCALATED",
-    { context: { verdict: decision.verdict, rule: decision.rule } },
-  );
 }
 
 /**
@@ -357,7 +210,7 @@ async function runLoop(
       maxToolsPerTurn: runtime.maxToolsPerTurn,
       signal: deps.signal,
       // THE SAME map object the metered invoker was built with — see
-      // ordering constraint 3 on this module.
+      // `prepare-gated-operation.ts`'s ordering constraint 3.
       rates: runtime.modelRates,
       inferenceConfig: { maxTokens: runtime.maxOutputTokens },
     });
@@ -484,99 +337,40 @@ export async function runHealthCheck(deps: RunHealthCheckDeps): Promise<void> {
   await concludeHealthCheck(deps, setup, loop);
 }
 
-/** Everything {@link prepareHealthCheck} assembles, in dependency order. */
-interface HealthCheckSetup {
-  readonly policy: Core.M3LAgentPolicy;
-  readonly runtime: AgentOperatorRuntimeSettings;
-  readonly ledger: AgentRunLedger;
-  readonly recorder: AgentDecisionRecorder;
-  readonly counter: AgentDailyInvocationCounter;
+/**
+ * Everything {@link prepareHealthCheck} assembles, in dependency order: the
+ * shared {@link GatedOperationSetup} plus the two fields specific to the
+ * health-check operation.
+ */
+interface HealthCheckSetup extends GatedOperationSetup {
   readonly observations: AgentHealthObservations;
-  readonly surface: AgentCliSurface;
-  readonly metered: MeteredInvoker;
-  readonly decision: Core.M3LAgentDecision;
   readonly includeDryRunProbe: boolean;
-  readonly workspaceRoot: string | undefined;
-  readonly now: number;
 }
 
 /**
- * Everything before the loop, in the one order that works: policy, runtime,
- * recorder + ledger, daily seed, CLI surface, metered invoker, preflight,
- * auto-approval gate.
+ * Everything before the loop, delegating the operation-agnostic AUTHORIZATION
+ * setup to {@link prepareGatedOperation} and adding only what health-check
+ * itself needs: its declared action, its observations sink, and whether the
+ * dry-run probe tool is armed.
  *
  * Split from {@link runHealthCheck} to stay inside the scripts zone's
- * `max-lines-per-function` budget, not because the two halves are
- * independent — every ordering constraint on this module lives here.
+ * `max-lines-per-function` budget.
  */
 async function prepareHealthCheck(
   deps: RunHealthCheckDeps,
 ): Promise<HealthCheckSetup> {
-  const accessor = new Core.M3LConfigAccessor({
-    config: deps.config,
-    code: "ERR_AGENT_OPERATOR_CONFIG",
-  });
-  // Sampled once for the whole run: the counter's rollover, the ledger's
-  // `todayCountedAt`, the preflight's two evaluator calls, and the report's
-  // `completedAt` all read the clock this line hands them.
-  const now = Date.now();
-  const policy = await loadPolicy(deps, accessor);
-  const runtime = resolveAgentOperatorRuntime({
-    config: deps.config,
-    policy,
-    paths: deps.paths,
-  });
-
-  const ledger = new AgentRunLedger();
-  const recorder = buildRecorder(accessor);
-  const counter = await seedDailyCounter(deps, ledger, now);
-
-  const workspaceRoot = deriveWorkspaceRoot(deps.paths, deps.logger);
-  const includeDryRunProbe =
-    runtime.includeDryRunProbes && runtime.dryRunAllowlist.length > 0;
-  const surface = buildSurface(deps, runtime, workspaceRoot);
-
-  // BEFORE the preflight — ordering constraint 1. Constructing the client
-  // makes no network call, and this is what seeds the observed zero spend
-  // that keeps `budget.tokens-per-run` from escalating at the preflight.
-  const metered = createMeteredInvoker({
-    inner: createInvoker({
-      aws: deps.aws,
-      models: [runtime.modelId, ...runtime.fallbackModelIds],
-    }),
-    ledger,
-    rates: runtime.modelRates,
-  });
-
-  const preflight = await runDecisionLogPreflight({
-    policy,
-    ledger,
-    recorder,
+  const setup = await prepareGatedOperation({
+    ...deps,
     action: healthCheckAction(),
-    now,
   });
-  deps.logger.info("decision-log preflight complete", {
-    step: "preflight-complete",
-    bootstrapVerdict: preflight.bootstrapDecision.verdict,
-    bootstrapRule: preflight.bootstrapDecision.rule,
-    verdict: preflight.decision.verdict,
-    rule: preflight.decision.rule,
-  });
-  assertConclusionAutoApproved(preflight.decision);
+  const includeDryRunProbe =
+    setup.runtime.includeDryRunProbes &&
+    setup.runtime.dryRunAllowlist.length > 0;
 
   return {
-    policy,
-    runtime,
-    ledger,
-    recorder,
-    counter,
+    ...setup,
     observations: new AgentHealthObservations(),
-    surface,
-    metered,
-    decision: preflight.decision,
     includeDryRunProbe,
-    workspaceRoot,
-    now,
   };
 }
 
