@@ -3,6 +3,7 @@
 - **Status:** Accepted
 - **Relations:** amended-by: 0091
 - **Date:** 2026-07-02
+- **Review by:** 2027-01-02
 - **Deciders:** Enrico Lionello
 
 > **Update (2026-07-06).** The SBOM/provenance attestation described below lived

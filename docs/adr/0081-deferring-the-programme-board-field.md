@@ -3,6 +3,7 @@
 - **Status:** Accepted
 - **Relations:** amends: 0073
 - **Date:** 2026-08-28
+- **Review by:** 2027-02-28
 - **Deciders:** Enrico Lionello (maintainer); Claude (live-board verification)
 
 ## Context and problem statement

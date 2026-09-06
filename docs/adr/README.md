@@ -11,11 +11,14 @@ We use a lightweight [MADR](https://adr.github.io/madr/)-style format. Start fro
 
 - One decision per file, named `NNNN-short-title.md` (zero-padded sequence),
   e.g. `0001-esm-only-output.md`.
-- **Status schema (ADR-0094).** The status block is two lines:
+- **Status schema (ADR-0094).** The status block's machine-readable lines are
+  `Status:` and, optionally, `Relations:` and `Review by:` (`Date:` and
+  `Deciders:` are prose, not parsed):
 
   ```markdown
   - **Status:** Accepted
   - **Relations:** partially-superseded-by: 0057 (clauses: the publish pipeline; §Decision 2)
+  - **Review by:** 2027-01-11
   ```
 
   `Status:` is exactly one of `Proposed`, `Accepted`, `Rejected`, `Deprecated`,
@@ -25,6 +28,14 @@ We use a lightweight [MADR](https://adr.github.io/madr/)-style format. Start fro
   `superseded-by`, `partially-supersedes`, `partially-superseded-by`, `amends`,
   `amended-by`, `re-affirmed-by`, `fires-trigger-of`, `trigger-fired-by`. Omit
   the `Relations:` line entirely when an ADR has none.
+
+- **`Review by:` (optional, `docs/decision-notes/0001-deferral-review-by-dates.md`).**
+  A `YYYY-MM-DD` date for a deferral ADR whose revisit trigger has not fired
+  yet, so it isn't forgotten indefinitely. `pnpm check:adr-index` warns (never
+  blocks) once the date has passed — a prompt for a fresh look, not an
+  automatic re-open. Applied where it's actually useful, not to every
+  "…deferred"-titled ADR: an unfired trigger with no other schedule pressing
+  on it is the case this exists for.
 
 - **Partial supersession must name its clauses, on both sides.** A
   `partially-supersedes` / `partially-superseded-by` entry carries a
