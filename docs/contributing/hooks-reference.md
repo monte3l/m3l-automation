@@ -50,7 +50,10 @@ so the process only spawns for a matching edit, instead of spawning on every
 exactly one rule with no `&&`/`||`/list syntax, so a guard needing both tools
 and/or several path patterns gets one entry per (tool, pattern) combination —
 this is why `.claude/settings.json`'s `PreToolUse`/`PostToolUse` arrays list
-more entries than there are distinct guard scripts. The three guards with no
+more entries than there are distinct guard scripts. `if` is also evaluated on
+`PostToolUseFailure`, `PermissionRequest`, and `PermissionDenied` (confirmed
+2026-09-06) — none of this repo's guards use those events today — and on any
+other event a hook with `if` set never runs. The three guards with no
 stated backstop elsewhere (`guard-branch-isolation`, `guard-hub-src-writes`)
 or with an inherently unscopeable concern (`guard-secret-writes`, which must
 inspect any file) are **deliberately left unscoped** — narrowing them risks a
