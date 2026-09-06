@@ -68,6 +68,17 @@ paths:
   index rather than trusting an agent's echo, require agents to confirm their
   own writes landed, and give the caller a recovery rule for a missing artifact.
 
+- **A section-scoping regex combining the `m` flag with a non-greedy
+  `[\s\S]*?…$` needs re-checking before you trust it.** Under `/m`, `$`
+  matches before _any_ newline in the string, not just at the very end — so a
+  non-greedy lookahead succeeds at the first line break and the "rest of the
+  section" capture is always empty. A `bin/lib/*.mjs` heuristic extracting one
+  `##` section's body this way silently flagged zero inputs instead of the
+  intended subset, caught only by testing a synthetic fixture immediately
+  after writing it (`docs/logs/2026-09-06-adr-governance-tooling.md`). Anchor
+  `^` via `(?:^|\n)` and end the capture at the next marker or end-of-string
+  via `(?=\n<marker>|$)` instead — that needs no multiline flag at all.
+
 - **Normalize paths to forward slashes before they cross an agent boundary.**
   A backslashed path survives or dies depending on which shell the agent picks,
   which makes the failure non-deterministic and very hard to attribute.
