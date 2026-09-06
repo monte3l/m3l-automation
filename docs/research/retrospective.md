@@ -1,6 +1,6 @@
 # Retrospective sweep tracker
 
-<!-- retrospective: last-swept=2026-09-05 logs-considered=155 -->
+<!-- retrospective: last-swept=2026-09-06 logs-considered=155 -->
 
 Living ledger of `/promoting-work-log-lessons` sweeps — one row per work log,
 recording whether it has been swept and what came out of it. Updated **in

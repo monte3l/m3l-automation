@@ -18,12 +18,18 @@ paths:
   front, not handed to one spoke as an indivisible turn. A single-file test
   suite over ~40 tests, or a fix round over ~5 findings, splits into
   checkpointed batches the same way. `code-implementer` is the spoke this
-  bites hardest — measured over 30 days it took 0.24 prompt-cache breaks per
-  call at 3.15M tokens/call against `test-author`'s 0.06 and 1.50M, and every
-  read-only reviewer's zero. Hand it an explicit file list **and** a byte
-  budget per file, measured before dispatch; a spoke told the ceiling shrinks
-  the file instead of ratcheting the baseline
-  (`docs/logs/2026-09-03-u11-retry-resume-cancellation.md`).
+  bites hardest, but the margin over other spokes is not stable — measured
+  2026-09-06, `code-implementer` and `test-author` both sat at ≈0.18
+  prompt-cache breaks per call (3.1M and 2.8M tokens/call respectively), and
+  even `security-reviewer` — a read-only reviewer — carried 0.17 breaks/call.
+  A single oversized session (2026-09-05 afternoon, commits `a7a29b0a`,
+  `8baf68a9`, `c464e389`) shifted `test-author` from 0.06 to 0.18
+  breaks/call in under a day — not yet captured in a work log. So treat any
+  cited ratio as a snapshot: re-run `pnpm telemetry:sessions` before relying
+  on it, don't just quote the number in this file. Hand it an
+  explicit file list **and** a byte budget per file, measured before
+  dispatch; a spoke told the ceiling shrinks the file instead of ratcheting
+  the baseline (`docs/logs/2026-09-03-u11-retry-resume-cancellation.md`).
 - **Size a FIX round by file, not by finding count.** Regroup findings by
   file — one spoke per file (or tight file group), every finding for that
   file in one prompt — so each spoke loads one file's context. This also
