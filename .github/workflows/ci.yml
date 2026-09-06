@@ -523,6 +523,14 @@ jobs:
       - name: Check reference index
         run: pnpm check:index
 
+      # ADR-0094's governance convention: the generated docs/adr/README.md
+      # index matches each ADR's own Status/Relations block, and every
+      # Relations verb/target/reciprocity check passes. Advisory only until
+      # the PR3 corpus-normalization sweep flips BLOCKING in the script
+      # itself (bin/check-adr-index.mjs never exits 1 before that).
+      - name: Check ADR index
+        run: pnpm check:adr-index
+
       # Every public export surfaced through a namespace barrel must be
       # documented — present in its reference page heading or provenance
       # sidecar. Moved here from the `build` lane (it reads src/ and docs/

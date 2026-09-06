@@ -242,8 +242,10 @@ export function buildIndex() {
 // Prettier uses display width (not JS string length) when aligning table columns.
 // Wide characters (CJK, emoji) occupy 2 terminal columns but have JS length 1.
 // This helper matches prettier's character-width logic for the values that appear
-// in the generated table (emoji status values in particular).
-function displayWidth(str) {
+// in the generated table (emoji status values in particular). Exported so
+// bin/lib/adr-index.mjs's generated table can match prettier's own column
+// alignment too, rather than duplicating this Unicode-width table.
+export function displayWidth(str) {
   let w = 0;
   for (const ch of str) {
     const cp = ch.codePointAt(0);
@@ -273,7 +275,7 @@ function isWide(cp) {
   );
 }
 
-function padToDisplay(str, width) {
+export function padToDisplay(str, width) {
   const spaces = width - displayWidth(str);
   return spaces > 0 ? str + " ".repeat(spaces) : str;
 }

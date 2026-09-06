@@ -272,6 +272,43 @@ const ADR_PROPOSED_CONTENT = `# 0031. Relational and document data engine access
 Aurora PostgreSQL / DocumentDB access.
 `;
 
+const ADR_PARTIALLY_SUPERSEDED_BARE_NAME = "0020-drop-release-automation.md";
+const ADR_PARTIALLY_SUPERSEDED_BARE_CONTENT = `# 0020. Drop release automation
+
+- **Status:** Partially superseded by ADR-0057
+- **Date:** 2026-07-06
+- **Deciders:** Enrico Lionello
+
+## Context
+
+Publishing pipeline dropped, later partially revived by ADR-0057.
+`;
+
+const ADR_REAFFIRMED_NAME = "0012-defer-external-code-index-mcp.md";
+const ADR_REAFFIRMED_CONTENT = `# 0012. Defer external code-index MCP
+
+- **Status:** Re-affirmed by ADR-0023
+- **Date:** 2026-06-20
+- **Deciders:** Enrico Lionello
+
+## Context
+
+Deferred; re-affirmed on new grounds by ADR-0023.
+`;
+
+const ADR_0094_SCHEMA_NAME = "0099-normalized-partial-supersession.md";
+const ADR_0094_SCHEMA_CONTENT = `# 0099. Normalized partial supersession
+
+- **Status:** Partially-superseded
+- **Relations:** partially-superseded-by: 0057 (clauses: the publish pipeline)
+- **Date:** 2026-09-06
+- **Deciders:** Enrico Lionello
+
+## Context
+
+Already normalized to ADR-0094's exact-match schema.
+`;
+
 const ADR_MISSING_STATUS_NAME = "0099-test-adr-no-status.md";
 const ADR_MISSING_STATUS_CONTENT = `# 0099. Test ADR with no status line
 
@@ -567,6 +604,30 @@ describe("parseAdr", () => {
   test("returns null for a filename that doesn't match the NNNN-slug.md pattern", () => {
     expect(parseAdr("README.md", "# ADR index\n")).toBeNull();
     expect(parseAdr("template.md", "# Template\n")).toBeNull();
+  });
+
+  test("classifies a bare partial-supersession status as Partially-superseded", () => {
+    const result = parseAdr(
+      ADR_PARTIALLY_SUPERSEDED_BARE_NAME,
+      ADR_PARTIALLY_SUPERSEDED_BARE_CONTENT,
+    );
+    expect(result).not.toBeNull();
+    expect(result?.statusKind).toBe("Partially-superseded");
+    expect(result?.statusText).toBe("Partially superseded by ADR-0057");
+  });
+
+  test("classifies a Re-affirmed status as Accepted", () => {
+    const result = parseAdr(ADR_REAFFIRMED_NAME, ADR_REAFFIRMED_CONTENT);
+    expect(result).not.toBeNull();
+    expect(result?.statusKind).toBe("Accepted");
+    expect(result?.statusText).toBe("Re-affirmed by ADR-0023");
+  });
+
+  test("classifies an already-normalized ADR-0094-schema status via exact match", () => {
+    const result = parseAdr(ADR_0094_SCHEMA_NAME, ADR_0094_SCHEMA_CONTENT);
+    expect(result).not.toBeNull();
+    expect(result?.statusKind).toBe("Partially-superseded");
+    expect(result?.statusText).toBe("Partially-superseded");
   });
 });
 

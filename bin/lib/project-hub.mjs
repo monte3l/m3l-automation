@@ -560,10 +560,48 @@ export function findOffVocabularyTypeCells(content, validTypes) {
   );
 }
 
+/**
+ * The six statuses ADR-0094's schema declares as the machine-readable
+ * `Status:` field's closed set. A file already normalized to that schema
+ * carries one of these strings verbatim.
+ */
+const ADR_0094_STATUSES = /** @type {const} */ ([
+  "Proposed",
+  "Accepted",
+  "Rejected",
+  "Deprecated",
+  "Superseded",
+  "Partially-superseded",
+]);
+
+/**
+ * Classify a `Status:` value into one of ADR-0094's six kinds. Tries an
+ * exact match against the closed set first (the post-normalization shape);
+ * falls back to a `startsWith` match against the pre-ADR-0094 free-prose
+ * forms still in the corpus until the normalization sweep lands, so a status
+ * like `"Partially superseded by ADR-0057"` classifies as
+ * `"Partially-superseded"` rather than `"Unknown"` — this fallback is what
+ * fixes the live GitHub Pages hub rendering ADR-0020 and ADR-0052 as
+ * `"(Unknown)"` (confirmed by running this function against the corpus
+ * before this fix: `docs/logs/2026-09-06-adr-corpus-audit.md`). A
+ * `Re-affirmed by ADR-NNNN` status (ADR-0012's pre-0094 form) remains
+ * `Accepted` — a re-affirmation changes no decision, per ADR-0094's Update
+ * convention.
+ *
+ * @param {string} statusText
+ * @returns {(typeof ADR_0094_STATUSES)[number] | "Unknown"}
+ */
 function classifyAdrStatusKind(statusText) {
+  if (ADR_0094_STATUSES.includes(statusText)) return statusText;
+  if (statusText.startsWith("Partially superseded")) {
+    return "Partially-superseded";
+  }
+  if (statusText.startsWith("Superseded")) return "Superseded";
+  if (statusText.startsWith("Re-affirmed")) return "Accepted";
   if (statusText.startsWith("Accepted")) return "Accepted";
   if (statusText.startsWith("Proposed")) return "Proposed";
-  if (statusText.startsWith("Superseded")) return "Superseded";
+  if (statusText.startsWith("Rejected")) return "Rejected";
+  if (statusText.startsWith("Deprecated")) return "Deprecated";
   return "Unknown";
 }
 
@@ -576,7 +614,7 @@ function classifyAdrStatusKind(statusText) {
  *
  * @param {string} filename basename only, e.g. "0032-project-management-visibility-hub.md"
  * @param {string} content file contents
- * @returns {{ number: number, title: string, statusText: string, statusKind: "Accepted" | "Proposed" | "Superseded" | "Unknown", date: string | undefined } | null}
+ * @returns {{ number: number, title: string, statusText: string, statusKind: "Proposed" | "Accepted" | "Rejected" | "Deprecated" | "Superseded" | "Partially-superseded" | "Unknown", date: string | undefined } | null}
  * @example
  * ```js
  * import { parseAdr } from "@m3l-automation/workspace/bin/lib/project-hub.mjs";
