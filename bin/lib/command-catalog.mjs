@@ -481,6 +481,11 @@ export const COMMAND_CATALOG = [
       "Regenerates docs/reference/catalog.json + symbol-map.json (and the consumer-scripts catalog block in docs/reference/README.md) from each module's provenance sidecar. Run after any symbol or script changes, before check:index.",
   },
   {
+    name: "gen:adr-index",
+    description:
+      "ADR-0094: regenerates the <!-- BEGIN/END GENERATED ADR INDEX --> table in docs/adr/README.md from each ADR's own Status/Relations block. Run after adding or amending an ADR, before check:adr-index.",
+  },
+  {
     name: "gen:commit-stats-endpoint",
     description:
       "Emits shields.io endpoint-badge JSON (aggregate + per-model) to dist/commit-stats/ from the AI co-authorship commit history. Published by pages.yml on every push to main; rarely run by hand.",
@@ -499,6 +504,11 @@ export const COMMAND_CATALOG = [
     name: "check:index",
     description:
       "Verifies docs/reference/catalog.json, symbol-map.json, and the README catalog block are current against docs/reference/ + the provenance sidecars. Run after gen:index.",
+  },
+  {
+    name: "check:adr-index",
+    description:
+      "ADR-0094's governance convention: verifies docs/adr/README.md's generated index matches each ADR's own Status/Relations block, every Relations verb is declared, every relation target exists and is reciprocated, and a partial supersession names its clauses. Advisory only (never exits 1) until the PR3 corpus-normalization sweep flips the BLOCKING flag in bin/check-adr-index.mjs. Run after gen:adr-index, or after editing any ADR's Status/Relations line.",
   },
   {
     name: "worktree:new",
