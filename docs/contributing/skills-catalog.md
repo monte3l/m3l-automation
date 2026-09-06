@@ -22,6 +22,59 @@ means the repo is healthy, not that the skill is unused. See
 [Low usage ≠ broken](#low-usage--broken) below before changing a skill's
 trigger conditions on the basis of a low mention count alone.
 
+## Naming convention
+
+Every skill name falls into one of two families, enforced by
+`bin/check-skill-frontmatter.mjs`'s naming-convention check (added
+2026-09-06, after a review against Anthropic's Agent Skills spec —
+platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices §
+Naming conventions — found four names that didn't fit any documented
+pattern, three of which were fixable):
+
+- **Gerund phrase** (`<verb>ing-<noun>`) for a skill that performs a
+  procedure: `creating-prs`, `triaging-ci`, `implementing-submodules`,
+  `scaffolding-scripts`, and 15 others. This is Anthropic's own recommended
+  default, and covers 21 of this repo's 23 skills.
+- **`<topic>-<head-noun>`** for a skill that answers "how this repo's X is
+  configured" rather than performing an action: `vitest-testing`,
+  `typescript-configuration`. The head noun must come from a small,
+  deliberately narrow set (`configuration`, `testing`, `analysis`,
+  `routing`, `processing`, `management`, `reference` —
+  `bin/lib/skill-frontmatter.mjs`'s `HEAD_NOUNS`) — a name needing a new
+  head noun added to that set is usually a name that should have been a
+  gerund instead.
+
+A name matching neither family hard-fails `check:skill-frontmatter` unless
+it's in `GRANDFATHERED_NAMES` (same file), which currently holds two
+deliberate exceptions:
+
+- **`eslint-flat-config`** — `-config` names the artifact (an ESLint config
+  file) accurately; the head-noun set doesn't include "config" because that
+  would admit vaguer names too readily, and the rename churn for this one
+  borderline case was judged not worth it.
+- **`harness-guide`** — `-guide` is the kind of vague head noun Anthropic's
+  guidance explicitly groups with `helper`/`utils`/`tools`, but this skill
+  carries `disable-model-invocation: true`: it's a typed command
+  (`/harness-guide`) a person invokes by name, never a prose-triggered skill
+  competing for a description match, so the triggering rationale behind the
+  naming convention doesn't apply to it.
+
+**Known, deliberately unenforced gap:** `refreshing-anthropic-guidance` and
+`researching-anthropic-guidance` both contain "anthropic", which the spec
+reserves ("Cannot contain reserved words: anthropic, claude"). Both are
+real, working skills already in the live skill listing — Claude Code loads
+them without issue — so this is a spec-vs-implementation divergence this
+repo doesn't control, not a defect to silently paper over. The gate warns on
+it (never hard-fails) so the gap stays visible without breaking two working
+skills over it; renaming either is a separate, deliberate decision, not an
+automatic consequence of this convention.
+
+Two skills were renamed to fit this convention on 2026-09-06:
+`tsconfig-strict-esm` → `typescript-configuration`,
+`vitest-coverage-types-mocks` → `vitest-testing`. See
+[ADR-0093](../adr/0093-documentation-lookup-mcp-context7.md)'s post-acceptance
+note for why its own text still cites the old names.
+
 ## Usage tiers
 
 ### Core pipeline — high usage, this is the primary work loop

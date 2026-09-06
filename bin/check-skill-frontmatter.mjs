@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-// Validates `.claude/skills/*/SKILL.md` frontmatter and catalog coverage —
-// the skill-side counterpart to `bin/check-agents.mjs`'s agent checks, which
-// had no equivalent for skills before this gate.
+// Validates `.claude/skills/*/SKILL.md` frontmatter, naming convention, and
+// catalog coverage — the skill-side counterpart to `bin/check-agents.mjs`'s
+// agent checks, which had no equivalent for skills before this gate.
 //
-// Three checks, two enforcement shapes:
+// Four checks, three enforcement shapes:
 //
 //   1. Structural frontmatter validity: HARD-FAIL on a missing/empty
 //      `description` (mirrors check-agents.mjs's identical rule for
@@ -12,11 +12,18 @@
 //      so an empty one there silently produced `chars: 0`, nothing else
 //      caught it), and HARD-FAIL when `name:` doesn't match the skill's
 //      directory name.
-//   2. Catalog coverage: HARD-FAIL when `docs/contributing/skills-catalog.md`
+//   2. Naming convention: HARD-FAIL on a name breaking the Agent Skills
+//      spec's hard rules (kebab-case, ≤64 chars) or matching neither this
+//      repo's gerund-phrase nor <topic>-<head-noun> convention (unless
+//      explicitly grandfathered). WARN-only when a name contains a spec-
+//      reserved word ("anthropic"/"claude") — see
+//      bin/lib/skill-frontmatter.mjs's deriveNameIssues doc comment for why
+//      that one case is a warning, not a hard-fail.
+//   3. Catalog coverage: HARD-FAIL when `docs/contributing/skills-catalog.md`
 //      doesn't mention a skill directory at all — this is exactly how
 //      `finishing-work` went undocumented after shipping (docs/logs/
 //      2026-09-02-finishing-work-skill.md), with nothing to catch it.
-//   3. Description overlap: WARN-only. Two skills whose descriptions share
+//   4. Description overlap: WARN-only. Two skills whose descriptions share
 //      enough vocabulary risk competing for the same prose-triggered
 //      request. Judgment call, not a defect — see
 //      bin/lib/skill-frontmatter.mjs's OVERLAP_WARN_THRESHOLD comment for
@@ -31,6 +38,7 @@ import { dirname, join } from "node:path";
 import {
   parseSkillFrontmatter,
   deriveFrontmatterIssues,
+  deriveNameIssues,
   deriveMissingFromCatalog,
   deriveOverlappingPairs,
 } from "./lib/skill-frontmatter.mjs";
@@ -70,7 +78,21 @@ for (const message of nameMismatch) {
   reporter.error(message);
 }
 
-// --- 2. Catalog coverage ----------------------------------------------------
+// --- 2. Naming convention ----------------------------------------------------
+const { specViolations, shapeViolations, reservedWordWarnings } =
+  deriveNameIssues(parsed);
+
+for (const message of specViolations) {
+  reporter.error(message);
+}
+for (const message of shapeViolations) {
+  reporter.error(message);
+}
+for (const message of reservedWordWarnings) {
+  reporter.warn(message);
+}
+
+// --- 3. Catalog coverage ----------------------------------------------------
 const catalogContent = existsSync(catalogPath)
   ? readFileSync(catalogPath, "utf8")
   : "";
@@ -85,7 +107,7 @@ for (const dirName of missingFromCatalog) {
   );
 }
 
-// --- 3. Description overlap (informational) ---------------------------------
+// --- 4. Description overlap (informational) ---------------------------------
 const overlapping = deriveOverlappingPairs(parsed);
 for (const { pair, similarity } of overlapping) {
   reporter.warn(
@@ -99,6 +121,10 @@ reporter.info(
     `${nameMismatch.length} name mismatch(es).`,
 );
 reporter.info(
+  `Naming convention: ${specViolations.length} spec violation(s), ${shapeViolations.length} ` +
+    `shape violation(s), ${reservedWordWarnings.length} reserved-word warning(s).`,
+);
+reporter.info(
   `Catalog coverage: ${missingFromCatalog.length} skill(s) missing from skills-catalog.md.`,
 );
 reporter.info(
@@ -108,6 +134,9 @@ reporter.info(
 const finishExtra = {
   emptyDescription,
   nameMismatch,
+  specViolations,
+  shapeViolations,
+  reservedWordWarnings,
   missingFromCatalog,
   overlapping,
 };
@@ -115,6 +144,8 @@ const finishExtra = {
 if (
   emptyDescription.length > 0 ||
   nameMismatch.length > 0 ||
+  specViolations.length > 0 ||
+  shapeViolations.length > 0 ||
   missingFromCatalog.length > 0
 ) {
   const finalReport = reporter.finish(finishExtra);
@@ -127,6 +158,6 @@ if (
 
 reporter.succeed(
   `${skills.length} skill(s) valid: descriptions present, names match directories, ` +
-    `catalog coverage complete.`,
+    `naming convention followed, catalog coverage complete.`,
 );
 reporter.finish(finishExtra);
