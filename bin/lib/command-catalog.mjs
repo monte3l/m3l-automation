@@ -486,6 +486,11 @@ export const COMMAND_CATALOG = [
       "ADR-0094: regenerates the <!-- BEGIN/END GENERATED ADR INDEX --> table in docs/adr/README.md from each ADR's own Status/Relations block. Run after adding or amending an ADR, before check:adr-index.",
   },
   {
+    name: "gen:adr-provenance",
+    description:
+      "Regenerates docs/adr/provenance.json: extracts every backtick-quoted repo-path citation from docs/adr/*.md that exists on disk, stamps each with its current git blob SHA, and only advances an ADR's verifiedAt date when its source list or a blob actually changed. Run after adding/editing an ADR that cites a concrete repo path, before check:adr-provenance.",
+  },
+  {
     name: "gen:commit-stats-endpoint",
     description:
       "Emits shields.io endpoint-badge JSON (aggregate + per-model) to dist/commit-stats/ from the AI co-authorship commit history. Published by pages.yml on every push to main; rarely run by hand.",
@@ -509,6 +514,16 @@ export const COMMAND_CATALOG = [
     name: "check:adr-index",
     description:
       "ADR-0094's governance convention: verifies docs/adr/README.md's generated index matches each ADR's own Status/Relations block, every Relations verb is declared, every relation target exists and is reciprocated, and a partial supersession names its clauses. Blocking (exits 1) on structural findings — unknown status/verb, a dangling or non-reciprocal relation, a duplicate ADR number, or a stale/missing generated block; a missing clause list stays advisory. Run after gen:adr-index, or after editing any ADR's Status/Relations line.",
+  },
+  {
+    name: "check:adr-claims",
+    description:
+      "Verifies every mechanically-probeable factual claim a load-bearing ADR makes (bin/lib/adr-claims.mjs — an exports-map entry count, a workspace glob, a config file's declared content, a tool's existence) against live repo state. Blocking: each probe has one mechanically certain source of truth, so a mismatch is the exact 'stale claim against a drifted repo' defect an audit found live (ADR-0004 claiming a three-entry exports map after the live map grew a fourth entry).",
+  },
+  {
+    name: "check:adr-provenance",
+    description:
+      "Advisory freshness signal for docs/adr/provenance.json: re-derives every ADR's cited-file blob SHAs from live disk and warns (never blocks) when a cited file changed since the ADR last confirmed it, was newly cited and never verified, or no longer exists. Broader but weaker coverage than check:adr-claims — covers any ADR citing a concrete path, not just the ones with a mechanically-probeable assertion. Run after gen:adr-provenance.",
   },
   {
     name: "worktree:new",

@@ -531,6 +531,19 @@ jobs:
       - name: Check ADR index
         run: pnpm check:adr-index
 
+      # Every mechanically-probeable factual claim a load-bearing ADR makes
+      # (an exports-map entry count, a workspace glob, a file's existence)
+      # against live repo state (bin/lib/adr-claims.mjs). Blocking — each
+      # probe has one mechanically certain source of truth.
+      - name: Check ADR claims
+        run: pnpm check:adr-claims
+
+      # Advisory freshness signal for every ADR citing a concrete repo path
+      # (docs/adr/provenance.json) — warns when a cited file's blob has
+      # drifted since the ADR last confirmed it, never blocks.
+      - name: Check ADR provenance
+        run: pnpm check:adr-provenance
+
       # Every public export surfaced through a namespace barrel must be
       # documented — present in its reference page heading or provenance
       # sidecar. Moved here from the `build` lane (it reads src/ and docs/

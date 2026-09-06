@@ -20,7 +20,7 @@ lint) — never source code, tests, or barrel exports.
 pnpm sync:docs          # or: node bin/sync-docs.mjs [--affected <path>] [--json]
 ```
 
-`bin/sync-docs.mjs` (ADR-0030 Phase 4) runs steps 1–8 below as one
+`bin/sync-docs.mjs` (ADR-0030 Phase 4) runs steps 1–9 below as one
 deterministic sequence: fail-fast ordering, re-stamp-before-verify (so a
 staleness warning that the restamp itself would clear never aborts the run),
 the gen:index-before-prettier rule baked in (it prettier-writes exactly the
@@ -190,7 +190,24 @@ every push to `main` and publishes them to GitHub Pages
 (`.github/workflows/pages.yml`), so no local command touches
 them and the README never needs a badge reconcile.
 
-### 8 — Markdown lint
+### 8 — Re-stamp ADR provenance
+
+```bash
+pnpm gen:adr-provenance && pnpm check:adr-provenance
+```
+
+`gen:adr-provenance` regenerates `docs/adr/provenance.json` — every ADR's
+backtick-quoted repo-path citations that resolve to a real file, each stamped
+with its current git blob SHA (an ADR's `verifiedAt` only advances when its
+source list or a blob actually changed). `check:adr-provenance` is advisory
+(never blocks): it reports which ADRs cite a file that changed since they last
+confirmed it, so the finding means "go re-read this ADR," not "this ADR is
+wrong." Distinct from `check:adr-claims` (blocking, `pre-push`'s `checks` lane
+— ADR-0094's own `Relations:` field validity plus the ~9 mechanically-probeable
+claims in `bin/lib/adr-claims.mjs`), which this composite does not run — that
+gate needs no re-stamping step, only re-running.
+
+### 9 — Markdown lint
 
 ```bash
 pnpm lint:md
@@ -223,6 +240,7 @@ Output after all steps complete:
 - Test counts:           ✓ (N submodules verified) / ✗
 - Script docs:           ✓ (N script(s) conformant / none) / ✗ (check:script-scaffold)
 - Reference index:       ✓ (gen:index + check:index) / ✗
+- ADR provenance:        ✓ (gen:adr-provenance + check:adr-provenance) / N ADR(s) drifted
 - Markdown lint:         ✓ / ✗
 
 Commit-stats badges are live CI-published endpoint badges (not part of this
