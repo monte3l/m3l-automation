@@ -14,6 +14,19 @@
 - [ ] No `any`, no missing `.js` extensions on relative imports, no CommonJS
 - [ ] PR title follows Conventional Commits (`feat:` minor · `fix:` patch · `feat!:` major · others no release)
 
+## ADR review checklist (skip if this PR adds no `docs/adr/*.md` file)
+
+- [ ] Meets a `docs/adr/README.md` "When to write an ADR" criterion — if the
+      honest answer is "we'd just change it and move on," a
+      [decision note](/docs/decision-notes/README.md) fits better (ADR-0095)
+- [ ] `pnpm check:adr-worthiness` reviewed — a flag isn't a block, but read it
+- [ ] `Status:`/`Relations:` follow ADR-0094's schema; every `Relations:`
+      entry is reciprocated on the other ADR (`pnpm check:adr-index`)
+- [ ] A `partially-supersedes`/`partially-superseded-by` entry names its
+      clauses on both sides
+- [ ] Any file citation the ADR makes resolves on disk
+      (`pnpm gen:adr-provenance && pnpm check:adr-provenance`)
+
 ## Notes
 
 <!-- Migration instructions for breaking changes. ADR references. -->

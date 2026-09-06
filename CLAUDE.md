@@ -60,8 +60,7 @@ Utilities library for automation scripts (config, logging, errors, import/export
   dep/exports hygiene
 - Versioning is manual — internal, unpublished package (ADR-0020)
 
-`pnpm commands` lists every script; `package.json` has the dependency set and
-the `exports` map.
+`package.json` has the dependency set and the `exports` map.
 
 ## Repository Layout
 
@@ -75,9 +74,9 @@ workspace root.
 ## Environment Setup
 
 `pnpm install` (deps + lefthook hooks); CI uses `--frozen-lockfile`. A pure
-library — nothing to run locally. `.node-version` (24) is the single
-authority for the dev/CI runtime; `check:node-version` fails on drift. Setup,
-the `fnm` recipe, why `engines.node` stays `">=24"`:
+library — nothing to run locally. `.node-version` (24) is the authority for
+the dev/CI runtime; `check:node-version` fails on drift. Setup, the `fnm`
+recipe, why `engines.node` stays `">=24"`:
 `docs/contributing/contributing.md` § Environment Setup.
 
 ## Commands
@@ -98,7 +97,8 @@ minutes — background it, never `--no-verify`.
 | `pre-push` (lefthook)   | `check:cli-docs`, `check:review-size`, `check:context-budget`, `check:index`              | repo   |
 | `pre-push` (lefthook)   | `check:harness-freshness`, `check:skill-evals`, `check:retrospective`, `check:logs-index` | repo   |
 | `pre-push` (lefthook)   | `check:review-policy`, `check:claude-cli-version`, `check:hooks`                          | repo   |
-| `pre-push` (lefthook)   | `check:staleness`, `check:adr-index`, `check:adr-claims`, `check:adr-provenance`          | repo   |
+| `pre-push` (lefthook)   | `check:staleness`, `check:adr-index`, `check:adr-claims`                                  | repo   |
+| `pre-push` (lefthook)   | `check:adr-provenance`, `check:adr-worthiness`                                            | repo   |
 | `pre-push` (lefthook)   | `check-commit-trailers`, `check:skill-frontmatter`, `check:no-docker`                     | repo   |
 
 `pnpm verify` reproduces every CI check locally; `check:verify-parity` keeps
@@ -107,11 +107,11 @@ for width) per stage against `lefthook.yml`.
 
 ## Compact Instructions
 
-When this session compacts, preserve: the current branch/worktree and any
-open PR number; a failing `pnpm` gate and its exact error text; the ADR or
-plan being implemented and which step is in progress; any `AskUserQuestion`
-answer not yet acted on. Prefer dropping exploratory tool-call detail (file
-reads, passing test output) over any of the above.
+When this session compacts, preserve: the branch/worktree and any open PR
+number; a failing `pnpm` gate and its exact error text; the ADR or plan being
+implemented and which step is in progress; any `AskUserQuestion` answer not
+yet acted on. Prefer dropping exploratory tool-call detail (file reads,
+passing test output) over any of the above.
 
 ## CI/CD
 
@@ -149,7 +149,7 @@ The `exports` map is the public contract (semver-gated) — full rationale: `doc
 
 ## Security
 
-- The library does not log by default; never log secrets, tokens, or caller data. Validate all external input at the public API boundary before use.
+- The library does not log by default; never log secrets, tokens, or caller data. Validate external input at the public API boundary.
 - CI has no publish credentials; no token of any kind (`NPM_TOKEN`, `GITHUB_TOKEN`, AWS keys, `CLAUDE_CODE_OAUTH_TOKEN`) may land in source, tests, or fixtures.
 - Pushed commits must be signed (valid `%G?`) — three layers, with branch protection the authoritative one: ADR-0016 and `docs/contributing/branch-protection.md`.
 

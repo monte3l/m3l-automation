@@ -278,6 +278,11 @@ export const VERIFY_STEPS = [
     cmd: () => "pnpm check:adr-provenance",
   },
   {
+    ciStepName: "Check ADR worthiness",
+    id: "check-adr-worthiness",
+    cmd: () => "pnpm check:adr-worthiness",
+  },
+  {
     ciStepName: "Test (with coverage gate)",
     id: "test-coverage",
     cmd: () => "pnpm test:coverage",

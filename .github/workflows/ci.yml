@@ -544,6 +544,12 @@ jobs:
       - name: Check ADR provenance
         run: pnpm check:adr-provenance
 
+      # ADR-0095: advisory nudge flagging a new ADR that reads as
+      # low-blast-radius (no semver impact, no public-contract/harness-wide
+      # language) as a docs/decision-notes/ candidate instead. Never blocks.
+      - name: Check ADR worthiness
+        run: pnpm check:adr-worthiness
+
       # Every public export surfaced through a namespace barrel must be
       # documented — present in its reference page heading or provenance
       # sidecar. Moved here from the `build` lane (it reads src/ and docs/

@@ -125,6 +125,72 @@ This is illustrative only, not a real relation declared by this file.
     expect(result).not.toBeNull();
     expect(result?.relations).toEqual([]);
   });
+
+  test("parses a Review by: line in the header block into an entry's reviewBy field", () => {
+    const content = `# 0110. Defer a decision
+
+- **Status:** Accepted
+- **Review by:** 2027-01-11
+- **Date:** 2026-07-11
+- **Deciders:** Enrico Lionello
+
+## Context
+
+Deferred pending a trigger.
+`;
+    const result = parseAdrEntry("0110-defer-a-decision.md", content);
+    expect(result).not.toBeNull();
+    expect(result?.reviewBy).toBe("2027-01-11");
+  });
+
+  test("leaves reviewBy undefined when the header block has no Review by: line", () => {
+    const content = `# 0111. No deferral
+
+- **Status:** Accepted
+- **Date:** 2026-07-11
+- **Deciders:** Enrico Lionello
+
+## Context
+
+Nothing deferred here.
+`;
+    const result = parseAdrEntry("0111-no-deferral.md", content);
+    expect(result).not.toBeNull();
+    expect(result?.reviewBy).toBeUndefined();
+  });
+
+  // Regression test: headerBlock() scopes the Review by: search to before the
+  // first "## " heading, same as it does for Relations: above. A
+  // whole-document regex would also match an illustrative "- **Review by:**
+  // ..." example shown inside the body.
+  test("[KNOWN FIX] ignores an illustrative Review by: example inside the body, after the first heading", () => {
+    const content = `# 0112. Illustrates deferral syntax
+
+- **Status:** Accepted
+- **Date:** 2026-09-01
+- **Deciders:** Enrico Lionello
+
+## Context
+
+Establishes a Review by: convention.
+
+### The schema
+
+An entry looks like this:
+
+\`\`\`
+- **Review by:** 2020-01-01
+\`\`\`
+
+This is illustrative only, not a real deferral declared by this file.
+`;
+    const result = parseAdrEntry(
+      "0112-illustrates-deferral-syntax.md",
+      content,
+    );
+    expect(result).not.toBeNull();
+    expect(result?.reviewBy).toBeUndefined();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -449,5 +515,107 @@ describe("checkAdrIndex", () => {
       },
     ];
     expect(checkAdrIndex(entries)).toEqual([]);
+  });
+
+  test("flags an entry whose reviewBy has passed the injected today as review-by-passed", () => {
+    const entries = [
+      {
+        number: 130,
+        filename: "0130-a.md",
+        title: "A",
+        statusText: "Accepted",
+        statusKind: "Accepted",
+        relations: [],
+        date: undefined,
+        reviewBy: "2020-01-01",
+      },
+    ];
+    const findings = checkAdrIndex(entries, "2026-09-06");
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.kind).toBe("review-by-passed");
+    expect(findings[0]?.message).toContain("0130-a.md");
+    expect(findings[0]?.message).toContain("2020-01-01");
+  });
+
+  test("does not flag an entry whose reviewBy is still in the future against the injected today", () => {
+    const entries = [
+      {
+        number: 131,
+        filename: "0131-a.md",
+        title: "A",
+        statusText: "Accepted",
+        statusKind: "Accepted",
+        relations: [],
+        date: undefined,
+        reviewBy: "2030-01-01",
+      },
+    ];
+    expect(checkAdrIndex(entries, "2026-09-06")).toEqual([]);
+  });
+
+  test("does not flag an entry with no reviewBy at all", () => {
+    const entries = [
+      {
+        number: 132,
+        filename: "0132-a.md",
+        title: "A",
+        statusText: "Accepted",
+        statusKind: "Accepted",
+        relations: [],
+        date: undefined,
+      },
+    ];
+    expect(checkAdrIndex(entries, "2026-09-06")).toEqual([]);
+  });
+
+  test("flags a passed reviewBy using the real current date when today is omitted", () => {
+    const entries = [
+      {
+        number: 133,
+        filename: "0133-a.md",
+        title: "A",
+        statusText: "Accepted",
+        statusKind: "Accepted",
+        relations: [],
+        date: undefined,
+        reviewBy: "2020-01-01",
+      },
+    ];
+    const findings = checkAdrIndex(entries);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.kind).toBe("review-by-passed");
+  });
+
+  test("combines review-by-passed with an unrelated finding kind in the same call, without interference", () => {
+    const entries = [
+      {
+        number: 134,
+        filename: "0134-a.md",
+        title: "A",
+        statusText: "Accepted",
+        statusKind: "Accepted",
+        relations: [],
+        date: undefined,
+        reviewBy: "2020-01-01",
+      },
+      {
+        number: 135,
+        filename: "0135-mystery.md",
+        title: "Mystery",
+        statusText: "Some free-form text",
+        statusKind: "Unknown",
+        relations: [],
+        date: undefined,
+      },
+    ];
+    const findings = checkAdrIndex(entries, "2026-09-06");
+    expect(findings).toHaveLength(2);
+    const kinds = findings.map((f) => f.kind);
+    expect(kinds).toContain("review-by-passed");
+    expect(kinds).toContain("unknown-status");
+    const reviewFinding = findings.find((f) => f.kind === "review-by-passed");
+    expect(reviewFinding?.message).toContain("0134-a.md");
+    const statusFinding = findings.find((f) => f.kind === "unknown-status");
+    expect(statusFinding?.message).toContain("0135-mystery.md");
   });
 });

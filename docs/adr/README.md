@@ -79,12 +79,34 @@ Write a new ADR when:
   reasoning should be recorded for future maintainers.
 - A **foundational design choice** is made — error model, result type, module
   topology — that will be hard to reverse without a major semver bump.
+- A **harness or agent-operating-model decision** changes how work gets done
+  across the whole repo — a new spoke role, a subagent tool-grant policy, a
+  session-naming or worktree convention, a cross-cutting hook or gate class.
+  This cluster was the corpus's largest single theme as of ADR-0095's audit
+  (~18 of the then-94 ADRs) and the criteria above never named it explicitly
+  before that — naming it here is itself the fix for that gap. (Deliberately
+  not re-citing the exact count here: it is a live-corpus fact that rots the
+  moment another ADR lands, unlike ADR-0095's own point-in-time record of
+  it.)
 - There is genuine **disagreement or uncertainty** among deciders: record what was
   decided and why, so it is not relitigated.
 - A decision is **superseded**: the new ADR records the change; the old ADR's
   `Status:` is updated to `Superseded` (or `Partially-superseded`, with a
   clause list) and its `Relations:` gains `superseded-by: NNNN`, reciprocated
   by `supersedes: NNNN` on the new ADR.
+
+**The reversibility test.** Before writing a new ADR, ask: _would a different
+choice here force a different choice somewhere else, or cost real effort to
+reverse?_ If the honest answer is "we'd just change it and move on" — a label
+rename, one ESLint zone widened by one module, a naming convention with no
+downstream dependents — it does not need an ADR. This test exists because the
+corpus accumulated exactly these low-blast-radius entries once ADR-writing
+became habitual (ADR-0074 retitles a milestone label; ADR-0040/ADR-0041 each
+widen one ESLint zone by a single module; ADR-0087/ADR-0088 are two ADRs for
+one harness affordance) — diluting the signal for the ADRs that gate
+something genuinely hard to reverse. Route a decision that fails this test to
+a [decision note](../decision-notes/README.md) instead: a real record, sized
+to the decision.
 
 You do **not** need an ADR for implementation details that stay behind the module
 boundary (internal helpers, test utilities, refactors that do not touch the public
@@ -193,5 +215,6 @@ surface).
 | 0092 | [Out-of-band usage cache for the statusline's first network dependency](./0092-out-of-band-usage-cache.md)                                                | Accepted             |
 | 0093 | [Documentation-lookup MCP (Context7): adoption stance and usage policy](./0093-documentation-lookup-mcp-context7.md)                                      | Accepted             |
 | 0094 | [ADR governance: a structured status schema and a generated index](./0094-adr-governance-and-status-schema.md)                                            | Accepted             |
+| 0095 | [ADR-worthiness routing and a lightweight decision-note tier](./0095-adr-worthiness-and-decision-note-tier.md)                                            | Accepted             |
 
 <!-- END GENERATED ADR INDEX -->

@@ -21,6 +21,16 @@ formatting/lint sweeps, tracker-status flips, a bare `sync:hub` run, or the
 `docs:` commit that lands a log itself. The tiebreak: would a future session
 hitting the same problem want to read it?
 
+**A work log is not where a decision gets recorded.** A log is retrospective
+— it narrates what happened _after_ the work shipped. A choice made _before_
+or _during_ the work belongs in [`docs/adr/`](../adr/README.md) (hard to
+reverse, or something else will cite it) or
+[`docs/decision-notes/`](../decision-notes/README.md) (a real decision, low
+blast radius, cheaply reversible) instead — see that directory's README for
+the full three-way boundary. A single unit of work can produce a decision
+note for a small call made along the way _and_ a work log for the narrative
+of the whole task; neither substitutes for the other.
+
 ## Maintaining this index
 
 Every log gets exactly one row, added in the same commit that writes it
