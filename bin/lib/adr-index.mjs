@@ -282,9 +282,10 @@ export function buildGeneratedBlock(entries) {
  *
  * `missing-clause-list` and `placeholder-clause-list` joined this set after
  * the corpus was confirmed clean of both (0 findings across 95 ADRs) — see
- * the audit that added them. ADR-0094:93-94 states the clause requirement in
- * absolute terms ("no longer permitted"), so leaving it advisory only
- * defers the enforcement that its own wording already claims.
+ * the audit that added them. ADR-0094:93-94 already states the clause
+ * requirement in absolute terms ("no longer permitted"); moving these two
+ * kinds here makes the gate enforce that rule structurally instead of
+ * merely warning about a violation of it.
  */
 export const STRUCTURAL_FINDING_KINDS = new Set([
   "unknown-status",
