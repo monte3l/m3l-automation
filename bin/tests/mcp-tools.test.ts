@@ -1,33 +1,27 @@
 // Unit tests for bin/lib/mcp-tools.mjs — the tool definitions + handlers
-// backing the in-repo MCP server (ADR-0030 Phase 5). Spawn-backed handlers
-// (repo_verify, worktree_manage, scaffold_script) mock node:child_process's
-// execFileSync via a hoisted vi.fn() bag, following the repo convention in
-// packages/m3l-common/tests/credentials.test.ts (hoisted vi.mock + a single
-// static import so every dynamic import() inside the implementation resolves
-// to the same mocked module instance — the vitest-lazy-import-mock-race
-// lesson). catalog_query and commit_lint run against the real committed
-// docs/reference/*.json and the real bin/lint-commit.mjs respectively — no
-// mocking needed for either.
-import { describe, expect, test, vi } from "vitest";
-
-const h = vi.hoisted(() => ({
-  execFileSync: vi.fn<(...args: unknown[]) => string>(),
-}));
-
-vi.mock("node:child_process", () => ({
-  execFileSync: h.execFileSync,
-}));
-
+// backing the in-repo MCP server (ADR-0096, replacing ADR-0030 Phase 5's
+// original seven-tool CLI-wrapper design). None of the six current tools
+// spawns a child process, so this file needs no execFileSync mocking:
+// adr_query/logs_query/hooks_query run against the real committed
+// docs/adr/**, docs/logs/**, and docs/contributing/hooks-reference.md;
+// commands_query runs against the real bin/lib/command-catalog.mjs;
+// catalog_query and commit_lint run against the real committed
+// docs/reference/*.json and bin/lint-commit.mjs respectively.
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, test } from "vitest";
 import {
   TOOLS,
+  adrQuery,
   catalogQuery,
+  commandsQuery,
   commitLint,
-  docsSync,
-  repoVerify,
-  scaffoldScript,
-  spokeRecover,
-  worktreeManage,
+  hooksQuery,
+  logsQuery,
+  resolveRepoRoot,
 } from "../lib/mcp-tools.mjs";
+import { root } from "../lib/reference-index.mjs";
 
 /** Parse the single text content block every handler returns. */
 function payloadOf(result: {
@@ -39,9 +33,25 @@ function payloadOf(result: {
   return JSON.parse(block.text) as Record<string, unknown>;
 }
 
+/** A fresh, empty temp directory to build a small fixture repo tree under. */
+function mktemp(): string {
+  return mkdtempSync(join(tmpdir(), "mcp-root-test-"));
+}
+
 describe("TOOLS registration contract", () => {
-  test("registers exactly seven tools", () => {
-    expect(TOOLS).toHaveLength(7);
+  test("registers exactly six tools", () => {
+    expect(TOOLS).toHaveLength(6);
+  });
+
+  test("tool names, in server-registration order", () => {
+    expect(TOOLS.map((tool) => tool.name)).toEqual([
+      "adr_query",
+      "logs_query",
+      "commands_query",
+      "hooks_query",
+      "catalog_query",
+      "commit_lint",
+    ]);
   });
 
   test.each(TOOLS)(
@@ -56,6 +66,455 @@ describe("TOOLS registration contract", () => {
       expect(typeof tool.handler).toBe("function");
     },
   );
+
+  test.each(TOOLS)(
+    "$name: has a non-empty title and a non-null outputSchema",
+    (tool) => {
+      expect(typeof tool.config.title).toBe("string");
+      expect(tool.config.title.length).toBeGreaterThan(0);
+      expect(typeof tool.config.outputSchema).toBe("object");
+      expect(tool.config.outputSchema).not.toBeNull();
+    },
+  );
+
+  test.each(TOOLS)("$name: is annotated read-only", (tool) => {
+    expect(tool.config.annotations["readOnlyHint"]).toBe(true);
+  });
+
+  test.each(TOOLS)("$name: needsRoot is a boolean", (tool) => {
+    expect(typeof tool.needsRoot).toBe("boolean");
+  });
+
+  test.each(["commands_query", "commit_lint"])(
+    "%s: needsRoot is false (never reads a repo file)",
+    (name) => {
+      const tool = TOOLS.find((t) => t.name === name);
+      expect(tool?.needsRoot).toBe(false);
+    },
+  );
+
+  test.each(["adr_query", "logs_query", "hooks_query", "catalog_query"])(
+    "%s: needsRoot is true",
+    (name) => {
+      const tool = TOOLS.find((t) => t.name === name);
+      expect(tool?.needsRoot).toBe(true);
+    },
+  );
+});
+
+describe("resolveRepoRoot (fake mcpServer, no real MCP transport)", () => {
+  function fakeServer(
+    capabilities: { roots?: unknown } | undefined,
+    listRoots: () => Promise<{ roots?: { uri: string }[] }>,
+  ) {
+    return {
+      server: {
+        getClientCapabilities: () => capabilities,
+        listRoots,
+      },
+    };
+  }
+
+  test("no client capabilities at all → falls back to the static root", async () => {
+    const server = fakeServer(undefined, () => Promise.resolve({ roots: [] }));
+    await expect(resolveRepoRoot(server)).resolves.toBe(root);
+  });
+
+  test("capabilities present but no 'roots' key → falls back to the static root", async () => {
+    const server = fakeServer({}, () => Promise.resolve({ roots: [] }));
+    await expect(resolveRepoRoot(server)).resolves.toBe(root);
+  });
+
+  test("client declares roots and returns one → resolves to the fileURLToPath-converted path", async () => {
+    const server = fakeServer({ roots: {} }, () =>
+      Promise.resolve({
+        roots: [{ uri: "file:///tmp/some-other-checkout" }],
+      }),
+    );
+    await expect(resolveRepoRoot(server)).resolves.toBe(
+      "/tmp/some-other-checkout",
+    );
+  });
+
+  test("client declares roots but returns an empty array → falls back to the static root", async () => {
+    const server = fakeServer({ roots: {} }, () =>
+      Promise.resolve({ roots: [] }),
+    );
+    await expect(resolveRepoRoot(server)).resolves.toBe(root);
+  });
+
+  test("client declares roots but listRoots() rejects → falls back to the static root, does not throw", async () => {
+    const server = fakeServer({ roots: {} }, () =>
+      Promise.reject(new Error("transport error")),
+    );
+    await expect(resolveRepoRoot(server)).resolves.toBe(root);
+  });
+});
+
+describe("options.root override (regression: silently reverting to the static load-time root, resurrecting ADR-0096's stale-cwd-after-EnterWorktree bug)", () => {
+  let dir: string;
+
+  afterEach(() => {
+    if (dir) rmSync(dir, { recursive: true, force: true });
+  });
+
+  test("adrQuery: options.root reads a fixture repo, not the real one", () => {
+    dir = mktemp();
+    mkdirSync(join(dir, "docs", "adr"), { recursive: true });
+    writeFileSync(
+      join(dir, "docs", "adr", "0001-fixture.md"),
+      "# 0001. Fixture ADR\n\n- **Status:** Accepted\n",
+    );
+
+    const fixturePayload = payloadOf(adrQuery({ id: "0001" }, { root: dir }));
+    const fixtureResults = fixturePayload["results"] as {
+      id: string;
+      title: string;
+      status: string;
+    }[];
+    expect(fixturePayload["total"]).toBe(1);
+    expect(fixtureResults[0]?.id).toBe("0001");
+    expect(fixtureResults[0]?.title).toBe("Fixture ADR");
+    expect(fixtureResults[0]?.status).toBe("Accepted");
+
+    // Same query, no options — reads the real repo's own ADR-0001, whose
+    // title is never "Fixture ADR". Proves the two calls read genuinely
+    // different roots rather than coincidentally agreeing.
+    const realPayload = payloadOf(adrQuery({ id: "0001" }));
+    const realResults = realPayload["results"] as { title: string }[];
+    expect(realResults[0]?.title).not.toBe("Fixture ADR");
+  });
+
+  test("logsQuery: options.root reads a fixture repo; the real repo has no log dated 2099-01-01", () => {
+    dir = mktemp();
+    mkdirSync(join(dir, "docs", "logs"), { recursive: true });
+    writeFileSync(
+      join(dir, "docs", "logs", "2099-01-01-fixture.md"),
+      "# Work log — fixture (2099-01-01)\n",
+    );
+
+    const fixturePayload = payloadOf(
+      logsQuery({ date: "2099-01-01" }, { root: dir }),
+    );
+    const fixtureResults = fixturePayload["results"] as {
+      date: string;
+      file: string;
+      title: string;
+    }[];
+    expect(fixturePayload["total"]).toBe(1);
+    expect(fixtureResults[0]?.date).toBe("2099-01-01");
+    expect(fixtureResults[0]?.file).toBe("2099-01-01-fixture.md");
+    expect(fixtureResults[0]?.title).toBe("Work log — fixture (2099-01-01)");
+
+    // Same query against the real repo, no options — 2099-01-01 is a clearly
+    // fake future date no real log carries, so this must report zero.
+    const realPayload = payloadOf(logsQuery({ date: "2099-01-01" }));
+    expect(realPayload["total"]).toBe(0);
+  });
+
+  test("hooksQuery: options.root reads a fixture repo; the real repo has no such hook", () => {
+    dir = mktemp();
+    mkdirSync(join(dir, "docs", "contributing"), { recursive: true });
+    writeFileSync(
+      join(dir, "docs", "contributing", "hooks-reference.md"),
+      [
+        "# Hooks reference",
+        "",
+        "| Event | Matcher | Hook | Purpose | Mode |",
+        "| --- | --- | --- | --- | --- |",
+        "| SessionStart | fixture | `fixture-hook.mjs` | Fixture purpose text | blocking |",
+        "",
+      ].join("\n"),
+    );
+
+    const fixturePayload = payloadOf(
+      hooksQuery({ name: "fixture-hook.mjs" }, { root: dir }),
+    );
+    const fixtureResults = fixturePayload["results"] as {
+      event: string;
+      hook: string;
+      purpose: string;
+      mode: string;
+    }[];
+    expect(fixturePayload["total"]).toBe(1);
+    expect(fixtureResults[0]?.hook).toBe("fixture-hook.mjs");
+    expect(fixtureResults[0]?.event).toBe("SessionStart");
+    expect(fixtureResults[0]?.purpose).toBe("Fixture purpose text");
+
+    // Same query against the real repo, no options — "fixture-hook.mjs" is
+    // not a real hook filename.
+    const realPayload = payloadOf(hooksQuery({ name: "fixture-hook.mjs" }));
+    expect(realPayload["total"]).toBe(0);
+  });
+
+  test("catalogQuery: options.root reads a fixture repo; the real repo has no such symbol", () => {
+    dir = mktemp();
+    mkdirSync(join(dir, "docs", "reference"), { recursive: true });
+    writeFileSync(join(dir, "docs", "reference", "catalog.json"), "[]");
+    writeFileSync(
+      join(dir, "docs", "reference", "symbol-map.json"),
+      JSON.stringify({
+        FixtureSymbol: {
+          submodule: "fixture",
+          namespace: "core",
+          file: "fixture.ts",
+        },
+      }),
+    );
+
+    const fixturePayload = payloadOf(
+      catalogQuery({ symbol: "FixtureSymbol" }, { root: dir }),
+    );
+    expect(fixturePayload["symbol"]).toMatchObject({
+      symbol: "FixtureSymbol",
+      submodule: "fixture",
+      namespace: "core",
+      file: "fixture.ts",
+    });
+
+    // Same query against the real repo, no options — "FixtureSymbol" is not
+    // a real exported symbol, so the lookup must report not-found.
+    const realPayload = payloadOf(catalogQuery({ symbol: "FixtureSymbol" }));
+    expect(realPayload["symbol"]).toBeNull();
+  });
+});
+
+describe("logsQuery limit validation", () => {
+  test.each([0, -1, 1.5, "5", Number.NaN])(
+    "limit %p → isError with a 'positive integer' message",
+    (limit) => {
+      const result = logsQuery({ topic: "worktree", limit });
+      expect(result.isError).toBe(true);
+      const payload = payloadOf(result);
+      expect(payload["error"]).toContain("positive integer");
+    },
+  );
+});
+
+describe("adrQuery (real docs/adr corpus, no mocking)", () => {
+  test("id '0096' → exactly one result, Accepted, with a dated reviewBy field", () => {
+    const result = adrQuery({ id: "0096" });
+    expect(result.isError).toBe(false);
+    const payload = payloadOf(result);
+    const results = payload["results"] as {
+      id: string;
+      status: string;
+      reviewBy?: string;
+    }[];
+    expect(payload["total"]).toBe(1);
+    expect(results).toHaveLength(1);
+    expect(results[0]?.id).toBe("0096");
+    expect(results[0]?.status).toBe("Accepted");
+    expect(results[0]?.reviewBy).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  test("id '0001' → exactly one result with a non-empty status", () => {
+    const result = adrQuery({ id: "0001" });
+    expect(result.isError).toBe(false);
+    const payload = payloadOf(result);
+    const results = payload["results"] as { id: string; status: string }[];
+    expect(payload["total"]).toBe(1);
+    expect(results).toHaveLength(1);
+    expect(results[0]?.id).toBe("0001");
+    expect(typeof results[0]?.status).toBe("string");
+    expect((results[0]?.status ?? "").length).toBeGreaterThan(0);
+  });
+
+  test("a nonexistent ADR number → isError:false, total:0, results:[]", () => {
+    const result = adrQuery({ id: "9999" });
+    expect(result.isError).toBe(false);
+    const payload = payloadOf(result);
+    expect(payload["total"]).toBe(0);
+    expect(payload["results"]).toEqual([]);
+  });
+
+  test("status 'Accepted' → every result has that status, total is positive", () => {
+    const result = adrQuery({ status: "Accepted" });
+    expect(result.isError).toBe(false);
+    const payload = payloadOf(result);
+    const results = payload["results"] as { status: string }[];
+    expect(payload["total"]).toBeGreaterThan(0);
+    expect(results.every((entry) => entry.status === "Accepted")).toBe(true);
+  });
+
+  test("query 'worktree' → at least one title contains it case-insensitively", () => {
+    const result = adrQuery({ query: "worktree" });
+    expect(result.isError).toBe(false);
+    const payload = payloadOf(result);
+    const results = payload["results"] as { title: string }[];
+    expect(payload["total"]).toBeGreaterThan(0);
+    expect(
+      results.some((entry) => entry.title.toLowerCase().includes("worktree")),
+    ).toBe(true);
+  });
+
+  test("no params at all → isError with a usage message", () => {
+    const result = adrQuery({});
+    expect(result.isError).toBe(true);
+    const payload = payloadOf(result);
+    expect(payload["error"]).toContain("requires at least one of");
+  });
+
+  test("status matching is case-insensitive", () => {
+    const lower = payloadOf(adrQuery({ status: "accepted" }));
+    const proper = payloadOf(adrQuery({ status: "Accepted" }));
+    expect(lower["total"]).toBe(proper["total"]);
+    expect(lower["total"]).toBeGreaterThan(0);
+  });
+});
+
+describe("logsQuery (real docs/logs corpus, no mocking)", () => {
+  test("topic 'worktree' → every result has date/file/title strings, one title matches", () => {
+    const result = logsQuery({ topic: "worktree" });
+    expect(result.isError).toBe(false);
+    const payload = payloadOf(result);
+    const results = payload["results"] as {
+      date: string;
+      file: string;
+      title: string;
+    }[];
+    expect(payload["total"]).toBeGreaterThan(0);
+    for (const entry of results) {
+      expect(typeof entry.date).toBe("string");
+      expect(typeof entry.file).toBe("string");
+      expect(typeof entry.title).toBe("string");
+    }
+    expect(
+      results.some((entry) => entry.title.toLowerCase().includes("worktree")),
+    ).toBe(true);
+  });
+
+  test("date '2026-09-07' → total positive, every result's date matches exactly", () => {
+    const result = logsQuery({ date: "2026-09-07" });
+    expect(result.isError).toBe(false);
+    const payload = payloadOf(result);
+    const results = payload["results"] as { date: string }[];
+    expect(payload["total"]).toBeGreaterThan(0);
+    expect(results.every((entry) => entry.date === "2026-09-07")).toBe(true);
+  });
+
+  test("a date with no logs → isError:false, total:0", () => {
+    const result = logsQuery({ date: "1999-01-01" });
+    expect(result.isError).toBe(false);
+    const payload = payloadOf(result);
+    expect(payload["total"]).toBe(0);
+  });
+
+  test("no params at all → isError with a usage message", () => {
+    const result = logsQuery({});
+    expect(result.isError).toBe(true);
+    const payload = payloadOf(result);
+    expect(payload["error"]).toContain("requires at least one of");
+  });
+
+  test("limit caps the returned results even when total reports more matches", () => {
+    const result = logsQuery({ topic: "worktree", limit: 1 });
+    expect(result.isError).toBe(false);
+    const payload = payloadOf(result);
+    const results = payload["results"] as unknown[];
+    expect(results.length).toBeLessThanOrEqual(1);
+  });
+});
+
+describe("commandsQuery (real COMMAND_CATALOG, no mocking, no options)", () => {
+  test("name 'verify' → exactly one result with a non-empty description", () => {
+    const result = commandsQuery({ name: "verify" });
+    expect(result.isError).toBe(false);
+    const payload = payloadOf(result);
+    const results = payload["results"] as {
+      name: string;
+      description: string;
+    }[];
+    expect(payload["total"]).toBe(1);
+    expect(results).toHaveLength(1);
+    expect(results[0]?.name).toBe("verify");
+    expect((results[0]?.description ?? "").length).toBeGreaterThan(0);
+  });
+
+  test("an unknown script name → isError:false, total:0", () => {
+    const result = commandsQuery({ name: "this-script-does-not-exist" });
+    expect(result.isError).toBe(false);
+    const payload = payloadOf(result);
+    expect(payload["total"]).toBe(0);
+  });
+
+  test("query 'worktree' → every result matches name or description case-insensitively", () => {
+    const result = commandsQuery({ query: "worktree" });
+    expect(result.isError).toBe(false);
+    const payload = payloadOf(result);
+    const results = payload["results"] as {
+      name: string;
+      description: string;
+    }[];
+    expect(payload["total"]).toBeGreaterThan(0);
+    for (const entry of results) {
+      const hit =
+        entry.name.toLowerCase().includes("worktree") ||
+        entry.description.toLowerCase().includes("worktree");
+      expect(hit).toBe(true);
+    }
+  });
+
+  test("no params at all → isError with a usage message", () => {
+    const result = commandsQuery({});
+    expect(result.isError).toBe(true);
+    const payload = payloadOf(result);
+    expect(payload["error"]).toContain("requires at least one of");
+  });
+});
+
+describe("hooksQuery (real docs/contributing/hooks-reference.md, no mocking)", () => {
+  test("name 'guard-branch-isolation.mjs' → exactly one result with event/purpose strings", () => {
+    const result = hooksQuery({ name: "guard-branch-isolation.mjs" });
+    expect(result.isError).toBe(false);
+    const payload = payloadOf(result);
+    const results = payload["results"] as {
+      hook: string;
+      event: string;
+      purpose: string;
+    }[];
+    expect(payload["total"]).toBe(1);
+    expect(results).toHaveLength(1);
+    expect(results[0]?.hook).toBe("guard-branch-isolation.mjs");
+    expect((results[0]?.event ?? "").length).toBeGreaterThan(0);
+    expect((results[0]?.purpose ?? "").length).toBeGreaterThan(0);
+  });
+
+  test("event 'SessionStart' → total positive, every result matches that event", () => {
+    const result = hooksQuery({ event: "SessionStart" });
+    expect(result.isError).toBe(false);
+    const payload = payloadOf(result);
+    const results = payload["results"] as { event: string }[];
+    expect(payload["total"]).toBeGreaterThan(0);
+    expect(results.every((entry) => entry.event === "SessionStart")).toBe(true);
+  });
+
+  test("an unknown hook filename → isError:false, total:0", () => {
+    const result = hooksQuery({ name: "this-hook-does-not-exist.mjs" });
+    expect(result.isError).toBe(false);
+    const payload = payloadOf(result);
+    expect(payload["total"]).toBe(0);
+  });
+
+  test("no params at all → isError with a usage message", () => {
+    const result = hooksQuery({});
+    expect(result.isError).toBe(true);
+    const payload = payloadOf(result);
+    expect(payload["error"]).toContain("requires at least one of");
+  });
+
+  test("query 'worktree' → total positive, every result's purpose matches case-insensitively", () => {
+    const result = hooksQuery({ query: "worktree" });
+    expect(result.isError).toBe(false);
+    const payload = payloadOf(result);
+    const results = payload["results"] as { purpose: string }[];
+    expect(payload["total"]).toBeGreaterThan(0);
+    expect(
+      results.every((entry) =>
+        entry.purpose.toLowerCase().includes("worktree"),
+      ),
+    ).toBe(true);
+  });
 });
 
 describe("catalogQuery (real docs/reference index, no mocking)", () => {
@@ -125,63 +584,6 @@ describe("catalogQuery (real docs/reference index, no mocking)", () => {
   });
 });
 
-describe("docsSync (mocked execFileSync)", () => {
-  test("happy path spawns bin/sync-docs.mjs with --json and returns its payload", () => {
-    h.execFileSync.mockReset();
-    h.execFileSync.mockReturnValueOnce(
-      JSON.stringify({ ok: true, updated: [] }),
-    );
-    const result = docsSync({});
-    expect(result.isError).toBe(false);
-    const payload = payloadOf(result);
-    expect(payload).toEqual({ ok: true, updated: [] });
-    const [cmd, args, options] = h.execFileSync.mock.calls[0] as [
-      string,
-      string[],
-      { timeout: number },
-    ];
-    expect(cmd).toBe("node");
-    expect(args[0]).toContain("sync-docs.mjs");
-    expect(args).toContain("--json");
-    expect(args).not.toContain("--affected");
-    // docs_sync re-runs the full Vitest suite, so it gets the longer of the
-    // two spawn timeouts (15 minutes vs. the 5-minute default for check:* scripts).
-    expect(options.timeout).toBe(15 * 60 * 1000);
-  });
-
-  test("forwards 'affected' as --affected <path> in argv", () => {
-    h.execFileSync.mockReset();
-    h.execFileSync.mockReturnValueOnce(JSON.stringify({ ok: true }));
-    docsSync({ affected: "packages/m3l-common/src/core/retry/index.ts" });
-    const [, args] = h.execFileSync.mock.calls[0] as [string, string[]];
-    expect(args).toContain("--affected");
-    expect(args).toContain("packages/m3l-common/src/core/retry/index.ts");
-  });
-
-  test("mocked child failure (non-zero exit, JSON payload in stdout) surfaces the errors", () => {
-    h.execFileSync.mockReset();
-    const err = Object.assign(new Error("Command failed"), {
-      stdout: JSON.stringify({ ok: false, errors: ["stale doc counts"] }),
-      status: 1,
-    });
-    h.execFileSync.mockImplementationOnce(() => {
-      throw err;
-    });
-    const result = docsSync({});
-    expect(result.isError).toBe(true);
-    const payload = payloadOf(result);
-    expect(payload["errors"]).toEqual(["stale doc counts"]);
-  });
-
-  test("a non-string 'affected' → isError usage message, no spawn attempted", () => {
-    h.execFileSync.mockReset();
-    const result = docsSync({ affected: 123 });
-    expect(result.isError).toBe(true);
-    expect(payloadOf(result)["error"]).toContain("string");
-    expect(h.execFileSync).not.toHaveBeenCalled();
-  });
-});
-
 describe("commitLint (direct in-process import, no subprocess)", () => {
   test("a valid Conventional Commit with a valid Claude trailer → valid:true", async () => {
     const message =
@@ -207,507 +609,5 @@ describe("commitLint (direct in-process import, no subprocess)", () => {
     expect(result.isError).toBe(true);
     const payload = payloadOf(result);
     expect(payload["error"]).toContain("non-empty");
-  });
-});
-
-describe("worktreeManage (mocked execFileSync)", () => {
-  test("create without slug → isError usage message, no spawn attempted", () => {
-    h.execFileSync.mockReset();
-    const result = worktreeManage({ action: "create" });
-    expect(result.isError).toBe(true);
-    expect(payloadOf(result)["error"]).toContain("slug");
-    expect(h.execFileSync).not.toHaveBeenCalled();
-  });
-
-  test("remove without slug → isError usage message, no spawn attempted", () => {
-    h.execFileSync.mockReset();
-    const result = worktreeManage({ action: "remove" });
-    expect(result.isError).toBe(true);
-    expect(payloadOf(result)["error"]).toContain("slug");
-    expect(h.execFileSync).not.toHaveBeenCalled();
-  });
-
-  test("prune with dryRun spawns worktree-prune with --dry-run and --json", () => {
-    h.execFileSync.mockReset();
-    h.execFileSync.mockReturnValueOnce(
-      JSON.stringify({ ok: true, candidates: [] }),
-    );
-    const result = worktreeManage({ action: "prune", dryRun: true });
-    expect(result.isError).toBe(false);
-    expect(h.execFileSync).toHaveBeenCalledTimes(1);
-    const [cmd, args] = h.execFileSync.mock.calls[0] as [string, string[]];
-    expect(cmd).toBe("node");
-    expect(args[0]).toContain("worktree-prune.mjs");
-    expect(args).toContain("--dry-run");
-    expect(args).toContain("--json");
-  });
-
-  test("prune without dryRun omits --dry-run", () => {
-    h.execFileSync.mockReset();
-    h.execFileSync.mockReturnValueOnce(JSON.stringify({ ok: true }));
-    worktreeManage({ action: "prune" });
-    const [, args] = h.execFileSync.mock.calls[0] as [string, string[]];
-    expect(args).not.toContain("--dry-run");
-  });
-
-  test("prune with noFetch spawns worktree-prune with --no-fetch", () => {
-    h.execFileSync.mockReset();
-    h.execFileSync.mockReturnValueOnce(JSON.stringify({ ok: true }));
-    const result = worktreeManage({ action: "prune", noFetch: true });
-    expect(result.isError).toBe(false);
-    const [, args] = h.execFileSync.mock.calls[0] as [string, string[]];
-    expect(args).toContain("--no-fetch");
-  });
-
-  test("noFetch with a non-prune action → isError, no spawn attempted", () => {
-    h.execFileSync.mockReset();
-    const result = worktreeManage({
-      action: "create",
-      slug: "my-feature",
-      noFetch: true,
-    });
-    expect(result.isError).toBe(true);
-    expect(payloadOf(result)["error"]).toContain("noFetch");
-    expect(h.execFileSync).not.toHaveBeenCalled();
-  });
-
-  test("mocked child failure surfaces the JSON payload's errors", () => {
-    h.execFileSync.mockReset();
-    const err = Object.assign(new Error("Command failed"), {
-      stdout: JSON.stringify({ ok: false, errors: ["merge check failed"] }),
-      status: 1,
-    });
-    h.execFileSync.mockImplementationOnce(() => {
-      throw err;
-    });
-    const result = worktreeManage({ action: "prune" });
-    expect(result.isError).toBe(true);
-    const payload = payloadOf(result);
-    expect(payload["errors"]).toEqual(["merge check failed"]);
-  });
-
-  test("create with a slug spawns worktree-new with the slug and --json", () => {
-    h.execFileSync.mockReset();
-    h.execFileSync.mockReturnValueOnce(JSON.stringify({ ok: true }));
-    const result = worktreeManage({ action: "create", slug: "my-feature" });
-    expect(result.isError).toBe(false);
-    const [, args] = h.execFileSync.mock.calls[0] as [string, string[]];
-    expect(args[0]).toContain("worktree-new.mjs");
-    expect(args).toContain("my-feature");
-    expect(args).toContain("--json");
-  });
-
-  test("remove with a path-traversal slug ('../evil') → isError pattern-quoting message, no spawn", () => {
-    h.execFileSync.mockReset();
-    const result = worktreeManage({ action: "remove", slug: "../evil" });
-    expect(result.isError).toBe(true);
-    const message = payloadOf(result)["error"] as string;
-    expect(message).toContain("../evil");
-    expect(message).toContain("invalid");
-    expect(h.execFileSync).not.toHaveBeenCalled();
-  });
-
-  test("create with a flag-like slug ('--force') → isError pattern-quoting message, no spawn", () => {
-    h.execFileSync.mockReset();
-    const result = worktreeManage({ action: "create", slug: "--force" });
-    expect(result.isError).toBe(true);
-    const message = payloadOf(result)["error"] as string;
-    expect(message).toContain("--force");
-    expect(message).toContain("invalid");
-    expect(h.execFileSync).not.toHaveBeenCalled();
-  });
-
-  test("remove with a valid kebab-case slug still spawns worktree-remove", () => {
-    h.execFileSync.mockReset();
-    h.execFileSync.mockReturnValueOnce("worktree removed\n");
-    const result = worktreeManage({ action: "remove", slug: "my-feature" });
-    expect(result.isError).toBe(false);
-    const [, args] = h.execFileSync.mock.calls[0] as [string, string[]];
-    expect(args[0]).toContain("worktree-remove.mjs");
-    expect(args).toContain("my-feature");
-  });
-
-  test("create with 'from' forwards --from <ref> and --json", () => {
-    h.execFileSync.mockReset();
-    h.execFileSync.mockReturnValueOnce(JSON.stringify({ ok: true }));
-    const result = worktreeManage({
-      action: "create",
-      slug: "audit-x",
-      from: "origin/feat/old-branch",
-    });
-    expect(result.isError).toBe(false);
-    const [, args] = h.execFileSync.mock.calls[0] as [string, string[]];
-    expect(args).toContain("audit-x");
-    expect(args).toContain("--from");
-    expect(args).toContain("origin/feat/old-branch");
-    expect(args).toContain("--json");
-  });
-
-  test("create with 'from' and fix:true → isError mutual-exclusivity message, no spawn", () => {
-    h.execFileSync.mockReset();
-    const result = worktreeManage({
-      action: "create",
-      slug: "audit-x",
-      from: "origin/main",
-      fix: true,
-    });
-    expect(result.isError).toBe(true);
-    const message = payloadOf(result)["error"] as string;
-    expect(message).toContain("mutually exclusive");
-    expect(h.execFileSync).not.toHaveBeenCalled();
-  });
-
-  test("create with a flag-like 'from' ('--upload-pack=x') → isError invalid message, no spawn", () => {
-    h.execFileSync.mockReset();
-    const result = worktreeManage({
-      action: "create",
-      slug: "audit-x",
-      from: "--upload-pack=x",
-    });
-    expect(result.isError).toBe(true);
-    const message = payloadOf(result)["error"] as string;
-    expect(message).toContain("--upload-pack=x");
-    expect(message).toContain("invalid");
-    expect(h.execFileSync).not.toHaveBeenCalled();
-  });
-
-  test("'from' with a non-create action (remove) → isError, no spawn", () => {
-    h.execFileSync.mockReset();
-    const result = worktreeManage({
-      action: "remove",
-      slug: "my-feature",
-      from: "origin/main",
-    });
-    expect(result.isError).toBe(true);
-    const message = payloadOf(result)["error"] as string;
-    expect(message).toContain("from");
-    expect(message).toContain("create");
-    expect(h.execFileSync).not.toHaveBeenCalled();
-  });
-
-  test("create with 'kind' forwards --kind <kind> and --json", () => {
-    h.execFileSync.mockReset();
-    h.execFileSync.mockReturnValueOnce(JSON.stringify({ ok: true }));
-    const result = worktreeManage({
-      action: "create",
-      slug: "my-feature",
-      kind: "docs",
-    });
-    expect(result.isError).toBe(false);
-    const [, args] = h.execFileSync.mock.calls[0] as [string, string[]];
-    expect(args).toContain("my-feature");
-    expect(args).toContain("--kind");
-    expect(args).toContain("docs");
-    expect(args).toContain("--json");
-  });
-
-  test("create with an invalid 'kind' ('perf') → isError naming the invalid kind and the valid ones, no spawn", () => {
-    h.execFileSync.mockReset();
-    const result = worktreeManage({
-      action: "create",
-      slug: "my-feature",
-      kind: "perf",
-    });
-    expect(result.isError).toBe(true);
-    const message = payloadOf(result)["error"] as string;
-    expect(message).toContain("perf");
-    expect(message).toContain("feat");
-    expect(message).toContain("fix");
-    expect(message).toContain("docs");
-    expect(message).toContain("chore");
-    expect(message).toContain("refactor");
-    expect(message).toContain("ci");
-    expect(h.execFileSync).not.toHaveBeenCalled();
-  });
-
-  test("create with 'kind' and fix:true disagreeing → isError conflict message, no spawn", () => {
-    h.execFileSync.mockReset();
-    const result = worktreeManage({
-      action: "create",
-      slug: "my-feature",
-      kind: "docs",
-      fix: true,
-    });
-    expect(result.isError).toBe(true);
-    const message = payloadOf(result)["error"] as string;
-    expect(message).toContain("conflicts");
-    expect(h.execFileSync).not.toHaveBeenCalled();
-  });
-
-  test("create with 'kind: \"fix\"' and fix:true agreeing → succeeds, spawns", () => {
-    h.execFileSync.mockReset();
-    h.execFileSync.mockReturnValueOnce(JSON.stringify({ ok: true }));
-    const result = worktreeManage({
-      action: "create",
-      slug: "my-feature",
-      kind: "fix",
-      fix: true,
-    });
-    expect(result.isError).toBe(false);
-    expect(h.execFileSync).toHaveBeenCalledTimes(1);
-  });
-
-  test("create with 'kind' and 'from' together → isError mutual-exclusivity message, no spawn", () => {
-    h.execFileSync.mockReset();
-    const result = worktreeManage({
-      action: "create",
-      slug: "my-feature",
-      kind: "docs",
-      from: "origin/main",
-    });
-    expect(result.isError).toBe(true);
-    const message = payloadOf(result)["error"] as string;
-    expect(message).toContain("mutually exclusive");
-    expect(h.execFileSync).not.toHaveBeenCalled();
-  });
-
-  test("'kind' with a non-create action (remove) → isError naming kind and the action, no spawn", () => {
-    h.execFileSync.mockReset();
-    const result = worktreeManage({
-      action: "remove",
-      slug: "my-feature",
-      kind: "docs",
-    });
-    expect(result.isError).toBe(true);
-    const message = payloadOf(result)["error"] as string;
-    expect(message).toContain("kind");
-    expect(message).toContain("remove");
-    expect(h.execFileSync).not.toHaveBeenCalled();
-  });
-});
-
-describe("repoVerify (mocked execFileSync per scope)", () => {
-  test("scope 'docs' runs the five doc checks and reports ok:true when all pass", () => {
-    h.execFileSync.mockReset();
-    h.execFileSync.mockImplementation(() => JSON.stringify({ ok: true }));
-    const result = repoVerify({ scope: "docs" });
-    expect(result.isError).toBe(false);
-    const payload = payloadOf(result);
-    expect(payload["ok"]).toBe(true);
-    const checks = payload["checks"] as { name: string; ok: boolean }[];
-    expect(checks.map((c) => c.name)).toEqual([
-      "check-doc-counts",
-      "check-impl-counts",
-      "check-doc-exports",
-      "check-doc-provenance",
-      "check-reference-index",
-    ]);
-    expect(checks.every((c) => c.ok)).toBe(true);
-  });
-
-  test("a failing doc check → ok:false with that check's errors attached", () => {
-    h.execFileSync.mockReset();
-    h.execFileSync.mockImplementation((...args: unknown[]) => {
-      const [, argv] = args as [string, string[]];
-      const scriptPath = argv[0] ?? "";
-      if (scriptPath.includes("check-doc-provenance")) {
-        const err = Object.assign(new Error("Command failed"), {
-          stdout: JSON.stringify({
-            ok: false,
-            errors: ["stale provenance sidecar"],
-          }),
-          status: 1,
-        });
-        throw err;
-      }
-      return JSON.stringify({ ok: true });
-    });
-    const result = repoVerify({ scope: "docs" });
-    expect(result.isError).toBe(true);
-    const payload = payloadOf(result);
-    expect(payload["ok"]).toBe(false);
-    const checks = payload["checks"] as {
-      name: string;
-      ok: boolean;
-      errors: string[];
-    }[];
-    const failing = checks.find((c) => c.name === "check-doc-provenance");
-    expect(failing?.ok).toBe(false);
-    expect(failing?.errors).toEqual(["stale provenance sidecar"]);
-    const others = checks.filter((c) => c.name !== "check-doc-provenance");
-    expect(others.every((c) => c.ok)).toBe(true);
-  });
-
-  test("scope 'hooks' (non-JSON script) takes the exit-code success path", () => {
-    h.execFileSync.mockReset();
-    h.execFileSync.mockReturnValueOnce("hooks look fine\n");
-    const result = repoVerify({ scope: "hooks" });
-    expect(result.isError).toBe(false);
-    const payload = payloadOf(result);
-    const checks = payload["checks"] as { name: string; ok: boolean }[];
-    expect(checks).toEqual([{ name: "check-hooks", ok: true, errors: [] }]);
-    const [, args] = h.execFileSync.mock.calls[0] as [string, string[]];
-    expect(args).not.toContain("--json");
-  });
-
-  test("scope 'hooks' (non-JSON script) takes the exit-code failure path", () => {
-    h.execFileSync.mockReset();
-    const err = Object.assign(new Error("Command failed"), {
-      stdout: "checking hooks...\n",
-      stderr: "hook wiring mismatch for guard-secret-writes\n",
-    });
-    h.execFileSync.mockImplementationOnce(() => {
-      throw err;
-    });
-    const result = repoVerify({ scope: "hooks" });
-    expect(result.isError).toBe(true);
-    const payload = payloadOf(result);
-    const checks = payload["checks"] as {
-      name: string;
-      ok: boolean;
-      errors: string[];
-    }[];
-    expect(checks[0]?.ok).toBe(false);
-    expect(checks[0]?.errors).toContain(
-      "hook wiring mismatch for guard-secret-writes",
-    );
-  });
-
-  test("an invalid scope → isError usage message, no spawn attempted", () => {
-    h.execFileSync.mockReset();
-    const result = repoVerify({ scope: "bogus" });
-    expect(result.isError).toBe(true);
-    expect(payloadOf(result)["error"]).toContain("scope");
-    expect(h.execFileSync).not.toHaveBeenCalled();
-  });
-});
-
-describe("scaffoldScript (mocked execFileSync)", () => {
-  test("forwards name as a positional arg plus --json", () => {
-    h.execFileSync.mockReset();
-    h.execFileSync.mockReturnValueOnce(JSON.stringify({ ok: true }));
-    const result = scaffoldScript({ name: "data-sync" });
-    expect(result.isError).toBe(false);
-    const [cmd, args] = h.execFileSync.mock.calls[0] as [string, string[]];
-    expect(cmd).toBe("node");
-    expect(args[0]).toContain("scaffold-script.mjs");
-    expect(args).toContain("data-sync");
-    expect(args).toContain("--json");
-  });
-
-  test("forwards an optional purpose as --purpose <value>", () => {
-    h.execFileSync.mockReset();
-    h.execFileSync.mockReturnValueOnce(JSON.stringify({ ok: true }));
-    scaffoldScript({ name: "data-sync", purpose: "Sync S3 exports" });
-    const [, args] = h.execFileSync.mock.calls[0] as [string, string[]];
-    expect(args).toContain("--purpose");
-    expect(args).toContain("Sync S3 exports");
-  });
-
-  test("a validation-failure payload from the script is surfaced", () => {
-    h.execFileSync.mockReset();
-    const err = Object.assign(new Error("Command failed"), {
-      stdout: JSON.stringify({
-        ok: false,
-        errors: ["scripts/data-sync already exists"],
-      }),
-      status: 1,
-    });
-    h.execFileSync.mockImplementationOnce(() => {
-      throw err;
-    });
-    const result = scaffoldScript({ name: "data-sync" });
-    expect(result.isError).toBe(true);
-    const payload = payloadOf(result);
-    expect(payload["errors"]).toEqual(["scripts/data-sync already exists"]);
-  });
-
-  test("missing name → isError usage message, no spawn attempted", () => {
-    h.execFileSync.mockReset();
-    const result = scaffoldScript({});
-    expect(result.isError).toBe(true);
-    expect(payloadOf(result)["error"]).toContain("name");
-    expect(h.execFileSync).not.toHaveBeenCalled();
-  });
-});
-
-describe("spokeRecover (mocked execFileSync)", () => {
-  test("happy path spawns bin/spoke-recovery.mjs with --journal <path> and --json, returning its payload", () => {
-    h.execFileSync.mockReset();
-    h.execFileSync.mockReturnValueOnce(
-      JSON.stringify({
-        ok: true,
-        recommendation: { action: "resume", punchList: [], rationale: "..." },
-      }),
-    );
-    const result = spokeRecover({ journal: "scratchpad/writer-a.md" });
-    expect(result.isError).toBe(false);
-    const payload = payloadOf(result);
-    expect(payload["ok"]).toBe(true);
-    const [cmd, args] = h.execFileSync.mock.calls[0] as [string, string[]];
-    expect(cmd).toBe("node");
-    expect(args[0]).toContain("spoke-recovery.mjs");
-    expect(args).toContain("--journal");
-    expect(args).toContain("scratchpad/writer-a.md");
-    expect(args).toContain("--json");
-  });
-
-  test("forwards 'expected' as a comma-joined --expected list", () => {
-    h.execFileSync.mockReset();
-    h.execFileSync.mockReturnValueOnce(JSON.stringify({ ok: true }));
-    spokeRecover({
-      journal: "scratchpad/writer-a.md",
-      expected: ["src/a.ts", "src/b/**"],
-    });
-    const [, args] = h.execFileSync.mock.calls[0] as [string, string[]];
-    expect(args).toContain("--expected");
-    expect(args).toContain("src/a.ts,src/b/**");
-  });
-
-  test("missing 'journal' → isError usage message, no spawn attempted", () => {
-    h.execFileSync.mockReset();
-    const result = spokeRecover({});
-    expect(result.isError).toBe(true);
-    expect(payloadOf(result)["error"]).toContain("journal");
-    expect(h.execFileSync).not.toHaveBeenCalled();
-  });
-
-  test("a non-array 'expected' → isError usage message, no spawn attempted", () => {
-    h.execFileSync.mockReset();
-    const result = spokeRecover({
-      journal: "scratchpad/writer-a.md",
-      expected: "src/a.ts",
-    });
-    expect(result.isError).toBe(true);
-    expect(payloadOf(result)["error"]).toContain("array of strings");
-    expect(h.execFileSync).not.toHaveBeenCalled();
-  });
-
-  test("child exits 1 with a JSON redispatch-recommendation payload on stdout → payload surfaced, isError stays false", () => {
-    h.execFileSync.mockReset();
-    const redispatchPayload = {
-      ok: false,
-      recommendation: {
-        action: "redispatch",
-        punchList: [],
-        rationale: "no durable trace",
-      },
-    };
-    const err = Object.assign(new Error("Command failed"), {
-      stdout: JSON.stringify(redispatchPayload),
-      status: 1,
-    });
-    h.execFileSync.mockImplementationOnce(() => {
-      throw err;
-    });
-    const result = spokeRecover({ journal: "scratchpad/missing.md" });
-    // The CLI's own contract treats a missing/unreadable journal (or the
-    // "no durable trace" case) as exit 1 with a well-formed recommendation on
-    // stdout, not a malfunction — spokeRecover surfaces that payload with
-    // isError:false, per its handler comment.
-    expect(result.isError).toBe(false);
-    const payload = payloadOf(result);
-    expect(payload).toEqual(redispatchPayload);
-  });
-
-  test("child spawn failure with no parseable stdout → isError true with the spoke_recover-prefixed message", () => {
-    h.execFileSync.mockReset();
-    const err = Object.assign(new Error("spawn ENOENT"), { status: 1 });
-    h.execFileSync.mockImplementationOnce(() => {
-      throw err;
-    });
-    const result = spokeRecover({ journal: "scratchpad/writer-a.md" });
-    expect(result.isError).toBe(true);
-    expect(payloadOf(result)["error"]).toContain("spoke_recover");
   });
 });
