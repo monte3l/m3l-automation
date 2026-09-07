@@ -54,14 +54,15 @@ import { assertAllowedScriptName } from "../lib/cli-names.js";
 import { M3LAgentOperatorCliError } from "../lib/errors.js";
 import { buildEtlTools } from "./build-etl-tools.js";
 import { buildAgentToolRegistry } from "./build-tool-registry.js";
-import type { AgentDailyInvocationCounter } from "./daily-counter.js";
-import type { AgentDecisionRecorder } from "./decision-recorder.js";
+// The consumption/conclusion tail now has one owner: `./conclusion-tail.js`.
+import {
+  concludeGatedOperation,
+  recordConsumption,
+} from "./conclusion-tail.js";
 import { runPresetSystemPrompt, runPresetUserPrompt } from "./etl-prompt.js";
-import { reconcileMeteredCost } from "./metering-invoker.js";
 import { prepareGatedOperation } from "./prepare-gated-operation.js";
 import type { GatedOperationSetup } from "./prepare-gated-operation.js";
 import type { AgentOperatorRuntimeSettings } from "./resolve-runtime.js";
-import type { AgentRunLedger } from "./run-ledger.js";
 
 /** Everything {@link runEtlPreset} needs, injected rather than reached for. */
 export interface RunEtlPresetDeps {
@@ -244,109 +245,6 @@ async function runLoop(
 }
 
 /**
- * Persists the run's invocation count onto the cross-run daily counter.
- *
- * @remarks
- * Called from a `finally`, so it runs whether the loop completed or threw —
- * a crash mid-loop must not forget invocations that were already made and
- * already billed. A failure to write is logged and reported as an absorbed
- * failure rather than rethrown: letting it escape from a `finally` would
- * REPLACE whatever the loop was already throwing, discarding the original
- * failure's classification. This is not swallowing — it still reaches the
- * logger and `reportRecovery`, so the run cannot report a silent success.
- */
-async function recordConsumption(
-  counter: AgentDailyInvocationCounter,
-  ledger: AgentRunLedger,
-  deps: RunEtlPresetDeps,
-  now: number,
-): Promise<void> {
-  try {
-    await counter.record(ledger.invocationCount);
-  } catch (cause) {
-    deps.logger.error(
-      "the cross-run daily invocation counter could not be updated; today's recorded spend is now behind by this run's invocations",
-      { invocations: ledger.invocationCount },
-    );
-    deps.reportRecovery({
-      item: "daily-invocation-counter",
-      error: Core.serializeErrorChain(cause, { redact: true }),
-      recordedAt: new Date(now).toISOString(),
-    });
-  }
-}
-
-/**
- * Writes the run's concluding decision-log entry: what the authorized run
- * actually cost.
- *
- * @remarks
- * Mirrors `steps/run-health-check.ts`'s own `recordConclusion` exactly — same
- * shape, same identifying fields (`decision` carries `operation: "run-preset"`
- * / `script: "agent-operator"` / `verdict: "auto-approved"` from
- * {@link runPresetAction}'s judged action). JSONL is append-only, so
- * this is a further entry rather than an amendment of the preflight's own
- * bootstrap entry, which never carries `tokens`/`cost`. `cost` is spread
- * conditionally: an unpriceable run must leave the key absent, not present
- * holding `undefined`.
- */
-async function recordConclusion(
-  recorder: AgentDecisionRecorder,
-  decision: Core.M3LAgentDecision,
-  now: number,
-  tokens: number,
-  cost: number | undefined,
-): Promise<void> {
-  await recorder.record({
-    decision,
-    now,
-    outcome: { dryRun: false, exitCode: 0 },
-    tokens,
-    ...(cost === undefined ? {} : { cost }),
-  });
-}
-
-/**
- * Everything after the loop: reconcile the metered cost against the loop's
- * own reported cost, then record the concluding audit entry.
- *
- * @remarks
- * Mirrors `steps/run-health-check.ts`'s own `concludeHealthCheck` for the
- * cost-reconciliation and conclusion-record halves; this operation has no
- * report artifact or anomaly demotion of its own. `reconcileMeteredCost` runs
- * unconditionally here (unlike `run-health-check.ts`, whose loop can absorb a
- * ceiling breach into an `outcome: undefined`): {@link runLoop} above never
- * absorbs a failure, so reaching this function at all means the loop
- * produced a genuine `outcome`, refusal or not — see `steps/gate-tool.ts`'s
- * documented "a refusal never throws" contract for why a per-call refusal
- * still lands here.
- */
-async function concludeEtlPreset(
-  setup: GatedOperationSetup,
-  outcome: AWS.M3LBedrockToolLoopOutcome,
-): Promise<void> {
-  const iterations = setup.metered.observedIterations();
-  const tokens = iterations.reduce(
-    (total, iteration) => total + iteration.usage.totalTokens,
-    0,
-  );
-  // THIS script's own figure, not the library's — see `runLoop`'s ordering-
-  // constraint-3 remarks and `steps/metering-invoker.ts`'s own header on why
-  // `sumObservedCost` is a deliberate local re-implementation of
-  // `AWS.computeCost` that `reconcileMeteredCost` is what makes safe.
-  const cost = setup.ledger.snapshot(setup.now).costThisRun;
-  reconcileMeteredCost({ metered: cost, reported: outcome.cost });
-
-  await recordConclusion(
-    setup.recorder,
-    setup.decision,
-    setup.now,
-    tokens,
-    cost,
-  );
-}
-
-/**
  * Runs the `run-preset` workload end to end: prepare, resolve the target
  * script's `aws.profile` declaration (fail closed), build a registry
  * offering exactly one tool, drive the Bedrock tool loop, and conclude.
@@ -401,5 +299,5 @@ export async function runEtlPreset(deps: RunEtlPresetDeps): Promise<void> {
     await recordConsumption(counter, ledger, deps, setup.now);
   }
 
-  await concludeEtlPreset(setup, outcome);
+  await concludeGatedOperation(setup, outcome);
 }

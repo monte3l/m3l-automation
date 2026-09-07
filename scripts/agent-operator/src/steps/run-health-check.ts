@@ -67,12 +67,17 @@
  * confusingly, throw on.
  */
 
-import { AWS, Core } from "@m3l-automation/m3l-common";
+import { AWS } from "@m3l-automation/m3l-common";
+import type { Core } from "@m3l-automation/m3l-common";
 
 import { buildAgentToolRegistry } from "./build-tool-registry.js";
 import { buildHealthTools } from "./build-health-tools.js";
-import type { AgentDailyInvocationCounter } from "./daily-counter.js";
-import type { AgentDecisionRecorder } from "./decision-recorder.js";
+// The consumption/conclusion tail now has one owner: `./conclusion-tail.js`.
+import {
+  recordConclusion,
+  recordConsumption,
+  summarizeMeteredRun,
+} from "./conclusion-tail.js";
 import { AgentHealthObservations } from "./health-observations.js";
 import {
   healthCheckSystemPrompt,
@@ -84,7 +89,6 @@ import { reconcileMeteredCost } from "./metering-invoker.js";
 import { prepareGatedOperation } from "./prepare-gated-operation.js";
 import type { GatedOperationSetup } from "./prepare-gated-operation.js";
 import type { AgentOperatorRuntimeSettings } from "./resolve-runtime.js";
-import type { AgentRunLedger } from "./run-ledger.js";
 
 /** Everything {@link runHealthCheck} needs, injected rather than reached for. */
 export interface RunHealthCheckDeps {
@@ -120,41 +124,6 @@ function healthCheckAction(): Core.M3LAgentAction {
       "modelId",
     ],
   };
-}
-
-/**
- * Persists the run's invocation count onto the cross-run daily counter.
- *
- * @remarks
- * Called from a `finally`, so it runs whether the loop completed, breached a
- * ceiling, or threw — a crash mid-loop must not forget invocations that were
- * already made and already billed. A failure to write is logged and reported
- * as an absorbed failure rather than rethrown, for the reason
- * `steps/gate-tool`'s `recordExecutionFailure` documents: letting it escape
- * from a `finally` would REPLACE whatever the loop was already throwing,
- * discarding the original failure's classification. This is not swallowing —
- * it reaches the logger and `reportRecovery`, so the run cannot report a
- * silent `success`.
- */
-async function recordConsumption(
-  counter: AgentDailyInvocationCounter,
-  ledger: AgentRunLedger,
-  deps: RunHealthCheckDeps,
-  now: number,
-): Promise<void> {
-  try {
-    await counter.record(ledger.invocationCount);
-  } catch (cause) {
-    deps.logger.error(
-      "the cross-run daily invocation counter could not be updated; today's recorded spend is now behind by this run's invocations",
-      { invocations: ledger.invocationCount },
-    );
-    deps.reportRecovery({
-      item: "daily-invocation-counter",
-      error: Core.serializeErrorChain(cause, { redact: true }),
-      recordedAt: new Date(now).toISOString(),
-    });
-  }
 }
 
 /** What {@link runLoop} produced, with a ceiling breach already absorbed. */
@@ -228,38 +197,6 @@ async function runLoop(
       ceilingBreach: cause.message,
     };
   }
-}
-
-/**
- * Writes the run's **third** decision-log entry: what the authorized run
- * actually cost.
- *
- * @remarks
- * JSONL is append-only, so this is a third entry rather than an amendment of
- * the second. It re-records `decision` rather than re-evaluating: the
- * question it answers is *"what did the authorized run cost"*, not *"would
- * it be authorized now"* — those are different questions, and re-evaluating
- * would answer the second while looking like the first. **A reviewer should
- * check this trade explicitly.**
- *
- * It is the first caller ever to populate the `tokens`/`cost` fields
- * ADR-0061 added. `cost` is spread conditionally: an unpriceable run must
- * leave the key absent, not present holding `undefined`.
- */
-async function recordConclusion(
-  recorder: AgentDecisionRecorder,
-  decision: Core.M3LAgentDecision,
-  now: number,
-  tokens: number,
-  cost: number | undefined,
-): Promise<void> {
-  await recorder.record({
-    decision,
-    now,
-    outcome: { dryRun: false, exitCode: 0 },
-    tokens,
-    ...(cost === undefined ? {} : { cost }),
-  });
 }
 
 /** Reports every anomaly as an absorbed failure, demoting the run to `partial`. */
@@ -388,33 +325,21 @@ async function concludeHealthCheck(
   loop: HealthLoopResult,
 ): Promise<void> {
   const iterations = setup.metered.observedIterations();
-  const tokens = iterations.reduce(
-    (total, iteration) => total + iteration.usage.totalTokens,
-    0,
-  );
-  // THIS script's own figure, not the library's: `createMeteredInvoker` pushes
-  // `sumObservedCost(...)` onto the ledger through `observeSpend`, so the
-  // ledger's `costThisRun` IS the locally computed cost — omitted (and so read
-  // as `undefined`) exactly when a served model had no declared rate.
-  //
-  // Reading it back from `loop.outcome.cost` instead would compare the
-  // library's figure to itself: the check could never fail, and the local
-  // re-implementation of `AWS.computeCost` that `steps/metering-invoker`
-  // documents as "made safe by `reconcileMeteredCost`" would be unguarded.
-  const cost = setup.ledger.snapshot(setup.now).costThisRun;
+  const summary = summarizeMeteredRun(setup);
+  const { tokens, cost } = summary;
   // Only meaningful when the loop actually completed: a ceiling breach has no
   // library-side figure to reconcile against.
   if (loop.outcome !== undefined) {
     reconcileMeteredCost({ metered: cost, reported: loop.outcome.cost });
   }
 
-  await recordConclusion(
-    setup.recorder,
-    setup.decision,
-    setup.now,
-    tokens,
-    cost,
-  );
+  // This is the run's THIRD decision-log entry — JSONL is append-only, so
+  // this is a further entry, not an amendment of the second. It re-records
+  // `decision` rather than re-evaluating: the question it answers is "what
+  // did the authorized run cost", not "would it be authorized now" — those
+  // are different questions, and re-evaluating would answer the second while
+  // looking like the first. A reviewer should check this trade explicitly.
+  await recordConclusion(setup.recorder, setup.decision, setup.now, summary);
 
   const report = buildHealthReport({
     snapshot: setup.observations.snapshot(),
