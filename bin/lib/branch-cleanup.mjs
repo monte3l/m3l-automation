@@ -126,7 +126,16 @@ export function validateDeletable(branch, currentBranch) {
  * ```
  */
 export function validateWorktreeSafe({ branch, location, records }) {
-  const attached = worktreeForBranch(branch, records);
+  // Exclude the main checkout's own porcelain record before searching —
+  // `parseWorktreeList` always includes it (worktree-prune.mjs's first
+  // record), and without this filter a branch checked out in the MAIN
+  // checkout would be misreported as "attached" to "a linked worktree" with
+  // a `git worktree remove <main checkout>` remedy git will reject. Git's
+  // own `branch -d`/`-D` already refuses a branch checked out in the main
+  // checkout on its own; deleteBranch() surfaces that refusal correctly, and
+  // there's no worktree directory to strand in that case anyway.
+  const linkedRecords = records.filter((r) => r.path !== location.mainCheckout);
+  const attached = worktreeForBranch(branch, linkedRecords);
   if (attached !== null && attached.path !== location.here) {
     return {
       ok: false,

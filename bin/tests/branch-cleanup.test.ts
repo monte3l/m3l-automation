@@ -129,6 +129,35 @@ describe("validateWorktreeSafe", () => {
     });
   });
 
+  test("does not report 'attached' for a branch checked out in the MAIN checkout, not a linked worktree", () => {
+    // The main checkout's own porcelain record (branch: "main" in the base
+    // fixture above) must never be mistaken for a linked worktree — git's
+    // own `branch -d`/`-D` already refuses a branch checked out in the main
+    // checkout on its own, and there's no worktree directory to strand in
+    // that case, so `validateWorktreeSafe` must stay silent here rather than
+    // reporting "attached" with a `worktree:remove <main checkout>` remedy
+    // git would reject (claude-pr-review Should-fix on PR #1094).
+    const mainOnFeatureBranch = parseWorktreeList(
+      porcelain.replace(
+        "branch refs/heads/main",
+        "branch refs/heads/feat/on-main",
+      ),
+    );
+    const location = {
+      kind: "worktree" as const,
+      mainCheckout: "/home/u/m3l-automation",
+      here: "/home/u/m3l-automation-other-task",
+      slug: "other-task",
+    };
+    expect(
+      validateWorktreeSafe({
+        branch: "feat/on-main",
+        location,
+        records: mainOnFeatureBranch,
+      }),
+    ).toEqual({ ok: true, refusal: null });
+  });
+
   test("refuses when cwd is the worktree named for the branch's own slug, even though the worktree record no longer names that branch (the orphan case, issue #1004)", () => {
     // /home/u/m3l-automation-other-task really is checked out on
     // feat/other-task in the fixture — this proves the STANDING-IN check

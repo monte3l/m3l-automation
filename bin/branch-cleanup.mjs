@@ -76,7 +76,7 @@ if (!validation.ok) {
 // (bare repo, git missing) rather than treat an unreadable location as safe
 // OR unsafe.
 try {
-  const location = resolveCheckoutLocation();
+  const location = resolveCheckoutLocation({ runGit: git });
   const records = parseWorktreeList(git(["worktree", "list", "--porcelain"]));
   const worktreeSafety = validateWorktreeSafe({ branch, location, records });
   if (!worktreeSafety.ok) {
