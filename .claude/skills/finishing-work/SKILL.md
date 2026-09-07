@@ -104,25 +104,42 @@ merged" does not mean every commit on the branch landed. Run `git log
 non-empty result is a commit about to be abandoned, not noise
 (`docs/logs/2026-09-05-document-merge-step.md`).
 
-Two cases, mutually exclusive:
+Two cases, mutually exclusive — decide with a command, not recollection:
 
-- **Linked worktree** (this session is running inside
-  `../m3l-automation-<slug>`, per ADR-0013/0014): `pnpm worktree:remove <slug>`
-  — it already removes the worktree, prunes admin entries, and deletes the
-  branch if `git branch -d` accepts it (kept-and-noted otherwise). Nothing
-  further needed here. **`ExitWorktree({action: "remove"})` first, if this
-  session entered the worktree via `EnterWorktree` earlier — but expect it
-  to refuse with "this session is not the owner" if a mid-session compaction
-  happened since entry** (ownership tracking doesn't survive one). That's
-  not an error to debug: call `ExitWorktree({action: "keep"})` instead (falls
-  back to the current directory), then run `git checkout main && git pull`
-  and `pnpm worktree:remove <slug>` from there as below
+```bash
+git rev-parse --show-toplevel        # this checkout's root
+git rev-parse --git-common-dir       # differs from --git-dir in a linked worktree
+git rev-parse --git-dir
+```
+
+If `--git-common-dir` and `--git-dir` resolve differently you're in a linked
+worktree; `basename $(git rev-parse --show-toplevel)` gives
+`m3l-automation-<slug>`. If they resolve identically you're in the shared
+checkout. **Run this, don't recall it** — a mid-session compaction, a
+concurrent session's close-out, or an `ExitWorktree` since the last check can
+all have moved you, same as `starting-work` Step 1's re-inspection rule.
+`pnpm branch:cleanup` now enforces the same discriminator itself and refuses
+with the right remedy if this step is skipped or gets it wrong (issue #1004).
+
+- **Linked worktree** (per ADR-0013/0014): `pnpm worktree:remove <slug>` — it
+  already removes the worktree, prunes admin entries, and deletes the branch
+  if `git branch -d` accepts it (kept-and-noted otherwise). Nothing further
+  needed here. **`ExitWorktree({action: "remove"})` first, if this session
+  entered the worktree via `EnterWorktree` earlier — but expect it to refuse
+  with "this session is not the owner" if a mid-session compaction happened
+  since entry** (ownership tracking doesn't survive one). That's not an error
+  to debug: call `ExitWorktree({action: "keep"})` instead (falls back to the
+  current directory), then run `git checkout main && git pull` and `pnpm
+worktree:remove <slug>` from there as below
   (`docs/logs/2026-09-05-statusline-weekly-usage.md`).
 - **Shared checkout**: `pnpm branch:cleanup <headRefName>` — the
   shared-checkout equivalent, added alongside this skill. It refuses to
   delete `main` or the currently-checked-out branch, and safely keeps (never
   force-deletes) a branch `git branch -d` won't accept, printing a manual
-  fallback.
+  fallback. It also refuses (exit 1) when deleting `headRefName` would strand
+  a linked worktree — either it's checked out in a _different_ worktree, or
+  this checkout itself is the worktree named for that branch's slug (issue
+  #1004) — naming `pnpm worktree:remove <slug>` as the remedy either way.
 
 If either reports the branch was **kept** (not merged into its base, or
 checked out elsewhere), stop and tell the user why — don't force-delete

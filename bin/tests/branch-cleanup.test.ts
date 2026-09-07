@@ -2,8 +2,10 @@ import { describe, expect, test } from "vitest";
 import {
   PROTECTED_BRANCHES,
   validateDeletable,
+  validateWorktreeSafe,
   deleteBranch,
 } from "../lib/branch-cleanup.mjs";
+import { parseWorktreeList } from "../lib/worktree-prune.mjs";
 
 describe("PROTECTED_BRANCHES", () => {
   test("contains main", () => {
@@ -55,6 +57,209 @@ describe("validateDeletable", () => {
       '"feat/current" is the currently checked-out branch — switch to ' +
         "main (or another branch) first",
     );
+  });
+});
+
+describe("validateWorktreeSafe", () => {
+  // A worktree layout with two linked worktrees, one attached to a branch,
+  // one detached — real `parseWorktreeList` output, not a hand-built array
+  // (.claude/rules/tests.md: exercise the real collaborator). Directory names
+  // follow ADR-0014's `m3l-automation-<slug>` convention except the last,
+  // deliberately non-conventional one.
+  const porcelain = [
+    "worktree /home/u/m3l-automation",
+    "HEAD aaaaaaa",
+    "branch refs/heads/main",
+    "",
+    "worktree /home/u/m3l-automation-other-task",
+    "HEAD bbbbbbb",
+    "branch refs/heads/feat/other-task",
+    "",
+    "worktree /home/u/scratch",
+    "HEAD ccccccc",
+    "detached",
+    "",
+  ].join("\n");
+  const records = parseWorktreeList(porcelain);
+
+  const mainLocation = {
+    kind: "main" as const,
+    mainCheckout: "/home/u/m3l-automation",
+    here: "/home/u/m3l-automation",
+    slug: null,
+  };
+
+  test("refuses when the branch is attached to a DIFFERENT linked worktree", () => {
+    expect(
+      validateWorktreeSafe({
+        branch: "feat/other-task",
+        location: mainLocation,
+        records,
+      }),
+    ).toEqual({
+      ok: false,
+      refusal: {
+        kind: "attached",
+        worktreePath: "/home/u/m3l-automation-other-task",
+        slug: "other-task",
+      },
+    });
+  });
+
+  test("reports a null slug when the attached worktree's directory name is non-conventional", () => {
+    // The scratch record is detached in the fixture above; attach a
+    // synthetic branch to it to exercise the null-slug reporting path in
+    // isolation from the detached-HEAD case covered separately below.
+    const scratchAttached = records.map((r) =>
+      r.path === "/home/u/scratch" ? { ...r, branch: "feat/x" } : r,
+    );
+    expect(
+      validateWorktreeSafe({
+        branch: "feat/x",
+        location: mainLocation,
+        records: scratchAttached,
+      }),
+    ).toEqual({
+      ok: false,
+      refusal: {
+        kind: "attached",
+        worktreePath: "/home/u/scratch",
+        slug: null,
+      },
+    });
+  });
+
+  test("does not report 'attached' for a branch checked out in the MAIN checkout, not a linked worktree", () => {
+    // The main checkout's own porcelain record (branch: "main" in the base
+    // fixture above) must never be mistaken for a linked worktree — git's
+    // own `branch -d`/`-D` already refuses a branch checked out in the main
+    // checkout on its own, and there's no worktree directory to strand in
+    // that case, so `validateWorktreeSafe` must stay silent here rather than
+    // reporting "attached" with a `worktree:remove <main checkout>` remedy
+    // git would reject (claude-pr-review Should-fix on PR #1094).
+    const mainOnFeatureBranch = parseWorktreeList(
+      porcelain.replace(
+        "branch refs/heads/main",
+        "branch refs/heads/feat/on-main",
+      ),
+    );
+    const location = {
+      kind: "worktree" as const,
+      mainCheckout: "/home/u/m3l-automation",
+      here: "/home/u/m3l-automation-other-task",
+      slug: "other-task",
+    };
+    expect(
+      validateWorktreeSafe({
+        branch: "feat/on-main",
+        location,
+        records: mainOnFeatureBranch,
+      }),
+    ).toEqual({ ok: true, refusal: null });
+  });
+
+  test("refuses when cwd is the worktree named for the branch's own slug, even though the worktree record no longer names that branch (the orphan case, issue #1004)", () => {
+    // /home/u/m3l-automation-other-task really is checked out on
+    // feat/other-task in the fixture — this proves the STANDING-IN check
+    // fires from the location's own slug, independent of worktreeForBranch,
+    // by asking about a branch the attached-worktree lookup cannot see at
+    // all (it names a different branch than the one this worktree is
+    // actually on).
+    const location = {
+      kind: "worktree" as const,
+      mainCheckout: "/home/u/m3l-automation",
+      here: "/home/u/m3l-automation-other-task",
+      slug: "other-task",
+    };
+    expect(
+      validateWorktreeSafe({
+        branch: "chore/other-task",
+        location,
+        records,
+      }),
+    ).toEqual({
+      ok: false,
+      refusal: {
+        kind: "standing-in",
+        worktreePath: "/home/u/m3l-automation-other-task",
+        slug: "other-task",
+      },
+    });
+  });
+
+  test("passes for an unattached branch when standing in an UNRELATED worktree — the check:staleness compatibility case", () => {
+    const location = {
+      kind: "worktree" as const,
+      mainCheckout: "/home/u/m3l-automation",
+      here: "/home/u/m3l-automation-other-task",
+      slug: "other-task",
+    };
+    expect(
+      validateWorktreeSafe({
+        branch: "feat/unrelated-stale-branch",
+        location,
+        records,
+      }),
+    ).toEqual({ ok: true, refusal: null });
+  });
+
+  test("passes for an unattached branch from the main checkout", () => {
+    expect(
+      validateWorktreeSafe({
+        branch: "feat/unrelated-stale-branch",
+        location: mainLocation,
+        records,
+      }),
+    ).toEqual({ ok: true, refusal: null });
+  });
+
+  test("a detached-HEAD worktree standing in a conventionally-named matching directory still refuses", () => {
+    // worktreeForBranch structurally cannot see this case — the scratch
+    // record is detached (branch: null), so it never matches "feat/scratch"
+    // by branch name. Only the standing-in check (keyed off the location's
+    // OWN slug, not the worktree record's branch field) catches it — which
+    // is exactly why validateWorktreeSafe checks both independently.
+    const location = {
+      kind: "worktree" as const,
+      mainCheckout: "/home/u/m3l-automation",
+      here: "/home/u/m3l-automation-scratch",
+      slug: "scratch",
+    };
+    expect(
+      validateWorktreeSafe({
+        branch: "feat/scratch",
+        location,
+        records,
+      }),
+    ).toEqual({
+      ok: false,
+      refusal: {
+        kind: "standing-in",
+        worktreePath: "/home/u/m3l-automation-scratch",
+        slug: "scratch",
+      },
+    });
+  });
+
+  test("a non-conventional worktree directory (slug: null) gets no orphan protection from the standing-in check", () => {
+    // Documented limit, not a bug: a hand-made `git worktree add ../scratch`
+    // has no slug to compare against a branch's slug, so this check cannot
+    // catch the orphan case for it. worktreeForBranch also can't help here
+    // (the fixture's scratch record is detached). This is the one gap the
+    // guard leaves open.
+    const location = {
+      kind: "worktree" as const,
+      mainCheckout: "/home/u/m3l-automation",
+      here: "/home/u/scratch",
+      slug: null,
+    };
+    expect(
+      validateWorktreeSafe({
+        branch: "feat/scratch",
+        location,
+        records,
+      }),
+    ).toEqual({ ok: true, refusal: null });
   });
 });
 

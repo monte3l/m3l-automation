@@ -9,8 +9,13 @@
  * documented default location, delete a branch that has already merged. This
  * fills that gap without duplicating either script's worktree-specific
  * bookkeeping (this module never touches `git worktree *`).
+ *
+ * {@link validateWorktreeSafe} adds the worktree-stranding guard issue #1004
+ * (ROADMAP H11) asked for — see its own doc comment for the two conditions it
+ * checks and why the check is narrow rather than a blanket cwd refusal.
  */
 import { execFileSync } from "node:child_process";
+import { branchSlug, worktreeForBranch } from "./checkout-location.mjs";
 
 /** Branches this tool refuses to delete under any circumstance. */
 export const PROTECTED_BRANCHES = new Set(["main"]);
@@ -33,10 +38,10 @@ function defaultRunGit(args, opts = {}) {
  * raw git error. Pure — no git calls; `currentBranch` is supplied by the
  * caller (typically `git rev-parse --abbrev-ref HEAD`).
  *
- * Deliberately does NOT check "is this branch checked out in another
- * worktree" here — `git branch -d`/`-D` already refuses that case with its
- * own clear error, which {@link deleteBranch} surfaces via the kept/message
- * result rather than duplicating the check.
+ * Does NOT check "is this branch checked out in another worktree" —
+ * {@link validateWorktreeSafe} owns that check, run separately by the caller
+ * so a worktree-detection failure (bare repo, git missing) can be handled
+ * without disturbing this simpler, always-available validation.
  *
  * @param {string} branch
  * @param {string} currentBranch
@@ -70,6 +75,88 @@ export function validateDeletable(branch, currentBranch) {
     };
   }
   return { ok: true, reason: null };
+}
+
+/**
+ * @typedef {{ kind: "attached", worktreePath: string, slug: string | null }} AttachedRefusal
+ * @typedef {{ kind: "standing-in", worktreePath: string, slug: string | null }} StandingInRefusal
+ * @typedef {{ ok: true, refusal: null } |
+ *           { ok: false, refusal: AttachedRefusal | StandingInRefusal }} WorktreeSafeResult
+ */
+
+/**
+ * Whether deleting `branch` from `location` would strand a linked worktree
+ * (issue #1004, ROADMAP H11). Pure — the caller supplies the parsed worktree
+ * records and its own already-resolved location; this makes no git calls.
+ *
+ * Two narrow conditions, not a blanket "cwd is a linked worktree" refusal —
+ * that would break `check:staleness`'s `pnpm branch:cleanup <branch>` advice
+ * (`bin/lib/staleness-scan.mjs`), which only ever recommends the command for
+ * a branch *already confirmed* attached to no worktree, and routinely runs
+ * from inside a worktree. Deleting an unattached branch from a linked
+ * worktree is safe — the ref lives in the shared object store regardless of
+ * which worktree stands in for it:
+ *
+ * - `"attached"` — `branch` is checked out in a *different* linked worktree.
+ *   `git branch -d`/`-D` cannot delete it from anywhere; the only fix is
+ *   `pnpm worktree:remove <slug>` (or a manual `git worktree remove` when
+ *   `slug` is `null` — a worktree directory that doesn't follow the
+ *   `m3l-automation-<slug>` convention).
+ * - `"standing-in"` — the caller's own cwd is the worktree named for
+ *   `branch`'s slug (`m3l-automation-<slug>`), even if that worktree has
+ *   since been switched off the branch. `worktreeForBranch` cannot see this
+ *   case (the worktree's `branch` field no longer names the target), so it
+ *   is checked independently via the location's own slug.
+ *
+ * @param {object} opts
+ * @param {string} opts.branch
+ * @param {import("./checkout-location.mjs").CheckoutLocation} opts.location
+ * @param {import("./worktree-prune.mjs").WorktreeRecord[]} opts.records
+ * @returns {WorktreeSafeResult}
+ * @example
+ * ```js
+ * import { validateWorktreeSafe } from "@m3l-automation/workspace/bin/lib/branch-cleanup.mjs";
+ *
+ * validateWorktreeSafe({
+ *   branch: "feat/x",
+ *   location: { kind: "main", mainCheckout: "/repo", here: "/repo", slug: null },
+ *   records: [{ path: "/repo-x", branch: "feat/x", head: null, detached: false, flags: [] }],
+ * });
+ * // { ok: false, refusal: { kind: "attached", worktreePath: "/repo-x", slug: "x" } }
+ * ```
+ */
+export function validateWorktreeSafe({ branch, location, records }) {
+  // Exclude the main checkout's own porcelain record before searching —
+  // `parseWorktreeList` always includes it (worktree-prune.mjs's first
+  // record), and without this filter a branch checked out in the MAIN
+  // checkout would be misreported as "attached" to "a linked worktree" with
+  // a `git worktree remove <main checkout>` remedy git will reject. Git's
+  // own `branch -d`/`-D` already refuses a branch checked out in the main
+  // checkout on its own; deleteBranch() surfaces that refusal correctly, and
+  // there's no worktree directory to strand in that case anyway.
+  const linkedRecords = records.filter((r) => r.path !== location.mainCheckout);
+  const attached = worktreeForBranch(branch, linkedRecords);
+  if (attached !== null && attached.path !== location.here) {
+    return {
+      ok: false,
+      refusal: {
+        kind: "attached",
+        worktreePath: attached.path,
+        slug: attached.slug,
+      },
+    };
+  }
+  if (location.kind === "worktree" && location.slug === branchSlug(branch)) {
+    return {
+      ok: false,
+      refusal: {
+        kind: "standing-in",
+        worktreePath: location.here,
+        slug: location.slug,
+      },
+    };
+  }
+  return { ok: true, refusal: null };
 }
 
 /**

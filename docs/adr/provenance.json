@@ -23,7 +23,7 @@
       },
       {
         "path": "docs/contributing/contributing.md",
-        "blob": "010ae831ae0dbc23edb65ac3240767ffc05d906b"
+        "blob": "856abe5ea611208e54305b38ce4c3722c49c8545"
       },
       {
         "path": "lefthook.yml",
@@ -89,7 +89,7 @@
       },
       {
         "path": "docs/contributing/contributing.md",
-        "blob": "010ae831ae0dbc23edb65ac3240767ffc05d906b"
+        "blob": "856abe5ea611208e54305b38ce4c3722c49c8545"
       },
       {
         "path": "lefthook.yml",
@@ -295,7 +295,7 @@
     "sourceFiles": [
       {
         "path": "bin/worktree-new.mjs",
-        "blob": "01d7f12062f0a38a96cd2922185556b2d0fe9633"
+        "blob": "156830fafe45aeff0a4c8ba707fcc4edf2b2eeb1"
       },
       {
         "path": "CLAUDE.md",
@@ -310,7 +310,7 @@
         "blob": "c90be7566c7e98d8c904e12c39612754987a292e"
       }
     ],
-    "verifiedAt": "2026-09-06"
+    "verifiedAt": "2026-09-07"
   },
   "0014": {
     "sourceFiles": [
@@ -332,7 +332,7 @@
       },
       {
         "path": "bin/worktree-new.mjs",
-        "blob": "01d7f12062f0a38a96cd2922185556b2d0fe9633"
+        "blob": "156830fafe45aeff0a4c8ba707fcc4edf2b2eeb1"
       },
       {
         "path": "bin/worktree-prune.mjs",
@@ -340,7 +340,7 @@
       },
       {
         "path": "bin/worktree-remove.mjs",
-        "blob": "d8eafd8da977f4c6061a3d609146c60e182c7ead"
+        "blob": "32712c26643c51c19a1fae667093d5a9c581a9f7"
       },
       {
         "path": "bin/worktree-setup.mjs",
@@ -804,7 +804,7 @@
       },
       {
         "path": ".github/workflows/claude-pr-review.yml",
-        "blob": "4ca018d8fb4373eb9ff245132cdd60f0abb330c3"
+        "blob": "72d7a0bf79b3c639ce626eeab54ecd6a393a4b34"
       },
       {
         "path": ".mcp.json",
@@ -922,7 +922,7 @@
       },
       {
         "path": "bin/lib/command-catalog.mjs",
-        "blob": "5e873df3dd8c599d0dabd84b253ce6bac68260a9"
+        "blob": "b261c24f463b40f1613e054136a1b4cfe9b2ba3f"
       },
       {
         "path": "bin/lib/hub-sync.mjs",
@@ -1617,7 +1617,7 @@
       },
       {
         "path": ".claude/skills/finishing-work/SKILL.md",
-        "blob": "6b10e55a2437c5154d6a47264bfb0bb0e77d374f"
+        "blob": "f9037a6aa0a8ef4a8ca7fc2ed322d57e1ec3a371"
       },
       {
         "path": ".github/dependabot.yml",
@@ -1625,7 +1625,7 @@
       },
       {
         "path": ".github/workflows/claude-pr-review.yml",
-        "blob": "4ca018d8fb4373eb9ff245132cdd60f0abb330c3"
+        "blob": "72d7a0bf79b3c639ce626eeab54ecd6a393a4b34"
       },
       {
         "path": "bin/check-file-budget.mjs",
@@ -2064,11 +2064,11 @@
       },
       {
         "path": "bin/worktree-new.mjs",
-        "blob": "01d7f12062f0a38a96cd2922185556b2d0fe9633"
+        "blob": "156830fafe45aeff0a4c8ba707fcc4edf2b2eeb1"
       },
       {
         "path": "docs/contributing/contributing.md",
-        "blob": "010ae831ae0dbc23edb65ac3240767ffc05d906b"
+        "blob": "856abe5ea611208e54305b38ce4c3722c49c8545"
       },
       {
         "path": "docs/research/session-naming.md",
@@ -2093,11 +2093,11 @@
       },
       {
         "path": "bin/worktree-new.mjs",
-        "blob": "01d7f12062f0a38a96cd2922185556b2d0fe9633"
+        "blob": "156830fafe45aeff0a4c8ba707fcc4edf2b2eeb1"
       },
       {
         "path": "docs/contributing/contributing.md",
-        "blob": "010ae831ae0dbc23edb65ac3240767ffc05d906b"
+        "blob": "856abe5ea611208e54305b38ce4c3722c49c8545"
       },
       {
         "path": "docs/research/harness-refresh.md",
