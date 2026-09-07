@@ -58,9 +58,6 @@ describe("TOOLS registration contract", () => {
     "$name: valid name, description, inputSchema, handler",
     (tool) => {
       expect(tool.name).toMatch(/^[a-z_]+$/);
-      expect(tool.config.description.split(". ").length).toBeGreaterThanOrEqual(
-        3,
-      );
       expect(typeof tool.config.inputSchema).toBe("object");
       expect(tool.config.inputSchema).not.toBeNull();
       expect(typeof tool.handler).toBe("function");
@@ -100,6 +97,118 @@ describe("TOOLS registration contract", () => {
       expect(tool?.needsRoot).toBe(true);
     },
   );
+});
+
+// ---------------------------------------------------------------------------
+// Tool description content — replaces a proxy assertion
+// (`description.split(". ").length >= 3`, a sentence count that proves
+// nothing about usefulness) with a check on the actually-required content
+// per this PR's plan: every tool description must state (a) what the tool
+// does, (b) when/how to use it, and (c) what it returns or a behavioral
+// caveat about its output.
+// ---------------------------------------------------------------------------
+
+/**
+ * One regex per required facet for a tool's `config.description`. `returns`
+ * is typed optional per-entry to let the second `test.each` below filter to
+ * only the tools that declare it; every current tool declares one.
+ */
+type DescriptionFacets = {
+  /** (a) what the tool does. */
+  action: RegExp;
+  /** (b) when/how to use it. */
+  usage: RegExp;
+  /** (c) what it returns or a behavioral caveat about its output. */
+  returns?: RegExp;
+};
+
+const DESCRIPTION_FACETS: Record<string, DescriptionFacets> = {
+  adr_query: {
+    action: /Looks up architecture decision record\(s\)/,
+    usage: /Use it to answer/,
+    returns: /not a cached snapshot/,
+  },
+  logs_query: {
+    action: /Looks up work log\(s\) under docs\/logs\//,
+    usage: /read the specific file yourself once you've found the one you want/,
+    returns: /never the log body/,
+  },
+  commands_query: {
+    action: /Looks up `pnpm` script\(s\) by exact name/,
+    usage: /use it to answer "which pnpm script does X"/,
+    returns: /not a live filesystem scan/,
+  },
+  hooks_query: {
+    action: /Looks up wired-hook row\(s\)/,
+    usage: /use it to answer "what does hook X do"/,
+    returns: /not a cached snapshot/,
+  },
+  catalog_query: {
+    action: /Looks up submodule\/symbol metadata/,
+    usage: /Pass exactly one of `symbol`/,
+    returns: /not a live filesystem scan/,
+  },
+  commit_lint: {
+    action: /Validates a full commit message/,
+    usage: /Use it before `git commit`/,
+    returns: /normal \(not an error\) response/,
+  },
+};
+
+describe("tool description content: what it does, how/when to use it, what it returns", () => {
+  test.each(TOOLS)(
+    "$name: description states what it does and when/how to use it",
+    (tool) => {
+      const facets = DESCRIPTION_FACETS[tool.name];
+      if (facets === undefined) {
+        throw new Error(
+          `no DESCRIPTION_FACETS fixture defined for tool "${tool.name}" — ` +
+            "add one covering its (a) action and (b) usage facets.",
+        );
+      }
+      expect(tool.config.description).toMatch(facets.action);
+      expect(tool.config.description).toMatch(facets.usage);
+    },
+  );
+
+  test.each(
+    Object.entries(DESCRIPTION_FACETS).filter(
+      (entry): entry is [string, Required<DescriptionFacets>] =>
+        entry[1].returns !== undefined,
+    ),
+  )(
+    "%s: description states what it returns or a behavioral caveat about its output",
+    (name, facets) => {
+      const tool = TOOLS.find((t) => t.name === name);
+      expect(tool).toBeDefined();
+      expect(tool?.config.description).toMatch(facets.returns);
+    },
+  );
+});
+
+describe("tool description facet assertions are not proxies (mutation check)", () => {
+  // A description with an action-verb phrase and nothing else — no usage
+  // guidance, no return/caveat statement — the exact shape tests.md asks a
+  // mutation probe to construct: "a bare one-line action verb phrase with no
+  // usage guidance and no return/caveat info".
+  const bareActionOnlyFixture = "Looks up architecture decision record(s).";
+
+  test("a bare action-only fixture fails the usage and returns facet regexes (proves the assertions aren't proxies)", () => {
+    const facets = DESCRIPTION_FACETS["adr_query"];
+    expect(facets).toBeDefined();
+    expect(bareActionOnlyFixture).toMatch(facets?.action as RegExp);
+    expect(bareActionOnlyFixture).not.toMatch(facets?.usage as RegExp);
+    expect(bareActionOnlyFixture).not.toMatch(facets?.returns as RegExp);
+  });
+
+  test("the real adr_query description matches all three facets (confirms the mutation probe above discriminates, not just fires)", () => {
+    const tool = TOOLS.find((t) => t.name === "adr_query");
+    const facets = DESCRIPTION_FACETS["adr_query"];
+    expect(facets).toBeDefined();
+    expect(tool?.config.description).toMatch(facets?.action as RegExp);
+    expect(tool?.config.description).toMatch(facets?.usage as RegExp);
+    expect(tool?.config.description).toMatch(facets?.returns as RegExp);
+  });
 });
 
 describe("resolveRepoRoot (fake mcpServer, no real MCP transport)", () => {

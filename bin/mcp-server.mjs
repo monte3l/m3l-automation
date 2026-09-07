@@ -44,8 +44,10 @@ import { TOOLS, resolveRepoRoot } from "./lib/mcp-tools.mjs";
 // ADR-0096's own root-cause finding was that nothing anywhere told an agent
 // or a skill to reach for these tools over reading the underlying doc/data
 // files directly; this string is the server's own answer to that, read by
-// every client regardless of what any skill does or doesn't say.
-const INSTRUCTIONS =
+// every client regardless of what any skill does or doesn't say. Exported
+// (not just passed inline) so bin/check-mcp.mjs can assert it is non-empty
+// without spawning the server.
+export const INSTRUCTIONS =
   "Read-only lookups over this repo's own generated/curated metadata. Prefer " +
   "these over reading the underlying file in full: adr_query instead of " +
   "docs/adr/**, logs_query instead of docs/logs/**, commands_query instead of " +

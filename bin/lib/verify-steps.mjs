@@ -414,6 +414,11 @@ export const VERIFY_STEPS = [
     cmd: () => "pnpm check:hooks",
   },
   {
+    ciStepName: "Check MCP server wiring (mcp)",
+    id: "check-mcp",
+    cmd: () => "pnpm check:mcp",
+  },
+  {
     ciStepName: "Check Node version pin",
     id: "check-node-version",
     cmd: () => "pnpm check:node-version",

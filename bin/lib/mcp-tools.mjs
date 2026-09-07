@@ -737,7 +737,10 @@ export const TOOLS = [
         'exact event name (e.g. "SessionStart"), or a case-insensitive substring ' +
         "search over each row's Purpose text — use it to answer \"what does hook X " +
         'do" or "what fires on event Y" instead of reading the reference page in ' +
-        "full. Pass at least one of `name`, `event`, or `query`.",
+        "full. Pass at least one of `name`, `event`, or `query`. Returns each " +
+        "match's event, hook filename, purpose, and mode fields, capped like every " +
+        "other list-returning tool here — it reads the reference page fresh on " +
+        "every call, not a cached snapshot.",
       inputSchema: {
         name: z
           .string()
