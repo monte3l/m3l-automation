@@ -45,6 +45,7 @@ import {
   collectSkillDescriptions,
   parseClaudeMdRuleGlobs,
   diffRuleGlobParity,
+  deriveRuleRegistrationGaps,
   stripFrontmatter,
   collectSkillBodyBytes,
   collectAgentBodyBytes,
@@ -883,7 +884,7 @@ describe("diffRuleGlobParity", () => {
     ]);
   });
 
-  test("a rule with no CLAUDE.md bullet at all is skipped, not flagged", () => {
+  test("a rule with no CLAUDE.md bullet at all is skipped by glob-parity comparison (see deriveRuleRegistrationGaps for registration completeness)", () => {
     const claudeMdGlobs = new Map<string, string[]>();
     const rules = [
       {
@@ -894,6 +895,161 @@ describe("diffRuleGlobParity", () => {
       },
     ];
     expect(diffRuleGlobParity(claudeMdGlobs, rules)).toEqual([]);
+  });
+});
+
+describe("deriveRuleRegistrationGaps", () => {
+  test("no gaps when every rule has a matching CLAUDE.md key and no globs are empty", () => {
+    const claudeMdGlobs = new Map([
+      ["refactoring.md", ["scripts/**"]],
+      ["tests.md", ["**/*.test.ts", "**/tests/**"]],
+    ]);
+    const rules = [
+      {
+        name: "refactoring.md",
+        relPath: ".claude/rules/refactoring.md",
+        bytes: 100,
+        globs: ["scripts/**"],
+      },
+      {
+        name: "tests.md",
+        relPath: ".claude/rules/tests.md",
+        bytes: 100,
+        globs: ["**/tests/**", "**/*.test.ts"],
+      },
+    ];
+    expect(deriveRuleRegistrationGaps(claudeMdGlobs, rules)).toEqual({
+      orphans: [],
+      phantoms: [],
+      pathless: [],
+    });
+  });
+
+  test("a rule file with no matching CLAUDE.md key is an orphan", () => {
+    const claudeMdGlobs = new Map<string, string[]>();
+    const rules = [
+      {
+        name: "undocumented.md",
+        relPath: ".claude/rules/undocumented.md",
+        bytes: 100,
+        globs: ["**/*.ts"],
+      },
+    ];
+    expect(deriveRuleRegistrationGaps(claudeMdGlobs, rules)).toEqual({
+      orphans: ["undocumented.md"],
+      phantoms: [],
+      pathless: [],
+    });
+  });
+
+  test("a CLAUDE.md key naming a rule that does not exist on disk is a phantom", () => {
+    const claudeMdGlobs = new Map([["ghost.md", ["**/*.ts"]]]);
+    const rules: {
+      name: string;
+      relPath: string;
+      bytes: number;
+      globs: string[];
+    }[] = [];
+    expect(deriveRuleRegistrationGaps(claudeMdGlobs, rules)).toEqual({
+      orphans: [],
+      phantoms: ["ghost.md"],
+      pathless: [],
+    });
+  });
+
+  test("a rule with empty globs is pathless even when it has a CLAUDE.md bullet (orthogonal to orphan status)", () => {
+    const claudeMdGlobs = new Map([["scripts.md", []]]);
+    const rules = [
+      {
+        name: "scripts.md",
+        relPath: ".claude/rules/scripts.md",
+        bytes: 100,
+        globs: [] as string[],
+      },
+    ];
+    expect(deriveRuleRegistrationGaps(claudeMdGlobs, rules)).toEqual({
+      orphans: [],
+      phantoms: [],
+      pathless: ["scripts.md"],
+    });
+  });
+
+  test("orphans, phantoms, and pathless can all occur together in one fixture", () => {
+    const claudeMdGlobs = new Map([
+      ["ghost.md", ["**/*.ts"]],
+      ["scripts.md", []],
+    ]);
+    const rules = [
+      {
+        name: "undocumented.md",
+        relPath: ".claude/rules/undocumented.md",
+        bytes: 100,
+        globs: ["**/*.ts"],
+      },
+      {
+        name: "scripts.md",
+        relPath: ".claude/rules/scripts.md",
+        bytes: 100,
+        globs: [] as string[],
+      },
+    ];
+    expect(deriveRuleRegistrationGaps(claudeMdGlobs, rules)).toEqual({
+      orphans: ["undocumented.md"],
+      phantoms: ["ghost.md"],
+      pathless: ["scripts.md"],
+    });
+  });
+
+  test("orphans, phantoms, and pathless are each returned alphabetically sorted regardless of input order", () => {
+    const claudeMdGlobs = new Map([
+      ["zeta-ghost.md", ["**/*.ts"]],
+      ["alpha-ghost.md", ["**/*.ts"]],
+      ["zeta-pathless.md", []],
+      ["alpha-pathless.md", []],
+    ]);
+    const rules = [
+      {
+        name: "zeta-orphan.md",
+        relPath: ".claude/rules/zeta-orphan.md",
+        bytes: 100,
+        globs: ["**/*.ts"],
+      },
+      {
+        name: "alpha-orphan.md",
+        relPath: ".claude/rules/alpha-orphan.md",
+        bytes: 100,
+        globs: ["**/*.ts"],
+      },
+      {
+        name: "zeta-pathless.md",
+        relPath: ".claude/rules/zeta-pathless.md",
+        bytes: 100,
+        globs: [] as string[],
+      },
+      {
+        name: "alpha-pathless.md",
+        relPath: ".claude/rules/alpha-pathless.md",
+        bytes: 100,
+        globs: [] as string[],
+      },
+    ];
+    expect(deriveRuleRegistrationGaps(claudeMdGlobs, rules)).toEqual({
+      orphans: ["alpha-orphan.md", "zeta-orphan.md"],
+      phantoms: ["alpha-ghost.md", "zeta-ghost.md"],
+      pathless: ["alpha-pathless.md", "zeta-pathless.md"],
+    });
+  });
+
+  test("the real repo's .claude/rules tree and CLAUDE.md have no registration gaps today", () => {
+    const rules = collectRuleFiles(join(root, ".claude", "rules"));
+    const claudeMdGlobs = parseClaudeMdRuleGlobs(
+      fs.readFileSync(join(root, "CLAUDE.md"), "utf8"),
+    );
+    expect(deriveRuleRegistrationGaps(claudeMdGlobs, rules)).toEqual({
+      orphans: [],
+      phantoms: [],
+      pathless: [],
+    });
   });
 });
 
