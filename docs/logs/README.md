@@ -281,3 +281,4 @@ target was renamed is repaired via `RENAMED_TARGETS` in
 | 2026-09-07 | Harness tool-usage telemetry — per-tool run metrics (PR #1079)                        | [tool-usage-telemetry](./2026-09-07-tool-usage-telemetry.md)                               |
 | 2026-09-07 | m3l MCP server rebuild — ADR-0096, 4-PR wave (PR #1080/#1085/#1102/#1109)             | [m3l-mcp-server-rebuild](./2026-09-07-m3l-mcp-server-rebuild.md)                           |
 | 2026-09-07 | H10 — pre-push/post-push review-loop sequencing note (issue #1003, PR #1103)          | [review-loop-sequencing](./2026-09-07-review-loop-sequencing.md)                           |
+| 2026-09-07 | H7 — `check:promotion-stamps` validity gate (issue #1000, PR #1112/#1117)             | [check-promotion-stamps](./2026-09-07-check-promotion-stamps.md)                           |
