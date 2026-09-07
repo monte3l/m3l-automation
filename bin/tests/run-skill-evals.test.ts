@@ -17,6 +17,7 @@ import {
   formatSuiteSummary,
   gateFailureMessage,
   MIN_PASS_RATE,
+  resolveMinPassRate,
   extractInvokedSkills,
   extractResultEnvelope,
   parseStreamEvents,
@@ -1012,13 +1013,13 @@ describe("evaluateSuiteOutcome", () => {
       reason: "empty-suite",
     },
     {
-      label: "an empty suite fails even with the floor disabled",
+      label: "an empty suite fails even with the rate floor at 0",
       counts: { totalCases: 0, passed: 0, minPassRate: 0 },
       met: false,
       reason: "empty-suite",
     },
     {
-      label: "a filtered run with the floor disabled passes even at 0/5",
+      label: "an explicit floor of 0 never fails on rate alone (0/5)",
       counts: { totalCases: 5, passed: 0, minPassRate: 0 },
       met: true,
       reason: "met",
@@ -1090,7 +1091,7 @@ describe("evaluateSuiteOutcome", () => {
     expect(outcome.reason).toBe("errored");
   });
 
-  test("refuses an error-class failure even on a filtered, floor-disabled run", () => {
+  test("refuses an error-class failure even with the rate floor at 0", () => {
     const outcome = evaluateSuiteOutcome({
       totalCases: 5,
       passed: 4,
@@ -1168,19 +1169,23 @@ describe("formatSuiteSummary", () => {
   test("states the pass rate and that the floor was met", () => {
     const lines = summary({ totalCases: 92, passed: 62 });
     expect(lines).toContain("Pass rate:    67.4% (62/92)");
-    expect(lines).toContain("Floor:        60.0% (MIN_PASS_RATE) — met");
+    expect(lines).toContain("Floor:        60.0% — met");
   });
 
   test("says NOT met when the run is below the floor", () => {
     const lines = summary({ totalCases: 92, passed: 55 });
     expect(lines).toContain("Pass rate:    59.8% (55/92)");
-    expect(lines).toContain("Floor:        60.0% (MIN_PASS_RATE) — NOT met");
+    expect(lines).toContain("Floor:        60.0% — NOT met");
   });
 
-  test("reports no floor on a single-skill run", () => {
-    const lines = summary({ totalCases: 5, passed: 3, minPassRate: 0 });
-    expect(lines).toContain("Floor:        none (single-skill run)");
-    expect(lines).not.toContain("Floor:        0.0% (MIN_PASS_RATE) — met");
+  test("reads an all-must-pass threshold as such, not as 100.0%", () => {
+    // The threshold a filtered probe run gets from resolveMinPassRate.
+    expect(summary({ totalCases: 5, passed: 3, minPassRate: 1 })).toContain(
+      "Floor:        every case must pass — NOT met",
+    );
+    expect(summary({ totalCases: 5, passed: 5, minPassRate: 1 })).toContain(
+      "Floor:        every case must pass — met",
+    );
   });
 
   test("renders n/a rather than 0.0% when no case ran", () => {
@@ -1233,9 +1238,61 @@ describe("gateFailureMessage", () => {
     );
   });
 
+  test("names the failed count, not a floor, when every case must pass", () => {
+    // What a single-skill probe run prints; "below the 100.0% MIN_PASS_RATE
+    // floor" would name a threshold the constant does not hold.
+    expect(
+      gateFailureMessage(
+        evaluateSuiteOutcome({ totalCases: 5, passed: 2, minPassRate: 1 }),
+      ),
+    ).toBe("3 of 5 case(s) failed; every case must pass.");
+  });
+
   test("returns the empty string for a met outcome", () => {
     expect(
       gateFailureMessage(evaluateSuiteOutcome({ totalCases: 92, passed: 62 })),
     ).toBe("");
+  });
+});
+
+describe("resolveMinPassRate", () => {
+  test("judges the full suite against MIN_PASS_RATE", () => {
+    expect(resolveMinPassRate({})).toBe(MIN_PASS_RATE);
+    expect(resolveMinPassRate({ filterSkill: undefined })).toBe(MIN_PASS_RATE);
+  });
+
+  test("requires every case to pass on a filtered probe run", () => {
+    // Not 0.60: 5 cases cannot support a rate floor, so a single-skill run
+    // keeps the script's original exit-1-on-any-failure behaviour.
+    expect(resolveMinPassRate({ filterSkill: "writing-commits" })).toBe(1);
+  });
+
+  test("does not let the env override loosen a filtered probe run", () => {
+    expect(
+      resolveMinPassRate({ filterSkill: "writing-commits", envValue: "0.6" }),
+    ).toBe(1);
+    expect(
+      resolveMinPassRate({ filterSkill: "writing-commits", envValue: "0" }),
+    ).toBe(1);
+  });
+
+  test("honours the env override on a full-suite run", () => {
+    expect(resolveMinPassRate({ envValue: "0.8" })).toBe(0.8);
+    expect(resolveMinPassRate({ envValue: "1" })).toBe(1);
+    // "0" is a non-empty string, so it is honoured as an explicit 0 rather
+    // than falling through to the default — floor off, by request.
+    expect(resolveMinPassRate({ envValue: "0" })).toBe(0);
+  });
+
+  test("passes a non-numeric override through as NaN for the outcome to refuse", () => {
+    const resolved = resolveMinPassRate({ envValue: "abc" });
+    expect(Number.isNaN(resolved)).toBe(true);
+    expect(
+      evaluateSuiteOutcome({
+        totalCases: 92,
+        passed: 92,
+        minPassRate: resolved,
+      }).reason,
+    ).toBe("invalid-threshold");
   });
 });

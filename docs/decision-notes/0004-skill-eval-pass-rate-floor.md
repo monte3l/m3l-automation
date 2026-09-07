@@ -44,11 +44,13 @@ is that a legitimately heavy case exceeding `DEFAULT_MAX_BUDGET_USD` surfaces
 as error-class and would redden the job; measured per-case spend is ~$0.089
 against a $0.50 ceiling, so there is ~5.6x headroom, and if that ever fires
 routinely the answer is a calibrated `MAX_ERRORED_CASES`, not softening the
-refusal.) And a single-skill run applies no floor at all unless
-`M3L_EVAL_MIN_PASS_RATE` is set explicitly, because at 3–5 cases the rate
-quantum is 20–33 points: a 60% floor would fail `pnpm eval:skills
-writing-commits` for behaving exactly as the full suite does, and a gate that
-fails on correct behavior gets routed around. The workflow is **not** promoted
+refusal.) And the floor governs the full suite only: a single-skill run
+requires every case to pass, the script's original behaviour, and the env
+override cannot loosen that. A rate floor needs N — at the 3–5 cases
+`check:skill-evals` guarantees per skill the quantum is 20–33 points, so 0.60
+would fail `pnpm eval:skills writing-commits` for behaving exactly as the full
+suite it belongs to does, and a gate that fails on correct behavior gets
+routed around. The workflow is **not** promoted
 to a fifth required status check, and is not going to be. It is the only
 path-filtered workflow in the repo, and GitHub reports a required context that
 never fires as _pending_ rather than _skipped_, so promoting it would leave

@@ -89,11 +89,12 @@
 // docs/contributing/model-selection.md's machine-checked MODEL-MATRIX (see
 // that doc's note on this script).
 //
-// Exit code is RATE-gated, not all-or-nothing: a full run fails when the
-// suite-wide pass rate falls below MIN_PASS_RATE (a collapse detector — see
-// that constant), when any case produced no verdict at all, or when no case
-// ran. A single-skill run reports its rate but applies no floor, since 3-5
-// cases cannot support one. Override with M3L_EVAL_MIN_PASS_RATE (a fraction).
+// A FULL run's exit code is RATE-gated rather than all-or-nothing: it fails
+// when the suite-wide pass rate falls below MIN_PASS_RATE (a collapse
+// detector — see that constant), when any case produced no verdict at all, or
+// when no case ran. A SINGLE-SKILL run is a probe, not the gate, and keeps the
+// original behaviour: every case must pass. Override the suite-wide floor with
+// M3L_EVAL_MIN_PASS_RATE (a fraction); it cannot loosen a single-skill run.
 //
 // Usage:
 //   node bin/run-skill-evals.mjs                # every skill with evals.json
@@ -170,10 +171,10 @@ export const DEFAULT_MAX_BUDGET_USD = 0.5;
  * which is more than the headroom above. Adding a skill and re-baselining
  * this constant belong in the same PR.
  *
- * Override with `M3L_EVAL_MIN_PASS_RATE` (a fraction, not a percentage). A
- * single-skill run applies no floor unless that variable is set explicitly:
- * at N=3-5 the rate quantum is 20-33 points, so the full suite's own ~69%
- * baseline is indistinguishable from noise. See the main block.
+ * Override with `M3L_EVAL_MIN_PASS_RATE` (a fraction, not a percentage). This
+ * floor governs the FULL suite only — a single-skill run requires every case
+ * to pass instead, and the override cannot loosen that. See
+ * {@link resolveMinPassRate}.
  */
 export const MIN_PASS_RATE = 0.6;
 
@@ -558,6 +559,40 @@ export function evaluateSkillFired(skillName, invokedSkills, evalCase) {
 }
 
 /**
+ * The pass-rate threshold a given run is judged against.
+ *
+ * Two modes, one rule each:
+ *
+ * - The FULL suite is the gate, judged against {@link MIN_PASS_RATE} (or an
+ *   explicit `M3L_EVAL_MIN_PASS_RATE`).
+ * - A FILTERED run is a developer probe, not the gate, and requires EVERY
+ *   case to pass — the script's original behaviour, unchanged. A rate floor
+ *   needs N: at the 3-5 cases `check:skill-evals` guarantees per skill the
+ *   quantum is 20-33 points, so 0.60 would fail `pnpm eval:skills
+ *   writing-commits` for behaving exactly as the full suite it belongs to
+ *   does, and a gate that fails on correct behaviour gets routed around.
+ *   The env override deliberately does NOT loosen this: it governs the
+ *   suite-wide floor only, so a probe can never be talked into reporting
+ *   green on a case it actually failed.
+ *
+ * Extracted rather than inlined at the call site so the mode rule is
+ * assertable; it used to be unreachable from a test.
+ *
+ * @param {{ filterSkill?: string | undefined, envValue?: string | undefined }}
+ *   options `filterSkill` is the positional skill-name argument and
+ *   `envValue` the raw `M3L_EVAL_MIN_PASS_RATE` string. Both are explicitly
+ *   `| undefined` rather than merely optional: under
+ *   `exactOptionalPropertyTypes` the main block's `argv[0]` /
+ *   `process.env.X` reads pass the key with an `undefined` value, which a
+ *   bare `?:` rejects.
+ * @returns {number} the threshold to hand {@link evaluateSuiteOutcome}
+ */
+export function resolveMinPassRate({ filterSkill, envValue }) {
+  if (filterSkill !== undefined) return 1;
+  return envValue ? Number(envValue) : MIN_PASS_RATE;
+}
+
+/**
  * Whether a finished suite run clears the {@link MIN_PASS_RATE} floor, and
  * why — the whole exit-code decision as a returned value.
  *
@@ -594,8 +629,10 @@ export function evaluateSkillFired(skillName, invokedSkills, evalCase) {
  *
  * @param {{ totalCases: number, passed: number, errored?: number,
  *   minPassRate?: number }} counts `minPassRate` defaults to
- *   {@link MIN_PASS_RATE}; `0` disables the floor (the single-skill path).
- *   `errored` is the subset of non-passing cases that produced no verdict.
+ *   {@link MIN_PASS_RATE}; `1` requires every case (what a single-skill probe
+ *   run gets from {@link resolveMinPassRate}) and `0` never fails on rate
+ *   alone. `errored` is the subset of non-passing cases that produced no
+ *   verdict.
  * @returns {{ totalCases: number, passed: number, failed: number,
  *   errored: number, passRate: number, minPassRate: number, met: boolean,
  *   reason: "met" | "below-floor" | "errored" | "empty-suite" | "invalid-threshold" }}
@@ -653,9 +690,9 @@ export function formatSuiteSummary({ skillsRun, costUsd, outcome }) {
     totalCases === 0
       ? "Pass rate:    n/a (0 case(s) run)"
       : `Pass rate:    ${(passRate * 100).toFixed(1)}% (${passed}/${totalCases})`,
-    minPassRate === 0
-      ? "Floor:        none (single-skill run)"
-      : `Floor:        ${(minPassRate * 100).toFixed(1)}% (MIN_PASS_RATE) — ${met ? "met" : "NOT met"}`,
+    minPassRate >= 1
+      ? `Floor:        every case must pass — ${met ? "met" : "NOT met"}`
+      : `Floor:        ${(minPassRate * 100).toFixed(1)}% — ${met ? "met" : "NOT met"}`,
     `Cost (USD):   ~$${costUsd.toFixed(4)}`,
   ];
 }
@@ -688,10 +725,13 @@ export function gateFailureMessage(outcome) {
         `(harness fault, not a grade) — the pass-rate floor does not forgive these.`
       );
     case "below-floor":
-      return (
-        `pass rate ${pct(passRate)} (${passed}/${totalCases}) is below the ` +
-        `${pct(minPassRate)} MIN_PASS_RATE floor.`
-      );
+      // An all-must-pass threshold is not a "floor" a reader can act on, and
+      // naming MIN_PASS_RATE for it would be a lie — 1 is what a single-skill
+      // probe gets, not the constant's value.
+      return minPassRate >= 1
+        ? `${totalCases - passed} of ${totalCases} case(s) failed; every case must pass.`
+        : `pass rate ${pct(passRate)} (${passed}/${totalCases}) is below the ` +
+            `${pct(minPassRate)} MIN_PASS_RATE floor.`;
     default:
       return "";
   }
@@ -938,14 +978,10 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const maxBudgetUsd = process.env.M3L_EVAL_MAX_BUDGET_USD
     ? Number(process.env.M3L_EVAL_MAX_BUDGET_USD)
     : DEFAULT_MAX_BUDGET_USD;
-  // A filtered run is a developer probe, not the gate: 3-5 cases cannot
-  // support a rate floor (see MIN_PASS_RATE). An explicit env override is
-  // honoured in either mode, so "a human named a threshold" stays one rule.
-  const minPassRate = process.env.M3L_EVAL_MIN_PASS_RATE
-    ? Number(process.env.M3L_EVAL_MIN_PASS_RATE)
-    : filterSkill === undefined
-      ? MIN_PASS_RATE
-      : 0;
+  const minPassRate = resolveMinPassRate({
+    filterSkill,
+    envValue: process.env.M3L_EVAL_MIN_PASS_RATE,
+  });
 
   const root = repoRoot(import.meta.url);
   const skillsDir = join(root, ".claude/skills");
