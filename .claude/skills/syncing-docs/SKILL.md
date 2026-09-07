@@ -5,7 +5,8 @@ description: >-
   re-stamps provenance sidecars, regenerates "N of 22" doc-count sites, confirms
   exports documented, verifies script conformance, regenerates the reference
   index, runs markdown lint. Use for /syncing-docs, "sync docs", "reconcile
-  docs", "stamp provenance", or after implementing pipelines finish.
+  docs", "stamp provenance", or after implementing pipelines finish. m3l MCP
+  stance: adr_query (ADR-0096).
 ---
 
 Reconcile all documentation metadata for `@m3l-automation/m3l-common`. This
@@ -202,10 +203,14 @@ with its current git blob SHA (an ADR's `verifiedAt` only advances when its
 source list or a blob actually changed). `check:adr-provenance` is advisory
 (never blocks): it reports which ADRs cite a file that changed since they last
 confirmed it, so the finding means "go re-read this ADR," not "this ADR is
-wrong." Distinct from `check:adr-claims` (blocking, `pre-push`'s `checks` lane
-— ADR-0094's own `Relations:` field validity plus the ~9 mechanically-probeable
-claims in `bin/lib/adr-claims.mjs`), which this composite does not run — that
-gate needs no re-stamping step, only re-running.
+wrong." Before opening a flagged ADR in full, `mcp__m3l__adr_query({ id })` confirms
+its current Status and `reviewBy` at a glance — useful when several ADRs
+drift in one run and you're triaging which to actually re-read first.
+Distinct from `check:adr-claims`
+(blocking, `pre-push`'s `checks` lane — ADR-0094's own `Relations:` field
+validity plus the ~9 mechanically-probeable claims in `bin/lib/adr-claims.mjs`),
+which this composite does not run — that gate needs no re-stamping step, only
+re-running.
 
 ### 9 — Markdown lint
 

@@ -1,8 +1,9 @@
 ---
 name: audit-refuter
 description: Read-only adversarial verifier for /auditing findings. Given one GAP or INCONSISTENCY claim from an audit-fanout finder, tries genuinely to disprove it before reporting it as confirmed. Dispatched by .claude/workflows/audit-fanout.js's Verify phase, one per finding — never for general code review.
-tools: Read, Grep, Glob, Bash
+tools: Read, Grep, Glob, Bash, mcp__m3l__adr_query, mcp__m3l__hooks_query, mcp__m3l__commands_query, mcp__m3l__catalog_query, mcp__m3l__logs_query
 disallowedTools: Agent
+mcpServers: [m3l]
 model: claude-sonnet-5
 effort: medium
 maxTurns: 40
@@ -20,8 +21,13 @@ claim, its type, the facet it came from, and the repo path it cites.
 - For a **GAP** ("something absent that would be expected"), hunt for the
   claimed-missing thing under other names, paths, or conventions — a rule
   enforced by a differently-named gate, a check implemented in a sibling
-  script, a convention documented in a file the finder didn't read. Read
-  candidate files in full, not excerpts.
+  script, a convention documented in a file the finder didn't read. Reach for
+  `mcp__m3l__adr_query`/`hooks_query`/`commands_query`/`catalog_query`/
+  `logs_query` first when the candidate is an ADR decision, a wired hook, a
+  `pnpm` script, a symbol/module, or a work log — a targeted lookup settles
+  "does X exist under another name" faster than grepping and opening the
+  full corpus, and you still read the specific file in full once you've
+  found it to confirm the claim.
 - For an **INCONSISTENCY** ("something that conflicts with another part of
   the repo"), check whether the two sides are actually reconciled somewhere —
   a doc section the finder missed, a generated artifact, a comment explaining

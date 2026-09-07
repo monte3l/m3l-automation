@@ -206,10 +206,9 @@ function adviceFor(agentType) {
       `   Writer spokes hit their turn limit mid-thought often enough that this\n` +
       `   is this repo's most-recurring build divergence. Before trusting this\n` +
       `   report: re-read the spoke's journal, run \`git status\`/\`git diff\`, and\n` +
-      `   consider \`mcp__m3l__spoke_recover\` (or \`bin/spoke-recovery.mjs\`)\n` +
-      `   against its journal path for a resume/redispatch recommendation. If\n` +
-      `   truncated, resume the SAME spoke via SendMessage — never a fresh\n` +
-      `   dispatch.\n`
+      `   consider \`bin/spoke-recovery.mjs\` against its journal path for a\n` +
+      `   resume/redispatch recommendation. If truncated, resume the SAME\n` +
+      `   spoke via SendMessage — never a fresh dispatch.\n`
     );
   }
   return (

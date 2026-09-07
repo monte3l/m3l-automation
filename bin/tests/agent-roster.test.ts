@@ -100,7 +100,7 @@ describe("deriveMcpGrantIssues", () => {
     expect(issues.unscopedServer).toHaveLength(0);
   });
 
-  it("MCP_SPOKES currently contains exactly code-implementer", () => {
-    expect(MCP_SPOKES).toEqual(new Set(["code-implementer"]));
+  it("MCP_SPOKES currently contains exactly code-implementer and audit-refuter", () => {
+    expect(MCP_SPOKES).toEqual(new Set(["code-implementer", "audit-refuter"]));
   });
 });

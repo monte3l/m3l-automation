@@ -27,9 +27,7 @@
 //   --test <pattern>   A vitest file/pattern to run (`pnpm vitest run
 //                       --reporter=json <pattern>`) to verify the claimed
 //                       work is actually green. Optional — omitted by default
-//                       since it can take minutes; the MCP tool wrapping this
-//                       script deliberately never sets it (see
-//                       bin/lib/mcp-tools.mjs's spoke_recover for why).
+//                       since it can take minutes.
 //   --cwd <path>        Directory to run `git status`/`git diff`/the targeted
 //                       test in — defaults to this repo's own root. Pass the
 //                       linked worktree's path when recovering a spoke that
@@ -381,9 +379,9 @@ function tailLines(text, n) {
  * gates (the writer-spoke prompts now instruct against this, but a
  * mis-logged entry is still possible). When a "done" marker's gate-state is
  * uncertain, pass `--test` to verify against the real suite rather than
- * trusting this heuristic alone — the MCP `spoke_recover` tool deliberately
- * never sets it (see the module header), so its default recommendation
- * leans on journal + `git status` only.
+ * trusting this heuristic alone — omitted by default (see the module
+ * header), so the default recommendation leans on journal + `git status`
+ * only.
  *
  * @param {ReturnType<typeof parseJournalEntries>} entries
  * @returns {ReturnType<typeof parseJournalEntries>}

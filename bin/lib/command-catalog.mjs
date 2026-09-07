@@ -573,7 +573,7 @@ export const COMMAND_CATALOG = [
   {
     name: "spoke:recover",
     description:
-      "Automates the first step of the subagent-truncation recovery playbook: cross-references a spoke's journal against `git status`/`git diff` and recommends resume/redispatch/none. `-- --journal <path>` (required); the MCP `spoke_recover` tool wraps this same script.",
+      "Automates the first step of the subagent-truncation recovery playbook: cross-references a spoke's journal against `git status`/`git diff` and recommends resume/redispatch/none. `-- --journal <path>` (required).",
   },
   {
     name: "session:launch",

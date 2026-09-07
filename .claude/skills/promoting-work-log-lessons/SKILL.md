@@ -4,7 +4,8 @@ description: >-
   Closes the work-log → rules loop: reads docs/logs/*.md, finds lessons
   recurring across logs, promotes them into .claude/rules, agents, or a skill's
   SKILL.md. Use for /promoting-work-log-lessons, "promote work-log lessons",
-  "which lessons keep recurring", "what does our session telemetry say".
+  "which lessons keep recurring", "what does our session telemetry say". m3l
+  MCP stance: adr_query (ADR-0096).
 ---
 
 # promoting-work-log-lessons
@@ -153,6 +154,10 @@ Keep a theme as a **promotion candidate** only if it clears all three filters:
    targets for the lesson's keyword — e.g.
    `grep -rin "gen:index" .claude/rules .claude/agents .claude/skills`. If the
    convention is already written down, the loop is already closed for it; drop it.
+   A rule/agent/skill grep alone can miss a convention that lives only in ADR
+   prose rather than a rule file — `mcp__m3l__adr_query({ query: "<keyword>"
+})` is a cheap second check for that case before proposing a new rule that
+   would just restate an existing decision.
 
 What survives all three is a real gap: a lesson the project keeps re-learning
 that its durable rules still don't mention.
