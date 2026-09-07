@@ -857,7 +857,7 @@
       },
       {
         "path": "docs/adr/README.md",
-        "blob": "2fd3dfd7239be27c45052f91035f9470794f2156"
+        "blob": "9ef849ef07f6ba9102121ce1f20f7e84f4815ef1"
       },
       {
         "path": "docs/logs/2026-08-14-aws-rds-data.md",
@@ -884,7 +884,7 @@
         "blob": "8de88ccbba9e75d387c88342faec1e394c3a057b"
       }
     ],
-    "verifiedAt": "2026-09-06"
+    "verifiedAt": "2026-09-07"
   },
   "0032": {
     "sourceFiles": [
@@ -974,7 +974,7 @@
       },
       {
         "path": "docs/logs/README.md",
-        "blob": "e52e95b3f766c612e050d3c62030acee69920a4c"
+        "blob": "9e96419cfa165752a06b4d06ef99bfbb2299301c"
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
@@ -989,7 +989,7 @@
         "blob": "c90be7566c7e98d8c904e12c39612754987a292e"
       }
     ],
-    "verifiedAt": "2026-09-06"
+    "verifiedAt": "2026-09-07"
   },
   "0033": {
     "sourceFiles": [
@@ -1993,7 +1993,7 @@
       },
       {
         "path": "bin/session-telemetry.mjs",
-        "blob": "a4e7b0174e1f577db6653c914085067d5438c6a4"
+        "blob": "8365a0e3e9a03dbb27c3748b4ab1762300b12e11"
       },
       {
         "path": "CLAUDE.md",
@@ -2004,7 +2004,7 @@
         "blob": "cf88da2a4c81823f5f57bd112b301f010c70ce8a"
       }
     ],
-    "verifiedAt": "2026-09-06"
+    "verifiedAt": "2026-09-07"
   },
   "0085": {
     "sourceFiles": [
@@ -2060,7 +2060,7 @@
       },
       {
         "path": "bin/session-telemetry.mjs",
-        "blob": "a4e7b0174e1f577db6653c914085067d5438c6a4"
+        "blob": "8365a0e3e9a03dbb27c3748b4ab1762300b12e11"
       },
       {
         "path": "bin/worktree-new.mjs",
@@ -2075,7 +2075,7 @@
         "blob": "1c8dd5683cc5463ae3ba98de0b9b0766e5633782"
       }
     ],
-    "verifiedAt": "2026-09-06"
+    "verifiedAt": "2026-09-07"
   },
   "0088": {
     "sourceFiles": [
@@ -2089,7 +2089,7 @@
       },
       {
         "path": "bin/session-telemetry.mjs",
-        "blob": "a4e7b0174e1f577db6653c914085067d5438c6a4"
+        "blob": "8365a0e3e9a03dbb27c3748b4ab1762300b12e11"
       },
       {
         "path": "bin/worktree-new.mjs",
@@ -2104,7 +2104,7 @@
         "blob": "b0bebce5ab3010955e4cc10d2cef34c3903f591a"
       }
     ],
-    "verifiedAt": "2026-09-06"
+    "verifiedAt": "2026-09-07"
   },
   "0089": {
     "sourceFiles": [
@@ -2126,18 +2126,18 @@
       },
       {
         "path": "docs/contributing/skill-routing.md",
-        "blob": "4557b35825fa8b92dc3a494347c532b9f89cba5a"
+        "blob": "851bcd3f57262c0c997f798829c5b284cb30899e"
       },
       {
         "path": "docs/contributing/skills-catalog.md",
-        "blob": "630448bb561e3a958f92811366ff9c85f5d53d9c"
+        "blob": "b3c8fc40668605d97cec18cee9bfe0d490376b78"
       },
       {
         "path": "docs/plans/archive/2026-09-03-skill-invocation-and-listing-budget.md",
         "blob": "acfcda66e41569485f508ff3ff5b0cea825641ef"
       }
     ],
-    "verifiedAt": "2026-09-06"
+    "verifiedAt": "2026-09-07"
   },
   "0090": {
     "sourceFiles": [
@@ -2217,6 +2217,14 @@
         "blob": "e070b9a56244d4c7a3b4fb6bb66f3eb5711e1a48"
       },
       {
+        "path": ".claude/skills/typescript-configuration/references/typescript-configuration.md",
+        "blob": "9415f6ad0315adbc3408e3331d5f674d020bbc63"
+      },
+      {
+        "path": ".claude/skills/vitest-testing/references/vitest-testing.md",
+        "blob": "0f09a880048ee1c9117e6544b5d18786619adbe8"
+      },
+      {
         "path": ".mcp.json",
         "blob": "bfdae6871697486c57b2b4fb09ee202485da98fc"
       },
@@ -2234,7 +2242,7 @@
       },
       {
         "path": "docs/contributing/skills-catalog.md",
-        "blob": "630448bb561e3a958f92811366ff9c85f5d53d9c"
+        "blob": "b3c8fc40668605d97cec18cee9bfe0d490376b78"
       },
       {
         "path": "docs/logs/2026-07-17-adr-0030-workflow-tooling-mcp.md",
@@ -2249,7 +2257,7 @@
         "blob": "40caafa3178dd40f2b22aa430eed9bfc0562df25"
       }
     ],
-    "verifiedAt": "2026-09-06"
+    "verifiedAt": "2026-09-07"
   },
   "0094": {
     "sourceFiles": [
@@ -2279,7 +2287,7 @@
       },
       {
         "path": "docs/adr/README.md",
-        "blob": "2fd3dfd7239be27c45052f91035f9470794f2156"
+        "blob": "9ef849ef07f6ba9102121ce1f20f7e84f4815ef1"
       },
       {
         "path": "docs/contributing/filing-work.md",
@@ -2290,7 +2298,7 @@
         "blob": "0915d8bc8a00fb43f0c943b5ccf8019d094a65cc"
       }
     ],
-    "verifiedAt": "2026-09-06"
+    "verifiedAt": "2026-09-07"
   },
   "0095": {
     "sourceFiles": [
@@ -2300,7 +2308,7 @@
       },
       {
         "path": "docs/adr/README.md",
-        "blob": "2fd3dfd7239be27c45052f91035f9470794f2156"
+        "blob": "9ef849ef07f6ba9102121ce1f20f7e84f4815ef1"
       },
       {
         "path": "docs/decision-notes/README.md",
@@ -2311,6 +2319,51 @@
         "blob": "0915d8bc8a00fb43f0c943b5ccf8019d094a65cc"
       }
     ],
-    "verifiedAt": "2026-09-06"
+    "verifiedAt": "2026-09-07"
+  },
+  "0096": {
+    "sourceFiles": [
+      {
+        "path": ".claude/settings.json",
+        "blob": "e070b9a56244d4c7a3b4fb6bb66f3eb5711e1a48"
+      },
+      {
+        "path": ".mcp.json",
+        "blob": "bfdae6871697486c57b2b4fb09ee202485da98fc"
+      },
+      {
+        "path": "bin/check-agents.mjs",
+        "blob": "b12152706dee5d504c9bac04652ee79ba661acd2"
+      },
+      {
+        "path": "bin/check-integration-stance.mjs",
+        "blob": "91fbc7e59303348883452f2fcba950cd555789a5"
+      },
+      {
+        "path": "bin/lib/mcp-tools.mjs",
+        "blob": "5d7043ee42ea57c56d7ffe561936f562d58d5df3"
+      },
+      {
+        "path": "bin/lib/project-hub.mjs",
+        "blob": "35bb2ae92e2a3ae8442c2275999398f64c0edf58"
+      },
+      {
+        "path": "bin/lib/reference-index.mjs",
+        "blob": "2860c6b5fbfbd80590f8b6a8e318565864a12755"
+      },
+      {
+        "path": "bin/mcp-server.mjs",
+        "blob": "3ed4f9f3d517ab7927c4d77987b3bcb3d1d570c7"
+      },
+      {
+        "path": "bin/tests/mcp-tools.test.ts",
+        "blob": "33a00ab3757dd372edc77289273b2536f878bdf8"
+      },
+      {
+        "path": "docs/research/writing-custom-tools-and-mcp.md",
+        "blob": "b8783951f68fb653a4235dd99daefa6c39653a41"
+      }
+    ],
+    "verifiedAt": "2026-09-07"
   }
 }
