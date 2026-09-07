@@ -26,7 +26,10 @@ zero time on mechanical review-driven edits.
 - If a **Should-fix** finding requires the same kind of structural change, skip it
   instead of asking — it does not block merge, so stopping the whole run over an
   optional item is worse than leaving it for a human. Note it as not addressed in the
-  Step 3 preview and the Step 10 follow-up comment.
+  Step 3 preview, the Step 9 commit body, and the Step 10 follow-up comment — skipping
+  the fix never means skipping the acknowledgment: an `Acknowledged-Should-Fix:`
+  footer still lands on a commit in this pass (Step 9), because `should-fix-ack`
+  (`docs/adr/0097`) requires one whenever any Should-fix was posted, fixed or not.
 - For a finding you believe is wrong, this skill does not dispute it on your behalf —
   see `docs/contributing/branch-protection.md`'s override procedure (investigate, reply
   to the bot's comment thread with evidence, then a human with admin rights merges past
@@ -179,11 +182,17 @@ it has no findings:
 
 After printing the preview, branch on the verdict from Step 2:
 
-- **PASS**: nothing blocks merge by definition, so there is nothing to fix regardless
-  of what the preview shows. Tell the user "The bot review already shows PASS —
-  nothing blocking." (add "See Should-fix / Nits above for optional follow-up." only
-  if the preview printed a non-empty Should-fix or Nits section) and **stop** — do not
-  proceed to Step 4.
+- **PASS, Should-fix section empty**: nothing to fix and nothing to acknowledge. Tell
+  the user "The bot review already shows PASS — nothing blocking." and **stop** — do
+  not proceed to Step 4.
+- **PASS, Should-fix section non-empty**: nothing blocks the `review` check, but
+  `should-fix-ack` (the required-check-in-waiting added by `docs/adr/0097`) fails this
+  PR until an `Acknowledged-Should-Fix:` commit footer lands somewhere in its commit
+  range — REVIEW.md's Should-fix tier now says so explicitly. Tell the user "The bot
+  review shows PASS, but N Should-fix finding(s) still need acknowledgment before
+  should-fix-ack passes." and **continue to Step 4** — the Must-fix loop there is
+  naturally a no-op (nothing to iterate), so only the Should-fix/Nits loop and Step 9's
+  acknowledgment footer actually run.
 - **FAIL with an empty Must-fix list** (the anomaly case): tell the user "The bot
   verdict is FAIL but no Must-fix items were found. See Should-fix / Nits above.
   Investigate whether the bot miscategorised a finding or if a non-blocking item was
@@ -330,9 +339,13 @@ based on the findings resolved:
 - **Subject:** `{type}: resolve claude-pr-review findings` (≤70 chars)
 - **Body:** one bullet per finding actually resolved this pass, grouped by tier —
   Must-fix first, then any Should-fix fixed, then any Nits folded in. Omit a tier's
-  sub-heading entirely when nothing in it was resolved. Do not list a Should-fix or Nit
-  that was left unaddressed — those belong only in the Step 3 preview and the Step 10
-  follow-up comment, never the commit body:
+  sub-heading entirely when nothing in it was resolved. **Also list any Should-fix
+  left unaddressed**, under its own "Not addressed" sub-heading — this used to be
+  forbidden here (visible only in the Step 3 preview and the Step 10 follow-up
+  comment), but a PR comment thread doesn't survive a squash-merge the way the
+  commit message does, and the acknowledgment footer below needs the reader to be
+  able to find out _what_ was acknowledged from `git log` alone, not just _that_
+  something was:
   ```
   Must-fix:
   - replace `any` with `unknown` in src/core/config/index.ts
@@ -341,8 +354,36 @@ based on the findings resolved:
   Should-fix:
   - add TSDoc + @example to `loadConfig`
 
+  Not addressed:
+  - Should-fix: `src/core/foo.ts:45` — structural change, left for a human (reason)
+
   Nits (folded in):
   - prefer `const` over `let` on the same line
+  ```
+- **Footer, whenever the Step 3 preview showed any Should-fix finding at all**
+  (PASS or FAIL, fixed or left): add `Acknowledged-Should-Fix: <reason>` —
+  `should-fix-ack` (`docs/adr/0097`) fails the PR without it, regardless of
+  verdict, once a Should-fix has ever been posted. Keep the reason short; the
+  "Not addressed" bullets above already carry the detail:
+  ```
+  Acknowledged-Should-Fix: 1 fixed, 1 left as a structural change — see body
+  ```
+  If Step 4 fixed every Should-fix finding and there is nothing else to commit
+  (a PASS invocation where every fix was itself a targeted line change already
+  staged), a normal commit carries the footer fine. If Step 4 left every
+  Should-fix finding unaddressed and nothing else changed, there is no diff to
+  commit — use `git commit --allow-empty` so the footer still lands on a
+  real commit in the PR's range:
+  ```bash
+  git commit --allow-empty -S -m "$(cat <<'EOF'
+  docs: acknowledge outstanding claude-pr-review Should-fix findings
+
+  Not addressed:
+  - Should-fix: `src/core/foo.ts:45` — structural change, left for a human (reason)
+
+  Acknowledged-Should-Fix: left as a structural change — see body
+  EOF
+  )"
   ```
 
 Then sync and push. The `claude-pr-review.yml` workflow only holds
@@ -396,9 +437,10 @@ mcp__github__add_issue_comment({
 - \`path/to/file.ts:line\` — <one-line description>
 (omit this section entirely if none were folded in)
 
-**Not addressed (non-blocking):**
-- Should-fix: \`path/to/file.ts:line\` — <violation>
-- Nits: \`path/to/file.ts:line\` — <violation>`
+**Not addressed:**
+- Should-fix: \`path/to/file.ts:line\` — <violation> (acknowledged via the
+  Acknowledged-Should-Fix: commit footer, not fixed — see the commit)
+- Nits: \`path/to/file.ts:line\` — <violation> (non-blocking, no acknowledgment needed)`
 })
 ```
 

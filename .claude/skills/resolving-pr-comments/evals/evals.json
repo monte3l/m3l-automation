@@ -22,14 +22,23 @@
     },
     {
       "id": 2,
-      "prompt": "I just opened a PR and the claude-pr-review bot reviewed it. The comment shows a PASS verdict, an empty Must-fix section, one Should-fix item (missing `@example` on `loadConfig` in `packages/m3l-common/src/core/config/index.ts`), and one Nit (prefer `const` over `let` on line 4 of the same file). Run resolving-pr-comments to confirm there is nothing to do.",
-      "expected_output": "The skill names fetching the bot comment as its first substantive step, detects the PASS verdict, still prints the Should-fix and Nit items for context (Must-fix omitted as empty), and stops without editing, committing, or pushing anything.",
+      "prompt": "I just opened a PR and the claude-pr-review bot reviewed it. The comment shows a PASS verdict, an empty Must-fix section, one Should-fix item (missing `@example` on `loadConfig` in `packages/m3l-common/src/core/config/index.ts`), and one Nit (prefer `const` over `let` on line 4 of the same file). Run resolving-pr-comments.",
+      "expected_output": "The skill names fetching the bot comment as its first substantive step, detects the PASS verdict, prints the Should-fix and Nit items for context (Must-fix omitted as empty), and — because should-fix-ack requires acknowledgment of any posted Should-fix regardless of verdict — continues rather than stopping: it reads the seeded file, adds the missing @example, runs the relevant gate, commits with an Acknowledged-Should-Fix: footer, pushes, and posts a follow-up comment.",
+      "files": [
+        {
+          "path": "packages/m3l-common/src/core/config/index.ts",
+          "content": "import { M3LConfigParameter } from '../parameters/index.js';\nimport { ConfigSchema } from './types.js';\n\n/** Loads configuration from the given schema. */\nexport function loadConfig(schema: ConfigSchema): M3LConfigParameter[] {\n  return schema.parameters.map((p) => new M3LConfigParameter(p));\n}\n"
+        }
+      ],
       "expectations": [
         "Names fetching the claude[bot] comment from the PR thread as its first substantive step (states the intent to retrieve or read the bot comment before any other action).",
-        "Identifies the PASS verdict and explicitly states nothing is blocking, using language such as 'already shows PASS' or 'nothing blocking'.",
-        "Prints the Should-fix item (missing `@example` on `loadConfig`) and the Nit item (prefer `const` over `let`) for context, rather than silently dropping them because the verdict is PASS.",
-        "Emits no `WOULD-RUN: git commit` or `WOULD-RUN: git push` line anywhere in the response.",
-        "Does not describe any file edits and does not list any Must-fix findings to resolve."
+        "Identifies the PASS verdict and explicitly states nothing blocks the review check, while also stating that should-fix-ack still requires acknowledgment of the Should-fix item.",
+        "Prints the Should-fix item (missing `@example` on `loadConfig`) and the Nit item (prefer `const` over `let`) for context.",
+        "Reads the seeded `packages/m3l-common/src/core/config/index.ts` and describes adding a `@example` block to `loadConfig`.",
+        "Emits a `WOULD-RUN: pnpm typecheck` or `WOULD-RUN: pnpm lint` line for the TSDoc fix before the commit step.",
+        "States the commit will carry an `Acknowledged-Should-Fix:` footer.",
+        "Emits a `WOULD-RUN: git commit` and a `WOULD-RUN: git push` line.",
+        "States it will post a top-level PR comment referencing the commit SHA."
       ]
     },
     {
@@ -109,6 +118,7 @@
         "Explicitly states or implies that the `let cache` declaration on line 4 (Nit B) is left untouched, since no Must-fix or Should-fix edit in this pass touches that line.",
         "Emits a `WOULD-RUN: pnpm typecheck` line covering the ESM-imports-category fixes, and a `WOULD-RUN: pnpm verify` line before the commit step.",
         "Describes the commit body as separating Must-fix, Should-fix, and folded-in-Nits into distinct groups rather than one flat list.",
+        "States the commit will carry an `Acknowledged-Should-Fix:` footer, since a Should-fix finding was posted regardless of it being fixed.",
         "States the follow-up comment will list the Must-fix and Should-fix items resolved, Nit A as folded in, and Nit B under Not addressed."
       ]
     }

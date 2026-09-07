@@ -219,7 +219,7 @@
     "sourceFiles": [
       {
         "path": "docs/contributing/branch-protection.md",
-        "blob": "27722fe8604ee20c58f0a60c4518cee8260fd990"
+        "blob": "216865c09e8b563986a3726fce6228cf6eeba0e0"
       }
     ],
     "verifiedAt": "2026-09-07"
@@ -389,7 +389,7 @@
       },
       {
         "path": "docs/contributing/branch-protection.md",
-        "blob": "27722fe8604ee20c58f0a60c4518cee8260fd990"
+        "blob": "216865c09e8b563986a3726fce6228cf6eeba0e0"
       }
     ],
     "verifiedAt": "2026-09-07"
@@ -438,7 +438,7 @@
       },
       {
         "path": "docs/contributing/branch-protection.md",
-        "blob": "27722fe8604ee20c58f0a60c4518cee8260fd990"
+        "blob": "216865c09e8b563986a3726fce6228cf6eeba0e0"
       },
       {
         "path": "docs/logs/2026-07-24-w5-promote-destructive-gate.md",
@@ -792,7 +792,7 @@
     "sourceFiles": [
       {
         "path": ".claude/skills/resolving-pr-comments/SKILL.md",
-        "blob": "926bc76268bc1e29b9f51746b54963c11070251c"
+        "blob": "5e8bc733d5719c0d68967e04378f76b42956bef4"
       },
       {
         "path": ".claude/skills/triaging-ci/SKILL.md",
@@ -804,7 +804,7 @@
       },
       {
         "path": ".github/workflows/claude-pr-review.yml",
-        "blob": "b48c4422d750420def6adf60520b224edbdea820"
+        "blob": "16d2456f25a88a21206b6bc7727b4b5c37cd8172"
       },
       {
         "path": ".mcp.json",
@@ -857,7 +857,7 @@
       },
       {
         "path": "docs/adr/README.md",
-        "blob": "9ef849ef07f6ba9102121ce1f20f7e84f4815ef1"
+        "blob": "18afd8540cb41b6669ee3e3a1ddb37e22e2afb11"
       },
       {
         "path": "docs/logs/2026-08-14-aws-rds-data.md",
@@ -1625,7 +1625,7 @@
       },
       {
         "path": ".github/workflows/claude-pr-review.yml",
-        "blob": "b48c4422d750420def6adf60520b224edbdea820"
+        "blob": "16d2456f25a88a21206b6bc7727b4b5c37cd8172"
       },
       {
         "path": "bin/check-file-budget.mjs",
@@ -1964,7 +1964,7 @@
       },
       {
         "path": "docs/contributing/branch-protection.md",
-        "blob": "27722fe8604ee20c58f0a60c4518cee8260fd990"
+        "blob": "216865c09e8b563986a3726fce6228cf6eeba0e0"
       },
       {
         "path": "docs/contributing/hooks-reference.md",
@@ -2287,7 +2287,7 @@
       },
       {
         "path": "docs/adr/README.md",
-        "blob": "9ef849ef07f6ba9102121ce1f20f7e84f4815ef1"
+        "blob": "18afd8540cb41b6669ee3e3a1ddb37e22e2afb11"
       },
       {
         "path": "docs/contributing/filing-work.md",
@@ -2308,7 +2308,7 @@
       },
       {
         "path": "docs/adr/README.md",
-        "blob": "9ef849ef07f6ba9102121ce1f20f7e84f4815ef1"
+        "blob": "18afd8540cb41b6669ee3e3a1ddb37e22e2afb11"
       },
       {
         "path": "docs/decision-notes/README.md",
@@ -2362,6 +2362,27 @@
       {
         "path": "docs/research/writing-custom-tools-and-mcp.md",
         "blob": "b8783951f68fb653a4235dd99daefa6c39653a41"
+      }
+    ],
+    "verifiedAt": "2026-09-07"
+  },
+  "0097": {
+    "sourceFiles": [
+      {
+        "path": "bin/check-should-fix-ack.mjs",
+        "blob": "b47b120e41259447e485e071dbd5848d50d6a9cc"
+      },
+      {
+        "path": "bin/lib/pr-review-gate.mjs",
+        "blob": "de7df384b5a777b6b709e34d27a12288eecf1859"
+      },
+      {
+        "path": "docs/adr/0016-signed-commits-and-decision-gate.md",
+        "blob": "4d2e7b43037cc0796d2d2779fd5927c6f0006c3f"
+      },
+      {
+        "path": "docs/contributing/branch-protection.md",
+        "blob": "216865c09e8b563986a3726fce6228cf6eeba0e0"
       }
     ],
     "verifiedAt": "2026-09-07"
