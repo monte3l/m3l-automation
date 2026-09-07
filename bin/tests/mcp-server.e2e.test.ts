@@ -113,10 +113,14 @@ describe("m3l MCP server — real stdio protocol round trip", () => {
       };
       expect(payload.total).toBe(1);
       expect(payload.results[0]?.id).toBe("0030");
-      // ADR-0030 is committed in this repo as "Partially-superseded" — a
-      // real status string, not a placeholder, proving the handler actually
-      // parsed the live docs/adr/ corpus rather than returning a stub.
-      expect(payload.results[0]?.status).toBe("Partially-superseded");
+      // Deliberately not pinned to ADR-0030's exact status text (e.g.
+      // "Partially-superseded") — a later status change to that one ADR
+      // would fail this transport-round-trip test for a reason unrelated to
+      // what it exists to prove. A non-empty string is enough to show the
+      // handler parsed the live docs/adr/ corpus (which has a real status
+      // per entry) rather than returning a stub.
+      expect(typeof payload.results[0]?.status).toBe("string");
+      expect((payload.results[0]?.status ?? "").length).toBeGreaterThan(0);
     },
     TOOL_CALL_TIMEOUT,
   );

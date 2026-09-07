@@ -85,7 +85,7 @@ export function reconcileToolAllowlist(tools, allowlist) {
   const toolNames = new Set(tools.map((t) => t.name));
   const allowedM3lTools = new Set(
     allowlist
-      .filter((a) => a.startsWith(MCP_TOOL_PREFIX))
+      .filter((a) => typeof a === "string" && a.startsWith(MCP_TOOL_PREFIX))
       .map((a) => a.slice(MCP_TOOL_PREFIX.length)),
   );
   for (const name of toolNames) {
@@ -143,36 +143,56 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const mcpJsonPath = join(root, MCP_JSON_REL);
   const settingsPath = join(root, SETTINGS_JSON_REL);
 
-  /** @type {string[]} */
+  // Each error is paired with the file it actually concerns — this gate spans
+  // three declarations (.mcp.json, .claude/settings.json, and TOOLS itself,
+  // defined in bin/lib/mcp-tools.mjs / bin/mcp-server.mjs), so a single
+  // blanket attribution would point a PR annotation at the wrong file for
+  // two of the three checks below.
+  /** @type {{ message: string, file: string }[]} */
   const errors = [];
 
   if (!existsSync(mcpJsonPath)) {
-    errors.push(`${MCP_JSON_REL} does not exist.`);
+    errors.push({
+      message: `${MCP_JSON_REL} does not exist.`,
+      file: MCP_JSON_REL,
+    });
   } else {
     const mcpJson = JSON.parse(readFileSync(mcpJsonPath, "utf8"));
-    errors.push(
-      ...validateMcpJsonEntry(mcpJson, (rel) => existsSync(join(root, rel))),
-    );
+    for (const message of validateMcpJsonEntry(mcpJson, (rel) =>
+      existsSync(join(root, rel)),
+    )) {
+      errors.push({ message, file: MCP_JSON_REL });
+    }
   }
 
   if (!existsSync(settingsPath)) {
-    errors.push(`${SETTINGS_JSON_REL} does not exist.`);
+    errors.push({
+      message: `${SETTINGS_JSON_REL} does not exist.`,
+      file: SETTINGS_JSON_REL,
+    });
   } else {
     const settings = JSON.parse(readFileSync(settingsPath, "utf8"));
     const allowlist = Array.isArray(settings.permissions?.allow)
       ? settings.permissions.allow
       : [];
-    errors.push(...reconcileToolAllowlist(TOOLS, allowlist));
+    for (const message of reconcileToolAllowlist(TOOLS, allowlist)) {
+      errors.push({ message, file: SETTINGS_JSON_REL });
+    }
   }
 
-  errors.push(...validateToolAnnotations(TOOLS));
+  for (const message of validateToolAnnotations(TOOLS)) {
+    errors.push({ message, file: "bin/lib/mcp-tools.mjs" });
+  }
 
   if (typeof INSTRUCTIONS !== "string" || INSTRUCTIONS.length === 0) {
-    errors.push("bin/mcp-server.mjs's INSTRUCTIONS is empty or not a string.");
+    errors.push({
+      message: "bin/mcp-server.mjs's INSTRUCTIONS is empty or not a string.",
+      file: "bin/mcp-server.mjs",
+    });
   }
 
   for (const error of errors) {
-    reporter.error(error, { file: MCP_JSON_REL });
+    reporter.error(error.message, { file: error.file });
   }
 
   if (errors.length > 0) {

@@ -167,6 +167,21 @@ describe("reconcileToolAllowlist", () => {
     expect(reconcileToolAllowlist(tools, allowlist)).toEqual([]);
   });
 
+  test("non-string entries mixed into the allowlist (number, null, plain object) do not throw and are silently ignored, not misread as tool entries", () => {
+    // permissions.allow is untyped user-editable JSON, so a malformed entry
+    // (a stray number, a null, an accidental object) is a realistic input,
+    // not just a type-system exercise — the cast below simulates that.
+    const allowlist = [
+      "mcp__m3l__adr_query",
+      "mcp__m3l__logs_query",
+      42,
+      null,
+      { name: "mcp__m3l__adr_query" },
+    ] as unknown as string[];
+    expect(() => reconcileToolAllowlist(tools, allowlist)).not.toThrow();
+    expect(reconcileToolAllowlist(tools, allowlist)).toEqual([]);
+  });
+
   test("an empty tools array against a non-empty allowlist → every allowlist entry is stale", () => {
     const errors = reconcileToolAllowlist([], ["mcp__m3l__adr_query"]);
     expect(errors).toEqual([
