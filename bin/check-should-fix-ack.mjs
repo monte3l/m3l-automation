@@ -124,8 +124,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   try {
     const bodies = fetchClaudeBotCommentBodies(repo, pr);
     const selected = selectShouldFixComment(bodies);
-    const section =
-      selected === null ? null : parseShouldFixSection(selected);
+    const section = selected === null ? null : parseShouldFixSection(selected);
     const count = countShouldFixFindings(section);
 
     if (count === 0) {
