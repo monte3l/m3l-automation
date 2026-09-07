@@ -77,16 +77,24 @@ function botComment(body: string) {
 }
 
 /**
+ * `classifyPr`'s own parameter type, derived (not re-declared) so a
+ * `BackfillPrInput` field-shape drift fails typecheck here rather than
+ * silently passing through an `as never` escape hatch.
+ */
+type TestPrInput = Parameters<typeof classifyPr>[0];
+
+/**
  * A base `BackfillPrInput`-shaped object with sane, reviewable-by-default
  * values — every test overrides only the fields it's exercising.
  */
-function buildPr(overrides: Partial<Record<string, unknown>> = {}) {
+function buildPr(overrides: Partial<TestPrInput> = {}): TestPrInput {
   return {
     number: 1,
     mergedAt: "2026-01-01T00:00:00Z",
     mergedByLogin: "octocat",
     autoMergeUsed: false,
     mergeCommitBody: "fix: unrelated commit message\n",
+    mergeCommitUnreachable: false,
     filePaths: ["src/foo.ts"],
     filesTruncated: false,
     comments: [],
@@ -126,7 +134,7 @@ describe("classifyPr", () => {
       filePaths: ["README.md", "docs/guide.md", ".github/dependabot.yml"],
       filesTruncated: false,
     });
-    const result = classifyPr(pr as never);
+    const result = classifyPr(pr);
     expect(result.category).toBe("review-excluded");
     expect(result.shouldFixCount).toBe(0);
     expect(result.mode).toBeNull();
@@ -144,7 +152,7 @@ describe("classifyPr", () => {
       filesTruncated: true,
       comments: [],
     });
-    const result = classifyPr(pr as never);
+    const result = classifyPr(pr);
     expect(result.category).not.toBe("review-excluded");
     expect(result.uncertain).toBe(true);
   });
@@ -153,7 +161,7 @@ describe("classifyPr", () => {
     const pr = buildPr({
       comments: [botComment("Thanks for the ping! Taking a look shortly.")],
     });
-    const result = classifyPr(pr as never);
+    const result = classifyPr(pr);
     expect(result.category).toBe("no-review-posted");
     expect(result.shouldFixCount).toBe(0);
     expect(result.mode).toBeNull();
@@ -163,7 +171,7 @@ describe("classifyPr", () => {
     const pr = buildPr({
       comments: [botComment(buildReviewComment({ verdict: "PASS" }))],
     });
-    const result = classifyPr(pr as never);
+    const result = classifyPr(pr);
     expect(result.category).toBe("no-should-fix");
     expect(result.shouldFixCount).toBe(0);
     expect(result.mode).toBeNull();
@@ -175,7 +183,7 @@ describe("classifyPr", () => {
       mergeCommitBody:
         "fix: address review feedback\n\nAcknowledged-Should-Fix: deferring the rename for now",
     });
-    const result = classifyPr(pr as never);
+    const result = classifyPr(pr);
     expect(result.category).toBe("acknowledged-footer");
     expect(result.shouldFixCount).toBe(2);
     expect(result.mode).toBe("manual");
@@ -188,7 +196,7 @@ describe("classifyPr", () => {
         comments: [botComment(shouldFixComment(1))],
         mergeCommitBody: "fix: resolve claude-pr-review findings\n",
       });
-      const result = classifyPr(pr as never);
+      const result = classifyPr(pr);
       expect(result.category).toBe("resolve-commit-heuristic");
       expect(result.shouldFixCount).toBe(1);
     });
@@ -202,7 +210,7 @@ describe("classifyPr", () => {
         comments: [botComment(shouldFixComment(1))],
         mergeCommitBody: "fix: resolve claude-pr-review must-fix findings\n",
       });
-      const result = classifyPr(pr as never);
+      const result = classifyPr(pr);
       expect(result.category).toBe("resolve-commit-heuristic");
       expect(result.shouldFixCount).toBe(1);
     });
@@ -219,7 +227,7 @@ describe("classifyPr", () => {
         botComment(shouldFixComment(0)),
       ],
     });
-    const result = classifyPr(pr as never);
+    const result = classifyPr(pr);
     expect(result.category).toBe("multi-round-suppressed");
     expect(result.shouldFixCount).toBe(3);
   });
@@ -228,7 +236,7 @@ describe("classifyPr", () => {
     const pr = buildPr({
       comments: [botComment(shouldFixComment(1))],
     });
-    const result = classifyPr(pr as never);
+    const result = classifyPr(pr);
     expect(result.category).toBe("merged-unresolved");
     expect(result.shouldFixCount).toBe(1);
   });
@@ -239,7 +247,7 @@ describe("classifyPr", () => {
         autoMergeUsed: true,
         comments: [botComment(shouldFixComment(1))],
       });
-      expect(classifyPr(pr as never).mode).toBe("auto-merge");
+      expect(classifyPr(pr).mode).toBe("auto-merge");
     });
 
     test("is manual when autoMergeUsed is false", () => {
@@ -247,7 +255,7 @@ describe("classifyPr", () => {
         autoMergeUsed: false,
         comments: [botComment(shouldFixComment(1))],
       });
-      expect(classifyPr(pr as never).mode).toBe("manual");
+      expect(classifyPr(pr).mode).toBe("manual");
     });
 
     test.each([
@@ -263,7 +271,7 @@ describe("classifyPr", () => {
         }),
       ],
     ])("is null for the non-Should-fix category %s", (expectedCategory, pr) => {
-      const result = classifyPr(pr as never);
+      const result = classifyPr(pr);
       expect(result.category).toBe(expectedCategory);
       expect(result.mode).toBeNull();
     });
@@ -280,7 +288,7 @@ describe("classifyPr", () => {
         { login: "someone-else[bot]", isBot: true, body: shouldFixComment(50) },
       ],
     });
-    const result = classifyPr(pr as never);
+    const result = classifyPr(pr);
     expect(result.category).toBe("no-review-posted");
     expect(result.shouldFixCount).toBe(0);
   });
@@ -294,14 +302,81 @@ describe("classifyPr", () => {
     const pr = buildPr({
       comments: [{ login: "claude", isBot: false, body: shouldFixComment(50) }],
     });
-    const result = classifyPr(pr as never);
+    const result = classifyPr(pr);
     expect(result.category).toBe("no-review-posted");
     expect(result.shouldFixCount).toBe(0);
+  });
+
+  // classifyPr's `uncertainWithMergeBody` branch: once a Should-fix finding
+  // was posted, every remaining category's footer/resolve-commit/round-count
+  // search reads `mergeCommitBody` — and when the merge commit itself was
+  // unreachable locally (history rewrite; see `readMergeCommitBody`'s own
+  // JSDoc), that body is `""` by construction, so a negative search result
+  // proves nothing. Each row below builds a fixture whose comment history
+  // alone would otherwise land it in the named category with `uncertain:
+  // false` (asserted by the sibling tests above), then flips ONLY
+  // `mergeCommitUnreachable: true` to prove that flag — not the truncation
+  // flags already covered elsewhere — is what forces `uncertain: true` here.
+  describe("mergeCommitUnreachable forces uncertain", () => {
+    test.each([
+      [
+        "acknowledged-footer",
+        buildPr({
+          comments: [botComment(shouldFixComment(1))],
+          mergeCommitBody:
+            "fix: address review feedback\n\nAcknowledged-Should-Fix: deferred",
+          mergeCommitUnreachable: true,
+        }),
+      ],
+      [
+        "resolve-commit-heuristic",
+        buildPr({
+          comments: [botComment(shouldFixComment(1))],
+          mergeCommitBody: "fix: resolve claude-pr-review findings\n",
+          mergeCommitUnreachable: true,
+        }),
+      ],
+      [
+        "multi-round-suppressed",
+        buildPr({
+          comments: [
+            botComment(shouldFixComment(3)),
+            botComment(shouldFixComment(0)),
+          ],
+          mergeCommitUnreachable: true,
+        }),
+      ],
+      [
+        "merged-unresolved",
+        buildPr({
+          comments: [botComment(shouldFixComment(1))],
+          mergeCommitUnreachable: true,
+        }),
+      ],
+    ])(
+      "%s: mergeCommitUnreachable true forces uncertain true even with filesTruncated/commentsTruncated false",
+      (expectedCategory, pr) => {
+        expect(pr.filesTruncated).toBe(false);
+        expect(pr.commentsTruncated).toBe(false);
+        const result = classifyPr(pr);
+        expect(result.category).toBe(expectedCategory);
+        expect(result.uncertain).toBe(true);
+      },
+    );
   });
 });
 
 describe("summarizeResults", () => {
-  function buildResult(overrides: Partial<Record<string, unknown>> = {}) {
+  /**
+   * `summarizeResults`'s own element parameter type, derived so a
+   * `BackfillPrResult` field-shape drift fails typecheck here rather than
+   * silently passing through an `as never` escape hatch.
+   */
+  type TestResultInput = Parameters<typeof summarizeResults>[0][number];
+
+  function buildResult(
+    overrides: Partial<TestResultInput> = {},
+  ): TestResultInput {
     return {
       number: 1,
       category: "merged-unresolved",
@@ -319,7 +394,7 @@ describe("summarizeResults", () => {
       buildResult({ number: 3, category: "merged-unresolved" }),
       buildResult({ number: 4, category: "acknowledged-footer" }),
     ];
-    const summary = summarizeResults(results as never);
+    const summary = summarizeResults(results);
     expect(summary.total).toBe(4);
     expect(summary.byCategory).toEqual({
       "review-excluded": 1,
@@ -352,7 +427,7 @@ describe("summarizeResults", () => {
         mode: "manual",
       }),
     ];
-    const summary = summarizeResults(results as never);
+    const summary = summarizeResults(results);
     expect(summary.modeByCategory).toEqual({
       "merged-unresolved": { "auto-merge": 1, manual: 1 },
       "acknowledged-footer": { "auto-merge": 0, manual: 1 },
@@ -368,7 +443,7 @@ describe("summarizeResults", () => {
       buildResult({ number: 2, uncertain: false }),
       buildResult({ number: 3, uncertain: true }),
     ];
-    const summary = summarizeResults(results as never);
+    const summary = summarizeResults(results);
     expect(summary.uncertainCount).toBe(2);
   });
 });

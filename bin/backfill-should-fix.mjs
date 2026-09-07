@@ -89,6 +89,30 @@ function checkGhAuth(runGhFn) {
   }
 }
 
+/**
+ * Parse a `--limit`/`--page-size` value as a positive integer, mirroring
+ * `session-telemetry.mjs`'s `parseTop` — a bare `Number(...)` on a missing or
+ * non-numeric flag value silently produces `NaN`, and `NaN` compared against
+ * anything is always `false` (`nodes.length < NaN` never holds), so
+ * `fetchMergedPrNodes` would stop after its very first page and this script
+ * would report "Total merged PRs examined: **0**" and exit 0 — a silent
+ * under-measurement, not a loud failure.
+ *
+ * @param {string} flag flag name, for the error message (e.g. `"--limit"`)
+ * @param {string | undefined} value raw argv value following the flag
+ * @returns {number}
+ * @throws {Error} if `value` is missing or not a positive integer
+ */
+function parsePositiveInt(flag, value) {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new Error(
+      `${flag} "${value}" is not a positive integer. Refusing to run with it.`,
+    );
+  }
+  return parsed;
+}
+
 const MERGED_PRS_QUERY = `
   query($owner: String!, $repo: String!, $pageSize: Int!, $cursor: String, $filesPerPr: Int!, $commentsPerPr: Int!) {
     repository(owner: $owner, name: $repo) {
@@ -416,17 +440,31 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const reporter = createReporter(json);
 
   const dryRun = argv.includes("--dry-run");
-  const limitIndex = argv.indexOf("--limit");
-  const limit = limitIndex >= 0 ? Number(argv[limitIndex + 1]) : null;
-  const pageSizeIndex = argv.indexOf("--page-size");
-  const pageSize =
-    pageSizeIndex >= 0 ? Number(argv[pageSizeIndex + 1]) : DEFAULT_PAGE_SIZE;
   const outIndex = argv.indexOf("--out");
   const today = new Date().toISOString().slice(0, 10);
   const outPath =
     outIndex >= 0
       ? argv[outIndex + 1]
       : `docs/logs/${today}-should-fix-backfill.md`;
+
+  let limit;
+  let pageSize;
+  try {
+    const limitIndex = argv.indexOf("--limit");
+    limit =
+      limitIndex >= 0
+        ? parsePositiveInt("--limit", argv[limitIndex + 1])
+        : null;
+    const pageSizeIndex = argv.indexOf("--page-size");
+    pageSize =
+      pageSizeIndex >= 0
+        ? parsePositiveInt("--page-size", argv[pageSizeIndex + 1])
+        : DEFAULT_PAGE_SIZE;
+  } catch (error) {
+    reporter.error(error instanceof Error ? error.message : String(error));
+    reporter.finish();
+    process.exit(1);
+  }
 
   const authError = checkGhAuth(runGh);
   if (authError !== null) {
@@ -476,6 +514,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
 
 export {
   fetchMergedPrNodes,
+  parsePositiveInt,
   readMergeCommitBody,
   renderReport,
   toBackfillInput,
