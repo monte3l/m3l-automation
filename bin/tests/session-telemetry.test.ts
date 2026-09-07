@@ -13,8 +13,13 @@ import {
   buildAnalyzerArgs,
   SINCE_PATTERN,
   classifySessionName,
+  classifyToolUse,
   computeNamingCompliance,
+  computeToolUsage,
+  countToolUseInTranscript,
   extractSessionName,
+  isSubagentTranscript,
+  listAllTranscripts,
   listRecentTranscripts,
   missingKeys,
   parsePayload,
@@ -232,6 +237,13 @@ describe("runTelemetry", () => {
         unreadable: 0,
         non_conforming_names: [],
       }),
+      computeTools: () => ({
+        files_scanned: 1,
+        unreadable: 0,
+        events_scanned: 1,
+        by_tool: { Read: 1 },
+        by_tool_origin: { Read: { hub: 1, subagent: 0 } },
+      }),
       reporter,
       ...overrides,
     });
@@ -270,6 +282,17 @@ describe("runTelemetry", () => {
     expect(outcome.payload).toBeNull();
     expect(firstError(payload)).toContain(PLUGIN_CACHE_SUBPATH);
     expect(firstError(payload)).toContain("Not falling back to a wider scan");
+    // toolUsage is computed independently of the analyzer run and still
+    // threads through even though the overall run fails.
+    expect(outcome.toolUsage).not.toBeNull();
+    expect(outcome.toolUsage).toEqual({
+      files_scanned: 1,
+      unreadable: 0,
+      events_scanned: 1,
+      by_tool: { Read: 1 },
+      by_tool_origin: { Read: { hub: 1, subagent: 0 } },
+    });
+    expect(payload["toolUsage"]).toEqual(outcome.toolUsage);
   });
 
   test("MUTATION: a top-level key removed from the analyzer output fails the run", () => {
@@ -282,6 +305,17 @@ describe("runTelemetry", () => {
     expect(outcome.payload).toBeNull();
     expect(firstError(payload)).toContain("by_subagent_type");
     expect(firstError(payload)).toContain("ADR-0084");
+    // toolUsage is computed independently of the analyzer run and still
+    // threads through even though the overall run fails.
+    expect(outcome.toolUsage).not.toBeNull();
+    expect(outcome.toolUsage).toEqual({
+      files_scanned: 1,
+      unreadable: 0,
+      events_scanned: 1,
+      by_tool: { Read: 1 },
+      by_tool_origin: { Read: { hub: 1, subagent: 0 } },
+    });
+    expect(payload["toolUsage"]).toEqual(outcome.toolUsage);
   });
 
   test("MUTATION: unparseable analyzer output fails the run", () => {
@@ -332,6 +366,35 @@ describe("runTelemetry", () => {
     expect(outcome.payload).not.toBeNull();
     expect(outcome.naming).toBeNull();
     expect(firstWarning(payload)).toContain("transcript format drift detected");
+  });
+
+  test("threads a successful tool-usage report through to the outcome", () => {
+    const toolUsageReport = {
+      files_scanned: 4,
+      unreadable: 1,
+      events_scanned: 10,
+      by_tool: { Read: 6, Bash: 4 },
+      by_tool_origin: {
+        Read: { hub: 2, subagent: 4 },
+        Bash: { hub: 4, subagent: 0 },
+      },
+    };
+    const { outcome, payload } = run({ computeTools: () => toolUsageReport });
+    expect(outcome.ok).toBe(true);
+    expect(outcome.toolUsage).toEqual(toolUsageReport);
+    expect(payload["toolUsage"]).toEqual(toolUsageReport);
+  });
+
+  test("MUTATION: a failed tool-usage scan does NOT fail the run — the payload survives as a warning", () => {
+    const { outcome, payload } = run({
+      computeTools: () => {
+        throw new Error("tool-usage format drift detected");
+      },
+    });
+    expect(outcome.ok).toBe(true);
+    expect(outcome.payload).not.toBeNull();
+    expect(outcome.toolUsage).toBeNull();
+    expect(firstWarning(payload)).toContain("tool-usage format drift detected");
   });
 });
 
@@ -929,5 +992,285 @@ describe("sanitizeNonConformingName — ANSI and constant", () => {
     const long = "a".repeat(NON_CONFORMING_NAME_PREVIEW_LENGTH + 10);
     const result = sanitizeNonConformingName(long);
     expect(result.length).toBe(NON_CONFORMING_NAME_PREVIEW_LENGTH + 1);
+  });
+});
+
+describe("classifyToolUse", () => {
+  test("returns the tool name for a tool_use block", () => {
+    expect(classifyToolUse({ type: "tool_use", name: "Read" })).toBe("Read");
+  });
+
+  test('normalizes the "Task" SDK alias to "Agent"', () => {
+    expect(classifyToolUse({ type: "tool_use", name: "Task" })).toBe("Agent");
+  });
+
+  test("a Skill tool_use block returns the bare tool name, not Skill:xyz", () => {
+    expect(classifyToolUse({ type: "tool_use", name: "Skill" })).toBe("Skill");
+  });
+
+  test("an Agent tool_use block returns the bare tool name", () => {
+    expect(classifyToolUse({ type: "tool_use", name: "Agent" })).toBe("Agent");
+  });
+
+  test("MUTATION: a block whose type is not tool_use returns null", () => {
+    expect(classifyToolUse({ type: "tool_result", name: "Read" })).toBeNull();
+  });
+
+  test("MUTATION: a missing name returns null", () => {
+    expect(classifyToolUse({ type: "tool_use" })).toBeNull();
+  });
+
+  test("MUTATION: an empty string name returns null", () => {
+    expect(classifyToolUse({ type: "tool_use", name: "" })).toBeNull();
+  });
+
+  test("MUTATION: a non-string name returns null", () => {
+    expect(classifyToolUse({ type: "tool_use", name: 42 })).toBeNull();
+  });
+
+  test.each([null, undefined, "a string", 42, ["array"]])(
+    "MUTATION: a non-object block %j returns null",
+    (block) => {
+      expect(classifyToolUse(block)).toBeNull();
+    },
+  );
+});
+
+describe("isSubagentTranscript", () => {
+  test("true for a path with a subagents segment", () => {
+    expect(isSubagentTranscript("a/subagents/b.jsonl")).toBe(true);
+  });
+
+  test("true for a subagents segment nested further (workflows under it)", () => {
+    expect(isSubagentTranscript("a/subagents/workflows/run/b.jsonl")).toBe(
+      true,
+    );
+  });
+
+  test('true when "subagents" is the whole (only) path segment', () => {
+    expect(isSubagentTranscript("subagents")).toBe(true);
+  });
+
+  test("false for a top-level hub transcript with no subagents segment", () => {
+    expect(isSubagentTranscript("a.jsonl")).toBe(false);
+  });
+
+  test("MUTATION: a substring match must not trigger — subagentsx is not the segment subagents", () => {
+    expect(isSubagentTranscript("a/subagentsx/b.jsonl")).toBe(false);
+  });
+});
+
+describe("listAllTranscripts", () => {
+  test("keeps only .jsonl-suffixed entries within the window, dropping a bare directory-name entry", () => {
+    const fs = {
+      readdirRecursive: () => ["sub", "sub/a.jsonl", "b.txt", "c.jsonl"],
+      stat: (p: string) => ({
+        mtimeMs: p.endsWith("a.jsonl") ? 5000 : 1000,
+      }),
+    };
+    expect(listAllTranscripts("/dir", 2000, 6000, fs)).toEqual(["sub/a.jsonl"]);
+  });
+
+  test("MUTATION: an unlistable directory throws, naming a recursive read", () => {
+    const fs = {
+      readdirRecursive: () => {
+        throw new Error("ENOENT");
+      },
+      stat: () => ({ mtimeMs: 0 }),
+    };
+    expect(() => listAllTranscripts("/missing", 1000, 2000, fs)).toThrow(
+      /recursively read/,
+    );
+    expect(() => listAllTranscripts("/missing", 1000, 2000, fs)).toThrow(
+      /\/missing/,
+    );
+  });
+
+  test("a file that vanishes between readdirRecursive and stat is skipped, not fatal", () => {
+    const fs = {
+      readdirRecursive: () => ["a.jsonl", "b.jsonl"],
+      stat: (p: string) => {
+        if (p.endsWith("b.jsonl")) throw new Error("ENOENT");
+        return { mtimeMs: 5000 };
+      },
+    };
+    expect(listAllTranscripts("/dir", 10000, 6000, fs)).toEqual(["a.jsonl"]);
+  });
+
+  test("MUTATION: an entry that escapes the project directory is rejected (anti-traversal)", () => {
+    const fs = {
+      readdirRecursive: () => ["../../../../etc/shadow.jsonl", "good.jsonl"],
+      stat: () => ({ mtimeMs: 5000 }),
+    };
+    expect(listAllTranscripts("/safe/dir", 10000, 6000, fs)).toEqual([
+      "good.jsonl",
+    ]);
+  });
+
+  test("returns nested paths relative to dir, forward-slash normalized", () => {
+    const fs = {
+      readdirRecursive: () => ["x/subagents/y.jsonl"],
+      stat: () => ({ mtimeMs: 5000 }),
+    };
+    expect(listAllTranscripts("/dir", 10000, 6000, fs)).toEqual([
+      "x/subagents/y.jsonl",
+    ]);
+  });
+});
+
+describe("countToolUseInTranscript", () => {
+  test("aggregates multiple tool_use blocks across multiple lines", () => {
+    const fs = {
+      readFile: () =>
+        '{"message":{"content":[{"type":"tool_use","name":"Read"},{"type":"tool_use","name":"Bash"}]}}\n' +
+        '{"message":{"content":[{"type":"tool_use","name":"Read"}]}}\n',
+    };
+    const counts = countToolUseInTranscript("/p/a.jsonl", fs);
+    expect(counts).toEqual(
+      new Map([
+        ["Read", 2],
+        ["Bash", 1],
+      ]),
+    );
+  });
+
+  test("skips a non-JSON line without throwing", () => {
+    const fs = {
+      readFile: () =>
+        "not json at all\n" +
+        '{"message":{"content":[{"type":"tool_use","name":"Read"}]}}\n',
+    };
+    expect(countToolUseInTranscript("/p/a.jsonl", fs)).toEqual(
+      new Map([["Read", 1]]),
+    );
+  });
+
+  test("MUTATION: a line whose message.content is not an array is skipped", () => {
+    const fs = {
+      readFile: () =>
+        '{"message":{"content":"not-an-array"}}\n' +
+        '{"message":{"content":[{"type":"tool_use","name":"Read"}]}}\n',
+    };
+    expect(countToolUseInTranscript("/p/a.jsonl", fs)).toEqual(
+      new Map([["Read", 1]]),
+    );
+  });
+
+  test("MUTATION: a record with no message key is skipped", () => {
+    const fs = {
+      readFile: () =>
+        '{"type":"user"}\n' +
+        '{"message":{"content":[{"type":"tool_use","name":"Read"}]}}\n',
+    };
+    expect(countToolUseInTranscript("/p/a.jsonl", fs)).toEqual(
+      new Map([["Read", 1]]),
+    );
+  });
+
+  test("MUTATION: an unreadable file returns null, not a throw", () => {
+    const fs = {
+      readFile: () => {
+        throw new Error("EACCES");
+      },
+    };
+    expect(countToolUseInTranscript("/p/a.jsonl", fs)).toBeNull();
+  });
+
+  test("returns an empty Map for a readable file with zero tool_use records", () => {
+    const fs = { readFile: () => '{"type":"user"}\n' };
+    expect(countToolUseInTranscript("/p/a.jsonl", fs)).toEqual(new Map());
+  });
+});
+
+function fakeToolUsageFs(files: Record<string, string>) {
+  const names = Object.keys(files);
+  return {
+    readdirRecursive: () => names,
+    stat: () => ({ mtimeMs: 5000 }),
+    readFile: (path: string) => {
+      const name = names.find((n) => path.endsWith(n));
+      if (name === undefined) throw new Error("ENOENT");
+      return files[name] ?? "";
+    },
+  };
+}
+
+describe("computeToolUsage", () => {
+  const now = () => 10_000;
+
+  test("aggregates tool usage and splits hub vs. subagent origin so they sum to the total", () => {
+    const fs = fakeToolUsageFs({
+      "a.jsonl":
+        '{"message":{"content":[{"type":"tool_use","name":"Read"}]}}\n',
+      "x/subagents/y.jsonl":
+        '{"message":{"content":[{"type":"tool_use","name":"Read"},{"type":"tool_use","name":"Read"}]}}\n',
+    });
+    const report = computeToolUsage({ dir: "/p", since: "7d", now, fs });
+    expect(report.files_scanned).toBe(2);
+    expect(report.unreadable).toBe(0);
+    expect(report.events_scanned).toBe(3);
+
+    const total = report.by_tool["Read"] ?? 0;
+    const origin = report.by_tool_origin["Read"] ?? { hub: 0, subagent: 0 };
+    expect(total).toBe(3);
+    expect(origin).toEqual({ hub: 1, subagent: 2 });
+    expect(origin.hub + origin.subagent).toBe(total);
+  });
+
+  test("MUTATION: an empty window throws rather than reporting zeros", () => {
+    const fs = fakeToolUsageFs({});
+    expect(() => computeToolUsage({ dir: "/p", since: "7d", now, fs })).toThrow(
+      /No transcript files found.*recursively/s,
+    );
+    expect(() => computeToolUsage({ dir: "/p", since: "7d", now, fs })).toThrow(
+      /empty window/,
+    );
+  });
+
+  test("MUTATION: when every file is unreadable, throws a permissions message, not ADR-0084", () => {
+    const fs = {
+      readdirRecursive: () => ["a.jsonl"],
+      stat: () => ({ mtimeMs: 5000 }),
+      readFile: () => {
+        throw new Error("EACCES");
+      },
+    };
+    let thrown: unknown;
+    try {
+      computeToolUsage({ dir: "/p", since: "7d", now, fs });
+      expect.unreachable("should have thrown");
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(Error);
+    expect((thrown as Error).message).toMatch(/permissions or access problem/);
+    expect((thrown as Error).message).not.toContain("ADR-0084");
+  });
+
+  test("MUTATION: transcripts present and readable but zero tool_use records throws, naming ADR-0084", () => {
+    const fs = fakeToolUsageFs({
+      "a.jsonl": '{"type":"user","message":{}}\n',
+    });
+    expect(() => computeToolUsage({ dir: "/p", since: "7d", now, fs })).toThrow(
+      /ZERO tool_use records/,
+    );
+    expect(() => computeToolUsage({ dir: "/p", since: "7d", now, fs })).toThrow(
+      /ADR-0084/,
+    );
+  });
+
+  test("a file that cannot be read is counted unreadable, not fatal, when others carry records", () => {
+    const fs = {
+      readdirRecursive: () => ["a.jsonl", "b.jsonl"],
+      stat: () => ({ mtimeMs: 5000 }),
+      readFile: (path: string) => {
+        if (path.endsWith("b.jsonl")) throw new Error("EACCES");
+        return '{"message":{"content":[{"type":"tool_use","name":"Read"}]}}\n';
+      },
+    };
+    const report = computeToolUsage({ dir: "/p", since: "7d", now, fs });
+    expect(report.files_scanned).toBe(2);
+    expect(report.unreadable).toBe(1);
+    expect(report.by_tool).toEqual({ Read: 1 });
   });
 });

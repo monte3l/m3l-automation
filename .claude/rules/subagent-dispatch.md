@@ -26,7 +26,12 @@ paths:
   `8baf68a9`, `c464e389`) shifted `test-author` from 0.06 to 0.18
   breaks/call in under a day — not yet captured in a work log. So treat any
   cited ratio as a snapshot: re-run `pnpm telemetry:sessions` before relying
-  on it, don't just quote the number in this file. Hand it an
+  on it, don't just quote the number in this file. The same command's
+  `toolUsage.by_tool`/`toolUsage.by_tool_origin` (a recursive scan over
+  every transcript, including subagent transcripts) reports total per-tool
+  call volume — a coarser but complementary signal for this same judgment,
+  since it does not yet break down by which spoke TYPE made a given call,
+  only hub vs. subagent in aggregate. Hand it an
   explicit file list **and** a byte budget per file, measured before
   dispatch; a spoke told the ceiling shrinks the file instead of ratcheting
   the baseline (`docs/logs/2026-09-03-u11-retry-resume-cancellation.md`).

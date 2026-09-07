@@ -974,7 +974,7 @@
       },
       {
         "path": "docs/logs/README.md",
-        "blob": "a677c2a6307e5d764dea9d0ebfb569a22d486ac4"
+        "blob": "e52e95b3f766c612e050d3c62030acee69920a4c"
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
@@ -1993,7 +1993,7 @@
       },
       {
         "path": "bin/session-telemetry.mjs",
-        "blob": "268890c90b5e76f2314bb5bfc1fa9aa51a66e7c0"
+        "blob": "a4e7b0174e1f577db6653c914085067d5438c6a4"
       },
       {
         "path": "CLAUDE.md",
@@ -2060,7 +2060,7 @@
       },
       {
         "path": "bin/session-telemetry.mjs",
-        "blob": "268890c90b5e76f2314bb5bfc1fa9aa51a66e7c0"
+        "blob": "a4e7b0174e1f577db6653c914085067d5438c6a4"
       },
       {
         "path": "bin/worktree-new.mjs",
@@ -2089,7 +2089,7 @@
       },
       {
         "path": "bin/session-telemetry.mjs",
-        "blob": "268890c90b5e76f2314bb5bfc1fa9aa51a66e7c0"
+        "blob": "a4e7b0174e1f577db6653c914085067d5438c6a4"
       },
       {
         "path": "bin/worktree-new.mjs",
@@ -2130,7 +2130,7 @@
       },
       {
         "path": "docs/contributing/skills-catalog.md",
-        "blob": "0fe6d447733edd736fedc6b0d34cc2589d75e75c"
+        "blob": "630448bb561e3a958f92811366ff9c85f5d53d9c"
       },
       {
         "path": "docs/plans/archive/2026-09-03-skill-invocation-and-listing-budget.md",
@@ -2234,7 +2234,7 @@
       },
       {
         "path": "docs/contributing/skills-catalog.md",
-        "blob": "0fe6d447733edd736fedc6b0d34cc2589d75e75c"
+        "blob": "630448bb561e3a958f92811366ff9c85f5d53d9c"
       },
       {
         "path": "docs/logs/2026-07-17-adr-0030-workflow-tooling-mcp.md",
@@ -2304,7 +2304,7 @@
       },
       {
         "path": "docs/decision-notes/README.md",
-        "blob": "338aca49ee50ca8a6d1532e5ca0432aa1d8c9867"
+        "blob": "2c62e8097cff978364e4f7bb6dd41767eebea51d"
       },
       {
         "path": "docs/logs/2026-09-06-adr-corpus-audit.md",
