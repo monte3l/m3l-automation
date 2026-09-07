@@ -236,6 +236,19 @@ in that context either, and no skill may depend on it to run.
   documentation only; the public `@m3l-automation/m3l-common` exports contract
   is untouched.
 
+## Post-acceptance note
+
+**2026-09-06:** two of the three reference snapshots named above moved as
+part of a skill-naming-convention cleanup — `tsconfig-strict-esm` →
+`typescript-configuration`, `vitest-coverage-types-mocks` → `vitest-testing`.
+The paths cited in this ADR's Context and Decision sections
+(`tsconfig-strict-esm`, `vitest-coverage-types-mocks`) reflect the names at
+the time of writing and are left as-is per the append-only convention for
+accepted decisions; the live paths are now
+`.claude/skills/typescript-configuration/references/typescript-configuration.md`
+and `.claude/skills/vitest-testing/references/vitest-testing.md`. `docs/contributing/skills-catalog.md`
+carries the current names.
+
 ## Links
 
 - Amends [ADR-0030](./0030-targeted-workflow-tooling-and-mcp.md) — fires its

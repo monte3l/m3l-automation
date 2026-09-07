@@ -1,5 +1,5 @@
 ---
-name: tsconfig-strict-esm
+name: typescript-configuration
 description: >-
   How this repo's TypeScript project is configured — strict/ESM options in
   tsconfig.base.json, the build-vs-tooling split — and how to change it safely.
@@ -82,4 +82,4 @@ means a missing `.js` extension or a `module`/`moduleResolution` mismatch; a
 
 For the current TypeScript compiler-option semantics (NodeNext resolution rules,
 the strict-flag breakdown, composite/references, interop constraints), see
-[`references/tsconfig-strict-esm.md`](references/tsconfig-strict-esm.md).
+[`references/typescript-configuration.md`](references/typescript-configuration.md).

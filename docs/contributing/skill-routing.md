@@ -108,11 +108,11 @@ rarely need to invoke it standalone except mid-task or before a PR exists.
 
 ### Config-specific how-to
 
-| I'm touching...                                                | Skill                          |
-| -------------------------------------------------------------- | ------------------------------ |
-| `eslint.config.js`, an ESLint rule, an override block          | `/eslint-flat-config`          |
-| `tsconfig*.json`, a project reference, TS5110/TS2834/2835      | `/tsconfig-strict-esm`         |
-| `vitest.config.ts`, a coverage threshold, `vi.mock`/type tests | `/vitest-coverage-types-mocks` |
+| I'm touching...                                                | Skill                       |
+| -------------------------------------------------------------- | --------------------------- |
+| `eslint.config.js`, an ESLint rule, an override block          | `/eslint-flat-config`       |
+| `tsconfig*.json`, a project reference, TS5110/TS2834/2835      | `/typescript-configuration` |
+| `vitest.config.ts`, a coverage threshold, `vi.mock`/type tests | `/vitest-testing`           |
 
 ### The knowledge loop
 
