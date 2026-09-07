@@ -64,6 +64,7 @@ function unusedSurface(): AgentCliSurface {
     inspect: refuse,
     dryRun: refuse,
     run: refuse,
+    triageRun: refuse,
   };
 }
 

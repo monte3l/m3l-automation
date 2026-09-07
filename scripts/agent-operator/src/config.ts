@@ -80,21 +80,23 @@ function eachNonEmptyModelId(
 }
 
 /**
- * The `command` parameter's declared operation set (ADR-0055) — the three
+ * The `command` parameter's declared operation set (ADR-0055) — the four
  * verbs `agent-operator` dispatches over: PR 1's two offline-only operations
  * (`health-check`, `explain-policy` — no Bedrock client, no agent loop, no
- * network) plus V9 slice 3b's `run-preset`, which does call Bedrock and does
- * mutate through an allowlisted preset. Feeds {@link configParameters}'
- * `command` declaration (which auto-composes the membership validator) and
- * {@link AGENT_OPERATOR_COMMANDS} below.
+ * network) plus V9 slice 3b's `run-preset` and V9 slice 4's `triage-logs`,
+ * both of which call Bedrock — `run-preset` mutates through an allowlisted
+ * preset, `triage-logs` only reads (there is no dry-run phase; the
+ * `triage_logs` tool is single-phase and policy-gated read-only). Feeds
+ * {@link configParameters}' `command` declaration (which auto-composes the
+ * membership validator) and {@link AGENT_OPERATOR_COMMANDS} below.
  *
  * Deliberately no generic `ask`/`prompt` operation: a free-form operation
  * would let model output (rather than a reviewed, versioned declaration)
  * choose which workload runs, defeating the whole point of declaring the
- * operation set as data. `run-preset` does not violate this — WHICH preset
- * runs is model-chosen, but only from the names present in the
- * operator-declared `presetAllowlist`, never from an open-ended workload
- * choice.
+ * operation set as data. Neither `run-preset` nor `triage-logs` violates
+ * this — WHICH preset runs is model-chosen, but only from the names present
+ * in the operator-declared `presetAllowlist`, never from an open-ended
+ * workload choice.
  *
  * Declared with a bare `as const` — NOT
  * `as const satisfies Core.M3LOperationDeclarationList` — because a
@@ -141,6 +143,17 @@ export const AGENT_OPERATOR_COMMAND_DECLARATIONS = [
       "scripts",
       "presetAllowlist",
     ],
+  },
+  {
+    name: "triage-logs",
+    description:
+      "Triage a CloudWatch alarm by running an allowlisted cloudwatch-logs-analysis preset through the policy-gated read-only triage_logs tool.",
+    // Same literal-not-`Core.AWS_PROFILE_PARAM_NAME` rationale as
+    // `run-preset` above (TS9013 under `isolatedDeclarations`); the
+    // requiredParameters set itself is also identical to `run-preset`'s —
+    // both operations need an AWS profile, an allowlisted script name, and
+    // a preset allowlist to resolve their model-chosen preset name against.
+    requiredParameters: ["aws.profile", "scripts", "presetAllowlist"],
   },
 ] as const;
 
@@ -204,11 +217,13 @@ export const AGENT_OPERATOR_COMMANDS: readonly [
  * script touches AWS — that name is what enables the `script.aws`
  * dynamic-provisioning seam.
  *
- * `presetAllowlist` is also now `run-preset`'s (V9 slice 3b) declared
- * `requiredParameters` entry alongside `Core.AWS_PROFILE_PARAM_NAME` and
- * `scripts` — see {@link AGENT_OPERATOR_COMMAND_DECLARATIONS}'s `run-preset`
- * entry for why the preset NAME itself is deliberately not a required
- * parameter here.
+ * `presetAllowlist` is also now both `run-preset`'s (V9 slice 3b) and
+ * `triage-logs`'s (V9 slice 4) declared `requiredParameters` entry alongside
+ * `Core.AWS_PROFILE_PARAM_NAME` and `scripts` — see
+ * {@link AGENT_OPERATOR_COMMAND_DECLARATIONS}'s `run-preset` entry for why
+ * the preset NAME itself is deliberately not a required parameter here; the
+ * same reasoning applies to `triage-logs`, whose model-chosen preset name
+ * flows through `triage_logs`'s own input schema instead.
  */
 export const configParameters: readonly Core.M3LConfigParameter[] = [
   new Core.M3LConfigParameter({

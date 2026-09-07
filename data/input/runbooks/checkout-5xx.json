@@ -1,0 +1,63 @@
+{
+  "alarm": "checkout-5xx",
+  "title": "Checkout API 5xx rate above threshold",
+  "escalateTo": "#payments-oncall",
+  "window": {
+    "leadMinutes": 5,
+    "lagMinutes": 15
+  },
+  "entry": {
+    "logGroups": ["/aws/apigateway/checkout"],
+    "query": "fields @timestamp, @message, requestId | filter status >= 500 | sort @timestamp desc",
+    "limit": 200
+  },
+  "correlation": {
+    "field": "requestId",
+    "pattern": "^[0-9a-f-]{8,64}$",
+    "label": "requestId"
+  },
+  "signature": {
+    "field": "@message",
+    "pattern": "(?:Exception|Error):\\s*(?<signature>[A-Za-z0-9_.]+)",
+    "levelField": "level",
+    "serviceField": "service"
+  },
+  "trace": [
+    {
+      "label": "checkout-service",
+      "logGroups": ["/aws/lambda/checkout-service"],
+      "query": "fields @timestamp, @message, level, service | filter requestId = 'REQUEST_ID' | sort @timestamp desc",
+      "limit": 100
+    }
+  ],
+  "cases": [
+    {
+      "id": "downstream-payments-timeout",
+      "description": "The payments provider timed out and the retry succeeded.",
+      "prose": "A read timeout against the payments provider that the client retry already recovered. No action while the retry rate stays inside its own alarm.",
+      "priority": 10,
+      "pattern": "PaymentProviderTimeout",
+      "level": "WARN",
+      "service": "checkout-service",
+      "verdict": "transient-downstream",
+      "followUps": [
+        "Confirm the provider's retry rate is inside its own alarm before closing."
+      ]
+    },
+    {
+      "id": "known-inventory-null-sku",
+      "description": "A null SKU from the inventory feed, tracked upstream.",
+      "prose": "The inventory feed occasionally emits a record with no SKU, which the checkout mapper rejects with a 500. Tracked upstream; the alarm clears once the feed is republished.",
+      "priority": 11,
+      "pattern": "NullPointerException: sku",
+      "level": "ERROR",
+      "service": "checkout-service",
+      "verdict": "known-open-issue",
+      "ticket": "PAY-4182",
+      "resolution": "Wait for the inventory feed to republish, then confirm the alarm clears."
+    }
+  ],
+  "followUps": [
+    "Attach the correlated request IDs to the incident before escalating."
+  ]
+}

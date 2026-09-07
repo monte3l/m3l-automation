@@ -413,6 +413,92 @@ describe("the committed data/input/agent-policy.json (realAgentPolicy)", () => {
     // of escalating it — defeating the entire cross-check.
     expect(grant?.readOnlyOperations).not.toContain("run");
   });
+
+  // V9 slice 4: the agent-operator grant's fourth operation, `triage-logs`.
+  it("case 9: the agent-operator grant lists triage-logs in both operations and readOnlyOperations", async () => {
+    const policy = await realAgentPolicy();
+    const grant = policy.scripts.find((s) => s.script === "agent-operator");
+    expect(grant).toBeDefined();
+    // Without the `operations` grant, `assertConclusionAutoApproved` (the
+    // conclusion-tail gate in `steps/run-log-triage.ts`) dies with every OTHER
+    // gate green: step 1 (`script-not-allowlisted`) would never even be
+    // reached by name, but step 2 (`operation-not-allowlisted`) denies the
+    // action outright before dry-run/budget/decision-log checks run at all —
+    // this membership guard is what catches that omission structurally,
+    // rather than only downstream in a full run trace.
+    expect(grant?.operations).toContain("triage-logs");
+    expect(grant?.readOnlyOperations).toContain("triage-logs");
+  });
+
+  // V9 slice 4: `triage-logs` drives `cloudwatch-logs-analysis`'s `analyze`
+  // verb through its existing `run` argv shape (see slice4-contract.md's
+  // maintainer decision 1), so the target script's grant must carry `run` in
+  // BOTH lists — the mirror image of json-etl's case 8 asymmetry.
+  it("case 10: the cloudwatch-logs-analysis grant lists run in both operations and readOnlyOperations", async () => {
+    const policy = await realAgentPolicy();
+    const grant = policy.scripts.find(
+      (s) => s.script === "cloudwatch-logs-analysis",
+    );
+    expect(grant).toBeDefined();
+    expect(grant?.operations).toContain("run");
+    expect(grant?.readOnlyOperations).toContain("run");
+  });
+
+  it("case 11: cloudwatch-logs-analysis run (read-only) is auto-approved via read-only-auto-approved, driven through the real evaluator", async () => {
+    // This is the behavioral guard case 10's membership check alone cannot
+    // give: `decideReadOnly` escalates `kind-cross-check-escalated` whenever
+    // `readOnlyOperations` OMITS an operation a read-only action names (see
+    // `decide.ts`'s `decideReadOnly`) — so the only way to prove the grant
+    // actually corroborates a read-only `run` claim is to drive a real
+    // `{ operation: "run", kind: "read-only" }` action through
+    // `Core.evaluateAgentAction` and assert the resulting verdict AND rule,
+    // not just that the array happens to contain the string.
+    const policy = await realAgentPolicy();
+
+    const decision = Core.evaluateAgentAction({
+      policy,
+      action: {
+        script: "cloudwatch-logs-analysis",
+        operation: "run",
+        kind: "read-only",
+        // A non-sensitive profile: sensitiveTargets.profiles is
+        // ["prod","production"], and grading (mutating-only) sits below the
+        // read-only arm anyway — named here so the target is a realistic,
+        // resolvable profile rather than an empty object.
+        target: { profile: "sandbox" },
+      },
+      run: healthyRunLedger(),
+    });
+
+    expect(decision.verdict).toBe("auto-approved");
+    expect(decision.rule).toBe("read-only-auto-approved");
+  });
+
+  it("case 12 (contrast): json-etl's run grant still omits readOnlyOperations, so a read-only claim for it escalates instead of auto-approving", async () => {
+    // The discriminating contrast: without this, a passing case 11 could
+    // just as easily be explained by an implementation that always
+    // auto-approves ANY read-only-kind action regardless of the grant's
+    // readOnlyOperations. Driving the SAME kind: "read-only" claim against
+    // json-etl's grant (which deliberately omits "run" from
+    // readOnlyOperations per case 8) must instead escalate via the
+    // kind-cross-check — proving case 11's approval really is conditional on
+    // the grant, not a vacuous always-approve.
+    const policy = await realAgentPolicy();
+
+    const decision = Core.evaluateAgentAction({
+      policy,
+      action: {
+        script: "json-etl",
+        operation: "run",
+        kind: "read-only",
+        target: { profile: "sandbox" },
+      },
+      run: healthyRunLedger(),
+    });
+
+    expect(decision.verdict).toBe("escalate");
+    expect(decision.rule).toBe("kind-cross-check-escalated");
+  });
 });
 
 describe("policyFixtures.castPolicy (validator-is-the-only-door guarantee)", () => {

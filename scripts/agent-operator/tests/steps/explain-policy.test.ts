@@ -154,6 +154,12 @@ function createFakeSurface(): {
       calls.push("run");
       return Promise.reject(new Error("unexpected mutating run() call"));
     },
+    // Same reasoning as `run` above: `triageRun` is also a mutating
+    // operation `explainPolicy` never invokes.
+    triageRun() {
+      calls.push("triageRun");
+      return Promise.reject(new Error("unexpected mutating triageRun() call"));
+    },
   };
   return { surface, calls };
 }

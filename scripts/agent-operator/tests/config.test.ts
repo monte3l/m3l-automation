@@ -103,11 +103,14 @@ describe("agent-operator config declaration", () => {
     // adds a third, `run-preset` — still a declared, reviewed operation, not
     // a free-form one: which PRESET it runs is model-chosen, but only from
     // the operator-declared `presetAllowlist` (see the dedicated
-    // `run-preset operation declaration` block below).
+    // `run-preset operation declaration` block below). V9 slice 4 adds a
+    // fourth, `triage-logs` (see the dedicated `triage-logs operation
+    // declaration` block below).
     expect(operationNames).toEqual([
       "health-check",
       "explain-policy",
       "run-preset",
+      "triage-logs",
     ]);
   });
 
@@ -443,13 +446,18 @@ describe("run-preset operation declaration (V9 slice 3b)", () => {
   );
 
   it("is present in AGENT_OPERATOR_COMMANDS (Core.deriveOperationNames), alongside the unchanged first two", () => {
+    // V9 slice 4 adds a fourth entry, `triage-logs` — see the dedicated
+    // `triage-logs operation declaration` block below, which is where that
+    // entry's own contract lives. Both `deriveOperationNames` and the
+    // derived `AGENT_OPERATOR_COMMANDS` union must reflect all four.
     expect(
       Core.deriveOperationNames(AGENT_OPERATOR_COMMAND_DECLARATIONS),
-    ).toEqual(["health-check", "explain-policy", "run-preset"]);
+    ).toEqual(["health-check", "explain-policy", "run-preset", "triage-logs"]);
     expect(AGENT_OPERATOR_COMMANDS).toEqual([
       "health-check",
       "explain-policy",
       "run-preset",
+      "triage-logs",
     ]);
   });
 
@@ -497,5 +505,43 @@ describe("run-preset operation declaration (V9 slice 3b)", () => {
   it("makes Core.deriveOperationValidators(configParameters) derive a non-empty validator set", () => {
     const derived = Core.deriveOperationValidators(configParameters);
     expect(derived.length).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * V9 slice 4: a fourth declared operation, `triage-logs`, alongside PR 1's
+ * `health-check`/`explain-policy` pair and slice 3b's `run-preset`. It drives
+ * `cloudwatch-logs-analysis`'s `analyze` verb through the read-only
+ * `triage_logs` Bedrock tool (`steps/build-triage-tools.ts`) and its own
+ * `presetAllowlist`-gated preset verification seam
+ * (`lib/triage-presets.ts`).
+ */
+describe("triage-logs operation declaration (V9 slice 4)", () => {
+  const triageLogsDeclaration = AGENT_OPERATOR_COMMAND_DECLARATIONS.find(
+    (declaration) => declaration.name === "triage-logs",
+  );
+
+  it("declares requiredParameters exactly aws.profile, scripts, presetAllowlist", () => {
+    expect(triageLogsDeclaration).toBeDefined();
+    // Written as `config.ts` must write it: literal strings, not
+    // `Core.AWS_PROFILE_PARAM_NAME`, because `isolatedDeclarations` rejects
+    // an imported const inside that `as const` array (TS9013). This is the
+    // drift guard for that literal: if the library constant's value ever
+    // changes, this assertion fails rather than the drift going unnoticed.
+    expect(triageLogsDeclaration?.requiredParameters).toEqual([
+      Core.AWS_PROFILE_PARAM_NAME,
+      "scripts",
+      "presetAllowlist",
+    ]);
+  });
+
+  it("makes AGENT_OPERATOR_COMMANDS exactly four members, including triage-logs", () => {
+    expect(AGENT_OPERATOR_COMMANDS).toHaveLength(4);
+    expect(AGENT_OPERATOR_COMMANDS).toContain("triage-logs");
+  });
+
+  it("carries a non-empty description", () => {
+    expect(triageLogsDeclaration).toBeDefined();
+    expect(triageLogsDeclaration?.description ?? "").not.toBe("");
   });
 });
