@@ -375,6 +375,17 @@ letters, digits, single hyphens). Tear down the symmetric way with
 `pnpm worktree:remove <slug>` (add `--force` to discard uncommitted/untracked
 changes first).
 
+Deleting a branch from the **shared checkout** instead — no worktree involved
+— is `pnpm branch:cleanup <branch>`, `worktree:remove`'s shared-checkout
+counterpart (`bin/branch-cleanup.mjs`). It refuses to delete `main` or the
+currently-checked-out branch, safely keeps (never force-deletes) a branch
+`git branch -d` won't accept, and — like `worktree:remove` — refuses when
+deleting the branch would strand a linked worktree, naming
+`pnpm worktree:remove <slug>` as the remedy either way (issue #1004,
+ROADMAP H11). `finishing-work` decides which of the two applies with a
+mechanical check (`git rev-parse --git-common-dir` vs `--git-dir`), not
+recollection.
+
 To investigate or audit an existing branch — an abandoned or in-review branch
 you don't intend to develop on — without a raw manual `git worktree add
 --detach`, use `--from <ref>` instead of branching from main:

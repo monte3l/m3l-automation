@@ -553,7 +553,7 @@ export const COMMAND_CATALOG = [
   {
     name: "branch:cleanup",
     description:
-      "Shared-checkout equivalent of `worktree:remove`'s branch-delete step — deletes a merged local branch from the CURRENT checkout without any worktree-specific bookkeeping. `-- <branch>` (required, `git branch -d`; refuses `main` and the currently-checked-out branch), `-- <branch> --force` (`git branch -D`). The primary caller is `/finishing-work`, the post-merge close-out skill.",
+      "Shared-checkout equivalent of `worktree:remove`'s branch-delete step — deletes a merged local branch from the CURRENT checkout without any worktree-specific bookkeeping. `-- <branch>` (required, `git branch -d`; refuses `main`, the currently-checked-out branch, and — naming `pnpm worktree:remove <slug>` as the remedy — a branch that would strand a linked worktree, issue #1004), `-- <branch> --force` (`git branch -D`). The primary caller is `/finishing-work`, the post-merge close-out skill.",
   },
   {
     name: "telemetry:sessions",
