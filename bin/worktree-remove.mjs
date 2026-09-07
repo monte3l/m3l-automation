@@ -11,7 +11,9 @@
 //   node bin/worktree-remove.mjs <slug> --force  # discard uncommitted changes
 import process from "node:process";
 import { execFileSync } from "node:child_process";
-import { dirname, resolve } from "node:path";
+import { resolve } from "node:path";
+import { resolveCheckoutLocation } from "./lib/checkout-location.mjs";
+import { worktreeDirName } from "./lib/worktree-new.mjs";
 
 const args = process.argv.slice(2);
 const force = args.includes("--force");
@@ -32,20 +34,29 @@ function git(argv, opts = {}) {
   return typeof out === "string" ? out.trim() : "";
 }
 
-const gitCommonDir = git([
-  "rev-parse",
-  "--path-format=absolute",
-  "--git-common-dir",
-]);
-const mainCheckout = dirname(gitCommonDir);
-const worktreePath = resolve(mainCheckout, "..", `m3l-automation-${slug}`);
+const { mainCheckout, here } = resolveCheckoutLocation({ runGit: git });
+const worktreePath = resolve(mainCheckout, "..", worktreeDirName(slug));
 
-// Refuse to remove the main checkout or the tree we are standing in.
-const here = resolve(process.cwd());
-if (worktreePath === resolve(mainCheckout) || worktreePath === here) {
+// Refuse to remove the main checkout or the tree we are standing in — two
+// distinguishable messages, since the remedy differs (the wrong command
+// entirely vs. the right command from the wrong place).
+if (worktreePath === resolve(mainCheckout)) {
   console.error(
-    `✗  worktree:remove: refusing to remove the main or current checkout ` +
-      `(${worktreePath}).`,
+    `✗  worktree:remove: "${slug}" resolves to the main checkout ` +
+      `(${worktreePath}) — there is no linked worktree to remove. If you ` +
+      "meant to delete a merged branch from the shared checkout, use " +
+      "`pnpm branch:cleanup <branch>` instead.",
+  );
+  process.exit(1);
+}
+if (worktreePath === here) {
+  console.error(
+    "✗  worktree:remove: refusing to remove the worktree this session is " +
+      `standing in (${worktreePath}). Leave it first — ` +
+      '`ExitWorktree({action: "remove"})` if this session entered via ' +
+      '`EnterWorktree`, otherwise `ExitWorktree({action: "keep"})` (or `cd` ' +
+      "to the main checkout) and re-run `pnpm worktree:remove " +
+      `${slug}\` from there.`,
   );
   process.exit(1);
 }
