@@ -239,6 +239,7 @@ target was renamed is repaired via `RENAMED_TARGETS` in
 | 2026-09-05 | statusline-anchor-fixes               | [statusline-anchor-fixes](./2026-09-05-statusline-anchor-fixes.md)                         |
 | 2026-09-07 | hooks-unwired-events-rationale        | [hooks-unwired-events-rationale](./2026-09-07-hooks-unwired-events-rationale.md)           |
 | 2026-09-07 | landing-plan-parser-generalization    | [landing-plan-parser-generalization](./2026-09-07-landing-plan-parser-generalization.md)   |
+| 2026-09-07 | check-landing-plans-gate              | [check-landing-plans-gate](./2026-09-07-check-landing-plans-gate.md)                       |
 
 ## Workflow / infra
 
