@@ -653,6 +653,14 @@ jobs:
       - name: Check hook wiring (hooks)
         run: pnpm check:hooks
 
+      # m3l MCP server wiring (ADR-0096 PR3): .mcp.json's "m3l" entry, the
+      # registered TOOLS array, and settings.json's mcp__m3l__* allowlist
+      # reconcile 1:1 in both directions, every tool carries readOnlyHint and
+      # a non-empty title, and the server declares non-empty instructions —
+      # the server had no runtime verification at any stage before this gate.
+      - name: Check MCP server wiring (mcp)
+        run: pnpm check:mcp
+
       # .node-version is the single authority for the dev/CI Node runtime
       # (ADR-0003 amendment): every workspace manifest's engines.node floor
       # agrees with the pin, and every actions/setup-node site in .github/

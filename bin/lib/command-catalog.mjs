@@ -271,6 +271,11 @@ export const COMMAND_CATALOG = [
       "Verifies every .claude/settings.json hook command resolves to a real .claude/hooks/*.mjs file, every event name is a real Claude Code lifecycle event, and no hook file is left unwired. Run after editing hooks or settings.json.",
   },
   {
+    name: "check:mcp",
+    description:
+      "Reconciles the m3l MCP server's .mcp.json entry, its registered TOOLS array (bin/lib/mcp-tools.mjs), and .claude/settings.json's mcp__m3l__* allowlist 1:1 in both directions, and asserts every tool carries readOnlyHint + a non-empty title plus a non-empty server instructions string. Run after adding, renaming, or dropping an m3l MCP tool.",
+  },
+  {
     name: "statusline:preview",
     description:
       "Renders .claude/hooks/statusline-context-pressure.mjs's five-row output against fixture payloads (early-session, mid-session, ≥90% context, no rate limits, derived/literal/all-landed/absent slice progress, no git) at COLUMNS 60/80/120/160, plus live malformed-JSON and corrupt-tmp-state probes of the real script. Dev-only display tool, not a gate — run it after changing the statusLine renderer or the layout module.",
