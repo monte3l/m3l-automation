@@ -402,13 +402,38 @@ jobs:
             compare_err="$GITHUB_WORKSPACE/.claude-compare.err"
             compare_json="$(gh api "repos/$REPO/compare/$REVIEWED_SHA...$HEAD_SHA" 2>"$compare_err" || echo "")"
             # Every condition below must hold for a delta to be trustworthy:
-            # a non-empty API response, build-delta-patch succeeding (it
+            # a non-empty API response, the compare reporting status "ahead"
+            # (see below), build-delta-patch succeeding (it
             # itself returns non-zero — see bin/lib/pr-review-gate.mjs's
             # buildDeltaPatch() — when the file list hits GitHub's 300-file
             # compare-API cap, or any file has a real content change with no
             # `patch` field GitHub could have withheld for size/binary
             # reasons it cannot safely guess between), AND both output files
-            # existing and non-empty. That last check matters on its own:
+            # existing and non-empty.
+            #
+            # The status check is what makes REVIEWED_SHA safe to use as a
+            # base at all. `compare/A...B` is a THREE-dot comparison, so it
+            # diffs B against merge-base(A, B) — fine while the prior-PASS
+            # commit is still an ancestor of HEAD, meaningless once it isn't.
+            # A rebase (or amend, or force-push) orphans that commit, the
+            # merge-base collapses back to the branch's old base, and the
+            # "delta since PASS" silently becomes the full diff from before
+            # `main` advanced — every commit `main` gained in the meantime
+            # included. On PR #1089 that turned a real 36,115-char diff into
+            # 417,946 chars of other people's code and tripped
+            # MAX_REVIEWABLE_BYTES, so the size ceiling rejected the PR and
+            # skipped the review entirely, naming files the author never
+            # touched. Worse, it could not self-heal: the fail-safe below
+            # only falls back when the SHA marker is MISSING, and a stale
+            # PASS still has one.
+            #
+            # `status` is "ahead" exactly when behind_by is 0, i.e. the base
+            # really is an ancestor; a rebased anchor reports "diverged".
+            # It costs nothing — it is already in the response fetched above.
+            # Anything other than "ahead" falls through to the full-diff path
+            # like any other untrustworthy delta.
+            #
+            # That last check matters on its own:
             # the guard step already proved a reviewable file changed since
             # REVIEWED_SHA, so an empty result here — both commands
             # succeeding, zero files reported — means the two independent
@@ -416,6 +441,7 @@ jobs:
             # there is genuinely nothing to review. Treat that as a build
             # failure, not a smaller-than-expected success.
             if [ -n "$compare_json" ] \
+              && [ "$(printf '%s' "$compare_json" | jq -r '.status // ""')" = ahead ] \
               && printf '%s' "$compare_json" \
                 | node "$GITHUB_WORKSPACE/bin/pr-review-gate.mjs" build-delta-patch \
                   > "$GITHUB_WORKSPACE/.claude-pr-diff.patch" 2>/dev/null \
@@ -427,7 +453,7 @@ jobs:
               is_delta=true
               echo "Delta review: comparing ${REVIEWED_SHA}...${HEAD_SHA} (since the prior PASS) instead of the full diff."
             else
-              echo "Delta patch build failed or was untrustworthy — falling back to the full diff. Compare API stderr (if any): $(cat "$compare_err" 2>/dev/null)" >&2
+              echo "Delta patch build failed or was untrustworthy (compare status: $(printf '%s' "$compare_json" | jq -r '.status // "unknown"') — only \"ahead\" is usable) — falling back to the full diff. Compare API stderr (if any): $(cat "$compare_err" 2>/dev/null)" >&2
               rm -f "$GITHUB_WORKSPACE/.claude-pr-diff.patch" "$GITHUB_WORKSPACE/.claude-pr-changed-files.txt"
             fi
           fi
