@@ -1,6 +1,6 @@
 # Sequence pre-push and post-push review loops (issue #1003, H10)
 
-**Status: shipped**
+**Status: shipped** — PR #1103.
 
 ## Context
 
