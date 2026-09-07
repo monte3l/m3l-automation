@@ -32,6 +32,7 @@ import {
   makeInspectPayload,
   makeListPayload,
   makeParamDescriptor,
+  makeRunEnvelope,
   makeRunEnvelopePayload,
   signalledResult,
   spawnFailedResult,
@@ -78,9 +79,14 @@ function createDeps(overrides: Partial<AgentCliSurfaceDeps> = {}): {
     nodeExecPath: "/usr/bin/node",
     cliTimeoutMs: 30_000,
     dryRunTimeoutMs: 120_000,
+    flowTimeoutMs: 600_000,
     maxOutputBytes: 1_048_576,
     dryRunAllowlist: new Set([DRY_RUN_ALLOWED_NAME]),
     presetAllowlist: new Map([[PRESET_ALLOWED_NAME, PRESET_RELATIVE_PATH]]),
+    // Closed by default, mirroring `presetAllowlist`'s own "empty still
+    // means closed" convention — `createFlowDeps` below overrides this with
+    // the real fixture allowlist for every `flowRun` scenario.
+    flowAllowlist: new Set<string>(),
     runProcess: fake.runProcess,
     ...overrides,
   };
@@ -2331,9 +2337,11 @@ function createBareDeps(): AgentCliSurfaceDeps {
     nodeExecPath: UNSPAWNABLE_NODE_EXEC_PATH,
     cliTimeoutMs: 2_000,
     dryRunTimeoutMs: 2_000,
+    flowTimeoutMs: 2_000,
     maxOutputBytes: 1_048_576,
     dryRunAllowlist: new Set([DRY_RUN_ALLOWED_NAME]),
     presetAllowlist: new Map([[PRESET_ALLOWED_NAME, PRESET_RELATIVE_PATH]]),
+    flowAllowlist: new Set<string>(),
   };
 }
 
@@ -2913,5 +2921,333 @@ describe("createAgentCliSurface — triageRun() preset rejection (same allowlist
       message: SCRIPT_NAME_REJECTION_MESSAGE,
     });
     expect(recorder.invocations).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PR B1 — `flowRun(flowName, options)`, the `m3l flow run` seam. Unlike
+// `run`/`triageRun`, `flow run` parses `--json` itself and REJECTS every
+// extra argument (exit code 2, per `packages/m3l-cli/src/commands/flow.ts`'s
+// own `reportUnknownFlag`), so there is no bare `--` passthrough separator,
+// no `--resume` (resuming would re-enter a partially-executed, already-
+// mutated flow under an authorization granted for a fresh run), and no
+// `--aws.profile=` pin the way `triageRun` carries one (a flow's profile is
+// graded from the flow definition instead — PR B2). The flow name is
+// validated by `lib/flow-names.ts`'s `assertAllowedFlowName`, which mirrors
+// `assertAllowedScriptName`/`assertAllowedPresetName`'s shape-then-
+// membership order but — unlike the collapsed preset/script messages —
+// raises three DISTINCT, non-echoing messages, all coded
+// `ERR_AGENT_OPERATOR_CONFIG` (read directly from `lib/flow-names.ts`, not
+// invented). `options.mode` reuses the EXACT `AgentCliRunOptions` type and
+// runtime-narrowing contract `run()` already enforces via `assertRunMode`,
+// so the invalid-mode cases below reuse this file's own
+// `settleRun`/`assertCodedFailClosedRejection` helpers rather than pin a
+// message: those helpers already encode "coded `M3LAgentOperatorCliError`,
+// never a bare `TypeError`, nothing spawned" without assuming which of the
+// two run-mode-shaped seams raised it.
+// ---------------------------------------------------------------------------
+
+/** A flow name matching the slug shape AND declared into the fixture allowlist. */
+const FLOW_ALLOWED_NAME = "dlq-reconcile";
+
+const EXPECTED_FLOW_RUN_ARGV: readonly string[] = [
+  "flow",
+  "run",
+  FLOW_ALLOWED_NAME,
+  "--json",
+];
+
+/** `--dry-run` appended LAST, as the fifth token. */
+const EXPECTED_FLOW_DRY_RUN_ARGV: readonly string[] = [
+  ...EXPECTED_FLOW_RUN_ARGV,
+  "--dry-run",
+];
+
+/**
+ * `flowRun`-flavoured deps around the recording seam. No `workspaceRoot` is
+ * needed: unlike `run`/`triageRun`, `flowRun` never resolves a filesystem
+ * path — the flow name is interpolated directly into argv, so there is
+ * nothing here for an anchoring root to join onto.
+ *
+ * `flowAllowlist` is not yet a declared field of
+ * `CreateAgentCliSurfaceOptions` — it is this slice's own missing piece,
+ * mirroring the existing `dryRunAllowlist`/`presetAllowlist` naming and
+ * "required, closed-by-default" shape. Passing it here is expected to be a
+ * RED-phase typecheck error (an unknown property on the options bag) until
+ * `flowRun` and its config field ship together.
+ */
+function createFlowDeps(overrides: Partial<AgentCliSurfaceDeps> = {}): {
+  readonly deps: AgentCliSurfaceDeps;
+  readonly recorder: RecordingRunProcess;
+} {
+  const recorder = createRecordingRunProcess();
+  const { deps } = createDeps({
+    flowAllowlist: new Set([FLOW_ALLOWED_NAME]),
+    runProcess: recorder.runProcess,
+    ...overrides,
+  });
+  return { deps, recorder };
+}
+
+/**
+ * Builds a `flow run --json` payload with exactly one step, whose nested
+ * `run` envelope is a full `AgentOperatorRunEnvelope` produced by the
+ * EXISTING `makeRunEnvelope` fixture (never a hand-rolled copy) — mirroring
+ * how the real CLI's `buildStepEnvelope` composes a step from the real
+ * `buildRunEnvelope`. `stepReportPath` defaults to `null` so most callers
+ * get an unremarkable happy-path fixture; the projection end-to-end test
+ * below is the one caller that sets it to an absolute path.
+ */
+function makeFlowEnvelopePayload(
+  overrides: {
+    readonly exitCode?: number;
+    readonly stepReportPath?: string | null;
+  } = {},
+): string {
+  const stepRun = makeRunEnvelope({
+    reportPath: overrides.stepReportPath ?? null,
+    outcome: "success",
+  });
+  return JSON.stringify({
+    kind: "m3l.flow.result",
+    schemaVersion: 1,
+    flow: FLOW_ALLOWED_NAME,
+    runId: "flow-run-1",
+    definitionHash: "deadbeefcafefeed",
+    startedAt: "2026-09-01T00:00:00.000Z",
+    finishedAt: "2026-09-01T00:00:02.000Z",
+    durationMs: 2000,
+    status: "succeeded",
+    exitCode: overrides.exitCode ?? 0,
+    exitCodeName: "SUCCESS",
+    dryRun: false,
+    stepExecutionCount: 1,
+    haltingStepId: null,
+    resumeStepId: null,
+    steps: [
+      {
+        stepId: "step-1",
+        script: FLOW_ALLOWED_NAME,
+        attempt: 1,
+        branch: "continue",
+        run: stepRun,
+      },
+    ],
+  });
+}
+
+const FLOW_RUN_MODES: readonly (readonly [
+  label: string,
+  mode: AgentCliRunOptions["mode"],
+])[] = [
+  ["mutate", "mutate"],
+  ["dry-run", "dry-run"],
+] as const;
+
+describe("createAgentCliSurface — flowRun() argv", () => {
+  test("flowRun(flowName, { mode: 'mutate' }) sends exactly ['flow', 'run', flowName, '--json']", async () => {
+    const { deps, recorder } = createFlowDeps();
+    recorder.enqueueResult(exitedResult({ stdout: makeFlowEnvelopePayload() }));
+    const surface = createAgentCliSurface(deps);
+
+    await surface.flowRun(FLOW_ALLOWED_NAME, { mode: "mutate" });
+
+    expect(recorder.invocations.map((call) => call.args)).toEqual([
+      EXPECTED_FLOW_RUN_ARGV,
+    ]);
+  });
+
+  test("flowRun(flowName, { mode: 'dry-run' }) appends --dry-run as the fifth token", async () => {
+    const { deps, recorder } = createFlowDeps();
+    recorder.enqueueResult(exitedResult({ stdout: makeFlowEnvelopePayload() }));
+    const surface = createAgentCliSurface(deps);
+
+    await surface.flowRun(FLOW_ALLOWED_NAME, { mode: "dry-run" });
+
+    expect(recorder.invocations.map((call) => call.args)).toEqual([
+      EXPECTED_FLOW_DRY_RUN_ARGV,
+    ]);
+    const argv = recorder.invocations[0]?.args ?? [];
+    expect(argv).toHaveLength(5);
+    expect(argv.at(-1)).toBe("--dry-run");
+  });
+
+  test.each(FLOW_RUN_MODES)(
+    "flowRun() never emits a bare '--' in %s mode — m3l flow parses --json itself and rejects every extra argument, so a passthrough separator would be a usage error",
+    async (_label, mode) => {
+      const { deps, recorder } = createFlowDeps();
+      recorder.enqueueResult(
+        exitedResult({ stdout: makeFlowEnvelopePayload() }),
+      );
+      const surface = createAgentCliSurface(deps);
+
+      await surface.flowRun(FLOW_ALLOWED_NAME, { mode });
+
+      const argv = recorder.invocations[0]?.args ?? [];
+      expect(argv).not.toContain("--");
+    },
+  );
+
+  test.each(FLOW_RUN_MODES)(
+    "flowRun() never emits --resume in %s mode — resuming would re-enter a partially-executed flow under an authorization granted for a fresh run",
+    async (_label, mode) => {
+      const { deps, recorder } = createFlowDeps();
+      recorder.enqueueResult(
+        exitedResult({ stdout: makeFlowEnvelopePayload() }),
+      );
+      const surface = createAgentCliSurface(deps);
+
+      await surface.flowRun(FLOW_ALLOWED_NAME, { mode });
+
+      const argv = recorder.invocations[0]?.args ?? [];
+      expect(argv).not.toContain("--resume");
+    },
+  );
+
+  test.each(FLOW_RUN_MODES)(
+    "flowRun() never emits an --aws.profile token in %s mode — unlike triageRun, a profile cannot be pinned here because m3l flow rejects every extra argument",
+    async (_label, mode) => {
+      const { deps, recorder } = createFlowDeps();
+      recorder.enqueueResult(
+        exitedResult({ stdout: makeFlowEnvelopePayload() }),
+      );
+      const surface = createAgentCliSurface(deps);
+
+      await surface.flowRun(FLOW_ALLOWED_NAME, { mode });
+
+      const argv = recorder.invocations[0]?.args ?? [];
+      expect(argv.some((arg) => arg.startsWith("--aws.profile"))).toBe(false);
+    },
+  );
+});
+
+// The bags that must all fail closed before any argv is built. Mirrors this
+// file's own `UNRECOGNISED_RUN_MODE_BAGS` table, narrowed to the four rows
+// the contract calls out for this seam specifically. Typed `unknown` and
+// cast at the call site for the same reason as that table: a
+// `readonly [string, AgentCliRunOptions][]` could not hold them.
+const FLOW_RUN_INVALID_MODE_BAGS: readonly (readonly [
+  label: string,
+  bag: unknown,
+])[] = [
+  ["the options bag omitted entirely (undefined at runtime)", undefined],
+  ["a near-miss spelling { mode: 'mutates' }", { mode: "mutates" }],
+  ["an empty-string mode", { mode: "" }],
+  [
+    "a bag parsed from model-supplied JSON with an unrecognised mode",
+    JSON.parse('{"mode":"nope"}') as unknown,
+  ],
+] as const;
+
+describe("createAgentCliSurface — flowRun() narrows mode at RUNTIME and fails closed before spawning", () => {
+  test.each(FLOW_RUN_INVALID_MODE_BAGS)(
+    "flowRun() rejects %s instead of emitting any argv",
+    async (_label, bag) => {
+      const { deps, recorder } = createFlowDeps();
+      recorder.enqueueResult(
+        exitedResult({ stdout: makeFlowEnvelopePayload() }),
+      );
+      const surface = createAgentCliSurface(deps);
+
+      const settlement = await settleRun(
+        () =>
+          // The cast is deliberate, same reasoning as the `run()` table
+          // above: the declared type rejects this bag, and a caller that
+          // casts (a bag parsed from model-supplied JSON) gets no
+          // protection from the type system at runtime.
+          surface.flowRun(FLOW_ALLOWED_NAME, bag as AgentCliRunOptions),
+        recorder,
+      );
+
+      // Reuses the SAME assertion `run()`'s own M4 mode-narrowing suite
+      // uses for this exact condition, rather than inventing a message:
+      // coded `M3LAgentOperatorCliError`, never a bare `TypeError`, and
+      // nothing spawned.
+      assertCodedFailClosedRejection(settlement);
+    },
+  );
+});
+
+describe("createAgentCliSurface — flowRun() flow-name validation refuses before spawning", () => {
+  test("a flowName failing the slug shape check ('--dry-run') rejects with ERR_AGENT_OPERATOR_CONFIG and spawns nothing", async () => {
+    const { deps, recorder } = createFlowDeps();
+    const surface = createAgentCliSurface(deps);
+
+    await expect(
+      surface.flowRun("--dry-run", { mode: "mutate" }),
+    ).rejects.toMatchObject({
+      code: "ERR_AGENT_OPERATOR_CONFIG",
+      // Verified directly against `lib/flow-names.ts`'s
+      // `assertAllowedFlowName`, which raises three DISTINCT messages (never
+      // one collapsed message) — this is the shape-check arm's exact text.
+      message: "flow name has an invalid shape",
+    });
+    expect(recorder.invocations).toEqual([]);
+  });
+
+  test("a shape-valid flowName absent from the declared allowlist rejects with ERR_AGENT_OPERATOR_CONFIG and spawns nothing", async () => {
+    const { deps, recorder } = createFlowDeps({
+      flowAllowlist: new Set(["some-other-flow"]),
+    });
+    const surface = createAgentCliSurface(deps);
+
+    await expect(
+      surface.flowRun(FLOW_ALLOWED_NAME, { mode: "mutate" }),
+    ).rejects.toMatchObject({
+      code: "ERR_AGENT_OPERATOR_CONFIG",
+      // The membership arm's exact text — proves this is not merely the
+      // shape check succeeding twice.
+      message: "flow name is not on the allowlist",
+    });
+    expect(recorder.invocations).toEqual([]);
+  });
+});
+
+describe("createAgentCliSurface — flowRun() returns a PROJECTED flow envelope", () => {
+  test("a step's run.reportPath (an absolute host path) is projected away entirely — no own reportPath key on the returned step's run", async () => {
+    const { deps, recorder } = createFlowDeps();
+    recorder.enqueueResult(
+      exitedResult({
+        stdout: makeFlowEnvelopePayload({
+          stepReportPath: "/repo/data/agent-log/report.json",
+        }),
+      }),
+    );
+    const surface = createAgentCliSurface(deps);
+
+    const envelope = await surface.flowRun(FLOW_ALLOWED_NAME, {
+      mode: "mutate",
+    });
+
+    const step = envelope.steps[0];
+    expect(step).toBeDefined();
+    // `not.toHaveProperty` cannot prove own-key absence (it falls back to
+    // the `in` operator and walks the prototype chain) — `Object.hasOwn` is
+    // the only assertion that actually proves the parser/projection wiring
+    // dropped the field rather than merely shadowing it.
+    expect(Object.hasOwn(step?.run ?? {}, "reportPath")).toBe(false);
+    expect(JSON.stringify(envelope)).not.toContain(
+      "/repo/data/agent-log/report.json",
+    );
+  });
+
+  test("flowRun() accepts a non-zero exit code, resolving with the envelope's own exitCode", async () => {
+    const { deps, recorder } = createFlowDeps();
+    recorder.enqueueResult(
+      exitedResult({
+        exitCode: 6,
+        stdout: makeFlowEnvelopePayload({ exitCode: 6 }),
+      }),
+    );
+    const surface = createAgentCliSurface(deps);
+
+    const envelope = await surface.flowRun(FLOW_ALLOWED_NAME, {
+      mode: "mutate",
+    });
+
+    // Same policy as `run`/`dryRun`/`triageRun`: the envelope carries its
+    // own outcome data, so a non-zero child exit is data, not a failure of
+    // this tool.
+    expect(envelope.exitCode).toBe(6);
   });
 });

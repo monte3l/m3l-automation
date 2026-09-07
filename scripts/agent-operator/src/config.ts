@@ -28,6 +28,29 @@ const DRY_RUN_TIMEOUT_MS_MIN = 1000;
 const DRY_RUN_TIMEOUT_MS_MAX = 900_000;
 /** Declared default for `dryRunTimeoutMs` — see {@link MAX_ITERATIONS_DEFAULT}. */
 export const DRY_RUN_TIMEOUT_MS_DEFAULT = 120_000;
+const FLOW_TIMEOUT_MS_MIN = 1000;
+const FLOW_TIMEOUT_MS_MAX = 1_800_000; // 30 minutes
+/**
+ * Declared default for `flowTimeoutMs` — see {@link MAX_ITERATIONS_DEFAULT}.
+ *
+ * Deliberately NOT `dryRunTimeoutMs`, unlike `run`/`triageRun`, which reuse
+ * that budget because one script's config load and work dwarf a `list`. A
+ * flow spawns N scripts sequentially, so `dryRunTimeoutMs`'s 120,000 ms is
+ * the wrong unit here, and the failure mode is worse than a lost read:
+ * `cli-process` resolves `"timed-out"` and sends SIGTERM only to its direct
+ * child, the `m3l` CLI — which traps SIGTERM in a survival scope and keeps
+ * running, so the follow-up SIGKILL never reaches the flow step spawned as
+ * its own grandchild. `flowRun` rejects while an AWS-mutating step may keep
+ * running to completion, unobserved, with no envelope and no step account,
+ * and this seam deliberately never emits `--resume` (see
+ * `lib/cli-surface.ts`'s `buildArgv` case for `flowRun`), so there is no
+ * automated recovery either way. This is UNSOLVED — the budget is generous
+ * and operator-controlled precisely because it only bounds how long before
+ * a human has to go check by hand, not because expiry is safe. That
+ * asymmetry is why `flowTimeoutMs` is its own declared parameter rather
+ * than an alias.
+ */
+export const FLOW_TIMEOUT_MS_DEFAULT = 600_000; // 10 minutes
 const MAX_OUTPUT_BYTES_MIN = 1024;
 const MAX_OUTPUT_BYTES_MAX = 16_777_216;
 /** Declared default for `maxOutputBytes` — see {@link MAX_ITERATIONS_DEFAULT}. */
@@ -347,6 +370,15 @@ export const configParameters: readonly Core.M3LConfigParameter[] = [
     validate: Core.M3LConfigValidators.range(
       DRY_RUN_TIMEOUT_MS_MIN,
       DRY_RUN_TIMEOUT_MS_MAX,
+    ),
+  }),
+  new Core.M3LConfigParameter({
+    name: "flowTimeoutMs",
+    type: Core.M3LConfigParameterType.INT,
+    defaultValue: FLOW_TIMEOUT_MS_DEFAULT,
+    validate: Core.M3LConfigValidators.range(
+      FLOW_TIMEOUT_MS_MIN,
+      FLOW_TIMEOUT_MS_MAX,
     ),
   }),
   new Core.M3LConfigParameter({

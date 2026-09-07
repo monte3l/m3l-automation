@@ -161,6 +161,10 @@ function createFakeSurface(): {
       calls.push("triageRun");
       throw new Error("unexpected surface.triageRun() call");
     },
+    flowRun(): Promise<never> {
+      calls.push("flowRun");
+      throw new Error("unexpected surface.flowRun() call");
+    },
   };
   return { surface, calls };
 }

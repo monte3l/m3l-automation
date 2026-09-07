@@ -15,6 +15,7 @@ import {
   AGENT_NAME_DEFAULT,
   CLI_TIMEOUT_MS_DEFAULT,
   DRY_RUN_TIMEOUT_MS_DEFAULT,
+  FLOW_TIMEOUT_MS_DEFAULT,
   MAX_ITERATIONS_DEFAULT,
   MAX_OUTPUT_BYTES_DEFAULT,
   MAX_OUTPUT_TOKENS_DEFAULT,
@@ -145,6 +146,12 @@ export interface AgentOperatorRuntimeSettings {
   readonly cliTimeoutMs: number;
   /** Timeout, in milliseconds, for `dryRun` calls. */
   readonly dryRunTimeoutMs: number;
+  /**
+   * Timeout, in milliseconds, for `flowRun` calls — see `config.ts`'s
+   * `FLOW_TIMEOUT_MS_DEFAULT` for why a flow gets its own budget rather than
+   * reusing `dryRunTimeoutMs`.
+   */
+  readonly flowTimeoutMs: number;
   /** Per-stream byte cap on spawned CLI output. */
   readonly maxOutputBytes: number;
 }
@@ -648,6 +655,10 @@ export function resolveAgentOperatorRuntime(
     dryRunTimeoutMs: accessor.numberWithDefault(
       "dryRunTimeoutMs",
       DRY_RUN_TIMEOUT_MS_DEFAULT,
+    ),
+    flowTimeoutMs: accessor.numberWithDefault(
+      "flowTimeoutMs",
+      FLOW_TIMEOUT_MS_DEFAULT,
     ),
     maxOutputBytes: accessor.numberWithDefault(
       "maxOutputBytes",

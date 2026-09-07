@@ -33,6 +33,7 @@ import {
 
 import { Core } from "@m3l-automation/m3l-common";
 
+import { FLOW_TIMEOUT_MS_DEFAULT } from "../../src/config.js";
 import { M3LAgentOperatorCliError } from "../../src/lib/errors.js";
 import { resolveAgentOperatorRuntime } from "../../src/steps/resolve-runtime.js";
 import { minimalPolicy } from "../support/policyFixtures.js";
@@ -516,6 +517,31 @@ describe("resolveAgentOperatorRuntime — cliEntrypoint default", () => {
     expect((thrown as M3LAgentOperatorCliError).code).toBe(
       "ERR_AGENT_OPERATOR_CLI_ENTRYPOINT",
     );
+  });
+});
+
+/**
+ * V9 flow command seam: `flowTimeoutMs` bounds a `flowRun` call's own
+ * budget, deliberately not aliasing `dryRunTimeoutMs` — see `config.ts`'s
+ * `FLOW_TIMEOUT_MS_DEFAULT` comment.
+ */
+describe("resolveAgentOperatorRuntime — flowTimeoutMs default", () => {
+  it("defaults to FLOW_TIMEOUT_MS_DEFAULT when unset", () => {
+    const settings = resolveAgentOperatorRuntime({
+      config: buildConfig(),
+      policy: minimalPolicy(),
+      paths: new Core.M3LPaths(),
+    });
+    expect(settings.flowTimeoutMs).toBe(FLOW_TIMEOUT_MS_DEFAULT);
+  });
+
+  it("uses the explicit flowTimeoutMs when set", () => {
+    const settings = resolveAgentOperatorRuntime({
+      config: buildConfig({ flowTimeoutMs: 300_000 }),
+      policy: minimalPolicy(),
+      paths: new Core.M3LPaths(),
+    });
+    expect(settings.flowTimeoutMs).toBe(300_000);
   });
 });
 

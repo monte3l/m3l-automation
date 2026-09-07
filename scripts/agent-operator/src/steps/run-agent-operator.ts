@@ -136,6 +136,7 @@ async function runExplainPolicy(deps: RunAgentOperatorDeps): Promise<void> {
     nodeExecPath: process.execPath,
     cliTimeoutMs: runtime.cliTimeoutMs,
     dryRunTimeoutMs: runtime.dryRunTimeoutMs,
+    flowTimeoutMs: runtime.flowTimeoutMs,
     maxOutputBytes: runtime.maxOutputBytes,
     // `includeDryRunProbes` is the gate; the allowlist is inert on its own.
     // Fail closed — an unset or false flag hands the surface an EMPTY set, so
@@ -153,6 +154,12 @@ async function runExplainPolicy(deps: RunAgentOperatorDeps): Promise<void> {
     // reason rides as an operator-only `cause`), so the wiring defect is
     // indistinguishable from an undeclared preset — hence the required option.
     presetAllowlist: runtime.presetAllowlist,
+    // No operation exercised through this seam declares a flow name yet, so
+    // there is no `flowAllowlist` config parameter to read here. The empty
+    // set keeps `flowRun` closed — every call rejects — which is the correct
+    // behavior until an operation requiring one is declared and threads a
+    // real value through.
+    flowAllowlist: new Set<string>(),
     signal: deps.signal,
     ...(workspaceRoot === undefined ? {} : { workspaceRoot }),
   });

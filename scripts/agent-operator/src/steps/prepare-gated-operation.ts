@@ -150,6 +150,7 @@ function buildSurface(
     nodeExecPath: process.execPath,
     cliTimeoutMs: runtime.cliTimeoutMs,
     dryRunTimeoutMs: runtime.dryRunTimeoutMs,
+    flowTimeoutMs: runtime.flowTimeoutMs,
     maxOutputBytes: runtime.maxOutputBytes,
     // Layer two of `script_dry_run`'s two independent fail-closed layers (the
     // first being that its spec is not built at all): an unset or false flag
@@ -167,6 +168,12 @@ function buildSurface(
     // reason rides as an operator-only `cause`), so the wiring defect is
     // indistinguishable from an undeclared preset — hence the required option.
     presetAllowlist: runtime.presetAllowlist,
+    // No operation exercised through this seam declares a flow name yet, so
+    // there is no `flowAllowlist` config parameter to read here. The empty
+    // set keeps `flowRun` closed — every call rejects — which is the correct
+    // behavior until an operation requiring one is declared and threads a
+    // real value through.
+    flowAllowlist: new Set<string>(),
     signal: deps.signal,
     ...(workspaceRoot === undefined ? {} : { workspaceRoot }),
   });

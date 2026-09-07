@@ -46,6 +46,7 @@ interface AgentCliSurfaceDeps {
   readonly nodeExecPath: string;
   readonly cliTimeoutMs: number;
   readonly dryRunTimeoutMs: number;
+  readonly flowTimeoutMs: number;
   readonly maxOutputBytes: number;
   readonly dryRunAllowlist: ReadonlySet<string>;
   /**
@@ -56,6 +57,13 @@ interface AgentCliSurfaceDeps {
    * `cli-surface.test.ts`'s own deps shape.
    */
   readonly presetAllowlist: ReadonlyMap<string, string>;
+  /**
+   * PR B1: the operator-declared flow-name allowlist `flowRun` consults.
+   * Declared here (and populated below) purely to satisfy
+   * `CreateAgentCliSurfaceOptions`'s required shape — every test in this
+   * file drives `list()`, never `flowRun()`.
+   */
+  readonly flowAllowlist: ReadonlySet<string>;
   readonly runProcess?: typeof runCliProcess;
 }
 
@@ -71,9 +79,11 @@ function createDeps(runProcess: typeof runCliProcess): AgentCliSurfaceDeps {
     nodeExecPath: "/usr/bin/node",
     cliTimeoutMs: 30_000,
     dryRunTimeoutMs: 120_000,
+    flowTimeoutMs: 600_000,
     maxOutputBytes: 1_048_576,
     dryRunAllowlist: new Set(["widget-export"]),
     presetAllowlist: new Map([[PRESET_ALLOWED_NAME, PRESET_RELATIVE_PATH]]),
+    flowAllowlist: new Set<string>(),
     runProcess,
   };
 }

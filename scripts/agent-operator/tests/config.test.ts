@@ -7,6 +7,7 @@ import {
   AGENT_OPERATOR_COMMANDS,
   configParameters,
   configValidators,
+  FLOW_TIMEOUT_MS_DEFAULT,
 } from "../src/config.js";
 
 /**
@@ -543,5 +544,64 @@ describe("triage-logs operation declaration (V9 slice 4)", () => {
   it("carries a non-empty description", () => {
     expect(triageLogsDeclaration).toBeDefined();
     expect(triageLogsDeclaration?.description ?? "").not.toBe("");
+  });
+});
+
+/**
+ * V9 flow command seam: `flowTimeoutMs` bounds a `flowRun` call's own budget
+ * (`config.ts`'s own comment on `FLOW_TIMEOUT_MS_DEFAULT` explains why it is
+ * a standalone declared parameter rather than an alias of `dryRunTimeoutMs`).
+ * Structural declaration is asserted directly against `configParameters`;
+ * range enforcement is exercised through the real
+ * `new Core.M3LConfigSchema(...)` + `M3LConfigParameter.resolveAsync`, the
+ * same way every other validated parameter in this file is proven wired
+ * rather than merely present.
+ */
+describe("flowTimeoutMs declaration (V9 flow command seam)", () => {
+  it("declares flowTimeoutMs as an INT parameter defaulting to FLOW_TIMEOUT_MS_DEFAULT", () => {
+    const parameter = configParameters.find(
+      (candidate) => candidate.getName() === "flowTimeoutMs",
+    );
+
+    expect(parameter).toBeDefined();
+    expect(parameter).toBeInstanceOf(Core.M3LConfigParameter);
+    expect(parameter?.getType()).toBe(Core.M3LConfigParameterType.INT);
+    expect(parameter?.getDefaultValue()).toBe(FLOW_TIMEOUT_MS_DEFAULT);
+    expect(parameter?.isRequired()).toBe(false);
+  });
+
+  it("defaults flowTimeoutMs to FLOW_TIMEOUT_MS_DEFAULT when nothing is supplied", async () => {
+    const config = await loadAndValidate({ ...REQUIRED_RAW });
+
+    expect(config.get("flowTimeoutMs")).toBe(FLOW_TIMEOUT_MS_DEFAULT);
+  });
+
+  it("rejects a flowTimeoutMs value below the declared minimum (1000)", async () => {
+    const thrown = await captureLoadFailure({ flowTimeoutMs: "999" });
+
+    expect(thrown).toBeInstanceOf(Core.M3LConfigValidationError);
+    const asError = thrown as Core.M3LConfigValidationError;
+    expect(asError.code).toBe("ERR_CONFIG_VALIDATION");
+    expect(asError.context["parameter"]).toBe("flowTimeoutMs");
+    expect(asError.context["reason"]).toBe("must be between 1000 and 1800000");
+  });
+
+  it("rejects a flowTimeoutMs value above the declared maximum (1_800_000)", async () => {
+    const thrown = await captureLoadFailure({ flowTimeoutMs: "1800001" });
+
+    expect(thrown).toBeInstanceOf(Core.M3LConfigValidationError);
+    const asError = thrown as Core.M3LConfigValidationError;
+    expect(asError.code).toBe("ERR_CONFIG_VALIDATION");
+    expect(asError.context["parameter"]).toBe("flowTimeoutMs");
+    expect(asError.context["reason"]).toBe("must be between 1000 and 1800000");
+  });
+
+  it("accepts a valid in-range flowTimeoutMs value", async () => {
+    const config = await loadAndValidate({
+      ...REQUIRED_RAW,
+      flowTimeoutMs: "300000",
+    });
+
+    expect(config.get("flowTimeoutMs")).toBe(300_000);
   });
 });
