@@ -625,7 +625,7 @@ describe("projectFlowEnvelope", () => {
       startedAt: "2026-08-30T00:00:00.000Z",
       finishedAt: "2026-08-30T00:00:02.000Z",
       durationMs: 2000,
-      status: "succeeded",
+      status: "completed",
       exitCode: 0,
       exitCodeName: "SUCCESS",
       dryRun: false,
@@ -689,7 +689,7 @@ describe("projectFlowEnvelope", () => {
     }
   });
 
-  it("scrubs the workspace root out of every free-text scalar, including each step's stepId and script", () => {
+  it("scrubs the workspace root out of every free-text scalar, including each step's stepId, script, and branch.goto", () => {
     const workspaceRoot = "/home/example-user/workspaces/m3l-automation";
     const env = makeFlowEnvelope({
       flow: `sqs-roundtrip ${workspaceRoot}`,
@@ -697,13 +697,17 @@ describe("projectFlowEnvelope", () => {
       definitionHash: `hash-${workspaceRoot}`,
       startedAt: `2026-08-30T00:00:00.000Z ${workspaceRoot}`,
       finishedAt: `2026-08-30T00:00:02.000Z ${workspaceRoot}`,
-      status: `succeeded ${workspaceRoot}`,
       haltingStepId: `halt-${workspaceRoot}`,
       resumeStepId: `resume-${workspaceRoot}`,
       steps: [
         makeFlowStep({
           stepId: `step-${workspaceRoot}`,
           script: `json-etl ${workspaceRoot}`,
+          // `status` is now a closed literal (AgentOperatorFlowRunStatus)
+          // and can no longer carry free text, so `branch.goto` — the
+          // remaining free-text field this test hadn't yet exercised —
+          // takes over as the vehicle proving step-level scrubbing.
+          branch: { goto: `goto-${workspaceRoot}` },
         }),
       ],
     });
@@ -716,19 +720,22 @@ describe("projectFlowEnvelope", () => {
   });
 
   it("redacts a declared secret key name the built-in heuristic alone does not recognize", () => {
+    // `status` is now a closed literal (AgentOperatorFlowRunStatus) and can
+    // no longer carry free text, so `haltingStepId` — nullable free-text —
+    // takes over as this test's vehicle.
     const env = makeFlowEnvelope({
-      status: "run failed with tenantRef=abcSecretXYZ present",
+      haltingStepId: "run failed with tenantRef=abcSecretXYZ present",
     });
 
     // Sanity: without the declared secret, the heuristic alone leaves this
     // key/value pair untouched — proving the redaction below is actually
     // attributable to `opts.secrets`, not the built-in heuristic.
     const withoutDeclaredSecret = projectFlowEnvelope(env, {});
-    expect(withoutDeclaredSecret.status).toContain("abcSecretXYZ");
+    expect(withoutDeclaredSecret.haltingStepId).toContain("abcSecretXYZ");
 
     const projected = projectFlowEnvelope(env, { secrets: ["tenantRef"] });
-    expect(projected.status).not.toContain("abcSecretXYZ");
-    expect(projected.status).toContain("[REDACTED]");
+    expect(projected.haltingStepId).not.toContain("abcSecretXYZ");
+    expect(projected.haltingStepId).toContain("[REDACTED]");
   });
 
   it.each(["continue", "stop"] as const)(

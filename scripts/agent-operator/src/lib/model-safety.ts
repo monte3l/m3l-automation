@@ -17,6 +17,7 @@ import type {
   AgentOperatorExitCodeName,
   AgentOperatorFlowBranch,
   AgentOperatorFlowEnvelope,
+  AgentOperatorFlowRunStatus,
   AgentOperatorFlowStepEnvelope,
   AgentOperatorListRow,
   AgentOperatorParamDescriptor,
@@ -782,7 +783,7 @@ export interface AgentOperatorProjectedFlowEnvelope {
   readonly startedAt: string;
   readonly finishedAt: string;
   readonly durationMs: number;
-  readonly status: string;
+  readonly status: AgentOperatorFlowRunStatus;
   readonly exitCode: number;
   readonly exitCodeName: AgentOperatorExitCodeName | null;
   readonly dryRun: boolean;
@@ -813,14 +814,20 @@ function sanitizeNullable(
  * exists: `cli-envelopes.ts`'s `parseFlowEnvelope` embeds each step's `run`
  * verbatim, including `reportPath`, and only the existing per-run projection
  * knows how to drop it. Every free-text scalar (`flow`, `runId`,
- * `definitionHash`, `startedAt`, `finishedAt`, `status`, and each step's
+ * `definitionHash`, `startedAt`, `finishedAt`, and each step's
  * `stepId`/`script`) is sanitized through {@link sanitizeForModel} exactly
  * like {@link projectRunEnvelope}'s own free-text fields, since
  * `parseFlowEnvelope` only `requireString`s them. `haltingStepId` and
  * `resumeStepId` are sanitized when present but kept `null` when absent
- * (see {@link sanitizeNullable}). Already-validated numbers/booleans/enums
- * (`durationMs`, `exitCode`, `exitCodeName`, `dryRun`, `stepExecutionCount`,
- * and each step's `attempt`) pass through unchanged.
+ * (see {@link sanitizeNullable}). `status` is CLOSED to
+ * {@link AgentOperatorFlowRunStatus} by `parseFlowEnvelope` (it rejects
+ * anything outside the four literals with `"unknown-status"`), so — like
+ * `exitCodeName` below and {@link projectRunEnvelope}'s `outcome` — it passes
+ * through UNCHANGED: an already-validated literal carries no free-text
+ * disclosure risk, so sanitizing it would only be redundant. The remaining
+ * already-validated numbers/booleans (`durationMs`, `exitCode`,
+ * `exitCodeName`, `dryRun`, `stepExecutionCount`, and each step's `attempt`)
+ * pass through unchanged too.
  *
  * @param env - The parsed flow envelope.
  * @param opts - Sanitization options (workspace-root scrubbing, declared secrets).
@@ -839,7 +846,7 @@ function sanitizeNullable(
  *     startedAt: "2026-08-30T00:00:00.000Z",
  *     finishedAt: "2026-08-30T00:00:02.000Z",
  *     durationMs: 2000,
- *     status: "succeeded",
+ *     status: "completed",
  *     exitCode: 0,
  *     exitCodeName: "SUCCESS",
  *     dryRun: false,
@@ -864,7 +871,7 @@ export function projectFlowEnvelope(
     startedAt: sanitize(env.startedAt, opts),
     finishedAt: sanitize(env.finishedAt, opts),
     durationMs: env.durationMs,
-    status: sanitize(env.status, opts),
+    status: env.status,
     exitCode: env.exitCode,
     exitCodeName: env.exitCodeName,
     dryRun: env.dryRun,

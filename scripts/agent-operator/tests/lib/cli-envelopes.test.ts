@@ -7,6 +7,7 @@ import type {
   AgentOperatorExitCodeName,
   AgentOperatorFlowBranch,
   AgentOperatorFlowEnvelope,
+  AgentOperatorFlowRunStatus,
   AgentOperatorFlowStepEnvelope,
   AgentOperatorListRow,
   AgentOperatorParamDescriptor,
@@ -93,7 +94,12 @@ function validFlowEnvelope(
     startedAt: "2026-08-30T00:00:00.000Z",
     finishedAt: "2026-08-30T00:00:05.000Z",
     durationMs: 5000,
-    status: "success",
+    // A member of the closed `AgentOperatorFlowRunStatus` union (the bare
+    // `string` type this field used to carry accepted anything, including
+    // the now-invalid "success"). No existing case in this file asserts on
+    // `.status`, so this default is free to move without weakening any of
+    // them.
+    status: "completed",
     exitCode: 0,
     exitCodeName: "SUCCESS",
     dryRun: false,
@@ -500,7 +506,14 @@ describe("parseFlowEnvelope", () => {
     }
   });
 
-  it.each(["stepId", "script", "attempt"] as const)(
+  // `branch` is the subtlest of these four: `parseFlowBranch` first tries
+  // `readNullableLiteral`, whose nullable-passthrough only short-circuits on
+  // an OWN `branch` key holding `null` — an absent key instead falls
+  // through that helper's own `requireOwn` check (which also reports
+  // `"missing-field"`) into `parseFlowBranch`'s second, explicit
+  // `requireOwn(raw, "branch")` call. Both paths report the same reason,
+  // but only actually deleting the key exercises the fallthrough at all.
+  it.each(["stepId", "script", "attempt", "branch"] as const)(
     "rejects a step missing %s",
     (field) => {
       const step = validFlowStepEnvelope() as unknown as Record<
@@ -620,5 +633,55 @@ describe("parseFlowEnvelope", () => {
     expectTypeOf<AgentOperatorFlowBranch>().toEqualTypeOf<
       "continue" | "stop" | { readonly goto: string }
     >();
+  });
+
+  // `AgentOperatorFlowEnvelope.status` mirrors `M3LCliFlowRunStatus`
+  // (`packages/m3l-cli/src/flow/types.ts`) exactly — verified against that
+  // file rather than assumed. The four rows below are the complete closed
+  // set; anything outside it must fail closed.
+  const VALID_FLOW_RUN_STATUSES = [
+    "completed",
+    "stopped",
+    "failed",
+    "loop-guard-exceeded",
+  ] as const;
+
+  it.each(VALID_FLOW_RUN_STATUSES)("accepts status %s", (status) => {
+    const result = parseFlowEnvelope(validFlowEnvelope({ status }));
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.status).toBe(status);
+    }
+  });
+
+  it("rejects an out-of-set status ('finished') with the same reason parseDoctorCheck uses for an unrecognised status", () => {
+    const result = parseFlowEnvelope(
+      validFlowEnvelope({
+        // Deliberately outside the closed AgentOperatorFlowRunStatus union;
+        // double-cast through `unknown` avoids `any`.
+        status: "finished" as unknown as AgentOperatorFlowRunStatus,
+      }),
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toBe("unknown-status");
+    }
+  });
+
+  it("rejects a non-string status", () => {
+    const result = parseFlowEnvelope(
+      validFlowEnvelope({
+        // Deliberately wrong runtime type (number, not string);
+        // double-cast through `unknown` avoids `any`.
+        status: 42 as unknown as AgentOperatorFlowRunStatus,
+      }),
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toBe("field-wrong-type");
+    }
   });
 });

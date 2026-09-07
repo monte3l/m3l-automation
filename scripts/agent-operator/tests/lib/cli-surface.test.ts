@@ -3017,7 +3017,7 @@ function makeFlowEnvelopePayload(
     startedAt: "2026-09-01T00:00:00.000Z",
     finishedAt: "2026-09-01T00:00:02.000Z",
     durationMs: 2000,
-    status: "succeeded",
+    status: "completed",
     exitCode: overrides.exitCode ?? 0,
     exitCodeName: "SUCCESS",
     dryRun: false,
@@ -3117,6 +3117,27 @@ describe("createAgentCliSurface — flowRun() argv", () => {
 
       const argv = recorder.invocations[0]?.args ?? [];
       expect(argv.some((arg) => arg.startsWith("--aws.profile"))).toBe(false);
+    },
+  );
+
+  test.each(FLOW_RUN_MODES)(
+    "flowRun() forwards flowTimeoutMs, not dryRunTimeoutMs, in %s mode — a dry-run flow still spawns every step",
+    async (_label, mode) => {
+      const { deps, recorder } = createFlowDeps();
+      recorder.enqueueResult(
+        exitedResult({ stdout: makeFlowEnvelopePayload() }),
+      );
+      const surface = createAgentCliSurface(deps);
+
+      await surface.flowRun(FLOW_ALLOWED_NAME, { mode });
+
+      // `createFlowDeps` leaves `createDeps`'s own defaults (lines ~81-82)
+      // in place: `flowTimeoutMs: 600_000`, `dryRunTimeoutMs: 120_000`. A
+      // mis-wire to `deps.dryRunTimeoutMs` would satisfy every other
+      // assertion in this describe block while forwarding the wrong
+      // budget — this is the one seam that would catch it.
+      expect(recorder.invocations[0]?.timeoutMs).toBe(600_000);
+      expect(recorder.invocations[0]?.timeoutMs).not.toBe(120_000);
     },
   );
 });

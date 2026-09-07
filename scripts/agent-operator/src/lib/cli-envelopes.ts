@@ -806,6 +806,20 @@ export interface AgentOperatorFlowStepEnvelope {
 }
 
 /**
+ * The closed vocabulary a `flow run --json` envelope's `status` field
+ * carries — mirrors `packages/m3l-cli/src/flow/types.ts`'s
+ * `M3LCliFlowRunStatus` exactly. Restated here rather than imported:
+ * `scripts/agent-operator` declares exactly one runtime dependency,
+ * `@m3l-automation/m3l-common` (ADR-0029), so `packages/m3l-cli` is not on
+ * its dependency graph and its types are not importable from here. Because
+ * this parser fails closed, a literal here that drifts from the CLI's own
+ * four values would silently reject every real flow envelope — re-verify
+ * against `flow/types.ts` before changing either side.
+ */
+export type AgentOperatorFlowRunStatus =
+  "completed" | "stopped" | "failed" | "loop-guard-exceeded";
+
+/**
  * The single-object envelope emitted by `m3l flow run <name> --json`.
  * Carries its own `kind: "m3l.flow.result"` marker — distinct from
  * {@link AgentOperatorRunEnvelope}'s `"m3l.run.result"` — so
@@ -821,7 +835,7 @@ export interface AgentOperatorFlowEnvelope {
   readonly startedAt: string;
   readonly finishedAt: string;
   readonly durationMs: number;
-  readonly status: string;
+  readonly status: AgentOperatorFlowRunStatus;
   readonly exitCode: number;
   readonly exitCodeName: AgentOperatorExitCodeName | null;
   readonly dryRun: boolean;
@@ -878,15 +892,31 @@ function parseFlowEnvelopeTiming(raw: Record<string, unknown>): ParseResult<{
   });
 }
 
-/** Reads and validates the `status`/`exitCode`/`exitCodeName`/`dryRun` fields of a flow envelope. */
+/**
+ * Reads and validates the `status`/`exitCode`/`exitCodeName`/`dryRun` fields
+ * of a flow envelope. `status` is closed against
+ * {@link AgentOperatorFlowRunStatus} via a hand-rolled comparison — mirroring
+ * {@link parseDoctorCheck}'s `status` check rather than
+ * {@link readNullableLiteral} — because the field is required and non-null
+ * here, unlike every `readNullableLiteral` caller in this file, which reads
+ * a field that may legitimately be `null`.
+ */
 function parseFlowEnvelopeOutcome(raw: Record<string, unknown>): ParseResult<{
-  readonly status: string;
+  readonly status: AgentOperatorFlowRunStatus;
   readonly exitCode: number;
   readonly exitCodeName: AgentOperatorExitCodeName | null;
   readonly dryRun: boolean;
 }> {
   const status = requireString(raw, "status");
   if (!status.ok) return status;
+  if (
+    status.value !== "completed" &&
+    status.value !== "stopped" &&
+    status.value !== "failed" &&
+    status.value !== "loop-guard-exceeded"
+  ) {
+    return err("unknown-status");
+  }
   const exitCode = requireFiniteNumber(raw, "exitCode");
   if (!exitCode.ok) return exitCode;
   const exitCodeName = readNullableLiteral<AgentOperatorExitCodeName>(
