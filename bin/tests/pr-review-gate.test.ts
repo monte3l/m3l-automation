@@ -12,6 +12,7 @@ import {
   parseVerdict,
   parseVerdictFile,
   resolveVerdict,
+  selectShouldFixComment,
 } from "../../bin/lib/pr-review-gate.mjs";
 import { filterPatch } from "../../bin/lib/pr-diff-filter.mjs";
 
@@ -511,6 +512,139 @@ describe("hasShouldFixAcknowledgment", () => {
         "fix: tidy up\n\nacknowledged-should-fix: deferring for now",
       ),
     ).toBe(true);
+  });
+});
+
+describe("selectShouldFixComment", () => {
+  // The core regression this function exists for: round 2 is a re-review
+  // whose Should-fix section is suppressed to the empty-tier placeholder per
+  // REVIEW.md's "Re-review convergence" rule (only a count in the summary
+  // line, no re-listed bullets) — but it still parses a real Verdict, so a
+  // naive "most recent comment" strategy would pick it and silently stop
+  // enforcing acknowledgment of round 1's still-outstanding findings.
+  test("prefers an earlier comment with real Should-fix bullets over a later re-review's suppressed _None._", () => {
+    const round1 = [
+      "### Should-fix",
+      "",
+      "- `src/foo.ts:10` — consider extracting this branch (clarity).",
+      "- `src/bar.ts:5` — missing a doc comment (documentation).",
+      "",
+      "### Verdict",
+      "",
+      "- FAIL — a Must-fix remains.",
+    ].join("\n");
+    const round2 = [
+      "### Should-fix",
+      "",
+      "_None._",
+      "",
+      "### Verdict",
+      "",
+      "- PASS",
+    ].join("\n");
+    expect(selectShouldFixComment([round1, round2])).toBe(round1);
+  });
+
+  test("returns the sole comment when it is alone in the array and carries Should-fix findings", () => {
+    const body = [
+      "### Should-fix",
+      "",
+      "- `src/bar.ts:5` — consider renaming (clarity).",
+      "",
+      "### Verdict",
+      "",
+      "- PASS",
+    ].join("\n");
+    expect(selectShouldFixComment([body])).toBe(body);
+  });
+
+  // Mirrors countReviewComments' own guard against claude-assistant.yml's
+  // unrestricted @claude-mention reply landing under the same claude[bot]
+  // identity — it must never be selected even when it precedes a real review.
+  test("never selects an unrelated non-review reply that precedes a real review comment", () => {
+    const reply = "Thanks for the ping! Happy to help.";
+    const review = [
+      "### Should-fix",
+      "",
+      "- `src/bar.ts:5` — consider renaming (clarity).",
+      "",
+      "### Verdict",
+      "",
+      "- PASS",
+    ].join("\n");
+    expect(selectShouldFixComment([reply, review])).toBe(review);
+  });
+
+  test("returns null when no body in the array parses a verdict at all", () => {
+    const reply = "Thanks for the ping! Happy to help.";
+    expect(selectShouldFixComment([reply])).toBeNull();
+  });
+
+  test("returns null for an empty array", () => {
+    expect(selectShouldFixComment([])).toBeNull();
+  });
+
+  // Ties break toward the later body per the JSDoc — both candidates carry
+  // the same Should-fix count here (zero), so the choice of which literal
+  // body wins doesn't change countShouldFixFindings downstream, but the
+  // function's own tie-break behavior is still an assertable contract.
+  test("breaks a tied Should-fix count toward the later comment in the array", () => {
+    const first = [
+      "### Should-fix",
+      "",
+      "_None._",
+      "",
+      "### Verdict",
+      "",
+      "- PASS",
+    ].join("\n");
+    const second = [
+      "### Should-fix",
+      "",
+      "_None._",
+      "",
+      "### Verdict",
+      "",
+      "- PASS — nothing further to add.",
+    ].join("\n");
+    expect(selectShouldFixComment([first, second])).toBe(second);
+  });
+
+  // Realistic multi-round PR: round 1 raises 3 Should-fix findings, and every
+  // subsequent re-review round suppresses them to the empty-tier placeholder
+  // without ever raising new ones — round 1 must still win regardless of how
+  // many suppressed rounds follow it.
+  test("selects round 1 as the max across a three-round sequence where every later round is suppressed", () => {
+    const round1 = [
+      "### Should-fix",
+      "",
+      "- `src/foo.ts:10` — consider extracting this branch (clarity).",
+      "- `src/bar.ts:5` — missing a doc comment (documentation).",
+      "- `src/baz.ts:1` — rename for clarity (readability).",
+      "",
+      "### Verdict",
+      "",
+      "- FAIL — a Must-fix remains.",
+    ].join("\n");
+    const round2 = [
+      "### Should-fix",
+      "",
+      "_None._",
+      "",
+      "### Verdict",
+      "",
+      "- FAIL — a Must-fix remains.",
+    ].join("\n");
+    const round3 = [
+      "### Should-fix",
+      "",
+      "_None._",
+      "",
+      "### Verdict",
+      "",
+      "- PASS",
+    ].join("\n");
+    expect(selectShouldFixComment([round1, round2, round3])).toBe(round1);
   });
 });
 

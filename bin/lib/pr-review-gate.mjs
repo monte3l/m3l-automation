@@ -205,6 +205,62 @@ export function hasShouldFixAcknowledgment(commitLog) {
 }
 
 /**
+ * Among a PR's posted `claude[bot]` comment bodies, the one that carries the
+ * largest number of Should-fix findings — i.e. the round that actually
+ * enumerated them as bullets, not a later re-review's suppressed
+ * count-only summary. REVIEW.md's "Re-review convergence" rule instructs
+ * the reviewer to suppress new Should-fix/Nit bullets on any round after
+ * the first, reporting only a count in the summary line — so a naive
+ * "read the most recent comment" strategy would silently stop enforcing
+ * acknowledgment the moment a PR reaches a second review round, even
+ * though the first round's findings are still outstanding. Taking the
+ * max-count comment instead is correct regardless of how many rounds a PR
+ * goes through: round 1 either has bullets or doesn't, and no later round
+ * ever posts more than round 1 did (it only ever posts the same or fewer,
+ * per that suppression rule), so round 1's comment — or whichever comment
+ * first listed the current count — always wins.
+ *
+ * Known limitation this trades for that correctness: because round 2+
+ * NEVER restates Should-fix as freshly-recomputed bullets (only a summary
+ * count, per the same suppression rule), this function structurally cannot
+ * distinguish "still outstanding, just suppressed" from "genuinely fixed,
+ * and round 2 correctly says so" — both look identical to a caller that
+ * only sees bullet-less rounds after the first. Once round 1 posts N &gt; 0
+ * findings, the max never drops back to 0 through re-review alone; an
+ * `Acknowledged-Should-Fix:` footer becomes the only path a caller built on
+ * this function's output can recognize, even for a finding that was
+ * actually fixed. Closing this needs REVIEW.md's convergence rule itself to
+ * restate current Should-fix status on every round, not a change to this
+ * function.
+ *
+ * Only bodies that parse a real verdict are considered (same filter as
+ * {@link countReviewComments}), so an unrelated `claude-assistant.yml`
+ * reply on the same PR thread can never be selected. Ties are broken
+ * toward the later body in `bodies` (assumes chronological order, oldest
+ * first, matching GitHub's default comment ordering) — both candidates
+ * carry the same count in that case, so which one is returned doesn't
+ * change the result of {@link countShouldFixFindings} downstream, only
+ * which literal comment text a caller would quote.
+ *
+ * @param {string[]} bodies
+ * @returns {string | null} The selected body, or `null` if none of `bodies`
+ *   parses a verdict at all (e.g. the PR was never reviewed).
+ */
+export function selectShouldFixComment(bodies) {
+  let best = null;
+  let bestCount = -1;
+  for (const body of bodies) {
+    if (parseVerdict(body) === null) continue;
+    const count = countShouldFixFindings(parseShouldFixSection(body));
+    if (count >= bestCount) {
+      best = body;
+      bestCount = count;
+    }
+  }
+  return best;
+}
+
+/**
  * @typedef {object} WorkflowGateChangeStatus
  * @property {boolean} includesWorkflowFile Whether the reviewable-file list
  *   contains `.github/workflows/claude-pr-review.yml`.

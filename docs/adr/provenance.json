@@ -219,10 +219,10 @@
     "sourceFiles": [
       {
         "path": "docs/contributing/branch-protection.md",
-        "blob": "3d6d0200d6ceb11bc68eb9e154a730f8ac6d5b90"
+        "blob": "bbaf566b7f122ca2f45bd49350876c1ff7e50f27"
       }
     ],
-    "verifiedAt": "2026-09-06"
+    "verifiedAt": "2026-09-07"
   },
   "0010": {
     "sourceFiles": [
@@ -389,10 +389,10 @@
       },
       {
         "path": "docs/contributing/branch-protection.md",
-        "blob": "3d6d0200d6ceb11bc68eb9e154a730f8ac6d5b90"
+        "blob": "bbaf566b7f122ca2f45bd49350876c1ff7e50f27"
       }
     ],
-    "verifiedAt": "2026-09-06"
+    "verifiedAt": "2026-09-07"
   },
   "0016": {
     "sourceFiles": [
@@ -438,14 +438,14 @@
       },
       {
         "path": "docs/contributing/branch-protection.md",
-        "blob": "3d6d0200d6ceb11bc68eb9e154a730f8ac6d5b90"
+        "blob": "bbaf566b7f122ca2f45bd49350876c1ff7e50f27"
       },
       {
         "path": "docs/logs/2026-07-24-w5-promote-destructive-gate.md",
         "blob": "6198c75526c1d14fffd18d7835768d02d25712fe"
       }
     ],
-    "verifiedAt": "2026-09-06"
+    "verifiedAt": "2026-09-07"
   },
   "0017": {
     "sourceFiles": [
@@ -804,7 +804,7 @@
       },
       {
         "path": ".github/workflows/claude-pr-review.yml",
-        "blob": "1f7bab5c537bd17d5a18eab96a3ff4ff5f99420e"
+        "blob": "4ca018d8fb4373eb9ff245132cdd60f0abb330c3"
       },
       {
         "path": ".mcp.json",
@@ -847,7 +847,7 @@
         "blob": "b8783951f68fb653a4235dd99daefa6c39653a41"
       }
     ],
-    "verifiedAt": "2026-09-06"
+    "verifiedAt": "2026-09-07"
   },
   "0031": {
     "sourceFiles": [
@@ -1625,7 +1625,7 @@
       },
       {
         "path": ".github/workflows/claude-pr-review.yml",
-        "blob": "1f7bab5c537bd17d5a18eab96a3ff4ff5f99420e"
+        "blob": "4ca018d8fb4373eb9ff245132cdd60f0abb330c3"
       },
       {
         "path": "bin/check-file-budget.mjs",
@@ -1688,7 +1688,7 @@
         "blob": "c90be7566c7e98d8c904e12c39612754987a292e"
       }
     ],
-    "verifiedAt": "2026-09-06"
+    "verifiedAt": "2026-09-07"
   },
   "0073": {
     "sourceFiles": [
@@ -1964,14 +1964,14 @@
       },
       {
         "path": "docs/contributing/branch-protection.md",
-        "blob": "3d6d0200d6ceb11bc68eb9e154a730f8ac6d5b90"
+        "blob": "bbaf566b7f122ca2f45bd49350876c1ff7e50f27"
       },
       {
         "path": "docs/contributing/hooks-reference.md",
         "blob": "5f9705a688850c4440a3a635908878683a807fef"
       }
     ],
-    "verifiedAt": "2026-09-06"
+    "verifiedAt": "2026-09-07"
   },
   "0084": {
     "sourceFiles": [

@@ -1178,3 +1178,48 @@ jobs:
             echo "::error::Claude PR review did not pass (verdict: ${verdict}). See the review comment on the PR."
             exit 1
           fi
+
+  # Dogfood period (docs/adr/0096, once it lands): this job is NOT YET a
+  # required status check. It runs and reports on every PR so its behavior
+  # can be observed against real reviews before being registered as
+  # blocking in docs/contributing/branch-protection.md — see that section's
+  # own note on why a brand-new gate earns an observation period before it
+  # can fail a merge. `needs: review` matters for two reasons: (1) it can
+  # only read a posted review comment after one exists, and (2) no `if:`
+  # is needed here — GitHub Actions' default is to run a job only when
+  # every job it `needs` completed with result `success`, which already
+  # skips this job whenever `review` itself is skipped or fails. A Must-fix
+  # FAIL, a draft PR, or a Dependabot PR therefore all correctly skip this
+  # job too, mirroring `review`'s own condition without restating it (a
+  # skipped required check reads as passing, the same property
+  # branch-protection.md already documents for Dependabot's `review` skip).
+  should-fix-ack:
+    needs: review
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      # Reading a PR's issue comments via `gh api .../issues/{pr}/comments`
+      # needs `pull-requests: read` (or `issues: read` — the two share the
+      # same underlying comments API) on `GITHUB_TOKEN`; `contents: read`
+      # alone is scoped to repo files and does not cover it. `review`'s own
+      # job above needs `write` because it also posts a comment; this job
+      # never writes anything, so it stays at the minimal `read` scope.
+      pull-requests: read
+    steps:
+      # fetch-depth 0: the gate below needs the PR's full base..head commit
+      # range to check for an Acknowledged-Should-Fix: footer anywhere in
+      # it, mirroring check-exports-semver.mjs's own --base/--head need.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Check Should-fix acknowledgment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node bin/check-should-fix-ack.mjs \
+            --repo ${{ github.repository }} \
+            --pr ${{ github.event.pull_request.number }} \
+            --base ${{ github.event.pull_request.base.sha }} \
+            --head ${{ github.event.pull_request.head.sha }}

@@ -190,6 +190,19 @@ In **Settings → Branches → Branch protection rules**, add a rule for `main`:
     The `reviewing-dependabot-prs` skill (`.claude/skills/reviewing-dependabot-prs/`)
     is what actually reviews and acts on them instead, run manually rather than
     as a required workflow gate (for the same secrets-access reason).
+  - **`should-fix-ack` — not yet a required check.** A second job in the same
+    workflow (`needs: review`), added to enforce that a Should-fix finding
+    from the posted review is either fixed or explicitly acknowledged via an
+    `Acknowledged-Should-Fix:` commit footer before merge (docs/adr/0096, once
+    it lands) — REVIEW.md's own severity tiers leave Should-fix non-blocking
+    by design, and before this job nothing in the repo read that tier at all.
+    It runs and reports on every non-draft, non-Dependabot PR today, but is
+    deliberately **not yet** added to either protection layer's required
+    contexts below: a brand-new gate earns an observation period against real
+    reviews before it can start failing a merge. Once that period confirms it
+    behaves correctly, register it as a fifth required context on both layers
+    and update this section and the ruleset list below to match — until then,
+    its green or red state is informational only.
 - **Require branches to be up to date before merging** — deliberately **not**
   enabled (`strict_required_status_checks_policy: false` on both the classic
   rule and the `main-dual-layer-protection` ruleset, confirmed live via
