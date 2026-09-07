@@ -15,6 +15,10 @@ import { Core } from "@m3l-automation/m3l-common";
 import type {
   AgentOperatorDoctorCheck,
   AgentOperatorExitCodeName,
+  AgentOperatorFlowBranch,
+  AgentOperatorFlowEnvelope,
+  AgentOperatorFlowRunStatus,
+  AgentOperatorFlowStepEnvelope,
   AgentOperatorListRow,
   AgentOperatorParamDescriptor,
   AgentOperatorReportUnavailableReason,
@@ -678,4 +682,202 @@ export function projectRunEnvelope(
     timelineSourceCount: env.timelineSourceCount,
     recoveryTotal: env.recoveryTotal,
   }) as AgentOperatorProjectedRunEnvelope;
+}
+
+/**
+ * The model-safe projection of one {@link AgentOperatorFlowStepEnvelope}.
+ * `run` is the recursive {@link AgentOperatorProjectedRunEnvelope} produced
+ * by {@link projectRunEnvelope} — see {@link projectFlowStepEnvelope} for why
+ * that recursion, rather than a second field-handling copy, is the whole
+ * point. `branch` keeps the raw union's SHAPE (`"continue"` / `"stop"` /
+ * `{ goto: string }`) rather than flattening it to a plain string — see
+ * {@link projectFlowBranch}.
+ */
+interface AgentOperatorProjectedFlowStepEnvelope {
+  readonly stepId: string;
+  readonly script: string;
+  readonly attempt: number;
+  /** The union is PRESERVED, not flattened to a string — see {@link projectFlowBranch}. */
+  readonly branch: AgentOperatorFlowBranch;
+  readonly run: AgentOperatorProjectedRunEnvelope;
+  /** Type-level-only marker — see {@link MODEL_SAFE_BRAND}. Never present at runtime. */
+  readonly [MODEL_SAFE_BRAND]: true;
+}
+
+/**
+ * Projects one step's `branch` per arm. `"continue"`/`"stop"` are closed
+ * literals needing no sanitizing and pass through unchanged. The `{ goto }`
+ * arm carries a free-text step id as its VALUE, so only that value is
+ * sanitized, returning a fresh `{ goto: sanitize(...) }` object.
+ *
+ * The union is deliberately never flattened to a plain string: a flow step
+ * may legitimately be named `stop`, so collapsing `{ goto: "stop" }` down to
+ * `"stop"` would make it indistinguishable from the literal `"stop"` branch —
+ * destroying the difference between "this step halted the flow" and "this
+ * step jumped to the step called stop". `Object.hasOwn` (never the `in`
+ * operator, which also matches inherited/prototype properties) guards the
+ * object arm.
+ */
+function projectFlowBranch(
+  branch: AgentOperatorFlowBranch,
+  opts: AgentOperatorProjectionOptions,
+): AgentOperatorFlowBranch {
+  if (typeof branch === "string") return branch;
+  // Freeze whatever object this returns. Every other node in this projection
+  // tree is already frozen by its caller (projectRunEnvelope,
+  // projectOperations freeze both the array and its elements) — leaving this
+  // one node mutable would be the single gap in an otherwise-sealed tree,
+  // and the projection's entire guarantee is that no unsanitized text
+  // survives it: an unfrozen `{ goto }` node lets a caller mutate
+  // `branch.goto` back to an absolute host path *after* sanitization,
+  // silently undoing it. The non-`goto` arm below is defensive — the type
+  // guarantees `goto` is always present here — but is frozen the same way,
+  // and as a fresh shallow copy (never the caller's own object), so this
+  // function never mutates state it doesn't own.
+  return Object.hasOwn(branch, "goto")
+    ? Object.freeze({ goto: sanitize(branch.goto, opts) })
+    : Object.freeze({ ...branch });
+}
+
+/**
+ * Projects one flow step for the model. `run` is recursed through the
+ * EXISTING {@link projectRunEnvelope} — never re-implemented here and never
+ * spread from `step.run` — because that is the only place `reportPath` (an
+ * absolute host path the CLI keeps deliberately for a human operator to
+ * open) gets dropped in favor of `reportAvailable`. A second, parallel copy
+ * of that field-handling logic is exactly how `reportPath` would leak back
+ * into a model-facing projection.
+ */
+function projectFlowStepEnvelope(
+  step: AgentOperatorFlowStepEnvelope,
+  opts: AgentOperatorProjectionOptions,
+): AgentOperatorProjectedFlowStepEnvelope {
+  return Object.freeze({
+    stepId: sanitize(step.stepId, opts),
+    script: sanitize(step.script, opts),
+    attempt: step.attempt,
+    branch: projectFlowBranch(step.branch, opts),
+    run: projectRunEnvelope(step.run, opts),
+  }) as AgentOperatorProjectedFlowStepEnvelope;
+}
+
+/**
+ * Projects a flow envelope's whole `steps` array into fresh, frozen,
+ * sanitized entries — the array itself is also frozen, mirroring
+ * {@link projectOperations}'s nested-array idiom.
+ */
+function projectFlowSteps(
+  steps: readonly AgentOperatorFlowStepEnvelope[],
+  opts: AgentOperatorProjectionOptions,
+): readonly AgentOperatorProjectedFlowStepEnvelope[] {
+  return Object.freeze(
+    steps.map((step) => projectFlowStepEnvelope(step, opts)),
+  );
+}
+
+/** The model-safe projection of a full `flow run --json` envelope. */
+export interface AgentOperatorProjectedFlowEnvelope {
+  readonly flow: string;
+  readonly runId: string;
+  readonly definitionHash: string;
+  readonly startedAt: string;
+  readonly finishedAt: string;
+  readonly durationMs: number;
+  readonly status: AgentOperatorFlowRunStatus;
+  readonly exitCode: number;
+  readonly exitCodeName: AgentOperatorExitCodeName | null;
+  readonly dryRun: boolean;
+  readonly stepExecutionCount: number;
+  readonly haltingStepId: string | null;
+  readonly resumeStepId: string | null;
+  readonly steps: readonly AgentOperatorProjectedFlowStepEnvelope[];
+  /** Type-level-only marker — see {@link MODEL_SAFE_BRAND}. Never present at runtime. */
+  readonly [MODEL_SAFE_BRAND]: true;
+}
+
+/**
+ * Sanitizes `text` unless it is `null`, in which case `null` passes through
+ * unchanged — `haltingStepId`/`resumeStepId` are `string | null` and a bare
+ * absence must stay `null`, never become `""` or the literal text `"null"`.
+ */
+function sanitizeNullable(
+  text: string | null,
+  opts: AgentOperatorProjectionOptions,
+): string | null {
+  return text === null ? null : sanitize(text, opts);
+}
+
+/**
+ * Projects a `flow run --json` envelope for the model. Every step's `run` is
+ * recursed through {@link projectRunEnvelope} (see
+ * {@link projectFlowStepEnvelope}), which is the sole reason this function
+ * exists: `cli-envelopes.ts`'s `parseFlowEnvelope` embeds each step's `run`
+ * verbatim, including `reportPath`, and only the existing per-run projection
+ * knows how to drop it. Every free-text scalar (`flow`, `runId`,
+ * `definitionHash`, `startedAt`, `finishedAt`, and each step's
+ * `stepId`/`script`) is sanitized through {@link sanitizeForModel} exactly
+ * like {@link projectRunEnvelope}'s own free-text fields, since
+ * `parseFlowEnvelope` only `requireString`s them. `haltingStepId` and
+ * `resumeStepId` are sanitized when present but kept `null` when absent
+ * (see {@link sanitizeNullable}). `status` is CLOSED to
+ * {@link AgentOperatorFlowRunStatus} by `parseFlowEnvelope` (it rejects
+ * anything outside the four literals with `"unknown-status"`), so — like
+ * `exitCodeName` below and {@link projectRunEnvelope}'s `outcome` — it passes
+ * through UNCHANGED: an already-validated literal carries no free-text
+ * disclosure risk, so sanitizing it would only be redundant. The remaining
+ * already-validated numbers/booleans (`durationMs`, `exitCode`,
+ * `exitCodeName`, `dryRun`, `stepExecutionCount`, and each step's `attempt`)
+ * pass through unchanged too.
+ *
+ * @param env - The parsed flow envelope.
+ * @param opts - Sanitization options (workspace-root scrubbing, declared secrets).
+ * @returns A fresh, frozen, model-safe projection with a frozen `steps` array.
+ * @example
+ * ```ts
+ * import { projectFlowEnvelope } from "./model-safety.js";
+ *
+ * const safe = projectFlowEnvelope(
+ *   {
+ *     kind: "m3l.flow.result",
+ *     schemaVersion: 1,
+ *     flow: "sqs-roundtrip",
+ *     runId: "run-1",
+ *     definitionHash: "hash-1",
+ *     startedAt: "2026-08-30T00:00:00.000Z",
+ *     finishedAt: "2026-08-30T00:00:02.000Z",
+ *     durationMs: 2000,
+ *     status: "completed",
+ *     exitCode: 0,
+ *     exitCodeName: "SUCCESS",
+ *     dryRun: false,
+ *     stepExecutionCount: 1,
+ *     haltingStepId: null,
+ *     resumeStepId: null,
+ *     steps: [],
+ *   },
+ *   {},
+ * );
+ * // safe.steps is a frozen, empty array
+ * ```
+ */
+export function projectFlowEnvelope(
+  env: AgentOperatorFlowEnvelope,
+  opts: AgentOperatorProjectionOptions = {},
+): AgentOperatorProjectedFlowEnvelope {
+  return Object.freeze({
+    flow: sanitize(env.flow, opts),
+    runId: sanitize(env.runId, opts),
+    definitionHash: sanitize(env.definitionHash, opts),
+    startedAt: sanitize(env.startedAt, opts),
+    finishedAt: sanitize(env.finishedAt, opts),
+    durationMs: env.durationMs,
+    status: env.status,
+    exitCode: env.exitCode,
+    exitCodeName: env.exitCodeName,
+    dryRun: env.dryRun,
+    stepExecutionCount: env.stepExecutionCount,
+    haltingStepId: sanitizeNullable(env.haltingStepId, opts),
+    resumeStepId: sanitizeNullable(env.resumeStepId, opts),
+    steps: projectFlowSteps(env.steps, opts),
+  }) as AgentOperatorProjectedFlowEnvelope;
 }

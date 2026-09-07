@@ -780,3 +780,327 @@ export function parseRunEnvelope(
     return err("not-an-object");
   }
 }
+
+/**
+ * The branch a flow step reports having taken — mirrors the CLI's own
+ * `M3LCliFlowBranch` (`packages/m3l-cli/src/flow/envelope.ts`). Deliberately
+ * a UNION rather than a bare string: `"continue"` and `"stop"` are closed
+ * literals, while a jump carries the destination step id as `goto`.
+ */
+export type AgentOperatorFlowBranch =
+  "continue" | "stop" | { readonly goto: string };
+
+/**
+ * One entry of a {@link AgentOperatorFlowEnvelope}'s `steps` array. Its
+ * `run` field is a complete, self-marked {@link AgentOperatorRunEnvelope} —
+ * the CLI stamps every nested run through its own `buildRunEnvelope` before
+ * composing the step, so {@link parseFlowEnvelope} reads it with the
+ * existing {@link parseRunEnvelope} rather than a second reader.
+ */
+export interface AgentOperatorFlowStepEnvelope {
+  readonly stepId: string;
+  readonly script: string;
+  readonly attempt: number;
+  readonly branch: AgentOperatorFlowBranch;
+  readonly run: AgentOperatorRunEnvelope;
+}
+
+/**
+ * The closed vocabulary a `flow run --json` envelope's `status` field
+ * carries — mirrors `packages/m3l-cli/src/flow/types.ts`'s
+ * `M3LCliFlowRunStatus` exactly. Restated here rather than imported:
+ * `scripts/agent-operator` declares exactly one runtime dependency,
+ * `@m3l-automation/m3l-common` (ADR-0029), so `packages/m3l-cli` is not on
+ * its dependency graph and its types are not importable from here. Because
+ * this parser fails closed, a literal here that drifts from the CLI's own
+ * four values would silently reject every real flow envelope — re-verify
+ * against `flow/types.ts` before changing either side.
+ */
+export type AgentOperatorFlowRunStatus =
+  "completed" | "stopped" | "failed" | "loop-guard-exceeded";
+
+/**
+ * The single-object envelope emitted by `m3l flow run <name> --json`.
+ * Carries its own `kind: "m3l.flow.result"` marker — distinct from
+ * {@link AgentOperatorRunEnvelope}'s `"m3l.run.result"` — so
+ * {@link parseRunEnvelope} fails closed on it by design and this dedicated
+ * shape exists instead.
+ */
+export interface AgentOperatorFlowEnvelope {
+  readonly kind: "m3l.flow.result";
+  readonly schemaVersion: 1;
+  readonly flow: string;
+  readonly runId: string;
+  readonly definitionHash: string;
+  readonly startedAt: string;
+  readonly finishedAt: string;
+  readonly durationMs: number;
+  readonly status: AgentOperatorFlowRunStatus;
+  readonly exitCode: number;
+  readonly exitCodeName: AgentOperatorExitCodeName | null;
+  readonly dryRun: boolean;
+  readonly stepExecutionCount: number;
+  readonly haltingStepId: string | null;
+  readonly resumeStepId: string | null;
+  readonly steps: readonly AgentOperatorFlowStepEnvelope[];
+}
+
+/** Reads and validates the `kind`/`schemaVersion`/identity header of a flow envelope. */
+function parseFlowEnvelopeHeader(raw: Record<string, unknown>): ParseResult<{
+  readonly flow: string;
+  readonly runId: string;
+  readonly definitionHash: string;
+}> {
+  const kind = requireOwn(raw, "kind");
+  if (!kind.ok) return kind;
+  if (kind.value !== "m3l.flow.result") return err("wrong-kind");
+
+  const schemaVersion = requireOwn(raw, "schemaVersion");
+  if (!schemaVersion.ok) return schemaVersion;
+  if (schemaVersion.value !== 1) return err("unsupported-schema-version");
+
+  const flow = requireString(raw, "flow");
+  if (!flow.ok) return flow;
+  const runId = requireString(raw, "runId");
+  if (!runId.ok) return runId;
+  const definitionHash = requireString(raw, "definitionHash");
+  if (!definitionHash.ok) return definitionHash;
+
+  return ok({
+    flow: flow.value,
+    runId: runId.value,
+    definitionHash: definitionHash.value,
+  });
+}
+
+/** Reads and validates the timing fields of a flow envelope, mirroring {@link parseRunEnvelopeTiming}'s field set. */
+function parseFlowEnvelopeTiming(raw: Record<string, unknown>): ParseResult<{
+  readonly startedAt: string;
+  readonly finishedAt: string;
+  readonly durationMs: number;
+}> {
+  const startedAt = requireString(raw, "startedAt");
+  if (!startedAt.ok) return startedAt;
+  const finishedAt = requireString(raw, "finishedAt");
+  if (!finishedAt.ok) return finishedAt;
+  const durationMs = requireFiniteNumber(raw, "durationMs");
+  if (!durationMs.ok) return durationMs;
+  return ok({
+    startedAt: startedAt.value,
+    finishedAt: finishedAt.value,
+    durationMs: durationMs.value,
+  });
+}
+
+/**
+ * Reads and validates the `status`/`exitCode`/`exitCodeName`/`dryRun` fields
+ * of a flow envelope. `status` is closed against
+ * {@link AgentOperatorFlowRunStatus} via a hand-rolled comparison — mirroring
+ * {@link parseDoctorCheck}'s `status` check rather than
+ * {@link readNullableLiteral} — because the field is required and non-null
+ * here, unlike every `readNullableLiteral` caller in this file, which reads
+ * a field that may legitimately be `null`.
+ */
+function parseFlowEnvelopeOutcome(raw: Record<string, unknown>): ParseResult<{
+  readonly status: AgentOperatorFlowRunStatus;
+  readonly exitCode: number;
+  readonly exitCodeName: AgentOperatorExitCodeName | null;
+  readonly dryRun: boolean;
+}> {
+  const status = requireString(raw, "status");
+  if (!status.ok) return status;
+  if (
+    status.value !== "completed" &&
+    status.value !== "stopped" &&
+    status.value !== "failed" &&
+    status.value !== "loop-guard-exceeded"
+  ) {
+    return err("unknown-status");
+  }
+  const exitCode = requireFiniteNumber(raw, "exitCode");
+  if (!exitCode.ok) return exitCode;
+  const exitCodeName = readNullableLiteral<AgentOperatorExitCodeName>(
+    raw,
+    "exitCodeName",
+    EXIT_CODE_NAME_SET,
+  );
+  if (!exitCodeName.ok) return exitCodeName;
+  const dryRun = requireBoolean(raw, "dryRun");
+  if (!dryRun.ok) return dryRun;
+  return ok({
+    status: status.value,
+    exitCode: exitCode.value,
+    exitCodeName: exitCodeName.value,
+    dryRun: dryRun.value,
+  });
+}
+
+/** Reads and validates the step-progress fields of a flow envelope. */
+function parseFlowEnvelopeProgress(raw: Record<string, unknown>): ParseResult<{
+  readonly stepExecutionCount: number;
+  readonly haltingStepId: string | null;
+  readonly resumeStepId: string | null;
+}> {
+  const stepExecutionCount = requireFiniteNumber(raw, "stepExecutionCount");
+  if (!stepExecutionCount.ok) return stepExecutionCount;
+  const haltingStepId = readNullable(raw, "haltingStepId", Core.isString);
+  if (!haltingStepId.ok) return haltingStepId;
+  const resumeStepId = readNullable(raw, "resumeStepId", Core.isString);
+  if (!resumeStepId.ok) return resumeStepId;
+  return ok({
+    stepExecutionCount: stepExecutionCount.value,
+    haltingStepId: haltingStepId.value,
+    resumeStepId: resumeStepId.value,
+  });
+}
+
+/** The literal half of {@link AgentOperatorFlowBranch} — checked via {@link readNullableLiteral} before the `{ goto }` arm is hand-rolled. */
+const FLOW_BRANCH_LITERAL_SET: ReadonlySet<"continue" | "stop"> = new Set([
+  "continue",
+  "stop",
+]);
+
+/**
+ * Reads and validates a step's `branch` field against the closed
+ * {@link AgentOperatorFlowBranch} union: the `"continue"`/`"stop"` literal
+ * half is checked via {@link readNullableLiteral} (its nullable-passthrough
+ * is harmless here since the branch is otherwise validated to be present);
+ * a value that is neither one of those literals nor `null` falls through to
+ * the `{ goto }` object arm, guarded with `Object.hasOwn` — never the `in`
+ * operator, which walks the prototype chain.
+ */
+function parseFlowBranch(
+  raw: Record<string, unknown>,
+): ParseResult<AgentOperatorFlowBranch> {
+  const literal = readNullableLiteral<"continue" | "stop">(
+    raw,
+    "branch",
+    FLOW_BRANCH_LITERAL_SET,
+  );
+  if (literal.ok && literal.value !== null) return ok(literal.value);
+
+  const field = requireOwn(raw, "branch");
+  if (!field.ok) return field;
+  if (!Core.isPlainObject(field.value) || !Object.hasOwn(field.value, "goto")) {
+    return err("field-wrong-type");
+  }
+  const goto = requireString(field.value, "goto");
+  if (!goto.ok) return goto;
+  return ok({ goto: goto.value });
+}
+
+/** Reads the `stepId`/`script`/`attempt` trio of a flow step. */
+function parseFlowStepCore(raw: Record<string, unknown>): ParseResult<{
+  readonly stepId: string;
+  readonly script: string;
+  readonly attempt: number;
+}> {
+  const stepId = requireString(raw, "stepId");
+  if (!stepId.ok) return stepId;
+  const script = requireString(raw, "script");
+  if (!script.ok) return script;
+  const attempt = requireFiniteNumber(raw, "attempt");
+  if (!attempt.ok) return attempt;
+  return ok({
+    stepId: stepId.value,
+    script: script.value,
+    attempt: attempt.value,
+  });
+}
+
+/**
+ * Parses one entry of a flow envelope's `steps` array. The nested `run`
+ * field is delegated to the existing {@link parseRunEnvelope} — never a
+ * second, hand-rolled reader — because the CLI composes every step through
+ * its own `buildRunEnvelope`, which stamps `kind: "m3l.run.result"` and
+ * `schemaVersion: 1` on the nested object before it ever reaches here.
+ *
+ * A malformed step's failure reason is returned UNCHANGED (never mapped to
+ * a generic reason and never skipped): a partially-read flow result would
+ * under-report what actually executed, and this envelope is the agent's
+ * only account of a mutating run.
+ */
+function parseFlowStepEnvelope(
+  raw: unknown,
+): ParseResult<AgentOperatorFlowStepEnvelope> {
+  if (!Core.isPlainObject(raw)) return err("row-not-an-object");
+  const core = parseFlowStepCore(raw);
+  if (!core.ok) return core;
+  const branch = parseFlowBranch(raw);
+  if (!branch.ok) return branch;
+  const run = requireOwn(raw, "run");
+  if (!run.ok) return run;
+  const parsedRun = parseRunEnvelope(run.value);
+  if (!parsedRun.ok) return parsedRun;
+  return ok({
+    stepId: core.value.stepId,
+    script: core.value.script,
+    attempt: core.value.attempt,
+    branch: branch.value,
+    run: parsedRun.value,
+  });
+}
+
+/** Assembles the validated field groups into a frozen `AgentOperatorFlowEnvelope`. */
+function buildFlowEnvelope(
+  raw: Record<string, unknown>,
+): ParseResult<AgentOperatorFlowEnvelope> {
+  const header = parseFlowEnvelopeHeader(raw);
+  if (!header.ok) return header;
+  const timing = parseFlowEnvelopeTiming(raw);
+  if (!timing.ok) return timing;
+  const outcome = parseFlowEnvelopeOutcome(raw);
+  if (!outcome.ok) return outcome;
+  const progress = parseFlowEnvelopeProgress(raw);
+  if (!progress.ok) return progress;
+  const stepsField = requireOwn(raw, "steps");
+  if (!stepsField.ok) return stepsField;
+  const steps = parseArray(stepsField.value, parseFlowStepEnvelope);
+  if (!steps.ok) return steps;
+
+  const envelope: AgentOperatorFlowEnvelope = {
+    kind: "m3l.flow.result",
+    schemaVersion: 1,
+    ...header.value,
+    ...timing.value,
+    ...outcome.value,
+    ...progress.value,
+    steps: steps.value,
+  };
+  Object.freeze(envelope);
+  return ok(envelope);
+}
+
+/**
+ * Parses the single-object envelope emitted by `m3l flow run <name> --json`,
+ * failing closed on `kind !== "m3l.flow.result"` (`"wrong-kind"`) and
+ * `schemaVersion !== 1` (`"unsupported-schema-version"`) — the same two
+ * markers {@link parseRunEnvelope} fails closed on, for its own `kind`.
+ *
+ * A malformed entry in `steps` (a missing field, a wrong-kind nested run, an
+ * unrecognized `branch`) rejects the WHOLE envelope with that entry's own
+ * failure reason, never a partial or substituted result: this envelope is
+ * the agent's only account of what a mutating flow run actually did, and a
+ * silently-dropped step would under-report it.
+ *
+ * @param input - The value returned by {@link parseJsonText}.
+ * @returns A fresh, frozen {@link AgentOperatorFlowEnvelope}, or a closed
+ *   failure reason.
+ * @example
+ * ```ts
+ * import { parseFlowEnvelope, parseJsonText } from "./cli-envelopes.js";
+ *
+ * const raw = parseJsonText(stdout);
+ * const envelope = raw.ok ? parseFlowEnvelope(raw.value) : raw;
+ * ```
+ */
+export function parseFlowEnvelope(
+  input: unknown,
+): ParseResult<AgentOperatorFlowEnvelope> {
+  if (!Core.isPlainObject(input)) return err("not-an-object");
+  try {
+    return buildFlowEnvelope(input);
+  } catch {
+    return err("not-an-object");
+  }
+}

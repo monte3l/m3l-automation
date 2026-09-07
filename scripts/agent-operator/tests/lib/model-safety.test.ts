@@ -2,6 +2,8 @@ import { describe, expect, expectTypeOf, it } from "vitest";
 
 import type {
   AgentOperatorDoctorCheck,
+  AgentOperatorFlowEnvelope,
+  AgentOperatorFlowStepEnvelope,
   AgentOperatorListRow,
   AgentOperatorParamDescriptor,
   AgentOperatorRunEnvelope,
@@ -13,6 +15,7 @@ import type {
 import {
   projectDoctorCheck,
   projectDoctorReport,
+  projectFlowEnvelope,
   projectListRow,
   projectParamDescriptor,
   projectRunEnvelope,
@@ -559,5 +562,256 @@ describe("projectRunEnvelope — free-text sanitization (defect S7)", () => {
 
     expect(projected.finishedAt).not.toContain("abc123");
     expect(projected.finishedAt).toContain("[REDACTED]");
+  });
+});
+
+/**
+ * Contract: PR B1 slice, `lib/model-safety.ts` § `projectFlowEnvelope`. Each
+ * step of a flow envelope embeds a COMPLETE run envelope verbatim, including
+ * `reportPath` — an absolute host path the CLI keeps deliberately for a
+ * human operator to open. `projectFlowEnvelope` must recurse each step's
+ * `run` through the EXISTING `projectRunEnvelope` (never a second, parallel
+ * field-handling copy) so that path never reaches the model. This is the
+ * headline case in this describe block: everything else here (scalar
+ * sanitization, per-arm `branch` handling, already-validated field
+ * passthrough, freezing) mirrors `projectRunEnvelope`'s own established
+ * contract one level up.
+ */
+describe("projectFlowEnvelope", () => {
+  function makeRunEnvelope(
+    overrides: Partial<AgentOperatorRunEnvelope> = {},
+  ): AgentOperatorRunEnvelope {
+    return {
+      kind: "m3l.run.result",
+      schemaVersion: 1,
+      script: "json-etl",
+      startedAt: "2026-08-30T00:00:00.000Z",
+      finishedAt: "2026-08-30T00:00:01.000Z",
+      durationMs: 1000,
+      exitCode: 0,
+      exitCodeName: "SUCCESS",
+      outcome: "success",
+      reportPath: null,
+      reportUnavailable: null,
+      timelineCount: null,
+      timelineSourceCount: null,
+      recoveryTotal: null,
+      ...overrides,
+    };
+  }
+
+  function makeFlowStep(
+    overrides: Partial<AgentOperatorFlowStepEnvelope> = {},
+  ): AgentOperatorFlowStepEnvelope {
+    return {
+      stepId: "step-1",
+      script: "json-etl",
+      attempt: 1,
+      branch: "continue",
+      run: makeRunEnvelope(),
+      ...overrides,
+    };
+  }
+
+  function makeFlowEnvelope(
+    overrides: Partial<AgentOperatorFlowEnvelope> = {},
+  ): AgentOperatorFlowEnvelope {
+    return {
+      kind: "m3l.flow.result",
+      schemaVersion: 1,
+      flow: "sqs-roundtrip",
+      runId: "run-1",
+      definitionHash: "hash-1",
+      startedAt: "2026-08-30T00:00:00.000Z",
+      finishedAt: "2026-08-30T00:00:02.000Z",
+      durationMs: 2000,
+      status: "completed",
+      exitCode: 0,
+      exitCodeName: "SUCCESS",
+      dryRun: false,
+      stepExecutionCount: 1,
+      haltingStepId: null,
+      resumeStepId: null,
+      steps: [makeFlowStep()],
+      ...overrides,
+    };
+  }
+
+  it("drops reportPath from every step's run and substitutes reportAvailable: true, with the raw host path absent from the whole serialized output", () => {
+    const reportPathA =
+      "/home/someone/workspaces/repo/data/output/report-a.json";
+    const reportPathB =
+      "/home/someone/workspaces/repo/data/output/report-b.json";
+    const env = makeFlowEnvelope({
+      steps: [
+        makeFlowStep({
+          stepId: "step-a",
+          run: makeRunEnvelope({ reportPath: reportPathA }),
+        }),
+        makeFlowStep({
+          stepId: "step-b",
+          run: makeRunEnvelope({ reportPath: reportPathB }),
+        }),
+      ],
+    });
+
+    const projected = projectFlowEnvelope(env);
+
+    expect(projected.steps).toHaveLength(2);
+    const [first, second] = projected.steps;
+    expect(first).toBeDefined();
+    expect(second).toBeDefined();
+    if (first !== undefined) {
+      expect(Object.hasOwn(first.run, "reportPath")).toBe(false);
+      expect(first.run.reportAvailable).toBe(true);
+    }
+    if (second !== undefined) {
+      expect(Object.hasOwn(second.run, "reportPath")).toBe(false);
+      expect(second.run.reportAvailable).toBe(true);
+    }
+
+    const serialized = JSON.stringify(projected);
+    expect(serialized).not.toContain(reportPathA);
+    expect(serialized).not.toContain(reportPathB);
+  });
+
+  it("emits reportAvailable: false for a step whose run.reportPath is null", () => {
+    const env = makeFlowEnvelope({
+      steps: [makeFlowStep({ run: makeRunEnvelope({ reportPath: null }) })],
+    });
+
+    const projected = projectFlowEnvelope(env);
+    const [step] = projected.steps;
+    expect(step).toBeDefined();
+    if (step !== undefined) {
+      expect(step.run.reportAvailable).toBe(false);
+      expect(Object.hasOwn(step.run, "reportPath")).toBe(false);
+    }
+  });
+
+  it("scrubs the workspace root out of every free-text scalar, including each step's stepId, script, and branch.goto", () => {
+    const workspaceRoot = "/home/example-user/workspaces/m3l-automation";
+    const env = makeFlowEnvelope({
+      flow: `sqs-roundtrip ${workspaceRoot}`,
+      runId: `run-${workspaceRoot}`,
+      definitionHash: `hash-${workspaceRoot}`,
+      startedAt: `2026-08-30T00:00:00.000Z ${workspaceRoot}`,
+      finishedAt: `2026-08-30T00:00:02.000Z ${workspaceRoot}`,
+      haltingStepId: `halt-${workspaceRoot}`,
+      resumeStepId: `resume-${workspaceRoot}`,
+      steps: [
+        makeFlowStep({
+          stepId: `step-${workspaceRoot}`,
+          script: `json-etl ${workspaceRoot}`,
+          // `status` is now a closed literal (AgentOperatorFlowRunStatus)
+          // and can no longer carry free text, so `branch.goto` — the
+          // remaining free-text field this test hadn't yet exercised —
+          // takes over as the vehicle proving step-level scrubbing.
+          branch: { goto: `goto-${workspaceRoot}` },
+        }),
+      ],
+    });
+
+    const projected = projectFlowEnvelope(env, { workspaceRoot });
+    const serialized = JSON.stringify(projected);
+
+    expect(serialized).not.toContain(workspaceRoot);
+    expect(serialized).toContain("<workspace>");
+  });
+
+  it("redacts a declared secret key name the built-in heuristic alone does not recognize", () => {
+    // `status` is now a closed literal (AgentOperatorFlowRunStatus) and can
+    // no longer carry free text, so `haltingStepId` — nullable free-text —
+    // takes over as this test's vehicle.
+    const env = makeFlowEnvelope({
+      haltingStepId: "run failed with tenantRef=abcSecretXYZ present",
+    });
+
+    // Sanity: without the declared secret, the heuristic alone leaves this
+    // key/value pair untouched — proving the redaction below is actually
+    // attributable to `opts.secrets`, not the built-in heuristic.
+    const withoutDeclaredSecret = projectFlowEnvelope(env, {});
+    expect(withoutDeclaredSecret.haltingStepId).toContain("abcSecretXYZ");
+
+    const projected = projectFlowEnvelope(env, { secrets: ["tenantRef"] });
+    expect(projected.haltingStepId).not.toContain("abcSecretXYZ");
+    expect(projected.haltingStepId).toContain("[REDACTED]");
+  });
+
+  it.each(["continue", "stop"] as const)(
+    "passes the %s branch literal through unchanged",
+    (branchLiteral) => {
+      const env = makeFlowEnvelope({
+        steps: [makeFlowStep({ branch: branchLiteral })],
+      });
+
+      const projected = projectFlowEnvelope(env);
+      const [step] = projected.steps;
+      expect(step).toBeDefined();
+      if (step !== undefined) {
+        expect(step.branch).toBe(branchLiteral);
+      }
+    },
+  );
+
+  it("sanitizes the goto value of a { goto } branch — a blanket `branch: env.branch` pass-through would leak the raw value unscrubbed", () => {
+    const workspaceRoot = "/home/example-user/workspaces/m3l-automation";
+    const env = makeFlowEnvelope({
+      steps: [
+        makeFlowStep({ branch: { goto: `retry-step-${workspaceRoot}` } }),
+      ],
+    });
+
+    const projected = projectFlowEnvelope(env, { workspaceRoot });
+    const serialized = JSON.stringify(projected);
+
+    expect(serialized).not.toContain(workspaceRoot);
+    expect(serialized).toContain("<workspace>");
+  });
+
+  it("passes already-validated non-text fields through unchanged", () => {
+    const env = makeFlowEnvelope({
+      durationMs: 42_000,
+      exitCode: 2,
+      exitCodeName: "UNCLASSIFIED",
+      dryRun: true,
+      stepExecutionCount: 3,
+      steps: [makeFlowStep({ attempt: 2 })],
+    });
+
+    const projected = projectFlowEnvelope(env);
+
+    expect(projected.durationMs).toBe(42_000);
+    expect(projected.exitCode).toBe(2);
+    expect(projected.exitCodeName).toBe("UNCLASSIFIED");
+    expect(projected.dryRun).toBe(true);
+    expect(projected.stepExecutionCount).toBe(3);
+    const [step] = projected.steps;
+    expect(step).toBeDefined();
+    if (step !== undefined) {
+      expect(step.attempt).toBe(2);
+    }
+  });
+
+  it("projects an empty steps array to an empty array", () => {
+    const env = makeFlowEnvelope({ steps: [] });
+    const projected = projectFlowEnvelope(env);
+    expect(projected.steps).toEqual([]);
+  });
+
+  it("returns a frozen projected envelope with a frozen steps array", () => {
+    const env = makeFlowEnvelope();
+    const projected = projectFlowEnvelope(env);
+
+    expect(Object.isFrozen(projected)).toBe(true);
+    expect(Object.isFrozen(projected.steps)).toBe(true);
+  });
+
+  it("keeps haltingStepId and resumeStepId as null rather than sanitizing null into a string", () => {
+    const env = makeFlowEnvelope({ haltingStepId: null, resumeStepId: null });
+    const projected = projectFlowEnvelope(env);
+
+    expect(projected.haltingStepId).toBeNull();
+    expect(projected.resumeStepId).toBeNull();
   });
 });

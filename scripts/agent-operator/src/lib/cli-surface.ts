@@ -95,11 +95,13 @@ import { Core } from "@m3l-automation/m3l-common";
 
 import {
   parseDoctorChecks,
+  parseFlowEnvelope,
   parseJsonText,
   parseListRows,
   parseParamDescriptors,
   parseRunEnvelope,
   type AgentOperatorDoctorCheck,
+  type AgentOperatorFlowEnvelope,
   type AgentOperatorListRow,
   type AgentOperatorParamDescriptor,
   type AgentOperatorRunEnvelope,
@@ -116,6 +118,23 @@ import {
 } from "./cli-process.js";
 import { M3LAgentOperatorCliError } from "./errors.js";
 import {
+  assertAllowedFlowName,
+  type AgentOperatorFlowName,
+} from "./flow-names.js";
+import {
+  projectDoctorReport,
+  projectFlowEnvelope,
+  projectListRow,
+  projectParamDescriptor,
+  projectRunEnvelope,
+  type AgentOperatorProjectedDoctorReport,
+  type AgentOperatorProjectedFlowEnvelope,
+  type AgentOperatorProjectedListRow,
+  type AgentOperatorProjectedParamDescriptor,
+  type AgentOperatorProjectedRunEnvelope,
+  type AgentOperatorProjectionOptions,
+} from "./model-safety.js";
+import {
   AGENT_OPERATOR_PATH_SEPARATOR_RE,
   AGENT_OPERATOR_PRESETS_DIRECTORY_PREFIX,
   assertAllowedPresetName,
@@ -123,17 +142,6 @@ import {
   type AgentOperatorPresetName,
   type AgentOperatorPresetPath,
 } from "./preset-names.js";
-import {
-  projectDoctorReport,
-  projectListRow,
-  projectParamDescriptor,
-  projectRunEnvelope,
-  type AgentOperatorProjectedDoctorReport,
-  type AgentOperatorProjectedListRow,
-  type AgentOperatorProjectedParamDescriptor,
-  type AgentOperatorProjectedRunEnvelope,
-  type AgentOperatorProjectionOptions,
-} from "./model-safety.js";
 
 // ---------------------------------------------------------------------------
 // Fixed, non-interpolated model-facing rejection messages. Every reachable
@@ -335,6 +343,29 @@ export interface AgentCliSurface {
     presetName: string,
     operatorProfile: string,
   ): Promise<AgentOperatorProjectedRunEnvelope>;
+  /**
+   * Runs `m3l flow run <name> --json` — the flow-orchestration sibling of
+   * {@link AgentCliSurface.run}. `flowName` must pass
+   * `lib/flow-names.ts`'s {@link "./flow-names.js".assertAllowedFlowName}
+   * (shape, then membership in the caller-supplied `flowAllowlist`) before
+   * anything is spawned. Any exit code is acceptable — the envelope carries
+   * its own `exitCode`/`status`.
+   *
+   * Unlike `run`/`triageRun`, `flowName` is never resolved to a filesystem
+   * path: `m3l flow run <name>` resolves `data/config/flows/<name>.yaml`
+   * itself, so there is no `--preset=` token, no `workspaceRoot` anchoring,
+   * and no containment check at this boundary.
+   *
+   * @param flowName - The target flow's name.
+   * @param options - Required, and re-checked at RUNTIME by the same
+   *   {@link assertRunMode} `run` uses: `mode` must be exactly `"dry-run"`
+   *   (appends `--dry-run`, forcing every step dry) or exactly `"mutate"`
+   *   (omits it). See {@link AgentCliRunOptions}.
+   */
+  flowRun(
+    flowName: string,
+    options: AgentCliRunOptions,
+  ): Promise<AgentOperatorProjectedFlowEnvelope>;
 }
 
 /** Constructor options for {@link createAgentCliSurface}. */
@@ -349,6 +380,18 @@ export interface CreateAgentCliSurfaceOptions {
   readonly cliTimeoutMs: number;
   /** Timeout applied to `dryRun` (a real script's config load can be slower). */
   readonly dryRunTimeoutMs: number;
+  /**
+   * Timeout applied to `flowRun`, for BOTH modes — a dry-run flow still
+   * spawns every step, it just stops each after its config and credential
+   * checks. Deliberately not `dryRunTimeoutMs`: a flow spawns N scripts
+   * sequentially, and expiry does not stop an in-flight step — `cli-process`
+   * resolves `"timed-out"` and SIGTERMs only its direct child (the `m3l`
+   * CLI), which traps SIGTERM and keeps running, so the flow step spawned
+   * as its own grandchild can keep mutating AWS to completion, unobserved,
+   * after `flowRun` has already rejected, with no `--resume` path back — see
+   * `config.ts`'s `FLOW_TIMEOUT_MS_DEFAULT` for the full rationale.
+   */
+  readonly flowTimeoutMs: number;
   /** Per-stream byte cap forwarded to `runCliProcess`. */
   readonly maxOutputBytes: number;
   /**
@@ -379,6 +422,19 @@ export interface CreateAgentCliSurfaceOptions {
    * documented on `resolveAllowedPresetPath`.
    */
   readonly presetAllowlist: ReadonlyMap<string, string>;
+  /**
+   * The closed set of flow names `flowRun` may target, consulted by
+   * {@link "./flow-names.js".assertAllowedFlowName}.
+   *
+   * Deliberately a `ReadonlySet<string>`, NOT a `presetAllowlist`-shaped
+   * `ReadonlyMap<string, string>` — a flow name needs no path resolution at
+   * all: `m3l flow run <name>` resolves `data/config/flows/<name>.yaml`
+   * itself, so there is no path to build, no containment rule to enforce
+   * here, and nothing to anchor to `workspaceRoot`. Do not "align" this
+   * field's shape with `presetAllowlist` for symmetry; the asymmetry
+   * reflects a real difference in what the CLI accepts.
+   */
+  readonly flowAllowlist: ReadonlySet<string>;
   /**
    * The absolute host workspace-root path, forwarded into every `project*`
    * call as `AgentOperatorProjectionOptions.workspaceRoot` so
@@ -481,6 +537,20 @@ type CliOperation =
       // Deliberately NO `dryRun` field: triage never rehearses, so there is
       // no boolean to thread and no second argv shape to build — see
       // `AgentCliSurface.triageRun`'s own TSDoc.
+    }
+  | {
+      readonly method: "flowRun";
+      /**
+       * Branded; minted ONLY by `assertAllowedFlowName`, called with this
+       * flow name and the surface's own `flowAllowlist`. Typing this field
+       * with the brand rather than `string` is what makes a skipped
+       * validation a compile error rather than a convention — mirroring how
+       * the `run`/`triageRun` arms above type their `presetPath` field with
+       * `AgentOperatorPresetPath`.
+       */
+      readonly flowName: AgentOperatorFlowName;
+      /** Whether to append the trailing `--dry-run` token. */
+      readonly dryRun: boolean;
     };
 
 /**
@@ -535,6 +605,32 @@ function buildArgv(operation: CliOperation): readonly string[] {
         `--preset=${operation.presetPath}`,
         TRIAGE_OPERATION_ARG,
         `--aws.profile=${operation.operatorProfile}`,
+      ];
+    case "flowRun":
+      // Four argv facts, each a decision rather than an oversight:
+      //
+      // 1. No bare `--`: `main.ts` bypasses `parseStaticCommandArgs` for
+      //    `flow` entirely, so `m3l flow run` parses `--json` itself. The
+      //    "--json before the bare --" ordering constraint that governs the
+      //    whole `run`/`triageRun` family above does not apply here, and
+      //    adding a `--` would be a usage error, not a no-op.
+      // 2. `m3l flow` REJECTS every extra argument (exit code 2, via its own
+      //    `reportUnknownFlag`) rather than silently dropping it — so no
+      //    speculative flag is ever safe to add to this arm.
+      // 3. That rejection is also why no `--aws.profile=` token is pinned
+      //    here the way `triageRun` pins one above: the profile cannot be
+      //    forced from this side at all. A later slice grades it from the
+      //    flow definition instead.
+      // 4. `--resume` is deliberately never emitted: resuming re-enters a
+      //    partially-executed flow whose earlier steps already mutated,
+      //    under an authorization granted for a fresh run, not a resumed
+      //    one.
+      return [
+        "flow",
+        "run",
+        operation.flowName,
+        "--json",
+        ...(operation.dryRun ? ["--dry-run"] : []),
       ];
     default: {
       const exhaustive: never = operation;
@@ -1166,6 +1262,44 @@ async function runTriageRun(
 }
 
 /**
+ * `flowRun(flowName, options)` — `mode` checked FIRST via the SAME
+ * {@link assertRunMode} `run` uses (mirrors `runRun`'s ordering: a bag that
+ * cannot say which mode it wants has nothing to gain from having its flow
+ * name resolved), then {@link "./flow-names.js".assertAllowedFlowName}
+ * against `flowAllowlist`, then the same "any exit code is acceptable"
+ * policy as `run`/`dryRun`/`triageRun`. Every validation runs before
+ * `buildArgv`, so a rejected call never reaches `runCliProcess`.
+ *
+ * Uses `timeoutMs` for BOTH modes — see
+ * `CreateAgentCliSurfaceOptions.flowTimeoutMs`'s own TSDoc for why a
+ * dry-run flow still spawns every step rather than returning early.
+ */
+async function runFlowRun(
+  ctx: SurfaceRunContext,
+  timeoutMs: number,
+  flowName: string,
+  options: AgentCliRunOptions,
+  flowAllowlist: ReadonlySet<string>,
+): Promise<AgentOperatorProjectedFlowEnvelope> {
+  const mode = assertRunMode(options);
+  const name = assertAllowedFlowName(flowName, flowAllowlist);
+  const envelope = await runCliInvocation<AgentOperatorFlowEnvelope>(ctx, {
+    args: buildArgv({
+      method: "flowRun",
+      flowName: name,
+      dryRun: mode === "dry-run",
+    }),
+    timeoutMs,
+    isAcceptableExitCode: () => true,
+    parse: parseFlowEnvelope,
+  });
+  return projectFlowEnvelope(
+    envelope,
+    buildProjectionOptions(ctx.workspaceRoot),
+  );
+}
+
+/**
  * Reads ONE of `deps`' three OPTIONAL keys, treating an inherited value as
  * absent: the property is read only when the bag OWNS it, so a
  * prototype-supplied value resolves to `undefined` and each key's documented
@@ -1221,11 +1355,13 @@ function readOwnOptionalDep<
  *   nodeExecPath: process.execPath,
  *   cliTimeoutMs: 30_000,
  *   dryRunTimeoutMs: 120_000,
+ *   flowTimeoutMs: 600_000,
  *   maxOutputBytes: 1_048_576,
  *   dryRunAllowlist: new Set(["json-etl"]),
  *   presetAllowlist: new Map([
  *     ["nightly", "data/config/presets/json-etl/nightly.json"],
  *   ]),
+ *   flowAllowlist: new Set(["json-etl-flow"]),
  *   workspaceRoot: "/repo",
  * });
  *
@@ -1277,6 +1413,17 @@ export function createAgentCliSurface(
         presetName,
         operatorProfile,
         deps.presetAllowlist,
+      ),
+    // `flowRun` uses its own `flowTimeoutMs`, not `dryRunTimeoutMs`: a flow
+    // spawns N scripts sequentially, so the single-script budget the other
+    // methods share is the wrong unit — see `flowTimeoutMs`'s own TSDoc.
+    flowRun: (flowName, options) =>
+      runFlowRun(
+        ctx,
+        deps.flowTimeoutMs,
+        flowName,
+        options,
+        deps.flowAllowlist,
       ),
   };
 }

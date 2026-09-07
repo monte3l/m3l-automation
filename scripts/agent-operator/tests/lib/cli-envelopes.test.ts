@@ -5,6 +5,10 @@ import { Core } from "@m3l-automation/m3l-common";
 import type {
   AgentOperatorDoctorCheck,
   AgentOperatorExitCodeName,
+  AgentOperatorFlowBranch,
+  AgentOperatorFlowEnvelope,
+  AgentOperatorFlowRunStatus,
+  AgentOperatorFlowStepEnvelope,
   AgentOperatorListRow,
   AgentOperatorParamDescriptor,
   AgentOperatorRunEnvelope,
@@ -13,6 +17,7 @@ import type {
 } from "../../src/lib/cli-envelopes.js";
 import {
   parseDoctorChecks,
+  parseFlowEnvelope,
   parseJsonText,
   parseListRows,
   parseParamDescriptors,
@@ -60,6 +65,60 @@ function validRunEnvelope(
     timelineCount: null,
     timelineSourceCount: null,
     recoveryTotal: null,
+    ...overrides,
+  };
+}
+
+function validFlowStepEnvelope(
+  overrides: Partial<AgentOperatorFlowStepEnvelope> = {},
+): AgentOperatorFlowStepEnvelope {
+  return {
+    stepId: "step-1",
+    script: "json-etl",
+    attempt: 1,
+    branch: "continue",
+    run: validRunEnvelope(),
+    ...overrides,
+  };
+}
+
+function validFlowEnvelope(
+  overrides: Partial<AgentOperatorFlowEnvelope> = {},
+): AgentOperatorFlowEnvelope {
+  return {
+    kind: "m3l.flow.result",
+    schemaVersion: 1,
+    flow: "sqs-roundtrip",
+    runId: "run-abc123",
+    definitionHash: "sha256:deadbeef",
+    startedAt: "2026-08-30T00:00:00.000Z",
+    finishedAt: "2026-08-30T00:00:05.000Z",
+    durationMs: 5000,
+    // A member of the closed `AgentOperatorFlowRunStatus` union (the bare
+    // `string` type this field used to carry accepted anything, including
+    // the now-invalid "success"). No existing case in this file asserts on
+    // `.status`, so this default is free to move without weakening any of
+    // them.
+    status: "completed",
+    exitCode: 0,
+    exitCodeName: "SUCCESS",
+    dryRun: false,
+    stepExecutionCount: 2,
+    haltingStepId: null,
+    resumeStepId: null,
+    steps: [
+      validFlowStepEnvelope({
+        stepId: "step-1",
+        attempt: 1,
+        branch: { goto: "step-1" },
+      }),
+      validFlowStepEnvelope({
+        stepId: "step-2",
+        attempt: 1,
+        branch: "stop",
+        run: validRunEnvelope({ exitCode: 3, exitCodeName: "PARTIAL" }),
+      }),
+    ],
     ...overrides,
   };
 }
@@ -346,5 +405,283 @@ describe("EnvelopeParseFailure / ParseResult discriminated union", () => {
       | { readonly ok: true; readonly value: number }
       | { readonly ok: false; readonly reason: EnvelopeParseFailure }
     >();
+  });
+});
+
+describe("parseFlowEnvelope", () => {
+  it("accepts a valid, fully-populated envelope with two steps, round-tripping nested fields", () => {
+    const result = parseFlowEnvelope(validFlowEnvelope());
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.flow).toBe("sqs-roundtrip");
+      expect(result.value.steps).toHaveLength(2);
+      expect(result.value.steps[0]?.branch).toEqual({ goto: "step-1" });
+      expect(result.value.steps[1]?.branch).toBe("stop");
+      expect(result.value.steps[1]?.run.exitCode).toBe(3);
+      expect(result.value.steps[1]?.run.kind).toBe("m3l.run.result");
+    }
+  });
+
+  it("accepts an empty steps array (a flow refused before its first step)", () => {
+    const result = parseFlowEnvelope(validFlowEnvelope({ steps: [] }));
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.steps).toEqual([]);
+    }
+  });
+
+  it("rejects kind: 'nope' with the same reason parseRunEnvelope uses for a wrong kind", () => {
+    const result = parseFlowEnvelope(
+      validFlowEnvelope({
+        // Deliberately wrong kind to prove fail-closed behavior;
+        // double-cast through `unknown` avoids `any`.
+        kind: "nope" as unknown as "m3l.flow.result",
+      }),
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toBe("wrong-kind");
+    }
+  });
+
+  it("rejects schemaVersion: 2 with the same reason parseRunEnvelope uses for a wrong schemaVersion", () => {
+    const result = parseFlowEnvelope(
+      validFlowEnvelope({
+        // Deliberately wrong schema version to prove fail-closed behavior;
+        // double-cast through `unknown` avoids `any`.
+        schemaVersion: 2 as unknown as 1,
+      }),
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toBe("unsupported-schema-version");
+    }
+  });
+
+  it("rejects the WHOLE envelope when a nested step's run has a wrong kind, not just that step", () => {
+    const result = parseFlowEnvelope(
+      validFlowEnvelope({
+        steps: [
+          validFlowStepEnvelope({
+            run: validRunEnvelope({
+              // Deliberately wrong kind on the nested run to prove a
+              // malformed step rejects the whole flow envelope.
+              kind: "nope" as unknown as "m3l.run.result",
+            }),
+          }),
+        ],
+      }),
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toBe("wrong-kind");
+    }
+  });
+
+  it("rejects the WHOLE envelope when a nested step's run is missing a required field, not just that step", () => {
+    const runWithoutScript = validRunEnvelope() as unknown as Record<
+      string,
+      unknown
+    >;
+    delete runWithoutScript["script"];
+
+    const result = parseFlowEnvelope(
+      validFlowEnvelope({
+        steps: [
+          validFlowStepEnvelope({
+            run: runWithoutScript as unknown as AgentOperatorRunEnvelope,
+          }),
+        ],
+      }),
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toBe("missing-field");
+    }
+  });
+
+  // `branch` is the subtlest of these four: `parseFlowBranch` first tries
+  // `readNullableLiteral`, whose nullable-passthrough only short-circuits on
+  // an OWN `branch` key holding `null` — an absent key instead falls
+  // through that helper's own `requireOwn` check (which also reports
+  // `"missing-field"`) into `parseFlowBranch`'s second, explicit
+  // `requireOwn(raw, "branch")` call. Both paths report the same reason,
+  // but only actually deleting the key exercises the fallthrough at all.
+  it.each(["stepId", "script", "attempt", "branch"] as const)(
+    "rejects a step missing %s",
+    (field) => {
+      const step = validFlowStepEnvelope() as unknown as Record<
+        string,
+        unknown
+      >;
+      delete step[field];
+
+      const result = parseFlowEnvelope(
+        validFlowEnvelope({
+          steps: [step as unknown as AgentOperatorFlowStepEnvelope],
+        }),
+      );
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.reason).toBe("missing-field");
+      }
+    },
+  );
+
+  it.each(["continue", "stop"] as const)(
+    "accepts the branch literal %s",
+    (branch) => {
+      const result = parseFlowEnvelope(
+        validFlowEnvelope({ steps: [validFlowStepEnvelope({ branch })] }),
+      );
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.steps[0]?.branch).toBe(branch);
+      }
+    },
+  );
+
+  it("accepts a valid { goto } branch object", () => {
+    const result = parseFlowEnvelope(
+      validFlowEnvelope({
+        steps: [validFlowStepEnvelope({ branch: { goto: "step-2" } })],
+      }),
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.steps[0]?.branch).toEqual({ goto: "step-2" });
+    }
+  });
+
+  it("rejects an unknown branch literal ('maybe')", () => {
+    const result = parseFlowEnvelope(
+      validFlowEnvelope({
+        steps: [
+          validFlowStepEnvelope({
+            // Deliberately outside the closed branch union;
+            // double-cast through `unknown` avoids `any`.
+            branch: "maybe" as unknown as AgentOperatorFlowBranch,
+          }),
+        ],
+      }),
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toBe("field-wrong-type");
+    }
+  });
+
+  it("rejects a branch object without a goto field", () => {
+    const result = parseFlowEnvelope(
+      validFlowEnvelope({
+        steps: [
+          validFlowStepEnvelope({
+            // Deliberately missing the `goto` key;
+            // double-cast through `unknown` avoids `any`.
+            branch: {} as unknown as AgentOperatorFlowBranch,
+          }),
+        ],
+      }),
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toBe("field-wrong-type");
+    }
+  });
+
+  it("rejects steps that is not an array", () => {
+    const result = parseFlowEnvelope(
+      validFlowEnvelope({
+        // Deliberately wrong runtime type (string, not array) to prove the
+        // parser rejects it; double-cast through `unknown` avoids `any`.
+        steps: "nope" as unknown as readonly AgentOperatorFlowStepEnvelope[],
+      }),
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toBe("not-an-array");
+    }
+  });
+
+  it.each([NaN, Infinity, -Infinity])(
+    "rejects flowEnvelope.durationMs = %s as non-finite-number",
+    (badNumber) => {
+      const result = parseFlowEnvelope(
+        validFlowEnvelope({ durationMs: badNumber }),
+      );
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.reason).toBe("non-finite-number");
+      }
+    },
+  );
+
+  it("types AgentOperatorFlowBranch as the closed union of continue/stop/{ goto }", () => {
+    expectTypeOf<AgentOperatorFlowBranch>().toEqualTypeOf<
+      "continue" | "stop" | { readonly goto: string }
+    >();
+  });
+
+  // `AgentOperatorFlowEnvelope.status` mirrors `M3LCliFlowRunStatus`
+  // (`packages/m3l-cli/src/flow/types.ts`) exactly — verified against that
+  // file rather than assumed. The four rows below are the complete closed
+  // set; anything outside it must fail closed.
+  const VALID_FLOW_RUN_STATUSES = [
+    "completed",
+    "stopped",
+    "failed",
+    "loop-guard-exceeded",
+  ] as const;
+
+  it.each(VALID_FLOW_RUN_STATUSES)("accepts status %s", (status) => {
+    const result = parseFlowEnvelope(validFlowEnvelope({ status }));
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.status).toBe(status);
+    }
+  });
+
+  it("rejects an out-of-set status ('finished') with the same reason parseDoctorCheck uses for an unrecognised status", () => {
+    const result = parseFlowEnvelope(
+      validFlowEnvelope({
+        // Deliberately outside the closed AgentOperatorFlowRunStatus union;
+        // double-cast through `unknown` avoids `any`.
+        status: "finished" as unknown as AgentOperatorFlowRunStatus,
+      }),
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toBe("unknown-status");
+    }
+  });
+
+  it("rejects a non-string status", () => {
+    const result = parseFlowEnvelope(
+      validFlowEnvelope({
+        // Deliberately wrong runtime type (number, not string);
+        // double-cast through `unknown` avoids `any`.
+        status: 42 as unknown as AgentOperatorFlowRunStatus,
+      }),
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toBe("field-wrong-type");
+    }
   });
 });
