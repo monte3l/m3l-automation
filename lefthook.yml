@@ -2,6 +2,14 @@
 # Install/refresh with `pnpm exec lefthook install` (wired into `prepare`).
 # yaml-language-server: $schema=https://json.schemastore.org/lefthook.json
 
+# Fail closed when no lefthook binary resolves at all. Without this, the
+# generated shim's final else-branch only echoes "Can't find lefthook in
+# PATH" and then falls through — call_lefthook's exit code is 0, so a push
+# on a machine where nothing resolves proceeds with every gate below (and
+# ADR-0016 layer 2's verify-signed-range) silently skipped (H14, issue
+# #1097). LEFTHOOK=0 or --no-verify remain the intentional escape hatches.
+assert_lefthook_installed: true
+
 pre-commit:
   parallel: true
   commands:
