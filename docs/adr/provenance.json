@@ -662,7 +662,7 @@
       },
       {
         "path": "docs/ROADMAP.md",
-        "blob": "724b3c03d85fd8c9e723dba94854394cf85301e0"
+        "blob": "191626a394f8112c705a74b71a87f999d96efb20"
       },
       {
         "path": "pnpm-lock.yaml",
@@ -737,7 +737,7 @@
       },
       {
         "path": "docs/ROADMAP.md",
-        "blob": "724b3c03d85fd8c9e723dba94854394cf85301e0"
+        "blob": "191626a394f8112c705a74b71a87f999d96efb20"
       },
       {
         "path": "packages/m3l-common/src/aws/clients/provider.ts",
@@ -758,7 +758,7 @@
       },
       {
         "path": "docs/ROADMAP.md",
-        "blob": "724b3c03d85fd8c9e723dba94854394cf85301e0"
+        "blob": "191626a394f8112c705a74b71a87f999d96efb20"
       },
       {
         "path": "tsconfig.json",
@@ -779,7 +779,7 @@
       },
       {
         "path": "docs/ROADMAP.md",
-        "blob": "724b3c03d85fd8c9e723dba94854394cf85301e0"
+        "blob": "191626a394f8112c705a74b71a87f999d96efb20"
       },
       {
         "path": "package.json",
@@ -792,7 +792,7 @@
     "sourceFiles": [
       {
         "path": ".claude/skills/resolving-pr-comments/SKILL.md",
-        "blob": "1a271fa7e8886b58a1498e367cfaff8802598063"
+        "blob": "926bc76268bc1e29b9f51746b54963c11070251c"
       },
       {
         "path": ".claude/skills/triaging-ci/SKILL.md",
@@ -873,7 +873,7 @@
       },
       {
         "path": "docs/ROADMAP.md",
-        "blob": "724b3c03d85fd8c9e723dba94854394cf85301e0"
+        "blob": "191626a394f8112c705a74b71a87f999d96efb20"
       },
       {
         "path": "package.json",
@@ -922,7 +922,7 @@
       },
       {
         "path": "bin/lib/command-catalog.mjs",
-        "blob": "fe5038715a09a912d589c423bce0d2d1b8e3dae3"
+        "blob": "d5a82684363dff563017ffd5715ce303a2f8cf32"
       },
       {
         "path": "bin/lib/hub-sync.mjs",
@@ -982,7 +982,7 @@
       },
       {
         "path": "docs/ROADMAP.md",
-        "blob": "724b3c03d85fd8c9e723dba94854394cf85301e0"
+        "blob": "191626a394f8112c705a74b71a87f999d96efb20"
       },
       {
         "path": "package.json",
@@ -999,7 +999,7 @@
       },
       {
         "path": "docs/ROADMAP.md",
-        "blob": "724b3c03d85fd8c9e723dba94854394cf85301e0"
+        "blob": "191626a394f8112c705a74b71a87f999d96efb20"
       },
       {
         "path": "packages/m3l-common/package.json",
@@ -1356,7 +1356,7 @@
       },
       {
         "path": "docs/ROADMAP.md",
-        "blob": "724b3c03d85fd8c9e723dba94854394cf85301e0"
+        "blob": "191626a394f8112c705a74b71a87f999d96efb20"
       }
     ],
     "verifiedAt": "2026-09-07"
@@ -1418,7 +1418,7 @@
       },
       {
         "path": "docs/ROADMAP.md",
-        "blob": "724b3c03d85fd8c9e723dba94854394cf85301e0"
+        "blob": "191626a394f8112c705a74b71a87f999d96efb20"
       }
     ],
     "verifiedAt": "2026-09-07"
@@ -1587,7 +1587,7 @@
       },
       {
         "path": "docs/ROADMAP.md",
-        "blob": "724b3c03d85fd8c9e723dba94854394cf85301e0"
+        "blob": "191626a394f8112c705a74b71a87f999d96efb20"
       },
       {
         "path": "packages/m3l-common/package.json",
@@ -1726,7 +1726,7 @@
       },
       {
         "path": "docs/ROADMAP.md",
-        "blob": "724b3c03d85fd8c9e723dba94854394cf85301e0"
+        "blob": "191626a394f8112c705a74b71a87f999d96efb20"
       }
     ],
     "verifiedAt": "2026-09-07"
@@ -1753,7 +1753,7 @@
     "sourceFiles": [
       {
         "path": "docs/ROADMAP.md",
-        "blob": "724b3c03d85fd8c9e723dba94854394cf85301e0"
+        "blob": "191626a394f8112c705a74b71a87f999d96efb20"
       },
       {
         "path": "scripts/cloudwatch-logs-analysis/src/steps/preset.ts",
@@ -1774,7 +1774,7 @@
       },
       {
         "path": "docs/ROADMAP.md",
-        "blob": "724b3c03d85fd8c9e723dba94854394cf85301e0"
+        "blob": "191626a394f8112c705a74b71a87f999d96efb20"
       },
       {
         "path": "packages/m3l-common/src/aws/sqs/client.ts",
@@ -1868,7 +1868,7 @@
       },
       {
         "path": "docs/ROADMAP.md",
-        "blob": "724b3c03d85fd8c9e723dba94854394cf85301e0"
+        "blob": "191626a394f8112c705a74b71a87f999d96efb20"
       }
     ],
     "verifiedAt": "2026-09-07"
@@ -1926,7 +1926,7 @@
       },
       {
         "path": "docs/ROADMAP.md",
-        "blob": "724b3c03d85fd8c9e723dba94854394cf85301e0"
+        "blob": "191626a394f8112c705a74b71a87f999d96efb20"
       }
     ],
     "verifiedAt": "2026-09-07"
@@ -2114,7 +2114,7 @@
       },
       {
         "path": "bin/run-skill-evals.mjs",
-        "blob": "3d69b9a4faf0c7be03b097ecec48c12e3ee85686"
+        "blob": "9946fbb25ef559a2adb9d505cf0e929bed7f6bdf"
       },
       {
         "path": "CLAUDE.md",
@@ -2126,7 +2126,7 @@
       },
       {
         "path": "docs/contributing/skill-routing.md",
-        "blob": "851bcd3f57262c0c997f798829c5b284cb30899e"
+        "blob": "3f4432393e06ecd27a73b582bea61da4f62708e7"
       },
       {
         "path": "docs/contributing/skills-catalog.md",
@@ -2312,7 +2312,7 @@
       },
       {
         "path": "docs/decision-notes/README.md",
-        "blob": "faaa6b29a0af7405bd9e6e1e5584cf63d3fc1ecc"
+        "blob": "0fc8b195c201ae0f91aeaf5b792917970327cf07"
       },
       {
         "path": "docs/logs/2026-09-06-adr-corpus-audit.md",

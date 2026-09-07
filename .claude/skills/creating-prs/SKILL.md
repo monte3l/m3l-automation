@@ -256,6 +256,15 @@ substitute — that wave shipped eight real defects past typecheck, lint, `knip`
 `check:dup`, `check:file-budget` and ~1,450 tests; every one was caught by a
 reviewer reasoning about behaviour.
 
+**This is the pre-push half of a two-phase review, not the whole of it.** The
+post-push half is `/resolving-pr-comments`, which fires on
+`claude-pr-review.yml`'s verdict after Step 13 opens the PR and there is a
+pushed diff for the bot to read. They are sequential phases of one review
+lifecycle, not alternatives — this step's spokes reason about code that has
+never left the local branch, and the bot never sees the revisions this loop
+already discarded. So a Must-fix here is never something to defer to that
+loop: leave one outstanding and Step 15's third outcome (hand back) applies.
+
 ### 8 — Pre-existing code-scanning check
 
 CodeQL runs via GitHub "default setup". The **required** merge context is the

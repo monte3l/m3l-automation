@@ -129,10 +129,17 @@ destination:
 ```text
 scaffolding-submodules → implementing-submodules → creating-prs → finishing-work
 scaffolding-scripts    → implementing-scripts    → creating-prs → finishing-work
+
+creating-prs Step 15 → resolving-pr-comments → creating-prs Step 15 → finishing-work
+        (only when claude-pr-review.yml's verdict is FAIL; repeats until it PASSes)
 ```
 
 `starting-work` precedes every chain above; `syncing-docs` is a sub-step
-inside `creating-prs`, not a separate stage.
+inside `creating-prs`, not a separate stage. The third line is conditional:
+`resolving-pr-comments` runs only once a PR exists and the bot posted FAIL,
+which is what makes it the post-push counterpart to `creating-prs`' pre-push
+review step rather than a competitor — the two can never contend for the same
+moment, and Step 15 still owns the merge on either side of it.
 
 ## When nothing in the table matches
 
