@@ -267,6 +267,7 @@ backstop for the step above, not a substitute for it.
 | 2026-09-07 | H9 — worktree hook shim race (issue #1002, PR #1090)                                  | [worktree-hook-shim-race](./2026-09-07-worktree-hook-shim-race.md)                         |
 | 2026-09-07 | H11 — finishing-work location guard (issue #1004, PR #1094/#1098)                     | [finishing-work-location-guard](./2026-09-07-finishing-work-location-guard.md)             |
 | 2026-09-07 | H12 — seam-plan → PR-sequence handoff made concrete (issue #1005)                     | [seam-plan-handoff](./2026-09-07-seam-plan-handoff.md)                                     |
+| 2026-09-07 | H8 — instruction-authoring policy (issue #1001, PR #1104/#1113)                       | [instruction-authoring-policy](./2026-09-07-instruction-authoring-policy.md)               |
 | 2026-09-07 | H14 — lefthook shim fail-open fix + detection tooling (issue #1097, PR #1105)         | [lefthook-shim-fail-open](./2026-09-07-lefthook-shim-fail-open.md)                         |
 | 2026-09-07 | Skill-eval suite gated on a MIN_PASS_RATE collapse floor (issue #809, PR #1089/#1101) | [skill-evals-pass-rate-floor](./2026-09-07-skill-evals-pass-rate-floor.md)                 |
 | 2026-09-07 | Harness tool-usage telemetry — per-tool run metrics (PR #1079)                        | [tool-usage-telemetry](./2026-09-07-tool-usage-telemetry.md)                               |

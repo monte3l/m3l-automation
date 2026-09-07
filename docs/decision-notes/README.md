@@ -48,6 +48,13 @@ document. Name it `NNNN-short-title.md`, numbered from the same kind of
 zero-padded sequence as `docs/adr/`, in its own sequence (a decision note's
 number carries no relationship to any ADR number).
 
+**A drafted-but-unpushed number is provisional, not reserved** — same as
+`docs/adr/README.md`'s equivalent caveat. Several concurrent sessions can pick
+the same next-free number from their own local view of `main`; re-derive it
+against `origin/main` immediately before push rather than trusting the number
+chosen at task start (`docs/logs/2026-09-07-instruction-authoring-policy.md`
+hit this twice in one task).
+
 Unlike an ADR, a decision note **may be edited in place** when the decision
 it records is superseded by a later note or promoted into a full ADR — add a
 dated `> **Superseded (YYYY-MM-DD).**` callout at the top pointing to the
