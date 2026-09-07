@@ -84,10 +84,17 @@ export async function resolveRepoRoot(mcpServer) {
     if (typeof first === "string" && first.startsWith("file://")) {
       return fileURLToPath(first);
     }
-  } catch {
+  } catch (cause) {
     // The client declared the capability but the request itself failed (no
     // handler registered, a transport error) — fall back rather than error
-    // the tool call over a discovery affordance failing.
+    // the tool call over a discovery affordance failing. Logged to stderr
+    // (never stdout — that's the JSON-RPC transport, see bin/mcp-server.mjs)
+    // so a wiring bug here is at least observable, not a silent, permanent
+    // degradation to the static root with zero trace.
+    console.error(
+      "resolveRepoRoot: roots lookup failed, falling back to static root:",
+      cause,
+    );
   }
   return root;
 }
@@ -167,7 +174,9 @@ export function adrQuery(args, options = {}) {
     entries = loadAdrEntries(repoRoot);
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : String(cause);
-    return errorResult(`adr_query: failed to read the ADR corpus — ${message}.`);
+    return errorResult(
+      `adr_query: failed to read the ADR corpus — ${message}.`,
+    );
   }
 
   const toRow = (entry) => ({
@@ -179,18 +188,27 @@ export function adrQuery(args, options = {}) {
 
   if (id !== undefined) {
     const padded = id.padStart(4, "0");
-    const match = entries.find((entry) => String(entry.number).padStart(4, "0") === padded);
-    return toolResult({ results: match ? [toRow(match)] : [], total: match ? 1 : 0 });
+    const match = entries.find(
+      (entry) => String(entry.number).padStart(4, "0") === padded,
+    );
+    return toolResult({
+      results: match ? [toRow(match)] : [],
+      total: match ? 1 : 0,
+    });
   }
 
   let matches = entries;
   if (status !== undefined) {
     const needle = status.toLowerCase();
-    matches = matches.filter((entry) => entry.statusText.toLowerCase() === needle);
+    matches = matches.filter(
+      (entry) => entry.statusText.toLowerCase() === needle,
+    );
   }
   if (query !== undefined) {
     const needle = query.toLowerCase();
-    matches = matches.filter((entry) => entry.title.toLowerCase().includes(needle));
+    matches = matches.filter((entry) =>
+      entry.title.toLowerCase().includes(needle),
+    );
   }
   return toolResult(capResults(matches.map(toRow)));
 }
@@ -246,7 +264,18 @@ function loadLogEntries(repoRoot) {
 export function logsQuery(args, options = {}) {
   const date = typeof args?.date === "string" ? args.date : undefined;
   const topic = typeof args?.topic === "string" ? args.topic : undefined;
-  const limit = typeof args?.limit === "number" ? args.limit : 25;
+  const rawLimit = args?.limit;
+  if (
+    rawLimit !== undefined &&
+    (typeof rawLimit !== "number" ||
+      !Number.isInteger(rawLimit) ||
+      rawLimit < 1)
+  ) {
+    return errorResult(
+      `logs_query: 'limit' must be a positive integer when provided, got ${JSON.stringify(rawLimit)}.`,
+    );
+  }
+  const limit = rawLimit ?? 25;
   if (date === undefined && topic === undefined) {
     return errorResult(
       `logs_query requires at least one of 'date' or 'topic' — e.g. ` +
@@ -260,7 +289,9 @@ export function logsQuery(args, options = {}) {
     entries = loadLogEntries(repoRoot);
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : String(cause);
-    return errorResult(`logs_query: failed to read the work-log corpus — ${message}.`);
+    return errorResult(
+      `logs_query: failed to read the work-log corpus — ${message}.`,
+    );
   }
 
   let matches = entries;
@@ -269,7 +300,9 @@ export function logsQuery(args, options = {}) {
   }
   if (topic !== undefined) {
     const needle = topic.toLowerCase();
-    matches = matches.filter((entry) => entry.title.toLowerCase().includes(needle));
+    matches = matches.filter((entry) =>
+      entry.title.toLowerCase().includes(needle),
+    );
   }
   return toolResult(capResults(matches, limit));
 }
@@ -331,7 +364,7 @@ export function commandsQuery(args) {
  * @returns {{ event: string, hook: string, purpose: string, mode: string }[]}
  */
 function parseHooksTable(markdown) {
-  const ESCAPED_PIPE = " PIPE ";
+  const ESCAPED_PIPE = "\u0000PIPE\u0000";
   /** @type {{ event: string, hook: string, purpose: string, mode: string }[]} */
   const rows = [];
   for (const line of markdown.split("\n")) {
@@ -379,12 +412,25 @@ export function hooksQuery(args, options = {}) {
   /** @type {ReturnType<typeof parseHooksTable>} */
   let rows;
   try {
-    rows = parseHooksTable(
-      readFileSync(join(repoRoot, HOOKS_REFERENCE_PATH_REL), "utf8"),
+    const markdown = readFileSync(
+      join(repoRoot, HOOKS_REFERENCE_PATH_REL),
+      "utf8",
     );
+    rows = parseHooksTable(markdown);
+    // A non-empty file that yields zero parsed rows means the table's shape
+    // drifted out from under this parser (a re-flowed column, a changed
+    // escape convention) — that's a parse failure, not a legitimate "the
+    // hooks reference is empty" answer, and must not present as one.
+    if (rows.length === 0 && markdown.includes("|")) {
+      throw new Error(
+        "parsed zero rows from a non-empty file — its table format may have changed",
+      );
+    }
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : String(cause);
-    return errorResult(`hooks_query: failed to read the hooks reference — ${message}.`);
+    return errorResult(
+      `hooks_query: failed to read the hooks reference — ${message}.`,
+    );
   }
 
   let matches = rows;
@@ -396,7 +442,9 @@ export function hooksQuery(args, options = {}) {
   }
   if (query !== undefined) {
     const needle = query.toLowerCase();
-    matches = matches.filter((row) => row.purpose.toLowerCase().includes(needle));
+    matches = matches.filter((row) =>
+      row.purpose.toLowerCase().includes(needle),
+    );
   }
   return toolResult(capResults(matches));
 }
@@ -444,6 +492,17 @@ export function catalogQuery(args, options = {}) {
     symbolMap = JSON.parse(
       readFileSync(join(repoRoot, "docs/reference/symbol-map.json"), "utf8"),
     );
+    // A syntactically-valid-but-wrong-shape generated file (e.g. gen:index
+    // regressing to emit an object instead of an array) must fail with this
+    // function's own actionable message, not an unrelated TypeError from the
+    // shape-dependent code below that this try block doesn't otherwise cover.
+    if (
+      !Array.isArray(catalog) ||
+      typeof symbolMap !== "object" ||
+      symbolMap === null
+    ) {
+      throw new Error("reference index has an unexpected shape");
+    }
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : String(cause);
     return errorResult(
@@ -472,14 +531,10 @@ export function catalogQuery(args, options = {}) {
     const hits = Object.keys(symbolMap).filter((s) =>
       s.toLowerCase().includes(needle),
     );
-    const capped = hits.length > 25;
-    result.query = {
-      total: hits.length,
-      symbols: hits.slice(0, 25).map((s) => ({ symbol: s, ...symbolMap[s] })),
-      ...(capped
-        ? { note: "More than 25 matches returned — narrow your query." }
-        : {}),
-    };
+    const { total, results, note } = capResults(
+      hits.map((s) => ({ symbol: s, ...symbolMap[s] })),
+    );
+    result.query = { total, symbols: results, ...(note ? { note } : {}) };
   }
   return toolResult(result, false);
 }
@@ -531,8 +586,9 @@ const NAME_DESCRIPTION_SHAPE = { name: z.string(), description: z.string() };
  * is the exported function above — kept together here so
  * bin/mcp-server.mjs stays a pure registration loop. `needsRoot` tells the
  * registration loop whether to resolve {@link resolveRepoRoot} before
- * calling the handler — `false` only for `commit_lint`, which never reads a
- * repo file.
+ * calling the handler — `false` for `commands_query` (reads only the
+ * in-memory `COMMAND_CATALOG`) and `commit_lint` (validates a string
+ * in-process), the two tools that never read a repo file.
  *
  * @type {{ name: string, needsRoot: boolean, config: { title: string, description: string, inputSchema: Record<string, import("zod").ZodTypeAny>, outputSchema: Record<string, import("zod").ZodTypeAny>, annotations: Record<string, boolean> }, handler: (args: Record<string, unknown>, options?: { root?: string }) => unknown }[]}
  */
@@ -543,11 +599,11 @@ export const TOOLS = [
     config: {
       title: "Query the ADR corpus",
       description:
-        "Looks up architecture decision record(s) by exact number (e.g. \"0030\"), " +
-        "by exact Status (e.g. \"Accepted\", \"Partially-superseded\" — case-" +
+        'Looks up architecture decision record(s) by exact number (e.g. "0030"), ' +
+        'by exact Status (e.g. "Accepted", "Partially-superseded" — case-' +
         "insensitive), or by a case-insensitive substring search over ADR titles, " +
-        "without reading any file under docs/adr/ in full. Use it to answer \"which " +
-        "ADR governs X\" or \"is ADR NNNN still Accepted\" — this repo's own session " +
+        'without reading any file under docs/adr/ in full. Use it to answer "which ' +
+        'ADR governs X" or "is ADR NNNN still Accepted" — this repo\'s own session ' +
         "transcripts show this corpus is the single most frequently fully-read " +
         "artifact in the repo. Pass exactly one of `id`, `status`, or `query`; an " +
         "`id` lookup returns at most one ADR with its Relations-derived reviewBy " +
@@ -580,7 +636,11 @@ export const TOOLS = [
         total: z.number(),
         note: z.string().optional(),
       },
-      annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+      annotations: {
+        readOnlyHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     handler: adrQuery,
   },
@@ -590,7 +650,7 @@ export const TOOLS = [
     config: {
       title: "Query the work-log corpus",
       description:
-        "Looks up work log(s) under docs/logs/ by exact date (\"YYYY-MM-DD\") or a " +
+        'Looks up work log(s) under docs/logs/ by exact date ("YYYY-MM-DD") or a ' +
         "case-insensitive substring search over log titles, without reading any " +
         "log file in full — this repo's own transcripts show the work-log corpus " +
         "is the second most frequently fully-read artifact in the repo. Returns " +
@@ -619,7 +679,11 @@ export const TOOLS = [
         total: z.number(),
         note: z.string().optional(),
       },
-      annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+      annotations: {
+        readOnlyHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     handler: logsQuery,
   },
@@ -629,10 +693,10 @@ export const TOOLS = [
     config: {
       title: "Query the pnpm command catalog",
       description:
-        "Looks up `pnpm` script(s) by exact name (e.g. \"verify\") or a case-" +
+        'Looks up `pnpm` script(s) by exact name (e.g. "verify") or a case-' +
         "insensitive substring search over script names and descriptions, " +
         "across all 111 entries in package.json's scripts block — use it to " +
-        "answer \"which pnpm script does X\" instead of reading package.json's " +
+        'answer "which pnpm script does X" instead of reading package.json\'s ' +
         "scripts block or bin/lib/command-catalog.mjs in full. Pass at least one " +
         "of `name` or `query`. The catalog is a hand-authored, structurally-gated " +
         "companion to package.json (check:command-catalog fails on any mismatch), " +
@@ -645,14 +709,20 @@ export const TOOLS = [
         query: z
           .string()
           .optional()
-          .describe("Case-insensitive substring to search script names/descriptions for."),
+          .describe(
+            "Case-insensitive substring to search script names/descriptions for.",
+          ),
       },
       outputSchema: {
         results: z.array(z.object(NAME_DESCRIPTION_SHAPE)),
         total: z.number(),
         note: z.string().optional(),
       },
-      annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+      annotations: {
+        readOnlyHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     handler: commandsQuery,
   },
@@ -663,10 +733,10 @@ export const TOOLS = [
       title: "Query the Claude Code hooks reference",
       description:
         "Looks up wired-hook row(s) from docs/contributing/hooks-reference.md's " +
-        "27-row inventory by exact hook filename (e.g. \"guard-branch-isolation.mjs\"), " +
-        "exact event name (e.g. \"SessionStart\"), or a case-insensitive substring " +
+        '27-row inventory by exact hook filename (e.g. "guard-branch-isolation.mjs"), ' +
+        'exact event name (e.g. "SessionStart"), or a case-insensitive substring ' +
         "search over each row's Purpose text — use it to answer \"what does hook X " +
-        "do\" or \"what fires on event Y\" instead of reading the reference page in " +
+        'do" or "what fires on event Y" instead of reading the reference page in ' +
         "full. Pass at least one of `name`, `event`, or `query`.",
       inputSchema: {
         name: z
@@ -680,7 +750,9 @@ export const TOOLS = [
         query: z
           .string()
           .optional()
-          .describe("Case-insensitive substring to search each row's Purpose text for."),
+          .describe(
+            "Case-insensitive substring to search each row's Purpose text for.",
+          ),
       },
       outputSchema: {
         results: z.array(
@@ -694,7 +766,11 @@ export const TOOLS = [
         total: z.number(),
         note: z.string().optional(),
       },
-      annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+      annotations: {
+        readOnlyHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     handler: hooksQuery,
   },
@@ -769,7 +845,11 @@ export const TOOLS = [
           })
           .optional(),
       },
-      annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+      annotations: {
+        readOnlyHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     handler: catalogQuery,
   },
@@ -795,7 +875,11 @@ export const TOOLS = [
         valid: z.boolean(),
         errors: z.array(z.string()),
       },
-      annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+      annotations: {
+        readOnlyHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     handler: commitLint,
   },

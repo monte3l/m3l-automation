@@ -7,7 +7,10 @@
 // commands_query runs against the real bin/lib/command-catalog.mjs;
 // catalog_query and commit_lint run against the real committed
 // docs/reference/*.json and bin/lint-commit.mjs respectively.
-import { describe, expect, test } from "vitest";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, test } from "vitest";
 import {
   TOOLS,
   adrQuery,
@@ -28,6 +31,11 @@ function payloadOf(result: {
   const block = result.content[0];
   if (block === undefined) throw new Error("tool result had no content");
   return JSON.parse(block.text) as Record<string, unknown>;
+}
+
+/** A fresh, empty temp directory to build a small fixture repo tree under. */
+function mktemp(): string {
+  return mkdtempSync(join(tmpdir(), "mcp-root-test-"));
 }
 
 describe("TOOLS registration contract", () => {
@@ -141,6 +149,146 @@ describe("resolveRepoRoot (fake mcpServer, no real MCP transport)", () => {
     );
     await expect(resolveRepoRoot(server)).resolves.toBe(root);
   });
+});
+
+describe("options.root override (regression: silently reverting to the static load-time root, resurrecting ADR-0096's stale-cwd-after-EnterWorktree bug)", () => {
+  let dir: string;
+
+  afterEach(() => {
+    if (dir) rmSync(dir, { recursive: true, force: true });
+  });
+
+  test("adrQuery: options.root reads a fixture repo, not the real one", () => {
+    dir = mktemp();
+    mkdirSync(join(dir, "docs", "adr"), { recursive: true });
+    writeFileSync(
+      join(dir, "docs", "adr", "0001-fixture.md"),
+      "# 0001. Fixture ADR\n\n- **Status:** Accepted\n",
+    );
+
+    const fixturePayload = payloadOf(adrQuery({ id: "0001" }, { root: dir }));
+    const fixtureResults = fixturePayload["results"] as {
+      id: string;
+      title: string;
+      status: string;
+    }[];
+    expect(fixturePayload["total"]).toBe(1);
+    expect(fixtureResults[0]?.id).toBe("0001");
+    expect(fixtureResults[0]?.title).toBe("Fixture ADR");
+    expect(fixtureResults[0]?.status).toBe("Accepted");
+
+    // Same query, no options — reads the real repo's own ADR-0001, whose
+    // title is never "Fixture ADR". Proves the two calls read genuinely
+    // different roots rather than coincidentally agreeing.
+    const realPayload = payloadOf(adrQuery({ id: "0001" }));
+    const realResults = realPayload["results"] as { title: string }[];
+    expect(realResults[0]?.title).not.toBe("Fixture ADR");
+  });
+
+  test("logsQuery: options.root reads a fixture repo; the real repo has no log dated 2099-01-01", () => {
+    dir = mktemp();
+    mkdirSync(join(dir, "docs", "logs"), { recursive: true });
+    writeFileSync(
+      join(dir, "docs", "logs", "2099-01-01-fixture.md"),
+      "# Work log — fixture (2099-01-01)\n",
+    );
+
+    const fixturePayload = payloadOf(
+      logsQuery({ date: "2099-01-01" }, { root: dir }),
+    );
+    const fixtureResults = fixturePayload["results"] as {
+      date: string;
+      file: string;
+      title: string;
+    }[];
+    expect(fixturePayload["total"]).toBe(1);
+    expect(fixtureResults[0]?.date).toBe("2099-01-01");
+    expect(fixtureResults[0]?.file).toBe("2099-01-01-fixture.md");
+    expect(fixtureResults[0]?.title).toBe("Work log — fixture (2099-01-01)");
+
+    // Same query against the real repo, no options — 2099-01-01 is a clearly
+    // fake future date no real log carries, so this must report zero.
+    const realPayload = payloadOf(logsQuery({ date: "2099-01-01" }));
+    expect(realPayload["total"]).toBe(0);
+  });
+
+  test("hooksQuery: options.root reads a fixture repo; the real repo has no such hook", () => {
+    dir = mktemp();
+    mkdirSync(join(dir, "docs", "contributing"), { recursive: true });
+    writeFileSync(
+      join(dir, "docs", "contributing", "hooks-reference.md"),
+      [
+        "# Hooks reference",
+        "",
+        "| Event | Matcher | Hook | Purpose | Mode |",
+        "| --- | --- | --- | --- | --- |",
+        "| SessionStart | fixture | `fixture-hook.mjs` | Fixture purpose text | blocking |",
+        "",
+      ].join("\n"),
+    );
+
+    const fixturePayload = payloadOf(
+      hooksQuery({ name: "fixture-hook.mjs" }, { root: dir }),
+    );
+    const fixtureResults = fixturePayload["results"] as {
+      event: string;
+      hook: string;
+      purpose: string;
+      mode: string;
+    }[];
+    expect(fixturePayload["total"]).toBe(1);
+    expect(fixtureResults[0]?.hook).toBe("fixture-hook.mjs");
+    expect(fixtureResults[0]?.event).toBe("SessionStart");
+    expect(fixtureResults[0]?.purpose).toBe("Fixture purpose text");
+
+    // Same query against the real repo, no options — "fixture-hook.mjs" is
+    // not a real hook filename.
+    const realPayload = payloadOf(hooksQuery({ name: "fixture-hook.mjs" }));
+    expect(realPayload["total"]).toBe(0);
+  });
+
+  test("catalogQuery: options.root reads a fixture repo; the real repo has no such symbol", () => {
+    dir = mktemp();
+    mkdirSync(join(dir, "docs", "reference"), { recursive: true });
+    writeFileSync(join(dir, "docs", "reference", "catalog.json"), "[]");
+    writeFileSync(
+      join(dir, "docs", "reference", "symbol-map.json"),
+      JSON.stringify({
+        FixtureSymbol: {
+          submodule: "fixture",
+          namespace: "core",
+          file: "fixture.ts",
+        },
+      }),
+    );
+
+    const fixturePayload = payloadOf(
+      catalogQuery({ symbol: "FixtureSymbol" }, { root: dir }),
+    );
+    expect(fixturePayload["symbol"]).toMatchObject({
+      symbol: "FixtureSymbol",
+      submodule: "fixture",
+      namespace: "core",
+      file: "fixture.ts",
+    });
+
+    // Same query against the real repo, no options — "FixtureSymbol" is not
+    // a real exported symbol, so the lookup must report not-found.
+    const realPayload = payloadOf(catalogQuery({ symbol: "FixtureSymbol" }));
+    expect(realPayload["symbol"]).toBeNull();
+  });
+});
+
+describe("logsQuery limit validation", () => {
+  test.each([0, -1, 1.5, "5", Number.NaN])(
+    "limit %p → isError with a 'positive integer' message",
+    (limit) => {
+      const result = logsQuery({ topic: "worktree", limit });
+      expect(result.isError).toBe(true);
+      const payload = payloadOf(result);
+      expect(payload["error"]).toContain("positive integer");
+    },
+  );
 });
 
 describe("adrQuery (real docs/adr corpus, no mocking)", () => {
