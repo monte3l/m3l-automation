@@ -492,6 +492,10 @@ function normalizeBranchCell(cell) {
  * `null` via {@link normalizeBranchCell} — this value can end up interpolated
  * into a shell command (`pnpm worktree:new`), so a caller must treat `null`
  * as "not recorded", never fall back to guessing from the cell text itself.
+ * `branch` is also `null` whenever `allLanded` is true — once every row is
+ * landed, `currentRow` is the *last* row, and its branch already shipped;
+ * there is no next slice to hand off to, so the field never points a caller
+ * back at spent work.
  *
  * @param {string} pageText
  * @returns {{ current: number, total: number, label: string | null, branch: string | null, allLanded: boolean } | null}
@@ -551,8 +555,14 @@ export function parseLandingPlanProgress(pageText) {
   const currentRow = dataRows[current - 1];
   const label =
     sliceIndex === -1 ? null : deriveSliceLabel(currentRow[sliceIndex]);
+  // No next branch once every row is landed — currentRow is the LAST row
+  // here (current === total), so its branch is one that already shipped,
+  // not a hand-off target. A caller reading branch without also checking
+  // allLanded would otherwise be pointed back at spent work.
   const branch =
-    branchIndex === -1 ? null : normalizeBranchCell(currentRow[branchIndex]);
+    branchIndex === -1 || allLanded
+      ? null
+      : normalizeBranchCell(currentRow[branchIndex]);
 
   return { current, total, label, branch, allLanded };
 }

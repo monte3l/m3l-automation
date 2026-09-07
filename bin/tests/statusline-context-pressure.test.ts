@@ -1589,6 +1589,52 @@ describe("parseLandingPlanProgress", () => {
       allLanded: true,
     });
   });
+
+  // The actual regression this fixes: a table WITH a Branch column where
+  // every row is Landed. The last row's Branch cell holds a real,
+  // non-placeholder value (feat/b), proving branch: null here comes from
+  // the allLanded suppression, not from the cell being empty/placeholder --
+  // that already shipped branch has no next slice to hand off to.
+  test("suppresses branch to null on a fully-landed table even when the Branch column has a real value", () => {
+    const pageText = [
+      "## Landing plan",
+      "",
+      "| Slice | Scope | Status | Branch |",
+      "| ----- | ----- | ------ | ------ |",
+      "| V6 slice 1 | first slice | Landed | feat/a |",
+      "| V6 slice 2 | second slice | Landed | feat/b |",
+    ].join("\n");
+
+    expect(parseLandingPlanProgress(pageText)).toEqual({
+      current: 2,
+      total: 2,
+      label: "V6",
+      branch: null,
+      allLanded: true,
+    });
+  });
+
+  // Regression guard: a table WITH a Branch column that is NOT fully landed
+  // must still return the current (first open) row's branch -- the
+  // allLanded fix must not suppress the in-flight case too.
+  test("still returns the current row's branch when a Branch-column table is not fully landed", () => {
+    const pageText = [
+      "## Landing plan",
+      "",
+      "| Slice | Scope | Status | Branch |",
+      "| ----- | ----- | ------ | ------ |",
+      "| V6 slice 1 | first slice | Landed | feat/a |",
+      "| V6 slice 2 | second slice | In progress | feat/b |",
+    ].join("\n");
+
+    expect(parseLandingPlanProgress(pageText)).toEqual({
+      current: 2,
+      total: 2,
+      label: "V6",
+      branch: "feat/b",
+      allLanded: false,
+    });
+  });
 });
 
 describe("resolveSliceProgress", () => {

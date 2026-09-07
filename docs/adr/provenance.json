@@ -1609,7 +1609,7 @@
     "sourceFiles": [
       {
         "path": ".claude/hooks/statusline-context-pressure.mjs",
-        "blob": "91c3ae1be24f559e35303f712e4349f0d02d521f"
+        "blob": "3145ca420f4037ea8bed7d373f042df43c48a866"
       },
       {
         "path": ".claude/rules/library-src.md",
