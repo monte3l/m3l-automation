@@ -484,6 +484,15 @@ jobs:
       - name: Check logs index coverage
         run: pnpm check:logs-index
 
+      # Warns (non-blocking) when an installed lefthook git-hook shim falls
+      # through with no `exit 1` on an unresolved binary (issue #1097 /
+      # ROADMAP H14). CI's `pnpm install --frozen-lockfile` above always runs
+      # `prepare` -> `lefthook install` fresh, with `assert_lefthook_installed:
+      # true` already in lefthook.yml, so this naturally passes clean here —
+      # the real value is catching a stale shim on a maintainer's own machine.
+      - name: Check lefthook shim integrity
+        run: pnpm check:lefthook-shim
+
       - name: Check skill evals
         run: pnpm check:skill-evals
 
