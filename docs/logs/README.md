@@ -271,3 +271,4 @@ backstop for the step above, not a substitute for it.
 | 2026-09-07 | Skill-eval suite gated on a MIN_PASS_RATE collapse floor (issue #809, PR #1089/#1101) | [skill-evals-pass-rate-floor](./2026-09-07-skill-evals-pass-rate-floor.md)                 |
 | 2026-09-07 | Harness tool-usage telemetry — per-tool run metrics (PR #1079)                        | [tool-usage-telemetry](./2026-09-07-tool-usage-telemetry.md)                               |
 | 2026-09-07 | m3l MCP server rebuild — ADR-0096, 4-PR wave (PR #1080/#1085/#1102/#1109)             | [m3l-mcp-server-rebuild](./2026-09-07-m3l-mcp-server-rebuild.md)                           |
+| 2026-09-07 | H10 — pre-push/post-push review-loop sequencing note (issue #1003, PR #1103)          | [review-loop-sequencing](./2026-09-07-review-loop-sequencing.md)                           |
