@@ -1,14 +1,14 @@
 /**
  * `agent-operator/steps/run-agent-operator` — dispatches `agent-operator`'s
- * three declared operations (`health-check`, `explain-policy`, `run-preset`)
- * over a closed `switch`, per ADR-0055.
+ * four declared operations (`health-check`, `explain-policy`, `run-preset`,
+ * `triage-logs`) over a closed `switch`, per ADR-0055.
  *
  * Every operation lives in its own step module — `steps/run-health-check`,
- * `steps/explain-policy`, `steps/run-etl-preset` — so this file stays what
- * its name says: a dispatcher. `health-check` moved out when the model loop
- * landed; keeping it inline would have pushed one function past the scripts
- * zone's `max-lines-per-function` budget and buried the workload's own
- * ordering constraints inside a `switch`.
+ * `steps/explain-policy`, `steps/run-etl-preset`, `steps/run-log-triage` —
+ * so this file stays what its name says: a dispatcher. `health-check` moved
+ * out when the model loop landed; keeping it inline would have pushed one
+ * function past the scripts zone's `max-lines-per-function` budget and
+ * buried the workload's own ordering constraints inside a `switch`.
  *
  * @packageDocumentation
  */
@@ -26,6 +26,7 @@ import { loadAgentPolicy } from "./load-policy.js";
 import { resolveAgentOperatorRuntime } from "./resolve-runtime.js";
 import { runEtlPreset } from "./run-etl-preset.js";
 import { runHealthCheck } from "./run-health-check.js";
+import { runLogTriage } from "./run-log-triage.js";
 
 /** The literal union of {@link AGENT_OPERATOR_COMMAND_DECLARATIONS}' names. */
 type AgentOperatorCommand =
@@ -160,7 +161,7 @@ async function runExplainPolicy(deps: RunAgentOperatorDeps): Promise<void> {
 }
 
 /**
- * Dispatches `agent-operator`'s three declared operations over a closed
+ * Dispatches `agent-operator`'s four declared operations over a closed
  * `switch` with a `never` exhaustiveness arm (ADR-0055).
  *
  * @param deps - See {@link RunAgentOperatorDeps}.
@@ -170,7 +171,8 @@ async function runExplainPolicy(deps: RunAgentOperatorDeps): Promise<void> {
  *   `health-check` (policy, decision log, budget state, escalation, and the
  *   Bedrock errors it deliberately does NOT absorb),
  *   `steps/load-policy.ts` / `steps/resolve-runtime.ts` for `explain-policy`,
- *   and `steps/run-etl-preset.ts` for `run-preset`.
+ *   `steps/run-etl-preset.ts` for `run-preset`, and `steps/run-log-triage.ts`
+ *   for `triage-logs`.
  *
  * @example
  * ```ts
@@ -224,6 +226,12 @@ export async function runAgentOperator(
       // added there is a compile error here rather than a silently dropped
       // dependency.
       return runEtlPreset(deps);
+    case "triage-logs":
+      // `deps` is forwarded whole for the same reason `run-preset` is:
+      // `RunLogTriageDeps` is a structural subset of this seam, so a field
+      // added there is a compile error here rather than a silently dropped
+      // dependency.
+      return runLogTriage(deps);
     default: {
       const exhaustive: never = rawCommand;
       throw new M3LAgentOperatorCliError(

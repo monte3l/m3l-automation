@@ -10,6 +10,8 @@
  * @packageDocumentation
  */
 
+import { isAbsolute } from "node:path";
+
 import { M3LAgentOperatorCliError } from "./errors.js";
 
 /**
@@ -348,6 +350,73 @@ export function isWellFormedPresetPathShape(presetPath: string): boolean {
     isUnpaddedNonBlankPresetPath(presetPath) &&
     !hasPresetPathControlOrFormatCharacter(presetPath) &&
     !PRESET_PATH_WHITESPACE_RE.test(presetPath)
+  );
+}
+
+/**
+ * Whether one `presetAllowlist` entry is a declarable preset path:
+ * well-shaped per {@link isWellFormedPresetPathShape}, relative, free of any
+ * `..` segment, and naming a file inside
+ * {@link AGENT_OPERATOR_PRESETS_DIRECTORY_PREFIX}.
+ *
+ * The shape predicate and the directory boundary are both declared in this
+ * same module, shared with `steps/resolve-runtime.ts`'s config parser, so
+ * the two cannot drift into accepting different sets. Sharing the constant
+ * alone was not enough and is what a review caught: the parser rejected a
+ * whitespace-padded, NUL-bearing or newline-bearing declared path while
+ * `lib/cli-surface.ts`'s use-site re-check — the one a
+ * directly-constructed `ReadonlyMap` actually passes through — accepted it
+ * and emitted a token. Calling this shared predicate rather than restating
+ * its rules is what keeps that site from being the looser of the two again.
+ *
+ * `lib/triage-presets.ts`'s `verifyTriagePresets` is a second call site for
+ * the same reason: an operator-declared `presetAllowlist` entry has to clear
+ * the identical containment rule before either module ever reads the file it
+ * names, and duplicating the rule there instead of importing it from here
+ * would recreate the exact drift this paragraph describes — which is why
+ * this predicate lives in `lib/preset-names.ts` rather than beside either
+ * caller.
+ *
+ * Sharing the rules is still not sharing the CHECK: each call site remains a
+ * deliberate use-site re-check, for the reason
+ * {@link "./cli-surface.js".resolveAllowedPresetPath} documents.
+ *
+ * The `..` ban is stricter than "where does it land" —
+ * `data/config/presets/sub/../x.json` normalises back inside the directory
+ * and is still rejected — because the declared string is the artifact an
+ * operator reviews in a config diff, and a symlinked `sub/` would make the
+ * reviewed string and the resolved path genuinely disagree.
+ *
+ * @param relativePath - A declared `presetAllowlist` value.
+ * @returns Whether `relativePath` is a declarable preset path.
+ *
+ * @example
+ * ```ts
+ * import { isDeclarablePresetPath } from "./preset-names.js";
+ *
+ * isDeclarablePresetPath("data/config/presets/report.yaml"); // true
+ * isDeclarablePresetPath("../../etc/passwd"); // false
+ * ```
+ */
+export function isDeclarablePresetPath(relativePath: string): boolean {
+  return (
+    // Shape first: a padded or control-character-bearing value is not a path
+    // this script accepts anywhere, and checking it here rather than after
+    // containment keeps the reason the parser would have given.
+    isWellFormedPresetPathShape(relativePath) &&
+    !isAbsolute(relativePath) &&
+    // A win32-style absolute (`C:\...`) is not absolute on a POSIX host, so
+    // the prefix check below is what rejects it — it cannot start with
+    // `data/config/presets/`.
+    !relativePath.split(AGENT_OPERATOR_PATH_SEPARATOR_RE).includes("..") &&
+    // The compared prefix carries its trailing separator: without it, a bare
+    // `startsWith("data/config/presets")` also accepts
+    // `data/config/presetsevil/report.json`, a different directory that
+    // merely shares the prefix as text.
+    relativePath.startsWith(AGENT_OPERATOR_PRESETS_DIRECTORY_PREFIX) &&
+    // The prefix and nothing else names the DIRECTORY, not a file in it;
+    // `--preset=<a directory>` is never a preset the CLI can load.
+    relativePath.length > AGENT_OPERATOR_PRESETS_DIRECTORY_PREFIX.length
   );
 }
 

@@ -127,13 +127,22 @@ each ceiling was metering, never a defaulted ledger field: reporting an
 unobserved budget as `0` would convert "unobservable" into a silently passing
 check, which is the one direction this design must never fail in.
 
-Explicitly out of scope: mutations of any kind (the policy grants only
-`inspect`/`dry-run` on fleet scripts, all declared `readOnlyOperations`); a
-generic `ask`/`prompt` operation, which would let model output choose the
-workload rather than the operator choosing it; and budget parameters on argv —
-budgets are policy-file fields, and exposing them on the command line would let
-an operator widen a declared ceiling without a reviewable diff, defeating
-ADR-0060's premise.
+**Mutations are no longer out of scope** — that changed with V9. `run-preset`
+spawns a real `m3l run` against an allowlisted preset, gated by V6's two-phase
+`dryRunFirst` credit rather than by a `confirmDestructive` flag, so the gate
+lives in a diffable policy file instead of an argv switch. `triage-logs` is
+read-only but still reaches AWS. The grants reflect that: `json-etl` carries
+`run` in `operations` and deliberately **not** in `readOnlyOperations` (so
+`decideReadOnly`'s cross-check would escalate a mis-declared kind), while
+`cloudwatch-logs-analysis` carries `run` in **both** (so a genuinely read-only
+claim is corroborated rather than escalated). Every other fleet entry is still
+`inspect`/`dry-run` in both lists.
+
+Still explicitly out of scope: a generic `ask`/`prompt` operation, which would
+let model output choose the workload rather than the operator choosing it; and
+budget parameters on argv — budgets are policy-file fields, and exposing them
+on the command line would let an operator widen a declared ceiling without a
+reviewable diff, defeating ADR-0060's premise.
 
 ## Configuration schema
 
@@ -144,7 +153,7 @@ declarations (ADR-0055) and enforced by `Core.deriveOperationValidators`.
 | Parameter             | Type           | Default               | Validation                  | Required for | Description                                                                                                                     |
 | --------------------- | -------------- | --------------------- | --------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------- |
 | `aws.profile`         | `STRING`       | —                     | `nonEmpty`                  | all          | Local AWS profile; declaring it enables the `script.aws` provisioning seam                                                      |
-| `command`             | `STRING`       | —                     | operation membership        | all          | `health-check` or `explain-policy`                                                                                              |
+| `command`             | `STRING`       | —                     | operation membership        | all          | `health-check`, `explain-policy`, `run-preset`, or `triage-logs`                                                                |
 | `modelId`             | `STRING`       | —                     | `nonEmpty`                  | all          | Primary Bedrock model id for the workload loop                                                                                  |
 | `fallbackModelIds`    | `STRING_ARRAY` | `[]`                  | each `nonEmpty`             | —            | Ordered fallback models handed to `M3LBedrockRuntimeOperations`                                                                 |
 | `modelRates`          | `STRING_ARRAY` | `[]`                  | parsed in `resolve-runtime` | —            | Per-1k-token rates, `<id>=<in>,<out>` per entry; an absent rate makes cost **unobservable**, which escalates rather than passes |
@@ -156,7 +165,7 @@ declarations (ADR-0055) and enforced by `Core.deriveOperationValidators`.
 | `scripts`             | `STRING_ARRAY` | `[]`                  | each an allowed script name | —            | Narrows the checked set; empty means every discovered script                                                                    |
 | `includeDryRunProbes` | `BOOL`         | `false`               | requires `dryRunAllowlist`  | —            | Enables the `dry-run` tool                                                                                                      |
 | `dryRunAllowlist`     | `STRING_ARRAY` | `[]`                  | each an allowed script name | —            | The only names `dry-run` may probe                                                                                              |
-| `presetAllowlist`     | `STRING_ARRAY` | `[]`                  | parsed in `resolve-runtime` | —            | The only presets `run` may use, `<name>=<workspace-relative-path>` per entry; empty means no mutating run is possible           |
+| `presetAllowlist`     | `STRING_ARRAY` | `[]`                  | parsed in `resolve-runtime` | —            | The only presets `run` may use, `<name>=<workspace-relative-path>` per entry; shared by `run-preset` and `triage-logs`          |
 | `output`              | `STRING`       | —                     | `nonEmpty`                  | —            | Artifact filename under `M3L_OUTPUT_DIR`                                                                                        |
 | `decisionLogDir`      | `STRING`       | —                     | `nonEmpty`                  | —            | Overrides the decision log's directory                                                                                          |
 | `cliEntrypoint`       | `STRING`       | derived (see below)   | `nonEmpty`                  | —            | Absolute path to `packages/m3l-cli/bin/m3l.mjs`                                                                                 |
@@ -273,9 +282,44 @@ different and stays: relocating an audit record widens no authority.)
   (`schemaVersion: 1`) and `deriveHealthAnomalies`.
 - `run-health-check` — the orchestrator, and the owner of the three ordering
   constraints above.
-- `run-agent-operator` — dispatches the two operations over a closed `switch`
-  with a `never` exhaustiveness arm. Both operations live in their own step
-  modules; this file is a dispatcher and nothing else.
+- `prepare-gated-operation` — the operation-agnostic authorization setup every
+  gated operation shares: accessor, a single `now` sample, policy load, runtime
+  resolution, ledger and recorder, the daily-counter seed, the CLI surface, the
+  metered invoker (constructed **before** the preflight, so observed zero spend
+  keeps `budget.tokens-per-run` from escalating), the decision-log preflight,
+  and `assertConclusionAutoApproved`. The declared action is its only
+  per-operation input.
+- `build-etl-tools` — the single **two-phase** `run_preset` spec. Refuses at
+  build time when the target script declares its own `aws.profile`: the judged
+  `target` is the operator's profile, which would then be grading a different
+  account than the one being mutated.
+- `etl-prompt` — `run-preset`'s system and user prompts.
+- `run-etl-preset` — the `run-preset` orchestrator. Requires `scripts` to
+  declare exactly one entry: a mutating operation's target must never be
+  decided by array ordering.
+- `build-triage-tools` — the single **single-phase**, read-only `triage_logs`
+  spec. Pins its target script to `cloudwatch-logs-analysis` and refuses to
+  register for any other, and drives the surface's `triageRun` method rather
+  than `run`. Three things make the `read-only` claim sound, none of them a
+  per-call check: the script pin, `triageRun`'s **fixed**
+  `--operation=analyze` token, and its `--aws.profile=<operator profile>`
+  token. Both tokens matter for the same reason — a preset's own `operation:`
+  and `aws.profile` keys sit at config precedence level 6, below the
+  environment at level 4, so an inherited `OPERATION=convert` would re-verb
+  the child while the action was graded read-only, and a parent profile
+  resolved from its own CLI argument (level 1) or config file (levels 2–3)
+  would grade an account the child never queries. A child passthrough
+  argument binds at level 1, above every other source. The profile token
+  carries the _same_ value stamped into the judged action's `target`, not a
+  second lookup.
+- `triage-prompt` — `triage-logs`' system and user prompts.
+- `run-log-triage` — the `triage-logs` orchestrator. Verifies the preset
+  allowlist before the registry is built, and refuses when the workspace root
+  is unresolvable, since there is then no anchor to resolve preset paths
+  against.
+- `run-agent-operator` — dispatches the four operations over a closed `switch`
+  with a `never` exhaustiveness arm. Every operation lives in its own step
+  module; this file is a dispatcher and nothing else.
 
 Non-step helpers live in `src/lib/` (the established location — precedent:
 `scripts/json-etl/src/lib/field-spec.ts`, `scripts/rds-data-sql/src/lib/defaults.ts`):
@@ -293,6 +337,27 @@ Non-step helpers live in `src/lib/` (the established location — precedent:
 - `lib/cli-process` — the **only** module importing `node:child_process`.
 - `lib/cli-surface` — the typed `m3l` adapter: argv table, exit-code policy,
   error minting.
+- `lib/preset-names` — the preset-name shape check plus the
+  `AgentOperatorPresetName` / `AgentOperatorPresetPath` brands. Membership in
+  the operator's `presetAllowlist`, not the shape check, is the load-bearing
+  layer: the pattern alone accepts `--json`, `-h` and `123`.
+- `lib/triage-presets` — `verifyTriagePresets`, the only minting site of the
+  `VerifiedTriagePresets` brand `build-triage-tools` requires. Six refusals, in
+  the order it checks them: an empty allowlist, a path escaping
+  `data/config/presets/`, a path whose extension is not `.yaml`/`.yml`, and a
+  preset declaring its own `extends`, its own `aws.profile`, or any
+  `operation` other than `analyze`. The extension refusal is not cosmetic:
+  `M3LScriptPresetLoader` dispatches on extension, parsing `.json` with
+  `JSON.parse` rather than YAML, so without it verification and execution
+  could read the same bytes through two different parsers. The `extends`
+  refusal is what
+  makes the other two sound: `Core.M3LYAMLConfigProvider` does not follow
+  `extends` (only `M3LScriptPresetLoader` does), so without it a shallow
+  own-key read could be blinded by a base preset. The `aws.profile` refusal
+  exists because environment variables outrank a preset in `M3LScript`'s
+  config precedence (level 4 against level 6) and the spawned child inherits
+  this process's environment — so the key looks like it re-targets the run and
+  usually does not.
 
 ### The CLI seam
 

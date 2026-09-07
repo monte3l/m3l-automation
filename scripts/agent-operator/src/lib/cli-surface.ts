@@ -1,8 +1,9 @@
 /**
  * `lib/cli-surface` — the typed adapter over `lib/cli-process.ts`. This is
  * the **only** consumer of `runCliProcess`; it owns the argv table, the
- * per-method exit-code acceptance policy, and all error minting for the five
- * agent-facing CLI operations (`list`, `doctor`, `inspect`, `dryRun`, `run`).
+ * per-method exit-code acceptance policy, and all error minting for the six
+ * agent-facing CLI operations (`list`, `doctor`, `inspect`, `dryRun`, `run`,
+ * `triageRun`).
  *
  * Argument-injection defence, layered in the order each layer is applied:
  *
@@ -25,16 +26,52 @@
  * 5. Fixed argv positions built here from a closed `switch` over a
  *    discriminated `CliOperation` union — never string concatenation.
  *
- * Net effect: the model supplies exactly two values that can influence a
- * token across the whole tool surface — a script name and, for `run` alone, a
- * preset *name*. (`run`'s `mode` is a third caller-supplied value, but it is
- * never interpolated: it selects whether a FIXED `--dry-run` token is
- * appended, and it is narrowed to one of two literals at runtime by
- * `assertRunMode` before argv is built — see {@link AgentCliRunOptions}.) It never
+ * Net effect: the MODEL supplies exactly two values that can influence a
+ * token across the whole tool surface — a script name and, for `run` and
+ * `triageRun` alike, a preset *name*. (`run`'s `mode` is a third
+ * caller-supplied value, but it is never interpolated: it selects whether a
+ * FIXED `--dry-run` token is appended, and it is narrowed to one of two
+ * literals at runtime by `assertRunMode` before argv is built — see
+ * {@link AgentCliRunOptions}. `triageRun` has no such third value: see its own
+ * TSDoc for why a caller-selectable mode would be strictly less safe here,
+ * not merely unneeded.) `triageRun`'s trailing `--operation=analyze` token
+ * supplies **no** model-influenced value at all — it is a literal written
+ * into a closed `switch` arm, the same way every other fixed token in this
+ * table is, and stating that plainly is the point of this section: the
+ * defect this method closes was a verb that looked fixed (the preset file's
+ * own `operation:` key) but was actually overridable by an inherited
+ * environment variable one precedence level below it. A `TRIAGE_OPERATION_ARG`
+ * module constant, spawned as a child passthrough argument, binds at
+ * precedence level 1 — above both the preset file (level 6) and environment
+ * (level 4) — so nothing later in `M3LScript.loadConfig`'s resolution order
+ * can move it. It never
  * supplies a path: `run`'s `--preset=` token is looked up from the
  * operator's own `presetAllowlist` and anchored to `workspaceRoot` here, so
- * the model names a key and this module resolves the file. Distinct nominal
- * brands hold that chain together, and each one occupies a real
+ * the model names a key and this module resolves the file.
+ *
+ * `triageRun`'s trailing `--aws.profile=<value>` token is the one departure
+ * from "no model-influenced value is interpolated": it DOES interpolate a
+ * caller-supplied `operatorProfile` string, closing the same precedence gap
+ * as `TRIAGE_OPERATION_ARG` (a preset is forbidden from declaring its own
+ * `aws.profile`, so the spawned child would otherwise resolve one from the
+ * inherited environment — level 4 — independently of the operator's own
+ * profile, which resolves through the PARENT's full CLI (level 1) and
+ * config-file (levels 2-3) precedence; a policy grading the parent's value
+ * while the child reads a different one is a confidentiality bypass, not
+ * merely a verb mismatch). What keeps the "the model supplies exactly two
+ * values" claim above true despite this interpolation is WHO supplies it:
+ * `operatorProfile` is read from agent-operator's own validated config by
+ * `steps/build-triage-tools.ts` before any tool call reaches this module,
+ * never derived from model-supplied tool input — it is a third
+ * CALLER-supplied value, not a third MODEL-supplied one. Interpolating it is
+ * exactly as safe as `run`'s `--preset=` token: `shell: false` plus an argv
+ * array means no spawned command line exists for any value, however chosen,
+ * to inject into, and an `=` embedded in the profile is harmless because the
+ * child's own `parseArgv` (`internal/config/parseArgv`) splits on the FIRST
+ * `=` only — the whole value binds, never a truncation.
+ *
+ * Distinct nominal brands hold the script/preset chain together, and each one
+ * occupies a real
  * parameter or field position rather than sitting decoratively at its mint
  * site: `AgentOperatorScriptName` (minted by `assertAllowedScriptName`, and
  * the type of every `scriptName` field on the argv union),
@@ -82,7 +119,7 @@ import {
   AGENT_OPERATOR_PATH_SEPARATOR_RE,
   AGENT_OPERATOR_PRESETS_DIRECTORY_PREFIX,
   assertAllowedPresetName,
-  isWellFormedPresetPathShape,
+  isDeclarablePresetPath,
   type AgentOperatorPresetName,
   type AgentOperatorPresetPath,
 } from "./preset-names.js";
@@ -121,6 +158,35 @@ const PRESET_NAME_REJECTION_MESSAGE =
 // operator to audit `presetAllowlist` over a malformed options bag.
 const RUN_MODE_REJECTION_MESSAGE =
   "the run mode must be declared as exactly 'dry-run' or 'mutate'";
+// Its own string too: an empty `operatorProfile` is a caller-supplied-value
+// failure exactly like an unrecognised `mode` (same `ERR_AGENT_OPERATOR_CONFIG`
+// code — "the caller supplied a value this seam does not accept" — rather
+// than an eleventh code for the same class of failure), but names a
+// different argument; reusing RUN_MODE_REJECTION_MESSAGE would send an
+// operator auditing the wrong config key.
+const OPERATOR_PROFILE_REJECTION_MESSAGE =
+  "the operator profile must be a non-empty string";
+
+/**
+ * The fixed passthrough argument `triageRun` appends after its `--preset=`
+ * token. Reasoning is on the module's own layered-defence section: a preset
+ * file's declared `operation:` key resolves at `M3LScript.loadConfig`
+ * precedence level 6, and the operator's own environment (the config key
+ * `operation` and its derived env var name `OPERATION` both bind, per
+ * `M3LEnvironmentConfigProvider.getRawValue`) resolves at level 4 — with
+ * `lib/cli-process.ts` spawning the child with no `env` option, an inherited
+ * `OPERATION=convert` silently overrode the preset's declared verb while
+ * `triage-logs`'s action was graded `read-only-auto-approved`. A CLI
+ * passthrough argument binds at level 1, above both, so this token — a
+ * literal in a closed `switch`, never templated from a caller value —
+ * pins the verb where nothing later in the resolution order can move it.
+ *
+ * Named `_ARG`, not `_TOKEN`: gitleaks' `generic-api-key` rule flags a
+ * keyword (`TOKEN` among them) followed by `=` and a 10+ character value
+ * drawn from `[\w.=-]`, which this literal is. Keep the "argv token"
+ * meaning in prose; keep "token" out of adjacency with `=`.
+ */
+const TRIAGE_OPERATION_ARG = "--operation=analyze";
 
 /**
  * The mode a {@link AgentCliSurface.run} call must declare. There is no
@@ -223,6 +289,52 @@ export interface AgentCliSurface {
     presetName: string,
     options: AgentCliRunOptions,
   ): Promise<AgentOperatorProjectedRunEnvelope>;
+  /**
+   * Runs `m3l run <name> --json -- --preset=<absolute path> --operation=analyze --aws.profile=<profile>`
+   * — the fixed-verb sibling of
+   * {@link AgentCliSurface.run} that `agent-operator`'s `triage-logs`
+   * operation drives. `scriptName` must pass the script allowlist;
+   * `presetName` must pass the preset-name check AND be a key of the
+   * constructed `presetAllowlist`, resolved to an absolute path exactly as
+   * `run` resolves one; `operatorProfile` must be a non-empty string. Any
+   * exit code is acceptable — the envelope carries its own
+   * `exitCode`/`outcome`.
+   *
+   * Deliberately has NO `options` bag and NO `mode` parameter: `run`'s `mode`
+   * exists so a caller can choose between probing and committing, and
+   * {@link assertRunMode}'s own reasoning is that only a RUNTIME-narrowed
+   * choice is safe against a cast from model-supplied JSON. A triage run
+   * never rehearses — there is nothing to choose between — so giving this
+   * method a `mode` parameter would only add a caller-influenced value for no
+   * caller-facing benefit. Omitting the parameter entirely is therefore
+   * strictly safer than `run`'s runtime-narrowed `mode`: there is no bag to
+   * cast into, and so no near-miss narrowing failure mode to guard against in
+   * the first place.
+   *
+   * The trailing `--operation=analyze` token is the fixed
+   * `TRIAGE_OPERATION_ARG` — see the module header and that constant's own
+   * TSDoc for the precedence defect this method closes. The final
+   * `--aws.profile=<profile>` token closes the SAME class of precedence gap
+   * for the target profile: a preset is forbidden from declaring its own
+   * `aws.profile`, so without this passthrough argument the spawned child
+   * would resolve one from the inherited environment (config precedence
+   * level 4) independently of the operator's own profile, which the caller
+   * graded through the PARENT's full CLI (level 1) and config-file (levels
+   * 2-3) precedence — see the module header's own note on this token for why
+   * interpolating `operatorProfile` here does not widen what the MODEL can
+   * influence.
+   *
+   * @param scriptName - The target script's name.
+   * @param presetName - A key of the operator-declared `presetAllowlist`.
+   * @param operatorProfile - The operator's own resolved `aws.profile` — the
+   *   SAME value the caller stamped into the judged action's `target`, never
+   *   model-supplied. Rejected before anything spawns when empty.
+   */
+  triageRun(
+    scriptName: string,
+    presetName: string,
+    operatorProfile: string,
+  ): Promise<AgentOperatorProjectedRunEnvelope>;
 }
 
 /** Constructor options for {@link createAgentCliSurface}. */
@@ -323,7 +435,7 @@ interface CliInvocationSpec<T> {
 }
 
 /**
- * The argv table — a closed, discriminated union over the five operations.
+ * The argv table — a closed, discriminated union over the six operations.
  * `scriptName` is typed as the branded {@link AgentOperatorScriptName}
  * (never bare `string`), so `buildArgv` structurally cannot be called with a
  * name that has not already passed {@link assertAllowedScriptName} — the
@@ -352,6 +464,23 @@ type CliOperation =
       readonly presetPath: AgentOperatorPresetPath;
       /** Whether to append the trailing `--dry-run` passthrough token. */
       readonly dryRun: boolean;
+    }
+  | {
+      readonly method: "triageRun";
+      readonly scriptName: AgentOperatorScriptName;
+      /** Same brand, same one mint site, as the `run` arm's `presetPath`. */
+      readonly presetPath: AgentOperatorPresetPath;
+      /**
+       * The operator's own resolved `aws.profile`, already validated
+       * non-empty by {@link assertUsableOperatorProfile} before this arm is
+       * ever constructed — a bare `string` field (unbranded, unlike
+       * `presetPath`) because it is never resolved from a name-to-path
+       * lookup, only checked for non-emptiness.
+       */
+      readonly operatorProfile: string;
+      // Deliberately NO `dryRun` field: triage never rehearses, so there is
+      // no boolean to thread and no second argv shape to build — see
+      // `AgentCliSurface.triageRun`'s own TSDoc.
     };
 
 /**
@@ -388,6 +517,25 @@ function buildArgv(operation: CliOperation): readonly string[] {
         `--preset=${operation.presetPath}`,
         ...(operation.dryRun ? ["--dry-run"] : []),
       ];
+    case "triageRun":
+      // Same `--json`-before-`--` and attached-`--preset=` reasoning as the
+      // `run` case above. `TRIAGE_OPERATION_ARG` follows `--preset=` — see
+      // that constant's own TSDoc for why a passthrough argument (precedence
+      // level 1) is what makes it un-overridable by the preset file's
+      // `operation:` key (level 6) or an inherited environment variable
+      // (level 4). The interpolated `--aws.profile=` token is appended LAST,
+      // for the same precedence reason applied to the profile instead of the
+      // verb — see the module header and `AgentCliSurface.triageRun`'s own
+      // TSDoc.
+      return [
+        "run",
+        operation.scriptName,
+        "--json",
+        "--",
+        `--preset=${operation.presetPath}`,
+        TRIAGE_OPERATION_ARG,
+        `--aws.profile=${operation.operatorProfile}`,
+      ];
     default: {
       const exhaustive: never = operation;
       throw new M3LAgentOperatorCliError(
@@ -397,6 +545,34 @@ function buildArgv(operation: CliOperation): readonly string[] {
       );
     }
   }
+}
+
+/**
+ * Validates `triageRun`'s `operatorProfile` argument, rejecting an empty
+ * string BEFORE anything spawns and before either the script name or the
+ * preset name is checked.
+ *
+ * @remarks
+ * `steps/build-triage-tools.ts` stamps this SAME value into a judged
+ * action's `target.profile` — the value the policy gate grades. An empty
+ * string would still be a caller-supplied value the parent had already
+ * graded (an empty profile is not the same failure as "the caller never
+ * graded anything"), but handing the spawned child no usable target while
+ * the parent's grading proceeded is the same class of divergence this
+ * method's third parameter exists to close in the first place, so it must
+ * fail loudly rather than emit an argv token of `--aws.profile=`.
+ *
+ * @throws {@link M3LAgentOperatorCliError} coded `ERR_AGENT_OPERATOR_CONFIG`
+ *   when `operatorProfile` is the empty string.
+ */
+function assertUsableOperatorProfile(operatorProfile: string): string {
+  if (operatorProfile === "") {
+    throw new M3LAgentOperatorCliError(
+      OPERATOR_PROFILE_REJECTION_MESSAGE,
+      "ERR_AGENT_OPERATOR_CONFIG",
+    );
+  }
+  return operatorProfile;
 }
 
 /**
@@ -511,60 +687,13 @@ function assertUsablePresetName(presetName: string): AgentOperatorPresetName {
 }
 
 /**
- * Whether one `presetAllowlist` entry is a declarable preset path:
- * well-shaped per {@link isWellFormedPresetPathShape}, relative, free of any
- * `..` segment, and naming a file inside
- * {@link AGENT_OPERATOR_PRESETS_DIRECTORY_PREFIX}.
- *
- * Both the shape predicate and the directory boundary are imported from
- * `lib/preset-names.ts`, shared with `steps/resolve-runtime.ts`'s config
- * parser, so the two cannot drift into accepting different sets. Sharing the
- * constant alone was not enough and is what a review caught: the parser
- * rejected a whitespace-padded, NUL-bearing or newline-bearing declared path
- * while this check — the one a directly-constructed `ReadonlyMap` actually
- * passes through — accepted it and emitted a token. Calling the shared
- * predicate rather than restating its rules is what keeps this site from
- * being the looser of the two again.
- *
- * Sharing the rules is still not sharing the check: this remains a deliberate
- * use-site re-check, for the reason {@link resolveAllowedPresetPath}
- * documents.
- *
- * The `..` ban is stricter than "where does it land" —
- * `data/config/presets/sub/../x.json` normalises back inside the directory
- * and is still rejected — because the declared string is the artifact an
- * operator reviews in a config diff, and a symlinked `sub/` would make the
- * reviewed string and the resolved path genuinely disagree.
- */
-function isDeclarablePresetPath(relativePath: string): boolean {
-  return (
-    // Shape first: a padded or control-character-bearing value is not a path
-    // this script accepts anywhere, and checking it here rather than after
-    // containment keeps the reason the parser would have given.
-    isWellFormedPresetPathShape(relativePath) &&
-    !path.isAbsolute(relativePath) &&
-    // A win32-style absolute (`C:\...`) is not absolute on a POSIX host, so
-    // the prefix check below is what rejects it — it cannot start with
-    // `data/config/presets/`.
-    !relativePath.split(AGENT_OPERATOR_PATH_SEPARATOR_RE).includes("..") &&
-    // The compared prefix carries its trailing separator: without it, a bare
-    // `startsWith("data/config/presets")` also accepts
-    // `data/config/presetsevil/report.json`, a different directory that
-    // merely shares the prefix as text.
-    relativePath.startsWith(AGENT_OPERATOR_PRESETS_DIRECTORY_PREFIX) &&
-    // The prefix and nothing else names the DIRECTORY, not a file in it;
-    // `--preset=<a directory>` is never a preset the CLI can load.
-    relativePath.length > AGENT_OPERATOR_PRESETS_DIRECTORY_PREFIX.length
-  );
-}
-
-/**
  * Resolves an already-validated preset name into the ABSOLUTE path `run` may
  * emit, and is the ONLY function permitted to mint an
  * {@link AgentOperatorPresetPath}. The name must be a key of
  * `presetAllowlist`, the surface must carry an ABSOLUTE, `..`-free
  * `workspaceRoot`, and the stored entry must still satisfy
- * {@link isDeclarablePresetPath} — those checks are what the brand records.
+ * {@link "./preset-names.js".isDeclarablePresetPath} — those checks are what
+ * the brand records.
  *
  * Taking an {@link AgentOperatorPresetName} rather than a `string` is what
  * makes {@link assertUsablePresetName} unskippable: there is no expression
@@ -587,8 +716,9 @@ function isDeclarablePresetPath(relativePath: string): boolean {
  * mutating run against the wrong configuration. `path.isAbsolute` alone does
  * not settle that: `/repo/../etc` is absolute and anchors the join under
  * `/etc`, so the root half of the join is held to the same unconditional
- * `..` ban {@link isDeclarablePresetPath} applies to the entry half — the two
- * halves of one `path.join` must not be checked by two different rules.
+ * `..` ban {@link "./preset-names.js".isDeclarablePresetPath} applies to the
+ * entry half — the two halves of one `path.join` must not be checked by two
+ * different rules.
  */
 function resolveAllowedPresetPath(
   presetName: AgentOperatorPresetName,
@@ -988,6 +1118,54 @@ async function runRun(
 }
 
 /**
+ * `triageRun(scriptName, presetName, operatorProfile)` — `operatorProfile`
+ * checked FIRST (mirrors {@link runRun}'s `mode`-first ordering: a call that
+ * cannot supply a usable profile has nothing to gain from having its script
+ * or preset name resolved), then the script allowlist, then the preset
+ * allowlist (which is also what anchors the stored relative path to an
+ * absolute one), then the same "any exit code is acceptable" policy as
+ * `run`/`dryRun`. Every validation runs before `buildArgv`, so a rejected
+ * call never reaches `runCliProcess`. Otherwise mirrors {@link runRun} minus
+ * its `mode` handling: there is no bag to narrow and no dry-run boolean to
+ * derive, because `triageRun` never rehearses.
+ */
+async function runTriageRun(
+  ctx: SurfaceRunContext,
+  timeoutMs: number,
+  scriptName: string,
+  presetName: string,
+  operatorProfile: string,
+  presetAllowlist: ReadonlyMap<string, string>,
+): Promise<AgentOperatorProjectedRunEnvelope> {
+  const profile = assertUsableOperatorProfile(operatorProfile);
+  const name = assertUsableScriptName(scriptName);
+  // Two steps, not one, because the brands make the order compulsory:
+  // `resolveAllowedPresetPath` accepts only an `AgentOperatorPresetName`, and
+  // `buildArgv` accepts only the `AgentOperatorPresetPath` it returns.
+  const preset = assertUsablePresetName(presetName);
+  const presetPath = resolveAllowedPresetPath(
+    preset,
+    presetAllowlist,
+    ctx.workspaceRoot,
+  );
+  const envelope = await runCliInvocation<AgentOperatorRunEnvelope>(ctx, {
+    args: buildArgv({
+      method: "triageRun",
+      scriptName: name,
+      presetPath,
+      operatorProfile: profile,
+    }),
+    timeoutMs,
+    isAcceptableExitCode: () => true,
+    parse: parseRunEnvelope,
+  });
+  return projectRunEnvelope(
+    envelope,
+    buildProjectionOptions(ctx.workspaceRoot),
+  );
+}
+
+/**
  * Reads ONE of `deps`' three OPTIONAL keys, treating an inherited value as
  * absent: the property is read only when the bag OWNS it, so a
  * prototype-supplied value resolves to `undefined` and each key's documented
@@ -998,7 +1176,7 @@ async function runRun(
  * and these three keys are the ones a caller is entitled to omit, so the
  * chain is consulted on exactly the calls that never named them. Both
  * directions found here are worse than hygiene. An inherited `runProcess`
- * REPLACED THE SPAWN FUNCTION for all five methods, making the polluter the
+ * REPLACED THE SPAWN FUNCTION for all six methods, making the polluter the
  * process that every CLI call runs through; an inherited `workspaceRoot`
  * anchored `run`'s `--preset=` path under a directory the polluter chose,
  * and a mutating run takes every parameter value from that preset file. An
@@ -1025,13 +1203,14 @@ function readOwnOptionalDep<
 /**
  * Creates the typed, model-safe {@link AgentCliSurface} adapter over the
  * `m3l` CLI. Every method validates its script-name argument (and, for
- * `dryRun`, the `dryRunAllowlist`; for `run`, the `presetAllowlist` and the
- * `workspaceRoot` needed to anchor its path) BEFORE building argv or
- * spawning anything — a rejected call never reaches `runCliProcess`.
+ * `dryRun`, the `dryRunAllowlist`; for `run` and `triageRun` alike, the
+ * `presetAllowlist` and the `workspaceRoot` needed to anchor its path)
+ * BEFORE building argv or spawning anything — a rejected call never reaches
+ * `runCliProcess`.
  *
  * @param deps - Spawn configuration, timeouts, the two allowlists, and an
  *   optional `runProcess` test seam.
- * @returns The five-method {@link AgentCliSurface}.
+ * @returns The six-method {@link AgentCliSurface}.
  * @example
  * ```ts
  * import { createAgentCliSurface } from "./cli-surface.js";
@@ -1088,6 +1267,16 @@ export function createAgentCliSurface(
         presetName,
         deps.presetAllowlist,
         options,
+      ),
+    // Same reason as `run` above: `triageRun` also spawns a whole script.
+    triageRun: (scriptName, presetName, operatorProfile) =>
+      runTriageRun(
+        ctx,
+        deps.dryRunTimeoutMs,
+        scriptName,
+        presetName,
+        operatorProfile,
+        deps.presetAllowlist,
       ),
   };
 }

@@ -463,6 +463,17 @@ const CLI_OUTPUT_REJECTION_MESSAGE =
 const PRESET_NAME_REJECTION_MESSAGE =
   "the preset name did not pass this tool's allowed-name check";
 
+// V9 log-triage slice: `triageRun`'s third `operatorProfile` parameter is the
+// SAME value `steps/build-triage-tools.ts` stamped into a judged action's
+// `target.profile` — an empty string would hand the child no usable target
+// while the parent had already graded a real one, so it must reject before
+// anything spawns. Reuses `ERR_AGENT_OPERATOR_CONFIG`, the code already
+// documented for "a caller supplied a value this seam does not accept"
+// (`assertRunMode`'s `mode` rejection), rather than minting an eleventh code
+// for the same class of caller-supplied-value failure.
+const OPERATOR_PROFILE_REJECTION_MESSAGE =
+  "the operator profile must be a non-empty string";
+
 const FIXED_MODEL_FACING_MESSAGES: readonly string[] = [
   SCRIPT_NAME_REJECTION_MESSAGE,
   CLI_SPAWN_REJECTION_MESSAGE,
@@ -2523,5 +2534,384 @@ describe("createAgentCliSurface — reads its optional deps as OWN properties (M
       expect(received?.signal).toBe(controller.signal);
       expect(received?.signal).not.toBe(FORGED_SIGNAL);
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// V9 log-triage slice — `triageRun(scriptName, presetName, operatorProfile)`.
+// Closes the finding recorded in the review log: a preset file's own
+// `operation:` key sits at `M3LScript` config precedence level 6, and an
+// operator environment variable (`OPERATION`/`SOURCE`) sits at level 4 —
+// with `lib/cli-process.ts` spawning the child with no `env` option, an
+// inherited `OPERATION=convert` silently overrode the preset's declared verb
+// while `triage-logs`'s action was graded `read-only-auto-approved`. A child
+// passthrough argument binds at precedence level 1, above both, so
+// `triageRun` appends a FIXED, non-interpolated `--operation=analyze` token
+// nothing here can override — there is no `options` bag and no `mode`
+// parameter, because a triage run never dry-runs and so has nothing to
+// choose between.
+//
+// The SAME precedence gap applies to `aws.profile`: a preset is forbidden
+// from declaring one, so the spawned child otherwise resolves its own
+// profile from the inherited environment (level 4) — independently of the
+// PARENT's own `aws.profile`, which resolves through the parent's full CLI
+// (level 1) and config-file (levels 2-3) precedence. The policy grades the
+// parent's value; a child that resolves a different one is a confidentiality
+// bypass (`claude-pr-review` on PR #1081, Should-fix 1). `triageRun` closes
+// it the same way it closed the verb: a THIRD `operatorProfile` parameter,
+// appended as a FIXED-POSITION (never templated) `--aws.profile=` passthrough
+// token, LAST — after `--operation=analyze`.
+// ---------------------------------------------------------------------------
+
+/** The operator profile fixture `triageRun` must pin as a level-1 passthrough. */
+const TRIAGE_OPERATOR_PROFILE = "sandbox";
+
+/** A second, distinct profile — proves the token tracks the parameter. */
+const TRIAGE_SECOND_OPERATOR_PROFILE = "prod-readonly";
+
+/** The absolute token `triageRun` must emit, derived from the injected root. */
+const EXPECTED_TRIAGE_ARGV: readonly string[] = [
+  "run",
+  RUN_SCRIPT_NAME,
+  "--json",
+  "--",
+  `--preset=${EXPECTED_PRESET_PATH}`,
+  "--operation=analyze",
+  `--aws.profile=${TRIAGE_OPERATOR_PROFILE}`,
+];
+
+// A second allowlisted preset, distinct from `PRESET_ALLOWED_NAME`, so the
+// "fixed literal across two different presets" test below genuinely varies
+// the one caller-supplied value that could plausibly leak into the token.
+const TRIAGE_SECOND_PRESET_NAME = "weekly-triage";
+const TRIAGE_SECOND_PRESET_RELATIVE_PATH =
+  "data/config/presets/agent-operator/weekly-triage.json";
+
+describe("createAgentCliSurface — triageRun() argv", () => {
+  test("triageRun(script, preset, profile) sends exactly ['run', script, '--json', '--', '--preset=<absolute>', '--operation=analyze', '--aws.profile=<profile>'], element by element", async () => {
+    const { deps, recorder } = createRunDeps();
+    recorder.enqueueResult(
+      exitedResult({ stdout: makeRunEnvelopePayload({ outcome: "success" }) }),
+    );
+    const surface = createAgentCliSurface(deps);
+
+    await surface.triageRun(
+      RUN_SCRIPT_NAME,
+      PRESET_ALLOWED_NAME,
+      TRIAGE_OPERATOR_PROFILE,
+    );
+
+    const argv = recorder.invocations[0]?.args ?? [];
+    // Element by element, not just the array-equality check below: the
+    // contract names exactly 7 tokens at exactly these positions.
+    expect(argv).toHaveLength(7);
+    expect(argv[0]).toBe("run");
+    expect(argv[1]).toBe(RUN_SCRIPT_NAME);
+    expect(argv[2]).toBe("--json");
+    expect(argv[3]).toBe("--");
+    expect(argv[4]).toBe(`--preset=${EXPECTED_PRESET_PATH}`);
+    expect(argv[5]).toBe("--operation=analyze");
+    expect(argv[6]).toBe(`--aws.profile=${TRIAGE_OPERATOR_PROFILE}`);
+    expect(recorder.invocations.map((call) => call.args)).toEqual([
+      EXPECTED_TRIAGE_ARGV,
+    ]);
+  });
+
+  test("triageRun() puts --json before the bare --, --preset= attached right after it, --operation=analyze next, and --aws.profile= LAST", async () => {
+    const { deps, recorder } = createRunDeps();
+    recorder.enqueueResult(exitedResult({ stdout: makeRunEnvelopePayload() }));
+    const surface = createAgentCliSurface(deps);
+
+    await surface.triageRun(
+      RUN_SCRIPT_NAME,
+      PRESET_ALLOWED_NAME,
+      TRIAGE_OPERATOR_PROFILE,
+    );
+
+    const argv = recorder.invocations[0]?.args ?? [];
+    const jsonIndex = argv.indexOf("--json");
+    const dashIndex = argv.indexOf("--");
+    const presetIndex = argv.findIndex((arg) => arg.startsWith("--preset="));
+    const operationIndex = argv.indexOf("--operation=analyze");
+    const profileIndex = argv.findIndex((arg) =>
+      arg.startsWith("--aws.profile="),
+    );
+    // Same partitioning reasoning as `run`'s own ordering test: `--json` must
+    // precede the bare `--` to be stripped by the CLI's own flag
+    // partitioning, and everything after `--` is forwarded verbatim to the
+    // child, which binds each passthrough argument by splitting on its first
+    // `=`.
+    expect(jsonIndex).toBeGreaterThanOrEqual(0);
+    expect(dashIndex).toBeGreaterThan(jsonIndex);
+    expect(presetIndex).toBeGreaterThan(dashIndex);
+    expect(operationIndex).toBeGreaterThan(presetIndex);
+    expect(profileIndex).toBe(argv.length - 1);
+    expect(profileIndex).toBeGreaterThan(operationIndex);
+  });
+
+  test("--operation=analyze is a fixed literal — byte-identical across two calls naming different presets and profiles", async () => {
+    const { deps, recorder } = createRunDeps({
+      presetAllowlist: new Map([
+        [PRESET_ALLOWED_NAME, PRESET_RELATIVE_PATH],
+        [TRIAGE_SECOND_PRESET_NAME, TRIAGE_SECOND_PRESET_RELATIVE_PATH],
+      ]),
+    });
+    recorder.enqueueResult(exitedResult({ stdout: makeRunEnvelopePayload() }));
+    recorder.enqueueResult(exitedResult({ stdout: makeRunEnvelopePayload() }));
+    const surface = createAgentCliSurface(deps);
+
+    await surface.triageRun(
+      RUN_SCRIPT_NAME,
+      PRESET_ALLOWED_NAME,
+      TRIAGE_OPERATOR_PROFILE,
+    );
+    await surface.triageRun(
+      RUN_SCRIPT_NAME,
+      TRIAGE_SECOND_PRESET_NAME,
+      TRIAGE_SECOND_OPERATOR_PROFILE,
+    );
+
+    const firstArgv = recorder.invocations[0]?.args ?? [];
+    const secondArgv = recorder.invocations[1]?.args ?? [];
+    // No caller input, no parameter and no config value reaches the
+    // `--operation=analyze` token: a different preset name changes the
+    // `--preset=` token and a different profile changes the trailing
+    // `--aws.profile=` token, but the operation token in between must stay
+    // byte-identical.
+    const firstOperationToken = firstArgv.find(
+      (arg) => arg === "--operation=analyze",
+    );
+    const secondOperationToken = secondArgv.find(
+      (arg) => arg === "--operation=analyze",
+    );
+    expect(firstOperationToken).toBe("--operation=analyze");
+    expect(secondOperationToken).toBe("--operation=analyze");
+    expect(firstOperationToken).toBe(secondOperationToken);
+    expect(firstArgv.find((arg) => arg.startsWith("--preset="))).not.toBe(
+      secondArgv.find((arg) => arg.startsWith("--preset=")),
+    );
+    expect(firstArgv.at(-1)).not.toBe(secondArgv.at(-1));
+  });
+
+  test("--aws.profile=<profile> is interpolated from the parameter — two calls with different profiles change only that token", async () => {
+    const { deps, recorder } = createRunDeps();
+    recorder.enqueueResult(exitedResult({ stdout: makeRunEnvelopePayload() }));
+    recorder.enqueueResult(exitedResult({ stdout: makeRunEnvelopePayload() }));
+    const surface = createAgentCliSurface(deps);
+
+    await surface.triageRun(
+      RUN_SCRIPT_NAME,
+      PRESET_ALLOWED_NAME,
+      TRIAGE_OPERATOR_PROFILE,
+    );
+    await surface.triageRun(
+      RUN_SCRIPT_NAME,
+      PRESET_ALLOWED_NAME,
+      TRIAGE_SECOND_OPERATOR_PROFILE,
+    );
+
+    const firstArgv = recorder.invocations[0]?.args ?? [];
+    const secondArgv = recorder.invocations[1]?.args ?? [];
+    expect(firstArgv.at(-1)).toBe(`--aws.profile=${TRIAGE_OPERATOR_PROFILE}`);
+    expect(secondArgv.at(-1)).toBe(
+      `--aws.profile=${TRIAGE_SECOND_OPERATOR_PROFILE}`,
+    );
+    expect(firstArgv.at(-1)).not.toBe(secondArgv.at(-1));
+    // Unlike the profile token, the genuinely fixed literal stays
+    // byte-identical across the very same two calls.
+    expect(firstArgv.find((arg) => arg === "--operation=analyze")).toBe(
+      secondArgv.find((arg) => arg === "--operation=analyze"),
+    );
+  });
+
+  test("a profile containing '=' still binds as one token — the whole value, not a truncation", async () => {
+    const profileWithEquals = "sandbox=eu-west-1";
+    const { deps, recorder } = createRunDeps();
+    recorder.enqueueResult(exitedResult({ stdout: makeRunEnvelopePayload() }));
+    const surface = createAgentCliSurface(deps);
+
+    await surface.triageRun(
+      RUN_SCRIPT_NAME,
+      PRESET_ALLOWED_NAME,
+      profileWithEquals,
+    );
+
+    const argv = recorder.invocations[0]?.args ?? [];
+    // The child's own `parseArgv` splits on the FIRST `=`, so the whole
+    // value — including the embedded `=` — must survive as one argv element;
+    // a naive split-then-rejoin on this side would truncate it.
+    expect(argv.at(-1)).toBe(`--aws.profile=${profileWithEquals}`);
+    expect(argv.at(-1)).not.toBe("--aws.profile=sandbox");
+  });
+
+  test("triageRun() forwards dryRunTimeoutMs, not cliTimeoutMs", async () => {
+    const { deps, recorder } = createRunDeps();
+    recorder.enqueueResult(exitedResult({ stdout: makeRunEnvelopePayload() }));
+    const surface = createAgentCliSurface(deps);
+
+    await surface.triageRun(
+      RUN_SCRIPT_NAME,
+      PRESET_ALLOWED_NAME,
+      TRIAGE_OPERATOR_PROFILE,
+    );
+
+    expect(recorder.invocations[0]?.timeoutMs).toBe(RUN_DRY_RUN_TIMEOUT_MS);
+    expect(recorder.invocations[0]?.timeoutMs).not.toBe(RUN_CLI_TIMEOUT_MS);
+  });
+
+  test("triageRun() has no options bag and no mode parameter — exactly (scriptName, presetName, operatorProfile), all required strings", () => {
+    expectTypeOf<AgentCliSurface["triageRun"]>().parameters.toEqualTypeOf<
+      [string, string, string]
+    >();
+    // Arity is the load-bearing half: an OPTIONAL third parameter would widen
+    // `length` to `2 | 3`, which the tuple equality above cannot see on its
+    // own the way it would for a genuinely optional member.
+    expectTypeOf<
+      Parameters<AgentCliSurface["triageRun"]>["length"]
+    >().toEqualTypeOf<3>();
+  });
+
+  test("triageRun(script, preset) omitting operatorProfile is a compile error", () => {
+    const { deps } = createRunDeps();
+    const surface = createAgentCliSurface(deps);
+
+    // Declared, never invoked: the assertion IS the compile error on the
+    // line below. Against today's 2-parameter `triageRun` this directive is
+    // unused (no error to suppress) — that unused-directive diagnostic is
+    // the RED signal for this slice; once the required third parameter
+    // lands, it absorbs a real "expected 3 arguments, but got 2" error and
+    // this file typechecks clean.
+    const compileErrorProbe = (): void => {
+      // @ts-expect-error -- `operatorProfile` is REQUIRED: there is no default.
+      void surface.triageRun(RUN_SCRIPT_NAME, PRESET_ALLOWED_NAME);
+    };
+
+    expect(compileErrorProbe).toBeTypeOf("function");
+  });
+});
+
+describe("createAgentCliSurface — triageRun() operator profile validation", () => {
+  test("an empty-string operatorProfile rejects before spawning — the parent graded a profile, and an empty one would hand the child no usable target", async () => {
+    const { deps, recorder } = createRunDeps();
+    const surface = createAgentCliSurface(deps);
+
+    await expect(
+      surface.triageRun(RUN_SCRIPT_NAME, PRESET_ALLOWED_NAME, ""),
+    ).rejects.toMatchObject({
+      code: "ERR_AGENT_OPERATOR_CONFIG",
+      message: OPERATOR_PROFILE_REJECTION_MESSAGE,
+    });
+    expect(recorder.invocations).toEqual([]);
+  });
+});
+
+describe("createAgentCliSurface — triageRun() exit policy", () => {
+  test("triageRun() accepts any exit code, resolving with the envelope's own exitCode/outcome", async () => {
+    const { deps, recorder } = createRunDeps();
+    recorder.enqueueResult(
+      exitedResult({
+        exitCode: 6,
+        stdout: makeRunEnvelopePayload({ exitCode: 6, outcome: "partial" }),
+      }),
+    );
+    const surface = createAgentCliSurface(deps);
+
+    const envelope = await surface.triageRun(
+      RUN_SCRIPT_NAME,
+      PRESET_ALLOWED_NAME,
+      TRIAGE_OPERATOR_PROFILE,
+    );
+
+    // Same policy as `run`/`dryRun`: the envelope carries its own outcome, so
+    // a non-zero child exit is data, not a failure of this tool.
+    expect(envelope.exitCode).toBe(6);
+    expect(envelope.outcome).toBe("partial");
+  });
+});
+
+describe("createAgentCliSurface — triageRun() preset rejection (same allowlist as run())", () => {
+  test("triageRun(script, %p) rejects with ERR_AGENT_OPERATOR_PRESET and spawns nothing for an unknown preset name", async () => {
+    const { deps, recorder } = createRunDeps();
+    const surface = createAgentCliSurface(deps);
+
+    await expect(
+      surface.triageRun(
+        RUN_SCRIPT_NAME,
+        "not-on-the-allowlist",
+        TRIAGE_OPERATOR_PROFILE,
+      ),
+    ).rejects.toMatchObject({
+      code: "ERR_AGENT_OPERATOR_PRESET",
+      message: PRESET_NAME_REJECTION_MESSAGE,
+    });
+    expect(recorder.invocations).toEqual([]);
+  });
+
+  test.each(INVALID_PRESET_NAMES)(
+    "triageRun(script, %p) rejects with ERR_AGENT_OPERATOR_PRESET and spawns nothing (shape)",
+    async (presetName) => {
+      const { deps, recorder } = createRunDeps();
+      const surface = createAgentCliSurface(deps);
+
+      await expect(
+        surface.triageRun(RUN_SCRIPT_NAME, presetName, TRIAGE_OPERATOR_PROFILE),
+      ).rejects.toMatchObject({
+        code: "ERR_AGENT_OPERATOR_PRESET",
+        message: PRESET_NAME_REJECTION_MESSAGE,
+      });
+      expect(recorder.invocations).toEqual([]);
+    },
+  );
+
+  test("triageRun() resolves a valid preset name to join(workspaceRoot, storedRelativePath) — the same anchoring run() uses", async () => {
+    const { deps, recorder } = createRunDeps();
+    recorder.enqueueResult(exitedResult({ stdout: makeRunEnvelopePayload() }));
+    const surface = createAgentCliSurface(deps);
+
+    await surface.triageRun(
+      RUN_SCRIPT_NAME,
+      PRESET_ALLOWED_NAME,
+      TRIAGE_OPERATOR_PROFILE,
+    );
+
+    const argv = recorder.invocations[0]?.args ?? [];
+    const presetToken = argv.find((arg) => arg.startsWith("--preset="));
+    expect(presetToken).toBeDefined();
+    const emittedPath = (presetToken ?? "").slice("--preset=".length);
+    expect(path.isAbsolute(emittedPath)).toBe(true);
+    expect(emittedPath).toBe(EXPECTED_PRESET_PATH);
+    expect(emittedPath).not.toBe(PRESET_RELATIVE_PATH);
+  });
+
+  test("the rejection message never echoes the supplied preset name", async () => {
+    const { deps, recorder } = createRunDeps();
+    const hostile = "../../etc/passwd;rm -rf /";
+    const surface = createAgentCliSurface(deps);
+
+    const thrown = await captureRejection(() =>
+      surface.triageRun(RUN_SCRIPT_NAME, hostile, TRIAGE_OPERATOR_PROFILE),
+    );
+
+    expect(thrown).toBeInstanceOf(Core.M3LError);
+    const message = (thrown as Core.M3LError).message;
+    expect(message).toBe(PRESET_NAME_REJECTION_MESSAGE);
+    expect(message).not.toContain(hostile);
+    expect(message).not.toContain("..");
+    expect(message).not.toContain("/etc/passwd");
+    expect(message).not.toContain(";");
+    expect(recorder.invocations).toEqual([]);
+  });
+
+  test("triageRun() with an unusable script name rejects with ERR_AGENT_OPERATOR_SCRIPT_NAME and spawns nothing", async () => {
+    const { deps, recorder } = createRunDeps();
+    const surface = createAgentCliSurface(deps);
+
+    await expect(
+      surface.triageRun("-h", PRESET_ALLOWED_NAME, TRIAGE_OPERATOR_PROFILE),
+    ).rejects.toMatchObject({
+      code: "ERR_AGENT_OPERATOR_SCRIPT_NAME",
+      message: SCRIPT_NAME_REJECTION_MESSAGE,
+    });
+    expect(recorder.invocations).toEqual([]);
   });
 });

@@ -34,12 +34,14 @@ function unusedSurface(): AgentCliSurface {
   // `run` (V9 slice 2a) refuses like the other four rather than resolving a
   // stub envelope: it is the one mutating operation on the surface, so a
   // stray call from a pure-boundary test must fail loudly, not be absorbed.
+  // `triageRun` (V9 log-triage) refuses for the same reason.
   return {
     list: refuse,
     doctor: refuse,
     inspect: refuse,
     dryRun: refuse,
     run: refuse,
+    triageRun: refuse,
   };
 }
 

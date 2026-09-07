@@ -284,7 +284,7 @@ async function readEntries(
  * An `AgentCliSurface` whose every method rejects — for the two tests that
  * exercise `describeAction`/`inputSchema` directly and must never execute.
  * `run` is refused on the same terms as its four siblings: no test here may
- * reach the mutating method.
+ * reach the mutating method. `triageRun` is refused for the same reason.
  */
 function unusedSurface(): AgentCliSurface {
   const refuse = (): Promise<never> =>
@@ -295,6 +295,7 @@ function unusedSurface(): AgentCliSurface {
     inspect: refuse,
     dryRun: refuse,
     run: refuse,
+    triageRun: refuse,
   };
 }
 

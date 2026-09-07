@@ -94,6 +94,18 @@ node dist/main.js --command run-preset --dry-run \
   --scripts json-etl \
   --presetAllowlist "report=data/config/presets/report.yaml"
 
+# Triage a CloudWatch alarm. SPENDS MONEY but never mutates AWS state: the
+# model chooses a preset name and the gate grades the action read-only, so
+# there is no dry-run phase to clear. The target script is PINNED to
+# cloudwatch-logs-analysis — buildTriageTools refuses to register the tool for
+# any other script, because the read-only claim is only sound for the one
+# script whose read-only verb set it knows.
+node dist/main.js --command triage-logs \
+  --modelId anthropic.claude-sonnet-4-5-20250929-v1:0 \
+  --modelRates "anthropic.claude-sonnet-4-5-20250929-v1:0=0.003,0.015" \
+  --scripts cloudwatch-logs-analysis \
+  --presetAllowlist "checkout-5xx=data/config/presets/triage-checkout-5xx.yaml"
+
 # Outside the monorepo — M3LPaths.getProjectRoot() is unavailable in
 # standalone mode, so the CLI entrypoint must be named explicitly or the run
 # fails with ERR_AGENT_OPERATOR_CLI_ENTRYPOINT
@@ -108,6 +120,76 @@ node dist/main.js --command explain-policy \
 | `explain-policy` | Minimal, Common, Production, Edge case           |
 | `health-check`   | Dry-run rehearsal, the real run, and probe-armed |
 | `run-preset`     | The preset run and its rehearsal                 |
+| `triage-logs`    | The alarm triage run                             |
+
+### What a `triage-logs` preset may declare
+
+A triage preset is a **leaf**: `lib/triage-presets.ts` verifies every entry of
+`presetAllowlist` before the `triage_logs` tool is registered at all, and
+refuses three things outright.
+
+- **`extends`** — refused so the preset's own keys are its whole resolved key
+  set. `Core.M3LYAMLConfigProvider` does not follow `extends` (only
+  `M3LScriptPresetLoader` does), so without this rule the two checks below
+  could be blinded by a base preset and would be guards that cannot fire.
+- **`aws.profile`** — refused because it would not do what it looks like it
+  does. `M3LScript`'s config precedence puts environment variables at level 4
+  and a preset at level 6, and the spawned child inherits this process's
+  environment, so an `AWS_PROFILE` set here silently outranks the preset. The
+  operator's own profile is the single graded target, as it is for
+  `run-preset`.
+- **Any `operation` other than `analyze`** — `convert` writes a preset skeleton
+  to disk, and `validate`/`explain` are refused too even though
+  `cloudwatch-logs-analysis` supports them: `triageRun` pins the verb to
+  `analyze`, so accepting either would authorize a request that then dies at
+  the child's own config load, since `analyze`'s `requiredParameters` are not
+  what a `validate`/`explain` preset carries. Only `analyze` is reachable
+  through this seam, and the accepted set says exactly that.
+
+  This check screens **operator-authored config**; on its own it is not a
+  closure, for the same reason the `aws.profile` refusal exists. A preset's
+  `operation:` also sits at precedence level 6, so an `OPERATION=convert` in
+  the operator's inherited environment would outrank it. What actually pins
+  the verb is the surface's `triageRun` method, which emits a **fixed**
+  `--operation=analyze` child passthrough token — level 1, above both the
+  environment and the preset. The token is a literal in a closed `buildArgv`
+  variant; no caller input, config value or model output can change it, which
+  is why it adds no model-supplied value to argv.
+
+### The graded profile is pinned the same way
+
+`triageRun` also emits `--aws.profile=<the operator's own resolved profile>`,
+at the same level 1. Without it, the parent could grade one account while the
+child queried another: the parent resolves `aws.profile` through _its_ full
+chain, including its own CLI argument at level 1 and config files at 2–3,
+while the child sees only the inherited environment at level 4. So
+`--command triage-logs --aws.profile sandbox` with `AWS_PROFILE=prod` set would
+grade `sandbox`, auto-approve, and read `prod` — defeating
+`sensitive-target-escalated`, since `prod` is a declared sensitive profile.
+
+Unlike the verb token this one interpolates a value, but the value is
+**operator-supplied** from agent-operator's own validated config, never
+model-supplied, and it is the _same_ value stamped into the judged action's
+`target` rather than a second lookup free to diverge from it. `run-preset` does
+not need this pin because it refuses target scripts that declare an
+`aws.profile` at all — a luxury triage does not have, since `analyze` is the
+one fleet-facing operation that must reach AWS.
+
+Two operational notes on the shipped example:
+
+- `triggeredAt` is a fixed timestamp in
+  `data/config/presets/triage-checkout-5xx.yaml`, not an incident-time value —
+  the `run` seam carries a preset PATH, not scalars, and threading a live
+  timestamp would add a third class of model-supplied input to argv. Copy the
+  file and edit the timestamp for a live incident; that is a reviewable diff.
+- The runbook the example resolves lives at
+  `data/input/runbooks/checkout-5xx.json` (runbooks are JSON, and
+  `runbookDir` defaults to `runbooks` under `M3L_INPUT_DIR`). The spawned
+  child **inherits this process's environment**, so a per-script
+  `M3L_INPUT_DIR` set for `agent-operator` (see below) is inherited by
+  `cloudwatch-logs-analysis` too and the child will look for runbooks under
+  the operator's own input tree. That is a property of the spawn seam, not of
+  this operation — it applies equally to `run-preset`'s `json-etl` inputs.
 
 ### Operational flags
 

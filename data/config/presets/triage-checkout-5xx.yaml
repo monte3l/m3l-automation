@@ -1,0 +1,30 @@
+# cloudwatch-logs-analysis "triage-checkout-5xx" preset — the alarm agent-operator's
+# `triage-logs` operation triages. Keys are cloudwatch-logs-analysis config parameter
+# names (an unknown key is rejected by the preset loader). `--preset` takes a PATH, not
+# a name: there is no search root or per-script fallback, so `--preset
+# triage-checkout-5xx` would be read as the literal path `triage-checkout-5xx` and fail
+# with ERR_PRESET_LOAD. Run with:
+#   m3l run cloudwatch-logs-analysis -- --preset=data/config/presets/triage-checkout-5xx.yaml
+# (override any value on the CLI).
+#
+# `triggeredAt` is deliberately a FIXED timestamp rather than an incident-time value.
+# The agent-operator `run` seam carries a preset PATH, not scalars, so threading a live
+# timestamp would mean a third class of model-supplied input reaching argv — the one
+# thing `lib/cli-surface.ts`'s brand chain exists to prevent. The cost is that this
+# preset always queries the same historical window; an operator triaging a live incident
+# copies this file and edits the timestamp, which is a reviewable diff rather than a
+# model-chosen value.
+#
+# Three keys this file must NOT declare, each refused by `lib/triage-presets.ts` before
+# the `triage_logs` tool is ever registered:
+#   - `extends`     — a triage preset is a leaf, so its own keys are its whole resolved
+#                     key set and the two checks below cannot be blinded by inheritance.
+#   - `aws.profile` — environment variables outrank a preset in M3LScript's config
+#                     precedence (level 4 vs level 6), so AWS_PROFILE silently wins and
+#                     the key would look like it re-targets the run without doing so.
+#                     The operator's own profile is the single graded target.
+#   - a mutating `operation` — only `analyze`, `validate` and `explain` are accepted;
+#                     `convert` writes a preset skeleton to disk.
+operation: analyze
+alarm: checkout-5xx
+triggeredAt: "2026-08-23T14:32:00Z"

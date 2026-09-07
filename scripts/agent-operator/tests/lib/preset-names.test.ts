@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { isAbsolute, posix } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, expectTypeOf, it } from "vitest";
@@ -8,11 +9,13 @@ import { M3LAgentOperatorCliError } from "../../src/lib/errors.js";
 import {
   AGENT_OPERATOR_PRESET_NAME_MAX_LENGTH,
   AGENT_OPERATOR_PRESET_NAME_RE,
+  AGENT_OPERATOR_PRESETS_DIRECTORY_PREFIX,
   type AgentOperatorPresetName,
   type AgentOperatorPresetPath,
   assertAllowedPresetName,
   hasPresetPathControlOrFormatCharacter,
   isAllowedPresetName,
+  isDeclarablePresetPath,
   isUnpaddedNonBlankPresetPath,
   isWellFormedPresetPathShape,
 } from "../../src/lib/preset-names.js";
@@ -586,5 +589,124 @@ describe("AgentOperatorPresetPath — the path brand is the contract", () => {
     expectTypeOf(
       assertAllowedPresetName,
     ).returns.not.toExtend<AgentOperatorPresetPath>();
+  });
+});
+
+/**
+ * Contract: `claude-pr-review` on PR #1081 (Should-fix 3) — `preset-names.ts`
+ * moved `isDeclarablePresetPath` out of `lib/cli-surface.ts` (where it was
+ * private) so `lib/triage-presets.ts`'s `verifyTriagePresets` could share the
+ * same containment rule, but the export gained no direct test of its own: it
+ * was exercised only transitively through those two callers' own checks. This
+ * block tests the predicate in isolation, against its own TSDoc claims rather
+ * than either caller's behavior.
+ */
+describe("isDeclarablePresetPath", () => {
+  it("accepts a well-formed path inside the presets directory", () => {
+    expect(isDeclarablePresetPath(CLEAN_PRESET_PATH)).toBe(true);
+  });
+
+  describe("`..` traversal segment", () => {
+    it("rejects a `..` segment even though the string still starts with the presets prefix", () => {
+      const traversal = "data/config/presets/../etc/passwd";
+      // Confirms the prefix check ALONE would have let this through, so the
+      // rejection below is provably the `..` ban firing, not the prefix one.
+      expect(
+        traversal.startsWith(AGENT_OPERATOR_PRESETS_DIRECTORY_PREFIX),
+      ).toBe(true);
+      expect(isDeclarablePresetPath(traversal)).toBe(false);
+    });
+
+    /*
+     * The TSDoc's own claimed case: "`data/config/presets/sub/../x.json`
+     * normalises back inside the directory and is still rejected". Proven by
+     * actually normalising it with `node:path`'s `posix.normalize`, rather
+     * than asserting the rejection and trusting the comment — a `..` segment
+     * that normalised OUTSIDE the directory would be rejected by the prefix
+     * check alone and would prove nothing about this stricter rule.
+     */
+    it("[TSDoc-claimed case] rejects a `..` segment that normalises back INSIDE the presets directory", () => {
+      const traversalBackInside = "data/config/presets/sub/../report.yaml";
+      expect(posix.normalize(traversalBackInside)).toBe(CLEAN_PRESET_PATH);
+      expect(isDeclarablePresetPath(traversalBackInside)).toBe(false);
+    });
+
+    it("accepts the identical path with the `..` segment removed — the near-miss that proves the rejection above is the `..` ban and not the `sub/` segment", () => {
+      expect(
+        isDeclarablePresetPath("data/config/presets/sub/report.yaml"),
+      ).toBe(true);
+    });
+
+    it("rejects a `..` segment written win32-style with a backslash, on this POSIX host", () => {
+      // AGENT_OPERATOR_PATH_SEPARATOR_RE splits on `\` as well as `/`
+      // specifically so a backslash-separated traversal is seen here too.
+      const backslashTraversal = "data/config/presets/sub\\..\\report.yaml";
+      expect(isDeclarablePresetPath(backslashTraversal)).toBe(false);
+    });
+
+    it("accepts the same backslash-separated path with the `..` segment removed — proves the rejection above is the `..` ban, not the presence of a backslash", () => {
+      expect(
+        isDeclarablePresetPath("data/config/presets/sub\\report.yaml"),
+      ).toBe(true);
+    });
+  });
+
+  describe("absolute path", () => {
+    it("rejects an absolute POSIX path", () => {
+      expect(isDeclarablePresetPath("/etc/passwd")).toBe(false);
+    });
+
+    it("rejects a win32-style absolute path via the prefix check — node:path's isAbsolute is POSIX-only on this host, so the source's own comment is what is under test here", () => {
+      const win32Absolute = "C:\\Windows\\System32\\config.yaml";
+      // Confirms the comment's claim: `isAbsolute` does NOT catch this on a
+      // POSIX host, so the containment prefix check must be doing the work.
+      expect(isAbsolute(win32Absolute)).toBe(false);
+      expect(isDeclarablePresetPath(win32Absolute)).toBe(false);
+    });
+  });
+
+  describe("containment inside the presets directory", () => {
+    it("rejects a path outside the presets directory that merely shares the prefix as TEXT", () => {
+      expect(
+        isDeclarablePresetPath("data/config/presetsevil/report.yaml"),
+      ).toBe(false);
+    });
+
+    it("accepts the same path with the missing separator restored — the near-miss that proves the rejection above is the trailing-separator boundary, not the token `evil`", () => {
+      expect(
+        isDeclarablePresetPath("data/config/presets/evil/report.yaml"),
+      ).toBe(true);
+    });
+
+    it("rejects a path entirely outside the presets tree", () => {
+      expect(isDeclarablePresetPath("data/config/other/report.yaml")).toBe(
+        false,
+      );
+    });
+
+    it("rejects the bare directory itself (no file component past the prefix)", () => {
+      expect(
+        isDeclarablePresetPath(AGENT_OPERATOR_PRESETS_DIRECTORY_PREFIX),
+      ).toBe(false);
+    });
+  });
+
+  describe("shape: whitespace, blank, and control/format characters", () => {
+    it("rejects a leading space", () => {
+      expect(isDeclarablePresetPath(` ${CLEAN_PRESET_PATH}`)).toBe(false);
+    });
+
+    it("rejects a trailing space", () => {
+      expect(isDeclarablePresetPath(`${CLEAN_PRESET_PATH} `)).toBe(false);
+    });
+
+    it("rejects the empty string", () => {
+      expect(isDeclarablePresetPath("")).toBe(false);
+    });
+
+    it("rejects a NUL-bearing path", () => {
+      const pathWithNul = `data/config/presets/report${String.fromCodePoint(0x00)}.yaml`;
+      expect(isDeclarablePresetPath(pathWithNul)).toBe(false);
+    });
   });
 });

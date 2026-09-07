@@ -20,14 +20,16 @@
         "doctor",
         "explain-policy",
         "health-check",
-        "run-preset"
+        "run-preset",
+        "triage-logs"
       ],
       "readOnlyOperations": [
         "list",
         "doctor",
         "explain-policy",
         "health-check",
-        "run-preset"
+        "run-preset",
+        "triage-logs"
       ]
     },
     {
@@ -47,8 +49,8 @@
     },
     {
       "script": "cloudwatch-logs-analysis",
-      "operations": ["inspect", "dry-run"],
-      "readOnlyOperations": ["inspect", "dry-run"]
+      "operations": ["inspect", "dry-run", "run"],
+      "readOnlyOperations": ["inspect", "dry-run", "run"]
     },
     {
       "script": "cloudwatch-logs-insights",
