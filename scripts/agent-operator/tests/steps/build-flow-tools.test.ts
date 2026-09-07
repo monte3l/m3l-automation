@@ -686,6 +686,64 @@ describe("buildFlowTools — execute — the INDETERMINATE timeout rule", () => 
     );
   });
 
+  it("[new guard] still rethrows the ORIGINAL flowRun rejection unchanged, rather than letting reportRecovery's throw escape, when BOTH the decision-log write AND reportRecovery fail", async () => {
+    const cliError = new M3LAgentOperatorCliError(
+      "the m3l flow run child timed out mid-flight",
+      "ERR_AGENT_OPERATOR_CLI_SPAWN",
+      { context: { disposition: "timed-out" } },
+    );
+    const flowRun = vi.fn(() => Promise.reject(cliError));
+    // The decision-log write fails, same as the case above — but this time
+    // `reportRecovery` ALSO throws, exercising the nested "reporting also
+    // failed" catch that the case above never reaches. Mirrors
+    // `conclusion-tail.test.ts`'s own "[new guard]" case for
+    // `recordConsumption`, which establishes the same shape for the
+    // equivalent nested catch.
+    const recorder = new AgentDecisionRecorder({
+      identity: agentIdentity({ name: "agent-operator" }),
+      writer: new FailingDecisionLogWriter(),
+    });
+    const { logger, handler } = makeLogger();
+    const reportRecovery = vi.fn(() => {
+      throw new Error("reportRecovery blew up");
+    });
+    const deps = await buildDeps({
+      surface: { ...unusedSurface(), flowRun },
+      decisionRecorder: recorder,
+      logger,
+      reportRecovery,
+    });
+    const spec = buildReconcileQueueSpec(deps);
+
+    // The proof this case exists for: without the inner `try`/`catch`
+    // around the reporting call, this `await` would reject with
+    // `reportRecovery`'s thrown error instead of resolving to the original
+    // `flowRun` rejection — silently replacing the one failure the caller
+    // actually needs with a last-resort reporter's own failure.
+    let thrown: unknown;
+    try {
+      await spec.execute(
+        { flowName: FLOW_NAME },
+        toolContext(AGENT_FLOW_TOOL_NAMES.reconcileQueue),
+      );
+    } catch (error) {
+      thrown = error;
+    }
+
+    // UNCHANGED, not re-wrapped and not replaced by the reporting failure:
+    // the exact same instance `surface.flowRun` rejected with.
+    expect(thrown).toBe(cliError);
+
+    // The failure is not fully silent: `reportRecovery` was attempted once,
+    // and the logger observed BOTH the decision-log write failure and the
+    // reporting failure that followed it.
+    expect(reportRecovery).toHaveBeenCalledTimes(1);
+    const errorEvents = handler.events.filter(
+      (event) => event.category === Core.M3LLogEventCategory.ERROR,
+    );
+    expect(errorEvents).toHaveLength(2);
+  });
+
   // The seven contrast cases moved from `run-queue-reconcile.test.ts`'s own
   // `ORDINARY_CLI_SPAWN_DISPOSITIONS` + prototype case — rewritten against
   // `execute` directly, and against the writer's own `entries`, never a
