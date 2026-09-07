@@ -228,6 +228,11 @@ export const VERIFY_STEPS = [
     cmd: () => "pnpm check:logs-index",
   },
   {
+    ciStepName: "Check promotion stamps",
+    id: "check-promotion-stamps",
+    cmd: () => "pnpm check:promotion-stamps",
+  },
+  {
     ciStepName: "Check lefthook shim integrity",
     id: "check-lefthook-shim",
     cmd: () => "pnpm check:lefthook-shim",

@@ -98,6 +98,7 @@
     "check:staleness": "node bin/check-staleness.mjs",
     "check:lefthook-shim": "node bin/check-lefthook-shim.mjs",
     "check:logs-index": "node bin/check-logs-index.mjs",
+    "check:promotion-stamps": "node bin/check-promotion-stamps.mjs",
     "check:skill-evals": "node bin/check-skill-evals.mjs",
     "check:review-policy": "node bin/check-review-policy.mjs",
     "maintain:scan": "node bin/run-maintain-scan.mjs",

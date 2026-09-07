@@ -391,6 +391,11 @@ export const COMMAND_CATALOG = [
       "Warns (non-blocking) when docs/logs/README.md's index tables have drifted from docs/logs/: a log file with no row (undiscoverable through the index), a row linking a file that no longer exists, a file linked from more than one row, or a row's date column disagreeing with its filename's date. check:retrospective counts logs for sweep-cadence purposes but never checks which ones are indexed — this closes that gap. Offline, always exits 0. Run after /writing-work-logs or when backfilling missing index rows.",
   },
   {
+    name: "check:promotion-stamps",
+    description:
+      "ROADMAP H7 (issue #1000): BLOCKING validation of the `promoted → <path>` stamp convention /promoting-work-log-lessons and /writing-work-logs share — every docs/logs/*.md stamp's target must exist (via bin/lib/promotion-stamps.mjs's RENAMED_TARGETS alias map when the target was since renamed, never by editing the immutable log), and every docs/logs/<name>.md citation inside .claude/rules/*.md, .claude/agents/*.md, .claude/skills/*/SKILL.md, or CLAUDE.md must resolve to a real log. Does not check symmetry (a stamp's target citing its source log back) — see the lib module's header comment for why. Exits 1 on any dangling stamp/citation or stale alias.",
+  },
+  {
     name: "check:skill-evals",
     description:
       "Verifies every .claude/skills/<name>/SKILL.md has a sibling evals/evals.json with >= 3 cases, AND that every case is gradeable — a prompt, an expected_output, and at least one checklist entry the runner can actually render (validated with the same renderChecklistEntry the runner uses, so the gate and the runner cannot disagree). Catches the shapes that graded against nothing: object entries interpolated as [object Object], identifier-only entries, and a case with no expectations/assertions key at all. Every case needs >= 3 checklist entries. The named EXEMPT_SKILLS grandfather list (empty since the #775 backfill completed; kept for the next new skill) covers both a missing file and unresolved case shape, and a redundant exemption is an error so it cannot outlive its purpose. Run after adding a skill or editing its evals.json.",
