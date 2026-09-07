@@ -336,6 +336,18 @@ host. If a restart is a realistic risk for this session, detach the command
 from the harness process instead — `nohup <cmd> > <log-in-a-durable-path>
 2>&1 & disown` — and poll it by PID and log path rather than relying solely
 on the task-notification (`docs/logs/2026-09-02-reinject-compact-resume.md`).
+**A harness "low memory" kill on a `run_in_background` push can fire even
+while the session's own `free -h` shows ample headroom** — this is a
+distinct scenario from the restart case above (the session itself stays
+alive), and it can recur across consecutive retries of the identical
+command. The same `nohup <cmd> > <log> 2>&1 & disown` detach recovers it,
+but the poll checking for completion must ALSO be detached or run via a
+`Monitor` until-loop watching the raw PID (`kill -0 $PID`) — a lightweight
+`run_in_background` polling wrapper was killed too, even though it did
+negligible work itself, confirming the kill targets the session's tracked
+background jobs as a set rather than whichever process is actually heavy
+(`docs/logs/2026-09-07-lefthook-shim-fail-open.md`).
+
 **Even a detached log can still go unreadable across a restart** — the
 session's own scratchpad path includes a session id that can rotate mid-task,
 so a log written under the pre-restart path may not exist under the
