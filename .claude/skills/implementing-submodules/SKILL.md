@@ -213,10 +213,17 @@ ADR-0013 (its durable home), not a per-plan caveat.
      files written across its entire 150k-token budget) is exactly the
      failure this catches before it happens, not after.
    - **Record the sequence on the contract page** under a `## Landing plan`
-     heading — the slice order, what each slice ships, and which slices are
-     separate PRs vs. one PR. A single-PR module still gets the heading, even
-     if it just states "lands as one PR" — `check:scaffold-seam` is being
-     extended (ADR-0072) to look for it on any module not yet ✅.
+     heading, as a `| Slice | Scope | Status |` table — one row per slice, in
+     landing order, `Status` flipping to `Landed` as each slice's PR merges.
+     Prose or a numbered list is not enough: `bin/check-scaffold-seam.mjs`
+     already hard-fails a module not yet ✅ whose page is missing, whose
+     heading is missing, or whose section has a heading but no parseable
+     table — and the same table is what `starting-work`, `creating-prs` Step 12,
+     and `finishing-work` Step 8 all read back (via the shared
+     `parseLandingPlanProgress` parser in
+     `.claude/hooks/statusline-context-pressure.mjs`), so an unparseable table
+     silently breaks their handoff too. A single-PR module still gets the
+     heading and a one-row table, even if that row just says "lands as one PR."
    - A module whose seam plan projects more than one slice is **never**
      dispatched as a single RED/GREEN pair — each slice gets its own bounded
      Phase 2/3 dispatch and its own Phase 4 review, landing as its own PR

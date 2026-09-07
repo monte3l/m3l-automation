@@ -266,3 +266,4 @@ backstop for the step above, not a substitute for it.
 | 2026-09-07 | CodeQL scan timing and alert-readiness polling — H4, issue #997 (PR #1083, #1084) | [codeql-scan-timing-guidance](./2026-09-07-codeql-scan-timing-guidance.md)                 |
 | 2026-09-07 | H9 — worktree hook shim race (issue #1002, PR #1090)                              | [worktree-hook-shim-race](./2026-09-07-worktree-hook-shim-race.md)                         |
 | 2026-09-07 | H11 — finishing-work location guard (issue #1004, PR #1094/#1098)                 | [finishing-work-location-guard](./2026-09-07-finishing-work-location-guard.md)             |
+| 2026-09-07 | H12 — seam-plan → PR-sequence handoff made concrete (issue #1005)                 | [seam-plan-handoff](./2026-09-07-seam-plan-handoff.md)                                     |

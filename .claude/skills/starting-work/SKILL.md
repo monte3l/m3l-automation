@@ -105,9 +105,14 @@ Also decide whether the scope is **one landable unit or several.** It spans
 several when the task already implies independently mergeable slices — a
 process/tooling change with a docs-only part and a code part (ADR-0072's
 docs-vs-code split, which measures ~0 reviewable chars and should default to
-splitting), a submodule whose seam plan (`implementing-submodules`) projects
-more than one PR, or a batch of same-shaped changes across unrelated paths. A
-single bug fix or a small, cohesive feature is one unit — most tasks are.
+splitting), a submodule whose `## Landing plan` table on
+`docs/reference/<ns>/<mod>.md` (the seam plan's durable form —
+`implementing-submodules` Step 5, ADR-0072) has more than one row, or a batch
+of same-shaped changes across unrelated paths. Read the page rather than
+inferring from conversation; a page with no heading yet, or a heading with no
+parseable table, means no seam plan has been recorded — treat the scope as one
+unit. A single bug fix or a small, cohesive feature is one unit — most tasks
+are.
 
 ### 3 — Recommend each decision
 
@@ -159,9 +164,10 @@ Derive a concrete default for all decisions from steps 1–2:
   residual fallback.
 - **PR sequence** — only surfaced when Step 2 found several landable units.
   Recommend the order (docs-first when the scope mixes docs and code — that
-  slice is free to review and unblocks the rest; otherwise by path cluster or
-  by the seam plan's projected order) and name each slice's branch. This is
-  the ADR-0072 discipline applied at plan time, before the first commit exists
+  slice is free to review and unblocks the rest; otherwise by path cluster or,
+  for submodule work, the `## Landing plan` table's own row order, skipping
+  any row whose Status is already terminal) and name each slice's branch.
+  This is the ADR-0072 discipline applied at plan time, before the first commit exists
   to split.
 - **Model tier (advisory only)** — name the recommended model + effort for this
   task category from the matrix in `docs/contributing/model-selection.md`
@@ -276,6 +282,27 @@ lives in ADR-0072; the session-naming rationale lives in ADR-0087/ADR-0088.
 as their first step instead of re-deriving isolation inline — it's the single
 source of truth for the decision. When one of them calls it, the "infer scope"
 step is easy: the caller already knows it will write `src/`/`tests/`, so the PR
-answer is yes and isolation is required. `implementing-submodules` also feeds
-its own seam plan (its "Seam plan" step, ADR-0072) into the PR-sequence
-recommendation when that plan projects more than one PR.
+answer is yes and isolation is required.
+
+**The seam-plan handoff (`implementing-submodules` Step 5, ADR-0072) is not
+same-conversation context — it's a file on disk.** Step 5 writes the module's
+`## Landing plan` heading and a `| Slice | Scope | Status |` table onto its
+contract page, `docs/reference/<ns>/<mod>.md`. Reading that table is how Step 2
+above decides a submodule spans several landable units, and how Step 3 orders
+the PR sequence: row count is `M`, the first row whose Status is not
+`Landed`/`Shipped`/`✅` is the current slice, and row order is the PR order.
+This is the same table three other consumers already parse by name —
+`bin/check-scaffold-seam.mjs` (gates on it), `creating-prs` Step 12 (derives its
+`PR N of M` line from it), and `finishing-work` Step 8 (derives the next slice
+from it) — all through the one shared parser,
+`parseLandingPlanProgress` in `.claude/hooks/statusline-context-pressure.mjs`.
+A page with no `## Landing plan` heading yet, or a heading whose section has no
+parseable table (a freshly scaffolded module — `scaffolding-submodules` writes
+only placeholder text there), means no seam plan has been recorded yet; treat
+the scope as one unit until `implementing-submodules` Step 5 authors the table.
+
+This concrete record exists for submodule work only. A non-submodule multi-PR
+task (a tooling/process wave spanning several PRs) has no equivalent durable
+file — ROADMAP row **H5** tracks that gap — and `pnpm slice:set -- --wave`
+writes only an ephemeral, gitignored `tmp/` entry with no authority over this
+skill's own decisions (ADR-0072 § Amendment (2026-09-04)).
