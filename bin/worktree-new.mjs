@@ -26,9 +26,10 @@
 import process from "node:process";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { dirname, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { parseJsonFlag, createReporter } from "./lib/report.mjs";
 import { parseWorktreeNewArgs, worktreeDirName } from "./lib/worktree-new.mjs";
+import { resolveCheckoutLocation } from "./lib/checkout-location.mjs";
 
 const { json, argv } = parseJsonFlag();
 const reporter = createReporter(json);
@@ -69,14 +70,9 @@ if (from !== null && !refExists(from)) {
   process.exit(1);
 }
 
-// Locate the main checkout (parent of the shared .git common dir) so the sibling
-// directory sits alongside it regardless of where this runs.
-const gitCommonDir = git([
-  "rev-parse",
-  "--path-format=absolute",
-  "--git-common-dir",
-]);
-const mainCheckout = dirname(gitCommonDir);
+// Locate the main checkout so the sibling directory sits alongside it
+// regardless of where this runs.
+const { mainCheckout } = resolveCheckoutLocation({ runGit: git });
 const worktreePath = resolve(mainCheckout, "..", worktreeDirName(slug));
 
 let startPoint = null;
