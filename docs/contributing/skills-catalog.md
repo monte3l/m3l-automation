@@ -231,6 +231,34 @@ exception), and **unavailable in headless CI** (`claude-pr-review.yml` pins a
 scoped `--allowedTools` with no `--mcp-config`) — no skill may _depend_ on it
 to run.
 
+## m3l MCP metadata lookup
+
+`m3l` is this repo's own in-process MCP server (`bin/mcp-server.mjs` +
+`bin/lib/mcp-tools.mjs`), rebuilt by
+[ADR-0096](../adr/0096-m3l-mcp-server-replace-with-query-tools.md) into six
+read-only query tools over the repo's own generated/curated metadata —
+`adr_query`, `logs_query`, `commands_query`, `hooks_query`, `catalog_query`,
+`commit_lint`. ADR-0096's own audit found the server's zero-invocation
+problem was caused by discoverability, not mechanics: no skill or rule
+anywhere named an m3l tool, so nothing ever pointed an agent at it over
+reading the underlying corpus in full. This section — and the
+`check:integration-stance` gate's `m3l` descriptor — exists to close that gap
+for good, the same way the two sections above close it for GitHub and
+context7.
+
+| Skill                        | Mechanism                                                     | Why                                                                                                              |
+| ---------------------------- | ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `syncing-docs`               | `mcp__m3l__adr_query` (hub-invoked)                           | A quick per-ADR status/`reviewBy` lookup before opening a `check:adr-provenance`-flagged ADR in full             |
+| `promoting-work-log-lessons` | `mcp__m3l__adr_query` (hub-invoked)                           | Checks whether a candidate lesson is already an ADR decision before proposing a new rule that would restate it   |
+| `triaging-ci`                | `mcp__m3l__hooks_query` / `mcp__m3l__adr_query` (hub-invoked) | Looks up the specific hook/ADR context behind a governance-gate CI failure instead of reading the full reference |
+
+Unlike GitHub (five mechanisms across two options) or context7 (a single
+mechanism with per-surface hub/spoke variation), every m3l tool is read-only
+and local — no CI-availability or auto-merge-shaped constraint applies. A
+spoke may hold an `mcp__m3l__*` grant when its brief genuinely needs the
+matching lookup; see `docs/contributing/agent-operating-model.md`'s
+`MCP_SPOKES` note for the current grant list.
+
 ## How to re-check usage
 
 **Primary source: real invocation counts, not a name grep.** `resolving-pr-

@@ -266,7 +266,7 @@
     "sourceFiles": [
       {
         "path": ".claude/settings.json",
-        "blob": "2b6b5894015ea46d5304f0b79b3f3ca37b90f594"
+        "blob": "f749629a0e8b68842849e97ae75303c71b39bd70"
       },
       {
         "path": "bin/check-reference-index.mjs",
@@ -414,7 +414,7 @@
       },
       {
         "path": ".claude/settings.json",
-        "blob": "2b6b5894015ea46d5304f0b79b3f3ca37b90f594"
+        "blob": "f749629a0e8b68842849e97ae75303c71b39bd70"
       },
       {
         "path": ".claude/skills/starting-work/SKILL.md",
@@ -573,7 +573,7 @@
     "sourceFiles": [
       {
         "path": ".claude/settings.json",
-        "blob": "2b6b5894015ea46d5304f0b79b3f3ca37b90f594"
+        "blob": "f749629a0e8b68842849e97ae75303c71b39bd70"
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
@@ -598,7 +598,7 @@
       },
       {
         "path": ".claude/skills/syncing-docs/SKILL.md",
-        "blob": "6f780dc3b5f8fc6fc1689efb85cb8e7f0b6423ec"
+        "blob": "85e9fb679a6fa4150e3f2ca12e697c3034ed95be"
       },
       {
         "path": ".gitattributes",
@@ -796,7 +796,7 @@
       },
       {
         "path": ".claude/skills/triaging-ci/SKILL.md",
-        "blob": "ecee984edd8cc8c2be229ad82290c5627555223a"
+        "blob": "b792ea54cd19b1baa674706e6f742b8713547a25"
       },
       {
         "path": ".claude/skills/triaging-scan-alerts/SKILL.md",
@@ -824,7 +824,7 @@
       },
       {
         "path": "bin/spoke-recovery.mjs",
-        "blob": "1e335bda9aed34f06f59cbd5e26dda91571da5be"
+        "blob": "58e39962e94dd0c8f13b227945f25890908a4d44"
       },
       {
         "path": "bin/sync-docs.mjs",
@@ -832,7 +832,7 @@
       },
       {
         "path": "docs/contributing/subagent-context-management.md",
-        "blob": "e80dcd15d0da36bc6bc612a1c1af94ca549f9345"
+        "blob": "8ceca8c16454f5f98354fb72b9b5f6463668ea1e"
       },
       {
         "path": "docs/logs/2026-07-17-adr-0030-workflow-tooling-mcp.md",
@@ -922,7 +922,7 @@
       },
       {
         "path": "bin/lib/command-catalog.mjs",
-        "blob": "d5a82684363dff563017ffd5715ce303a2f8cf32"
+        "blob": "416f6e19e5edd4616215ef11fad471186de15ba1"
       },
       {
         "path": "bin/lib/hub-sync.mjs",
@@ -974,7 +974,7 @@
       },
       {
         "path": "docs/logs/README.md",
-        "blob": "2f7be02f88df7686a64edd5176455b0718457aa0"
+        "blob": "e63a8c806abfb977663ff7be46bced832ac668fe"
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
@@ -1653,7 +1653,7 @@
       },
       {
         "path": "docs/contributing/subagent-context-management.md",
-        "blob": "e80dcd15d0da36bc6bc612a1c1af94ca549f9345"
+        "blob": "8ceca8c16454f5f98354fb72b9b5f6463668ea1e"
       },
       {
         "path": "docs/implementation-status.md",
@@ -1799,7 +1799,7 @@
       },
       {
         "path": ".claude/settings.json",
-        "blob": "2b6b5894015ea46d5304f0b79b3f3ca37b90f594"
+        "blob": "f749629a0e8b68842849e97ae75303c71b39bd70"
       },
       {
         "path": "bin/check-agents.mjs",
@@ -1823,7 +1823,7 @@
       },
       {
         "path": "bin/spoke-recovery.mjs",
-        "blob": "1e335bda9aed34f06f59cbd5e26dda91571da5be"
+        "blob": "58e39962e94dd0c8f13b227945f25890908a4d44"
       },
       {
         "path": "CLAUDE.md",
@@ -1835,7 +1835,7 @@
       },
       {
         "path": "docs/contributing/subagent-context-management.md",
-        "blob": "e80dcd15d0da36bc6bc612a1c1af94ca549f9345"
+        "blob": "8ceca8c16454f5f98354fb72b9b5f6463668ea1e"
       },
       {
         "path": "docs/research/context-window-and-compaction.md",
@@ -1881,7 +1881,7 @@
       },
       {
         "path": ".claude/settings.json",
-        "blob": "2b6b5894015ea46d5304f0b79b3f3ca37b90f594"
+        "blob": "f749629a0e8b68842849e97ae75303c71b39bd70"
       },
       {
         "path": "bin/setup-host-resources.mjs",
@@ -1960,7 +1960,7 @@
     "sourceFiles": [
       {
         "path": ".claude/settings.json",
-        "blob": "2b6b5894015ea46d5304f0b79b3f3ca37b90f594"
+        "blob": "f749629a0e8b68842849e97ae75303c71b39bd70"
       },
       {
         "path": "docs/contributing/branch-protection.md",
@@ -1977,11 +1977,11 @@
     "sourceFiles": [
       {
         "path": ".claude/settings.json",
-        "blob": "2b6b5894015ea46d5304f0b79b3f3ca37b90f594"
+        "blob": "f749629a0e8b68842849e97ae75303c71b39bd70"
       },
       {
         "path": ".claude/skills/promoting-work-log-lessons/SKILL.md",
-        "blob": "7a88fa52cea18edfd0b828ff211a9702149ee201"
+        "blob": "f6fed3a5e023ae716424c2f86b57382546ec61e8"
       },
       {
         "path": "bin/check-control-chars.mjs",
@@ -2122,7 +2122,7 @@
       },
       {
         "path": "docs/contributing/agent-operating-model.md",
-        "blob": "f9a7df9a59a6c80a0b6e8f7e253a2112db1d1fbd"
+        "blob": "a4444a805e654f8867b713b5ddb752d9073a1c83"
       },
       {
         "path": "docs/contributing/skill-routing.md",
@@ -2130,7 +2130,7 @@
       },
       {
         "path": "docs/contributing/skills-catalog.md",
-        "blob": "b3c8fc40668605d97cec18cee9bfe0d490376b78"
+        "blob": "f1b23cd85703d4d1bd467c4c276baf5199a14454"
       },
       {
         "path": "docs/plans/archive/2026-09-03-skill-invocation-and-listing-budget.md",
@@ -2147,7 +2147,7 @@
       },
       {
         "path": ".claude/settings.json",
-        "blob": "2b6b5894015ea46d5304f0b79b3f3ca37b90f594"
+        "blob": "f749629a0e8b68842849e97ae75303c71b39bd70"
       },
       {
         "path": "bin/check-hooks.mjs",
@@ -2155,7 +2155,7 @@
       },
       {
         "path": "docs/contributing/subagent-context-management.md",
-        "blob": "e80dcd15d0da36bc6bc612a1c1af94ca549f9345"
+        "blob": "8ceca8c16454f5f98354fb72b9b5f6463668ea1e"
       },
       {
         "path": "docs/logs/2026-07-18-aws-athena.md",
@@ -2193,7 +2193,7 @@
       },
       {
         "path": ".claude/settings.json",
-        "blob": "2b6b5894015ea46d5304f0b79b3f3ca37b90f594"
+        "blob": "f749629a0e8b68842849e97ae75303c71b39bd70"
       },
       {
         "path": "bin/check-hooks.mjs",
@@ -2214,7 +2214,7 @@
     "sourceFiles": [
       {
         "path": ".claude/settings.json",
-        "blob": "2b6b5894015ea46d5304f0b79b3f3ca37b90f594"
+        "blob": "f749629a0e8b68842849e97ae75303c71b39bd70"
       },
       {
         "path": ".claude/skills/typescript-configuration/references/typescript-configuration.md",
@@ -2230,19 +2230,19 @@
       },
       {
         "path": "bin/lib/agent-roster.mjs",
-        "blob": "70fda4e68bd9d17d055fba2614b46909c6bdb688"
+        "blob": "fc9c0daf0e0d69ee3783cca0832ab47567598764"
       },
       {
         "path": "bin/lib/integration-stance.mjs",
-        "blob": "77475c17dd7201274403ef86bae7ded86c8d53f1"
+        "blob": "2f2554d49a291c40d22292fd686bf2816dc74530"
       },
       {
         "path": "docs/contributing/agent-operating-model.md",
-        "blob": "f9a7df9a59a6c80a0b6e8f7e253a2112db1d1fbd"
+        "blob": "a4444a805e654f8867b713b5ddb752d9073a1c83"
       },
       {
         "path": "docs/contributing/skills-catalog.md",
-        "blob": "b3c8fc40668605d97cec18cee9bfe0d490376b78"
+        "blob": "f1b23cd85703d4d1bd467c4c276baf5199a14454"
       },
       {
         "path": "docs/logs/2026-07-17-adr-0030-workflow-tooling-mcp.md",
@@ -2325,7 +2325,7 @@
     "sourceFiles": [
       {
         "path": ".claude/settings.json",
-        "blob": "2b6b5894015ea46d5304f0b79b3f3ca37b90f594"
+        "blob": "f749629a0e8b68842849e97ae75303c71b39bd70"
       },
       {
         "path": ".mcp.json",
@@ -2337,7 +2337,7 @@
       },
       {
         "path": "bin/check-integration-stance.mjs",
-        "blob": "91fbc7e59303348883452f2fcba950cd555789a5"
+        "blob": "ad33ac8d5017818cfbb804ceb86ee240824005d7"
       },
       {
         "path": "bin/lib/mcp-tools.mjs",

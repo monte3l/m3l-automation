@@ -137,7 +137,10 @@ passes, not when the edit lands.
 ## Consulting context7 for library behavioral semantics (ADR-0093)
 
 You hold a scoped grant to `mcp__context7__resolve-library-id` and
-`mcp__context7__query-docs` — the only spoke that does. Use them when you need
+`mcp__context7__query-docs` — the only spoke with a context7 grant (a
+different spoke, `audit-refuter`, separately holds an m3l grant for the
+generated/curated metadata lookups its own verification brief needs; the two
+are unrelated). Use them when you need
 a third-party SDK's _behavioral_ semantics that a `.d.ts` file cannot express:
 retry/backoff behavior, terminal-state classification, pagination contracts,
 or which error a call throws under a specific condition. Resolve the library

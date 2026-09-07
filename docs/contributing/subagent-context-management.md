@@ -416,14 +416,13 @@ still running, and for how long," not "what has it found so far."
 The manual recovery routine above — re-read the spoke's journal, verify
 on-disk state with `git status`/`git diff`, optionally re-run the targeted
 tests, then decide resume-vs-redispatch — was, until ADR-0030 Phase 6, done
-entirely by hand each time. `bin/spoke-recovery.mjs` (also exposed as the
-`mcp__m3l__spoke_recover` tool) automates exactly that deterministic first
-step: it parses the journal's progress markers, cross-references `--expected`
-paths against `git status --porcelain`, optionally runs a targeted vitest
-pattern (CLI-only — the MCP tool omits this so it stays read-only and fast),
-and emits a `resume` / `redispatch` / `none` / `unverifiable` recommendation
-with a punch-list. Run it (or call the tool) right after a writer-spoke
-truncates or reports something ambiguous, then apply the hub's own judgment
+entirely by hand each time. `bin/spoke-recovery.mjs` automates exactly that
+deterministic first step: it parses the journal's progress markers,
+cross-references `--expected` paths against `git status --porcelain`,
+optionally runs a targeted vitest pattern, and emits a `resume` /
+`redispatch` / `none` / `unverifiable` recommendation with a punch-list. Run
+it right after a writer-spoke truncates or reports something ambiguous, then
+apply the hub's own judgment
 on top — it feeds the decision above, it does not replace it. Its
 outstanding-item heuristic assumes one journal tracks one linear
 workstream (the dispatch convention — one spoke, one scoped task, one

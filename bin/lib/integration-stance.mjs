@@ -1,5 +1,6 @@
-// Pure derivation for `bin/check-integration-stance.mjs` (the ADR-0030 and
-// ADR-0093 drift gates). Nothing here reads a filesystem — the CLI wrapper
+// Pure derivation for `bin/check-integration-stance.mjs` (the ADR-0030,
+// ADR-0093, and ADR-0096 drift gates). Nothing here reads a filesystem — the
+// CLI wrapper
 // collects `.claude/skills/*/SKILL.md` file contents and hands them to
 // `deriveIntegrationStanceIssues`, mirroring `bin/lib/command-catalog.mjs`'s
 // gen/check-shared-derivation shape so this stays exercisable in tests
@@ -21,6 +22,12 @@
 // machinery instead of a hand-rolled copy. context7 has exactly one
 // mechanism (its MCP server), so no mismatch check applies to it; the
 // mismatch machinery only activates for a descriptor with 2+ mechanisms.
+// ADR-0096 (the m3l MCP server's read-only query tools) added the `m3l`
+// descriptor for the same reason ADR-0096 itself was written: no skill or
+// rule named an m3l tool anywhere, which the audit found was the dominant
+// cause of the server's zero-invocation problem. Same single-mechanism shape
+// as context7 (its MCP server, no CLI alternative), so no mismatch check
+// applies to it either.
 //
 // A stale or inaccurate *description* of what a skill does otherwise is a
 // review-time concern (same reasoning as `command-catalog.mjs`'s STRUCTURE-only
@@ -84,6 +91,19 @@ const INTEGRATION_DESCRIPTORS = [
         declaresPattern: /mcp__context7__|context7 mcp/i,
         usagePhrase: "mcp__context7__ tools",
         claimPhrase: "the context7 MCP",
+      },
+    ],
+  },
+  {
+    id: "m3l",
+    adrPattern: /ADR-0096/,
+    mechanisms: [
+      {
+        id: "m3l-mcp",
+        usagePattern: /mcp__m3l__/,
+        declaresPattern: /mcp__m3l__|m3l mcp/i,
+        usagePhrase: "mcp__m3l__ tools",
+        claimPhrase: "the m3l MCP",
       },
     ],
   },

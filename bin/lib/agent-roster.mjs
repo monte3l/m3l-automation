@@ -15,13 +15,17 @@ export const WRITER_SPOKES = new Set(["code-implementer", "test-author"]);
 
 /**
  * Spokes permitted to hold any `mcp__*` tool grant (ADR-0093's selective,
- * not-blanket, spoke-access invariant) — every other agent must stay
- * MCP-free. Consumed by `bin/check-agents.mjs`'s MCP-grant check alongside
+ * not-blanket, spoke-access invariant, amended by ADR-0096 to admit
+ * read-only m3l query tools) — every other agent must stay MCP-free.
+ * Consumed by `bin/check-agents.mjs`'s MCP-grant check alongside
  * {@link parseMcpServers}/{@link deriveMcpGrantIssues}, so "which spokes may
  * reach an MCP server" has one answer instead of a convention nothing
- * enforces.
+ * enforces. `audit-refuter` joined for m3l (ADR-0096): its whole brief is
+ * checking whether a claimed-missing thing exists "under other names, paths,
+ * or conventions" — exactly what `adr_query`/`hooks_query`/`commands_query`/
+ * `catalog_query`/`logs_query` answer directly instead of a grep-and-read.
  */
-export const MCP_SPOKES = new Set(["code-implementer"]);
+export const MCP_SPOKES = new Set(["code-implementer", "audit-refuter"]);
 
 /**
  * Reviewer spokes whose findings report is a per-section Must-fix/Should-fix/

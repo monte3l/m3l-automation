@@ -13,19 +13,24 @@ that reviews it" structural, and keeps the hub's context lean.
   only the hub dispatches subagents (each carries `disallowedTools: Agent`), so
   the graph stays flat at depth 1. `pnpm check:agents` enforces this and that
   every `subagent_type` resolves to a real agent or known built-in.
-- **MCP is selective, not blanket.** Since ADR-0093, one spoke —
-  `code-implementer` — holds a scoped `mcpServers: [context7]` grant plus the
-  matching `mcp__context7__*` entries in `tools:`, for third-party SDK
-  behavioral semantics a pinned `dist-types` file can't express. Every other
-  spoke's `tools:` grant stays a closed list with no `mcp__*` entry.
-  `bin/check-agents.mjs` enforces this structurally: an agent outside
-  `MCP_SPOKES` (`bin/lib/agent-roster.mjs`) that declares any `mcp__*` tool
-  fails the gate, and an `MCP_SPOKES` member's tool must be scoped to a server
-  it also names in `mcpServers:` — so a grant can no longer silently widen.
-  A skill whose work is delegated to any other spoke still cannot depend on
-  MCP regardless of what's configured in `.mcp.json`; only a hub-invoked,
-  in-process skill (e.g. `resolving-pr-comments`) or `code-implementer`'s
-  context7 grant can use it. See
+- **MCP is selective, not blanket.** Two spokes currently hold a grant:
+  `code-implementer` (since ADR-0093) holds a scoped `mcpServers: [context7]`
+  grant plus the matching `mcp__context7__*` entries in `tools:`, for
+  third-party SDK behavioral semantics a pinned `dist-types` file can't
+  express; `audit-refuter` (since ADR-0096) holds a scoped `mcpServers: [m3l]`
+  grant plus `mcp__m3l__adr_query`/`hooks_query`/`commands_query`/
+  `catalog_query`/`logs_query`, since its whole brief — checking whether a
+  claimed-missing thing exists "under other names, paths, or conventions" —
+  is a direct fit for m3l's targeted lookups. Every other spoke's `tools:`
+  grant stays a closed list with no `mcp__*` entry. `bin/check-agents.mjs`
+  enforces this structurally: an agent outside `MCP_SPOKES`
+  (`bin/lib/agent-roster.mjs`) that declares any `mcp__*` tool fails the
+  gate, and an `MCP_SPOKES` member's tool must be scoped to a server it also
+  names in `mcpServers:` — so a grant can no longer silently widen. A skill
+  whose work is delegated to any other spoke still cannot depend on MCP
+  regardless of what's configured in `.mcp.json`; only a hub-invoked,
+  in-process skill (e.g. `resolving-pr-comments`), `code-implementer`'s
+  context7 grant, or `audit-refuter`'s m3l grant can use it. See
   `docs/adr/0030-targeted-workflow-tooling-and-mcp.md`'s 2026-07-27 amendment
   for the full GitHub-integration stance, including the parallel constraint
   that `claude-pr-review.yml` pins a scoped `--allowedTools` allowlist with no
@@ -33,7 +38,8 @@ that reviews it" structural, and keeps the hub's context lean.
   stays gh-CLI-based even when it runs hub-only locally. See
   `docs/adr/0093-documentation-lookup-mcp-context7.md` for the selective-
   spoke-access decision and why it doesn't reopen the GitHub-MCP question for
-  those five skills.
+  those five skills, and `docs/adr/0096-m3l-mcp-server-replace-with-query-tools.md`
+  for the m3l equivalent.
 - **Model tiering**: which Claude model runs which task category is documented
   in `docs/contributing/model-selection.md`; `pnpm check:agents` also enforces
   its MODEL-MATRIX block against agent `model:` frontmatter and workflow
@@ -96,8 +102,8 @@ that reviews it" structural, and keeps the hub's context lean.
   flags a suspicious-looking return automatically), prevent it (decompose
   oversized dispatches up front, hand writer spokes a journal path, bound
   review-spoke input scope as well as output to a digest), and recover from it
-  (run `bin/spoke-recovery.mjs` / `mcp__m3l__spoke_recover` first to automate
-  the journal-parse + on-disk-verification step, then resume the SAME spoke
+  (run `bin/spoke-recovery.mjs` first to automate the journal-parse +
+  on-disk-verification step, then resume the SAME spoke
   via `SendMessage` on top of that recommendation rather than re-deriving
   state entirely by hand) per `docs/contributing/subagent-context-management.md`
   — the terse checklist auto-loads as `.claude/rules/subagent-dispatch.md`

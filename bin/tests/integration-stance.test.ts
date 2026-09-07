@@ -1,8 +1,18 @@
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
 import {
   deriveIntegrationStanceIssues,
   extractFrontmatterBlock,
 } from "../lib/integration-stance.mjs";
+
+// bin/check-integration-stance.mjs computes `root` via repoRoot(import.meta.url)
+// from its own location (bin/check-integration-stance.mjs), i.e. the repo
+// root. This test file lives one directory deeper (bin/tests/), so the same
+// repo root needs one extra dirname() hop from here — same pattern as
+// check-mcp.test.ts / adr-claims.test.ts / check-file-budget.test.ts.
+const root = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
 
 // ---------------------------------------------------------------------------
 // extractFrontmatterBlock
@@ -264,6 +274,109 @@ describe("deriveIntegrationStanceIssues — context7 descriptor", () => {
     // GitHub side is clean (ADR-0030 present, gh CLI declared and used);
     // context7 side has no ADR-0093 reference at all.
     expect(result.missingStanceNote).toEqual(["creating-prs (context7)"]);
+    expect(result.mechanismMismatches).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// deriveIntegrationStanceIssues — m3l descriptor (ADR-0096)
+// ---------------------------------------------------------------------------
+
+describe("deriveIntegrationStanceIssues — m3l descriptor", () => {
+  test("a skill with no mcp__m3l__ surface at all is skipped entirely", () => {
+    const skills = [
+      {
+        name: "eslint-flat-config",
+        content: "---\nname: eslint-flat-config\n---\n\nNo m3l here.",
+      },
+    ];
+    expect(deriveIntegrationStanceIssues(skills)).toEqual({
+      missingStanceNote: [],
+      retiredClaims: [],
+      mechanismMismatches: [],
+    });
+  });
+
+  test("an m3l-using skill with an ADR-0096 stance note has no issues", () => {
+    const skills = [
+      {
+        name: "triaging-ci",
+        content:
+          "---\nname: triaging-ci\ndescription: >-\n  m3l MCP stance: mcp__m3l__adr_query for the hook/ADR context (ADR-0096).\n---\n\n`mcp__m3l__adr_query({ id })`",
+      },
+    ];
+    expect(deriveIntegrationStanceIssues(skills)).toEqual({
+      missingStanceNote: [],
+      retiredClaims: [],
+      mechanismMismatches: [],
+    });
+  });
+
+  test("an m3l-using skill with no ADR-0096 reference is flagged missingStanceNote", () => {
+    const skills = [
+      {
+        name: "reviewing-dependabot-prs",
+        content:
+          "---\nname: reviewing-dependabot-prs\ndescription: Reviews dependabot PRs.\n---\n\n`mcp__m3l__adr_query({ id })`",
+      },
+    ];
+    expect(deriveIntegrationStanceIssues(skills)).toEqual({
+      missingStanceNote: ["reviewing-dependabot-prs (m3l)"],
+      retiredClaims: [],
+      mechanismMismatches: [],
+    });
+  });
+
+  test("a single-mechanism descriptor never reports a mechanism mismatch", () => {
+    const skills = [
+      {
+        name: "triaging-ci",
+        content:
+          "---\nname: triaging-ci\ndescription: >-\n  m3l MCP stance: uses the gh CLI, not m3l (ADR-0096).\n---\n\n`mcp__m3l__adr_query({ id })`",
+      },
+    ];
+    expect(deriveIntegrationStanceIssues(skills)).toEqual({
+      missingStanceNote: [],
+      retiredClaims: [],
+      mechanismMismatches: [],
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Live-fixture check: the three real skill files this PR's frontmatter
+// stance-note additions touched. This is the check that proves the hub's own
+// edits actually satisfy the gate they're supposed to satisfy — same spirit
+// as check-mcp.test.ts's "live repo state" describe block.
+// ---------------------------------------------------------------------------
+
+describe("deriveIntegrationStanceIssues — live m3l-stance skill files (ADR-0096)", () => {
+  test("syncing-docs, promoting-work-log-lessons, and triaging-ci all satisfy the m3l stance gate", () => {
+    const skillNames = [
+      "syncing-docs",
+      "promoting-work-log-lessons",
+      "triaging-ci",
+    ];
+    const skills = skillNames.map((name) => ({
+      name,
+      content: readFileSync(
+        join(root, ".claude", "skills", name, "SKILL.md"),
+        "utf8",
+      ),
+    }));
+    // Guard against the gate going vacuous: deriveIntegrationStanceIssues
+    // skips a skill entirely (`continue`, no issue pushed either way) when
+    // its body has no usage match for a descriptor's mechanism. Without this,
+    // the assertions below would stay green even if `mcp__m3l__` usage were
+    // later removed from one of these three bodies — proving nothing about
+    // the stance-note gate actually having fired for it. Confirm each body
+    // still exercises the m3l descriptor's usagePattern before trusting the
+    // "no issues" result that follows.
+    for (const skill of skills) {
+      expect(skill.content).toMatch(/mcp__m3l__/);
+    }
+    const result = deriveIntegrationStanceIssues(skills);
+    expect(result.missingStanceNote).toEqual([]);
     expect(result.mechanismMismatches).toEqual([]);
   });
 });

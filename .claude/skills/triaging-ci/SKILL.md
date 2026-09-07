@@ -5,7 +5,8 @@ description: >-
   failure to its pipeline step, report root cause plus the exact local repro
   command, and present 3-5 fix options. Use for /triaging-ci, "why did CI fail",
   "CI is failing", "debug the CI run", or a specific run ID/URL. GitHub stance:
-  gh CLI (ADR-0030; no Actions tools in the MCP toolset).
+  gh CLI (ADR-0030; no Actions tools in the MCP toolset). m3l MCP stance:
+  hooks_query/adr_query (ADR-0096).
 ---
 
 Diagnose why a GitHub Actions CI run failed by fetching its logs via `gh` and
@@ -93,6 +94,13 @@ still run in the order listed here; the lanes themselves run concurrently):
 
 The step name usually appears verbatim in the log lines (e.g.
 `Run pnpm lint:md` or `##[error]...`). Match on that to identify the culprit.
+
+If the failing step is a governance gate (`check:hooks`, `check:adr-*`,
+`check:mcp`, `check:agents`, and similar), look up the specific hook or ADR
+the failure concerns via `mcp__m3l__hooks_query`/`mcp__m3l__adr_query`
+instead of opening `docs/contributing/hooks-reference.md` or the ADR corpus
+in full — the diagnosis in Step 4 only needs that one row/entry's context,
+not the whole reference.
 
 ### 4 — Report the diagnosis
 
