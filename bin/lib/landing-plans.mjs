@@ -3,9 +3,11 @@
 // "## Landing plan" table gets the same durable record a submodule already
 // has via bin/check-scaffold-seam.mjs — sited on a live dated plan doc
 // (docs/plans/YYYY-MM-DD-<slug>.md) instead of a docs/reference/<ns>/<mod>.md
-// reference page. No fs/process here (mirrors bin/lib/logs-index.mjs and
-// bin/lib/promotion-stamps.mjs) so the checker's decision logic is testable
-// against synthetic fixtures without touching disk.
+// reference page. This module itself does no direct fs/process I/O — the
+// checker's decision logic is testable against synthetic fixtures without
+// touching disk — though it imports bin/check-scaffold-seam.mjs, which does
+// (guarded behind that file's own argv[1] check, so importing it here still
+// triggers no disk access).
 import { landingPlanVerdict } from "../check-scaffold-seam.mjs";
 import { extractLandingPlanTable } from "../../.claude/hooks/statusline-context-pressure.mjs";
 
@@ -79,15 +81,25 @@ export function hasEmptySliceId(dataRows, sliceIndex) {
  * "missing-heading" | "unparseable-table"` arms {@link landingPlanVerdict}
  * already returns (reused so this gate's error text reads like
  * `check:scaffold-seam`'s), plus this gate's own additional structural
- * checks — empty or duplicate Slice IDs — layered on top of an otherwise-`ok`
- * table. `"missing-page"` cannot occur in practice here (a scanned file was
- * already read from disk to get `text`), but the arm is kept so a caller
- * passing `null` defensively still gets a defined result rather than a
- * crash.
+ * checks layered on top of an otherwise-`ok` table. `"missing-page"` cannot
+ * occur in practice here (a scanned file was already read from disk to get
+ * `text`), but the arm is kept so a caller passing `null` defensively still
+ * gets a defined result rather than a crash.
+ *
+ * A `docs/plans/` landing plan REQUIRES a `Slice` column — unlike a
+ * submodule's reference page (`check-scaffold-seam.mjs`'s sibling table,
+ * which only needs `Status`), this gate's whole added value is asserting
+ * non-empty, unique slice identifiers, so a table with no `Slice` column at
+ * all is `missingSliceColumn: true` rather than silently passing as clean.
+ * `emptySliceId`/`duplicateSliceIds` are only meaningful once a `Slice`
+ * column exists, so both are forced to their "nothing wrong" value
+ * alongside `missingSliceColumn: true` — a caller should check
+ * `missingSliceColumn` first.
  *
  * @param {string | null} text plan-doc file content, or null if unreadable.
  * @returns {{
  *   verdict: "ok" | "missing-page" | "missing-heading" | "unparseable-table",
+ *   missingSliceColumn: boolean,
  *   emptySliceId: boolean,
  *   duplicateSliceIds: string[],
  * }}
@@ -95,7 +107,12 @@ export function hasEmptySliceId(dataRows, sliceIndex) {
 export function checkLandingPlanDoc(text) {
   const verdict = landingPlanVerdict(text);
   if (verdict !== "ok" || text === null) {
-    return { verdict, emptySliceId: false, duplicateSliceIds: [] };
+    return {
+      verdict,
+      missingSliceColumn: false,
+      emptySliceId: false,
+      duplicateSliceIds: [],
+    };
   }
 
   const table = extractLandingPlanTable(text);
@@ -105,6 +122,16 @@ export function checkLandingPlanDoc(text) {
   if (table === null) {
     return {
       verdict: "unparseable-table",
+      missingSliceColumn: false,
+      emptySliceId: false,
+      duplicateSliceIds: [],
+    };
+  }
+
+  if (table.sliceIndex === -1) {
+    return {
+      verdict: "ok",
+      missingSliceColumn: true,
       emptySliceId: false,
       duplicateSliceIds: [],
     };
@@ -112,6 +139,7 @@ export function checkLandingPlanDoc(text) {
 
   return {
     verdict: "ok",
+    missingSliceColumn: false,
     emptySliceId: hasEmptySliceId(table.dataRows, table.sliceIndex),
     duplicateSliceIds: findDuplicateSliceIds(table.dataRows, table.sliceIndex),
   };

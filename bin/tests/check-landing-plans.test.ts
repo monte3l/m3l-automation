@@ -1,15 +1,24 @@
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
+import * as fs from "node:fs";
 
 // bin/check-landing-plans.mjs guards its scan-and-report logic behind
 // `process.argv[1] === fileURLToPath(import.meta.url)`, matching every
 // sibling bin/ checker (see bin/tests/check-scaffold-seam.test.ts), so
-// importing it would be side-effect-free. But it exports nothing itself —
-// its only helper (`listPlanFiles`) is a local, unexported function; all
-// its actual logic composes selectDatedPlans/checkLandingPlanDoc from
-// bin/lib/landing-plans.mjs, which is what this file exercises directly.
-// There is nothing importable from bin/check-landing-plans.mjs worth a
-// direct unit test, so no node:fs mock is needed here — every function
-// under test is pure.
+// importing it would be side-effect-free. Most of its logic composes
+// selectDatedPlans/checkLandingPlanDoc from bin/lib/landing-plans.mjs, which
+// this file exercises directly with no node:fs mock (every function under
+// test there is pure). `listPlanFiles` is its one exported, fs-touching
+// helper — it needs a node:fs mock, following implementedModules's pattern
+// in bin/tests/check-scaffold-seam.test.ts.
+//
+// Spread the actual fs so vi.spyOn can intercept individual methods (ESM
+// namespace objects are non-writable by default — the spread makes them
+// plain, writable object properties).
+vi.mock("node:fs", async () => {
+  const actual = await vi.importActual<typeof fs>("node:fs");
+  return { ...actual };
+});
+
 import {
   DATED_PLAN_RE,
   PLAN_DIR,
@@ -18,6 +27,7 @@ import {
   hasEmptySliceId,
   selectDatedPlans,
 } from "../../bin/lib/landing-plans.mjs";
+import { listPlanFiles } from "../../bin/check-landing-plans.mjs";
 
 // ---------------------------------------------------------------------------
 // PLAN_DIR / DATED_PLAN_RE
@@ -142,39 +152,41 @@ describe("hasEmptySliceId", () => {
 // (see the task's acceptance fixtures) — match them exactly.
 
 describe("checkLandingPlanDoc", () => {
-  test("null text yields missing-page", () => {
+  test("null text yields missing-page, missingSliceColumn false (verdict arm never reaches the Slice-column check)", () => {
     expect(checkLandingPlanDoc(null)).toEqual({
       verdict: "missing-page",
+      missingSliceColumn: false,
       emptySliceId: false,
       duplicateSliceIds: [],
     });
   });
 
-  test("prose with no Landing plan heading yields missing-heading", () => {
-    expect(checkLandingPlanDoc("# Some plan\nprose only\n")).toEqual({
+  test("prose with no Landing plan heading yields missing-heading, missingSliceColumn false (verdict arm never reaches the Slice-column check)", () => {
+    expect(checkLandingPlanDoc("prose, no heading")).toEqual({
       verdict: "missing-heading",
+      missingSliceColumn: false,
       emptySliceId: false,
       duplicateSliceIds: [],
     });
   });
 
-  test("a numbered list under the heading yields unparseable-table", () => {
-    expect(
-      checkLandingPlanDoc("## Landing plan\n1. First\n2. Second\n"),
-    ).toEqual({
+  test("a numbered list under the heading yields unparseable-table, missingSliceColumn false (verdict arm never reaches the Slice-column check)", () => {
+    expect(checkLandingPlanDoc("## Landing plan\n1. list\n")).toEqual({
       verdict: "unparseable-table",
+      missingSliceColumn: false,
       emptySliceId: false,
       duplicateSliceIds: [],
     });
   });
 
-  test("a table with no Status column yields unparseable-table", () => {
+  test("a table with no Status column yields unparseable-table, missingSliceColumn false", () => {
     expect(
       checkLandingPlanDoc(
         "## Landing plan\n| Slice | Scope |\n| --- | --- |\n| 1 | x |\n",
       ),
     ).toEqual({
       verdict: "unparseable-table",
+      missingSliceColumn: false,
       emptySliceId: false,
       duplicateSliceIds: [],
     });
@@ -187,6 +199,7 @@ describe("checkLandingPlanDoc", () => {
       ),
     ).toEqual({
       verdict: "ok",
+      missingSliceColumn: false,
       emptySliceId: false,
       duplicateSliceIds: ["A"],
     });
@@ -199,6 +212,7 @@ describe("checkLandingPlanDoc", () => {
       ),
     ).toEqual({
       verdict: "ok",
+      missingSliceColumn: false,
       emptySliceId: true,
       duplicateSliceIds: [],
     });
@@ -211,18 +225,25 @@ describe("checkLandingPlanDoc", () => {
       ),
     ).toEqual({
       verdict: "ok",
+      missingSliceColumn: false,
       emptySliceId: false,
       duplicateSliceIds: [],
     });
   });
 
-  test("a table with no Slice column at all short-circuits both checks regardless of content", () => {
+  // Previously asserted a clean pass (duplicateSliceIds: [], emptySliceId:
+  // false) -- that WAS the bug this gate's added value exists to catch: a
+  // table with no Slice column at all has no way to have a slice ID, so it
+  // must fail via missingSliceColumn, not silently read as clean. Confirmed
+  // live against the fixed implementation.
+  test("a table with no Slice column at all reports missingSliceColumn true, not a clean pass", () => {
     expect(
       checkLandingPlanDoc(
         "## Landing plan\n| Task | Status |\n| --- | --- |\n| A | Landed |\n| B | To Do |\n",
       ),
     ).toEqual({
       verdict: "ok",
+      missingSliceColumn: true,
       emptySliceId: false,
       duplicateSliceIds: [],
     });
@@ -235,6 +256,7 @@ describe("checkLandingPlanDoc", () => {
       ),
     ).toEqual({
       verdict: "ok",
+      missingSliceColumn: false,
       emptySliceId: false,
       duplicateSliceIds: ["A"],
     });
@@ -247,6 +269,7 @@ describe("checkLandingPlanDoc", () => {
       ),
     ).toEqual({
       verdict: "ok",
+      missingSliceColumn: false,
       emptySliceId: false,
       duplicateSliceIds: ["A", "B"],
     });
@@ -259,8 +282,61 @@ describe("checkLandingPlanDoc", () => {
       ),
     ).toEqual({
       verdict: "ok",
+      missingSliceColumn: false,
       emptySliceId: true,
       duplicateSliceIds: ["A"],
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// listPlanFiles
+// ---------------------------------------------------------------------------
+
+describe("listPlanFiles", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  test("returns file names, filtering out directory entries, with a null error", () => {
+    vi.spyOn(fs, "readdirSync").mockReturnValue([
+      {
+        name: "2026-08-20-agent-operator.md",
+        isDirectory: () => false,
+        isFile: () => true,
+      },
+      { name: "archive", isDirectory: () => true, isFile: () => false },
+      { name: "README.md", isDirectory: () => false, isFile: () => true },
+    ] as unknown as ReturnType<typeof fs.readdirSync>);
+
+    expect(listPlanFiles("/fake/docs/plans")).toEqual({
+      files: ["2026-08-20-agent-operator.md", "README.md"],
+      error: null,
+    });
+  });
+
+  test("returns an empty files array and the thrown Error's message when readdirSync throws an Error", () => {
+    vi.spyOn(fs, "readdirSync").mockImplementation(() => {
+      throw new Error(
+        "ENOENT: no such file or directory, scandir '/fake/docs/plans'",
+      );
+    });
+
+    expect(listPlanFiles("/fake/docs/plans")).toEqual({
+      files: [],
+      error: "ENOENT: no such file or directory, scandir '/fake/docs/plans'",
+    });
+  });
+
+  test("stringifies a non-Error throw from readdirSync as the error", () => {
+    vi.spyOn(fs, "readdirSync").mockImplementation(() => {
+      // eslint-disable-next-line @typescript-eslint/only-throw-error -- intentional non-Error to verify the `cause instanceof Error ? cause.message : String(cause)` branch
+      throw "boom";
+    });
+
+    expect(listPlanFiles("/fake/docs/plans")).toEqual({
+      files: [],
+      error: "boom",
     });
   });
 });
