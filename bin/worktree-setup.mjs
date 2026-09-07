@@ -75,12 +75,17 @@ run("node", ["bin/install-merge-drivers.mjs"]);
 // worktree's own (still working) path.
 try {
   run("pnpm", ["exec", "lefthook", "install"], mainCheckout);
-} catch {
+} catch (err) {
+  // `run()` inherits stdio, so a non-zero lefthook exit already printed its
+  // own reason to the terminal; a spawn-level failure (e.g. `pnpm` not on
+  // PATH -> ENOENT) produces no child output at all, so the error's own
+  // message is the only diagnostic available for that case.
   console.error(
     "⚠  worktree:setup: could not re-run `lefthook install` from the main " +
-      `checkout (${mainCheckout}); the shared pre-push shim still points at ` +
-      "this worktree's binary. Run `pnpm exec lefthook install` from the " +
-      "main checkout by hand if you plan to remove this worktree later.",
+      `checkout (${mainCheckout}): ${/** @type {Error} */ (err).message}\n` +
+      "   The shared pre-push shim still points at this worktree's binary. " +
+      "Run `pnpm exec lefthook install` from the main checkout by hand if " +
+      "you plan to remove this worktree later.",
   );
 }
 
