@@ -178,6 +178,6 @@ cites for the same ordering); a detailed method must preserve that order.
   [ADR-0053](./0053-cli-first-evolution-programme.md) (the wave this row belongs to),
   [ADR-0072](./0072-reviewable-slice-discipline.md) (why the extraction is its own
   slice)
-- Design plan: [`2026-09-02-u11-retry-resume-cancellation.md`](../plans/2026-09-02-u11-retry-resume-cancellation.md)
+- Design plan: [`2026-09-02-u11-retry-resume-cancellation.md`](../plans/archive/2026-09-02-u11-retry-resume-cancellation.md)
 - Tracker: [`IMPLEMENTATION.md`](../plans/IMPLEMENTATION.md) row **U11**;
   issue #535

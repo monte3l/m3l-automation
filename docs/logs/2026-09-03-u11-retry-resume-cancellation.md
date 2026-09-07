@@ -8,7 +8,7 @@ seven slices and eleven PRs. It records what shipped, what matched the plan,
 the ten divergences that cost real rework, and the durable lessons — two of
 which are promoted into `.claude/rules/` in this same change set.
 
-Plan of record: [`docs/plans/2026-09-02-u11-retry-resume-cancellation.md`](../plans/2026-09-02-u11-retry-resume-cancellation.md)
+Plan of record: [`docs/plans/2026-09-02-u11-retry-resume-cancellation.md`](../plans/archive/2026-09-02-u11-retry-resume-cancellation.md)
 
 ## Summary
 

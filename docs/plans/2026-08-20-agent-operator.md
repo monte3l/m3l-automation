@@ -56,6 +56,21 @@ Library-touching rows (V4–V7) and every script/CLI/package row write into
 with `/starting-work` and dispatches `code-implementer` / `test-author` —
 the hub never writes those paths.
 
+## Landing plan
+
+ADR-0072's durable slice record for this non-submodule multi-PR wave — the
+same `## Landing plan` heading and `| Slice | Scope | Status |` table a
+submodule's reference page carries, gated by `pnpm check:landing-plans`.
+Stage 1 (V2, V4–V9) shipped; the remaining rows below are Stages 2–3. V12
+(the remote-MCP-gated row) is omitted — it cannot start until its own future
+ADR exists, so it never reads as "in flight" here.
+
+| Slice | Branch | Scope                                          | Status |
+| ----- | ------ | ---------------------------------------------- | ------ |
+| V10   | —      | `packages/m3l-mcp` stdio MCP surface (Stage 2) | To Do  |
+| V11   | —      | Headless/scheduled operation (Stage 3)         | To Do  |
+| V13   | —      | Flow-run process-group teardown                | To Do  |
+
 ---
 
 ## Stage 1 — repo-native operator

@@ -364,6 +364,11 @@ export const VERIFY_STEPS = [
     cmd: () => "pnpm check:scaffold-seam",
   },
   {
+    ciStepName: "Check landing plans (docs/plans)",
+    id: "check-landing-plans",
+    cmd: () => "pnpm check:landing-plans",
+  },
+  {
     ciStepName: "Check file budget",
     id: "check-file-budget",
     cmd: () => "pnpm check:file-budget",

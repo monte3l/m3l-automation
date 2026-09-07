@@ -7,7 +7,7 @@
       },
       {
         "path": ".github/workflows/ci.yml",
-        "blob": "e8a79632a6037083f4f17d7026287552826e62a3"
+        "blob": "81b279bc50916f7e87218f32779082c8673ea0b2"
       },
       {
         "path": ".node-version",
@@ -40,7 +40,7 @@
     "sourceFiles": [
       {
         "path": "package.json",
-        "blob": "18a7f5dbe38023e73645a582c136ffe73853d1fd"
+        "blob": "cacab6e37b96b4668bb2d32435c557f370d727b3"
       },
       {
         "path": "packages/m3l-common/package.json",
@@ -69,7 +69,7 @@
       },
       {
         "path": ".github/workflows/ci.yml",
-        "blob": "e8a79632a6037083f4f17d7026287552826e62a3"
+        "blob": "81b279bc50916f7e87218f32779082c8673ea0b2"
       },
       {
         "path": ".node-version",
@@ -85,7 +85,7 @@
       },
       {
         "path": "bin/lib/verify-steps.mjs",
-        "blob": "a6498b5b420abae6435e16d8aaaf389ecf6217ca"
+        "blob": "92ae66d9639aaf8f7278faab0279ef6e195c4fa4"
       },
       {
         "path": "docs/contributing/contributing.md",
@@ -97,7 +97,7 @@
       },
       {
         "path": "package.json",
-        "blob": "18a7f5dbe38023e73645a582c136ffe73853d1fd"
+        "blob": "cacab6e37b96b4668bb2d32435c557f370d727b3"
       },
       {
         "path": "packages/m3l-common/package.json",
@@ -126,11 +126,11 @@
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "96867afc6e172409a7682b6836dbeeec92259a4b"
+        "blob": "5b415cf774e2305f970151aed8dc1c00858eb380"
       },
       {
         "path": "package.json",
-        "blob": "18a7f5dbe38023e73645a582c136ffe73853d1fd"
+        "blob": "cacab6e37b96b4668bb2d32435c557f370d727b3"
       },
       {
         "path": "packages/m3l-common/package.json",
@@ -159,7 +159,7 @@
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "96867afc6e172409a7682b6836dbeeec92259a4b"
+        "blob": "5b415cf774e2305f970151aed8dc1c00858eb380"
       },
       {
         "path": "docs/reference/core/errors.md",
@@ -172,7 +172,7 @@
     "sourceFiles": [
       {
         "path": "package.json",
-        "blob": "18a7f5dbe38023e73645a582c136ffe73853d1fd"
+        "blob": "cacab6e37b96b4668bb2d32435c557f370d727b3"
       },
       {
         "path": "packages/m3l-common/package.json",
@@ -189,7 +189,7 @@
       },
       {
         "path": ".github/workflows/ci.yml",
-        "blob": "e8a79632a6037083f4f17d7026287552826e62a3"
+        "blob": "81b279bc50916f7e87218f32779082c8673ea0b2"
       },
       {
         "path": ".github/workflows/dependency-review.yml",
@@ -202,7 +202,7 @@
     "sourceFiles": [
       {
         "path": ".github/workflows/ci.yml",
-        "blob": "e8a79632a6037083f4f17d7026287552826e62a3"
+        "blob": "81b279bc50916f7e87218f32779082c8673ea0b2"
       },
       {
         "path": "bin/lint-commit.mjs",
@@ -236,7 +236,7 @@
       },
       {
         "path": ".github/workflows/ci.yml",
-        "blob": "e8a79632a6037083f4f17d7026287552826e62a3"
+        "blob": "81b279bc50916f7e87218f32779082c8673ea0b2"
       },
       {
         "path": "CLAUDE.md",
@@ -248,7 +248,7 @@
       },
       {
         "path": "package.json",
-        "blob": "18a7f5dbe38023e73645a582c136ffe73853d1fd"
+        "blob": "cacab6e37b96b4668bb2d32435c557f370d727b3"
       }
     ],
     "verifiedAt": "2026-09-07"
@@ -257,7 +257,7 @@
     "sourceFiles": [
       {
         "path": "package.json",
-        "blob": "18a7f5dbe38023e73645a582c136ffe73853d1fd"
+        "blob": "cacab6e37b96b4668bb2d32435c557f370d727b3"
       }
     ],
     "verifiedAt": "2026-09-07"
@@ -307,7 +307,7 @@
       },
       {
         "path": "package.json",
-        "blob": "18a7f5dbe38023e73645a582c136ffe73853d1fd"
+        "blob": "cacab6e37b96b4668bb2d32435c557f370d727b3"
       }
     ],
     "verifiedAt": "2026-09-07"
@@ -360,7 +360,7 @@
       },
       {
         "path": "package.json",
-        "blob": "18a7f5dbe38023e73645a582c136ffe73853d1fd"
+        "blob": "cacab6e37b96b4668bb2d32435c557f370d727b3"
       }
     ],
     "verifiedAt": "2026-09-07"
@@ -506,7 +506,7 @@
       },
       {
         "path": "package.json",
-        "blob": "18a7f5dbe38023e73645a582c136ffe73853d1fd"
+        "blob": "cacab6e37b96b4668bb2d32435c557f370d727b3"
       }
     ],
     "verifiedAt": "2026-09-07"
@@ -552,7 +552,7 @@
       },
       {
         "path": "package.json",
-        "blob": "18a7f5dbe38023e73645a582c136ffe73853d1fd"
+        "blob": "cacab6e37b96b4668bb2d32435c557f370d727b3"
       },
       {
         "path": "pnpm-workspace.yaml",
@@ -577,7 +577,7 @@
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "96867afc6e172409a7682b6836dbeeec92259a4b"
+        "blob": "5b415cf774e2305f970151aed8dc1c00858eb380"
       },
       {
         "path": "docs/reference/catalog.json",
@@ -642,7 +642,7 @@
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "96867afc6e172409a7682b6836dbeeec92259a4b"
+        "blob": "5b415cf774e2305f970151aed8dc1c00858eb380"
       },
       {
         "path": "docs/reference/catalog.json",
@@ -662,7 +662,7 @@
       },
       {
         "path": "docs/ROADMAP.md",
-        "blob": "716aa76db9ab471ee30d21448b0f7fee8bac471e"
+        "blob": "76c0fed7fe317bbafdc44e2b24860b616000ed62"
       },
       {
         "path": "pnpm-lock.yaml",
@@ -704,7 +704,7 @@
     "sourceFiles": [
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "96867afc6e172409a7682b6836dbeeec92259a4b"
+        "blob": "5b415cf774e2305f970151aed8dc1c00858eb380"
       },
       {
         "path": "docs/reference/aws/clients.md",
@@ -737,7 +737,7 @@
       },
       {
         "path": "docs/ROADMAP.md",
-        "blob": "716aa76db9ab471ee30d21448b0f7fee8bac471e"
+        "blob": "76c0fed7fe317bbafdc44e2b24860b616000ed62"
       },
       {
         "path": "packages/m3l-common/src/aws/clients/provider.ts",
@@ -758,7 +758,7 @@
       },
       {
         "path": "docs/ROADMAP.md",
-        "blob": "716aa76db9ab471ee30d21448b0f7fee8bac471e"
+        "blob": "76c0fed7fe317bbafdc44e2b24860b616000ed62"
       },
       {
         "path": "tsconfig.json",
@@ -779,11 +779,11 @@
       },
       {
         "path": "docs/ROADMAP.md",
-        "blob": "716aa76db9ab471ee30d21448b0f7fee8bac471e"
+        "blob": "76c0fed7fe317bbafdc44e2b24860b616000ed62"
       },
       {
         "path": "package.json",
-        "blob": "18a7f5dbe38023e73645a582c136ffe73853d1fd"
+        "blob": "cacab6e37b96b4668bb2d32435c557f370d727b3"
       }
     ],
     "verifiedAt": "2026-09-07"
@@ -840,7 +840,7 @@
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "96867afc6e172409a7682b6836dbeeec92259a4b"
+        "blob": "5b415cf774e2305f970151aed8dc1c00858eb380"
       },
       {
         "path": "docs/research/writing-custom-tools-and-mcp.md",
@@ -869,15 +869,15 @@
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "96867afc6e172409a7682b6836dbeeec92259a4b"
+        "blob": "5b415cf774e2305f970151aed8dc1c00858eb380"
       },
       {
         "path": "docs/ROADMAP.md",
-        "blob": "716aa76db9ab471ee30d21448b0f7fee8bac471e"
+        "blob": "76c0fed7fe317bbafdc44e2b24860b616000ed62"
       },
       {
         "path": "package.json",
-        "blob": "18a7f5dbe38023e73645a582c136ffe73853d1fd"
+        "blob": "cacab6e37b96b4668bb2d32435c557f370d727b3"
       },
       {
         "path": "packages/m3l-common/src/aws/clients/provider.ts",
@@ -890,7 +890,7 @@
     "sourceFiles": [
       {
         "path": ".github/workflows/ci.yml",
-        "blob": "e8a79632a6037083f4f17d7026287552826e62a3"
+        "blob": "81b279bc50916f7e87218f32779082c8673ea0b2"
       },
       {
         "path": ".github/workflows/pages.yml",
@@ -922,7 +922,7 @@
       },
       {
         "path": "bin/lib/command-catalog.mjs",
-        "blob": "61f50519dbbb10be527489d9b1b7c5d6af415199"
+        "blob": "3d49d0d58e3b7d526f464d4667920991dadd8c47"
       },
       {
         "path": "bin/lib/hub-sync.mjs",
@@ -934,7 +934,7 @@
       },
       {
         "path": "bin/lib/verify-steps.mjs",
-        "blob": "a6498b5b420abae6435e16d8aaaf389ecf6217ca"
+        "blob": "92ae66d9639aaf8f7278faab0279ef6e195c4fa4"
       },
       {
         "path": "bin/lint-commit.mjs",
@@ -978,15 +978,15 @@
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "96867afc6e172409a7682b6836dbeeec92259a4b"
+        "blob": "5b415cf774e2305f970151aed8dc1c00858eb380"
       },
       {
         "path": "docs/ROADMAP.md",
-        "blob": "716aa76db9ab471ee30d21448b0f7fee8bac471e"
+        "blob": "76c0fed7fe317bbafdc44e2b24860b616000ed62"
       },
       {
         "path": "package.json",
-        "blob": "18a7f5dbe38023e73645a582c136ffe73853d1fd"
+        "blob": "cacab6e37b96b4668bb2d32435c557f370d727b3"
       }
     ],
     "verifiedAt": "2026-09-07"
@@ -995,11 +995,11 @@
     "sourceFiles": [
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "96867afc6e172409a7682b6836dbeeec92259a4b"
+        "blob": "5b415cf774e2305f970151aed8dc1c00858eb380"
       },
       {
         "path": "docs/ROADMAP.md",
-        "blob": "716aa76db9ab471ee30d21448b0f7fee8bac471e"
+        "blob": "76c0fed7fe317bbafdc44e2b24860b616000ed62"
       },
       {
         "path": "packages/m3l-common/package.json",
@@ -1020,11 +1020,11 @@
       },
       {
         "path": ".github/workflows/ci.yml",
-        "blob": "e8a79632a6037083f4f17d7026287552826e62a3"
+        "blob": "81b279bc50916f7e87218f32779082c8673ea0b2"
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "96867afc6e172409a7682b6836dbeeec92259a4b"
+        "blob": "5b415cf774e2305f970151aed8dc1c00858eb380"
       },
       {
         "path": "packages/m3l-common/src/aws/credentials/manager.ts",
@@ -1062,7 +1062,7 @@
       },
       {
         "path": "package.json",
-        "blob": "18a7f5dbe38023e73645a582c136ffe73853d1fd"
+        "blob": "cacab6e37b96b4668bb2d32435c557f370d727b3"
       },
       {
         "path": "packages/m3l-common/package.json",
@@ -1172,7 +1172,7 @@
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "96867afc6e172409a7682b6836dbeeec92259a4b"
+        "blob": "5b415cf774e2305f970151aed8dc1c00858eb380"
       },
       {
         "path": "docs/reference/cli.md",
@@ -1214,7 +1214,7 @@
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "96867afc6e172409a7682b6836dbeeec92259a4b"
+        "blob": "5b415cf774e2305f970151aed8dc1c00858eb380"
       },
       {
         "path": "docs/reference/aws/clients.md",
@@ -1222,7 +1222,7 @@
       },
       {
         "path": "package.json",
-        "blob": "18a7f5dbe38023e73645a582c136ffe73853d1fd"
+        "blob": "cacab6e37b96b4668bb2d32435c557f370d727b3"
       },
       {
         "path": "packages/m3l-common/src/aws/clients/provider.ts",
@@ -1243,7 +1243,7 @@
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "96867afc6e172409a7682b6836dbeeec92259a4b"
+        "blob": "5b415cf774e2305f970151aed8dc1c00858eb380"
       },
       {
         "path": "docs/reference/core/checkpoint.md",
@@ -1277,7 +1277,7 @@
     "sourceFiles": [
       {
         "path": "package.json",
-        "blob": "18a7f5dbe38023e73645a582c136ffe73853d1fd"
+        "blob": "cacab6e37b96b4668bb2d32435c557f370d727b3"
       }
     ],
     "verifiedAt": "2026-09-07"
@@ -1352,11 +1352,11 @@
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "96867afc6e172409a7682b6836dbeeec92259a4b"
+        "blob": "5b415cf774e2305f970151aed8dc1c00858eb380"
       },
       {
         "path": "docs/ROADMAP.md",
-        "blob": "716aa76db9ab471ee30d21448b0f7fee8bac471e"
+        "blob": "76c0fed7fe317bbafdc44e2b24860b616000ed62"
       }
     ],
     "verifiedAt": "2026-09-07"
@@ -1406,11 +1406,11 @@
       },
       {
         "path": "docs/plans/2026-08-20-cli-evolution.md",
-        "blob": "1c8d4a1e90d526a3d84aa55ac5fd3e52194ff0f6"
+        "blob": "e4f36d4bfe92519d2d2d90c326450e381d681367"
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "96867afc6e172409a7682b6836dbeeec92259a4b"
+        "blob": "5b415cf774e2305f970151aed8dc1c00858eb380"
       },
       {
         "path": "docs/reference/cli.md",
@@ -1418,7 +1418,7 @@
       },
       {
         "path": "docs/ROADMAP.md",
-        "blob": "716aa76db9ab471ee30d21448b0f7fee8bac471e"
+        "blob": "76c0fed7fe317bbafdc44e2b24860b616000ed62"
       }
     ],
     "verifiedAt": "2026-09-07"
@@ -1453,11 +1453,11 @@
     "sourceFiles": [
       {
         "path": "docs/plans/2026-08-20-agent-operator.md",
-        "blob": "e32b6451f6e35ade80048c1fc24e33b1f1b7c45f"
+        "blob": "f6ee31ea57026e6fdcf25f4ef61e606350b02515"
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "96867afc6e172409a7682b6836dbeeec92259a4b"
+        "blob": "5b415cf774e2305f970151aed8dc1c00858eb380"
       },
       {
         "path": "docs/research/agent-cli-integration.md",
@@ -1523,11 +1523,11 @@
     "sourceFiles": [
       {
         "path": "docs/plans/2026-08-20-m3l-console.md",
-        "blob": "4b482324d6ef7985e47cef60d25c1a193d2be74f"
+        "blob": "0a4cb48ed3214014d1daf54bc652ea12effa4cfd"
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "96867afc6e172409a7682b6836dbeeec92259a4b"
+        "blob": "5b415cf774e2305f970151aed8dc1c00858eb380"
       }
     ],
     "verifiedAt": "2026-09-07"
@@ -1545,7 +1545,7 @@
     "sourceFiles": [
       {
         "path": ".github/workflows/ci.yml",
-        "blob": "e8a79632a6037083f4f17d7026287552826e62a3"
+        "blob": "81b279bc50916f7e87218f32779082c8673ea0b2"
       },
       {
         "path": "bin/lib/changed-paths.mjs",
@@ -1562,7 +1562,7 @@
     "sourceFiles": [
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "96867afc6e172409a7682b6836dbeeec92259a4b"
+        "blob": "5b415cf774e2305f970151aed8dc1c00858eb380"
       },
       {
         "path": "docs/reference/console.md",
@@ -1579,7 +1579,7 @@
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "96867afc6e172409a7682b6836dbeeec92259a4b"
+        "blob": "5b415cf774e2305f970151aed8dc1c00858eb380"
       },
       {
         "path": "docs/reference/console.md",
@@ -1587,7 +1587,7 @@
       },
       {
         "path": "docs/ROADMAP.md",
-        "blob": "716aa76db9ab471ee30d21448b0f7fee8bac471e"
+        "blob": "76c0fed7fe317bbafdc44e2b24860b616000ed62"
       },
       {
         "path": "packages/m3l-common/package.json",
@@ -1609,7 +1609,7 @@
     "sourceFiles": [
       {
         "path": ".claude/hooks/statusline-context-pressure.mjs",
-        "blob": "3145ca420f4037ea8bed7d373f042df43c48a866"
+        "blob": "44a38f2a2768003ae2bd174d813596e3e52bdc1b"
       },
       {
         "path": ".claude/rules/library-src.md",
@@ -1669,7 +1669,7 @@
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "96867afc6e172409a7682b6836dbeeec92259a4b"
+        "blob": "5b415cf774e2305f970151aed8dc1c00858eb380"
       },
       {
         "path": "docs/reference/catalog.json",
@@ -1685,7 +1685,7 @@
       },
       {
         "path": "package.json",
-        "blob": "18a7f5dbe38023e73645a582c136ffe73853d1fd"
+        "blob": "cacab6e37b96b4668bb2d32435c557f370d727b3"
       }
     ],
     "verifiedAt": "2026-09-07"
@@ -1717,16 +1717,12 @@
         "blob": "5c38fff29c453995730620e3c5f65b0dc49b1612"
       },
       {
-        "path": "docs/plans/2026-08-21-hub-board-restructure.md",
-        "blob": "fe0fe75c1061fe1ba7e09d304f363f33619f686a"
-      },
-      {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "96867afc6e172409a7682b6836dbeeec92259a4b"
+        "blob": "5b415cf774e2305f970151aed8dc1c00858eb380"
       },
       {
         "path": "docs/ROADMAP.md",
-        "blob": "716aa76db9ab471ee30d21448b0f7fee8bac471e"
+        "blob": "76c0fed7fe317bbafdc44e2b24860b616000ed62"
       }
     ],
     "verifiedAt": "2026-09-07"
@@ -1753,7 +1749,7 @@
     "sourceFiles": [
       {
         "path": "docs/ROADMAP.md",
-        "blob": "716aa76db9ab471ee30d21448b0f7fee8bac471e"
+        "blob": "76c0fed7fe317bbafdc44e2b24860b616000ed62"
       },
       {
         "path": "scripts/cloudwatch-logs-analysis/src/steps/preset.ts",
@@ -1770,11 +1766,11 @@
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "96867afc6e172409a7682b6836dbeeec92259a4b"
+        "blob": "5b415cf774e2305f970151aed8dc1c00858eb380"
       },
       {
         "path": "docs/ROADMAP.md",
-        "blob": "716aa76db9ab471ee30d21448b0f7fee8bac471e"
+        "blob": "76c0fed7fe317bbafdc44e2b24860b616000ed62"
       },
       {
         "path": "packages/m3l-common/src/aws/sqs/client.ts",
@@ -1856,7 +1852,7 @@
       },
       {
         "path": "bin/lib/verify-steps.mjs",
-        "blob": "a6498b5b420abae6435e16d8aaaf389ecf6217ca"
+        "blob": "92ae66d9639aaf8f7278faab0279ef6e195c4fa4"
       },
       {
         "path": "bin/sync-hub.mjs",
@@ -1864,11 +1860,11 @@
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "96867afc6e172409a7682b6836dbeeec92259a4b"
+        "blob": "5b415cf774e2305f970151aed8dc1c00858eb380"
       },
       {
         "path": "docs/ROADMAP.md",
-        "blob": "716aa76db9ab471ee30d21448b0f7fee8bac471e"
+        "blob": "76c0fed7fe317bbafdc44e2b24860b616000ed62"
       }
     ],
     "verifiedAt": "2026-09-07"
@@ -1921,12 +1917,8 @@
         "blob": "5c38fff29c453995730620e3c5f65b0dc49b1612"
       },
       {
-        "path": "docs/plans/2026-08-21-hub-board-restructure.md",
-        "blob": "fe0fe75c1061fe1ba7e09d304f363f33619f686a"
-      },
-      {
         "path": "docs/ROADMAP.md",
-        "blob": "716aa76db9ab471ee30d21448b0f7fee8bac471e"
+        "blob": "76c0fed7fe317bbafdc44e2b24860b616000ed62"
       }
     ],
     "verifiedAt": "2026-09-07"
@@ -2014,11 +2006,11 @@
       },
       {
         "path": "docs/plans/2026-08-20-agent-operator.md",
-        "blob": "e32b6451f6e35ade80048c1fc24e33b1f1b7c45f"
+        "blob": "f6ee31ea57026e6fdcf25f4ef61e606350b02515"
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "96867afc6e172409a7682b6836dbeeec92259a4b"
+        "blob": "5b415cf774e2305f970151aed8dc1c00858eb380"
       },
       {
         "path": "docs/reference/cli.md",

@@ -473,34 +473,23 @@ function normalizeBranchCell(cell) {
 }
 
 /**
- * Parses the first markdown table following a `## Landing plan` heading
- * (ADR-0072) into a slice-progress count. Returns null — not an error — for
- * a page whose landing plan is prose or a numbered list rather than a table
- * (`docs/reference/aws/bedrock-runtime.md` at authoring time): the segment
- * simply doesn't render for those pages.
+ * Locates the `## Landing plan` heading (ADR-0072) and parses the first
+ * markdown table following it into its raw structural pieces — header column
+ * indices plus every data row's cells. Returns null for a page with no
+ * heading, no table immediately under it, or a table with no `Status`
+ * column — the same three "not usable" cases {@link parseLandingPlanProgress}
+ * (built on top of this) already returns null for.
  *
- * `allLanded` is computed independently of `current === total` — the last
- * row in an in-flight table (not yet `Landed`) also makes `current === total`
- * numerically, but must not be treated as fully landed for styling purposes.
- *
- * An optional `Branch` column, if present, is read for the current row and
- * returned as `branch` — a non-submodule wave's plan doc carries one so
- * `finishing-work` can hand off to the exact next branch instead of deriving
- * a slug from a row name; a submodule's reference page has no such column
- * and `branch` is always `null` there. A cell that isn't a safe ref-name
- * shape (prose, whitespace, a placeholder like `—`/`TBD`) also normalizes to
- * `null` via {@link normalizeBranchCell} — this value can end up interpolated
- * into a shell command (`pnpm worktree:new`), so a caller must treat `null`
- * as "not recorded", never fall back to guessing from the cell text itself.
- * `branch` is also `null` whenever `allLanded` is true — once every row is
- * landed, `currentRow` is the *last* row, and its branch already shipped;
- * there is no next slice to hand off to, so the field never points a caller
- * back at spent work.
+ * This is the shared substrate: {@link parseLandingPlanProgress} derives its
+ * current/total/label/branch/allLanded summary from it, and a caller needing
+ * the raw table itself (e.g. `bin/check-landing-plans.mjs`'s slice-ID
+ * uniqueness check) uses this directly instead of re-deriving the
+ * heading/table-boundary logic a second time.
  *
  * @param {string} pageText
- * @returns {{ current: number, total: number, label: string | null, branch: string | null, allLanded: boolean } | null}
+ * @returns {{ headerCells: string[], statusIndex: number, sliceIndex: number, branchIndex: number, dataRows: string[][] } | null}
  */
-export function parseLandingPlanProgress(pageText) {
+export function extractLandingPlanTable(pageText) {
   const headingMatch = LANDING_PLAN_HEADING_RE.exec(pageText);
   if (headingMatch === null) return null;
 
@@ -545,6 +534,42 @@ export function parseLandingPlanProgress(pageText) {
     dataRows.push(splitTableRow(lines[i]));
   }
   if (dataRows.length === 0) return null;
+
+  return { headerCells, statusIndex, sliceIndex, branchIndex, dataRows };
+}
+
+/**
+ * Parses the first markdown table following a `## Landing plan` heading
+ * (ADR-0072) into a slice-progress count. Returns null — not an error — for
+ * a page whose landing plan is prose or a numbered list rather than a table
+ * (`docs/reference/aws/bedrock-runtime.md` at authoring time): the segment
+ * simply doesn't render for those pages.
+ *
+ * `allLanded` is computed independently of `current === total` — the last
+ * row in an in-flight table (not yet `Landed`) also makes `current === total`
+ * numerically, but must not be treated as fully landed for styling purposes.
+ *
+ * An optional `Branch` column, if present, is read for the current row and
+ * returned as `branch` — a non-submodule wave's plan doc carries one so
+ * `finishing-work` can hand off to the exact next branch instead of deriving
+ * a slug from a row name; a submodule's reference page has no such column
+ * and `branch` is always `null` there. A cell that isn't a safe ref-name
+ * shape (prose, whitespace, a placeholder like `—`/`TBD`) also normalizes to
+ * `null` via {@link normalizeBranchCell} — this value can end up interpolated
+ * into a shell command (`pnpm worktree:new`), so a caller must treat `null`
+ * as "not recorded", never fall back to guessing from the cell text itself.
+ * `branch` is also `null` whenever `allLanded` is true — once every row is
+ * landed, `currentRow` is the *last* row, and its branch already shipped;
+ * there is no next slice to hand off to, so the field never points a caller
+ * back at spent work.
+ *
+ * @param {string} pageText
+ * @returns {{ current: number, total: number, label: string | null, branch: string | null, allLanded: boolean } | null}
+ */
+export function parseLandingPlanProgress(pageText) {
+  const table = extractLandingPlanTable(pageText);
+  if (table === null) return null;
+  const { statusIndex, sliceIndex, branchIndex, dataRows } = table;
 
   const total = dataRows.length;
   const firstOpenIndex = dataRows.findIndex(

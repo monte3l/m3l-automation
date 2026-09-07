@@ -109,6 +109,6 @@ write, and the `updateProjectV2Field` reconciliation
   ADR-0073 correction, handled the same way — a follow-up ADR rather than a
   silent edit); `docs/contributing/filing-work.md` (restates the deferral in
   plain terms for contributors filing new rows);
-  [`docs/plans/2026-08-21-hub-board-restructure.md`](../plans/2026-08-21-hub-board-restructure.md)
+  [`docs/plans/2026-08-21-hub-board-restructure.md`](../plans/archive/2026-08-21-hub-board-restructure.md)
   (the landing plan whose PR-6 row originally scoped this field).
 - Issues: #613 (tracker row T12, the standing record this ADR retires).

@@ -196,6 +196,11 @@ export const COMMAND_CATALOG = [
       "Verifies every scaffolded submodule carries both its TDD test file and its docs/implementation-status.md row — the backstop for the scaffolding-submodules skill. Run after scaffolding a new submodule.",
   },
   {
+    name: "check:landing-plans",
+    description:
+      "ROADMAP H5 (issue #998): BLOCKING validation that every live dated plan doc under docs/plans/ (YYYY-MM-DD-<slug>.md, excluding archive/**) carries a durable slice record — a \"## Landing plan\" heading whose section parses as a Slice/Status table (ADR-0072's 2026-09-07 amendment) with non-empty, unique Slice IDs. The non-submodule counterpart to check:scaffold-seam's Landing plan arm. A finished plan belongs in docs/plans/archive/, not retrofitted with a table.",
+  },
+  {
     name: "check:script-scaffold",
     description:
       "Verifies every scripts/<name>/ package matches the ADR-0022 shape (modular src/, contract page, README, package.json script values, tsconfig extends/references shape, root tsconfig ref, smoke test). Run after scaffolding or editing a consumer script's structure.",

@@ -404,7 +404,7 @@ cause, for a setting nothing in the pipeline writes, would be noise.
   epic/slice hierarchy exists to make trackable);
   `docs/contributing/filing-work.md` (the Priority/Type/Status legends and the
   view-setup steps, rewritten alongside this ADR);
-  [`docs/plans/2026-08-21-hub-board-restructure.md`](../plans/2026-08-21-hub-board-restructure.md)
+  [`docs/plans/2026-08-21-hub-board-restructure.md`](../plans/archive/2026-08-21-hub-board-restructure.md)
   (the seven-PR landing sequence and its migration hazards).
 - Issues: #576 (the hand-built B2 landing plan promoted to a tracker row here);
   #474 (B2, whose closed-vs-`To Do` mismatch is the other half of the live
