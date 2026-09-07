@@ -8,7 +8,7 @@ and gate on a `MIN_PASS_RATE` threshold recorded from two consecutive green
 `main` runs, on the premise — recorded in that issue's own closing comment —
 that "across four CI runs, every failure was a genuine corpus defect, not
 flake". Both halves had expired by the time the work was picked up. PR 921
-(`42122f46`, 2026-09-02) added `evaluateSkillFired`, which additionally fails
+(`42122f46`, 2026-09-03) added `evaluateSkillFired`, which additionally fails
 any case whose skill under test never fired via the `Skill` tool; that took
 the suite from 100% (77/77, run 33447797950) into a 63.0%–75.0% band and made
 routing, not corpus quality, the dominant failure mode — ~93–95% of every
