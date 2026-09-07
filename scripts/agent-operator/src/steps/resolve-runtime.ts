@@ -136,6 +136,14 @@ export interface AgentOperatorRuntimeSettings {
    * resolve under the script directory instead of the workspace.
    */
   readonly presetAllowlist: ReadonlyMap<string, string>;
+  /**
+   * The flow names `flowRun` may target, per `cli-surface.ts`'s allowlist
+   * gate. Unlike {@link presetAllowlist}, a flow name needs no path
+   * resolution here — `m3l flow run <name>` resolves the declared flow file
+   * itself — so this is a plain set of allowed names rather than a name→path
+   * map.
+   */
+  readonly flowAllowlist: ReadonlySet<string>;
   /** An explicit output file override, when set. */
   readonly output: string | undefined;
   /** An explicit decision-log directory override, when set. */
@@ -645,6 +653,7 @@ export function resolveAgentOperatorRuntime(
     presetAllowlist: parsePresetAllowlist(
       accessor.optionalStringArray("presetAllowlist") ?? [],
     ),
+    flowAllowlist: new Set(accessor.optionalStringArray("flowAllowlist") ?? []),
     output: accessor.optionalString("output"),
     decisionLogDir: accessor.optionalString("decisionLogDir"),
     cliEntrypoint: resolveCliEntrypoint(accessor, deps.paths),

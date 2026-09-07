@@ -531,18 +531,19 @@ and removes the temptation for a future maintainer to parse its reply.
 
 ## Error codes
 
-| Code                                | Meaning                                                                                                               |
-| ----------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `ERR_AGENT_OPERATOR_CONFIG`         | A required parameter is missing or a cross-check failed                                                               |
-| `ERR_AGENT_OPERATOR_CLI_ENTRYPOINT` | The CLI entrypoint could not be derived and was not supplied                                                          |
-| `ERR_AGENT_OPERATOR_CLI_SPAWN`      | Spawn failed, timed out, was signalled, or breached the output byte cap                                               |
-| `ERR_AGENT_OPERATOR_CLI_OUTPUT`     | An unacceptable exit code, or a CLI payload that failed to parse                                                      |
-| `ERR_AGENT_OPERATOR_SCRIPT_NAME`    | A script name failed the allowlist, or is absent from `dryRunAllowlist`                                               |
-| `ERR_AGENT_OPERATOR_POLICY`         | The policy file is missing, unreadable, malformed, or structurally invalid                                            |
-| `ERR_AGENT_OPERATOR_DECISION_LOG`   | A decision-log entry could not be written, or breached an entry/shape cap                                             |
-| `ERR_AGENT_OPERATOR_ESCALATED`      | The run concluded without an auto-approved verdict — the policy declined it                                           |
-| `ERR_AGENT_OPERATOR_BUDGET_STATE`   | The cross-run daily invocation counter could not be read, is corrupt, or could not be written                         |
-| `ERR_AGENT_OPERATOR_PRESET`         | A preset name failed the allowlist, is absent from `presetAllowlist`, or no `workspaceRoot` was supplied to anchor it |
+| Code                                | Meaning                                                                                                                                                                        |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `ERR_AGENT_OPERATOR_CONFIG`         | A required parameter is missing or a cross-check failed                                                                                                                        |
+| `ERR_AGENT_OPERATOR_CLI_ENTRYPOINT` | The CLI entrypoint could not be derived and was not supplied                                                                                                                   |
+| `ERR_AGENT_OPERATOR_CLI_SPAWN`      | Spawn failed, timed out, was signalled, or breached the output byte cap                                                                                                        |
+| `ERR_AGENT_OPERATOR_CLI_OUTPUT`     | An unacceptable exit code, or a CLI payload that failed to parse                                                                                                               |
+| `ERR_AGENT_OPERATOR_SCRIPT_NAME`    | A script name failed the allowlist, or is absent from `dryRunAllowlist`                                                                                                        |
+| `ERR_AGENT_OPERATOR_POLICY`         | The policy file is missing, unreadable, malformed, or structurally invalid                                                                                                     |
+| `ERR_AGENT_OPERATOR_DECISION_LOG`   | A decision-log entry could not be written, or breached an entry/shape cap                                                                                                      |
+| `ERR_AGENT_OPERATOR_ESCALATED`      | The run concluded without an auto-approved verdict — the policy declined it                                                                                                    |
+| `ERR_AGENT_OPERATOR_BUDGET_STATE`   | The cross-run daily invocation counter could not be read, is corrupt, or could not be written                                                                                  |
+| `ERR_AGENT_OPERATOR_PRESET`         | A preset name failed the allowlist, is absent from `presetAllowlist`, or no `workspaceRoot` was supplied to anchor it                                                          |
+| `ERR_AGENT_OPERATOR_FLOW`           | An allowlisted flow definition failed verification — a step pre-declares `yesSensitive`, the steps disagree on `aws.profile`, or a step omits it for a script that requires it |
 
 A caller-driven abort raises `Core.M3LOperationAbortedError`
 (`ERR_OPERATION_ABORTED`), not a code from this family — see § The CLI seam.
@@ -556,10 +557,33 @@ embeds a snippet of the file), raw CLI stdout, or a model-supplied script name.
 **Reads.** `data/input/agent-policy.json` (or `policyFile`), resolved through
 `M3LPaths.resolveInput` and `M3L_INPUT_DIR`. The file is **committed** —
 `data/input/` is tracked — precisely so a missing policy is a loud failure
-rather than a silent fallback. It declares `version: 1`, 17 script grants, a
+rather than a silent fallback. It declares `version: 1`, 18 script grants, a
 `sensitiveTargets` spec, five budget ceilings, `requireDecisionLog: true`, and
-`dryRunFirst: true`. Every grant declares `readOnlyOperations`, including the
-`agent-operator` grant covering its own run.
+`dryRunFirst: true`. Every grant declares `readOnlyOperations` — including the
+`agent-operator` grant covering its own run — with exactly one deliberate
+exception, the `m3l` grant.
+
+That grant is the only one covering the CLI itself rather than a fleet script,
+because `reconcile_queue`'s judged action is the first to declare
+`script: "m3l"` (`list` and `doctor` declare `agent-operator`; `inspect` and
+`dry-run` declare their target script). It grants exactly one operation,
+`run`, and that operation mutates — so it has no read-only operation to
+declare. `readOnlyOperations` is optional in the policy schema and must be
+non-empty when present, so omitting it is the only encoding available.
+
+**But be precise about what omitting it does, because the obvious reading is
+backwards.** `decideReadOnly` cross-checks a `kind: "read-only"` claim against
+`readOnlyOperations` only when that list is **present**. Omitting it therefore
+REMOVES the cross-check rather than preserving it: a read-only claim on
+`m3l`/`run` would be auto-approved with no target grading and no
+dry-run-first. That is not reachable today — `buildFlowTools`'s
+`describeAction` hardcodes `kind: "mutating"`, so no read-only claim on this
+grant can be constructed — but the protection here comes from that hardcoded
+literal, not from the omission.
+
+The separation is also useful operationally: revoking the `m3l` grant disables
+flow reconciliation on its own, without touching any of `agent-operator`'s own
+operations.
 
 **Writes.** Four things:
 

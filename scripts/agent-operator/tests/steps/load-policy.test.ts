@@ -193,14 +193,14 @@ describe("loadAgentPolicy", () => {
 });
 
 describe("the committed data/input/agent-policy.json (realAgentPolicy)", () => {
-  it("validates and holds the shape the docs claim: 17 grants, both discipline flags, every budget ceiling, and a non-empty readOnlyOperations per grant", async () => {
+  it("validates and holds the shape the docs claim: 18 grants, both discipline flags, every budget ceiling, and a non-empty readOnlyOperations per grant except the single documented m3l exception", async () => {
     // Guards against someone hand-editing the committed policy into an
     // invalid or over-granted state without exercising the real deployed
     // file through the real validator (not a synthetic stand-in).
     const policy = await realAgentPolicy();
 
     expect(policy.version).toBe(1);
-    expect(policy.scripts).toHaveLength(17);
+    expect(policy.scripts).toHaveLength(18);
     expect(policy.requireDecisionLog).toBe(true);
     expect(policy.dryRunFirst).toBe(true);
 
@@ -217,9 +217,32 @@ describe("the committed data/input/agent-policy.json (realAgentPolicy)", () => {
       expect(typeof budgets?.[ceiling]).toBe("number");
     }
 
+    // The rule ("every grant declares a non-empty readOnlyOperations") holds
+    // for every grant EXCEPT one explicit, documented exception: `m3l`,
+    // whose judged action is the first to declare `script: "m3l"` (rather
+    // than `agent-operator` for `list`/`doctor`, or the target script for
+    // `inspect`/`dry-run`). That grant covers exactly one operation, `run`,
+    // which mutates — so it has no read-only operation to declare, and
+    // listing `run` as one would defeat the cross-check in `decideReadOnly`
+    // that catches a mis-declared action kind. `readOnlyOperations` is
+    // optional in `policy-types.ts` and must be non-empty when present, so
+    // omitting it is the only correct encoding
+    // (`docs/reference/scripts/agent-operator.md` documents this exception).
+    //
+    // This is asserted as an explicit exception SET (currently exactly
+    // `["m3l"]`), not a relaxation of the rule to "most grants": a second,
+    // undocumented grant omitting `readOnlyOperations` must still fail this
+    // test.
+    const SANCTIONED_READ_ONLY_EXCEPTIONS: ReadonlySet<string> = new Set([
+      "m3l",
+    ]);
     for (const grant of policy.scripts) {
-      expect(grant.readOnlyOperations).toBeDefined();
-      expect(grant.readOnlyOperations?.length).toBeGreaterThan(0);
+      if (SANCTIONED_READ_ONLY_EXCEPTIONS.has(grant.script)) {
+        expect(Object.hasOwn(grant, "readOnlyOperations")).toBe(false);
+      } else {
+        expect(grant.readOnlyOperations).toBeDefined();
+        expect(grant.readOnlyOperations?.length).toBeGreaterThan(0);
+      }
     }
   });
 

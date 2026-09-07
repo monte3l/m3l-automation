@@ -1,6 +1,7 @@
 import { Core } from "@m3l-automation/m3l-common";
 
 import { isAllowedScriptName } from "./lib/cli-names.js";
+import { AGENT_OPERATOR_FLOW_NAME_RE } from "./lib/flow-names.js";
 
 const MAX_ITERATIONS_MIN = 1;
 const MAX_ITERATIONS_MAX = 64;
@@ -103,6 +104,29 @@ function eachNonEmptyModelId(
 }
 
 /**
+ * Builds a {@link Core.M3LConfigValidator} for a `STRING_ARRAY` parameter
+ * that rejects the array unless every element matches
+ * {@link AGENT_OPERATOR_FLOW_NAME_RE} — the same shape check
+ * `lib/flow-names.ts`'s `assertAllowedFlowName` applies per-call before any
+ * spawn. Attaching it here makes a malformed flow name fail closed at
+ * config-load time too, not only at first use.
+ *
+ * @param parameterName - The declaring parameter's canonical name, named in
+ *   the failure reason. The offending element itself is never echoed — a
+ *   rejected flow name can be an operator typo, and is not safe to surface
+ *   verbatim.
+ * @returns A validator whose failure reason names only `parameterName`.
+ */
+function eachAllowedFlowName(
+  parameterName: string,
+): Core.M3LConfigValidator<readonly string[]> {
+  return (values) =>
+    values.every((value) => AGENT_OPERATOR_FLOW_NAME_RE.test(value))
+      ? true
+      : `every '${parameterName}' entry must be an allowed flow name`;
+}
+
+/**
  * The `command` parameter's declared operation set (ADR-0055) — the four
  * verbs `agent-operator` dispatches over: PR 1's two offline-only operations
  * (`health-check`, `explain-policy` — no Bedrock client, no agent loop, no
@@ -177,6 +201,17 @@ export const AGENT_OPERATOR_COMMAND_DECLARATIONS = [
     // both operations need an AWS profile, an allowlisted script name, and
     // a preset allowlist to resolve their model-chosen preset name against.
     requiredParameters: ["aws.profile", "scripts", "presetAllowlist"],
+  },
+  {
+    name: "reconcile-queue",
+    description:
+      "Reconcile a dead-letter queue by running an allowlisted flow through the policy-gated single-phase reconcile_queue tool.",
+    // Same literal-not-`Core.AWS_PROFILE_PARAM_NAME` rationale as
+    // `run-preset`/`triage-logs` above (TS9013 under `isolatedDeclarations`).
+    // `flowAllowlist`, not `presetAllowlist`: the model-chosen value here is
+    // a flow NAME, resolved by `m3l flow run <name>` itself rather than by a
+    // preset path this script would otherwise have to resolve.
+    requiredParameters: ["aws.profile", "scripts", "flowAllowlist"],
   },
 ] as const;
 
@@ -338,6 +373,12 @@ export const configParameters: readonly Core.M3LConfigParameter[] = [
     name: "presetAllowlist",
     type: Core.M3LConfigParameterType.STRING_ARRAY,
     defaultValue: [],
+  }),
+  new Core.M3LConfigParameter({
+    name: "flowAllowlist",
+    type: Core.M3LConfigParameterType.STRING_ARRAY,
+    defaultValue: [],
+    validate: eachAllowedFlowName("flowAllowlist"),
   }),
   new Core.M3LConfigParameter({
     name: "output",

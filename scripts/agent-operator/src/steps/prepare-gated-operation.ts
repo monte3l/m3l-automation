@@ -168,12 +168,13 @@ function buildSurface(
     // reason rides as an operator-only `cause`), so the wiring defect is
     // indistinguishable from an undeclared preset — hence the required option.
     presetAllowlist: runtime.presetAllowlist,
-    // No operation exercised through this seam declares a flow name yet, so
-    // there is no `flowAllowlist` config parameter to read here. The empty
-    // set keeps `flowRun` closed — every call rejects — which is the correct
-    // behavior until an operation requiring one is declared and threads a
-    // real value through.
-    flowAllowlist: new Set<string>(),
+    // Populated from RAW config: the surface's own `flowRun` gate enforces
+    // shape and allowlist membership only, at this call site. Definition-level
+    // verification (`verifyFlowNames` — one agreed `aws.profile`, no
+    // `yesSensitive` step) happens downstream in the `reconcile-queue`
+    // runner, and no other operation built from this surface can reach
+    // `flowRun`.
+    flowAllowlist: runtime.flowAllowlist,
     signal: deps.signal,
     ...(workspaceRoot === undefined ? {} : { workspaceRoot }),
   });

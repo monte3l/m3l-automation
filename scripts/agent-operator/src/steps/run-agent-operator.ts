@@ -27,6 +27,7 @@ import { resolveAgentOperatorRuntime } from "./resolve-runtime.js";
 import { runEtlPreset } from "./run-etl-preset.js";
 import { runHealthCheck } from "./run-health-check.js";
 import { runLogTriage } from "./run-log-triage.js";
+import { runQueueReconcile } from "./run-queue-reconcile.js";
 
 /** The literal union of {@link AGENT_OPERATOR_COMMAND_DECLARATIONS}' names. */
 type AgentOperatorCommand =
@@ -154,12 +155,13 @@ async function runExplainPolicy(deps: RunAgentOperatorDeps): Promise<void> {
     // reason rides as an operator-only `cause`), so the wiring defect is
     // indistinguishable from an undeclared preset — hence the required option.
     presetAllowlist: runtime.presetAllowlist,
-    // No operation exercised through this seam declares a flow name yet, so
-    // there is no `flowAllowlist` config parameter to read here. The empty
-    // set keeps `flowRun` closed — every call rejects — which is the correct
-    // behavior until an operation requiring one is declared and threads a
-    // real value through.
-    flowAllowlist: new Set<string>(),
+    // Populated from RAW config: the surface's own `flowRun` gate enforces
+    // shape and allowlist membership only, at this call site. Definition-level
+    // verification (`verifyFlowNames` — one agreed `aws.profile`, no
+    // `yesSensitive` step) happens downstream in the `reconcile-queue`
+    // runner, and no other operation built from this surface (here,
+    // `explain-policy`) can reach `flowRun`.
+    flowAllowlist: runtime.flowAllowlist,
     signal: deps.signal,
     ...(workspaceRoot === undefined ? {} : { workspaceRoot }),
   });
@@ -239,6 +241,12 @@ export async function runAgentOperator(
       // added there is a compile error here rather than a silently dropped
       // dependency.
       return runLogTriage(deps);
+    case "reconcile-queue":
+      // `deps` is forwarded whole for the same reason `triage-logs` is:
+      // `RunQueueReconcileDeps` is a structural subset of this seam, so a
+      // field added there is a compile error here rather than a silently
+      // dropped dependency.
+      return runQueueReconcile(deps);
     default: {
       const exhaustive: never = rawCommand;
       throw new M3LAgentOperatorCliError(

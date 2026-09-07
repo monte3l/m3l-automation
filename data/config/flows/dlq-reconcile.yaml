@@ -1,0 +1,76 @@
+# The V9 queue-reconciliation flow: the definition `agent-operator`'s
+# `reconcile-queue` operation is allowed to run.
+#
+#   audit-dlq    sqs-etl  DLQ -> JSONL (one M3LSQSReceivedMessage/line)
+#   redrive-dlq  sqs-etl  move those messages back to the source queue
+#
+# The audit step runs FIRST and does not mutate: `deleteAfterDump` defaults to
+# `false`, so `dump` reads the DLQ and leaves it intact. That ordering is the
+# point — `redrive` moves messages server-side and produces no record of what
+# it moved, so without the audit artifact a reconciliation leaves nothing to
+# reconcile against. Step 2 does not consume step 1's output; step 1 exists so
+# an operator can answer "what was in there" afterwards.
+#
+# Every value below is an example. `aws.profile`, `queueUrl` and `dlqUrl` name
+# resources that must exist before a real run. Validate the definition without
+# them via `m3l flow list`, and rehearse with
+# `m3l flow run dlq-reconcile --dry-run`, which stops each step after its
+# config and credential checks.
+#
+# THREE CONSTRAINTS THIS FILE MUST KEEP, each enforced by `verifyFlowNames`
+# in `scripts/agent-operator/src/lib/flow-definitions.ts`:
+#
+# 1. Both steps declare the SAME `aws.profile`. The agent grades ONE target
+#    triple, and a flow whose steps span two accounts cannot be represented by
+#    it — so a second profile here makes the whole definition unrunnable by
+#    the agent rather than silently half-graded.
+#
+# 2. Every step whose script DECLARES `aws.profile` must declare a value for
+#    it. `sqs-etl` requires it, so omitting it would let the step resolve
+#    `AWS_PROFILE` from the inherited environment at config precedence 4 —
+#    ungraded, and invisible to the target the agent actually authorized.
+#
+# 3. `yesSensitive` must NEVER appear. `yes: true` on the destructive step is
+#    required and deliberate: the agent spawns with stdin ignored, so
+#    `confirmDestructive`'s prompt is unanswerable and the step would simply
+#    fail without it. `yesSensitive` is different in kind — it is the only key
+#    that bypasses the ESCALATED typed-echo for a sensitive target, which is
+#    exactly the control the V6 policy layer owns
+#    (`sensitive-target-escalated`). Declaring it here would let committed
+#    data pre-empt a refusal the agent is supposed to make. The verifier
+#    refuses any definition that names it.
+#
+# Consequence worth stating: on a profile the policy declares sensitive, this
+# flow cannot complete at all, and that is intended. The agent layer escalates
+# before spawning, and the child's typed-echo would be unanswerable even if it
+# did not. Two independent refusals, neither relying on the other.
+name: dlq-reconcile
+description: >-
+  Record the dead-letter queue's contents as a JSONL audit artifact, then move
+  those messages back onto the source queue.
+maxStepExecutions: 4
+steps:
+  - id: audit-dlq
+    script: sqs-etl
+    parameters:
+      aws.profile: m3l-acceptance
+      command: dump
+      queueUrl: https://sqs.eu-west-1.amazonaws.com/000000000000/m3l-acceptance-dlq
+      output: data/output/flows/dlq-reconcile/audited.jsonl
+      batchSize: 100
+
+  - id: redrive-dlq
+    script: sqs-etl
+    parameters:
+      # Same profile as `audit-dlq`, per constraint 1 above.
+      aws.profile: m3l-acceptance
+      command: redrive
+      # `redrive` reads `dlqUrl` and writes to `queueUrl` — the direction is
+      # the opposite of what the step ids might suggest, so both are spelled
+      # out rather than inherited from the step above.
+      queueUrl: https://sqs.eu-west-1.amazonaws.com/000000000000/m3l-acceptance
+      dlqUrl: https://sqs.eu-west-1.amazonaws.com/000000000000/m3l-acceptance-dlq
+      # Required, not optional: stdin is ignored for an agent-spawned child,
+      # so the destructive confirmation is unanswerable and this step would
+      # fail without it. See constraint 3.
+      yes: true

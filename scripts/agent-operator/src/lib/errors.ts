@@ -1,7 +1,7 @@
 /**
  * `lib/errors` — the single script-local error type for `agent-operator`.
  *
- * Every failure this script raises pins one of ten documented codes onto a
+ * Every failure this script raises pins one of eleven documented codes onto a
  * single `M3LAgentOperatorCliError` class rather than a dedicated subclass
  * per code: the codes differ only in the string that identifies them, not in
  * shape or behaviour, so a subclass hierarchy would add nothing but ceremony
@@ -64,7 +64,15 @@ export type M3LAgentOperatorErrorCode =
   // operator reading `ERR_AGENT_OPERATOR_CONFIG` goes looking for a missing or
   // mistyped parameter; here the parameter is present and well-typed, and the
   // fix is the allowlist entry itself (or the name that was requested).
-  | "ERR_AGENT_OPERATOR_PRESET";
+  | "ERR_AGENT_OPERATOR_PRESET"
+  // Deliberately not folded onto `ERR_AGENT_OPERATOR_PRESET`, though the two
+  // are shaped alike (both grade an operator-declared allowlist): the
+  // remediation targets a different config key. This code means the
+  // operator's `flowAllowlist` declaration is wrong, a requested flow name is
+  // absent from it, or a flow definition FILE itself fails
+  // `lib/flow-definitions.ts`'s verification (a `yesSensitive` step, a
+  // missing or divergent declared `aws.profile`) — never the preset system.
+  | "ERR_AGENT_OPERATOR_FLOW";
 
 /**
  * Fault origin per code — the table that gives this family real exit codes.
@@ -111,6 +119,7 @@ const ORIGIN_BY_CODE: Readonly<
   ERR_AGENT_OPERATOR_ESCALATED: "caller",
   ERR_AGENT_OPERATOR_BUDGET_STATE: "external",
   ERR_AGENT_OPERATOR_PRESET: "caller",
+  ERR_AGENT_OPERATOR_FLOW: "caller",
 });
 
 /**

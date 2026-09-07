@@ -91,9 +91,23 @@ vi.mock("../../src/steps/run-etl-preset.js", () => ({
   runEtlPreset: vi.fn(() => Promise.resolve()),
 }));
 
+// V9 queue-reconciliation: the `reconcile-queue` ARM is mocked the same
+// way, for the same reason — this file tests only that the dispatcher
+// reaches it with the dispatcher's own deps; `run-queue-reconcile.test.ts`
+// (a peer file) owns the workload's own behaviour. Before this dispatch,
+// this arm was a placeholder that threw `ERR_AGENT_OPERATOR_CONFIG` on
+// every invocation and no test here reached it — the describe block below
+// closes exactly that gap: a re-introduced placeholder throw fails this test
+// because it never reaches (or resolves through) the mocked
+// `runQueueReconcile`.
+vi.mock("../../src/steps/run-queue-reconcile.js", () => ({
+  runQueueReconcile: vi.fn(() => Promise.resolve()),
+}));
+
 import { createAgentCliSurface } from "../../src/lib/cli-surface.js";
 import { runEtlPreset } from "../../src/steps/run-etl-preset.js";
 import { runHealthCheck } from "../../src/steps/run-health-check.js";
+import { runQueueReconcile } from "../../src/steps/run-queue-reconcile.js";
 
 /** Records every event handed to it, for assertion without pinning exact prose. */
 class RecordingLoggerHandler implements Core.M3LLoggerHandler {
@@ -192,6 +206,7 @@ afterEach(async () => {
   vi.mocked(createAgentCliSurface).mockReset();
   vi.mocked(runHealthCheck).mockClear();
   vi.mocked(runEtlPreset).mockClear();
+  vi.mocked(runQueueReconcile).mockClear();
   await rm(inputDir, { recursive: true, force: true });
   await rm(dataDir, { recursive: true, force: true });
 });
@@ -650,6 +665,47 @@ describe("runAgentOperator — run-preset delegates to the workload step", () =>
 
     expect(runEtlPreset).toHaveBeenCalledTimes(1);
     expect(runEtlPreset).toHaveBeenCalledWith({
+      config,
+      logger,
+      paths,
+      signal,
+      reportRecovery,
+      aws: undefined,
+    });
+    // The dispatcher builds no CLI surface of its own for this arm either —
+    // the workload step owns that.
+    expect(createAgentCliSurface).not.toHaveBeenCalled();
+  });
+});
+
+// V9 queue-reconciliation: `reconcile-queue` is the fifth declared operation
+// (`AGENT_OPERATOR_COMMAND_DECLARATIONS`). This closes the gap a review
+// found: the arm previously in this `switch` was a placeholder that threw
+// `ERR_AGENT_OPERATOR_CONFIG` unconditionally, and nothing here exercised
+// `--command reconcile-queue` to notice. This proves only that the
+// dispatcher reaches the real workload step with its own deps, unaltered,
+// and — critically — does NOT throw the placeholder's "not yet wired"
+// config error; `run-queue-reconcile.test.ts` (a peer file) owns what the
+// workload itself does once reached.
+describe("runAgentOperator — reconcile-queue delegates to the workload step", () => {
+  it("calls runQueueReconcile with the dispatcher's own deps, and never builds the explain-policy CLI surface itself", async () => {
+    const { logger } = createLogger();
+    const config = buildConfig({ command: "reconcile-queue" });
+    const signal = new AbortController().signal;
+    const reportRecovery = vi.fn();
+    const paths = makePaths();
+
+    await runAgentOperator({
+      config,
+      logger,
+      paths,
+      signal,
+      reportRecovery,
+      aws: undefined,
+    });
+
+    expect(runQueueReconcile).toHaveBeenCalledTimes(1);
+    expect(runQueueReconcile).toHaveBeenCalledWith({
       config,
       logger,
       paths,
