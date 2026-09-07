@@ -484,6 +484,13 @@ jobs:
       - name: Check logs index coverage
         run: pnpm check:logs-index
 
+      # ROADMAP H7 (issue #1000): every docs/logs/*.md `promoted → <path>`
+      # stamp's target must exist (or be listed in RENAMED_TARGETS), and every
+      # docs/logs/<name>.md citation inside a rule/agent/skill/CLAUDE.md must
+      # resolve. Blocking — see bin/lib/promotion-stamps.mjs's header comment.
+      - name: Check promotion stamps
+        run: pnpm check:promotion-stamps
+
       # Warns (non-blocking) when an installed lefthook git-hook shim falls
       # through with no `exit 1` on an unresolved binary (issue #1097 /
       # ROADMAP H14). CI's `pnpm install --frozen-lockfile` above always runs

@@ -86,19 +86,19 @@ table below is the pre-push cadence, verified against `lefthook.yml` by
 `audit`, and gitleaks (`docs/contributing/ci-cd.md`). `pre-push` takes
 minutes — background it, never `--no-verify`.
 
-| Stage                   | Checks                                                                                    | Scope  |
-| ----------------------- | ----------------------------------------------------------------------------------------- | ------ |
-| `pre-commit` (lefthook) | `eslint`, `prettier`                                                                      | staged |
-| `commit-msg` (lefthook) | `strip-claude-trailers`, `lint-commit`                                                    | commit |
-| `pre-push` (lefthook)   | `format:check`, `lint`, `typecheck`, `test:coverage`, `check:test-counts`                 | repo   |
-| `pre-push` (lefthook)   | `build`, `check:exports`, `verify-signed-range`, `check:control-chars`                    | repo   |
-| `pre-push` (lefthook)   | `check:file-budget`, `check:agents`, `check:script-docs`, `check:provenance`              | repo   |
-| `pre-push` (lefthook)   | `check:cli-docs`, `check:review-size`, `check:context-budget`, `check:index`              | repo   |
-| `pre-push` (lefthook)   | `check:harness-freshness`, `check:skill-evals`, `check:retrospective`, `check:logs-index` | repo   |
-| `pre-push` (lefthook)   | `check:review-policy`, `check:claude-cli-version`, `check:hooks`                          | repo   |
-| `pre-push` (lefthook)   | `check:staleness`, `check:adr-index`, `check:adr-claims`                                  | repo   |
-| `pre-push` (lefthook)   | `check:adr-provenance`, `check:adr-worthiness`, `check:mcp`, `check:lefthook-shim`        | repo   |
-| `pre-push` (lefthook)   | `check-commit-trailers`, `check:skill-frontmatter`, `check:no-docker`                     | repo   |
+| Stage                   | Checks                                                                                                       | Scope  |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------ | ------ |
+| `pre-commit` (lefthook) | `eslint`, `prettier`                                                                                         | staged |
+| `commit-msg` (lefthook) | `strip-claude-trailers`, `lint-commit`                                                                       | commit |
+| `pre-push` (lefthook)   | `format:check`, `lint`, `typecheck`, `test:coverage`, `check:test-counts`                                    | repo   |
+| `pre-push` (lefthook)   | `build`, `check:exports`, `verify-signed-range`, `check:control-chars`                                       | repo   |
+| `pre-push` (lefthook)   | `check:file-budget`, `check:agents`, `check:script-docs`, `check:provenance`                                 | repo   |
+| `pre-push` (lefthook)   | `check:cli-docs`, `check:review-size`, `check:context-budget`, `check:index`                                 | repo   |
+| `pre-push` (lefthook)   | `check:harness-freshness`, `check:skill-evals`, `check:retrospective`, `check:logs-index`                    | repo   |
+| `pre-push` (lefthook)   | `check:review-policy`, `check:claude-cli-version`, `check:hooks`                                             | repo   |
+| `pre-push` (lefthook)   | `check:staleness`, `check:adr-index`, `check:adr-claims`                                                     | repo   |
+| `pre-push` (lefthook)   | `check:adr-provenance`, `check:adr-worthiness`, `check:mcp`, `check:lefthook-shim`, `check:promotion-stamps` | repo   |
+| `pre-push` (lefthook)   | `check-commit-trailers`, `check:skill-frontmatter`, `check:no-docker`                                        | repo   |
 
 `pnpm verify` reproduces every CI check locally; `check:verify-parity` keeps
 it in sync with `ci.yml`, and `check:cadence` unions the rows above (split
@@ -106,16 +106,15 @@ for width) per stage against `lefthook.yml`.
 
 ## Compact Instructions
 
-When this session compacts, preserve: the branch/worktree and any open PR
-number; a failing `pnpm` gate and its exact error text; the ADR or plan being
-implemented and which step is in progress; any `AskUserQuestion` answer not
-yet acted on. Prefer dropping exploratory tool-call detail (file reads,
-passing test output) over any of the above.
+When this session compacts, preserve: the branch/worktree and open PR number;
+a failing `pnpm` gate's exact error text; the ADR/plan and its step in
+progress; any unactioned `AskUserQuestion` answer. Drop exploratory tool-call
+detail (file reads, passing test output) first.
 
 ## CI/CD
 
-GitHub Actions workflows live in `.github/workflows/` (plus Dependabot). Full
-table — triggers, purpose, required checks: `docs/contributing/ci-cd.md`.
+GitHub Actions workflows live in `.github/workflows/` (plus Dependabot); full
+table: `docs/contributing/ci-cd.md`.
 
 ## Coding, errors & tests (path-scoped)
 
@@ -140,7 +139,7 @@ Canonical **Style Guide**: `docs/contributing/style-guide.md` (`[enforced]` vs `
 
 - **Conventional Commits (required)** plus an AI co-authorship trailer when Claude assisted; enforced by the `commit-msg` hook. Trailer mechanics and canonical model names: `docs/contributing/contributing.md`.
 - **Run the `starting-work` skill before any change-work** — settles location / branch / PR / push (ADR-0016); defaults to a worktree entered in-session via `pnpm worktree:new <slug>` + `EnterWorktree`, no restart (ADR-0013/0014). Branch off `main` as `feat/<slug>`/`fix/<slug>`; `guard-branch-isolation.mjs` blocks `packages/*/src/**`, `scripts/*/src/**`, `**/tests/**` writes on `main`.
-- Never `git push --force` a shared branch. **Prefer several small, independently reviewable PRs** (ADR-0072) — run `pnpm check:review-size` first.
+- Never `git push --force` a shared branch. **Prefer several small, reviewable PRs** (ADR-0072) — run `pnpm check:review-size` first.
 
 ## Architecture & Decisions
 
@@ -179,14 +178,14 @@ Comment the _why_, not the _what_. TSDoc rules (every exported symbol, `@example
 
 ## Forbidden Patterns
 
-**Enforced at write time or in CI:** `any` in the public API, a missing `.js` extension, CommonJS (`require`/`module.exports`/`__dirname`), hand-edits to `dist/`, non-Conventional commits, committed secrets/tokens, an unsigned/invalid-signature push, adding a dependency without updating the lockfile, and any `Claude-*` git trailer other than `Co-Authored-By:` (harness-injected, e.g. `Claude-Session:`; stripped at `commit-msg`, rejected at push). The `.js`-extension and CommonJS bans are guarded twice (a PreToolUse hook plus ESLint/CI) — don't remove either as "redundant."
+**Enforced at write time or in CI:** `any` in the public API, a missing `.js` extension, CommonJS (`require`/`module.exports`/`__dirname`), hand-edits to `dist/`, non-Conventional commits, committed secrets/tokens, an unsigned/invalid-signature push, adding a dependency without updating the lockfile, and any `Claude-*` git trailer other than `Co-Authored-By:` (harness-injected; stripped at `commit-msg`, rejected at push). The `.js`-extension and CommonJS bans are guarded twice (a PreToolUse hook plus ESLint/CI) — don't remove either as "redundant."
 
-**No automated guard — need conscious care:** never swallow errors silently; no top-level side effects; keep the import graph shallow; never `git push --force`; surface new Core/AWS exports through the namespace barrel only, never a new `exports` subpath; never run a destructive command for a _disposable_ purpose without checking what else it takes with it — `git status --porcelain` before any `git reset --hard` (non-empty output is a hard stop; there is no partial-hard-reset), and `rm -rf` the specific subdirectory a test created, never the shared tracked directory containing it.
+**No automated guard — need conscious care:** never swallow errors silently; no top-level side effects; keep the import graph shallow; never `git push --force`; new Core/AWS exports go through the namespace barrel only, never a new `exports` subpath; never run a destructive command for a _disposable_ purpose without checking what else it takes with it — `git status --porcelain` before any `git reset --hard` (non-empty is a hard stop; no partial-hard-reset), and `rm -rf` only the specific subdirectory a test created, never the shared tracked directory.
 
 ## Known Gotchas
 
 - A new public subpath needs both `src/<path>/index.ts` and an `exports` entry — but per the layout above, new submodules go through the namespace barrel, not a new subpath.
-- A fresh dependency bump can trip pnpm's `minimumReleaseAge` and block every command. Add the exact `name@version` to `minimumReleaseAgeExclude` (own `build:` commit); never weaken the policy.
+- A fresh dependency bump can trip pnpm's `minimumReleaseAge` and block every command — add `name@version` to `minimumReleaseAgeExclude` (own `build:` commit); never weaken the policy.
 - What a `check:*` gate enforces is defined by its `bin/*.mjs` source, not nearby prose. Read the script before designing a plan around a gate.
 - 2+ concurrent Claude Code sessions can livelock a memory-constrained host (uncapped `pre-push` fan-out). Run `pnpm check:host-resources` first — see ADR-0080.
-- `check:file-budget` (25,000 chars per `src` file) runs no earlier than `pre-push`, so a file already near the ceiling turns any growth into a late failure discovered only at push time — a rebase, not a two-minute fix. Measure the file before planning an edit that grows it, and fold the paying extraction into the same change.
+- `check:file-budget` (25,000 chars per `src` file) runs no earlier than `pre-push`, so growth near the ceiling fails late — at push, not edit time — costing a rebase. Measure the file before an edit that grows it, and fold the paying extraction into the same change.

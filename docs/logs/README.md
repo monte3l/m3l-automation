@@ -43,6 +43,14 @@ prefix and `.md` stripped, and rows within a table are date-ascending.
 exactly once, no dangling links, no date-column mismatches — but it is a
 backstop for the step above, not a substitute for it.
 
+A `promoted →` stamp's syntax is `_(promoted → <repo-relative path>)_`,
+appended to the lesson bullet or divergence headline it came from.
+`pnpm check:promotion-stamps` (blocking, ROADMAP H7 / issue #1000) verifies
+every stamp's target exists and every `docs/logs/<name>.md` citation inside a
+rule/agent/skill/CLAUDE.md resolves — logs stay immutable, so a stamp whose
+target was renamed is repaired via `RENAMED_TARGETS` in
+`bin/lib/promotion-stamps.mjs`, never by editing the log.
+
 ## Library — Core & AWS submodules (v1.0 → v1.1)
 
 | Date       | Module             | Log                                             |

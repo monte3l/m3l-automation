@@ -257,7 +257,10 @@ For each approved promotion:
 
    This is the same marker `/writing-work-logs`'s Step 4 uses when it promotes a
    lesson at write time — the two skills share one convention so a log's promotion
-   state is always readable from the log itself.
+   state is always readable from the log itself. `pnpm check:promotion-stamps`
+   (blocking, ROADMAP H7) verifies the target path actually exists — a target
+   that gets renamed later is repaired via `RENAMED_TARGETS` in
+   `bin/lib/promotion-stamps.mjs`, never by editing the log.
 
 3. **Incident → eval.** If the promoted lesson originated from a gate or CI
    failure (not just a behavioral correction with no failing check attached),
