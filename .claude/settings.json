@@ -193,6 +193,11 @@
           },
           {
             "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-lefthook-shim.mjs\"",
+            "timeout": 30
+          },
+          {
+            "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-readonly-bash.mjs\"",
             "timeout": 30
           }

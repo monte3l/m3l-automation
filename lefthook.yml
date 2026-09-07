@@ -2,6 +2,14 @@
 # Install/refresh with `pnpm exec lefthook install` (wired into `prepare`).
 # yaml-language-server: $schema=https://json.schemastore.org/lefthook.json
 
+# Fail closed when no lefthook binary resolves at all. Without this, the
+# generated shim's final else-branch only echoes "Can't find lefthook in
+# PATH" and then falls through — call_lefthook's exit code is 0, so a push
+# on a machine where nothing resolves proceeds with every gate below (and
+# ADR-0016 layer 2's verify-signed-range) silently skipped (H14, issue
+# #1097). LEFTHOOK=0 or --no-verify remain the intentional escape hatches.
+assert_lefthook_installed: true
+
 pre-commit:
   parallel: true
   commands:
@@ -135,8 +143,15 @@ pre-push:
     # MCP server had no check:*, smoke start, or tools/list assertion at all
     # — and its first run against this repo caught a real allowlist drift
     # left over from the tool-set replacement.
+    # check:lefthook-shim (issue #1097 / ROADMAP H14) joined the same way: it
+    # reads only .git/hooks/, no network call, negligible cost. Warns when an
+    # installed shim fails open (falls through with no exit 1 when no
+    # lefthook binary resolves) — the precursor state to H14's silent-skip
+    # failure. Cannot catch the live failure itself (a fail-open shim means
+    # pre-push never runs, so this copy of the gate never runs either); the
+    # blocking guard-lefthook-shim.mjs PreToolUse hook covers that case.
     checks:
-      run: node bin/verify-signed-range.mjs && node bin/check-commit-trailers.mjs && pnpm check:control-chars && pnpm check:no-docker && pnpm check:file-budget && pnpm check:agents && pnpm check:script-docs && pnpm check:cli-docs && pnpm check:review-size && pnpm check:context-budget && pnpm check:provenance && pnpm check:index && pnpm check:adr-index && pnpm check:adr-claims && pnpm check:adr-provenance && pnpm check:adr-worthiness && pnpm check:harness-freshness && pnpm check:retrospective && pnpm check:staleness && pnpm check:logs-index && pnpm check:skill-evals && pnpm check:claude-cli-version && pnpm check:review-policy && pnpm check:hooks && pnpm check:skill-frontmatter && pnpm check:mcp
+      run: node bin/verify-signed-range.mjs && node bin/check-commit-trailers.mjs && pnpm check:control-chars && pnpm check:no-docker && pnpm check:file-budget && pnpm check:agents && pnpm check:script-docs && pnpm check:cli-docs && pnpm check:review-size && pnpm check:context-budget && pnpm check:provenance && pnpm check:index && pnpm check:adr-index && pnpm check:adr-claims && pnpm check:adr-provenance && pnpm check:adr-worthiness && pnpm check:harness-freshness && pnpm check:retrospective && pnpm check:staleness && pnpm check:logs-index && pnpm check:lefthook-shim && pnpm check:skill-evals && pnpm check:claude-cli-version && pnpm check:review-policy && pnpm check:hooks && pnpm check:skill-frontmatter && pnpm check:mcp
 
 # Fire after `git rebase` completes (including a no-op rebase with nothing to
 # replay) and after `git merge` completes. Regenerates the derived files the
