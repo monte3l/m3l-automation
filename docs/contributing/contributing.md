@@ -391,8 +391,20 @@ detached worktree correctly (there's no branch to delete).
 
 A fresh worktree is a clean checkout: it has no `node_modules` and none of your
 gitignored local files, which is why `pnpm worktree:setup` exists. The `.git`
-directory (and therefore the lefthook hooks) is shared, so hooks work without a
+directory (and therefore the lefthook hooks) is shared, so hooks fire without a
 re-install; `node_modules`, `dist/`, and `coverage/` are per-worktree.
+
+The _installed_ `pre-push` shim is one layer more subtle than "shared, so it
+just works": lefthook bakes an absolute binary path into it at install time,
+and `.git/hooks` has exactly one shim for every worktree. Whichever checkout's
+`pnpm install` ran last wins the shim, so a push from any worktree can end up
+executing a sibling checkout's lefthook binary. `worktree:setup` re-runs
+`lefthook install` from the main checkout right after provisioning, so the
+main checkout — the one directory that is never removed — wins by
+construction instead of by install order; a later manual `pnpm install`
+inside a worktree still re-takes it, and the shim's own PATH/`$dir`-relative
+fallbacks mean a stale baked path degrades gracefully rather than failing
+with "command not found."
 
 The gitignored files it copies from the main checkout are listed in
 `.worktreeinclude`, one literal path per line, validated by
@@ -450,6 +462,12 @@ Troubleshooting:
   worktree instead of the main tree.
 - `pnpm worktree:prune` errors with "no local `main` branch found": it needs a
   local `main` to compute the merged set; check out or fetch `main` and re-run.
+- `pre-push` resolves lefthook from an unexpected checkout, or a push silently
+  ran none of the pre-push checks: inspect `.git/hooks/pre-push` for the baked
+  binary path, then re-run `pnpm exec lefthook install` from the main
+  checkout. If no lefthook binary resolves at all, the shim prints "Can't find
+  lefthook in PATH" and **exits 0** — the push proceeds with every gate
+  skipped, `verify-signed-range` included, rather than failing loudly.
 
 ## Definition of Done
 

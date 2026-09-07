@@ -18,8 +18,8 @@ import { parseWorktreeInclude } from "./lib/worktree-include.mjs";
 
 const worktreeRoot = process.cwd();
 
-function run(cmd, args) {
-  execFileSync(cmd, args, { stdio: "inherit", cwd: worktreeRoot });
+function run(cmd, args, cwd = worktreeRoot) {
+  execFileSync(cmd, args, { stdio: "inherit", cwd });
 }
 
 function gitOut(args) {
@@ -63,6 +63,31 @@ try {
 // .git/config), so a worktree provisioned here has it even if `prepare` was
 // skipped. Idempotent; safe to run every time.
 run("node", ["bin/install-merge-drivers.mjs"]);
+
+// The `pnpm install` above just re-ran `prepare` -> `lefthook install`
+// *from this worktree*, which bakes this worktree's absolute node_modules
+// path into the shared `.git/hooks/pre-push` shim (all worktrees share one
+// `.git/hooks` dir — H9, issue #1002). Re-running `lefthook install` from the
+// main checkout puts that path back, so the shim deterministically favors
+// the one checkout guaranteed to outlive every worktree, instead of
+// whichever one happened to install last. Warn-only: provisioning has
+// already succeeded above, and a failure here just leaves the shim at this
+// worktree's own (still working) path.
+try {
+  run("pnpm", ["exec", "lefthook", "install"], mainCheckout);
+} catch (err) {
+  // `run()` inherits stdio, so a non-zero lefthook exit already printed its
+  // own reason to the terminal; a spawn-level failure (e.g. `pnpm` not on
+  // PATH -> ENOENT) produces no child output at all, so the error's own
+  // message is the only diagnostic available for that case.
+  console.error(
+    "⚠  worktree:setup: could not re-run `lefthook install` from the main " +
+      `checkout (${mainCheckout}): ${/** @type {Error} */ (err).message}\n` +
+      "   The shared pre-push shim still points at this worktree's binary. " +
+      "Run `pnpm exec lefthook install` from the main checkout by hand if " +
+      "you plan to remove this worktree later.",
+  );
+}
 
 const includeFile = join(worktreeRoot, ".worktreeinclude");
 let copied = 0;
