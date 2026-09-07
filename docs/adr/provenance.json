@@ -219,7 +219,7 @@
     "sourceFiles": [
       {
         "path": "docs/contributing/branch-protection.md",
-        "blob": "bbaf566b7f122ca2f45bd49350876c1ff7e50f27"
+        "blob": "27722fe8604ee20c58f0a60c4518cee8260fd990"
       }
     ],
     "verifiedAt": "2026-09-07"
@@ -389,7 +389,7 @@
       },
       {
         "path": "docs/contributing/branch-protection.md",
-        "blob": "bbaf566b7f122ca2f45bd49350876c1ff7e50f27"
+        "blob": "27722fe8604ee20c58f0a60c4518cee8260fd990"
       }
     ],
     "verifiedAt": "2026-09-07"
@@ -438,7 +438,7 @@
       },
       {
         "path": "docs/contributing/branch-protection.md",
-        "blob": "bbaf566b7f122ca2f45bd49350876c1ff7e50f27"
+        "blob": "27722fe8604ee20c58f0a60c4518cee8260fd990"
       },
       {
         "path": "docs/logs/2026-07-24-w5-promote-destructive-gate.md",
@@ -800,7 +800,7 @@
       },
       {
         "path": ".claude/skills/triaging-scan-alerts/SKILL.md",
-        "blob": "4fe3530728ce2c4d6ada2067a649a82cb21a16ff"
+        "blob": "48219724b6fef263b5e7df8d7dd73684a14e88ed"
       },
       {
         "path": ".github/workflows/claude-pr-review.yml",
@@ -974,7 +974,7 @@
       },
       {
         "path": "docs/logs/README.md",
-        "blob": "9e96419cfa165752a06b4d06ef99bfbb2299301c"
+        "blob": "c951a37fe4df5e552850407de5484447f93fcab8"
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
@@ -1964,7 +1964,7 @@
       },
       {
         "path": "docs/contributing/branch-protection.md",
-        "blob": "bbaf566b7f122ca2f45bd49350876c1ff7e50f27"
+        "blob": "27722fe8604ee20c58f0a60c4518cee8260fd990"
       },
       {
         "path": "docs/contributing/hooks-reference.md",

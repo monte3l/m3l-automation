@@ -13,10 +13,21 @@ them by tool and severity, and report which ones block merge — then present
 remediation options for the user to choose from. This skill does not edit code
 or dismiss alerts; it ends with options, not actions.
 
-CodeQL runs via GitHub "default setup" (repo settings, not a workflow file), and
-its `Analyze (...)` check-runs are required to merge (see
-`docs/contributing/branch-protection.md`). Scorecard uploads supply-chain alerts
-to the same code-scanning surface.
+CodeQL runs via GitHub "default setup" (repo settings, not a workflow file).
+The **required** merge context is the single consolidated `CodeQL` check — the
+per-language `Analyze (...)` runs do report on human PRs, but they are not the
+gate (see `docs/contributing/branch-protection.md`). Scorecard uploads
+supply-chain alerts to the same code-scanning surface.
+
+**This skill is reactive by design, and that is not an oversight.** It reads
+what code scanning has already published; it never triggers a scan and is not
+a pre-push gate — that half is `creating-prs` Step 8, which checks
+_pre-existing_ alerts against the files a branch touches, before the push. The
+split is forced by the platform: a scan cannot analyze code that has not been
+pushed yet, so nothing earlier than "after the push" has anything new to read.
+The cost of the split is a wait, and Step 1a below is where this skill pays
+it — not by scanning earlier, but by refusing to read a scan that has not
+finished.
 
 ## Steps
 
@@ -26,17 +37,44 @@ Confirm `gh` is authenticated, then find the PR for the current branch:
 
 ```bash
 gh auth status
-gh pr view --json number,headRefName,url,mergeable,mergeStateStatus
+gh pr view --json number,headRefName,headRefOid,url,mergeable,mergeStateStatus
 ```
 
 If no PR is open for the branch, the alerts still apply to the branch head —
-continue and note that findings are reported against the branch, not a PR.
+continue and note that findings are reported against the branch, not a PR. Use
+`git rev-parse HEAD` for `headRefOid` in that case.
 
 Resolve `{owner}/{repo}` for the API calls:
 
 ```bash
 gh repo view --json nameWithOwner --jq '.nameWithOwner'
 ```
+
+### 1a — Confirm the scan for this head has finished
+
+Skip this step if the alerts were handed to you rather than fetched live (a
+saved export, a pasted list), or if the head commit was pushed more than ~5
+min ago. Otherwise the alerts endpoint may still be answering for the
+_previous_ head, and an empty answer is indistinguishable from a clean scan:
+
+```bash
+gh api repos/{owner}/{repo}/commits/{headRefOid}/check-runs \
+  --jq '.check_runs[] | select(.name | startswith("Analyze ("))
+        | "\(.name)\t\(.status)\t\(.conclusion)"'
+```
+
+Proceed only once **every** row reports `completed`. Empty output means no
+scan has been created for this commit yet — wait and re-run; never read it as
+"no alerts". Do **not** substitute the required `CodeQL` check for this — it
+completes well before the `Analyze (...)` runs that actually produce the
+alerts, so it can be green while the analysis is still in flight. Typical
+waits: ~2 min on a PR head, ~5 min on a direct `main` push (which produces no
+`CodeQL` check at all). Measured figures and rationale:
+`docs/contributing/branch-protection.md` § CodeQL scan timing and alert
+readiness.
+
+If the wait is unacceptable, say so and stop — do not report a possibly-stale
+alert list as current.
 
 ### 2 — Fetch open code-scanning alerts
 
@@ -92,8 +130,8 @@ Output a concise structured report — no prose padding:
 **Merge status:** <mergeStateStatus from Step 1, e.g. BLOCKED / CLEAN>
 ```
 
-Error-severity CodeQL alerts on changed files are the ones that block the
-required `Analyze (...)` check. Scorecard alerts reflect repo/workflow posture,
+Error-severity CodeQL alerts on changed files are the ones that fail the
+required `CodeQL` check. Scorecard alerts reflect repo/workflow posture,
 not code defects — never silently dismiss them.
 
 ### 5 — Present remediation options

@@ -176,6 +176,9 @@ In **Settings → Branches → Branch protection rules**, add a rule for `main`:
     Confirm the exact check-run name on a live PR before re-wiring this rule,
     in case default-setup naming changes again:
     `gh api repos/monte3l/m3l-automation/commits/<pr-head-sha>/check-runs --jq '.check_runs[].name'`.
+    Check-run naming is a _merge-gating_ fact, not a scan-completion signal —
+    see § CodeQL scan timing and alert readiness below before polling for
+    alerts on a freshly pushed head.
   - **Dependency Review** — the job in `.github/workflows/dependency-review.yml`
     (`fail-on-severity: high`). Required under ADR-0015; it runs on PRs only.
   - **Dependabot PRs skip `review`, intentionally.** `claude-pr-review.yml`
@@ -274,6 +277,49 @@ independently configured layer means one mechanism being disabled or
 misconfigured again doesn't leave `main` unprotected. Manage both when
 changing policy: a rule added to only one layer is not authoritative on its
 own.
+
+## CodeQL scan timing and alert readiness
+
+Merge-gating and alert-readiness are two different signals, and the required
+check above is only the first. **The `CodeQL` check going green does not mean
+alerts for the pushed head are queryable yet.** It is a fast aggregator; the
+findings come from the per-language `Analyze (...)` runs, which finish later.
+Measured 2026-09-07 across 12 merged-PR head commits and 5 direct `main` push
+commits — re-derive rather than trusting these numbers if they're load-bearing
+for a decision, since default setup's cadence can change:
+
+- **PR head commit** — `Analyze (javascript-typescript)`, the longest lane,
+  ran 73–99 s; `Analyze (actions)` ran 41–50 s; the consolidated `CodeQL`
+  check ran 1–4 s and completed **before** the JS/TS run in 12 of 12 cases,
+  by 25–58 s. Budget roughly 2 min from push before alerts for that head
+  exist.
+- **Direct `main` push** — `Analyze (javascript-typescript)` ran 3.5–4.7 min,
+  `Analyze (actions)` ~45–50 s, and no consolidated `CodeQL` check was
+  created at all (0 of 5), consistent with the per-PR-class naming above.
+  Budget roughly 5 min.
+
+So poll the `Analyze (...)` runs — never `CodeQL` — as the readiness signal:
+
+```bash
+gh api repos/monte3l/m3l-automation/commits/<head-sha>/check-runs \
+  --jq '.check_runs[] | select(.name | startswith("Analyze ("))
+        | "\(.name)\t\(.status)\t\(.conclusion)"'
+```
+
+Alerts for `<head-sha>` are queryable once **every** row reports `completed`.
+**Empty output from this command is not "ready"** — it means no `Analyze (...)`
+run exists for that commit yet, and the code-scanning-alerts endpoint answers
+`[]` in that window, byte-identical to a genuinely clean scan. That is the
+failure mode this section exists to prevent: a triage run against a
+just-pushed head reporting "no open alerts" as if it were a clean bill of
+health rather than an unscanned one.
+
+`gh pr checks --watch` is not a substitute here — it blocks on every check,
+including the multi-minute `verify` and `review` lanes, takes no check-name
+filter, and has no equivalent for a direct `main` push (no PR to watch).
+Neither `--paginate` nor `--method GET` is needed on the command above — the
+response is well under one page, and with no `-f` field there is no silent
+POST switch to guard against.
 
 ## Overriding a disputed finding
 
