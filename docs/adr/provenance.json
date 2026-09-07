@@ -662,14 +662,14 @@
       },
       {
         "path": "docs/ROADMAP.md",
-        "blob": "c0d14a334d34535696e81cb16283ce57268fc753"
+        "blob": "de1026a87df71e141558962fda2312d5b6ec8d38"
       },
       {
         "path": "pnpm-lock.yaml",
         "blob": "1aa29ca6033124e18cddfd33b818db832916fe84"
       }
     ],
-    "verifiedAt": "2026-09-06"
+    "verifiedAt": "2026-09-07"
   },
   "0025": {
     "sourceFiles": [
@@ -737,14 +737,14 @@
       },
       {
         "path": "docs/ROADMAP.md",
-        "blob": "c0d14a334d34535696e81cb16283ce57268fc753"
+        "blob": "de1026a87df71e141558962fda2312d5b6ec8d38"
       },
       {
         "path": "packages/m3l-common/src/aws/clients/provider.ts",
         "blob": "8de88ccbba9e75d387c88342faec1e394c3a057b"
       }
     ],
-    "verifiedAt": "2026-09-06"
+    "verifiedAt": "2026-09-07"
   },
   "0028": {
     "sourceFiles": [
@@ -758,14 +758,14 @@
       },
       {
         "path": "docs/ROADMAP.md",
-        "blob": "c0d14a334d34535696e81cb16283ce57268fc753"
+        "blob": "de1026a87df71e141558962fda2312d5b6ec8d38"
       },
       {
         "path": "tsconfig.json",
         "blob": "970fb5e829dc53830bfd2eb25e5a975c09d08504"
       }
     ],
-    "verifiedAt": "2026-09-06"
+    "verifiedAt": "2026-09-07"
   },
   "0029": {
     "sourceFiles": [
@@ -779,14 +779,14 @@
       },
       {
         "path": "docs/ROADMAP.md",
-        "blob": "c0d14a334d34535696e81cb16283ce57268fc753"
+        "blob": "de1026a87df71e141558962fda2312d5b6ec8d38"
       },
       {
         "path": "package.json",
         "blob": "c90be7566c7e98d8c904e12c39612754987a292e"
       }
     ],
-    "verifiedAt": "2026-09-06"
+    "verifiedAt": "2026-09-07"
   },
   "0030": {
     "sourceFiles": [
@@ -873,7 +873,7 @@
       },
       {
         "path": "docs/ROADMAP.md",
-        "blob": "c0d14a334d34535696e81cb16283ce57268fc753"
+        "blob": "de1026a87df71e141558962fda2312d5b6ec8d38"
       },
       {
         "path": "package.json",
@@ -974,7 +974,7 @@
       },
       {
         "path": "docs/logs/README.md",
-        "blob": "c951a37fe4df5e552850407de5484447f93fcab8"
+        "blob": "c2f5360a582755991b0d5fd263184b46358daf3e"
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
@@ -982,7 +982,7 @@
       },
       {
         "path": "docs/ROADMAP.md",
-        "blob": "c0d14a334d34535696e81cb16283ce57268fc753"
+        "blob": "de1026a87df71e141558962fda2312d5b6ec8d38"
       },
       {
         "path": "package.json",
@@ -999,7 +999,7 @@
       },
       {
         "path": "docs/ROADMAP.md",
-        "blob": "c0d14a334d34535696e81cb16283ce57268fc753"
+        "blob": "de1026a87df71e141558962fda2312d5b6ec8d38"
       },
       {
         "path": "packages/m3l-common/package.json",
@@ -1010,7 +1010,7 @@
         "blob": "8de88ccbba9e75d387c88342faec1e394c3a057b"
       }
     ],
-    "verifiedAt": "2026-09-06"
+    "verifiedAt": "2026-09-07"
   },
   "0034": {
     "sourceFiles": [
@@ -1356,10 +1356,10 @@
       },
       {
         "path": "docs/ROADMAP.md",
-        "blob": "c0d14a334d34535696e81cb16283ce57268fc753"
+        "blob": "de1026a87df71e141558962fda2312d5b6ec8d38"
       }
     ],
-    "verifiedAt": "2026-09-06"
+    "verifiedAt": "2026-09-07"
   },
   "0052": {
     "sourceFiles": [
@@ -1418,10 +1418,10 @@
       },
       {
         "path": "docs/ROADMAP.md",
-        "blob": "c0d14a334d34535696e81cb16283ce57268fc753"
+        "blob": "de1026a87df71e141558962fda2312d5b6ec8d38"
       }
     ],
-    "verifiedAt": "2026-09-06"
+    "verifiedAt": "2026-09-07"
   },
   "0054": {
     "sourceFiles": [
@@ -1587,14 +1587,14 @@
       },
       {
         "path": "docs/ROADMAP.md",
-        "blob": "c0d14a334d34535696e81cb16283ce57268fc753"
+        "blob": "de1026a87df71e141558962fda2312d5b6ec8d38"
       },
       {
         "path": "packages/m3l-common/package.json",
         "blob": "9b3749fb2efb6ea44dc9db2353e5823fef3f88b4"
       }
     ],
-    "verifiedAt": "2026-09-06"
+    "verifiedAt": "2026-09-07"
   },
   "0071": {
     "sourceFiles": [
@@ -1726,10 +1726,10 @@
       },
       {
         "path": "docs/ROADMAP.md",
-        "blob": "c0d14a334d34535696e81cb16283ce57268fc753"
+        "blob": "de1026a87df71e141558962fda2312d5b6ec8d38"
       }
     ],
-    "verifiedAt": "2026-09-06"
+    "verifiedAt": "2026-09-07"
   },
   "0074": {
     "sourceFiles": [
@@ -1753,14 +1753,14 @@
     "sourceFiles": [
       {
         "path": "docs/ROADMAP.md",
-        "blob": "c0d14a334d34535696e81cb16283ce57268fc753"
+        "blob": "de1026a87df71e141558962fda2312d5b6ec8d38"
       },
       {
         "path": "scripts/cloudwatch-logs-analysis/src/steps/preset.ts",
         "blob": "f2b4140b7f1fd6720820790ccfa9c3ab15e02218"
       }
     ],
-    "verifiedAt": "2026-09-06"
+    "verifiedAt": "2026-09-07"
   },
   "0077": {
     "sourceFiles": [
@@ -1774,7 +1774,7 @@
       },
       {
         "path": "docs/ROADMAP.md",
-        "blob": "c0d14a334d34535696e81cb16283ce57268fc753"
+        "blob": "de1026a87df71e141558962fda2312d5b6ec8d38"
       },
       {
         "path": "packages/m3l-common/src/aws/sqs/client.ts",
@@ -1789,7 +1789,7 @@
         "blob": "1f8b2f101cc806781a03fed5fcde4f4d90374095"
       }
     ],
-    "verifiedAt": "2026-09-06"
+    "verifiedAt": "2026-09-07"
   },
   "0078": {
     "sourceFiles": [
@@ -1868,10 +1868,10 @@
       },
       {
         "path": "docs/ROADMAP.md",
-        "blob": "c0d14a334d34535696e81cb16283ce57268fc753"
+        "blob": "de1026a87df71e141558962fda2312d5b6ec8d38"
       }
     ],
-    "verifiedAt": "2026-09-06"
+    "verifiedAt": "2026-09-07"
   },
   "0080": {
     "sourceFiles": [
@@ -1926,10 +1926,10 @@
       },
       {
         "path": "docs/ROADMAP.md",
-        "blob": "c0d14a334d34535696e81cb16283ce57268fc753"
+        "blob": "de1026a87df71e141558962fda2312d5b6ec8d38"
       }
     ],
-    "verifiedAt": "2026-09-06"
+    "verifiedAt": "2026-09-07"
   },
   "0082": {
     "sourceFiles": [
@@ -1968,7 +1968,7 @@
       },
       {
         "path": "docs/contributing/hooks-reference.md",
-        "blob": "5f9705a688850c4440a3a635908878683a807fef"
+        "blob": "cf94725c89edc8797f6c029d5df310183d773c13"
       }
     ],
     "verifiedAt": "2026-09-07"
@@ -2312,7 +2312,7 @@
       },
       {
         "path": "docs/decision-notes/README.md",
-        "blob": "2c62e8097cff978364e4f7bb6dd41767eebea51d"
+        "blob": "faaa6b29a0af7405bd9e6e1e5584cf63d3fc1ecc"
       },
       {
         "path": "docs/logs/2026-09-06-adr-corpus-audit.md",

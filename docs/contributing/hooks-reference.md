@@ -121,14 +121,30 @@ stale) source for. The complete set, per <https://code.claude.com/docs/en/hooks>
 **Wired in this repo** (7 of 33): `SessionStart`, `PreCompact`,
 `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `SubagentStop`, `Stop`.
 
+**Documented but unused here, with a recorded reason**
+(`docs/decision-notes/0003-unwired-hook-events.md`):
+
+- `PostCompact` — closed as not-actionable, 2026-09-06: its output schema
+  carries no `additionalContext`, so it cannot do the one thing a hook here
+  would need it for. The `SessionStart`/`compact` route it would have
+  replaced is empirically verified working instead.
+- `SessionEnd` — the docs give it no guaranteed abnormal-termination signal,
+  so handoff recovery is deliberately on the `SessionStart`
+  (`compact|resume|startup`) read side instead
+  (`.claude/hooks/reinject-compact-handoff.mjs:13-15`).
+- `Notification` — already handled by the first-class
+  `preferredNotifChannel: "terminal_bell"` setting (PR #890); its matcher
+  enum is also unverifiable across repeated doc fetches, which is why
+  `KNOWN_MATCHERS` leaves it unencoded.
+
 **Documented but unused here, with no repo-recorded reason for the gap**:
-`SessionEnd`, `Notification`, `PostCompact`, `SubagentStart` (retired in favor
-of `subagentStatusLine`, ADR-0090), `PostToolUseFailure`, `PostToolBatch`,
-`StopFailure`, `Setup`, `PermissionRequest`, `PermissionDenied`,
-`UserPromptExpansion`, `MessageDisplay`, `TaskCreated`, `TaskCompleted`,
-`TeammateIdle`, `InstructionsLoaded`, `ConfigChange`, `CwdChanged`,
-`DirectoryAdded`, `FileChanged`, `WorktreeCreate`, `WorktreeRemove`,
-`PreModelSwitch`, `PostModelSwitch`, `Elicitation`, `ElicitationResult`.
+`SubagentStart` (retired in favor of `subagentStatusLine`, ADR-0090),
+`PostToolUseFailure`, `PostToolBatch`, `StopFailure`, `Setup`,
+`PermissionRequest`, `PermissionDenied`, `UserPromptExpansion`,
+`MessageDisplay`, `TaskCreated`, `TaskCompleted`, `TeammateIdle`,
+`InstructionsLoaded`, `ConfigChange`, `CwdChanged`, `DirectoryAdded`,
+`FileChanged`, `WorktreeCreate`, `WorktreeRemove`, `PreModelSwitch`,
+`PostModelSwitch`, `Elicitation`, `ElicitationResult`.
 
 None of these gaps are load-bearing today — the closing-phase automation this
 repo lacks (no gate catches leftover worktrees, branches, refs, or an
