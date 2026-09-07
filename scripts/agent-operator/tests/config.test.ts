@@ -106,12 +106,16 @@ describe("agent-operator config declaration", () => {
     // the operator-declared `presetAllowlist` (see the dedicated
     // `run-preset operation declaration` block below). V9 slice 4 adds a
     // fourth, `triage-logs` (see the dedicated `triage-logs operation
-    // declaration` block below).
+    // declaration` block below). The queue-reconciliation slice adds a
+    // fifth, `reconcile-queue`, whose model-chosen value is a flow NAME
+    // resolved against the operator-declared `flowAllowlist` (see the
+    // dedicated `reconcile-queue operation declaration` block below).
     expect(operationNames).toEqual([
       "health-check",
       "explain-policy",
       "run-preset",
       "triage-logs",
+      "reconcile-queue",
     ]);
   });
 
@@ -447,18 +451,27 @@ describe("run-preset operation declaration (V9 slice 3b)", () => {
   );
 
   it("is present in AGENT_OPERATOR_COMMANDS (Core.deriveOperationNames), alongside the unchanged first two", () => {
-    // V9 slice 4 adds a fourth entry, `triage-logs` — see the dedicated
-    // `triage-logs operation declaration` block below, which is where that
-    // entry's own contract lives. Both `deriveOperationNames` and the
-    // derived `AGENT_OPERATOR_COMMANDS` union must reflect all four.
+    // V9 slice 4 adds a fourth entry, `triage-logs`, and the
+    // queue-reconciliation slice adds a fifth, `reconcile-queue` — see the
+    // dedicated `triage-logs operation declaration` and
+    // `reconcile-queue operation declaration` blocks below, which is where
+    // each entry's own contract lives. Both `deriveOperationNames` and the
+    // derived `AGENT_OPERATOR_COMMANDS` union must reflect all five.
     expect(
       Core.deriveOperationNames(AGENT_OPERATOR_COMMAND_DECLARATIONS),
-    ).toEqual(["health-check", "explain-policy", "run-preset", "triage-logs"]);
+    ).toEqual([
+      "health-check",
+      "explain-policy",
+      "run-preset",
+      "triage-logs",
+      "reconcile-queue",
+    ]);
     expect(AGENT_OPERATOR_COMMANDS).toEqual([
       "health-check",
       "explain-policy",
       "run-preset",
       "triage-logs",
+      "reconcile-queue",
     ]);
   });
 
@@ -536,14 +549,58 @@ describe("triage-logs operation declaration (V9 slice 4)", () => {
     ]);
   });
 
-  it("makes AGENT_OPERATOR_COMMANDS exactly four members, including triage-logs", () => {
-    expect(AGENT_OPERATOR_COMMANDS).toHaveLength(4);
+  it("makes AGENT_OPERATOR_COMMANDS exactly five members, including triage-logs", () => {
+    expect(AGENT_OPERATOR_COMMANDS).toHaveLength(5);
     expect(AGENT_OPERATOR_COMMANDS).toContain("triage-logs");
   });
 
   it("carries a non-empty description", () => {
     expect(triageLogsDeclaration).toBeDefined();
     expect(triageLogsDeclaration?.description ?? "").not.toBe("");
+  });
+});
+
+/**
+ * Queue-reconciliation slice: a fifth declared operation,
+ * `reconcile-queue`, alongside PR 1's `health-check`/`explain-policy` pair
+ * and slices 3b/4's `run-preset`/`triage-logs`. It is the first declared
+ * operation whose judged action names `script: "m3l"` rather than a target
+ * script (`list`/`doctor` judge `agent-operator`; `inspect`/`dry-run` judge
+ * their target script) — see `load-policy.test.ts`'s `m3l` grant coverage
+ * for the policy-side half of that contract. It drives a dead-letter queue
+ * reconciliation through the policy-gated single-phase `reconcile_queue`
+ * tool, resolving a model-chosen flow NAME against the operator-declared
+ * `flowAllowlist`.
+ */
+describe("reconcile-queue operation declaration (queue-reconciliation slice)", () => {
+  const reconcileQueueDeclaration = AGENT_OPERATOR_COMMAND_DECLARATIONS.find(
+    (declaration) => declaration.name === "reconcile-queue",
+  );
+
+  it("declares requiredParameters exactly aws.profile, scripts, flowAllowlist", () => {
+    expect(reconcileQueueDeclaration).toBeDefined();
+    // Written as `config.ts` must write it: literal strings, not
+    // `Core.AWS_PROFILE_PARAM_NAME`, because `isolatedDeclarations` rejects
+    // an imported const inside that `as const` array (TS9013). This is the
+    // drift guard for that literal: if the library constant's value ever
+    // changes, this assertion fails rather than the drift going unnoticed.
+    // `flowAllowlist`, not `presetAllowlist`: the model-chosen value here is
+    // a flow NAME, resolved by `m3l flow run <name>` itself.
+    expect(reconcileQueueDeclaration?.requiredParameters).toEqual([
+      Core.AWS_PROFILE_PARAM_NAME,
+      "scripts",
+      "flowAllowlist",
+    ]);
+  });
+
+  it("makes AGENT_OPERATOR_COMMANDS exactly five members, including reconcile-queue", () => {
+    expect(AGENT_OPERATOR_COMMANDS).toHaveLength(5);
+    expect(AGENT_OPERATOR_COMMANDS).toContain("reconcile-queue");
+  });
+
+  it("carries a non-empty description", () => {
+    expect(reconcileQueueDeclaration).toBeDefined();
+    expect(reconcileQueueDeclaration?.description ?? "").not.toBe("");
   });
 });
 

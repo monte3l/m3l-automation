@@ -106,6 +106,19 @@ node dist/main.js --command triage-logs \
   --scripts cloudwatch-logs-analysis \
   --presetAllowlist "checkout-5xx=data/config/presets/triage-checkout-5xx.yaml"
 
+# Reconcile a dead-letter queue by supervising the m3l flow command. SPENDS
+# MONEY and MUTATES AWS state. The model chooses one flow name from
+# flowAllowlist and nothing else: m3l flow rejects every extra argument, so
+# unlike triage-logs no profile or verb can be pinned in argv. The graded
+# target is therefore derived from the flow DEFINITION — verifyFlowNames
+# refuses any flow whose steps declare more than one aws.profile, whose step
+# omits it for a script that requires it, or that pre-declares yesSensitive.
+node dist/main.js --command reconcile-queue \
+  --modelId anthropic.claude-sonnet-4-5-20250929-v1:0 \
+  --modelRates "anthropic.claude-sonnet-4-5-20250929-v1:0=0.003,0.015" \
+  --scripts flow \
+  --flowAllowlist dlq-reconcile
+
 # Outside the monorepo — M3LPaths.getProjectRoot() is unavailable in
 # standalone mode, so the CLI entrypoint must be named explicitly or the run
 # fails with ERR_AGENT_OPERATOR_CLI_ENTRYPOINT
@@ -115,12 +128,13 @@ node dist/main.js --command explain-policy \
 
 ### Operations at a glance
 
-| Operation        | Demonstrated by                                  |
-| ---------------- | ------------------------------------------------ |
-| `explain-policy` | Minimal, Common, Production, Edge case           |
-| `health-check`   | Dry-run rehearsal, the real run, and probe-armed |
-| `run-preset`     | The preset run and its rehearsal                 |
-| `triage-logs`    | The alarm triage run                             |
+| Operation         | Demonstrated by                                  |
+| ----------------- | ------------------------------------------------ |
+| `explain-policy`  | Minimal, Common, Production, Edge case           |
+| `health-check`    | Dry-run rehearsal, the real run, and probe-armed |
+| `run-preset`      | The preset run and its rehearsal                 |
+| `triage-logs`     | The alarm triage run                             |
+| `reconcile-queue` | The dead-letter-queue reconciliation run         |
 
 ### What a `triage-logs` preset may declare
 

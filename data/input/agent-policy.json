@@ -21,7 +21,8 @@
         "explain-policy",
         "health-check",
         "run-preset",
-        "triage-logs"
+        "triage-logs",
+        "reconcile-queue"
       ],
       "readOnlyOperations": [
         "list",
@@ -29,7 +30,8 @@
         "explain-policy",
         "health-check",
         "run-preset",
-        "triage-logs"
+        "triage-logs",
+        "reconcile-queue"
       ]
     },
     {
@@ -93,6 +95,10 @@
       "readOnlyOperations": ["inspect", "dry-run"]
     },
     {
+      "script": "m3l",
+      "operations": ["run"]
+    },
+    {
       "script": "rds-data-sql",
       "operations": ["inspect", "dry-run"],
       "readOnlyOperations": ["inspect", "dry-run"]
@@ -109,7 +115,7 @@
     },
     {
       "script": "sqs-etl",
-      "operations": ["inspect", "dry-run"],
+      "operations": ["inspect", "dry-run", "run"],
       "readOnlyOperations": ["inspect", "dry-run"]
     }
   ]

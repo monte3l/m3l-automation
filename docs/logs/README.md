@@ -184,6 +184,7 @@ backstop for the step above, not a substitute for it.
 | 2026-08-30 | `core/agent` decision log, V7                               | [v7-agent-decision-log](./2026-08-30-v7-agent-decision-log.md)                     |
 | 2026-09-01 | V3 — secrets to the spawn env, not argv (ADR-0085)          | [v3-secrets-delivery](./2026-09-01-v3-secrets-delivery.md)                         |
 | 2026-09-01 | V8 `agent-operator` health-checks workload                  | [v8-agent-operator-health-checks](./2026-09-01-v8-agent-operator-health-checks.md) |
+| 2026-09-07 | V9 workload expansion — ETL presets, log triage, queue      | [v9-workload-expansion](./2026-09-07-v9-workload-expansion.md)                     |
 
 ## Agent-reliability wave (A-series)
 
