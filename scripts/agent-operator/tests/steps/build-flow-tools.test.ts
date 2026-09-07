@@ -66,12 +66,40 @@ import {
   agentIdentity,
 } from "../../src/steps/decision-recorder.js";
 import type { AgentToolSpec } from "../../src/steps/gate-tool.js";
-import { RecordingDecisionLogWriter } from "../support/logFakes.js";
+import {
+  FailingDecisionLogWriter,
+  RecordingDecisionLogWriter,
+} from "../support/logFakes.js";
 import { minimalPolicy } from "../support/policyFixtures.js";
 
 /** The `AWS.M3LBedrockToolContext` every `execute` call in this file uses. */
 function toolContext(name: string): AWS.M3LBedrockToolContext {
   return { toolUseId: "tool-use-1", name };
+}
+
+/**
+ * Captures every event a `Core.M3LLogger` dispatches, in call order. Same
+ * idiom as `tests/steps/conclusion-tail.test.ts`'s `RecordingLoggerHandler` —
+ * reused here rather than re-invented, since a failed INDETERMINATE
+ * decision-log write is logged through this exact same `logger.error` seam.
+ */
+class RecordingLoggerHandler implements Core.M3LLoggerHandler {
+  readonly events: Core.M3LLogEvent[] = [];
+  handle(event: Core.M3LLogEvent): void {
+    this.events.push(event);
+  }
+  reset(): void {
+    this.events.length = 0;
+  }
+}
+
+/** Builds a real logger plus the handler that observes what it dispatched. */
+function makeLogger(): {
+  readonly logger: Core.M3LLogger;
+  readonly handler: RecordingLoggerHandler;
+} {
+  const handler = new RecordingLoggerHandler();
+  return { logger: new Core.M3LLogger([handler]), handler };
 }
 
 /** A surface whose every method rejects — for the pure-boundary tests. */
@@ -210,6 +238,8 @@ async function buildDeps(
     decisionRecorder: makeDecisionRecorder().recorder,
     decision: fixtureDecision(),
     now: DECISION_NOW,
+    logger: makeLogger().logger,
+    reportRecovery: vi.fn(),
     ...overrides,
   };
 }
@@ -404,6 +434,8 @@ describe("buildFlowTools — describeAction's exact action shape", () => {
         decisionRecorder: makeDecisionRecorder().recorder,
         decision: fixtureDecision(),
         now: DECISION_NOW,
+        logger: makeLogger().logger,
+        reportRecovery: vi.fn(),
       };
       const spec = buildReconcileQueueSpec(deps);
 
@@ -593,6 +625,65 @@ describe("buildFlowTools — execute — the INDETERMINATE timeout rule", () => 
         "exitCode",
       ),
     ).toBe(false);
+  });
+
+  it("reports a failed indeterminate decision-log write through BOTH logger and reportRecovery, but still rethrows the ORIGINAL flowRun rejection — not the audit-write failure", async () => {
+    const cliError = new M3LAgentOperatorCliError(
+      "the m3l flow run child timed out mid-flight",
+      "ERR_AGENT_OPERATOR_CLI_SPAWN",
+      { context: { disposition: "timed-out" } },
+    );
+    const flowRun = vi.fn(() => Promise.reject(cliError));
+    // The decision-log write itself now also fails — `decisionRecorder`
+    // is built directly over a `FailingDecisionLogWriter` rather than the
+    // `makeDecisionRecorder` happy-path helper, so `record()` rejects.
+    const recorder = new AgentDecisionRecorder({
+      identity: agentIdentity({ name: "agent-operator" }),
+      writer: new FailingDecisionLogWriter(),
+    });
+    const { logger, handler } = makeLogger();
+    const reportRecovery = vi.fn();
+    const deps = await buildDeps({
+      surface: { ...unusedSurface(), flowRun },
+      decisionRecorder: recorder,
+      logger,
+      reportRecovery,
+    });
+    const spec = buildReconcileQueueSpec(deps);
+
+    let thrown: unknown;
+    try {
+      await spec.execute(
+        { flowName: FLOW_NAME },
+        toolContext(AGENT_FLOW_TOOL_NAMES.reconcileQueue),
+      );
+    } catch (error) {
+      thrown = error;
+    }
+
+    // The ORIGINAL `flowRun` rejection reaches the caller unchanged — not
+    // the secondary decision-log write failure that followed it.
+    expect(thrown).toBe(cliError);
+
+    // `reportRecovery` saw the absorbed failure exactly once.
+    expect(reportRecovery).toHaveBeenCalledTimes(1);
+    const [recoveryEntry] = reportRecovery.mock.calls[0] as [
+      Core.M3LRunRecoveryEntry,
+    ];
+    expect(recoveryEntry.item).toBe(
+      "reconcile-queue-indeterminate-decision-log",
+    );
+
+    // `logger` saw exactly one error event for the failed write —
+    // `reportRecovery` here does not itself throw, so the nested
+    // "reporting also failed" branch never fires a second one.
+    const errorEvents = handler.events.filter(
+      (event) => event.category === Core.M3LLogEventCategory.ERROR,
+    );
+    expect(errorEvents).toHaveLength(1);
+    expect(errorEvents[0]?.message).toContain(
+      "the INDETERMINATE decision-log entry",
+    );
   });
 
   // The seven contrast cases moved from `run-queue-reconcile.test.ts`'s own

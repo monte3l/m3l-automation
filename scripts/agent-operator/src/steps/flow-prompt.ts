@@ -41,7 +41,13 @@ export function queueReconcileSystemPrompt(): string {
  * Builds the opening user turn naming the operator-verified flow allowlist.
  *
  * @param flowNames - The operator-verified flow names for this run. Every
- *   entry already passed `verifyFlowNames` before this prompt is built.
+ *   entry already passed `verifyFlowNames` before this prompt is built. An
+ *   empty array is defensive only: `verifyFlowNames` already refuses an
+ *   empty allowlist (`deps.flowAllowlist.size === 0`) as its first check,
+ *   before this prompt can ever be built. The branch is kept anyway so a
+ *   caller that somehow reaches this function with nothing allowed still
+ *   gets an explicit statement of emptiness rather than a sentence that
+ *   collapses into a dangling colon.
  * @returns The opening user message text.
  *
  * @example
@@ -52,5 +58,9 @@ export function queueReconcileSystemPrompt(): string {
  * ```
  */
 export function queueReconcileUserPrompt(flowNames: readonly string[]): string {
-  return `The operator-verified flow allowlist is: ${flowNames.join(", ")}.`;
+  return flowNames.length === 0
+    ? "No flows are declared for this run: the allowlist is empty, so " +
+        "reconcile_queue must not be called. Do not attempt a call; report " +
+        "that no action is available."
+    : `The operator-verified flow allowlist is: ${flowNames.join(", ")}.`;
 }

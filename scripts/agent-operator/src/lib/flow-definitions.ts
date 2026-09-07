@@ -512,6 +512,13 @@ export async function verifyFlowNames(
 
   const resolvedSteps: ResolvedStep[] = [];
   for (const flowName of deps.flowAllowlist) {
+    // Membership is tautologically true at this call site — `flowName` is
+    // drawn FROM `deps.flowAllowlist` by the loop itself, so the
+    // allowlist-membership half of `assertFlowNameOnAllowlist` can never
+    // reject here. Only the shape check does real work in this loop; that
+    // membership check earns its keep instead at the tool boundary
+    // (`build-flow-tools.ts`'s `readFlowName`), where a model-supplied name
+    // arrives and has never been checked against the allowlist before.
     assertFlowNameOnAllowlist(flowName, deps.flowAllowlist);
     for (const step of readFlowSteps(flowName, deps)) {
       rejectIfYesSensitive(flowName, step);

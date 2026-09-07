@@ -83,7 +83,7 @@
  * @packageDocumentation
  */
 
-import type { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@m3l-automation/m3l-common";
 
 import type { AgentCliSurface } from "../lib/cli-surface.js";
 import { M3LAgentOperatorCliError } from "../lib/errors.js";
@@ -178,6 +178,19 @@ export interface BuildFlowToolsDeps {
    * run's own audit trail.
    */
   readonly now: number;
+  /**
+   * The script's logger — where a failed INDETERMINATE decision-log write is
+   * logged. Mirrors `steps/run-queue-reconcile.ts`'s `RunQueueReconcileDeps`,
+   * which is the runner threading this straight through from `script.logger`.
+   */
+  readonly logger: Core.M3LLogger;
+  /**
+   * Bound from `script.reportRecovery` — files a recovery entry for a failed
+   * INDETERMINATE decision-log write, demoting the run to `partial` instead
+   * of letting the loss go unobserved. Mirrors
+   * `steps/run-queue-reconcile.ts`'s `RunQueueReconcileDeps`.
+   */
+  readonly reportRecovery: (entry: Core.M3LRunRecoveryEntry) => void;
 }
 
 /**
@@ -301,18 +314,39 @@ function isIndeterminateTimeout(error: unknown): boolean {
  * omitted, never `0` or any other guessed value.
  *
  * @remarks
- * Best-effort: a failing decision-log write is swallowed rather than
- * propagated, because the caller is about to rethrow `surface.flowRun`'s own
- * timeout rejection unchanged, and that original rejection — not a
- * secondary audit-write failure — is the one this tool must surface. This
- * mirrors "wrap the whole fallible resource lifecycle, not just acquisition"
- * cleanup discipline: a `finally`-style best-effort step must never shadow
- * the real error it runs alongside.
+ * A failing decision-log write is never propagated: the caller is about to
+ * rethrow `surface.flowRun`'s own timeout rejection unchanged, and that
+ * original rejection — not a secondary audit-write failure — is the one this
+ * tool must surface. But a failure here is uniquely costly to lose silently:
+ * `requireDecisionLog` is set, and this is the one entry that records "this
+ * run's AWS effects are indeterminate" — losing it without a trace means the
+ * audit trail is missing exactly the record a timed-out flow run needs most,
+ * while the run still reports its original failure. So the failure is
+ * logged and reported as an absorbed failure (demoting the run to `partial`)
+ * rather than swallowed. This mirrors `steps/conclusion-tail.ts`'s
+ * `recordConsumption`: a `finally`-adjacent best-effort step must never
+ * shadow the real error it runs alongside, but "must not shadow" is not
+ * "must not observe".
+ *
+ * The reporting call itself — `reportRecovery` and the `recordedAt` it
+ * builds — sits in its own nested `try`, whose `catch` logs through
+ * `logger.error` rather than letting the reporting call's own failure
+ * replace the decision-log write failure that is actually the one that
+ * matters. That nested `try`/`catch` only catches a SYNCHRONOUS throw — see
+ * `conclusion-tail.ts`'s module remarks for why that is the whole of the
+ * real `reportRecovery` port's contract.
+ *
+ * @throws Never — every failure along this path, including one from the
+ *   absorbed-failure reporting path itself, is logged rather than
+ *   propagated, so it can never replace the caller's original `flowRun`
+ *   rejection.
  */
 async function recordIndeterminateOutcome(
   decisionRecorder: AgentDecisionRecorder,
   decision: Core.M3LAgentDecision,
   now: number,
+  logger: Core.M3LLogger,
+  reportRecovery: (entry: Core.M3LRunRecoveryEntry) => void,
 ): Promise<void> {
   try {
     await decisionRecorder.record({
@@ -320,9 +354,27 @@ async function recordIndeterminateOutcome(
       now,
       outcome: { dryRun: false },
     });
-  } catch {
-    // Ignored — see remarks: the caller's original timeout rejection is
-    // what must propagate, and a failed audit write must not replace it.
+  } catch (cause) {
+    logger.error(
+      "the INDETERMINATE decision-log entry for a timed-out reconcile_queue flow run could not be written; the audit trail is missing the one record marking this run's AWS effects as unknown",
+      { cause: Core.serializeErrorChain(cause, { redact: true }) },
+    );
+    try {
+      reportRecovery({
+        item: "reconcile-queue-indeterminate-decision-log",
+        error: Core.serializeErrorChain(cause, { redact: true }),
+        recordedAt: new Date(now).toISOString(),
+      });
+    } catch (reportingCause) {
+      // A last-resort reporter must never be the thing that replaces the
+      // decision-log write failure above — see this function's remarks and
+      // `conclusion-tail.ts`'s `recordConsumption`, which establishes the
+      // same shape.
+      logger.error(
+        "reporting the reconcile-queue indeterminate-decision-log recovery entry also failed; the decision-log write failure above is the one that matters",
+        { cause: Core.serializeErrorChain(reportingCause, { redact: true }) },
+      );
+    }
   }
 }
 
@@ -342,6 +394,10 @@ interface ReconcileQueueSpecLocals {
   readonly decisionRecorder: AgentDecisionRecorder;
   readonly decision: Core.M3LAgentDecision;
   readonly now: number;
+  /** See {@link BuildFlowToolsDeps.logger}. */
+  readonly logger: Core.M3LLogger;
+  /** See {@link BuildFlowToolsDeps.reportRecovery}. */
+  readonly reportRecovery: (entry: Core.M3LRunRecoveryEntry) => void;
   /**
    * One fresh mutable guard per {@link buildFlowTools} call — therefore one
    * per run. `invoked` is a property on this object (not a `let` inside
@@ -360,6 +416,8 @@ function reconcileQueueSpec(locals: ReconcileQueueSpecLocals): AgentToolSpec {
     decisionRecorder,
     decision,
     now,
+    logger,
+    reportRecovery,
     executionGuard,
   } = locals;
   return {
@@ -416,7 +474,13 @@ function reconcileQueueSpec(locals: ReconcileQueueSpecLocals): AgentToolSpec {
         // this is the one point in the whole call chain that still sees the
         // original rejection, before `gate-tool.ts` re-wraps it.
         if (isIndeterminateTimeout(cause)) {
-          await recordIndeterminateOutcome(decisionRecorder, decision, now);
+          await recordIndeterminateOutcome(
+            decisionRecorder,
+            decision,
+            now,
+            logger,
+            reportRecovery,
+          );
         }
         throw cause;
       }
@@ -455,6 +519,8 @@ export function buildFlowTools(
     decisionRecorder,
     decision,
     now,
+    logger,
+    reportRecovery,
   } = deps;
   // One fresh guard per `buildFlowTools` call — therefore one per run. See
   // the module remarks' "no retry within one run" section.
@@ -467,6 +533,8 @@ export function buildFlowTools(
       decisionRecorder,
       decision,
       now,
+      logger,
+      reportRecovery,
       executionGuard,
     }),
   ]);

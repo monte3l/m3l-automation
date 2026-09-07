@@ -214,6 +214,11 @@ function buildRegistry(
     decisionRecorder: setup.recorder,
     decision: setup.decision,
     now: setup.now,
+    // A failed INDETERMINATE decision-log write must still be observable —
+    // same `deps.logger`/`deps.reportRecovery` ports `recordConsumption`
+    // below uses for its own absorbed-failure reporting.
+    logger: deps.logger,
+    reportRecovery: deps.reportRecovery,
   });
   return buildAgentToolRegistry(tools, {
     policy: setup.policy,
