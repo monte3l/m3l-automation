@@ -196,7 +196,7 @@ In **Settings → Branches → Branch protection rules**, add a rule for `main`:
   - **`should-fix-ack` — not yet a required check.** A second job in the same
     workflow (`needs: review`), added to enforce that a Should-fix finding
     from the posted review is either fixed or explicitly acknowledged via an
-    `Acknowledged-Should-Fix:` commit footer before merge (docs/adr/0096, once
+    `Acknowledged-Should-Fix:` commit footer before merge (docs/adr/0097, once
     it lands) — REVIEW.md's own severity tiers leave Should-fix non-blocking
     by design, and before this job nothing in the repo read that tier at all.
     It runs and reports on every non-draft, non-Dependabot PR today, but is

@@ -23,7 +23,10 @@ in sync with, not something that changes their behavior on its own.
   repo's `docs/contributing/style-guide.md` and `.claude/rules/*.md`), or
   introduces a security/silent-failure defect. Blocks merge.
 - **Should-fix** — a real quality issue that does not block merge on its
-  own: a missed edge case, a weak type, a maintainability concern.
+  own: a missed edge case, a weak type, a maintainability concern. A posted
+  Should-fix finding must be resolved or explicitly acknowledged — an
+  `Acknowledged-Should-Fix:` commit footer recording the decision — before
+  merge (`docs/adr/0097`).
 - **Nit** — style, naming, or preference. Never blocks merge.
 
 Reserve Must-fix for what actually blocks; route preference/stylistic items

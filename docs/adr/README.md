@@ -228,5 +228,6 @@ surface).
 | 0094 | [ADR governance: a structured status schema and a generated index](./0094-adr-governance-and-status-schema.md)                                            | Accepted             |
 | 0095 | [ADR-worthiness routing and a lightweight decision-note tier](./0095-adr-worthiness-and-decision-note-tier.md)                                            | Accepted             |
 | 0096 | [Replace the in-repo `m3l` MCP server's tool set with read-only query tools](./0096-m3l-mcp-server-replace-with-query-tools.md)                           | Accepted             |
+| 0097 | [A Should-fix acknowledgment gate for claude-pr-review](./0097-should-fix-acknowledgment-gate.md)                                                         | Accepted             |
 
 <!-- END GENERATED ADR INDEX -->
