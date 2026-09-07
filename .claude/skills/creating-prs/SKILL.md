@@ -420,6 +420,17 @@ A clean Step 2 rebase should make this `MERGEABLE`. If `mergeable` is
 `CONFLICTING`, tell the user the branch conflicts with the base and hand back so
 they can rebase — do not attempt to resolve it here.
 
+**`mergeStateStatus: "UNSTABLE"` is not a blocker** — it means at least one
+_non-required_ check is still pending/failed, not that a required one is.
+The actual gate is `main`'s `required_status_checks.contexts`
+(`gh api repos/{owner}/{repo}/branches/main/protection/required_status_checks`),
+which is a short, fixed list (e.g. `Dependency Review`, `CodeQL`, `verify`,
+`review`) — not every check shown on the PR. A slow non-required job (a
+full `Test` run, a multi-minute `Run skill evals` suite) can still be
+`in_progress` while every required check has already passed; querying `gh
+pr checks` alone and waiting for the whole list to go green wastes time
+waiting on jobs that were never going to block the merge.
+
 ### 15 — Decide the merge path
 
 This is the step the skill used to stop short of: `finishing-work` Step 1 only
@@ -484,6 +495,26 @@ Three things this step must never do:
    it — see `finishing-work/SKILL.md`'s Step 3 note for the same race from the
    other side. If a follow-up commit must land in this PR, confirm the push
    landed and is still HEAD before assuming it will be included.
+
+**A PR stacked on another feature branch (ADR-0072 sequence) needs a rebase
+once its base merges.** When PR N's base is PR N-1's branch rather than
+`main`, merging PR N-1 deletes that branch and GitHub auto-retargets PR N's
+base to `main` — but PR N's own commit still carries PR N-1's now-duplicate
+content (a squash merge is never a literal ancestor of the branch it came
+from). Drop the duplicate and get a fresh, correctly-scoped CI run against
+the real base with:
+
+```bash
+git fetch origin main
+git rebase --onto origin/main <old-base-tip-sha> <branch>
+git push --force-with-lease origin <branch>
+```
+
+`<old-base-tip-sha>` is the commit PR N's branch was cut from (its own
+first commit's parent) — this replays only the commits after that point,
+so the range excludes the sibling's content rather than reapplying it.
+Re-run this skill's quality gates (Step 4) before the push; the force-push
+re-triggers `pre-push` and CI from scratch.
 
 Once the PR shows `state: "MERGED"`, hand off to `/finishing-work` — this step
 is `creating-prs`' terminal one, matching the boundary `finishing-work`'s own

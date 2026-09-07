@@ -261,3 +261,4 @@ backstop for the step above, not a substitute for it.
 | 2026-09-06 | ADR governance tooling + lightweight tier (PR2–PR5, #1066–#1069)          | [adr-governance-tooling](./2026-09-06-adr-governance-tooling.md)                           |
 | 2026-09-06 | Harness-refresh sweep — v2.1.263 delta, 4 tracker items closed (PR #1072) | [harness-refresh-sweep](./2026-09-06-harness-refresh-sweep.md)                             |
 | 2026-09-07 | ADR retroactive-gap resolution (PR #1071, #1073)                          | [adr-retroactive-gap-resolution](./2026-09-07-adr-retroactive-gap-resolution.md)           |
+| 2026-09-07 | Skill naming conventions — rename + enforcement gate (PR #1077, #1078)    | [skill-naming-conventions](./2026-09-07-skill-naming-conventions.md)                       |
