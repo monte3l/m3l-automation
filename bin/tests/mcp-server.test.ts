@@ -13,6 +13,12 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { TOOLS } from "../lib/mcp-tools.mjs";
 
+/** The `{ content, isError }` envelope every tool handler resolves to. */
+type ToolResult = {
+  content: { type: string; text: string }[];
+  isError: boolean;
+};
+
 const h = vi.hoisted(() => {
   const registerTool = vi.fn();
   const connect = vi.fn((_transport: unknown) => Promise.resolve());
@@ -45,24 +51,60 @@ describe("mcp-server main() registration loop", () => {
     vi.clearAllMocks();
   });
 
-  test("registers every TOOLS entry exactly once with its config and handler", async () => {
+  test("registers every TOOLS entry exactly once with its name/config, wrapped in a function that delegates to the real handler (commit_lint verified directly)", async () => {
     await main();
     expect(h.registerTool).toHaveBeenCalledTimes(TOOLS.length);
-    for (const tool of TOOLS) {
-      expect(h.registerTool).toHaveBeenCalledWith(
-        tool.name,
-        tool.config,
-        tool.handler,
-      );
-    }
+
+    // The registration loop wraps each handler in a fresh async closure (to
+    // thread the per-call resolved repo root through), so the third argument
+    // can no longer be asserted by reference equality to `tool.handler` —
+    // only that a call was registered, by value, for every tool's name/config,
+    // with a function in the third slot.
+    TOOLS.forEach((tool, index) => {
+      const call = h.registerTool.mock.calls[index] as
+        [string, unknown, unknown] | undefined;
+      expect(call?.[0]).toBe(tool.name);
+      expect(call?.[1]).toBe(tool.config);
+      expect(typeof call?.[2]).toBe("function");
+    });
+
+    // Representative behavioral check: commit_lint's needsRoot is false, so
+    // its wrapper never calls resolveRepoRoot() — invoking it directly with a
+    // real message exercises the real delegation to commitLint without
+    // needing to mock server.getClientCapabilities()/listRoots() for this
+    // assertion.
+    const commitLintIndex = TOOLS.findIndex(
+      (tool) => tool.name === "commit_lint",
+    );
+    expect(commitLintIndex).toBeGreaterThanOrEqual(0);
+    const commitLintCall = h.registerTool.mock.calls[commitLintIndex] as [
+      string,
+      unknown,
+      (args: Record<string, unknown>) => Promise<ToolResult>,
+    ];
+    const wrapper = commitLintCall[2];
+    const message =
+      "feat(core): add a widget\n\n" +
+      "Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>";
+    const wrapperResult = await wrapper({ message });
+    const directResult = await TOOLS[commitLintIndex]?.handler({ message });
+    expect(wrapperResult).toEqual(directResult);
+    expect(wrapperResult.isError).toBe(false);
+    const block = wrapperResult.content[0];
+    expect(block).toBeDefined();
+    const payload = JSON.parse(block?.text ?? "{}") as Record<string, unknown>;
+    expect(payload["valid"]).toBe(true);
   });
 
   test("constructs the McpServer with the server's own name/version identity", async () => {
     await main();
-    expect(h.McpServerCtor).toHaveBeenCalledWith({
-      name: "m3l",
-      version: "1.0.0",
-    });
+    expect(h.McpServerCtor).toHaveBeenCalledWith(
+      { name: "m3l", version: "2.0.0" },
+      expect.objectContaining({ instructions: expect.any(String) }),
+    );
+    const call = h.McpServerCtor.mock.calls[0] as
+      [unknown, { instructions: string }] | undefined;
+    expect(call?.[1]?.instructions.length).toBeGreaterThan(0);
   });
 
   test("connects exactly once over a StdioServerTransport instance", async () => {
