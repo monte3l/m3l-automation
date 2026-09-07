@@ -149,7 +149,7 @@ per-phase detail in
 | **U8**  | Operation introspection in `inspect`/`--help`/wizard         | Done     |
 | **U9**  | `m3l new` + Lambda scaffold variant                          | Done     |
 | **U10** | `m3l flow` — orchestration engine + the named flow           | Done     |
-| **U11** | Retry/resume/cancellation surfacing at the CLI layer         | To Do    |
+| **U11** | Retry/resume/cancellation surfacing at the CLI layer         | Done     |
 | **U12** | `m3l completion` (bash/zsh/fish)                             | Done     |
 | **U13** | Phase B — private GitHub Packages publishing                 | To Do    |
 | **U14** | Phase C — single-file binary (gated on a future ADR)         | Deferred |
@@ -180,7 +180,7 @@ per-phase detail in
 | **V6**  | Agent policy layer (graded autonomy as authorization)           | Done     |
 | **V7**  | Agent decision log (append-only, names-never-values)            | Done     |
 | **V8**  | `agent-operator` script + fleet-health-checks workload          | Done     |
-| **V9**  | Workload expansion (ETL; log triage; queue flow after U10)      | To Do    |
+| **V9**  | Workload expansion (ETL; log triage; queue flow after U10)      | Done     |
 | **V10** | `packages/m3l-mcp` stdio MCP surface                            | To Do    |
 | **V11** | Headless/scheduled operation                                    | To Do    |
 | **V12** | Remote/HTTP MCP (gated on a future ADR)                         | Deferred |

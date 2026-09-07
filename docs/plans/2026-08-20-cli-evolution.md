@@ -44,6 +44,18 @@ phase write into `packages/*/src/**` or `**/tests/**`, so each begins with
 `/starting-work` and dispatches `code-implementer` / `test-author` — the hub
 never writes those paths.
 
+## Landing plan
+
+ADR-0072's durable slice record for this non-submodule multi-PR wave — the
+same `## Landing plan` heading and `| Slice | Scope | Status |` table a
+submodule's reference page carries, gated by `pnpm check:landing-plans`.
+Phase A (U1–U12) shipped. U14 (Phase C) is omitted — recorded only, gated
+behind its own future ADR, so it never reads as "in flight" here.
+
+| Slice | Branch | Scope                                        | Status |
+| ----- | ------ | -------------------------------------------- | ------ |
+| U13   | —      | Phase B — private GitHub Packages publishing | To Do  |
+
 ---
 
 ## Phase A — restructure and capabilities

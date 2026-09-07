@@ -582,6 +582,13 @@ jobs:
       - name: Check scaffold seam (test + status row + landing plan)
         run: pnpm check:scaffold-seam
 
+      # Non-submodule counterpart to the check above (ADR-0072's 2026-09-07
+      # amendment, issue #998 / ROADMAP H5): every live dated plan doc under
+      # docs/plans/ needs the same durable "## Landing plan" record a
+      # submodule's reference page carries.
+      - name: Check landing plans (docs/plans)
+        run: pnpm check:landing-plans
+
       # Per-file size ratchet (ADR-0072): a src/tests file not in
       # bin/file-budget-baseline.json must stay under its ceiling; a baselined
       # file may shrink but never grow. See ADR-0072 for the rationale — a

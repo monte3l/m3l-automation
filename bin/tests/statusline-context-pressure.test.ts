@@ -28,6 +28,7 @@ import {
   formatBranchSegment,
   formatWorktreeSegment,
   formatSliceSegment,
+  extractLandingPlanTable,
   parseLandingPlanProgress,
   resolveSliceProgress,
   formatAgentSegment,
@@ -1203,6 +1204,66 @@ describe("resolveWorkspaceRoot", () => {
     const readFile = (): string | null => null;
 
     expect(resolveWorkspaceRoot(readFile, "/workspace/project")).toBeNull();
+  });
+});
+
+describe("extractLandingPlanTable", () => {
+  test("parses a table with Branch and Slice columns into header/column-index/data-row shape", () => {
+    const pageText = [
+      "## Landing plan",
+      "",
+      "| Slice | Scope | Status | Branch |",
+      "| ----- | ----- | ------ | ------ |",
+      "| V6 slice 1 | first slice | Landed | feat/v6-s1 |",
+      "| V6 slice 2 | second slice | In progress | feat/v6-s2 |",
+    ].join("\n");
+
+    expect(extractLandingPlanTable(pageText)).toEqual({
+      headerCells: ["Slice", "Scope", "Status", "Branch"],
+      statusIndex: 2,
+      sliceIndex: 0,
+      branchIndex: 3,
+      dataRows: [
+        ["V6 slice 1", "first slice", "Landed", "feat/v6-s1"],
+        ["V6 slice 2", "second slice", "In progress", "feat/v6-s2"],
+      ],
+    });
+  });
+
+  test("returns branchIndex -1 for a table with no Branch column", () => {
+    const pageText = [
+      "## Landing plan",
+      "",
+      "| Slice | Scope | Status |",
+      "| ----- | ----- | ------ |",
+      "| V6 slice 1 | first slice | Landed |",
+    ].join("\n");
+
+    const table = extractLandingPlanTable(pageText);
+    expect(table).not.toBeNull();
+    expect(table?.branchIndex).toBe(-1);
+  });
+
+  test("returns null when there is no '## Landing plan' heading at all", () => {
+    expect(extractLandingPlanTable("# Some module\n\nsome prose\n")).toBeNull();
+  });
+
+  test("returns null when the heading exists but no table follows it", () => {
+    expect(
+      extractLandingPlanTable("## Landing plan\n\nprose only, no table\n"),
+    ).toBeNull();
+  });
+
+  test("returns null when the table under the heading has no 'Status' column", () => {
+    const pageText = [
+      "## Landing plan",
+      "",
+      "| Slice | Scope |",
+      "| ----- | ----- |",
+      "| V6 slice 1 | first slice |",
+    ].join("\n");
+
+    expect(extractLandingPlanTable(pageText)).toBeNull();
   });
 });
 
