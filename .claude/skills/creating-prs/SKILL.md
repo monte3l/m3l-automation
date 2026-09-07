@@ -258,11 +258,13 @@ reviewer reasoning about behaviour.
 
 ### 8 — Pre-existing code-scanning check
 
-CodeQL runs via GitHub "default setup" and its `Analyze (...)` check-runs are
-required to merge (see `docs/contributing/branch-protection.md`). Before
-pushing, surface any **open error-severity CodeQL alert that already touches a
-file this branch changes** — so you learn about a blocker now, not after the PR
-is open.
+CodeQL runs via GitHub "default setup". The **required** merge context is the
+single consolidated `CodeQL` check — the per-language
+`Analyze (javascript-typescript)`/`Analyze (actions)` runs do report on human
+PRs, but they are not the gate (see `docs/contributing/branch-protection.md`).
+Before pushing, surface any **open error-severity CodeQL alert that already
+touches a file this branch changes** — so you learn about a blocker now, not
+after the PR is open.
 
 `--paginate` is required — without it, alerts past the first page (>30) are
 silently missed:
@@ -277,9 +279,15 @@ gh api --method GET repos/{owner}/{repo}/code-scanning/alerts --paginate \
 Cross-reference the paths against the changed set from Step 7
 (`git diff main...HEAD --name-only`). If any alert path matches, list the
 matches and tell the user to triage them with the `triaging-scan-alerts` skill
-before merge. This is informational — alerts for **newly pushed** code only
-appear after the post-push scan, so `triaging-scan-alerts` is the follow-up once
-the PR is open.
+before merge. This is informational — alerts for **newly pushed** code do not
+exist yet. They appear only once the per-language `Analyze (...)` check-runs
+for the new head complete, roughly 2 min after a PR-head push (longer on a
+direct `main` push); the required `CodeQL` check going green is **not** that
+signal, since it completes well before the analysis does
+(`docs/contributing/branch-protection.md` § CodeQL scan timing and alert
+readiness has the measured numbers and the poll command). So
+`triaging-scan-alerts` is the follow-up once the PR is open, and it owns that
+wait.
 
 ### 9 — Push the branch
 
@@ -463,7 +471,12 @@ turning an open, mergeable PR into one. Three outcomes, one **default**:
   ```
 
   State the tradeoff at the point of choosing, not after: the verdict may
-  still arrive post-merge if a reviewable file sneaks in later. This mirrors
+  still arrive post-merge if a reviewable file sneaks in later — and so may a
+  new CodeQL finding. The required `CodeQL` check clears well before the
+  `Analyze (...)` run that actually produces the alert
+  (`docs/contributing/branch-protection.md` § CodeQL scan timing and alert
+  readiness), so an armed auto-merge can land the PR while the scan of its own
+  code is still running. This mirrors
   `reviewing-dependabot-prs`' own MERGE action
   (`.claude/skills/reviewing-dependabot-prs/SKILL.md`), which always uses
   `--auto --squash` for the class of PR it's scoped to.
