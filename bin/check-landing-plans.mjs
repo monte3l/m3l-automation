@@ -74,22 +74,40 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     }
 
     const result = checkLandingPlanDoc(text);
-    /** @type {string | null} */
-    let message = null;
+    // The three verdict arms are mutually exclusive by construction
+    // (checkLandingPlanDoc returns exactly one), but emptySliceId and
+    // duplicateSliceIds are independent booleans checked only once verdict
+    // is "ok" — a table can have BOTH an empty cell and a duplicate ID, and
+    // each is reported (and counted) on its own rather than one masking the
+    // other, matching check-scaffold-seam.mjs's every-independent-problem
+    // reporting for a module.
+    /** @type {string[]} */
+    const messages = [];
 
     if (result.verdict === "missing-page") {
-      message = `${relPath} could not be read.`;
+      messages.push(`${relPath} could not be read.`);
     } else if (result.verdict === "missing-heading") {
-      message = `${relPath} is missing a "## Landing plan" heading (ADR-0072) — every live dated plan doc needs a durable slice record. Add the heading, or git mv this file into docs/plans/archive/ if the work it describes has already shipped.`;
+      messages.push(
+        `${relPath} is missing a "## Landing plan" heading (ADR-0072) — every live dated plan doc needs a durable slice record. Add the heading, or git mv this file into docs/plans/archive/ if the work it describes has already shipped.`,
+      );
     } else if (result.verdict === "unparseable-table") {
-      message = `${relPath}'s "## Landing plan" section has a heading but no parseable Slice/Status table. See docs/adr/0072-reviewable-slice-discipline.md's 2026-09-07 amendment for the required "| Slice | Scope | Status |" table shape.`;
-    } else if (result.emptySliceId) {
-      message = `${relPath}'s "## Landing plan" table has a row with an empty Slice cell — every row needs a non-empty slice identifier.`;
-    } else if (result.duplicateSliceIds.length > 0) {
-      message = `${relPath}'s "## Landing plan" table has duplicate Slice ID(s): ${result.duplicateSliceIds.join(", ")}.`;
+      messages.push(
+        `${relPath}'s "## Landing plan" section has a heading but no parseable Slice/Status table. See docs/adr/0072-reviewable-slice-discipline.md's 2026-09-07 amendment for the required "| Slice | Scope | Status |" table shape.`,
+      );
+    } else {
+      if (result.emptySliceId) {
+        messages.push(
+          `${relPath}'s "## Landing plan" table has a row with an empty Slice cell — every row needs a non-empty slice identifier.`,
+        );
+      }
+      if (result.duplicateSliceIds.length > 0) {
+        messages.push(
+          `${relPath}'s "## Landing plan" table has duplicate Slice ID(s): ${result.duplicateSliceIds.join(", ")}.`,
+        );
+      }
     }
 
-    if (message !== null) {
+    for (const message of messages) {
       reporter.error(message, { file: relPath });
       findings.push({ file: relPath, verdict: result.verdict, message });
       errors++;

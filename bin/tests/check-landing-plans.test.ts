@@ -251,4 +251,16 @@ describe("checkLandingPlanDoc", () => {
       duplicateSliceIds: ["A", "B"],
     });
   });
+
+  test("a table with both an empty Slice cell and a duplicate Slice ID reports both", () => {
+    expect(
+      checkLandingPlanDoc(
+        "## Landing plan\n| Slice | Scope | Status |\n| --- | --- | --- |\n|  | x | Landed |\n| A | y | To Do |\n| A | z | To Do |\n",
+      ),
+    ).toEqual({
+      verdict: "ok",
+      emptySliceId: true,
+      duplicateSliceIds: ["A"],
+    });
+  });
 });
