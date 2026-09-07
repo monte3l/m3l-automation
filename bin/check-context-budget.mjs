@@ -447,6 +447,25 @@ export function collectRuleFiles(rulesDir) {
 }
 
 /**
+ * Extract the body of CLAUDE.md's "## Coding, errors & tests (path-scoped)"
+ * section — from its heading up to (not including) the next `## ` heading or
+ * end of string. No `/m` flag: under `/m`, `$` matches before *any* newline,
+ * which silently truncates a non-greedy `[\s\S]*?` capture at the section's
+ * first line break rather than its end (`.claude/rules/harness-artifacts.md`
+ * names this exact trap). Anchoring via `(?:^|\n)` and ending the capture at
+ * `(?=\n## |$)` needs no multiline flag at all.
+ *
+ * @param {string} claudeMdContent raw CLAUDE.md text
+ * @returns {string} the section body, or "" if the heading isn't found
+ */
+export function extractCodingSection(claudeMdContent) {
+  const match = claudeMdContent.match(
+    /(?:^|\n)## Coding, errors & tests \(path-scoped\)\n([\s\S]*?)(?=\n## |$)/,
+  );
+  return match === null ? "" : match[1];
+}
+
+/**
  * Parse CLAUDE.md's "Coding, errors & tests (path-scoped)" rule-glob bullet
  * list — the prose description of which `.claude/rules/*.md` extract loads
  * for which path glob(s) — into a map of rule filename -> declared globs.
@@ -455,15 +474,24 @@ export function collectRuleFiles(rulesDir) {
  * drifted apart twice with no gate catching it before this one existed
  * (2026-08-31 audit against Anthropic's AI-native SDLC playbook).
  *
+ * Scoped to {@link extractCodingSection}'s section body, not the whole file
+ * — an arrow-bullet of this exact shape anywhere else in CLAUDE.md (e.g. an
+ * unrelated worked example) would otherwise become a map entry, and
+ * {@link deriveRuleRegistrationGaps}'s `phantoms` check (unlike
+ * {@link diffRuleGlobParity}, which only ever iterates real rule files) walks
+ * every key in this map — so a stray whole-file match would hard-fail the
+ * gate on a bullet that was never meant to register a rule at all.
+ *
  * @param {string} claudeMdContent raw CLAUDE.md text
  * @returns {Map<string, string[]>} rule filename -> globs, in bullet order
  */
 export function parseClaudeMdRuleGlobs(claudeMdContent) {
   /** @type {Map<string, string[]>} */
   const result = new Map();
+  const section = extractCodingSection(claudeMdContent);
   const bulletRe = /^- ((?:`[^`]+`(?:,\s*)?)+)\s*→\s*`([\w.-]+\.md)`/gm;
   let match;
-  while ((match = bulletRe.exec(claudeMdContent)) !== null) {
+  while ((match = bulletRe.exec(section)) !== null) {
     const globs = [...match[1].matchAll(/`([^`]+)`/g)].map((m) => m[1]);
     result.set(match[2], globs);
   }
@@ -474,7 +502,10 @@ export function parseClaudeMdRuleGlobs(claudeMdContent) {
  * Diff CLAUDE.md's declared rule-glob prose against each rule file's actual
  * `paths:` frontmatter — an order-insensitive set comparison, since the
  * prose lists read most naturally in a hand-chosen order that need not match
- * the frontmatter array order.
+ * the frontmatter array order. A rule absent from either side, or one whose
+ * `paths:` is empty, is a registration failure rather than a glob mismatch —
+ * left entirely to {@link deriveRuleRegistrationGaps} so a documented-but-
+ * pathless rule reports once, not twice, for one root cause.
  *
  * @param {Map<string, string[]>} claudeMdGlobs from {@link parseClaudeMdRuleGlobs}
  * @param {RuleFile[]} rules from {@link collectRuleFiles}
@@ -484,7 +515,7 @@ export function diffRuleGlobParity(claudeMdGlobs, rules) {
   const mismatches = [];
   for (const rule of rules) {
     const documented = claudeMdGlobs.get(rule.name);
-    if (documented === undefined) continue;
+    if (documented === undefined || rule.globs.length === 0) continue;
     const a = [...documented].sort();
     const b = [...rule.globs].sort();
     const same = a.length === b.length && a.every((g, i) => g === b[i]);
@@ -493,6 +524,50 @@ export function diffRuleGlobParity(claudeMdGlobs, rules) {
     }
   }
   return mismatches;
+}
+
+/**
+ * @typedef {Object} RuleRegistrationGaps
+ * @property {string[]} orphans `.claude/rules/*.md` files with no CLAUDE.md
+ *   bullet at all — {@link diffRuleGlobParity} deliberately skips these (its
+ *   own contract, asserted in its test suite), so nothing else catches a
+ *   rule that registers nowhere.
+ * @property {string[]} phantoms CLAUDE.md bullets naming a rule file that
+ *   does not exist under `.claude/rules/`.
+ * @property {string[]} pathless rule files whose `paths:` frontmatter is
+ *   missing or empty — `extractRulePaths` returns `[]`, so the rule can
+ *   never conditionally load regardless of what CLAUDE.md says about it.
+ */
+
+/**
+ * Bidirectional completeness check between `.claude/rules/*.md` and
+ * CLAUDE.md's rule-glob prose — the registration gap `diffRuleGlobParity`
+ * leaves open by design (it only compares globs for rules documented on
+ * *both* sides). Mirrors the shape `bin/check-agents.mjs` already applies to
+ * the agent roster vs. its MODEL-MATRIX block: every other harness artifact
+ * class (skills, agents, hooks) has a completeness gate against its own
+ * registry; `.claude/rules/*` was the one left un-registrable-checked, and a
+ * rule with no bullet and no `paths:` passes {@link diffRuleGlobParity} with
+ * zero mismatches while never loading in any session.
+ *
+ * @param {Map<string, string[]>} claudeMdGlobs from {@link parseClaudeMdRuleGlobs}
+ * @param {RuleFile[]} rules from {@link collectRuleFiles}
+ * @returns {RuleRegistrationGaps}
+ */
+export function deriveRuleRegistrationGaps(claudeMdGlobs, rules) {
+  const ruleNames = new Set(rules.map((r) => r.name));
+  const orphans = rules
+    .filter((r) => !claudeMdGlobs.has(r.name))
+    .map((r) => r.name)
+    .sort();
+  const phantoms = [...claudeMdGlobs.keys()]
+    .filter((name) => !ruleNames.has(name))
+    .sort();
+  const pathless = rules
+    .filter((r) => r.globs.length === 0)
+    .map((r) => r.name)
+    .sort();
+  return { orphans, phantoms, pathless };
 }
 
 /**
@@ -939,6 +1014,34 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     );
   }
 
+  // --- 2c. .claude/rules registration completeness (orphans/phantoms/pathless) ---
+  const ruleGaps = deriveRuleRegistrationGaps(claudeMdRuleGlobs, rules);
+  for (const name of ruleGaps.orphans) {
+    hardFail = true;
+    reporter.error(
+      `.claude/rules/${name} has no bullet in CLAUDE.md's "Coding, errors & tests" ` +
+        `list — an unregistered rule never surfaces to a contributor and diffRuleGlobParity ` +
+        `only compares rules documented on both sides, so nothing else catches this. Add a bullet.`,
+      { file: `.claude/rules/${name}` },
+    );
+  }
+  for (const name of ruleGaps.phantoms) {
+    hardFail = true;
+    reporter.error(
+      `CLAUDE.md's "Coding, errors & tests" list names \`${name}\`, but no ` +
+        `.claude/rules/${name} file exists — remove the bullet or restore the file.`,
+      { file: "CLAUDE.md" },
+    );
+  }
+  for (const name of ruleGaps.pathless) {
+    hardFail = true;
+    reporter.error(
+      `.claude/rules/${name} has no (or empty) \`paths:\` frontmatter — it can never ` +
+        `conditionally load regardless of what CLAUDE.md says about it. Add a paths: list.`,
+      { file: `.claude/rules/${name}` },
+    );
+  }
+
   // --- 3. .claude/skills/*/SKILL.md description weight (informational) ---
   const skillsDir = join(root, ".claude", "skills");
   const skillDescriptions = collectSkillDescriptions(skillsDir);
@@ -991,7 +1094,8 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     `Rules ratchet: ${rules.length} file(s) checked, ${ruleViolations.length} violation(s).`,
   );
   reporter.info(
-    `Rule-glob parity: ${claudeMdRuleGlobs.size} documented, ${ruleGlobMismatches.length} mismatch(es).`,
+    `Rule-glob parity: ${claudeMdRuleGlobs.size} documented, ${ruleGlobMismatches.length} mismatch(es), ` +
+      `${ruleGaps.orphans.length} orphan(s), ${ruleGaps.phantoms.length} phantom(s), ${ruleGaps.pathless.length} pathless.`,
   );
   reporter.info(
     `Skill listing: ${skillDescriptions.length} description(s), ${totalSkillDescChars} total chars ` +
@@ -1031,6 +1135,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     perBlock,
     ruleViolations,
     ruleGlobMismatches,
+    ruleGaps,
     scenarios,
     skillDescriptions,
     totalSkillDescChars,

@@ -43,8 +43,10 @@ import {
   checkRuleBudget,
   buildRuleBaseline,
   collectSkillDescriptions,
+  extractCodingSection,
   parseClaudeMdRuleGlobs,
   diffRuleGlobParity,
+  deriveRuleRegistrationGaps,
   stripFrontmatter,
   collectSkillBodyBytes,
   collectAgentBodyBytes,
@@ -828,10 +830,80 @@ describe("deriveScenarioTotals", () => {
   });
 });
 
+describe("extractCodingSection", () => {
+  test("extracts the section body when a following ## heading is present", () => {
+    const content = [
+      "# CLAUDE.md",
+      "",
+      "## Coding, errors & tests (path-scoped)",
+      "",
+      "Canonical **Style Guide**: intro line.",
+      "- `tests/**` → `tests.md`",
+      "",
+      "## Interaction Style",
+      "",
+      "- ask clarifying questions first",
+      "",
+    ].join("\n");
+    const section = extractCodingSection(content);
+    expect(section).toContain("- `tests/**` → `tests.md`");
+    expect(section).not.toContain("ask clarifying questions first");
+  });
+
+  test("extracts to end-of-string, without truncating at the first newline, when the section is last in the file", () => {
+    const content = [
+      "# CLAUDE.md",
+      "",
+      "## Interaction Style",
+      "",
+      "- ask clarifying questions first",
+      "",
+      "## Coding, errors & tests (path-scoped)",
+      "",
+      "First line of the last section.",
+      "- `packages/m3l-common/src/**` → `library-src.md` — ESM only",
+      "Third and final line of the section body.",
+    ].join("\n");
+    const section = extractCodingSection(content);
+    expect(section).toContain("First line of the last section.");
+    expect(section).toContain(
+      "- `packages/m3l-common/src/**` → `library-src.md` — ESM only",
+    );
+    expect(section).toContain("Third and final line of the section body.");
+  });
+
+  test("returns an empty string when the heading is not present at all", () => {
+    const content = [
+      "# CLAUDE.md",
+      "",
+      "## Interaction Style",
+      "",
+      "- ask clarifying questions first",
+      "",
+    ].join("\n");
+    expect(extractCodingSection(content)).toBe("");
+  });
+
+  test("the real repo's CLAUDE.md has a non-empty Coding section containing a known rule-glob bullet", () => {
+    const claudeMdContent = fs.readFileSync(join(root, "CLAUDE.md"), "utf8");
+    const section = extractCodingSection(claudeMdContent);
+    expect(section.length).toBeGreaterThan(0);
+    expect(
+      section.includes("`tests.md`") ||
+        section.includes("`harness-artifacts.md`"),
+    ).toBe(true);
+  });
+});
+
 describe("parseClaudeMdRuleGlobs", () => {
   test("parses a bullet with multiple globs into an ordered array keyed by filename", () => {
     const result = parseClaudeMdRuleGlobs(
-      "- `packages/m3l-common/src/**`, `scripts/**` → `refactoring.md` — behavior-preserving changes\n",
+      [
+        "## Coding, errors & tests (path-scoped)",
+        "",
+        "- `packages/m3l-common/src/**`, `scripts/**` → `refactoring.md` — behavior-preserving changes",
+        "",
+      ].join("\n"),
     );
     expect(result.get("refactoring.md")).toEqual([
       "packages/m3l-common/src/**",
@@ -844,6 +916,33 @@ describe("parseClaudeMdRuleGlobs", () => {
       "Just prose, no rule-glob bullets here.\n- an unrelated bullet\n",
     );
     expect(result.size).toBe(0);
+  });
+
+  test("ignores an arrow-bullet of the registrable shape outside the Coding section while still parsing one inside it", () => {
+    const content = [
+      "# CLAUDE.md",
+      "",
+      "## Worked Example",
+      "",
+      "Here is an example bullet from an unrelated walkthrough:",
+      "- `some/glob/**` → `something.md` — this is NOT a real rule registration",
+      "",
+      "## Coding, errors & tests (path-scoped)",
+      "",
+      "- `packages/m3l-common/src/**` → `library-src.md` — ESM imports, no `any`",
+      "",
+      "## Interaction Style",
+      "",
+      "- `other/glob/**` → `elsewhere.md` — also NOT a real rule registration",
+      "",
+    ].join("\n");
+    const result = parseClaudeMdRuleGlobs(content);
+    expect(result.get("library-src.md")).toEqual([
+      "packages/m3l-common/src/**",
+    ]);
+    expect(result.has("something.md")).toBe(false);
+    expect(result.has("elsewhere.md")).toBe(false);
+    expect(result.size).toBe(1);
   });
 });
 
@@ -883,7 +982,7 @@ describe("diffRuleGlobParity", () => {
     ]);
   });
 
-  test("a rule with no CLAUDE.md bullet at all is skipped, not flagged", () => {
+  test("a rule with no CLAUDE.md bullet at all is skipped by glob-parity comparison (see deriveRuleRegistrationGaps for registration completeness)", () => {
     const claudeMdGlobs = new Map<string, string[]>();
     const rules = [
       {
@@ -894,6 +993,161 @@ describe("diffRuleGlobParity", () => {
       },
     ];
     expect(diffRuleGlobParity(claudeMdGlobs, rules)).toEqual([]);
+  });
+});
+
+describe("deriveRuleRegistrationGaps", () => {
+  test("no gaps when every rule has a matching CLAUDE.md key and no globs are empty", () => {
+    const claudeMdGlobs = new Map([
+      ["refactoring.md", ["scripts/**"]],
+      ["tests.md", ["**/*.test.ts", "**/tests/**"]],
+    ]);
+    const rules = [
+      {
+        name: "refactoring.md",
+        relPath: ".claude/rules/refactoring.md",
+        bytes: 100,
+        globs: ["scripts/**"],
+      },
+      {
+        name: "tests.md",
+        relPath: ".claude/rules/tests.md",
+        bytes: 100,
+        globs: ["**/tests/**", "**/*.test.ts"],
+      },
+    ];
+    expect(deriveRuleRegistrationGaps(claudeMdGlobs, rules)).toEqual({
+      orphans: [],
+      phantoms: [],
+      pathless: [],
+    });
+  });
+
+  test("a rule file with no matching CLAUDE.md key is an orphan", () => {
+    const claudeMdGlobs = new Map<string, string[]>();
+    const rules = [
+      {
+        name: "undocumented.md",
+        relPath: ".claude/rules/undocumented.md",
+        bytes: 100,
+        globs: ["**/*.ts"],
+      },
+    ];
+    expect(deriveRuleRegistrationGaps(claudeMdGlobs, rules)).toEqual({
+      orphans: ["undocumented.md"],
+      phantoms: [],
+      pathless: [],
+    });
+  });
+
+  test("a CLAUDE.md key naming a rule that does not exist on disk is a phantom", () => {
+    const claudeMdGlobs = new Map([["ghost.md", ["**/*.ts"]]]);
+    const rules: {
+      name: string;
+      relPath: string;
+      bytes: number;
+      globs: string[];
+    }[] = [];
+    expect(deriveRuleRegistrationGaps(claudeMdGlobs, rules)).toEqual({
+      orphans: [],
+      phantoms: ["ghost.md"],
+      pathless: [],
+    });
+  });
+
+  test("a rule with empty globs is pathless even when it has a CLAUDE.md bullet (orthogonal to orphan status)", () => {
+    const claudeMdGlobs = new Map([["scripts.md", []]]);
+    const rules = [
+      {
+        name: "scripts.md",
+        relPath: ".claude/rules/scripts.md",
+        bytes: 100,
+        globs: [] as string[],
+      },
+    ];
+    expect(deriveRuleRegistrationGaps(claudeMdGlobs, rules)).toEqual({
+      orphans: [],
+      phantoms: [],
+      pathless: ["scripts.md"],
+    });
+  });
+
+  test("orphans, phantoms, and pathless can all occur together in one fixture", () => {
+    const claudeMdGlobs = new Map([
+      ["ghost.md", ["**/*.ts"]],
+      ["scripts.md", []],
+    ]);
+    const rules = [
+      {
+        name: "undocumented.md",
+        relPath: ".claude/rules/undocumented.md",
+        bytes: 100,
+        globs: ["**/*.ts"],
+      },
+      {
+        name: "scripts.md",
+        relPath: ".claude/rules/scripts.md",
+        bytes: 100,
+        globs: [] as string[],
+      },
+    ];
+    expect(deriveRuleRegistrationGaps(claudeMdGlobs, rules)).toEqual({
+      orphans: ["undocumented.md"],
+      phantoms: ["ghost.md"],
+      pathless: ["scripts.md"],
+    });
+  });
+
+  test("orphans, phantoms, and pathless are each returned alphabetically sorted regardless of input order", () => {
+    const claudeMdGlobs = new Map([
+      ["zeta-ghost.md", ["**/*.ts"]],
+      ["alpha-ghost.md", ["**/*.ts"]],
+      ["zeta-pathless.md", []],
+      ["alpha-pathless.md", []],
+    ]);
+    const rules = [
+      {
+        name: "zeta-orphan.md",
+        relPath: ".claude/rules/zeta-orphan.md",
+        bytes: 100,
+        globs: ["**/*.ts"],
+      },
+      {
+        name: "alpha-orphan.md",
+        relPath: ".claude/rules/alpha-orphan.md",
+        bytes: 100,
+        globs: ["**/*.ts"],
+      },
+      {
+        name: "zeta-pathless.md",
+        relPath: ".claude/rules/zeta-pathless.md",
+        bytes: 100,
+        globs: [] as string[],
+      },
+      {
+        name: "alpha-pathless.md",
+        relPath: ".claude/rules/alpha-pathless.md",
+        bytes: 100,
+        globs: [] as string[],
+      },
+    ];
+    expect(deriveRuleRegistrationGaps(claudeMdGlobs, rules)).toEqual({
+      orphans: ["alpha-orphan.md", "zeta-orphan.md"],
+      phantoms: ["alpha-ghost.md", "zeta-ghost.md"],
+      pathless: ["alpha-pathless.md", "zeta-pathless.md"],
+    });
+  });
+
+  test("the real repo's .claude/rules tree and CLAUDE.md have no registration gaps today", () => {
+    const rules = collectRuleFiles(join(root, ".claude", "rules"));
+    const claudeMdGlobs = parseClaudeMdRuleGlobs(
+      fs.readFileSync(join(root, "CLAUDE.md"), "utf8"),
+    );
+    expect(deriveRuleRegistrationGaps(claudeMdGlobs, rules)).toEqual({
+      orphans: [],
+      phantoms: [],
+      pathless: [],
+    });
   });
 });
 

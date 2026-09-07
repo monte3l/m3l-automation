@@ -165,25 +165,18 @@ that its durable rules still don't mention.
 ## Step 3 — Route each lesson to its durable home
 
 A lesson only changes behavior if it lives where the next agent will read it.
-Route by _who needs it and when_:
+`docs/contributing/instruction-authoring.md` is the canonical placement
+policy: it routes any instruction to one of six tiers — `CLAUDE.md`,
+`.claude/rules/*.md` (`library-src.md`, `tests.md`, `scripts.md`,
+`domain-knowledge.md`), `.claude/agents/*.md`, a
+`.claude/skills/<name>/SKILL.md`, a `.claude/settings.json` hook, or a
+`docs/contributing/` page — and gives each tier's load trigger, its enforced
+budget, and the question that selects it. Route by that page.
 
-- **General code conventions** (ESM/error/test/API rules that apply to all
-  library or script code) → `.claude/rules/`:
-  `library-src.md`, `tests.md`, `scripts.md`, or `domain-knowledge.md`.
-- **Agent/spoke tactics** (how a specific writer or reviewer spoke should act) →
-  `.claude/agents/`: e.g. `test-author.md`, `code-implementer.md`,
-  `spec-conformance-reviewer.md`, `code-reviewer.md`, and the other reviewers.
-- **Process / step-ordering lessons** that belong to a specific workflow → that
-  workflow's `.claude/skills/<name>/SKILL.md` (e.g. a "run `gen:index` before
-  `format`" ordering lesson belongs in the `syncing-docs` skill's step sequence).
-- **Cross-cutting project constraints** with no better home → `CLAUDE.md`.
-- **Harness-shaped findings from telemetry** → the owning skill's or agent's
-  own file, or `docs/contributing/model-selection.md` when it is a tiering
-  question.
-
-If a lesson could land in two places, prefer the most specific one an agent
-actually reads while doing the relevant work — a tactic buried in `CLAUDE.md` is
-weaker than the same tactic in the spoke prompt that governs the task.
+One tiebreak is specific to promotion and is not in it: **prefer the most
+specific home an agent actually reads while doing the relevant work** — a
+tactic buried in `CLAUDE.md` is weaker than the same tactic in the spoke
+prompt that governs the task.
 
 Write the promotion as the rules themselves are written: terse, imperative, and
 explaining the _why_ (a rule the reader understands survives edge cases a bare

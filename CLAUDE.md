@@ -19,14 +19,13 @@
  exceeds 200 chars — the recurring cause of this file's largest blocks
  historically.
 
- EVICTION RULES: a multi-step procedure -> a skill (.claude/skills/); a
- constraint scoped to one path -> a rule with `paths:` frontmatter
- (.claude/rules/*.md); a rule that must ALWAYS hold -> a
- .claude/settings.json hook, not prose (CLAUDE.md is advisory context, never
- enforced config). Keep here only facts every session needs. `@path`
- imports do NOT save context — they expand in full at launch; prefer a
- pointer sentence over an import when the target is large (this file no
- longer imports anything for exactly that reason — ADR-0078).
+ EVICTION RULES: docs/contributing/instruction-authoring.md is canonical —
+ which of six tiers (this file, a rule, an agent, a skill, a hook, or a
+ contributing doc) a new instruction belongs in, and what each costs. Keep
+ here only facts every session needs. `@path` imports do NOT save context —
+ they expand in full at launch; prefer a pointer sentence over an import
+ when the target is large (this file no longer imports anything for exactly
+ that reason — ADR-0078).
 
  WARNING — three scripts parse this file's exact prose; do not restructure
  the sections below without updating them:
@@ -165,7 +164,7 @@ Comment the _why_, not the _what_. TSDoc rules (every exported symbol, `@example
 
 **Hub-and-spoke**: the hub plans and dispatches to isolated spokes, never writing or reviewing `src/`/test code itself — enforced by `guard-hub-src-writes.mjs` and `disallowedTools: Agent` on every spoke (`pnpm check:agents`). Spoke roster, TDD loop, model tiering, recurring-failure lessons: `docs/contributing/agent-operating-model.md`, `model-selection.md`.
 
-**Hooks** (`.claude/settings.json`) add deterministic enforcement on top of this advisory file (`check:hooks` validates wiring); **skills** encode multi-step procedures the hub invokes by name. Inventories: `hooks-reference.md`, `skills-catalog.md`, `subagent-context-management.md` (mid-turn truncation).
+**Where a new instruction goes** — this file vs a path-scoped rule vs a skill vs a hook: `docs/contributing/instruction-authoring.md`. Inventories: `hooks-reference.md`, `skills-catalog.md`, `subagent-context-management.md` (mid-turn truncation).
 
 ## Task Workflow
 
