@@ -53,15 +53,25 @@ gh pr view --json state,mergedAt,headRefName,baseRefName
 Record `headRefName` — every later step operates on this branch, not
 whatever the user typed.
 
-Also capture any **literal-mode** slice-progress entry now, before Step 3
-removes the worktree it lives in: read `tmp/slice-progress.json` in the
-current worktree/checkout. If it exists, is stamped for `headRefName`, and
-carries a `wave` field with no `page` field (literal mode — ADR-0072's
-escape hatch for a non-submodule multi-PR wave with no committed
-landing-plan table), record its `{wave, current, total, label}` for Step 8.
-It lives only in this gitignored `tmp/`, so once the worktree is gone it's
-unrecoverable — a derived-mode entry (`page` field) needs no such capture,
-since it's re-read from committed docs and unaffected by worktree removal.
+Also capture any slice-progress entry now, before Step 3 removes the worktree
+it lives in: read `tmp/slice-progress.json` in the current worktree/checkout.
+If it exists and is stamped for `headRefName`, record it for Step 8 — but what
+you need depends on its mode:
+
+- **Literal mode** (a `wave` field with no `page` field — ADR-0072's escape
+  hatch for a non-submodule multi-PR wave with no committed landing-plan
+  document): record the whole `{wave, current, total, label}`.
+- **Derived mode with a submodule reference page** (a `page` field pointing at
+  `docs/reference/<ns>/<mod>.md`): no capture needed. Step 8 re-derives the
+  page path independently from `headRefName` itself (which submodule's
+  `packages/m3l-common/src/{core,aws}/<mod>/` the merge touched), so it's
+  unaffected by worktree removal.
+- **Derived mode with a non-submodule wave's plan doc** (a `page` field
+  pointing at `docs/plans/YYYY-MM-DD-<slug>.md`, ADR-0072's 2026-09-07
+  amendment): record the `page` path. Unlike a submodule, there is no
+  deterministic way to derive _which_ plan doc a wave's merged diff belongs
+  to from the diff alone — the pointer, not the table content, is the one
+  thing that dies with the worktree.
 
 ### 2 — Return to `main` and pull
 
@@ -225,44 +235,62 @@ orphan.
 
 ### 8 — Check for a remaining slice (ADR-0072)
 
-Two cases, depending on whether `headRefName` (Step 1) landed part of a
-submodule (a durable, machine-checkable slice record) or a non-submodule
-multi-PR wave (an ephemeral one, captured in Step 1 — see `## Notes` below
-for why literal mode has no durable record to re-derive here).
+One lookup, with a fallback — both a submodule and a non-submodule wave now
+carry the identical durable record (ADR-0072's 2026-09-07 amendment, issue
+#998): a `## Landing plan` heading and a `| Slice | [Branch |] Scope | Status |`
+table, read by the same shared parser either way.
 
-**Submodule case.** If the just-merged work touched
-`packages/m3l-common/src/{core,aws}/<mod>/`, read that submodule's
-`docs/reference/<ns>/<mod>.md` for a `## Landing plan` heading and parse its
-slice table. If the heading is absent, or every row's Status is `Landed`,
-nothing remains — run `pnpm slice:clear` (blanks the statusline's
-slice-progress segment; a no-op if it was never set) and proceed to Step 9,
-this is still the terminal case.
+**1 — Resolve the document.** If `headRefName` (Step 1) touched
+`packages/m3l-common/src/{core,aws}/<mod>/`, it's that submodule's
+`docs/reference/<ns>/<mod>.md`. Otherwise, use the `page` path Step 1 captured
+from a derived-mode `tmp/slice-progress.json` entry pointing at
+`docs/plans/YYYY-MM-DD-<slug>.md` — there is no way to derive _which_ plan doc
+a non-submodule wave's diff belongs to from the diff alone, which is exactly
+why Step 1 captures that pointer before the worktree (and its `tmp/`) is gone.
+If neither applies, there is no document to resolve — skip to Step 3's
+literal-mode fallback.
 
-**If a row's Status is not `Landed`,** a slice remains. Don't stop here:
+**2 — Parse it.** Read the resolved document for a `## Landing plan` heading
+and parse its slice table. If the heading is absent, or every row's Status is
+terminal (`Landed`/`Shipped`/`✅`, matched by leading word — a trailing PR
+citation like `Landed (PR #580)` still counts), nothing remains: run `pnpm
+slice:clear` (blanks the statusline segment; a no-op if it was never set) and
+proceed to Step 9, this is still the terminal case.
 
-1. Derive the next slice's slug from that row (ask the user to confirm if
-   the row name doesn't map cleanly to a slug), then run `pnpm worktree:new
-<next-slug>` and `EnterWorktree path: ../m3l-automation-<next-slug>` —
-   the same in-session mechanism `starting-work` Step 5 uses (ADR-0013/0014's
-   2026-09-04 amendments): no restart, no second session.
+**If a row's Status is not terminal,** a slice remains. Don't stop here:
+
+1. Determine the next slice's branch: if the table has a `Branch` column,
+   use that row's cell verbatim — it's already settled, don't re-derive a
+   slug or ask the user to confirm it. Only when the cell is empty/absent (no
+   `Branch` column at all, a submodule's page never has one) does this fall
+   back to deriving a slug from the row name, asking the user to confirm if
+   it doesn't map cleanly. Then run `pnpm worktree:new <next-slug>` and
+   `EnterWorktree path: ../m3l-automation-<next-slug>` — the same in-session
+   mechanism `starting-work` Step 5 uses (ADR-0013/0014's 2026-09-04
+   amendments): no restart, no second session.
 2. Re-enter `starting-work` in its **abbreviated** form: skip the
-   Location/Branch/PR-required/Push-target confirmation entirely — a
+   Location/Branch/PR-required/Push-target confirmation entirely — the
    landing plan's own sequence already fixes them (same branch-naming
    pattern as the slice that just merged, PR required, `origin <branch>`
    push target) — but still confirm the session name via `/rename
 <kind>-<next-slug>`, since that names this specific session rather than
    settling git state. `starting-work` Step 1's "next-slice signal" is
    exactly this handoff.
-3. Report which slice is starting, quoting its `## Landing plan` row,
+3. In the new worktree, re-run `pnpm slice:set -- --page <the resolved
+document>` so the statusline segment continues immediately — derived
+   mode re-reads the same committed table, so this never drifts.
+4. Report which slice is starting, quoting its `## Landing plan` row,
    instead of Step 9's terminal report.
 
-**Non-submodule wave case.** If Step 1 captured a literal-mode
-slice-progress entry (`{wave, current, total, label}`), the just-merged PR
-was slice `current` of `total` in that wave.
+**3 — Literal-mode fallback.** Only when Step 1 found no document to resolve
+at all: if it captured a literal-mode entry (`{wave, current, total, label}`
+— a non-submodule wave with no plan doc yet, ADR-0072's original 2026-09-04
+escape hatch), the just-merged PR was slice `current` of `total`.
 
 - **`current < total`:** a slice remains. Ask the user for the next slice's
-  slug (there is no landing-plan row to derive it from), then follow the
-  same three sub-steps as the submodule case — `worktree:new` +
+  slug (there is no table row to derive it from) and, separately, whether
+  this wave's plan doc should finally be authored — closing the gap that put
+  it here. Follow the same sub-steps as above — `worktree:new` +
   `EnterWorktree`, abbreviated `starting-work` re-entry, session name — and
   in the new worktree run `pnpm slice:set -- --wave <wave> --current
 <current + 1> --total <total> [--label <label>]` so the segment continues
@@ -275,7 +303,7 @@ was slice `current` of `total` in that wave.
 
 This makes `finishing-work` a third workflow entry point wired into
 ADR-0072's slice discipline, alongside `starting-work` and `creating-prs` —
-see that ADR's 2026-09-04 amendment.
+see that ADR's 2026-09-04 and 2026-09-07 amendments.
 
 ### 9 — Report
 
@@ -298,17 +326,18 @@ this step is expected to run.
   `delete_branch_on_merge` setting is off — that's the GitHub-side
   precondition for the remote branch disappearing on its own; this skill's
   Step 3/4 handle only the _local_ residue regardless of that setting.
-- Step 8's two cases are asymmetric on purpose. The submodule case reads a
-  durable, machine-checkable record (`check-scaffold-seam.mjs`'s
-  `LANDING_PLAN_HEADING`/table) that survives independently of any one
-  session or worktree. The non-submodule wave case has no equivalent
-  durable record — literal-mode `tmp/slice-progress.json` is deliberately
-  ephemeral and gitignored (ADR-0072's 2026-09-04 amendment) — so Step 8
-  depends on Step 1 having captured it **before** Step 3 deletes the
-  worktree it lives in. A session that skips Step 1's capture (or resumes
-  `finishing-work` mid-flow after the worktree is already gone) has no way
-  to recover that state after the fact; it simply reports nothing to
-  continue, indistinguishable from a wave's last slice. This is a known,
-  accepted gap — mirroring the deliberate choice in ADR-0072's 2026-09-04
-  amendment not to invent a second durable record for this case — not a
-  defect to fix reflexively if it recurs.
+- **The asymmetry between Step 8's two cases is closed, as of ADR-0072's
+  2026-09-07 amendment (issue #998).** Both a submodule and a non-submodule
+  wave now read a durable, machine-checkable record — `bin/check-scaffold-seam.mjs`
+  gates the former, `bin/check-landing-plans.mjs` the latter, both through the
+  same `parseLandingPlanProgress`. The residual gap is narrower than before:
+  Step 1 still has to capture a derived-mode entry's `page` pointer before
+  Step 3 deletes the worktree, since (unlike a submodule) there's no way to
+  derive which plan doc a wave's diff belongs to from the diff alone. A
+  session that skips that capture (or resumes `finishing-work` mid-flow after
+  the worktree is already gone) falls through to the literal-mode fallback,
+  which reports nothing to continue if no `--wave` entry was ever set either
+  — indistinguishable from a wave's last slice. `pnpm slice:set -- --wave`
+  itself remains deliberately ephemeral and gitignored (ADR-0072's 2026-09-04
+  amendment) for the one case that genuinely still has no durable record: a
+  wave whose plan doc hasn't been authored yet.

@@ -105,11 +105,13 @@ Also decide whether the scope is **one landable unit or several.** It spans
 several when the task already implies independently mergeable slices — a
 process/tooling change with a docs-only part and a code part (ADR-0072's
 docs-vs-code split, which measures ~0 reviewable chars and should default to
-splitting), a submodule whose `## Landing plan` table on
-`docs/reference/<ns>/<mod>.md` (the seam plan's durable form —
-`implementing-submodules` Step 5, ADR-0072) has more than one row, or a batch
-of same-shaped changes across unrelated paths. Read the page rather than
-inferring from conversation; a page with no heading yet, or a heading with no
+splitting), or a `## Landing plan` table with more than one row (the seam
+plan's durable form, ADR-0072) — a submodule's on
+`docs/reference/<ns>/<mod>.md` (`implementing-submodules` Step 5), a
+non-submodule multi-PR wave's on its own live dated
+`docs/plans/YYYY-MM-DD-<slug>.md` (`pnpm check:landing-plans`) — or a batch of
+same-shaped changes across unrelated paths. Read the document rather than
+inferring from conversation; one with no heading yet, or a heading with no
 parseable table, means no seam plan has been recorded — treat the scope as one
 unit. A single bug fix or a small, cohesive feature is one unit — most tasks
 are.
@@ -165,10 +167,11 @@ Derive a concrete default for all decisions from steps 1–2:
 - **PR sequence** — only surfaced when Step 2 found several landable units.
   Recommend the order (docs-first when the scope mixes docs and code — that
   slice is free to review and unblocks the rest; otherwise by path cluster or,
-  for submodule work, the `## Landing plan` table's own row order, skipping
-  any row whose Status is already terminal) and name each slice's branch.
-  This is the ADR-0072 discipline applied at plan time, before the first commit exists
-  to split.
+  when a `## Landing plan` table exists, its own row order, skipping any row
+  whose Status is already terminal) and name each slice's branch. When the
+  table carries a `Branch` column, its names are already settled — read them,
+  don't re-derive a slug. This is the ADR-0072 discipline applied at plan
+  time, before the first commit exists to split.
 - **Model tier (advisory only)** — name the recommended model + effort for this
   task category from the matrix in `docs/contributing/model-selection.md`
   (e.g. "matrix row 2: Opus 5 at `xhigh` for a single-sitting implementation").
@@ -244,7 +247,14 @@ Once confirmed:
     the page's `## Landing plan` table on every render, so it never needs
     updating again mid-slice. Prefer this form whenever a page exists; it
     cannot drift from the committed table the way a literal count can.
-  - **Non-submodule multi-PR wave, no reference page** (the PR-sequence
+  - **Non-submodule multi-PR wave with a plan doc** (ADR-0072's 2026-09-07
+    amendment, issue #998): run `pnpm slice:set -- --page docs/plans/YYYY-MM
+-DD-<slug>.md` — the same derived mode, reading that plan doc's own
+    `## Landing plan` table instead of a reference page. Prefer this over
+    `--wave` whenever the wave's plan doc exists; if it doesn't yet, writing
+    it is the wave's own first landable unit (a docs-only PR, ~0 reviewable
+    chars) rather than a reason to fall back to literal mode.
+  - **Non-submodule multi-PR wave, no plan doc yet** (the PR-sequence
     case from Step 3 above — an X8/X11/V9-style wave): run `pnpm slice:set
 -- --wave <ID> --current <N> --total <M>` using the same wave label and
     position Step 3 already recommended, so the segment shows `<ID> N/M`
@@ -284,25 +294,33 @@ source of truth for the decision. When one of them calls it, the "infer scope"
 step is easy: the caller already knows it will write `src/`/`tests/`, so the PR
 answer is yes and isolation is required.
 
-**The seam-plan handoff (`implementing-submodules` Step 5, ADR-0072) is not
-same-conversation context — it's a file on disk.** Step 5 writes the module's
+**The seam-plan handoff (ADR-0072) is not same-conversation context — it's a
+file on disk, and the same one whether the work is a submodule or a
+non-submodule wave.** A submodule's `implementing-submodules` Step 5 writes a
 `## Landing plan` heading and a `| Slice | Scope | Status |` table onto its
-contract page, `docs/reference/<ns>/<mod>.md`. Reading that table is how Step 2
-above decides a submodule spans several landable units, and how Step 3 orders
-the PR sequence: row count is `M`, the first row whose Status is not
-`Landed`/`Shipped`/`✅` is the current slice, and row order is the PR order.
-This is the same table three other consumers already parse by name —
-`bin/check-scaffold-seam.mjs` (gates on it), `creating-prs` Step 12 (derives its
-`PR N of M` line from it), and `finishing-work` Step 8 (derives the next slice
-from it) — all through the one shared parser,
+contract page, `docs/reference/<ns>/<mod>.md`; a non-submodule multi-PR wave
+carries the identical heading and table shape (plus an optional `Branch`
+column) on its own live dated plan doc, `docs/plans/YYYY-MM-DD-<slug>.md`
+(ADR-0072's 2026-09-07 amendment, `pnpm check:landing-plans` — issue #998).
+Reading that table is how Step 2 above decides the scope spans several
+landable units, and how Step 3 orders the PR sequence: row count is `M`, the
+first row whose Status is not `Landed`/`Shipped`/`✅` is the current slice, row
+order is the PR order, and a `Branch` cell (when present) is the next slice's
+branch name, already settled. This is the same table three other consumers
+already parse by name — `bin/check-scaffold-seam.mjs` (a submodule page) /
+`bin/check-landing-plans.mjs` (a plan doc) gate on it, `creating-prs` Step 12
+derives its `PR N of M` line from it, and `finishing-work` Step 8 derives the
+next slice from it — all through the one shared parser,
 `parseLandingPlanProgress` in `.claude/hooks/statusline-context-pressure.mjs`.
-A page with no `## Landing plan` heading yet, or a heading whose section has no
-parseable table (a freshly scaffolded module — `scaffolding-submodules` writes
-only placeholder text there), means no seam plan has been recorded yet; treat
-the scope as one unit until `implementing-submodules` Step 5 authors the table.
+A document with no `## Landing plan` heading yet, or a heading whose section
+has no parseable table (a freshly scaffolded module — `scaffolding-submodules`
+writes only placeholder text there — or a wave whose plan doc hasn't been
+authored yet), means no seam plan has been recorded yet; treat the scope as
+one unit until the table exists.
 
-This concrete record exists for submodule work only. A non-submodule multi-PR
-task (a tooling/process wave spanning several PRs) has no equivalent durable
-file — ROADMAP row **H5** tracks that gap — and `pnpm slice:set -- --wave`
+`pnpm slice:set -- --wave` remains the fallback for the one case with
+genuinely no durable record: a non-submodule wave with no plan doc at all. It
 writes only an ephemeral, gitignored `tmp/` entry with no authority over this
-skill's own decisions (ADR-0072 § Amendment (2026-09-04)).
+skill's own decisions (ADR-0072 § Amendment (2026-09-04)) — prefer authoring
+the plan doc over reaching for it, since the doc is a real, committed record
+and the literal mode is a display convenience only.

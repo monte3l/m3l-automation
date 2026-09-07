@@ -298,7 +298,10 @@ slice record via `bin/check-scaffold-seam.mjs`. A non-submodule multi-PR
 task (a process/tooling change spanning several PRs, X8/X11/X12-style) has
 no equivalent record; this amendment does not invent a second mechanism for
 it — `finishing-work`'s Step 8 says so explicitly and stays terminal for
-that case, same as before.
+that case, same as before. [**Stale (2026-09-07):** superseded by the
+2026-09-07 amendment below, which closes this gap (ROADMAP H5, issue #998) —
+a non-submodule wave now gets the identical durable record on its own live
+dated plan doc.]
 
 ## Amendment (2026-09-04) — slice-progress statusline segment
 
@@ -337,7 +340,11 @@ and carries no authority over `finishing-work`'s own behavior: Step 8 still
 treats only a submodule's `## Landing plan` as machine-checked truth and stays
 terminal for everything else. Literal mode is a display convenience, cleared
 by `pnpm slice:clear` or simply overwritten by the next `slice:set`, not a
-tracking mechanism.
+tracking mechanism. [**Stale (2026-09-07):** the 2026-09-07 amendment below
+gives a non-submodule wave the same durable `## Landing plan` record a
+submodule has; literal mode remains the fallback only for a wave with no
+plan doc yet, not the primary non-submodule mechanism this paragraph
+originally described.]
 
 The entry is branch-stamped by `bin/slice-progress.mjs` itself from live git
 state — never accepted as a caller-supplied flag, so a model invoking the CLI
@@ -346,6 +353,88 @@ matches the currently resolved branch. This mirrors `starting-work`'s
 handling of a `tmp/compact-handoff.json` naming a different branch: a
 mismatched entry is not a signal for the current task, just stale state from
 a previous one.
+
+## Amendment (2026-09-07) — the landing-plan record generalized beyond submodules
+
+The 2026-09-04 `finishing-work` amendment stated plainly: "Scope: submodule
+landings only, the one case with a durable, machine-checked slice record via
+`bin/check-scaffold-seam.mjs`. A non-submodule multi-PR task … has no
+equivalent record; this amendment does not invent a second mechanism for it."
+The slice-progress statusline amendment said the same thing from the display
+side: literal mode "invents no second _durable_ record for non-submodule
+multi-PR work." ROADMAP row **H5** (issue #998) filed exactly this as the
+deferred item, and this amendment closes it.
+
+**The decision: no second mechanism, even now — the same one, sited
+differently.** A non-submodule multi-PR wave gets the identical `## Landing
+plan` heading and `| Slice | [Branch |] Scope | Status |` table a submodule's
+reference page already carries, on the wave's own live dated plan doc,
+`docs/plans/YYYY-MM-DD-<slug>.md`, instead of `docs/reference/<ns>/<mod>.md`.
+Both are parsed by the one shared function,
+`parseLandingPlanProgress` in `.claude/hooks/statusline-context-pressure.mjs`.
+This was a small change precisely because it invents nothing new: `bin/
+slice-progress.mjs`'s `--page` flag never constrained its argument to a
+`docs/reference/` path — `parseSetArgs` reads whatever file it's given — so
+`pnpm slice:set -- --page docs/plans/<plan>.md` needed **zero** CLI change to
+start working. That is the concrete evidence the two sitings are one
+mechanism, not two: the code never assumed submodule-only in the first place,
+only the prose around it did.
+
+**Two generalizations to the shared parser, each fixing a real defect.**
+
+1. **Terminal-status matching went from whole-cell exact-match to
+   leading-word match.** The exact-match `Set` (`{"landed", "shipped", "✅"}`)
+   rejected any cell with a trailing annotation — `Landed (PR #580)`, the
+   normal way to write one. Confirmed live: `docs/reference/core/procedure.md`'s
+   seven rows all read `Landed (PR #NNN)` and parsed as slice 1 of 7, despite
+   being fully shipped. `isTerminalLandingPlanStatus` now matches the cell's
+   leading word (a leading `**`/`_` emphasis run stripped first, since a bold
+   status cell is an established convention elsewhere in this repo's own
+   status tracking) — `Landed (PR #580)` and `**Shipped**` both count,
+   `Landing soon`/`To Do` correctly don't. A future reader should not
+   "simplify" this to `cell.startsWith(token)`: the whole-word anchor is what
+   keeps `Landing` from falsely matching `Landed`.
+2. **An optional `Branch` column is read and returned** for the current row —
+   the field that lets `finishing-work`'s hand-off use the exact next branch
+   name instead of deriving a slug from a row name and asking the user to
+   confirm it. The value is validated against a conservative ref-name shape
+   before being returned (a placeholder, prose, or a shell metacharacter
+   degrades to `null`) — this field can end up interpolated into a shell
+   command (`pnpm worktree:new <branch>`), so an invalid cell must read as
+   "not recorded," never fall back to guessing from raw cell text. It is
+   also forced to `null` once every row is landed: the "current row" at that
+   point is the last row, whose branch has already shipped, not a hand-off
+   target.
+
+**The new gate, and why it stays CI-only.** `pnpm check:landing-plans`
+(`bin/check-landing-plans.mjs` + `bin/lib/landing-plans.mjs`) is the
+non-submodule counterpart to `bin/check-scaffold-seam.mjs`'s Landing-plan
+arm — blocking, scanning every `docs/plans/YYYY-MM-DD-<slug>.md` (`archive/**`
+excluded by the filename pattern itself, so a finished plan belongs there
+rather than being retrofitted with a table). It stays CI-only, matching
+`check-scaffold-seam.mjs`'s own posture, deliberately — `CLAUDE.md`'s
+always-loaded block sits within roughly 15 tokens of `check:context-budget`'s
+3,000-token cap, and a `lefthook.yml` registration would force a cadence-table
+edit (`check:cadence`) that a prior PR already had to trim unrelated prose to
+land under.
+
+**A finished plan is archived, never retrofitted.** This is the corollary the
+scan predicate enforces mechanically: the set of `docs/plans/*.md` files
+matching the dated-filename convention **is** the set of documents this gate
+requires a table from. A plan doc whose work has shipped moves to
+`docs/plans/archive/` (excluded from the scan by the same predicate) instead
+of carrying a stale table — "finished" and "must carry a Landing plan" become
+the same statement by construction, exactly as ADR-0072's original Part B
+made them the same statement for a submodule via its own status-column check.
+
+**Skill consumers, updated to read either siting.** `starting-work` (Steps 2,
+3, 5, and its "Notes for callers"), `finishing-work` (Step 8, now one lookup
+with a fallback rather than two asymmetric cases), and `creating-prs` (Step
+12's `PR N of M` line) all now name both a submodule's reference page and a
+non-submodule wave's plan doc as the same kind of record, read through the
+same parser. `finishing-work`'s literal `slice:set --wave` mode remains the
+fallback for the one case that still has no durable record: a wave whose
+plan doc has not been authored yet.
 
 ## Links
 
@@ -360,6 +449,9 @@ a previous one.
   `docs/plans/archive/2026-08-20-pr-review-turn-budget.md`;
   `docs/plans/IMPLEMENTATION.md` F23 row; `docs/logs/2026-08-21-f23-field-test-b2.md`.
 - Gate: `.github/workflows/claude-pr-review.yml` (`MAX_REVIEWABLE_BYTES`);
-  `bin/check-file-budget.mjs`.
-- Issues: closes #571 (F23) and #579 (F26); #474 (B2, `core/procedure`)
-  remains open and is the first intended consumer of this discipline.
+  `bin/check-file-budget.mjs`; `bin/check-scaffold-seam.mjs` (submodule Landing
+  plans); `bin/check-landing-plans.mjs` (non-submodule plan-doc Landing plans,
+  2026-09-07 amendment).
+- Issues: closes #571 (F23), #579 (F26), and #998 (H5, the 2026-09-07
+  amendment); #474 (B2, `core/procedure`) remains open and is the first
+  intended consumer of this discipline.

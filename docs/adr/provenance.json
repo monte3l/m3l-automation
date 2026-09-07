@@ -418,7 +418,7 @@
       },
       {
         "path": ".claude/skills/starting-work/SKILL.md",
-        "blob": "0c07729fa3f172a2c234c3d655944be696ff1ecb"
+        "blob": "3c7246581c103ecf42ca39306aac144e6c028467"
       },
       {
         "path": "bin/check-hooks.mjs",
@@ -662,7 +662,7 @@
       },
       {
         "path": "docs/ROADMAP.md",
-        "blob": "76c0fed7fe317bbafdc44e2b24860b616000ed62"
+        "blob": "06f18b066eeab2ba81bca6b284df5699646cee5e"
       },
       {
         "path": "pnpm-lock.yaml",
@@ -737,7 +737,7 @@
       },
       {
         "path": "docs/ROADMAP.md",
-        "blob": "76c0fed7fe317bbafdc44e2b24860b616000ed62"
+        "blob": "06f18b066eeab2ba81bca6b284df5699646cee5e"
       },
       {
         "path": "packages/m3l-common/src/aws/clients/provider.ts",
@@ -758,7 +758,7 @@
       },
       {
         "path": "docs/ROADMAP.md",
-        "blob": "76c0fed7fe317bbafdc44e2b24860b616000ed62"
+        "blob": "06f18b066eeab2ba81bca6b284df5699646cee5e"
       },
       {
         "path": "tsconfig.json",
@@ -779,7 +779,7 @@
       },
       {
         "path": "docs/ROADMAP.md",
-        "blob": "76c0fed7fe317bbafdc44e2b24860b616000ed62"
+        "blob": "06f18b066eeab2ba81bca6b284df5699646cee5e"
       },
       {
         "path": "package.json",
@@ -873,7 +873,7 @@
       },
       {
         "path": "docs/ROADMAP.md",
-        "blob": "76c0fed7fe317bbafdc44e2b24860b616000ed62"
+        "blob": "06f18b066eeab2ba81bca6b284df5699646cee5e"
       },
       {
         "path": "package.json",
@@ -966,7 +966,7 @@
       },
       {
         "path": "docs/contributing/filing-work.md",
-        "blob": "5c38fff29c453995730620e3c5f65b0dc49b1612"
+        "blob": "7a2156c9c0c9c8d0f902b8c3f6ba9df3fb85f646"
       },
       {
         "path": "docs/implementation-status.md",
@@ -974,7 +974,7 @@
       },
       {
         "path": "docs/logs/README.md",
-        "blob": "b6264a66bd839e474abb260a2191b1aca46960b0"
+        "blob": "94f3c7cb79c148ea770189daa2147fa8d90be4ba"
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
@@ -982,7 +982,7 @@
       },
       {
         "path": "docs/ROADMAP.md",
-        "blob": "76c0fed7fe317bbafdc44e2b24860b616000ed62"
+        "blob": "06f18b066eeab2ba81bca6b284df5699646cee5e"
       },
       {
         "path": "package.json",
@@ -999,7 +999,7 @@
       },
       {
         "path": "docs/ROADMAP.md",
-        "blob": "76c0fed7fe317bbafdc44e2b24860b616000ed62"
+        "blob": "06f18b066eeab2ba81bca6b284df5699646cee5e"
       },
       {
         "path": "packages/m3l-common/package.json",
@@ -1311,7 +1311,7 @@
       },
       {
         "path": "docs/contributing/filing-work.md",
-        "blob": "5c38fff29c453995730620e3c5f65b0dc49b1612"
+        "blob": "7a2156c9c0c9c8d0f902b8c3f6ba9df3fb85f646"
       }
     ],
     "verifiedAt": "2026-09-07"
@@ -1344,7 +1344,7 @@
       },
       {
         "path": "docs/contributing/filing-work.md",
-        "blob": "5c38fff29c453995730620e3c5f65b0dc49b1612"
+        "blob": "7a2156c9c0c9c8d0f902b8c3f6ba9df3fb85f646"
       },
       {
         "path": "docs/logs/2026-08-19-hub-sync-key-namespace.md",
@@ -1356,7 +1356,7 @@
       },
       {
         "path": "docs/ROADMAP.md",
-        "blob": "76c0fed7fe317bbafdc44e2b24860b616000ed62"
+        "blob": "06f18b066eeab2ba81bca6b284df5699646cee5e"
       }
     ],
     "verifiedAt": "2026-09-07"
@@ -1393,10 +1393,10 @@
       },
       {
         "path": "docs/contributing/filing-work.md",
-        "blob": "5c38fff29c453995730620e3c5f65b0dc49b1612"
+        "blob": "7a2156c9c0c9c8d0f902b8c3f6ba9df3fb85f646"
       }
     ],
-    "verifiedAt": "2026-09-06"
+    "verifiedAt": "2026-09-07"
   },
   "0053": {
     "sourceFiles": [
@@ -1418,7 +1418,7 @@
       },
       {
         "path": "docs/ROADMAP.md",
-        "blob": "76c0fed7fe317bbafdc44e2b24860b616000ed62"
+        "blob": "06f18b066eeab2ba81bca6b284df5699646cee5e"
       }
     ],
     "verifiedAt": "2026-09-07"
@@ -1587,7 +1587,7 @@
       },
       {
         "path": "docs/ROADMAP.md",
-        "blob": "76c0fed7fe317bbafdc44e2b24860b616000ed62"
+        "blob": "06f18b066eeab2ba81bca6b284df5699646cee5e"
       },
       {
         "path": "packages/m3l-common/package.json",
@@ -1617,7 +1617,7 @@
       },
       {
         "path": ".claude/skills/finishing-work/SKILL.md",
-        "blob": "f9037a6aa0a8ef4a8ca7fc2ed322d57e1ec3a371"
+        "blob": "12fcd5123a0da96ae82cc1b4ead0b9ab8a8e84ed"
       },
       {
         "path": ".github/dependabot.yml",
@@ -1630,6 +1630,10 @@
       {
         "path": "bin/check-file-budget.mjs",
         "blob": "dda73a63ede130846a698fd2fa1425f7caffc622"
+      },
+      {
+        "path": "bin/check-landing-plans.mjs",
+        "blob": "3aa720bf7efc8d676db8a4490a0ed973e514ad01"
       },
       {
         "path": "bin/check-review-size.mjs",
@@ -1648,8 +1652,16 @@
         "blob": "d368daa4d57ffc32776eadc492d22c8be9e2a4d2"
       },
       {
+        "path": "bin/lib/landing-plans.mjs",
+        "blob": "9bce09cc694ada27bac059d1b93baa4ee12cda70"
+      },
+      {
         "path": "bin/slice-progress.mjs",
         "blob": "67f34328af932d2bd46e89175315df1eb88015ba"
+      },
+      {
+        "path": "CLAUDE.md",
+        "blob": "52c91d02c17493e8754e504a6f8e0e7b31ab7ce7"
       },
       {
         "path": "docs/contributing/subagent-context-management.md",
@@ -1674,6 +1686,10 @@
       {
         "path": "docs/reference/catalog.json",
         "blob": "214c8bd38f8c6cdaa00040c8408d22bc0268f06f"
+      },
+      {
+        "path": "docs/reference/core/procedure.md",
+        "blob": "d4b78da26a6a3c74c33701d1d943e0e55c770526"
       },
       {
         "path": "docs/research/pr-review-action-tuning.md",
@@ -1714,7 +1730,7 @@
       },
       {
         "path": "docs/contributing/filing-work.md",
-        "blob": "5c38fff29c453995730620e3c5f65b0dc49b1612"
+        "blob": "7a2156c9c0c9c8d0f902b8c3f6ba9df3fb85f646"
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
@@ -1722,7 +1738,7 @@
       },
       {
         "path": "docs/ROADMAP.md",
-        "blob": "76c0fed7fe317bbafdc44e2b24860b616000ed62"
+        "blob": "06f18b066eeab2ba81bca6b284df5699646cee5e"
       }
     ],
     "verifiedAt": "2026-09-07"
@@ -1749,7 +1765,7 @@
     "sourceFiles": [
       {
         "path": "docs/ROADMAP.md",
-        "blob": "76c0fed7fe317bbafdc44e2b24860b616000ed62"
+        "blob": "06f18b066eeab2ba81bca6b284df5699646cee5e"
       },
       {
         "path": "scripts/cloudwatch-logs-analysis/src/steps/preset.ts",
@@ -1770,7 +1786,7 @@
       },
       {
         "path": "docs/ROADMAP.md",
-        "blob": "76c0fed7fe317bbafdc44e2b24860b616000ed62"
+        "blob": "06f18b066eeab2ba81bca6b284df5699646cee5e"
       },
       {
         "path": "packages/m3l-common/src/aws/sqs/client.ts",
@@ -1864,7 +1880,7 @@
       },
       {
         "path": "docs/ROADMAP.md",
-        "blob": "76c0fed7fe317bbafdc44e2b24860b616000ed62"
+        "blob": "06f18b066eeab2ba81bca6b284df5699646cee5e"
       }
     ],
     "verifiedAt": "2026-09-07"
@@ -1914,11 +1930,11 @@
     "sourceFiles": [
       {
         "path": "docs/contributing/filing-work.md",
-        "blob": "5c38fff29c453995730620e3c5f65b0dc49b1612"
+        "blob": "7a2156c9c0c9c8d0f902b8c3f6ba9df3fb85f646"
       },
       {
         "path": "docs/ROADMAP.md",
-        "blob": "76c0fed7fe317bbafdc44e2b24860b616000ed62"
+        "blob": "06f18b066eeab2ba81bca6b284df5699646cee5e"
       }
     ],
     "verifiedAt": "2026-09-07"
@@ -2283,7 +2299,7 @@
       },
       {
         "path": "docs/contributing/filing-work.md",
-        "blob": "5c38fff29c453995730620e3c5f65b0dc49b1612"
+        "blob": "7a2156c9c0c9c8d0f902b8c3f6ba9df3fb85f646"
       },
       {
         "path": "docs/logs/2026-09-06-adr-corpus-audit.md",
