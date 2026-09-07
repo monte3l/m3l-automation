@@ -1807,7 +1807,7 @@
       },
       {
         "path": "bin/check-context-budget.mjs",
-        "blob": "58b233fe0e127e27be7188ac4010485f9ac08ca5"
+        "blob": "f98f5de569cee1878f415e2fff2c43d10fe66e49"
       },
       {
         "path": "bin/check-file-budget.mjs",
@@ -2110,7 +2110,7 @@
     "sourceFiles": [
       {
         "path": "bin/check-context-budget.mjs",
-        "blob": "58b233fe0e127e27be7188ac4010485f9ac08ca5"
+        "blob": "f98f5de569cee1878f415e2fff2c43d10fe66e49"
       },
       {
         "path": "bin/run-skill-evals.mjs",

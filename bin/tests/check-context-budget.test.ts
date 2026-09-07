@@ -43,6 +43,7 @@ import {
   checkRuleBudget,
   buildRuleBaseline,
   collectSkillDescriptions,
+  extractCodingSection,
   parseClaudeMdRuleGlobs,
   diffRuleGlobParity,
   deriveRuleRegistrationGaps,
@@ -829,10 +830,80 @@ describe("deriveScenarioTotals", () => {
   });
 });
 
+describe("extractCodingSection", () => {
+  test("extracts the section body when a following ## heading is present", () => {
+    const content = [
+      "# CLAUDE.md",
+      "",
+      "## Coding, errors & tests (path-scoped)",
+      "",
+      "Canonical **Style Guide**: intro line.",
+      "- `tests/**` → `tests.md`",
+      "",
+      "## Interaction Style",
+      "",
+      "- ask clarifying questions first",
+      "",
+    ].join("\n");
+    const section = extractCodingSection(content);
+    expect(section).toContain("- `tests/**` → `tests.md`");
+    expect(section).not.toContain("ask clarifying questions first");
+  });
+
+  test("extracts to end-of-string, without truncating at the first newline, when the section is last in the file", () => {
+    const content = [
+      "# CLAUDE.md",
+      "",
+      "## Interaction Style",
+      "",
+      "- ask clarifying questions first",
+      "",
+      "## Coding, errors & tests (path-scoped)",
+      "",
+      "First line of the last section.",
+      "- `packages/m3l-common/src/**` → `library-src.md` — ESM only",
+      "Third and final line of the section body.",
+    ].join("\n");
+    const section = extractCodingSection(content);
+    expect(section).toContain("First line of the last section.");
+    expect(section).toContain(
+      "- `packages/m3l-common/src/**` → `library-src.md` — ESM only",
+    );
+    expect(section).toContain("Third and final line of the section body.");
+  });
+
+  test("returns an empty string when the heading is not present at all", () => {
+    const content = [
+      "# CLAUDE.md",
+      "",
+      "## Interaction Style",
+      "",
+      "- ask clarifying questions first",
+      "",
+    ].join("\n");
+    expect(extractCodingSection(content)).toBe("");
+  });
+
+  test("the real repo's CLAUDE.md has a non-empty Coding section containing a known rule-glob bullet", () => {
+    const claudeMdContent = fs.readFileSync(join(root, "CLAUDE.md"), "utf8");
+    const section = extractCodingSection(claudeMdContent);
+    expect(section.length).toBeGreaterThan(0);
+    expect(
+      section.includes("`tests.md`") ||
+        section.includes("`harness-artifacts.md`"),
+    ).toBe(true);
+  });
+});
+
 describe("parseClaudeMdRuleGlobs", () => {
   test("parses a bullet with multiple globs into an ordered array keyed by filename", () => {
     const result = parseClaudeMdRuleGlobs(
-      "- `packages/m3l-common/src/**`, `scripts/**` → `refactoring.md` — behavior-preserving changes\n",
+      [
+        "## Coding, errors & tests (path-scoped)",
+        "",
+        "- `packages/m3l-common/src/**`, `scripts/**` → `refactoring.md` — behavior-preserving changes",
+        "",
+      ].join("\n"),
     );
     expect(result.get("refactoring.md")).toEqual([
       "packages/m3l-common/src/**",
@@ -845,6 +916,33 @@ describe("parseClaudeMdRuleGlobs", () => {
       "Just prose, no rule-glob bullets here.\n- an unrelated bullet\n",
     );
     expect(result.size).toBe(0);
+  });
+
+  test("ignores an arrow-bullet of the registrable shape outside the Coding section while still parsing one inside it", () => {
+    const content = [
+      "# CLAUDE.md",
+      "",
+      "## Worked Example",
+      "",
+      "Here is an example bullet from an unrelated walkthrough:",
+      "- `some/glob/**` → `something.md` — this is NOT a real rule registration",
+      "",
+      "## Coding, errors & tests (path-scoped)",
+      "",
+      "- `packages/m3l-common/src/**` → `library-src.md` — ESM imports, no `any`",
+      "",
+      "## Interaction Style",
+      "",
+      "- `other/glob/**` → `elsewhere.md` — also NOT a real rule registration",
+      "",
+    ].join("\n");
+    const result = parseClaudeMdRuleGlobs(content);
+    expect(result.get("library-src.md")).toEqual([
+      "packages/m3l-common/src/**",
+    ]);
+    expect(result.has("something.md")).toBe(false);
+    expect(result.has("elsewhere.md")).toBe(false);
+    expect(result.size).toBe(1);
   });
 });
 

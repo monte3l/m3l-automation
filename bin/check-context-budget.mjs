@@ -447,6 +447,25 @@ export function collectRuleFiles(rulesDir) {
 }
 
 /**
+ * Extract the body of CLAUDE.md's "## Coding, errors & tests (path-scoped)"
+ * section — from its heading up to (not including) the next `## ` heading or
+ * end of string. No `/m` flag: under `/m`, `$` matches before *any* newline,
+ * which silently truncates a non-greedy `[\s\S]*?` capture at the section's
+ * first line break rather than its end (`.claude/rules/harness-artifacts.md`
+ * names this exact trap). Anchoring via `(?:^|\n)` and ending the capture at
+ * `(?=\n## |$)` needs no multiline flag at all.
+ *
+ * @param {string} claudeMdContent raw CLAUDE.md text
+ * @returns {string} the section body, or "" if the heading isn't found
+ */
+export function extractCodingSection(claudeMdContent) {
+  const match = claudeMdContent.match(
+    /(?:^|\n)## Coding, errors & tests \(path-scoped\)\n([\s\S]*?)(?=\n## |$)/,
+  );
+  return match === null ? "" : match[1];
+}
+
+/**
  * Parse CLAUDE.md's "Coding, errors & tests (path-scoped)" rule-glob bullet
  * list — the prose description of which `.claude/rules/*.md` extract loads
  * for which path glob(s) — into a map of rule filename -> declared globs.
@@ -455,15 +474,24 @@ export function collectRuleFiles(rulesDir) {
  * drifted apart twice with no gate catching it before this one existed
  * (2026-08-31 audit against Anthropic's AI-native SDLC playbook).
  *
+ * Scoped to {@link extractCodingSection}'s section body, not the whole file
+ * — an arrow-bullet of this exact shape anywhere else in CLAUDE.md (e.g. an
+ * unrelated worked example) would otherwise become a map entry, and
+ * {@link deriveRuleRegistrationGaps}'s `phantoms` check (unlike
+ * {@link diffRuleGlobParity}, which only ever iterates real rule files) walks
+ * every key in this map — so a stray whole-file match would hard-fail the
+ * gate on a bullet that was never meant to register a rule at all.
+ *
  * @param {string} claudeMdContent raw CLAUDE.md text
  * @returns {Map<string, string[]>} rule filename -> globs, in bullet order
  */
 export function parseClaudeMdRuleGlobs(claudeMdContent) {
   /** @type {Map<string, string[]>} */
   const result = new Map();
+  const section = extractCodingSection(claudeMdContent);
   const bulletRe = /^- ((?:`[^`]+`(?:,\s*)?)+)\s*→\s*`([\w.-]+\.md)`/gm;
   let match;
-  while ((match = bulletRe.exec(claudeMdContent)) !== null) {
+  while ((match = bulletRe.exec(section)) !== null) {
     const globs = [...match[1].matchAll(/`([^`]+)`/g)].map((m) => m[1]);
     result.set(match[2], globs);
   }
