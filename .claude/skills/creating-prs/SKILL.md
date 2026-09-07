@@ -484,6 +484,18 @@ turning an open, mergeable PR into one. Three outcomes, one **default**:
 - **Hand back.** Step 14 reported `CONFLICTING`, or a spoke's Must-fix from
   Step 7 is still outstanding. Neither is safe to merge past.
 
+**A `gh pr merge` conflict at this point is expected, not a surprise, on any
+branch that waited through a full required-check run before merging** — Step
+14's `mergeable`/`mergeStateStatus` check only ran once, right after opening
+the PR; enough wall-clock (checks plus any user-confirmation round-trip) can
+pass for another PR to land on `main` first. `GraphQL: Pull Request has
+merge conflicts` from the merge call itself means exactly that. Apply Step
+2's rebase-and-resolve procedure again, right here, rather than treating the
+error as anomalous — most derived-artifact conflicts still auto-resolve or
+regenerate cleanly (`/resolving-merge-conflicts`), then re-run `pnpm verify`
+and force-with-lease push before retrying the merge
+(`docs/logs/2026-09-07-codeql-scan-timing-guidance.md`).
+
 Whichever outcome applies, the method is always `--squash` — this repo lands
 every PR by squash merge (verified against #650/#649/#647,
 `docs/adr/0014-symmetric-worktree-tooling.md`).
