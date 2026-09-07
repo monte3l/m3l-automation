@@ -6,11 +6,44 @@
 # weekly schedule so a suite that only runs on rare harness PRs doesn't go
 # stale unnoticed.
 #
-# Deliberately INFORMATIONAL, not a required status check, for its first
-# cycle: this is the suite's first time running anywhere, including CI, so
-# there is no real pass-rate baseline yet to gate merges on. `continue-on-
-# error: true` reports the run without blocking. Promote to required once a
-# baseline exists (see docs/plans/IMPLEMENTATION.md).
+# GATING since 2026-09-07 — but as a COLLAPSE DETECTOR, not a corpus gate. The
+# job fails only when the suite-wide pass rate falls below MIN_PASS_RATE (0.60)
+# in bin/run-skill-evals.mjs, when a case produces no verdict at all, or when
+# no case runs. Calibrated from all 15 CI runs on the current 23-skill /
+# 92-case / 432-criterion corpus (2026-09-05 to 2026-09-07): min 58/92 = 63.0%
+# (run 34064682457), max 69/92 = 75.0% (run 34028636084), mean ~68.6%. At 0.60
+# a 92-case run needs 56 passes, two below that minimum — thin headroom on a
+# wide band, so the measured spread cannot trip it but a collapse cannot hide
+# under it either.
+#
+# It is deliberately NOT a "the corpus should pass" gate: ~93-95% of every
+# failure in that window is the expect_skill_fired routing assertion rather
+# than a criterion verdict, 12 cases fail in every run and 50 of 92 flip
+# between runs. Issue 1087 tracks that debt, and raising MIN_PASS_RATE is its
+# exit criterion. Full rationale: docs/decision-notes/0004-skill-eval-pass-
+# rate-floor.md and the skill-evals.yml row in docs/contributing/ci-cd.md —
+# NOT docs/plans/IMPLEMENTATION.md, which this comment used to point at and
+# which has never carried a skill-evals row.
+#
+# Why not the two-consecutive-green-`main`-runs baseline that issue 809 item 5
+# asked for: this workflow has run on `main` exactly ONCE, ever — run
+# 33418702130, `schedule`, 2026-08-31, 18/46 on the pre-repair corpus — and has
+# never had a single workflow_dispatch run (145 runs total: 144 pull_request, 1
+# schedule). That precondition is unreachable, and a `main`-only baseline would
+# be one stale data point on a corpus that no longer exists. PR-branch runs are
+# the only real sample this suite has. Recorded because it is a deliberate
+# departure, not an oversight.
+#
+# NOT a required status check, and not becoming one. This workflow is
+# path-filtered (see `on:` below), and GitHub holds a path-filtered required
+# context PERMANENTLY PENDING on every PR that touches none of those paths —
+# promoting it would make every unrelated PR in the repo unmergeable. The four
+# required contexts therefore stay `verify`, `review`, `CodeQL` and `Dependency
+# Review` (docs/contributing/branch-protection.md). Reporting RED is the whole
+# signal, the same visible-but-non-blocking posture ci-cd.md describes for
+# hub-alarm. Removing the path filter is not the equivalent fix — the suite
+# costs $8.13-$8.35 and 27-28 minutes per run, which is why it is filtered at
+# all.
 name: Skill Evals
 
 on:
@@ -43,11 +76,16 @@ jobs:
     name: Run skill evals
     runs-on: ubuntu-latest
     # 30 was too tight: run 33405684499 was cancelled at the limit having
-    # graded 30 of 46 cases. Removing subagent fan-out (the `--tools`
-    # restriction in bin/run-skill-evals.mjs) should cut wall-clock, but
-    # there is no post-fix measurement yet, so this is headroom rather than a
-    # guess at the true cost. Per-case spend is bounded separately by
-    # DEFAULT_MAX_BUDGET_USD, which a wall-clock limit cannot express.
+    # graded 30 of 46 cases. Now measured rather than guessed: runs on the
+    # 92-case corpus have taken roughly 27-31 minutes (16 runs, 2026-09-05
+    # onward), so 60 leaves about 2x headroom. Deliberately a range and not a
+    # census — the first version of this comment pinned an exact 26.9-28.3
+    # window and the very next run came in at 30m53s. Do NOT tighten it toward
+    # the measurement: the step is gating now (see the header), so a timeout
+    # cancellation reads as a suite failure rather than a missing datapoint.
+    # Per-case spend is bounded separately by DEFAULT_MAX_BUDGET_USD, which a
+    # wall-clock limit cannot express; whole-run cost measured $8.13-$8.35
+    # (~$0.089/case).
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -88,4 +126,3 @@ jobs:
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
         run: pnpm eval:skills
-        continue-on-error: true
