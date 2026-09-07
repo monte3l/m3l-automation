@@ -66,3 +66,4 @@ grows past ~20 entries.
 | ---- | ------------------------------------------------------------------------------------------------------------------- | ---------- |
 | 0001 | [An optional `Review by:` date for a deferral ADR with no fired trigger](./0001-deferral-review-by-dates.md)        | 2026-09-06 |
 | 0002 | [Extend the session-telemetry adapter with a per-tool usage scan, recursively](./0002-per-tool-usage-scan-scope.md) | 2026-09-06 |
+| 0003 | [Why `SessionEnd`, `Notification`, and `PostCompact` stay unwired](./0003-unwired-hook-events.md)                   | 2026-09-07 |

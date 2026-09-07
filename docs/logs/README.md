@@ -228,6 +228,7 @@ backstop for the step above, not a substitute for it.
 | 2026-09-03 | subagent-statusline                   | [subagent-statusline](./2026-09-03-subagent-statusline.md)                                 |
 | 2026-09-05 | statusline-weekly-usage               | [statusline-weekly-usage](./2026-09-05-statusline-weekly-usage.md)                         |
 | 2026-09-05 | statusline-anchor-fixes               | [statusline-anchor-fixes](./2026-09-05-statusline-anchor-fixes.md)                         |
+| 2026-09-07 | hooks-unwired-events-rationale        | [hooks-unwired-events-rationale](./2026-09-07-hooks-unwired-events-rationale.md)           |
 
 ## Workflow / infra
 
