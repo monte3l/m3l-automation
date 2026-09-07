@@ -36,7 +36,10 @@ import {
 } from "../../src/steps/decision-recorder.js";
 import type { AgentDailyInvocationCounter } from "../../src/steps/daily-counter.js";
 import { AgentRunLedger } from "../../src/steps/run-ledger.js";
-import { RecordingDecisionLogWriter } from "../support/logFakes.js";
+import {
+  FailingDecisionLogWriter,
+  RecordingDecisionLogWriter,
+} from "../support/logFakes.js";
 import { minimalPolicy } from "../support/policyFixtures.js";
 
 import {
@@ -337,6 +340,33 @@ describe("recordConclusion", () => {
     expect(entry.tokens).toBe(7);
     expect(entry.outcome).toEqual({ dryRun: false, exitCode: 0 });
   });
+
+  it("propagates recorder.record's rejection to the caller — unlike recordConsumption, the concluding audit entry is not optional and is deliberately unguarded", async () => {
+    const failure = new Core.M3LAgentDecisionLogWriteError(
+      "append failed: EACCES",
+    );
+    const writer = new FailingDecisionLogWriter(failure);
+    const recorder = new AgentDecisionRecorder({
+      identity: agentIdentity({ name: "agent-operator" }),
+      writer,
+    });
+    const decision = realDecision();
+
+    const promise = recordConclusion(recorder, decision, NOW, {
+      tokens: 42,
+      cost: 1.5,
+    });
+
+    await expect(promise).rejects.toBeInstanceOf(M3LAgentOperatorCliError);
+    await expect(promise).rejects.toMatchObject({
+      code: "ERR_AGENT_OPERATOR_DECISION_LOG",
+    });
+    // Chained, not re-messaged — the caller can still reach the writer's own
+    // failure that recordConclusion never catches.
+    const thrown = await promise.catch((error: unknown) => error);
+    expect((thrown as M3LAgentOperatorCliError).cause).toBe(failure);
+    expect(writer.entries).toHaveLength(1);
+  });
 });
 
 describe("concludeGatedOperation", () => {
@@ -395,6 +425,14 @@ describe("concludeGatedOperation", () => {
     expect((thrown as M3LAgentOperatorCliError).code).toBe(
       "ERR_AGENT_OPERATOR_CONFIG",
     );
+    // reconcileMeteredCost attaches no `cause` — the divergence is a
+    // computed disagreement between two figures, not a wrapped failure —
+    // so the diagnostic is carried on `context` instead.
+    expect((thrown as M3LAgentOperatorCliError).cause).toBeUndefined();
+    expect((thrown as M3LAgentOperatorCliError).context).toEqual({
+      metered: 2.5,
+      reported: 99,
+    });
     expect(writer.entries).toHaveLength(0);
   });
 });
